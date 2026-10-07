@@ -1,19 +1,19 @@
 //! NEON `f64` FFT/IFFT butterfly kernels for [`FFT64Neon`].
 //!
-//! Sizes `m < 16` delegate to [`fft_portable`] / [`ifft_portable`]; `m == 16` and BFS leaves
+//! Sizes `m < 16` delegate to [`fft_portable_fused`] / [`ifft_portable_fused`]; `m == 16` and BFS leaves
 //! use the NEON-intrinsic [`fft16_neon`] / [`ifft16_neon`].
 
 use core::arch::aarch64::{
-    float64x2_t, vaddq_f64, vdupq_n_f64, vfmaq_f64, vfmsq_f64, vld1q_f64, vmulq_f64, vst1q_f64, vsubq_f64, vzip1q_f64, vzip2q_f64,
+    float64x2_t, vaddq_f64, vdupq_n_f64, vfmaq_f64, vld1q_f64, vmulq_f64, vnegq_f64, vst1q_f64, vsubq_f64, vzip1q_f64, vzip2q_f64,
 };
 
-use poulpy_cpu_portable::kernels::fft64::reim::{fft_portable, ifft_portable};
+use poulpy_cpu_portable::kernels::fft64::reim::{fft_portable_fused, ifft_portable_fused};
 
 /// Forward FFT in REIM split layout. Mirrors `fft_avx2_fma`.
 pub(crate) fn fft_neon(m: usize, omg: &[f64], data: &mut [f64]) {
     if m < 16 {
         // m ∈ {1, 2, 4, 8} — scalar reference handles the small leaves.
-        fft_portable(m, omg, data);
+        fft_portable_fused(m, omg, data);
         return;
     }
     assert!(data.len() == 2 * m);
@@ -30,7 +30,7 @@ pub(crate) fn fft_neon(m: usize, omg: &[f64], data: &mut [f64]) {
 /// Inverse FFT in REIM split layout. Mirrors `ifft_avx2_fma`.
 pub(crate) fn ifft_neon(m: usize, omg: &[f64], data: &mut [f64]) {
     if m < 16 {
-        ifft_portable(m, omg, data);
+        ifft_portable_fused(m, omg, data);
         return;
     }
     assert!(data.len() == 2 * m);
@@ -132,6 +132,7 @@ unsafe fn twiddle_fft_neon(h: usize, re: &mut [f64], im: &mut [f64], omg: &[f64]
     unsafe {
         let omr: float64x2_t = vdupq_n_f64(omg[0]);
         let omi: float64x2_t = vdupq_n_f64(omg[1]);
+        let omi_neg: float64x2_t = vnegq_f64(omi);
 
         let re_base = re.as_mut_ptr();
         let im_base = im.as_mut_ptr();
@@ -150,11 +151,11 @@ unsafe fn twiddle_fft_neon(h: usize, re: &mut [f64], im: &mut [f64], omg: &[f64]
             let mut ui1_lo = vld1q_f64(i1);
             let mut ui1_hi = vld1q_f64(i1.add(2));
 
-            // tra = omr*ur1 - omi*ui1  (vfmsq(c, a, b) = c - a*b → seed c with omr*ur1)
-            let mut tra_lo = vmulq_f64(omr, ur1_lo);
-            let mut tra_hi = vmulq_f64(omr, ur1_hi);
-            tra_lo = vfmsq_f64(tra_lo, omi, ui1_lo);
-            tra_hi = vfmsq_f64(tra_hi, omi, ui1_hi);
+            // tra = fma(ur1, omr, -(omi*ui1)): seed with the product by -omi.
+            let mut tra_lo = vmulq_f64(omi_neg, ui1_lo);
+            let mut tra_hi = vmulq_f64(omi_neg, ui1_hi);
+            tra_lo = vfmaq_f64(tra_lo, omr, ur1_lo);
+            tra_hi = vfmaq_f64(tra_hi, omr, ur1_hi);
 
             // tia = omr*ui1 + omi*ur1
             let mut tia_lo = vmulq_f64(omi, ur1_lo);
@@ -209,6 +210,9 @@ unsafe fn bitwiddle_fft_neon(h: usize, re: &mut [f64], im: &mut [f64], omg: &[f6
         let omai: float64x2_t = vdupq_n_f64(omg[1]);
         let ombr: float64x2_t = vdupq_n_f64(omg[2]);
         let ombi: float64x2_t = vdupq_n_f64(omg[3]);
+        let omai_neg: float64x2_t = vnegq_f64(omai);
+        let ombi_neg: float64x2_t = vnegq_f64(ombi);
+        let ombr_neg: float64x2_t = vnegq_f64(ombr);
 
         for _ in (0..h).step_by(4) {
             let mut ur0_lo = vld1q_f64(r0);
@@ -229,19 +233,19 @@ unsafe fn bitwiddle_fft_neon(h: usize, re: &mut [f64], im: &mut [f64], omg: &[f6
             let mut ui3_hi = vld1q_f64(i3.add(2));
 
             // Stage 1: pair (r0,r2) and (r1,r3) with twiddle a.
-            // tra = omar*ur2 - omai*ui2  (seed with omar*ur2; vfmsq subtracts omai*ui2)
-            let mut tra_lo = vmulq_f64(omar, ur2_lo);
-            let mut tra_hi = vmulq_f64(omar, ur2_hi);
-            let mut trb_lo = vmulq_f64(omar, ur3_lo);
-            let mut trb_hi = vmulq_f64(omar, ur3_hi);
+            // tra = fma(ur2, omar, -(omai*ui2)): seed with the product by -omai.
+            let mut tra_lo = vmulq_f64(omai_neg, ui2_lo);
+            let mut tra_hi = vmulq_f64(omai_neg, ui2_hi);
+            let mut trb_lo = vmulq_f64(omai_neg, ui3_lo);
+            let mut trb_hi = vmulq_f64(omai_neg, ui3_hi);
             let mut tia_lo = vmulq_f64(omai, ur2_lo);
             let mut tia_hi = vmulq_f64(omai, ur2_hi);
             let mut tib_lo = vmulq_f64(omai, ur3_lo);
             let mut tib_hi = vmulq_f64(omai, ur3_hi);
-            tra_lo = vfmsq_f64(tra_lo, omai, ui2_lo);
-            tra_hi = vfmsq_f64(tra_hi, omai, ui2_hi);
-            trb_lo = vfmsq_f64(trb_lo, omai, ui3_lo);
-            trb_hi = vfmsq_f64(trb_hi, omai, ui3_hi);
+            tra_lo = vfmaq_f64(tra_lo, omar, ur2_lo);
+            tra_hi = vfmaq_f64(tra_hi, omar, ur2_hi);
+            trb_lo = vfmaq_f64(trb_lo, omar, ur3_lo);
+            trb_hi = vfmaq_f64(trb_hi, omar, ur3_hi);
             tia_lo = vfmaq_f64(tia_lo, omar, ui2_lo);
             tia_hi = vfmaq_f64(tia_hi, omar, ui2_hi);
             tib_lo = vfmaq_f64(tib_lo, omar, ui3_lo);
@@ -267,22 +271,22 @@ unsafe fn bitwiddle_fft_neon(h: usize, re: &mut [f64], im: &mut [f64], omg: &[f6
             // Stage 2: cplx_twiddle on (r0,r1) and cplx_i_twiddle on (r2,r3) with twiddle b.
             // (r0, r1) line: tra = ombr*ur1 - ombi*ui1; tia = ombr*ui1 + ombi*ur1
             // (r2, r3) line: trb = ombi*ur3 + ombr*ui3; tib = ombi*ui3 - ombr*ur3
-            tra_lo = vmulq_f64(ombr, ur1_lo);
-            tra_hi = vmulq_f64(ombr, ur1_hi);
+            tra_lo = vmulq_f64(ombi_neg, ui1_lo);
+            tra_hi = vmulq_f64(ombi_neg, ui1_hi);
             trb_lo = vmulq_f64(ombr, ui3_lo);
             trb_hi = vmulq_f64(ombr, ui3_hi);
             tia_lo = vmulq_f64(ombi, ur1_lo);
             tia_hi = vmulq_f64(ombi, ur1_hi);
-            tib_lo = vmulq_f64(ombi, ui3_lo);
-            tib_hi = vmulq_f64(ombi, ui3_hi);
-            tra_lo = vfmsq_f64(tra_lo, ombi, ui1_lo);
-            tra_hi = vfmsq_f64(tra_hi, ombi, ui1_hi);
+            tib_lo = vmulq_f64(ombr_neg, ur3_lo);
+            tib_hi = vmulq_f64(ombr_neg, ur3_hi);
+            tra_lo = vfmaq_f64(tra_lo, ombr, ur1_lo);
+            tra_hi = vfmaq_f64(tra_hi, ombr, ur1_hi);
             trb_lo = vfmaq_f64(trb_lo, ombi, ur3_lo);
             trb_hi = vfmaq_f64(trb_hi, ombi, ur3_hi);
             tia_lo = vfmaq_f64(tia_lo, ombr, ui1_lo);
             tia_hi = vfmaq_f64(tia_hi, ombr, ui1_hi);
-            tib_lo = vfmsq_f64(tib_lo, ombr, ur3_lo);
-            tib_hi = vfmsq_f64(tib_hi, ombr, ur3_hi);
+            tib_lo = vfmaq_f64(tib_lo, ombi, ui3_lo);
+            tib_hi = vfmaq_f64(tib_hi, ombi, ui3_hi);
 
             ur1_lo = vsubq_f64(ur0_lo, tra_lo);
             ur1_hi = vsubq_f64(ur0_hi, tra_hi);
@@ -338,6 +342,7 @@ unsafe fn inv_twiddle_ifft_neon(h: usize, re: &mut [f64], im: &mut [f64], omg: &
     unsafe {
         let omr: float64x2_t = vdupq_n_f64(omg[0]);
         let omi: float64x2_t = vdupq_n_f64(omg[1]);
+        let omi_neg: float64x2_t = vnegq_f64(omi);
 
         let re_base = re.as_mut_ptr();
         let im_base = im.as_mut_ptr();
@@ -367,10 +372,10 @@ unsafe fn inv_twiddle_ifft_neon(h: usize, re: &mut [f64], im: &mut [f64], omg: &
             ui0_hi = vaddq_f64(ui0_hi, ui1_hi);
 
             // ur1 = omr*tra - omi*tia
-            ur1_lo = vmulq_f64(omr, tra_lo);
-            ur1_hi = vmulq_f64(omr, tra_hi);
-            ur1_lo = vfmsq_f64(ur1_lo, omi, tia_lo);
-            ur1_hi = vfmsq_f64(ur1_hi, omi, tia_hi);
+            ur1_lo = vmulq_f64(omi_neg, tia_lo);
+            ur1_hi = vmulq_f64(omi_neg, tia_hi);
+            ur1_lo = vfmaq_f64(ur1_lo, omr, tra_lo);
+            ur1_hi = vfmaq_f64(ur1_hi, omr, tra_hi);
 
             // ui1 = omr*tia + omi*tra
             ui1_lo = vmulq_f64(omi, tra_lo);
@@ -416,6 +421,9 @@ unsafe fn inv_bitwiddle_ifft_neon(h: usize, re: &mut [f64], im: &mut [f64], omg:
         let omai: float64x2_t = vdupq_n_f64(omg[1]);
         let ombr: float64x2_t = vdupq_n_f64(omg[2]);
         let ombi: float64x2_t = vdupq_n_f64(omg[3]);
+        let omai_neg: float64x2_t = vnegq_f64(omai);
+        let omar_neg: float64x2_t = vnegq_f64(omar);
+        let ombi_neg: float64x2_t = vnegq_f64(ombi);
 
         for _ in (0..h).step_by(4) {
             let mut ur0_lo = vld1q_f64(r0);
@@ -458,22 +466,22 @@ unsafe fn inv_bitwiddle_ifft_neon(h: usize, re: &mut [f64], im: &mut [f64], omg:
             // ur3 = omai*trb + omar*tib    (inv_itwiddle real, +)
             // ui1 = omar*tia + omai*tra    (inv_twiddle imag)
             // ui3 = omai*tib - omar*trb    (inv_itwiddle imag, -)
-            ur1_lo = vmulq_f64(omar, tra_lo);
-            ur1_hi = vmulq_f64(omar, tra_hi);
+            ur1_lo = vmulq_f64(omai_neg, tia_lo);
+            ur1_hi = vmulq_f64(omai_neg, tia_hi);
             ur3_lo = vmulq_f64(omar, tib_lo);
             ur3_hi = vmulq_f64(omar, tib_hi);
             ui1_lo = vmulq_f64(omai, tra_lo);
             ui1_hi = vmulq_f64(omai, tra_hi);
-            ui3_lo = vmulq_f64(omai, tib_lo);
-            ui3_hi = vmulq_f64(omai, tib_hi);
-            ur1_lo = vfmsq_f64(ur1_lo, omai, tia_lo);
-            ur1_hi = vfmsq_f64(ur1_hi, omai, tia_hi);
+            ui3_lo = vmulq_f64(omar_neg, trb_lo);
+            ui3_hi = vmulq_f64(omar_neg, trb_hi);
+            ur1_lo = vfmaq_f64(ur1_lo, omar, tra_lo);
+            ur1_hi = vfmaq_f64(ur1_hi, omar, tra_hi);
             ur3_lo = vfmaq_f64(ur3_lo, omai, trb_lo);
             ur3_hi = vfmaq_f64(ur3_hi, omai, trb_hi);
             ui1_lo = vfmaq_f64(ui1_lo, omar, tia_lo);
             ui1_hi = vfmaq_f64(ui1_hi, omar, tia_hi);
-            ui3_lo = vfmsq_f64(ui3_lo, omar, trb_lo);
-            ui3_hi = vfmsq_f64(ui3_hi, omar, trb_hi);
+            ui3_lo = vfmaq_f64(ui3_lo, omai, tib_lo);
+            ui3_hi = vfmaq_f64(ui3_hi, omai, tib_hi);
 
             // Stage 2: inv_twiddle on (r0,r2) and (r1,r3) with twiddle b.
             tra_lo = vsubq_f64(ur0_lo, ur2_lo);
@@ -498,18 +506,18 @@ unsafe fn inv_bitwiddle_ifft_neon(h: usize, re: &mut [f64], im: &mut [f64], omg:
             // ur3 = ombr*trb - ombi*tib
             // ui2 = ombr*tia + ombi*tra
             // ui3 = ombr*tib + ombi*trb
-            ur2_lo = vmulq_f64(ombr, tra_lo);
-            ur2_hi = vmulq_f64(ombr, tra_hi);
-            ur3_lo = vmulq_f64(ombr, trb_lo);
-            ur3_hi = vmulq_f64(ombr, trb_hi);
+            ur2_lo = vmulq_f64(ombi_neg, tia_lo);
+            ur2_hi = vmulq_f64(ombi_neg, tia_hi);
+            ur3_lo = vmulq_f64(ombi_neg, tib_lo);
+            ur3_hi = vmulq_f64(ombi_neg, tib_hi);
             ui2_lo = vmulq_f64(ombi, tra_lo);
             ui2_hi = vmulq_f64(ombi, tra_hi);
             ui3_lo = vmulq_f64(ombi, trb_lo);
             ui3_hi = vmulq_f64(ombi, trb_hi);
-            ur2_lo = vfmsq_f64(ur2_lo, ombi, tia_lo);
-            ur2_hi = vfmsq_f64(ur2_hi, ombi, tia_hi);
-            ur3_lo = vfmsq_f64(ur3_lo, ombi, tib_lo);
-            ur3_hi = vfmsq_f64(ur3_hi, ombi, tib_hi);
+            ur2_lo = vfmaq_f64(ur2_lo, ombr, tra_lo);
+            ur2_hi = vfmaq_f64(ur2_hi, ombr, tra_hi);
+            ur3_lo = vfmaq_f64(ur3_lo, ombr, trb_lo);
+            ur3_hi = vfmaq_f64(ur3_hi, ombr, trb_hi);
             ui2_lo = vfmaq_f64(ui2_lo, ombr, tia_lo);
             ui2_hi = vfmaq_f64(ui2_hi, ombr, tia_hi);
             ui3_lo = vfmaq_f64(ui3_lo, ombr, tib_lo);
@@ -565,8 +573,8 @@ unsafe fn cplx_twiddle_neon(
     omi: float64x2_t,
 ) {
     unsafe {
-        // dr = rb*omr - ib*omi, di = rb*omi + ib*omr
-        let dr = vfmsq_f64(vmulq_f64(*rb, omr), *ib, omi);
+        // dr = fma(rb, omr, -(ib*omi)), di = fma(ib, omr, rb*omi)
+        let dr = vfmaq_f64(vmulq_f64(*ib, vnegq_f64(omi)), *rb, omr);
         let di = vfmaq_f64(vmulq_f64(*rb, omi), *ib, omr);
         let nra = vaddq_f64(*ra, dr);
         let nia = vaddq_f64(*ia, di);
@@ -589,13 +597,13 @@ unsafe fn cplx_i_twiddle_neon(
     omi: float64x2_t,
 ) {
     unsafe {
-        // dr = rb*omi + ib*omr, di = rb*omr - ib*omi
-        let dr = vfmaq_f64(vmulq_f64(*rb, omi), *ib, omr);
-        let di = vfmsq_f64(vmulq_f64(*rb, omr), *ib, omi);
+        // dr = fma(rb, omi, ib*omr), neg_di = fma(ib, omi, -(rb*omr))
+        let dr = vfmaq_f64(vmulq_f64(*ib, omr), *rb, omi);
+        let neg_di = vfmaq_f64(vmulq_f64(*rb, vnegq_f64(omr)), *ib, omi);
         let nra = vsubq_f64(*ra, dr);
-        let nia = vaddq_f64(*ia, di);
+        let nia = vsubq_f64(*ia, neg_di);
         let nrb = vaddq_f64(*ra, dr);
-        let nib = vsubq_f64(*ia, di);
+        let nib = vaddq_f64(*ia, neg_di);
         *ra = nra;
         *ia = nia;
         *rb = nrb;
@@ -617,8 +625,8 @@ unsafe fn inv_twiddle_neon(
         let i_diff = vsubq_f64(*ia, *ib);
         let nra = vaddq_f64(*ra, *rb);
         let nia = vaddq_f64(*ia, *ib);
-        // rb' = r_diff*omr - i_diff*omi, ib' = r_diff*omi + i_diff*omr
-        let nrb = vfmsq_f64(vmulq_f64(r_diff, omr), i_diff, omi);
+        // rb' = fma(r_diff, omr, -(i_diff*omi)), ib' = fma(i_diff, omr, r_diff*omi)
+        let nrb = vfmaq_f64(vmulq_f64(i_diff, vnegq_f64(omi)), r_diff, omr);
         let nib = vfmaq_f64(vmulq_f64(r_diff, omi), i_diff, omr);
         *ra = nra;
         *ia = nia;
@@ -641,9 +649,9 @@ unsafe fn inv_itwiddle_neon(
         let i_diff = vsubq_f64(*ia, *ib);
         let nra = vaddq_f64(*ra, *rb);
         let nia = vaddq_f64(*ia, *ib);
-        // rb' = r_diff*omi + i_diff*omr, ib' = i_diff*omi - r_diff*omr
-        let nrb = vfmaq_f64(vmulq_f64(r_diff, omi), i_diff, omr);
-        let nib = vfmsq_f64(vmulq_f64(i_diff, omi), r_diff, omr);
+        // rb' = fma(r_diff, omi, i_diff*omr), ib' = fma(i_diff, omi, -(r_diff*omr))
+        let nrb = vfmaq_f64(vmulq_f64(i_diff, omr), r_diff, omi);
+        let nib = vfmaq_f64(vmulq_f64(r_diff, vnegq_f64(omr)), i_diff, omi);
         *ra = nra;
         *ia = nia;
         *rb = nrb;

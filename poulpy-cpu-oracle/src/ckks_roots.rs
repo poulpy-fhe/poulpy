@@ -3,7 +3,7 @@
 //! Pi comes from Machin's formula and the cosine from its Taylor series, both
 //! evaluated on scaled integers with a bounded truncation error. The
 //! production tables of `poulpy-ckks` are checked against these values, not
-//! derived from them.
+//! derived from them, and the oracle encoding transform uses them.
 
 use std::sync::OnceLock;
 
@@ -62,13 +62,13 @@ fn fixed_cos(i: u64, log_order: u32) -> UBig {
     UBig::try_from(sum).unwrap()
 }
 
-fn cached_fixed_cos(i: u64) -> &'static UBig {
-    static QUADRANT: OnceLock<Vec<UBig>> = OnceLock::new();
-    &QUADRANT.get_or_init(|| {
-        (0..=1u64 << (CACHED_LOG_ORDER - 2))
-            .map(|i| fixed_cos(i, CACHED_LOG_ORDER))
-            .collect()
-    })[i as usize]
+/// One first quadrant per order, built on first use so small transforms only
+/// pay for their own roots.
+fn cached_fixed_cos(i: u64, log_order: u32) -> &'static UBig {
+    const ORDERS: usize = CACHED_LOG_ORDER as usize + 1;
+    static QUADRANTS: [OnceLock<Vec<UBig>>; ORDERS] = [const { OnceLock::new() }; ORDERS];
+    &QUADRANTS[log_order as usize].get_or_init(|| (0..=1u64 << (log_order - 2)).map(|i| fixed_cos(i, log_order)).collect())
+        [i as usize]
 }
 
 fn round_to(value: &UBig, bits: usize) -> UBig {
@@ -110,7 +110,7 @@ fn quadrant_cos<F: CKKSFloat>(i: u64, log_order: u32) -> F {
     } else if i == quarter {
         F::zero()
     } else if log_order <= CACHED_LOG_ORDER {
-        to_scalar(cached_fixed_cos(i << (CACHED_LOG_ORDER - log_order)))
+        to_scalar(cached_fixed_cos(i, log_order))
     } else {
         to_scalar(&fixed_cos(i, log_order))
     }

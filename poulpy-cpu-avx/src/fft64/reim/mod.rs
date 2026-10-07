@@ -28,7 +28,6 @@ pub(crate) use conversion::*;
 pub(crate) use fft_vec_avx2_fma::*;
 
 use poulpy_cpu_portable::kernels::fft64::reim::{ReimFFTExecute, ReimFFTTable, ReimIFFTTable};
-use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
 use rand_distr::num_traits::{Float, FloatConst};
 
 use crate::fft64::reim::{fft_avx2_fma::fft_avx2_fma, ifft_avx2_fma::ifft_avx2_fma};
@@ -88,39 +87,17 @@ pub(crate) fn as_arr_mut<const SIZE: usize, R: Float + FloatConst>(x: &mut [R]) 
     unsafe { &mut *(x.as_mut_ptr() as *mut [R; SIZE]) }
 }
 
-/// Precomputed twiddle-factor tables for the negacyclic reim FFT and IFFT,
-/// dispatching to AVX2/FMA-accelerated kernels.
-///
-/// Wraps [`ReimFFTTable`] and [`ReimIFFTTable`] into a single object that
-/// implements [`NegacyclicFFT`], suitable for use as the transform provider
-/// in the CPU CKKS encoding implementation.
-pub struct FFT64AvxReimTable {
-    fft: ReimFFTTable<f64>,
-    ifft: ReimIFFTTable<f64>,
-}
+/// Negacyclic transform for CKKS encoding in `f64`: the AVX2 kernels on
+/// the correctly rounded twiddles of
+/// [`EncodingFFTTable`](poulpy_cpu_portable::ckks_encoding::EncodingFFTTable),
+/// byte identical to every other CPU backend.
+#[cfg(feature = "enable-ckks")]
+pub type FFT64AvxEncodingTable = poulpy_cpu_portable::ckks_encoding::EncodingFFTTable<f64, ReimFFTAvx, ReimIFFTAvx>;
 
-impl NegacyclicFFT<f64> for FFT64AvxReimTable {
-    fn m(&self) -> usize {
-        self.fft.m()
-    }
-
-    fn fft(&self, data: &mut [f64]) {
-        ReimFFTAvx::reim_dft_execute(&self.fft, data);
-    }
-
-    fn ifft(&self, data: &mut [f64]) {
-        ReimIFFTAvx::reim_dft_execute(&self.ifft, data);
-    }
-}
-
-impl NegacyclicFFTNew<f64> for FFT64AvxReimTable {
-    fn new(m: usize) -> Self {
-        Self {
-            fft: ReimFFTTable::new(m),
-            ifft: ReimIFFTTable::new(m),
-        }
-    }
-}
+/// Former CKKS encoding transform, now [`FFT64AvxEncodingTable`].
+#[cfg(feature = "enable-ckks")]
+#[deprecated(note = "use `FFT64AvxEncodingTable`, which encodes byte identically on every CPU backend")]
+pub type FFT64AvxReimTable = FFT64AvxEncodingTable;
 
 pub struct ReimFFTAvx;
 
@@ -144,16 +121,28 @@ impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for ReimIFFTAvx {
     }
 }
 
-#[cfg(test)]
-mod contract_tests {
-    use super::*;
-    use poulpy_hal::api::NegacyclicFFTNew;
+#[cfg(all(test, feature = "enable-ckks"))]
+mod encoding_tests {
+    use poulpy_cpu_portable::ckks_encoding::EncodingFFTTable;
+    use poulpy_hal::{
+        api::NegacyclicFFTNew,
+        test_suite::reim::{test_negacyclic_fft, test_negacyclic_fft_bit_exact},
+    };
+
+    use super::FFT64AvxEncodingTable;
 
     #[test]
     fn raw_transform_matches_contract() {
         for m in [16, 32, 64, 128, 256] {
-            let table = FFT64AvxReimTable::new(m);
-            poulpy_hal::test_suite::reim::test_negacyclic_fft(&table);
+            test_negacyclic_fft(&FFT64AvxEncodingTable::new(m));
+        }
+    }
+
+    #[test]
+    fn encoding_transform_matches_portable() {
+        for log_m in 0..=15 {
+            let m = 1 << log_m;
+            test_negacyclic_fft_bit_exact::<f64, _, _>(&FFT64AvxEncodingTable::new(m), &EncodingFFTTable::<f64>::new(m));
         }
     }
 }

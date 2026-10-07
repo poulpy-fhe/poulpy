@@ -25,8 +25,8 @@ use crate::fft64::reim::{as_arr, as_arr_mut};
 #[target_feature(enable = "avx2,fma")]
 pub(crate) fn ifft_avx2_fma(m: usize, omg: &[f64], data: &mut [f64]) {
     if m < 16 {
-        use poulpy_cpu_portable::kernels::fft64::reim::ifft_portable;
-        ifft_portable(m, omg, data);
+        use poulpy_cpu_portable::kernels::fft64::reim::ifft_portable_fused;
+        ifft_portable_fused(m, omg, data);
         return;
     }
 

@@ -198,7 +198,10 @@ mod znx_avx;
 #[cfg(all(feature = "enable-avx", feature = "enable-rayon"))]
 pub use fft64::FFT64AvxRayon;
 #[cfg(feature = "enable-avx")]
-pub use fft64::{FFT64Avx, FFT64AvxReimTable, ReimFFTAvx, ReimIFFTAvx};
+pub use fft64::{FFT64Avx, ReimFFTAvx, ReimIFFTAvx};
+#[cfg(all(feature = "enable-avx", feature = "enable-ckks"))]
+#[allow(deprecated)]
+pub use fft64::{FFT64AvxEncodingTable, FFT64AvxReimTable};
 #[cfg(feature = "enable-avx")]
 pub use ntt4x30::NTT4x30Avx;
 #[cfg(feature = "enable-rayon")]

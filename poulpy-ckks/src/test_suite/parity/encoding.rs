@@ -315,7 +315,10 @@ where
     assert_eq!(reference.len(), tested.len());
     for ((pt_r, slots_r), (pt_t, slots_t)) in reference.iter().zip(&tested) {
         assert!(snapshot::<BR, _>(pt_r) == snapshot::<BT, _>(pt_t), "slot encoding differs");
-        assert!(slots_r == slots_t, "slot decoding differs");
+        assert!(
+            bytemuck::cast_slice::<F, u8>(slots_r) == bytemuck::cast_slice::<F, u8>(slots_t),
+            "slot decoding differs"
+        );
     }
 }
 

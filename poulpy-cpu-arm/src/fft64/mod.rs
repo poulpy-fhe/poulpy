@@ -17,7 +17,10 @@ mod tests;
 
 #[allow(unused_imports)]
 pub use poulpy_cpu_portable::kernels::fft64::module::FFTModuleHandle;
-pub use reim::{FFT64NeonReimTable, ReimFFTNeon, ReimIFFTNeon};
+#[cfg(feature = "enable-ckks")]
+#[allow(deprecated)]
+pub use reim::{FFT64NeonEncodingTable, FFT64NeonReimTable};
+pub use reim::{ReimFFTNeon, ReimIFFTNeon};
 
 /// NEON-accelerated CPU backend for Poulpy HAL.
 /// `DftWord = f64`, `BigWord = i64`.

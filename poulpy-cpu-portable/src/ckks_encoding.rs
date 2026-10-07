@@ -16,7 +16,10 @@
 use std::marker::PhantomData;
 
 use anyhow::{Result, ensure};
+use poulpy_ckks::{api::CKKSEncodingScalar, numerics::ROOT_TABLE_LOG_ORDER};
 use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
+
+use crate::kernels::fft64::reim::{ReimFFTExecute, ReimFFTPortableFused, ReimFFTTable, ReimIFFTPortableFused, ReimIFFTTable};
 
 use poulpy_ckks::reference::encoding::EncodingPermutation;
 
@@ -123,6 +126,75 @@ where
     #[doc(hidden)]
     pub fn for_slots(&self, slots: usize) -> Result<(&EncodingPermutation, &T)> {
         Ok((self.maps.for_slots(slots)?, self.ffts.for_slots(slots)?))
+    }
+}
+
+/// Negacyclic transform for CKKS encoding at precision `F`: the portable
+/// kernels on twiddles built from the correctly rounded roots of unity of
+/// [`CKKSFloat`](poulpy_ckks::numerics::CKKSFloat).
+///
+/// Every CPU backend encodes with these twiddles and the fused butterflies of
+/// [`fft_portable_fused`](crate::kernels::fft64::reim::fft_portable_fused), so encodings
+/// are byte identical across backends. `FWD` and `INV` run the transform:
+/// accelerated backends name their own kernels, whose multiply-adds sit at the
+/// same positions. Precisions other than 24, 53 and 113 significand bits
+/// generate every root instead of reading the table, once for each of the two
+/// tables.
+pub struct EncodingFFTTable<F: CKKSEncodingScalar, FWD = ReimFFTPortableFused, INV = ReimIFFTPortableFused> {
+    fft: ReimFFTTable<F>,
+    ifft: ReimIFFTTable<F>,
+    kernels: PhantomData<(FWD, INV)>,
+}
+
+impl<F, FWD, INV> NegacyclicFFTNew<F> for EncodingFFTTable<F, FWD, INV>
+where
+    F: CKKSEncodingScalar,
+    FWD: ReimFFTExecute<ReimFFTTable<F>, F>,
+    INV: ReimFFTExecute<ReimIFFTTable<F>, F>,
+{
+    fn new(m: usize) -> Self {
+        let log_order = (4 * m).trailing_zeros();
+        let order = F::from_u64(1 << log_order).expect("twiddle order is representable");
+        let index = move |turn: F| {
+            // Scaling a dyadic turn by the power-of-two order is exact.
+            let scaled = turn * order;
+            let k = scaled.to_u64().expect("twiddle turn is non-negative");
+            assert!(
+                F::from_u64(k) == Some(scaled),
+                "twiddle turn is not a multiple of 2^-{log_order}"
+            );
+            k
+        };
+        // Every supported ring degree reads its roots from the checked-in table.
+        assert!(
+            log_order <= ROOT_TABLE_LOG_ORDER,
+            "encoding roots of order 2^{log_order} exceed the supported 2^{ROOT_TABLE_LOG_ORDER}"
+        );
+        let root = move |turn: F| F::ckks_root_of_unity(index(turn), log_order);
+        Self {
+            fft: ReimFFTTable::new_with_roots(m, root),
+            ifft: ReimIFFTTable::new_with_roots(m, root),
+            kernels: PhantomData,
+        }
+    }
+}
+
+impl<F, FWD, INV> NegacyclicFFT<F> for EncodingFFTTable<F, FWD, INV>
+where
+    F: CKKSEncodingScalar,
+    FWD: ReimFFTExecute<ReimFFTTable<F>, F>,
+    INV: ReimFFTExecute<ReimIFFTTable<F>, F>,
+{
+    fn m(&self) -> usize {
+        self.fft.m()
+    }
+
+    fn fft(&self, data: &mut [F]) {
+        FWD::reim_dft_execute(&self.fft, data);
+    }
+
+    fn ifft(&self, data: &mut [F]) {
+        INV::reim_dft_execute(&self.ifft, data);
     }
 }
 
@@ -286,12 +358,6 @@ mod tests {
     }
 
     #[test]
-    fn fft64_f64_reuses_ring_plan_family_at_every_dimension() {
-        let module = Module::<FFT64Portable>::new(32);
-        roundtrip_all_dimensions::<FFT64Portable, f64>(&module);
-    }
-
-    #[test]
     fn fft64_precision_families_coexist_in_one_module() {
         let module = Module::<FFT64Portable>::new(32);
         roundtrip_all_dimensions::<FFT64Portable, f64>(&module);
@@ -388,5 +454,36 @@ mod tests {
                 .ckks_encode_reim_into(&mut pt, &re, &im, &mut undersized.arena())
                 .is_err()
         );
+    }
+}
+
+#[cfg(test)]
+mod transform_tests {
+    use poulpy_ckks::{Quad, api::CKKSEncodingScalar};
+    use poulpy_cpu_oracle::EncodingFft;
+    use poulpy_hal::{api::NegacyclicFFTNew, test_suite::reim::test_negacyclic_fft_bit_exact};
+
+    use super::EncodingFFTTable;
+
+    fn matches_oracle<F: CKKSEncodingScalar>(max_log_m: usize) {
+        for log_m in 0..=max_log_m {
+            let m = 1 << log_m;
+            test_negacyclic_fft_bit_exact::<F, _, _>(&EncodingFFTTable::<F>::new(m), &EncodingFft::<F>::new(m));
+        }
+    }
+
+    #[test]
+    fn encoding_transform_matches_oracle_f32() {
+        matches_oracle::<f32>(15);
+    }
+
+    #[test]
+    fn encoding_transform_matches_oracle_f64() {
+        matches_oracle::<f64>(15);
+    }
+
+    #[test]
+    fn encoding_transform_matches_oracle_quad() {
+        matches_oracle::<Quad>(15);
     }
 }
