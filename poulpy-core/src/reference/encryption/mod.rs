@@ -57,12 +57,12 @@ pub use lwe_to_glwe_key::*;
 /// Standard deviation of the discrete Gaussian distribution used for error sampling
 /// during encryption. Set to 3.2.
 pub const DEFAULT_SIGMA_XE: f64 = match crate::Noise::ENCRYPTION {
-    crate::Noise::Gaussian { sigma, .. } => sigma,
+    crate::Noise::Gaussian { sigma } => sigma,
     crate::Noise::Uniform { .. } => unreachable!(),
 };
 
 /// Maximum absolute sample of the default encryption error distribution.
 pub const DEFAULT_BOUND_XE: f64 = match crate::Noise::ENCRYPTION {
-    crate::Noise::Gaussian { sigma, cutoff_factor } => (sigma * cutoff_factor as f64) as u64 as f64,
+    crate::Noise::Gaussian { sigma } => (sigma * crate::Noise::CUTOFF_FACTOR as f64) as u64 as f64,
     crate::Noise::Uniform { .. } => unreachable!(),
 };

@@ -10,7 +10,10 @@ use poulpy_hal::{AlignedBuf, alloc_aligned};
 use std::f64::consts::SQRT_2;
 
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes},
+    api::{
+        ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallAssign,
+    },
     layouts::{
         Backend, Module, ScalarZnx, ScratchOwned, VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxOwned,
         ZnxView, ZnxViewMut, ZnxWord,
@@ -18,7 +21,7 @@ use poulpy_hal::{
     source::Source,
     test_suite::{
         TestBackend, TestParams, alloc_host_vec_znx, download_scalar_znx, download_vec_znx, scalar_znx_backend_mut,
-        upload_scalar_znx, upload_vec_znx, vec_znx_backend_mut,
+        upload_scalar_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref,
     },
 };
 
@@ -354,32 +357,20 @@ where
                 bits: BASE2K - padding + 1,
             },
             Noise::Uniform { bits: 135 },
-            Noise::Gaussian {
-                sigma: 2f64.powi(132),
-                cutoff_factor: 6,
-            },
-            Noise::Gaussian {
-                sigma: 0.75,
-                cutoff_factor: 6,
-            },
-            Noise::Gaussian {
-                sigma: 1.5,
-                cutoff_factor: 1,
-            },
-            Noise::Gaussian {
-                sigma: 100.5,
-                cutoff_factor: 1,
-            },
+            Noise::Gaussian { sigma: 2f64.powi(132) },
+            Noise::Gaussian { sigma: 1.0 },
+            Noise::Gaussian { sigma: 1.5 },
+            Noise::Gaussian { sigma: 16.75 },
         ] {
             let bound = match noise {
                 Noise::Uniform { bits } => UBig::ONE << (bits - 1),
-                Noise::Gaussian { sigma, .. } if sigma > 1e30 => (UBig::ONE << 132) * 6u8,
-                Noise::Gaussian { sigma: 0.75, .. } => UBig::from(4u8),
-                Noise::Gaussian { sigma: 1.5, .. } => UBig::ONE,
+                Noise::Gaussian { sigma } if sigma > 1e30 => (UBig::ONE << 132) * 6u8,
+                Noise::Gaussian { sigma: 1.0 } => UBig::from(6u8),
+                Noise::Gaussian { sigma: 1.5 } => UBig::from(9u8),
                 Noise::Gaussian { .. } => UBig::from(100u8),
             };
             let pmf = match noise {
-                Noise::Gaussian { sigma, .. } if sigma < 101.0 => Some((sigma, usize::try_from(&bound).unwrap())),
+                Noise::Gaussian { sigma } if sigma < 17.0 => Some((sigma, usize::try_from(&bound).unwrap())),
                 _ => None,
             };
             let rounds = if pmf.is_some() {
@@ -457,6 +448,8 @@ where
         + VecZnxBigAddNoise<BE>
         + VecZnxBigAlloc<BE>
         + VecZnxAlloc<BE>
+        + VecZnxBigFromSmall<BE>
+        + VecZnxBigSubSmallAssign<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
@@ -487,23 +480,30 @@ where
             for noise in [
                 Noise::ENCRYPTION,
                 Noise::Uniform { bits: 24 },
-                Noise::Gaussian {
-                    sigma: 100.5,
-                    cutoff_factor: 1,
-                },
+                Noise::Gaussian { sigma: 16.75 },
             ] {
                 let active = k.div_ceil(BASE2K);
                 let draw = |cols, size, col| {
-                    let initial = if !big && cols > 1 { 11 } else { 0 };
+                    let initial = if cols > 1 { 11 } else { 0 };
                     let mut host = alloc_host_vec_znx::<BE>(module.n(), cols, size);
                     for limb in 0..active {
                         host.at_mut(col, limb).fill(initial);
                     }
                     let mut out = upload_vec_znx::<BE>(&host);
                     let mut source = Source::new([29; 32]);
+                    let mut residual = initial;
                     if big {
+                        // Preload the same digits and remove them after sampling: the sampler only adds.
                         let mut wide = module.vec_znx_big_alloc(module.n(), cols, size);
+                        module.vec_znx_big_from_small(&mut wide.to_backend_mut(), col, &vec_znx_backend_ref::<BE>(&out), col);
                         module.vec_znx_big_add_noise(BASE2K, k, &mut wide.to_backend_mut(), col, noise, &mut source);
+                        module.vec_znx_big_sub_small_assign(
+                            &mut wide.to_backend_mut(),
+                            col,
+                            &vec_znx_backend_ref::<BE>(&out),
+                            col,
+                        );
+                        residual = 0;
                         let mut scratch = ScratchOwned::<BE>::alloc(module.vec_znx_big_normalize_tmp_bytes());
                         module.vec_znx_big_normalize(
                             &mut vec_znx_backend_mut::<BE>(&mut out),
@@ -521,7 +521,7 @@ where
                     }
                     let host = download_vec_znx::<BE>(&out);
                     (0..active)
-                        .flat_map(|limb| host.at(col, limb).iter().map(|&digit| digit - initial))
+                        .flat_map(|limb| host.at(col, limb).iter().map(|&digit| digit - residual))
                         .collect::<Vec<_>>()
                 };
                 assert_eq!(draw(1, active, 0), draw(3, active + 2, 2), "big={big}, {noise:?}, k={k}");
@@ -544,6 +544,8 @@ pub fn test_sampling_contract<BR: TestBackend, BT: TestBackend>(
         + VecZnxBigAddNoise<BR>
         + VecZnxAlloc<BR>
         + VecZnxBigAlloc<BR>
+        + VecZnxBigFromSmall<BR>
+        + VecZnxBigSubSmallAssign<BR>
         + VecZnxBigNormalize<BR>
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: ScalarZnxFillDistribution<BT>
@@ -551,6 +553,8 @@ pub fn test_sampling_contract<BR: TestBackend, BT: TestBackend>(
         + VecZnxBigAddNoise<BT>
         + VecZnxAlloc<BT>
         + VecZnxBigAlloc<BT>
+        + VecZnxBigFromSmall<BT>
+        + VecZnxBigSubSmallAssign<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,

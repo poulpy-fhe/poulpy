@@ -630,7 +630,7 @@ fn test_hal_serialization_fft64_portable() {
 fn test_glwe_public_key_rank1_golden() {
     use poulpy_core::test_suite::noise::encryption::glwe_public_key_rank1_digests;
     use poulpy_core::test_suite::parity::controlled_sampling::with_backend_samples;
-    use poulpy_cpu_oracle::{FFT64Oracle, NTT4x30Oracle, test_suite::controlled_sampling_module};
+    use poulpy_cpu_oracle::test_suite::{ControlledSamplingFFT64Oracle, ControlledSamplingNTT4x30Oracle};
     // Digests cover the public key, encryption of a message, and encryption of zero.
     const FFT64: [u64; 3] = [12523918757293039242, 16193001892340394447, 8859732105559243891];
     const NTT4X30: [u64; 3] = [10600561161379084701, 11211264228044108947, 11785251196183236736];
@@ -642,12 +642,10 @@ fn test_glwe_public_key_rank1_golden() {
         (FFT64, NTT4X30)
     );
     let fft_oracle = with_backend_samples(Module::<FFT64Portable>::new(256), |_| {
-        let oracle: Module<FFT64Oracle> = controlled_sampling_module(256);
-        glwe_public_key_rank1_digests(&oracle, 17)
+        glwe_public_key_rank1_digests(&Module::<ControlledSamplingFFT64Oracle>::new(256), 17)
     });
     let ntt_oracle = with_backend_samples(Module::<NTT4x30Portable>::new(256), |_| {
-        let oracle: Module<NTT4x30Oracle> = controlled_sampling_module(256);
-        glwe_public_key_rank1_digests(&oracle, 52)
+        glwe_public_key_rank1_digests(&Module::<ControlledSamplingNTT4x30Oracle>::new(256), 52)
     });
     assert_eq!((fft_oracle, ntt_oracle), (FFT64, NTT4X30));
 }
@@ -1606,17 +1604,15 @@ mod canonical_precision_tests {
 #[cfg(feature = "enable-core")]
 poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption_fft64portable,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref = poulpy_cpu_oracle::test_suite::ControlledSamplingFFT64Oracle,
     backend_test = crate::FFT64Portable,
-    reference_factory = poulpy_cpu_oracle::test_suite::controlled_sampling_module,
 );
 
 #[cfg(feature = "enable-core")]
 poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption_ntt4x30portable,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref = poulpy_cpu_oracle::test_suite::ControlledSamplingFFT64Oracle,
     backend_test = crate::NTT4x30Portable,
-    reference_factory = poulpy_cpu_oracle::test_suite::controlled_sampling_module,
 );
 
 // Encryption on a module of twice the operand degree samples and computes as a
@@ -1624,9 +1620,8 @@ poulpy_core::core_encryption_parity_test_suite!(
 #[cfg(feature = "enable-core")]
 poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption_sub_degree_fft64portable,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref = poulpy_cpu_oracle::test_suite::ControlledSamplingFFT64Oracle,
     backend_test = crate::FFT64Portable,
-    reference_factory = poulpy_cpu_oracle::test_suite::controlled_sampling_module,
     params = TestParams { size: 1<<7, n: 1<<7, base2k: 12 },
     test_size = 1<<8,
 );

@@ -129,20 +129,19 @@ where
             )
             .unwrap();
         if roundtrip_keys {
-            fn roundtrip<T: ReaderFrom + WriterTo + Clone + PartialEq>(key: &T) {
+            fn roundtrip<T: ReaderFrom + WriterTo + PartialEq>(key: &T, mut restored: T) {
                 let mut bytes = Vec::new();
                 key.write_to(&mut bytes).unwrap();
-                let mut restored = key.clone();
                 restored.read_from(&mut bytes.as_slice()).unwrap();
-                assert!(&restored == key);
+                assert!(restored == *key);
             }
             for key in keys.rotation_keys.values() {
-                roundtrip(key);
+                roundtrip(key, module.glwe_automorphism_key_alloc_from_infos(key));
             }
-            roundtrip(&keys.tensor_key);
+            roundtrip(&keys.tensor_key, module.glwe_tensor_key_alloc_from_infos(&keys.tensor_key));
             let (dense_to_sparse, sparse_to_dense) = keys.encapsulation_keys.as_ref().expect("preset needs encapsulation keys");
-            roundtrip(dense_to_sparse);
-            roundtrip(sparse_to_dense);
+            roundtrip(dense_to_sparse, module.glwe_switching_key_alloc_from_infos(dense_to_sparse));
+            roundtrip(sparse_to_dense, module.glwe_switching_key_alloc_from_infos(sparse_to_dense));
         }
         let keys = keys.prepare(&module, &mut scratch.borrow());
 
@@ -242,80 +241,9 @@ where
     }
 }
 
-/// Round-trips every generated key of the smallest published bootstrapping preset.
-/// This covers both encapsulation directions without running a bootstrap.
-pub fn bootstrapping_preset_keys_roundtrip<BE>(fixture_base2k: usize)
-where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
-    for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
-    for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
-{
-    let preset = all().unwrap().into_iter().min_by_key(BootstrappingPreset::n).unwrap();
-    let preset = preset_with_max_base2k(&preset, fixture_base2k).unwrap();
-    let plan = preset.plan();
-    let n = preset.n();
-    let base2k = preset.base2k();
-    let input_layout = preset.input_layout();
-    let bootstrap_layout = preset.bootstrap_layout();
-    let keys_layout = *preset.keys_layout();
-    let module = Module::<BE>::new(n as u64);
-
-    let scratch_size = bootstrap_setup_tmp_bytes(&module, &bootstrap_layout, plan, &keys_layout);
-    let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
-    let unprepared =
-        BootstrappingContext::<BE, f64>::compile_unprepared(&module, base2k.into(), plan, &mut scratch.borrow()).unwrap();
-    let prepare_scratch = unprepared.prepare_tmp_bytes(&module);
-    if prepare_scratch > BE::len_bytes(&scratch.data) {
-        scratch = ScratchOwned::<BE>::alloc(prepare_scratch);
-    }
-    let context = unprepared.prepare(&module, &mut scratch.borrow());
-    let boot_scratch = module.ckks_bootstrap_tmp_bytes(&bootstrap_layout, &input_layout, &context, &keys_layout);
-    if boot_scratch > BE::len_bytes(&scratch.data) {
-        scratch = ScratchOwned::<BE>::alloc(boot_scratch);
-    }
-
-    // Dense application secret at the preset's Hamming weight.
-    let mut source_sk = Source::new([0; 32]);
-    let mut sk_raw = module.glwe_secret_alloc_from_infos(&bootstrap_layout.glwe_layout);
-    module.glwe_secret_fill_ternary_hw(&mut sk_raw, preset.dense_secret_hamming_weight(), &mut source_sk);
-    let mut sk = module.glwe_secret_prepared_alloc_from_infos(&bootstrap_layout.glwe_layout);
-    module.glwe_secret_prepare(&mut sk, &sk_raw);
-
-    let (mut source_xs, mut source_xa, mut source_xe) = (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
-    let keys = context
-        .generate_keys(
-            &module,
-            &sk_raw,
-            &keys_layout,
-            &mut source_xs,
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch.borrow(),
-        )
-        .unwrap();
-    fn roundtrip<T: ReaderFrom + WriterTo + Clone + PartialEq>(key: &T) {
-        let mut bytes = Vec::new();
-        key.write_to(&mut bytes).unwrap();
-        let mut restored = key.clone();
-        restored.read_from(&mut bytes.as_slice()).unwrap();
-        assert!(&restored == key);
-    }
-    for key in keys.rotation_keys.values() {
-        roundtrip(key);
-    }
-    roundtrip(&keys.tensor_key);
-    let (dense_to_sparse, sparse_to_dense) = keys.encapsulation_keys.as_ref().expect("preset needs encapsulation keys");
-    roundtrip(dense_to_sparse);
-    roundtrip(sparse_to_dense);
-}
-
 /// Runs every preset once on `BE` and checks the measured output precision
-/// against the precision the preset advertises.
+/// against the precision the preset advertises. The first preset also
+/// round-trips every generated key, both encapsulation directions included.
 ///
 /// The caller supplies the fixture radix limit; this precision check does
 /// not establish a failure-probability bound. Every backend uses `f64` DFT

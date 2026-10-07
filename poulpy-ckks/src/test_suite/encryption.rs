@@ -161,6 +161,23 @@ where
         assert_ckks_error("encrypt_degree_mismatch", &err, expected("ckks_encrypt_sk"));
         assert_eq!(ct_before, snapshot::<BE, _>(&ct));
     }
+
+    // A plaintext scale above the ciphertext precision fails before encryption.
+    let sk = module.glwe_secret_prepared_alloc(1usize.into());
+    pt.set_log_delta(9);
+    let err = module
+        .ckks_encrypt_sk(&mut ct, &pt, &sk, &mut xe, &mut xa, &mut scratch.arena())
+        .unwrap_err();
+    assert_ckks_error(
+        "encrypt_insufficient_budget",
+        &err,
+        CKKSCompositionError::InsufficientHomomorphicCapacity {
+            op: "ckks_encrypt_sk",
+            available_log_budget: 8,
+            required_bits: 9,
+        },
+    );
+    assert_eq!(ct_before, snapshot::<BE, _>(&ct));
     assert_eq!(xe.new_seed(), Source::new([1; 32]).new_seed());
     assert_eq!(xa.new_seed(), Source::new([2; 32]).new_seed());
 }

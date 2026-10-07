@@ -48,8 +48,9 @@ pub trait CKKSEncryptionReference<BE: Backend> {
             ct.n().as_usize(),
             sk.to_backend_ref().n().as_usize(),
         )?;
+        let log_budget = checked_log_budget_sub("ckks_encrypt_sk", ct.k().as_usize(), pt.log_delta())?;
         self.glwe_encrypt_zero_sk(ct, sk, source_xe, source_xa, scratch);
-        ct.set_log_budget(checked_log_budget_sub("ckks_encrypt_sk", ct.k().as_usize(), pt.log_delta())?);
+        ct.set_log_budget(log_budget);
         ct.set_log_delta(pt.log_delta());
         ct.set_log_sparsity(pt.log_sparsity());
         ct.set_slots(pt.slots());

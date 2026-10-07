@@ -259,8 +259,6 @@ pub trait GGSWEncryptSk<BE: Backend> {
 /// `Sum_l u_l pk_l + (m + f, e_1, .., e_r)`, where `f` is drawn from `flood` at
 /// the output's precision with `source_smudge` and replaces the body's encryption
 /// error. `u` and `e_1, .., e_r` are drawn as [`GLWEEncryptPk`] draws them.
-/// Sampling precision is selected from inherited, key-truncation and fresh mask errors;
-/// the deliberate flood is excluded from that target and added at output `k`.
 pub trait GLWEEncryptPkSmudged<BE: Backend> {
     fn glwe_encrypt_pk_smudged_tmp_bytes<R, K>(&self, res_infos: &R, pk_infos: &K) -> usize
     where

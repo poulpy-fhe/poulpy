@@ -19,7 +19,7 @@ use crate::{Distribution, Noise};
 /// limb count or existing destination values. Controlled-sampling parity relies
 /// on this independence.
 /// Every backend must implement these methods, including full-width noise.
-/// A Gaussian with bound `B = floor(cutoff_factor * sigma) <= 64` may use a
+/// A Gaussian with bound `B = floor(6 sigma) <= 64` may use a
 /// 128-bit cumulative table with statistical distance at most `B * 2^-128`.
 /// Larger Gaussians and uniform noise must be sampled exactly.
 ///

@@ -170,7 +170,7 @@ headroom remains. Normalization restores balanced digits.
 Encryption uses `Noise::ENCRYPTION` at the output precision before its final
 normalization. The same
 `Noise` descriptor represents floods, with an exact dyadic Gaussian parameter
-or a signed uniform width. `Noise::assert_valid_for` checks a flood against its
+`sigma >= 1`, truncated at six `sigma`, or a signed uniform width. `Noise::assert_valid_for` checks a flood against its
 destination before protocol mutation. Sampling takes no scratch arena. The
 production small-Gaussian path scans a 128-bit cumulative table; larger
 Gaussians use exact integer rejection and may take variable time.

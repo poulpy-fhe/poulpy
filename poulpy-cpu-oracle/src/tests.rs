@@ -442,8 +442,8 @@ fn test_hal_serialization_fft64_oracle() {
 fn test_glwe_public_key_rank1_golden() {
     use poulpy_core::test_suite::noise::encryption::glwe_public_key_rank1_digests;
     // Recorded on the single-key public key; the digest hashes its byte stream, the distribution then entry 0 as a GLWE.
-    const FFT64: [u64; 3] = [18017213869352445729, 9213557931905396260, 10799483475176155729];
-    const NTT4X30: [u64; 3] = [2028483832413116677, 2757074163890415372, 4567509438135070216];
+    const FFT64: [u64; 3] = [2530722187843569987, 6620872941776292896, 4484040934894676579];
+    const NTT4X30: [u64; 3] = [6913643103437743291, 12086469125074064179, 3423385851279491223];
     assert_eq!(
         (
             glwe_public_key_rank1_digests(&Module::<FFT64Oracle>::new(256), 17),

@@ -1,7 +1,11 @@
 //! The `poulpy-core` sampling extension point, on host buffers.
 
 use dashu_int::{IBig, UBig, ops::BitTest};
-use poulpy_core::{Distribution, Noise, oep::SamplingImpl};
+use poulpy_core::{
+    Distribution, Noise,
+    oep::SamplingImpl,
+    test_suite::parity::controlled_sampling::{add_noise_samples, scalar_samples},
+};
 use poulpy_hal::{
     layouts::{Module, ScalarZnxBackendMut, VecZnxBackendMut, VecZnxBigBackendMut, ZnxViewMut},
     source::Source,
@@ -12,7 +16,10 @@ use crate::{
     ScalarZnxFill,
     backend::Oracle,
     family::{DFTFamily, Int},
+    fft::Fft64,
+    ntt::Ntt4x30,
     ring::OracleRing,
+    test_suite::ControlledSampling,
 };
 
 // The oracle deliberately uses uniform rejection over the whole bounded
@@ -63,24 +70,10 @@ struct Gaussian {
 }
 
 impl Gaussian {
-    fn new(sigma: f64, cutoff_factor: usize) -> Self {
-        let raw = sigma.to_bits();
-        let encoded_exponent = ((raw >> 52) & 2047) as i32;
-        let significand = (raw & ((1u64 << 52) - 1)) | (u64::from(encoded_exponent != 0) << 52);
-        let exponent = if encoded_exponent == 0 {
-            -1074
-        } else {
-            encoded_exponent - 1075
-        };
-        let mut numerator = UBig::from(significand);
-        let mut denominator = UBig::ONE;
-        if exponent < 0 {
-            denominator <<= (-exponent) as usize;
-        } else {
-            numerator <<= exponent as usize;
-        }
+    fn new(sigma: f64) -> Self {
+        let (numerator, denominator, bound) = Noise::gaussian_parts(sigma);
         Self {
-            bound: &numerator * cutoff_factor / &denominator,
+            bound,
             numerator_squared: &numerator * &numerator,
             denominator_squared: &denominator * &denominator,
         }
@@ -115,7 +108,7 @@ where
     let radix = IBig::ONE << base2k;
     let half = &radix >> 1;
     let gaussian = match noise {
-        Noise::Gaussian { sigma, cutoff_factor } => Some(Gaussian::new(sigma, cutoff_factor)),
+        Noise::Gaussian { sigma } => Some(Gaussian::new(sigma)),
         Noise::Uniform { .. } => None,
     };
     let mut source = Source::new(seed);
@@ -140,55 +133,77 @@ where
     }
 }
 
-fn uses_controlled_sampling<F: DFTFamily, R: OracleRing>(module: &Module<Oracle<F, R>>) -> bool {
-    // This flag is fixed before the module is exposed to callers or workers.
-    unsafe { (*module.ptr()).controlled_sampling }
+fn assert_degree<F: DFTFamily, R: OracleRing>(module: &Module<Oracle<F, R>>, n: usize) {
+    assert!(n.is_power_of_two() && n <= module.n(), "noise degree outside module");
 }
 
-fn add_controlled_noise<R: ZnxViewMut>(base2k: usize, k: usize, res: &mut R, col: usize, noise: Noise, seed: [u8; 32], big: bool)
-where
-    R::Scalar: Int,
-{
-    noise.validate();
-    assert!((1..=63).contains(&base2k), "noise radix must be in 1..=63");
-    assert!(
-        k > 0 && k.div_ceil(base2k) <= res.size(),
-        "noise precision exceeds destination allocation"
-    );
-    assert!(col < res.cols(), "noise column exceeds destination allocation");
-    let samples = poulpy_core::test_suite::parity::controlled_sampling::noise_samples(res.n(), base2k, k, noise, seed, big);
-    for (limb, digits) in samples.chunks(res.n()).enumerate() {
-        for (dst, &digit) in res.at_mut(col, limb).iter_mut().zip(digits) {
-            *dst = dst.add(R::Scalar::from(digit));
+macro_rules! impl_independent_sampling {
+    ($($family:ty),+) => {$(
+        unsafe impl<R: OracleRing> SamplingImpl for Oracle<$family, R> {
+            fn scalar_znx_fill_distribution(
+                _module: &Module<Self>,
+                res: &mut ScalarZnxBackendMut<'_, Self>,
+                res_col: usize,
+                dist: Distribution,
+                seed: [u8; 32],
+            ) {
+                let mut source = Source::new(seed);
+                match dist {
+                    Distribution::TernaryFixed(hw) => res.fill_ternary_hw(res_col, hw, &mut source),
+                    Distribution::TernaryProb(prob) => res.fill_ternary_prob(res_col, prob, &mut source),
+                    Distribution::BinaryFixed(hw) => res.fill_binary_hw(res_col, hw, &mut source),
+                    Distribution::BinaryProb(prob) => res.fill_binary_prob(res_col, prob, &mut source),
+                    Distribution::BinaryBlock(block_size) => res.fill_binary_block(res_col, block_size, &mut source),
+                    Distribution::ZERO => res.at_mut(res_col, 0).fill(0),
+                    Distribution::NONE | Distribution::ENCAPSULATED(_) => {
+                        panic!("scalar_znx_fill_distribution: {dist:?} is not a sampleable distribution")
+                    }
+                }
+            }
+
+            fn vec_znx_add_noise(
+                module: &Module<Self>,
+                base2k: usize,
+                k: usize,
+                res: &mut VecZnxBackendMut<'_, Self>,
+                res_col: usize,
+                noise: Noise,
+                seed: [u8; 32],
+            ) {
+                assert_degree(module, res.n());
+                add_noise(base2k, k, res, res_col, noise, seed);
+            }
+
+            fn vec_znx_big_add_noise(
+                module: &Module<Self>,
+                base2k: usize,
+                k: usize,
+                res: &mut VecZnxBigBackendMut<'_, Self>,
+                res_col: usize,
+                noise: Noise,
+                seed: [u8; 32],
+            ) {
+                assert_degree(module, res.n());
+                add_noise(base2k, k, res, res_col, noise, seed);
+            }
         }
-    }
+    )+};
 }
 
-unsafe impl<F: DFTFamily, R: OracleRing> SamplingImpl for Oracle<F, R> {
+impl_independent_sampling!(Fft64, Ntt4x30);
+
+// Safety: copies distribution-correct draws of the backend under test and
+// mutates only the selected column and precision, after the same checks.
+unsafe impl<F: DFTFamily, R: OracleRing> SamplingImpl for Oracle<ControlledSampling<F>, R> {
     fn scalar_znx_fill_distribution(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         res: &mut ScalarZnxBackendMut<'_, Self>,
         res_col: usize,
         dist: Distribution,
         seed: [u8; 32],
     ) {
-        if uses_controlled_sampling(module) {
-            let samples = poulpy_core::test_suite::parity::controlled_sampling::scalar_samples(res.n(), dist, seed);
-            res.at_mut(res_col, 0).copy_from_slice(&samples);
-            return;
-        }
-        let mut source = Source::new(seed);
-        match dist {
-            Distribution::TernaryFixed(hw) => res.fill_ternary_hw(res_col, hw, &mut source),
-            Distribution::TernaryProb(prob) => res.fill_ternary_prob(res_col, prob, &mut source),
-            Distribution::BinaryFixed(hw) => res.fill_binary_hw(res_col, hw, &mut source),
-            Distribution::BinaryProb(prob) => res.fill_binary_prob(res_col, prob, &mut source),
-            Distribution::BinaryBlock(block_size) => res.fill_binary_block(res_col, block_size, &mut source),
-            Distribution::ZERO => res.at_mut(res_col, 0).fill(0),
-            Distribution::NONE | Distribution::ENCAPSULATED(_) => {
-                panic!("scalar_znx_fill_distribution: {dist:?} is not a sampleable distribution")
-            }
-        }
+        let samples = scalar_samples(res.n(), dist, seed);
+        res.at_mut(res_col, 0).copy_from_slice(&samples);
     }
 
     fn vec_znx_add_noise(
@@ -200,15 +215,10 @@ unsafe impl<F: DFTFamily, R: OracleRing> SamplingImpl for Oracle<F, R> {
         noise: Noise,
         seed: [u8; 32],
     ) {
-        assert!(
-            res.n().is_power_of_two() && res.n() <= module.n(),
-            "noise degree outside module"
-        );
-        if uses_controlled_sampling(module) {
-            add_controlled_noise(base2k, k, res, res_col, noise, seed, false);
-        } else {
-            add_noise(base2k, k, res, res_col, noise, seed);
-        }
+        assert_degree(module, res.n());
+        add_noise_samples(res, base2k, k, res_col, noise, seed, false, |dst, digit| {
+            *dst = dst.add(digit)
+        });
     }
 
     fn vec_znx_big_add_noise(
@@ -220,15 +230,10 @@ unsafe impl<F: DFTFamily, R: OracleRing> SamplingImpl for Oracle<F, R> {
         noise: Noise,
         seed: [u8; 32],
     ) {
-        assert!(
-            res.n().is_power_of_two() && res.n() <= module.n(),
-            "noise degree outside module"
-        );
-        if uses_controlled_sampling(module) {
-            add_controlled_noise(base2k, k, res, res_col, noise, seed, true);
-        } else {
-            add_noise(base2k, k, res, res_col, noise, seed);
-        }
+        assert_degree(module, res.n());
+        add_noise_samples(res, base2k, k, res_col, noise, seed, true, |dst, digit| {
+            *dst = dst.add(digit.into())
+        });
     }
 }
 
@@ -240,8 +245,8 @@ mod tests {
     #[test]
     fn independent_gaussian_matches_discrete_pmf() {
         const COUNT: usize = 32_000;
-        for (sigma, bound) in [(0.75, 4i64), (3.2, 19)] {
-            let sampler = Gaussian::new(sigma, 6);
+        for (sigma, bound) in [(1.0, 6i64), (3.2, 19)] {
+            let sampler = Gaussian::new(sigma);
             assert_eq!(sampler.bound, UBig::from(bound as u64));
             let mut histogram = vec![0usize; (2 * bound + 1) as usize];
             let mut source = Source::new([38; 32]);

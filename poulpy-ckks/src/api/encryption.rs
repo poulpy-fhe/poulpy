@@ -16,8 +16,8 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos};
 ///
 /// # Metadata
 ///
-/// `enc_infos.noise_infos().k`.  The ciphertext metadata is set to:
-/// The destination ciphertext supplies the total torus budget `k`.
+/// The destination ciphertext supplies the total torus budget `k`. The
+/// ciphertext metadata is set to:
 ///
 /// ```text
 /// log_delta_out  = pt.log_delta
@@ -27,8 +27,8 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos};
 /// `k_out = k` (the full encryption budget).
 ///
 /// Errors with `InsufficientHomomorphicCapacity` if `k < pt.log_delta`
-/// (i.e., the encryption key does not provide enough headroom for the
-/// requested plaintext precision).
+/// (i.e., the ciphertext does not provide enough headroom for the
+/// requested plaintext precision), before changing the ciphertext.
 /// Returns `EncryptionDegreeMismatch` if the ciphertext and prepared secret
 /// key degrees differ or exceed the module degree, before changing the ciphertext
 /// or consuming randomness.

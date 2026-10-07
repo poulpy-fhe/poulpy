@@ -148,9 +148,10 @@ pub unsafe trait EncryptionImpl: Backend {
     /// from it. Without `body_noise`, the body gets no encryption error: the
     /// caller floods it, see [`Self::glwe_encrypt_pk_smudged`].
     ///
-    /// `k_sample`, a product using only the leading `ceil(work / base2k)` key
-    /// limbs, and one normalization to `res.k()`. Record the resulting component
-    /// distribution; reject mismatches before modifying the output.
+    /// The product uses every key limb. Each error is drawn from
+    /// [`Noise::ENCRYPTION`](crate::Noise::ENCRYPTION) at `res.k()`, and each
+    /// column is normalized once at `res.k()`. Invalid keys, plaintexts or
+    /// columns panic before the output changes.
     fn glwe_encrypt_pk_at_col<R, P, K>(
         module: &Module<Self>,
         res: &mut R,

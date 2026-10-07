@@ -608,8 +608,11 @@ where
                     );
                     assert_canonical(&ct);
 
+                    let factor = <BE::Ring as Ring>::CYCLOTOMIC_ORDER_FACTOR as usize / 2;
+                    let model = public_key_phase_variance(law, rank, n * factor * factor, k_ct, k_pk);
                     let stats = glwe_noise_checked(module, &ct, &pt_want, &sk_prepared, &mut scratch.borrow());
                     noise_variance += stats.second_moment();
+                    modeled_variance += model;
                     let mut phase = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
                     module.glwe_decrypt(&ct, &mut phase, &sk_prepared, &mut scratch.borrow());
                     module.glwe_sub_assign(&mut phase, &pt_want);
@@ -618,8 +621,7 @@ where
                     phase.decode_vec_i64(&mut residual, ct.k());
                     coefficient_zero += (residual[0] as f64 * (-(k_ct as f64)).exp2()).powi(2);
 
-                    let factor = <BE::Ring as Ring>::CYCLOTOMIC_ORDER_FACTOR as usize / 2;
-                    modeled_variance += public_key_phase_variance(law, rank, n * factor * factor, k_ct, k_pk);
+                    // Encryption of zero follows the same model.
                     module.glwe_encrypt_zero_pk(
                         &mut ct,
                         &pk_prepared,
@@ -627,21 +629,27 @@ where
                         &mut source_xe,
                         &mut enc_scratch.borrow(),
                     );
+                    assert_canonical(&ct);
+                    let zero = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+                    let stats = glwe_noise_checked(module, &ct, &zero, &sk_prepared, &mut scratch.borrow());
+                    noise_variance += stats.second_moment();
+                    modeled_variance += model;
                 }
                 let ratio = noise_variance / modeled_variance;
                 let ring_factor = <BE::Ring as Ring>::CYCLOTOMIC_ORDER_FACTOR / 2;
                 if ring_factor == 2 {
                     assert!(
-                        coefficient_zero <= 2.5 * modeled_variance,
+                        // The model counts two encryptions per trial, coefficient zero one.
+                        coefficient_zero <= 2.5 * modeled_variance / 2.0,
                         "CI coefficient-zero second moment exceeds the model: {}",
-                        coefficient_zero / modeled_variance
+                        2.0 * coefficient_zero / modeled_variance
                     );
                 }
                 // CI uses a bound covering coefficient zero, twice the average product weight.
                 // Rounding uses a 1/4 bound although its variance approaches 1/12.
                 // For binary CI, the all-ones product has coefficients 2*n-1 at zero
                 // and 2*(n-c) elsewhere. Its average squared bias is about 4*n^2/3,
-                // versus the planner's (4*n)^2 bound, so the ratio can approach 1/12.
+                // versus the model's (4*n)^2 bound, so the ratio can approach 1/12.
                 let lower = if ring_factor == 2 && binary && k_pk > k_ct {
                     0.06
                 } else if ring_factor == 2 {
@@ -741,8 +749,6 @@ where
     }
 }
 
-// Formula regression calculation for the ternary probability-1/2 fixtures.
-// Repeated quartering deliberately differs from the planner's integer search.
 /// `glwe_public_key_generate` and `glwe_encrypt_pk` equal their per-entry formulas replayed from the same sources.
 pub fn test_glwe_encrypt_pk_replay<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where

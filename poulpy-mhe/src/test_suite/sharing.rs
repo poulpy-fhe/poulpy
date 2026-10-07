@@ -3,7 +3,7 @@
 //! larger precision decrypt to their integer sum.
 
 use poulpy_core::{
-    DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GLWEAdd, GLWEDecrypt, GLWEEncryptSk, GLWENormalize,
+    DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GLWEAdd, GLWEDecrypt, GLWEEncryptSk, GLWENormalize, Noise,
     layouts::{
         GLWE, GLWELayout, GLWEPlaintext, GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank, TorusPrecision,
     },
@@ -17,7 +17,7 @@ use poulpy_hal::{
 
 use super::fixtures::{
     BASE2K, K, K_OUT, LOG_MESSAGE, PARTIES, SEED_XE, SEEDS, assert_flooded_integers, bounded_integers, encrypt_integers,
-    glwe_layout_at, ideal_secret, integer_flood_infos, integer_plaintext, party_secrets, plaintext_integers, secret_from_seed,
+    glwe_layout_at, ideal_secret, integer_plaintext, party_secrets, plaintext_integers, secret_from_seed,
 };
 use crate::{
     api::{GLWEEncToShareMHEProtocol, GLWEShareToEncMHEProtocol},
@@ -43,7 +43,7 @@ where
     for k in [K, TorusPrecision(3 * BASE2K.0)] {
         for sigma in [1024.0, 4096.0] {
             let layout = glwe_layout_at(module, k);
-            let flood = integer_flood_infos(sigma);
+            let flood = Noise::Gaussian { sigma };
             let parties = party_secrets(module);
             let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
                 module
@@ -215,7 +215,7 @@ where
         &mut secret,
         &ct,
         &sk,
-        integer_flood_infos(1024.0),
+        Noise::Gaussian { sigma: 1024.0 },
         &mut Source::new([60u8; 32]),
         &mut Source::new(SEED_XE),
         &mut scratch.borrow(),
@@ -273,7 +273,7 @@ where
             &mut secret,
             &ct,
             &sk,
-            integer_flood_infos(1024.0),
+            Noise::Gaussian { sigma: 1024.0 },
             &mut Source::new([60u8; 32]),
             &mut Source::new(SEED_XE),
             &mut scratch.borrow(),
@@ -305,21 +305,17 @@ where
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_enc_to_share_share_gen_tmp_bytes(&layout));
     for (noise, message) in [
         (
-            poulpy_core::Noise::Gaussian {
-                sigma: 1024.0,
-                cutoff_factor: 0,
-            },
-            "invalid noise: Gaussian cutoff factor must be positive",
+            Noise::Gaussian { sigma: 0.5 },
+            "invalid noise: Gaussian sigma must be finite and at least 1",
         ),
         (
-            poulpy_core::Noise::Gaussian {
+            Noise::Gaussian {
                 sigma: 2.0f64.powi((K.as_usize()) as i32),
-                cutoff_factor: 6,
             },
             "invalid noise: Gaussian bound outside the precision",
         ),
         (
-            poulpy_core::Noise::Uniform { bits: K.as_usize() },
+            Noise::Uniform { bits: K.as_usize() },
             "invalid noise: uniform width outside the precision",
         ),
     ] {

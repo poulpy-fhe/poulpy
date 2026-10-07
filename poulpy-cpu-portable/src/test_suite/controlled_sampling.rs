@@ -6,7 +6,7 @@ use super::{ControlledSamplingFFT64CIPortable, ControlledSamplingFFT64Portable};
 use poulpy_core::{
     Distribution, Noise,
     oep::SamplingImpl,
-    test_suite::parity::controlled_sampling::{noise_samples, scalar_samples},
+    test_suite::parity::controlled_sampling::{add_noise_samples, scalar_samples},
 };
 use poulpy_hal::layouts::*;
 
@@ -34,16 +34,7 @@ macro_rules! impl_controlled_sampling {
                 noise: Noise,
                 seed: [u8; 32],
             ) {
-                noise.validate();
-                assert!((1..=63).contains(&base2k));
-                assert!(k > 0 && k.div_ceil(base2k) <= res.size());
-                assert!(col < res.cols());
-                let samples = noise_samples(res.n(), base2k, k, noise, seed, false);
-                for (limb, digits) in samples.chunks(res.n()).enumerate() {
-                    for (dst, digit) in res.at_mut(col, limb).iter_mut().zip(digits) {
-                        *dst = dst.wrapping_add(*digit);
-                    }
-                }
+                add_noise_samples(res, base2k, k, col, noise, seed, false, |dst, digit| *dst = dst.wrapping_add(digit));
             }
             fn vec_znx_big_add_noise(
                 _: &Module<Self>,
@@ -54,16 +45,7 @@ macro_rules! impl_controlled_sampling {
                 noise: Noise,
                 seed: [u8; 32],
             ) {
-                noise.validate();
-                assert!((1..=63).contains(&base2k));
-                assert!(k > 0 && k.div_ceil(base2k) <= res.size());
-                assert!(col < res.cols());
-                let samples = noise_samples(res.n(), base2k, k, noise, seed, true);
-                for (limb, digits) in samples.chunks(res.n()).enumerate() {
-                    for (dst, digit) in res.at_mut(col, limb).iter_mut().zip(digits) {
-                        *dst = dst.wrapping_add(*digit);
-                    }
-                }
+                add_noise_samples(res, base2k, k, col, noise, seed, true, |dst, digit| *dst = dst.wrapping_add(digit));
             }
         }
     )+};

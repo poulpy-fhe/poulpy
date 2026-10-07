@@ -1,5 +1,5 @@
 use poulpy_core::{
-    Distribution, GLWEDecrypt, GLWEEncryptSk, GetDistribution, GetDistributionMut, Noise,
+    Distribution, GLWEDecrypt, GLWEEncryptSk, GetDistribution, GetDistributionMut,
     layouts::{
         Base2K, Dnum, Dsize, GGLWELayout, GGSWLayout, GLWE, GLWEInfos, GLWELayout, GLWEPlaintext, GLWEPublicKey,
         GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory, GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory,
@@ -253,11 +253,6 @@ pub(crate) fn assert_decrypts_to<BE>(
     for (got, want) in plaintext_integers(&pt).iter().zip(want) {
         assert!((got - want).abs() <= bound, "decrypted {got}, want {want} within {bound}");
     }
-}
-
-/// Small functional-test flooding parameters, not a production security margin.
-pub(crate) fn integer_flood_infos(sigma: f64) -> Noise {
-    Noise::Gaussian { sigma, cutoff_factor: 6 }
 }
 
 /// Checks both correctness and the presence of caller-sized, per-party flooding.

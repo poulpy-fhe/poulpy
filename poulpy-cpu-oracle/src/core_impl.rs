@@ -1,6 +1,9 @@
 //! Registers the generic Core compositions for the oracles.
 
-use crate::{FFT64CIOracle, FFT64Oracle, NTT4x30CIOracle, NTT4x30Oracle};
+use crate::{
+    FFT64CIOracle, FFT64Oracle, NTT4x30CIOracle, NTT4x30Oracle,
+    test_suite::{ControlledSamplingFFT64CIOracle, ControlledSamplingFFT64Oracle, ControlledSamplingNTT4x30Oracle},
+};
 
 /// The compositions shared by both rings.
 macro_rules! impl_oracle_core {
@@ -44,3 +47,9 @@ impl_oracle_core_standard!(NTT4x30Oracle);
 ::poulpy_core::impl_glwe_ci_conversion_reference_full!(NTT4x30Oracle);
 impl_oracle_core!(FFT64CIOracle);
 impl_oracle_core!(NTT4x30CIOracle);
+impl_oracle_core!(ControlledSamplingFFT64Oracle);
+impl_oracle_core_standard!(ControlledSamplingFFT64Oracle);
+::poulpy_core::impl_glwe_ci_conversion_reference_full!(ControlledSamplingFFT64Oracle);
+impl_oracle_core!(ControlledSamplingNTT4x30Oracle);
+impl_oracle_core_standard!(ControlledSamplingNTT4x30Oracle);
+impl_oracle_core!(ControlledSamplingFFT64CIOracle);
