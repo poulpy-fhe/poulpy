@@ -13,7 +13,7 @@
 //! `2·max_n` scalars (~100 KiB of `f64` at `n = 65536`), and in exchange every
 //! backend follows one code path and can use its own accelerated kernels.
 
-use std::{cell::RefCell, marker::PhantomData};
+use std::marker::PhantomData;
 
 use anyhow::{Result, ensure};
 use poulpy_ckks::{api::CKKSEncodingScalar, numerics::ROOT_TABLE_LOG_ORDER};
@@ -137,6 +137,8 @@ where
 /// [`fft_portable_fused`](crate::kernels::fft64::reim::fft_portable_fused), so encodings
 /// are byte identical across backends. Accelerated backends wrap this table
 /// and run their own kernels on [`Self::forward`] and [`Self::inverse`].
+/// Precisions other than 24, 53 and 113 significand bits generate every root
+/// instead of reading the table, once for each of the two tables.
 pub struct EncodingFFTTable<F: CKKSEncodingScalar> {
     fft: ReimFFTTable<F>,
     ifft: ReimIFFTTable<F>,
@@ -168,20 +170,12 @@ impl<F: CKKSEncodingScalar> NegacyclicFFTNew<F> for EncodingFFTTable<F> {
             );
             k
         };
-        if log_order <= ROOT_TABLE_LOG_ORDER {
-            let root = move |turn: F| F::ckks_root_of_unity(index(turn), log_order);
-            return Self {
-                fft: ReimFFTTable::new_with_roots(m, root),
-                ifft: ReimIFFTTable::new_with_roots(m, root),
-            };
-        }
-        // Past the checked-in tables, roots are costly to generate and both
-        // tables read the same ones, so each is computed once.
-        let memo: RefCell<Vec<Option<(F, F)>>> = RefCell::new(vec![None; 4 * m]);
-        let root = |turn: F| {
-            let k = index(turn);
-            *memo.borrow_mut()[k as usize & (4 * m - 1)].get_or_insert_with(|| F::ckks_root_of_unity(k, log_order))
-        };
+        // Every supported ring degree reads its roots from the checked-in table.
+        assert!(
+            log_order <= ROOT_TABLE_LOG_ORDER,
+            "encoding roots of order 2^{log_order} exceed the supported 2^{ROOT_TABLE_LOG_ORDER}"
+        );
+        let root = move |turn: F| F::ckks_root_of_unity(index(turn), log_order);
         Self {
             fft: ReimFFTTable::new_with_roots(m, root),
             ifft: ReimIFFTTable::new_with_roots(m, root),
