@@ -27,10 +27,10 @@ macro_rules! impl_cpu_core_defaults {
 #[cfg(feature = "enable-ckks")]
 #[macro_export]
 macro_rules! impl_cpu_ckks_defaults {
-    ($be:ty $(, prepared_tensor = $prepared_tensor:path)?) => {
+    ($be:ty) => {
         ::poulpy_ckks::impl_ckks_copy_reference!($be);
         ::poulpy_ckks::impl_ckks_encryption_reference!($be);
-        ::poulpy_ckks::impl_ckks_mul_reference!($be $(, prepared_tensor = $prepared_tensor)?);
+        ::poulpy_ckks::impl_ckks_mul_reference!($be);
         ::poulpy_ckks::impl_ckks_neg_reference!($be);
         ::poulpy_ckks::impl_ckks_pow2_reference!($be);
         ::poulpy_ckks::impl_ckks_rotate_reference!($be);

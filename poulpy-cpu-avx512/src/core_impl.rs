@@ -397,6 +397,7 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
 {
     let res_base2k = res.base2k().as_usize();
     let res_k = res.k().as_usize();
+    let full_k = res.size() * res_base2k;
     let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, in_base2k);
     let dft_size = normalize_input_limb_bound_with_offset(
         a_size + b_size - cnv_offset_hi,
@@ -422,7 +423,7 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
             module,
             res.to_backend_mut().data_mut(),
             res_base2k,
-            res_k,
+            full_k,
             cnv_offset_lo,
             res_col,
             &mut tensor_dft,
@@ -437,7 +438,7 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
         module,
         &mut pairwise,
         res_base2k,
-        res_k,
+        full_k,
         cnv_offset_lo,
         0,
         &mut tensor_dft,
@@ -453,6 +454,9 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
     }
     module.vec_znx_normalize_assign(res_base2k, res_k, 0, &mut pairwise.to_backend_mut(), 0, &mut norm_scratch);
     module.vec_znx_copy(res.to_backend_mut().data_mut(), 1, &pairwise.to_backend_ref(), 0);
+    for col in [0, 2] {
+        module.vec_znx_normalize_assign(res_base2k, res_k, 0, res.to_backend_mut().data_mut(), col, &mut norm_scratch);
+    }
 }
 
 fn rank_one_tensor_apply<BE, R, A, B>(
@@ -581,8 +585,38 @@ fn rank_one_tensor_square<BE, R, A>(
 }
 
 macro_rules! impl_rank_one_tensoring {
-    ($be:ty, $consume:literal) => {
+    ($be:ty, $consume:literal, $prepared:path) => {
         unsafe impl GLWETensoringImpl for $be {
+            fn glwe_tensor_apply_prepared_right_tmp_bytes<R, A>(
+                module: &Module<$be>,
+                res: &R,
+                a: &A,
+                a_size: usize,
+                b_size: usize,
+            ) -> usize
+            where
+                R: GLWEInfos,
+                A: GLWEInfos,
+            {
+                poulpy_core::glwe_tensor_apply_prepared_right_tmp_bytes(module, res, a, a_size, b_size)
+            }
+
+            fn glwe_tensor_apply_prepared_right<R, A, BP>(
+                module: &Module<$be>,
+                offset: usize,
+                res: &mut R,
+                a: &A,
+                b: &BP,
+                b_size: usize,
+                scratch: &mut ScratchArena<'_, $be>,
+            ) where
+                R: GLWEToBackendMut<$be> + GLWEInfos,
+                A: GLWEToBackendRef<$be> + GLWEInfos,
+                BP: CnvPVecRToBackendRef<$be>,
+            {
+                $prepared(module, offset, res, a, b, b_size, scratch)
+            }
+
             fn glwe_tensor_apply_tmp_bytes<R, A, B>(module: &Module<$be>, res: &R, a: &A, b: &B) -> usize
             where
                 R: GLWEInfos,
@@ -723,20 +757,20 @@ macro_rules! impl_rank_one_tensoring {
     };
 }
 
-impl_rank_one_tensoring!(NTT4x30Avx512, false);
-impl_rank_one_tensoring!(NTT4x30CIAvx512, false);
+impl_rank_one_tensoring!(NTT4x30Avx512, false, poulpy_core::glwe_tensor_apply_prepared_right);
+impl_rank_one_tensoring!(NTT4x30CIAvx512, false, poulpy_core::glwe_tensor_apply_prepared_right);
 #[cfg(feature = "enable-rayon")]
-impl_rank_one_tensoring!(NTT4x30Avx512Rayon, false);
+impl_rank_one_tensoring!(NTT4x30Avx512Rayon, false, poulpy_core::glwe_tensor_apply_prepared_right);
 #[cfg(feature = "enable-rayon")]
-impl_rank_one_tensoring!(NTT4x30CIAvx512Rayon, false);
+impl_rank_one_tensoring!(NTT4x30CIAvx512Rayon, false, poulpy_core::glwe_tensor_apply_prepared_right);
 #[cfg(feature = "enable-ifma")]
-impl_rank_one_tensoring!(NTT3x42Ifma, true);
+impl_rank_one_tensoring!(NTT3x42Ifma, true, poulpy_core::glwe_tensor_apply_prepared_right);
 #[cfg(feature = "enable-ifma")]
-impl_rank_one_tensoring!(NTT3x42CIIfma, true);
+impl_rank_one_tensoring!(NTT3x42CIIfma, true, poulpy_core::glwe_tensor_apply_prepared_right);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-impl_rank_one_tensoring!(NTT3x42IfmaRayon, true);
+impl_rank_one_tensoring!(NTT3x42IfmaRayon, true, ifma_prepared_tensor);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-impl_rank_one_tensoring!(NTT3x42CIIfmaRayon, true);
+impl_rank_one_tensoring!(NTT3x42CIIfmaRayon, true, poulpy_core::glwe_tensor_apply_prepared_right);
 
 unsafe impl<R: Ring> poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30Avx512<R>
 where
@@ -950,9 +984,9 @@ poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64CIAvx512Rayon, fft64);
 poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30CIAvx512Rayon, ntt4x30);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT3x42CIIfmaRayon, ntt4x30);
-#[cfg(all(feature = "enable-ifma", feature = "enable-rayon", any(feature = "enable-ckks", test)))]
+#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn ifma_prepared_tensor<R, A, BP>(
+fn ifma_prepared_tensor<R, A, BP>(
     module: &Module<NTT3x42IfmaRayon>,
     offset: usize,
     res: &mut R,
@@ -965,12 +999,13 @@ pub(crate) fn ifma_prepared_tensor<R, A, BP>(
     A: GLWEToBackendRef<NTT3x42IfmaRayon> + GLWEInfos,
     BP: CnvPVecRToBackendRef<NTT3x42IfmaRayon>,
 {
-    if res.n().as_usize() != 65536
+    const MIN_DEGREE: usize = 1 << 16;
+    const MIN_LIMBS: usize = 16;
+    if res.n().as_usize() < MIN_DEGREE
         || res.rank().as_usize() != 1
         || a.rank().as_usize() != 1
-        || res.base2k().as_usize() != 52
-        || a.base2k().as_usize() != 52
-        || res.size() < 16
+        || res.base2k() != a.base2k()
+        || res.size() < MIN_LIMBS
     {
         poulpy_core::glwe_tensor_apply_prepared_right(module, offset, res, a, b, b_size, scratch);
         return;
@@ -979,6 +1014,9 @@ pub(crate) fn ifma_prepared_tensor<R, A, BP>(
     let n = res.n().as_usize();
     let base = a.base2k().as_usize();
     let a_size = a.k().as_usize().div_ceil(base);
+    assert_degrees(module, [res.n(), a.n(), res.n()]);
+    assert!(a_size <= a.size(), "effective input exceeds its allocation");
+    assert!(scratch.available() >= poulpy_core::glwe_tensor_apply_prepared_right_tmp_bytes(module, res, a, a_size, b_size));
     let result_base = res.base2k().as_usize();
     let result_k = res.k().as_usize();
     // Preserve the prepared product's rounding before the pairwise subtraction.
@@ -1146,12 +1184,12 @@ mod relinearize_tests {
 mod prepared_tensor_tests {
     use super::*;
     use poulpy_core::{
-        glwe_prepare_right, glwe_tensor_apply_prepared_right, glwe_tensor_apply_prepared_right_tmp_bytes,
+        GLWETensoring, glwe_prepare_right, glwe_tensor_apply_prepared_right,
         layouts::{GLWELayout, ModuleCoreAlloc, SetK},
     };
     use poulpy_hal::{
         api::{CnvPVecAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAddAssign, VecZnxFillUniformSourceAll},
-        layouts::ScratchOwned,
+        layouts::{DataView, ScratchOwned},
         source::Source,
     };
 
@@ -1159,7 +1197,7 @@ mod prepared_tensor_tests {
     fn prepared_tensor_matches_reference() {
         type BE = NTT3x42IfmaRayon;
         let mut source = Source::new([67; 32]);
-        for (n, rank, base) in [(65536usize, 1usize, 52usize), (256, 2, 26)] {
+        for (n, rank, base) in [(65536usize, 1usize, 52usize), (65536, 1, 26), (32768, 1, 52), (256, 2, 26)] {
             let module = Module::<BE>::new(n as u64);
             let layout = GLWELayout {
                 n: n.into(),
@@ -1206,14 +1244,34 @@ mod prepared_tensor_tests {
                     let mut got = module.glwe_tensor_alloc_from_infos(&output);
                     let mut expected = module.glwe_tensor_alloc_from_infos(&output);
                     module.vec_znx_fill_uniform_source_all(base, k, got.data_mut(), &mut source);
-                    let bytes = glwe_tensor_apply_prepared_right_tmp_bytes(&module, &got, &a, a.size(), b_size);
+                    let bytes = module.glwe_tensor_apply_prepared_right_tmp_bytes(&got, &a, a.size(), b_size);
                     let mut scratch = ScratchOwned::<BE>::alloc(bytes);
-                    ifma_prepared_tensor(&module, offset, &mut got, &a, &right, b_size, &mut scratch.borrow());
+                    scratch.data.fill(0xa5);
+                    if n == 65536 && k == 16 * base && !lazy {
+                        let before = got.clone();
+                        let (mut short, _) = scratch.borrow().split_at(bytes - 1);
+                        assert!(
+                            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                module.glwe_tensor_apply_prepared_right(offset, &mut got, &a, &right, b_size, &mut short);
+                            }))
+                            .is_err()
+                        );
+                        assert_eq!(got, before, "short scratch mutated the output");
+                    }
+                    let before_a = a.clone();
+                    let before_right = right.data().to_vec();
+                    module.glwe_tensor_apply_prepared_right(offset, &mut got, &a, &right, b_size, &mut scratch.borrow());
+                    assert_eq!(a, before_a);
+                    assert_eq!(&right.data()[..], &before_right);
                     glwe_tensor_apply_prepared_right(&module, offset, &mut expected, &a, &right, b_size, &mut scratch.borrow());
                     assert_eq!(
                         got, expected,
                         "n={n}, rank={rank}, base={base}, lazy={lazy}, k={k}, offset={offset}"
                     );
+                    let bytes = module.glwe_tensor_apply_tmp_bytes(&got, &a, &b);
+                    let mut scratch = ScratchOwned::<BE>::alloc(bytes);
+                    module.glwe_tensor_apply(offset, &mut got, &a, &b, &mut scratch.borrow());
+                    assert_eq!(got, expected, "ordinary/prepared n={n} k={k} offset={offset}");
                 }
             }
         }

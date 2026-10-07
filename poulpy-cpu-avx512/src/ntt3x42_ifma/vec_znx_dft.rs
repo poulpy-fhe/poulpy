@@ -167,7 +167,11 @@ unsafe fn crt_compact_planes<const ADD: bool>(nn: usize, res: &mut [i128], a: [&
     assert!(res.len() >= nn);
     assert!(a.iter().all(|plane| plane.len() >= nn));
     assert!(!ADD || add.len() >= nn);
+    unsafe { crt_compact_planes_unchecked::<ADD>(nn, res, a, add) };
+}
 
+#[target_feature(enable = "avx512ifma,avx512vl")]
+unsafe fn crt_compact_planes_unchecked<const ADD: bool>(nn: usize, res: &mut [i128], a: [&[u64]; 3], add: &[i64]) {
     unsafe {
         let q0 = _mm512_set1_epi64(Q0 as i64);
         let q1 = _mm512_set1_epi64(Q1 as i64);
@@ -600,11 +604,18 @@ pub(crate) fn idft_normalize_consume_ifma<R: Ring, E: poulpy_hal::execution::Tas
     NTT3x42Ifma<R>:
         Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
 {
+    #[cfg(feature = "enable-rayon")]
+    if E::is_parallel() && poulpy_cpu_rayon::RayonTaskExecutor::should_serialize_inner() {
+        return idft_normalize_consume_ifma::<R, poulpy_hal::execution::SerialTaskExecutor>(
+            module, res, res_base2k, res_k, res_offset, res_col, a, a_col, a_base2k, addend, tmp, carry,
+        );
+    }
+    const MIN_STREAM_DEGREE: usize = 1 << 16;
     let n = a.n();
     assert_eq!(res.n(), n);
     if E::is_parallel()
         && R::CYCLOTOMIC_ORDER_FACTOR == 2
-        && n >= 65536
+        && n >= MIN_STREAM_DEGREE
         && res.is_dense()
         && res_base2k == a_base2k
         && (1..=63).contains(&res_base2k)
@@ -666,7 +677,7 @@ fn stream_finish<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
     tmp: &mut [u64],
     carry: &mut [i128],
 ) {
-    use poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::I128NormalizeOps;
+    use poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::{I128NormalizeOps, I128NormalizePlan};
     let n = a.n();
     check_degree::<NTT3x42Ifma<R>>(module.n(), n);
     assert_eq!(R::CYCLOTOMIC_ORDER_FACTOR, 2);
@@ -683,12 +694,11 @@ fn stream_finish<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
     let size = a.size();
     let cols = a.cols();
     let output_size = res.size();
-    let output_cols = res.cols();
+    let output_shape = res.shape();
     let active = k.div_ceil(base);
     assert!(active <= output_size);
-    let padding = (base - k % base) % base;
+    let plan = I128NormalizePlan::new(base, k, offset, size).unwrap();
     let limb_offset = offset.div_euclid(base as i64);
-    let lsh = offset.rem_euclid(base as i64) as usize;
     let boundary = (active as i64 - 1).saturating_add(limb_offset);
     assert!((0..size as i64).contains(&boundary));
     let boundary = boundary as usize;
@@ -697,7 +707,6 @@ fn stream_finish<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
     let input: &[u64] = cast_slice(a.data());
     let planar = SendPtr(tmp.as_mut_ptr());
     let (carry, rest) = carry.split_at_mut(n);
-    carry.fill(0);
     let carry_ptr = SendPtr(carry.as_mut_ptr());
     let compact_ptr = SendPtr(rest.as_mut_ptr());
     let output = SendPtr(res.base_mut_ptr());
@@ -718,6 +727,8 @@ fn stream_finish<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
             }
             crate::ntt3x42_ifma::kernels::intt_quarter(table, dst, prime, part);
         });
+        let add = addend.filter(|(add, _)| j < add.size()).map(|(add, col)| add.at(col, j));
+        let out_offset = (j <= boundary).then(|| output_shape.scalar_offset(res_col, (j as i64 - limb_offset) as usize));
         E::for_each(chunks, |task| unsafe {
             let start = (n / 32 * task / chunks) * 8;
             let end = (n / 32 * (task + 1) / chunks) * 8;
@@ -730,48 +741,34 @@ fn stream_finish<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
                 let compact = std::slice::from_raw_parts_mut(compact_ptr.get().add(begin), len);
                 // Each task owns only this span in each plane, including during CRT.
                 let planes = std::array::from_fn(|prime| std::slice::from_raw_parts(planar.get().add(prime * n + begin), len));
-                if let Some((add, col)) = addend.filter(|(add, _)| j < add.size()) {
-                    crt_compact_planes::<true>(len, compact, planes, &add.at(col, j)[begin..begin + len]);
+                if let Some(add) = add {
+                    crt_compact_planes_unchecked::<true>(len, compact, planes, &add[begin..begin + len]);
                 } else {
-                    crt_compact_planes::<false>(len, compact, planes, &[]);
+                    crt_compact_planes_unchecked::<false>(len, compact, planes, &[]);
                 }
                 let carry = std::slice::from_raw_parts_mut(carry_ptr.get().add(begin), len);
-                if j > boundary {
-                    match (j + 1 == size, padding == 0 && j == boundary + 1) {
-                        (true, false) => NTT3x42Ifma::<R>::nfc_normalize_floor::<false, false>(base, lsh, compact, carry),
-                        (true, true) => NTT3x42Ifma::<R>::nfc_normalize_floor::<false, true>(base, lsh, compact, carry),
-                        (false, false) => NTT3x42Ifma::<R>::nfc_normalize_floor::<true, false>(base, lsh, compact, carry),
-                        (false, true) => NTT3x42Ifma::<R>::nfc_normalize_floor::<true, true>(base, lsh, compact, carry),
-                    }
+                let out = if let Some(offset) = out_offset {
+                    std::slice::from_raw_parts_mut(output.get().add(offset + begin), len)
                 } else {
-                    let out_limb = (j as i64 - limb_offset) as usize;
-                    let out =
-                        std::slice::from_raw_parts_mut(output.get().add(n * (out_limb * output_cols + res_col) + begin), len);
-                    if j == boundary {
-                        if j + 1 < size {
-                            NTT3x42Ifma::<R>::nfc_normalize_round::<true, true>(base, lsh, padding, out, compact, carry);
-                        } else {
-                            NTT3x42Ifma::<R>::nfc_normalize_round::<false, true>(base, lsh, padding, out, compact, carry);
-                        }
-                    } else {
-                        NTT3x42Ifma::<R>::nfc_middle_step(base, lsh, out, compact, carry);
-                    }
-                }
+                    &mut []
+                };
+                plan.apply::<NTT3x42Ifma<R>>(j, out, compact, carry);
             }
         });
     }
-    E::for_each(chunks, |task| unsafe {
-        let begin = n * task / chunks;
-        let end = n * (task + 1) / chunks;
-        let carry = std::slice::from_raw_parts_mut(carry_ptr.get().add(begin), end - begin);
-        for j in (0..limb_offset.saturating_neg().clamp(0, active as i64) as usize).rev() {
-            let out = std::slice::from_raw_parts_mut(output.get().add(n * (j * output_cols + res_col) + begin), end - begin);
+    for j in (0..limb_offset.saturating_neg().clamp(0, active as i64) as usize).rev() {
+        let out_offset = output_shape.scalar_offset(res_col, j);
+        E::for_each(chunks, |task| unsafe {
+            let begin = n * task / chunks;
+            let end = n * (task + 1) / chunks;
+            let carry = std::slice::from_raw_parts_mut(carry_ptr.get().add(begin), end - begin);
+            let out = std::slice::from_raw_parts_mut(output.get().add(out_offset + begin), end - begin);
             NTT3x42Ifma::<R>::znx_extract_digit_mul_i128(base, 0, out, carry);
-        }
-        for j in active..output_size {
-            std::slice::from_raw_parts_mut(output.get().add(n * (j * output_cols + res_col) + begin), end - begin).fill(0);
-        }
-    });
+        });
+    }
+    for j in active..output_size {
+        res.at_mut(res_col, j).fill(0);
+    }
 }
 
 /// `VecZnxIdftApplyTmpA` packed fast path.
@@ -1271,6 +1268,42 @@ mod finish_tests {
         oep::HalVecZnxDftImpl,
     };
 
+    #[cfg(feature = "enable-rayon")]
+    struct CheckedExecutor;
+
+    #[cfg(feature = "enable-rayon")]
+    impl poulpy_hal::execution::TaskExecutor for CheckedExecutor {
+        const IS_PARALLEL: bool = true;
+        fn is_parallel() -> bool {
+            poulpy_cpu_rayon::RayonTaskExecutor::is_parallel()
+        }
+        fn max_parallelism() -> usize {
+            poulpy_cpu_rayon::RayonTaskExecutor::max_parallelism()
+        }
+        fn join<A, B, RA, RB>(left: A, right: B) -> (RA, RB)
+        where
+            A: FnOnce() -> RA + Send,
+            B: FnOnce() -> RB + Send,
+            RA: Send,
+            RB: Send,
+        {
+            assert!(!poulpy_cpu_rayon::RayonTaskExecutor::should_serialize_inner());
+            poulpy_cpu_rayon::RayonTaskExecutor::join(left, right)
+        }
+        fn for_each<F: Fn(usize) + Send + Sync>(count: usize, task: F) {
+            assert!(!poulpy_cpu_rayon::RayonTaskExecutor::should_serialize_inner());
+            poulpy_cpu_rayon::RayonTaskExecutor::for_each(count, task);
+        }
+        fn for_each_chunked<T, F>(count: usize, scratch: &mut [T], per_worker: usize, task: F)
+        where
+            T: Send,
+            F: Fn(&mut [T], usize) + Send + Sync,
+        {
+            assert!(!poulpy_cpu_rayon::RayonTaskExecutor::should_serialize_inner());
+            poulpy_cpu_rayon::RayonTaskExecutor::for_each_chunked(count, scratch, per_worker, task);
+        }
+    }
+
     #[test]
     fn finish_matches_composition_edges() {
         for n in [8usize, 256, 65536] {
@@ -1281,6 +1314,7 @@ mod finish_tests {
                     continue;
                 }
                 let mut source = module.vec_znx_dft_alloc(n, 2, 5);
+                source.data_mut().fill(0xa5);
                 let mut big = module.vec_znx_big_alloc(n, 2, 5);
                 let mut residues = vec![0u64; 3 * n];
                 let edge = [
@@ -1363,7 +1397,13 @@ mod finish_tests {
                             &mut vec![0; 3 * n],
                         );
                         assert_eq!(got, expected, "n={n}, base2k={base2k}, k={k}, add_size={add_size}");
-                        assert_eq!(&source.data()[..2 * n * 8], &input.data()[..2 * n * 8]);
+                        for limb in 0..source.size() {
+                            assert_eq!(
+                                packed_limb(cast_slice(source.data()), n, 2, 0, limb),
+                                packed_limb(cast_slice(input.data()), n, 2, 0, limb),
+                                "untouched column, limb={limb}"
+                            );
+                        }
                     }
                 }
             }
@@ -1373,136 +1413,168 @@ mod finish_tests {
     #[cfg(feature = "enable-rayon")]
     #[test]
     fn streaming_finish_matches_composition_edges() {
-        rayon::ThreadPoolBuilder::new().num_threads(3).build().unwrap().install(|| {
-            for n in [256usize, 65536] {
-                let module = Module::<NTT3x42Ifma>::new((n * 2) as u64);
-                let host = Module::<HostBytesBackend>::new((n * 2) as u64);
-                for base2k in [1usize, 17, 52, 63] {
-                    if n == 65536 && base2k != 52 {
-                        continue;
-                    }
-                    let mut source = module.vec_znx_dft_alloc(n, 2, 5);
-                    let mut big = module.vec_znx_big_alloc(n, 2, 5);
-                    let mut residues = vec![0u64; 3 * n];
-                    let edge = [
-                        0,
-                        1,
-                        -1,
-                        (1i128 << (base2k - 1)) - 1,
-                        1i128 << (base2k - 1),
-                        -(1i128 << (base2k - 1)),
-                        HALF_BIG_Q as i128,
-                        -(HALF_BIG_Q as i128),
-                        (1i128 << 100) + 17,
-                        -(1i128 << 100) - 17,
-                    ];
-                    for j in 0..5 {
-                        for i in 0..n {
-                            let value = edge[(i + 3 * j) % edge.len()];
-                            big.at_mut(1, j)[i] = value;
-                            for p in 0..3 {
-                                residues[p * n + i] = value.rem_euclid(Q[p] as i128) as u64;
-                            }
+        for threads in [1, 3, 16, 48] {
+            check_streaming_finish(threads, false, &[256, 65536]);
+        }
+        check_streaming_finish(3, true, &[65536]);
+    }
+
+    #[cfg(feature = "enable-rayon")]
+    #[test]
+    fn test_vec_znx_idft_finish_small() {
+        check_streaming_finish(3, false, &[256]);
+    }
+
+    #[cfg(feature = "enable-rayon")]
+    fn check_streaming_finish(threads: usize, nested: bool, degrees: &[usize]) {
+        use poulpy_hal::execution::TaskExecutor;
+        rayon::ThreadPoolBuilder::new().num_threads(threads).build().unwrap().install(|| {
+            let run = || {
+                for &n in degrees {
+                    let module = Module::<NTT3x42Ifma>::new((n * 2) as u64);
+                    let host = Module::<HostBytesBackend>::new((n * 2) as u64);
+                    for base2k in [1usize, 17, 52, 63] {
+                        if n == 65536 && base2k != 52 {
+                            continue;
                         }
-                        unsafe {
-                            ntt_avx512::<Primes42>(handle(&module).table_ntt_for(n), &mut residues, true);
-                            pack_limb_3x42_lazy(n, packed_limb_mut(cast_slice_mut(source.data_mut()), n, 2, 1, j), &residues);
-                        }
-                    }
-                    for add_size in [0, 3, 7] {
-                        let mut add = host.vec_znx_alloc(n, 2, add_size.max(1));
-                        for j in 0..add.size() {
-                            for (i, value) in add.at_mut(0, j).iter_mut().enumerate() {
-                                *value = [0, 1, -1, (1i64 << 62) - 1, -(1i64 << 62), i64::MIN, i64::MAX][(i + j) % 7];
-                            }
-                        }
-                        let add_ref: VecZnxBackendRef<'_, NTT3x42Ifma> = VecZnxToBackendRef::<NTT3x42Ifma>::to_backend_ref(&add);
-                        let mut expected_big = module.vec_znx_big_alloc(n, 2, 5);
-                        expected_big.data_mut().copy_from_slice(big.data());
-                        if add_size != 0 {
-                            poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign_portable::<
-                                _,
-                                _,
-                                NTT3x42Ifma,
-                            >(&mut &mut expected_big.to_backend_mut(), 1, &add_ref, 0);
-                        }
-                        for offset in [
-                            -(2 * base2k as i64) - 1,
-                            -1,
+                        let mut source = module.vec_znx_dft_alloc(n, 2, 5);
+                        source.data_mut().fill(0xa5);
+                        let mut big = module.vec_znx_big_alloc(n, 2, 5);
+                        let mut residues = vec![0u64; 3 * n];
+                        let edge = [
                             0,
                             1,
-                            base2k as i64 - 1,
-                            base2k as i64,
-                            2 * base2k as i64 + 1,
-                        ] {
-                            for k in [0, 1, base2k, base2k + 1, 3 * base2k - 1, 5 * base2k, 6 * base2k] {
-                                let boundary = k.div_ceil(base2k) as i64 - 1 + offset.div_euclid(base2k as i64);
-                                if n < 65536 && (k == 0 || !(0..5).contains(&boundary)) {
-                                    continue;
+                            -1,
+                            (1i128 << (base2k - 1)) - 1,
+                            1i128 << (base2k - 1),
+                            -(1i128 << (base2k - 1)),
+                            HALF_BIG_Q as i128,
+                            -(HALF_BIG_Q as i128),
+                            (1i128 << 100) + 17,
+                            -(1i128 << 100) - 17,
+                        ];
+                        for j in 0..5 {
+                            for i in 0..n {
+                                let value = edge[(i + 3 * j) % edge.len()];
+                                big.at_mut(1, j)[i] = value;
+                                for p in 0..3 {
+                                    residues[p * n + i] = value.rem_euclid(Q[p] as i128) as u64;
                                 }
-                                let mut got = host.vec_znx_alloc(n, 2, 6);
-                                for j in 0..got.size() {
-                                    got.at_mut(0, j).fill(123);
-                                    got.at_mut(1, j).fill(456);
+                            }
+                            unsafe {
+                                ntt_avx512::<Primes42>(handle(&module).table_ntt_for(n), &mut residues, true);
+                                pack_limb_3x42_lazy(n, packed_limb_mut(cast_slice_mut(source.data_mut()), n, 2, 1, j), &residues);
+                            }
+                        }
+                        for add_size in [0, 3, 7] {
+                            let mut add = host.vec_znx_alloc(n, 2, add_size.max(1));
+                            for j in 0..add.size() {
+                                for (i, value) in add.at_mut(0, j).iter_mut().enumerate() {
+                                    *value = [0, 1, -1, (1i64 << 62) - 1, -(1i64 << 62), i64::MIN, i64::MAX][(i + j) % 7];
                                 }
-                                let mut expected = got.clone();
-                                let mut input = module.vec_znx_dft_alloc(n, 2, 5);
-                                input.data_mut().copy_from_slice(source.data());
-                                if n == 65536 {
-                                    idft_normalize_consume_ifma::<_, poulpy_cpu_rayon::RayonTaskExecutor>(
-                                        &module,
-                                        &mut VecZnxToBackendMut::<NTT3x42Ifma>::to_backend_mut(&mut got),
-                                        base2k,
-                                        k,
-                                        offset,
-                                        1,
-                                        &mut input.to_backend_mut(),
-                                        1,
-                                        base2k,
-                                        (add_size != 0).then_some((&add_ref, 0)),
-                                        &mut vec![0; 3 * n * 5],
-                                        &mut vec![0; 3 * n],
-                                    );
-                                } else {
-                                    stream_finish::<_, poulpy_cpu_rayon::RayonTaskExecutor>(
-                                        &module,
-                                        &mut VecZnxToBackendMut::<NTT3x42Ifma>::to_backend_mut(&mut got),
-                                        base2k,
-                                        k,
-                                        offset,
-                                        1,
-                                        &mut input.to_backend_mut(),
-                                        1,
-                                        (add_size != 0).then_some((&add_ref, 0)),
-                                        &mut vec![0; 3 * n],
-                                        &mut vec![0; 3 * n],
-                                    );
-                                }
-                                let expected_ref = expected_big.to_backend_ref();
-                                poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_normalize_portable::<
+                            }
+                            let add_ref: VecZnxBackendRef<'_, NTT3x42Ifma> = VecZnxToBackendRef::<NTT3x42Ifma>::to_backend_ref(&add);
+                            let mut expected_big = module.vec_znx_big_alloc(n, 2, 5);
+                            expected_big.data_mut().copy_from_slice(big.data());
+                            if add_size != 0 {
+                                poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign_portable::<
                                     _,
                                     _,
                                     NTT3x42Ifma,
-                                >(
-                                    &mut &mut VecZnxToBackendMut::<NTT3x42Ifma>::to_backend_mut(&mut expected),
-                                    base2k,
-                                    k,
-                                    offset,
-                                    1,
-                                    &&expected_ref,
-                                    base2k,
-                                    1,
-                                    &mut vec![0; 3 * n],
-                                );
-                                assert_eq!(
-                                    got, expected,
-                                    "n={n}, base2k={base2k}, k={k}, offset={offset}, add_size={add_size}"
-                                );
-                                assert_eq!(&source.data()[..2 * n * 8], &input.data()[..2 * n * 8]);
+                                >(&mut &mut expected_big.to_backend_mut(), 1, &add_ref, 0);
+                            }
+                            for offset in [
+                                -(2 * base2k as i64) - 1,
+                                -1,
+                                0,
+                                1,
+                                base2k as i64 - 1,
+                                base2k as i64,
+                                2 * base2k as i64 + 1,
+                            ] {
+                                for k in [0, 1, base2k, base2k + 1, 3 * base2k - 1, 5 * base2k, 6 * base2k] {
+                                    let boundary = k.div_ceil(base2k) as i64 - 1 + offset.div_euclid(base2k as i64);
+                                    if n < 65536 && (k == 0 || !(0..5).contains(&boundary)) {
+                                        continue;
+                                    }
+                                    let mut got = host.vec_znx_alloc(n, 2, 6);
+                                    for j in 0..got.size() {
+                                        got.at_mut(0, j).fill(123);
+                                        got.at_mut(1, j).fill(456);
+                                    }
+                                    let mut expected = got.clone();
+                                    let mut input = module.vec_znx_dft_alloc(n, 2, 5);
+                                    input.data_mut().copy_from_slice(source.data());
+                                    if n == 65536 {
+                                        idft_normalize_consume_ifma::<_, CheckedExecutor>(
+                                            &module,
+                                            &mut VecZnxToBackendMut::<NTT3x42Ifma>::to_backend_mut(&mut got),
+                                            base2k,
+                                            k,
+                                            offset,
+                                            1,
+                                            &mut input.to_backend_mut(),
+                                            1,
+                                            base2k,
+                                            (add_size != 0).then_some((&add_ref, 0)),
+                                            &mut vec![0; 3 * n * 5],
+                                            &mut vec![0x12345678; 3 * n],
+                                        );
+                                    } else {
+                                        stream_finish::<_, poulpy_cpu_rayon::RayonTaskExecutor>(
+                                            &module,
+                                            &mut VecZnxToBackendMut::<NTT3x42Ifma>::to_backend_mut(&mut got),
+                                            base2k,
+                                            k,
+                                            offset,
+                                            1,
+                                            &mut input.to_backend_mut(),
+                                            1,
+                                            (add_size != 0).then_some((&add_ref, 0)),
+                                            &mut vec![0x12345678; 3 * n],
+                                            &mut vec![0x12345678; 3 * n],
+                                        );
+                                    }
+                                    let expected_ref = expected_big.to_backend_ref();
+                                    poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_normalize_portable::<
+                                        _,
+                                        _,
+                                        NTT3x42Ifma,
+                                    >(
+                                        &mut &mut VecZnxToBackendMut::<NTT3x42Ifma>::to_backend_mut(&mut expected),
+                                        base2k,
+                                        k,
+                                        offset,
+                                        1,
+                                        &&expected_ref,
+                                        base2k,
+                                        1,
+                                        &mut vec![0x12345678; 3 * n],
+                                    );
+                                    assert_eq!(
+                                        got, expected,
+                                        "n={n}, base2k={base2k}, k={k}, offset={offset}, add_size={add_size}"
+                                    );
+                                    for limb in 0..source.size() {
+                                        assert_eq!(
+                                            packed_limb(cast_slice(source.data()), n, 2, 0, limb),
+                                            packed_limb(cast_slice(input.data()), n, 2, 0, limb),
+                                            "untouched column, limb={limb} threads={threads} nested={nested}"
+                                        );
+                                    }
+                                }
                             }
                         }
                     }
                 }
+            };
+            if nested {
+                poulpy_cpu_rayon::RayonTaskExecutor::join(
+                    || poulpy_cpu_rayon::RayonTaskExecutor::join(run, || ()),
+                    || (),
+                );
+            } else {
+                run();
             }
         });
     }

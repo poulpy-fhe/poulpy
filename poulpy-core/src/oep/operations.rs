@@ -1,7 +1,7 @@
 use crate::layouts::IntPolyInfos;
 use std::collections::HashMap;
 
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, CnvPVecRToBackendRef, Module, ScratchArena};
 
 use crate::layouts::{
     GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
@@ -87,6 +87,32 @@ pub unsafe trait GLWEMulPlainImpl: Backend {
 /// Implementations must preserve tensor layout semantics, respect the temporary-size contracts,
 /// and only touch backend-owned storage regions that belong to the supplied operands.
 pub unsafe trait GLWETensoringImpl: Backend {
+    /// Scratch required by the prepared-right tensor implementation.
+    fn glwe_tensor_apply_prepared_right_tmp_bytes<R, A>(
+        module: &Module<Self>,
+        res: &R,
+        a: &A,
+        a_size: usize,
+        b_size: usize,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos;
+
+    /// Prepared-right tensor product with the same rounding and mutation contract as the reference.
+    fn glwe_tensor_apply_prepared_right<R, A, BP>(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &A,
+        b: &BP,
+        b_size: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        A: GLWEToBackendRef<Self> + GLWEInfos,
+        BP: CnvPVecRToBackendRef<Self>;
+
     fn glwe_tensor_apply_tmp_bytes<R, A, B>(module: &Module<Self>, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,
@@ -412,6 +438,27 @@ pub unsafe trait GLWEPackImpl: GLWETraceImpl + GLWERotateImpl + GLWESubImpl + GL
 macro_rules! impl_glwe_tensoring_reference {
     ($be:ty) => {
         unsafe impl $crate::oep::GLWETensoringImpl for $be {
+            fn glwe_tensor_apply_prepared_right_tmp_bytes<R, A>(
+                module: &::poulpy_hal::layouts::Module<$be>, res: &R, a: &A, a_size: usize, b_size: usize,
+            ) -> usize
+            where
+                R: $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEInfos,
+            {
+                $crate::reference::operations::glwe_tensor_apply_prepared_right_tmp_bytes(module, res, a, a_size, b_size)
+            }
+
+            fn glwe_tensor_apply_prepared_right<R, A, BP>(
+                module: &::poulpy_hal::layouts::Module<$be>, cnv_offset: usize, res: &mut R, a: &A, b: &BP, b_size: usize,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) where
+                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be>,
+            {
+                $crate::reference::operations::glwe_tensor_apply_prepared_right(module, cnv_offset, res, a, b, b_size, scratch)
+            }
+
             fn glwe_tensor_apply_tmp_bytes<R, A, B>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res: &R,

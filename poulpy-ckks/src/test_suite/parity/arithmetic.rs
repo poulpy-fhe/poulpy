@@ -413,6 +413,60 @@ where
     assert_eq!(products(params, r), products(params, t));
 }
 
+/// Prepared, ordinary and square products at caller-selected large-ring layouts.
+pub fn test_prepared_multiplication_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR>, t: &Module<BT>)
+where
+    BR: Backend<ZnxWord = i64> + CKKSMulImpl,
+    BT: Backend<ZnxWord = i64> + CKKSMulImpl,
+    Module<BR>: GLWETensorKeyPreparedFactory<BR> + GLWEMaskFill<BR> + GLWEAdd<BR>,
+    Module<BT>: GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
+{
+    fn products<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<Snapshot>
+    where
+        B: Backend<ZnxWord = i64> + CKKSMulImpl,
+        Module<B>: GLWETensorKeyPreparedFactory<B> + GLWEMaskFill<B> + GLWEAdd<B>,
+    {
+        use super::keys::{key_layout, prepared_tensor_key};
+        let base = params.base2k;
+        let infos = layout(params, 1, 17 * base - 3, base - 1, 0, SlotsKind::Complex);
+        let key_infos = key_layout(params.n, base, infos.k().as_usize(), 4, 1, 1);
+        let key = prepared_tensor_key(module, &key_infos, 83);
+        let mut results = Vec::new();
+        for lazy in [false, true] {
+            let a = fixture_operand(module, &infos, 81, lazy);
+            let before = snapshot::<B, _>(&a);
+            let bytes =
+                B::ckks_mul_tmp_bytes_impl(module, &a, &a, &a, &key).max(B::ckks_square_tmp_bytes_impl(module, &a, &a, &key));
+            let prepared = with_scratch::<B, _>(bytes, |scratch| B::ckks_prepare_right_impl(module, &a, scratch)).unwrap();
+            let mut ordinary = fixture_operand(module, &infos, 81, lazy);
+            with_scratch::<B, _>(bytes, |scratch| {
+                B::ckks_mul_assign_impl(module, &mut ordinary, &a, &key, scratch)
+            })
+            .unwrap();
+            let expected = snapshot::<B, _>(&ordinary);
+            for _ in 0..2 {
+                let mut dst = fixture_operand(module, &infos, 81, lazy);
+                with_scratch::<B, _>(bytes, |scratch| {
+                    B::ckks_mul_prepared_assign_impl(module, &mut dst, &prepared, &key, scratch)
+                })
+                .unwrap();
+                assert_eq!(expected, snapshot::<B, _>(&dst), "prepared versus ordinary multiplication");
+            }
+            let mut square = fixture_operand(module, &infos, 81, lazy);
+            with_scratch::<B, _>(bytes, |scratch| {
+                B::ckks_square_assign_impl(module, &mut square, &key, scratch)
+            })
+            .unwrap();
+            assert_eq!(expected, snapshot::<B, _>(&square), "square versus ordinary multiplication");
+            assert_eq!(before, snapshot::<B, _>(&a), "operand modified");
+            results.push(expected);
+        }
+        results
+    }
+    let _scalar = std::marker::PhantomData::<F>;
+    assert_eq!(products(params, r), products(params, t));
+}
+
 fn rotations<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
 where
     B: Backend<ZnxWord = i64> + CKKSRotateImpl,

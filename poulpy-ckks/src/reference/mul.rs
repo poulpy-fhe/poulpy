@@ -2,8 +2,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    GLWECopy, GLWEMulConst, GLWEMulPlain, GLWENormalize, GLWETensoring, GiantStepTensorBounds, ScratchArenaTakeCore,
-    glwe_prepare_right, glwe_tensor_apply_prepared_right,
+    GLWECopy, GLWEMulConst, GLWEMulPlain, GLWENormalize, GLWETensoring, ScratchArenaTakeCore, glwe_prepare_right,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextLayout, GLWETensorViewMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         ModuleCoreAlloc, TorusPrecision,
@@ -11,7 +10,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, Convolution, ModuleN, VecZnxCopy},
-    layouts::{Backend, CnvPVecROwned, PrepareHint, ScratchArena},
+    layouts::{Backend, PrepareHint, ScratchArena},
 };
 
 use crate::SlotsKind;
@@ -49,6 +48,7 @@ pub trait CKKSMulReference<BE: Backend> {
         let lvl_0 = self.glwe_tensor_bytes_of_from_infos(&tensor_layout);
         let lvl_1 = self
             .glwe_tensor_apply_tmp_bytes(&tensor_layout, a, b)
+            .max(self.glwe_tensor_apply_prepared_right_tmp_bytes(&tensor_layout, a, a.size(), b.size()))
             .max(self.glwe_tensor_relinearize_tmp_bytes(res, &tensor_layout, tsk));
 
         lvl_0 + lvl_1
@@ -159,13 +159,31 @@ pub trait CKKSMulReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWETensoring<BE> + GiantStepTensorBounds<BE>,
+        Self: GLWETensoring<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
-        ckks_mul_prepared_assign_with_tensor(self, dst, prepared, tsk, scratch, |offset, tensor, a, b, b_size, scratch| {
-            glwe_tensor_apply_prepared_right(self, offset, tensor, a, b, b_size, scratch);
-        })
+        let (res_log_budget, res_log_delta, cnv_offset, tensor_k) = get_mul_prepared_params(&*dst, prepared)?;
+
+        // Size the intermediate from the right operand's `k` rather than
+        // its full `max_k`: the tensor product only consumes the top `k`
+        // limbs (via the prepared operand).
+        tensor_mul_core(
+            self,
+            dst,
+            tsk,
+            tensor_k,
+            MulStamp {
+                log_budget: res_log_budget,
+                log_delta: res_log_delta,
+                // The product of values sparse at `s` and `t` is sparse at `min(s, t)`.
+                log_sparsity: Some(dst.log_sparsity().min(prepared.log_sparsity)),
+                slots: Some(dst.slots().join(prepared.slots)),
+            },
+            StampOrder::AfterApply,
+            scratch,
+            |tmp, dst_ref, s| self.glwe_tensor_apply_prepared_right(cnv_offset, tmp, dst_ref, &prepared.prep, prepared.size, s),
+        )
     }
 
     fn ckks_square_tmp_bytes_reference<R, A, T>(&self, res: &R, a: &A, tsk: &T) -> usize
@@ -468,45 +486,6 @@ where
     }
     module.glwe_tensor_relinearize(dst, &tmp, tsk, &mut scratch_local);
     Ok(())
-}
-
-/// Multiplies by a prepared operand with a backend-selected tensor product.
-/// Validation, metadata updates and relinearization retain the reference semantics.
-pub fn ckks_mul_prepared_assign_with_tensor<BE, M, Dst, T>(
-    module: &M,
-    dst: &mut Dst,
-    prepared: &CKKSPreparedRight<BE>,
-    tsk: &T,
-    scratch: &mut ScratchArena<'_, BE>,
-    apply: impl for<'t> FnOnce(usize, &mut GLWETensorViewMut<'t, BE>, &Dst, &CnvPVecROwned<BE>, usize, &mut ScratchArena<'t, BE>),
-) -> Result<()>
-where
-    BE: Backend,
-    M: GLWETensoring<BE> + ?Sized,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-    T: GetTensorKey<BE>,
-{
-    let (res_log_budget, res_log_delta, cnv_offset, tensor_k) = get_mul_prepared_params(&*dst, prepared)?;
-
-    // Size the intermediate from the right operand's `k` rather than
-    // its full `max_k`: the tensor product only consumes the top `k`
-    // limbs (via the prepared operand).
-    tensor_mul_core(
-        module,
-        dst,
-        tsk,
-        tensor_k,
-        MulStamp {
-            log_budget: res_log_budget,
-            log_delta: res_log_delta,
-            // The product of values sparse at `s` and `t` is sparse at `min(s, t)`.
-            log_sparsity: Some(dst.log_sparsity().min(prepared.log_sparsity)),
-            slots: Some(dst.slots().join(prepared.slots)),
-        },
-        StampOrder::AfterApply,
-        scratch,
-        |tmp, dst_ref, s| apply(cnv_offset, tmp, dst_ref, &prepared.prep, prepared.size, s),
-    )
 }
 
 /// Prepared operands are long-lived cached objects: reject one built under a

@@ -58,6 +58,13 @@ a family, so its `*Impl` is defined only once. Sampling is supplied through
 Preparation and decompression helpers reuse selected operations;
 see the [OEP documentation](../src/oep/mod.rs) for the available hooks and macros.
 
+Prepared-right tensor multiplication is a `GLWETensoring` operation. Its
+`glwe_tensor_apply_prepared_right_tmp_bytes` query sizes the selected implementation;
+`glwe_tensor_apply_prepared_right` preserves the left operand and prepared right
+operand. Reference free functions remain independently callable. Tensor products
+normalize diagonal and pairwise products to full output limbs before subtraction,
+then round all tensor columns to the requested precision.
+
 ## Matching the result
 
 Every OEP override must implement the same circuit as the reference

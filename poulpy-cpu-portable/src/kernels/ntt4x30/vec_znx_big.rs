@@ -51,6 +51,56 @@ use crate::{
     source::Source,
 };
 
+/// Exact same-radix normalization of materialized or streamed wide limbs.
+/// Process input limbs from least to most significant; the first step initializes carry.
+#[derive(Clone, Copy)]
+pub struct I128NormalizePlan {
+    base: usize,
+    lsh: usize,
+    padding: usize,
+    size: usize,
+    boundary: usize,
+}
+
+impl I128NormalizePlan {
+    /// Returns a plan when the rounding boundary falls inside the input.
+    pub fn new(base: usize, k: usize, offset: i64, size: usize) -> Option<Self> {
+        if !(1..=63).contains(&base) || k == 0 {
+            return None;
+        }
+        let boundary = (k.div_ceil(base) as i64 - 1).saturating_add(offset.div_euclid(base as i64));
+        (0..size as i64).contains(&boundary).then_some(Self {
+            base,
+            lsh: offset.rem_euclid(base as i64) as usize,
+            padding: (base - k % base) % base,
+            size,
+            boundary: boundary as usize,
+        })
+    }
+
+    /// Normalizes one limb and updates its coefficient-range carry.
+    /// `out` is empty for discarded limbs and otherwise matches `input` and `carry`.
+    #[inline]
+    pub fn apply<BE: I128NormalizeOps>(&self, limb: usize, out: &mut [i64], input: &[i128], carry: &mut [i128]) {
+        if limb > self.boundary {
+            match (limb + 1 == self.size, self.padding == 0 && limb == self.boundary + 1) {
+                (true, false) => BE::nfc_normalize_floor::<false, false>(self.base, self.lsh, input, carry),
+                (true, true) => BE::nfc_normalize_floor::<false, true>(self.base, self.lsh, input, carry),
+                (false, false) => BE::nfc_normalize_floor::<true, false>(self.base, self.lsh, input, carry),
+                (false, true) => BE::nfc_normalize_floor::<true, true>(self.base, self.lsh, input, carry),
+            }
+        } else if limb == self.boundary {
+            if limb + 1 < self.size {
+                BE::nfc_normalize_round::<true, true>(self.base, self.lsh, self.padding, out, input, carry);
+            } else {
+                BE::nfc_normalize_round::<false, true>(self.base, self.lsh, self.padding, out, input, carry);
+            }
+        } else {
+            BE::nfc_middle_step(self.base, self.lsh, out, input, carry);
+        }
+    }
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Private helpers: i128-typed analogues of the znx normalize primitives
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1351,7 +1401,6 @@ pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw_portable<A, BE>(
         return;
     }
     let active_size = res_k.div_ceil(res_base2k);
-    let padding = (res_base2k - res_k % res_base2k) % res_base2k;
     let input = a.to_backend_ref();
     let partial = res_k != size * res_base2k;
     if res_base2k == a_base2k
@@ -1362,29 +1411,19 @@ pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw_portable<A, BE>(
         let limb_offset = res_offset.div_euclid(res_base2k as i64);
         let boundary = (active_size as i64 - 1).saturating_add(limb_offset);
         if (0..input.size() as i64).contains(&boundary) {
-            let lsh = res_offset.rem_euclid(res_base2k as i64) as usize;
             let carry = &mut carry[..coeff_len];
+            let plan = I128NormalizePlan::new(res_base2k, res_k, res_offset, input.size()).unwrap();
             for j in (boundary as usize + 1..input.size()).rev() {
                 let source = &input.at(a_col, j)[coeff_start..coeff_start + coeff_len];
-                match (j + 1 == input.size(), padding == 0 && j == boundary as usize + 1) {
-                    (true, false) => BE::nfc_normalize_floor::<false, false>(res_base2k, lsh, source, carry),
-                    (true, true) => BE::nfc_normalize_floor::<false, true>(res_base2k, lsh, source, carry),
-                    (false, false) => BE::nfc_normalize_floor::<true, false>(res_base2k, lsh, source, carry),
-                    (false, true) => BE::nfc_normalize_floor::<true, true>(res_base2k, lsh, source, carry),
-                }
+                plan.apply::<BE>(j, &mut [], source, carry);
             }
             let source = &input.at(a_col, boundary as usize)[coeff_start..coeff_start + coeff_len];
-            if boundary as usize + 1 < input.size() {
-                BE::nfc_normalize_round::<true, true>(res_base2k, lsh, padding, res.at_mut(active_size - 1), source, carry);
-            } else {
-                BE::nfc_normalize_round::<false, true>(res_base2k, lsh, padding, res.at_mut(active_size - 1), source, carry);
-            }
+            plan.apply::<BE>(boundary as usize, res.at_mut(active_size - 1), source, carry);
             for j in (0..active_size - 1).rev() {
                 let source = j as i64 + limb_offset;
                 if source >= 0 {
-                    BE::nfc_middle_step(
-                        res_base2k,
-                        lsh,
+                    plan.apply::<BE>(
+                        source as usize,
                         res.at_mut(j),
                         &input.at(a_col, source as usize)[coeff_start..coeff_start + coeff_len],
                         carry,
