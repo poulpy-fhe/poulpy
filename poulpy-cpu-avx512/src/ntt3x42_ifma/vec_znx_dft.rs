@@ -611,7 +611,9 @@ pub(crate) fn idft_normalize_consume_ifma<R: Ring, E: poulpy_hal::execution::Tas
             module, res, res_base2k, res_k, res_offset, res_col, a, a_col, a_base2k, addend, tmp, carry,
         );
     }
-    const MIN_STREAM_DEGREE: usize = 1 << 16;
+    // Streaming ties materializing every limb at 2^16 and wins 1.1x at 2^17.
+    // Unit tests lower the threshold so the small-ring suites exercise it.
+    const MIN_STREAM_DEGREE: usize = if cfg!(test) { 1 << 8 } else { 1 << 16 };
     let n = a.n();
     assert_eq!(res.n(), n);
     if E::is_parallel()

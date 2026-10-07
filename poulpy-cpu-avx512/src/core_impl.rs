@@ -289,8 +289,14 @@ fn assert_degrees<BE: Backend, const N: usize>(module: &Module<BE>, degrees: [De
     n
 }
 
+/// Smallest ring degree where the rank-one tensor kernels, ordinary and
+/// prepared, beat the reference composition: 1.08x to 1.5x from 2^13 up to the
+/// 2^17 cap on 4 to 48 Rayon threads of a 24-core Zen 4, a tie at 2^12. Unit
+/// tests lower it so the small-ring parity suites take the fast paths.
+const RANK_ONE_TENSOR_MIN_DEGREE: usize = if cfg!(test) { 1 << 8 } else { 1 << 13 };
+
 fn rank_one_tensor_supported<R: GLWEInfos>(res: &R) -> bool {
-    res.rank().as_usize() == 1 && matches!(res.n().as_usize(), 32768 | 65536)
+    res.rank().as_usize() == 1 && res.n().as_usize() >= RANK_ONE_TENSOR_MIN_DEGREE
 }
 
 fn rank_one_tensor_work_bytes<BE: RankOneTensorDft>(
@@ -1050,14 +1056,7 @@ fn ifma_prepared_tensor<R, A, BP>(
     A: GLWEToBackendRef<NTT3x42IfmaRayon> + GLWEInfos,
     BP: CnvPVecRToBackendRef<NTT3x42IfmaRayon>,
 {
-    const MIN_DEGREE: usize = 1 << 16;
-    const MIN_LIMBS: usize = 16;
-    if res.n().as_usize() < MIN_DEGREE
-        || res.rank().as_usize() != 1
-        || a.rank().as_usize() != 1
-        || res.base2k() != a.base2k()
-        || res.size() < MIN_LIMBS
-    {
+    if !rank_one_tensor_supported(res) || a.rank().as_usize() != 1 || res.base2k() != a.base2k() {
         module.glwe_tensor_apply_prepared_right_reference(offset, res, a, b, b_size, scratch);
         return;
     }
