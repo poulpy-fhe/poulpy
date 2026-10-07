@@ -1294,6 +1294,8 @@ mod prepared_tensor_tests {
                     );
                     let bytes = module.glwe_tensor_apply_tmp_bytes(&got, &a, &b);
                     let mut scratch = ScratchOwned::<BE>::alloc(bytes);
+                    // Fresh garbage, so every limb the ordinary path fails to write differs from `expected`.
+                    module.vec_znx_fill_uniform_source_all(base, k, got.data_mut(), &mut source);
                     module.glwe_tensor_apply(offset, &mut got, &a, &b, &mut scratch.borrow());
                     assert_eq!(got, expected, "ordinary/prepared n={n} k={k} offset={offset}");
                 }
