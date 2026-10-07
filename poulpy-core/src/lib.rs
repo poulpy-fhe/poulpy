@@ -91,6 +91,7 @@ pub use reference::encryption::*;
 pub use reference::linear_transformation::*;
 pub(crate) use reference::noise::{log2_std_noise_glwe_tensor, log2_std_noise_glwe_tensor_relinearized};
 pub use reference::operations::*;
+#[allow(deprecated)]
 pub use reference::polynomial_evaluation::{BSGSOps, GiantStepTensorBounds};
 pub use scratch::*;
 pub use smudging::*;

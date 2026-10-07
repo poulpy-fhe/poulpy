@@ -2,7 +2,7 @@ use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{BSGSMeta, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta};
-use poulpy_core::{BSGSOps, GLWEPolynomialEvaluation, GLWEZero, GiantStepTensorBounds};
+use poulpy_core::{BSGSOps, GLWEPolynomialEvaluation, GLWEZero};
 use poulpy_hal::{
     api::{
         Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxRsh, VecZnxRshTmpBytes,
@@ -82,7 +82,8 @@ where
         + CKKSMulAddOps<BE>
         + CKKSCopyOps<BE>
         + GLWEZero<BE>
-        + GiantStepTensorBounds<BE>
+        + Convolution<BE>
+        + VecZnxBigNormalize<BE>
         + VecZnxRsh<BE>
         + VecZnxRshTmpBytes,
     V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
@@ -341,7 +342,8 @@ pub trait PolynomialEvaluationReference<BE: Backend> {
             + CKKSMulAddOps<BE>
             + CKKSModuleAlloc<BE>
             + CKKSCopyOps<BE>
-            + GiantStepTensorBounds<BE>
+            + Convolution<BE>
+            + VecZnxBigNormalize<BE>
             + VecZnxRsh<BE>
             + VecZnxRshTmpBytes
             + Sized,
@@ -368,7 +370,8 @@ pub trait PolynomialEvaluationReference<BE: Backend> {
             + CKKSMulAddOps<BE>
             + CKKSModuleAlloc<BE>
             + CKKSCopyOps<BE>
-            + GiantStepTensorBounds<BE>
+            + Convolution<BE>
+            + VecZnxBigNormalize<BE>
             + VecZnxRsh<BE>
             + VecZnxRshTmpBytes
             + Sized,
@@ -399,7 +402,8 @@ where
             + CKKSMulAddOps<BE>
             + CKKSModuleAlloc<BE>
             + CKKSCopyOps<BE>
-            + GiantStepTensorBounds<BE>
+            + Convolution<BE>
+            + VecZnxBigNormalize<BE>
             + VecZnxRsh<BE>
             + VecZnxRshTmpBytes
             + Sized,
@@ -480,7 +484,8 @@ where
             + CKKSMulAddOps<BE>
             + CKKSModuleAlloc<BE>
             + CKKSCopyOps<BE>
-            + GiantStepTensorBounds<BE>
+            + Convolution<BE>
+            + VecZnxBigNormalize<BE>
             + VecZnxRsh<BE>
             + VecZnxRshTmpBytes
             + Sized,
