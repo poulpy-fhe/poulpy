@@ -31,6 +31,7 @@ See [`Cargo.toml`](Cargo.toml) for the target conditions.
 ## Setup reproducibility and cost
 
 For the built-in `f32`, `f64` and `Quad` implementations, finite setup results are reproducible across supported targets for a fixed Poulpy version and resolved dependency set.
+This covers the host values (DFT diagonals, EvalMod and approximation coefficients), not encoded plaintexts: encoding goes through the backend FFT, whose twiddle tables still use platform math, so their last bits can differ between targets.
 Keep the application's `Cargo.lock`, the supported Rust toolchain and ordinary IEEE arithmetic settings when reproducing saved parameters.
 NaN payload bits are unspecified, and custom scalar implementations and user callbacks must satisfy the same portability contract themselves.
 The approximation callbacks must also be pure because Remez caches their grid samples.
