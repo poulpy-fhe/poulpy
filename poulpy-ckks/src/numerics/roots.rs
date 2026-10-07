@@ -12,7 +12,7 @@ use super::{
 };
 
 /// Base-2 logarithm of the order of the checked-in quadrant table.
-pub const TABLE_LOG_ORDER: u32 = 18;
+pub const TABLE_LOG_ORDER: u32 = 19;
 const TABLE_LEN: usize = (1 << (TABLE_LOG_ORDER - 2)) + 1;
 
 pub(super) static COS_QUADRANT_F128: &[u8; TABLE_LEN * 16] = include_bytes!("cos_quadrant_f128.bin");
