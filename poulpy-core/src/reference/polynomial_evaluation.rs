@@ -20,11 +20,12 @@ use poulpy_hal::{
 
 use crate::layouts::{GLWEToBackendMut, GLWEToBackendRef};
 
-/// HAL bounds required to run the hoisted prepared-right tensor product.
+/// Former bundle of the HAL bounds behind the prepared-right tensor product.
 ///
-/// Retained as a convenience bundle for the **scheme** implementations of
-/// [`BSGSOps::mul_prepared_assign`] (the engine itself no longer touches
-/// these primitives).
+/// The product now dispatches through
+/// [`GLWETensoring::glwe_tensor_apply_prepared_right`](crate::GLWETensoring::glwe_tensor_apply_prepared_right),
+/// so neither the BSGS engine nor its scheme implementations need these bounds.
+#[deprecated(note = "bound the module by `GLWETensoring` and the HAL operations it calls directly")]
 pub trait GiantStepTensorBounds<BE: Backend>:
     Sized
     + ModuleN
@@ -46,6 +47,7 @@ pub trait GiantStepTensorBounds<BE: Backend>:
 {
 }
 
+#[allow(deprecated)]
 impl<BE: Backend, M> GiantStepTensorBounds<BE> for M where
     M: Sized
         + ModuleN

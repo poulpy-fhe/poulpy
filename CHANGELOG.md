@@ -64,6 +64,9 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-core`
 
+- **Breaking:** `GLWETensoring` and `GLWETensoringImpl` include prepared-right tensor multiplication and its scratch query. Reference forwarding macros implement both operations through the new `GLWETensoringReference` methods `glwe_tensor_apply_prepared_right_reference` and `glwe_tensor_apply_prepared_right_tmp_bytes_reference`; CKKS prepared multiplication dispatches through Core.
+  The core tensor parity checks the prepared-right product against the reference and against the ordinary product on every backend.
+- `GiantStepTensorBounds` is deprecated: the BSGS engine and its CKKS operations no longer need it.
 - `Polynomial::chebyshev_interpolate_with_cos` interpolates with a caller-supplied cosine for the Chebyshev nodes, so that `poulpy-ckks` can make the nodes independent of the platform libm.
 - **Breaking:** the measurement methods `GGLWE::noise`, `GGSW::noise`, `FheUint::noise` and `FheUintPreparedDebug::noise` are renamed `noise_stats`.
 - `lwe_encrypt_sk_tmp_bytes` aligns each of its two big temporaries to `SCRATCH_ALIGN`, as the arena takes them, instead of their sum. The sum could fall short when the normalization scratch left no slack.
@@ -243,6 +246,11 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### CPU backends
 
+- AVX-512 rank-one tensor multiplication and squaring retain full-limb precision before pairwise subtraction and round all output columns to the requested precision. `NTT3x42IfmaRayon` specializes prepared-right Core tensor products with matching input and output radices.
+  The ordinary and prepared rank-one specializations share one gate: rank one at degree `2^13` and above, where they run 1.08x to 1.5x faster than the reference composition on 4 to 48 Rayon threads. They previously ran only at `2^15` and `2^16`.
+- `NTT3x42IfmaRayon` streams inverse transforms at degree `2^16` and above through CRT reconstruction and shared carry normalization, respects nested execution, and avoids clearing carry storage before overwriting it.
+  Limbs run in batches that fill the pool: each limb quarter is unpacked once, and each coefficient span carries through the whole batch.
+- `I128NormalizePlan` exposes `base`, `active`, `limb_offset` and `boundary`, and `apply_unchecked` for kernels that validate their spans once at entry. `I128NormalizeOps` gains the matching `nfc_normalize_floor_unchecked`, `nfc_normalize_round_unchecked` and `nfc_middle_step_unchecked`, which default to the checked forms.
 - `poulpy-cpu-oracle` derives the roots of unity independently, with Machin's formula and the Taylor series of the cosine on fixed-point integers, and checks every `poulpy-ckks` root of order `2^19` in `f32`, `f64` and `Quad`.
 - `impl_smudging_host!`, included by `impl_cpu_core_defaults!`, implements `SmudgingSamplingImpl` with `dashu-int`: an exact conditional discrete Gaussian with power-of-two scale and an exact signed uniform distribution, preserving low bits across multiple limbs. Gaussian sampling uses variable-time integer rejection.
 - Add `poulpy-cpu-oracle` (unpublished): `FFT64Oracle` and `NTT4x30Oracle`, independent scalar backends for correctness tests. They implement the required HAL primitives with direct scalar loops, independently generated transform tables and arbitrary-precision normalization, inherit every optional operation from HAL, and do not depend on `poulpy-cpu-ref` or any production kernel. Sparse operands are materialized through their degree embedding. `enable-core` registers the generic Core compositions and runs the Core suites on both oracles.

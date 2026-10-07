@@ -1,9 +1,10 @@
 //! Bounded large-ring tensor coverage for emulated CI.
 //!
 //! Native suites in `tests.rs` sweep precisions and offsets at rank one. These
-//! focused cases exercise every rank-one specialization (degree 2^15 or 2^16),
-//! with partial top limbs and both aligned and unaligned convolution offsets.
-//! Small-ring suites retain the complete rank, precision and offset sweeps.
+//! focused cases run the rank-one, prepared and streaming specializations at
+//! large degrees, with partial top limbs and both aligned and unaligned
+//! convolution offsets. Unit tests lower the specialization thresholds, so the
+//! small-ring suites take the same paths with their complete sweeps.
 
 use poulpy_core::{
     layouts::{Base2K, Degree, GLWELayout, Rank, TorusPrecision},

@@ -1002,3 +1002,15 @@ poulpy_ckks::ckks_encryption_parity_test_suite! {
     backend_test = crate::NTT3x42CIIfmaRayon,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
+
+#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
+poulpy_ckks::ckks_parity_test_suite! {
+    mod ckks_parity_ifma_prepared_large,
+    backend_ref = poulpy_cpu_avx::NTT4x30Avx,
+    backend_test = crate::NTT3x42IfmaRayon,
+    scalar = f64,
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 1 << 16, base2k: 52, rank: 1, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
+    tests = {
+        multiplication => poulpy_ckks::test_suite::parity::test_prepared_multiplication_parity,
+    }
+}

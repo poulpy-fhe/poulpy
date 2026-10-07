@@ -2,8 +2,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    GLWECopy, GLWEMulConst, GLWEMulPlain, GLWENormalize, GLWETensoring, GiantStepTensorBounds, ScratchArenaTakeCore,
-    glwe_prepare_right, glwe_tensor_apply_prepared_right,
+    GLWECopy, GLWEMulConst, GLWEMulPlain, GLWENormalize, GLWETensoring, ScratchArenaTakeCore, glwe_prepare_right,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextLayout, GLWETensorViewMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         ModuleCoreAlloc, TorusPrecision,
@@ -49,6 +48,7 @@ pub trait CKKSMulReference<BE: Backend> {
         let lvl_0 = self.glwe_tensor_bytes_of_from_infos(&tensor_layout);
         let lvl_1 = self
             .glwe_tensor_apply_tmp_bytes(&tensor_layout, a, b)
+            .max(self.glwe_tensor_apply_prepared_right_tmp_bytes(&tensor_layout, a, a.size(), b.size()))
             .max(self.glwe_tensor_relinearize_tmp_bytes(res, &tensor_layout, tsk));
 
         lvl_0 + lvl_1
@@ -159,7 +159,7 @@ pub trait CKKSMulReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWETensoring<BE> + GiantStepTensorBounds<BE>,
+        Self: GLWETensoring<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
@@ -182,7 +182,7 @@ pub trait CKKSMulReference<BE: Backend> {
             },
             StampOrder::AfterApply,
             scratch,
-            |tmp, dst_ref, s| glwe_tensor_apply_prepared_right(self, cnv_offset, tmp, dst_ref, &prepared.prep, prepared.size, s),
+            |tmp, dst_ref, s| self.glwe_tensor_apply_prepared_right(cnv_offset, tmp, dst_ref, &prepared.prep, prepared.size, s),
         )
     }
 

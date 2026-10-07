@@ -1,7 +1,7 @@
 use crate::layouts::IntPolyInfos;
 use std::collections::HashMap;
 
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, CnvPVecRToBackendRef, ScratchArena};
 
 use crate::layouts::{
     GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
@@ -156,6 +156,29 @@ pub trait GLWEMulPlain<BE: Backend> {
 /// bit of their live limbs, so an operand whose canonical flag is clear is
 /// normalized first.
 pub trait GLWETensoring<BE: Backend> {
+    /// Scratch required for a tensor product with a reusable prepared right operand.
+    /// `a_size` and `b_size` are the operands' effective limb counts.
+    fn glwe_tensor_apply_prepared_right_tmp_bytes<R, A>(&self, res: &R, a: &A, a_size: usize, b_size: usize) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos;
+
+    /// Tensor product with a right operand prepared by [`crate::glwe_prepare_right`].
+    /// Preserves both inputs and returns a canonical tensor at `res.k()`.
+    /// `b_size` is the effective limb count used to prepare `b`.
+    fn glwe_tensor_apply_prepared_right<R, A, BP>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &A,
+        b: &BP,
+        b_size: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        BP: CnvPVecRToBackendRef<BE>;
+
     fn glwe_tensor_apply_tmp_bytes<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,

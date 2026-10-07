@@ -51,6 +51,139 @@ use crate::{
     source::Source,
 };
 
+/// Exact same-radix normalization of materialized or streamed wide limbs.
+/// Process input limbs from least to most significant; the first step initializes carry.
+#[derive(Clone, Copy)]
+pub struct I128NormalizePlan {
+    base: usize,
+    lsh: usize,
+    padding: usize,
+    size: usize,
+    active: usize,
+    limb_offset: i64,
+    boundary: usize,
+}
+
+impl I128NormalizePlan {
+    /// Returns a plan when the rounding boundary falls inside the input.
+    pub fn new(base: usize, k: usize, offset: i64, size: usize) -> Option<Self> {
+        if !(1..=63).contains(&base) || k == 0 {
+            return None;
+        }
+        let active = k.div_ceil(base);
+        let limb_offset = offset.div_euclid(base as i64);
+        let boundary = (active as i64 - 1).saturating_add(limb_offset);
+        (0..size as i64).contains(&boundary).then_some(Self {
+            base,
+            lsh: offset.rem_euclid(base as i64) as usize,
+            padding: (base - k % base) % base,
+            size,
+            active,
+            limb_offset,
+            boundary: boundary as usize,
+        })
+    }
+
+    /// Output radix.
+    pub fn base(&self) -> usize {
+        self.base
+    }
+
+    /// Output limbs that carry the result, `k.div_ceil(base)`.
+    pub fn active(&self) -> usize {
+        self.active
+    }
+
+    /// Input limb `j` lands in output limb `j - limb_offset`.
+    pub fn limb_offset(&self) -> i64 {
+        self.limb_offset
+    }
+
+    /// Input limb holding the rounding boundary.
+    pub fn boundary(&self) -> usize {
+        self.boundary
+    }
+
+    /// Normalizes one limb and updates its coefficient-range carry.
+    /// `out` is empty for discarded limbs and otherwise matches `input` and `carry`.
+    #[inline]
+    pub fn apply<BE: I128NormalizeOps>(&self, limb: usize, out: &mut [i64], input: &[i128], carry: &mut [i128]) {
+        // SAFETY: the checked entry points validate every length.
+        unsafe { self.dispatch::<BE, true>(limb, out, input, carry) }
+    }
+
+    /// [`Self::apply`] without the per-call length checks.
+    ///
+    /// # Safety
+    /// `input.len() >= carry.len()`, and `out.len() == carry.len()` for limbs at
+    /// or below the boundary.
+    #[inline]
+    pub unsafe fn apply_unchecked<BE: I128NormalizeOps>(&self, limb: usize, out: &mut [i64], input: &[i128], carry: &mut [i128]) {
+        unsafe { self.dispatch::<BE, false>(limb, out, input, carry) }
+    }
+
+    #[inline(always)]
+    unsafe fn dispatch<BE: I128NormalizeOps, const CHECKED: bool>(
+        &self,
+        limb: usize,
+        out: &mut [i64],
+        input: &[i128],
+        carry: &mut [i128],
+    ) {
+        let (base, lsh, padding) = (self.base, self.lsh, self.padding);
+        unsafe {
+            if limb > self.boundary {
+                match (limb + 1 == self.size, self.padding == 0 && limb == self.boundary + 1) {
+                    (true, false) => floor::<BE, CHECKED, false, false>(base, lsh, input, carry),
+                    (true, true) => floor::<BE, CHECKED, false, true>(base, lsh, input, carry),
+                    (false, false) => floor::<BE, CHECKED, true, false>(base, lsh, input, carry),
+                    (false, true) => floor::<BE, CHECKED, true, true>(base, lsh, input, carry),
+                }
+            } else if limb == self.boundary {
+                if limb + 1 < self.size {
+                    round::<BE, CHECKED, true>(base, lsh, padding, out, input, carry);
+                } else {
+                    round::<BE, CHECKED, false>(base, lsh, padding, out, input, carry);
+                }
+            } else if CHECKED {
+                BE::nfc_middle_step(base, lsh, out, input, carry);
+            } else {
+                BE::nfc_middle_step_unchecked(base, lsh, out, input, carry);
+            }
+        }
+    }
+}
+
+#[inline(always)]
+unsafe fn floor<BE: I128NormalizeOps, const CHECKED: bool, const CARRY_IN: bool, const ROUND: bool>(
+    base: usize,
+    lsh: usize,
+    input: &[i128],
+    carry: &mut [i128],
+) {
+    if CHECKED {
+        BE::nfc_normalize_floor::<CARRY_IN, ROUND>(base, lsh, input, carry);
+    } else {
+        unsafe { BE::nfc_normalize_floor_unchecked::<CARRY_IN, ROUND>(base, lsh, input, carry) };
+    }
+}
+
+#[inline(always)]
+unsafe fn round<BE: I128NormalizeOps, const CHECKED: bool, const CARRY_IN: bool>(
+    base: usize,
+    lsh: usize,
+    padding: usize,
+    out: &mut [i64],
+    input: &[i128],
+    carry: &mut [i128],
+) {
+    if CHECKED {
+        BE::nfc_normalize_round::<CARRY_IN, true>(base, lsh, padding, out, input, carry);
+    } else {
+        unsafe { BE::nfc_normalize_round_unchecked::<CARRY_IN, true>(base, lsh, padding, out, input, carry) };
+    }
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Private helpers: i128-typed analogues of the znx normalize primitives
 // ──────────────────────────────────────────────────────────────────────────────
@@ -706,6 +839,45 @@ pub trait I128NormalizeOps: I64NormalizeOps + ZnxNormalizeMiddleStepAssign {
         }
     }
 
+    /// [`Self::nfc_normalize_floor`] for kernels that validate their spans once at entry.
+    ///
+    /// # Safety
+    /// `a.len() >= carry.len()`.
+    #[inline(always)]
+    unsafe fn nfc_normalize_floor_unchecked<const CARRY_IN: bool, const ROUND: bool>(
+        base2k: usize,
+        lsh: usize,
+        a: &[i128],
+        carry: &mut [i128],
+    ) {
+        Self::nfc_normalize_floor::<CARRY_IN, ROUND>(base2k, lsh, a, carry)
+    }
+
+    /// [`Self::nfc_normalize_round`] for kernels that validate their spans once at entry.
+    ///
+    /// # Safety
+    /// `a.len() >= res.len()` and `carry.len() >= res.len()`.
+    #[inline(always)]
+    unsafe fn nfc_normalize_round_unchecked<const CARRY_IN: bool, const PAD: bool>(
+        base2k: usize,
+        lsh: usize,
+        padding: usize,
+        res: &mut [i64],
+        a: &[i128],
+        carry: &mut [i128],
+    ) {
+        Self::nfc_normalize_round::<CARRY_IN, PAD>(base2k, lsh, padding, res, a, carry)
+    }
+
+    /// [`Self::nfc_middle_step`] for kernels that validate their spans once at entry.
+    ///
+    /// # Safety
+    /// `a.len() >= res.len()` and `carry.len() >= res.len()`.
+    #[inline(always)]
+    unsafe fn nfc_middle_step_unchecked(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
+        Self::nfc_middle_step(base2k, lsh, res, a, carry)
+    }
+
     /// Fused middle step for `res ±= normalize(a)`.  `O = AddOp` adds; `O = SubOp` subtracts.
     #[inline(always)]
     fn nfc_middle_step_into<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
@@ -1351,53 +1523,39 @@ pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw_portable<A, BE>(
         return;
     }
     let active_size = res_k.div_ceil(res_base2k);
-    let padding = (res_base2k - res_k % res_base2k) % res_base2k;
     let input = a.to_backend_ref();
     let partial = res_k != size * res_base2k;
     if res_base2k == a_base2k
         && res_base2k <= 63
         && (partial
             || crate::kernels::vec_znx::normalize_needs_exact(input.size(), a_base2k, active_size, res_base2k, res_offset))
+        && let Some(plan) = I128NormalizePlan::new(res_base2k, res_k, res_offset, input.size())
     {
-        let limb_offset = res_offset.div_euclid(res_base2k as i64);
-        let boundary = (active_size as i64 - 1).saturating_add(limb_offset);
-        if (0..input.size() as i64).contains(&boundary) {
-            let lsh = res_offset.rem_euclid(res_base2k as i64) as usize;
-            let carry = &mut carry[..coeff_len];
-            for j in (boundary as usize + 1..input.size()).rev() {
-                let source = &input.at(a_col, j)[coeff_start..coeff_start + coeff_len];
-                match (j + 1 == input.size(), padding == 0 && j == boundary as usize + 1) {
-                    (true, false) => BE::nfc_normalize_floor::<false, false>(res_base2k, lsh, source, carry),
-                    (true, true) => BE::nfc_normalize_floor::<false, true>(res_base2k, lsh, source, carry),
-                    (false, false) => BE::nfc_normalize_floor::<true, false>(res_base2k, lsh, source, carry),
-                    (false, true) => BE::nfc_normalize_floor::<true, true>(res_base2k, lsh, source, carry),
-                }
-            }
-            let source = &input.at(a_col, boundary as usize)[coeff_start..coeff_start + coeff_len];
-            if boundary as usize + 1 < input.size() {
-                BE::nfc_normalize_round::<true, true>(res_base2k, lsh, padding, res.at_mut(active_size - 1), source, carry);
-            } else {
-                BE::nfc_normalize_round::<false, true>(res_base2k, lsh, padding, res.at_mut(active_size - 1), source, carry);
-            }
-            for j in (0..active_size - 1).rev() {
-                let source = j as i64 + limb_offset;
-                if source >= 0 {
-                    BE::nfc_middle_step(
-                        res_base2k,
-                        lsh,
-                        res.at_mut(j),
-                        &input.at(a_col, source as usize)[coeff_start..coeff_start + coeff_len],
-                        carry,
-                    );
-                } else {
-                    BE::znx_extract_digit_mul_i128(res_base2k, 0, res.at_mut(j), carry);
-                }
-            }
-            for j in active_size..size {
-                res.at_mut(j).fill(0);
-            }
-            return;
+        let (boundary, limb_offset) = (plan.boundary(), plan.limb_offset());
+        let carry = &mut carry[..coeff_len];
+        for j in (boundary + 1..input.size()).rev() {
+            let source = &input.at(a_col, j)[coeff_start..coeff_start + coeff_len];
+            plan.apply::<BE>(j, &mut [], source, carry);
         }
+        let source = &input.at(a_col, boundary)[coeff_start..coeff_start + coeff_len];
+        plan.apply::<BE>(boundary, res.at_mut(active_size - 1), source, carry);
+        for j in (0..active_size - 1).rev() {
+            let source = j as i64 + limb_offset;
+            if source >= 0 {
+                plan.apply::<BE>(
+                    source as usize,
+                    res.at_mut(j),
+                    &input.at(a_col, source as usize)[coeff_start..coeff_start + coeff_len],
+                    carry,
+                );
+            } else {
+                BE::znx_extract_digit_mul_i128(res_base2k, 0, res.at_mut(j), carry);
+            }
+        }
+        for j in active_size..size {
+            res.at_mut(j).fill(0);
+        }
+        return;
     }
     let needs_exact = if a_base2k == res_base2k {
         crate::kernels::vec_znx::normalize_needs_exact(input.size(), a_base2k, active_size, res_base2k, res_offset)
