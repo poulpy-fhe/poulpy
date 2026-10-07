@@ -9,9 +9,9 @@ use poulpy_hal::{
         VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxZero,
     },
     layouts::{
-        Backend, CnvPVecLToBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, Module, PrepareHint, ScratchArena,
-        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut,
-        VecZnxToBackendRef, vec_znx_backend_ref_from_mut,
+        Backend, CnvPVecLBackendRef, CnvPVecLToBackendRef, CnvPVecRBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef,
+        Module, PrepareHint, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut,
+        VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, vec_znx_backend_ref_from_mut,
     },
 };
 
@@ -600,6 +600,53 @@ pub trait GLWETensoringReference<BE: Backend> {
         B: GLWEToBackendRef<BE> + GLWEInfos,
         BP: CnvPVecRToBackendRef<BE>,
         H: GetTensorKey<BE>;
+
+    /// The three product columns of [`Self::glwe_mul_relinearize_reference`], from prepared rank-1 operands.
+    ///
+    /// Columns 0 and 1 of `diag` receive `d0 = a0 * b0` and `d2 = a1 * b1`.
+    /// Column 0 of `cross` receives `d1 = (a0 + a1) * (b0 + b1) - d0 - d2`.
+    /// `cnv_offset_hi` is the limb offset of the convolutions.
+    fn glwe_mul_columns_reference(
+        &self,
+        cnv_offset_hi: usize,
+        diag: &mut VecZnxDftBackendMut<'_, BE>,
+        cross: &mut VecZnxDftBackendMut<'_, BE>,
+        a: &CnvPVecLBackendRef<'_, BE>,
+        b: &CnvPVecRBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+
+    /// [`Self::glwe_mul_relinearize_reference`] with the three product columns computed by `columns`.
+    ///
+    /// `columns` has the contract of [`Self::glwe_mul_columns_reference`], which a backend replaces by a fused kernel.
+    /// It receives the scratch left once the operands and the columns are allocated: a kernel that needs more than
+    /// the convolutions of the reference must have its caller size the arena above
+    /// [`Self::glwe_mul_relinearize_tmp_bytes_reference`] by that amount.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_relinearize_with_reference<R, A, B, BP, H, F>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: TorusPrecision,
+        left: Option<&A>,
+        right: GLWEMulRight<'_, B, BP>,
+        tsk: &H,
+        columns: F,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        B: GLWEToBackendRef<BE> + GLWEInfos,
+        BP: CnvPVecRToBackendRef<BE>,
+        H: GetTensorKey<BE>,
+        F: FnOnce(
+            usize,
+            &mut VecZnxDftBackendMut<'_, BE>,
+            &mut VecZnxDftBackendMut<'_, BE>,
+            &CnvPVecLBackendRef<'_, BE>,
+            &CnvPVecRBackendRef<'_, BE>,
+            &mut ScratchArena<'_, BE>,
+        );
 }
 
 impl<BE: Backend> GLWETensoringReference<BE> for Module<BE>
@@ -1084,6 +1131,63 @@ where
         BP: CnvPVecRToBackendRef<BE>,
         H: GetTensorKey<BE>,
     {
+        self.glwe_mul_relinearize_with_reference(
+            cnv_offset,
+            res,
+            res_k,
+            left,
+            right,
+            tsk,
+            |cnv_offset_hi, diag, cross, a, b, scratch| {
+                self.glwe_mul_columns_reference(cnv_offset_hi, diag, cross, a, b, scratch)
+            },
+            scratch,
+        )
+    }
+
+    fn glwe_mul_columns_reference(
+        &self,
+        cnv_offset_hi: usize,
+        diag: &mut VecZnxDftBackendMut<'_, BE>,
+        cross: &mut VecZnxDftBackendMut<'_, BE>,
+        a: &CnvPVecLBackendRef<'_, BE>,
+        b: &CnvPVecRBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) {
+        for i in 0..2 {
+            self.cnv_apply_dft(cnv_offset_hi, diag, i, a, i, b, i, scratch);
+        }
+        self.cnv_pairwise_apply_dft(cnv_offset_hi, cross, 0, a, b, 0, 1, scratch);
+        let diag_ref = poulpy_hal::layouts::vec_znx_dft_backend_ref_from_mut(diag);
+        self.vec_znx_dft_sub_assign(cross, 0, &diag_ref, 0);
+        self.vec_znx_dft_sub_assign(cross, 0, &diag_ref, 1);
+    }
+
+    fn glwe_mul_relinearize_with_reference<R, A, B, BP, H, F>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: TorusPrecision,
+        left: Option<&A>,
+        right: GLWEMulRight<'_, B, BP>,
+        tsk: &H,
+        columns: F,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        B: GLWEToBackendRef<BE> + GLWEInfos,
+        BP: CnvPVecRToBackendRef<BE>,
+        H: GetTensorKey<BE>,
+        F: FnOnce(
+            usize,
+            &mut VecZnxDftBackendMut<'_, BE>,
+            &mut VecZnxDftBackendMut<'_, BE>,
+            &CnvPVecLBackendRef<'_, BE>,
+            &CnvPVecRBackendRef<'_, BE>,
+            &mut ScratchArena<'_, BE>,
+        ),
+    {
         let n = res.n().as_usize();
         let base2k = res.base2k().as_usize();
         assert_eq!(res.rank().as_usize(), 1, "rank 1 only");
@@ -1200,7 +1304,7 @@ where
             );
         let output_size = gglwe_product_output_size::<BE, _, _, _>(&res_infos, &tensor_infos, tsk);
 
-        // `diag` holds d0 = a0 * b0 and d2 = a1 * b1, `cross` holds (a0 + a1) * (b0 + b1) then d1.
+        // `diag` holds d0 = a0 * b0 and d2 = a1 * b1, `cross` holds d1.
         let (mut diag, scratch) = scratch.take_vec_znx_dft_scratch(n, 2, dft_size);
         let (mut cross, scratch) = scratch.take_vec_znx_dft_scratch(n, 1, dft_size);
         let (mut d2_digits, mut scratch) = scratch.take_vec_znx_scratch(n, 1, dft_size);
@@ -1210,19 +1314,9 @@ where
                 GLWEMulRight::Prepared { prep, .. } => prep.to_backend_ref(),
                 _ => b_prep.to_backend_ref(),
             };
-            let mut cnv_scratch = scratch.borrow();
-            for i in 0..2 {
-                self.cnv_apply_dft(cnv_offset_hi, &mut diag, i, &a_prep, i, &b_prep, i, &mut cnv_scratch);
-            }
-            self.cnv_pairwise_apply_dft(cnv_offset_hi, &mut cross, 0, &a_prep, &b_prep, 0, 1, &mut cnv_scratch);
-        }
-        {
-            let diag_ref = diag.to_backend_ref();
-            self.vec_znx_dft_sub_assign(&mut cross, 0, &diag_ref, 0);
-            self.vec_znx_dft_sub_assign(&mut cross, 0, &diag_ref, 1);
+            columns(cnv_offset_hi, &mut diag, &mut cross, &a_prep, &b_prep, &mut scratch.borrow());
         }
 
-        // d2 goes back to digits at the alignment of the convolution output: no shift here.
         // The inverse consumes column 1 of `diag` and leaves d0 in column 0.
         self.vec_znx_idft_normalize_consume(
             &mut d2_digits,

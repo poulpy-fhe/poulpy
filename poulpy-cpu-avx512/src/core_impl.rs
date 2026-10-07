@@ -104,6 +104,23 @@ trait RankOneTensorDft: Backend {
         b: &CnvPVecRBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     );
+
+    /// Whether [`Self::rank_one_cross_dft`] is implemented.
+    const CROSS_KERNEL: bool = false;
+
+    /// The tensor product with its cross term formed in place: `d0` and `d2` into columns 0 and 1 of `diag`,
+    /// `d1` into column 0 of `cross`, within `rank_one_tensor_dft_tmp_bytes` of scratch.
+    fn rank_one_cross_dft(
+        _module: &Module<Self>,
+        _diag: &mut VecZnxDftBackendMut<'_, Self>,
+        _cross: &mut VecZnxDftBackendMut<'_, Self>,
+        _cnv_offset: usize,
+        _a: &CnvPVecLBackendRef<'_, Self>,
+        _b: &CnvPVecRBackendRef<'_, Self>,
+        _scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        unreachable!("no cross kernel for this backend")
+    }
 }
 
 #[cfg(feature = "enable-ifma")]
@@ -232,6 +249,26 @@ where
             )
         };
     }
+
+    const CROSS_KERNEL: bool = true;
+
+    fn rank_one_cross_dft(
+        _module: &Module<Self>,
+        diag: &mut VecZnxDftBackendMut<'_, Self>,
+        cross: &mut VecZnxDftBackendMut<'_, Self>,
+        cnv_offset: usize,
+        a: &CnvPVecLBackendRef<'_, Self>,
+        b: &CnvPVecRBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let bytes = Self::rank_one_tensor_dft_tmp_bytes(diag.size(), a.size(), b.size());
+        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
+        unsafe {
+            super::ntt3x42_ifma::convolution::cnv_tensor_rank1_cross_dft_ifma::<_, poulpy_hal::execution::SerialTaskExecutor>(
+                diag, cross, cnv_offset, a, b, tmp,
+            )
+        };
+    }
 }
 
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
@@ -268,6 +305,36 @@ where
         unsafe {
             super::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma::<_, super::ntt3x42_ifma::NTT3x42IfmaRayonExecutor>(
                 &mut super::ntt3x42_ifma::rayon::base_dft_mut::<R>(res),
+                cnv_offset,
+                &super::ntt3x42_ifma::rayon::base_cnv_l_ref::<R>(a),
+                &super::ntt3x42_ifma::rayon::base_cnv_r_ref::<R>(b),
+                tmp,
+            )
+        };
+    }
+
+    const CROSS_KERNEL: bool = true;
+
+    fn rank_one_cross_dft(
+        _module: &Module<Self>,
+        diag: &mut VecZnxDftBackendMut<'_, Self>,
+        cross: &mut VecZnxDftBackendMut<'_, Self>,
+        cnv_offset: usize,
+        a: &CnvPVecLBackendRef<'_, Self>,
+        b: &CnvPVecRBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let per_worker = super::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma_tmp_bytes(diag.size(), a.size(), b.size());
+        let bytes = poulpy_cpu_rayon::workers_within(
+            <Self as poulpy_hal::execution::ScratchWorkers>::APPLY,
+            per_worker,
+            scratch.available(),
+        ) * per_worker;
+        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
+        unsafe {
+            super::ntt3x42_ifma::convolution::cnv_tensor_rank1_cross_dft_ifma::<_, super::ntt3x42_ifma::NTT3x42IfmaRayonExecutor>(
+                &mut super::ntt3x42_ifma::rayon::base_dft_mut::<R>(diag),
+                &mut super::ntt3x42_ifma::rayon::base_dft_mut::<R>(cross),
                 cnv_offset,
                 &super::ntt3x42_ifma::rayon::base_cnv_l_ref::<R>(a),
                 &super::ntt3x42_ifma::rayon::base_cnv_r_ref::<R>(b),
@@ -796,7 +863,13 @@ macro_rules! impl_rank_one_tensoring {
                 R: GLWEInfos,
                 B: GGLWEInfos,
             {
-                module.glwe_mul_relinearize_tmp_bytes_reference(res, a_size, b_size, tensor_k, tsk)
+                let reference = module.glwe_mul_relinearize_tmp_bytes_reference(res, a_size, b_size, tensor_k, tsk);
+                if <$be as RankOneTensorDft>::CROSS_KERNEL && rank_one_tensor_supported(res) {
+                    // The kernel runs where the reference runs its convolutions: its scratch is added whole.
+                    reference + <$be as RankOneTensorDft>::rank_one_tensor_dft_tmp_bytes(a_size + b_size, a_size, b_size)
+                } else {
+                    reference
+                }
             }
 
             fn glwe_mul_relinearize<R, A, B, BP, T>(
@@ -815,7 +888,26 @@ macro_rules! impl_rank_one_tensoring {
                 BP: poulpy_hal::layouts::CnvPVecRToBackendRef<$be>,
                 T: poulpy_core::layouts::GetTensorKey<$be>,
             {
-                module.glwe_mul_relinearize_reference(cnv_offset, res, res_k, left, right, tsk, scratch)
+                if !(<$be as RankOneTensorDft>::CROSS_KERNEL && rank_one_tensor_supported(res)) {
+                    return module.glwe_mul_relinearize_reference(cnv_offset, res, res_k, left, right, tsk, scratch);
+                }
+                module.glwe_mul_relinearize_with_reference(
+                    cnv_offset,
+                    res,
+                    res_k,
+                    left,
+                    right,
+                    tsk,
+                    |cnv_offset_hi, diag, cross, a, b, scratch| {
+                        // The kernel reads two dense columns of the degree of the product.
+                        if b.n() == diag.n() && b.cols() >= 2 {
+                            <$be as RankOneTensorDft>::rank_one_cross_dft(module, diag, cross, cnv_offset_hi, a, b, scratch)
+                        } else {
+                            module.glwe_mul_columns_reference(cnv_offset_hi, diag, cross, a, b, scratch)
+                        }
+                    },
+                    scratch,
+                )
             }
         }
     };
@@ -1254,6 +1346,122 @@ mod relinearize_tests {
     check_relinearize!(consume_relinearize_serial, NTT3x42Ifma);
     #[cfg(feature = "enable-rayon")]
     check_relinearize!(consume_relinearize_parallel, NTT3x42IfmaRayon);
+
+    /// The one-pass product of the backend against the shared reference, each within its own scratch query.
+    /// Degree 256 takes the fallback and degree 65536 the fused kernel.
+    macro_rules! check_mul_relinearize {
+        ($name:ident, $be:ty) => {
+            #[test]
+            fn $name() {
+                use poulpy_core::GLWEMulRight;
+                use poulpy_hal::layouts::CnvPVecROwned;
+                for n in [256usize, 65536] {
+                    let module = Module::<$be>::new(n as u64);
+                    let mut source = Source::new([43; 32]);
+                    let base2k = 52usize;
+                    let layout = GLWELayout {
+                        n: n.into(),
+                        base2k: base2k.into(),
+                        k: 415usize.into(),
+                        rank: 1usize.into(),
+                    };
+                    let size = 415usize.div_ceil(base2k);
+                    for dsize in [1usize, 4] {
+                        let key_layout = GLWETensorKeyLayout {
+                            n: n.into(),
+                            base2k: base2k.into(),
+                            dsize: dsize.into(),
+                            dnum: 8usize.div_ceil(dsize).into(),
+                            k_aux: (base2k * dsize + n.ilog2() as usize).into(),
+                            rank: 1usize.into(),
+                        };
+                        let mut key = module.glwe_tensor_key_alloc_from_infos(&key_layout);
+                        for row in 0..key.dnum().as_usize() {
+                            for col in 0..key.rank_in().as_usize() {
+                                let mut view = GGLWEAtBackendMut::<$be>::at_backend_mut(&mut key, row, col);
+                                let key_k = view.size() * base2k;
+                                for out in 0..view.rank().as_usize() + 1 {
+                                    module.vec_znx_fill_uniform_source(base2k, key_k, view.data_mut(), out, &mut source);
+                                }
+                            }
+                        }
+                        let mut prepared = module.alloc_tensor_key_prepared_from_infos(&key_layout);
+                        let mut prep_scratch = ScratchOwned::<$be>::alloc(module.prepare_tensor_key_tmp_bytes(&key_layout));
+                        module.prepare_tensor_key(&mut prepared, &key, &mut prep_scratch.borrow());
+
+                        let mut x = module.glwe_alloc_from_infos(&layout);
+                        let mut y = module.glwe_alloc_from_infos(&layout);
+                        let fill_k = x.size() * base2k;
+                        module.vec_znx_fill_uniform_source_all(base2k, fill_k, x.data_mut(), &mut source);
+                        module.vec_znx_fill_uniform_source_all(base2k, fill_k, y.data_mut(), &mut source);
+
+                        for cnv_offset in [base2k, 233, 415] {
+                            // Role 0 is a product, role 1 reads its left operand from the destination, role 2 is a squaring.
+                            for role in 0..3 {
+                                let mut got = module.glwe_alloc_from_infos(&layout);
+                                let mut expected = module.glwe_alloc_from_infos(&layout);
+                                for out in [&mut got, &mut expected] {
+                                    let mut same = Source::new([44; 32]);
+                                    module.vec_znx_fill_uniform_source_all(base2k, fill_k, out.data_mut(), &mut same);
+                                }
+                                let mut scratch = ScratchOwned::<$be>::alloc(module.glwe_mul_relinearize_tmp_bytes(
+                                    &layout,
+                                    size,
+                                    size,
+                                    layout.k,
+                                    &key_layout,
+                                ));
+                                let mut reference_scratch = ScratchOwned::<$be>::alloc(
+                                    module.glwe_mul_relinearize_tmp_bytes_reference(&layout, size, size, layout.k, &key_layout),
+                                );
+                                macro_rules! operands {
+                                    () => {
+                                        (
+                                            Some(&x).filter(|_| role != 1),
+                                            match role {
+                                                2 => GLWEMulRight::Left,
+                                                _ => GLWEMulRight::<_, CnvPVecROwned<$be>>::Operand(&y),
+                                            },
+                                        )
+                                    };
+                                }
+                                let (left, right) = operands!();
+                                module.glwe_mul_relinearize(
+                                    cnv_offset,
+                                    &mut got,
+                                    layout.k,
+                                    left,
+                                    right,
+                                    &prepared,
+                                    &mut scratch.borrow(),
+                                );
+                                let (left, right) = operands!();
+                                module.glwe_mul_relinearize_reference(
+                                    cnv_offset,
+                                    &mut expected,
+                                    layout.k,
+                                    left,
+                                    right,
+                                    &prepared,
+                                    &mut reference_scratch.borrow(),
+                                );
+                                assert_eq!(
+                                    got, expected,
+                                    "n={n}, dsize={dsize}, cnv_offset={cnv_offset}, role={role}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        };
+    }
+    check_mul_relinearize!(mul_relinearize_serial, NTT3x42Ifma);
+    check_mul_relinearize!(mul_relinearize_ci_serial, NTT3x42CIIfma);
+    #[cfg(feature = "enable-rayon")]
+    check_mul_relinearize!(mul_relinearize_parallel, NTT3x42IfmaRayon);
+    #[cfg(feature = "enable-rayon")]
+    check_mul_relinearize!(mul_relinearize_ci_parallel, NTT3x42CIIfmaRayon);
 }
 
 #[cfg(all(test, feature = "enable-ifma", feature = "enable-rayon"))]

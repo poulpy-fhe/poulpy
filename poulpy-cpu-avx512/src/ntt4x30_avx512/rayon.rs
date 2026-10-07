@@ -66,11 +66,6 @@ fn base_znx_ref<'a, R: Ring>(a: &'a VecZnxBackendRef<'_, NTT4x30Avx512Rayon<R>>)
     VecZnx::from_shape(&**a.data(), a.shape())
 }
 
-fn base_znx_mut<'a, R: Ring>(a: &'a mut VecZnxBackendMut<'_, NTT4x30Avx512Rayon<R>>) -> VecZnxBackendMut<'a, NTT4x30Avx512<R>> {
-    let shape = a.shape();
-    VecZnx::from_shape(&mut **a.data_mut(), shape)
-}
-
 fn base_scalar_ref<'a, R: Ring>(
     a: &'a ScalarZnxBackendRef<'_, NTT4x30Avx512Rayon<R>>,
 ) -> ScalarZnxBackendRef<'a, NTT4x30Avx512<R>> {
@@ -1296,8 +1291,9 @@ unsafe impl<R: Ring> HalVecZnxDftImpl for NTT4x30Avx512Rayon<R>
 where
     NTT4x30Avx512<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + ZnxAutomorphism,
 {
-    fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
-        NTT4x30Avx512::<R>::vec_znx_idft_normalize_consume_tmp_bytes(base_module(module), res_size, a_size)
+    fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<Self>, _res_size: usize, a_size: usize) -> usize {
+        let workers = poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::IDFT).min(a_size.max(1));
+        workers * 4 * module.n() * size_of::<u64>() + 3 * module.n() * size_of::<i128>()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1314,39 +1310,43 @@ where
         addend: Option<(&VecZnxBackendRef<'_, Self>, usize)>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut base_res = base_znx_mut::<R>(res);
-        let mut base_a = base_dft_mut::<R>(a);
-        let mut base_scratch = scratch.borrow().into_backend::<NTT4x30Avx512<R>>();
+        let n = a.n();
+        poulpy_hal::layouts::check_degree::<NTT4x30Avx512<R>>(module.n(), n);
+        assert_eq!(res.n(), n, "vec_znx_idft_normalize_consume: res.n():{} != a.n():{n}", res.n());
+        let cols = a.cols();
+        let size = a.size();
+        let per_worker = 4 * n;
+        // The carry is taken first: a short arena lowers the worker count, never the carry.
+        let (carry, arena) = crate::hal_impl::take_host_typed::<Self, i128>(scratch.borrow(), 3 * n);
+        let workers = poulpy_cpu_rayon::workers_within(
+            size.clamp(1, <Self as poulpy_hal::execution::ScratchWorkers>::IDFT),
+            per_worker * size_of::<u64>(),
+            arena.available(),
+        );
+        let (worker_tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(arena, workers * per_worker);
+
+        // Tasks replace distinct limbs of the column by their coefficients.
+        let base = base_module(module);
+        let data = SendPtr::new(cast_slice_mut::<_, u32>(a.raw_mut()).as_mut_ptr());
+        RayonTaskExecutor::for_each_chunked(size, worker_tmp, per_worker, |tmp, limb| {
+            let slot = unsafe { std::slice::from_raw_parts_mut(data.get().add(4 * n * (limb * cols + a_col)), 4 * n) };
+            super::vec_znx_dft::idft_compact_limb(base, n, slot, tmp);
+        });
+
+        let a_shape = a.shape();
         if let Some((add, add_col)) = addend {
-            let base_add = base_znx_ref::<R>(add);
-            NTT4x30Avx512::<R>::vec_znx_idft_normalize_consume(
-                base_module(module),
-                &mut base_res,
-                res_base2k,
-                res_k,
-                res_offset,
-                res_col,
-                &mut base_a,
-                a_col,
-                a_base2k,
-                Some((&base_add, add_col)),
-                &mut base_scratch,
-            );
-        } else {
-            NTT4x30Avx512::<R>::vec_znx_idft_normalize_consume(
-                base_module(module),
-                &mut base_res,
-                res_base2k,
-                res_k,
-                res_offset,
-                res_col,
-                &mut base_a,
-                a_col,
-                a_base2k,
-                None,
-                &mut base_scratch,
-            );
+            let mut big: VecZnxBigBackendMut<'_, NTT4x30Avx512<R>> = VecZnxBig::from_shape(&mut **a.data_mut(), a_shape);
+            let mut big_ref = &mut big;
+            poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign_portable::<
+                _,
+                _,
+                NTT4x30Avx512<R>,
+            >(&mut big_ref, a_col, &base_znx_ref::<R>(add), add_col);
         }
+        let big_ref: poulpy_hal::layouts::VecZnxBigBackendRef<'_, NTT4x30Avx512<R>> = VecZnxBig::from_shape(&**a.data(), a_shape);
+        poulpy_cpu_rayon::normalize::ntt4x30_vec_znx_big_normalize_par::<NTT4x30Avx512<R>, Self>(
+            res, res_base2k, res_k, res_offset, res_col, &big_ref, a_base2k, a_col, carry,
+        );
     }
     fn vec_znx_dft_apply(
         module: &Module<Self>,
