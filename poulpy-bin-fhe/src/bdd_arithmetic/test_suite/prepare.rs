@@ -90,7 +90,7 @@ pub fn test_bdd_prepare<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = AlignedBu
 
     for row in 0..c_enc_prep_debug.dnum().as_usize() {
         for col in 0..c_enc_prep_debug.rank().as_usize() + 1 {
-            let stats: Vec<Stats> = c_enc_prep_debug.noise(module, row, col, value, sk_glwe_prep, &mut scratch.borrow());
+            let stats: Vec<Stats> = c_enc_prep_debug.noise_stats(module, row, col, value, sk_glwe_prep, &mut scratch.borrow());
             for (i, stat) in stats.iter().enumerate() {
                 let noise_have: f64 = stat.std().log2();
                 let noise_max: f64 = max_noise(col);
