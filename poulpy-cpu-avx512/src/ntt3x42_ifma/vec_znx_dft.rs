@@ -1419,8 +1419,10 @@ mod finish_tests {
         rayon::ThreadPoolBuilder::new().num_threads(threads).build().unwrap().install(|| {
             let run = || {
                 for &n in degrees {
-                    let module = Module::<NTT3x42Ifma>::new((n * 2) as u64);
-                    let host = Module::<HostBytesBackend>::new((n * 2) as u64);
+                    // Operands sit below the module degree when the cap leaves room.
+                    let module_n = (n as u64 * 2).min(poulpy_hal::layouts::MAX_RING_DEGREE);
+                    let module = Module::<NTT3x42Ifma>::new(module_n);
+                    let host = Module::<HostBytesBackend>::new(module_n);
                     for base2k in [1usize, 17, 52, 63] {
                         if n >= 65536 && base2k != 52 {
                             continue;
