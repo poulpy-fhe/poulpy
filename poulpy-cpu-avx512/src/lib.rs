@@ -163,12 +163,13 @@ mod vec_znx_big_avx512;
 #[cfg(feature = "enable-ifma")]
 mod ntt3x42_ifma;
 
-#[cfg(all(feature = "enable-avx512f", feature = "enable-ckks"))]
-pub use fft64::FFT64Avx512EncodingTable;
 #[cfg(all(feature = "enable-avx512f", feature = "enable-rayon"))]
 pub use fft64::FFT64Avx512Rayon;
 #[cfg(feature = "enable-avx512f")]
-pub use fft64::{FFT64Avx512, FFT64Avx512ReimTable, ReimFFTAvx512, ReimIFFTAvx512};
+pub use fft64::{FFT64Avx512, ReimFFTAvx512, ReimIFFTAvx512};
+#[cfg(all(feature = "enable-avx512f", feature = "enable-ckks"))]
+#[allow(deprecated)]
+pub use fft64::{FFT64Avx512EncodingTable, FFT64Avx512ReimTable};
 #[cfg(feature = "enable-ifma")]
 pub use ntt3x42_ifma::NTT3x42Ifma;
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]

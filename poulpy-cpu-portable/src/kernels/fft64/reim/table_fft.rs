@@ -19,7 +19,7 @@ use std::fmt::Debug;
 
 use rand_distr::num_traits::{Float, FloatConst};
 
-use crate::kernels::fft64::reim::{ReimFFTExecute, fft_portable, frac_rev_bits, platform_root};
+use crate::kernels::fft64::reim::{ReimFFTExecute, fft_portable, fft_portable_fused, frac_rev_bits, platform_root};
 use bytemuck::Zeroable;
 use poulpy_hal::{AlignedVec, alloc_aligned};
 
@@ -28,6 +28,17 @@ pub struct ReimFFTPortable;
 impl ReimFFTExecute<ReimFFTTable<f64>, f64> for ReimFFTPortable {
     fn reim_dft_execute(table: &ReimFFTTable<f64>, data: &mut [f64]) {
         fft_portable(table.m, &table.omg, data);
+    }
+}
+
+/// Forward executor of the CKKS encoding transform: [`fft_portable_fused`] at
+/// any precision.
+pub struct ReimFFTPortableFused;
+
+impl<R: Float + FloatConst + Debug + Zeroable> ReimFFTExecute<ReimFFTTable<R>, R> for ReimFFTPortableFused {
+    #[inline(always)]
+    fn reim_dft_execute(table: &ReimFFTTable<R>, data: &mut [R]) {
+        fft_portable_fused(table.m, &table.omg, data);
     }
 }
 

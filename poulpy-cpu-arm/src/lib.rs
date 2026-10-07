@@ -150,7 +150,7 @@
 //! # Versioning and stability
 //!
 //! This crate follows semantic versioning. The public API consists of the backend marker
-//! types, the `FFT64NeonReimTable` and `ReimFFT(I)Neon` FFT executors,
+//! types, the `FFT64NeonEncodingTable` CKKS transform and `ReimFFT(I)Neon` FFT executors,
 //! and their trait implementations from `poulpy_hal::oep`. All other items are
 //! implementation details subject to change without notice.
 
@@ -172,12 +172,13 @@ mod ntt4x30;
 #[cfg(all(test, feature = "enable-neon"))]
 mod tests;
 
-#[cfg(all(feature = "enable-neon", feature = "enable-ckks"))]
-pub use fft64::FFT64NeonEncodingTable;
 #[cfg(feature = "enable-rayon")]
 pub use fft64::FFT64NeonRayon;
 #[cfg(feature = "enable-neon")]
-pub use fft64::{FFT64Neon, FFT64NeonReimTable, ReimFFTNeon, ReimIFFTNeon};
+pub use fft64::{FFT64Neon, ReimFFTNeon, ReimIFFTNeon};
+#[cfg(all(feature = "enable-neon", feature = "enable-ckks"))]
+#[allow(deprecated)]
+pub use fft64::{FFT64NeonEncodingTable, FFT64NeonReimTable};
 #[cfg(feature = "enable-neon")]
 pub use ntt4x30::NTT4x30Neon;
 #[cfg(feature = "enable-rayon")]

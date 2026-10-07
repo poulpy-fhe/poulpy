@@ -19,7 +19,7 @@ use anyhow::{Result, ensure};
 use poulpy_ckks::{api::CKKSEncodingScalar, numerics::ROOT_TABLE_LOG_ORDER};
 use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
 
-use crate::kernels::fft64::reim::{ReimFFTTable, ReimIFFTTable, fft_portable_fused, ifft_portable_fused};
+use crate::kernels::fft64::reim::{ReimFFTExecute, ReimFFTPortableFused, ReimFFTTable, ReimIFFTPortableFused, ReimIFFTTable};
 
 use poulpy_ckks::reference::encoding::EncodingPermutation;
 
@@ -135,28 +135,23 @@ where
 ///
 /// Every CPU backend encodes with these twiddles and the fused butterflies of
 /// [`fft_portable_fused`](crate::kernels::fft64::reim::fft_portable_fused), so encodings
-/// are byte identical across backends. Accelerated backends wrap this table
-/// and run their own kernels on [`Self::forward`] and [`Self::inverse`].
-/// Precisions other than 24, 53 and 113 significand bits generate every root
-/// instead of reading the table, once for each of the two tables.
-pub struct EncodingFFTTable<F: CKKSEncodingScalar> {
+/// are byte identical across backends. `FWD` and `INV` run the transform:
+/// accelerated backends name their own kernels, whose multiply-adds sit at the
+/// same positions. Precisions other than 24, 53 and 113 significand bits
+/// generate every root instead of reading the table, once for each of the two
+/// tables.
+pub struct EncodingFFTTable<F: CKKSEncodingScalar, FWD = ReimFFTPortableFused, INV = ReimIFFTPortableFused> {
     fft: ReimFFTTable<F>,
     ifft: ReimIFFTTable<F>,
+    kernels: PhantomData<(FWD, INV)>,
 }
 
-impl<F: CKKSEncodingScalar> EncodingFFTTable<F> {
-    /// The forward table.
-    pub fn forward(&self) -> &ReimFFTTable<F> {
-        &self.fft
-    }
-
-    /// The inverse table.
-    pub fn inverse(&self) -> &ReimIFFTTable<F> {
-        &self.ifft
-    }
-}
-
-impl<F: CKKSEncodingScalar> NegacyclicFFTNew<F> for EncodingFFTTable<F> {
+impl<F, FWD, INV> NegacyclicFFTNew<F> for EncodingFFTTable<F, FWD, INV>
+where
+    F: CKKSEncodingScalar,
+    FWD: ReimFFTExecute<ReimFFTTable<F>, F>,
+    INV: ReimFFTExecute<ReimIFFTTable<F>, F>,
+{
     fn new(m: usize) -> Self {
         let log_order = (4 * m).trailing_zeros();
         let order = F::from_u64(1 << log_order).expect("twiddle order is representable");
@@ -179,21 +174,27 @@ impl<F: CKKSEncodingScalar> NegacyclicFFTNew<F> for EncodingFFTTable<F> {
         Self {
             fft: ReimFFTTable::new_with_roots(m, root),
             ifft: ReimIFFTTable::new_with_roots(m, root),
+            kernels: PhantomData,
         }
     }
 }
 
-impl<F: CKKSEncodingScalar> NegacyclicFFT<F> for EncodingFFTTable<F> {
+impl<F, FWD, INV> NegacyclicFFT<F> for EncodingFFTTable<F, FWD, INV>
+where
+    F: CKKSEncodingScalar,
+    FWD: ReimFFTExecute<ReimFFTTable<F>, F>,
+    INV: ReimFFTExecute<ReimIFFTTable<F>, F>,
+{
     fn m(&self) -> usize {
         self.fft.m()
     }
 
     fn fft(&self, data: &mut [F]) {
-        fft_portable_fused(self.fft.m(), self.fft.omg(), data);
+        FWD::reim_dft_execute(&self.fft, data);
     }
 
     fn ifft(&self, data: &mut [F]) {
-        ifft_portable_fused(self.ifft.m(), self.ifft.omg(), data);
+        INV::reim_dft_execute(&self.ifft, data);
     }
 }
 

@@ -30,7 +30,6 @@
 //! - `BigWord  = i64`: coefficients in the large-integer (multi-word) domain.
 //!   meaning each coefficient occupies exactly one scalar word.
 
-mod encoding;
 mod module;
 pub(crate) mod reim;
 mod znx;
@@ -40,7 +39,6 @@ use std::marker::PhantomData;
 use poulpy_hal::layouts::{Ring, Standard};
 
 pub use crate::kernels::fft64::module::FFTModuleHandle;
-pub use encoding::FFT64ReimTable;
 
 /// Portable CPU backend using f64 FFT.
 ///

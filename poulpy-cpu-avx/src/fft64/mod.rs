@@ -74,5 +74,6 @@ pub mod tests;
 #[allow(unused_imports)]
 pub use poulpy_cpu_portable::kernels::fft64::module::FFTModuleHandle;
 #[cfg(feature = "enable-ckks")]
-pub use reim::FFT64AvxEncodingTable;
-pub use reim::{FFT64AvxReimTable, ReimFFTAvx, ReimIFFTAvx};
+#[allow(deprecated)]
+pub use reim::{FFT64AvxEncodingTable, FFT64AvxReimTable};
+pub use reim::{ReimFFTAvx, ReimIFFTAvx};
