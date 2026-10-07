@@ -59,6 +59,8 @@ pub struct I128NormalizePlan {
     lsh: usize,
     padding: usize,
     size: usize,
+    active: usize,
+    limb_offset: i64,
     boundary: usize,
 }
 
@@ -68,14 +70,38 @@ impl I128NormalizePlan {
         if !(1..=63).contains(&base) || k == 0 {
             return None;
         }
-        let boundary = (k.div_ceil(base) as i64 - 1).saturating_add(offset.div_euclid(base as i64));
+        let active = k.div_ceil(base);
+        let limb_offset = offset.div_euclid(base as i64);
+        let boundary = (active as i64 - 1).saturating_add(limb_offset);
         (0..size as i64).contains(&boundary).then_some(Self {
             base,
             lsh: offset.rem_euclid(base as i64) as usize,
             padding: (base - k % base) % base,
             size,
+            active,
+            limb_offset,
             boundary: boundary as usize,
         })
+    }
+
+    /// Output radix.
+    pub fn base(&self) -> usize {
+        self.base
+    }
+
+    /// Output limbs that carry the result, `k.div_ceil(base)`.
+    pub fn active(&self) -> usize {
+        self.active
+    }
+
+    /// Input limb `j` lands in output limb `j - limb_offset`.
+    pub fn limb_offset(&self) -> i64 {
+        self.limb_offset
+    }
+
+    /// Input limb holding the rounding boundary.
+    pub fn boundary(&self) -> usize {
+        self.boundary
     }
 
     /// Normalizes one limb and updates its coefficient-range carry.
@@ -1407,36 +1433,33 @@ pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw_portable<A, BE>(
         && res_base2k <= 63
         && (partial
             || crate::kernels::vec_znx::normalize_needs_exact(input.size(), a_base2k, active_size, res_base2k, res_offset))
+        && let Some(plan) = I128NormalizePlan::new(res_base2k, res_k, res_offset, input.size())
     {
-        let limb_offset = res_offset.div_euclid(res_base2k as i64);
-        let boundary = (active_size as i64 - 1).saturating_add(limb_offset);
-        if (0..input.size() as i64).contains(&boundary) {
-            let carry = &mut carry[..coeff_len];
-            let plan = I128NormalizePlan::new(res_base2k, res_k, res_offset, input.size()).unwrap();
-            for j in (boundary as usize + 1..input.size()).rev() {
-                let source = &input.at(a_col, j)[coeff_start..coeff_start + coeff_len];
-                plan.apply::<BE>(j, &mut [], source, carry);
-            }
-            let source = &input.at(a_col, boundary as usize)[coeff_start..coeff_start + coeff_len];
-            plan.apply::<BE>(boundary as usize, res.at_mut(active_size - 1), source, carry);
-            for j in (0..active_size - 1).rev() {
-                let source = j as i64 + limb_offset;
-                if source >= 0 {
-                    plan.apply::<BE>(
-                        source as usize,
-                        res.at_mut(j),
-                        &input.at(a_col, source as usize)[coeff_start..coeff_start + coeff_len],
-                        carry,
-                    );
-                } else {
-                    BE::znx_extract_digit_mul_i128(res_base2k, 0, res.at_mut(j), carry);
-                }
-            }
-            for j in active_size..size {
-                res.at_mut(j).fill(0);
-            }
-            return;
+        let (boundary, limb_offset) = (plan.boundary(), plan.limb_offset());
+        let carry = &mut carry[..coeff_len];
+        for j in (boundary + 1..input.size()).rev() {
+            let source = &input.at(a_col, j)[coeff_start..coeff_start + coeff_len];
+            plan.apply::<BE>(j, &mut [], source, carry);
         }
+        let source = &input.at(a_col, boundary)[coeff_start..coeff_start + coeff_len];
+        plan.apply::<BE>(boundary, res.at_mut(active_size - 1), source, carry);
+        for j in (0..active_size - 1).rev() {
+            let source = j as i64 + limb_offset;
+            if source >= 0 {
+                plan.apply::<BE>(
+                    source as usize,
+                    res.at_mut(j),
+                    &input.at(a_col, source as usize)[coeff_start..coeff_start + coeff_len],
+                    carry,
+                );
+            } else {
+                BE::znx_extract_digit_mul_i128(res_base2k, 0, res.at_mut(j), carry);
+            }
+        }
+        for j in active_size..size {
+            res.at_mut(j).fill(0);
+        }
+        return;
     }
     let needs_exact = if a_base2k == res_base2k {
         crate::kernels::vec_znx::normalize_needs_exact(input.size(), a_base2k, active_size, res_base2k, res_offset)

@@ -17,6 +17,7 @@ use core::arch::x86_64::{
     _mm512_permutex2var_epi64, _mm512_set_epi64, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_slli_epi64, _mm512_srai_epi64,
     _mm512_srli_epi64, _mm512_storeu_si512, _mm512_sub_epi64,
 };
+use poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::I128NormalizePlan;
 use poulpy_hal::layouts::{
     DataView, DataViewMut, Module, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxInfos,
     ZnxView, ZnxViewMut, check_degree,
@@ -618,17 +619,10 @@ pub(crate) fn idft_normalize_consume_ifma<R: Ring, E: poulpy_hal::execution::Tas
         && n >= MIN_STREAM_DEGREE
         && res.is_dense()
         && res_base2k == a_base2k
-        && (1..=63).contains(&res_base2k)
-        && res_k > 0
         && addend.is_none_or(|(add, _)| add.n() == n)
+        && let Some(plan) = I128NormalizePlan::new(res_base2k, res_k, res_offset, a.size())
     {
-        let active = res_k.div_ceil(res_base2k);
-        let boundary = (active as i64 - 1).saturating_add(res_offset.div_euclid(res_base2k as i64));
-        if (0..a.size() as i64).contains(&boundary) {
-            return stream_finish::<R, E>(
-                module, res, res_base2k, res_k, res_offset, res_col, a, a_col, addend, tmp, carry,
-            );
-        }
+        return stream_finish::<R, E>(module, res, &plan, res_col, a, a_col, addend, tmp, carry);
     }
     idft_compact_in_place_ifma::<R, E>(module, a, a_col, addend.filter(|(add, _)| add.n() == n), tmp);
     let shape = a.shape();
@@ -667,9 +661,7 @@ pub(crate) fn idft_normalize_consume_ifma<R: Ring, E: poulpy_hal::execution::Tas
 fn stream_finish<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
     module: &Module<NTT3x42Ifma<R>>,
     res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, NTT3x42Ifma<R>>,
-    base: usize,
-    k: usize,
-    offset: i64,
+    plan: &I128NormalizePlan,
     res_col: usize,
     a: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
     a_col: usize,
@@ -677,7 +669,7 @@ fn stream_finish<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
     tmp: &mut [u64],
     carry: &mut [i128],
 ) {
-    use poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::{I128NormalizeOps, I128NormalizePlan};
+    use poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::I128NormalizeOps;
     let n = a.n();
     check_degree::<NTT3x42Ifma<R>>(module.n(), n);
     assert_eq!(R::CYCLOTOMIC_ORDER_FACTOR, 2);
@@ -685,7 +677,6 @@ fn stream_finish<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
     assert_eq!(res.n(), n);
     poulpy_hal::layouts::assert_dense(res, "stream_finish");
     assert!(res_col < res.cols() && a_col < a.cols());
-    assert!((1..=63).contains(&base) && k > 0);
     assert!(tmp.len() >= 3 * n && carry.len() >= 2 * n);
     if let Some((add, col)) = addend {
         assert_eq!(add.n(), n);
@@ -695,13 +686,8 @@ fn stream_finish<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
     let cols = a.cols();
     let output_size = res.size();
     let output_shape = res.shape();
-    let active = k.div_ceil(base);
-    assert!(active <= output_size);
-    let plan = I128NormalizePlan::new(base, k, offset, size).unwrap();
-    let limb_offset = offset.div_euclid(base as i64);
-    let boundary = (active as i64 - 1).saturating_add(limb_offset);
-    assert!((0..size as i64).contains(&boundary));
-    let boundary = boundary as usize;
+    let (base, active, limb_offset, boundary) = (plan.base(), plan.active(), plan.limb_offset(), plan.boundary());
+    assert!(active <= output_size && boundary < size);
     let first = limb_offset.max(0) as usize;
     let table = handle(module).table_intt_for(n);
     let input: &[u64] = cast_slice(a.data());
@@ -1529,9 +1515,7 @@ mod finish_tests {
                                         stream_finish::<_, poulpy_cpu_rayon::RayonTaskExecutor>(
                                             &module,
                                             &mut VecZnxToBackendMut::<NTT3x42Ifma>::to_backend_mut(&mut got),
-                                            base2k,
-                                            k,
-                                            offset,
+                                            &I128NormalizePlan::new(base2k, k, offset, input.size()).unwrap(),
                                             1,
                                             &mut input.to_backend_mut(),
                                             1,
