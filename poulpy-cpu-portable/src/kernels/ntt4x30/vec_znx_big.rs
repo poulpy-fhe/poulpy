@@ -108,22 +108,79 @@ impl I128NormalizePlan {
     /// `out` is empty for discarded limbs and otherwise matches `input` and `carry`.
     #[inline]
     pub fn apply<BE: I128NormalizeOps>(&self, limb: usize, out: &mut [i64], input: &[i128], carry: &mut [i128]) {
-        if limb > self.boundary {
-            match (limb + 1 == self.size, self.padding == 0 && limb == self.boundary + 1) {
-                (true, false) => BE::nfc_normalize_floor::<false, false>(self.base, self.lsh, input, carry),
-                (true, true) => BE::nfc_normalize_floor::<false, true>(self.base, self.lsh, input, carry),
-                (false, false) => BE::nfc_normalize_floor::<true, false>(self.base, self.lsh, input, carry),
-                (false, true) => BE::nfc_normalize_floor::<true, true>(self.base, self.lsh, input, carry),
-            }
-        } else if limb == self.boundary {
-            if limb + 1 < self.size {
-                BE::nfc_normalize_round::<true, true>(self.base, self.lsh, self.padding, out, input, carry);
+        // SAFETY: the checked entry points validate every length.
+        unsafe { self.dispatch::<BE, true>(limb, out, input, carry) }
+    }
+
+    /// [`Self::apply`] without the per-call length checks.
+    ///
+    /// # Safety
+    /// `input.len() >= carry.len()`, and `out.len() == carry.len()` for limbs at
+    /// or below the boundary.
+    #[inline]
+    pub unsafe fn apply_unchecked<BE: I128NormalizeOps>(&self, limb: usize, out: &mut [i64], input: &[i128], carry: &mut [i128]) {
+        unsafe { self.dispatch::<BE, false>(limb, out, input, carry) }
+    }
+
+    #[inline(always)]
+    unsafe fn dispatch<BE: I128NormalizeOps, const CHECKED: bool>(
+        &self,
+        limb: usize,
+        out: &mut [i64],
+        input: &[i128],
+        carry: &mut [i128],
+    ) {
+        let (base, lsh, padding) = (self.base, self.lsh, self.padding);
+        unsafe {
+            if limb > self.boundary {
+                match (limb + 1 == self.size, self.padding == 0 && limb == self.boundary + 1) {
+                    (true, false) => floor::<BE, CHECKED, false, false>(base, lsh, input, carry),
+                    (true, true) => floor::<BE, CHECKED, false, true>(base, lsh, input, carry),
+                    (false, false) => floor::<BE, CHECKED, true, false>(base, lsh, input, carry),
+                    (false, true) => floor::<BE, CHECKED, true, true>(base, lsh, input, carry),
+                }
+            } else if limb == self.boundary {
+                if limb + 1 < self.size {
+                    round::<BE, CHECKED, true>(base, lsh, padding, out, input, carry);
+                } else {
+                    round::<BE, CHECKED, false>(base, lsh, padding, out, input, carry);
+                }
+            } else if CHECKED {
+                BE::nfc_middle_step(base, lsh, out, input, carry);
             } else {
-                BE::nfc_normalize_round::<false, true>(self.base, self.lsh, self.padding, out, input, carry);
+                BE::nfc_middle_step_unchecked(base, lsh, out, input, carry);
             }
-        } else {
-            BE::nfc_middle_step(self.base, self.lsh, out, input, carry);
         }
+    }
+}
+
+#[inline(always)]
+unsafe fn floor<BE: I128NormalizeOps, const CHECKED: bool, const CARRY_IN: bool, const ROUND: bool>(
+    base: usize,
+    lsh: usize,
+    input: &[i128],
+    carry: &mut [i128],
+) {
+    if CHECKED {
+        BE::nfc_normalize_floor::<CARRY_IN, ROUND>(base, lsh, input, carry);
+    } else {
+        unsafe { BE::nfc_normalize_floor_unchecked::<CARRY_IN, ROUND>(base, lsh, input, carry) };
+    }
+}
+
+#[inline(always)]
+unsafe fn round<BE: I128NormalizeOps, const CHECKED: bool, const CARRY_IN: bool>(
+    base: usize,
+    lsh: usize,
+    padding: usize,
+    out: &mut [i64],
+    input: &[i128],
+    carry: &mut [i128],
+) {
+    if CHECKED {
+        BE::nfc_normalize_round::<CARRY_IN, true>(base, lsh, padding, out, input, carry);
+    } else {
+        unsafe { BE::nfc_normalize_round_unchecked::<CARRY_IN, true>(base, lsh, padding, out, input, carry) };
     }
 }
 
@@ -780,6 +837,45 @@ pub trait I128NormalizeOps: I64NormalizeOps + ZnxNormalizeMiddleStepAssign {
                 *c = co + get_carry_i128_portable(base2k, d_plus_c, out);
             });
         }
+    }
+
+    /// [`Self::nfc_normalize_floor`] for kernels that validate their spans once at entry.
+    ///
+    /// # Safety
+    /// `a.len() >= carry.len()`.
+    #[inline(always)]
+    unsafe fn nfc_normalize_floor_unchecked<const CARRY_IN: bool, const ROUND: bool>(
+        base2k: usize,
+        lsh: usize,
+        a: &[i128],
+        carry: &mut [i128],
+    ) {
+        Self::nfc_normalize_floor::<CARRY_IN, ROUND>(base2k, lsh, a, carry)
+    }
+
+    /// [`Self::nfc_normalize_round`] for kernels that validate their spans once at entry.
+    ///
+    /// # Safety
+    /// `a.len() >= res.len()` and `carry.len() >= res.len()`.
+    #[inline(always)]
+    unsafe fn nfc_normalize_round_unchecked<const CARRY_IN: bool, const PAD: bool>(
+        base2k: usize,
+        lsh: usize,
+        padding: usize,
+        res: &mut [i64],
+        a: &[i128],
+        carry: &mut [i128],
+    ) {
+        Self::nfc_normalize_round::<CARRY_IN, PAD>(base2k, lsh, padding, res, a, carry)
+    }
+
+    /// [`Self::nfc_middle_step`] for kernels that validate their spans once at entry.
+    ///
+    /// # Safety
+    /// `a.len() >= res.len()` and `carry.len() >= res.len()`.
+    #[inline(always)]
+    unsafe fn nfc_middle_step_unchecked(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
+        Self::nfc_middle_step(base2k, lsh, res, a, carry)
     }
 
     /// Fused middle step for `res ±= normalize(a)`.  `O = AddOp` adds; `O = SubOp` subtracts.

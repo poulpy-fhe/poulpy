@@ -728,7 +728,7 @@ fn stream_finish<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
                 // Each task owns only this span in each plane, including during CRT.
                 let planes = std::array::from_fn(|prime| std::slice::from_raw_parts(planar.get().add(prime * n + begin), len));
                 if let Some(add) = add {
-                    crt_compact_planes_unchecked::<true>(len, compact, planes, &add[begin..begin + len]);
+                    crt_compact_planes_unchecked::<true>(len, compact, planes, add.get_unchecked(begin..begin + len));
                 } else {
                     crt_compact_planes_unchecked::<false>(len, compact, planes, &[]);
                 }
@@ -738,7 +738,8 @@ fn stream_finish<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
                 } else {
                     &mut []
                 };
-                plan.apply::<NTT3x42Ifma<R>>(j, out, compact, carry);
+                // Entry checks size every span to `len`, so `out` is empty or matches `carry`.
+                plan.apply_unchecked::<NTT3x42Ifma<R>>(j, out, compact, carry);
             }
         });
     }

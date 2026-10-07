@@ -154,6 +154,33 @@ impl<R: Ring> I128NormalizeOps for NTT3x42Ifma<R> {
     #[inline(always)]
     fn nfc_middle_step(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
         assert!(a.len() >= res.len() && carry.len() >= res.len());
+        unsafe { Self::nfc_middle_step_unchecked(base2k, lsh, res, a, carry) }
+    }
+
+    #[inline(always)]
+    unsafe fn nfc_normalize_floor_unchecked<const CARRY_IN: bool, const ROUND: bool>(
+        base2k: usize,
+        lsh: usize,
+        a: &[i128],
+        carry: &mut [i128],
+    ) {
+        unsafe { crate::vec_znx_big_avx512::nfc_normalize_floor_avx512::<CARRY_IN, ROUND>(base2k, lsh, a, carry) }
+    }
+
+    #[inline(always)]
+    unsafe fn nfc_normalize_round_unchecked<const CARRY_IN: bool, const PAD: bool>(
+        base2k: usize,
+        lsh: usize,
+        padding: usize,
+        res: &mut [i64],
+        a: &[i128],
+        carry: &mut [i128],
+    ) {
+        unsafe { crate::vec_znx_big_avx512::nfc_normalize_round_avx512::<CARRY_IN, PAD>(base2k, lsh, padding, res, a, carry) }
+    }
+
+    #[inline(always)]
+    unsafe fn nfc_middle_step_unchecked(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
         if base2k <= 64 && res.len() >= 8 {
             unsafe { nfc_middle_step_avx512(base2k as u32, lsh as u32, res.len(), res, a, carry) }
         } else {

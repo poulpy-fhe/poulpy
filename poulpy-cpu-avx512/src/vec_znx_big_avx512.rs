@@ -27,7 +27,7 @@ use itertools::izip;
 use poulpy_cpu_portable::kernels::znx::{get_carry_i128_portable, get_digit_i128_portable};
 
 /// # Safety
-/// Requires AVX-512F.
+/// Requires AVX-512F and `a.len() >= carry.len()`.
 #[inline]
 #[target_feature(enable = "avx512f")]
 pub(crate) unsafe fn nfc_normalize_floor_avx512<const CARRY_IN: bool, const ROUND: bool>(
@@ -36,12 +36,12 @@ pub(crate) unsafe fn nfc_normalize_floor_avx512<const CARRY_IN: bool, const ROUN
     a: &[i128],
     carry: &mut [i128],
 ) {
-    assert!(a.len() >= carry.len());
+    debug_assert!(a.len() >= carry.len());
     unsafe { nfc_normalize_boundary_avx512::<CARRY_IN, ROUND, false, false>(base2k, lsh, 0, &mut [], a, carry) }
 }
 
 /// # Safety
-/// Requires AVX-512F.
+/// Requires AVX-512F, `a.len() >= res.len()` and `carry.len() >= res.len()`.
 #[inline]
 #[target_feature(enable = "avx512f")]
 pub(crate) unsafe fn nfc_normalize_round_avx512<const CARRY_IN: bool, const PAD: bool>(
@@ -52,7 +52,7 @@ pub(crate) unsafe fn nfc_normalize_round_avx512<const CARRY_IN: bool, const PAD:
     a: &[i128],
     carry: &mut [i128],
 ) {
-    assert!(a.len() >= res.len() && carry.len() >= res.len());
+    debug_assert!(a.len() >= res.len() && carry.len() >= res.len());
     unsafe { nfc_normalize_boundary_avx512::<CARRY_IN, false, true, PAD>(base2k, lsh, padding, res, a, carry) }
 }
 
