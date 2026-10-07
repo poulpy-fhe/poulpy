@@ -39,7 +39,7 @@ use poulpy_hal::{
     layouts::{
         Backend, CnvPVecLBackendRef, CnvPVecLToBackendRef, CnvPVecRBackendRef, CnvPVecRToBackendRef, Module, PrepareHint, Ring,
         ScratchArena, VecZnxBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
-        VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, VmpPMatBackendRef,
+        VecZnxDftToBackendRef, VmpPMatBackendRef,
     },
 };
 
@@ -396,7 +396,6 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
     BP: CnvPVecRToBackendRef<BE>,
 {
     let res_base2k = res.base2k().as_usize();
-    let res_k = res.k().as_usize();
     let full_k = res.size() * res_base2k;
     let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, in_base2k);
     let dft_size = normalize_input_limb_bound_with_offset(
@@ -446,16 +445,40 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
         in_base2k,
         &mut norm_scratch,
     );
+    rank_one_tensor_combine(module, res, &mut pairwise, &mut norm_scratch);
+}
+
+/// Writes column 1 as the pairwise product minus both diagonals, then rounds
+/// the tensor to `res.k()`. The diagonals arrive finished at full precision,
+/// so they are rounded again only when `res.k()` drops limbs.
+fn rank_one_tensor_combine<BE, R>(
+    module: &Module<BE>,
+    res: &mut R,
+    pairwise: &mut VecZnxBackendMut<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    Module<BE>: VecZnxCopy<BE> + VecZnxSubAssign<BE> + VecZnxNormalizeAssign<BE>,
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+{
+    let base2k = res.base2k().as_usize();
+    let k = res.k().as_usize();
     {
-        let mut pairwise = pairwise.to_backend_mut();
         let res_ref = res.to_backend_ref();
-        module.vec_znx_sub_assign(&mut pairwise, 0, res_ref.data(), 0);
-        module.vec_znx_sub_assign(&mut pairwise, 0, res_ref.data(), 2);
+        module.vec_znx_sub_assign(pairwise, 0, res_ref.data(), 0);
+        module.vec_znx_sub_assign(pairwise, 0, res_ref.data(), 2);
     }
-    module.vec_znx_normalize_assign(res_base2k, res_k, 0, &mut pairwise.to_backend_mut(), 0, &mut norm_scratch);
-    module.vec_znx_copy(res.to_backend_mut().data_mut(), 1, &pairwise.to_backend_ref(), 0);
-    for col in [0, 2] {
-        module.vec_znx_normalize_assign(res_base2k, res_k, 0, res.to_backend_mut().data_mut(), col, &mut norm_scratch);
+    module.vec_znx_normalize_assign(base2k, k, 0, pairwise, 0, scratch);
+    module.vec_znx_copy(
+        res.to_backend_mut().data_mut(),
+        1,
+        &poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE>(pairwise),
+        0,
+    );
+    if k < res.size() * base2k {
+        for col in [0, 2] {
+            module.vec_znx_normalize_assign(base2k, k, 0, res.to_backend_mut().data_mut(), col, scratch);
+        }
     }
 }
 
@@ -1018,7 +1041,6 @@ fn ifma_prepared_tensor<R, A, BP>(
     assert!(a_size <= a.size(), "effective input exceeds its allocation");
     assert!(scratch.available() >= poulpy_core::glwe_tensor_apply_prepared_right_tmp_bytes(module, res, a, a_size, b_size));
     let result_base = res.base2k().as_usize();
-    let result_k = res.k().as_usize();
     // Preserve the prepared product's rounding before the pairwise subtraction.
     let full_k = res.size() * result_base;
     let (mut normalized, mut work) = scratch.borrow().take_glwe_scratch(a);
@@ -1081,17 +1103,7 @@ fn ifma_prepared_tensor<R, A, BP>(
         base,
         &mut work,
     );
-    {
-        let mut pairwise = pairwise.to_backend_mut();
-        let r = res.to_backend_ref();
-        module.vec_znx_sub_assign(&mut pairwise, 0, r.data(), 0);
-        module.vec_znx_sub_assign(&mut pairwise, 0, r.data(), 2);
-    }
-    module.vec_znx_normalize_assign(result_base, result_k, 0, &mut pairwise, 0, &mut work);
-    module.vec_znx_copy(res.to_backend_mut().data_mut(), 1, &pairwise.to_backend_ref(), 0);
-    for col in [0, 2] {
-        module.vec_znx_normalize_assign(result_base, result_k, 0, res.to_backend_mut().data_mut(), col, &mut work);
-    }
+    rank_one_tensor_combine(module, res, &mut pairwise, &mut work);
 }
 
 #[cfg(all(test, feature = "enable-ifma"))]
