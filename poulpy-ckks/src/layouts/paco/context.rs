@@ -123,23 +123,15 @@ fn validate_beta_encoding<F: PaCoScalar>(plan: &PaCoPlan) -> Result<()> {
         .log_delta_bsk()
         .checked_add(plan.log_beta_budget())
         .context("PaCo beta plaintext width overflows usize")?;
-    let scale = F::from(plan.log_delta_bsk())
-        .context("PaCo beta scale exponent is not representable by the selected scalar")?
-        .ckks_exp2();
-    ensure!(
-        scale.is_finite(),
-        "PaCo beta scale 2^{} is not finite for the selected scalar",
-        plan.log_delta_bsk(),
-    );
+    let log_delta = plan.log_delta_bsk();
     let representable = if width <= 63 {
-        scale.round().to_i64().is_some()
+        F::one().ckks_quantize_i64(log_delta).is_some()
     } else {
-        scale.round().to_i128().is_some()
+        F::one().ckks_quantize(log_delta).is_some()
     };
     ensure!(
         representable,
-        "PaCo beta coefficients are not representable at scale 2^{}",
-        plan.log_delta_bsk(),
+        "PaCo beta scale 2^{log_delta} is not representable by the plaintext coefficients",
     );
     Ok(())
 }
@@ -263,12 +255,8 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
                     tile.len(),
                 );
                 let dft = plan.c2s();
-                let scale = F::from(dft.log_delta())
-                    .context("PaCo ψ mask scale exponent is not representable by the selected scalar")?
-                    .ckks_exp2();
                 ensure!(
-                    tile.iter()
-                        .any(|value| (value.re * scale).round() != <F as DiagonalArithmetic>::zero()),
+                    tile.iter().any(|value| value.re.ckks_quantize(dft.log_delta()) != Some(0)),
                     "PaCo ψ mask quantizes entirely to zero at scale 2^{}",
                     dft.log_delta(),
                 );
