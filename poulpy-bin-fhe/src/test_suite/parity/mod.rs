@@ -11,9 +11,10 @@ pub mod circuit_bootstrapping;
 pub mod lifecycle;
 
 use poulpy_core::{
-    TransferInto,
+    ComponentNoise, Distribution, TransferInto,
     layouts::{
-        GGSW, GGSWInfos, GGSWLayout, GGSWToBackendRef, GLWE, GLWEInfos, GLWELayout, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
+        GGSW, GGSWInfos, GGSWLayout, GGSWToBackendRef, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        ModuleCoreAlloc,
     },
 };
 use poulpy_hal::{
@@ -25,11 +26,12 @@ use poulpy_hal::{
 pub trait ParityBackend: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost + CopyToHost> {}
 impl<B: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost + CopyToHost>> ParityBackend for B {}
 
-/// Coefficient-domain representation including precision and allocated tails.
+/// Coefficient-domain representation including precision, noise estimate and allocated tails.
 #[derive(PartialEq, Eq)]
 pub(crate) struct GlweSnapshot {
     layout: GLWELayout,
     capacity: usize,
+    noise: Option<ComponentNoise>,
     bytes: Vec<u8>,
 }
 impl std::fmt::Debug for GlweSnapshot {
@@ -37,6 +39,7 @@ impl std::fmt::Debug for GlweSnapshot {
         f.debug_struct("GlweSnapshot")
             .field("layout", &self.layout)
             .field("capacity", &self.capacity)
+            .field("noise", &self.noise)
             .finish()
     }
 }
@@ -54,6 +57,7 @@ pub(crate) fn snapshot_glwe<B: Backend<ZnxWord = i64>, A: GLWEToBackendRef<B>>(c
     GlweSnapshot {
         layout: view.glwe_layout(),
         capacity: view.max_size(),
+        noise: view.noise(),
         bytes,
     }
 }
@@ -105,6 +109,9 @@ pub(crate) fn fixture_glwe<B: ParityBackend>(module: &Module<B>, infos: &impl GL
         &mut Source::new([seed; 32]),
     );
     canonicalize(&mut input);
+    // A fresh estimate, so an evaluation output that keeps a stale one fails the comparison.
+    let noise = ComponentNoise::from_secret_at(Distribution::TernaryProb(0.5), infos.k(), infos.rank().as_usize());
+    GLWEToBackendMut::<HostBytesBackend>::set_noise(&mut input, Some(noise));
     let mut output = module.glwe_alloc_from_infos(infos);
     input.transfer_into(&mut output);
     output

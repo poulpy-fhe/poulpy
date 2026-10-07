@@ -93,19 +93,32 @@ where
             false_layout.k = 179u32.into();
         }
         let mut right = fixture_glwe(module, &false_layout, 3);
+        let provenance = poulpy_core::ComponentNoise::from_secret_at(
+            poulpy_core::Distribution::TernaryProb(0.5),
+            layout.k,
+            layout.rank.as_usize(),
+        );
+        GLWEToBackendMut::<B>::set_noise(&mut left, Some(provenance.clone()));
+        GLWEToBackendMut::<B>::set_noise(&mut right, Some(provenance.clone()));
         if swap {
             let bytes = module.cswap_tmp_bytes(&left, &right, &bit);
             with_scratch::<B, _>(bytes, |scratch| module.cswap(&mut left, &mut right, &bit, scratch));
+            assert_eq!(left.noise(), None);
+            assert_eq!(right.noise(), None);
             outputs.push(snapshot_glwe::<B, _>(&left));
             outputs.push(snapshot_glwe::<B, _>(&right));
         } else {
             let mut out = fixture_glwe(module, &layout, 2);
+            GLWEToBackendMut::<B>::set_noise(&mut out, Some(provenance.clone()));
             let bytes = module.cmux_tmp_bytes(&out, &left, &bit);
             with_scratch::<B, _>(bytes, |scratch| match variant {
                 0 | 3 => module.cmux(&mut out, &left, &right, &bit, scratch),
                 1 => module.cmux_assign(&mut out, &right, &bit, scratch),
                 _ => module.cmux_assign_neg(&mut out, &right, &bit, scratch),
             });
+            assert_eq!(out.noise(), None);
+            assert_eq!(left.noise(), Some(provenance.clone()));
+            assert_eq!(right.noise(), Some(provenance.clone()));
             outputs.push(snapshot_glwe::<B, _>(&out));
         }
     }
@@ -354,6 +367,8 @@ where
                     with_scratch::<B, _>(module.glwe_copy_tmp_bytes(&copied, &values[0]), |s| {
                         module.glwe_copy(&mut copied, &values[0], s);
                     });
+                    // A retrieval is an evaluation: it returns the copy without the input's estimate.
+                    GLWEToBackendMut::<B>::set_noise(&mut copied, None);
                     assert_eq!(expected, snapshot_glwe::<B, _>(&copied));
                 }
                 with_scratch::<B, _>(bytes, |s| {

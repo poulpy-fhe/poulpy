@@ -2,12 +2,13 @@
 //! finalized aggregate decrypts under the ideal secret.
 
 use poulpy_core::{
-    DEFAULT_SIGMA_XE, GGLWECompressedEncryptSk, GGLWENoise, GLWECompressedEncryptSk, GLWEEncryptPk, GLWENoise,
+    ComponentNoise, DEFAULT_SIGMA_XE, Distribution, GGLWECompressedEncryptSk, GGLWENoise, GLWECompressedEncryptSk, GLWEEncryptPk,
+    GLWENoise,
     layouts::{
         GGLWE, GGLWEAtViewRef, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWE, GLWEInfos, GLWELayout, GLWEPlaintext,
         GLWEPlaintextLayout, GLWEPublicKeyPreparedFactory, GLWESecret, GLWESecretPreparedFactory, GLWESecretSampling, LWEInfos,
         ModuleCoreAlloc, TorusPrecision,
-        compressed::{GGLWECompressedSeedMut, GLWECompressedSeedMut},
+        compressed::{GGLWECompressedSeedMut, GLWECompressedSeedMut, GLWECompressedToBackendMut},
     },
 };
 use poulpy_hal::{
@@ -52,6 +53,7 @@ where
         k: K,
         rank: RANK,
     };
+
     let parties = party_secrets(module);
     let sk_ideal = ideal_secret(module, &parties);
     let pt_layout = GLWEPlaintextLayout {
@@ -94,13 +96,42 @@ where
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([10 + i as u8; 32]);
         module.glwe_compressed_encrypt_sk(dst, &pts[i], sk, SEEDS[0], &mut source_xe, &mut scratch.borrow());
-        if i > 0 {
+        if i == 1 {
+            // Backend views own their metadata snapshot, like their seeds and precision.
+            let metadata = {
+                let mut view = poulpy_core::layouts::compressed::GLWECompressedViewMut::<BE>::from_inner(
+                    GLWECompressedToBackendMut::<BE>::to_backend_mut(&mut acc),
+                );
+                module.glwe_pat_compressed_aggregate_assign(&mut view, &share);
+                super::fixtures::assert_collective_metadata(&view, i + 1);
+                view.noise()
+            };
+            super::fixtures::assert_collective_metadata(&acc, 1);
+            GLWECompressedToBackendMut::<BE>::set_noise(&mut acc, metadata);
+        } else if i > 1 {
             module.glwe_pat_compressed_aggregate_assign(&mut acc, &share);
         }
     }
 
+    // Reject inconsistent provenance before changing coefficients or metadata.
+    let before = acc.clone();
+    let mut mismatched = share.clone();
+    GLWECompressedToBackendMut::<BE>::set_noise(
+        &mut mismatched,
+        Some(ComponentNoise::from_secret_at(
+            Distribution::BinaryProb(0.5),
+            K,
+            RANK.as_usize(),
+        )),
+    );
+    super::fixtures::assert_panics_with("invalid aggregation: secret distributions differ", || {
+        module.glwe_pat_compressed_aggregate_assign(&mut acc, &mismatched);
+    });
+    assert!(acc == before);
+
     let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
     module.glwe_pat_compressed_finalize(&mut res, &acc, &mut scratch.borrow());
+    super::fixtures::assert_collective_metadata(&res, PARTIES);
     assert!(res.is_canonical());
     let noise: f64 = module
         .glwe_noise(&res, &pt_want, &sk_ideal, &mut scratch.borrow())
@@ -124,6 +155,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = gglwe_layout(module);
+
     let parties = party_secrets(module);
     let sk_ideal = ideal_secret(module, &parties);
     let messages = party_messages(module);
@@ -148,6 +180,7 @@ where
 
     let mut res: GGLWE<AlignedBuf, i64> = module.gglwe_alloc_from_infos(&layout);
     module.gglwe_pat_compressed_finalize(&mut res, &acc, &mut scratch.borrow());
+    super::fixtures::assert_collective_metadata(&res, PARTIES);
     assert_gglwe_noise(module, &res, &pt_want, &sk_ideal, &mut scratch);
 }
 
@@ -184,6 +217,7 @@ where
         base2k: BASE2K,
         k,
     };
+
     let parties = party_secrets(module);
     let sk_ideal = ideal_secret(module, &parties);
     let pk = collective_public_key(module, &parties, &pk_layout);
@@ -206,6 +240,7 @@ where
         let mut source_xm = Source::new([30 + i as u8; 32]);
         let mut source_xu = Source::new([20 + i as u8; 32]);
         let mut source_xe = Source::new([10 + i as u8; 32]);
+        let mut metadata = None;
         {
             let mut dst_be = GGLWEToBackendMut::<BE>::to_backend_mut(dst);
             for row in 0..dnum {
@@ -217,14 +252,9 @@ where
                         0,
                         &mut source_xm,
                     );
-                    module.glwe_encrypt_pk(
-                        &mut dst_be.at_view_mut(row, col),
-                        &pt,
-                        &pk,
-                        &mut source_xu,
-                        &mut source_xe,
-                        &mut scratch.borrow(),
-                    );
+                    let mut cell = dst_be.at_view_mut(row, col);
+                    module.glwe_encrypt_pk(&mut cell, &pt, &pk, &mut source_xu, &mut source_xe, &mut scratch.borrow());
+                    metadata = cell.noise();
                     module.vec_znx_add_assign(
                         &mut vec_znx_backend_mut::<BE>(pts_want[row * rank_in + col].data_mut()),
                         0,
@@ -234,9 +264,15 @@ where
                 }
             }
         }
+        GGLWEToBackendMut::<BE>::set_noise(dst, metadata);
         if i == 1 {
             // Backend borrows stand in for the owned PATs.
-            module.gglwe_pat_aggregate_assign(&mut acc.to_backend_mut(), &share.to_backend_ref());
+            let metadata = {
+                let mut view = acc.to_backend_mut();
+                module.gglwe_pat_aggregate_assign(&mut view, &share.to_backend_ref());
+                view.noise()
+            };
+            GGLWEToBackendMut::<BE>::set_noise(&mut acc, metadata);
         } else if i > 1 {
             module.gglwe_pat_aggregate_assign(&mut acc, &share);
         }
@@ -244,6 +280,7 @@ where
 
     let mut res: GGLWE<AlignedBuf, i64> = module.gglwe_alloc_from_infos(&layout);
     module.gglwe_pat_finalize(&mut res, &acc, &mut scratch.borrow());
+    super::fixtures::assert_collective_metadata(&res, PARTIES);
     // The public key test variance, times PARTIES independent encryptions.
     let n = module.n() as f64;
     let variance = 2.0 * RANK.as_usize() as f64 * n * 0.5 * (PARTIES * PARTIES) as f64 * DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
@@ -361,10 +398,12 @@ pub(crate) fn assert_gglwe_noise_within<BE, C, S>(
 {
     for row in 0..ct.dnum().as_usize() {
         for col in 0..ct.rank_in().as_usize() {
-            let noise: f64 = module
-                .gglwe_noise(ct, row, col, pt_want, sk, &mut scratch.borrow())
-                .std()
-                .log2();
+            let stats = module.gglwe_noise(ct, row, col, pt_want, sk, &mut scratch.borrow());
+            if let Some(metadata) = ct.noise() {
+                let estimate = metadata.phase_noise(ct.n().as_usize()).variance_at(0u32.into());
+                assert!(stats.second_moment() <= 2.0 * estimate, "GGLWE residual exceeds metadata");
+            }
+            let noise = stats.std().log2();
             assert!(noise <= bound, "row {row} col {col}: noise {noise} above bound {bound}");
         }
     }

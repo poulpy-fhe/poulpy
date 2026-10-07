@@ -29,6 +29,7 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
         let (mask, scratch) = scratch_1.take_vec_znx_scratch(infos.n().into(), 1, infos.size());
         (
             LWEViewMut::from_inner(LWE {
+                noise: None,
                 base2k: infos.base2k(),
                 k: infos.k(),
                 body: body.into_inner(),
@@ -64,6 +65,7 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
         let (data, scratch) = self.take_vec_znx_scratch(infos.n().into(), (infos.rank() + 1).into(), infos.size());
         (
             GLWEViewMut::from_inner(GLWE {
+                noise: None,
                 k: infos.k(),
                 base2k: infos.base2k(),
                 canonical: false,
@@ -100,6 +102,7 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
         let (data, scratch) = self.take_vec_znx_scratch(infos.n().into(), pairs, infos.size());
         (
             GLWETensorViewMut::from_inner(GLWETensor {
+                noise: None,
                 k: infos.k(),
                 base2k: infos.base2k(),
                 rank: infos.rank(),
@@ -187,6 +190,7 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
         );
         (
             GGLWEViewMut::from_inner(GGLWE {
+                noise: None,
                 k_aux: infos.k_aux(),
                 base2k: infos.base2k(),
                 dsize: infos.dsize(),
@@ -214,6 +218,7 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
         );
         (
             GGLWEPreparedViewMut::from_inner(GGLWEPrepared {
+                noise: None,
                 k_aux: infos.k_aux(),
                 base2k: infos.base2k(),
                 dsize: infos.dsize(),
@@ -240,6 +245,7 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
         );
         (
             GGSWViewMut::from_inner(GGSW {
+                noise: None,
                 k_aux: infos.k_aux(),
                 base2k: infos.base2k(),
                 dsize: infos.dsize(),
@@ -267,6 +273,7 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
         );
         (
             GGSWPreparedViewMut::from_inner(GGSWPrepared {
+                noise: None,
                 k_aux: infos.k_aux(),
                 base2k: infos.base2k(),
                 dsize: infos.dsize(),

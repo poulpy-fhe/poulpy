@@ -31,6 +31,10 @@ impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegrees for LWEToGLWEKeyCompressed<D, 
 }
 
 impl<D: Data, W: ZnxWord> LWEInfos for LWEToGLWEKeyCompressed<D, W> {
+    fn noise(&self) -> Option<crate::ComponentNoise> {
+        self.0.noise()
+    }
+
     fn n(&self) -> Degree {
         self.0.n()
     }

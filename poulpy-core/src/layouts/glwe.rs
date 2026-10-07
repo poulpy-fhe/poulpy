@@ -107,6 +107,7 @@ impl GLWEInfos for GLWELayout {
 /// normalize after writing a flag-clearing result into one.
 #[derive(Clone)]
 pub struct GLWE<D: Data, W: ZnxWord> {
+    pub(crate) noise: Option<crate::ComponentNoise>,
     pub(crate) data: VecZnx<D, W>,
     pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
@@ -118,7 +119,7 @@ where
     VecZnx<D, W>: PartialEq,
 {
     fn eq(&self, other: &Self) -> bool {
-        self.data == other.data && self.k == other.k && self.base2k == other.base2k
+        self.noise == other.noise && self.data == other.data && self.k == other.k && self.base2k == other.base2k
     }
 }
 
@@ -177,6 +178,10 @@ impl<D: Data, W: ZnxWord> GLWE<D, W> {
 }
 
 impl<D: Data, W: ZnxWord> LWEInfos for GLWE<D, W> {
+    fn noise(&self) -> Option<crate::ComponentNoise> {
+        self.noise.clone()
+    }
+
     fn base2k(&self) -> Base2K {
         self.base2k
     }
@@ -204,6 +209,7 @@ impl<D: HostDataRef, W: ZnxWord> ToOwnedDeep for GLWE<D, W> {
     type Owned = GLWE<AlignedBuf, W>;
     fn to_owned_deep(&self) -> Self::Owned {
         GLWE {
+            noise: self.noise.clone(),
             data: self.data.to_owned_deep(),
             base2k: self.base2k,
             k: self.k,
@@ -219,6 +225,7 @@ impl<D: Data, W: ZnxWord> GLWE<D, W> {
         BE: Backend<OwnedBuf = D, ZnxWord = W>,
     {
         GLWE {
+            noise: self.noise.clone(),
             data: self.data.to_host_owned::<BE>(),
             base2k: self.base2k,
             k: self.k,
@@ -244,6 +251,7 @@ impl<D: Data, W: ZnxWord> GLWE<D, W> {
         let shape = self.data.shape();
         let data = self.data.into_data();
         GLWE {
+            noise: self.noise.clone(),
             data: VecZnx::from_shape(data, shape),
             base2k: self.base2k,
             k: self.k,
@@ -286,6 +294,7 @@ impl<W: ZnxWord> GLWE<AlignedBuf, W> {
     pub(crate) fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank) -> Self {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         GLWE {
+            noise: None,
             data: VecZnx::from_data(
                 alloc_aligned::<u8>(VecZnx::<AlignedBuf, W>::bytes_of(n.into(), (rank + 1).into(), size)),
                 n.into(),
@@ -320,8 +329,14 @@ impl<W: ZnxWord> GLWE<AlignedBuf, W> {
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWE<D, W> {
     /// Deserialises a [`GLWE`] in little-endian binary format.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
-        self.set_base2k(Base2K(reader.read_u32::<LittleEndian>()?));
-        self.data.read_from(reader)?;
+        self.noise = None;
+        let components = self.data.cols();
+        let noise = crate::ComponentNoise::read_optional(reader, components)?;
+        let base2k = Base2K(reader.read_u32::<LittleEndian>()?);
+        crate::layouts::read_vec_znx_with_shape(&mut self.data, reader, None, components)?;
+        crate::layouts::validate_noise_components(noise.as_ref(), self.data.cols())?;
+        self.set_base2k(base2k);
+        self.noise = noise;
         self.canonical = true;
         Ok(())
     }
@@ -339,6 +354,8 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWE<D, W> {
                 "GLWE is not canonical: normalize it before serializing",
             ));
         }
+        crate::layouts::validate_noise_components(self.noise.as_ref(), self.data.cols())?;
+        crate::ComponentNoise::write_optional(self.noise.as_ref(), writer)?;
         writer.write_u32::<LittleEndian>(self.base2k.0)?;
         self.data.write_to(writer)
     }
@@ -358,6 +375,7 @@ where
 {
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         GLWE {
+            noise: self.noise.clone(),
             base2k: self.base2k,
             k: self.k,
             canonical: self.canonical,
@@ -368,6 +386,7 @@ where
 
 pub fn glwe_backend_ref_from_ref<'a, 'b, BE: Backend>(glwe: &'a GLWE<BE::BufRef<'b>, BE::ZnxWord>) -> GLWEBackendRef<'a, BE> {
     GLWE {
+        noise: crate::layouts::LWEInfos::noise(&glwe),
         base2k: glwe.base2k,
         k: glwe.k,
         canonical: glwe.canonical,
@@ -383,6 +402,7 @@ impl<BE: Backend> GLWEToBackendRef<BE> for &GLWE<BE::BufRef<'_>, BE::ZnxWord> {
 
 pub fn glwe_backend_ref_from_mut<'a, 'b, BE: Backend>(glwe: &'a GLWE<BE::BufMut<'b>, BE::ZnxWord>) -> GLWEBackendRef<'a, BE> {
     GLWE {
+        noise: crate::layouts::LWEInfos::noise(&glwe),
         base2k: glwe.base2k,
         k: glwe.k,
         canonical: glwe.canonical,
@@ -391,6 +411,12 @@ pub fn glwe_backend_ref_from_mut<'a, 'b, BE: Backend>(glwe: &'a GLWE<BE::BufMut<
 }
 
 pub trait GLWEToBackendMut<BE: Backend>: GLWEToBackendRef<BE> {
+    /// Backend hook for recording or propagating component noise metadata.
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
+
+    /// Borrows coefficients and copies the current layout and component noise metadata.
+    /// Metadata changed on the returned view is local to that view. Operations
+    /// that update the owner must call its `set_noise` hook.
     fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE>;
 
     /// Sets the owner's canonical flag; a flag set on the view returned by
@@ -402,8 +428,15 @@ impl<BE: Backend, D: Data> GLWEToBackendMut<BE> for GLWE<D, BE::ZnxWord>
 where
     VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE> + VecZnxToBackendMut<BE>,
 {
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        crate::layouts::validate_noise_components(metadata.as_ref(), crate::layouts::GLWEInfos::rank(self).as_usize() + 1)
+            .expect("noise component count does not match the ciphertext");
+        self.noise = metadata;
+    }
+
     fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
         GLWE {
+            noise: self.noise.clone(),
             base2k: self.base2k,
             k: self.k,
             canonical: self.canonical,
@@ -423,6 +456,12 @@ impl<BE: Backend> GLWEToBackendRef<BE> for &mut GLWE<BE::BufMut<'_>, BE::ZnxWord
 }
 
 impl<BE: Backend> GLWEToBackendMut<BE> for &mut GLWE<BE::BufMut<'_>, BE::ZnxWord> {
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        crate::layouts::validate_noise_components(metadata.as_ref(), crate::layouts::GLWEInfos::rank(self).as_usize() + 1)
+            .expect("noise component count does not match the ciphertext");
+        self.noise = metadata;
+    }
+
     fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
         glwe_backend_mut_from_mut::<BE>(self)
     }
@@ -434,6 +473,7 @@ impl<BE: Backend> GLWEToBackendMut<BE> for &mut GLWE<BE::BufMut<'_>, BE::ZnxWord
 
 pub fn glwe_backend_mut_from_mut<'a, 'b, BE: Backend>(glwe: &'a mut GLWE<BE::BufMut<'b>, BE::ZnxWord>) -> GLWEBackendMut<'a, BE> {
     GLWE {
+        noise: crate::layouts::LWEInfos::noise(&glwe),
         base2k: glwe.base2k,
         k: glwe.k,
         canonical: glwe.canonical,
@@ -441,9 +481,80 @@ pub fn glwe_backend_mut_from_mut<'a, 'b, BE: Backend>(glwe: &'a mut GLWE<BE::Buf
     }
 }
 
+impl<D: Data, W: ZnxWord> GLWE<D, W> {
+    pub(crate) fn record_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        crate::layouts::validate_noise_components(metadata.as_ref(), self.data.cols())
+            .expect("noise component count does not match the ciphertext");
+        self.noise = metadata;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mutable_backend_view_keeps_a_provenance_snapshot() {
+        use poulpy_hal::layouts::HostBytesBackend;
+        let mut glwe = GLWE::<AlignedBuf, i64>::alloc(Degree(8), Base2K(12), TorusPrecision(33), Rank(1));
+        let single = crate::ComponentNoise::from_secret(crate::Distribution::TernaryProb(0.5), 1);
+        let aggregate = single.aggregate(&single);
+        GLWEToBackendMut::<HostBytesBackend>::set_noise(&mut glwe, Some(single.clone()));
+        {
+            let mut view = GLWEToBackendMut::<HostBytesBackend>::to_backend_mut(&mut glwe);
+            assert_eq!(view.noise(), Some(single.clone()));
+            GLWEToBackendMut::<HostBytesBackend>::set_noise(&mut view, Some(aggregate.clone()));
+            assert_eq!(view.noise(), Some(aggregate.clone()));
+        }
+        assert_eq!(glwe.noise(), Some(single.clone()));
+        GLWEToBackendMut::<HostBytesBackend>::set_noise(&mut glwe, Some(aggregate.clone()));
+        assert_eq!(glwe.noise(), Some(aggregate.clone()));
+    }
+
+    #[test]
+    fn failed_rank_change_read_clears_old_metadata() {
+        use crate::{ComponentNoise, Distribution};
+        let mut source = GLWE::<AlignedBuf, i64>::alloc(Degree(8), Base2K(12), TorusPrecision(33), Rank(1));
+        source.noise = Some(ComponentNoise::from_secret_at(Distribution::TernaryProb(0.3), source.k(), 1));
+        let mut receiver = GLWE::<AlignedBuf, i64>::alloc(Degree(8), Base2K(12), TorusPrecision(33), Rank(2));
+        receiver.noise = Some(ComponentNoise::from_secret_at(
+            Distribution::TernaryProb(0.3),
+            receiver.k(),
+            2,
+        ));
+        let mut bytes = Vec::new();
+        source.write_to(&mut bytes).unwrap();
+        assert!(receiver.read_from(&mut bytes.as_slice()).is_err());
+        assert!(receiver.noise().is_none());
+        receiver.write_to(&mut Vec::new()).unwrap();
+    }
+
+    #[test]
+    fn serialization_rejects_noise_with_a_different_component_count() {
+        let mut glwe = GLWE::<AlignedBuf, i64>::alloc(Degree(8), Base2K(12), TorusPrecision(33), Rank(1));
+        let invalid = crate::ComponentNoise::from_secret_at(crate::Distribution::TernaryProb(0.5), glwe.k(), 2);
+
+        let mut no_noise = Vec::new();
+        crate::ComponentNoise::write_optional(None, &mut no_noise).unwrap();
+        let mut valid = Vec::new();
+        glwe.write_to(&mut valid).unwrap();
+        let mut invalid_stream = Vec::new();
+        crate::ComponentNoise::write_optional(Some(&invalid), &mut invalid_stream).unwrap();
+        invalid_stream.extend_from_slice(&valid[no_noise.len()..]);
+        assert_eq!(
+            glwe.read_from(&mut invalid_stream.as_slice()).unwrap_err().kind(),
+            std::io::ErrorKind::InvalidData
+        );
+        assert!(glwe.noise().is_none());
+
+        glwe.noise = Some(invalid);
+        let mut output = Vec::new();
+        assert_eq!(
+            glwe.write_to(&mut output).unwrap_err().kind(),
+            std::io::ErrorKind::InvalidData
+        );
+        assert!(output.is_empty());
+    }
 
     #[test]
     fn write_to_rejects_flag_clear_glwe() {

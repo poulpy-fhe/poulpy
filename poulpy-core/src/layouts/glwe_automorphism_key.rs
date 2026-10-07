@@ -83,6 +83,10 @@ impl<D: Data, W: ZnxWord> GLWEAutomorphismKey<D, W> {
 }
 
 impl<D: Data, W: ZnxWord> LWEInfos for GLWEAutomorphismKey<D, W> {
+    fn noise(&self) -> Option<crate::ComponentNoise> {
+        self.key.noise()
+    }
+
     fn n(&self) -> Degree {
         self.key.n()
     }
@@ -267,6 +271,7 @@ impl_glwe_host_at_for_field!(GLWEAutomorphismKey<D, W>; key);
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEAutomorphismKey<D, W> {
     /// Deserialises from little-endian binary format.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
+        self.key.noise = None;
         self.p = reader.read_u64::<LittleEndian>()? as i64;
         self.key.read_from(reader)
     }
@@ -275,6 +280,10 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEAutomorphismKey<D, W> {
 impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWEAutomorphismKey<D, W> {
     /// Serialises in little-endian binary format.
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
+        if let Some(noise) = &self.key.noise {
+            noise.validate_wire()?;
+            noise.validate_components(self.key.data.cols_out())?;
+        }
         writer.write_u64::<LittleEndian>(self.p as u64)?;
         self.key.write_to(writer)
     }

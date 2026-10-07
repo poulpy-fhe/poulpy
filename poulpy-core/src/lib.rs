@@ -74,9 +74,11 @@
 //! | scratch | Arena-style scratch allocation for ciphertext temporaries |
 
 pub mod api;
+mod component_noise;
 mod delegates;
 mod dist;
 pub mod error;
+mod fresh_noise_model;
 mod noise_distribution;
 pub mod oep;
 pub mod reference;
@@ -85,8 +87,10 @@ mod utils;
 
 pub mod layouts;
 pub use api::*;
+pub use component_noise::{ComponentNoise, FreshNoiseEstimate, SecretDistribution};
 pub use dist::*;
 pub use error::{CoreError, Result};
+pub use fresh_noise_model::{PublicKeyBodyNoise, PublicKeyEncryptionPlan, public_key_encryption_plan};
 pub use noise_distribution::Noise;
 pub use reference::encryption::*;
 pub use reference::linear_transformation::*;

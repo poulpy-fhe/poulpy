@@ -532,6 +532,8 @@ where
         }
         assert_eq!(before, snapshot::<B, _>(&input));
     }
+    // Every rotation, the identity included, returns an untagged ciphertext.
+    assert!(results.iter().all(|(_, s)| s.noise.is_none()));
     results
 }
 

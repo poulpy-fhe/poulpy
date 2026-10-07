@@ -245,6 +245,7 @@ pub fn glwe_eval_linear_transformation_into_reference<BE, M, R, P, H>(
     );
 
     glwe_eval_giant_steps(module, cnv_offset, res, lhs, rhs, keys, scratch);
+    res.set_noise(None);
     res.set_canonical(true);
 }
 

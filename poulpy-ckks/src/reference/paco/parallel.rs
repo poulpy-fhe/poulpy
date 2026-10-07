@@ -168,7 +168,9 @@ where
         output_meta,
         required_scratch,
     };
-    paco_bootstrap_direct_validated_into::<BE, F, K, _>(module, output, input, context, keys, schedule, scratch)
+    paco_bootstrap_direct_validated_into::<BE, F, K, _>(module, output, input, context, keys, schedule, scratch)?;
+    output.set_noise(None);
+    Ok(())
 }
 
 /// Runs the sequential branch schedule after the public-call preflight has
@@ -312,7 +314,9 @@ where
         required_scratch,
     };
     let structured = encapsulate_input(module, input, context, keys, scratch)?;
-    paco_bootstrap_direct_validated_into::<BE, F, K, _>(module, output, &structured, context, keys, schedule, scratch)
+    paco_bootstrap_direct_validated_into::<BE, F, K, _>(module, output, &structured, context, keys, schedule, scratch)?;
+    output.set_noise(None);
+    Ok(())
 }
 
 /// Parallel direct-mode driver with reusable caller-owned workers and ordered
@@ -362,7 +366,11 @@ where
         output_meta,
         required_scratch,
     };
-    paco_bootstrap_parallel_direct_validated_into::<BE, F, K, _>(module, output, input, context, keys, schedule, workers, scratch)
+    paco_bootstrap_parallel_direct_validated_into::<BE, F, K, _>(
+        module, output, input, context, keys, schedule, workers, scratch,
+    )?;
+    output.set_noise(None);
+    Ok(())
 }
 
 /// Runs the bounded branch pool after the common runtime preflight.
@@ -617,5 +625,7 @@ where
         schedule,
         workers,
         scratch,
-    )
+    )?;
+    output.set_noise(None);
+    Ok(())
 }

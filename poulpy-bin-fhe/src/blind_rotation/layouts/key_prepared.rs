@@ -90,6 +90,10 @@ impl<D: Data, BRT: BlindRotationAlgo, B: Backend> BlindRotationKeyInfos for Blin
 }
 
 impl<D: Data, BRT: BlindRotationAlgo, B: Backend> LWEInfos for BlindRotationKeyPrepared<D, BRT, B> {
+    fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
+        self.data.first().and_then(LWEInfos::noise)
+    }
+
     fn base2k(&self) -> Base2K {
         self.data[0].base2k()
     }

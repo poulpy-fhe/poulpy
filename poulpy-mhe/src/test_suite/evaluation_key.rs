@@ -41,6 +41,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = gglwe_layout(module);
+
     let parties_in: Vec<Secret<BE>> = (0..PARTIES).map(|i| secret_from_seed(module, [150 + i as u8; 32])).collect();
     let parties_out = party_secrets(module);
     let pt_want = secret_sum(module, &parties_in);
@@ -65,6 +66,7 @@ where
 
     let mut res: GLWESwitchingKey<AlignedBuf, i64> = module.glwe_switching_key_alloc_from_infos(&layout);
     module.mhe_glwe_switching_key_share_finalize(&mut res, &acc, &mut scratch.borrow());
+    super::fixtures::assert_collective_metadata(&res, PARTIES);
     let n = Degree(module.n() as u32);
     assert_eq!((*res.input_degree(), *res.output_degree()), (n, n));
     assert_gglwe_noise(module, &res, &pt_want, &sk_out_ideal, &mut scratch);
@@ -86,6 +88,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = gglwe_layout(module);
+
     let parties = party_secrets(module);
     let pt_want = secret_sum(module, &parties);
     let sk_out = automorphism_inv_prepared(module, &pt_want, P);
@@ -109,6 +112,7 @@ where
 
     let mut res: GLWEAutomorphismKey<AlignedBuf, i64> = module.glwe_automorphism_key_alloc_from_infos(&layout);
     module.mhe_glwe_automorphism_key_share_finalize(&mut res, &acc, &mut scratch.borrow());
+    super::fixtures::assert_collective_metadata(&res, PARTIES);
     assert_eq!(res.p(), P);
     assert_gglwe_noise(module, &res, &pt_want, &sk_out, &mut scratch);
 }
@@ -188,6 +192,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = gglwe_layout(module);
+
     let (sk, _) = secret_from_seed(module, [100u8; 32]);
     let rank_one = module.glwe_secret_alloc(Rank(1));
     let small_sk = module.glwe_secret_alloc_from_infos(&GLWESecretLayout {

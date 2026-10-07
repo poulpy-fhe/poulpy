@@ -76,6 +76,11 @@ where
         P: GLWEToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
+        let metadata = Some(crate::ComponentNoise::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+            crate::layouts::GLWEInfos::rank(&res.to_backend_ref()).as_usize(),
+        ));
         {
             {
                 let mut res_backend = res.to_backend_mut();
@@ -103,6 +108,7 @@ where
             scratch.wipe(self.glwe_compressed_encrypt_sk_tmp_bytes_reference(&res.to_backend_mut()));
         }
         res.seed_mut().copy_from_slice(&seed_xa);
+        res.set_noise(metadata);
     }
 
     fn glwe_compressed_encrypt_zero_sk_reference<R, S>(
@@ -116,6 +122,11 @@ where
         R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
+        let metadata = Some(crate::ComponentNoise::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+            crate::layouts::GLWEInfos::rank(&res.to_backend_ref()).as_usize(),
+        ));
         {
             let mut res_backend = res.to_backend_mut();
             assert!(
@@ -156,5 +167,6 @@ where
             scratch.wipe(tmp_bytes);
         }
         res.seed_mut().copy_from_slice(&seed_xa);
+        res.set_noise(metadata);
     }
 }

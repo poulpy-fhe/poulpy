@@ -461,6 +461,9 @@ where
                 }
             }
         }
+        for ct in folded {
+            GLWEToBackendMut::<BE>::set_noise(ct, None);
+        }
         Ok(())
     }
 
@@ -574,6 +577,12 @@ where
                     R::from_standard(module, &mut outs[re..end], part, &keys, scratch)?;
                 }
             }
+        }
+        for ct in outs {
+            GLWEToBackendMut::<BE>::set_noise(&mut ct.inner, None);
+        }
+        for ct in folded {
+            GLWEToBackendMut::<BE>::set_noise(ct, None);
         }
         Ok(())
     }
@@ -789,6 +798,7 @@ fn merge<'s, BE, D, S>(
         module.glwe_add_assign(dst, &shifted);
         module.glwe_normalize_assign(dst, scratch);
     }
+    dst.set_noise(None);
 }
 
 /// Writes the component of `src` at `X^j`, `X^(-j)·src` restricted to `X^g`, into
@@ -818,6 +828,7 @@ where
 {
     let src = src.to_backend_ref();
     let canonical = src.is_canonical();
+    dst.set_noise(None);
     {
         let mut view = dst.to_backend_mut();
         for col in 0..=src.rank().as_usize() {

@@ -37,6 +37,10 @@ pub struct GLWETensorKeyLayout {
 pub struct GLWETensorKey<D: Data, W: ZnxWord>(pub(crate) GGLWE<D, W>);
 
 impl<D: Data, W: ZnxWord> LWEInfos for GLWETensorKey<D, W> {
+    fn noise(&self) -> Option<crate::ComponentNoise> {
+        self.0.noise()
+    }
+
     fn n(&self) -> Degree {
         self.0.n()
     }

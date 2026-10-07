@@ -118,6 +118,11 @@ fn compare<BR, BT, FR, FT>(
             op_ref(module_ref, &mut res_ref, &a_ref, &b_ref, &mut scratch_ref);
             op_test(module_test, &mut res_test, &a_test, &b_test, &mut scratch_test);
 
+            if label == "glwe_copy" {
+                let expected = if res_infos.k >= a_infos.k { a_ref.noise() } else { None };
+                assert_eq!(res_ref.noise(), expected);
+                assert_eq!(res_test.noise(), expected);
+            }
             let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
             res_test.transfer_into(&mut have);
             assert_glwe_eq!(
@@ -636,7 +641,7 @@ fn test_glwe_tensor_parity_case<BR, BT>(
     }
 }
 
-/// Zeroing and copying retain destination metadata, including partial limbs.
+/// Zeroing and copying retain destination layout metadata, including partial limbs.
 pub fn test_glwe_copy_zero_parity<BR, BT>(
     params: &TestParams,
     shapes: &ParityShapes,

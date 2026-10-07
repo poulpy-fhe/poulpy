@@ -15,6 +15,10 @@ use crate::layouts::{
 pub struct GLWETensorKeyPrepared<D: Data, B: Backend>(pub(crate) GGLWEPrepared<D, B>);
 
 impl<D: Data, B: Backend> LWEInfos for GLWETensorKeyPrepared<D, B> {
+    fn noise(&self) -> Option<crate::ComponentNoise> {
+        self.0.noise()
+    }
+
     fn n(&self) -> Degree {
         self.0.n()
     }
@@ -161,6 +165,9 @@ where
 }
 
 pub trait GLWETensorKeyPreparedToBackendMut<B: Backend> {
+    /// Borrows coefficients and copies the current layout and component noise metadata.
+    /// Metadata changed on the returned view is local to that view. Operations
+    /// that update the owner must call its `set_noise` hook.
     fn to_backend_mut(&mut self) -> GLWETensorKeyPreparedBackendMut<'_, B>;
 }
 
@@ -185,6 +192,7 @@ where
 impl<'a, B: Backend + 'a> GGLWEPreparedToBackendRef<B> for &GLWETensorKeyPrepared<B::BufRef<'a>, B> {
     fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
         GGLWEPrepared {
+            noise: self.0.noise.clone(),
             base2k: self.0.base2k,
             k_aux: self.0.k_aux,
             dsize: self.0.dsize,
@@ -199,6 +207,10 @@ impl<D: Data, B: Backend> GGLWEPreparedToBackendMut<B> for GLWETensorKeyPrepared
 where
     GGLWEPrepared<D, B>: GGLWEPreparedToBackendMut<B>,
 {
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        <_ as GGLWEPreparedToBackendMut<B>>::set_noise(&mut self.0, metadata);
+    }
+
     fn to_backend_mut(&mut self) -> GGLWEPreparedBackendMut<'_, B> {
         self.0.to_backend_mut()
     }

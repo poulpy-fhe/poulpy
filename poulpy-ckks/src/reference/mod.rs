@@ -42,3 +42,5 @@ pub use linear_transformation_diagonals::ckks_encode_linear_transformation_from_
 pub use plaintext::CKKSPlaintextReference;
 pub use polynomial_evaluation::PolynomialEvaluationReference;
 pub use sub::CKKSSubReference;
+
+pub(crate) mod composite;

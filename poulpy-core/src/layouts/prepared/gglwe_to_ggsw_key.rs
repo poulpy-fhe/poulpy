@@ -23,6 +23,10 @@ pub struct GGLWEToGGSWKeyPrepared<D: Data, BE: Backend> {
 
 /// Provides LWE-level parameter accessors, delegating to the first key element.
 impl<D: Data, BE: Backend> LWEInfos for GGLWEToGGSWKeyPrepared<D, BE> {
+    fn noise(&self) -> Option<crate::ComponentNoise> {
+        self.keys.first().and_then(crate::layouts::LWEInfos::noise)
+    }
+
     fn n(&self) -> Degree {
         self.keys[0].n()
     }
@@ -181,6 +185,7 @@ where
         R: GGLWEToGGSWKeyPreparedToBackendMut<BE>,
         O: GGLWEToGGSWKeyToBackendRef<BE>,
     {
+        res.set_noise(other.to_backend_ref().noise());
         let needed = {
             let res_infos = res.to_backend_mut();
             self.gglwe_to_ggsw_key_prepare_tmp_bytes(&res_infos)
@@ -244,6 +249,10 @@ where
 }
 
 pub trait GGLWEToGGSWKeyPreparedToBackendMut<B: Backend> {
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
+    /// Borrows coefficients and copies the current layout and component noise metadata.
+    /// Metadata changed on the returned view is local to that view. Operations
+    /// that update the owner must call its `set_noise` hook.
     fn to_backend_mut(&mut self) -> GGLWEToGGSWKeyPreparedBackendMut<'_, B>;
 }
 
@@ -251,6 +260,12 @@ impl<D: Data, B: Backend> GGLWEToGGSWKeyPreparedToBackendMut<B> for GGLWEToGGSWK
 where
     GGLWEPrepared<D, B>: GGLWEPreparedToBackendMut<B>,
 {
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        for key in &mut self.keys {
+            key.set_noise(metadata.clone());
+        }
+    }
+
     fn to_backend_mut(&mut self) -> GGLWEToGGSWKeyPreparedBackendMut<'_, B> {
         GGLWEToGGSWKeyPrepared {
             keys: self.keys.iter_mut().map(|c| c.to_backend_mut()).collect(),

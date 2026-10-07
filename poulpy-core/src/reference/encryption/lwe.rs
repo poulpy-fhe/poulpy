@@ -29,9 +29,12 @@ where
     where
         R: LWEToBackendMut<BE>,
     {
-        let mut res = res.to_backend_mut();
-        assert_eq!(res.mask.cols(), 1, "fill_lwe_mask_from_source: LWE mask cols must be 1");
-        self.vec_znx_fill_uniform_source(base2k, res.k().as_usize(), &mut res.mask, 0, source_xa);
+        {
+            let mut res = res.to_backend_mut();
+            assert_eq!(res.mask.cols(), 1, "fill_lwe_mask_from_source: LWE mask cols must be 1");
+            self.vec_znx_fill_uniform_source(base2k, res.k().as_usize(), &mut res.mask, 0, source_xa);
+        }
+        res.set_noise(None);
     }
 }
 
@@ -96,6 +99,11 @@ where
         P: LWEPlaintextToBackendRef<BE>,
         S: LWESecretToBackendRef<BE>,
     {
+        let metadata = Some(crate::ComponentNoise::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+            crate::layouts::LWEInfos::n(&res.to_backend_ref()).as_usize(),
+        ));
         {
             let pt = pt.to_backend_ref();
             let sk = sk.to_backend_ref();
@@ -154,5 +162,6 @@ where
             }
             scratch.wipe(tmp_bytes);
         }
+        res.set_noise(metadata);
     }
 }

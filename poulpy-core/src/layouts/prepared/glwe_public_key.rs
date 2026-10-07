@@ -16,6 +16,7 @@ use crate::{
 /// ephemerals from. Tied to a specific backend via `B: Backend`.
 #[derive(PartialEq)]
 pub struct GLWEPublicKeyPrepared<D: Data, B: Backend> {
+    pub(crate) noise: Option<crate::ComponentNoise>,
     pub(crate) data: VmpPMat<D, B::DftWord, B>,
     pub(crate) base2k: Base2K,
     pub(crate) k: TorusPrecision,
@@ -39,12 +40,18 @@ impl<D: Data, BE: Backend> GetDistribution for GLWEPublicKeyPrepared<D, BE> {
 }
 
 impl<D: Data, BE: Backend> GetDistributionMut for GLWEPublicKeyPrepared<D, BE> {
+    /// Changing this law requires matching noise provenance. Public-key encryption
+    /// rejects a mismatch when metadata is present; untagged keys skip that check.
     fn dist_mut(&mut self) -> &mut Distribution {
         &mut self.dist
     }
 }
 
 impl<D: Data, B: Backend> LWEInfos for GLWEPublicKeyPrepared<D, B> {
+    fn noise(&self) -> Option<crate::ComponentNoise> {
+        self.noise.clone()
+    }
+
     fn base2k(&self) -> Base2K {
         self.base2k
     }
@@ -94,6 +101,7 @@ where
         assert!(rank.as_usize() >= 1, "invalid public key: rank must be at least 1");
         let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
         GLWEPublicKeyPrepared {
+            noise: None,
             data: self.vmp_pmat_alloc(n, 1, rank.into(), (rank + 1).into(), infos.size(), PrepareHint::Reuse),
             base2k: infos.base2k(),
             k: infos.k(),
@@ -146,6 +154,7 @@ where
 
             self.vmp_prepare(&mut res.data, &other.data, scratch);
         }
+        res.set_noise(other.to_backend_ref().noise());
         *res.dist_mut() = *other.dist();
     }
 }
@@ -171,6 +180,7 @@ where
 {
     fn to_backend_ref(&self) -> GLWEPublicKeyPreparedBackendRef<'_, B> {
         GLWEPublicKeyPrepared {
+            noise: self.noise.clone(),
             data: self.data.to_backend_ref(),
             base2k: self.base2k,
             k: self.k,
@@ -180,6 +190,12 @@ where
 }
 
 pub trait GLWEPublicKeyPreparedToBackendMut<B: Backend> {
+    /// Records component noise metadata on this key.
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
+
+    /// Borrows coefficients and copies the current layout and component noise metadata.
+    /// Metadata changed on the returned view is local to that view. Operations
+    /// that update the owner must call its `set_noise` hook.
     fn to_backend_mut(&mut self) -> GLWEPublicKeyPreparedBackendMut<'_, B>;
 }
 
@@ -187,8 +203,15 @@ impl<D: Data, B: Backend> GLWEPublicKeyPreparedToBackendMut<B> for GLWEPublicKey
 where
     VmpPMat<D, B::DftWord, B>: VmpPMatToBackendMut<B>,
 {
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        crate::layouts::validate_noise_components(metadata.as_ref(), crate::layouts::GLWEInfos::rank(self).as_usize() + 1)
+            .expect("noise component count does not match the ciphertext");
+        self.noise = metadata;
+    }
+
     fn to_backend_mut(&mut self) -> GLWEPublicKeyPreparedBackendMut<'_, B> {
         GLWEPublicKeyPrepared {
+            noise: self.noise.clone(),
             data: self.data.to_backend_mut(),
             base2k: self.base2k,
             k: self.k,

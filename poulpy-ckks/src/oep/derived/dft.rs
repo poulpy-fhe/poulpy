@@ -21,7 +21,9 @@ where
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE>,
 {
-    module.ckks_dft_evaluate_assign(ct, dft, keys, scratch)
+    module.ckks_dft_evaluate_assign(ct, dft, keys, scratch)?;
+    ct.set_noise(None);
+    Ok(())
 }
 
 /// Homomorphic decoding (SlotsToCoeffs), `Standard` format: evaluates the Decode
@@ -40,7 +42,9 @@ where
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE>,
 {
-    module.ckks_dft_evaluate_assign(ct, dft, keys, scratch)
+    module.ckks_dft_evaluate_assign(ct, dft, keys, scratch)?;
+    ct.set_noise(None);
+    Ok(())
 }
 
 /// `CoeffsToSlots` with the real and imaginary parts returned in two separate
@@ -91,6 +95,8 @@ where
     // Both halves are the (real) coefficients of the input polynomial.
     ct_real.set_slots(SlotsKind::Real);
     ct_imag.set_slots(SlotsKind::Real);
+    ct_real.set_noise(None);
+    ct_imag.set_noise(None);
     Ok(())
 }
 
@@ -119,7 +125,9 @@ where
     // op_out := ct_real + i·ct_imag, then Decode.
     module.ckks_mul_i_into(op_out, ct_imag, scratch)?;
     module.ckks_add_assign(op_out, ct_real, scratch)?;
-    module.ckks_dft_evaluate_assign(op_out, dft, keys, scratch)
+    module.ckks_dft_evaluate_assign(op_out, dft, keys, scratch)?;
+    op_out.set_noise(None);
+    Ok(())
 }
 
 /// Sparse `CoeffsToSlots` with the imaginary part repacked into the right half of
@@ -176,6 +184,7 @@ where
     ct_out.set_log_sparsity(log_sparsity);
     // `[Re | Im]` packs the input polynomial's (real) coefficients.
     ct_out.set_slots(SlotsKind::Real);
+    ct_out.set_noise(None);
     Ok(())
 }
 
@@ -207,5 +216,6 @@ where
 
     // The repack-decode halves the live slot count.
     op_out.set_log_sparsity(ct_in.log_sparsity() + 1);
+    op_out.set_noise(None);
     Ok(())
 }

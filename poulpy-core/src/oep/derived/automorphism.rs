@@ -45,6 +45,7 @@ mod ggsw {
         R: GGSWToBackendMut<BE> + GGSWInfos,
         A: GGSWToBackendRef<BE> + GGSWInfos,
     {
+        res.set_noise(None);
         {
             let a_backend = a.to_backend_ref();
             let rows = res.dnum().as_usize();
@@ -69,6 +70,7 @@ mod ggsw {
         M: GLWEAutomorphism<BE> + GGSWExpandRows<BE>,
         R: GGSWToBackendMut<BE> + GGSWInfos,
     {
+        res.set_noise(None);
         {
             let rows = res.dnum().as_usize();
             let mut res_backend = res.to_backend_mut();

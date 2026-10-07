@@ -24,6 +24,7 @@ where
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
 {
+    res.set_noise(None);
     res.set_canonical(false);
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
@@ -61,6 +62,7 @@ where
         scratch.available(),
         glwe_ci_trace_tmp_bytes_reference::<BE, _, _, _>(module, res, a)
     );
+    res.set_noise(None);
     res.set_canonical(true);
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();

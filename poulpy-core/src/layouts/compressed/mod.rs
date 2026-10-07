@@ -19,6 +19,10 @@ macro_rules! impl_gglwe_compressed_to_backend_for_field {
         }
 
         impl<BE: Backend> GGLWECompressedToBackendMut<BE> for $ty {
+            fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+                <_ as GGLWECompressedToBackendMut<BE>>::set_noise(&mut self.$field, metadata);
+            }
+
             fn to_backend_mut(&mut self) -> GGLWECompressedBackendMut<'_, BE> {
                 <$inner as GGLWECompressedToBackendMut<BE>>::to_backend_mut(&mut self.$field)
             }

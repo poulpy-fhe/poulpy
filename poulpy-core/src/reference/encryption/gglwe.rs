@@ -75,6 +75,11 @@ where
         P: ScalarZnxToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
+        let metadata = Some(crate::ComponentNoise::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+            crate::layouts::GLWEInfos::rank(&res.to_backend_ref()).as_usize(),
+        ));
         {
             let res = &mut res.to_backend_mut();
             let pt_backend = pt.to_backend_ref();
@@ -158,5 +163,6 @@ where
             drop(tmp_pt);
             scratch.wipe(GGLWEEncryptSkReference::gglwe_encrypt_sk_tmp_bytes_reference(self, res));
         }
+        res.set_noise(metadata);
     }
 }

@@ -360,6 +360,8 @@ fn blind_rotation_execute_selected<BE, R, L, const PARALLEL: bool>(
         }
         _ => panic!("invalid CGGI distribution (have you prepared the key?)"),
     }
+
+    res.set_noise(None);
 }
 
 fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64>>(

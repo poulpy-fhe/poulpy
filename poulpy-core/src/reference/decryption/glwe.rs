@@ -87,6 +87,8 @@ pub fn glwe_decrypt_reference<M, BE: Backend, R, P, S>(
         glwe_decrypt_backend_inner(module, &res, &mut pt_backend, &sk_backend, &mut scratch);
     }
     scratch.wipe(tmp_bytes);
+
+    pt.set_noise(None);
 }
 
 pub(crate) fn glwe_decrypt_backend_inner<'arena, 'scratch, M, BE: Backend>(
@@ -262,4 +264,6 @@ pub fn glwe_mask_inner_product_reference<M, BE: Backend, R, A, S>(
         );
     }
     scratch.wipe(tmp_bytes);
+
+    res.set_noise(None);
 }

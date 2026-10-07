@@ -40,6 +40,7 @@ mod gglwe {
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         A: GGLWEToBackendRef<BE> + GGLWEInfos,
     {
+        res.set_noise(None);
         assert_eq!(
             res.rank_in(),
             a.rank_in(),
@@ -105,6 +106,7 @@ mod gglwe {
         M: GLWEExternalProduct<BE>,
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
     {
+        res.set_noise(None);
         assert_eq!(
             res.rank_out(),
             a.rank(),
@@ -177,6 +179,7 @@ mod ggsw {
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
         A: GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos,
     {
+        res.set_noise(None);
         assert_eq!(res.rank(), a.rank(), "res rank: {} != a rank: {}", res.rank(), a.rank());
         assert_eq!(res.rank(), b.rank(), "res rank: {} != b rank: {}", res.rank(), b.rank());
         assert_eq!(res.base2k(), a.base2k());
@@ -217,6 +220,7 @@ mod ggsw {
         M: GLWEExternalProduct<BE> + ModuleN,
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
     {
+        res.set_noise(None);
         operand_degree(module.n(), &[res.n(), a.n()]);
         assert_eq!(res.rank(), a.rank(), "res rank: {} != a rank: {}", res.rank(), a.rank());
         assert!(

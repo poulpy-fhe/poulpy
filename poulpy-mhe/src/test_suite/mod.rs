@@ -62,6 +62,11 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
+            fn ciphertext_encryption_noise_tags() {
+                $crate::test_suite::public_key::test_ciphertext_encryption_noise_tags(&Module::<$backend>::new(64));
+            }
+
+            #[test]
             #[should_panic(expected = "samplable distribution")]
             fn glwe_public_key_finalize_dist_none() {
                 $crate::test_suite::public_key::test_glwe_public_key_finalize_dist_none(&Module::<$backend>::new(64));
