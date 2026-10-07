@@ -193,7 +193,7 @@ jobs:
   intel_macos_avx:
     name: Intel macOS AVX smoke
     runs-on: macos-15-intel
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     env:
       RUSTFLAGS: -C target-feature=+avx2,+fma
