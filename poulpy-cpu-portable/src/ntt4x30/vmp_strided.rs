@@ -42,12 +42,16 @@ struct Digit {
 ///
 /// Digit `di` gathers the input limbs congruent to `dsize - 1 - di` modulo `dsize` and reads the matrix `di` limbs ahead.
 /// Returns the residues of `gglwe_product_digits_strided_reference`.
+///
+/// `zero_prefix`, when given, is a number of leading input limbs the caller knows to be zero in every column.
+/// Those limbs are then not read, so they need not hold anything, and the scan for leading zero limbs is skipped.
 pub(crate) fn gglwe_product_digits_strided<R: Ring, E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
     a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
     dsize: usize,
     product_limbs: usize,
     pmat: &VmpPMatBackendRef<'_, NTT4x30Portable<R>>,
+    zero_prefix: Option<usize>,
     scratch: &mut ScratchArena<'_, NTT4x30Portable<R>>,
 ) {
     assert_eq!(res.n(), pmat.n());
@@ -71,11 +75,14 @@ pub(crate) fn gglwe_product_digits_strided<R: Ring, E: TaskExecutor>(
 
     // Leading input limbs that are zero in every column contribute nothing: their rows are skipped.
     // A ciphertext raised to a larger modulus has most of its limbs in this case.
-    let zero_limbs = a_u32
-        .chunks_exact(cols_in * 4 * n)
-        .take(a_size)
-        .take_while(|limb| limb.iter().all(|&x| x == 0))
-        .count();
+    let zero_limbs = match zero_prefix {
+        Some(prefix) => prefix.min(a_size),
+        None => a_u32
+            .chunks_exact(cols_in * 4 * n)
+            .take(a_size)
+            .take_while(|limb| limb.iter().all(|&x| x == 0))
+            .count(),
+    };
 
     let mut digits = [Digit::default(); STRIDED_MAX_DSIZE];
     let mut total_rows = 0;

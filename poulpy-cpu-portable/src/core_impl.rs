@@ -65,7 +65,7 @@ where
         if dsize > STRIDED_MAX_DSIZE {
             return gglwe_product_digits_strided_reference(module, res, a, dsize, product_limbs, pmat, scratch);
         }
-        gglwe_product_digits_strided::<R, SerialTaskExecutor>(res, a, dsize, product_limbs, pmat, scratch);
+        gglwe_product_digits_strided::<R, SerialTaskExecutor>(res, a, dsize, product_limbs, pmat, None, scratch);
     }
 }
 
