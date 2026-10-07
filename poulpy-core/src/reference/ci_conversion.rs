@@ -8,7 +8,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    EncryptionInfos, GLWECIKeyEncryptSk, GLWESwitchingKeyEncryptSk, GetDistribution,
+    GLWECIKeyEncryptSk, GLWESwitchingKeyEncryptSk, GetDistribution,
     layouts::{
         GGLWEInfos, GGLWEToBackendMut, GLWECIEmbedKey, GLWECITraceKey, GLWEInfos, GLWESecretCIEmbed, GLWESecretToBackendRef,
         GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
@@ -97,12 +97,11 @@ where
         self.glwe_switching_key_encrypt_sk_tmp_bytes(infos)
     }
 
-    fn glwe_ci_embed_key_encrypt_sk<D, S1, S2, E>(
+    fn glwe_ci_embed_key_encrypt_sk<D, S1, S2>(
         &self,
         res: &mut GLWECIEmbedKey<D, BE::ZnxWord>,
         sk_ci: &S1,
         sk: &S2,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
@@ -111,18 +110,16 @@ where
         GLWECIEmbedKey<D, BE::ZnxWord>: GGLWEToBackendMut<BE>,
         S1: GLWESecretToBackendRef<BE>,
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
-        E: EncryptionInfos,
     {
         let sk_embedded = self.glwe_secret_ci_embed(sk_ci);
-        self.glwe_switching_key_encrypt_sk(res, &sk_embedded, sk, enc_infos, source_xe, source_xa, scratch);
+        self.glwe_switching_key_encrypt_sk(res, &sk_embedded, sk, source_xe, source_xa, scratch);
     }
 
-    fn glwe_ci_trace_key_encrypt_sk<D, S1, S2, E>(
+    fn glwe_ci_trace_key_encrypt_sk<D, S1, S2>(
         &self,
         res: &mut GLWECITraceKey<D, BE::ZnxWord>,
         sk_ci: &S1,
         sk: &S2,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
@@ -131,9 +128,8 @@ where
         GLWECITraceKey<D, BE::ZnxWord>: GGLWEToBackendMut<BE>,
         S1: GLWESecretToBackendRef<BE>,
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
-        E: EncryptionInfos,
     {
         let sk_embedded = self.glwe_secret_ci_embed(sk_ci);
-        self.glwe_switching_key_encrypt_sk(res, sk, &sk_embedded, enc_infos, source_xe, source_xa, scratch);
+        self.glwe_switching_key_encrypt_sk(res, sk, &sk_embedded, source_xe, source_xa, scratch);
     }
 }

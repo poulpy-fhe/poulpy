@@ -8,7 +8,7 @@ use poulpy_hal::{
 
 use crate::layouts::operand_degree;
 use crate::{
-    EncryptionInfos, GGLWECompressedEncryptSk, GetDistribution, ScratchArenaTakeCore,
+    GGLWECompressedEncryptSk, GetDistribution, ScratchArenaTakeCore,
     layouts::{
         GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GLWEInfos, GLWESecretToBackendRef,
         GLWESwitchingKeyDegreesMut, LWEInfos, prepared::GLWESecretPreparedFactory,
@@ -23,18 +23,16 @@ pub trait GLWESwitchingKeyCompressedEncryptSkReference<BE: Backend> {
     where
         A: GGLWEInfos;
 
-    fn glwe_switching_key_compressed_encrypt_sk_reference<R, S1, S2, E>(
+    fn glwe_switching_key_compressed_encrypt_sk_reference<R, S1, S2>(
         &self,
         res: &mut R,
         sk_in: &S1,
         sk_out: &S2,
         seed_xa: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeedMut + GLWESwitchingKeyDegreesMut + GGLWEInfos,
-        E: EncryptionInfos,
         S1: GLWESecretToBackendRef<BE> + GLWEInfos,
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
@@ -57,18 +55,16 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_switching_key_compressed_encrypt_sk_reference<R, S1, S2, E>(
+    fn glwe_switching_key_compressed_encrypt_sk_reference<R, S1, S2>(
         &self,
         res: &mut R,
         sk_in: &S1,
         sk_out: &S2,
         seed_xa: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeedMut + GLWESwitchingKeyDegreesMut + GGLWEInfos,
-        E: EncryptionInfos,
         S1: GLWESecretToBackendRef<BE> + GLWEInfos,
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
@@ -106,15 +102,7 @@ where
             self.glwe_secret_prepare(&mut sk_out_prepared, &sk_out_lifted);
 
             let (mut enc_scratch, _scratch_4) = scratch_3.split_at(self.gglwe_compressed_encrypt_sk_tmp_bytes(res));
-            self.gglwe_compressed_encrypt_sk(
-                res,
-                &sk_in_lifted,
-                &sk_out_prepared,
-                seed_xa,
-                enc_infos,
-                source_xe,
-                &mut enc_scratch,
-            );
+            self.gglwe_compressed_encrypt_sk(res, &sk_in_lifted, &sk_out_prepared, seed_xa, source_xe, &mut enc_scratch);
 
             *res.input_degree() = sk_in.n();
             *res.output_degree() = sk_out_ref.n();

@@ -30,7 +30,6 @@ pub fn bdd_key_encrypt_sk_reference<BRA: BlindRotationAlgo, BE: Backend<ZnxWord 
     res: &mut BDDKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
     sk_lwe: &S0,
     sk_glwe: &S1,
-    enc_infos: &BDDEncryptionInfos,
     source_xe: &mut Source,
     source_xa: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
@@ -43,33 +42,13 @@ pub fn bdd_key_encrypt_sk_reference<BRA: BlindRotationAlgo, BE: Backend<ZnxWord 
         + GLWESecretSampling<BE>,
 {
     if let Some(key) = &mut res.ks_glwe {
-        let ks_glwe_infos = enc_infos
-            .ks_glwe
-            .as_ref()
-            .expect("ks_glwe enc_infos missing when ks_glwe key exists");
         let mut sk_out: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(key.rank_out());
         module.glwe_secret_fill_ternary_prob(&mut sk_out, 0.5, source_xe);
-        module.glwe_switching_key_encrypt_sk(key, sk_glwe, &sk_out, ks_glwe_infos, source_xe, source_xa, scratch);
-        module.glwe_to_lwe_key_encrypt_sk(
-            &mut res.ks_lwe,
-            sk_lwe,
-            &sk_out,
-            &enc_infos.ks_lwe,
-            source_xe,
-            source_xa,
-            scratch,
-        );
+        module.glwe_switching_key_encrypt_sk(key, sk_glwe, &sk_out, source_xe, source_xa, scratch);
+        module.glwe_to_lwe_key_encrypt_sk(&mut res.ks_lwe, sk_lwe, &sk_out, source_xe, source_xa, scratch);
     } else {
-        module.glwe_to_lwe_key_encrypt_sk(
-            &mut res.ks_lwe,
-            sk_lwe,
-            sk_glwe,
-            &enc_infos.ks_lwe,
-            source_xe,
-            source_xa,
-            scratch,
-        );
+        module.glwe_to_lwe_key_encrypt_sk(&mut res.ks_lwe, sk_lwe, sk_glwe, source_xe, source_xa, scratch);
     }
 
-    module.circuit_bootstrapping_key_encrypt_sk(&mut res.cbt, sk_lwe, sk_glwe, &enc_infos.cbt, source_xe, source_xa, scratch);
+    module.circuit_bootstrapping_key_encrypt_sk(&mut res.cbt, sk_lwe, sk_glwe, source_xe, source_xa, scratch);
 }

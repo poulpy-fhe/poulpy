@@ -2,7 +2,7 @@
 //! key decrypts under the ideal secret to the ideal secret's tensor.
 
 use poulpy_core::{
-    DEFAULT_SIGMA_XE, Distribution, EncryptionLayout, GGLWENoise, GetDistributionMut,
+    DEFAULT_SIGMA_XE, Distribution, GGLWENoise, GetDistributionMut,
     layouts::{
         Base2K, Dnum, Dsize, GLWELayout, GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory, GLWESecret, GLWESecretLayout,
         GLWESecretPreparedFactory, GLWESecretSampling, GLWESecretTensor, GLWESecretTensorFactory, GLWETensorKey,
@@ -47,7 +47,6 @@ where
         let layout = tensor_key_layout(module, dnum, dsize);
         // A public key more precise than the share exercises the share scratch query for real.
         let pk_layout = public_key_layout(module, TorusPrecision(layout.k().0 + BASE2K.0));
-        let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
         let parties = party_secrets(module);
         let sk_ideal = ideal_secret(module, &parties);
         let pk = collective_public_key(module, &parties, &pk_layout);
@@ -69,7 +68,7 @@ where
             // The secret components and their encryptions would be left in the scratch.
             poulpy_core::test_suite::assert_wipes_scratch::<BE>(
                 module.mhe_glwe_tensor_key_share_gen_tmp_bytes(&layout, &pk_layout),
-                |scratch| module.mhe_glwe_tensor_key_share_gen(dst, sk, &pk, &enc_infos, &mut source_xu, &mut source_xe, scratch),
+                |scratch| module.mhe_glwe_tensor_key_share_gen(dst, sk, &pk, &mut source_xu, &mut source_xe, scratch),
             );
             if i > 0 {
                 module.mhe_glwe_tensor_key_share_aggregate(&mut acc, &share);
@@ -101,7 +100,6 @@ where
 {
     let layout = tensor_key_layout(module, DNUM, DSIZE);
     let pk_layout = public_key_layout(module, TorusPrecision(layout.k().0 - BASE2K.0));
-    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
     let (sk, _) = secret_from_seed(module, [100u8; 32]);
     let pk: GLWEPublicKeyPrepared<AlignedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&pk_layout);
     let mut res = module.glwe_tensor_key_share_alloc_from_infos(&layout);
@@ -110,7 +108,6 @@ where
         &mut res,
         &sk,
         &pk,
-        &enc_infos,
         &mut Source::new([20u8; 32]),
         &mut Source::new([10u8; 32]),
         &mut scratch.borrow(),
@@ -130,7 +127,6 @@ where
 {
     let layout = tensor_key_layout(module, DNUM, DSIZE);
     let pk_layout = public_key_layout(module, layout.k());
-    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
     let sk_layout = GLWESecretLayout {
         n: (module.n() / 2).into(),
         rank: RANK,
@@ -144,7 +140,6 @@ where
         &mut res,
         &sk,
         &pk,
-        &enc_infos,
         &mut Source::new([20u8; 32]),
         &mut Source::new([10u8; 32]),
         &mut scratch.borrow(),
@@ -184,7 +179,6 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = tensor_key_layout(module, DNUM, DSIZE);
-    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
     let (sk, _) = secret_from_seed(module, [100u8; 32]);
     let expected = [
         "invalid share: public key degree differs from the key's",
@@ -215,7 +209,6 @@ where
                 &mut res,
                 &sk,
                 &pk,
-                &enc_infos,
                 &mut Source::new([20u8; 32]),
                 &mut Source::new([10u8; 32]),
                 &mut scratch.borrow(),

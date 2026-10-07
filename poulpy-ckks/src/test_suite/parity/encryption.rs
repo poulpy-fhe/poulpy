@@ -2,7 +2,7 @@
 //! backends and, when their streams differ, installs a controlled-sampling adapter.
 use super::{arithmetic::layout, helpers::*};
 use crate::{CKKSInfos, SetCKKSInfos, SlotsKind, oep::CKKSEncryptionImpl, test_suite::CKKSTestParams};
-use poulpy_core::{Distribution, EncryptionLayout, GLWEMaskFill, GetDistributionMut, layouts::*};
+use poulpy_core::{Distribution, GLWEMaskFill, GetDistributionMut, layouts::*};
 use poulpy_hal::{
     layouts::{Backend, Module},
     source::Source,
@@ -29,12 +29,12 @@ where
                 let pt_layout = layout(params, 0, params.base2k + 3, params.base2k, sparse, slots);
                 let pt = fixture_plaintext(module, &pt_layout, 67);
                 let before = snapshot::<B, _>(&pt);
-                let enc = EncryptionLayout::new_from_default_sigma(ct_layout.glwe_layout).unwrap();
+
                 let mut ct = fixture_ciphertext(module, &ct_layout, 99);
                 let mut e = Source::new([71; 32]);
                 let mut a = Source::new([72; 32]);
                 with_scratch::<B, _>(B::ckks_encrypt_sk_tmp_bytes_impl(module, &ct), |scratch| {
-                    B::ckks_encrypt_sk_impl(module, &mut ct, &pt, &prepared, &enc, &mut e, &mut a, scratch)
+                    B::ckks_encrypt_sk_impl(module, &mut ct, &pt, &prepared, &mut e, &mut a, scratch)
                 })
                 .unwrap();
                 assert_eq!(before, snapshot::<B, _>(&pt), "encryption changed plaintext");

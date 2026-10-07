@@ -8,7 +8,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    EncryptionInfos, LWEFillMask, VecZnxBigAddNormal,
+    LWEFillMask, Noise, VecZnxBigAddNoise,
     layouts::{LWEInfos, LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut},
 };
 
@@ -43,27 +43,25 @@ pub trait LWEEncryptSkReference<BE: Backend> {
     where
         A: LWEInfos;
 
-    fn lwe_encrypt_sk_reference<R, P, S, E>(
+    fn lwe_encrypt_sk_reference<R, P, S>(
         &self,
         res: &mut R,
         pt: &P,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: LWEToBackendMut<BE> + LWEInfos,
         P: LWEPlaintextToBackendRef<BE>,
-        S: LWESecretToBackendRef<BE>,
-        E: EncryptionInfos;
+        S: LWESecretToBackendRef<BE>;
 }
 
 impl<BE: Backend> LWEEncryptSkReference<BE> for Module<BE>
 where
     Self: Sized
         + LWEFillMask<BE>
-        + VecZnxBigAddNormal<BE>
+        + VecZnxBigAddNoise<BE>
         + VecZnxBigBytesOf
         + VecZnxBigInnerSum<BE>
         + VecZnxBigNormalize<BE>
@@ -85,12 +83,11 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn lwe_encrypt_sk_reference<R, P, S, E>(
+    fn lwe_encrypt_sk_reference<R, P, S>(
         &self,
         res: &mut R,
         pt: &P,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
@@ -98,63 +95,64 @@ where
         R: LWEToBackendMut<BE> + LWEInfos,
         P: LWEPlaintextToBackendRef<BE>,
         S: LWESecretToBackendRef<BE>,
-        E: EncryptionInfos,
     {
-        let pt = pt.to_backend_ref();
-        let sk = sk.to_backend_ref();
-
-        #[cfg(debug_assertions)]
         {
-            assert_eq!(res.n(), sk.n())
-        }
+            let pt = pt.to_backend_ref();
+            let sk = sk.to_backend_ref();
 
-        assert!(
-            scratch.available() >= self.lwe_encrypt_sk_tmp_bytes_reference(res),
-            "scratch.available(): {} < LWEEncryptSk::lwe_encrypt_sk_tmp_bytes: {}",
-            scratch.available(),
-            self.lwe_encrypt_sk_tmp_bytes_reference(res)
-        );
-        let tmp_bytes: usize = self.lwe_encrypt_sk_tmp_bytes_reference(res);
-        {
-            let base2k: usize = res.base2k().into();
-            let res_n: usize = res.n().into();
-            let res_size = res.size();
-            self.fill_lwe_mask_from_source(base2k, res, source_xa);
-
-            // tmp_hadamard[limb][k] = mask[limb][k] * sk[k]  (element-wise, BigScalar)
-            let (mut tmp_hadamard, scratch_1) = scratch.borrow().take_vec_znx_big_scratch(res_n, 1, res_size);
+            #[cfg(debug_assertions)]
             {
-                let res_ref = res.to_backend_ref();
-                self.vec_znx_scalar_product(&mut tmp_hadamard, 0, &res_ref.mask, 0, &sk.data, 0);
+                assert_eq!(res.n(), sk.n())
             }
 
-            // tmp_scalar[limb][0] = sum_k tmp_hadamard[limb][k] = <mask, sk>
-            let (mut tmp_scalar, mut scratch_2) = scratch_1.take_vec_znx_big_scratch(1, 1, res_size);
-            self.vec_znx_big_inner_sum(&mut tmp_scalar, 0, 0, &tmp_hadamard.to_backend_ref(), 0);
-
-            // tmp_scalar = m - <mask, sk>
-            self.vec_znx_big_sub_small_negate_assign(&mut tmp_scalar, 0, &pt.data, 0);
-
-            // tmp_scalar = m - <mask, sk> + e
-            self.vec_znx_big_add_normal(base2k, &mut tmp_scalar, 0, enc_infos.noise_infos(), source_xe);
-
-            // Normalize into res.body.
+            assert!(
+                scratch.available() >= self.lwe_encrypt_sk_tmp_bytes_reference(res),
+                "scratch.available(): {} < LWEEncryptSk::lwe_encrypt_sk_tmp_bytes: {}",
+                scratch.available(),
+                self.lwe_encrypt_sk_tmp_bytes_reference(res)
+            );
+            let tmp_bytes: usize = self.lwe_encrypt_sk_tmp_bytes_reference(res);
             {
-                let res_k = res.k().as_usize();
-                let mut res_mut = res.to_backend_mut();
-                self.vec_znx_big_normalize(
-                    &mut res_mut.body,
-                    base2k,
-                    res_k,
-                    0,
-                    0,
-                    &tmp_scalar.to_backend_ref(),
-                    base2k,
-                    0,
-                    &mut scratch_2.borrow(),
-                )
+                let base2k: usize = res.base2k().into();
+                let res_n: usize = res.n().into();
+                let res_size = res.size();
+                self.fill_lwe_mask_from_source(base2k, res, source_xa);
+
+                // tmp_hadamard[limb][k] = mask[limb][k] * sk[k]  (element-wise, BigScalar)
+                let (mut tmp_hadamard, scratch_1) = scratch.borrow().take_vec_znx_big_scratch(res_n, 1, res_size);
+                {
+                    let res_ref = res.to_backend_ref();
+                    self.vec_znx_scalar_product(&mut tmp_hadamard, 0, &res_ref.mask, 0, &sk.data, 0);
+                }
+
+                // tmp_scalar[limb][0] = sum_k tmp_hadamard[limb][k] = <mask, sk>
+                let (mut tmp_scalar, mut scratch_2) = scratch_1.take_vec_znx_big_scratch(1, 1, res_size);
+                self.vec_znx_big_inner_sum(&mut tmp_scalar, 0, 0, &tmp_hadamard.to_backend_ref(), 0);
+
+                // tmp_scalar = m - <mask, sk>
+                self.vec_znx_big_sub_small_negate_assign(&mut tmp_scalar, 0, &pt.data, 0);
+
+                // tmp_scalar = m - <mask, sk> + e
+                self.vec_znx_big_add_noise(base2k, res.k().as_usize(), &mut tmp_scalar, 0, Noise::ENCRYPTION, source_xe);
+
+                // Normalize into res.body.
+                {
+                    let res_k = res.k().as_usize();
+                    let mut res_mut = res.to_backend_mut();
+                    self.vec_znx_big_normalize(
+                        &mut res_mut.body,
+                        base2k,
+                        res_k,
+                        0,
+                        0,
+                        &tmp_scalar.to_backend_ref(),
+                        base2k,
+                        0,
+                        &mut scratch_2.borrow(),
+                    )
+                }
             }
+            scratch.wipe(tmp_bytes);
         }
-        scratch.wipe(tmp_bytes);
     }
 }

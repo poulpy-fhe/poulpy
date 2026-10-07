@@ -1,7 +1,7 @@
 use poulpy_core::layouts::prepared::GGLWEPreparedBackendRef;
 use poulpy_core::{
-    EncryptionInfos, GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEKeyswitch, GLWENoise, GLWEPacking, GLWERotate, GLWESub,
-    GLWETrace, LWEFromGLWE, ScratchArenaTakeCore, TransferInto,
+    GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEKeyswitch, GLWENoise, GLWEPacking, GLWERotate, GLWESub, GLWETrace,
+    LWEFromGLWE, ScratchArenaTakeCore, TransferInto,
     layouts::{
         Base2K, GGLWEInfos, GLWE, GLWEInfos, GLWEPlaintext, GLWEPlaintextLayout, GLWESecretPreparedToBackendRef,
         GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LWEToBackendMut, ModuleCoreAlloc, Rank, TorusPrecision,
@@ -108,12 +108,11 @@ impl<D: Data, T: UnsignedInteger, W: ZnxWord> GLWEInfos for FheUint<D, T, W> {
 
 impl<D: HostDataMut, T: UnsignedInteger + ToBits> FheUint<D, T, i64> {
     #[allow(clippy::too_many_arguments)]
-    pub fn encrypt_sk<S, M, E, BE>(
+    pub fn encrypt_sk<S, M, BE>(
         &mut self,
         module: &M,
         data: T,
         sk_glwe: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
@@ -122,7 +121,6 @@ impl<D: HostDataMut, T: UnsignedInteger + ToBits> FheUint<D, T, i64> {
         GLWE<D, i64>: GLWEToBackendMut<BE>,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         M: GLWEBytesOf<BE> + ModuleLogN + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + GLWEEncryptSk<BE>,
-        E: EncryptionInfos,
     {
         #[cfg(debug_assertions)]
         {
@@ -149,7 +147,7 @@ impl<D: HostDataMut, T: UnsignedInteger + ToBits> FheUint<D, T, i64> {
         let mut pt = module.glwe_plaintext_alloc_from_infos(&pt_infos);
 
         pt.encode_vec_i64(&data_bits, TorusPrecision(2));
-        module.glwe_encrypt_sk(&mut self.bits, &pt, sk_glwe, enc_infos, source_xe, source_xa, scratch);
+        module.glwe_encrypt_sk(&mut self.bits, &pt, sk_glwe, source_xe, source_xa, scratch);
     }
 
     pub fn encrypt_sk_tmp_bytes<M, BE: Backend>(&self, module: &M) -> usize

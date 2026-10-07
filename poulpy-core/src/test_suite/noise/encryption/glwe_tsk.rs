@@ -7,7 +7,7 @@ use poulpy_hal::{
 
 use crate::layouts::GLWESecretSampling;
 use crate::{
-    EncryptionLayout, GGLWENoise, GLWETensorKeyCompressedEncryptSk, GLWETensorKeyEncryptSk,
+    GGLWENoise, GLWETensorKeyCompressedEncryptSk, GLWETensorKeyEncryptSk,
     decryption::GLWEDecrypt,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
@@ -36,15 +36,14 @@ where
         let n: usize = module.n();
         let dnum: usize = k / base2k;
 
-        let tensor_key_infos = EncryptionLayout::new_from_default_sigma(GLWETensorKeyLayout {
+        let tensor_key_infos = GLWETensorKeyLayout {
             n: n.into(),
             base2k: base2k.into(),
             dnum: dnum.into(),
             k_aux: (base2k + module.log_n()).into(),
             dsize: Dsize(1),
             rank: rank.into(),
-        })
-        .unwrap();
+        };
 
         let mut tensor_key: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(&tensor_key_infos);
 
@@ -67,7 +66,6 @@ where
         module.glwe_tensor_key_encrypt_sk(
             &mut tensor_key,
             &sk,
-            &tensor_key_infos,
             &mut source_xe,
             &mut source_xa,
             &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
@@ -126,15 +124,14 @@ pub fn test_gglwe_tensor_key_compressed_encrypt_sk<BE: crate::test_suite::noise:
         let n: usize = module.n();
         let dnum: usize = k / base2k;
 
-        let tensor_key_infos = EncryptionLayout::new_from_default_sigma(GLWETensorKeyLayout {
+        let tensor_key_infos = GLWETensorKeyLayout {
             n: n.into(),
             base2k: base2k.into(),
             dnum: dnum.into(),
             k_aux: (base2k + module.log_n()).into(),
             dsize: Dsize(1),
             rank: rank.into(),
-        })
-        .unwrap();
+        };
 
         let mut tensor_key_compressed: GLWETensorKeyCompressed<BE::OwnedBuf, BE::ZnxWord> =
             module.glwe_tensor_key_compressed_alloc_from_infos(&tensor_key_infos);
@@ -160,7 +157,6 @@ pub fn test_gglwe_tensor_key_compressed_encrypt_sk<BE: crate::test_suite::noise:
             &mut tensor_key_compressed,
             &sk,
             seed_xa,
-            &tensor_key_infos,
             &mut source_xe,
             &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
         );

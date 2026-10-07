@@ -13,7 +13,7 @@ use crate::blind_rotation::{
 use poulpy_core::layouts::{GLWESecretSampling, LWESecretSampling};
 use poulpy_core::test_suite::noise::glwe_decrypt_checked;
 use poulpy_core::{
-    EncryptionLayout, GLWEDecrypt, LWEEncryptSk,
+    GLWEDecrypt, LWEEncryptSk,
     layouts::{
         GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, LWE, LWEInfos, LWELayout, LWEPlaintext,
         LWESecret, ModuleCoreAlloc, prepared::GLWESecretPrepared,
@@ -60,30 +60,27 @@ where
     let mut source_xe: Source = Source::new([2u8; 32]);
     let mut source_xa: Source = Source::new([1u8; 32]);
 
-    let brk_infos = EncryptionLayout::new_from_default_sigma(BlindRotationKeyLayout {
+    let brk_infos = BlindRotationKeyLayout {
         n_glwe: n_glwe.into(),
         n_lwe: n_lwe.into(),
         base2k: base2k.into(),
         dnum: rows_brk.into(),
         k_aux: (base2k + n_glwe.ilog2() as usize).into(),
         rank: rank.into(),
-    })
-    .unwrap();
+    };
 
-    let glwe_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+    let glwe_infos = GLWELayout {
         n: n_glwe.into(),
         base2k: base2k.into(),
         k: k_res.into(),
         rank: rank.into(),
-    })
-    .unwrap();
+    };
 
-    let lwe_infos = EncryptionLayout::new_from_default_sigma(LWELayout {
+    let lwe_infos = LWELayout {
         n: n_lwe.into(),
         k: k_lwe.into(),
         base2k: base2k.into(),
-    })
-    .unwrap();
+    };
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::<BE>::alloc(BlindRotationKey::encrypt_sk_tmp_bytes(module, &brk_infos));
 
@@ -110,7 +107,6 @@ where
         &mut brk,
         &sk_glwe_dft,
         &sk_lwe,
-        &brk_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),
@@ -128,7 +124,6 @@ where
         &mut lwe,
         &pt_lwe,
         &sk_lwe,
-        &lwe_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),

@@ -24,7 +24,7 @@
 //! available reference algorithms and derived defaults. Purely derived families
 //! have `impl_*_derived_full!` macros. [`crate::impl_core_reference_full!`] selects
 //! the provided implementations for all core families except [`SamplingImpl`],
-//! [`SmudgingSamplingImpl`] and the standard-only families (monomial operations,
+//! and the standard-only families (monomial operations,
 //! the Galois trace and the conjugate-invariant maps), which conjugate-invariant
 //! backends do not implement.
 //!

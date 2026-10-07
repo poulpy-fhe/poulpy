@@ -9,7 +9,7 @@ use crate::blind_rotation::{
     BlindRotationAlgo, BlindRotationKey, BlindRotationKeyCompressed, BlindRotationKeyInfos, BlindRotationKeyPrepared,
     LookUpTableRotationDirection, LookupTable,
 };
-use poulpy_core::{EncryptionInfos, GetDistribution, layouts::*};
+use poulpy_core::{GetDistribution, layouts::*};
 use poulpy_hal::{layouts::*, source::Source};
 
 /// Backend implementation of the blind-rotation operation family.
@@ -94,18 +94,16 @@ macro_rules! impl_bin_fhe_blind_rotation_execute_reference {
 /// Preserve the reference circuit, metadata, and advertised scratch bounds.
 pub unsafe trait BlindRotationKeyEncryptSkImpl<BRA: BlindRotationAlgo>: Backend {
     fn blind_rotation_key_encrypt_sk_tmp_bytes<A: GGSWInfos>(module: &Module<Self>, infos: &A) -> usize;
-    fn blind_rotation_key_encrypt_sk<S0, S1, E>(
+    fn blind_rotation_key_encrypt_sk<S0, S1>(
         module: &Module<Self>,
         res: &mut BlindRotationKey<Self::OwnedBuf, BRA, Self::ZnxWord>,
         sk_glwe: &S0,
         sk_lwe: &S1,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         S0: GLWESecretPreparedToBackendRef<Self> + GLWEInfos,
-        E: EncryptionInfos,
         S1: LWESecretToBackendRef<Self> + LWEInfos + GetDistribution;
 }
 
@@ -115,7 +113,7 @@ macro_rules! impl_bin_fhe_blind_rotation_key_encrypt_reference {
     ($backend:ty) => {
         const _: () = {
             use poulpy_core::{
-                EncryptionInfos, GetDistribution,
+                GetDistribution,
                 layouts::{GGSWInfos, GLWEInfos, GLWESecretPreparedToBackendRef, LWEInfos, LWESecretToBackendRef},
             };
             use poulpy_hal::{
@@ -128,22 +126,20 @@ macro_rules! impl_bin_fhe_blind_rotation_key_encrypt_reference {
                 fn blind_rotation_key_encrypt_sk_tmp_bytes<A: GGSWInfos>(module: &Module<Self>, infos: &A) -> usize {
                     $crate::reference::blind_rotation::blind_rotation_key_encrypt_sk_tmp_bytes_ref::<Self, _>(module, infos)
                 }
-                fn blind_rotation_key_encrypt_sk<S0, S1, E>(
+                fn blind_rotation_key_encrypt_sk<S0, S1>(
                     module: &Module<Self>,
                     res: &mut BlindRotationKey<Self::OwnedBuf, CGGI, Self::ZnxWord>,
                     sk_glwe: &S0,
                     sk_lwe: &S1,
-                    enc_infos: &E,
                     source_xe: &mut Source,
                     source_xa: &mut Source,
                     scratch: &mut ScratchArena<'_, Self>,
                 ) where
                     S0: GLWESecretPreparedToBackendRef<Self> + GLWEInfos,
-                    E: EncryptionInfos,
                     S1: LWESecretToBackendRef<Self> + LWEInfos + GetDistribution,
                 {
-                    $crate::reference::blind_rotation::blind_rotation_key_encrypt_sk_ref::<Self, _, _, _>(
-                        module, res, sk_glwe, sk_lwe, enc_infos, source_xe, source_xa, scratch,
+                    $crate::reference::blind_rotation::blind_rotation_key_encrypt_sk_ref::<Self, _, _>(
+                        module, res, sk_glwe, sk_lwe, source_xe, source_xa, scratch,
                     )
                 }
             }
@@ -159,18 +155,16 @@ pub unsafe trait BlindRotationKeyCompressedEncryptSkImpl<BRA: BlindRotationAlgo>
     fn blind_rotation_key_compressed_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGSWInfos;
-    fn blind_rotation_key_compressed_encrypt_sk<S0, S1, E>(
+    fn blind_rotation_key_compressed_encrypt_sk<S0, S1>(
         module: &Module<Self>,
         res: &mut BlindRotationKeyCompressed<Self::OwnedBuf, BRA, Self::ZnxWord>,
         sk_glwe: &S0,
         sk_lwe: &S1,
         seed_xa: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         S0: GLWESecretPreparedToBackendRef<Self> + GLWEInfos,
-        E: EncryptionInfos,
         S1: LWESecretToBackendRef<Self> + LWEInfos + GetDistribution;
 }
 
@@ -180,7 +174,7 @@ macro_rules! impl_bin_fhe_blind_rotation_key_compressed_reference {
     ($backend:ty) => {
         const _: () = {
             use poulpy_core::{
-                EncryptionInfos, GetDistribution,
+                GetDistribution,
                 layouts::{GGSWInfos, GLWEInfos, GLWESecretPreparedToBackendRef, LWEInfos, LWESecretToBackendRef},
             };
             use poulpy_hal::{
@@ -198,22 +192,20 @@ macro_rules! impl_bin_fhe_blind_rotation_key_compressed_reference {
                         module, infos,
                     )
                 }
-                fn blind_rotation_key_compressed_encrypt_sk<S0, S1, E>(
+                fn blind_rotation_key_compressed_encrypt_sk<S0, S1>(
                     module: &Module<Self>,
                     res: &mut BlindRotationKeyCompressed<Self::OwnedBuf, CGGI, Self::ZnxWord>,
                     sk_glwe: &S0,
                     sk_lwe: &S1,
                     seed_xa: [u8; 32],
-                    enc_infos: &E,
                     source_xe: &mut Source,
                     scratch: &mut ScratchArena<'_, Self>,
                 ) where
                     S0: GLWESecretPreparedToBackendRef<Self> + GLWEInfos,
-                    E: EncryptionInfos,
                     S1: LWESecretToBackendRef<Self> + LWEInfos + GetDistribution,
                 {
-                    $crate::reference::blind_rotation::blind_rotation_key_compressed_encrypt_sk_ref::<Self, _, _, _>(
-                        module, res, sk_glwe, sk_lwe, seed_xa, enc_infos, source_xe, scratch,
+                    $crate::reference::blind_rotation::blind_rotation_key_compressed_encrypt_sk_ref::<Self, _, _>(
+                        module, res, sk_glwe, sk_lwe, seed_xa, source_xe, scratch,
                     )
                 }
             }

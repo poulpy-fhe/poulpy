@@ -10,7 +10,7 @@ use poulpy_hal::{
 use crate::api::GLWEBytesOf;
 use crate::layouts::operand_degree;
 use crate::{
-    EncryptionInfos, ScratchArenaTakeCore,
+    ScratchArenaTakeCore,
     encryption::glwe_switching_key::GLWESwitchingKeyEncryptSk,
     layouts::{GGLWEInfos, GGLWEToBackendMut, GLWESwitchingKeyDegreesMut, LWEInfos, LWESecretToBackendRef, Rank},
 };
@@ -23,18 +23,16 @@ pub trait LWESwitchingKeyEncryptReference<BE: Backend> {
     where
         A: GGLWEInfos;
 
-    fn lwe_switching_key_encrypt_sk_reference<R, S1, S2, E>(
+    fn lwe_switching_key_encrypt_sk_reference<R, S1, S2>(
         &self,
         res: &mut R,
         sk_lwe_in: &S1,
         sk_lwe_out: &S2,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToBackendMut<BE> + GLWESwitchingKeyDegreesMut + GGLWEInfos,
-        E: EncryptionInfos,
         S1: LWESecretToBackendRef<BE>,
         S2: LWESecretToBackendRef<BE>;
 }
@@ -61,18 +59,16 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn lwe_switching_key_encrypt_sk_reference<R, S1, S2, E>(
+    fn lwe_switching_key_encrypt_sk_reference<R, S1, S2>(
         &self,
         res: &mut R,
         sk_lwe_in: &S1,
         sk_lwe_out: &S2,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToBackendMut<BE> + GLWESwitchingKeyDegreesMut + GGLWEInfos,
-        E: EncryptionInfos,
         S1: LWESecretToBackendRef<BE>,
         S2: LWESecretToBackendRef<BE>,
     {
@@ -133,15 +129,7 @@ where
                 self.vec_znx_automorphism(-1, &mut sk_glwe_in_backend, 0, &sk_glwe_src_backend, 0);
             }
 
-            self.glwe_switching_key_encrypt_sk(
-                res,
-                &sk_glwe_in,
-                &sk_glwe_out,
-                enc_infos,
-                source_xe,
-                source_xa,
-                &mut enc_scratch,
-            );
+            self.glwe_switching_key_encrypt_sk(res, &sk_glwe_in, &sk_glwe_out, source_xe, source_xa, &mut enc_scratch);
         }
         scratch.wipe(tmp_bytes);
     }

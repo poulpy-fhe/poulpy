@@ -1,6 +1,6 @@
 use crate::blind_rotation::{BlindRotationAlgo, BlindRotationKey};
 use poulpy_core::{
-    EncryptionInfos, GetDistribution,
+    GetDistribution,
     layouts::{GGSWInfos, GLWEInfos, GLWESecretPreparedToBackendRef, LWEInfos, LWESecretToBackendRef},
 };
 use poulpy_hal::{
@@ -19,17 +19,15 @@ pub trait BlindRotationKeyEncryptSk<BRA: BlindRotationAlgo, B: Backend> {
     /// Encrypts each bit of `sk_lwe` as a GGSW ciphertext under `sk_glwe`,
     /// storing the result in `res`.
     #[allow(clippy::too_many_arguments)]
-    fn blind_rotation_key_encrypt_sk<S0, S1, E>(
+    fn blind_rotation_key_encrypt_sk<S0, S1>(
         &self,
         res: &mut BlindRotationKey<B::OwnedBuf, BRA, B::ZnxWord>,
         sk_glwe: &S0,
         sk_lwe: &S1,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, B>,
     ) where
         S0: GLWESecretPreparedToBackendRef<B> + GLWEInfos,
-        E: EncryptionInfos,
         S1: LWESecretToBackendRef<B> + LWEInfos + GetDistribution;
 }

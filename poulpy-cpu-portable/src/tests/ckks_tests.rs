@@ -119,7 +119,7 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_fft64portable_encryption,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref = poulpy_cpu_oracle::test_suite::ControlledSamplingFFT64Oracle,
     backend_test = crate::FFT64Portable,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
@@ -178,7 +178,7 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ntt4x30portable_encryption,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref = poulpy_cpu_oracle::test_suite::ControlledSamplingFFT64Oracle,
     backend_test = crate::NTT4x30Portable,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
@@ -227,7 +227,7 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_fft64portable_encryption_rank2,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref = poulpy_cpu_oracle::test_suite::ControlledSamplingFFT64Oracle,
     backend_test = crate::FFT64Portable,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
@@ -249,7 +249,7 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ntt4x30portable_encryption_rank2,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref = poulpy_cpu_oracle::test_suite::ControlledSamplingFFT64Oracle,
     backend_test = crate::NTT4x30Portable,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
@@ -291,7 +291,7 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_fft64portable_encryption,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
+    backend_ref = poulpy_cpu_oracle::test_suite::ControlledSamplingFFT64CIOracle,
     backend_test = crate::FFT64CIPortable,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
@@ -332,7 +332,7 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_ntt4x30portable_encryption,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
+    backend_ref = poulpy_cpu_oracle::test_suite::ControlledSamplingFFT64CIOracle,
     backend_test = crate::NTT4x30CIPortable,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
@@ -376,7 +376,7 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_fft64portable_encryption_rank2,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
+    backend_ref = poulpy_cpu_oracle::test_suite::ControlledSamplingFFT64CIOracle,
     backend_test = crate::FFT64CIPortable,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
@@ -396,7 +396,7 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_ntt4x30portable_encryption_rank2,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
+    backend_ref = poulpy_cpu_oracle::test_suite::ControlledSamplingFFT64CIOracle,
     backend_test = crate::NTT4x30CIPortable,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }

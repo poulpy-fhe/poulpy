@@ -2,7 +2,7 @@
 //! under the finalized key decrypts under the ideal secret.
 
 use poulpy_core::{
-    DEFAULT_SIGMA_XE, Distribution, EncryptionLayout, GLWEEncryptPk, GLWENoise, GetDistributionMut,
+    DEFAULT_SIGMA_XE, Distribution, GLWEEncryptPk, GLWENoise, GetDistributionMut,
     layouts::{
         GLWE, GLWELayout, GLWEPlaintext, GLWEPublicKey, GLWEPublicKeyPreparedFactory, GLWESecretPrepared,
         GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank,
@@ -41,7 +41,6 @@ where
         k: K,
         rank: RANK,
     };
-    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
     let parties = party_secrets(module);
     let sk_ideal = ideal_secret(module, &parties);
     let pk_prepared = collective_public_key(module, &parties, &layout);
@@ -64,7 +63,6 @@ where
         &mut ct,
         &pt,
         &pk_prepared,
-        &enc_infos,
         &mut Source::new([31u8; 32]),
         &mut Source::new([32u8; 32]),
         &mut scratch.borrow(),
@@ -179,18 +177,10 @@ where
         k: K,
         rank: RANK,
     };
-    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
     let sk: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(RANK);
     let mut res = module.glwe_public_key_share_alloc_from_infos(&layout);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_public_key_share_gen_tmp_bytes(&layout));
-    module.mhe_glwe_public_key_share_gen(
-        &mut res,
-        &sk,
-        SEEDS[0],
-        &enc_infos,
-        &mut Source::new([10u8; 32]),
-        &mut scratch.borrow(),
-    );
+    module.mhe_glwe_public_key_share_gen(&mut res, &sk, SEEDS[0], &mut Source::new([10u8; 32]), &mut scratch.borrow());
 }
 
 /// Invalid shapes fail at the protocol boundary with an exact static message.
@@ -206,7 +196,6 @@ where
         k: K,
         rank: RANK,
     };
-    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
     let small_module = Module::<BE>::new((module.n() / 2) as u64);
     let expected = [
         "invalid share: secret degree differs from the share's",
@@ -229,14 +218,7 @@ where
             };
             let mut res = module.glwe_public_key_share_alloc_from_infos(&layout);
             let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_public_key_share_gen_tmp_bytes(&layout));
-            module.mhe_glwe_public_key_share_gen(
-                &mut res,
-                &sk,
-                SEEDS[0],
-                &enc_infos,
-                &mut Source::new([10u8; 32]),
-                &mut scratch.borrow(),
-            );
+            module.mhe_glwe_public_key_share_gen(&mut res, &sk, SEEDS[0], &mut Source::new([10u8; 32]), &mut scratch.borrow());
         });
     }
 }

@@ -1,5 +1,5 @@
 use poulpy_core::{
-    EncryptionLayout, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWENoise,
+    GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWENoise,
     layouts::{GGSWLayout, GLWELayout, GLWESecretPrepared, GLWESecretPreparedFactory},
 };
 use poulpy_hal::layouts::HostDataRef;
@@ -61,27 +61,10 @@ pub fn test_bdd_add<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + 
     let a: u32 = source.next_u32();
     let b: u32 = source.next_u32();
 
-    let ggsw_enc_infos = EncryptionLayout::new_from_default_sigma(ggsw_infos).unwrap();
     source.fill_bytes(scratch.data.as_mut());
-    a_enc_prep.encrypt_sk(
-        module,
-        a,
-        sk_glwe_prep,
-        &ggsw_enc_infos,
-        &mut source_xe,
-        &mut source_xa,
-        &mut scratch.borrow(),
-    );
+    a_enc_prep.encrypt_sk(module, a, sk_glwe_prep, &mut source_xe, &mut source_xa, &mut scratch.borrow());
     source.fill_bytes(scratch.data.as_mut());
-    b_enc_prep.encrypt_sk(
-        module,
-        b,
-        sk_glwe_prep,
-        &ggsw_enc_infos,
-        &mut source_xe,
-        &mut source_xa,
-        &mut scratch.borrow(),
-    );
+    b_enc_prep.encrypt_sk(module, b, sk_glwe_prep, &mut source_xe, &mut source_xa, &mut scratch.borrow());
 
     let add_bytes: usize = res.add_tmp_bytes(module, &glwe_infos, &ggsw_infos, bdd_key_prepared);
     let mut scratch_add: ScratchOwned<BE> = ScratchOwned::alloc(add_bytes);

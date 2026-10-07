@@ -6,16 +6,13 @@
 //! precision pin test ([`bootstrapping_presets_meet_precision`]) both drive it,
 //! so there is a single description of how a preset is exercised.
 
-use poulpy_core::{
-    EncryptionLayout,
-    layouts::{
-        GGLWEInfos, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, GLWETensorKeyPrepared, GLWEToBackendMut,
-        GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, prepared::GLWETensorKeyPreparedToBackendRef,
-    },
+use poulpy_core::layouts::{
+    GGLWEInfos, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, GLWETensorKeyPrepared, GLWEToBackendMut,
+    GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
+    layouts::{Backend, HostDataMut, HostDataRef, Module, ReaderFrom, ScratchOwned, Standard, WriterTo},
     source::Source,
 };
 
@@ -86,6 +83,10 @@ where
     /// at the preset's input layout, and runs one bootstrap to check the output
     /// width. Every layout comes from `preset`.
     pub fn setup(preset: BootstrappingPreset) -> Self {
+        Self::setup_with_roundtrip(preset, false)
+    }
+
+    fn setup_with_roundtrip(preset: BootstrappingPreset, roundtrip_keys: bool) -> Self {
         let plan = preset.plan();
         let n = preset.n();
         let base2k = preset.base2k();
@@ -126,8 +127,23 @@ where
                 &mut source_xa,
                 &mut scratch.borrow(),
             )
-            .unwrap()
-            .prepare(&module, &mut scratch.borrow());
+            .unwrap();
+        if roundtrip_keys {
+            fn roundtrip<T: ReaderFrom + WriterTo + PartialEq>(key: &T, mut restored: T) {
+                let mut bytes = Vec::new();
+                key.write_to(&mut bytes).unwrap();
+                restored.read_from(&mut bytes.as_slice()).unwrap();
+                assert!(restored == *key);
+            }
+            for key in keys.rotation_keys.values() {
+                roundtrip(key, module.glwe_automorphism_key_alloc_from_infos(key));
+            }
+            roundtrip(&keys.tensor_key, module.glwe_tensor_key_alloc_from_infos(&keys.tensor_key));
+            let (dense_to_sparse, sparse_to_dense) = keys.encapsulation_keys.as_ref().expect("preset needs encapsulation keys");
+            roundtrip(dense_to_sparse, module.glwe_switching_key_alloc_from_infos(dense_to_sparse));
+            roundtrip(sparse_to_dense, module.glwe_switching_key_alloc_from_infos(sparse_to_dense));
+        }
+        let keys = keys.prepare(&module, &mut scratch.borrow());
 
         let (want_re, want_im) = test_vector_1::<f64>(n / 2);
         let mut input_pt = module.ckks_pt_vec_alloc(base2k.into(), input_layout.k());
@@ -135,7 +151,7 @@ where
         module
             .ckks_encode_reim_into(&mut input_pt, &want_re, &want_im, &mut scratch.borrow())
             .unwrap();
-        let input_enc_infos = EncryptionLayout::new_from_default_sigma(input_layout.glwe_layout).unwrap();
+
         let mut input = module.ckks_ciphertext_alloc_from_glwe_infos(&input_layout);
         let (mut input_xa, mut input_xe) = (Source::new([3; 32]), Source::new([4; 32]));
         module
@@ -143,7 +159,6 @@ where
                 &mut input,
                 &input_pt,
                 &sk,
-                &input_enc_infos,
                 &mut input_xe,
                 &mut input_xa,
                 &mut scratch.borrow(),
@@ -227,7 +242,8 @@ where
 }
 
 /// Runs every preset once on `BE` and checks the measured output precision
-/// against the precision the preset advertises.
+/// against the precision the preset advertises. The first preset also
+/// round-trips every generated key, both encapsulation directions included.
 ///
 /// The caller supplies the fixture radix limit; this precision check does
 /// not establish a failure-probability bound. Every backend uses `f64` DFT
@@ -245,9 +261,9 @@ where
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
-    for preset in all().unwrap() {
+    for (index, preset) in all().unwrap().into_iter().enumerate() {
         let preset = preset_with_max_base2k(&preset, fixture_base2k).unwrap();
-        let mut run = BootstrappingPresetRun::<BE>::setup(preset);
+        let mut run = BootstrappingPresetRun::<BE>::setup_with_roundtrip(preset, index == 0);
         let (re, im) = run.precision();
         let preset = run.preset();
         println!(

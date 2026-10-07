@@ -5,7 +5,7 @@ use poulpy_hal::{
 };
 
 use poulpy_core::{
-    EncryptionInfos, GetDistribution,
+    GetDistribution,
     layouts::{GGSWInfos, GLWEInfos, GLWESecretPreparedToBackendRef, LWEInfos, LWESecretToBackendRef},
 };
 
@@ -32,23 +32,21 @@ pub use crate::api::BlindRotationKeyEncryptSk;
 
 impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> BlindRotationKey<D, BRA, W> {
     #[allow(clippy::too_many_arguments)]
-    pub fn encrypt_sk<M, S0, S1, E, BE>(
+    pub fn encrypt_sk<M, S0, S1, BE>(
         &mut self,
         module: &M,
         sk_glwe: &S0,
         sk_lwe: &S1,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         S0: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         S1: LWESecretToBackendRef<BE> + LWEInfos + GetDistribution,
-        E: EncryptionInfos,
         M: BlindRotationKeyEncryptSk<BRA, BE>,
         BE: Backend<OwnedBuf = D, ZnxWord = W>,
     {
-        module.blind_rotation_key_encrypt_sk(self, sk_glwe, sk_lwe, enc_infos, source_xe, source_xa, scratch);
+        module.blind_rotation_key_encrypt_sk(self, sk_glwe, sk_lwe, source_xe, source_xa, scratch);
     }
 }
 

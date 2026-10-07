@@ -2,7 +2,7 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use poulpy_core::{
-    EncryptionLayout, GLWEDecrypt, GLWEEncryptSk,
+    GLWEDecrypt, GLWEEncryptSk,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGLWEToGGSWKeyLayout, GGSWLayout, GGSWPreparedFactory, GLWEAutomorphismKeyLayout,
         GLWELayout, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKeyLayout, GLWEToLWEKeyLayout, LWESecret,
@@ -12,8 +12,7 @@ use poulpy_core::{
 
 use poulpy_bin_fhe::{
     bdd_arithmetic::{
-        BDDEncryptionInfos, BDDKey, BDDKeyEncryptSk, BDDKeyLayout, BDDKeyPrepared, BDDKeyPreparedFactory, FheUint,
-        FheUintPrepare, FheUintPrepared,
+        BDDKey, BDDKeyEncryptSk, BDDKeyLayout, BDDKeyPrepared, BDDKeyPreparedFactory, FheUint, FheUintPrepare, FheUintPrepared,
     },
     blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos, BlindRotationKeyLayout, CGGI},
     circuit_bootstrapping::{CircuitBootstrappingKeyEncryptSk, CircuitBootstrappingKeyLayout},
@@ -101,14 +100,11 @@ pub fn benc_bdd_prepare<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBac
         let mut sk_glwe_prepared = module.glwe_secret_prepared_alloc_from_infos(&params.glwe_layout);
         module.glwe_secret_prepare(&mut sk_glwe_prepared, &sk_glwe);
 
-        let bdd_enc_infos = BDDEncryptionInfos::from_default_sigma(&params.bdd_layout).unwrap();
-        let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(params.glwe_layout).unwrap();
         let mut bdd_key: BDDKey<BE::OwnedBuf, BRA, BE::ZnxWord> = BDDKey::alloc_from_infos(&module, &params.bdd_layout);
         bdd_key.encrypt_sk(
             &module,
             &sk_lwe,
             &sk_glwe,
-            &bdd_enc_infos,
             &mut source_xe,
             &mut source_xa,
             &mut scratch.borrow(),
@@ -121,7 +117,6 @@ pub fn benc_bdd_prepare<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBac
             &module,
             input_a,
             &sk_glwe_prepared,
-            &glwe_enc_infos,
             &mut source_xe,
             &mut source_xa,
             &mut scratch.borrow(),

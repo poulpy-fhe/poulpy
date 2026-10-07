@@ -1,6 +1,6 @@
 use poulpy_core::test_suite::noise::glwe_decrypt_checked;
 use poulpy_core::{
-    EncryptionLayout, GGSWEncryptSk, GLWEDecrypt, GLWEEncryptSk,
+    GGSWEncryptSk, GLWEDecrypt, GLWEEncryptSk,
     layouts::{
         Base2K, Dnum, Dsize, GGSWLayout, GGSWPreparedFactory, GLWE, GLWELayout, GLWEPlaintext, GLWESecretPrepared,
         GLWESecretPreparedFactory, ModuleCoreAlloc, Rank, TorusPrecision,
@@ -75,19 +75,9 @@ where
 
     let k: u32 = source.next_u32();
 
-    let ggsw_enc_infos = EncryptionLayout::new_from_default_sigma(ggsw_infos).unwrap();
-
     let mut k_enc_prep: FheUintPrepared<BE::OwnedBuf, u32, BE> =
         FheUintPrepared::<BE::OwnedBuf, u32, BE>::alloc_from_infos(module, &ggsw_infos);
-    k_enc_prep.encrypt_sk(
-        module,
-        k,
-        sk_glwe_prep,
-        &ggsw_enc_infos,
-        &mut source_xe,
-        &mut source_xa,
-        &mut scratch.borrow(),
-    );
+    k_enc_prep.encrypt_sk(module, k, sk_glwe_prep, &mut source_xe, &mut source_xa, &mut scratch.borrow());
 
     let base: [usize; 2] = [module.log_n() >> 1, module.log_n() - (module.log_n() >> 1)];
 

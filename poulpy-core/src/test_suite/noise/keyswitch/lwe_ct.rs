@@ -8,7 +8,7 @@ use poulpy_hal::{
 use crate::layouts::LWESecretSampling;
 use crate::layouts::prepared::GGLWEPreparedToBackendRef;
 use crate::{
-    EncryptionLayout, LWEDecrypt, LWEEncryptSk, LWEKeyswitch, LWESwitchingKeyEncrypt,
+    LWEDecrypt, LWEEncryptSk, LWEKeyswitch, LWESwitchingKeyEncrypt,
     layouts::{
         LWE, LWELayout, LWEPlaintext, LWESecret, LWESwitchingKey, LWESwitchingKeyLayout, LWESwitchingKeyPreparedFactory,
         ModuleCoreAlloc, prepared::LWESwitchingKeyPrepared,
@@ -45,20 +45,18 @@ where
     let mut source_xa: Source = Source::new([0u8; 32]);
     let mut source_xe: Source = Source::new([0u8; 32]);
 
-    let key_apply_infos = EncryptionLayout::new_from_default_sigma(LWESwitchingKeyLayout {
+    let key_apply_infos = LWESwitchingKeyLayout {
         n: n.into(),
         base2k: key_base2k.into(),
         dnum: dnum.into(),
         k_aux: (key_base2k + module.log_n()).into(),
-    })
-    .unwrap();
+    };
 
-    let lwe_in_infos = EncryptionLayout::new_from_default_sigma(LWELayout {
+    let lwe_in_infos = LWELayout {
         n: n_lwe_in.into(),
         base2k: in_base2k.into(),
         k: k_lwe_ct.into(),
-    })
-    .unwrap();
+    };
 
     let lwe_out_infos: LWELayout = LWELayout {
         n: n_lwe_out.into(),
@@ -87,7 +85,6 @@ where
         &mut lwe_ct_in,
         &lwe_pt_in,
         &sk_lwe_in,
-        &lwe_in_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),
@@ -99,7 +96,6 @@ where
         &mut ksk,
         &sk_lwe_in,
         &sk_lwe_out,
-        &key_apply_infos,
         &mut source_xe,
         &mut source_xa,
         &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),

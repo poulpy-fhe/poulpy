@@ -1,9 +1,6 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_core::{
-    EncryptionInfos,
-    layouts::{GLWEInfos, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef},
-};
+use poulpy_core::layouts::{GLWEInfos, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::{
     layouts::{Backend, ScratchArena},
     source::Source,
@@ -19,8 +16,8 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos};
 ///
 /// # Metadata
 ///
-/// The encryption parameters supply the total torus budget `k` via
-/// `enc_infos.noise_infos().k`.  The ciphertext metadata is set to:
+/// The destination ciphertext supplies the total torus budget `k`. The
+/// ciphertext metadata is set to:
 ///
 /// ```text
 /// log_delta_out  = pt.log_delta
@@ -30,8 +27,8 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos};
 /// `k_out = k` (the full encryption budget).
 ///
 /// Errors with `InsufficientHomomorphicCapacity` if `k < pt.log_delta`
-/// (i.e., the encryption key does not provide enough headroom for the
-/// requested plaintext precision).
+/// (i.e., the ciphertext does not provide enough headroom for the
+/// requested plaintext precision), before changing the ciphertext.
 /// Returns `EncryptionDegreeMismatch` if the ciphertext and prepared secret
 /// key degrees differ or exceed the module degree, before changing the ciphertext
 /// or consuming randomness.
@@ -41,12 +38,11 @@ pub trait CKKSEncryptOps<BE: Backend> {
         A: CKKSCtBounds;
 
     #[allow(clippy::too_many_arguments)]
-    fn ckks_encrypt_sk<Dct, Dpt, S, E: EncryptionInfos>(
+    fn ckks_encrypt_sk<Dct, Dpt, S>(
         &self,
         ct: &mut Dct,
         pt: &Dpt,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,

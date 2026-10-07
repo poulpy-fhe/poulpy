@@ -1,7 +1,7 @@
 //! Evaluation-key and gadget encryption compositions with controlled sampling.
 use super::encryption::{EncryptionParityBackend, Snapshot, secret, source_snapshot};
 use super::{ParityShapes, poisoned_scratch};
-use crate::{EncryptionLayout, api::*, layouts::*};
+use crate::{Distribution, GetDistributionMut, api::*, layouts::*};
 use poulpy_hal::{
     layouts::{Backend, DataView, DataViewMut, Module, ScalarZnx},
     source::Source,
@@ -104,8 +104,10 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             rank_out: Rank(rank as u32),
             stride: 1,
         };
-        let enc = EncryptionLayout::new_from_default_sigma(key).unwrap();
+
         let sk = secret(module, n, rank);
+        let mut sk_in = secret(module, n, rank);
+        *sk_in.dist_mut() = Distribution::TernaryProb(0.5);
         let mut skp = module.glwe_secret_prepared_alloc_from_infos(&sk);
         module.glwe_secret_prepare(&mut skp, &sk);
         let mut lwe = module.lwe_secret_alloc(Degree((n / 2) as u32));
@@ -123,12 +125,17 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             &mut out,
             &pt,
             &skp,
-            &enc,
             &mut e,
             &mut a,
             &mut poisoned_scratch::<B>(module.gglwe_encrypt_sk_tmp_bytes(&key)).arena(),
         );
         result.push(gglwe_snapshot::<B, _>("gglwe_encrypt_sk", &out));
+        let mut prepared = module.gglwe_prepared_alloc_from_infos(&key);
+        module.gglwe_prepare(
+            &mut prepared,
+            &out,
+            &mut poisoned_scratch::<B>(module.gglwe_prepare_tmp_bytes(&key)).arena(),
+        );
         result.push(source_snapshot("gglwe_encrypt_sk_sources", &mut e, &mut a));
         let mut compact = module.gglwe_compressed_alloc_from_infos(&key);
         poison_compressed::<B, _>(&mut compact);
@@ -137,7 +144,6 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             &pt,
             &skp,
             seed,
-            &enc,
             &mut e,
             &mut poisoned_scratch::<B>(module.gglwe_compressed_encrypt_sk_tmp_bytes(&key)).arena(),
         );
@@ -153,7 +159,7 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             k_aux: key.k_aux,
             rank: key.rank_out,
         };
-        let genc = EncryptionLayout::new_from_default_sigma(g).unwrap();
+
         let pt = scalar(module, n, 1);
         let mut out = module.ggsw_alloc_from_infos(&g);
         poison_ggsw::<B, _>(&mut out);
@@ -161,12 +167,17 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             &mut out,
             &pt,
             &skp,
-            &genc,
             &mut e,
             &mut a,
             &mut poisoned_scratch::<B>(module.ggsw_encrypt_sk_tmp_bytes(&g)).arena(),
         );
         result.push(ggsw_snapshot::<B, _>("ggsw_encrypt_sk", &out));
+        let mut prepared = module.ggsw_prepared_alloc_from_infos(&g);
+        module.ggsw_prepare(
+            &mut prepared,
+            &out,
+            &mut poisoned_scratch::<B>(module.ggsw_prepare_tmp_bytes(&g)).arena(),
+        );
         result.push(source_snapshot("ggsw_encrypt_sk_sources", &mut e, &mut a));
         let mut compact = module.ggsw_compressed_alloc_from_infos(&g);
         poison_compressed_ggsw::<B, _>(&mut compact);
@@ -175,7 +186,6 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             &pt,
             &skp,
             seed,
-            &genc,
             &mut e,
             &mut poisoned_scratch::<B>(module.ggsw_compressed_encrypt_sk_tmp_bytes(&g)).arena(),
         );
@@ -183,13 +193,42 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
         module.decompress_ggsw(&mut out, &compact);
         result.push(ggsw_snapshot::<B, _>("ggsw_compressed_encrypt_sk", &out));
         result.push(source_snapshot("ggsw_compressed_sources", &mut e, &mut a));
+        let pk_layout = GLWELayout {
+            n: g.n,
+            base2k: g.base2k,
+            k: TorusPrecision(g.k().0 + b as u32),
+            rank: g.rank,
+        };
+        let mut pk = module.glwe_public_key_alloc_from_infos(&pk_layout);
+        module.glwe_public_key_generate(
+            &mut pk,
+            &skp,
+            &mut e,
+            &mut a,
+            &mut poisoned_scratch::<B>(module.glwe_public_key_generate_tmp_bytes(&pk_layout)).arena(),
+        );
+        let mut pkp = module.glwe_public_key_prepared_alloc_from_infos(&pk_layout);
+        module.glwe_public_key_prepare(
+            &mut pkp,
+            &pk,
+            &mut poisoned_scratch::<B>(module.glwe_public_key_prepare_tmp_bytes(&pk_layout)).arena(),
+        );
+        module.ggsw_encrypt_pk(
+            &mut out,
+            &pt,
+            &pkp,
+            &mut e,
+            &mut a,
+            &mut poisoned_scratch::<B>(module.ggsw_encrypt_pk_tmp_bytes(&g, &pk_layout)).arena(),
+        );
+        result.push(ggsw_snapshot::<B, _>("ggsw_pk_reduced", &out));
+        result.push(source_snapshot("ggsw_pk_sources", &mut e, &mut a));
         let mut switching = module.glwe_switching_key_alloc_from_infos(&key);
         poison_gglwe::<B, _>(&mut switching);
         module.glwe_switching_key_encrypt_sk(
             &mut switching,
+            &sk_in,
             &sk,
-            &sk,
-            &enc,
             &mut e,
             &mut a,
             &mut poisoned_scratch::<B>(module.glwe_switching_key_encrypt_sk_tmp_bytes(&key)).arena(),
@@ -208,10 +247,9 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
         poison_compressed::<B, _>(&mut compact);
         module.glwe_switching_key_compressed_encrypt_sk(
             &mut compact,
-            &sk,
+            &sk_in,
             &sk,
             seed,
-            &enc,
             &mut e,
             &mut poisoned_scratch::<B>(module.glwe_switching_key_compressed_encrypt_sk_tmp_bytes(&key)).arena(),
         );
@@ -225,7 +263,6 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             &mut auto,
             -5,
             &sk,
-            &enc,
             &mut e,
             &mut a,
             &mut poisoned_scratch::<B>(module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&key)).arena(),
@@ -240,7 +277,6 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             -5,
             &sk,
             seed,
-            &enc,
             &mut e,
             &mut poisoned_scratch::<B>(module.glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes(&key)).arena(),
         );
@@ -257,13 +293,11 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             k_aux: key.k_aux,
             rank: key.rank_out,
         };
-        let tenc = EncryptionLayout::new_from_default_sigma(tk).unwrap();
         let mut tensor = module.glwe_tensor_key_alloc_from_infos(&tk);
         poison_gglwe::<B, _>(&mut tensor);
         module.glwe_tensor_key_encrypt_sk(
             &mut tensor,
             &sk,
-            &tenc,
             &mut e,
             &mut a,
             &mut poisoned_scratch::<B>(module.glwe_tensor_key_encrypt_sk_tmp_bytes(&tk)).arena(),
@@ -276,7 +310,6 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             &mut compact,
             &sk,
             seed,
-            &tenc,
             &mut e,
             &mut poisoned_scratch::<B>(module.glwe_tensor_key_compressed_encrypt_sk_tmp_bytes(&tk)).arena(),
         );
@@ -291,7 +324,6 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
         module.gglwe_to_ggsw_key_encrypt_sk(
             &mut rows,
             &sk,
-            &enc,
             &mut e,
             &mut a,
             &mut poisoned_scratch::<B>(module.gglwe_to_ggsw_key_encrypt_sk_tmp_bytes(&key)).arena(),
@@ -308,7 +340,6 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             &mut compact,
             &sk,
             seed,
-            &enc,
             &mut e,
             &mut poisoned_scratch::<B>(module.gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes(&key)).arena(),
         );
@@ -316,6 +347,12 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             result.push(seeds_snapshot("row_key_compressed_seeds", &row.seed));
         }
         module.decompress_gglwe_to_ggsw_key(&mut rows, &compact);
+        let mut prepared_rows = module.gglwe_to_ggsw_key_prepared_alloc_from_infos(&rows);
+        module.gglwe_to_ggsw_key_prepare(
+            &mut prepared_rows,
+            &rows,
+            &mut poisoned_scratch::<B>(module.gglwe_to_ggsw_key_prepare_tmp_bytes(&rows)).arena(),
+        );
         for row in &rows.keys {
             result.push(gglwe_snapshot::<B, _>("gglwe_to_ggsw_key_compressed_encrypt_sk", row));
         }
@@ -366,14 +403,12 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
                 decompress_glwe_to_lwe_key,
                 kl
             );
-            let enc = EncryptionLayout::new_from_default_sigma(kl).unwrap();
             let mut out = module.glwe_to_lwe_key_alloc_from_infos(&kl);
             poison_gglwe::<B, _>(&mut out);
             module.glwe_to_lwe_key_encrypt_sk(
                 &mut out,
                 &lwe,
                 &sk,
-                &enc,
                 &mut e,
                 &mut a,
                 &mut poisoned_scratch::<B>(module.glwe_to_lwe_key_encrypt_sk_tmp_bytes(&kl)).arena(),
@@ -393,14 +428,12 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
                 decompress_lwe_to_glwe_key,
                 kl
             );
-            let enc = EncryptionLayout::new_from_default_sigma(kl).unwrap();
             let mut out = module.lwe_to_glwe_key_alloc_from_infos(&kl);
             poison_gglwe::<B, _>(&mut out);
             module.lwe_to_glwe_key_encrypt_sk(
                 &mut out,
                 &lwe,
                 &skp,
-                &enc,
                 &mut e,
                 &mut a,
                 &mut poisoned_scratch::<B>(module.lwe_to_glwe_key_encrypt_sk_tmp_bytes(&kl)).arena(),
@@ -419,14 +452,12 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
                 decompress_lwe_switching_key,
                 kl
             );
-            let enc = EncryptionLayout::new_from_default_sigma(kl).unwrap();
             let mut out = module.lwe_switching_key_alloc_from_infos(&kl);
             poison_gglwe::<B, _>(&mut out);
             module.lwe_switching_key_encrypt_sk(
                 &mut out,
                 &lwe,
                 &lwe,
-                &enc,
                 &mut e,
                 &mut a,
                 &mut poisoned_scratch::<B>(module.lwe_switching_key_encrypt_sk_tmp_bytes(&kl)).arena(),

@@ -479,8 +479,8 @@ backend_test_suite! {
     // the core suite computes at the module degree, no sweep
     params = TestParams { size: 1<<12, base2k: 12, n: 1<<12 },
     tests = {
-        test_vec_znx_add_normal => poulpy_core::test_suite::sampling::test_vec_znx_add_normal,
-        test_vec_znx_big_add_normal => poulpy_core::test_suite::sampling::test_vec_znx_big_add_normal,
+        test_vec_znx_add_noise => poulpy_core::test_suite::sampling::test_vec_znx_add_noise,
+        test_vec_znx_big_add_noise => poulpy_core::test_suite::sampling::test_vec_znx_big_add_noise,
     }
 }
 
@@ -491,8 +491,8 @@ backend_test_suite! {
     // the core suite computes at the module degree, no sweep
     params = TestParams { size: 1<<12, base2k: 17, n: 1<<12 },
     tests = {
-        test_vec_znx_add_normal => poulpy_core::test_suite::sampling::test_vec_znx_add_normal,
-        test_vec_znx_big_add_normal => poulpy_core::test_suite::sampling::test_vec_znx_big_add_normal,
+        test_vec_znx_add_noise => poulpy_core::test_suite::sampling::test_vec_znx_add_noise,
+        test_vec_znx_big_add_noise => poulpy_core::test_suite::sampling::test_vec_znx_big_add_noise,
     }
 }
 
@@ -629,9 +629,11 @@ fn test_hal_serialization_fft64_portable() {
 #[test]
 fn test_glwe_public_key_rank1_golden() {
     use poulpy_core::test_suite::noise::encryption::glwe_public_key_rank1_digests;
-    // Recorded on the single-key public key; the digest hashes its byte stream, the distribution then entry 0 as a GLWE.
-    const FFT64: [u64; 3] = [2646170676813990930, 724828226321361831, 12849013967890643351];
-    const NTT4X30: [u64; 3] = [15179721698775570956, 467002870803367667, 5727457524732813243];
+    use poulpy_core::test_suite::parity::controlled_sampling::with_backend_samples;
+    use poulpy_cpu_oracle::test_suite::{ControlledSamplingFFT64Oracle, ControlledSamplingNTT4x30Oracle};
+    // Digests cover the public key, encryption of a message, and encryption of zero.
+    const FFT64: [u64; 3] = [12523918757293039242, 16193001892340394447, 8859732105559243891];
+    const NTT4X30: [u64; 3] = [10600561161379084701, 11211264228044108947, 11785251196183236736];
     assert_eq!(
         (
             glwe_public_key_rank1_digests(&Module::<FFT64Portable>::new(256), 17),
@@ -639,6 +641,13 @@ fn test_glwe_public_key_rank1_golden() {
         ),
         (FFT64, NTT4X30)
     );
+    let fft_oracle = with_backend_samples(Module::<FFT64Portable>::new(256), |_| {
+        glwe_public_key_rank1_digests(&Module::<ControlledSamplingFFT64Oracle>::new(256), 17)
+    });
+    let ntt_oracle = with_backend_samples(Module::<NTT4x30Portable>::new(256), |_| {
+        glwe_public_key_rank1_digests(&Module::<ControlledSamplingNTT4x30Oracle>::new(256), 52)
+    });
+    assert_eq!((fft_oracle, ntt_oracle), (FFT64, NTT4X30));
 }
 
 #[cfg(feature = "enable-core")]
@@ -1595,15 +1604,15 @@ mod canonical_precision_tests {
 #[cfg(feature = "enable-core")]
 poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption_fft64portable,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
-    backend_test = crate::FFT64Portable
+    backend_ref = poulpy_cpu_oracle::test_suite::ControlledSamplingFFT64Oracle,
+    backend_test = crate::FFT64Portable,
 );
 
 #[cfg(feature = "enable-core")]
 poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption_ntt4x30portable,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
-    backend_test = crate::NTT4x30Portable
+    backend_ref = poulpy_cpu_oracle::test_suite::ControlledSamplingFFT64Oracle,
+    backend_test = crate::NTT4x30Portable,
 );
 
 // Encryption on a module of twice the operand degree samples and computes as a
@@ -1611,7 +1620,7 @@ poulpy_core::core_encryption_parity_test_suite!(
 #[cfg(feature = "enable-core")]
 poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption_sub_degree_fft64portable,
-    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_ref = poulpy_cpu_oracle::test_suite::ControlledSamplingFFT64Oracle,
     backend_test = crate::FFT64Portable,
     params = TestParams { size: 1<<7, n: 1<<7, base2k: 12 },
     test_size = 1<<8,

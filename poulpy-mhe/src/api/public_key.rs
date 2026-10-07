@@ -1,5 +1,5 @@
 use poulpy_core::{
-    EncryptionInfos, GetDistribution, GetDistributionMut,
+    GetDistribution, GetDistributionMut,
     layouts::{GLWEInfos, GLWEPublicKeyAtViewMut, GLWESecretPreparedToBackendRef},
 };
 use poulpy_hal::{
@@ -28,17 +28,15 @@ pub trait GLWEPublicKeyMHEProtocol<BE: Backend> {
     /// independently seeded for each party and purpose; never replay its stream
     /// or initialize it from the public `seed`.
     #[allow(clippy::too_many_arguments)]
-    fn mhe_glwe_public_key_share_gen<S, E>(
+    fn mhe_glwe_public_key_share_gen<S>(
         &self,
         res: &mut GLWEPublicKeyShareOwned<BE>,
         sk: &S,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        S: GLWESecretPreparedToBackendRef<BE> + GetDistribution,
-        E: EncryptionInfos;
+        S: GLWESecretPreparedToBackendRef<BE> + GetDistribution;
 
     /// Adds share `a` into `res`, which starts as the first share. The shares
     /// must have the same layout, entry seeds and distribution.

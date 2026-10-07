@@ -1,7 +1,4 @@
-use poulpy_core::{
-    EncryptionInfos,
-    layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWEPublicKeyPreparedToBackendRef, GLWESecretToBackendRef},
-};
+use poulpy_core::layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWEPublicKeyPreparedToBackendRef, GLWESecretToBackendRef};
 use poulpy_hal::{
     layouts::{Backend, ScratchArena},
     source::Source,
@@ -35,19 +32,17 @@ pub trait GLWETensorKeyMHEProtocol<BE: Backend> {
     /// be private, independently seeded for each party and purpose; never
     /// replay their streams.
     #[allow(clippy::too_many_arguments)]
-    fn mhe_glwe_tensor_key_share_gen<S, K, E>(
+    fn mhe_glwe_tensor_key_share_gen<S, K>(
         &self,
         res: &mut GLWETensorKeyShareOwned<BE>,
         sk: &S,
         pk: &K,
-        enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         S: GLWESecretToBackendRef<BE> + GLWEInfos,
-        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos;
+        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
 
     /// Adds share `a` into `res`, which starts as the first share. The shares
     /// must have the same layout.

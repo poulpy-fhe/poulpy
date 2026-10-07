@@ -205,11 +205,11 @@ where
     // One scratch for the whole pipeline (plaintext precision sized for the
     // largest plaintext op, EvalMod).
     let keys_layout = BootstrappingKeysLayout {
-        automorphism_key: tp.atk_layout().layout,
-        tensor_key: tp.tsk_layout().layout,
+        automorphism_key: tp.atk_layout(),
+        tensor_key: tp.tsk_layout(),
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
-            dense_to_sparse: tp.ksk_layout(log_modulus_in).layout,
-            sparse_to_dense: tp.ksk_layout(k_boot).layout,
+            dense_to_sparse: tp.ksk_layout(log_modulus_in),
+            sparse_to_dense: tp.ksk_layout(k_boot),
         }),
     };
     let scratch_size = bootstrap_setup_tmp_bytes(
@@ -508,11 +508,11 @@ where
     };
 
     let keys_layout = BootstrappingKeysLayout {
-        automorphism_key: tp.atk_layout().layout,
-        tensor_key: tp.tsk_layout().layout,
+        automorphism_key: tp.atk_layout(),
+        tensor_key: tp.tsk_layout(),
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
-            dense_to_sparse: tp.ksk_layout(log_modulus_in).layout,
-            sparse_to_dense: tp.ksk_layout(k_boot).layout,
+            dense_to_sparse: tp.ksk_layout(log_modulus_in),
+            sparse_to_dense: tp.ksk_layout(k_boot),
         }),
     };
     let scratch_size = bootstrap_setup_tmp_bytes(
@@ -811,11 +811,11 @@ where
     };
 
     let keys_layout = BootstrappingKeysLayout {
-        automorphism_key: tp.atk_layout().layout,
-        tensor_key: tp.tsk_layout().layout,
+        automorphism_key: tp.atk_layout(),
+        tensor_key: tp.tsk_layout(),
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
-            dense_to_sparse: tp.ksk_layout(log_modulus_in).layout,
-            sparse_to_dense: tp.ksk_layout(k_boot).layout,
+            dense_to_sparse: tp.ksk_layout(log_modulus_in),
+            sparse_to_dense: tp.ksk_layout(k_boot),
         }),
     };
     let scratch_size = bootstrap_setup_tmp_bytes(

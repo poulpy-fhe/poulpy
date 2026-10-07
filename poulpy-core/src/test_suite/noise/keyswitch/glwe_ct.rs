@@ -9,7 +9,7 @@ use poulpy_hal::{
 use crate::layouts::GLWESecretSampling;
 use crate::test_suite::noise::glwe_noise_checked;
 use crate::{
-    EncryptionLayout, GLWEEncryptSk, GLWEKeyswitch, GLWENoise, GLWENormalize, GLWESwitchingKeyEncryptSk,
+    GLWEEncryptSk, GLWEKeyswitch, GLWENoise, GLWENormalize, GLWESwitchingKeyEncryptSk,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey, GLWESwitchingKeyLayout,
@@ -50,13 +50,12 @@ where
                 let n: usize = module.n();
                 let dnum: usize = k_in.div_ceil(key_base2k * dsize);
 
-                let glwe_in_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+                let glwe_in_infos = GLWELayout {
                     n: n.into(),
                     base2k: in_base2k.into(),
                     k: k_in.into(),
                     rank: rank_in.into(),
-                })
-                .unwrap();
+                };
 
                 let glwe_out_infos: GLWELayout = GLWELayout {
                     n: n.into(),
@@ -65,7 +64,7 @@ where
                     rank: rank_out.into(),
                 };
 
-                let ksk_infos = EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
+                let ksk_infos = GLWESwitchingKeyLayout {
                     n: n.into(),
                     base2k: key_base2k.into(),
                     dnum: dnum.into(),
@@ -73,8 +72,7 @@ where
                     dsize: dsize.into(),
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
-                })
-                .unwrap();
+                };
 
                 let mut ksk: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&ksk_infos);
                 let mut glwe_in: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_in_infos);
@@ -118,7 +116,6 @@ where
                     &mut ksk,
                     &sk_in,
                     &sk_out,
-                    &ksk_infos,
                     &mut source_xe,
                     &mut source_xa,
                     &mut scratch.arena(),
@@ -128,7 +125,6 @@ where
                     &mut glwe_in,
                     &pt_in,
                     &sk_in_prepared,
-                    &glwe_in_infos,
                     &mut source_xe,
                     &mut source_xa,
                     &mut scratch.borrow(),
@@ -190,15 +186,14 @@ where
         for dsize in 1..max_dsize + 1 {
             let n: usize = module.n();
             let dnum: usize = k_out.div_ceil(key_base2k * dsize);
-            let glwe_out_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+            let glwe_out_infos = GLWELayout {
                 n: n.into(),
                 base2k: out_base2k.into(),
                 k: k_out.into(),
                 rank: rank.into(),
-            })
-            .unwrap();
+            };
 
-            let ksk_infos = EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
+            let ksk_infos = GLWESwitchingKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
                 dnum: dnum.into(),
@@ -206,8 +201,7 @@ where
                 dsize: dsize.into(),
                 rank_in: rank.into(),
                 rank_out: rank.into(),
-            })
-            .unwrap();
+            };
 
             let mut ksk: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&ksk_infos);
             let mut glwe_out: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_out_infos);
@@ -247,7 +241,6 @@ where
                 &mut ksk,
                 &sk_in,
                 &sk_out,
-                &ksk_infos,
                 &mut source_xe,
                 &mut source_xa,
                 &mut scratch.arena(),
@@ -257,7 +250,6 @@ where
                 &mut glwe_out,
                 &pt_want,
                 &sk_in_prepared,
-                &glwe_out_infos,
                 &mut source_xe,
                 &mut source_xa,
                 &mut scratch.borrow(),

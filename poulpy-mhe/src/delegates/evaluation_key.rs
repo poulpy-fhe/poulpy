@@ -1,5 +1,5 @@
 use poulpy_core::{
-    EncryptionInfos, GetDistribution,
+    GetDistribution,
     layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, SetGaloisElement},
 };
 use poulpy_hal::{
@@ -21,21 +21,19 @@ impl<BE: Backend + GLWESwitchingKeyMHEProtocolImpl> GLWESwitchingKeyMHEProtocol<
         BE::mhe_glwe_switching_key_share_gen_tmp_bytes(self, infos)
     }
 
-    fn mhe_glwe_switching_key_share_gen<S1, S2, E>(
+    fn mhe_glwe_switching_key_share_gen<S1, S2>(
         &self,
         res: &mut GLWESwitchingKeyShareOwned<BE>,
         sk_in: &S1,
         sk_out: &S2,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         S1: GLWESecretToBackendRef<BE> + GLWEInfos,
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
-        E: EncryptionInfos,
     {
-        BE::mhe_glwe_switching_key_share_gen(self, res, sk_in, sk_out, seed, enc_infos, source_xe, scratch)
+        BE::mhe_glwe_switching_key_share_gen(self, res, sk_in, sk_out, seed, source_xe, scratch)
     }
 
     fn mhe_glwe_switching_key_share_aggregate(
@@ -70,20 +68,18 @@ impl<BE: Backend + GLWEAutomorphismKeyMHEProtocolImpl> GLWEAutomorphismKeyMHEPro
         BE::mhe_glwe_automorphism_key_share_gen_tmp_bytes(self, infos)
     }
 
-    fn mhe_glwe_automorphism_key_share_gen<S, E>(
+    fn mhe_glwe_automorphism_key_share_gen<S>(
         &self,
         res: &mut GLWEAutomorphismKeyShareOwned<BE>,
         p: i64,
         sk: &S,
         seed: [u8; 32],
-        enc_infos: &E,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         S: GLWESecretToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos,
     {
-        BE::mhe_glwe_automorphism_key_share_gen(self, res, p, sk, seed, enc_infos, source_xe, scratch)
+        BE::mhe_glwe_automorphism_key_share_gen(self, res, p, sk, seed, source_xe, scratch)
     }
 
     fn mhe_glwe_automorphism_key_share_aggregate(

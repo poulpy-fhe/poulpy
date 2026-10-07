@@ -13,8 +13,8 @@ use std::f64::consts::SQRT_2;
 use crate::layouts::GLWESecretSampling;
 use crate::test_suite::noise::glwe_decrypt_checked;
 use crate::{
-    EncryptionInfos, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEMaskFill, GLWEMulConst, GLWEMulPlain, GLWESub,
-    GLWETensorDecrypt, GLWETensorKeyEncryptSk, GLWETensoring,
+    GLWEDecrypt, GLWEEncryptSk, GLWEMaskFill, GLWEMulConst, GLWEMulPlain, GLWESub, GLWETensorDecrypt, GLWETensorKeyEncryptSk,
+    GLWETensoring,
     layouts::{
         Dnum, Dsize, GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWESecret, GLWESecretPreparedFactory,
         GLWESecretTensor, GLWESecretTensorFactory, GLWESecretTensorPrepared, GLWESecretTensorPreparedFactory, GLWETensor,
@@ -77,13 +77,12 @@ where
     for rank in 1_usize..=3 {
         let n: usize = module.n();
 
-        let glwe_in_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+        let glwe_in_infos = GLWELayout {
             n: n.into(),
             base2k: in_base2k.into(),
             k: k.into(),
             rank: rank.into(),
-        })
-        .unwrap();
+        };
 
         let glwe_out_infos: GLWELayout = GLWELayout {
             n: n.into(),
@@ -92,15 +91,14 @@ where
             rank: rank.into(),
         };
 
-        let tsk_infos = EncryptionLayout::new_from_default_sigma(GLWETensorKeyLayout {
+        let tsk_infos = GLWETensorKeyLayout {
             n: n.into(),
             base2k: tsk_base2k.into(),
             dnum: k.div_ceil(tsk_base2k).into(),
             k_aux: (tsk_base2k + module.log_n()).into(),
             rank: rank.into(),
             dsize: Dsize(1),
-        })
-        .unwrap();
+        };
 
         let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_in_infos);
         let mut b: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_in_infos);
@@ -148,7 +146,6 @@ where
         module.glwe_tensor_key_encrypt_sk(
             &mut tsk,
             &sk,
-            &tsk_infos,
             &mut source_xe,
             &mut source_xa,
             &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
@@ -169,16 +166,16 @@ where
         // Tensoring rescales by `2^cnv_offset` (it drops that many low bits of
         // the product), so `res_offset` shifts the noise one bit at a time.
         // `var_xs = 0.5` is `E[s^2]` of the ternary-prob-0.5 secret above.
-        let noise = glwe_in_infos.noise_infos();
+        let noise_k = glwe_in_infos.k().as_usize();
         let noise_want = |res_offset: usize| -> f64 {
             log2_std_noise_glwe_tensor(
                 n as f64,
                 rank as f64,
                 0.5,
-                noise.sigma,
-                noise.k,
-                noise.sigma,
-                noise.k,
+                crate::DEFAULT_SIGMA_XE,
+                noise_k,
+                crate::DEFAULT_SIGMA_XE,
+                noise_k,
                 scale + res_offset,
                 k,
                 out_base2k,
@@ -189,10 +186,10 @@ where
                 n as f64,
                 rank as f64,
                 0.5,
-                noise.sigma,
-                noise.k,
-                noise.sigma,
-                noise.k,
+                crate::DEFAULT_SIGMA_XE,
+                noise_k,
+                crate::DEFAULT_SIGMA_XE,
+                noise_k,
                 scale + res_offset,
                 k,
                 out_base2k,
@@ -215,24 +212,8 @@ where
             &mut scratch.borrow(),
         );
 
-        module.glwe_encrypt_sk(
-            &mut a,
-            &pt_in,
-            &sk_dft,
-            &glwe_in_infos,
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch.borrow(),
-        );
-        module.glwe_encrypt_sk(
-            &mut b,
-            &pt_in,
-            &sk_dft,
-            &glwe_in_infos,
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch.borrow(),
-        );
+        module.glwe_encrypt_sk(&mut a, &pt_in, &sk_dft, &mut source_xe, &mut source_xa, &mut scratch.borrow());
+        module.glwe_encrypt_sk(&mut b, &pt_in, &sk_dft, &mut source_xe, &mut source_xa, &mut scratch.borrow());
 
         for res_offset in 0..scale {
             module.glwe_tensor_apply(scale + res_offset, &mut res_tensor, &a, &b, &mut scratch.borrow());
@@ -376,14 +357,10 @@ where
 
         let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
         module.glwe_secret_prepare(&mut sk_dft, &sk);
-
-        let tsk_enc_infos = EncryptionLayout::new_from_default_sigma(tsk_infos).unwrap();
-        let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(glwe_in_infos).unwrap();
         let mut tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
         module.glwe_tensor_key_encrypt_sk(
             &mut tsk,
             &sk,
-            &tsk_enc_infos,
             &mut source_xe,
             &mut source_xa,
             &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
@@ -399,15 +376,7 @@ where
             *i = (source_xa.next_i64() & 7) - 4;
         }
         pt_in.encode_vec_i64(&data, TorusPrecision(scale as u32));
-        module.glwe_encrypt_sk(
-            &mut a,
-            &pt_in,
-            &sk_dft,
-            &glwe_enc_infos,
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch.borrow(),
-        );
+        module.glwe_encrypt_sk(&mut a, &pt_in, &sk_dft, &mut source_xe, &mut source_xa, &mut scratch.borrow());
 
         for res_offset in 0..scale {
             module.glwe_tensor_square_apply(scale + res_offset, &mut res_square, &a, &mut scratch.borrow());
@@ -458,13 +427,12 @@ where
     for rank in 1_usize..=3 {
         let n: usize = module.n();
 
-        let glwe_in_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+        let glwe_in_infos = GLWELayout {
             n: n.into(),
             base2k: in_base2k.into(),
             k: k.into(),
             rank: rank.into(),
-        })
-        .unwrap();
+        };
 
         let glwe_out_infos: GLWELayout = GLWELayout {
             n: n.into(),
@@ -534,15 +502,7 @@ where
             &mut scratch.borrow(),
         );
 
-        module.glwe_encrypt_sk(
-            &mut a,
-            &pt_a,
-            &sk_dft,
-            &glwe_in_infos,
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch.borrow(),
-        );
+        module.glwe_encrypt_sk(&mut a, &pt_a, &sk_dft, &mut source_xe, &mut source_xa, &mut scratch.borrow());
 
         let mut scratch_cnv = ScratchOwned::alloc(module.glwe_mul_plain_tmp_bytes(&res, &a, &pt_b));
 
@@ -681,13 +641,12 @@ where
     for rank in 1_usize..=3 {
         let n: usize = module.n();
 
-        let glwe_in_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+        let glwe_in_infos = GLWELayout {
             n: n.into(),
             base2k: in_base2k.into(),
             k: k.into(),
             rank: rank.into(),
-        })
-        .unwrap();
+        };
 
         let glwe_out_infos: GLWELayout = GLWELayout {
             n: n.into(),
@@ -757,15 +716,7 @@ where
             &mut scratch.borrow(),
         );
 
-        module.glwe_encrypt_sk(
-            &mut a,
-            &pt_a,
-            &sk_dft,
-            &glwe_in_infos,
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch.borrow(),
-        );
+        module.glwe_encrypt_sk(&mut a, &pt_a, &sk_dft, &mut source_xe, &mut source_xa, &mut scratch.borrow());
 
         for res_offset in 0..scale {
             module.glwe_mul_const(scale + res_offset, &mut res, &a, &pt_b, b_coeff, &mut scratch.borrow());
@@ -845,29 +796,25 @@ pub fn test_glwe_tensor_relinearize_cross_radix<BE: crate::test_suite::noise::Te
             .checked_mul(4)
             .and_then(|v| v.checked_add(1))
             .expect("cross-radix test precision overflows usize");
-        let glwe_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+        let glwe_infos = GLWELayout {
             n: n.into(),
             base2k: a_base2k.into(),
             k: k.into(),
             rank: rank.into(),
-        })
-        .unwrap();
+        };
         assert_ne!(
             (glwe_infos.size() * a_base2k).div_ceil(key_base2k),
             k.div_ceil(key_base2k),
             "the case must separate the storage width from the exact precision"
         );
 
-        let key_infos = |base2k: usize| {
-            EncryptionLayout::new_from_default_sigma(GLWETensorKeyLayout {
-                n: n.into(),
-                base2k: base2k.into(),
-                dnum: Dnum(k.div_ceil(base2k) as u32),
-                k_aux: (base2k + module.log_n()).into(),
-                rank: rank.into(),
-                dsize: Dsize(1),
-            })
-            .unwrap()
+        let key_infos = |base2k: usize| GLWETensorKeyLayout {
+            n: n.into(),
+            base2k: base2k.into(),
+            dnum: Dnum(k.div_ceil(base2k) as u32),
+            k_aux: (base2k + module.log_n()).into(),
+            rank: rank.into(),
+            dsize: Dsize(1),
         };
         let cross_infos = key_infos(key_base2k);
 
@@ -901,15 +848,7 @@ pub fn test_glwe_tensor_relinearize_cross_radix<BE: crate::test_suite::noise::Te
             *i = (source_xa.next_i64() & 3) - 2;
         }
         pt_in.encode_vec_i64(&data, TorusPrecision(scale as u32));
-        module.glwe_encrypt_sk(
-            &mut a,
-            &pt_in,
-            &sk_dft,
-            &glwe_infos,
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch.borrow(),
-        );
+        module.glwe_encrypt_sk(&mut a, &pt_in, &sk_dft, &mut source_xe, &mut source_xa, &mut scratch.borrow());
         module.glwe_tensor_apply(scale, &mut res_tensor, &a, &a, &mut scratch.borrow());
         assert_canonical(res_tensor.data(), a_base2k, k);
 
@@ -917,7 +856,6 @@ pub fn test_glwe_tensor_relinearize_cross_radix<BE: crate::test_suite::noise::Te
         module.glwe_tensor_key_encrypt_sk(
             &mut tsk,
             &sk,
-            &cross_infos,
             &mut source_xe,
             &mut source_xa,
             &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),

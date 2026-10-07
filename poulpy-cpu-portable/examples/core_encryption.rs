@@ -1,6 +1,6 @@
 use poulpy_core::layouts::GLWESecretSampling;
 use poulpy_core::{
-    DEFAULT_SIGMA_XE, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWESub,
+    DEFAULT_SIGMA_XE, GLWEDecrypt, GLWEEncryptSk, GLWESub,
     layouts::{
         Base2K, Degree, GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWESecret, LWEInfos, ModuleCoreAlloc, Rank,
         TorusPrecision,
@@ -25,13 +25,12 @@ fn main() {
 
     let module: Module<BackendImpl> = Module::<BackendImpl>::new(n.0 as u64);
 
-    let glwe_ct_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+    let glwe_ct_infos = GLWELayout {
         n,
         base2k,
         k: k_xe,
         rank,
-    })
-    .unwrap();
+    };
 
     let glwe_pt_infos: GLWEPlaintextLayout = GLWEPlaintextLayout { n, base2k, k: k_pt };
 
@@ -67,7 +66,6 @@ fn main() {
         &mut ct,
         &pt_want,
         &sk_prepared,
-        &glwe_ct_infos,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),

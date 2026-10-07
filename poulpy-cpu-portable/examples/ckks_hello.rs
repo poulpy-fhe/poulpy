@@ -20,7 +20,7 @@ use poulpy_ckks::SlotsKind;
 use poulpy_ckks::prelude::*;
 use poulpy_core::layouts::GLWESecretSampling;
 use poulpy_core::{
-    EncryptionLayout, GLWETensorKeyEncryptSk,
+    GLWETensorKeyEncryptSk,
     layouts::{
         GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, ModuleCoreAlloc, Rank, prepared::GLWESecretPreparedFactory,
     },
@@ -46,26 +46,24 @@ const LOG_DELTA: usize = 45;
 /// Secret-key Hamming weight.
 const HW: usize = 192;
 
-fn glwe_layout() -> EncryptionLayout<GLWELayout> {
-    EncryptionLayout::new_from_default_sigma(GLWELayout {
+fn glwe_layout() -> GLWELayout {
+    GLWELayout {
         n: N.into(),
         base2k: BASE2K.into(),
         k: CT_K.into(),
         rank: Rank(1),
-    })
-    .unwrap()
+    }
 }
 
-fn tsk_layout() -> EncryptionLayout<GLWETensorKeyLayout> {
-    EncryptionLayout::new_from_default_sigma(GLWETensorKeyLayout {
+fn tsk_layout() -> GLWETensorKeyLayout {
+    GLWETensorKeyLayout {
         n: N.into(),
         base2k: BASE2K.into(),
         k_aux: BASE2K.into(),
         rank: Rank(1),
         dsize: 1usize.into(),
         dnum: CT_K.div_ceil(BASE2K).into(),
-    })
-    .unwrap()
+    }
 }
 
 fn main() -> Result<()> {
@@ -91,14 +89,7 @@ fn main() -> Result<()> {
     let mut scratch = ScratchOwned::<BackendImpl>::alloc(module.ckks_all_ops_tmp_bytes(&ct_infos, &tsk_layout(), &ct_infos));
 
     let mut tsk = module.glwe_tensor_key_alloc_from_infos(&tsk_layout());
-    module.glwe_tensor_key_encrypt_sk(
-        &mut tsk,
-        &sk_raw,
-        &tsk_layout(),
-        &mut source_xa,
-        &mut source_xe,
-        &mut scratch.borrow(),
-    );
+    module.glwe_tensor_key_encrypt_sk(&mut tsk, &sk_raw, &mut source_xa, &mut source_xe, &mut scratch.borrow());
     let mut tsk_prepared = module.alloc_tensor_key_prepared_from_infos(&tsk_layout());
     module.prepare_tensor_key(&mut tsk_prepared, &tsk, &mut scratch.borrow());
 
@@ -112,15 +103,7 @@ fn main() -> Result<()> {
         pt.set_meta(meta);
         module.ckks_encode_reim_into(&mut pt, re, &zeros, &mut scratch.borrow())?;
         let mut ct = module.ckks_ciphertext_alloc(BASE2K.into(), CT_K.into());
-        module.ckks_encrypt_sk(
-            &mut ct,
-            &pt,
-            &sk,
-            &glwe_layout(),
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch.borrow(),
-        )?;
+        module.ckks_encrypt_sk(&mut ct, &pt, &sk, &mut source_xe, &mut source_xa, &mut scratch.borrow())?;
         Ok(ct)
     };
     let mut ct = encrypt(&a_re)?;

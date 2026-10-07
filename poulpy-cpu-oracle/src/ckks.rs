@@ -234,3 +234,5 @@ impl_oracle_ckks_standard!(FFT64Oracle);
 impl_oracle_ckks_standard!(NTT4x30Oracle);
 impl_oracle_ckks!(FFT64CIOracle);
 impl_oracle_ckks!(NTT4x30CIOracle);
+impl_oracle_ckks!(crate::test_suite::ControlledSamplingFFT64Oracle);
+impl_oracle_ckks!(crate::test_suite::ControlledSamplingFFT64CIOracle);

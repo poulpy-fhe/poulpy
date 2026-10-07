@@ -1,15 +1,15 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEInfos, GLWESecretPreparedToBackendRef, GLWEToBackendMut};
-use poulpy_core::{EncryptionInfos, GLWEDecrypt, GLWEEncryptSk, GLWENormalize, ScratchArenaTakeCore};
+use poulpy_core::{GLWEDecrypt, GLWEEncryptSk, GLWENormalize, ScratchArenaTakeCore};
 use poulpy_hal::{
-    api::{VecZnxLsh, VecZnxLshAdd, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshTmpBytes},
+    api::{ModuleN, VecZnxLsh, VecZnxLshAdd, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshTmpBytes},
     layouts::{Backend, ScratchArena},
     source::Source,
 };
 
 use crate::GLWEToBackendRef;
-use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub};
+use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub, error::ensure_encryption_degrees};
 
 use super::CKKSPlaintextReference;
 use poulpy_core::GLWEBytesOf;
@@ -27,29 +27,30 @@ pub trait CKKSEncryptionReference<BE: Backend> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn ckks_encrypt_sk_reference<Dct, Dpt, S, E>(
+    fn ckks_encrypt_sk_reference<Dct, Dpt, S>(
         &self,
         ct: &mut Dct,
         pt: &Dpt,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
         Dct: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
         Dpt: GLWEToBackendRef<BE> + CKKSInfos + IntPolyInfos,
-        Self: GLWEEncryptSk<BE> + GLWENormalize<BE> + VecZnxLshAdd<BE> + VecZnxRshAdd<BE> + CKKSPlaintextReference<BE>,
+        Self: ModuleN + GLWEEncryptSk<BE> + GLWENormalize<BE> + VecZnxLshAdd<BE> + VecZnxRshAdd<BE> + CKKSPlaintextReference<BE>,
     {
-        self.glwe_encrypt_zero_sk(ct, sk, enc_infos, source_xe, source_xa, scratch);
-        ct.set_log_budget(checked_log_budget_sub(
+        ensure_encryption_degrees(
             "ckks_encrypt_sk",
-            enc_infos.noise_infos().k,
-            pt.log_delta(),
-        )?);
+            self.n(),
+            ct.n().as_usize(),
+            sk.to_backend_ref().n().as_usize(),
+        )?;
+        let log_budget = checked_log_budget_sub("ckks_encrypt_sk", ct.k().as_usize(), pt.log_delta())?;
+        self.glwe_encrypt_zero_sk(ct, sk, source_xe, source_xa, scratch);
+        ct.set_log_budget(log_budget);
         ct.set_log_delta(pt.log_delta());
         ct.set_log_sparsity(pt.log_sparsity());
         ct.set_slots(pt.slots());

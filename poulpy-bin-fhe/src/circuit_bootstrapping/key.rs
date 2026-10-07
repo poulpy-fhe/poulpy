@@ -1,6 +1,5 @@
-use anyhow::Result;
 use poulpy_core::{
-    DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GetDistribution, NoiseInfos, TransferInto,
+    GetDistribution, TransferInto,
     layouts::{
         GGLWEInfos, GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGSWInfos, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEInfos,
         GLWESecretToBackendRef, LWEInfos, LWESecretToBackendRef, ModuleCoreAlloc,
@@ -19,30 +18,6 @@ use poulpy_hal::{
 
 use crate::blind_rotation::{BlindRotationAlgo, BlindRotationKey, BlindRotationKeyInfos, BlindRotationKeyLayout};
 use crate::circuit_bootstrapping::trace_galois_elements;
-
-/// Encryption noise parameters for all three sub-keys of a circuit bootstrapping key bundle.
-///
-/// Created via [`CircuitBootstrappingEncryptionInfos::from_default_sigma`] for the
-/// standard Gaussian error distribution, or constructed manually for custom noise parameters.
-pub struct CircuitBootstrappingEncryptionInfos {
-    /// Noise parameters for the blind rotation key.
-    pub brk: NoiseInfos,
-    /// Noise parameters for the automorphism (Galois) key.
-    pub atk: NoiseInfos,
-    /// Noise parameters for the tensor-switching key.
-    pub tsk: NoiseInfos,
-}
-
-impl CircuitBootstrappingEncryptionInfos {
-    /// Constructs encryption infos using the default Gaussian sigma for all sub-keys.
-    pub fn from_default_sigma(layout: &CircuitBootstrappingKeyLayout) -> Result<Self> {
-        Ok(Self {
-            brk: NoiseInfos::new(layout.brk_layout.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE)?,
-            atk: NoiseInfos::new(layout.atk_layout.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE)?,
-            tsk: NoiseInfos::new(layout.tsk_layout.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE)?,
-        })
-    }
-}
 
 /// Accessor trait for the dimensional parameters of a circuit bootstrapping
 /// key bundle.
@@ -208,7 +183,6 @@ impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> CircuitBootstrappingKey<D, BRA
         module: &M,
         sk_lwe: &S0,
         sk_glwe: &S1,
-        enc_infos: &CircuitBootstrappingEncryptionInfos,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
@@ -218,7 +192,7 @@ impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> CircuitBootstrappingKey<D, BRA
         M: CircuitBootstrappingKeyEncryptSk<BRA, BE>,
         BE: Backend<OwnedBuf = D, ZnxWord = W>,
     {
-        module.circuit_bootstrapping_key_encrypt_sk(self, sk_lwe, sk_glwe, enc_infos, source_xe, source_xa, scratch);
+        module.circuit_bootstrapping_key_encrypt_sk(self, sk_lwe, sk_glwe, source_xe, source_xa, scratch);
     }
 }
 

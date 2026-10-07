@@ -25,7 +25,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-use poulpy_core::{NoiseInfos, VecZnxAddNormal};
+use poulpy_core::{Noise, VecZnxAddNoise};
 
 fn main() {
     let n: usize = 16;
@@ -33,7 +33,7 @@ fn main() {
     let ct_size: usize = 3;
     let msg_size: usize = 2;
     let log_scale: usize = msg_size * base2k - 5;
-    let noise_infos = NoiseInfos::new(base2k * ct_size, 3.2, 6.0 * 3.2).unwrap();
+    let noise = Noise::ENCRYPTION;
     let module = Module::<BackendImpl>::new(n as u64);
 
     let mut scratch = ScratchOwned::<BackendImpl>::alloc(module.vec_znx_big_normalize_tmp_bytes());
@@ -134,11 +134,12 @@ fn main() {
 
     // Add noise to ct[0]
     // ct[0] <- ct[0] + e
-    module.vec_znx_add_normal(
+    module.vec_znx_add_noise(
         base2k,
+        base2k * ct_size,
         &mut <VecZnx<AlignedBuf, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut ct),
         0, // Selects the first column of ct (ct[0])
-        noise_infos,
+        noise,
         &mut source,
     );
 

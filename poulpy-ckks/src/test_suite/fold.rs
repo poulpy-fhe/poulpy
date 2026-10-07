@@ -49,8 +49,8 @@ where
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [31; 32]);
     let (half_sk_raw, half_sk) = gen_sk_with_raw(&half_params, module, host_module, [32; 32]);
     let ring_switch = RingSwitchKeys {
-        inbound: params.ksk_layout(k_in).layout,
-        outbound: params.ksk_layout(k_out).layout,
+        inbound: params.ksk_layout(k_in),
+        outbound: params.ksk_layout(k_out),
     }
     .generate(
         module,

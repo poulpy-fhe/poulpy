@@ -3,6 +3,7 @@ use crate::layouts::VecZnxBigBackendRef;
 
 use crate::{
     kernels::{
+        noise::add_noise_portable,
         vec_znx::{
             vec_znx_add_assign_portable, vec_znx_add_portable, vec_znx_automorphism_assign_portable,
             vec_znx_automorphism_portable, vec_znx_negate_assign_portable, vec_znx_negate_portable, vec_znx_normalize_portable,
@@ -13,15 +14,16 @@ use crate::{
             I64NormalizeOps, ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign,
             ZnxNormalizeDigit, ZnxNormalizeFinalStep, ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep,
             ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign,
-            ZnxNormalizeMiddleStepCarryOnly, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxZero, znx_add_normal_f64_portable,
+            ZnxNormalizeMiddleStepCarryOnly, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxZero,
         },
     },
     layouts::{
         Backend, HostDataMut, HostDataRef, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut,
-        VecZnxToBackendRef, ZnxViewMut,
+        VecZnxToBackendRef,
     },
     source::Source,
 };
+use poulpy_core::Noise;
 
 fn big_as_vec_znx_mut<'a, BE>(v: VecZnxBigBackendMut<'a, BE>) -> VecZnx<BE::BufMut<'a>, BE::ZnxWord>
 where
@@ -195,29 +197,19 @@ pub fn vec_znx_big_normalize_portable<R, A, BE>(
     );
 }
 
-pub fn vec_znx_big_add_normal_portable<R, B>(
+pub fn vec_znx_big_add_noise_portable<R, BE>(
     base2k: usize,
+    k: usize,
     res: &mut R,
     res_col: usize,
-    k: usize,
-    sigma: f64,
-    bound: f64,
+    noise: Noise,
     source: &mut Source,
 ) where
-    B: Backend<BigWord = i64, ZnxWord = i64>,
-    for<'a> B::BufMut<'a>: HostDataMut,
-    R: VecZnxBigToBackendMut<B>,
+    BE: Backend<BigWord = i64, ZnxWord = i64>,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    R: VecZnxBigToBackendMut<BE>,
 {
-    let mut res = res.to_backend_mut();
-    assert!(
-        (bound.log2().ceil() as i64) < 64,
-        "invalid bound: ceil(log2(bound))={} > 63",
-        (bound.log2().ceil() as i64)
-    );
-
-    let limb: usize = k.div_ceil(base2k) - 1;
-    let shift: u32 = ((limb + 1) * base2k - k) as u32;
-    znx_add_normal_f64_portable(res.at_mut(res_col, limb), sigma, bound, shift, source)
+    add_noise_portable(base2k, k, &mut res.to_backend_mut(), res_col, noise, source);
 }
 
 /// R <- A - B

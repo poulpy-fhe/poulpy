@@ -10,7 +10,7 @@ use poulpy_hal::{
 use crate::api::GLWEBytesOf;
 use crate::layouts::operand_degree;
 use crate::{
-    EncryptionInfos, GGLWEEncryptSk, ScratchArenaTakeCore,
+    GGLWEEncryptSk, ScratchArenaTakeCore,
     layouts::{
         GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESecretPreparedFactory, GLWESecretToBackendRef, LWEInfos, SetGaloisElement,
     },
@@ -24,18 +24,16 @@ pub trait GLWEAutomorphismKeyEncryptSkReference<BE: Backend> {
     where
         A: GGLWEInfos;
 
-    fn glwe_automorphism_key_encrypt_sk_reference<R, S, E>(
+    fn glwe_automorphism_key_encrypt_sk_reference<R, S>(
         &self,
         res: &mut R,
         p: i64,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToBackendMut<BE> + SetGaloisElement + GGLWEInfos,
-        E: EncryptionInfos,
         S: GLWESecretToBackendRef<BE> + GLWEInfos;
 }
 
@@ -63,19 +61,17 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_automorphism_key_encrypt_sk_reference<R, S, E>(
+    fn glwe_automorphism_key_encrypt_sk_reference<R, S>(
         &self,
         res: &mut R,
         p: i64,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
 
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToBackendMut<BE> + SetGaloisElement + GGLWEInfos,
-        E: EncryptionInfos,
         S: GLWESecretToBackendRef<BE> + GLWEInfos,
     {
         let sk = sk.to_backend_ref();
@@ -106,15 +102,7 @@ where
 
             let (mut enc_scratch, _scratch_3) = scratch_2.split_at(self.gglwe_encrypt_sk_tmp_bytes(res));
             let sk_data_ref = sk.data();
-            self.gglwe_encrypt_sk(
-                res,
-                &sk_data_ref,
-                &sk_out_prepared,
-                enc_infos,
-                source_xe,
-                source_xa,
-                &mut enc_scratch,
-            );
+            self.gglwe_encrypt_sk(res, &sk_data_ref, &sk_out_prepared, source_xe, source_xa, &mut enc_scratch);
 
             res.set_p(p);
         }

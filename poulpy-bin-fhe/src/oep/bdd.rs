@@ -558,21 +558,19 @@ macro_rules! impl_bin_fhe_fhe_uint_prepared_encrypt_sk_reference {
                     $crate::reference::bdd::fhe_uint_prepared_encrypt_sk_tmp_bytes_reference(module, infos)
                 }
                 #[allow(clippy::too_many_arguments)]
-                fn fhe_uint_prepared_encrypt_sk<S, E>(
+                fn fhe_uint_prepared_encrypt_sk<S>(
                     module: &Module<$be>,
                     res: &mut FheUintPrepared<Self::OwnedBuf, T, $be>,
                     value: T,
                     sk: &S,
-                    enc_infos: &E,
                     source_xe: &mut Source,
                     source_xa: &mut Source,
                     scratch: &mut ScratchArena<'_, $be>,
                 ) where
                     S: GLWESecretPreparedToBackendRef<$be> + GLWEInfos,
-                    E: EncryptionInfos,
                 {
-                    $crate::reference::bdd::fhe_uint_prepared_encrypt_sk_reference::<T, $be, _, _>(
-                        module, res, value, sk, enc_infos, source_xe, source_xa, scratch,
+                    $crate::reference::bdd::fhe_uint_prepared_encrypt_sk_reference::<T, $be, _>(
+                        module, res, value, sk, source_xe, source_xa, scratch,
                     )
                 }
             }
@@ -674,7 +672,6 @@ macro_rules! impl_bin_fhe_bdd_key_encrypt_sk_reference {
                     res: &mut BDDKey<Self::OwnedBuf, $algo, Self::ZnxWord>,
                     sk_lwe: &S0,
                     sk_glwe: &S1,
-                    enc_infos: &BDDEncryptionInfos,
                     source_xe: &mut Source,
                     source_xa: &mut Source,
                     scratch: &mut ScratchArena<'_, $be>,
@@ -683,7 +680,7 @@ macro_rules! impl_bin_fhe_bdd_key_encrypt_sk_reference {
                     S1: GLWESecretToBackendRef<$be> + GetDistribution + GLWEInfos,
                 {
                     $crate::reference::bdd::bdd_key_encrypt_sk_reference::<$algo, $be, _, _>(
-                        module, res, sk_lwe, sk_glwe, enc_infos, source_xe, source_xa, scratch,
+                        module, res, sk_lwe, sk_glwe, source_xe, source_xa, scratch,
                     )
                 }
             }

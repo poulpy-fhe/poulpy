@@ -613,6 +613,7 @@ dependencies = [
  "bytemuck",
  "byteorder",
  "dashu-float",
+ "dashu-int",
  "itertools 0.15.0",
  "num-traits",
  "once_cell",

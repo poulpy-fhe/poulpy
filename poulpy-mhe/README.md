@@ -56,7 +56,7 @@ implementation, built from `poulpy-core` and `poulpy-hal` operations. See the
 
 ## Smudging
 
-Key switching and encryption-to-shares take a caller-selected `SmudgingNoise`
+Key switching and encryption-to-shares take a caller-selected `Noise`
 flood, a discrete Gaussian or a uniform distribution on consecutive integers,
 sampled on the share's own precision grid. Size it with the
 [smudging contract](docs/mhe-contracts.md#smudging); small test parameters do

@@ -11,10 +11,7 @@ use crate::{
     api::{CKKSDecryptOps, CKKSEncryptOps},
     layouts::CKKSModuleAlloc,
 };
-use poulpy_core::{
-    EncryptionLayout,
-    layouts::{GLWELayout, GLWESecretPreparedFactory, LWEInfos},
-};
+use poulpy_core::layouts::{GLWELayout, GLWESecretPreparedFactory, LWEInfos};
 use poulpy_hal::{
     api::{ModuleNew, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, HostBytesBackend, Module, ScratchOwned, Standard},
@@ -132,13 +129,12 @@ where
     let n = BE::MIN_DEGREE.max(16);
     let module = Module::<BE>::new(n as u64);
     let other = Module::<BE>::new((2 * n) as u64);
-    let enc = EncryptionLayout::new_from_default_sigma(GLWELayout {
+    let enc = GLWELayout {
         n: n.into(),
         base2k: 8usize.into(),
         k: 8usize.into(),
         rank: 1usize.into(),
-    })
-    .unwrap();
+    };
     let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos(&enc);
     let mut pt = module.ckks_pt_vec_alloc(8usize.into(), 8usize.into());
     let sk = other.glwe_secret_prepared_alloc(1usize.into());
@@ -160,11 +156,28 @@ where
         assert_eq!(pt_before, snapshot::<BE, _>(&pt));
 
         let err = call_module
-            .ckks_encrypt_sk(&mut ct, &pt, &sk, &enc, &mut xe, &mut xa, &mut scratch.arena())
+            .ckks_encrypt_sk(&mut ct, &pt, &sk, &mut xe, &mut xa, &mut scratch.arena())
             .unwrap_err();
         assert_ckks_error("encrypt_degree_mismatch", &err, expected("ckks_encrypt_sk"));
         assert_eq!(ct_before, snapshot::<BE, _>(&ct));
     }
+
+    // A plaintext scale above the ciphertext precision fails before encryption.
+    let sk = module.glwe_secret_prepared_alloc(1usize.into());
+    pt.set_log_delta(9);
+    let err = module
+        .ckks_encrypt_sk(&mut ct, &pt, &sk, &mut xe, &mut xa, &mut scratch.arena())
+        .unwrap_err();
+    assert_ckks_error(
+        "encrypt_insufficient_budget",
+        &err,
+        CKKSCompositionError::InsufficientHomomorphicCapacity {
+            op: "ckks_encrypt_sk",
+            available_log_budget: 8,
+            required_bits: 9,
+        },
+    );
+    assert_eq!(ct_before, snapshot::<BE, _>(&ct));
     assert_eq!(xe.new_seed(), Source::new([1; 32]).new_seed());
     assert_eq!(xa.new_seed(), Source::new([2; 32]).new_seed());
 }

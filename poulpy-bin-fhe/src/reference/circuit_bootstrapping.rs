@@ -8,8 +8,8 @@ use crate::{
         LookupTableFactory,
     },
     circuit_bootstrapping::{
-        CircuitBootstrappingEncryptionInfos, CircuitBootstrappingKey, CircuitBootstrappingKeyInfos,
-        CircuitBootstrappingKeyPrepared, CircuitBootstrappingPlan, CircuitBootstrappingPlanLayout,
+        CircuitBootstrappingKey, CircuitBootstrappingKeyInfos, CircuitBootstrappingKeyPrepared, CircuitBootstrappingPlan,
+        CircuitBootstrappingPlanLayout,
         circuit::{CircuitBootstrappingExecutionConfig, CircuitBootstrappingOutput},
         trace_galois_elements,
     },
@@ -125,7 +125,6 @@ pub fn circuit_bootstrapping_key_encrypt_sk_reference<S0, S1, M, BRA, BE>(
     res: &mut CircuitBootstrappingKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
     sk_lwe: &S0,
     sk_glwe: &S1,
-    enc_infos: &CircuitBootstrappingEncryptionInfos,
     source_xe: &mut Source,
     source_xa: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
@@ -154,7 +153,7 @@ pub fn circuit_bootstrapping_key_encrypt_sk_reference<S0, S1, M, BRA, BE>(
     let gal_els: Vec<i64> = res.atk.keys().sorted().copied().collect();
     for p in gal_els {
         let atk = res.atk.get_mut(&p).unwrap();
-        module.glwe_automorphism_key_encrypt_sk(atk, p, sk_glwe, &enc_infos.atk, source_xe, source_xa, scratch);
+        module.glwe_automorphism_key_encrypt_sk(atk, p, sk_glwe, source_xe, source_xa, scratch);
     }
 
     {
@@ -163,17 +162,9 @@ pub fn circuit_bootstrapping_key_encrypt_sk_reference<S0, S1, M, BRA, BE>(
             .take_glwe_secret_prepared_scratch(sk_glwe.n(), brk_infos.rank());
         module.glwe_secret_prepare(&mut sk_glwe_prepared, sk_glwe);
 
-        module.blind_rotation_key_encrypt_sk(
-            &mut res.brk,
-            &sk_glwe_prepared,
-            sk_lwe,
-            &enc_infos.brk,
-            source_xe,
-            source_xa,
-            &mut op_scratch,
-        );
+        module.blind_rotation_key_encrypt_sk(&mut res.brk, &sk_glwe_prepared, sk_lwe, source_xe, source_xa, &mut op_scratch);
     }
-    module.gglwe_to_ggsw_key_encrypt_sk(&mut res.tsk, sk_glwe, &enc_infos.tsk, source_xe, source_xa, scratch);
+    module.gglwe_to_ggsw_key_encrypt_sk(&mut res.tsk, sk_glwe, source_xe, source_xa, scratch);
 }
 pub fn circuit_bootstrapping_key_prepared_alloc_from_infos_reference<A, M, BRA, BE>(
     module: &M,

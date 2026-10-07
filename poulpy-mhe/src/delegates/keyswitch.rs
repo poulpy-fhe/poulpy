@@ -1,6 +1,6 @@
 use crate::layouts::{GLWEPrivateKeyswitchShareOwned, GLWEPublicKeyswitchShareOwned};
 use poulpy_core::{
-    EncryptionInfos, SmudgingNoise,
+    Noise,
     layouts::{
         GLWEInfos, GLWEMaskToBackendRef, GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef, GLWEToBackendMut,
         GLWEToBackendRef,
@@ -30,7 +30,7 @@ impl<BE: Backend + GLWEPrivateKeyswitchMHEProtocolImpl> GLWEPrivateKeyswitchMHEP
         mask: &C,
         sk_in: &S1,
         sk_out: &S2,
-        flood: SmudgingNoise,
+        flood: Noise,
         source_smudge: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -77,14 +77,13 @@ impl<BE: Backend + GLWEPublicKeyswitchMHEProtocolImpl> GLWEPublicKeyswitchMHEPro
         BE::mhe_glwe_public_keyswitch_share_gen_tmp_bytes(self, ct_infos, res_infos, pk_infos)
     }
 
-    fn mhe_glwe_public_keyswitch_share_gen<C, S, K, E>(
+    fn mhe_glwe_public_keyswitch_share_gen<C, S, K>(
         &self,
         res: &mut GLWEPublicKeyswitchShareOwned<BE>,
         mask: &C,
         sk_in: &S,
         pk_out: &K,
-        flood: SmudgingNoise,
-        enc_infos: &E,
+        flood: Noise,
         source_xu: &mut Source,
         source_xe: &mut Source,
         source_smudge: &mut Source,
@@ -93,7 +92,6 @@ impl<BE: Backend + GLWEPublicKeyswitchMHEProtocolImpl> GLWEPublicKeyswitchMHEPro
         C: GLWEMaskToBackendRef<BE> + GLWEInfos,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
-        E: EncryptionInfos,
     {
         BE::mhe_glwe_public_keyswitch_share_gen(
             self,
@@ -102,7 +100,6 @@ impl<BE: Backend + GLWEPublicKeyswitchMHEProtocolImpl> GLWEPublicKeyswitchMHEPro
             sk_in,
             pk_out,
             flood,
-            enc_infos,
             source_xu,
             source_xe,
             source_smudge,

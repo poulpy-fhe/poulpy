@@ -437,8 +437,8 @@ fn ship_bootstrap_case<BE, F, E>(
 
     let keys_layout = ShipKeysLayout {
         mux_dsize: params.dsize,
-        tensor_key: big.tsk_layout().layout,
-        conjugation_key: big.atk_layout().layout,
+        tensor_key: big.tsk_layout(),
+        conjugation_key: big.atk_layout(),
         complex,
     };
     let mut scratch = alloc_scratch(&big, module);

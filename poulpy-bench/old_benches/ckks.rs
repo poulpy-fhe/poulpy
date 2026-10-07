@@ -15,7 +15,6 @@ use poulpy_ckks::{
     oep::CKKSImpl,
 };
 use poulpy_core::{
-    EncryptionLayout,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory,
         GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, ModuleCoreAlloc, Rank, SetGaloisElement, TorusPrecision,
@@ -24,8 +23,8 @@ use poulpy_core::{
         AutomorphismImpl, ConversionImpl, DecryptionImpl, GGLWEExternalProductImpl, GGLWEKeyswitchImpl,
         GGLWEProductDigitsStridedImpl, GGSWExternalProductImpl, GGSWKeyswitchImpl, GGSWRotateImpl, GLWEAddImpl, GLWECopyImpl,
         GLWEExternalProductImpl, GLWEKeyswitchImpl, GLWEMulConstImpl, GLWEMulPlainImpl, GLWEMulXpMinusOneImpl, GLWENegateImpl,
-        GLWENormalizeImpl, GLWEPackImpl, GLWERotateImpl, GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl,
-        GLWETraceImpl, LWEKeyswitchImpl, LinearTransformationImpl,
+        GLWENormalizeImpl, GLWEPackImpl, GLWERotateImpl, GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, GLWETraceImpl,
+        LWEKeyswitchImpl, LinearTransformationImpl,
     },
 };
 use poulpy_hal::{
@@ -260,18 +259,17 @@ fn tsk_layout() -> GLWETensorKeyLayout {
     }
 }
 
-fn atk_layout() -> EncryptionLayout<GLWEAutomorphismKeyLayout> {
+fn atk_layout() -> GLWEAutomorphismKeyLayout {
     let (dnum, k_aux) = crate::params::key_dnum_k_aux((K + DSIZE * BASE2K) as u32, BASE2K as u32, DSIZE as u32);
     debug_assert_eq!(dnum, DNUM as u32);
-    EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
+    GLWEAutomorphismKeyLayout {
         n: Degree(N as u32),
         base2k: Base2K(BASE2K as u32),
         k_aux: TorusPrecision(k_aux),
         rank: Rank(1),
         dsize: Dsize(DSIZE as u32),
         dnum: Dnum(dnum),
-    })
-    .unwrap()
+    }
 }
 
 fn reset_dst(dst: &mut CKKSCiphertext<Vec<u8>, i64>) {

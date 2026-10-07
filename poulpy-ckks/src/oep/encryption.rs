@@ -3,10 +3,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 
-use poulpy_core::{
-    EncryptionInfos,
-    layouts::{GLWEInfos, GLWESecretPreparedToBackendRef},
-};
+use poulpy_core::layouts::{GLWEInfos, GLWESecretPreparedToBackendRef};
 use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena},
     source::Source,
@@ -24,18 +21,16 @@ pub unsafe trait CKKSEncryptionImpl: Backend {
     where
         A: CKKSCtBounds;
 
-    fn ckks_encrypt_sk_impl<Dct, S, E, Pt>(
+    fn ckks_encrypt_sk_impl<Dct, S, Pt>(
         module: &Module<Self>,
         ct: &mut Dct,
         pt: &Pt,
         sk: &S,
-        enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        E: EncryptionInfos,
         Pt: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds,
         Dct: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         S: GLWESecretPreparedToBackendRef<Self>;
@@ -70,24 +65,22 @@ macro_rules! impl_ckks_encryption_reference {
                 $crate::reference::encryption::CKKSEncryptionReference::ckks_encrypt_sk_tmp_bytes_reference(module, ct_infos)
             }
 
-            fn ckks_encrypt_sk_impl<Dct, S, E, Pt>(
+            fn ckks_encrypt_sk_impl<Dct, S, Pt>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 ct: &mut Dct,
                 pt: &Pt,
                 sk: &S,
-                enc_infos: &E,
                 source_xe: &mut ::poulpy_hal::source::Source,
                 source_xa: &mut ::poulpy_hal::source::Source,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
-                E: ::poulpy_core::EncryptionInfos,
                 Pt: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
                 Dct: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
                 S: ::poulpy_core::layouts::GLWESecretPreparedToBackendRef<Self>,
             {
                 $crate::reference::encryption::CKKSEncryptionReference::ckks_encrypt_sk_reference(
-                    module, ct, pt, sk, enc_infos, source_xe, source_xa, scratch,
+                    module, ct, pt, sk, source_xe, source_xa, scratch,
                 )
             }
 
