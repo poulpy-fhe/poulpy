@@ -84,11 +84,6 @@ fn validate_factor_encoding<F: CKKSScalar>(diagonals: &crate::layouts::ComplexDi
         .log_delta()
         .checked_add(dft.log_budget())
         .context("PaCo factor torus width overflows usize")?;
-    let scale = F::from(dft.log_delta())
-        .context("PaCo factor scale exponent is not representable by the selected scalar")?
-        .exp2();
-    ensure!(scale.is_finite(), "PaCo factor scale 2^{} is not finite", dft.log_delta());
-
     let mut nonzero = false;
     for map in [&diagonals.re, &diagonals.im] {
         for index in map.indexes() {
@@ -96,24 +91,18 @@ fn validate_factor_encoding<F: CKKSScalar>(diagonals: &crate::layouts::ComplexDi
                 .get(index)
                 .context("PaCo generated-factor index is missing its diagonal")?;
             for &value in values {
-                ensure!(value.is_finite(), "PaCo generated factor contains a non-finite coefficient");
-                let quantized = (value * scale).round();
-                ensure!(
-                    quantized.is_finite(),
-                    "PaCo generated factor overflows at scale 2^{}",
-                    dft.log_delta()
-                );
-                let representable = if width <= 63 {
-                    quantized.to_i64().is_some()
+                let quantized = if width <= 63 {
+                    value.ckks_quantize_i64(dft.log_delta()).map(i128::from)
                 } else {
-                    quantized.to_i128().is_some()
-                };
-                ensure!(
-                    representable,
-                    "PaCo generated factor coefficient is not representable at scale 2^{}",
-                    dft.log_delta(),
-                );
-                nonzero |= quantized != <F as DiagonalArithmetic>::zero();
+                    value.ckks_quantize(dft.log_delta())
+                }
+                .with_context(|| {
+                    format!(
+                        "PaCo generated factor coefficient is not representable at scale 2^{}",
+                        dft.log_delta(),
+                    )
+                })?;
+                nonzero |= quantized != 0;
             }
         }
     }
@@ -134,23 +123,15 @@ fn validate_beta_encoding<F: PaCoScalar>(plan: &PaCoPlan) -> Result<()> {
         .log_delta_bsk()
         .checked_add(plan.log_beta_budget())
         .context("PaCo beta plaintext width overflows usize")?;
-    let scale = F::from(plan.log_delta_bsk())
-        .context("PaCo beta scale exponent is not representable by the selected scalar")?
-        .exp2();
-    ensure!(
-        scale.is_finite(),
-        "PaCo beta scale 2^{} is not finite for the selected scalar",
-        plan.log_delta_bsk(),
-    );
+    let log_delta = plan.log_delta_bsk();
     let representable = if width <= 63 {
-        scale.round().to_i64().is_some()
+        F::one().ckks_quantize_i64(log_delta).is_some()
     } else {
-        scale.round().to_i128().is_some()
+        F::one().ckks_quantize(log_delta).is_some()
     };
     ensure!(
         representable,
-        "PaCo beta coefficients are not representable at scale 2^{}",
-        plan.log_delta_bsk(),
+        "PaCo beta scale 2^{log_delta} is not representable by the plaintext coefficients",
     );
     Ok(())
 }
@@ -274,12 +255,8 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
                     tile.len(),
                 );
                 let dft = plan.c2s();
-                let scale = F::from(dft.log_delta())
-                    .context("PaCo ψ mask scale exponent is not representable by the selected scalar")?
-                    .exp2();
                 ensure!(
-                    tile.iter()
-                        .any(|value| (value.re * scale).round() != <F as DiagonalArithmetic>::zero()),
+                    tile.iter().any(|value| value.re.ckks_quantize(dft.log_delta()) != Some(0)),
                     "PaCo ψ mask quantizes entirely to zero at scale 2^{}",
                     dft.log_delta(),
                 );
@@ -382,6 +359,39 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn factor_preflight_uses_exact_codec() {
+        fn check<F: CKKSScalar>(value: F, log_delta: usize, log_budget: usize, expected: bool) {
+            use poulpy_core::layouts::Diagonals;
+            let mut diagonals = crate::layouts::ComplexDiagonals::new(Diagonals::new(1), Diagonals::new(1));
+            diagonals.re.set(0, vec![value]);
+            let dft = PaCoDFTPlan::uniform(1, 1, 1, log_delta, log_budget).unwrap();
+            assert_eq!(validate_factor_encoding(&diagonals, &dft).is_ok(), expected);
+        }
+        // These scales overflow the scalar, but the coefficients quantize to one.
+        check(f32::from_bits(1), 149, 1, true);
+        check(f64::from_bits(1), 1074, 1, true);
+        check(crate::Quad::from_bits(1), 16494, 1, true);
+        // Zero after rounding, ties away from zero, and asymmetric signed limits.
+        for (value, delta, budget, accepted) in [
+            (0.0, 0, 63, false),
+            (0.25, 0, 63, false),
+            (-0.25, 0, 63, false),
+            (0.5, 0, 63, true),
+            (-0.5, 0, 63, true),
+            (1.0, 63, 0, false),
+            (-1.0, 63, 0, true),
+            (1.0, 63, 1, true),
+            (-1.0, 63, 1, true),
+            (1.0, 127, 1, false),
+            (-1.0, 127, 1, true),
+            (f64::NAN, 0, 63, false),
+            (f64::INFINITY, 0, 63, false),
+        ] {
+            check(value, delta, budget, accepted);
+        }
+    }
 
     #[test]
     fn beta_scale_is_rejected_during_context_preflight() {

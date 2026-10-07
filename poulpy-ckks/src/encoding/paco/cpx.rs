@@ -56,8 +56,11 @@ impl<F: Float> Cpx<F> {
 
     /// Modulus.
     #[cfg_attr(not(feature = "test-utils"), allow(dead_code))]
-    pub(crate) fn abs(self) -> F {
-        self.norm_sqr().sqrt()
+    pub(crate) fn abs(self) -> F
+    where
+        F: crate::numerics::CKKSFloat,
+    {
+        self.norm_sqr().ckks_sqrt()
     }
 }
 
