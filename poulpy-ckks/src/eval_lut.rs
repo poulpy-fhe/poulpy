@@ -43,15 +43,22 @@ where
     let sum: F = f.iter().fold(F::zero(), |acc, &v| acc + v);
     re[0] = half * sum / pf;
 
+    let roots: Vec<(F, F)> = (0..p)
+        .map(|index| {
+            let angle = two_pi * F::from_usize(index).ok_or_else(|| anyhow!("cannot represent LUT sample index {index}"))? / pf;
+            Ok(angle.ckks_sin_cos())
+        })
+        .collect::<Result<_>>()?;
+
     for k in 1..p {
         let scale =
             two * F::from_usize(p - k).ok_or_else(|| anyhow!("cannot represent LUT coefficient index {}", p - k))? / (pf * pf);
         let (mut sr, mut si) = (F::zero(), F::zero());
         for (l, &fl) in f.iter().enumerate() {
             let index = (k * l) % p;
-            let angle = two_pi * F::from_usize(index).ok_or_else(|| anyhow!("cannot represent LUT sample index {index}"))? / pf;
-            sr = sr + fl * angle.ckks_cos();
-            si = si - fl * angle.ckks_sin();
+            let (sin, cos) = roots[index];
+            sr = sr + fl * cos;
+            si = si - fl * sin;
         }
         re[k] = half * scale * sr;
         im[k] = half * scale * si;
@@ -273,6 +280,35 @@ where
 #[cfg(test)]
 mod tests {
     use super::{cos_hermite_binary, trig_hermite_lut};
+
+    #[test]
+    fn cached_lut_preserves_coefficients() {
+        fn check<F: crate::numerics::CKKSFloat + num_traits::FloatConst + std::fmt::Debug>() {
+            for p in [1, 3, 4, 7, 16] {
+                let table: Vec<F> = (0..p).map(|i| F::from_f64(i as f64 - 1.25).unwrap()).collect();
+                let poly = trig_hermite_lut(&table).unwrap();
+                let two = F::one() + F::one();
+                let half = F::one() / two;
+                let pf = F::from_usize(p).unwrap();
+                let two_pi = two * F::PI();
+                assert_eq!(poly.re[0], half * table.iter().copied().fold(F::zero(), |a, b| a + b) / pf);
+                for k in 1..p {
+                    let scale = two * F::from_usize(p - k).unwrap() / (pf * pf);
+                    let (mut re, mut im) = (F::zero(), F::zero());
+                    for (l, &value) in table.iter().enumerate() {
+                        let angle = two_pi * F::from_usize((k * l) % p).unwrap() / pf;
+                        re = re + value * angle.ckks_cos();
+                        im = im - value * angle.ckks_sin();
+                    }
+                    assert_eq!(poly.re[k], half * scale * re);
+                    assert_eq!(poly.im[k], half * scale * im);
+                }
+            }
+        }
+        check::<f32>();
+        check::<f64>();
+        check::<crate::Quad>();
+    }
 
     #[test]
     fn trig_lut_rejects_empty_table() {

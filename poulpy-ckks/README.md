@@ -23,9 +23,38 @@ The crate exposes:
 
 `poulpy-ckks` requires **nightly Rust** by default: the portable quad-precision scalar [`Quad`](src/scalar.rs) is a newtype over the unstable primitive `f128` (`#![feature(f128)]`). The workspace pins a known-good nightly in `rust-toolchain.toml`.
 
-The optional `libquadmath` feature changes the backing math library for `Quad`
-on supported targets; its storage and arithmetic interfaces stay the same.
+The optional `libquadmath` feature changes the general `Quad` math routing on supported targets.
+CKKS setup uses `CKKSFloat` and always selects portable math, including when that feature is enabled.
+Its storage and arithmetic interfaces stay the same.
 See [`Cargo.toml`](Cargo.toml) for the target conditions.
+
+## Setup reproducibility and cost
+
+For the built-in `f32`, `f64` and `Quad` implementations, finite setup results are reproducible across supported targets for a fixed Poulpy version and resolved dependency set.
+Keep the application's `Cargo.lock`, the supported Rust toolchain and ordinary IEEE arithmetic settings when reproducing saved parameters.
+NaN payload bits are unspecified, and custom scalar implementations and user callbacks must satisfy the same portability contract themselves.
+The approximation callbacks must also be pure because Remez caches their grid samples.
+
+The math dependencies use compatible version ranges so applications can resolve newer compatible versions.
+Their transcendental approximations are not all correctly rounded, so dependency upgrades can change setup bits.
+Revalidate or regenerate cached setup parameters after changing the math dependencies.
+CI checks committed bit patterns with the workspace lockfile, and table roots are also checked against an independent integer derivation.
+
+Portable Quad transcendental evaluation generally costs more than native binary128 math on Linux GNU targets that provide it.
+The difference depends on CPU, operating system, compiler, math library, inputs and which setup operations dominate.
+No fixed slowdown factor applies to all machines or to complete CKKS setup.
+On targets already using portable Quad math, such as macOS, both routes use the same implementation.
+This cost concerns setup and parameter generation, rather than a replacement of the backend's ciphertext arithmetic kernels.
+Reuse compiled setup parameters when possible.
+
+To compare the two routes locally, run `cargo run -p poulpy-ckks --release --example setup_math`, optionally adding `--features libquadmath` on supported Linux targets.
+The example reports warmed median timings for cosine and fractional powers, the target architecture and the selected feature.
+Record the CPU model, operating system, `rustc -Vv`, compiler flags and lockfile alongside any reported ratios.
+Benchmark the actual parameter-generation workload separately before drawing conclusions about application setup time.
+
+Production code is checked by the crate's `clippy.toml` for calls that bypass `CKKSFloat`.
+Run `cargo clippy -p poulpy-ckks --all-targets --features test-utils -- -D warnings` when changing setup math.
+The general Quad adapter, independent tests and the comparison benchmark explicitly permit platform math.
 
 ## Tests and backend integration
 

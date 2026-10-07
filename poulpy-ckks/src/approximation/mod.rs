@@ -6,6 +6,10 @@
 //! approximations. Prepared ciphertext evaluation is exposed through
 //! [`CKKSApproximationOps`] and [`PolynomialApproximation`].
 
+//! Fitting and degree-selection entry points require [`crate::numerics::CKKSFloat`].
+//! Generic callers previously bounded only by `Float` must add this bound.
+//! User callbacks must be pure and use portable math for reproducible results.
+
 mod remez;
 mod select;
 mod sign;

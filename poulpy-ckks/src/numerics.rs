@@ -1,17 +1,20 @@
 //! Platform-independent scalar math for CKKS setup and encoding.
 //!
-//! Every function here returns the same bits on every target, so plaintext
-//! constants and encoded coefficients do not depend on the platform libm or
-//! on the backend that runs the encoding.
+//! For a fixed Poulpy version and resolved dependency set, the built-in scalar
+//! implementations return the same finite results on every supported target.
+//! Dependency upgrades may change setup results, so retain the application lockfile
+//! when reproducing cached parameters. Custom scalar implementations and callbacks
+//! must uphold the same contract themselves. NaN payload bits are unspecified.
 
 use num_traits::{Float, FromPrimitive};
 
 use crate::Quad;
 
+pub(crate) mod astro;
 mod roots;
 
 /// Base-2 logarithm of the largest root order read from the checked-in
-/// tables. Larger orders are generated on demand, which is much slower.
+/// table. Larger orders are generated on demand, which is much slower.
 pub const ROOT_TABLE_LOG_ORDER: u32 = roots::TABLE_LOG_ORDER;
 
 /// Scalar with platform-independent transcendental functions and exact
@@ -42,6 +45,11 @@ pub trait CKKSFloat: Float + FromPrimitive {
     }
 
     /// `cos(2*pi * i / 2^log_order)` for `0 <= i <= 2^(log_order - 2)`, correctly rounded.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless `2 <= log_order < 64` and `i <= 2^(log_order - 2)`.
+    /// Implementations overriding this hook must enforce these bounds too.
     #[doc(hidden)]
     fn ckks_quadrant_cos(i: u64, log_order: u32) -> Self {
         roots::generated_quadrant_cos(i, log_order)
@@ -101,10 +109,7 @@ impl CKKSFloat for f64 {
     }
     fn ckks_quadrant_cos(i: u64, log_order: u32) -> Self {
         match roots::table_index(i, log_order) {
-            Some(index) => {
-                let bytes = &roots::COS_QUADRANT_F64[8 * index..8 * index + 8];
-                Self::from_bits(u64::from_le_bytes(bytes.try_into().unwrap()))
-            }
+            Some(index) => roots::table_quad(index).0 as f64,
             None => roots::generated_quadrant_cos(i, log_order),
         }
     }
@@ -153,7 +158,7 @@ impl CKKSFloat for f32 {
     fn ckks_sqrt(self) -> Self {
         libm::sqrtf(self)
     }
-    /// Rounds the `f64` table entry, which a test checks against direct
+    /// Rounds the derived `f64` entry, exhaustively checked against direct
     /// correct rounding for every entry.
     fn ckks_quadrant_cos(i: u64, log_order: u32) -> Self {
         match roots::table_index(i, log_order) {
@@ -203,10 +208,7 @@ impl CKKSFloat for Quad {
     }
     fn ckks_quadrant_cos(i: u64, log_order: u32) -> Self {
         match roots::table_index(i, log_order) {
-            Some(index) => {
-                let bytes = &roots::COS_QUADRANT_F128[16 * index..16 * index + 16];
-                Self::from_bits(u128::from_le_bytes(bytes.try_into().unwrap()))
-            }
+            Some(index) => roots::table_quad(index),
             None => roots::generated_quadrant_cos(i, log_order),
         }
     }
@@ -327,6 +329,67 @@ mod tests {
         assert_eq!((-F::one()).ckks_quantize_i64(63), Some(i64::MIN));
         assert_eq!(F::one().ckks_quantize_i64(usize::MAX), None);
         assert_eq!(F::zero().ckks_quantize_i64(usize::MAX), Some(0));
+    }
+
+    // Recorded with libm 0.2.16 and astro-float-num 0.3.7. Dependency changes
+    // require reviewing changed bits and the cached-parameter compatibility policy.
+    #[test]
+    fn setup_math_golden_vectors() {
+        fn values<F: CKKSFloat>() -> [F; 9] {
+            let x = F::from_f64(0.5).unwrap();
+            let y = F::from_f64(1.25).unwrap();
+            let (sin, cos) = x.ckks_sin_cos();
+            assert!(sin == x.ckks_sin() && cos == x.ckks_cos());
+            [
+                sin,
+                cos,
+                y.ckks_powf(x),
+                x.ckks_exp2(),
+                y.ckks_log2(),
+                y.ckks_sqrt(),
+                y.ckks_powi(-3),
+                F::ckks_root_of_unity(3, 5).0,
+                F::ckks_root_of_unity(3, 5).1,
+            ]
+        }
+        assert_eq!(
+            values::<f32>().map(f32::to_bits),
+            [
+                0x3ef57744, 0x3f60a940, 0x3f8f1bbd, 0x3fb504f3, 0x3ea4d3c2, 0x3f8f1bbd, 0x3f03126f, 0x3f54db31, 0x3f0e39da,
+            ]
+        );
+        assert_eq!(
+            values::<f64>().map(f64::to_bits),
+            [
+                0x3fdeaee8744b05f0,
+                0x3fec1528065b7d50,
+                0x3ff1e3779b97f4a8,
+                0x3ff6a09e667f3bcd,
+                0x3fd49a784bcd1b8b,
+                0x3ff1e3779b97f4a8,
+                0x3fe0624dd2f1a9fc,
+                0x3fea9b66290ea1a3,
+                0x3fe1c73b39ae68c8,
+            ]
+        );
+        let quad = values::<Quad>().map(Quad::to_bits);
+        // Growing the shared constants cache must not change lower-precision math.
+        Quad::ckks_root_of_unity(1, ROOT_TABLE_LOG_ORDER + 1);
+        assert_eq!(values::<Quad>().map(Quad::to_bits), quad);
+        assert_eq!(
+            quad,
+            [
+                0x3ffdeaee8744b05efe8764bc364fd838,
+                0x3ffec1528065b7d4f9db7bbb3b45f5f6,
+                0x3fff1e3779b97f4a7c15f39cc0605cee,
+                0x3fff6a09e667f3bcc908b2fb1366ea95,
+                0x3ffd49a784bcd1b8afe492bf6ff4dafe,
+                0x3fff1e3779b97f4a7c15f39cc0605cee,
+                0x3ffe0624dd2f1a9fbe76c8b439581062,
+                0x3ffea9b66290ea1a3033ec61d16db590,
+                0x3ffe1c73b39ae68c86c977499fd97feb,
+            ]
+        );
     }
 
     #[test]

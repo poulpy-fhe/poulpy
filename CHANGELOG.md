@@ -125,13 +125,25 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-ckks`
 
-- **Breaking, behaviour:** CKKS setup math and plaintext quantization return the same bits on every platform, as a first step towards encodings that are byte identical on every backend.
+- **Breaking, API:** `minimax*`, `degree_for_precision*`, `precision_at_depth*` and `sign_composite_coeffs*` require `CKKSFloat` in addition to their remaining bounds.
+  Generic callers must add this bound, and custom scalar types must implement its portable math and exact codec contract.
+- Remez reuses Lobatto nodes and target samples within a fit, rebuilding when its search grid grows.
+  Target callbacks must be pure.
+  Trigonometric Hermite LUT construction precomputes sine/cosine pairs while preserving accumulation order.
+- PaCo factor preflight uses the exact scalar codec, including when a floating-point scale would overflow, and still rejects factors that quantize entirely to zero.
+- Quad setup always uses portable math and is generally slower than native Linux binary128 math, with machine- and workload-dependent costs.
+  The `setup_math` example measures local operation costs without claiming a universal setup slowdown.
+- The public quadrant hook validates its order and index before table access or generation.
+  The oracle's root coverage follows `ROOT_TABLE_LOG_ORDER`, and production Clippy checks reject platform math outside the explicit adapters and tests.
+
+- **Breaking, behaviour:** CKKS setup math and plaintext quantization return the same bits on supported targets for a fixed Poulpy version and resolved dependency set, as a first step towards encodings that are byte identical on every backend.
   The new `numerics::CKKSFloat` trait, which `CKKSScalar` now requires, provides the transcendental functions of the setup code through soft-float `libm` for `f32` and `f64` and the pure-Rust binary128 implementation for `Quad`, on every target.
-  `libm` and `astro-float-num` are pinned to exact versions because these results are not correctly rounded.
+  Reproducibility requires the same resolved `libm` and `astro-float-num` versions across targets.
+  Compatible dependency ranges permit downstream upgrades, which may change setup bits and require regenerating cached parameters.
   DFT matrices, EvalMod, the Remez, sign and LUT approximations, the PaCo and SHIP coefficient encodings and the bootstrapping presets use it.
   Setup constants can differ in the last bit from earlier versions, so cached bootstrap parameters must be rebuilt.
 - Add `CKKSFloat::ckks_root_of_unity`, the correctly rounded `(cos, sin)` of `2*pi*k / 2^log_order`.
-  Orders up to `2^18`, enough for every ring degree the NTT backends support, read checked-in binary64 and binary128 quadrant tables, and larger orders evaluate the same definition on demand, much more slowly.
+  Orders up to `2^18`, enough for every ring degree the NTT backends support, read a checked-in binary128 quadrant table, with binary64 and binary32 values derived by exhaustively validated rounding, and larger orders evaluate the same definition on demand, much more slowly.
   The DFT matrices use these roots.
 - Add `CKKSFloat::ckks_quantize` and `ckks_dequantize`, exact conversions between scalars and plaintext integers at a power-of-two scale.
   Quantization rounds halfway cases away from zero and rejects non-finite values and integer overflow, and dequantization rounds once to nearest even.

@@ -24,7 +24,8 @@
 //!
 //! The extrema search is numerical, so [`Minimax::error`] is an estimate rather
 //! than a certified bound. This implementation uses absolute error and a
-//! multi-point exchange.
+//! multi-point exchange. Target callbacks must be pure functions because grid
+//! samples are cached within each fit.
 //!
 //! # References
 //!
@@ -352,6 +353,7 @@ where
     let mut coeffs = vec![F::zero(); degree + 1];
     let mut converged = false;
     let mut iters = 0;
+    let mut grid = None;
 
     for it in 0..opts.max_iters {
         iters = it + 1;
@@ -374,7 +376,7 @@ where
         // Step 3: find and refine the actual extrema of the new error curve.
         let mut exchange = None;
         for _ in 0..=6 {
-            let extrema = find_extrema(g, &coeffs, intervals, grid_len);
+            let extrema = find_extrema_cached(g, &coeffs, intervals, grid_len, &mut grid);
             let egrid = extrema.iter().map(|&(_, error)| error.abs()).fold(F::zero(), F::max);
             let value_scale = extrema
                 .iter()
@@ -409,7 +411,10 @@ where
     }
 
     Ok(RemezFit {
-        error: estimate_sup_error(g, &coeffs, intervals, grid_len),
+        error: find_extrema_cached(g, &coeffs, intervals, grid_len, &mut grid)
+            .into_iter()
+            .map(|(_, error)| error.abs())
+            .fold(F::zero(), F::max),
         coeffs,
         iters,
         converged,
@@ -523,6 +528,13 @@ pub(crate) fn eval_cheb<F: Float>(c: &[F], y: F) -> F {
     y * d - dd + c[0]
 }
 
+/// Grid geometry and target samples reused while exchanging polynomial coefficients.
+struct ExtremaGrid<F> {
+    len: usize,
+    intervals: Vec<Vec<(F, F)>>,
+    refinement_ratio: F,
+}
+
 /// Finds candidate extrema of the signed error `g - p` on every interval.
 ///
 /// Each interval is sampled at `grid_len` Chebyshev--Lobatto points. Endpoints
@@ -535,19 +547,54 @@ where
     F: CKKSFloat + FloatConst + FromPrimitive,
     G: Fn(F) -> F,
 {
+    find_extrema_cached(g, coeffs, intervals, grid_len, &mut None)
+}
+
+fn find_extrema_cached<F, G>(
+    g: &G,
+    coeffs: &[F],
+    intervals: &[(F, F)],
+    grid_len: usize,
+    cache: &mut Option<ExtremaGrid<F>>,
+) -> Vec<(F, F)>
+where
+    F: CKKSFloat + FloatConst + FromPrimitive,
+    G: Fn(F) -> F,
+{
+    if cache.as_ref().is_none_or(|grid| grid.len != grid_len) {
+        let two = F::one() + F::one();
+        let nodes: Vec<F> = (0..grid_len).map(|j| cheb_lobatto::<F>(j, grid_len)).collect();
+        let samples = intervals
+            .iter()
+            .map(|&(a, b)| {
+                let mid = a / two + b / two;
+                let half = (b - a) / two;
+                nodes
+                    .iter()
+                    .map(|&node| {
+                        let x = mid - half * node;
+                        (x, g(x))
+                    })
+                    .collect()
+            })
+            .collect();
+        *cache = Some(ExtremaGrid {
+            len: grid_len,
+            intervals: samples,
+            refinement_ratio: (F::from_u8(5).unwrap().ckks_sqrt() - F::one()) / two,
+        });
+    }
+    let grid = cache.as_ref().unwrap();
     let mut out: Vec<(F, F)> = Vec::new();
-    let two = F::one() + F::one();
-    for &(a, b) in intervals {
-        let mid = a / two + b / two;
-        let half = (b - a) / two;
-        let xs: Vec<F> = (0..grid_len).map(|j| mid - half * cheb_lobatto::<F>(j, grid_len)).collect();
-        let es: Vec<F> = xs.iter().map(|&x| g(x) - eval_cheb(coeffs, x)).collect();
+    for samples in &grid.intervals {
+        let xs: Vec<F> = samples.iter().map(|&(x, _)| x).collect();
+        let es: Vec<F> = samples.iter().map(|&(x, value)| value - eval_cheb(coeffs, x)).collect();
 
         out.push((xs[0], es[0]));
         for j in 1..grid_len - 1 {
             let (left, current, right) = (es[j - 1].abs(), es[j].abs(), es[j + 1].abs());
             if current >= left && current >= right {
-                out.push(refine_extremum(g, coeffs, xs[j - 1], xs[j + 1]));
+                out.push(refine_extremum(g, coeffs, xs[j - 1], xs[j + 1], grid.refinement_ratio));
             }
         }
         out.push((xs[grid_len - 1], es[grid_len - 1]));
@@ -560,13 +607,11 @@ where
 /// The derivative-free search reuses one function value per step and stops
 /// when the bracket reaches a scale-aware floating-point width, or after 256
 /// iterations. It returns the better of its two remaining interior probes.
-fn refine_extremum<F, G>(g: &G, coeffs: &[F], mut a: F, mut b: F) -> (F, F)
+fn refine_extremum<F, G>(g: &G, coeffs: &[F], mut a: F, mut b: F, ratio: F) -> (F, F)
 where
     F: CKKSFloat + FromPrimitive,
     G: Fn(F) -> F,
 {
-    let two = F::one() + F::one();
-    let ratio = (F::from_u8(5).unwrap().ckks_sqrt() - F::one()) / two;
     let mut x0 = b - ratio * (b - a);
     let mut x1 = a + ratio * (b - a);
     let mut e0 = g(x0) - eval_cheb(coeffs, x0);
@@ -772,6 +817,26 @@ mod tests {
                 })
             })
             .fold(0.0, f64::max)
+    }
+
+    #[test]
+    fn extrema_grid_reuses_samples_and_rebuilds_when_refined() {
+        use std::cell::Cell;
+        let calls = Cell::new(0);
+        let f = |_: f64| {
+            calls.set(calls.get() + 1);
+            0.0
+        };
+        let intervals = [(-1.0, -0.1), (0.1, 1.0)];
+        let mut cache = None;
+        let first = find_extrema_cached(&f, &[1.0, 1.0], &intervals, 16, &mut cache);
+        assert_eq!(calls.get(), 32);
+        assert_eq!(first, find_extrema_cached(&f, &[1.0, 1.0], &intervals, 16, &mut cache));
+        assert_eq!(calls.get(), 32);
+        find_extrema_cached(&f, &[2.0, 1.0], &intervals, 32, &mut cache);
+        assert_eq!(calls.get(), 96);
+        let cached = find_extrema_cached(&f, &[2.0, 1.0], &intervals, 32, &mut cache);
+        assert_eq!(cached, find_extrema(&f, &[2.0, 1.0], &intervals, 32));
     }
 
     #[test]

@@ -457,9 +457,7 @@ pub(crate) mod backing {
     /// against libquadmath.
     #[allow(dead_code)]
     pub(crate) mod portable {
-        use std::cell::RefCell;
-
-        use astro_float_num::{BigFloat, Consts, INF_NEG, INF_POS, NAN, RoundingMode, Sign, WORD_BIT_SIZE};
+        use astro_float_num::{BigFloat, INF_NEG, INF_POS, NAN, RoundingMode, Sign, WORD_BIT_SIZE};
 
         const WORK_PRECISION: usize = 192;
         const _: () = assert!(WORK_PRECISION >= 113);
@@ -467,16 +465,7 @@ pub(crate) mod backing {
         const SIGN_MASK: u128 = 1 << 127;
         const FRACTION_MASK: u128 = (1 << 112) - 1;
 
-        std::thread_local! {
-            static CONSTANTS: RefCell<Consts> = RefCell::new(
-                Consts::new().expect("failed to initialize portable f128 constants"),
-            );
-        }
-
-        #[inline]
-        fn with_constants<T>(f: impl FnOnce(&mut Consts) -> T) -> T {
-            CONSTANTS.with(|constants| f(&mut constants.borrow_mut()))
-        }
+        use crate::numerics::astro::{rounded_shift, with_constants};
 
         /// Exact conversion from an IEEE binary128 value to an Astro value.
         fn to_big(x: f128, precision: usize) -> BigFloat {
@@ -507,31 +496,6 @@ pub(crate) mod backing {
                 value.set_exponent(exponent);
             }
             value.set_sign(if negative { Sign::Neg } else { Sign::Pos });
-            value
-        }
-
-        #[inline]
-        fn mantissa_bit(words: &[astro_float_num::Word], bit: usize) -> bool {
-            let word = bit / WORD_BIT_SIZE;
-            word < words.len() && (words[word] & (1 << (bit % WORD_BIT_SIZE))) != 0
-        }
-
-        /// Shift a little-endian mantissa right and round it to nearest-even.
-        fn rounded_shift(words: &[astro_float_num::Word], shift: usize) -> u128 {
-            let mut value = 0u128;
-            for bit in 0..128 {
-                if mantissa_bit(words, shift + bit) {
-                    value |= 1u128 << bit;
-                }
-            }
-
-            if shift != 0 {
-                let halfway = mantissa_bit(words, shift - 1);
-                let sticky = (0..shift - 1).any(|bit| mantissa_bit(words, bit));
-                if halfway && (sticky || value & 1 != 0) {
-                    value += 1;
-                }
-            }
             value
         }
 

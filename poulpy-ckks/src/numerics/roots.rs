@@ -1,20 +1,20 @@
 //! Correctly rounded roots of unity `exp(2*pi*i * k / 2^log_order)`.
 //!
 //! Every value is the round-to-nearest-even image of the exact root.
-//! Orders up to `2^TABLE_LOG_ORDER` read the checked-in quadrant tables and
+//! Orders up to `2^TABLE_LOG_ORDER` read the checked-in quadrant table and
 //! larger orders evaluate the same definition on demand.
 
-use std::cell::RefCell;
+use astro_float_num::{BigFloat, RoundingMode, WORD_BIT_SIZE};
 
-use astro_float_num::{BigFloat, Consts, RoundingMode, WORD_BIT_SIZE, Word};
+use super::{
+    CKKSFloat,
+    astro::{mantissa_bit, rounded_shift, with_constants},
+};
 
-use super::CKKSFloat;
-
-/// Base-2 logarithm of the order of the checked-in quadrant tables.
+/// Base-2 logarithm of the order of the checked-in quadrant table.
 pub const TABLE_LOG_ORDER: u32 = 18;
 const TABLE_LEN: usize = (1 << (TABLE_LOG_ORDER - 2)) + 1;
 
-pub(super) static COS_QUADRANT_F64: &[u8; TABLE_LEN * 8] = include_bytes!("cos_quadrant_f64.bin");
 pub(super) static COS_QUADRANT_F128: &[u8; TABLE_LEN * 16] = include_bytes!("cos_quadrant_f128.bin");
 
 // The evaluation error is below one unit in the last place of the working
@@ -22,20 +22,27 @@ pub(super) static COS_QUADRANT_F128: &[u8; TABLE_LEN * 16] = include_bytes!("cos
 const GUARD_BITS: usize = 8;
 const INITIAL_PRECISION: usize = 320;
 
-std::thread_local! {
-    static CONSTANTS: RefCell<Consts> = RefCell::new(Consts::new().expect("failed to initialize root constants"));
+fn validate_quadrant(i: u64, log_order: u32) {
+    assert!((2..64).contains(&log_order), "quadrant order must be in 2..64");
+    assert!(i <= 1u64 << (log_order - 2), "quadrant index exceeds the first quadrant");
+}
+
+pub(super) fn table_quad(index: usize) -> crate::Quad {
+    let bytes = &COS_QUADRANT_F128[16 * index..16 * index + 16];
+    crate::Quad::from_bits(u128::from_le_bytes(bytes.try_into().unwrap()))
 }
 
 /// Table index of `cos(2*pi * i / 2^log_order)`, if the table covers it.
 #[inline]
 pub(super) fn table_index(i: u64, log_order: u32) -> Option<usize> {
+    validate_quadrant(i, log_order);
     (log_order <= TABLE_LOG_ORDER).then(|| (i << (TABLE_LOG_ORDER - log_order)) as usize)
 }
 
 /// `cos(2*pi * i / 2^log_order)` for `0 <= i <= 2^(log_order - 2)`, correctly rounded.
 pub(super) fn generated_quadrant_cos<F: CKKSFloat>(i: u64, log_order: u32) -> F {
+    validate_quadrant(i, log_order);
     let quarter = 1u64 << (log_order - 2);
-    assert!(i <= quarter, "quadrant index {i} exceeds 2^{}", log_order - 2);
     if i == 0 {
         return F::one();
     }
@@ -81,8 +88,7 @@ fn quadrant_cos_bits(i: u64, log_order: u32, bits: u32) -> (u128, i64) {
     // Past pi/4, the sine of the complement keeps the relative error bounded.
     let (j, sine) = if 2 * i <= quarter { (i, false) } else { (quarter - i, true) };
     let rm = RoundingMode::ToEven;
-    CONSTANTS.with(|constants| {
-        let constants = &mut constants.borrow_mut();
+    with_constants(|constants| {
         let mut precision = INITIAL_PRECISION;
         loop {
             let wide = precision + 2 * WORD_BIT_SIZE;
@@ -105,15 +111,14 @@ fn quadrant_cos_bits(i: u64, log_order: u32, bits: u32) -> (u128, i64) {
 /// the evaluation error could change the rounding decision.
 fn round_unambiguous(value: &BigFloat, bits: u32) -> Option<(u128, i64)> {
     let (words, _, _, exponent, _) = value.as_raw_parts().expect("finite root");
-    let bit = |index: usize| words[index / WORD_BIT_SIZE] & ((1 as Word) << (index % WORD_BIT_SIZE)) != 0;
+    let bit = |index: usize| mantissa_bit(words, index);
     let precision = words.len() * WORD_BIT_SIZE;
     let dropped = precision - bits as usize;
     let half = bit(dropped - 1);
     if (GUARD_BITS..dropped - 1).all(|index| bit(index) != half) {
         return None;
     }
-    let significand = (0..bits as usize).fold(0u128, |acc, index| acc | (u128::from(bit(dropped + index)) << index));
-    Some((significand + u128::from(half), exponent as i64 - bits as i64))
+    Some((rounded_shift(words, dropped), exponent as i64 - bits as i64))
 }
 
 #[cfg(test)]
@@ -138,14 +143,18 @@ mod tests {
 
     #[test]
     fn quadrant_tables_match_generator() {
-        assert_eq!(COS_QUADRANT_F64.as_slice(), quadrant_bits::<f64>(TABLE_LOG_ORDER));
         assert_eq!(COS_QUADRANT_F128.as_slice(), quadrant_bits::<Quad>(TABLE_LOG_ORDER));
     }
 
     #[test]
-    fn single_precision_roots_round_the_double_table_exactly() {
+    fn derived_roots_match_direct_rounding() {
         let quarter = 1u64 << (TABLE_LOG_ORDER - 2);
         for i in 0..=quarter {
+            assert_eq!(
+                f64::ckks_quadrant_cos(i, TABLE_LOG_ORDER).to_bits(),
+                generated_quadrant_cos::<f64>(i, TABLE_LOG_ORDER).to_bits(),
+                "f64 {i}/2^{TABLE_LOG_ORDER}"
+            );
             assert_eq!(
                 f32::ckks_quadrant_cos(i, TABLE_LOG_ORDER).to_bits(),
                 generated_quadrant_cos::<f32>(i, TABLE_LOG_ORDER).to_bits(),
@@ -158,8 +167,32 @@ mod tests {
     #[ignore = "rewrites the checked-in root tables"]
     fn regenerate_quadrant_tables() {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/numerics");
-        std::fs::write(dir.join("cos_quadrant_f64.bin"), quadrant_bits::<f64>(TABLE_LOG_ORDER)).unwrap();
         std::fs::write(dir.join("cos_quadrant_f128.bin"), quadrant_bits::<Quad>(TABLE_LOG_ORDER)).unwrap();
+    }
+
+    #[test]
+    fn quadrant_hook_rejects_invalid_inputs() {
+        fn check<F: CKKSFloat>() {
+            for (i, order) in [
+                (0, 0),
+                (0, 1),
+                (0, 64),
+                (0, u32::MAX),
+                (2, 2),
+                (u64::MAX, TABLE_LOG_ORDER),
+                (u64::MAX, TABLE_LOG_ORDER + 1),
+            ] {
+                assert!(std::panic::catch_unwind(|| F::ckks_quadrant_cos(i, order)).is_err());
+                assert!(std::panic::catch_unwind(|| generated_quadrant_cos::<F>(i, order)).is_err());
+            }
+            for order in [2, TABLE_LOG_ORDER, TABLE_LOG_ORDER + 1, 63] {
+                assert!(F::ckks_quadrant_cos(0, order) == F::one());
+                assert!(F::ckks_quadrant_cos(1 << (order - 2), order) == F::zero());
+            }
+        }
+        check::<f32>();
+        check::<f64>();
+        check::<Quad>();
     }
 
     fn check_symmetries<F: CKKSFloat + std::fmt::Debug>(log_order: u32) {
