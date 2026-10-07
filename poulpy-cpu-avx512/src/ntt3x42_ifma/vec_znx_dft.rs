@@ -697,51 +697,72 @@ fn stream_finish<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
     let compact_ptr = SendPtr(rest.as_mut_ptr());
     let output = SendPtr(res.base_mut_ptr());
     let chunks = E::max_parallelism().min(n / 32);
-    // Carry flows from the least significant limb through disjoint coefficient spans.
-    for j in (first..size).rev() {
-        let slot = packed_limb(input, n, cols, a_col, j);
-        E::for_each(12, |task| unsafe {
-            let prime = task / 4;
-            let part = task % 4;
-            let quarter = n / 4;
-            let dst = planar.get().add(prime * n + part * quarter);
+    // Limbs run in batches that share each parallel phase: one task per limb
+    // quarter unpacks it once and runs the three inverse quarter transforms,
+    // then each coefficient span carries through the batch from its least
+    // significant limb. Batch slot `s` holds limb `hi - 1 - s` in `tmp[3n s..]`.
+    const MAX_BATCH: usize = 8;
+    let batch = (tmp.len() / (3 * n))
+        .min(E::max_parallelism().div_ceil(4))
+        .clamp(1, MAX_BATCH);
+    let quarter = n / 4;
+    let mut hi = size;
+    while hi > first {
+        let count = (hi - first).min(batch);
+        E::for_each(4 * count, |task| unsafe {
+            let (slot, part) = (task / 4, task % 4);
+            let packed = packed_limb(input, n, cols, a_col, hi - 1 - slot);
+            let planes = planar.get().add(3 * n * slot);
             let m42 = _mm512_set1_epi64(MASK42 as i64);
             let m20 = _mm512_set1_epi64(MASK20 as i64);
             for c in (0..quarter).step_by(8) {
-                let group = load_group(slot, 2 * (part * quarter + c), m42, m20);
-                _mm512_storeu_si512(dst.add(c).cast(), group[prime]);
+                let group = load_group(packed, 2 * (part * quarter + c), m42, m20);
+                for (prime, plane) in group.into_iter().enumerate() {
+                    _mm512_storeu_si512(planes.add(prime * n + part * quarter + c).cast(), plane);
+                }
             }
-            crate::ntt3x42_ifma::kernels::intt_quarter(table, dst, prime, part);
+            for prime in 0..3 {
+                crate::ntt3x42_ifma::kernels::intt_quarter(table, planes.add(prime * n + part * quarter), prime, part);
+            }
         });
-        let add = addend.filter(|(add, _)| j < add.size()).map(|(add, col)| add.at(col, j));
-        let out_offset = (j <= boundary).then(|| output_shape.scalar_offset(res_col, (j as i64 - limb_offset) as usize));
+        let mut adds: [Option<&[i64]>; MAX_BATCH] = [None; MAX_BATCH];
+        let mut outs: [Option<usize>; MAX_BATCH] = [None; MAX_BATCH];
+        for slot in 0..count {
+            let j = hi - 1 - slot;
+            adds[slot] = addend.filter(|(add, _)| j < add.size()).map(|(add, col)| add.at(col, j));
+            outs[slot] = (j <= boundary).then(|| output_shape.scalar_offset(res_col, (j as i64 - limb_offset) as usize));
+        }
         E::for_each(chunks, |task| unsafe {
             let start = (n / 32 * task / chunks) * 8;
             let end = (n / 32 * (task + 1) / chunks) * 8;
-            for prime in 0..3 {
-                crate::ntt3x42_ifma::kernels::intt_finish_span(table, planar.get().add(prime * n), prime, start, end);
-            }
-            for part in 0..4 {
-                let begin = part * n / 4 + start;
-                let len = end - start;
-                let compact = std::slice::from_raw_parts_mut(compact_ptr.get().add(begin), len);
-                // Each task owns only this span in each plane, including during CRT.
-                let planes = std::array::from_fn(|prime| std::slice::from_raw_parts(planar.get().add(prime * n + begin), len));
-                if let Some(add) = add {
-                    crt_compact_planes_unchecked::<true>(len, compact, planes, add.get_unchecked(begin..begin + len));
-                } else {
-                    crt_compact_planes_unchecked::<false>(len, compact, planes, &[]);
+            let len = end - start;
+            for slot in 0..count {
+                let planes = planar.get().add(3 * n * slot);
+                for prime in 0..3 {
+                    crate::ntt3x42_ifma::kernels::intt_finish_span(table, planes.add(prime * n), prime, start, end);
                 }
-                let carry = std::slice::from_raw_parts_mut(carry_ptr.get().add(begin), len);
-                let out = if let Some(offset) = out_offset {
-                    std::slice::from_raw_parts_mut(output.get().add(offset + begin), len)
-                } else {
-                    &mut []
-                };
-                // Entry checks size every span to `len`, so `out` is empty or matches `carry`.
-                plan.apply_unchecked::<NTT3x42Ifma<R>>(j, out, compact, carry);
+                for part in 0..4 {
+                    let begin = part * quarter + start;
+                    let compact = std::slice::from_raw_parts_mut(compact_ptr.get().add(begin), len);
+                    // Each task owns only this span in each plane, including during CRT.
+                    let limb_planes = std::array::from_fn(|prime| std::slice::from_raw_parts(planes.add(prime * n + begin), len));
+                    if let Some(add) = adds[slot] {
+                        crt_compact_planes_unchecked::<true>(len, compact, limb_planes, add.get_unchecked(begin..begin + len));
+                    } else {
+                        crt_compact_planes_unchecked::<false>(len, compact, limb_planes, &[]);
+                    }
+                    let carry = std::slice::from_raw_parts_mut(carry_ptr.get().add(begin), len);
+                    let out = if let Some(offset) = outs[slot] {
+                        std::slice::from_raw_parts_mut(output.get().add(offset + begin), len)
+                    } else {
+                        &mut []
+                    };
+                    // Entry checks size every span to `len`, so `out` is empty or matches `carry`.
+                    plan.apply_unchecked::<NTT3x42Ifma<R>>(hi - 1 - slot, out, compact, carry);
+                }
             }
         });
+        hi -= count;
     }
     for j in (0..limb_offset.saturating_neg().clamp(0, active as i64) as usize).rev() {
         let out_offset = output_shape.scalar_offset(res_col, j);
