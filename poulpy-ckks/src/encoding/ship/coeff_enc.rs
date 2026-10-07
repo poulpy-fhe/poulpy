@@ -26,8 +26,9 @@ fn phases<F: ShipScalar>(residues: &[i64], base2k: usize) -> Result<(Vec<F>, Vec
     let mut sin = Vec::with_capacity(residues.len());
     for &x in residues {
         let phase = F::TAU() * F::from_i64(x.rem_euclid(q0)).expect("residues fit the scalar") / q0_f;
-        cos.push(phase.ckks_cos());
-        sin.push(phase.ckks_sin());
+        let (s, c) = phase.ckks_sin_cos();
+        cos.push(c);
+        sin.push(s);
     }
     Ok((cos, sin))
 }

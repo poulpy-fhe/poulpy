@@ -44,7 +44,8 @@ Portable Quad transcendental evaluation generally costs more than native binary1
 The difference depends on CPU, operating system, compiler, math library, inputs and which setup operations dominate.
 No fixed slowdown factor applies to all machines or to complete CKKS setup.
 On targets already using portable Quad math, such as macOS, both routes use the same implementation.
-This cost concerns setup and parameter generation, rather than a replacement of the backend's ciphertext arithmetic kernels.
+This cost concerns setup and parameter generation, and also every PaCo and SHIP bootstrap, whose coefficient encodings evaluate one sine and cosine per ciphertext coefficient.
+It does not affect the backend's ciphertext arithmetic kernels.
 Reuse compiled setup parameters when possible.
 
 To compare the two routes locally, run `cargo run -p poulpy-ckks --release --example setup_math`, optionally adding `--features libquadmath` on supported Linux targets.
