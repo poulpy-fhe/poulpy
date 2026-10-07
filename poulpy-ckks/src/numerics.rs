@@ -21,7 +21,7 @@ pub const ROOT_TABLE_LOG_ORDER: u32 = roots::TABLE_LOG_ORDER;
 /// conversions between scalars and plaintext integers.
 ///
 /// Arithmetic uses round to nearest, ties to even, with gradual underflow.
-/// `f32` and `f64` evaluate through soft-float `libm` and `Quad` through the
+/// `f32` and `f64` evaluate through the pure-Rust `libm` and `Quad` through the
 /// pure-Rust binary128 implementation, whatever the target or the `Quad`
 /// routing. Roots of unity are correctly rounded.
 pub trait CKKSFloat: Float + FromPrimitive {

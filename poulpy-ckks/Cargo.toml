@@ -28,10 +28,11 @@ bytemuck = {workspace = true}
 paste = {workspace = true}
 dashu-float = {workspace = true}
 
-# Portable setup math on every target: `f64` through soft-float libm and
-# `Quad` through the pure-Rust binary128 implementation.
+# Portable setup math on every target: `f64` through the pure-Rust libm, whose
+# hardware paths are exact IEEE operations, and `Quad` through the pure-Rust
+# binary128 implementation. `unstable-float` provides the f128 functions.
 astro-float-num = {workspace = true}
-libm = {workspace = true, features = ["unstable-float", "force-soft-floats"]}
+libm = {workspace = true, features = ["unstable-float"]}
 
 # libquadmath backing for `Quad` (x86_64 Linux GNU only).
 [target.'cfg(all(target_arch = "x86_64", target_os = "linux", target_env = "gnu"))'.dependencies]

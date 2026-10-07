@@ -138,7 +138,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
   The oracle's root coverage follows `ROOT_TABLE_LOG_ORDER`, and production Clippy checks reject `f32`, `f64` and `num_traits::Float` platform math outside the explicit adapters and tests.
 
 - **Breaking, behaviour:** CKKS setup math and plaintext quantization return the same bits on supported targets for a fixed Poulpy version and resolved dependency set, as a first step towards encodings that are byte identical on every backend.
-  The new `numerics::CKKSFloat` trait, which `CKKSScalar` now requires, provides the transcendental functions of the setup code through soft-float `libm` for `f32` and `f64` and the pure-Rust binary128 implementation for `Quad`, on every target.
+  The new `numerics::CKKSFloat` trait, which `CKKSScalar` now requires, provides the transcendental functions of the setup code through the pure-Rust `libm` for `f32` and `f64` and the pure-Rust binary128 implementation for `Quad`, on every target.
   Reproducibility requires the same resolved `libm` and `astro-float-num` versions across targets.
   Compatible dependency ranges permit downstream upgrades, which may change setup bits and require regenerating cached parameters.
   DFT matrices, EvalMod, the Remez, sign and LUT approximations, the PaCo and SHIP coefficient encodings and the bootstrapping presets use it.
