@@ -13,7 +13,7 @@ use poulpy_ckks::numerics::CKKSFloat;
 const SCALE: usize = 448;
 /// The accumulated truncation error is below `2^ERROR_BITS` units of `2^-SCALE`.
 const ERROR_BITS: usize = 16;
-const CACHED_LOG_ORDER: u32 = 18;
+const CACHED_LOG_ORDER: u32 = poulpy_ckks::numerics::ROOT_TABLE_LOG_ORDER;
 
 fn atan_inverse(x: u64) -> IBig {
     let mut power = (UBig::ONE << SCALE) / x;
@@ -148,8 +148,13 @@ mod tests {
                 "{k}/2^{log_order}"
             );
         }
-        for k in [1u64, 5, 1 << 18, (1 << 19) - 1] {
-            assert_eq!(super::root_of_unity::<F>(k, 20), F::ckks_root_of_unity(k, 20), "{k}/2^20");
+        let beyond = log_order + 2;
+        for k in [1u64, 5, 1 << log_order, (1 << (log_order + 1)) - 1] {
+            assert_eq!(
+                super::root_of_unity::<F>(k, beyond),
+                F::ckks_root_of_unity(k, beyond),
+                "{k}/2^{beyond}"
+            );
         }
     }
 

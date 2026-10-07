@@ -150,7 +150,7 @@ where
             for row in 0..res.dnum().as_usize() {
                 for col in 0..res.rank().as_usize() + 1 {
                     assert!(
-                        res.noise(module, row, col, &scalar_want.to_ref(), sk_glwe_prep, &mut scratch.borrow())
+                        res.noise_stats(module, row, col, &scalar_want.to_ref(), sk_glwe_prep, &mut scratch.borrow())
                             .std()
                             .log2()
                             <= max_noise(col)

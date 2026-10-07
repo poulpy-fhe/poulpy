@@ -9,7 +9,7 @@ use crate::numerics::CKKSFloat;
 
 #[cfg(test)]
 use super::remez::eval_cheb;
-use super::remez::{RemezOptions, fit_chebyshev_on_intervals, grid_error_bounds};
+use super::remez::{RemezOptions, error_bounds, fit_chebyshev_on_intervals};
 
 /// Fits an odd polynomial to `1` on positive `[lo, hi]`.
 pub(crate) fn minimax_odd_const1<F>(lo: F, hi: F, degree: usize, opts: RemezOptions) -> Result<(Vec<F>, F, F)>
@@ -35,7 +35,7 @@ where
     let domain = [(lo, hi)];
     let fit = fit_chebyshev_on_intervals(&target, &domain, degree, &odd_degs, fit_opts)
         .map_err(|error| anyhow!("minimax_odd_const1: {error}"))?;
-    let (undershoot, overshoot) = grid_error_bounds(&target, &fit.coeffs, &domain, fit.grid_len);
+    let (undershoot, overshoot) = error_bounds(&fit.extrema);
     Ok((fit.coeffs, undershoot, overshoot))
 }
 

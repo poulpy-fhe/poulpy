@@ -52,7 +52,8 @@ pub(crate) fn psi<F: DftScalar>(a: i64, log_q: u32) -> Result<Cpx<F>> {
     let modulus = F::from(modulus).context("psi modulus cannot be represented by the working scalar")?;
     let two = F::one() + F::one();
     let theta = two * F::PI() * a / modulus;
-    Ok(Cpx::new(theta.ckks_cos(), theta.ckks_sin()))
+    let (sin, cos) = theta.ckks_sin_cos();
+    Ok(Cpx::new(cos, sin))
 }
 
 fn validate_coeff_inputs(ct0: &[i64], ct1: &[i64], p: &PaCoPlan) -> Result<usize> {

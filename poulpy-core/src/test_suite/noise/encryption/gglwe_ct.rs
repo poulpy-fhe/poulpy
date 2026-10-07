@@ -95,7 +95,7 @@ where
                     for col in 0..ksk.rank_in().as_usize() {
                         let noise_have = ksk
                             .key
-                            .noise(
+                            .noise_stats(
                                 module,
                                 row,
                                 col,
@@ -239,7 +239,7 @@ pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::noi
                     for col in 0..ksk.rank_in().as_usize() {
                         let noise_have = ksk
                             .key
-                            .noise(
+                            .noise_stats(
                                 module,
                                 row,
                                 col,
@@ -380,7 +380,7 @@ where
                 for row in 0..ksk.dnum().as_usize() {
                     for col in 0..ksk.rank_in().as_usize() {
                         let noise_have = ksk
-                            .noise(
+                            .noise_stats(
                                 module,
                                 row,
                                 col,
