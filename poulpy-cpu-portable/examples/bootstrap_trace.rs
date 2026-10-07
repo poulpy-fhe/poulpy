@@ -26,8 +26,8 @@
 //!   (SVG, open in any browser).
 
 use poulpy_ckks::test_suite::{BASE52_PARAMS_F64, bootstrapping::test_bootstrapping_standard_e2e};
-use poulpy_cpu_portable::{FFT64ReimTable, NTT4x30Portable};
+use poulpy_cpu_portable::{NTT4x30Portable, ckks_encoding::EncodingFFTTable};
 
 fn main() {
-    test_bootstrapping_standard_e2e::<NTT4x30Portable, f64, FFT64ReimTable<f64>>(BASE52_PARAMS_F64);
+    test_bootstrapping_standard_e2e::<NTT4x30Portable, f64, EncodingFFTTable<f64>>(BASE52_PARAMS_F64);
 }

@@ -383,7 +383,7 @@ fn conditional_dft_fallback_reenters_selected_evaluation() {
 }
 
 impl<F: poulpy_ckks::api::CKKSEncodingScalar> crate::ckks_encoding::CKKSEncodingTransform<F> for OverrideBackend {
-    type Fft = crate::FFT64ReimTable<F>;
+    type Fft = crate::ckks_encoding::EncodingFFTTable<F>;
 }
 crate::impl_ckks_encoding!(OverrideBackend);
 poulpy_ckks::impl_ckks_encapsulated_mod_up_reference!(OverrideBackend);

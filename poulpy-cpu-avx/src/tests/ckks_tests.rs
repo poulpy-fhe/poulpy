@@ -6,7 +6,7 @@ ckks_backend_test_suite!(
     mod fft64_f64,
     backend = crate::FFT64Avx,
     scalar = f64,
-    encoder = crate::FFT64AvxReimTable,
+    encoder = crate::FFT64AvxEncodingTable,
     params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
     rotations = super::ATK_ROTATIONS,
 );
@@ -16,7 +16,7 @@ ckks_backend_test_suite!(
     mod fft64_rayon_f64,
     backend = crate::FFT64AvxRayon,
     scalar = f64,
-    encoder = crate::FFT64AvxReimTable,
+    encoder = crate::FFT64AvxEncodingTable,
     params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
     rotations = super::ATK_ROTATIONS,
 );
@@ -26,7 +26,7 @@ ckks_backend_test_suite!(
     mod ntt4x30_rayon_f64,
     backend = crate::NTT4x30AvxRayon,
     scalar = f64,
-    encoder = crate::FFT64AvxReimTable,
+    encoder = crate::FFT64AvxEncodingTable,
     params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
     rotations = super::ATK_ROTATIONS,
 );
@@ -35,7 +35,7 @@ ckks_backend_test_suite!(
     mod ntt4x30_f64,
     backend = crate::NTT4x30Avx,
     scalar = f64,
-    encoder = crate::FFT64AvxReimTable,
+    encoder = crate::FFT64AvxEncodingTable,
     params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
     rotations = super::ATK_ROTATIONS,
 );
@@ -73,7 +73,6 @@ poulpy_ckks::ckks_parity_test_suite! {
         conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
-        #[ignore = "encoding is not bit-exact across backends yet"]
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
@@ -100,7 +99,6 @@ poulpy_ckks::ckks_parity_test_suite! {
         conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
-        #[ignore = "encoding is not bit-exact across backends yet"]
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
@@ -134,7 +132,6 @@ poulpy_ckks::ckks_parity_test_suite! {
         conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
-        #[ignore = "encoding is not bit-exact across backends yet"]
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
@@ -161,7 +158,6 @@ poulpy_ckks::ckks_parity_test_suite! {
         conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
-        #[ignore = "encoding is not bit-exact across backends yet"]
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
@@ -196,7 +192,6 @@ poulpy_ckks::ckks_parity_test_suite! {
         conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
-        #[ignore = "encoding is not bit-exact across backends yet"]
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
@@ -224,7 +219,6 @@ poulpy_ckks::ckks_parity_test_suite! {
         conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
-        #[ignore = "encoding is not bit-exact across backends yet"]
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
@@ -260,7 +254,6 @@ poulpy_ckks::ckks_parity_test_suite! {
         conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
-        #[ignore = "encoding is not bit-exact across backends yet"]
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
@@ -288,7 +281,6 @@ poulpy_ckks::ckks_parity_test_suite! {
         conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
-        #[ignore = "encoding is not bit-exact across backends yet"]
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
@@ -415,7 +407,6 @@ poulpy_ckks::ckks_parity_test_suite! {
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
-        #[ignore = "encoding is not bit-exact across backends yet"]
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
     }
@@ -433,7 +424,6 @@ poulpy_ckks::ckks_parity_test_suite! {
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
-        #[ignore = "encoding is not bit-exact across backends yet"]
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
     }
@@ -458,7 +448,6 @@ poulpy_ckks::ckks_parity_test_suite! {
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
-        #[ignore = "encoding is not bit-exact across backends yet"]
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
     }
@@ -476,7 +465,6 @@ poulpy_ckks::ckks_parity_test_suite! {
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
-        #[ignore = "encoding is not bit-exact across backends yet"]
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
     }
@@ -502,7 +490,6 @@ poulpy_ckks::ckks_parity_test_suite! {
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
-        #[ignore = "encoding is not bit-exact across backends yet"]
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
     }
@@ -521,7 +508,6 @@ poulpy_ckks::ckks_parity_test_suite! {
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
-        #[ignore = "encoding is not bit-exact across backends yet"]
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
     }
@@ -548,7 +534,6 @@ poulpy_ckks::ckks_parity_test_suite! {
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
-        #[ignore = "encoding is not bit-exact across backends yet"]
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
     }
@@ -567,7 +552,6 @@ poulpy_ckks::ckks_parity_test_suite! {
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
-        #[ignore = "encoding is not bit-exact across backends yet"]
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
     }

@@ -77,7 +77,7 @@ pub mod source {
 
 pub use scalar_znx_fill::ScalarZnxFill;
 
-pub use fft64::{FFT64Portable, FFT64ReimTable};
+pub use fft64::FFT64Portable;
 pub use ntt4x30::{NTT4x30Portable, NTT4x30PortableHandle};
 
 #[cfg(test)]
@@ -201,6 +201,10 @@ pub type NTT4x30Ref<R = poulpy_hal::layouts::Standard> = NTT4x30Portable<R>;
 pub type FFT64CIRef = FFT64CIPortable;
 #[deprecated(note = "renamed to `NTT4x30CIPortable`")]
 pub type NTT4x30CIRef = NTT4x30CIPortable;
+/// Former CKKS encoding transform, now [`EncodingFFTTable`](ckks_encoding::EncodingFFTTable).
+#[cfg(feature = "enable-ckks")]
+#[deprecated(note = "use `ckks_encoding::EncodingFFTTable`, which encodes byte identically on every CPU backend")]
+pub type FFT64ReimTable<F> = ckks_encoding::EncodingFFTTable<F>;
 
 #[cfg(feature = "enable-bin-fhe")]
 mod bin_fhe_impl;

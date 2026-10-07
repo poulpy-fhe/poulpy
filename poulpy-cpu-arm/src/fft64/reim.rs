@@ -1,50 +1,27 @@
 //! Real/imaginary interleaved FFT primitives for [`FFT64Neon`](super::FFT64Neon).
 
 #[cfg(not(target_arch = "aarch64"))]
-use poulpy_cpu_portable::kernels::fft64::reim::{fft_portable, ifft_portable};
+use poulpy_cpu_portable::kernels::fft64::reim::{fft_portable, fft_portable_fused, ifft_portable, ifft_portable_fused};
 use poulpy_cpu_portable::kernels::fft64::{
     convolution::I64Ops,
     reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
     reim4::{Reim4BlkMatVec, Reim4Convolution},
 };
-use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
 
 use super::FFT64Neon;
 use poulpy_hal::layouts::Ring;
 
-/// Precomputed twiddle-factor tables for the negacyclic reim FFT and IFFT,
-/// dispatching to NEON-accelerated kernels on AArch64 and the portable
-/// portable kernels otherwise.
-/// Wraps [`ReimFFTTable`] and [`ReimIFFTTable`] into a single object that
-/// implements [`NegacyclicFFT`], suitable for use as the transform provider
-/// in the CPU CKKS encoding implementation.
-pub struct FFT64NeonReimTable {
-    fft: ReimFFTTable<f64>,
-    ifft: ReimIFFTTable<f64>,
-}
+/// Negacyclic transform for CKKS encoding in `f64`: the NEON kernels on
+/// the correctly rounded twiddles of
+/// [`EncodingFFTTable`](poulpy_cpu_portable::ckks_encoding::EncodingFFTTable),
+/// byte identical to every other CPU backend.
+#[cfg(feature = "enable-ckks")]
+pub type FFT64NeonEncodingTable = poulpy_cpu_portable::ckks_encoding::EncodingFFTTable<f64, ReimFFTNeon, ReimIFFTNeon>;
 
-impl NegacyclicFFT<f64> for FFT64NeonReimTable {
-    fn m(&self) -> usize {
-        self.fft.m()
-    }
-
-    fn fft(&self, data: &mut [f64]) {
-        ReimFFTNeon::reim_dft_execute(&self.fft, data);
-    }
-
-    fn ifft(&self, data: &mut [f64]) {
-        ReimIFFTNeon::reim_dft_execute(&self.ifft, data);
-    }
-}
-
-impl NegacyclicFFTNew<f64> for FFT64NeonReimTable {
-    fn new(m: usize) -> Self {
-        Self {
-            fft: ReimFFTTable::new(m),
-            ifft: ReimIFFTTable::new(m),
-        }
-    }
-}
+/// Former CKKS encoding transform, now [`FFT64NeonEncodingTable`].
+#[cfg(feature = "enable-ckks")]
+#[deprecated(note = "use `FFT64NeonEncodingTable`, which encodes byte identically on every CPU backend")]
+pub type FFT64NeonReimTable = FFT64NeonEncodingTable;
 
 pub struct ReimFFTNeon;
 
@@ -57,7 +34,7 @@ impl ReimFFTExecute<ReimFFTTable<f64>, f64> for ReimFFTNeon {
         }
         #[cfg(not(target_arch = "aarch64"))]
         {
-            fft_portable(table.m(), table.omg(), data);
+            fft_portable_fused(table.m(), table.omg(), data);
         }
     }
 }
@@ -73,7 +50,7 @@ impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for ReimIFFTNeon {
         }
         #[cfg(not(target_arch = "aarch64"))]
         {
-            ifft_portable(table.m(), table.omg(), data);
+            ifft_portable_fused(table.m(), table.omg(), data);
         }
     }
 }
@@ -278,16 +255,28 @@ impl<R: Ring> poulpy_cpu_portable::hal_defaults::BigWordHadamardProduct for FFT6
     }
 }
 
-#[cfg(test)]
-mod contract_tests {
-    use super::*;
-    use poulpy_hal::api::NegacyclicFFTNew;
+#[cfg(all(test, feature = "enable-ckks"))]
+mod encoding_tests {
+    use poulpy_cpu_portable::ckks_encoding::EncodingFFTTable;
+    use poulpy_hal::{
+        api::NegacyclicFFTNew,
+        test_suite::reim::{test_negacyclic_fft, test_negacyclic_fft_bit_exact},
+    };
+
+    use super::FFT64NeonEncodingTable;
 
     #[test]
     fn raw_transform_matches_contract() {
         for m in [16, 32, 64, 128, 256] {
-            let table = FFT64NeonReimTable::new(m);
-            poulpy_hal::test_suite::reim::test_negacyclic_fft(&table);
+            test_negacyclic_fft(&FFT64NeonEncodingTable::new(m));
+        }
+    }
+
+    #[test]
+    fn encoding_transform_matches_portable() {
+        for log_m in 0..=15 {
+            let m = 1 << log_m;
+            test_negacyclic_fft_bit_exact::<f64, _, _>(&FFT64NeonEncodingTable::new(m), &EncodingFFTTable::<f64>::new(m));
         }
     }
 }
