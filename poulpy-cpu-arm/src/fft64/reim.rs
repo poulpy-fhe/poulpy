@@ -1,7 +1,7 @@
 //! Real/imaginary interleaved FFT primitives for [`FFT64Neon`](super::FFT64Neon).
 
 #[cfg(not(target_arch = "aarch64"))]
-use poulpy_cpu_portable::kernels::fft64::reim::{fft_portable, ifft_portable};
+use poulpy_cpu_portable::kernels::fft64::reim::{fft_portable, fft_portable_fused, ifft_portable, ifft_portable_fused};
 use poulpy_cpu_portable::kernels::fft64::{
     convolution::I64Ops,
     reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
@@ -86,7 +86,7 @@ impl ReimFFTExecute<ReimFFTTable<f64>, f64> for ReimFFTNeon {
         }
         #[cfg(not(target_arch = "aarch64"))]
         {
-            fft_portable(table.m(), table.omg(), data);
+            fft_portable_fused(table.m(), table.omg(), data);
         }
     }
 }
@@ -102,7 +102,7 @@ impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for ReimIFFTNeon {
         }
         #[cfg(not(target_arch = "aarch64"))]
         {
-            ifft_portable(table.m(), table.omg(), data);
+            ifft_portable_fused(table.m(), table.omg(), data);
         }
     }
 }

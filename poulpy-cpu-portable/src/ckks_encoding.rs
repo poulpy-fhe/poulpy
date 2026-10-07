@@ -19,7 +19,7 @@ use anyhow::{Result, ensure};
 use poulpy_ckks::{api::CKKSEncodingScalar, numerics::ROOT_TABLE_LOG_ORDER};
 use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
 
-use crate::kernels::fft64::reim::{ReimFFTTable, ReimIFFTTable};
+use crate::kernels::fft64::reim::{ReimFFTTable, ReimIFFTTable, fft_portable_fused, ifft_portable_fused};
 
 use poulpy_ckks::reference::encoding::EncodingPermutation;
 
@@ -134,7 +134,7 @@ where
 /// [`CKKSFloat`](poulpy_ckks::numerics::CKKSFloat).
 ///
 /// Every CPU backend encodes with these twiddles and the fused butterflies of
-/// [`fft_portable`](crate::kernels::fft64::reim::fft_portable), so encodings
+/// [`fft_portable_fused`](crate::kernels::fft64::reim::fft_portable_fused), so encodings
 /// are byte identical across backends. Accelerated backends wrap this table
 /// and run their own kernels on [`Self::forward`] and [`Self::inverse`].
 pub struct EncodingFFTTable<F: CKKSEncodingScalar> {
@@ -195,11 +195,11 @@ impl<F: CKKSEncodingScalar> NegacyclicFFT<F> for EncodingFFTTable<F> {
     }
 
     fn fft(&self, data: &mut [F]) {
-        self.fft.execute(data);
+        fft_portable_fused(self.fft.m(), self.fft.omg(), data);
     }
 
     fn ifft(&self, data: &mut [F]) {
-        self.ifft.execute(data);
+        ifft_portable_fused(self.ifft.m(), self.ifft.omg(), data);
     }
 }
 

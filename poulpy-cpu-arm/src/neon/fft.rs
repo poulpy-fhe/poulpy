@@ -1,19 +1,19 @@
 //! NEON `f64` FFT/IFFT butterfly kernels for [`FFT64Neon`].
 //!
-//! Sizes `m < 16` delegate to [`fft_portable`] / [`ifft_portable`]; `m == 16` and BFS leaves
+//! Sizes `m < 16` delegate to [`fft_portable_fused`] / [`ifft_portable_fused`]; `m == 16` and BFS leaves
 //! use the NEON-intrinsic [`fft16_neon`] / [`ifft16_neon`].
 
 use core::arch::aarch64::{
     float64x2_t, vaddq_f64, vdupq_n_f64, vfmaq_f64, vld1q_f64, vmulq_f64, vnegq_f64, vst1q_f64, vsubq_f64, vzip1q_f64, vzip2q_f64,
 };
 
-use poulpy_cpu_portable::kernels::fft64::reim::{fft_portable, ifft_portable};
+use poulpy_cpu_portable::kernels::fft64::reim::{fft_portable_fused, ifft_portable_fused};
 
 /// Forward FFT in REIM split layout. Mirrors `fft_avx2_fma`.
 pub(crate) fn fft_neon(m: usize, omg: &[f64], data: &mut [f64]) {
     if m < 16 {
         // m ∈ {1, 2, 4, 8} — scalar reference handles the small leaves.
-        fft_portable(m, omg, data);
+        fft_portable_fused(m, omg, data);
         return;
     }
     assert!(data.len() == 2 * m);
@@ -30,7 +30,7 @@ pub(crate) fn fft_neon(m: usize, omg: &[f64], data: &mut [f64]) {
 /// Inverse FFT in REIM split layout. Mirrors `ifft_avx2_fma`.
 pub(crate) fn ifft_neon(m: usize, omg: &[f64], data: &mut [f64]) {
     if m < 16 {
-        ifft_portable(m, omg, data);
+        ifft_portable_fused(m, omg, data);
         return;
     }
     assert!(data.len() == 2 * m);

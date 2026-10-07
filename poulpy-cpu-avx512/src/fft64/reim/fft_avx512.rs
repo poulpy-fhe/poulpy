@@ -33,9 +33,9 @@ pub(crate) fn fft_avx512(m: usize, omg: &[f64], data: &mut [f64]) {
     // so it needs m >= 32). For m == 32 and above, the BFS dispatcher always
     // produces an even number of FFT16 blocks and uses `fft16x2_avx512`.
     if m <= 16 {
-        use poulpy_cpu_portable::kernels::fft64::reim::fft_portable;
+        use poulpy_cpu_portable::kernels::fft64::reim::fft_portable_fused;
 
-        fft_portable(m, omg, data);
+        fft_portable_fused(m, omg, data);
         return;
     }
 
