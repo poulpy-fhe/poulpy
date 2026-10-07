@@ -127,6 +127,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 ### `poulpy-ckks`
 
 - **Breaking, API:** `minimax*`, `degree_for_precision*`, `precision_at_depth*` and `sign_composite_coeffs*` require `CKKSFloat` in addition to their remaining bounds.
+  `reference::dft::DftScalar`, the bound of `gen_dft_matrices` and `gen_dft_matrices_blockwise`, requires `CKKSFloat + FloatConst` instead of `Float + FloatConst`.
   Generic callers must add this bound, and custom scalar types must implement its portable math and exact codec contract.
 - Remez reuses Lobatto nodes and target samples within a fit, rebuilding when its search grid grows.
   Target callbacks must be pure.
