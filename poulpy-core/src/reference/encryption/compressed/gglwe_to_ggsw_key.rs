@@ -78,13 +78,11 @@ where
         {
             assert_eq!(res.rank(), sk.rank());
             assert_eq!(res.n(), sk.n());
-            assert!(
-                scratch.available() >= self.gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference(res),
-                "scratch.available(): {} < GGLWEToGGSWKeyCompressedEncryptSk::gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes: {}",
-                scratch.available(),
-                self.gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference(res)
-            );
             let tmp_bytes: usize = self.gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference(res);
+            assert!(
+                scratch.available() >= tmp_bytes,
+                "insufficient scratch for compressed GGLWE-to-GGSW key encryption"
+            );
             {
                 let mut res = res.to_backend_mut();
                 let rank: usize = res.rank_out().as_usize();

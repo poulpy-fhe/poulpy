@@ -80,13 +80,11 @@ where
             let mut res = res.to_backend_mut();
 
             let rank: usize = res.rank_out().as_usize();
-            assert!(
-                scratch.available() >= self.gglwe_to_ggsw_key_encrypt_sk_tmp_bytes_reference(&res),
-                "scratch.available(): {} < GGLWEToGGSWKeyEncryptSk::gglwe_to_ggsw_key_encrypt_sk_tmp_bytes: {}",
-                scratch.available(),
-                self.gglwe_to_ggsw_key_encrypt_sk_tmp_bytes_reference(&res)
-            );
             let tmp_bytes: usize = self.gglwe_to_ggsw_key_encrypt_sk_tmp_bytes_reference(&res);
+            assert!(
+                scratch.available() >= tmp_bytes,
+                "insufficient scratch for GGLWE-to-GGSW key encryption"
+            );
             {
                 let scratch = scratch.borrow();
                 let (mut sk_prepared, scratch_1) = scratch.take_glwe_secret_prepared_scratch(sk.n(), res.rank());
