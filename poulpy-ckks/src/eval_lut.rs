@@ -5,7 +5,7 @@
 //! `T(x) = Σ α_k·E(x)^k` in `E(x) = exp(2πi·x)`.
 
 use anyhow::{Result, anyhow, ensure};
-use num_traits::{Float, FloatConst, FromPrimitive};
+use num_traits::{FloatConst, FromPrimitive};
 use poulpy_core::GLWENormalize;
 use poulpy_core::layouts::GetAutomorphismKey;
 use poulpy_core::layouts::GetTensorKey;
@@ -19,6 +19,7 @@ use crate::{
         CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
     },
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, EncodedLut, ScratchArenaTakeCKKS, eval_mod::EvalMod},
+    numerics::CKKSFloat,
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, ComplexPolynomial, Polynomial},
     power_basis::{PowerBasis, PowerBasisGen},
 };
@@ -27,7 +28,7 @@ use crate::{
 /// interpolation of `f`.
 pub(crate) fn trig_hermite_lut<F>(f: &[F]) -> Result<ComplexPolynomial<F>>
 where
-    F: Float + FloatConst + FromPrimitive,
+    F: CKKSFloat + FloatConst + FromPrimitive,
 {
     ensure!(!f.is_empty(), "trig_hermite_lut: table must not be empty");
     let p = f.len();
@@ -42,15 +43,22 @@ where
     let sum: F = f.iter().fold(F::zero(), |acc, &v| acc + v);
     re[0] = half * sum / pf;
 
+    let roots: Vec<(F, F)> = (0..p)
+        .map(|index| {
+            let angle = two_pi * F::from_usize(index).ok_or_else(|| anyhow!("cannot represent LUT sample index {index}"))? / pf;
+            Ok(angle.ckks_sin_cos())
+        })
+        .collect::<Result<_>>()?;
+
     for k in 1..p {
         let scale =
             two * F::from_usize(p - k).ok_or_else(|| anyhow!("cannot represent LUT coefficient index {}", p - k))? / (pf * pf);
         let (mut sr, mut si) = (F::zero(), F::zero());
         for (l, &fl) in f.iter().enumerate() {
             let index = (k * l) % p;
-            let angle = two_pi * F::from_usize(index).ok_or_else(|| anyhow!("cannot represent LUT sample index {index}"))? / pf;
-            sr = sr + fl * angle.cos();
-            si = si - fl * angle.sin();
+            let (sin, cos) = roots[index];
+            sr = sr + fl * cos;
+            si = si - fl * sin;
         }
         re[k] = half * scale * sr;
         im[k] = half * scale * si;
@@ -216,7 +224,7 @@ pub(crate) fn cos_hermite_binary<F>(
     log_interval_reduction: usize,
 ) -> Result<(Polynomial<F>, [F; 2])>
 where
-    F: Float + FloatConst + FromPrimitive + std::fmt::Debug,
+    F: CKKSFloat + FloatConst + FromPrimitive + std::fmt::Debug,
 {
     let two = F::one() + F::one();
     let two_pi = two * F::PI();
@@ -228,7 +236,7 @@ where
     let k_eff = F::from_usize(k_interval).ok_or_else(|| anyhow!("cannot represent interval bound {k_interval}"))?
         / F::from_usize(1usize << log_interval_reduction)
             .ok_or_else(|| anyhow!("cannot represent interval reduction 2^{log_interval_reduction}"))?;
-    let cos = Polynomial::chebyshev_interpolate(degree, -k_eff, k_eff, |x| (two_pi * x).cos())?;
+    let cos = Polynomial::chebyshev_interpolate_with_cos(degree, -k_eff, k_eff, |x| (two_pi * x).ckks_cos(), F::ckks_cos)?;
     Ok((cos, [(f0 + f1) / two, (f0 - f1) / two]))
 }
 
@@ -272,6 +280,35 @@ where
 #[cfg(test)]
 mod tests {
     use super::{cos_hermite_binary, trig_hermite_lut};
+
+    #[test]
+    fn cached_lut_preserves_coefficients() {
+        fn check<F: crate::numerics::CKKSFloat + num_traits::FloatConst + std::fmt::Debug>() {
+            for p in [1, 3, 4, 7, 16] {
+                let table: Vec<F> = (0..p).map(|i| F::from_f64(i as f64 - 1.25).unwrap()).collect();
+                let poly = trig_hermite_lut(&table).unwrap();
+                let two = F::one() + F::one();
+                let half = F::one() / two;
+                let pf = F::from_usize(p).unwrap();
+                let two_pi = two * F::PI();
+                assert_eq!(poly.re[0], half * table.iter().copied().fold(F::zero(), |a, b| a + b) / pf);
+                for k in 1..p {
+                    let scale = two * F::from_usize(p - k).unwrap() / (pf * pf);
+                    let (mut re, mut im) = (F::zero(), F::zero());
+                    for (l, &value) in table.iter().enumerate() {
+                        let angle = two_pi * F::from_usize((k * l) % p).unwrap() / pf;
+                        re = re + value * angle.ckks_cos();
+                        im = im - value * angle.ckks_sin();
+                    }
+                    assert_eq!(poly.re[k], half * scale * re);
+                    assert_eq!(poly.im[k], half * scale * im);
+                }
+            }
+        }
+        check::<f32>();
+        check::<f64>();
+        check::<crate::Quad>();
+    }
 
     #[test]
     fn trig_lut_rejects_empty_table() {

@@ -63,7 +63,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 ### `poulpy-core`
 
 - **Breaking:** `GLWETensoring` and `GLWETensoringImpl` include prepared-right tensor multiplication and its scratch query. Reference forwarding macros implement both operations; CKKS prepared multiplication dispatches through Core.
-
+- `Polynomial::chebyshev_interpolate_with_cos` interpolates with a caller-supplied cosine for the Chebyshev nodes, so that `poulpy-ckks` can make the nodes independent of the platform libm.
 - **Breaking:** the measurement methods `GGLWE::noise`, `GGSW::noise`, `FheUint::noise` and `FheUintPreparedDebug::noise` are renamed `noise_stats`.
 - `lwe_encrypt_sk_tmp_bytes` aligns each of its two big temporaries to `SCRATCH_ALIGN`, as the arena takes them, instead of their sum. The sum could fall short when the normalization scratch left no slack.
 - **Breaking:** `GLWEExternalProductImpl` selects the DFT-domain execution and scratch query used by `GLWEExternalProductInternal`. Public reference external products use this dispatch for matching and mixed radices. The contiguous-limb reference remains independently callable; custom DFT layouts can override it.
@@ -127,6 +127,30 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-ckks`
 
+- **Breaking, API:** `minimax*`, `degree_for_precision*`, `precision_at_depth*` and `sign_composite_coeffs*` require `CKKSFloat` in addition to their remaining bounds.
+  `reference::dft::DftScalar`, the bound of `gen_dft_matrices` and `gen_dft_matrices_blockwise`, requires `CKKSFloat + FloatConst` instead of `Float + FloatConst`.
+  Generic callers must add this bound, and custom scalar types must implement its portable math and exact codec contract.
+- Remez reuses Lobatto nodes and target samples within a fit, rebuilding when its search grid grows.
+  Target callbacks must be pure.
+  Trigonometric Hermite LUT construction precomputes sine/cosine pairs while preserving accumulation order.
+- PaCo factor preflight uses the exact scalar codec, including when a floating-point scale would overflow, and still rejects factors that quantize entirely to zero.
+- Quad setup, and the per-bootstrap PaCo and SHIP coefficient encodings, always use portable math and are generally slower than native Linux binary128 math, with machine- and workload-dependent costs.
+  The `setup_math` example measures local operation costs without claiming a universal setup slowdown.
+- The quadrant lookup behind `ckks_root_of_unity` is internal, not an overridable trait hook, and validates its order and index before table access or generation.
+  The oracle's root coverage follows `ROOT_TABLE_LOG_ORDER`, and production Clippy checks reject `f32`, `f64` and `num_traits::Float` platform math outside the explicit adapters and tests.
+
+- **Breaking, behaviour:** CKKS setup math and plaintext quantization return the same bits on supported targets for a fixed Poulpy version and resolved dependency set, as a first step towards encodings that are byte identical on every backend.
+  The new `numerics::CKKSFloat` trait, which `CKKSScalar` now requires, provides the transcendental functions of the setup code through the pure-Rust `libm` for `f32` and `f64` and the pure-Rust binary128 implementation for `Quad`, on every target.
+  Reproducibility requires the same resolved `libm` and `astro-float-num` versions across targets.
+  Compatible dependency ranges permit downstream upgrades, which may change setup bits and require regenerating cached parameters.
+  DFT matrices, EvalMod, the Remez, sign and LUT approximations, the PaCo and SHIP coefficient encodings and the bootstrapping presets use it.
+  Setup constants can differ in the last bit from earlier versions, so cached bootstrap parameters must be rebuilt.
+- Add `CKKSFloat::ckks_root_of_unity`, the correctly rounded `(cos, sin)` of `2*pi*k / 2^log_order`.
+  Orders up to `2^19`, enough for the DFT matrices (order `4 * slots`) at every ring degree the NTT backends support, read a checked-in binary128 quadrant table, with binary64 and binary32 values derived by exhaustively validated rounding, and larger orders evaluate the same definition on demand, much more slowly.
+  The DFT matrices use these roots.
+- Add `CKKSFloat::ckks_quantize` and `ckks_dequantize`, exact conversions between scalars and plaintext integers at a power-of-two scale.
+  Quantization rounds halfway cases away from zero and rejects non-finite values and integer overflow, and dequantization rounds once to nearest even.
+  Encoding and decoding use them in place of a multiplication by a computed scale factor.
 - **Breaking:** DFT preparation and evaluation have backend-selected workspace queries. Bootstrap sizing includes the selected DFT requirements, queried with the layouts each transform runs on, and DFT parity uses exact advertised scratch. The reference evaluation budget covers both prepared and streamed factors and aligns its working ciphertext.
 
 - `BootstrappingContext::compile_unprepared` and `BootstrappingContextUnprepared::prepare` stage compilation, so preparation can be sized with the selected budget through `prepare_tmp_bytes`. `compile` composes the two stages.
@@ -220,6 +244,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 - AVX-512 rank-one tensor multiplication and squaring retain full-limb precision before pairwise subtraction and round all output columns to the requested precision. `NTT3x42IfmaRayon` specializes prepared-right Core tensor products at large degrees with matching input and output radices.
 - `NTT3x42IfmaRayon` streams large-ring inverse transforms through CRT reconstruction and shared carry normalization, respects nested execution, and avoids clearing carry storage before overwriting it.
+- `poulpy-cpu-oracle` derives the roots of unity independently, with Machin's formula and the Taylor series of the cosine on fixed-point integers, and checks every `poulpy-ckks` root of order `2^19` in `f32`, `f64` and `Quad`.
 - `impl_smudging_host!`, included by `impl_cpu_core_defaults!`, implements `SmudgingSamplingImpl` with `dashu-int`: an exact conditional discrete Gaussian with power-of-two scale and an exact signed uniform distribution, preserving low bits across multiple limbs. Gaussian sampling uses variable-time integer rejection.
 - Add `poulpy-cpu-oracle` (unpublished): `FFT64Oracle` and `NTT4x30Oracle`, independent scalar backends for correctness tests. They implement the required HAL primitives with direct scalar loops, independently generated transform tables and arbitrary-precision normalization, inherit every optional operation from HAL, and do not depend on `poulpy-cpu-ref` or any production kernel. Sparse operands are materialized through their degree embedding. `enable-core` registers the generic Core compositions and runs the Core suites on both oracles.
 - **Breaking:** `poulpy-cpu-ref` is renamed `poulpy-cpu-portable`, and its backends `FFT64Ref`, `NTT4x30Ref`, `FFT64CIRef` and `NTT4x30CIRef` are renamed `FFT64Portable`, `NTT4x30Portable`, `FFT64CIPortable` and `NTT4x30CIPortable`, with their handles and test adapters. The crate is the portable production backend, and `poulpy-cpu-oracle` is the correctness reference of the cross-backend and parity suites. Deprecated aliases keep the four old type names for one release. Its `reference` module is renamed `kernels` (`poulpy_cpu_portable::kernels::{znx, fft64, ntt4x30, vec_znx, ...}`), `ZnxRef`, `ReimFFTRef` and `ReimIFFTRef` are renamed `ZnxPortable`, `ReimFFTPortable` and `ReimIFFTPortable`, and all exported free kernel functions use the `_portable` suffix, including generic compositions, table builders and scratch-size queries.

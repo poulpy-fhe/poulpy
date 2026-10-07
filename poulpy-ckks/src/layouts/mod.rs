@@ -171,10 +171,11 @@ pub use ship::{
 
 use std::fmt::Debug;
 
+use crate::numerics::CKKSFloat;
 use num_traits::{Float, FromPrimitive, ToPrimitive};
-pub trait CKKSScalar: Float + FromPrimitive + ToPrimitive + Debug {}
+pub trait CKKSScalar: Float + FromPrimitive + ToPrimitive + Debug + CKKSFloat {}
 
-impl<T> CKKSScalar for T where T: Float + FromPrimitive + ToPrimitive + Debug {}
+impl<T> CKKSScalar for T where T: Float + FromPrimitive + ToPrimitive + Debug + CKKSFloat {}
 
 pub use plaintext::CKKSPlaintextVecHostCodec;
 

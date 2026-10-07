@@ -1,4 +1,6 @@
 #![feature(f128)]
+#![cfg_attr(not(test), deny(clippy::disallowed_methods))]
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
 #![deny(rustdoc::broken_intra_doc_links)]
 //! # poulpy-ckks
 //!
@@ -85,6 +87,7 @@ pub mod encoding;
 mod error;
 mod eval_lut;
 pub mod layouts;
+pub mod numerics;
 /// One-stop imports for the common CKKS path.
 ///
 /// `use poulpy_ckks::prelude::*;` brings in the op traits (add/sub/mul/…,
@@ -110,6 +113,7 @@ pub mod power_basis;
 pub mod presets;
 pub mod scalar;
 #[cfg(feature = "test-utils")]
+#[allow(clippy::disallowed_methods)]
 pub mod test_suite;
 pub use error::{CKKSCompositionError, CKKSError, CKKSResult};
 pub(crate) use error::{
