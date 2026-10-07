@@ -358,7 +358,7 @@ pub trait BDDKeyHelper<D: Data, BRA: BlindRotationAlgo, BE: Backend> {
 ///
 /// Unlike `FheUintPrepare`, this variant stores the per-bit GGSW ciphertexts
 /// in standard (non-DFT) form, enabling noise inspection via
-/// [`FheUintPreparedDebug::noise`] without a forward DFT transform.
+/// [`FheUintPreparedDebug::noise_stats`] without a forward DFT transform.
 pub trait FheUintPrepareDebug<
     BRA: BlindRotationAlgo,
     T: UnsignedInteger,

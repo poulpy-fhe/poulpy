@@ -160,7 +160,7 @@ where
                         for col in 0..gglwe_s0s2.rank_in().as_usize() {
                             let noise_have: f64 = gglwe_s0s2
                                 .key
-                                .noise(
+                                .noise_stats(
                                     module,
                                     row,
                                     col,
@@ -336,7 +336,7 @@ pub fn test_gglwe_switching_key_keyswitch_assign<BE: crate::test_suite::noise::T
                     for col in 0..gglwe_s0s2.rank_in().as_usize() {
                         let noise_have = gglwe_s0s2
                             .key
-                            .noise(
+                            .noise_stats(
                                 module,
                                 row,
                                 col,
