@@ -25,7 +25,7 @@ pub const ROOT_TABLE_LOG_ORDER: u32 = roots::TABLE_LOG_ORDER;
 /// pure-Rust binary128 implementation, whatever the target or the `Quad`
 /// routing. Roots of unity are correctly rounded.
 pub trait CKKSFloat: Float + FromPrimitive {
-    /// Significand precision, including the implicit bit.
+    /// Significand precision, including the implicit bit. At most 126.
     const SIGNIFICAND_BITS: u32;
 
     fn ckks_sin(self) -> Self;
@@ -42,17 +42,6 @@ pub trait CKKSFloat: Float + FromPrimitive {
     /// `(cos, sin)` of `2*pi * k / 2^log_order`, each correctly rounded.
     fn ckks_root_of_unity(k: u64, log_order: u32) -> (Self, Self) {
         roots::root_of_unity(k, log_order)
-    }
-
-    /// `cos(2*pi * i / 2^log_order)` for `0 <= i <= 2^(log_order - 2)`, correctly rounded.
-    ///
-    /// # Panics
-    ///
-    /// Panics unless `2 <= log_order < 64` and `i <= 2^(log_order - 2)`.
-    /// Implementations overriding this hook must enforce these bounds too.
-    #[doc(hidden)]
-    fn ckks_quadrant_cos(i: u64, log_order: u32) -> Self {
-        roots::generated_quadrant_cos(i, log_order)
     }
 
     /// Integer power by binary exponentiation, with one rounding per product.
@@ -107,12 +96,6 @@ impl CKKSFloat for f64 {
     fn ckks_sqrt(self) -> Self {
         libm::sqrt(self)
     }
-    fn ckks_quadrant_cos(i: u64, log_order: u32) -> Self {
-        match roots::table_index(i, log_order) {
-            Some(index) => roots::table_quad(index).0 as f64,
-            None => roots::generated_quadrant_cos(i, log_order),
-        }
-    }
     #[inline]
     fn ckks_quantize(self, log_delta: usize) -> Option<i128> {
         quantize(self.to_bits() as u128, 52, 11, log_delta)
@@ -158,14 +141,6 @@ impl CKKSFloat for f32 {
     fn ckks_sqrt(self) -> Self {
         libm::sqrtf(self)
     }
-    /// Rounds the derived `f64` entry, exhaustively checked against direct
-    /// correct rounding for every entry.
-    fn ckks_quadrant_cos(i: u64, log_order: u32) -> Self {
-        match roots::table_index(i, log_order) {
-            Some(_) => f64::ckks_quadrant_cos(i, log_order) as f32,
-            None => roots::generated_quadrant_cos(i, log_order),
-        }
-    }
     #[inline]
     fn ckks_quantize(self, log_delta: usize) -> Option<i128> {
         quantize(self.to_bits() as u128, 23, 8, log_delta)
@@ -205,12 +180,6 @@ impl CKKSFloat for Quad {
     }
     fn ckks_sqrt(self) -> Self {
         Self(crate::scalar::backing::portable::sqrt(self.0))
-    }
-    fn ckks_quadrant_cos(i: u64, log_order: u32) -> Self {
-        match roots::table_index(i, log_order) {
-            Some(index) => roots::table_quad(index),
-            None => roots::generated_quadrant_cos(i, log_order),
-        }
     }
     #[inline]
     fn ckks_quantize(self, log_delta: usize) -> Option<i128> {

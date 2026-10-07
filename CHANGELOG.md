@@ -135,7 +135,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 - PaCo factor preflight uses the exact scalar codec, including when a floating-point scale would overflow, and still rejects factors that quantize entirely to zero.
 - Quad setup, and the per-bootstrap PaCo and SHIP coefficient encodings, always use portable math and are generally slower than native Linux binary128 math, with machine- and workload-dependent costs.
   The `setup_math` example measures local operation costs without claiming a universal setup slowdown.
-- The public quadrant hook validates its order and index before table access or generation.
+- The quadrant lookup behind `ckks_root_of_unity` is internal, not an overridable trait hook, and validates its order and index before table access or generation.
   The oracle's root coverage follows `ROOT_TABLE_LOG_ORDER`, and production Clippy checks reject `f32`, `f64` and `num_traits::Float` platform math outside the explicit adapters and tests.
 
 - **Breaking, behaviour:** CKKS setup math and plaintext quantization return the same bits on supported targets for a fixed Poulpy version and resolved dependency set, as a first step towards encodings that are byte identical on every backend.

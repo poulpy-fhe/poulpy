@@ -27,20 +27,39 @@ fn validate_quadrant(i: u64, log_order: u32) {
     assert!(i <= 1u64 << (log_order - 2), "quadrant index exceeds the first quadrant");
 }
 
-pub(super) fn table_quad(index: usize) -> crate::Quad {
-    let bytes = &COS_QUADRANT_F128[16 * index..16 * index + 16];
-    crate::Quad::from_bits(u128::from_le_bytes(bytes.try_into().unwrap()))
-}
+// Precisions whose rounding of the binary128 table entries is exhaustively
+// checked against direct correct rounding.
+const TABLE_PRECISIONS: [u32; 3] = [24, 53, 113];
 
-/// Table index of `cos(2*pi * i / 2^log_order)`, if the table covers it.
-#[inline]
-pub(super) fn table_index(i: u64, log_order: u32) -> Option<usize> {
-    validate_quadrant(i, log_order);
-    (log_order <= TABLE_LOG_ORDER).then(|| (i << (TABLE_LOG_ORDER - log_order)) as usize)
+fn table_bits(index: usize) -> u128 {
+    u128::from_le_bytes(COS_QUADRANT_F128[16 * index..16 * index + 16].try_into().unwrap())
 }
 
 /// `cos(2*pi * i / 2^log_order)` for `0 <= i <= 2^(log_order - 2)`, correctly rounded.
-pub(super) fn generated_quadrant_cos<F: CKKSFloat>(i: u64, log_order: u32) -> F {
+fn quadrant_cos<F: CKKSFloat>(i: u64, log_order: u32) -> F {
+    validate_quadrant(i, log_order);
+    if log_order <= TABLE_LOG_ORDER && TABLE_PRECISIONS.contains(&F::SIGNIFICAND_BITS) {
+        table_value((i << (TABLE_LOG_ORDER - log_order)) as usize)
+    } else {
+        generated_quadrant_cos(i, log_order)
+    }
+}
+
+/// Rounds the binary128 table entry, a value in `[0, 1]`, once to `F`.
+fn table_value<F: CKKSFloat>(index: usize) -> F {
+    let bits = table_bits(index);
+    let exponent = (bits >> 112) as usize;
+    if exponent == 0 {
+        return F::zero();
+    }
+    let significand = (bits & ((1 << 112) - 1)) | (1 << 112);
+    F::ckks_dequantize(significand as i128, 16383 + 112 - exponent)
+}
+
+/// `cos(2*pi * i / 2^log_order)` for `0 <= i <= 2^(log_order - 2)`, correctly rounded.
+fn generated_quadrant_cos<F: CKKSFloat>(i: u64, log_order: u32) -> F {
+    // The rounded significand, possibly carried to 2^bits, must fit an i128.
+    const { assert!(F::SIGNIFICAND_BITS <= 126, "CKKSFloat::SIGNIFICAND_BITS exceeds 126") };
     validate_quadrant(i, log_order);
     let quarter = 1u64 << (log_order - 2);
     if i == 0 {
@@ -75,9 +94,9 @@ fn circle_cos<F: CKKSFloat>(k: u64, log_order: u32) -> F {
     let order = 1u64 << log_order;
     let k = if k > order / 2 { order - k } else { k };
     if k <= order / 4 {
-        F::ckks_quadrant_cos(k, log_order)
+        quadrant_cos::<F>(k, log_order)
     } else {
-        -F::ckks_quadrant_cos(order / 2 - k, log_order)
+        -quadrant_cos::<F>(order / 2 - k, log_order)
     }
 }
 
@@ -151,14 +170,19 @@ mod tests {
         let quarter = 1u64 << (TABLE_LOG_ORDER - 2);
         for i in 0..=quarter {
             assert_eq!(
-                f64::ckks_quadrant_cos(i, TABLE_LOG_ORDER).to_bits(),
+                quadrant_cos::<Quad>(i, TABLE_LOG_ORDER).to_bits(),
+                table_bits(i as usize),
+                "Quad {i}/2^{TABLE_LOG_ORDER}"
+            );
+            assert_eq!(
+                quadrant_cos::<f64>(i, TABLE_LOG_ORDER).to_bits(),
                 generated_quadrant_cos::<f64>(i, TABLE_LOG_ORDER).to_bits(),
                 "f64 {i}/2^{TABLE_LOG_ORDER}"
             );
             assert_eq!(
-                f32::ckks_quadrant_cos(i, TABLE_LOG_ORDER).to_bits(),
+                quadrant_cos::<f32>(i, TABLE_LOG_ORDER).to_bits(),
                 generated_quadrant_cos::<f32>(i, TABLE_LOG_ORDER).to_bits(),
-                "{i}/2^{TABLE_LOG_ORDER}"
+                "f32 {i}/2^{TABLE_LOG_ORDER}"
             );
         }
     }
@@ -171,7 +195,7 @@ mod tests {
     }
 
     #[test]
-    fn quadrant_hook_rejects_invalid_inputs() {
+    fn quadrant_cos_rejects_invalid_inputs() {
         fn check<F: CKKSFloat>() {
             for (i, order) in [
                 (0, 0),
@@ -182,12 +206,12 @@ mod tests {
                 (u64::MAX, TABLE_LOG_ORDER),
                 (u64::MAX, TABLE_LOG_ORDER + 1),
             ] {
-                assert!(std::panic::catch_unwind(|| F::ckks_quadrant_cos(i, order)).is_err());
+                assert!(std::panic::catch_unwind(|| quadrant_cos::<F>(i, order)).is_err());
                 assert!(std::panic::catch_unwind(|| generated_quadrant_cos::<F>(i, order)).is_err());
             }
             for order in [2, TABLE_LOG_ORDER, TABLE_LOG_ORDER + 1, 63] {
-                assert!(F::ckks_quadrant_cos(0, order) == F::one());
-                assert!(F::ckks_quadrant_cos(1 << (order - 2), order) == F::zero());
+                assert!(quadrant_cos::<F>(0, order) == F::one());
+                assert!(quadrant_cos::<F>(1 << (order - 2), order) == F::zero());
             }
         }
         check::<f32>();
