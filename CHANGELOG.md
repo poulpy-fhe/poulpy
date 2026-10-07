@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### CPU backends
+
+- **Breaking, behaviour:** `NTT4x30Portable` stores the transform domain as four `u32` residues per coefficient (`DftWord = CrtWord<Primes30, u32>`), half the previous size, for `VecZnxDft`, `SvpPPol`, `VmpPMat` and both convolution operands.
+  The layouts are those of the NEON backends: a transformed limb is one plane of canonical residues per prime, prepared operands are multiplied by `2^32`, the prepared matrix and the convolution operands hold residues centered around zero in the order their kernels read them.
+  `NTT4x30Portable` and the NEON NTT4x30 backends are byte-compatible again for `VecZnxDft` and `SvpPPol`: the `VecZnxDftLayoutCompatible` and `SvpPPolLayoutCompatible` markers and the word-compatibility suite between them are back.
+  The q120 kernels of `poulpy_cpu_portable::kernels::ntt4x30` are unchanged and stay the base of the AVX2 and AVX-512 backends.
+- `NTT4x30Portable` runs a 32-bit NTT in place on the packed limb, on both rings, in plain scalar Rust: signed residues, a precomputed twiddle quotient, cache-blocked levels, a forward transform that reads the `i64` coefficients directly and an inverse transform that folds `1/n` and the CRT constant into its last level.
+  Its loops have a fixed stride over one prime, and the two halves of a butterfly block go through a function boundary that tells the compiler they do not overlap, so that the target's vector instructions are used.
+  The forward transform returns zero for a zero limb without running, and no transform or prepare allocates.
+- The vector-matrix product and the convolutions of `NTT4x30Portable` share one inner product on signed accumulators, 24 products per Montgomery step, gather their inputs and stage their outputs in runs of 32 blocks of four coefficients, and take that staging buffer from scratch.
+  `vmp_apply_dft_to_dft_add`, `cnv_apply_dft_add`, `cnv_apply_dft_sum` and `cnv_pairwise_apply_dft` accumulate in the same pass, `svp_apply_dft` transforms each limb into its destination, and `vec_znx_idft_normalize_consume` writes the coefficients over the limb it transforms.
+- `NTT4x30Portable` implements `GGLWEProductDigitsStridedImpl` with a fused kernel for up to 16 gadget digits, which returns the residues of the reference body and skips the rows of leading input limbs that are zero in every column.
+- `NTT4x30Portable` implements `CKKSEncapsulatedModUpImpl` natively: the limbs that the raise to the large modulus leaves at zero are neither transformed nor multiplied, and the reference body stays in use where the layouts differ or the key has fewer than two or more than 16 digits.
+- The middle step of the portable `i128` normalization takes the digit and the carry of the sum of the input and the incoming carry in one step.
+  It returns the same values as the two-step form.
+- The portable FFT64 passes load, combine and store four elements at a time, and the two merged layers of a pass run in one sweep.
+  Every element goes through the same operations in the same order, so the transforms return the same bytes.
+- `vmp_apply_dft_to_dft_add` of the FFT64 backends accumulates each block as it is computed, where it filled a zeroed scratch vector and added it afterwards.
+- **Fix:** `ZnxPortable::znx_normalize_middle_step` ignored its `OVERWRITE` parameter and always overwrote.
+
 ## [0.9.0] - 2026-10-08
 
 Reworks the HAL around a smaller operation basis with documented contracts and backend-generic derived defaults ([#234](https://github.com/poulpy-fhe/poulpy/issues/234)), adds the conjugate-invariant ring, multi-degree modules and compact operands ([#266](https://github.com/poulpy-fhe/poulpy/issues/266)), moves sampling into `poulpy-core` behind a unified `Noise` with per-component noise metadata ([#372](https://github.com/poulpy-fhe/poulpy/issues/372)), and makes CKKS encoding byte identical across backends and targets. `poulpy-cpu-ref` is renamed `poulpy-cpu-portable`; new crates: `poulpy-mhe` (multiparty HE) and the unpublished `poulpy-cpu-oracle`.
