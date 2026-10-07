@@ -68,7 +68,8 @@ impl<F: CKKSFloat> NegacyclicFFTNew<F> for EncodingFft<F> {
         let log_order = (4 * m).trailing_zeros();
         Self {
             m,
-            roots: (0..4 * m as u64).map(|k| root_of_unity(k, log_order)).collect(),
+            // The recursion reads `roots[j / 2]` with `j < 4m`.
+            roots: (0..2 * m as u64).map(|k| root_of_unity(k, log_order)).collect(),
         }
     }
 }
