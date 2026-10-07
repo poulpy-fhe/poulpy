@@ -217,14 +217,17 @@ where
             Parity::Odd => !k.is_multiple_of(2),
         })
         .collect();
-    let mut fit = fit_chebyshev_on_intervals(&g, &fit_domain, degree, &degrees, opts)?;
-    fit.error = estimate_sup_error(&g, &fit.coeffs, &mapped, fit.grid_len);
+    let fit = fit_chebyshev_on_intervals(&g, &fit_domain, degree, &degrees, opts)?;
+    let error = match parity {
+        Parity::Full => sup_error(&fit.extrema),
+        Parity::Even | Parity::Odd => sup_error(&find_extrema(&g, &fit.coeffs, &mapped, fit.grid_len)),
+    };
 
     let poly = Polynomial::new_with_parity(Basis::Chebyshev, fit.coeffs, parity).with_interval(a, b);
     Ok(Minimax {
         poly,
         intervals: intervals.to_vec(),
-        error: fit.error,
+        error,
         iters: fit.iters,
         converged: fit.converged,
     })
@@ -293,8 +296,8 @@ fn positive_half<F: Float>(intervals: &[(F, F)]) -> Vec<(F, F)> {
 pub(crate) struct RemezFit<F> {
     /// Dense coefficient vector; degrees excluded from the fit contain zero.
     pub(crate) coeffs: Vec<F>,
-    /// Estimated maximum absolute error on the supplied fit domain.
-    pub(crate) error: F,
+    /// Refined extrema `(x, g(x) - p(x))` of the final error curve on the fit domain.
+    pub(crate) extrema: Vec<(F, F)>,
     /// Number of equioscillation systems solved.
     pub(crate) iters: usize,
     /// Whether a numerical or equioscillation stopping criterion was met.
@@ -340,7 +343,7 @@ where
     if degrees.is_empty() {
         let coeffs = vec![F::zero(); degree + 1];
         return Ok(RemezFit {
-            error: estimate_sup_error(g, &coeffs, intervals, grid_len),
+            extrema: find_extrema(g, &coeffs, intervals, grid_len),
             coeffs,
             iters: 0,
             converged: true,
@@ -411,10 +414,7 @@ where
     }
 
     Ok(RemezFit {
-        error: find_extrema_cached(g, &coeffs, intervals, grid_len, &mut grid)
-            .into_iter()
-            .map(|(_, error)| error.abs())
-            .fold(F::zero(), F::max),
+        extrema: find_extrema_cached(g, &coeffs, intervals, grid_len, &mut grid),
         coeffs,
         iters,
         converged,
@@ -644,15 +644,8 @@ where
 ///
 /// This shares the extrema search used by the exchange step and is therefore a
 /// numerical estimate, not an interval-arithmetic certificate.
-fn estimate_sup_error<F, G>(g: &G, coeffs: &[F], intervals: &[(F, F)], grid_len: usize) -> F
-where
-    F: CKKSFloat + FloatConst + FromPrimitive,
-    G: Fn(F) -> F,
-{
-    find_extrema(g, coeffs, intervals, grid_len)
-        .into_iter()
-        .map(|(_, e)| e.abs())
-        .fold(F::zero(), F::max)
+fn sup_error<F: Float>(extrema: &[(F, F)]) -> F {
+    extrema.iter().map(|&(_, e)| e.abs()).fold(F::zero(), F::max)
 }
 
 /// Estimates the largest undershoot and overshoot of `p` relative to `g`.
@@ -660,14 +653,10 @@ where
 /// Because signed error is defined as `g - p`, the returned pair is
 /// `(max(g - p), max(p - g))`. The composite-sign planner uses these directional
 /// bounds to propagate the image interval between polynomial factors.
-pub(crate) fn grid_error_bounds<F, G>(g: &G, coeffs: &[F], intervals: &[(F, F)], grid_len: usize) -> (F, F)
-where
-    F: CKKSFloat + FloatConst + FromPrimitive,
-    G: Fn(F) -> F,
-{
-    find_extrema(g, coeffs, intervals, grid_len)
-        .into_iter()
-        .fold((F::zero(), F::zero()), |(positive, negative), (_, error)| {
+pub(crate) fn error_bounds<F: Float>(extrema: &[(F, F)]) -> (F, F) {
+    extrema
+        .iter()
+        .fold((F::zero(), F::zero()), |(positive, negative), &(_, error)| {
             (positive.max(error), negative.max(-error))
         })
 }
