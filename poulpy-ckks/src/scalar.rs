@@ -384,6 +384,7 @@ pub(crate) mod backing {
     /// libquadmath, reached by bit-casting to the `f128` crate's binary128 type
     /// (identical layout) and back. Storage never leaves the primitive.
     #[cfg(all(feature = "libquadmath", target_arch = "x86_64", target_os = "linux", target_env = "gnu"))]
+    #[allow(clippy::disallowed_methods)] // The general Quad API routes platform math here; CKKS uses CKKSFloat.
     mod quadmath {
         use num_traits::Float;
 

@@ -111,8 +111,6 @@ pub mod oep;
 pub mod polynomial;
 pub mod power_basis;
 pub mod presets;
-// The general Quad API intentionally routes platform math. CKKS uses CKKSFloat.
-#[allow(clippy::disallowed_methods)]
 pub mod scalar;
 #[cfg(feature = "test-utils")]
 #[allow(clippy::disallowed_methods)]

@@ -135,7 +135,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 - Quad setup always uses portable math and is generally slower than native Linux binary128 math, with machine- and workload-dependent costs.
   The `setup_math` example measures local operation costs without claiming a universal setup slowdown.
 - The public quadrant hook validates its order and index before table access or generation.
-  The oracle's root coverage follows `ROOT_TABLE_LOG_ORDER`, and production Clippy checks reject platform math outside the explicit adapters and tests.
+  The oracle's root coverage follows `ROOT_TABLE_LOG_ORDER`, and production Clippy checks reject `f32`, `f64` and `num_traits::Float` platform math outside the explicit adapters and tests.
 
 - **Breaking, behaviour:** CKKS setup math and plaintext quantization return the same bits on supported targets for a fixed Poulpy version and resolved dependency set, as a first step towards encodings that are byte identical on every backend.
   The new `numerics::CKKSFloat` trait, which `CKKSScalar` now requires, provides the transcendental functions of the setup code through soft-float `libm` for `f32` and `f64` and the pure-Rust binary128 implementation for `Quad`, on every target.

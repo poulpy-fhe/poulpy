@@ -52,9 +52,10 @@ The example reports warmed median timings for cosine and fractional powers, the 
 Record the CPU model, operating system, `rustc -Vv`, compiler flags and lockfile alongside any reported ratios.
 Benchmark the actual parameter-generation workload separately before drawing conclusions about application setup time.
 
-Production code is checked by the crate's `clippy.toml` for calls that bypass `CKKSFloat`.
+Production code is checked by the crate's `clippy.toml` for `f32`, `f64` and `num_traits::Float` calls that bypass `CKKSFloat`.
+Clippy does not check methods of the primitive `f128`, so code outside `scalar::backing` must reach `Quad` math through `Float` or `CKKSFloat`, not through the inner `f128`.
 Run `cargo clippy -p poulpy-ckks --all-targets --features test-utils -- -D warnings` when changing setup math.
-The general Quad adapter, independent tests and the comparison benchmark explicitly permit platform math.
+The libquadmath backing, independent tests and the comparison benchmark explicitly permit platform math.
 
 ## Tests and backend integration
 
