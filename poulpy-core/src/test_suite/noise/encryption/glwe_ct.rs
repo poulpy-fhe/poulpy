@@ -526,11 +526,12 @@ where
             let glwe_infos = layout(k_ct);
 
             // A public key more precise than the output needs scratch past the output's width; a
-            // decompressed key encrypts as a generated one.
+            // decompressed key encrypts as a generated one. Three extra limbs drop key limbs.
             for (k_pk, compressed) in [
                 (k_ct, false),
                 (k_ct + 1, false),
                 (k_ct + base2k, false),
+                (k_ct + 3 * base2k, false),
                 (k_ct, true),
                 (k_ct + 1, true),
                 (k_ct + base2k, true),
@@ -638,7 +639,7 @@ where
                     let model = |ct: &GLWE<BE::OwnedBuf, BE::ZnxWord>| {
                         let metadata = ct.noise().unwrap();
                         assert_eq!(metadata.precision(), ct.k());
-                        metadata.weighted_phase_noise(n, n * factor * factor).variance_at(0u32.into())
+                        metadata.weighted_phase_noise(n, n * factor).variance_at(0u32.into())
                     };
                     let stats = glwe_noise_checked(module, &ct, &pt_want, &sk_prepared, &mut scratch.borrow());
                     noise_variance += stats.second_moment();
@@ -666,33 +667,19 @@ where
                     modeled_variance += model(&ct);
                 }
                 let ratio = noise_variance / modeled_variance;
-                let ring_factor = <BE::Ring as Ring>::CYCLOTOMIC_ORDER_FACTOR / 2;
-                if ring_factor == 2 {
+                if <BE::Ring as Ring>::CYCLOTOMIC_ORDER_FACTOR == 4 {
                     assert!(
-                        // The model counts two encryptions per trial, coefficient zero one.
-                        coefficient_zero <= 2.5 * modeled_variance / 2.0,
-                        "CI coefficient-zero second moment exceeds metadata: {}",
+                        // Coefficient zero weighs about twice the average; the
+                        // model counts two encryptions per trial, coefficient zero one.
+                        coefficient_zero <= 3.5 * modeled_variance / 2.0,
+                        "CI coefficient-zero second moment exceeds twice the metadata: {}",
                         2.0 * coefficient_zero / modeled_variance
                     );
                 }
-                // CI uses a bound covering coefficient zero, twice the average product weight.
-                // Rounding uses a 1/4 bound although its variance approaches 1/12.
-                // For binary CI, the all-ones product has coefficients 2*n-1 at zero
-                // and 2*(n-c) elsewhere. Its average squared bias is about 4*n^2/3,
-                // versus the planner's (4*n)^2 bound, so the ratio can approach 1/12.
-                let lower = if ring_factor == 2 && binary && k_pk > k_ct {
-                    0.06
-                } else if ring_factor == 2 {
-                    0.18
-                } else if k_pk == k_ct {
-                    0.85
-                } else if binary {
-                    0.15
-                } else {
-                    0.25
-                };
+                // The metadata is the expected second moment averaged over coefficients.
+                let lower = 0.88;
                 assert!(
-                    ratio >= lower && ratio <= 1.15,
+                    ratio >= lower && ratio <= 1.1,
                     "empirical/model second moment={ratio}, binary={binary}, rank={rank}, key gap={}",
                     k_pk - k_ct
                 );
@@ -759,64 +746,32 @@ where
     }
 }
 
-// Formula regression calculation for the ternary probability-1/2 fixtures.
-// Repeated quartering deliberately differs from the planner's integer search.
-fn expected_public_key_noise(rank: usize, n: usize, base2k: usize, k: usize, k_pk: usize) -> (usize, f64, Vec<f64>) {
-    let fold = rank as f64 * n as f64 * 0.5;
-    let inherited = (DEFAULT_SIGMA_XE.powi(2) * (-2.0 * (k_pk - k) as f64).exp2()) * fold;
-    let rounding = (1.0 + fold) / 4.0;
-    let tail = 0.5 / (1.0 - (-(base2k as f64)).exp2());
-    let prefix_variance = fold * (1.0 + fold) * tail.powi(2);
-    let mut fresh = DEFAULT_SIGMA_XE.powi(2) * (1.0 + fold);
-    let mut sample_k = k;
-    let (combined, cut, work_k) = loop {
-        let work_k = (sample_k.div_ceil(base2k) * base2k).min(k_pk);
-        let cut = if work_k == k_pk {
-            0.0
-        } else {
-            prefix_variance * (-2.0 * (work_k - k) as f64).exp2()
-        };
-        let combined = if cut == 0.0 {
-            inherited
-        } else {
-            (inherited.sqrt() + cut.sqrt()).powi(2)
-        };
-        if sample_k == k_pk || combined + fresh <= rounding {
-            break (combined, cut, work_k);
-        }
-        fresh *= 0.25;
-        sample_k += 1;
-    };
+// Raw components of a public-key encryption at `k` under a fresh ternary
+// probability-1/2 key at `k_pk`, with fresh errors drawn at `sample_k`.
+fn expected_public_key_components(rank: usize, weight: f64, base2k: usize, k: usize, k_pk: usize, sample_k: usize) -> Vec<f64> {
+    let sigma2 = DEFAULT_SIGMA_XE.powi(2);
+    let at_k = |variance: f64, precision: usize| variance * (-2.0 * (precision - k) as f64).exp2();
     let scale = (-2.0 * (sample_k - k) as f64).exp2();
-    // Check that the component split reconstructs the phase estimate.
-    let variance = combined
-        + DEFAULT_SIGMA_XE.powi(2) * fold * scale
-        + DEFAULT_SIGMA_XE.powi(2) * scale
-        + if work_k > k { rounding } else { 0.0 };
-    let raw_cut = cut / (1.0 + fold);
-    let raw_fresh = DEFAULT_SIGMA_XE.powi(2) * scale;
-    let raw_rounding = if work_k > k { 0.25 } else { 0.0 };
-    let components: Vec<f64> = (0..=rank)
-        .map(|index| {
-            let raw_inherited = if index == 0 { inherited } else { 0.0 };
-            let combined = if cut == 0.0 {
-                raw_inherited
-            } else if inherited == 0.0 {
-                raw_cut
-            } else {
-                // A common Young split bounds inherited/prefix covariance
-                // in each raw coefficient before secret multiplication.
-                raw_inherited
-                    + raw_cut
-                    + raw_inherited * (cut.sqrt() / inherited.sqrt())
-                    + raw_cut * (inherited.sqrt() / cut.sqrt())
-            };
-            combined + raw_fresh + raw_rounding
+    // A dropped-limb tail is uniform over one ulp of the sampling grid; the
+    // output rounding drops `sample_k - k` uniform bits, ties rounding up.
+    let tail = if sample_k < k_pk {
+        let mean = -0.5 * (-(base2k as f64)).exp2() / (1.0 - (-(base2k as f64)).exp2()) * scale.sqrt();
+        mean * mean + scale / 12.0
+    } else {
+        0.0
+    };
+    let rounding = if sample_k > k {
+        let mean = -0.5 * scale.sqrt();
+        mean * mean + (1.0 - scale) / 12.0
+    } else {
+        0.0
+    };
+    (0..=rank)
+        .map(|i| {
+            let key = if i == 0 { at_k(sigma2, k_pk) } else { 0.0 };
+            (key + tail) * (0.5 * (rank as f64 * weight)) + at_k(sigma2, sample_k) + rounding
         })
-        .collect();
-    let reconstructed = components[0] + n as f64 * 0.5 * components[1..].iter().sum::<f64>();
-    assert!((reconstructed - variance).abs() <= variance * 1e-12);
-    (sample_k, variance, components)
+        .collect()
 }
 
 /// `glwe_public_key_generate` and `glwe_encrypt_pk` equal their per-entry formulas replayed from the same sources.
@@ -868,7 +823,16 @@ where
                 k: (k + extra).into(),
                 ..infos
             };
-            let (sample_k, _, expected_components) = expected_public_key_noise(rank, n, base2k, k, k + extra);
+            // One limb past the output, at most the key's precision.
+            let sample_k = ((k.div_ceil(base2k) + 1) * base2k).min(k + extra);
+            let expected_components = expected_public_key_components(
+                rank,
+                <BE::Ring as Ring>::product_moments(n).weight,
+                base2k,
+                k,
+                k + extra,
+                sample_k,
+            );
             let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
                 module
                     .glwe_encrypt_pk_tmp_bytes(&infos, &pk_infos)
@@ -939,9 +903,9 @@ where
             }
 
             // Independent scalar products consume only the leading key limbs,
-            // exercising the narrower matrix product without using its planner.
+            // exercising the narrower matrix product without the library's selection.
             let size: usize = sample_k.div_ceil(base2k);
-            if extra >= base2k {
+            if extra == 3 * base2k {
                 assert!(size < pk.size(), "high-precision replay must discard PK limbs");
             }
             let mut want: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);

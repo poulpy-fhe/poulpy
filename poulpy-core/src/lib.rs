@@ -90,7 +90,7 @@ pub use api::*;
 pub use component_noise::{ComponentNoise, FreshNoiseEstimate, SecretDistribution};
 pub use dist::*;
 pub use error::{CoreError, Result};
-pub use fresh_noise_model::{PublicKeyBodyNoise, PublicKeyEncryptionPlan, public_key_encryption_plan};
+pub use fresh_noise_model::{PublicKeyBodyNoise, public_key_encryption_noise, public_key_sample_precision};
 pub use noise_distribution::Noise;
 pub use reference::encryption::*;
 pub use reference::linear_transformation::*;

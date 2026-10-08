@@ -123,15 +123,10 @@ pub trait GLWEEncryptSk<BE: Backend> {
 /// of rank `r`: draws `u_1, .., u_r` in order from `source_xu` under the key's
 /// distribution and outputs `Sum_l u_l pk_l + (e_0 + m, e_1, .., e_r)`, one
 /// fresh error per column drawn in column order from `source_xe`, each column
-/// normalized once at the output's `k`.
+/// normalized once at the output's `k`. The errors are drawn at
+/// [`public_key_sample_precision`](crate::public_key_sample_precision) and the
+/// product uses only the key limbs down to it.
 ///
-/// Fresh body and mask errors use a derived precision `k_sample` between the
-/// output's `k` and the public key's precision. It is the smallest precision
-/// whose modeled inherited, key-truncation and fresh error fits the
-/// output-rounding variance;
-/// an unattainable target or unavailable estimate selects the key's precision.
-/// The product uses only the key limbs needed for `k_sample`, then is normalized
-/// once to `k`. The prepared key itself is unchanged.
 /// A public key carrying noise metadata must keep its ephemeral distribution
 /// equal to the metadata provenance base. A mismatch panics before mutation.
 /// Untagged keys skip this provenance check.
@@ -273,8 +268,6 @@ pub trait GGSWEncryptSk<BE: Backend> {
 /// `Sum_l u_l pk_l + (m + f, e_1, .., e_r)`, where `f` is drawn from `flood` at
 /// the output's precision with `source_smudge` and replaces the body's encryption
 /// error. `u` and `e_1, .., e_r` are drawn as [`GLWEEncryptPk`] draws them.
-/// Sampling precision is selected from inherited, key-truncation and fresh mask errors;
-/// the deliberate flood is excluded from that target and added at output `k`.
 /// A public key carrying noise metadata must keep its ephemeral distribution
 /// equal to the metadata provenance base. A mismatch panics before mutation.
 /// Untagged keys skip this provenance check.
