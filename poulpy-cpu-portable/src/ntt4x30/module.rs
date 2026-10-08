@@ -22,19 +22,18 @@ use poulpy_hal::{
 use crate::kernels::ntt4x30::{
     mat_vec::{BbbMeta, BbcMeta},
     primes::Primes30,
-    types::Q120bScalar,
     vec_znx_dft::{NttHandleFactory, NttHandleProvider, NttPlan, NttPlanSet},
 };
-use poulpy_hal::layouts::{Ring, Standard};
+use poulpy_hal::layouts::{CrtWord, Ring, Standard};
 
 use super::NTT4x30Portable;
+use super::ntt32::{MIN_N, Ntt32Table};
 
 /// Opaque handle for the NTT4x30 portable backends over ring `R`
 /// ([`NTT4x30Portable`](super::NTT4x30Portable) and [`NTT4x30CIPortable`](crate::NTT4x30CIPortable)).
 ///
-/// Holds precomputed twiddle-factor tables for the forward NTT and inverse NTT
-/// of size `n`, and the lazy-accumulation metadata for `q120b × q120c` and
-/// `q120b × q120b` products.
+/// Holds the tables of the packed NTT of every degree the module serves.
+/// The q120 plans and metadata are kept for the bodies that are generic over the q120 layout.
 ///
 /// This struct is heap-allocated during module creation and freed when the
 /// `Module` is dropped (via [`Backend::destroy`]).
@@ -44,6 +43,21 @@ pub struct NTT4x30PortableHandle<R: Ring = Standard> {
     meta_bbc: BbcMeta<Primes30>,
     meta_bbb: BbbMeta<Primes30>,
     table_cache: crate::table_cache::ModuleTableCache,
+    /// Tables of the packed NTT, indexed by `log2(n)`.
+    packed: Vec<Option<Ntt32Table>>,
+}
+
+impl<R: Ring> NTT4x30PortableHandle<R> {
+    /// Tables of the packed NTT of degree `n`.
+    ///
+    /// Panics below the smallest degree the kernels accept, which is the smallest degree of the backend.
+    #[inline]
+    pub(crate) fn packed_table(&self, n: usize) -> &Ntt32Table {
+        self.packed
+            .get(n.trailing_zeros() as usize)
+            .and_then(Option::as_ref)
+            .expect("no packed NTT table for this degree")
+    }
 }
 
 impl<R: Ring> poulpy_hal::execution::ScratchWorkers for NTT4x30Portable<R> {}
@@ -72,7 +86,7 @@ impl<R: Ring> Backend for NTT4x30Portable<R> {
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type Ring = R;
-    type DftWord = Q120bScalar;
+    type DftWord = CrtWord<Primes30, u32>;
     type ZnxWord = i64;
     type BigWord = i128;
     type OwnedBuf = AlignedBuf;
@@ -190,6 +204,12 @@ where
     fn create_ntt_handle(n: usize) -> Self {
         NTT4x30PortableHandle {
             table_cache: Default::default(),
+            packed: (0..=n.ilog2())
+                .map(|log_n| {
+                    let n = 1usize << log_n;
+                    (n >= MIN_N).then(|| Ntt32Table::new(n, R::CYCLOTOMIC_ORDER_FACTOR == 4))
+                })
+                .collect(),
             ring_plans: NttPlanSet::new(n),
             meta_bbc: BbcMeta::new(),
             meta_bbb: BbbMeta::new(),

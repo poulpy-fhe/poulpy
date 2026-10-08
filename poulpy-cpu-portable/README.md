@@ -63,7 +63,7 @@ let log_n: usize = 10;
 // f64 FFT backend
 let module: Module<FFT64Portable> = Module::<FFT64Portable>::new(1 << log_n);
 
-// Q120 NTT backend (CRT over four ~30-bit primes)
+// NTT backend (CRT over four ~30-bit primes)
 let module: Module<NTT4x30Portable> = Module::<NTT4x30Portable>::new(1 << log_n);
 ```
 

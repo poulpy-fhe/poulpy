@@ -345,6 +345,14 @@ fn ifft16_portable<R: Float + FloatConst, const FUSED: bool>(re: &mut [R; 16], i
     }
 }
 
+/// Elements a pass loads, combines and stores as a unit, see the forward transform.
+const LANES: usize = 4;
+
+#[inline(always)]
+fn load<R: Float>(x: &[R]) -> [R; LANES] {
+    [x[0], x[1], x[2], x[3]]
+}
+
 #[inline(always)]
 fn inv_twiddle_ifft_portable<R: Float + FloatConst, const FUSED: bool>(h: usize, re: &mut [R], im: &mut [R], omg: &[R; 2]) {
     let romg = omg[0];
@@ -353,11 +361,30 @@ fn inv_twiddle_ifft_portable<R: Float + FloatConst, const FUSED: bool>(h: usize,
     let (re_lhs, re_rhs) = re.split_at_mut(h);
     let (im_lhs, im_rhs) = im.split_at_mut(h);
 
-    for i in 0..h {
-        inv_twiddle::<_, FUSED>(&mut re_lhs[i], &mut im_lhs[i], &mut re_rhs[i], &mut im_rhs[i], romg, iomg);
+    if h < LANES {
+        for i in 0..h {
+            inv_twiddle::<_, FUSED>(&mut re_lhs[i], &mut im_lhs[i], &mut re_rhs[i], &mut im_rhs[i], romg, iomg);
+        }
+        return;
+    }
+    for (((ra, ia), rb), ib) in re_lhs[..h]
+        .chunks_exact_mut(LANES)
+        .zip(im_lhs[..h].chunks_exact_mut(LANES))
+        .zip(re_rhs[..h].chunks_exact_mut(LANES))
+        .zip(im_rhs[..h].chunks_exact_mut(LANES))
+    {
+        let (mut va, mut wa, mut vb, mut wb) = (load(ra), load(ia), load(rb), load(ib));
+        for l in 0..LANES {
+            inv_twiddle::<_, FUSED>(&mut va[l], &mut wa[l], &mut vb[l], &mut wb[l], romg, iomg);
+        }
+        ra.copy_from_slice(&va);
+        ia.copy_from_slice(&wa);
+        rb.copy_from_slice(&vb);
+        ib.copy_from_slice(&wb);
     }
 }
 
+/// Two merged layers over a block of `4 * h` elements, `h` a multiple of [`LANES`].
 #[inline(always)]
 fn inv_bitwiddle_ifft_portable<R: Float + FloatConst, const FUSED: bool>(h: usize, re: &mut [R], im: &mut [R], omg: &[R; 4]) {
     let (r0, r2) = re.split_at_mut(2 * h);
@@ -373,13 +400,34 @@ fn inv_bitwiddle_ifft_portable<R: Float + FloatConst, const FUSED: bool>(h: usiz
     let omg_2: R = omg[2];
     let omg_3: R = omg[3];
 
-    for i in 0..h {
-        inv_twiddle::<_, FUSED>(&mut r0[i], &mut i0[i], &mut r1[i], &mut i1[i], omg_0, omg_1);
-        inv_itwiddle::<_, FUSED>(&mut r2[i], &mut i2[i], &mut r3[i], &mut i3[i], omg_0, omg_1);
-    }
-
-    for i in 0..h {
-        inv_twiddle::<_, FUSED>(&mut r0[i], &mut i0[i], &mut r2[i], &mut i2[i], omg_2, omg_3);
-        inv_twiddle::<_, FUSED>(&mut r1[i], &mut i1[i], &mut r3[i], &mut i3[i], omg_2, omg_3);
+    let re = r0
+        .chunks_exact_mut(LANES)
+        .zip(r1.chunks_exact_mut(LANES))
+        .zip(r2[..h].chunks_exact_mut(LANES))
+        .zip(r3[..h].chunks_exact_mut(LANES));
+    let im = i0
+        .chunks_exact_mut(LANES)
+        .zip(i1.chunks_exact_mut(LANES))
+        .zip(i2[..h].chunks_exact_mut(LANES))
+        .zip(i3[..h].chunks_exact_mut(LANES));
+    for ((((r0, r1), r2), r3), (((i0, i1), i2), i3)) in re.zip(im) {
+        let (mut a0, mut a1, mut a2, mut a3) = (load(r0), load(r1), load(r2), load(r3));
+        let (mut b0, mut b1, mut b2, mut b3) = (load(i0), load(i1), load(i2), load(i3));
+        for l in 0..LANES {
+            inv_twiddle::<_, FUSED>(&mut a0[l], &mut b0[l], &mut a1[l], &mut b1[l], omg_0, omg_1);
+            inv_itwiddle::<_, FUSED>(&mut a2[l], &mut b2[l], &mut a3[l], &mut b3[l], omg_0, omg_1);
+        }
+        for l in 0..LANES {
+            inv_twiddle::<_, FUSED>(&mut a0[l], &mut b0[l], &mut a2[l], &mut b2[l], omg_2, omg_3);
+            inv_twiddle::<_, FUSED>(&mut a1[l], &mut b1[l], &mut a3[l], &mut b3[l], omg_2, omg_3);
+        }
+        r0.copy_from_slice(&a0);
+        r1.copy_from_slice(&a1);
+        r2.copy_from_slice(&a2);
+        r3.copy_from_slice(&a3);
+        i0.copy_from_slice(&b0);
+        i1.copy_from_slice(&b1);
+        i2.copy_from_slice(&b2);
+        i3.copy_from_slice(&b3);
     }
 }

@@ -819,13 +819,16 @@ pub trait I128NormalizeOps: I64NormalizeOps + ZnxNormalizeMiddleStepAssign {
     fn nfc_middle_step(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
         assert!(a.len() >= res.len() && carry.len() >= res.len());
         if lsh == 0 {
+            // The digit of `a + carry` and the carry it leaves are those of the two-step form
+            // (digit of `a`, then digit of that plus the carry).
+            // The sum itself may not be representable, so it is split: the low `base2k` bits of both terms
+            // give the digit and a carry of at most two, and the high parts add without overflow.
+            let mask: i128 = (1i128 << base2k) - 1;
             izip!(res.iter_mut(), a.iter(), carry.iter_mut()).for_each(|(r, &ai, c)| {
-                let digit = get_digit_i128_portable(base2k, ai);
-                let co = get_carry_i128_portable(base2k, ai, digit);
-                let d_plus_c = digit + *c;
-                let out = get_digit_i128_portable(base2k, d_plus_c);
+                let low = (ai & mask) + (*c & mask);
+                let out = get_digit_i128_portable(base2k, low);
                 *r = out as i64;
-                *c = co + get_carry_i128_portable(base2k, d_plus_c, out);
+                *c = (ai >> base2k) + (*c >> base2k) + ((low - out) >> base2k);
             });
         } else {
             let base2k_lsh = base2k - lsh;

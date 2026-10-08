@@ -1,52 +1,59 @@
 //! Portable NTT4x30 CPU backend for the Poulpy lattice cryptography library.
 //!
-//! This crate provides [`NTT4x30Portable`], a backend implementation for [`poulpy_hal`] that uses
-//! scalar Q120 NTT arithmetic (Chinese Remainder Theorem over four ~30-bit primes). It runs on
-//! every CPU architecture, in plain scalar Rust.
+//! This module provides [`NTT4x30Portable`], a backend implementation for [`poulpy_hal`] on the CRT of four
+//! primes of about 30 bits. It runs on every CPU architecture, in plain scalar Rust.
 //!
-//! # Architecture
+//! # Transform domain
 //!
-//! `poulpy-hal` defines a hardware abstraction layer (HAL) via the [`Backend`](poulpy_hal::layouts::Backend)
-//! trait and a family of _open extension point_ (OEP) traits in [`poulpy_hal::oep`]. This crate
-//! implements every OEP trait for the [`NTT4x30Portable`] backend by delegating to the portable
-//! functions provided by `crate::kernels::ntt4x30`.
+//! A transformed limb is four planes of `n` canonical `u32` residues, 16 bytes per coefficient.
+//! Prepared operands (`SvpPPol`, `VmpPMat`, the convolution operands) hold the same residues, multiplied by `2^32`
+//! or centered around zero where their products need it, in the order their kernels read them.
 //!
-//! The internal modules are organised by operation domain:
+//! The kernels are written as loops with a fixed stride over one prime at a time, the shape compilers turn into
+//! vector instructions on the targets that have them. The q120 kernels of `crate::kernels::ntt4x30`, which the
+//! SIMD backends build on, use a different layout and are not part of this backend's transform path.
 //!
-//! | Module          | Domain                                                         |
-//! |-----------------|----------------------------------------------------------------|
-//! | `module`        | Backend handle lifecycle, NTT table management                 |
-//! | `scratch`       | Temporary memory allocation and arena-style sub-allocation, now provided by shared `poulpy-hal` portable defaults |
-//! | `znx`           | Single ring element (`Z[X]/(X^n+1)`) arithmetic               |
-//! | `vec_znx`       | Vectors of ring elements (limb decomposition), now provided by shared `poulpy-hal` portable defaults |
-//! | `vec_znx_big`   | Large-coefficient (i128) ring element vectors, now provided by shared `poulpy-hal` NTT4x30 defaults |
-//! | `vec_znx_dft`   | NTT-domain ring element vectors, now provided by shared `poulpy-hal` NTT4x30 defaults |
-//! | `svp`           | Scalar-vector product in NTT domain, now provided by shared `poulpy-hal` NTT4x30 defaults |
+//! | Module          | Domain                                                              |
+//! |-----------------|---------------------------------------------------------------------|
+//! | `module`        | Backend handle lifecycle, NTT tables                                |
+//! | `packed`        | Modular arithmetic and inner products on packed residues            |
+//! | `ntt32`         | Forward and inverse transform of one packed limb                    |
+//! | `vec_znx_dft`   | Transform-domain vectors                                            |
+//! | `svp`           | Scalar-vector product                                               |
+//! | `vmp`           | Vector-matrix product                                               |
+//! | `vmp_strided`   | Interleaved-digit product of `poulpy-core`, fused in one pass       |
+//! | `convolution`   | Bivariate convolution                                               |
+//! | `hal_impl`      | Wiring of the above into the `poulpy_hal` extension points          |
+//! | `znx`           | Single ring element (`Z[X]/(X^n+1)`) arithmetic                     |
+//! | `vec_znx_big`   | Large-coefficient (`i128`) vectors, on the shared NTT4x30 defaults  |
 //!
 //! # Scalar types
 //!
-//! For the `NTT4x30Portable` backend:
-//!
-//! - `DftWord = Q120bScalar`: coefficients in the NTT / frequency domain (32 bytes = 4 × u64).
-//! - `BigWord  = i128`: coefficients in the large-integer (CRT-reconstructed) domain.
-//!
-//! # Usage
-//!
-//! This crate exports a single public type, [`NTT4x30Portable`], which is used as a type parameter
-//! to the HAL generic types. All functionality is accessed through the trait methods defined
-//! in `poulpy_hal::api`.
+//! - `DftWord = CrtWord<Primes30, u32>`: four residues of a coefficient in the transform domain (16 bytes).
+//! - `BigWord = i128`: coefficients in the large-integer (CRT-reconstructed) domain.
 //!
 //! # Platform support
 //!
 //! Compiles and runs on any target supported by the Rust standard library.
 //! No platform-specific intrinsics or assembly are used.
 
+mod convolution;
+mod hal_impl;
 mod module;
+mod ntt32;
+mod packed;
 mod prim;
+mod svp;
 mod vec_znx_big;
+mod vec_znx_dft;
+mod vmp;
+#[cfg(feature = "enable-core")]
+mod vmp_strided;
 mod znx;
 
 pub use module::NTT4x30PortableHandle;
+#[cfg(feature = "enable-core")]
+pub(crate) use vmp_strided::{STRIDED_MAX_DSIZE, gglwe_product_digits_strided, gglwe_product_digits_strided_tmp_bytes};
 
 use std::marker::PhantomData;
 
@@ -59,12 +66,11 @@ use poulpy_hal::layouts::{Ring, Standard};
 /// conjugate invariant ring)
 /// when used as the type parameter `B` in [`poulpy_hal::layouts::Module<B>`](poulpy_hal::layouts::Module)
 /// and related HAL types. It implements all open extension point (OEP) traits from
-/// `poulpy_hal::oep` by delegating to the portable functions in
-/// `crate::kernels::ntt4x30`.
+/// `poulpy_hal::oep`.
 ///
 /// # Backend characteristics
 ///
-/// - **DftWord**: `Q120bScalar` — NTT-domain coefficients stored as 4 × u64 CRT residues.
+/// - **DftWord**: `CrtWord<Primes30, u32>`, NTT-domain coefficients stored as four canonical `u32` CRT residues.
 /// - **BigWord**: `i128` — large-coefficient ring elements use 128-bit signed integers.
 /// - **Prime set**: `Primes30` (four ~30-bit primes, Q ≈ 2^120).
 /// - **NTT tables**: precomputed twiddle factors stored in the module handle

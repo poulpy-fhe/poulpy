@@ -24,7 +24,7 @@ It is the preferred choice at small ring dimensions, and the subfamily the examp
 
 `NTT4x30` uses an exact integer NTT for polynomial multiplication.
 It uses the Chinese Remainder Theorem over four roughly 30-bit primes (`Primes30`), giving a modulus `Q` near `2^120`.
-Coefficients live in the NTT domain as four `u64` lanes and reconstruct to `i128` in the large-integer domain.
+Coefficients live in the NTT domain as four `u32` residues, one per prime, and reconstruct to `i128` in the large-integer domain.
 The arithmetic is exact, with no floating-point error, which makes it the better choice at larger ring dimensions.
 
 ### NTT3x42
