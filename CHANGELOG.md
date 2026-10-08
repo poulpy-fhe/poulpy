@@ -158,6 +158,13 @@ Reworks the HAL around a smaller operation basis with documented contracts and b
 - **Breaking:** HAL runners and bench ids follow the HAL rename (`runner_vec_znx_add_into` is `runner_vec_znx_add`, `runner_cnv_apply_dft_accumulate` is `runner_cnv_apply_dft_add`).
 - Add HAL runners for the shift `_add`/`_sub` forms, `vec_znx_add_scalar_assign`, `vec_znx_idft_normalize_consume`, `vmp_apply_dft_to_dft_add`, `cnv_prepare_self`, `cnv_by_const_apply_add` and `cnv_apply_dft_sum`.
 
+### Dependencies
+
+- Bump `dashu-float` and `dashu-int` to 0.6.2, `rand` to 0.10.3, `rayon` to 1.12.0, `num-traits` to 0.2.19, `libc` to 0.2.190 and `f128` to 0.2.9.
+- `poulpy-ckks` depends on `libm` (without default features) and `astro-float-num` on every target, not only on targets without a native binary128 libm.
+- `poulpy-core` and `poulpy-cpu-portable` depend on `dashu-int`; `poulpy-cpu-avx512` depends on `libc` with `enable-rayon`.
+- Remove the unused `cmake` build dependency of `poulpy-hal`.
+
 ## [0.8.3] - 2026-09-09
 
 Adds opt-in Rayon parallelism to every accelerated CPU family behind a backend-selected task executor, packs NTT4x30 transform words into `u32` pairs on AVX2/AVX-512, fuses paired gadget digits in strided key switching, and resolves evaluation keys per precision, including reading a prepared key at a coarser digit size. Normalization takes an explicit target precision, fixing cross-base and partial-limb noise. CKKS gains `LogN=16` bootstrapping presets, non-power-of-two LUTs, an even Han–Ki EvalMod and a native NTT ModUp; bin-FHE runs on device backends.
