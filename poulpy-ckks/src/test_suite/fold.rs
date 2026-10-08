@@ -3,7 +3,9 @@
 
 use std::collections::HashMap;
 
-use poulpy_core::layouts::{GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWEInfos, GLWELayout, GLWESecretPrepared, LWEInfos};
+use poulpy_core::layouts::{
+    GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWEInfos, GLWELayout, GLWESecretPrepared, GLWEToBackendMut, LWEInfos,
+};
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
@@ -98,7 +100,7 @@ where
             .enumerate()
             .map(|(seed, &slots)| message(n_in, slots, log_sparsity, seed))
             .collect();
-        let ins: Vec<_> = msgs
+        let mut ins: Vec<_> = msgs
             .iter()
             .zip(slots)
             .map(|(msg, slots)| {
@@ -157,6 +159,10 @@ where
                 &mut fold_scratch.borrow(),
             )
             .unwrap();
+
+        for ct in &folded {
+            assert_eq!(ct.noise(), None, "folded provenance, {label}");
+        }
 
         let mut refresh_scratch = alloc_scratch(&params, module);
         let mut refreshed: Vec<_> = folded
@@ -217,8 +223,24 @@ where
             .unwrap();
         for (i, (out, msg)) in outs.iter().zip(&msgs).enumerate() {
             assert_eq!(out.meta(), ins[i].meta(), "unfolded {i}, {label}");
+            assert_eq!(out.noise(), None, "unfolded provenance {i}, {label}");
             let got = decrypt_coeffs::<BE, F>(module, input_params, out, input_sk, &mut scratch);
             assert_precision(&format!("unfolded {i}, {label}"), &got, msg, log_delta, n_in);
+        }
+
+        if ring_switch.is_none() {
+            GLWEToBackendMut::<BE>::set_noise(&mut ins[1], None);
+            module
+                .ckks_fold(
+                    &mut folded,
+                    &ins,
+                    ring_switch.map(|keys| &keys.inbound),
+                    &mut fold_scratch.borrow(),
+                )
+                .unwrap();
+            for ct in &folded {
+                assert_eq!(ct.noise(), None, "mixed folded provenance, {label}");
+            }
         }
     }
 }

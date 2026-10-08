@@ -83,7 +83,8 @@ pub trait CKKSAddOps<BE: Backend> {
     /// Computes `dst += 1` in-place.
     ///
     /// The exact integer constant is added to coefficient slot `0`.
-    /// Metadata is preserved. Size scratch with [`Self::ckks_add_one_tmp_bytes`].
+    /// CKKS layout and scale metadata is preserved; component noise metadata is cleared.
+    /// Size scratch with [`Self::ckks_add_one_tmp_bytes`].
     fn ckks_add_one_assign<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
@@ -93,8 +94,8 @@ pub trait CKKSAddOps<BE: Backend> {
     /// Computes `dst = a + pt` where `pt` is a full plaintext polynomial.
     ///
     /// `pt` is added coefficient-wise after being aligned to the ciphertext's
-    /// torus level.  Metadata is inherited from `a` with the capacity offset
-    /// applied (see trait-level doc).
+    /// torus level. CKKS layout and scale metadata is inherited from `a` with the
+    /// capacity offset applied (see trait-level doc). Component noise metadata is cleared.
     fn ckks_add_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,

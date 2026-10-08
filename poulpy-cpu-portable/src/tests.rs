@@ -631,9 +631,10 @@ fn test_glwe_public_key_rank1_golden() {
     use poulpy_core::test_suite::noise::encryption::glwe_public_key_rank1_digests;
     use poulpy_core::test_suite::parity::controlled_sampling::with_backend_samples;
     use poulpy_cpu_oracle::test_suite::{ControlledSamplingFFT64Oracle, ControlledSamplingNTT4x30Oracle};
+    // Pins the discrete-Gaussian sampler and PNM3 component-noise wire format.
     // Digests cover the public key, encryption of a message, and encryption of zero.
-    const FFT64: [u64; 3] = [12523918757293039242, 16193001892340394447, 8859732105559243891];
-    const NTT4X30: [u64; 3] = [10600561161379084701, 11211264228044108947, 11785251196183236736];
+    const FFT64: [u64; 3] = [15206321185833343840, 16014056909502571106, 12098182843825841058];
+    const NTT4X30: [u64; 3] = [3710393567399427478, 13637453161361644367, 8699844452920164836];
     assert_eq!(
         (
             glwe_public_key_rank1_digests(&Module::<FFT64Portable>::new(256), 17),

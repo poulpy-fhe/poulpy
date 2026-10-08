@@ -212,6 +212,10 @@ where
 }
 
 impl<D: Data, T: UnsignedInteger, B: Backend> LWEInfos for FheUintPrepared<D, T, B> {
+    fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
+        self.bits.first().and_then(LWEInfos::noise)
+    }
+
     fn base2k(&self) -> poulpy_core::layouts::Base2K {
         self.bits[0].base2k()
     }

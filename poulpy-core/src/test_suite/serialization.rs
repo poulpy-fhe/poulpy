@@ -3,20 +3,84 @@ use poulpy_hal::{
     api::{VecZnxFillUniformSource, VecZnxFillUniformSourceAll},
     layouts::{Backend, MatZnx, MatZnxAtBackendMut, Module, ReaderFrom, WriterTo},
     source::Source,
-    test_suite::serialization::test_reader_writer_interface,
+    test_suite::serialization::test_reader_writer_interface as check_roundtrip,
 };
 
-use crate::api::GLWEMaskFill;
 use crate::dist::Distribution;
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWE, GGSW, GLWE, GLWEAutomorphismKey, GLWEPublicKey, GLWESwitchingKey, GLWETensorKey,
-    GLWEToLWEKey, LWE, LWESwitchingKey, LWEToGLWEKey, Rank, TorusPrecision,
+    Base2K, Degree, Dnum, Dsize, GGLWE, GGSW, GLWE, GLWEAutomorphismKey, GLWEInfos, GLWEPublicKey, GLWESwitchingKey,
+    GLWETensorKey, GLWEToLWEKey, LWE, LWEInfos, LWESwitchingKey, LWEToGLWEKey, Rank, TorusPrecision,
     compressed::{
         GGLWECompressed, GGSWCompressed, GLWEAutomorphismKeyCompressed, GLWECompressed, GLWESwitchingKeyCompressed,
         GLWETensorKeyCompressed, GLWEToLWESwitchingKeyCompressed, LWECompressed, LWESwitchingKeyCompressed,
         LWEToGLWEKeyCompressed,
     },
 };
+use crate::{ComponentNoise, FreshNoiseEstimate, api::GLWEMaskFill};
+
+fn test_reader_writer_interface<T>([original, mut receiver]: [T; 2])
+where
+    T: WriterTo + ReaderFrom + PartialEq + Eq + std::fmt::Debug + LWEInfos,
+{
+    if original.noise().is_some() {
+        let mut bytes = Vec::new();
+        original.write_to(&mut bytes).unwrap();
+        let marker = bytes.windows(4).position(|word| word == b"PNM3").unwrap();
+        let mut malformed = bytes.clone();
+        malformed[marker + 25..marker + 33].copy_from_slice(&u64::MAX.to_le_bytes());
+        assert!(
+            receiver
+                .read_from(&mut malformed.as_slice())
+                .unwrap_err()
+                .to_string()
+                .contains("count")
+        );
+        assert!(receiver.noise().is_none());
+        receiver.write_to(&mut Vec::new()).unwrap();
+        receiver.read_from(&mut bytes.as_slice()).unwrap();
+        bytes.pop();
+        assert!(receiver.read_from(&mut bytes.as_slice()).is_err());
+        assert!(receiver.noise().is_none());
+        receiver.write_to(&mut Vec::new()).unwrap();
+    }
+    check_roundtrip([original, receiver]);
+}
+
+/// A rejected shape must not enlarge the metadata allocation bound on a later
+/// read into the same receiver. Check the first failure before sending the
+/// compact oversized prefix, so a regression cannot request a huge allocation.
+fn test_reused_reader_shape_bound<T>(mut receiver: T, malformed_shape: &[u8])
+where
+    T: WriterTo + ReaderFrom + GLWEInfos,
+{
+    let trusted_shape = (receiver.n(), receiver.rank());
+    assert!(receiver.noise().is_some());
+    let mut reader = malformed_shape;
+    let error = receiver.read_from(&mut reader).unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    assert_eq!((receiver.n(), receiver.rank()), trusted_shape);
+    assert!(receiver.noise().is_none());
+    receiver.write_to(&mut Vec::new()).unwrap();
+
+    let mut oversized = b"PNM3".to_vec();
+    oversized.extend(1u64.to_le_bytes());
+    Distribution::TernaryProb(0.5).write_to(&mut oversized).unwrap();
+    oversized.extend(K.0.to_le_bytes());
+    oversized.extend((1u64 << 32).to_le_bytes());
+    oversized.extend(0u64.to_le_bytes());
+    let mut reader = oversized.as_slice();
+    let error = receiver.read_from(&mut reader).unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    assert!(error.to_string().contains("count"));
+    assert_eq!(
+        reader.len(),
+        8,
+        "the oversized count must fail before reading its stored prefix"
+    );
+    assert_eq!((receiver.n(), receiver.rank()), trusted_shape);
+    assert!(receiver.noise().is_none());
+    receiver.write_to(&mut Vec::new()).unwrap();
+}
 
 const N_GLWE: Degree = Degree(64);
 const N_LWE: Degree = Degree(32);
@@ -118,6 +182,118 @@ where
         }
     }
 
+    let mut fixture = 0;
+    let mut metadata = |rank: usize| {
+        fixture += 1;
+        Some(
+            ComponentNoise::from_secret_at(Distribution::TernaryProb(0.3), K, rank).with_components(
+                (0..=rank)
+                    .map(|component| FreshNoiseEstimate::new((fixture * 10 + component) as f64, K))
+                    .collect(),
+            ),
+        )
+    };
+    for value in &mut glwe {
+        value.noise = metadata(RANK.as_usize());
+    }
+    for value in &mut glwe_c {
+        value.noise = metadata(RANK.as_usize());
+    }
+    for value in &mut pk {
+        value.noise = metadata(RANK.as_usize());
+    }
+    for value in &mut gglwe {
+        value.noise = metadata(RANK.as_usize());
+    }
+    for value in &mut gglwe_c {
+        value.noise = metadata(RANK.as_usize());
+    }
+    for value in &mut swk {
+        value.key.noise = metadata(RANK.as_usize());
+    }
+    for value in &mut swk_c {
+        value.key.noise = metadata(RANK.as_usize());
+    }
+    for value in &mut atk {
+        value.key.noise = metadata(RANK.as_usize());
+    }
+    for value in &mut atk_c {
+        value.key.noise = metadata(RANK.as_usize());
+    }
+    for value in &mut tsk {
+        value.0.noise = metadata(RANK.as_usize());
+    }
+    for value in &mut tsk_c {
+        value.0.noise = metadata(RANK.as_usize());
+    }
+    for value in &mut g2l {
+        value.0.key.noise = metadata(1);
+    }
+    for value in &mut g2l_c {
+        value.0.key.noise = metadata(1);
+    }
+    for value in &mut l2g {
+        value.0.key.noise = metadata(RANK.as_usize());
+    }
+    for value in &mut l2g_c {
+        value.0.key.noise = metadata(RANK.as_usize());
+    }
+    for value in &mut lsk {
+        value.0.key.noise = metadata(1);
+    }
+    for value in &mut lsk_c {
+        value.0.key.noise = metadata(1);
+    }
+    for value in &mut ggsw {
+        value.noise = metadata(RANK.as_usize());
+    }
+    for value in &mut ggsw_c {
+        value.noise = metadata(RANK.as_usize());
+    }
+    for value in &mut lwe {
+        value.noise = metadata(N_LWE.as_usize());
+    }
+    for value in &mut pk {
+        value.dist = Distribution::TernaryProb(0.3);
+    }
+
+    let mut none_prefix = Vec::new();
+    ComponentNoise::write_optional(None, &mut none_prefix).unwrap();
+    for (invalid_rank, partial_next_field) in [(0u32, false), (0, true), (u32::MAX, false), (u32::MAX, true)] {
+        let mut glwe_header = none_prefix.clone();
+        glwe_header.extend(BASE2K.0.to_le_bytes());
+        glwe_header.extend(invalid_rank.to_le_bytes());
+        let mut gadget_header = none_prefix.clone();
+        gadget_header.extend(K_KEY_AUX.0.to_le_bytes());
+        gadget_header.extend(BASE2K.0.to_le_bytes());
+        gadget_header.extend(DSIZE.0.to_le_bytes());
+        gadget_header.extend(invalid_rank.to_le_bytes());
+        if partial_next_field {
+            glwe_header.push(0);
+            gadget_header.push(0);
+        }
+        test_reused_reader_shape_bound(glwe_c[1].clone(), &glwe_header);
+        test_reused_reader_shape_bound(gglwe_c[1].clone(), &gadget_header);
+        test_reused_reader_shape_bound(ggsw_c[1].clone(), &gadget_header);
+    }
+    // Zero degree makes the advertised byte length zero even with enormous
+    // column counts. Reject the header before it replaces the trusted shape.
+    let mut glwe_header = none_prefix.clone();
+    glwe_header.extend(BASE2K.0.to_le_bytes());
+    for value in [0u64, 1u64 << 32, 1, 0] {
+        glwe_header.extend(value.to_le_bytes());
+    }
+    test_reused_reader_shape_bound(glwe[1].clone(), &glwe_header);
+    let mut gadget_header = none_prefix;
+    gadget_header.extend(BASE2K.0.to_le_bytes());
+    gadget_header.extend(DSIZE.0.to_le_bytes());
+    gadget_header.extend(K_KEY_AUX.0.to_le_bytes());
+    for value in [0u64, 1, DNUM.0 as u64, RANK.0 as u64, 1u64 << 32, 0] {
+        gadget_header.extend(value.to_le_bytes());
+    }
+    test_reused_reader_shape_bound(gglwe[1].clone(), &gadget_header);
+    test_reused_reader_shape_bound(ggsw[1].clone(), &gadget_header);
+
     test_reader_writer_interface(glwe);
     // A stream is one row of `rank` encryptions of zero at the stated precision.
     let size: usize = K.0.div_ceil(BASE2K.0) as usize;
@@ -134,18 +310,30 @@ where
         (0, BASE2K, 1, 2, 3, size),
     ] {
         let mut stream: Vec<u8> = Vec::new();
+        ComponentNoise::write_optional(None, &mut stream).unwrap();
         Distribution::TernaryFixed(1).write_to(&mut stream).unwrap();
         stream.extend(base2k.0.to_le_bytes());
         stream.extend(K.0.to_le_bytes());
         MatZnx::<&[u8], i64>::from_data(&zeros, n, rows, cols_in, cols_out, size)
             .write_to(&mut stream)
             .unwrap();
-        assert_eq!(
-            receiver.read_from(&mut stream.as_slice()).unwrap_err().kind(),
-            std::io::ErrorKind::InvalidData
-        );
+        let error = receiver.read_from(&mut stream.as_slice()).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert!(error.to_string().contains("invalid public key"));
         assert!(receiver == pristine, "a rejected stream changed the key");
     }
+    let mut valid = Vec::new();
+    pristine.write_to(&mut valid).unwrap();
+    let mut wrong = Vec::new();
+    ComponentNoise::write_optional(metadata(0).as_ref(), &mut wrong).unwrap();
+    wrong.extend_from_slice(&valid[12..]);
+    assert!(
+        receiver
+            .read_from(&mut wrong.as_slice())
+            .unwrap_err()
+            .to_string()
+            .contains("noise component count")
+    );
     test_reader_writer_interface(pk);
     test_reader_writer_interface(glwe_c);
     test_reader_writer_interface(lwe);

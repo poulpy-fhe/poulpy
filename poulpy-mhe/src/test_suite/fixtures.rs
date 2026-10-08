@@ -10,7 +10,8 @@ use poulpy_hal::{
     AlignedBuf,
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAddScalarAssign},
     layouts::{
-        Backend, HostBackend, HostDataMut, HostDataRef, Module, ScalarZnxAsVecZnxBackendMut, ScalarZnxToBackendRef, ScratchOwned,
+        Backend, HostBackend, HostDataMut, HostDataRef, Module, ReaderFrom, ScalarZnxAsVecZnxBackendMut, ScalarZnxToBackendRef,
+        ScratchOwned, WriterTo,
     },
     source::Source,
 };
@@ -160,18 +161,38 @@ where
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([40 + i as u8; 32]);
         module.mhe_glwe_public_key_share_gen(dst, sk, SEEDS[0], &mut source_xe, &mut scratch.borrow());
+        assert_collective_metadata(dst, 1);
         if i > 0 {
             module.mhe_glwe_public_key_share_aggregate(&mut acc, &share);
         }
+        assert_collective_metadata(&acc, i + 1);
+        assert_fresh_noise(&acc, (i + 1) as f64 * poulpy_core::DEFAULT_SIGMA_XE.powi(2), layout.k);
+        let mut components = vec![0.0; layout.rank.as_usize() + 1];
+        components[0] = (i + 1) as f64 * poulpy_core::DEFAULT_SIGMA_XE.powi(2);
+        assert_noise_components(&acc, &components);
     }
+    let mut encoded = Vec::new();
+    acc.write_to(&mut encoded).unwrap();
+    let mut decoded = module.glwe_public_key_share_alloc_from_infos(layout);
+    decoded.read_from(&mut encoded.as_slice()).unwrap();
+    assert!(decoded == acc);
+    assert_collective_metadata(&decoded, parties.len());
+
     let mut pk: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(layout);
     module.mhe_glwe_public_key_share_finalize(&mut pk, &acc, &mut scratch.borrow());
+    assert_collective_metadata(&pk, parties.len());
     assert!(
         pk.dist() == parties[0].0.dist(),
         "the key takes the parties' secret distribution"
     );
     let mut pk_prepared: GLWEPublicKeyPrepared<AlignedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(layout);
     module.glwe_public_key_prepare(&mut pk_prepared, &pk, &mut scratch.borrow());
+    assert_collective_metadata(&pk_prepared, parties.len());
+    assert_fresh_noise(
+        &pk_prepared,
+        parties.len() as f64 * poulpy_core::DEFAULT_SIGMA_XE.powi(2),
+        layout.k,
+    );
     pk_prepared
 }
 
@@ -284,4 +305,49 @@ pub(crate) fn assert_panics_with(expected: &str, f: impl FnOnce()) {
         .copied()
         .or_else(|| panic.downcast_ref::<String>().map(String::as_str));
     assert_eq!(message, Some(expected));
+}
+
+/// The aggregate preserves the base law and records the number of independent
+/// secret contributions, including after conversion to a prepared key.
+pub(crate) fn assert_collective_metadata<A: poulpy_core::layouts::LWEInfos>(infos: &A, parties: usize) {
+    let metadata = infos.noise().expect("derived encryption provenance");
+    assert_eq!(metadata.parties(), parties as u64);
+    assert_eq!(metadata.secret_distribution().parties(), parties as u64);
+    assert_eq!(metadata.secret_distribution().base(), Distribution::TernaryProb(0.5));
+}
+
+/// Checks a fresh phase estimate independently of the secret's party count.
+pub(crate) fn assert_fresh_noise<A: poulpy_core::layouts::LWEInfos>(
+    infos: &A,
+    expected_variance: f64,
+    precision: TorusPrecision,
+) {
+    let noise = infos.noise().expect("derived fresh noise");
+    assert_eq!(noise.components().len(), noise.rank() + 1);
+    assert!(noise.components().iter().all(|component| component.precision() == precision));
+    let estimate = noise.phase_noise(infos.n().as_usize());
+    assert_eq!(estimate.precision(), precision);
+    assert!(
+        (estimate.variance() - expected_variance).abs() <= 1e-12 * expected_variance.max(1.0),
+        "fresh variance differs from the expected estimate"
+    );
+}
+
+/// Assert raw variances before the mask components are weighted by the secret.
+pub(crate) fn assert_noise_components<A: poulpy_core::layouts::LWEInfos>(infos: &A, expected: &[f64]) {
+    let noise = infos.noise().expect("derived component noise");
+    assert_eq!(noise.components().len(), expected.len());
+    for (component, expected) in noise.components().iter().zip(expected) {
+        assert!(
+            (component.variance() - expected).abs() <= 1e-12 * expected.max(1.0),
+            "component variance {} differs from {expected}",
+            component.variance()
+        );
+    }
+}
+
+/// Phase variance of a public-key encryption at output precision `k`: inherited
+/// key error, fresh error, and the rounding of the key's extra bits.
+pub(crate) fn expected_pk_variance(inherited: f64, fresh: f64, phase_fold: f64, k: usize, k_pk: usize) -> f64 {
+    inherited + fresh + if k_pk > k { phase_fold / 4.0 } else { 0.0 }
 }

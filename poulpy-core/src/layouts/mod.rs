@@ -102,10 +102,15 @@ pub use polynomial_evaluation::*;
 pub use prepared::*;
 pub use scratch_views::*;
 
-use std::marker::PhantomData;
+use std::{
+    io::{Error, ErrorKind, Read, Result as IoResult},
+    marker::PhantomData,
+};
 
 use crate::dist::Distribution;
-use poulpy_hal::layouts::{Backend, Data, MatZnx, Module, ScalarZnx, ZnxWord, vec_znx_alloc_zeroed};
+use poulpy_hal::layouts::{
+    Backend, Data, HostDataMut, MatZnx, Module, ReaderFrom, ScalarZnx, VecZnx, ZnxWord, vec_znx_alloc_zeroed,
+};
 
 /// Backend-indexed ownership aliases for the non-prepared layouts.
 ///
@@ -331,6 +336,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
     fn glwe_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWE<B::OwnedBuf, B::ZnxWord> {
         let size = infos.k().as_usize().div_ceil(infos.base2k().as_usize());
         GLWE {
+            noise: None,
             data: vec_znx_alloc_zeroed::<B>(infos.n().as_usize(), (infos.rank() + 1).as_usize(), size),
             k: infos.k(),
             base2k: infos.base2k(),
@@ -369,6 +375,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         let n = self.ring_degree().as_usize();
         let cols = (rank + 1).as_usize();
         GLWE {
+            noise: None,
             data: vec_znx_alloc_zeroed::<B>(n, cols, size),
             k: TorusPrecision((size * base2k.as_usize()) as u32),
             base2k,
@@ -381,6 +388,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         let size = crate::layouts::key_size(infos.base2k(), dnum, infos.dsize(), infos.k_aux());
 
         GGLWE {
+            noise: None,
             data: MatZnx::from_data(
                 B::alloc_zeroed_bytes(B::bytes_of_mat_znx(
                     infos.n().as_usize(),
@@ -426,6 +434,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         let size = crate::layouts::key_size(infos.base2k(), dnum, infos.dsize(), infos.k_aux());
 
         GGSW {
+            noise: None,
             data: MatZnx::from_data(
                 B::alloc_zeroed_bytes(B::bytes_of_mat_znx(
                     infos.n().as_usize(),
@@ -539,6 +548,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         assert!(infos.rank().as_usize() >= 1, "invalid public key: rank must be at least 1");
         let (n, rank, size) = (infos.n().as_usize(), infos.rank().as_usize(), infos.size());
         GLWEPublicKey {
+            noise: None,
             data: MatZnx::from_data(
                 B::alloc_zeroed_bytes(B::bytes_of_mat_znx(n, 1, rank, rank + 1, size)),
                 n,
@@ -707,6 +717,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         let size = infos.k().as_usize().div_ceil(infos.base2k().as_usize());
         let n = infos.n().as_usize();
         LWE {
+            noise: None,
             body: vec_znx_alloc_zeroed::<B>(1, 1, size),
             mask: vec_znx_alloc_zeroed::<B>(n, 1, size),
             base2k: infos.base2k(),
@@ -721,6 +732,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         let size = infos.k().as_usize().div_ceil(infos.base2k().as_usize());
         let rows = infos.rows();
         LWEMatrix {
+            noise: None,
             body: vec_znx_alloc_zeroed::<B>(rows, 1, size),
             mask: vec_znx_alloc_zeroed::<B>(rows, infos.n().as_usize(), size),
             k: infos.k(),
@@ -1490,6 +1502,93 @@ pub(crate) fn gadget_product_output_size(params: GadgetProductOutputSizeParams) 
         .saturating_add(extra_live_limbs);
     let product_limbs = gadget_product_limbs(key_base2k, product_terms);
     work_size.min(live_limbs.saturating_add(product_limbs))
+}
+
+/// Checks the component count before storing or serializing known noise.
+pub(crate) fn validate_noise_components(noise: Option<&crate::ComponentNoise>, components: usize) -> std::io::Result<()> {
+    if let Some(noise) = noise {
+        noise.validate_components(components)?;
+    }
+    Ok(())
+}
+
+/// Panics unless known noise has `components` terms.
+pub(crate) fn checked_noise(noise: Option<crate::ComponentNoise>, components: usize) -> Option<crate::ComponentNoise> {
+    validate_noise_components(noise.as_ref(), components).expect("noise component count does not match the ciphertext");
+    noise
+}
+
+/// Tag shared by every key; `None` once any key was changed on its own.
+pub(crate) fn common_noise(mut keys: impl Iterator<Item = Option<crate::ComponentNoise>>) -> Option<crate::ComponentNoise> {
+    let first = keys.next()??;
+    keys.all(|key| key.as_ref() == Some(&first)).then_some(first)
+}
+
+/// Preflights the dimensions used to derive a later metadata allocation before
+/// the HAL reader commits its shape. The payload may change on a failed read,
+/// but the destination's component count remains trusted across retries.
+pub(crate) fn read_vec_znx_with_shape<D: HostDataMut, W: ZnxWord, R: Read>(
+    data: &mut VecZnx<D, W>,
+    reader: &mut R,
+    degree: Option<usize>,
+    cols: usize,
+) -> IoResult<()> {
+    let mut header = [0u8; 32];
+    reader.read_exact(&mut header)?;
+    let fields = read_shape_fields::<4>(&header)?;
+    if fields[0] == 0 || degree.is_some_and(|n| n != fields[0]) || fields[1] != cols {
+        return Err(invalid_serialized_shape());
+    }
+    validate_serialized_size::<W>(&fields[..3], fields[3])?;
+    data.read_from(&mut Read::chain(header.as_slice(), reader))
+}
+
+pub(crate) fn read_mat_znx_with_shape<D: HostDataMut, W: ZnxWord, R: Read>(
+    data: &mut MatZnx<D, W>,
+    reader: &mut R,
+    rows: Option<usize>,
+    cols_in: Option<usize>,
+    cols_out: usize,
+) -> IoResult<()> {
+    let mut header = [0u8; 48];
+    reader.read_exact(&mut header)?;
+    let fields = read_shape_fields::<6>(&header)?;
+    if fields[0] == 0
+        || rows.is_some_and(|rows| rows != fields[2])
+        || cols_in.is_some_and(|cols| cols != fields[3])
+        || fields[4] != cols_out
+    {
+        return Err(invalid_serialized_shape());
+    }
+    // Match the HAL's product order, including zero dimensions, so malformed
+    // headers cannot reach its checked-product panic through an earlier zero.
+    validate_serialized_size::<W>(&[fields[2], fields[3], fields[0], fields[4], fields[1]], fields[5])?;
+    data.read_from(&mut Read::chain(header.as_slice(), reader))
+}
+
+fn read_shape_fields<const N: usize>(header: &[u8]) -> IoResult<[usize; N]> {
+    let mut fields = [0; N];
+    for (field, bytes) in fields.iter_mut().zip(header.chunks_exact(8)) {
+        *field = usize::try_from(u64::from_le_bytes(bytes.try_into().unwrap())).map_err(|_| invalid_serialized_shape())?;
+    }
+    Ok(fields)
+}
+
+fn validate_serialized_size<W: ZnxWord>(dimensions: &[usize], size: usize) -> IoResult<()> {
+    let expected = dimensions
+        .iter()
+        .try_fold(std::mem::size_of::<W>(), |product, dimension| product.checked_mul(*dimension));
+    if expected != Some(size) {
+        return Err(invalid_serialized_shape());
+    }
+    Ok(())
+}
+
+pub(crate) fn invalid_serialized_shape() -> Error {
+    Error::new(
+        ErrorKind::InvalidData,
+        "serialized shape does not match the destination component shape",
+    )
 }
 
 #[cfg(test)]

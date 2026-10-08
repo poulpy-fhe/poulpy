@@ -166,13 +166,17 @@ where
                 with_scratch::<BT, _>(plan_test.execute_tmp_bytes(tested, &key_test), |s| {
                     plan_test.execute(tested, &mut actual, &input_test, &key_test, s)
                 });
-                assert_eq!(snapshot_ggsw::<BR, _>(&expected), snapshot_ggsw::<BT, _>(&actual));
+                let want = snapshot_ggsw::<BR, _>(&expected);
+                super::assert_untagged("circuit bootstrapping", &want.rows);
+                assert_eq!(want, snapshot_ggsw::<BT, _>(&actual));
                 // Reuse the same prepared plan after replacing every output coefficient.
                 actual = fixture_ggsw(tested, &output, 41);
                 with_scratch::<BT, _>(plan_test.execute_tmp_bytes(tested, &key_test), |s| {
                     plan_test.execute(tested, &mut actual, &input_test, &key_test, s)
                 });
-                assert_eq!(snapshot_ggsw::<BR, _>(&expected), snapshot_ggsw::<BT, _>(&actual));
+                let want = snapshot_ggsw::<BR, _>(&expected);
+                super::assert_untagged("circuit bootstrapping", &want.rows);
+                assert_eq!(want, snapshot_ggsw::<BT, _>(&actual));
                 for legacy in [false, true] {
                     let bytes = match gap {
                         None if legacy => {
@@ -190,7 +194,9 @@ where
                         None => key_test.execute_to_constant(tested, &mut actual, &input_test, 1, extension, s),
                         Some(gap) => key_test.execute_to_exponent(tested, gap, &mut actual, &input_test, 1, extension, s),
                     });
-                    assert_eq!(snapshot_ggsw::<BR, _>(&expected), snapshot_ggsw::<BT, _>(&actual));
+                    let want = snapshot_ggsw::<BR, _>(&expected);
+                    super::assert_untagged("circuit bootstrapping", &want.rows);
+                    assert_eq!(want, snapshot_ggsw::<BT, _>(&actual));
                     if gap.is_some() {
                         break;
                     }

@@ -238,6 +238,7 @@ mod trace {
         assert!(skip <= res.log_n(), "trace skip exceeds log_n");
         let Some(first) = trace_rotations(module, res.log_n(), skip).next() else {
             module.glwe_copy(res, a, scratch);
+            res.set_noise(None);
             return;
         };
         let atk_layout = keys
@@ -291,6 +292,7 @@ mod trace {
         H: GetAutomorphismKey<BE>,
     {
         trace_assign_internal::<M, H, _, BE>(module, res, skip, keys, scratch);
+        res.set_noise(None);
     }
 }
 

@@ -43,6 +43,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyCompressedBackendRef<'a, BE> {
         assert!((i as u32) < self.rank());
         let key_i = &self.inner.keys[i];
         GGLWECompressedBackendRef::from_inner(GGLWECompressed {
+            noise: key_i.noise.clone(),
             k_aux: key_i.k_aux,
             base2k: key_i.base2k,
             dsize: key_i.dsize,
@@ -78,6 +79,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyCompressedBackendMut<'a, BE> {
         assert!((i as u32) < self.rank());
         let key_i = &self.inner.keys[i];
         GGLWECompressedBackendRef::from_inner(GGLWECompressed {
+            noise: key_i.noise.clone(),
             k_aux: key_i.k_aux,
             base2k: key_i.base2k,
             dsize: key_i.dsize,
@@ -90,7 +92,9 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyCompressedBackendMut<'a, BE> {
     pub fn at_view_mut(&mut self, i: usize) -> GGLWECompressedBackendMut<'_, BE> {
         assert!((i as u32) < self.rank());
         let key_i = &mut self.inner.keys[i];
+        key_i.noise = None;
         GGLWECompressedBackendMut::from_inner(GGLWECompressed {
+            noise: None,
             k_aux: key_i.k_aux,
             base2k: key_i.base2k,
             dsize: key_i.dsize,
@@ -119,6 +123,10 @@ impl_gglwe_infos_for_inner!(GGLWEToGGSWKeyCompressedBackendRef<'a, BE>, ['a, BE:
 impl_gglwe_infos_for_inner!(GGLWEToGGSWKeyCompressedBackendMut<'a, BE>, ['a, BE: Backend + 'a]; inner);
 
 impl<D: Data, W: ZnxWord> LWEInfos for GGLWEToGGSWKeyCompressed<D, W> {
+    fn noise(&self) -> Option<crate::ComponentNoise> {
+        crate::layouts::common_noise(self.keys.iter().map(crate::layouts::LWEInfos::noise))
+    }
+
     fn n(&self) -> Degree {
         self.keys[0].n()
     }
@@ -296,25 +304,29 @@ where
         R: GGLWEToGGSWKeyToBackendMut<Self::Backend>,
         O: GGLWEToGGSWKeyCompressedToBackendRef<Self::Backend>,
     {
-        let mut res = res.to_backend_mut();
-        let other = other.to_backend_ref();
-        assert_eq!(res.keys.len(), other.keys.len());
-        for i in 0..res.keys.len() {
-            let mut a = res.at_view_mut(i);
-            let b = other.at_view(i);
-            assert_eq!(a.dsize(), b.dsize());
-            assert!(a.dnum() <= b.dnum());
+        let noise = other.to_backend_ref().noise();
+        {
+            let mut res = res.to_backend_mut();
+            let other = other.to_backend_ref();
+            assert_eq!(res.keys.len(), other.keys.len());
+            for i in 0..res.keys.len() {
+                let mut a = res.at_view_mut(i);
+                let b = other.at_view(i);
+                assert_eq!(a.dsize(), b.dsize());
+                assert!(a.dnum() <= b.dnum());
 
-            let rank_in: usize = a.rank_in().into();
-            let dnum: usize = a.dnum().into();
-            for col_i in 0..rank_in {
-                for row_i in 0..dnum {
-                    let mut dst = a.at_view_mut(row_i, col_i);
-                    let src = b.at_view(row_i, col_i);
-                    self.decompress_glwe(&mut dst, &src);
+                let rank_in: usize = a.rank_in().into();
+                let dnum: usize = a.dnum().into();
+                for col_i in 0..rank_in {
+                    for row_i in 0..dnum {
+                        let mut dst = a.at_view_mut(row_i, col_i);
+                        let src = b.at_view(row_i, col_i);
+                        self.decompress_glwe(&mut dst, &src);
+                    }
                 }
             }
         }
+        res.set_noise(noise);
     }
 }
 
@@ -339,10 +351,20 @@ impl<BE: Backend> GGLWEToGGSWKeyCompressedToBackendRef<BE> for GGLWEToGGSWKeyCom
 }
 
 pub trait GGLWEToGGSWKeyCompressedToBackendMut<BE: Backend>: GGLWEToGGSWKeyCompressedToBackendRef<BE> {
+    /// Backend hook for recording or propagating component noise metadata.
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
+
+    /// Borrows coefficients mutably and clears the owner's component noise metadata.
     fn to_backend_mut(&mut self) -> GGLWEToGGSWKeyCompressedBackendMut<'_, BE>;
 }
 
 impl<BE: Backend> GGLWEToGGSWKeyCompressedToBackendMut<BE> for GGLWEToGGSWKeyCompressed<BE::OwnedBuf, BE::ZnxWord> {
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        for key in &mut self.keys {
+            key.noise = crate::layouts::checked_noise(metadata.clone(), crate::layouts::GLWEInfos::rank(key).as_usize() + 1);
+        }
+    }
+
     fn to_backend_mut(&mut self) -> GGLWEToGGSWKeyCompressedBackendMut<'_, BE> {
         GGLWEToGGSWKeyCompressedBackendMut::from_inner(GGLWEToGGSWKeyCompressed {
             keys: self

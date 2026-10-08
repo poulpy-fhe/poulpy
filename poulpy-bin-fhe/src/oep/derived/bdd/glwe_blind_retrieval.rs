@@ -33,6 +33,10 @@ pub(crate) fn glwe_blind_retrieval_statefull_derived<BE: Backend, R, K>(
             }
         }
     }
+
+    for ct in res {
+        ct.set_noise(None);
+    }
 }
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn glwe_blind_retrieval_statefull_rev_derived<BE: Backend, R, K>(
@@ -56,5 +60,9 @@ pub(crate) fn glwe_blind_retrieval_statefull_rev_derived<BE: Backend, R, K>(
                 module.cswap(&mut lo[j], &mut hi[0], &bit.to_backend_ref(), &mut scratch.borrow());
             }
         }
+    }
+
+    for ct in res {
+        ct.set_noise(None);
     }
 }

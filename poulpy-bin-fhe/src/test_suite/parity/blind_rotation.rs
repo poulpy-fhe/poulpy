@@ -176,11 +176,9 @@ where
                         tested.blind_rotation_execute_tmp_bytes(key_t.block_size(), extension, &output_t, &key_layout),
                         |s| tested.blind_rotation_execute(&mut output_t, &lwe_t, &lut_t, &prepared_t, s),
                     );
-                    assert_eq!(
-                        snapshot_glwe::<BR, _>(&output_r),
-                        snapshot_glwe::<BT, _>(&output_t),
-                        "blind-rotation parity"
-                    );
+                    let want = snapshot_glwe::<BR, _>(&output_r);
+                    super::assert_untagged("blind rotation", [&want]);
+                    assert_eq!(want, snapshot_glwe::<BT, _>(&output_t), "blind-rotation parity");
                 }
             }
         }

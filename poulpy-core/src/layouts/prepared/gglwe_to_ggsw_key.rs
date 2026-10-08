@@ -23,6 +23,10 @@ pub struct GGLWEToGGSWKeyPrepared<D: Data, BE: Backend> {
 
 /// Provides LWE-level parameter accessors, delegating to the first key element.
 impl<D: Data, BE: Backend> LWEInfos for GGLWEToGGSWKeyPrepared<D, BE> {
+    fn noise(&self) -> Option<crate::ComponentNoise> {
+        crate::layouts::common_noise(self.keys.iter().map(crate::layouts::LWEInfos::noise))
+    }
+
     fn n(&self) -> Degree {
         self.keys[0].n()
     }
@@ -181,24 +185,28 @@ where
         R: GGLWEToGGSWKeyPreparedToBackendMut<BE>,
         O: GGLWEToGGSWKeyToBackendRef<BE>,
     {
-        let needed = {
-            let res_infos = res.to_backend_mut();
-            self.gglwe_to_ggsw_key_prepare_tmp_bytes(&res_infos)
-        };
-        assert!(
-            scratch.available() >= needed,
-            "scratch.available(): {} < GGLWEToGGSWKeyPreparedFactory::gglwe_to_ggsw_key_prepare_tmp_bytes: {}",
-            scratch.available(),
-            needed
-        );
+        let noise = other.to_backend_ref().noise();
+        {
+            let needed = {
+                let res_infos = res.to_backend_mut();
+                self.gglwe_to_ggsw_key_prepare_tmp_bytes(&res_infos)
+            };
+            assert!(
+                scratch.available() >= needed,
+                "scratch.available(): {} < GGLWEToGGSWKeyPreparedFactory::gglwe_to_ggsw_key_prepare_tmp_bytes: {}",
+                scratch.available(),
+                needed
+            );
 
-        let mut res = res.to_backend_mut();
-        let other = other.to_backend_ref();
+            let mut res = res.to_backend_mut();
+            let other = other.to_backend_ref();
 
-        assert_eq!(res.keys.len(), other.keys.len());
-        for (a, b) in res.keys.iter_mut().zip(other.keys.iter()) {
-            self.vmp_prepare(&mut a.data, &b.data, &mut scratch.borrow());
+            assert_eq!(res.keys.len(), other.keys.len());
+            for (a, b) in res.keys.iter_mut().zip(other.keys.iter()) {
+                self.vmp_prepare(&mut a.data, &b.data, &mut scratch.borrow());
+            }
         }
+        res.set_noise(noise);
     }
 }
 
@@ -244,6 +252,8 @@ where
 }
 
 pub trait GGLWEToGGSWKeyPreparedToBackendMut<B: Backend> {
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
+    /// Borrows coefficients mutably and clears the owner's component noise metadata.
     fn to_backend_mut(&mut self) -> GGLWEToGGSWKeyPreparedBackendMut<'_, B>;
 }
 
@@ -251,6 +261,12 @@ impl<D: Data, B: Backend> GGLWEToGGSWKeyPreparedToBackendMut<B> for GGLWEToGGSWK
 where
     GGLWEPrepared<D, B>: GGLWEPreparedToBackendMut<B>,
 {
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        for key in &mut self.keys {
+            key.set_noise(metadata.clone());
+        }
+    }
+
     fn to_backend_mut(&mut self) -> GGLWEToGGSWKeyPreparedBackendMut<'_, B> {
         GGLWEToGGSWKeyPrepared {
             keys: self.keys.iter_mut().map(|c| c.to_backend_mut()).collect(),

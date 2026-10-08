@@ -1,6 +1,6 @@
 use poulpy_core::{
     GetDistribution, GetDistributionMut,
-    layouts::{GLWEInfos, GLWEPublicKeyAtViewMut, GLWESecretPreparedToBackendRef},
+    layouts::{GLWEInfos, GLWEPublicKeyAtViewMut, GLWEPublicKeyToBackendMut, GLWESecretPreparedToBackendRef},
 };
 use poulpy_hal::{
     layouts::{Module, ScratchArena},
@@ -47,7 +47,7 @@ pub unsafe trait GLWEPublicKeyMHEProtocolImpl: GLWEPatCompressedImpl {
         share: &GLWEPublicKeyShareOwned<Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEPublicKeyAtViewMut<Self> + GetDistributionMut + GLWEInfos,
+        R: GLWEPublicKeyAtViewMut<Self> + GLWEPublicKeyToBackendMut<Self> + GetDistributionMut + GLWEInfos,
     {
         derived::mhe_glwe_public_key_share_finalize_derived(module, res, share, scratch)
     }

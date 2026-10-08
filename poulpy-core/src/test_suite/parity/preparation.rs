@@ -1,7 +1,10 @@
 //! Prepared allocation/size-helper contracts. Opaque prepared bytes are never
 //! compared between backends; parity of their logical consumers lives beside
 //! this suite. Each preparation receives only its own advertised scratch.
+use std::panic::{AssertUnwindSafe, catch_unwind};
+
 use crate::{
+    ComponentNoise, Distribution,
     layouts::*,
     test_suite::parity::{ParityBackend, ParityShapes, poisoned_scratch},
 };
@@ -116,12 +119,28 @@ where
                 p,
                 BE::len_bytes(p.data.data())
             );
-            let source = m.glwe_alloc_from_infos(&plain);
+            let mut source = m.glwe_alloc_from_infos(&plain);
+            source.noise = Some(ComponentNoise::from_secret_at(
+                Distribution::TernaryProb(0.3),
+                k,
+                rank.as_usize(),
+            ));
             m.glwe_prepare(
                 &mut prepared,
                 &source,
                 &mut poisoned_scratch::<BE>(m.glwe_prepare_tmp_bytes(&plain)).borrow(),
             );
+            assert_eq!(prepared.noise(), source.noise());
+            let mut wrong_rank = m.glwe_prepared_alloc(b, k, Rank(rank.0 + 1));
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| m.glwe_prepare(
+                    &mut wrong_rank,
+                    &source,
+                    &mut poisoned_scratch::<BE>(m.glwe_prepare_tmp_bytes(&plain)).borrow(),
+                )))
+                .is_err()
+            );
+            assert!(wrong_rank.noise().is_none());
             let mut prepared = check!(
                 glwe_public_key_prepared_alloc,
                 glwe_public_key_prepared_alloc_from_infos,
@@ -236,12 +255,21 @@ where
                 p,
                 BE::len_bytes(p.0.data.data())
             );
-            let source = m.glwe_tensor_key_alloc_from_infos(&tensor_infos);
+            let mut source = m.glwe_tensor_key_alloc_from_infos(&tensor_infos);
+            source.0.noise = Some(ComponentNoise::from_secret_at(
+                Distribution::TernaryProb(0.3),
+                k,
+                rank.as_usize(),
+            ));
             m.prepare_tensor_key(
                 &mut prepared,
                 &source,
                 &mut poisoned_scratch::<BE>(m.prepare_tensor_key_tmp_bytes(&source)).borrow(),
             );
+            let borrowed = GLWETensorKeyPreparedToBackendRef::<BE>::to_backend_ref(&prepared);
+            let borrowed_ref = &borrowed;
+            let view = GGLWEPreparedToBackendRef::<BE>::to_backend_ref(&borrowed_ref);
+            assert_eq!(view.noise(), source.noise());
             let mut prepared = check!(
                 lwe_switching_key_prepared_alloc,
                 lwe_switching_key_prepared_alloc_from_infos,

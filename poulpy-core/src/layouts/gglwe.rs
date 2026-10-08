@@ -263,6 +263,7 @@ impl GGLWEInfos for GGLWELayout {
 
 #[derive(PartialEq, Eq, Clone)]
 pub struct GGLWE<D: Data, W: ZnxWord> {
+    pub(crate) noise: Option<crate::ComponentNoise>,
     pub(crate) data: MatZnx<D, W>,
     pub(crate) k_aux: TorusPrecision,
     pub(crate) base2k: Base2K,
@@ -312,6 +313,7 @@ impl<'a, BE: Backend + 'a> GGLWEBackendMut<'a, BE> {
         GLWEViewRef::from_inner(gglwe_at_backend_ref_from_mut::<BE>(&self.inner, row, col))
     }
 
+    /// Clears the owner's component noise metadata.
     pub fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE> {
         GLWEViewMut::from_inner(gglwe_at_backend_mut_from_mut::<BE>(&mut self.inner, row, col))
     }
@@ -337,6 +339,7 @@ impl_gglwe_infos_for_inner!(GGLWEBackendMut<'a, BE>, ['a, BE: Backend + 'a]; inn
 impl<BE: Backend> GGLWEToBackendRef<BE> for GGLWEBackendRef<'_, BE> {
     fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE> {
         GGLWEBackendRef::from_inner(GGLWE {
+            noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
@@ -354,6 +357,7 @@ impl<BE: Backend> GGSWAtViewRef<BE> for GGLWEBackendRef<'_, BE> {
 impl<BE: Backend> GGLWEToBackendRef<BE> for GGLWEBackendMut<'_, BE> {
     fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE> {
         GGLWEBackendRef::from_inner(GGLWE {
+            noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
@@ -363,8 +367,14 @@ impl<BE: Backend> GGLWEToBackendRef<BE> for GGLWEBackendMut<'_, BE> {
 }
 
 impl<BE: Backend> GGLWEToBackendMut<BE> for GGLWEBackendMut<'_, BE> {
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        self.inner.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
+    }
+
     fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE> {
+        self.inner.noise = None;
         GGLWEBackendMut::from_inner(GGLWE {
+            noise: None,
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
@@ -374,6 +384,10 @@ impl<BE: Backend> GGLWEToBackendMut<BE> for GGLWEBackendMut<'_, BE> {
 }
 
 impl<D: Data, W: ZnxWord> LWEInfos for GGLWE<D, W> {
+    fn noise(&self) -> Option<crate::ComponentNoise> {
+        self.noise.clone()
+    }
+
     fn base2k(&self) -> Base2K {
         self.base2k
     }
@@ -435,6 +449,7 @@ impl<BE: Backend> GGLWEAtBackendRef<BE> for GGLWE<BE::OwnedBuf, BE::ZnxWord> {
     fn at_backend(&self, row: usize, col: usize) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
         let data = <MatZnx<BE::OwnedBuf, BE::ZnxWord> as MatZnxAtBackendRef<BE>>::at_backend(&self.data, row, col);
         GLWE {
+            noise: crate::layouts::LWEInfos::noise(&self),
             base2k: self.base2k,
             k: self.k(),
             canonical: true,
@@ -450,6 +465,7 @@ pub(crate) fn gglwe_at_backend_ref_from_ref<'a, 'b, BE: Backend>(
 ) -> GLWE<BE::BufRef<'a>, BE::ZnxWord> {
     let data = poulpy_hal::layouts::mat_znx_at_backend_ref_from_ref::<BE>(&gglwe.data, row, col);
     GLWE {
+        noise: crate::layouts::LWEInfos::noise(&gglwe),
         base2k: gglwe.base2k,
         k: gglwe.k(),
         canonical: true,
@@ -476,6 +492,7 @@ pub(crate) fn gglwe_at_backend_ref_from_mut<'a, 'b, BE: Backend>(
 ) -> GLWE<BE::BufRef<'a>, BE::ZnxWord> {
     let data = poulpy_hal::layouts::mat_znx_at_backend_ref_from_mut::<BE>(&gglwe.data, row, col);
     GLWE {
+        noise: crate::layouts::LWEInfos::noise(&gglwe),
         base2k: gglwe.base2k,
         k: gglwe.k(),
         canonical: true,
@@ -486,21 +503,26 @@ pub(crate) fn gglwe_at_backend_ref_from_mut<'a, 'b, BE: Backend>(
 impl<D: Data, W: ZnxWord> GGLWE<D, W> {
     /// Returns a mutable reference to the underlying [`MatZnx`].
     pub fn data_mut(&mut self) -> &mut MatZnx<D, W> {
+        self.noise = None;
         &mut self.data
     }
 }
 
 /// Backend-native mutable view of one GLWE row.
 pub trait GGLWEAtBackendMut<BE: Backend> {
+    /// Clears the owner's component noise metadata.
     fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord>;
 }
 
 impl<BE: Backend> GGLWEAtBackendMut<BE> for GGLWE<BE::OwnedBuf, BE::ZnxWord> {
+    /// Clears the owner's component noise metadata.
     fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
         let base2k = self.base2k;
         let k = self.k();
         let data = <MatZnx<BE::OwnedBuf, BE::ZnxWord> as MatZnxAtBackendMut<BE>>::at_backend_mut(&mut self.data, row, col);
+        self.noise = None;
         GLWE {
+            noise: None,
             base2k,
             k,
             canonical: true,
@@ -517,7 +539,9 @@ pub(crate) fn gglwe_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
     let base2k = gglwe.base2k;
     let k = gglwe.k();
     let data = poulpy_hal::layouts::mat_znx_at_backend_mut_from_mut::<BE>(&mut gglwe.data, row, col);
+    gglwe.noise = None;
     GLWE {
+        noise: None,
         base2k,
         k,
         canonical: true,
@@ -566,6 +590,7 @@ impl<D: HostDataRef, W: ZnxWord> GGLWE<D, W> {
     pub fn at(&self, row: usize, col: usize) -> GLWE<&[u8], W> {
         let data = self.data.at(row, col);
         GLWE {
+            noise: crate::layouts::LWEInfos::noise(&self),
             base2k: self.base2k,
             k: self.k(),
             canonical: true,
@@ -579,7 +604,9 @@ impl<D: HostDataMut, W: ZnxWord> GGLWE<D, W> {
         let base2k = self.base2k;
         let k = self.k();
         let data = self.data.at_mut(row, col);
+        self.noise = None;
         GLWE {
+            noise: None,
             base2k,
             k,
             canonical: true,
@@ -602,6 +629,7 @@ impl<D: Data, W: ZnxWord> GGLWE<D, W> {
             self.data.size(),
         );
         GGLWE {
+            noise: crate::layouts::LWEInfos::noise(&self),
             data: MatZnx::from_data(self.data.into_data(), n, rows, cols_in, cols_out, size),
             base2k: self.base2k,
             dsize: self.dsize,
@@ -642,6 +670,7 @@ impl<W: ZnxWord> GGLWE<AlignedBuf, W> {
         let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
 
         GGLWE {
+            noise: None,
             data: MatZnx::from_data(
                 alloc_aligned::<u8>(MatZnx::<AlignedBuf, W>::bytes_of(
                     n.into(),
@@ -693,6 +722,10 @@ impl<W: ZnxWord> GGLWE<AlignedBuf, W> {
 }
 
 pub trait GGLWEToBackendMut<BE: Backend>: GGLWEToBackendRef<BE> {
+    /// Backend hook for recording or propagating component noise metadata.
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
+
+    /// Borrows coefficients mutably and clears the owner's component noise metadata.
     fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE>;
 }
 
@@ -700,8 +733,14 @@ impl<BE: Backend, D: Data> GGLWEToBackendMut<BE> for GGLWE<D, BE::ZnxWord>
 where
     MatZnx<D, BE::ZnxWord>: MatZnxToBackendRef<BE> + MatZnxToBackendMut<BE>,
 {
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        self.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
+    }
+
     fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE> {
+        self.noise = None;
         GGLWEBackendMut::from_inner(GGLWE {
+            noise: None,
             base2k: self.base2k(),
             dsize: self.dsize(),
             k_aux: self.k_aux(),
@@ -713,6 +752,7 @@ where
 impl<BE: Backend> GGLWEToBackendRef<BE> for &mut GGLWE<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE> {
         GGLWEBackendRef::from_inner(GGLWE {
+            noise: crate::layouts::LWEInfos::noise(&self),
             base2k: self.base2k(),
             dsize: self.dsize(),
             k_aux: self.k_aux(),
@@ -722,8 +762,14 @@ impl<BE: Backend> GGLWEToBackendRef<BE> for &mut GGLWE<BE::BufMut<'_>, BE::ZnxWo
 }
 
 impl<BE: Backend> GGLWEToBackendMut<BE> for &mut GGLWE<BE::BufMut<'_>, BE::ZnxWord> {
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        self.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
+    }
+
     fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE> {
+        self.noise = None;
         GGLWEBackendMut::from_inner(GGLWE {
+            noise: None,
             base2k: self.base2k(),
             dsize: self.dsize(),
             k_aux: self.k_aux(),
@@ -742,6 +788,7 @@ where
 {
     fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE> {
         GGLWEBackendRef::from_inner(GGLWE {
+            noise: crate::layouts::LWEInfos::noise(&self),
             base2k: self.base2k(),
             dsize: self.dsize(),
             k_aux: self.k_aux(),
@@ -752,15 +799,26 @@ where
 
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGLWE<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
-        self.base2k = Base2K(reader.read_u32::<LittleEndian>()?);
-        self.dsize = Dsize(reader.read_u32::<LittleEndian>()?);
-        self.k_aux = TorusPrecision(reader.read_u32::<LittleEndian>()?);
-        self.data.read_from(reader)
+        self.noise = None;
+        let components = self.data.cols_out();
+        let noise = crate::ComponentNoise::read_optional(reader, components)?;
+        let base2k = Base2K(reader.read_u32::<LittleEndian>()?);
+        let dsize = Dsize(reader.read_u32::<LittleEndian>()?);
+        let k_aux = TorusPrecision(reader.read_u32::<LittleEndian>()?);
+        crate::layouts::read_mat_znx_with_shape(&mut self.data, reader, None, None, components)?;
+        crate::layouts::validate_noise_components(noise.as_ref(), self.data.cols_out())?;
+        self.base2k = base2k;
+        self.dsize = dsize;
+        self.k_aux = k_aux;
+        self.noise = noise;
+        Ok(())
     }
 }
 
 impl<D: HostDataRef, W: ZnxWord> WriterTo for GGLWE<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
+        crate::layouts::validate_noise_components(self.noise.as_ref(), self.data.cols_out())?;
+        crate::ComponentNoise::write_optional(self.noise.as_ref(), writer)?;
         writer.write_u32::<LittleEndian>(self.base2k.0)?;
         writer.write_u32::<LittleEndian>(self.dsize.0)?;
         writer.write_u32::<LittleEndian>(self.k_aux.0)?;

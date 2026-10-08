@@ -151,7 +151,8 @@ pub unsafe trait EncryptionImpl: Backend {
     /// The product uses every key limb. Each error is drawn from
     /// [`Noise::ENCRYPTION`](crate::Noise::ENCRYPTION) at `res.k()`, and each
     /// column is normalized once at `res.k()`. Invalid keys, plaintexts or
-    /// columns panic before the output changes.
+    /// columns panic before the output changes. The output records
+    /// [`public_key_encryption_noise`](crate::public_key_encryption_noise).
     fn glwe_encrypt_pk_at_col<R, P, K>(
         module: &Module<Self>,
         res: &mut R,
@@ -302,7 +303,7 @@ pub unsafe trait EncryptionImpl: Backend {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GGSWInfos + GGSWAtViewMut<Self>,
+        R: GGSWToBackendMut<Self> + GGSWInfos + GGSWAtViewMut<Self>,
         P: ScalarZnxToBackendRef<Self> + ZnxInfos,
         K: GLWEPublicKeyPreparedToBackendRef<Self> + GLWEInfos,
         Module<Self>: VecZnxZero<Self> + VecZnxAddScalarAssign<Self> + VecZnxNormalizeAssign<Self> + VecZnxNormalizeTmpBytes,

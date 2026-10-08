@@ -25,7 +25,7 @@ use poulpy_hal::{
     },
 };
 
-use crate::{Distribution, Noise, ScalarZnxFillDistribution, VecZnxAddNoise, VecZnxBigAddNoise};
+use crate::{ComponentNoise, Distribution, Noise, ScalarZnxFillDistribution, VecZnxAddNoise, VecZnxBigAddNoise};
 
 const BASE2K: usize = 17;
 const SIZE: usize = 5;
@@ -268,7 +268,7 @@ where
     }
 }
 
-/// Checks secret-law moments with at least 2^14 draws.
+/// Checks the moments used by fresh-noise planning with at least 2^14 draws.
 fn secret_moments<BE: TestBackend>(module: &Module<BE>)
 where
     Module<BE>: ScalarZnxFillDistribution<BE>,
@@ -314,13 +314,9 @@ where
             }
         }
         let count = (draws * n) as f64;
-        let (mean, second) = match dist {
-            Distribution::TernaryProb(p) => (0.0, p),
-            Distribution::BinaryProb(p) => (p, p),
-            Distribution::BinaryBlock(b) => (1.0 / (b + 1) as f64, 1.0 / (b + 1) as f64),
-            Distribution::TernaryFixed(h) => (0.0, h as f64 / n as f64),
-            _ => unreachable!(),
-        };
+        let law = ComponentNoise::from_secret(dist, 0).secret_distribution();
+        let mean = law.coefficient_mean(n).unwrap();
+        let second = law.coefficient_second_moment(n).unwrap();
         assert!((sum as f64 / count - mean).abs() < 7.0 / count.sqrt(), "{dist:?}: mean");
         assert!(
             (squares as f64 / count - second).abs() < 7.0 / count.sqrt(),

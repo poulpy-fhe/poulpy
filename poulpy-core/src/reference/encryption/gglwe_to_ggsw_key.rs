@@ -71,6 +71,7 @@ where
         R: GGLWEToGGSWKeyToBackendMut<BE>,
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
+        let metadata = crate::component_noise::fresh_sk_noise(sk.to_backend_ref().dist, &res.to_backend_ref());
         {
             let mut res = res.to_backend_mut();
 
@@ -114,5 +115,6 @@ where
             }
             scratch.wipe(tmp_bytes);
         }
+        res.set_noise(metadata);
     }
 }

@@ -68,6 +68,10 @@ impl GGLWEInfos for LWESwitchingKeyLayout {
 pub struct LWESwitchingKey<D: Data, W: ZnxWord>(pub(crate) GLWESwitchingKey<D, W>);
 
 impl<D: Data, W: ZnxWord> LWEInfos for LWESwitchingKey<D, W> {
+    fn noise(&self) -> Option<crate::ComponentNoise> {
+        self.0.noise()
+    }
+
     fn base2k(&self) -> Base2K {
         self.0.base2k()
     }

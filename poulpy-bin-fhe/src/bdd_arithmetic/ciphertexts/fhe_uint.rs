@@ -83,6 +83,10 @@ where
 }
 
 impl<D: Data, T: UnsignedInteger, W: ZnxWord> LWEInfos for FheUint<D, T, W> {
+    fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
+        self.bits.noise()
+    }
+
     fn base2k(&self) -> poulpy_core::layouts::Base2K {
         self.bits.base2k()
     }
@@ -388,6 +392,10 @@ where
     fn set_canonical(&mut self, canonical: bool) {
         self.bits.set_canonical(canonical)
     }
+
+    fn set_noise(&mut self, metadata: Option<poulpy_core::ComponentNoise>) {
+        GLWEToBackendMut::<BE>::set_noise(&mut self.bits, metadata);
+    }
 }
 
 #[doc(hidden)]
@@ -603,5 +611,6 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
             module.glwe_copy(&mut current, &tmp.bits, &mut scratch_1);
         }
         module.glwe_copy(self, &current, &mut scratch_1);
+        self.set_noise(None);
     }
 }

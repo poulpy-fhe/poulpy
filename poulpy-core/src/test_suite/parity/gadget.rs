@@ -111,7 +111,7 @@ where
                     );
                     let mut have = r.$alloc(&$infos);
                     out_t.transfer_into(&mut have);
-                    assert_eq!(out_r, have, "{} rank={rank} dsize={dsize}", stringify!($apply));
+                    assert_eval_eq!(out_r, have, "{} rank={rank} dsize={dsize}", stringify!($apply));
                     // Also compare assign with out-of-place semantics, in addition to pairwise backend parity.
                     r.$assign(
                         &mut a_r,
@@ -124,7 +124,7 @@ where
                         &mut poisoned_scratch::<BT>(t.$query(&$infos, &$infos, &k)).borrow(),
                     );
                     a_t.transfer_into(&mut have);
-                    assert_eq!(a_r, have, "{} rank={rank} dsize={dsize}", stringify!($assign));
+                    assert_eval_eq!(a_r, have, "{} rank={rank} dsize={dsize}", stringify!($assign));
                     assert_eq!(a_r, out_r, "{} differs from into form", stringify!($assign));
                 }};
             }
@@ -328,7 +328,7 @@ where
                     );
                     let mut have = r.ggsw_alloc_from_infos(&g);
                     out_t.transfer_into(&mut have);
-                    assert_eq!(out_r, have, "{} rank={rank} dsize={dsize}", stringify!($apply));
+                    assert_eval_eq!(out_r, have, "{} rank={rank} dsize={dsize}", stringify!($apply));
                     a_r.transfer_into(&mut out_r);
                     a_r.transfer_into(&mut out_t);
                     r.$assign(
@@ -344,7 +344,7 @@ where
                         &mut poisoned_scratch::<BT>(t.$query(&g, &g, &k, &tk)).borrow(),
                     );
                     out_t.transfer_into(&mut have);
-                    assert_eq!(out_r, have, "{} rank={rank} dsize={dsize}", stringify!($assign));
+                    assert_eval_eq!(out_r, have, "{} rank={rank} dsize={dsize}", stringify!($assign));
                 }};
             }
             check!(
@@ -409,7 +409,7 @@ where
             );
             let mut have = r.glwe_automorphism_key_alloc_from_infos(&ak);
             out_t.transfer_into(&mut have);
-            assert_eq!(out_r, have, "automorphism key into: rank={rank} dsize={dsize}");
+            assert_eval_eq!(out_r, have, "automorphism key into: rank={rank} dsize={dsize}");
             auto_r.transfer_into(&mut out_r);
             auto_r.transfer_into(&mut out_t);
             r.glwe_automorphism_key_automorphism_assign(
@@ -423,7 +423,7 @@ where
                 &mut poisoned_scratch::<BT>(t.glwe_automorphism_key_automorphism_tmp_bytes(&ak, &ak, &ak)).borrow(),
             );
             out_t.transfer_into(&mut have);
-            assert_eq!(out_r, have, "automorphism key assign: rank={rank} dsize={dsize}");
+            assert_eval_eq!(out_r, have, "automorphism key assign: rank={rank} dsize={dsize}");
             let h = GGLWELayout {
                 dnum: g.dnum,
                 dsize: g.dsize,
@@ -455,7 +455,7 @@ where
             );
             let mut have = r.ggsw_alloc_from_infos(&g);
             out_t.transfer_into(&mut have);
-            assert_eq!(out_r, have, "ggsw_from_gglwe: rank={rank} dsize={dsize}");
+            assert_eval_eq!(out_r, have, "ggsw_from_gglwe: rank={rank} dsize={dsize}");
             // Row expansion consumes an existing GGSW body row and replaces mask rows.
             a_r.transfer_into(&mut out_r);
             a_r.transfer_into(&mut out_t);
@@ -470,7 +470,7 @@ where
                 &mut poisoned_scratch::<BT>(t.ggsw_expand_rows_tmp_bytes(&g, &tk)).borrow(),
             );
             out_t.transfer_into(&mut have);
-            assert_eq!(out_r, have, "ggsw_expand_row: rank={rank} dsize={dsize}");
+            assert_eval_eq!(out_r, have, "ggsw_expand_row: rank={rank} dsize={dsize}");
         }
     }
 }

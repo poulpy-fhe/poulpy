@@ -52,5 +52,7 @@ where
     Module<BT>: GLWEMaskFill<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
-    assert_eq!(exercise(params, r), exercise(params, t));
+    let want = exercise(params, r);
+    assert_untagged("plaintext", &want);
+    assert_eq!(want, exercise(params, t));
 }
