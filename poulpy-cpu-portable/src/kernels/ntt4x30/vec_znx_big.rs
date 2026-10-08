@@ -820,12 +820,15 @@ pub trait I128NormalizeOps: I64NormalizeOps + ZnxNormalizeMiddleStepAssign {
         assert!(a.len() >= res.len() && carry.len() >= res.len());
         if lsh == 0 {
             // The digit of `a + carry` and the carry it leaves are those of the two-step form
-            // (digit of `a`, then digit of that plus the carry), as long as the sum is representable.
+            // (digit of `a`, then digit of that plus the carry).
+            // The sum itself may not be representable, so it is split: the low `base2k` bits of both terms
+            // give the digit and a carry of at most two, and the high parts add without overflow.
+            let mask: i128 = (1i128 << base2k) - 1;
             izip!(res.iter_mut(), a.iter(), carry.iter_mut()).for_each(|(r, &ai, c)| {
-                let sum = ai.wrapping_add(*c);
-                let out = get_digit_i128_portable(base2k, sum);
+                let low = (ai & mask) + (*c & mask);
+                let out = get_digit_i128_portable(base2k, low);
                 *r = out as i64;
-                *c = get_carry_i128_portable(base2k, sum, out);
+                *c = (ai >> base2k) + (*c >> base2k) + ((low - out) >> base2k);
             });
         } else {
             let base2k_lsh = base2k - lsh;
