@@ -1,6 +1,6 @@
 [package]
 name = "poulpy-ckks"
-version = "0.8.3"
+version = "0.9.0"
 edition = "2024"
 license = "Apache-2.0"
 readme = "README.md"
@@ -36,9 +36,9 @@ libm = {workspace = true, features = ["unstable-float"]}
 
 # libquadmath backing for `Quad` (x86_64 Linux GNU only).
 [target.'cfg(all(target_arch = "x86_64", target_os = "linux", target_env = "gnu"))'.dependencies]
-f128 = { version = "0.2", optional = true }
+f128 = { version = "0.2.9", optional = true }
 
 # Reference for the portable-`Quad` parity test. Keep this positive allowlist:
 # the crate compiles a C shim against GCC's quadmath.h/libquadmath.
 [target.'cfg(all(target_arch = "x86_64", target_os = "linux", target_env = "gnu"))'.dev-dependencies]
-f128 = "0.2"
+f128 = "0.2.9"

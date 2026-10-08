@@ -23,6 +23,7 @@
 - **`poulpy-core`**: a backend-agnostic crate implementing scheme-agnostic Module-LWE arithmetic for LWE, GLWE, GGLWE, and GGSW ciphertexts using **`poulpy-hal`**. It can be instantiated with any backend crate (e.g. `poulpy-cpu-portable`, `poulpy-cpu-avx`).
 - **`poulpy-ckks`**: a backend-agnostic leveled CKKS implementation built on **`poulpy-core`** and **`poulpy-hal`**, including polynomial evaluation and bootstrappings.
 - **`poulpy-bin-fhe`**: the binary/gate-level FHE crate built on **`poulpy-core`** and **`poulpy-hal`**. It replaces the former `poulpy-schemes` crate and exposes backend-owned APIs with explicit operation overrides and reusable reference circuits.
+- **`poulpy-mhe`**: a backend-agnostic multiparty homomorphic encryption crate built on **`poulpy-core`** and **`poulpy-hal`**: collective public, switching, automorphism, tensor and GGSW keys, collective key switching, and conversions between encryptions and additive shares.
 - **`poulpy-cpu-portable`**: the portable CPU implementation of **`poulpy-hal`** in plain scalar Rust, which runs on any target and whose scalar kernels back the SIMD backends.
 - **`poulpy-cpu-oracle`**: an unpublished, independent scalar backend that the other backends are compared against in the cross-backend and parity suites.
 - **`poulpy-cpu-rayon`**: the shared Rayon task executor and parallel kernels used by the optional multithreaded CPU backend variants.
@@ -39,7 +40,8 @@
 poulpy-hal                  ← hardware abstraction: layouts and operation traits
 └── poulpy-core              ← scheme-agnostic Module-LWE arithmetic (LWE, GLWE, GGLWE, GGSW)
     ├── poulpy-ckks           ← leveled CKKS evaluator
-    └── poulpy-bin-fhe        ← binary / gate-level FHE
+    ├── poulpy-bin-fhe        ← binary / gate-level FHE
+    └── poulpy-mhe            ← multiparty HE
 
 poulpy-cpu-portable         ← portable scalar backend
 poulpy-cpu-oracle           ← independent scalar oracle for correctness tests
@@ -197,6 +199,7 @@ The bivariate representation recovers bit-granular scale and capacity management
 - **`poulpy-core`**: https://crates.io/crates/poulpy-core
 - **`poulpy-ckks`**: https://crates.io/crates/poulpy-ckks
 - **`poulpy-bin-fhe`**: https://crates.io/crates/poulpy-bin-fhe
+- **`poulpy-mhe`**: https://crates.io/crates/poulpy-mhe
 - **`poulpy-cpu-portable`**: https://crates.io/crates/poulpy-cpu-portable
 - **`poulpy-cpu-rayon`**: https://crates.io/crates/poulpy-cpu-rayon
 - **`poulpy-cpu-avx`**: https://crates.io/crates/poulpy-cpu-avx
@@ -207,16 +210,16 @@ For example, a CKKS application can depend on:
 
 ```toml
 [dependencies]
-poulpy-ckks = "0.8.3"
-poulpy-cpu-portable = "0.8.3"
+poulpy-ckks = "0.9.0"
+poulpy-cpu-portable = "0.9.0"
 ```
 
 For binary FHE:
 
 ```toml
 [dependencies]
-poulpy-bin-fhe = "0.8.3"
-poulpy-cpu-portable = "0.8.3"
+poulpy-bin-fhe = "0.9.0"
+poulpy-cpu-portable = "0.9.0"
 ```
 
 ## Documentation
@@ -310,10 +313,10 @@ For anything better suited to a direct exchange, reach the organisation administ
 Please use the following BibTeX entry for citing Poulpy:
 
     @misc{poulpy,
-        title = {Poulpy v0.8.3},
+        title = {Poulpy v0.9.0},
         author = {Jean-Philippe Bossuat and Jules Dumezy and Rasoul Akhavan Mahdavi and Janmajaya Mall and Cedoor and Luis Ruiz-Lopez and Christian Mouchet},
         affiliation = {Jean-Philippe Bossuat: Ideal Rings Lab and PhantomZone; Jules Dumezy: CEA-List, Universit{\'e} Paris-Saclay; Rasoul Akhavan Mahdavi: University of Waterloo; Janmajaya Mall: PhantomZone; Cedoor: Independent contributor; Luis Ruiz-Lopez: University of Waterloo; Christian Mouchet: Independent contributor},
         howpublished = {Online: \url{https://github.com/poulpy-fhe/poulpy}},
-        month = September,
+        month = October,
         year = 2026,
     }
