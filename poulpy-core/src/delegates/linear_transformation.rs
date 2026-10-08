@@ -71,7 +71,7 @@ where
         A: GLWEToBackendRef<BE> + GLWEInfos,
         H: GetAutomorphismKey<BE>,
     {
-        BE::glwe_prepare_linear_transformation_baby_steps(self, cache, a, keys, scratch);
+        BE::glwe_prepare_linear_transformation_baby_steps(self, cache, a, keys, scratch)
     }
 
     fn glwe_eval_linear_transformation_into<R, P, H>(

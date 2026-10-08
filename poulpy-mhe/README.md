@@ -79,8 +79,8 @@ metadata. Key-switch share estimates describe newly generated construction
 error; finalization clears the ciphertext tag because it also contains the
 input's existing phase error and precision-conversion error. See the
 [fresh-noise contract](docs/mhe-contracts.md#share-metadata) for the model's limits.
-Backend views clone the noise snapshot, as they copy precision and canonical flags,
-so pass the owner to a protocol when its metadata must be updated.
+Mutable backend views clear the owner's metadata, so pass the owner to a
+protocol whose output should carry a tag.
 
 ## Smudging
 

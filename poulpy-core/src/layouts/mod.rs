@@ -529,7 +529,6 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         let pairs = (((cols + 1) * cols) >> 1).max(1);
         let size = infos.k().as_usize().div_ceil(infos.base2k().as_usize());
         GLWETensor {
-            noise: None,
             data: vec_znx_alloc_zeroed::<B>(infos.n().as_usize(), pairs, size),
             k: infos.k(),
             base2k: infos.base2k(),
@@ -1511,6 +1510,18 @@ pub(crate) fn validate_noise_components(noise: Option<&crate::ComponentNoise>, c
         noise.validate_components(components)?;
     }
     Ok(())
+}
+
+/// Panics unless known noise has `components` terms.
+pub(crate) fn checked_noise(noise: Option<crate::ComponentNoise>, components: usize) -> Option<crate::ComponentNoise> {
+    validate_noise_components(noise.as_ref(), components).expect("noise component count does not match the ciphertext");
+    noise
+}
+
+/// Tag shared by every key; `None` once any key was changed on its own.
+pub(crate) fn common_noise(mut keys: impl Iterator<Item = Option<crate::ComponentNoise>>) -> Option<crate::ComponentNoise> {
+    let first = keys.next()??;
+    keys.all(|key| key.as_ref() == Some(&first)).then_some(first)
 }
 
 /// Preflights the dimensions used to derive a later metadata allocation before

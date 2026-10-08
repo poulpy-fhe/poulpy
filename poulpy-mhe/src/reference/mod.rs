@@ -18,6 +18,7 @@ pub use sharing::*;
 pub use tensor_key::*;
 
 /// Combining seeded shares combines independently sampled secret summands.
+/// An untagged share leaves the aggregate untagged.
 pub(crate) fn aggregate_metadata(
     left: Option<poulpy_core::ComponentNoise>,
     right: Option<poulpy_core::ComponentNoise>,
@@ -30,8 +31,7 @@ pub(crate) fn aggregate_metadata(
             );
             Some(left.aggregate(&right))
         }
-        (None, None) => None,
-        _ => panic!("invalid aggregation: encryption provenance differs"),
+        _ => None,
     }
 }
 
@@ -39,6 +39,7 @@ pub(crate) fn aggregate_metadata(
 /// distribution. Centered independent ephemerals remove the shared-key error
 /// covariance. For noncentered ephemerals, the component estimates lack that
 /// covariance decomposition, so the triangle bound safely combines spreads.
+/// An untagged share leaves the aggregate untagged.
 pub(crate) fn aggregate_common_key_metadata(
     left: Option<poulpy_core::ComponentNoise>,
     right: Option<poulpy_core::ComponentNoise>,
@@ -52,7 +53,7 @@ pub(crate) fn aggregate_common_key_metadata(
             let components = left
                 .components()
                 .iter()
-                .zip(right.components())
+                .zip(right.components().iter())
                 .map(|(noise, right)| {
                     let right_variance = right.variance_at(noise.precision());
                     let variance = if centered {
@@ -65,8 +66,7 @@ pub(crate) fn aggregate_common_key_metadata(
                 .collect();
             Some(left.with_components(components))
         }
-        (None, None) => None,
-        _ => panic!("invalid aggregation: output key provenance differs"),
+        _ => None,
     }
 }
 
@@ -89,20 +89,10 @@ where
     }
 }
 
-/// A flood's effective centered variance in units of its integer sampling grid.
-/// Gaussian sigma is its variance parameter, an upper estimate after cutoff;
-/// uniform noise has its exact discrete variance and a separate mean of -1/2.
-pub(crate) fn flood_variance(noise: poulpy_core::Noise) -> f64 {
-    match noise {
-        poulpy_core::Noise::Gaussian { sigma } => sigma * sigma,
-        poulpy_core::Noise::Uniform { bits } => (2.0 * bits as f64 - 4.0).exp2() * (4.0 / 3.0) - 1.0 / 12.0,
-    }
-}
-
 #[cfg(test)]
 mod fresh_noise_tests {
     use super::*;
-    use poulpy_core::{ComponentNoise, Distribution, FreshNoiseEstimate, Noise, layouts::TorusPrecision};
+    use poulpy_core::{ComponentNoise, Distribution, FreshNoiseEstimate, layouts::TorusPrecision};
 
     #[test]
     fn common_key_sum_tracks_error_independently_from_secret_parties_and_precision() {
@@ -147,13 +137,5 @@ mod fresh_noise_tests {
         assert_eq!(three.parties(), 3);
         assert_eq!(three.body().variance(), 81.0);
         assert_eq!(three.components()[1].variance(), 36.0);
-    }
-
-    #[test]
-    fn flood_estimates_use_the_requested_distribution() {
-        assert_eq!(flood_variance(Noise::Uniform { bits: 4 }), 21.25);
-        assert!(flood_variance(Noise::Uniform { bits: 513 }).is_finite());
-        assert_eq!(flood_variance(Noise::Uniform { bits: 514 }), f64::INFINITY);
-        assert_eq!(flood_variance(Noise::Gaussian { sigma: 1024.0 }), 1048576.0);
     }
 }

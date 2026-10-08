@@ -253,63 +253,17 @@ where
                 let inherited = rank_n * second * count * sigma2 * key_grid_scale;
                 let mask_error = rank_n * secret_second * sigma2;
                 let phase_fold = 1.0 + rank_n * secret_second;
-                let rounding = phase_fold / 4.0;
                 let extra_bits = (key_k.0 - k.0) as usize;
-                let prefix_amplification = if mean == 0.0 {
-                    rank_n * second * phase_fold
+                // Normalizing the key's extra bits rounds every coefficient;
+                // ties of noncentered secrets add a bias.
+                let rounding = if extra_bits > 0 { phase_fold / 4.0 } else { 0.0 };
+                let bias_squared = if extra_bits > 0 && mean != 0.0 {
+                    ((-(extra_bits as f64 + 1.0)).exp2() * (1.0 + rank_n * count * mean)).powi(2)
                 } else {
-                    (rank_n * 0.5_f64.sqrt() * (1.0 + rank_n * secret_second.sqrt())).powi(2)
+                    0.0
                 };
-                let expected = |fresh| {
-                    super::fixtures::expected_pk_variance(
-                        inherited,
-                        fresh,
-                        phase_fold,
-                        prefix_amplification,
-                        BASE2K.as_usize(),
-                        k.as_usize(),
-                        key_k.as_usize(),
-                    )
-                };
-                let (ordinary_delta, ordinary) = expected(mask_error + sigma2);
-                let (smudged_delta, without_body) = expected(mask_error);
-                let bias_squared = |delta: usize| {
-                    let work = ((k.as_usize() + delta).div_ceil(BASE2K.as_usize()) * BASE2K.as_usize()).min(key_k.as_usize());
-                    if work > k.as_usize() && mean != 0.0 {
-                        ((-(work as f64 - k.as_usize() as f64 + 1.0)).exp2() * (1.0 + rank_n * count * mean)).powi(2)
-                    } else {
-                        0.0
-                    }
-                };
-                let ordinary_bias = bias_squared(ordinary_delta);
-                let smudged_bias = bias_squared(smudged_delta);
-                let ordinary = ordinary + ordinary_bias;
-                let without_body = without_body + smudged_bias;
-                if extra_bits > BASE2K.as_usize() {
-                    // The three-bit candidate omits too much of the PK. One
-                    // more bit crosses the limb boundary and meets the target
-                    // while still omitting two of the five available limbs.
-                    assert_eq!(ordinary_delta, 4);
-                    assert_eq!(smudged_delta, 4);
-                    let work_limbs = (k.as_usize() + ordinary_delta).div_ceil(BASE2K.as_usize());
-                    assert_eq!(work_limbs, 3);
-                    assert_eq!(key_k.as_usize().div_ceil(BASE2K.as_usize()), 5);
-                    assert!(ordinary - ordinary_bias - rounding <= rounding);
-                    let tail = 0.5 / (1.0 - (-(BASE2K.as_usize() as f64)).exp2());
-                    let previous_work_k = (k.as_usize() + 3).div_ceil(BASE2K.as_usize()) * BASE2K.as_usize();
-                    let previous_tail =
-                        prefix_amplification * tail.powi(2) * (-2.0 * (previous_work_k - k.as_usize()) as f64).exp2();
-                    assert!((inherited.sqrt() + previous_tail.sqrt()).powi(2) + (mask_error + sigma2) / 64.0 > rounding);
-                } else {
-                    assert_eq!(ordinary_delta, extra_bits);
-                    assert_eq!(smudged_delta, extra_bits);
-                    if extra_bits == 1 {
-                        // The inherited key error alone already exceeds the
-                        // target, so the selector must stop at the key's cap.
-                        assert!(inherited > rounding);
-                        assert!(ordinary - rounding > rounding);
-                    }
-                }
+                let ordinary = inherited + mask_error + sigma2 + rounding + bias_squared;
+                let without_body = inherited + mask_error + rounding + bias_squared;
                 assert!(ordinary > sigma2);
                 module.glwe_encrypt_pk(&mut ct, &pt, pk, &mut source_xu, &mut source_xe, &mut scratch.borrow());
                 assert_noise_tag(&ct, base, parties, ordinary, k);
@@ -338,14 +292,13 @@ where
                     );
                 }
 
+                let component_rounding = if extra_bits == 0 {
+                    0.0
+                } else {
+                    0.25 + bias_squared / phase_fold
+                };
                 if extra_bits <= 1 {
-                    let fresh = sigma2 * (-2.0 * ordinary_delta as f64).exp2();
-                    let component_rounding = if extra_bits == 0 {
-                        0.0
-                    } else {
-                        0.25 + ordinary_bias / phase_fold
-                    };
-                    let mut components = vec![fresh + component_rounding; RANK.as_usize() + 1];
+                    let mut components = vec![sigma2 + component_rounding; RANK.as_usize() + 1];
                     components[0] += inherited;
                     super::fixtures::assert_noise_components(&ct, &components);
                 }
@@ -362,8 +315,7 @@ where
                 module.glwe_encrypt_zero_pk(&mut ct, pk, &mut source_xu, &mut source_xe, &mut scratch.borrow());
                 assert_noise_tag(&ct, base, parties, ordinary, k);
                 for (flood, variance) in [
-                    // Even the default Gaussian is an output-grid flood here,
-                    // rather than the ordinary intermediate-grid body error.
+                    // Even the default Gaussian replaces the ordinary body error.
                     (Noise::ENCRYPTION, sigma2),
                     (Noise::Uniform { bits: 4 }, 21.25),
                     (Noise::Gaussian { sigma: 128.0 }, 16384.0),
@@ -380,13 +332,7 @@ where
                     );
                     assert_noise_tag(&ct, base, parties, without_body + variance, k);
                     if extra_bits <= 1 {
-                        let fresh = sigma2 * (-2.0 * smudged_delta as f64).exp2();
-                        let component_rounding = if extra_bits == 0 {
-                            0.0
-                        } else {
-                            0.25 + smudged_bias / phase_fold
-                        };
-                        let mut components = vec![fresh + component_rounding; RANK.as_usize() + 1];
+                        let mut components = vec![sigma2 + component_rounding; RANK.as_usize() + 1];
                         components[0] = inherited + variance + component_rounding;
                         super::fixtures::assert_noise_components(&ct, &components);
                     }

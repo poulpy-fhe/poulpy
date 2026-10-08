@@ -269,7 +269,6 @@ mod trace {
         }
 
         module.glwe_copy(res, &tmp, &mut scratch_1);
-        res.set_noise(None);
     }
 
     pub(crate) fn glwe_trace_assign_derived<BE, M, R, H>(
@@ -478,10 +477,6 @@ mod packing {
             glwe_pack_tmp_bytes_derived::<BE, _, _, _, _>(module, res, &a_layout, &key_infos)
         );
 
-        for input in a.values_mut() {
-            input.set_noise(None);
-        }
-        res.set_noise(None);
         let mut scratch_local = scratch.borrow();
         let log_n: usize = res.log_n();
         for i in 0..(log_n - log_gap_out) {

@@ -184,9 +184,7 @@ where
 }
 
 pub trait LWEToGLWEKeyPreparedToBackendMut<B: Backend> {
-    /// Borrows coefficients and copies the current layout and component noise metadata.
-    /// Metadata changed on the returned view is local to that view. Operations
-    /// that update the owner must call its `set_noise` hook.
+    /// Borrows coefficients mutably and clears the owner's component noise metadata.
     fn to_backend_mut(&mut self) -> LWEToGLWEKeyPreparedBackendMut<'_, B>;
 }
 

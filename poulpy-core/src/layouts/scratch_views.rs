@@ -289,9 +289,7 @@ impl<BE: Backend> LWEToBackendRef<BE> for LWEViewMut<'_, BE> {
 
 impl<BE: Backend> LWEToBackendMut<BE> for LWEViewMut<'_, BE> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        crate::layouts::validate_noise_components(metadata.as_ref(), self.inner.mask.n() + 1)
-            .expect("noise component count does not match the ciphertext");
-        self.inner.noise = metadata;
+        self.inner.noise = crate::layouts::checked_noise(metadata, self.inner.mask.n() + 1);
     }
 
     fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE> {
@@ -299,8 +297,9 @@ impl<BE: Backend> LWEToBackendMut<BE> for LWEViewMut<'_, BE> {
         let k = self.inner.k;
         let body = vec_znx_backend_mut_from_mut::<BE>(&mut self.inner.body);
         let mask = vec_znx_backend_mut_from_mut::<BE>(&mut self.inner.mask);
+        self.inner.noise = None;
         LWE {
-            noise: self.inner.noise.clone(),
+            noise: None,
             base2k,
             k,
             body,
@@ -352,8 +351,9 @@ macro_rules! impl_glwe_to_backend {
             fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
                 let $this = &*self;
                 let canonical = $canonical;
+                self.inner.record_noise(None);
                 GLWE {
-                    noise: crate::layouts::LWEInfos::noise(&self.inner),
+                    noise: None,
                     base2k: self.inner.base2k,
                     k: self.inner.k,
                     canonical,
@@ -470,14 +470,13 @@ impl<BE: Backend> GGLWEToBackendRef<BE> for GGLWEViewMut<'_, BE> {
 
 impl<BE: Backend> GGLWEToBackendMut<BE> for GGLWEViewMut<'_, BE> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        crate::layouts::validate_noise_components(metadata.as_ref(), self.inner.data.cols_out())
-            .expect("noise component count does not match the ciphertext");
-        self.inner.noise = metadata;
+        self.inner.noise = crate::layouts::checked_noise(metadata, self.inner.data.cols_out());
     }
 
     fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE> {
+        self.inner.noise = None;
         GGLWEBackendMut::from_inner(GGLWE {
-            noise: crate::layouts::LWEInfos::noise(&self.inner),
+            noise: None,
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
@@ -502,14 +501,13 @@ impl<BE: Backend> GGLWEPreparedToBackendRef<BE> for GGLWEPreparedViewMut<'_, BE>
 
 impl<BE: Backend> GGLWEPreparedToBackendMut<BE> for GGLWEPreparedViewMut<'_, BE> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        crate::layouts::validate_noise_components(metadata.as_ref(), self.inner.data.cols_out())
-            .expect("noise component count does not match the ciphertext");
-        self.inner.noise = metadata;
+        self.inner.noise = crate::layouts::checked_noise(metadata, self.inner.data.cols_out());
     }
 
     fn to_backend_mut(&mut self) -> GGLWEPreparedBackendMut<'_, BE> {
+        self.inner.noise = None;
         GGLWEPrepared {
-            noise: crate::layouts::LWEInfos::noise(&self.inner),
+            noise: None,
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
@@ -534,14 +532,13 @@ impl<BE: Backend> GGSWToBackendRef<BE> for GGSWViewMut<'_, BE> {
 
 impl<BE: Backend> GGSWToBackendMut<BE> for GGSWViewMut<'_, BE> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        crate::layouts::validate_noise_components(metadata.as_ref(), self.inner.data.cols_out())
-            .expect("noise component count does not match the ciphertext");
-        self.inner.noise = metadata;
+        self.inner.noise = crate::layouts::checked_noise(metadata, self.inner.data.cols_out());
     }
 
     fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE> {
+        self.inner.noise = None;
         GGSWBackendMut::from_inner(GGSW {
-            noise: crate::layouts::LWEInfos::noise(&self.inner),
+            noise: None,
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
@@ -564,14 +561,13 @@ impl<BE: Backend> GGSWPreparedToBackendRef<BE> for GGSWPreparedViewMut<'_, BE> {
 
 impl<BE: Backend> GGSWPreparedToBackendMut<BE> for GGSWPreparedViewMut<'_, BE> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        crate::layouts::validate_noise_components(metadata.as_ref(), self.inner.data.cols_out())
-            .expect("noise component count does not match the ciphertext");
-        self.inner.noise = metadata;
+        self.inner.noise = crate::layouts::checked_noise(metadata, self.inner.data.cols_out());
     }
 
     fn to_backend_mut(&mut self) -> GGSWPreparedBackendMut<'_, BE> {
+        self.inner.noise = None;
         GGSWPrepared {
-            noise: crate::layouts::LWEInfos::noise(&self.inner),
+            noise: None,
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,

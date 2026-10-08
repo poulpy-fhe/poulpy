@@ -93,9 +93,7 @@ pub trait CKKSMulReference<BE: Backend> {
             StampOrder::BeforeApply,
             scratch,
             |tmp, _dst, s| self.glwe_tensor_apply(cnv_offset, tmp, a, b, s),
-        )?;
-        dst.set_noise(None);
-        Ok(())
+        )
     }
 
     fn ckks_mul_assign_reference<Dst, A, T>(
@@ -135,9 +133,7 @@ pub trait CKKSMulReference<BE: Backend> {
             StampOrder::AfterApply,
             scratch,
             |tmp, dst_ref, s| self.glwe_tensor_apply(cnv_offset, tmp, dst_ref, a, s),
-        )?;
-        dst.set_noise(None);
-        Ok(())
+        )
     }
 
     fn ckks_prepare_right_reference<A>(&self, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
@@ -209,13 +205,8 @@ pub trait CKKSMulReference<BE: Backend> {
             },
             StampOrder::AfterApply,
             scratch,
-            |tmp, dst_ref, s| {
-                self.glwe_tensor_apply_prepared_right(cnv_offset, tmp, dst_ref, &prepared.prep, prepared.size, s);
-                GLWEToBackendMut::<BE>::set_noise(tmp, None);
-            },
-        )?;
-        dst.set_noise(None);
-        Ok(())
+            |tmp, dst_ref, s| self.glwe_tensor_apply_prepared_right(cnv_offset, tmp, dst_ref, &prepared.prep, prepared.size, s),
+        )
     }
 
     fn ckks_square_tmp_bytes_reference<R, A, T>(&self, res: &R, a: &A, tsk: &T) -> usize
@@ -283,9 +274,7 @@ pub trait CKKSMulReference<BE: Backend> {
             StampOrder::BeforeApply,
             scratch,
             |tmp, _dst, s| self.glwe_tensor_square_apply(cnv_offset, tmp, a, s),
-        )?;
-        dst.set_noise(None);
-        Ok(())
+        )
     }
 
     fn ckks_square_assign_reference<Dst, T>(&self, dst: &mut Dst, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -319,9 +308,7 @@ pub trait CKKSMulReference<BE: Backend> {
             StampOrder::AfterApply,
             scratch,
             |tmp, dst_ref, s| self.glwe_tensor_square_apply(cnv_offset, tmp, dst_ref, s),
-        )?;
-        dst.set_noise(None);
-        Ok(())
+        )
     }
 
     fn ckks_mul_pt_vec_tmp_bytes_reference<R, A>(&self, res: &R, a: &A, b_k: TorusPrecision) -> usize
@@ -378,7 +365,6 @@ pub trait CKKSMulReference<BE: Backend> {
         dst.set_log_sparsity(a.log_sparsity().min(pt.log_sparsity()));
         dst.set_slots(a.slots().join(pt.slots()));
         self.glwe_mul_plain(cnv_offset, dst, a, pt, scratch);
-        dst.set_noise(None);
         Ok(())
     }
 
@@ -406,7 +392,6 @@ pub trait CKKSMulReference<BE: Backend> {
             dst.set_slots(slots);
             self.glwe_mul_plain(cnv_offset, dst, &input, pt, &mut op_scratch);
         });
-        dst.set_noise(None);
         Ok(())
     }
 
@@ -436,7 +421,6 @@ pub trait CKKSMulReference<BE: Backend> {
         dst.set_slots(a.slots());
         self.glwe_mul_const(cnv_offset, dst, a, pt, pt_coeff, scratch);
 
-        dst.set_noise(None);
         Ok(())
     }
 
@@ -460,7 +444,6 @@ pub trait CKKSMulReference<BE: Backend> {
             dst.set_log_delta(res_log_delta);
             self.glwe_mul_const(cnv_offset, dst, &input, cnst, cnst_coeff, &mut op_scratch);
         });
-        dst.set_noise(None);
         Ok(())
     }
 }

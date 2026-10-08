@@ -119,7 +119,6 @@ where
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        res.set_noise(None);
         let scratch = scratch.borrow();
         assert_eq!(res.rank(), a.rank());
         let b_size = b.size();
@@ -193,7 +192,6 @@ where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        res.set_noise(None);
         let mut scratch = scratch.borrow();
         assert!(
             scratch.available() >= self.glwe_mul_const_tmp_bytes_reference(res, res, b),
@@ -306,7 +304,6 @@ where
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
     {
-        res.set_noise(None);
         let scratch = scratch.borrow();
         assert_eq!(res.rank(), a.rank());
         assert!(
@@ -394,7 +391,6 @@ where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
     {
-        res.set_noise(None);
         let mut scratch = scratch.borrow();
         assert!(
             scratch.available() >= self.glwe_mul_plain_tmp_bytes_reference(res, res, a),
@@ -710,7 +706,6 @@ where
         A: GLWEToBackendRef<BE> + GLWEInfos,
         H: GetTensorKey<BE>,
     {
-        res.set_noise(None);
         let tsk = &tsk.get_tensor_key(a.k()).unwrap_or_else(|e| panic!("{e}"));
         let scratch = scratch.borrow();
         assert!(
@@ -824,7 +819,6 @@ where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        res.set_noise(None);
         let scratch = scratch.borrow();
         assert!(
             scratch.available() >= self.glwe_tensor_square_apply_tmp_bytes_reference(res, a),
@@ -914,7 +908,6 @@ where
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        res.set_noise(None);
         let scratch = scratch.borrow();
         assert!(
             scratch.available() >= self.glwe_tensor_apply_tmp_bytes_reference(res, a, b),
@@ -1004,7 +997,6 @@ fn glwe_tensor_square_apply_symmetric<BE, M, R, AP, BP>(
     AP: CnvPVecLToBackendRef<BE>,
     BP: CnvPVecRToBackendRef<BE>,
 {
-    res.set_noise(None);
     let cols = res.rank().as_usize() + 1;
     let (mut diag_terms, mut scratch) = scratch.borrow().take_vec_znx_scratch(res.n().as_usize(), cols, res.size());
 
@@ -1150,7 +1142,6 @@ pub(crate) fn glwe_tensor_apply_loop<BE, M, R, AP, BP>(
     AP: CnvPVecLToBackendRef<BE>,
     BP: CnvPVecRToBackendRef<BE>,
 {
-    res.set_noise(None);
     let res_base2k: usize = res.base2k().as_usize();
     let cols: usize = res.rank().as_usize() + 1;
 
@@ -1373,7 +1364,6 @@ pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
     A: GLWEToBackendRef<BE> + GLWEInfos,
     BP: CnvPVecRToBackendRef<BE>,
 {
-    res.set_noise(None);
     let ab_base2k: usize = a.base2k().as_usize();
     let a_k = a.k().as_usize();
     let a_size: usize = a_k.div_ceil(ab_base2k);
@@ -1515,7 +1505,6 @@ where
         A: GLWEToBackendRef<BE>,
         B: GLWEToBackendRef<BE>,
     {
-        res.set_noise(None);
         res.set_canonical(false);
         let res = &mut res.to_backend_mut();
         let a = &a.to_backend_ref();
@@ -1562,7 +1551,6 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
-        res.set_noise(None);
         res.set_canonical(false);
         let mut res = res.to_backend_mut();
         let a = a.to_backend_ref();
@@ -1600,7 +1588,6 @@ where
         A: GLWEToBackendRef<BE>,
         B: GLWEToBackendRef<BE>,
     {
-        res.set_noise(None);
         res.set_canonical(false);
         let mut res = res.to_backend_mut();
         let a = a.to_backend_ref();
@@ -1646,7 +1633,6 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
-        res.set_noise(None);
         res.set_canonical(false);
         let mut res = res.to_backend_mut();
         let a = a.to_backend_ref();
@@ -1681,7 +1667,6 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
-        res.set_noise(None);
         res.set_canonical(keeps_canonical_digits::<BE, _, _>(res, a));
         let mut res = res.to_backend_mut();
         let a = a.to_backend_ref();
@@ -1699,7 +1684,6 @@ where
     where
         R: GLWEToBackendMut<BE>,
     {
-        res.set_noise(None);
         let mut res = res.to_backend_mut();
 
         operand_degree(self.n(), &[res.n()]);
@@ -1725,7 +1709,6 @@ where
     where
         R: GLWEToBackendMut<BE>,
     {
-        res.set_noise(None);
         res.set_canonical(true);
         let mut res = res.to_backend_mut();
 
@@ -1764,7 +1747,6 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
-        res.set_noise(None);
         res.set_canonical(keeps_canonical_digits::<BE, _, _>(res, a));
         let mut res = res.to_backend_mut();
         let a = a.to_backend_ref();
@@ -1787,7 +1769,6 @@ where
     where
         R: GLWEToBackendMut<BE>,
     {
-        res.set_noise(None);
         let mut res = res.to_backend_mut();
 
         assert!(
@@ -1827,7 +1808,6 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
-        res.set_noise(None);
         res.set_canonical(false);
         let res = &mut res.to_backend_mut();
         let a = &a.to_backend_ref();
@@ -1844,7 +1824,6 @@ where
     where
         R: GLWEToBackendMut<BE>,
     {
-        res.set_noise(None);
         res.set_canonical(false);
         let res = &mut res.to_backend_mut();
 
@@ -1895,44 +1874,46 @@ where
         };
         let rank = res.to_backend_ref().rank().as_usize();
         let noise = if res.to_backend_ref().k() >= a.to_backend_ref().k() {
-            a.to_backend_ref().noise().map(|noise| noise.with_rank(rank))
+            a.to_backend_ref().noise()
         } else {
             None
         };
-        res.set_noise(noise);
         res.set_canonical(!raw || a.is_canonical());
-        let mut res = res.to_backend_mut();
-        let a = a.to_backend_ref();
+        {
+            let mut res = res.to_backend_mut();
+            let a = a.to_backend_ref();
 
-        operand_degree(self.n(), &[res.n(), a.n()]);
-        assert!(res.rank() == a.rank() || a.rank() == 0);
+            operand_degree(self.n(), &[res.n(), a.n()]);
+            assert!(res.rank() == a.rank() || a.rank() == 0);
 
-        let min_rank: usize = res.rank().min(a.rank()).as_usize() + 1;
-        if raw {
-            for i in 0..min_rank {
-                self.vec_znx_copy(&mut res.data, i, &a.data, i);
+            let min_rank: usize = res.rank().min(a.rank()).as_usize() + 1;
+            if raw {
+                for i in 0..min_rank {
+                    self.vec_znx_copy(&mut res.data, i, &a.data, i);
+                }
+            } else {
+                let base2k = res.base2k().as_usize();
+                let k = res.k().as_usize();
+                for i in 0..min_rank {
+                    self.vec_znx_normalize(
+                        &mut res.data,
+                        base2k,
+                        k,
+                        0,
+                        i,
+                        &a.data,
+                        a.base2k().as_usize(),
+                        i,
+                        &mut scratch.borrow(),
+                    );
+                }
             }
-        } else {
-            let base2k = res.base2k().as_usize();
-            let k = res.k().as_usize();
-            for i in 0..min_rank {
-                self.vec_znx_normalize(
-                    &mut res.data,
-                    base2k,
-                    k,
-                    0,
-                    i,
-                    &a.data,
-                    a.base2k().as_usize(),
-                    i,
-                    &mut scratch.borrow(),
-                );
+
+            for i in min_rank..(res.rank() + 1).into() {
+                self.vec_znx_zero(&mut res.data, i);
             }
         }
-
-        for i in min_rank..(res.rank() + 1).into() {
-            self.vec_znx_zero(&mut res.data, i);
-        }
+        res.set_noise(noise.map(|noise| noise.with_rank(rank)));
     }
 }
 
@@ -2002,7 +1983,6 @@ where
     where
         R: GLWEToBackendMut<BE>,
     {
-        res.set_noise(None);
         res.set_canonical(true);
         let res = &mut res.to_backend_mut();
         assert!(
@@ -2049,7 +2029,6 @@ where
     where
         R: GLWEToBackendMut<BE>,
     {
-        res.set_noise(None);
         let was_canonical: bool = res.is_canonical();
         res.set_canonical(true);
         let res = &mut res.to_backend_mut();
@@ -2083,7 +2062,6 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
-        res.set_noise(None);
         res.set_canonical(true);
         let res = &mut res.to_backend_mut();
         let a = &a.to_backend_ref();
@@ -2124,7 +2102,6 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
-        res.set_noise(None);
         res.set_canonical(false);
         let res = &mut res.to_backend_mut();
         let a = &a.to_backend_ref();
@@ -2151,7 +2128,6 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
-        res.set_noise(None);
         res.set_canonical(false);
         let res = &mut res.to_backend_mut();
         let a = &a.to_backend_ref();
@@ -2202,7 +2178,6 @@ where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
-        res.set_noise(None);
         res.set_canonical(true);
         let mut res = res.to_backend_mut();
         let a = a.to_backend_ref();
@@ -2239,7 +2214,6 @@ where
     where
         R: GLWEToBackendMut<BE>,
     {
-        res.set_noise(None);
         res.set_canonical(true);
         let mut res = res.to_backend_mut();
 

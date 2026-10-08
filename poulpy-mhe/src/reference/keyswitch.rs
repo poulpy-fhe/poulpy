@@ -138,7 +138,7 @@ where
             res,
             Some(
                 ComponentNoise::from_secret_at(*sk_out.to_backend_ref().dist(), res.k(), res.rank().as_usize())
-                    .with_body_noise(FreshNoiseEstimate::new(super::flood_variance(flood) + rounding, res.k())),
+                    .with_body_noise(FreshNoiseEstimate::new(flood.variance() + rounding, res.k())),
             ),
         );
         scratch.wipe(tmp_bytes);
@@ -184,7 +184,6 @@ where
         );
         self.glwe_add_into(res, ct, share);
         self.glwe_normalize_assign(res, scratch);
-        res.set_noise(None);
     }
 }
 
@@ -360,6 +359,5 @@ where
         res.set_canonical(false);
         self.vec_znx_add_assign(res.to_backend_mut().data_mut(), 0, ct.to_backend_ref().data(), 0);
         self.glwe_normalize_assign(res, scratch);
-        res.set_noise(None);
     }
 }

@@ -71,11 +71,7 @@ where
         P: ScalarZnxToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        let metadata = Some(crate::ComponentNoise::from_secret_at(
-            sk.to_backend_ref().dist,
-            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
-            crate::layouts::GLWEInfos::rank(&res.to_backend_ref()).as_usize(),
-        ));
+        let metadata = crate::component_noise::fresh_sk_noise(sk.to_backend_ref().dist, &res.to_backend_ref());
         {
             let base2k: usize = res.base2k().into();
             let rank: usize = res.rank().into();

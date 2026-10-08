@@ -67,18 +67,13 @@ a nonzero secret distribution.
 
 Seeded share aggregation checks compatible base laws and adds independent
 component variances after bringing them to the same precision, while also adding secret
-party counts. Public-key ciphertext and tensor-key shares retain the destination
+party counts; an untagged share leaves the aggregate untagged. Public-key ciphertext and tensor-key shares retain the destination
 secret count. Their raw variances include public-key error multiplied by new
 ephemerals, fresh mask error, and body noise. Secret weighting is applied only
 when computing the phase estimate.
-Public-key encryption derives an intermediate sampling precision and multiplies
-only the required prefix of prepared-key limbs. The selector brings inherited
-key error, amplified prefix-truncation error and fresh error below the modeled
-output-rounding variance when possible. Final normalization occurs once, at the
-share's precision; `noise()` records the resulting component estimates on that output
-grid. A deliberately selected flood is added afterward at the output precision
-and is excluded from this precision-selection target. Missing or unbounded
-provenance, or an unattainable target, selects the full key precision.
+Public-key encryption draws its fresh errors and normalizes once at the share's
+precision; `noise()` records the resulting component estimates on that grid. A
+deliberate flood replaces the body error at the same precision.
 For a centered base secret law the independent ephemeral contributions give
 additive variances. For a noncentered law, reusing a public key correlates its
 error across shares; each component uses the conservative squared sum of

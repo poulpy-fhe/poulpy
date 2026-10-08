@@ -13,9 +13,7 @@ where
     Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     let one = crate::reference::carry_verb::ckks_one_pt(module, dst.base2k())?;
-    module.ckks_add_pt_const_assign(dst, 0, &one, 0, scratch)?;
-    dst.set_noise(None);
-    Ok(())
+    module.ckks_add_pt_const_assign(dst, 0, &one, 0, scratch)
 }
 pub(crate) fn ckks_sub_one_assign_derived<BE: Backend, Dst>(
     module: &Module<BE>,
@@ -27,7 +25,5 @@ where
     Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     let one = crate::reference::carry_verb::ckks_one_pt(module, dst.base2k())?;
-    module.ckks_sub_pt_const_assign(dst, 0, &one, 0, scratch)?;
-    dst.set_noise(None);
-    Ok(())
+    module.ckks_sub_pt_const_assign(dst, 0, &one, 0, scratch)
 }

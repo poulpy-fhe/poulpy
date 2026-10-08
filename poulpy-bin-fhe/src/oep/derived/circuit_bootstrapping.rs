@@ -39,8 +39,6 @@ pub(crate) fn circuit_bootstrapping_execute_to_constant_derived<R, L, M, BRA, BE
 {
     let plan = key.prepare_to_constant(module, res, log_domain, extension_factor);
     plan.execute(module, res, lwe, key, scratch);
-
-    res.set_noise(None);
 }
 pub(crate) fn circuit_bootstrapping_execute_to_exponent_derived<R, L, M, BRA, BE>(
     module: &M,
@@ -60,8 +58,6 @@ pub(crate) fn circuit_bootstrapping_execute_to_exponent_derived<R, L, M, BRA, BE
 {
     let plan = key.prepare_to_exponent(module, log_gap_out, res, log_domain, extension_factor);
     plan.execute(module, res, lwe, key, scratch);
-
-    res.set_noise(None);
 }
 
 pub(crate) fn circuit_bootstrapping_execute_tmp_bytes_derived<R, A, M, BRA, BE>(

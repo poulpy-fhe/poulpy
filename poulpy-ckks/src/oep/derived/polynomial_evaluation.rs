@@ -89,7 +89,6 @@ where
     ) {
         module.ckks_mul_assign(dst, src, tsk, scratch)?;
     }
-    dst.set_noise(None);
     Ok(())
 }
 
@@ -130,6 +129,5 @@ where
     ) {
         module.ckks_mul_assign(dst, src, tsk, scratch)?;
     }
-    dst.set_noise(None);
     Ok(())
 }

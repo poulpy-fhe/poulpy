@@ -313,7 +313,7 @@ impl<'a, BE: Backend + 'a> GGLWEBackendMut<'a, BE> {
         GLWEViewRef::from_inner(gglwe_at_backend_ref_from_mut::<BE>(&self.inner, row, col))
     }
 
-    /// Metadata changes on this row view are local; update the owner after changing coefficients.
+    /// Clears the owner's component noise metadata.
     pub fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE> {
         GLWEViewMut::from_inner(gglwe_at_backend_mut_from_mut::<BE>(&mut self.inner, row, col))
     }
@@ -368,14 +368,13 @@ impl<BE: Backend> GGLWEToBackendRef<BE> for GGLWEBackendMut<'_, BE> {
 
 impl<BE: Backend> GGLWEToBackendMut<BE> for GGLWEBackendMut<'_, BE> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        crate::layouts::validate_noise_components(metadata.as_ref(), crate::layouts::GLWEInfos::rank(self).as_usize() + 1)
-            .expect("noise component count does not match the ciphertext");
-        self.inner.noise = metadata;
+        self.inner.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
     }
 
     fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE> {
+        self.inner.noise = None;
         GGLWEBackendMut::from_inner(GGLWE {
-            noise: crate::layouts::LWEInfos::noise(&self.inner),
+            noise: None,
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
@@ -504,24 +503,26 @@ pub(crate) fn gglwe_at_backend_ref_from_mut<'a, 'b, BE: Backend>(
 impl<D: Data, W: ZnxWord> GGLWE<D, W> {
     /// Returns a mutable reference to the underlying [`MatZnx`].
     pub fn data_mut(&mut self) -> &mut MatZnx<D, W> {
+        self.noise = None;
         &mut self.data
     }
 }
 
 /// Backend-native mutable view of one GLWE row.
 pub trait GGLWEAtBackendMut<BE: Backend> {
-    /// Metadata changes on this entry view are local; update the owner after changing coefficients.
+    /// Clears the owner's component noise metadata.
     fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord>;
 }
 
 impl<BE: Backend> GGLWEAtBackendMut<BE> for GGLWE<BE::OwnedBuf, BE::ZnxWord> {
-    /// Metadata changes on this entry view are local; update the owner after changing coefficients.
+    /// Clears the owner's component noise metadata.
     fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
         let base2k = self.base2k;
         let k = self.k();
         let data = <MatZnx<BE::OwnedBuf, BE::ZnxWord> as MatZnxAtBackendMut<BE>>::at_backend_mut(&mut self.data, row, col);
+        self.noise = None;
         GLWE {
-            noise: self.noise.clone(),
+            noise: None,
             base2k,
             k,
             canonical: true,
@@ -538,8 +539,9 @@ pub(crate) fn gglwe_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
     let base2k = gglwe.base2k;
     let k = gglwe.k();
     let data = poulpy_hal::layouts::mat_znx_at_backend_mut_from_mut::<BE>(&mut gglwe.data, row, col);
+    gglwe.noise = None;
     GLWE {
-        noise: gglwe.noise.clone(),
+        noise: None,
         base2k,
         k,
         canonical: true,
@@ -602,8 +604,9 @@ impl<D: HostDataMut, W: ZnxWord> GGLWE<D, W> {
         let base2k = self.base2k;
         let k = self.k();
         let data = self.data.at_mut(row, col);
+        self.noise = None;
         GLWE {
-            noise: self.noise.clone(),
+            noise: None,
             base2k,
             k,
             canonical: true,
@@ -722,9 +725,7 @@ pub trait GGLWEToBackendMut<BE: Backend>: GGLWEToBackendRef<BE> {
     /// Backend hook for recording or propagating component noise metadata.
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
 
-    /// Borrows coefficients and copies the current layout and component noise metadata.
-    /// Metadata changed on the returned view is local to that view. Operations
-    /// that update the owner must call its `set_noise` hook.
+    /// Borrows coefficients mutably and clears the owner's component noise metadata.
     fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE>;
 }
 
@@ -733,14 +734,13 @@ where
     MatZnx<D, BE::ZnxWord>: MatZnxToBackendRef<BE> + MatZnxToBackendMut<BE>,
 {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        crate::layouts::validate_noise_components(metadata.as_ref(), crate::layouts::GLWEInfos::rank(self).as_usize() + 1)
-            .expect("noise component count does not match the ciphertext");
-        self.noise = metadata;
+        self.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
     }
 
     fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE> {
+        self.noise = None;
         GGLWEBackendMut::from_inner(GGLWE {
-            noise: crate::layouts::LWEInfos::noise(&self),
+            noise: None,
             base2k: self.base2k(),
             dsize: self.dsize(),
             k_aux: self.k_aux(),
@@ -763,14 +763,13 @@ impl<BE: Backend> GGLWEToBackendRef<BE> for &mut GGLWE<BE::BufMut<'_>, BE::ZnxWo
 
 impl<BE: Backend> GGLWEToBackendMut<BE> for &mut GGLWE<BE::BufMut<'_>, BE::ZnxWord> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        crate::layouts::validate_noise_components(metadata.as_ref(), crate::layouts::GLWEInfos::rank(self).as_usize() + 1)
-            .expect("noise component count does not match the ciphertext");
-        self.noise = metadata;
+        self.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
     }
 
     fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE> {
+        self.noise = None;
         GGLWEBackendMut::from_inner(GGLWE {
-            noise: crate::layouts::LWEInfos::noise(&self),
+            noise: None,
             base2k: self.base2k(),
             dsize: self.dsize(),
             k_aux: self.k_aux(),

@@ -99,6 +99,4 @@ pub fn lwe_matrix_decrypt_reference<BE, R, P, S>(
         );
     }
     scratch.wipe(tmp_bytes);
-
-    pt.set_noise(None);
 }

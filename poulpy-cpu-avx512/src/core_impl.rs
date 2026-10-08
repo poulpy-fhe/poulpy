@@ -530,7 +530,6 @@ fn rank_one_tensor_apply<BE, R, A, B>(
         module.glwe_normalize(&mut b_tmp, b, &mut scratch.borrow());
         b_tmp.to_backend_ref()
     };
-    res.set_noise(None);
     res.set_canonical(true);
     let base2k = a.base2k().as_usize();
     assert_eq!(b.base2k().as_usize(), base2k);
@@ -591,7 +590,6 @@ fn rank_one_tensor_square<BE, R, A>(
         module.glwe_normalize(&mut a_tmp, a, &mut scratch.borrow());
         a_tmp.to_backend_ref()
     };
-    res.set_noise(None);
     res.set_canonical(true);
     let base2k = a.base2k().as_usize();
     let a_size = a.k().as_usize().div_ceil(base2k);
@@ -749,7 +747,6 @@ macro_rules! impl_rank_one_tensoring {
                     1,
                     &mut scratch,
                 );
-                res.set_noise(None);
                 res.set_canonical(true);
                 let mut res = res.to_backend_mut();
                 for i in 0..cols {
@@ -1082,7 +1079,6 @@ fn ifma_prepared_tensor<R, A, BP>(
         module.glwe_normalize(&mut normalized, a, &mut work);
         normalized.to_backend_ref()
     };
-    res.set_noise(None);
     res.set_canonical(true);
     let (mut left, mut work) = work.take_cnv_pvec_left_scratch(n, 2, a_size, PrepareHint::Reuse);
     module.cnv_prepare_left(&mut left, a.data(), &mut work);

@@ -37,7 +37,6 @@ pub trait CKKSNegReference<BE: Backend> {
             dst.set_log_budget(src.log_budget());
             self.glwe_negate(dst, src);
         }
-        dst.set_noise(None);
         Ok(())
     }
 
@@ -47,7 +46,6 @@ pub trait CKKSNegReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
     {
         self.glwe_negate_assign(dst);
-        dst.set_noise(None);
         Ok(())
     }
 }

@@ -268,7 +268,6 @@ where
     module.ckks_add_into(output, &root, &conj, scratch)?;
     // `root + conj(root) = 2·Re(root)`.
     output.set_slots(SlotsKind::Real);
-    output.set_noise(None);
     Ok(())
 }
 
@@ -327,6 +326,5 @@ where
     let mut conj = module.ckks_ciphertext_alloc(base2k, w_minus.k());
     module.ckks_conjugate_into(&mut conj, &w_minus, keys.conjugation_key(), scratch)?;
     module.ckks_add_into(output, &w_plus, &conj, scratch)?;
-    output.set_noise(None);
     Ok(())
 }

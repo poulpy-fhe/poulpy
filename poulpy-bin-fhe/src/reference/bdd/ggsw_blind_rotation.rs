@@ -63,6 +63,4 @@ pub fn scalar_to_ggsw_blind_rotation_reference<T: UnsignedInteger, BE, R, A, K>(
             );
         }
     }
-
-    res.set_noise(None);
 }

@@ -76,11 +76,7 @@ where
         P: GLWEToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        let metadata = Some(crate::ComponentNoise::from_secret_at(
-            sk.to_backend_ref().dist,
-            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
-            crate::layouts::GLWEInfos::rank(&res.to_backend_ref()).as_usize(),
-        ));
+        let metadata = crate::component_noise::fresh_sk_noise(sk.to_backend_ref().dist, &res.to_backend_ref());
         {
             {
                 let mut res_backend = res.to_backend_mut();
@@ -122,11 +118,7 @@ where
         R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        let metadata = Some(crate::ComponentNoise::from_secret_at(
-            sk.to_backend_ref().dist,
-            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
-            crate::layouts::GLWEInfos::rank(&res.to_backend_ref()).as_usize(),
-        ));
+        let metadata = crate::component_noise::fresh_sk_noise(sk.to_backend_ref().dist, &res.to_backend_ref());
         {
             let mut res_backend = res.to_backend_mut();
             assert!(

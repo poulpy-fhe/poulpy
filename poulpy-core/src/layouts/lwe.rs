@@ -208,6 +208,7 @@ impl<D: Data, W: ZnxWord> LWE<D, W> {
 
     /// Returns a mutable reference to the body [`VecZnx`] (n = 1).
     pub fn body_mut(&mut self) -> &mut VecZnx<D, W> {
+        self.noise = None;
         &mut self.body
     }
 
@@ -218,6 +219,7 @@ impl<D: Data, W: ZnxWord> LWE<D, W> {
 
     /// Returns a mutable reference to the mask [`VecZnx`] (n = lwe_dim).
     pub fn mask_mut(&mut self) -> &mut VecZnx<D, W> {
+        self.noise = None;
         &mut self.mask
     }
 
@@ -371,9 +373,7 @@ pub trait LWEToBackendMut<BE: Backend>: LWEToBackendRef<BE> {
     /// Backend hook for recording or propagating component noise metadata.
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
 
-    /// Borrows coefficients and copies the current layout and component noise metadata.
-    /// Metadata changed on the returned view is local to that view. Operations
-    /// that update the owner must call its `set_noise` hook.
+    /// Borrows coefficients mutably and clears the owner's component noise metadata.
     fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE>;
 }
 
@@ -382,14 +382,13 @@ where
     VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE> + VecZnxToBackendMut<BE>,
 {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        crate::layouts::validate_noise_components(metadata.as_ref(), crate::layouts::LWEInfos::n(self).as_usize() + 1)
-            .expect("noise component count does not match the ciphertext");
-        self.noise = metadata;
+        self.noise = crate::layouts::checked_noise(metadata, crate::layouts::LWEInfos::n(self).as_usize() + 1);
     }
 
     fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE> {
+        self.noise = None;
         LWE {
-            noise: self.noise.clone(),
+            noise: None,
             base2k: self.base2k,
             k: self.k,
             body: self.body.to_backend_mut(),
@@ -412,14 +411,13 @@ impl<BE: Backend> LWEToBackendRef<BE> for &mut LWE<BE::BufMut<'_>, BE::ZnxWord> 
 
 impl<BE: Backend> LWEToBackendMut<BE> for &mut LWE<BE::BufMut<'_>, BE::ZnxWord> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        crate::layouts::validate_noise_components(metadata.as_ref(), crate::layouts::LWEInfos::n(self).as_usize() + 1)
-            .expect("noise component count does not match the ciphertext");
-        self.noise = metadata;
+        self.noise = crate::layouts::checked_noise(metadata, crate::layouts::LWEInfos::n(self).as_usize() + 1);
     }
 
     fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE> {
+        self.noise = None;
         LWE {
-            noise: self.noise.clone(),
+            noise: None,
             base2k: self.base2k,
             k: self.k,
             body: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE>(&mut self.body),

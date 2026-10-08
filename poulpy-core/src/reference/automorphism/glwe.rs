@@ -96,7 +96,6 @@ pub fn glwe_automorphism_reference<BE, M, R, A>(
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
 {
-    res.set_noise(None);
     let p = key.p();
     let key = key.to_backend_ref();
     assert!(
@@ -124,7 +123,6 @@ pub fn glwe_automorphism_assign_reference<BE, M, R>(
     M: GLWEAutomorphismReference<BE> + GLWEKeyswitch<BE> + VecZnxAutomorphismAssign<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
 {
-    res.set_noise(None);
     let p = key.p();
     let key = key.to_backend_ref();
     assert!(
@@ -165,7 +163,6 @@ pub fn glwe_automorphism_add_reference<BE, M, R, A>(
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
 {
-    res.set_noise(None);
     let p = key.p();
     let key = key.to_backend_ref();
     assert!(
@@ -245,7 +242,6 @@ pub fn glwe_automorphism_add_assign_reference<BE, M, R>(
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
 {
-    res.set_noise(None);
     let p = key.p();
     let key = key.to_backend_ref();
     assert!(
@@ -326,7 +322,6 @@ pub fn glwe_automorphism_sub_reference<BE, M, R, A>(
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
 {
-    res.set_noise(None);
     let p = key.p();
     let key = key.to_backend_ref();
     assert!(
@@ -407,7 +402,6 @@ pub fn glwe_automorphism_sub_negate_reference<BE, M, R, A>(
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
 {
-    res.set_noise(None);
     let p = key.p();
     let key = key.to_backend_ref();
     assert!(
@@ -486,7 +480,6 @@ pub fn glwe_automorphism_sub_assign_reference<BE, M, R>(
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
 {
-    res.set_noise(None);
     let p = key.p();
     let key = key.to_backend_ref();
     assert!(
@@ -564,7 +557,6 @@ pub fn glwe_automorphism_sub_negate_assign_reference<BE, M, R>(
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
 {
-    res.set_noise(None);
     let p = key.p();
     let key = key.to_backend_ref();
     assert!(

@@ -68,6 +68,7 @@ impl<D: Data, W: ZnxWord> GLWEPublicKey<D, W> {
     }
 
     pub fn data_mut(&mut self) -> &mut MatZnx<D, W> {
+        self.noise = None;
         &mut self.data
     }
 }
@@ -81,7 +82,8 @@ impl<D: HostDataRef, W: ZnxWord> GLWEPublicKey<D, W> {
 
 impl<D: HostDataMut, W: ZnxWord> GLWEPublicKey<D, W> {
     pub fn at_mut(&mut self, l: usize) -> GLWE<&mut [u8], W> {
-        entry(self.data.at_mut(0, l), self.base2k, self.k, self.noise.clone())
+        self.noise = None;
+        entry(self.data.at_mut(0, l), self.base2k, self.k, None)
     }
 }
 
@@ -123,11 +125,12 @@ impl<BE: Backend> GLWEPublicKeyAtViewRef<BE> for GLWEPublicKey<BE::OwnedBuf, BE:
 
 impl<BE: Backend> GLWEPublicKeyAtViewMut<BE> for GLWEPublicKey<BE::OwnedBuf, BE::ZnxWord> {
     fn at_view_mut(&mut self, l: usize) -> GLWEViewMut<'_, BE> {
+        self.noise = None;
         GLWEViewMut::from_inner(entry(
             MatZnxAtBackendMut::<BE>::at_backend_mut(&mut self.data, 0, l),
             self.base2k,
             self.k,
-            self.noise.clone(),
+            None,
         ))
     }
 }
@@ -159,11 +162,12 @@ impl<BE: Backend> GLWEPublicKeyAtViewRef<BE> for GLWEPublicKeyBackendMut<'_, BE>
 impl<BE: Backend> GLWEPublicKeyAtViewMut<BE> for GLWEPublicKeyBackendMut<'_, BE> {
     fn at_view_mut(&mut self, l: usize) -> GLWEViewMut<'_, BE> {
         let pk = &mut self.inner;
+        pk.noise = None;
         GLWEViewMut::from_inner(entry(
             mat_znx_at_backend_mut_from_mut::<BE>(&mut pk.data, 0, l),
             pk.base2k,
             pk.k,
-            pk.noise.clone(),
+            None,
         ))
     }
 }
@@ -483,14 +487,13 @@ impl<BE: Backend> GLWEPublicKeyToBackendRef<BE> for GLWEPublicKeyBackendMut<'_, 
 
 impl<BE: Backend> GLWEPublicKeyToBackendMut<BE> for GLWEPublicKeyBackendMut<'_, BE> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        crate::layouts::validate_noise_components(metadata.as_ref(), crate::layouts::GLWEInfos::rank(self).as_usize() + 1)
-            .expect("noise component count does not match the ciphertext");
-        self.inner.noise = metadata;
+        self.inner.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
     }
 
     fn to_backend_mut(&mut self) -> GLWEPublicKeyBackendMut<'_, BE> {
+        self.inner.noise = None;
         GLWEPublicKeyBackendMut::from_inner(GLWEPublicKey {
-            noise: self.inner.noise.clone(),
+            noise: None,
             data: mat_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
             base2k: self.inner.base2k,
             k: self.inner.k,
@@ -522,9 +525,7 @@ pub trait GLWEPublicKeyToBackendMut<BE: Backend> {
     /// Records component noise metadata on this key.
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
 
-    /// Borrows coefficients and copies the current layout and component noise metadata.
-    /// Metadata changed on the returned view is local to that view. Operations
-    /// that update the owner must call its `set_noise` hook.
+    /// Borrows coefficients mutably and clears the owner's component noise metadata.
     fn to_backend_mut(&mut self) -> GLWEPublicKeyBackendMut<'_, BE>;
 }
 
@@ -533,14 +534,13 @@ where
     MatZnx<D, BE::ZnxWord>: MatZnxToBackendMut<BE>,
 {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        crate::layouts::validate_noise_components(metadata.as_ref(), crate::layouts::GLWEInfos::rank(self).as_usize() + 1)
-            .expect("noise component count does not match the ciphertext");
-        self.noise = metadata;
+        self.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
     }
 
     fn to_backend_mut(&mut self) -> GLWEPublicKeyBackendMut<'_, BE> {
+        self.noise = None;
         GLWEPublicKeyBackendMut::from_inner(GLWEPublicKey {
-            noise: self.noise.clone(),
+            noise: None,
             data: self.data.to_backend_mut(),
             base2k: self.base2k,
             k: self.k,

@@ -272,8 +272,10 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEAutomorphismKey<D, W> {
     /// Deserialises from little-endian binary format.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.key.noise = None;
-        self.p = reader.read_u64::<LittleEndian>()? as i64;
-        self.key.read_from(reader)
+        let p = reader.read_u64::<LittleEndian>()? as i64;
+        self.key.read_from(reader)?;
+        self.p = p;
+        Ok(())
     }
 }
 

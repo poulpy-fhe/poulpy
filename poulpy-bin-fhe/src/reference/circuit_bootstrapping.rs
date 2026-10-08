@@ -731,8 +731,6 @@ pub fn circuit_bootstrapping_execute_prepared_reference<R, L, M, BRA, BE>(
     let needed = circuit_bootstrapping_execute_prepared_tmp_bytes_reference::<_, _, BRA, BE>(module, &plan.layout(), key);
     assert!(scratch.available() >= needed, "insufficient circuit-bootstrapping scratch");
     circuit_bootstrap_prepared(module, res, lwe, key, plan, scratch);
-
-    res.set_noise(None);
 }
 
 #[cfg(test)]

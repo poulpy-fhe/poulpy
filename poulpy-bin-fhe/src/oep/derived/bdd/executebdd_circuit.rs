@@ -30,8 +30,4 @@ pub(crate) fn execute_bdd_circuit_derived<BE: Backend, C, G, O>(
     Module<BE>: ExecuteBDDCircuit<BE>,
 {
     module.execute_bdd_circuit_multi_thread(1, out, inputs, circuit, scratch);
-
-    for ct in out {
-        ct.set_noise(None);
-    }
 }

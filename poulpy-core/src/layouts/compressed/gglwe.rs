@@ -147,14 +147,13 @@ impl<BE: Backend> GGLWECompressedToBackendRef<BE> for GGLWECompressedBackendMut<
 
 impl<BE: Backend> GGLWECompressedToBackendMut<BE> for GGLWECompressedBackendMut<'_, BE> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        crate::layouts::validate_noise_components(metadata.as_ref(), crate::layouts::GLWEInfos::rank(self).as_usize() + 1)
-            .expect("noise component count does not match the ciphertext");
-        self.inner.noise = metadata;
+        self.inner.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
     }
 
     fn to_backend_mut(&mut self) -> GGLWECompressedBackendMut<'_, BE> {
+        self.inner.noise = None;
         GGLWECompressedBackendMut::from_inner(GGLWECompressed {
-            noise: crate::layouts::LWEInfos::noise(&self.inner),
+            noise: None,
             k_aux: self.inner.k_aux,
             base2k: self.inner.base2k,
             dsize: self.inner.dsize,
@@ -393,22 +392,25 @@ where
         R: GGLWEToBackendMut<Self::Backend> + GGLWEInfos,
         O: GGLWECompressedToBackendRef<Self::Backend> + GGLWEInfos,
     {
-        res.set_noise(other.to_backend_ref().noise());
-        let mut res = res.to_backend_mut();
-        let other = other.to_backend_ref();
+        let noise = other.to_backend_ref().noise();
+        {
+            let mut res = res.to_backend_mut();
+            let other = other.to_backend_ref();
 
-        assert_eq!(res.dsize(), other.dsize());
-        assert!(res.dnum() <= other.dnum());
+            assert_eq!(res.dsize(), other.dsize());
+            assert!(res.dnum() <= other.dnum());
 
-        let rank_in: usize = res.rank_in().into();
-        let dnum: usize = res.dnum().into();
-        for col_i in 0..rank_in {
-            for row_i in 0..dnum {
-                let mut dst = res.at_view_mut(row_i, col_i);
-                let src = other.at_view(row_i, col_i);
-                self.decompress_glwe(&mut dst, &src);
+            let rank_in: usize = res.rank_in().into();
+            let dnum: usize = res.dnum().into();
+            for col_i in 0..rank_in {
+                for row_i in 0..dnum {
+                    let mut dst = res.at_view_mut(row_i, col_i);
+                    let src = other.at_view(row_i, col_i);
+                    self.decompress_glwe(&mut dst, &src);
+                }
             }
         }
+        res.set_noise(noise);
     }
 }
 
@@ -466,22 +468,19 @@ pub trait GGLWECompressedToBackendMut<BE: Backend>: GGLWECompressedToBackendRef<
     /// Backend hook for recording or propagating component noise metadata.
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
 
-    /// Borrows coefficients and copies the current layout and component noise metadata.
-    /// Metadata changed on the returned view is local to that view. Operations
-    /// that update the owner must call its `set_noise` hook.
+    /// Borrows coefficients mutably and clears the owner's component noise metadata.
     fn to_backend_mut(&mut self) -> GGLWECompressedBackendMut<'_, BE>;
 }
 
 impl<BE: Backend> GGLWECompressedToBackendMut<BE> for GGLWECompressed<BE::OwnedBuf, BE::ZnxWord> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        crate::layouts::validate_noise_components(metadata.as_ref(), crate::layouts::GLWEInfos::rank(self).as_usize() + 1)
-            .expect("noise component count does not match the ciphertext");
-        self.noise = metadata;
+        self.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
     }
 
     fn to_backend_mut(&mut self) -> GGLWECompressedBackendMut<'_, BE> {
+        self.noise = None;
         GGLWECompressedBackendMut::from_inner(GGLWECompressed {
-            noise: crate::layouts::LWEInfos::noise(&self),
+            noise: None,
             k_aux: self.k_aux(),
             base2k: self.base2k(),
             dsize: self.dsize(),
@@ -494,14 +493,13 @@ impl<BE: Backend> GGLWECompressedToBackendMut<BE> for GGLWECompressed<BE::OwnedB
 
 impl<BE: Backend> GGLWECompressedToBackendMut<BE> for &mut GGLWECompressed<BE::BufMut<'_>, BE::ZnxWord> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        crate::layouts::validate_noise_components(metadata.as_ref(), crate::layouts::GLWEInfos::rank(self).as_usize() + 1)
-            .expect("noise component count does not match the ciphertext");
-        self.noise = metadata;
+        self.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
     }
 
     fn to_backend_mut(&mut self) -> GGLWECompressedBackendMut<'_, BE> {
+        self.noise = None;
         GGLWECompressedBackendMut::from_inner(GGLWECompressed {
-            noise: crate::layouts::LWEInfos::noise(&self),
+            noise: None,
             k_aux: self.k_aux(),
             base2k: self.base2k(),
             dsize: self.dsize(),
@@ -518,8 +516,9 @@ fn gglwe_compressed_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
     col: usize,
 ) -> GLWECompressedBackendMut<'a, BE> {
     let rank_in: usize = gglwe.rank_in().into();
+    gglwe.noise = None;
     GLWECompressed {
-        noise: crate::layouts::LWEInfos::noise(&gglwe),
+        noise: None,
         base2k: gglwe.base2k,
         k: gglwe.k(),
         rank: gglwe.rank_out,
@@ -566,6 +565,6 @@ mod tests {
         let view = GGLWECompressedToBackendRef::<HostBytesBackend>::to_backend_ref(&ciphertext);
         let body = view.body_as_gglwe();
         assert_eq!(body.rank_out(), Rank(0));
-        assert_eq!(body.noise().unwrap().components(), &[noise.body()]);
+        assert_eq!(*body.noise().unwrap().components(), [noise.body()]);
     }
 }

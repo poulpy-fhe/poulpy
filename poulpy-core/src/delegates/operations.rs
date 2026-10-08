@@ -280,7 +280,7 @@ impl_operations_delegate!(
     where
         R: GLWEToBackendMut<BE>,
     {
-        BE::glwe_rotate_assign(self, k, res, scratch)
+        BE::glwe_rotate_assign(self, k, res, scratch);
     }
 );
 

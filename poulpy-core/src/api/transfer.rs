@@ -222,7 +222,6 @@ where
         assert_eq!(self.k, dst.k, "transfer_into: GLWETensor k");
         assert_eq!(self.rank, dst.rank, "transfer_into: GLWETensor rank");
         move_vec_znx(&self.data, &mut dst.data);
-        dst.noise = self.noise.clone();
     }
 }
 

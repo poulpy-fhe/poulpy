@@ -100,9 +100,7 @@ where
         P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
         H: GetTensorKey<BE>,
     {
-        eval_mod(self, res, ct, params, tsk, scratch)?;
-        res.set_noise(None);
-        Ok(())
+        eval_mod(self, res, ct, params, tsk, scratch)
     }
 }
 

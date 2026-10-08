@@ -105,6 +105,4 @@ pub fn glwe_blind_rotation_reference<BE, R, A, K>(
 {
     module.glwe_copy(res, a, scratch);
     module.glwe_blind_rotation_assign(res, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch);
-
-    res.set_noise(None);
 }

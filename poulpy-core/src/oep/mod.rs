@@ -49,17 +49,17 @@
 //! # Noise metadata
 //!
 //! Only the [`ComponentNoise`](crate::ComponentNoise) an operation leaves on its
-//! outputs is specified; backend views, temporaries and nested calls may carry
-//! anything. Secret-key encryption, key generation included, records
+//! outputs is specified. Mutable access to an output clears it, so writing an
+//! output leaves `None`; an output returned unwritten or copied from an input is
+//! cleared with `set_noise(None)`. Secret-key encryption, key generation included, records
 //! [`ComponentNoise::from_secret_at`](crate::ComponentNoise::from_secret_at) with
 //! the encrypting secret's distribution and the output's `k` and rank (scalar LWE:
-//! its dimension). Public-key encryption draws its fresh errors at the
-//! `sample_precision`, uses the key up to the `work_precision` and records the
-//! `noise` of [`public_key_encryption_plan`](crate::public_key_encryption_plan).
+//! its dimension). Public-key encryption records
+//! [`public_key_encryption_noise`](crate::public_key_encryption_noise).
 //! Copies at equal or wider precision (zero masks appended for a wider rank),
 //! preparation, compression, decompression and transfers keep the source's
-//! estimate. Every other operation leaves `None`. Provenance checks run before
-//! any mutation. Delegates only forward.
+//! estimate, recorded after their last write. Every other operation leaves `None`.
+//! Provenance checks run before any mutation. Delegates only forward.
 //!
 //! # Correctness
 //!

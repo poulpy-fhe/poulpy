@@ -160,19 +160,22 @@ where
         R: GGSWPreparedToBackendMut<B>,
         O: GGSWToBackendRef<B>,
     {
-        res.set_noise(other.to_backend_ref().noise());
-        let mut res = res.to_backend_mut();
-        let other = other.to_backend_ref();
-        operand_degree(self.ring_degree().as_usize(), &[res.n(), other.n()]);
-        assert_eq!(res.base2k, other.base2k);
-        assert_eq!(res.dsize, other.dsize);
-        assert!(
-            scratch.available() >= self.ggsw_prepare_tmp_bytes(&res),
-            "scratch.available(): {} < GGSWPreparedFactory::ggsw_prepare_tmp_bytes: {}",
-            scratch.available(),
-            self.ggsw_prepare_tmp_bytes(&res)
-        );
-        self.vmp_prepare(&mut res.data, &other.data, scratch);
+        let noise = other.to_backend_ref().noise();
+        {
+            let mut res = res.to_backend_mut();
+            let other = other.to_backend_ref();
+            operand_degree(self.ring_degree().as_usize(), &[res.n(), other.n()]);
+            assert_eq!(res.base2k, other.base2k);
+            assert_eq!(res.dsize, other.dsize);
+            assert!(
+                scratch.available() >= self.ggsw_prepare_tmp_bytes(&res),
+                "scratch.available(): {} < GGSWPreparedFactory::ggsw_prepare_tmp_bytes: {}",
+                scratch.available(),
+                self.ggsw_prepare_tmp_bytes(&res)
+            );
+            self.vmp_prepare(&mut res.data, &other.data, scratch);
+        }
+        res.set_noise(noise);
     }
 
     fn ggsw_zero<R>(&self, res: &mut R)
@@ -222,22 +225,19 @@ pub trait GGSWPreparedToBackendMut<B: Backend> {
     /// Backend hook for recording or propagating component noise metadata.
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
 
-    /// Borrows coefficients and copies the current layout and component noise metadata.
-    /// Metadata changed on the returned view is local to that view. Operations
-    /// that update the owner must call its `set_noise` hook.
+    /// Borrows coefficients mutably and clears the owner's component noise metadata.
     fn to_backend_mut(&mut self) -> GGSWPreparedBackendMut<'_, B>;
 }
 
 impl<B: Backend> GGSWPreparedToBackendMut<B> for GGSWPrepared<B::OwnedBuf, B> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        crate::layouts::validate_noise_components(metadata.as_ref(), crate::layouts::GLWEInfos::rank(self).as_usize() + 1)
-            .expect("noise component count does not match the ciphertext");
-        self.noise = metadata;
+        self.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
     }
 
     fn to_backend_mut(&mut self) -> GGSWPreparedBackendMut<'_, B> {
+        self.noise = None;
         GGSWPrepared {
-            noise: crate::layouts::LWEInfos::noise(&self),
+            noise: None,
             base2k: self.base2k,
             k_aux: self.k_aux,
             dsize: self.dsize,

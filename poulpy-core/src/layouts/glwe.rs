@@ -141,8 +141,12 @@ impl<D: Data, W: ZnxWord> SetBase2k for &mut GLWE<D, W> {
 }
 
 impl<D: Data, W: ZnxWord> SetK for GLWE<D, W> {
+    /// Narrowing drops the canonical flag and the noise estimate.
     fn set_k(&mut self, k: TorusPrecision) {
-        self.canonical &= k >= self.k;
+        if k < self.k {
+            self.canonical = false;
+            self.noise = None;
+        }
         self.k = k
     }
 }
@@ -173,6 +177,7 @@ impl<D: Data, W: ZnxWord> GLWE<D, W> {
 impl<D: Data, W: ZnxWord> GLWE<D, W> {
     /// Returns a mutable reference to the underlying [`VecZnx`].
     pub fn data_mut(&mut self) -> &mut VecZnx<D, W> {
+        self.noise = None;
         &mut self.data
     }
 }
@@ -414,9 +419,7 @@ pub trait GLWEToBackendMut<BE: Backend>: GLWEToBackendRef<BE> {
     /// Backend hook for recording or propagating component noise metadata.
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
 
-    /// Borrows coefficients and copies the current layout and component noise metadata.
-    /// Metadata changed on the returned view is local to that view. Operations
-    /// that update the owner must call its `set_noise` hook.
+    /// Borrows coefficients mutably and clears the owner's component noise metadata.
     fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE>;
 
     /// Sets the owner's canonical flag; a flag set on the view returned by
@@ -429,14 +432,13 @@ where
     VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE> + VecZnxToBackendMut<BE>,
 {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        crate::layouts::validate_noise_components(metadata.as_ref(), crate::layouts::GLWEInfos::rank(self).as_usize() + 1)
-            .expect("noise component count does not match the ciphertext");
-        self.noise = metadata;
+        self.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
     }
 
     fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
+        self.noise = None;
         GLWE {
-            noise: self.noise.clone(),
+            noise: None,
             base2k: self.base2k,
             k: self.k,
             canonical: self.canonical,
@@ -457,9 +459,7 @@ impl<BE: Backend> GLWEToBackendRef<BE> for &mut GLWE<BE::BufMut<'_>, BE::ZnxWord
 
 impl<BE: Backend> GLWEToBackendMut<BE> for &mut GLWE<BE::BufMut<'_>, BE::ZnxWord> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        crate::layouts::validate_noise_components(metadata.as_ref(), crate::layouts::GLWEInfos::rank(self).as_usize() + 1)
-            .expect("noise component count does not match the ciphertext");
-        self.noise = metadata;
+        self.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
     }
 
     fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
@@ -472,8 +472,9 @@ impl<BE: Backend> GLWEToBackendMut<BE> for &mut GLWE<BE::BufMut<'_>, BE::ZnxWord
 }
 
 pub fn glwe_backend_mut_from_mut<'a, 'b, BE: Backend>(glwe: &'a mut GLWE<BE::BufMut<'b>, BE::ZnxWord>) -> GLWEBackendMut<'a, BE> {
+    glwe.noise = None;
     GLWE {
-        noise: crate::layouts::LWEInfos::noise(&glwe),
+        noise: None,
         base2k: glwe.base2k,
         k: glwe.k,
         canonical: glwe.canonical,
@@ -483,9 +484,7 @@ pub fn glwe_backend_mut_from_mut<'a, 'b, BE: Backend>(glwe: &'a mut GLWE<BE::Buf
 
 impl<D: Data, W: ZnxWord> GLWE<D, W> {
     pub(crate) fn record_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        crate::layouts::validate_noise_components(metadata.as_ref(), self.data.cols())
-            .expect("noise component count does not match the ciphertext");
-        self.noise = metadata;
+        self.noise = crate::layouts::checked_noise(metadata, self.data.cols());
     }
 }
 
@@ -494,21 +493,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mutable_backend_view_keeps_a_provenance_snapshot() {
+    fn mutable_access_clears_metadata() {
         use poulpy_hal::layouts::HostBytesBackend;
         let mut glwe = GLWE::<AlignedBuf, i64>::alloc(Degree(8), Base2K(12), TorusPrecision(33), Rank(1));
-        let single = crate::ComponentNoise::from_secret(crate::Distribution::TernaryProb(0.5), 1);
-        let aggregate = single.aggregate(&single);
-        GLWEToBackendMut::<HostBytesBackend>::set_noise(&mut glwe, Some(single.clone()));
-        {
-            let mut view = GLWEToBackendMut::<HostBytesBackend>::to_backend_mut(&mut glwe);
-            assert_eq!(view.noise(), Some(single.clone()));
-            GLWEToBackendMut::<HostBytesBackend>::set_noise(&mut view, Some(aggregate.clone()));
-            assert_eq!(view.noise(), Some(aggregate.clone()));
-        }
-        assert_eq!(glwe.noise(), Some(single.clone()));
-        GLWEToBackendMut::<HostBytesBackend>::set_noise(&mut glwe, Some(aggregate.clone()));
-        assert_eq!(glwe.noise(), Some(aggregate.clone()));
+        let fresh = Some(crate::ComponentNoise::from_secret(crate::Distribution::TernaryProb(0.5), 1));
+        GLWEToBackendMut::<HostBytesBackend>::set_noise(&mut glwe, fresh.clone());
+        assert_eq!(GLWEToBackendRef::<HostBytesBackend>::to_backend_ref(&glwe).noise(), fresh);
+        assert_eq!(GLWEToBackendMut::<HostBytesBackend>::to_backend_mut(&mut glwe).noise(), None);
+        assert_eq!(glwe.noise(), None);
+        GLWEToBackendMut::<HostBytesBackend>::set_noise(&mut glwe, fresh.clone());
+        glwe.data_mut();
+        assert_eq!(glwe.noise(), None);
+        GLWEToBackendMut::<HostBytesBackend>::set_noise(&mut glwe, fresh.clone());
+        glwe.set_k(TorusPrecision(40));
+        assert_eq!(glwe.noise(), fresh);
+        glwe.set_k(TorusPrecision(30));
+        assert_eq!(glwe.noise(), None);
     }
 
     #[test]

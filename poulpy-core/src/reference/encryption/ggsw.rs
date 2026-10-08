@@ -73,11 +73,7 @@ where
         P: ScalarZnxToBackendRef<BE> + ZnxInfos,
         S: GLWESecretPreparedToBackendRef<BE> + LWEInfos + GLWEInfos,
     {
-        let metadata = Some(crate::ComponentNoise::from_secret_at(
-            sk.to_backend_ref().dist,
-            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
-            crate::layouts::GLWEInfos::rank(&res.to_backend_ref()).as_usize(),
-        ));
+        let metadata = crate::component_noise::fresh_sk_noise(sk.to_backend_ref().dist, &res.to_backend_ref());
         {
             assert_eq!(res.rank(), sk.rank());
             operand_degree(self.n(), &[res.n(), pt.n().into(), sk.n()]);

@@ -163,10 +163,6 @@ where
                 self.gglwe_compressed_encrypt_sk(&mut res.circ_s[j], &zero, sk, seeds.new_seed(), source_xe, &mut scratch_2);
                 let (circ_u, circ_s) = (&mut res.circ_u[j], &res.circ_s[j]);
                 circ_u.seed_mut().copy_from_slice(circ_s.seed());
-                GGLWECompressedToBackendMut::<BE>::set_noise(
-                    circ_u,
-                    Some(ComponentNoise::from_secret_at(*u.to_backend_ref().dist(), circ_u.k(), r)),
-                );
                 for row in 0..dnum {
                     for i in 0..r {
                         self.fill_glwe_mask_from_seed(&mut mask, circ_s.seed()[row * r + i]);
@@ -190,6 +186,10 @@ where
                         );
                     }
                 }
+                GGLWECompressedToBackendMut::<BE>::set_noise(
+                    circ_u,
+                    Some(ComponentNoise::from_secret_at(*u.to_backend_ref().dist(), circ_u.k(), r)),
+                );
             }
         }
         scratch.wipe(tmp_bytes);

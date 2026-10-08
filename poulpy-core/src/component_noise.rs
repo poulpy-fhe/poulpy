@@ -1,6 +1,7 @@
 //! Fresh component-noise estimates, cleared from homomorphic evaluation outputs.
 
 use std::{
+    borrow::Cow,
     io::{self, Read, Write},
     sync::Arc,
 };
@@ -127,13 +128,15 @@ impl SecretDistribution {
 ///
 /// Copies, preparation, compression, and backend transfers preserve these
 /// estimates. Homomorphic operations clear them; noise composition after
-/// evaluation is not tracked. The shared immutable terms make view creation
-/// cheap without limiting ciphertext rank. Equality and serialization include
-/// the component estimates and secret provenance.
+/// evaluation is not tracked. Terms after the last nonzero one are implicit,
+/// so a fresh LWE stores one. Equality and serialization include the component
+/// estimates and secret provenance.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ComponentNoise {
     secret: SecretDistribution,
-    components: Arc<[FreshNoiseEstimate]>,
+    /// Body and masks through the last nonzero term, never empty.
+    stored: Arc<[FreshNoiseEstimate]>,
+    count: usize,
 }
 
 impl ComponentNoise {
@@ -151,33 +154,42 @@ impl ComponentNoise {
         } else {
             base
         };
-        let count = rank.checked_add(1).expect("noise component count overflow");
-        let mut components = vec![FreshNoiseEstimate::new(0.0, precision); count];
-        components[0] = FreshNoiseEstimate::new(crate::DEFAULT_SIGMA_XE.powi(2), precision);
         Self {
             secret: SecretDistribution { base, parties: 1 },
-            components: components.into(),
+            stored: [FreshNoiseEstimate::new(crate::DEFAULT_SIGMA_XE.powi(2), precision)].into(),
+            count: rank.checked_add(1).expect("noise component count overflow"),
         }
     }
 
     /// Body first, followed by one estimate per mask component.
-    pub fn components(&self) -> &[FreshNoiseEstimate] {
-        &self.components
+    pub fn components(&self) -> Cow<'_, [FreshNoiseEstimate]> {
+        if self.stored.len() == self.count {
+            return Cow::Borrowed(&self.stored);
+        }
+        let mut components = self.stored.to_vec();
+        components.resize(self.count, FreshNoiseEstimate::new(0.0, self.precision()));
+        Cow::Owned(components)
     }
 
     /// Number of mask components.
     pub fn rank(&self) -> usize {
-        self.components.len() - 1
+        self.count - 1
     }
 
     /// Noise of the body before subtracting the secret-weighted mask.
     pub fn body(&self) -> FreshNoiseEstimate {
-        self.components[0]
+        self.stored[0]
     }
 
     /// Noise of each mask component before multiplication by the secret.
-    pub fn masks(&self) -> &[FreshNoiseEstimate] {
-        &self.components[1..]
+    pub fn masks(&self) -> Cow<'_, [FreshNoiseEstimate]> {
+        match self.components() {
+            Cow::Borrowed(components) => Cow::Borrowed(&components[1..]),
+            Cow::Owned(mut components) => {
+                components.remove(0);
+                Cow::Owned(components)
+            }
+        }
     }
 
     /// Common precision of the coefficient grid used by all terms.
@@ -211,7 +223,7 @@ impl ComponentNoise {
     /// `secret_dimension` is the original sampling block dimension. Use a product
     /// weight of `n` for negacyclic products or `4*n` as a conservative CI bound.
     pub fn weighted_phase_noise(&self, secret_dimension: usize, convolution_degree: usize) -> FreshNoiseEstimate {
-        let mask_variance: f64 = self.masks().iter().map(FreshNoiseEstimate::variance).sum();
+        let mask_variance: f64 = self.stored[1..].iter().map(FreshNoiseEstimate::variance).sum();
         let weighted_masks = if mask_variance == 0.0 {
             0.0
         } else {
@@ -237,30 +249,37 @@ impl ComponentNoise {
             components.iter().all(|term| term.precision() == precision),
             "noise component precisions differ"
         );
+        let count = components.len();
+        Self::trimmed(self.secret, components, count)
+    }
+
+    /// Drops trailing zero terms, keeping the body.
+    fn trimmed(secret: SecretDistribution, mut stored: Vec<FreshNoiseEstimate>, count: usize) -> Self {
+        stored.truncate(stored.iter().rposition(|term| term.variance_bits != 0).map_or(1, |i| i + 1));
         Self {
-            secret: self.secret,
-            components: components.into(),
+            secret,
+            stored: stored.into(),
+            count,
         }
     }
 
     /// Records a derived body error and zero mask errors at the given precision.
     pub fn with_body_noise(&self, body: FreshNoiseEstimate) -> Self {
-        let mut components = vec![FreshNoiseEstimate::new(0.0, body.precision()); self.components.len()];
-        components[0] = body;
-        self.with_components(components)
+        Self {
+            secret: self.secret,
+            stored: [body].into(),
+            count: self.count,
+        }
     }
 
     /// Appends zero-noise masks for a layout copy. Panics when reducing rank.
     /// This preserves the recorded estimates and their creation precision.
     pub fn with_rank(&self, rank: usize) -> Self {
         assert!(rank >= self.rank(), "cannot truncate noise mask components");
-        if rank == self.rank() {
-            return self.clone();
+        Self {
+            count: rank.checked_add(1).expect("noise component count overflow"),
+            ..self.clone()
         }
-        let count = rank.checked_add(1).expect("noise component count overflow");
-        let mut components = self.components.to_vec();
-        components.resize(count, FreshNoiseEstimate::new(0.0, self.precision()));
-        self.with_components(components)
     }
 
     /// Combines independent secret shares and their component errors.
@@ -269,23 +288,23 @@ impl ComponentNoise {
         assert!(self.secret.base == other.secret.base, "incompatible secret distributions");
         assert!(self.rank() == other.rank(), "incompatible noise component counts");
         let precision = self.precision();
-        let components: Vec<_> = self
-            .components
-            .iter()
-            .zip(other.components.iter())
-            .map(|(left, right)| FreshNoiseEstimate::new(left.variance() + right.variance_at(precision), precision))
+        let term = |noise: &Self, i: usize| noise.stored.get(i).map_or(0.0, |term| term.variance_at(precision));
+        let stored = (0..self.stored.len().max(other.stored.len()))
+            .map(|i| FreshNoiseEstimate::new(term(self, i) + term(other, i), precision))
             .collect();
-        Self {
-            secret: SecretDistribution {
+        let parties = self
+            .secret
+            .parties
+            .checked_add(other.secret.parties)
+            .expect("party count overflow");
+        Self::trimmed(
+            SecretDistribution {
                 base: self.secret.base,
-                parties: self
-                    .secret
-                    .parties
-                    .checked_add(other.secret.parties)
-                    .expect("party count overflow"),
+                parties,
             },
-            components: components.into(),
-        }
+            stored,
+            self.count,
+        )
     }
 
     /// Number of independent parties in the encrypting secret.
@@ -304,7 +323,7 @@ impl ComponentNoise {
     }
 
     pub(crate) fn validate_components(&self, expected: usize) -> io::Result<()> {
-        if self.components.len() != expected {
+        if self.count != expected {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "noise component count does not match ciphertext shape",
@@ -328,14 +347,14 @@ impl ComponentNoise {
                 writer.write_u64::<LittleEndian>(noise.parties())?;
                 noise.secret.base.write_to(writer)?;
                 writer.write_u32::<LittleEndian>(noise.precision().0)?;
-                writer.write_u64::<LittleEndian>(noise.components.len() as u64)?;
+                writer.write_u64::<LittleEndian>(noise.count as u64)?;
                 let stored = noise
-                    .components
+                    .stored
                     .iter()
                     .rposition(|term| term.variance_bits != 0)
                     .map_or(0, |i| i + 1);
                 writer.write_u64::<LittleEndian>(stored as u64)?;
-                for term in &noise.components[..stored] {
+                for term in &noise.stored[..stored] {
                     writer.write_u64::<LittleEndian>(term.variance_bits)?;
                 }
                 Ok(())
@@ -369,26 +388,30 @@ impl ComponentNoise {
                 "noise stored prefix exceeds component count",
             ));
         }
-        let mut components = vec![FreshNoiseEstimate::new(0.0, precision); expected];
-        for term in &mut components[..stored as usize] {
+        let mut components = vec![FreshNoiseEstimate::new(0.0, precision)];
+        for i in 0..stored as usize {
             let variance = f64::from_bits(reader.read_u64::<LittleEndian>()?);
             if variance.is_nan() || variance < 0.0 {
                 return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid noise component variance"));
             }
-            *term = FreshNoiseEstimate::new(variance, precision);
+            let term = FreshNoiseEstimate::new(variance, precision);
+            if i == 0 {
+                components[0] = term;
+            } else {
+                components.push(term);
+            }
         }
-        Ok(Some(Self {
-            secret: SecretDistribution { base, parties },
-            components: components.into(),
-        }))
+        Ok(Some(Self::trimmed(
+            SecretDistribution { base, parties },
+            components,
+            expected,
+        )))
     }
 }
 
-impl std::ops::Index<usize> for ComponentNoise {
-    type Output = FreshNoiseEstimate;
-    fn index(&self, component: usize) -> &Self::Output {
-        &self.components[component]
-    }
+/// Secret-key encryption estimate for an output shaped like `infos`.
+pub(crate) fn fresh_sk_noise(base: Distribution, infos: &impl crate::layouts::GLWEInfos) -> Option<ComponentNoise> {
+    Some(ComponentNoise::from_secret_at(base, infos.k(), infos.rank().as_usize()))
 }
 
 #[cfg(test)]
@@ -428,10 +451,10 @@ mod tests {
             .with_components([64.0, 36.0].map(|v| FreshNoiseEstimate::new(v, TorusPrecision(61))).to_vec());
         let sum = left.aggregate(&right);
         assert_eq!(sum.parties(), 2);
-        assert_eq!(sum[0].variance(), 32.0);
-        assert_eq!(sum[1].variance(), 13.0);
+        assert_eq!(sum.components()[0].variance(), 32.0);
+        assert_eq!(sum.components()[1].variance(), 13.0);
         assert_eq!(sum.phase_noise(64).variance(), 864.0);
-        assert_eq!(right.aggregate(&left)[1].variance_at(TorusPrecision(60)), 13.0);
+        assert_eq!(right.aggregate(&left).components()[1].variance_at(TorusPrecision(60)), 13.0);
         let wrong_rank = ComponentNoise::from_secret(Distribution::TernaryProb(0.5), 0);
         assert!(std::panic::catch_unwind(|| left.aggregate(&wrong_rank)).is_err());
         assert!(std::panic::catch_unwind(|| left.with_components(Vec::new())).is_err());
@@ -633,7 +656,10 @@ mod tests {
     #[test]
     fn invalid_key_provenance_fails_before_wrapper_headers() {
         use crate::layouts::{Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKey, GLWESwitchingKey, Rank};
-        use poulpy_hal::{AlignedBuf, layouts::WriterTo};
+        use poulpy_hal::{
+            AlignedBuf,
+            layouts::{ReaderFrom, WriterTo},
+        };
         let mut invalid = ComponentNoise::from_secret(Distribution::NONE, 1);
         invalid.secret.base = Distribution::ENCAPSULATED("hand-built");
         let mut switching = GLWESwitchingKey::<AlignedBuf, i64>::alloc(
@@ -654,5 +680,15 @@ mod tests {
         assert!(bytes.is_empty());
         assert!(automorphism.write_to(&mut bytes).is_err());
         assert!(bytes.is_empty());
+
+        // A failed inner read leaves the wrapper header untouched.
+        automorphism.key.noise = None;
+        automorphism.p = 5;
+        automorphism.write_to(&mut bytes).unwrap();
+        let mut receiver =
+            GLWEAutomorphismKey::<AlignedBuf, i64>::alloc(Degree(8), Base2K(12), Dnum(2), Dsize(1), TorusPrecision(15), Rank(2));
+        receiver.p = 3;
+        assert!(receiver.read_from(&mut bytes.as_slice()).is_err());
+        assert_eq!(receiver.p, 3);
     }
 }

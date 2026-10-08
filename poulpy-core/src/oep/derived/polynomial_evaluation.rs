@@ -48,7 +48,6 @@ where
         terms.push((power_basis.get(i)?, i));
     }
     if !terms.is_empty() && ops.eval_baby_linear_combination(module, res, &terms, coeffs, scratch)? {
-        res.set_noise(None);
         if parity != Parity::Odd {
             ops.add_pt_const_assign(module, res, 0, coeffs, 0, scratch)?;
         }
@@ -57,7 +56,6 @@ where
     }
 
     ops.init_accumulator(module, res, power_basis.get(init_power)?, scratch)?;
-    res.set_noise(None);
 
     if parity != Parity::Odd {
         ops.add_pt_const_assign(module, res, 0, coeffs, 0, scratch)?;
@@ -153,9 +151,7 @@ where
                 // `b·Xᵍˢᵖ` (ct×ct, the scheme stamps `b` with the consumed
                 // budget); then `b += a`.
                 ops.mul_prepared_assign(module, b, &prepared, tsk, scratch)?;
-                b.set_noise(None);
                 ops.add_assign(module, b, a, scratch)?;
-                b.set_noise(None);
             }
             p = run_end;
         }

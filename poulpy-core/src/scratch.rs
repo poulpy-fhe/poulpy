@@ -102,7 +102,6 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
         let (data, scratch) = self.take_vec_znx_scratch(infos.n().into(), pairs, infos.size());
         (
             GLWETensorViewMut::from_inner(GLWETensor {
-                noise: None,
                 k: infos.k(),
                 base2k: infos.base2k(),
                 rank: infos.rank(),

@@ -90,8 +90,9 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyBackendMut<'a, BE> {
     pub fn at_view_mut(&mut self, i: usize) -> GGLWEBackendMut<'_, BE> {
         assert!((i as u32) < self.rank());
         let key_i = &mut self.inner.keys[i];
+        key_i.noise = None;
         GGLWEBackendMut::from_inner(GGLWE {
-            noise: key_i.noise.clone(),
+            noise: None,
             base2k: key_i.base2k,
             k_aux: key_i.k_aux,
             dsize: key_i.dsize,
@@ -119,7 +120,7 @@ impl_gglwe_infos_for_inner!(GGLWEToGGSWKeyBackendMut<'a, BE>, ['a, BE: Backend +
 
 impl<D: Data, W: ZnxWord> LWEInfos for GGLWEToGGSWKey<D, W> {
     fn noise(&self) -> Option<crate::ComponentNoise> {
-        self.keys.first().and_then(crate::layouts::LWEInfos::noise)
+        crate::layouts::common_noise(self.keys.iter().map(crate::layouts::LWEInfos::noise))
     }
 
     fn n(&self) -> Degree {
@@ -350,9 +351,7 @@ pub trait GGLWEToGGSWKeyToBackendMut<BE: Backend>: GGLWEToGGSWKeyToBackendRef<BE
     /// Backend hook for recording or propagating component noise metadata.
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
 
-    /// Borrows coefficients and copies the current layout and component noise metadata.
-    /// Metadata changed on the returned view is local to that view. Operations
-    /// that update the owner must call its `set_noise` hook.
+    /// Borrows coefficients mutably and clears the owner's component noise metadata.
     fn to_backend_mut(&mut self) -> GGLWEToGGSWKeyBackendMut<'_, BE>;
 }
 
@@ -362,9 +361,7 @@ where
 {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         for key in &mut self.keys {
-            crate::layouts::validate_noise_components(metadata.as_ref(), crate::layouts::GLWEInfos::rank(key).as_usize() + 1)
-                .expect("noise component count does not match the ciphertext");
-            key.noise = metadata.clone();
+            key.noise = crate::layouts::checked_noise(metadata.clone(), crate::layouts::GLWEInfos::rank(key).as_usize() + 1);
         }
     }
 
@@ -388,9 +385,7 @@ impl<BE: Backend> GGLWEToGGSWKeyToBackendRef<BE> for &mut GGLWEToGGSWKey<BE::Own
 impl<BE: Backend> GGLWEToGGSWKeyToBackendMut<BE> for &mut GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         for key in &mut self.keys {
-            crate::layouts::validate_noise_components(metadata.as_ref(), crate::layouts::GLWEInfos::rank(key).as_usize() + 1)
-                .expect("noise component count does not match the ciphertext");
-            key.noise = metadata.clone();
+            key.noise = crate::layouts::checked_noise(metadata.clone(), crate::layouts::GLWEInfos::rank(key).as_usize() + 1);
         }
     }
 

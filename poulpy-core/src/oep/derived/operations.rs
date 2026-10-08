@@ -15,7 +15,6 @@ where
     R: crate::layouts::GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
     A: crate::layouts::GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos,
 {
-    res.set_noise(None);
     assert!(res.dnum() <= a.dnum());
     assert_eq!(res.dsize(), a.dsize());
     assert_eq!(res.rank(), a.rank());
@@ -39,7 +38,6 @@ pub(crate) fn ggsw_rotate_assign_derived<BE: crate::oep::GLWERotateImpl, R>(
 ) where
     R: GGSWToBackendMut<BE> + GGSWInfos,
 {
-    res.set_noise(None);
     let mut res = res.to_backend_mut();
     assert!(
         scratch.available() >= BE::glwe_rotate_tmp_bytes(module),
@@ -68,7 +66,6 @@ where
     R: GLWEToBackendMut<BE>,
     A: GLWEToBackendRef<BE>,
 {
-    res.set_noise(None);
     {
         let res = res.to_backend_ref();
         let a = a.to_backend_ref();

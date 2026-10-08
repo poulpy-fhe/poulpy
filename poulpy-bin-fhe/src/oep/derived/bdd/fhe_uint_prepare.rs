@@ -1,5 +1,4 @@
 use crate::{bdd_arithmetic::*, blind_rotation::BlindRotationAlgo};
-use poulpy_core::layouts::GGSWPreparedToBackendMut;
 use poulpy_hal::layouts::*;
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn fhe_uint_prepare_derived<BRA: BlindRotationAlgo, BE: Backend, K, T: UnsignedInteger>(
@@ -13,10 +12,6 @@ pub(crate) fn fhe_uint_prepare_derived<BRA: BlindRotationAlgo, BE: Backend, K, T
     Module<BE>: FheUintPrepare<BRA, BE>,
 {
     module.fhe_uint_prepare_custom(res, bits, 0, T::BITS as usize, key, scratch);
-
-    for bit in &mut res.bits {
-        GGSWPreparedToBackendMut::<BE>::set_noise(bit, None);
-    }
 }
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn fhe_uint_prepare_custom_derived<BRA: BlindRotationAlgo, BE: Backend, K, T: UnsignedInteger>(
@@ -31,9 +26,5 @@ pub(crate) fn fhe_uint_prepare_custom_derived<BRA: BlindRotationAlgo, BE: Backen
     K: BDDKeyHelper<BE::OwnedBuf, BRA, BE> + BDDKeyInfos,
     Module<BE>: FheUintPrepare<BRA, BE>,
 {
-    module.fhe_uint_prepare_custom_multi_thread(1, res, bits, bit_start, bit_count, key, scratch);
-
-    for bit in &mut res.bits {
-        GGSWPreparedToBackendMut::<BE>::set_noise(bit, None);
-    }
+    module.fhe_uint_prepare_custom_multi_thread(1, res, bits, bit_start, bit_count, key, scratch)
 }

@@ -96,19 +96,7 @@ where
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([10 + i as u8; 32]);
         module.glwe_compressed_encrypt_sk(dst, &pts[i], sk, SEEDS[0], &mut source_xe, &mut scratch.borrow());
-        if i == 1 {
-            // Backend views own their metadata snapshot, like their seeds and precision.
-            let metadata = {
-                let mut view = poulpy_core::layouts::compressed::GLWECompressedViewMut::<BE>::from_inner(
-                    GLWECompressedToBackendMut::<BE>::to_backend_mut(&mut acc),
-                );
-                module.glwe_pat_compressed_aggregate_assign(&mut view, &share);
-                super::fixtures::assert_collective_metadata(&view, i + 1);
-                view.noise()
-            };
-            super::fixtures::assert_collective_metadata(&acc, 1);
-            GLWECompressedToBackendMut::<BE>::set_noise(&mut acc, metadata);
-        } else if i > 1 {
+        if i > 0 {
             module.glwe_pat_compressed_aggregate_assign(&mut acc, &share);
         }
     }
@@ -266,12 +254,10 @@ where
         }
         GGLWEToBackendMut::<BE>::set_noise(dst, metadata);
         if i == 1 {
-            // Backend borrows stand in for the owned PATs.
-            let metadata = {
-                let mut view = acc.to_backend_mut();
-                module.gglwe_pat_aggregate_assign(&mut view, &share.to_backend_ref());
-                view.noise()
-            };
+            // Backend borrows stand in for the owned PATs. A mutable borrow
+            // carries no tag, so the owner is stamped afterwards.
+            let metadata = crate::reference::aggregate_common_key_metadata(acc.noise(), share.noise(), module.n());
+            module.gglwe_pat_aggregate_assign(&mut acc.to_backend_mut(), &share.to_backend_ref());
             GGLWEToBackendMut::<BE>::set_noise(&mut acc, metadata);
         } else if i > 1 {
             module.gglwe_pat_aggregate_assign(&mut acc, &share);

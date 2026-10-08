@@ -58,9 +58,7 @@ pub(crate) fn ggsw_from_gglwe_derived<BE, M, R, A>(
         module.glwe_copy(&mut res_at, &a_at, scratch);
     }
 
-    module.ggsw_expand_row(&mut res_backend, tsk, scratch);
-    drop(res_backend);
-    res.set_noise(None);
+    module.ggsw_expand_row(&mut res_backend, tsk, scratch)
 }
 
 pub(crate) fn lwe_from_glwe_tmp_bytes_derived<BE, M, R, A, K>(module: &M, lwe_infos: &R, glwe_infos: &A, key_infos: &K) -> usize

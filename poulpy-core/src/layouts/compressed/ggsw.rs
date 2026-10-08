@@ -355,8 +355,9 @@ impl<D: HostDataMut, W: ZnxWord> GGSWCompressed<D, W> {
         let rank: usize = self.rank().into();
         let k = self.k();
         let seed = self.seed[row * (rank + 1) + col];
+        self.noise = None;
         GLWECompressed {
-            noise: crate::layouts::LWEInfos::noise(&self),
+            noise: None,
             data: self.data.at_mut(row, col),
             k,
             base2k: self.base2k,
@@ -427,21 +428,24 @@ where
         R: GGSWToBackendMut<Self::Backend> + GGSWInfos,
         O: GGSWCompressedToBackendRef<Self::Backend> + GGSWInfos,
     {
-        res.set_noise(other.to_backend_ref().noise());
-        let mut res = res.to_backend_mut();
-        let other = other.to_backend_ref();
+        let noise = other.to_backend_ref().noise();
+        {
+            let mut res = res.to_backend_mut();
+            let other = other.to_backend_ref();
 
-        assert_eq!(res.rank(), other.rank());
-        let dnum: usize = res.dnum().into();
-        let rank: usize = res.rank().into();
+            assert_eq!(res.rank(), other.rank());
+            let dnum: usize = res.dnum().into();
+            let rank: usize = res.rank().into();
 
-        for row_i in 0..dnum {
-            for col_j in 0..rank + 1 {
-                let mut dst = res.at_view_mut(row_i, col_j);
-                let src = other.at_view(row_i, col_j);
-                self.decompress_glwe(&mut dst, &src);
+            for row_i in 0..dnum {
+                for col_j in 0..rank + 1 {
+                    let mut dst = res.at_view_mut(row_i, col_j);
+                    let src = other.at_view(row_i, col_j);
+                    self.decompress_glwe(&mut dst, &src);
+                }
             }
         }
+        res.set_noise(noise);
     }
 }
 
@@ -499,22 +503,19 @@ pub trait GGSWCompressedToBackendMut<BE: Backend>: GGSWCompressedToBackendRef<BE
     /// Backend hook for recording or propagating component noise metadata.
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
 
-    /// Borrows coefficients and copies the current layout and component noise metadata.
-    /// Metadata changed on the returned view is local to that view. Operations
-    /// that update the owner must call its `set_noise` hook.
+    /// Borrows coefficients mutably and clears the owner's component noise metadata.
     fn to_backend_mut(&mut self) -> GGSWCompressedBackendMut<'_, BE>;
 }
 
 impl<BE: Backend> GGSWCompressedToBackendMut<BE> for GGSWCompressed<BE::OwnedBuf, BE::ZnxWord> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        crate::layouts::validate_noise_components(metadata.as_ref(), crate::layouts::GLWEInfos::rank(self).as_usize() + 1)
-            .expect("noise component count does not match the ciphertext");
-        self.noise = metadata;
+        self.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
     }
 
     fn to_backend_mut(&mut self) -> GGSWCompressedBackendMut<'_, BE> {
+        self.noise = None;
         GGSWCompressedBackendMut::from_inner(GGSWCompressed {
-            noise: crate::layouts::LWEInfos::noise(&self),
+            noise: None,
             k_aux: self.k_aux(),
             base2k: self.base2k(),
             dsize: self.dsize(),
@@ -527,14 +528,13 @@ impl<BE: Backend> GGSWCompressedToBackendMut<BE> for GGSWCompressed<BE::OwnedBuf
 
 impl<BE: Backend> GGSWCompressedToBackendMut<BE> for &mut GGSWCompressed<BE::BufMut<'_>, BE::ZnxWord> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        crate::layouts::validate_noise_components(metadata.as_ref(), crate::layouts::GLWEInfos::rank(self).as_usize() + 1)
-            .expect("noise component count does not match the ciphertext");
-        self.noise = metadata;
+        self.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
     }
 
     fn to_backend_mut(&mut self) -> GGSWCompressedBackendMut<'_, BE> {
+        self.noise = None;
         GGSWCompressedBackendMut::from_inner(GGSWCompressed {
-            noise: crate::layouts::LWEInfos::noise(&self),
+            noise: None,
             k_aux: self.k_aux(),
             base2k: self.base2k(),
             dsize: self.dsize(),
@@ -555,8 +555,9 @@ fn ggsw_compressed_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
     let seed = ggsw.seed[row * (rank + 1) + col];
     let base2k = ggsw.base2k;
     let rank_field = ggsw.rank;
+    ggsw.noise = None;
     GLWECompressed {
-        noise: crate::layouts::LWEInfos::noise(&ggsw),
+        noise: None,
         data: mat_znx_at_backend_mut_from_mut::<BE>(&mut ggsw.data, row, col),
         k,
         base2k,

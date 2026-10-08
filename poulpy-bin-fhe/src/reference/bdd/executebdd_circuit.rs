@@ -80,10 +80,6 @@ pub fn execute_bdd_circuit_multi_thread_reference<BE: Backend<ZnxWord = i64>, C,
             }
         },
     );
-
-    for ct in out {
-        ct.set_noise(None);
-    }
 }
 
 trait BddTrivialOne<BE: Backend> {

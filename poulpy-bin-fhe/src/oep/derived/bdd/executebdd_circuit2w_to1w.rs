@@ -18,8 +18,6 @@ pub(crate) fn execute_bdd_circuit_2w_to_1w_derived<BE, C, H, T>(
     Module<BE>: ExecuteBDDCircuit2WTo1W<BE>,
 {
     module.execute_bdd_circuit_2w_to_1w_multi_thread(1, out, circuit, a, b, key, scratch);
-
-    GLWEToBackendMut::<BE>::set_noise(out, None);
 }
 
 /// The serial wrapper uses the selected one-worker execution budget.

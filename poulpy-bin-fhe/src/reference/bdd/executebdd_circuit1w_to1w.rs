@@ -59,6 +59,4 @@ pub fn execute_bdd_circuit_1w_to_1w_multi_thread_reference<BE, C, H, T>(
 
     // Repacks the bits
     out.pack(module, out_bits, key, &mut scratch_1);
-
-    GLWEToBackendMut::<BE>::set_noise(out, None);
 }

@@ -301,7 +301,4 @@ pub fn cswap_reference<BE, A, B>(
             );
         }
     }
-
-    res_a.set_noise(None);
-    res_b.set_noise(None);
 }

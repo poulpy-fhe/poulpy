@@ -89,7 +89,7 @@ impl<BE: Backend> Value<BE> {
         i64::from_ne_bytes(bytes[index * 8..index * 8 + 8].try_into().unwrap())
     }
     fn write(&mut self, values: &[i64]) {
-        BE::copy_from_host(self.data.data.data_mut(), bytemuck::cast_slice(values));
+        BE::copy_from_host(self.data.data_mut().data_mut(), bytemuck::cast_slice(values));
     }
 }
 fn value<BE: ParityBackend>(module: &Module<BE>, values: &[i64], budget: usize) -> Value<BE>

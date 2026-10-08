@@ -67,6 +67,7 @@ impl<D: Data, W: ZnxWord> GLWEPublicKeyCompressed<D, W> {
     }
 
     pub fn data_mut(&mut self) -> &mut MatZnx<D, W> {
+        self.noise = None;
         &mut self.data
     }
 }
@@ -305,8 +306,9 @@ impl<'a, BE: Backend + 'a> GLWEPublicKeyCompressedBackendMut<'a, BE> {
     /// [`GLWEPublicKeyCompressedSeedMut`] on the key.
     pub fn at_view_mut(&mut self, l: usize) -> GLWECompressedViewMut<'_, BE> {
         let (base2k, k, rank, seed) = (self.inner.base2k, self.inner.k, self.inner.rank(), self.inner.seed[l]);
+        self.inner.noise = None;
         GLWECompressedViewMut::from_inner(GLWECompressed {
-            noise: self.inner.noise.clone(),
+            noise: None,
             data: mat_znx_at_backend_mut_from_mut::<BE>(&mut self.inner.data, 0, l),
             base2k,
             k,
@@ -408,9 +410,7 @@ pub trait GLWEPublicKeyCompressedToBackendMut<BE: Backend>: GLWEPublicKeyCompres
     /// Records component noise metadata on this key.
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
 
-    /// Borrows coefficients and copies the current layout and component noise metadata.
-    /// Metadata changed on the returned view is local to that view. Operations
-    /// that update the owner must call its `set_noise` hook.
+    /// Borrows coefficients mutably and clears the owner's component noise metadata.
     fn to_backend_mut(&mut self) -> GLWEPublicKeyCompressedBackendMut<'_, BE>;
 }
 
@@ -435,14 +435,13 @@ where
     MatZnx<D, BE::ZnxWord>: MatZnxToBackendRef<BE> + MatZnxToBackendMut<BE>,
 {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        crate::layouts::validate_noise_components(metadata.as_ref(), crate::layouts::GLWEInfos::rank(self).as_usize() + 1)
-            .expect("noise component count does not match the ciphertext");
-        self.noise = metadata;
+        self.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
     }
 
     fn to_backend_mut(&mut self) -> GLWEPublicKeyCompressedBackendMut<'_, BE> {
+        self.noise = None;
         GLWEPublicKeyCompressedBackendMut::from_inner(GLWEPublicKeyCompressed {
-            noise: self.noise.clone(),
+            noise: None,
             data: self.data.to_backend_mut(),
             base2k: self.base2k,
             k: self.k,
@@ -480,14 +479,13 @@ impl<BE: Backend> GLWEPublicKeyCompressedToBackendRef<BE> for GLWEPublicKeyCompr
 
 impl<BE: Backend> GLWEPublicKeyCompressedToBackendMut<BE> for GLWEPublicKeyCompressedBackendMut<'_, BE> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        crate::layouts::validate_noise_components(metadata.as_ref(), crate::layouts::GLWEInfos::rank(self).as_usize() + 1)
-            .expect("noise component count does not match the ciphertext");
-        self.inner.noise = metadata;
+        self.inner.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
     }
 
     fn to_backend_mut(&mut self) -> GLWEPublicKeyCompressedBackendMut<'_, BE> {
+        self.inner.noise = None;
         GLWEPublicKeyCompressedBackendMut::from_inner(GLWEPublicKeyCompressed {
-            noise: self.inner.noise.clone(),
+            noise: None,
             data: mat_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
             base2k: self.inner.base2k,
             k: self.inner.k,

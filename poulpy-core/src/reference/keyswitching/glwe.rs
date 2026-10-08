@@ -513,7 +513,6 @@ pub fn glwe_keyswitch_reference<BE, M, R, A>(
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
 {
-    res.set_noise(None);
     assert_eq!(
         a.rank(),
         key.rank_in(),
@@ -639,7 +638,6 @@ pub fn glwe_keyswitch_assign_reference<BE, M, R>(
         + VecZnxNormalizeAssign<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
 {
-    res.set_noise(None);
     assert_eq!(
         res.rank(),
         key.rank_in(),

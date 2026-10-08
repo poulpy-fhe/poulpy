@@ -50,7 +50,6 @@ pub trait CKKSRotateReference<BE: Backend> {
             self.glwe_automorphism(dst, src, key, scratch);
         }
 
-        dst.set_noise(None);
         Ok(())
     }
 
@@ -65,7 +64,6 @@ pub trait CKKSRotateReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEInfos + CKKSInfos + SetCKKSInfos,
     {
         self.glwe_automorphism_assign(dst, key, scratch);
-        dst.set_noise(None);
         Ok(())
     }
 }

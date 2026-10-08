@@ -191,7 +191,6 @@ fn eval<R, P, H>(
     }
     let res_base = res.base2k().as_usize();
     let res_k = res.k().as_usize();
-    res.set_noise(None);
     res.set_canonical(true);
     let mut result = res.to_backend_mut();
     for col in 0..cols {

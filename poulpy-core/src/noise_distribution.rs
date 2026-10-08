@@ -25,6 +25,16 @@ impl Noise {
     /// `sigma = 3.2`, integer samples satisfy `|z| <= 19`.
     pub const ENCRYPTION: Self = Self::Gaussian { sigma: 3.2 };
 
+    /// Centered variance on the integer sampling grid; the Gaussian's is an upper estimate after cutoff.
+    pub fn variance(self) -> f64 {
+        match self {
+            Self::Gaussian { sigma } => sigma * sigma,
+            // Divide before the last power of two so widths such as 512 bits
+            // keep a finite variance whenever the final f64 fits.
+            Self::Uniform { bits } => (2.0 * bits as f64 - 4.0).exp2() * (16.0 / 12.0) - 1.0 / 12.0,
+        }
+    }
+
     /// Rejects invalid distribution parameters before drawing randomness.
     /// `sigma >= 1` keeps every Gaussian away from a degenerate zero draw.
     pub fn validate(self) {

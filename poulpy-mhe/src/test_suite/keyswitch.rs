@@ -207,16 +207,13 @@ where
         let secret_fold = rank * n * 0.5 * PARTIES as f64;
         let sigma2 = DEFAULT_SIGMA_XE.powi(2);
         let inherited = secret_fold * sigma2 * (2.0 * (k_out.as_usize() as f64 - pk_layout.k.as_usize() as f64)).exp2();
-        let (sample_delta, per_share) = super::fixtures::expected_pk_variance(
+        let per_share = super::fixtures::expected_pk_variance(
             inherited,
             secret_fold * sigma2,
             1.0 + secret_fold,
-            rank * n * 0.5 * (1.0 + secret_fold),
-            BASE2K.as_usize(),
             k_out.as_usize(),
             pk_layout.k.as_usize(),
         );
-        assert!(sample_delta == 0 && key_gap == 0 || sample_delta > 0 && sample_delta < BASE2K.as_usize());
         let conversion = if k_out < K && key_gap == 0 { 1.0 } else { 0.0 };
         let fresh = PARTIES as f64 * (per_share + SIGMA_FLOOD.powi(2) + conversion);
         super::fixtures::assert_fresh_noise(&acc, fresh, k_out);
