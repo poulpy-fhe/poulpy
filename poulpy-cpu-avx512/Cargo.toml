@@ -38,7 +38,7 @@ once_cell = {workspace = true}
 rand_chacha = {workspace = true}
 paste = {workspace = true}
 rayon = {workspace = true, optional = true}
-libc = {version = "0.2", optional = true}
+libc = {version = "0.2.190", optional = true}
 
 [dev-dependencies]
 # Independent arithmetic for the direct parity tests.

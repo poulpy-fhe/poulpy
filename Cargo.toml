@@ -27,23 +27,22 @@ poulpy-cpu-oracle = {path = "poulpy-cpu-oracle"}
 poulpy-bench = {path = "poulpy-bench"}
 poulpy-ckks = {path = "poulpy-ckks", version = "0.9.0"}
 poulpy-mhe = {path = "poulpy-mhe", version = "0.9.0"}
-dashu-float = "0.6.0"
-dashu-int = "0.6.0"
+dashu-float = "0.6.2"
+dashu-int = "0.6.2"
 # Reproducible setup requires the same resolved math dependencies on each target.
 # Keep compatible ranges for downstream resolution and lock CI with Cargo.lock.
 astro-float-num = { version = "0.3.7", default-features = false, features = ["std"] }
 libm = { version = "0.2.16", default-features = false }
-rand = "0.10.2"
+rand = "0.10.3"
 rand_chacha = "0.10.0"
 rand_core = "0.10.1"
 rand_distr = "0.6.0"
-num-traits = "0.2"
+num-traits = "0.2.19"
 itertools = "0.15.0"
 criterion = "0.8.2"
 byteorder = "1.5.0"
-zstd = "0.13.3"
 once_cell = "1.21.4"
-rayon = "1.11.0"
+rayon = "1.12.0"
 bytemuck = { version = "1.25.2", features = ["min_const_generics"] }
 paste = "1.0.15"
 serde = "1.0.229"

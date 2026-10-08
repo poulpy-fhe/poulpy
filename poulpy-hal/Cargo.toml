@@ -24,11 +24,8 @@ anyhow = {workspace = true}
 
 # madvise(MADV_HUGEPAGE) in the aligned allocator; Linux only.
 [target.'cfg(target_os = "linux")'.dependencies]
-libc = "0.2"
+libc = "0.2.190"
 
-
-[build-dependencies]
-cmake = "0.1.54"
 
 [package.metadata.docs.rs]
 all-features = true
