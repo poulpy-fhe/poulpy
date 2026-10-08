@@ -3,7 +3,15 @@
 //! They live in this crate because it already depends on `poulpy-cpu-portable`: the portable crate cannot
 //! depend on the executor in return.
 
+#[cfg(feature = "enable-bin-fhe")]
+mod bin_fhe_impl;
+#[cfg(feature = "enable-ckks")]
+mod ckks_impl;
+#[cfg(feature = "enable-core")]
+mod core_impl;
 mod fft64;
+#[cfg(feature = "enable-mhe")]
+mod mhe_impl;
 mod ntt4x30;
 #[cfg(test)]
 mod tests;

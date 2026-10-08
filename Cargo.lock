@@ -738,10 +738,16 @@ dependencies = [
 name = "poulpy-cpu-rayon"
 version = "0.9.0"
 dependencies = [
+ "anyhow",
  "bytemuck",
  "once_cell",
+ "paste",
+ "poulpy-bin-fhe",
+ "poulpy-ckks",
+ "poulpy-core",
  "poulpy-cpu-portable",
  "poulpy-hal",
+ "poulpy-mhe",
  "rayon",
 ]
 

@@ -68,6 +68,8 @@ pub mod drivers {
         vec_znx_dft_sub_negate_assign,
     };
     pub use super::vmp::{vmp_apply_dft_to_dft, vmp_apply_dft_to_dft_add, vmp_apply_tmp_bytes};
+    #[cfg(feature = "enable-core")]
+    pub use super::vmp_strided::{STRIDED_MAX_DSIZE, gglwe_product_digits_strided_tmp_bytes, gglwe_product_digits_strided_with};
 }
 #[cfg(feature = "enable-core")]
 pub(crate) use vmp_strided::{STRIDED_MAX_DSIZE, gglwe_product_digits_strided, gglwe_product_digits_strided_tmp_bytes};

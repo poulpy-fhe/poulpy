@@ -161,3 +161,116 @@ poulpy_cpu_portable::conjugate_invariant_test_suite!(
     crate::NTT4x30PortableRayon,
     reference = poulpy_cpu_portable::NTT4x30CIPortable
 );
+
+#[cfg(feature = "enable-core")]
+mod core {
+    use poulpy_hal::layouts::Module;
+
+    poulpy_core::core_parity_test_suite! {
+        mod parity_ntt4x30,
+        backend_ref = poulpy_cpu_portable::NTT4x30Portable,
+        backend_test = crate::NTT4x30PortableRayon,
+        // computes at the module degree, no sweep
+        params = TestParams { size: 1<<8, base2k: 12, n: 1<<8 },
+        tests = {
+            glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
+            glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
+            gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
+            glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
+            glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
+            glwe_multiplication => poulpy_core::test_suite::parity::test_glwe_multiplication_parity,
+            gadget_external_product => poulpy_core::test_suite::parity::test_gadget_external_product_parity,
+            gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,
+            tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
+            linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
+            glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
+        }
+    }
+
+    poulpy_core::core_parity_test_suite! {
+        mod parity_fft64,
+        backend_ref = poulpy_cpu_portable::FFT64Portable,
+        backend_test = crate::FFT64PortableRayon,
+        // computes at the module degree, no sweep
+        params = TestParams { size: 1<<8, base2k: 12, n: 1<<8 },
+        tests = {
+            glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
+            glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
+            glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
+            glwe_multiplication => poulpy_core::test_suite::parity::test_glwe_multiplication_parity,
+            gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,
+            glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
+        }
+    }
+
+    /// The fused interleaved-digit product against the core reference body, on the same backend.
+    #[test]
+    fn test_gglwe_product_digits_strided_bit_identical() {
+        poulpy_core::test_suite::parity::test_gglwe_product_digits_strided(&Module::<crate::NTT4x30PortableRayon>::new(64), 50);
+    }
+
+    poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
+        ci_core_fft64,
+        crate::FFT64CIPortableRayon,
+        crate::FFT64PortableRayon,
+        reference = poulpy_cpu_portable::FFT64CIPortable
+    );
+
+    poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
+        ci_core_ntt4x30,
+        crate::NTT4x30CIPortableRayon,
+        crate::NTT4x30PortableRayon,
+        reference = poulpy_cpu_portable::NTT4x30CIPortable
+    );
+}
+
+#[cfg(feature = "enable-ckks")]
+mod ckks {
+    poulpy_ckks::ckks_parity_test_suite! {
+        mod parity_ntt4x30_f64,
+        backend_ref = poulpy_cpu_portable::NTT4x30Portable,
+        backend_test = crate::NTT4x30PortableRayon,
+        scalar = f64,
+        params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
+        tests = {
+            arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
+            imag => poulpy_ckks::test_suite::parity::test_imag_parity,
+            multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
+            rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+            conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
+            plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
+            encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
+            slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+            paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
+            ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
+            dft => poulpy_ckks::test_suite::parity::test_dft_parity,
+            real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+            polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
+            encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
+            bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
+            fold => poulpy_ckks::test_suite::parity::test_fold_parity,
+        }
+    }
+
+    poulpy_ckks::ckks_parity_test_suite! {
+        mod parity_fft64_f64,
+        backend_ref = poulpy_cpu_portable::FFT64Portable,
+        backend_test = crate::FFT64PortableRayon,
+        scalar = f64,
+        params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
+        tests = {
+            arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
+            multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
+            rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+            encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
+            bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
+        }
+    }
+
+    poulpy_ckks::ckks_encryption_parity_test_suite! {
+        mod parity_ntt4x30_encryption,
+        backend_ref = poulpy_cpu_portable::NTT4x30Portable,
+        backend_test = crate::NTT4x30PortableRayon,
+        params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
+    }
+}
