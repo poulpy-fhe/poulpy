@@ -396,7 +396,7 @@ where
         R: GLWEToBackendMut<BE>,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     {
-        let noise = crate::fresh_noise_model::public_key_encryption_noise::<BE, _, _>(
+        let plan = crate::fresh_noise_model::public_key_encryption_plan::<BE, _, _>(
             &res.to_backend_ref(),
             pk,
             if body_noise {
@@ -405,7 +405,6 @@ where
                 crate::fresh_noise_model::PublicKeyBodyNoise::Omitted
             },
         );
-        // Validate before any mutation; the flag is set once the output is written.
         {
             let res_ref = res.to_backend_ref();
 
@@ -425,7 +424,11 @@ where
             );
             let n: usize = operand_degree(self.n(), &[res_ref.n(), pk.n()]);
             let base2k: usize = pk.base2k().into();
-            let size_pk: usize = pk.size();
+            let work_size: usize = plan.work_precision.as_usize().div_ceil(base2k);
+            // Plaintexts may be more precise than the selected key prefix. Keep
+            // their previously supported tail before the final normalization;
+            // IDFT zero-extends the narrower product into this wider accumulator.
+            let big_size = work_size.max(pt.as_ref().map_or(0, |(pt, _)| pt.size().min(pk.size())));
             let res_k: usize = res_ref.k().as_usize();
             let rank: usize = pk.data.cols_in();
 
@@ -463,7 +466,7 @@ where
                 );
             }
 
-            let (mut res_dft, mut scratch_1) = scratch_1.take_vec_znx_dft_scratch(n, rank + 1, size_pk);
+            let (mut res_dft, mut scratch_1) = scratch_1.take_vec_znx_dft_scratch(n, rank + 1, work_size);
             self.vmp_apply_dft_to_dft(
                 &mut res_dft.to_backend_mut(),
                 &u_dft.to_backend_ref(),
@@ -473,11 +476,20 @@ where
             );
 
             {
-                let (mut ci_big, mut scratch_2) = scratch_1.borrow().take_vec_znx_big_scratch(n, 1, size_pk);
+                let (mut ci_big, mut scratch_2) = scratch_1.borrow().take_vec_znx_big_scratch(n, 1, big_size);
                 for i in 0..rank + 1 {
                     self.vec_znx_idft_apply_tmpa(&mut ci_big.to_backend_mut(), 0, &mut res_dft.to_backend_mut(), i);
                     if i > 0 || body_noise {
-                        self.vec_znx_big_add_noise(base2k, res_k, &mut ci_big, 0, Noise::ENCRYPTION, source_xe);
+                        // The product keeps only leading whole limbs of the key. Add
+                        // fresh error at the selected grid, then normalize once.
+                        self.vec_znx_big_add_noise(
+                            base2k,
+                            plan.sample_precision.as_usize(),
+                            &mut ci_big,
+                            0,
+                            Noise::ENCRYPTION,
+                            source_xe,
+                        );
                     }
 
                     if let Some((pt, col)) = &pt
@@ -500,7 +512,7 @@ where
                 }
             }
         }
-        res.set_noise(noise);
+        res.set_noise(plan.noise);
         res.set_canonical(true);
     }
 }

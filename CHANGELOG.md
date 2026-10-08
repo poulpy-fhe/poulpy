@@ -75,7 +75,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 - **Breaking:** the measurement methods `GGLWE::noise`, `GGSW::noise`, `FheUint::noise` and `FheUintPreparedDebug::noise` are renamed `noise_stats`.
 - **Fix:** shifted GLWE addition and subtraction accept rank-zero plaintexts without accessing absent mask columns, and preserve the ciphertext mask.
 - **Breaking:** `Noise` replaces `SmudgingNoise`, `NoiseInfos`, `EncryptionInfos`, `EncryptionLayout` and encryption `enc_infos` arguments. Its discrete Gaussian (`sigma >= 1`, truncated at six sigma) and full-width uniform laws use mandatory `SamplingImpl::{vec_znx_add_noise, vec_znx_big_add_noise}`, exposed through `VecZnxAddNoise` and `VecZnxBigAddNoise`. `Noise::ENCRYPTION` is the bounded discrete Gaussian with sigma 3.2 and support [-19, 19]. Fixed-seed secret and error outputs change; compressed-mask streams retain their generator ([#372](https://github.com/poulpy-fhe/poulpy/issues/372)).
-- **Added:** `public_key_encryption_noise`, with `PublicKeyBodyNoise`, returns a public-key encryption's output metadata for out-of-tree overrides.
+- **Behaviour:** public-key encryption selects the sampling precision and prepared-key limb prefix from inherited, truncation and fresh error estimates. It accounts for collective-secret moments, binary tie-rounding bias and conjugate-invariant product weights. Missing or unbounded metadata selects full key precision; intentional flooding stays at the output precision.
+- **Added:** `public_key_encryption_plan`, with `PublicKeyEncryptionPlan` and `PublicKeyBodyNoise`, returns a public-key encryption's sampling grids and output metadata for out-of-tree overrides.
 - **Added:** `Noise::variance` returns a sampler's centered variance on its integer grid.
 - **Breaking:** `LWEInfos::noise()` and required `set_noise` methods on ciphertext/key backend mutation traits expose `ComponentNoise`: secret provenance plus body and mask estimates at their creation precision. Equality includes metadata. Evaluation, mutable access and narrowing (copies or `set_k`) clear it; equal or wider copies, preparation and transfers preserve it. Backend overrides follow the noise metadata rule stated in `poulpy_core::oep`. `ggsw_encrypt_pk` requires `GGSWToBackendMut`; GLWE preparation requires equal ranks. `weighted_phase_noise` and `lwe_phase_noise_with_block` support ring weights and flattened fixed-weight secrets.
 - **Breaking, format:** ciphertext/key serialization includes a `PNM3` metadata prefix with shape-checked logical component counts and a stored nonzero prefix. Fresh LWE metadata uses 49 bytes regardless of dimension, on the wire and in memory. `Distribution` uses a lossless tag byte plus a little-endian u64 payload, preserving non-dyadic probabilities. Encapsulated secret provenance becomes `NONE`, so generated switching and bootstrapping keys remain serializable. Dimensionless `LWECompressed` carries no metadata. Readers require the destination's component count even when metadata is absent; compressed readers also require its seed count and matrix entry shape. Failed reads clear stale estimates and preserve component counts, and key wrappers validate serializability before writing headers.
@@ -173,7 +174,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 - CKKS copies that drop a level clear fresh-noise metadata. **Breaking:** conjugation OEP implementations also provide the key-lookup entry points used by the forwarding delegates.
 
-- **Breaking:** CKKS encryption and key generation use `Noise::ENCRYPTION` at the destination's precision; encryption-info parameters are removed. Ciphertexts forward core component noise metadata ([#372](https://github.com/poulpy-fhe/poulpy/issues/372)).
+- **Breaking:** CKKS encryption and key generation derive encryption noise and its placement from the destination and key metadata; encryption-info parameters are removed. Ciphertexts forward core component noise metadata ([#372](https://github.com/poulpy-fhe/poulpy/issues/372)).
 
 - **Breaking:** DFT preparation and evaluation have backend-selected workspace queries. Bootstrap sizing includes the selected DFT requirements, queried with the layouts each transform runs on, and DFT parity uses exact advertised scratch. The reference evaluation budget covers both prepared and streamed factors and aligns its working ciphertext.
 
@@ -338,7 +339,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-bench`
 
-- **Breaking:** encryption benchmark runners use fixed noise and no longer construct or pass encryption-info descriptors ([#372](https://github.com/poulpy-fhe/poulpy/issues/372)).
+- **Breaking:** encryption benchmark runners use fixed noise with derived placement and no longer construct or pass encryption-info descriptors ([#372](https://github.com/poulpy-fhe/poulpy/issues/372)).
 
 - **Breaking:** the `core::fill` module is removed: the core runners sample their operands on the tested backend and require `GLWEMaskFill`, the blind rotation runners also `LWEFillMask`, and the core runners and suites drop the `OwnedBuf: CopyFromHost` and `*AtBackendMut` bounds the host staging needed.
 - **Breaking:** `bench_ckks_bootstrapping` takes a `FIXTURE_BASE2K` const generic; registered FFT and NTT benchmarks retain their 19- and 52-bit fixture radices.

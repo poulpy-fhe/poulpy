@@ -117,8 +117,9 @@ column `l`; `at` and `at_mut` view an entry as a GLWE. The entries are
 canonical: generation writes them so, `read_from` trusts the stream, and a
 writer through a mutable view must leave them so. `GLWEPublicKeyPrepared` is
 that matrix prepared by one `vmp_prepare`, and the reference encryption
-computes `Sum_l u_l pk_l` as one vector-matrix product, then adds each
-column's error before its single normalization at the output's `k`.
+computes `Sum_l u_l pk_l` as one vector-matrix product using a derived prefix
+of the key's limbs, then adds each column's error at the derived `k_sample`
+before its single normalization at the output's `k`.
 
 Each mask column `c_j = Sum_l u_l a_{l,j} + e_j` is a rank-`r` module-LWE
 sample in `(u_1, .., u_r)` with independent uniform masks, and the body is one
@@ -135,8 +136,9 @@ access to an output (`to_backend_mut`, row views, `data_mut`, narrowing
 unwritten or copied from an input is cleared with `set_noise(None)`. Secret-key encryption,
 key generation included, records `ComponentNoise::from_secret_at` with the
 encrypting secret's distribution and the output's `k` and rank (scalar LWE: its
-dimension). Public-key encryption records `public_key_encryption_noise`.
-Copies at equal or wider precision
+dimension). Public-key encryption draws its fresh errors at the
+`sample_precision`, uses the key up to the `work_precision` and records the
+`noise` of `public_key_encryption_plan`. Copies at equal or wider precision
 (zero masks appended for a wider rank), preparation, compression, decompression
 and transfers keep the source's estimate, recorded after their last write.
 Every other operation leaves `None`.
@@ -162,38 +164,72 @@ a rank greater than one fixed-weight GLWE secret, use
 For conjugate-invariant products, `weighted_phase_noise(n, 4*n)` bounds
 every coefficient, including coefficient zero; the average weight is about `2*n`.
 
-Public-key encryption draws its fresh errors at the output's `k` and
-normalizes the full-precision key product once. Its estimate follows from the
-key's metadata. Let the output precision be `k`, public-key precision be
-`k + a`, rank be `r`, and degree be `n`. Write `V_pk` for a public-key entry's
+Fresh ciphertexts derive their phase-error estimate and sampling precision
+from the key's metadata. Let the output precision be `k`, public-key precision
+be `k + a`, rank be `r`, and degree be `n`. Write `V_pk` for a public-key entry's
 variance on the key's grid, `q_u = E[u^2]` for the ephemeral second moment, and
 `q_S = E[S^2]` for the destination secret's second moment. In output-grid
-coefficient units (replace the product weight `n` by `4*n` for the
-conjugate-invariant bound, retaining `n` when computing the secret law's
-coefficient moments):
+coefficient units, define the following negacyclic model (replace each product
+weight `n` by `4*n` for the conjugate-invariant bound, retaining `n` when
+computing the secret law's coefficient moments):
 
-- `I = r*n*q_u*V_pk*2^(-2*a)`, the inherited public-key error; this assumes centered laws or zero inherited mask errors. Noncentered laws with inherited mask error record an unbounded estimate;
-- `F = (1 + r*n*q_S)*sigma_fresh^2`, the fresh body and mask error;
-- `R = (1 + r*n*q_S)/4 + M^2` when `a > 0` and zero otherwise, the rounding of the key's extra bits. Ties round up, so a noncentered secret has the bias bound `M = 2^(-(a+1)) * (1 + r*n*abs(E[S]))`; centered secrets use `M = 0`.
+- `I = r*n*q_u*V_pk*2^(-2*a)`, the inherited public-key error; this assumes centered laws or zero inherited mask errors. Noncentered laws with inherited mask error record an unbounded estimate and use full key precision;
+- `F = (1 + r*n*q_S)*sigma_fresh^2`, the fresh body and mask error before rescaling;
+- `Q = (1 + r*n*q_S)/4`, the modeled output-rounding variance.
 
-The phase estimate is `V_ct = I + F + R`, adding rounding as an independent
-variance as in the library's other noise models. Each component records its
-inherited error, `sigma_fresh^2` and, when `a > 0`, `1/4 + M^2/(1 + r*n*q_S)`.
-Smudged encryption replaces the fresh body error by the requested flood, added
-after normalization at the output's `k`.
+For a candidate `k_sample = k + d`, the product uses only the first
+`L = ceil(k_sample / base2k)` prepared-key limbs. Its working precision is
+`w = min(L*base2k, k + a)`. This skips multiplication of discarded limbs
+without recovering or preparing the key again. Whole-limb truncation drops
+balanced digits, so the discarded coefficient tail is bounded by
+`t = 0.5/(1 - 2^(-base2k))` working-grid ulps. It is not exact nearest rounding.
+When limbs are discarded, the modeled truncation contribution at the output is
+`T(d) = r*n*q_u*(1 + r*n*q_S)*t^2*2^(-2*(w-k))` for a centered base secret.
+For a noncentered base, use the conservative RMS bound
+`T(d) = (r*n*sqrt(q_u)*(1 + r*n*sqrt(q_S))*t)^2*2^(-2*(w-k))`
+to cover correlated, nonzero-mean tails. `T(d) = 0` when all key limbs are kept.
+
+The original-key and truncation errors may correlate. Combine them as
+`C(d) = (sqrt(I) + sqrt(T(d)))^2`, retaining exactly `I` when no limbs are
+discarded. Encryption chooses the smallest integer `d` in `[0, a]` satisfying
+`C(d) + F*2^(-2*d) <= Q`. If the target is unreachable, or the metadata is
+absent or does not give a finite estimate, it uses the full key and samples
+at `k + a`. Equal key and output precisions retain their existing behavior.
+The inherited original-key term `I` depends on the key's error and precision;
+truncation introduces `T(d)` in addition to that rescaled error.
+
+Fresh errors are added to the truncated product at `k_sample`, and the result
+is normalized directly to `k` once. The component terms recover the phase estimate
+`V_ct = C(d) + F*2^(-2*d) + R` at precision `k`, where `R = Q + M^2` when `w > k`
+and zero otherwise. For a noncentered secret, ties round up and the bias bound is
+`M = 2^(-(w-k+1)) * (1 + r*n*abs(E[S]))`; centered secrets use `M = 0`. Adding final rounding as an independent variance follows
+the library's noise-model approximation; the output-rounding error need not
+actually be independent of the existing phase error.
+Inherited and truncation errors are recorded per component using a common
+Young-inequality split that preserves `C(d)` after secret weighting. Fresh
+body and mask errors are added separately, with `1/4 + M^2/(1 + r*n*q_S)` output-rounding
+second moment per component when `w > k`. Intentional flooding affects only the body.
+The threshold makes construction noise no larger than the modeled final
+rounding contribution when attainable, so the estimate is at most `2*Q + M^2`.
 
 For a centered base secret with coefficient variance `v`, a public key built
 from `P` independent shares has `V_pk = P*sigma_fresh^2` and `q_S = P*v`;
-its ephemeral still has `q_u = v`. Thus:
+its ephemeral still has `q_u = v`. Write `D = C(d) - I` for the truncation
+contribution, including its possible covariance with the original error. Thus:
 
 | Encryption path | Fresh ciphertext variance at output precision `k` |
 | --- | --- |
 | Secret key | `sigma_fresh^2` |
-| Single-party public key at `k + a` | `(r*n*v*2^(-2*a) + 1 + r*n*v) * sigma_fresh^2 + R` |
-| `P`-party public key at `k + a` | `(r*n*P*v*2^(-2*a) + 1 + r*n*P*v) * sigma_fresh^2 + R` |
+| Single-party public key at `k + a` | `(r*n*v*2^(-2*a) + (1 + r*n*v)*2^(-2*d)) * sigma_fresh^2 + D + R` |
+| `P`-party public key at `k + a` | `(r*n*P*v*2^(-2*a) + (1 + r*n*P*v)*2^(-2*d)) * sigma_fresh^2 + D + R` |
 
+The equal-precision formulas follow by setting `a = d = 0` and `D = R = 0`.
 For binary secrets, use the second moments in the general formula, including
-the squared collective mean. Re-encryption replaces the ciphertext's previous metadata.
+the squared collective mean. Smudged encryption omits the ordinary body error,
+so its selector uses `F = r*n*q_S*sigma_fresh^2`. It adds the requested flood
+after normalization at the output's `k`; the flood is excluded from the
+sampling-precision target and its variance is added without attenuation.
+Re-encryption replaces the ciphertext's previous metadata.
 
 The estimate accounts for inherited public-key error and amplification during
 key generation or protocol finalization. It is a variance model, not an exact
