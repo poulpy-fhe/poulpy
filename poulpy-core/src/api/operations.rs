@@ -412,6 +412,9 @@ pub trait GGSWRotate<BE: Backend> {
 /// neither radix conversion nor normalization, even when source and destination
 /// radices differ. Their degrees and ranks must match. Component noise metadata is cleared.
 pub trait GLWEMulXpMinusOne<BE: Backend> {
+    /// Scratch for the in-place variant on a destination of `res_size` limbs.
+    fn glwe_mul_xp_minus_one_assign_tmp_bytes(&self, res_size: usize) -> usize;
+
     fn glwe_mul_xp_minus_one<R, A>(&self, k: i64, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,

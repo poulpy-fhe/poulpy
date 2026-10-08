@@ -693,8 +693,8 @@ pub fn test_glwe_shift_parity<BR, BT>(
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWEShift<BR> + GLWEMulXpMinusOne<BR> + GLWERotate<BR>,
-    Module<BT>: GLWEShift<BT> + GLWEMulXpMinusOne<BT> + GLWERotate<BT>,
+    Module<BR>: GLWEShift<BR> + GLWEMulXpMinusOne<BR>,
+    Module<BT>: GLWEShift<BT> + GLWEMulXpMinusOne<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
@@ -812,9 +812,15 @@ pub fn test_glwe_shift_parity<BR, BT>(
             module_test,
             "glwe_mul_xp_minus_one_assign",
             53,
-            (module_ref.glwe_rotate_tmp_bytes(), module_test.glwe_rotate_tmp_bytes()),
-            move |m, res, _, _, s| m.glwe_mul_xp_minus_one_assign(k, res, &mut s.borrow()),
-            move |m, res, _, _, s| m.glwe_mul_xp_minus_one_assign(k, res, &mut s.borrow()),
+            (0, 0),
+            move |m, res, _, _, _| {
+                let mut s = poisoned_scratch::<BR>(m.glwe_mul_xp_minus_one_assign_tmp_bytes(res.size()));
+                m.glwe_mul_xp_minus_one_assign(k, res, &mut s.borrow());
+            },
+            move |m, res, _, _, _| {
+                let mut s = poisoned_scratch::<BT>(m.glwe_mul_xp_minus_one_assign_tmp_bytes(res.size()));
+                m.glwe_mul_xp_minus_one_assign(k, res, &mut s.borrow());
+            },
         );
     }
     // Multiplication by X^p - 1 is raw-limb arithmetic, even when the two

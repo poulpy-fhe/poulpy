@@ -180,7 +180,7 @@ pub fn glwe_prepare_linear_transformation_rhs_reference<BE, M, P>(
             );
             assert_eq!(
                 pt_k_usize.div_ceil(pt_base2k_usize),
-                plaintext.size(),
+                plaintext.max_size(),
                 "linear transformation plaintext size does not match its effective precision"
             );
             assert_eq!(
