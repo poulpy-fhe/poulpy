@@ -187,7 +187,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
     let baby_size = lhs.size();
     let diagonal_size = first_diagonal.size();
     let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, prod_base2k.as_usize());
-    let prod_size = baby_size + diagonal_size - cnv_offset_hi;
+    let prod_size = crate::reference::operations::prod_dft_size(baby_size, diagonal_size, cnv_offset_hi);
 
     let nonzero_giant_rotations = rhs.giant_steps.iter().filter(|gs| gs.rot != 0).count();
     let has_nonzero_giant_rotation = nonzero_giant_rotations != 0;

@@ -110,6 +110,7 @@ where
             &mut <VecZnx<BE::OwnedBuf, i64> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut output),
             base2k,
             size * base2k,
+            0,
             col,
             &mut result.to_backend_mut(),
             col,

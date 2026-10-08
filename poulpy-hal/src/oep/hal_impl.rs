@@ -682,6 +682,7 @@ pub unsafe trait HalVecZnxDftImpl: Backend + HalVecZnxBigImpl {
         res: &mut crate::layouts::VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
         res_k: usize,
+        res_offset: i64,
         res_col: usize,
         a: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>,
         a_col: usize,
@@ -690,7 +691,7 @@ pub unsafe trait HalVecZnxDftImpl: Backend + HalVecZnxBigImpl {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         crate::oep::vec_znx_idft_normalize_consume_derived::<Self>(
-            module, res, res_base2k, res_k, res_col, a, a_col, a_base2k, addend, scratch,
+            module, res, res_base2k, res_k, res_offset, res_col, a, a_col, a_base2k, addend, scratch,
         )
     }
 

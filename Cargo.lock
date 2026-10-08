@@ -690,6 +690,7 @@ dependencies = [
  "poulpy-ckks",
  "poulpy-core",
  "poulpy-cpu-avx",
+ "poulpy-cpu-oracle",
  "poulpy-cpu-portable",
  "poulpy-cpu-rayon",
  "poulpy-hal",

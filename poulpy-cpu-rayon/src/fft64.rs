@@ -1216,7 +1216,7 @@ unsafe impl HalVecZnxDftImpl for $rayon {
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
-        res_k: usize,
+        res_k: usize, res_offset: i64,
         res_col: usize,
         a: &mut VecZnxDftBackendMut<'_, Self>,
         a_col: usize,
@@ -1259,7 +1259,7 @@ unsafe impl HalVecZnxDftImpl for $rayon {
         }
         let a_vec: VecZnxBackendRef<'_, $base> = VecZnx::from_shape(&**a.data(), a_shape);
         $crate::normalize::vec_znx_normalize_par::<$base, $rayon>(
-            res, res_base2k, res_k, 0, res_col, &a_vec, a_base2k, a_col, carry,
+            res, res_base2k, res_k, res_offset, res_col, &a_vec, a_base2k, a_col, carry,
         );
     }
     fn vec_znx_dft_apply(

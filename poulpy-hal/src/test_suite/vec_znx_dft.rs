@@ -988,7 +988,9 @@ where
                         .max(module.vec_znx_big_normalize_tmp_bytes()),
                 );
 
-                for col in 0..cols {
+                // Zero, a few bits either way, and more than one limb.
+                let offsets = [0i64, 7, -5, base2k as i64 + 3];
+                for (col, res_offset) in (0..cols).flat_map(|col| offsets.map(|offset| (col, offset))) {
                     // Fused: res = normalize(idft(a) + addend), clobbering a.
                     let mut a_dft = dft_of_uploaded_vec_znx(module, &a, 1, 0);
                     let res_host_template = VecZnx::alloc(n, 1, res_size);
@@ -997,6 +999,7 @@ where
                         &mut vec_znx_backend_mut::<BE>(&mut res_have_backend),
                         res_base2k,
                         res_size * res_base2k,
+                        res_offset,
                         0,
                         &mut a_dft.to_backend_mut(),
                         col,
@@ -1024,7 +1027,7 @@ where
                         &mut vec_znx_backend_mut::<BE>(&mut res_want_backend),
                         res_base2k,
                         res_size * res_base2k,
-                        0,
+                        res_offset,
                         0,
                         &big.to_backend_ref(),
                         base2k,
@@ -1036,7 +1039,7 @@ where
                     assert_eq!(
                         res_want, res_have,
                         "idft_normalize_consume != idft + add_small + normalize for a_size={a_size}, res_size={res_size}, \
-                         res_base2k={res_base2k}, addend={with_addend}, col={col}"
+                         res_base2k={res_base2k}, addend={with_addend}, col={col}, res_offset={res_offset}"
                     );
                 }
             }

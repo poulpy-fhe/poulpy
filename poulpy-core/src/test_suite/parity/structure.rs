@@ -498,6 +498,49 @@ where
                 let mut have = r.glwe_alloc_from_infos(&g);
                 out_t.transfer_into(&mut have);
                 assert_glwe_eq!(out_r, have, "relinearize rank={rank} k={precision} dsize={dsize}");
+
+                // The one-pass product must agree byte for byte across backends, in each operand role.
+                if rank == 1 {
+                    let x_r = ref_glwe(r, &g, &mut source);
+                    let y_r = ref_glwe(r, &g, &mut source);
+                    let mut x_t = t.glwe_alloc_from_infos(&g);
+                    x_r.transfer_into(&mut x_t);
+                    let mut y_t = t.glwe_alloc_from_infos(&g);
+                    y_r.transfer_into(&mut y_t);
+                    let size = precision.div_ceil(b);
+                    for cnv_offset in [b, precision] {
+                        for role in 0..3 {
+                            let mut out_r = r.glwe_alloc_from_infos(&g);
+                            x_r.transfer_into(&mut out_r);
+                            let mut out_t = t.glwe_alloc_from_infos(&g);
+                            out_r.transfer_into(&mut out_t);
+                            macro_rules! one_pass {
+                                ($be:ty, $m:expr, $out:expr, $x:expr, $y:expr, $key:expr) => {{
+                                    let bytes = $m.glwe_mul_relinearize_tmp_bytes(&g, size, size, g.k, &key);
+                                    let mut scratch = poisoned_scratch::<$be>(bytes);
+                                    // Role 0 is a product, role 1 reads its left operand from the destination,
+                                    // role 2 is a squaring.
+                                    match role {
+                                        1 => {
+                                            $m.glwe_mul_relinearize_assign(cnv_offset, $out, g.k, $y, $key, &mut scratch.borrow())
+                                        }
+                                        2 => $m.glwe_square_relinearize(cnv_offset, $out, g.k, $x, $key, &mut scratch.borrow()),
+                                        _ => $m.glwe_mul_relinearize(cnv_offset, $out, g.k, $x, $y, $key, &mut scratch.borrow()),
+                                    }
+                                }};
+                            }
+                            one_pass!(BR, r, &mut out_r, &x_r, &y_r, &kp_r);
+                            one_pass!(BT, t, &mut out_t, &x_t, &y_t, &kp_t);
+                            let mut have = r.glwe_alloc_from_infos(&g);
+                            out_t.transfer_into(&mut have);
+                            assert_glwe_eq!(
+                                out_r,
+                                have,
+                                "one-pass product role={role} k={precision} dsize={dsize} offset={cnv_offset}"
+                            );
+                        }
+                    }
+                }
             }
         }
     }

@@ -154,6 +154,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R>(
                 &mut baby_ref.data,
                 baby_base2k,
                 baby_k,
+                0,
                 col,
                 &mut res_dft,
                 col,
