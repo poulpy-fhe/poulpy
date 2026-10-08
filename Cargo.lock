@@ -739,6 +739,7 @@ name = "poulpy-cpu-rayon"
 version = "0.9.0"
 dependencies = [
  "bytemuck",
+ "once_cell",
  "poulpy-cpu-portable",
  "poulpy-hal",
  "rayon",
