@@ -3,11 +3,8 @@
 //! # Safety
 //!
 //! Each impl asserts byte-identical buffer layouts with the portable backend
-//! for that container family, for every shape. Validated by the word-compat
-//! suite instantiated in the corresponding `tests.rs`. `VmpPMat` and
-//! `CnvPVec*` markers are intentionally absent: the accelerated NTT4x30
-//! `VmpPMat` uses a prime-major planar layout (unlike Ref's block-interleaved
-//! q120c), and the `CnvPVec` layouts are unverified.
+//! for that container family, for every shape.
+//! The NTT4x30 backends only share `VecZnxBig` with the portable backend: their transform domain is packed.
 
 use poulpy_cpu_portable::{FFT64Portable, NTT4x30Portable};
 use poulpy_hal::layouts::{SvpPPolLayoutCompatible, VecZnxBigLayoutCompatible, VecZnxDftLayoutCompatible};
@@ -37,25 +34,13 @@ unsafe impl SvpPPolLayoutCompatible<FFT64NeonRayon> for FFT64Portable {}
 #[cfg(feature = "enable-rayon")]
 unsafe impl SvpPPolLayoutCompatible<FFT64Portable> for FFT64NeonRayon {}
 
-unsafe impl VecZnxDftLayoutCompatible<NTT4x30Neon> for NTT4x30Portable {}
-unsafe impl VecZnxDftLayoutCompatible<NTT4x30Portable> for NTT4x30Neon {}
 unsafe impl VecZnxBigLayoutCompatible<NTT4x30Neon> for NTT4x30Portable {}
 unsafe impl VecZnxBigLayoutCompatible<NTT4x30Portable> for NTT4x30Neon {}
-unsafe impl SvpPPolLayoutCompatible<NTT4x30Neon> for NTT4x30Portable {}
-unsafe impl SvpPPolLayoutCompatible<NTT4x30Portable> for NTT4x30Neon {}
 
-#[cfg(feature = "enable-rayon")]
-unsafe impl VecZnxDftLayoutCompatible<NTT4x30NeonRayon> for NTT4x30Portable {}
-#[cfg(feature = "enable-rayon")]
-unsafe impl VecZnxDftLayoutCompatible<NTT4x30Portable> for NTT4x30NeonRayon {}
 #[cfg(feature = "enable-rayon")]
 unsafe impl VecZnxBigLayoutCompatible<NTT4x30NeonRayon> for NTT4x30Portable {}
 #[cfg(feature = "enable-rayon")]
 unsafe impl VecZnxBigLayoutCompatible<NTT4x30Portable> for NTT4x30NeonRayon {}
-#[cfg(feature = "enable-rayon")]
-unsafe impl SvpPPolLayoutCompatible<NTT4x30NeonRayon> for NTT4x30Portable {}
-#[cfg(feature = "enable-rayon")]
-unsafe impl SvpPPolLayoutCompatible<NTT4x30Portable> for NTT4x30NeonRayon {}
 
 mod ci {
     use poulpy_cpu_portable::{FFT64CIPortable, NTT4x30CIPortable};
@@ -86,23 +71,11 @@ mod ci {
     #[cfg(feature = "enable-rayon")]
     unsafe impl SvpPPolLayoutCompatible<FFT64CIPortable> for FFT64CINeonRayon {}
 
-    unsafe impl VecZnxDftLayoutCompatible<NTT4x30CINeon> for NTT4x30CIPortable {}
-    unsafe impl VecZnxDftLayoutCompatible<NTT4x30CIPortable> for NTT4x30CINeon {}
     unsafe impl VecZnxBigLayoutCompatible<NTT4x30CINeon> for NTT4x30CIPortable {}
     unsafe impl VecZnxBigLayoutCompatible<NTT4x30CIPortable> for NTT4x30CINeon {}
-    unsafe impl SvpPPolLayoutCompatible<NTT4x30CINeon> for NTT4x30CIPortable {}
-    unsafe impl SvpPPolLayoutCompatible<NTT4x30CIPortable> for NTT4x30CINeon {}
 
-    #[cfg(feature = "enable-rayon")]
-    unsafe impl VecZnxDftLayoutCompatible<NTT4x30CINeonRayon> for NTT4x30CIPortable {}
-    #[cfg(feature = "enable-rayon")]
-    unsafe impl VecZnxDftLayoutCompatible<NTT4x30CIPortable> for NTT4x30CINeonRayon {}
     #[cfg(feature = "enable-rayon")]
     unsafe impl VecZnxBigLayoutCompatible<NTT4x30CINeonRayon> for NTT4x30CIPortable {}
     #[cfg(feature = "enable-rayon")]
     unsafe impl VecZnxBigLayoutCompatible<NTT4x30CIPortable> for NTT4x30CINeonRayon {}
-    #[cfg(feature = "enable-rayon")]
-    unsafe impl SvpPPolLayoutCompatible<NTT4x30CINeonRayon> for NTT4x30CIPortable {}
-    #[cfg(feature = "enable-rayon")]
-    unsafe impl SvpPPolLayoutCompatible<NTT4x30CIPortable> for NTT4x30CINeonRayon {}
 }

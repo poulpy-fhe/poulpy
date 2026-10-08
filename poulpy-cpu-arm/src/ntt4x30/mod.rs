@@ -1,13 +1,14 @@
-//! NEON-accelerated NTT4x30 CPU backend (Q120 NTT, CRT over four ~30-bit primes).
+//! NEON-accelerated NTT4x30 CPU backend (CRT over four ~30-bit primes, packed `u32` transform domain).
 
 mod conjugate_invariant;
+pub(crate) mod convolution;
 mod module;
-mod prim;
 #[cfg(feature = "enable-rayon")]
 mod rayon;
 mod standard;
+pub(crate) mod svp;
 mod vec_znx_big;
-#[cfg(target_arch = "aarch64")]
+pub(crate) mod vec_znx_dft;
 pub(crate) mod vmp;
 mod znx;
 
@@ -19,7 +20,7 @@ use poulpy_hal::layouts::{Ring, Standard};
 mod tests;
 
 /// NEON-accelerated NTT4x30 CPU backend for Poulpy HAL.
-/// `DftWord = Q120bScalar` (4 × u64 CRT residues), `BigWord = i128`, prime set `Primes30`.
+/// `DftWord = CrtWord<Primes30, u32>` (four `u32` CRT residues), `BigWord = i128`, prime set `Primes30`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NTT4x30Neon<R: Ring = Standard>(PhantomData<R>);
 

@@ -13,12 +13,6 @@ use poulpy_cpu_portable::kernels::{
 use poulpy_hal::layouts::ConjugateInvariant;
 
 use super::NTT4x30Neon;
-#[cfg(target_arch = "aarch64")]
-use crate::neon::{
-    ntt4x30_conjugate_invariant::basis_change,
-    ntt4x30_ntt::{intt_neon, ntt_neon},
-};
-#[cfg(not(target_arch = "aarch64"))]
 use poulpy_cpu_portable::kernels::ntt4x30::conjugate_invariant::{intt_portable, ntt_portable};
 
 /// No failure model: a square's constant coefficient has a large positive mean on this ring.
@@ -43,15 +37,7 @@ impl ZnxAutomorphism for NTT4x30Neon<ConjugateInvariant> {
 impl NttDFTExecute<NttTable<Primes30, ConjugateInvariant>> for NTT4x30Neon<ConjugateInvariant> {
     #[inline(always)]
     fn ntt_dft_execute(table: &NttTable<Primes30, ConjugateInvariant>, data: &mut [u64]) {
-        #[cfg(target_arch = "aarch64")]
-        unsafe {
-            basis_change::<Primes30>(table.basis_changes(), data);
-            ntt_neon::<Primes30>(table, data);
-        }
-        #[cfg(not(target_arch = "aarch64"))]
-        {
-            ntt_portable::<Primes30>(table, data);
-        }
+        ntt_portable::<Primes30>(table, data);
     }
 
     fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan {
@@ -62,15 +48,7 @@ impl NttDFTExecute<NttTable<Primes30, ConjugateInvariant>> for NTT4x30Neon<Conju
 impl NttDFTExecute<NttTableInv<Primes30, ConjugateInvariant>> for NTT4x30Neon<ConjugateInvariant> {
     #[inline(always)]
     fn ntt_dft_execute(table: &NttTableInv<Primes30, ConjugateInvariant>, data: &mut [u64]) {
-        #[cfg(target_arch = "aarch64")]
-        unsafe {
-            intt_neon::<Primes30>(table, data);
-            basis_change::<Primes30>(table.basis_changes(), data);
-        }
-        #[cfg(not(target_arch = "aarch64"))]
-        {
-            intt_portable::<Primes30>(table, data);
-        }
+        intt_portable::<Primes30>(table, data);
     }
 
     fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan {

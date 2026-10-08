@@ -6,21 +6,13 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use rayon::prelude::*;
 
 use poulpy_cpu_portable::{
-    hal_defaults::{
-        BigWordHadamardProduct, HalVecZnxDefault, NTT4x30ConvolutionDefault, NTT4x30ModuleDefault, NTT4x30SvpDefault,
-        NTT4x30VecZnxBigDefault, NTT4x30VmpDefault,
-    },
+    hal_defaults::{BigWordHadamardProduct, HalVecZnxDefault, NTT4x30ModuleDefault, NTT4x30VecZnxBigDefault},
     kernels::{
         ntt4x30::{
-            I128BigOps, I128NormalizeOps, NttAdd, NttAddAssign, NttCFromB, NttCopy, NttDFTExecute, NttExtract1BlkContiguous,
-            NttFromZnx64, NttMulBbb, NttMulBbc, NttMulBbc1ColX2, NttMulBbc2ColsX2, NttNegate, NttNegateAssign, NttPackLeft1BlkX2,
-            NttPackRight1BlkX2, NttPairwisePackLeft1BlkX2, NttPairwisePackRight1BlkX2, NttSub, NttSubAssign, NttSubNegateAssign,
-            NttToZnx128, NttZero,
-            mat_vec::{BbbMeta, BbcMeta},
+            I128BigOps, I128NormalizeOps, NttDFTExecute,
             ntt::{NttTable, NttTableInv},
             primes::Primes30,
             vec_znx_big::AssignOp,
-            vec_znx_dft::NttModuleHandle,
         },
         znx::{
             ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
@@ -34,14 +26,15 @@ use poulpy_cpu_portable::{
 use poulpy_hal::{
     execution::{SerialTaskExecutor, TaskExecutor},
     layouts::{
-        DataView, DataViewMut, MatZnxBackendRef, Module, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig,
-        VecZnxBigBackendMut, VecZnxDft, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMat, VmpPMatBackendMut, VmpPMatBackendRef,
-        ZnxView, ZnxViewMut,
+        DataView, DataViewMut, MatZnxBackendRef, Module, ScalarZnx, ScalarZnxBackendRef, ScratchArena, SvpPPol,
+        SvpPPolBackendMut, SvpPPolBackendRef, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut,
+        VecZnxDft, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMat, VmpPMatBackendMut, VmpPMatBackendRef, ZnxView, ZnxViewMut,
     },
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
 use super::{NTT4x30Neon, NTT4x30NeonRayon};
+use crate::neon::ntt4x30_ntt32::{intt32, intt32_crt, intt32_plane, ntt32_plane};
 use poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::{NttPlan, NttPlanNew};
 use poulpy_cpu_rayon::{RayonTaskExecutor, SendPtr};
 use poulpy_hal::layouts::Ring;
@@ -70,6 +63,23 @@ fn base_dft_mut<'a, R: Ring>(a: &'a mut VecZnxDftBackendMut<'_, NTT4x30NeonRayon
     VecZnxDft::from_shape(&mut **a.data_mut(), shape)
 }
 
+fn base_znx_ref<'a, R: Ring>(a: &'a VecZnxBackendRef<'_, NTT4x30NeonRayon<R>>) -> VecZnxBackendRef<'a, NTT4x30Neon<R>> {
+    VecZnx::from_shape(&**a.data(), a.shape())
+}
+
+fn base_scalar_ref<'a, R: Ring>(a: &'a ScalarZnxBackendRef<'_, NTT4x30NeonRayon<R>>) -> ScalarZnxBackendRef<'a, NTT4x30Neon<R>> {
+    ScalarZnx::from_data(&**a.data(), a.n(), a.cols())
+}
+
+fn base_svp_ref<'a, R: Ring>(a: &'a SvpPPolBackendRef<'_, NTT4x30NeonRayon<R>>) -> SvpPPolBackendRef<'a, NTT4x30Neon<R>> {
+    SvpPPol::from_data(&**a.data(), a.n(), a.cols(), a.hint())
+}
+
+fn base_svp_mut<'a, R: Ring>(a: &'a mut SvpPPolBackendMut<'_, NTT4x30NeonRayon<R>>) -> SvpPPolBackendMut<'a, NTT4x30Neon<R>> {
+    let (n, cols, hint) = (a.n(), a.cols(), a.hint());
+    SvpPPol::from_data(&mut **a.data_mut(), n, cols, hint)
+}
+
 fn base_big_mut<'a, R: Ring>(a: &'a mut VecZnxBigBackendMut<'_, NTT4x30NeonRayon<R>>) -> VecZnxBigBackendMut<'a, NTT4x30Neon<R>> {
     let shape = a.shape();
     VecZnxBig::from_shape(&mut **a.data_mut(), shape)
@@ -91,6 +101,65 @@ fn base_vmp_mut<'a, R: Ring>(a: &'a mut VmpPMatBackendMut<'_, NTT4x30NeonRayon<R
 }
 
 use poulpy_cpu_rayon::{parallel_chunk_len, parallel_limb_tasks};
+
+impl<R: Ring> super::vec_znx_dft::PackedDft for Module<NTT4x30NeonRayon<R>>
+where
+    NTT4x30Neon<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+{
+    #[inline(always)]
+    fn packed_dft_limb(&self, n: usize, dst: &mut [u32], src: &[i64], prepared: bool) {
+        if !plane_tasks(n) {
+            return base_module(self).packed_dft_limb(n, dst, src, prepared);
+        }
+        assert!(dst.len() >= 4 * n);
+        let table = super::vec_znx_dft::packed_table(base_module(self), n);
+        let dst = SendPtr::new(dst.as_mut_ptr());
+        join4(|p| {
+            let plane = unsafe { std::slice::from_raw_parts_mut(dst.get().add(p * n), n) };
+            ntt32_plane(table, p, plane, src, prepared)
+        });
+    }
+}
+
+/// Ring degree from which the four planes of a limb are transformed as separate tasks.
+///
+/// A ciphertext has few limbs at a large `base2k`, fewer than the pool has threads.
+const PLANE_TASKS_MIN_N: usize = 1 << 13;
+
+#[inline]
+fn plane_tasks(n: usize) -> bool {
+    n >= PLANE_TASKS_MIN_N && rayon::current_num_threads() > 1
+}
+
+/// Whether the limbs of a transform-domain vector are worth one task each.
+#[inline]
+fn limb_tasks(n: usize, size: usize) -> bool {
+    n >= PLANE_TASKS_MIN_N && parallel_limb_tasks(size)
+}
+
+/// Runs `task` on `0..4` as four tasks.
+#[inline]
+fn join4(task: impl Fn(usize) + Sync) {
+    rayon::join(|| rayon::join(|| task(0), || task(1)), || rayon::join(|| task(2), || task(3)));
+}
+
+/// Inverse transform of one packed limb, its planes and its reconstruction split into tasks at large degrees.
+///
+/// # Safety
+/// Same contract as [`intt32`].
+unsafe fn idft_limb_planes<R: Ring>(module: &Module<NTT4x30Neon<R>>, n: usize, dst: *mut i128, src: *const u32, work: *mut u32)
+where
+    NTT4x30Neon<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+{
+    let table = super::vec_znx_dft::packed_table(module, n);
+    if !plane_tasks(n) {
+        return unsafe { intt32(table, dst, src, work) };
+    }
+    let (dst, src, work) = (SendPtr::new(dst), SendPtr::new(src as *mut u32), SendPtr::new(work));
+    join4(|p| unsafe { intt32_plane(table, p, src.get(), work.get()) });
+    let quarter = n / 4;
+    join4(|k| unsafe { intt32_crt(table, dst.get(), work.get(), k * quarter, (k + 1) * quarter) });
+}
 
 macro_rules! parallel_binary {
     ($trait:ident, $method:ident) => {
@@ -315,109 +384,6 @@ where
 
     fn ntt_automorphism_plan(n: usize, p: i64) -> poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttAutomorphismPlan {
         <NTT4x30Neon<R> as NttDFTExecute<NttTableInv<Primes30, R>>>::ntt_automorphism_plan(n, p)
-    }
-}
-
-impl<R: Ring> NttFromZnx64 for NTT4x30NeonRayon<R> {
-    fn ntt_from_znx64(res: &mut [u64], a: &[i64]) {
-        <NTT4x30Neon<R> as NttFromZnx64>::ntt_from_znx64(res, a)
-    }
-}
-
-impl<R: Ring> NttToZnx128 for NTT4x30NeonRayon<R> {
-    fn ntt_to_znx128(res: &mut [i128], divisor_is_n: usize, a: &[u64]) {
-        <NTT4x30Neon<R> as NttToZnx128>::ntt_to_znx128(res, divisor_is_n, a)
-    }
-}
-
-macro_rules! forward_ntt_binary {
-    ($trait:ident, $method:ident) => {
-        impl<R: Ring> $trait for NTT4x30NeonRayon<R> {
-            fn $method(res: &mut [u64], a: &[u64], b: &[u64]) {
-                <NTT4x30Neon<R> as $trait>::$method(res, a, b)
-            }
-        }
-    };
-}
-macro_rules! forward_ntt_assign {
-    ($trait:ident, $method:ident) => {
-        impl<R: Ring> $trait for NTT4x30NeonRayon<R> {
-            fn $method(res: &mut [u64], a: &[u64]) {
-                <NTT4x30Neon<R> as $trait>::$method(res, a)
-            }
-        }
-    };
-}
-
-forward_ntt_binary!(NttAdd, ntt_add);
-forward_ntt_assign!(NttAddAssign, ntt_add_assign);
-forward_ntt_binary!(NttSub, ntt_sub);
-forward_ntt_assign!(NttSubAssign, ntt_sub_assign);
-forward_ntt_assign!(NttSubNegateAssign, ntt_sub_negate_assign);
-forward_ntt_assign!(NttNegate, ntt_negate);
-impl<R: Ring> NttNegateAssign for NTT4x30NeonRayon<R> {
-    fn ntt_negate_assign(res: &mut [u64]) {
-        <NTT4x30Neon<R> as NttNegateAssign>::ntt_negate_assign(res)
-    }
-}
-impl<R: Ring> NttZero for NTT4x30NeonRayon<R> {
-    fn ntt_zero(res: &mut [u64]) {
-        <NTT4x30Neon<R> as NttZero>::ntt_zero(res)
-    }
-}
-forward_ntt_assign!(NttCopy, ntt_copy);
-
-impl<R: Ring> NttMulBbb for NTT4x30NeonRayon<R> {
-    fn ntt_mul_bbb(meta: &BbbMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u64], b: &[u64]) {
-        <NTT4x30Neon<R> as NttMulBbb>::ntt_mul_bbb(meta, ell, res, a, b)
-    }
-}
-impl<R: Ring> NttMulBbc for NTT4x30NeonRayon<R> {
-    fn ntt_mul_bbc(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
-        <NTT4x30Neon<R> as NttMulBbc>::ntt_mul_bbc(meta, ell, res, a, b)
-    }
-}
-impl<R: Ring> NttCFromB for NTT4x30NeonRayon<R> {
-    fn ntt_c_from_b(n: usize, res: &mut [u32], a: &[u64]) {
-        <NTT4x30Neon<R> as NttCFromB>::ntt_c_from_b(n, res, a)
-    }
-}
-impl<R: Ring> NttMulBbc1ColX2 for NTT4x30NeonRayon<R> {
-    fn ntt_mul_bbc_1col_x2(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
-        <NTT4x30Neon<R> as NttMulBbc1ColX2>::ntt_mul_bbc_1col_x2(meta, ell, res, a, b)
-    }
-    fn ntt_mul_bbc_tile4_x2(meta: &BbcMeta<Primes30>, len: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
-        <NTT4x30Neon<R> as NttMulBbc1ColX2>::ntt_mul_bbc_tile4_x2(meta, len, res, a, b)
-    }
-}
-impl<R: Ring> NttMulBbc2ColsX2 for NTT4x30NeonRayon<R> {
-    fn ntt_mul_bbc_2cols_x2(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
-        <NTT4x30Neon<R> as NttMulBbc2ColsX2>::ntt_mul_bbc_2cols_x2(meta, ell, res, a, b)
-    }
-}
-impl<R: Ring> NttExtract1BlkContiguous for NTT4x30NeonRayon<R> {
-    fn ntt_extract_1blk_contiguous(n: usize, rows: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
-        <NTT4x30Neon<R> as NttExtract1BlkContiguous>::ntt_extract_1blk_contiguous(n, rows, blk, dst, src)
-    }
-}
-impl<R: Ring> NttPackLeft1BlkX2 for NTT4x30NeonRayon<R> {
-    fn ntt_pack_left_1blk_x2(dst: &mut [u32], a: &[u64], rows: usize, stride: usize, blk: usize) {
-        <NTT4x30Neon<R> as NttPackLeft1BlkX2>::ntt_pack_left_1blk_x2(dst, a, rows, stride, blk)
-    }
-}
-impl<R: Ring> NttPackRight1BlkX2 for NTT4x30NeonRayon<R> {
-    fn ntt_pack_right_1blk_x2(dst: &mut [u32], a: &[u32], rows: usize, stride: usize, blk: usize) {
-        <NTT4x30Neon<R> as NttPackRight1BlkX2>::ntt_pack_right_1blk_x2(dst, a, rows, stride, blk)
-    }
-}
-impl<R: Ring> NttPairwisePackLeft1BlkX2 for NTT4x30NeonRayon<R> {
-    fn ntt_pairwise_pack_left_1blk_x2(dst: &mut [u32], a: &[u64], b: &[u64], rows: usize, stride: usize, blk: usize) {
-        <NTT4x30Neon<R> as NttPairwisePackLeft1BlkX2>::ntt_pairwise_pack_left_1blk_x2(dst, a, b, rows, stride, blk)
-    }
-}
-impl<R: Ring> NttPairwisePackRight1BlkX2 for NTT4x30NeonRayon<R> {
-    fn ntt_pairwise_pack_right_1blk_x2(dst: &mut [u32], a: &[u32], b: &[u32], rows: usize, stride: usize, blk: usize) {
-        <NTT4x30Neon<R> as NttPairwisePackRight1BlkX2>::ntt_pairwise_pack_right_1blk_x2(dst, a, b, rows, stride, blk)
     }
 }
 
@@ -702,8 +668,8 @@ where
         )
     }
 
-    fn vmp_zero(module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
-        <Self as NTT4x30VmpDefault>::vmp_zero_default(module, res)
+    fn vmp_zero(_module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
+        res.data_mut().fill(Default::default());
     }
 }
 
@@ -711,7 +677,282 @@ unsafe impl<R: Ring> HalConvolutionImpl for NTT4x30NeonRayon<R>
 where
     NTT4x30Neon<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + ZnxAutomorphism,
 {
-    poulpy_cpu_portable::hal_impl_convolution!(NTT4x30ConvolutionDefault);
+    fn cnv_prepare_left_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+        poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE)
+            * super::convolution::cnv_prepare_tmp_bytes(module.n())
+    }
+
+    fn cnv_prepare_left(
+        module: &Module<Self>,
+        res: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let per_worker = super::convolution::cnv_prepare_tmp_bytes(res.n());
+        let bytes = poulpy_cpu_rayon::workers_within(
+            res.size().min(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE),
+            per_worker,
+            scratch.available(),
+        ) * per_worker;
+        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
+        super::convolution::cnv_prepare_left::<_, RayonTaskExecutor>(module, res, a, tmp);
+    }
+
+    fn cnv_prepare_right_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+        poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE)
+            * super::convolution::cnv_prepare_tmp_bytes(module.n())
+    }
+
+    fn cnv_prepare_right(
+        module: &Module<Self>,
+        res: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let per_worker = super::convolution::cnv_prepare_tmp_bytes(res.n());
+        let bytes = poulpy_cpu_rayon::workers_within(
+            res.size().min(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE),
+            per_worker,
+            scratch.available(),
+        ) * per_worker;
+        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
+        super::convolution::cnv_prepare_right::<_, RayonTaskExecutor>(module, res, a, tmp);
+    }
+
+    fn cnv_apply_dft_tmp_bytes(
+        _module: &Module<Self>,
+        _cnv_offset: usize,
+        res_size: usize,
+        a_size: usize,
+        b_size: usize,
+    ) -> usize {
+        super::convolution::cnv_apply_dft_tmp_bytes(res_size, a_size, b_size)
+    }
+
+    fn cnv_by_const_apply_tmp_bytes(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res_size: usize,
+        a_size: usize,
+        b_size: usize,
+    ) -> usize {
+        let _ = (module, cnv_offset);
+        super::convolution::cnv_by_const_apply_tmp_bytes(res_size, a_size, b_size)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_by_const_apply(
+        _module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, Self>,
+        a_col: usize,
+        b: &VecZnxBackendRef<'_, Self>,
+        b_col: usize,
+        b_coeff: usize,
+        _scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        if RayonTaskExecutor::should_serialize_inner() {
+            poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_portable::<Self, SerialTaskExecutor>(
+                cnv_offset,
+                res,
+                res_col,
+                a,
+                a_col,
+                b,
+                b_col,
+                b_coeff,
+                &mut [],
+            );
+        } else {
+            poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_portable::<Self, RayonTaskExecutor>(
+                cnv_offset,
+                res,
+                res_col,
+                a,
+                a_col,
+                b,
+                b_col,
+                b_coeff,
+                &mut [],
+            );
+        }
+    }
+
+    fn cnv_by_const_apply_add_tmp_bytes(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res_size: usize,
+        a_size: usize,
+        b_size: usize,
+    ) -> usize {
+        Self::cnv_by_const_apply_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_by_const_apply_add(
+        _module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, Self>,
+        a_col: usize,
+        b: &VecZnxBackendRef<'_, Self>,
+        b_col: usize,
+        b_coeff: usize,
+        _scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        if RayonTaskExecutor::should_serialize_inner() {
+            poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add_portable::<Self, SerialTaskExecutor>(
+                cnv_offset,
+                res,
+                res_col,
+                a,
+                a_col,
+                b,
+                b_col,
+                b_coeff,
+                &mut [],
+            );
+        } else {
+            poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add_portable::<Self, RayonTaskExecutor>(
+                cnv_offset,
+                res,
+                res_col,
+                a,
+                a_col,
+                b,
+                b_col,
+                b_coeff,
+                &mut [],
+            );
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_apply_dft(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &poulpy_hal::layouts::CnvPVecLBackendRef<'_, Self>,
+        a_col: usize,
+        b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
+        b_col: usize,
+        _scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        unsafe {
+            super::convolution::cnv_apply_dft::<_, RayonTaskExecutor>(module, cnv_offset, res, res_col, a, a_col, b, b_col)
+        };
+    }
+
+    fn cnv_apply_dft_add_tmp_bytes(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res_size: usize,
+        a_size: usize,
+        b_size: usize,
+    ) -> usize {
+        Self::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_apply_dft_add(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &poulpy_hal::layouts::CnvPVecLBackendRef<'_, Self>,
+        a_col: usize,
+        b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
+        b_col: usize,
+        _scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        unsafe {
+            super::convolution::cnv_apply_dft_add::<_, RayonTaskExecutor>(module, cnv_offset, res, res_col, a, a_col, b, b_col)
+        };
+    }
+
+    fn cnv_apply_dft_sum_tmp_bytes(
+        _module: &Module<Self>,
+        _cnv_offset: usize,
+        res_size: usize,
+        _a_size: usize,
+        _b_size: usize,
+    ) -> usize {
+        poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::APPLY)
+            * super::convolution::cnv_apply_dft_sum_neon_tmp_bytes(res_size)
+    }
+
+    fn cnv_apply_dft_sum(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        terms: &[poulpy_hal::layouts::CnvDftAccTerm<'_, Self>],
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let per_worker = super::convolution::cnv_apply_dft_sum_neon_tmp_bytes(res.size());
+        let bytes = poulpy_cpu_rayon::workers_within(
+            <Self as poulpy_hal::execution::ScratchWorkers>::APPLY,
+            per_worker,
+            scratch.available(),
+        ) * per_worker;
+        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
+        unsafe {
+            super::convolution::cnv_apply_dft_sum_neon::<_, RayonTaskExecutor>(module, cnv_offset, res, res_col, terms, tmp)
+        };
+    }
+
+    fn cnv_pairwise_apply_dft_tmp_bytes(
+        _module: &Module<Self>,
+        _cnv_offset: usize,
+        res_size: usize,
+        a_size: usize,
+        b_size: usize,
+    ) -> usize {
+        super::convolution::cnv_apply_dft_tmp_bytes(res_size, a_size, b_size)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_pairwise_apply_dft(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &poulpy_hal::layouts::CnvPVecLBackendRef<'_, Self>,
+        b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
+        i: usize,
+        j: usize,
+        _scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        unsafe {
+            super::convolution::cnv_pairwise_apply_dft::<_, RayonTaskExecutor>(module, cnv_offset, res, res_col, a, b, i, j)
+        };
+    }
+
+    fn cnv_prepare_self_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+        poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE)
+            * super::convolution::cnv_prepare_tmp_bytes(module.n())
+    }
+
+    fn cnv_prepare_self(
+        module: &Module<Self>,
+        left: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
+        right: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let per_worker = super::convolution::cnv_prepare_tmp_bytes(left.n());
+        let bytes = poulpy_cpu_rayon::workers_within(
+            left.size().min(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE),
+            per_worker,
+            scratch.available(),
+        ) * per_worker;
+        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
+        super::convolution::cnv_prepare_self::<_, RayonTaskExecutor>(module, left, right, a, tmp);
+    }
 }
 unsafe impl<R: Ring> HalVecZnxBigImpl for NTT4x30NeonRayon<R>
 where
@@ -749,12 +990,179 @@ unsafe impl<R: Ring> HalSvpImpl for NTT4x30NeonRayon<R>
 where
     NTT4x30Neon<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + ZnxAutomorphism,
 {
-    poulpy_cpu_portable::hal_impl_svp!(NTT4x30SvpDefault);
+    fn svp_prepare(
+        module: &Module<Self>,
+        res: &mut SvpPPolBackendMut<'_, Self>,
+        res_col: usize,
+        a: &ScalarZnxBackendRef<'_, Self>,
+        a_col: usize,
+    ) {
+        NTT4x30Neon::<R>::svp_prepare(
+            base_module(module),
+            &mut base_svp_mut::<R>(res),
+            res_col,
+            &base_scalar_ref::<R>(a),
+            a_col,
+        );
+    }
+
+    fn svp_ppol_copy(
+        module: &Module<Self>,
+        res: &mut SvpPPolBackendMut<'_, Self>,
+        res_col: usize,
+        a: &SvpPPolBackendRef<'_, Self>,
+        a_col: usize,
+    ) {
+        NTT4x30Neon::<R>::svp_ppol_copy(
+            base_module(module),
+            &mut base_svp_mut::<R>(res),
+            res_col,
+            &base_svp_ref::<R>(a),
+            a_col,
+        );
+    }
+
+    fn svp_apply_dft_tmp_bytes(_module: &Module<Self>, _b_size: usize) -> usize {
+        0
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn svp_apply_dft(
+        module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &SvpPPolBackendRef<'_, Self>,
+        a_col: usize,
+        b: &VecZnxBackendRef<'_, Self>,
+        b_col: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let mut base_scratch = scratch.borrow().into_backend::<NTT4x30Neon<R>>();
+        NTT4x30Neon::<R>::svp_apply_dft(
+            base_module(module),
+            &mut base_dft_mut::<R>(res),
+            res_col,
+            &base_svp_ref::<R>(a),
+            a_col,
+            &base_znx_ref::<R>(b),
+            b_col,
+            &mut base_scratch,
+        );
+    }
+
+    fn svp_apply_dft_to_dft(
+        module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &SvpPPolBackendRef<'_, Self>,
+        a_col: usize,
+        b: &VecZnxDftBackendRef<'_, Self>,
+        b_col: usize,
+    ) {
+        NTT4x30Neon::<R>::svp_apply_dft_to_dft(
+            base_module(module),
+            &mut base_dft_mut::<R>(res),
+            res_col,
+            &base_svp_ref::<R>(a),
+            a_col,
+            &base_dft_ref::<R>(b),
+            b_col,
+        );
+    }
+
+    fn svp_apply_dft_to_dft_assign(
+        module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &SvpPPolBackendRef<'_, Self>,
+        a_col: usize,
+    ) {
+        NTT4x30Neon::<R>::svp_apply_dft_to_dft_assign(
+            base_module(module),
+            &mut base_dft_mut::<R>(res),
+            res_col,
+            &base_svp_ref::<R>(a),
+            a_col,
+        );
+    }
 }
 unsafe impl<R: Ring> HalVecZnxDftImpl for NTT4x30NeonRayon<R>
 where
     NTT4x30Neon<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + ZnxAutomorphism,
 {
+    fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<Self>, _res_size: usize, a_size: usize) -> usize {
+        let workers = poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::IDFT).min(a_size.max(1));
+        workers * super::vec_znx_dft::idft_tmp_words(module.n()) * size_of::<u64>() + 3 * module.n() * size_of::<i128>()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_idft_normalize_consume(
+        module: &Module<Self>,
+        res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
+        res_base2k: usize,
+        res_k: usize,
+        res_offset: i64,
+        res_col: usize,
+        a: &mut VecZnxDftBackendMut<'_, Self>,
+        a_col: usize,
+        a_base2k: usize,
+        addend: Option<(&VecZnxBackendRef<'_, Self>, usize)>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let n = a.n();
+        poulpy_hal::layouts::check_degree::<NTT4x30Neon<R>>(module.n(), n);
+        assert_eq!(res.n(), n, "vec_znx_idft_normalize_consume: res.n():{} != a.n():{n}", res.n());
+        let cols = a.cols();
+        let size = a.size();
+        let per_worker = super::vec_znx_dft::idft_tmp_words(n);
+        let (carry, arena) = crate::hal_impl::take_host_typed::<Self, i128>(scratch.borrow(), 3 * n);
+        let workers = poulpy_cpu_rayon::workers_within(
+            size.clamp(1, <Self as poulpy_hal::execution::ScratchWorkers>::IDFT),
+            per_worker * size_of::<u64>(),
+            arena.available(),
+        );
+        let (worker_tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(arena, workers * per_worker);
+
+        // Each limb is replaced by its coefficients: the planes move to the worker's buffer during the transform.
+        let base = base_module(module);
+        let data = SendPtr::new(cast_slice_mut::<_, u32>(a.raw_mut()).as_mut_ptr());
+        RayonTaskExecutor::for_each_chunked(size, worker_tmp, per_worker, |tmp, limb| {
+            let work: &mut [u32] = cast_slice_mut(tmp);
+            assert!(work.len() >= 4 * n);
+            let slot = unsafe { data.get().add(4 * n * (limb * cols + a_col)) };
+            unsafe { idft_limb_planes(base, n, slot as *mut i128, slot, work.as_mut_ptr()) };
+        });
+
+        if let Some((add, add_col)) = addend {
+            if add.n() == n {
+                let big: &mut [i128] = cast_slice_mut(a.raw_mut());
+                big.par_chunks_mut(n * cols)
+                    .take(size.min(add.size()))
+                    .enumerate()
+                    .for_each(|(limb, group)| {
+                        <NTT4x30Neon<R> as I128BigOps>::i128_add_small_assign(
+                            &mut group[n * a_col..][..n],
+                            add.at(add_col, limb),
+                        );
+                    });
+            } else {
+                let a_shape = a.shape();
+                let mut big: VecZnxBigBackendMut<'_, Self> = VecZnxBig::from_shape(&mut **a.data_mut(), a_shape);
+                let mut big_ref = &mut big;
+                poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign_portable::<_, _, Self>(
+                    &mut big_ref,
+                    a_col,
+                    &add,
+                    add_col,
+                );
+            }
+        }
+        let a_shape = a.shape();
+        let big_ref: poulpy_hal::layouts::VecZnxBigBackendRef<'_, NTT4x30Neon<R>> = VecZnxBig::from_shape(&**a.data(), a_shape);
+        poulpy_cpu_rayon::normalize::ntt4x30_vec_znx_big_normalize_par::<NTT4x30Neon<R>, Self>(
+            res, res_base2k, res_k, res_offset, res_col, &big_ref, a_base2k, a_col, carry,
+        );
+    }
     fn vec_znx_dft_apply(
         module: &Module<Self>,
         step: usize,
@@ -773,7 +1181,7 @@ where
                 offset,
                 &mut base_dft_mut::<R>(res),
                 res_col,
-                a,
+                &base_znx_ref::<R>(a),
                 a_col,
             );
         }
@@ -783,22 +1191,23 @@ where
         let n = res.n();
         let cols = res.cols();
         let a_size = a.size();
-        let table = module.get_ntt_table_for(n);
-        res.raw_mut().par_chunks_mut(n * cols).enumerate().for_each(|(j, group)| {
-            let dst = cast_slice_mut(&mut group[n * res_col..][..n]);
-            let limb = offset + j * step;
-            if limb < a_size {
-                <NTT4x30Neon<R> as NttFromZnx64>::ntt_from_znx64(dst, a.at(a_col, limb));
-                <NTT4x30Neon<R> as NttDFTExecute<NttTable<Primes30, R>>>::ntt_dft_execute(table, dst);
-            } else {
-                <NTT4x30Neon<R> as NttZero>::ntt_zero(dst);
-            }
+        let data: &mut [u32] = cast_slice_mut(res.raw_mut());
+        data.par_chunks_mut(4 * n * cols).enumerate().for_each(|(limb, group)| {
+            let src_limb = offset + limb * step;
+            super::vec_znx_dft::dft_limb(
+                module,
+                n,
+                &mut group[4 * n * res_col..][..4 * n],
+                (src_limb < a_size).then(|| a.at(a_col, src_limb)),
+            );
         });
     }
 
     fn vec_znx_idft_apply_tmp_bytes(module: &Module<Self>) -> usize {
         NTT4x30Neon::<R>::vec_znx_idft_apply_tmp_bytes(base_module(module)).max(
-            poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::IDFT) * 4 * module.n() * size_of::<u64>(),
+            poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::IDFT)
+                * super::vec_znx_dft::idft_tmp_words(module.n())
+                * size_of::<u64>(),
         )
     }
 
@@ -811,14 +1220,14 @@ where
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         if !parallel_limb_tasks(res.size()) {
-            let mut scratch = scratch.borrow().into_backend::<NTT4x30Neon<R>>();
+            let mut base_scratch = scratch.borrow().into_backend::<NTT4x30Neon<R>>();
             return NTT4x30Neon::<R>::vec_znx_idft_apply(
                 base_module(module),
                 &mut base_big_mut::<R>(res),
                 res_col,
                 &base_dft_ref::<R>(a),
                 a_col,
-                &mut scratch,
+                &mut base_scratch,
             );
         }
 
@@ -829,9 +1238,8 @@ where
         let a_cols = a.cols();
         let size = res.size();
         let min_size = size.min(a.size());
-        let a_raw = a.raw();
-        let table = module.get_intt_table_for(n);
-        let per_worker = 4 * n;
+        let a_data: &[u32] = cast_slice(a.raw());
+        let per_worker = super::vec_znx_dft::idft_tmp_words(n);
         let workers = poulpy_cpu_rayon::workers_within(
             size.min(<Self as poulpy_hal::execution::ScratchWorkers>::IDFT),
             per_worker * size_of::<u64>(),
@@ -839,13 +1247,14 @@ where
         );
         let (worker_tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), workers * per_worker);
         let res_ptr = SendPtr::new(res.raw_mut().as_mut_ptr());
-        RayonTaskExecutor::for_each_chunked(size, worker_tmp, per_worker, |tmp, j| {
-            let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(n * (j * res_cols + res_col)), n) };
-            if j < min_size {
-                let src = cast_slice(&a_raw[n * (j * a_cols + a_col)..][..n]);
-                <NTT4x30Neon<R> as NttCopy>::ntt_copy(tmp, src);
-                <NTT4x30Neon<R> as NttDFTExecute<NttTableInv<Primes30, R>>>::ntt_dft_execute(table, tmp);
-                <NTT4x30Neon<R> as NttToZnx128>::ntt_to_znx128(dst, n, tmp);
+        let module = base_module(module);
+        RayonTaskExecutor::for_each_chunked(size, worker_tmp, per_worker, |tmp, limb| {
+            let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(n * (limb * res_cols + res_col)), n) };
+            if limb < min_size {
+                let src = super::vec_znx_dft::packed_limb(a_data, n, a_cols, a_col, limb);
+                let work: &mut [u32] = cast_slice_mut(tmp);
+                assert!(src.len() >= 4 * n && work.len() >= 4 * n);
+                unsafe { idft_limb_planes(module, n, dst.as_mut_ptr(), src.as_ptr(), work.as_mut_ptr()) };
             } else {
                 dst.fill(0);
             }
@@ -881,18 +1290,16 @@ where
         let res_cols = res.cols();
         let a_cols = a.cols();
         let min_size = res.size().min(a.size());
-        let active_words = min_size * n * res_cols;
-        let (res_active, res_zero) = res.raw_mut().split_at_mut(active_words);
-        let table = module.get_intt_table_for(n);
-
+        let module = base_module(module);
+        let (res_active, res_zero) = res.raw_mut().split_at_mut(min_size * n * res_cols);
+        let a_data: &mut [u32] = cast_slice_mut(a.raw_mut());
         res_active
             .par_chunks_mut(n * res_cols)
-            .zip(a.raw_mut().par_chunks_mut(n * a_cols))
+            .zip(a_data.par_chunks_mut(4 * n * a_cols))
             .for_each(|(res_group, a_group)| {
                 let dst = &mut res_group[n * res_col..][..n];
-                let src = cast_slice_mut(&mut a_group[n * a_col..][..n]);
-                <NTT4x30Neon<R> as NttDFTExecute<NttTableInv<Primes30, R>>>::ntt_dft_execute(table, src);
-                <NTT4x30Neon<R> as NttToZnx128>::ntt_to_znx128(dst, n, src);
+                let src = a_group[4 * n * a_col..][..4 * n].as_mut_ptr();
+                unsafe { idft_limb_planes(module, n, dst.as_mut_ptr(), src, src) };
             });
         res_zero
             .par_chunks_mut(n * res_cols)
@@ -900,7 +1307,7 @@ where
     }
 
     fn vec_znx_dft_add(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
         a: &VecZnxDftBackendRef<'_, Self>,
@@ -908,35 +1315,53 @@ where
         b: &VecZnxDftBackendRef<'_, Self>,
         b_col: usize,
     ) {
-        NTT4x30Neon::<R>::vec_znx_dft_add(
-            base_module(module),
-            &mut base_dft_mut::<R>(res),
-            res_col,
-            &base_dft_ref::<R>(a),
-            a_col,
-            &base_dft_ref::<R>(b),
-            b_col,
-        )
+        if limb_tasks(res.n(), res.size()) {
+            super::vec_znx_dft::vec_znx_dft_add::<R, RayonTaskExecutor>(
+                &mut base_dft_mut::<R>(res),
+                res_col,
+                &base_dft_ref::<R>(a),
+                a_col,
+                &base_dft_ref::<R>(b),
+                b_col,
+            )
+        } else {
+            super::vec_znx_dft::vec_znx_dft_add::<R, SerialTaskExecutor>(
+                &mut base_dft_mut::<R>(res),
+                res_col,
+                &base_dft_ref::<R>(a),
+                a_col,
+                &base_dft_ref::<R>(b),
+                b_col,
+            )
+        }
     }
 
     fn vec_znx_dft_add_assign(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        NTT4x30Neon::<R>::vec_znx_dft_add_assign(
-            base_module(module),
-            &mut base_dft_mut::<R>(res),
-            res_col,
-            &base_dft_ref::<R>(a),
-            a_col,
-        )
+        if limb_tasks(res.n(), res.size()) {
+            super::vec_znx_dft::vec_znx_dft_add_assign::<R, RayonTaskExecutor>(
+                &mut base_dft_mut::<R>(res),
+                res_col,
+                &base_dft_ref::<R>(a),
+                a_col,
+            )
+        } else {
+            super::vec_znx_dft::vec_znx_dft_add_assign::<R, SerialTaskExecutor>(
+                &mut base_dft_mut::<R>(res),
+                res_col,
+                &base_dft_ref::<R>(a),
+                a_col,
+            )
+        }
     }
 
     fn vec_znx_dft_sub(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
         a: &VecZnxDftBackendRef<'_, Self>,
@@ -944,51 +1369,77 @@ where
         b: &VecZnxDftBackendRef<'_, Self>,
         b_col: usize,
     ) {
-        NTT4x30Neon::<R>::vec_znx_dft_sub(
-            base_module(module),
-            &mut base_dft_mut::<R>(res),
-            res_col,
-            &base_dft_ref::<R>(a),
-            a_col,
-            &base_dft_ref::<R>(b),
-            b_col,
-        )
+        if limb_tasks(res.n(), res.size()) {
+            super::vec_znx_dft::vec_znx_dft_sub::<R, RayonTaskExecutor>(
+                &mut base_dft_mut::<R>(res),
+                res_col,
+                &base_dft_ref::<R>(a),
+                a_col,
+                &base_dft_ref::<R>(b),
+                b_col,
+            )
+        } else {
+            super::vec_znx_dft::vec_znx_dft_sub::<R, SerialTaskExecutor>(
+                &mut base_dft_mut::<R>(res),
+                res_col,
+                &base_dft_ref::<R>(a),
+                a_col,
+                &base_dft_ref::<R>(b),
+                b_col,
+            )
+        }
     }
 
     fn vec_znx_dft_sub_assign(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        NTT4x30Neon::<R>::vec_znx_dft_sub_assign(
-            base_module(module),
-            &mut base_dft_mut::<R>(res),
-            res_col,
-            &base_dft_ref::<R>(a),
-            a_col,
-        )
+        if limb_tasks(res.n(), res.size()) {
+            super::vec_znx_dft::vec_znx_dft_sub_assign::<R, RayonTaskExecutor>(
+                &mut base_dft_mut::<R>(res),
+                res_col,
+                &base_dft_ref::<R>(a),
+                a_col,
+            )
+        } else {
+            super::vec_znx_dft::vec_znx_dft_sub_assign::<R, SerialTaskExecutor>(
+                &mut base_dft_mut::<R>(res),
+                res_col,
+                &base_dft_ref::<R>(a),
+                a_col,
+            )
+        }
     }
 
     fn vec_znx_dft_sub_negate_assign(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        NTT4x30Neon::<R>::vec_znx_dft_sub_negate_assign(
-            base_module(module),
-            &mut base_dft_mut::<R>(res),
-            res_col,
-            &base_dft_ref::<R>(a),
-            a_col,
-        )
+        if limb_tasks(res.n(), res.size()) {
+            super::vec_znx_dft::vec_znx_dft_sub_negate_assign::<R, RayonTaskExecutor>(
+                &mut base_dft_mut::<R>(res),
+                res_col,
+                &base_dft_ref::<R>(a),
+                a_col,
+            )
+        } else {
+            super::vec_znx_dft::vec_znx_dft_sub_negate_assign::<R, SerialTaskExecutor>(
+                &mut base_dft_mut::<R>(res),
+                res_col,
+                &base_dft_ref::<R>(a),
+                a_col,
+            )
+        }
     }
 
     fn vec_znx_dft_copy(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         step: usize,
         offset: usize,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -996,15 +1447,25 @@ where
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        NTT4x30Neon::<R>::vec_znx_dft_copy(
-            base_module(module),
-            step,
-            offset,
-            &mut base_dft_mut::<R>(res),
-            res_col,
-            &base_dft_ref::<R>(a),
-            a_col,
-        )
+        if limb_tasks(res.n(), res.size()) {
+            super::vec_znx_dft::vec_znx_dft_copy::<R, RayonTaskExecutor>(
+                step,
+                offset,
+                &mut base_dft_mut::<R>(res),
+                res_col,
+                &base_dft_ref::<R>(a),
+                a_col,
+            )
+        } else {
+            super::vec_znx_dft::vec_znx_dft_copy::<R, SerialTaskExecutor>(
+                step,
+                offset,
+                &mut base_dft_mut::<R>(res),
+                res_col,
+                &base_dft_ref::<R>(a),
+                a_col,
+            )
+        }
     }
 
     fn vec_znx_dft_zero(module: &Module<Self>, res: &mut VecZnxDftBackendMut<'_, Self>, res_col: usize) {
@@ -1018,21 +1479,14 @@ where
     }
 
     fn vec_znx_dft_automorphism_with_plan(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         plan: &Self::AutomorphismPlan,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        NTT4x30Neon::<R>::vec_znx_dft_automorphism_with_plan(
-            base_module(module),
-            plan,
-            &mut base_dft_mut::<R>(res),
-            res_col,
-            &base_dft_ref::<R>(a),
-            a_col,
-        );
+        super::vec_znx_dft::vec_znx_dft_automorphism(plan, &mut base_dft_mut::<R>(res), res_col, &base_dft_ref::<R>(a), a_col);
     }
 
     fn vec_znx_dft_automorphism_add_with_plan_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
@@ -1051,28 +1505,34 @@ where
     ) {
         let _ = scratch;
         if RayonTaskExecutor::should_serialize_inner() {
-            poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::ntt4x30_vec_znx_dft_automorphism_add_portable::<
-                Self,
-                SerialTaskExecutor,
-            >(plan, res, res_col, a, a_col);
+            super::vec_znx_dft::vec_znx_dft_automorphism_add::<_, SerialTaskExecutor>(
+                plan,
+                &mut base_dft_mut::<R>(res),
+                res_col,
+                &base_dft_ref::<R>(a),
+                a_col,
+            );
         } else {
-            poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::ntt4x30_vec_znx_dft_automorphism_add_portable::<
-                Self,
-                RayonTaskExecutor,
-            >(plan, res, res_col, a, a_col);
+            super::vec_znx_dft::vec_znx_dft_automorphism_add::<_, RayonTaskExecutor>(
+                plan,
+                &mut base_dft_mut::<R>(res),
+                res_col,
+                &base_dft_ref::<R>(a),
+                a_col,
+            );
         }
     }
 }
 
 impl<R: Ring> poulpy_hal::execution::ScratchWorkers for NTT4x30NeonRayon<R> {
-    const PREPARE: usize = 4;
-    const APPLY: usize = 8;
-    const VMP: usize = 8;
-    const IDFT: usize = 8;
+    const PREPARE: usize = 32;
+    const APPLY: usize = 32;
+    const VMP: usize = 32;
+    const IDFT: usize = 32;
 }
 
 impl<R: Ring> poulpy_cpu_rayon::RayonTuning for NTT4x30NeonRayon<R> {
-    const COEFF_MIN_LEN: usize = 1 << 15;
+    const COEFF_MIN_LEN: usize = 1 << 17;
     const COEFF_MIN_TASK: usize = 1 << 13;
     const NORMALIZE_MIN_TASK: usize = 1 << 12;
 }

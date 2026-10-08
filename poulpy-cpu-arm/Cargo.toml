@@ -70,3 +70,8 @@ required-features = ["enable-neon", "enable-ckks", "enable-bin-fhe"]
 name = "normalize"
 harness = false
 required-features = ["enable-neon"]
+
+[[bench]]
+name = "bootstrapping"
+harness = false
+required-features = ["enable-neon", "enable-ckks"]

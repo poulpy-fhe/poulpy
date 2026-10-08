@@ -4,10 +4,8 @@
 //! im_0..im_{m-1}]` (split, not interleaved).
 
 use core::arch::aarch64::{
-    float64x2_t, int64x2_t, vaddq_f64, vaddq_s64, vandq_s64, vandq_u64, vdupq_n_f64, vdupq_n_s64, vdupq_n_u64, veorq_s64,
-    vfmaq_f64, vfmsq_f64, vld1q_f64, vld1q_s64, vmulq_f64, vnegq_f64, vorrq_s64, vorrq_u64, vreinterpretq_f64_u64,
-    vreinterpretq_s64_f64, vreinterpretq_s64_u64, vreinterpretq_u64_f64, vreinterpretq_u64_s64, vshlq_u64, vshrq_n_s64,
-    vshrq_n_u64, vst1q_f64, vst1q_s64, vsubq_f64, vsubq_s64,
+    float64x2_t, vaddq_f64, vcvtaq_s64_f64, vcvtq_f64_s64, vdupq_n_f64, vfmaq_f64, vfmsq_f64, vld1q_f64, vld1q_s64, vmulq_f64,
+    vnegq_f64, vst1q_f64, vst1q_s64, vsubq_f64,
 };
 
 #[allow(unused_imports)]
@@ -362,47 +360,19 @@ pub(crate) fn reim_addmul_neon(res: &mut [f64], a: &[f64], b: &[f64]) {
     let _ = reim_addmul_portable;
 }
 
-/// `i64 → f64` exact conversion for `|a[i]| < 2^50` via IEEE 754 bit trick.
+/// `i64 → f64` conversion, rounded to nearest even as the `as f64` cast of the reference.
 ///
-/// Caller must ensure `|a[i]| <= 2^50 - 1`; debug builds assert.
-pub(crate) fn reim_from_znx_i64_bnd50_neon(res: &mut [f64], a: &[i64]) {
+/// Uses the native conversion, so every `i64` is accepted.
+pub(crate) fn reim_from_znx_i64_neon(res: &mut [f64], a: &[i64]) {
     assert_eq!(res.len(), a.len());
-    #[cfg(debug_assertions)]
-    {
-        const BOUND: i64 = (1i64 << 50) - 1;
-        for (i, &val) in a.iter().enumerate() {
-            assert!(
-                val.abs() <= BOUND,
-                "reim_from_znx_i64_bnd50_neon: a[{i}] = {val} exceeds 2^50-1"
-            );
-        }
-    }
     let n = res.len();
     let span = n >> 2;
     unsafe {
-        let expo: f64 = (1i64 << 52) as f64;
-        let add_cst: i64 = 1i64 << 51;
-        let sub_cst: f64 = (3i64 << 51) as f64;
-
-        let expo_v = vreinterpretq_u64_f64(vdupq_n_f64(expo));
-        let add_cst_v = vdupq_n_s64(add_cst);
-        let sub_cst_v = vdupq_n_f64(sub_cst);
-
-        let mut res_ptr = res.as_mut_ptr();
-        let mut a_ptr = a.as_ptr();
-
-        for _ in 0..span {
-            // Process 4 lanes via 2 NEON registers.
-            let lo = vaddq_s64(vld1q_s64(a_ptr), add_cst_v);
-            let hi = vaddq_s64(vld1q_s64(a_ptr.add(2)), add_cst_v);
-            let mut lo_f = vreinterpretq_f64_u64(vorrq_u64(vreinterpretq_u64_s64(lo), expo_v));
-            let mut hi_f = vreinterpretq_f64_u64(vorrq_u64(vreinterpretq_u64_s64(hi), expo_v));
-            lo_f = vsubq_f64(lo_f, sub_cst_v);
-            hi_f = vsubq_f64(hi_f, sub_cst_v);
-            vst1q_f64(res_ptr, lo_f);
-            vst1q_f64(res_ptr.add(2), hi_f);
-            res_ptr = res_ptr.add(4);
-            a_ptr = a_ptr.add(4);
+        let (r, a) = (res.as_mut_ptr(), a.as_ptr());
+        for i in 0..span {
+            let o = 4 * i;
+            vst1q_f64(r.add(o), vcvtq_f64_s64(vld1q_s64(a.add(o))));
+            vst1q_f64(r.add(o + 2), vcvtq_f64_s64(vld1q_s64(a.add(o + 2))));
         }
     }
     let tail = span << 2;
@@ -411,105 +381,20 @@ pub(crate) fn reim_from_znx_i64_bnd50_neon(res: &mut [f64], a: &[i64]) {
     }
 }
 
-/// Shared per-lane body: round and convert one f64 lane vector to i64 via
-/// IEEE 754 exponent-diff bit manipulation. Mirrors the inner block of
-/// `reim_to_znx_i64_bnd63_avx2_fma` at `conversion.rs:223`. Caller supplies
-/// the broadcast constants to avoid recomputation in the hot loop.
-/// Bound: caller guarantees `|a / divisor| < 2^62` (output fits in i64).
-#[inline(always)]
-unsafe fn reim_to_znx_chunk(
-    a_f: float64x2_t,
-    sign_mask_f: float64x2_t,
-    offset_f: float64x2_t,
-    expo_mask: int64x2_t,
-    mantissa_mask: int64x2_t,
-    mantissa_msb: int64x2_t,
-    divi_bits: int64x2_t,
-) -> int64x2_t {
-    unsafe {
-        // a_round = a + sign(a) * (divisor / 2)
-        let asign = vreinterpretq_s64_u64(vandq_u64(vreinterpretq_u64_f64(a_f), vreinterpretq_u64_f64(sign_mask_f)));
-        let bias = vreinterpretq_f64_u64(vorrq_u64(vreinterpretq_u64_s64(asign), vreinterpretq_u64_f64(offset_f)));
-        let a_round = vaddq_f64(a_f, bias);
-
-        // sign_full = -1 if a was negative, else 0 (used for two's-complement negate)
-        let sign_full = vsubq_s64(
-            vdupq_n_s64(0),
-            vreinterpretq_s64_u64(vshrq_n_u64::<63>(vreinterpretq_u64_s64(asign))),
-        );
-
-        // exp = (a as u64) & expo_mask
-        let a_bits = vreinterpretq_s64_f64(a_round);
-        let a0exp = vandq_s64(a_bits, expo_mask);
-
-        // shift_signed = (a0exp - divi_bits) >>_arith 52  (positive = left, negative = right amount)
-        let exp_diff = vsubq_s64(a0exp, divi_bits);
-        let shift_signed = vshrq_n_s64::<52>(exp_diff);
-
-        // mantissa = (a as u64) & mantissa_mask | mantissa_msb
-        let a0pos_u = vorrq_u64(
-            vandq_u64(vreinterpretq_u64_s64(a_bits), vreinterpretq_u64_s64(mantissa_mask)),
-            vreinterpretq_u64_s64(mantissa_msb),
-        );
-
-        // out = vshlq_u64(mantissa, shift_signed) — handles both directions in one op.
-        let out_u = vshlq_u64(a0pos_u, shift_signed);
-
-        // Apply sign: out = (out ^ sign_full) - sign_full
-        let out_s = vreinterpretq_s64_u64(out_u);
-        vsubq_s64(veorq_s64(out_s, sign_full), sign_full)
-    }
-}
-
-/// `f64 → i64` conversion with rounding-divide by `divisor`. Bound: output
-/// must fit in i64.
-pub(crate) fn reim_to_znx_i64_bnd63_neon(res: &mut [i64], divisor: f64, a: &[f64]) {
+/// `f64 → i64` conversion of `a / divisor`, rounded to nearest with ties away from zero.
+///
+/// The native conversion computes `(a * (1 / divisor)).round() as i64` as the reference does, saturation included.
+pub(crate) fn reim_to_znx_i64_neon(res: &mut [i64], divisor: f64, a: &[f64]) {
     assert_eq!(res.len(), a.len());
     let n = res.len();
     let span = n >> 2;
-
-    let sign_mask: u64 = 0x8000_0000_0000_0000;
-    let expo_mask: u64 = 0x7FF0_0000_0000_0000;
-    let mantissa_mask: u64 = (i64::MAX as u64) ^ expo_mask;
-    let mantissa_msb: u64 = 0x0010_0000_0000_0000;
-    let divi_bits_f: f64 = divisor * (1i64 << 52) as f64;
-    // A bias just below half avoids double rounding near ties and at 2^52.
-    let offset: f64 = divisor * 0.5f64.next_down();
-
     unsafe {
-        let sign_mask_f = vreinterpretq_f64_u64(vdupq_n_u64(sign_mask));
-        let expo_mask_v = vreinterpretq_s64_u64(vdupq_n_u64(expo_mask));
-        let mantissa_mask_v = vreinterpretq_s64_u64(vdupq_n_u64(mantissa_mask));
-        let mantissa_msb_v = vreinterpretq_s64_u64(vdupq_n_u64(mantissa_msb));
-        let offset_f = vdupq_n_f64(offset);
-        let divi_bits_v = vreinterpretq_s64_f64(vdupq_n_f64(divi_bits_f));
-
-        let mut res_ptr = res.as_mut_ptr();
-        let mut a_ptr = a.as_ptr();
-
-        for _ in 0..span {
-            let lo = reim_to_znx_chunk(
-                vld1q_f64(a_ptr),
-                sign_mask_f,
-                offset_f,
-                expo_mask_v,
-                mantissa_mask_v,
-                mantissa_msb_v,
-                divi_bits_v,
-            );
-            let hi = reim_to_znx_chunk(
-                vld1q_f64(a_ptr.add(2)),
-                sign_mask_f,
-                offset_f,
-                expo_mask_v,
-                mantissa_mask_v,
-                mantissa_msb_v,
-                divi_bits_v,
-            );
-            vst1q_s64(res_ptr, lo);
-            vst1q_s64(res_ptr.add(2), hi);
-            res_ptr = res_ptr.add(4);
-            a_ptr = a_ptr.add(4);
+        let inv = vdupq_n_f64(1. / divisor);
+        let (r, a) = (res.as_mut_ptr(), a.as_ptr());
+        for i in 0..span {
+            let o = 4 * i;
+            vst1q_s64(r.add(o), vcvtaq_s64_f64(vmulq_f64(vld1q_f64(a.add(o)), inv)));
+            vst1q_s64(r.add(o + 2), vcvtaq_s64_f64(vmulq_f64(vld1q_f64(a.add(o + 2)), inv)));
         }
     }
     let tail = span << 2;
@@ -519,64 +404,24 @@ pub(crate) fn reim_to_znx_i64_bnd63_neon(res: &mut [i64], divisor: f64, a: &[f64
 }
 
 /// In-place variant: read `f64`, write `i64` (reinterpreted) into the same buffer.
-pub(crate) fn reim_to_znx_i64_assign_bnd63_neon(res: &mut [f64], divisor: f64) {
+pub(crate) fn reim_to_znx_i64_assign_neon(res: &mut [f64], divisor: f64) {
     let n = res.len();
     let span = n >> 2;
-
-    let sign_mask: u64 = 0x8000_0000_0000_0000;
-    let expo_mask: u64 = 0x7FF0_0000_0000_0000;
-    let mantissa_mask: u64 = (i64::MAX as u64) ^ expo_mask;
-    let mantissa_msb: u64 = 0x0010_0000_0000_0000;
-    let divi_bits_f: f64 = divisor * (1i64 << 52) as f64;
-    // A bias just below half avoids double rounding near ties and at 2^52.
-    let offset: f64 = divisor * 0.5f64.next_down();
-
     unsafe {
-        let sign_mask_f = vreinterpretq_f64_u64(vdupq_n_u64(sign_mask));
-        let expo_mask_v = vreinterpretq_s64_u64(vdupq_n_u64(expo_mask));
-        let mantissa_mask_v = vreinterpretq_s64_u64(vdupq_n_u64(mantissa_mask));
-        let mantissa_msb_v = vreinterpretq_s64_u64(vdupq_n_u64(mantissa_msb));
-        let offset_f = vdupq_n_f64(offset);
-        let divi_bits_v = vreinterpretq_s64_f64(vdupq_n_f64(divi_bits_f));
-
-        let mut ptr_f = res.as_mut_ptr();
-        let mut ptr_i = ptr_f as *mut i64;
-
-        for _ in 0..span {
-            let lo = reim_to_znx_chunk(
-                vld1q_f64(ptr_f),
-                sign_mask_f,
-                offset_f,
-                expo_mask_v,
-                mantissa_mask_v,
-                mantissa_msb_v,
-                divi_bits_v,
-            );
-            let hi = reim_to_znx_chunk(
-                vld1q_f64(ptr_f.add(2)),
-                sign_mask_f,
-                offset_f,
-                expo_mask_v,
-                mantissa_mask_v,
-                mantissa_msb_v,
-                divi_bits_v,
-            );
-            vst1q_s64(ptr_i, lo);
-            vst1q_s64(ptr_i.add(2), hi);
-            ptr_f = ptr_f.add(4);
-            ptr_i = ptr_i.add(4);
+        let inv = vdupq_n_f64(1. / divisor);
+        let p = res.as_mut_ptr();
+        for i in 0..span {
+            let o = 4 * i;
+            let lo = vcvtaq_s64_f64(vmulq_f64(vld1q_f64(p.add(o)), inv));
+            let hi = vcvtaq_s64_f64(vmulq_f64(vld1q_f64(p.add(o + 2)), inv));
+            vst1q_s64(p.add(o) as *mut i64, lo);
+            vst1q_s64(p.add(o + 2) as *mut i64, hi);
         }
     }
     let tail = span << 2;
     if tail < n {
         reim_to_znx_i64_assign_portable(&mut res[tail..], divisor);
     }
-}
-
-// suppress: reused for tail handling on builds without orrq/eorq detection helpers
-#[allow(dead_code)]
-fn _unused() {
-    let _ = vorrq_s64;
 }
 
 #[cfg(test)]
@@ -675,14 +520,21 @@ mod tests {
     fn reim_from_znx_neon_exact_vs_ref() {
         let mut r = rng();
         for &n in SIZES {
+            // The whole range, with the values whose conversion rounds.
             let a: Vec<i64> = (0..n)
-                .map(|_| (r.random::<u64>() & ((1u64 << 50) - 1)) as i64 - (1i64 << 49))
+                .map(|i| match i % 6 {
+                    0 => i64::MAX,
+                    1 => i64::MIN,
+                    2 => (1i64 << 53) + 1,
+                    3 => -(1i64 << 53) - 3,
+                    _ => r.random::<i64>(),
+                })
                 .collect();
             let mut got = vec![0f64; n];
             let mut want = vec![0f64; n];
-            reim_from_znx_i64_bnd50_neon(&mut got, &a);
+            reim_from_znx_i64_neon(&mut got, &a);
             reim_from_znx_i64_portable(&mut want, &a);
-            assert_eq!(got, want, "reim_from_znx_i64_bnd50_neon n={n}");
+            assert_eq!(got, want, "reim_from_znx_i64_neon n={n}");
         }
     }
 

@@ -130,15 +130,15 @@ impl<R: Ring> ReimArith for FFT64Neon<R> {
     }
     #[inline(always)]
     fn reim_from_znx(res: &mut [f64], a: &[i64]) {
-        crate::neon::reim_arith::reim_from_znx_i64_bnd50_neon(res, a);
+        crate::neon::reim_arith::reim_from_znx_i64_neon(res, a);
     }
     #[inline(always)]
     fn reim_to_znx(res: &mut [i64], divisor: f64, a: &[f64]) {
-        crate::neon::reim_arith::reim_to_znx_i64_bnd63_neon(res, divisor, a);
+        crate::neon::reim_arith::reim_to_znx_i64_neon(res, divisor, a);
     }
     #[inline(always)]
     fn reim_to_znx_assign(res: &mut [f64], divisor: f64) {
-        crate::neon::reim_arith::reim_to_znx_i64_assign_bnd63_neon(res, divisor);
+        crate::neon::reim_arith::reim_to_znx_i64_assign_neon(res, divisor);
     }
 }
 

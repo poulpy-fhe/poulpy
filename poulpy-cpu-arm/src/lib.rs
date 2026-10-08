@@ -17,16 +17,17 @@
 //! | Module          | Domain                                                    |
 //! |-----------------|-----------------------------------------------------------|
 //! | `module`        | Backend handle lifecycle, FFT/NTT table management        |
-//! | `neon`          | Low-level NEON kernels (FFT, NTT, mat-vec, conversions)   |
+//! | `neon`          | Low-level NEON kernels (FFT, NTT, inner products)         |
 //! | `fft64`         | f64 complex-FFT backend wiring (`FFT64Neon`)              |
-//! | `ntt4x30`        | Q120 NTT backend wiring (`NTT4x30Neon`), VMP                |
+//! | `ntt4x30`        | NTT backend wiring (`NTT4x30Neon`), VMP, convolution        |
 //! | `znx`           | Single ring element (`Z[X]/(X^n+1)`) SIMD arithmetic      |
 //! | `vec_znx_big`   | Large-coefficient (i128) ring element vectors             |
 //!
 //! # Scalar types
 //!
 //! - `FFT64Neon`: `DftWord = f64`, `BigWord = i64`.
-//! - `NTT4x30Neon`: `DftWord = Q120bScalar` (4 × u64 CRT residues over `Primes30`), `BigWord = i128`.
+//! - `NTT4x30Neon`: `DftWord = CrtWord<Primes30, u32>` (four `u32` CRT residues over `Primes30`), `BigWord = i128`.
+//!   A transformed limb stores one plane of residues per prime.
 //!
 //! # CPU requirements
 //!
@@ -97,10 +98,9 @@
 //! on the target host for representative numbers. Qualitative trends:
 //!
 //! - **Ring element arithmetic** (add/sub/negate): bandwidth-bound, modest gains.
-//! - **NTT/INTT, mat-vec, and convolution**: noticeable gains from hand-tuned NEON kernels;
-//!   the convolution apply path dispatches to the fused canonical `ntt_mul_bbc_tile4_x2` kernel.
-//! - **VMP** (large degree): the largest gains, scaling with coefficient size;
-//!   uses `stnp` non-temporal stores to avoid cache pollution.
+//! - **NTT/INTT**: a native 32-bit transform on packed limbs, four lanes of one prime per register.
+//! - **VMP and convolution**: inner products of centered residues against prepared operands,
+//!   with one Montgomery step for every 24 products.
 //!
 //! ## Memory layout
 //!
@@ -109,8 +109,9 @@
 //!   process each block as two `int64x2_t` / `uint64x2_t` per iteration.
 //! - **Tail handling**: Scalar fallback for lengths not divisible by 4.
 //! - **Cache-friendly**: 64-byte alignment ensures single cache line per vector load.
-//! - **Q120 layout**: a q120 vector packs four u64 lanes (one per `Primes30` prime) across
-//!   two NEON registers — `lo` for primes 0/1, `hi` for primes 2/3.
+//! - **NTT4x30 transform domain**: a limb is four planes of `n` canonical `u32` residues, one plane per
+//!   `Primes30` prime, so a transformed coefficient takes 16 bytes.
+//!   Prepared operands store their residues multiplied by `2^32`.
 //!
 //! # Threading and concurrency
 //!

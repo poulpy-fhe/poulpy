@@ -276,6 +276,38 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### CPU backends
 
+- **Behaviour:** the workers of a Rayon pool keep polling for work for 1 ms after the last parallel region of a `*Rayon` backend, where Rayon put them to sleep after a few failed steals. `poulpy_cpu_rayon::set_idle_polling` changes the window or turns polling off, and `idle_polling` reads it. The NEON NTT4x30 bootstrap `n16_d35_k720_p19_s2c` is about 4% faster on 18 threads.
+- `RayonTaskExecutor` gives each task the number of threads it may still fan out to, and `should_serialize_inner` runs a nested region on the calling thread once that number is one. It tested the nesting depth alone before, so the four baby rotations of a linear transformation, spawned through two joins, ran everything inside them on one thread.
+- `FFT64Neon` converts between `i64` and `f64` with the native AArch64 conversions (`SCVTF`, and `FCVTAS` after the multiplication by the inverse divisor), in place of the IEEE bit manipulation ported from the AVX2 kernels.
+  They are the operations of the reference definition, so the input bound of the previous kernels is gone.
+- `NTT4x30Neon<ConjugateInvariant>` and its Rayon variant run the native 32-bit NTT, with the basis change of the conjugate-invariant ring applied on the packed planes.
+- **Breaking:** the NEON q120 kernels are removed, with the `Ntt*` kernel trait implementations of `NTT4x30Neon` and `NTT4x30NeonRayon` other than `NttDFTExecute`, which forwards to the portable transform for the reference bodies that require it.
+  `examples/bench_neon_vs_ref.rs` no longer compares the q120 transforms.
+- The accumulating DFT-domain automorphism of the NEON NTT4x30 backends runs its modular add on four lanes, after a scalar gather.
+- The fused interleaved-digit product of the NEON NTT4x30 backends skips the rows of leading input limbs that are zero in every column, as the per-digit vector-matrix products of the reference body did, and the NEON forward transform returns zero for a zero limb without running.
+  A ciphertext raised to a larger modulus has most of its limbs in this case.
+- The NEON `i128` normalization step computes each carry as one rounding shift of the wrapping sum, in place of a digit subtraction with its borrow, which removes a quarter of its instructions.
+- The NEON NTT4x30 inner products of the vector-matrix product and the convolution multiply residues centered around zero, on signed accumulators: 24 products share one Montgomery step, where 12 canonical ones did.
+  The prepared matrix and both prepared convolution operands store centered residues.
+- The NEON NTT4x30 vector-matrix products gather their input limbs in runs of eight blocks of four coefficients.
+  Gathering one block at a time touched every input limb for 16 bytes and cost up to a fifth of the product.
+- `NTT4x30NeonRayon` raises its `ScratchWorkers` caps to 32 for every family, from 8 (4 for prepare), which left most of a wide pool idle in the vector-matrix product, the convolution and the inverse transform.
+  The scratch of the NEON NTT4x30 transforms is sized by what the native NTT needs on the standard ring: half the previous size for the inverse transform and a third for the prepare kernels, so the larger caps reserve about as much as before.
+- `NTT4x30Neon` and `NTT4x30NeonRayon` override `cnv_apply_dft_sum` with a fused kernel: the terms of a sum are accumulated together, sixteen at a time, so an output limb is reduced and stored once per group where the derived body reduced, read and wrote it for every term.
+- The CRT reconstruction after the NEON inverse NTT accumulates its sum on four coefficients at a time in limbs of 30 bits, and folds the centering into the reduction.
+- `NTT4x30Neon` and `NTT4x30NeonRayon` implement `GGLWEProductDigitsStridedImpl` with a fused kernel for up to 16 gadget digits: one pass over the prepared matrix accumulates every digit of an output limb, with one store and one Montgomery step per 12 products, where the reference body ran one accumulating vector-matrix product per digit.
+  It returns the residues of the reference body, which stays in use above 16 digits.
+  Inner products of at most four terms skip one reduction step.
+- The NEON NTT4x30 convolution reads a sparse right operand in place, through repeated-lane loads, and no longer expands it into a zeroed buffer for every output limb.
+- `NTT4x30Neon` and `NTT4x30NeonRayon` run a native 32-bit NTT on the standard ring, in place on the packed limb, four lanes of one prime per register.
+  Butterflies use signed residues and a precomputed twiddle quotient, levels are cache-blocked, the forward transform reads the `i64` coefficients directly and the inverse transform folds `1/n` and the CRT constant into its last level.
+  It returns the same residues as the q120 kernel, which stays in use on the conjugate-invariant ring.
+  The forward transform no longer allocates.
+- **Breaking, behaviour:** `NTT4x30Neon` and `NTT4x30NeonRayon` store the transform domain as four `u32` residues per coefficient (`DftWord = CrtWord<Primes30, u32>`), half the previous size, for `VecZnxDft`, `SvpPPol`, `VmpPMat`, `CnvPVecL` and `CnvPVecR`.
+  A transformed limb holds one plane of canonical residues per prime, so every lane of a NEON register belongs to the same prime.
+  Prepared operands store their residues multiplied by `2^32` and products against them reduce with one Montgomery step on four lanes.
+  The prepared matrix is ordered block, output column, input row, so a vector-matrix product reads it as one contiguous stream, and the convolution shares its inner product kernel.
+  These buffers are no longer byte-compatible with `NTT4x30Portable`: the `VecZnxDftLayoutCompatible` and `SvpPPolLayoutCompatible` markers between the two are removed, `VecZnxBigLayoutCompatible` stays.
 - `NTT4x30AvxRayon` and `NTT4x30Avx512Rayon` run `vec_znx_idft_normalize_consume` in parallel, one inverse transform per limb and the shared parallel normalization. They forwarded to the serial backend before.
 - The IFMA and NTT4x30 AVX-512 backends override `glwe_mul_columns` with their fused rank-one kernel, which forms the cross term before storing it. IFMA linear transformations size their intermediate products at the true limb count.
 - AVX-512 rank-one tensor multiplication and squaring retain full-limb precision before pairwise subtraction and round all output columns to the requested precision. `NTT3x42IfmaRayon` specializes prepared-right Core tensor products with matching input and output radices.

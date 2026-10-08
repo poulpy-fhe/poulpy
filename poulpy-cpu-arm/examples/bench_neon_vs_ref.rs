@@ -32,11 +32,7 @@ mod neon {
         FFT64Portable, NTT4x30Portable,
         kernels::{
             fft64::reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
-            ntt4x30::{
-                I128BigOps, I128NormalizeOps, NttDFTExecute, NttFromZnx64,
-                ntt::{NttTable, NttTableInv},
-                primes::{PrimeSet, Primes30},
-            },
+            ntt4x30::{I128BigOps, I128NormalizeOps},
             znx::{ZnxAdd, ZnxAutomorphism, ZnxNormalizeMiddleStepAssign},
         },
     };
@@ -89,17 +85,6 @@ mod neon {
     fn rand_f64s(n: usize) -> Vec<f64> {
         let mut r = rng();
         (0..n).map(|_| r.random::<f64>() * 2e6 - 1e6).collect()
-    }
-
-    fn rand_q120b(n: usize) -> Vec<u64> {
-        let mut r = rng();
-        let mut out = vec![0u64; 4 * n];
-        for chunk in out.chunks_exact_mut(4) {
-            for (lane, slot) in chunk.iter_mut().enumerate() {
-                *slot = r.random::<u64>() % Primes30::Q[lane] as u64;
-            }
-        }
-        out
     }
 
     fn iters_for(n: usize) -> u64 {
@@ -352,80 +337,6 @@ mod neon {
         row(rep, "ifft", n, ref_ns, neon_ns, sp);
     }
 
-    // ─── NTT4x30 ────────────────────────────────────────────────────────────
-
-    fn bench_ntt_from_znx64(rep: &mut Reporter, n: usize, sp: &mut Vec<f64>) {
-        let a = rand_i64s(n);
-
-        let mut neon = vec![0u64; 4 * n];
-        let mut refr = vec![0u64; 4 * n];
-        <NTT4x30Neon as NttFromZnx64>::ntt_from_znx64(&mut neon, &a);
-        <NTT4x30Portable as NttFromZnx64>::ntt_from_znx64(&mut refr, &a);
-        assert_eq!(neon, refr, "ntt_from_znx64 (n={n})");
-
-        let iters = iters_for(n);
-        let mut r = vec![0u64; 4 * n];
-        let ref_ns = time(iters, || {
-            <NTT4x30Portable as NttFromZnx64>::ntt_from_znx64(&mut r, &a);
-            black_box(&r);
-        });
-        let neon_ns = time(iters, || {
-            <NTT4x30Neon as NttFromZnx64>::ntt_from_znx64(&mut r, &a);
-            black_box(&r);
-        });
-        row(rep, "ntt_from_znx64", n, ref_ns, neon_ns, sp);
-    }
-
-    fn bench_ntt(rep: &mut Reporter, n: usize, sp: &mut Vec<f64>) {
-        let table = NttTable::<Primes30>::new(n);
-        let data0 = rand_q120b(n);
-
-        let mut neon = data0.clone();
-        let mut refr = data0.clone();
-        <NTT4x30Neon as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut neon);
-        <NTT4x30Portable as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut refr);
-        assert_eq!(neon, refr, "ntt (n={n})");
-
-        let iters = iters_for(n);
-        let mut d = data0.clone();
-        let ref_ns = time(iters, || {
-            d.copy_from_slice(&data0);
-            <NTT4x30Portable as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut d);
-            black_box(&d);
-        });
-        let neon_ns = time(iters, || {
-            d.copy_from_slice(&data0);
-            <NTT4x30Neon as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut d);
-            black_box(&d);
-        });
-        row(rep, "ntt", n, ref_ns, neon_ns, sp);
-    }
-
-    fn bench_intt(rep: &mut Reporter, n: usize, sp: &mut Vec<f64>) {
-        let table = NttTableInv::<Primes30>::new(n);
-        let data0 = rand_q120b(n);
-
-        let mut neon = data0.clone();
-        let mut refr = data0.clone();
-        <NTT4x30Neon as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut neon);
-        <NTT4x30Portable as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut refr);
-        assert_eq!(neon, refr, "intt (n={n})");
-
-        let iters = iters_for(n);
-        let mut d = data0.clone();
-        let ref_ns = time(iters, || {
-            d.copy_from_slice(&data0);
-            <NTT4x30Portable as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut d);
-            black_box(&d);
-        });
-        let neon_ns = time(iters, || {
-            d.copy_from_slice(&data0);
-            <NTT4x30Neon as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut d);
-            black_box(&d);
-        });
-        row(rep, "intt", n, ref_ns, neon_ns, sp);
-    }
-
     // ─── VecZnxBig (i128) ──────────────────────────────────────────────────
 
     fn bench_i128_add(rep: &mut Reporter, n: usize, sp: &mut Vec<f64>) {
@@ -545,13 +456,6 @@ mod neon {
         for &n in SIZES {
             bench_fft(&mut rep, n, &mut sp);
             bench_ifft(&mut rep, n, &mut sp);
-        }
-
-        section(&mut rep, "NTT4x30 (q120b)");
-        for &n in SIZES {
-            bench_ntt_from_znx64(&mut rep, n, &mut sp);
-            bench_ntt(&mut rep, n, &mut sp);
-            bench_intt(&mut rep, n, &mut sp);
         }
 
         section(&mut rep, "VecZnxBig (i128)");

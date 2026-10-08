@@ -75,7 +75,7 @@ let log_n: usize = 10;
 // f64 FFT backend (NEON)
 let module: Module<FFT64Neon> = Module::<FFT64Neon>::new(1 << log_n);
 
-// Q120 NTT backend (NEON, CRT over four ~30-bit primes)
+// NTT backend (NEON, CRT over four ~30-bit primes)
 let module: Module<NTT4x30Neon> = Module::<NTT4x30Neon>::new(1 << log_n);
 
 // Rayon variants use the same NEON kernels with backend-owned scheduling
@@ -87,7 +87,7 @@ The serial backends require `enable-neon`; the Rayon variants additionally requi
 
 ## Numerical contract
 
-- Integer / modular operations (`Znx*`, `I128BigOps`, `Ntt*`, `NttDFTExecute`) are bit-exact against `poulpy-cpu-portable`.
+- Integer operations (`Znx*`, `I128BigOps`) are bit-exact against `poulpy-cpu-portable`. The NTT4x30 transform domain uses a packed `u32` layout that differs from the portable one in bytes, and agrees with it in the residues it holds.
 - FFT-domain operations (`ReimArith`, `Reim4*`, `I64Ops`, `ReimFFTExecute`) match the reference within ULP tolerance — NEON kernels use FMA where the scalar reference does not.
 
 See `poulpy-hal/docs/backend_safety_contract.md` for the full backend contract.

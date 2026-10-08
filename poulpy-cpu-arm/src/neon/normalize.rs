@@ -1,8 +1,9 @@
 //! NEON kernels for `vec_znx_big_normalize`'s i128 carry-propagation.
 
 use core::arch::aarch64::{
-    int64x2_t, vaddq_s64, vaddq_u64, vcgtq_u64, vdupq_n_s64, vld1q_s64, vorrq_u64, vreinterpretq_s64_u64, vreinterpretq_u64_s64,
-    vshlq_s64, vshlq_u64, vst1q_s64, vsubq_s64, vsubq_u64, vuzp1q_s64, vuzp2q_s64, vzip1q_s64, vzip2q_s64,
+    int64x2_t, uint64x2_t, vaddq_s64, vaddq_u64, vcgtq_u64, vdupq_n_s64, vdupq_n_u64, vld1q_s64, vorrq_u64,
+    vreinterpretq_s64_u64, vreinterpretq_u64_s64, vshlq_s64, vshlq_u64, vst1q_s64, vsubq_s64, vuzp1q_s64, vuzp2q_s64, vzip1q_s64,
+    vzip2q_s64,
 };
 use poulpy_cpu_portable::NTT4x30Portable;
 use poulpy_cpu_portable::kernels::ntt4x30::{I128NormalizeOps, vec_znx_big::AssignOp};
@@ -32,6 +33,10 @@ struct NfcShifts {
     srl_b2k: int64x2_t,
     /// `− base2k` — arithmetic-right count for `carry2_hi`.
     sra_b2k_carry: int64x2_t,
+    /// `2^(base2k_lsh - 1)`, the rounding offset of the first carry.
+    half_b2klsh: uint64x2_t,
+    /// `2^(base2k - 1)`, the rounding offset of the second carry.
+    half_b2k: uint64x2_t,
 }
 
 impl NfcShifts {
@@ -49,6 +54,8 @@ impl NfcShifts {
                 sra_b2k: vdupq_n_s64(-((64 - base2k) as i64)),
                 srl_b2k: vdupq_n_s64(-(base2k as i64)),
                 sra_b2k_carry: vdupq_n_s64(-(base2k as i64)),
+                half_b2klsh: vdupq_n_u64(1u64 << (b2klsh - 1)),
+                half_b2k: vdupq_n_u64(1u64 << (base2k - 1)),
             }
         }
     }
@@ -93,10 +100,12 @@ unsafe fn store2_i64(r_ptr: *mut i64, lo: int64x2_t) {
 }
 
 /// Shared body of `nfc_middle_step` for one 2-lane chunk.
-/// Mirrors `nfc_middle_chunk` in the AVX file: input is a deinterleaved
-/// `(lo_a, hi_a)` and previous carry `(lo_c, hi_c)`; output is `(lo_out,
-/// new_lo_c, new_hi_c)`. The math is identical to AVX line-for-line — see
-/// `poulpy-cpu-avx/src/ntt4x30/vec_znx_big_avx.rs:243`.
+///
+/// Input is a deinterleaved `(lo_a, hi_a)` and the previous carry `(lo_c, hi_c)`.
+/// Output is `(lo_out, new_lo_c, new_hi_c)`.
+///
+/// The carry out of a digit extraction, `(x - digit) >> k`, is computed as `(x + 2^(k-1)) >> k`.
+/// Both clear the low `k` bits of the same wrapping sum, so they agree on every input.
 #[inline(always)]
 unsafe fn nfc_middle_chunk(
     s: &NfcShifts,
@@ -106,61 +115,42 @@ unsafe fn nfc_middle_chunk(
     hi_c: int64x2_t,
 ) -> (int64x2_t, int64x2_t, int64x2_t) {
     unsafe {
-        // digit = sign_extend_low_b2klsh_bits(lo_a)
-        let lo_dig = vshlq_s64(vshlq_s64(lo_a, s.sll_b2klsh), s.sra_b2klsh);
-        // hi_dig = lo_dig >> 63 (sign-extend digit i64 → split i128)
-        let hi_dig = vshlq_s64(lo_dig, vdupq_n_s64(-63));
-
-        // co (carry-out from digit extraction) = (a − digit) >> base2k_lsh
-        let diff_lo_u = vsubq_u64(vreinterpretq_u64_s64(lo_a), vreinterpretq_u64_s64(lo_dig));
-        let borrow_mask = vcgtq_u64(vreinterpretq_u64_s64(lo_dig), vreinterpretq_u64_s64(lo_a));
-        let borrow_s = vreinterpretq_s64_u64(borrow_mask); // -1 on borrow, 0 otherwise
-        // diff_hi = hi_a - hi_dig + borrow_mask (subtract -1 = add 1 only if borrow)
-        let diff_hi = vaddq_s64(vsubq_s64(hi_a, hi_dig), borrow_s);
-
-        // co_lo = (diff_lo_u >> b2klsh) | (diff_hi << (64 − b2klsh))
-        let co_lo_u = vorrq_u64(
-            vshlq_u64(diff_lo_u, s.srl_b2klsh),
-            vshlq_u64(vreinterpretq_u64_s64(diff_hi), s.sll_b2klsh),
+        let lo_a_u = vreinterpretq_u64_s64(lo_a);
+        // co = (a + 2^(b2klsh - 1)) >> b2klsh
+        let lo1 = vaddq_u64(lo_a_u, s.half_b2klsh);
+        let hi1 = vsubq_s64(hi_a, vreinterpretq_s64_u64(vcgtq_u64(lo_a_u, lo1)));
+        let co_lo = vorrq_u64(
+            vshlq_u64(lo1, s.srl_b2klsh),
+            vshlq_u64(vreinterpretq_u64_s64(hi1), s.sll_b2klsh),
         );
-        let co_lo = vreinterpretq_s64_u64(co_lo_u);
-        // co_hi = diff_hi >> base2k_lsh (arithmetic)
-        let co_hi = vshlq_s64(diff_hi, s.sra_b2klsh_co_hi);
+        let co_hi = vshlq_s64(hi1, s.sra_b2klsh_co_hi);
 
-        // digit_shifted = digit << lsh
+        // digit = sign_extend_low_b2klsh_bits(lo_a), then shifted by lsh
+        let lo_dig = vshlq_s64(vshlq_s64(lo_a, s.sll_b2klsh), s.sra_b2klsh);
         let lo_dig_sh = vshlq_s64(lo_dig, s.sll_lsh);
         let hi_dig_sh = vshlq_s64(lo_dig_sh, vdupq_n_s64(-63));
 
         // d_plus_c = digit_shifted + carry
         let lo_dpc = vaddq_s64(lo_dig_sh, lo_c);
-        let carry1_mask = vcgtq_u64(vreinterpretq_u64_s64(lo_dig_sh), vreinterpretq_u64_s64(lo_dpc));
-        // carry1 = 1 if unsigned overflow happened, else 0; mask is -1 → subtract.
-        let carry1_s = vreinterpretq_s64_u64(carry1_mask);
-        let hi_dpc = vsubq_s64(vaddq_s64(hi_dig_sh, hi_c), carry1_s);
+        let lo_dpc_u = vreinterpretq_u64_s64(lo_dpc);
+        let carry1 = vreinterpretq_s64_u64(vcgtq_u64(vreinterpretq_u64_s64(lo_dig_sh), lo_dpc_u));
+        let hi_dpc = vsubq_s64(vaddq_s64(hi_dig_sh, hi_c), carry1);
 
         // out = sign_extend_low_base2k_bits(lo_dpc)
         let lo_out = vshlq_s64(vshlq_s64(lo_dpc, s.sll_b2k), s.sra_b2k);
-        let hi_out = vshlq_s64(lo_out, vdupq_n_s64(-63));
 
-        // carry2 = (d_plus_c − out) >> base2k
-        let diff2_lo_u = vsubq_u64(vreinterpretq_u64_s64(lo_dpc), vreinterpretq_u64_s64(lo_out));
-        let borrow2_mask = vcgtq_u64(vreinterpretq_u64_s64(lo_out), vreinterpretq_u64_s64(lo_dpc));
-        let diff2_hi = vaddq_s64(vsubq_s64(hi_dpc, hi_out), vreinterpretq_s64_u64(borrow2_mask));
-        // carry2_lo = (diff2_lo_u >> base2k) | (diff2_hi << (64 − base2k))
-        let carry2_lo_u = vorrq_u64(
-            vshlq_u64(diff2_lo_u, s.srl_b2k),
-            vshlq_u64(vreinterpretq_u64_s64(diff2_hi), s.sll_b2k),
-        );
-        let carry2_lo = vreinterpretq_s64_u64(carry2_lo_u);
-        let carry2_hi = vshlq_s64(diff2_hi, s.sra_b2k_carry);
+        // carry2 = (d_plus_c + 2^(base2k - 1)) >> base2k
+        let lo2 = vaddq_u64(lo_dpc_u, s.half_b2k);
+        let hi2 = vsubq_s64(hi_dpc, vreinterpretq_s64_u64(vcgtq_u64(lo_dpc_u, lo2)));
+        let carry2_lo = vorrq_u64(vshlq_u64(lo2, s.srl_b2k), vshlq_u64(vreinterpretq_u64_s64(hi2), s.sll_b2k));
+        let carry2_hi = vshlq_s64(hi2, s.sra_b2k_carry);
 
         // new_carry = co + carry2 (i128 add, propagate carry)
-        let new_lo_c_u = vaddq_u64(vreinterpretq_u64_s64(co_lo), vreinterpretq_u64_s64(carry2_lo));
-        let cmask = vcgtq_u64(vreinterpretq_u64_s64(co_lo), new_lo_c_u);
-        let new_lo_c = vreinterpretq_s64_u64(new_lo_c_u);
+        let new_lo_c_u = vaddq_u64(co_lo, carry2_lo);
+        let cmask = vcgtq_u64(co_lo, new_lo_c_u);
         let new_hi_c = vsubq_s64(vaddq_s64(co_hi, carry2_hi), vreinterpretq_s64_u64(cmask));
 
-        (lo_out, new_lo_c, new_hi_c)
+        (lo_out, vreinterpretq_s64_u64(new_lo_c_u), new_hi_c)
     }
 }
 

@@ -40,6 +40,9 @@ impl<R: Ring> Backend for FFT64Neon<R> {
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)
     }
+    fn alloc_zeroed_bytes(len: usize) -> Self::OwnedBuf {
+        alloc_aligned::<u8>(len)
+    }
     fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf {
         AlignedBuf::from(bytes)
     }

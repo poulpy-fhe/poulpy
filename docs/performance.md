@@ -26,13 +26,13 @@ A prepared key holds one DFT-domain word per coefficient per limb, so what matte
 | backend / layout | bytes per coefficient | benchmark `base2k` | bytes per torus bit |
 | --- | --- | --- | --- |
 | `NTT3x42` (IFMA) | 16 | 52 | 0.31 |
-| `NTT4x30` (AVX2 / AVX-512) | 16 | 52 | 0.31 |
+| `NTT4x30` (AVX2 / AVX-512 / Neon) | 16 | 52 | 0.31 |
 | `FFT64` | 8 | 19 | 0.42 |
-| `NTT4x30` (reference / Neon) | 32 | 52 | 0.62 |
+| `NTT4x30` (reference) | 32 | 52 | 0.62 |
 
 A wider limb is only worth what it costs to store.
-The AVX2 and AVX-512 `NTT4x30` backends store their four residues as `u32` and widen them only while computing, so each transformed coefficient occupies 16 bytes.
-At the same radix they therefore have the same storage density as `NTT3x42`; the reference and Neon implementations store four `u64` residues and occupy 32 bytes per transformed coefficient.
+The AVX2, AVX-512 and Neon `NTT4x30` backends store their four residues as `u32`, so each transformed coefficient occupies 16 bytes.
+At the same radix they therefore have the same storage density as `NTT3x42`; the reference implementation stores four `u64` residues and occupies 32 bytes per transformed coefficient.
 
 At the benchmark radices, for leveled work where a parameter set fixes the torus precision and the limb counts follow from it, either packed NTT backend uses about 27% less prepared-key storage per bit than `FFT64`.
 `NTT3x42` remains the fastest because it evaluates three residue streams rather than four.
@@ -68,7 +68,7 @@ At realistic leveled parameters its keys are smaller than `FFT64` keys, while it
 This reduces the FFT advantage on key-switch-heavy work and can put NTT4 ahead on a mixed pipeline such as bootstrapping.
 It is not universal: the FFT's cheaper transform can still win an isolated key-switch or relinearized multiplication, and the margin depends on the ring degree and ISA.
 
-The qualification matters: `NTT4x30Portable` and `NTT4x30Neon` use the 32-byte transformed representation, so their choice against `FFT64` is operation- and machine-dependent.
+The qualification matters: `NTT4x30Portable` uses the 32-byte transformed representation, so its choice against `FFT64` is operation- and machine-dependent.
 For AVX2 and AVX-512, start with NTT4 for a full CKKS pipeline and FFT for a small, switch-heavy one, then benchmark the actual circuit.
 
 ## 2. Backend
@@ -194,8 +194,24 @@ pool.install(|| {
 });
 ```
 
-Nesting a Rayon backend inside your own Rayon tasks is safe — the executor serializes the inner level rather than oversubscribing — but it gains nothing.
-Parallelize at one level only.
+Nesting a Rayon backend inside your own Rayon tasks is safe: each task carries the number of threads it may still use, and a region opened in a task that has one thread left runs on the calling thread.
+A few outer tasks therefore still share the pool, and many outer tasks do not oversubscribe it.
+
+### Idle polling
+
+A circuit opens thousands of short parallel regions, and a worker that Rayon has put to sleep takes tens of microseconds to wake.
+The executor therefore keeps the workers of the pool polling for work for a short window after the last region, 1 ms by default.
+On the NEON NTT4x30 bootstrap this is worth about 4% on 18 threads.
+
+The cost is processor time: every worker stays busy for up to the window after each burst of work.
+Change the window or turn polling off with `poulpy_cpu_rayon::set_idle_polling`:
+
+```rust
+poulpy_cpu_rayon::set_idle_polling(None); // workers sleep as soon as Rayon lets them
+poulpy_cpu_rayon::set_idle_polling(Some(std::time::Duration::from_micros(200)));
+```
+
+The setting is global. A window much longer than a millisecond lets the pollers compete with the thread that drives the circuit.
 
 ## Measuring your own thread count
 

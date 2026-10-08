@@ -19,28 +19,135 @@ use poulpy_hal::execution::TaskExecutor;
 
 thread_local! {
     static TASK_DEPTH: Cell<usize> = const { Cell::new(0) };
+    /// Threads the current task may still fan out to. Zero outside any region: the whole pool.
+    static TASK_BUDGET: Cell<usize> = const { Cell::new(0) };
 }
 
-struct TaskGuard(usize);
+struct TaskGuard(usize, usize);
 
 impl TaskGuard {
-    fn enter(depth: usize) -> Self {
-        Self(TASK_DEPTH.replace(depth))
+    fn enter(depth: usize, budget: usize) -> Self {
+        Self(TASK_DEPTH.replace(depth), TASK_BUDGET.replace(budget.max(1)))
     }
 }
 
 impl Drop for TaskGuard {
     fn drop(&mut self) {
         TASK_DEPTH.set(self.0);
+        TASK_BUDGET.set(self.1);
     }
 }
+
+/// Threads the calling task may fan out to.
+fn task_budget() -> usize {
+    match TASK_BUDGET.get() {
+        0 => ::rayon::current_num_threads().max(1),
+        budget => budget,
+    }
+}
+
+mod idle {
+    //! Idle polling: workers keep looking for work for a short window after the last parallel region.
+    //!
+    //! A homomorphic circuit opens thousands of short parallel regions.
+    //! Rayon puts an idle worker to sleep after a few failed steals, and waking it costs tens of microseconds,
+    //! so each region starts on a few threads and reaches the whole pool late or not at all.
+    //! While the window is open, every worker runs a job that calls `rayon::yield_now` in a loop:
+    //! it executes whatever work appears and never reaches the sleep path.
+    //! The job returns once no region was opened and no work was found for the length of the window.
+
+    use std::sync::OnceLock;
+    use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+    use std::time::{Duration, Instant};
+
+    /// Idle polling window used unless [`set_idle_polling`] changes it.
+    pub const DEFAULT_IDLE_POLLING: Duration = Duration::from_millis(1);
+
+    /// Window in nanoseconds, zero when polling is off.
+    static WINDOW_NS: AtomicU64 = AtomicU64::new(DEFAULT_IDLE_POLLING.as_nanos() as u64);
+    /// Time of the last region opened or of the last work a poller found.
+    static LAST_ACTIVE_NS: AtomicU64 = AtomicU64::new(0);
+    /// Polling jobs that have not returned yet.
+    static POLLERS: AtomicUsize = AtomicUsize::new(0);
+
+    fn now_ns() -> u64 {
+        static START: OnceLock<Instant> = OnceLock::new();
+        START.get_or_init(Instant::now).elapsed().as_nanos() as u64
+    }
+
+    /// Sets how long idle workers keep polling for work after the last parallel region, or turns polling off.
+    ///
+    /// Polling trades processor time for latency: every worker of the pool stays busy for up to `window`
+    /// after each burst of parallel work. Turn it off, or shorten the window, where idle processor time matters
+    /// more than the duration of a computation. The setting is global and takes effect at the next region.
+    pub fn set_idle_polling(window: Option<Duration>) {
+        let ns = window.map_or(0, |w| (w.as_nanos().min(u64::MAX as u128) as u64).max(1));
+        WINDOW_NS.store(ns, Ordering::Relaxed);
+    }
+
+    /// The idle polling window, or `None` when polling is off.
+    pub fn idle_polling() -> Option<Duration> {
+        match WINDOW_NS.load(Ordering::Relaxed) {
+            0 => None,
+            ns => Some(Duration::from_nanos(ns)),
+        }
+    }
+
+    /// Polling jobs currently running.
+    #[cfg(test)]
+    pub(crate) fn pollers() -> usize {
+        POLLERS.load(Ordering::Relaxed)
+    }
+
+    /// Records that a top-level region opens, and starts the polling jobs of the current pool if none runs.
+    #[inline]
+    pub(crate) fn region_opened() {
+        let window = WINDOW_NS.load(Ordering::Relaxed);
+        let workers = ::rayon::current_num_threads();
+        if window == 0 || workers < 2 {
+            return;
+        }
+        LAST_ACTIVE_NS.store(now_ns(), Ordering::Relaxed);
+        if POLLERS.load(Ordering::Relaxed) != 0
+            || POLLERS
+                .compare_exchange(0, workers, Ordering::AcqRel, Ordering::Relaxed)
+                .is_err()
+        {
+            return;
+        }
+        ::rayon::spawn_broadcast(move |_| {
+            let mut idle_rounds = 0u32;
+            loop {
+                if ::rayon::yield_now() == Some(::rayon::Yield::Executed) {
+                    LAST_ACTIVE_NS.store(now_ns(), Ordering::Relaxed);
+                    idle_rounds = 0;
+                    continue;
+                }
+                idle_rounds += 1;
+                // The clock is read once every 64 empty rounds.
+                if idle_rounds.is_multiple_of(64) && now_ns().saturating_sub(LAST_ACTIVE_NS.load(Ordering::Relaxed)) > window {
+                    break;
+                }
+                std::hint::spin_loop();
+            }
+            POLLERS.fetch_sub(1, Ordering::AcqRel);
+        });
+    }
+}
+
+pub use idle::{DEFAULT_IDLE_POLLING, idle_polling, set_idle_polling};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RayonTaskExecutor;
 
 impl RayonTaskExecutor {
+    /// Whether a region opened here should run on the calling thread.
+    ///
+    /// One level of nesting is always split, which evens out tasks of unequal cost.
+    /// Deeper levels are split while the enclosing regions leave threads unused:
+    /// four tasks spawned through two joins still have most of the pool to share.
     pub fn should_serialize_inner() -> bool {
-        TASK_DEPTH.get() > 1
+        TASK_DEPTH.get() > 1 && task_budget() <= 1
     }
 }
 
@@ -63,13 +170,17 @@ impl TaskExecutor for RayonTaskExecutor {
         RB: Send,
     {
         let depth = TASK_DEPTH.get() + 1;
+        if depth == 1 {
+            idle::region_opened();
+        }
+        let budget = task_budget();
         ::rayon::join(
             || {
-                let _guard = TaskGuard::enter(depth);
+                let _guard = TaskGuard::enter(depth, budget.div_ceil(2));
                 left()
             },
             || {
-                let _guard = TaskGuard::enter(depth);
+                let _guard = TaskGuard::enter(depth, budget / 2);
                 right()
             },
         )
@@ -85,8 +196,12 @@ impl TaskExecutor for RayonTaskExecutor {
         }
         let min_len = count.div_ceil(::rayon::current_num_threads().max(1));
         let depth = TASK_DEPTH.get() + 1;
+        if depth == 1 {
+            idle::region_opened();
+        }
+        let budget = task_budget().div_ceil(count.min(::rayon::current_num_threads().max(1)));
         (0..count).into_par_iter().with_min_len(min_len).for_each(|index| {
-            let _guard = TaskGuard::enter(depth);
+            let _guard = TaskGuard::enter(depth, budget);
             task(index);
         });
     }
@@ -120,17 +235,52 @@ impl TaskExecutor for RayonTaskExecutor {
             return;
         }
         let span = count.div_ceil(workers);
+        let budget = task_budget().div_ceil(workers);
         let depth = TASK_DEPTH.get() + 1;
+        if depth == 1 {
+            idle::region_opened();
+        }
         scratch[..workers * per_worker]
             .par_chunks_mut(per_worker)
             .enumerate()
             .for_each(|(worker, buffer)| {
-                let _guard = TaskGuard::enter(depth);
+                let _guard = TaskGuard::enter(depth, budget);
                 let start = worker * span;
                 for index in start..(start + span).min(count) {
                     task(buffer, index);
                 }
             });
+    }
+}
+
+#[cfg(test)]
+mod idle_tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::{Duration, Instant};
+
+    use poulpy_hal::execution::TaskExecutor;
+
+    use super::{RayonTaskExecutor, idle};
+
+    /// Polling jobs run regions correctly while they are alive, and all return once the pool is quiet.
+    #[test]
+    fn pollers_execute_work_and_stop() {
+        assert_eq!(super::idle_polling(), Some(super::DEFAULT_IDLE_POLLING));
+        let pool = ::rayon::ThreadPoolBuilder::new().num_threads(4).build().unwrap();
+        pool.install(|| {
+            for _ in 0..50 {
+                let sum = AtomicUsize::new(0);
+                <RayonTaskExecutor as TaskExecutor>::for_each(64, |index| {
+                    sum.fetch_add(index, Ordering::Relaxed);
+                });
+                assert_eq!(sum.load(Ordering::Relaxed), 64 * 63 / 2);
+            }
+        });
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while idle::pollers() != 0 {
+            assert!(Instant::now() < deadline, "polling jobs did not stop");
+            std::thread::sleep(Duration::from_millis(1));
+        }
     }
 }
 
