@@ -61,7 +61,7 @@ has torus variance `V * 2^(-2k)`. Rescaling the estimate does not change the sto
 secret count. The estimate is not an assertion that the resulting distribution
 is Gaussian. For the standard negacyclic ring, `phase_noise(n)` computes
 `V_body + n * E[S²] * sum(V_masks)`. Conjugate-invariant public-key encryption
-uses `weighted_phase_noise(n, 4*n)` to cover coefficient zero.
+uses `weighted_phase_noise(n, 2*n)`, the average over coefficients.
 Rank-zero shares have one body component even when their secret provenance names
 a nonzero secret distribution.
 
@@ -71,9 +71,10 @@ party counts; an untagged share leaves the aggregate untagged. Public-key cipher
 secret count. Their raw variances include public-key error multiplied by new
 ephemerals, fresh mask error, and body noise. Secret weighting is applied only
 when computing the phase estimate.
-Public-key encryption draws its fresh errors and normalizes once at the share's
-precision; `noise()` records the resulting component estimates on that grid. A
-deliberate flood replaces the body error at the same precision.
+Public-key encryption draws its fresh errors one limb past the share's
+precision and normalizes once to it; `noise()` records the resulting component
+estimates on the share's grid. A deliberate flood replaces the body error at the
+share's precision.
 For a centered base secret law the independent ephemeral contributions give
 additive variances. For a noncentered law, reusing a public key correlates its
 error across shares; each component uses the conservative squared sum of

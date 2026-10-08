@@ -14,6 +14,34 @@ mod sealed {
 pub trait Ring: sealed::Sealed + Copy + Eq + Send + Sync + 'static {
     /// Ambient cyclotomic order divided by the coefficient dimension.
     const CYCLOTOMIC_ORDER_FACTOR: i64;
+
+    /// Averages of the degree-`n` product map, see [`ProductMoments`].
+    fn product_moments(n: usize) -> ProductMoments;
+}
+
+/// Averages `E_c` over the output coefficients `c` of ring products, written
+/// with the basis elements `e_k` and the all-ones element `1`. They give the
+/// second moment of a product of independent factors with iid coefficients.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ProductMoments {
+    /// `E_c Sum_{k,m} (e_k e_m)_c^2`, equal to `E_c Sum_k (1 e_k)_c^2`.
+    pub weight: f64,
+    /// `E_c Sum_{k,m,p} (e_k e_m e_p)_c^2`, equal to `E_c Sum_{k,m} (1 e_k e_m)_c^2`.
+    pub triple_weight: f64,
+    /// `E_c (1 1)_c`.
+    pub sum: f64,
+    /// `E_c (1 1)_c^2`.
+    pub sum_square: f64,
+    /// `E_c (1 1 1)_c`.
+    pub triple_sum: f64,
+    /// `E_c (1 1)_c (1 1 1)_c`.
+    pub sum_triple_sum: f64,
+    /// `E_c (1 1 1)_c^2`.
+    pub triple_sum_square: f64,
+    /// `E_c Sum_k (1 1 e_k)_c^2`.
+    pub sum_weight: f64,
+    /// `E_c Sum_k (1 e_k)_c (1 1 e_k)_c`.
+    pub sum_cross_weight: f64,
 }
 
 /// The standard negacyclic ring `Z[X]/(X^N + 1)`.
@@ -29,10 +57,43 @@ impl sealed::Sealed for ConjugateInvariant {}
 
 impl Ring for Standard {
     const CYCLOTOMIC_ORDER_FACTOR: i64 = 2;
+
+    /// Each product of basis elements is a signed basis element: `(1 1)_c = 2c + 2 - n`.
+    fn product_moments(n: usize) -> ProductMoments {
+        let n = n as f64;
+        ProductMoments {
+            weight: n,
+            triple_weight: n * n,
+            sum: 1.0,
+            sum_square: (n * n + 2.0) / 3.0,
+            triple_sum: -(n * n - 4.0) / 3.0,
+            sum_triple_sum: (n * n + 2.0) / 3.0,
+            triple_sum_square: (2.0 * n.powi(4) + 5.0 * n * n + 8.0) / 15.0,
+            sum_weight: n * (n * n + 2.0) / 3.0,
+            sum_cross_weight: n,
+        }
+    }
 }
 
 impl Ring for ConjugateInvariant {
     const CYCLOTOMIC_ORDER_FACTOR: i64 = 4;
+
+    /// `(1 1)_0 = 2n - 1` and `(1 1)_c = 2(n - c)`; the other averages are exact
+    /// fits to the products, checked against them.
+    fn product_moments(n: usize) -> ProductMoments {
+        let n = n as f64;
+        ProductMoments {
+            weight: 2.0 * n - 1.0 / n,
+            triple_weight: 4.0 * n * n - 2.0 * n - 3.0 + 2.0 / n,
+            sum: n + 1.0 - 1.0 / n,
+            sum_square: (4.0 * n * n + 6.0 * n - 10.0 + 3.0 / n) / 3.0,
+            triple_sum: (4.0 * n * n + 3.0 * n - 4.0) / 3.0,
+            sum_triple_sum: (5.0 * n.powi(3) + 6.0 * n * n - 8.0 * n - 3.0 + 3.0 / n) / 3.0,
+            triple_sum_square: (32.0 * n.powi(4) + 30.0 * n.powi(3) - 40.0 * n * n - 30.0 * n + 23.0) / 15.0,
+            sum_weight: (8.0 * n.powi(3) + 4.0 * n * n - 14.0 * n + 5.0) / 3.0,
+            sum_cross_weight: 2.0 * n * n + n - 2.0,
+        }
+    }
 }
 
 /// Core trait that every backend (CPU, GPU, FPGA, ...) must implement.
@@ -648,5 +709,99 @@ mod degree_tests {
     #[should_panic(expected = "degree 24 is not served by the module")]
     fn check_degree_rejects_non_power_of_two() {
         check_degree::<HostBytesBackend>(256, 24);
+    }
+}
+
+#[cfg(test)]
+mod product_moments_tests {
+    use super::{ConjugateInvariant, ProductMoments, Ring, Standard};
+
+    /// The averages from dense products, `basis(k, m)` giving `e_k e_m`.
+    fn brute_force(n: usize, basis: impl Fn(usize, usize) -> Vec<(usize, i64)>) -> ProductMoments {
+        let mul = |a: &[i64], b: &[i64]| {
+            let mut out = vec![0i64; n];
+            for (k, x) in a.iter().enumerate().filter(|(_, x)| **x != 0) {
+                for (m, y) in b.iter().enumerate().filter(|(_, y)| **y != 0) {
+                    for (c, v) in basis(k, m) {
+                        out[c] += x * y * v;
+                    }
+                }
+            }
+            out
+        };
+        let e = |k: usize| (0..n).map(|i| i64::from(i == k)).collect::<Vec<_>>();
+        let square = |v: &[i64]| v.iter().map(|x| x * x).sum::<i64>();
+        let one = vec![1i64; n];
+        let t = mul(&one, &one);
+        let t3 = mul(&one, &t);
+        // Sums over c of: (1 e_k)^2, (1 1 e_k)^2, (1 e_k)(1 1 e_k), (e_k e_m)^2,
+        // (e_k e_m e_p)^2 and (1 e_k e_m)^2.
+        let mut acc = [0i64; 6];
+        for k in 0..n {
+            let (one_e, t_e) = (mul(&one, &e(k)), mul(&t, &e(k)));
+            acc[0] += square(&one_e);
+            acc[1] += square(&t_e);
+            acc[2] += one_e.iter().zip(&t_e).map(|(a, b)| a * b).sum::<i64>();
+            for m in 0..n {
+                let pair = mul(&e(k), &e(m));
+                acc[3] += square(&pair);
+                acc[4] += (0..n).map(|p| square(&mul(&pair, &e(p)))).sum::<i64>();
+                acc[5] += square(&mul(&one, &pair));
+            }
+        }
+        assert_eq!(acc[0], acc[3], "Sum_k (1 e_k)^2 averages to the weight");
+        assert_eq!(acc[4], acc[5], "Sum_km (1 e_k e_m)^2 averages to the triple weight");
+        let mean = |x: i64| x as f64 / n as f64;
+        ProductMoments {
+            weight: mean(acc[3]),
+            triple_weight: mean(acc[4]),
+            sum: mean(t.iter().sum()),
+            sum_square: mean(square(&t)),
+            triple_sum: mean(t3.iter().sum()),
+            sum_triple_sum: mean(t.iter().zip(&t3).map(|(a, b)| a * b).sum()),
+            triple_sum_square: mean(square(&t3)),
+            sum_weight: mean(acc[1]),
+            sum_cross_weight: mean(acc[2]),
+        }
+    }
+
+    fn assert_close(have: ProductMoments, want: ProductMoments, n: usize) {
+        let fields = |m: ProductMoments| {
+            [
+                m.weight,
+                m.triple_weight,
+                m.sum,
+                m.sum_square,
+                m.triple_sum,
+                m.sum_triple_sum,
+                m.triple_sum_square,
+                m.sum_weight,
+                m.sum_cross_weight,
+            ]
+        };
+        for (have, want) in fields(have).into_iter().zip(fields(want)) {
+            assert!((have - want).abs() <= 1e-9 * want.abs().max(1.0), "n={n}: {have} vs {want}");
+        }
+    }
+
+    #[test]
+    fn product_moments_match_the_products() {
+        for n in [8, 16] {
+            let negacyclic = brute_force(n, |k, m| vec![if k + m < n { (k + m, 1) } else { (k + m - n, -1) }]);
+            assert_close(negacyclic, Standard::product_moments(n), n);
+            // `a_0 + Sum_k a_k (X^k + X^-k)` in `Z[X]/(X^2n + 1)`.
+            let pair = |j: usize| match j {
+                0 => vec![(0, 2)],
+                j if j < n => vec![(j, 1)],
+                j if j == n => vec![],
+                j => vec![(2 * n - j, -1)],
+            };
+            let invariant = brute_force(n, |k, m| match (k, m) {
+                (0, m) => vec![(m, 1)],
+                (k, 0) => vec![(k, 1)],
+                (k, m) => [pair(k + m), pair(k.abs_diff(m))].concat(),
+            });
+            assert_close(invariant, ConjugateInvariant::product_moments(n), n);
+        }
     }
 }

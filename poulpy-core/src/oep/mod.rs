@@ -55,7 +55,9 @@
 //! [`ComponentNoise::from_secret_at`](crate::ComponentNoise::from_secret_at) with
 //! the encrypting secret's distribution and the output's `k` and rank (scalar LWE:
 //! its dimension). Public-key encryption records
-//! [`public_key_encryption_noise`](crate::public_key_encryption_noise).
+//! [`public_key_encryption_noise`](crate::public_key_encryption_noise); the derived
+//! methods pass [`public_key_sample_precision`](crate::public_key_sample_precision)
+//! to `glwe_encrypt_pk_sampled_at`, which leaves recording to them.
 //! Copies at equal or wider precision (zero masks appended for a wider rank),
 //! preparation, compression, decompression and transfers keep the source's
 //! estimate, recorded after their last write. Every other operation leaves `None`.

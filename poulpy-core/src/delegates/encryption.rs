@@ -243,7 +243,7 @@ impl_encryption_delegate!(
         P: GLWEToBackendRef<BE> + GLWEInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     {
-        BE::glwe_encrypt_pk_at_col(self, res, Some((pt, col)), true, pk, source_xu, source_xe, scratch)
+        BE::glwe_encrypt_pk_at_col(self, res, pt, col, pk, source_xu, source_xe, scratch)
     }
 );
 

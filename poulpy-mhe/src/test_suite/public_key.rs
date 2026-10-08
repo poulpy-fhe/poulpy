@@ -254,20 +254,34 @@ where
                 let mask_error = rank_n * secret_second * sigma2;
                 let phase_fold = 1.0 + rank_n * secret_second;
                 let extra_bits = (key_k.0 - k.0) as usize;
-                // Normalizing the key's extra bits rounds every coefficient;
-                // ties of noncentered secrets add a bias.
-                let rounding = if extra_bits > 0 { phase_fold / 4.0 } else { 0.0 };
-                let bias_squared = if extra_bits > 0 && mean != 0.0 {
-                    ((-(extra_bits as f64 + 1.0)).exp2() * (1.0 + rank_n * count * mean)).powi(2)
+                // Fresh errors are drawn one limb past `k`. Dropped key limbs
+                // leave a tail on every key component; with the output rounding,
+                // noncentered means add up along ring products.
+                let sample = super::fixtures::pk_sample(k.as_usize(), key_k.as_usize());
+                let fresh_scale = (-2.0 * (sample - k.as_usize()) as f64).exp2();
+                let ((tau, v_t), mu_r) = super::fixtures::pk_tail_and_rounding(k.as_usize(), key_k.as_usize());
+                let component_rounding = if mu_r != 0.0 {
+                    mu_r * mu_r + (1.0 - fresh_scale) / 12.0
                 } else {
                     0.0
                 };
-                let ordinary = inherited + mask_error + sigma2 + rounding + bias_squared;
-                let without_body = inherited + mask_error + rounding + bias_squared;
-                assert!(ordinary > sigma2);
+                let excess = super::fixtures::pk_coherent_excess(
+                    module.n(),
+                    RANK.as_usize(),
+                    (mean, second),
+                    (count * mean, secret_second),
+                    ((tau, v_t), mu_r),
+                );
+                let tail_and_rounding =
+                    rank_n * second * phase_fold * (tau * tau + v_t) + phase_fold * component_rounding + excess;
+                let ordinary = inherited + (mask_error + sigma2) * fresh_scale + tail_and_rounding;
+                let without_body = inherited + mask_error * fresh_scale + tail_and_rounding;
                 module.glwe_encrypt_pk(&mut ct, &pt, pk, &mut source_xu, &mut source_xe, &mut scratch.borrow());
                 assert_noise_tag(&ct, base, parties, ordinary, k);
-                if extra_bits <= 1 {
+                // A single binary secret sets the coherent means the estimate
+                // averages over: one key may sit far from it. The core suite
+                // measures them over fresh keys.
+                if extra_bits <= 1 && mean == 0.0 {
                     let decrypt_key = if parties == 1 { &secrets[0].1 } else { &collective_secret };
                     let mut measured = 0.0;
                     for _ in 0..32 {
@@ -279,26 +293,16 @@ where
                     let estimate = ct.noise().unwrap().phase_noise(module.n()).variance_at(0u32.into());
                     let ratio = measured / (32.0 * estimate);
                     assert!(
-                        ratio
-                            > (if extra_bits == 0 {
-                                0.5
-                            } else if mean == 0.0 {
-                                0.25
-                            } else {
-                                0.15
-                            })
-                            && ratio < 1.35,
+                        ratio > 0.85 && ratio < 1.15,
                         "collective phase ratio={ratio}, base={base:?}, parties={parties}, gap={extra_bits}"
                     );
                 }
 
-                let component_rounding = if extra_bits == 0 {
-                    0.0
-                } else {
-                    0.25 + bias_squared / phase_fold
-                };
+                // No limb is dropped this close: each component carries the
+                // rounding and an even share of the coherent excess.
+                let component_rounding = component_rounding + excess / phase_fold;
                 if extra_bits <= 1 {
-                    let mut components = vec![sigma2 + component_rounding; RANK.as_usize() + 1];
+                    let mut components = vec![sigma2 * fresh_scale + component_rounding; RANK.as_usize() + 1];
                     components[0] += inherited;
                     super::fixtures::assert_noise_components(&ct, &components);
                 }
@@ -315,7 +319,7 @@ where
                 module.glwe_encrypt_zero_pk(&mut ct, pk, &mut source_xu, &mut source_xe, &mut scratch.borrow());
                 assert_noise_tag(&ct, base, parties, ordinary, k);
                 for (flood, variance) in [
-                    // Even the default Gaussian replaces the ordinary body error.
+                    // Even the default Gaussian is a flood at `k`, not a body error at `sample`.
                     (Noise::ENCRYPTION, sigma2),
                     (Noise::Uniform { bits: 4 }, 21.25),
                     (Noise::Gaussian { sigma: 128.0 }, 16384.0),
@@ -332,7 +336,7 @@ where
                     );
                     assert_noise_tag(&ct, base, parties, without_body + variance, k);
                     if extra_bits <= 1 {
-                        let mut components = vec![sigma2 + component_rounding; RANK.as_usize() + 1];
+                        let mut components = vec![sigma2 * fresh_scale + component_rounding; RANK.as_usize() + 1];
                         components[0] = inherited + variance + component_rounding;
                         super::fixtures::assert_noise_components(&ct, &components);
                     }

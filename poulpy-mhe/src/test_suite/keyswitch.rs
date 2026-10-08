@@ -211,6 +211,7 @@ where
             inherited,
             secret_fold * sigma2,
             1.0 + secret_fold,
+            rank * n * 0.5 * (1.0 + secret_fold),
             k_out.as_usize(),
             pk_layout.k.as_usize(),
         );
