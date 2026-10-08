@@ -5,7 +5,15 @@
 //! CubeCL runtime gets its own marker, which lets several of them run side by
 //! side on the same card.
 
-use cubecl::{Device, RuntimeId, prelude::Client};
+use cubecl::prelude::Client;
+#[cfg(any(
+    feature = "enable-cuda",
+    feature = "enable-hip",
+    feature = "enable-metal",
+    feature = "enable-vulkan",
+    feature = "enable-wgpu"
+))]
+use cubecl::{Device, RuntimeId};
 
 /// A CubeCL runtime a backend type is bound to.
 pub trait GpuRuntime: Send + Sync + 'static {
@@ -16,6 +24,13 @@ pub trait GpuRuntime: Send + Sync + 'static {
     fn client() -> &'static Client;
 }
 
+#[cfg(any(
+    feature = "enable-cuda",
+    feature = "enable-hip",
+    feature = "enable-metal",
+    feature = "enable-vulkan",
+    feature = "enable-wgpu"
+))]
 fn first_device(name: &str, accept: impl Fn(RuntimeId) -> bool) -> Client {
     let index: usize = std::env::var("POULPY_GPU_DEVICE")
         .ok()
@@ -31,6 +46,13 @@ fn first_device(name: &str, accept: impl Fn(RuntimeId) -> bool) -> Client {
     device.client()
 }
 
+#[cfg(any(
+    feature = "enable-cuda",
+    feature = "enable-hip",
+    feature = "enable-metal",
+    feature = "enable-vulkan",
+    feature = "enable-wgpu"
+))]
 macro_rules! gpu_runtime {
     ($(#[$attr:meta])* $marker:ident, $name:literal, $accept:expr) => {
         $(#[$attr])*
