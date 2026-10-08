@@ -93,6 +93,7 @@ where
             inherited,
             (1.0 + rank_n * secret_second) * sigma2,
             1.0 + rank_n * secret_second,
+            rank_n * 0.5 * (1.0 + rank_n * secret_second),
             layout.k().as_usize(),
             pk_layout.k.as_usize(),
         );

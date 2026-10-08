@@ -77,6 +77,9 @@ macro_rules! core_backend_test_suite {
                 glwe_trace_coarsened => $crate::test_suite::parity::test_glwe_trace_coarsened,
                 glwe_hoisted_baby_rotations_match_automorphism =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_hoisted_baby_rotations_match_automorphism,
+                #[should_panic(expected = "linear transformation plaintext size does not match its effective precision")]
+                glwe_prepare_linear_transformation_rhs_rejects_wide_diagonal =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_prepare_linear_transformation_rhs_rejects_wide_diagonal,
                 glwe_packing => $crate::test_suite::noise::test_glwe_packing,
                 gglwe_switching_key_encrypt_sk => $crate::test_suite::noise::encryption::test_gglwe_switching_key_encrypt_sk,
                 gglwe_switching_key_compressed_encrypt_sk =>

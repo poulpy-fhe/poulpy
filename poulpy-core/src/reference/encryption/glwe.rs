@@ -18,7 +18,7 @@ use crate::{
     GLWEMaskFill, GetDistribution, Noise, ScalarZnxFillDistribution, VecZnxAddNoise, VecZnxBigAddNoise,
     dist::Distribution,
     layouts::{
-        GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision,
         prepared::{GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef},
     },
 };
@@ -281,12 +281,14 @@ pub trait GLWEEncryptPkReference<BE: Backend> {
         R: GLWEInfos,
         K: GLWEInfos;
 
-    fn glwe_encrypt_pk_at_col_reference<R, P, K>(
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_encrypt_pk_sampled_at_reference<R, P, K>(
         &self,
         res: &mut R,
         pt: Option<(&P, usize)>,
         body_noise: bool,
         pk: &K,
+        k_sample: TorusPrecision,
         source_xu: &mut Source,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
@@ -318,12 +320,14 @@ where
         lvl_0 + lvl_1 + lvl_2 + lvl_3
     }
 
-    fn glwe_encrypt_pk_at_col_reference<R, P, K>(
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_encrypt_pk_sampled_at_reference<R, P, K>(
         &self,
         res: &mut R,
         pt: Option<(&P, usize)>,
         body_noise: bool,
         pk: &K,
+        k_sample: TorusPrecision,
         source_xu: &mut Source,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
@@ -344,6 +348,7 @@ where
             pt.map(|(pt, col)| (pt.to_backend_ref(), col)),
             body_noise,
             pk,
+            k_sample,
             source_xu,
             source_xe,
             scratch,
@@ -360,6 +365,7 @@ pub(crate) trait GLWEEncryptPkInternal<BE: Backend> {
         pt: Option<(GLWEBackendRef<'_, BE>, usize)>,
         body_noise: bool,
         pk: &K,
+        k_sample: TorusPrecision,
         source_xu: &mut Source,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
@@ -389,6 +395,7 @@ where
         pt: Option<(GLWEBackendRef<'_, BE>, usize)>,
         body_noise: bool,
         pk: &K,
+        k_sample: TorusPrecision,
         source_xu: &mut Source,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
@@ -396,16 +403,6 @@ where
         R: GLWEToBackendMut<BE>,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     {
-        let noise = crate::fresh_noise_model::public_key_encryption_noise::<BE, _, _>(
-            &res.to_backend_ref(),
-            pk,
-            if body_noise {
-                crate::fresh_noise_model::PublicKeyBodyNoise::Sampled
-            } else {
-                crate::fresh_noise_model::PublicKeyBodyNoise::Omitted
-            },
-        );
-        // Validate before any mutation; the flag is set once the output is written.
         {
             let res_ref = res.to_backend_ref();
 
@@ -413,6 +410,10 @@ where
             assert_eq!(res_ref.n(), pk.n());
             assert_eq!(res_ref.rank(), pk.rank());
             assert!(pk.k() >= res_ref.k(), "invalid public key: less precise than the output");
+            assert!(
+                res_ref.k() <= k_sample && k_sample <= pk.k(),
+                "invalid k_sample: outside the output and key precisions"
+            );
             if let Some((pt, _)) = &pt {
                 assert_eq!(pt.base2k(), pk.base2k());
                 assert_eq!(pt.n(), pk.n());
@@ -425,7 +426,11 @@ where
             );
             let n: usize = operand_degree(self.n(), &[res_ref.n(), pk.n()]);
             let base2k: usize = pk.base2k().into();
-            let size_pk: usize = pk.size();
+            let work_size: usize = k_sample.as_usize().div_ceil(base2k);
+            // Plaintexts may be more precise than the selected key prefix. Keep
+            // their previously supported tail before the final normalization;
+            // IDFT zero-extends the narrower product into this wider accumulator.
+            let big_size = work_size.max(pt.as_ref().map_or(0, |(pt, _)| pt.size().min(pk.size())));
             let res_k: usize = res_ref.k().as_usize();
             let rank: usize = pk.data.cols_in();
 
@@ -463,7 +468,7 @@ where
                 );
             }
 
-            let (mut res_dft, mut scratch_1) = scratch_1.take_vec_znx_dft_scratch(n, rank + 1, size_pk);
+            let (mut res_dft, mut scratch_1) = scratch_1.take_vec_znx_dft_scratch(n, rank + 1, work_size);
             self.vmp_apply_dft_to_dft(
                 &mut res_dft.to_backend_mut(),
                 &u_dft.to_backend_ref(),
@@ -473,11 +478,13 @@ where
             );
 
             {
-                let (mut ci_big, mut scratch_2) = scratch_1.borrow().take_vec_znx_big_scratch(n, 1, size_pk);
+                let (mut ci_big, mut scratch_2) = scratch_1.borrow().take_vec_znx_big_scratch(n, 1, big_size);
                 for i in 0..rank + 1 {
                     self.vec_znx_idft_apply_tmpa(&mut ci_big.to_backend_mut(), 0, &mut res_dft.to_backend_mut(), i);
                     if i > 0 || body_noise {
-                        self.vec_znx_big_add_noise(base2k, res_k, &mut ci_big, 0, Noise::ENCRYPTION, source_xe);
+                        // The product keeps only leading whole limbs of the key. Add
+                        // fresh error at the selected grid, then normalize once.
+                        self.vec_znx_big_add_noise(base2k, k_sample.as_usize(), &mut ci_big, 0, Noise::ENCRYPTION, source_xe);
                     }
 
                     if let Some((pt, col)) = &pt
@@ -500,7 +507,6 @@ where
                 }
             }
         }
-        res.set_noise(noise);
         res.set_canonical(true);
     }
 }

@@ -112,7 +112,7 @@ pub fn runner_blind_rotate<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, BR
         n: module.n().into(),
         extension_factor: params.extension_factor,
         k: TorusPrecision(2),
-        base2k: Base2K(17),
+        base2k: Base2K(params.bin_fhe_params.base2k),
     };
     let mut lut: LookupTable<BE::OwnedBuf, BE::ZnxWord> = LookupTable::alloc(&module, &lut_infos);
     lut.set(&module, &f_vec, params.log_message_modulus + 1);

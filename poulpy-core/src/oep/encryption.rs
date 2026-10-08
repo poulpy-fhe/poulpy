@@ -13,7 +13,7 @@ use crate::{
         GGLWEToGGSWKeyToBackendMut, GGSWAtViewMut, GGSWCompressedSeedMut, GGSWCompressedToBackendMut, GGSWInfos,
         GGSWToBackendMut, GLWECompressedSeedMut, GLWECompressedToBackendMut, GLWEInfos, GLWEPublicKeyToBackendMut,
         GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-        LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut, SetGaloisElement,
+        LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut, SetGaloisElement, TorusPrecision,
         compressed::{GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyCompressedToBackendMut},
         prepared::{GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef},
     },
@@ -143,22 +143,48 @@ pub unsafe trait EncryptionImpl: Backend {
         super::derived::encryption::glwe_encrypt_zero_pk_derived(module, res, pk, source_xu, source_xe, scratch)
     }
 
+    fn glwe_encrypt_pk_at_col<R, P, K>(
+        module: &Module<Self>,
+        res: &mut R,
+        pt: &P,
+        col: usize,
+        pk: &K,
+        source_xu: &mut Source,
+        source_xe: &mut Source,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        P: GLWEToBackendRef<Self> + GLWEInfos,
+        K: GLWEPublicKeyPreparedToBackendRef<Self> + GLWEInfos,
+    {
+        super::derived::encryption::glwe_encrypt_pk_at_col_derived(
+            module,
+            res,
+            Some((pt, col)),
+            pk,
+            source_xu,
+            source_xe,
+            scratch,
+        )
+    }
+
     /// Encrypts under `pk` with `pt.0` added to column `pt.1` (`0` is the
     /// body), or zero when `pt` is `None`: every public-key encryption derives
     /// from it. Without `body_noise`, the body gets no encryption error: the
     /// caller floods it, see [`Self::glwe_encrypt_pk_smudged`].
     ///
-    /// The product uses every key limb. Each error is drawn from
-    /// [`Noise::ENCRYPTION`](crate::Noise::ENCRYPTION) at `res.k()`, and each
-    /// column is normalized once at `res.k()`. Invalid keys, plaintexts or
-    /// columns panic before the output changes. The output records
-    /// [`public_key_encryption_noise`](crate::public_key_encryption_noise).
-    fn glwe_encrypt_pk_at_col<R, P, K>(
+    /// Fresh errors are drawn at `k_sample`, which the caller selects in
+    /// `[res.k(), pk.k()]`. The product uses the key's leading
+    /// `ceil(k_sample / base2k)` limbs and each column is normalized once at
+    /// `res.k()`. Invalid keys, plaintexts, columns or `k_sample` panic before
+    /// the output changes. The caller records the output metadata.
+    fn glwe_encrypt_pk_sampled_at<R, P, K>(
         module: &Module<Self>,
         res: &mut R,
         pt: Option<(&P, usize)>,
         body_noise: bool,
         pk: &K,
+        k_sample: TorusPrecision,
         source_xu: &mut Source,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, Self>,
@@ -176,7 +202,7 @@ pub unsafe trait EncryptionImpl: Backend {
         super::derived::encryption::glwe_encrypt_pk_smudged_tmp_bytes_derived(module, res_infos, pk_infos)
     }
 
-    /// [`Self::glwe_encrypt_pk_at_col`] of `pt` into the body without its error,
+    /// [`Self::glwe_encrypt_pk_sampled_at`] of `pt` into the body without its error,
     /// then `flood` on the body at the output's precision, drawn from `source_smudge`.
     fn glwe_encrypt_pk_smudged<R, P, K>(
         module: &Module<Self>,
@@ -818,12 +844,13 @@ macro_rules! impl_encryption_reference_full {
             <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEEncryptPkReference<$be>>::glwe_encrypt_pk_tmp_bytes_reference::<R, K>(module, res_infos, pk_infos)
         }
 
-    fn glwe_encrypt_pk_at_col<R, P, K>(
+    fn glwe_encrypt_pk_sampled_at<R, P, K>(
         module: &::poulpy_hal::layouts::Module<$be>,
         res: &mut R,
         pt: Option<(&P, usize)>,
         body_noise: bool,
         pk: &K,
+        k_sample: $crate::layouts::TorusPrecision,
         source_xu: &mut ::poulpy_hal::source::Source,
         source_xe: &mut ::poulpy_hal::source::Source,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
@@ -831,7 +858,7 @@ macro_rules! impl_encryption_reference_full {
         R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
         P: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
         K: $crate::layouts::GLWEPublicKeyPreparedToBackendRef<$be> + $crate::layouts::GLWEInfos {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEEncryptPkReference<$be>>::glwe_encrypt_pk_at_col_reference::<R, P, K>(module, res, pt, body_noise, pk, source_xu, source_xe, scratch)
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEEncryptPkReference<$be>>::glwe_encrypt_pk_sampled_at_reference::<R, P, K>(module, res, pt, body_noise, pk, k_sample, source_xu, source_xe, scratch)
         }
 
     fn gglwe_to_ggsw_key_encrypt_sk_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize

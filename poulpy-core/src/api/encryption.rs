@@ -123,7 +123,9 @@ pub trait GLWEEncryptSk<BE: Backend> {
 /// of rank `r`: draws `u_1, .., u_r` in order from `source_xu` under the key's
 /// distribution and outputs `Sum_l u_l pk_l + (e_0 + m, e_1, .., e_r)`, one
 /// fresh error per column drawn in column order from `source_xe`, each column
-/// normalized once at the output's `k`.
+/// normalized once at the output's `k`. The errors are drawn at
+/// [`public_key_sample_precision`](crate::public_key_sample_precision) and the
+/// product uses only the key limbs down to it.
 ///
 /// A public key carrying noise metadata must keep its ephemeral distribution
 /// equal to the metadata provenance base. A mismatch panics before mutation.
