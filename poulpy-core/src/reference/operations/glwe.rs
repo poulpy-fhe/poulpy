@@ -1,24 +1,30 @@
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAdd, VecZnxAddAssign, VecZnxBigAddSmallAssign,
-        VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf,
-        VecZnxIdftApplyTmpA, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxMulXpMinusOne,
+        VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftApply,
+        VecZnxDftBytesOf, VecZnxDftSubAssign, VecZnxIdftApplyTmpA, VecZnxIdftNormalizeConsume,
+        VecZnxIdftNormalizeConsumeTmpBytes, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxMulXpMinusOne,
         VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize,
         VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign, VecZnxRotateAssignTmpBytes,
         VecZnxRshAssign, VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxZero,
     },
     layouts::{
-        Backend, CnvPVecLToBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, Module, PrepareHint, ScratchArena,
-        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut,
-        VecZnxToBackendRef, vec_znx_backend_ref_from_mut,
+        Backend, CnvPVecLBackendRef, CnvPVecLToBackendRef, CnvPVecRBackendRef, CnvPVecROwned, CnvPVecRToBackendMut,
+        CnvPVecRToBackendRef, Module, PrepareHint, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
+        VecZnxDftBackendMut, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef,
+        vec_znx_backend_ref_from_mut,
     },
 };
 
 use crate::layouts::operand_degree;
+use crate::oep::GLWETensoringImpl;
 use crate::{
     ScratchArenaTakeCore,
     api::{GLWEBytesOf, GLWENormalize},
-    layouts::{Base2K, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos, LWEInfos},
+    layouts::{
+        Base2K, GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos,
+        LWEInfos, TorusPrecision,
+    },
     reference::keyswitching::{GGLWEProductReference, gglwe_product_output_size},
 };
 
@@ -549,10 +555,148 @@ pub trait GLWETensoringReference<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         BP: CnvPVecRToBackendRef<BE>;
+
+    /// Scratch bytes of [`Self::glwe_mul_relinearize_reference`] for a result as wide as `res`, operands of
+    /// `a_size` and `b_size` limbs and a product of width `tensor_k`.
+    fn glwe_mul_relinearize_tmp_bytes_reference<R, B>(
+        &self,
+        res: &R,
+        a_size: usize,
+        b_size: usize,
+        tensor_k: TorusPrecision,
+        tsk: &B,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        B: GGLWEInfos;
+
+    /// Product of two rank-1 ciphertexts and its relinearization, in one pass.
+    ///
+    /// The result is written at width `res_k`: the caller sets the width of `res` afterwards.
+    ///
+    /// The product is `(d0, d1, d2)`, formed by [`GLWETensoringImpl::glwe_mul_columns`]. Only `d2` is brought
+    /// back to digits, for the gadget product. `d0` and `d1` are added to the gadget product in the transform
+    /// domain, and the two result columns are inverse-transformed and normalized once.
+    /// The two-step path transforms and normalizes all three columns first.
+    ///
+    /// The sum is rounded once where the two-step path rounds twice.
+    /// The key-switch runs on `d2` at the alignment of the convolution output, `cnv_offset mod base2k` bits
+    /// below the normalized position, so its noise is scaled up by that many bits in the result.
+    ///
+    /// Requires rank 1, the `base2k` of `res` for the operands and the tensor key, and `cnv_offset >= base2k`:
+    /// below it the final normalization shifts right, which turns the integer parts dropped from `d2` into errors.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_relinearize_reference<R, A, B, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: TorusPrecision,
+        a: &A,
+        b: &B,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        B: GLWEToBackendRef<BE> + GLWEInfos,
+        H: GetTensorKey<BE>;
+
+    /// [`Self::glwe_mul_relinearize_reference`] with `res`, read at its current width, as the left operand.
+    fn glwe_mul_relinearize_assign_reference<R, A, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: TorusPrecision,
+        a: &A,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        H: GetTensorKey<BE>;
+
+    /// [`Self::glwe_mul_relinearize_reference`] of `a` by itself.
+    fn glwe_square_relinearize_reference<R, A, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: TorusPrecision,
+        a: &A,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        H: GetTensorKey<BE>;
+
+    /// [`Self::glwe_square_relinearize_reference`] of `res`, read at its current width.
+    fn glwe_square_relinearize_assign_reference<R, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: TorusPrecision,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        H: GetTensorKey<BE>;
+
+    /// [`Self::glwe_mul_relinearize_reference`] with a right operand prepared by [`glwe_prepare_right`]:
+    /// `b_size` limbs of a ciphertext of width `b_k`.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_prepared_relinearize_reference<R, A, BP, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: TorusPrecision,
+        a: &A,
+        b: &BP,
+        b_size: usize,
+        b_k: TorusPrecision,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        BP: CnvPVecRToBackendRef<BE>,
+        H: GetTensorKey<BE>;
+
+    /// [`Self::glwe_mul_prepared_relinearize_reference`] with `res`, read at its current width, as the left operand.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_prepared_relinearize_assign_reference<R, AP, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: TorusPrecision,
+        a: &AP,
+        a_size: usize,
+        a_k: TorusPrecision,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        AP: CnvPVecRToBackendRef<BE>,
+        H: GetTensorKey<BE>;
+
+    /// The three product columns of [`Self::glwe_mul_relinearize_reference`], from prepared rank-1 operands.
+    ///
+    /// Columns 0 and 1 of `diag` receive `d0 = a0 * b0` and `d2 = a1 * b1`.
+    /// Column 0 of `cross` receives `d1 = (a0 + a1) * (b0 + b1) - d0 - d2`.
+    /// `cnv_offset_hi` is the limb offset of the convolutions.
+    fn glwe_mul_columns_reference(
+        &self,
+        cnv_offset_hi: usize,
+        diag: &mut VecZnxDftBackendMut<'_, BE>,
+        cross: &mut VecZnxDftBackendMut<'_, BE>,
+        a: &CnvPVecLBackendRef<'_, BE>,
+        b: &CnvPVecRBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
 }
 
 impl<BE: Backend> GLWETensoringReference<BE> for Module<BE>
 where
+    BE: GLWETensoringImpl,
     Self: Sized
         + ModuleN
         + CnvPVecBytesOf
@@ -571,6 +715,11 @@ where
         + GGLWEProductReference<BE>
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxNormalizeTmpBytes
+        + VecZnxDftAddAssign<BE>
+        + VecZnxDftSubAssign<BE>
+        + VecZnxIdftNormalizeConsume<BE>
+        + VecZnxIdftNormalizeConsumeTmpBytes
+        + VecZnxBigBytesOf
         + GLWENormalize<BE>,
 {
     fn glwe_tensor_square_apply_tmp_bytes_reference<R, A>(&self, res: &R, a: &A) -> usize
@@ -960,6 +1109,454 @@ where
             b_size,
             ab_base2k,
             &mut scratch,
+        );
+    }
+
+    fn glwe_mul_relinearize_tmp_bytes_reference<R, B>(
+        &self,
+        res: &R,
+        a_size: usize,
+        b_size: usize,
+        tensor_k: TorusPrecision,
+        tsk: &B,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        B: GGLWEInfos,
+    {
+        let n: usize = operand_degree(self.n(), &[res.n(), tsk.n()]);
+        let base2k = res.base2k().as_usize();
+        let max_size = a_size.max(b_size);
+        let tensor_infos = GLWELayout {
+            n: res.n(),
+            base2k: res.base2k(),
+            k: tensor_k,
+            rank: res.rank(),
+        };
+        let tensor_size = tensor_k.as_usize().div_ceil(base2k);
+        let dft_size = normalize_input_limb_bound_worst_case(a_size + b_size, tensor_size, base2k, base2k);
+        let ks_size = (gglwe_product_output_size::<BE, _, _, _>(res, &tensor_infos, tsk) + 1).min(tsk.size());
+
+        let prepared = self.bytes_of_cnv_pvec_left(n, 2, a_size, PrepareHint::Reuse)
+            + self.bytes_of_cnv_pvec_right(n, 2, b_size, PrepareHint::Reuse);
+        // Either operand may need a normalized copy while it is prepared.
+        let prepare = 2 * BE::scratch_aligned(self.glwe_bytes_of_from_infos(&tensor_infos))
+            + self
+                .cnv_prepare_self_tmp_bytes(max_size, max_size)
+                .max(self.cnv_prepare_left_tmp_bytes(max_size, max_size))
+                .max(self.cnv_prepare_right_tmp_bytes(max_size, max_size))
+                .max(self.glwe_normalize_tmp_bytes());
+        let columns = self.bytes_of_vec_znx_dft(n, 2, dft_size) + self.bytes_of_vec_znx_dft(n, 1, dft_size);
+        let convolve = self
+            .cnv_apply_dft_tmp_bytes(max_size, dft_size, a_size, b_size)
+            .max(self.cnv_pairwise_apply_dft_tmp_bytes(max_size, dft_size, a_size, b_size));
+        let digits = self.vec_znx_idft_normalize_consume_tmp_bytes(dft_size, dft_size);
+        let product = self.bytes_of_vec_znx_dft(n, 1, dft_size)
+            + self.bytes_of_vec_znx_dft(n, 2, ks_size)
+            + self
+                .gglwe_product_dft_tmp_bytes_reference(ks_size, dft_size, tsk)
+                .max(self.vec_znx_idft_normalize_consume_tmp_bytes(res.size(), ks_size));
+        let tail = columns + BE::bytes_of_vec_znx(n, 1, dft_size) + convolve.max(digits).max(product);
+
+        prepared + prepare.max(tail)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_relinearize_reference<R, A, B, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: TorusPrecision,
+        a: &A,
+        b: &B,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        B: GLWEToBackendRef<BE> + GLWEInfos,
+        H: GetTensorKey<BE>,
+    {
+        glwe_mul_relinearize_one_pass(
+            self,
+            cnv_offset,
+            res,
+            res_k,
+            Some(a),
+            MulRight::<B, CnvPVecROwned<BE>>::Operand(b),
+            tsk,
+            scratch,
+        )
+    }
+
+    fn glwe_mul_relinearize_assign_reference<R, A, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: TorusPrecision,
+        a: &A,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        H: GetTensorKey<BE>,
+    {
+        glwe_mul_relinearize_one_pass(
+            self,
+            cnv_offset,
+            res,
+            res_k,
+            None::<&A>,
+            MulRight::<A, CnvPVecROwned<BE>>::Operand(a),
+            tsk,
+            scratch,
+        )
+    }
+
+    fn glwe_square_relinearize_reference<R, A, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: TorusPrecision,
+        a: &A,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        H: GetTensorKey<BE>,
+    {
+        glwe_mul_relinearize_one_pass(
+            self,
+            cnv_offset,
+            res,
+            res_k,
+            Some(a),
+            MulRight::<A, CnvPVecROwned<BE>>::Left,
+            tsk,
+            scratch,
+        )
+    }
+
+    fn glwe_square_relinearize_assign_reference<R, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: TorusPrecision,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        H: GetTensorKey<BE>,
+    {
+        glwe_mul_relinearize_one_pass(
+            self,
+            cnv_offset,
+            res,
+            res_k,
+            None::<&NoOperand<BE>>,
+            MulRight::<NoOperand<BE>, CnvPVecROwned<BE>>::Left,
+            tsk,
+            scratch,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_prepared_relinearize_reference<R, A, BP, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: TorusPrecision,
+        a: &A,
+        b: &BP,
+        b_size: usize,
+        b_k: TorusPrecision,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        BP: CnvPVecRToBackendRef<BE>,
+        H: GetTensorKey<BE>,
+    {
+        glwe_mul_relinearize_one_pass(
+            self,
+            cnv_offset,
+            res,
+            res_k,
+            Some(a),
+            MulRight::<A, BP>::Prepared {
+                prep: b,
+                size: b_size,
+                k: b_k,
+            },
+            tsk,
+            scratch,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_prepared_relinearize_assign_reference<R, AP, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: TorusPrecision,
+        a: &AP,
+        a_size: usize,
+        a_k: TorusPrecision,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        AP: CnvPVecRToBackendRef<BE>,
+        H: GetTensorKey<BE>,
+    {
+        glwe_mul_relinearize_one_pass(
+            self,
+            cnv_offset,
+            res,
+            res_k,
+            None::<&NoOperand<BE>>,
+            MulRight::<NoOperand<BE>, AP>::Prepared {
+                prep: a,
+                size: a_size,
+                k: a_k,
+            },
+            tsk,
+            scratch,
+        )
+    }
+
+    fn glwe_mul_columns_reference(
+        &self,
+        cnv_offset_hi: usize,
+        diag: &mut VecZnxDftBackendMut<'_, BE>,
+        cross: &mut VecZnxDftBackendMut<'_, BE>,
+        a: &CnvPVecLBackendRef<'_, BE>,
+        b: &CnvPVecRBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) {
+        for i in 0..2 {
+            self.cnv_apply_dft(cnv_offset_hi, diag, i, a, i, b, i, scratch);
+        }
+        self.cnv_pairwise_apply_dft(cnv_offset_hi, cross, 0, a, b, 0, 1, scratch);
+        let diag_ref = poulpy_hal::layouts::vec_znx_dft_backend_ref_from_mut(diag);
+        self.vec_znx_dft_sub_assign(cross, 0, &diag_ref, 0);
+        self.vec_znx_dft_sub_assign(cross, 0, &diag_ref, 1);
+    }
+}
+
+/// Right operand of [`glwe_mul_relinearize_one_pass`].
+enum MulRight<'a, B, BP> {
+    /// The left operand itself: a squaring.
+    Left,
+    /// Another ciphertext.
+    Operand(&'a B),
+    /// A prepared right operand of `size` limbs, built from a ciphertext of width `k`.
+    Prepared { prep: &'a BP, size: usize, k: TorusPrecision },
+}
+
+/// Names the unused operand type of the forms without a ciphertext operand.
+type NoOperand<BE> = GLWE<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
+
+/// Shared body of the one-pass products: `left` is the left operand, or `None` when it is `res` itself.
+#[allow(clippy::too_many_arguments)]
+fn glwe_mul_relinearize_one_pass<BE, R, A, B, BP, H>(
+    module: &Module<BE>,
+    cnv_offset: usize,
+    res: &mut R,
+    res_k: TorusPrecision,
+    left: Option<&A>,
+    right: MulRight<'_, B, BP>,
+    tsk: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: GLWETensoringImpl,
+    Module<BE>: GLWETensoringReference<BE>
+        + ModuleN
+        + Convolution<BE>
+        + GLWENormalize<BE>
+        + VecZnxIdftNormalizeConsume<BE>
+        + VecZnxDftApply<BE>
+        + VecZnxDftAddAssign<BE>
+        + GGLWEProductReference<BE>,
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+    A: GLWEToBackendRef<BE> + GLWEInfos,
+    B: GLWEToBackendRef<BE> + GLWEInfos,
+    BP: CnvPVecRToBackendRef<BE>,
+    H: GetTensorKey<BE>,
+{
+    let n = res.n().as_usize();
+    let base2k = res.base2k().as_usize();
+    assert_eq!(res.rank().as_usize(), 1, "rank 1 only");
+    assert!(cnv_offset >= base2k, "one-pass product needs cnv_offset >= base2k");
+
+    let (left_k, left_limbs) = match left {
+        Some(a) => {
+            assert_eq!(a.base2k().as_usize(), base2k, "left.base2k() != res.base2k()");
+            assert_eq!(a.rank().as_usize(), 1, "rank 1 only");
+            (a.k(), a.max_size())
+        }
+        None => (res.k(), res.max_size()),
+    };
+    let a_size = left_k.as_usize().div_ceil(base2k);
+    assert!(a_size <= left_limbs, "left operand k exceeds its allocated limbs");
+    let (right_k, b_size) = match &right {
+        MulRight::Left => (left_k, a_size),
+        MulRight::Operand(b) => {
+            assert_eq!(b.base2k().as_usize(), base2k, "right.base2k() != res.base2k()");
+            assert_eq!(b.rank().as_usize(), 1, "rank 1 only");
+            let b_size = b.k().as_usize().div_ceil(base2k);
+            assert!(b_size <= b.max_size(), "right operand k exceeds its allocated limbs");
+            (b.k(), b_size)
+        }
+        MulRight::Prepared { size, k, .. } => (*k, *size),
+    };
+    // The width the two-step path gives its tensor intermediate.
+    let tensor_k = left_k.max(right_k);
+    let tensor_infos = GLWELayout {
+        n: res.n(),
+        base2k: res.base2k(),
+        k: tensor_k,
+        rank: res.rank(),
+    };
+    let res_infos = GLWELayout {
+        k: res_k,
+        ..tensor_infos
+    };
+
+    let tsk = &tsk.get_tensor_key(tensor_k).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(tsk.base2k().as_usize(), base2k, "tsk.base2k() != res.base2k()");
+    assert_eq!(tsk.rank_out().as_usize(), 1, "rank 1 only");
+    let scratch = scratch.borrow();
+    assert!(
+        scratch.available() >= module.glwe_mul_relinearize_tmp_bytes_reference(&res_infos, a_size, b_size, tensor_k, tsk),
+        "scratch.available(): {} < GLWETensoring::glwe_mul_relinearize_tmp_bytes: {}",
+        scratch.available(),
+        module.glwe_mul_relinearize_tmp_bytes_reference(&res_infos, a_size, b_size, tensor_k, tsk)
+    );
+
+    // Both operands are read here, and `res` is only written once they are prepared.
+    let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(n, 2, a_size, PrepareHint::Reuse);
+    let own_right_size = if matches!(right, MulRight::Prepared { .. }) {
+        1
+    } else {
+        b_size
+    };
+    let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(n, 2, own_right_size, PrepareHint::Reuse);
+    {
+        // A normalized copy keeps the width of its operand.
+        let left_infos = GLWELayout {
+            k: left_k,
+            ..tensor_infos
+        };
+        let right_infos = GLWELayout {
+            k: right_k,
+            ..tensor_infos
+        };
+        let (mut left_tmp, prep_scratch) = scratch.borrow().take_glwe_scratch(&left_infos);
+        let (mut right_tmp, mut prep_scratch) = prep_scratch.take_glwe_scratch(&right_infos);
+        macro_rules! canonical {
+            ($operand:expr, $tmp:ident) => {
+                if $operand.is_canonical() {
+                    $operand.to_backend_ref()
+                } else {
+                    module.glwe_normalize(&mut $tmp, $operand, &mut prep_scratch.borrow());
+                    $tmp.to_backend_ref()
+                }
+            };
+        }
+        macro_rules! prepare {
+            ($left:expr) => {{
+                let left = canonical!($left, left_tmp);
+                match &right {
+                    MulRight::Left => module.cnv_prepare_self(&mut a_prep, &mut b_prep, &left.data, &mut prep_scratch.borrow()),
+                    MulRight::Operand(b) => {
+                        module.cnv_prepare_left(&mut a_prep, &left.data, &mut prep_scratch.borrow());
+                        let b = canonical!(*b, right_tmp);
+                        module.cnv_prepare_right(&mut b_prep, &b.data, &mut prep_scratch.borrow());
+                    }
+                    MulRight::Prepared { .. } => module.cnv_prepare_left(&mut a_prep, &left.data, &mut prep_scratch.borrow()),
+                }
+            }};
+        }
+        match left {
+            Some(a) => prepare!(a),
+            None => prepare!(&*res),
+        }
+    }
+
+    let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, base2k);
+    let tensor_size = tensor_k.as_usize().div_ceil(base2k);
+    let dft_size = normalize_input_limb_bound_with_offset(
+        prod_dft_size(a_size, b_size, cnv_offset_hi),
+        tensor_size,
+        base2k,
+        base2k,
+        cnv_offset_lo,
+    );
+    let output_size = gglwe_product_output_size::<BE, _, _, _>(&res_infos, &tensor_infos, tsk);
+
+    // `diag` holds d0 = a0 * b0 and d2 = a1 * b1, `cross` holds d1.
+    let (mut diag, scratch) = scratch.take_vec_znx_dft_scratch(n, 2, dft_size);
+    let (mut cross, scratch) = scratch.take_vec_znx_dft_scratch(n, 1, dft_size);
+    let (mut d2_digits, mut scratch) = scratch.take_vec_znx_scratch(n, 1, dft_size);
+    {
+        let a_prep = a_prep.to_backend_ref();
+        let b_prep = match &right {
+            MulRight::Prepared { prep, .. } => prep.to_backend_ref(),
+            _ => b_prep.to_backend_ref(),
+        };
+        BE::glwe_mul_columns(
+            module,
+            cnv_offset_hi,
+            &mut diag,
+            &mut cross,
+            &a_prep,
+            &b_prep,
+            &mut scratch.borrow(),
+        );
+    }
+
+    // The inverse consumes column 1 of `diag` and leaves d0 in column 0.
+    module.vec_znx_idft_normalize_consume(
+        &mut d2_digits,
+        base2k,
+        dft_size * base2k,
+        0,
+        0,
+        &mut diag,
+        1,
+        base2k,
+        None,
+        &mut scratch.borrow(),
+    );
+
+    let (mut d2_dft, scratch) = scratch.take_vec_znx_dft_scratch(n, 1, dft_size);
+    module.vec_znx_dft_apply(1, 0, &mut d2_dft, 0, &d2_digits.to_backend_ref(), 0);
+
+    // One more output limb than the two-step path when the alignment adds a limb to d2.
+    let ks_size = (output_size + dft_size.saturating_sub(tensor_size)).min(tsk.size());
+    let (mut res_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(n, 2, ks_size);
+    module.gglwe_product_dft_reference(&mut res_dft, &d2_dft.to_backend_ref(), &tsk.0, 1, &mut scratch.borrow());
+    module.vec_znx_dft_add_assign(&mut res_dft, 0, &diag.to_backend_ref(), 0);
+    module.vec_znx_dft_add_assign(&mut res_dft, 1, &cross.to_backend_ref(), 0);
+
+    res.set_canonical(true);
+    let mut res_backend = res.to_backend_mut();
+    for i in 0..2 {
+        module.vec_znx_idft_normalize_consume(
+            &mut res_backend.data,
+            base2k,
+            res_k.as_usize(),
+            cnv_offset_lo,
+            i,
+            &mut res_dft,
+            i,
+            base2k,
+            None,
+            &mut scratch.borrow(),
         );
     }
 }
@@ -1441,6 +2038,14 @@ where
     module.cnv_prepare_right(&mut b_prep.to_backend_mut(), &b.data, &mut scratch);
 }
 
+/// Limbs of the product of an `a_size`-limb operand by a `b_size`-limb operand, from limb `cnv_offset_hi` on.
+///
+/// Limb `k` of a product sums the pairs `i + j = k`, so it has `a_size + b_size - 1` limbs.
+/// One limb more would be zero: it would be transformed and decomposed like the others, and counted as live.
+pub fn prod_dft_size(a_size: usize, b_size: usize, cnv_offset_hi: usize) -> usize {
+    (a_size + b_size - cnv_offset_hi).saturating_sub(1).max(1)
+}
+
 pub fn cnv_offset_to_limb_offset(cnv_offset: usize, base2k: usize) -> (usize, i64) {
     assert_ne!(base2k, 0);
     if cnv_offset < base2k {
@@ -1886,39 +2491,48 @@ where
                 && res_ref.k() >= a_ref.k()
                 && (a_ref.is_canonical() || res_ref.max_size() >= a_ref.max_size())
         };
-        res.set_canonical(!raw || a.is_canonical());
-        let mut res = res.to_backend_mut();
-        let a = a.to_backend_ref();
-
-        operand_degree(self.n(), &[res.n(), a.n()]);
-        assert!(res.rank() == a.rank() || a.rank() == 0);
-
-        let min_rank: usize = res.rank().min(a.rank()).as_usize() + 1;
-        if raw {
-            for i in 0..min_rank {
-                self.vec_znx_copy(&mut res.data, i, &a.data, i);
-            }
+        let rank = res.to_backend_ref().rank().as_usize();
+        let noise = if res.to_backend_ref().k() >= a.to_backend_ref().k() {
+            a.to_backend_ref().noise()
         } else {
-            let base2k = res.base2k().as_usize();
-            let k = res.k().as_usize();
-            for i in 0..min_rank {
-                self.vec_znx_normalize(
-                    &mut res.data,
-                    base2k,
-                    k,
-                    0,
-                    i,
-                    &a.data,
-                    a.base2k().as_usize(),
-                    i,
-                    &mut scratch.borrow(),
-                );
+            None
+        };
+        res.set_canonical(!raw || a.is_canonical());
+        {
+            let mut res = res.to_backend_mut();
+            let a = a.to_backend_ref();
+
+            operand_degree(self.n(), &[res.n(), a.n()]);
+            assert!(res.rank() == a.rank() || a.rank() == 0);
+
+            let min_rank: usize = res.rank().min(a.rank()).as_usize() + 1;
+            if raw {
+                for i in 0..min_rank {
+                    self.vec_znx_copy(&mut res.data, i, &a.data, i);
+                }
+            } else {
+                let base2k = res.base2k().as_usize();
+                let k = res.k().as_usize();
+                for i in 0..min_rank {
+                    self.vec_znx_normalize(
+                        &mut res.data,
+                        base2k,
+                        k,
+                        0,
+                        i,
+                        &a.data,
+                        a.base2k().as_usize(),
+                        i,
+                        &mut scratch.borrow(),
+                    );
+                }
+            }
+
+            for i in min_rank..(res.rank() + 1).into() {
+                self.vec_znx_zero(&mut res.data, i);
             }
         }
-
-        for i in min_rank..(res.rank() + 1).into() {
-            self.vec_znx_zero(&mut res.data, i);
-        }
+        res.set_noise(noise.map(|noise| noise.with_rank(rank)));
     }
 }
 
@@ -2122,7 +2736,7 @@ where
         assert!(res.rank() >= a.rank());
 
         let base2k: usize = res.base2k().into();
-        for i in 0..res.rank().as_usize() + 1 {
+        for i in 0..a.rank().as_usize() + 1 {
             let mut scratch_iter = scratch.borrow();
             self.vec_znx_lsh_add(base2k, k, &mut res.data, i, &a.data, i, &mut scratch_iter);
         }
@@ -2148,7 +2762,7 @@ where
         assert!(res.rank() >= a.rank());
 
         let base2k: usize = res.base2k().into();
-        for i in 0..res.rank().as_usize() + 1 {
+        for i in 0..a.rank().as_usize() + 1 {
             let mut scratch_iter = scratch.borrow();
             self.vec_znx_lsh_sub(base2k, k, &mut res.data, i, &a.data, i, &mut scratch_iter);
         }

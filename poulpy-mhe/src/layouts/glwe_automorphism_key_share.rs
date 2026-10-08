@@ -36,6 +36,10 @@ impl<D: Data, W: ZnxWord> SetGaloisElement for GLWEAutomorphismKeyShare<D, W> {
 }
 
 impl<D: Data, W: ZnxWord> LWEInfos for GLWEAutomorphismKeyShare<D, W> {
+    fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
+        self.key.noise()
+    }
+
     fn n(&self) -> Degree {
         self.key.n()
     }
@@ -106,6 +110,10 @@ impl<BE: Backend, D: Data> GGLWECompressedToBackendMut<BE> for GLWEAutomorphismK
 where
     GGLWEPatCompressed<D, BE::ZnxWord>: GGLWECompressedToBackendMut<BE>,
 {
+    fn set_noise(&mut self, metadata: Option<poulpy_core::ComponentNoise>) {
+        GGLWECompressedToBackendMut::<BE>::set_noise(&mut self.key, metadata);
+    }
+
     fn to_backend_mut(&mut self) -> GGLWECompressedBackendMut<'_, BE> {
         self.key.to_backend_mut()
     }

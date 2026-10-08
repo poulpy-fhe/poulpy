@@ -33,6 +33,10 @@ where
 impl<D: Data, W: ZnxWord> Eq for GGLWEPatCompressed<D, W> where GGLWECompressed<D, W>: Eq {}
 
 impl<D: Data, W: ZnxWord> LWEInfos for GGLWEPatCompressed<D, W> {
+    fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
+        self.inner.noise()
+    }
+
     fn n(&self) -> Degree {
         self.inner.n()
     }
@@ -103,6 +107,10 @@ impl<BE: Backend, D: Data> GGLWECompressedToBackendMut<BE> for GGLWEPatCompresse
 where
     GGLWECompressed<D, BE::ZnxWord>: GGLWECompressedToBackendMut<BE>,
 {
+    fn set_noise(&mut self, metadata: Option<poulpy_core::ComponentNoise>) {
+        GGLWECompressedToBackendMut::<BE>::set_noise(&mut self.inner, metadata);
+    }
+
     fn to_backend_mut(&mut self) -> GGLWECompressedBackendMut<'_, BE> {
         self.inner.to_backend_mut()
     }

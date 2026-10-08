@@ -30,6 +30,10 @@ macro_rules! glwe_share {
         }
 
         impl<D: Data, W: ZnxWord> LWEInfos for $name<D, W> {
+            fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
+                self.inner.noise()
+            }
+
             fn n(&self) -> Degree {
                 self.inner.n()
             }
@@ -68,6 +72,10 @@ macro_rules! glwe_share {
         where
             GLWE<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
         {
+            fn set_noise(&mut self, metadata: Option<poulpy_core::ComponentNoise>) {
+                GLWEToBackendMut::<BE>::set_noise(&mut self.inner, metadata);
+            }
+
             fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
                 self.inner.to_backend_mut()
             }

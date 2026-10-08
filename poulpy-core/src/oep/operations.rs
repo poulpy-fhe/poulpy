@@ -1,7 +1,9 @@
 use crate::layouts::IntPolyInfos;
 use std::collections::HashMap;
 
-use poulpy_hal::layouts::{Backend, CnvPVecRToBackendRef, Module, ScratchArena};
+use poulpy_hal::layouts::{
+    Backend, CnvPVecLBackendRef, CnvPVecRBackendRef, CnvPVecRToBackendRef, Module, ScratchArena, VecZnxDftBackendMut,
+};
 
 use crate::layouts::{
     GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
@@ -157,6 +159,130 @@ pub unsafe trait GLWETensoringImpl: Backend {
         R: GLWEInfos,
         A: GLWEInfos,
         B: GGLWEInfos;
+
+    /// Scratch bytes of [`Self::glwe_mul_relinearize`].
+    fn glwe_mul_relinearize_tmp_bytes<R, B>(
+        module: &Module<Self>,
+        res: &R,
+        a_size: usize,
+        b_size: usize,
+        tensor_k: crate::layouts::TorusPrecision,
+        tsk: &B,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        B: GGLWEInfos;
+
+    /// The one-pass products of [`GLWETensoring`](crate::api::GLWETensoring), one hook per method of the same name.
+    /// Overrides must reproduce
+    /// [`GLWETensoringReference`](crate::reference::operations::GLWETensoringReference) bit for bit.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_relinearize<R, A, B, H>(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        a: &A,
+        b: &B,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        A: GLWEToBackendRef<Self> + GLWEInfos,
+        B: GLWEToBackendRef<Self> + GLWEInfos,
+        H: GetTensorKey<Self>;
+
+    /// See [`Self::glwe_mul_relinearize`].
+    fn glwe_mul_relinearize_assign<R, A, H>(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        a: &A,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        A: GLWEToBackendRef<Self> + GLWEInfos,
+        H: GetTensorKey<Self>;
+
+    /// See [`Self::glwe_mul_relinearize`].
+    fn glwe_square_relinearize<R, A, H>(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        a: &A,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        A: GLWEToBackendRef<Self> + GLWEInfos,
+        H: GetTensorKey<Self>;
+
+    /// See [`Self::glwe_mul_relinearize`].
+    fn glwe_square_relinearize_assign<R, H>(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        H: GetTensorKey<Self>;
+
+    /// See [`Self::glwe_mul_relinearize`].
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_prepared_relinearize<R, A, BP, H>(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        a: &A,
+        b: &BP,
+        b_size: usize,
+        b_k: crate::layouts::TorusPrecision,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        A: GLWEToBackendRef<Self> + GLWEInfos,
+        BP: CnvPVecRToBackendRef<Self>,
+        H: GetTensorKey<Self>;
+
+    /// See [`Self::glwe_mul_relinearize`].
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_prepared_relinearize_assign<R, AP, H>(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        a: &AP,
+        a_size: usize,
+        a_k: crate::layouts::TorusPrecision,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        AP: CnvPVecRToBackendRef<Self>,
+        H: GetTensorKey<Self>;
+
+    /// The three product columns of the one-pass products, from prepared rank-1 operands: see
+    /// [`GLWETensoringReference::glwe_mul_columns_reference`](crate::reference::operations::GLWETensoringReference::glwe_mul_columns_reference).
+    ///
+    /// It receives the scratch left once the operands and the columns are allocated: a kernel that needs more
+    /// than the reference convolutions adds it to [`Self::glwe_mul_relinearize_tmp_bytes`].
+    /// Overrides must reproduce the reference bit for bit.
+    fn glwe_mul_columns(
+        module: &Module<Self>,
+        cnv_offset_hi: usize,
+        diag: &mut VecZnxDftBackendMut<'_, Self>,
+        cross: &mut VecZnxDftBackendMut<'_, Self>,
+        a: &CnvPVecLBackendRef<'_, Self>,
+        b: &CnvPVecRBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    );
 }
 
 /// Backend-provided GLWE addition operations.
@@ -556,6 +682,154 @@ macro_rules! impl_glwe_tensoring_reference {
             {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_relinearize_tmp_bytes_reference(
                     module, res, a, tsk,
+                )
+            }
+
+            fn glwe_mul_relinearize_tmp_bytes<R, B>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res: &R,
+                a_size: usize,
+                b_size: usize,
+                tensor_k: $crate::layouts::TorusPrecision,
+                tsk: &B,
+            ) -> usize
+            where
+                R: $crate::layouts::GLWEInfos,
+                B: $crate::layouts::GGLWEInfos,
+            {
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_relinearize_tmp_bytes_reference(
+                    module, res, a_size, b_size, tensor_k, tsk,
+                )
+            }
+
+            #[allow(clippy::too_many_arguments)]
+            fn glwe_mul_relinearize<R, A, B, H>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                cnv_offset: usize,
+                res: &mut R,
+                res_k: $crate::layouts::TorusPrecision,
+                a: &A,
+                b: &B,
+                tsk: &H,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) where
+                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                B: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                H: $crate::layouts::GetTensorKey<$be>,
+            {
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_relinearize_reference(
+                    module, cnv_offset, res, res_k, a, b, tsk, scratch,
+                )
+            }
+
+            fn glwe_mul_relinearize_assign<R, A, H>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                cnv_offset: usize,
+                res: &mut R,
+                res_k: $crate::layouts::TorusPrecision,
+                a: &A,
+                tsk: &H,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) where
+                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                H: $crate::layouts::GetTensorKey<$be>,
+            {
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_relinearize_assign_reference(
+                    module, cnv_offset, res, res_k, a, tsk, scratch,
+                )
+            }
+
+            fn glwe_square_relinearize<R, A, H>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                cnv_offset: usize,
+                res: &mut R,
+                res_k: $crate::layouts::TorusPrecision,
+                a: &A,
+                tsk: &H,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) where
+                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                H: $crate::layouts::GetTensorKey<$be>,
+            {
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_square_relinearize_reference(
+                    module, cnv_offset, res, res_k, a, tsk, scratch,
+                )
+            }
+
+            fn glwe_square_relinearize_assign<R, H>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                cnv_offset: usize,
+                res: &mut R,
+                res_k: $crate::layouts::TorusPrecision,
+                tsk: &H,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) where
+                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+                H: $crate::layouts::GetTensorKey<$be>,
+            {
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_square_relinearize_assign_reference(
+                    module, cnv_offset, res, res_k, tsk, scratch,
+                )
+            }
+
+            #[allow(clippy::too_many_arguments)]
+            fn glwe_mul_prepared_relinearize<R, A, BP, H>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                cnv_offset: usize,
+                res: &mut R,
+                res_k: $crate::layouts::TorusPrecision,
+                a: &A,
+                b: &BP,
+                b_size: usize,
+                b_k: $crate::layouts::TorusPrecision,
+                tsk: &H,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) where
+                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be>,
+                H: $crate::layouts::GetTensorKey<$be>,
+            {
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_prepared_relinearize_reference(
+                    module, cnv_offset, res, res_k, a, b, b_size, b_k, tsk, scratch,
+                )
+            }
+
+            #[allow(clippy::too_many_arguments)]
+            fn glwe_mul_prepared_relinearize_assign<R, AP, H>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                cnv_offset: usize,
+                res: &mut R,
+                res_k: $crate::layouts::TorusPrecision,
+                a: &AP,
+                a_size: usize,
+                a_k: $crate::layouts::TorusPrecision,
+                tsk: &H,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) where
+                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+                AP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be>,
+                H: $crate::layouts::GetTensorKey<$be>,
+            {
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_prepared_relinearize_assign_reference(
+                    module, cnv_offset, res, res_k, a, a_size, a_k, tsk, scratch,
+                )
+            }
+
+            fn glwe_mul_columns(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                cnv_offset_hi: usize,
+                diag: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>,
+                cross: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>,
+                a: &::poulpy_hal::layouts::CnvPVecLBackendRef<'_, $be>,
+                b: &::poulpy_hal::layouts::CnvPVecRBackendRef<'_, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) {
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_columns_reference(
+                    module, cnv_offset_hi, diag, cross, a, b, scratch,
                 )
             }
         }

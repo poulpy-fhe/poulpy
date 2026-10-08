@@ -11,9 +11,10 @@ pub mod circuit_bootstrapping;
 pub mod lifecycle;
 
 use poulpy_core::{
-    TransferInto,
+    ComponentNoise, Distribution, TransferInto,
     layouts::{
-        GGSW, GGSWInfos, GGSWLayout, GGSWToBackendRef, GLWE, GLWEInfos, GLWELayout, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
+        GGSW, GGSWInfos, GGSWLayout, GGSWToBackendMut, GGSWToBackendRef, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut,
+        GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
     },
 };
 use poulpy_hal::{
@@ -25,11 +26,12 @@ use poulpy_hal::{
 pub trait ParityBackend: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost + CopyToHost> {}
 impl<B: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost + CopyToHost>> ParityBackend for B {}
 
-/// Coefficient-domain representation including precision and allocated tails.
+/// Coefficient-domain representation including precision, noise estimate and allocated tails.
 #[derive(PartialEq, Eq)]
 pub(crate) struct GlweSnapshot {
     layout: GLWELayout,
     capacity: usize,
+    noise: Option<ComponentNoise>,
     bytes: Vec<u8>,
 }
 impl std::fmt::Debug for GlweSnapshot {
@@ -37,6 +39,7 @@ impl std::fmt::Debug for GlweSnapshot {
         f.debug_struct("GlweSnapshot")
             .field("layout", &self.layout)
             .field("capacity", &self.capacity)
+            .field("noise", &self.noise)
             .finish()
     }
 }
@@ -47,6 +50,13 @@ pub(crate) struct GgswSnapshot {
     rows: Vec<GlweSnapshot>,
 }
 
+/// Asserts evaluation outputs carry no noise tag, which equality between backends would miss.
+pub(crate) fn assert_untagged<'a>(label: &str, outputs: impl IntoIterator<Item = &'a GlweSnapshot>) {
+    for (i, output) in outputs.into_iter().enumerate() {
+        assert!(output.noise.is_none(), "{label} output {i} kept a noise tag");
+    }
+}
+
 pub(crate) fn snapshot_glwe<B: Backend<ZnxWord = i64>, A: GLWEToBackendRef<B>>(ct: &A) -> GlweSnapshot {
     let view = ct.to_backend_ref();
     let mut bytes = vec![0; view.n().as_usize() * (view.rank().as_usize() + 1) * view.max_size() * size_of::<i64>()];
@@ -54,6 +64,7 @@ pub(crate) fn snapshot_glwe<B: Backend<ZnxWord = i64>, A: GLWEToBackendRef<B>>(c
     GlweSnapshot {
         layout: view.glwe_layout(),
         capacity: view.max_size(),
+        noise: view.noise(),
         bytes,
     }
 }
@@ -105,6 +116,9 @@ pub(crate) fn fixture_glwe<B: ParityBackend>(module: &Module<B>, infos: &impl GL
         &mut Source::new([seed; 32]),
     );
     canonicalize(&mut input);
+    // A fresh estimate, so an evaluation output that keeps a stale one fails the comparison.
+    let noise = ComponentNoise::from_secret_at(Distribution::TernaryProb(0.5), infos.k(), infos.rank().as_usize());
+    GLWEToBackendMut::<HostBytesBackend>::set_noise(&mut input, Some(noise));
     let mut output = module.glwe_alloc_from_infos(infos);
     input.transfer_into(&mut output);
     output
@@ -121,6 +135,9 @@ pub(crate) fn fixture_ggsw<B: ParityBackend>(module: &Module<B>, infos: &impl GG
             canonicalize(&mut glwe);
         }
     }
+    // Tagged after filling, since mutable row access clears the tag.
+    let noise = ComponentNoise::from_secret_at(Distribution::TernaryProb(0.5), infos.k(), infos.rank().as_usize());
+    GGSWToBackendMut::<HostBytesBackend>::set_noise(&mut input, Some(noise));
     let mut output = module.ggsw_alloc_from_infos(infos);
     input.transfer_into(&mut output);
     output

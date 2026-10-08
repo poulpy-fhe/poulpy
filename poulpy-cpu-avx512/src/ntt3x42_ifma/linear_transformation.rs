@@ -135,7 +135,8 @@ fn eval<R, P, H>(
     let base = rhs.first_diagonal_plaintext().unwrap().base2k().as_usize();
     let cols = res.rank().as_usize() + 1;
     let (offset_hi, offset_lo) = poulpy_core::reference::operations::cnv_offset_to_limb_offset(cnv_offset, base);
-    let prod_size = lhs.size() + rhs.first_diagonal_plaintext().unwrap().size() - offset_hi;
+    let prod_size =
+        poulpy_core::reference::operations::prod_dft_size(lhs.size(), rhs.first_diagonal_plaintext().unwrap().size(), offset_hi);
     let term_count = rhs.giant_steps.iter().filter(|g| g.rot != 0).count();
     let giant_keys: Vec<_> = rhs
         .giant_steps
@@ -236,7 +237,7 @@ fn finish_giant(
     {
         let (mut small, mut work) = arena.borrow().take_vec_znx_scratch(module.n(), 1, mask_size);
         for col in 1..acc.cols() {
-            module.vec_znx_idft_normalize_consume(&mut small, base, mask_size * base, 0, prod, col, base, None, &mut work);
+            module.vec_znx_idft_normalize_consume(&mut small, base, mask_size * base, 0, 0, prod, col, base, None, &mut work);
             module.vec_znx_dft_apply(1, 0, &mut a_dft, col - 1, &small.to_backend_ref(), 0);
         }
     }

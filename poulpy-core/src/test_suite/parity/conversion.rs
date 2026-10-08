@@ -158,7 +158,7 @@ where
                 t.lwe_sample_extract(&mut out_t, &a_t);
                 let mut have = r.lwe_alloc_from_infos(&l);
                 out_t.transfer_into(&mut have);
-                assert_eq!(out_r, have, "lwe_sample_extract rank={rank} k={k} n={dimension}");
+                assert_eval_eq!(out_r, have, "lwe_sample_extract rank={rank} k={k} n={dimension}");
             }
             let l = LWELayout {
                 n: Degree((params.n / 2) as u32),
@@ -209,7 +209,7 @@ where
                 );
                 let mut have = r.lwe_alloc_from_infos(&l);
                 out_t.transfer_into(&mut have);
-                assert_eq!(out_r, have, "lwe_from_glwe rank={rank} k={k} index={index}");
+                assert_eval_eq!(out_r, have, "lwe_from_glwe rank={rank} k={k} index={index}");
             }
             let kt = LWEToGLWEKeyLayout {
                 n: g.n,
@@ -301,7 +301,7 @@ where
             );
             let mut have = r.lwe_alloc_from_infos(&res);
             out_t.transfer_into(&mut have);
-            assert_eq!(out_r, have, "lwe_keyswitch rank={rank} k={k}");
+            assert_eval_eq!(out_r, have, "lwe_keyswitch rank={rank} k={k}");
         }
     }
 }

@@ -54,6 +54,8 @@ where
     );
     let mut ct_res = alloc_ct(&params, module, params.k);
     module.ckks_copy(&mut ct_res, &ct, &mut scratch.borrow())?;
+    assert!(ct.noise().is_some());
+    assert_eq!(ct_res.noise(), ct.noise());
     assert_unary_output_meta("copy", &ct_res, &ct);
     assert_decrypt_precision(
         "copy",
@@ -101,6 +103,11 @@ where
     );
     let mut ct_res = alloc_ct(&params, module, ct.k().as_usize() - 1);
     module.ckks_copy(&mut ct_res, &ct, &mut scratch.borrow())?;
+    assert!(ct.noise().is_some());
+    assert!(ct_res.noise().is_none());
+    let mut dropped = alloc_ct(&params, module, ct.k().as_usize() - ct.base2k().as_usize());
+    module.ckks_copy(&mut dropped, &ct, &mut scratch.borrow())?;
+    assert!(dropped.noise().is_none());
     assert_unary_output_meta("copy smaller_output", &ct_res, &ct);
     assert_decrypt_precision(
         "copy smaller_output",

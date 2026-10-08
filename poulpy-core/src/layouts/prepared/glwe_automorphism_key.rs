@@ -15,6 +15,10 @@ pub struct GLWEAutomorphismKeyPrepared<D: Data, B: Backend> {
 }
 
 impl<D: Data, B: Backend> LWEInfos for GLWEAutomorphismKeyPrepared<D, B> {
+    fn noise(&self) -> Option<crate::ComponentNoise> {
+        self.key.noise()
+    }
+
     fn n(&self) -> Degree {
         self.key.n()
     }
@@ -218,6 +222,7 @@ where
 impl<B: Backend> GGLWEPreparedToBackendRef<B> for &GLWEAutomorphismKeyPrepared<B::BufRef<'_>, B> {
     fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
         GGLWEPrepared {
+            noise: self.key.noise.clone(),
             base2k: self.key.base2k,
             k_aux: self.key.k_aux,
             dsize: self.key.dsize,
@@ -232,12 +237,17 @@ impl<D: Data, B: Backend> GGLWEPreparedToBackendMut<B> for GLWEAutomorphismKeyPr
 where
     GGLWEPrepared<D, B>: GGLWEPreparedToBackendMut<B>,
 {
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        <_ as GGLWEPreparedToBackendMut<B>>::set_noise(&mut self.key, metadata);
+    }
+
     fn to_backend_mut(&mut self) -> GGLWEPreparedBackendMut<'_, B> {
         self.key.to_backend_mut()
     }
 }
 
 pub trait GLWEAutomorphismKeyPreparedToBackendMut<B: Backend> {
+    /// Borrows coefficients mutably and clears the owner's component noise metadata.
     fn to_backend_mut(&mut self) -> GLWEAutomorphismKeyPreparedBackendMut<'_, B>;
 }
 

@@ -1,8 +1,8 @@
 //! Blanket implementations connecting `poulpy-core` traits to the matching
 //! backend family impl traits on [`poulpy_hal::layouts::Module`].
 //!
-//! This module contains no algorithmic logic; it only wires the safe public
-//! traits to the backend-owned high-level extension point.
+//! Delegates forward the safe public traits to backend extension points.
+//! Reference and derived implementations own component noise metadata updates.
 
 mod automorphism;
 mod ci_conversion;

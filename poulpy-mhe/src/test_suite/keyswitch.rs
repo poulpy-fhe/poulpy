@@ -3,10 +3,10 @@
 //! smudging noise.
 
 use poulpy_core::{
-    DEFAULT_SIGMA_XE, GLWEAdd, GLWEEncryptSk, GLWENoise, GLWENormalize, Noise,
+    DEFAULT_SIGMA_XE, Distribution, GLWEAdd, GLWEDecrypt, GLWEEncryptSk, GLWENoise, GLWENormalize, GetDistributionMut, Noise,
     layouts::{
         Base2K, GLWE, GLWEInfos, GLWELayout, GLWEMask, GLWEPlaintext, GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory,
-        GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank, TorusPrecision,
+        GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
     },
 };
 use poulpy_hal::{
@@ -49,6 +49,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = glwe_layout(module);
+
     let parties_in = input_secrets(module);
     let parties_out = party_secrets(module);
     let sk_out = ideal_secret(module, &parties_out);
@@ -63,30 +64,38 @@ where
     let (pt, ct) = encrypted_plaintext(module, &ideal_secret(module, &parties_in), &mut scratch);
     let mask = ciphertext_mask(module, &ct);
 
-    let mut acc = module.glwe_private_keyswitch_share_alloc_from_infos(&layout);
-    let mut share = module.glwe_private_keyswitch_share_alloc_from_infos(&layout);
-    for (i, ((_, sk_in), (_, sk_out_i))) in parties_in.iter().zip(&parties_out).enumerate() {
-        let dst = if i == 0 { &mut acc } else { &mut share };
-        dst.inner.set_canonical(false);
-        let mut source_smudge = Source::new([10 + i as u8; 32]);
-        // The inner products with both secrets would be left in the scratch.
-        poulpy_core::test_suite::assert_wipes_scratch::<BE>(
-            module.mhe_glwe_private_keyswitch_share_gen_tmp_bytes(&layout),
-            |scratch| {
-                module.mhe_glwe_private_keyswitch_share_gen(dst, &mask, sk_in, sk_out_i, FLOOD, &mut source_smudge, scratch)
-            },
-        );
-        assert!(dst.inner.is_canonical());
-        if i > 0 {
-            module.mhe_glwe_private_keyswitch_share_aggregate(&mut acc, &share);
+    for share_k in [K, TorusPrecision(K.0 - BASE2K.0)] {
+        let share_layout = GLWELayout { k: share_k, ..layout };
+        let mut acc = module.glwe_private_keyswitch_share_alloc_from_infos(&share_layout);
+        let mut share = module.glwe_private_keyswitch_share_alloc_from_infos(&share_layout);
+        for (i, ((_, sk_in), (_, sk_out_i))) in parties_in.iter().zip(&parties_out).enumerate() {
+            let dst = if i == 0 { &mut acc } else { &mut share };
+            dst.inner.set_canonical(false);
+            let mut source_smudge = Source::new([10 + i as u8; 32]);
+            // The inner products with both secrets would be left in the scratch.
+            poulpy_core::test_suite::assert_wipes_scratch::<BE>(
+                module.mhe_glwe_private_keyswitch_share_gen_tmp_bytes(&layout),
+                |scratch| {
+                    module.mhe_glwe_private_keyswitch_share_gen(dst, &mask, sk_in, sk_out_i, FLOOD, &mut source_smudge, scratch)
+                },
+            );
+            assert!(dst.inner.is_canonical());
+            if i > 0 {
+                module.mhe_glwe_private_keyswitch_share_aggregate(&mut acc, &share);
+            }
         }
-    }
-    assert!(!acc.inner.is_canonical());
+        assert!(!acc.inner.is_canonical());
+        super::fixtures::assert_collective_metadata(&acc, PARTIES);
+        let rounding = if share_k < layout.k { 1.0 } else { 0.0 };
+        super::fixtures::assert_fresh_noise(&acc, PARTIES as f64 * (SIGMA_FLOOD.powi(2) + rounding), share_k);
+        super::fixtures::assert_noise_components(&acc, &[PARTIES as f64 * (SIGMA_FLOOD.powi(2) + rounding)]);
 
-    let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
-    module.mhe_glwe_private_keyswitch_share_finalize(&mut res, &ct, &acc, &mut scratch.borrow());
-    assert!(res.is_canonical());
-    assert_flooded_noise(module, &res, &pt, &sk_out, 0.0, layout.k, &mut scratch);
+        let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
+        module.mhe_glwe_private_keyswitch_share_finalize(&mut res, &ct, &acc, &mut scratch.borrow());
+        assert_eq!(res.noise(), None);
+        assert!(res.is_canonical());
+        assert_flooded_noise(module, &res, &pt, &sk_out, 0.0, share_k, &mut scratch);
+    }
 }
 
 pub fn test_glwe_public_keyswitch<BE>(module: &Module<BE>)
@@ -101,6 +110,7 @@ where
         + GLWESecretPreparedFactory<BE>
         + GLWEPublicKeyPreparedFactory<BE>
         + GLWEEncryptSk<BE>
+        + GLWEDecrypt<BE>
         + GLWEAdd<BE>
         + GLWENormalize<BE>
         + GLWENoise<BE>
@@ -110,7 +120,11 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     // Public key switching also supports a different destination rank and precision.
-    for (rank_out, k_out) in [(RANK, K), (Rank(1), TorusPrecision(K.0 + BASE2K.0))] {
+    for (rank_out, k_out, key_gap) in [
+        (RANK, K, BASE2K.0),
+        (Rank(1), TorusPrecision(K.0 + BASE2K.0), BASE2K.0),
+        (RANK, TorusPrecision(K.0 - BASE2K.0), 0),
+    ] {
         let layout = glwe_layout(module);
         let share_layout = GLWELayout {
             rank: rank_out,
@@ -119,9 +133,10 @@ where
         };
         // A public key more precise than the share exercises the share scratch query for real.
         let pk_layout = GLWELayout {
-            k: TorusPrecision(k_out.0 + BASE2K.0),
+            k: TorusPrecision(k_out.0 + key_gap),
             ..share_layout
         };
+
         let parties_in = input_secrets(module);
         let parties_out: Vec<Secret<BE>> = (0..PARTIES)
             .map(|i| secret_from_seed_at(module, rank_out, [100 + i as u8; 32]))
@@ -130,13 +145,14 @@ where
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
             module
                 .glwe_encrypt_sk_tmp_bytes(&layout)
+                .max(module.glwe_decrypt_tmp_bytes(&layout))
                 .max(module.mhe_glwe_public_keyswitch_share_finalize_tmp_bytes())
                 .max(module.glwe_normalize_tmp_bytes())
                 .max(module.glwe_noise_tmp_bytes(&share_layout)),
         );
         let share_bytes = module.mhe_glwe_public_keyswitch_share_gen_tmp_bytes(&layout, &share_layout, &pk_layout);
 
-        let pk_out = collective_public_key(module, &parties_out, &pk_layout);
+        let mut pk_out = collective_public_key(module, &parties_out, &pk_layout);
 
         let (pt, ct) = encrypted_plaintext(module, &ideal_secret(module, &parties_in), &mut scratch);
         let mask = ciphertext_mask(module, &ct);
@@ -178,15 +194,75 @@ where
             }
         }
         assert!(!acc.inner.is_canonical());
+        super::fixtures::assert_collective_metadata(&acc, PARTIES);
 
         let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&share_layout);
         module.mhe_glwe_public_keyswitch_share_finalize(&mut res, &ct, &acc, &mut scratch.borrow());
+        assert_eq!(res.noise(), None);
         assert!(res.is_canonical());
         // Each party's pk encryption adds 2 * rank * n * 0.5 * PARTIES * sigma^2, as in the pk test.
         let n = module.n() as f64;
         let rank = rank_out.as_usize() as f64;
         let pk_noise = PARTIES as f64 * 2.0 * rank * n * 0.5 * PARTIES as f64 * DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
+        let secret_fold = rank * n * 0.5 * PARTIES as f64;
+        let sigma2 = DEFAULT_SIGMA_XE.powi(2);
+        let inherited = secret_fold * sigma2 * (2.0 * (k_out.as_usize() as f64 - pk_layout.k.as_usize() as f64)).exp2();
+        let per_share = super::fixtures::expected_pk_variance(
+            inherited,
+            secret_fold * sigma2,
+            1.0 + secret_fold,
+            k_out.as_usize(),
+            pk_layout.k.as_usize(),
+        );
+        let conversion = if k_out < K && key_gap == 0 { 1.0 } else { 0.0 };
+        let fresh = PARTIES as f64 * (per_share + SIGMA_FLOOD.powi(2) + conversion);
+        super::fixtures::assert_fresh_noise(&acc, fresh, k_out);
         assert_flooded_noise(module, &res, &pt, &sk_out, pk_noise, share_layout.k, &mut scratch);
+        // The share estimate excludes the input ciphertext's existing error.
+        let mut input_phase = module.glwe_plaintext_alloc_from_infos(&share_layout);
+        module.glwe_decrypt(
+            &ct,
+            &mut input_phase,
+            &ideal_secret(module, &parties_in),
+            &mut scratch.borrow(),
+        );
+        let measured = module
+            .glwe_noise(&res, &input_phase, &sk_out, &mut scratch.borrow())
+            .second_moment();
+        let estimate = acc.noise().unwrap().phase_noise(module.n()).variance_at(0u32.into());
+        assert!(
+            measured > 0.4 * estimate && measured < 1.8 * estimate,
+            "public key-switch residual/model={}",
+            measured / estimate
+        );
+
+        // Changing a valid ephemeral law must not invalidate the aggregation
+        // covariance model or mutate an existing transcript on rejection.
+        *pk_out.dist_mut() = Distribution::BinaryProb(0.5);
+        let before = share.clone();
+        let mut source_xu = Source::new([20u8; 32]);
+        let mut source_xe = Source::new([10u8; 32]);
+        let mut source_smudge = Source::new([30u8; 32]);
+        assert_panics_with(
+            "invalid public key: ephemeral distribution differs from its secret provenance",
+            || {
+                module.mhe_glwe_public_keyswitch_share_gen(
+                    &mut share,
+                    &mask,
+                    &parties_in[0].1,
+                    &pk_out,
+                    FLOOD,
+                    &mut source_xu,
+                    &mut source_xe,
+                    &mut source_smudge,
+                    &mut scratch.borrow(),
+                );
+            },
+        );
+        assert!(share == before);
+        assert_eq!(source_xu.next_i64(), Source::new([20u8; 32]).next_i64());
+        assert_eq!(source_xe.next_i64(), Source::new([10u8; 32]).next_i64());
+        assert_eq!(source_smudge.next_i64(), Source::new([30u8; 32]).next_i64());
     }
 }
 
@@ -237,6 +313,7 @@ where
         k: TorusPrecision(K.0 - BASE2K.0),
         ..layout
     };
+
     let (_, sk_in) = secret_from_seed(module, [150u8; 32]);
     let pk_out: GLWEPublicKeyPrepared<AlignedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&pk_layout);
     let ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
@@ -321,6 +398,7 @@ where
 {
     let layout = glwe_layout(module);
     let ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
+
     let mut scratch: ScratchOwned<BE> =
         ScratchOwned::alloc(module.mhe_glwe_public_keyswitch_share_gen_tmp_bytes(&layout, &layout, &layout));
     for (res_layout, rank_in, pk_layout, expected) in [
@@ -438,6 +516,7 @@ where
     let ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
     let sk: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(RANK);
     let pk: GLWEPublicKeyPrepared<AlignedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&public_layout);
+
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .mhe_glwe_private_keyswitch_share_gen_tmp_bytes(&layout)

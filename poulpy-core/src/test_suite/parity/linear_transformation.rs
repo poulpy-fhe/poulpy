@@ -270,8 +270,12 @@ where
                     );
                     let mut have = r.glwe_alloc_from_infos(&ct);
                     out_t.transfer_into(&mut have);
-                    assert_eq!(out_r, input_r, "reference identity linear transformation rank={rank}");
-                    assert_eq!(have, input_r, "backend identity linear transformation rank={rank}");
+                    // The input's coefficients without its noise estimate: an evaluation is not a copy.
+                    let mut want = r.glwe_alloc_from_infos(&ct);
+                    input_r.transfer_into(&mut want);
+                    want.noise = None;
+                    assert_eq!(out_r, want, "reference identity linear transformation rank={rank}");
+                    assert_eq!(have, want, "backend identity linear transformation rank={rank}");
                     r.glwe_eval_linear_transformation_into(
                         base,
                         &mut out_r,
@@ -301,8 +305,8 @@ where
                         .borrow(),
                     );
                     out_t.transfer_into(&mut have);
-                    assert_eq!(out_r, input_r, "reference streamed identity rank={rank}");
-                    assert_eq!(have, input_r, "backend streamed identity rank={rank}");
+                    assert_eq!(out_r, want, "reference streamed identity rank={rank}");
+                    assert_eq!(have, want, "backend streamed identity rank={rank}");
                 }
 
                 let mut rhs_r = LinearTransformation {

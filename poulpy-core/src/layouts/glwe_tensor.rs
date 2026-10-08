@@ -123,6 +123,7 @@ where
 {
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         GLWE {
+            noise: None,
             base2k: self.base2k,
             k: self.k,
             canonical: true,
@@ -137,6 +138,7 @@ where
 {
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         GLWE {
+            noise: None,
             base2k: self.base2k,
             k: self.k,
             canonical: true,
@@ -149,8 +151,11 @@ impl<BE: Backend, D: Data> GLWEToBackendMut<BE> for GLWETensor<D, BE::ZnxWord>
 where
     VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE> + VecZnxToBackendMut<BE>,
 {
+    fn set_noise(&mut self, _: Option<crate::ComponentNoise>) {}
+
     fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
         GLWE {
+            noise: None,
             base2k: self.base2k,
             k: self.k,
             canonical: true,
@@ -164,6 +169,7 @@ where
 impl<BE: Backend> GLWEToBackendRef<BE> for &mut GLWETensor<BE::BufMut<'_>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         GLWE {
+            noise: None,
             base2k: self.base2k,
             k: self.k,
             canonical: true,
@@ -173,8 +179,11 @@ impl<BE: Backend> GLWEToBackendRef<BE> for &mut GLWETensor<BE::BufMut<'_>, BE::Z
 }
 
 impl<BE: Backend> GLWEToBackendMut<BE> for &mut GLWETensor<BE::BufMut<'_>, BE::ZnxWord> {
+    fn set_noise(&mut self, _: Option<crate::ComponentNoise>) {}
+
     fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
         GLWE {
+            noise: None,
             base2k: self.base2k,
             k: self.k,
             canonical: true,
@@ -183,4 +192,8 @@ impl<BE: Backend> GLWEToBackendMut<BE> for &mut GLWETensor<BE::BufMut<'_>, BE::Z
     }
 
     fn set_canonical(&mut self, _canonical: bool) {}
+}
+
+impl<D: Data, W: ZnxWord> GLWETensor<D, W> {
+    pub(crate) fn record_noise(&mut self, _: Option<crate::ComponentNoise>) {}
 }

@@ -2,7 +2,7 @@
 use std::{cell::Cell, collections::HashMap};
 
 use super::{
-    helpers::{Snapshot, fixture_ciphertext, snapshot, with_scratch},
+    helpers::{Snapshot, assert_untagged, fixture_ciphertext, snapshot, with_scratch},
     keys::{key_layout, prepared_automorphism_key, prepared_gglwe},
 };
 use crate::{
@@ -596,5 +596,7 @@ where
     check_large_digits(tested);
     check_ci_unfold_width(reference);
     check_ci_unfold_width(tested);
-    assert_eq!(run_fold(params, reference), run_fold(params, tested), "fold differs");
+    let want = run_fold(params, reference);
+    assert_untagged("fold", want.iter().flatten().flatten());
+    assert_eq!(want, run_fold(params, tested), "fold differs");
 }

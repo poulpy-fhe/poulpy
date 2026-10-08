@@ -303,17 +303,23 @@ pub(crate) fn idft_compact_in_place<R: Ring>(
 {
     let n = a.n();
     check_degree::<NTT4x30Avx512<R>>(module.n(), n);
-    let table = module.get_intt_table_for(n);
     let cols = a.cols();
     let size = a.size();
     let data: &mut [u32] = cast_slice_mut(a.data_mut());
     for limb in 0..size {
-        let slot = packed_limb_mut(data, n, cols, a_col, limb);
-        unsafe { unpack_limb_q120(n, tmp, slot) };
-        NTT4x30Avx512::<R>::ntt_dft_execute(table, tmp);
-        let dst = unsafe { std::slice::from_raw_parts_mut(slot.as_mut_ptr() as *mut i128, n) };
-        NTT4x30Avx512::<R>::ntt_to_znx128(dst, n, tmp);
+        idft_compact_limb(module, n, packed_limb_mut(data, n, cols, a_col, limb), tmp);
     }
+}
+
+/// Replaces one packed limb by its `n` coefficients, as `i128` in the same storage.
+pub(crate) fn idft_compact_limb<R: Ring>(module: &Module<NTT4x30Avx512<R>>, n: usize, slot: &mut [u32], tmp: &mut [u64])
+where
+    NTT4x30Avx512<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+{
+    unsafe { unpack_limb_q120(n, tmp, slot) };
+    NTT4x30Avx512::<R>::ntt_dft_execute(module.get_intt_table_for(n), tmp);
+    let dst = unsafe { std::slice::from_raw_parts_mut(slot.as_mut_ptr() as *mut i128, n) };
+    NTT4x30Avx512::<R>::ntt_to_znx128(dst, n, tmp);
 }
 
 pub(crate) fn vec_znx_dft_add<R: Ring>(

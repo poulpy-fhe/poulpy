@@ -1,6 +1,6 @@
 use poulpy_core::{
     GetDistribution, GetDistributionMut,
-    layouts::{GLWEInfos, GLWEPublicKeyAtViewMut, GLWESecretPreparedToBackendRef},
+    layouts::{GLWEInfos, GLWEPublicKeyAtViewMut, GLWEPublicKeyToBackendMut, GLWESecretPreparedToBackendRef},
 };
 use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena},
@@ -44,7 +44,7 @@ impl<BE: Backend + GLWEPublicKeyMHEProtocolImpl> GLWEPublicKeyMHEProtocol<BE> fo
         share: &GLWEPublicKeyShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEPublicKeyAtViewMut<BE> + GetDistributionMut + GLWEInfos,
+        R: GLWEPublicKeyAtViewMut<BE> + GLWEPublicKeyToBackendMut<BE> + GetDistributionMut + GLWEInfos,
     {
         BE::mhe_glwe_public_key_share_finalize(self, res, share, scratch)
     }

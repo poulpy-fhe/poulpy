@@ -65,6 +65,32 @@ pub fn test_bdd_prepare<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = AlignedBu
         &mut scratch.borrow(),
     );
 
+    let mut measured = 0.0;
+    let mut modeled = 0.0;
+    for trial in 0..16 {
+        if trial != 0 {
+            c_enc.encrypt_sk(
+                module,
+                value,
+                sk_glwe_prep,
+                &mut source_xe,
+                &mut source_xa,
+                &mut scratch.borrow(),
+            );
+        }
+        let metadata = LWEInfos::noise(&c_enc).expect("FheUint encryption must record metadata");
+        assert_eq!(metadata.precision(), c_enc.k());
+        measured += c_enc
+            .noise_stats(module, value, sk_glwe_prep, &mut scratch.borrow())
+            .second_moment();
+        modeled += metadata.phase_noise(module.n()).variance_at(0u32.into());
+    }
+    let ratio = measured / modeled;
+    assert!(
+        (0.75..=1.25).contains(&ratio),
+        "FheUint empirical/model second moment={ratio}"
+    );
+
     // GGSW(0)
     let mut c_enc_prep_debug: FheUintPreparedDebug<BE::OwnedBuf, u32, BE::ZnxWord> =
         FheUintPreparedDebug::<AlignedBuf, u32, i64>::alloc_from_infos(module, &ggsw_infos);

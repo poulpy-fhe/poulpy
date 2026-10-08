@@ -114,4 +114,6 @@ pub fn glwe_blind_selection_reference<T: UnsignedInteger, BE: Backend<ZnxWord = 
     } else {
         module.glwe_zero(res);
     }
+
+    res.set_noise(None);
 }

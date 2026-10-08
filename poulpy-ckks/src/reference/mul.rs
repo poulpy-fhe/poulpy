@@ -13,7 +13,7 @@ use poulpy_hal::{
     layouts::{Backend, PrepareHint, ScratchArena},
 };
 
-use crate::SlotsKind;
+use crate::{CKKSCompositionError, CKKSError, SlotsKind};
 use crate::{
     CKKSInfos, SetCKKSInfos, checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget,
     ensure_plaintext_degree_embeds, layouts::CKKSPreparedRight,
@@ -50,8 +50,11 @@ pub trait CKKSMulReference<BE: Backend> {
             .glwe_tensor_apply_tmp_bytes(&tensor_layout, a, b)
             .max(self.glwe_tensor_apply_prepared_right_tmp_bytes(&tensor_layout, a, a.size(), b.size()))
             .max(self.glwe_tensor_relinearize_tmp_bytes(res, &tensor_layout, tsk));
+        // The one-pass path. The prepared variant has the same shape.
+        let size = tensor_layout.k().as_usize().div_ceil(res.base2k().as_usize());
+        let one_pass = self.glwe_mul_relinearize_tmp_bytes(res, size, size, tensor_layout.k(), tsk);
 
-        lvl_0 + lvl_1
+        (lvl_0 + lvl_1).max(one_pass)
     }
 
     fn ckks_mul_into_reference<Dst, A, B, T>(
@@ -69,8 +72,18 @@ pub trait CKKSMulReference<BE: Backend> {
         B: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
+        let k = a.k().max(b.k());
+        tsk.get_tensor_key(k)
+            .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+                op: "ckks_mul_into",
+                k: k.into(),
+            })?;
+
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, a, b)?;
 
+        let one_pass = mul_one_pass(dst, &[a.base2k(), b.base2k()], a.k().max(b.k()), cnv_offset, tsk).then_some(
+            |dst: &mut Dst, res_k, s: &mut ScratchArena<'_, BE>| self.glwe_mul_relinearize(cnv_offset, dst, res_k, a, b, tsk, s),
+        );
         tensor_mul_core(
             self,
             dst,
@@ -85,6 +98,7 @@ pub trait CKKSMulReference<BE: Backend> {
             },
             StampOrder::BeforeApply,
             scratch,
+            one_pass,
             |tmp, _dst, s| self.glwe_tensor_apply(cnv_offset, tmp, a, b, s),
         )
     }
@@ -102,8 +116,20 @@ pub trait CKKSMulReference<BE: Backend> {
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
+        let k = dst.k().max(a.k());
+        tsk.get_tensor_key(k)
+            .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+                op: "ckks_mul_assign",
+                k: k.into(),
+            })?;
+
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, dst, a)?;
 
+        let one_pass = mul_one_pass(dst, &[a.base2k()], dst.k().max(a.k()), cnv_offset, tsk).then_some(
+            |dst: &mut Dst, res_k, s: &mut ScratchArena<'_, BE>| {
+                self.glwe_mul_relinearize_assign(cnv_offset, dst, res_k, a, tsk, s)
+            },
+        );
         tensor_mul_core(
             self,
             dst,
@@ -118,6 +144,7 @@ pub trait CKKSMulReference<BE: Backend> {
             },
             StampOrder::AfterApply,
             scratch,
+            one_pass,
             |tmp, dst_ref, s| self.glwe_tensor_apply(cnv_offset, tmp, dst_ref, a, s),
         )
     }
@@ -163,8 +190,31 @@ pub trait CKKSMulReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
+        let k = dst.k().max(TorusPrecision(u32::try_from(prepared.k).map_err(|_| {
+            CKKSError::Internal(anyhow::anyhow!("prepared precision {} exceeds u32", prepared.k))
+        })?));
+        tsk.get_tensor_key(k)
+            .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+                op: "ckks_mul_prepared_assign",
+                k: k.into(),
+            })?;
+
         let (res_log_budget, res_log_delta, cnv_offset, tensor_k) = get_mul_prepared_params(&*dst, prepared)?;
 
+        let one_pass = mul_one_pass(dst, &[prepared.layout.base2k], tensor_k, cnv_offset, tsk).then_some(
+            |dst: &mut Dst, res_k, s: &mut ScratchArena<'_, BE>| {
+                self.glwe_mul_prepared_relinearize_assign(
+                    cnv_offset,
+                    dst,
+                    res_k,
+                    &prepared.prep,
+                    prepared.size,
+                    prepared.layout.k,
+                    tsk,
+                    s,
+                )
+            },
+        );
         // Size the intermediate from the right operand's `k` rather than
         // its full `max_k`: the tensor product only consumes the top `k`
         // limbs (via the prepared operand).
@@ -182,6 +232,7 @@ pub trait CKKSMulReference<BE: Backend> {
             },
             StampOrder::AfterApply,
             scratch,
+            one_pass,
             |tmp, dst_ref, s| self.glwe_tensor_apply_prepared_right(cnv_offset, tmp, dst_ref, &prepared.prep, prepared.size, s),
         )
     }
@@ -211,8 +262,11 @@ pub trait CKKSMulReference<BE: Backend> {
         let lvl_1 = self
             .glwe_tensor_square_apply_tmp_bytes(&tensor_layout, a)
             .max(self.glwe_tensor_relinearize_tmp_bytes(res, &tensor_layout, tsk));
+        // The one-pass path.
+        let a_size = a.k().as_usize().div_ceil(a.base2k().as_usize());
+        let one_pass = self.glwe_mul_relinearize_tmp_bytes(res, a_size, a_size, a.k(), tsk);
 
-        lvl_0 + lvl_1
+        (lvl_0 + lvl_1).max(one_pass)
     }
 
     fn ckks_square_into_reference<Dst, A, T>(
@@ -228,8 +282,18 @@ pub trait CKKSMulReference<BE: Backend> {
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
+        let k = a.k();
+        tsk.get_tensor_key(k)
+            .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+                op: "ckks_square_into",
+                k: k.into(),
+            })?;
+
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, a, a)?;
 
+        let one_pass = mul_one_pass(dst, &[a.base2k()], a.k(), cnv_offset, tsk).then_some(
+            |dst: &mut Dst, res_k, s: &mut ScratchArena<'_, BE>| self.glwe_square_relinearize(cnv_offset, dst, res_k, a, tsk, s),
+        );
         tensor_mul_core(
             self,
             dst,
@@ -243,6 +307,7 @@ pub trait CKKSMulReference<BE: Backend> {
             },
             StampOrder::BeforeApply,
             scratch,
+            one_pass,
             |tmp, _dst, s| self.glwe_tensor_square_apply(cnv_offset, tmp, a, s),
         )
     }
@@ -253,8 +318,19 @@ pub trait CKKSMulReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
+        let k = dst.k();
+        tsk.get_tensor_key(k)
+            .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+                op: "ckks_square_assign",
+                k: k.into(),
+            })?;
+
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, dst, dst)?;
 
+        let one_pass =
+            mul_one_pass(dst, &[], dst.k(), cnv_offset, tsk).then_some(|dst: &mut Dst, res_k, s: &mut ScratchArena<'_, BE>| {
+                self.glwe_square_relinearize_assign(cnv_offset, dst, res_k, tsk, s)
+            });
         tensor_mul_core(
             self,
             dst,
@@ -270,6 +346,7 @@ pub trait CKKSMulReference<BE: Backend> {
             },
             StampOrder::AfterApply,
             scratch,
+            one_pass,
             |tmp, dst_ref, s| self.glwe_tensor_square_apply(cnv_offset, tmp, dst_ref, s),
         )
     }
@@ -441,6 +518,10 @@ enum StampOrder {
 ///
 /// `apply` receives the carved tensor, a shared reborrow of `dst` (used by the
 /// `_assign` variants, ignored by `_into`), and the nested scratch arena.
+///
+/// `one_pass`, when given, replaces the tensor intermediate: it writes the
+/// relinearized product into `dst` at the stamped width, reading `dst` first when
+/// `dst` is an operand, so `dst` is stamped after it whatever `order` says.
 #[allow(clippy::too_many_arguments)]
 fn tensor_mul_core<BE, M, Dst, T>(
     module: &M,
@@ -450,6 +531,7 @@ fn tensor_mul_core<BE, M, Dst, T>(
     stamp: MulStamp,
     order: StampOrder,
     scratch: &mut ScratchArena<'_, BE>,
+    one_pass: Option<impl FnOnce(&mut Dst, TorusPrecision, &mut ScratchArena<'_, BE>)>,
     apply: impl for<'t> FnOnce(&mut GLWETensorViewMut<'t, BE>, &Dst, &mut ScratchArena<'t, BE>),
 ) -> Result<()>
 where
@@ -468,6 +550,13 @@ where
             dst.set_slots(slots);
         }
     };
+    if let Some(one_pass) = one_pass {
+        one_pass(dst, TorusPrecision((stamp.log_budget + stamp.log_delta) as u32), scratch);
+        do_stamp(dst);
+        // Stamping lowers `k`, which clears the flag of a product canonical at its new width.
+        dst.set_canonical(true);
+        return Ok(());
+    }
     if matches!(order, StampOrder::BeforeApply) {
         do_stamp(dst);
     }
@@ -486,6 +575,28 @@ where
     }
     module.glwe_tensor_relinearize(dst, &tmp, tsk, &mut scratch_local);
     Ok(())
+}
+
+/// Whether a product of width `tensor_k` takes the one-pass product and relinearization.
+///
+/// The one-pass path needs rank 1, one `base2k` across `dst`, the operands other than `dst` and the
+/// tensor key, and `cnv_offset >= base2k`. Other products go through the tensor intermediate.
+fn mul_one_pass<BE, Dst, T>(
+    dst: &Dst,
+    operands_base2k: &[poulpy_core::layouts::Base2K],
+    tensor_k: TorusPrecision,
+    cnv_offset: usize,
+    tsk: &T,
+) -> bool
+where
+    BE: Backend,
+    Dst: GLWEInfos,
+    T: GetTensorKey<BE>,
+{
+    dst.rank().as_usize() == 1
+        && cnv_offset >= dst.base2k().as_usize()
+        && operands_base2k.iter().all(|&base2k| base2k == dst.base2k())
+        && tsk.get_tensor_key(tensor_k).is_ok_and(|key| key.base2k() == dst.base2k())
 }
 
 /// Prepared operands are long-lived cached objects: reject one built under a

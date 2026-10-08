@@ -151,6 +151,7 @@ where
         P: GLWEToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
+        let metadata = crate::component_noise::fresh_sk_noise(sk.to_backend_ref().dist, &res.to_backend_ref());
         {
             let res = &mut res.to_backend_mut();
             let pt_backend = pt.to_backend_ref();
@@ -180,6 +181,7 @@ where
             );
             scratch.wipe(self.glwe_encrypt_sk_tmp_bytes_reference(res));
         }
+        res.set_noise(metadata);
         res.set_canonical(true);
     }
 
@@ -194,6 +196,7 @@ where
         R: GLWEToBackendMut<BE>,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
+        let metadata = crate::component_noise::fresh_sk_noise(sk.to_backend_ref().dist, &res.to_backend_ref());
         {
             let res = &mut res.to_backend_mut();
             let sk_ref = sk.to_backend_ref();
@@ -222,6 +225,7 @@ where
             );
             scratch.wipe(self.glwe_encrypt_sk_tmp_bytes_reference(res));
         }
+        res.set_noise(metadata);
         res.set_canonical(false);
     }
 
@@ -237,6 +241,7 @@ where
         P: GLWEToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
+        let metadata = crate::component_noise::fresh_sk_noise(sk.to_backend_ref().dist, &res.to_backend_ref());
         {
             let res = &mut res.to_backend_mut();
             let pt_backend = pt.to_backend_ref();
@@ -262,6 +267,7 @@ where
             );
             scratch.wipe(self.glwe_encrypt_sk_tmp_bytes_reference(res));
         }
+        res.set_noise(metadata);
         res.set_canonical(true);
     }
 }
@@ -390,14 +396,23 @@ where
         R: GLWEToBackendMut<BE>,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     {
+        let noise = crate::fresh_noise_model::public_key_encryption_noise::<BE, _, _>(
+            &res.to_backend_ref(),
+            pk,
+            if body_noise {
+                crate::fresh_noise_model::PublicKeyBodyNoise::Sampled
+            } else {
+                crate::fresh_noise_model::PublicKeyBodyNoise::Omitted
+            },
+        );
         // Validate before any mutation; the flag is set once the output is written.
         {
-            let res = &mut res.to_backend_mut();
+            let res_ref = res.to_backend_ref();
 
-            assert_eq!(res.base2k(), pk.base2k());
-            assert_eq!(res.n(), pk.n());
-            assert_eq!(res.rank(), pk.rank());
-            assert!(pk.k() >= res.k(), "invalid public key: less precise than the output");
+            assert_eq!(res_ref.base2k(), pk.base2k());
+            assert_eq!(res_ref.n(), pk.n());
+            assert_eq!(res_ref.rank(), pk.rank());
+            assert!(pk.k() >= res_ref.k(), "invalid public key: less precise than the output");
             if let Some((pt, _)) = &pt {
                 assert_eq!(pt.base2k(), pk.base2k());
                 assert_eq!(pt.n(), pk.n());
@@ -408,10 +423,10 @@ where
                 pk.data.cols_out() == pk.data.cols_in() + 1,
                 "invalid public key: entry count differs from its rank"
             );
-            let n: usize = operand_degree(self.n(), &[res.n(), pk.n()]);
+            let n: usize = operand_degree(self.n(), &[res_ref.n(), pk.n()]);
             let base2k: usize = pk.base2k().into();
             let size_pk: usize = pk.size();
-            let res_k: usize = res.k().as_usize();
+            let res_k: usize = res_ref.k().as_usize();
             let rank: usize = pk.data.cols_in();
 
             // One ephemeral per entry, drawn like the secret: a single one leaves the masks rank-1 in u.
@@ -431,6 +446,8 @@ where
                 dist => *dist,
             };
 
+            drop(res_ref);
+            let res = &mut res.to_backend_mut();
             let scratch = scratch.borrow();
             let (mut u, scratch_1) = scratch.take_scalar_znx_scratch(n, rank);
             let (mut u_dft, scratch_1) = scratch_1.take_vec_znx_dft_scratch(n, rank, 1);
@@ -483,6 +500,7 @@ where
                 }
             }
         }
+        res.set_noise(noise);
         res.set_canonical(true);
     }
 }

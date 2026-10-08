@@ -4,7 +4,7 @@
 //! seed equality alone does not imply identical samples across backends.
 use super::{ParityBackend, ParityShapes, poisoned_scratch, unnormalized_twin};
 use crate::{
-    Distribution, GetDistribution, GetDistributionMut,
+    ComponentNoise, Distribution, GetDistribution, GetDistributionMut,
     api::*,
     layouts::*,
     oep::{ConversionImpl, DecryptionImpl, EncryptionImpl, GLWENormalizeImpl, SamplingImpl},
@@ -57,10 +57,41 @@ pub(crate) struct Snapshot {
     pub(crate) metadata: Vec<usize>,
     pub(crate) bytes: Vec<u8>,
 }
+pub(crate) fn assert_fresh_noise(value: &impl LWEInfos) {
+    assert_noise(value, crate::DEFAULT_SIGMA_XE.powi(2));
+    let noise = value.noise().unwrap();
+    assert_eq!(noise.body().variance(), crate::DEFAULT_SIGMA_XE.powi(2));
+    assert!(noise.masks().iter().all(|component| component.variance() == 0.0));
+}
+
+fn assert_noise(value: &impl LWEInfos, variance: f64) {
+    let metadata = value.noise().expect("encryption must record its provenance");
+    assert_eq!(metadata.parties(), 1);
+    assert_eq!(metadata.secret_distribution().base(), Distribution::TernaryProb(2.0 / 3.0));
+    assert_eq!(metadata.secret_distribution().parties(), 1);
+    assert_eq!(metadata.precision(), value.k());
+    assert!((metadata.phase_noise(value.n().as_usize()).variance() - variance).abs() <= variance * 1e-12);
+}
+
 pub(crate) fn snapshot_glwe<B: Backend, G: GLWEToBackendRef<B>>(label: &'static str, value: &G) -> Snapshot {
     let view = value.to_backend_ref();
+    if label == "encrypt_pk" || label == "encrypt_zero_pk" {
+        let variance = (2.0 * view.rank().as_usize() as f64 * view.n().as_usize() as f64 * (2.0 / 3.0) + 1.0)
+            * crate::DEFAULT_SIGMA_XE.powi(2);
+        assert_noise(&view, variance);
+        let noise = LWEInfos::noise(&view).unwrap();
+        assert_eq!(noise.rank(), view.rank().as_usize());
+        let sigma2 = crate::DEFAULT_SIGMA_XE.powi(2);
+        let body = (view.rank().as_usize() as f64 * view.n().as_usize() as f64 * (2.0 / 3.0) + 1.0) * sigma2;
+        assert!((noise.body().variance() - body).abs() <= body * 1e-12);
+        assert!(noise.masks().iter().all(|component| component.variance() == sigma2));
+    } else if label.contains("encrypt") || label == "public_key_generate" {
+        assert_fresh_noise(&view);
+        assert_eq!(LWEInfos::noise(&view).unwrap().rank(), view.rank().as_usize());
+    }
     let mut bytes = vec![0; view.data.n() * view.data.cols() * view.data.size() * size_of::<i64>()];
     B::copy_view_to_host(view.data.data(), &mut bytes);
+    ComponentNoise::write_optional(view.noise().as_ref(), &mut bytes).unwrap();
     Snapshot {
         label,
         metadata: vec![
@@ -201,9 +232,14 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         // The mask phase is the decryption without the body: of the ciphertext's
         // mask in place and of an allocated copy; the unnormalized twin's is rejected.
         let mut phase = module.glwe_alloc_from_infos(&GLWELayout { rank: Rank(0), ..infos });
+        GLWEToBackendMut::<B>::set_noise(
+            &mut phase,
+            Some(crate::ComponentNoise::from_secret_at(*sk.dist(), infos.k, 0)),
+        );
         poison_glwe::<B, _>(&mut phase);
         let mask_scratch = || poisoned_scratch::<B>(module.glwe_mask_inner_product_tmp_bytes(&infos));
         module.glwe_mask_inner_product(&mut phase, &out, &skp, &mut mask_scratch().arena());
+        assert!(phase.noise().is_none());
         results.push(snapshot_glwe::<B, _>("mask_inner_product", &phase));
         let mut mask = module.glwe_mask_alloc_from_infos(&infos);
         for j in 0..rank {
@@ -307,6 +343,7 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
                     &mut poisoned_scratch::<B>(module.glwe_public_key_prepare_tmp_bytes(&pk_infos)).arena(),
                 );
                 assert_eq!(pkp.dist(), pk.dist());
+                assert_eq!(pkp.noise(), pk.noise());
                 poison_glwe::<B, _>(&mut out);
                 module.glwe_encrypt_pk(
                     &mut out,
@@ -363,9 +400,14 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         module.decompress_glwe(&mut zero, &compressed);
         results.push(snapshot_glwe::<B, _>("compressed_encrypt_zero_sk", &zero));
         results.push(source_snapshot("compressed_zero_sources", &mut e, &mut a));
+        assert!(out.noise().is_some());
+        let previous_metadata = out.noise();
         module.fill_glwe_mask_from_seed(&mut out, [83; 32]);
+        assert!(out.noise().is_none());
         results.push(snapshot_glwe::<B, _>("mask_seed", &out));
+        GLWEToBackendMut::<B>::set_noise(&mut out, previous_metadata);
         module.fill_glwe_mask_from_source(&mut out, &mut a);
+        assert!(out.noise().is_none());
         results.push(snapshot_glwe::<B, _>("mask_source", &out));
         results.push(source_snapshot("mask_sources", &mut e, &mut a));
         let mut lsk = module.lwe_secret_alloc((n * rank).into());
@@ -414,6 +456,10 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
 
 fn snapshot_lwe<B: Backend, G: LWEToBackendRef<B>>(label: &'static str, value: &G) -> Snapshot {
     let view = LWEToBackendRef::<B>::to_backend_ref(value);
+    if label == "lwe_encrypt_sk" {
+        assert_fresh_noise(&view);
+        assert_eq!(LWEInfos::noise(&view).unwrap().rank(), view.n().as_usize());
+    }
     let mut bytes = vec![0; view.body.n() * view.body.cols() * view.body.size() * size_of::<i64>()];
     B::copy_view_to_host(view.body.data(), &mut bytes);
     let mut mask = vec![0; view.mask.n() * view.mask.cols() * view.mask.size() * size_of::<i64>()];
@@ -487,9 +533,14 @@ pub fn test_lwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             metadata: vec![view.base2k().as_usize(), view.k().as_usize()],
             bytes,
         });
+        assert!(out.noise().is_some());
+        let previous_metadata = out.noise();
         module.fill_lwe_mask_from_seed(base2k, &mut out, [103; 32]);
+        assert!(out.noise().is_none());
         results.push(snapshot_lwe::<B, _>("lwe_mask_seed", &out));
+        LWEToBackendMut::<B>::set_noise(&mut out, previous_metadata);
         module.fill_lwe_mask_from_source(base2k, &mut out, &mut a);
+        assert!(out.noise().is_none());
         results.push(snapshot_lwe::<B, _>("lwe_mask_source", &out));
         results.push(source_snapshot("lwe_mask_sources", &mut e, &mut a));
         // LWECompressed has a public decompressor but no compressed encrypt

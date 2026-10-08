@@ -70,6 +70,7 @@ where
         R: GGLWEToGGSWKeyCompressedToBackendMut<BE> + GGLWEInfos,
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
+        let metadata = crate::component_noise::fresh_sk_noise(sk.to_backend_ref().dist, &res.to_backend_ref());
         {
             assert_eq!(res.rank(), sk.rank());
             assert_eq!(res.n(), sk.n());
@@ -114,5 +115,6 @@ where
             }
             scratch.wipe(tmp_bytes);
         }
+        res.set_noise(metadata);
     }
 }

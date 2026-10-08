@@ -60,6 +60,8 @@ macro_rules! view_wrapper {
         }
 
         impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> $crate::layouts::LWEInfos for $name<'a, BE> {
+            fn noise(&self) -> Option<$crate::ComponentNoise> { $crate::layouts::LWEInfos::noise(&self.inner) }
+
             fn base2k(&self) -> $crate::layouts::Base2K {
                 $crate::layouts::LWEInfos::base2k(&self.inner)
             }
@@ -276,6 +278,7 @@ impl<BE: Backend> GGSWInfos for GGSWPreparedViewMut<'_, BE> {
 impl<BE: Backend> LWEToBackendRef<BE> for LWEViewMut<'_, BE> {
     fn to_backend_ref(&self) -> LWEBackendRef<'_, BE> {
         LWE {
+            noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k: self.inner.k,
             body: vec_znx_backend_ref_from_mut::<BE>(&self.inner.body),
@@ -285,12 +288,23 @@ impl<BE: Backend> LWEToBackendRef<BE> for LWEViewMut<'_, BE> {
 }
 
 impl<BE: Backend> LWEToBackendMut<BE> for LWEViewMut<'_, BE> {
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        self.inner.noise = crate::layouts::checked_noise(metadata, self.inner.mask.n() + 1);
+    }
+
     fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE> {
         let base2k = self.inner.base2k;
         let k = self.inner.k;
         let body = vec_znx_backend_mut_from_mut::<BE>(&mut self.inner.body);
         let mask = vec_znx_backend_mut_from_mut::<BE>(&mut self.inner.mask);
-        LWE { base2k, k, body, mask }
+        self.inner.noise = None;
+        LWE {
+            noise: None,
+            base2k,
+            k,
+            body,
+            mask,
+        }
     }
 }
 
@@ -320,6 +334,7 @@ macro_rules! impl_glwe_to_backend {
             fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
                 let $this = self;
                 GLWE {
+                    noise: crate::layouts::LWEInfos::noise(&self.inner),
                     base2k: self.inner.base2k,
                     k: self.inner.k,
                     canonical: $canonical,
@@ -329,10 +344,16 @@ macro_rules! impl_glwe_to_backend {
         }
 
         impl<'a, BE: Backend + 'a> GLWEToBackendMut<BE> for $name<'a, BE> {
+            fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+                self.inner.record_noise(metadata);
+            }
+
             fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
                 let $this = &*self;
                 let canonical = $canonical;
+                self.inner.record_noise(None);
                 GLWE {
+                    noise: None,
                     base2k: self.inner.base2k,
                     k: self.inner.k,
                     canonical,
@@ -358,6 +379,7 @@ impl_glwe_to_backend!(GLWETensorViewMut, |_this| true, |_this, _canonical| ());
 impl<BE: Backend> GLWEToBackendRef<BE> for GLWEViewRef<'_, BE> {
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         GLWE {
+            noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k: self.inner.k,
             canonical: self.inner.canonical,
@@ -437,6 +459,7 @@ impl<BE: Backend> GLWESecretPreparedToBackendMut<BE> for GLWESecretPreparedViewM
 impl<BE: Backend> GGLWEToBackendRef<BE> for GGLWEViewMut<'_, BE> {
     fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE> {
         GGLWEBackendRef::from_inner(GGLWE {
+            noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
@@ -446,8 +469,14 @@ impl<BE: Backend> GGLWEToBackendRef<BE> for GGLWEViewMut<'_, BE> {
 }
 
 impl<BE: Backend> GGLWEToBackendMut<BE> for GGLWEViewMut<'_, BE> {
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        self.inner.noise = crate::layouts::checked_noise(metadata, self.inner.data.cols_out());
+    }
+
     fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE> {
+        self.inner.noise = None;
         GGLWEBackendMut::from_inner(GGLWE {
+            noise: None,
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
@@ -459,6 +488,7 @@ impl<BE: Backend> GGLWEToBackendMut<BE> for GGLWEViewMut<'_, BE> {
 impl<BE: Backend> GGLWEPreparedToBackendRef<BE> for GGLWEPreparedViewMut<'_, BE> {
     fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, BE> {
         GGLWEPrepared {
+            noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
@@ -470,8 +500,14 @@ impl<BE: Backend> GGLWEPreparedToBackendRef<BE> for GGLWEPreparedViewMut<'_, BE>
 }
 
 impl<BE: Backend> GGLWEPreparedToBackendMut<BE> for GGLWEPreparedViewMut<'_, BE> {
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        self.inner.noise = crate::layouts::checked_noise(metadata, self.inner.data.cols_out());
+    }
+
     fn to_backend_mut(&mut self) -> GGLWEPreparedBackendMut<'_, BE> {
+        self.inner.noise = None;
         GGLWEPrepared {
+            noise: None,
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
@@ -485,6 +521,7 @@ impl<BE: Backend> GGLWEPreparedToBackendMut<BE> for GGLWEPreparedViewMut<'_, BE>
 impl<BE: Backend> GGSWToBackendRef<BE> for GGSWViewMut<'_, BE> {
     fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE> {
         GGSWBackendRef::from_inner(GGSW {
+            noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
@@ -494,8 +531,14 @@ impl<BE: Backend> GGSWToBackendRef<BE> for GGSWViewMut<'_, BE> {
 }
 
 impl<BE: Backend> GGSWToBackendMut<BE> for GGSWViewMut<'_, BE> {
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        self.inner.noise = crate::layouts::checked_noise(metadata, self.inner.data.cols_out());
+    }
+
     fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE> {
+        self.inner.noise = None;
         GGSWBackendMut::from_inner(GGSW {
+            noise: None,
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
@@ -507,6 +550,7 @@ impl<BE: Backend> GGSWToBackendMut<BE> for GGSWViewMut<'_, BE> {
 impl<BE: Backend> GGSWPreparedToBackendRef<BE> for GGSWPreparedViewMut<'_, BE> {
     fn to_backend_ref(&self) -> GGSWPreparedBackendRef<'_, BE> {
         GGSWPrepared {
+            noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
@@ -516,8 +560,14 @@ impl<BE: Backend> GGSWPreparedToBackendRef<BE> for GGSWPreparedViewMut<'_, BE> {
 }
 
 impl<BE: Backend> GGSWPreparedToBackendMut<BE> for GGSWPreparedViewMut<'_, BE> {
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        self.inner.noise = crate::layouts::checked_noise(metadata, self.inner.data.cols_out());
+    }
+
     fn to_backend_mut(&mut self) -> GGSWPreparedBackendMut<'_, BE> {
+        self.inner.noise = None;
         GGSWPrepared {
+            noise: None,
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,

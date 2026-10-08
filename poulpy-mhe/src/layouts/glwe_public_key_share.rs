@@ -34,6 +34,10 @@ where
 impl<D: Data, W: ZnxWord> Eq for GLWEPublicKeyShare<D, W> where GLWEPublicKeyCompressed<D, W>: Eq {}
 
 impl<D: Data, W: ZnxWord> LWEInfos for GLWEPublicKeyShare<D, W> {
+    fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
+        self.key.noise()
+    }
+
     fn n(&self) -> Degree {
         self.key.n()
     }
@@ -94,6 +98,10 @@ impl<BE: Backend, D: Data> GLWEPublicKeyCompressedToBackendMut<BE> for GLWEPubli
 where
     GLWEPublicKeyCompressed<D, BE::ZnxWord>: GLWEPublicKeyCompressedToBackendMut<BE>,
 {
+    fn set_noise(&mut self, metadata: Option<poulpy_core::ComponentNoise>) {
+        GLWEPublicKeyCompressedToBackendMut::<BE>::set_noise(&mut self.key, metadata);
+    }
+
     fn to_backend_mut(&mut self) -> GLWEPublicKeyCompressedBackendMut<'_, BE> {
         self.key.to_backend_mut()
     }

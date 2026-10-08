@@ -51,6 +51,20 @@ A hard bound assumes every product has maximum magnitude and all signs reinforce
 
 For **NTT4x30**, take $\log_2Q\simeq119.8861552574811$, $N=2^{16}$, $d=32$, and $K=54$ with `squaring = false`. The hard bound is $dN\,2^{2K-2}=2^{127}>Q/2$, so it rejects this radix and requires $K\le49$. The Gaussian polynomial envelope is approximately **$2^{-165.718}<2^{-128}$**, so the probabilistic selector admits **54 bits instead of 49**. For the same degree, count, and target, FFT64 selects **19 bits**, with a modeled envelope approximately $2^{-143.107}$.
 
+## Guard limbs of gadget products
+
+A gadget product (key-switch or external product) is normalized from a window of limbs: the live precision plus $g$ guard limbs. The limbs below the window are dropped. They act as an error on the last live limb, and the same model sizes $g$.
+
+One accumulated coefficient has standard deviation $\sigma_c$ with $dN$ replaced by the number of accumulated coefficient products. The first dropped limb weighs $2^{-(g+1)K}$ units of the last live limb, and all dropped limbs together have deviation at most $\sqrt{4/3}$ times that of the first:
+
+$$
+\sigma_g\le\sqrt{4/3}\;\sigma_c\,2^{-(g+1)K},
+\qquad
+\widehat p_g=\operatorname{erfc}\!\left(\frac{1/2}{\sqrt2\,\sigma_g}\right).
+$$
+
+The threshold is **$1/2$**, the rounding threshold of the last live limb. `gadget_product_guard_limbs` returns the smallest $g$ whose union bound over the product meets $\lambda=128$, with the Mills-ratio bound below. For $N=2^{16}$, 28 gadget limbs and $K=52$ this gives $g=2$, where making the last live limb exact in the worst case takes 3.
+
 ## Leave room for coefficient-domain additions
 
 The word-size cap is not a budget for repeated additions. A sum or difference of $a$ normalized digits can reach magnitude $a\,2^{K-1}$; that intermediate must fit the coefficient word and the normalization contract. With `i64`, eight digits at $K=62$ can overflow, whereas $K=60$ bounds their sum by $2^{62}$, within the current normalization input range. Choose a smaller radix or normalize earlier when an addition chain needs more headroom.

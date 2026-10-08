@@ -96,6 +96,11 @@ where
         P: LWEPlaintextToBackendRef<BE>,
         S: LWESecretToBackendRef<BE>,
     {
+        let metadata = Some(crate::ComponentNoise::from_secret_at(
+            sk.to_backend_ref().dist,
+            crate::layouts::LWEInfos::k(&res.to_backend_ref()),
+            crate::layouts::LWEInfos::n(&res.to_backend_ref()).as_usize(),
+        ));
         {
             let pt = pt.to_backend_ref();
             let sk = sk.to_backend_ref();
@@ -154,5 +159,6 @@ where
             }
             scratch.wipe(tmp_bytes);
         }
+        res.set_noise(metadata);
     }
 }

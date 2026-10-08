@@ -104,6 +104,18 @@ trait RankOneTensorDft: Backend {
         b: &CnvPVecRBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     );
+
+    /// The tensor product with its cross term formed in place: `d0` and `d2` into columns 0 and 1 of `diag`,
+    /// `d1` into column 0 of `cross`, within `rank_one_tensor_dft_tmp_bytes` of scratch.
+    fn rank_one_cross_dft(
+        module: &Module<Self>,
+        diag: &mut VecZnxDftBackendMut<'_, Self>,
+        cross: &mut VecZnxDftBackendMut<'_, Self>,
+        cnv_offset: usize,
+        a: &CnvPVecLBackendRef<'_, Self>,
+        b: &CnvPVecRBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    );
 }
 
 #[cfg(feature = "enable-ifma")]
@@ -174,6 +186,22 @@ impl<R: Ring> RankOneTensorDft for NTT4x30Avx512<R> {
             )
         };
     }
+
+    fn rank_one_cross_dft(
+        module: &Module<Self>,
+        diag: &mut VecZnxDftBackendMut<'_, Self>,
+        cross: &mut VecZnxDftBackendMut<'_, Self>,
+        cnv_offset: usize,
+        a: &CnvPVecLBackendRef<'_, Self>,
+        b: &CnvPVecRBackendRef<'_, Self>,
+        _scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        unsafe {
+            super::ntt4x30_avx512::convolution::cnv_tensor_rank1_cross_dft::<_, poulpy_hal::execution::SerialTaskExecutor>(
+                module, diag, cross, cnv_offset, a, b,
+            )
+        };
+    }
 }
 
 #[cfg(feature = "enable-rayon")]
@@ -203,6 +231,27 @@ impl<R: Ring> RankOneTensorDft for NTT4x30Avx512Rayon<R> {
             )
         };
     }
+
+    fn rank_one_cross_dft(
+        module: &Module<Self>,
+        diag: &mut VecZnxDftBackendMut<'_, Self>,
+        cross: &mut VecZnxDftBackendMut<'_, Self>,
+        cnv_offset: usize,
+        a: &CnvPVecLBackendRef<'_, Self>,
+        b: &CnvPVecRBackendRef<'_, Self>,
+        _scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        unsafe {
+            super::ntt4x30_avx512::convolution::cnv_tensor_rank1_cross_dft::<_, poulpy_cpu_rayon::RayonTaskExecutor>(
+                module.reinterpret(),
+                &mut super::ntt4x30_avx512::rayon::base_dft_mut::<R>(diag),
+                &mut super::ntt4x30_avx512::rayon::base_dft_mut::<R>(cross),
+                cnv_offset,
+                &super::ntt4x30_avx512::rayon::base_cnv_l_ref::<R>(a),
+                &super::ntt4x30_avx512::rayon::base_cnv_r_ref::<R>(b),
+            )
+        };
+    }
 }
 
 #[cfg(feature = "enable-ifma")]
@@ -229,6 +278,24 @@ where
         unsafe {
             super::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma::<_, poulpy_hal::execution::SerialTaskExecutor>(
                 res, cnv_offset, a, b, tmp,
+            )
+        };
+    }
+
+    fn rank_one_cross_dft(
+        _module: &Module<Self>,
+        diag: &mut VecZnxDftBackendMut<'_, Self>,
+        cross: &mut VecZnxDftBackendMut<'_, Self>,
+        cnv_offset: usize,
+        a: &CnvPVecLBackendRef<'_, Self>,
+        b: &CnvPVecRBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let bytes = Self::rank_one_tensor_dft_tmp_bytes(diag.size(), a.size(), b.size());
+        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
+        unsafe {
+            super::ntt3x42_ifma::convolution::cnv_tensor_rank1_cross_dft_ifma::<_, poulpy_hal::execution::SerialTaskExecutor>(
+                diag, cross, cnv_offset, a, b, tmp,
             )
         };
     }
@@ -268,6 +335,34 @@ where
         unsafe {
             super::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma::<_, super::ntt3x42_ifma::NTT3x42IfmaRayonExecutor>(
                 &mut super::ntt3x42_ifma::rayon::base_dft_mut::<R>(res),
+                cnv_offset,
+                &super::ntt3x42_ifma::rayon::base_cnv_l_ref::<R>(a),
+                &super::ntt3x42_ifma::rayon::base_cnv_r_ref::<R>(b),
+                tmp,
+            )
+        };
+    }
+
+    fn rank_one_cross_dft(
+        _module: &Module<Self>,
+        diag: &mut VecZnxDftBackendMut<'_, Self>,
+        cross: &mut VecZnxDftBackendMut<'_, Self>,
+        cnv_offset: usize,
+        a: &CnvPVecLBackendRef<'_, Self>,
+        b: &CnvPVecRBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let per_worker = super::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma_tmp_bytes(diag.size(), a.size(), b.size());
+        let bytes = poulpy_cpu_rayon::workers_within(
+            <Self as poulpy_hal::execution::ScratchWorkers>::APPLY,
+            per_worker,
+            scratch.available(),
+        ) * per_worker;
+        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
+        unsafe {
+            super::ntt3x42_ifma::convolution::cnv_tensor_rank1_cross_dft_ifma::<_, super::ntt3x42_ifma::NTT3x42IfmaRayonExecutor>(
+                &mut super::ntt3x42_ifma::rayon::base_dft_mut::<R>(diag),
+                &mut super::ntt3x42_ifma::rayon::base_dft_mut::<R>(cross),
                 cnv_offset,
                 &super::ntt3x42_ifma::rayon::base_cnv_l_ref::<R>(a),
                 &super::ntt3x42_ifma::rayon::base_cnv_r_ref::<R>(b),
@@ -754,6 +849,7 @@ macro_rules! impl_rank_one_tensoring {
                         res.data_mut(),
                         res_base2k,
                         res_k,
+                        0,
                         i,
                         &mut output,
                         i,
@@ -781,6 +877,149 @@ macro_rules! impl_rank_one_tensoring {
                     + module
                         .gglwe_product_dft_tmp_bytes_reference(output_size, a_size, tsk)
                         .max(module.vec_znx_idft_normalize_consume_tmp_bytes(res.size(), output_size))
+            }
+
+            fn glwe_mul_relinearize_tmp_bytes<R, B>(
+                module: &Module<$be>,
+                res: &R,
+                a_size: usize,
+                b_size: usize,
+                tensor_k: poulpy_core::layouts::TorusPrecision,
+                tsk: &B,
+            ) -> usize
+            where
+                R: GLWEInfos,
+                B: GGLWEInfos,
+            {
+                let reference = module.glwe_mul_relinearize_tmp_bytes_reference(res, a_size, b_size, tensor_k, tsk);
+                if rank_one_tensor_supported(res) {
+                    // The kernel runs where the reference runs its convolutions: its scratch is added whole.
+                    reference + <$be as RankOneTensorDft>::rank_one_tensor_dft_tmp_bytes(a_size + b_size, a_size, b_size)
+                } else {
+                    reference
+                }
+            }
+
+            #[allow(clippy::too_many_arguments)]
+            fn glwe_mul_relinearize<R, A, B, H>(
+                module: &Module<$be>,
+                cnv_offset: usize,
+                res: &mut R,
+                res_k: poulpy_core::layouts::TorusPrecision,
+                a: &A,
+                b: &B,
+                tsk: &H,
+                scratch: &mut ScratchArena<'_, $be>,
+            ) where
+                R: poulpy_core::layouts::GLWEToBackendMut<$be> + poulpy_core::layouts::GLWEInfos,
+                A: poulpy_core::layouts::GLWEToBackendRef<$be> + poulpy_core::layouts::GLWEInfos,
+                B: poulpy_core::layouts::GLWEToBackendRef<$be> + poulpy_core::layouts::GLWEInfos,
+                H: poulpy_core::layouts::GetTensorKey<$be>,
+            {
+                module.glwe_mul_relinearize_reference(cnv_offset, res, res_k, a, b, tsk, scratch)
+            }
+
+            fn glwe_mul_relinearize_assign<R, A, H>(
+                module: &Module<$be>,
+                cnv_offset: usize,
+                res: &mut R,
+                res_k: poulpy_core::layouts::TorusPrecision,
+                a: &A,
+                tsk: &H,
+                scratch: &mut ScratchArena<'_, $be>,
+            ) where
+                R: poulpy_core::layouts::GLWEToBackendMut<$be> + poulpy_core::layouts::GLWEInfos,
+                A: poulpy_core::layouts::GLWEToBackendRef<$be> + poulpy_core::layouts::GLWEInfos,
+                H: poulpy_core::layouts::GetTensorKey<$be>,
+            {
+                module.glwe_mul_relinearize_assign_reference(cnv_offset, res, res_k, a, tsk, scratch)
+            }
+
+            fn glwe_square_relinearize<R, A, H>(
+                module: &Module<$be>,
+                cnv_offset: usize,
+                res: &mut R,
+                res_k: poulpy_core::layouts::TorusPrecision,
+                a: &A,
+                tsk: &H,
+                scratch: &mut ScratchArena<'_, $be>,
+            ) where
+                R: poulpy_core::layouts::GLWEToBackendMut<$be> + poulpy_core::layouts::GLWEInfos,
+                A: poulpy_core::layouts::GLWEToBackendRef<$be> + poulpy_core::layouts::GLWEInfos,
+                H: poulpy_core::layouts::GetTensorKey<$be>,
+            {
+                module.glwe_square_relinearize_reference(cnv_offset, res, res_k, a, tsk, scratch)
+            }
+
+            fn glwe_square_relinearize_assign<R, H>(
+                module: &Module<$be>,
+                cnv_offset: usize,
+                res: &mut R,
+                res_k: poulpy_core::layouts::TorusPrecision,
+                tsk: &H,
+                scratch: &mut ScratchArena<'_, $be>,
+            ) where
+                R: poulpy_core::layouts::GLWEToBackendMut<$be> + poulpy_core::layouts::GLWEInfos,
+                H: poulpy_core::layouts::GetTensorKey<$be>,
+            {
+                module.glwe_square_relinearize_assign_reference(cnv_offset, res, res_k, tsk, scratch)
+            }
+
+            #[allow(clippy::too_many_arguments)]
+            fn glwe_mul_prepared_relinearize<R, A, BP, H>(
+                module: &Module<$be>,
+                cnv_offset: usize,
+                res: &mut R,
+                res_k: poulpy_core::layouts::TorusPrecision,
+                a: &A,
+                b: &BP,
+                b_size: usize,
+                b_k: poulpy_core::layouts::TorusPrecision,
+                tsk: &H,
+                scratch: &mut ScratchArena<'_, $be>,
+            ) where
+                R: poulpy_core::layouts::GLWEToBackendMut<$be> + poulpy_core::layouts::GLWEInfos,
+                A: poulpy_core::layouts::GLWEToBackendRef<$be> + poulpy_core::layouts::GLWEInfos,
+                BP: CnvPVecRToBackendRef<$be>,
+                H: poulpy_core::layouts::GetTensorKey<$be>,
+            {
+                module.glwe_mul_prepared_relinearize_reference(cnv_offset, res, res_k, a, b, b_size, b_k, tsk, scratch)
+            }
+
+            #[allow(clippy::too_many_arguments)]
+            fn glwe_mul_prepared_relinearize_assign<R, AP, H>(
+                module: &Module<$be>,
+                cnv_offset: usize,
+                res: &mut R,
+                res_k: poulpy_core::layouts::TorusPrecision,
+                a: &AP,
+                a_size: usize,
+                a_k: poulpy_core::layouts::TorusPrecision,
+                tsk: &H,
+                scratch: &mut ScratchArena<'_, $be>,
+            ) where
+                R: poulpy_core::layouts::GLWEToBackendMut<$be> + poulpy_core::layouts::GLWEInfos,
+                AP: CnvPVecRToBackendRef<$be>,
+                H: poulpy_core::layouts::GetTensorKey<$be>,
+            {
+                module.glwe_mul_prepared_relinearize_assign_reference(cnv_offset, res, res_k, a, a_size, a_k, tsk, scratch)
+            }
+
+            fn glwe_mul_columns(
+                module: &Module<$be>,
+                cnv_offset_hi: usize,
+                diag: &mut VecZnxDftBackendMut<'_, $be>,
+                cross: &mut VecZnxDftBackendMut<'_, $be>,
+                a: &CnvPVecLBackendRef<'_, $be>,
+                b: &CnvPVecRBackendRef<'_, $be>,
+                scratch: &mut ScratchArena<'_, $be>,
+            ) {
+                // The kernel reads two dense columns of the degree of the product.
+                if diag.n() >= RANK_ONE_TENSOR_MIN_DEGREE && b.n() == diag.n() && b.cols() >= 2 {
+                    <$be as RankOneTensorDft>::rank_one_cross_dft(module, diag, cross, cnv_offset_hi, a, b, scratch)
+                } else {
+                    module.glwe_mul_columns_reference(cnv_offset_hi, diag, cross, a, b, scratch)
+                }
             }
         }
     };

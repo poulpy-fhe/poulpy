@@ -31,7 +31,7 @@ use crate::NTT3x42Ifma;
 use core::arch::x86_64::{
     __m512i, _mm_sfence, _mm512_add_epi64, _mm512_and_si512, _mm512_loadu_si512, _mm512_madd52hi_epu64, _mm512_madd52lo_epu64,
     _mm512_or_si512, _mm512_permutexvar_epi64, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_slli_epi64, _mm512_srli_epi64,
-    _mm512_storeu_si512, _mm512_stream_si512,
+    _mm512_storeu_si512, _mm512_stream_si512, _mm512_sub_epi64,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -584,12 +584,27 @@ unsafe fn conv_columns_packed<R: Ring, E: TaskExecutor, const ACC: bool, const P
     }
 }
 
+/// Destination of one output column of the rank-one tensor kernel.
+#[derive(Clone, Copy)]
+struct TensorDst {
+    /// First word of the destination vector.
+    ptr: SendPtr<u64>,
+    /// Columns of the destination vector.
+    cols: usize,
+    /// Column written.
+    col: usize,
+}
+
+/// One group of eight coefficients of the rank-one tensor product.
+///
+/// `dst` receives `a0 * b0`, the middle column and `a1 * b1`, in this order.
+/// The middle column is `(a0 + a1) * (b0 + b1)`, minus the two others when `cross` is set.
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
 unsafe fn conv_tensor_rank1_packed_group(
-    res_ptr: SendPtr<u64>,
+    dst: [TensorDst; 3],
+    cross: bool,
     n: usize,
-    res_cols: usize,
     min_size: usize,
     offset: usize,
     group: usize,
@@ -617,6 +632,7 @@ unsafe fn conv_tensor_rank1_packed_group(
         let m20 = _mm512_set1_epi64(((1u64 << 20) - 1) as i64);
         let m22 = _mm512_set1_epi64(((1u64 << 22) - 1) as i64);
         let zero = _mm512_setzero_si512();
+        let pc = [PrimeConsts512::new(0), PrimeConsts512::new(1), PrimeConsts512::new(2)];
         for p in 0..3 {
             for win in [&mut *a0_win, &mut *a1_win] {
                 let wp = win.as_mut_ptr().add(p * 8 * win_rows);
@@ -690,21 +706,31 @@ unsafe fn conv_tensor_rank1_packed_group(
                 pairwise[p] = _mm512_loadu_si512(pair.as_ptr().add(off) as *const __m512i);
             }
 
-            for (col, values) in [(0, d0), (1, pairwise), (2, d1)] {
+            if cross {
+                // Canonical residues: each difference is brought back below q before the next one.
+                for p in 0..3 {
+                    let q = pc[p].q;
+                    let t = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(pairwise[p], q), d0[p]), q);
+                    pairwise[p] = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(t, q), d1[p]), q);
+                }
+            }
+
+            for (target, values) in dst.iter().zip([d0, pairwise, d1]) {
                 let [w0, w1] = pack_y(values, m22);
-                let dst = res_ptr.get().add((k * res_cols + col) * 2 * n + 16 * group);
+                let out = target.ptr.get().add((k * target.cols + target.col) * 2 * n + 16 * group);
                 if cached_overwrite {
-                    _mm512_storeu_si512(dst as *mut __m512i, w0);
-                    _mm512_storeu_si512(dst.add(8) as *mut __m512i, w1);
+                    _mm512_storeu_si512(out as *mut __m512i, w0);
+                    _mm512_storeu_si512(out.add(8) as *mut __m512i, w1);
                 } else {
-                    _mm512_stream_si512(dst as *mut __m512i, w0);
-                    _mm512_stream_si512(dst.add(8) as *mut __m512i, w1);
+                    _mm512_stream_si512(out as *mut __m512i, w0);
+                    _mm512_stream_si512(out.add(8) as *mut __m512i, w1);
                 }
             }
         }
     }
 }
 
+/// Rank-one tensor product into columns 0, 1, 2 of `res`: `a0 * b0`, `(a0 + a1) * (b0 + b1)` and `a1 * b1`.
 #[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn cnv_tensor_rank1_dft_ifma<R: Ring, E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
@@ -714,33 +740,96 @@ pub(crate) unsafe fn cnv_tensor_rank1_dft_ifma<R: Ring, E: TaskExecutor>(
     tmp: &mut [u8],
 ) {
     assert!(res.cols() >= 3);
+    let (n, res_size, cols) = (res.n(), res.size(), res.cols());
+    let ptr = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
+    let dst = [0, 1, 2].map(|col| TensorDst { ptr, cols, col });
+    let min_size = unsafe { tensor_rank1_run::<R, E>(dst, false, n, res_size, cnv_offset, a, b, tmp) };
+    for col in 0..3 {
+        for j in min_size..res_size {
+            zero_res_limb(res, col, j);
+        }
+    }
+}
+
+/// Rank-one tensor product with the cross term formed in place.
+///
+/// Columns 0 and 1 of `diag` receive `d0 = a0 * b0` and `d2 = a1 * b1`.
+/// Column 0 of `cross` receives `d1 = (a0 + a1) * (b0 + b1) - d0 - d2`.
+#[target_feature(enable = "avx512ifma,avx512vl")]
+pub(crate) unsafe fn cnv_tensor_rank1_cross_dft_ifma<R: Ring, E: TaskExecutor>(
+    diag: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
+    cross: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
+    cnv_offset: usize,
+    a: &CnvPVecLBackendRef<'_, NTT3x42Ifma<R>>,
+    b: &CnvPVecRBackendRef<'_, NTT3x42Ifma<R>>,
+    tmp: &mut [u8],
+) {
+    assert!(diag.cols() >= 2);
+    assert!(cross.cols() >= 1);
+    let (n, res_size) = (diag.n(), diag.size());
+    assert_eq!(
+        cross.n(),
+        n,
+        "cnv_tensor_rank1_cross_dft_ifma: cross.n():{} != diag.n():{n}",
+        cross.n()
+    );
+    assert_eq!(
+        cross.size(),
+        res_size,
+        "cnv_tensor_rank1_cross_dft_ifma: cross.size():{} != diag.size():{res_size}",
+        cross.size()
+    );
+    let (diag_cols, cross_cols) = (diag.cols(), cross.cols());
+    let diag_ptr = SendPtr(cast_slice_mut::<_, u64>(diag.data_mut()).as_mut_ptr());
+    let cross_ptr = SendPtr(cast_slice_mut::<_, u64>(cross.data_mut()).as_mut_ptr());
+    let dst = [
+        TensorDst {
+            ptr: diag_ptr,
+            cols: diag_cols,
+            col: 0,
+        },
+        TensorDst {
+            ptr: cross_ptr,
+            cols: cross_cols,
+            col: 0,
+        },
+        TensorDst {
+            ptr: diag_ptr,
+            cols: diag_cols,
+            col: 1,
+        },
+    ];
+    let min_size = unsafe { tensor_rank1_run::<R, E>(dst, true, n, res_size, cnv_offset, a, b, tmp) };
+    for j in min_size..res_size {
+        zero_res_limb(diag, 0, j);
+        zero_res_limb(diag, 1, j);
+        zero_res_limb(cross, 0, j);
+    }
+}
+
+/// Runs the rank-one tensor kernel over every group and returns the number of limbs it wrote.
+///
+/// The destinations hold `res_size` limbs of degree `n`. The limbs past the returned count are left to the caller.
+#[allow(clippy::too_many_arguments)]
+#[target_feature(enable = "avx512ifma,avx512vl")]
+unsafe fn tensor_rank1_run<R: Ring, E: TaskExecutor>(
+    dst: [TensorDst; 3],
+    cross: bool,
+    n: usize,
+    res_size: usize,
+    cnv_offset: usize,
+    a: &CnvPVecLBackendRef<'_, NTT3x42Ifma<R>>,
+    b: &CnvPVecRBackendRef<'_, NTT3x42Ifma<R>>,
+    tmp: &mut [u8],
+) -> usize {
     assert!(a.cols() >= 2);
     assert!(b.cols() >= 2);
-    assert_eq!(
-        a.n(),
-        res.n(),
-        "cnv_tensor_rank1_dft_ifma: a.n():{} != res.n():{}",
-        a.n(),
-        res.n()
-    );
-    assert_eq!(
-        b.n(),
-        res.n(),
-        "cnv_tensor_rank1_dft_ifma: b.n():{} != res.n():{}",
-        b.n(),
-        res.n()
-    );
-    let n = res.n();
-    let res_size = res.size();
+    assert_eq!(a.n(), n, "cnv_tensor_rank1_dft_ifma: a.n():{} != res.n():{n}", a.n());
+    assert_eq!(b.n(), n, "cnv_tensor_rank1_dft_ifma: b.n():{} != res.n():{n}", b.n());
     let a_size = a.size();
     let b_size = b.size();
     if res_size == 0 || a_size == 0 || b_size == 0 {
-        for col in 0..3 {
-            for j in 0..res_size {
-                zero_res_limb(res, col, j);
-            }
-        }
-        return;
+        return 0;
     }
 
     let bound = a_size + b_size - 1;
@@ -750,8 +839,6 @@ pub(crate) unsafe fn cnv_tensor_rank1_dft_ifma<R: Ring, E: TaskExecutor>(
     let staged = min_size.div_ceil(TILE) * TILE;
     let task_tmp_len = 6 * 8 * win_rows + 6 * 8 * b_size + 9 * 8 * staged;
     let n_groups = n / 8;
-    let res_cols = res.cols();
-    let res_ptr = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
     let cached_overwrite = cached_overwrite_stores(n, min_size);
     let a_raw: &[u64] = cast_slice(a.data());
     let b_raw: &[u64] = cast_slice(b.data());
@@ -766,9 +853,9 @@ pub(crate) unsafe fn cnv_tensor_rank1_dft_ifma<R: Ring, E: TaskExecutor>(
     if E::is_parallel() && n_groups > 1 {
         E::for_each_chunked(n_groups, tmp_u64, task_tmp_len, |local_tmp, group| unsafe {
             conv_tensor_rank1_packed_group(
-                res_ptr,
+                dst,
+                cross,
                 n,
-                res_cols,
                 min_size,
                 offset,
                 group,
@@ -790,9 +877,9 @@ pub(crate) unsafe fn cnv_tensor_rank1_dft_ifma<R: Ring, E: TaskExecutor>(
         for group in 0..n_groups {
             unsafe {
                 conv_tensor_rank1_packed_group(
-                    res_ptr,
+                    dst,
+                    cross,
                     n,
-                    res_cols,
                     min_size,
                     offset,
                     group,
@@ -811,12 +898,7 @@ pub(crate) unsafe fn cnv_tensor_rank1_dft_ifma<R: Ring, E: TaskExecutor>(
             _mm_sfence();
         }
     }
-
-    for col in 0..3 {
-        for j in min_size..res_size {
-            zero_res_limb(res, col, j);
-        }
-    }
+    min_size
 }
 
 /// DFT-domain bivariate convolution `res[k] = Σ a[j] ⊙ b[k−j]`.
