@@ -8,6 +8,7 @@
 mod backend;
 mod hal_impl;
 mod module;
+mod ntt4x30;
 pub mod runtime;
 mod znx;
 
@@ -16,6 +17,7 @@ mod tests;
 
 pub use backend::NTT4x30Gpu;
 pub use module::GpuHandle;
+pub use ntt4x30::AutomorphismPlan;
 pub use runtime::{GpuRuntime, LaunchCounters, launch_counters, reset_launch_counters};
 
 /// NTT4x30 on CubeCL's CUDA runtime.

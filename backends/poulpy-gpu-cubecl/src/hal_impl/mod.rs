@@ -4,3 +4,4 @@
 mod operand;
 mod vec_znx;
 mod vec_znx_big;
+mod vec_znx_dft;

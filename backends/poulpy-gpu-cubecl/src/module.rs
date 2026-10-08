@@ -1,6 +1,6 @@
 //! Module handle and construction.
 
-use std::{marker::PhantomData, ptr::NonNull};
+use std::ptr::NonNull;
 
 use poulpy_hal::{
     layouts::{Module, Ring},
@@ -9,13 +9,15 @@ use poulpy_hal::{
 
 use crate::{
     NTT4x30Gpu,
+    ntt4x30::Tables,
     runtime::{GpuBuf, GpuRuntime},
 };
 
 /// State a module keeps on the device.
 pub struct GpuHandle<RT: GpuRuntime> {
     n: usize,
-    _runtime: PhantomData<fn() -> RT>,
+    /// Transform tables of every degree the module serves.
+    tables: Tables<RT>,
 }
 
 impl<RT: GpuRuntime> GpuHandle<RT> {
@@ -24,10 +26,15 @@ impl<RT: GpuRuntime> GpuHandle<RT> {
         self.n
     }
 
+    pub(crate) fn tables(&self) -> &Tables<RT> {
+        &self.tables
+    }
+
     /// Runs `f` on an uninitialized device temporary of `len` bytes, the one of
-    /// the in-place permutations. Each call takes its own from the allocator,
-    /// which recycles memory per stream: threads sharing the module run on
-    /// different streams and must not share a temporary.
+    /// the in-place permutations and of the inverse transform that keeps its
+    /// source. Each call takes its own from the allocator, which recycles
+    /// memory per stream: threads sharing the module run on different streams
+    /// and must not share a temporary.
     pub(crate) fn with_temp<T>(&self, len: usize, f: impl FnOnce(&mut GpuBuf<RT>) -> T) -> T {
         f(&mut GpuBuf::uninit(len))
     }
@@ -45,7 +52,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalModuleImpl for NTT4x30Gpu<RT, R> {
         RT::client();
         let handle = Box::new(GpuHandle::<RT> {
             n: n as usize,
-            _runtime: PhantomData,
+            tables: Tables::new(n as usize, R::CYCLOTOMIC_ORDER_FACTOR == 4),
         });
         unsafe { Module::from_nonnull(NonNull::new_unchecked(Box::into_raw(handle)), n) }
     }

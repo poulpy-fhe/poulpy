@@ -1,22 +1,30 @@
 //! Normalization: `res = canon(a * 2^offset, res_base2k, res_k, res.size())`.
 //!
-//! The source limbs are `i64` or `i128`. Each thread owns one coefficient and follows the exact definition: the
-//! limbs of `a` are read from the least significant one as a stream of bits
-//! (carrying across unnormalized limbs), the bits below the output precision
-//! are dropped with one rounding bit and a sticky bit, rounding ties to even,
-//! and the output digits are emitted from the least significant one, each
-//! centered by the carry of the previous.
+//! The source limbs are `i64` or `i128`, or the output of an inverse transform:
+//! four residues per coefficient, reconstructed in registers and summed with
+//! an optional `i64` addend. Each thread owns one coefficient and follows the
+//! exact definition: the limbs of `a` are read from the least significant one
+//! as a stream of bits (carrying across unnormalized limbs), the bits below
+//! the output precision are dropped with one rounding bit and a sticky bit,
+//! rounding ties to even, and the output digits are emitted from the least
+//! significant one, each centered by the carry of the previous.
 
 use cubecl::prelude::*;
 
 use super::{Column, DIM};
-use crate::runtime::{GpuRuntime, cubes, launched};
+use crate::{
+    ntt4x30::{Consts, DftColumn, Tables, crt_at},
+    runtime::{GpuRuntime, cubes, launched},
+};
 
 #[cube(launch_unchecked)]
 #[allow(clippy::too_many_arguments, unused_assignments)]
 fn normalize_kernel(
     res: &mut [i64],
+    // The source limbs, or the addend of a source held in `dft`.
     a: &[u64],
+    dft: &[u32],
+    tw: &[u32],
     n: u32,
     res_base: u32,
     res_stride: u32,
@@ -34,6 +42,13 @@ fn normalize_kernel(
     // Bits of `a` below the output precision when positive; zero bits to
     // insert below `a` when negative.
     drop: i64,
+    dft_base: u32,
+    dft_stride: u32,
+    dft_size: u32,
+    #[comptime] c: Consts,
+    // The source is `dft`, the output of an inverse transform.
+    #[comptime] residues: bool,
+    #[comptime] invariant: bool,
 ) {
     let i = ABSOLUTE_POS as u32;
     if i < n {
@@ -46,6 +61,9 @@ fn normalize_kernel(
         // Bit stream over the limbs of `a`, least significant first. The
         // carry between limbs is a 128-bit two's complement value.
         let mut left = a_size;
+        if residues {
+            left = dft_size;
+        }
         let mut carry_lo = 0u64;
         let mut carry_hi = 0u64;
         let mut pending = 0u64;
@@ -102,14 +120,31 @@ fn normalize_kernel(
                     let shifted_hi = shifted_hi_signed as u64;
                     if left != 0u32 {
                         left -= 1u32;
-                        let index = a_base + left * a_stride + i * a_words;
-                        let x_lo = a[index as usize];
+                        let mut x_lo = 0u64;
                         let mut x_hi = 0u64;
-                        if a_words == 2u32 {
-                            x_hi = a[(index + 1u32) as usize];
+                        if residues {
+                            let value = crt_at(dft, tw, dft_base + left * dft_stride, i, n, c, invariant);
+                            x_lo = value.0;
+                            x_hi = value.1;
+                            if left < a_size {
+                                let y = a[(a_base + left * a_stride + i) as usize];
+                                let sign = (y as i64) >> 63i64;
+                                let sum = x_lo + y;
+                                x_hi += sign as u64;
+                                if sum < x_lo {
+                                    x_hi += 1u64;
+                                }
+                                x_lo = sum;
+                            }
                         } else {
-                            let sign = (x_lo as i64) >> 63i64;
-                            x_hi = sign as u64;
+                            let index = a_base + left * a_stride + i * a_words;
+                            x_lo = a[index as usize];
+                            if a_words == 2u32 {
+                                x_hi = a[(index + 1u32) as usize];
+                            } else {
+                                let sign = (x_lo as i64) >> 63i64;
+                                x_hi = sign as u64;
+                            }
                         }
                         let low = (x_lo & mask) + (carry_lo & mask);
                         // carry = (x >> a_base2k) + (carry >> a_base2k) + (low >> a_base2k)
@@ -192,11 +227,58 @@ fn normalize_kernel(
     }
 }
 
+/// What a normalization reads.
+enum Source<'a, RT: GpuRuntime> {
+    /// `i64` or `i128` limbs.
+    Limbs(&'a Column),
+    /// The output of an inverse transform, plus the first limbs of an `i64` column.
+    Residues {
+        dft: &'a DftColumn,
+        addend: Option<&'a Column>,
+        tables: &'a Tables<RT>,
+    },
+}
+
 /// Normalizes every limb of `res` from `a`. `res` may be `a` itself when
 /// `offset <= 0` and both radices are equal: a digit is only written once the
 /// limbs it depends on have been read.
 pub(crate) fn normalize<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: usize, offset: i64, a: &Column, a_base2k: usize) {
     assert_eq!(res.n, a.n, "normalization between different degrees");
+    launch::<RT>(res, res_base2k, res_k, offset, Source::Limbs(a), a_base2k);
+}
+
+/// Normalizes every limb of `res` from `dft + addend`, `dft` holding the
+/// output of the inverse transform and `addend` contributing its first
+/// `dft.size` limbs.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn normalize_residues<RT: GpuRuntime>(
+    tables: &Tables<RT>,
+    res: &Column,
+    res_base2k: usize,
+    res_k: usize,
+    offset: i64,
+    dft: &DftColumn,
+    addend: Option<&Column>,
+    a_base2k: usize,
+) {
+    assert_eq!(res.n, dft.n, "normalization between different degrees");
+    if let Some(addend) = addend {
+        assert!(
+            addend.n == res.n && addend.words == 1,
+            "the addend is an `i64` column of the same degree"
+        );
+    }
+    launch::<RT>(
+        res,
+        res_base2k,
+        res_k,
+        offset,
+        Source::Residues { dft, addend, tables },
+        a_base2k,
+    );
+}
+
+fn launch<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: usize, offset: i64, source: Source<'_, RT>, a_base2k: usize) {
     assert_eq!(res.words, 1, "normalization writes `i64` limbs");
     assert!(
         (1..=62).contains(&res_base2k) && (1..=62).contains(&a_base2k),
@@ -212,7 +294,19 @@ pub(crate) fn normalize<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: 
         let active_size = res_k.div_ceil(res_base2k);
         (active_size, active_size * res_base2k - res_k)
     };
-    let drop = a.size as i64 * a_base2k as i64 - res_k as i64 - offset;
+    // Operands a mode does not read are bound to a buffer of the launch.
+    let (a, a_size, dft, table, invariant, source_size) = match source {
+        Source::Limbs(a) => (a, a.size, None, a.binding.clone(), false, a.size),
+        Source::Residues { dft, addend, tables } => (
+            addend.unwrap_or(res),
+            addend.map_or(0, |addend| addend.size.min(dft.size)),
+            Some(dft),
+            tables.of(res.n).view().binding().expect("transform tables hold storage"),
+            tables.invariant(),
+            dft.size,
+        ),
+    };
+    let drop = source_size as i64 * a_base2k as i64 - res_k as i64 - offset;
     let client = RT::client();
     unsafe {
         normalize_kernel::launch_unchecked(
@@ -221,20 +315,32 @@ pub(crate) fn normalize<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: 
             CubeDim::new_1d(DIM),
             res.binding.arg::<i64>(),
             a.binding.arg::<u64>(),
+            dft.map_or(&a.binding, |dft| &dft.binding).arg::<u32>(),
+            table.arg::<u32>(),
             res.n as u32,
             res.base,
             res.stride,
             res.size as u32,
             a.base,
             a.stride,
-            a.size as u32,
+            a_size as u32,
             a.words,
             a_base2k as u32,
             res_base2k as u32,
             active_size as u32,
             precision_padding as u32,
             drop,
+            dft.map_or(0, |dft| dft.base),
+            dft.map_or(0, |dft| dft.stride),
+            dft.map_or(0, |dft| dft.size as u32),
+            Consts::get(),
+            dft.is_some(),
+            invariant,
         );
     }
-    launched(res.n * 8 * (res.size + a.size * a.words as usize));
+    let source_bytes = match dft {
+        Some(dft) => dft.size * 16 + a_size * 8,
+        None => a_size * 8 * a.words as usize,
+    };
+    launched(res.n * (res.size * 8 + source_bytes));
 }

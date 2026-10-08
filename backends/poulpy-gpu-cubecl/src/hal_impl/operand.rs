@@ -1,13 +1,17 @@
 //! Layouts as kernel operands.
 
-use poulpy_hal::layouts::{Backend, DataView, Module, Ring, VecZnx, VecZnxBig, VecZnxShape};
+use poulpy_cpu_portable::kernels::ntt4x30::primes::Primes30;
+use poulpy_hal::layouts::{Backend, CrtWord, DataView, Module, Ring, VecZnx, VecZnxBig, VecZnxDft, VecZnxShape};
 
 use crate::{
     NTT4x30Gpu,
     module::handle,
+    ntt4x30::DftColumn,
     runtime::{Binding, GpuMut, GpuRef, GpuRuntime},
     znx::{Column, Map, Term, lincomb, permute},
 };
+
+type Word = CrtWord<Primes30, u32>;
 
 fn column(binding: Option<Binding>, shape: VecZnxShape, col: usize, words: u32) -> Option<Column> {
     assert!(col < shape.cols(), "column {col} out of range ({} columns)", shape.cols());
@@ -48,6 +52,42 @@ pub(crate) fn big_column_mut<RT: GpuRuntime, B: Backend<BigWord = i128>>(
     col: usize,
 ) -> Option<Column> {
     column(a.data().binding(), a.shape(), col, 2)
+}
+
+/// A DFT-domain vector is dense: limb `j` of column `col` is block `j * cols + col`.
+fn dft_column(binding: Option<Binding>, n: usize, cols: usize, size: usize, col: usize) -> Option<DftColumn> {
+    assert!(col < cols, "column {col} out of range ({cols} columns)");
+    let binding = binding?;
+    let block = 4 * n;
+    Some(DftColumn {
+        base: u32::try_from(binding.base::<u32>() as usize + col * block)
+            .expect("device view starts beyond the 32-bit word range"),
+        stride: u32::try_from(cols * block).expect("limb stride beyond the 32-bit word range"),
+        n,
+        size,
+        binding,
+    })
+}
+
+/// Column `col` of a shared DFT view, or `None` when the view holds no storage.
+pub(crate) fn dft_column_ref<RT: GpuRuntime, B: Backend<DftWord = Word>>(
+    a: &VecZnxDft<GpuRef<'_, RT>, Word, B>,
+    col: usize,
+) -> Option<DftColumn> {
+    dft_column(a.data().binding(), a.n(), a.cols(), a.size(), col)
+}
+
+/// Column `col` of an exclusive DFT view, or `None` when the view holds no storage.
+pub(crate) fn dft_column_mut<RT: GpuRuntime, B: Backend<DftWord = Word>>(
+    a: &VecZnxDft<GpuMut<'_, RT>, Word, B>,
+    col: usize,
+) -> Option<DftColumn> {
+    dft_column(a.data().binding(), a.n(), a.cols(), a.size(), col)
+}
+
+/// A DFT operand with no limbs, bound to `like`'s storage so the launch has a buffer.
+pub(crate) fn empty_dft_like(like: &DftColumn) -> DftColumn {
+    like.limbs(0, 1, 0)
 }
 
 /// An operand with no limbs, bound to `like`'s storage so the launch has a buffer.
