@@ -20,10 +20,12 @@ impl<BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>> PackedWord fo
 
 /// Drivers a serial packed NTT4x30 backend hands to its Rayon variant.
 ///
-/// A limb of a transform-domain vector is `4 * n` consecutive `u32`, limb `l` of column `c` starting at
-/// `4 * n * (l * cols + c)`. The operations that split their work take the executor as `E` and run
-/// serially on `SerialTaskExecutor`. The limb transforms may split one limb further, into its planes. The convolution drivers are generic over the backend `BE` that tags
-/// their operands, so that the wrapper passes its own layouts.
+/// A limb of a transform-domain vector is `4 * n` consecutive `u32`, limb `l` of column `c` starting at `4 * n * (l * cols + c)`.
+/// The operations that split their work take the executor as `E` and run serially on `SerialTaskExecutor`.
+/// The limb transforms may split one limb further, into its planes.
+/// The convolution drivers are generic over the backend `BE` that tags their operands, so that the wrapper passes its own layouts.
+///
+/// The limb transforms receive no scratch beyond `tmp`, so a backend whose forward transform needs working memory per task does not fit this trait as it stands.
 #[allow(clippy::too_many_arguments)]
 pub trait PackedNtt4x30Base: PackedWord + HalVecZnxDftImpl {
     /// `u64` words of scratch the inverse transform of one limb of degree `n` needs.
@@ -220,11 +222,13 @@ macro_rules! rayon_forward_i128_big {
     };
 }
 
-/// Implements the Rayon-scheduled NTT4x30 backend `$rayon` on top of the serial backend `$base`,
-/// which implements [`PackedNtt4x30Base`].
+/// Implements the Rayon-scheduled NTT4x30 backend `$rayon` on top of the serial backend `$base`, which implements [`PackedNtt4x30Base`].
 ///
-/// The caller provides what differs per backend and per ring: `ScratchWorkers`, `RayonTuning`, and on the
-/// standard ring `HalVecZnxMonomialImpl`, `HalVecZnxCIImpl` and `ZnxAutomorphismRotate`.
+/// The caller provides what differs per backend and per ring: `ScratchWorkers`, `RayonTuning`, and on the standard ring `HalVecZnxMonomialImpl`, `HalVecZnxCIImpl` and `ZnxAutomorphismRotate`.
+///
+/// Beyond the trait, the macro forwards to the HAL implementations of `$base` (vector, big, transform, scalar and vector-matrix products) and to its coefficient kernels, so `$base` must implement them.
+/// It assumes that the scalar products of `$base` take no scratch.
+/// The items land in a module named `ntt4x30_rayon_backend`, so two invocations must sit in separate modules.
 #[macro_export]
 macro_rules! impl_ntt4x30_rayon_backend {
     ($rayon:ty, $base:ty) => {

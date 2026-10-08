@@ -29,7 +29,11 @@ pub fn znx_automorphism_rotate_portable(p: i64, k: i64, res: &mut [i64], a: &[i6
 
     for ai in a.iter().take(n).skip(1) {
         pos = (pos + p_2n) & mask;
-        if pos < n { res[pos] = *ai } else { res[pos - n] = ai.wrapping_neg() }
+        if pos < n {
+            res[pos] = *ai
+        } else {
+            res[pos - n] = ai.wrapping_neg()
+        }
     }
 }
 
