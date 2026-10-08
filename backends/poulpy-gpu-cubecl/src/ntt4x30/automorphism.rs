@@ -19,12 +19,12 @@ use crate::runtime::{GpuRuntime, cubes, launched};
 /// no device state: the kernels derive the permutation from `mul`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AutomorphismPlan {
-    n: usize,
+    pub(super) n: usize,
     /// `p` (or `-p`) modulo the order of the evaluation points.
-    mul: u32,
+    pub(super) mul: u32,
     /// log2 of the gap between the exponents of two points: 1, or 2 over the
     /// conjugate-invariant ring.
-    shift: u32,
+    pub(super) shift: u32,
 }
 
 impl AutomorphismPlan {

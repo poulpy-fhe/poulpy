@@ -233,3 +233,102 @@ pub(crate) fn inner_sum<RT: GpuRuntime>(res: &Column, res_coeff: usize, a: &Colu
     }
     launched(res.size * (a.n + 1) * 16);
 }
+
+#[cube(launch_unchecked)]
+#[allow(clippy::too_many_arguments)]
+fn by_const_kernel(
+    res: &mut [u64],
+    a: &[u64],
+    b: &[u64],
+    n: u32,
+    limbs: u32,
+    res_base: u32,
+    res_stride: u32,
+    a_base: u32,
+    a_stride: u32,
+    a_size: u32,
+    // The selected coefficient of limb 0 of `b`.
+    b_base: u32,
+    b_stride: u32,
+    b_size: u32,
+    offset: u32,
+    #[comptime] accumulate: bool,
+) {
+    let pos = ABSOLUTE_POS as u32;
+    if pos < n * limbs {
+        let limb = pos / n;
+        let i = pos - limb * n;
+        // Terms `a[top - v] * b[v]` for `v` in `first..end`.
+        let top = limb + offset;
+        let first = top + 1u32 - min(top + 1u32, a_size);
+        let end = min(top + 1u32, b_size);
+        let mut lo = 0u64;
+        let mut hi = 0u64;
+        for v in first..end {
+            let x = a[(a_base + (top - v) * a_stride + i) as usize];
+            let y = b[(b_base + v * b_stride) as usize];
+            let sum = lo + x * y;
+            hi += mul_hi_signed(x, y);
+            if sum < lo {
+                hi += 1u64;
+            }
+            lo = sum;
+        }
+        let index = res_base + limb * res_stride + 2u32 * i;
+        if accumulate {
+            let sum = lo + res[index as usize];
+            hi += res[(index + 1u32) as usize];
+            if sum < lo {
+                hi += 1u64;
+            }
+            lo = sum;
+        }
+        res[index as usize] = lo;
+        res[(index + 1u32) as usize] = hi;
+    }
+}
+
+/// `res[j][i] = sum_{u + v = j + offset} a[u][i] * b[v][b_coeff]` for every
+/// limb of `res`, added to `res` when `accumulate`. Limbs without a term are
+/// zero, or unchanged when accumulating. `b` may have any degree.
+pub(crate) fn convolution_by_const<RT: GpuRuntime>(
+    res: &Column,
+    a: &Column,
+    b: &Column,
+    b_coeff: usize,
+    offset: usize,
+    accumulate: bool,
+) {
+    assert!(res.words == 2 && a.words == 1 && b.words == 1);
+    assert_eq!(a.n, res.n, "cnv_by_const_apply: a.n() != res.n()");
+    assert!(b_coeff < b.n || b.size == 0, "cnv_by_const_apply: b_coeff out of range");
+    if res.size == 0 || res.n == 0 {
+        return;
+    }
+    let client = RT::client();
+    let units = res.n * res.size;
+    unsafe {
+        by_const_kernel::launch_unchecked(
+            client,
+            cubes(client, units, DIM),
+            CubeDim::new_1d(DIM),
+            res.binding.arg::<u64>(),
+            a.binding.arg::<u64>(),
+            b.binding.arg::<u64>(),
+            res.n as u32,
+            res.size as u32,
+            res.base,
+            res.stride,
+            a.base,
+            a.stride,
+            a.size as u32,
+            b.base + b_coeff as u32,
+            b.stride,
+            b.size as u32,
+            // Past `a.size + b.size` no limb has a term.
+            offset.min(a.size + b.size) as u32,
+            accumulate,
+        );
+    }
+    launched(units * (16 + 16 * a.size.min(b.size)));
+}

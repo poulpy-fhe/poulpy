@@ -4,6 +4,8 @@
 
 use poulpy_hal::{backend_test_suite, cross_backend_test_suite};
 
+mod local;
+
 type Gpu = crate::NTT4x30Wgpu;
 type GpuCI = crate::NTT4x30Wgpu<poulpy_hal::layouts::ConjugateInvariant>;
 
@@ -157,6 +159,7 @@ cross_backend_test_suite! {
     backend_test = super::Gpu,
     params = TestParams { size: 1 << 13, base2k: 50, n: 8 },
     tests = {
+        test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
         test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
         test_vec_znx_dft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_apply,
         test_vec_znx_dft_automorphism => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism,
@@ -317,14 +320,194 @@ fn roundtrip_at_word_limits<R: poulpy_hal::layouts::Ring>(n: usize) {
 
 #[test]
 fn roundtrip_at_word_limits_standard() {
-    for n in [8, 1 << 12, 1 << 13, 1 << 17] {
+    for n in [8, 1 << 12, 1 << 13, 1 << 14, 1 << 15, 1 << 17] {
         roundtrip_at_word_limits::<poulpy_hal::layouts::Standard>(n);
     }
 }
 
 #[test]
 fn roundtrip_at_word_limits_conjugate_invariant() {
-    for n in [8, 1 << 12, 1 << 13, 1 << 17] {
+    for n in [8, 1 << 12, 1 << 13, 1 << 14, 1 << 15, 1 << 17] {
         roundtrip_at_word_limits::<poulpy_hal::layouts::ConjugateInvariant>(n);
+    }
+}
+
+cross_backend_test_suite! {
+    mod svp,
+    backend_ref = poulpy_cpu_portable::NTT4x30Portable,
+    backend_test = super::Gpu,
+    params = TestParams { size: 1 << 8, base2k: 50, n: 8 },
+    tests = {
+        test_svp_apply_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft,
+        test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
+        test_svp_apply_dft_to_dft_assign => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft_assign,
+    }
+}
+
+cross_backend_test_suite! {
+    mod vmp,
+    backend_ref = poulpy_cpu_portable::NTT4x30Portable,
+    backend_test = super::Gpu,
+    params = TestParams { size: 1 << 8, base2k: 50, n: 8 },
+    tests = {
+        test_vmp_apply_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft,
+        test_vmp_apply_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft,
+        test_vmp_extract_selected_rows => poulpy_hal::test_suite::vmp::test_vmp_extract_selected_rows,
+        test_vmp_apply_dft_to_dft_add => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_add,
+        test_vmp_zero => poulpy_hal::test_suite::vmp::test_vmp_zero,
+    }
+}
+
+backend_test_suite! {
+    mod derived,
+    backend = super::Gpu,
+    params = TestParams { size: 1 << 8, base2k: 50, n: 8 },
+    tests = {
+        test_vmp_apply_dft_derived => poulpy_hal::test_suite::derived::test_vmp_apply_dft_derived,
+        test_vmp_apply_dft_to_dft_add_derived => poulpy_hal::test_suite::derived::test_vmp_apply_dft_to_dft_add_derived,
+        test_vec_znx_lsh_derived => poulpy_hal::test_suite::derived::test_vec_znx_lsh_derived,
+        test_vec_znx_rsh_derived => poulpy_hal::test_suite::derived::test_vec_znx_rsh_derived,
+        test_vec_znx_lsh_add_derived => poulpy_hal::test_suite::derived::test_vec_znx_lsh_add_derived,
+        test_vec_znx_lsh_sub_derived => poulpy_hal::test_suite::derived::test_vec_znx_lsh_sub_derived,
+        test_vec_znx_rsh_add_derived => poulpy_hal::test_suite::derived::test_vec_znx_rsh_add_derived,
+        test_vec_znx_rsh_sub_derived => poulpy_hal::test_suite::derived::test_vec_znx_rsh_sub_derived,
+        test_vec_znx_lsh_assign_derived => poulpy_hal::test_suite::derived::test_vec_znx_lsh_assign_derived,
+        test_vec_znx_rsh_assign_derived => poulpy_hal::test_suite::derived::test_vec_znx_rsh_assign_derived,
+        test_vec_znx_mul_xp_minus_one_derived => poulpy_hal::test_suite::derived::test_vec_znx_mul_xp_minus_one_derived,
+        test_vec_znx_mul_xp_minus_one_assign_derived => poulpy_hal::test_suite::derived::test_vec_znx_mul_xp_minus_one_assign_derived,
+        test_vec_znx_fill_uniform_source_all_derived => poulpy_hal::test_suite::derived::test_vec_znx_fill_uniform_source_all_derived,
+        test_vec_znx_add_scalar_assign_derived => poulpy_hal::test_suite::derived::test_vec_znx_add_scalar_assign_derived,
+        test_vec_znx_big_add_small_derived => poulpy_hal::test_suite::derived::test_vec_znx_big_add_small_derived,
+        test_vec_znx_big_sub_small_a_derived => poulpy_hal::test_suite::derived::test_vec_znx_big_sub_small_a_derived,
+        test_vec_znx_big_sub_small_b_derived => poulpy_hal::test_suite::derived::test_vec_znx_big_sub_small_b_derived,
+        test_svp_apply_dft_derived => poulpy_hal::test_suite::derived::test_svp_apply_dft_derived,
+        test_cnv_prepare_self_derived => poulpy_hal::test_suite::derived::test_cnv_prepare_self_derived,
+        test_cnv_apply_dft_add_derived => poulpy_hal::test_suite::derived::test_cnv_apply_dft_add_derived,
+        test_cnv_apply_dft_sum_derived => poulpy_hal::test_suite::derived::test_cnv_apply_dft_sum_derived,
+        test_cnv_pairwise_apply_dft_derived => poulpy_hal::test_suite::derived::test_cnv_pairwise_apply_dft_derived,
+        test_cnv_by_const_apply_add_derived => poulpy_hal::test_suite::derived::test_cnv_by_const_apply_add_derived,
+    }
+}
+
+backend_test_suite! {
+    mod window,
+    backend = super::Gpu,
+    params = TestParams { size: 1 << 8, base2k: 50, n: 8 },
+    tests = {
+        test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
+        test_cnv_prepare_rejects_mismatched_shape => poulpy_hal::test_suite::convolution::test_cnv_prepare_rejects_mismatched_shape,
+        test_vmp_apply_dft_to_dft_rejects_column_mismatch => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_rejects_column_mismatch,
+        test_convolution_embed => poulpy_hal::test_suite::convolution::test_convolution_embed,
+        test_convolution_galois => poulpy_hal::test_suite::convolution::test_convolution_galois,
+        test_cnv_by_const_rejects_degree_mismatch => poulpy_hal::test_suite::convolution::test_cnv_by_const_rejects_degree_mismatch,
+    }
+}
+
+#[test]
+fn test_convolution_direct() {
+    use poulpy_hal::{
+        layouts::{Backend, Module},
+        test_suite::convolution::{
+            test_convolution, test_convolution_add, test_convolution_by_const, test_convolution_by_const_add,
+            test_convolution_pairwise, test_convolution_sum,
+        },
+    };
+    let module = Module::<Gpu>::new(1 << 8);
+    const FLOOR: usize = <Gpu as Backend>::MIN_DEGREE;
+    for n in [FLOOR, module.n()] {
+        test_convolution(&module, n, 50);
+        test_convolution_add(&module, n, 50);
+        test_convolution_by_const(&module, n, 50);
+        test_convolution_by_const_add(&module, n, 50);
+        test_convolution_pairwise(&module, n, 50);
+        test_convolution_sum(&module, n, 50);
+    }
+    // Sparse right operands one and two halvings below the module degree.
+    for gap in [1, 2] {
+        test_convolution(&module, module.n() >> gap, 50);
+        test_convolution_pairwise(&module, module.n() >> gap, 50);
+        test_convolution_sum(&module, module.n() >> gap, 50);
+    }
+}
+
+#[test]
+fn test_transform_domain_packed_byte_sizes() {
+    use poulpy_hal::layouts::{Backend, PrepareHint};
+    let (n, cols, size) = (256, 3, 5);
+    let packed_bytes = n * cols * size * 4 * size_of::<u32>();
+    assert_eq!(<Gpu as Backend>::bytes_of_vec_znx_dft(n, cols, size), packed_bytes);
+    assert_eq!(
+        <Gpu as Backend>::bytes_of_cnv_pvec_left(n, cols, size, PrepareHint::Reuse),
+        packed_bytes
+    );
+    assert_eq!(
+        <Gpu as Backend>::bytes_of_cnv_pvec_right(n, cols, size, PrepareHint::Reuse),
+        packed_bytes
+    );
+    assert_eq!(
+        <Gpu as Backend>::bytes_of_svp_ppol(n, cols, PrepareHint::Reuse),
+        n * cols * 4 * size_of::<u32>()
+    );
+    let (rows, cols_in, cols_out) = (3, 2, 4);
+    assert_eq!(
+        <Gpu as Backend>::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size, PrepareHint::Reuse),
+        n * rows * cols_in * cols_out * size * 4 * size_of::<u32>()
+    );
+}
+
+// The products of the conjugate-invariant ring, as `conjugate_invariant_test_suite!`
+// of `poulpy-cpu-portable` checks them. That macro itself writes operands through
+// host slices of backend allocations, which a device backend does not have.
+#[test]
+fn ci_products_parity() {
+    use poulpy_hal::{layouts::Module, test_suite::TestParams};
+    let module = Module::<GpuCI>::new(256);
+    let reference = Module::<poulpy_cpu_portable::NTT4x30CIPortable>::new(256);
+    for n in [8, 256] {
+        let params = TestParams {
+            size: 256,
+            n,
+            base2k: 10,
+        };
+        poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft(&params, &reference, &module);
+        poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft_assign(&params, &reference, &module);
+        poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft(&params, &reference, &module);
+        poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_add(&params, &reference, &module);
+    }
+}
+
+#[test]
+fn ci_embed_convolution() {
+    use poulpy_hal::{layouts::Module, test_suite::TestParams};
+    let module = Module::<GpuCI>::new(256);
+    for n in [8, 128, 256] {
+        let params = TestParams {
+            size: 256,
+            n,
+            base2k: 10,
+        };
+        poulpy_hal::test_suite::convolution::test_convolution_embed(&params, &module);
+        poulpy_hal::test_suite::convolution::test_convolution_galois(&params, &module);
+        poulpy_hal::test_suite::embed::test_vec_znx_embed_add_sub(&params, &module);
+        poulpy_hal::test_suite::embed::test_vec_znx_big_embed_add_sub(&params, &module);
+    }
+}
+
+backend_test_suite! {
+    mod ci_derived,
+    backend = super::GpuCI,
+    params = TestParams { size: 1 << 8, base2k: 50, n: 8 },
+    tests = {
+        test_vmp_apply_dft_derived => poulpy_hal::test_suite::derived::test_vmp_apply_dft_derived,
+        test_vmp_apply_dft_to_dft_add_derived => poulpy_hal::test_suite::derived::test_vmp_apply_dft_to_dft_add_derived,
+        test_vec_znx_idft_normalize_derived => poulpy_hal::test_suite::derived::test_vec_znx_idft_normalize_derived,
+        test_vec_znx_dft_automorphism_add_with_plan_derived => poulpy_hal::test_suite::derived::test_vec_znx_dft_automorphism_add_with_plan_derived,
+        test_vec_znx_dft_automorphism_derived => poulpy_hal::test_suite::derived::test_vec_znx_dft_automorphism_derived,
+        test_svp_apply_dft_derived => poulpy_hal::test_suite::derived::test_svp_apply_dft_derived,
+        test_cnv_prepare_self_derived => poulpy_hal::test_suite::derived::test_cnv_prepare_self_derived,
+        test_cnv_apply_dft_add_derived => poulpy_hal::test_suite::derived::test_cnv_apply_dft_add_derived,
+        test_cnv_apply_dft_sum_derived => poulpy_hal::test_suite::derived::test_cnv_apply_dft_sum_derived,
+        test_cnv_pairwise_apply_dft_derived => poulpy_hal::test_suite::derived::test_cnv_pairwise_apply_dft_derived,
+        test_cnv_by_const_apply_add_derived => poulpy_hal::test_suite::derived::test_cnv_by_const_apply_add_derived,
     }
 }

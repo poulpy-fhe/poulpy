@@ -13,19 +13,25 @@
 //! degree-`2n` polynomial at `alpha^(4 bitrev(s) + 1)`.
 
 mod automorphism;
+mod cnv;
 mod crt;
 mod elementwise;
 mod ntt;
 mod primes;
+mod svp;
 mod tables;
+mod vmp;
 
 pub use automorphism::AutomorphismPlan;
 pub(crate) use automorphism::automorphism;
+pub(crate) use cnv::{convolution, convolution_pairwise, convolution_tensor};
 pub(crate) use crt::{crt_at, to_big};
 pub(crate) use elementwise::{DftTerm, combine};
 pub(crate) use ntt::{forward, inverse};
 pub(crate) use primes::Consts;
+pub(crate) use svp::scale;
 pub(crate) use tables::Tables;
+pub(crate) use vmp::{Pmat, digit_product, extract_rows};
 
 use crate::runtime::Binding;
 

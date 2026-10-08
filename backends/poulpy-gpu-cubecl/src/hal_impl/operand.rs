@@ -1,13 +1,16 @@
 //! Layouts as kernel operands.
 
 use poulpy_cpu_portable::kernels::ntt4x30::primes::Primes30;
-use poulpy_hal::layouts::{Backend, CrtWord, DataView, Module, Ring, VecZnx, VecZnxBig, VecZnxDft, VecZnxShape};
+use poulpy_hal::layouts::{
+    Backend, CnvPVecL, CnvPVecR, CrtWord, Data, DataView, MatZnx, Module, Ring, ScalarZnx, SvpPPol, VecZnx, VecZnxBig, VecZnxDft,
+    VecZnxShape, VmpPMat,
+};
 
 use crate::{
     NTT4x30Gpu,
     module::handle,
-    ntt4x30::DftColumn,
-    runtime::{Binding, GpuMut, GpuRef, GpuRuntime},
+    ntt4x30::{DftColumn, Pmat},
+    runtime::{Binding, GpuBuf, GpuMut, GpuRef, GpuRuntime},
     znx::{Column, Map, Term, lincomb, permute},
 };
 
@@ -83,6 +86,114 @@ pub(crate) fn dft_column_mut<RT: GpuRuntime, B: Backend<DftWord = Word>>(
     col: usize,
 ) -> Option<DftColumn> {
     dft_column(a.data().binding(), a.n(), a.cols(), a.size(), col)
+}
+
+/// Storage a layout can be bound from.
+pub(crate) trait Bind: Data {
+    /// The launch binding of the storage, or `None` when it is empty.
+    fn bind(&self) -> Option<Binding>;
+}
+
+impl<RT: GpuRuntime> Bind for GpuRef<'_, RT> {
+    fn bind(&self) -> Option<Binding> {
+        self.binding()
+    }
+}
+
+impl<RT: GpuRuntime> Bind for GpuMut<'_, RT> {
+    fn bind(&self) -> Option<Binding> {
+        self.binding()
+    }
+}
+
+impl<RT: GpuRuntime> Bind for GpuBuf<RT> {
+    fn bind(&self) -> Option<Binding> {
+        self.view().binding()
+    }
+}
+
+/// Column `col` of a prepared left convolution operand, which has the layout of a DFT-domain vector.
+pub(crate) fn cnv_left_column<D: Bind, B: Backend<DftWord = Word>>(a: &CnvPVecL<D, Word, B>, col: usize) -> Option<DftColumn> {
+    dft_column(a.data().bind(), a.n(), a.cols(), a.size(), col)
+}
+
+/// Column `col` of a prepared right convolution operand, which has the layout of a DFT-domain vector.
+pub(crate) fn cnv_right_column<D: Bind, B: Backend<DftWord = Word>>(a: &CnvPVecR<D, Word, B>, col: usize) -> Option<DftColumn> {
+    dft_column(a.data().bind(), a.n(), a.cols(), a.size(), col)
+}
+
+/// Column `col` of a prepared scalar polynomial: one block per column.
+pub(crate) fn svp_column<D: Bind, B: Backend<DftWord = Word>>(a: &SvpPPol<D, Word, B>, col: usize) -> Option<DftColumn> {
+    dft_column(a.data().bind(), a.n(), a.cols(), 1, col)
+}
+
+/// A prepared matrix, or `None` when it holds no storage.
+pub(crate) fn pmat<D: Bind, B: Backend<DftWord = Word>>(a: &VmpPMat<D, Word, B>) -> Option<Pmat> {
+    let binding = a.data().bind()?;
+    Some(Pmat {
+        base: binding.base::<u32>(),
+        n: a.n(),
+        rows: a.rows(),
+        cols_in: a.cols_in(),
+        cols_out: a.cols_out(),
+        size: a.size(),
+        binding,
+    })
+}
+
+/// Every polynomial of a coefficient-domain matrix as the limbs of one
+/// column, in the block order of the prepared matrix.
+pub(crate) fn mat_blocks<D: Bind>(a: &MatZnx<D, i64>) -> Option<Column> {
+    let binding = a.data().bind()?;
+    Some(Column {
+        base: binding.base::<u64>(),
+        stride: a.n() as u32,
+        words: 1,
+        n: a.n(),
+        size: a.rows() * a.cols_in() * a.cols_out() * a.size(),
+        binding,
+    })
+}
+
+/// Column `col` of a scalar polynomial vector, as a one-limb column.
+pub(crate) fn scalar_column<D: Bind>(a: &ScalarZnx<D, i64>, col: usize) -> Option<Column> {
+    assert!(col < a.cols(), "column {col} out of range ({} columns)", a.cols());
+    let binding = a.data().bind()?;
+    Some(Column {
+        base: u32::try_from(binding.base::<u64>() as usize + col * a.n())
+            .expect("device view starts beyond the 32-bit word range"),
+        stride: a.n() as u32,
+        words: 1,
+        n: a.n(),
+        size: 1,
+        binding,
+    })
+}
+
+/// The first `limbs` limbs of every column of a dense vector as the limbs of
+/// one column: block `limb * cols + col` of the vector is limb
+/// `limb * cols + col` of the result.
+pub(crate) fn all_blocks(column0: &Column, cols: usize, limbs: usize) -> Column {
+    Column {
+        binding: column0.binding.clone(),
+        base: column0.base,
+        stride: column0.n as u32 * column0.words,
+        words: column0.words,
+        n: column0.n,
+        size: limbs * cols,
+    }
+}
+
+/// [`all_blocks`] of a DFT-domain vector given by its column 0.
+pub(crate) fn all_dft_blocks(column0: &DftColumn, limbs: usize) -> DftColumn {
+    let block = 4 * column0.n as u32;
+    DftColumn {
+        binding: column0.binding.clone(),
+        base: column0.base,
+        stride: block,
+        n: column0.n,
+        size: limbs * (column0.stride / block) as usize,
+    }
 }
 
 /// A DFT operand with no limbs, bound to `like`'s storage so the launch has a buffer.

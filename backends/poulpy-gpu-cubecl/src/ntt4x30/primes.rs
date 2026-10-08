@@ -64,6 +64,8 @@ pub(crate) struct Consts {
     pub(crate) c63: [u32; 4],
     /// `floor(2^61 / q)`.
     pub(crate) mu61: [u32; 4],
+    /// `floor(2^60 / q)`.
+    pub(crate) mu60: [u32; 4],
     /// The fourth root of unity of the conjugate-invariant basis change, and its Shoup companion.
     pub(crate) i: [u32; 4],
     pub(crate) i_shoup: [u32; 4],
@@ -107,6 +109,7 @@ impl Consts {
             r,
             c63: q.map(|q| ((q as u64 - (1u64 << 63) % q as u64) % q as u64) as u32),
             mu61: q.map(|q| u32::try_from((1u64 << 61) / q as u64).expect("2^61 / q fits a word")),
+            mu60: q.map(|q| ((1u64 << 60) / q as u64) as u32),
             i,
             i_shoup: std::array::from_fn(|k| shoup(i[k], q[k])),
             g,
@@ -141,4 +144,31 @@ pub(crate) fn sel4(k: u32, #[comptime] c: [u32; 4]) -> u32 {
 pub(crate) fn mul_lazy(x: u32, wq: u32, q: u32) -> u32 {
     let w = wq.mul_hi(q) + 1u32;
     x * w - x.mul_hi(wq) * q
+}
+
+/// Terms a product accumulator takes between two folds: a folded value and
+/// 15 products of canonical residues stay below `2^60 + 15 * 2^60 = 2^64`.
+pub(crate) const FOLD_TERMS: u32 = 15;
+
+/// Lazy reduction of a 64-bit accumulator: `lo + hi * (2^32 mod q)`,
+/// congruent to `v` and below `2^60` (`2^32 mod q < 2^27`).
+#[cube]
+pub(crate) fn fold64(v: u64, r: u32) -> u64 {
+    (v & 0xFFFF_FFFFu64) + (v >> 32u64) * u64::cast_from(r)
+}
+
+/// `v mod q` in `[0, q)` for `v < 2^60`, `mu = floor(2^60 / q)`: the quotient
+/// estimate is at most two short, so the remainder fits a word.
+#[cube]
+pub(crate) fn barrett60(v: u64, q: u32, mu: u32) -> u32 {
+    let quotient = ((v >> 29u64) * u64::cast_from(mu)) >> 31u64;
+    let r = u32::cast_from(v) - u32::cast_from(quotient) * q;
+    let r = min(r, r - q);
+    min(r, r - q)
+}
+
+/// `x * y mod q` in `[0, q)` for canonical `x` and `y`.
+#[cube]
+pub(crate) fn mul_mod_canonical(x: u32, y: u32, q: u32, mu: u32) -> u32 {
+    barrett60(u64::cast_from(x) * u64::cast_from(y), q, mu)
 }

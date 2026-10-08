@@ -3534,6 +3534,7 @@ dependencies = [
  "cubecl",
  "once_cell",
  "pollster",
+ "poulpy-core",
  "poulpy-cpu-portable",
  "poulpy-hal",
 ]

@@ -29,4 +29,5 @@ pollster = "0.4"
 
 [dev-dependencies]
 poulpy-cpu-portable = {workspace = true, features = ["enable-test-suite"]}
+poulpy-core = {workspace = true}
 once_cell = {workspace = true}

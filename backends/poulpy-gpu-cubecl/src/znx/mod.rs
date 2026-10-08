@@ -12,7 +12,7 @@ pub(crate) use gadget::gadget_decompose;
 pub(crate) use lincomb::{Term, lincomb, lincomb_decimating};
 pub(crate) use normalize::{normalize, normalize_residues};
 pub(crate) use permute::{Map, ci_embed, ci_trace, permute};
-pub(crate) use products::{col_weighted_sum, inner_sum, scalar_product};
+pub(crate) use products::{col_weighted_sum, convolution_by_const, inner_sum, scalar_product};
 
 use crate::runtime::Binding;
 
