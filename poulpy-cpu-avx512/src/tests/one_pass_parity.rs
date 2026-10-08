@@ -22,7 +22,37 @@ macro_rules! one_pass_case {
     };
 }
 
-one_pass_case!(ifma_fallback, crate::NTT3x42Ifma, poulpy_cpu_oracle::NTT4x30Oracle, 256, 512);
+one_pass_case!(
+    ntt4x30_fallback,
+    crate::NTT4x30Avx512,
+    poulpy_cpu_oracle::NTT4x30Oracle,
+    128,
+    256
+);
+one_pass_case!(
+    ntt4x30_n16,
+    crate::NTT4x30Avx512,
+    poulpy_cpu_oracle::NTT4x30Oracle,
+    65536,
+    65536
+);
+#[cfg(feature = "enable-rayon")]
+one_pass_case!(
+    ntt4x30_rayon_fallback,
+    crate::NTT4x30Avx512Rayon,
+    poulpy_cpu_oracle::NTT4x30Oracle,
+    128,
+    256
+);
+#[cfg(feature = "enable-rayon")]
+one_pass_case!(
+    ntt4x30_rayon_n16,
+    crate::NTT4x30Avx512Rayon,
+    poulpy_cpu_oracle::NTT4x30Oracle,
+    65536,
+    65536
+);
+one_pass_case!(ifma_fallback, crate::NTT3x42Ifma, poulpy_cpu_oracle::NTT4x30Oracle, 128, 256);
 one_pass_case!(ifma_n16, crate::NTT3x42Ifma, poulpy_cpu_oracle::NTT4x30Oracle, 65536, 65536);
 one_pass_case!(
     ifma_ci_n16,
@@ -36,8 +66,8 @@ one_pass_case!(
     ifma_rayon_fallback,
     crate::NTT3x42IfmaRayon,
     poulpy_cpu_oracle::NTT4x30Oracle,
-    256,
-    512
+    128,
+    256
 );
 #[cfg(feature = "enable-rayon")]
 one_pass_case!(

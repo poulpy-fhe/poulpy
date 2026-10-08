@@ -275,23 +275,104 @@ impl_operations_delegate!(
     {
         BE::glwe_mul_relinearize_tmp_bytes(self, res, a_size, b_size, tensor_k, tsk)
     },
-    fn glwe_mul_relinearize<R, A, B, BP, H>(
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_relinearize<R, A, B, H>(
         &self,
         cnv_offset: usize,
         res: &mut R,
         res_k: crate::layouts::TorusPrecision,
-        left: Option<&A>,
-        right: crate::api::GLWEMulRight<'_, B, BP>,
+        a: &A,
+        b: &B,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos,
-        BP: poulpy_hal::layouts::CnvPVecRToBackendRef<BE>,
         H: GetTensorKey<BE>,
     {
-        BE::glwe_mul_relinearize(self, cnv_offset, res, res_k, left, right, tsk, scratch)
+        BE::glwe_mul_relinearize(self, cnv_offset, res, res_k, a, b, tsk, scratch)
+    },
+    fn glwe_mul_relinearize_assign<R, A, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        a: &A,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        H: GetTensorKey<BE>,
+    {
+        BE::glwe_mul_relinearize_assign(self, cnv_offset, res, res_k, a, tsk, scratch)
+    },
+    fn glwe_square_relinearize<R, A, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        a: &A,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        H: GetTensorKey<BE>,
+    {
+        BE::glwe_square_relinearize(self, cnv_offset, res, res_k, a, tsk, scratch)
+    },
+    fn glwe_square_relinearize_assign<R, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        H: GetTensorKey<BE>,
+    {
+        BE::glwe_square_relinearize_assign(self, cnv_offset, res, res_k, tsk, scratch)
+    },
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_prepared_relinearize<R, A, BP, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        a: &A,
+        b: &BP,
+        b_size: usize,
+        b_k: crate::layouts::TorusPrecision,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        BP: CnvPVecRToBackendRef<BE>,
+        H: GetTensorKey<BE>,
+    {
+        BE::glwe_mul_prepared_relinearize(self, cnv_offset, res, res_k, a, b, b_size, b_k, tsk, scratch)
+    },
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_prepared_relinearize_assign<R, AP, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        a: &AP,
+        a_size: usize,
+        a_k: crate::layouts::TorusPrecision,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        AP: CnvPVecRToBackendRef<BE>,
+        H: GetTensorKey<BE>,
+    {
+        BE::glwe_mul_prepared_relinearize_assign(self, cnv_offset, res, res_k, a, a_size, a_k, tsk, scratch)
     }
 );
 

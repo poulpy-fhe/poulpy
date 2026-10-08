@@ -135,10 +135,8 @@ fn eval<R, P, H>(
     let base = rhs.first_diagonal_plaintext().unwrap().base2k().as_usize();
     let cols = res.rank().as_usize() + 1;
     let (offset_hi, offset_lo) = poulpy_core::reference::operations::cnv_offset_to_limb_offset(cnv_offset, base);
-    // A product of `a` by `b` limbs has `a + b - 1` limbs, as in the shared reference.
-    let prod_size = (lhs.size() + rhs.first_diagonal_plaintext().unwrap().size() - offset_hi)
-        .saturating_sub(1)
-        .max(1);
+    let prod_size =
+        poulpy_core::reference::operations::prod_dft_size(lhs.size(), rhs.first_diagonal_plaintext().unwrap().size(), offset_hi);
     let term_count = rhs.giant_steps.iter().filter(|g| g.rot != 0).count();
     let giant_keys: Vec<_> = rhs
         .giant_steps

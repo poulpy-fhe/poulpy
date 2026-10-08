@@ -1,7 +1,7 @@
 //! Trace, packing, relinearization and tensor-secret parity.
 use super::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe};
 use crate::{
-    Distribution, GLWEMaskFill, GLWEMulRight, GLWEPacking, GLWETensorDecrypt, GLWETensoring, GLWETrace, GetDistribution,
+    Distribution, GLWEMaskFill, GLWEPacking, GLWETensorDecrypt, GLWETensoring, GLWETrace, GetDistribution,
     api::TransferInto,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecretLayout, GLWESecretTensorFactory,
@@ -513,20 +513,13 @@ where
                                     let mut scratch = poisoned_scratch::<$be>(bytes);
                                     // Role 0 is a product, role 1 reads its left operand from the destination,
                                     // role 2 is a squaring.
-                                    let left = Some($x).filter(|_| role != 1);
-                                    let right = match role {
-                                        2 => GLWEMulRight::Left,
-                                        _ => GLWEMulRight::<_, poulpy_hal::layouts::CnvPVecROwned<$be>>::Operand($y),
-                                    };
-                                    $m.glwe_mul_relinearize(
-                                        cnv_offset,
-                                        $out,
-                                        g.k,
-                                        left,
-                                        right,
-                                        $key,
-                                        &mut scratch.borrow(),
-                                    )
+                                    match role {
+                                        1 => {
+                                            $m.glwe_mul_relinearize_assign(cnv_offset, $out, g.k, $y, $key, &mut scratch.borrow())
+                                        }
+                                        2 => $m.glwe_square_relinearize(cnv_offset, $out, g.k, $x, $key, &mut scratch.borrow()),
+                                        _ => $m.glwe_mul_relinearize(cnv_offset, $out, g.k, $x, $y, $key, &mut scratch.borrow()),
+                                    }
                                 }};
                             }
                             one_pass!(BR, r, &mut out_r, &x_r, &y_r, &kp_r);

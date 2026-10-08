@@ -2,7 +2,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    GLWECopy, GLWEMulConst, GLWEMulPlain, GLWEMulRight, GLWENormalize, GLWETensoring, ScratchArenaTakeCore, glwe_prepare_right,
+    GLWECopy, GLWEMulConst, GLWEMulPlain, GLWENormalize, GLWETensoring, ScratchArenaTakeCore, glwe_prepare_right,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextLayout, GLWETensorViewMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         ModuleCoreAlloc, TorusPrecision,
@@ -10,7 +10,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, Convolution, ModuleN, VecZnxCopy},
-    layouts::{Backend, CnvPVecROwned, PrepareHint, ScratchArena},
+    layouts::{Backend, PrepareHint, ScratchArena},
 };
 
 use crate::SlotsKind;
@@ -74,17 +74,9 @@ pub trait CKKSMulReference<BE: Backend> {
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, a, b)?;
 
-        if a.base2k() == b.base2k() && mul_one_pass(dst, a.base2k(), a.k().max(b.k()), tsk) {
-            let res_k = TorusPrecision((res_log_budget + res_log_delta) as u32);
-            let right = GLWEMulRight::<B, CnvPVecROwned<BE>>::Operand(b);
-            self.glwe_mul_relinearize(cnv_offset, dst, res_k, Some(a), right, tsk, scratch);
-            dst.set_log_budget(res_log_budget);
-            dst.set_log_delta(res_log_delta);
-            dst.set_log_sparsity(a.log_sparsity().min(b.log_sparsity()));
-            dst.set_slots(a.slots().join(b.slots()));
-            return Ok(());
-        }
-
+        let one_pass = mul_one_pass(dst, &[a.base2k(), b.base2k()], a.k().max(b.k()), cnv_offset, tsk).then_some(
+            |dst: &mut Dst, res_k, s: &mut ScratchArena<'_, BE>| self.glwe_mul_relinearize(cnv_offset, dst, res_k, a, b, tsk, s),
+        );
         tensor_mul_core(
             self,
             dst,
@@ -99,6 +91,7 @@ pub trait CKKSMulReference<BE: Backend> {
             },
             StampOrder::BeforeApply,
             scratch,
+            one_pass,
             |tmp, _dst, s| self.glwe_tensor_apply(cnv_offset, tmp, a, b, s),
         )
     }
@@ -118,18 +111,11 @@ pub trait CKKSMulReference<BE: Backend> {
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, dst, a)?;
 
-        if a.base2k() == dst.base2k() && mul_one_pass(dst, a.base2k(), dst.k().max(a.k()), tsk) {
-            let (log_sparsity, slots) = (dst.log_sparsity().min(a.log_sparsity()), dst.slots().join(a.slots()));
-            let res_k = TorusPrecision((res_log_budget + res_log_delta) as u32);
-            let right = GLWEMulRight::<A, CnvPVecROwned<BE>>::Operand(a);
-            self.glwe_mul_relinearize(cnv_offset, dst, res_k, None::<&A>, right, tsk, scratch);
-            dst.set_log_budget(res_log_budget);
-            dst.set_log_delta(res_log_delta);
-            dst.set_log_sparsity(log_sparsity);
-            dst.set_slots(slots);
-            return Ok(());
-        }
-
+        let one_pass = mul_one_pass(dst, &[a.base2k()], dst.k().max(a.k()), cnv_offset, tsk).then_some(
+            |dst: &mut Dst, res_k, s: &mut ScratchArena<'_, BE>| {
+                self.glwe_mul_relinearize_assign(cnv_offset, dst, res_k, a, tsk, s)
+            },
+        );
         tensor_mul_core(
             self,
             dst,
@@ -144,6 +130,7 @@ pub trait CKKSMulReference<BE: Backend> {
             },
             StampOrder::AfterApply,
             scratch,
+            one_pass,
             |tmp, dst_ref, s| self.glwe_tensor_apply(cnv_offset, tmp, dst_ref, a, s),
         )
     }
@@ -191,25 +178,20 @@ pub trait CKKSMulReference<BE: Backend> {
     {
         let (res_log_budget, res_log_delta, cnv_offset, tensor_k) = get_mul_prepared_params(&*dst, prepared)?;
 
-        if mul_one_pass(dst, prepared.layout.base2k, tensor_k, tsk) {
-            let (log_sparsity, slots) = (
-                dst.log_sparsity().min(prepared.log_sparsity),
-                dst.slots().join(prepared.slots),
-            );
-            let res_k = TorusPrecision((res_log_budget + res_log_delta) as u32);
-            let right: GLWEMulRight<'_, Dst, _> = GLWEMulRight::Prepared {
-                prep: &prepared.prep,
-                size: prepared.size,
-                k: prepared.layout.k,
-            };
-            self.glwe_mul_relinearize(cnv_offset, dst, res_k, None::<&Dst>, right, tsk, scratch);
-            dst.set_log_budget(res_log_budget);
-            dst.set_log_delta(res_log_delta);
-            dst.set_log_sparsity(log_sparsity);
-            dst.set_slots(slots);
-            return Ok(());
-        }
-
+        let one_pass = mul_one_pass(dst, &[prepared.layout.base2k], tensor_k, cnv_offset, tsk).then_some(
+            |dst: &mut Dst, res_k, s: &mut ScratchArena<'_, BE>| {
+                self.glwe_mul_prepared_relinearize_assign(
+                    cnv_offset,
+                    dst,
+                    res_k,
+                    &prepared.prep,
+                    prepared.size,
+                    prepared.layout.k,
+                    tsk,
+                    s,
+                )
+            },
+        );
         // Size the intermediate from the right operand's `k` rather than
         // its full `max_k`: the tensor product only consumes the top `k`
         // limbs (via the prepared operand).
@@ -227,6 +209,7 @@ pub trait CKKSMulReference<BE: Backend> {
             },
             StampOrder::AfterApply,
             scratch,
+            one_pass,
             |tmp, dst_ref, s| self.glwe_tensor_apply_prepared_right(cnv_offset, tmp, dst_ref, &prepared.prep, prepared.size, s),
         )
     }
@@ -278,17 +261,9 @@ pub trait CKKSMulReference<BE: Backend> {
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, a, a)?;
 
-        if mul_one_pass(dst, a.base2k(), a.k(), tsk) {
-            let res_k = TorusPrecision((res_log_budget + res_log_delta) as u32);
-            let right = GLWEMulRight::<A, CnvPVecROwned<BE>>::Left;
-            self.glwe_mul_relinearize(cnv_offset, dst, res_k, Some(a), right, tsk, scratch);
-            dst.set_log_budget(res_log_budget);
-            dst.set_log_delta(res_log_delta);
-            dst.set_log_sparsity(a.log_sparsity());
-            dst.set_slots(a.slots());
-            return Ok(());
-        }
-
+        let one_pass = mul_one_pass(dst, &[a.base2k()], a.k(), cnv_offset, tsk).then_some(
+            |dst: &mut Dst, res_k, s: &mut ScratchArena<'_, BE>| self.glwe_square_relinearize(cnv_offset, dst, res_k, a, tsk, s),
+        );
         tensor_mul_core(
             self,
             dst,
@@ -302,6 +277,7 @@ pub trait CKKSMulReference<BE: Backend> {
             },
             StampOrder::BeforeApply,
             scratch,
+            one_pass,
             |tmp, _dst, s| self.glwe_tensor_square_apply(cnv_offset, tmp, a, s),
         )
     }
@@ -314,15 +290,10 @@ pub trait CKKSMulReference<BE: Backend> {
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, dst, dst)?;
 
-        if mul_one_pass(dst, dst.base2k(), dst.k(), tsk) {
-            let res_k = TorusPrecision((res_log_budget + res_log_delta) as u32);
-            let right = GLWEMulRight::<Dst, CnvPVecROwned<BE>>::Left;
-            self.glwe_mul_relinearize(cnv_offset, dst, res_k, None::<&Dst>, right, tsk, scratch);
-            dst.set_log_budget(res_log_budget);
-            dst.set_log_delta(res_log_delta);
-            return Ok(());
-        }
-
+        let one_pass =
+            mul_one_pass(dst, &[], dst.k(), cnv_offset, tsk).then_some(|dst: &mut Dst, res_k, s: &mut ScratchArena<'_, BE>| {
+                self.glwe_square_relinearize_assign(cnv_offset, dst, res_k, tsk, s)
+            });
         tensor_mul_core(
             self,
             dst,
@@ -338,6 +309,7 @@ pub trait CKKSMulReference<BE: Backend> {
             },
             StampOrder::AfterApply,
             scratch,
+            one_pass,
             |tmp, dst_ref, s| self.glwe_tensor_square_apply(cnv_offset, tmp, dst_ref, s),
         )
     }
@@ -509,6 +481,10 @@ enum StampOrder {
 ///
 /// `apply` receives the carved tensor, a shared reborrow of `dst` (used by the
 /// `_assign` variants, ignored by `_into`), and the nested scratch arena.
+///
+/// `one_pass`, when given, replaces the tensor intermediate: it writes the
+/// relinearized product into `dst` at the stamped width, reading `dst` first when
+/// `dst` is an operand, so `dst` is stamped after it whatever `order` says.
 #[allow(clippy::too_many_arguments)]
 fn tensor_mul_core<BE, M, Dst, T>(
     module: &M,
@@ -518,6 +494,7 @@ fn tensor_mul_core<BE, M, Dst, T>(
     stamp: MulStamp,
     order: StampOrder,
     scratch: &mut ScratchArena<'_, BE>,
+    one_pass: Option<impl FnOnce(&mut Dst, TorusPrecision, &mut ScratchArena<'_, BE>)>,
     apply: impl for<'t> FnOnce(&mut GLWETensorViewMut<'t, BE>, &Dst, &mut ScratchArena<'t, BE>),
 ) -> Result<()>
 where
@@ -536,6 +513,13 @@ where
             dst.set_slots(slots);
         }
     };
+    if let Some(one_pass) = one_pass {
+        one_pass(dst, TorusPrecision((stamp.log_budget + stamp.log_delta) as u32), scratch);
+        do_stamp(dst);
+        // Stamping lowers `k`, which clears the flag of a product canonical at its new width.
+        dst.set_canonical(true);
+        return Ok(());
+    }
     if matches!(order, StampOrder::BeforeApply) {
         do_stamp(dst);
     }
@@ -558,16 +542,23 @@ where
 
 /// Whether a product of width `tensor_k` takes the one-pass product and relinearization.
 ///
-/// The one-pass path needs rank 1 and one `base2k` across the operands and the tensor key.
-/// Other products go through the tensor intermediate.
-fn mul_one_pass<BE, Dst, T>(dst: &Dst, operand_base2k: poulpy_core::layouts::Base2K, tensor_k: TorusPrecision, tsk: &T) -> bool
+/// The one-pass path needs rank 1, one `base2k` across `dst`, the operands other than `dst` and the
+/// tensor key, and `cnv_offset >= base2k`. Other products go through the tensor intermediate.
+fn mul_one_pass<BE, Dst, T>(
+    dst: &Dst,
+    operands_base2k: &[poulpy_core::layouts::Base2K],
+    tensor_k: TorusPrecision,
+    cnv_offset: usize,
+    tsk: &T,
+) -> bool
 where
     BE: Backend,
     Dst: GLWEInfos,
     T: GetTensorKey<BE>,
 {
     dst.rank().as_usize() == 1
-        && operand_base2k == dst.base2k()
+        && cnv_offset >= dst.base2k().as_usize()
+        && operands_base2k.iter().all(|&base2k| base2k == dst.base2k())
         && tsk.get_tensor_key(tensor_k).is_ok_and(|key| key.base2k() == dst.base2k())
 }
 

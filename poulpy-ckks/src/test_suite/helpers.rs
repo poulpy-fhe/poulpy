@@ -1396,6 +1396,7 @@ pub fn assert_mul_ct_output_meta<D: Data, W: ZnxWord, R: Ring>(
     // rounding, not its buffer capacity, so the result width is bounded by `k`, not `max_k`.
     let offset = (log_budget + log_delta).saturating_sub(ct.k().as_usize());
     assert_ct_meta(label, ct, log_delta, log_budget - offset);
+    assert!(ct.is_canonical(), "{label}: a relinearized product is canonical");
 }
 
 pub fn assert_mul_pt_output_meta<D: Data, W: ZnxWord, R: Ring>(

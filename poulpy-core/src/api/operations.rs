@@ -149,20 +149,6 @@ pub trait GLWEMulPlain<BE: Backend> {
         A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
 }
 
-/// Right operand of [`GLWETensoring::glwe_mul_relinearize`].
-pub enum GLWEMulRight<'a, B, BP> {
-    /// The left operand itself: a squaring.
-    Left,
-    /// Another ciphertext.
-    Operand(&'a B),
-    /// A prepared right operand of `size` limbs, built from a ciphertext of width `k`.
-    Prepared {
-        prep: &'a BP,
-        size: usize,
-        k: crate::layouts::TorusPrecision,
-    },
-}
-
 /// Tensor products of GLWE ciphertexts.
 ///
 /// Both ciphertext operands are read canonical at their `k` (see the
@@ -227,8 +213,9 @@ pub trait GLWETensoring<BE: Backend> {
         A: GLWEInfos,
         B: GGLWEInfos;
 
-    /// Scratch bytes of [`Self::glwe_mul_relinearize`] for operands of `a_size` and `b_size` limbs
-    /// and a product of width `tensor_k`, the larger of the two operand widths.
+    /// Scratch bytes of [`Self::glwe_mul_relinearize`], [`Self::glwe_square_relinearize`],
+    /// [`Self::glwe_mul_prepared_relinearize`] and their `_assign` forms, for a result as wide as `res`, operands of
+    /// `a_size` and `b_size` limbs and a product of width `tensor_k`, the larger of the two operand widths.
     fn glwe_mul_relinearize_tmp_bytes<R, B>(
         &self,
         res: &R,
@@ -241,10 +228,9 @@ pub trait GLWETensoring<BE: Backend> {
         R: GLWEInfos,
         B: GGLWEInfos;
 
-    /// `res = relinearize(left * right)` in one pass, for rank 1 and one `base2k` across `res`,
-    /// the operands and the tensor key.
+    /// `res = relinearize(a * b)` in one pass, for rank 1, one `base2k` across `res`,
+    /// the operands and the tensor key, and `cnv_offset >= base2k`.
     ///
-    /// `left` is the left operand, or `None` when it is `res` itself, read at its current width.
     /// The result is written at width `res_k`: the caller sets the width of `res` afterwards.
     ///
     /// The columns of the product that are not key-switched stay in the transform domain until the
@@ -252,20 +238,96 @@ pub trait GLWETensoring<BE: Backend> {
     /// [`Self::glwe_tensor_relinearize`] transforms and normalizes them first.
     /// The two paths agree up to rounding, not bit for bit.
     #[allow(clippy::too_many_arguments)]
-    fn glwe_mul_relinearize<R, A, B, BP, H>(
+    fn glwe_mul_relinearize<R, A, B, H>(
         &self,
         cnv_offset: usize,
         res: &mut R,
         res_k: crate::layouts::TorusPrecision,
-        left: Option<&A>,
-        right: GLWEMulRight<'_, B, BP>,
+        a: &A,
+        b: &B,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos,
+        H: GetTensorKey<BE>;
+
+    /// [`Self::glwe_mul_relinearize`] with `res`, read at its current width, as the left operand.
+    fn glwe_mul_relinearize_assign<R, A, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        a: &A,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        H: GetTensorKey<BE>;
+
+    /// [`Self::glwe_mul_relinearize`] of `a` by itself.
+    fn glwe_square_relinearize<R, A, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        a: &A,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        H: GetTensorKey<BE>;
+
+    /// [`Self::glwe_square_relinearize`] of `res`, read at its current width.
+    fn glwe_square_relinearize_assign<R, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        H: GetTensorKey<BE>;
+
+    /// [`Self::glwe_mul_relinearize`] with a right operand prepared by [`crate::glwe_prepare_right`]:
+    /// `b_size` limbs of a ciphertext of width `b_k`.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_prepared_relinearize<R, A, BP, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        a: &A,
+        b: &BP,
+        b_size: usize,
+        b_k: crate::layouts::TorusPrecision,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
         BP: poulpy_hal::layouts::CnvPVecRToBackendRef<BE>,
+        H: GetTensorKey<BE>;
+
+    /// [`Self::glwe_mul_prepared_relinearize`] with `res`, read at its current width, as the left operand.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_prepared_relinearize_assign<R, AP, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        a: &AP,
+        a_size: usize,
+        a_k: crate::layouts::TorusPrecision,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        AP: poulpy_hal::layouts::CnvPVecRToBackendRef<BE>,
         H: GetTensorKey<BE>;
 }
 
