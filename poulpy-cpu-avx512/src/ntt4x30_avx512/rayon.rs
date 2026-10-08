@@ -1314,6 +1314,7 @@ where
         poulpy_hal::layouts::check_degree::<NTT4x30Avx512<R>>(module.n(), n);
         assert_eq!(res.n(), n, "vec_znx_idft_normalize_consume: res.n():{} != a.n():{n}", res.n());
         let cols = a.cols();
+        assert!(a_col < cols, "input column out of bounds");
         let size = a.size();
         let per_worker = 4 * n;
         // The carry is taken first: a short arena lowers the worker count, never the carry.

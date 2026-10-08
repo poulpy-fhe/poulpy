@@ -41,6 +41,8 @@ rayon = {workspace = true, optional = true}
 libc = {version = "0.2", optional = true}
 
 [dev-dependencies]
+# Independent arithmetic for the direct parity tests.
+poulpy-cpu-oracle = {workspace = true, features = ["enable-core"]}
 # Shared test helpers and portable comparison backends.
 poulpy-cpu-portable = {workspace = true, features = ["enable-core", "enable-test-suite"]}
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
@@ -51,7 +53,7 @@ anyhow = {workspace = true}
 
 # AVX-512 parity follows the AVX backend, enabled only with the SIMD tests.
 [target.'cfg(target_arch = "x86_64")'.dev-dependencies]
-poulpy-cpu-avx = {workspace = true}
+poulpy-cpu-avx = {workspace = true, features = ["enable-rayon"]}
 
 [package.metadata.docs.rs]
 all-features = true

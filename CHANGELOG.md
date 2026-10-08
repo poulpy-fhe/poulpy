@@ -6,6 +6,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-hal`
 
+- **Breaking:** `vec_znx_idft_normalize_consume` takes a bit offset `res_offset` after `res_k`, with the meaning it has in `vec_znx_big_normalize`. Existing callers pass `0`.
 - **Breaking:** `Module` construction panics above `layouts::MAX_RING_DEGREE`, `2^17`, on the standard and the conjugate-invariant ring.
 - `ModuleSynchronize::synchronize` waits for a module's deferred work through the new defaulted `HalModuleImpl::synchronize` hook, a no-op on backends that complete each call before returning. The backend safety contract now defines when a backend may defer execution: submission order, transfers that wait for the storage they read, and the release and failure rules.
 - `ScratchArena::wipe(len)` zeroes the first `len` bytes the arena can carve out, through `Backend::copy_host_to_view`.
@@ -64,6 +65,10 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-core`
 
+- **Breaking:** `GLWETensoring` and `GLWETensoringImpl` include `glwe_mul_relinearize` and its scratch query: the product of two rank-1 ciphertexts and its relinearization in one pass. Only the degree-2 column goes back to digits for the gadget product, the two others are added to it in the transform domain, and the result is inverse-transformed and normalized once. The result is not bit-identical to `glwe_tensor_apply` followed by `glwe_tensor_relinearize`: the sum is rounded once where the two-step path rounds twice, and the key-switch noise is scaled up by `cnv_offset mod base2k` bits.
+  `GLWETensoringReference` splits it into `glwe_mul_columns_reference`, the three product columns, and `glwe_mul_relinearize_with_reference`, which takes that step as a closure, so that a backend overrides the columns alone.
+- Gadget products take their guard limbs from the `2^-128` failure model of `docs/base2k-failure-probability.md` through `gadget_product_guard_limbs`. This gives 2 guard limbs at every radix in use, where the exact count gave 3, and applies to key switching, external products and binary FHE.
+- Products of `a` by `b` limbs are sized at `a + b - 1` limbs in the linear transformations and in the one-pass product. The last limb of the former `a + b` was zero, and was transformed and decomposed like the others.
 - **Breaking:** `GLWETensoring` and `GLWETensoringImpl` include prepared-right tensor multiplication and its scratch query. Reference forwarding macros implement both operations through the new `GLWETensoringReference` methods `glwe_tensor_apply_prepared_right_reference` and `glwe_tensor_apply_prepared_right_tmp_bytes_reference`; CKKS prepared multiplication dispatches through Core.
   The core tensor parity checks the prepared-right product against the reference and against the ordinary product on every backend.
 - `GiantStepTensorBounds` is deprecated: the BSGS engine and its CKKS operations no longer need it.
@@ -133,6 +138,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-ckks`
 
+- Rank-1 multiplication, squaring and prepared multiplication with a tensor key at the radix of the operands go through `glwe_mul_relinearize`. Other shapes keep the two-step path. On the bootstrap `n16_d35_k720_p19_s2c`, with the two sizing changes, this is about 6% faster on NEON, 3% to 6% on IFMA and 4% to 7% on AVX-512 NTT4x30.
 - **Breaking, API:** `minimax*`, `degree_for_precision*`, `precision_at_depth*` and `sign_composite_coeffs*` require `CKKSFloat` in addition to their remaining bounds.
   `reference::dft::DftScalar`, the bound of `gen_dft_matrices` and `gen_dft_matrices_blockwise`, requires `CKKSFloat + FloatConst` instead of `Float + FloatConst`.
   Generic callers must add this bound, and custom scalar types must implement its portable math and exact codec contract.
@@ -254,6 +260,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### CPU backends
 
+- `NTT4x30AvxRayon` and `NTT4x30Avx512Rayon` run `vec_znx_idft_normalize_consume` in parallel, one inverse transform per limb and the shared parallel normalization. They forwarded to the serial backend before.
+- The IFMA backends override the product columns of `glwe_mul_relinearize` with their fused rank-one kernel, which forms the cross term before storing it. IFMA linear transformations size their intermediate products at the true limb count.
 - AVX-512 rank-one tensor multiplication and squaring retain full-limb precision before pairwise subtraction and round all output columns to the requested precision. `NTT3x42IfmaRayon` specializes prepared-right Core tensor products with matching input and output radices.
   The ordinary and prepared rank-one specializations share one gate: rank one at degree `2^13` and above, where they run 1.08x to 1.5x faster than the reference composition on 4 to 48 Rayon threads. They previously ran only at `2^15` and `2^16`.
 - `NTT3x42IfmaRayon` streams inverse transforms at degree `2^16` and above through CRT reconstruction and shared carry normalization, respects nested execution, and avoids clearing carry storage before overwriting it.

@@ -197,7 +197,7 @@ pub trait CKKSMulReference<BE: Backend> {
                 dst.slots().join(prepared.slots),
             );
             let res_k = TorusPrecision((res_log_budget + res_log_delta) as u32);
-            let right = GLWEMulRight::<Dst, _>::Prepared {
+            let right: GLWEMulRight<'_, Dst, _> = GLWEMulRight::Prepared {
                 prep: &prepared.prep,
                 size: prepared.size,
                 k: prepared.layout.k,
