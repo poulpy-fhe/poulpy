@@ -13,6 +13,7 @@
 //! Every loop is a plain loop over slices with a fixed stride, which compilers turn into vector code.
 
 use bytemuck::{cast_slice, cast_slice_mut};
+use poulpy_hal::execution::TaskExecutor;
 
 use crate::kernels::ntt4x30::{
     conjugate_invariant::BasisChange,
@@ -522,14 +523,51 @@ fn ntt32_plane(table: &Ntt32Table, p: usize, dst: &mut [u32], src: &[i64], prepa
     fwd_plane(dst, &table.fwd[p], q);
 }
 
+/// Ring degree from which the four planes of a limb are transformed as separate tasks of a parallel executor.
+///
+/// A ciphertext has few limbs at a large `base2k`, fewer than a pool has threads.
+const PLANE_TASKS_MIN_N: usize = 1 << 13;
+const _: () = assert!((PLANE_TASKS_MIN_N / 4).is_multiple_of(CRT_RUN));
+
+#[inline]
+fn plane_tasks<E: TaskExecutor>(n: usize) -> bool {
+    E::is_parallel() && n >= PLANE_TASKS_MIN_N && E::max_parallelism() > 1
+}
+
+/// Runs `task` on the four items, as four tasks of `E` when `parallel` is set and in order otherwise.
+#[inline]
+fn for_each_of_four<E: TaskExecutor, T: Send>(parallel: bool, items: [T; 4], task: impl Fn(usize, T) + Sync) {
+    let [a, b, c, d] = items;
+    if parallel {
+        E::join(
+            || E::join(|| task(0, a), || task(1, b)),
+            || E::join(|| task(2, c), || task(3, d)),
+        );
+    } else {
+        task(0, a);
+        task(1, b);
+        task(2, c);
+        task(3, d);
+    }
+}
+
+/// The four planes of a packed limb.
+#[inline]
+fn planes_mut(n: usize, limb: &mut [u32]) -> [&mut [u32]; 4] {
+    let (p0, rest) = limb[..4 * n].split_at_mut(n);
+    let (p1, rest) = rest.split_at_mut(n);
+    let (p2, p3) = rest.split_at_mut(n);
+    [p0, p1, p2, p3]
+}
+
 /// Forward transform of `n` coefficients into one packed limb.
 ///
 /// The residues are canonical, multiplied by `2^32` when `prepared` is set.
-pub(crate) fn ntt32(table: &Ntt32Table, dst: &mut [u32], src: &[i64], prepared: bool) {
+pub(crate) fn ntt32<E: TaskExecutor>(table: &Ntt32Table, dst: &mut [u32], src: &[i64], prepared: bool) {
     let n = table.n;
-    for (p, plane) in dst[..4 * n].chunks_exact_mut(n).enumerate() {
-        ntt32_plane(table, p, plane, src, prepared);
-    }
+    for_each_of_four::<E, _>(plane_tasks::<E>(n), planes_mut(n, dst), |p, plane| {
+        ntt32_plane(table, p, plane, src, prepared)
+    });
 }
 
 const QM: [u128; 4] = {
@@ -570,11 +608,7 @@ const CRT_RUN: usize = 8;
 /// The sum `floor(Q / 2) + sum_p t[p] * (Q / Q[p])` is accumulated limb by limb, on a run of coefficients at a time.
 /// Each limb sum stays below `2^63`.
 /// Reducing it modulo `Q` and removing the offset gives the representative in `[-floor(Q / 2), ceil(Q / 2))`.
-fn crt(dst: &mut [i128], t: &[u32]) {
-    let n = dst.len();
-    let (t0, rest) = t[..4 * n].split_at(n);
-    let (t1, rest) = rest.split_at(n);
-    let (t2, t3) = rest.split_at(n);
+fn crt(dst: &mut [i128], [t0, t1, t2, t3]: [&[u32]; 4]) {
     let planes = t0
         .chunks_exact(CRT_RUN)
         .zip(t1.chunks_exact(CRT_RUN))
@@ -618,41 +652,50 @@ fn intt32_plane(table: &Ntt32Table, p: usize, work: &mut [u32], src: Option<&[u3
     }
 }
 
-/// Inverse transform of the packed limb `src` into `n` coefficients, with the intermediate planes in `work`.
-pub(crate) fn intt32(table: &Ntt32Table, dst: &mut [i128], src: &[u32], work: &mut [u32]) {
-    let n = table.n;
-    for (p, (work, src)) in work[..4 * n]
-        .chunks_exact_mut(n)
-        .zip(src[..4 * n].chunks_exact(n))
-        .enumerate()
-    {
-        intt32_plane(table, p, work, Some(src));
+/// Reconstruction of the coefficients from the four planes of `work`, by quarters when `parallel` is set.
+fn crt_planes<E: TaskExecutor>(parallel: bool, n: usize, dst: &mut [i128], work: &[u32]) {
+    if !parallel {
+        return crt(&mut dst[..n], std::array::from_fn(|p| &work[p * n..(p + 1) * n]));
     }
-    crt(&mut dst[..n], work);
+    // A quarter is a whole number of reconstruction runs at the degrees that split.
+    let quarter = n / 4;
+    let (d0, rest) = dst[..n].split_at_mut(quarter);
+    let (d1, rest) = rest.split_at_mut(quarter);
+    let (d2, d3) = rest.split_at_mut(quarter);
+    for_each_of_four::<E, _>(parallel, [d0, d1, d2, d3], |k, dst| {
+        let range = k * quarter..(k + 1) * quarter;
+        crt(dst, std::array::from_fn(|p| &work[p * n..][range.clone()]));
+    });
+}
+
+/// Inverse transform of the packed limb `src` into `n` coefficients, with the intermediate planes in `work`.
+pub(crate) fn intt32<E: TaskExecutor>(table: &Ntt32Table, dst: &mut [i128], src: &[u32], work: &mut [u32]) {
+    let n = table.n;
+    let parallel = plane_tasks::<E>(n);
+    for_each_of_four::<E, _>(parallel, planes_mut(n, work), |p, work| {
+        intt32_plane(table, p, work, Some(&src[p * n..(p + 1) * n]))
+    });
+    crt_planes::<E>(parallel, n, dst, work);
 }
 
 /// Inverse transform of the packed limb `work` into `n` coefficients, overwriting the limb with its intermediate planes.
-pub(crate) fn intt32_assign(table: &Ntt32Table, dst: &mut [i128], work: &mut [u32]) {
+pub(crate) fn intt32_assign<E: TaskExecutor>(table: &Ntt32Table, dst: &mut [i128], work: &mut [u32]) {
     let n = table.n;
-    for (p, work) in work[..4 * n].chunks_exact_mut(n).enumerate() {
-        intt32_plane(table, p, work, None);
-    }
-    crt(&mut dst[..n], work);
+    let parallel = plane_tasks::<E>(n);
+    for_each_of_four::<E, _>(parallel, planes_mut(n, work), |p, work| intt32_plane(table, p, work, None));
+    crt_planes::<E>(parallel, n, dst, work);
 }
 
 /// Inverse transform of the packed limb `slot` into `n` coefficients that overwrite it.
 ///
 /// The planes move to `work` during the transform, and the coefficients take the 16 bytes per coefficient of the limb.
-pub(crate) fn intt32_compact(table: &Ntt32Table, slot: &mut [u32], work: &mut [u32]) {
+pub(crate) fn intt32_compact<E: TaskExecutor>(table: &Ntt32Table, slot: &mut [u32], work: &mut [u32]) {
     let n = table.n;
-    for (p, (work, src)) in work[..4 * n]
-        .chunks_exact_mut(n)
-        .zip(slot[..4 * n].chunks_exact(n))
-        .enumerate()
-    {
-        intt32_plane(table, p, work, Some(src));
-    }
-    crt(cast_slice_mut(&mut slot[..4 * n]), work);
+    let parallel = plane_tasks::<E>(n);
+    for_each_of_four::<E, _>(parallel, planes_mut(n, work), |p, work| {
+        intt32_plane(table, p, work, Some(&slot[p * n..(p + 1) * n]))
+    });
+    crt_planes::<E>(parallel, n, cast_slice_mut(&mut slot[..4 * n]), work);
 }
 
 #[cfg(test)]
@@ -698,7 +741,7 @@ mod tests {
             BE::ntt_dft_execute(fwd, &mut wide);
             for prepared in [false, true] {
                 let mut packed = vec![0u32; 4 * n];
-                ntt32(&table, &mut packed, &src, prepared);
+                ntt32::<poulpy_hal::execution::SerialTaskExecutor>(&table, &mut packed, &src, prepared);
                 for p in 0..4 {
                     let q = Q[p] as u64;
                     let scale = if prepared { R1[p] as u64 } else { 1 };
@@ -732,14 +775,14 @@ mod tests {
             BE::ntt_to_znx128(&mut want, n, &wide);
             let mut got = vec![0i128; n];
             let mut work = vec![0u32; 4 * n];
-            intt32(&table, &mut got, &planes, &mut work);
+            intt32::<poulpy_hal::execution::SerialTaskExecutor>(&table, &mut got, &planes, &mut work);
             assert_eq!(got, want, "log_n={log_n} inverse");
             let mut slot = poulpy_hal::alloc_aligned::<u32>(4 * n);
             slot.copy_from_slice(&planes);
-            intt32_compact(&table, &mut slot, &mut work);
+            intt32_compact::<poulpy_hal::execution::SerialTaskExecutor>(&table, &mut slot, &mut work);
             assert_eq!(cast_slice::<u32, i128>(&slot), &want[..], "log_n={log_n} inverse compacted");
             let mut got = vec![0i128; n];
-            intt32_assign(&table, &mut got, &mut planes);
+            intt32_assign::<poulpy_hal::execution::SerialTaskExecutor>(&table, &mut got, &mut planes);
             assert_eq!(got, want, "log_n={log_n} inverse in place");
         }
     }

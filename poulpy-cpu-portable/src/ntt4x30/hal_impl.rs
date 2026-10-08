@@ -142,7 +142,7 @@ where
         let bytes = super::convolution::cnv_prepare_tmp_bytes(res.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         super::convolution::cnv_prepare_left::<_, SerialTaskExecutor>(module, res, a, tmp, |n, dst, src, prepared| {
-            super::vec_znx_dft::dft_limb_scaled(module, n, dst, src, prepared)
+            super::vec_znx_dft::dft_limb_scaled::<_, poulpy_hal::execution::SerialTaskExecutor>(module, n, dst, src, prepared)
         });
     }
 
@@ -159,7 +159,7 @@ where
         let bytes = super::convolution::cnv_prepare_tmp_bytes(res.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         super::convolution::cnv_prepare_right::<_, SerialTaskExecutor>(module, res, a, tmp, |n, dst, src, prepared| {
-            super::vec_znx_dft::dft_limb_scaled(module, n, dst, src, prepared)
+            super::vec_znx_dft::dft_limb_scaled::<_, poulpy_hal::execution::SerialTaskExecutor>(module, n, dst, src, prepared)
         });
     }
 
@@ -352,7 +352,7 @@ where
         let bytes = super::convolution::cnv_prepare_tmp_bytes(left.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         super::convolution::cnv_prepare_self::<_, SerialTaskExecutor>(module, left, right, a, tmp, |n, dst, src, prepared| {
-            super::vec_znx_dft::dft_limb_scaled(module, n, dst, src, prepared)
+            super::vec_znx_dft::dft_limb_scaled::<_, poulpy_hal::execution::SerialTaskExecutor>(module, n, dst, src, prepared)
         });
     }
 }

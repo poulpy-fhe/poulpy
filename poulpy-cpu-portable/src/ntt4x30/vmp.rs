@@ -54,7 +54,7 @@ pub(crate) fn vmp_prepare<R: Ring>(
     for row_i in 0..nrows {
         for col_i in 0..ncols {
             let pos = n * (row_i * ncols + col_i);
-            dft_limb_scaled(module, n, tmp_packed, &mat_i64[pos..pos + n], true);
+            dft_limb_scaled::<_, poulpy_hal::execution::SerialTaskExecutor>(module, n, tmp_packed, &mat_i64[pos..pos + n], true);
             scatter_centered_limb(n, pmat, tmp_packed, |blk| ((blk * ncols + col_i) * nrows + row_i) * ROW);
         }
     }

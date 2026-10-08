@@ -23,20 +23,20 @@ macro_rules! impl_packed_base {
                 drivers::idft_tmp_words(n)
             }
 
-            fn dft_limb(module: &Module<Self>, n: usize, dst: &mut [u32], src: Option<&[i64]>) {
-                drivers::dft_limb(module, n, dst, src)
+            fn dft_limb<E: TaskExecutor>(module: &Module<Self>, n: usize, dst: &mut [u32], src: Option<&[i64]>) {
+                drivers::dft_limb::<$ring, E>(module, n, dst, src)
             }
 
-            fn idft_limb(module: &Module<Self>, n: usize, dst: &mut [i128], src: &[u32], tmp: &mut [u64]) {
-                drivers::idft_limb(module, n, dst, src, tmp)
+            fn idft_limb<E: TaskExecutor>(module: &Module<Self>, n: usize, dst: &mut [i128], src: &[u32], tmp: &mut [u64]) {
+                drivers::idft_limb::<$ring, E>(module, n, dst, src, tmp)
             }
 
-            fn idft_limb_tmpa(module: &Module<Self>, n: usize, dst: &mut [i128], src: &mut [u32]) {
-                drivers::idft_limb_tmpa(module, n, dst, src)
+            fn idft_limb_tmpa<E: TaskExecutor>(module: &Module<Self>, n: usize, dst: &mut [i128], src: &mut [u32]) {
+                drivers::idft_limb_tmpa::<$ring, E>(module, n, dst, src)
             }
 
-            fn idft_limb_compact(module: &Module<Self>, n: usize, slot: &mut [u32], tmp: &mut [u64]) {
-                drivers::idft_limb_compact(module, n, slot, tmp)
+            fn idft_limb_compact<E: TaskExecutor>(module: &Module<Self>, n: usize, slot: &mut [u32], tmp: &mut [u64]) {
+                drivers::idft_limb_compact::<$ring, E>(module, n, slot, tmp)
             }
 
             fn vmp_apply_tmp_bytes(a_size: usize, b_rows: usize, b_cols_in: usize) -> usize {
@@ -150,7 +150,7 @@ macro_rules! impl_packed_base {
                 for<'a> BE::BufMut<'a>: HostDataMut,
             {
                 drivers::cnv_prepare_left::<BE, E>(module, res, a, tmp, |n, dst, src, prepared| {
-                    drivers::dft_limb_scaled(base, n, dst, src, prepared)
+                    drivers::dft_limb_scaled::<$ring, E>(base, n, dst, src, prepared)
                 })
             }
 
@@ -165,7 +165,7 @@ macro_rules! impl_packed_base {
                 for<'a> BE::BufMut<'a>: HostDataMut,
             {
                 drivers::cnv_prepare_right::<BE, E>(module, res, a, tmp, |n, dst, src, prepared| {
-                    drivers::dft_limb_scaled(base, n, dst, src, prepared)
+                    drivers::dft_limb_scaled::<$ring, E>(base, n, dst, src, prepared)
                 })
             }
 
@@ -181,7 +181,7 @@ macro_rules! impl_packed_base {
                 for<'a> BE::BufMut<'a>: HostDataMut,
             {
                 drivers::cnv_prepare_self::<BE, E>(module, left, right, a, tmp, |n, dst, src, prepared| {
-                    drivers::dft_limb_scaled(base, n, dst, src, prepared)
+                    drivers::dft_limb_scaled::<$ring, E>(base, n, dst, src, prepared)
                 })
             }
 

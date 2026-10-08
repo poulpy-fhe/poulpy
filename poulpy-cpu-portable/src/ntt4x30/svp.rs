@@ -33,7 +33,13 @@ pub(crate) fn svp_prepare<R: Ring>(
     check_degree::<NTT4x30Portable<R>>(module.n(), n);
     assert!(a.n() == n, "svp_prepare: a.n() != res.n()");
     let data: &mut [u32] = cast_slice_mut(res.data_mut());
-    dft_limb_scaled(module, n, &mut data[4 * n * res_col..][..4 * n], a.at(a_col, 0), true);
+    dft_limb_scaled::<_, poulpy_hal::execution::SerialTaskExecutor>(
+        module,
+        n,
+        &mut data[4 * n * res_col..][..4 * n],
+        a.at(a_col, 0),
+        true,
+    );
 }
 
 pub(crate) fn svp_ppol_copy<R: Ring>(
@@ -77,7 +83,7 @@ pub(crate) fn svp_apply_dft<R: Ring>(
     let res_data: &mut [u32] = cast_slice_mut(res.data_mut());
     for limb in 0..res_size {
         let dst = packed_limb_mut(res_data, n, res_cols, res_col, limb);
-        dft_limb(module, n, dst, (limb < b_size).then(|| b.at(b_col, limb)));
+        dft_limb::<_, poulpy_hal::execution::SerialTaskExecutor>(module, n, dst, (limb < b_size).then(|| b.at(b_col, limb)));
         if limb < b_size {
             limb_mont_mul_assign(n, dst, factor);
         }

@@ -22,7 +22,7 @@ impl<BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>> PackedWord fo
 ///
 /// A limb of a transform-domain vector is `4 * n` consecutive `u32`, limb `l` of column `c` starting at
 /// `4 * n * (l * cols + c)`. The operations that split their work take the executor as `E` and run
-/// serially on `SerialTaskExecutor`. The convolution drivers are generic over the backend `BE` that tags
+/// serially on `SerialTaskExecutor`. The limb transforms may split one limb further, into its planes. The convolution drivers are generic over the backend `BE` that tags
 /// their operands, so that the wrapper passes its own layouts.
 #[allow(clippy::too_many_arguments)]
 pub trait PackedNtt4x30Base: PackedWord + HalVecZnxDftImpl {
@@ -30,16 +30,16 @@ pub trait PackedNtt4x30Base: PackedWord + HalVecZnxDftImpl {
     fn idft_tmp_words(n: usize) -> usize;
 
     /// Forward transform of `src` into the limb `dst`, or zeros when `src` is `None`.
-    fn dft_limb(module: &Module<Self>, n: usize, dst: &mut [u32], src: Option<&[i64]>);
+    fn dft_limb<E: TaskExecutor>(module: &Module<Self>, n: usize, dst: &mut [u32], src: Option<&[i64]>);
 
     /// Inverse transform of the limb `src` into `dst`, with [`Self::idft_tmp_words`] words in `tmp`.
-    fn idft_limb(module: &Module<Self>, n: usize, dst: &mut [i128], src: &[u32], tmp: &mut [u64]);
+    fn idft_limb<E: TaskExecutor>(module: &Module<Self>, n: usize, dst: &mut [i128], src: &[u32], tmp: &mut [u64]);
 
     /// Inverse transform of the limb `src` into `dst`, overwriting the limb.
-    fn idft_limb_tmpa(module: &Module<Self>, n: usize, dst: &mut [i128], src: &mut [u32]);
+    fn idft_limb_tmpa<E: TaskExecutor>(module: &Module<Self>, n: usize, dst: &mut [i128], src: &mut [u32]);
 
     /// Inverse transform of the limb `slot` into coefficients that take its place.
-    fn idft_limb_compact(module: &Module<Self>, n: usize, slot: &mut [u32], tmp: &mut [u64]);
+    fn idft_limb_compact<E: TaskExecutor>(module: &Module<Self>, n: usize, slot: &mut [u32], tmp: &mut [u64]);
 
     /// Scratch (in bytes) of the vector-matrix products, per worker.
     fn vmp_apply_tmp_bytes(a_size: usize, b_rows: usize, b_cols_in: usize) -> usize;
@@ -1164,7 +1164,7 @@ unsafe impl HalVecZnxDftImpl for $rayon
         RayonTaskExecutor::for_each_chunked(size, worker_tmp, per_worker, |tmp, limb| {
             // Tasks take distinct limbs.
             let slot = unsafe { std::slice::from_raw_parts_mut(data.get().add(4 * n * (limb * cols + a_col)), 4 * n) };
-            <$base as $crate::ntt4x30::PackedNtt4x30Base>::idft_limb_compact(base, n, slot, tmp);
+            <$base as $crate::ntt4x30::PackedNtt4x30Base>::idft_limb_compact::<RayonTaskExecutor>(base, n, slot, tmp);
         });
 
         if let Some((add, add_col)) = addend {
@@ -1229,7 +1229,7 @@ unsafe impl HalVecZnxDftImpl for $rayon
         let data: &mut [u32] = cast_slice_mut(res.raw_mut());
         data.par_chunks_mut(4 * n * cols).enumerate().for_each(|(limb, group)| {
             let src_limb = offset + limb * step;
-            <$base as $crate::ntt4x30::PackedNtt4x30Base>::dft_limb(
+            <$base as $crate::ntt4x30::PackedNtt4x30Base>::dft_limb::<RayonTaskExecutor>(
                 base,
                 n,
                 &mut group[4 * n * res_col..][..4 * n],
@@ -1287,7 +1287,7 @@ unsafe impl HalVecZnxDftImpl for $rayon
             let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(n * (limb * res_cols + res_col)), n) };
             if limb < min_size {
                 let src = &a_data[4 * n * (limb * a_cols + a_col)..][..4 * n];
-                <$base as $crate::ntt4x30::PackedNtt4x30Base>::idft_limb(module, n, dst, src, tmp);
+                <$base as $crate::ntt4x30::PackedNtt4x30Base>::idft_limb::<RayonTaskExecutor>(module, n, dst, src, tmp);
             } else {
                 dst.fill(0);
             }
@@ -1330,7 +1330,7 @@ unsafe impl HalVecZnxDftImpl for $rayon
             .par_chunks_mut(n * res_cols)
             .zip(a_data.par_chunks_mut(4 * n * a_cols))
             .for_each(|(res_group, a_group)| {
-                <$base as $crate::ntt4x30::PackedNtt4x30Base>::idft_limb_tmpa(module, n, &mut res_group[n * res_col..][..n], &mut a_group[4 * n * a_col..][..4 * n]);
+                <$base as $crate::ntt4x30::PackedNtt4x30Base>::idft_limb_tmpa::<RayonTaskExecutor>(module, n, &mut res_group[n * res_col..][..n], &mut a_group[4 * n * a_col..][..4 * n]);
             });
         res_zero
             .par_chunks_mut(n * res_cols)
