@@ -12,8 +12,19 @@ documentation = "https://docs.rs/poulpy-cpu-rayon"
 [lib]
 doctest = false
 
+[features]
+# Scheme layers of the portable Rayon backends this crate defines.
+enable-core = ["dep:poulpy-core", "poulpy-cpu-portable/enable-core"]
+enable-ckks = ["enable-core", "dep:poulpy-ckks", "poulpy-cpu-portable/enable-ckks"]
+enable-bin-fhe = ["enable-core", "dep:poulpy-bin-fhe", "poulpy-cpu-portable/enable-bin-fhe"]
+enable-mhe = ["enable-core", "dep:poulpy-mhe", "poulpy-cpu-portable/enable-mhe"]
+
 [dependencies]
 bytemuck = {workspace = true}
+poulpy-bin-fhe = {workspace = true, optional = true}
+poulpy-ckks = {workspace = true, optional = true}
+poulpy-core = {workspace = true, optional = true}
+poulpy-mhe = {workspace = true, optional = true}
 poulpy-cpu-portable = {workspace = true}
 poulpy-hal = {workspace = true}
 rayon = {workspace = true}
@@ -21,3 +32,9 @@ rayon = {workspace = true}
 [dev-dependencies]
 # Used by the test-suite macros of `poulpy-hal`.
 once_cell = {workspace = true}
+paste = {workspace = true}
+# Shared test helpers and portable comparison backends.
+poulpy-cpu-portable = {workspace = true, features = ["enable-core", "enable-test-suite"]}
+poulpy-ckks = {workspace = true, features = ["test-utils"]}
+poulpy-bin-fhe = {workspace = true}
+anyhow = {workspace = true}

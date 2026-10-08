@@ -1,4 +1,4 @@
-//! Encapsulated ModUp of [`NTT4x30Portable`] with the limbs that the raise leaves at zero skipped.
+//! Encapsulated ModUp of the packed NTT4x30 backends with the limbs that the raise leaves at zero skipped.
 //!
 //! After the switch to the sparse key and the shift to the large modulus, the top `shift / base2k` limbs of the
 //! ciphertext are zero. The switch back to the dense key transforms only the limbs below them, and its product
@@ -23,13 +23,53 @@ use poulpy_hal::{
         VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
     },
     execution::SerialTaskExecutor,
-    layouts::{Backend, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
+    layouts::{
+        Backend, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendRef,
+        VmpPMatBackendRef,
+    },
 };
 
 use crate::NTT4x30Portable;
 use crate::ntt4x30::{STRIDED_MAX_DSIZE, gglwe_product_digits_strided, gglwe_product_digits_strided_tmp_bytes};
 
-type BE = NTT4x30Portable;
+/// The fused interleaved-digit product of a backend, as the ModUp of this module uses it.
+///
+/// Not a stable API: it lets the Rayon variant of the portable backend share the body below.
+pub trait PackedModUp: Backend {
+    /// Scratch (in bytes) of [`Self::product_known_zero_prefix`].
+    fn product_tmp_bytes(a_cols: usize, a_size: usize) -> usize;
+
+    /// The interleaved-digit product of `a` by `pmat`, for at most [`STRIDED_MAX_DSIZE`] digits, where the
+    /// first `zero_prefix` limbs of `a` are known to be zero and are not read.
+    #[allow(clippy::too_many_arguments)]
+    fn product_known_zero_prefix(
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self>,
+        dsize: usize,
+        zero_prefix: usize,
+        product_limbs: usize,
+        pmat: &VmpPMatBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    );
+}
+
+impl PackedModUp for NTT4x30Portable {
+    fn product_tmp_bytes(a_cols: usize, a_size: usize) -> usize {
+        gglwe_product_digits_strided_tmp_bytes(a_cols, a_size)
+    }
+
+    fn product_known_zero_prefix(
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self>,
+        dsize: usize,
+        zero_prefix: usize,
+        product_limbs: usize,
+        pmat: &VmpPMatBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        gglwe_product_digits_strided::<_, SerialTaskExecutor>(res, a, dsize, product_limbs, pmat, Some(zero_prefix), scratch);
+    }
+}
 
 /// Whether the raise from `src` to `dst` takes the path of this module, and falls back to the reference otherwise.
 fn takes_native_path<Dst, Src, S2D>(dst: &Dst, src: &Src, scale_up: Option<usize>, sparse_to_dense: &S2D) -> bool
@@ -45,8 +85,10 @@ where
 }
 
 /// Scratch of the switch back to the dense key: the product, then its inverse transform and normalization.
-fn dense_switch_tmp_bytes<Dst, S2D>(module: &Module<BE>, dst: &Dst, sparse_to_dense: &S2D) -> usize
+fn dense_switch_tmp_bytes<BE, Dst, S2D>(module: &Module<BE>, dst: &Dst, sparse_to_dense: &S2D) -> usize
 where
+    BE: PackedModUp,
+    Module<BE>: VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxIdftApplyTmpBytes + VecZnxBigNormalizeTmpBytes,
     Dst: CKKSCtBounds,
     S2D: GGLWEInfos,
 {
@@ -54,8 +96,8 @@ where
     let (mask_cols, output_cols) = (dst.rank().as_usize(), dst.rank().as_usize() + 1);
     let output_size = gglwe_product_output_size::<BE, _, _, _>(dst, dst, sparse_to_dense);
     let res_dft = BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, output_cols, output_size));
-    let product = BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, mask_cols, dst.size()))
-        + gglwe_product_digits_strided_tmp_bytes(mask_cols, dst.size());
+    let product =
+        BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, mask_cols, dst.size())) + BE::product_tmp_bytes(mask_cols, dst.size());
     let normalize = BE::scratch_aligned(module.bytes_of_vec_znx_big(n, output_cols, output_size))
         + module
             .vec_znx_idft_apply_tmp_bytes()
@@ -63,19 +105,27 @@ where
     res_dft + product.max(normalize)
 }
 
-unsafe impl CKKSEncapsulatedModUpImpl for BE {
-    fn ckks_encapsulated_mod_up_tmp_bytes<Dst, Src, D2S, S2D>(
-        module: &Module<BE>,
-        dst_infos: &Dst,
-        src_infos: &Src,
-        dense_to_sparse_infos: &D2S,
-        sparse_to_dense_infos: &S2D,
-    ) -> usize
-    where
-        Dst: CKKSCtBounds,
-        Src: CKKSCtBounds,
-        D2S: GGLWEInfos,
-        S2D: GGLWEInfos,
+/// Scratch (in bytes) of [`encapsulated_mod_up`].
+pub fn encapsulated_mod_up_tmp_bytes<BE, Dst, Src, D2S, S2D>(
+    module: &Module<BE>,
+    dst_infos: &Dst,
+    src_infos: &Src,
+    dense_to_sparse_infos: &D2S,
+    sparse_to_dense_infos: &S2D,
+) -> usize
+where
+    BE: PackedModUp,
+    Module<BE>: GLWEShift<BE>
+        + GLWEKeyswitch<BE>
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxBigNormalizeTmpBytes,
+    Dst: CKKSCtBounds,
+    Src: CKKSCtBounds,
+    D2S: GGLWEInfos,
+    S2D: GGLWEInfos,
+{
     {
         let reference = ckks_encapsulated_mod_up_tmp_bytes_reference(
             module,
@@ -91,19 +141,33 @@ unsafe impl CKKSEncapsulatedModUpImpl for BE {
             reference
         }
     }
+}
 
-    fn ckks_encapsulated_mod_up<Dst, Src>(
-        module: &Module<BE>,
-        dst: &mut Dst,
-        src: &mut Src,
-        scale_up: usize,
-        dense_to_sparse: &GGLWEPreparedBackendRef<'_, BE>,
-        sparse_to_dense: &GGLWEPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> CKKSResult<()>
-    where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+/// The encapsulated ModUp, with the zero limbs of the raised ciphertext skipped where the layouts allow it.
+pub fn encapsulated_mod_up<BE, Dst, Src>(
+    module: &Module<BE>,
+    dst: &mut Dst,
+    src: &mut Src,
+    scale_up: usize,
+    dense_to_sparse: &GGLWEPreparedBackendRef<'_, BE>,
+    sparse_to_dense: &GGLWEPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> CKKSResult<()>
+where
+    BE: PackedModUp + CKKSEncapsulatedModUpImpl,
+    Module<BE>: GLWECopy<BE>
+        + GLWEShift<BE>
+        + GLWEKeyswitch<BE>
+        + poulpy_ckks::api::CKKSPow2Ops<BE>
+        + VecZnxBigAddSmallAssign<BE>
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalize<BE>
+        + VecZnxDftApply<BE>
+        + VecZnxDftBytesOf
+        + VecZnxIdftApply<BE>,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+{
     {
         if !takes_native_path(dst, src, Some(scale_up), sparse_to_dense) {
             return ckks_encapsulated_mod_up_reference(module, dst, src, scale_up, dense_to_sparse, sparse_to_dense, scratch);
@@ -155,13 +219,13 @@ unsafe impl CKKSEncapsulatedModUpImpl for BE {
                 let mut suffix = a_dft.with_limb_range_mut(zero_prefix, a_size);
                 module.vec_znx_dft_apply(1, zero_prefix, &mut suffix, col, dst_ref.data(), col + 1);
             }
-            gglwe_product_digits_strided::<_, SerialTaskExecutor>(
+            BE::product_known_zero_prefix(
                 &mut res_dft,
                 &a_dft.to_backend_ref(),
                 dsize,
+                zero_prefix,
                 product_limbs,
                 key.data(),
-                Some(zero_prefix),
                 &mut product_scratch,
             );
         }
@@ -191,5 +255,39 @@ unsafe impl CKKSEncapsulatedModUpImpl for BE {
             );
         }
         Ok(())
+    }
+}
+
+unsafe impl CKKSEncapsulatedModUpImpl for NTT4x30Portable {
+    fn ckks_encapsulated_mod_up_tmp_bytes<Dst, Src, D2S, S2D>(
+        module: &Module<Self>,
+        dst_infos: &Dst,
+        src_infos: &Src,
+        dense_to_sparse_infos: &D2S,
+        sparse_to_dense_infos: &S2D,
+    ) -> usize
+    where
+        Dst: CKKSCtBounds,
+        Src: CKKSCtBounds,
+        D2S: GGLWEInfos,
+        S2D: GGLWEInfos,
+    {
+        encapsulated_mod_up_tmp_bytes(module, dst_infos, src_infos, dense_to_sparse_infos, sparse_to_dense_infos)
+    }
+
+    fn ckks_encapsulated_mod_up<Dst, Src>(
+        module: &Module<Self>,
+        dst: &mut Dst,
+        src: &mut Src,
+        scale_up: usize,
+        dense_to_sparse: &GGLWEPreparedBackendRef<'_, Self>,
+        sparse_to_dense: &GGLWEPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> CKKSResult<()>
+    where
+        Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
+    {
+        encapsulated_mod_up(module, dst, src, scale_up, dense_to_sparse, sparse_to_dense, scratch)
     }
 }
