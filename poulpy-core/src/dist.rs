@@ -1,4 +1,4 @@
-use std::io::{Read, Result, Write};
+use std::io::{Error, ErrorKind, Read, Result, Write};
 
 /// Read-only access to the [`Distribution`] associated with a secret key.
 pub trait GetDistribution {
@@ -41,12 +41,8 @@ impl<T: GetDistributionMut + ?Sized> GetDistributionMut for &mut T {
 /// from.
 ///
 /// Each variant encodes either a fixed Hamming weight or a per-coefficient
-/// probability. The enum is serialised as a single little-endian `u64`
-/// word via [`write_to`](Self::write_to) / [`read_from`](Self::read_from).
-///
-/// For probabilistic variants the `f64` payload is stored with a
-/// precision loss below 2^-44 (8 least-significant mantissa bits
-/// are discarded to fit the tag byte).
+/// probability. The wire format is a tag byte followed by a lossless
+/// little-endian `u64` payload, shared with component-noise provenance.
 ///
 /// # What this tag means
 ///
@@ -105,7 +101,8 @@ pub enum Distribution {
     BinaryFixed(usize),
     /// Binary in {0, 1} where each coefficient is 1 with probability `p`.
     BinaryProb(f64),
-    /// Binary in {0, 1} split into blocks of size 2^k, with one 1 per block.
+    /// Binary blocks of size `b`, with an all-zero block of probability `1/(b+1)`.
+    /// Otherwise one uniformly selected position is 1. The degree is a multiple of `b`.
     BinaryBlock(usize),
     /// Encapsulated category, only valid within its ephemeral context: cannot
     /// back a public key and cannot be serialized.
@@ -127,69 +124,54 @@ const TAG_NONE: u8 = 6;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 impl Distribution {
-    /// Packs a tag (u8) and an f64 into a single u64.
-    /// The f64 is shifted right by 8, discarding the 8 least-significant
-    /// mantissa bits (precision loss < 2^-44), and the tag is placed
-    /// in the freed top byte.
-    #[inline]
-    fn pack_f64(tag: u8, p: f64) -> u64 {
-        (tag as u64) << 56 | (p.to_bits() >> 8)
+    pub(crate) fn validate_wire(&self) -> Result<()> {
+        match self {
+            Self::ENCAPSULATED(_) => Err(Error::new(
+                ErrorKind::InvalidData,
+                "secret distribution has no wire representation",
+            )),
+            Self::TernaryProb(p) | Self::BinaryProb(p) if !p.is_finite() || !(0.0..=1.0).contains(p) => {
+                Err(Error::new(ErrorKind::InvalidData, "invalid secret distribution"))
+            }
+            _ => Ok(()),
+        }
     }
 
-    /// Unpacks a tag-stripped 56-bit payload back into an f64
-    /// by shifting left by 8 (the 8 LSB mantissa bits become zero).
-    #[inline]
-    fn unpack_f64(payload: u64) -> f64 {
-        f64::from_bits(payload << 8)
-    }
-
-    /// Serialises this distribution as a single little-endian `u64` word.
-    ///
-    /// The top byte carries a variant tag; the lower 56 bits carry either
-    /// a `usize` payload (for fixed/block variants) or a truncated `f64`
-    /// (for probabilistic variants).
-    ///
-    /// [`ENCAPSULATED`](Self::ENCAPSULATED) has no wire form and returns
-    /// [`std::io::ErrorKind::InvalidData`].
+    /// Writes a tag byte and a full little-endian `u64` payload.
+    /// Probabilities preserve all binary64 bits and must be finite and in `[0, 1]`.
+    /// `ENCAPSULATED` has no wire form. Invalid values fail before writing.
     pub fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
-        let word: u64 = match self {
-            Distribution::TernaryFixed(v) => (TAG_TERNARY_FIXED as u64) << 56 | (*v as u64),
-            Distribution::TernaryProb(p) => Self::pack_f64(TAG_TERNARY_PROB, *p),
-            Distribution::BinaryFixed(v) => (TAG_BINARY_FIXED as u64) << 56 | (*v as u64),
-            Distribution::BinaryProb(p) => Self::pack_f64(TAG_BINARY_PROB, *p),
-            Distribution::BinaryBlock(v) => (TAG_BINARY_BLOCK as u64) << 56 | (*v as u64),
-            Distribution::ZERO => (TAG_ZERO as u64) << 56,
-            Distribution::NONE => (TAG_NONE as u64) << 56,
-            Distribution::ENCAPSULATED(name) => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("Distribution::ENCAPSULATED({name}) is not serializable"),
-                ));
-            }
+        self.validate_wire()?;
+        let (tag, payload) = match self {
+            Self::TernaryFixed(v) => (TAG_TERNARY_FIXED, *v as u64),
+            Self::TernaryProb(p) => (TAG_TERNARY_PROB, p.to_bits()),
+            Self::BinaryFixed(v) => (TAG_BINARY_FIXED, *v as u64),
+            Self::BinaryProb(p) => (TAG_BINARY_PROB, p.to_bits()),
+            Self::BinaryBlock(v) => (TAG_BINARY_BLOCK, *v as u64),
+            Self::ZERO => (TAG_ZERO, 0),
+            Self::NONE => (TAG_NONE, 0),
+            Self::ENCAPSULATED(_) => unreachable!(),
         };
-        writer.write_u64::<LittleEndian>(word)
+        writer.write_u8(tag)?;
+        writer.write_u64::<LittleEndian>(payload)
     }
 
-    /// Deserialises a [`Distribution`] from a single little-endian `u64` word.
-    ///
-    /// Returns [`std::io::ErrorKind::InvalidData`] if the tag byte is unrecognised.
+    /// Reads the lossless nine-byte format, rejecting invalid tags or payloads.
     pub fn read_from<R: Read>(reader: &mut R) -> Result<Self> {
-        let word = reader.read_u64::<LittleEndian>()?;
-        let tag = (word >> 56) as u8;
-        let payload = word & 0x00FF_FFFF_FFFF_FFFF;
-
+        let tag = reader.read_u8()?;
+        let payload = reader.read_u64::<LittleEndian>()?;
+        let invalid = || Error::new(ErrorKind::InvalidData, "invalid secret distribution");
         let dist = match tag {
-            TAG_TERNARY_FIXED => Distribution::TernaryFixed(payload as usize),
-            TAG_TERNARY_PROB => Distribution::TernaryProb(Self::unpack_f64(payload)),
-            TAG_BINARY_FIXED => Distribution::BinaryFixed(payload as usize),
-            TAG_BINARY_PROB => Distribution::BinaryProb(Self::unpack_f64(payload)),
-            TAG_BINARY_BLOCK => Distribution::BinaryBlock(payload as usize),
-            TAG_ZERO => Distribution::ZERO,
-            TAG_NONE => Distribution::NONE,
-            _ => {
-                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid tag"));
-            }
+            TAG_TERNARY_FIXED => Self::TernaryFixed(usize::try_from(payload).map_err(|_| invalid())?),
+            TAG_TERNARY_PROB => Self::TernaryProb(f64::from_bits(payload)),
+            TAG_BINARY_FIXED => Self::BinaryFixed(usize::try_from(payload).map_err(|_| invalid())?),
+            TAG_BINARY_PROB => Self::BinaryProb(f64::from_bits(payload)),
+            TAG_BINARY_BLOCK => Self::BinaryBlock(usize::try_from(payload).map_err(|_| invalid())?),
+            TAG_ZERO if payload == 0 => Self::ZERO,
+            TAG_NONE if payload == 0 => Self::NONE,
+            _ => return Err(invalid()),
         };
+        dist.validate_wire()?;
         Ok(dist)
     }
 }
@@ -212,3 +194,31 @@ impl PartialEq for Distribution {
 }
 
 impl Eq for Distribution {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wire_probabilities_are_lossless_and_validated() {
+        for p in [0.0, -0.0, 0.1, 0.3, 1.0 / 3.0, 2.0 / 3.0, 0.7, 0.9, 1.0] {
+            for dist in [Distribution::TernaryProb(p), Distribution::BinaryProb(p)] {
+                let mut bytes = Vec::new();
+                dist.write_to(&mut bytes).unwrap();
+                assert_eq!(bytes.len(), 9);
+                assert_eq!(Distribution::read_from(&mut bytes.as_slice()).unwrap(), dist);
+            }
+        }
+        for p in [f64::NAN, f64::INFINITY, -0.1, 1.1] {
+            let mut bytes = vec![TAG_TERNARY_PROB];
+            bytes.extend_from_slice(&p.to_bits().to_le_bytes());
+            assert_eq!(
+                Distribution::read_from(&mut bytes.as_slice()).unwrap_err().kind(),
+                ErrorKind::InvalidData
+            );
+            let mut writer = Vec::new();
+            assert!(Distribution::TernaryProb(p).write_to(&mut writer).is_err());
+            assert!(writer.is_empty());
+        }
+    }
+}

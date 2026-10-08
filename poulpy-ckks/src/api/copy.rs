@@ -22,7 +22,8 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// When `dst.k() >= src.k()` the copy is lossless and
 /// `offset = 0`.  When `dst.k() < src.k()`, the
 /// most-significant bits that do not fit are silently dropped and
-/// `log_budget` is reduced by the deficit.
+/// `log_budget` is reduced by the deficit. A level drop clears noise metadata;
+/// a lossless copy preserves it.
 pub trait CKKSCopyOps<BE: Backend> {
     /// Scratch required for these source and destination layouts. The query
     /// includes the selected core copy and shift implementations.

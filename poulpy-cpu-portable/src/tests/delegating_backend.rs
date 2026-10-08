@@ -195,6 +195,7 @@ unsafe impl GGSWRotateImpl for DelegatingFFT64Portable {
         R: GGSWToBackendMut<Self> + GGSWInfos,
     {
         GGSW_ASSIGN_CALLS.set(GGSW_ASSIGN_CALLS.get() + 1);
+        res.set_noise(None);
         let mut res = res.to_backend_mut();
         for row in 0..res.dnum().as_usize() {
             for col in 0..res.rank().as_usize() + 1 {
@@ -267,6 +268,7 @@ unsafe impl GLWETraceImpl for DelegatingFFT64Portable {
                 module.glwe_normalize(res, converted, &mut remaining.borrow());
             }
         }
+        res.set_noise(None);
         assert!(marker.iter().all(|&byte| byte == 0xB7));
     }
 }

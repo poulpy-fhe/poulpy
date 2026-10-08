@@ -128,6 +128,10 @@ impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> BlindRotationKeyInfos for Blin
 }
 
 impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> LWEInfos for BlindRotationKeyCompressed<D, BRA, W> {
+    fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
+        self.keys.first().and_then(LWEInfos::noise)
+    }
+
     fn n(&self) -> Degree {
         self.keys[0].n()
     }

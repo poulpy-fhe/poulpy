@@ -261,6 +261,7 @@ where
     for factor in dft.factor_operands() {
         eval_factor(module, ct, factor, keys, scratch)?;
     }
+    ct.set_noise(None);
     Ok(())
 }
 

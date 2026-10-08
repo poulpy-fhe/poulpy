@@ -1383,6 +1383,7 @@ mod finish_tests {
                             &mut VecZnxToBackendMut::<NTT3x42Ifma>::to_backend_mut(&mut got),
                             base2k,
                             k,
+                            0,
                             1,
                             &mut input.to_backend_mut(),
                             1,

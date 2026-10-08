@@ -230,6 +230,7 @@ pub fn runner_vec_znx_idft_normalize_consume<B: Backend<ZnxWord = i64>, M: Measu
                 &mut res,
                 base2k,
                 base2k * sweep.size,
+                0,
                 i,
                 &mut a,
                 i,

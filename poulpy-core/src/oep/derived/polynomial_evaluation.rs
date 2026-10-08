@@ -51,6 +51,7 @@ where
         if parity != Parity::Odd {
             ops.add_pt_const_assign(module, res, 0, coeffs, 0, scratch)?;
         }
+        res.set_noise(None);
         return Ok(());
     }
 
@@ -64,6 +65,7 @@ where
         ops.mul_add_pt_const(module, res, xpow, coeffs, *i, scratch)?;
     }
 
+    res.set_noise(None);
     Ok(())
 }
 
@@ -159,6 +161,7 @@ where
 
     let evaluated = baby_steps.last().expect("non-empty baby step vector");
     ops.copy(module, res, evaluated.get(), scratch)?;
+    res.set_noise(None);
 
     Ok(())
 }

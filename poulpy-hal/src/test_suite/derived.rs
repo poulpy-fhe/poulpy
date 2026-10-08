@@ -1724,7 +1724,7 @@ where
             crate::oep::vec_znx_idft_normalize_consume_tmp_bytes_derived::<BE>(module, res_size, a_size),
         );
 
-        for with_addend in [false, true] {
+        for (with_addend, res_offset) in [(false, 0i64), (true, 0), (false, 7), (true, -5)] {
             let addend_arg = with_addend.then_some((&addend_ref, 0));
 
             // The op consumes its input, so each side gets its own transform.
@@ -1743,6 +1743,7 @@ where
                 &mut vec_znx_backend_mut::<BE>(&mut have_backend),
                 base2k,
                 res_size * base2k,
+                res_offset,
                 0,
                 &mut have_dft.to_backend_mut(),
                 0,
@@ -1762,7 +1763,7 @@ where
                 &mut vec_znx_backend_mut::<BE>(&mut want_backend),
                 base2k,
                 res_size * base2k,
-                0,
+                res_offset,
                 0,
                 &big.to_backend_ref(),
                 base2k,
@@ -1774,7 +1775,7 @@ where
                 download_vec_znx::<BE>(&want_backend),
                 download_vec_znx::<BE>(&have_backend),
                 "vec_znx_idft_normalize_consume: default body != independent oracle (a_size {a_size} res_size {res_size} \
-                 addend {with_addend})"
+                 addend {with_addend} res_offset {res_offset})"
             );
         }
     }

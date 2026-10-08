@@ -441,9 +441,10 @@ fn test_hal_serialization_fft64_oracle() {
 #[test]
 fn test_glwe_public_key_rank1_golden() {
     use poulpy_core::test_suite::noise::encryption::glwe_public_key_rank1_digests;
-    // Recorded on the single-key public key; the digest hashes its byte stream, the distribution then entry 0 as a GLWE.
-    const FFT64: [u64; 3] = [2530722187843569987, 6620872941776292896, 4484040934894676579];
-    const NTT4X30: [u64; 3] = [6913643103437743291, 12086469125074064179, 3423385851279491223];
+    // Pins the discrete-Gaussian sampler and PNM3 component-noise wire format.
+    // Digests cover the public key, encryption of a message, and encryption of zero.
+    const FFT64: [u64; 3] = [5767234095043241473, 11648208482876543481, 5965594551130503766];
+    const NTT4X30: [u64; 3] = [9300951361746961464, 14160194515837852911, 7490762991012125971];
     assert_eq!(
         (
             glwe_public_key_rank1_digests(&Module::<FFT64Oracle>::new(256), 17),

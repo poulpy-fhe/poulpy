@@ -93,19 +93,32 @@ where
             false_layout.k = 179u32.into();
         }
         let mut right = fixture_glwe(module, &false_layout, 3);
+        let provenance = poulpy_core::ComponentNoise::from_secret_at(
+            poulpy_core::Distribution::TernaryProb(0.5),
+            layout.k,
+            layout.rank.as_usize(),
+        );
+        GLWEToBackendMut::<B>::set_noise(&mut left, Some(provenance.clone()));
+        GLWEToBackendMut::<B>::set_noise(&mut right, Some(provenance.clone()));
         if swap {
             let bytes = module.cswap_tmp_bytes(&left, &right, &bit);
             with_scratch::<B, _>(bytes, |scratch| module.cswap(&mut left, &mut right, &bit, scratch));
+            assert_eq!(left.noise(), None);
+            assert_eq!(right.noise(), None);
             outputs.push(snapshot_glwe::<B, _>(&left));
             outputs.push(snapshot_glwe::<B, _>(&right));
         } else {
             let mut out = fixture_glwe(module, &layout, 2);
+            GLWEToBackendMut::<B>::set_noise(&mut out, Some(provenance.clone()));
             let bytes = module.cmux_tmp_bytes(&out, &left, &bit);
             with_scratch::<B, _>(bytes, |scratch| match variant {
                 0 | 3 => module.cmux(&mut out, &left, &right, &bit, scratch),
                 1 => module.cmux_assign(&mut out, &right, &bit, scratch),
                 _ => module.cmux_assign_neg(&mut out, &right, &bit, scratch),
             });
+            assert_eq!(out.noise(), None);
+            assert_eq!(left.noise(), Some(provenance.clone()));
+            assert_eq!(right.noise(), Some(provenance.clone()));
             outputs.push(snapshot_glwe::<B, _>(&out));
         }
     }
@@ -118,7 +131,9 @@ where
     Module<BR>: BddParityModule<BR>,
     Module<BT>: BddParityModule<BT>,
 {
-    assert_eq!(gates(reference, false), gates(tested, false));
+    let want = gates(reference, false);
+    super::assert_untagged("cmux", &want);
+    assert_eq!(want, gates(tested, false));
 }
 /// Checks conditional swap, including a selector radix different from the operands.
 pub fn test_cswap_parity<BR: ParityBackend, BT: ParityBackend>(reference: &Module<BR>, tested: &Module<BT>)
@@ -126,7 +141,9 @@ where
     Module<BR>: BddParityModule<BR>,
     Module<BT>: BddParityModule<BT>,
 {
-    assert_eq!(gates(reference, true), gates(tested, true));
+    let want = gates(reference, true);
+    super::assert_untagged("cswap", &want);
+    assert_eq!(want, gates(tested, true));
 }
 
 fn rotations<B: ParityBackend>(module: &Module<B>) -> Vec<GlweSnapshot>
@@ -192,7 +209,9 @@ where
     Module<BR>: BddParityModule<BR>,
     Module<BT>: BddParityModule<BT>,
 {
-    assert_eq!(rotations(reference), rotations(tested));
+    let want = rotations(reference);
+    super::assert_untagged("glwe blind rotation", &want);
+    assert_eq!(want, rotations(tested));
 }
 
 fn selection_fixture<B: ParityBackend>(
@@ -226,7 +245,7 @@ where
     let (layout, key) = layouts(module);
     let mut outputs = Vec::new();
     for varied in [false, true] {
-        for present in [0b1111, 0b0101, 0b1010, 0] {
+        for present in [0b1111, 0b0101, 0b1010, 0b0100, 0] {
             let mut values: Vec<_> = (0..4)
                 .map(|i| {
                     let mut input_layout = layout;
@@ -270,7 +289,9 @@ where
     Module<BR>: BddParityModule<BR>,
     Module<BT>: BddParityModule<BT>,
 {
-    assert_eq!(selection(reference), selection(tested));
+    let want = selection(reference);
+    super::assert_untagged("blind selection", &want);
+    assert_eq!(want, selection(tested));
 }
 
 fn retrieval<B: ParityBackend>(module: &Module<B>) -> Vec<GlweSnapshot>
@@ -307,7 +328,9 @@ where
     Module<BR>: BddParityModule<BR>,
     Module<BT>: BddParityModule<BT>,
 {
-    assert_eq!(retrieval(reference), retrieval(tested));
+    let want = retrieval(reference);
+    super::assert_untagged("blind retrieval", &want);
+    assert_eq!(want, retrieval(tested));
 }
 
 fn streaming_retrieval<B: ParityBackend>(module: &Module<B>) -> Vec<GlweSnapshot>
@@ -354,6 +377,8 @@ where
                     with_scratch::<B, _>(module.glwe_copy_tmp_bytes(&copied, &values[0]), |s| {
                         module.glwe_copy(&mut copied, &values[0], s);
                     });
+                    // A retrieval is an evaluation: it returns the copy without the input's estimate.
+                    GLWEToBackendMut::<B>::set_noise(&mut copied, None);
                     assert_eq!(expected, snapshot_glwe::<B, _>(&copied));
                 }
                 with_scratch::<B, _>(bytes, |s| {
@@ -413,7 +438,9 @@ where
     Module<BR>: Cmux<BR> + poulpy_core::GLWECopy<BR> + poulpy_core::GLWEZero<BR> + GGSWPreparedFactory<BR>,
     Module<BT>: Cmux<BT> + poulpy_core::GLWECopy<BT> + poulpy_core::GLWEZero<BT> + GGSWPreparedFactory<BT>,
 {
-    assert_eq!(streaming_retrieval(reference), streaming_retrieval(tested));
+    let want = streaming_retrieval(reference);
+    super::assert_untagged("streaming retrieval", &want);
+    assert_eq!(want, streaming_retrieval(tested));
 }
 
 struct TinyCircuit;
@@ -453,7 +480,9 @@ where
     Module<BR>: BddParityModule<BR>,
     Module<BT>: BddParityModule<BT>,
 {
-    assert_eq!(evaluation(reference), evaluation(tested));
+    let want = evaluation(reference);
+    super::assert_untagged("bdd evaluation", &want);
+    assert_eq!(want, evaluation(tested));
 }
 
 fn matrix_rotations<B: ParityBackend>(module: &Module<B>) -> Vec<super::GgswSnapshot>
@@ -510,5 +539,7 @@ where
     Module<BR>: BddParityModule<BR>,
     Module<BT>: BddParityModule<BT>,
 {
-    assert_eq!(matrix_rotations(reference), matrix_rotations(tested));
+    let want = matrix_rotations(reference);
+    super::assert_untagged("ggsw blind rotation", want.iter().flat_map(|ggsw| &ggsw.rows));
+    assert_eq!(want, matrix_rotations(tested));
 }

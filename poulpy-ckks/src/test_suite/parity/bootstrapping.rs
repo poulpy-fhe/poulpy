@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use super::{
-    helpers::{Snapshot, fixture_ciphertext, fixture_operand, snapshot, with_scratch},
+    helpers::{Snapshot, assert_untagged, fixture_ciphertext, fixture_operand, snapshot, with_scratch},
     keys::{fixture_gglwe, key_layout, prepared_automorphism_key, prepared_gglwe, prepared_tensor_key},
 };
 use crate::{
@@ -126,7 +126,12 @@ where
     Module<BT>: GGLWEPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
 {
     assert_eq!(reference.n(), tested.n());
-    assert_eq!(run(params, reference), run(params, tested), "encapsulated ModUp differs");
+    let want = run(params, reference);
+    assert_untagged(
+        "encapsulated ModUp",
+        want.iter().filter(|(result, _, _)| result.is_ok()).map(|(_, _, dst)| dst),
+    );
+    assert_eq!(want, run(params, tested), "encapsulated ModUp differs");
 }
 
 /// Fixture key store of the bootstrapping parity tests: identical coefficients
@@ -445,9 +450,12 @@ where
     FixtureKeys<BT>: BootstrappingKeys<BT, TensorKey = GLWETensorKeyPrepared<BT::OwnedBuf, BT>> + Sync,
 {
     assert_eq!(reference.n(), tested.n());
-    assert_eq!(
-        run_bootstrap::<BR, F>(params, reference),
-        run_bootstrap::<BT, F>(params, tested),
-        "bootstrapping differs"
+    let want = run_bootstrap::<BR, F>(params, reference);
+    assert_untagged(
+        "bootstrapping",
+        want.iter()
+            .filter(|(result, _)| result.is_ok())
+            .flat_map(|(_, outputs)| outputs),
     );
+    assert_eq!(want, run_bootstrap::<BT, F>(params, tested), "bootstrapping differs");
 }

@@ -1,6 +1,6 @@
 //! Paired matrix generation and homomorphic transforms in every output format.
 use super::{
-    helpers::{Snapshot, fixture_ciphertext, snapshot, with_scratch},
+    helpers::{Snapshot, assert_untagged, fixture_ciphertext, snapshot, with_scratch},
     keys::{key_layout, prepared_automorphism_key},
 };
 use crate::{
@@ -275,9 +275,7 @@ where
     Module<BT>: GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
 {
     assert_eq!(reference.n(), tested.n());
-    assert_eq!(
-        run::<BR, F>(params, reference),
-        run::<BT, F>(params, tested),
-        "DFT parity differs"
-    );
+    let want = run::<BR, F>(params, reference);
+    assert_untagged("DFT", &want);
+    assert_eq!(want, run::<BT, F>(params, tested), "DFT parity differs");
 }

@@ -212,6 +212,123 @@ pub trait GLWETensoring<BE: Backend> {
         R: GLWEInfos,
         A: GLWEInfos,
         B: GGLWEInfos;
+
+    /// Scratch bytes of [`Self::glwe_mul_relinearize`], [`Self::glwe_square_relinearize`],
+    /// [`Self::glwe_mul_prepared_relinearize`] and their `_assign` forms, for a result as wide as `res`, operands of
+    /// `a_size` and `b_size` limbs and a product of width `tensor_k`, the larger of the two operand widths.
+    fn glwe_mul_relinearize_tmp_bytes<R, B>(
+        &self,
+        res: &R,
+        a_size: usize,
+        b_size: usize,
+        tensor_k: crate::layouts::TorusPrecision,
+        tsk: &B,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        B: GGLWEInfos;
+
+    /// `res = relinearize(a * b)` in one pass, for rank 1, one `base2k` across `res`,
+    /// the operands and the tensor key, and `cnv_offset >= base2k`.
+    ///
+    /// The result is written at width `res_k`: the caller sets the width of `res` afterwards.
+    ///
+    /// The columns of the product that are not key-switched stay in the transform domain until the
+    /// single final normalization, where [`Self::glwe_tensor_apply`] followed by
+    /// [`Self::glwe_tensor_relinearize`] transforms and normalizes them first.
+    /// The two paths agree up to rounding, not bit for bit.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_relinearize<R, A, B, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        a: &A,
+        b: &B,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        B: GLWEToBackendRef<BE> + GLWEInfos,
+        H: GetTensorKey<BE>;
+
+    /// [`Self::glwe_mul_relinearize`] with `res`, read at its current width, as the left operand.
+    fn glwe_mul_relinearize_assign<R, A, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        a: &A,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        H: GetTensorKey<BE>;
+
+    /// [`Self::glwe_mul_relinearize`] of `a` by itself.
+    fn glwe_square_relinearize<R, A, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        a: &A,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        H: GetTensorKey<BE>;
+
+    /// [`Self::glwe_square_relinearize`] of `res`, read at its current width.
+    fn glwe_square_relinearize_assign<R, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        H: GetTensorKey<BE>;
+
+    /// [`Self::glwe_mul_relinearize`] with a right operand prepared by [`crate::glwe_prepare_right`]:
+    /// `b_size` limbs of a ciphertext of width `b_k`.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_prepared_relinearize<R, A, BP, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        a: &A,
+        b: &BP,
+        b_size: usize,
+        b_k: crate::layouts::TorusPrecision,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        BP: poulpy_hal::layouts::CnvPVecRToBackendRef<BE>,
+        H: GetTensorKey<BE>;
+
+    /// [`Self::glwe_mul_prepared_relinearize`] with `res`, read at its current width, as the left operand.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_prepared_relinearize_assign<R, AP, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        a: &AP,
+        a_size: usize,
+        a_k: crate::layouts::TorusPrecision,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        AP: poulpy_hal::layouts::CnvPVecRToBackendRef<BE>,
+        H: GetTensorKey<BE>;
 }
 
 pub trait GLWEAdd<BE: Backend> {
@@ -291,9 +408,9 @@ pub trait GGSWRotate<BE: Backend> {
 
 /// Multiplies stored polynomial limbs by `X^k - 1` in the negacyclic ring.
 ///
-/// This is raw limb arithmetic: it preserves destination metadata and performs
+/// This is raw limb arithmetic: it preserves destination layout metadata and performs
 /// neither radix conversion nor normalization, even when source and destination
-/// radices differ. Their degrees and ranks must match.
+/// radices differ. Their degrees and ranks must match. Component noise metadata is cleared.
 pub trait GLWEMulXpMinusOne<BE: Backend> {
     fn glwe_mul_xp_minus_one<R, A>(&self, k: i64, res: &mut R, a: &A)
     where
@@ -307,12 +424,14 @@ pub trait GLWEMulXpMinusOne<BE: Backend> {
 
 /// Copies a canonical GLWE's torus value into the destination layout.
 ///
-/// The destination keeps its metadata. Narrowing rounds to its logical `k`,
+/// The destination keeps its layout metadata and copies the source's component
+/// noise metadata. Narrowing rounds to its logical `k`,
 /// including partial limbs; differing radices are converted. With equal radices
 /// and no precision loss, this is a limb copy with zero-extension. A rank-zero
 /// source may be copied into a higher-rank destination, whose mask is zeroed.
 /// Equal-layout copies also preserve unnormalized digits verbatim; normalizing
 /// such an intermediate remains the caller's responsibility.
+/// Exact copies preserve noise metadata; narrowing the torus precision clears it.
 pub trait GLWECopy<BE: Backend> {
     /// Scratch for the given source and destination layouts (zero for the
     /// equal-radix, non-narrowing path).
