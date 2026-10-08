@@ -294,11 +294,9 @@ macro_rules! view_common {
             /// The launch binding of this view, or `None` for an empty one.
             pub(crate) fn binding(&self) -> Option<Binding> {
                 self.allocation.as_ref().map(|allocation| Binding {
-                    id: allocation.id,
                     handle: allocation.handle.clone(),
                     reserved: allocation.reserved,
                     offset: self.offset,
-                    len: self.len,
                 })
             }
         }

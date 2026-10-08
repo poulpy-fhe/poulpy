@@ -1,23 +1,30 @@
-//! Coefficient-domain kernels: `i64` limbs, one thread per coefficient.
+//! Coefficient-domain kernels, one thread per coefficient. They serve both
+//! `i64` limbs and `i128` big values: every buffer is addressed in 64-bit
+//! words, a big value being its low word followed by its high word.
 
 mod gadget;
 mod lincomb;
 mod normalize;
 mod permute;
+mod products;
 
 pub(crate) use gadget::gadget_decompose;
 pub(crate) use lincomb::{Term, lincomb, lincomb_decimating};
 pub(crate) use normalize::normalize;
 pub(crate) use permute::{Map, ci_embed, ci_trace, permute};
+pub(crate) use products::{col_weighted_sum, inner_sum, scalar_product};
 
 use crate::runtime::Binding;
 
 /// One column of a coefficient-domain vector as a kernel addresses it:
-/// coefficient `i` of limb `j` is element `base + j * stride + i` of `binding`.
+/// coefficient `i` of limb `j` starts at 64-bit word `base + j * stride + i * words`
+/// of `binding`.
 pub(crate) struct Column {
     pub(crate) binding: Binding,
     pub(crate) base: u32,
     pub(crate) stride: u32,
+    /// 64-bit words per coefficient: 1 for `i64`, 2 for `i128`.
+    pub(crate) words: u32,
     /// Visible coefficients per limb.
     pub(crate) n: usize,
     /// Visible limbs.

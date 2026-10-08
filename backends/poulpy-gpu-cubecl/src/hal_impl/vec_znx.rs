@@ -1,81 +1,16 @@
 use poulpy_cpu_portable::kernels::vec_znx::vec_znx_fill_uniform_portable;
 use poulpy_hal::{
-    layouts::{HostBytesBackend, Module, Ring, ScratchArena, Standard, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxShape},
+    layouts::{HostBytesBackend, Module, Ring, ScratchArena, Standard, VecZnx, VecZnxBackendMut, VecZnxBackendRef},
     oep::{HalVecZnxCIImpl, HalVecZnxImpl, HalVecZnxMonomialImpl},
     source::Source,
 };
 
+use super::operand::{automorphism_map, column_mut, column_ref, empty_like, permute_assign};
 use crate::{
     NTT4x30Gpu,
-    module::handle,
-    runtime::{Binding, GpuMut, GpuRef, GpuRuntime},
-    znx::{Column, Map, Term, ci_embed, ci_trace, gadget_decompose, lincomb, lincomb_decimating, normalize, permute},
+    runtime::{GpuMut, GpuRuntime},
+    znx::{Map, Term, ci_embed, ci_trace, gadget_decompose, lincomb, lincomb_decimating, normalize, permute},
 };
-
-fn column(binding: Option<Binding>, shape: VecZnxShape, col: usize) -> Option<Column> {
-    assert!(col < shape.cols(), "column {col} out of range ({} columns)", shape.cols());
-    let binding = binding?;
-    let base = binding.base::<i64>() as usize + shape.scalar_offset(col, 0);
-    let stride = shape.limb_step() * shape.cols() * shape.n_full();
-    Some(Column {
-        base: u32::try_from(base).expect("device view starts beyond the 32-bit element range"),
-        stride: u32::try_from(stride).expect("limb stride beyond the 32-bit element range"),
-        n: shape.n(),
-        size: shape.size(),
-        binding,
-    })
-}
-
-/// Column `col` of a shared view, or `None` when the view holds no storage.
-pub(crate) fn column_ref<RT: GpuRuntime>(a: &VecZnx<GpuRef<'_, RT>, i64>, col: usize) -> Option<Column> {
-    column(a.data().binding(), a.shape(), col)
-}
-
-/// Column `col` of an exclusive view, or `None` when the view holds no storage.
-pub(crate) fn column_mut<RT: GpuRuntime>(a: &VecZnx<GpuMut<'_, RT>, i64>, col: usize) -> Option<Column> {
-    column(a.data().binding(), a.shape(), col)
-}
-
-/// An operand with no limbs, bound to `like`'s storage so the launch has a buffer.
-fn empty_like(like: &Column) -> Column {
-    Column {
-        binding: Binding {
-            id: like.binding.id,
-            handle: like.binding.handle.clone(),
-            reserved: like.binding.reserved,
-            offset: like.binding.offset,
-            len: like.binding.len,
-        },
-        base: like.base,
-        stride: like.stride,
-        n: like.n,
-        size: 0,
-    }
-}
-
-fn automorphism_map<R: Ring>(p: i64) -> Map {
-    if R::CYCLOTOMIC_ORDER_FACTOR == 4 {
-        Map::AutomorphismCI { p }
-    } else {
-        Map::Automorphism { p }
-    }
-}
-
-/// `res = map(res)` through the module's device temporary.
-fn permute_assign<RT: GpuRuntime, R: Ring>(module: &Module<NTT4x30Gpu<RT, R>>, res: &Column, map: Map) {
-    let bytes = res.n * res.size * size_of::<i64>();
-    handle(module).with_temp(bytes, |temp| {
-        let tmp = Column {
-            binding: temp.view().binding().expect("temporary holds storage"),
-            base: 0,
-            stride: res.n as u32,
-            n: res.n,
-            size: res.size,
-        };
-        permute::<RT>(&tmp, res, map);
-        lincomb::<RT>(res, res.size, Term::plus(&tmp), Term::zero(&tmp));
-    });
-}
 
 unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxImpl for NTT4x30Gpu<RT, R> {
     fn vec_znx_zero(_module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, res_col: usize) {

@@ -6,16 +6,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use cubecl::{prelude::*, server::Handle};
 
 /// A view as a kernel sees it: the whole allocation, and where the view starts.
+#[derive(Clone)]
 pub(crate) struct Binding {
-    /// Identity of the allocation.
-    pub(crate) id: u64,
     pub(crate) handle: Handle,
     /// Bytes reserved by the allocation.
     pub(crate) reserved: usize,
     /// Byte offset of the view in the allocation.
     pub(crate) offset: usize,
-    /// Byte length of the view.
-    pub(crate) len: usize,
 }
 
 impl Binding {

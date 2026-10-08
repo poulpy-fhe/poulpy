@@ -30,12 +30,13 @@ fn inverse_odd(p: i64, modulus: u64) -> u32 {
 }
 
 #[cube(launch_unchecked)]
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, unused_assignments)]
 fn permute_kernel(
-    res: &mut [i64],
-    a: &[i64],
+    res: &mut [u64],
+    a: &[u64],
     n: u32,
     limbs: u32,
+    words: u32,
     res_base: u32,
     res_stride: u32,
     a_base: u32,
@@ -49,33 +50,51 @@ fn permute_kernel(
     if pos < n * limbs {
         let limb = pos / n;
         let t = pos - limb * n;
-        let mut value = 0i64;
-        if limb < a_size {
-            let src = a_base + limb * a_stride;
-            if invariant == 0u32 {
-                // Output `t` reads input `s mod n`, negated when `s` wraps past `n`.
-                let s = (t * mul + add) & (2u32 * n - 1u32);
-                let index = s & (n - 1u32);
-                value = a[(src + index) as usize];
-                if s >= n {
-                    value = 0i64 - value;
-                }
+        // `index` is the source coefficient, `negate` its sign, `zero` a hole.
+        let mut index = 0u32;
+        let mut negate = false;
+        let mut zero = limb >= a_size;
+        if invariant == 0u32 {
+            // Output `t` reads input `s mod n`, negated when `s` wraps past `n`.
+            let s = (t * mul + add) & (2u32 * n - 1u32);
+            index = s & (n - 1u32);
+            negate = s >= n;
+        } else {
+            // The same gather on the ambient vector
+            // `[a_0, .., a_{n-1}, 0, -a_{n-1}, .., -a_1]` of degree `2n`.
+            let s = (t * mul) & (4u32 * n - 1u32);
+            let ambient = s & (2u32 * n - 1u32);
+            negate = s >= 2u32 * n;
+            if ambient < n {
+                index = ambient;
+            } else if ambient > n {
+                index = 2u32 * n - ambient;
+                negate = !negate;
             } else {
-                // The same gather on the ambient vector
-                // `[a_0, .., a_{n-1}, 0, -a_{n-1}, .., -a_1]` of degree `2n`.
-                let s = (t * mul) & (4u32 * n - 1u32);
-                let index = s & (2u32 * n - 1u32);
-                if index < n {
-                    value = a[(src + index) as usize];
-                } else if index > n {
-                    value = 0i64 - a[(src + 2u32 * n - index) as usize];
-                }
-                if s >= 2u32 * n {
-                    value = 0i64 - value;
-                }
+                zero = true;
             }
         }
-        res[(res_base + limb * res_stride + t) as usize] = value;
+        let mut lo = 0u64;
+        let mut hi = 0u64;
+        if !zero {
+            let src = a_base + limb * a_stride + index * words;
+            lo = a[src as usize];
+            if words == 2u32 {
+                hi = a[(src + 1u32) as usize];
+            }
+            if negate {
+                hi = 0u64 - hi;
+                if lo != 0u64 {
+                    hi -= 1u64;
+                }
+                lo = 0u64 - lo;
+            }
+        }
+        let dst = res_base + limb * res_stride + t * words;
+        res[dst as usize] = lo;
+        if words == 2u32 {
+            res[(dst + 1u32) as usize] = hi;
+        }
     }
 }
 
@@ -83,6 +102,7 @@ fn permute_kernel(
 /// `a`'s are zero. `res` and `a` must not overlap.
 pub(crate) fn permute<RT: GpuRuntime>(res: &Column, a: &Column, map: Map) {
     assert_eq!(res.n, a.n, "permutation between different degrees");
+    assert_eq!(res.words, a.words, "permutation between different word widths");
     if res.size == 0 || res.n == 0 {
         return;
     }
@@ -99,10 +119,11 @@ pub(crate) fn permute<RT: GpuRuntime>(res: &Column, a: &Column, map: Map) {
             client,
             cubes(client, units, DIM),
             CubeDim::new_1d(DIM),
-            res.binding.arg::<i64>(),
-            a.binding.arg::<i64>(),
+            res.binding.arg::<u64>(),
+            a.binding.arg::<u64>(),
             res.n as u32,
             res.size as u32,
+            res.words,
             res.base,
             res.stride,
             a.base,
@@ -113,7 +134,7 @@ pub(crate) fn permute<RT: GpuRuntime>(res: &Column, a: &Column, map: Map) {
             invariant,
         );
     }
-    launched(units * 16);
+    launched(units * 16 * res.words as usize);
 }
 
 #[cube(launch_unchecked)]
@@ -159,6 +180,7 @@ fn ci_kernel(
 }
 
 fn ci_map<RT: GpuRuntime>(res: &Column, a: &Column, trace: u32) {
+    assert!(res.words == 1 && a.words == 1, "the ring maps act on `i64` limbs");
     if res.size == 0 || res.n == 0 {
         return;
     }

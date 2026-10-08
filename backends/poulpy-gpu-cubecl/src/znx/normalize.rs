@@ -1,6 +1,6 @@
 //! Normalization: `res = canon(a * 2^offset, res_base2k, res_k, res.size())`.
 //!
-//! Each thread owns one coefficient and follows the exact definition: the
+//! The source limbs are `i64` or `i128`. Each thread owns one coefficient and follows the exact definition: the
 //! limbs of `a` are read from the least significant one as a stream of bits
 //! (carrying across unnormalized limbs), the bits below the output precision
 //! are dropped with one rounding bit and a sticky bit, rounding ties to even,
@@ -13,10 +13,10 @@ use super::{Column, DIM};
 use crate::runtime::{GpuRuntime, cubes, launched};
 
 #[cube(launch_unchecked)]
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, unused_assignments)]
 fn normalize_kernel(
     res: &mut [i64],
-    a: &[i64],
+    a: &[u64],
     n: u32,
     res_base: u32,
     res_stride: u32,
@@ -24,6 +24,8 @@ fn normalize_kernel(
     a_base: u32,
     a_stride: u32,
     a_size: u32,
+    // 64-bit words per source coefficient: 1 for `i64`, 2 for `i128`.
+    a_words: u32,
     a_base2k: u32,
     res_base2k: u32,
     // Limbs that carry precision, and the unused low bits of the last of them.
@@ -37,11 +39,15 @@ fn normalize_kernel(
     if i < n {
         let ab = a_base2k as u64;
         let ab_signed = a_base2k as i64;
+        let ab_up = 64u64 - ab;
         let mask = (1u64 << ab) - 1u64;
+        let ones = 0xFFFF_FFFF_FFFF_FFFFu64;
 
-        // Bit stream over the limbs of `a`, least significant first.
+        // Bit stream over the limbs of `a`, least significant first. The
+        // carry between limbs is a 128-bit two's complement value.
         let mut left = a_size;
-        let mut carry = 0i64;
+        let mut carry_lo = 0u64;
+        let mut carry_hi = 0u64;
         let mut pending = 0u64;
         let mut available = 0u32;
 
@@ -89,22 +95,50 @@ fn normalize_kernel(
             let mut written = 0u32;
             while count != 0u32 {
                 if available == 0u32 {
+                    // `carry >> a_base2k`, shared by both refills.
+                    let carry_hi_signed = carry_hi as i64;
+                    let shifted_hi_signed = carry_hi_signed >> ab_signed;
+                    let shifted_lo = (carry_lo >> ab) | (carry_hi << ab_up);
+                    let shifted_hi = shifted_hi_signed as u64;
                     if left != 0u32 {
                         left -= 1u32;
-                        let x = a[(a_base + left * a_stride + i) as usize];
-                        let low = ((x as u64) & mask) + ((carry as u64) & mask);
-                        carry = (x >> ab_signed) + (carry >> ab_signed) + ((low >> ab) as i64);
+                        let index = a_base + left * a_stride + i * a_words;
+                        let x_lo = a[index as usize];
+                        let mut x_hi = 0u64;
+                        if a_words == 2u32 {
+                            x_hi = a[(index + 1u32) as usize];
+                        } else {
+                            let sign = (x_lo as i64) >> 63i64;
+                            x_hi = sign as u64;
+                        }
+                        let low = (x_lo & mask) + (carry_lo & mask);
+                        // carry = (x >> a_base2k) + (carry >> a_base2k) + (low >> a_base2k)
+                        let x_hi_signed = x_hi as i64;
+                        let xs_hi_signed = x_hi_signed >> ab_signed;
+                        let xs_lo = (x_lo >> ab) | (x_hi << ab_up);
+                        let xs_hi = xs_hi_signed as u64;
+                        let sum_lo = xs_lo + shifted_lo;
+                        let mut sum_hi = xs_hi + shifted_hi;
+                        if sum_lo < xs_lo {
+                            sum_hi += 1u64;
+                        }
+                        carry_lo = sum_lo + (low >> ab);
+                        carry_hi = sum_hi;
+                        if carry_lo < sum_lo {
+                            carry_hi += 1u64;
+                        }
                         pending = low & mask;
                         available = a_base2k;
-                    } else if discard && (carry == 0i64 || carry == -1i64) {
+                    } else if discard && ((carry_lo == 0u64 && carry_hi == 0u64) || (carry_lo == ones && carry_hi == ones)) {
                         // Only the sign extension is left to discard: ones below a negative value.
-                        if carry == -1i64 {
+                        if carry_lo == ones {
                             sticky = 1u64;
                         }
                         count = 0u32;
                     } else {
-                        pending = (carry as u64) & mask;
-                        carry >>= ab_signed;
+                        pending = carry_lo & mask;
+                        carry_lo = shifted_lo;
+                        carry_hi = shifted_hi;
                         available = a_base2k;
                     }
                 }
@@ -163,6 +197,7 @@ fn normalize_kernel(
 /// limbs it depends on have been read.
 pub(crate) fn normalize<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: usize, offset: i64, a: &Column, a_base2k: usize) {
     assert_eq!(res.n, a.n, "normalization between different degrees");
+    assert_eq!(res.words, 1, "normalization writes `i64` limbs");
     assert!(
         (1..=62).contains(&res_base2k) && (1..=62).contains(&a_base2k),
         "radix widths must be in 1..=62"
@@ -185,7 +220,7 @@ pub(crate) fn normalize<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: 
             cubes(client, res.n, DIM),
             CubeDim::new_1d(DIM),
             res.binding.arg::<i64>(),
-            a.binding.arg::<i64>(),
+            a.binding.arg::<u64>(),
             res.n as u32,
             res.base,
             res.stride,
@@ -193,6 +228,7 @@ pub(crate) fn normalize<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: 
             a.base,
             a.stride,
             a.size as u32,
+            a.words,
             a_base2k as u32,
             res_base2k as u32,
             active_size as u32,
@@ -200,5 +236,5 @@ pub(crate) fn normalize<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: 
             drop,
         );
     }
-    launched(res.n * 8 * (res.size + a.size));
+    launched(res.n * 8 * (res.size + a.size * a.words as usize));
 }
