@@ -4,6 +4,12 @@
 
 ### CPU backends
 
+- Add `FFT64PortableRayon` and `NTT4x30PortableRayon`, the Rayon variants of the portable backends, with their conjugate-invariant aliases `FFT64CIPortableRayon` and `NTT4x30CIPortableRayon`.
+  They live in `poulpy-cpu-rayon`, which already depends on `poulpy-cpu-portable`, behind no feature for the HAL and behind `enable-core`, `enable-ckks`, `enable-bin-fhe` and `enable-mhe` for the scheme layers.
+  `NTT4x30PortableRayon` runs the fused interleaved-digit product and the encapsulated ModUp of `NTT4x30Portable` on per-worker scratch, and transforms the four planes of a limb as separate tasks from degree `2^13`.
+- `poulpy-cpu-rayon` gains `impl_ntt4x30_rayon_backend!` and the trait `PackedNtt4x30Base`: a serial NTT4x30 backend with a packed `u32` transform domain describes its drivers through the trait, and the macro builds its Rayon variant, as `impl_fft64_rayon_backend!` does for FFT64.
+- `poulpy_cpu_portable::ntt4x30::drivers` and `poulpy_cpu_portable::ckks_mod_up` expose, as hidden items without stability promise, the packed drivers and the ModUp body that the Rayon variant builds on.
+- **Fix:** the portable `znx_add`, `znx_sub`, `znx_negate` kernels and their in-place forms wrap on overflow, as the oracle and the SIMD backends do. They panicked in builds with overflow checks.
 - **Breaking, behaviour:** `NTT4x30Portable` stores the transform domain as four `u32` residues per coefficient (`DftWord = CrtWord<Primes30, u32>`), half the previous size, for `VecZnxDft`, `SvpPPol`, `VmpPMat` and both convolution operands.
   The layouts are those of the NEON backends: a transformed limb is one plane of canonical residues per prime, prepared operands are multiplied by `2^32`, the prepared matrix and the convolution operands hold residues centered around zero in the order their kernels read them.
   `NTT4x30Portable` and the NEON NTT4x30 backends are byte-compatible again for `VecZnxDft` and `SvpPPol`: the `VecZnxDftLayoutCompatible` and `SvpPPolLayoutCompatible` markers and the word-compatibility suite between them are back.

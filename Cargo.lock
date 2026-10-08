@@ -740,8 +740,10 @@ version = "0.9.0"
 dependencies = [
  "anyhow",
  "bytemuck",
+ "criterion",
  "once_cell",
  "paste",
+ "poulpy-bench",
  "poulpy-bin-fhe",
  "poulpy-ckks",
  "poulpy-core",

@@ -38,3 +38,10 @@ poulpy-cpu-portable = {workspace = true, features = ["enable-core", "enable-test
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
 poulpy-bin-fhe = {workspace = true}
 anyhow = {workspace = true}
+poulpy-bench = {workspace = true}
+criterion = {workspace = true}
+
+[[bench]]
+name = "bootstrapping"
+harness = false
+required-features = ["enable-ckks"]
