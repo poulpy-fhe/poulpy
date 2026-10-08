@@ -117,9 +117,10 @@ column `l`; `at` and `at_mut` view an entry as a GLWE. The entries are
 canonical: generation writes them so, `read_from` trusts the stream, and a
 writer through a mutable view must leave them so. `GLWEPublicKeyPrepared` is
 that matrix prepared by one `vmp_prepare`, and the reference encryption
-computes `Sum_l u_l pk_l` as one vector-matrix product using a derived prefix
-of the key's limbs, then adds each column's error at the derived `k_sample`
-before its single normalization at the output's `k`.
+computes `Sum_l u_l pk_l` as one vector-matrix product over the key's leading
+`ceil(k_sample / base2k)` limbs, then adds each column's error at `k_sample`
+before its single normalization at the output's `k`. The library selects
+`k_sample` from the key's metadata; the backend only receives it.
 
 Each mask column `c_j = Sum_l u_l a_{l,j} + e_j` is a rank-`r` module-LWE
 sample in `(u_1, .., u_r)` with independent uniform masks, and the body is one
@@ -136,9 +137,9 @@ access to an output (`to_backend_mut`, row views, `data_mut`, narrowing
 unwritten or copied from an input is cleared with `set_noise(None)`. Secret-key encryption,
 key generation included, records `ComponentNoise::from_secret_at` with the
 encrypting secret's distribution and the output's `k` and rank (scalar LWE: its
-dimension). Public-key encryption draws its fresh errors at the
-`sample_precision`, uses the key up to the `work_precision` and records the
-`noise` of `public_key_encryption_plan`. Copies at equal or wider precision
+dimension). Public-key encryption records the `noise` of
+`public_key_encryption_plan`; the derived methods pass its `sample_precision`
+to `glwe_encrypt_pk_sampled_at`, which leaves recording to them. Copies at equal or wider precision
 (zero masks appended for a wider rank), preparation, compression, decompression
 and transfers keep the source's estimate, recorded after their last write.
 Every other operation leaves `None`.
