@@ -197,10 +197,6 @@ pub type NTT4x30CIPortable = NTT4x30Portable<poulpy_hal::layouts::ConjugateInvar
 pub type FFT64Ref<R = poulpy_hal::layouts::Standard> = FFT64Portable<R>;
 #[deprecated(note = "renamed to `NTT4x30Portable`")]
 pub type NTT4x30Ref<R = poulpy_hal::layouts::Standard> = NTT4x30Portable<R>;
-#[deprecated(note = "renamed to `FFT64CIPortable`")]
-pub type FFT64CIRef = FFT64CIPortable;
-#[deprecated(note = "renamed to `NTT4x30CIPortable`")]
-pub type NTT4x30CIRef = NTT4x30CIPortable;
 /// Former CKKS encoding transform, now [`EncodingFFTTable`](ckks_encoding::EncodingFFTTable).
 #[cfg(feature = "enable-ckks")]
 #[deprecated(note = "use `ckks_encoding::EncodingFFTTable`, which encodes byte identically on every CPU backend")]

@@ -15,18 +15,18 @@ debug = true
 strip = false
 
 [workspace.dependencies]
-poulpy-hal = {path = "poulpy-hal", version = "0.8.3"}
-poulpy-core = {path = "poulpy-core", version = "0.8.3"}
-poulpy-cpu-avx = {path = "poulpy-cpu-avx", version = "0.8.3"}
-poulpy-cpu-arm = {path = "poulpy-cpu-arm", version = "0.8.3"}
-poulpy-cpu-portable = {path = "poulpy-cpu-portable", version = "0.8.3"}
-poulpy-cpu-avx512 = {path = "poulpy-cpu-avx512", version = "0.8.3"}
-poulpy-cpu-rayon = {path = "poulpy-cpu-rayon", version = "0.8.3"}
-poulpy-bin-fhe = {path = "poulpy-bin-fhe"}
+poulpy-hal = {path = "poulpy-hal", version = "0.9.0"}
+poulpy-core = {path = "poulpy-core", version = "0.9.0"}
+poulpy-cpu-avx = {path = "poulpy-cpu-avx", version = "0.9.0"}
+poulpy-cpu-arm = {path = "poulpy-cpu-arm", version = "0.9.0"}
+poulpy-cpu-portable = {path = "poulpy-cpu-portable", version = "0.9.0"}
+poulpy-cpu-avx512 = {path = "poulpy-cpu-avx512", version = "0.9.0"}
+poulpy-cpu-rayon = {path = "poulpy-cpu-rayon", version = "0.9.0"}
+poulpy-bin-fhe = {path = "poulpy-bin-fhe", version = "0.9.0"}
 poulpy-cpu-oracle = {path = "poulpy-cpu-oracle"}
 poulpy-bench = {path = "poulpy-bench"}
-poulpy-ckks = {path = "poulpy-ckks", version = "0.8.3"}
-poulpy-mhe = {path = "poulpy-mhe", version = "0.8.3"}
+poulpy-ckks = {path = "poulpy-ckks", version = "0.9.0"}
+poulpy-mhe = {path = "poulpy-mhe", version = "0.9.0"}
 dashu-float = "0.6.0"
 dashu-int = "0.6.0"
 # Reproducible setup requires the same resolved math dependencies on each target.

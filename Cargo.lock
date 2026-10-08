@@ -564,7 +564,7 @@ dependencies = [
 
 [[package]]
 name = "poulpy-bench"
-version = "0.8.3"
+version = "0.9.0"
 dependencies = [
  "criterion",
  "poulpy-bin-fhe",
@@ -578,7 +578,7 @@ dependencies = [
 
 [[package]]
 name = "poulpy-bin-fhe"
-version = "0.8.3"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "byteorder",
@@ -591,7 +591,7 @@ dependencies = [
 
 [[package]]
 name = "poulpy-ckks"
-version = "0.8.3"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "astro-float-num",
@@ -607,7 +607,7 @@ dependencies = [
 
 [[package]]
 name = "poulpy-core"
-version = "0.8.3"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -625,7 +625,7 @@ dependencies = [
 
 [[package]]
 name = "poulpy-cpu-arm"
-version = "0.8.3"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -650,7 +650,7 @@ dependencies = [
 
 [[package]]
 name = "poulpy-cpu-avx"
-version = "0.8.3"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -675,7 +675,7 @@ dependencies = [
 
 [[package]]
 name = "poulpy-cpu-avx512"
-version = "0.8.3"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -703,7 +703,7 @@ dependencies = [
 
 [[package]]
 name = "poulpy-cpu-oracle"
-version = "0.8.3"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -719,7 +719,7 @@ dependencies = [
 
 [[package]]
 name = "poulpy-cpu-portable"
-version = "0.8.3"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -745,7 +745,7 @@ dependencies = [
 
 [[package]]
 name = "poulpy-cpu-rayon"
-version = "0.8.3"
+version = "0.9.0"
 dependencies = [
  "bytemuck",
  "poulpy-cpu-portable",
@@ -755,7 +755,7 @@ dependencies = [
 
 [[package]]
 name = "poulpy-hal"
-version = "0.8.3"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -774,7 +774,7 @@ dependencies = [
 
 [[package]]
 name = "poulpy-mhe"
-version = "0.8.3"
+version = "0.9.0"
 dependencies = [
  "poulpy-core",
  "poulpy-hal",
