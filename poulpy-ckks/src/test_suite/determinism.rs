@@ -122,10 +122,10 @@ fn check_plaintext<BE: Backend<ZnxWord = i64>>(key: &str, pt: &CKKSPlaintextOwne
 }
 
 /// Dyadic test values with 20 significant bits, exact in every precision.
-fn dyadic<F: TestScalar>(len: usize, salt: u64) -> Vec<F> {
+fn dyadic<F: TestScalar>(len: usize, seed: u64) -> Vec<F> {
     (0..len)
         .map(|i| {
-            let bits = (i as u64 ^ salt).wrapping_mul(0x9e37_79b9_7f4a_7c15).rotate_left(23) >> 44;
+            let bits = (i as u64 ^ seed).wrapping_mul(0x9e37_79b9_7f4a_7c15).rotate_left(23) >> 44;
             F::from_i64(bits as i64 - (1 << 19)).unwrap() / F::from_i64(1 << 19).unwrap()
         })
         .collect()
