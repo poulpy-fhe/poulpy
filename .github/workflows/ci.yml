@@ -115,6 +115,10 @@ jobs:
       - name: Check scheme documentation
         run: RUSTDOCFLAGS="-D warnings" cargo doc -p poulpy-core -p poulpy-ckks -p poulpy-bin-fhe -p poulpy-mhe --no-deps --features poulpy-core/enable-core,poulpy-ckks/test-utils
 
+      # CKKS setup math uses the pure-Rust binary128 backing whatever the `Quad` routing.
+      - name: Test CKKS encoding determinism with libquadmath
+        run: cargo test -p poulpy-cpu-portable --lib --profile ci --features "enable-ckks,poulpy-ckks/libquadmath" determinism
+
   avx:
     name: AVX backend (native or SDE)
     runs-on: ubuntu-24.04
@@ -189,7 +193,7 @@ jobs:
   intel_macos_avx:
     name: Intel macOS AVX smoke
     runs-on: macos-15-intel
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     env:
       RUSTFLAGS: -C target-feature=+avx2,+fma
@@ -238,6 +242,12 @@ jobs:
           fft64::reim::fft_avx2_fma::tests::fft_ifft_roundtrip_avx2
           -- --exact
 
+      - name: Test CKKS encoding determinism on Intel macOS
+        run: >-
+          cargo test -p poulpy-cpu-portable -p poulpy-cpu-avx --lib
+          --features "poulpy-cpu-portable/enable-ckks,poulpy-cpu-avx/enable-avx,poulpy-cpu-avx/enable-ckks"
+          determinism
+
   macos_arm_quad:
     name: Apple Silicon Quad smoke
     runs-on: macos-latest
@@ -273,6 +283,12 @@ jobs:
           cargo test -p poulpy-ckks --lib --features libquadmath scalar::tests::portable_math_surface_values -- --exact
           cargo test -p poulpy-ckks --lib --features libquadmath scalar::tests::portable_special_value_semantics -- --exact
           cargo test -p poulpy-cpu-portable --lib --features "enable-ckks,poulpy-ckks/libquadmath" ckks_encoding::tests::fft64_precision_families_coexist_in_one_module -- --exact
+
+      - name: Test CKKS encoding determinism on Apple Silicon
+        run: >-
+          cargo test -p poulpy-cpu-portable -p poulpy-cpu-arm --lib
+          --features "poulpy-cpu-portable/enable-ckks,poulpy-cpu-arm/enable-neon,poulpy-cpu-arm/enable-ckks"
+          determinism
 
   # Run natively when every required CPU feature is usable; otherwise use SDE.
   avx512:

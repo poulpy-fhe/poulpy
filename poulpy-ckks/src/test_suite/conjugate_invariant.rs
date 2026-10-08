@@ -449,6 +449,14 @@ macro_rules! conjugate_invariant_ckks_test_suite {
                 );
             }
             #[test]
+            fn ckks_ci_encoding_determinism_f64() {
+                $crate::test_suite::determinism::encoding_fixtures::<$backend, f64>(&Module::<$backend>::new(2048));
+            }
+            #[test]
+            fn ckks_ci_encoding_determinism_quad() {
+                $crate::test_suite::determinism::encoding_fixtures::<$backend, $crate::Quad>(&Module::<$backend>::new(2048));
+            }
+            #[test]
             fn ckks_ci_ring_map() {
                 let params = $params;
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_ring_map(
