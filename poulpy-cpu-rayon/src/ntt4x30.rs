@@ -1560,12 +1560,20 @@ mod ntt4x30_rayon_tests {
     #[allow(unused_imports)]
     use super::*;
 
+    /// Above the parallel floor of every tuning, so the kernels run as tasks on a pool of more than one thread.
+    const COEFF_LEN: usize = 1 << 18;
+
     #[test]
-    fn coefficient_add_matches_wrapping_arithmetic() {
-        let a = vec![i64::MAX; 1 << 16];
-        let b = vec![1; 1 << 16];
-        let mut actual = vec![0; 1 << 16];
-        <$rayon as ZnxAdd>::znx_add(&mut actual, &a, &b);
+    fn coefficient_kernels_wrap_above_the_parallel_floor() {
+        let max = vec![i64::MAX; COEFF_LEN];
+        let min = vec![i64::MIN; COEFF_LEN];
+        let one = vec![1; COEFF_LEN];
+        let mut actual = vec![0; COEFF_LEN];
+        <$rayon as ZnxAdd>::znx_add(&mut actual, &max, &one);
+        assert!(actual.iter().all(|&x| x == i64::MIN));
+        <$rayon as ZnxSub>::znx_sub(&mut actual, &min, &one);
+        assert!(actual.iter().all(|&x| x == i64::MAX));
+        <$rayon as ZnxNegate>::znx_negate(&mut actual, &min);
         assert!(actual.iter().all(|&x| x == i64::MIN));
     }
 }

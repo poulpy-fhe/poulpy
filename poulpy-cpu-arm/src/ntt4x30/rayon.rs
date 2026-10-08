@@ -310,19 +310,9 @@ impl<R: Ring> poulpy_cpu_rayon::RayonTuning for NTT4x30NeonRayon<R> {
 
 #[cfg(test)]
 mod tests {
-    use poulpy_cpu_portable::kernels::znx::ZnxAdd;
     use poulpy_hal::{layouts::Module, test_suite::convolution::test_convolution_by_const};
 
     use super::NTT4x30NeonRayon;
-
-    #[test]
-    fn coefficient_add_matches_wrapping_arithmetic() {
-        let a = vec![i64::MAX; 1 << 16];
-        let b = vec![1; 1 << 16];
-        let mut actual = vec![0; 1 << 16];
-        <NTT4x30NeonRayon as ZnxAdd>::znx_add(&mut actual, &a, &b);
-        assert!(actual.iter().all(|&x| x == i64::MIN));
-    }
 
     #[test]
     fn convolution_by_const() {

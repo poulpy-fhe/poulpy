@@ -18,6 +18,9 @@ cross_backend_test_suite! {
     params = TestParams { size: 1<<14, base2k: 12, n: 8 },
     tests = {
         test_vec_znx_dft_copy => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_copy,
+        test_vec_znx_dft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_apply,
+        test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
+        test_vec_znx_idft_apply_tmpa => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_tmpa,
         test_vec_znx_dft_automorphism_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism_add,
         test_vec_znx_idft_normalize_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_normalize_consume,
     }
@@ -153,6 +156,16 @@ fn test_convolution_ntt4x30() {
         test_convolution_sum(&module, n, 50);
     }
     test_convolution_by_const_add(&module, module.n(), 50);
+}
+
+/// The degree gives the apply more than one task of blocks, so the staged outputs of several workers meet.
+#[test]
+fn test_convolution_ntt4x30_multi_task() {
+    let module = Module::<NTT4x30PortableRayon>::new(1 << 11);
+    test_convolution(&module, module.n(), 50);
+    test_convolution_add(&module, module.n(), 50);
+    test_convolution_pairwise(&module, module.n(), 50);
+    test_convolution_sum(&module, module.n(), 50);
 }
 
 poulpy_cpu_portable::conjugate_invariant_test_suite!(
