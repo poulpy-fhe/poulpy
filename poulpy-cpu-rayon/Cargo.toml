@@ -17,3 +17,7 @@ bytemuck = {workspace = true}
 poulpy-cpu-portable = {workspace = true}
 poulpy-hal = {workspace = true}
 rayon = {workspace = true}
+
+[dev-dependencies]
+# Used by the test-suite macros of `poulpy-hal`.
+once_cell = {workspace = true}

@@ -2,7 +2,10 @@
 
 pub mod fft64;
 pub mod normalize;
+mod portable;
 pub mod tuning;
+
+pub use portable::{FFT64CIPortableRayon, FFT64PortableRayon};
 
 /// Re-exports for the crate's macros. Not a stable API.
 #[doc(hidden)]
