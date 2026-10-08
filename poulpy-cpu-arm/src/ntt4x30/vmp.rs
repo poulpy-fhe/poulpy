@@ -82,7 +82,7 @@ pub(crate) fn vmp_prepare_neon_pm<R: Ring>(
         for col_i in 0..ncols {
             let pos = n * (row_i * ncols + col_i);
 
-            dft_limb_scaled(module, n, tmp_packed, &mat_i64[pos..pos + n], true);
+            dft_limb_scaled::<R, poulpy_hal::execution::SerialTaskExecutor>(module, n, tmp_packed, &mat_i64[pos..pos + n], true);
             limb_center(n, tmp_packed);
 
             for blk in 0..n_blocks {

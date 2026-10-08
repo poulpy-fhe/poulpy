@@ -47,7 +47,13 @@ pub(crate) fn svp_prepare<R: Ring>(
     check_degree::<NTT4x30Neon<R>>(module.n(), n);
     assert!(a.n() == n, "svp_prepare: a.n() != res.n()");
     let data: &mut [u32] = cast_slice_mut(res.data_mut());
-    dft_limb_scaled(module, n, &mut data[4 * n * res_col..][..4 * n], a.at(a_col, 0), true);
+    dft_limb_scaled::<R, poulpy_hal::execution::SerialTaskExecutor>(
+        module,
+        n,
+        &mut data[4 * n * res_col..][..4 * n],
+        a.at(a_col, 0),
+        true,
+    );
 }
 
 pub(crate) fn svp_ppol_copy<R: Ring>(

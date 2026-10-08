@@ -8,6 +8,9 @@
   They live in `poulpy-cpu-rayon`, which already depends on `poulpy-cpu-portable`, behind no feature for the HAL and behind `enable-core`, `enable-ckks`, `enable-bin-fhe` and `enable-mhe` for the scheme layers.
   `NTT4x30PortableRayon` runs the fused interleaved-digit product and the encapsulated ModUp of `NTT4x30Portable` on per-worker scratch, and transforms the four planes of a limb as separate tasks from degree `2^13`.
 - `poulpy-cpu-rayon` gains `impl_ntt4x30_rayon_backend!` and the trait `PackedNtt4x30Base`: a serial NTT4x30 backend with a packed `u32` transform domain describes its drivers through the trait, and the macro builds its Rayon variant, as `impl_fft64_rayon_backend!` does for FFT64.
+- `NTT4x30NeonRayon` is built with `impl_ntt4x30_rayon_backend!` on the drivers of `NTT4x30Neon`, in place of its hand-written wiring.
+  The split of a limb into plane tasks moves into the NEON limb transforms, which take the task executor, and the NEON convolution prepare takes the forward transform as a closure.
+  Results and scheduling are unchanged.
 - `poulpy_cpu_portable::ntt4x30::drivers` and `poulpy_cpu_portable::ckks_mod_up` expose, as hidden items without stability promise, the packed drivers and the ModUp body that the Rayon variant builds on.
 - **Fix:** the portable `znx_add`, `znx_sub`, `znx_negate` kernels and their in-place forms wrap on overflow, as the oracle and the SIMD backends do. They panicked in builds with overflow checks.
 - **Breaking, behaviour:** `NTT4x30Portable` stores the transform domain as four `u32` residues per coefficient (`DftWord = CrtWord<Primes30, u32>`), half the previous size, for `VecZnxDft`, `SvpPPol`, `VmpPMat` and both convolution operands.
