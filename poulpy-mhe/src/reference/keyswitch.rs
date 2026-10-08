@@ -1,7 +1,7 @@
 use crate::layouts::{GLWEPrivateKeyswitchShareOwned, GLWEPublicKeyswitchShareOwned};
 use poulpy_core::{
-    GLWEAdd, GLWEBytesOf, GLWEEncryptPkSmudged, GLWEMaskInnerProduct, GLWENormalize, GLWESub, Noise, ScratchArenaTakeCore,
-    VecZnxAddNoise,
+    ComponentNoise, FreshNoiseEstimate, GLWEAdd, GLWEBytesOf, GLWEEncryptPkSmudged, GLWEMaskInnerProduct, GLWENormalize, GLWESub,
+    GetDistribution, Noise, ScratchArenaTakeCore, VecZnxAddNoise,
     layouts::{
         GLWEInfos, GLWEMaskToBackendRef, GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef, GLWEToBackendMut,
         GLWEToBackendRef, LWEInfos,
@@ -130,6 +130,17 @@ where
             );
             self.glwe_normalize_assign(res, &mut scratch_2);
         }
+        // Model the conversion of two cropped inner products followed by
+        // normalization as one output-grid ulp when the share is narrower.
+        // As for other rounding terms, this is an effective estimate.
+        let rounding = if res.k() < mask.k() { 1.0 } else { 0.0 };
+        GLWEToBackendMut::<BE>::set_noise(
+            res,
+            Some(
+                ComponentNoise::from_secret_at(*sk_out.to_backend_ref().dist(), res.k(), res.rank().as_usize())
+                    .with_body_noise(FreshNoiseEstimate::new(flood.variance() + rounding, res.k())),
+            ),
+        );
         scratch.wipe(tmp_bytes);
     }
 
@@ -139,7 +150,9 @@ where
         a: &GLWEPrivateKeyswitchShareOwned<BE>,
     ) {
         assert!(res.glwe_layout() == a.glwe_layout(), "invalid aggregation: layouts differ");
+        let metadata = super::aggregate_metadata(res.noise(), a.noise());
         self.glwe_add_assign(&mut res.inner, &a.inner);
+        GLWEToBackendMut::<BE>::set_noise(res, metadata);
     }
 
     fn mhe_glwe_private_keyswitch_share_finalize_tmp_bytes_reference(&self) -> usize {
@@ -286,11 +299,20 @@ where
         );
         assert!(pk_out.k() >= res.k(), "invalid share: public key less precise than the share");
         flood.assert_valid_for(res.base2k().as_usize(), res.k().as_usize());
+        super::assert_public_key_distribution::<BE, _>(pk_out);
         let tmp_bytes = self.mhe_glwe_public_keyswitch_share_gen_tmp_bytes_reference(mask, &*res, pk_out);
         {
             let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(mask);
             self.glwe_mask_inner_product(&mut pt, mask, sk_in, &mut scratch_1);
             self.glwe_encrypt_pk_smudged(res, &pt, pk_out, flood, source_xu, source_xe, source_smudge, &mut scratch_1);
+        }
+        if res.k() < mask.k()
+            && pk_out.k() == res.k()
+            && let Some(metadata) = res.noise()
+        {
+            let mut components = metadata.components().to_vec();
+            components[0] = FreshNoiseEstimate::new(metadata.body().variance_at(res.k()) + 1.0, res.k());
+            GLWEToBackendMut::<BE>::set_noise(res, Some(metadata.with_components(components)));
         }
         scratch.wipe(tmp_bytes);
     }
@@ -301,7 +323,9 @@ where
         a: &GLWEPublicKeyswitchShareOwned<BE>,
     ) {
         assert!(res.glwe_layout() == a.glwe_layout(), "invalid aggregation: layouts differ");
+        let metadata = super::aggregate_common_key_metadata(res.noise(), a.noise(), res.n().as_usize());
         self.glwe_add_assign(&mut res.inner, &a.inner);
+        GLWEToBackendMut::<BE>::set_noise(res, metadata);
     }
 
     fn mhe_glwe_public_keyswitch_share_finalize_tmp_bytes_reference(&self) -> usize {

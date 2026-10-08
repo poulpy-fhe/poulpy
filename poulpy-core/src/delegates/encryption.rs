@@ -399,7 +399,7 @@ impl_encryption_delegate!(
         source_xe: &mut Source,
         scratch: &mut ScratchArena<BE>,
     ) where
-        R: GGSWInfos + GGSWAtViewMut<BE>,
+        R: GGSWToBackendMut<BE> + GGSWInfos + GGSWAtViewMut<BE>,
         P: ScalarZnxToBackendRef<BE> + ZnxInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     {

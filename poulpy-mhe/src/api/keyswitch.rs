@@ -12,7 +12,7 @@ use poulpy_hal::{
 };
 
 /// Collective key switching to a secret key: every party publishes a share,
-/// the shares are aggregated with core `glwe_add_assign`, and any party
+/// the shares are aggregated with `mhe_glwe_private_keyswitch_share_aggregate`, and any party
 /// finalizes the ciphertext under the ideal output secret, the sum of the
 /// parties' output secrets.
 ///

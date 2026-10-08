@@ -1,6 +1,6 @@
 use poulpy_core::{
-    GLWEAdd, GLWEBytesOf, GLWECompressedEncryptSk, GLWECopy, GLWEMaskInnerProduct, GLWENormalize, GLWESub, Noise,
-    ScratchArenaTakeCore, VecZnxAddNoise,
+    ComponentNoise, FreshNoiseEstimate, GLWEAdd, GLWEBytesOf, GLWECompressedEncryptSk, GLWECopy, GLWEMaskInnerProduct,
+    GLWENormalize, GLWESub, GetDistribution, Noise, ScratchArenaTakeCore, VecZnxAddNoise,
     layouts::{GLWEInfos, GLWEMaskToBackendRef, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
 };
 use poulpy_hal::{
@@ -126,6 +126,13 @@ where
             );
             self.glwe_normalize_assign(public, &mut scratch_1);
         }
+        GLWEToBackendMut::<BE>::set_noise(
+            public,
+            Some(
+                ComponentNoise::from_secret_at(*sk.to_backend_ref().dist(), public.k(), public.rank().as_usize())
+                    .with_body_noise(FreshNoiseEstimate::new(flood.variance(), public.k())),
+            ),
+        );
         scratch.wipe(tmp_bytes);
     }
 
@@ -135,7 +142,9 @@ where
         a: &GLWEEncToShareShareOwned<BE>,
     ) {
         assert!(res.glwe_layout() == a.glwe_layout(), "invalid aggregation: layouts differ");
+        let metadata = super::aggregate_metadata(res.noise(), a.noise());
         self.glwe_add_assign(&mut res.inner, &a.inner);
+        GLWEToBackendMut::<BE>::set_noise(res, metadata);
     }
 
     fn mhe_glwe_enc_to_share_share_finalize_tmp_bytes_reference(&self) -> usize {

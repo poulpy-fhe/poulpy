@@ -64,7 +64,7 @@ where
     ]
 }
 
-/// Public-key encryption under a prepared key, swept by [`default_bench_params_encrypt_pk`].
+/// Public-key encryption under a key with one extra precision limb, swept by [`default_bench_params_encrypt_pk`].
 pub fn bench_glwe_encrypt_pk<BE>(c: &mut Criterion<WallTime>)
 where
     BE: Backend<ZnxWord = i64>,

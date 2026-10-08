@@ -1,5 +1,8 @@
 //! Explicit backend extension points for binary-FHE operations.
 //!
+//! Outputs follow the core [noise metadata rule](poulpy_core::oep#noise-metadata).
+//! Delegates only forward.
+//!
 //! Backend implementations select callable lower-layer reference algorithms or
 //! inherit crate-private same-layer derived defaults. An override must reproduce
 //! the reference circuit and pass parity against a caller-selected validated

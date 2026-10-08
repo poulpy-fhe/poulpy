@@ -81,6 +81,7 @@ where
         P: ScalarZnxToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
+        let metadata = crate::component_noise::fresh_sk_noise(sk.to_backend_ref().dist, &res.to_backend_ref());
         {
             let mut seeds: Vec<[u8; 32]> = vec![[0u8; 32]; res.seed_mut().len()];
 
@@ -178,5 +179,6 @@ where
             res.seed_mut().copy_from_slice(&seeds);
             scratch.wipe(self.gglwe_compressed_encrypt_sk_tmp_bytes_reference(&res.to_backend_mut()));
         }
+        res.set_noise(metadata);
     }
 }

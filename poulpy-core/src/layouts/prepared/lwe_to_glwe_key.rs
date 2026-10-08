@@ -15,6 +15,10 @@ use crate::layouts::{
 pub struct LWEToGLWEKeyPrepared<D: Data, B: Backend>(pub(crate) GLWESwitchingKeyPrepared<D, B>);
 
 impl<D: Data, B: Backend> LWEInfos for LWEToGLWEKeyPrepared<D, B> {
+    fn noise(&self) -> Option<crate::ComponentNoise> {
+        self.0.noise()
+    }
+
     fn base2k(&self) -> Base2K {
         self.0.base2k()
     }
@@ -135,6 +139,10 @@ impl<D: Data, B: Backend> GGLWEPreparedToBackendMut<B> for LWEToGLWEKeyPrepared<
 where
     GGLWEPrepared<D, B>: GGLWEPreparedToBackendMut<B>,
 {
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        <_ as GGLWEPreparedToBackendMut<B>>::set_noise(&mut self.0.key, metadata);
+    }
+
     fn to_backend_mut(&mut self) -> crate::layouts::GGLWEPreparedBackendMut<'_, B> {
         self.0.key.to_backend_mut()
     }
@@ -176,6 +184,7 @@ where
 }
 
 pub trait LWEToGLWEKeyPreparedToBackendMut<B: Backend> {
+    /// Borrows coefficients mutably and clears the owner's component noise metadata.
     fn to_backend_mut(&mut self) -> LWEToGLWEKeyPreparedBackendMut<'_, B>;
 }
 

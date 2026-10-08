@@ -12,7 +12,7 @@ use crate::layouts::{GLWEEncToShareShareOwned, GLWEShareToEncShareOwned};
 /// Encryption to additive shares: every party keeps a random mask `M_i` as its
 /// share and publishes the inner product of the ciphertext's mask with its
 /// secret, minus `M_i`, plus its flood. The public shares are aggregated with
-/// core `glwe_add_assign`, and one party adds them and the ciphertext's body to
+/// `mhe_glwe_enc_to_share_share_aggregate`, and one party adds them and the ciphertext's body to
 /// its mask, so that the shares sum to the plaintext plus the input noise and
 /// the floods.
 ///

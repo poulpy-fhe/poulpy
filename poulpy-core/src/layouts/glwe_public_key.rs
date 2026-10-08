@@ -25,6 +25,7 @@ use crate::{
 /// columns, entry `l` at input column `l`. Its entries are canonical: a writer
 /// through a mutable view or `data_mut` must leave them so.
 pub struct GLWEPublicKey<D: Data, W: ZnxWord> {
+    pub(crate) noise: Option<crate::ComponentNoise>,
     pub(crate) data: MatZnx<D, W>,
     pub(crate) base2k: Base2K,
     pub(crate) k: TorusPrecision,
@@ -36,14 +37,24 @@ where
     MatZnx<D, W>: PartialEq,
 {
     fn eq(&self, other: &Self) -> bool {
-        self.data == other.data && self.base2k == other.base2k && self.k == other.k && self.dist == other.dist
+        self.noise == other.noise
+            && self.data == other.data
+            && self.base2k == other.base2k
+            && self.k == other.k
+            && self.dist == other.dist
     }
 }
 
 impl<D: Data, W: ZnxWord> Eq for GLWEPublicKey<D, W> where MatZnx<D, W>: Eq {}
 
-fn entry<D: Data, W: ZnxWord>(data: VecZnx<D, W>, base2k: Base2K, k: TorusPrecision) -> GLWE<D, W> {
+fn entry<D: Data, W: ZnxWord>(
+    data: VecZnx<D, W>,
+    base2k: Base2K,
+    k: TorusPrecision,
+    metadata: Option<crate::ComponentNoise>,
+) -> GLWE<D, W> {
     GLWE {
+        noise: metadata,
         data,
         base2k,
         k,
@@ -57,6 +68,7 @@ impl<D: Data, W: ZnxWord> GLWEPublicKey<D, W> {
     }
 
     pub fn data_mut(&mut self) -> &mut MatZnx<D, W> {
+        self.noise = None;
         &mut self.data
     }
 }
@@ -64,13 +76,14 @@ impl<D: Data, W: ZnxWord> GLWEPublicKey<D, W> {
 impl<D: HostDataRef, W: ZnxWord> GLWEPublicKey<D, W> {
     /// Entry `l` is the encryption of zero paired with the ephemeral `u_l`.
     pub fn at(&self, l: usize) -> GLWE<&[u8], W> {
-        entry(self.data.at(0, l), self.base2k, self.k)
+        entry(self.data.at(0, l), self.base2k, self.k, self.noise.clone())
     }
 }
 
 impl<D: HostDataMut, W: ZnxWord> GLWEPublicKey<D, W> {
     pub fn at_mut(&mut self, l: usize) -> GLWE<&mut [u8], W> {
-        entry(self.data.at_mut(0, l), self.base2k, self.k)
+        self.noise = None;
+        entry(self.data.at_mut(0, l), self.base2k, self.k, None)
     }
 }
 
@@ -105,16 +118,19 @@ impl<BE: Backend> GLWEPublicKeyAtViewRef<BE> for GLWEPublicKey<BE::OwnedBuf, BE:
             MatZnxAtBackendRef::<BE>::at_backend(&self.data, 0, l),
             self.base2k,
             self.k,
+            self.noise.clone(),
         ))
     }
 }
 
 impl<BE: Backend> GLWEPublicKeyAtViewMut<BE> for GLWEPublicKey<BE::OwnedBuf, BE::ZnxWord> {
     fn at_view_mut(&mut self, l: usize) -> GLWEViewMut<'_, BE> {
+        self.noise = None;
         GLWEViewMut::from_inner(entry(
             MatZnxAtBackendMut::<BE>::at_backend_mut(&mut self.data, 0, l),
             self.base2k,
             self.k,
+            None,
         ))
     }
 }
@@ -122,24 +138,36 @@ impl<BE: Backend> GLWEPublicKeyAtViewMut<BE> for GLWEPublicKey<BE::OwnedBuf, BE:
 impl<BE: Backend> GLWEPublicKeyAtViewRef<BE> for GLWEPublicKeyBackendRef<'_, BE> {
     fn at_view(&self, l: usize) -> GLWEViewRef<'_, BE> {
         let pk = &self.inner;
-        GLWEViewRef::from_inner(entry(mat_znx_at_backend_ref_from_ref::<BE>(&pk.data, 0, l), pk.base2k, pk.k))
+        GLWEViewRef::from_inner(entry(
+            mat_znx_at_backend_ref_from_ref::<BE>(&pk.data, 0, l),
+            pk.base2k,
+            pk.k,
+            pk.noise.clone(),
+        ))
     }
 }
 
 impl<BE: Backend> GLWEPublicKeyAtViewRef<BE> for GLWEPublicKeyBackendMut<'_, BE> {
     fn at_view(&self, l: usize) -> GLWEViewRef<'_, BE> {
         let pk = &self.inner;
-        GLWEViewRef::from_inner(entry(mat_znx_at_backend_ref_from_mut::<BE>(&pk.data, 0, l), pk.base2k, pk.k))
+        GLWEViewRef::from_inner(entry(
+            mat_znx_at_backend_ref_from_mut::<BE>(&pk.data, 0, l),
+            pk.base2k,
+            pk.k,
+            pk.noise.clone(),
+        ))
     }
 }
 
 impl<BE: Backend> GLWEPublicKeyAtViewMut<BE> for GLWEPublicKeyBackendMut<'_, BE> {
     fn at_view_mut(&mut self, l: usize) -> GLWEViewMut<'_, BE> {
         let pk = &mut self.inner;
+        pk.noise = None;
         GLWEViewMut::from_inner(entry(
             mat_znx_at_backend_mut_from_mut::<BE>(&mut pk.data, 0, l),
             pk.base2k,
             pk.k,
+            None,
         ))
     }
 }
@@ -165,6 +193,10 @@ pub struct GLWEPublicKeyLayout {
 }
 
 impl<D: Data, W: ZnxWord> LWEInfos for GLWEPublicKey<D, W> {
+    fn noise(&self) -> Option<crate::ComponentNoise> {
+        self.noise.clone()
+    }
+
     fn base2k(&self) -> Base2K {
         self.base2k
     }
@@ -228,6 +260,7 @@ impl<W: ZnxWord> GLWEPublicKey<AlignedBuf, W> {
         assert!(rank.as_usize() >= 1, "invalid public key: rank must be at least 1");
         let (rows, cols_in, cols_out, size) = (1, rank.as_usize(), (rank + 1).as_usize(), k.0.div_ceil(base2k.0) as usize);
         GLWEPublicKey {
+            noise: None,
             data: MatZnx::from_data(
                 <poulpy_hal::layouts::HostBytesBackend>::alloc_bytes(MatZnx::<AlignedBuf, W>::bytes_of(
                     n.into(),
@@ -272,10 +305,13 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWEPublicKey<D, W> {
 }
 
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEPublicKey<D, W> {
-    /// Fails with [`std::io::ErrorKind::InvalidData`], leaving the key's layout
-    /// unchanged, on a stream that is not one row of `r >= 1` encryptions of
-    /// zero of a nonzero degree at its precision.
+    /// Rejects an invalid shape with [`std::io::ErrorKind::InvalidData`] before
+    /// changing the layout. Every read attempt clears the previous metadata.
+    /// The stream must contain one row of `r >= 1` encryptions of zero at the
+    /// destination's rank, with a nonzero degree at its precision.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
+        self.noise = None;
+        let metadata = crate::ComponentNoise::read_optional(reader, self.data.cols_out())?;
         let dist = Distribution::read_from(reader)?;
         let base2k = Base2K(reader.read_u32::<LittleEndian>()?);
         let k = TorusPrecision(reader.read_u32::<LittleEndian>()?);
@@ -289,6 +325,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEPublicKey<D, W> {
             || rows != 1
             || cols_in == 0
             || cols_in.checked_add(1) != Some(cols_out)
+            || cols_out != self.data.cols_out() as u64
             || size != u64::from(k.0.div_ceil(base2k.0))
         {
             return Err(std::io::Error::new(
@@ -296,7 +333,18 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEPublicKey<D, W> {
                 "invalid public key: not one row of rank encryptions of zero at its precision",
             ));
         }
-        self.data.read_from(&mut std::io::Read::chain(header.as_slice(), reader))?;
+        let components = usize::try_from(cols_out)
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "noise component count is too large"))?;
+        crate::layouts::validate_noise_components(metadata.as_ref(), components)?;
+        let components = self.data.cols_out();
+        crate::layouts::read_mat_znx_with_shape(
+            &mut self.data,
+            &mut std::io::Read::chain(header.as_slice(), reader),
+            Some(1),
+            Some(components - 1),
+            components,
+        )?;
+        self.noise = metadata;
         self.dist = dist;
         self.base2k = base2k;
         self.k = k;
@@ -306,6 +354,9 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEPublicKey<D, W> {
 
 impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWEPublicKey<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
+        self.dist.validate_wire()?;
+        crate::layouts::validate_noise_components(self.noise.as_ref(), self.data.cols_out())?;
+        crate::ComponentNoise::write_optional(self.noise.as_ref(), writer)?;
         self.dist.write_to(writer)?;
         writer.write_u32::<LittleEndian>(self.base2k.0)?;
         writer.write_u32::<LittleEndian>(self.k.0)?;
@@ -366,6 +417,10 @@ impl<BE: Backend> DerefMut for GLWEPublicKeyBackendMut<'_, BE> {
 macro_rules! impl_public_key_infos_for_inner {
     ($ty:ident) => {
         impl<BE: Backend> LWEInfos for $ty<'_, BE> {
+            fn noise(&self) -> Option<crate::ComponentNoise> {
+                self.inner.noise.clone()
+            }
+
             fn base2k(&self) -> Base2K {
                 self.inner.base2k()
             }
@@ -409,6 +464,7 @@ impl<BE: Backend> GetDistributionMut for GLWEPublicKeyBackendMut<'_, BE> {
 impl<BE: Backend> GLWEPublicKeyToBackendRef<BE> for GLWEPublicKeyBackendRef<'_, BE> {
     fn to_backend_ref(&self) -> GLWEPublicKeyBackendRef<'_, BE> {
         GLWEPublicKeyBackendRef::from_inner(GLWEPublicKey {
+            noise: self.inner.noise.clone(),
             data: mat_znx_backend_ref_from_ref::<BE>(&self.inner.data),
             base2k: self.inner.base2k,
             k: self.inner.k,
@@ -420,6 +476,7 @@ impl<BE: Backend> GLWEPublicKeyToBackendRef<BE> for GLWEPublicKeyBackendRef<'_, 
 impl<BE: Backend> GLWEPublicKeyToBackendRef<BE> for GLWEPublicKeyBackendMut<'_, BE> {
     fn to_backend_ref(&self) -> GLWEPublicKeyBackendRef<'_, BE> {
         GLWEPublicKeyBackendRef::from_inner(GLWEPublicKey {
+            noise: self.inner.noise.clone(),
             data: mat_znx_backend_ref_from_mut::<BE>(&self.inner.data),
             base2k: self.inner.base2k,
             k: self.inner.k,
@@ -429,8 +486,14 @@ impl<BE: Backend> GLWEPublicKeyToBackendRef<BE> for GLWEPublicKeyBackendMut<'_, 
 }
 
 impl<BE: Backend> GLWEPublicKeyToBackendMut<BE> for GLWEPublicKeyBackendMut<'_, BE> {
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        self.inner.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
+    }
+
     fn to_backend_mut(&mut self) -> GLWEPublicKeyBackendMut<'_, BE> {
+        self.inner.noise = None;
         GLWEPublicKeyBackendMut::from_inner(GLWEPublicKey {
+            noise: None,
             data: mat_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
             base2k: self.inner.base2k,
             k: self.inner.k,
@@ -449,6 +512,7 @@ where
 {
     fn to_backend_ref(&self) -> GLWEPublicKeyBackendRef<'_, BE> {
         GLWEPublicKeyBackendRef::from_inner(GLWEPublicKey {
+            noise: self.noise.clone(),
             data: self.data.to_backend_ref(),
             base2k: self.base2k,
             k: self.k,
@@ -458,6 +522,10 @@ where
 }
 
 pub trait GLWEPublicKeyToBackendMut<BE: Backend> {
+    /// Records component noise metadata on this key.
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
+
+    /// Borrows coefficients mutably and clears the owner's component noise metadata.
     fn to_backend_mut(&mut self) -> GLWEPublicKeyBackendMut<'_, BE>;
 }
 
@@ -465,8 +533,14 @@ impl<BE: Backend, D: Data> GLWEPublicKeyToBackendMut<BE> for GLWEPublicKey<D, BE
 where
     MatZnx<D, BE::ZnxWord>: MatZnxToBackendMut<BE>,
 {
+    fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+        self.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
+    }
+
     fn to_backend_mut(&mut self) -> GLWEPublicKeyBackendMut<'_, BE> {
+        self.noise = None;
         GLWEPublicKeyBackendMut::from_inner(GLWEPublicKey {
+            noise: None,
             data: self.data.to_backend_mut(),
             base2k: self.base2k,
             k: self.k,

@@ -1,5 +1,8 @@
 //! Backend contracts selected by the public CKKS API through delegates.
 //!
+//! Outputs follow the core [noise metadata rule](poulpy_core::oep#noise-metadata).
+//! Delegates only forward.
+//!
 //! A backend explicitly implements each `*Impl` family. The
 //! `impl_ckks_*_reference!` macros wire lower-layer algorithms from
 //! [`crate::reference`]; a custom implementation can call those algorithms for

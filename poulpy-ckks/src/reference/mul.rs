@@ -13,7 +13,7 @@ use poulpy_hal::{
     layouts::{Backend, PrepareHint, ScratchArena},
 };
 
-use crate::SlotsKind;
+use crate::{CKKSCompositionError, CKKSError, SlotsKind};
 use crate::{
     CKKSInfos, SetCKKSInfos, checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget,
     ensure_plaintext_degree_embeds, layouts::CKKSPreparedRight,
@@ -72,6 +72,13 @@ pub trait CKKSMulReference<BE: Backend> {
         B: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
+        let k = a.k().max(b.k());
+        tsk.get_tensor_key(k)
+            .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+                op: "ckks_mul_into",
+                k: k.into(),
+            })?;
+
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, a, b)?;
 
         let one_pass = mul_one_pass(dst, &[a.base2k(), b.base2k()], a.k().max(b.k()), cnv_offset, tsk).then_some(
@@ -109,6 +116,13 @@ pub trait CKKSMulReference<BE: Backend> {
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
+        let k = dst.k().max(a.k());
+        tsk.get_tensor_key(k)
+            .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+                op: "ckks_mul_assign",
+                k: k.into(),
+            })?;
+
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, dst, a)?;
 
         let one_pass = mul_one_pass(dst, &[a.base2k()], dst.k().max(a.k()), cnv_offset, tsk).then_some(
@@ -176,6 +190,15 @@ pub trait CKKSMulReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
+        let k = dst.k().max(TorusPrecision(u32::try_from(prepared.k).map_err(|_| {
+            CKKSError::Internal(anyhow::anyhow!("prepared precision {} exceeds u32", prepared.k))
+        })?));
+        tsk.get_tensor_key(k)
+            .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+                op: "ckks_mul_prepared_assign",
+                k: k.into(),
+            })?;
+
         let (res_log_budget, res_log_delta, cnv_offset, tensor_k) = get_mul_prepared_params(&*dst, prepared)?;
 
         let one_pass = mul_one_pass(dst, &[prepared.layout.base2k], tensor_k, cnv_offset, tsk).then_some(
@@ -259,6 +282,13 @@ pub trait CKKSMulReference<BE: Backend> {
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
+        let k = a.k();
+        tsk.get_tensor_key(k)
+            .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+                op: "ckks_square_into",
+                k: k.into(),
+            })?;
+
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, a, a)?;
 
         let one_pass = mul_one_pass(dst, &[a.base2k()], a.k(), cnv_offset, tsk).then_some(
@@ -288,6 +318,13 @@ pub trait CKKSMulReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
+        let k = dst.k();
+        tsk.get_tensor_key(k)
+            .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+                op: "ckks_square_assign",
+                k: k.into(),
+            })?;
+
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, dst, dst)?;
 
         let one_pass =

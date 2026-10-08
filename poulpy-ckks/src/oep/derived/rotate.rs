@@ -32,7 +32,9 @@ where
 {
     let p = module.ckks_galois_element(k);
     if p == 1 {
-        return module.ckks_copy(dst, src, scratch);
+        module.ckks_copy(dst, src, scratch)?;
+        dst.set_noise(None);
+        return Ok(());
     }
     let key = keys
         .get_automorphism_key(p, src.k())
@@ -58,6 +60,7 @@ where
 {
     let p = module.ckks_galois_element(k);
     if p == 1 {
+        dst.set_noise(None);
         return Ok(());
     }
     let key = keys

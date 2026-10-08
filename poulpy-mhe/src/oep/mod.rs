@@ -1,5 +1,11 @@
 //! Backend extension points for multiparty operations.
 //!
+//! # Noise metadata
+//!
+//! Outputs follow the [core rule](poulpy_core::oep#noise-metadata). Shares,
+//! aggregates and finalized keys are fresh constructions and record the estimates
+//! of the share metadata contract in `docs/mhe-contracts.md`.
+//!
 //! A backend selects the reference implementation with the `impl_mhe_*_reference!`
 //! opt-ins or implements an `*Impl` contract itself. An override must compute the
 //! same result as the reference and pass parity against a validated backend; the

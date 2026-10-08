@@ -84,6 +84,7 @@ where
                 if i > 0 {
                     module.mhe_glwe_enc_to_share_share_aggregate(&mut acc, &public);
                 }
+                super::fixtures::assert_noise_components(&acc, &[(i + 1) as f64 * sigma * sigma]);
             }
             // The masks span the whole torus at the share's precision, top bits and bottom bit.
             for secret in &secrets[1..] {
@@ -155,6 +156,8 @@ where
 
         let mut ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&out_layout);
         module.mhe_glwe_share_to_enc_share_finalize(&mut ct, &acc, &mut scratch.borrow());
+        super::fixtures::assert_collective_metadata(&ct, PARTIES);
+        super::fixtures::assert_fresh_noise(&ct, PARTIES as f64 * DEFAULT_SIGMA_XE.powi(2), K_OUT);
         // The shares add up modulo 1; the output's extra precision only carries the noise.
         let want: Vec<i64> = (0..module.n())
             .map(|j| shares.iter().fold(0, |sum, s| wrap(sum + s[j], K.as_usize())))
@@ -179,6 +182,7 @@ where
     let (_, sk) = secret_from_seed(module, [100u8; 32]);
     let secret: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&secret_layout);
     let mut res = module.glwe_share_to_enc_share_alloc_from_infos(&layout);
+
     let mut scratch: ScratchOwned<BE> =
         ScratchOwned::alloc(module.mhe_glwe_share_to_enc_share_gen_tmp_bytes(&layout, &secret_layout));
     module.mhe_glwe_share_to_enc_share_gen(
@@ -288,7 +292,7 @@ where
     });
 }
 
-/// Reject invalid flood descriptors before touching the shares.
+/// Reject invalid smudging descriptors before touching the shares.
 pub fn test_glwe_enc_to_share_flood_guards<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,

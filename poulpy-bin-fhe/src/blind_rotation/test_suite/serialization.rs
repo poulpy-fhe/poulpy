@@ -1,4 +1,7 @@
-use poulpy_core::layouts::{GGSWAtBackendMut, GGSWInfos, GLWEInfos, LWEInfos, compressed::GGSWCompressedToBackendMut};
+use poulpy_core::layouts::{
+    GGSWAtBackendMut, GGSWInfos, GGSWToBackendMut, GLWEInfos, LWEInfos, compressed::GGSWCompressedToBackendMut,
+};
+use poulpy_core::{ComponentNoise, Distribution, FreshNoiseEstimate};
 use poulpy_hal::{
     api::VecZnxFillUniformSource,
     layouts::{Backend, HostDataMut, Module},
@@ -30,7 +33,10 @@ where
 
     let mut brk: [BlindRotationKey<BE::OwnedBuf, CGGI, BE::ZnxWord>; 2] =
         [(); 2].map(|_| BlindRotationKey::alloc(module, &layout));
-    for ggsw in brk.iter_mut().flat_map(|x| &mut x.keys) {
+    for (index, ggsw) in brk.iter_mut().flat_map(|x| &mut x.keys).enumerate() {
+        let noise = ComponentNoise::from_secret_at(Distribution::TernaryProb(0.3), ggsw.k(), ggsw.rank().as_usize())
+            .with_body_noise(FreshNoiseEstimate::new(index as f64 + 1.0, ggsw.k()));
+        GGSWToBackendMut::<BE>::set_noise(ggsw, Some(noise));
         let (rows, cols, size) = (ggsw.dnum().as_usize(), ggsw.rank().as_usize() + 1, ggsw.size());
         for row in 0..rows {
             for col_in in 0..cols {
@@ -45,7 +51,10 @@ where
 
     let mut brk_c: [BlindRotationKeyCompressed<BE::OwnedBuf, CGGI, BE::ZnxWord>; 2] =
         [(); 2].map(|_| BlindRotationKeyCompressed::alloc(module, &layout));
-    for ggsw in brk_c.iter_mut().flat_map(|x| &mut x.keys) {
+    for (index, ggsw) in brk_c.iter_mut().flat_map(|x| &mut x.keys).enumerate() {
+        let noise = ComponentNoise::from_secret_at(Distribution::TernaryProb(0.3), ggsw.k(), ggsw.rank().as_usize())
+            .with_body_noise(FreshNoiseEstimate::new(index as f64 + 1.0, ggsw.k()));
+        GGSWCompressedToBackendMut::<BE>::set_noise(ggsw, Some(noise));
         let (rows, cols, size) = (ggsw.dnum().as_usize(), ggsw.rank().as_usize() + 1, ggsw.size());
         let mut ggsw = GGSWCompressedToBackendMut::<BE>::to_backend_mut(ggsw);
         for row in 0..rows {

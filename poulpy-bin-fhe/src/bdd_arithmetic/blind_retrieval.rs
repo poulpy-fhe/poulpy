@@ -185,6 +185,7 @@ impl<D: Data> GLWEBlindRetriever<D, i64> {
             }
         }
         module.glwe_copy(res, &self.accumulators.last().unwrap().data, scratch);
+        res.set_noise(None);
         self.reset()
     }
 

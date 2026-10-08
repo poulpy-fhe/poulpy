@@ -2477,39 +2477,48 @@ where
                 && res_ref.k() >= a_ref.k()
                 && (a_ref.is_canonical() || res_ref.max_size() >= a_ref.max_size())
         };
-        res.set_canonical(!raw || a.is_canonical());
-        let mut res = res.to_backend_mut();
-        let a = a.to_backend_ref();
-
-        operand_degree(self.n(), &[res.n(), a.n()]);
-        assert!(res.rank() == a.rank() || a.rank() == 0);
-
-        let min_rank: usize = res.rank().min(a.rank()).as_usize() + 1;
-        if raw {
-            for i in 0..min_rank {
-                self.vec_znx_copy(&mut res.data, i, &a.data, i);
-            }
+        let rank = res.to_backend_ref().rank().as_usize();
+        let noise = if res.to_backend_ref().k() >= a.to_backend_ref().k() {
+            a.to_backend_ref().noise()
         } else {
-            let base2k = res.base2k().as_usize();
-            let k = res.k().as_usize();
-            for i in 0..min_rank {
-                self.vec_znx_normalize(
-                    &mut res.data,
-                    base2k,
-                    k,
-                    0,
-                    i,
-                    &a.data,
-                    a.base2k().as_usize(),
-                    i,
-                    &mut scratch.borrow(),
-                );
+            None
+        };
+        res.set_canonical(!raw || a.is_canonical());
+        {
+            let mut res = res.to_backend_mut();
+            let a = a.to_backend_ref();
+
+            operand_degree(self.n(), &[res.n(), a.n()]);
+            assert!(res.rank() == a.rank() || a.rank() == 0);
+
+            let min_rank: usize = res.rank().min(a.rank()).as_usize() + 1;
+            if raw {
+                for i in 0..min_rank {
+                    self.vec_znx_copy(&mut res.data, i, &a.data, i);
+                }
+            } else {
+                let base2k = res.base2k().as_usize();
+                let k = res.k().as_usize();
+                for i in 0..min_rank {
+                    self.vec_znx_normalize(
+                        &mut res.data,
+                        base2k,
+                        k,
+                        0,
+                        i,
+                        &a.data,
+                        a.base2k().as_usize(),
+                        i,
+                        &mut scratch.borrow(),
+                    );
+                }
+            }
+
+            for i in min_rank..(res.rank() + 1).into() {
+                self.vec_znx_zero(&mut res.data, i);
             }
         }
-
-        for i in min_rank..(res.rank() + 1).into() {
-            self.vec_znx_zero(&mut res.data, i);
-        }
+        res.set_noise(noise.map(|noise| noise.with_rank(rank)));
     }
 }
 
@@ -2713,7 +2722,7 @@ where
         assert!(res.rank() >= a.rank());
 
         let base2k: usize = res.base2k().into();
-        for i in 0..res.rank().as_usize() + 1 {
+        for i in 0..a.rank().as_usize() + 1 {
             let mut scratch_iter = scratch.borrow();
             self.vec_znx_lsh_add(base2k, k, &mut res.data, i, &a.data, i, &mut scratch_iter);
         }
@@ -2739,7 +2748,7 @@ where
         assert!(res.rank() >= a.rank());
 
         let base2k: usize = res.base2k().into();
-        for i in 0..res.rank().as_usize() + 1 {
+        for i in 0..a.rank().as_usize() + 1 {
             let mut scratch_iter = scratch.borrow();
             self.vec_znx_lsh_sub(base2k, k, &mut res.data, i, &a.data, i, &mut scratch_iter);
         }
