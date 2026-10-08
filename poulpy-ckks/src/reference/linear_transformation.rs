@@ -113,7 +113,7 @@ where
         // sizes from above, so the result is a safe upper bound. The extra
         // ct-sized buffer is the dst-shaped working copy the `_assign` wrappers
         // carve from scratch (an upper bound for the `_into` paths, which skip it).
-        self.glwe_eval_linear_transformation_tmp_bytes(ct, ct, ct, key) + self.glwe_bytes_of_from_infos(ct)
+        self.glwe_eval_linear_transformation_tmp_bytes(ct, ct, ct, key) + BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
     }
 
     /// The ciphertext stands in for the diagonal, so the budget is an upper bound for a compact diagonal.
@@ -125,7 +125,8 @@ where
         // `ct` doubles as the plaintext-operand proxy (upper bound on diagonal
         // shape). The extra ct-sized buffer covers the `_assign` wrappers'
         // scratch-carved working copy, as above.
-        self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, ct, key) + self.glwe_bytes_of_from_infos(ct)
+        self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, ct, key)
+            + BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
     }
 
     // ---------- populate ----------

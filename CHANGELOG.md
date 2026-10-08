@@ -64,6 +64,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-core`
 
+- `glwe_prepare_linear_transformation_rhs` panics on a diagonal stored across more limbs than its `k` selects, instead of dropping the limbs past the prepared slot; the check compared `size()` with its own definition and could not fail ([#386](https://github.com/poulpy-fhe/poulpy/issues/386)). `test_glwe_prepare_linear_transformation_rhs_rejects_wide_diagonal` pins it.
 - **Breaking:** `GLWEMulXpMinusOne` and `GLWEMulXpMinusOneImpl` gain `glwe_mul_xp_minus_one_assign_tmp_bytes(res_size)`, the scratch query of the in-place variant ([#385](https://github.com/poulpy-fhe/poulpy/issues/385)). The reference body checks the arena against it, the blind-rotation budget and the shift parity test size through it instead of the HAL query and the rotation query.
 - **Breaking:** `GLWETensoring` and `GLWETensoringImpl` include prepared-right tensor multiplication and its scratch query. Reference forwarding macros implement both operations through the new `GLWETensoringReference` methods `glwe_tensor_apply_prepared_right_reference` and `glwe_tensor_apply_prepared_right_tmp_bytes_reference`; CKKS prepared multiplication dispatches through Core.
   The core tensor parity checks the prepared-right product against the reference and against the ordinary product on every backend.
@@ -134,6 +135,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-ckks`
 
+- Scratch sizing that held only on the CPU backends ([#386](https://github.com/poulpy-fhe/poulpy/issues/386)): `ckks_eval_linear_transformation_tmp_bytes` and its streamed variant round the working ciphertext to `SCRATCH_ALIGN`, and the bootstrapping queries also size EvalMod for `ct_out` itself, which may be allocated wider than its `k`.
 - Add `test_suite::determinism`, frozen FNV-64 fixtures in `test_suite/determinism.txt` that pin the CKKS encoding bytes of every backend on every platform.
   They cover the slot transforms, the plaintexts, the decoded slots and the dequantized coefficients in `f64` and `Quad` in both rings and `f32` on the portable and oracle FFT64 backends, and the setup constants: the `CKKSFloat` functions, DFT matrices, the sign and minimax approximations, and the EvalMod polynomials and plaintexts.
   The CKKS backend suites run them as `encoding_determinism`, and `POULPY_UPDATE_FIXTURES=1` records new hashes after an intended change.

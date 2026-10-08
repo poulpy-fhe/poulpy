@@ -24,10 +24,12 @@ use crate::{
     error::{CoreError, Result},
     layouts::{
         Dsize, GGLWEInfos, GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext, GLWESecret,
-        GLWESecretPreparedFactory, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, ModuleCoreAlloc, TorusPrecision,
+        GLWESecretPreparedFactory, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation,
+        LinearTransformationDiagonal, LinearTransformationGiantStep, LinearTransformationLayout, LinearTransformationStrategy,
+        ModuleCoreAlloc, SetK, TorusPrecision,
         prepared::{
             GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedFactory,
-            GLWEAutomorphismKeyPreparedToBackendRef, GLWESecretPrepared,
+            GLWEAutomorphismKeyPreparedToBackendRef, GLWESecretPrepared, PreparedDiagonal,
         },
     },
 };
@@ -291,4 +293,46 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
             }
         }
     }
+}
+
+/// A diagonal stored across more limbs than its `k` selects does not fit the
+/// slot sized from that `k`: preparing it must panic instead of dropping the
+/// limbs past the slot.
+pub fn test_glwe_prepare_linear_transformation_rhs_rejects_wide_diagonal<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: GLWELinearTransformations<BE> + CnvPVecAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let layout = GLWELayout {
+        n: module.n().into(),
+        base2k: params.base2k.into(),
+        k: (3 * params.base2k).into(),
+        rank: 0u32.into(),
+    };
+    let mut diagonal: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&layout);
+    diagonal.set_k(params.base2k.into());
+
+    let schedule = LinearTransformationLayout {
+        indexes: vec![0],
+        slots: module.n() / 2,
+        strategy: LinearTransformationStrategy::Bsgs { giant_step: 1 },
+    };
+    let mut prepared: LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> =
+        LinearTransformation::alloc_prepared(module, &schedule, &diagonal);
+    let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_prepare_linear_transformation_rhs_tmp_bytes(&layout));
+    let lt = LinearTransformation {
+        baby_steps: vec![0],
+        giant_steps: vec![LinearTransformationGiantStep {
+            rot: 0,
+            diagonals: vec![LinearTransformationDiagonal {
+                baby: 0,
+                plaintext: diagonal,
+            }],
+        }],
+    };
+    module.glwe_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch.borrow());
 }

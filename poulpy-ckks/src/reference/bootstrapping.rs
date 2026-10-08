@@ -248,7 +248,12 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
             BootstrappingPipeline::S2CFirst => post_mod_up.max(boot_ct_bytes + in_ct_bytes),
         };
 
-        let eval_mod_tmp = self.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key);
+        // EvalMod writes into scratch-carved boot-width ciphertexts and, on the
+        // real-slot path, into `ct_out` itself, which may be allocated wider
+        // than its `k`.
+        let eval_mod_tmp = self
+            .ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key)
+            .max(self.ckks_eval_mod_tmp_bytes(ct_out, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key));
         let eval_mod_tmp = if <BE::TaskExecutor as TaskExecutor>::IS_PARALLEL {
             2 * worker_scratch_bytes::<BE>(eval_mod_tmp)
         } else {
@@ -353,8 +358,9 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
                 ));
         }
         if luts.iter().any(EncodedLut::requires_eval_mod) {
-            nested =
-                nested.max(self.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key));
+            nested = nested
+                .max(self.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key))
+                .max(self.ckks_eval_mod_tmp_bytes(ct_out, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key));
         }
         base.max(carved + nested)
     }
