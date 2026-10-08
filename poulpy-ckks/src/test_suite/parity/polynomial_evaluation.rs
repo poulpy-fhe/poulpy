@@ -1,6 +1,6 @@
 //! Paired polynomial engines, one-shot derived schedules, and EvalMod.
 use super::{
-    helpers::{Snapshot, fixture_ciphertext, snapshot, with_scratch},
+    helpers::{Snapshot, assert_untagged, fixture_ciphertext, snapshot, with_scratch},
     keys::{key_layout, prepared_tensor_key},
 };
 use crate::{
@@ -336,8 +336,10 @@ where
     Module<BT>: CKKSAllOpsTmpBytes<BT> + GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
 {
     assert_eq!(reference.n(), tested.n());
+    let want = real_polynomials::<BR, F>(params, reference);
+    assert_untagged("real polynomial", &want);
     assert_eq!(
-        real_polynomials::<BR, F>(params, reference),
+        want,
         real_polynomials::<BT, F>(params, tested),
         "real polynomial parity differs"
     );
@@ -354,8 +356,10 @@ where
     Module<BT>: CKKSAllOpsTmpBytes<BT> + CKKSEvalModOps<BT> + GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
 {
     assert_eq!(reference.n(), tested.n());
+    let want = complex_polynomials_and_eval_mod::<BR, F>(params, reference);
+    assert_untagged("complex polynomial or EvalMod", &want);
     assert_eq!(
-        complex_polynomials_and_eval_mod::<BR, F>(params, reference),
+        want,
         complex_polynomials_and_eval_mod::<BT, F>(params, tested),
         "complex polynomial or EvalMod parity differs"
     );

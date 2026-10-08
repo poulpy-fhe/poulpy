@@ -1,6 +1,6 @@
 use poulpy_core::{
     GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWERotate, GLWESub, GLWETrace,
-    layouts::{GLWELayout, GLWESecretPrepared},
+    layouts::{GLWELayout, GLWESecretPrepared, LWEInfos},
 };
 use poulpy_hal::layouts::HostDataRef;
 use poulpy_hal::{
@@ -61,6 +61,14 @@ pub fn test_fhe_uint_sext<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostData
             a_enc.decrypt(module, sk, &mut scratch.borrow())
         );
     }
+
+    // Extending from the top byte leaves the value unchanged, yet is an evaluation.
+    let a: u32 = 0x8483_8281;
+    a_enc.encrypt_sk(module, a, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
+    assert!(a_enc.noise().is_some());
+    a_enc.sext(module, 3, keys, &mut scratch.borrow());
+    assert!(a_enc.noise().is_none());
+    assert_eq!(a, a_enc.decrypt(module, sk, &mut scratch.borrow()));
 }
 
 pub(crate) fn sext(x: u32, bits: u32) -> u32 {

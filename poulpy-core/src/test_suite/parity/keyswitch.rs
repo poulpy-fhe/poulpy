@@ -421,7 +421,7 @@ pub fn test_gglwe_keyswitch_parity<BR, BT>(
 
             let mut have = module_ref.gglwe_alloc_from_infos(&res_infos);
             res_test.transfer_into(&mut have);
-            assert_eq!(res_ref, have, "gglwe_keyswitch: rank={rank} dsize={dsize} k={k}");
+            assert_eval_eq!(res_ref, have, "gglwe_keyswitch: rank={rank} dsize={dsize} k={k}");
 
             // The assign query is measured independently at the operand's own width.
             let mut assigned_ref = module_ref.gglwe_alloc_from_infos(&a_infos);
@@ -434,7 +434,7 @@ pub fn test_gglwe_keyswitch_parity<BR, BT>(
             module_test.gglwe_keyswitch_assign(&mut assigned_test, &key_test.to_backend_ref(), &mut scratch_test.borrow());
             let mut have = module_ref.gglwe_alloc_from_infos(&a_infos);
             assigned_test.transfer_into(&mut have);
-            assert_eq!(assigned_ref, have, "gglwe_keyswitch_assign: rank={rank} dsize={dsize}");
+            assert_eval_eq!(assigned_ref, have, "gglwe_keyswitch_assign: rank={rank} dsize={dsize}");
         }
     }
 }

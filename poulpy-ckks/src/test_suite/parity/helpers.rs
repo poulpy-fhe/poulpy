@@ -57,6 +57,13 @@ where
     }
 }
 
+/// Asserts evaluation outputs carry no noise tag, which equality between backends would miss.
+pub(crate) fn assert_untagged<'a>(label: &str, outputs: impl IntoIterator<Item = &'a Snapshot>) {
+    for (i, output) in outputs.into_iter().enumerate() {
+        assert!(output.noise.is_none(), "{label} output {i} kept a noise tag");
+    }
+}
+
 pub(crate) fn fixture_ciphertext<B: Backend<ZnxWord = i64>>(
     module: &Module<B>,
     layout: &CKKSLayout,

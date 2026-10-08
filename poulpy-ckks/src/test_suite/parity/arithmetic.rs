@@ -207,7 +207,14 @@ pub fn test_arithmetic_parity<BR: ArithmeticParityBackend, BT: ArithmeticParityB
     Module<BT>: GLWEMaskFill<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
-    assert_eq!(arithmetic(params, r), arithmetic(params, t));
+    let want = arithmetic(params, r);
+    assert_untagged(
+        "arithmetic",
+        want.iter()
+            .filter(|(label, _)| !label.contains("copy"))
+            .map(|(_, output)| output),
+    );
+    assert_eq!(want, arithmetic(params, t));
 }
 
 fn imaginary<B: Backend<ZnxWord = i64> + CKKSImagImpl>(
@@ -279,7 +286,14 @@ where
     Module<BT>: GLWEMaskFill<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
-    assert_eq!(imaginary(params, r), imaginary(params, t));
+    let want = imaginary(params, r);
+    assert_untagged(
+        "imaginary",
+        want.iter()
+            .filter(|(label, _)| !label.contains("copy"))
+            .map(|(_, output)| output),
+    );
+    assert_eq!(want, imaginary(params, t));
 }
 
 fn products<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
@@ -410,7 +424,14 @@ where
     Module<BT>: GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
-    assert_eq!(products(params, r), products(params, t));
+    let want = products(params, r);
+    assert_untagged(
+        "products",
+        want.iter()
+            .filter(|(label, _)| !label.contains("copy"))
+            .map(|(_, output)| output),
+    );
+    assert_eq!(want, products(params, t));
 }
 
 /// Prepared, ordinary and square products at caller-selected large-ring layouts.
@@ -464,7 +485,9 @@ where
         results
     }
     let _scalar = std::marker::PhantomData::<F>;
-    assert_eq!(products(params, r), products(params, t));
+    let want = products(params, r);
+    assert_untagged("prepared products", &want);
+    assert_eq!(want, products(params, t));
 }
 
 fn rotations<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
@@ -532,8 +555,6 @@ where
         }
         assert_eq!(before, snapshot::<B, _>(&input));
     }
-    // Every rotation, the identity included, returns an untagged ciphertext.
-    assert!(results.iter().all(|(_, s)| s.noise.is_none()));
     results
 }
 
@@ -546,7 +567,14 @@ where
     Module<BT>: GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
-    assert_eq!(rotations(params, r), rotations(params, t));
+    let want = rotations(params, r);
+    assert_untagged(
+        "rotations",
+        want.iter()
+            .filter(|(label, _)| !label.contains("copy"))
+            .map(|(_, output)| output),
+    );
+    assert_eq!(want, rotations(params, t));
 }
 
 fn conjugations<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
@@ -606,5 +634,12 @@ where
     Module<BT>: GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
-    assert_eq!(conjugations(params, r), conjugations(params, t));
+    let want = conjugations(params, r);
+    assert_untagged(
+        "conjugations",
+        want.iter()
+            .filter(|(label, _)| !label.contains("copy"))
+            .map(|(_, output)| output),
+    );
+    assert_eq!(want, conjugations(params, t));
 }

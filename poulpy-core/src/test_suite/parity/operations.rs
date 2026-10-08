@@ -122,6 +122,9 @@ fn compare<BR, BT, FR, FT>(
                 let expected = if res_infos.k >= a_infos.k { a_ref.noise() } else { None };
                 assert_eq!(res_ref.noise(), expected);
                 assert_eq!(res_test.noise(), expected);
+                // Copies keep the tag; every other operation must clear it.
+                res_ref.noise = None;
+                res_test.noise = None;
             }
             let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
             res_test.transfer_into(&mut have);
@@ -1021,7 +1024,7 @@ pub fn test_ggsw_rotate_parity<BR, BT>(
             module_test.ggsw_rotate(k, &mut out_test, &a_test);
             let mut have = module_ref.ggsw_alloc_from_infos(&infos);
             out_test.transfer_into(&mut have);
-            assert_eq!(out_ref, have, "ggsw_rotate rank={rank} k={k}");
+            assert_eval_eq!(out_ref, have, "ggsw_rotate rank={rank} k={k}");
             a_ref.transfer_into(&mut out_ref);
             a_ref.transfer_into(&mut out_test);
             module_ref.ggsw_rotate_assign(
@@ -1035,7 +1038,7 @@ pub fn test_ggsw_rotate_parity<BR, BT>(
                 &mut poisoned_scratch::<BT>(module_test.ggsw_rotate_tmp_bytes()).borrow(),
             );
             out_test.transfer_into(&mut have);
-            assert_eq!(out_ref, have, "ggsw_rotate_assign rank={rank} k={k}");
+            assert_eval_eq!(out_ref, have, "ggsw_rotate_assign rank={rank} k={k}");
         }
     }
 }

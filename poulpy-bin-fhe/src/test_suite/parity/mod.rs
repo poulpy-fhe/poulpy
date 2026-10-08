@@ -13,8 +13,8 @@ pub mod lifecycle;
 use poulpy_core::{
     ComponentNoise, Distribution, TransferInto,
     layouts::{
-        GGSW, GGSWInfos, GGSWLayout, GGSWToBackendRef, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-        ModuleCoreAlloc,
+        GGSW, GGSWInfos, GGSWLayout, GGSWToBackendMut, GGSWToBackendRef, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut,
+        GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
     },
 };
 use poulpy_hal::{
@@ -48,6 +48,13 @@ impl std::fmt::Debug for GlweSnapshot {
 pub(crate) struct GgswSnapshot {
     layout: GGSWLayout,
     rows: Vec<GlweSnapshot>,
+}
+
+/// Asserts evaluation outputs carry no noise tag, which equality between backends would miss.
+pub(crate) fn assert_untagged<'a>(label: &str, outputs: impl IntoIterator<Item = &'a GlweSnapshot>) {
+    for (i, output) in outputs.into_iter().enumerate() {
+        assert!(output.noise.is_none(), "{label} output {i} kept a noise tag");
+    }
 }
 
 pub(crate) fn snapshot_glwe<B: Backend<ZnxWord = i64>, A: GLWEToBackendRef<B>>(ct: &A) -> GlweSnapshot {
@@ -128,6 +135,9 @@ pub(crate) fn fixture_ggsw<B: ParityBackend>(module: &Module<B>, infos: &impl GG
             canonicalize(&mut glwe);
         }
     }
+    // Tagged after filling, since mutable row access clears the tag.
+    let noise = ComponentNoise::from_secret_at(Distribution::TernaryProb(0.5), infos.k(), infos.rank().as_usize());
+    GGSWToBackendMut::<HostBytesBackend>::set_noise(&mut input, Some(noise));
     let mut output = module.ggsw_alloc_from_infos(infos);
     input.transfer_into(&mut output);
     output

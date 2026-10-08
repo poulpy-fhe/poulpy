@@ -5,11 +5,12 @@
 //! | Function | Path exercised |
 //! |----------|----------------|
 //! | [`test_add_many_aligned`] | all inputs at the same `log_budget` / `log_delta` |
-//! | [`test_add_many_single_smaller_output`] | one input into a narrower output |
+//! | [`test_add_many_single_smaller_output`] | one input, at its width and into a narrower output |
 //! | [`test_add_many_unaligned_log_budget`] | one input rescaled by one limb |
 //! | [`test_add_many_delta_log_delta`] | inputs at different `log_delta` |
 //! | [`test_add_many_smaller_output`] | output narrower than inputs (`offset > 0`) |
 
+use poulpy_core::layouts::LWEInfos;
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, Standard},
@@ -132,8 +133,14 @@ pub fn test_add_many_single_smaller_output<BE, F, E>(
         &mut scratch.borrow(),
     );
     let ct_refs = vec![&ct];
+    // At the input's width, one input is a lossless copy, still an evaluation.
+    let mut ct_same = alloc_ct(&params, module, params.k);
+    module.ckks_add_many(&mut ct_same, &ct_refs, &mut scratch.borrow()).unwrap();
+    assert!(ct.noise().is_some());
+    assert!(ct_same.noise().is_none());
     let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
     module.ckks_add_many(&mut ct_res, &ct_refs, &mut scratch.borrow()).unwrap();
+    assert!(ct_res.noise().is_none());
     assert_decrypt_precision(
         "add_many_single_smaller_output",
         &params,
