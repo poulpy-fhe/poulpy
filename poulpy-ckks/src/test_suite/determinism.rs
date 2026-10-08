@@ -20,9 +20,8 @@ use std::{
 
 use poulpy_core::layouts::{Base2K, LWEInfos, TorusPrecision};
 use poulpy_hal::{
-    AlignedBuf,
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, Ring, ScratchOwned, Standard, ZnxView},
+    layouts::{Backend, HostBytesBackend, Module, Ring, ScratchOwned, Standard, ZnxView},
 };
 
 use crate::{
@@ -32,6 +31,7 @@ use crate::{
     layouts::{
         CKKSEncodingBuffer, CKKSModuleAlloc, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType,
         eval_mod::{EvalModPlan, EvalModPoly, EvalModType, compile_eval_mod},
+        slot_coeff_count,
     },
     polynomial::SplitStrategy,
     reference::gen_dft_matrices,
@@ -110,7 +110,7 @@ fn check_scalars<F: TestScalar>(key: &str, values: &[F]) {
     check_fixture(key, scalar_bytes(values));
 }
 
-fn check_plaintext<BE: TestContextBackend>(key: &str, pt: &CKKSPlaintextOwned<BE>) {
+fn check_plaintext<BE: Backend<ZnxWord = i64>>(key: &str, pt: &CKKSPlaintextOwned<BE>) {
     let host = pt.to_host_owned::<BE>();
     let mut bytes = Vec::new();
     for limb in 0..host.size() {
@@ -140,7 +140,7 @@ fn precision<F>() -> usize {
 /// for dense and sparse slot counts.
 pub fn encoding_fixtures<BE, F>(module: &Module<BE>)
 where
-    BE: TestContextBackend,
+    BE: Backend<ZnxWord = i64>,
     F: TestScalar,
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
 {
@@ -159,10 +159,12 @@ where
         let key = format!("encoding-{ring}-f{bits}-n{}-slots{slots}", module.n());
         let re = dyadic::<F>(slots, 1);
         let im = dyadic::<F>(slots, 2);
+        // The invariant ring leaves workspace past its coefficients.
+        let coeffs = slot_coeff_count(module, 2 * slots);
 
-        let mut values = CKKSEncodingBuffer::<AlignedBuf, F>::from_host::<BE>(&[re.as_slice(), im.as_slice()].concat());
+        let mut values = CKKSEncodingBuffer::<BE::OwnedBuf, F>::from_host::<BE>(&[re.as_slice(), im.as_slice()].concat());
         module.ckks_slots_to_coeffs_assign(&mut values).unwrap();
-        check_scalars(&format!("{key}-coeffs"), &values.to_host::<BE>());
+        check_scalars(&format!("{key}-coeffs"), &values.to_host::<BE>()[..coeffs]);
         module.ckks_coeffs_to_slots_assign(&mut values).unwrap();
         check_scalars(&format!("{key}-slots"), &values.to_host::<BE>());
 
@@ -185,7 +187,7 @@ where
                 .unwrap();
             check_scalars(&format!("{key}-delta{log_delta}-decoded"), &[got_re, got_im].concat());
 
-            let mut coefficients = vec![F::zero(); slots];
+            let mut coefficients = vec![F::zero(); coeffs];
             module
                 .ckks_decode_coeffs_host_into(&pt, &mut coefficients, &mut scratch.borrow())
                 .unwrap();
@@ -199,7 +201,7 @@ where
 /// with their encoded plaintexts.
 pub fn setup_fixtures<BE, F>(module: &Module<BE>)
 where
-    BE: TestContextBackend,
+    BE: Backend<ZnxWord = i64>,
     F: TestScalar,
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
 {

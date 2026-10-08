@@ -131,12 +131,12 @@ Rayon variants fall back to serial execution when the active pool has one thread
 
 ## CKKS encoding
 
-CKKS encoding and decoding return the same bytes on every backend and platform, at each scalar precision (`f32`, `f64` and `Quad`), in both rings.
+CKKS encoding and decoding return the same bytes on every backend and platform, at each scalar precision it implements (`f32`, `f64` or `Quad`), in both rings.
 The plaintexts, the decoded slots and the float coefficients of the slot transforms all match, and so do the setup constants of bootstrapping.
 
 A backend implementing `CKKSEncodingImpl` keeps this by following one arithmetic definition, whatever its layout, vectorization or scheduling:
 
-- The slot transforms are the radix-2 negacyclic FFT of `fft_portable` and `ifft_portable` in `poulpy-cpu-portable`, with the same butterflies on the same pairs.
+- The slot transforms are the radix-2 negacyclic FFT of `fft_portable_fused` and `ifft_portable_fused` in `poulpy-cpu-portable`, with the same butterflies on the same pairs.
 - Each butterfly computes `b * w` with one multiply-add per component, as the portable kernels do: the real part is `fma(br, wr, -(bi * wi))` and the imaginary part `fma(bi, wr, br * wi)`, the product in parentheses rounded once. The butterflies by `i * w` and the inverse butterflies follow the portable kernels in the same way, including which sum is computed negated.
 - No other operation is fused or reassociated. On a GPU this means compiling with contraction disabled, such as `--fmad=false`, or writing every operation with the explicitly rounded intrinsics `__fma_rn`, `__fmul_rn` and `__fadd_rn`.
 - The twiddles are the correctly rounded roots of unity of `CKKSFloat::ckks_root_of_unity`, as built by `EncodingFFTTable`.
