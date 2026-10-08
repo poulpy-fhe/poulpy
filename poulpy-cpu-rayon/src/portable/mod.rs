@@ -4,6 +4,7 @@
 //! depend on the executor in return.
 
 mod fft64;
+mod ntt4x30;
 #[cfg(test)]
 mod tests;
 
@@ -17,3 +18,10 @@ pub struct FFT64PortableRayon<R: Ring = Standard>(PhantomData<R>);
 
 /// [`FFT64PortableRayon`] over the conjugate invariant ring.
 pub type FFT64CIPortableRayon = FFT64PortableRayon<ConjugateInvariant>;
+
+/// Rayon-scheduled variant of [`NTT4x30Portable`](poulpy_cpu_portable::NTT4x30Portable).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct NTT4x30PortableRayon<R: Ring = Standard>(PhantomData<R>);
+
+/// [`NTT4x30PortableRayon`] over the conjugate invariant ring.
+pub type NTT4x30CIPortableRayon = NTT4x30PortableRayon<ConjugateInvariant>;
