@@ -510,7 +510,6 @@ pub(crate) fn ntt32(table: &Ntt32Table, dst: &mut [u32], src: &[i64], prepared: 
 /// Plane `p` of [`ntt32`], for callers that transform the four planes of a limb as separate tasks.
 ///
 /// `dst` is the plane itself, `n` words.
-#[cfg(feature = "enable-rayon")]
 pub(crate) fn ntt32_plane(table: &Ntt32Table, p: usize, dst: &mut [u32], src: &[i64], prepared: bool) {
     let n = table.n;
     assert!(dst.len() >= n);
@@ -644,7 +643,6 @@ pub(crate) unsafe fn intt32_plane(table: &Ntt32Table, p: usize, src: *const u32,
 ///
 /// # Safety
 /// `work` holds the planes written by [`intt32_plane`], `dst` addresses `n` `i128` and does not overlap `work`.
-#[cfg(feature = "enable-rayon")]
 pub(crate) unsafe fn intt32_crt(table: &Ntt32Table, dst: *mut i128, work: *const u32, start: usize, end: usize) {
     debug_assert!(start.is_multiple_of(4) && end.is_multiple_of(4) && end <= table.n);
     unsafe { crt(dst, work, table.n, start, end) }

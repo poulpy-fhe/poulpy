@@ -9,7 +9,7 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::aarch64::{
     int64x2_t, uint32x4_t, vaddq_u32, vdupq_n_s64, vdupq_n_u32, vld1q_dup_u32, vld1q_u32, vst1q_u32, vzip1q_u32, vzip2q_u32,
 };
-use poulpy_cpu_portable::kernels::ntt4x30::{primes::Primes30, vec_znx_dft::NttModuleHandle};
+use poulpy_cpu_portable::kernels::ntt4x30::primes::Primes30;
 use poulpy_cpu_portable::kernels::sparse_log_gap_portable;
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::CnvDftAccTerm;
@@ -19,7 +19,7 @@ use poulpy_hal::layouts::{
 };
 use std::mem::size_of;
 
-use super::vec_znx_dft::{PackedDft, prepare_tmp_words};
+use super::vec_znx_dft::prepare_tmp_words;
 use crate::neon::ntt4x30_packed::{
     DOT_CHUNK, DOT_SHORT, Plane, add_mod, center, limb_to_prepared, mla_centered, planes, redc_acc,
 };
@@ -356,17 +356,21 @@ fn zero_prepared_limb(dst: &mut [u32], n: usize, size: usize, limb: usize) {
     }
 }
 
+/// Prepares `a` into `left`, `right`, or both.
+///
+/// `dft(n, dst, src, prepared)` is the forward transform of `src` into the packed limb `dst`,
+/// multiplied by `2^32` when `prepared` is set.
 fn prepare<BE, E: TaskExecutor>(
     module: &Module<BE>,
     left: Option<&mut CnvPVecLBackendMut<'_, BE>>,
     right: Option<&mut CnvPVecRBackendMut<'_, BE>>,
     a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut [u64],
+    dft: impl Fn(usize, &mut [u32], &[i64], bool) + Send + Sync,
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: NttModuleHandle + PackedDft,
 {
     poulpy_hal::layouts::assert_dense(a, "prepare");
     let (n, cols, size) = if let Some(res) = left.as_ref() {
@@ -396,7 +400,7 @@ fn prepare<BE, E: TaskExecutor>(
         let dst_r = right_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
         if limb < min_size {
             let tmp_packed: &mut [u32] = &mut cast_slice_mut(tmp)[..4 * n];
-            module.packed_dft_limb(n, tmp_packed, a.at(col, limb), dst_l.is_none());
+            dft(n, tmp_packed, a.at(col, limb), dst_l.is_none());
             if let Some(dst) = dst_l {
                 scatter_centered_limb(dst, tmp_packed, n, size, limb);
                 if dst_r.is_some() {
@@ -422,13 +426,13 @@ pub(crate) fn cnv_prepare_left<BE, E: TaskExecutor>(
     res: &mut CnvPVecLBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut [u64],
+    dft: impl Fn(usize, &mut [u32], &[i64], bool) + Send + Sync,
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: NttModuleHandle + PackedDft,
 {
-    prepare::<BE, E>(module, Some(res), None, a, tmp);
+    prepare::<BE, E>(module, Some(res), None, a, tmp, dft);
 }
 
 pub(crate) fn cnv_prepare_right<BE, E: TaskExecutor>(
@@ -436,13 +440,13 @@ pub(crate) fn cnv_prepare_right<BE, E: TaskExecutor>(
     res: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut [u64],
+    dft: impl Fn(usize, &mut [u32], &[i64], bool) + Send + Sync,
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: NttModuleHandle + PackedDft,
 {
-    prepare::<BE, E>(module, None, Some(res), a, tmp);
+    prepare::<BE, E>(module, None, Some(res), a, tmp, dft);
 }
 
 pub(crate) fn cnv_prepare_self<BE, E: TaskExecutor>(
@@ -451,13 +455,13 @@ pub(crate) fn cnv_prepare_self<BE, E: TaskExecutor>(
     right: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut [u64],
+    dft: impl Fn(usize, &mut [u32], &[i64], bool) + Send + Sync,
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: NttModuleHandle + PackedDft,
 {
-    prepare::<BE, E>(module, Some(left), Some(right), a, tmp);
+    prepare::<BE, E>(module, Some(left), Some(right), a, tmp, dft);
 }
 
 pub(crate) fn cnv_apply_dft_tmp_bytes(_res_size: usize, _a_size: usize, _b_size: usize) -> usize {
@@ -480,7 +484,6 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: NttModuleHandle,
 {
     let (n, res_size, a_size, b_size) = (res.n(), res.size(), a.size(), b.size());
     check_degree::<BE>(module.n(), n);
@@ -554,7 +557,6 @@ pub(crate) unsafe fn cnv_apply_dft<BE, E: TaskExecutor>(
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: NttModuleHandle,
 {
     unsafe { apply::<BE, E, false, false>(module, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
 }
@@ -573,7 +575,6 @@ pub(crate) unsafe fn cnv_apply_dft_add<BE, E: TaskExecutor>(
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: NttModuleHandle,
 {
     unsafe { apply::<BE, E, true, false>(module, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
 }
@@ -617,7 +618,6 @@ pub(crate) unsafe fn cnv_apply_dft_sum_neon<BE, E: TaskExecutor>(
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: NttModuleHandle,
 {
     let (n, res_size, res_cols) = (res.n(), res.size(), res.cols());
     check_degree::<BE>(module.n(), n);
@@ -724,7 +724,6 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft<BE, E: TaskExecutor>(
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: NttModuleHandle,
 {
     if i == j {
         unsafe { apply::<BE, E, false, false>(module, cnv_offset, res, res_col, a, i, i, b, i, i) };

@@ -243,7 +243,9 @@ where
     ) {
         let bytes = crate::ntt4x30::convolution::cnv_prepare_tmp_bytes(res.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30::convolution::cnv_prepare_left::<_, SerialTaskExecutor>(module, res, a, tmp);
+        crate::ntt4x30::convolution::cnv_prepare_left::<_, SerialTaskExecutor>(module, res, a, tmp, |n, dst, src, prepared| {
+            crate::ntt4x30::vec_znx_dft::dft_limb_scaled::<R, SerialTaskExecutor>(module, n, dst, src, prepared)
+        });
     }
 
     fn cnv_prepare_right_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
@@ -258,7 +260,9 @@ where
     ) {
         let bytes = crate::ntt4x30::convolution::cnv_prepare_tmp_bytes(res.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30::convolution::cnv_prepare_right::<_, SerialTaskExecutor>(module, res, a, tmp);
+        crate::ntt4x30::convolution::cnv_prepare_right::<_, SerialTaskExecutor>(module, res, a, tmp, |n, dst, src, prepared| {
+            crate::ntt4x30::vec_znx_dft::dft_limb_scaled::<R, SerialTaskExecutor>(module, n, dst, src, prepared)
+        });
     }
 
     fn cnv_apply_dft_tmp_bytes(
@@ -470,7 +474,16 @@ where
     ) {
         let bytes = crate::ntt4x30::convolution::cnv_prepare_tmp_bytes(left.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30::convolution::cnv_prepare_self::<_, SerialTaskExecutor>(module, left, right, a, tmp);
+        crate::ntt4x30::convolution::cnv_prepare_self::<_, SerialTaskExecutor>(
+            module,
+            left,
+            right,
+            a,
+            tmp,
+            |n, dst, src, prepared| {
+                crate::ntt4x30::vec_znx_dft::dft_limb_scaled::<R, SerialTaskExecutor>(module, n, dst, src, prepared)
+            },
+        );
     }
 }
 
