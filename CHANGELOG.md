@@ -271,6 +271,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### CPU backends
 
+- **Behaviour:** the workers of a Rayon pool keep polling for work for 1 ms after the last parallel region of a `*Rayon` backend, where Rayon put them to sleep after a few failed steals. `poulpy_cpu_rayon::set_idle_polling` changes the window or turns polling off, and `idle_polling` reads it. The NEON NTT4x30 bootstrap `n16_d35_k720_p19_s2c` is about 4% faster on 18 threads.
+- `RayonTaskExecutor` gives each task the number of threads it may still fan out to, and `should_serialize_inner` runs a nested region on the calling thread once that number is one. It tested the nesting depth alone before, so the four baby rotations of a linear transformation, spawned through two joins, ran everything inside them on one thread.
 - `FFT64Neon` converts between `i64` and `f64` with the native AArch64 conversions (`SCVTF`, and `FCVTAS` after the multiplication by the inverse divisor), in place of the IEEE bit manipulation ported from the AVX2 kernels.
   They are the operations of the reference definition, so the input bound of the previous kernels is gone.
 - `NTT4x30Neon<ConjugateInvariant>` and its Rayon variant run the native 32-bit NTT, with the basis change of the conjugate-invariant ring applied on the packed planes.

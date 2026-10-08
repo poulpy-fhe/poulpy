@@ -194,8 +194,24 @@ pool.install(|| {
 });
 ```
 
-Nesting a Rayon backend inside your own Rayon tasks is safe — the executor serializes the inner level rather than oversubscribing — but it gains nothing.
-Parallelize at one level only.
+Nesting a Rayon backend inside your own Rayon tasks is safe: each task carries the number of threads it may still use, and a region opened in a task that has one thread left runs on the calling thread.
+A few outer tasks therefore still share the pool, and many outer tasks do not oversubscribe it.
+
+### Idle polling
+
+A circuit opens thousands of short parallel regions, and a worker that Rayon has put to sleep takes tens of microseconds to wake.
+The executor therefore keeps the workers of the pool polling for work for a short window after the last region, 1 ms by default.
+On the NEON NTT4x30 bootstrap this is worth about 4% on 18 threads.
+
+The cost is processor time: every worker stays busy for up to the window after each burst of work.
+Change the window or turn polling off with `poulpy_cpu_rayon::set_idle_polling`:
+
+```rust
+poulpy_cpu_rayon::set_idle_polling(None); // workers sleep as soon as Rayon lets them
+poulpy_cpu_rayon::set_idle_polling(Some(std::time::Duration::from_micros(200)));
+```
+
+The setting is global. A window much longer than a millisecond lets the pollers compete with the thread that drives the circuit.
 
 ## Measuring your own thread count
 
