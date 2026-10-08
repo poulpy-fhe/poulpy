@@ -1101,6 +1101,7 @@ where
         res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
         res_k: usize,
+        res_offset: i64,
         res_col: usize,
         a: &mut VecZnxDftBackendMut<'_, Self>,
         a_col: usize,
@@ -1159,7 +1160,7 @@ where
         let a_shape = a.shape();
         let big_ref: poulpy_hal::layouts::VecZnxBigBackendRef<'_, NTT4x30Neon<R>> = VecZnxBig::from_shape(&**a.data(), a_shape);
         poulpy_cpu_rayon::normalize::ntt4x30_vec_znx_big_normalize_par::<NTT4x30Neon<R>, Self>(
-            res, res_base2k, res_k, 0, res_col, &big_ref, a_base2k, a_col, carry,
+            res, res_base2k, res_k, res_offset, res_col, &big_ref, a_base2k, a_col, carry,
         );
     }
     fn vec_znx_dft_apply(
