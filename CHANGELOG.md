@@ -138,7 +138,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-ckks`
 
-- Rank-1 multiplication, squaring and prepared multiplication with a tensor key at the radix of the operands go through `glwe_mul_relinearize`. Other shapes keep the two-step path. On the bootstrap `n16_d35_k720_p19_s2c`, with the two sizing changes, this is about 6% faster on NEON, 3% to 6% on IFMA and 4% to 7% on AVX-512 NTT4x30.
+- Rank-1 multiplication, squaring and prepared multiplication with a tensor key at the radix of the operands go through `glwe_mul_relinearize`. Other shapes keep the two-step path. On the bootstrap `n16_d35_k720_p19_s2c`, with the two sizing changes, this is about 6% faster on NEON, 7% on IFMA, 7% to 11% on AVX-512 NTT4x30 and 10% to 15% on AVX NTT4x30, on one thread and on 16.
 - Add `test_suite::determinism`, frozen FNV-64 fixtures in `test_suite/determinism.txt` that pin the CKKS encoding bytes of every backend on every platform.
   They cover the slot transforms, the plaintexts, the decoded slots and the dequantized coefficients in `f64` and `Quad` in both rings and `f32` on the portable and oracle FFT64 backends, and the setup constants: the `CKKSFloat` functions, DFT matrices, the sign and minimax approximations, and the EvalMod polynomials and plaintexts.
   The CKKS backend suites run them as `encoding_determinism`, and `POULPY_UPDATE_FIXTURES=1` records new hashes after an intended change.
