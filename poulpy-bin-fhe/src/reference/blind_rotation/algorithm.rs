@@ -6,8 +6,8 @@ use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDft, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftSubAssign,
-        VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxRotate, VecZnxZero,
-        VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
+        VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxRotate, VecZnxZero, VmpApplyDftToDft,
+        VmpApplyDftToDftTmpBytes,
     },
     layouts::{
         Backend, Module, ScratchArena, SvpPPolOwned, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendRef,
@@ -63,7 +63,6 @@ where
         + GLWENormalize<BE>
         + VecZnxCopy<BE>
         + VecZnxZero<BE>
-        + VecZnxMulXpMinusOneAssignTmpBytes
         + Sync,
     BE: HalVecZnxImpl,
 {
@@ -107,7 +106,6 @@ where
         + GLWENormalize<BE>
         + VecZnxCopy<BE>
         + VecZnxZero<BE>
-        + VecZnxMulXpMinusOneAssignTmpBytes
         + Sync,
     BE: HalVecZnxImpl,
 {
@@ -150,7 +148,6 @@ where
         + GLWENormalize<BE>
         + VecZnxCopy<BE>
         + VecZnxZero<BE>
-        + VecZnxMulXpMinusOneAssignTmpBytes
         + Sync,
     BE: HalVecZnxImpl,
 {
@@ -196,7 +193,7 @@ where
         copy_in.max(
             acc + module
                 .glwe_external_product_tmp_bytes(&compact, &compact, brk_infos)
-                .max(module.vec_znx_mul_xp_minus_one_assign_tmp_bytes(compact.size()))
+                .max(module.glwe_mul_xp_minus_one_assign_tmp_bytes(compact.size()))
                 .max(module.glwe_normalize_tmp_bytes())
                 .max(copy_out),
         )
@@ -240,7 +237,6 @@ pub fn blind_rotation_execute_ref<BE, R, L>(
         + GLWENormalize<BE>
         + VecZnxCopy<BE>
         + VecZnxZero<BE>
-        + VecZnxMulXpMinusOneAssignTmpBytes
         + Sync,
     BE: HalVecZnxImpl,
 {
@@ -284,7 +280,6 @@ pub fn blind_rotation_execute_parallel<BE, R, L>(
         + GLWENormalize<BE>
         + VecZnxCopy<BE>
         + VecZnxZero<BE>
-        + VecZnxMulXpMinusOneAssignTmpBytes
         + Sync,
     BE: HalVecZnxImpl,
 {
@@ -327,7 +322,6 @@ fn blind_rotation_execute_selected<BE, R, L, const PARALLEL: bool>(
         + GLWENormalize<BE>
         + VecZnxCopy<BE>
         + VecZnxZero<BE>
-        + VecZnxMulXpMinusOneAssignTmpBytes
         + Sync,
     BE: HalVecZnxImpl,
 {

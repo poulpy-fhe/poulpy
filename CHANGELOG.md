@@ -64,6 +64,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-core`
 
+- **Breaking:** `GLWEMulXpMinusOne` and `GLWEMulXpMinusOneImpl` gain `glwe_mul_xp_minus_one_assign_tmp_bytes(res_size)`, the scratch query of the in-place variant ([#385](https://github.com/poulpy-fhe/poulpy/issues/385)). The reference body checks the arena against it, the blind-rotation budget and the shift parity test size through it instead of the HAL query and the rotation query.
 - **Breaking:** `GLWETensoring` and `GLWETensoringImpl` include prepared-right tensor multiplication and its scratch query. Reference forwarding macros implement both operations through the new `GLWETensoringReference` methods `glwe_tensor_apply_prepared_right_reference` and `glwe_tensor_apply_prepared_right_tmp_bytes_reference`; CKKS prepared multiplication dispatches through Core.
   The core tensor parity checks the prepared-right product against the reference and against the ordinary product on every backend.
 - `GiantStepTensorBounds` is deprecated: the BSGS engine and its CKKS operations no longer need it.

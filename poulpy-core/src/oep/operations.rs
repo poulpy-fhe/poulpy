@@ -291,6 +291,8 @@ pub unsafe trait GGSWRotateImpl: GLWERotateImpl {
 /// Implementations must apply the requested ring operation without violating the layout or memory
 /// invariants of the supplied ciphertext buffers.
 pub unsafe trait GLWEMulXpMinusOneImpl: Backend {
+    fn glwe_mul_xp_minus_one_assign_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
+
     fn glwe_mul_xp_minus_one<R, A>(module: &Module<Self>, k: i64, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<Self>,

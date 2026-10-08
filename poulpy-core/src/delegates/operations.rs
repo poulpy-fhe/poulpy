@@ -308,6 +308,9 @@ impl_operations_delegate!(
 impl_operations_delegate!(
     GLWEMulXpMinusOne<BE>,
     GLWEMulXpMinusOneImpl,
+    fn glwe_mul_xp_minus_one_assign_tmp_bytes(&self, res_size: usize) -> usize {
+        BE::glwe_mul_xp_minus_one_assign_tmp_bytes(self, res_size)
+    },
     fn glwe_mul_xp_minus_one<R, A>(&self, k: i64, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
