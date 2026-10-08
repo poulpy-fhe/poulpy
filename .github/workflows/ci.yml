@@ -31,6 +31,9 @@ env:
     poulpy-cpu-portable/enable-ckks
     poulpy-cpu-portable/enable-bin-fhe
     poulpy-cpu-portable/enable-mhe
+    poulpy-cpu-rayon/enable-ckks
+    poulpy-cpu-rayon/enable-bin-fhe
+    poulpy-cpu-rayon/enable-mhe
     poulpy-bin-fhe/enable-bin-fhe
   AVX_FEATURES: >-
     poulpy-core/enable-core
