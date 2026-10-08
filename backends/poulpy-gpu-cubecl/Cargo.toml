@@ -1,0 +1,32 @@
+[package]
+name = "poulpy-gpu-cubecl"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "A crate providing GPU implementations of poulpy-hal through its open extension points, on CubeCL"
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/poulpy-gpu-cubecl"
+
+[lib]
+doctest = false
+
+[features]
+# One feature per CubeCL runtime; each exposes its backend type.
+enable-cuda = ["cubecl/cuda"]
+enable-hip = ["cubecl/hip"]
+# The wgpu runtime, with the shader compiler of each target.
+enable-metal = ["cubecl/metal"]
+enable-vulkan = ["cubecl/vulkan"]
+enable-wgpu = ["cubecl/webgpu"]
+
+[dependencies]
+poulpy-hal = {workspace = true}
+poulpy-cpu-portable = {workspace = true}
+bytemuck = {workspace = true}
+cubecl = {version = "=0.11.1"}
+pollster = "0.4"
+
+[dev-dependencies]
+poulpy-cpu-portable = {workspace = true, features = ["enable-test-suite"]}
+once_cell = {workspace = true}
