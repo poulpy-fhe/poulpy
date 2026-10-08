@@ -52,6 +52,23 @@ mod vmp_strided;
 mod znx;
 
 pub use module::NTT4x30PortableHandle;
+
+/// Drivers of the packed transform domain, for the Rayon variant of this backend in `poulpy-cpu-rayon`.
+///
+/// Not a stable API.
+#[doc(hidden)]
+pub mod drivers {
+    pub use super::convolution::{
+        apply_tmp_words as cnv_apply_tmp_words, cnv_apply_dft, cnv_apply_dft_add, cnv_apply_dft_sum, cnv_pairwise_apply_dft,
+        cnv_prepare_left, cnv_prepare_right, cnv_prepare_self, cnv_prepare_tmp_bytes,
+    };
+    pub use super::vec_znx_dft::{
+        dft_limb, dft_limb_scaled, idft_limb, idft_limb_compact, idft_limb_tmpa, idft_tmp_words, vec_znx_dft_add,
+        vec_znx_dft_add_assign, vec_znx_dft_automorphism_add, vec_znx_dft_copy, vec_znx_dft_sub, vec_znx_dft_sub_assign,
+        vec_znx_dft_sub_negate_assign,
+    };
+    pub use super::vmp::{vmp_apply_dft_to_dft, vmp_apply_dft_to_dft_add, vmp_apply_tmp_bytes};
+}
 #[cfg(feature = "enable-core")]
 pub(crate) use vmp_strided::{STRIDED_MAX_DSIZE, gglwe_product_digits_strided, gglwe_product_digits_strided_tmp_bytes};
 

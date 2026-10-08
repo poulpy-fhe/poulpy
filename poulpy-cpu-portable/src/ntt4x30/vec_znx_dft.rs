@@ -39,7 +39,7 @@ pub(crate) fn packed_table<R: Ring>(module: &Module<NTT4x30Portable<R>>, n: usiz
 
 /// Length in `u64` of the scratch the inverse transform of one limb of degree `n` needs: the planes move to it.
 #[inline(always)]
-pub(crate) fn idft_tmp_words(n: usize) -> usize {
+pub fn idft_tmp_words(n: usize) -> usize {
     2 * n
 }
 
@@ -50,33 +50,15 @@ pub(crate) fn prepare_tmp_words(n: usize) -> usize {
 }
 
 /// Forward transform of `src` into one packed limb, multiplied by `2^32` when `prepared` is set.
-pub(crate) fn dft_limb_scaled<R: Ring>(
-    module: &Module<NTT4x30Portable<R>>,
-    n: usize,
-    dst: &mut [u32],
-    src: &[i64],
-    prepared: bool,
-) {
+pub fn dft_limb_scaled<R: Ring>(module: &Module<NTT4x30Portable<R>>, n: usize, dst: &mut [u32], src: &[i64], prepared: bool) {
     ntt32(packed_table(module, n), dst, src, prepared);
 }
 
-/// Forward transform into a packed limb, for drivers shared by the serial and Rayon backends.
-pub(crate) trait PackedDft {
-    /// See [`dft_limb_scaled`].
-    fn packed_dft_limb(&self, n: usize, dst: &mut [u32], src: &[i64], prepared: bool);
-}
-
-impl<R: Ring> PackedDft for Module<NTT4x30Portable<R>> {
-    #[inline(always)]
-    fn packed_dft_limb(&self, n: usize, dst: &mut [u32], src: &[i64], prepared: bool) {
-        dft_limb_scaled(self, n, dst, src, prepared)
-    }
-}
-
-pub(crate) fn dft_limb<M: PackedDft>(module: &M, n: usize, dst: &mut [u32], src: Option<&[i64]>) {
+/// Forward transform of `src` into one packed limb, or zeros when `src` is `None`.
+pub fn dft_limb<R: Ring>(module: &Module<NTT4x30Portable<R>>, n: usize, dst: &mut [u32], src: Option<&[i64]>) {
     match src {
         // A zero limb transforms to zero: the scan stops at the first nonzero coefficient.
-        Some(src) if src[..n].iter().any(|&x| x != 0) => module.packed_dft_limb(n, dst, src, false),
+        Some(src) if src[..n].iter().any(|&x| x != 0) => dft_limb_scaled(module, n, dst, src, false),
         _ => dst.fill(0),
     }
 }
@@ -84,13 +66,20 @@ pub(crate) fn dft_limb<M: PackedDft>(module: &M, n: usize, dst: &mut [u32], src:
 /// Inverse transform of one packed limb.
 ///
 /// `tmp` holds [`idft_tmp_words`] words.
-pub(crate) fn idft_limb<R: Ring>(module: &Module<NTT4x30Portable<R>>, n: usize, dst: &mut [i128], src: &[u32], tmp: &mut [u64]) {
+pub fn idft_limb<R: Ring>(module: &Module<NTT4x30Portable<R>>, n: usize, dst: &mut [i128], src: &[u32], tmp: &mut [u64]) {
     intt32(packed_table(module, n), dst, src, cast_slice_mut(tmp));
 }
 
 /// Inverse transform of one packed limb, which it overwrites.
-pub(crate) fn idft_limb_tmpa<R: Ring>(module: &Module<NTT4x30Portable<R>>, n: usize, dst: &mut [i128], src: &mut [u32]) {
+pub fn idft_limb_tmpa<R: Ring>(module: &Module<NTT4x30Portable<R>>, n: usize, dst: &mut [i128], src: &mut [u32]) {
     intt32_assign(packed_table(module, n), dst, src);
+}
+
+/// Inverse transform of the packed limb `slot` into `n` coefficients that overwrite it.
+///
+/// The planes move to `tmp`, which holds [`idft_tmp_words`] words, so the coefficients can take the place of the limb.
+pub fn idft_limb_compact<R: Ring>(module: &Module<NTT4x30Portable<R>>, n: usize, slot: &mut [u32], tmp: &mut [u64]) {
+    intt32_compact(packed_table(module, n), slot, cast_slice_mut(tmp));
 }
 
 pub(crate) fn vec_znx_dft_apply<R: Ring>(
@@ -198,12 +187,7 @@ pub(crate) fn idft_compact_in_place<R: Ring>(
     let size = a.size();
     let data: &mut [u32] = cast_slice_mut(a.data_mut());
     for limb in 0..size {
-        // The planes move to `tmp` during the transform, so the coefficients can overwrite the limb.
-        intt32_compact(
-            packed_table(module, n),
-            packed_limb_mut(data, n, cols, a_col, limb),
-            cast_slice_mut(tmp),
-        );
+        idft_limb_compact(module, n, packed_limb_mut(data, n, cols, a_col, limb), tmp);
     }
 }
 
@@ -229,7 +213,7 @@ fn for_each_limb<E: TaskExecutor>(
     });
 }
 
-pub(crate) fn vec_znx_dft_add<R: Ring, E: TaskExecutor>(
+pub fn vec_znx_dft_add<R: Ring, E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
@@ -269,7 +253,7 @@ pub(crate) fn vec_znx_dft_add<R: Ring, E: TaskExecutor>(
     });
 }
 
-pub(crate) fn vec_znx_dft_add_assign<R: Ring, E: TaskExecutor>(
+pub fn vec_znx_dft_add_assign<R: Ring, E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
@@ -285,7 +269,7 @@ pub(crate) fn vec_znx_dft_add_assign<R: Ring, E: TaskExecutor>(
     });
 }
 
-pub(crate) fn vec_znx_dft_sub<R: Ring, E: TaskExecutor>(
+pub fn vec_znx_dft_sub<R: Ring, E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
@@ -325,7 +309,7 @@ pub(crate) fn vec_znx_dft_sub<R: Ring, E: TaskExecutor>(
     });
 }
 
-pub(crate) fn vec_znx_dft_sub_assign<R: Ring, E: TaskExecutor>(
+pub fn vec_znx_dft_sub_assign<R: Ring, E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
@@ -341,7 +325,7 @@ pub(crate) fn vec_znx_dft_sub_assign<R: Ring, E: TaskExecutor>(
     });
 }
 
-pub(crate) fn vec_znx_dft_sub_negate_assign<R: Ring, E: TaskExecutor>(
+pub fn vec_znx_dft_sub_negate_assign<R: Ring, E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
@@ -362,7 +346,7 @@ pub(crate) fn vec_znx_dft_sub_negate_assign<R: Ring, E: TaskExecutor>(
     });
 }
 
-pub(crate) fn vec_znx_dft_copy<R: Ring, E: TaskExecutor>(
+pub fn vec_znx_dft_copy<R: Ring, E: TaskExecutor>(
     step: usize,
     offset: usize,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
@@ -430,7 +414,7 @@ pub(crate) fn vec_znx_dft_automorphism<R: Ring>(
     }
 }
 
-pub(crate) fn vec_znx_dft_automorphism_add<R: Ring, E: TaskExecutor>(
+pub fn vec_znx_dft_automorphism_add<R: Ring, E: TaskExecutor>(
     plan: &NttAutomorphismPlan,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
     res_col: usize,
