@@ -19,11 +19,21 @@ macro_rules! impl_packed_base {
     ($ring:ty) => {
         #[allow(clippy::too_many_arguments)]
         impl PackedNtt4x30Base for NTT4x30Portable<$ring> {
+            fn dft_tmp_words(_n: usize) -> usize {
+                0
+            }
+
             fn idft_tmp_words(n: usize) -> usize {
                 drivers::idft_tmp_words(n)
             }
 
-            fn dft_limb<E: TaskExecutor>(module: &Module<Self>, n: usize, dst: &mut [u32], src: Option<&[i64]>) {
+            fn dft_limb<E: TaskExecutor>(
+                module: &Module<Self>,
+                n: usize,
+                dst: &mut [u32],
+                src: Option<&[i64]>,
+                _tmp: &mut [u64],
+            ) {
                 drivers::dft_limb::<$ring, E>(module, n, dst, src)
             }
 

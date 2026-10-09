@@ -35,15 +35,17 @@ impl<BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>> PackedWord fo
 /// The operations that split their work take the executor as `E` and run serially on `SerialTaskExecutor`.
 /// The limb transforms may split one limb further, into its planes.
 /// The convolution drivers are generic over the backend `BE` that tags their operands, so that the wrapper passes its own layouts.
-///
-/// The limb transforms receive no scratch beyond `tmp`, so a backend whose forward transform needs working memory per task does not fit this trait as it stands.
+/// The limb transforms that take `tmp` receive it per task, zero words when the backend transforms in place.
 #[allow(clippy::too_many_arguments)]
 pub trait PackedNtt4x30Base: PackedWord + HalVecZnxDftImpl {
+    /// `u64` words of scratch the forward transform of one limb of degree `n` needs.
+    fn dft_tmp_words(n: usize) -> usize;
+
     /// `u64` words of scratch the inverse transform of one limb of degree `n` needs.
     fn idft_tmp_words(n: usize) -> usize;
 
-    /// Forward transform of `src` into the limb `dst`, or zeros when `src` is `None`.
-    fn dft_limb<E: TaskExecutor>(module: &Module<Self>, n: usize, dst: &mut [u32], src: Option<&[i64]>);
+    /// Forward transform of `src` into the limb `dst`, or zeros when `src` is `None`, with [`Self::dft_tmp_words`] words in `tmp`.
+    fn dft_limb<E: TaskExecutor>(module: &Module<Self>, n: usize, dst: &mut [u32], src: Option<&[i64]>, tmp: &mut [u64]);
 
     /// Inverse transform of the limb `src` into `dst`, with [`Self::idft_tmp_words`] words in `tmp`.
     fn idft_limb<E: TaskExecutor>(module: &Module<Self>, n: usize, dst: &mut [i128], src: &[u32], tmp: &mut [u64]);
@@ -1161,6 +1163,7 @@ unsafe impl HalVecZnxDftImpl for $rayon
         let n = a.n();
         $crate::__private::poulpy_hal::layouts::check_degree::<$base>(module.n(), n);
         let cols = a.cols();
+        assert!(a_col < cols, "input column out of bounds");
         let size = a.size();
         let per_worker = <$base as $crate::ntt4x30::PackedNtt4x30Base>::idft_tmp_words(n);
         let (carry, arena) = $crate::take_scratch::<Self, i128>(scratch.borrow(), 3 * n);
@@ -1240,16 +1243,21 @@ unsafe impl HalVecZnxDftImpl for $rayon
         let cols = res.cols();
         let a_size = a.size();
         let base = base_module(module);
+        let tmp_words = <$base as $crate::ntt4x30::PackedNtt4x30Base>::dft_tmp_words(n);
         let data: &mut [u32] = cast_slice_mut(res.raw_mut());
-        data.par_chunks_mut(4 * n * cols).enumerate().for_each(|(limb, group)| {
-            let src_limb = offset + limb * step;
-            <$base as $crate::ntt4x30::PackedNtt4x30Base>::dft_limb::<RayonTaskExecutor>(
-                base,
-                n,
-                &mut group[4 * n * res_col..][..4 * n],
-                (src_limb < a_size).then(|| a.at(a_col, src_limb)),
-            );
-        });
+        data.par_chunks_mut(4 * n * cols).enumerate().for_each_init(
+            || vec![0u64; tmp_words],
+            |tmp, (limb, group)| {
+                let src_limb = offset + limb * step;
+                <$base as $crate::ntt4x30::PackedNtt4x30Base>::dft_limb::<RayonTaskExecutor>(
+                    base,
+                    n,
+                    &mut group[4 * n * res_col..][..4 * n],
+                    (src_limb < a_size).then(|| a.at(a_col, src_limb)),
+                    tmp,
+                );
+            },
+        );
     }
 
     fn vec_znx_idft_apply_tmp_bytes(module: &Module<Self>) -> usize {
