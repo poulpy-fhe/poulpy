@@ -112,7 +112,7 @@ A recording keeps the temporaries of the closure reserved on the device until it
 
 Limits of the GPU backends:
 
-- Normalization handles radix widths from 1 to 62 bits. The wider radices the HAL admits for a 128-bit source are rejected with a panic; no parameter set of `NTT4x30` reaches them.
+- Normalization runs on the device for radix widths from 1 to 62 bits. The wider radices the HAL admits for a 128-bit source go through the host; no parameter set of `NTT4x30` reaches them.
 - A window whose degree is not a power-of-two fraction of its operand's is rejected with a panic.
 - The suites pass on Metal and on HIP (Radeon RX 7900 XTX). The CUDA and Vulkan registrations compile from the same code but have not been run.
 

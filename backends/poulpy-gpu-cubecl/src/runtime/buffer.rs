@@ -186,6 +186,25 @@ fn write<RT: GpuRuntime>(allocation: &Option<Allocation>, offset: usize, src: &[
     RT::client().write(&handle, Bytes::from_bytes_vec(src.to_vec()));
 }
 
+fn allocation_of(binding: &Binding) -> Option<Allocation> {
+    Some(Allocation {
+        id: binding.id,
+        handle: binding.handle.clone(),
+        reserved: binding.reserved,
+        owned: binding.owned.clone(),
+    })
+}
+
+/// Reads `dst.len()` bytes at byte `offset` of the allocation `binding` views.
+pub(crate) fn read_at<RT: GpuRuntime>(binding: &Binding, offset: usize, dst: &mut [u8]) {
+    read::<RT>(&allocation_of(binding), offset, dst);
+}
+
+/// Writes `src` at byte `offset` of the allocation `binding` views.
+pub(crate) fn write_at<RT: GpuRuntime>(binding: &Binding, offset: usize, src: &[u8]) {
+    write::<RT>(&allocation_of(binding), offset, src);
+}
+
 fn zero<RT: GpuRuntime>(allocation: &Option<Allocation>, offset: usize, len: usize) {
     let Some(allocation) = allocation else { return };
     if len == 0 {

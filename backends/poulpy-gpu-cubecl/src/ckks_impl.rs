@@ -40,7 +40,7 @@ use crate::{
     NTT4x30Gpu,
     ckks_add_sub::{impl_add_cached_one, impl_sub_cached_one},
     module::handle,
-    runtime::{GpuMut, GpuRef, GpuRuntime},
+    runtime::{GpuMut, GpuRef, GpuRuntime, access},
 };
 
 /// The constant plaintexts `1` of a module, one per radix.
@@ -82,6 +82,10 @@ where
         storage.write_prefix(&limbs.data()[..bytes]);
         pt
     };
+    // Building the constant uses the device. The access is taken before the
+    // cache is locked, as everywhere else: a thread that records holds the
+    // device and may ask for the constant.
+    let _access = access::shared();
     handle(module)
         .plan_cache()
         .with_or_create::<OnePlaintexts<NTT4x30Gpu<RT, R>>, _, _>(

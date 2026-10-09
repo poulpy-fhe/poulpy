@@ -7,7 +7,7 @@ mod device;
 mod launch;
 mod replay;
 
-pub(crate) use buffer::{GpuBuf, GpuMut, GpuRef};
+pub(crate) use buffer::{GpuBuf, GpuMut, GpuRef, read_at, write_at};
 #[cfg(feature = "enable-cpu")]
 pub(crate) use device::Cpu;
 #[cfg(feature = "enable-cuda")]

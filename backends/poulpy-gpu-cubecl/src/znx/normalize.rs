@@ -14,7 +14,7 @@ use cubecl::prelude::*;
 use super::Column;
 use crate::{
     ntt4x30::{Consts, DftColumn, Tables, crt_at},
-    runtime::{GpuRuntime, Label, launch},
+    runtime::{GpuRuntime, Label, launch, read_at, write_at},
 };
 
 #[cube(launch_unchecked)]
@@ -236,7 +236,59 @@ enum Source<'a, RT: GpuRuntime> {
 /// limbs it depends on have been read.
 pub(crate) fn normalize<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: usize, offset: i64, a: &Column, a_base2k: usize) {
     assert_eq!(res.n, a.n, "normalization between different degrees");
+    if a.words == 2 && (res_base2k > KERNEL_RADIX || a_base2k > KERNEL_RADIX) {
+        return normalize_big_on_host::<RT>(res, res_base2k, res_k, offset, a, a_base2k);
+    }
     launch::<RT>(res, res_base2k, res_k, offset, Source::Limbs(a), a_base2k);
+}
+
+/// Widest radix the kernel handles: it keeps its bit stream and its digits
+/// in 64-bit registers.
+const KERNEL_RADIX: usize = 62;
+
+/// [`normalize`] of an `i128` source at the radices the kernel does not
+/// handle (a source radix up to 127, a destination radix up to 64), which
+/// the HAL admits and no parameter set of this backend reaches: the limbs go
+/// through the host and the portable routine.
+fn normalize_big_on_host<RT: GpuRuntime>(
+    res: &Column,
+    res_base2k: usize,
+    res_k: usize,
+    offset: i64,
+    a: &Column,
+    a_base2k: usize,
+) {
+    use poulpy_cpu_portable::{NTT4x30Portable, kernels::vec_znx_big_normalize::vec_znx_big_normalize_portable};
+    use poulpy_hal::{
+        AlignedBuf,
+        layouts::{VecZnx, VecZnxBig, VecZnxBigToBackendRef, VecZnxToBackendMut},
+    };
+    assert_eq!(res.words, 1, "normalization writes `i64` limbs");
+    if res.size == 0 || res.n == 0 {
+        return;
+    }
+    let n = res.n;
+    // Both columns as dense host vectors of one column.
+    let limb = |column: &Column, limb: usize| (column.base as usize + limb * column.stride as usize) * 8;
+    let mut source = AlignedBuf::from(vec![0u8; n * a.size * 16]);
+    for j in 0..a.size {
+        read_at::<RT>(&a.binding, limb(a, j), &mut source[j * n * 16..(j + 1) * n * 16]);
+    }
+    let source = VecZnxBig::<AlignedBuf, i128, NTT4x30Portable>::from_data(source, n, 1, a.size);
+    let mut target = VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0u8; n * res.size * 8]), n, 1, res.size);
+    vec_znx_big_normalize_portable::<NTT4x30Portable>(
+        &mut VecZnxToBackendMut::<NTT4x30Portable>::to_backend_mut(&mut target),
+        res_base2k,
+        res_k,
+        offset,
+        0,
+        &source.to_backend_ref(),
+        a_base2k,
+        0,
+    );
+    for j in 0..res.size {
+        write_at::<RT>(&res.binding, limb(res, j), &target.data()[j * n * 8..(j + 1) * n * 8]);
+    }
 }
 
 /// Normalizes every limb of `res` from `dft + addend`, `dft` holding the
@@ -272,13 +324,9 @@ pub(crate) fn normalize_residues<RT: GpuRuntime>(
 
 fn launch<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: usize, offset: i64, source: Source<'_, RT>, a_base2k: usize) {
     assert_eq!(res.words, 1, "normalization writes `i64` limbs");
-    // The kernel keeps its bit stream and its digits in 64-bit registers.
-    // The HAL contract also admits wider radices for an `i128` source
-    // (`a_base2k` up to 127, `res_base2k` up to 64), which no parameter set
-    // of this backend reaches: its largest radix is `MaxBase2k`, below 62.
     assert!(
-        (1..=62).contains(&res_base2k) && (1..=62).contains(&a_base2k),
-        "this backend normalizes radix widths in 1..=62 (got {a_base2k} to {res_base2k})"
+        (1..=KERNEL_RADIX).contains(&res_base2k) && (1..=KERNEL_RADIX).contains(&a_base2k),
+        "radix widths must be in 1..={KERNEL_RADIX} (got {a_base2k} to {res_base2k})"
     );
     assert!(res_k <= res.size * res_base2k, "res_k exceeds the destination precision");
     if res.size == 0 || res.n == 0 {

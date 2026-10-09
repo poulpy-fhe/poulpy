@@ -68,12 +68,40 @@ fn digits_case<R: Ring>(
     key_size: usize,
     res_size: usize,
     product_limbs: usize,
+    // Every coefficient of the operands is `-1`: every residue is the largest one.
+    extreme: bool,
 ) {
     let mut seed = 0x1234_5678_9abc_def0u64 ^ ((a_size * 131 + dsize * 17 + rows * 7 + res_size) as u64);
     let mut scratch = ScratchOwned::<BE<R>>::alloc((n << 12).max(1 << 22));
-    let a = transformed(module, n, cols_in, a_size, &mut seed);
+    let fill = |count: usize, seed: &mut u64| {
+        if extreme {
+            (-1i64).to_le_bytes().repeat(count)
+        } else {
+            coefficients(count, seed)
+        }
+    };
+    let a = {
+        let source = VecZnx::from_data(
+            BE::<R>::from_host_bytes(&fill(n * cols_in * a_size, &mut seed)),
+            n,
+            cols_in,
+            a_size,
+        );
+        let mut dft = module.vec_znx_dft_alloc(n, cols_in, a_size);
+        for col in 0..cols_in {
+            module.vec_znx_dft_apply(
+                1,
+                0,
+                &mut dft.to_backend_mut(),
+                col,
+                &vec_znx_backend_ref::<BE<R>>(&source),
+                col,
+            );
+        }
+        dft
+    };
     let matrix = MatZnx::from_data(
-        BE::<R>::from_host_bytes(&coefficients(n * rows * cols_in * cols_out * key_size, &mut seed)),
+        BE::<R>::from_host_bytes(&fill(n * rows * cols_in * cols_out * key_size, &mut seed)),
         n,
         rows,
         cols_in,
@@ -146,10 +174,22 @@ fn gglwe_product_digits_strided_matches_reference() {
             key_size,
             res_size,
             product_limbs,
+            false,
         );
     }
-    digits_case(&MODULE, N, 27, 4, 7, 1, 2, 33, 30, 2);
-    digits_case(&MODULE_CI, 16, 27, 4, 7, 1, 2, 33, 30, 2);
+    digits_case(&MODULE, N, 27, 4, 7, 1, 2, 33, 30, 2, false);
+    digits_case(&MODULE_CI, 16, 27, 4, 7, 1, 2, 33, 30, 2, false);
+}
+
+/// Accumulators at their largest: every product is `(q - 1)^2`. With seven
+/// digits of nine rows and only some of them reaching a result limb, a limb
+/// accumulates eighteen products across digits whose own folds are skipped.
+#[test]
+fn gglwe_product_digits_strided_folds_across_skipped_digits() {
+    digits_case(&MODULE, 8, 63, 7, 9, 1, 2, 11, 11, 3, true);
+    digits_case(&MODULE, 8, 27, 4, 7, 1, 2, 33, 30, 2, true);
+    digits_case(&MODULE, 8, 27, 4, 7, 1, 2, 33, 30, 1, true);
+    digits_case(&MODULE, 8, 30, 5, 6, 2, 2, 12, 9, 2, true);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -330,8 +370,8 @@ fn one_limb_convolution_sum_reads_each_term_through_its_automorphism() {
 fn products_match_their_references_at_full_degree() {
     let n = 1 << 16;
     let module = Module::<Gpu>::new(n as u64);
-    digits_case(&module, n, 27, 4, 7, 1, 2, 33, 30, 2);
-    digits_case(&module, n, 27, 4, 7, 1, 2, 33, 33, 4);
+    digits_case(&module, n, 27, 4, 7, 1, 2, 33, 30, 2, false);
+    digits_case(&module, n, 27, 4, 7, 1, 2, 33, 33, 4, false);
     mul_columns_case(&module, n, n, 30, 30, 31, 31, 30);
     mul_columns_case(&module, n, n, 23, 23, 24, 24, 0);
 }
@@ -557,6 +597,75 @@ fn bootstrap_shapes_match_portable_at_full_degree() {
         }
     }
     assert!(differences.is_empty(), "\n{}", differences.join("\n"));
+}
+
+/// `vec_znx_big_normalize` on the backend `$be` at the radices `$a_base2k`
+/// to `$res_base2k`, from the same `i128` limbs: the normalized limbs.
+macro_rules! big_normalized {
+    ($be:ty, $bytes:expr, $n:expr, $size:expr, $res_size:expr, $a_base2k:expr, $res_base2k:expr, $offset:expr) => {{
+        type B = $be;
+        let module = Module::<B>::new(64);
+        let mut scratch = ScratchOwned::<B>::alloc(1 << 16);
+        let big = poulpy_hal::layouts::VecZnxBig::<<B as Backend>::OwnedBuf, i128, B>::from_data(
+            B::from_host_bytes($bytes),
+            $n,
+            1,
+            $size,
+        );
+        let mut res: VecZnx<<B as Backend>::OwnedBuf, i64> =
+            VecZnx::from_data(B::from_host_bytes(&vec![0u8; $n * $res_size * 8]), $n, 1, $res_size);
+        module.vec_znx_big_normalize(
+            &mut vec_znx_backend_mut::<B>(&mut res),
+            $res_base2k,
+            $res_size * $res_base2k,
+            $offset,
+            0,
+            &poulpy_hal::layouts::VecZnxBigToBackendRef::to_backend_ref(&big),
+            $a_base2k,
+            0,
+            &mut scratch.arena(),
+        );
+        B::to_host_bytes(res.data())
+    }};
+}
+
+/// The radices of an `i128` source beyond what the kernel handles are
+/// served through the host, and agree with the portable backend.
+#[test]
+fn big_normalize_at_wide_radices_matches_portable() {
+    let (n, size) = (16usize, 3usize);
+    let mut seed = 0x0123_4567_89ab_cdefu64;
+    // Values of up to 120 bits, both signs.
+    let bytes: Vec<u8> = coefficients(2 * n * size, &mut seed)
+        .chunks(16)
+        .flat_map(|pair| {
+            let (lo, hi) = (
+                i64::from_le_bytes(pair[..8].try_into().unwrap()),
+                i64::from_le_bytes(pair[8..].try_into().unwrap()),
+            );
+            (((hi as i128) << 70) ^ (lo as i128)).to_le_bytes()
+        })
+        .collect();
+    for (a_base2k, res_base2k, res_size, offset) in [
+        (100, 62, 5, 0),
+        (127, 64, 6, 0),
+        (70, 50, 5, 13),
+        (60, 64, 4, -7),
+        (100, 1, 40, 0),
+    ] {
+        let have = big_normalized!(Gpu, &bytes, n, size, res_size, a_base2k, res_base2k, offset);
+        let want = big_normalized!(
+            poulpy_cpu_portable::NTT4x30Portable,
+            &bytes,
+            n,
+            size,
+            res_size,
+            a_base2k,
+            res_base2k,
+            offset
+        );
+        assert!(have == want, "radix {a_base2k} to {res_base2k}, offset {offset}");
+    }
 }
 
 /// A limb range of a DFT-domain vector is a view with a non-zero base: what

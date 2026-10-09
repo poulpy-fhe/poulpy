@@ -78,11 +78,31 @@ impl Terms {
         (self.limbs + di) / self.dsize
     }
 
-    /// Whether the accumulator is folded before term `(di, row, col)`, terms
-    /// being counted over the digits in the order an accumulator meets them.
+    /// Whether the accumulator is folded before term `(di, row, col)`.
+    ///
+    /// An accumulator meets the digits in order, but not all of them: a
+    /// digit past its width contributes nothing, and the folds scheduled
+    /// inside it do not happen. The schedule therefore tracks the most
+    /// products an accumulator can hold unfolded whichever digits were
+    /// skipped, and folds before the term that would be the sixteenth.
     fn fold_before(&self, di: u32, row: u32, col: u32) -> bool {
-        let before: u32 = (0..di).map(|d| self.digit_rows(d) * self.cols_in).sum::<u32>() + row * self.cols_in + col;
-        before != 0 && before.is_multiple_of(FOLD_TERMS)
+        let mut pending = 0;
+        for digit in 0..self.dsize {
+            let mut inside = pending;
+            for term in 0..self.digit_rows(digit) * self.cols_in {
+                let fold = inside == FOLD_TERMS;
+                if fold {
+                    inside = 0;
+                }
+                if digit == di && term == row * self.cols_in + col {
+                    return fold;
+                }
+                inside += 1;
+            }
+            // A skipped digit leaves what was pending before it.
+            pending = pending.max(inside);
+        }
+        false
     }
 }
 
