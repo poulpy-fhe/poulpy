@@ -5,7 +5,8 @@ use crate::{Scale, ckks_log_delta};
 use std::collections::HashMap;
 
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWEInfos, GLWELayout, GLWESecretPrepared, GLWEToBackendMut, LWEInfos,
+    GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWESecretPrepared, GLWEToBackendMut,
+    LWEInfos,
 };
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},

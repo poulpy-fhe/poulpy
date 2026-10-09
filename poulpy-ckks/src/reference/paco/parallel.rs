@@ -15,6 +15,7 @@
 use crate::layouts::CKKSCiphertextOwned;
 use crate::layouts::CKKSPlaintextOwned;
 use crate::{CKKSError, CKKSResult as Result, ckks_ensure};
+use poulpy_core::layouts::SetGLWEPlaintextInfos;
 use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
 use std::{sync::mpsc::sync_channel, thread};
 
@@ -35,7 +36,7 @@ use super::{
 };
 use crate::layouts::paco::{context::PaCoContext, keyset::PaCoKeys};
 use crate::{
-    CKKSCtBounds, SetCKKSInfos,
+    CKKSCtBounds,
     api::{
         CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSRotateOps, CKKSSubOps, PaCoScalar,
     },

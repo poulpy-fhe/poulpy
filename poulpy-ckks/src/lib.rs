@@ -203,17 +203,6 @@ pub trait CKKSInfos: LWEInfos + GLWEPlaintextInfos {
     fn log_budget(&self) -> usize {
         self.k().as_usize().saturating_sub(self.log_delta())
     }
-
-    /// Returns the sparse-packing factor (`log2` of the coefficient gap / slot
-    /// replication); `0` is dense. See [`GLWEPlaintextMeta::log_sparsity`].
-    fn log_sparsity(&self) -> usize {
-        self.meta().log_sparsity
-    }
-
-    /// Returns the subring the slots are known to live in. See [`SlotsKind`].
-    fn slots(&self) -> SlotsKind {
-        self.meta().slots
-    }
 }
 
 impl<T: LWEInfos + GLWEPlaintextInfos + ?Sized> CKKSInfos for T {}
@@ -231,10 +220,7 @@ pub trait SetCKKSInfos: CKKSInfos + SetGLWEPlaintextInfos + SetK {
     /// `log_budget` by shifting the torus width `k` accordingly.
     fn set_log_delta(&mut self, log_delta: usize) {
         let log_budget = self.log_budget();
-        self.set_meta(GLWEPlaintextMeta {
-            scale: Scale::Log(log_delta),
-            ..self.meta()
-        });
+        self.set_scale(Scale::Log(log_delta));
         self.set_k((log_budget + log_delta).into());
     }
 
@@ -242,19 +228,6 @@ pub trait SetCKKSInfos: CKKSInfos + SetGLWEPlaintextInfos + SetK {
     /// setting the torus width `k = log_budget + log_delta`.
     fn set_log_budget(&mut self, log_budget: usize) {
         self.set_k((log_budget + self.log_delta()).into());
-    }
-
-    /// Updates only the sparse-packing factor. See [`GLWEPlaintextMeta::log_sparsity`].
-    fn set_log_sparsity(&mut self, log_sparsity: usize) {
-        self.set_meta(GLWEPlaintextMeta {
-            log_sparsity,
-            ..self.meta()
-        });
-    }
-
-    /// Updates only the slot kind. See [`SlotsKind`].
-    fn set_slots(&mut self, slots: SlotsKind) {
-        self.set_meta(GLWEPlaintextMeta { slots, ..self.meta() });
     }
 }
 

@@ -1,5 +1,6 @@
 //! Folding of CKKS batches into the ciphertexts a bootstrap refreshes, and back.
 use crate::Scale;
+use poulpy_core::layouts::{GLWEPlaintextInfos, SetGLWEPlaintextInfos};
 use std::{cell::Cell, collections::HashMap};
 
 use super::{
@@ -7,7 +8,7 @@ use super::{
     keys::{key_layout, prepared_automorphism_key, prepared_gglwe},
 };
 use crate::{
-    CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
+    CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SlotsKind,
     layouts::{CKKSCiphertext, CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSModuleAlloc, CKKSRingCiphertext, RingSwitchKeys},
     oep::{CKKSFoldImpl, CKKSFoldLayoutImpl},
     test_suite::CKKSTestParams,

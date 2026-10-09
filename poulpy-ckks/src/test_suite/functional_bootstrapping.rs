@@ -1,4 +1,5 @@
 use crate::Scale;
+use poulpy_core::layouts::{GLWEPlaintextInfos, SetGLWEPlaintextInfos};
 use poulpy_core::{
     GLWEBytesOf,
     layouts::{

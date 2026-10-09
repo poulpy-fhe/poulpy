@@ -5,6 +5,7 @@
 //! coefficients, independently of either backend's floating-point decoder.
 
 use crate::Scale;
+use poulpy_core::layouts::GLWEPlaintextInfos;
 use poulpy_core::{
     GLWEMaskFill,
     layouts::{GLWELayout, IntPolyInfos, LWEInfos},

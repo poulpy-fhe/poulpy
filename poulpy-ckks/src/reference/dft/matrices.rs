@@ -14,7 +14,7 @@
 //! packing `RepackImagAsReal` uses `dslots = 2·slots` butterflies and the special
 //! repack matrix). Sparse coefficient placement at the codec boundary is provided
 //! by [`CKKSPlaintextVecHostCodec::encode_host_floats`](crate::layouts::CKKSPlaintextVecHostCodec);
-//! a ciphertext's [`CKKSInfos::log_sparsity`](crate::CKKSInfos::log_sparsity) carries the packing factor.
+//! a ciphertext's [`GLWEPlaintextInfos::log_sparsity`](poulpy_core::layouts::GLWEPlaintextInfos::log_sparsity) carries the packing factor.
 //!
 //! Conventions match the rest of the crate: a diagonal at index `i` is the vector
 //! `diag_i[j] = M[j][(j+i) mod slots]` (see [`poulpy_core::layouts::Diagonals`]),

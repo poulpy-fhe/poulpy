@@ -4,6 +4,7 @@
 //! operand is `Real`, and any op that leaves the reals (multiplication by `i`,
 //! a linear transformation with complex diagonals) yields `Complex`.
 
+use poulpy_core::layouts::{GLWEPlaintextInfos, SetGLWEPlaintextInfos};
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, Standard},
@@ -14,7 +15,7 @@ use super::helpers::{
     gen_tsk,
 };
 use crate::{
-    CKKSInfos, SetCKKSInfos, SlotsKind,
+    SlotsKind,
     api::{CKKSAddOps, CKKSImagOps, CKKSMulOps, CKKSNegOps, CKKSSubOps},
     test_suite::{CKKSTestParams, reference_encoder::ReferenceEncoder},
 };

@@ -7,6 +7,7 @@
 
 use crate::SlotsKind;
 use crate::{CKKSResult as Result, ckks_ensure};
+use poulpy_core::layouts::GLWEPlaintextInfos;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     GLWECopy, GLWELinearTransformations, LinearTransformationBabySteps, LinearTransformationGiantStep,

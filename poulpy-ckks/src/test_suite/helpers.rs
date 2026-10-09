@@ -12,6 +12,7 @@
 //! correctness.
 
 use crate::Scale;
+use poulpy_core::layouts::SetGLWEPlaintextInfos;
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::HostStaged;
 use std::{f64::consts::TAU, fmt::Debug};

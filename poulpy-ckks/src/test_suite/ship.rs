@@ -1,6 +1,7 @@
 //! SHIP bootstrapping tests (host replica, HMuxRot primitive, end-to-end).
 
 use crate::ckks_log_delta;
+use poulpy_core::layouts::GLWEPlaintextInfos;
 use std::f64::consts::TAU;
 
 use poulpy_core::{

@@ -8,7 +8,10 @@ use poulpy_ckks::api::{
 use poulpy_ckks::layouts::{CKKSModuleAlloc, CKKSPlaintextOwned};
 use poulpy_ckks::oep::CKKSComplexPolynomialEvaluationImpl;
 use poulpy_ckks::{CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos};
-use poulpy_core::layouts::{GetTensorKey, LWEInfos, SetK, TorusPrecision, prepared::GLWETensorKeyPreparedBackendRef};
+use poulpy_core::layouts::{
+    GLWEPlaintextInfos, GetTensorKey, LWEInfos, SetGLWEPlaintextInfos, SetK, TorusPrecision,
+    prepared::GLWETensorKeyPreparedBackendRef,
+};
 use poulpy_hal::api::{ScratchOwnedAlloc, ScratchOwnedBorrow};
 use poulpy_hal::layouts::{Backend, Module, ScratchOwned};
 use std::cell::{Cell, RefCell};

@@ -19,6 +19,7 @@
 
 use crate::Scale;
 use crate::api::CKKSEncodingOps;
+use poulpy_core::layouts::{GLWEPlaintextInfos, SetGLWEPlaintextInfos};
 use std::collections::HashMap;
 
 use poulpy_core::layouts::Base2K;

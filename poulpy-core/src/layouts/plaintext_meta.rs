@@ -123,11 +123,42 @@ impl GLWEPlaintextMeta {
 /// Read access to the [`GLWEPlaintextMeta`] a scheme set, if any.
 pub trait GLWEPlaintextInfos {
     fn plaintext_meta(&self) -> Option<GLWEPlaintextMeta>;
+
+    /// The scale, `None` when unset: no scale holds by default.
+    fn scale(&self) -> Option<Scale> {
+        self.plaintext_meta().map(|meta| meta.scale)
+    }
+
+    /// The slot kind; unset reads as `Complex`, which always holds.
+    fn slots(&self) -> SlotsKind {
+        self.plaintext_meta().unwrap_or_default().slots
+    }
+
+    /// The sparsity; unset reads as `0`, which always holds.
+    fn log_sparsity(&self) -> usize {
+        self.plaintext_meta().unwrap_or_default().log_sparsity
+    }
 }
 
-/// Write access to [`GLWEPlaintextMeta`].
+/// Write access to [`GLWEPlaintextMeta`]. A field setter on unset metadata
+/// starts from [`GLWEPlaintextMeta::default`].
 pub trait SetGLWEPlaintextInfos: GLWEPlaintextInfos {
     fn set_plaintext_meta(&mut self, meta: Option<GLWEPlaintextMeta>);
+
+    fn set_scale(&mut self, scale: Scale) {
+        let meta = self.plaintext_meta().unwrap_or_default();
+        self.set_plaintext_meta(Some(GLWEPlaintextMeta { scale, ..meta }));
+    }
+
+    fn set_slots(&mut self, slots: SlotsKind) {
+        let meta = self.plaintext_meta().unwrap_or_default();
+        self.set_plaintext_meta(Some(GLWEPlaintextMeta { slots, ..meta }));
+    }
+
+    fn set_log_sparsity(&mut self, log_sparsity: usize) {
+        let meta = self.plaintext_meta().unwrap_or_default();
+        self.set_plaintext_meta(Some(GLWEPlaintextMeta { log_sparsity, ..meta }));
+    }
 }
 
 impl<T: GLWEPlaintextInfos + ?Sized> GLWEPlaintextInfos for &T {

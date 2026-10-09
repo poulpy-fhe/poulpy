@@ -7,6 +7,7 @@
 //! of the result is `X^(-j)·ct` restricted to `X^g`, since the input secret lies in
 //! that subring. Merging and splitting only move coefficients.
 
+use poulpy_core::layouts::{GLWEPlaintextInfos, SetGLWEPlaintextInfos};
 use std::collections::HashMap;
 
 use crate::CKKSResult as Result;

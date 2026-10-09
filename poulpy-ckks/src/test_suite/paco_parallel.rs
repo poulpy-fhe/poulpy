@@ -12,6 +12,7 @@
 use crate::Scale;
 use crate::api::CKKSEncodingOps;
 use poulpy_core::layouts::IntPolyInfos;
+use poulpy_core::layouts::{GLWEPlaintextInfos, SetGLWEPlaintextInfos};
 use std::collections::HashMap;
 
 use poulpy_core::{
@@ -26,7 +27,7 @@ use poulpy_hal::{
 
 use crate::SlotsKind;
 use crate::{
-    CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos,
+    CKKSInfos, GLWEPlaintextMeta,
     api::{CKKSLinearTransformationOps, CKKSPaCoOps, PaCoScalar},
     layouts::{CKKSModuleAlloc, PaCoContext, PaCoDFTPlan, PaCoKeySet, PaCoKeysPrepared, PaCoPlan, PaCoSecretSpec, PaCoWorker},
     reference::paco::ops::PaCoSlotOps,

@@ -1,4 +1,5 @@
 use crate::{Scale, ckks_log_delta};
+use poulpy_core::layouts::GLWEPlaintextInfos;
 use std::collections::HashMap;
 
 use crate::{
