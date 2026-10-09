@@ -1,12 +1,12 @@
 [package]
-name = "poulpy-gpu-cubecl"
+name = "poulpy-gpu-portable"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "A crate providing GPU implementations of poulpy-hal through its open extension points, on CubeCL"
 repository.workspace = true
 homepage.workspace = true
-documentation = "https://docs.rs/poulpy-gpu-cubecl"
+documentation = "https://docs.rs/poulpy-gpu-portable"
 
 [lib]
 doctest = false

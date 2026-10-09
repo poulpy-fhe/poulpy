@@ -13,7 +13,7 @@ members = [
     "backends/poulpy-cpu-arm",
     "backends/poulpy-cpu-rayon",
     "backends/poulpy-cpu-oracle",
-    "backends/poulpy-gpu-cubecl",
+    "backends/poulpy-gpu-portable",
     "tools/poulpy-bench",
 ]
 default-members = [

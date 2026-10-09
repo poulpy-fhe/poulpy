@@ -4,7 +4,7 @@
 //!
 //! Two groups per runtime. `ckks_bootstrapping` is the shared benchmark of
 //! `poulpy-bench`: each iteration calls the bootstrap. `ckks_bootstrapping_replayed`
-//! records the bootstrap once with [`poulpy_gpu_cubecl::Replay`] and times
+//! records the bootstrap once with [`poulpy_gpu_portable::Replay`] and times
 //! its replays, the way an application that repeats a bootstrap on the same
 //! buffers would run it. Every iteration ends with a device synchronization.
 
@@ -29,7 +29,7 @@ macro_rules! bootstrapping {
         for preset in all().unwrap() {
             let preset = preset_for_backend::<
                 $backend,
-                poulpy_gpu_cubecl::NTT4x30Gpu<$runtime, poulpy_hal::layouts::ConjugateInvariant>,
+                poulpy_gpu_portable::NTT4x30Gpu<$runtime, poulpy_hal::layouts::ConjugateInvariant>,
             >(&preset)
             .unwrap();
             let advertised = preset.log2_precision() as f64;
@@ -45,7 +45,7 @@ macro_rules! bootstrapping {
                         _ => BootstrappingPresetRun::<$backend, NTT4x30Portable>::setup_ci(preset.clone()),
                     }));
                     let body = run.clone();
-                    let replay = poulpy_gpu_cubecl::Replay::<$runtime>::record(move || body.borrow_mut().bootstrap_queued());
+                    let replay = poulpy_gpu_portable::Replay::<$runtime>::record(move || body.borrow_mut().bootstrap_queued());
                     (run, replay)
                 });
                 bencher.iter(|| {
@@ -79,11 +79,26 @@ macro_rules! bootstrapping {
 #[allow(unused_variables)]
 fn runtimes(c: &mut Criterion) {
     #[cfg(feature = "enable-cuda")]
-    bootstrapping!(c, poulpy_gpu_cubecl::NTT4x30Cuda, poulpy_gpu_cubecl::Cuda, "NTT4x30Gpu<Cuda>");
+    bootstrapping!(
+        c,
+        poulpy_gpu_portable::NTT4x30Cuda,
+        poulpy_gpu_portable::Cuda,
+        "NTT4x30Gpu<Cuda>"
+    );
     #[cfg(feature = "enable-hip")]
-    bootstrapping!(c, poulpy_gpu_cubecl::NTT4x30Hip, poulpy_gpu_cubecl::Hip, "NTT4x30Gpu<Hip>");
+    bootstrapping!(
+        c,
+        poulpy_gpu_portable::NTT4x30Hip,
+        poulpy_gpu_portable::Hip,
+        "NTT4x30Gpu<Hip>"
+    );
     #[cfg(any(feature = "enable-metal", feature = "enable-vulkan", feature = "enable-wgpu"))]
-    bootstrapping!(c, poulpy_gpu_cubecl::NTT4x30Wgpu, poulpy_gpu_cubecl::Wgpu, "NTT4x30Gpu<Wgpu>");
+    bootstrapping!(
+        c,
+        poulpy_gpu_portable::NTT4x30Wgpu,
+        poulpy_gpu_portable::Wgpu,
+        "NTT4x30Gpu<Wgpu>"
+    );
 }
 
 criterion_group! {

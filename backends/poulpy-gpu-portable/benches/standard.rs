@@ -18,11 +18,11 @@ macro_rules! standard {
 #[allow(unused_variables)]
 fn runtimes(c: &mut Criterion) {
     #[cfg(feature = "enable-cuda")]
-    standard!(c, poulpy_gpu_cubecl::NTT4x30Cuda);
+    standard!(c, poulpy_gpu_portable::NTT4x30Cuda);
     #[cfg(feature = "enable-hip")]
-    standard!(c, poulpy_gpu_cubecl::NTT4x30Hip);
+    standard!(c, poulpy_gpu_portable::NTT4x30Hip);
     #[cfg(any(feature = "enable-metal", feature = "enable-vulkan", feature = "enable-wgpu"))]
-    standard!(c, poulpy_gpu_cubecl::NTT4x30Wgpu);
+    standard!(c, poulpy_gpu_portable::NTT4x30Wgpu);
 }
 
 criterion_group! {

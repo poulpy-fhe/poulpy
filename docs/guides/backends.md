@@ -80,7 +80,7 @@ In `poulpy-cpu-avx512`, `enable-rayon` implies `enable-avx512f`, but it must be 
 
 ## GPU backends
 
-`poulpy-gpu-cubecl` implements the `NTT4x30` subfamily on GPUs through [CubeCL](https://github.com/tracel-ai/cubecl).
+`poulpy-gpu-portable` implements the `NTT4x30` subfamily on GPUs through [CubeCL](https://github.com/tracel-ai/cubecl).
 It uses the same four primes as the CPU `NTT4x30` backends, so its results are bit-identical to `NTT4x30Portable`; only the storage differs (four `u32` residues per DFT-domain coefficient, buffers resident on the device).
 The implementation is written once, and each CubeCL runtime has its own backend type, so that several runtimes can run side by side in one process.
 
@@ -100,7 +100,7 @@ CKKS encoding goes through the host with the portable transform, which keeps it 
 A sequence of calls that is repeated on the same buffers (a bootstrap, say) can be recorded once and replayed as one CubeCL graph:
 
 ```rust
-use poulpy_gpu_cubecl::{Replay, Wgpu};
+use poulpy_gpu_portable::{Replay, Wgpu};
 
 let mut replay = Replay::<Wgpu>::record(|| bootstrap(&module, &mut ct_out, &ct_in, &ctx, &keys, &mut scratch));
 // Write new inputs into the same buffers, then:
