@@ -4,8 +4,8 @@
 mod bootstrapping;
 mod dft;
 mod fold;
-pub(crate) mod helpers;
-pub(crate) mod keys;
+pub mod helpers;
+pub mod keys;
 mod polynomial_evaluation;
 pub use bootstrapping::*;
 pub use dft::*;

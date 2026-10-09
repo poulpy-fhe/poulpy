@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### `poulpy-ckks`
+
+- `test_suite::parity::helpers`, `test_suite::parity::keys` and `test_suite::parity::layout` are public under `test-utils`, so downstream crates build parity tests from the same fixtures.
+
 ## [0.9.0] - 2026-10-08
 
 Reworks the HAL around a smaller operation basis with documented contracts and backend-generic derived defaults ([#234](https://github.com/poulpy-fhe/poulpy/issues/234)), adds the conjugate-invariant ring, multi-degree modules and compact operands ([#266](https://github.com/poulpy-fhe/poulpy/issues/266)), moves sampling into `poulpy-core` behind a unified `Noise` with per-component noise metadata ([#372](https://github.com/poulpy-fhe/poulpy/issues/372)), and makes CKKS encoding byte identical across backends and targets. `poulpy-cpu-ref` is renamed `poulpy-cpu-portable`; new crates: `poulpy-mhe` (multiparty HE) and the unpublished `poulpy-cpu-oracle`.

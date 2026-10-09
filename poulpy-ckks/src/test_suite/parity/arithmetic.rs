@@ -13,7 +13,8 @@ impl<B> ArithmeticParityBackend for B where
 {
 }
 
-pub(crate) fn layout(params: CKKSTestParams, rank: usize, k: usize, delta: usize, sparse: usize, slots: SlotsKind) -> CKKSLayout {
+/// A CKKS layout at the parameter set's degree and radix.
+pub fn layout(params: CKKSTestParams, rank: usize, k: usize, delta: usize, sparse: usize, slots: SlotsKind) -> CKKSLayout {
     CKKSLayout {
         glwe_layout: GLWELayout {
             n: params.n.into(),

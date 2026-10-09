@@ -13,7 +13,8 @@ use poulpy_hal::{
     source::Source,
 };
 
-pub(crate) fn key_layout(n: usize, base2k: usize, k: usize, dsize: usize, rank_in: usize, rank_out: usize) -> GGLWELayout {
+/// Gadget layout of a key covering `k` bits with digit size `dsize`.
+pub fn key_layout(n: usize, base2k: usize, k: usize, dsize: usize, rank_in: usize, rank_out: usize) -> GGLWELayout {
     GGLWELayout {
         n: n.into(),
         base2k: base2k.into(),
@@ -26,11 +27,8 @@ pub(crate) fn key_layout(n: usize, base2k: usize, k: usize, dsize: usize, rank_i
     }
 }
 
-pub(crate) fn fixture_gglwe<B: Backend<ZnxWord = i64>>(
-    module: &Module<B>,
-    layout: &GGLWELayout,
-    seed: u8,
-) -> GGLWE<B::OwnedBuf, i64>
+/// A GGLWE of `layout` filled digit by digit from `seed`.
+pub fn fixture_gglwe<B: Backend<ZnxWord = i64>>(module: &Module<B>, layout: &GGLWELayout, seed: u8) -> GGLWE<B::OwnedBuf, i64>
 where
     Module<B>: GLWEMaskFill<B>,
 {
@@ -39,7 +37,8 @@ where
     out
 }
 
-pub(crate) fn prepared_tensor_key<B>(module: &Module<B>, layout: &GGLWELayout, seed: u8) -> GLWETensorKeyPrepared<B::OwnedBuf, B>
+/// A tensor key prepared from the fixture GGLWE of `seed`.
+pub fn prepared_tensor_key<B>(module: &Module<B>, layout: &GGLWELayout, seed: u8) -> GLWETensorKeyPrepared<B::OwnedBuf, B>
 where
     B: Backend<ZnxWord = i64>,
     Module<B>: GLWETensorKeyPreparedFactory<B> + GLWEMaskFill<B>,
@@ -52,7 +51,8 @@ where
     prepared
 }
 
-pub(crate) fn prepared_automorphism_key<B>(
+/// An automorphism key for Galois element `p`, prepared from the fixture GGLWE of `seed`.
+pub fn prepared_automorphism_key<B>(
     module: &Module<B>,
     layout: &GGLWELayout,
     p: i64,
@@ -71,7 +71,8 @@ where
     prepared
 }
 
-pub(crate) fn prepared_gglwe<B>(module: &Module<B>, layout: &GGLWELayout, seed: u8) -> GGLWEPrepared<B::OwnedBuf, B>
+/// A GGLWE prepared from the fixture GGLWE of `seed`.
+pub fn prepared_gglwe<B>(module: &Module<B>, layout: &GGLWELayout, seed: u8) -> GGLWEPrepared<B::OwnedBuf, B>
 where
     B: Backend<ZnxWord = i64>,
     Module<B>: GGLWEPreparedFactory<B> + GLWEMaskFill<B>,
