@@ -45,6 +45,7 @@ The basis crates sit at the root of the repository, and the other crates are gro
 - **`poulpy-cpu-avx`**: an AVX2/FMA accelerated CPU implementation of **`poulpy-hal`**, exposing `FFT64Avx`, `NTT4x30Avx`, and their optional Rayon-scheduled variants (`enable-rayon`).
 - **`poulpy-cpu-avx512`**: an AVX-512 accelerated CPU implementation of **`poulpy-hal`**, exposing `FFT64Avx512`, `NTT4x30Avx512`, and `NTT3x42Ifma` (`enable-ifma`), plus `FFT64Avx512Rayon` and `NTT4x30Avx512Rayon` (`enable-rayon`) and `NTT3x42IfmaRayon` (`enable-rayon` with `enable-ifma`).
 - **`poulpy-cpu-arm`**: a NEON/ASIMD accelerated CPU implementation of **`poulpy-hal`** for AArch64, exposing `FFT64Neon`, `NTT4x30Neon`, and their optional Rayon-scheduled variants (`enable-rayon`).
+- **`poulpy-gpu-cubecl`**: a GPU implementation of **`poulpy-hal`** on CubeCL, exposing `NTT4x30Cuda` (`enable-cuda`), `NTT4x30Hip` (`enable-hip`) and `NTT4x30Wgpu` (`enable-metal`, `enable-vulkan`, `enable-wgpu`).
 
 ### [`tools/`](tools): workspace tooling
 
@@ -69,6 +70,7 @@ poulpy-cpu-rayon            ← shared Rayon executor and parallel CPU kernels
 poulpy-cpu-avx              ← AVX2/FMA-accelerated backend
 poulpy-cpu-avx512           ← AVX-512/IFMA-accelerated backend
 poulpy-cpu-arm              ← NEON/ASIMD-accelerated backend (AArch64)
+poulpy-gpu-cubecl           ← GPU backend (CUDA, HIP, Metal, Vulkan through CubeCL)
 ```
 
 Backend crates (`poulpy-cpu-portable`, `poulpy-cpu-avx`, `poulpy-cpu-avx512`, `poulpy-cpu-arm`, …) implement the open extension points defined in `poulpy_hal::oep`. Core, CKKS, BLAS and binary-FHE keep concrete backend wiring in backend crates. Each layer provides explicit operation contracts, reusable reference algorithms and caller-selected parity suites.

@@ -78,6 +78,25 @@ In `poulpy-cpu-rayon`, the `enable-core`, `enable-ckks`, `enable-bin-fhe` and `e
 In `poulpy-cpu-avx`, `enable-rayon` implies `enable-avx`.
 In `poulpy-cpu-avx512`, `enable-rayon` implies `enable-avx512f`, but it must be combined with `enable-ifma` to expose `NTT3x42IfmaRayon`.
 
+## GPU backends
+
+`poulpy-gpu-cubecl` implements the `NTT4x30` subfamily on GPUs through [CubeCL](https://github.com/tracel-ai/cubecl).
+It uses the same four primes as the CPU `NTT4x30` backends, so its results are bit-identical to `NTT4x30Portable`; only the storage differs (four `u32` residues per DFT-domain coefficient, buffers resident on the device).
+The implementation is written once, and each CubeCL runtime has its own backend type, so that several runtimes can run side by side in one process.
+
+| Backend | CubeCL runtime | Hardware | Feature |
+|---------|----------------|----------|---------|
+| `NTT4x30Cuda` | CUDA | NVIDIA | `enable-cuda` |
+| `NTT4x30Hip` | HIP | AMD | `enable-hip` |
+| `NTT4x30Wgpu` | wgpu | Metal on Apple, Vulkan, other wgpu targets | `enable-metal`, `enable-vulkan`, `enable-wgpu` |
+
+Each type is generic over the ring like the CPU types (`NTT4x30Wgpu<ConjugateInvariant>`), and `enable-core` and `enable-ckks` add the scheme layers.
+A backend type owns one device for the life of the process: the first device of its runtime, or the one at the index given by the environment variable `POULPY_GPU_DEVICE`.
+
+Buffers live on the device, so data moves explicitly: generate keys and encrypt with a host backend, move the layouts with `TransferInto`, prepare and evaluate on the GPU backend, and move results back to decrypt.
+Operations are queued; `Module::synchronize` returns once they have completed, and a transfer to the host waits for what it reads.
+CKKS encoding goes through the host with the portable transform, which keeps it byte-identical to every other backend.
+
 ## How to use a backend
 
 A backend is selected by naming its type when you build the `Module`.
