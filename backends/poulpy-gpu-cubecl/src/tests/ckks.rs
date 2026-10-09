@@ -149,6 +149,17 @@ fn bootstrapping_n16_d35_k733_p20_s2c_precision_and_launches() {
             100.0 * kernel.bytes as f64 / counters.bytes as f64
         );
     }
+    // The same bootstrap with a synchronization around every launch: the time of each kernel alone.
+    crate::runtime::profile::set(true);
+    run.bootstrap();
+    let mut seconds = crate::runtime::profile::seconds();
+    crate::runtime::profile::set(false);
+    seconds.sort_by(|a, b| b.1.total_cmp(&a.1));
+    let total: f64 = seconds.iter().map(|kernel| kernel.1).sum();
+    println!("PROFILE total={:.1}ms", total * 1e3);
+    for (label, kernel) in seconds {
+        println!("PROFILE {label:<24} {:>7.1}ms {:>5.1}%", kernel * 1e3, 100.0 * kernel / total);
+    }
     let advertised = run.preset().log2_precision() as f64;
     assert!(re.min_log2_prec >= advertised && im.min_log2_prec >= advertised);
 }

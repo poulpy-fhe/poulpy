@@ -2,9 +2,11 @@
 //! `res[j] = sum_{u + v = j + offset} a[u] * b[v]`, slot by slot.
 //!
 //! A prepared operand, left or right, is the transform of its source in the
-//! layout of a DFT-domain vector. One thread per result residue walks the
-//! terms of its limb, accumulating products of canonical residues in a `u64`
-//! folded every [`FOLD_TERMS`] terms.
+//! layout of a DFT-domain vector. One thread per slot and prime reads its
+//! residue in every operand limb once, into thread-local arrays, then walks
+//! the terms of each result limb, accumulating products of canonical
+//! residues in a `u64` folded every [`FOLD_TERMS`] terms. Device memory is
+//! read and written once per residue, whatever the number of limbs.
 //!
 //! A right operand may have a degree `m` dividing the degree `n` of the
 //! product; it then denotes its polynomial in `X^(n/m)`, whose value at the
@@ -29,6 +31,19 @@ use super::{
     primes::{Consts, FOLD_TERMS, barrett60, fold64, sel4},
 };
 use crate::runtime::{GpuRuntime, Label, launch};
+
+/// Step of the capacity of a thread's operand copies, in limbs.
+const CAPACITY_STEP: usize = 8;
+
+/// The slot of a degree-`2^log_b` right operand that `sigma_mul` moves to
+/// slot `slot`, as in `automorphism_kernel`.
+#[cube]
+fn galois_slot(slot: u32, log_b: u32, mul: u32, shift: u32) -> u32 {
+    let up = 32u32 - log_b;
+    let point = slot.reverse_bits() >> up;
+    let exponent = (mul * ((point << shift) + 1u32)) & ((1u32 << (log_b + shift)) - 1u32);
+    (exponent >> shift).reverse_bits() >> up
+}
 
 /// `res = a * b`.
 const SINGLE: u32 = 0;
@@ -58,91 +73,262 @@ fn convolution_kernel(
     a2_base: u32,
     a_stride: u32,
     a_size: u32,
+    // The limbs of `a` some term reads: `a_len` of them from `a_first`.
+    a_first: u32,
+    a_len: u32,
     b_base: u32,
     b2_base: u32,
     b_stride: u32,
     b_size: u32,
+    b_first: u32,
+    b_len: u32,
     // log2 of the ratio between the degree of the product and that of `b`.
     b_gap: u32,
-    // The automorphism `b` is read through, as in `automorphism_kernel`.
+    // The automorphism `b` is read through.
     b_mul: u32,
     b_shift: u32,
     offset: u32,
     #[comptime] c: Consts,
     #[comptime] form: u32,
     #[comptime] accumulate: bool,
+    // Capacity of the thread's copies of the operands, at least `a_len` and `b_len`.
+    #[comptime] a_cap: usize,
+    #[comptime] b_cap: usize,
 ) {
-    let log_block = log_n + 2u32;
-    let pos = ABSOLUTE_POS as u32;
-    if pos < (limbs << log_block) {
-        let j = pos >> log_block;
-        let word = pos - (j << log_block);
+    let word = ABSOLUTE_POS as u32;
+    if word < (4u32 << log_n) {
         let plane = word >> log_n;
         let slot = word - (plane << log_n);
         let log_b = log_n - b_gap;
-        let up = 32u32 - log_b;
-        let point = (slot >> b_gap).reverse_bits() >> up;
-        let exponent = (b_mul * ((point << b_shift) + 1u32)) & ((1u32 << (log_b + b_shift)) - 1u32);
-        let b_word = (plane << log_b) + ((exponent >> b_shift).reverse_bits() >> up);
+        let b_word = (plane << log_b) + galois_slot(slot >> b_gap, log_b, b_mul, b_shift);
         let q = sel4(plane, c.q);
         let r = sel4(plane, c.r);
         let mu = sel4(plane, c.mu60);
 
-        // Terms `a[top - v] * b[v]` for `v` in `v..end`.
-        let top = j + offset;
-        let mut v = top + 1u32 - min(top + 1u32, a_size);
-        let end = min(top + 1u32, b_size);
-        let mut acc = 0u64;
-        let mut acc2 = 0u64;
-        let mut acc_sum = 0u64;
-        while v < end {
-            let block_end = min(v + FOLD_TERMS, end);
-            acc = fold64(acc, r);
-            if form == TENSOR {
-                acc2 = fold64(acc2, r);
-                acc_sum = fold64(acc_sum, r);
-            }
-            while v < block_end {
-                let a_index = (top - v) * a_stride + word;
-                let b_index = v * b_stride + b_word;
-                let mut x = a[(a_base + a_index) as usize];
-                let mut y = b[(b_base + b_index) as usize];
-                if form != SINGLE {
-                    let x2 = a[(a2_base + a_index) as usize];
-                    let y2 = b[(b2_base + b_index) as usize];
-                    let x_sum = x + x2;
-                    let y_sum = y + y2;
-                    let xs = min(x_sum, x_sum - q);
-                    let ys = min(y_sum, y_sum - q);
-                    if form == TENSOR {
-                        acc2 += u64::cast_from(x2) * u64::cast_from(y2);
-                        acc_sum += u64::cast_from(xs) * u64::cast_from(ys);
-                    } else {
-                        x = xs;
-                        y = ys;
-                    }
+        // The residues of this slot in every limb a term reads, read once.
+        // The pairwise form keeps the sums of its two columns.
+        let mut x = Array::<u32>::new(a_cap);
+        let mut y = Array::<u32>::new(b_cap);
+        // Only the tensor form keeps its second columns apart.
+        let mut x2 = Array::<u32>::new(comptime!(if form == TENSOR { a_cap } else { 1 }));
+        let mut y2 = Array::<u32>::new(comptime!(if form == TENSOR { b_cap } else { 1 }));
+        for t in 0..a_len {
+            let index = (a_first + t) * a_stride + word;
+            let mut value = a[(a_base + index) as usize];
+            if form != SINGLE {
+                let second = a[(a2_base + index) as usize];
+                if form == TENSOR {
+                    x2[t as usize] = second;
+                } else {
+                    let sum = value + second;
+                    value = min(sum, sum - q);
                 }
-                acc += u64::cast_from(x) * u64::cast_from(y);
-                v += 1u32;
+            }
+            x[t as usize] = value;
+        }
+        for t in 0..b_len {
+            let index = (b_first + t) * b_stride + b_word;
+            let mut value = b[(b_base + index) as usize];
+            if form != SINGLE {
+                let second = b[(b2_base + index) as usize];
+                if form == TENSOR {
+                    y2[t as usize] = second;
+                } else {
+                    let sum = value + second;
+                    value = min(sum, sum - q);
+                }
+            }
+            y[t as usize] = value;
+        }
+
+        for j in 0..limbs {
+            // Terms `a[top - v] * b[v]` for `v` in `v..end`.
+            let top = j + offset;
+            let mut v = top + 1u32 - min(top + 1u32, a_size);
+            let end = min(top + 1u32, b_size);
+            let mut acc = 0u64;
+            let mut acc2 = 0u64;
+            let mut acc_sum = 0u64;
+            while v < end {
+                let block_end = min(v + FOLD_TERMS, end);
+                acc = fold64(acc, r);
+                if form == TENSOR {
+                    acc2 = fold64(acc2, r);
+                    acc_sum = fold64(acc_sum, r);
+                }
+                while v < block_end {
+                    let u = (top - v - a_first) as usize;
+                    let w = (v - b_first) as usize;
+                    let xv = x[u];
+                    let yv = y[w];
+                    if form == TENSOR {
+                        let xv2 = x2[u];
+                        let yv2 = y2[w];
+                        let x_sum = xv + xv2;
+                        let y_sum = yv + yv2;
+                        let xs = min(x_sum, x_sum - q);
+                        let ys = min(y_sum, y_sum - q);
+                        acc2 += u64::cast_from(xv2) * u64::cast_from(yv2);
+                        acc_sum += u64::cast_from(xs) * u64::cast_from(ys);
+                    }
+                    acc += u64::cast_from(xv) * u64::cast_from(yv);
+                    v += 1u32;
+                }
+            }
+            let mut value = barrett60(fold64(acc, r), q, mu);
+            if form == TENSOR {
+                let value2 = barrett60(fold64(acc2, r), q, mu);
+                let mut middle = barrett60(fold64(acc_sum, r), q, mu);
+                if j < res_size {
+                    res[(res_base + j * res_stride + word) as usize] = value;
+                    res[(res2_base + j * res_stride + word) as usize] = value2;
+                    // `middle - value - value2` on canonical residues.
+                    let sum = value + value2;
+                    let both = min(sum, sum - q);
+                    let difference = middle - both;
+                    middle = min(difference, difference + q);
+                }
+                if j < cross_size {
+                    cross[(cross_base + j * cross_stride + word) as usize] = middle;
+                }
+            } else {
+                let index = res_base + j * res_stride + word;
+                if accumulate {
+                    let sum = value + res[index as usize];
+                    value = min(sum, sum - q);
+                }
+                res[index as usize] = value;
             }
         }
-        let mut value = barrett60(fold64(acc, r), q, mu);
-        if form == TENSOR {
-            let value2 = barrett60(fold64(acc2, r), q, mu);
-            let mut middle = barrett60(fold64(acc_sum, r), q, mu);
-            if j < res_size {
-                res[(res_base + j * res_stride + word) as usize] = value;
-                res[(res2_base + j * res_stride + word) as usize] = value2;
-                // `middle - value - value2` on canonical residues.
-                let sum = value + value2;
-                let both = min(sum, sum - q);
-                let difference = middle - both;
-                middle = min(difference, difference + q);
+    }
+}
+
+/// Terms one launch of the sum sums.
+pub(crate) const SUM_TERMS: usize = 4;
+
+/// `res[j] = sum_t sum_{u + v = j + offset} a_t[u] * sigma_t(b_t[v])`, the
+/// operands of the `terms` terms having the same limb counts and degrees. Like
+/// [`convolution_kernel`], with the copies of term `t` at `t * a_cap` and
+/// `t * b_cap` of the thread's arrays.
+#[cube(launch_unchecked)]
+#[allow(clippy::too_many_arguments, unused_assignments)]
+fn convolution_sum_kernel(
+    res: &mut [u32],
+    a0: &[u32],
+    a1: &[u32],
+    a2: &[u32],
+    a3: &[u32],
+    b0: &[u32],
+    b1: &[u32],
+    b2: &[u32],
+    b3: &[u32],
+    log_n: u32,
+    limbs: u32,
+    res_base: u32,
+    res_stride: u32,
+    a0_base: u32,
+    a0_stride: u32,
+    a1_base: u32,
+    a1_stride: u32,
+    a2_base: u32,
+    a2_stride: u32,
+    a3_base: u32,
+    a3_stride: u32,
+    b0_base: u32,
+    b0_stride: u32,
+    b1_base: u32,
+    b1_stride: u32,
+    b2_base: u32,
+    b2_stride: u32,
+    b3_base: u32,
+    b3_stride: u32,
+    a_size: u32,
+    a_first: u32,
+    a_len: u32,
+    b_size: u32,
+    b_first: u32,
+    b_len: u32,
+    b_gap: u32,
+    // The automorphisms the right operands are read through, of one shift.
+    b0_mul: u32,
+    b1_mul: u32,
+    b2_mul: u32,
+    b3_mul: u32,
+    b_shift: u32,
+    offset: u32,
+    #[comptime] c: Consts,
+    #[comptime] terms: u32,
+    #[comptime] accumulate: bool,
+    #[comptime] a_cap: usize,
+    #[comptime] b_cap: usize,
+) {
+    let word = ABSOLUTE_POS as u32;
+    if word < (4u32 << log_n) {
+        let plane = word >> log_n;
+        let slot = word - (plane << log_n);
+        let log_b = log_n - b_gap;
+        let b_slot = slot >> b_gap;
+        let b_plane = plane << log_b;
+        let b0_word = b_plane + galois_slot(b_slot, log_b, b0_mul, b_shift);
+        let b1_word = b_plane + galois_slot(b_slot, log_b, b1_mul, b_shift);
+        let b2_word = b_plane + galois_slot(b_slot, log_b, b2_mul, b_shift);
+        let b3_word = b_plane + galois_slot(b_slot, log_b, b3_mul, b_shift);
+        let q = sel4(plane, c.q);
+        let r = sel4(plane, c.r);
+        let mu = sel4(plane, c.mu60);
+
+        let mut x = Array::<u32>::new(comptime!(terms as usize * a_cap));
+        let mut y = Array::<u32>::new(comptime!(terms as usize * b_cap));
+        for t in 0..a_len {
+            let limb = a_first + t;
+            let at = t as usize;
+            x[at] = a0[(a0_base + limb * a0_stride + word) as usize];
+            if terms > 1 {
+                x[a_cap + at] = a1[(a1_base + limb * a1_stride + word) as usize];
             }
-            if j < cross_size {
-                cross[(cross_base + j * cross_stride + word) as usize] = middle;
+            if terms > 2 {
+                x[comptime!(2 * a_cap) + at] = a2[(a2_base + limb * a2_stride + word) as usize];
             }
-        } else {
+            if terms > 3 {
+                x[comptime!(3 * a_cap) + at] = a3[(a3_base + limb * a3_stride + word) as usize];
+            }
+        }
+        for t in 0..b_len {
+            let limb = b_first + t;
+            let at = t as usize;
+            y[at] = b0[(b0_base + limb * b0_stride + b0_word) as usize];
+            if terms > 1 {
+                y[b_cap + at] = b1[(b1_base + limb * b1_stride + b1_word) as usize];
+            }
+            if terms > 2 {
+                y[comptime!(2 * b_cap) + at] = b2[(b2_base + limb * b2_stride + b2_word) as usize];
+            }
+            if terms > 3 {
+                y[comptime!(3 * b_cap) + at] = b3[(b3_base + limb * b3_stride + b3_word) as usize];
+            }
+        }
+
+        for j in 0..limbs {
+            let top = j + offset;
+            let start = top + 1u32 - min(top + 1u32, a_size);
+            let end = min(top + 1u32, b_size);
+            let mut acc = 0u64;
+            for term in 0..terms {
+                let x_at = term as usize * a_cap;
+                let y_at = term as usize * b_cap;
+                let mut v = start;
+                while v < end {
+                    let block_end = min(v + FOLD_TERMS, end);
+                    acc = fold64(acc, r);
+                    while v < block_end {
+                        let xv = x[x_at + (top - v - a_first) as usize];
+                        let yv = y[y_at + (v - b_first) as usize];
+                        acc += u64::cast_from(xv) * u64::cast_from(yv);
+                        v += 1u32;
+                    }
+                }
+            }
+            let mut value = barrett60(fold64(acc, r), q, mu);
             let index = res_base + j * res_stride + word;
             if accumulate {
                 let sum = value + res[index as usize];
@@ -150,6 +336,152 @@ fn convolution_kernel(
             }
             res[index as usize] = value;
         }
+    }
+}
+
+/// `res[j] = sum_t sum_{u + v = j + offset} a_t[u] * sigma_t(b_t[v])` for
+/// every limb of `res`, over the `(a_t, b_t, sigma_t)` of `terms`, added to
+/// `res` when `accumulate`. Terms of the same shape are summed [`SUM_TERMS`]
+/// per launch.
+pub(crate) fn convolution_sum<RT: GpuRuntime>(
+    res: &DftColumn,
+    terms: &[(DftColumn, DftColumn, AutomorphismPlan)],
+    offset: usize,
+    accumulate: bool,
+) {
+    let mut accumulate = accumulate;
+    let mut rest = terms;
+    while let Some(((a, b, b_plan), _)) = rest.split_first() {
+        let alike = rest
+            .iter()
+            .take(SUM_TERMS)
+            .take_while(|(a_t, b_t, plan_t)| {
+                a_t.size == a.size && b_t.size == b.size && b_t.n == b.n && plan_t.shift == b_plan.shift
+            })
+            .count();
+        let (group, tail) = rest.split_at(alike);
+        if alike == 1 {
+            convolution::<RT>(res, a, b, b_plan, offset, accumulate);
+        } else {
+            launch_sum::<RT>(res, group, offset, accumulate);
+        }
+        accumulate = true;
+        rest = tail;
+    }
+}
+
+fn launch_sum<RT: GpuRuntime>(
+    res: &DftColumn,
+    terms: &[(DftColumn, DftColumn, AutomorphismPlan)],
+    offset: usize,
+    accumulate: bool,
+) {
+    let (a, b, _) = &terms[0];
+    let (n, limbs) = (res.n, res.size);
+    assert!(
+        terms.iter().all(|(a, _, _)| a.n == n),
+        "the left operands have the degree of the product"
+    );
+    assert!(
+        b.n.is_power_of_two() && b.n <= n,
+        "the right operand has degree {} which does not divide {n}",
+        b.n
+    );
+    assert!(
+        terms.iter().all(|(_, _, plan)| plan.n == b.n),
+        "the right operands are read through automorphisms of their degree"
+    );
+    if limbs == 0 {
+        return;
+    }
+    let offset = offset.min(a.size + b.size);
+    let ranges = Ranges::new(limbs, offset, a.size, b.size);
+    // Terms beyond the last repeat it: the kernel does not read them.
+    let term = |index: usize| &terms[index.min(terms.len() - 1)];
+    let units = 4 * n;
+    let bytes = 4 * (terms.len() * (units * ranges.a_len + 4 * b.n * ranges.b_len) + units * limbs * (1 + accumulate as usize));
+    launch!(
+        RT, if accumulate { Label::CnvSumAdd } else { Label::CnvSum }, bytes, convolution_sum_kernel, (units, DIM, DIM);
+        [
+            res.binding => u32,
+            term(0).0.binding => u32,
+            term(1).0.binding => u32,
+            term(2).0.binding => u32,
+            term(3).0.binding => u32,
+            term(0).1.binding => u32,
+            term(1).1.binding => u32,
+            term(2).1.binding => u32,
+            term(3).1.binding => u32,
+        ];
+        [
+            n.ilog2(),
+            limbs as u32,
+            res.base,
+            res.stride,
+            term(0).0.base,
+            term(0).0.stride,
+            term(1).0.base,
+            term(1).0.stride,
+            term(2).0.base,
+            term(2).0.stride,
+            term(3).0.base,
+            term(3).0.stride,
+            term(0).1.base,
+            term(0).1.stride,
+            term(1).1.base,
+            term(1).1.stride,
+            term(2).1.base,
+            term(2).1.stride,
+            term(3).1.base,
+            term(3).1.stride,
+            a.size as u32,
+            ranges.a_first as u32,
+            ranges.a_len as u32,
+            b.size as u32,
+            ranges.b_first as u32,
+            ranges.b_len as u32,
+            (n / b.n).ilog2(),
+            term(0).2.mul,
+            term(1).2.mul,
+            term(2).2.mul,
+            term(3).2.mul,
+            term(0).2.shift,
+            offset as u32,
+        ];
+        [Consts::get(), terms.len() as u32, accumulate, ranges.a_cap(), ranges.b_cap()]
+    );
+}
+
+/// The operand limbs some term of a convolution reads: `u + v = j + offset`
+/// over the `limbs` limbs `j` written.
+struct Ranges {
+    a_first: usize,
+    a_len: usize,
+    b_first: usize,
+    b_len: usize,
+}
+
+impl Ranges {
+    fn new(limbs: usize, offset: usize, a_size: usize, b_size: usize) -> Self {
+        let top = limbs + offset;
+        let a = (offset + 1).saturating_sub(b_size).min(a_size)..top.min(a_size);
+        let b = (offset + 1).saturating_sub(a_size).min(b_size)..top.min(b_size);
+        Self {
+            a_first: a.start,
+            a_len: a.len(),
+            b_first: b.start,
+            b_len: b.len(),
+        }
+    }
+
+    /// Capacity of a thread's copy of `a`: in steps of [`CAPACITY_STEP`]
+    /// limbs, which keeps the number of compiled kernels small.
+    fn a_cap(&self) -> usize {
+        self.a_len.max(1).next_multiple_of(CAPACITY_STEP)
+    }
+
+    fn b_cap(&self) -> usize {
+        self.b_len.max(1).next_multiple_of(CAPACITY_STEP)
     }
 }
 
@@ -189,16 +521,24 @@ fn launch<RT: GpuRuntime>(
     if limbs == 0 {
         return;
     }
-    let units = 4 * n * limbs;
+    let offset = offset.min(a.size + b.size);
+    let ranges = Ranges::new(limbs, offset, a.size, b.size);
+    let (a_len, b_len) = (ranges.a_len, ranges.b_len);
+    let columns = if form == SINGLE { 1 } else { 2 };
+    let written = if form == TENSOR {
+        2 * res.size + cross.size
+    } else {
+        limbs * (1 + accumulate as usize)
+    };
+    let units = 4 * n;
     let label = match (form, accumulate) {
         (TENSOR, _) => Label::CnvTensor,
         (PAIRWISE, _) => Label::CnvPairwise,
         (_, true) => Label::CnvSingleAdd,
         _ => Label::CnvSingle,
     };
-    let terms = a.size.min(b.size) * if form == SINGLE { 2 } else { 4 };
     launch!(
-        RT, label, units * 4 * (terms + if form == TENSOR { 3 } else { 1 + accumulate as usize }), convolution_kernel, (units, DIM, DIM);
+        RT, label, 4 * (units * (a_len * columns + written) + 4 * b.n * b_len * columns), convolution_kernel, (units, DIM, DIM);
         [
             res.binding => u32,
             *if form == TENSOR { &cross.binding } else { &a.binding } => u32,
@@ -219,17 +559,20 @@ fn launch<RT: GpuRuntime>(
             a2.base,
             a.stride,
             a.size as u32,
+            ranges.a_first as u32,
+            a_len as u32,
             b.base,
             b2.base,
             b.stride,
             b.size as u32,
+            ranges.b_first as u32,
+            b_len as u32,
             (n / b.n).ilog2(),
             b_plan.mul,
             b_plan.shift,
-            // Past `a.size + b.size` no limb has a term.
-            offset.min(a.size + b.size) as u32,
+            offset as u32,
         ];
-        [Consts::get(), form, accumulate]
+        [Consts::get(), form, accumulate, ranges.a_cap(), ranges.b_cap()]
     );
 }
 

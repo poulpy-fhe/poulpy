@@ -24,7 +24,7 @@ mod vmp;
 
 pub use automorphism::AutomorphismPlan;
 pub(crate) use automorphism::automorphism;
-pub(crate) use cnv::{convolution, convolution_pairwise, convolution_tensor};
+pub(crate) use cnv::{convolution, convolution_pairwise, convolution_sum, convolution_tensor};
 pub(crate) use crt::{crt_at, to_big};
 pub(crate) use elementwise::{DftTerm, combine};
 pub(crate) use ntt::{forward, inverse};

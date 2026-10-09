@@ -15,6 +15,8 @@ pub use device::GpuRuntime;
 pub use device::Hip;
 #[cfg(any(feature = "enable-metal", feature = "enable-vulkan", feature = "enable-wgpu"))]
 pub use device::Wgpu;
+#[cfg(test)]
+pub(crate) use launch::profile;
 pub(crate) use launch::{
     Binding, Bound, BufferArgs, HostEvent, Label, Trace, Tracer, cubes, host_event, launch, launched, replayed, trace_launch,
     tracing,

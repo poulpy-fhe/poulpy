@@ -12,7 +12,10 @@ use super::operand::{
 use crate::{
     NTT4x30Gpu,
     module::handle,
-    ntt4x30::{AutomorphismPlan, DftColumn, DftTerm, combine, convolution, convolution_pairwise, convolution_tensor, forward},
+    ntt4x30::{
+        AutomorphismPlan, DftColumn, DftTerm, combine, convolution, convolution_pairwise, convolution_sum, convolution_tensor,
+        forward,
+    },
     runtime::GpuRuntime,
     znx::{Term, convolution_by_const, lincomb},
 };
@@ -213,43 +216,29 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalConvolutionImpl for NTT4x30Gpu<RT, R> {
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
         terms: &[CnvDftAccTerm<'_, Self>],
-        scratch: &mut ScratchArena<'_, Self>,
+        _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        // The terms are separate allocations: one launch each, the first
-        // overwriting and the others accumulating in place. Every term is
-        // checked before the first launch writes `res`.
+        // Every term is checked before the first launch writes `res`.
         terms.iter().for_each(|term| check_galois(term.b_galois));
-        let Some((first, rest)) = terms.split_first() else {
-            let Some(res) = dft_column_mut(res, res_col) else { return };
+        let Some(res) = dft_column_mut(res, res_col) else { return };
+        // A term with an operand without storage is zero.
+        let terms: Vec<(DftColumn, DftColumn, AutomorphismPlan)> = terms
+            .iter()
+            .filter_map(|term| {
+                assert_eq!(term.a.n(), res.n, "cnv_apply_dft_sum: a.n() != res.n()");
+                let plan = right_plan(module, &term.b, term.b_galois);
+                Some((
+                    cnv_left_column(&term.a, term.a_col)?,
+                    cnv_right_column(&term.b, term.b_col)?,
+                    plan,
+                ))
+            })
+            .collect();
+        if terms.is_empty() {
             combine::<RT>(&res, res.size, DftTerm::zero(&res), DftTerm::zero(&res));
             return;
-        };
-        Self::cnv_apply_dft(
-            module,
-            cnv_offset,
-            res,
-            res_col,
-            &first.a,
-            first.a_col,
-            &first.b,
-            first.b_col,
-            first.b_galois,
-            scratch,
-        );
-        for term in rest {
-            Self::cnv_apply_dft_add(
-                module,
-                cnv_offset,
-                res,
-                res_col,
-                &term.a,
-                term.a_col,
-                &term.b,
-                term.b_col,
-                term.b_galois,
-                scratch,
-            );
         }
+        convolution_sum::<RT>(&res, &terms, cnv_offset, false);
     }
 
     fn cnv_pairwise_apply_dft_tmp_bytes(

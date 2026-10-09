@@ -70,7 +70,7 @@ impl Binding {
 /// different word types (temporaries carved from one scratch arena), stay
 /// separate arguments.
 pub(crate) struct BufferArgs<const N: usize> {
-    /// Per argument: the position of the argument it aliases, if any.
+    /// Per argument: the rank, among the buffers bound, of the one it aliases, if any.
     alias: [Option<usize>; N],
     next: usize,
 }
@@ -88,7 +88,13 @@ impl<const N: usize> BufferArgs<N> {
                 (overlap && a_word == b_word).then(|| alias[earlier].unwrap_or(earlier))
             });
         }
-        Self { alias, next: 0 }
+        // CubeCL names the aliased buffer by its rank among the buffers
+        // actually bound, which the aliases are not part of.
+        let rank = |position: usize| alias[..position].iter().filter(|earlier| earlier.is_none()).count();
+        Self {
+            alias: std::array::from_fn(|position| alias[position].map(rank)),
+            next: 0,
+        }
     }
 
     /// The argument of the next buffer of the signature, which is `binding` bound as `T`.
@@ -143,6 +149,8 @@ labels! {
     SvpScale => "svp.scale",
     CnvSingle => "cnv.single",
     CnvSingleAdd => "cnv.single_add",
+    CnvSum => "cnv.sum",
+    CnvSumAdd => "cnv.sum_add",
     CnvPairwise => "cnv.pairwise",
     CnvTensor => "cnv.tensor",
     CnvByConst => "cnv.by_const",
@@ -237,6 +245,62 @@ pub fn launch_breakdown() -> Vec<KernelCounters> {
         .collect();
     breakdown.sort_by(|a, b| b.bytes.cmp(&a.bytes).then(a.label.cmp(b.label)));
     breakdown
+}
+
+/// Time per kernel, for the tests that profile: with profiling on, every
+/// launch is preceded and followed by a device synchronization, and the time
+/// between the two is charged to its kernel.
+#[cfg(test)]
+pub(crate) mod profile {
+    // Read by the full-size test of the CKKS layer.
+    #![cfg_attr(not(feature = "enable-ckks"), allow(dead_code))]
+
+    use std::{
+        sync::atomic::{AtomicBool, AtomicU64, Ordering},
+        time::Instant,
+    };
+
+    use super::{LABELS, Label};
+    use crate::runtime::GpuRuntime;
+
+    static ON: AtomicBool = AtomicBool::new(false);
+    static NANOS: [AtomicU64; LABELS.len()] = [const { AtomicU64::new(0) }; LABELS.len()];
+
+    fn sync<RT: GpuRuntime>() {
+        pollster::block_on(RT::client().sync()).unwrap_or_else(|error| panic!("device synchronization failed: {error:?}"));
+    }
+
+    /// Turns profiling on or off and clears the times.
+    pub(crate) fn set(on: bool) {
+        ON.store(on, Ordering::Relaxed);
+        for nanos in &NANOS {
+            nanos.store(0, Ordering::Relaxed);
+        }
+    }
+
+    pub(crate) fn start<RT: GpuRuntime>() -> Option<Instant> {
+        ON.load(Ordering::Relaxed).then(|| {
+            sync::<RT>();
+            Instant::now()
+        })
+    }
+
+    pub(crate) fn end<RT: GpuRuntime>(label: Label, start: Option<Instant>) {
+        if let Some(start) = start {
+            sync::<RT>();
+            NANOS[label as usize].fetch_add(start.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        }
+    }
+
+    /// Seconds charged to each kernel launched since profiling was turned on.
+    pub(crate) fn seconds() -> Vec<(&'static str, f64)> {
+        LABELS
+            .iter()
+            .zip(&NANOS)
+            .map(|(&label, nanos)| (label, nanos.load(Ordering::Relaxed) as f64 * 1e-9))
+            .filter(|(_, seconds)| *seconds != 0.0)
+            .collect()
+    }
 }
 
 /// Resets [`launch_counters`] and [`launch_breakdown`].
@@ -447,6 +511,8 @@ macro_rules! launch {
         let client = <$rt as $crate::runtime::GpuRuntime>::client();
         let (units, per, dim): (usize, u32, u32) = ($units, $per, $dim);
         let _access = $crate::runtime::access::shared();
+        #[cfg(test)]
+        let profiled = $crate::runtime::profile::start::<$rt>();
         #[allow(unused_mut)]
         let mut buffers = $crate::runtime::BufferArgs::new([$((&$binding, std::any::TypeId::of::<$word>())),*]);
         // SAFETY: each launcher checks, before it launches, that the indices
@@ -462,6 +528,8 @@ macro_rules! launch {
                 $($comptime,)*
             );
         }
+        #[cfg(test)]
+        $crate::runtime::profile::end::<$rt>($label, profiled);
         $crate::runtime::launched($label, $bytes);
         if $crate::runtime::tracing() {
             $crate::runtime::trace_launch($label, units, dim, &[$(&$binding),*], &[$($scalar as u64),*], &($($comptime,)*));
@@ -469,3 +537,42 @@ macro_rules! launch {
     }};
 }
 pub(crate) use launch;
+
+// The test needs a device handle to build bindings from.
+#[cfg(all(test, any(feature = "enable-metal", feature = "enable-vulkan", feature = "enable-wgpu")))]
+mod tests {
+    use std::any::TypeId;
+
+    use super::*;
+    use crate::runtime::GpuRuntime;
+
+    /// The aliases `BufferArgs` declares for views `(allocation, offset, len)` bound as `u32`.
+    fn aliases<const N: usize>(views: [(u64, usize, usize); N], handle: &Handle) -> [Option<usize>; N] {
+        let bindings = views.map(|(id, offset, len)| Binding {
+            id,
+            handle: handle.clone(),
+            reserved: 1024,
+            offset,
+            len,
+            owned: Arc::new(AtomicBool::new(true)),
+        });
+        BufferArgs::new(std::array::from_fn(|i| (&bindings[i], TypeId::of::<u32>()))).alias
+    }
+
+    #[test]
+    fn overlapping_views_alias_the_first_by_its_rank_among_bound_buffers() {
+        let handle = crate::runtime::Wgpu::client().empty(1024);
+        // Distinct allocations and disjoint views of one allocation stay separate.
+        assert_eq!(aliases([(0, 0, 64), (1, 0, 64), (0, 64, 64)], &handle), [None, None, None]);
+        // An operation in place.
+        assert_eq!(aliases([(0, 0, 64), (0, 0, 64), (1, 0, 64)], &handle), [None, Some(0), None]);
+        // Aliases are not bound: the fifth argument is the third buffer, of rank 2.
+        assert_eq!(
+            aliases(
+                [(0, 0, 64), (1, 0, 64), (1, 0, 64), (1, 32, 64), (2, 0, 64), (2, 0, 64)],
+                &handle
+            ),
+            [None, None, Some(1), Some(1), None, Some(2)]
+        );
+    }
+}
