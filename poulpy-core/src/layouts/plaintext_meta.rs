@@ -92,8 +92,9 @@ impl GLWEPlaintextMeta {
         writer.write_u32::<LittleEndian>(meta.log_sparsity as u32)
     }
 
-    /// Reads the metadata of a plaintext of degree `n`.
-    pub(crate) fn read_from<R: std::io::Read>(reader: &mut R, n: usize) -> std::io::Result<Option<Self>> {
+    /// Reads metadata; validate it with [`Self::validate_degree`] once the
+    /// serialized plaintext degree is known.
+    pub(crate) fn read_from<R: std::io::Read>(reader: &mut R) -> std::io::Result<Option<Self>> {
         let invalid = |what: &str| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("invalid plaintext {what}"));
         let scale = match reader.read_u8()? {
             0 => return Ok(None),
@@ -108,15 +109,22 @@ impl GLWEPlaintextMeta {
             _ => return Err(invalid("slots")),
         };
         let log_sparsity = reader.read_u32::<LittleEndian>()? as usize;
-        // `Z[X^(2^s)]` needs `2^s <= n`.
-        if log_sparsity > n.ilog2() as usize {
-            return Err(invalid("sparsity"));
-        }
         Ok(Some(Self {
             scale,
             slots,
             log_sparsity,
         }))
+    }
+
+    pub(crate) fn validate_degree(&self, n: usize) -> std::io::Result<()> {
+        // `Z[X^(2^s)]` needs `2^s <= n`.
+        if n == 0 || self.log_sparsity > n.ilog2() as usize {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "invalid plaintext sparsity",
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -207,7 +215,11 @@ mod tests {
         for meta in [None, Some(sparse), Some(exact)] {
             let mut bytes = Vec::new();
             GLWEPlaintextMeta::write_to(&meta, &mut bytes).unwrap();
-            assert_eq!(GLWEPlaintextMeta::read_from(&mut bytes.as_slice(), 8).unwrap(), meta);
+            let decoded = GLWEPlaintextMeta::read_from(&mut bytes.as_slice()).unwrap();
+            assert_eq!(decoded, meta);
+            if let Some(decoded) = decoded {
+                decoded.validate_degree(8).unwrap();
+            }
         }
         let mut bytes = Vec::new();
         GLWEPlaintextMeta::write_to(
@@ -219,7 +231,12 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            GLWEPlaintextMeta::read_from(&mut bytes.as_slice(), 8).unwrap_err().kind(),
+            GLWEPlaintextMeta::read_from(&mut bytes.as_slice())
+                .unwrap()
+                .unwrap()
+                .validate_degree(8)
+                .unwrap_err()
+                .kind(),
             std::io::ErrorKind::InvalidData
         );
     }

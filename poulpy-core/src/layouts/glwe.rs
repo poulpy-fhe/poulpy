@@ -366,8 +366,11 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWE<D, W> {
         let components = self.data.cols();
         let noise = crate::ComponentNoise::read_optional(reader, components)?;
         let base2k = Base2K(reader.read_u32::<LittleEndian>()?);
-        let plaintext_meta = GLWEPlaintextMeta::read_from(reader, self.data.n())?;
+        let plaintext_meta = GLWEPlaintextMeta::read_from(reader)?;
         crate::layouts::read_vec_znx_with_shape(&mut self.data, reader, None, components)?;
+        if let Some(meta) = plaintext_meta {
+            meta.validate_degree(self.data.n())?;
+        }
         crate::layouts::validate_noise_components(noise.as_ref(), self.data.cols())?;
         self.set_base2k(base2k);
         self.noise = noise;

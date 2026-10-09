@@ -313,8 +313,11 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWECompressed<D, W> {
         }
         let mut seed = [0u8; 32];
         reader.read_exact(&mut seed)?;
-        let plaintext_meta = GLWEPlaintextMeta::read_from(reader, self.data.n())?;
+        let plaintext_meta = GLWEPlaintextMeta::read_from(reader)?;
         crate::layouts::read_vec_znx_with_shape(&mut self.data, reader, None, 1)?;
+        if let Some(meta) = plaintext_meta {
+            meta.validate_degree(self.data.n())?;
+        }
         crate::layouts::validate_noise_components(noise.as_ref(), self.rank.as_usize() + 1)?;
         self.base2k = base2k;
         self.seed = seed;
