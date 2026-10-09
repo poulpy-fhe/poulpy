@@ -14,7 +14,7 @@ use poulpy_cpu_portable::kernels::{
         NttDFTExecute,
         ntt::{NttTable, NttTableInv},
         primes::Primes30,
-        vec_znx_dft::{NttPlan, NttPlanNew},
+        vec_znx_dft::{NttModuleHandle, NttPlan, NttPlanNew},
     },
     znx::ZnxAutomorphism,
 };
@@ -242,7 +242,9 @@ where
     ) {
         let bytes = crate::ntt4x30_avx512::convolution::cnv_prepare_tmp_bytes(res.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30_avx512::convolution::cnv_prepare_left::<_, SerialTaskExecutor>(module, res, a, tmp);
+        crate::ntt4x30_avx512::convolution::cnv_prepare_left::<_, SerialTaskExecutor>(module, res, a, tmp, |n, dst, src| {
+            crate::ntt4x30_avx512::vec_znx_dft::dft_limb_wide(module, n, dst, src)
+        });
     }
 
     fn cnv_prepare_right_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
@@ -257,7 +259,9 @@ where
     ) {
         let bytes = crate::ntt4x30_avx512::convolution::cnv_prepare_tmp_bytes(res.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30_avx512::convolution::cnv_prepare_right::<_, SerialTaskExecutor>(module, res, a, tmp);
+        crate::ntt4x30_avx512::convolution::cnv_prepare_right::<_, SerialTaskExecutor>(module, res, a, tmp, |n, dst, src| {
+            crate::ntt4x30_avx512::vec_znx_dft::dft_limb_wide(module, n, dst, src)
+        });
     }
 
     fn cnv_apply_dft_tmp_bytes(
@@ -360,7 +364,15 @@ where
         let _ = scratch;
         unsafe {
             crate::ntt4x30_avx512::convolution::cnv_apply_dft::<_, SerialTaskExecutor>(
-                module, cnv_offset, res, res_col, a, a_col, b, b_col,
+                module,
+                module.get_bbc_meta(),
+                cnv_offset,
+                res,
+                res_col,
+                a,
+                a_col,
+                b,
+                b_col,
             )
         };
     }
@@ -390,7 +402,15 @@ where
         let _ = scratch;
         unsafe {
             crate::ntt4x30_avx512::convolution::cnv_apply_dft_add::<_, SerialTaskExecutor>(
-                module, cnv_offset, res, res_col, a, a_col, b, b_col,
+                module,
+                module.get_bbc_meta(),
+                cnv_offset,
+                res,
+                res_col,
+                a,
+                a_col,
+                b,
+                b_col,
             )
         };
     }
@@ -420,7 +440,15 @@ where
         let _ = scratch;
         unsafe {
             crate::ntt4x30_avx512::convolution::cnv_pairwise_apply_dft::<_, SerialTaskExecutor>(
-                module, cnv_offset, res, res_col, a, b, i, j,
+                module,
+                module.get_bbc_meta(),
+                cnv_offset,
+                res,
+                res_col,
+                a,
+                b,
+                i,
+                j,
             )
         };
     }
@@ -438,7 +466,14 @@ where
     ) {
         let bytes = crate::ntt4x30_avx512::convolution::cnv_prepare_tmp_bytes(left.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30_avx512::convolution::cnv_prepare_self::<_, SerialTaskExecutor>(module, left, right, a, tmp);
+        crate::ntt4x30_avx512::convolution::cnv_prepare_self::<_, SerialTaskExecutor>(
+            module,
+            left,
+            right,
+            a,
+            tmp,
+            |n, dst, src| crate::ntt4x30_avx512::vec_znx_dft::dft_limb_wide(module, n, dst, src),
+        );
     }
 }
 
@@ -620,7 +655,7 @@ where
         b_col: usize,
     ) {
         let _ = module;
-        crate::ntt4x30_avx512::vec_znx_dft::vec_znx_dft_add(res, res_col, a, a_col, b, b_col)
+        crate::ntt4x30_avx512::vec_znx_dft::vec_znx_dft_add::<_, SerialTaskExecutor>(res, res_col, a, a_col, b, b_col)
     }
 
     fn vec_znx_dft_add_assign(
@@ -631,7 +666,7 @@ where
         a_col: usize,
     ) {
         let _ = module;
-        crate::ntt4x30_avx512::vec_znx_dft::vec_znx_dft_add_assign(res, res_col, a, a_col)
+        crate::ntt4x30_avx512::vec_znx_dft::vec_znx_dft_add_assign::<_, SerialTaskExecutor>(res, res_col, a, a_col)
     }
 
     fn vec_znx_dft_sub(
@@ -644,7 +679,7 @@ where
         b_col: usize,
     ) {
         let _ = module;
-        crate::ntt4x30_avx512::vec_znx_dft::vec_znx_dft_sub(res, res_col, a, a_col, b, b_col)
+        crate::ntt4x30_avx512::vec_znx_dft::vec_znx_dft_sub::<_, SerialTaskExecutor>(res, res_col, a, a_col, b, b_col)
     }
 
     fn vec_znx_dft_sub_assign(
@@ -655,7 +690,7 @@ where
         a_col: usize,
     ) {
         let _ = module;
-        crate::ntt4x30_avx512::vec_znx_dft::vec_znx_dft_sub_assign(res, res_col, a, a_col)
+        crate::ntt4x30_avx512::vec_znx_dft::vec_znx_dft_sub_assign::<_, SerialTaskExecutor>(res, res_col, a, a_col)
     }
 
     fn vec_znx_dft_sub_negate_assign(
@@ -666,7 +701,7 @@ where
         a_col: usize,
     ) {
         let _ = module;
-        crate::ntt4x30_avx512::vec_znx_dft::vec_znx_dft_sub_negate_assign(res, res_col, a, a_col)
+        crate::ntt4x30_avx512::vec_znx_dft::vec_znx_dft_sub_negate_assign::<_, SerialTaskExecutor>(res, res_col, a, a_col)
     }
 
     fn vec_znx_dft_copy(
@@ -679,7 +714,7 @@ where
         a_col: usize,
     ) {
         let _ = module;
-        crate::ntt4x30_avx512::vec_znx_dft::vec_znx_dft_copy(step, offset, res, res_col, a, a_col)
+        crate::ntt4x30_avx512::vec_znx_dft::vec_znx_dft_copy::<_, SerialTaskExecutor>(step, offset, res, res_col, a, a_col)
     }
 
     fn vec_znx_dft_zero(module: &Module<Self>, res: &mut VecZnxDftBackendMut<'_, Self>, res_col: usize) {
