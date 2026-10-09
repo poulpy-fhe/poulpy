@@ -237,6 +237,93 @@ fn glwe_mul_columns_matches_reference() {
     mul_columns_case(&MODULE_CI, N, 16, 6, 5, 8, 8, 3);
 }
 
+/// The streamed sum of right operands of one limb, each term read through
+/// its own automorphism, against the same terms one product at a time: the
+/// upstream suite reads through automorphisms on several limbs only.
+fn one_limb_sum_case<R: Ring>(module: &Module<BE<R>>, n: usize, b_n: usize, galois: &[i64]) {
+    let (a_size, res_size, offset) = (5, 4, 1);
+    let mut seed = 0x5eed_0f0e_e11bu64 ^ ((b_n * 31 + galois.len()) as u64);
+    let mut scratch = ScratchOwned::<BE<R>>::alloc((n << 12).max(1 << 22));
+    let prepared: Vec<_> = galois
+        .iter()
+        .map(|_| {
+            let (a, b) = (vector::<R>(n, 1, a_size, &mut seed), vector::<R>(b_n, 1, 1, &mut seed));
+            let mut left = module.cnv_pvec_left_alloc(n, 1, a_size, PrepareHint::Reuse);
+            let mut right = module.cnv_pvec_right_alloc(b_n, 1, 1, PrepareHint::Reuse);
+            module.cnv_prepare_left(
+                &mut poulpy_hal::layouts::CnvPVecLToBackendMut::to_backend_mut(&mut left),
+                &vec_znx_backend_ref::<BE<R>>(&a),
+                &mut scratch.arena(),
+            );
+            module.cnv_prepare_right(
+                &mut poulpy_hal::layouts::CnvPVecRToBackendMut::to_backend_mut(&mut right),
+                &vec_znx_backend_ref::<BE<R>>(&b),
+                &mut scratch.arena(),
+            );
+            (left, right)
+        })
+        .collect();
+    let terms: Vec<poulpy_hal::layouts::CnvDftAccTerm<'_, BE<R>>> = prepared
+        .iter()
+        .zip(galois)
+        .map(|((left, right), &b_galois)| poulpy_hal::layouts::CnvDftAccTerm {
+            a: poulpy_hal::layouts::CnvPVecLToBackendRef::to_backend_ref(left),
+            a_col: 0,
+            b: poulpy_hal::layouts::CnvPVecRToBackendRef::to_backend_ref(right),
+            b_col: 0,
+            b_galois,
+        })
+        .collect();
+
+    let mut want = module.vec_znx_dft_alloc(n, 1, res_size);
+    for (index, term) in terms.iter().enumerate() {
+        let mut res = want.to_backend_mut();
+        if index == 0 {
+            module.cnv_apply_dft(
+                offset,
+                &mut res,
+                0,
+                &term.a,
+                0,
+                &term.b,
+                0,
+                term.b_galois,
+                &mut scratch.arena(),
+            );
+        } else {
+            module.cnv_apply_dft_add(
+                offset,
+                &mut res,
+                0,
+                &term.a,
+                0,
+                &term.b,
+                0,
+                term.b_galois,
+                &mut scratch.arena(),
+            );
+        }
+    }
+    let mut have = module.vec_znx_dft_alloc(n, 1, res_size);
+    module.cnv_apply_dft_sum(offset, &mut have.to_backend_mut(), 0, &terms, &mut scratch.arena());
+    assert!(
+        want == have,
+        "one-limb convolution sum differs: n={n} b_n={b_n} galois={galois:?}"
+    );
+}
+
+#[test]
+fn one_limb_convolution_sum_reads_each_term_through_its_automorphism() {
+    let galois = [5, -1, 3, 25];
+    for b_n in [N, N / 4] {
+        one_limb_sum_case(&MODULE, N, b_n, &galois);
+        // A group of fewer terms than one launch takes, and a lone term.
+        one_limb_sum_case(&MODULE, N, b_n, &galois[..3]);
+        one_limb_sum_case(&MODULE, N, b_n, &galois[1..2]);
+        one_limb_sum_case(&MODULE_CI, N, b_n, &galois);
+    }
+}
+
 /// The two products at the degree and limb counts of the bootstrapping presets.
 #[test]
 #[ignore = "full degree; run in release with --ignored"]

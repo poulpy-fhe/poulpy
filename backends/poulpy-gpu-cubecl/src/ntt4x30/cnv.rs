@@ -339,6 +339,169 @@ fn convolution_sum_kernel(
     }
 }
 
+/// [`convolution_sum_kernel`] for right operands of one limb, the diagonals
+/// of a linear transformation: `res[j] = sum_t a_t[j + offset] * sigma_t(b_t[0])`. No
+/// result limb shares an operand limb with another, so one thread per result
+/// residue streams through the operands.
+#[cube(launch_unchecked)]
+#[allow(clippy::too_many_arguments, unused_assignments)]
+fn convolution_scale_kernel(
+    res: &mut [u32],
+    a0: &[u32],
+    a1: &[u32],
+    a2: &[u32],
+    a3: &[u32],
+    b0: &[u32],
+    b1: &[u32],
+    b2: &[u32],
+    b3: &[u32],
+    log_n: u32,
+    limbs: u32,
+    res_base: u32,
+    res_stride: u32,
+    a0_base: u32,
+    a0_stride: u32,
+    a1_base: u32,
+    a1_stride: u32,
+    a2_base: u32,
+    a2_stride: u32,
+    a3_base: u32,
+    a3_stride: u32,
+    b0_base: u32,
+    b1_base: u32,
+    b2_base: u32,
+    b3_base: u32,
+    a_size: u32,
+    b_gap: u32,
+    // The automorphisms the right operands are read through, of one shift.
+    b0_mul: u32,
+    b1_mul: u32,
+    b2_mul: u32,
+    b3_mul: u32,
+    b_shift: u32,
+    offset: u32,
+    #[comptime] c: Consts,
+    #[comptime] terms: u32,
+    #[comptime] accumulate: bool,
+) {
+    let log_block = log_n + 2u32;
+    let pos = ABSOLUTE_POS as u32;
+    if pos < (limbs << log_block) {
+        let j = pos >> log_block;
+        let word = pos - (j << log_block);
+        let plane = word >> log_n;
+        let slot = word - (plane << log_n);
+        let log_b = log_n - b_gap;
+        let b_slot = slot >> b_gap;
+        let b_plane = plane << log_b;
+        let q = sel4(plane, c.q);
+        let r = sel4(plane, c.r);
+        let mu = sel4(plane, c.mu60);
+        let u = j + offset;
+        let index = res_base + j * res_stride + word;
+        let mut value = 0u32;
+        if u < a_size {
+            // Up to four products of canonical residues: below `2^62`.
+            let b0_word = b_plane + galois_slot(b_slot, log_b, b0_mul, b_shift);
+            let mut acc =
+                u64::cast_from(a0[(a0_base + u * a0_stride + word) as usize]) * u64::cast_from(b0[(b0_base + b0_word) as usize]);
+            if terms > 1 {
+                let b1_word = b_plane + galois_slot(b_slot, log_b, b1_mul, b_shift);
+                acc += u64::cast_from(a1[(a1_base + u * a1_stride + word) as usize])
+                    * u64::cast_from(b1[(b1_base + b1_word) as usize]);
+            }
+            if terms > 2 {
+                let b2_word = b_plane + galois_slot(b_slot, log_b, b2_mul, b_shift);
+                acc += u64::cast_from(a2[(a2_base + u * a2_stride + word) as usize])
+                    * u64::cast_from(b2[(b2_base + b2_word) as usize]);
+            }
+            if terms > 3 {
+                let b3_word = b_plane + galois_slot(b_slot, log_b, b3_mul, b_shift);
+                acc += u64::cast_from(a3[(a3_base + u * a3_stride + word) as usize])
+                    * u64::cast_from(b3[(b3_base + b3_word) as usize]);
+            }
+            value = barrett60(fold64(acc, r), q, mu);
+        }
+        if accumulate {
+            let sum = value + res[index as usize];
+            value = min(sum, sum - q);
+        }
+        res[index as usize] = value;
+    }
+}
+
+fn launch_scale<RT: GpuRuntime>(
+    res: &DftColumn,
+    terms: &[(DftColumn, DftColumn, AutomorphismPlan)],
+    offset: usize,
+    accumulate: bool,
+) {
+    let (a, b, _) = &terms[0];
+    let (n, limbs) = (res.n, res.size);
+    assert!(
+        terms.iter().all(|(a, _, _)| a.n == n),
+        "the left operands have the degree of the product"
+    );
+    assert!(
+        b.n.is_power_of_two() && b.n <= n,
+        "the right operand has degree {} which does not divide {n}",
+        b.n
+    );
+    assert!(
+        terms.iter().all(|(_, _, plan)| plan.n == b.n),
+        "the right operands are read through automorphisms of their degree"
+    );
+    if limbs == 0 {
+        return;
+    }
+    // Terms beyond the last repeat it: the kernel does not read them.
+    let term = |index: usize| &terms[index.min(terms.len() - 1)];
+    let units = 4 * n * limbs;
+    let read = limbs.min(a.size.saturating_sub(offset));
+    let bytes = 4 * (terms.len() * 4 * (n * read + b.n) + units * (1 + accumulate as usize));
+    launch!(
+        RT, if accumulate { Label::CnvSumAdd } else { Label::CnvSum }, bytes, convolution_scale_kernel, (units, RT::GROUP, RT::GROUP);
+        [
+            res.binding => u32,
+            term(0).0.binding => u32,
+            term(1).0.binding => u32,
+            term(2).0.binding => u32,
+            term(3).0.binding => u32,
+            term(0).1.binding => u32,
+            term(1).1.binding => u32,
+            term(2).1.binding => u32,
+            term(3).1.binding => u32,
+        ];
+        [
+            n.ilog2(),
+            limbs as u32,
+            res.base,
+            res.stride,
+            term(0).0.base,
+            term(0).0.stride,
+            term(1).0.base,
+            term(1).0.stride,
+            term(2).0.base,
+            term(2).0.stride,
+            term(3).0.base,
+            term(3).0.stride,
+            term(0).1.base,
+            term(1).1.base,
+            term(2).1.base,
+            term(3).1.base,
+            a.size as u32,
+            (n / b.n).ilog2(),
+            term(0).2.mul,
+            term(1).2.mul,
+            term(2).2.mul,
+            term(3).2.mul,
+            term(0).2.shift,
+            offset.min(a.size) as u32,
+        ];
+        [Consts::get(), terms.len() as u32, accumulate]
+    );
+}
+
 /// `res[j] = sum_t sum_{u + v = j + offset} a_t[u] * sigma_t(b_t[v])` for
 /// every limb of `res`, over the `(a_t, b_t, sigma_t)` of `terms`, added to
 /// `res` when `accumulate`. Terms of the same shape are summed [`SUM_TERMS`]
@@ -360,7 +523,9 @@ pub(crate) fn convolution_sum<RT: GpuRuntime>(
             })
             .count();
         let (group, tail) = rest.split_at(alike);
-        if alike == 1 {
+        if b.size == 1 {
+            launch_scale::<RT>(res, group, offset, accumulate);
+        } else if alike == 1 {
             convolution::<RT>(res, a, b, b_plan, offset, accumulate);
         } else {
             launch_sum::<RT>(res, group, offset, accumulate);
