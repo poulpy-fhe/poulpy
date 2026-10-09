@@ -38,8 +38,8 @@ It exists only as an IFMA-accelerated backend, because it relies on IFMA multipl
 
 | Subfamily | Reference | AVX2 / FMA | AVX-512 | NEON |
 |-----------|-----------|------------|---------|------|
-| FFT64  | `FFT64Portable` | `FFT64Avx`, `FFT64AvxRayon` | `FFT64Avx512`, `FFT64Avx512Rayon` | `FFT64Neon`, `FFT64NeonRayon` |
-| NTT4x30 | `NTT4x30Portable` | `NTT4x30Avx`, `NTT4x30AvxRayon` | `NTT4x30Avx512`, `NTT4x30Avx512Rayon` | `NTT4x30Neon`, `NTT4x30NeonRayon` |
+| FFT64  | `FFT64Portable`, `FFT64PortableRayon` | `FFT64Avx`, `FFT64AvxRayon` | `FFT64Avx512`, `FFT64Avx512Rayon` | `FFT64Neon`, `FFT64NeonRayon` |
+| NTT4x30 | `NTT4x30Portable`, `NTT4x30PortableRayon` | `NTT4x30Avx`, `NTT4x30AvxRayon` | `NTT4x30Avx512`, `NTT4x30Avx512Rayon` | `NTT4x30Neon`, `NTT4x30NeonRayon` |
 | NTT3x42 | none | none | `NTT3x42Ifma`, `NTT3x42IfmaRayon` | none |
 
 The `*Ref` types live in `poulpy-cpu-portable` and are portable across every CPU.
@@ -47,11 +47,13 @@ They prioritize correctness and validation, not performance; use an accelerated 
 The `*Avx` types live in `poulpy-cpu-avx`.
 The `*Avx512` and `NTT3x42Ifma` types live in `poulpy-cpu-avx512`.
 The `*Neon` types live in `poulpy-cpu-arm` and target AArch64 (Apple Silicon, Neoverse).
+The Rayon variants of the portable backends live in `poulpy-cpu-rayon`, since that crate depends on `poulpy-cpu-portable` and not the other way round.
 The `*Rayon` types use the same arithmetic subfamily and storage formats as their serial counterparts but schedule supported operations over the active Rayon thread pool.
 
 | Backend | Crate | Feature | Required target features |
 |---------|-------|---------|--------------------------|
 | `FFT64Portable` | `poulpy-cpu-portable` | none | none |
+| `FFT64PortableRayon` | `poulpy-cpu-rayon` | none | none |
 | `FFT64Avx` | `poulpy-cpu-avx` | `enable-avx` | `+avx2,+fma` |
 | `FFT64AvxRayon` | `poulpy-cpu-avx` | `enable-rayon` | `+avx2,+fma` |
 | `FFT64Avx512` | `poulpy-cpu-avx512` | `enable-avx512f` | `+avx512f` |
@@ -59,6 +61,7 @@ The `*Rayon` types use the same arithmetic subfamily and storage formats as thei
 | `FFT64Neon` | `poulpy-cpu-arm` | `enable-neon` | none |
 | `FFT64NeonRayon` | `poulpy-cpu-arm` | `enable-rayon` | none |
 | `NTT4x30Portable` | `poulpy-cpu-portable` | none | none |
+| `NTT4x30PortableRayon` | `poulpy-cpu-rayon` | none | none |
 | `NTT4x30Avx` | `poulpy-cpu-avx` | `enable-avx` | `+avx2,+fma` |
 | `NTT4x30AvxRayon` | `poulpy-cpu-avx` | `enable-rayon` | `+avx2,+fma` |
 | `NTT4x30Avx512` | `poulpy-cpu-avx512` | `enable-avx512f` | `+avx512f` |
@@ -71,6 +74,7 @@ The `*Rayon` types use the same arithmetic subfamily and storage formats as thei
 The AVX and AVX-512 backends check the required CPU features at runtime in `Module::new` and panic if they are missing.
 They also require the matching `target-feature` flags at compile time.
 The `*Neon` backends need no `target-feature` flags and build only on `aarch64`.
+In `poulpy-cpu-rayon`, the `enable-core`, `enable-ckks`, `enable-bin-fhe` and `enable-mhe` features wire the scheme layers into the portable Rayon backends, as the features of the same names do in `poulpy-cpu-portable`.
 In `poulpy-cpu-avx`, `enable-rayon` implies `enable-avx`.
 In `poulpy-cpu-avx512`, `enable-rayon` implies `enable-avx512f`, but it must be combined with `enable-ifma` to expose `NTT3x42IfmaRayon`.
 

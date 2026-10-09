@@ -5,16 +5,9 @@ use poulpy_core::{
     impl_gglwe_product_digits_strided_reference, impl_glwe_tensoring_reference,
     reference::keyswitching::glwe::{gglwe_product_digits_strided_reference, gglwe_product_digits_strided_tmp_bytes_reference},
 };
-use poulpy_cpu_portable::kernels::{
-    ntt4x30::{
-        NttDFTExecute,
-        ntt::{NttTable, NttTableInv},
-        primes::Primes30,
-    },
-    znx::ZnxAutomorphism,
-};
 use poulpy_hal::layouts::{
-    DataView, DataViewMut, Module, Ring, ScratchArena, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef,
+    ConjugateInvariant, DataView, DataViewMut, Module, ScratchArena, Standard, VecZnxDftBackendMut, VecZnxDftBackendRef,
+    VmpPMatBackendRef,
 };
 
 use crate::ntt4x30::vmp::{STRIDED_MAX_DSIZE, vmp_apply_dft_to_dft_digits_strided_neon, vmp_apply_digits_strided_tmp_bytes_neon};
@@ -28,11 +21,8 @@ impl_gglwe_product_digits_strided_reference!(FFT64CINeon);
 
 /// Interleaved-digit product hook of the NTT backends, fused up to `STRIDED_MAX_DSIZE` digits.
 macro_rules! impl_ntt_digits_strided {
-    ($be:ident, $executor:ty, $workers:expr) => {
-        unsafe impl<R: Ring> poulpy_core::oep::GGLWEProductDigitsStridedImpl for $be<R>
-        where
-            NTT4x30Neon<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + ZnxAutomorphism,
-        {
+    ($be:ident, $ring:ty, $executor:ty, $workers:expr) => {
+        unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for $be<$ring> {
             fn gglwe_product_digits_strided_tmp_bytes(
                 module: &Module<Self>,
                 res_size: usize,
@@ -76,7 +66,7 @@ macro_rules! impl_ntt_digits_strided {
                 let workers = ($workers).min(scratch.available() / per_worker).max(1);
                 let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), workers * per_worker / 8);
                 let res_shape = res.shape();
-                vmp_apply_dft_to_dft_digits_strided_neon::<R, $executor>(
+                vmp_apply_dft_to_dft_digits_strided_neon::<$ring, $executor>(
                     &mut poulpy_hal::layouts::VecZnxDft::from_shape(&mut **res.data_mut(), res_shape),
                     &poulpy_hal::layouts::VecZnxDft::from_shape(&**a.data(), a.shape()),
                     dsize,
@@ -97,12 +87,21 @@ macro_rules! impl_ntt_digits_strided {
     };
 }
 
-impl_ntt_digits_strided!(NTT4x30Neon, poulpy_hal::execution::SerialTaskExecutor, 1);
+impl_ntt_digits_strided!(NTT4x30Neon, Standard, poulpy_hal::execution::SerialTaskExecutor, 1);
+impl_ntt_digits_strided!(NTT4x30Neon, ConjugateInvariant, poulpy_hal::execution::SerialTaskExecutor, 1);
 #[cfg(feature = "enable-rayon")]
 impl_ntt_digits_strided!(
     NTT4x30NeonRayon,
+    Standard,
     poulpy_cpu_rayon::RayonTaskExecutor,
-    poulpy_cpu_rayon::workers(<NTT4x30NeonRayon<R> as poulpy_hal::execution::ScratchWorkers>::VMP)
+    poulpy_cpu_rayon::workers(<NTT4x30NeonRayon as poulpy_hal::execution::ScratchWorkers>::VMP)
+);
+#[cfg(feature = "enable-rayon")]
+impl_ntt_digits_strided!(
+    NTT4x30NeonRayon,
+    ConjugateInvariant,
+    poulpy_cpu_rayon::RayonTaskExecutor,
+    poulpy_cpu_rayon::workers(<NTT4x30NeonRayon<ConjugateInvariant> as poulpy_hal::execution::ScratchWorkers>::VMP)
 );
 
 #[cfg(feature = "enable-rayon")]

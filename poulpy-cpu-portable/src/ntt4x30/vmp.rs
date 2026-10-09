@@ -54,7 +54,7 @@ pub(crate) fn vmp_prepare<R: Ring>(
     for row_i in 0..nrows {
         for col_i in 0..ncols {
             let pos = n * (row_i * ncols + col_i);
-            dft_limb_scaled(module, n, tmp_packed, &mat_i64[pos..pos + n], true);
+            dft_limb_scaled::<_, poulpy_hal::execution::SerialTaskExecutor>(module, n, tmp_packed, &mat_i64[pos..pos + n], true);
             scatter_centered_limb(n, pmat, tmp_packed, |blk| ((blk * ncols + col_i) * nrows + row_i) * ROW);
         }
     }
@@ -110,7 +110,7 @@ pub(super) fn apply_tmp_words(rows: usize) -> usize {
 }
 
 /// Scratch space (in bytes) required by the VMP apply kernels, per worker.
-pub(crate) fn vmp_apply_tmp_bytes(a_size: usize, b_rows: usize, b_cols_in: usize) -> usize {
+pub fn vmp_apply_tmp_bytes(a_size: usize, b_rows: usize, b_cols_in: usize) -> usize {
     apply_tmp_words(a_size.min(b_rows) * b_cols_in) * size_of::<u32>()
 }
 
@@ -205,7 +205,7 @@ fn vmp_apply<const OVERWRITE: bool, R: Ring, E: TaskExecutor>(
     );
 }
 
-pub(crate) fn vmp_apply_dft_to_dft<R: Ring, E: TaskExecutor>(
+pub fn vmp_apply_dft_to_dft<R: Ring, E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
     a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
     pmat: &VmpPMatBackendRef<'_, NTT4x30Portable<R>>,
@@ -215,7 +215,7 @@ pub(crate) fn vmp_apply_dft_to_dft<R: Ring, E: TaskExecutor>(
     vmp_apply::<true, R, E>(res, a, pmat, limb_offset, tmp);
 }
 
-pub(crate) fn vmp_apply_dft_to_dft_add<R: Ring, E: TaskExecutor>(
+pub fn vmp_apply_dft_to_dft_add<R: Ring, E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
     a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
     pmat: &VmpPMatBackendRef<'_, NTT4x30Portable<R>>,

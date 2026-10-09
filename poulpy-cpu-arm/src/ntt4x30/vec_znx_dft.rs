@@ -6,7 +6,7 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::aarch64::{vaddq_u32, vdupq_n_u32, vld1q_u32, vminq_u32, vst1q_u32, vsubq_u32};
 use poulpy_cpu_portable::kernels::ntt4x30::ntt::{NttTable, NttTableInv};
 use poulpy_cpu_portable::kernels::ntt4x30::{NttDFTExecute, primes::Primes30, vec_znx_dft::NttAutomorphismPlan};
-use poulpy_hal::execution::TaskExecutor;
+use poulpy_hal::execution::{SerialTaskExecutor, TaskExecutor};
 use poulpy_hal::layouts::Ring;
 use poulpy_hal::layouts::{
     DataView, DataViewMut, Module, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef, ZnxView,
@@ -15,7 +15,7 @@ use poulpy_hal::layouts::{
 
 use super::NTT4x30Neon;
 use super::convolution::SendPtr;
-use crate::neon::ntt4x30_ntt32::{Ntt32Table, intt32, ntt32};
+use crate::neon::ntt4x30_ntt32::{Ntt32Table, intt32, intt32_crt, intt32_plane, ntt32, ntt32_plane};
 use crate::neon::ntt4x30_packed::{OP_ADD, OP_NEG, OP_SUB, Q, limb_op};
 
 #[inline(always)]
@@ -49,47 +49,122 @@ pub(crate) fn prepare_tmp_words(n: usize) -> usize {
     2 * n
 }
 
+/// Ring degree from which the four planes of a limb are transformed as separate tasks of a parallel executor.
+///
+/// A ciphertext has few limbs at a large `base2k`, fewer than a pool has threads.
+const PLANE_TASKS_MIN_N: usize = 1 << 13;
+
+#[inline]
+fn plane_tasks<E: TaskExecutor>(n: usize) -> bool {
+    E::is_parallel() && n >= PLANE_TASKS_MIN_N && E::max_parallelism() > 1
+}
+
+/// Runs `task` on `0..4` as four tasks of `E`.
+#[inline]
+fn join4<E: TaskExecutor>(task: impl Fn(usize) + Sync) {
+    E::join(|| E::join(|| task(0), || task(1)), || E::join(|| task(2), || task(3)));
+}
+
 /// Forward transform of `src` into one packed limb, multiplied by `2^32` when `prepared` is set.
-pub(crate) fn dft_limb_scaled<R: Ring>(module: &Module<NTT4x30Neon<R>>, n: usize, dst: &mut [u32], src: &[i64], prepared: bool) {
-    ntt32(packed_table(module, n), dst, src, prepared);
-}
-
-/// Forward transform into a packed limb, for drivers shared by the serial and Rayon backends.
-pub(crate) trait PackedDft {
-    /// See [`dft_limb_scaled`].
-    fn packed_dft_limb(&self, n: usize, dst: &mut [u32], src: &[i64], prepared: bool);
-}
-
-impl<R: Ring> PackedDft for Module<NTT4x30Neon<R>> {
-    #[inline(always)]
-    fn packed_dft_limb(&self, n: usize, dst: &mut [u32], src: &[i64], prepared: bool) {
-        dft_limb_scaled(self, n, dst, src, prepared)
+///
+/// A parallel executor `E` transforms the four planes as separate tasks at large degrees, here and in the inverse transforms.
+pub(crate) fn dft_limb_scaled<R: Ring, E: TaskExecutor>(
+    module: &Module<NTT4x30Neon<R>>,
+    n: usize,
+    dst: &mut [u32],
+    src: &[i64],
+    prepared: bool,
+) {
+    let table = packed_table(module, n);
+    if !plane_tasks::<E>(n) {
+        return ntt32(table, dst, src, prepared);
     }
+    assert!(dst.len() >= 4 * n);
+    let dst = SendPtr(dst.as_mut_ptr());
+    join4::<E>(|p| {
+        // Tasks take distinct planes.
+        let plane = unsafe { std::slice::from_raw_parts_mut(dst.get().add(p * n), n) };
+        ntt32_plane(table, p, plane, src, prepared)
+    });
 }
 
-pub(crate) fn dft_limb<M: PackedDft>(module: &M, n: usize, dst: &mut [u32], src: Option<&[i64]>) {
+/// Forward transform of `src` into one packed limb, or zeros when `src` is `None`.
+pub(crate) fn dft_limb<R: Ring, E: TaskExecutor>(
+    module: &Module<NTT4x30Neon<R>>,
+    n: usize,
+    dst: &mut [u32],
+    src: Option<&[i64]>,
+) {
     match src {
         // A zero limb transforms to zero: the scan stops at the first nonzero coefficient.
-        Some(src) if src[..n].iter().any(|&x| x != 0) => module.packed_dft_limb(n, dst, src, false),
+        Some(src) if src[..n].iter().any(|&x| x != 0) => dft_limb_scaled::<R, E>(module, n, dst, src, false),
         _ => dst.fill(0),
     }
+}
+
+/// Inverse transform of one packed limb, its planes and its reconstruction split into tasks of `E` at large degrees.
+///
+/// # Safety
+/// Same contract as [`intt32`].
+unsafe fn idft_limb_planes<R: Ring, E: TaskExecutor>(
+    module: &Module<NTT4x30Neon<R>>,
+    n: usize,
+    dst: *mut i128,
+    src: *const u32,
+    work: *mut u32,
+) {
+    let table = packed_table(module, n);
+    if !plane_tasks::<E>(n) {
+        return unsafe { intt32(table, dst, src, work) };
+    }
+    let (dst, src, work) = (SendPtr(dst), SendPtr(src as *mut u32), SendPtr(work));
+    join4::<E>(|p| unsafe { intt32_plane(table, p, src.get(), work.get()) });
+    let quarter = n / 4;
+    join4::<E>(|k| unsafe { intt32_crt(table, dst.get(), work.get(), k * quarter, (k + 1) * quarter) });
 }
 
 /// Inverse transform of one packed limb.
 ///
 /// `tmp` holds [`idft_tmp_words`] words.
-pub(crate) fn idft_limb<R: Ring>(module: &Module<NTT4x30Neon<R>>, n: usize, dst: &mut [i128], src: &[u32], tmp: &mut [u64]) {
+pub(crate) fn idft_limb<R: Ring, E: TaskExecutor>(
+    module: &Module<NTT4x30Neon<R>>,
+    n: usize,
+    dst: &mut [i128],
+    src: &[u32],
+    tmp: &mut [u64],
+) {
     assert!(dst.len() >= n && src.len() >= 4 * n);
     let work: &mut [u32] = cast_slice_mut(tmp);
     assert!(work.len() >= 4 * n);
-    unsafe { intt32(packed_table(module, n), dst.as_mut_ptr(), src.as_ptr(), work.as_mut_ptr()) };
+    unsafe { idft_limb_planes::<R, E>(module, n, dst.as_mut_ptr(), src.as_ptr(), work.as_mut_ptr()) };
 }
 
 /// Inverse transform of one packed limb, which it overwrites.
-pub(crate) fn idft_limb_tmpa<R: Ring>(module: &Module<NTT4x30Neon<R>>, n: usize, dst: &mut [i128], src: &mut [u32]) {
+pub(crate) fn idft_limb_tmpa<R: Ring, E: TaskExecutor>(
+    module: &Module<NTT4x30Neon<R>>,
+    n: usize,
+    dst: &mut [i128],
+    src: &mut [u32],
+) {
     assert!(dst.len() >= n && src.len() >= 4 * n);
     let src = src.as_mut_ptr();
-    unsafe { intt32(packed_table(module, n), dst.as_mut_ptr(), src, src) };
+    unsafe { idft_limb_planes::<R, E>(module, n, dst.as_mut_ptr(), src, src) };
+}
+
+/// Inverse transform of the packed limb `slot` into `n` coefficients that overwrite it.
+///
+/// The planes move to `tmp`, which holds [`idft_tmp_words`] words, so the coefficients can take the place of the limb.
+pub(crate) fn idft_limb_compact<R: Ring, E: TaskExecutor>(
+    module: &Module<NTT4x30Neon<R>>,
+    n: usize,
+    slot: &mut [u32],
+    tmp: &mut [u64],
+) {
+    assert!(slot.len() >= 4 * n);
+    let work: &mut [u32] = cast_slice_mut(tmp);
+    assert!(work.len() >= 4 * n);
+    let slot = slot.as_mut_ptr();
+    unsafe { idft_limb_planes::<R, E>(module, n, slot as *mut i128, slot, work.as_mut_ptr()) };
 }
 
 fn packed_add(n: usize, dst: &mut [u32], a: &[u32], b: &[u32]) {
@@ -149,7 +224,7 @@ pub(crate) fn vec_znx_dft_apply<R: Ring>(
     for limb in 0..res_size {
         let dst = packed_limb_mut(res_data, n, cols, res_col, limb);
         let src_limb = offset + limb * step;
-        dft_limb(module, n, dst, (src_limb < a_size).then(|| a.at(a_col, src_limb)));
+        dft_limb::<R, SerialTaskExecutor>(module, n, dst, (src_limb < a_size).then(|| a.at(a_col, src_limb)));
     }
 }
 
@@ -175,7 +250,7 @@ pub(crate) fn vec_znx_idft_apply<R: Ring>(
     let a_cols = a.cols();
     let a_data: &[u32] = cast_slice(a.data());
     for limb in 0..min_size {
-        idft_limb(
+        idft_limb::<R, SerialTaskExecutor>(
             module,
             n,
             res.at_mut(res_col, limb),
@@ -205,7 +280,7 @@ pub(crate) fn vec_znx_idft_apply_tmpa<R: Ring>(
     let a_cols = a.cols();
     let a_data: &mut [u32] = cast_slice_mut(a.data_mut());
     for limb in 0..min_size {
-        idft_limb_tmpa(
+        idft_limb_tmpa::<R, SerialTaskExecutor>(
             module,
             n,
             res.at_mut(res_col, limb),
@@ -231,12 +306,7 @@ pub(crate) fn idft_compact_in_place<R: Ring>(
     let size = a.size();
     let data: &mut [u32] = cast_slice_mut(a.data_mut());
     for limb in 0..size {
-        let slot = packed_limb_mut(data, n, cols, a_col, limb);
-        // The planes move to `tmp` during the transform, so the coefficients can overwrite the limb.
-        let work: &mut [u32] = cast_slice_mut(tmp);
-        assert!(work.len() >= 4 * n);
-        let slot = slot.as_mut_ptr();
-        unsafe { intt32(packed_table(module, n), slot as *mut i128, slot, work.as_mut_ptr()) };
+        idft_limb_compact::<R, SerialTaskExecutor>(module, n, packed_limb_mut(data, n, cols, a_col, limb), tmp);
     }
 }
 

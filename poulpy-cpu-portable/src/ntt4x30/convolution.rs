@@ -14,8 +14,8 @@ use poulpy_hal::layouts::{
 };
 use std::mem::size_of;
 
-use super::packed::{DotState, ROW, SendPtr, limb_to_prepared, scatter_centered_limb, stage_flush, stage_store};
-use super::vec_znx_dft::{PackedDft, prepare_tmp_words};
+use super::packed::{DotState, ROW, SendPtr, center, limb_to_prepared, planes, stage_flush, stage_store};
+use super::vec_znx_dft::prepare_tmp_words;
 use crate::kernels::ntt4x30::primes::Primes30;
 use crate::kernels::sparse_log_gap_portable;
 
@@ -166,7 +166,7 @@ const STAGE_LIMBS: usize = 32;
 const STAGE_LIMB: usize = ROW * RUN;
 
 /// Words of scratch of the apply kernels, per worker: the stage.
-pub(crate) fn apply_tmp_words(res_size: usize) -> usize {
+pub fn apply_tmp_words(res_size: usize) -> usize {
     res_size.clamp(1, STAGE_LIMBS) * STAGE_LIMB
 }
 
@@ -222,28 +222,54 @@ fn apply_terms<BE, E: TaskExecutor, const PAIRWISE: bool>(
 }
 
 /// Scratch for one packed limb, per worker.
-pub(crate) fn cnv_prepare_tmp_bytes(n: usize) -> usize {
+pub fn cnv_prepare_tmp_bytes(n: usize) -> usize {
     prepare_tmp_words(n) * size_of::<u64>()
 }
 
-fn zero_prepared_limb(dst: &mut [u32], n: usize, size: usize, limb: usize) {
-    for blk in 0..n / 4 {
-        let off = packed_row_offset(size, limb, blk);
-        dst[off..off + ROW].fill(0);
+/// Writes the packed limb `src` into row `limb` of every block of the prepared column at `dst`, centered.
+///
+/// # Safety
+///
+/// `dst` must be valid for writes over the `4 * n * size` words of a column, and no other writer may touch the rows of `limb`.
+unsafe fn scatter_centered_rows(n: usize, dst: *mut u32, src: &[u32], size: usize, limb: usize) {
+    debug_assert!(limb < size);
+    for (p, (plane, q)) in planes(n, src).enumerate() {
+        for (blk, src) in plane.chunks_exact(4).enumerate() {
+            let row = unsafe { dst.add(packed_row_offset(size, limb, blk) + 4 * p) };
+            for (i, &s) in src.iter().enumerate() {
+                unsafe { row.add(i).write(center(s, q)) };
+            }
+        }
     }
 }
 
+/// Zeroes row `limb` of every block of the prepared column at `dst`.
+///
+/// # Safety
+///
+/// Same contract as [`scatter_centered_rows`].
+unsafe fn zero_prepared_rows(n: usize, dst: *mut u32, size: usize, limb: usize) {
+    debug_assert!(limb < size);
+    for blk in 0..n / 4 {
+        unsafe { dst.add(packed_row_offset(size, limb, blk)).write_bytes(0, ROW) };
+    }
+}
+
+/// Prepares `a` into `left`, `right`, or both.
+///
+/// `dft(n, dst, src, prepared)` is the forward transform of `src` into the packed limb `dst`,
+/// multiplied by `2^32` when `prepared` is set.
 fn prepare<BE, E: TaskExecutor>(
     module: &Module<BE>,
     left: Option<&mut CnvPVecLBackendMut<'_, BE>>,
     right: Option<&mut CnvPVecRBackendMut<'_, BE>>,
     a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut [u64],
+    dft: impl Fn(usize, &mut [u32], &[i64], bool) + Send + Sync,
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: PackedDft,
 {
     poulpy_hal::layouts::assert_dense(a, "prepare");
     let (n, cols, size) = if let Some(res) = left.as_ref() {
@@ -264,76 +290,77 @@ fn prepare<BE, E: TaskExecutor>(
     let stride = 4 * n * size;
     let left_ptr = left.map(|res| SendPtr(cast_slice_mut::<_, u32>(res.raw_mut()).as_mut_ptr()));
     let right_ptr = right.map(|res| SendPtr(cast_slice_mut::<_, u32>(res.raw_mut()).as_mut_ptr()));
+    // The rows of the limbs of a column interleave, so a task writes its own rows through the column pointer.
     // Tasks write distinct limbs of distinct columns.
     E::for_each_chunked(cols * size, tmp, prepare_tmp_words(n), |tmp, task| {
         let col = task / size;
         let limb = task % size;
-        let dst_l = left_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
-        let dst_r = right_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
+        let dst_l = left_ptr.map(|ptr| unsafe { ptr.get().add(col * stride) });
+        let dst_r = right_ptr.map(|ptr| unsafe { ptr.get().add(col * stride) });
         if limb < min_size {
             let tmp_packed: &mut [u32] = &mut cast_slice_mut(tmp)[..4 * n];
-            module.packed_dft_limb(n, tmp_packed, a.at(col, limb), dst_l.is_none());
+            dft(n, tmp_packed, a.at(col, limb), dst_l.is_none());
             if let Some(dst) = dst_l {
-                scatter_centered_limb(n, dst, tmp_packed, |blk| packed_row_offset(size, limb, blk));
+                unsafe { scatter_centered_rows(n, dst, tmp_packed, size, limb) };
                 if dst_r.is_some() {
                     limb_to_prepared(n, tmp_packed);
                 }
             }
             if let Some(dst) = dst_r {
-                scatter_centered_limb(n, dst, tmp_packed, |blk| packed_row_offset(size, size - 1 - limb, blk));
+                unsafe { scatter_centered_rows(n, dst, tmp_packed, size, size - 1 - limb) };
             }
         } else {
             if let Some(dst) = dst_l {
-                zero_prepared_limb(dst, n, size, limb);
+                unsafe { zero_prepared_rows(n, dst, size, limb) };
             }
             if let Some(dst) = dst_r {
-                zero_prepared_limb(dst, n, size, size - 1 - limb);
+                unsafe { zero_prepared_rows(n, dst, size, size - 1 - limb) };
             }
         }
     });
 }
 
-pub(crate) fn cnv_prepare_left<BE, E: TaskExecutor>(
+pub fn cnv_prepare_left<BE, E: TaskExecutor>(
     module: &Module<BE>,
     res: &mut CnvPVecLBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut [u64],
+    dft: impl Fn(usize, &mut [u32], &[i64], bool) + Send + Sync,
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: PackedDft,
 {
-    prepare::<BE, E>(module, Some(res), None, a, tmp);
+    prepare::<BE, E>(module, Some(res), None, a, tmp, dft);
 }
 
-pub(crate) fn cnv_prepare_right<BE, E: TaskExecutor>(
+pub fn cnv_prepare_right<BE, E: TaskExecutor>(
     module: &Module<BE>,
     res: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut [u64],
+    dft: impl Fn(usize, &mut [u32], &[i64], bool) + Send + Sync,
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: PackedDft,
 {
-    prepare::<BE, E>(module, None, Some(res), a, tmp);
+    prepare::<BE, E>(module, None, Some(res), a, tmp, dft);
 }
 
-pub(crate) fn cnv_prepare_self<BE, E: TaskExecutor>(
+pub fn cnv_prepare_self<BE, E: TaskExecutor>(
     module: &Module<BE>,
     left: &mut CnvPVecLBackendMut<'_, BE>,
     right: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut [u64],
+    dft: impl Fn(usize, &mut [u32], &[i64], bool) + Send + Sync,
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: PackedDft,
 {
-    prepare::<BE, E>(module, Some(left), Some(right), a, tmp);
+    prepare::<BE, E>(module, Some(left), Some(right), a, tmp, dft);
 }
 
 /// Scratch space (in bytes) of the apply kernels, per worker.
@@ -369,7 +396,7 @@ fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn cnv_apply_dft<BE, E: TaskExecutor>(
+pub fn cnv_apply_dft<BE, E: TaskExecutor>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -388,7 +415,7 @@ pub(crate) fn cnv_apply_dft<BE, E: TaskExecutor>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn cnv_apply_dft_add<BE, E: TaskExecutor>(
+pub fn cnv_apply_dft_add<BE, E: TaskExecutor>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -412,7 +439,7 @@ const SUM_TERMS: usize = 16;
 /// `res[res_col] = sum_t a_t (x) b_t`, the terms of each group of `SUM_TERMS` accumulated in one pass.
 ///
 /// An output limb is reduced and stored once per group, where a per-term loop reduces, reads and writes it for every term.
-pub(crate) fn cnv_apply_dft_sum<BE, E: TaskExecutor>(
+pub fn cnv_apply_dft_sum<BE, E: TaskExecutor>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -452,7 +479,7 @@ pub(crate) fn cnv_apply_dft_sum<BE, E: TaskExecutor>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn cnv_pairwise_apply_dft<BE, E: TaskExecutor>(
+pub fn cnv_pairwise_apply_dft<BE, E: TaskExecutor>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
