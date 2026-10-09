@@ -542,6 +542,7 @@ pub(crate) use launch;
 #[cfg(all(
     test,
     any(
+        feature = "enable-cpu",
         feature = "enable-cuda",
         feature = "enable-hip",
         feature = "enable-metal",

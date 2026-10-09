@@ -1,6 +1,7 @@
 //! The upstream HAL suites, with `NTT4x30Portable` as the comparison backend.
 
 #![cfg(any(
+    feature = "enable-cpu",
     feature = "enable-cuda",
     feature = "enable-hip",
     feature = "enable-metal",
@@ -17,12 +18,23 @@ mod core;
 mod local;
 mod replay;
 
-/// The runtime the suites run on: the first enabled of CUDA, HIP and wgpu.
+#[cfg(not(any(
+    feature = "enable-cuda",
+    feature = "enable-hip",
+    feature = "enable-metal",
+    feature = "enable-vulkan",
+    feature = "enable-wgpu"
+)))]
+pub(crate) use crate::runtime::Cpu as Runtime;
+/// The runtime the suites run on: the first enabled of CUDA, HIP, wgpu and the CPU runtime.
 #[cfg(feature = "enable-cuda")]
 pub(crate) use crate::runtime::Cuda as Runtime;
 #[cfg(all(feature = "enable-hip", not(feature = "enable-cuda")))]
 pub(crate) use crate::runtime::Hip as Runtime;
-#[cfg(not(any(feature = "enable-cuda", feature = "enable-hip")))]
+#[cfg(all(
+    any(feature = "enable-metal", feature = "enable-vulkan", feature = "enable-wgpu"),
+    not(any(feature = "enable-cuda", feature = "enable-hip"))
+))]
 pub(crate) use crate::runtime::Wgpu as Runtime;
 
 type Gpu = crate::NTT4x30Gpu<Runtime, poulpy_hal::layouts::Standard>;

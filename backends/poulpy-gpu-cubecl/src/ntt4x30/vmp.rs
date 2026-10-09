@@ -27,7 +27,7 @@
 use cubecl::prelude::*;
 
 use super::{
-    DIM, DftColumn,
+    DftColumn,
     primes::{Consts, FOLD_TERMS, barrett60, fold64, sel4},
 };
 use crate::runtime::{Binding, GpuRuntime, Label, launch};
@@ -269,7 +269,7 @@ pub(crate) fn digit_product<RT: GpuRuntime>(
     let key_limbs = pmat.size.min(res.size + dsize - 1);
     let words = limbs * pmat.cols_in + terms.rows() as usize * pmat.cols_in * key_limbs + res.size * (1 + accumulate as usize);
     launch!(
-        RT, if accumulate { Label::VmpDigitProductAdd } else { Label::VmpDigitProduct }, units * 4 * words, product_kernel, (units, DIM, DIM);
+        RT, if accumulate { Label::VmpDigitProductAdd } else { Label::VmpDigitProduct }, units * 4 * words, product_kernel, (units, RT::GROUP, RT::GROUP);
         [
             res.binding => u32,
             a.binding => u32,
@@ -340,7 +340,7 @@ pub(crate) fn extract_rows<RT: GpuRuntime>(res: &Pmat, a: &Pmat, first_row: usiz
     narrow(a.base as usize + a.blocks().size * block);
     narrow(res.base as usize + entries * entry);
     launch!(
-        RT, Label::VmpExtractRows, entries * entry * 8, extract_rows_kernel, (entries * entry, DIM, DIM);
+        RT, Label::VmpExtractRows, entries * entry * 8, extract_rows_kernel, (entries * entry, RT::GROUP, RT::GROUP);
         [
             res.binding => u32,
             a.binding => u32,

@@ -10,7 +10,7 @@
 use cubecl::prelude::*;
 
 use super::{
-    DIM, DftColumn,
+    DftColumn,
     primes::{Q, sel4},
 };
 use crate::runtime::{GpuRuntime, Label, launch};
@@ -104,7 +104,7 @@ pub(crate) fn automorphism<RT: GpuRuntime>(plan: &AutomorphismPlan, res: &DftCol
     }
     let units = 4 * res.n * limbs;
     launch!(
-        RT, if accumulate { Label::DftAutomorphismAdd } else { Label::DftAutomorphism }, units * if accumulate { 12 } else { 8 }, automorphism_kernel, (units, DIM, DIM);
+        RT, if accumulate { Label::DftAutomorphismAdd } else { Label::DftAutomorphism }, units * if accumulate { 12 } else { 8 }, automorphism_kernel, (units, RT::GROUP, RT::GROUP);
         [
             res.binding => u32,
             a.binding => u32,

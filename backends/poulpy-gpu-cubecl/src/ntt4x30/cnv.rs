@@ -27,7 +27,7 @@
 use cubecl::prelude::*;
 
 use super::{
-    AutomorphismPlan, DIM, DftColumn,
+    AutomorphismPlan, DftColumn,
     primes::{Consts, FOLD_TERMS, barrett60, fold64, sel4},
 };
 use crate::runtime::{GpuRuntime, Label, launch};
@@ -401,7 +401,7 @@ fn launch_sum<RT: GpuRuntime>(
     let units = 4 * n;
     let bytes = 4 * (terms.len() * (units * ranges.a_len + 4 * b.n * ranges.b_len) + units * limbs * (1 + accumulate as usize));
     launch!(
-        RT, if accumulate { Label::CnvSumAdd } else { Label::CnvSum }, bytes, convolution_sum_kernel, (units, DIM, DIM);
+        RT, if accumulate { Label::CnvSumAdd } else { Label::CnvSum }, bytes, convolution_sum_kernel, (units, RT::GROUP, RT::GROUP);
         [
             res.binding => u32,
             term(0).0.binding => u32,
@@ -538,7 +538,7 @@ fn launch<RT: GpuRuntime>(
         _ => Label::CnvSingle,
     };
     launch!(
-        RT, label, 4 * (units * (a_len * columns + written) + 4 * b.n * b_len * columns), convolution_kernel, (units, DIM, DIM);
+        RT, label, 4 * (units * (a_len * columns + written) + 4 * b.n * b_len * columns), convolution_kernel, (units, RT::GROUP, RT::GROUP);
         [
             res.binding => u32,
             *if form == TENSOR { &cross.binding } else { &a.binding } => u32,

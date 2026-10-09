@@ -19,6 +19,9 @@ enable-hip = ["cubecl/hip"]
 enable-metal = ["cubecl/metal"]
 enable-vulkan = ["cubecl/vulkan"]
 enable-wgpu = ["cubecl/webgpu"]
+# CubeCL's CPU runtime, which compiles the kernels through the LLVM path of
+# the CUDA and HIP runtimes: for tests where there is no GPU.
+enable-cpu = ["cubecl/cpu"]
 enable-core = ["dep:poulpy-core", "poulpy-cpu-portable/enable-core"]
 enable-ckks = ["enable-core", "dep:poulpy-ckks", "dep:anyhow", "poulpy-cpu-portable/enable-ckks"]
 

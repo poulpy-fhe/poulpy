@@ -3,7 +3,7 @@
 
 use cubecl::prelude::*;
 
-use super::{Column, DIM};
+use super::Column;
 use crate::runtime::{GpuRuntime, Label, launch};
 
 /// A signed permutation, as the gather each output coefficient performs.
@@ -114,7 +114,7 @@ pub(crate) fn permute<RT: GpuRuntime>(res: &Column, a: &Column, map: Map) {
     };
     let units = res.n * res.size;
     launch!(
-        RT, if res.words == 2 { Label::BigPermute } else { Label::ZnxPermute }, units * 16 * res.words as usize, permute_kernel, (units, DIM, DIM);
+        RT, if res.words == 2 { Label::BigPermute } else { Label::ZnxPermute }, units * 16 * res.words as usize, permute_kernel, (units, RT::GROUP, RT::GROUP);
         [
             res.binding => u64,
             a.binding => u64,
@@ -185,7 +185,7 @@ fn ci_map<RT: GpuRuntime>(res: &Column, a: &Column, trace: u32) {
     }
     let units = res.n * res.size;
     launch!(
-        RT, Label::ZnxRingMap, units * 16, ci_kernel, (units, DIM, DIM);
+        RT, Label::ZnxRingMap, units * 16, ci_kernel, (units, RT::GROUP, RT::GROUP);
         [
             res.binding => i64,
             a.binding => i64,

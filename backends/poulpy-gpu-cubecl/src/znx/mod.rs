@@ -31,6 +31,3 @@ pub(crate) struct Column {
     /// Visible limbs.
     pub(crate) size: usize,
 }
-
-/// Threads per group of the coefficient-domain kernels.
-pub(crate) const DIM: u32 = 256;

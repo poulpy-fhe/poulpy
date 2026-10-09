@@ -459,6 +459,15 @@ mod wgpu {
     impl_ckks!(crate::NTT4x30Wgpu<ConjugateInvariant>);
 }
 
+#[cfg(feature = "enable-cpu")]
+mod cpu {
+    use super::*;
+    type Cpu<R = Standard> = crate::NTT4x30Gpu<crate::runtime::Cpu, R>;
+    impl_ckks!(Cpu);
+    impl_ckks_standard!(Cpu);
+    impl_ckks!(Cpu<ConjugateInvariant>);
+}
+
 #[cfg(feature = "enable-cuda")]
 mod cuda {
     use super::*;

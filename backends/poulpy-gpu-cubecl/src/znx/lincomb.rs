@@ -4,7 +4,7 @@
 
 use cubecl::prelude::*;
 
-use super::{Column, DIM};
+use super::Column;
 use crate::runtime::{GpuRuntime, Label, launch};
 
 /// How an operand enters the combination.
@@ -185,7 +185,7 @@ fn lincomb_with<RT: GpuRuntime>(res: &Column, limbs: usize, a: Term<'_>, b: Term
         }
     }
     launch!(
-        RT, label, bytes, lincomb_kernel, (units, DIM, DIM);
+        RT, label, bytes, lincomb_kernel, (units, RT::GROUP, RT::GROUP);
         [
             res.binding => u64,
             a.column.binding => u64,

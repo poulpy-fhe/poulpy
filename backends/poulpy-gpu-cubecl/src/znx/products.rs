@@ -2,7 +2,7 @@
 
 use cubecl::prelude::*;
 
-use super::{Column, DIM};
+use super::Column;
 use crate::runtime::{Binding, GpuRuntime, Label, launch};
 
 /// High 64 bits of the signed product `x * y`.
@@ -64,7 +64,7 @@ pub(crate) fn scalar_product<RT: GpuRuntime>(res: &Column, a: &Column, b: &Bindi
     }
     let units = a.n * res.size;
     launch!(
-        RT, Label::BigScalarProduct, units * 32, scalar_product_kernel, (units, DIM, DIM);
+        RT, Label::BigScalarProduct, units * 32, scalar_product_kernel, (units, RT::GROUP, RT::GROUP);
         [
             res.binding => u64,
             a.binding => u64,
@@ -147,7 +147,7 @@ pub(crate) fn col_weighted_sum<RT: GpuRuntime>(
     }
     let units = res.n * res.size;
     launch!(
-        RT, Label::BigColWeightedSum, units * 16 + coeffs * res.size * cols * 8, col_weighted_sum_kernel, (units, DIM, DIM);
+        RT, Label::BigColWeightedSum, units * 16 + coeffs * res.size * cols * 8, col_weighted_sum_kernel, (units, RT::GROUP, RT::GROUP);
         [
             res.binding => u64,
             a_col0.binding => u64,
@@ -304,7 +304,7 @@ pub(crate) fn convolution_by_const<RT: GpuRuntime>(
     }
     let units = res.n * res.size;
     launch!(
-        RT, if accumulate { Label::CnvByConstAdd } else { Label::CnvByConst }, units * (16 + 16 * a.size.min(b.size)), by_const_kernel, (units, DIM, DIM);
+        RT, if accumulate { Label::CnvByConstAdd } else { Label::CnvByConst }, units * (16 + 16 * a.size.min(b.size)), by_const_kernel, (units, RT::GROUP, RT::GROUP);
         [
             res.binding => u64,
             a.binding => u64,

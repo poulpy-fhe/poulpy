@@ -11,9 +11,10 @@
 //! A launch runs `mt` consecutive stages. One workgroup owns `2^log_w` tiles of
 //! `2^mt` lanes that the stages close over, and runs them as up to three
 //! register sub-passes that hand their lanes over through workgroup shared
-//! memory, one barrier apart. A transform is one launch over whole polynomials
-//! up to degree `2^SINGLE_LAUNCH_LOG_N`, and two launches above: stages
-//! `0..m` on strided columns and stages `m..log_n` on contiguous blocks.
+//! memory, one barrier apart. A transform is as few launches as the runtime's
+//! stage count per launch allows (`NttGeometry`): on a GPU one launch over
+//! whole polynomials up to degree `2^12` and two above, stages `0..m` on
+//! strided columns and stages `m..log_n` on contiguous blocks.
 //!
 //! A launch transforms a batch of limbs. Polynomial `p` of the batch is prime
 //! `p % 4` of limb `p / 4`; its plane starts `limb * stride + (p % 4) * n`
@@ -27,13 +28,10 @@ use super::{
     tables::Tables,
 };
 use crate::{
-    runtime::{Binding, GpuBuf, GpuRuntime, Label, launch},
+    runtime::{Binding, GpuBuf, GpuRuntime, Label, NttGeometry, launch},
     znx::Column,
 };
 
-/// Largest degree transformed by a single launch: a tile must fit the
-/// shared memory and the thread count of one workgroup.
-const SINGLE_LAUNCH_LOG_N: u32 = 12;
 /// Most stages of one launch.
 const MAX_TILE_STAGES: u32 = 12;
 const MAX_SUBS: usize = 3;
@@ -59,9 +57,12 @@ struct Tile {
     log_n: u32,
     /// A tile has `2^mt` lanes and closes over `mt` stages.
     mt: u32,
-    /// `true`: a strided column (lanes `2^(log_n - mt)` apart, stages `0..mt`);
-    /// `false`: a contiguous block (stages `log_n - mt..log_n`).
-    strided: bool,
+    /// The first stage of the launch: the tile closes over stages
+    /// `first..first + mt`, on lanes `2^(log_n - first - mt)` apart inside one
+    /// of the `2^first` blocks the earlier stages left independent. A launch
+    /// from stage 0 works on strided columns of the whole polynomial, the
+    /// launch of the last stages on contiguous blocks.
+    first: u32,
     /// log2 of the tiles one workgroup owns.
     log_w: u32,
     /// log2 of the threads per tile.
@@ -75,14 +76,14 @@ struct Tile {
 
 impl Tile {
     /// `mt` stages as `ceil(mt / 4)` sub-passes of near-equal radix, with as
-    /// many tiles per workgroup as reach 128 threads (8 tiles at least) within
-    /// 16 KiB of shared memory and 1024 threads.
-    fn new(log_n: u32, mt: u32, strided: bool, inverse: bool) -> Self {
-        assert!((1..=MAX_TILE_STAGES).contains(&mt) && mt <= log_n);
+    /// many tiles per workgroup as reach the runtime's thread count (and its
+    /// least tile count) within 16 KiB of shared memory and 1024 threads.
+    fn new(geometry: NttGeometry, log_n: u32, first: u32, mt: u32, inverse: bool) -> Self {
+        assert!((1..=MAX_TILE_STAGES).contains(&mt) && first + mt <= log_n);
         let nsubs = mt.div_ceil(4);
         let radix = |i: u32| mt / nsubs + (i < mt % nsubs) as u32;
         let log_tpt = mt - radix(nsubs - 1);
-        let mut log_w = 7u32.saturating_sub(log_tpt).max(3);
+        let mut log_w = geometry.log_threads.saturating_sub(log_tpt).max(geometry.log_tiles);
         while log_w > 0 && (mt + log_w > 12 || log_tpt + log_w > 10) {
             log_w -= 1;
         }
@@ -97,7 +98,7 @@ impl Tile {
         Self {
             log_n,
             mt,
-            strided,
+            first,
             log_w,
             log_tpt,
             nsubs,
@@ -245,9 +246,11 @@ fn tile_pass(
     let u = UNIT_POS as usize;
     // Threads of adjacent addresses are adjacent: tile-major for contiguous
     // tiles, tile-minor for strided ones.
+    // log2 of the distance between two lanes of a tile.
+    let lgs = ln - g.first as usize - mt;
     let mut w = u >> ltp;
     let mut r = u - (w << ltp);
-    if g.strided {
+    if comptime!(lgs != 0) {
         r = u >> lw;
         w = u - (r << lw);
     }
@@ -259,16 +262,13 @@ fn tile_pass(
     let pi = u32::cast_from(p) & 3u32;
     let q = sel4(pi, c.q);
     let plane = usize::cast_from(pi) << ln;
-    // First lane of the tile in its plane, log2 of the distance between two
-    // lanes, and the twiddle entry of the tile at its first stage.
-    let mut first = ti << mt;
-    let mut lgs = 0usize;
-    let mut tile_tb = (1usize << rest) + ti;
-    if g.strided {
-        first = ti;
-        lgs = rest;
-        tile_tb = 1usize;
-    }
+    // The block of the tile and its column in the block; from them the
+    // first lane of the tile in its plane and the twiddle entry of the tile
+    // at its first stage.
+    let block = ti >> lgs;
+    let column = ti - (block << lgs);
+    let first = (block << (ln - g.first as usize)) + column;
+    let tile_tb = (1usize << g.first as usize) + block;
     let dbase = dst_base as usize + limb * (dst_stride as usize) + plane + first;
     let sbase = src_base as usize + limb * (src_stride as usize);
     let mut toff = plane;
@@ -382,7 +382,7 @@ fn launch<RT: GpuRuntime>(
     let polys = 4 * limbs;
     let tiles = polys << (tile.log_n - tile.mt);
     let table = table.view().binding().expect("transform tables hold storage");
-    let label = match (inverse, tile.mt == tile.log_n, tile.strided) {
+    let label = match (inverse, tile.mt == tile.log_n, tile.first + tile.mt < tile.log_n) {
         (false, true, _) => Label::NttForwardSingle,
         (false, false, true) => Label::NttForwardStrided,
         (false, false, false) => Label::NttForwardContiguous,
@@ -409,16 +409,18 @@ fn launch<RT: GpuRuntime>(
 }
 
 /// The launches of a transform of degree `2^log_n`, in order.
-fn passes(log_n: u32, inverse: bool) -> Vec<Tile> {
-    if log_n <= SINGLE_LAUNCH_LOG_N {
-        return vec![Tile::new(log_n, log_n, false, inverse)];
-    }
-    let m = log_n.div_ceil(2);
+fn passes(geometry: NttGeometry, log_n: u32, inverse: bool) -> Vec<Tile> {
+    // As few launches as the runtime's stage count allows, of near-equal
+    // stage counts, the longer ones first in stage order.
+    let launches = log_n.div_ceil(geometry.max_stages);
+    let stages = |i: u32| log_n / launches + (i < log_n % launches) as u32;
+    let mut passes: Vec<Tile> = (0..launches)
+        .map(|i| Tile::new(geometry, log_n, (0..i).map(stages).sum(), stages(i), inverse))
+        .collect();
     if inverse {
-        vec![Tile::new(log_n, log_n - m, false, true), Tile::new(log_n, m, true, true)]
-    } else {
-        vec![Tile::new(log_n, m, true, false), Tile::new(log_n, log_n - m, false, false)]
+        passes.reverse();
     }
+    passes
 }
 
 /// `res[j] = dft(a[j])` for the first `limbs` limbs: the `i64` coefficients of
@@ -431,7 +433,7 @@ pub(crate) fn forward<RT: GpuRuntime>(tables: &Tables<RT>, res: &DftColumn, a: &
     }
     let log_n = res.n.ilog2();
     let table = tables.of(res.n);
-    let passes = passes(log_n, false);
+    let passes = passes(RT::NTT, log_n, false);
     let load = if tables.invariant() {
         SOURCE_LIMBS_INVARIANT
     } else {
@@ -479,7 +481,7 @@ pub(crate) fn inverse<RT: GpuRuntime>(tables: &Tables<RT>, dst: &DftColumn, src:
         return;
     }
     let table = tables.of(dst.n);
-    let passes = passes(dst.n.ilog2(), true);
+    let passes = passes(RT::NTT, dst.n.ilog2(), true);
     for (index, &tile) in passes.iter().enumerate() {
         let last = index + 1 == passes.len();
         let from = if index == 0 { src } else { dst };

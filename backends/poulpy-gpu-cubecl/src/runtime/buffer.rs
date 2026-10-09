@@ -204,7 +204,7 @@ fn zero<RT: GpuRuntime>(allocation: &Option<Allocation>, offset: usize, len: usi
         len: allocation.reserved,
         owned: allocation.owned.clone(),
     };
-    launch!(RT, Label::BufferZero, len, fill_zero, (words, 256, 256); [binding => u32]; [
+    launch!(RT, Label::BufferZero, len, fill_zero, (words, RT::GROUP, RT::GROUP); [binding => u32]; [
             u32::try_from(offset / 4).expect("device view starts beyond the 32-bit element range"),
             u32::try_from(words).expect("device view longer than the 32-bit element range"),
         ]; []);

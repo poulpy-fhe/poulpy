@@ -7,6 +7,7 @@
 
 use cubecl::prelude::Client;
 #[cfg(any(
+    feature = "enable-cpu",
     feature = "enable-cuda",
     feature = "enable-hip",
     feature = "enable-metal",
@@ -15,6 +16,7 @@ use cubecl::prelude::Client;
 ))]
 use cubecl::{Device, RuntimeId};
 #[cfg(any(
+    feature = "enable-cpu",
     feature = "enable-cuda",
     feature = "enable-hip",
     feature = "enable-metal",
@@ -25,6 +27,7 @@ use cubecl_environment::stream::StreamId;
 
 /// The stream of the backend clients (`"poulpy"` in ASCII).
 #[cfg(any(
+    feature = "enable-cpu",
     feature = "enable-cuda",
     feature = "enable-hip",
     feature = "enable-metal",
@@ -33,10 +36,48 @@ use cubecl_environment::stream::StreamId;
 ))]
 const STREAM: u64 = 0x706f_756c_7079;
 
+/// How a runtime wants the launches and the workgroups of the transform.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NttGeometry {
+    /// Most stages one launch runs: a tile has `2^stages` lanes. Up to four
+    /// stages, a thread holds a whole tile in registers; beyond, the threads
+    /// of a tile hand lanes over through shared memory at barriers.
+    pub max_stages: u32,
+    /// log2 of the threads a workgroup is filled up to, with whole tiles.
+    pub log_threads: u32,
+    /// log2 of the least number of tiles in a workgroup.
+    pub log_tiles: u32,
+}
+
+impl NttGeometry {
+    /// A GPU: up to twelve stages per launch, workgroups of 128 threads and 8 tiles at least.
+    pub const GPU: Self = Self {
+        max_stages: 12,
+        log_threads: 7,
+        log_tiles: 3,
+    };
+    /// CubeCL's CPU runtime, where every thread of a workgroup is a task and
+    /// a barrier needs them all running: four stages per launch, so that no
+    /// launch has a barrier, in workgroups of 8 tiles.
+    pub const CPU: Self = Self {
+        max_stages: 4,
+        log_threads: 3,
+        log_tiles: 0,
+    };
+}
+
 /// A CubeCL runtime a backend type is bound to.
 pub trait GpuRuntime: Send + Sync + 'static {
     /// Name used in logs and benchmark identifiers.
     const NAME: &'static str;
+
+    /// Threads per workgroup of the kernels whose threads are independent.
+    /// A GPU runs a workgroup on one of its cores at no cost per thread;
+    /// CubeCL's CPU runtime gives every thread of a workgroup its own task.
+    const GROUP: u32;
+
+    /// The workgroups of the transform.
+    const NTT: NttGeometry;
 
     /// Selects the device of this runtime by its index among the devices
     /// CubeCL enumerates for it; the first one is used otherwise. `false`
@@ -53,6 +94,7 @@ pub trait GpuRuntime: Send + Sync + 'static {
 /// for the client calls that act on the current stream and not on the
 /// client's.
 #[cfg(any(
+    feature = "enable-cpu",
     feature = "enable-cuda",
     feature = "enable-hip",
     feature = "enable-metal",
@@ -64,6 +106,7 @@ pub(crate) fn on_stream<T>(task: impl FnOnce() -> T) -> T {
 }
 
 #[cfg(not(any(
+    feature = "enable-cpu",
     feature = "enable-cuda",
     feature = "enable-hip",
     feature = "enable-metal",
@@ -75,6 +118,7 @@ pub(crate) fn on_stream<T>(task: impl FnOnce() -> T) -> T {
 }
 
 #[cfg(any(
+    feature = "enable-cpu",
     feature = "enable-cuda",
     feature = "enable-hip",
     feature = "enable-metal",
@@ -99,6 +143,7 @@ fn device_client(name: &str, index: usize, accept: impl Fn(RuntimeId) -> bool) -
 }
 
 #[cfg(any(
+    feature = "enable-cpu",
     feature = "enable-cuda",
     feature = "enable-hip",
     feature = "enable-metal",
@@ -106,13 +151,15 @@ fn device_client(name: &str, index: usize, accept: impl Fn(RuntimeId) -> bool) -
     feature = "enable-wgpu"
 ))]
 macro_rules! gpu_runtime {
-    ($(#[$attr:meta])* $marker:ident, $name:literal, $accept:expr) => {
+    ($(#[$attr:meta])* $marker:ident, $name:literal, $group:literal, $ntt:expr, $accept:expr) => {
         $(#[$attr])*
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
         pub struct $marker;
 
         impl GpuRuntime for $marker {
             const NAME: &'static str = $name;
+            const GROUP: u32 = $group;
+            const NTT: NttGeometry = $ntt;
 
             fn select_device(index: usize) -> bool {
                 let mut selected = false;
@@ -145,6 +192,8 @@ gpu_runtime!(
     /// CubeCL's CUDA runtime.
     Cuda,
     "cuda",
+    256,
+    NttGeometry::GPU,
     |id| matches!(id, RuntimeId::Cuda)
 );
 
@@ -153,6 +202,8 @@ gpu_runtime!(
     /// CubeCL's HIP runtime.
     Hip,
     "hip",
+    256,
+    NttGeometry::GPU,
     |id| matches!(id, RuntimeId::Hip)
 );
 
@@ -161,5 +212,17 @@ gpu_runtime!(
     /// CubeCL's wgpu runtime: Metal, Vulkan and the other wgpu targets.
     Wgpu,
     "wgpu",
+    256,
+    NttGeometry::GPU,
     |id| matches!(id, RuntimeId::Wgpu)
+);
+
+#[cfg(feature = "enable-cpu")]
+gpu_runtime!(
+    /// CubeCL's CPU runtime.
+    Cpu,
+    "cpu",
+    8,
+    NttGeometry::CPU,
+    |id| matches!(id, RuntimeId::Cpu)
 );

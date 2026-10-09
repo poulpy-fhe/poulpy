@@ -8,7 +8,7 @@
 
 use cubecl::prelude::*;
 
-use super::{DIM, DftColumn, primes::Consts, tables::Tables};
+use super::{DftColumn, primes::Consts, tables::Tables};
 use crate::{
     runtime::{GpuRuntime, Label, launch},
     znx::Column,
@@ -170,7 +170,7 @@ pub(crate) fn to_big<RT: GpuRuntime>(tables: &Tables<RT>, res: &Column, dft: &Df
     let table = tables.of(res.n).view().binding().expect("transform tables hold storage");
     let units = res.n * res.size;
     launch!(
-        RT, Label::CrtToBig, units * 16 + res.n * res.size.min(dft.size) * 16, to_big_kernel, (units, DIM, DIM);
+        RT, Label::CrtToBig, units * 16 + res.n * res.size.min(dft.size) * 16, to_big_kernel, (units, RT::GROUP, RT::GROUP);
         [
             res.binding => u64,
             dft.binding => u32,

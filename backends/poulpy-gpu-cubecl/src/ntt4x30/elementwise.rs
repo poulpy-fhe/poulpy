@@ -4,7 +4,7 @@
 use cubecl::prelude::*;
 
 use super::{
-    DIM, DftColumn,
+    DftColumn,
     primes::{Q, sel4},
 };
 use crate::runtime::{GpuRuntime, Label, launch};
@@ -98,7 +98,7 @@ pub(crate) fn combine<RT: GpuRuntime>(res: &DftColumn, limbs: usize, a: DftTerm<
     };
     let operands = 1 + (a.sign != ZERO) as usize + (b.sign != ZERO) as usize;
     launch!(
-        RT, label, units * 4 * operands, combine_kernel, (units, DIM, DIM);
+        RT, label, units * 4 * operands, combine_kernel, (units, RT::GROUP, RT::GROUP);
         [
             res.binding => u32,
             a.column.binding => u32,

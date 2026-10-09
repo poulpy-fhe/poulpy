@@ -8,7 +8,7 @@
 use cubecl::prelude::*;
 
 use super::{
-    DIM, DftColumn,
+    DftColumn,
     primes::{Consts, mul_mod_canonical, sel4},
 };
 use crate::runtime::{GpuRuntime, Label, launch};
@@ -61,7 +61,7 @@ pub(crate) fn scale<RT: GpuRuntime>(res: &DftColumn, ppol: &DftColumn, b: &DftCo
     }
     let units = 4 * res.n * res.size;
     launch!(
-        RT, Label::SvpScale, units * 4 + 4 * res.n * res.size.min(b.size) * 8, scale_kernel, (units, DIM, DIM);
+        RT, Label::SvpScale, units * 4 + 4 * res.n * res.size.min(b.size) * 8, scale_kernel, (units, RT::GROUP, RT::GROUP);
         [
             res.binding => u32,
             ppol.binding => u32,

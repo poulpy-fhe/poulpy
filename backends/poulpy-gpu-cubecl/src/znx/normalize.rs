@@ -11,7 +11,7 @@
 
 use cubecl::prelude::*;
 
-use super::{Column, DIM};
+use super::Column;
 use crate::{
     ntt4x30::{Consts, DftColumn, Tables, crt_at},
     runtime::{GpuRuntime, Label, launch},
@@ -317,7 +317,7 @@ fn launch<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: usize, offset:
         None => a_size * 8 * a.words as usize,
     };
     launch!(
-        RT, label, res.n * (res.size * 8 + source_bytes), normalize_kernel, (res.n, DIM, DIM);
+        RT, label, res.n * (res.size * 8 + source_bytes), normalize_kernel, (res.n, RT::GROUP, RT::GROUP);
         [
             res.binding => u64,
             a.binding => u64,

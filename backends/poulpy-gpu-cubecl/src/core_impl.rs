@@ -619,6 +619,17 @@ mod wgpu {
     impl_tensoring!(crate::NTT4x30Wgpu<ConjugateInvariant>);
 }
 
+#[cfg(feature = "enable-cpu")]
+mod cpu {
+    use super::ConjugateInvariant;
+    type Cpu<R = poulpy_hal::layouts::Standard> = crate::NTT4x30Gpu<crate::runtime::Cpu, R>;
+    impl_core!(Cpu);
+    impl_tensoring!(Cpu);
+    impl_core_standard!(Cpu);
+    impl_core!(Cpu<ConjugateInvariant>);
+    impl_tensoring!(Cpu<ConjugateInvariant>);
+}
+
 #[cfg(feature = "enable-cuda")]
 mod cuda {
     use super::ConjugateInvariant;

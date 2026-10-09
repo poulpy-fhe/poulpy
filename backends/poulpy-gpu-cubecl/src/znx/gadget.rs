@@ -10,7 +10,7 @@
 
 use cubecl::prelude::*;
 
-use super::{Column, DIM};
+use super::Column;
 use crate::runtime::{GpuRuntime, Label, launch};
 
 /// `x >> s` on the two's complement `x`, for `s` in `0..64`, with the sign
@@ -150,7 +150,7 @@ pub(crate) fn gadget_decompose<RT: GpuRuntime>(res: &Column, a: &Column, base2k:
     let j0 = gadget_k.div_ceil(base2k) - 1;
     let low = (j0 + 1) * base2k - gadget_k;
     launch!(
-        RT, Label::GadgetDecompose, res.n * 8 * (res.size + a.size), gadget_decompose_kernel, (res.n, DIM, DIM);
+        RT, Label::GadgetDecompose, res.n * 8 * (res.size + a.size), gadget_decompose_kernel, (res.n, RT::GROUP, RT::GROUP);
         [
             res.binding => u64,
             a.binding => u64,

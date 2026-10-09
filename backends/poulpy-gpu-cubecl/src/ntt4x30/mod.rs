@@ -69,6 +69,3 @@ impl DftColumn {
         }
     }
 }
-
-/// Threads per group of the kernels that own one word or one coefficient.
-pub(crate) const DIM: u32 = 256;
