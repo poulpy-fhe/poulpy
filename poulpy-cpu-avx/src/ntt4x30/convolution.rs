@@ -3,9 +3,7 @@ use core::arch::x86_64::{
     __m256i, _mm256_add_epi64, _mm256_and_si256, _mm256_castsi256_si128, _mm256_cvtepu32_epi64, _mm256_extracti128_si256,
     _mm256_loadu_si256, _mm256_mul_epu32, _mm256_set1_epi64x, _mm256_setzero_si256, _mm256_srli_epi64, _mm256_storeu_si256,
 };
-use poulpy_cpu_portable::kernels::ntt4x30::{
-    NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle,
-};
+use poulpy_cpu_portable::kernels::ntt4x30::{mat_vec::BbcMeta, primes::Primes30};
 use poulpy_cpu_portable::kernels::sparse_log_gap_portable;
 use poulpy_hal::execution::TaskExecutor;
 #[cfg(feature = "enable-rayon")]
@@ -210,19 +208,20 @@ unsafe fn pack_prepared_limb(dst: &mut [u32], src: &[u64], n: usize, size: usize
     }
 }
 
+/// Prepares `a` into `left`, `right`, or both.
+///
+/// `dft(n, dst, src)` is the forward transform of `src` into `dst`, one `u64` per residue.
 fn prepare<BE, E: TaskExecutor>(
     module: &Module<BE>,
     left: Option<&mut CnvPVecLBackendMut<'_, BE>>,
     right: Option<&mut CnvPVecRBackendMut<'_, BE>>,
     a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut [u64],
+    dft: impl Fn(usize, &mut [u64], &[i64]) + Send + Sync,
 ) where
-    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>
-        + NttDFTExecute<poulpy_cpu_portable::kernels::ntt4x30::ntt::NttTable<Primes30, <Module<BE> as NttModuleHandle>::Ring>>
-        + NttFromZnx64,
+    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: NttModuleHandle,
 {
     poulpy_hal::layouts::assert_dense(a, "prepare");
     let (n, cols, size) = if let Some(res) = left.as_ref() {
@@ -239,7 +238,6 @@ fn prepare<BE, E: TaskExecutor>(
         assert_eq!(r.cols(), l.cols(), "right.cols():{} != left.cols():{}", r.cols(), l.cols());
         assert_eq!(r.size(), l.size(), "right.size():{} != left.size():{}", r.size(), l.size());
     }
-    let table = module.get_ntt_table_for(n);
     let min_size = size.min(a.size());
     let mut left = left.map(|res| cast_slice_mut::<_, u32>(res.raw_mut()));
     let mut right = right.map(|res| cast_slice_mut::<_, u32>(res.raw_mut()));
@@ -254,8 +252,7 @@ fn prepare<BE, E: TaskExecutor>(
             let mut dst_l = left_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
             let mut dst_r = right_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
             if limb < min_size {
-                BE::ntt_from_znx64(tmp, a.at(col, limb));
-                BE::ntt_dft_execute(table, tmp);
+                dft(n, tmp, a.at(col, limb));
                 if let Some(dst) = dst_l.as_deref_mut() {
                     unsafe { pack_prepared_limb(dst, tmp, n, size, limb) };
                 }
@@ -283,8 +280,7 @@ fn prepare<BE, E: TaskExecutor>(
         let mut dst_l = left.as_deref_mut().map(|data| col_slice_mut(data, n, size, col));
         let mut dst_r = right.as_deref_mut().map(|data| col_slice_mut(data, n, size, col));
         for limb in 0..min_size {
-            BE::ntt_from_znx64(tmp, a.at(col, limb));
-            BE::ntt_dft_execute(table, tmp);
+            dft(n, tmp, a.at(col, limb));
             if let Some(dst) = dst_l.as_deref_mut() {
                 unsafe { pack_prepared_limb(dst, tmp, n, size, limb) };
             }
@@ -312,15 +308,13 @@ pub(crate) fn cnv_prepare_left<BE, E: TaskExecutor>(
     res: &mut CnvPVecLBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut [u64],
+    dft: impl Fn(usize, &mut [u64], &[i64]) + Send + Sync,
 ) where
-    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>
-        + NttDFTExecute<poulpy_cpu_portable::kernels::ntt4x30::ntt::NttTable<Primes30, <Module<BE> as NttModuleHandle>::Ring>>
-        + NttFromZnx64,
+    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: NttModuleHandle,
 {
-    prepare::<BE, E>(module, Some(res), None, a, tmp);
+    prepare::<BE, E>(module, Some(res), None, a, tmp, dft);
 }
 
 pub(crate) fn cnv_prepare_right<BE, E: TaskExecutor>(
@@ -328,15 +322,13 @@ pub(crate) fn cnv_prepare_right<BE, E: TaskExecutor>(
     res: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut [u64],
+    dft: impl Fn(usize, &mut [u64], &[i64]) + Send + Sync,
 ) where
-    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>
-        + NttDFTExecute<poulpy_cpu_portable::kernels::ntt4x30::ntt::NttTable<Primes30, <Module<BE> as NttModuleHandle>::Ring>>
-        + NttFromZnx64,
+    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: NttModuleHandle,
 {
-    prepare::<BE, E>(module, None, Some(res), a, tmp);
+    prepare::<BE, E>(module, None, Some(res), a, tmp, dft);
 }
 
 pub(crate) fn cnv_prepare_self<BE, E: TaskExecutor>(
@@ -345,15 +337,13 @@ pub(crate) fn cnv_prepare_self<BE, E: TaskExecutor>(
     right: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut [u64],
+    dft: impl Fn(usize, &mut [u64], &[i64]) + Send + Sync,
 ) where
-    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>
-        + NttDFTExecute<poulpy_cpu_portable::kernels::ntt4x30::ntt::NttTable<Primes30, <Module<BE> as NttModuleHandle>::Ring>>
-        + NttFromZnx64,
+    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: NttModuleHandle,
 {
-    prepare::<BE, E>(module, Some(left), Some(right), a, tmp);
+    prepare::<BE, E>(module, Some(left), Some(right), a, tmp, dft);
 }
 
 pub(crate) fn cnv_apply_dft_tmp_bytes(_res_size: usize, _a_size: usize, _b_size: usize) -> usize {
@@ -363,6 +353,7 @@ pub(crate) fn cnv_apply_dft_tmp_bytes(_res_size: usize, _a_size: usize, _b_size:
 #[allow(clippy::too_many_arguments)]
 unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     module: &Module<BE>,
+    meta: &BbcMeta<Primes30>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
@@ -376,7 +367,6 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: NttModuleHandle,
 {
     let (n, res_size, a_size, b_size) = (res.n(), res.size(), a.size(), b.size());
     check_degree::<BE>(module.n(), n);
@@ -403,21 +393,7 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     let res_ptr = SendPtr(cast_slice_mut::<_, u32>(res.raw_mut()).as_mut_ptr());
     E::for_each(n / GROUP, |group| unsafe {
         conv_group::<ACC, PAIRWISE>(
-            module.get_bbc_meta(),
-            res_ptr,
-            res_col,
-            n,
-            res_cols,
-            min_size,
-            offset,
-            group,
-            a0,
-            a1,
-            a_size,
-            b0,
-            b1,
-            b_size,
-            b_log_gap,
+            meta, res_ptr, res_col, n, res_cols, min_size, offset, group, a0, a1, a_size, b0, b1, b_size, b_log_gap,
         )
     });
     if !ACC {
@@ -430,6 +406,7 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
 #[allow(clippy::too_many_arguments)]
 pub(crate) unsafe fn cnv_apply_dft<BE, E: TaskExecutor>(
     module: &Module<BE>,
+    meta: &BbcMeta<Primes30>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
@@ -441,14 +418,14 @@ pub(crate) unsafe fn cnv_apply_dft<BE, E: TaskExecutor>(
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: NttModuleHandle,
 {
-    unsafe { apply::<BE, E, false, false>(module, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
+    unsafe { apply::<BE, E, false, false>(module, meta, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
 }
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) unsafe fn cnv_apply_dft_add<BE, E: TaskExecutor>(
     module: &Module<BE>,
+    meta: &BbcMeta<Primes30>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
@@ -460,29 +437,22 @@ pub(crate) unsafe fn cnv_apply_dft_add<BE, E: TaskExecutor>(
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: NttModuleHandle,
 {
-    unsafe { apply::<BE, E, true, false>(module, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
-}
-
-#[cfg(feature = "enable-rayon")]
-pub(crate) fn cnv_apply_dft_sum_avx_tmp_bytes(_res_size: usize) -> usize {
-    0
+    unsafe { apply::<BE, E, true, false>(module, meta, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
 }
 
 #[cfg(feature = "enable-rayon")]
 pub(crate) unsafe fn cnv_apply_dft_sum_avx<BE, E: TaskExecutor>(
     module: &Module<BE>,
+    meta: &BbcMeta<Primes30>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
     terms: &[CnvDftAccTerm<'_, BE>],
-    _tmp: &mut [u8],
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: NttModuleHandle,
 {
     if terms.is_empty() {
         for limb in 0..res.size() {
@@ -495,13 +465,13 @@ pub(crate) unsafe fn cnv_apply_dft_sum_avx<BE, E: TaskExecutor>(
         if index == 0 {
             unsafe {
                 apply::<BE, E, false, false>(
-                    module, cnv_offset, res, res_col, &term.a, term.a_col, term.a_col, &term.b, term.b_col, term.b_col,
+                    module, meta, cnv_offset, res, res_col, &term.a, term.a_col, term.a_col, &term.b, term.b_col, term.b_col,
                 )
             };
         } else {
             unsafe {
                 apply::<BE, E, true, false>(
-                    module, cnv_offset, res, res_col, &term.a, term.a_col, term.a_col, &term.b, term.b_col, term.b_col,
+                    module, meta, cnv_offset, res, res_col, &term.a, term.a_col, term.a_col, &term.b, term.b_col, term.b_col,
                 )
             };
         }
@@ -511,6 +481,7 @@ pub(crate) unsafe fn cnv_apply_dft_sum_avx<BE, E: TaskExecutor>(
 #[allow(clippy::too_many_arguments)]
 pub(crate) unsafe fn cnv_pairwise_apply_dft<BE, E: TaskExecutor>(
     module: &Module<BE>,
+    meta: &BbcMeta<Primes30>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
@@ -522,12 +493,11 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft<BE, E: TaskExecutor>(
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: NttModuleHandle,
 {
     if i == j {
-        unsafe { apply::<BE, E, false, false>(module, cnv_offset, res, res_col, a, i, i, b, i, i) };
+        unsafe { apply::<BE, E, false, false>(module, meta, cnv_offset, res, res_col, a, i, i, b, i, i) };
     } else {
-        unsafe { apply::<BE, E, false, true>(module, cnv_offset, res, res_col, a, i, j, b, i, j) };
+        unsafe { apply::<BE, E, false, true>(module, meta, cnv_offset, res, res_col, a, i, j, b, i, j) };
     }
 }
 

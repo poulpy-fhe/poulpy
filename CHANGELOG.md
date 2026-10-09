@@ -13,6 +13,14 @@
   The split of a limb into plane tasks moves into the NEON limb transforms, which take the task executor, and the NEON convolution prepare takes the forward transform as a closure.
   Results are unchanged.
   The plane tasks now go through `RayonTaskExecutor::join`, so they follow its nesting budget and idle polling, and the backend items are implemented per ring instead of generically over `R: Ring`.
+- `PackedNtt4x30Base` carries per-task scratch for the transforms that the HAL gives no arena: `dft_tmp_words` and `idft_tmpa_tmp_words` size the `tmp` argument that `dft_limb` and `idft_limb_tmpa` take.
+  `impl_ntt4x30_rayon_backend!` allocates it per group of tasks, and the portable and NEON backends ask for none.
+  The macro's `vec_znx_idft_normalize_consume` panics on an input column out of range.
+- `NTT4x30AvxRayon` and `NTT4x30Avx512Rayon` are built with `impl_ntt4x30_rayon_backend!` on the drivers of `NTT4x30Avx` and `NTT4x30Avx512`, in place of their hand-written wiring.
+  The element-wise transform-domain operations of both backends take the task executor and run one task per limb from degree `2^13`, their convolution prepares take the forward transform as a closure, and the AVX-512 convolution drivers are generic over the backend that tags their operands.
+  A limb is transformed as one task: its residues are interleaved, so it has no planes to split.
+  Results are unchanged, and the backend items are implemented per ring instead of generically over `R: Ring`.
+  **Breaking, API:** the two Rayon types no longer implement the q120 kernel traits of `poulpy_cpu_portable::kernels::ntt4x30` (`NttFromZnx64`, `NttToZnx128`, `NttAdd`, `NttMulBbc` and the like), which their serial backends keep.
 - `poulpy_cpu_portable::ntt4x30::drivers` and `poulpy_cpu_portable::ckks_mod_up` expose, as hidden items without stability promise, the packed drivers and the ModUp body that the Rayon variant builds on.
 - **Fix:** the portable `znx_add`, `znx_sub`, `znx_negate` kernels and their in-place forms, the power-of-two multiplications and the rotating automorphism wrap on overflow, as the oracle and the SIMD backends do. They panicked in builds with overflow checks.
 - **Breaking, behaviour:** `NTT4x30Portable` stores the transform domain as four `u32` residues per coefficient (`DftWord = CrtWord<Primes30, u32>`), half the previous size, for `VecZnxDft`, `SvpPPol`, `VmpPMat` and both convolution operands.

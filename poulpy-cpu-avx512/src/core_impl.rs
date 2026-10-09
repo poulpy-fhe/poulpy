@@ -27,7 +27,9 @@ use poulpy_cpu_portable::kernels::{
     },
     znx::ZnxAutomorphism,
 };
-#[cfg(feature = "enable-ifma")]
+#[cfg(feature = "enable-rayon")]
+use poulpy_hal::layouts::{CnvPVecL, CnvPVecR, DataView};
+#[cfg(any(feature = "enable-ifma", feature = "enable-rayon"))]
 use poulpy_hal::layouts::{DataViewMut, VecZnxDft};
 use poulpy_hal::{
     api::{
@@ -204,55 +206,67 @@ impl<R: Ring> RankOneTensorDft for NTT4x30Avx512<R> {
     }
 }
 
+/// Rank-one tensor products of the Rayon NTT4x30 backend over one ring, on the kernels of the serial backend.
 #[cfg(feature = "enable-rayon")]
-impl<R: Ring> RankOneTensorDft for NTT4x30Avx512Rayon<R> {
-    fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
-        super::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512_tmp_bytes(res_size, a_size, b_size)
-    }
+macro_rules! impl_rank_one_tensor_dft_rayon {
+    ($ring:ty) => {
+        impl RankOneTensorDft for NTT4x30Avx512Rayon<$ring> {
+            fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
+                super::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512_tmp_bytes(res_size, a_size, b_size)
+            }
 
-    fn rank_one_tensor_dft(
-        module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        cnv_offset: usize,
-        a: &CnvPVecLBackendRef<'_, Self>,
-        b: &CnvPVecRBackendRef<'_, Self>,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) {
-        let bytes = Self::rank_one_tensor_dft_tmp_bytes(res.size(), a.size(), b.size());
-        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        unsafe {
-            super::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512::<_, poulpy_cpu_rayon::RayonTaskExecutor>(
-                module.reinterpret(),
-                &mut super::ntt4x30_avx512::rayon::base_dft_mut::<R>(res),
-                cnv_offset,
-                &super::ntt4x30_avx512::rayon::base_cnv_l_ref::<R>(a),
-                &super::ntt4x30_avx512::rayon::base_cnv_r_ref::<R>(b),
-                tmp,
-            )
-        };
-    }
+            fn rank_one_tensor_dft(
+                module: &Module<Self>,
+                res: &mut VecZnxDftBackendMut<'_, Self>,
+                cnv_offset: usize,
+                a: &CnvPVecLBackendRef<'_, Self>,
+                b: &CnvPVecRBackendRef<'_, Self>,
+                scratch: &mut ScratchArena<'_, Self>,
+            ) {
+                let bytes = Self::rank_one_tensor_dft_tmp_bytes(res.size(), a.size(), b.size());
+                let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
+                let res_shape = res.shape();
+                unsafe {
+                    super::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512::<$ring, poulpy_cpu_rayon::RayonTaskExecutor>(
+                        module.reinterpret(),
+                        &mut VecZnxDft::from_shape(&mut **res.data_mut(), res_shape),
+                        cnv_offset,
+                        &CnvPVecL::from_data(&**a.data(), a.n(), a.cols(), a.size(), a.hint()),
+                        &CnvPVecR::from_data(&**b.data(), b.n(), b.cols(), b.size(), b.hint()),
+                        tmp,
+                    )
+                };
+            }
 
-    fn rank_one_cross_dft(
-        module: &Module<Self>,
-        diag: &mut VecZnxDftBackendMut<'_, Self>,
-        cross: &mut VecZnxDftBackendMut<'_, Self>,
-        cnv_offset: usize,
-        a: &CnvPVecLBackendRef<'_, Self>,
-        b: &CnvPVecRBackendRef<'_, Self>,
-        _scratch: &mut ScratchArena<'_, Self>,
-    ) {
-        unsafe {
-            super::ntt4x30_avx512::convolution::cnv_tensor_rank1_cross_dft::<_, poulpy_cpu_rayon::RayonTaskExecutor>(
-                module.reinterpret(),
-                &mut super::ntt4x30_avx512::rayon::base_dft_mut::<R>(diag),
-                &mut super::ntt4x30_avx512::rayon::base_dft_mut::<R>(cross),
-                cnv_offset,
-                &super::ntt4x30_avx512::rayon::base_cnv_l_ref::<R>(a),
-                &super::ntt4x30_avx512::rayon::base_cnv_r_ref::<R>(b),
-            )
-        };
-    }
+            fn rank_one_cross_dft(
+                module: &Module<Self>,
+                diag: &mut VecZnxDftBackendMut<'_, Self>,
+                cross: &mut VecZnxDftBackendMut<'_, Self>,
+                cnv_offset: usize,
+                a: &CnvPVecLBackendRef<'_, Self>,
+                b: &CnvPVecRBackendRef<'_, Self>,
+                _scratch: &mut ScratchArena<'_, Self>,
+            ) {
+                let (diag_shape, cross_shape) = (diag.shape(), cross.shape());
+                unsafe {
+                    super::ntt4x30_avx512::convolution::cnv_tensor_rank1_cross_dft::<$ring, poulpy_cpu_rayon::RayonTaskExecutor>(
+                        module.reinterpret(),
+                        &mut VecZnxDft::from_shape(&mut **diag.data_mut(), diag_shape),
+                        &mut VecZnxDft::from_shape(&mut **cross.data_mut(), cross_shape),
+                        cnv_offset,
+                        &CnvPVecL::from_data(&**a.data(), a.n(), a.cols(), a.size(), a.hint()),
+                        &CnvPVecR::from_data(&**b.data(), b.n(), b.cols(), b.size(), b.hint()),
+                    )
+                };
+            }
+        }
+    };
 }
+
+#[cfg(feature = "enable-rayon")]
+impl_rank_one_tensor_dft_rayon!(poulpy_hal::layouts::Standard);
+#[cfg(feature = "enable-rayon")]
+impl_rank_one_tensor_dft_rayon!(poulpy_hal::layouts::ConjugateInvariant);
 
 #[cfg(feature = "enable-ifma")]
 impl<R: Ring> RankOneTensorDft for NTT3x42Ifma<R>
