@@ -88,8 +88,7 @@ fn lincomb_kernel(
             if a_words == 2u32 {
                 x_hi = a[(index + 1u32) as usize];
             } else {
-                let sign = (x_lo as i64) >> 63i64;
-                x_hi = sign as u64;
+                x_hi = 0u64 - (x_lo >> 63u64);
             }
             if a_sign == 2u32 {
                 x_hi = 0u64 - x_hi;
@@ -107,8 +106,7 @@ fn lincomb_kernel(
             if b_words == 2u32 {
                 y_hi = b[(index + 1u32) as usize];
             } else {
-                let sign = (y_lo as i64) >> 63i64;
-                y_hi = sign as u64;
+                y_hi = 0u64 - (y_lo >> 63u64);
             }
             if b_sign == 2u32 {
                 y_hi = 0u64 - y_hi;

@@ -34,7 +34,7 @@ use std::sync::atomic::Ordering;
 
 use cubecl::{client::Graph, prelude::Client};
 
-use super::{Bound, GpuRuntime, Trace, Tracer, access, replayed};
+use super::{Bound, GpuRuntime, Trace, Tracer, access, buffer::parked, replayed};
 
 /// A recorded graph and the buffers it replays against.
 pub(crate) struct GraphRecording {
@@ -68,6 +68,8 @@ impl Drop for Capture {
 pub(crate) fn record<RT: GpuRuntime>(run: &mut dyn FnMut()) -> (Trace, Option<GraphRecording>) {
     let client = RT::client();
     let _access = access::exclusive();
+    // The recorded run allocates again what the warm-up run dropped.
+    let _parking = parked::start();
     let capture = client.graph_prepare().is_ok().then_some(Capture(client));
 
     // The warm-up run: it executes, compiles the kernels and leaves the

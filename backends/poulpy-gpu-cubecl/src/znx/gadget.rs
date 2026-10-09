@@ -13,11 +13,22 @@ use cubecl::prelude::*;
 use super::{Column, DIM};
 use crate::runtime::{GpuRuntime, Label, launch};
 
+/// `x >> s` on the two's complement `x`, for `s` in `0..64`, with the sign
+/// extension written out: the runtimes do not agree on signed 64-bit shifts.
+#[cube]
+fn asr(x: u64, s: u64) -> u64 {
+    let mut y = x;
+    if s != 0u64 {
+        y = (x >> s) | ((0u64 - (x >> 63u64)) << (64u64 - s));
+    }
+    y
+}
+
 #[cube(launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn gadget_decompose_kernel(
-    res: &mut [i64],
-    a: &[i64],
+    res: &mut [u64],
+    a: &[u64],
     n: u32,
     res_base: u32,
     res_stride: u32,
@@ -34,41 +45,42 @@ fn gadget_decompose_kernel(
     j0: u32,
     low: u32,
 ) {
+    // Every value is two's complement in unsigned registers.
     let i = ABSOLUTE_POS as u32;
     if i < n {
-        let b = base2k as i64;
+        let b = base2k as u64;
 
         // Rounding at `gadget_k`: half up, the low bit cleared when every dropped bit,
         // after the half, is zero.
-        let mut acc = 0i64;
+        let mut acc = 0u64;
         if j0 < a_size {
-            let mut carry = 0i64;
-            let mut sticky = 0i64;
+            let mut carry = 0u64;
+            let mut sticky = 0u64;
             if j0 + 1u32 == a_size && low == 0u32 {
-                sticky = 1i64;
+                sticky = 1u64;
             }
-            let limb_mask = (1i64 << b) - 1i64;
+            let limb_mask = (1u64 << b) - 1u64;
             let mut j = a_size;
             while j > j0 + 1u32 {
                 j -= 1u32;
-                let mut half = 0i64;
+                let mut half = 0u64;
                 if j == j0 + 1u32 && low == 0u32 {
-                    half = 1i64 << (b - 1i64);
+                    half = 1u64 << (b - 1u64);
                 }
                 let s = a[(a_base + j * a_stride + i) as usize] + carry + half;
-                carry = s >> b;
+                carry = asr(s, b);
                 sticky |= s & limb_mask;
             }
-            let l = low as i64;
-            let mut half = 0i64;
+            let l = low as u64;
+            let mut half = 0u64;
             if low > 0u32 {
-                half = 1i64 << (l - 1i64);
+                half = 1u64 << (l - 1u64);
             }
-            let low_mask = (1i64 << l) - 1i64;
+            let low_mask = (1u64 << l) - 1u64;
             let s = a[(a_base + j0 * a_stride + i) as usize] + carry + half;
-            acc = s >> l;
-            if (sticky | (s & low_mask)) == 0i64 {
-                acc &= -2i64;
+            acc = asr(s, l);
+            if (sticky | (s & low_mask)) == 0u64 {
+                acc &= !1u64;
             }
         }
 
@@ -80,35 +92,35 @@ fn gadget_decompose_kernel(
         let mut pos = gadget_k;
         for qq in 0..dnum {
             let q = dnum - 1u32 - qq;
-            let mut neg = 0i64;
+            let mut neg = 0u64;
             for t in 0..r {
                 let mut w = base2k;
                 if t == r - 1u32 {
                     w = rem;
                 }
                 let top = t == r - 1u32 && r > 1u32;
-                let wi = w as i64;
-                let half = 1i64 << (wi - 1i64);
-                let mask = (1i64 << wi) - 1i64;
+                let wu = w as u64;
+                let half = 1u64 << (wu - 1u64);
+                let mask = (1u64 << wu) - 1u64;
                 let mut y = acc;
-                let mut high = 0i64;
+                let mut high = 0u64;
                 if next > 0u32 && next * base2k > pos - w {
-                    let s = (pos - next * base2k) as i64;
-                    let split = wi - s;
+                    let s = (pos - next * base2k) as u64;
+                    let split = wu - s;
                     next -= 1u32;
                     let v = a[(a_base + next * a_stride + i) as usize];
-                    y = acc + ((v & ((1i64 << split) - 1i64)) << s);
-                    high = v >> split;
+                    y = acc + ((v & ((1u64 << split) - 1u64)) << s);
+                    high = asr(v, split);
                 }
                 let centered = ((y + half) & mask) - half;
                 let mut d = centered;
-                if top && centered == 0i64 - half && neg != 0i64 {
-                    d = centered + (half << 1i64);
+                if top && centered == 0u64 - half && neg != 0u64 {
+                    d = centered + (half << 1u64);
                 }
-                acc = ((y - d) >> wi) + high;
-                if !top && d != 0i64 {
+                acc = asr(y - d, wu) + high;
+                if !top && d != 0u64 {
                     // The sign of the last nonzero lower limb.
-                    neg = d >> 63i64;
+                    neg = d >> 63u64;
                 }
                 res[(res_base + (q * r + r - 1u32 - t) * res_stride + i) as usize] = d;
                 pos -= w;
@@ -140,8 +152,8 @@ pub(crate) fn gadget_decompose<RT: GpuRuntime>(res: &Column, a: &Column, base2k:
     launch!(
         RT, Label::GadgetDecompose, res.n * 8 * (res.size + a.size), gadget_decompose_kernel, (res.n, DIM, DIM);
         [
-            res.binding => i64,
-            a.binding => i64,
+            res.binding => u64,
+            a.binding => u64,
         ];
         [
             res.n as u32,

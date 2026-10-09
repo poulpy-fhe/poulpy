@@ -1,7 +1,7 @@
 //! The upstream `poulpy-ckks` suites, with `NTT4x30Portable` as the comparison backend.
 
-type Gpu = crate::NTT4x30Wgpu;
-type GpuCI = crate::NTT4x30Wgpu<poulpy_hal::layouts::ConjugateInvariant>;
+type Gpu = crate::NTT4x30Gpu<super::Runtime, poulpy_hal::layouts::Standard>;
+type GpuCI = crate::NTT4x30Gpu<super::Runtime, poulpy_hal::layouts::ConjugateInvariant>;
 
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_f64,
@@ -25,6 +25,49 @@ poulpy_ckks::ckks_parity_test_suite! {
         polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
         bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
+        fold => poulpy_ckks::test_suite::parity::test_fold_parity,
+    }
+}
+
+// The suite at the degree of the bootstrapping presets.
+poulpy_ckks::ckks_parity_test_suite! {
+    mod ckks_parity_n65536,
+    backend_ref = poulpy_cpu_portable::NTT4x30Portable,
+    backend_test = super::Gpu,
+    scalar = f64,
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 1 << 16, hw: 192, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
+    tests = {
+        #[ignore = "full degree; run in release with --ignored"]
+        arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
+        #[ignore = "full degree; run in release with --ignored"]
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
+        #[ignore = "full degree; run in release with --ignored"]
+        multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
+        #[ignore = "full degree; run in release with --ignored"]
+        rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+        #[ignore = "full degree; run in release with --ignored"]
+        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
+        #[ignore = "full degree; run in release with --ignored"]
+        plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
+        #[ignore = "full degree; run in release with --ignored"]
+        encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
+        #[ignore = "full degree; run in release with --ignored"]
+        slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+        #[ignore = "full degree; run in release with --ignored"]
+        paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
+        #[ignore = "full degree; run in release with --ignored"]
+        ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
+        #[ignore = "full degree; run in release with --ignored"]
+        dft => poulpy_ckks::test_suite::parity::test_dft_parity,
+        #[ignore = "full degree; run in release with --ignored"]
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+        #[ignore = "full degree; run in release with --ignored"]
+        polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
+        #[ignore = "full degree; run in release with --ignored"]
+        encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
+        #[ignore = "full degree; run in release with --ignored"]
+        bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
+        #[ignore = "full degree; run in release with --ignored"]
         fold => poulpy_ckks::test_suite::parity::test_fold_parity,
     }
 }
@@ -115,6 +158,17 @@ fn bootstrapping_n16_d35_k733_p20_s2c_precision_and_launches() {
     let preset = poulpy_ckks::presets::bootstrapping::n16_d35_k733_p20_s2c().unwrap();
     let preset = preset_for_backend::<Gpu, GpuCI>(&preset).unwrap();
     let mut run = BootstrappingPresetRun::<Gpu, poulpy_cpu_portable::NTT4x30Portable>::setup(preset);
+    // What the device holds once the keys are prepared, and what the pools reserve for it.
+    {
+        use crate::runtime::GpuRuntime;
+        let usage = super::Runtime::client().memory_report(cubecl::MemoryScope::Device).usage();
+        let gib = |bytes: u64| bytes as f64 / (1u64 << 30) as f64;
+        println!(
+            "MEMORY in_use={:.2}GiB reserved={:.2}GiB",
+            gib(usage.bytes_in_use),
+            gib(usage.bytes_reserved)
+        );
+    }
     run.bootstrap();
     let (re, im) = run.precision();
     println!(
@@ -192,7 +246,7 @@ fn bootstrapping_n16_d35_k733_p20_s2c_replay() {
     };
 
     crate::reset_launch_counters();
-    let mut replay = crate::Replay::<crate::runtime::Wgpu>::record(|| run.borrow_mut().bootstrap_queued());
+    let mut replay = crate::Replay::<super::Runtime>::record(|| run.borrow_mut().bootstrap_queued());
     let recording = crate::launch_counters();
     println!(
         "REPLAY recording  launches={} graph={} retained_bytes={}",
@@ -268,10 +322,10 @@ fn conjugate_invariant_encoding_matches_portable() {
     }
 
     let n = 64;
-    let device = Module::<crate::NTT4x30Wgpu<ConjugateInvariant>>::new(n);
+    let device = Module::<crate::NTT4x30Gpu<super::Runtime, ConjugateInvariant>>::new(n);
     let portable = Module::<poulpy_cpu_portable::NTT4x30CIPortable>::new(n);
     // A vector plaintext has the degree of its slots on this ring, at least the backend's minimum.
-    let min_log_slots = <crate::NTT4x30Wgpu<ConjugateInvariant> as Backend>::MIN_DEGREE.ilog2();
+    let min_log_slots = <crate::NTT4x30Gpu<super::Runtime, ConjugateInvariant> as Backend>::MIN_DEGREE.ilog2();
     for log_slots in min_log_slots..=n.ilog2() {
         let slots = 1usize << log_slots;
         let re: Vec<f64> = (0..slots).map(|i| ((17 * i + 3) % 31) as f64 / 37.0).collect();

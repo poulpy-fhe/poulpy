@@ -539,7 +539,16 @@ macro_rules! launch {
 pub(crate) use launch;
 
 // The test needs a device handle to build bindings from.
-#[cfg(all(test, any(feature = "enable-metal", feature = "enable-vulkan", feature = "enable-wgpu")))]
+#[cfg(all(
+    test,
+    any(
+        feature = "enable-cuda",
+        feature = "enable-hip",
+        feature = "enable-metal",
+        feature = "enable-vulkan",
+        feature = "enable-wgpu"
+    )
+))]
 mod tests {
     use std::any::TypeId;
 
@@ -561,7 +570,7 @@ mod tests {
 
     #[test]
     fn overlapping_views_alias_the_first_by_its_rank_among_bound_buffers() {
-        let handle = crate::runtime::Wgpu::client().empty(1024);
+        let handle = crate::tests::Runtime::client().empty(1024);
         // Distinct allocations and disjoint views of one allocation stay separate.
         assert_eq!(aliases([(0, 0, 64), (1, 0, 64), (0, 64, 64)], &handle), [None, None, None]);
         // An operation in place.

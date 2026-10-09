@@ -41,6 +41,8 @@ poulpy-core = {workspace = true}
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
 poulpy-bench = {workspace = true}
 criterion = {workspace = true}
+# `pod_collect_to_vec`, which the wgpu runtime's dependencies happen to enable.
+bytemuck = {workspace = true, features = ["extern_crate_alloc"]}
 once_cell = {workspace = true}
 
 [[bench]]

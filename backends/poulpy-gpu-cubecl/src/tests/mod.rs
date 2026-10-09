@@ -1,6 +1,12 @@
 //! The upstream HAL suites, with `NTT4x30Portable` as the comparison backend.
 
-#![cfg(any(feature = "enable-metal", feature = "enable-vulkan", feature = "enable-wgpu"))]
+#![cfg(any(
+    feature = "enable-cuda",
+    feature = "enable-hip",
+    feature = "enable-metal",
+    feature = "enable-vulkan",
+    feature = "enable-wgpu"
+))]
 
 use poulpy_hal::{backend_test_suite, cross_backend_test_suite};
 
@@ -11,8 +17,16 @@ mod core;
 mod local;
 mod replay;
 
-type Gpu = crate::NTT4x30Wgpu;
-type GpuCI = crate::NTT4x30Wgpu<poulpy_hal::layouts::ConjugateInvariant>;
+/// The runtime the suites run on: the first enabled of CUDA, HIP and wgpu.
+#[cfg(feature = "enable-cuda")]
+pub(crate) use crate::runtime::Cuda as Runtime;
+#[cfg(all(feature = "enable-hip", not(feature = "enable-cuda")))]
+pub(crate) use crate::runtime::Hip as Runtime;
+#[cfg(not(any(feature = "enable-cuda", feature = "enable-hip")))]
+pub(crate) use crate::runtime::Wgpu as Runtime;
+
+type Gpu = crate::NTT4x30Gpu<Runtime, poulpy_hal::layouts::Standard>;
+type GpuCI = crate::NTT4x30Gpu<Runtime, poulpy_hal::layouts::ConjugateInvariant>;
 
 cross_backend_test_suite! {
     mod vec_znx,
@@ -299,7 +313,7 @@ fn roundtrip_at_word_limits<R: poulpy_hal::layouts::Ring>(n: usize) {
         test_suite::{upload_vec_znx, vec_znx_backend_ref},
     };
 
-    type BE<R> = crate::NTT4x30Wgpu<R>;
+    type BE<R> = crate::NTT4x30Gpu<Runtime, R>;
     let module = Module::<BE<R>>::new(n as u64);
     let mut host = Module::<HostBytesBackend>::new(n as u64).vec_znx_alloc(n, 1, 2);
     for limb in 0..2 {
@@ -515,6 +529,231 @@ backend_test_suite! {
         test_cnv_apply_dft_add_derived => poulpy_hal::test_suite::derived::test_cnv_apply_dft_add_derived,
         test_cnv_apply_dft_sum_derived => poulpy_hal::test_suite::derived::test_cnv_apply_dft_sum_derived,
         test_cnv_pairwise_apply_dft_derived => poulpy_hal::test_suite::derived::test_cnv_pairwise_apply_dft_derived,
+        test_cnv_by_const_apply_add_derived => poulpy_hal::test_suite::derived::test_cnv_by_const_apply_add_derived,
+    }
+}
+
+// The suites above at the degree of the bootstrapping presets, where the
+// transforms take two launches and the dispatches span many workgroups.
+cross_backend_test_suite! {
+    mod vec_znx_n65536,
+    backend_ref = poulpy_cpu_portable::NTT4x30Portable,
+    backend_test = super::Gpu,
+    params = TestParams { size: 1 << 16, base2k: 50, n: 1 << 16 },
+    tests = {
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_add_matches_reference => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_matches_reference,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_add_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_assign,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_add_scalar_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_scalar_assign,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_sub => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_sub_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub_assign,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_sub_negate_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub_negate_assign,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_rsh => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_rsh_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_assign,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_lsh => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_lsh_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_assign,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_negate => poulpy_hal::test_suite::vec_znx::test_vec_znx_negate,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_negate_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_negate_assign,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_rotate => poulpy_hal::test_suite::vec_znx::test_vec_znx_rotate,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_rotate_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_rotate_assign,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_automorphism => poulpy_hal::test_suite::vec_znx::test_vec_znx_automorphism,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_automorphism_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_automorphism_assign,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_mul_xp_minus_one => poulpy_hal::test_suite::vec_znx::test_vec_znx_mul_xp_minus_one,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_mul_xp_minus_one_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_mul_xp_minus_one_assign,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_normalize => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_normalize_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize_assign,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_switch_ring => poulpy_hal::test_suite::vec_znx::test_vec_znx_switch_ring,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_copy => poulpy_hal::test_suite::vec_znx::test_vec_znx_copy,
+    }
+}
+
+cross_backend_test_suite! {
+    mod vec_znx_big_n65536,
+    backend_ref = poulpy_cpu_portable::NTT4x30Portable,
+    backend_test = super::Gpu,
+    params = TestParams { size: 1 << 16, base2k: 50, n: 1 << 16 },
+    tests = {
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_big_add => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_big_add_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_assign,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_big_add_small => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_small,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_big_add_small_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_small_assign,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_big_automorphism => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_automorphism,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_big_automorphism_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_automorphism_assign,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_big_negate => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_negate,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_big_negate_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_negate_assign,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_big_normalize => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_normalize,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_big_sub => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_sub,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_big_sub_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_sub_assign,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_big_sub_negate_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_sub_negate_assign,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_big_sub_small_a => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_sub_small_a,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_big_sub_small_b => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_sub_small_b,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_big_sub_small_a_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_sub_small_a_assign,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_big_sub_small_b_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_sub_small_b_assign,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_big_from_small => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_from_small,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_big_inner_sum => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_inner_sum,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_big_col_weighted_sum => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_col_weighted_sum,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_scalar_product => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_scalar_product,
+    }
+}
+
+cross_backend_test_suite! {
+    mod vec_znx_dft_n65536,
+    backend_ref = poulpy_cpu_portable::NTT4x30Portable,
+    backend_test = super::Gpu,
+    params = TestParams { size: 1 << 16, base2k: 50, n: 1 << 16 },
+    tests = {
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_dft_copy => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_copy,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_dft_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_dft_add_assign => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add_assign,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_dft_sub => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_sub,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_dft_sub_assign => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_sub_assign,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_dft_sub_negate_assign => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_sub_negate_assign,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_dft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_apply,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_dft_zero => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_zero,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_dft_automorphism => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_dft_automorphism_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism_add,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_idft_normalize => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_normalize,
+    }
+}
+
+cross_backend_test_suite! {
+    mod svp_n65536,
+    backend_ref = poulpy_cpu_portable::NTT4x30Portable,
+    backend_test = super::Gpu,
+    params = TestParams { size: 1 << 16, base2k: 50, n: 1 << 16 },
+    tests = {
+        #[ignore = "full degree; run in release with --ignored"]
+        test_svp_apply_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_svp_apply_dft_to_dft_assign => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft_assign,
+    }
+}
+
+cross_backend_test_suite! {
+    mod vmp_n65536,
+    backend_ref = poulpy_cpu_portable::NTT4x30Portable,
+    backend_test = super::Gpu,
+    params = TestParams { size: 1 << 16, base2k: 50, n: 1 << 16 },
+    tests = {
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vmp_apply_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vmp_apply_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vmp_extract_selected_rows => poulpy_hal::test_suite::vmp::test_vmp_extract_selected_rows,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vmp_apply_dft_to_dft_add => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_add,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vmp_zero => poulpy_hal::test_suite::vmp::test_vmp_zero,
+    }
+}
+
+backend_test_suite! {
+    mod derived_n65536,
+    backend = super::Gpu,
+    params = TestParams { size: 1 << 16, base2k: 50, n: 1 << 16 },
+    tests = {
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vmp_apply_dft_derived => poulpy_hal::test_suite::derived::test_vmp_apply_dft_derived,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vmp_apply_dft_to_dft_add_derived => poulpy_hal::test_suite::derived::test_vmp_apply_dft_to_dft_add_derived,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_lsh_derived => poulpy_hal::test_suite::derived::test_vec_znx_lsh_derived,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_rsh_derived => poulpy_hal::test_suite::derived::test_vec_znx_rsh_derived,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_lsh_add_derived => poulpy_hal::test_suite::derived::test_vec_znx_lsh_add_derived,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_lsh_sub_derived => poulpy_hal::test_suite::derived::test_vec_znx_lsh_sub_derived,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_rsh_add_derived => poulpy_hal::test_suite::derived::test_vec_znx_rsh_add_derived,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_rsh_sub_derived => poulpy_hal::test_suite::derived::test_vec_znx_rsh_sub_derived,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_lsh_assign_derived => poulpy_hal::test_suite::derived::test_vec_znx_lsh_assign_derived,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_rsh_assign_derived => poulpy_hal::test_suite::derived::test_vec_znx_rsh_assign_derived,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_mul_xp_minus_one_derived => poulpy_hal::test_suite::derived::test_vec_znx_mul_xp_minus_one_derived,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_mul_xp_minus_one_assign_derived => poulpy_hal::test_suite::derived::test_vec_znx_mul_xp_minus_one_assign_derived,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_fill_uniform_source_all_derived => poulpy_hal::test_suite::derived::test_vec_znx_fill_uniform_source_all_derived,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_add_scalar_assign_derived => poulpy_hal::test_suite::derived::test_vec_znx_add_scalar_assign_derived,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_big_add_small_derived => poulpy_hal::test_suite::derived::test_vec_znx_big_add_small_derived,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_big_sub_small_a_derived => poulpy_hal::test_suite::derived::test_vec_znx_big_sub_small_a_derived,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_vec_znx_big_sub_small_b_derived => poulpy_hal::test_suite::derived::test_vec_znx_big_sub_small_b_derived,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_svp_apply_dft_derived => poulpy_hal::test_suite::derived::test_svp_apply_dft_derived,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_cnv_prepare_self_derived => poulpy_hal::test_suite::derived::test_cnv_prepare_self_derived,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_cnv_apply_dft_add_derived => poulpy_hal::test_suite::derived::test_cnv_apply_dft_add_derived,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_cnv_apply_dft_sum_derived => poulpy_hal::test_suite::derived::test_cnv_apply_dft_sum_derived,
+        #[ignore = "full degree; run in release with --ignored"]
+        test_cnv_pairwise_apply_dft_derived => poulpy_hal::test_suite::derived::test_cnv_pairwise_apply_dft_derived,
+        #[ignore = "full degree; run in release with --ignored"]
         test_cnv_by_const_apply_add_derived => poulpy_hal::test_suite::derived::test_cnv_by_const_apply_add_derived,
     }
 }

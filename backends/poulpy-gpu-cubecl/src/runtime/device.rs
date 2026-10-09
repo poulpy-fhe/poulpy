@@ -49,6 +49,31 @@ pub trait GpuRuntime: Send + Sync + 'static {
     fn client() -> &'static Client;
 }
 
+/// Runs `task` with the client's stream as the current one of the thread,
+/// for the client calls that act on the current stream and not on the
+/// client's.
+#[cfg(any(
+    feature = "enable-cuda",
+    feature = "enable-hip",
+    feature = "enable-metal",
+    feature = "enable-vulkan",
+    feature = "enable-wgpu"
+))]
+pub(crate) fn on_stream<T>(task: impl FnOnce() -> T) -> T {
+    StreamId { value: STREAM }.executes(task)
+}
+
+#[cfg(not(any(
+    feature = "enable-cuda",
+    feature = "enable-hip",
+    feature = "enable-metal",
+    feature = "enable-vulkan",
+    feature = "enable-wgpu"
+)))]
+pub(crate) fn on_stream<T>(task: impl FnOnce() -> T) -> T {
+    task()
+}
+
 #[cfg(any(
     feature = "enable-cuda",
     feature = "enable-hip",

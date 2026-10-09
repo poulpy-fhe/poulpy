@@ -2,8 +2,8 @@
 
 use poulpy_hal::layouts::{ConjugateInvariant, Module};
 
-type Gpu = crate::NTT4x30Wgpu;
-type GpuCI = crate::NTT4x30Wgpu<ConjugateInvariant>;
+type Gpu = crate::NTT4x30Gpu<super::Runtime, poulpy_hal::layouts::Standard>;
+type GpuCI = crate::NTT4x30Gpu<super::Runtime, ConjugateInvariant>;
 
 poulpy_core::core_parity_test_suite! {
     mod core_parity,

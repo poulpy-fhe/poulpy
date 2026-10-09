@@ -16,12 +16,15 @@ use std::{
 use cubecl::{bytes::Bytes, prelude::*, server::Handle};
 use poulpy_hal::layouts::{CopyFromHost, CopyToHost};
 
-use super::{Binding, GpuRuntime, HostEvent, Label, access, host_event, launch};
+use super::{Binding, GpuRuntime, HostEvent, Label, access, host_event, launch, on_stream};
 
 /// Owned allocations are padded like host ones (`poulpy_hal::layouts::padded_bytes`):
 /// a host-staged transfer moves an owned buffer byte for byte, so both sides
 /// must span the same length.
 const PADDING: usize = poulpy_hal::DEFAULTALIGN;
+
+/// Allocations from this size on are exact-fit; smaller ones are pooled.
+const EXACT_FIT_FROM: usize = 1 << 20;
 
 #[cube(launch_unchecked)]
 fn fill_zero(out: &mut [u32], base: u32, len: u32) {
@@ -43,6 +46,62 @@ struct Allocation {
     owned: Arc<AtomicBool>,
 }
 
+/// The buffers a body being recorded dropped, kept for it to allocate again.
+///
+/// A capture window allocates nothing: the recorded run of a body is served
+/// from what its warm-up run released. Rather than depend on what CubeCL's
+/// pools keep of it, the buffers dropped on the recording thread are parked
+/// here, and an allocation of the same size takes one back. Both runs
+/// allocate and drop in the same order, so the recorded run finds every
+/// buffer it asks for.
+pub(crate) mod parked {
+    use std::cell::RefCell;
+
+    use cubecl::server::Handle;
+
+    thread_local! {
+        /// `Some` while this thread records: the parked allocations, by reserved size.
+        static PARKED: RefCell<Option<Vec<(usize, Handle)>>> = const { RefCell::new(None) };
+    }
+
+    /// Parks the buffers this thread drops until the guard is dropped, which releases them.
+    pub(crate) struct Parking(());
+
+    pub(crate) fn start() -> Parking {
+        PARKED.with_borrow_mut(|parked| *parked = Some(Vec::new()));
+        Parking(())
+    }
+
+    impl Drop for Parking {
+        fn drop(&mut self) {
+            PARKED.with_borrow_mut(|parked| *parked = None);
+        }
+    }
+
+    pub(super) fn active() -> bool {
+        PARKED.with_borrow(Option::is_some)
+    }
+
+    pub(super) fn take(reserved: usize) -> Option<Handle> {
+        PARKED.with_borrow_mut(|parked| {
+            let parked = parked.as_mut()?;
+            let position = parked.iter().position(|(size, _)| *size == reserved)?;
+            Some(parked.remove(position).1)
+        })
+    }
+
+    /// Parks `handle` when this thread records; `false` otherwise.
+    pub(super) fn park(reserved: usize, handle: &Handle) -> bool {
+        PARKED.with_borrow_mut(|parked| match parked {
+            Some(parked) => {
+                parked.push((reserved, handle.clone()));
+                true
+            }
+            None => false,
+        })
+    }
+}
+
 fn allocate<RT: GpuRuntime>(len: usize) -> Option<Allocation> {
     if len == 0 {
         return None;
@@ -52,9 +111,33 @@ fn allocate<RT: GpuRuntime>(len: usize) -> Option<Allocation> {
     let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     host_event(HostEvent::Allocation, id);
     let _access = access::shared();
+    let client = RT::client();
+    let handle = match parked::take(reserved) {
+        Some(handle) => handle,
+        None => {
+            // CubeCL's default pools carve allocations from pages sized to
+            // the largest one served, and keep them: with a few hundred
+            // megabytes per key, a key set reserved half as much again as it
+            // holds. The persistent pool is exact-fit, and a freed slice
+            // serves the next request of its size. It does not grow once a
+            // capture is prepared: a recorded body allocates from the
+            // default pools, and reuses what it drops (see `parked`).
+            let handle = if reserved >= EXACT_FIT_FROM && !parked::active() {
+                on_stream(|| client.memory_persistent_allocation((), |()| client.empty(reserved)))
+            } else {
+                client.empty(reserved)
+            };
+            // An allocation the device refused only fails the launches that
+            // bind it, and silently when nothing reads their results back.
+            if let Err(error) = client.check([&handle]) {
+                panic!("device allocation of {reserved} bytes failed: {error:?}");
+            }
+            handle
+        }
+    };
     Some(Allocation {
         id,
-        handle: RT::client().empty(reserved),
+        handle,
         reserved,
         owned: Arc::new(AtomicBool::new(true)),
     })
@@ -393,6 +476,7 @@ impl<RT: GpuRuntime> Drop for GpuBuf<RT> {
     fn drop(&mut self) {
         if let Some(allocation) = &self.allocation {
             allocation.owned.store(false, Ordering::Release);
+            parked::park(allocation.reserved, &allocation.handle);
         }
     }
 }

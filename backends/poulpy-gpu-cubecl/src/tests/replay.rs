@@ -1,4 +1,4 @@
-//! Recording and replay on the device: the wgpu runtime records real graphs.
+//! Recording and replay on the device, with real graphs.
 
 use std::cell::RefCell;
 
@@ -8,9 +8,10 @@ use poulpy_hal::{
     test_suite::{vec_znx_backend_mut, vec_znx_backend_ref},
 };
 
-use crate::{Replay, runtime::Wgpu};
+use super::Runtime;
+use crate::Replay;
 
-type Gpu = crate::NTT4x30Wgpu;
+type Gpu = crate::NTT4x30Gpu<Runtime, poulpy_hal::layouts::Standard>;
 type Vector = VecZnx<<Gpu as Backend>::OwnedBuf, i64>;
 
 const N: usize = 64;
@@ -42,7 +43,7 @@ fn a_replay_redoes_the_closure() {
     let a = vector(|i| i as i64, 2);
     let mut res = vector(|_| 1, 2);
     {
-        let mut replay = Replay::<Wgpu>::record(|| body(&module, &mut res, &a));
+        let mut replay = Replay::<Runtime>::record(|| body(&module, &mut res, &a));
         // The closure ran twice, once for its effect and once recorded; the replays run the graph.
         assert!(replay.is_graph());
         // The addition, the zeroing of the temporary and its transform.
@@ -66,7 +67,7 @@ fn a_check_accepts_a_closure_that_repeats_itself() {
     let module = Module::<Gpu>::new(N as u64);
     let a = vector(|i| i as i64, 2);
     let mut res = vector(|_| 1, 2);
-    let mut replay = Replay::<Wgpu>::record(|| body(&module, &mut res, &a));
+    let mut replay = Replay::<Runtime>::record(|| body(&module, &mut res, &a));
     // The temporary is another allocation at each call: it is named by its order in the body.
     replay.check();
     replay.check();
@@ -79,7 +80,7 @@ fn a_check_catches_a_closure_that_changes() {
     let a = vector(|i| i as i64, 2);
     let mut res = vector(|_| 1, 2);
     let mut calls = 0;
-    let mut replay = Replay::<Wgpu>::record(|| {
+    let mut replay = Replay::<Runtime>::record(|| {
         calls += 1;
         body(&module, &mut res, &a);
         if calls == 3 {
@@ -95,7 +96,7 @@ fn a_closure_that_touches_the_host_is_called_at_every_replay() {
     let module = Module::<Gpu>::new(N as u64);
     let a = vector(|i| i as i64, 2);
     let res = RefCell::new(vector(|_| 1, 2));
-    let mut replay = Replay::<Wgpu>::record(|| {
+    let mut replay = Replay::<Runtime>::record(|| {
         add_assign(&module, &mut res.borrow_mut(), &a);
         assert_eq!(read(&res.borrow()).len(), 2 * N);
     });
@@ -112,7 +113,7 @@ fn a_replay_calls_the_closure_once_a_bound_buffer_is_dropped() {
     let module = Module::<Gpu>::new(N as u64);
     let a = RefCell::new(vector(|i| i as i64, 2));
     let res = RefCell::new(vector(|_| 1, 2));
-    let mut replay = Replay::<Wgpu>::record(|| body(&module, &mut res.borrow_mut(), &a.borrow()));
+    let mut replay = Replay::<Runtime>::record(|| body(&module, &mut res.borrow_mut(), &a.borrow()));
     replay.replay();
     assert!(replay.is_graph());
     assert_ne!(replay.retained_bytes(), 0);
@@ -146,7 +147,7 @@ fn another_thread_keeps_its_launches_while_a_closure_is_recorded() {
             }
         });
         while !worker.is_finished() {
-            let mut replay = Replay::<Wgpu>::record(|| body(&module, &mut res, &a));
+            let mut replay = Replay::<Runtime>::record(|| body(&module, &mut res, &a));
             replay.replay();
             graphs += replay.is_graph() as usize;
         }
@@ -165,7 +166,7 @@ fn a_closure_that_panics_leaves_the_device_usable() {
     let mut res = vector(|_| 1, 2);
     let mut calls = 0;
     let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        Replay::<Wgpu>::record(|| {
+        Replay::<Runtime>::record(|| {
             calls += 1;
             body(&module, &mut res, &a);
             // The second call is the recorded run, inside the capture window.
@@ -185,7 +186,7 @@ fn a_recording_does_not_nest() {
     let module = Module::<Gpu>::new(N as u64);
     let a = vector(|i| i as i64, 2);
     let res = RefCell::new(vector(|_| 1, 2));
-    Replay::<Wgpu>::record(|| {
-        Replay::<Wgpu>::record(|| add_assign(&module, &mut res.borrow_mut(), &a));
+    Replay::<Runtime>::record(|| {
+        Replay::<Runtime>::record(|| add_assign(&module, &mut res.borrow_mut(), &a));
     });
 }

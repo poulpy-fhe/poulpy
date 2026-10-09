@@ -20,7 +20,7 @@ use crate::{
 #[cube(launch_unchecked)]
 #[allow(clippy::too_many_arguments, unused_assignments)]
 fn normalize_kernel(
-    res: &mut [i64],
+    res: &mut [u64],
     // The source limbs, or the addend of a source held in `dft`.
     a: &[u64],
     dft: &[u32],
@@ -39,9 +39,10 @@ fn normalize_kernel(
     // Limbs that carry precision, and the unused low bits of the last of them.
     active_size: u32,
     precision_padding: u32,
-    // Bits of `a` below the output precision when positive; zero bits to
-    // insert below `a` when negative.
-    drop: i64,
+    // Bits of `a` below the output precision, and zero bits to insert
+    // below `a`: one of the two is zero.
+    drop: u32,
+    insert: u32,
     dft_base: u32,
     dft_stride: u32,
     dft_size: u32,
@@ -52,8 +53,10 @@ fn normalize_kernel(
 ) {
     let i = ABSOLUTE_POS as u32;
     if i < n {
+        // Every value is two's complement in unsigned registers, with the
+        // arithmetic shifts and sign extensions written out: the runtimes do
+        // not agree on signed 64-bit shifts.
         let ab = a_base2k as u64;
-        let ab_signed = a_base2k as i64;
         let ab_up = 64u64 - ab;
         let mask = (1u64 << ab) - 1u64;
         let ones = 0xFFFF_FFFF_FFFF_FFFFu64;
@@ -72,10 +75,7 @@ fn normalize_kernel(
         let mut rounding = 0u64;
         // Any one among the bits below the rounding bit.
         let mut sticky = 0u64;
-        let mut padding = 0i64;
-        if drop < 0i64 {
-            padding = 0i64 - drop;
-        }
+        let mut padding = insert;
 
         // Field 0 discards `drop - 1` bits, field 1 reads the rounding bit, and
         // each later field reads one output digit, least significant first.
@@ -86,11 +86,11 @@ fn normalize_kernel(
             let mut zeroes = 0u32;
             let discard = field == 0u32;
             if field == 0u32 {
-                if drop > 1i64 {
-                    count = (drop - 1i64) as u32;
+                if drop > 1u32 {
+                    count = drop - 1u32;
                 }
             } else if field == 1u32 {
-                if drop > 0i64 {
+                if drop > 0u32 {
                     count = 1u32;
                 }
             } else {
@@ -98,13 +98,9 @@ fn normalize_kernel(
                 if field == 2u32 && precision_padding != 0u32 {
                     width = res_base2k - precision_padding;
                 }
-                if padding > 0i64 {
-                    if padding >= width as i64 {
-                        zeroes = width;
-                    } else {
-                        zeroes = padding as u32;
-                    }
-                    padding -= zeroes as i64;
+                if padding > 0u32 {
+                    zeroes = min(padding, width);
+                    padding -= zeroes;
                 }
                 count = width - zeroes;
             }
@@ -114,10 +110,9 @@ fn normalize_kernel(
             while count != 0u32 {
                 if available == 0u32 {
                     // `carry >> a_base2k`, shared by both refills.
-                    let carry_hi_signed = carry_hi as i64;
-                    let shifted_hi_signed = carry_hi_signed >> ab_signed;
+                    let carry_sign = 0u64 - (carry_hi >> 63u64);
                     let shifted_lo = (carry_lo >> ab) | (carry_hi << ab_up);
-                    let shifted_hi = shifted_hi_signed as u64;
+                    let shifted_hi = (carry_hi >> ab) | (carry_sign << ab_up);
                     if left != 0u32 {
                         left -= 1u32;
                         let mut x_lo = 0u64;
@@ -128,9 +123,8 @@ fn normalize_kernel(
                             x_hi = value.1;
                             if left < a_size {
                                 let y = a[(a_base + left * a_stride + i) as usize];
-                                let sign = (y as i64) >> 63i64;
                                 let sum = x_lo + y;
-                                x_hi += sign as u64;
+                                x_hi += 0u64 - (y >> 63u64);
                                 if sum < x_lo {
                                     x_hi += 1u64;
                                 }
@@ -142,16 +136,14 @@ fn normalize_kernel(
                             if a_words == 2u32 {
                                 x_hi = a[(index + 1u32) as usize];
                             } else {
-                                let sign = (x_lo as i64) >> 63i64;
-                                x_hi = sign as u64;
+                                x_hi = 0u64 - (x_lo >> 63u64);
                             }
                         }
                         let low = (x_lo & mask) + (carry_lo & mask);
                         // carry = (x >> a_base2k) + (carry >> a_base2k) + (low >> a_base2k)
-                        let x_hi_signed = x_hi as i64;
-                        let xs_hi_signed = x_hi_signed >> ab_signed;
+                        let x_sign = 0u64 - (x_hi >> 63u64);
                         let xs_lo = (x_lo >> ab) | (x_hi << ab_up);
-                        let xs_hi = xs_hi_signed as u64;
+                        let xs_hi = (x_hi >> ab) | (x_sign << ab_up);
                         let sum_lo = xs_lo + shifted_lo;
                         let mut sum_hi = xs_hi + shifted_hi;
                         if sum_lo < xs_lo {
@@ -212,9 +204,9 @@ fn normalize_kernel(
                     value += rounding;
                 }
                 rounding = (value + (1u64 << (w - 1u64))) >> w;
-                let mut digit = (value as i64) - ((rounding << w) as i64);
+                let mut digit = value - (rounding << w);
                 if field == 2u32 && precision_padding != 0u32 {
-                    digit <<= precision_padding as i64;
+                    digit <<= precision_padding as u64;
                 }
                 let limb = active_size + 1u32 - field;
                 res[(res_base + limb * res_stride + i) as usize] = digit;
@@ -222,7 +214,7 @@ fn normalize_kernel(
         }
 
         for limb in active_size..res_size {
-            res[(res_base + limb * res_stride + i) as usize] = 0i64;
+            res[(res_base + limb * res_stride + i) as usize] = 0u64;
         }
     }
 }
@@ -318,7 +310,8 @@ fn launch<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: usize, offset:
     // Past these bounds every further bit dropped is sign extension, and
     // every further bit inserted lies below the last digit.
     let source_bits = (source_size * a_base2k) as i128;
-    let drop = (source_bits - res_k as i128 - offset as i128).clamp(-(res_k as i128) - 64, source_bits + 192) as i64;
+    let drop = (source_bits - res_k as i128 - offset as i128).clamp(-(res_k as i128) - 64, source_bits + 192);
+    let (drop, insert) = (drop.max(0) as u32, (-drop).max(0) as u32);
     let source_bytes = match dft {
         Some(dft) => dft.size * 16 + a_size * 8,
         None => a_size * 8 * a.words as usize,
@@ -326,7 +319,7 @@ fn launch<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: usize, offset:
     launch!(
         RT, label, res.n * (res.size * 8 + source_bytes), normalize_kernel, (res.n, DIM, DIM);
         [
-            res.binding => i64,
+            res.binding => u64,
             a.binding => u64,
             *dft.map_or(&a.binding, |dft| &dft.binding) => u32,
             table => u32,
@@ -345,6 +338,7 @@ fn launch<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: usize, offset:
             active_size as u32,
             precision_padding as u32,
             drop,
+            insert,
             dft.map_or(0, |dft| dft.base),
             dft.map_or(0, |dft| dft.stride),
             dft.map_or(0, |dft| dft.size as u32),
