@@ -14,7 +14,7 @@ use cubecl::prelude::*;
 use super::{Column, DIM};
 use crate::{
     ntt4x30::{Consts, DftColumn, Tables, crt_at},
-    runtime::{GpuRuntime, cubes, launched},
+    runtime::{GpuRuntime, Label, launch},
 };
 
 #[cube(launch_unchecked)]
@@ -280,9 +280,13 @@ pub(crate) fn normalize_residues<RT: GpuRuntime>(
 
 fn launch<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: usize, offset: i64, source: Source<'_, RT>, a_base2k: usize) {
     assert_eq!(res.words, 1, "normalization writes `i64` limbs");
+    // The kernel keeps its bit stream and its digits in 64-bit registers.
+    // The HAL contract also admits wider radices for an `i128` source
+    // (`a_base2k` up to 127, `res_base2k` up to 64), which no parameter set
+    // of this backend reaches: its largest radix is `MaxBase2k`, below 62.
     assert!(
         (1..=62).contains(&res_base2k) && (1..=62).contains(&a_base2k),
-        "radix widths must be in 1..=62"
+        "this backend normalizes radix widths in 1..=62 (got {a_base2k} to {res_base2k})"
     );
     assert!(res_k <= res.size * res_base2k, "res_k exceeds the destination precision");
     if res.size == 0 || res.n == 0 {
@@ -306,17 +310,28 @@ fn launch<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: usize, offset:
             dft.size,
         ),
     };
-    let drop = source_size as i64 * a_base2k as i64 - res_k as i64 - offset;
-    let client = RT::client();
-    unsafe {
-        normalize_kernel::launch_unchecked(
-            client,
-            cubes(client, res.n, DIM),
-            CubeDim::new_1d(DIM),
-            res.binding.arg::<i64>(),
-            a.binding.arg::<u64>(),
-            dft.map_or(&a.binding, |dft| &dft.binding).arg::<u32>(),
-            table.arg::<u32>(),
+    let label = match (dft.is_some(), a.words) {
+        (true, _) => Label::NormalizeResidues,
+        (false, 2) => Label::NormalizeBig,
+        _ => Label::NormalizeLimbs,
+    };
+    // Past these bounds every further bit dropped is sign extension, and
+    // every further bit inserted lies below the last digit.
+    let source_bits = (source_size * a_base2k) as i128;
+    let drop = (source_bits - res_k as i128 - offset as i128).clamp(-(res_k as i128) - 64, source_bits + 192) as i64;
+    let source_bytes = match dft {
+        Some(dft) => dft.size * 16 + a_size * 8,
+        None => a_size * 8 * a.words as usize,
+    };
+    launch!(
+        RT, label, res.n * (res.size * 8 + source_bytes), normalize_kernel, (res.n, DIM, DIM);
+        [
+            res.binding => i64,
+            a.binding => u64,
+            *dft.map_or(&a.binding, |dft| &dft.binding) => u32,
+            table => u32,
+        ];
+        [
             res.n as u32,
             res.base,
             res.stride,
@@ -333,14 +348,7 @@ fn launch<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: usize, offset:
             dft.map_or(0, |dft| dft.base),
             dft.map_or(0, |dft| dft.stride),
             dft.map_or(0, |dft| dft.size as u32),
-            Consts::get(),
-            dft.is_some(),
-            invariant,
-        );
-    }
-    let source_bytes = match dft {
-        Some(dft) => dft.size * 16 + a_size * 8,
-        None => a_size * 8 * a.words as usize,
-    };
-    launched(res.n * (res.size * 8 + source_bytes));
+        ];
+        [Consts::get(), dft.is_some(), invariant]
+    );
 }

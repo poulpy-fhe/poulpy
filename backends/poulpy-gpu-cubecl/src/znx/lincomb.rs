@@ -5,7 +5,7 @@
 use cubecl::prelude::*;
 
 use super::{Column, DIM};
-use crate::runtime::{GpuRuntime, cubes, launched};
+use crate::runtime::{GpuRuntime, Label, launch};
 
 /// How an operand enters the combination.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -141,13 +141,13 @@ fn gaps(res_n: usize, n: usize, decimate: bool) -> (u32, u32) {
     }
     if n < res_n {
         assert!(
-            n.is_power_of_two() && res_n.is_multiple_of(n),
+            res_n.is_multiple_of(n) && (res_n / n).is_power_of_two(),
             "operand of degree {n} does not embed into degree {res_n}"
         );
         return ((res_n / n).ilog2(), 0);
     }
     assert!(
-        decimate && res_n.is_power_of_two() && n.is_multiple_of(res_n),
+        decimate && n.is_multiple_of(res_n) && (n / res_n).is_power_of_two(),
         "operand of degree {n} does not embed into degree {res_n}"
     );
     (0, (n / res_n).ilog2())
@@ -171,16 +171,29 @@ fn lincomb_with<RT: GpuRuntime>(res: &Column, limbs: usize, a: Term<'_>, b: Term
     }
     let (a_down, a_up) = gaps(res.n, a.column.n, decimate);
     let (b_down, b_up) = gaps(res.n, b.column.n, decimate);
-    let client = RT::client();
     let units = res.n * limbs;
-    unsafe {
-        lincomb_kernel::launch_unchecked(
-            client,
-            cubes(client, units, DIM),
-            CubeDim::new_1d(DIM),
-            res.binding.arg::<u64>(),
-            a.column.binding.arg::<u64>(),
-            b.column.binding.arg::<u64>(),
+    let label = match ((a.sign != Sign::Zero) as u32 + (b.sign != Sign::Zero) as u32, res.words) {
+        (0, 1) => Label::ZnxZero,
+        (0, _) => Label::BigZero,
+        (1, 1) if a.sign != Sign::Minus && b.sign != Sign::Minus => Label::ZnxCopy,
+        (1, 2) if a.sign != Sign::Minus && b.sign != Sign::Minus => Label::BigCopy,
+        (_, 1) => Label::ZnxCombine,
+        _ => Label::BigCombine,
+    };
+    let mut bytes = units * 8 * res.words as usize;
+    for term in [&a, &b] {
+        if term.sign != Sign::Zero {
+            bytes += units * 8 * term.column.words as usize;
+        }
+    }
+    launch!(
+        RT, label, bytes, lincomb_kernel, (units, DIM, DIM);
+        [
+            res.binding => u64,
+            a.column.binding => u64,
+            b.column.binding => u64,
+        ];
+        [
             res.n as u32,
             limbs as u32,
             res.base,
@@ -200,13 +213,7 @@ fn lincomb_with<RT: GpuRuntime>(res: &Column, limbs: usize, a: Term<'_>, b: Term
             b_down,
             b_up,
             b.sign as u32,
-        );
-    }
-    let mut bytes = units * 8 * res.words as usize;
-    for term in [&a, &b] {
-        if term.sign != Sign::Zero {
-            bytes += units * 8 * term.column.words as usize;
-        }
-    }
-    launched(bytes);
+        ];
+        []
+    );
 }

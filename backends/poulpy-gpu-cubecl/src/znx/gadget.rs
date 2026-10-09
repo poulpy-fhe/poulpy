@@ -11,7 +11,7 @@
 use cubecl::prelude::*;
 
 use super::{Column, DIM};
-use crate::runtime::{GpuRuntime, cubes, launched};
+use crate::runtime::{GpuRuntime, Label, launch};
 
 #[cube(launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
@@ -137,14 +137,13 @@ pub(crate) fn gadget_decompose<RT: GpuRuntime>(res: &Column, a: &Column, base2k:
     let gadget_k = dnum * k_digit;
     let j0 = gadget_k.div_ceil(base2k) - 1;
     let low = (j0 + 1) * base2k - gadget_k;
-    let client = RT::client();
-    unsafe {
-        gadget_decompose_kernel::launch_unchecked(
-            client,
-            cubes(client, res.n, DIM),
-            CubeDim::new_1d(DIM),
-            res.binding.arg::<i64>(),
-            a.binding.arg::<i64>(),
+    launch!(
+        RT, Label::GadgetDecompose, res.n * 8 * (res.size + a.size), gadget_decompose_kernel, (res.n, DIM, DIM);
+        [
+            res.binding => i64,
+            a.binding => i64,
+        ];
+        [
             res.n as u32,
             res.base,
             res.stride,
@@ -158,7 +157,7 @@ pub(crate) fn gadget_decompose<RT: GpuRuntime>(res: &Column, a: &Column, base2k:
             gadget_k as u32,
             j0 as u32,
             low as u32,
-        );
-    }
-    launched(res.n * 8 * (res.size + a.size));
+        ];
+        []
+    );
 }

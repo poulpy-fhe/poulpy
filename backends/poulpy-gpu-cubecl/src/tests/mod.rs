@@ -9,6 +9,7 @@ mod ckks;
 #[cfg(feature = "enable-core")]
 mod core;
 mod local;
+mod replay;
 
 type Gpu = crate::NTT4x30Wgpu;
 type GpuCI = crate::NTT4x30Wgpu<poulpy_hal::layouts::ConjugateInvariant>;

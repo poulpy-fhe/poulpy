@@ -25,6 +25,11 @@ use poulpy_core::{
     },
 };
 use poulpy_cpu_portable::ckks_encoding::{EncodingFFTTable, OwnedEncodingPlanSet};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
+
 use poulpy_hal::{
     AlignedBuf,
     api::ModuleN,
@@ -33,9 +38,61 @@ use poulpy_hal::{
 
 use crate::{
     NTT4x30Gpu,
+    ckks_add_sub::{impl_add_cached_one, impl_sub_cached_one},
     module::handle,
     runtime::{GpuMut, GpuRef, GpuRuntime},
 };
+
+/// The constant plaintexts `1` of a module, one per radix.
+struct OnePlaintexts<BE: poulpy_hal::layouts::Backend>(Mutex<HashMap<usize, Arc<CKKSPlaintextOwned<BE>>>>);
+
+/// The device plaintext of the constant `1.0`, as `poulpy-ckks` builds it for
+/// its add-one and sub-one operations (one coefficient `2` at scale 2), kept
+/// by the module: only the first request for a radix uploads it.
+pub(crate) fn one_plaintext<RT, R>(
+    module: &Module<NTT4x30Gpu<RT, R>>,
+    base2k: Base2K,
+) -> CKKSResult<Arc<CKKSPlaintextOwned<NTT4x30Gpu<RT, R>>>>
+where
+    RT: GpuRuntime,
+    R: Ring,
+    Module<NTT4x30Gpu<RT, R>>: CKKSModuleAlloc<NTT4x30Gpu<RT, R>>,
+{
+    let build = || -> CKKSPlaintextOwned<NTT4x30Gpu<RT, R>> {
+        let log_delta = 1usize;
+        let meta = GLWEPlaintextMeta {
+            scale: poulpy_ckks::Scale::Log(log_delta),
+            slots: poulpy_ckks::SlotsKind::Real,
+            log_sparsity: 0,
+        };
+        // The total torus width is `log_delta`: no budget above the scale.
+        let size = log_delta.div_ceil(base2k.as_usize());
+        let mut limbs = poulpy_hal::layouts::VecZnx::<AlignedBuf, i64>::from_data(
+            AlignedBuf::from(vec![0u8; size * size_of::<i64>()]),
+            1,
+            1,
+            size,
+        );
+        limbs.encode_vec_i64(base2k.as_usize(), 0, size * base2k.as_usize(), &[1i64 << log_delta]);
+        let mut pt = module.ckks_pt_coeffs_alloc(1, base2k, log_delta.into());
+        pt.set_meta(meta);
+        let mut device = GLWEToBackendMut::<NTT4x30Gpu<RT, R>>::to_backend_mut(&mut pt);
+        let storage = device.data_mut().data_mut();
+        let bytes = storage.len();
+        storage.write_prefix(&limbs.data()[..bytes]);
+        pt
+    };
+    handle(module)
+        .plan_cache()
+        .with_or_create::<OnePlaintexts<NTT4x30Gpu<RT, R>>, _, _>(
+            || Ok(OnePlaintexts(Mutex::new(HashMap::new()))),
+            |cache: &OnePlaintexts<NTT4x30Gpu<RT, R>>| {
+                let mut cache = cache.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                cache.entry(base2k.as_usize()).or_insert_with(|| Arc::new(build())).clone()
+            },
+        )
+        .map_err(CKKSError::from)
+}
 
 /// The host backend the staged work is typed with: host bytes, `i64` limbs, the ring of the device backend.
 type Host<R> = HostBytesBackend<R>;
@@ -314,8 +371,8 @@ macro_rules! impl_ckks {
         ::poulpy_ckks::impl_ckks_neg_reference!($be);
         ::poulpy_ckks::impl_ckks_pow2_reference!($be);
         ::poulpy_ckks::impl_ckks_rotate_reference!($be);
-        ::poulpy_ckks::impl_ckks_add_reference!($be);
-        ::poulpy_ckks::impl_ckks_sub_reference!($be);
+        impl_add_cached_one!($be);
+        impl_sub_cached_one!($be);
         ::poulpy_ckks::impl_ckks_plaintext_reference!($be);
         ::poulpy_ckks::impl_ckks_polynomial_evaluation_reference!($be);
         ::poulpy_ckks::impl_ckks_eval_mod_reference!($be);

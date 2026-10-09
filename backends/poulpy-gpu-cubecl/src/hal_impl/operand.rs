@@ -21,6 +21,9 @@ fn column(binding: Option<Binding>, shape: VecZnxShape, col: usize, words: u32) 
     let binding = binding?;
     let base = binding.base::<u64>() as usize + shape.scalar_offset(col, 0) * words as usize;
     let stride = shape.limb_step() * shape.cols() * shape.n_full() * words as usize;
+    // The kernels index in 32 bits: the last word of the column must be in range.
+    let end = base + stride * shape.size().saturating_sub(1) + shape.n() * words as usize;
+    assert!(u32::try_from(end).is_ok(), "device column ends beyond the 32-bit word range");
     Some(Column {
         base: u32::try_from(base).expect("device view starts beyond the 32-bit word range"),
         stride: u32::try_from(stride).expect("limb stride beyond the 32-bit word range"),

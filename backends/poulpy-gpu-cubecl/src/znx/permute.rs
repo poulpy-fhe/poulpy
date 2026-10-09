@@ -4,7 +4,7 @@
 use cubecl::prelude::*;
 
 use super::{Column, DIM};
-use crate::runtime::{GpuRuntime, cubes, launched};
+use crate::runtime::{GpuRuntime, Label, launch};
 
 /// A signed permutation, as the gather each output coefficient performs.
 #[derive(Clone, Copy)]
@@ -112,15 +112,14 @@ pub(crate) fn permute<RT: GpuRuntime>(res: &Column, a: &Column, map: Map) {
         Map::Rotation { p } => (1u32, ((-(p as i128)).rem_euclid(2 * n as i128)) as u32, 0u32),
         Map::AutomorphismCI { p } => (inverse_odd(p, 4 * n), 0u32, 1u32),
     };
-    let client = RT::client();
     let units = res.n * res.size;
-    unsafe {
-        permute_kernel::launch_unchecked(
-            client,
-            cubes(client, units, DIM),
-            CubeDim::new_1d(DIM),
-            res.binding.arg::<u64>(),
-            a.binding.arg::<u64>(),
+    launch!(
+        RT, if res.words == 2 { Label::BigPermute } else { Label::ZnxPermute }, units * 16 * res.words as usize, permute_kernel, (units, DIM, DIM);
+        [
+            res.binding => u64,
+            a.binding => u64,
+        ];
+        [
             res.n as u32,
             res.size as u32,
             res.words,
@@ -132,9 +131,9 @@ pub(crate) fn permute<RT: GpuRuntime>(res: &Column, a: &Column, map: Map) {
             mul,
             add,
             invariant,
-        );
-    }
-    launched(units * 16 * res.words as usize);
+        ];
+        []
+    );
 }
 
 #[cube(launch_unchecked)]
@@ -184,15 +183,14 @@ fn ci_map<RT: GpuRuntime>(res: &Column, a: &Column, trace: u32) {
     if res.size == 0 || res.n == 0 {
         return;
     }
-    let client = RT::client();
     let units = res.n * res.size;
-    unsafe {
-        ci_kernel::launch_unchecked(
-            client,
-            cubes(client, units, DIM),
-            CubeDim::new_1d(DIM),
-            res.binding.arg::<i64>(),
-            a.binding.arg::<i64>(),
+    launch!(
+        RT, Label::ZnxRingMap, units * 16, ci_kernel, (units, DIM, DIM);
+        [
+            res.binding => i64,
+            a.binding => i64,
+        ];
+        [
             res.n as u32,
             res.size as u32,
             res.base,
@@ -201,9 +199,9 @@ fn ci_map<RT: GpuRuntime>(res: &Column, a: &Column, trace: u32) {
             a.stride,
             a.size as u32,
             trace,
-        );
-    }
-    launched(units * 16);
+        ];
+        []
+    );
 }
 
 /// Embeds a conjugate-invariant `a` of degree `n` into the standard ring of degree `2n`.

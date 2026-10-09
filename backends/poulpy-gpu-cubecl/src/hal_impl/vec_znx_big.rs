@@ -182,6 +182,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxBigImpl for NTT4x30Gpu<RT, R> {
         poulpy_hal::layouts::assert_dense(res, "vec_znx_scalar_product");
         poulpy_hal::layouts::assert_dense(a, "vec_znx_scalar_product");
         assert_eq!(b.n(), a.n(), "vec_znx_scalar_product: b must have a's degree");
+        assert!(b_col < b.cols(), "vec_znx_scalar_product: column {b_col} of b out of range");
         let Some(res) = big_column_mut(res, res_col) else { return };
         let Some(a) = column_ref(a, a_col) else { return };
         let Some(b_binding) = b.data().binding() else { return };

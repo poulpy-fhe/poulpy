@@ -27,7 +27,7 @@ use super::{
     tables::Tables,
 };
 use crate::{
-    runtime::{Binding, GpuBuf, GpuRuntime, cubes, launched},
+    runtime::{Binding, GpuBuf, GpuRuntime, Label, launch},
     znx::Column,
 };
 
@@ -379,32 +379,33 @@ fn launch<RT: GpuRuntime>(
     dst: Span<'_>,
     src: Span<'_>,
 ) {
-    let client = RT::client();
     let polys = 4 * limbs;
     let tiles = polys << (tile.log_n - tile.mt);
     let table = table.view().binding().expect("transform tables hold storage");
-    unsafe {
-        tile_pass::launch_unchecked(
-            client,
-            cubes(client, tiles, 1 << tile.log_w),
-            CubeDim::new_1d(1 << (tile.log_w + tile.log_tpt)),
-            dst.binding.arg::<u32>(),
-            src.binding.arg::<u32>(),
-            table.arg::<u32>(),
+    let label = match (inverse, tile.mt == tile.log_n, tile.strided) {
+        (false, true, _) => Label::NttForwardSingle,
+        (false, false, true) => Label::NttForwardStrided,
+        (false, false, false) => Label::NttForwardContiguous,
+        (true, true, _) => Label::NttInverseSingle,
+        (true, false, true) => Label::NttInverseStrided,
+        (true, false, false) => Label::NttInverseContiguous,
+    };
+    launch!(
+        RT, label, (polys << tile.log_n) * 8, tile_pass, (tiles, 1 << tile.log_w, 1 << (tile.log_w + tile.log_tpt));
+        [
+            dst.binding => u32,
+            src.binding => u32,
+            table => u32,
+        ];
+        [
             u32::try_from(polys).expect("batch beyond the 32-bit polynomial range"),
             dst.base,
             dst.stride,
             src.base,
             src.stride,
-            Consts::get(),
-            tile,
-            inverse,
-            scale,
-            mode,
-            source,
-        );
-    }
-    launched((polys << tile.log_n) * 8);
+        ];
+        [Consts::get(), tile, inverse, scale, mode, source]
+    );
 }
 
 /// The launches of a transform of degree `2^log_n`, in order.

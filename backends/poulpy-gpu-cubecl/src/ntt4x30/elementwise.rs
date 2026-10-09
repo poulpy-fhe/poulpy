@@ -7,7 +7,7 @@ use super::{
     DIM, DftColumn,
     primes::{Q, sel4},
 };
-use crate::runtime::{GpuRuntime, cubes, launched};
+use crate::runtime::{GpuRuntime, Label, launch};
 
 const ZERO: u32 = 0;
 const PLUS: u32 = 1;
@@ -90,16 +90,21 @@ pub(crate) fn combine<RT: GpuRuntime>(res: &DftColumn, limbs: usize, a: DftTerm<
     if limbs == 0 {
         return;
     }
-    let client = RT::client();
     let units = 4 * res.n * limbs;
-    unsafe {
-        combine_kernel::launch_unchecked(
-            client,
-            cubes(client, units, DIM),
-            CubeDim::new_1d(DIM),
-            res.binding.arg::<u32>(),
-            a.column.binding.arg::<u32>(),
-            b.column.binding.arg::<u32>(),
+    let label = match (a.sign, b.sign) {
+        (ZERO, ZERO) => Label::DftZero,
+        (PLUS, ZERO) | (ZERO, PLUS) => Label::DftCopy,
+        _ => Label::DftCombine,
+    };
+    let operands = 1 + (a.sign != ZERO) as usize + (b.sign != ZERO) as usize;
+    launch!(
+        RT, label, units * 4 * operands, combine_kernel, (units, DIM, DIM);
+        [
+            res.binding => u32,
+            a.column.binding => u32,
+            b.column.binding => u32,
+        ];
+        [
             res.n.ilog2() + 2,
             limbs as u32,
             res.base,
@@ -112,9 +117,7 @@ pub(crate) fn combine<RT: GpuRuntime>(res: &DftColumn, limbs: usize, a: DftTerm<
             b.column.stride,
             b.column.size as u32,
             b.sign,
-            Q,
-        );
-    }
-    let operands = 1 + (a.sign != ZERO) as usize + (b.sign != ZERO) as usize;
-    launched(units * 4 * operands);
+        ];
+        [Q]
+    );
 }

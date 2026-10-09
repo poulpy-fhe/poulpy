@@ -13,7 +13,7 @@ use super::{
     DIM, DftColumn,
     primes::{Q, sel4},
 };
-use crate::runtime::{GpuRuntime, cubes, launched};
+use crate::runtime::{GpuRuntime, Label, launch};
 
 /// The substitution `X -> X^p` on DFT-domain vectors of degree `n`. It holds
 /// no device state: the kernels derive the permutation from `mul`.
@@ -102,15 +102,14 @@ pub(crate) fn automorphism<RT: GpuRuntime>(plan: &AutomorphismPlan, res: &DftCol
     if limbs == 0 {
         return;
     }
-    let client = RT::client();
     let units = 4 * res.n * limbs;
-    unsafe {
-        automorphism_kernel::launch_unchecked(
-            client,
-            cubes(client, units, DIM),
-            CubeDim::new_1d(DIM),
-            res.binding.arg::<u32>(),
-            a.binding.arg::<u32>(),
+    launch!(
+        RT, if accumulate { Label::DftAutomorphismAdd } else { Label::DftAutomorphism }, units * if accumulate { 12 } else { 8 }, automorphism_kernel, (units, DIM, DIM);
+        [
+            res.binding => u32,
+            a.binding => u32,
+        ];
+        [
             res.n.ilog2(),
             limbs as u32,
             res.base,
@@ -120,9 +119,7 @@ pub(crate) fn automorphism<RT: GpuRuntime>(plan: &AutomorphismPlan, res: &DftCol
             a.size as u32,
             plan.mul,
             plan.shift,
-            accumulate,
-            Q,
-        );
-    }
-    launched(units * if accumulate { 12 } else { 8 });
+        ];
+        [accumulate, Q]
+    );
 }

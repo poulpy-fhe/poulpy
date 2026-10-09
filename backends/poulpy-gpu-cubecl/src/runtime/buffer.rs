@@ -5,12 +5,18 @@
 //! an element offset, so two views of the same allocation can be read and
 //! written by one kernel.
 
-use std::marker::PhantomData;
+use std::{
+    marker::PhantomData,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use cubecl::{bytes::Bytes, prelude::*, server::Handle};
 use poulpy_hal::layouts::{CopyFromHost, CopyToHost};
 
-use super::{Binding, GpuRuntime, cubes, launched};
+use super::{Binding, GpuRuntime, HostEvent, Label, access, host_event, launch};
 
 /// Owned allocations are padded like host ones (`poulpy_hal::layouts::padded_bytes`):
 /// a host-staged transfer moves an owned buffer byte for byte, so both sides
@@ -31,6 +37,10 @@ struct Allocation {
     handle: Handle,
     /// Bytes reserved on the device, a multiple of [`PADDING`].
     reserved: usize,
+    /// Whether the [`GpuBuf`] that owns the allocation is alive. A recorded
+    /// graph keeps the handle, hence the device memory, past that point:
+    /// the flag is how it learns that nobody can name the buffer any more.
+    owned: Arc<AtomicBool>,
 }
 
 fn allocate<RT: GpuRuntime>(len: usize) -> Option<Allocation> {
@@ -39,10 +49,14 @@ fn allocate<RT: GpuRuntime>(len: usize) -> Option<Allocation> {
     }
     let reserved = len.next_multiple_of(PADDING);
     static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    host_event(HostEvent::Allocation, id);
+    let _access = access::shared();
     Some(Allocation {
-        id: NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+        id,
         handle: RT::client().empty(reserved),
         reserved,
+        owned: Arc::new(AtomicBool::new(true)),
     })
 }
 
@@ -61,6 +75,8 @@ fn read<RT: GpuRuntime>(allocation: &Option<Allocation>, offset: usize, dst: &mu
         .clone()
         .offset_start(offset as u64)
         .offset_end((allocation.reserved - end) as u64);
+    host_event(HostEvent::Read, allocation.id);
+    let _access = access::shared();
     let bytes = RT::client()
         .read_one(handle)
         .unwrap_or_else(|error| panic!("device read failed: {error:?}"));
@@ -82,6 +98,8 @@ fn write<RT: GpuRuntime>(allocation: &Option<Allocation>, offset: usize, src: &[
         .clone()
         .offset_start(offset as u64)
         .offset_end((allocation.reserved - end) as u64);
+    host_event(HostEvent::Write, allocation.id);
+    let _access = access::shared();
     RT::client().write(&handle, Bytes::from_bytes_vec(src.to_vec()));
 }
 
@@ -94,19 +112,19 @@ fn zero<RT: GpuRuntime>(allocation: &Option<Allocation>, offset: usize, len: usi
         offset.is_multiple_of(4) && len.is_multiple_of(4),
         "device zeroing is 32-bit aligned"
     );
-    let client = RT::client();
     let words = len / 4;
-    unsafe {
-        fill_zero::launch_unchecked(
-            client,
-            cubes(client, words, 256),
-            CubeDim::new_1d(256),
-            BufferArg::from_raw_parts(allocation.handle.clone(), allocation.reserved / 4),
-            (offset / 4) as u32,
-            words as u32,
-        );
-    }
-    launched(len);
+    let binding = Binding {
+        id: allocation.id,
+        handle: allocation.handle.clone(),
+        reserved: allocation.reserved,
+        offset: 0,
+        len: allocation.reserved,
+        owned: allocation.owned.clone(),
+    };
+    launch!(RT, Label::BufferZero, len, fill_zero, (words, 256, 256); [binding => u32]; [
+            u32::try_from(offset / 4).expect("device view starts beyond the 32-bit element range"),
+            u32::try_from(words).expect("device view longer than the 32-bit element range"),
+        ]; []);
 }
 
 fn same_range(a: &Option<Allocation>, a_offset: usize, b: &Option<Allocation>, b_offset: usize) -> bool {
@@ -297,9 +315,12 @@ macro_rules! view_common {
             /// The launch binding of this view, or `None` for an empty one.
             pub(crate) fn binding(&self) -> Option<Binding> {
                 self.allocation.as_ref().map(|allocation| Binding {
+                    id: allocation.id,
                     handle: allocation.handle.clone(),
                     reserved: allocation.reserved,
                     offset: self.offset,
+                    len: self.len,
+                    owned: allocation.owned.clone(),
                 })
             }
         }
@@ -365,6 +386,14 @@ impl<RT: GpuRuntime> CopyFromHost for GpuMut<'_, RT> {
     fn copy_from_host(&mut self, src: &[u8]) {
         assert_eq!(src.len(), self.len);
         write::<RT>(&self.allocation, self.offset, src);
+    }
+}
+
+impl<RT: GpuRuntime> Drop for GpuBuf<RT> {
+    fn drop(&mut self) {
+        if let Some(allocation) = &self.allocation {
+            allocation.owned.store(false, Ordering::Release);
+        }
     }
 }
 

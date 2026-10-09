@@ -10,7 +10,7 @@ use poulpy_hal::{
 use crate::{
     NTT4x30Gpu,
     ntt4x30::Tables,
-    runtime::{GpuBuf, GpuRuntime},
+    runtime::{GpuBuf, GpuRuntime, access},
 };
 
 /// State a module keeps on the device.
@@ -19,6 +19,7 @@ pub struct GpuHandle<RT: GpuRuntime> {
     /// Transform tables of every degree the module serves.
     tables: Tables<RT>,
     /// Plans the layers above memoize per module, such as the encoding tables.
+    #[cfg_attr(not(feature = "enable-ckks"), allow(dead_code))]
     plans: ModulePlanCache,
 }
 
@@ -29,7 +30,8 @@ impl<RT: GpuRuntime> GpuHandle<RT> {
     }
 
     /// The module-owned plan cache.
-    pub fn plan_cache(&self) -> &ModulePlanCache {
+    #[cfg_attr(not(feature = "enable-ckks"), allow(dead_code))]
+    pub(crate) fn plan_cache(&self) -> &ModulePlanCache {
         &self.plans
     }
 
@@ -62,10 +64,13 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalModuleImpl for NTT4x30Gpu<RT, R> {
             tables: Tables::new(n as usize, R::CYCLOTOMIC_ORDER_FACTOR == 4),
             plans: ModulePlanCache::default(),
         });
+        // SAFETY: the pointer comes from a live `Box`, which the module owns from here on.
         unsafe { Module::from_nonnull(NonNull::new_unchecked(Box::into_raw(handle)), n) }
     }
 
     fn synchronize(_module: &Module<Self>) {
+        crate::runtime::host_event(crate::runtime::HostEvent::Sync, 0);
+        let _access = access::shared();
         pollster::block_on(RT::client().sync()).unwrap_or_else(|error| panic!("device synchronization failed: {error:?}"));
     }
 }

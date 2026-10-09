@@ -30,6 +30,8 @@ poulpy-ckks = {workspace = true, optional = true}
 anyhow = {workspace = true, optional = true}
 bytemuck = {workspace = true}
 cubecl = {version = "=0.11.1"}
+# `StreamId`, to pin the client: `cubecl` does not re-export it.
+cubecl-environment = {version = "=0.11.1"}
 pollster = "0.4"
 
 [dev-dependencies]
@@ -44,9 +46,9 @@ once_cell = {workspace = true}
 [[bench]]
 name = "standard"
 harness = false
-required-features = ["enable-metal", "enable-ckks"]
+required-features = ["enable-ckks"]
 
 [[bench]]
 name = "bootstrapping"
 harness = false
-required-features = ["enable-metal", "enable-ckks"]
+required-features = ["enable-ckks"]

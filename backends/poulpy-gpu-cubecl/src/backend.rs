@@ -142,6 +142,7 @@ impl<RT: GpuRuntime, R: Ring> Backend for NTT4x30Gpu<RT, R> {
     }
 
     unsafe fn destroy(handle: NonNull<Self::Handle>) {
+        // SAFETY: the caller passes the pointer `HalModuleImpl::new` made from a `Box`, once.
         unsafe {
             drop(Box::from_raw(handle.as_ptr()));
         }

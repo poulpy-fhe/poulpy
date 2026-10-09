@@ -3,7 +3,7 @@
 use cubecl::prelude::*;
 
 use super::{Column, DIM};
-use crate::runtime::{Binding, GpuRuntime, cubes, launched};
+use crate::runtime::{Binding, GpuRuntime, Label, launch};
 
 /// High 64 bits of the signed product `x * y`.
 #[cube]
@@ -62,16 +62,15 @@ pub(crate) fn scalar_product<RT: GpuRuntime>(res: &Column, a: &Column, b: &Bindi
     if res.size == 0 || a.n == 0 {
         return;
     }
-    let client = RT::client();
     let units = a.n * res.size;
-    unsafe {
-        scalar_product_kernel::launch_unchecked(
-            client,
-            cubes(client, units, DIM),
-            CubeDim::new_1d(DIM),
-            res.binding.arg::<u64>(),
-            a.binding.arg::<u64>(),
-            b.arg::<u64>(),
+    launch!(
+        RT, Label::BigScalarProduct, units * 32, scalar_product_kernel, (units, DIM, DIM);
+        [
+            res.binding => u64,
+            a.binding => u64,
+            b => u64,
+        ];
+        [
             a.n as u32,
             res.size as u32,
             res.base,
@@ -79,9 +78,9 @@ pub(crate) fn scalar_product<RT: GpuRuntime>(res: &Column, a: &Column, b: &Bindi
             a.base,
             a.stride,
             b_base,
-        );
-    }
-    launched(units * 32);
+        ];
+        []
+    );
 }
 
 #[cube(launch_unchecked)]
@@ -146,16 +145,15 @@ pub(crate) fn col_weighted_sum<RT: GpuRuntime>(
     if res.size == 0 || res.n == 0 {
         return;
     }
-    let client = RT::client();
     let units = res.n * res.size;
-    unsafe {
-        col_weighted_sum_kernel::launch_unchecked(
-            client,
-            cubes(client, units, DIM),
-            CubeDim::new_1d(DIM),
-            res.binding.arg::<u64>(),
-            a_col0.binding.arg::<u64>(),
-            weights.arg::<u64>(),
+    launch!(
+        RT, Label::BigColWeightedSum, units * 16 + coeffs * res.size * cols * 8, col_weighted_sum_kernel, (units, DIM, DIM);
+        [
+            res.binding => u64,
+            a_col0.binding => u64,
+            weights => u64,
+        ];
+        [
             res.n as u32,
             res.size as u32,
             res.base,
@@ -166,9 +164,9 @@ pub(crate) fn col_weighted_sum<RT: GpuRuntime>(
             weights_base,
             cols as u32,
             coeffs as u32,
-        );
-    }
-    launched(units * 16 + coeffs * res.size * cols * 8);
+        ];
+        []
+    );
 }
 
 #[cube(launch_unchecked)]
@@ -214,14 +212,13 @@ pub(crate) fn inner_sum<RT: GpuRuntime>(res: &Column, res_coeff: usize, a: &Colu
     if res.size == 0 {
         return;
     }
-    let client = RT::client();
-    unsafe {
-        inner_sum_kernel::launch_unchecked(
-            client,
-            cubes(client, res.size, 1),
-            CubeDim::new_1d(1),
-            res.binding.arg::<u64>(),
-            a.binding.arg::<u64>(),
+    launch!(
+        RT, Label::BigInnerSum, res.size * (a.n + 1) * 16, inner_sum_kernel, (res.size, 1, 1);
+        [
+            res.binding => u64,
+            a.binding => u64,
+        ];
+        [
             res.size as u32,
             res.base,
             res.stride,
@@ -229,9 +226,9 @@ pub(crate) fn inner_sum<RT: GpuRuntime>(res: &Column, res_coeff: usize, a: &Colu
             a.base,
             a.stride,
             a.n as u32,
-        );
-    }
-    launched(res.size * (a.n + 1) * 16);
+        ];
+        []
+    );
 }
 
 #[cube(launch_unchecked)]
@@ -305,16 +302,15 @@ pub(crate) fn convolution_by_const<RT: GpuRuntime>(
     if res.size == 0 || res.n == 0 {
         return;
     }
-    let client = RT::client();
     let units = res.n * res.size;
-    unsafe {
-        by_const_kernel::launch_unchecked(
-            client,
-            cubes(client, units, DIM),
-            CubeDim::new_1d(DIM),
-            res.binding.arg::<u64>(),
-            a.binding.arg::<u64>(),
-            b.binding.arg::<u64>(),
+    launch!(
+        RT, if accumulate { Label::CnvByConstAdd } else { Label::CnvByConst }, units * (16 + 16 * a.size.min(b.size)), by_const_kernel, (units, DIM, DIM);
+        [
+            res.binding => u64,
+            a.binding => u64,
+            b.binding => u64,
+        ];
+        [
             res.n as u32,
             res.size as u32,
             res.base,
@@ -325,10 +321,8 @@ pub(crate) fn convolution_by_const<RT: GpuRuntime>(
             b.base + b_coeff as u32,
             b.stride,
             b.size as u32,
-            // Past `a.size + b.size` no limb has a term.
             offset.min(a.size + b.size) as u32,
-            accumulate,
-        );
-    }
-    launched(units * (16 + 16 * a.size.min(b.size)));
+        ];
+        [accumulate]
+    );
 }

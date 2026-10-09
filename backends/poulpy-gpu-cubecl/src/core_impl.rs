@@ -10,6 +10,7 @@ use poulpy_core::{
 };
 use poulpy_cpu_portable::{NTT4x30Portable, ScalarZnxFill, kernels::noise::add_noise_portable};
 use poulpy_hal::{
+    AlignedBuf,
     layouts::{
         ConjugateInvariant, DataView, DataViewMut, Module, Ring, ScalarZnx, ScalarZnxBackendMut, ScratchArena, VecZnx,
         VecZnxBackendMut, VecZnxBig, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef, ZnxView,
@@ -76,7 +77,11 @@ fn add_host_noise<RT: GpuRuntime, T: bytemuck::Pod + PartialEq + Default>(res: &
     };
     let target = Column {
         binding: res.binding.clone(),
-        base: res.base + first as u32 * res.stride,
+        base: u32::try_from(first)
+            .ok()
+            .and_then(|first| first.checked_mul(res.stride))
+            .and_then(|skipped| res.base.checked_add(skipped))
+            .expect("limb offset beyond the 32-bit word range"),
         stride: res.stride,
         words: res.words,
         n,
@@ -97,7 +102,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> SamplingImpl for NTT4x30Gpu<RT, R> {
     ) {
         let n = res.n();
         assert!(res_col < res.cols(), "scalar_znx_fill_distribution: column out of range");
-        let mut host = ScalarZnx::<Vec<u8>, i64>::from_data(vec![0u8; n * size_of::<i64>()], n, 1);
+        let mut host = ScalarZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0u8; n * size_of::<i64>()]), n, 1);
         let mut source = Source::new(seed);
         match dist {
             Distribution::TernaryFixed(hw) => host.fill_ternary_hw(0, hw, &mut source),
@@ -110,8 +115,11 @@ unsafe impl<RT: GpuRuntime, R: Ring> SamplingImpl for NTT4x30Gpu<RT, R> {
                 panic!("scalar_znx_fill_distribution: {dist:?} is not a sampleable distribution")
             }
         }
+        // Host storage is padded; the device column has the exact length.
         let bytes = n * size_of::<i64>();
-        res.data_mut().region_mut(res_col * bytes, bytes).write_prefix(host.data());
+        res.data_mut()
+            .region_mut(res_col * bytes, bytes)
+            .write_prefix(&host.data()[..bytes]);
     }
 
     fn vec_znx_add_noise(
@@ -128,7 +136,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> SamplingImpl for NTT4x30Gpu<RT, R> {
         assert!(base2k >= 1, "noise radix must be positive");
         let size = k.div_ceil(base2k);
         assert!(size <= res.size(), "noise precision exceeds destination allocation");
-        let mut host = VecZnx::<Vec<u8>, i64>::from_data(vec![0u8; n * size * size_of::<i64>()], n, 1, size);
+        let mut host = VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0u8; n * size * size_of::<i64>()]), n, 1, size);
         add_noise_portable(base2k, k, &mut host, 0, noise, &mut Source::new(seed));
         let Some(res) = column_mut(res, res_col) else { return };
         add_host_noise::<RT, i64>(&res, n, host.raw());
@@ -148,8 +156,12 @@ unsafe impl<RT: GpuRuntime, R: Ring> SamplingImpl for NTT4x30Gpu<RT, R> {
         assert!(base2k >= 1, "noise radix must be positive");
         let size = k.div_ceil(base2k);
         assert!(size <= res.size(), "noise precision exceeds destination allocation");
-        let mut host =
-            VecZnxBig::<Vec<u8>, i128, NTT4x30Portable>::from_data(vec![0u8; n * size * size_of::<i128>()], n, 1, size);
+        let mut host = VecZnxBig::<AlignedBuf, i128, NTT4x30Portable>::from_data(
+            AlignedBuf::from(vec![0u8; n * size * size_of::<i128>()]),
+            n,
+            1,
+            size,
+        );
         add_noise_portable(base2k, k, &mut host, 0, noise, &mut Source::new(seed));
         let Some(res) = big_column_mut(res, res_col) else { return };
         add_host_noise::<RT, i128>(&res, n, host.raw());

@@ -10,7 +10,7 @@ use cubecl::prelude::*;
 
 use super::{DIM, DftColumn, primes::Consts, tables::Tables};
 use crate::{
-    runtime::{GpuRuntime, cubes, launched},
+    runtime::{GpuRuntime, Label, launch},
     znx::Column,
 };
 
@@ -167,17 +167,16 @@ pub(crate) fn to_big<RT: GpuRuntime>(tables: &Tables<RT>, res: &Column, dft: &Df
     if res.size == 0 {
         return;
     }
-    let client = RT::client();
     let table = tables.of(res.n).view().binding().expect("transform tables hold storage");
     let units = res.n * res.size;
-    unsafe {
-        to_big_kernel::launch_unchecked(
-            client,
-            cubes(client, units, DIM),
-            CubeDim::new_1d(DIM),
-            res.binding.arg::<u64>(),
-            dft.binding.arg::<u32>(),
-            table.arg::<u32>(),
+    launch!(
+        RT, Label::CrtToBig, units * 16 + res.n * res.size.min(dft.size) * 16, to_big_kernel, (units, DIM, DIM);
+        [
+            res.binding => u64,
+            dft.binding => u32,
+            table => u32,
+        ];
+        [
             res.n as u32,
             res.size as u32,
             res.base,
@@ -185,9 +184,7 @@ pub(crate) fn to_big<RT: GpuRuntime>(tables: &Tables<RT>, res: &Column, dft: &Df
             dft.base,
             dft.stride,
             dft.size as u32,
-            Consts::get(),
-            tables.invariant(),
-        );
-    }
-    launched(units * 16 + res.n * res.size.min(dft.size) * 16);
+        ];
+        [Consts::get(), tables.invariant()]
+    );
 }

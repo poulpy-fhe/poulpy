@@ -1,5 +1,6 @@
 use poulpy_cpu_portable::kernels::vec_znx::vec_znx_fill_uniform_portable;
 use poulpy_hal::{
+    AlignedBuf,
     layouts::{HostBytesBackend, Module, Ring, ScratchArena, Standard, VecZnx, VecZnxBackendMut, VecZnxBackendRef},
     oep::{HalVecZnxCIImpl, HalVecZnxImpl, HalVecZnxMonomialImpl},
     source::Source,
@@ -224,13 +225,13 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxImpl for NTT4x30Gpu<RT, R> {
         seed: [u8; 32],
     ) {
         // The stream is part of the contract, so the draws come from the
-        // portable sampler and reach the device as one column.
+        // portable sampler and reach the device limb by limb.
+        assert!(res_col < res.cols(), "vec_znx_fill_uniform: column {res_col} out of range");
         let (n, size) = (res.n(), res.size());
-        let mut host = VecZnx::<Vec<u8>, i64>::from_data(vec![0u8; n * size * size_of::<i64>()], n, 1, size);
+        let mut host = VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0u8; n * size * size_of::<i64>()]), n, 1, size);
         let mut source = Source::new(seed);
         {
-            let mut host_mut: VecZnxBackendMut<'_, HostBytesBackend> =
-                VecZnx::from_data(host.data_mut().as_mut_slice(), n, 1, size);
+            let mut host_mut: VecZnxBackendMut<'_, HostBytesBackend> = VecZnx::from_data(&mut host.data_mut()[..], n, 1, size);
             vec_znx_fill_uniform_portable::<HostBytesBackend>(base2k, k, &mut host_mut, 0, &mut source);
         }
         upload_column::<RT>(res, res_col, host.data());

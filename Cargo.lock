@@ -3534,6 +3534,7 @@ dependencies = [
  "bytemuck",
  "criterion",
  "cubecl",
+ "cubecl-environment",
  "once_cell",
  "pollster",
  "poulpy-bench",

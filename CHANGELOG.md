@@ -662,6 +662,10 @@
 - Add the full-size bootstrapping preset precision test for `NTT4x30NeonRayon`.
 - Add the full-size bootstrapping preset precision test of `NTT4x30Neon` and `NTT4x30CINeon` with keys and ciphertexts from an `NTT4x30Portable` client.
 
+### `poulpy-gpu-cubecl`
+
+- New crate: the `NTT4x30` subfamily on GPUs through CubeCL 0.11, bit-identical to `NTT4x30Portable`, for both rings. One implementation behind `NTT4x30Cuda`, `NTT4x30Hip` and `NTT4x30Wgpu` (`enable-cuda`, `enable-hip`, `enable-metal`, `enable-vulkan`, `enable-wgpu`), with `enable-core` and `enable-ckks`. CKKS encoding and sampling are staged through the host. `Replay` records a repeated sequence of calls and replays it as one graph. See `docs/backends.md`.
+
 ### `poulpy-bench`
 
 - Add the `libm` layer: `runner_ckks_exp`, `runner_ckks_log` and `runner_ckks_pow` over `default_bench_params_libm`, in the `libm_ops` table, with `bench_libm` in the full, standard and light tiers, which the tier binaries of `poulpy-cpu-portable`, `poulpy-cpu-avx`, `poulpy-cpu-avx512` and `poulpy-cpu-arm` register on their NTT backend.

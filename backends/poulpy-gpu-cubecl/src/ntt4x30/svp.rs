@@ -11,7 +11,7 @@ use super::{
     DIM, DftColumn,
     primes::{Consts, mul_mod_canonical, sel4},
 };
-use crate::runtime::{GpuRuntime, cubes, launched};
+use crate::runtime::{GpuRuntime, Label, launch};
 
 #[cube(launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
@@ -59,16 +59,15 @@ pub(crate) fn scale<RT: GpuRuntime>(res: &DftColumn, ppol: &DftColumn, b: &DftCo
     if res.size == 0 {
         return;
     }
-    let client = RT::client();
     let units = 4 * res.n * res.size;
-    unsafe {
-        scale_kernel::launch_unchecked(
-            client,
-            cubes(client, units, DIM),
-            CubeDim::new_1d(DIM),
-            res.binding.arg::<u32>(),
-            ppol.binding.arg::<u32>(),
-            b.binding.arg::<u32>(),
+    launch!(
+        RT, Label::SvpScale, units * 4 + 4 * res.n * res.size.min(b.size) * 8, scale_kernel, (units, DIM, DIM);
+        [
+            res.binding => u32,
+            ppol.binding => u32,
+            b.binding => u32,
+        ];
+        [
             res.n.ilog2() + 2,
             res.size as u32,
             res.base,
@@ -77,8 +76,7 @@ pub(crate) fn scale<RT: GpuRuntime>(res: &DftColumn, ppol: &DftColumn, b: &DftCo
             b.base,
             b.stride,
             b.size as u32,
-            Consts::get(),
-        );
-    }
-    launched(units * 4 + 4 * res.n * res.size.min(b.size) * 8);
+        ];
+        [Consts::get()]
+    );
 }

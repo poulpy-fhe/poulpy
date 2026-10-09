@@ -133,14 +133,82 @@ fn bootstrapping_n16_d35_k733_p20_s2c_precision_and_launches() {
     let elapsed = start.elapsed();
     let counters = crate::launch_counters();
     println!(
-        "LAUNCHES preset={} launches={} bytes={} elapsed={:.1}ms",
+        "LAUNCHES preset={} launches={} bytes={} allocations={} elapsed={:.1}ms",
         run.preset().name(),
         counters.launches,
         counters.bytes,
+        counters.allocations,
         elapsed.as_secs_f64() * 1e3
     );
+    for kernel in crate::launch_breakdown() {
+        println!(
+            "KERNEL {:<24} launches={:>5} bytes={:>13} share={:>5.1}%",
+            kernel.label,
+            kernel.launches,
+            kernel.bytes,
+            100.0 * kernel.bytes as f64 / counters.bytes as f64
+        );
+    }
     let advertised = run.preset().log2_precision() as f64;
     assert!(re.min_log2_prec >= advertised && im.min_log2_prec >= advertised);
+}
+
+/// The bootstrap of one preset at full size, recorded and replayed: the
+/// recording runs the body twice, each replay issues no launch and no
+/// allocation, and the output decrypted and measured is the one a graph
+/// replay produced. The closure is then checked against its recording.
+#[test]
+#[ignore = "full-size preset: minutes and about 20 GB of device memory; run in release"]
+fn bootstrapping_n16_d35_k733_p20_s2c_replay() {
+    use poulpy_ckks::test_suite::presets::{BootstrappingPresetRun, preset_for_backend};
+    use std::cell::RefCell;
+
+    let preset = poulpy_ckks::presets::bootstrapping::n16_d35_k733_p20_s2c().unwrap();
+    let preset = preset_for_backend::<Gpu, GpuCI>(&preset).unwrap();
+    let advertised = preset.log2_precision() as f64;
+    let run = RefCell::new(BootstrappingPresetRun::<Gpu, poulpy_cpu_portable::NTT4x30Portable>::setup(
+        preset,
+    ));
+    // Compiles the kernels, so that the counters below are those of a steady-state bootstrap.
+    run.borrow_mut().bootstrap();
+    let meets_precision = |what: &str| {
+        let (re, im) = run.borrow_mut().precision();
+        println!(
+            "REPLAY {what:<10} re_min={:.2}b im_min={:.2}b",
+            re.min_log2_prec, im.min_log2_prec
+        );
+        assert!(re.min_log2_prec >= advertised && im.min_log2_prec >= advertised, "{what}");
+    };
+
+    crate::reset_launch_counters();
+    let mut replay = crate::Replay::<crate::runtime::Wgpu>::record(|| run.borrow_mut().bootstrap_queued());
+    let recording = crate::launch_counters();
+    println!(
+        "REPLAY recording  launches={} graph={} retained_bytes={}",
+        replay.launches(),
+        replay.is_graph(),
+        replay.retained_bytes()
+    );
+    assert!(replay.is_graph());
+    assert_eq!(recording.launches, 2 * replay.launches() as u64);
+    meets_precision("recording");
+    for _ in 0..4 {
+        crate::reset_launch_counters();
+        let start = std::time::Instant::now();
+        replay.replay();
+        run.borrow().synchronize();
+        let elapsed = start.elapsed();
+        let counters = crate::launch_counters();
+        println!("REPLAY replay     elapsed={:.1}ms", elapsed.as_secs_f64() * 1e3);
+        // A graph replay issues no launch of its own: the counters report it as a replay.
+        assert_eq!(
+            (counters.launches, counters.bytes, counters.allocations, counters.replays),
+            (0, 0, 0, 1)
+        );
+        meets_precision("replay");
+    }
+    replay.check();
+    meets_precision("check");
 }
 
 /// Slot encoding on the conjugate-invariant ring, staged through the host:

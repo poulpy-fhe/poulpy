@@ -7,12 +7,15 @@
 
 mod backend;
 #[cfg(feature = "enable-ckks")]
+mod ckks_add_sub;
+#[cfg(feature = "enable-ckks")]
 mod ckks_impl;
 #[cfg(feature = "enable-core")]
 mod core_impl;
 mod hal_impl;
 mod module;
 mod ntt4x30;
+mod replay;
 pub mod runtime;
 mod znx;
 
@@ -22,7 +25,10 @@ mod tests;
 pub use backend::NTT4x30Gpu;
 pub use module::GpuHandle;
 pub use ntt4x30::AutomorphismPlan;
-pub use runtime::{GpuRuntime, LaunchCounters, launch_counters, reset_launch_counters};
+pub use replay::Replay;
+pub use runtime::{
+    GpuRuntime, HostEvents, KernelCounters, LaunchCounters, launch_breakdown, launch_counters, reset_launch_counters,
+};
 
 /// NTT4x30 on CubeCL's CUDA runtime.
 #[cfg(feature = "enable-cuda")]

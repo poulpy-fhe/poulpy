@@ -91,11 +91,30 @@ The implementation is written once, and each CubeCL runtime has its own backend 
 | `NTT4x30Wgpu` | wgpu | Metal on Apple, Vulkan, other wgpu targets | `enable-metal`, `enable-vulkan`, `enable-wgpu` |
 
 Each type is generic over the ring like the CPU types (`NTT4x30Wgpu<ConjugateInvariant>`), and `enable-core` and `enable-ckks` add the scheme layers.
-A backend type owns one device for the life of the process: the first device of its runtime, or the one at the index given by the environment variable `POULPY_GPU_DEVICE`.
+A backend type owns one device for the life of the process: the first device of its runtime, or the one chosen with `GpuRuntime::select_device` before the first module or buffer of that runtime is created.
 
 Buffers live on the device, so data moves explicitly: generate keys and encrypt with a host backend, move the layouts with `TransferInto`, prepare and evaluate on the GPU backend, and move results back to decrypt.
 Operations are queued; `Module::synchronize` returns once they have completed, and a transfer to the host waits for what it reads.
 CKKS encoding goes through the host with the portable transform, which keeps it byte-identical to every other backend.
+
+A sequence of calls that is repeated on the same buffers (a bootstrap, say) can be recorded once and replayed as one CubeCL graph:
+
+```rust
+use poulpy_gpu_cubecl::{Replay, runtime::Wgpu};
+
+let mut replay = Replay::<Wgpu>::record(|| bootstrap(&module, &mut ct_out, &ct_in, &ctx, &keys, &mut scratch));
+// Write new inputs into the same buffers, then:
+replay.replay();
+```
+
+The closure must bind the same buffers and issue the same launches at every call, and must not read from the device, write host data to it or synchronize; `Replay` documents the contract, and `Replay::check` tests a closure against its recording.
+A recording keeps the temporaries of the closure reserved on the device until it is dropped, and while a closure is recorded or a graph is queued, other threads wait for the device.
+
+Limits of the GPU backends:
+
+- Normalization handles radix widths from 1 to 62 bits. The wider radices the HAL admits for a 128-bit source are rejected with a panic; no parameter set of `NTT4x30` reaches them.
+- A window whose degree is not a power-of-two fraction of its operand's is rejected with a panic.
+- The suites have been run on Metal only. The CUDA, HIP and Vulkan registrations compile from the same code but have not been run.
 
 ## How to use a backend
 

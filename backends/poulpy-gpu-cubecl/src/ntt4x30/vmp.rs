@@ -30,7 +30,7 @@ use super::{
     DIM, DftColumn,
     primes::{Consts, FOLD_TERMS, barrett60, fold64, sel4},
 };
-use crate::runtime::{Binding, GpuRuntime, cubes, launched};
+use crate::runtime::{Binding, GpuRuntime, Label, launch};
 
 /// A prepared matrix as a kernel addresses it.
 pub(crate) struct Pmat {
@@ -265,16 +265,17 @@ pub(crate) fn digit_product<RT: GpuRuntime>(
         dsize: narrow(dsize),
         limbs: narrow(limbs),
     };
-    let client = RT::client();
     let units = pmat.cols_out * block;
-    unsafe {
-        product_kernel::launch_unchecked(
-            client,
-            cubes(client, units, DIM),
-            CubeDim::new_1d(DIM),
-            res.binding.arg::<u32>(),
-            a.binding.arg::<u32>(),
-            pmat.binding.arg::<u32>(),
+    let key_limbs = pmat.size.min(res.size + dsize - 1);
+    let words = limbs * pmat.cols_in + terms.rows() as usize * pmat.cols_in * key_limbs + res.size * (1 + accumulate as usize);
+    launch!(
+        RT, if accumulate { Label::VmpDigitProductAdd } else { Label::VmpDigitProduct }, units * 4 * words, product_kernel, (units, DIM, DIM);
+        [
+            res.binding => u32,
+            a.binding => u32,
+            pmat.binding => u32,
+        ];
+        [
             n.ilog2(),
             narrow(pmat.cols_out),
             res.base,
@@ -284,14 +285,9 @@ pub(crate) fn digit_product<RT: GpuRuntime>(
             narrow(pmat.size),
             narrow(limb_offset),
             narrow(product_limbs.min(dsize)),
-            Consts::get(),
-            terms,
-            accumulate,
-        );
-    }
-    let key_limbs = pmat.size.min(res.size + dsize - 1);
-    let words = limbs * pmat.cols_in + terms.rows() as usize * pmat.cols_in * key_limbs + res.size * (1 + accumulate as usize);
-    launched(units * 4 * words);
+        ];
+        [Consts::get(), terms, accumulate]
+    );
 }
 
 #[cube(launch_unchecked)]
@@ -343,14 +339,13 @@ pub(crate) fn extract_rows<RT: GpuRuntime>(res: &Pmat, a: &Pmat, first_row: usiz
     let narrow = |value: usize| u32::try_from(value).expect("prepared matrix beyond the 32-bit word range");
     narrow(a.base as usize + a.blocks().size * block);
     narrow(res.base as usize + entries * entry);
-    let client = RT::client();
-    unsafe {
-        extract_rows_kernel::launch_unchecked(
-            client,
-            cubes(client, entries * entry, DIM),
-            CubeDim::new_1d(DIM),
-            res.binding.arg::<u32>(),
-            a.binding.arg::<u32>(),
+    launch!(
+        RT, Label::VmpExtractRows, entries * entry * 8, extract_rows_kernel, (entries * entry, DIM, DIM);
+        [
+            res.binding => u32,
+            a.binding => u32,
+        ];
+        [
             narrow(entry),
             narrow(entries),
             narrow(res.cols_in),
@@ -359,7 +354,7 @@ pub(crate) fn extract_rows<RT: GpuRuntime>(res: &Pmat, a: &Pmat, first_row: usiz
             narrow(a.size * a.cols_out * block),
             narrow(first_row),
             narrow(row_step),
-        );
-    }
-    launched(entries * entry * 8);
+        ];
+        []
+    );
 }

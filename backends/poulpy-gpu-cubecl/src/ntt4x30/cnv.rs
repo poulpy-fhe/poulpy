@@ -28,7 +28,7 @@ use super::{
     AutomorphismPlan, DIM, DftColumn,
     primes::{Consts, FOLD_TERMS, barrett60, fold64, sel4},
 };
-use crate::runtime::{GpuRuntime, cubes, launched};
+use crate::runtime::{GpuRuntime, Label, launch};
 
 /// `res = a * b`.
 const SINGLE: u32 = 0;
@@ -189,18 +189,23 @@ fn launch<RT: GpuRuntime>(
     if limbs == 0 {
         return;
     }
-    let client = RT::client();
     let units = 4 * n * limbs;
-    unsafe {
-        convolution_kernel::launch_unchecked(
-            client,
-            cubes(client, units, DIM),
-            CubeDim::new_1d(DIM),
-            res.binding.arg::<u32>(),
-            // Only the tensor form writes `cross`; the other forms bind an operand in its place.
-            if form == TENSOR { &cross.binding } else { &a.binding }.arg::<u32>(),
-            a.binding.arg::<u32>(),
-            b.binding.arg::<u32>(),
+    let label = match (form, accumulate) {
+        (TENSOR, _) => Label::CnvTensor,
+        (PAIRWISE, _) => Label::CnvPairwise,
+        (_, true) => Label::CnvSingleAdd,
+        _ => Label::CnvSingle,
+    };
+    let terms = a.size.min(b.size) * if form == SINGLE { 2 } else { 4 };
+    launch!(
+        RT, label, units * 4 * (terms + if form == TENSOR { 3 } else { 1 + accumulate as usize }), convolution_kernel, (units, DIM, DIM);
+        [
+            res.binding => u32,
+            *if form == TENSOR { &cross.binding } else { &a.binding } => u32,
+            a.binding => u32,
+            b.binding => u32,
+        ];
+        [
             n.ilog2(),
             limbs as u32,
             res.base,
@@ -223,13 +228,9 @@ fn launch<RT: GpuRuntime>(
             b_plan.shift,
             // Past `a.size + b.size` no limb has a term.
             offset.min(a.size + b.size) as u32,
-            Consts::get(),
-            form,
-            accumulate,
-        );
-    }
-    let terms = a.size.min(b.size) * if form == SINGLE { 2 } else { 4 };
-    launched(units * 4 * (terms + if form == TENSOR { 3 } else { 1 + accumulate as usize }));
+        ];
+        [Consts::get(), form, accumulate]
+    );
 }
 
 /// `res[j] = sum_{u + v = j + offset} a[u] * sigma(b[v])` for every limb of
