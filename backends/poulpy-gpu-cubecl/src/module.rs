@@ -3,7 +3,7 @@
 use std::ptr::NonNull;
 
 use poulpy_hal::{
-    layouts::{Module, Ring},
+    layouts::{Module, ModulePlanCache, Ring},
     oep::HalModuleImpl,
 };
 
@@ -18,12 +18,19 @@ pub struct GpuHandle<RT: GpuRuntime> {
     n: usize,
     /// Transform tables of every degree the module serves.
     tables: Tables<RT>,
+    /// Plans the layers above memoize per module, such as the encoding tables.
+    plans: ModulePlanCache,
 }
 
 impl<RT: GpuRuntime> GpuHandle<RT> {
     /// Largest ring degree the module serves.
     pub fn n(&self) -> usize {
         self.n
+    }
+
+    /// The module-owned plan cache.
+    pub fn plan_cache(&self) -> &ModulePlanCache {
+        &self.plans
     }
 
     pub(crate) fn tables(&self) -> &Tables<RT> {
@@ -53,6 +60,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalModuleImpl for NTT4x30Gpu<RT, R> {
         let handle = Box::new(GpuHandle::<RT> {
             n: n as usize,
             tables: Tables::new(n as usize, R::CYCLOTOMIC_ORDER_FACTOR == 4),
+            plans: ModulePlanCache::default(),
         });
         unsafe { Module::from_nonnull(NonNull::new_unchecked(Box::into_raw(handle)), n) }
     }

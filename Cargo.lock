@@ -3530,10 +3530,14 @@ dependencies = [
 name = "poulpy-gpu-cubecl"
 version = "0.9.0"
 dependencies = [
+ "anyhow",
  "bytemuck",
+ "criterion",
  "cubecl",
  "once_cell",
  "pollster",
+ "poulpy-bench",
+ "poulpy-ckks",
  "poulpy-core",
  "poulpy-cpu-portable",
  "poulpy-hal",

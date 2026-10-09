@@ -4,6 +4,10 @@
 
 use poulpy_hal::{backend_test_suite, cross_backend_test_suite};
 
+#[cfg(feature = "enable-ckks")]
+mod ckks;
+#[cfg(feature = "enable-core")]
+mod core;
 mod local;
 
 type Gpu = crate::NTT4x30Wgpu;
@@ -174,6 +178,7 @@ cross_backend_test_suite! {
     backend_test = super::Gpu,
     params = TestParams { size: 1 << 16, base2k: 50, n: 8 },
     tests = {
+        #[ignore = "slow against the debug-build comparison backend; run with --ignored"]
         test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
     }
 }
@@ -186,6 +191,7 @@ cross_backend_test_suite! {
     backend_test = super::Gpu,
     params = TestParams { size: 1 << 17, base2k: 50, n: 8 },
     tests = {
+        #[ignore = "slow against the debug-build comparison backend; run with --ignored"]
         test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
     }
 }

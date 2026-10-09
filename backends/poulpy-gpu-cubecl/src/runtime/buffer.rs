@@ -12,8 +12,10 @@ use poulpy_hal::layouts::{CopyFromHost, CopyToHost};
 
 use super::{Binding, GpuRuntime, cubes, launched};
 
-/// Device allocations are a whole number of 64-bit words.
-const WORD: usize = 8;
+/// Owned allocations are padded like host ones (`poulpy_hal::layouts::padded_bytes`):
+/// a host-staged transfer moves an owned buffer byte for byte, so both sides
+/// must span the same length.
+const PADDING: usize = poulpy_hal::DEFAULTALIGN;
 
 #[cube(launch_unchecked)]
 fn fill_zero(out: &mut [u32], base: u32, len: u32) {
@@ -27,7 +29,7 @@ struct Allocation {
     /// Identity of the allocation, for alias checks.
     id: u64,
     handle: Handle,
-    /// Bytes reserved on the device, a multiple of [`WORD`].
+    /// Bytes reserved on the device, a multiple of [`PADDING`].
     reserved: usize,
 }
 
@@ -35,7 +37,7 @@ fn allocate<RT: GpuRuntime>(len: usize) -> Option<Allocation> {
     if len == 0 {
         return None;
     }
-    let reserved = len.div_ceil(WORD) * WORD;
+    let reserved = len.next_multiple_of(PADDING);
     static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     Some(Allocation {
         id: NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
@@ -161,33 +163,35 @@ pub struct GpuMut<'a, RT: GpuRuntime> {
 }
 
 impl<RT: GpuRuntime> GpuBuf<RT> {
-    /// A buffer of `len` bytes with unspecified contents.
+    /// A buffer of at least `len` bytes with unspecified contents.
     pub(crate) fn uninit(len: usize) -> Self {
+        let allocation = allocate::<RT>(len);
         Self {
-            allocation: allocate::<RT>(len),
-            len,
+            len: allocation.as_ref().map_or(0, |allocation| allocation.reserved),
+            allocation,
             _runtime: PhantomData,
         }
     }
 
-    /// A zero-initialized buffer of `len` bytes.
+    /// A zero-initialized buffer of at least `len` bytes.
     pub fn zeroed(len: usize) -> Self {
         let allocation = allocate::<RT>(len);
         if let Some(allocation) = &allocation {
             zero::<RT>(&Some(allocation.clone()), 0, allocation.reserved);
         }
         Self {
+            len: allocation.as_ref().map_or(0, |allocation| allocation.reserved),
             allocation,
-            len,
             _runtime: PhantomData,
         }
     }
 
-    /// A buffer holding `bytes`.
+    /// A buffer holding `bytes`, zero-padded.
     pub fn from_host(bytes: &[u8]) -> Self {
-        let mut buf = Self {
-            allocation: allocate::<RT>(bytes.len()),
-            len: bytes.len(),
+        let allocation = allocate::<RT>(bytes.len());
+        let buf = Self {
+            len: allocation.as_ref().map_or(0, |allocation| allocation.reserved),
+            allocation,
             _runtime: PhantomData,
         };
         if let Some(allocation) = &buf.allocation {
@@ -199,7 +203,6 @@ impl<RT: GpuRuntime> GpuBuf<RT> {
                 write::<RT>(&buf.allocation, 0, &padded);
             }
         }
-        buf.len = bytes.len();
         buf
     }
 

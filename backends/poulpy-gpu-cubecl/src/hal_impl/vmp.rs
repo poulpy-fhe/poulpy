@@ -21,8 +21,8 @@ use crate::{
 /// `0..res.size()`, and digit `di >= 1` accumulates the matrix limbs from `di`
 /// on into the first
 /// `min(res.size(), pmat.size() - max(dsize - di - product_limbs, 0))` limbs.
-// Registered with the core hook `GGLWEProductDigitsStridedImpl` in a later step.
-#[allow(dead_code)]
+// The body of the core hook `GGLWEProductDigitsStridedImpl`.
+#[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
 pub(crate) fn gglwe_product_digits_strided<RT: GpuRuntime, R: Ring>(
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
     a: &VecZnxDftBackendRef<'_, NTT4x30Gpu<RT, R>>,

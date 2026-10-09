@@ -9,10 +9,12 @@ mod vec_znx_big;
 mod vec_znx_dft;
 mod vmp;
 
-// Only the tests reach the two core products until the core hooks are registered.
-#[cfg(test)]
-#[allow(unused_imports)]
+// Without the core registration only the device tests reach the two core products.
+#[cfg(any(test, feature = "enable-core"))]
+#[cfg_attr(not(feature = "enable-core"), allow(unused_imports))]
 pub(crate) use convolution::glwe_mul_columns;
-#[cfg(test)]
-#[allow(unused_imports)]
+#[cfg(feature = "enable-core")]
+pub(crate) use operand::{big_column_mut, column_mut};
+#[cfg(any(test, feature = "enable-core"))]
+#[cfg_attr(not(feature = "enable-core"), allow(unused_imports))]
 pub(crate) use vmp::gglwe_product_digits_strided;

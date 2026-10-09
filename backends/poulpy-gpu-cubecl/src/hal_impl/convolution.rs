@@ -20,8 +20,8 @@ use crate::{
 /// The three product columns of a rank-1 tensor in one launch: columns 0 and 1
 /// of `diag` receive `a0 * b0` and `a1 * b1`, column 0 of `cross` receives
 /// `(a0 + a1) * (b0 + b1) - diag0 - diag1`.
-// Registered with the core hook `GLWETensoringImpl::glwe_mul_columns` in a later step.
-#[allow(dead_code)]
+// The body of the core hook `GLWETensoringImpl::glwe_mul_columns`.
+#[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
 pub(crate) fn glwe_mul_columns<RT: GpuRuntime, R: Ring>(
     cnv_offset: usize,
     diag: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,

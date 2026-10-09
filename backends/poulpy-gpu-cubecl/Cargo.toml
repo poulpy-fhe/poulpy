@@ -19,15 +19,34 @@ enable-hip = ["cubecl/hip"]
 enable-metal = ["cubecl/metal"]
 enable-vulkan = ["cubecl/vulkan"]
 enable-wgpu = ["cubecl/webgpu"]
+enable-core = ["dep:poulpy-core", "poulpy-cpu-portable/enable-core"]
+enable-ckks = ["enable-core", "dep:poulpy-ckks", "dep:anyhow", "poulpy-cpu-portable/enable-ckks"]
 
 [dependencies]
 poulpy-hal = {workspace = true}
 poulpy-cpu-portable = {workspace = true}
+poulpy-core = {workspace = true, optional = true}
+poulpy-ckks = {workspace = true, optional = true}
+anyhow = {workspace = true, optional = true}
 bytemuck = {workspace = true}
 cubecl = {version = "=0.11.1"}
 pollster = "0.4"
 
 [dev-dependencies]
-poulpy-cpu-portable = {workspace = true, features = ["enable-test-suite"]}
+# Shared test helpers and the portable comparison backends.
+poulpy-cpu-portable = {workspace = true, features = ["enable-core", "enable-test-suite"]}
 poulpy-core = {workspace = true}
+poulpy-ckks = {workspace = true, features = ["test-utils"]}
+poulpy-bench = {workspace = true}
+criterion = {workspace = true}
 once_cell = {workspace = true}
+
+[[bench]]
+name = "standard"
+harness = false
+required-features = ["enable-metal", "enable-ckks"]
+
+[[bench]]
+name = "bootstrapping"
+harness = false
+required-features = ["enable-metal", "enable-ckks"]

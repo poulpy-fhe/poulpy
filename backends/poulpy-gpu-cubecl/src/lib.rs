@@ -6,6 +6,10 @@
 //! type, so several runtimes can run side by side in one process.
 
 mod backend;
+#[cfg(feature = "enable-ckks")]
+mod ckks_impl;
+#[cfg(feature = "enable-core")]
+mod core_impl;
 mod hal_impl;
 mod module;
 mod ntt4x30;
