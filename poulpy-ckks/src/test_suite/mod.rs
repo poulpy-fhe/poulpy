@@ -6,13 +6,14 @@
 //! through [`ckks_backend_test_suite!`]. The [`parity`] suite compares a
 //! caller-selected pair through production operation dispatch.
 
+use crate::{Scale, ckks_log_delta};
 use poulpy_core::layouts::{
     Base2K, Degree, Dnum, Dsize, GGLWELayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWESwitchingKeyLayout, GLWETensorKeyLayout,
     Rank, TorusPrecision,
 };
 
 use crate::SlotsKind;
-use crate::{CKKSLayout, CKKSMeta};
+use crate::{CKKSLayout, GLWEPlaintextMeta};
 
 /// Shared CKKS parameter set for test instantiation.
 #[derive(Clone, Copy)]
@@ -20,9 +21,9 @@ pub struct CKKSTestParams {
     pub n: usize,
     pub base2k: usize,
     pub k: usize,
-    /// Plaintext precision metadata (`log_delta`, `log_sparsity`). The effective
+    /// Plaintext precision metadata (`log_delta`, `slots`). The effective
     /// torus width is `log_delta + prec_log_budget`; see [`Self::prec`].
-    pub prec_meta: CKKSMeta,
+    pub prec_meta: GLWEPlaintextMeta,
     /// Plaintext budget bits, i.e. `prec.k - prec_meta.log_delta`.
     pub prec_log_budget: usize,
     pub hw: usize,
@@ -41,7 +42,7 @@ impl CKKSTestParams {
             glwe_layout: GLWELayout {
                 n: Degree(self.n as u32),
                 base2k: Base2K(self.base2k as u32),
-                k: TorusPrecision((self.prec_meta.log_delta + self.prec_log_budget) as u32),
+                k: TorusPrecision((ckks_log_delta(&self.prec_meta) + self.prec_log_budget) as u32),
                 rank: Rank(self.rank as u32),
             },
             meta: self.prec_meta,
@@ -119,10 +120,10 @@ pub const BASE52_PARAMS_F64: CKKSTestParams = CKKSTestParams {
     n: 256,
     base2k: 52,
     k: 8 * 40,
-    prec_meta: CKKSMeta {
-        log_sparsity: 0,
-        log_delta: 40,
+    prec_meta: GLWEPlaintextMeta {
+        scale: Scale::Log(40),
         slots: SlotsKind::Complex,
+        log_sparsity: 0,
     },
     prec_log_budget: 30,
     hw: 192,
@@ -135,10 +136,10 @@ pub const BASE19_PARAMS_F64: CKKSTestParams = CKKSTestParams {
     n: 256,
     base2k: 19,
     k: 8 * 19,
-    prec_meta: CKKSMeta {
-        log_sparsity: 0,
-        log_delta: 30,
+    prec_meta: GLWEPlaintextMeta {
+        scale: Scale::Log(30),
         slots: SlotsKind::Complex,
+        log_sparsity: 0,
     },
     prec_log_budget: 10,
     hw: 192,
@@ -151,10 +152,10 @@ pub const BASE52_PARAMS_QUAD: CKKSTestParams = CKKSTestParams {
     n: 256,
     base2k: 52,
     k: 8 * 80,
-    prec_meta: CKKSMeta {
-        log_sparsity: 0,
-        log_delta: 80,
+    prec_meta: GLWEPlaintextMeta {
+        scale: Scale::Log(80),
         slots: SlotsKind::Complex,
+        log_sparsity: 0,
     },
     prec_log_budget: 30,
     hw: 192,

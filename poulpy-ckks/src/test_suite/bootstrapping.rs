@@ -26,6 +26,7 @@
 //! measures ~28 bits across the suite configurations; the assertions enforce
 //! the `MIN_AVG_LOG2_PREC` regression floor a few bits under that.
 
+use crate::Scale;
 use crate::api::CKKSEncodingOps;
 use crate::layouts::CKKSCiphertextOwned;
 use crate::layouts::CKKSPlaintextOwned;
@@ -42,7 +43,7 @@ use poulpy_hal::{
 
 use crate::SlotsKind;
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos,
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos,
     api::{
         CKKSAddOps, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTOps, CKKSDecryptOps, CKKSEvalModOps, CKKSPow2Ops, CKKSSubOps,
     },
@@ -191,10 +192,10 @@ where
         n,
         base2k,
         k: k_boot,
-        prec_meta: CKKSMeta {
-            log_sparsity: 0,
-            log_delta,
+        prec_meta: GLWEPlaintextMeta {
+            scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,
+            log_sparsity: 0,
         },
         prec_log_budget: 8,
         hw: 192,
@@ -496,10 +497,10 @@ where
         n,
         base2k,
         k: k_boot,
-        prec_meta: CKKSMeta {
-            log_sparsity: 0,
-            log_delta,
+        prec_meta: GLWEPlaintextMeta {
+            scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,
+            log_sparsity: 0,
         },
         prec_log_budget: 8,
         hw: 192,
@@ -799,10 +800,10 @@ where
         n,
         base2k,
         k: k_boot,
-        prec_meta: CKKSMeta {
-            log_sparsity: 0,
-            log_delta,
+        prec_meta: GLWEPlaintextMeta {
+            scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,
+            log_sparsity: 0,
         },
         prec_log_budget: 8,
         hw: 192,

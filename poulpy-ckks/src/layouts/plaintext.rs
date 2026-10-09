@@ -7,31 +7,32 @@ use std::{
 
 use anyhow::{Context, Result};
 use poulpy_core::layouts::{
-    BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEPlaintext, GLWEPlaintextReborrowBackendMut, GLWEPlaintextReborrowBackendRef,
-    GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetBSGSMeta, SetBase2k, SetK, TorusPrecision,
+    BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEPlaintext, GLWEPlaintextInfos, GLWEPlaintextMeta,
+    GLWEPlaintextReborrowBackendMut, GLWEPlaintextReborrowBackendRef, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
+    SetBSGSMeta, SetBase2k, SetGLWEPlaintextInfos, SetK, TorusPrecision,
 };
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Ring, ZnxWord};
 
-use crate::{CKKSInfos, CKKSMeta, SetCKKSInfos};
+use crate::{CKKSInfos, SetCKKSInfos, ckks_log_delta};
 
 use super::CKKSScalar;
 
 /// CKKS plaintext in the ZNX (torus) domain.
 pub struct CKKSPlaintext<D: Data, W: ZnxWord, R: Ring> {
-    /// Raw GLWE plaintext limb storage.
+    /// Raw GLWE plaintext limb storage; its plaintext metadata holds the CKKS
+    /// scale and slot kind.
     pub(crate) inner: GLWEPlaintext<D, W>,
-    /// Semantic CKKS metadata associated with `inner`.
-    pub(crate) meta: CKKSMeta,
     _ring: std::marker::PhantomData<R>,
 }
 
 impl<D: Data, W: ZnxWord, R: Ring> CKKSPlaintext<D, W, R> {
-    pub(crate) fn from_inner(inner: GLWEPlaintext<D, W>, meta: CKKSMeta) -> Self {
-        Self {
+    pub(crate) fn from_inner(inner: GLWEPlaintext<D, W>, meta: GLWEPlaintextMeta) -> Self {
+        let mut pt = Self {
             inner,
-            meta,
             _ring: std::marker::PhantomData,
-        }
+        };
+        pt.set_meta(meta);
+        pt
     }
 
     /// Rebuilds this backend-owned plaintext as a host-owned [`CKKSPlaintext<AlignedBuf, W, R>`].
@@ -39,7 +40,10 @@ impl<D: Data, W: ZnxWord, R: Ring> CKKSPlaintext<D, W, R> {
     where
         BE: Backend<OwnedBuf = D, ZnxWord = W>,
     {
-        CKKSPlaintext::from_inner(self.inner.to_host_owned::<BE>(), self.meta)
+        CKKSPlaintext {
+            inner: self.inner.to_host_owned::<BE>(),
+            _ring: std::marker::PhantomData,
+        }
     }
 
     /// Formats this backend-owned plaintext through the existing host [`fmt::Display`] implementation.
@@ -55,17 +59,17 @@ impl<D: Data, W: ZnxWord, R: Ring> CKKSPlaintext<D, W, R> {
     ///
     /// This is intended for callers that build plaintext buffers manually.
     /// Normal CKKS operations update metadata themselves.
-    pub fn set_meta_checked(&mut self, meta: CKKSMeta) -> Result<()> {
+    pub fn set_meta_checked(&mut self, meta: GLWEPlaintextMeta) -> Result<()> {
         anyhow::ensure!(
-            self.k().as_usize() <= self.max_k().as_usize() && meta.log_delta <= self.k().as_usize(),
+            self.k().as_usize() <= self.max_k().as_usize() && ckks_log_delta(&meta) <= self.k().as_usize(),
             crate::CKKSCompositionError::LimbReallocationShrinksBelowMetadata {
                 max_k: self.max_k().as_usize(),
-                log_delta: meta.log_delta,
+                log_delta: ckks_log_delta(&meta),
                 base2k: self.base2k().as_usize(),
                 requested_limbs: self.max_size(),
             }
         );
-        self.meta = meta;
+        self.set_meta(meta);
         Ok(())
     }
 }
@@ -184,16 +188,6 @@ impl<D: Data, W: ZnxWord, R: Ring> GLWEInfos for CKKSPlaintext<D, W, R> {
     }
 }
 
-impl<D: Data, W: ZnxWord, R: Ring> SetCKKSInfos for CKKSPlaintext<D, W, R> {
-    fn set_meta(&mut self, meta: CKKSMeta) {
-        self.meta = meta;
-    }
-
-    fn set_k(&mut self, k: TorusPrecision) {
-        poulpy_core::layouts::SetK::set_k(&mut self.inner, k);
-    }
-}
-
 impl<D: Data, W: ZnxWord, R: Ring> SetK for CKKSPlaintext<D, W, R> {
     fn set_k(&mut self, k: TorusPrecision) {
         SetK::set_k(&mut self.inner, k);
@@ -221,9 +215,15 @@ impl<D: HostDataRef, W: ZnxWord, R: Ring> fmt::Display for CKKSPlaintext<D, W, R
     }
 }
 
-impl<D: Data, W: ZnxWord, R: Ring> CKKSInfos for CKKSPlaintext<D, W, R> {
-    fn meta(&self) -> CKKSMeta {
-        self.meta
+impl<D: Data, W: ZnxWord, R: Ring> GLWEPlaintextInfos for CKKSPlaintext<D, W, R> {
+    fn plaintext_meta(&self) -> Option<GLWEPlaintextMeta> {
+        self.inner.plaintext_meta()
+    }
+}
+
+impl<D: Data, W: ZnxWord, R: Ring> SetGLWEPlaintextInfos for CKKSPlaintext<D, W, R> {
+    fn set_plaintext_meta(&mut self, meta: Option<GLWEPlaintextMeta>) {
+        self.inner.set_plaintext_meta(meta)
     }
 }
 
@@ -344,8 +344,8 @@ impl<F: CKKSScalar, D: HostDataMut + HostDataRef, R: Ring> CKKSPlaintextVecHostC
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::SlotsKind;
     use crate::layouts::CKKSModuleAlloc;
+    use crate::{Scale, SlotsKind};
     use poulpy_hal::layouts::{Backend, HostBytesBackend, Module};
 
     #[test]
@@ -373,10 +373,10 @@ mod tests {
     #[test]
     fn plaintext_coeff_pack_allocates_requested_degree() {
         let module = Module::<HostBytesBackend>::new(16);
-        let prec = CKKSMeta {
-            log_sparsity: 0,
-            log_delta: 40,
+        let prec = GLWEPlaintextMeta {
+            scale: Scale::Log(40),
             slots: SlotsKind::Complex,
+            log_sparsity: 0,
         };
         let base2k: Base2K = 52usize.into();
 
@@ -395,10 +395,10 @@ mod tests {
     fn sparse_coeff_pack_roundtrip_and_layout() {
         let n = 16usize;
         let module = Module::<HostBytesBackend>::new(n as u64);
-        let prec = CKKSMeta {
-            log_sparsity: 0,
-            log_delta: 40,
+        let prec = GLWEPlaintextMeta {
+            scale: Scale::Log(40),
             slots: SlotsKind::Complex,
+            log_sparsity: 0,
         };
         let base2k: Base2K = 50usize.into();
 

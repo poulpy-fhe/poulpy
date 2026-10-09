@@ -5,7 +5,7 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::GLWEToBackendRef;
 
-use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub, ckks_unary_exact};
+use crate::{CKKSInfos, Scale, SetCKKSInfos, checked_log_budget_sub, ckks_log_delta, ckks_unary_exact};
 
 pub trait CKKSPow2Reference<BE: Backend> {
     fn ckks_mul_pow2_tmp_bytes_reference(&self, res_size: usize) -> usize
@@ -89,7 +89,7 @@ pub trait CKKSPow2Reference<BE: Backend> {
         // canonical flag, unchanged.
         checked_log_budget_sub("div_pow2_assign", dst.log_budget(), bits)?;
         let mut meta = dst.meta();
-        meta.log_delta += bits;
+        meta.scale = Scale::Log(ckks_log_delta(&meta) + bits);
         dst.set_meta(meta);
         dst.set_noise(None);
         Ok(())

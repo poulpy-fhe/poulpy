@@ -1,7 +1,7 @@
 //! Encryption parity given identical realized draws. The caller selects both
 //! backends and, when their streams differ, installs a controlled-sampling adapter.
 use super::{arithmetic::layout, helpers::*};
-use crate::{CKKSInfos, SetCKKSInfos, SlotsKind, oep::CKKSEncryptionImpl, test_suite::CKKSTestParams};
+use crate::{CKKSInfos, SlotsKind, oep::CKKSEncryptionImpl, test_suite::CKKSTestParams};
 use poulpy_core::{Distribution, GLWEMaskFill, GetDistributionMut, layouts::*};
 use poulpy_hal::{
     layouts::{Backend, Module},
@@ -26,7 +26,9 @@ where
         for sparse in [0, 2] {
             for slots in [SlotsKind::Real, SlotsKind::Complex] {
                 let ct_layout = layout(params, rank, 4 * params.base2k + 3, params.base2k, sparse, slots);
-                let pt_layout = layout(params, 0, params.base2k + 3, params.base2k, sparse, slots);
+                // A compact plaintext: encryption reads its sparsity off the degrees.
+                let mut pt_layout = layout(params, 0, params.base2k + 3, params.base2k, sparse, slots);
+                pt_layout.glwe_layout.n = (params.n >> sparse).into();
                 let pt = fixture_plaintext(module, &pt_layout, 67);
                 let before = snapshot::<B, _>(&pt);
 
@@ -56,7 +58,7 @@ where
                 // precision: extraction still writes every allocated limb.
                 let wide_layout = layout(params, 0, 16 * params.base2k, params.base2k, sparse, slots);
                 let mut out = fixture_plaintext(module, &wide_layout, 97);
-                SetCKKSInfos::set_k(&mut out, (2 * params.base2k).into());
+                SetK::set_k(&mut out, (2 * params.base2k).into());
                 assert!(out.max_size() > ct.max_size());
                 let before_meta = out.meta();
                 with_scratch::<B, _>(B::ckks_decrypt_tmp_bytes_impl(module, &out, &ct), |scratch| {

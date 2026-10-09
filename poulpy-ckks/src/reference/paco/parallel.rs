@@ -35,7 +35,7 @@ use super::{
 };
 use crate::layouts::paco::{context::PaCoContext, keyset::PaCoKeys};
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSMeta,
+    CKKSCtBounds, SetCKKSInfos,
     api::{
         CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSRotateOps, CKKSSubOps, PaCoScalar,
     },
@@ -120,13 +120,8 @@ fn set_recombined_sparsity<BE: Backend + CKKSPaCoCoeffEncodingImpl, F: PaCoScala
         .context("PaCo kappa*C overflows usize")?;
     let gap = context.plan().n() / active;
     ckks_ensure!(gap.is_power_of_two(), "PaCo recombination gap {gap} is not a power of two");
-    output
-        .set_meta_checked(CKKSMeta {
-            log_delta: output.log_delta(),
-            log_sparsity: gap.trailing_zeros() as usize,
-            slots: output.slots(),
-        })
-        .map_err(Into::into)
+    output.set_log_sparsity(gap.trailing_zeros() as usize);
+    Ok(())
 }
 
 /// Sequential direct-mode driver shared by the public operation delegate.

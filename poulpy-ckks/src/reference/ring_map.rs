@@ -11,7 +11,7 @@ use poulpy_core::{
 use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Module, ScratchArena, Standard};
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos, SlotsKind,
+    CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::CKKSCIRingMapOps,
     error::checked_log_budget_sub,
     layouts::{CKKSCiphertext, ScratchArenaTakeCKKS},
@@ -99,7 +99,7 @@ where
     validate_ring_map(module, src, dst)?;
     ensure_holds(dst, src.k().as_usize())?;
     crate::ckks_ensure!(dst.base2k() == src.base2k(), "embed keeps the radix of its input");
-    dst.set_meta(CKKSMeta {
+    dst.set_meta(GLWEPlaintextMeta {
         slots: SlotsKind::Real,
         ..src.meta()
     });
@@ -136,7 +136,7 @@ where
     // on a power-of-two modulus that bit is the cost of the halving.
     let log_budget = checked_log_budget_sub("ckks_ci_trace", src.log_budget(), 1)?;
     ensure_holds(dst, src.k().as_usize() - 1)?;
-    dst.set_meta(CKKSMeta {
+    dst.set_meta(GLWEPlaintextMeta {
         slots: SlotsKind::Real,
         ..src.meta()
     });

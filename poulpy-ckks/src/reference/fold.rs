@@ -14,7 +14,7 @@ use poulpy_core::{
     GLWEAdd, GLWEAutomorphism, GLWECIEmbed, GLWECITrace, GLWEKeyswitch, GLWENormalize, GLWERotate, GLWEShift, GLWESub, GLWEZero,
     layouts::{
         Base2K, Degree, GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey,
-        GetGaloisElement, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision, prepared::GGLWEPreparedToBackendRef,
+        GetGaloisElement, LWEInfos, ModuleCoreAlloc, Rank, SetK, TorusPrecision, prepared::GGLWEPreparedToBackendRef,
     },
 };
 use poulpy_hal::{
@@ -23,7 +23,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos, SlotsKind,
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSSubOps},
     layouts::{
         CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSModuleAlloc, CKKSRingCiphertext,
@@ -49,7 +49,7 @@ pub(crate) trait FoldRing<BE: Backend>: Ring {
     fn packed_degree(n: usize) -> usize;
 
     /// Metadata of the standard ciphertext that represents an input labeled `meta`.
-    fn packed_meta(meta: CKKSMeta) -> CKKSMeta;
+    fn packed_meta(meta: GLWEPlaintextMeta) -> GLWEPlaintextMeta;
 
     /// Writes `src` into `dst`, a standard ciphertext of the packed degree, canonical at
     /// its width.
@@ -94,7 +94,7 @@ where
         let mut units = Vec::new();
         let mut i = 0;
         while i < ins.len() {
-            let paired = i + 1 < ins.len() && ins[i].slots() == SlotsKind::Real && ins[i + 1].slots() == SlotsKind::Real;
+            let paired = i + 1 < ins.len() && ins[i].slots().is_real() && ins[i + 1].slots().is_real();
             units.push((i, paired.then_some(i + 1)));
             i += 1 + usize::from(paired);
         }
@@ -107,7 +107,7 @@ where
         n
     }
 
-    fn packed_meta(meta: CKKSMeta) -> CKKSMeta {
+    fn packed_meta(meta: GLWEPlaintextMeta) -> GLWEPlaintextMeta {
         meta
     }
 
@@ -192,8 +192,8 @@ where
         2 * n
     }
 
-    fn packed_meta(meta: CKKSMeta) -> CKKSMeta {
-        CKKSMeta {
+    fn packed_meta(meta: GLWEPlaintextMeta) -> GLWEPlaintextMeta {
+        GLWEPlaintextMeta {
             slots: SlotsKind::Real,
             ..meta
         }
@@ -232,7 +232,10 @@ where
         for (out, src) in outs.iter_mut().zip([part, &rotated]) {
             ckks_ci_trace_keyless(module, out, src, scratch)?;
             // Labeled at the input scale like standard outputs, keeping the trace's width.
-            out.set_meta(CKKSMeta { log_delta, ..out.meta() });
+            out.set_meta(GLWEPlaintextMeta {
+                scale: Scale::Log(log_delta),
+                ..out.meta()
+            });
         }
         Ok(())
     }
@@ -285,7 +288,7 @@ where
         // conjugate-invariant ones a trace.
         let part = CKKSLayout {
             glwe_layout: layout(degree.as_usize(), ct_out.base2k(), ct_out.k()),
-            meta: CKKSMeta {
+            meta: GLWEPlaintextMeta {
                 log_sparsity: ct_in.log_sparsity(),
                 ..ct_out.meta()
             },
@@ -372,14 +375,14 @@ where
             return 0;
         };
         let g = degree.as_usize() / R::packed_degree(input.n().as_usize());
-        R::units(ins).len().div_ceil((g << sparse_log::<BE, R>(input)).max(1))
+        R::units(ins).len().div_ceil((g << input.log_sparsity()).max(1))
     }
 
     /// `−1` when real inputs pair and split with the conjugation key, and one element
     /// per level of sparsity, at the degree of the packed parts.
     fn ckks_unfold_galois_elements_reference<C: CKKSCtBounds>(&self, ct_in: &C) -> Vec<i64> {
-        let pairs = R::CONJUGATE_PAIRS && ct_in.slots() == SlotsKind::Real;
-        let log_g = R::packed_meta(ct_in.meta()).log_sparsity;
+        let pairs = R::CONJUGATE_PAIRS && ct_in.slots().is_real();
+        let log_g = ct_in.log_sparsity();
         pairs
             .then_some(-1)
             .into_iter()
@@ -407,7 +410,7 @@ where
         let units = R::units(ins);
         // A group fills every coefficient: `g` positions of the bootstrap degree, each
         // holding `2^log_g` sparse parts.
-        let span = g << sparse_log::<BE, R>(input);
+        let span = g << input.log_sparsity();
         crate::ckks_ensure!(
             folded.len() == units.len().div_ceil(span),
             "the batch folds into {} ciphertexts, got {}",
@@ -431,9 +434,6 @@ where
             let mut meta = parts[0].meta();
             if span > 1 || !imags.is_empty() {
                 meta.slots = SlotsKind::Complex;
-            }
-            if span > 1 {
-                meta.log_sparsity = 0;
             }
             // The group shares the input secret, so it is merged before one inbound switch.
             let mut packed = module.ckks_ciphertext_alloc_from_glwe_infos(&layout(degree, input.base2k(), input.k()));
@@ -460,6 +460,8 @@ where
                     switch_ring(module, dst, &packed);
                 }
             }
+            // Merged by raw limb copies: merging clears sparsity, a lone part keeps its own.
+            dst.set_log_sparsity(if span > 1 { 0 } else { parts[0].log_sparsity() });
         }
         Ok(())
     }
@@ -480,8 +482,7 @@ where
         let degree = folded_degree(folded)?;
         let g = validate_fold(module, outs, degree, outbound.is_some())?;
         let units = R::units(outs);
-        let log_g = sparse_log::<BE, R>(&outs[0]);
-        let (n, log_delta, log_sparsity) = (
+        let (n, log_delta, log_g) = (
             R::packed_degree(outs[0].n().as_usize()),
             outs[0].log_delta(),
             outs[0].log_sparsity(),
@@ -553,14 +554,12 @@ where
                 converted.set_meta(src.meta());
                 &converted
             };
-            let meta = CKKSMeta {
-                log_sparsity,
-                ..src.meta()
-            };
+            let meta = src.meta();
             for t in 0..g.min(group.len()) {
                 let mut part = module.ckks_ciphertext_alloc_from_glwe_infos(&layout(n, src.base2k(), src.k()));
                 extract(module, &mut part, src, t);
                 part.set_meta(meta);
+                part.set_log_sparsity(log_g);
                 let parts = if log_g > 0 {
                     split_sparse(module, &part, log_g, &keys, scratch)?
                 } else {
@@ -577,16 +576,6 @@ where
         }
         Ok(())
     }
-}
-
-/// Log of the number of sparse parts merged per position: the sparsity of the
-/// packed parts.
-fn sparse_log<BE, R>(input: &CKKSRingCiphertext<BE, R>) -> usize
-where
-    BE: Backend,
-    R: FoldRing<BE>,
-{
-    R::packed_meta(input.meta()).log_sparsity
 }
 
 /// Elements that split sparse parts of degree `n` merged `2^log_g` at a time, from
@@ -697,7 +686,7 @@ where
     );
     let n = R::packed_degree(head.n().as_usize());
     crate::ckks_ensure!(
-        R::packed_meta(head.meta()).log_sparsity < n.ilog2() as usize,
+        head.log_sparsity() < n.ilog2() as usize,
         "fold ciphertext sparsity exceeds its packed degree"
     );
     crate::ckks_ensure!(

@@ -1,11 +1,13 @@
 use poulpy_core::GLWECopy;
-use poulpy_core::layouts::{Base2K, Degree, GGLWEInfos, GLWEInfos, LWEInfos, Rank, TorusPrecision};
+use poulpy_core::layouts::{
+    Base2K, Degree, GGLWEInfos, GLWEInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, LWEInfos, Rank, Scale, TorusPrecision,
+};
 use poulpy_hal::api::{CnvPVecBytesOf, Convolution, VecZnxBigNormalizeTmpBytes, VecZnxRshTmpBytes};
 use poulpy_hal::layouts::{Backend, Module, PrepareHint};
 
 use crate::SlotsKind;
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSMeta,
+    CKKSCtBounds,
     api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSSubOps, PolynomialInputTransform},
     layouts::eval_mod::{EvalMod, EvalModBsgs},
 };
@@ -17,7 +19,7 @@ struct EvalModWorkCtInfos {
     rank: Rank,
     max_size: usize,
     k: TorusPrecision,
-    meta: CKKSMeta,
+    meta: GLWEPlaintextMeta,
 }
 
 impl LWEInfos for EvalModWorkCtInfos {
@@ -44,9 +46,9 @@ impl GLWEInfos for EvalModWorkCtInfos {
     }
 }
 
-impl CKKSInfos for EvalModWorkCtInfos {
-    fn meta(&self) -> CKKSMeta {
-        self.meta
+impl GLWEPlaintextInfos for EvalModWorkCtInfos {
+    fn plaintext_meta(&self) -> Option<GLWEPlaintextMeta> {
+        Some(self.meta)
     }
 }
 
@@ -80,10 +82,10 @@ where
         max_size: work_k.div_ceil(ct.base2k().as_usize()).max(1),
         // Total torus width = budget carried into eval_mod + the plan scale.
         k: (ct.log_budget() + params.plan.f_mod_log_delta).into(),
-        meta: CKKSMeta {
-            log_sparsity: ct.log_sparsity(),
-            log_delta: params.plan.f_mod_log_delta,
+        meta: GLWEPlaintextMeta {
+            scale: Scale::Log(params.plan.f_mod_log_delta),
             slots: SlotsKind::Complex,
+            log_sparsity: ct.log_sparsity(),
         },
     };
 

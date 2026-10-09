@@ -387,6 +387,7 @@ impl<D: HostDataRef, W: ZnxWord> GGSW<D, W> {
             base2k: self.base2k,
             k: self.k(),
             canonical: true,
+            plaintext_meta: None,
             data,
         }
     }
@@ -405,6 +406,7 @@ impl<BE: Backend> GGSWAtBackendRef<BE> for GGSW<BE::OwnedBuf, BE::ZnxWord> {
             base2k: self.base2k,
             k: self.k(),
             canonical: true,
+            plaintext_meta: None,
             data,
         }
     }
@@ -421,6 +423,7 @@ pub(crate) fn ggsw_at_backend_ref_from_ref<'a, 'b, BE: Backend>(
         base2k: ggsw.base2k,
         k: ggsw.k(),
         canonical: true,
+        plaintext_meta: None,
         data,
     }
 }
@@ -448,6 +451,7 @@ pub(crate) fn ggsw_at_backend_ref_from_mut<'a, 'b, BE: Backend>(
         base2k: ggsw.base2k,
         k: ggsw.k(),
         canonical: true,
+        plaintext_meta: None,
         data,
     }
 }
@@ -463,6 +467,7 @@ impl<D: HostDataMut, W: ZnxWord> GGSW<D, W> {
             base2k,
             k,
             canonical: true,
+            plaintext_meta: None,
             data,
         }
     }
@@ -486,6 +491,7 @@ impl<BE: Backend> GGSWAtBackendMut<BE> for GGSW<BE::OwnedBuf, BE::ZnxWord> {
             base2k,
             k,
             canonical: true,
+            plaintext_meta: None,
             data,
         }
     }
@@ -505,6 +511,7 @@ pub(crate) fn ggsw_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
         base2k,
         k,
         canonical: true,
+        plaintext_meta: None,
         data,
     }
 }

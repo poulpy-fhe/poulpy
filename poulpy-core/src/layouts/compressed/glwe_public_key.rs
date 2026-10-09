@@ -314,6 +314,7 @@ impl<'a, BE: Backend + 'a> GLWEPublicKeyCompressedBackendMut<'a, BE> {
             k,
             rank,
             seed,
+            plaintext_meta: None,
         })
     }
 }
@@ -340,6 +341,7 @@ fn entry<D: Data, E: Data, W: ZnxWord>(data: VecZnx<D, W>, pk: &GLWEPublicKeyCom
         k: pk.k,
         rank: pk.rank(),
         seed: pk.seed[l],
+        plaintext_meta: None,
     }
 }
 

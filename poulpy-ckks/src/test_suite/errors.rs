@@ -85,7 +85,7 @@ pub fn test_dot_product_overflow_guard<BE, F, E>(
     // Allocate ciphertexts with enormous base2k=63 to force the overflow guard.
     // The guard is metadata-only so data content does not matter.
     let mut dst = module.ckks_ciphertext_alloc(Base2K(63), TorusPrecision(64));
-    dst.meta = params.prec().meta;
+    dst.set_meta(params.prec().meta);
     let a = module.ckks_ciphertext_alloc(Base2K(63), TorusPrecision(64));
     let b = module.ckks_ciphertext_alloc(Base2K(63), TorusPrecision(64));
     let a_refs = vec![&a, &a];

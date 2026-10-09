@@ -127,6 +127,7 @@ where
             base2k: self.base2k,
             k: self.k,
             canonical: true,
+            plaintext_meta: None,
             data: self.data.to_backend_ref(),
         }
     }
@@ -142,6 +143,7 @@ where
             base2k: self.base2k,
             k: self.k,
             canonical: true,
+            plaintext_meta: None,
             data: self.data.to_backend_ref(),
         }
     }
@@ -159,6 +161,7 @@ where
             base2k: self.base2k,
             k: self.k,
             canonical: true,
+            plaintext_meta: None,
             data: self.data.to_backend_mut(),
         }
     }
@@ -173,6 +176,7 @@ impl<BE: Backend> GLWEToBackendRef<BE> for &mut GLWETensor<BE::BufMut<'_>, BE::Z
             base2k: self.base2k,
             k: self.k,
             canonical: true,
+            plaintext_meta: None,
             data: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE>(&self.data),
         }
     }
@@ -187,6 +191,7 @@ impl<BE: Backend> GLWEToBackendMut<BE> for &mut GLWETensor<BE::BufMut<'_>, BE::Z
             base2k: self.base2k,
             k: self.k,
             canonical: true,
+            plaintext_meta: None,
             data: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE>(&mut self.data),
         }
     }

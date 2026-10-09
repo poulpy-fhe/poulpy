@@ -12,6 +12,7 @@
 //! to the encoding or the setup math, on one backend, then run every backend
 //! without the variable to check that they agree, and review the diff.
 
+use crate::Scale;
 use std::{
     collections::BTreeMap,
     fs::OpenOptions,
@@ -25,7 +26,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSMeta, CKKSModuleInfos, CoeffsMeta, SetCKKSInfos, SlotsKind,
+    CKKSModuleInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::{CKKSEncodingHostOps, CKKSEncodingOps},
     approximation::{Parity, RemezOptions, minimax, sign_composite_coeffs},
     layouts::{
@@ -170,10 +171,10 @@ where
 
         for log_delta in [20, 40, 100] {
             let mut pt = module.ckks_pt_vec_alloc(Base2K(19), TorusPrecision(log_delta as u32 + 20));
-            pt.set_meta(CKKSMeta {
-                log_delta,
-                log_sparsity: (max_slots / slots).ilog2() as usize,
+            pt.set_meta(GLWEPlaintextMeta {
+                scale: Scale::Log(log_delta),
                 slots: SlotsKind::Complex,
+                log_sparsity: 0,
             });
             module
                 .ckks_encode_reim_into(&mut pt, &re, &im, &mut scratch.borrow())

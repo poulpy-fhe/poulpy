@@ -16,6 +16,7 @@
 //! `ckks_poly2.rs`.
 
 use anyhow::Result;
+use poulpy_ckks::Scale;
 use poulpy_ckks::SlotsKind;
 use poulpy_ckks::prelude::*;
 use poulpy_core::layouts::GLWESecretSampling;
@@ -81,10 +82,10 @@ fn main() -> Result<()> {
 
     // One arena sized for every op this example runs.
     let ct_infos = module.ckks_ciphertext_alloc_from_glwe_infos(&glwe_layout());
-    let meta = CKKSMeta {
-        log_delta: LOG_DELTA,
-        log_sparsity: 0,
+    let meta = GLWEPlaintextMeta {
+        scale: Scale::Log(LOG_DELTA),
         slots: SlotsKind::Complex,
+        log_sparsity: 0,
     };
     let mut scratch = ScratchOwned::<BackendImpl>::alloc(module.ckks_all_ops_tmp_bytes(&ct_infos, &tsk_layout(), &ct_infos));
 

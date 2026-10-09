@@ -1,5 +1,6 @@
 //! SHIP bootstrapping tests (host replica, HMuxRot primitive, end-to-end).
 
+use crate::ckks_log_delta;
 use std::f64::consts::TAU;
 
 use poulpy_core::{
@@ -50,7 +51,7 @@ fn ship_suite_plan(params: &CKKSTestParams) -> ShipPlan {
         6,
         // ~14 bits of CKKS noise accumulate below log_delta_work; 30+ keeps
         // the gap model (~12.7 bits for gamma = 2^6) dominant.
-        params.prec_meta.log_delta.min(40),
+        ckks_log_delta(&params.prec_meta).min(40),
         2 * params.base2k,
         SPARSE_HW,
         window,

@@ -3,7 +3,9 @@ use poulpy_hal::layouts::{
 };
 use poulpy_hal::{AlignedBuf, alloc_aligned};
 
-use crate::layouts::{Base2K, Degree, LWEInfos, Rank, SetBase2k, SetK, TorusPrecision};
+use crate::layouts::{
+    Base2K, Degree, GLWEPlaintextInfos, GLWEPlaintextMeta, LWEInfos, Rank, SetBase2k, SetGLWEPlaintextInfos, SetK, TorusPrecision,
+};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use poulpy_hal::layouts::ZnxWord;
 use std::fmt;
@@ -105,6 +107,11 @@ impl GLWEInfos for GLWELayout {
 /// Only a `GLWE` stores it: the GLWE views of GGLWE and GGSW rows, tensors and
 /// plaintexts report it set and drop a clear, so their data must stay canonical;
 /// normalize after writing a flag-clearing result into one.
+///
+/// # Plaintext metadata
+///
+/// [`GLWEPlaintextMeta`] records what the plaintext is, for the scheme that
+/// manages it; core operations never read or write it.
 #[derive(Clone)]
 pub struct GLWE<D: Data, W: ZnxWord> {
     pub(crate) noise: Option<crate::ComponentNoise>,
@@ -112,6 +119,7 @@ pub struct GLWE<D: Data, W: ZnxWord> {
     pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
     pub(crate) canonical: bool,
+    pub(crate) plaintext_meta: Option<GLWEPlaintextMeta>,
 }
 
 impl<D: Data, W: ZnxWord> PartialEq for GLWE<D, W>
@@ -119,7 +127,11 @@ where
     VecZnx<D, W>: PartialEq,
 {
     fn eq(&self, other: &Self) -> bool {
-        self.noise == other.noise && self.data == other.data && self.k == other.k && self.base2k == other.base2k
+        self.noise == other.noise
+            && self.data == other.data
+            && self.k == other.k
+            && self.base2k == other.base2k
+            && self.plaintext_meta == other.plaintext_meta
     }
 }
 
@@ -204,6 +216,18 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWE<D, W> {
     }
 }
 
+impl<D: Data, W: ZnxWord> GLWEPlaintextInfos for GLWE<D, W> {
+    fn plaintext_meta(&self) -> Option<GLWEPlaintextMeta> {
+        self.plaintext_meta
+    }
+}
+
+impl<D: Data, W: ZnxWord> SetGLWEPlaintextInfos for GLWE<D, W> {
+    fn set_plaintext_meta(&mut self, meta: Option<GLWEPlaintextMeta>) {
+        self.plaintext_meta = meta
+    }
+}
+
 impl<D: Data, W: ZnxWord> GLWEInfos for GLWE<D, W> {
     fn rank(&self) -> Rank {
         Rank(self.data.cols() as u32 - 1)
@@ -219,6 +243,7 @@ impl<D: HostDataRef, W: ZnxWord> ToOwnedDeep for GLWE<D, W> {
             base2k: self.base2k,
             k: self.k,
             canonical: self.canonical,
+            plaintext_meta: self.plaintext_meta,
         }
     }
 }
@@ -235,6 +260,7 @@ impl<D: Data, W: ZnxWord> GLWE<D, W> {
             base2k: self.base2k,
             k: self.k,
             canonical: self.canonical,
+            plaintext_meta: self.plaintext_meta,
         }
     }
 
@@ -261,6 +287,7 @@ impl<D: Data, W: ZnxWord> GLWE<D, W> {
             base2k: self.base2k,
             k: self.k,
             canonical: self.canonical,
+            plaintext_meta: self.plaintext_meta,
         }
     }
 }
@@ -309,6 +336,7 @@ impl<W: ZnxWord> GLWE<AlignedBuf, W> {
             base2k,
             k,
             canonical: true,
+            plaintext_meta: None,
         }
     }
 
@@ -338,11 +366,13 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWE<D, W> {
         let components = self.data.cols();
         let noise = crate::ComponentNoise::read_optional(reader, components)?;
         let base2k = Base2K(reader.read_u32::<LittleEndian>()?);
+        let plaintext_meta = GLWEPlaintextMeta::read_from(reader, self.data.n())?;
         crate::layouts::read_vec_znx_with_shape(&mut self.data, reader, None, components)?;
         crate::layouts::validate_noise_components(noise.as_ref(), self.data.cols())?;
         self.set_base2k(base2k);
         self.noise = noise;
         self.canonical = true;
+        self.plaintext_meta = plaintext_meta;
         Ok(())
     }
 }
@@ -362,6 +392,7 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWE<D, W> {
         crate::layouts::validate_noise_components(self.noise.as_ref(), self.data.cols())?;
         crate::ComponentNoise::write_optional(self.noise.as_ref(), writer)?;
         writer.write_u32::<LittleEndian>(self.base2k.0)?;
+        GLWEPlaintextMeta::write_to(&self.plaintext_meta, writer)?;
         self.data.write_to(writer)
     }
 }
@@ -384,6 +415,7 @@ where
             base2k: self.base2k,
             k: self.k,
             canonical: self.canonical,
+            plaintext_meta: self.plaintext_meta,
             data: self.data.to_backend_ref(),
         }
     }
@@ -395,6 +427,7 @@ pub fn glwe_backend_ref_from_ref<'a, 'b, BE: Backend>(glwe: &'a GLWE<BE::BufRef<
         base2k: glwe.base2k,
         k: glwe.k,
         canonical: glwe.canonical,
+        plaintext_meta: glwe.plaintext_meta,
         data: poulpy_hal::layouts::vec_znx_backend_ref_from_ref::<BE>(&glwe.data),
     }
 }
@@ -411,6 +444,7 @@ pub fn glwe_backend_ref_from_mut<'a, 'b, BE: Backend>(glwe: &'a GLWE<BE::BufMut<
         base2k: glwe.base2k,
         k: glwe.k,
         canonical: glwe.canonical,
+        plaintext_meta: glwe.plaintext_meta,
         data: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE>(&glwe.data),
     }
 }
@@ -442,6 +476,7 @@ where
             base2k: self.base2k,
             k: self.k,
             canonical: self.canonical,
+            plaintext_meta: self.plaintext_meta,
             data: self.data.to_backend_mut(),
         }
     }
@@ -478,6 +513,7 @@ pub fn glwe_backend_mut_from_mut<'a, 'b, BE: Backend>(glwe: &'a mut GLWE<BE::Buf
         base2k: glwe.base2k,
         k: glwe.k,
         canonical: glwe.canonical,
+        plaintext_meta: glwe.plaintext_meta,
         data: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE>(&mut glwe.data),
     }
 }

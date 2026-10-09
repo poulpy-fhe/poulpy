@@ -1,8 +1,9 @@
 use std::{collections::HashMap, hint::black_box};
+use poulpy_ckks::Scale;
 
 use criterion::{BenchmarkId, Criterion};
 use poulpy_ckks::{
-    CKKSMeta, SetCKKSInfos, SlotsKind,
+    GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAddManyOps, CKKSAddOps, CKKSConjugateOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSNegOps,
         CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
@@ -231,21 +232,9 @@ fn ckks_layout() -> GLWELayout {
     }
 }
 
-fn ckks_ct_meta() -> CKKSMeta {
-    CKKSMeta {
-        log_sparsity: 0,
-        log_delta: LOG_DELTA,
-        slots: SlotsKind::Complex,
-    }
-}
+fn ckks_ct_meta() -> GLWEPlaintextMeta { GLWEPlaintextMeta { scale: Scale::Log(LOG_DELTA), slots: SlotsKind::Complex, log_sparsity: 0 } }
 
-fn ckks_pt_meta() -> CKKSMeta {
-    CKKSMeta {
-        log_sparsity: 0,
-        log_delta: LOG_DELTA,
-        slots: SlotsKind::Complex,
-    }
-}
+fn ckks_pt_meta() -> GLWEPlaintextMeta { GLWEPlaintextMeta { scale: Scale::Log(LOG_DELTA), slots: SlotsKind::Complex, log_sparsity: 0 } }
 
 fn tsk_layout() -> GLWETensorKeyLayout {
     let (dnum, k_aux) = crate::params::key_dnum_k_aux((K + DSIZE * BASE2K) as u32, BASE2K as u32, DSIZE as u32);
@@ -739,13 +728,7 @@ fn mul_ckks_layout(p: &CkksMulParams) -> GLWELayout {
     }
 }
 
-fn mul_ckks_ct_meta(p: &CkksMulParams) -> CKKSMeta {
-    CKKSMeta {
-        log_sparsity: 0,
-        log_delta: p.log_delta,
-        slots: SlotsKind::Complex,
-    }
-}
+fn mul_ckks_ct_meta(p: &CkksMulParams) -> GLWEPlaintextMeta { GLWEPlaintextMeta { scale: Scale::Log(p.log_delta), slots: SlotsKind::Complex, log_sparsity: 0 } }
 
 fn mul_tsk_layout(p: &CkksMulParams) -> GLWETensorKeyLayout {
     let (dnum, k_aux) = crate::params::key_dnum_k_aux((p.k + p.dsize * p.base2k) as u32, p.base2k as u32, p.dsize as u32);
@@ -759,7 +742,7 @@ fn mul_tsk_layout(p: &CkksMulParams) -> GLWETensorKeyLayout {
     }
 }
 
-fn reset_dst_meta(dst: &mut CKKSCiphertext<Vec<u8>, i64>, meta: CKKSMeta) {
+fn reset_dst_meta(dst: &mut CKKSCiphertext<Vec<u8>, i64>, meta: GLWEPlaintextMeta) {
     dst.data_mut().raw_mut().fill(0);
     dst.set_meta_checked(meta).unwrap();
 }

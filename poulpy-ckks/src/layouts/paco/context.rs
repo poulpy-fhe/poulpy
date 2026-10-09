@@ -30,7 +30,7 @@ use super::plan::{PaCoDFTPlan, PaCoPlan};
 use crate::SlotsKind;
 use crate::reference::paco::lt::{PaCoPsiTail, paco_psi_c2s_factors, paco_stc_factors};
 use crate::{
-    CKKSMeta,
+    GLWEPlaintextMeta, Scale,
     api::{CKKSEncodingHostOps, CKKSEncodingOps, LinearTransformation, PaCoScalar},
     layouts::{CKKSModuleAlloc, CKKSScalar},
 };
@@ -195,10 +195,10 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
                 base2k,
                 crate::CoeffsMeta {
                     k: k.into(),
-                    meta: CKKSMeta {
-                        log_sparsity: (full_slots / slots).trailing_zeros() as usize,
-                        log_delta: dft.log_delta(),
+                    meta: GLWEPlaintextMeta {
+                        scale: Scale::Log(dft.log_delta()),
                         slots: SlotsKind::Complex,
+                        log_sparsity: 0,
                     },
                 },
                 diagonals,
@@ -273,10 +273,10 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
                     .checked_add(dft.log_budget())
                     .context("PaCo ψ mask torus width overflows usize")?;
                 let mut pt = module.ckks_pt_vec_alloc(base2k, k_pt.into());
-                pt.set_meta_checked(CKKSMeta {
-                    log_sparsity: 0,
-                    log_delta: dft.log_delta(),
+                pt.set_meta_checked(GLWEPlaintextMeta {
+                    scale: Scale::Log(dft.log_delta()),
                     slots: SlotsKind::Complex,
+                    log_sparsity: 0,
                 })?;
                 module
                     .ckks_encode_reim_into(&mut pt, &re, &im, scratch)

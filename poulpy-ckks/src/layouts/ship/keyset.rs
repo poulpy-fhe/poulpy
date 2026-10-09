@@ -31,7 +31,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSInfos, CKKSMeta,
+    CKKSInfos, GLWEPlaintextMeta, Scale,
     api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, ShipScalar},
     encoding::ship::masks::ship_mask_slot_vectors,
     layouts::{CKKSCiphertext, CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned},
@@ -474,10 +474,10 @@ impl<D: Data> ShipKeySet<D, i64> {
         let bases = plan.mux_bases();
         let kk = plan.raised_k(b2k);
         let ld = plan.log_delta_work();
-        let mask_meta = CKKSMeta {
-            log_delta: ld,
-            log_sparsity: 0,
+        let mask_meta = GLWEPlaintextMeta {
+            scale: Scale::Log(ld),
             slots: SlotsKind::Complex,
+            log_sparsity: 0,
         };
 
         let mut sk_dense = module.glwe_secret_alloc_from_infos(sk_dense_host);

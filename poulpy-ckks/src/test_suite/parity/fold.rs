@@ -1,4 +1,5 @@
 //! Folding of CKKS batches into the ciphertexts a bootstrap refreshes, and back.
+use crate::Scale;
 use std::{cell::Cell, collections::HashMap};
 
 use super::{
@@ -6,7 +7,7 @@ use super::{
     keys::{key_layout, prepared_automorphism_key, prepared_gglwe},
 };
 use crate::{
-    CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos, SlotsKind,
+    CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     layouts::{CKKSCiphertext, CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSModuleAlloc, CKKSRingCiphertext, RingSwitchKeys},
     oep::{CKKSFoldImpl, CKKSFoldLayoutImpl},
     test_suite::CKKSTestParams,
@@ -15,7 +16,8 @@ use poulpy_core::{
     GLWEMaskFill,
     layouts::{
         GGLWEInfos, GGLWEPrepared, GGLWEPreparedFactory, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory,
-        GLWEInfos, GLWELayout, GetAutomorphismKey, LWEInfos, TorusPrecision, prepared::GLWEAutomorphismKeyPreparedBackendRef,
+        GLWEInfos, GLWELayout, GetAutomorphismKey, LWEInfos, SetK, TorusPrecision,
+        prepared::GLWEAutomorphismKeyPreparedBackendRef,
     },
 };
 use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Module, Ring, Standard, ZnxWord};
@@ -32,10 +34,10 @@ fn layout(n: usize, base2k: usize, k: usize, log_delta: usize, slots: SlotsKind)
             k: k.into(),
             rank: 1usize.into(),
         },
-        meta: CKKSMeta {
-            log_delta,
-            log_sparsity: 0,
+        meta: GLWEPlaintextMeta {
+            scale: Scale::Log(log_delta),
             slots,
+            log_sparsity: 0,
         },
     }
 }
@@ -224,7 +226,7 @@ where
     let sparse_ci: Vec<CKKSRingCiphertext<B, ConjugateInvariant>> = (0..16u8)
         .map(|i| {
             let ci = CKKSLayout {
-                meta: CKKSMeta {
+                meta: GLWEPlaintextMeta {
                     log_sparsity: 2,
                     ..layout(n / 8, b, k_in, log_delta, SlotsKind::Real).meta
                 },
@@ -250,7 +252,7 @@ where
         n,
         &sparse_ci,
         &CKKSLayout {
-            meta: CKKSMeta {
+            meta: GLWEPlaintextMeta {
                 log_sparsity: 2,
                 ..layout(n / 8, b, k_out, log_delta, SlotsKind::Real).meta
             },
@@ -464,7 +466,7 @@ where
         .into_iter()
         .zip(233u8..)
         .map(|(slots, seed)| {
-            let meta = CKKSMeta { slots, ..input.meta };
+            let meta = GLWEPlaintextMeta { slots, ..input.meta };
             fixture_ciphertext(module, &CKKSLayout { meta, ..input }, seed)
         })
         .collect();

@@ -53,9 +53,10 @@ pub trait CKKSEncryptionReference<BE: Backend> {
         self.glwe_encrypt_zero_sk(ct, sk, source_xe, source_xa, scratch);
         ct.set_log_budget(log_budget);
         ct.set_log_delta(pt.log_delta());
-        ct.set_log_sparsity(pt.log_sparsity());
         ct.set_slots(pt.slots());
         self.ckks_add_pt_vec_into_reference(ct, pt, scratch)?;
+        // A plaintext is dense at its own degree.
+        ct.set_log_sparsity(ct.log_n() - pt.log_n());
         // The raw limb-add above can leave digits one bit beyond the `base2k`
         // normalized range; a fresh encryption is typed `Normalized`, so
         // propagate the carries before returning (the crate's digit contract

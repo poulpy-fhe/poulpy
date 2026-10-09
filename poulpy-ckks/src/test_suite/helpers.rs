@@ -11,12 +11,13 @@
 //! them to the backend, performs the operation, downloads, and asserts
 //! correctness.
 
+use crate::Scale;
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::HostStaged;
 use std::{f64::consts::TAU, fmt::Debug};
 
 use crate::{
-    CKKSCompositionError, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos,
+    CKKSCompositionError, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos,
     api::{
         CKKSAddManyOps, CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps, CKKSDotProductOps,
         CKKSEncodingScalar, CKKSEvalModOps, CKKSImagOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSNegOps,
@@ -97,10 +98,10 @@ pub const PT_PREC: CKKSLayout = CKKSLayout {
         k: TorusPrecision(8 + 10),
         rank: Rank(1),
     },
-    meta: CKKSMeta {
-        log_sparsity: 0,
-        log_delta: 8,
+    meta: GLWEPlaintextMeta {
+        scale: Scale::Log(8),
         slots: SlotsKind::Complex,
+        log_sparsity: 0,
     },
 };
 
@@ -132,10 +133,10 @@ pub fn ckks_spec_sparse(n: usize, base2k: usize, log_delta: usize, log_budget: u
             k: (log_delta + log_budget).into(),
             rank: Rank(1),
         },
-        meta: CKKSMeta {
-            log_sparsity,
-            log_delta,
+        meta: GLWEPlaintextMeta {
+            scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,
+            log_sparsity,
         },
     }
 }
@@ -480,7 +481,7 @@ pub fn quantize<F: TestScalar>(values: &[F], log_delta: usize) -> Vec<F> {
     values.iter().map(|x| (*x * scale).round() / scale).collect()
 }
 
-// ─── CKKSMeta helpers ─────────────────────────────────────────────────────────
+// ─── GLWEPlaintextMeta helpers ─────────────────────────────────────────────────────────
 
 /// Returns a `CKKSLayout` spec at the given `log_delta` with the standard budget from params.
 pub fn precision_at(params: &CKKSTestParams, log_delta: usize) -> CKKSLayout {
@@ -492,10 +493,10 @@ pub fn precision_at(params: &CKKSTestParams, log_delta: usize) -> CKKSLayout {
             k: (log_delta + log_budget).into(),
             rank: Rank(1),
         },
-        meta: CKKSMeta {
-            log_sparsity: 0,
-            log_delta,
+        meta: GLWEPlaintextMeta {
+            scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,
+            log_sparsity: 0,
         },
     }
 }
@@ -893,6 +894,8 @@ where
     let mut xa = Source::new(next_test_seed(5));
     let mut xe = Source::new(next_test_seed(6));
     module.ckks_encrypt_sk(&mut ct, &pt, sk, &mut xe, &mut xa, scratch).unwrap();
+    // A full-degree plaintext reads as dense: keep the layout's claim.
+    ct.set_log_sparsity(prec.meta.log_sparsity);
     ct
 }
 
@@ -925,6 +928,8 @@ where
     let mut xa = Source::new(next_test_seed(3));
     let mut xe = Source::new(next_test_seed(4));
     module.ckks_encrypt_sk(&mut ct, &pt, sk, &mut xe, &mut xa, scratch).unwrap();
+    // A full-degree plaintext reads as dense: keep the layout's claim.
+    ct.set_log_sparsity(prec.meta.log_sparsity);
     ct
 }
 
@@ -1064,10 +1069,10 @@ where
             k: (log_delta + log_budget).into(),
             rank: Rank(1),
         },
-        meta: CKKSMeta {
-            log_sparsity: 0,
-            log_delta,
+        meta: GLWEPlaintextMeta {
+            scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,
+            log_sparsity: 0,
         },
     };
     let pt = ckks_decrypt_with_prec(module, ct, sk, prec, scratch).unwrap();
@@ -1278,10 +1283,10 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
     // reference spans the same limbs as a full-width decryption (no head-room
     // clipping — any corruption above the head-room shows up as noise).
     let mut pt_want = module.ckks_pt_vec_alloc(ct.base2k(), ct.k());
-    pt_want.set_meta(CKKSMeta {
-        log_sparsity: ct.log_sparsity(),
-        log_delta: ct.log_delta(),
+    pt_want.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(ct.log_delta()),
         slots: SlotsKind::Complex,
+        log_sparsity: 0,
     });
     encoder.encode_reim(&mut pt_want, want_re, want_im).unwrap();
 
@@ -1327,10 +1332,10 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
         ct.base2k(),
         (ct.log_delta() + ct.log_budget().min(params.prec().log_budget())).into(),
     );
-    pt_decode.set_meta(CKKSMeta {
-        log_sparsity: ct.log_sparsity(),
-        log_delta: ct.log_delta(),
+    pt_decode.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(ct.log_delta()),
         slots: SlotsKind::Complex,
+        log_sparsity: 0,
     });
     module.ckks_extract_pt(&mut pt_decode, &full_pt, scratch).unwrap();
     let pt_host = download_pt::<BE>(&pt_decode);

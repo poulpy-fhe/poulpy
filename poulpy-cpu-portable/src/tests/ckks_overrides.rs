@@ -1,13 +1,14 @@
 //! Downstream specialization probes: reference families remain available while
 //! polynomial kernels and EvalMod independently select execution and scratch.
 use crate::hal_impl::delegating_backend::DifferentSamplingFFT64Portable as OverrideBackend;
+use poulpy_ckks::Scale;
 use poulpy_ckks::api::{
     CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSCopyOps, CKKSEvalModOps, CKKSPolynomialEvaluationOps,
 };
 use poulpy_ckks::layouts::{CKKSModuleAlloc, CKKSPlaintextOwned};
 use poulpy_ckks::oep::CKKSComplexPolynomialEvaluationImpl;
-use poulpy_ckks::{CKKSMeta, CoeffsMeta, SetCKKSInfos};
-use poulpy_core::layouts::{GetTensorKey, LWEInfos, TorusPrecision, prepared::GLWETensorKeyPreparedBackendRef};
+use poulpy_ckks::{CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos};
+use poulpy_core::layouts::{GetTensorKey, LWEInfos, SetK, TorusPrecision, prepared::GLWETensorKeyPreparedBackendRef};
 use poulpy_hal::api::{ScratchOwnedAlloc, ScratchOwnedBorrow};
 use poulpy_hal::layouts::{Backend, Module, ScratchOwned};
 use std::cell::{Cell, RefCell};
@@ -171,8 +172,8 @@ fn polynomial(module: &Module<OverrideBackend>) -> poulpy_ckks::polynomial::BSGS
     Polynomial::new(Basis::Monomial, vec![0.0f64, 1.0])
         .decompose_bsgs_with(SplitStrategy::MinDepth, |coeffs| -> anyhow::Result<_> {
             let mut pt = module.ckks_pt_coeffs_alloc(coeffs.len(), 16usize.into(), 32usize.into());
-            pt.set_meta(CKKSMeta {
-                log_delta: 8,
+            pt.set_meta(GLWEPlaintextMeta {
+                scale: Scale::Log(8),
                 ..Default::default()
             });
             Ok(pt)
@@ -185,8 +186,8 @@ fn one_shot_polynomials_dispatch_to_independent_prepared_overrides() {
     use poulpy_ckks::polynomial::ComplexBSGSPolynomial;
     let module = Module::<OverrideBackend>::new(64);
     let mut src = module.ckks_ciphertext_alloc(16usize.into(), 64usize.into());
-    src.set_meta(CKKSMeta {
-        log_delta: 16,
+    src.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(16),
         ..Default::default()
     });
     let mut dst = module.ckks_ciphertext_alloc_from_infos(&src);
@@ -205,8 +206,9 @@ fn one_shot_polynomials_dispatch_to_independent_prepared_overrides() {
             k: 32usize.into(),
             rank: 0usize.into(),
         },
-        meta: CKKSMeta {
-            log_delta: 8,
+        meta: GLWEPlaintextMeta {
+            scale: Scale::Log(8),
+            log_sparsity: 0,
             ..Default::default()
         },
     };
@@ -240,8 +242,8 @@ fn eval_mod_dispatch_uses_its_independent_scratch_query() {
     use poulpy_ckks::polynomial::{Basis, Polynomial, SplitStrategy};
     let module = Module::<OverrideBackend>::new(64);
     let mut src = module.ckks_ciphertext_alloc(16usize.into(), 64usize.into());
-    src.set_meta(CKKSMeta {
-        log_delta: 16,
+    src.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(16),
         ..Default::default()
     });
     let mut dst = module.ckks_ciphertext_alloc_from_infos(&src);
@@ -253,8 +255,8 @@ fn eval_mod_dispatch_uses_its_independent_scratch_query() {
             SplitStrategy::MinDepth,
             CoeffsMeta {
                 k: 32usize.into(),
-                meta: CKKSMeta {
-                    log_delta: 8,
+                meta: GLWEPlaintextMeta {
+                    scale: Scale::Log(8),
                     ..Default::default()
                 },
             },
@@ -315,8 +317,8 @@ fn eval_mod_reference_sizes_the_final_destination_copy() {
         dsize: 1usize.into(),
     };
     let mut src = module.ckks_ciphertext_alloc(16usize.into(), 64usize.into());
-    src.set_meta(CKKSMeta {
-        log_delta: 16,
+    src.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(16),
         ..Default::default()
     });
     src.data_mut().at_mut(0, 0)[0] = 128;
@@ -628,12 +630,12 @@ fn reference_queries_follow_independent_core_copy_and_shift_workspaces() {
         imag_calls: RefCell::default(),
     };
     let mut src = module.ckks_ciphertext_alloc(16usize.into(), 64usize.into());
-    src.set_meta(CKKSMeta {
-        log_delta: 16,
+    src.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(16),
         ..Default::default()
     });
     for source_k in [64usize, 61] {
-        SetCKKSInfos::set_k(&mut src, source_k.into());
+        SetK::set_k(&mut src, source_k.into());
         for col in 0..2 {
             for limb in 0..src.max_size() {
                 let padding = ((limb + 1) * 16).saturating_sub(source_k);
@@ -686,10 +688,10 @@ fn division_by_i_uses_negative_monomials_and_selected_core_workspaces() {
 
     let module = Module::<OverrideBackend>::new(64);
     let mut src = module.ckks_ciphertext_alloc(16usize.into(), 64usize.into());
-    src.set_meta(CKKSMeta {
-        log_delta: 16,
-        log_sparsity: 1,
+    src.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(16),
         slots: SlotsKind::Real,
+        log_sparsity: 1,
     });
     // Exercise both choices of dominant constituent workspace. The proxy has
     // no CKKS multiplication-by-i or negation contract to compose through.
@@ -724,7 +726,7 @@ fn division_by_i_uses_negative_monomials_and_selected_core_workspaces() {
             assert_eq!(dst.slots(), SlotsKind::Complex);
 
             dst.set_slots(SlotsKind::Real);
-            let meta = CKKSMeta {
+            let meta = GLWEPlaintextMeta {
                 slots: SlotsKind::Complex,
                 ..dst.meta()
             };
@@ -748,7 +750,7 @@ fn decrypt_query_uses_plaintext_allocation_width() {
     let ct = module.ckks_ciphertext_alloc(16usize.into(), 64usize.into());
     let narrow = module.ckks_pt_vec_alloc(16usize.into(), 64usize.into());
     let mut wide = module.ckks_pt_vec_alloc(16usize.into(), 1024usize.into());
-    SetCKKSInfos::set_k(&mut wide, 32usize.into());
+    SetK::set_k(&mut wide, 32usize.into());
     let expected = module.glwe_plaintext_bytes_of_from_infos(&ct)
         + module
             .glwe_decrypt_tmp_bytes(&ct)

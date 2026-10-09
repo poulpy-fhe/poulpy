@@ -1,5 +1,6 @@
 //! Reim encoder encode/decode round-trip test.
 
+use crate::Scale;
 use poulpy_core::layouts::Base2K;
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew},
@@ -8,7 +9,7 @@ use poulpy_hal::{
 
 use crate::SlotsKind;
 use crate::{
-    CKKSInfos, CKKSMeta, SetCKKSInfos,
+    CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos,
     layouts::CKKSModuleAlloc,
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
@@ -41,10 +42,10 @@ pub fn test_encode_decode_reim_roundtrip<BE, F, E>(
         Base2K(params.base2k as u32),
         poulpy_core::layouts::TorusPrecision((log_delta + 10) as u32),
     );
-    pt.set_meta(CKKSMeta {
-        log_sparsity: 0,
-        log_delta,
+    pt.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(log_delta),
         slots: SlotsKind::Complex,
+        log_sparsity: 0,
     });
     encoder.encode_reim(&mut pt, &re_in, &im_in).unwrap();
 

@@ -1,7 +1,8 @@
+use crate::{Scale, ckks_log_delta};
 use std::collections::HashMap;
 
 use crate::{
-    CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos, SlotsKind,
+    CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAddOps, CKKSCIRingMapOps, CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar,
         CKKSFoldLayoutOps, CKKSFoldOps, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, CKKSNegOps,
@@ -217,7 +218,6 @@ pub fn test_conjugate_invariant_leveled<BE>(
     let sparse_slots = slots / 4;
     let mut compact = module.ckks_pt_vec_alloc_compact(sparse_slots, params.base2k.into(), params.prec().k());
     compact.set_meta(params.prec().meta());
-    compact.set_log_sparsity(2);
     module
         .ckks_encode_reim_into(&mut compact, &re2[..sparse_slots], &im[..sparse_slots], &mut scratch.arena())
         .unwrap();
@@ -344,7 +344,7 @@ where
     F: CKKSEncodingScalar,
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
 {
-    use crate::{CKKSMeta, api::CKKSEncodingOps, layouts::CKKSEncodingBuffer};
+    use crate::{GLWEPlaintextMeta, api::CKKSEncodingOps, layouts::CKKSEncodingBuffer};
     use poulpy_hal::{AlignedBuf, api::ScratchOwnedAlloc, layouts::ScratchOwned};
 
     assert_eq!(module.ckks_max_slots(), module.n());
@@ -364,10 +364,10 @@ where
             if compact {
                 assert_eq!(pt.n().as_usize(), slots.max(BE::MIN_DEGREE).min(module.n()));
             }
-            pt.set_meta(CKKSMeta {
-                log_delta,
-                log_sparsity: (module.n() / slots).ilog2() as usize,
+            pt.set_meta(GLWEPlaintextMeta {
+                scale: Scale::Log(log_delta),
                 slots: SlotsKind::Complex,
+                log_sparsity: 0,
             });
             module.ckks_encode_reim_into(&mut pt, &re, &im, &mut scratch.arena()).unwrap();
             assert_eq!(pt.slots(), SlotsKind::Real);
@@ -612,7 +612,7 @@ where
     };
     let k_in = params.prec().k().as_usize();
     let k_out = 2 * k_in;
-    let log_delta = params.prec_meta.log_delta;
+    let log_delta = ckks_log_delta(&params.prec_meta);
     let mut ci_scratch = alloc_scratch(&ci_params, &ci);
     let mut scratch = alloc_scratch(&std_params, &standard);
     let (ci_sk_raw, ci_sk) = gen_sk_with_raw(&ci_params, &ci, &ci_host, [41; 32]);
@@ -637,9 +637,9 @@ where
     .unwrap();
     // Pairs split keylessly; two sparse elements of the embedded secret exercise both split levels.
     let sparse = CKKSLayout {
-        meta: CKKSMeta {
-            log_sparsity: 2,
+        meta: GLWEPlaintextMeta {
             slots: SlotsKind::Real,
+            log_sparsity: 2,
             ..params.prec_meta
         },
         ..ci_params.prec()
@@ -659,9 +659,9 @@ where
             .map(|seed| message(n, SlotsKind::Complex, log_sparsity, seed))
             .collect();
         let prec = CKKSLayout {
-            meta: CKKSMeta {
-                log_sparsity,
+            meta: GLWEPlaintextMeta {
                 slots: SlotsKind::Real,
+                log_sparsity,
                 ..params.prec_meta
             },
             ..ci_params.prec()
@@ -758,7 +758,11 @@ where
             )
             .unwrap();
         for (i, (out, msg)) in outs.iter().zip(&msgs).enumerate() {
-            assert_eq!(out.meta(), ins[i].meta(), "unfolded {i}, {label}");
+            assert_eq!(
+                (out.meta(), out.log_sparsity()),
+                (ins[i].meta(), ins[i].log_sparsity()),
+                "unfolded {i}, {label}"
+            );
             assert_eq!(out.noise(), None, "unfolded provenance {i}, {label}");
             let got = decrypt_coeffs::<BE, f64>(&ci, &ci_params, out, &ci_sk, &mut ci_scratch);
             assert_precision(&format!("unfolded {i}, {label}"), &got, msg, log_delta, n);

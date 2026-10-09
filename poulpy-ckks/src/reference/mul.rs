@@ -401,8 +401,9 @@ pub trait CKKSMulReference<BE: Backend> {
         // limbs) would otherwise produce an empty output.
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
-        // The product of values sparse at `s` and `t` is sparse at `min(s, t)`.
-        dst.set_log_sparsity(a.log_sparsity().min(pt.log_sparsity()));
+        // The product of values sparse at `s` and `t` is sparse at `min(s, t)`;
+        // a plaintext is dense at its own degree.
+        dst.set_log_sparsity(a.log_sparsity().min(a.log_n() - pt.log_n()));
         dst.set_slots(a.slots().join(pt.slots()));
         self.glwe_mul_plain(cnv_offset, dst, a, pt, scratch);
         Ok(())
@@ -421,7 +422,7 @@ pub trait CKKSMulReference<BE: Backend> {
             pt.n().as_usize(),
             BE::MIN_DEGREE,
         )?;
-        let log_sparsity = dst.log_sparsity().min(pt.log_sparsity());
+        let log_sparsity = dst.log_sparsity().min(dst.log_n() - pt.log_n());
         let slots = dst.slots().join(pt.slots());
         scratch.scope(|scratch_local| {
             let (mut input, mut op_scratch) = scratch_local.take_glwe_scratch(&*dst);

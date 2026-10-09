@@ -3,8 +3,9 @@ use super::{
     helpers::{Snapshot, assert_untagged, fixture_ciphertext, snapshot, with_scratch},
     keys::{key_layout, prepared_automorphism_key},
 };
+use crate::Scale;
 use crate::{
-    CKKSLayout, CKKSMeta, CoeffsMeta, SlotsKind,
+    CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotsKind,
     api::{CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingScalar},
     layouts::{DFTOutputFormat, DFTPlan, DFTType, Decode, Encode, Repack, Split, Standard},
     oep::{CKKSEncodingImpl, DFTImpl, DFTMatrixImpl},
@@ -57,10 +58,10 @@ where
                 k: k.into(),
                 rank: 1usize.into(),
             },
-            meta: CKKSMeta {
-                log_delta: 16,
-                log_sparsity: log_max_slots - log_slots,
+            meta: GLWEPlaintextMeta {
+                scale: Scale::Log(16),
                 slots: SlotsKind::Complex,
+                log_sparsity: log_max_slots - log_slots,
             },
         };
         let encoding = <Module<B> as CKKSEncodingHostOps<B, F>>::ckks_reim_tmp_bytes(module, module.n() / 2);
@@ -165,7 +166,7 @@ where
         {
             let (dft, prepared, keys) = prepare!(Decode, Split, DFTType::Decode, DFTOutputFormat::SplitRealAndImag);
             let real_layout = CKKSLayout {
-                meta: CKKSMeta {
+                meta: GLWEPlaintextMeta {
                     slots: SlotsKind::Real,
                     ..layout.meta
                 },
@@ -215,9 +216,9 @@ where
             );
             let (dft, prepared, keys) = prepare!(Decode, Repack, DFTType::Decode, DFTOutputFormat::RepackImagAsReal);
             let repacked = CKKSLayout {
-                meta: CKKSMeta {
-                    log_sparsity: layout.meta.log_sparsity - 1,
+                meta: GLWEPlaintextMeta {
                     slots: SlotsKind::Real,
+                    log_sparsity: layout.meta.log_sparsity - 1,
                     ..layout.meta
                 },
                 ..layout
