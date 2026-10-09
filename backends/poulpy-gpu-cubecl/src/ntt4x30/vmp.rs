@@ -13,16 +13,16 @@
 //! `res[d][j] = sum_di sum_{r, c} a[c][dsize - 1 - di + r dsize] * K[r][c][d][j + di + limb_offset]`
 //!
 //! where digit `di` contributes to the result limbs `j < w_di` only (see
-//! [`digit_product`]). One thread per (output column, prime, coefficient)
-//! loads the source limbs once into registers, then walks the matrix limbs
-//! once: matrix limb `h` contributes through digit `di` to result limb
+//! [`digit_product`]). One thread per (prime, coefficient) loads the source
+//! limbs once into registers, then walks the matrix limbs once for every
+//! output column: matrix limb `h` contributes through digit `di` to result limb
 //! `h - limb_offset - di`, so the thread keeps a window of `dsize`
-//! accumulators, stores the oldest after each matrix limb and shifts the
-//! window. Each matrix element is read exactly once. Accumulators are `u64`
+//! accumulators per output column, stores the oldest after each matrix limb
+//! and shifts the window. Each matrix element is read exactly once. Accumulators are `u64`
 //! sums of products of canonical residues, folded every [`FOLD_TERMS`] terms.
 //!
 //! The kernel is specialized for the terms of one result limb: the number of
-//! source limbs it reads, the input columns and the digit size.
+//! source limbs it reads, the input and output columns and the digit size.
 
 use cubecl::prelude::*;
 
@@ -61,6 +61,7 @@ impl Pmat {
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 struct Terms {
     cols_in: u32,
+    cols_out: u32,
     dsize: u32,
     /// Source limbs the product reads: `min(a.size, rows * dsize)`.
     limbs: u32,
@@ -92,7 +93,6 @@ fn product_kernel(
     a: &[u32],
     key: &[u32],
     log_n: u32,
-    cols_out: u32,
     res_base: u32,
     res_size: u32,
     a_base: u32,
@@ -105,15 +105,14 @@ fn product_kernel(
     #[comptime] accumulate: bool,
 ) {
     let log_block = log_n + 2u32;
-    let pos = ABSOLUTE_POS as u32;
-    if pos < (cols_out << log_block) {
-        let d = pos >> log_block;
-        let word = pos - (d << log_block);
+    let word = ABSOLUTE_POS as u32;
+    if word < (1u32 << log_block) {
         let plane = word >> log_n;
         let q = sel4(plane, c.q);
         let r = sel4(plane, c.r);
         let mu = sel4(plane, c.mu60);
         let cols_in = t.cols_in;
+        let cols_out = t.cols_out;
         let dsize = t.dsize;
         let rows = comptime!(t.rows());
 
@@ -141,10 +140,11 @@ fn product_kernel(
         }
 
         // While matrix limb `step + limb_offset` is walked, window slot `k`
-        // holds result limb `step - (dsize - 1) + k`.
+        // of output column `d` (cell `d * dsize + k`) holds result limb
+        // `step - (dsize - 1) + k` of that column.
         let mut window = Sequence::<RuntimeCell<u64>>::new();
         #[unroll]
-        for _ in 0..dsize {
+        for _ in 0..comptime!(dsize * cols_out) {
             window.push(RuntimeCell::<u64>::new(0u64));
         }
 
@@ -160,55 +160,66 @@ fn product_kernel(
             }
             if any {
                 let h = step + limb_offset;
-                let mut ks = Sequence::<u32>::new();
                 #[unroll]
-                for row in 0..rows {
+                for d in 0..cols_out {
+                    let mut ks = Sequence::<u32>::new();
                     #[unroll]
-                    for col in 0..cols_in {
-                        let block = ((row * cols_in + col) * key_size + h) * cols_out + d;
-                        ks.push(key[(key_base + (block << log_block) + word) as usize]);
-                    }
-                }
-                #[unroll]
-                for di in 0..dsize {
-                    if *live.index(di as usize) {
-                        let slot = window.index((dsize - 1 - di) as usize);
-                        let mut acc = slot.read();
+                    for row in 0..rows {
                         #[unroll]
-                        for row in 0..comptime!(t.digit_rows(di)) {
-                            #[unroll]
-                            for col in 0..cols_in {
-                                if comptime!(t.fold_before(di, row, col)) {
-                                    acc = fold64(acc, r);
-                                }
-                                let x = *xs.index(((dsize - 1 - di + row * dsize) * cols_in + col) as usize);
-                                let k = *ks.index((row * cols_in + col) as usize);
-                                acc += u64::cast_from(x) * u64::cast_from(k);
-                            }
+                        for col in 0..cols_in {
+                            let block = ((row * cols_in + col) * key_size + h) * cols_out + d;
+                            ks.push(key[(key_base + (block << log_block) + word) as usize]);
                         }
-                        slot.store(acc);
+                    }
+                    #[unroll]
+                    for di in 0..dsize {
+                        if *live.index(di as usize) {
+                            let slot = window.index((d * dsize + dsize - 1 - di) as usize);
+                            let mut acc = slot.read();
+                            #[unroll]
+                            for row in 0..comptime!(t.digit_rows(di)) {
+                                #[unroll]
+                                for col in 0..cols_in {
+                                    if comptime!(t.fold_before(di, row, col)) {
+                                        acc = fold64(acc, r);
+                                    }
+                                    let x = *xs.index(((dsize - 1 - di + row * dsize) * cols_in + col) as usize);
+                                    let k = *ks.index((row * cols_in + col) as usize);
+                                    acc += u64::cast_from(x) * u64::cast_from(k);
+                                }
+                            }
+                            slot.store(acc);
+                        }
                     }
                 }
-            }
-            if step >= dsize - 1u32 {
-                let j = step - (dsize - 1u32);
-                let index = res_base + ((j * cols_out + d) << log_block) + word;
-                let mut value = barrett60(fold64(window.index(0usize).read(), r), q, mu);
-                if accumulate {
-                    let sum = value + res[index as usize];
-                    value = min(sum, sum - q);
-                }
-                res[index as usize] = value;
             }
             #[unroll]
-            for k in 1..dsize {
-                window.index((k - 1) as usize).store(window.index(k as usize).read());
+            for d in 0..cols_out {
+                if step >= dsize - 1u32 {
+                    let j = step - (dsize - 1u32);
+                    let index = res_base + ((j * cols_out + d) << log_block) + word;
+                    let mut value = barrett60(fold64(window.index((d * dsize) as usize).read(), r), q, mu);
+                    if accumulate {
+                        let sum = value + res[index as usize];
+                        value = min(sum, sum - q);
+                    }
+                    res[index as usize] = value;
+                }
+                #[unroll]
+                for k in 1..dsize {
+                    window
+                        .index((d * dsize + k - 1) as usize)
+                        .store(window.index((d * dsize + k) as usize).read());
+                }
+                window.index((d * dsize + dsize - 1) as usize).store(0u64);
             }
-            window.index((dsize - 1) as usize).store(0u64);
         }
         if !accumulate {
-            for j in first..res_size {
-                res[(res_base + ((j * cols_out + d) << log_block) + word) as usize] = 0u32;
+            #[unroll]
+            for d in 0..cols_out {
+                for j in first..res_size {
+                    res[(res_base + ((j * cols_out + d) << log_block) + word) as usize] = 0u32;
+                }
             }
         }
     }
@@ -262,12 +273,14 @@ pub(crate) fn digit_product<RT: GpuRuntime>(
     narrow(pmat.base as usize + pmat.blocks().size * block);
     let terms = Terms {
         cols_in: narrow(pmat.cols_in),
+        cols_out: narrow(pmat.cols_out),
         dsize: narrow(dsize),
         limbs: narrow(limbs),
     };
-    let units = pmat.cols_out * block;
+    let units = block;
     let key_limbs = pmat.size.min(res.size + dsize - 1);
-    let words = limbs * pmat.cols_in + terms.rows() as usize * pmat.cols_in * key_limbs + res.size * (1 + accumulate as usize);
+    let words = limbs * pmat.cols_in
+        + pmat.cols_out * (terms.rows() as usize * pmat.cols_in * key_limbs + res.size * (1 + accumulate as usize));
     launch!(
         RT, if accumulate { Label::VmpDigitProductAdd } else { Label::VmpDigitProduct }, units * 4 * words, product_kernel, (units, RT::GROUP, RT::GROUP);
         [
@@ -277,7 +290,6 @@ pub(crate) fn digit_product<RT: GpuRuntime>(
         ];
         [
             n.ilog2(),
-            narrow(pmat.cols_out),
             res.base,
             narrow(res.size),
             a.base,
