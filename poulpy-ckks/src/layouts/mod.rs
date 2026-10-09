@@ -24,7 +24,7 @@
 /// type's reborrow plumbing).
 #[macro_export]
 macro_rules! impl_ckks_infos {
-    (@ckks_bundle $name:ident) => {
+    (ckks_inner $name:ident) => {
         impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::GLWEPlaintextInfos for $name<'a, BE> {
             fn plaintext_meta(&self) -> Option<::poulpy_core::layouts::GLWEPlaintextMeta> {
                 ::poulpy_core::layouts::GLWEPlaintextInfos::plaintext_meta(&self.inner)
@@ -65,9 +65,6 @@ macro_rules! impl_ckks_infos {
             }
         }
     };
-    (ckks_inner $name:ident) => {
-        $crate::impl_ckks_infos!(@ckks_bundle $name);
-    };
     (glwe_inner $name:ident) => {
         impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::LWEInfos for $name<'a, BE> {
             fn noise(&self) -> Option<::poulpy_core::ComponentNoise> {
@@ -97,7 +94,7 @@ macro_rules! impl_ckks_infos {
             }
         }
 
-        $crate::impl_ckks_infos!(@ckks_bundle $name);
+        $crate::impl_ckks_infos!(ckks_inner $name);
     };
 }
 
