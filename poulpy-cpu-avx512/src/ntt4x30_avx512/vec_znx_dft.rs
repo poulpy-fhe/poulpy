@@ -102,6 +102,15 @@ pub(crate) unsafe fn unpack_limb_q120(n: usize, dst: &mut [u64], src: &[u32]) {
     }
 }
 
+/// Forward transform of `src` into `dst`, one `u64` per residue.
+pub(crate) fn dft_limb_wide<R: Ring>(module: &Module<NTT4x30Avx512<R>>, n: usize, dst: &mut [u64], src: &[i64])
+where
+    NTT4x30Avx512<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+{
+    NTT4x30Avx512::<R>::ntt_from_znx64(dst, src);
+    NTT4x30Avx512::<R>::ntt_dft_execute(module.get_ntt_table_for(n), dst);
+}
+
 pub(crate) fn dft_limb<R: Ring>(
     module: &Module<NTT4x30Avx512<R>>,
     n: usize,
@@ -112,8 +121,7 @@ pub(crate) fn dft_limb<R: Ring>(
     NTT4x30Avx512<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
 {
     if let Some(src) = src {
-        NTT4x30Avx512::<R>::ntt_from_znx64(tmp, src);
-        NTT4x30Avx512::<R>::ntt_dft_execute(module.get_ntt_table_for(n), tmp);
+        dft_limb_wide(module, n, tmp, src);
         unsafe { pack_limb_q120(n, dst, tmp) };
     } else {
         dst.fill(0);
@@ -318,7 +326,41 @@ where
     NTT4x30Avx512::<R>::ntt_to_znx128(dst, n, tmp);
 }
 
-pub(crate) fn vec_znx_dft_add<R: Ring>(
+#[derive(Clone, Copy)]
+struct SendPtr(*mut u32);
+
+unsafe impl Send for SendPtr {}
+unsafe impl Sync for SendPtr {}
+
+impl SendPtr {
+    fn get(self) -> *mut u32 {
+        self.0
+    }
+}
+
+/// Runs `task` on limb `0..count` of column `col` of `data`, as tasks of the executor `E`.
+fn for_each_limb<E: TaskExecutor>(
+    data: &mut [u32],
+    n: usize,
+    cols: usize,
+    col: usize,
+    count: usize,
+    task: impl Fn(usize, &mut [u32]) + Send + Sync,
+) {
+    if count == 0 {
+        return;
+    }
+    assert!(col < cols && data.len() >= 4 * n * cols * count);
+    let ptr = SendPtr(data.as_mut_ptr());
+    E::for_each(count, |limb| {
+        // Limbs are disjoint, one task each.
+        task(limb, unsafe {
+            std::slice::from_raw_parts_mut(ptr.get().add(4 * n * (limb * cols + col)), 4 * n)
+        })
+    });
+}
+
+pub(crate) fn vec_znx_dft_add<R: Ring, E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT4x30Avx512<R>>,
@@ -340,8 +382,7 @@ pub(crate) fn vec_znx_dft_add<R: Ring>(
     let rp: &mut [u32] = cast_slice_mut(res.data_mut());
     let ap: &[u32] = cast_slice(a.data());
     let bp: &[u32] = cast_slice(b.data());
-    for limb in 0..rs {
-        let dst = packed_limb_mut(rp, n, rc, res_col, limb);
+    for_each_limb::<E>(rp, n, rc, res_col, rs, |limb, dst| {
         if limb < sum_size {
             unsafe {
                 packed_add(
@@ -361,10 +402,10 @@ pub(crate) fn vec_znx_dft_add<R: Ring>(
         } else {
             dst.fill(0);
         }
-    }
+    });
 }
 
-pub(crate) fn vec_znx_dft_add_assign<R: Ring>(
+pub(crate) fn vec_znx_dft_add_assign<R: Ring, E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT4x30Avx512<R>>,
@@ -377,18 +418,12 @@ pub(crate) fn vec_znx_dft_add_assign<R: Ring>(
     let size = res.size().min(a.size());
     let rp: &mut [u32] = cast_slice_mut(res.data_mut());
     let ap: &[u32] = cast_slice(a.data());
-    for limb in 0..size {
-        unsafe {
-            packed_add_assign(
-                n,
-                packed_limb_mut(rp, n, rc, res_col, limb),
-                packed_limb(ap, n, ac, a_col, limb),
-            )
-        };
-    }
+    for_each_limb::<E>(rp, n, rc, res_col, size, |limb, dst| unsafe {
+        packed_add_assign(n, dst, packed_limb(ap, n, ac, a_col, limb))
+    });
 }
 
-pub(crate) fn vec_znx_dft_sub<R: Ring>(
+pub(crate) fn vec_znx_dft_sub<R: Ring, E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT4x30Avx512<R>>,
@@ -410,8 +445,7 @@ pub(crate) fn vec_znx_dft_sub<R: Ring>(
     let rp: &mut [u32] = cast_slice_mut(res.data_mut());
     let ap: &[u32] = cast_slice(a.data());
     let bp: &[u32] = cast_slice(b.data());
-    for limb in 0..rs {
-        let dst = packed_limb_mut(rp, n, rc, res_col, limb);
+    for_each_limb::<E>(rp, n, rc, res_col, rs, |limb, dst| {
         if limb < sub_size {
             unsafe {
                 packed_sub(
@@ -431,10 +465,10 @@ pub(crate) fn vec_znx_dft_sub<R: Ring>(
         } else {
             dst.fill(0);
         }
-    }
+    });
 }
 
-pub(crate) fn vec_znx_dft_sub_assign<R: Ring>(
+pub(crate) fn vec_znx_dft_sub_assign<R: Ring, E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT4x30Avx512<R>>,
@@ -447,18 +481,12 @@ pub(crate) fn vec_znx_dft_sub_assign<R: Ring>(
     let size = res.size().min(a.size());
     let rp: &mut [u32] = cast_slice_mut(res.data_mut());
     let ap: &[u32] = cast_slice(a.data());
-    for limb in 0..size {
-        unsafe {
-            packed_sub_assign(
-                n,
-                packed_limb_mut(rp, n, rc, res_col, limb),
-                packed_limb(ap, n, ac, a_col, limb),
-            )
-        };
-    }
+    for_each_limb::<E>(rp, n, rc, res_col, size, |limb, dst| unsafe {
+        packed_sub_assign(n, dst, packed_limb(ap, n, ac, a_col, limb))
+    });
 }
 
-pub(crate) fn vec_znx_dft_sub_negate_assign<R: Ring>(
+pub(crate) fn vec_znx_dft_sub_negate_assign<R: Ring, E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT4x30Avx512<R>>,
@@ -472,17 +500,16 @@ pub(crate) fn vec_znx_dft_sub_negate_assign<R: Ring>(
     let size = rs.min(a.size());
     let rp: &mut [u32] = cast_slice_mut(res.data_mut());
     let ap: &[u32] = cast_slice(a.data());
-    for limb in 0..rs {
-        let dst = packed_limb_mut(rp, n, rc, res_col, limb);
+    for_each_limb::<E>(rp, n, rc, res_col, rs, |limb, dst| {
         if limb < size {
             unsafe { packed_sub_negate_assign(n, dst, packed_limb(ap, n, ac, a_col, limb)) };
         } else {
             unsafe { packed_negate_assign(n, dst) };
         }
-    }
+    });
 }
 
-pub(crate) fn vec_znx_dft_copy<R: Ring>(
+pub(crate) fn vec_znx_dft_copy<R: Ring, E: TaskExecutor>(
     step: usize,
     offset: usize,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
@@ -495,18 +522,17 @@ pub(crate) fn vec_znx_dft_copy<R: Ring>(
     check_operand(n, res, res_col);
     check_operand(n, a, a_col);
     let (rc, ac) = (res.cols(), a.cols());
-    let size = res.size();
+    let (size, a_size) = (res.size(), a.size());
     let rp: &mut [u32] = cast_slice_mut(res.data_mut());
     let ap: &[u32] = cast_slice(a.data());
-    for limb in 0..size {
-        let dst = packed_limb_mut(rp, n, rc, res_col, limb);
+    for_each_limb::<E>(rp, n, rc, res_col, size, |limb, dst| {
         let src_limb = offset + limb * step;
-        if src_limb < a.size() {
+        if src_limb < a_size {
             dst.copy_from_slice(packed_limb(ap, n, ac, a_col, src_limb));
         } else {
             dst.fill(0);
         }
-    }
+    });
 }
 
 pub(crate) fn vec_znx_dft_zero<R: Ring>(res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>, res_col: usize) {
