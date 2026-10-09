@@ -508,7 +508,7 @@ macro_rules! launch {
         [$($scalar:expr),* $(,)?];
         [$($comptime:expr),* $(,)?]
     ) => {{
-        let client = <$rt as $crate::runtime::GpuRuntime>::client();
+        let client = <$rt as $crate::runtime::RuntimeDevice>::client();
         let (units, per, dim): (usize, u32, u32) = ($units, $per, $dim);
         let _access = $crate::runtime::access::shared();
         #[cfg(test)]
@@ -554,7 +554,7 @@ mod tests {
     use std::any::TypeId;
 
     use super::*;
-    use crate::runtime::GpuRuntime;
+    use crate::runtime::RuntimeDevice;
 
     /// The aliases `BufferArgs` declares for views `(allocation, offset, len)` bound as `u32`.
     fn aliases<const N: usize>(views: [(u64, usize, usize); N], handle: &Handle) -> [Option<usize>; N] {

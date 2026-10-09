@@ -16,7 +16,7 @@ mod hal_impl;
 mod module;
 mod ntt4x30;
 mod replay;
-pub mod runtime;
+mod runtime;
 mod znx;
 
 #[cfg(test)]
@@ -26,6 +26,12 @@ pub use backend::NTT4x30Gpu;
 pub use module::GpuHandle;
 pub use ntt4x30::AutomorphismPlan;
 pub use replay::Replay;
+#[cfg(feature = "enable-cuda")]
+pub use runtime::Cuda;
+#[cfg(feature = "enable-hip")]
+pub use runtime::Hip;
+#[cfg(any(feature = "enable-metal", feature = "enable-vulkan", feature = "enable-wgpu"))]
+pub use runtime::Wgpu;
 pub use runtime::{
     GpuRuntime, HostEvents, KernelCounters, LaunchCounters, launch_breakdown, launch_counters, reset_launch_counters,
 };

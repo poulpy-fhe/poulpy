@@ -79,26 +79,11 @@ macro_rules! bootstrapping {
 #[allow(unused_variables)]
 fn runtimes(c: &mut Criterion) {
     #[cfg(feature = "enable-cuda")]
-    bootstrapping!(
-        c,
-        poulpy_gpu_cubecl::NTT4x30Cuda,
-        poulpy_gpu_cubecl::runtime::Cuda,
-        "NTT4x30Gpu<Cuda>"
-    );
+    bootstrapping!(c, poulpy_gpu_cubecl::NTT4x30Cuda, poulpy_gpu_cubecl::Cuda, "NTT4x30Gpu<Cuda>");
     #[cfg(feature = "enable-hip")]
-    bootstrapping!(
-        c,
-        poulpy_gpu_cubecl::NTT4x30Hip,
-        poulpy_gpu_cubecl::runtime::Hip,
-        "NTT4x30Gpu<Hip>"
-    );
+    bootstrapping!(c, poulpy_gpu_cubecl::NTT4x30Hip, poulpy_gpu_cubecl::Hip, "NTT4x30Gpu<Hip>");
     #[cfg(any(feature = "enable-metal", feature = "enable-vulkan", feature = "enable-wgpu"))]
-    bootstrapping!(
-        c,
-        poulpy_gpu_cubecl::NTT4x30Wgpu,
-        poulpy_gpu_cubecl::runtime::Wgpu,
-        "NTT4x30Gpu<Wgpu>"
-    );
+    bootstrapping!(c, poulpy_gpu_cubecl::NTT4x30Wgpu, poulpy_gpu_cubecl::Wgpu, "NTT4x30Gpu<Wgpu>");
 }
 
 criterion_group! {

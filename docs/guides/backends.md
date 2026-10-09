@@ -100,7 +100,7 @@ CKKS encoding goes through the host with the portable transform, which keeps it 
 A sequence of calls that is repeated on the same buffers (a bootstrap, say) can be recorded once and replayed as one CubeCL graph:
 
 ```rust
-use poulpy_gpu_cubecl::{Replay, runtime::Wgpu};
+use poulpy_gpu_cubecl::{Replay, Wgpu};
 
 let mut replay = Replay::<Wgpu>::record(|| bootstrap(&module, &mut ct_out, &ct_in, &ctx, &keys, &mut scratch));
 // Write new inputs into the same buffers, then:

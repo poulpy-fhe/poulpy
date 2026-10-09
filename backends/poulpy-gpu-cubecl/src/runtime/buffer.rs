@@ -275,7 +275,7 @@ impl<RT: GpuRuntime> GpuBuf<RT> {
     }
 
     /// A zero-initialized buffer of at least `len` bytes.
-    pub fn zeroed(len: usize) -> Self {
+    pub(crate) fn zeroed(len: usize) -> Self {
         let allocation = allocate::<RT>(len);
         if let Some(allocation) = &allocation {
             zero::<RT>(&Some(allocation.clone()), 0, allocation.reserved);
@@ -288,7 +288,7 @@ impl<RT: GpuRuntime> GpuBuf<RT> {
     }
 
     /// A buffer holding `bytes`, zero-padded.
-    pub fn from_host(bytes: &[u8]) -> Self {
+    pub(crate) fn from_host(bytes: &[u8]) -> Self {
         let allocation = allocate::<RT>(bytes.len());
         let buf = Self {
             len: allocation.as_ref().map_or(0, |allocation| allocation.reserved),
@@ -307,22 +307,18 @@ impl<RT: GpuRuntime> GpuBuf<RT> {
         buf
     }
 
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.len
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-
-    pub fn to_host(&self) -> Vec<u8> {
+    pub(crate) fn to_host(&self) -> Vec<u8> {
         let mut bytes = vec![0u8; self.len];
         read::<RT>(&self.allocation, 0, &mut bytes);
         bytes
     }
 
     /// Writes `src` at the start of the buffer and zeroes the rest.
-    pub fn write_prefix(&mut self, src: &[u8]) {
+    pub(crate) fn write_prefix(&mut self, src: &[u8]) {
         assert!(src.len() <= self.len, "host slice longer than the device buffer");
         let Some(allocation) = &self.allocation else { return };
         let mut padded = vec![0u8; allocation.reserved];
@@ -330,16 +326,16 @@ impl<RT: GpuRuntime> GpuBuf<RT> {
         write::<RT>(&self.allocation, 0, &padded);
     }
 
-    pub fn view(&self) -> GpuRef<'_, RT> {
+    pub(crate) fn view(&self) -> GpuRef<'_, RT> {
         self.region(0, self.len)
     }
 
-    pub fn view_mut(&mut self) -> GpuMut<'_, RT> {
+    pub(crate) fn view_mut(&mut self) -> GpuMut<'_, RT> {
         let len = self.len;
         self.region_mut(0, len)
     }
 
-    pub fn region(&self, offset: usize, len: usize) -> GpuRef<'_, RT> {
+    pub(crate) fn region(&self, offset: usize, len: usize) -> GpuRef<'_, RT> {
         assert!(offset + len <= self.len, "device region out of bounds");
         GpuRef {
             allocation: self.allocation.clone(),
@@ -350,7 +346,7 @@ impl<RT: GpuRuntime> GpuBuf<RT> {
         }
     }
 
-    pub fn region_mut(&mut self, offset: usize, len: usize) -> GpuMut<'_, RT> {
+    pub(crate) fn region_mut(&mut self, offset: usize, len: usize) -> GpuMut<'_, RT> {
         assert!(offset + len <= self.len, "device region out of bounds");
         GpuMut {
             allocation: self.allocation.clone(),
@@ -365,26 +361,11 @@ impl<RT: GpuRuntime> GpuBuf<RT> {
 macro_rules! view_common {
     ($view:ident) => {
         impl<RT: GpuRuntime> $view<'_, RT> {
-            pub fn len(&self) -> usize {
+            pub(crate) fn len(&self) -> usize {
                 self.len
             }
 
-            pub fn is_empty(&self) -> bool {
-                self.len == 0
-            }
-
-            pub fn to_host(&self) -> Vec<u8> {
-                let mut bytes = vec![0u8; self.len];
-                read::<RT>(&self.allocation, self.offset, &mut bytes);
-                bytes
-            }
-
-            pub fn read_prefix(&self, dst: &mut [u8]) {
-                assert!(dst.len() <= self.len, "host slice longer than the device view");
-                read::<RT>(&self.allocation, self.offset, dst);
-            }
-
-            pub fn region(&self, offset: usize, len: usize) -> GpuRef<'_, RT> {
+            pub(crate) fn region(&self, offset: usize, len: usize) -> GpuRef<'_, RT> {
                 assert!(offset + len <= self.len, "device region out of bounds");
                 GpuRef {
                     allocation: self.allocation.clone(),
@@ -436,8 +417,23 @@ macro_rules! view_common {
 view_common!(GpuRef);
 view_common!(GpuMut);
 
+// Host staging: the CKKS encoding and the tests.
+#[cfg_attr(not(feature = "enable-ckks"), allow(dead_code))]
+impl<RT: GpuRuntime> GpuRef<'_, RT> {
+    pub(crate) fn to_host(&self) -> Vec<u8> {
+        let mut bytes = vec![0u8; self.len];
+        read::<RT>(&self.allocation, self.offset, &mut bytes);
+        bytes
+    }
+
+    pub(crate) fn read_prefix(&self, dst: &mut [u8]) {
+        assert!(dst.len() <= self.len, "host slice longer than the device view");
+        read::<RT>(&self.allocation, self.offset, dst);
+    }
+}
+
 impl<RT: GpuRuntime> GpuMut<'_, RT> {
-    pub fn region_mut(&mut self, offset: usize, len: usize) -> GpuMut<'_, RT> {
+    pub(crate) fn region_mut(&mut self, offset: usize, len: usize) -> GpuMut<'_, RT> {
         assert!(offset + len <= self.len, "device region out of bounds");
         GpuMut {
             allocation: self.allocation.clone(),
@@ -449,7 +445,7 @@ impl<RT: GpuRuntime> GpuMut<'_, RT> {
     }
 
     /// Writes `src` at the start of the view and zeroes the rest.
-    pub fn write_prefix(&mut self, src: &[u8]) {
+    pub(crate) fn write_prefix(&mut self, src: &[u8]) {
         assert!(src.len() <= self.len, "host slice longer than the device view");
         if src.len() == self.len {
             write::<RT>(&self.allocation, self.offset, src);

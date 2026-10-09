@@ -7,17 +7,18 @@ mod device;
 mod launch;
 mod replay;
 
-pub use buffer::{GpuBuf, GpuMut, GpuRef};
+pub(crate) use buffer::{GpuBuf, GpuMut, GpuRef};
 #[cfg(feature = "enable-cpu")]
-pub use device::Cpu;
+pub(crate) use device::Cpu;
 #[cfg(feature = "enable-cuda")]
 pub use device::Cuda;
+pub use device::GpuRuntime;
 #[cfg(feature = "enable-hip")]
 pub use device::Hip;
 #[cfg(any(feature = "enable-metal", feature = "enable-vulkan", feature = "enable-wgpu"))]
 pub use device::Wgpu;
 pub(crate) use device::on_stream;
-pub use device::{GpuRuntime, NttGeometry};
+pub(crate) use device::{NttGeometry, RuntimeDevice};
 #[cfg(test)]
 pub(crate) use launch::profile;
 pub(crate) use launch::{

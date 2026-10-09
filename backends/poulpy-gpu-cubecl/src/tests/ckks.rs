@@ -160,7 +160,7 @@ fn bootstrapping_n16_d35_k733_p20_s2c_precision_and_launches() {
     let mut run = BootstrappingPresetRun::<Gpu, poulpy_cpu_portable::NTT4x30Portable>::setup(preset);
     // What the device holds once the keys are prepared, and what the pools reserve for it.
     {
-        use crate::runtime::GpuRuntime;
+        use crate::runtime::RuntimeDevice;
         let usage = super::Runtime::client().memory_report(cubecl::MemoryScope::Device).usage();
         let gib = |bytes: u64| bytes as f64 / (1u64 << 30) as f64;
         println!(

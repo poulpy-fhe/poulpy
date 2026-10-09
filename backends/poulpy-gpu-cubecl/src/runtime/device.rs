@@ -66,27 +66,30 @@ impl NttGeometry {
     };
 }
 
-/// A CubeCL runtime a backend type is bound to.
-pub trait GpuRuntime: Send + Sync + 'static {
+/// A CubeCL runtime a backend type is bound to: one of the markers of this
+/// crate. The trait cannot be implemented outside it.
+pub trait GpuRuntime: RuntimeDevice {
     /// Name used in logs and benchmark identifiers.
     const NAME: &'static str;
-
-    /// Threads per workgroup of the kernels whose threads are independent.
-    /// A GPU runs a workgroup on one of its cores at no cost per thread;
-    /// CubeCL's CPU runtime gives every thread of a workgroup its own task.
-    const GROUP: u32;
-
-    /// The workgroups of the transform.
-    const NTT: NttGeometry;
 
     /// Selects the device of this runtime by its index among the devices
     /// CubeCL enumerates for it; the first one is used otherwise. `false`
     /// when the device is already in use: the choice is made once, before
     /// the first module or buffer of a backend type on this runtime.
     fn select_device(index: usize) -> bool;
+}
+
+/// What the kernels and the buffers need of a runtime.
+pub trait RuntimeDevice: Send + Sync + 'static {
+    /// Threads per workgroup of the kernels whose threads are independent.
+    /// A GPU runs a workgroup on one of its cores at no cost per thread;
+    /// CubeCL's CPU runtime gives every thread of a workgroup its own task.
+    const GROUP: u32;
+
+    /// The launches and workgroups of the transform.
+    const NTT: NttGeometry;
 
     /// The client of this runtime's device, created on first use.
-    #[doc(hidden)]
     fn client() -> &'static Client;
 }
 
@@ -158,8 +161,6 @@ macro_rules! gpu_runtime {
 
         impl GpuRuntime for $marker {
             const NAME: &'static str = $name;
-            const GROUP: u32 = $group;
-            const NTT: NttGeometry = $ntt;
 
             fn select_device(index: usize) -> bool {
                 let mut selected = false;
@@ -169,6 +170,11 @@ macro_rules! gpu_runtime {
                 });
                 selected && Self::state().1.get().is_none()
             }
+        }
+
+        impl RuntimeDevice for $marker {
+            const GROUP: u32 = $group;
+            const NTT: NttGeometry = $ntt;
 
             fn client() -> &'static Client {
                 let (index, client) = Self::state();
