@@ -200,6 +200,11 @@ jobs:
 
     env:
       RUSTFLAGS: -C target-feature=+avx2,+fma
+      SMOKE_FEATURES: >-
+        poulpy-cpu-portable/enable-ckks
+        poulpy-cpu-avx/enable-avx
+        poulpy-cpu-avx/enable-ckks
+        poulpy-ckks/libquadmath
 
     steps:
       - name: Checkout
@@ -233,22 +238,22 @@ jobs:
 
       - name: Test Quad CKKS encoding on Darwin
         run: >-
-          cargo test -p poulpy-cpu-portable --lib
-          --features "enable-ckks,poulpy-ckks/libquadmath"
+          cargo test -p poulpy-cpu-portable -p poulpy-cpu-avx --lib
+          --features "$SMOKE_FEATURES"
           ckks_encoding::tests::fft64_precision_families_coexist_in_one_module
           -- --exact
 
       - name: Test Darwin AVX FFT assembly
         run: >-
-          cargo test -p poulpy-cpu-avx --lib
-          --features "enable-avx,poulpy-ckks/libquadmath"
+          cargo test -p poulpy-cpu-portable -p poulpy-cpu-avx --lib
+          --features "$SMOKE_FEATURES"
           fft64::reim::fft_avx2_fma::tests::fft_ifft_roundtrip_avx2
           -- --exact
 
       - name: Test CKKS encoding determinism on Intel macOS
         run: >-
           cargo test -p poulpy-cpu-portable -p poulpy-cpu-avx --lib
-          --features "poulpy-cpu-portable/enable-ckks,poulpy-cpu-avx/enable-avx,poulpy-cpu-avx/enable-ckks"
+          --features "$SMOKE_FEATURES"
           determinism
 
   macos_arm_quad:
