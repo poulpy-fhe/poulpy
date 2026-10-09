@@ -58,7 +58,8 @@ impl<D: Data, W: ZnxWord, R: Ring> CKKSPlaintext<D, W, R> {
     /// can represent it.
     ///
     /// This is intended for callers that build plaintext buffers manually.
-    /// Normal CKKS operations update metadata themselves.
+    /// Normal CKKS operations update metadata themselves. `meta.log_sparsity` is
+    /// not read: a plaintext is dense at its own degree.
     pub fn set_meta_checked(&mut self, meta: GLWEPlaintextMeta) -> Result<()> {
         anyhow::ensure!(
             self.k().as_usize() <= self.max_k().as_usize() && ckks_log_delta(&meta) <= self.k().as_usize(),
@@ -110,7 +111,7 @@ poulpy_core::view_wrapper!(
     CKKSPlaintext<BE::BufMut<'a>, BE::ZnxWord, BE::Ring>
 );
 poulpy_core::impl_glwe_infos!(CKKSPlaintextViewMut);
-crate::impl_ckks_infos!(inner_meta CKKSPlaintextViewMut);
+crate::impl_ckks_infos!(ckks_inner CKKSPlaintextViewMut);
 
 impl<'a, BE: poulpy_hal::layouts::Backend + 'a> poulpy_core::layouts::IntPolyInfos for CKKSPlaintextViewMut<'a, BE> {
     fn encoded_k(&self) -> TorusPrecision {
@@ -220,6 +221,8 @@ impl<D: Data, W: ZnxWord, R: Ring> GLWEPlaintextInfos for CKKSPlaintext<D, W, R>
         self.inner.plaintext_meta()
     }
 }
+
+impl<D: Data, W: ZnxWord, R: Ring> CKKSInfos for CKKSPlaintext<D, W, R> {}
 
 impl<D: Data, W: ZnxWord, R: Ring> SetGLWEPlaintextInfos for CKKSPlaintext<D, W, R> {
     fn set_plaintext_meta(&mut self, meta: Option<GLWEPlaintextMeta>) {

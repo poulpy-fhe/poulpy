@@ -10,23 +10,11 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 pub enum Scale {
     /// Scaled by `2^x`, as in CKKS.
     Log(usize),
-    /// Encoded modulo `p`, as `m / p` on the torus.
-    Exact(u64),
 }
 
 impl Default for Scale {
     fn default() -> Self {
         Self::Log(0)
-    }
-}
-
-impl Scale {
-    /// `x` for `Log(x)`, `None` for an `Exact` scale.
-    pub fn log2(self) -> Option<usize> {
-        match self {
-            Self::Log(x) => Some(x),
-            Self::Exact(_) => None,
-        }
     }
 }
 
@@ -74,16 +62,9 @@ impl GLWEPlaintextMeta {
         let Some(meta) = meta else {
             return writer.write_u8(0);
         };
-        match meta.scale {
-            Scale::Log(x) => {
-                writer.write_u8(1)?;
-                writer.write_u64::<LittleEndian>(x as u64)?;
-            }
-            Scale::Exact(p) => {
-                writer.write_u8(2)?;
-                writer.write_u64::<LittleEndian>(p)?;
-            }
-        }
+        let Scale::Log(x) = meta.scale;
+        writer.write_u8(1)?;
+        writer.write_u64::<LittleEndian>(x as u64)?;
         writer.write_u8(match meta.slots {
             SlotsKind::Integer => 0,
             SlotsKind::Real => 1,
@@ -99,7 +80,6 @@ impl GLWEPlaintextMeta {
         let scale = match reader.read_u8()? {
             0 => return Ok(None),
             1 => Scale::Log(reader.read_u64::<LittleEndian>()? as usize),
-            2 => Scale::Exact(reader.read_u64::<LittleEndian>()?),
             _ => return Err(invalid("scale")),
         };
         let slots = match reader.read_u8()? {
@@ -132,9 +112,9 @@ impl GLWEPlaintextMeta {
 pub trait GLWEPlaintextInfos {
     fn plaintext_meta(&self) -> Option<GLWEPlaintextMeta>;
 
-    /// The scale, `None` when unset: no scale holds by default.
-    fn scale(&self) -> Option<Scale> {
-        self.plaintext_meta().map(|meta| meta.scale)
+    /// The scale; unset reads as unscaled, `Log(0)`.
+    fn scale(&self) -> Scale {
+        self.plaintext_meta().unwrap_or_default().scale
     }
 
     /// The slot kind; unset reads as `Complex`, which always holds.
@@ -207,12 +187,11 @@ mod tests {
             slots: SlotsKind::Real,
             log_sparsity: 3,
         };
-        let exact = GLWEPlaintextMeta {
-            scale: Scale::Exact(65537),
+        let integer = GLWEPlaintextMeta {
             slots: SlotsKind::Integer,
-            log_sparsity: 0,
+            ..Default::default()
         };
-        for meta in [None, Some(sparse), Some(exact)] {
+        for meta in [None, Some(sparse), Some(integer)] {
             let mut bytes = Vec::new();
             GLWEPlaintextMeta::write_to(&meta, &mut bytes).unwrap();
             let decoded = GLWEPlaintextMeta::read_from(&mut bytes.as_slice()).unwrap();

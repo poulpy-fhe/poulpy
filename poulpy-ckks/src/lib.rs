@@ -63,10 +63,9 @@
 //! | [`api::CKKSPaCoOps`] | PaCo bootstrapping without ModUp or EvalMod; parameterized by [`layouts::PaCoPlan`] and a compiled [`layouts::PaCoContext`] |
 
 use poulpy_core::layouts::{
-    Base2K, Degree, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
-    SetGLWEPlaintextInfos, SetK, TorusPrecision,
+    Base2K, Degree, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetK, TorusPrecision,
 };
-pub use poulpy_core::layouts::{GLWEPlaintextMeta, Scale, SlotsKind};
+pub use poulpy_core::layouts::{GLWEPlaintextInfos, GLWEPlaintextMeta, Scale, SetGLWEPlaintextInfos, SlotsKind};
 use poulpy_hal::layouts::Backend;
 use poulpy_hal::layouts::CyclotomicOrder;
 use poulpy_hal::layouts::Module;
@@ -106,9 +105,10 @@ pub mod prelude {
     };
     pub use crate::layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, PolynomialApproximation};
     pub use crate::{
-        CKKSCompositionError, CKKSError, CKKSInfos, CKKSLayout, CKKSResult, CoeffsMeta, GLWEPlaintextMeta, Quad, Scale,
-        SetCKKSInfos, SlotsKind,
+        CKKSCompositionError, CKKSError, CKKSInfos, CKKSLayout, CKKSResult, CoeffsMeta, GLWEPlaintextInfos, GLWEPlaintextMeta,
+        Quad, Scale, SetCKKSInfos, SetGLWEPlaintextInfos, SlotsKind,
     };
+    pub use poulpy_core::layouts::SetK;
 }
 pub mod oep;
 pub mod polynomial;
@@ -175,13 +175,14 @@ impl<BE: Backend> CKKSModuleInfos for Module<BE> {
     }
 }
 
-/// `log_delta` of a CKKS scale, always a power of two.
+/// `log_delta` of a CKKS scale.
 pub(crate) fn ckks_log_delta(meta: &GLWEPlaintextMeta) -> usize {
-    meta.scale.log2().expect("a CKKS scale is a power of two")
+    let Scale::Log(log_delta) = meta.scale;
+    log_delta
 }
 
-/// CKKS reading of the plaintext metadata, implemented for every GLWE-like
-/// container.
+/// CKKS reading of the plaintext metadata, implemented by the CKKS containers
+/// only: a core GLWE is not a CKKS operand.
 ///
 /// This trait exposes the semantic precision of a value independently from the
 /// raw limb storage used by the underlying torus representation. `log_budget` is
@@ -205,9 +206,8 @@ pub trait CKKSInfos: LWEInfos + GLWEPlaintextInfos {
     }
 }
 
-impl<T: LWEInfos + GLWEPlaintextInfos + ?Sized> CKKSInfos for T {}
-
-/// Mutable CKKS metadata access, implemented for every GLWE-like container.
+/// Mutable CKKS metadata access, implemented for every [`CKKSInfos`] container
+/// that can set its metadata and `k`.
 pub trait SetCKKSInfos: CKKSInfos + SetGLWEPlaintextInfos + SetK {
     /// Replaces the plaintext metadata. Does not touch the wrapped GLWE's torus
     /// width `k`, so `log_budget` is re-derived against the (unchanged) `k`. Use
@@ -327,6 +327,8 @@ impl GLWEPlaintextInfos for CKKSLayout {
         Some(self.meta)
     }
 }
+
+impl CKKSInfos for CKKSLayout {}
 
 /// Bits a binary add/sub must shift its result down to fit `res`: the excess of
 /// the **natural result width** — `min(log_delta) + min(log_budget)`, the meta

@@ -684,7 +684,7 @@ fn validate_active_ciphertext_storage<K: LWEInfos + ActiveCiphertextStorage + ?S
 #[cfg(test)]
 mod tests {
     use super::*;
-    use poulpy_core::layouts::{Base2K, Degree, GLWE, GLWEInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, Rank, TorusPrecision};
+    use poulpy_core::layouts::{Base2K, Degree, GLWE, GLWEInfos, Rank, TorusPrecision};
     use poulpy_hal::AlignedBuf;
     use poulpy_hal::layouts::HostBytesBackend;
 
@@ -713,12 +713,6 @@ mod tests {
     impl GLWEInfos for MisreportedCiphertext {
         fn rank(&self) -> Rank {
             self.0.rank()
-        }
-    }
-
-    impl GLWEPlaintextInfos for MisreportedCiphertext {
-        fn plaintext_meta(&self) -> Option<GLWEPlaintextMeta> {
-            self.0.plaintext_meta()
         }
     }
 

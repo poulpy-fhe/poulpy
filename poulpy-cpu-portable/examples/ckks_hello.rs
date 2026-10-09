@@ -16,7 +16,6 @@
 //! `ckks_poly2.rs`.
 
 use anyhow::Result;
-use poulpy_ckks::Scale;
 use poulpy_ckks::SlotsKind;
 use poulpy_ckks::prelude::*;
 use poulpy_core::layouts::GLWESecretSampling;

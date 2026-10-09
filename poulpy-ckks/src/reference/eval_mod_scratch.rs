@@ -7,7 +7,7 @@ use poulpy_hal::layouts::{Backend, Module, PrepareHint};
 
 use crate::SlotsKind;
 use crate::{
-    CKKSCtBounds,
+    CKKSCtBounds, CKKSInfos,
     api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSSubOps, PolynomialInputTransform},
     layouts::eval_mod::{EvalMod, EvalModBsgs},
 };
@@ -51,6 +51,8 @@ impl GLWEPlaintextInfos for EvalModWorkCtInfos {
         Some(self.meta)
     }
 }
+
+impl CKKSInfos for EvalModWorkCtInfos {}
 
 pub fn ckks_eval_mod_tmp_bytes_reference<BE: Backend, R, C, P, F, T>(
     module: &Module<BE>,

@@ -75,6 +75,8 @@ impl GLWEPlaintextInfos for BranchScratchLayout {
     }
 }
 
+impl CKKSInfos for BranchScratchLayout {}
+
 fn automorphism_layout_for<'a, BE: Backend, H>(
     keys: &'a H,
     element: i64,

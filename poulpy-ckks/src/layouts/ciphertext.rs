@@ -162,6 +162,8 @@ impl<D: Data, W: ZnxWord, R: Ring> GLWEPlaintextInfos for CKKSCiphertext<D, W, R
     }
 }
 
+impl<D: Data, W: ZnxWord, R: Ring> CKKSInfos for CKKSCiphertext<D, W, R> {}
+
 impl<D: Data, W: ZnxWord, R: Ring> SetGLWEPlaintextInfos for CKKSCiphertext<D, W, R> {
     fn set_plaintext_meta(&mut self, meta: Option<GLWEPlaintextMeta>) {
         self.inner.set_plaintext_meta(meta)
@@ -276,6 +278,8 @@ impl<BE: Backend> GLWEPlaintextInfos for CKKSCiphertextViewRef<'_, BE> {
     }
 }
 
+impl<BE: Backend> CKKSInfos for CKKSCiphertextViewRef<'_, BE> {}
+
 impl<BE: Backend> GLWEToBackendRef<BE> for CKKSCiphertextViewRef<'_, BE> {
     fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
         self.inner.to_backend_ref()
@@ -319,7 +323,7 @@ impl<BE: Backend> DerefMut for CKKSCiphertextViewMut<'_, BE> {
     }
 }
 
-crate::impl_ckks_infos!(self_meta CKKSCiphertextViewMut);
+crate::impl_ckks_infos!(glwe_inner CKKSCiphertextViewMut);
 
 impl<BE: Backend> GLWEToBackendRef<BE> for CKKSCiphertextViewMut<'_, BE> {
     fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {

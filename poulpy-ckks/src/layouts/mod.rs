@@ -11,14 +11,12 @@
 //! | `CKKSPlaintext<D>` | Quantized CKKS plaintext in the torus / ZNX domain |
 
 /// Implements the full CKKS scratch-view trait bundle for a nominal backend
-/// view wrapper: `GLWEPlaintextInfos`, `SetGLWEPlaintextInfos`, `SetK`, `BSGSMeta`, and `SetBSGSMeta`;
-/// [`CKKSInfos`](crate::CKKSInfos) and [`SetCKKSInfos`](crate::SetCKKSInfos) follow.
+/// view wrapper, forwarding to `self.inner`: `GLWEPlaintextInfos`,
+/// `SetGLWEPlaintextInfos`, [`CKKSInfos`](crate::CKKSInfos), `SetK`, `BSGSMeta`
+/// and `SetBSGSMeta`; [`SetCKKSInfos`](crate::SetCKKSInfos) follows.
 ///
-/// Both arms forward the metadata, stored in the wrapped GLWE's plaintext
-/// metadata, to `self.inner`:
-///
-/// - `inner_meta`: `inner` is a CKKS container (e.g. [`CKKSPlaintextViewMut`] wrapping a `CKKSPlaintext<BufMut>` via [`poulpy_core::view_wrapper!`], which also supplies `LWEInfos`).
-/// - `self_meta`: `inner` is a GLWE-level view (e.g. [`CKKSCiphertextViewMut`]). This arm additionally implements `LWEInfos`/`GLWEInfos` by forwarding to `inner`.
+/// - `ckks_inner`: `inner` is a CKKS container (e.g. [`CKKSPlaintextViewMut`] wrapping a `CKKSPlaintext<BufMut>` via [`poulpy_core::view_wrapper!`], which also supplies `LWEInfos`).
+/// - `glwe_inner`: `inner` is a GLWE-level view (e.g. [`CKKSCiphertextViewMut`]); this arm also forwards `LWEInfos`/`GLWEInfos`.
 ///
 /// New scratch-backed CKKS containers should be one `view_wrapper!`-style
 /// struct plus one invocation of this macro (plus the backend to-ref/to-mut
@@ -27,6 +25,20 @@
 #[macro_export]
 macro_rules! impl_ckks_infos {
     (@ckks_bundle $name:ident) => {
+        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::GLWEPlaintextInfos for $name<'a, BE> {
+            fn plaintext_meta(&self) -> Option<::poulpy_core::layouts::GLWEPlaintextMeta> {
+                ::poulpy_core::layouts::GLWEPlaintextInfos::plaintext_meta(&self.inner)
+            }
+        }
+
+        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::SetGLWEPlaintextInfos for $name<'a, BE> {
+            fn set_plaintext_meta(&mut self, meta: Option<::poulpy_core::layouts::GLWEPlaintextMeta>) {
+                ::poulpy_core::layouts::SetGLWEPlaintextInfos::set_plaintext_meta(&mut self.inner, meta)
+            }
+        }
+
+        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> $crate::CKKSInfos for $name<'a, BE> {}
+
         impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::SetK for $name<'a, BE> {
             fn set_k(&mut self, k: ::poulpy_core::layouts::TorusPrecision) {
                 ::poulpy_core::layouts::SetK::set_k(&mut self.inner, k);
@@ -53,22 +65,10 @@ macro_rules! impl_ckks_infos {
             }
         }
     };
-    (inner_meta $name:ident) => {
-        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::GLWEPlaintextInfos for $name<'a, BE> {
-            fn plaintext_meta(&self) -> Option<::poulpy_core::layouts::GLWEPlaintextMeta> {
-                ::poulpy_core::layouts::GLWEPlaintextInfos::plaintext_meta(&self.inner)
-            }
-        }
-
-        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::SetGLWEPlaintextInfos for $name<'a, BE> {
-            fn set_plaintext_meta(&mut self, meta: Option<::poulpy_core::layouts::GLWEPlaintextMeta>) {
-                ::poulpy_core::layouts::SetGLWEPlaintextInfos::set_plaintext_meta(&mut self.inner, meta)
-            }
-        }
-
+    (ckks_inner $name:ident) => {
         $crate::impl_ckks_infos!(@ckks_bundle $name);
     };
-    (self_meta $name:ident) => {
+    (glwe_inner $name:ident) => {
         impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::LWEInfos for $name<'a, BE> {
             fn noise(&self) -> Option<::poulpy_core::ComponentNoise> {
                 ::poulpy_core::layouts::LWEInfos::noise(&self.inner)
@@ -94,18 +94,6 @@ macro_rules! impl_ckks_infos {
         impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::GLWEInfos for $name<'a, BE> {
             fn rank(&self) -> ::poulpy_core::layouts::Rank {
                 ::poulpy_core::layouts::GLWEInfos::rank(&self.inner)
-            }
-        }
-
-        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::GLWEPlaintextInfos for $name<'a, BE> {
-            fn plaintext_meta(&self) -> Option<::poulpy_core::layouts::GLWEPlaintextMeta> {
-                ::poulpy_core::layouts::GLWEPlaintextInfos::plaintext_meta(&self.inner)
-            }
-        }
-
-        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::SetGLWEPlaintextInfos for $name<'a, BE> {
-            fn set_plaintext_meta(&mut self, meta: Option<::poulpy_core::layouts::GLWEPlaintextMeta>) {
-                ::poulpy_core::layouts::SetGLWEPlaintextInfos::set_plaintext_meta(&mut self.inner, meta)
             }
         }
 
