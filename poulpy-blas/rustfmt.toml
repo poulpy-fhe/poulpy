@@ -1,0 +1,9 @@
+max_width = 130
+hard_tabs = false
+tab_spaces = 4
+newline_style = "Auto"
+use_small_heuristics = "Default"
+wrap_comments = false
+format_code_in_doc_comments = true
+reorder_imports = true
+merge_derives = true
