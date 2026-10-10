@@ -12,7 +12,7 @@ case "$backend" in
   *) echo "Invalid backend: $backend" >&2; exit 2 ;;
 esac
 case "$mode" in
-  native) features+=,enable-ckks,enable-bin-fhe; unset POULPY_TEST_EMULATED ;;
+  native) features+=,enable-ckks,enable-bin-fhe,enable-blas; unset POULPY_TEST_EMULATED ;;
   emulated) export POULPY_TEST_EMULATED=1 ;;
   *) echo "Invalid execution mode: $mode" >&2; exit 2 ;;
 esac
@@ -29,7 +29,7 @@ if [[ "$backend" == avx512 || "$mode" == emulated ]]; then
   filters=(test_vec_znx test_svp test_vmp test_convolution test_cnv test_word_compat
     test_transfer raw_transform_matches_contract core_parity core_encryption glwe_copy)
   if [[ "$mode" == native ]]; then
-    filters+=(ckks_parity bin_fhe_parity prepared_tensor_tests finish_matches_composition_edges determinism
+    filters+=(ckks_parity bin_fhe_parity blas_parity prepared_tensor_tests finish_matches_composition_edges determinism
       consume_parity one_pass_parity relinearize_tests)
   else
     filters+=(--skip ::ntt_n)

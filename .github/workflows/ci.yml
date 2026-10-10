@@ -27,10 +27,12 @@ env:
     poulpy-core/enable-core
     poulpy-cpu-oracle/enable-ckks
     poulpy-cpu-oracle/enable-bin-fhe
+    poulpy-cpu-oracle/enable-blas
     poulpy-cpu-portable/enable-core
     poulpy-cpu-portable/enable-ckks
     poulpy-cpu-portable/enable-bin-fhe
     poulpy-cpu-portable/enable-mhe
+    poulpy-cpu-portable/enable-blas
     poulpy-bin-fhe/enable-bin-fhe
   AVX_FEATURES: >-
     poulpy-core/enable-core
@@ -42,6 +44,7 @@ env:
     poulpy-cpu-avx/enable-ckks
     poulpy-cpu-avx/enable-bin-fhe
     poulpy-cpu-avx/enable-rayon
+    poulpy-cpu-avx/enable-blas
     poulpy-bin-fhe/enable-bin-fhe
   AVX512_FEATURES: >-
     poulpy-core/enable-core
@@ -57,6 +60,7 @@ env:
     poulpy-cpu-avx512/enable-bin-fhe
     poulpy-cpu-avx512/enable-ifma
     poulpy-cpu-avx512/enable-rayon
+    poulpy-cpu-avx512/enable-blas
     poulpy-bin-fhe/enable-bin-fhe
   NEON_FEATURES: >-
     poulpy-core/enable-core
@@ -68,6 +72,7 @@ env:
     poulpy-cpu-arm/enable-bin-fhe
     poulpy-cpu-arm/enable-neon
     poulpy-cpu-arm/enable-rayon
+    poulpy-cpu-arm/enable-blas
     poulpy-bin-fhe/enable-bin-fhe
 
 jobs:
@@ -113,7 +118,7 @@ jobs:
         run: cargo test --workspace --profile ci --features "$PORTABLE_FEATURES"
 
       - name: Check scheme documentation
-        run: RUSTDOCFLAGS="-D warnings" cargo doc -p poulpy-core -p poulpy-ckks -p poulpy-bin-fhe -p poulpy-mhe --no-deps --features poulpy-core/enable-core,poulpy-ckks/test-utils
+        run: RUSTDOCFLAGS="-D warnings" cargo doc -p poulpy-core -p poulpy-ckks -p poulpy-bin-fhe -p poulpy-mhe -p poulpy-blas --no-deps --features poulpy-core/enable-core,poulpy-ckks/test-utils,poulpy-blas/test-utils
 
       # CKKS setup math uses the pure-Rust binary128 backing whatever the `Quad` routing.
       - name: Test CKKS encoding determinism with libquadmath
