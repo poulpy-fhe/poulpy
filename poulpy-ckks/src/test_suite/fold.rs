@@ -1,10 +1,12 @@
 //! Fold and unfold round trip, checked on ring coefficients: the fold only moves
 //! coefficients, so the folded message has a cleartext model.
 
+use crate::{Scale, ckks_log_delta};
 use std::collections::HashMap;
 
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWEInfos, GLWELayout, GLWESecretPrepared, GLWEToBackendMut, LWEInfos,
+    GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWESecretPrepared, GLWEToBackendMut,
+    LWEInfos,
 };
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -13,7 +15,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos, SlotsKind,
+    CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::{CKKSFoldLayoutOps, CKKSFoldOps},
     layouts::{CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSModuleAlloc, CKKSPlaintextVecHostCodec, RingSwitchKeys},
     test_suite::{
@@ -67,9 +69,9 @@ where
     .unwrap();
     // Conjugation splits real pairs; two sparse elements exercise both split levels.
     let sparse_real = CKKSLayout {
-        meta: CKKSMeta {
-            log_sparsity: 2,
+        meta: GLWEPlaintextMeta {
             slots: SlotsKind::Real,
+            log_sparsity: 2,
             ..params.prec_meta
         },
         ..params.prec()
@@ -85,7 +87,7 @@ where
         (&half_params, &half_sk, Some(&ring_switch), Some(&half_automorphisms), 0),
     ] {
         let n_in = input_params.n;
-        let log_delta = params.prec_meta.log_delta;
+        let log_delta = ckks_log_delta(&params.prec_meta);
         let label = format!("degree {n_in}, sparsity {log_sparsity}");
         let mut scratch = alloc_scratch(input_params, module);
         let slots = [
@@ -105,9 +107,9 @@ where
             .zip(slots)
             .map(|(msg, slots)| {
                 let prec = CKKSLayout {
-                    meta: CKKSMeta {
-                        log_sparsity,
+                    meta: GLWEPlaintextMeta {
                         slots,
+                        log_sparsity,
                         ..input_params.prec_meta
                     },
                     ..input_params.prec()
@@ -171,12 +173,15 @@ where
             .enumerate()
             .map(|(i, (ct, group))| {
                 assert_eq!(
-                    ct.meta(),
-                    CKKSMeta {
-                        log_delta,
-                        log_sparsity: 0,
-                        slots: SlotsKind::Complex,
-                    },
+                    (ct.meta(), ct.log_sparsity()),
+                    (
+                        GLWEPlaintextMeta {
+                            scale: Scale::Log(log_delta),
+                            slots: SlotsKind::Complex,
+                            log_sparsity: 0
+                        },
+                        0
+                    ),
                     "folded metadata {i}, {label}"
                 );
                 let got = decrypt_coeffs::<BE, F>(module, &params, ct, &sk, &mut refresh_scratch);
@@ -222,7 +227,11 @@ where
             )
             .unwrap();
         for (i, (out, msg)) in outs.iter().zip(&msgs).enumerate() {
-            assert_eq!(out.meta(), ins[i].meta(), "unfolded {i}, {label}");
+            assert_eq!(
+                (out.meta(), out.log_sparsity()),
+                (ins[i].meta(), ins[i].log_sparsity()),
+                "unfolded {i}, {label}"
+            );
             assert_eq!(out.noise(), None, "unfolded provenance {i}, {label}");
             let got = decrypt_coeffs::<BE, F>(module, input_params, out, input_sk, &mut scratch);
             assert_precision(&format!("unfolded {i}, {label}"), &got, msg, log_delta, n_in);

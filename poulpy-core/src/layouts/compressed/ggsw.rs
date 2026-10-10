@@ -345,6 +345,7 @@ impl<D: HostDataRef, W: ZnxWord> GGSWCompressed<D, W> {
             base2k: self.base2k,
             rank: self.rank,
             seed: self.seed[row * (rank + 1) + col],
+            plaintext_meta: None,
         }
     }
 }
@@ -363,6 +364,7 @@ impl<D: HostDataMut, W: ZnxWord> GGSWCompressed<D, W> {
             base2k: self.base2k,
             rank: self.rank,
             seed,
+            plaintext_meta: None,
         }
     }
 }
@@ -563,6 +565,7 @@ fn ggsw_compressed_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
         base2k,
         rank: rank_field,
         seed,
+        plaintext_meta: None,
     }
 }
 
@@ -579,5 +582,6 @@ fn ggsw_compressed_at_backend_ref_from_ref<'a, 'b, BE: Backend>(
         base2k: ggsw.base2k,
         rank: ggsw.rank,
         seed: ggsw.seed[row * (rank + 1) + col],
+        plaintext_meta: None,
     }
 }

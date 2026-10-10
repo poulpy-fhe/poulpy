@@ -1,7 +1,9 @@
+use crate::Scale;
+use poulpy_core::layouts::{GLWEPlaintextInfos, SetGLWEPlaintextInfos};
 use poulpy_core::{
     GLWEBytesOf,
     layouts::{
-        GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetK,
         prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
@@ -13,7 +15,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos, SlotsKind,
+    CKKSCtBounds, CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSEncodingOps, CKKSEvalModOps, CKKSPolynomialEvaluationOps,
     },
@@ -280,10 +282,10 @@ fn run_case<BE, F, E>(
     let backend_luts: Vec<_> = host_luts.iter().map(|lut| lut.transfer_to(module)).collect();
     let tp = CKKSTestParams {
         k: k_boot,
-        prec_meta: CKKSMeta {
-            log_sparsity: 0,
-            log_delta: INPUT_LOG_DELTA,
+        prec_meta: GLWEPlaintextMeta {
+            scale: Scale::Log(INPUT_LOG_DELTA),
             slots: SlotsKind::Complex,
+            log_sparsity: 0,
         },
         prec_log_budget: 10,
         hw: 192,
@@ -326,7 +328,7 @@ fn run_case<BE, F, E>(
     if backend_luts.iter().any(|lut| lut.requires_eval_mod()) {
         let boot_layout = crate::CKKSLayout {
             glwe_layout: output_spec.glwe_layout,
-            meta: CKKSMeta::default(),
+            meta: GLWEPlaintextMeta::default(),
         };
         let boot_ct_bytes = module.glwe_bytes_of_from_infos(&boot_layout);
         let eval_mod_tmp = module.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key);

@@ -307,7 +307,7 @@ macro_rules! impl_ckks_encoding {
 mod tests {
     use crate::{FFT64Portable, NTT4x30Portable};
     use poulpy_ckks::{
-        CKKSMeta, SetCKKSInfos, SlotsKind,
+        GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
         api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
         layouts::{CKKSEncodingBuffer, CKKSModuleAlloc, ScratchArenaTakeCKKS},
     };
@@ -336,15 +336,12 @@ mod tests {
             let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(slots));
             let mut scratch = scratch.arena();
 
-            for (degree, log_sparsity) in [
-                (2 * slots, 0),
-                (module.max_n(), (module.max_n() / (2 * slots)).ilog2() as usize),
-            ] {
+            for degree in [2 * slots, module.max_n()] {
                 let mut pt = module.ckks_plaintext_alloc(Degree(degree as u32), Base2K(20), TorusPrecision(80));
-                pt.set_meta(CKKSMeta {
-                    log_sparsity,
-                    log_delta: 40,
+                pt.set_meta(GLWEPlaintextMeta {
+                    scale: Scale::Log(40),
                     slots: SlotsKind::Complex,
+                    log_sparsity: 0,
                 });
                 module.ckks_encode_reim_into(&mut pt, &re, &im, &mut scratch).unwrap();
                 let mut got_re = vec![F::zero(); slots];
@@ -375,10 +372,10 @@ mod tests {
     fn coefficient_only_encoding_accepts_scratch_plaintext_views() {
         let module = Module::<FFT64Portable>::new(32);
         let mut layout = module.ckks_plaintext_alloc(Degree(32), Base2K(20), TorusPrecision(80));
-        layout.set_meta(CKKSMeta {
-            log_sparsity: 1,
-            log_delta: 40,
+        layout.set_meta(GLWEPlaintextMeta {
+            scale: Scale::Log(40),
             slots: SlotsKind::Complex,
+            log_sparsity: 0,
         });
         let bytes = GLWEPlaintext::<AlignedBuf, i64>::bytes_of_from_infos(&layout);
         let mut pt_scratch = ScratchOwned::<FFT64Portable>::alloc(bytes);
@@ -428,10 +425,10 @@ mod tests {
     fn encoding_rejects_invalid_slot_shapes() {
         let module = Module::<FFT64Portable>::new(32);
         let mut pt = module.ckks_plaintext_alloc(Degree(32), Base2K(20), TorusPrecision(80));
-        pt.set_meta(CKKSMeta {
-            log_sparsity: 0,
-            log_delta: 40,
+        pt.set_meta(GLWEPlaintextMeta {
+            scale: Scale::Log(40),
             slots: SlotsKind::Complex,
+            log_sparsity: 0,
         });
 
         let three = [0.0; 3];

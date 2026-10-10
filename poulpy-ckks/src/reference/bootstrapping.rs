@@ -1,9 +1,10 @@
-use crate::{CKKSResult as Result, ckks_ensure, layouts::eval_mod::EvalModPlan};
+use crate::{CKKSResult as Result, ckks_ensure, ckks_log_delta, layouts::eval_mod::EvalModPlan};
+use poulpy_core::layouts::{GLWEPlaintextInfos, SetGLWEPlaintextInfos};
 use poulpy_core::{
     GLWECopy, GLWEKeyswitch, GLWEShift,
     layouts::{
         BSGSMeta, GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
-        SetBSGSMeta,
+        SetBSGSMeta, SetK,
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
@@ -13,7 +14,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos, SlotsKind,
+    CKKSCtBounds, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSCopyOps,
         CKKSDFTOps, CKKSEvalModOps, CKKSImagOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
@@ -42,7 +43,7 @@ where
         },
         // `log_delta = 0` maximizes `log_budget`, which upper-bounds the
         // EvalMod working width.
-        meta: CKKSMeta::default(),
+        meta: GLWEPlaintextMeta::default(),
     };
     let in_layout = CKKSLayout {
         glwe_layout: GLWELayout {
@@ -51,7 +52,7 @@ where
             k: ct_in.k(),
             rank: Rank(1),
         },
-        meta: CKKSMeta::default(),
+        meta: GLWEPlaintextMeta::default(),
     };
     (boot_layout, in_layout)
 }
@@ -380,7 +381,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
         let scale_up = eval_mod.raised_scale_up(src.log_delta())?;
         ckks_mod_up_scaled_reference(self, dst, src, scale_up, scratch)?;
         let mut meta = dst.meta();
-        meta.log_delta += eval_mod.log_msg_ratio;
+        meta.scale = Scale::Log(ckks_log_delta(&meta) + eval_mod.log_msg_ratio);
         dst.set_meta(meta);
         Ok(())
     }
@@ -417,10 +418,10 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
             ckks_bootstrap_mod_up_from_mut(self, dst, &mut ct0, Some(eval_mod), 0, keys, &mut scratch_inner)
         })?;
 
-        dst.set_meta(CKKSMeta {
-            log_sparsity: src.log_sparsity(),
-            log_delta: dst.log_delta() + eval_mod.log_msg_ratio,
+        dst.set_meta(GLWEPlaintextMeta {
+            scale: Scale::Log(dst.log_delta() + eval_mod.log_msg_ratio),
             slots: src.slots(),
+            log_sparsity: src.log_sparsity(),
         });
         Ok(())
     }
@@ -774,10 +775,10 @@ where
     // `log_delta` picks up the fused lift, so the encoded value is unchanged;
     // the remaining headroom now spans the full raised modulus, so the torus
     // width `k` becomes `k_large` and `log_budget = k_large - log_delta`.
-    dst.set_meta(CKKSMeta {
-        log_delta: src.log_delta() + scale_up,
-        log_sparsity: src.log_sparsity(),
+    dst.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(src.log_delta() + scale_up),
         slots: src.slots(),
+        log_sparsity: src.log_sparsity(),
     });
     dst.set_k(k_large.into());
 
@@ -811,7 +812,7 @@ where
             // Not `set_log_delta`: it preserves `log_budget` and grows `k`, which
             // cancels the shift. The lift spends budget at a fixed modulus.
             let mut meta = src.meta();
-            meta.log_delta = log_delta + scale_up_in;
+            meta.scale = Scale::Log(log_delta + scale_up_in);
             src.set_meta(meta);
         }
         scale_up = plan.raised_scale_up(src.log_delta())?;
@@ -1041,10 +1042,10 @@ where
     })?;
     // Keep the C2S guard bits through EvalMod, then relabel at the output width.
     ct_out.set_log_delta(ct_out.log_delta() - ctx.c2s_guard_bits());
-    ct_out.set_meta(CKKSMeta {
-        log_sparsity: ct_in.log_sparsity(),
-        log_delta: ct_in.log_delta(),
+    ct_out.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(ct_in.log_delta()),
         slots: ct_in.slots(),
+        log_sparsity: ct_in.log_sparsity(),
     });
     Ok(())
 }
@@ -1095,10 +1096,10 @@ where
             keys,
             &mut scratch_inner,
         )?;
-        ct_raised.set_meta(CKKSMeta {
-            log_sparsity: ct_in.log_sparsity(),
-            log_delta: log_modulus_in + ctx.c2s_guard_bits(),
+        ct_raised.set_meta(GLWEPlaintextMeta {
+            scale: Scale::Log(log_modulus_in + ctx.c2s_guard_bits()),
             slots: ct_in.slots(),
+            log_sparsity: ct_in.log_sparsity(),
         });
         Result::Ok(())
     })
@@ -1144,10 +1145,10 @@ where
         ckks_bootstrap_coeffs_to_slots_real(module, &mut ct_raised, &mut r0, ctx, keys, &mut scratch_local)?;
         module.ckks_eval_mod(ct_out, &ct_raised, ctx.eval_mod(), keys.tensor_key(), &mut scratch_local)?;
         ct_out.set_log_delta(ct_out.log_delta() - ctx.c2s_guard_bits());
-        ct_out.set_meta(CKKSMeta {
-            log_sparsity: ct_in.log_sparsity(),
-            log_delta: ct_in.log_delta(),
+        ct_out.set_meta(GLWEPlaintextMeta {
+            scale: Scale::Log(ct_in.log_delta()),
             slots: ct_in.slots(),
+            log_sparsity: ct_in.log_sparsity(),
         });
         Result::Ok(())
     })
@@ -1219,7 +1220,7 @@ fn functional_output_contract<BE: Backend, F>(
     ctx: &BootstrappingContext<BE, F>,
     lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
     bootstrap_k: usize,
-) -> Result<(CKKSMeta, usize)> {
+) -> Result<(GLWEPlaintextMeta, usize)> {
     let log_delta = ct_in
         .log_delta()
         .checked_add(lut.log_msg_ratio())
@@ -1246,10 +1247,10 @@ fn functional_output_contract<BE: Backend, F>(
         "functional bootstrap leaves output k={output_k} below log_delta={log_delta}"
     );
     Ok((
-        CKKSMeta {
-            log_delta,
-            log_sparsity: ct_in.log_sparsity(),
+        GLWEPlaintextMeta {
+            scale: Scale::Log(log_delta),
             slots: ct_in.slots(),
+            log_sparsity: ct_in.log_sparsity(),
         },
         output_k,
     ))

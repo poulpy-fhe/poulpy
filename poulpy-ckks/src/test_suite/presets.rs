@@ -6,9 +6,10 @@
 //! precision pin test ([`bootstrapping_presets_meet_precision`]) both drive it,
 //! so there is a single description of how a preset is exercised.
 
+use crate::Scale;
 use poulpy_core::layouts::{
     GGLWEInfos, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, GLWETensorKeyPrepared, GLWEToBackendMut,
-    GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, prepared::GLWETensorKeyPreparedToBackendRef,
+    GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, SetK, prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -17,7 +18,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos, SlotsKind,
+    CKKSCtBounds, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps,
         CKKSEncryptOps,
@@ -220,10 +221,10 @@ where
         let mut output_pt = self
             .module
             .ckks_pt_vec_alloc(output.base2k(), (output.log_delta() + log_budget).into());
-        output_pt.set_meta(CKKSMeta {
-            log_sparsity: 0,
-            log_delta: output.log_delta(),
+        output_pt.set_meta(GLWEPlaintextMeta {
+            scale: Scale::Log(output.log_delta()),
             slots: SlotsKind::Complex,
+            log_sparsity: 0,
         });
         self.module
             .ckks_decrypt(&mut output_pt, output, &self.sk, &mut self.scratch.borrow())

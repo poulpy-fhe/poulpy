@@ -1,6 +1,7 @@
 //! Backend-generic SHIP half-bootstrap circuit (Algorithm 1).
 
 use crate::{CKKSResult as Result, ckks_ensure};
+use poulpy_core::layouts::SetGLWEPlaintextInfos;
 use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_core::{
     GLWEKeyswitch, GLWEZero,
@@ -21,7 +22,7 @@ use super::{
     mux::{ship_mux_plans, ship_mux_rotate},
 };
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos, SlotsKind,
+    CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SlotsKind,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSMulOps, CKKSSubOps, ShipScalar},
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, ShipKeysPrepared},
     oep::{CKKSEncodingImpl, CKKSShipCoeffEncodingImpl},
@@ -157,10 +158,10 @@ where
         };
         let mut leaf0 = module.ckks_ciphertext_alloc(b2k_t, TorusPrecision(kk as u32));
         module.glwe_zero(&mut leaf0);
-        leaf0.set_meta_checked(CKKSMeta {
-            log_delta: ld,
-            log_sparsity: 0,
+        leaf0.set_meta_checked(GLWEPlaintextMeta {
+            scale: Scale::Log(ld),
             slots: SlotsKind::Complex,
+            log_sparsity: 0,
         })?;
         module.ckks_add_pt_vec_assign(&mut leaf0, pt0, scratch)?;
         let mut half_leaves = Vec::with_capacity(plan.sparse_hamming_weight() + 1);

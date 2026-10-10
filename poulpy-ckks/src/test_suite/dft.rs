@@ -17,7 +17,9 @@
 //! `dense_params` (full slot count, `Standard` / `Split` formats) and
 //! `sparse_params` (sub-maximal slots, the `RepackImagAsReal` path).
 
+use crate::Scale;
 use crate::api::CKKSEncodingOps;
+use poulpy_core::layouts::{GLWEPlaintextInfos, SetGLWEPlaintextInfos};
 use std::collections::HashMap;
 
 use poulpy_core::layouts::Base2K;
@@ -30,7 +32,7 @@ use poulpy_core::{GLWENoise, layouts::LWEInfos};
 
 use crate::SlotsKind;
 use crate::{
-    CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos,
+    CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos,
     api::{CKKSDFTMatrixOps, CKKSDFTOps},
     layouts::{
         CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, DFTMatrix, DFTMatrixPrepared,
@@ -68,10 +70,10 @@ fn dense_params(params: &CKKSTestParams) -> CKKSTestParams {
         n: 1 << (DENSE_LOG_SLOTS + 1),
         base2k,
         k,
-        prec_meta: CKKSMeta {
-            log_sparsity: 0,
-            log_delta,
+        prec_meta: GLWEPlaintextMeta {
+            scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,
+            log_sparsity: 0,
         },
         prec_log_budget: 10,
         hw: params.hw.min(1 << DENSE_LOG_SLOTS),
@@ -91,10 +93,10 @@ fn sparse_params(params: &CKKSTestParams) -> CKKSTestParams {
         n: 64,
         base2k,
         k,
-        prec_meta: CKKSMeta {
-            log_sparsity: 3,
-            log_delta,
+        prec_meta: GLWEPlaintextMeta {
+            scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,
+            log_sparsity: 0,
         },
         prec_log_budget: 10,
         hw: params.hw.min(32),
@@ -175,18 +177,18 @@ fn noise_bound(log_delta: usize) -> f64 {
     -(log_delta as f64) + 16.0
 }
 
-/// Allocates a CKKS plaintext at the same `(base2k, log_delta, log_budget,
-/// log_sparsity)` as `ct` — the scale [`GLWENoise`] needs the expected value at.
+/// Allocates a CKKS plaintext at the same `(base2k, log_delta, log_budget)` as
+/// `ct` — the scale [`GLWENoise`] needs the expected value at.
 fn want_plaintext<BE>(module: &Module<BE>, ct: &CKKSCiphertextOwned<BE>) -> CKKSPlaintextOwned<BE>
 where
     BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: CKKSModuleAlloc<BE>,
 {
     let mut pt = module.ckks_pt_vec_alloc(ct.base2k(), ct.k());
-    pt.set_meta(CKKSMeta {
-        log_sparsity: ct.log_sparsity(),
-        log_delta: ct.log_delta(),
+    pt.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(ct.log_delta()),
         slots: SlotsKind::Complex,
+        log_sparsity: 0,
     });
     pt
 }
@@ -660,10 +662,10 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
     want_re[slots..].copy_from_slice(im);
     let want_im = vec![F::from_f64(0.0).unwrap(); 2 * slots];
     let mut host_pt = host_module.ckks_pt_vec_alloc(Base2K(base2k as u32), ((log_delta + 10) as u32).into());
-    host_pt.set_meta(CKKSMeta {
-        log_sparsity: 2,
-        log_delta,
+    host_pt.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(log_delta),
         slots: SlotsKind::Complex,
+        log_sparsity: 0,
     });
     small.encode_reim(&mut host_pt, &want_re, &want_im).unwrap();
     let mut ct_in = ckks_encrypt_pt(&params, &module, &sk, params.k, &host_pt, &mut scratch.borrow());

@@ -1,7 +1,7 @@
 use poulpy_core::layouts::{Base2K, Degree, GLWEInfos, GLWEPlaintextLayout, GetDegree, ModuleCoreAlloc, Rank, TorusPrecision};
 use poulpy_hal::layouts::{Backend, Module};
 
-use crate::{CKKSInfos, CKKSMeta, SetCKKSInfos, api::CKKSModuleInfos};
+use crate::{CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos, api::CKKSModuleInfos};
 
 use super::{CKKSCiphertext, CKKSCiphertextOwned, CKKSPlaintext, CKKSPlaintextOwned};
 
@@ -32,12 +32,12 @@ pub trait CKKSModuleAlloc<BE: Backend>:
     where
         A: GLWEInfos,
     {
-        CKKSCiphertext::from_inner(self.glwe_alloc_from_infos(infos), CKKSMeta::default())
+        CKKSCiphertext::from_inner(self.glwe_alloc_from_infos(infos), GLWEPlaintextMeta::default())
     }
 
     /// Allocates a default-meta ciphertext of the given `rank`.
     fn ckks_ciphertext_alloc_with_rank(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> CKKSCiphertextOwned<BE> {
-        CKKSCiphertext::from_inner(self.glwe_alloc(base2k, k, rank), CKKSMeta::default())
+        CKKSCiphertext::from_inner(self.glwe_alloc(base2k, k, rank), GLWEPlaintextMeta::default())
     }
 
     /// Rank-1 convenience over [`Self::ckks_ciphertext_alloc_with_rank`].
@@ -55,7 +55,7 @@ pub trait CKKSModuleAlloc<BE: Backend>:
     }
 
     /// Allocates a default-meta plaintext sized to `k` over `base2k`. The semantic
-    /// [`CKKSMeta`] is not needed to size the buffer — set it afterwards with
+    /// [`GLWEPlaintextMeta`] is not needed to size the buffer — set it afterwards with
     /// [`SetCKKSInfos::set_meta`] (the `_from_infos` variants do this for you).
     fn ckks_plaintext_alloc(&self, n: Degree, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintextOwned<BE> {
         // `k` is the effective torus width (`log_delta + log_budget`); the buffer
@@ -64,7 +64,7 @@ pub trait CKKSModuleAlloc<BE: Backend>:
         // independent of sizing and defaults here; callers set it via `set_meta`.
         CKKSPlaintext::from_inner(
             self.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout { n, base2k, k }),
-            CKKSMeta::default(),
+            GLWEPlaintextMeta::default(),
         )
     }
 

@@ -11,12 +11,12 @@
 //! | `CKKSPlaintext<D>` | Quantized CKKS plaintext in the torus / ZNX domain |
 
 /// Implements the full CKKS scratch-view trait bundle for a nominal backend
-/// view wrapper: [`CKKSInfos`](crate::CKKSInfos), [`SetCKKSInfos`](crate::SetCKKSInfos), `SetK`, `BSGSMeta`, and `SetBSGSMeta`.
+/// view wrapper, forwarding to `self.inner`: `GLWEPlaintextInfos`,
+/// `SetGLWEPlaintextInfos`, [`CKKSInfos`](crate::CKKSInfos), `SetK`, `BSGSMeta`
+/// and `SetBSGSMeta`; [`SetCKKSInfos`](crate::SetCKKSInfos) follows.
 ///
-/// Two arms, selected by where the CKKS metadata lives:
-///
-/// - `inner_meta`: the wrapped `inner` itself carries the metadata (e.g. [`CKKSPlaintextViewMut`] wrapping a `CKKSPlaintext<BufMut>` via [`poulpy_core::view_wrapper!`], which also supplies `LWEInfos`). Everything forwards to `self.inner`.
-/// - `self_meta`: the view stores `meta: CKKSMeta` beside a GLWE-level `inner` (e.g. [`CKKSCiphertextViewMut`]). This arm additionally implements `LWEInfos`/`GLWEInfos` by forwarding to `inner`, and derives `log_budget` from `inner.k() − meta.log_delta`.
+/// - `ckks_inner`: `inner` is a CKKS container (e.g. [`CKKSPlaintextViewMut`] wrapping a `CKKSPlaintext<BufMut>` via [`poulpy_core::view_wrapper!`], which also supplies `LWEInfos`).
+/// - `glwe_inner`: `inner` is a GLWE-level view (e.g. [`CKKSCiphertextViewMut`]); this arm also forwards `LWEInfos`/`GLWEInfos`.
 ///
 /// New scratch-backed CKKS containers should be one `view_wrapper!`-style
 /// struct plus one invocation of this macro (plus the backend to-ref/to-mut
@@ -24,7 +24,21 @@
 /// type's reborrow plumbing).
 #[macro_export]
 macro_rules! impl_ckks_infos {
-    (@ckks_bundle $name:ident) => {
+    (ckks_inner $name:ident) => {
+        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::GLWEPlaintextInfos for $name<'a, BE> {
+            fn plaintext_meta(&self) -> Option<::poulpy_core::layouts::GLWEPlaintextMeta> {
+                ::poulpy_core::layouts::GLWEPlaintextInfos::plaintext_meta(&self.inner)
+            }
+        }
+
+        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::SetGLWEPlaintextInfos for $name<'a, BE> {
+            fn set_plaintext_meta(&mut self, meta: Option<::poulpy_core::layouts::GLWEPlaintextMeta>) {
+                ::poulpy_core::layouts::SetGLWEPlaintextInfos::set_plaintext_meta(&mut self.inner, meta)
+            }
+        }
+
+        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> $crate::CKKSInfos for $name<'a, BE> {}
+
         impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::SetK for $name<'a, BE> {
             fn set_k(&mut self, k: ::poulpy_core::layouts::TorusPrecision) {
                 ::poulpy_core::layouts::SetK::set_k(&mut self.inner, k);
@@ -51,26 +65,7 @@ macro_rules! impl_ckks_infos {
             }
         }
     };
-    (inner_meta $name:ident) => {
-        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> $crate::CKKSInfos for $name<'a, BE> {
-            fn meta(&self) -> $crate::CKKSMeta {
-                $crate::CKKSInfos::meta(&self.inner)
-            }
-        }
-
-        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> $crate::SetCKKSInfos for $name<'a, BE> {
-            fn set_meta(&mut self, meta: $crate::CKKSMeta) {
-                $crate::SetCKKSInfos::set_meta(&mut self.inner, meta);
-            }
-
-            fn set_k(&mut self, k: ::poulpy_core::layouts::TorusPrecision) {
-                $crate::SetCKKSInfos::set_k(&mut self.inner, k);
-            }
-        }
-
-        $crate::impl_ckks_infos!(@ckks_bundle $name);
-    };
-    (self_meta $name:ident) => {
+    (glwe_inner $name:ident) => {
         impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::LWEInfos for $name<'a, BE> {
             fn noise(&self) -> Option<::poulpy_core::ComponentNoise> {
                 ::poulpy_core::layouts::LWEInfos::noise(&self.inner)
@@ -99,23 +94,7 @@ macro_rules! impl_ckks_infos {
             }
         }
 
-        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> $crate::CKKSInfos for $name<'a, BE> {
-            fn meta(&self) -> $crate::CKKSMeta {
-                self.meta
-            }
-        }
-
-        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> $crate::SetCKKSInfos for $name<'a, BE> {
-            fn set_meta(&mut self, meta: $crate::CKKSMeta) {
-                self.meta = meta;
-            }
-
-            fn set_k(&mut self, k: ::poulpy_core::layouts::TorusPrecision) {
-                ::poulpy_core::layouts::SetK::set_k(&mut self.inner, k);
-            }
-        }
-
-        $crate::impl_ckks_infos!(@ckks_bundle $name);
+        $crate::impl_ckks_infos!(ckks_inner $name);
     };
 }
 

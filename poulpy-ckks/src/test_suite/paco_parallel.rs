@@ -9,8 +9,10 @@
 //!   **bit-identical** ciphertext (same limbs, same metadata) — parallelism
 //!   is pure orchestration.
 
+use crate::Scale;
 use crate::api::CKKSEncodingOps;
 use poulpy_core::layouts::IntPolyInfos;
+use poulpy_core::layouts::{GLWEPlaintextInfos, SetGLWEPlaintextInfos};
 use std::collections::HashMap;
 
 use poulpy_core::{
@@ -25,7 +27,7 @@ use poulpy_hal::{
 
 use crate::SlotsKind;
 use crate::{
-    CKKSInfos, CKKSMeta, SetCKKSInfos,
+    CKKSInfos, GLWEPlaintextMeta,
     api::{CKKSLinearTransformationOps, CKKSPaCoOps, PaCoScalar},
     layouts::{CKKSModuleAlloc, PaCoContext, PaCoDFTPlan, PaCoKeySet, PaCoKeysPrepared, PaCoPlan, PaCoSecretSpec, PaCoWorker},
     reference::paco::ops::PaCoSlotOps,
@@ -89,10 +91,10 @@ where
             k: ct.k(),
             rank: Rank(1),
         },
-        meta: CKKSMeta {
-            log_sparsity: 0,
-            log_delta,
+        meta: GLWEPlaintextMeta {
+            scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,
+            log_sparsity: 0,
         },
     };
     let pt = ckks_decrypt_with_prec(module, ct, sk, prec, scratch).unwrap();

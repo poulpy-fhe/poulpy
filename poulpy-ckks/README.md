@@ -183,22 +183,25 @@ The main CKKS-facing types are:
 
 - `CKKSCiphertext<D>` — encrypted CKKS value; wraps a core GLWE ciphertext
 - `CKKSPlaintext<D>` — quantized CKKS plaintext in the torus / ZNX domain
-- `CKKSMeta` — semantic precision metadata
+- `GLWEPlaintextMeta`: plaintext metadata (scale, slots, sparsity), re-exported
+  from `poulpy-core`
 - `CKKSPlaintextVecHostCodec<F>` — trait for encoding/decoding host floats
   into/out of a `CKKSPlaintext`
 
-`CKKSMeta` stores the logical precision metadata used by the scheme:
+CKKS stores its metadata in the wrapped GLWE's `GLWEPlaintextMeta`:
 
 ```rust
-pub struct CKKSMeta {
-    pub log_delta: usize,
-    pub log_sparsity: usize,
+pub struct GLWEPlaintextMeta {
+    pub scale: Scale,        // Scale::Log(log_delta) for CKKS
     pub slots: SlotsKind,
+    pub log_sparsity: usize,
 }
 ```
 
 `log_budget`, the remaining homomorphic capacity, is not stored here; it is
 derived from the wrapped GLWE's torus width `k` as `log_budget = k - log_delta`.
+A plaintext is dense at its own degree, so encrypting one of degree `n` into
+degree `N` yields `log_sparsity = log2(N / n)`.
 
 ## Evaluation Keys and `k_aux`
 
@@ -257,21 +260,20 @@ top:
 
 ```rust,ignore
 use poulpy_ckks::{
-    CKKSMeta, SlotsKind,
+    GLWEPlaintextMeta, Scale, SlotsKind,
     api::CKKSEncodingHostOps,
     layouts::CKKSModuleAlloc,
 };
-use poulpy_hal::api::ModuleN;
 
 let m = 8;  // number of complex slots
 let re = vec![0.0f64; m];
 let im = vec![1.0f64; m];
 
-let mut pt = module.ckks_pt_vec_alloc(base2k.into(), 50usize.into());
-pt.set_meta_checked(CKKSMeta {
-    log_delta: 40,
-    log_sparsity: (module.n() / (2 * m)).ilog2() as usize,
+let mut pt = module.ckks_pt_vec_alloc_compact(m, base2k.into(), 50usize.into());
+pt.set_meta_checked(GLWEPlaintextMeta {
+    scale: Scale::Log(40),
     slots: SlotsKind::Complex,
+    log_sparsity: 0,
 })?;
 // The host adapter needs module.ckks_reim_tmp_bytes(m) scratch bytes.
 module.ckks_encode_reim_into(&mut pt, &re, &im, &mut scratch)?;

@@ -54,6 +54,7 @@ mod lwe_plaintext;
 mod lwe_secret;
 mod lwe_switching_key;
 mod lwe_to_glwe_key;
+mod plaintext_meta;
 mod polynomial_evaluation;
 mod scratch_views;
 
@@ -98,6 +99,7 @@ pub use lwe_plaintext::*;
 pub use lwe_secret::*;
 pub use lwe_switching_key::*;
 pub use lwe_to_glwe_key::*;
+pub use plaintext_meta::*;
 pub use polynomial_evaluation::*;
 pub use prepared::*;
 pub use scratch_views::*;
@@ -341,6 +343,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             k: infos.k(),
             base2k: infos.base2k(),
             canonical: true,
+            plaintext_meta: None,
         }
     }
     fn glwe_alloc(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> GLWE<B::OwnedBuf, B::ZnxWord> {
@@ -380,6 +383,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             k: TorusPrecision((size * base2k.as_usize()) as u32),
             base2k,
             canonical: true,
+            plaintext_meta: None,
         }
     }
 
@@ -477,6 +481,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         GLWEPlaintext {
             data: vec_znx_alloc_zeroed::<B>(infos.n().as_usize(), 1, size),
             k: infos.k(),
+            plaintext_meta: None,
             base2k: infos.base2k(),
         }
     }
