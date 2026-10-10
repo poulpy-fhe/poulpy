@@ -4,8 +4,8 @@ use anyhow::{Context, Result, ensure};
 use poulpy_ckks::{
     CoeffsMeta, GLWEPlaintextInfos, SlotsKind,
     api::{
-        CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, CKKSModuleInfos, LinearTransformation,
-        LinearTransformationPrepared, optimal_bsgs_giant_step,
+        CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, CKKSModuleInfos,
+        LinearTransformation, LinearTransformationPrepared, optimal_bsgs_giant_step,
     },
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
     reference::ckks_encode_linear_transformation_from_diagonals,
@@ -101,12 +101,23 @@ pub struct BlasContextUnprepared<BE: Backend> {
 }
 
 impl<BE: Backend> BlasContextUnprepared<BE> {
+    /// Scratch bytes [`Self::encode`] needs at `log_d`: the encoding of one `d^2`-slot diagonal.
+    pub fn encode_tmp_bytes<F>(module: &Module<BE>, log_d: usize) -> usize
+    where
+        Module<BE>: CKKSEncodingOps<BE, F>,
+        F: CKKSEncodingScalar,
+    {
+        <Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_reim_tmp_bytes(
+            module,
+            1usize.checked_shl(2 * log_d as u32).expect("d^2 overflows usize"),
+        )
+    }
+
     /// Encodes every map for `2^log_d x 2^log_d` matrices at `coeffs_meta`. Operations reject the context on a module
     /// whose slot count differs from `module`'s, and on inputs whose blocks are not at `base2k`.
     ///
-    /// `scratch` must hold the backend's encoding of one `d^2`-slot diagonal (`ckks_reim_tmp_bytes(d * d)` plus the
-    /// encoder's own needs); operations size their scratch assuming the diagonals' `coeffs_meta.k` is not wider than the
-    /// operand ciphertexts.
+    /// `scratch` must hold [`Self::encode_tmp_bytes`]; operations size their scratch assuming the diagonals'
+    /// `coeffs_meta.k` is not wider than the operand ciphertexts.
     pub fn encode<F>(
         module: &Module<BE>,
         log_d: usize,
@@ -292,13 +303,27 @@ pub struct BlasPtOperandUnprepared<BE: Backend> {
 }
 
 impl<BE: Backend> BlasPtOperandUnprepared<BE> {
+    /// Scratch bytes [`Self::encode`] needs at `log_d` and `count`: the encoding of one `count d^2`-slot diagonal.
+    pub fn encode_tmp_bytes<F>(module: &Module<BE>, log_d: usize, count: usize) -> usize
+    where
+        Module<BE>: CKKSEncodingOps<BE, F>,
+        F: CKKSEncodingScalar,
+    {
+        <Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_reim_tmp_bytes(
+            module,
+            1usize
+                .checked_shl(2 * log_d as u32)
+                .and_then(|d2| d2.checked_mul(count))
+                .expect("count d^2 overflows usize"),
+        )
+    }
+
     /// Encodes block `(l, j)` as `A -> A B_lj` at `coeffs_meta`, matrix slot `s` reading public matrix `s mod count`
     /// through `entry(m, row, col)`, `m < count`, `row < rows * d`, `col < cols * d`. Operations reject the operand on a
     /// module whose slot count differs from `module`'s, and on inputs whose blocks are not at `base2k`.
     ///
-    /// `scratch` must hold the backend's encoding of one `count d^2`-slot diagonal (`ckks_reim_tmp_bytes(count * d * d)`
-    /// plus the encoder's own needs); operations size their scratch assuming the diagonals' `coeffs_meta.k` is not wider
-    /// than the operand ciphertexts.
+    /// `scratch` must hold [`Self::encode_tmp_bytes`]; operations size their scratch assuming the diagonals'
+    /// `coeffs_meta.k` is not wider than the operand ciphertexts.
     #[allow(clippy::too_many_arguments)]
     pub fn encode<F>(
         module: &Module<BE>,
