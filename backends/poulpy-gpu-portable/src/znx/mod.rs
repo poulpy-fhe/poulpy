@@ -13,6 +13,8 @@ pub(crate) mod sample;
 
 pub(crate) use gadget::gadget_decompose;
 pub(crate) use lincomb::{Term, lincomb, lincomb_decimating};
+#[cfg_attr(not(feature = "enable-core"), allow(unused_imports))]
+pub(crate) use normalize::normalize_products;
 pub(crate) use normalize::{KERNEL_RADIX, normalize, normalize_residues};
 pub(crate) use permute::{Map, ci_embed, ci_trace, move_from_temp, permute};
 #[cfg_attr(not(feature = "enable-core"), allow(unused_imports))]

@@ -144,6 +144,7 @@ labels! {
     NormalizeBig => "normalize.big",
     NormalizeResidues => "normalize.residues",
     GadgetDecompose => "znx.gadget_decompose",
+    NormalizeProducts => "normalize.products",
     VmpDigitProduct => "vmp.digit_product",
     VmpDigitProductAdd => "vmp.digit_product_add",
     VmpExtractRows => "vmp.extract_rows",

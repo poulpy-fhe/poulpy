@@ -289,7 +289,7 @@ fn by_const_kernel(
 /// `top` being that limb plus the offset: one product of [`by_const_kernel`].
 #[cube]
 #[allow(clippy::too_many_arguments)]
-fn const_product(
+pub(crate) fn const_product(
     a: &[u64],
     b: &[u64],
     i: u32,

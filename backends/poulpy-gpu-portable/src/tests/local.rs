@@ -7,12 +7,13 @@ use poulpy_hal::{
     api::{
         CnvPVecAlloc, Convolution, ScratchOwnedAlloc, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
         VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan, VecZnxDftCopy,
-        VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VmpPMatAlloc, VmpPrepare,
-        VmpPrepareTmpBytes,
+        VecZnxDftSubAssign, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
+        VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
         Backend, DataView, MatZnx, Module, PrepareHint, Ring, ScratchOwned, VecZnx, VecZnxBigToBackendMut, VecZnxDftOwned,
         VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxShape, VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxView,
+        vec_znx_dft_backend_ref_from_mut,
     },
     test_suite::{download_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref},
 };
@@ -330,6 +331,45 @@ fn mul_columns_case<R: Ring>(
         "diagonal products differ from their reference: {shape}"
     );
     assert!(cross_want == cross_have, "cross product differs from its reference: {shape}");
+
+    // The square of `a`: the reference on both prepared forms of `a`, the
+    // fused columns from the left form alone.
+    let mut right = module.cnv_pvec_right_alloc(n, 2, a_size, PrepareHint::Reuse);
+    module.cnv_prepare_right(
+        &mut poulpy_hal::layouts::CnvPVecRToBackendMut::to_backend_mut(&mut right),
+        &vec_znx_backend_ref::<BE<R>>(&a),
+        &mut scratch.arena(),
+    );
+    let right = poulpy_hal::layouts::CnvPVecRToBackendRef::to_backend_ref(&right);
+    let mut diag_seed = seed;
+    let mut diag_want = transformed(module, n, 2, diag_size, &mut diag_seed);
+    let mut diag_have = transformed(module, n, 2, diag_size, &mut seed);
+    let mut cross_seed = seed;
+    let mut cross_want = transformed(module, n, 1, cross_size, &mut cross_seed);
+    let mut cross_have = transformed(module, n, 1, cross_size, &mut seed);
+    {
+        let mut diag = diag_want.to_backend_mut();
+        let mut cross = cross_want.to_backend_mut();
+        for i in 0..2 {
+            module.cnv_apply_dft(offset, &mut diag, i, &left, i, &right, i, 1, &mut scratch.arena());
+        }
+        module.cnv_pairwise_apply_dft(offset, &mut cross, 0, &left, &right, 0, 1, &mut scratch.arena());
+        let diag_ref = vec_znx_dft_backend_ref_from_mut(&diag);
+        module.vec_znx_dft_sub_assign(&mut cross, 0, &diag_ref, 0);
+        module.vec_znx_dft_sub_assign(&mut cross, 0, &diag_ref, 1);
+    }
+    crate::hal_impl::glwe_square_columns(
+        module,
+        offset,
+        &mut diag_have.to_backend_mut(),
+        &mut cross_have.to_backend_mut(),
+        &left,
+    );
+    assert!(diag_want == diag_have, "squares differ from their reference: {shape}");
+    assert!(
+        cross_want == cross_have,
+        "cross column of a square differs from its reference: {shape}"
+    );
 }
 
 #[cfg(feature = "enable-core")]
@@ -1335,5 +1375,66 @@ fn fresh_buffers_are_zero_and_prepare_overwrites_them() {
             fresh.data() == settled.data(),
             "prepared operands differ for a source of {a_size} limbs"
         );
+    }
+}
+
+/// The constant combination against its reference: one to four terms summed
+/// inside the launch that normalizes them, every other constant shifted by a
+/// sub-limb amount first, and a fifth term refused.
+#[cfg(feature = "enable-core")]
+#[test]
+fn const_combination_matches_reference() {
+    use poulpy_core::{oep::ConstTerm, reference::operations::glwe_const_combination_reference};
+    let module = &*MODULE;
+    let mut scratch = ScratchOwned::<Gpu>::alloc(1 << 22);
+    let (base2k, a_size, b_size, res_size) = (50, 6, 3, 5);
+    for count in 1..=5usize {
+        for (res_k, acc_size) in [(res_size * base2k, a_size + b_size), (res_size * base2k - 7, res_size)] {
+            let mut seed = 0x0c0f_fee0_1234_5678u64 ^ ((count * 97 + res_k) as u64);
+            let operands: Vec<_> = (0..count)
+                .map(|_| vector::<poulpy_hal::layouts::Standard>(N, 2, a_size, &mut seed))
+                .collect();
+            let constants = vector::<poulpy_hal::layouts::Standard>(1, count, b_size, &mut seed);
+            let terms: Vec<ConstTerm<'_, Gpu>> = operands
+                .iter()
+                .enumerate()
+                .map(|(index, a)| ConstTerm {
+                    a: vec_znx_backend_ref::<Gpu>(a),
+                    b: vec_znx_backend_ref::<Gpu>(&constants),
+                    b_col: index,
+                    b_coeff: 0,
+                    shift: (index % 2) * 13,
+                    cnv_offset: index % 3,
+                })
+                .collect();
+            let mut destination_seed = seed;
+            let mut want = vector::<poulpy_hal::layouts::Standard>(N, 2, res_size, &mut destination_seed);
+            let mut have = vector::<poulpy_hal::layouts::Standard>(N, 2, res_size, &mut seed);
+            glwe_const_combination_reference(
+                module,
+                &mut vec_znx_backend_mut::<Gpu>(&mut want),
+                base2k,
+                res_k,
+                acc_size,
+                &terms,
+                &mut scratch.arena(),
+            );
+            let fused = crate::core_impl::shifted_const_combination(
+                module,
+                &mut vec_znx_backend_mut::<Gpu>(&mut have),
+                base2k,
+                res_k,
+                acc_size,
+                &terms,
+                &mut scratch.arena(),
+            );
+            assert_eq!(fused, count <= 4, "the kernel takes up to four terms");
+            if fused {
+                assert!(
+                    want.data() == have.data(),
+                    "constant combination differs from its reference: terms={count} res_k={res_k} acc_size={acc_size}"
+                );
+            }
+        }
     }
 }

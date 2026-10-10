@@ -34,7 +34,7 @@ use crate::{
     ntt4x30::AutomorphismPlan,
     runtime::{GpuBuf, GpuRuntime, access},
     znx::{
-        CONST_TERMS, Column, Term, convolution_by_const_sum, lincomb, normalize,
+        CONST_TERMS, Column, KERNEL_RADIX, Term, convolution_by_const_sum, lincomb, normalize, normalize_products,
         sample::{Placement, add_rejection, add_table, add_uniform, fill_block, fill_fixed_weight, fill_probability},
     },
 };
@@ -161,7 +161,7 @@ pub(crate) fn square_columns<RT: GpuRuntime, R: Ring>(
 }
 
 /// `GLWEMulConstImpl::glwe_const_combination` with the terms of a column
-/// summed by one launch into the module's temporary, then normalized.
+/// summed inside the launch that normalizes them.
 /// Returns `false`, having done nothing, for more terms than one launch takes
 /// or operands without storage.
 /// Scratch of [`shifted_const_combination`]: every constant of a combination shifted at once.
@@ -267,6 +267,30 @@ pub(crate) fn const_combination<RT: GpuRuntime, R: Ring>(
         poulpy_hal::layouts::assert_dense(&term.a, "glwe_const_combination");
         poulpy_hal::layouts::assert_dense(&term.b, "glwe_const_combination");
     }
+    let products = |col: usize| -> Vec<(Column, Column, usize, usize)> {
+        terms
+            .iter()
+            .map(|term| {
+                (
+                    column_ref(&term.a, col).expect("checked above"),
+                    column_ref(&term.b, term.b_col).expect("checked above"),
+                    term.b_coeff,
+                    term.cnv_offset,
+                )
+            })
+            .collect()
+    };
+    // The normalization reads the sum as it forms it, unless the radix is one
+    // the kernel leaves to the host or the destination is one of the operands.
+    let res0 = column_mut(res, 0).expect("checked above");
+    let apart = products(0).iter().all(|(a, _, _, _)| a.binding.id != res0.binding.id);
+    if base2k <= KERNEL_RADIX && apart {
+        for col in 0..res.cols() {
+            let res = column_mut(res, col).expect("checked above");
+            normalize_products::<RT>(&res, base2k, res_k, &products(col), acc_size, base2k);
+        }
+        return true;
+    }
     handle(module).with_temp(acc_size * n * size_of::<i128>(), |temp| {
         let acc = Column {
             binding: temp.view().binding().expect("temporary holds storage"),
@@ -277,18 +301,7 @@ pub(crate) fn const_combination<RT: GpuRuntime, R: Ring>(
             size: acc_size,
         };
         for col in 0..res.cols() {
-            let products: Vec<(Column, Column, usize, usize)> = terms
-                .iter()
-                .map(|term| {
-                    (
-                        column_ref(&term.a, col).expect("checked above"),
-                        column_ref(&term.b, term.b_col).expect("checked above"),
-                        term.b_coeff,
-                        term.cnv_offset,
-                    )
-                })
-                .collect();
-            convolution_by_const_sum::<RT>(&acc, &products);
+            convolution_by_const_sum::<RT>(&acc, &products(col));
             let res = column_mut(res, col).expect("checked above");
             normalize::<RT>(&res, base2k, res_k, 0, &acc, base2k);
         }

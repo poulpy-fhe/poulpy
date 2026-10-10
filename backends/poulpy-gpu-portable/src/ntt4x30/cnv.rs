@@ -56,6 +56,10 @@ const SINGLE: u32 = 0;
 const PAIRWISE: u32 = 1;
 /// `res = a * b`, `res2 = a2 * b2`, `cross = (a + a2) * (b + b2) - res - res2`.
 const TENSOR: u32 = 2;
+/// The tensor form for `b = a` and `b2 = a2`: the operand is read once, the
+/// two squares take each pair of limbs once, doubled, and the cross column
+/// is `2 a a2`.
+const SQUARE: u32 = 3;
 
 #[cube(launch_unchecked)]
 #[allow(clippy::too_many_arguments, unused_assignments)]
@@ -114,15 +118,15 @@ fn convolution_kernel(
         // The pairwise form keeps the sums of its two columns.
         let mut x = Array::<u32>::new(a_cap);
         let mut y = Array::<u32>::new(b_cap);
-        // Only the tensor form keeps its second columns apart.
-        let mut x2 = Array::<u32>::new(comptime!(if form == TENSOR { a_cap } else { 1 }));
+        // Only the tensor forms keep their second columns apart.
+        let mut x2 = Array::<u32>::new(comptime!(if form >= TENSOR { a_cap } else { 1 }));
         let mut y2 = Array::<u32>::new(comptime!(if form == TENSOR { b_cap } else { 1 }));
         for t in 0..a_len {
             let index = (a_first + t) * a_stride + word;
             let mut value = a[(a_base + index) as usize];
             if form != SINGLE {
                 let second = a[(a2_base + index) as usize];
-                if form == TENSOR {
+                if comptime!(form >= TENSOR) {
                     x2[t as usize] = second;
                 } else {
                     let sum = value + second;
@@ -131,19 +135,21 @@ fn convolution_kernel(
             }
             x[t as usize] = value;
         }
-        for t in 0..b_len {
-            let index = (b_first + t) * b_stride + b_word;
-            let mut value = b[(b_base + index) as usize];
-            if form != SINGLE {
-                let second = b[(b2_base + index) as usize];
-                if form == TENSOR {
-                    y2[t as usize] = second;
-                } else {
-                    let sum = value + second;
-                    value = min(sum, sum - q);
+        if comptime!(form != SQUARE) {
+            for t in 0..b_len {
+                let index = (b_first + t) * b_stride + b_word;
+                let mut value = b[(b_base + index) as usize];
+                if form != SINGLE {
+                    let second = b[(b2_base + index) as usize];
+                    if form == TENSOR {
+                        y2[t as usize] = second;
+                    } else {
+                        let sum = value + second;
+                        value = min(sum, sum - q);
+                    }
                 }
+                y[t as usize] = value;
             }
-            y[t as usize] = value;
         }
 
         for j in 0..limbs {
@@ -157,52 +163,91 @@ fn convolution_kernel(
             while v < end {
                 let block_end = min(v + FOLD_TERMS, end);
                 acc = fold64(acc, r);
-                if form == TENSOR {
+                if comptime!(form >= TENSOR) {
                     acc2 = fold64(acc2, r);
                     acc_sum = fold64(acc_sum, r);
                 }
                 while v < block_end {
                     let u = (top - v - a_first) as usize;
                     let w = (v - b_first) as usize;
-                    let xv = x[u];
-                    let yv = y[w];
-                    if form == TENSOR {
-                        let xv2 = x2[u];
-                        let yv2 = y2[w];
-                        let x_sum = xv + xv2;
-                        let y_sum = yv + yv2;
-                        let xs = min(x_sum, x_sum - q);
-                        let ys = min(y_sum, y_sum - q);
-                        acc2 += u64::cast_from(xv2) * u64::cast_from(yv2);
-                        acc_sum += u64::cast_from(xs) * u64::cast_from(ys);
+                    if comptime!(form == SQUARE) {
+                        // Both operands are `x` and `x2`: the pair `(u, v)` and
+                        // its mirror are one product, taken below the middle.
+                        acc_sum += u64::cast_from(x[u]) * u64::cast_from(x2[w]);
+                        if 2u32 * v < top {
+                            acc += u64::cast_from(x[u]) * u64::cast_from(x[w]);
+                            acc2 += u64::cast_from(x2[u]) * u64::cast_from(x2[w]);
+                        }
+                    } else {
+                        let xv = x[u];
+                        let yv = y[w];
+                        if form == TENSOR {
+                            let xv2 = x2[u];
+                            let yv2 = y2[w];
+                            let x_sum = xv + xv2;
+                            let y_sum = yv + yv2;
+                            let xs = min(x_sum, x_sum - q);
+                            let ys = min(y_sum, y_sum - q);
+                            acc2 += u64::cast_from(xv2) * u64::cast_from(yv2);
+                            acc_sum += u64::cast_from(xs) * u64::cast_from(ys);
+                        }
+                        acc += u64::cast_from(xv) * u64::cast_from(yv);
                     }
-                    acc += u64::cast_from(xv) * u64::cast_from(yv);
                     v += 1u32;
                 }
             }
-            let mut value = barrett60(fold64(acc, r), q, mu);
-            if form == TENSOR {
-                let value2 = barrett60(fold64(acc2, r), q, mu);
-                let mut middle = barrett60(fold64(acc_sum, r), q, mu);
+            if comptime!(form == SQUARE) {
+                // Twice the pairs below the middle, plus the middle one.
+                let mut middle_square = 0u64;
+                let mut middle_square2 = 0u64;
+                let start = top + 1u32 - min(top + 1u32, a_size);
+                let half = top >> 1u32;
+                if (top & 1u32) == 0u32 && half >= start && half < end {
+                    let m = (half - a_first) as usize;
+                    middle_square = u64::cast_from(x[m]) * u64::cast_from(x[m]);
+                    middle_square2 = u64::cast_from(x2[m]) * u64::cast_from(x2[m]);
+                }
+                let value = barrett60(fold64(2u64 * fold64(fold64(acc, r), r) + middle_square, r), q, mu);
+                let value2 = barrett60(fold64(2u64 * fold64(fold64(acc2, r), r) + middle_square2, r), q, mu);
+                let mut middle = barrett60(fold64(2u64 * fold64(fold64(acc_sum, r), r), r), q, mu);
                 if j < res_size {
                     res[(res_base + j * res_stride + word) as usize] = value;
                     res[(res2_base + j * res_stride + word) as usize] = value2;
-                    // `middle - value - value2` on canonical residues.
+                } else {
+                    // Past the squares the cross column keeps the whole product.
                     let sum = value + value2;
                     let both = min(sum, sum - q);
-                    let difference = middle - both;
-                    middle = min(difference, difference + q);
+                    let whole = middle + both;
+                    middle = min(whole, whole - q);
                 }
                 if j < cross_size {
                     cross[(cross_base + j * cross_stride + word) as usize] = middle;
                 }
             } else {
-                let index = res_base + j * res_stride + word;
-                if accumulate {
-                    let sum = value + res[index as usize];
-                    value = min(sum, sum - q);
+                let mut value = barrett60(fold64(acc, r), q, mu);
+                if form == TENSOR {
+                    let value2 = barrett60(fold64(acc2, r), q, mu);
+                    let mut middle = barrett60(fold64(acc_sum, r), q, mu);
+                    if j < res_size {
+                        res[(res_base + j * res_stride + word) as usize] = value;
+                        res[(res2_base + j * res_stride + word) as usize] = value2;
+                        // `middle - value - value2` on canonical residues.
+                        let sum = value + value2;
+                        let both = min(sum, sum - q);
+                        let difference = middle - both;
+                        middle = min(difference, difference + q);
+                    }
+                    if j < cross_size {
+                        cross[(cross_base + j * cross_stride + word) as usize] = middle;
+                    }
+                } else {
+                    let index = res_base + j * res_stride + word;
+                    if accumulate {
+                        let sum = value + res[index as usize];
+                        value = min(sum, sum - q);
+                    }
+                    res[index as usize] = value;
                 }
-                res[index as usize] = value;
             }
         }
     }
@@ -898,6 +943,15 @@ fn launch<RT: GpuRuntime>(
         b_plan,
         step,
     } = operands;
+    // A tensor whose right columns are its left ones, read as they are, is a square.
+    let same = |x: &DftColumn, y: &DftColumn| {
+        x.binding.id == y.binding.id && x.base == y.base && x.stride == y.stride && x.size == y.size && x.n == y.n
+    };
+    let form = if form == TENSOR && b_plan.mul == 1 && same(a, b) && same(a2, b2) {
+        SQUARE
+    } else {
+        form
+    };
     let n = res.n;
     assert!(a.n == n, "the left operand has the degree of the product");
     assert!(
@@ -915,23 +969,23 @@ fn launch<RT: GpuRuntime>(
     let ranges = Ranges::new(limbs, offset, a.size, b.size);
     let (a_len, b_len) = (ranges.a_len, ranges.b_len);
     let columns = if form == SINGLE { 1 } else { 2 };
-    let written = if form == TENSOR {
+    let written = if form >= TENSOR {
         2 * res.size + cross.size
     } else {
         limbs * (1 + accumulate as usize)
     };
     let units = 4 * n;
     let label = match (form, accumulate) {
-        (TENSOR, _) => Label::CnvTensor,
+        (TENSOR | SQUARE, _) => Label::CnvTensor,
         (PAIRWISE, _) => Label::CnvPairwise,
         (_, true) => Label::CnvSingleAdd,
         _ => Label::CnvSingle,
     };
     launch!(
-        RT, label, 4 * (units * (a_len * columns + written) + 4 * b.n * b_len * columns), convolution_kernel, (units, RT::GROUP, RT::GROUP);
+        RT, label, 4 * (units * (a_len * columns + written) + if form == SQUARE { 0 } else { 4 * b.n * b_len * columns }), convolution_kernel, (units, RT::GROUP, RT::GROUP);
         [
             res.binding => u32,
-            *if form == TENSOR { &cross.binding } else { &a.binding } => u32,
+            *if form >= TENSOR { &cross.binding } else { &a.binding } => u32,
             a.binding => u32,
             b.binding => u32,
         ];
@@ -962,7 +1016,7 @@ fn launch<RT: GpuRuntime>(
             b_plan.shift,
             offset as u32,
         ];
-        [Consts::get(), form, accumulate, ranges.a_cap(step), ranges.b_cap(step)]
+        [Consts::get(), form, accumulate, ranges.a_cap(step), if form == SQUARE { 1 } else { ranges.b_cap(step) }]
     );
 }
 

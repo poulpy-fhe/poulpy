@@ -11,7 +11,7 @@
 
 use cubecl::prelude::*;
 
-use super::Column;
+use super::{Column, products::const_product};
 use crate::{
     ntt4x30::{Consts, DftColumn, Tables, crt_at},
     runtime::{GpuRuntime, Label, launch, read_at, wipe_host, write_at},
@@ -25,6 +25,15 @@ fn normalize_kernel(
     a: &[u64],
     dft: &[u32],
     tw: &[u32],
+    // The operands of a source that is a sum of constant products.
+    ta0: &[u64],
+    ta1: &[u64],
+    ta2: &[u64],
+    ta3: &[u64],
+    tb0: &[u64],
+    tb1: &[u64],
+    tb2: &[u64],
+    tb3: &[u64],
     n: u32,
     res_base: u32,
     res_stride: u32,
@@ -46,10 +55,41 @@ fn normalize_kernel(
     dft_base: u32,
     dft_stride: u32,
     dft_size: u32,
+    // Per product: `a` base, stride and size, `b` base, stride and size, offset.
+    t0_a_base: u32,
+    t0_a_stride: u32,
+    t0_a_size: u32,
+    t0_b_base: u32,
+    t0_b_stride: u32,
+    t0_b_size: u32,
+    t0_offset: u32,
+    t1_a_base: u32,
+    t1_a_stride: u32,
+    t1_a_size: u32,
+    t1_b_base: u32,
+    t1_b_stride: u32,
+    t1_b_size: u32,
+    t1_offset: u32,
+    t2_a_base: u32,
+    t2_a_stride: u32,
+    t2_a_size: u32,
+    t2_b_base: u32,
+    t2_b_stride: u32,
+    t2_b_size: u32,
+    t2_offset: u32,
+    t3_a_base: u32,
+    t3_a_stride: u32,
+    t3_a_size: u32,
+    t3_b_base: u32,
+    t3_b_stride: u32,
+    t3_b_size: u32,
+    t3_offset: u32,
     #[comptime] c: Consts,
     // The source is `dft`, the output of an inverse transform.
     #[comptime] residues: bool,
     #[comptime] invariant: bool,
+    // The source limbs are sums of this many constant products, `a_size` of them.
+    #[comptime] products: u32,
 ) {
     let i = ABSOLUTE_POS as u32;
     if i < n {
@@ -117,7 +157,80 @@ fn normalize_kernel(
                         left -= 1u32;
                         let mut x_lo = 0u64;
                         let mut x_hi = 0u64;
-                        if residues {
+                        if comptime!(products > 0) {
+                            #[unroll]
+                            for term in 0..products {
+                                let mut p_lo = 0u64;
+                                let mut p_hi = 0u64;
+                                if comptime!(term == 0) {
+                                    let product = const_product(
+                                        ta0,
+                                        tb0,
+                                        i,
+                                        left + t0_offset,
+                                        t0_a_base,
+                                        t0_a_stride,
+                                        t0_a_size,
+                                        t0_b_base,
+                                        t0_b_stride,
+                                        t0_b_size,
+                                    );
+                                    p_lo = product.0;
+                                    p_hi = product.1;
+                                } else if comptime!(term == 1) {
+                                    let product = const_product(
+                                        ta1,
+                                        tb1,
+                                        i,
+                                        left + t1_offset,
+                                        t1_a_base,
+                                        t1_a_stride,
+                                        t1_a_size,
+                                        t1_b_base,
+                                        t1_b_stride,
+                                        t1_b_size,
+                                    );
+                                    p_lo = product.0;
+                                    p_hi = product.1;
+                                } else if comptime!(term == 2) {
+                                    let product = const_product(
+                                        ta2,
+                                        tb2,
+                                        i,
+                                        left + t2_offset,
+                                        t2_a_base,
+                                        t2_a_stride,
+                                        t2_a_size,
+                                        t2_b_base,
+                                        t2_b_stride,
+                                        t2_b_size,
+                                    );
+                                    p_lo = product.0;
+                                    p_hi = product.1;
+                                } else {
+                                    let product = const_product(
+                                        ta3,
+                                        tb3,
+                                        i,
+                                        left + t3_offset,
+                                        t3_a_base,
+                                        t3_a_stride,
+                                        t3_a_size,
+                                        t3_b_base,
+                                        t3_b_stride,
+                                        t3_b_size,
+                                    );
+                                    p_lo = product.0;
+                                    p_hi = product.1;
+                                }
+                                let sum = x_lo + p_lo;
+                                x_hi += p_hi;
+                                if sum < x_lo {
+                                    x_hi += 1u64;
+                                }
+                                x_lo = sum;
+                            }
+                        } else if residues {
                             let value = crt_at(dft, tw, dft_base + left * dft_stride, i, n, c, invariant);
                             x_lo = value.0;
                             x_hi = value.1;
@@ -229,6 +342,11 @@ enum Source<'a, RT: GpuRuntime> {
         addend: Option<&'a Column>,
         tables: &'a Tables<RT>,
     },
+    /// The sum of constant products `(a, b, coefficient of b, offset)`, over `size` limbs.
+    Products {
+        terms: &'a [(Column, Column, usize, usize)],
+        size: usize,
+    },
 }
 
 /// Normalizes every limb of `res` from `a`. `res` may be `a` itself when
@@ -294,6 +412,27 @@ fn normalize_big_on_host<RT: GpuRuntime>(
     wipe_host(target.data_mut());
 }
 
+/// Normalizes every limb of `res` from the `size` limbs
+/// `sum_t sum_{u + v = j + offset_t} a_t[u] * b_t[v][coeff_t]`, the sum of
+/// [`convolution_by_const`](super::convolution_by_const) over one to four
+/// terms `(a_t, b_t, coeff_t, offset_t)`, without storing it. `res` overlaps no operand.
+#[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
+pub(crate) fn normalize_products<RT: GpuRuntime>(
+    res: &Column,
+    res_base2k: usize,
+    res_k: usize,
+    terms: &[(Column, Column, usize, usize)],
+    size: usize,
+    a_base2k: usize,
+) {
+    assert!((1..=4).contains(&terms.len()), "one to four products");
+    for (a, b, b_coeff, _) in terms {
+        assert!(a.words == 1 && b.words == 1 && a.n == res.n);
+        assert!(*b_coeff < b.n || b.size == 0, "constant coefficient out of range");
+    }
+    launch::<RT>(res, res_base2k, res_k, 0, Source::Products { terms, size }, a_base2k);
+}
+
 /// Normalizes every limb of `res` from `dft + addend`, `dft` holding the
 /// output of the inverse transform and `addend` contributing its first
 /// `dft.size` limbs.
@@ -342,8 +481,13 @@ fn launch<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: usize, offset:
         (active_size, active_size * res_base2k - res_k)
     };
     // Operands a mode does not read are bound to a buffer of the launch.
+    let terms = match source {
+        Source::Products { terms, .. } => terms,
+        _ => &[],
+    };
     let (a, a_size, dft, table, invariant, source_size) = match source {
         Source::Limbs(a) => (a, a.size, None, a.binding.clone(), false, a.size),
+        Source::Products { size, .. } => (res, size, None, res.binding.clone(), false, size),
         Source::Residues { dft, addend, tables } => (
             addend.unwrap_or(res),
             addend.map_or(0, |addend| addend.size.min(dft.size)),
@@ -353,7 +497,22 @@ fn launch<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: usize, offset:
             dft.size,
         ),
     };
+    // Products beyond the last repeat it: the kernel does not read them.
+    let term = |index: usize| terms.get(index.min(terms.len().saturating_sub(1)));
+    let scalars = |index: usize| match term(index) {
+        Some((a, b, b_coeff, offset)) => [
+            a.base,
+            a.stride,
+            a.size as u32,
+            b.base + *b_coeff as u32,
+            b.stride,
+            b.size as u32,
+            (*offset).min(a.size + b.size) as u32,
+        ],
+        None => [0; 7],
+    };
     let label = match (dft.is_some(), a.words) {
+        _ if !terms.is_empty() => Label::NormalizeProducts,
         (true, _) => Label::NormalizeResidues,
         (false, 2) => Label::NormalizeBig,
         _ => Label::NormalizeLimbs,
@@ -364,6 +523,7 @@ fn launch<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: usize, offset:
     let drop = (source_bits - res_k as i128 - offset as i128).clamp(-(res_k as i128) - 64, source_bits + 192);
     let (drop, insert) = (drop.max(0) as u32, (-drop).max(0) as u32);
     let source_bytes = match dft {
+        _ if !terms.is_empty() => terms.iter().map(|(a, b, _, _)| 8 * a.size.min(a_size + b.size)).sum(),
         Some(dft) => dft.size * 16 + a_size * 8,
         None => a_size * 8 * a.words as usize,
     };
@@ -374,6 +534,14 @@ fn launch<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: usize, offset:
             a.binding => u64,
             *dft.map_or(&a.binding, |dft| &dft.binding) => u32,
             table => u32,
+            *term(0).map_or(&a.binding, |term| &term.0.binding) => u64,
+            *term(1).map_or(&a.binding, |term| &term.0.binding) => u64,
+            *term(2).map_or(&a.binding, |term| &term.0.binding) => u64,
+            *term(3).map_or(&a.binding, |term| &term.0.binding) => u64,
+            *term(0).map_or(&a.binding, |term| &term.1.binding) => u64,
+            *term(1).map_or(&a.binding, |term| &term.1.binding) => u64,
+            *term(2).map_or(&a.binding, |term| &term.1.binding) => u64,
+            *term(3).map_or(&a.binding, |term| &term.1.binding) => u64,
         ];
         [
             res.n as u32,
@@ -393,7 +561,35 @@ fn launch<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: usize, offset:
             dft.map_or(0, |dft| dft.base),
             dft.map_or(0, |dft| dft.stride),
             dft.map_or(0, |dft| dft.size as u32),
+            scalars(0)[0],
+            scalars(0)[1],
+            scalars(0)[2],
+            scalars(0)[3],
+            scalars(0)[4],
+            scalars(0)[5],
+            scalars(0)[6],
+            scalars(1)[0],
+            scalars(1)[1],
+            scalars(1)[2],
+            scalars(1)[3],
+            scalars(1)[4],
+            scalars(1)[5],
+            scalars(1)[6],
+            scalars(2)[0],
+            scalars(2)[1],
+            scalars(2)[2],
+            scalars(2)[3],
+            scalars(2)[4],
+            scalars(2)[5],
+            scalars(2)[6],
+            scalars(3)[0],
+            scalars(3)[1],
+            scalars(3)[2],
+            scalars(3)[3],
+            scalars(3)[4],
+            scalars(3)[5],
+            scalars(3)[6],
         ];
-        [Consts::get(), dft.is_some(), invariant]
+        [Consts::get(), dft.is_some(), invariant, terms.len() as u32]
     );
 }
