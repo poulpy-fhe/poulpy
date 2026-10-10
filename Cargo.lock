@@ -712,6 +712,7 @@ dependencies = [
  "dashu-int",
  "once_cell",
  "poulpy-bin-fhe",
+ "poulpy-blas",
  "poulpy-ckks",
  "poulpy-core",
  "poulpy-hal",

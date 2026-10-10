@@ -13,6 +13,7 @@ homepage = "https://github.com/poulpy-fhe/poulpy"
 enable-core = ["dep:poulpy-core"]
 enable-ckks = ["enable-core", "dep:poulpy-ckks", "dep:anyhow"]
 enable-bin-fhe = ["enable-core", "dep:poulpy-bin-fhe"]
+enable-blas = ["enable-ckks", "dep:poulpy-blas"]
 
 [dependencies]
 anyhow = {workspace = true, optional = true}
@@ -20,6 +21,7 @@ dashu-int = {workspace = true}
 poulpy-core = {workspace = true, optional = true}
 poulpy-ckks = {workspace = true, optional = true}
 poulpy-bin-fhe = {workspace = true, optional = true}
+poulpy-blas = {workspace = true, optional = true}
 poulpy-hal = {workspace = true}
 bytemuck = {workspace = true}
 rand = {workspace = true}
@@ -31,3 +33,4 @@ doctest = false
 [dev-dependencies]
 once_cell = {workspace = true}
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
+poulpy-blas = {workspace = true, features = ["test-utils"]}

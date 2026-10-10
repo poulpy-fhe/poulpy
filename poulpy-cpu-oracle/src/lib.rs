@@ -7,10 +7,13 @@
 //! with plain loops, and inherit every optional one. They own their
 //! transforms and tables and do not depend on any production CPU backend.
 //! `enable-core` registers the generic Core compositions.
+//! `enable-blas` implies `enable-ckks` and wires the oracle backends into `poulpy-blas`.
 
 mod backend;
 #[cfg(feature = "enable-bin-fhe")]
 mod bin_fhe;
+#[cfg(feature = "enable-blas")]
+mod blas;
 #[cfg(feature = "enable-ckks")]
 mod ckks;
 #[cfg(feature = "enable-ckks")]
