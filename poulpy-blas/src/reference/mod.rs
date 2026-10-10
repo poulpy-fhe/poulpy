@@ -11,7 +11,7 @@ pub use matmul::BlasMatMulReference;
 use std::cell::RefCell;
 
 use poulpy_ckks::{
-    CKKSCompositionError, CKKSError, CKKSInfos, CKKSLayout, CKKSResult as Result, SetCKKSInfos,
+    CKKSCompositionError, CKKSError, CKKSInfos, CKKSLayout, CKKSResult as Result, GLWEPlaintextInfos, SetGLWEPlaintextInfos,
     api::{CKKSLinearTransformationOps, CKKSModuleInfos, LinearTransformation, LtDiagonalMeta},
 };
 use poulpy_core::layouts::{

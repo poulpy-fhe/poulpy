@@ -6,7 +6,7 @@ use std::{
 };
 
 use poulpy_ckks::{
-    CKKSCompositionError, CKKSInfos, CKKSMeta, CKKSModuleInfos, CKKSResult, SetCKKSInfos,
+    CKKSCompositionError, CKKSInfos, CKKSModuleInfos, CKKSResult, GLWEPlaintextMeta, Scale, SetCKKSInfos,
     api::LinearTransformationPrepared,
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
     test_suite::{
@@ -227,7 +227,7 @@ pub fn assert_grid_decrypt<BE, F, E>(
 /// A copy of `grid` with the metadata of every block changed by `edit`, its torus width unchanged.
 pub fn relabel<DG: Data, W: ZnxWord, R: Ring>(
     grid: &BlasCiphertext<DG, W, R>,
-    edit: impl Fn(&mut CKKSMeta),
+    edit: impl Fn(&mut GLWEPlaintextMeta),
 ) -> BlasCiphertext<DG, W, R>
 where
     CKKSCiphertext<DG, W, R>: Clone,
@@ -262,7 +262,10 @@ where
         ),
         ("uneven", BlasCiphertext::from_blocks(uneven, log_d, rows, cols).unwrap()),
         ("one slot", relabel(grid, |meta| meta.log_sparsity = one_slot)),
-        ("scale", relabel(grid, |meta| meta.log_delta = layout.k().as_usize() + 1)),
+        (
+            "scale",
+            relabel(grid, |meta| meta.scale = Scale::Log(layout.k().as_usize() + 1)),
+        ),
     ]
 }
 

@@ -18,5 +18,5 @@ The block maps are encoded once, at a caller-chosen precision, into a `BlasConte
 `GetTensorKey` for the ciphertext x ciphertext products). Slot-wise additions, products and rescaling are poulpy-ckks
 operations applied to each block.
 
-Backends select the reference compositions with `poulpy_blas::impl_blas_reference_full!(Backend)`; the portable CPU
-backends are selected under the `enable-portable` feature.
+Backend crates wire poulpy-blas behind their own `enable-blas` feature, selecting the reference compositions with
+`poulpy_blas::impl_blas_reference_full!(Backend)`.

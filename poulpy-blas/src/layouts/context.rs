@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result, ensure};
 use poulpy_ckks::{
-    CKKSInfos, CoeffsMeta, SlotsKind,
+    CoeffsMeta, GLWEPlaintextInfos, SlotsKind,
     api::{
         CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, CKKSModuleInfos, LinearTransformation,
         LinearTransformationPrepared, optimal_bsgs_giant_step,
@@ -455,51 +455,11 @@ pub(crate) fn sum_rotations(log_d: usize, mat_slots: usize) -> impl Iterator<Ite
 mod tests {
     use super::*;
     use crate::layouts::{BlasLayout, BlasModuleAlloc};
-    use poulpy_ckks::test_suite::{BASE19_PARAMS_F64, helpers::alloc_scratch};
-    use poulpy_cpu_oracle::FFT64Oracle;
-    use poulpy_hal::{api::ScratchOwnedBorrow, layouts::CyclotomicOrder};
-
-    fn module() -> Module<FFT64Oracle> {
-        Module::<FFT64Oracle>::new(BASE19_PARAMS_F64.n as u64)
-    }
-
-    #[test]
-    fn context_lists_the_rotations_of_every_map() {
-        let module = module();
-        let params = BASE19_PARAMS_F64;
-        let mut scratch = alloc_scratch(&params, &module);
-        let unprepared =
-            BlasContextUnprepared::encode::<f64>(&module, 2, params.base2k.into(), params.prec().into(), &mut scratch.borrow())
-                .unwrap();
-        let ctx = unprepared.prepare(&module, &mut scratch.borrow());
-        assert_eq!(ctx.log_d(), 2);
-        let elements = ctx.galois_elements(module.cyclotomic_order());
-        // phi^1 rotates by 1 and by 1 - d.
-        assert!(elements.contains(&module.ckks_galois_element(1)));
-        assert!(elements.contains(&module.ckks_galois_element(1 - 4)));
-    }
-
-    #[test]
-    fn context_rejects_matrices_wider_than_the_slots() {
-        let module = module();
-        let params = BASE19_PARAMS_F64;
-        let mut scratch = alloc_scratch(&params, &module);
-        // 128 slots hold no 16 x 16 matrix; 2^40 x 2^40 has more entries than a usize counts.
-        for log_d in [4, 40] {
-            let res = BlasContextUnprepared::encode::<f64>(
-                &module,
-                log_d,
-                params.base2k.into(),
-                params.prec().into(),
-                &mut scratch.borrow(),
-            );
-            assert!(res.is_err());
-        }
-    }
+    use poulpy_hal::layouts::HostBytesBackend;
 
     #[test]
     fn sum_keys_plan_from_a_layout() {
-        let module = module();
+        let module = Module::<HostBytesBackend>::new(256);
         let ct = module.blas_ciphertext_alloc(2, 1, 1, 19usize.into(), 60usize.into());
         let mut layout = BlasLayout {
             block: ct.block_layout(),
@@ -526,36 +486,5 @@ mod tests {
             layout.log_d = log_d;
             assert!(sum_galois_elements(&module, &layout).is_empty(), "log_d={log_d}");
         }
-    }
-
-    #[test]
-    fn pt_operand_is_a_grid_of_maps() {
-        let module = module();
-        let params = BASE19_PARAMS_F64;
-        let mut scratch = alloc_scratch(&params, &module);
-        let entry = |m: usize, r: usize, c: usize| ((m + r * 3 + c) % 5) as f64 - 2.0;
-        let encode = |count: usize, scratch: &mut ScratchArena<'_, FFT64Oracle>| {
-            BlasPtOperandUnprepared::encode(
-                &module,
-                2,
-                3,
-                2,
-                count,
-                entry,
-                params.base2k.into(),
-                params.prec().into(),
-                scratch,
-            )
-        };
-        // 128 slots hold 8 matrix slots: 3 and 0 public matrices do not divide them.
-        for count in [0, 3] {
-            assert!(encode(count, &mut scratch.borrow()).is_err());
-        }
-        let b = encode(2, &mut scratch.borrow())
-            .unwrap()
-            .prepare(&module, &mut scratch.borrow());
-        assert_eq!((b.log_d(), b.rows(), b.cols(), b.count()), (2, 3, 2, 2));
-        let order = module.cyclotomic_order();
-        assert_eq!(b.galois_elements(order), b.block(2, 1).galois_elements(order));
     }
 }

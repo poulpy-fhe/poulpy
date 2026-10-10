@@ -1,7 +1,7 @@
 //! The metadata operations leave on their results: the batch's sparsity, the noise tag and the slot kind.
 
 use poulpy_ckks::{
-    CKKSInfos, SlotsKind,
+    GLWEPlaintextInfos, SlotsKind,
     api::{CKKSEncodingOps, CKKSLinearTransformationOps},
     test_suite::{
         CKKSTestParams,

@@ -7,15 +7,10 @@
 //! encoded once at a caller-chosen precision.
 
 pub mod api;
-#[cfg(any(test, feature = "enable-portable"))]
-mod backends;
 mod delegates;
 pub mod layouts;
 pub mod oep;
 pub mod reference;
-#[cfg(any(test, feature = "test-utils"))]
+#[cfg(feature = "test-utils")]
 #[allow(clippy::too_many_arguments)]
 pub mod test_suite;
-
-#[cfg(test)]
-mod tests;

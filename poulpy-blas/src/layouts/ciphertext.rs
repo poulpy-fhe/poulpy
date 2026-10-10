@@ -2,7 +2,7 @@
 
 use anyhow::{Result, ensure};
 use poulpy_ckks::{
-    CKKSInfos, CKKSLayout,
+    CKKSInfos, CKKSLayout, GLWEPlaintextInfos,
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
 };
 use poulpy_core::layouts::{Base2K, GLWEInfos, LWEInfos, TorusPrecision};
@@ -357,11 +357,11 @@ impl<BE: Backend> BlasModuleAlloc<BE> for Module<BE> where Module<BE>: CKKSModul
 #[cfg(test)]
 mod tests {
     use super::*;
-    use poulpy_ckks::SetCKKSInfos;
-    use poulpy_cpu_oracle::FFT64Oracle;
+    use poulpy_ckks::SetGLWEPlaintextInfos;
+    use poulpy_hal::layouts::HostBytesBackend;
 
-    fn module() -> Module<FFT64Oracle> {
-        Module::<FFT64Oracle>::new(256)
+    fn module() -> Module<HostBytesBackend> {
+        Module::<HostBytesBackend>::new(256)
     }
 
     #[test]
@@ -388,7 +388,7 @@ mod tests {
         let grid = BlasCiphertext::from_blocks(blocks().collect(), 2, 2, 3).unwrap();
         assert_eq!((grid.rows(), grid.cols(), grid.block(1, 2).k().as_usize()), (2, 3, 45));
         // Each block carries its own width, so the widths show where every block moved.
-        let widths = |g: &BlasCiphertextOwned<FFT64Oracle>| g.blocks().iter().map(|b| b.k().as_usize()).collect::<Vec<_>>();
+        let widths = |g: &BlasCiphertextOwned<HostBytesBackend>| g.blocks().iter().map(|b| b.k().as_usize()).collect::<Vec<_>>();
         let (left, right) = grid.clone().split_cols(1);
         assert_eq!((left.rows(), left.cols(), widths(&left)), (2, 1, vec![40, 43]));
         assert_eq!((right.rows(), right.cols(), widths(&right)), (2, 2, vec![41, 42, 44, 45]));

@@ -1,6 +1,6 @@
 [workspace]
-members = ["poulpy-cpu-oracle", "poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-cpu-avx512", "poulpy-cpu-arm", "poulpy-cpu-rayon", "poulpy-bin-fhe", "poulpy-cpu-portable", "poulpy-bench", "poulpy-ckks", "poulpy-mhe"]
-default-members = ["poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-cpu-arm", "poulpy-bin-fhe", "poulpy-cpu-portable", "poulpy-bench", "poulpy-ckks", "poulpy-mhe"]
+members = ["poulpy-cpu-oracle", "poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-cpu-avx512", "poulpy-cpu-arm", "poulpy-cpu-rayon", "poulpy-bin-fhe", "poulpy-cpu-portable", "poulpy-bench", "poulpy-ckks", "poulpy-mhe", "poulpy-blas"]
+default-members = ["poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-cpu-arm", "poulpy-bin-fhe", "poulpy-cpu-portable", "poulpy-bench", "poulpy-ckks", "poulpy-mhe", "poulpy-blas"]
 resolver = "3"
 
 [profile.ci]
@@ -27,6 +27,7 @@ poulpy-cpu-oracle = {path = "poulpy-cpu-oracle"}
 poulpy-bench = {path = "poulpy-bench"}
 poulpy-ckks = {path = "poulpy-ckks", version = "0.9.0"}
 poulpy-mhe = {path = "poulpy-mhe", version = "0.9.0"}
+poulpy-blas = {path = "poulpy-blas", version = "0.9.0"}
 dashu-float = "0.6.2"
 dashu-int = "0.6.2"
 # Reproducible setup requires the same resolved math dependencies on each target.

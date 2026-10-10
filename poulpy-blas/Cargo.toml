@@ -1,28 +1,21 @@
 [package]
 name = "poulpy-blas"
-version = "0.1.0"
+version = "0.9.0"
 edition = "2024"
 license = "Apache-2.0"
 readme = "README.md"
 description = "Backend-agnostic encrypted matrix arithmetic (JKLS) on poulpy-ckks"
-# crates.io poulpy 0.9.0 predates da920433b, whose parity fixtures `test-utils` needs: publish once a release has them.
-publish = false
+repository = "https://github.com/poulpy-fhe/poulpy"
+homepage = "https://github.com/poulpy-fhe/poulpy"
+documentation = "https://docs.rs/poulpy-blas"
 
 [features]
-# Compiles the exported test suite for downstream backend crates.
+# Compiles the exported test suite for backend crates, which enable it from their dev-dependencies.
 test-utils = ["poulpy-ckks/test-utils"]
-# Selects the reference implementations for the portable CPU backends.
-enable-portable = ["dep:poulpy-cpu-portable"]
 
 [dependencies]
-anyhow = "1.0.104"
-num-traits = "0.2"
-poulpy-hal = { version = "0.9.0", git = "https://github.com/poulpy-fhe/poulpy", rev = "da920433b60812afff5858bcd3e11e460466b966" }
-poulpy-core = { version = "0.9.0", git = "https://github.com/poulpy-fhe/poulpy", rev = "da920433b60812afff5858bcd3e11e460466b966" }
-poulpy-ckks = { version = "0.9.0", git = "https://github.com/poulpy-fhe/poulpy", rev = "da920433b60812afff5858bcd3e11e460466b966" }
-poulpy-cpu-portable = { version = "0.9.0", git = "https://github.com/poulpy-fhe/poulpy", rev = "da920433b60812afff5858bcd3e11e460466b966", features = ["enable-ckks"], optional = true }
-
-[dev-dependencies]
-poulpy-ckks = { version = "0.9.0", git = "https://github.com/poulpy-fhe/poulpy", rev = "da920433b60812afff5858bcd3e11e460466b966", features = ["test-utils"] }
-poulpy-cpu-oracle = { git = "https://github.com/poulpy-fhe/poulpy", rev = "da920433b60812afff5858bcd3e11e460466b966", features = ["enable-ckks"] }
-poulpy-cpu-portable = { version = "0.9.0", git = "https://github.com/poulpy-fhe/poulpy", rev = "da920433b60812afff5858bcd3e11e460466b966", features = ["enable-ckks"] }
+poulpy-hal = {workspace = true}
+poulpy-core = {workspace = true}
+poulpy-ckks = {workspace = true}
+anyhow = {workspace = true}
+num-traits = {workspace = true}

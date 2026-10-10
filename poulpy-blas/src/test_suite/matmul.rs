@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use poulpy_ckks::{
-    CKKSInfos, SetCKKSInfos,
+    CKKSInfos, SetGLWEPlaintextInfos,
     api::{CKKSEncodingOps, CKKSLinearTransformationOps},
     test_suite::{
         CKKSTestParams,

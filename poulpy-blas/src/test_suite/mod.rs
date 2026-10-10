@@ -5,6 +5,7 @@
 //! `(params, reference_module, tested_module)` and are instantiated with
 //! `poulpy_ckks::ckks_parity_test_suite!`.
 
+pub mod context;
 pub mod helpers;
 pub mod inter;
 pub mod intra;
@@ -49,6 +50,7 @@ macro_rules! blas_backend_test_suite {
             run_test!(matmul_long_sums, $crate::test_suite::matmul::test_blas_matmul_long_sums);
             run_test!(key_widths, $crate::test_suite::keys::test_blas_key_widths);
             run_test!(result_meta, $crate::test_suite::meta::test_blas_result_meta);
+            run_test!(context, $crate::test_suite::context::test_blas_context);
         }
     };
 }
