@@ -16,7 +16,7 @@ use super::helpers::{
 };
 use crate::{
     SlotsKind,
-    api::{CKKSAddOps, CKKSImagOps, CKKSMulOps, CKKSNegOps, CKKSSubOps},
+    api::{CKKSAddOps, CKKSImagOps, CKKSMulOps, CKKSNegOps, CKKSPow2Ops, CKKSSubOps},
     test_suite::{CKKSTestParams, reference_encoder::ReferenceEncoder},
 };
 
@@ -141,4 +141,14 @@ where
         .ckks_mul_pt_const_assign(&mut acc, &cst, 0, &mut scratch.borrow())
         .unwrap();
     assert_eq!(acc.slots(), SlotsKind::Real, "a real scalar multiplier keeps real slots");
+
+    // Halving an integer need not give an integer, so division refuses
+    // `Integer` slots rather than carry a false claim.
+    a.set_slots(SlotsKind::Integer);
+    assert!(module.ckks_div_pow2_into(&mut res, &a, 1, &mut scratch.borrow()).is_err());
+    let mut acc = a.clone();
+    assert!(module.ckks_div_pow2_assign(&mut acc, 1).is_err());
+    assert_eq!(acc.slots(), SlotsKind::Integer, "a refused division is a no-op");
+    module.ckks_div_pow2_assign(&mut acc, 0).unwrap();
+    assert_eq!(acc.slots(), SlotsKind::Integer, "dividing by one keeps integers");
 }

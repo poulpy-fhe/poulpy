@@ -5,7 +5,7 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::GLWEToBackendRef;
 
-use crate::{CKKSInfos, Scale, SetCKKSInfos, checked_log_budget_sub, ckks_log_delta, ckks_unary_exact};
+use crate::{CKKSInfos, Scale, SetCKKSInfos, SlotsKind, checked_log_budget_sub, ckks_log_delta, ckks_unary_exact};
 
 pub trait CKKSPow2Reference<BE: Backend> {
     fn ckks_mul_pow2_tmp_bytes_reference(&self, res_size: usize) -> usize
@@ -74,6 +74,7 @@ pub trait CKKSPow2Reference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
+        ensure_not_integer("div_pow2", src.slots(), bits)?;
         // The `bits` charged to the budget move under `log_delta` inside the
         // stamp, so the shift normalizes at the width the result reports.
         crate::ckks_shift_stamp_unary(self, "div_pow2", dst, src, 0, bits, bits, scratch)?;
@@ -87,6 +88,7 @@ pub trait CKKSPow2Reference<BE: Backend> {
         // Lossless relabel, mirroring `_into` with `offset = 0`: the `bits`
         // charged to the budget move under `log_delta`, leaving `k`, and so the
         // canonical flag, unchanged.
+        ensure_not_integer("div_pow2_assign", dst.slots(), bits)?;
         checked_log_budget_sub("div_pow2_assign", dst.log_budget(), bits)?;
         let mut meta = dst.meta();
         meta.scale = Scale::Log(ckks_log_delta(&meta) + bits);
@@ -97,3 +99,13 @@ pub trait CKKSPow2Reference<BE: Backend> {
 }
 
 impl<BE: Backend> CKKSPow2Reference<BE> for poulpy_hal::layouts::Module<BE> {}
+
+/// Halving an integer need not give an integer, so `Integer` slots cannot be
+/// carried through a division; relabel them `Real` first.
+fn ensure_not_integer(op: &'static str, slots: SlotsKind, bits: usize) -> Result<()> {
+    crate::ckks_ensure!(
+        bits == 0 || slots != SlotsKind::Integer,
+        "{op}: dividing Integer slots by 2^{bits} need not give integers; relabel them Real first"
+    );
+    Ok(())
+}
