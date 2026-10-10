@@ -28,6 +28,8 @@ pub(crate) use cnv::{CAPACITY_STEP, convolution, convolution_pairwise, convoluti
 #[cfg_attr(not(feature = "enable-core"), allow(unused_imports))]
 pub(crate) use cnv::{MANY_LEFTS, MANY_PRODUCTS, MANY_TERMS, Schedule, scale_many};
 pub(crate) use crt::{crt_at, to_big, to_big_clearing};
+#[cfg_attr(not(feature = "enable-core"), allow(unused_imports))]
+pub(crate) use elementwise::gather;
 pub(crate) use elementwise::{DftTerm, combine};
 pub(crate) use ntt::{forward, inverse};
 pub(crate) use primes::Consts;

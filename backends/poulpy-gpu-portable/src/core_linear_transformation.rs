@@ -16,7 +16,7 @@ use crate::{
     NTT4x30Gpu,
     hal_impl::{cnv_left_column, cnv_right_column, dft_column_mut},
     module::handle,
-    ntt4x30::{DftColumn, DftTerm, MANY_LEFTS, MANY_PRODUCTS, MANY_TERMS, Schedule, combine, scale_many},
+    ntt4x30::{DftColumn, MANY_LEFTS, MANY_PRODUCTS, MANY_TERMS, Schedule, gather, scale_many},
     runtime::{GpuBuf, GpuRuntime},
 };
 
@@ -112,10 +112,11 @@ pub(crate) fn accumulate_giant_steps<RT: GpuRuntime, R: Ring>(
             n,
             size: diagonals.len(),
         };
-        for (index, diagonal) in diagonals.iter().enumerate() {
-            let source = cnv_right_column(*diagonal, 0).expect("a prepared diagonal holds storage");
-            combine::<RT>(&rights.limbs(index, 1, 1), 1, DftTerm::plus(&source), DftTerm::zero(&source));
-        }
+        let sources: Vec<DftColumn> = diagonals
+            .iter()
+            .map(|diagonal| cnv_right_column(*diagonal, 0).expect("a prepared diagonal holds storage"))
+            .collect();
+        gather::<RT>(&rights, &sources);
         for col in 0..cols {
             let res = dft_column_mut(&prods[0], col).expect("the products hold storage");
             let lefts: Vec<DftColumn> = babies

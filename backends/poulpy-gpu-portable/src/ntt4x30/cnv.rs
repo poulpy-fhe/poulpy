@@ -253,6 +253,177 @@ fn convolution_kernel(
     }
 }
 
+/// The shape of a tensor product, fixed at compile time for [`tensor_kernel`].
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+struct TensorShape {
+    limbs: u32,
+    offset: u32,
+    a_size: u32,
+    a_first: u32,
+    a_len: u32,
+    b_size: u32,
+    b_first: u32,
+    b_len: u32,
+    res_size: u32,
+    cross_size: u32,
+    /// The right columns are the left ones.
+    square: bool,
+}
+
+impl TensorShape {
+    /// The terms `a[top - v] * b[v]` of result limb `j`: `v` in `start..end`.
+    fn terms(&self, j: u32) -> (u32, u32) {
+        let top = j + self.offset;
+        (top + 1 - (top + 1).min(self.a_size), (top + 1).min(self.b_size))
+    }
+}
+
+/// The tensor and square forms of [`convolution_kernel`] with every loop
+/// unrolled: the operand residues of the slot are held in registers, and each
+/// result limb is a straight line of products. A thread-local array is device
+/// memory on some runtimes, read at every term.
+#[cube(launch_unchecked)]
+#[allow(clippy::too_many_arguments, unused_assignments)]
+fn tensor_kernel(
+    res: &mut [u32],
+    cross: &mut [u32],
+    a: &[u32],
+    b: &[u32],
+    log_n: u32,
+    res_base: u32,
+    res2_base: u32,
+    res_stride: u32,
+    cross_base: u32,
+    cross_stride: u32,
+    a_base: u32,
+    a2_base: u32,
+    a_stride: u32,
+    b_base: u32,
+    b2_base: u32,
+    b_stride: u32,
+    b_gap: u32,
+    #[comptime] c: Consts,
+    #[comptime] s: TensorShape,
+) {
+    let word = ABSOLUTE_POS as u32;
+    if word < (4u32 << log_n) {
+        let plane = word >> log_n;
+        let slot = word - (plane << log_n);
+        let b_word = (plane << (log_n - b_gap)) + (slot >> b_gap);
+        let q = sel4(plane, c.q);
+        let r = sel4(plane, c.r);
+        let mu = sel4(plane, c.mu60);
+
+        // Each column's residues, and the sums of the two columns of an operand.
+        let mut x = Sequence::<u32>::new();
+        let mut x2 = Sequence::<u32>::new();
+        let mut xs = Sequence::<u32>::new();
+        #[unroll]
+        for t in 0..s.a_len {
+            let index = (s.a_first + t) * a_stride + word;
+            let first = a[(a_base + index) as usize];
+            let second = a[(a2_base + index) as usize];
+            let sum = first + second;
+            x.push(first);
+            x2.push(second);
+            xs.push(min(sum, sum - q));
+        }
+        let mut y = Sequence::<u32>::new();
+        let mut y2 = Sequence::<u32>::new();
+        let mut ys = Sequence::<u32>::new();
+        if comptime!(!s.square) {
+            #[unroll]
+            for t in 0..s.b_len {
+                let index = (s.b_first + t) * b_stride + b_word;
+                let first = b[(b_base + index) as usize];
+                let second = b[(b2_base + index) as usize];
+                let sum = first + second;
+                y.push(first);
+                y2.push(second);
+                ys.push(min(sum, sum - q));
+            }
+        }
+
+        #[unroll]
+        for j in 0..s.limbs {
+            let start = comptime!(s.terms(j).0);
+            let end = comptime!(s.terms(j).1);
+            let top = comptime!(j + s.offset);
+            let mut acc = 0u64;
+            let mut acc2 = 0u64;
+            let mut acc_sum = 0u64;
+            let mut value = 0u32;
+            let mut value2 = 0u32;
+            // The cross column, before the squares are taken out of it.
+            let mut middle = 0u32;
+            if comptime!(s.square) {
+                // The pair `(u, v)` and its mirror are one product, taken below
+                // the middle and doubled; the cross column is `2 a a2`.
+                #[unroll]
+                for i in 0..comptime!(end.saturating_sub(start)) {
+                    let v = comptime!(start + i);
+                    let u = comptime!((top - v - s.a_first) as usize);
+                    let w = comptime!((v - s.a_first) as usize);
+                    if comptime!(i > 0 && i % FOLD_TERMS == 0) {
+                        acc = fold64(acc, r);
+                        acc2 = fold64(acc2, r);
+                        acc_sum = fold64(acc_sum, r);
+                    }
+                    acc_sum += u64::cast_from(*x.index(u)) * u64::cast_from(*x2.index(w));
+                    if comptime!(2 * v < top) {
+                        acc += u64::cast_from(*x.index(u)) * u64::cast_from(*x.index(w));
+                        acc2 += u64::cast_from(*x2.index(u)) * u64::cast_from(*x2.index(w));
+                    }
+                }
+                let mut centre = 0u64;
+                let mut centre2 = 0u64;
+                if comptime!(top % 2 == 0 && top / 2 >= start && top / 2 < end) {
+                    let m = comptime!((top / 2 - s.a_first) as usize);
+                    centre = u64::cast_from(*x.index(m)) * u64::cast_from(*x.index(m));
+                    centre2 = u64::cast_from(*x2.index(m)) * u64::cast_from(*x2.index(m));
+                }
+                value = barrett60(fold64(2u64 * fold64(fold64(acc, r), r) + centre, r), q, mu);
+                value2 = barrett60(fold64(2u64 * fold64(fold64(acc2, r), r) + centre2, r), q, mu);
+                let doubled = barrett60(fold64(2u64 * fold64(fold64(acc_sum, r), r), r), q, mu);
+                let sum = value + value2;
+                let both = min(sum, sum - q);
+                let whole = doubled + both;
+                middle = min(whole, whole - q);
+            } else {
+                #[unroll]
+                for i in 0..comptime!(end.saturating_sub(start)) {
+                    let v = comptime!(start + i);
+                    let u = comptime!((top - v - s.a_first) as usize);
+                    let w = comptime!((v - s.b_first) as usize);
+                    if comptime!(i > 0 && i % FOLD_TERMS == 0) {
+                        acc = fold64(acc, r);
+                        acc2 = fold64(acc2, r);
+                        acc_sum = fold64(acc_sum, r);
+                    }
+                    acc += u64::cast_from(*x.index(u)) * u64::cast_from(*y.index(w));
+                    acc2 += u64::cast_from(*x2.index(u)) * u64::cast_from(*y2.index(w));
+                    acc_sum += u64::cast_from(*xs.index(u)) * u64::cast_from(*ys.index(w));
+                }
+                value = barrett60(fold64(acc, r), q, mu);
+                value2 = barrett60(fold64(acc2, r), q, mu);
+                middle = barrett60(fold64(acc_sum, r), q, mu);
+            }
+            if comptime!(j < s.res_size) {
+                res[(res_base + j * res_stride + word) as usize] = value;
+                res[(res2_base + j * res_stride + word) as usize] = value2;
+                // `middle - value - value2` on canonical residues.
+                let sum = value + value2;
+                let both = min(sum, sum - q);
+                let difference = middle - both;
+                middle = min(difference, difference + q);
+            }
+            if comptime!(j < s.cross_size) {
+                cross[(cross_base + j * cross_stride + word) as usize] = middle;
+            }
+        }
+    }
+}
+
 /// Terms one launch of the sum sums: the width of the signatures of
 /// `convolution_sum_kernel` and `convolution_scale_kernel`, which bind the
 /// operands of each term as buffers of their own (`a0..a3`, `b0..b3`).
@@ -975,6 +1146,49 @@ fn launch<RT: GpuRuntime>(
         limbs * (1 + accumulate as usize)
     };
     let units = 4 * n;
+    if form >= TENSOR {
+        let narrow = |value: usize| value as u32;
+        let shape = TensorShape {
+            limbs: narrow(limbs),
+            offset: narrow(offset),
+            a_size: narrow(a.size),
+            a_first: narrow(ranges.a_first),
+            a_len: narrow(a_len),
+            b_size: narrow(b.size),
+            b_first: narrow(ranges.b_first),
+            b_len: narrow(b_len),
+            res_size: narrow(res.size),
+            cross_size: narrow(cross.size),
+            square: form == SQUARE,
+        };
+        let group = RT::GROUP;
+        launch!(
+            RT, Label::CnvTensor, 4 * (units * (a_len * columns + written) + if form == SQUARE { 0 } else { 4 * b.n * b_len * columns }), tensor_kernel, (units, group, group);
+            [
+                res.binding => u32,
+                cross.binding => u32,
+                a.binding => u32,
+                b.binding => u32,
+            ];
+            [
+                n.ilog2(),
+                res.base,
+                res2.base,
+                res.stride,
+                cross.base,
+                cross.stride,
+                a.base,
+                a2.base,
+                a.stride,
+                b.base,
+                b2.base,
+                b.stride,
+                (n / b.n).ilog2(),
+            ];
+            [Consts::get(), shape]
+        );
+        return;
+    }
     let label = match (form, accumulate) {
         (TENSOR | SQUARE, _) => Label::CnvTensor,
         (PAIRWISE, _) => Label::CnvPairwise,

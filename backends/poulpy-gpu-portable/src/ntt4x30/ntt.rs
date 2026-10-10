@@ -290,6 +290,11 @@ fn tile_pass(
         unit_q = sel4(pi, c.i_shoup);
     }
     let shared = w << mt;
+    // A forward launch on contiguous tiles ends on adjacent lanes: a thread
+    // would store a run of them, and the threads of a warp runs apart. The
+    // lanes go through shared memory once more and are stored lane-major,
+    // neighbouring threads writing neighbouring words.
+    let regroup = comptime!(!inverse && lgs == 0 && g.nsubs > 1);
     #[unroll]
     for step in 0..g.nsubs {
         let kj = g.sub_k[step as usize];
@@ -346,6 +351,14 @@ fn tile_pass(
                 let lane = *x.index(l);
                 if step < g.nsubs - 1u32 {
                     sh[shared + e] = lane;
+                } else if regroup {
+                    let mut value = lane;
+                    if mode == STORE_FORWARD {
+                        let q2 = q + q;
+                        let reduced = min(lane, lane - q2);
+                        value = min(reduced, reduced - q);
+                    }
+                    sh[shared + e] = value;
                 } else if mode == STORE_FORWARD {
                     let q2 = q + q;
                     let reduced = min(lane, lane - q2);
@@ -355,6 +368,16 @@ fn tile_pass(
                 } else {
                     dst[dbase + (e << lgs)] = lane;
                 }
+            }
+        }
+    }
+    if regroup {
+        sync_cube();
+        if active {
+            #[unroll]
+            for l in 0..comptime!(1usize << (mt - ltp)) {
+                let e = r + (l << ltp);
+                dst[dbase + e] = sh[shared + e];
             }
         }
     }
