@@ -1248,3 +1248,31 @@ fn convolution_capacity_step_rejects_zero() {
 fn convolution_capacity_step_rejects_above_the_maximum() {
     crate::handle(&*MODULE).set_convolution_capacity_step(crate::MAX_CAPACITY_STEP + 1);
 }
+
+/// A fresh buffer reads as zeros, and a prepared operand written whole into
+/// a fresh buffer, which skips the zero fill, equals one written into a
+/// buffer that was filled first. A narrower source leaves a zero tail.
+#[test]
+fn fresh_buffers_are_zero_and_prepare_overwrites_them() {
+    let module = &*MODULE;
+    let mut seed = 0x05ee_d0ff_2e54_u64;
+    let mut scratch = ScratchOwned::<Gpu>::alloc(1 << 22);
+    assert!(Gpu::alloc_bytes(4096).to_host().iter().all(|&byte| byte == 0));
+    for a_size in [5, 3] {
+        let a = vector::<poulpy_hal::layouts::Standard>(N, 2, a_size, &mut seed);
+        let mut fresh = module.cnv_pvec_left_alloc(N, 2, 5, PrepareHint::Reuse);
+        let mut settled = module.cnv_pvec_left_alloc(N, 2, 5, PrepareHint::Reuse);
+        assert!(settled.data().to_host().iter().all(|&byte| byte == 0));
+        for prepared in [&mut fresh, &mut settled] {
+            module.cnv_prepare_left(
+                &mut poulpy_hal::layouts::CnvPVecLToBackendMut::to_backend_mut(prepared),
+                &vec_znx_backend_ref::<Gpu>(&a),
+                &mut scratch.arena(),
+            );
+        }
+        assert!(
+            fresh.data() == settled.data(),
+            "prepared operands differ for a source of {a_size} limbs"
+        );
+    }
+}

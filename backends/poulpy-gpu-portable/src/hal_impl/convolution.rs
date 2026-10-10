@@ -8,7 +8,8 @@ use poulpy_hal::{
 };
 
 use super::operand::{
-    all_blocks, all_dft_blocks, big_column_mut, cnv_left_column, cnv_right_column, column_ref, dft_column_mut, empty_dft_like,
+    all_blocks, all_dft_blocks, big_column_mut, cnv_left_column, cnv_left_overwritten, cnv_right_column, cnv_right_overwritten,
+    column_ref, dft_column_mut, empty_dft_like,
 };
 use crate::{
     NTT4x30Gpu,
@@ -105,7 +106,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalConvolutionImpl for NTT4x30Gpu<RT, R> {
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         assert!(a.cols() == res.cols(), "cnv_prepare_left: res.cols() != a.cols()");
-        let Some(res0) = cnv_left_column(res, 0) else { return };
+        let Some(res0) = cnv_left_overwritten(res) else { return };
         prepare(module, &res0, res.cols(), a);
     }
 
@@ -120,7 +121,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalConvolutionImpl for NTT4x30Gpu<RT, R> {
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         assert!(a.cols() == res.cols(), "cnv_prepare_right: res.cols() != a.cols()");
-        let Some(res0) = cnv_right_column(res, 0) else { return };
+        let Some(res0) = cnv_right_overwritten(res) else { return };
         prepare(module, &res0, res.cols(), a);
     }
 
@@ -139,10 +140,10 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalConvolutionImpl for NTT4x30Gpu<RT, R> {
         assert!(right.cols() == left.cols(), "cnv_prepare_self: right.cols() != left.cols()");
         assert!(right.n() == left.n(), "cnv_prepare_self: right.n() != left.n()");
         assert!(a.cols() == left.cols(), "cnv_prepare_self: left.cols() != a.cols()");
-        let Some(left0) = cnv_left_column(left, 0) else { return };
+        let Some(left0) = cnv_left_overwritten(left) else { return };
         prepare(module, &left0, left.cols(), a);
         // Both prepared forms are the transform: the right one is a copy.
-        let Some(right0) = cnv_right_column(right, 0) else { return };
+        let Some(right0) = cnv_right_overwritten(right) else { return };
         let (from, to) = (all_dft_blocks(&left0, left0.size), all_dft_blocks(&right0, right0.size));
         combine::<RT>(&to, to.size, DftTerm::plus(&from), DftTerm::zero(&from));
     }

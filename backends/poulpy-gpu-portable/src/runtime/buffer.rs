@@ -46,6 +46,16 @@ struct Allocation {
     /// graph keeps the handle, hence the device memory, past that point:
     /// the flag is how it learns that nobody can name the buffer any more.
     owned: Arc<AtomicBool>,
+    /// Whether the allocation still owes its zero fill: a zeroed buffer is
+    /// filled at its first use, unless that use overwrites all of it.
+    fresh: Arc<AtomicBool>,
+}
+
+/// Zero-fills `allocation` if it still owes it.
+fn settle<RT: GpuRuntime>(allocation: &Allocation) {
+    if allocation.fresh.swap(false, Ordering::AcqRel) {
+        zero::<RT>(allocation, 0, allocation.reserved);
+    }
 }
 
 /// The buffers a body being recorded dropped, kept for it to allocate again.
@@ -209,6 +219,7 @@ fn allocate<RT: GpuRuntime>(len: usize) -> Option<Allocation> {
         handle,
         reserved,
         owned: Arc::new(AtomicBool::new(true)),
+        fresh: Arc::new(AtomicBool::new(false)),
     })
 }
 
@@ -222,6 +233,7 @@ fn read<RT: GpuRuntime>(allocation: &Option<Allocation>, offset: usize, dst: &mu
     }
     let end = offset + dst.len();
     assert!(end <= allocation.reserved, "device read out of bounds");
+    settle::<RT>(allocation);
     let handle = allocation
         .handle
         .clone()
@@ -252,6 +264,11 @@ fn write_vec<RT: GpuRuntime>(allocation: &Option<Allocation>, offset: usize, src
     }
     let end = offset + src.len();
     assert!(end <= allocation.reserved, "device write out of bounds");
+    if src.len() == allocation.reserved {
+        allocation.fresh.store(false, Ordering::Release);
+    } else {
+        settle::<RT>(allocation);
+    }
     let handle = allocation
         .handle
         .clone()
@@ -270,7 +287,9 @@ fn write_prefix_at<RT: GpuRuntime>(allocation: &Option<Allocation>, offset: usiz
     let end = offset + src.len();
     if end.is_multiple_of(4) && (offset + len).is_multiple_of(4) {
         write::<RT>(allocation, offset, src);
-        zero::<RT>(allocation, end, len - src.len());
+        if let Some(allocation) = allocation {
+            zero::<RT>(allocation, end, len - src.len());
+        }
     } else {
         let mut padded = vec![0u8; len];
         padded[..src.len()].copy_from_slice(src);
@@ -284,6 +303,8 @@ fn allocation_of(binding: &Binding) -> Option<Allocation> {
         handle: binding.handle.clone(),
         reserved: binding.reserved,
         owned: binding.owned.clone(),
+        // A binding is only made of a settled allocation.
+        fresh: Arc::new(AtomicBool::new(false)),
     })
 }
 
@@ -308,8 +329,7 @@ pub(crate) fn write_at<RT: GpuRuntime>(binding: &Binding, offset: usize, src: &[
     write::<RT>(&allocation_of(binding), offset, src);
 }
 
-fn zero<RT: GpuRuntime>(allocation: &Option<Allocation>, offset: usize, len: usize) {
-    let Some(allocation) = allocation else { return };
+fn zero<RT: GpuRuntime>(allocation: &Allocation, offset: usize, len: usize) {
     if len == 0 {
         return;
     }
@@ -396,11 +416,12 @@ impl<RT: GpuRuntime> GpuBuf<RT> {
         }
     }
 
-    /// A zero-initialized buffer of at least `len` bytes.
+    /// A zero-initialized buffer of at least `len` bytes. The fill is
+    /// deferred to the first use of the buffer.
     pub(crate) fn zeroed(len: usize) -> Self {
         let allocation = allocate::<RT>(len);
         if let Some(allocation) = &allocation {
-            zero::<RT>(&Some(allocation.clone()), 0, allocation.reserved);
+            allocation.fresh.store(true, Ordering::Release);
         }
         Self {
             len: allocation.as_ref().map_or(0, |allocation| allocation.reserved),
@@ -427,7 +448,10 @@ impl<RT: GpuRuntime> GpuBuf<RT> {
 
     /// Zeroes the whole allocation on the device.
     pub(crate) fn wipe(&mut self) {
-        zero::<RT>(&self.allocation, 0, self.len);
+        if let Some(allocation) = &self.allocation {
+            settle::<RT>(allocation);
+            zero::<RT>(allocation, 0, self.len);
+        }
     }
 
     pub(crate) fn to_host(&self) -> Vec<u8> {
@@ -493,14 +517,21 @@ macro_rules! view_common {
 
             /// The launch binding of this view, or `None` for an empty one.
             pub(crate) fn binding(&self) -> Option<Binding> {
-                self.allocation.as_ref().map(|allocation| Binding {
+                self.allocation.as_ref().map(|allocation| {
+                    settle::<RT>(allocation);
+                    self.bound(allocation)
+                })
+            }
+
+            fn bound(&self, allocation: &Allocation) -> Binding {
+                Binding {
                     id: allocation.id,
                     handle: allocation.handle.clone(),
                     reserved: allocation.reserved,
                     offset: self.offset,
                     len: self.len,
                     owned: allocation.owned.clone(),
-                })
+                }
             }
         }
 
@@ -551,6 +582,20 @@ impl<RT: GpuRuntime> GpuRef<'_, RT> {
 }
 
 impl<RT: GpuRuntime> GpuMut<'_, RT> {
+    /// [`Self::binding`] for a launch that writes the first `written` bytes
+    /// of the view: when that is a whole buffer that still owes its zero
+    /// fill, the fill is skipped.
+    pub(crate) fn binding_overwritten(&self, written: usize) -> Option<Binding> {
+        self.allocation.as_ref().map(|allocation| {
+            if self.offset == 0 && written == allocation.reserved {
+                allocation.fresh.store(false, Ordering::Release);
+            } else {
+                settle::<RT>(allocation);
+            }
+            self.bound(allocation)
+        })
+    }
+
     pub(crate) fn region_mut(&mut self, offset: usize, len: usize) -> GpuMut<'_, RT> {
         assert!(offset + len <= self.len, "device region out of bounds");
         GpuMut {
