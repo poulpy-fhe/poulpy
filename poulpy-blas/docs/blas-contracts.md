@@ -1,0 +1,176 @@
+# Implementing BLAS operations
+
+Public matrix calls follow `api → delegates → oep`. `Module<BE>` implements
+`BlasMatInterOps`, `BlasMatIntraOps` and `BlasMatMulOps` for every backend that
+implements the matching `*Impl` trait, and forwards each call to it. The BLAS
+crate imports no backend crate: each backend crate wires its own types.
+
+## Reference implementations
+
+A **reference** implementation defines a matrix operation by composing CKKS
+and core operations on the module. The reference traits are implemented for
+every `Module<BE>` and are public, so an override can forward to them. They
+call `poulpy-ckks` and `poulpy-core` through their public APIs, so a backend's
+CKKS and core overrides remain effective inside them.
+
+| OEP family | Operations | Reference | Macro |
+|---|---|---|---|
+| `BlasMatInterImpl` | `blas_rotate`, `blas_sum` | `BlasMatInterReference`, [`reference/inter.rs`](../src/reference/inter.rs) | `impl_blas_inter_reference!` |
+| `BlasMatIntraImpl` | `blas_transpose`, `blas_rotate_rows`, `blas_rotate_cols` | `BlasMatIntraReference`, [`reference/intra.rs`](../src/reference/intra.rs) | `impl_blas_intra_reference!` |
+| `BlasMatMulImpl` | `blas_matmul`, `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, `blas_matmul_prepared`, `blas_matmul_pt` | `BlasMatMulReference`, [`reference/matmul.rs`](../src/reference/matmul.rs) | `impl_blas_matmul_reference!` |
+
+Each operation's `_tmp_bytes` query belongs to the same family.
+`impl_blas_reference_full!` expands to the three family macros. `BlasImpl`
+aggregates the three families as a test bound; it has a blanket implementation
+and is never implemented directly.
+
+## Wiring a backend crate
+
+A backend crate of this workspace wires BLAS behind its own `enable-blas`
+feature:
+
+```toml
+[features]
+enable-blas = ["dep:poulpy-blas", "enable-ckks"]
+
+[dependencies]
+poulpy-blas = {workspace = true, optional = true}
+```
+
+`enable-blas` implies the crate's own `enable-ckks`, which wires its CKKS
+families; BLAS needs nothing from another backend crate. A `blas_impl.rs`
+module (`blas.rs` in the oracle), declared under `enable-blas`, selects the
+reference for each type, with the same `#[cfg]` gates as `ckks_impl.rs`:
+
+```rust
+::poulpy_blas::impl_blas_reference_full!(crate::FFT64Avx);
+#[cfg(feature = "enable-rayon")]
+::poulpy_blas::impl_blas_reference_full!(crate::FFT64AvxRayon);
+```
+
+To replace a family, replace the type's `impl_blas_reference_full!` line with
+the macros of the families it keeps, and write the replaced family's `*Impl`
+implementation directly, forwarding the unchanged methods to their reference
+routines. The other families retain their own wiring. For example, a backend
+that replaces matrix products keeps:
+
+```rust
+::poulpy_blas::impl_blas_inter_reference!(MyBackend);
+::poulpy_blas::impl_blas_intra_reference!(MyBackend);
+```
+
+and implements `poulpy_blas::oep::BlasMatMulImpl` for `MyBackend` by hand. The
+expansion of `impl_blas_matmul_reference!` in [`oep/matmul.rs`](../src/oep/matmul.rs)
+spells out every signature and its forwarding call. A family macro and a
+handwritten implementation of the same trait are mutually exclusive. The family
+traits are `unsafe`; their `# Safety` sections state what an implementation
+must reproduce.
+
+## Testing a backend
+
+Enable `test-utils` on a `poulpy-blas` dev-dependency. It exports two
+registration macros.
+
+`blas_backend_test_suite!` registers the functional tests for one backend,
+scalar, encoder and parameter set. They encrypt, run every operation, and check
+the decrypted values and the output metadata against cleartext expectations,
+along with the input guards, key widths and context encoding. They read
+coefficients on the host and use the standard ring, so they need a host backend
+of the standard ring; `poulpy-cpu-oracle` runs them for `FFT64Oracle` and
+`NTT4x30Oracle`.
+
+`blas_parity_test_suite!` compares `backend_test` with `backend_ref`:
+
+```rust
+poulpy_blas::blas_parity_test_suite! {
+    mod blas_parity_fft64portable_f64,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_test = crate::FFT64Portable,
+    scalar = f64,
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
+}
+```
+
+It registers the tests `inter`, `intra` and `matmul`, each on its own pair of
+modules of degree `params.n`. Both backends run on identical fixtures and keys,
+and the operations are called through their `*Impl` methods. Every call,
+encodings and preparations included, gets exactly the bytes its query reports,
+poisoned and guarded. Every output block is compared bit for bit: digits and
+CKKS metadata. Storage and ring are free: the bounds are `BlasParityBackend`
+(`Backend<ZnxWord = i64>` and every BLAS family) and `BlasParityModule`. Rank
+and `dsize` follow `params`, as in CKKS parity.
+
+The optional `shapes` argument, a `BlasParityShapes`, sets the swept block
+dimensions `log_d` (default `[1, 2]`). A `log_d` below 1, or whose `d^2` reaches
+the slot count, is skipped with a message, and the test fails when none remains.
+A backend that lacks a block dimension restricts the sweep instead of dropping
+the suite:
+
+```rust
+    shapes = poulpy_blas::test_suite::parity::BlasParityShapes { log_d: vec![2] },
+```
+
+`log_d` is the only shapes axis: rank and `dsize` come from `params`, and one
+macro registers all three families, so none can be dropped silently.
+
+In this workspace the oracle runs the functional tests and parity between its
+FFT64 and NTT4x30 families, standard and conjugate-invariant, in both
+directions. Every other backend type registers parity against
+the oracle of its family: `NTT3x42` types against `NTT4x30Oracle`,
+conjugate-invariant types against the conjugate-invariant oracles, and Rayon
+types against the oracle rather than their serial sibling.
+[`blas_tests.rs`](../../poulpy-cpu-portable/src/tests/blas_tests.rs) in
+`poulpy-cpu-portable` shows the registrations; commands and CI coverage belong
+in the [repository README](../../README.md#testing-a-backend).
+
+## Attestation
+
+Parity is bit-exact, so an override must compute the reference's circuit. An
+algorithm that is only numerically close fails it.
+
+An override ships with its parity test passing against an attested backend.
+Attestation is transitive ([CONTRIBUTING](../../CONTRIBUTING.md#coding-conventions)):
+`poulpy-cpu-oracle` runs the reference directly, and a backend that passes
+parity against an attested one can serve as the reference for the next, for the
+same operations and parameter ranges. There are three routes:
+
+- **Inside the workspace**, against the oracle of the backend's family, from a
+  `poulpy-cpu-oracle` dev-dependency with `enable-blas`.
+- **Outside the workspace, against the oracle.** The oracle is not published,
+  so it comes as a git dev-dependency. It takes the other poulpy crates from its
+  own workspace, so the crate takes every poulpy crate from that one revision,
+  or redirects its crates.io ones there with `[patch.crates-io]`:
+
+  ```toml
+  [dependencies]
+  poulpy-hal = {git = "https://github.com/poulpy-fhe/poulpy", rev = "<rev>"}
+  poulpy-core = {git = "https://github.com/poulpy-fhe/poulpy", rev = "<rev>"}
+  poulpy-ckks = {git = "https://github.com/poulpy-fhe/poulpy", rev = "<rev>"}
+  poulpy-blas = {git = "https://github.com/poulpy-fhe/poulpy", rev = "<rev>"}
+
+  [dev-dependencies]
+  poulpy-blas = {git = "https://github.com/poulpy-fhe/poulpy", rev = "<rev>", features = ["test-utils"]}
+  poulpy-cpu-oracle = {git = "https://github.com/poulpy-fhe/poulpy", rev = "<rev>", features = ["enable-blas"]}
+  ```
+
+- **Outside the workspace, from crates.io**, against the published
+  `poulpy-cpu-portable` with `enable-blas`, which is attested against the oracle
+  here.
+
+## Backends outside the workspace
+
+Everything above applies to a backend crate outside this workspace,
+closed-source ones included. It may override any family, and three Rust rules
+constrain its wiring:
+
+- **It wires only its own types.** Implementing a BLAS trait for another
+  crate's type breaks the orphan rule (E0117). The CPU backends wire theirs
+  behind `enable-blas`.
+- **One source.** `poulpy-hal`, `poulpy-core`, `poulpy-ckks`, `poulpy-blas` and
+  the comparison backend come from one source and revision. Two copies of a
+  crate define distinct types and traits, so a crates.io copy beside a git one
+  leaves the module without the expected methods (E0599).
+- **Direct dependency names.** The wiring and registration macros expand to
+  `::poulpy_hal`, `::poulpy_core` and `::poulpy_ckks`, so the crate that invokes
+  them depends on `poulpy-hal`, `poulpy-core` and `poulpy-ckks` directly, under
+  those names (E0433 otherwise).

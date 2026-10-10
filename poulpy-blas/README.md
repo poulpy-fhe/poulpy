@@ -18,5 +18,26 @@ The block maps are encoded once, at a caller-chosen precision, into a `BlasConte
 `GetTensorKey` for the ciphertext x ciphertext products). Slot-wise additions, products and rescaling are poulpy-ckks
 operations applied to each block.
 
-Backend crates wire poulpy-blas behind their own `enable-blas` feature, selecting the reference compositions with
-`poulpy_blas::impl_blas_reference_full!(Backend)`.
+## Tests and backend integration
+
+poulpy-blas imports no backend. Backend crates select the reference compositions with
+`poulpy_blas::impl_blas_reference_full!(Backend)`. To override a family, a backend wires the other families with
+`impl_blas_inter_reference!`, `impl_blas_intra_reference!` or `impl_blas_matmul_reference!` and implements that
+family's `oep` trait by hand, forwarding the methods it keeps to `reference`. `poulpy-cpu-oracle` and the CPU backends
+do so behind their `enable-blas` feature. A backend crate outside this workspace does the same for its own types. It
+takes `poulpy-hal`, `poulpy-core`, `poulpy-ckks` and `poulpy-blas` from one poulpy source, as direct dependencies
+under those names, because the macros expand to `::poulpy_hal`, `::poulpy_core` and `::poulpy_ckks`.
+
+```sh
+cargo test -p poulpy-blas
+```
+
+The `test-utils` feature exposes the functional suite, registered with `blas_backend_test_suite!` and run by
+`poulpy-cpu-oracle`, and the parity suite, registered with `blas_parity_test_suite!`. Parity compares a tested backend
+with a reference backend bit for bit, at every block dimension that the optional `shapes` argument
+(`test_suite::parity::BlasParityShapes`, `log_d` 1 and 2 by default) selects. Every override ships with that parity
+test passing against an attested backend: the oracle inside this workspace; outside it, either the oracle taken from
+the same git revision as every other poulpy crate, or the published `poulpy-cpu-portable` with `enable-blas`.
+
+See the [repository README](../README.md) for commands and CI coverage, and
+[Implementing BLAS operations](docs/blas-contracts.md) for wiring, registration and attestation.

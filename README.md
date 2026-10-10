@@ -24,6 +24,7 @@
 - **`poulpy-ckks`**: a backend-agnostic leveled CKKS implementation built on **`poulpy-core`** and **`poulpy-hal`**, including polynomial evaluation and bootstrappings.
 - **`poulpy-bin-fhe`**: the binary/gate-level FHE crate built on **`poulpy-core`** and **`poulpy-hal`**. It replaces the former `poulpy-schemes` crate and exposes backend-owned APIs with explicit operation overrides and reusable reference circuits.
 - **`poulpy-mhe`**: a backend-agnostic multiparty homomorphic encryption crate built on **`poulpy-core`** and **`poulpy-hal`**: collective public, switching, automorphism, tensor and GGSW keys, collective key switching, and conversions between encryptions and additive shares.
+- **`poulpy-blas`**: backend-agnostic encrypted matrix arithmetic built on **`poulpy-ckks`**: grids of CKKS block ciphertexts with JKLS products, transposition, and row, column and matrix-slot rotations and sums.
 - **`poulpy-cpu-portable`**: the portable CPU implementation of **`poulpy-hal`** in plain scalar Rust, which runs on any target and whose scalar kernels back the SIMD backends.
 - **`poulpy-cpu-oracle`**: an unpublished, independent scalar backend that the other backends are compared against in the cross-backend and parity suites.
 - **`poulpy-cpu-rayon`**: the shared Rayon task executor and parallel kernels used by the optional multithreaded CPU backend variants.
@@ -40,6 +41,7 @@
 poulpy-hal                  ← hardware abstraction: layouts and operation traits
 └── poulpy-core              ← scheme-agnostic Module-LWE arithmetic (LWE, GLWE, GGLWE, GGSW)
     ├── poulpy-ckks           ← leveled CKKS evaluator
+    │   └── poulpy-blas        ← encrypted matrix arithmetic (JKLS)
     ├── poulpy-bin-fhe        ← binary / gate-level FHE
     └── poulpy-mhe            ← multiparty HE
 
@@ -51,7 +53,7 @@ poulpy-cpu-avx512           ← AVX-512/IFMA-accelerated backend
 poulpy-cpu-arm              ← NEON/ASIMD-accelerated backend (AArch64)
 ```
 
-Backend crates (`poulpy-cpu-portable`, `poulpy-cpu-avx`, `poulpy-cpu-avx512`, `poulpy-cpu-arm`, …) implement the open extension points defined in `poulpy-hal/oep`. Core, CKKS and binary-FHE keep concrete backend wiring in backend crates. Each layer provides explicit operation contracts, reusable reference algorithms and caller-selected parity suites.
+Backend crates (`poulpy-cpu-portable`, `poulpy-cpu-avx`, `poulpy-cpu-avx512`, `poulpy-cpu-arm`, …) implement the open extension points defined in `poulpy-hal/oep`. Core, CKKS, BLAS and binary-FHE keep concrete backend wiring in backend crates. Each layer provides explicit operation contracts, reusable reference algorithms and caller-selected parity suites.
 
 ### Layer Anatomy
 
@@ -98,6 +100,7 @@ bootstrap another.
 2. Implement each required HAL OEP method and inherit or override its derived defaults.
 3. Implement the core `*Impl` traits, or use family macros to select reference algorithms and derived defaults.
 4. Optionally, do the same for `poulpy-ckks` using the `impl_ckks_*_reference!` macros or direct OEP trait implementations.
+5. Optionally, do the same for `poulpy-blas` using `impl_blas_reference_full!`, its per-family macros or direct OEP trait implementations; see [implementing BLAS operations](poulpy-blas/docs/blas-contracts.md).
 
 A family macro and a handwritten implementation of the same trait are mutually
 exclusive. Use individual family macros when customizing a core backend, and
@@ -105,7 +108,7 @@ validate its implementations with the shared conformance tests. The
 [core backend guide](poulpy-core/docs/core-contracts.md) explains reference
 forwarding, derived defaults, scratch requirements and controlled sampling.
 
-See `poulpy-cpu-portable` for a complete implementation of all four steps. Its
+See `poulpy-cpu-portable` for a complete implementation of all five steps. Its
 [compiled override example](poulpy-cpu-portable/src/tests/delegating_backend.rs)
 checks reference forwarding and dispatch through custom core methods; the
 [encryption example](poulpy-cpu-portable/examples/core_encryption.rs) shows public API use.
@@ -135,6 +138,7 @@ Coverage degrades rather than switching off. A backend with a narrower envelope 
 | Core noise | `FFT64Portable`, `NTT4x30Portable` | — | — | — |
 | Core parity | FFT64 ↔ NTT4x30 | FFT64, NTT4x30 | FFT64, NTT4x30, NTT3x42Ifma | FFT64, NTT4x30 |
 | CKKS parity | FFT64 ↔ NTT4x30 | FFT64, NTT4x30 | FFT64, NTT4x30, NTT3x42Ifma | FFT64, NTT4x30 |
+| BLAS parity | vs oracle | vs oracle | vs oracle | vs oracle |
 
 The noise suite runs in `poulpy-cpu-portable` alone: the scheme-level model is backend-independent, and accelerated backends validate their outputs through parity with an already validated backend.
 
@@ -173,6 +177,18 @@ cargo test -p poulpy-cpu-portable --profile ci --features enable-ckks
 cargo run -p poulpy-cpu-portable --example ckks_poly2 --features enable-ckks
 ```
 
+BLAS runs its functional suite on `poulpy-cpu-oracle` and registers bit-exact
+parity through `blas_parity_test_suite!`: every other backend type, Rayon and
+IFMA variants included, is compared against the oracle of its family in `f64`
+and `Quad`. Native CI runs the `blas_parity` groups; the emulated jobs and the
+optional QEMU run do not. See [implementing BLAS operations](poulpy-blas/docs/blas-contracts.md).
+
+Run portable BLAS parity with:
+
+```sh
+cargo test -p poulpy-cpu-portable --lib --profile ci --features enable-blas -- blas_parity
+```
+
 ## Bivariate Polynomial Representation
 
 Existing FHE implementations (such as [Lattigo](https://github.com/tuneinsight/lattigo) or [OpenFHE](https://github.com/openfheorg/openfhe-development)) use the [residue number system](https://en.wikipedia.org/wiki/Residue_number_system) (RNS) to represent large integers. Although the parallelism and carry-less arithmetic offered by the RNS representation provide efficient modular arithmetic over large integers, RNS also has drawbacks in the context of FHE. The main idea behind the bivariate representation is to decouple cyclotomic arithmetic from large-number arithmetic. Instead of using the RNS representation for large integers, integers are decomposed in base $2^{-K}$ over the Torus $\mathbb{T}_{N}[X]$.
@@ -200,6 +216,7 @@ The bivariate representation recovers bit-granular scale and capacity management
 - **`poulpy-ckks`**: https://crates.io/crates/poulpy-ckks
 - **`poulpy-bin-fhe`**: https://crates.io/crates/poulpy-bin-fhe
 - **`poulpy-mhe`**: https://crates.io/crates/poulpy-mhe
+- **`poulpy-blas`**: https://crates.io/crates/poulpy-blas
 - **`poulpy-cpu-portable`**: https://crates.io/crates/poulpy-cpu-portable
 - **`poulpy-cpu-rayon`**: https://crates.io/crates/poulpy-cpu-rayon
 - **`poulpy-cpu-avx`**: https://crates.io/crates/poulpy-cpu-avx

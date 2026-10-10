@@ -3,7 +3,8 @@
 //! Functional tests take `(params, module, host_module)` and are instantiated per backend by
 //! [`blas_backend_test_suite!`](crate::blas_backend_test_suite); parity tests take
 //! `(params, shapes, reference_module, tested_module)` and are instantiated by
-//! [`blas_parity_test_suite!`](crate::blas_parity_test_suite).
+//! [`blas_parity_test_suite!`](crate::blas_parity_test_suite). The backend guide, `docs/blas-contracts.md`, covers
+//! wiring, registration and attestation.
 
 pub mod context;
 pub mod helpers;
