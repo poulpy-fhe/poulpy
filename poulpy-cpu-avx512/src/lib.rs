@@ -96,6 +96,7 @@
 //! - `enable-rayon`: implies `enable-avx512f` and exports `FFT64Avx512Rayon` and `NTT4x30Avx512Rayon`;
 //!   with `enable-ifma`, it also exports `NTT3x42IfmaRayon`.
 //! - `enable-ckks`: wires these backends into the `poulpy-ckks` reference implementations.
+//! - `enable-blas`: implies `enable-ckks` and wires the enabled backends into `poulpy-blas`.
 //!
 //! # Platform support
 //!
@@ -201,6 +202,8 @@ compile_error!(
     "feature `enable-ckks` requires `enable-avx512f` or `enable-ifma` (without them nothing is built and test runs are silently empty)."
 );
 
+#[cfg(all(feature = "enable-avx512f", feature = "enable-blas"))]
+mod blas_impl;
 #[cfg(all(feature = "enable-avx512f", feature = "enable-ckks"))]
 mod ckks_impl;
 #[cfg(all(feature = "enable-avx512f", feature = "enable-ckks"))]

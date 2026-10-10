@@ -126,6 +126,7 @@
 //!   the crate is an empty shell, allowing the workspace to build on non-aarch64 targets.
 //! - `enable-rayon` (optional): exports `FFT64NeonRayon` and `NTT4x30NeonRayon`.
 //! - `enable-ckks` (optional): wires the CKKS scheme OEP impls for enabled backends.
+//! - `enable-blas` (optional): implies `enable-ckks` and wires the enabled backends into `poulpy-blas`.
 //!
 //! # Platform support
 //!
@@ -158,6 +159,8 @@
 #[cfg(all(feature = "enable-neon", not(target_arch = "aarch64")))]
 compile_error!("feature `enable-neon` requires target_arch = \"aarch64\".");
 
+#[cfg(all(feature = "enable-neon", feature = "enable-blas"))]
+mod blas_impl;
 #[cfg(all(feature = "enable-neon", feature = "enable-ckks"))]
 mod ckks_impl;
 #[cfg(feature = "enable-neon")]
