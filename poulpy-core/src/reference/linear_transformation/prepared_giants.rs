@@ -129,14 +129,17 @@ pub fn glwe_accumulate_streamed_baby_steps_dft<BE, M, P>(
 ///   contribution is normalized to SMALL and rotated with the public normalized
 ///   `glwe_automorphism`. Correct, but gives up the lazy savings.
 ///
-/// Writes the encryption of `M·v` into `res`.
-#[allow(clippy::too_many_arguments)]
+/// `terms` are `(baby cache, transform)` pairs sharing the first one's giant
+/// schedule and diagonal layout (callers check it): each giant step's PROD is
+/// summed over them by `sum_giant_prod` before its single rotation, so one
+/// pair is the single transform.
+///
+/// Writes the encryption of `Σ_t M_t·v_t` into `res`.
 pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
     module: &M,
     cnv_offset: usize,
     res: &mut R,
-    lhs: &LinearTransformationBabySteps<BE>,
-    rhs: &LinearTransformation<P>,
+    terms: &[(&LinearTransformationBabySteps<BE>, &LinearTransformation<P>)],
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
@@ -178,6 +181,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
     let cols = res.rank().as_usize() + 1;
     let res_base2k = res.base2k();
     let res_k = res.k().as_usize();
+    let (lhs, rhs) = terms[0];
 
     // PROD writes its result in the diagonals' base2k.
     let first_diagonal = rhs
@@ -253,14 +257,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
         for (g, giant_key) in giant_keys.iter().enumerate() {
             {
                 let mut prod_dft_backend = prod_dft.to_backend_mut();
-                P::accumulate_giant_prod(
-                    module,
-                    cnv_offset_hi,
-                    &mut prod_dft_backend,
-                    lhs,
-                    &rhs.giant_steps[g],
-                    &mut scratch_phase,
-                );
+                sum_giant_prod(module, cnv_offset_hi, &mut prod_dft_backend, terms, g, &mut scratch_phase);
             }
             let rot = rhs.giant_steps[g].rot;
             if rot == 0 {
@@ -324,14 +321,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
     for (g, giant_key) in giant_keys.iter().enumerate() {
         {
             let mut prod_dft_backend = prod_dft.to_backend_mut();
-            P::accumulate_giant_prod(
-                module,
-                cnv_offset_hi,
-                &mut prod_dft_backend,
-                lhs,
-                &rhs.giant_steps[g],
-                &mut scratch_phase,
-            );
+            sum_giant_prod(module, cnv_offset_hi, &mut prod_dft_backend, terms, g, &mut scratch_phase);
             let mut acc_backend = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendMut<BE>>::to_backend_mut(&mut fallback_acc);
             for col in 0..cols {
                 module.vec_znx_idft_apply_tmpa(&mut prod_col_big, 0, &mut prod_dft_backend, col);
@@ -372,5 +362,43 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
             col,
             &mut scratch_phase.borrow(),
         );
+    }
+}
+
+/// PROD of giant step `g` summed over `terms` in slice order: the first term
+/// writes `prod_dft`, each later one is computed into one scratch bucket, taken
+/// only for a sum, and added in DFT. On an FFT backend that add rounds, so the
+/// order is part of the result.
+fn sum_giant_prod<BE, M, P>(
+    module: &M,
+    cnv_offset_hi: usize,
+    prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
+    terms: &[(&LinearTransformationBabySteps<BE>, &LinearTransformation<P>)],
+    g: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: CnvPVecBytesOf + Convolution<BE> + ModuleN + VecZnxDftAddAssign<BE>,
+    P: DiagonalProd<BE>,
+{
+    let (lhs, rhs) = terms[0];
+    P::accumulate_giant_prod(module, cnv_offset_hi, prod_dft, lhs, &rhs.giant_steps[g], scratch);
+    if terms.len() == 1 {
+        return;
+    }
+    let (mut bucket, mut scratch_bucket) =
+        scratch
+            .borrow()
+            .take_vec_znx_dft_scratch(prod_dft.n(), prod_dft.cols(), prod_dft.size());
+    for &(lhs, rhs) in &terms[1..] {
+        P::accumulate_giant_prod(
+            module,
+            cnv_offset_hi,
+            &mut bucket.to_backend_mut(),
+            lhs,
+            &rhs.giant_steps[g],
+            &mut scratch_bucket,
+        );
+        glwe_dft_add_dft_assign(module, prod_dft, &bucket.to_backend_ref());
     }
 }

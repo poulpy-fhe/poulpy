@@ -80,6 +80,19 @@ macro_rules! core_backend_test_suite {
                 #[should_panic(expected = "linear transformation plaintext size does not match its effective precision")]
                 glwe_prepare_linear_transformation_rhs_rejects_wide_diagonal =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_prepare_linear_transformation_rhs_rejects_wide_diagonal,
+                glwe_linear_transformation_sum => $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum,
+                #[should_panic(expected = "summed linear transformation 1 does not share the first one's giant schedule")]
+                glwe_linear_transformation_sum_rejects_mismatched_schedule =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_mismatched_schedule,
+                #[should_panic(expected = "summed linear transformation 1 does not share the first one's diagonal layout, width and scale")]
+                glwe_linear_transformation_sum_rejects_mismatched_diagonal_width =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_mismatched_diagonal_width,
+                #[should_panic(expected = "summed linear transformation 1 does not share the first one's diagonal layout, width and scale")]
+                glwe_linear_transformation_sum_rejects_mismatched_diagonal_scale =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_mismatched_diagonal_scale,
+                #[should_panic(expected = "summed linear transformation 1 does not share the first one's source layout")]
+                glwe_linear_transformation_sum_rejects_mismatched_source =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_mismatched_source,
                 glwe_packing => $crate::test_suite::noise::test_glwe_packing,
                 gglwe_switching_key_encrypt_sk => $crate::test_suite::noise::encryption::test_gglwe_switching_key_encrypt_sk,
                 gglwe_switching_key_compressed_encrypt_sk =>

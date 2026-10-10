@@ -30,7 +30,8 @@ pub use crate::layouts::{
 
 // Reference implementations forwarded to from `crate::oep::LinearTransformationImpl`.
 pub use eval::{
-    glwe_eval_linear_transformation_into_reference, glwe_eval_linear_transformation_tmp_bytes_reference,
+    glwe_eval_linear_transformation_into_reference, glwe_eval_linear_transformation_sum_into_reference,
+    glwe_eval_linear_transformation_sum_tmp_bytes_reference, glwe_eval_linear_transformation_tmp_bytes_reference,
     glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_reference, glwe_prepare_linear_transformation_baby_steps_reference,
     glwe_prepare_linear_transformation_baby_steps_tmp_bytes_reference,
 };

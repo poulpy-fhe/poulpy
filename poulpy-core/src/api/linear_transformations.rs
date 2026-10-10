@@ -12,7 +12,7 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::layouts::{
     GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation,
-    prepared::{LinearTransformationBabySteps, PreparedDiagonal},
+    prepared::{LinearTransformationBabySteps, LinearTransformationPrepared, PreparedDiagonal},
 };
 
 /// GLWE-level setup and evaluation of a resident (prepared) linear
@@ -34,6 +34,15 @@ pub trait GLWELinearTransformations<BE: Backend> {
     /// the RHS is *streamed* (an unprepared plaintext-diagonal `P`): the streamed
     /// inner product additionally holds one resident `CnvPVecR` diagonal slot.
     fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: GLWEInfos,
+        K: GGLWEInfos;
+
+    /// Scratch bytes required by [`Self::glwe_eval_linear_transformation_sum_into`]:
+    /// [`Self::glwe_eval_linear_transformation_tmp_bytes`] plus one giant-step product buffer.
+    fn glwe_eval_linear_transformation_sum_tmp_bytes<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
@@ -107,5 +116,31 @@ pub trait GLWELinearTransformations<BE: Backend> {
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         P: crate::reference::linear_transformation::DiagonalProd<BE>,
+        H: GetAutomorphismKey<BE>;
+
+    /// Computes `res = Σ_t M_t(a_t)`, where `terms[t]` pairs the baby cache of
+    /// `a_t` with the resident transform `M_t`, all sharing one giant schedule.
+    ///
+    /// Each giant step's products are summed over the terms in the DFT domain
+    /// and rotated once, so the sum costs the giant key switches of one
+    /// transform, and `cnv_offset` applies to every term. The terms are added
+    /// in slice order; an FFT backend adds in floating point, so that order is
+    /// part of the result. One term is
+    /// [`Self::glwe_eval_linear_transformation_into`], bit for bit. A giant
+    /// step's products over every term accumulate in one unnormalized buffer:
+    /// pick `base2k` for that many products (`Module::max_base2k`).
+    ///
+    /// Panics, before writing `res`, if `terms` is empty, if a transform has no
+    /// diagonal, or unless every term shares the first one's giant schedule,
+    /// diagonal layout, width and scale, and source layout.
+    fn glwe_eval_linear_transformation_sum_into<R, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        terms: &[(&LinearTransformationBabySteps<BE>, &LinearTransformationPrepared<BE>)],
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
         H: GetAutomorphismKey<BE>;
 }

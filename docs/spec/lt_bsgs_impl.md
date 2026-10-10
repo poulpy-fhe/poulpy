@@ -213,6 +213,7 @@ These `*_reference` free functions are what a backend forwards to from its
 | `glwe_prepare_linear_transformation_baby_steps_reference` | Setup §3.2 / Phase A (baby_steps.rs). |
 | `glwe_eval_linear_transformation_into_reference` | Prepared eval (§4) — asserts ≥ 1 non-empty giant step, then `glwe_eval_giant_steps`. |
 | `glwe_eval_linear_transformation_into_reference` with unprepared diagonals | Streamed eval (§6). |
+| `glwe_eval_linear_transformation_sum_into_reference` | `Σ_t M_t·v_t` over prepared transforms sharing one giant schedule — checks the terms, then `glwe_eval_giant_steps` sums each giant's PROD over them in DFT, in slice order, before its one rotation. |
 | `*_tmp_bytes_reference` siblings | Scratch sizing. |
 
 **Scratch sizing.** The `*_tmp_bytes` functions follow the additive-layout pattern of
@@ -220,7 +221,7 @@ These `*_reference` free functions are what a backend forwards to from its
 plain) and take the `max`. The eval budget covers the hoisted `a_dft`, the DFT PROD buffer
 + DFT temp, the DFT giant accumulator, the rotation scratch, the final BIG accumulator, and
 the per-op VMP/IDFT/normalize/convolution `*_tmp_bytes`. The streamed variant adds one
-resident `CnvPVecR` slot and a `cnv_prepare_right` scratch on top.
+resident `CnvPVecR` slot and a `cnv_prepare_right` scratch on top, and the sum one PROD bucket.
 
 ---
 
