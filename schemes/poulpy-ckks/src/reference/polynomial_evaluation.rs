@@ -2,14 +2,15 @@ use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{BSGSMeta, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta};
+use poulpy_core::oep::{ConstTerm, GLWEMulConstImpl};
 use poulpy_core::{BSGSOps, GLWEPolynomialEvaluation, GLWEZero};
 use poulpy_hal::{
     api::{
         Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxRsh, VecZnxRshTmpBytes,
     },
     layouts::{
-        Backend, Data, Module, PrepareHint, Ring, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut,
-        VecZnxToBackendRef, ZnxWord, vec_znx_backend_ref_from_ref,
+        Backend, Data, Module, PrepareHint, Ring, ScratchArena, VecZnxToBackendMut, VecZnxToBackendRef, ZnxWord,
+        vec_znx_backend_ref_from_ref,
     },
 };
 
@@ -27,13 +28,16 @@ use crate::{
 /// Scratch upper bound for [`BSGSOps::eval_baby_linear_combination`]: BIG
 /// accumulator, shifted-constant buffer and per-term convolution/shift/normalize
 /// scratch, for the widest term (`ct_size`) and constant (`pt_size`) in limbs.
+/// Most terms a baby step combines in one constant combination; a longer one takes the generic path.
+const MAX_BABY_TERMS: usize = 64;
+
 pub(crate) fn eval_baby_linear_combination_tmp_bytes<BE, M>(module: &M, ct_size: usize, pt_size: usize) -> usize
 where
     BE: Backend,
     M: ModuleN + Convolution<BE> + VecZnxRshTmpBytes + VecZnxBigNormalizeTmpBytes,
 {
     let acc_size = ct_size + pt_size;
-    BE::bytes_of_vec_znx(1, 1, pt_size + 1)
+    BE::bytes_of_vec_znx(1, MAX_BABY_TERMS, pt_size + 1)
         + BE::bytes_of_vec_znx_big(module.n(), 1, acc_size)
         + module
             .cnv_by_const_apply_tmp_bytes(0, acc_size, ct_size, pt_size + 1)
@@ -75,7 +79,7 @@ where
 /// has no single existing API equivalent.
 struct CKKSBSGSOps;
 
-impl<BE: Backend, V, P, A, R> BSGSOps<BE, V, P, A, R> for CKKSBSGSOps
+impl<BE: Backend + GLWEMulConstImpl, V, P, A, R> BSGSOps<BE, V, P, A, R> for CKKSBSGSOps
 where
     Module<BE>: CKKSAddOps<BE>
         + CKKSMulOps<BE>
@@ -120,6 +124,9 @@ where
         let Some(&(seed, _)) = terms.last() else {
             return Ok(false);
         };
+        if terms.len() > MAX_BABY_TERMS {
+            return Ok(false);
+        }
         let kb: usize = res.base2k().into();
         let delta = seed.log_delta();
         if kb == 0 {
@@ -152,7 +159,6 @@ where
             *offset += *term_budget - budget;
         }
 
-        let cols: usize = res.rank().as_usize() + 1;
         let mut sparsity = res.log_sparsity();
         let mut slots = seed.slots();
         for (t, _) in terms {
@@ -182,73 +188,55 @@ where
 
         res.set_canonical(true);
         scratch.scope(|scratch_local| -> anyhow::Result<()> {
-            let (mut g, scratch_local) = scratch_local.take_vec_znx_scratch(1, 1, pt_size + 1);
-            let (mut acc, mut scratch_local) = scratch_local.take_vec_znx_big_scratch(module.n(), 1, acc_size);
-            for col in 0..cols {
-                for (t_idx, ((t, coeff_idx), (_, off))) in terms.iter().zip(term_params.iter()).enumerate() {
-                    let (r, rho) = shift_split(*off);
-                    let t_bk = t.to_backend_ref();
-                    let mut acc_bk = acc.to_backend_mut();
-                    let (b_ref, b_coeff);
-                    if r == 0 {
-                        b_ref = vec_znx_backend_ref_from_ref::<BE>(pt_bk.data());
-                        b_coeff = *coeff_idx;
-                    } else {
-                        {
-                            let mut g_bk = g.to_backend_mut();
-                            module.vec_znx_rsh(
-                                kb,
-                                r,
-                                &mut g_bk,
-                                0,
-                                &vec_znx_backend_ref_from_ref::<BE>(pt_bk.data()).window_coeffs(*coeff_idx, 1),
-                                0,
-                                &mut scratch_local.borrow(),
-                            );
-                        }
-                        b_ref = g.to_backend_ref();
-                        b_coeff = 0;
-                    }
-                    if t_idx == 0 {
-                        module.cnv_by_const_apply(
-                            rho,
-                            &mut acc_bk,
-                            0,
-                            t_bk.data(),
-                            col,
-                            &b_ref,
-                            0,
-                            b_coeff,
-                            &mut scratch_local.borrow(),
-                        );
-                    } else {
-                        module.cnv_by_const_apply_add(
-                            rho,
-                            &mut acc_bk,
-                            0,
-                            t_bk.data(),
-                            col,
-                            &b_ref,
-                            0,
-                            b_coeff,
-                            &mut scratch_local.borrow(),
-                        );
-                    }
+            // The constants that need a sub-limb shift, one column each.
+            let (mut g, mut scratch_local) = scratch_local.take_vec_znx_scratch(1, terms.len(), pt_size + 1);
+            for (t_idx, ((_, coeff_idx), (_, off))) in terms.iter().zip(term_params.iter()).enumerate() {
+                let (r, _) = shift_split(*off);
+                if r != 0 {
+                    module.vec_znx_rsh(
+                        kb,
+                        r,
+                        &mut g.to_backend_mut(),
+                        t_idx,
+                        &vec_znx_backend_ref_from_ref::<BE>(pt_bk.data()).window_coeffs(*coeff_idx, 1),
+                        0,
+                        &mut scratch_local.borrow(),
+                    );
                 }
-                let acc_ref = acc.to_backend_ref();
-                let mut res_bk = res.to_backend_mut();
-                module.vec_znx_big_normalize(
-                    res_bk.data_mut(),
-                    kb,
-                    budget + delta,
-                    0,
-                    col,
-                    &acc_ref,
-                    kb,
-                    0,
-                    &mut scratch_local.borrow(),
-                );
             }
+            let g_ref = g.to_backend_ref();
+            let term_refs: Vec<_> = terms.iter().map(|(t, _)| t.to_backend_ref()).collect();
+            let combination: Vec<ConstTerm<'_, BE>> = terms
+                .iter()
+                .zip(term_params.iter())
+                .zip(term_refs.iter())
+                .enumerate()
+                .map(|(t_idx, (((_, coeff_idx), (_, off)), t_bk))| {
+                    let (r, rho) = shift_split(*off);
+                    let (b, b_col, b_coeff) = if r == 0 {
+                        (vec_znx_backend_ref_from_ref::<BE>(pt_bk.data()), 0, *coeff_idx)
+                    } else {
+                        (vec_znx_backend_ref_from_ref::<BE>(&g_ref), t_idx, 0)
+                    };
+                    ConstTerm {
+                        a: vec_znx_backend_ref_from_ref::<BE>(t_bk.data()),
+                        b,
+                        b_col,
+                        b_coeff,
+                        cnv_offset: rho,
+                    }
+                })
+                .collect();
+            let mut res_bk = res.to_backend_mut();
+            BE::glwe_const_combination(
+                module,
+                res_bk.data_mut(),
+                kb,
+                budget + delta,
+                acc_size,
+                &combination,
+                &mut scratch_local.borrow(),
+            );
             Ok(())
         })?;
         Ok(true)
@@ -385,7 +373,7 @@ pub trait PolynomialEvaluationReference<BE: Backend> {
         H: GetTensorKey<BE>;
 }
 
-impl<BE: Backend> PolynomialEvaluationReference<BE> for Module<BE>
+impl<BE: Backend + GLWEMulConstImpl> PolynomialEvaluationReference<BE> for Module<BE>
 where
     Module<BE>: GLWEPolynomialEvaluation<BE>,
 {

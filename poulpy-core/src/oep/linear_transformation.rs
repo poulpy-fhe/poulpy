@@ -1,10 +1,10 @@
 #![allow(clippy::too_many_arguments)]
 
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena, VecZnxDftBackendMut};
 
 use crate::layouts::{
     GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation,
-    LinearTransformationPlan,
+    LinearTransformationGiantStep, LinearTransformationPlan,
     prepared::{LinearTransformationBabySteps, LinearTransformationPrepared, PreparedDiagonal},
 };
 
@@ -141,6 +141,38 @@ pub unsafe trait LinearTransformationImpl: Backend {
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos,
         H: GetAutomorphismKey<Self>;
+
+    /// Most giant steps [`Self::glwe_accumulate_giant_steps`] takes per call: the evaluation
+    /// holds that many products at once. The default is one, the reference schedule.
+    fn glwe_giant_step_batch(_module: &Module<Self>) -> usize {
+        1
+    }
+
+    /// The products of several giant steps of a prepared transformation:
+    /// `prods[g] = sum_i baby(steps[g].diagonals[i].baby) * steps[g].diagonals[i].plaintext`,
+    /// every limb of every column of each product being written.
+    ///
+    /// `prods` and `steps` have the same length, at most [`Self::glwe_giant_step_batch`]. The
+    /// default accumulates each step with `cnv_apply_dft_sum`. Overrides must reproduce it bit for bit.
+    fn glwe_accumulate_giant_steps(
+        module: &Module<Self>,
+        cnv_offset_hi: usize,
+        prods: &mut [VecZnxDftBackendMut<'_, Self>],
+        lhs: &LinearTransformationBabySteps<Self>,
+        steps: &[LinearTransformationGiantStep<PreparedDiagonal<Self::OwnedBuf, Self>>],
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        Module<Self>: poulpy_hal::api::Convolution<Self>,
+    {
+        crate::reference::linear_transformation::glwe_accumulate_giant_steps_reference(
+            module,
+            cnv_offset_hi,
+            prods,
+            lhs,
+            steps,
+            scratch,
+        )
+    }
 }
 
 /// Implements the linear-transformation backend hooks with HAL-based algorithms.

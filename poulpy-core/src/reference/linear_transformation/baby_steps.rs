@@ -19,8 +19,8 @@ use std::collections::BTreeMap;
 
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphismAssign, VecZnxDftApply, VecZnxDftBytesOf,
-        VecZnxDftZero, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
+        CnvPVecAlloc, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphism, VecZnxAutomorphismAssign, VecZnxDftApply,
+        VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
     },
     execution::{for_each_with_scratch, scratch_workers, worker_count, worker_scratch_bytes},
     layouts::{
@@ -38,7 +38,7 @@ use crate::{
         GGLWEInfos, GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
         prepared::{GGLWEPreparedBackendRef, GLWEAutomorphismKeyPreparedBackendRef},
     },
-    reference::keyswitching::GGLWEProductReference,
+    reference::keyswitching::{GGLWEProductFused, GGLWEProductReference},
 };
 
 use super::{BsgsRotations, LinearTransformationBabySteps, LinearTransformationLayout, LinearTransformationPlan};
@@ -130,7 +130,9 @@ where
     let (base2k, k_digit, dnum) = (key_infos.base2k(), key_infos.k_digit(), key_infos.dnum());
     let operand_size = gadget_input_size(base2k, k_digit, dnum, a_infos.k(), a_size);
     let hoisted_a_dft = module.bytes_of_vec_znx_dft(module.n(), cols - 1, operand_size);
+    // The product, the normalized copy the automorphism reads, and their scratch.
     let hoisted_rot = module.bytes_of_vec_znx_dft(module.n(), cols, key_size)
+        + baby
         + module
             .gglwe_product_dft_tmp_bytes_reference(key_size, operand_size, key_infos)
             .max(module.vec_znx_idft_normalize_tmp_bytes(a_size, key_size));
@@ -166,7 +168,9 @@ fn glwe_hoisted_baby_rotation<BE, M, R>(
         + ModuleN
         + GaloisElement
         + GGLWEProductReference<BE>
+        + GGLWEProductFused<BE>
         + VecZnxAutomorphismAssign<BE>
+        + VecZnxAutomorphism<BE>
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>
         + VecZnxIdftNormalize<BE>,
@@ -176,31 +180,33 @@ fn glwe_hoisted_baby_rotation<BE, M, R>(
     assert_eq!(key_ref.base2k(), a.base2k());
 
     // `key_size` is this key's own product width; limbs above it stay zeroed.
-    let (mut res_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(a.n().as_usize(), cols, key_size);
+    let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(a.n().as_usize(), cols, key_size);
     crate::layouts::assert_no_row_offset("glwe_hoisted_baby_rotation", &key_ref);
-    module.gglwe_product_dft_reference(&mut res_dft, a_dft_ref, key_ref, 1, &mut scratch_1.borrow());
 
     let baby_base2k = baby.base2k().as_usize();
     let baby_k = baby.k().as_usize();
     let a_base2k = a.base2k().as_usize();
     {
+        // Normalized beside the destination, which the automorphism then writes.
         let mut baby_ref = baby.to_backend_mut();
+        let (mut normalized, mut scratch_1) = scratch_1.take_vec_znx_scratch(a.n().as_usize(), cols, baby_ref.data.size());
+        module.gglwe_product_idft_normalize(
+            &mut normalized,
+            baby_base2k,
+            baby_k,
+            0,
+            &mut res_dft,
+            a_dft_ref,
+            key_ref,
+            1,
+            &[],
+            Some((&a.data, 0)),
+            a_base2k,
+            &mut scratch_1.borrow(),
+        );
+        let normalized = poulpy_hal::layouts::VecZnxToBackendRef::to_backend_ref(&normalized);
         for col in 0..cols {
-            module.vec_znx_idft_normalize(
-                &mut baby_ref.data,
-                baby_base2k,
-                baby_k,
-                0,
-                col,
-                &mut res_dft,
-                col,
-                a_base2k,
-                (col == 0).then_some((&a.data, 0)),
-                &mut scratch_1.borrow(),
-            );
-        }
-        for col in 0..cols {
-            module.vec_znx_automorphism_assign(key_p, &mut baby_ref.data, col, &mut scratch_1.borrow());
+            module.vec_znx_automorphism(key_p, &mut baby_ref.data, col, &normalized, col);
         }
     }
 }
@@ -228,6 +234,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
         + GaloisElement
         + GLWEAutomorphism<BE>
         + GGLWEProductReference<BE>
+        + GGLWEProductFused<BE>
         + ModuleN
         + VecZnxAutomorphismAssign<BE>
         + poulpy_hal::api::VecZnxAutomorphism<BE>
@@ -354,6 +361,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
                 .filter_map(|(index, _)| key_refs[*index].as_ref().map(|key| (key, key_sizes[*index])))
                 .map(|(key, key_size)| {
                     module.bytes_of_vec_znx_dft(module.n(), cols, key_size)
+                        + module.glwe_bytes_of_from_infos(a)
                         + module
                             .gglwe_product_dft_tmp_bytes_reference(key_size, operand_size, key)
                             .max(module.vec_znx_idft_normalize_tmp_bytes(a_size, key_size))
@@ -435,7 +443,8 @@ fn glwe_prepare_baby_steps_doubling<BE, M, H>(
         + poulpy_hal::api::VecZnxGadgetDecompose<BE>
         + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
         + GLWENormalize<BE>
-        + Sync,
+        + Sync
+        + GGLWEProductFused<BE>,
     H: GetAutomorphismKey<BE>,
 {
     let n = a.n().as_usize();
@@ -510,7 +519,8 @@ fn glwe_prepare_baby_steps_doubling<BE, M, H>(
                 })
                 .collect();
             // The rotation of `source` before its automorphism: its operand laid out, its
-            // product by the key, normalized with its body.
+            // product by the key, normalized with its body
+            // ([`GGLWEProductFused::gglwe_product_idft_normalize`]).
             let (base2k, k) = (a.base2k().as_usize(), a.k().as_usize());
             let switch = |operand: &mut VecZnxDftBackendMut<'_, BE>,
                           product: &mut VecZnxDftBackendMut<'_, BE>,
@@ -531,27 +541,20 @@ fn glwe_prepare_baby_steps_doubling<BE, M, H>(
                         &mut scratch.borrow(),
                     );
                 }
-                module.gglwe_product_dft_reference(
+                module.gglwe_product_idft_normalize(
+                    normalized,
+                    base2k,
+                    k,
+                    0,
                     product,
                     &vec_znx_dft_backend_ref_from_mut(operand),
                     &key.key,
                     1,
+                    &[],
+                    Some((&source.data, 0)),
+                    base2k,
                     &mut scratch.borrow(),
                 );
-                for col in 0..cols {
-                    module.vec_znx_idft_normalize(
-                        normalized,
-                        base2k,
-                        k,
-                        0,
-                        col,
-                        product,
-                        col,
-                        base2k,
-                        (col == 0).then_some((&source.data, 0)),
-                        &mut scratch.borrow(),
-                    );
-                }
             };
             let task_bytes = worker_scratch_bytes::<BE>(
                 gadget_dft_apply_tmp_bytes::<BE, _>(module, a.base2k(), k_digit, dnum, a.k(), a_size)
