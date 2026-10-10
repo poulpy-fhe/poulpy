@@ -261,6 +261,8 @@
 - The hoisted baby steps of a linear transformation lay their input out once per class of keys that read the same operand, whole-limb digits or one digit width over one digit count, where a key set mixing classes was evaluated rotation by rotation, laying the input out and transforming it again for each.
   Outputs are unchanged; `test_glwe_hoisted_baby_rotations_match_automorphism` also checks key sets off a limb boundary, their coarser views and one mixing three widths.
 - Implement `TransferInto` for `GLWECIKey`, the conversion keys of a CI bootstrap.
+- Add step hooks with reference defaults, so a backend fuses one step of a composite operation without re-implementing it: `GGLWEProductDigitsStridedImpl::gglwe_product_fused` (a gadget product over `product_size` limbs, addends per output column, an automorphism, storage or accumulation), `GGLWEProductDigitsStridedImpl::gglwe_product_idft_normalize` (a gadget product, its transform-domain addends, the inverse transform and the normalization as one step), `GLWETensoringImpl::glwe_square_prepare` and `glwe_square_columns`, `LinearTransformationImpl::glwe_giant_step_batch` and `glwe_accumulate_giant_steps` (with `DiagonalProd::giant_step_batch`, `DiagonalProd::accumulate_giant_prods` and `GiantStepProducts`), and `GLWEMulConstImpl::glwe_const_combination` with `ConstTerm`. Existing implementations are unaffected.
+  The key switch, the hoisted baby rotations and the one-pass relinearization call `gglwe_product_idft_normalize`, the lazy giant rotation calls `gglwe_product_fused`, the lazy evaluation of a transformation accumulates its giant steps in batches through `accumulate_giant_prods`, and the one-pass square calls the square hooks; baby rotations apply their automorphism out of place. Results are unchanged.
 
 ### `poulpy-ckks`
 
@@ -420,6 +422,7 @@
 - Add `BootstrappingPlan::generate_keys` and `BootstrappingPlan::generate_keys_ci`, which generate the keys the compiled context generates from the plan alone, with `DFTPlan::first_factor_rotations`, and `BootstrappingKeySet::transfer_and_prepare` and `transfer_and_prepare_ci`, which move a key set to the evaluating backends and prepare it there one key at a time. `BootstrappingContext::generate_keys_ci` requires a `'static` CI backend.
 - **Breaking:** `test_suite::presets::BootstrappingPresetRun<BE, BC = BE>` takes a client backend `BC` that samples the secret, generates the keys from the plan, encrypts and decrypts, while `BE` compiles the context, prepares the keys and bootstraps; the CI presets run on the twins of both backends (`CIBackend`), and the evaluating module's bounds are `PresetRunModule`. `bootstrap` synchronizes the evaluating backend; `bootstrap_queued` and `synchronize` split the two steps.
 - Add `test_suite::presets::bootstrapping_presets_meet_precision_with_client`; `bootstrapping_presets_meet_precision` and `small_s2c_preset_meets_precision` require `PresetRunModule`, `HostStaged` and `CKKSDFTOps`.
+- The baby step of polynomial evaluation goes through `GLWEMulConstImpl::glwe_const_combination`; a step of more than 64 terms takes the generic path.
 
 ### `poulpy-bin-fhe`
 

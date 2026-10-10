@@ -26,7 +26,7 @@ use crate::{
         Base2K, GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos,
         LWEInfos, TorusPrecision,
     },
-    reference::keyswitching::{GGLWEProductReference, gglwe_product_output_size},
+    reference::keyswitching::{GGLWEProductFused, GGLWEProductReference, gglwe_product_output_size},
 };
 
 fn keeps_canonical_digits<BE, R, A>(res: &R, a: &A) -> bool
@@ -826,6 +826,7 @@ where
         + VecZnxCopy<BE>
         + VecZnxNegate<BE>
         + GGLWEProductReference<BE>
+        + GGLWEProductFused<BE>
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxNormalizeTmpBytes
         + VecZnxDftAddAssign<BE>
@@ -1686,6 +1687,7 @@ where
         + GLWENormalize<BE>
         + VecZnxIdftNormalizeTmpBytes
         + GGLWEProductReference<BE>
+        + GGLWEProductFused<BE>
         + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes,
     R: GLWEInfos,
     B: GGLWEInfos,
@@ -1815,6 +1817,7 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
         + VecZnxDftApply<BE>
         + VecZnxDftAddAssign<BE>
         + GGLWEProductReference<BE>
+        + GGLWEProductFused<BE>
         + poulpy_hal::api::VecZnxGadgetDecompose<BE>
         + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -1947,7 +1950,9 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
             let (mut right_tmp, mut prep_scratch) = prep_scratch.take_glwe_scratch(&right_infos);
             let left = canonical!($left, left_tmp, prep_scratch);
             match &right {
-                MulRight::Left => module.cnv_prepare_self(&mut a_prep, &mut b_prep, &left.data, &mut prep_scratch.borrow()),
+                MulRight::Left => {
+                    BE::glwe_square_prepare(module, &mut a_prep, &mut b_prep, &left.data, &mut prep_scratch.borrow())
+                }
                 MulRight::Operand(b) => {
                     module.cnv_prepare_left(&mut a_prep, &left.data, &mut prep_scratch.borrow());
                     let b = canonical!(*b, right_tmp, prep_scratch);
@@ -1991,7 +1996,12 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
             MulRight::Prepared { prep, .. } => prep.to_backend_ref(),
             _ => b_prep.to_backend_ref(),
         };
-        BE::glwe_mul_columns(
+        let columns = if matches!(right, MulRight::Left) {
+            BE::glwe_square_columns
+        } else {
+            BE::glwe_mul_columns
+        };
+        columns(
             module,
             cnv_offset_hi,
             &mut diag,
@@ -2121,26 +2131,23 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
     let ks_size = (output_size + dft_size.saturating_sub(tensor_size)).min(tsk.size());
     let (mut res_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(n, 2, ks_size);
     crate::reference::keyswitching::glwe::assert_no_row_offset("glwe_mul_relinearize", &tsk.0);
-    module.gglwe_product_dft_reference(&mut res_dft, &d2_dft.to_backend_ref(), &tsk.0, 1, &mut scratch.borrow());
-    module.vec_znx_dft_add_assign(&mut res_dft, 0, &diag.to_backend_ref(), 0);
-    module.vec_znx_dft_add_assign(&mut res_dft, 1, &cross.to_backend_ref(), 0);
-
+    // The key switch of d2 with d0 and d1 added to its columns, inverted and normalized.
     res.set_canonical(true);
     let mut res_backend = res.to_backend_mut();
-    for i in 0..2 {
-        module.vec_znx_idft_normalize(
-            &mut res_backend.data,
-            base2k,
-            res_k.as_usize(),
-            cnv_offset_lo,
-            i,
-            &mut res_dft,
-            i,
-            base2k,
-            None,
-            &mut scratch.borrow(),
-        );
-    }
+    module.gglwe_product_idft_normalize(
+        &mut res_backend.data,
+        base2k,
+        res_k.as_usize(),
+        cnv_offset_lo,
+        &mut res_dft,
+        &d2_dft.to_backend_ref(),
+        &tsk.0,
+        1,
+        &[Some((&diag.to_backend_ref(), 0)), Some((&cross.to_backend_ref(), 0))],
+        None,
+        base2k,
+        &mut scratch.borrow(),
+    );
 }
 
 /// General symmetric square for every rank.
@@ -3808,4 +3815,66 @@ macro_rules! impl_glwe_normalize_reference_full {
         }
         }
     };
+}
+
+/// Default of `GLWEMulConstImpl::glwe_const_combination`: the terms accumulated one by one, then one normalization.
+pub fn glwe_const_combination_reference<BE>(
+    module: &poulpy_hal::layouts::Module<BE>,
+    res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, BE>,
+    base2k: usize,
+    res_k: usize,
+    acc_size: usize,
+    terms: &[crate::oep::ConstTerm<'_, BE>],
+    scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
+) where
+    BE: poulpy_hal::layouts::Backend,
+    Module<BE>: poulpy_hal::api::Convolution<BE> + poulpy_hal::api::VecZnxBigNormalize<BE>,
+{
+    use poulpy_hal::{
+        api::{Convolution, ScratchArenaTakeBasic, VecZnxBigNormalize},
+        layouts::{VecZnxBigToBackendMut, VecZnxBigToBackendRef},
+    };
+    assert!(!terms.is_empty(), "a constant combination has at least one term");
+    let (mut acc, mut scratch) = scratch.borrow().take_vec_znx_big_scratch(res.n(), 1, acc_size);
+    for col in 0..res.cols() {
+        for (index, term) in terms.iter().enumerate() {
+            let mut acc = acc.to_backend_mut();
+            if index == 0 {
+                module.cnv_by_const_apply(
+                    term.cnv_offset,
+                    &mut acc,
+                    0,
+                    &term.a,
+                    col,
+                    &term.b,
+                    term.b_col,
+                    term.b_coeff,
+                    &mut scratch.borrow(),
+                );
+            } else {
+                module.cnv_by_const_apply_add(
+                    term.cnv_offset,
+                    &mut acc,
+                    0,
+                    &term.a,
+                    col,
+                    &term.b,
+                    term.b_col,
+                    term.b_coeff,
+                    &mut scratch.borrow(),
+                );
+            }
+        }
+        module.vec_znx_big_normalize(
+            res,
+            base2k,
+            res_k,
+            0,
+            col,
+            &acc.to_backend_ref(),
+            base2k,
+            0,
+            &mut scratch.borrow(),
+        );
+    }
 }

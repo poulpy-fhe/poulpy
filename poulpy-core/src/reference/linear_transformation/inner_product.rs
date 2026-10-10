@@ -74,6 +74,25 @@ pub(super) fn glwe_accumulate_prepared_baby_steps_dft<BE, M>(
     }
 }
 
+/// Default of `LinearTransformationImpl::glwe_accumulate_giant_steps`: each
+/// product accumulated on its own with `cnv_apply_dft_sum`.
+pub fn glwe_accumulate_giant_steps_reference<BE, M>(
+    module: &M,
+    cnv_offset_hi: usize,
+    prods: &mut [VecZnxDftBackendMut<'_, BE>],
+    lhs: &LinearTransformationBabySteps<BE>,
+    steps: &[LinearTransformationGiantStep<PreparedDiagonal<BE::OwnedBuf, BE>>],
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: Convolution<BE>,
+{
+    assert_eq!(prods.len(), steps.len());
+    for (prod, step) in prods.iter_mut().zip(steps) {
+        glwe_accumulate_prepared_baby_steps_dft(module, cnv_offset_hi, prod, lhs, step, scratch);
+    }
+}
+
 /// Scratch bytes required by [`glwe_accumulate_prepared_baby_steps_dft`].
 pub(super) fn glwe_accumulate_prepared_baby_steps_dft_tmp_bytes<BE, M>(
     module: &M,
