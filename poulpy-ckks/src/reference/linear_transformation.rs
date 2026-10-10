@@ -13,7 +13,8 @@ use poulpy_core::{
     GLWECopy, GLWELinearTransformations, LinearTransformationBabySteps, LinearTransformationGiantStep,
     LinearTransformationPrepared,
     layouts::{
-        GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, TorusPrecision, prepared::PreparedDiagonal,
+        GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, TorusPrecision,
+        prepared::PreparedDiagonal,
     },
     reference::linear_transformation::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft},
 };
@@ -128,6 +129,16 @@ where
         // scratch-carved working copy, as above.
         self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, ct, key)
             + BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
+    }
+
+    /// The ciphertext stands in for the diagonal, so the budget is an upper bound for a compact diagonal.
+    fn ckks_eval_linear_transformation_sum_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    where
+        C: CKKSCtBounds,
+        K: GGLWEInfos,
+    {
+        // No `_assign` wrapper, so no dst-shaped working copy.
+        self.glwe_eval_linear_transformation_sum_tmp_bytes(ct, ct, ct, key)
     }
 
     // ---------- populate ----------
@@ -264,6 +275,76 @@ where
             // into `dst` (a plain `glwe_copy` would leave the budget/scale stale).
             self.ckks_copy(dst, &tmp, &mut scratch_local)
         })
+    }
+
+    fn ckks_eval_linear_transformation_sum_into<Dst, Src, H>(
+        &self,
+        dst: &mut Dst,
+        terms: &[(&Src, &LinearTransformationBabySteps<BE>, &LinearTransformationPrepared<BE>)],
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        H: GetAutomorphismKey<BE>,
+    {
+        let &(src, _, lt) = terms
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("linear transformation sum has no terms"))?;
+        let first = lt
+            .first_diagonal_plaintext()
+            .ok_or_else(|| anyhow::anyhow!("linear transformation has no diagonals"))?;
+        let (pt_log_scale, pt_max_k, pt_slots) = (first.lt_log_scale(), first.encoded_k().as_usize(), first.lt_slots());
+        // Core sums each giant step's products over the terms before one rotation,
+        // at one `cnv_offset`, so the terms must agree on everything those read.
+        let diagonal = |lt: &LinearTransformationPrepared<BE>| {
+            lt.first_diagonal_plaintext()
+                .map(|d| (d.glwe_layout(), d.max_size(), d.lt_log_scale(), d.lt_slots()))
+        };
+        let source = |src: &Src| (src.glwe_layout(), src.log_delta());
+        for (t, &(src_t, _, lt_t)) in terms.iter().enumerate().skip(1) {
+            ckks_ensure!(
+                lt_t.giant_steps
+                    .iter()
+                    .map(|gs| gs.rot)
+                    .eq(lt.giant_steps.iter().map(|gs| gs.rot)),
+                "summed linear transformation {t} does not share the first one's giant schedule"
+            );
+            ckks_ensure!(
+                diagonal(lt_t) == diagonal(lt),
+                "summed linear transformation {t} does not share the first one's diagonal layout, width, scale and slot kind"
+            );
+            ckks_ensure!(
+                source(src_t) == source(src),
+                "summed linear transformation {t} does not share the first one's source layout and scale"
+            );
+        }
+        for &(_, _, lt_t) in terms {
+            ensure_uniform_diagonals(lt_t, pt_log_scale, pt_max_k, pt_slots)?;
+        }
+        // The terms share the source and diagonal metadata, so the first term's
+        // ct × pt rule holds for all of them (see `ckks_eval_linear_transformation_into`).
+        let (res_log_budget, res_log_delta, cnv_offset) = mul_pt_params_raw(
+            dst.k().as_usize(),
+            src.log_delta(),
+            src.log_budget(),
+            pt_log_scale,
+            0,
+            pt_max_k,
+        )?;
+        let res_k: TorusPrecision = (res_log_budget + res_log_delta).into();
+        for &(_, babies_t, lt_t) in terms {
+            check_required_keys(lt_t, babies_t, keys, self.cyclotomic_order(), res_k)?;
+        }
+        // The sum has real slots when every source and the diagonals do.
+        let slots = terms.iter().fold(pt_slots, |slots, (src_t, ..)| slots.join(src_t.slots()));
+        dst.set_log_budget(res_log_budget);
+        dst.set_log_delta(res_log_delta);
+        let core_terms: Vec<_> = terms.iter().map(|&(_, babies_t, lt_t)| (babies_t, lt_t)).collect();
+        self.glwe_eval_linear_transformation_sum_into(cnv_offset, dst, &core_terms, keys, scratch);
+        dst.set_slots(slots);
+        Ok(())
     }
 
     // ---------- eval (self-allocated baby cache) ----------

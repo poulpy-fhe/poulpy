@@ -114,6 +114,12 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         C: CKKSCtBounds,
         K: GGLWEInfos;
 
+    /// Scratch bytes required by [`Self::ckks_eval_linear_transformation_sum_into`].
+    fn ckks_eval_linear_transformation_sum_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    where
+        C: CKKSCtBounds,
+        K: GGLWEInfos;
+
     // ----- populate -----
 
     /// Encodes every diagonal of `lt` into the matching pre-allocated slot
@@ -189,6 +195,31 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
+        H: GetAutomorphismKey<BE>;
+
+    /// Computes `dst = Σ_t M_t · src_t` over resident transforms that share one
+    /// giant schedule, at the giant key switches of one transform. `terms[t]` is
+    /// `(src_t, babies_t, M_t)`, as for [`Self::ckks_eval_linear_transformation_into`];
+    /// one term is that method, bit for bit. The terms are added in slice order;
+    /// see [`GLWELinearTransformations::glwe_eval_linear_transformation_sum_into`](poulpy_core::GLWELinearTransformations::glwe_eval_linear_transformation_sum_into)
+    /// for why the order matters and how to pick `base2k`.
+    ///
+    /// `dst` gets the single transform's metadata; its slot kind joins every term's.
+    ///
+    /// Returns an error, before writing `dst`, if `terms` is empty, if a term
+    /// does not share the first one's giant schedule, diagonal layout, width,
+    /// scale and slot kind, or source layout and scale, or if a term fails the
+    /// checks of [`Self::ckks_eval_linear_transformation_into`].
+    fn ckks_eval_linear_transformation_sum_into<Dst, Src, H>(
+        &self,
+        dst: &mut Dst,
+        terms: &[(&Src, &LinearTransformationBabySteps<BE>, &LinearTransformationPrepared<BE>)],
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>;
 
     // ----- eval (self-allocated baby cache) -----

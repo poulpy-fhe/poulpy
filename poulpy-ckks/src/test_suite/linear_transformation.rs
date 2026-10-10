@@ -21,15 +21,16 @@ use poulpy_hal::{
 };
 
 use crate::{
-    api::{CKKSLinearTransformationOps, LinearTransformation, LinearTransformationPrepared},
-    layouts::{CKKSPlaintextOwned, ComplexDiagonals},
+    api::{CKKSLinearTransformationOps, LinearTransformation, LinearTransformationBabySteps, LinearTransformationPrepared},
+    layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, ComplexDiagonals},
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
         helpers::{
             TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_decrypt_precision, ckks_encrypt,
-            gen_atk, gen_sk_with_raw, test_vector_1,
+            gen_atk, gen_sk_with_raw, test_vector_1, test_vector_2, want_add,
         },
+        parity::helpers::{snapshot, with_scratch},
     },
 };
 
@@ -45,12 +46,14 @@ fn diagonal<F: TestScalar>(i: usize, m: usize) -> (Vec<F>, Vec<F>) {
 }
 
 /// Builds the complex matrix `B` as a raw diagonal map over the given non-zero
-/// diagonal indices (no pre-rotation — that is the encoder's job).
-fn complex_diagonals<F: TestScalar>(diag_indices: &[usize], m: usize) -> ComplexDiagonals<F> {
+/// diagonal indices (no pre-rotation — that is the encoder's job). Diagonal `i`
+/// carries the values of test diagonal `i + shift`, so matrices with one set of
+/// indices, hence one BSGS schedule, can differ.
+fn complex_diagonals<F: TestScalar>(diag_indices: &[usize], m: usize, shift: usize) -> ComplexDiagonals<F> {
     let mut re = Diagonals::<F>::new(m);
     let mut im = Diagonals::<F>::new(m);
     for &i in diag_indices {
-        let (dr, di) = diagonal::<F>(i, m);
+        let (dr, di) = diagonal::<F>(i + shift, m);
         re.set(i as i64, dr);
         im.set(i as i64, di);
     }
@@ -132,7 +135,7 @@ where
     // Encode both orientations through the `transpose` flag and check each one.
     let n1 = 2;
     let strategy = LinearTransformationStrategy::Bsgs { giant_step: n1 };
-    let b = complex_diagonals::<F>(&[0, 1, 2, 3, 4, 5], m);
+    let b = complex_diagonals::<F>(&[0, 1, 2, 3, 4, 5], m, 0);
     let lt_left = encode_lt(module, &params, &b, n1, false, &mut scratch.borrow());
     let lt_right = encode_lt(module, &params, &b, n1, true, &mut scratch.borrow());
 
@@ -219,6 +222,168 @@ where
     );
 }
 
+/// The summed transform with shared giant steps, `Σ_t M_t·a_t`, on its exact
+/// poisoned budget.
+///
+/// One term is the single transform bit for bit. Distinct terms decrypt to the
+/// sum of the single transforms and carry the single transform's metadata. A
+/// mismatched term is rejected, for its own reason, before `dst` is written.
+pub fn test_linear_transformation_sum<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    for<'a> ScratchArena<'a, BE>: ScratchAvailable,
+{
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+
+    // Three matrices on the same diagonals, hence one schedule, with distinct values.
+    let n1 = 2;
+    let strategy = LinearTransformationStrategy::Bsgs { giant_step: n1 };
+    let bs: Vec<ComplexDiagonals<F>> = (0..3).map(|t| complex_diagonals(&[0, 1, 2, 3, 4, 5], m, t)).collect();
+    let lts: Vec<_> = bs
+        .iter()
+        .map(|b| encode_lt(module, &params, b, n1, false, &mut scratch.borrow()))
+        .collect();
+    let prepared: Vec<_> = lts.iter().map(|lt| prepare_lt(module, lt, &mut scratch.borrow())).collect();
+    let keys: HashMap<i64, _> = lts[0]
+        .galois_elements(module.cyclotomic_order())
+        .into_iter()
+        .map(|p| (p, gen_atk(&params, module, p, &sk_raw, &mut scratch.borrow())))
+        .collect();
+
+    let inputs = [test_vector_1::<F>(m), test_vector_2::<F>(m)];
+    let cts: Vec<_> = inputs
+        .iter()
+        .map(|(re, im)| {
+            ckks_encrypt(
+                &params,
+                module,
+                host_module,
+                &encoder,
+                &sk,
+                params.k,
+                re,
+                im,
+                &mut scratch.borrow(),
+            )
+        })
+        .collect();
+    let babies: Vec<_> = cts
+        .iter()
+        .map(|ct| {
+            let mut babies = LinearTransformationBabySteps::alloc(module, prepared[0].baby_steps(), ct);
+            module
+                .ckks_prepare_linear_transformation_baby_steps(&mut babies, ct, &keys, &mut scratch.borrow())
+                .unwrap();
+            babies
+        })
+        .collect();
+    let sum_bytes = module.ckks_eval_linear_transformation_sum_tmp_bytes(&cts[0], &params.atk_layout());
+
+    // One term: the single transform, bit for bit.
+    let mut single = alloc_ct(&params, module, params.k);
+    module
+        .ckks_eval_linear_transformation_into(&mut single, &cts[0], &babies[0], &prepared[0], &keys, &mut scratch.borrow())
+        .unwrap();
+    let single = snapshot::<BE, _>(&single);
+    let mut one = alloc_ct(&params, module, params.k);
+    with_scratch::<BE, _>(sum_bytes, |scratch| {
+        module.ckks_eval_linear_transformation_sum_into(&mut one, &[(&cts[0], &babies[0], &prepared[0])], &keys, scratch)
+    })
+    .unwrap();
+    assert_eq!(snapshot::<BE, _>(&one), single, "a one-term sum is not the single transform");
+
+    // Distinct terms, as (source, matrix): the sum of the single transforms.
+    let terms = [(0, 0), (1, 1), (0, 2)];
+    let refs: Vec<_> = terms.iter().map(|&(s, l)| (&cts[s], &babies[s], &prepared[l])).collect();
+    let mut sum = alloc_ct(&params, module, params.k);
+    with_scratch::<BE, _>(sum_bytes, |scratch| {
+        module.ckks_eval_linear_transformation_sum_into(&mut sum, &refs, &keys, scratch)
+    })
+    .unwrap();
+    let have = snapshot::<BE, _>(&sum);
+    assert_eq!(
+        (have.layout, have.canonical, have.noise),
+        (single.layout, single.canonical, single.noise),
+        "the sum's metadata is not the single transform's"
+    );
+    let (want_re, want_im) = terms
+        .iter()
+        .map(|&(s, l)| bs[l].evaluate((inputs[s].0.as_slice(), inputs[s].1.as_slice()), strategy))
+        .reduce(|(re, im), (re_t, im_t)| want_add(&re, &im, &re_t, &im_t))
+        .unwrap();
+    assert_decrypt_precision(
+        "linear_transformation_sum",
+        &params,
+        module,
+        &encoder,
+        &sum,
+        &sk,
+        &want_re,
+        &want_im,
+        &mut scratch.borrow(),
+    );
+
+    // A mismatched term: rejected for `reason`, with `sum` untouched.
+    let mut reject = |terms: &[(
+        &CKKSCiphertextOwned<BE>,
+        &LinearTransformationBabySteps<BE>,
+        &LinearTransformationPrepared<BE>,
+    )],
+                      reason: &str| {
+        let before = snapshot::<BE, _>(&sum);
+        let err = with_scratch::<BE, _>(sum_bytes, |scratch| {
+            module.ckks_eval_linear_transformation_sum_into(&mut sum, terms, &keys, scratch)
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains(reason), "expected {reason:?}, got: {err}");
+        assert_eq!(snapshot::<BE, _>(&sum), before, "a rejected sum wrote dst ({reason})");
+    };
+    let first = (&cts[0], &babies[0], &prepared[0]);
+    reject(&[], "has no terms");
+    let empty: LinearTransformationPrepared<BE> = LinearTransformation {
+        baby_steps: vec![0],
+        giant_steps: Vec::new(),
+    };
+    reject(&[(&cts[0], &babies[0], &empty)], "has no diagonals");
+    let other_schedule = prepare_lt(
+        module,
+        &encode_lt(module, &params, &bs[1], 2 * n1, false, &mut scratch.borrow()),
+        &mut scratch.borrow(),
+    );
+    reject(&[first, (&cts[1], &babies[1], &other_schedule)], "giant schedule");
+    let mut bad = prepare_lt(module, &lts[1], &mut scratch.borrow());
+    let scale = bad.first_diagonal_plaintext().unwrap().log_scale();
+    bad.set_log_scale(scale + 1);
+    reject(
+        &[first, (&cts[1], &babies[1], &bad)],
+        "diagonal layout, width, scale and slot kind",
+    );
+    // Only a later diagonal differs, which core's first-diagonal check misses.
+    bad.set_log_scale(scale);
+    bad.giant_steps.last_mut().unwrap().diagonals[0]
+        .plaintext
+        .set_log_scale(scale + 1);
+    reject(&[first, (&cts[1], &babies[1], &bad)], "not uniform");
+    let narrow = alloc_ct(&params, module, params.k - params.base2k);
+    reject(&[first, (&narrow, &babies[1], &prepared[1])], "source layout and scale");
+    let no_babies = LinearTransformationBabySteps::alloc(module, &[0], &cts[1]);
+    reject(
+        &[first, (&cts[1], &no_babies, &prepared[1])],
+        "missing prepared baby-step rotation",
+    );
+}
+
 /// The stored keys, with the Galois elements listed in `coarse_ps` answered
 /// through a coarser `dsize`: one key set carrying two different layouts.
 struct MixedDsize<BE: Backend> {
@@ -294,7 +459,7 @@ pub fn test_linear_transformation_pins_operation_precisions<BE, F, E>(
     let mut scratch = alloc_scratch(&key_params, module);
 
     let n1 = 2;
-    let b = complex_diagonals::<F>(&[0, 1, 2, 3, 4, 5], m);
+    let b = complex_diagonals::<F>(&[0, 1, 2, 3, 4, 5], m, 0);
     let lt = encode_lt(module, &params, &b, n1, false, &mut scratch.borrow());
 
     let order = module.cyclotomic_order();
@@ -385,7 +550,7 @@ pub fn test_linear_transformation_mixed_key_layouts<BE, F, E>(
     let mut scratch = alloc_scratch(&key_params, module);
 
     let n1 = 2;
-    let b = complex_diagonals::<F>(&[0, 1, 2, 3, 4, 5], m);
+    let b = complex_diagonals::<F>(&[0, 1, 2, 3, 4, 5], m, 0);
     let lt = encode_lt(module, &params, &b, n1, false, &mut scratch.borrow());
 
     // Half the rotations answer through twice their stored `dsize`, so baby and
