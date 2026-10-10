@@ -33,7 +33,9 @@ impl<BE: Backend + BlasMatIntraImpl> BlasMatIntraOps<BE> for Module<BE> {
         CKKSCiphertext<DA, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
         K: GetAutomorphismKey<BE>,
     {
-        BE::blas_transpose_impl(self, res, a, ctx, keys, scratch)
+        BE::blas_transpose_impl(self, res, a, ctx, keys, scratch)?;
+        res.mat_slots = a.mat_slots;
+        Ok(())
     }
 
     fn blas_rotate_rows_tmp_bytes<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
@@ -61,7 +63,9 @@ impl<BE: Backend + BlasMatIntraImpl> BlasMatIntraOps<BE> for Module<BE> {
         CKKSCiphertext<DA, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
         K: GetAutomorphismKey<BE>,
     {
-        BE::blas_rotate_rows_impl(self, res, a, k, ctx, keys, scratch)
+        BE::blas_rotate_rows_impl(self, res, a, k, ctx, keys, scratch)?;
+        res.mat_slots = a.mat_slots;
+        Ok(())
     }
 
     fn blas_rotate_cols_tmp_bytes<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
@@ -89,6 +93,8 @@ impl<BE: Backend + BlasMatIntraImpl> BlasMatIntraOps<BE> for Module<BE> {
         CKKSCiphertext<DA, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
         K: GetAutomorphismKey<BE>,
     {
-        BE::blas_rotate_cols_impl(self, res, a, k, ctx, keys, scratch)
+        BE::blas_rotate_cols_impl(self, res, a, k, ctx, keys, scratch)?;
+        res.mat_slots = a.mat_slots;
+        Ok(())
     }
 }

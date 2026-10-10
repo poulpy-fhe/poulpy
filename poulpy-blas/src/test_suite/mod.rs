@@ -51,6 +51,7 @@ macro_rules! blas_backend_test_suite {
             run_test!(matmul_long_sums, $crate::test_suite::matmul::test_blas_matmul_long_sums);
             run_test!(key_widths, $crate::test_suite::keys::test_blas_key_widths);
             run_test!(result_meta, $crate::test_suite::meta::test_blas_result_meta);
+            run_test!(batch_record, $crate::test_suite::meta::test_blas_batch_record);
             run_test!(context, $crate::test_suite::context::test_blas_context);
         }
     };

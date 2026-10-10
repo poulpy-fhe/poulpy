@@ -4,7 +4,8 @@ use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
 use crate::layouts::{BlasCiphertext, BlasContext, BlasGridInfos, BlasMatMulLeft, BlasMatMulRight, BlasPtOperand};
 
-/// Matrix products of every matrix of the batch, across the blocks of a grid.
+/// Matrix products of every matrix of the batch, across the blocks of a grid. A product records the larger batch of its
+/// operands ([`BlasGridInfos::mat_slots`]); a preparation and the product by public matrices record their input's.
 pub trait BlasMatMulOps<BE: Backend> {
     /// Scratch bytes [`Self::blas_matmul`] needs on these layouts.
     fn blas_matmul_tmp_bytes<R, A, B, T, K>(&self, res: &R, a: &A, b: &B, tsk: &T, atk: &K) -> usize

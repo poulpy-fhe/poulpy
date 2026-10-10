@@ -93,7 +93,7 @@ pub trait BlasMatInterReference<BE: Backend> {
         ensure_grid(op, a.log_d(), a)?;
         ensure_grid(op, a.log_d(), res)?;
         ensure_shape(op, res, a.rows(), a.cols())?;
-        let rotations: Vec<i64> = sum_rotations(a.log_d(), a.mat_slots()).collect();
+        let rotations: Vec<i64> = sum_rotations(a.log_d(), a.mat_slots).collect();
         // Keys are checked at the width the loop rotates at: `ckks_copy` leaves `res` at the narrower of `a` and `res`.
         let k = a.block_layout().k().min(res.block_layout().k());
         let used = KeyLayouts::new(keys);

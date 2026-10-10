@@ -4,7 +4,8 @@ use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
 use crate::layouts::{BlasCiphertext, BlasContext, BlasGridInfos};
 
-/// The same map applied to every matrix of the batch, across the blocks of a grid.
+/// The same map applied to every matrix of the batch, across the blocks of a grid. `res` records the batch of `a`
+/// ([`BlasGridInfos::mat_slots`]).
 pub trait BlasMatIntraOps<BE: Backend> {
     /// Scratch bytes [`Self::blas_transpose`] needs into `res` from `a` with keys of layout `key`.
     fn blas_transpose_tmp_bytes<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize

@@ -28,7 +28,8 @@ pub fn reject(op: &'static str, reason: String) -> CKKSError {
 }
 
 /// Rejects `g` unless it reads `2^log_d x 2^log_d` blocks that share one layout, whose `log_delta` does not exceed their
-/// `k`, and one block fits their slots.
+/// `k`, and whose label allows its batch record: a power of two from the batch the label proves to the slots' dense
+/// batch, with the label at most `log2` of the degree.
 pub fn ensure_grid<D: Data, W: ZnxWord, R: Ring>(op: &'static str, log_d: usize, g: &BlasCiphertext<D, W, R>) -> Result<()> {
     if g.log_d() != log_d {
         return Err(reject(op, format!("grid dimension 2^{} differs from 2^{log_d}", g.log_d())));
@@ -47,8 +48,16 @@ pub fn ensure_grid<D: Data, W: ZnxWord, R: Ring>(op: &'static str, log_d: usize,
             ),
         ));
     }
-    if g.mat_slots() == 0 {
-        return Err(reject(op, format!("2^{log_d} x 2^{log_d} blocks do not fit the slots")));
+    if !g.batch_fits() {
+        return Err(reject(
+            op,
+            format!(
+                "a batch of {} matrices of 2^{log_d} x 2^{log_d} blocks does not fit blocks of degree {} labelled log_sparsity={}",
+                g.mat_slots,
+                first.n().as_usize(),
+                first.log_sparsity()
+            ),
+        ));
     }
     Ok(())
 }

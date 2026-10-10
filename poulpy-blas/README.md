@@ -3,7 +3,8 @@
 Encrypted matrix arithmetic on [poulpy-ckks](https://github.com/poulpy-fhe/poulpy).
 
 A matrix is a `rows x cols` grid of `d x d` blocks, one CKKS ciphertext per block. A ciphertext with `S` slots holds
-`S / d^2` row-major blocks, one per matrix of a batch, so every operation acts on that many matrices at once.
+`S / d^2` row-major blocks, one per matrix slot, so every operation acts on a batch of matrices at once. The grid records
+its batch, up to `S / d^2` matrices repeated over the slots, from its blocks' label (see `BlasCiphertext::from_blocks`).
 `layouts::grid::{split_into_blocks, join_blocks}` move matrices, read and written through element accessors, to and
 from the slot vectors of the blocks.
 

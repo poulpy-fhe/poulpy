@@ -48,6 +48,7 @@ where
         &encoder,
         &sk,
         params.k,
+        0,
         &a,
         &mut scratch.borrow(),
     );
@@ -98,6 +99,7 @@ where
         &encoder,
         &sk,
         params.k,
+        0,
         &a,
         &mut scratch.borrow(),
     );
@@ -124,8 +126,8 @@ where
     }
 }
 
-/// Every grid [`rejected_grids`] builds, as `a` or as `res`, a shape mismatch, a sparsity shifting the slot count past
-/// the word width, a missing rotation key, and blocks wider than the slots are rejected before `res` changes; a rotation
+/// Every grid [`rejected_grids`] builds, as `a` or as `res`, a shape mismatch, a copy relabelled past `log2` of the ring
+/// degree, a missing rotation key, and blocks wider than the slots are rejected before `res` changes; a rotation
 /// or a sum one scratch byte short of its query panics before `res` changes; `from_blocks` rejects a block count
 /// overflowing `usize`.
 pub fn test_blas_inter_guards<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
@@ -149,6 +151,7 @@ where
         &encoder,
         &sk,
         params.k,
+        0,
         &a,
         &mut scratch.borrow(),
     );
@@ -164,8 +167,8 @@ where
     let sparse_64 = relabel(&ct, |meta| meta.log_sparsity = 64);
     let sparse_65 = relabel(&ct, |meta| meta.log_sparsity = 65);
     let rejected = rejected_grids(module, &ct);
-    // Each rejected grid as `a`, then as `res`; a wrong shape of `res`; a sparsity shifting the slot count past the word
-    // width.
+    // Each rejected grid as `a`, then as `res`; a wrong shape of `res`; copies relabelled past `log2` of the ring degree,
+    // which keep recording the dense batch.
     let as_a = rejected
         .iter()
         .map(|(label, a)| (format!("{label} a"), alloc(LOG_D, 2, 2), a));

@@ -1,4 +1,5 @@
-//! Paired backends on identical fixtures, compared bit for bit through the extension points.
+//! Paired backends on identical fixtures, compared bit for bit through the extension points, which the API calls and
+//! then stamps with the output's batch record.
 //!
 //! Every call, encodings and preparations included, runs under [`with_scratch`]: exactly the bytes its query reports,
 //! poisoned and guarded. Storage and ring are free; rank and `dsize` follow `params`.
@@ -28,9 +29,10 @@ use poulpy_hal::{
 
 use super::helpers::{TestKeys, grid_snapshot};
 use crate::{
+    api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextUnprepared, BlasMatMulLeft, BlasMatMulRight, BlasPtOperand,
-        BlasPtOperandUnprepared, sum_galois_elements,
+        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextUnprepared, BlasGridInfos, BlasMatMulLeft, BlasMatMulRight,
+        BlasPtOperand, BlasPtOperandUnprepared, sum_galois_elements,
     },
     oep::BlasImpl,
 };
@@ -168,7 +170,14 @@ where
     with_scratch::<B, _>(ctx.prepare_tmp_bytes(module), |s| ctx.prepare(module, s))
 }
 
-fn inter<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) -> Vec<(&'static str, Vec<Snapshot>)>
+/// Every output by operation: its batch record and the snapshots of its blocks.
+type Outputs = Vec<(&'static str, Option<usize>, Vec<Snapshot>)>;
+
+fn output<B: BlasParityBackend>(op: &'static str, grid: &BlasCiphertextOwned<B>) -> (&'static str, Option<usize>, Vec<Snapshot>) {
+    (op, grid.mat_slots(), grid_snapshot::<B, _>(grid))
+}
+
+fn inter<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) -> Outputs
 where
     B: BlasParityBackend,
     Module<B>: BlasParityModule<B, F>,
@@ -181,20 +190,20 @@ where
     let key = atk_layout(params);
     let mut out = Vec::new();
     let mut res = operand(params, module, log_d, 2, 2, 70);
-    with_scratch::<B, _>(B::blas_rotate_tmp_bytes_impl(module, &res, &a, &key), |s| {
-        B::blas_rotate_impl(module, &mut res, &a, 3, &keys, s)
+    with_scratch::<B, _>(module.blas_rotate_tmp_bytes(&res, &a, &key), |s| {
+        module.blas_rotate(&mut res, &a, 3, &keys, s)
     })
     .unwrap();
-    out.push(("blas_rotate", grid_snapshot::<B, _>(&res)));
-    with_scratch::<B, _>(B::blas_sum_tmp_bytes_impl(module, &res, &a, &key), |s| {
-        B::blas_sum_impl(module, &mut res, &a, &keys, s)
+    out.push(output::<B>("blas_rotate", &res));
+    with_scratch::<B, _>(module.blas_sum_tmp_bytes(&res, &a, &key), |s| {
+        module.blas_sum(&mut res, &a, &keys, s)
     })
     .unwrap();
-    out.push(("blas_sum", grid_snapshot::<B, _>(&res)));
+    out.push(output::<B>("blas_sum", &res));
     out
 }
 
-fn intra<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) -> Vec<(&'static str, Vec<Snapshot>)>
+fn intra<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) -> Outputs
 where
     B: BlasParityBackend,
     Module<B>: BlasParityModule<B, F>,
@@ -207,37 +216,37 @@ where
     let mut out = Vec::new();
     let a = operand(params, module, log_d, 2, 3, 80);
     let mut res = operand(params, module, log_d, 3, 2, 90);
-    with_scratch::<B, _>(B::blas_transpose_tmp_bytes_impl(module, &res, &a, &key), |s| {
-        B::blas_transpose_impl(module, &mut res, &a, &ctx, &keys, s)
+    with_scratch::<B, _>(module.blas_transpose_tmp_bytes(&res, &a, &key), |s| {
+        module.blas_transpose(&mut res, &a, &ctx, &keys, s)
     })
     .unwrap();
-    out.push(("blas_transpose", grid_snapshot::<B, _>(&res)));
+    out.push(output::<B>("blas_transpose", &res));
     // k' = 0 is a copy, which the functional tests cover: row shifts k and column shifts k d / 2 keep k' != 0 at
     // every log_d. A one-row grid applies psi^k'.
     let a_row = operand(params, module, log_d, 1, 2, 110);
     let mut res = operand(params, module, log_d, 2, 3, 100);
     let mut res_row = operand(params, module, log_d, 1, 2, 112);
     for k in [1, d + 1] {
-        with_scratch::<B, _>(B::blas_rotate_rows_tmp_bytes_impl(module, &res, &a, &key), |s| {
-            B::blas_rotate_rows_impl(module, &mut res, &a, k, &ctx, &keys, s)
+        with_scratch::<B, _>(module.blas_rotate_rows_tmp_bytes(&res, &a, &key), |s| {
+            module.blas_rotate_rows(&mut res, &a, k, &ctx, &keys, s)
         })
         .unwrap();
-        out.push(("blas_rotate_rows", grid_snapshot::<B, _>(&res)));
-        with_scratch::<B, _>(B::blas_rotate_cols_tmp_bytes_impl(module, &res, &a, &key), |s| {
-            B::blas_rotate_cols_impl(module, &mut res, &a, k * d / 2, &ctx, &keys, s)
+        out.push(output::<B>("blas_rotate_rows", &res));
+        with_scratch::<B, _>(module.blas_rotate_cols_tmp_bytes(&res, &a, &key), |s| {
+            module.blas_rotate_cols(&mut res, &a, k * d / 2, &ctx, &keys, s)
         })
         .unwrap();
-        out.push(("blas_rotate_cols", grid_snapshot::<B, _>(&res)));
+        out.push(output::<B>("blas_rotate_cols", &res));
     }
-    with_scratch::<B, _>(B::blas_rotate_rows_tmp_bytes_impl(module, &res_row, &a_row, &key), |s| {
-        B::blas_rotate_rows_impl(module, &mut res_row, &a_row, 1, &ctx, &keys, s)
+    with_scratch::<B, _>(module.blas_rotate_rows_tmp_bytes(&res_row, &a_row, &key), |s| {
+        module.blas_rotate_rows(&mut res_row, &a_row, 1, &ctx, &keys, s)
     })
     .unwrap();
-    out.push(("blas_rotate_rows one row", grid_snapshot::<B, _>(&res_row)));
+    out.push(output::<B>("blas_rotate_rows one row", &res_row));
     out
 }
 
-fn matmul<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) -> Vec<(&'static str, Vec<Snapshot>)>
+fn matmul<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) -> Outputs
 where
     B: BlasParityBackend,
     Module<B>: BlasParityModule<B, F>,
@@ -278,45 +287,43 @@ where
     );
     let mut out = Vec::new();
     let mut res = operand(params, module, log_d, 2, 1, 126);
-    with_scratch::<B, _>(B::blas_matmul_tmp_bytes_impl(module, &res, &a, &b, &tsk, &atk), |s| {
-        B::blas_matmul_impl(module, &mut res, &a, &b, &ctx, &keys, s)
+    with_scratch::<B, _>(module.blas_matmul_tmp_bytes(&res, &a, &b, &tsk, &atk), |s| {
+        module.blas_matmul(&mut res, &a, &b, &ctx, &keys, s)
     })
     .unwrap();
-    out.push(("blas_matmul", grid_snapshot::<B, _>(&res)));
+    out.push(output::<B>("blas_matmul", &res));
     let mut left = BlasMatMulLeft::from_grid(operand(params, module, log_d, 2, 2, 130));
-    with_scratch::<B, _>(
-        B::blas_matmul_prepare_left_tmp_bytes_impl(module, left.as_grid(), &a, &atk),
-        |s| B::blas_matmul_prepare_left_impl(module, &mut left, &a, &ctx, &keys, s),
-    )
-    .unwrap();
-    out.push(("blas_matmul_prepare_left", grid_snapshot::<B, _>(left.as_grid())));
-    let mut right = BlasMatMulRight::from_grid(operand(params, module, log_d, 2, 1, 134));
-    with_scratch::<B, _>(
-        B::blas_matmul_prepare_right_tmp_bytes_impl(module, right.as_grid(), &b, &atk),
-        |s| B::blas_matmul_prepare_right_impl(module, &mut right, &b, &ctx, &keys, s),
-    )
-    .unwrap();
-    out.push(("blas_matmul_prepare_right", grid_snapshot::<B, _>(right.as_grid())));
-    let mut res = operand(params, module, log_d, 2, 1, 136);
-    let bytes = B::blas_matmul_prepared_tmp_bytes_impl(module, &res, left.as_grid(), right.as_grid(), &tsk, &atk);
-    with_scratch::<B, _>(bytes, |s| {
-        B::blas_matmul_prepared_impl(module, &mut res, &left, &right, &ctx, &keys, s)
+    with_scratch::<B, _>(module.blas_matmul_prepare_left_tmp_bytes(left.as_grid(), &a, &atk), |s| {
+        module.blas_matmul_prepare_left(&mut left, &a, &ctx, &keys, s)
     })
     .unwrap();
-    out.push(("blas_matmul_prepared", grid_snapshot::<B, _>(&res)));
+    out.push(output::<B>("blas_matmul_prepare_left", left.as_grid()));
+    let mut right = BlasMatMulRight::from_grid(operand(params, module, log_d, 2, 1, 134));
+    with_scratch::<B, _>(module.blas_matmul_prepare_right_tmp_bytes(right.as_grid(), &b, &atk), |s| {
+        module.blas_matmul_prepare_right(&mut right, &b, &ctx, &keys, s)
+    })
+    .unwrap();
+    out.push(output::<B>("blas_matmul_prepare_right", right.as_grid()));
+    let mut res = operand(params, module, log_d, 2, 1, 136);
+    let bytes = module.blas_matmul_prepared_tmp_bytes(&res, left.as_grid(), right.as_grid(), &tsk, &atk);
+    with_scratch::<B, _>(bytes, |s| {
+        module.blas_matmul_prepared(&mut res, &left, &right, &ctx, &keys, s)
+    })
+    .unwrap();
+    out.push(output::<B>("blas_matmul_prepared", &res));
     for pt in &pts {
         let mut res = operand(params, module, log_d, 2, 1, 138);
-        with_scratch::<B, _>(B::blas_matmul_pt_tmp_bytes_impl(module, &res, &a, &atk), |s| {
-            B::blas_matmul_pt_impl(module, &mut res, &a, pt, &keys, s)
+        with_scratch::<B, _>(module.blas_matmul_pt_tmp_bytes(&res, &a, &atk), |s| {
+            module.blas_matmul_pt(&mut res, &a, pt, &keys, s)
         })
         .unwrap();
-        out.push(("blas_matmul_pt", grid_snapshot::<B, _>(&res)));
+        out.push(output::<B>("blas_matmul_pt", &res));
     }
     out
 }
 
-fn compare(label: &str, want: Vec<(&'static str, Vec<Snapshot>)>, got: Vec<(&'static str, Vec<Snapshot>)>) {
-    assert_untagged(label, want.iter().flat_map(|(_, s)| s));
+fn compare(label: &str, want: Outputs, got: Outputs) {
+    assert_untagged(label, want.iter().flat_map(|(_, _, s)| s));
     assert_eq!(want, got, "{label}");
 }
 

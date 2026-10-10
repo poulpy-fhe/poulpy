@@ -297,14 +297,10 @@ pub trait BlasMatMulReference<BE: Backend> {
         ensure_inner(op, a.cols(), b.rows())?;
         ensure_shape(op, res, a.rows(), b.cols())?;
         ensure_maps(op, self, b.slots(), b.base2k(), &[a])?;
-        if !a.mat_slots().is_multiple_of(b.count()) {
+        if !a.mat_slots.is_multiple_of(b.count()) {
             return Err(reject(
                 op,
-                format!(
-                    "{} public matrices do not divide the {} matrix slots",
-                    b.count(),
-                    a.mat_slots()
-                ),
+                format!("{} public matrices do not divide the {} matrix slots", b.count(), a.mat_slots),
             ));
         }
         let maps = || (0..b.rows()).flat_map(|l| (0..b.cols()).map(move |j| b.at(l, j)));

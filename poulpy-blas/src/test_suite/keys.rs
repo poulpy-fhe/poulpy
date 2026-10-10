@@ -129,7 +129,7 @@ where
     .prepare(module, &mut scratch.borrow());
     let encrypt = |rows: usize, cols: usize, k: usize, seed: u64, scratch: &mut ScratchArena<'_, BE>| {
         let grid = Grid::model(rows, cols, lanes, seed);
-        encrypt_grid::<BE, F, E>(&params, module, host_module, &encoder, &sk, k, &grid, scratch)
+        encrypt_grid::<BE, F, E>(&params, module, host_module, &encoder, &sk, k, 0, &grid, scratch)
     };
     let a_k = params.k;
     let row = encrypt(1, 2, a_k, 11, &mut scratch.borrow());

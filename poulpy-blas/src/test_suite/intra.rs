@@ -53,6 +53,7 @@ where
         &encoder,
         &sk,
         params.k,
+        0,
         &a,
         &mut scratch.borrow(),
     );
@@ -117,6 +118,7 @@ where
             &encoder,
             &sk,
             params.k,
+            0,
             &a,
             &mut scratch.borrow(),
         );
@@ -160,8 +162,8 @@ where
     }
 }
 
-/// Every grid [`rejected_grids`] builds, as `a` or as `res`, a shape mismatch, a sparsity shifting the slot count past
-/// the word width, a context encoded on a module of another degree or at another radix, and a missing rotation key are
+/// Every grid [`rejected_grids`] builds, as `a` or as `res`, a shape mismatch, a copy relabelled past `log2` of the ring
+/// degree, a context encoded on a module of another degree or at another radix, and a missing rotation key are
 /// rejected before `res` changes; each operation one scratch byte short of its query, a row or column shift along one
 /// block or across blocks, panics before `res` changes.
 pub fn test_blas_intra_guards<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
@@ -189,6 +191,7 @@ where
         &encoder,
         &sk,
         params.k,
+        0,
         &a,
         &mut scratch.borrow(),
     );
@@ -209,8 +212,7 @@ where
         module.blas_rotate_cols(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow())
     });
 
-    // Each rejected grid as `a`, sparsities shifting the slot count past the word width, then each rejected grid as
-    // `res`.
+    // Each rejected grid as `a`, copies relabelled past `log2` of the ring degree, then each rejected grid as `res`.
     let (mut res, mut res_t) = (alloc(LOG_D, rows, cols), alloc(LOG_D, cols, rows));
     let sparse = [64, 65].map(|log_sparsity| {
         let a = relabel(&ct, |meta| meta.log_sparsity = log_sparsity);

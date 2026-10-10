@@ -38,7 +38,9 @@ impl<BE: Backend + BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
         CKKSCiphertext<DB, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
         K: GetTensorKey<BE> + GetAutomorphismKey<BE>,
     {
-        BE::blas_matmul_impl(self, res, a, b, ctx, keys, scratch)
+        BE::blas_matmul_impl(self, res, a, b, ctx, keys, scratch)?;
+        res.mat_slots = a.mat_slots.max(b.mat_slots);
+        Ok(())
     }
 
     fn blas_matmul_prepare_left_tmp_bytes<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
@@ -65,7 +67,9 @@ impl<BE: Backend + BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
         CKKSCiphertext<DA, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
         K: GetAutomorphismKey<BE>,
     {
-        BE::blas_matmul_prepare_left_impl(self, res, a, ctx, keys, scratch)
+        BE::blas_matmul_prepare_left_impl(self, res, a, ctx, keys, scratch)?;
+        res.as_grid_mut().mat_slots = a.mat_slots;
+        Ok(())
     }
 
     fn blas_matmul_prepare_right_tmp_bytes<R, B, K>(&self, res: &R, b: &B, key: &K) -> usize
@@ -92,7 +96,9 @@ impl<BE: Backend + BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
         CKKSCiphertext<DB, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
         K: GetAutomorphismKey<BE>,
     {
-        BE::blas_matmul_prepare_right_impl(self, res, b, ctx, keys, scratch)
+        BE::blas_matmul_prepare_right_impl(self, res, b, ctx, keys, scratch)?;
+        res.as_grid_mut().mat_slots = b.mat_slots;
+        Ok(())
     }
 
     fn blas_matmul_prepared_tmp_bytes<R, A, B, T, K>(&self, res: &R, a: &A, b: &B, tsk: &T, atk: &K) -> usize
@@ -124,7 +130,9 @@ impl<BE: Backend + BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
         CKKSCiphertext<DB, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
         K: GetTensorKey<BE> + GetAutomorphismKey<BE>,
     {
-        BE::blas_matmul_prepared_impl(self, res, a, b, ctx, keys, scratch)
+        BE::blas_matmul_prepared_impl(self, res, a, b, ctx, keys, scratch)?;
+        res.mat_slots = a.as_grid().mat_slots.max(b.as_grid().mat_slots);
+        Ok(())
     }
 
     fn blas_matmul_pt_tmp_bytes<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
@@ -151,6 +159,8 @@ impl<BE: Backend + BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
         CKKSCiphertext<DA, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
         K: GetAutomorphismKey<BE>,
     {
-        BE::blas_matmul_pt_impl(self, res, a, b, keys, scratch)
+        BE::blas_matmul_pt_impl(self, res, a, b, keys, scratch)?;
+        res.mat_slots = a.mat_slots;
+        Ok(())
     }
 }

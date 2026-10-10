@@ -6,7 +6,7 @@ use std::{
 };
 
 use poulpy_ckks::{
-    CKKSCompositionError, CKKSInfos, CKKSModuleInfos, CKKSResult, GLWEPlaintextMeta, Scale, SetCKKSInfos,
+    CKKSCompositionError, CKKSInfos, CKKSModuleInfos, CKKSResult, GLWEPlaintextMeta, Scale, SetCKKSInfos, SetGLWEPlaintextInfos,
     api::LinearTransformationPrepared,
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
     test_suite::{
@@ -145,11 +145,13 @@ impl Grid {
     }
 }
 
-fn to_f<F: TestScalar>(v: &[f64]) -> Vec<F> {
+/// `v` at scalar `F`.
+pub(crate) fn to_f<F: TestScalar>(v: &[f64]) -> Vec<F> {
     v.iter().map(|x| F::from_f64(*x).unwrap()).collect()
 }
 
-/// Encrypts every block of `grid` at torus width `k`.
+/// Encrypts every block of `grid` at torus width `k` and labels it `log_sparsity`, which the grid records the batch of:
+/// `grid` holds at least `slots >> log_sparsity` matrices, repeated over the slots.
 pub fn encrypt_grid<BE, F, E>(
     params: &CKKSTestParams,
     module: &Module<BE>,
@@ -157,6 +159,7 @@ pub fn encrypt_grid<BE, F, E>(
     encoder: &ReferenceEncoder<E>,
     sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     k: usize,
+    log_sparsity: usize,
     grid: &Grid,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> BlasCiphertextOwned<BE>
@@ -170,7 +173,7 @@ where
         .blocks(params.n / 2)
         .iter()
         .map(|(re, im)| {
-            ckks_encrypt(
+            let mut block = ckks_encrypt(
                 params,
                 module,
                 host_module,
@@ -180,7 +183,9 @@ where
                 &to_f::<F>(re),
                 &to_f::<F>(im),
                 scratch,
-            )
+            );
+            block.set_log_sparsity(log_sparsity);
+            block
         })
         .collect();
     BlasCiphertext::from_blocks(blocks, LOG_D, grid.rows, grid.cols).unwrap()
@@ -242,9 +247,10 @@ where
 }
 
 /// Copies of `grid`, by label, that an operation rejects in its place: read at the next dimension, its last block one
-/// limb narrower than the others, labelled one slot so that no block fits, and a scale wider than its blocks. `grid` has
+/// limb narrower than the others, labelled one slot so that it records no matrix, recording half the dense batch at
+/// the dense label, as after adding a dense plaintext to a sparse batch, and a scale wider than its blocks. `grid` has
 /// at least two blocks.
-pub fn rejected_grids<BE>(module: &Module<BE>, grid: &BlasCiphertextOwned<BE>) -> [(&'static str, BlasCiphertextOwned<BE>); 4]
+pub fn rejected_grids<BE>(module: &Module<BE>, grid: &BlasCiphertextOwned<BE>) -> [(&'static str, BlasCiphertextOwned<BE>); 5]
 where
     BE: TestContextBackend,
     Module<BE>: TestContextSharedModule<BE>,
@@ -254,14 +260,18 @@ where
     let mut uneven = grid.clone().into_blocks();
     *uneven.last_mut().unwrap() =
         module.ckks_ciphertext_alloc(layout.base2k(), (layout.k().as_usize() - layout.base2k().as_usize()).into());
-    let one_slot = module.ckks_max_slots().ilog2() as usize;
+    let labelled = |log_sparsity: usize| {
+        let blocks = relabel(grid, |meta| meta.log_sparsity = log_sparsity).into_blocks();
+        BlasCiphertext::from_blocks(blocks, log_d, rows, cols).unwrap()
+    };
     [
         (
             "dimension",
             BlasCiphertext::from_blocks(grid.clone().into_blocks(), log_d + 1, rows, cols).unwrap(),
         ),
         ("uneven", BlasCiphertext::from_blocks(uneven, log_d, rows, cols).unwrap()),
-        ("one slot", relabel(grid, |meta| meta.log_sparsity = one_slot)),
+        ("one slot", labelled(module.ckks_max_slots().ilog2() as usize)),
+        ("batch", relabel(&labelled(1), |meta| meta.log_sparsity = 0)),
         (
             "scale",
             relabel(grid, |meta| meta.scale = Scale::Log(layout.k().as_usize() + 1)),
@@ -290,7 +300,8 @@ pub enum Rejection {
     MissingTensorKey,
 }
 
-/// Runs `call` on `target` and asserts it fails with `rejection` raised by `op` and leaves `target` unchanged.
+/// Runs `call` on `target` and asserts it fails with `rejection` raised by `op` and leaves `target` unchanged, its batch
+/// record included.
 pub fn assert_guard<BE, DG>(
     label: &str,
     op: &str,
@@ -318,7 +329,8 @@ pub fn assert_guard_on<BE, X, DG>(
     DG: Data,
     CKKSCiphertext<DG, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
 {
-    let before = grid_snapshot::<BE, _>(grid(target));
+    let state = |target: &X| (grid(target).mat_slots(), grid_snapshot::<BE, _>(grid(target)));
+    let before = state(target);
     let e = call(target).expect_err(label);
     let raised = match e.composition() {
         Some(CKKSCompositionError::InvalidPlan { plan, .. }) => Some((Rejection::InvalidPlan, *plan)),
@@ -327,10 +339,7 @@ pub fn assert_guard_on<BE, X, DG>(
         _ => None,
     };
     assert_eq!(raised, Some((rejection, op)), "{label}: {op} raised {e}");
-    assert!(
-        grid_snapshot::<BE, _>(grid(target)) == before,
-        "{label}: {op} changed its output"
-    );
+    assert!(state(target) == before, "{label}: {op} changed its output");
 }
 
 /// Runs `call` on `target` with a scratch one byte short of `bytes`, its query, and asserts it panics before `target`

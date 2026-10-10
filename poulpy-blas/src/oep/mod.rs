@@ -1,6 +1,7 @@
 //! Backend extension points. A backend selects the reference with
 //! [`impl_blas_reference_full!`](crate::impl_blas_reference_full) or overrides a family; an
-//! override reproduces the reference bit for bit within the scratch its `_tmp_bytes_impl` reports.
+//! override reproduces the reference bit for bit within the scratch its `_tmp_bytes_impl` reports. It writes blocks
+//! only: the API stamps the batch record of `res` after `Ok`.
 
 mod inter;
 mod intra;

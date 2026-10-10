@@ -10,11 +10,18 @@ use poulpy_hal::layouts::{Backend, Data, Module, Ring, ZnxWord};
 
 /// An `rows x cols` grid of `2^log_d x 2^log_d` blocks: block `(i, j)` is one CKKS ciphertext whose matrix slot `s`
 /// holds block `(i, j)` of the `s`-th matrix of the batch.
+///
+/// The grid records its batch, [`BlasGridInfos::mat_slots`]: the number of matrices its blocks hold, repeated over
+/// their slots. [`Self::from_blocks`] records the batch the blocks' label proves, and every operation records one on
+/// its result. Every operation also rejects a grid whose label does not allow its record: with `S` slots, degree `n`
+/// and label `s`, the record is a power of two, `s <= log2 n`, and `(S >> s) / d^2 <= mat_slots <= S / d^2`.
 pub struct BlasCiphertext<D: Data, W: ZnxWord, R: Ring> {
     blocks: Vec<CKKSCiphertext<D, W, R>>,
     log_d: usize,
     rows: usize,
     cols: usize,
+    /// The batch record; the delegates stamp it on `res` after `Ok`.
+    pub(crate) mat_slots: usize,
 }
 
 /// Backend-owned grid.
@@ -33,15 +40,34 @@ pub trait BlasGridInfos {
 
     /// Layout of every block.
     fn block_layout(&self) -> CKKSLayout;
+
+    /// The recorded batch, the number of matrices each block holds; `None` when only the blocks' label tells it, as
+    /// for a [`BlasLayout`].
+    fn mat_slots(&self) -> Option<usize> {
+        None
+    }
 }
 
-/// A grid's dimensions and block layout, without ciphertexts.
+/// A grid's dimensions and block layout, without ciphertexts; its batch is the one its blocks' label proves.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct BlasLayout {
     pub block: CKKSLayout,
     pub log_d: usize,
     pub rows: usize,
     pub cols: usize,
+}
+
+impl BlasLayout {
+    /// A `rows x cols` grid of `2^log_d x 2^log_d` blocks of layout `block`.
+    pub fn new(block: CKKSLayout, log_d: usize, rows: usize, cols: usize) -> Self {
+        Self {
+            block,
+            log_d,
+            rows,
+            cols,
+        }
+    }
 }
 
 impl BlasGridInfos for BlasLayout {
@@ -80,8 +106,29 @@ pub(crate) fn mat_slots_in(slots: usize, log_d: usize, log_sparsity: usize) -> u
         .unwrap_or(0)
 }
 
+/// Slots of a block of degree `n` on ring `R`.
+fn slots_of<R: Ring>(n: usize) -> usize {
+    n * R::CYCLOTOMIC_ORDER_FACTOR as usize / 4
+}
+
 impl<D: Data, W: ZnxWord, R: Ring> BlasCiphertext<D, W, R> {
-    /// Reads `blocks`, row-major, as a `rows x cols` grid of `2^log_d x 2^log_d` blocks.
+    /// Reads `blocks`, row-major, as a `rows x cols` grid of `2^log_d x 2^log_d` blocks, recording the batch the label
+    /// of block `(0, 0)` proves: with `S` slots and label `s`, `(S >> s) / d^2` matrices, `0` when one block does not
+    /// fit (every operation then rejects the grid).
+    ///
+    /// A label `s` claims the plaintext lies in `Z[X^(2^s)]`, so the slots repeat with period `S >> s`. Encryption
+    /// derives it from the plaintext degree: a plaintext of degree `n_pt` labels its ciphertext `log2(N / n_pt)`,
+    /// whatever label the plaintext carries. So encrypt a batch of `count` matrices from a compact plaintext,
+    /// `ckks_pt_vec_alloc_compact(count * d^2)`; a dense plaintext records the full batch `S / d^2`, its matrices
+    /// repeated.
+    ///
+    /// Compact degrees are raised to the backend's `MIN_DEGREE` (8 by default, 16 on AVX-512 FFT64), and a raised
+    /// degree proves a larger batch than `count`. So a compact batch records `count` on every backend only when its
+    /// degree, `2 * count * d^2` on the standard ring and `count * d^2` on the conjugate-invariant one, reaches every
+    /// target's `MIN_DEGREE` (16 in this workspace); otherwise encrypt it dense.
+    ///
+    /// Plaintext operations keep the smaller of the ciphertext's label and the plaintext's: adding a dense plaintext
+    /// to the blocks of a sparse batch drops their label to 0, so the next operation rejects the grid.
     pub fn from_blocks(blocks: Vec<CKKSCiphertext<D, W, R>>, log_d: usize, rows: usize, cols: usize) -> Result<Self> {
         ensure!(rows > 0 && cols > 0, "a grid has at least one block");
         ensure!(
@@ -89,12 +136,28 @@ impl<D: Data, W: ZnxWord, R: Ring> BlasCiphertext<D, W, R> {
             "{} blocks do not form a {rows} x {cols} grid",
             blocks.len()
         );
+        let block = &blocks[0];
+        let mat_slots = mat_slots_in(slots_of::<R>(block.n().as_usize()), log_d, block.log_sparsity());
         Ok(Self {
             blocks,
             log_d,
             rows,
             cols,
+            mat_slots,
         })
+    }
+
+    /// Whether the label of block `(0, 0)` allows the record: with `S` slots, label `s` and degree `n`, a power of two
+    /// with `s <= log2 n` and `(S >> s) / d^2 <= mat_slots <= S / d^2`. The lower bound covers whole periods of the
+    /// slots, so rotations modulo the batch and sums over it keep their meaning.
+    pub(crate) fn batch_fits(&self) -> bool {
+        let block = &self.blocks[0];
+        let (n, s) = (block.n().as_usize(), block.log_sparsity());
+        let slots = slots_of::<R>(n);
+        self.mat_slots.is_power_of_two()
+            && s <= n.ilog2() as usize
+            && mat_slots_in(slots, self.log_d, s) <= self.mat_slots
+            && self.mat_slots <= mat_slots_in(slots, self.log_d, 0)
     }
 
     fn index(&self, i: usize, j: usize) -> usize {
@@ -143,17 +206,10 @@ impl<D: Data, W: ZnxWord, R: Ring> BlasCiphertext<D, W, R> {
         self.blocks
     }
 
-    /// Number of matrices in the batch, `0` when one block does not fit the slots of block `(0, 0)`.
-    pub fn mat_slots(&self) -> usize {
-        let block = &self.blocks[0];
-        let max_slots = block.n().as_usize() * R::CYCLOTOMIC_ORDER_FACTOR as usize / 4;
-        mat_slots_in(max_slots, self.log_d, block.log_sparsity())
-    }
-
     /// Moves the first `at` block columns into the first grid and the others into the second; panics unless
     /// `0 < at < cols`.
     pub fn split_cols(self, at: usize) -> (Self, Self) {
-        let (rows, cols, log_d) = (self.rows, self.cols, self.log_d);
+        let (rows, cols, log_d, mat_slots) = (self.rows, self.cols, self.log_d, self.mat_slots);
         assert!(0 < at && at < cols, "split_cols: {at} is not strictly inside 0..{cols}");
         let (mut left, mut right) = (Vec::with_capacity(rows * at), Vec::with_capacity(rows * (cols - at)));
         for (t, block) in self.blocks.into_iter().enumerate() {
@@ -168,6 +224,7 @@ impl<D: Data, W: ZnxWord, R: Ring> BlasCiphertext<D, W, R> {
             log_d,
             rows,
             cols,
+            mat_slots,
         };
         (grid(left, at), grid(right, cols - at))
     }
@@ -175,7 +232,7 @@ impl<D: Data, W: ZnxWord, R: Ring> BlasCiphertext<D, W, R> {
     /// Moves the first `at` block rows into the first grid and the others into the second; panics unless
     /// `0 < at < rows`.
     pub fn split_rows(self, at: usize) -> (Self, Self) {
-        let (rows, cols, log_d) = (self.rows, self.cols, self.log_d);
+        let (rows, cols, log_d, mat_slots) = (self.rows, self.cols, self.log_d, self.mat_slots);
         assert!(0 < at && at < rows, "split_rows: {at} is not strictly inside 0..{rows}");
         let mut top = self.blocks;
         let bottom = top.split_off(at * cols);
@@ -184,46 +241,57 @@ impl<D: Data, W: ZnxWord, R: Ring> BlasCiphertext<D, W, R> {
             log_d,
             rows,
             cols,
+            mat_slots,
         };
         (grid(top, at), grid(bottom, rows - at))
     }
 
     /// Moves the blocks of `left` then `right` into one grid, the inverse of [`Self::split_cols`]; rejects grids of
-    /// different `log_d` or row counts.
+    /// different `log_d`, row counts or batch records.
     pub fn concat_cols(left: Self, right: Self) -> Result<Self> {
         ensure!(
-            (left.log_d, left.rows) == (right.log_d, right.rows),
-            "concat_cols: a 2^{} x {}-row grid against a 2^{} x {}-row grid",
+            (left.log_d, left.rows, left.mat_slots) == (right.log_d, right.rows, right.mat_slots),
+            "concat_cols: a 2^{} x {}-row grid of {} matrices against a 2^{} x {}-row grid of {}",
             left.log_d,
             left.rows,
+            left.mat_slots,
             right.log_d,
-            right.rows
+            right.rows,
+            right.mat_slots
         );
-        let (rows, lc, rc) = (left.rows, left.cols, right.cols);
+        let (rows, lc, rc, mat_slots) = (left.rows, left.cols, right.cols, left.mat_slots);
         let mut blocks = Vec::with_capacity(rows * (lc + rc));
         let (mut l, mut r) = (left.blocks.into_iter(), right.blocks.into_iter());
         for _ in 0..rows {
             blocks.extend(l.by_ref().take(lc));
             blocks.extend(r.by_ref().take(rc));
         }
-        Self::from_blocks(blocks, left.log_d, rows, lc + rc)
+        Ok(Self {
+            mat_slots,
+            ..Self::from_blocks(blocks, left.log_d, rows, lc + rc)?
+        })
     }
 
     /// Moves the blocks of `top` then `bottom` into one grid, the inverse of [`Self::split_rows`]; rejects grids of
-    /// different `log_d` or column counts.
+    /// different `log_d`, column counts or batch records.
     pub fn concat_rows(top: Self, bottom: Self) -> Result<Self> {
         ensure!(
-            (top.log_d, top.cols) == (bottom.log_d, bottom.cols),
-            "concat_rows: a 2^{} x {}-column grid against a 2^{} x {}-column grid",
+            (top.log_d, top.cols, top.mat_slots) == (bottom.log_d, bottom.cols, bottom.mat_slots),
+            "concat_rows: a 2^{} x {}-column grid of {} matrices against a 2^{} x {}-column grid of {}",
             top.log_d,
             top.cols,
+            top.mat_slots,
             bottom.log_d,
-            bottom.cols
+            bottom.cols,
+            bottom.mat_slots
         );
-        let (log_d, rows, cols) = (top.log_d, top.rows + bottom.rows, top.cols);
+        let (log_d, rows, cols, mat_slots) = (top.log_d, top.rows + bottom.rows, top.cols, top.mat_slots);
         let mut blocks = top.blocks;
         blocks.extend(bottom.blocks);
-        Self::from_blocks(blocks, log_d, rows, cols)
+        Ok(Self {
+            mat_slots,
+            ..Self::from_blocks(blocks, log_d, rows, cols)?
+        })
     }
 }
 
@@ -237,6 +305,7 @@ where
             log_d: self.log_d,
             rows: self.rows,
             cols: self.cols,
+            mat_slots: self.mat_slots,
         }
     }
 }
@@ -256,6 +325,10 @@ impl<D: Data, W: ZnxWord, R: Ring> BlasGridInfos for BlasCiphertext<D, W, R> {
 
     fn block_layout(&self) -> CKKSLayout {
         layout_of(&self.blocks[0])
+    }
+
+    fn mat_slots(&self) -> Option<usize> {
+        Some(self.mat_slots)
     }
 }
 
@@ -319,7 +392,7 @@ impl<D: Data, W: ZnxWord, R: Ring> BlasMatMulRight<D, W, R> {
 
 /// Allocation of grids.
 pub trait BlasModuleAlloc<BE: Backend>: CKKSModuleAlloc<BE> {
-    /// A grid of `rows x cols` rank-1 blocks of dimension `2^log_d` at torus width `k`.
+    /// A grid of `rows x cols` rank-1 blocks of dimension `2^log_d` at torus width `k`, recording the dense batch.
     ///
     /// # Panics
     ///
@@ -338,7 +411,8 @@ pub trait BlasModuleAlloc<BE: Backend>: CKKSModuleAlloc<BE> {
         BlasCiphertext::from_blocks(blocks, log_d, rows, cols).expect("a grid has at least one block")
     }
 
-    /// A grid with the dimensions of `infos` and its block layout.
+    /// A grid with the dimensions of `infos`, its block layout and its batch record when it has one; otherwise the
+    /// batch the layout's label proves.
     ///
     /// # Panics
     ///
@@ -348,7 +422,12 @@ pub trait BlasModuleAlloc<BE: Backend>: CKKSModuleAlloc<BE> {
         let blocks = (0..infos.rows().checked_mul(infos.cols()).expect("rows * cols overflows usize"))
             .map(|_| self.ckks_ciphertext_alloc_from_infos(&layout))
             .collect();
-        BlasCiphertext::from_blocks(blocks, infos.log_d(), infos.rows(), infos.cols()).expect("a grid has at least one block")
+        let grid = BlasCiphertext::from_blocks(blocks, infos.log_d(), infos.rows(), infos.cols())
+            .expect("a grid has at least one block");
+        BlasCiphertext {
+            mat_slots: infos.mat_slots().unwrap_or(grid.mat_slots),
+            ..grid
+        }
     }
 }
 
@@ -360,23 +439,64 @@ mod tests {
     use poulpy_ckks::SetGLWEPlaintextInfos;
     use poulpy_hal::layouts::HostBytesBackend;
 
+    type Grid = BlasCiphertextOwned<HostBytesBackend>;
+
     fn module() -> Module<HostBytesBackend> {
         Module::<HostBytesBackend>::new(256)
     }
 
+    /// `grid`'s blocks labelled `log_sparsity`, read again at `log_d`.
+    fn relabelled(grid: Grid, log_d: usize, log_sparsity: usize) -> Grid {
+        let (rows, cols) = (grid.rows(), grid.cols());
+        let mut blocks = grid.into_blocks();
+        blocks.iter_mut().for_each(|block| block.set_log_sparsity(log_sparsity));
+        BlasCiphertext::from_blocks(blocks, log_d, rows, cols).unwrap()
+    }
+
     #[test]
-    fn mat_slots_follow_degree_sparsity_and_dimension() {
+    fn grids_record_the_batch_their_labels_prove() {
+        // 128 slots: 8 matrices of 4 x 4 blocks.
         let module = module();
-        let mut ct = module.blas_ciphertext_alloc(2, 1, 1, 19usize.into(), 60usize.into());
-        assert_eq!(ct.log_d(), 2);
-        assert_eq!(ct.mat_slots(), 128 / 16);
-        ct.block_mut(0, 0).set_log_sparsity(1);
-        assert_eq!(ct.mat_slots(), 64 / 16);
+        let ct = module.blas_ciphertext_alloc(2, 1, 1, 19usize.into(), 60usize.into());
+        assert_eq!((ct.log_d(), ct.mat_slots()), (2, Some(8)));
+        for (log_sparsity, mat_slots) in [(1, 4), (3, 1), (4, 0), (64, 0), (65, 0)] {
+            let ct = relabelled(ct.clone(), 2, log_sparsity);
+            assert_eq!(ct.mat_slots(), Some(mat_slots), "log_sparsity={log_sparsity}");
+        }
         let too_big = module.blas_ciphertext_alloc(4, 1, 1, 19usize.into(), 60usize.into());
-        assert_eq!(too_big.mat_slots(), 0);
+        assert_eq!(too_big.mat_slots(), Some(0));
         // A shift past the word width reads as no matrix, not an overflow.
         let wide = BlasCiphertext::from_blocks(too_big.into_blocks(), 40, 1, 1).unwrap();
-        assert_eq!(wide.mat_slots(), 0);
+        assert_eq!(wide.mat_slots(), Some(0));
+    }
+
+    #[test]
+    fn records_fit_labels_from_the_proven_batch_to_the_dense_one() {
+        // Degree 256, 128 slots: labels up to 8, records from `(128 >> s) / 16` to 8.
+        let mut ct = module().blas_ciphertext_alloc(2, 1, 1, 19usize.into(), 60usize.into());
+        for (log_sparsity, mat_slots, fits) in [
+            (0, 8, true),
+            (0, 4, false),
+            (1, 4, true),
+            (1, 8, true),
+            (1, 2, false),
+            (1, 6, false),
+            (1, 16, false),
+            (3, 1, true),
+            (8, 1, true),
+            (9, 1, false),
+            (64, 1, false),
+            (0, 0, false),
+            (4, 0, false),
+        ] {
+            ct.block_mut(0, 0).set_log_sparsity(log_sparsity);
+            ct.mat_slots = mat_slots;
+            assert_eq!(ct.batch_fits(), fits, "log_sparsity={log_sparsity}, mat_slots={mat_slots}");
+        }
+        // 16 x 16 blocks do not fit 128 slots, whatever the record.
+        let mut ct = relabelled(ct, 4, 0);
+        ct.mat_slots = 1;
+        assert!(!ct.batch_fits());
     }
 
     #[test]
@@ -385,41 +505,59 @@ mod tests {
         let blocks = || (0..6usize).map(|t| module.ckks_ciphertext_alloc(19usize.into(), (40 + t).into()));
         assert!(BlasCiphertext::from_blocks(blocks().take(5).collect(), 2, 2, 3).is_err());
         assert!(BlasCiphertext::from_blocks(blocks().take(0).collect(), 2, 0, 3).is_err());
-        let grid = BlasCiphertext::from_blocks(blocks().collect(), 2, 2, 3).unwrap();
+        let mut grid = BlasCiphertext::from_blocks(blocks().collect(), 2, 2, 3).unwrap();
         assert_eq!((grid.rows(), grid.cols(), grid.block(1, 2).k().as_usize()), (2, 3, 45));
+        // A record other than the labels' 8, so that every grid below shows it carried.
+        grid.mat_slots = 4;
+        assert_eq!(grid.clone().mat_slots(), Some(4));
         // Each block carries its own width, so the widths show where every block moved.
-        let widths = |g: &BlasCiphertextOwned<HostBytesBackend>| g.blocks().iter().map(|b| b.k().as_usize()).collect::<Vec<_>>();
+        let parts = |g: &Grid| {
+            (
+                g.rows(),
+                g.cols(),
+                g.mat_slots,
+                g.blocks().iter().map(|b| b.k().as_usize()).collect(),
+            )
+        };
         let (left, right) = grid.clone().split_cols(1);
-        assert_eq!((left.rows(), left.cols(), widths(&left)), (2, 1, vec![40, 43]));
-        assert_eq!((right.rows(), right.cols(), widths(&right)), (2, 2, vec![41, 42, 44, 45]));
+        assert_eq!(parts(&left), (2, 1, 4, vec![40, 43]));
+        assert_eq!(parts(&right), (2, 2, 4, vec![41, 42, 44, 45]));
         let (top, bottom) = grid.clone().split_rows(1);
-        assert_eq!((top.rows(), top.cols(), widths(&top)), (1, 3, vec![40, 41, 42]));
-        assert_eq!((bottom.rows(), bottom.cols(), widths(&bottom)), (1, 3, vec![43, 44, 45]));
+        assert_eq!(parts(&top), (1, 3, 4, vec![40, 41, 42]));
+        assert_eq!(parts(&bottom), (1, 3, 4, vec![43, 44, 45]));
 
-        // Concatenation moves the blocks back, and rejects grids whose dimension or shared extent differ.
+        // Concatenation moves the blocks back, and rejects grids whose dimension, shared extent or record differ.
         let joined = BlasCiphertext::concat_cols(left.clone(), right.clone()).unwrap();
-        assert_eq!((joined.rows(), joined.cols(), widths(&joined)), (2, 3, widths(&grid)));
+        assert_eq!(parts(&joined), parts(&grid));
         let joined = BlasCiphertext::concat_rows(top.clone(), bottom.clone()).unwrap();
-        assert_eq!((joined.rows(), joined.cols(), widths(&joined)), (2, 3, widths(&grid)));
+        assert_eq!(parts(&joined), parts(&grid));
         assert!(BlasCiphertext::concat_cols(left.clone(), top.clone()).is_err());
         assert!(BlasCiphertext::concat_rows(top.clone(), left.clone()).is_err());
         let other_d = BlasCiphertext::from_blocks(right.clone().into_blocks(), 3, 2, 2).unwrap();
-        assert!(BlasCiphertext::concat_cols(left, other_d).is_err());
-        let other_d = BlasCiphertext::from_blocks(bottom.into_blocks(), 3, 1, 3).unwrap();
-        assert!(BlasCiphertext::concat_rows(top, other_d).is_err());
+        assert!(BlasCiphertext::concat_cols(left.clone(), other_d).is_err());
+        let other_d = BlasCiphertext::from_blocks(bottom.clone().into_blocks(), 3, 1, 3).unwrap();
+        assert!(BlasCiphertext::concat_rows(top.clone(), other_d).is_err());
+        let (mut right, mut bottom) = (right, bottom);
+        (right.mat_slots, bottom.mat_slots) = (2, 2);
+        assert!(BlasCiphertext::concat_cols(left, right).is_err());
+        assert!(BlasCiphertext::concat_rows(top, bottom).is_err());
     }
 
     #[test]
     fn grids_allocate_from_infos() {
         let module = module();
-        let a = module.blas_ciphertext_alloc(2, 2, 3, 19usize.into(), 60usize.into());
-        let layout = BlasLayout {
-            block: a.block_layout(),
-            log_d: 2,
-            rows: 3,
-            cols: 2,
-        };
+        let mut a = module.blas_ciphertext_alloc(2, 2, 3, 19usize.into(), 60usize.into());
+        let layout = BlasLayout::new(a.block_layout(), 2, 3, 2);
         let t = module.blas_ciphertext_alloc_from_infos(&layout);
-        assert_eq!((t.log_d(), t.rows(), t.cols(), t.block_layout()), (2, 3, 2, a.block_layout()));
+        assert_eq!(
+            (t.log_d(), t.rows(), t.cols(), t.block_layout(), t.mat_slots()),
+            (2, 3, 2, a.block_layout(), Some(8))
+        );
+        // A layout reads its batch from its label, a grid copies its record.
+        let mut sparse = layout;
+        sparse.block.meta.log_sparsity = 1;
+        assert_eq!(module.blas_ciphertext_alloc_from_infos(&sparse).mat_slots(), Some(4));
+        a.mat_slots = 2;
+        assert_eq!(module.blas_ciphertext_alloc_from_infos(&a).mat_slots(), Some(2));
     }
 }

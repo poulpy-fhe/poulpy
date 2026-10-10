@@ -462,9 +462,12 @@ impl<BE: Backend> BlasPtOperand<BE> {
     }
 }
 
-/// Galois elements `blas_sum` needs on a grid of layout `infos`, none when one block does not fit the slots.
+/// Galois elements `blas_sum` needs on a grid of layout `infos`: at its recorded batch, or for a layout without one
+/// the batch its label proves; none when one block does not fit the slots.
 pub fn sum_galois_elements<BE: Backend>(module: &Module<BE>, infos: &impl BlasGridInfos) -> Vec<i64> {
-    let mat_slots = mat_slots_in(module.ckks_max_slots(), infos.log_d(), infos.block_layout().log_sparsity());
+    let mat_slots = infos
+        .mat_slots()
+        .unwrap_or_else(|| mat_slots_in(module.ckks_max_slots(), infos.log_d(), infos.block_layout().log_sparsity()));
     sum_rotations(infos.log_d(), mat_slots)
         .map(|rotation| module.ckks_galois_element(rotation))
         .collect()
@@ -480,24 +483,25 @@ pub(crate) fn sum_rotations(log_d: usize, mat_slots: usize) -> impl Iterator<Ite
 mod tests {
     use super::*;
     use crate::layouts::{BlasLayout, BlasModuleAlloc};
+    use poulpy_ckks::SetGLWEPlaintextInfos;
     use poulpy_hal::layouts::HostBytesBackend;
 
     #[test]
     fn sum_keys_plan_from_a_layout() {
         let module = Module::<HostBytesBackend>::new(256);
-        let ct = module.blas_ciphertext_alloc(2, 1, 1, 19usize.into(), 60usize.into());
-        let mut layout = BlasLayout {
-            block: ct.block_layout(),
-            log_d: 2,
-            rows: 2,
-            cols: 2,
-        };
+        let mut ct = module.blas_ciphertext_alloc(2, 1, 1, 19usize.into(), 60usize.into());
+        let mut layout = BlasLayout::new(ct.block_layout(), 2, 2, 2);
         // 128 slots hold 8 matrix slots of 4 x 4 blocks: rotations by 16, 32 and 64.
         let want: Vec<i64> = [16, 32, 64].map(|r| module.ckks_galois_element(r)).into();
         assert_eq!(sum_galois_elements(&module, &layout), want);
         assert_eq!(sum_galois_elements(&module, &ct), want);
         layout.block.meta.log_sparsity = 1;
         assert_eq!(sum_galois_elements(&module, &layout), want[..2]);
+        // A grid plans from its record, not from its label.
+        ct.block_mut(0, 0).set_log_sparsity(1);
+        assert_eq!(sum_galois_elements(&module, &ct), want);
+        ct.mat_slots = 2;
+        assert_eq!(sum_galois_elements(&module, &ct), want[..1]);
         // No block fits, or a shift is past the word width: no key, no panic.
         for log_sparsity in [64, 65] {
             layout.block.meta.log_sparsity = log_sparsity;

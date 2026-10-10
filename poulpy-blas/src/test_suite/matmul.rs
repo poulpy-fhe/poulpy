@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use poulpy_ckks::{
-    CKKSInfos, SetGLWEPlaintextInfos,
+    CKKSInfos,
     api::{CKKSEncodingOps, CKKSLinearTransformationOps},
     test_suite::{
         CKKSTestParams,
@@ -63,6 +63,7 @@ where
         &encoder,
         &sk,
         params.k,
+        0,
         &a,
         &mut scratch.borrow(),
     );
@@ -73,6 +74,7 @@ where
         &encoder,
         &sk,
         params.k,
+        0,
         &b,
         &mut scratch.borrow(),
     );
@@ -184,6 +186,7 @@ where
         &encoder,
         &sk,
         params.k,
+        0,
         &a,
         &mut scratch.borrow(),
     );
@@ -208,8 +211,8 @@ where
     }
 }
 
-/// An inner-dimension or `res` shape mismatch, more public matrices than a sparse input has matrix slots, a sparsity
-/// shifting the slot count past the word width, an operand encoded on a module of another degree, at another radix or at
+/// An inner-dimension or `res` shape mismatch, more public matrices than a sparse input records, a copy relabelled past
+/// `log2` of the ring degree, an operand encoded on a module of another degree, at another radix or at
 /// another dimension, every grid [`rejected_grids`] builds, as `a` or as `res`, a radix whose digits cannot take a second
 /// inner index, and a missing rotation key are rejected before `res` changes; a product one scratch byte short of its
 /// query panics before `res` changes; an operand whose block count overflows `usize` does not encode.
@@ -275,20 +278,20 @@ where
             &encoder,
             &sk,
             params.k,
+            0,
             &Grid::model(rows, cols, lanes, seed),
             scratch,
         )
     };
     let ct = encrypt(1, 2, 11, &mut scratch.borrow());
     let narrow = encrypt(1, 3, 12, &mut scratch.borrow());
-    let mut sparse = ct.clone();
-    sparse.blocks_mut().iter_mut().for_each(|block| block.set_log_sparsity(1));
+    let sparse = BlasCiphertext::from_blocks(relabel(&ct, |meta| meta.log_sparsity = 1).into_blocks(), LOG_D, 1, 2).unwrap();
     let sparse_64 = relabel(&ct, |meta| meta.log_sparsity = 64);
     let sparse_65 = relabel(&ct, |meta| meta.log_sparsity = 65);
     let mut op_scratch = ScratchOwned::<BE>::alloc(module.blas_matmul_pt_tmp_bytes(&ct, &ct, &params.atk_layout()));
 
-    // `narrow` has 3 block columns against 2 block rows of `b`; `res` must be 1 x 1; `sparse` holds 4 matrix slots;
-    // `sparse_64` and `sparse_65` shift the slot count past the word width.
+    // `narrow` has 3 block columns against 2 block rows of `b`; `res` must be 1 x 1; `sparse` records 4 matrices;
+    // `sparse_64` and `sparse_65` are labelled past `log2` of the ring degree.
     for (label, rows, cols, a) in [
         ("inner", 1, 1, &narrow),
         ("shape", 1, 2, &ct),
@@ -364,8 +367,8 @@ where
     assert!(overflow.is_err());
 }
 
-/// Every grid [`rejected_grids`] builds, in place of an operand or of `res`, a `res` shape mismatch, an operand whose
-/// sparsity shifts the slot count past the word width, a context encoded on a module of another degree or at another
+/// Every grid [`rejected_grids`] builds, in place of an operand or of `res`, a `res` shape mismatch, an operand
+/// relabelled past `log2` of the ring degree, a context encoded on a module of another degree or at another
 /// radix, and a missing rotation key are rejected before `res` changes, for the product, its prepared form and the
 /// preparations; so are an inner-dimension mismatch, one factor at a radix other than the context's, a radix whose
 /// digits cannot take a second inner index, and a missing tensor key, for the product and its prepared form. Each of
@@ -397,6 +400,7 @@ where
         &encoder,
         &sk,
         params.k,
+        0,
         &Grid::model(1, 2, lanes, 10),
         &mut scratch.borrow(),
     );
@@ -515,7 +519,7 @@ where
         );
     }
 
-    // Sparsities shifting the slot count past the word width.
+    // Copies relabelled past `log2` of the ring degree, which keep recording the dense batch.
     for log_sparsity in [64, 65] {
         let label = &format!("sparsity {log_sparsity}");
         let sparse_row = relabel(&ct, |meta| meta.log_sparsity = log_sparsity);
@@ -712,6 +716,7 @@ where
         &encoder,
         &sk,
         params.k,
+        0,
         &a0,
         &mut scratch.borrow(),
     );
@@ -722,6 +727,7 @@ where
         &encoder,
         &sk,
         params.k,
+        0,
         &b0,
         &mut scratch.borrow(),
     );

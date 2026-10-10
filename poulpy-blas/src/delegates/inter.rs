@@ -33,7 +33,9 @@ impl<BE: Backend + BlasMatInterImpl> BlasMatInterOps<BE> for Module<BE> {
         CKKSCiphertext<DA, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
         K: GetAutomorphismKey<BE>,
     {
-        BE::blas_rotate_impl(self, res, a, r, keys, scratch)
+        BE::blas_rotate_impl(self, res, a, r, keys, scratch)?;
+        res.mat_slots = a.mat_slots;
+        Ok(())
     }
 
     fn blas_sum_tmp_bytes<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
@@ -59,6 +61,8 @@ impl<BE: Backend + BlasMatInterImpl> BlasMatInterOps<BE> for Module<BE> {
         CKKSCiphertext<DA, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
         K: GetAutomorphismKey<BE>,
     {
-        BE::blas_sum_impl(self, res, a, keys, scratch)
+        BE::blas_sum_impl(self, res, a, keys, scratch)?;
+        res.mat_slots = a.mat_slots;
+        Ok(())
     }
 }

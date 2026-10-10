@@ -4,7 +4,8 @@ use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
 use crate::layouts::{BlasCiphertext, BlasGridInfos};
 
-/// Operations moving whole matrices between matrix slots, on every block of a grid.
+/// Operations moving whole matrices between matrix slots, on every block of a grid. `res` records the batch of `a`
+/// ([`BlasGridInfos::mat_slots`]), the matrices these operations move and sum over.
 pub trait BlasMatInterOps<BE: Backend> {
     /// Scratch bytes [`Self::blas_rotate`] needs into `res` from `a` with keys of layout `key`.
     fn blas_rotate_tmp_bytes<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize

@@ -24,6 +24,24 @@ Each operation's `_tmp_bytes` query belongs to the same family.
 aggregates the three families as a test bound; it has a blanket implementation
 and is never implemented directly.
 
+## Batches
+
+A grid records its batch, `BlasGridInfos::mat_slots`: the number of matrices
+its blocks hold. `BlasCiphertext::from_blocks` records the batch the blocks'
+label proves, and every operation rejects a grid whose label does not allow its
+record. The API stamps the record of `res` once the implementation returns
+`Ok`: products record the larger batch of their operands, every other operation
+its input's. An implementation writes blocks only, and reads an input's batch
+from its record, as the references do.
+
+Encryption labels a block from its plaintext's degree, so a batch of `count`
+matrices comes from compact plaintexts of `count d^2` slots. Compact degrees
+are raised to the backend's `MIN_DEGREE` (8 by default, 16 on AVX-512 FFT64),
+and a raised degree records a larger batch. A compact batch therefore records
+`count` on every backend only when its degree, `2 count d^2` on the standard
+ring and `count d^2` on the conjugate-invariant one, reaches every target's
+`MIN_DEGREE`; otherwise encrypt it dense.
+
 ## Wiring a backend crate
 
 A backend crate of this workspace wires BLAS behind its own `enable-blas`
@@ -93,10 +111,10 @@ poulpy_blas::blas_parity_test_suite! {
 
 It registers the tests `inter`, `intra` and `matmul`, each on its own pair of
 modules of degree `params.n`. Both backends run on identical fixtures and keys,
-and the operations are called through their `*Impl` methods. Every call,
-encodings and preparations included, gets exactly the bytes its query reports,
-poisoned and guarded. Every output block is compared bit for bit: digits and
-CKKS metadata. Storage and ring are free: the bounds are `BlasParityBackend`
+and the operations are called through the API, which forwards to their `*Impl`
+methods. Every call, encodings and preparations included, gets exactly the
+bytes its query reports, poisoned and guarded. Every output is compared: its
+batch record, and every block bit for bit, digits and CKKS metadata. Storage and ring are free: the bounds are `BlasParityBackend`
 (`Backend<ZnxWord = i64>` and every BLAS family) and `BlasParityModule`. Rank
 and `dsize` follow `params`, as in CKKS parity.
 
