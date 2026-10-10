@@ -341,7 +341,7 @@ pub trait CKKSMulSubOps<BE: Backend> {
 pub trait CKKSDotProductOps<BE: Backend> {
     /// Scratch bytes for [`Self::ckks_dot_product_ct`] over `n` input pairs;
     /// `a`/`b` describe the widest input pair (the internal products are carved
-    /// at the widest of `res`/`a`/`b`).
+    /// at `max(a.k, b.k)`).
     fn ckks_dot_product_ct_tmp_bytes<R, A, B, T>(&self, n: usize, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
@@ -363,10 +363,18 @@ pub trait CKKSDotProductOps<BE: Backend> {
 
     /// Computes `dst = Σ a[i] * b[i]` over ciphertext–ciphertext pairs.
     ///
+    /// When there are several pairs, every `a[i]` shares one layout and scale,
+    /// every `b[i]` shares one, and `dst.base2k() <= 62`, the tensor products
+    /// are summed and relinearized once, with the tensor key at
+    /// `max(a[0].k(), b[0].k())`, as in `ckks_mul_into`. That path returns its errors before
+    /// writing `dst` and leaves `dst` canonical. Other inputs are equivalent to
+    /// a `ckks_mul_into` followed by `ckks_mul_add_ct_into` calls, and a later
+    /// pair can fail after `dst` was written.
+    ///
     /// # Metadata
     ///
-    /// Equivalent to a sequence of `ckks_mul_add_ct_into` calls.  With
-    /// uniform-precision inputs:
+    /// Both paths stamp the `ckks_mul_into` rule, the smallest `log_sparsity`
+    /// and the joined slot kind of all operands. With uniform-precision inputs:
     ///
     /// ```text
     /// natural_eff_k  = a[i].log_budget   (= a[i].k() − a[i].log_delta)

@@ -1,10 +1,11 @@
 use crate::reference::composite::{ckks_add_many_reference, ensure_accumulation_fits};
-use crate::{CKKSResult as Result, ckks_bail};
+use crate::reference::mul::get_mul_ct_params;
+use crate::{CKKSCompositionError, CKKSResult as Result, SlotsKind, ckks_bail};
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    GLWETensoring,
-    layouts::{GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, TorusPrecision},
+    GLWEAdd, GLWENormalize, GLWETensoring, ScratchArenaTakeCore,
+    layouts::{GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
 };
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
@@ -367,6 +368,78 @@ fn check_lengths(op: &'static str, a_len: usize, b_len: usize) -> Result<()> {
     Ok(())
 }
 
+/// Whether every ciphertext shares the first one's layout and scale, the inputs of the ct × ct rule.
+fn share_layout<C: CKKSCtBounds>(cts: &[&C]) -> bool {
+    cts.iter()
+        .all(|ct| (ct.glwe_layout(), ct.log_delta()) == (cts[0].glwe_layout(), cts[0].log_delta()))
+}
+
+/// `dst = Σ a[i] · b[i]` with one relinearization, for pairs that share one ct × ct rule.
+///
+/// Checks the tensor key and the rule before writing `dst`. Each term is one tensor product,
+/// canonical at the tensor width, so the partial sums are exact and normalizing them leaves the
+/// bits unchanged. The sum is normalized before it would hold more than `2^(63 - base2k)` terms,
+/// which an `i64` digit holds, and once at the end. `dst` is stamped before the relinearization,
+/// which normalizes at the stamped width, as in `ckks_mul_into`.
+fn dot_product_ct_lazy<BE, Dst, A, B, H>(
+    module: &Module<BE>,
+    dst: &mut Dst,
+    a: &[&A],
+    b: &[&B],
+    tsk: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: GLWETensoring<BE> + GLWEAdd<BE> + GLWENormalize<BE>,
+    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    A: GLWEToBackendRef<BE> + CKKSCtBounds,
+    B: GLWEToBackendRef<BE> + CKKSCtBounds,
+    H: GetTensorKey<BE>,
+{
+    // `ckks_mul_into`'s tensor width, and so its key width, whatever `dst`'s width.
+    let tensor_layout = GLWELayout {
+        n: dst.n(),
+        base2k: dst.base2k(),
+        k: a[0].k().max(b[0].k()),
+        rank: dst.rank(),
+    };
+    tsk.get_tensor_key(tensor_layout.k)
+        .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+            op: "ckks_dot_product_ct",
+            k: tensor_layout.k.into(),
+        })?;
+    let (log_budget, log_delta, cnv_offset) = get_mul_ct_params(dst, a[0], b[0])?;
+    // The eager sum's label and slot kind: the smallest label and the join over every operand.
+    let metas = || a.iter().map(|ct| ct.meta()).chain(b.iter().map(|ct| ct.meta()));
+    let log_sparsity = metas().map(|meta| meta.log_sparsity).min().unwrap();
+    let slots = metas().map(|meta| meta.slots).reduce(SlotsKind::join).unwrap();
+    let max_terms: usize = 1 << (63 - dst.base2k().as_usize());
+
+    let scratch = scratch.borrow();
+    let (mut acc, scratch) = scratch.take_glwe_tensor_scratch(&tensor_layout);
+    let (mut term, mut scratch) = scratch.take_glwe_tensor_scratch(&tensor_layout);
+    module.glwe_tensor_apply(cnv_offset, &mut acc, a[0], b[0], &mut scratch);
+    let mut terms: usize = 1;
+    for (ai, bi) in a.iter().zip(b).skip(1) {
+        if terms == max_terms {
+            module.glwe_normalize_assign(&mut acc, &mut scratch);
+            terms = 1;
+        }
+        module.glwe_tensor_apply(cnv_offset, &mut term, *ai, *bi, &mut scratch);
+        module.glwe_add_assign(&mut acc, &term);
+        terms += 1;
+    }
+    // A tensor view reports canonical, so it must hold canonical digits.
+    module.glwe_normalize_assign(&mut acc, &mut scratch);
+    dst.set_log_budget(log_budget);
+    dst.set_log_delta(log_delta);
+    dst.set_log_sparsity(log_sparsity);
+    dst.set_slots(slots);
+    module.glwe_tensor_relinearize(dst, &acc, tsk, &mut scratch);
+    Ok(())
+}
+
 fn accumulate<BE, D, F>(
     module: &Module<BE>,
     dst: &mut CKKSCiphertext<D, BE::ZnxWord, BE::Ring>,
@@ -396,7 +469,7 @@ where
 
 impl<BE: Backend> CKKSDotProductOps<BE> for Module<BE>
 where
-    Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + GLWETensoring<BE>,
+    Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + GLWETensoring<BE> + GLWEAdd<BE> + GLWENormalize<BE>,
 {
     fn ckks_dot_product_ct_tmp_bytes<R, A, B, T>(&self, n: usize, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
@@ -414,17 +487,19 @@ where
         }
         let ct_bytes: usize = self.glwe_bytes_of_from_infos(res);
         let fallback: usize = ct_bytes + mul_scratch.max(self.ckks_add_tmp_bytes(res.size()));
+        // The lazy path: an accumulator and a term at this layout.
         let tensor_layout = GLWELayout {
             n: res.n(),
             base2k: res.base2k(),
-            k: TorusPrecision(res.k().max(a.k()).max(b.k()).as_u32()),
+            k: a.k().max(b.k()),
             rank: res.rank(),
         };
-        let tensor_bytes: usize = self.glwe_tensor_bytes_of_from_infos(&tensor_layout);
+        let tensor_bytes: usize = BE::scratch_aligned(self.glwe_tensor_bytes_of_from_infos(&tensor_layout));
         let inner: usize = self
             .glwe_tensor_apply_tmp_bytes(&tensor_layout, a, b)
+            .max(self.glwe_normalize_tmp_bytes())
             .max(self.glwe_tensor_relinearize_tmp_bytes(res, &tensor_layout, tsk));
-        let fast: usize = 2 * n * ct_bytes + tensor_bytes + inner;
+        let fast: usize = 2 * tensor_bytes + inner;
         fallback.max(fast)
     }
 
@@ -468,6 +543,10 @@ where
     {
         check_lengths("ckks_dot_product_ct", a.len(), b.len())?;
         let n: usize = a.len();
+        // Between normalizations the lazy sum holds at least two terms, which an `i64` digit fits up to base2k 62.
+        if n > 1 && dst.base2k().as_usize() <= 62 && share_layout(a) && share_layout(b) {
+            return dot_product_ct_lazy(self, dst, a, b, tsk, scratch);
+        }
         ensure_accumulation_fits("ckks_dot_product_ct", dst, n)?;
         self.ckks_mul_into(dst, a[0], b[0], tsk, scratch)?;
         accumulate(self, dst, n, scratch, |tmp, i, s| self.ckks_mul_into(tmp, a[i], b[i], tsk, s))

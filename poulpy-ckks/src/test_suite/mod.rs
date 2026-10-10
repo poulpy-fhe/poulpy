@@ -165,7 +165,8 @@ pub const BASE52_PARAMS_QUAD: CKKSTestParams = CKKSTestParams {
 
 /// Registers the **rank-generic arithmetic subset** of the CKKS suite for a
 /// parameter set with `rank > 1`: encrypt/decrypt, add/sub (ct and pt), mul
-/// (ct, square, prepared, pt), neg, copy, pow2, rotate, and conjugate.
+/// (ct, square, prepared, pt), the ct dot product, neg, copy, pow2, rotate,
+/// and conjugate.
 ///
 /// The full [`ckks_backend_test_suite!`](crate::ckks_backend_test_suite) hardwires rank-1-only pipelines
 /// (bootstrapping, EvalMod, DFT, PaCo — which reject `rank != 1` by
@@ -262,6 +263,10 @@ macro_rules! ckks_backend_rank2_test_suite {
                 $crate::test_suite::mul::test_mul_ct_smaller_output_exact_scratch
             );
             run_test!(square_aligned, $crate::test_suite::mul::test_square_aligned);
+            run_test!(
+                dot_product_ct_lazy,
+                $crate::test_suite::dot_product::test_dot_product_ct_lazy
+            );
             run_test!(
                 mul_pt_vec_into_aligned,
                 $crate::test_suite::mul::test_mul_pt_vec_into_aligned
@@ -977,6 +982,18 @@ macro_rules! ckks_backend_test_suite {
             run_test!(
                 dot_product_ct_smaller_output,
                 $crate::test_suite::dot_product::test_dot_product_ct_smaller_output
+            );
+            run_test!(
+                dot_product_ct_lazy,
+                $crate::test_suite::dot_product::test_dot_product_ct_lazy
+            );
+            run_test!(
+                dot_product_ct_long_sum,
+                $crate::test_suite::dot_product::test_dot_product_ct_long_sum
+            );
+            run_test!(
+                dot_product_ct_non_uniform,
+                $crate::test_suite::dot_product::test_dot_product_ct_non_uniform
             );
             run_test!(
                 dot_product_pt_vec_aligned,
