@@ -435,13 +435,16 @@ mod tests {
         reference::{BlasMatMulOperand, Left, Right},
     };
     use poulpy_ckks::{CKKSError, SetGLWEPlaintextInfos};
+    use poulpy_core::layouts::prepared::GLWETensorKeyPrepared;
     use poulpy_hal::layouts::{HostBytesBackend, Standard};
 
     type Grid = BlasCiphertextOwned<HostBytesBackend>;
 
     /// Grids over owned storage are inputs and outputs of every operation on every backend, with no unsafe impl, and
-    /// contexts, public operands, the reference's prepared operands and errors cross tasks. Borrowed views are not grids, their blocks not being
-    /// `GLWEToBackendRef`; they are as thread-safe as their buffers: `BufRef` views `Sync`, `BufMut` views only `Send`.
+    /// contexts, public operands, the reference's prepared operands, poulpy-core's prepared tensor key, which the
+    /// prepared product's tasks capture as they are, and errors cross tasks. Borrowed views are not grids, their blocks
+    /// not being `GLWEToBackendRef`; they are as thread-safe as their buffers: `BufRef` views `Sync`, `BufMut` views
+    /// only `Send`.
     fn assert_thread_safe<'a, BE: Backend + 'a>() {
         fn output<BE: Backend, G: BlasGridMut<BE> + Send + Sync>() {}
         fn sync<T: Sync>() {}
@@ -451,6 +454,7 @@ mod tests {
         sync::<BlasPtOperand<BE>>();
         sync::<BlasMatMulOperand<BE, Left>>();
         send::<BlasMatMulOperand<BE, Right>>();
+        sync::<GLWETensorKeyPrepared<BE::OwnedBuf, BE>>();
         send::<CKKSError>();
         sync::<BlasCiphertext<BE::BufRef<'a>, BE::ZnxWord, BE::Ring>>();
         send::<BlasCiphertext<BE::BufMut<'a>, BE::ZnxWord, BE::Ring>>();

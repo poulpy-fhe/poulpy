@@ -19,7 +19,8 @@ use poulpy_hal::{
 
 use super::{
     KeyLayouts, assert_scratch, ensure_dimension, ensure_grid, ensure_inner, ensure_layouts, ensure_lt_keys, ensure_maps,
-    ensure_record, ensure_shape, ensure_tensor_key, lt_output_k, lt_tmp_bytes, max_lazy_terms, reject, stamp_sparsity,
+    ensure_record, ensure_shape, ensure_tensor_key, lt_output_k, lt_tmp_bytes, max_lazy_terms, reject, run_tasks, stamp_sparsity,
+    tasks_tmp_bytes,
 };
 use crate::{
     layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, BlasLayout, BlasPtOperand, grid_batch, layout_of},
@@ -320,7 +321,9 @@ fn ensure_term_keys<'c, BE: Backend + 'c>(
 /// Reference compositions of [`crate::api::BlasMatMulOps`] and the JKLS kernel, on inputs their validators accepted:
 /// they check nothing but their scratch, and return poulpy-ckks's budget errors before any write to `res`. The
 /// preparations make [`BlasMatMulOperand`]s through the map hook of [`BlasMatIntraImpl`]; the prepared product reads
-/// them one output block at a time through the JKLS kernel of [`BlasJklsImpl`].
+/// them one output block at a time through the JKLS kernel of [`BlasJklsImpl`], the blocks split over up to four workers
+/// of `BE`'s task executor, each on its own scratch slice, and returns the error of the lowest failing block, as a
+/// serial loop would.
 pub trait BlasMatMulReference<BE: Backend> {
     /// The largest of the map hook's queries through sigma, from `a`'s blocks into blocks of their layout, and through
     /// every shift, from those into blocks of the terms' layout, and of the copy of one into a block of the terms'
@@ -369,7 +372,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         K: GetAutomorphismKey<BE> + Sync;
 
     /// The JKLS kernel's query for a block of `res` and the `K d` pairs of terms of the operands `a` and `b`, or of the
-    /// layouts [`blas_matmul_term_layout`] gives.
+    /// layouts [`blas_matmul_term_layout`] gives, on each worker's slice.
     fn blas_matmul_prepared_tmp_bytes_reference<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         BE: BlasJklsImpl,
@@ -378,8 +381,8 @@ pub trait BlasMatMulReference<BE: Backend> {
         B: BlasGridInfos,
         T: GGLWEInfos;
 
-    /// For every block `(i, j)` of `res`, row-major, one JKLS kernel, [`BlasJklsImpl::blas_jkls_block_impl`], over the
-    /// `K d` pairs `(a_il[k], b_lj[k])`, `l`-major.
+    /// For every block `(i, j)` of `res`, one JKLS kernel, [`BlasJklsImpl::blas_jkls_block_impl`], over the `K d` pairs
+    /// `(a_il[k], b_lj[k])`, `l`-major, the blocks in parallel.
     fn blas_matmul_prepared_reference<R, T>(
         &self,
         res: &mut R,
@@ -588,8 +591,9 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         B: BlasGridInfos,
         T: GGLWEInfos,
     {
-        let (res, lhs, rhs) = (res.block_layout(), a.block_layout(), b.block_layout());
-        BE::blas_jkls_block_tmp_bytes_impl(self, &res, &lhs, &rhs, a.cols() << a.log_d(), tsk)
+        let (dst, lhs, rhs) = (res.block_layout(), a.block_layout(), b.block_layout());
+        let block = BE::blas_jkls_block_tmp_bytes_impl(self, &dst, &lhs, &rhs, a.cols() << a.log_d(), tsk);
+        tasks_tmp_bytes::<BE>(res.rows() * res.cols(), block)
     }
 
     fn blas_matmul_prepared_reference<R, T>(
@@ -611,13 +615,13 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         let bytes = used.max_tensor_bytes(|tsk| self.blas_matmul_prepared_tmp_bytes_reference(&*res, a, b, tsk));
         assert_scratch(op, bytes, scratch);
         let (d, n) = (1usize << a.log_d(), b.cols());
-        for (t, dst) in res.blocks_mut().iter_mut().enumerate() {
-            let (i, j) = (t / n, t % n);
+        let mut blocks: Vec<_> = res.blocks_mut().iter_mut().enumerate().collect();
+        run_tasks::<BE::TaskExecutor, _, _>(&mut blocks, scratch, |(t, dst), scratch| {
+            let (i, j) = (*t / n, *t % n);
             let pairs = (0..a.cols()).flat_map(|l| (0..d).map(move |k| (l, k)));
             let (lhs, rhs): (Vec<_>, Vec<_>) = pairs.map(|(l, k)| (a.term(i, l, k), b.term(l, j, k))).unzip();
-            BE::blas_jkls_block_impl(self, dst, &lhs, &rhs, tsk, scratch)?;
-        }
-        Ok(())
+            BE::blas_jkls_block_impl(self, *dst, &lhs, &rhs, tsk, scratch)
+        })
     }
 }
 

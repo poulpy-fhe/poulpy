@@ -8,14 +8,11 @@ use poulpy_blas::{
 use poulpy_ckks::{CKKSCtBounds, CKKSResult, SetCKKSInfos, api::LinearTransformationPrepared};
 use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey};
 use poulpy_hal::layouts::{HostBytesBackend, Module, ScratchArena};
-use std::cell::Cell;
+use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
-// ponytail: thread-local counters see only the calling thread; once the products run their blocks in parallel, they
-// become atomics.
-thread_local! {
-    static MAP_CALLS: Cell<usize> = const { Cell::new(0) };
-    static JKLS_CALLS: Cell<usize> = const { Cell::new(0) };
-}
+// Atomics, so that hooks entered from the workers of a parallel executor count too.
+static MAP_CALLS: AtomicUsize = AtomicUsize::new(0);
+static JKLS_CALLS: AtomicUsize = AtomicUsize::new(0);
 
 poulpy_blas::impl_blas_inter_reference!(OverrideBackend);
 poulpy_blas::impl_blas_matmul_reference!(OverrideBackend);
@@ -50,7 +47,7 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         S: GLWEToBackendRef<Self> + CKKSCtBounds + Sync,
         K: GetAutomorphismKey<Self> + Sync,
     {
-        MAP_CALLS.with(|calls| calls.set(calls.get() + 1));
+        MAP_CALLS.fetch_add(1, Relaxed);
         module.blas_map_blocks_reference(dst, src, lts, atk, scratch)
     }
 }
@@ -87,7 +84,7 @@ unsafe impl BlasJklsImpl for OverrideBackend {
         Rh: GLWEToBackendRef<Self> + CKKSCtBounds + Sync,
         T: GetTensorKey<Self> + Sync,
     {
-        JKLS_CALLS.with(|calls| calls.set(calls.get() + 1));
+        JKLS_CALLS.fetch_add(1, Relaxed);
         module.blas_jkls_block_reference(res, lhs, rhs, tsk, scratch)
     }
 }
@@ -106,6 +103,6 @@ fn blas_products_enter_the_map_and_jkls_hooks() {
         &host_module,
         2,
     );
-    assert_eq!(MAP_CALLS.with(Cell::get), 2 * 2 * 2, "map hook calls");
-    assert_eq!(JKLS_CALLS.with(Cell::get), 2 * 4, "JKLS kernel calls");
+    assert_eq!(MAP_CALLS.load(Relaxed), 2 * 2 * 2, "map hook calls");
+    assert_eq!(JKLS_CALLS.load(Relaxed), 2 * 4, "JKLS kernel calls");
 }

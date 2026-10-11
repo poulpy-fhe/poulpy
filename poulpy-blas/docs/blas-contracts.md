@@ -189,9 +189,11 @@ backend's own `enable-blas`, replaces that family alone:
 unsafe impl poulpy_blas::oep::BlasJklsImpl for MyBackend { /* the kernel and its query */ }
 ```
 
-The rotation, the sum and the hook split their blocks over up to four workers
-of the backend's `TaskExecutor`, each on its own scratch slice (and, in the
-hook, its own baby-step cache), so a Rayon backend writes nothing. Their
+The rotation, the sum, the hook and the prepared product split their blocks
+over up to four workers of the backend's `TaskExecutor`, each on its own
+scratch slice (and, in the hook, its own baby-step cache), so a Rayon backend
+writes nothing; the prepared product calls the JKLS kernel once per block of
+`res`, concurrently on a parallel executor. Their
 queries reserve one slice per worker on a parallel executor and keep the
 serial size otherwise. On failure they return the error of the lowest block, as
 a serial loop would. Copies and additions run serially.
