@@ -5,7 +5,7 @@
 //! is told how many rows to skip instead of scanning for them.
 
 use poulpy_ckks::{
-    CKKSCtBounds, CKKSMeta, CKKSResult, SetCKKSInfos,
+    CKKSCtBounds, CKKSResult, GLWEPlaintextMeta, Scale, SetCKKSInfos,
     oep::CKKSEncapsulatedModUpImpl,
     reference::bootstrapping::{ckks_encapsulated_mod_up_reference, ckks_encapsulated_mod_up_tmp_bytes_reference},
 };
@@ -115,8 +115,8 @@ unsafe impl CKKSEncapsulatedModUpImpl for BE {
         let shift = k_large - k_small - scale_up;
         module.glwe_copy(dst, src, scratch);
         module.glwe_rsh(shift, dst, scratch);
-        dst.set_meta(CKKSMeta {
-            log_delta: src.log_delta() + scale_up,
+        dst.set_meta(GLWEPlaintextMeta {
+            scale: Scale::Log(src.log_delta() + scale_up),
             log_sparsity: src.log_sparsity(),
             slots: src.slots(),
         });
