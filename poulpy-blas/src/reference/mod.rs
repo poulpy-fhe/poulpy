@@ -5,14 +5,15 @@ mod intra;
 mod matmul;
 
 pub use inter::{BlasMatInterReference, validate_blas_rotate, validate_blas_sum};
+pub(crate) use intra::shift_maps;
 pub use intra::{BlasMatIntraReference, validate_blas_rotate_cols, validate_blas_rotate_rows, validate_blas_transpose};
 pub use matmul::BlasMatMulReference;
 
 use std::cell::RefCell;
 
 use poulpy_ckks::{
-    CKKSCompositionError, CKKSCtBounds, CKKSError, CKKSInfos, CKKSLayout, CKKSResult as Result, GLWEPlaintextInfos, SetCKKSInfos,
-    api::{CKKSLinearTransformationOps, CKKSModuleInfos, LinearTransformation, LtDiagonalMeta},
+    CKKSCompositionError, CKKSCtBounds, CKKSError, CKKSInfos, CKKSResult as Result, GLWEPlaintextInfos, SetCKKSInfos,
+    api::{CKKSLinearTransformationOps, CKKSModuleInfos, LinearTransformation, LinearTransformationPrepared, LtDiagonalMeta},
 };
 use poulpy_core::layouts::{
     Base2K, GGLWEInfos, GGLWELayout, GLWEInfos, GetAutomorphismKey, GetTensorKey, LWEInfos, TorusPrecision,
@@ -297,8 +298,29 @@ pub(crate) fn assert_scratch<BE: Backend>(op: &str, required: usize, scratch: &S
     );
 }
 
+/// Panics unless `scratch` holds the largest `bytes` over the layouts of the rotation keys that evaluating `lts` from
+/// width `src_k` into width `dst_k` looks up in `atk`, as [`assert_scratch`]; a call that looks up none asserts
+/// nothing. The keys passed `op`'s validator, so the look-ups only record their layouts.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn assert_maps_scratch<BE: Backend, M: CKKSModuleInfos + ?Sized>(
+    op: &'static str,
+    module: &M,
+    lts: &[&LinearTransformationPrepared<BE>],
+    atk: &impl GetAutomorphismKey<BE>,
+    src_k: TorusPrecision,
+    dst_k: TorusPrecision,
+    bytes: impl Fn(&GGLWELayout) -> usize,
+    scratch: &ScratchArena<'_, BE>,
+) {
+    let used = KeyLayouts::new(atk);
+    for lt in lts {
+        let _ = ensure_lt_keys(op, module, lt, &used, src_k, dst_k);
+    }
+    assert_scratch(op, used.max_bytes(bytes), scratch);
+}
+
 /// Scratch of one linear transformation from a block of layout `a` into a block of layout `res`.
-pub(crate) fn lt_tmp_bytes<BE, M, K>(module: &M, res: &CKKSLayout, a: &CKKSLayout, key: &K) -> usize
+pub(crate) fn lt_tmp_bytes<BE, M, K>(module: &M, res: &impl CKKSCtBounds, a: &impl CKKSCtBounds, key: &K) -> usize
 where
     BE: Backend,
     M: CKKSLinearTransformationOps<BE> + ?Sized,

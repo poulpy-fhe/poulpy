@@ -16,7 +16,7 @@ CKKS and core overrides remain effective inside them.
 | OEP family | Operations | Reference | Macro |
 |---|---|---|---|
 | `BlasMatInterImpl` | `blas_rotate`, `blas_sum` | `BlasMatInterReference`, [`reference/inter.rs`](../src/reference/inter.rs) | `impl_blas_inter_reference!` |
-| `BlasMatIntraImpl` | `blas_transpose`, `blas_rotate_rows`, `blas_rotate_cols` | `BlasMatIntraReference`, [`reference/intra.rs`](../src/reference/intra.rs) | `impl_blas_intra_reference!` |
+| `BlasMatIntraImpl` | `blas_transpose`, `blas_rotate_rows`, `blas_rotate_cols`, provided over the map hook `blas_map_blocks` | `BlasMatIntraReference` (the hook), [`reference/intra.rs`](../src/reference/intra.rs) | `impl_blas_intra_reference!` |
 | `BlasMatMulImpl` | `blas_matmul`, `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, `blas_matmul_prepared`, `blas_matmul_pt` | `BlasMatMulReference`, [`reference/matmul.rs`](../src/reference/matmul.rs) | `impl_blas_matmul_reference!` |
 
 Each operation's `_tmp_bytes` query belongs to the same family.
@@ -115,6 +115,27 @@ spells out every signature and its forwarding call. A family macro and a
 handwritten implementation of the same trait are mutually exclusive. The family
 traits are `unsafe`; their `# Safety` sections state what an implementation
 must reproduce.
+
+`BlasMatIntraImpl` requires only the map hook, `blas_map_blocks_impl`, and its
+query; the transpose and both shifts are provided over it, and over
+poulpy-ckks's copy and addition. A backend that replaces the hook keeps the
+other two families' macros and writes those two methods, as the expansion of
+`impl_blas_intra_reference!` in [`oep/intra.rs`](../src/oep/intra.rs) does:
+
+```rust
+::poulpy_blas::impl_blas_inter_reference!(MyBackend);
+::poulpy_blas::impl_blas_matmul_reference!(MyBackend);
+unsafe impl poulpy_blas::oep::BlasMatIntraImpl for MyBackend { /* the hook and its query */ }
+```
+
+The hook writes block `t * lts.len() + m` of `dst` with map `m` of source `t`,
+stamped with that source's label, in any order; the maps of one source may
+share its baby-step cache. The transpose is one hook call. A shift along one
+block row or column is one call with psi^k' (phi^k'). A shift across blocks is
+one call with both half maps over every block of `a`, into a heap grid of
+`2 m n` blocks at `res`'s block layout, then `m n` additions into `res`: the
+provided shifts hold that whole grid, and a backend that needs less memory
+overrides them to chunk it.
 
 ## Testing a backend
 

@@ -4,6 +4,7 @@
 //! only: the API stamps the batch record of `res` after `Ok`. Inter and intra implementations run only on inputs their
 //! `validate_*` in [`crate::reference`] accepted.
 
+pub(crate) mod derived;
 mod inter;
 mod intra;
 mod matmul;
