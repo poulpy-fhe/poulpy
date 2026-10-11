@@ -20,6 +20,7 @@
 //!    CoeffToSlot must land, slot for slot, on the cleartext model's Eq. 11
 //!    packing relation: `b'_{λ_v}` coefficients in natural order.
 
+use crate::Scale;
 use crate::api::CKKSEncodingOps;
 use std::collections::HashMap;
 
@@ -35,7 +36,7 @@ use poulpy_hal::{
 
 use crate::SlotsKind;
 use crate::{
-    CKKSInfos, CKKSMeta,
+    CKKSInfos, GLWEPlaintextMeta,
     api::{CKKSAddOps, CKKSLinearTransformationOps, CKKSMulOps},
     encoding::paco::{coeff_enc::glwe_column_residues, cpx::Cpx},
     layouts::{PaCoPlan, PaCoSecretSpec},
@@ -233,10 +234,10 @@ where
                 Base2K(params.base2k as u32),
                 crate::CoeffsMeta {
                     k: (log_delta + 10).into(),
-                    meta: CKKSMeta {
-                        log_sparsity: (m_full / n_paco).trailing_zeros() as usize,
-                        log_delta,
+                    meta: GLWEPlaintextMeta {
+                        scale: Scale::Log(log_delta),
                         slots: SlotsKind::Complex,
+                        log_sparsity: 0,
                     },
                 },
                 cd,

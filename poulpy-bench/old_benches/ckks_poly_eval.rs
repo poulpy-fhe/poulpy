@@ -5,10 +5,11 @@
 //! (log_budget delta) measured from the actual run.
 
 use std::hint::black_box;
+use poulpy_ckks::Scale;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use poulpy_ckks::{
-    CKKSInfos, CKKSLayout, CKKSMeta, SlotsKind,
+    CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SlotsKind,
     api::{CKKSAllOpsTmpBytes, CKKSCopyOps, CKKSPolynomialEvaluationOps},
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
     polynomial::{Basis, ComplexPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
@@ -30,19 +31,12 @@ const DSIZE: usize = 1;
 const DEGREES: &[usize] = &[7, 15, 31, 63, 127];
 const STRATEGIES: &[(SplitStrategy, &str)] = &[(SplitStrategy::MinDepth, "min-depth"), (SplitStrategy::MinMult, "min-mult")];
 
-const COEFF_META: CKKSLayout = CKKSLayout {
-    glwe_layout: GLWELayout {
+const COEFF_META: CKKSLayout = CKKSLayout { glwe_layout: GLWELayout {
         n: Degree(N as u32),
         base2k: Base2K(BASE2K as u32),
         k: TorusPrecision((LOG_DELTA + 1) as u32),
         rank: Rank(1),
-    },
-    meta: CKKSMeta {
-        log_sparsity: 0,
-        log_delta: LOG_DELTA,
-        slots: SlotsKind::Complex,
-    },
-};
+    }, meta: GLWEPlaintextMeta { scale: Scale::Log(LOG_DELTA), slots: SlotsKind::Complex, log_sparsity: 0 } };
 
 fn glwe_layout() -> GLWELayout {
     GLWELayout {
@@ -83,11 +77,7 @@ fn $fn(c: &mut Criterion) {
     let host_module = Module::<HostBytesBackend>::new(N as u64);
     let glwe_layout = glwe_layout();
     let tsk_layout = tsk_layout();
-    let input_meta = CKKSMeta {
-        log_sparsity: 0,
-        log_delta: LOG_DELTA,
-        slots: SlotsKind::Complex,
-    };
+    let input_meta = GLWEPlaintextMeta { scale: Scale::Log(LOG_DELTA), slots: SlotsKind::Complex, log_sparsity: 0 };
 
     let ct_template = module.ckks_ciphertext_alloc_from_glwe_infos(&glwe_layout);
     // The all-ops aggregate already includes the giant-step engine's scratch.

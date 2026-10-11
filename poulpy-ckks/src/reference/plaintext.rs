@@ -9,8 +9,8 @@ use poulpy_hal::{
 use crate::GLWEToBackendRef;
 
 use crate::{
-    CKKSInfos, CKKSMeta, SetCKKSInfos, ensure_base2k_match, ensure_plaintext_alignment, ensure_plaintext_coeff_in_range,
-    ensure_plaintext_degree_embeds,
+    CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos, ckks_log_delta, ensure_base2k_match, ensure_plaintext_alignment,
+    ensure_plaintext_coeff_in_range, ensure_plaintext_degree_embeds,
 };
 
 #[derive(Clone, Copy)]
@@ -160,7 +160,7 @@ pub trait CKKSPlaintextReference<BE: Backend> {
         &self,
         dst: &mut D,
         src: &S,
-        src_meta: CKKSMeta,
+        src_meta: GLWEPlaintextMeta,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -179,7 +179,7 @@ pub trait CKKSPlaintextReference<BE: Backend> {
         }
         // The source budget is derived from the decrypted plaintext's torus width
         // `k` (which spans the source ciphertext) and the source scale `log_delta`.
-        let src_log_budget = src.k().as_usize().saturating_sub(src_meta.log_delta);
+        let src_log_budget = src.k().as_usize().saturating_sub(ckks_log_delta(&src_meta));
         let available = src_log_budget + dst.log_delta();
         // Validity is checked against the meaningful (effective) precision; the
         // physical `max_k` integer-poly width is truncated by the shift below.

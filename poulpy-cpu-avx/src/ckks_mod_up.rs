@@ -1,11 +1,12 @@
 use super::NTT4x30Avx;
 #[cfg(feature = "enable-rayon")]
 use super::NTT4x30AvxRayon;
+use poulpy_ckks::Scale;
 
 use std::mem::size_of;
 
 use poulpy_ckks::{
-    CKKSCtBounds, CKKSMeta, CKKSResult, SetCKKSInfos,
+    CKKSCtBounds, CKKSResult, GLWEPlaintextMeta, SetCKKSInfos,
     api::CKKSPow2Ops,
     oep::CKKSEncapsulatedModUpImpl,
     reference::bootstrapping::{ckks_encapsulated_mod_up_reference, ckks_encapsulated_mod_up_tmp_bytes_reference},
@@ -141,10 +142,10 @@ where
     let shift = k_large - k_small - scale_up;
     module.glwe_copy(dst, src, scratch);
     module.glwe_rsh(shift, dst, scratch);
-    dst.set_meta(CKKSMeta {
-        log_delta: src.log_delta() + scale_up,
-        log_sparsity: src.log_sparsity(),
+    dst.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(src.log_delta() + scale_up),
         slots: src.slots(),
+        log_sparsity: src.log_sparsity(),
     });
     dst.set_k(k_large.into());
     let zero_prefix = shift / dst.base2k().as_usize();

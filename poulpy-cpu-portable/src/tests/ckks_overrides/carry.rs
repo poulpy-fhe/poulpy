@@ -1,8 +1,9 @@
 //! Unit shifts inherit the selected constant-plaintext operation and its budget.
 use super::OverrideBackend;
 use crate::FFT64Portable;
+use poulpy_ckks::Scale;
 use poulpy_ckks::{
-    CKKSMeta,
+    GLWEPlaintextMeta,
     api::{CKKSAddOps, CKKSSubOps},
     test_suite::CKKSTestParams,
 };
@@ -154,8 +155,8 @@ fn unit_shifts_use_selected_plaintext_scratch() {
         n: 64,
         base2k: 16,
         k: 64,
-        prec_meta: CKKSMeta {
-            log_delta: 16,
+        prec_meta: GLWEPlaintextMeta {
+            scale: Scale::Log(16),
             ..Default::default()
         },
         prec_log_budget: 16,

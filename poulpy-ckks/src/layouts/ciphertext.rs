@@ -14,35 +14,32 @@ use std::{
 use anyhow::Result;
 use poulpy_core::ScratchArenaTakeCore;
 use poulpy_core::layouts::{
-    BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, GLWEViewRef, LWEInfos, Rank,
-    SetBSGSMeta, SetK, TorusPrecision,
+    BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef,
+    GLWEViewMut, GLWEViewRef, LWEInfos, Rank, SetBSGSMeta, SetGLWEPlaintextInfos, SetK, TorusPrecision,
 };
 use poulpy_hal::layouts::{Backend, Data, HostDataRef, Ring, ScratchArena, ZnxWord};
 
-use crate::{CKKSInfos, CKKSMeta, SetCKKSInfos, error::CKKSCompositionError};
+use crate::{CKKSInfos, SetCKKSInfos, ckks_log_delta, error::CKKSCompositionError};
 
 use super::{CKKSEncodingBuffer, CKKSEncodingBufferViewMut, CKKSPlaintextViewMut};
 
-/// CKKS ciphertext storage plus semantic precision metadata.
-///
-/// `inner` contains the raw GLWE torus digits while `meta` describes the
-/// semantic decimal scaling and remaining homomorphic capacity of the value.
+/// CKKS ciphertext: a GLWE whose plaintext metadata holds the CKKS scale,
+/// slot kind and sparsity.
 /// `R` is the ring the value lives in; a module accepts only operands of its backend's ring.
 pub struct CKKSCiphertext<D: Data, W: ZnxWord, R: Ring> {
     /// Raw GLWE ciphertext storage.
     pub(crate) inner: GLWE<D, W>,
-    /// Semantic CKKS metadata associated with `inner`.
-    pub(crate) meta: CKKSMeta,
     _ring: PhantomData<R>,
 }
 
 impl<D: Data, W: ZnxWord, R: Ring> CKKSCiphertext<D, W, R> {
-    pub(crate) fn from_inner(inner: GLWE<D, W>, meta: CKKSMeta) -> Self {
-        Self {
+    pub(crate) fn from_inner(inner: GLWE<D, W>, meta: GLWEPlaintextMeta) -> Self {
+        let mut ct = Self {
             inner,
-            meta,
             _ring: PhantomData,
-        }
+        };
+        ct.set_meta(meta);
+        ct
     }
 
     /// Rebuilds this backend-owned ciphertext as a host-owned [`CKKSCiphertext<AlignedBuf, W, R>`].
@@ -50,7 +47,10 @@ impl<D: Data, W: ZnxWord, R: Ring> CKKSCiphertext<D, W, R> {
     where
         BE: Backend<OwnedBuf = D, ZnxWord = W>,
     {
-        CKKSCiphertext::from_inner(self.inner.to_host_owned::<BE>(), self.meta)
+        CKKSCiphertext {
+            inner: self.inner.to_host_owned::<BE>(),
+            _ring: PhantomData,
+        }
     }
 
     /// Formats this backend-owned ciphertext through the existing host [`fmt::Display`] implementation.
@@ -80,20 +80,20 @@ impl<D: Data, W: ZnxWord, R: Ring> CKKSCiphertext<D, W, R> {
     ///
     /// This is intended for callers that build ciphertext buffers manually.
     /// Normal CKKS operations update metadata themselves.
-    pub fn set_meta_checked(&mut self, meta: CKKSMeta) -> Result<()> {
+    pub fn set_meta_checked(&mut self, meta: GLWEPlaintextMeta) -> Result<()> {
         // The budget now lives in the wrapped GLWE's torus width `k`; this only
         // validates that the claimed width fits the allocated storage and that the
         // requested scale fits within it.
         anyhow::ensure!(
-            self.k().as_usize() <= self.max_k().as_usize() && meta.log_delta <= self.k().as_usize(),
+            self.k().as_usize() <= self.max_k().as_usize() && ckks_log_delta(&meta) <= self.k().as_usize(),
             CKKSCompositionError::LimbReallocationShrinksBelowMetadata {
                 max_k: self.max_k().as_usize(),
-                log_delta: meta.log_delta,
+                log_delta: ckks_log_delta(&meta),
                 base2k: self.base2k().as_usize(),
                 requested_limbs: self.max_size(),
             }
         );
-        self.meta = meta;
+        self.set_meta(meta);
         Ok(())
     }
 }
@@ -101,8 +101,7 @@ impl<D: Data, W: ZnxWord, R: Ring> CKKSCiphertext<D, W, R> {
 // Binding `R` to `BE::Ring` in the backend conversions below rejects a
 // ciphertext of another ring at compile time.
 
-// Without this, `ct.clone()` silently resolves through `Deref` to
-// `GLWE::clone` and drops the CKKS metadata.
+// Without this, `ct.clone()` silently resolves through `Deref` to `GLWE::clone`.
 impl<D: Data, W: ZnxWord, R: Ring> Clone for CKKSCiphertext<D, W, R>
 where
     GLWE<D, W>: Clone,
@@ -110,7 +109,6 @@ where
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
-            meta: self.meta,
             _ring: PhantomData,
         }
     }
@@ -158,19 +156,17 @@ impl<D: Data, W: ZnxWord, R: Ring> GLWEInfos for CKKSCiphertext<D, W, R> {
     }
 }
 
-impl<D: Data, W: ZnxWord, R: Ring> CKKSInfos for CKKSCiphertext<D, W, R> {
-    fn meta(&self) -> CKKSMeta {
-        self.meta
+impl<D: Data, W: ZnxWord, R: Ring> GLWEPlaintextInfos for CKKSCiphertext<D, W, R> {
+    fn plaintext_meta(&self) -> Option<GLWEPlaintextMeta> {
+        self.inner.plaintext_meta()
     }
 }
 
-impl<D: Data, W: ZnxWord, R: Ring> SetCKKSInfos for CKKSCiphertext<D, W, R> {
-    fn set_meta(&mut self, meta: CKKSMeta) {
-        self.meta = meta;
-    }
+impl<D: Data, W: ZnxWord, R: Ring> CKKSInfos for CKKSCiphertext<D, W, R> {}
 
-    fn set_k(&mut self, k: TorusPrecision) {
-        SetK::set_k(&mut self.inner, k);
+impl<D: Data, W: ZnxWord, R: Ring> SetGLWEPlaintextInfos for CKKSCiphertext<D, W, R> {
+    fn set_plaintext_meta(&mut self, meta: Option<GLWEPlaintextMeta>) {
+        self.inner.set_plaintext_meta(meta)
     }
 }
 
@@ -238,7 +234,6 @@ pub type CKKSRingCiphertext<BE, R> = CKKSCiphertext<<BE as Backend>::OwnedBuf, <
 
 pub(crate) struct CKKSCiphertextViewRef<'a, BE: Backend + 'a> {
     inner: GLWEViewRef<'a, BE>,
-    meta: CKKSMeta,
 }
 
 impl<'a, BE: Backend + 'a> Deref for CKKSCiphertextViewRef<'a, BE> {
@@ -277,11 +272,13 @@ impl<BE: Backend> GLWEInfos for CKKSCiphertextViewRef<'_, BE> {
     }
 }
 
-impl<BE: Backend> CKKSInfos for CKKSCiphertextViewRef<'_, BE> {
-    fn meta(&self) -> CKKSMeta {
-        self.meta
+impl<BE: Backend> GLWEPlaintextInfos for CKKSCiphertextViewRef<'_, BE> {
+    fn plaintext_meta(&self) -> Option<GLWEPlaintextMeta> {
+        self.inner.plaintext_meta()
     }
 }
+
+impl<BE: Backend> CKKSInfos for CKKSCiphertextViewRef<'_, BE> {}
 
 impl<BE: Backend> GLWEToBackendRef<BE> for CKKSCiphertextViewRef<'_, BE> {
     fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
@@ -292,22 +289,22 @@ impl<BE: Backend> GLWEToBackendRef<BE> for CKKSCiphertextViewRef<'_, BE> {
 /// Scratch-backed mutable CKKS ciphertext view.
 ///
 /// This is the CKKS analogue of core's [`GLWEViewMut`]: the limb storage is
-/// borrowed from a [`ScratchArena`] in the backend-native buffer type, while the
-/// CKKS semantic metadata is carried alongside the GLWE view.
+/// borrowed from a [`ScratchArena`] in the backend-native buffer type, and the
+/// CKKS metadata lives in the GLWE view's plaintext metadata.
 pub struct CKKSCiphertextViewMut<'a, BE: Backend + 'a> {
     inner: GLWEViewMut<'a, BE>,
-    meta: CKKSMeta,
 }
 
 impl<'a, BE: Backend + 'a> CKKSCiphertextViewMut<'a, BE> {
-    pub(crate) fn from_inner(inner: GLWEViewMut<'a, BE>, meta: CKKSMeta) -> Self {
-        Self { inner, meta }
+    pub(crate) fn from_inner(inner: GLWEViewMut<'a, BE>, meta: GLWEPlaintextMeta) -> Self {
+        let mut ct = Self { inner };
+        ct.set_meta(meta);
+        ct
     }
 
     pub(crate) fn to_backend_view_ref(&self) -> CKKSCiphertextViewRef<'_, BE> {
         CKKSCiphertextViewRef {
             inner: GLWEViewRef::from_inner(self.inner.to_backend_ref()),
-            meta: self.meta,
         }
     }
 }
@@ -326,7 +323,7 @@ impl<BE: Backend> DerefMut for CKKSCiphertextViewMut<'_, BE> {
     }
 }
 
-crate::impl_ckks_infos!(self_meta CKKSCiphertextViewMut);
+crate::impl_ckks_infos!(glwe_inner CKKSCiphertextViewMut);
 
 impl<BE: Backend> GLWEToBackendRef<BE> for CKKSCiphertextViewMut<'_, BE> {
     fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
@@ -356,7 +353,7 @@ pub trait ScratchArenaTakeCKKS<'a, BE: Backend>: ScratchArenaTakeCore<'a, BE> + 
         BE: 'a;
 
     /// Carves a mutable CKKS plaintext view from backend-native scratch.
-    fn take_ckks_plaintext_scratch<I>(self, infos: &I, meta: CKKSMeta) -> (CKKSPlaintextViewMut<'a, BE>, Self)
+    fn take_ckks_plaintext_scratch<I>(self, infos: &I, meta: GLWEPlaintextMeta) -> (CKKSPlaintextViewMut<'a, BE>, Self)
     where
         BE: 'a,
         I: GLWEInfos,
@@ -375,7 +372,7 @@ pub trait ScratchArenaTakeCKKS<'a, BE: Backend>: ScratchArenaTakeCore<'a, BE> + 
         self.take_ckks_plaintext_scratch(pt, pt.meta())
     }
 
-    fn take_ckks_ciphertext_scratch<I>(self, infos: &I, meta: CKKSMeta) -> (CKKSCiphertextViewMut<'a, BE>, Self)
+    fn take_ckks_ciphertext_scratch<I>(self, infos: &I, meta: GLWEPlaintextMeta) -> (CKKSCiphertextViewMut<'a, BE>, Self)
     where
         BE: 'a,
         I: GLWEInfos,
@@ -389,7 +386,7 @@ pub trait ScratchArenaTakeCKKS<'a, BE: Backend>: ScratchArenaTakeCore<'a, BE> + 
         self,
         size: usize,
         infos: &I,
-        meta: CKKSMeta,
+        meta: GLWEPlaintextMeta,
     ) -> (Vec<CKKSCiphertextViewMut<'a, BE>>, Self)
     where
         BE: 'a,

@@ -88,6 +88,7 @@ where
         move_vec_znx(&self.data, &mut dst.data);
         dst.canonical = self.canonical;
         dst.noise = self.noise.clone();
+        dst.plaintext_meta = self.plaintext_meta;
     }
 }
 
@@ -101,6 +102,7 @@ where
         assert_eq!(self.base2k, dst.base2k, "transfer_into: GLWEPlaintext base2k");
         assert_eq!(self.k, dst.k, "transfer_into: GLWEPlaintext k");
         move_vec_znx(&self.data, &mut dst.data);
+        dst.plaintext_meta = self.plaintext_meta;
     }
 }
 

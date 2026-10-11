@@ -49,7 +49,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use crate::{
     CoeffsMeta,
     api::{Basis, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, Parity},
-    cosine,
+    ckks_log_delta, cosine,
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, ComplexPolynomial, Polynomial, SplitStrategy},
 };
 
@@ -292,7 +292,7 @@ impl EvalModPlan {
     /// consuming `input_log_delta`), plus the optional arcsine inverse. Computed
     /// analytically; matches the compiled [`EvalMod::consumed_bits`].
     pub fn consumed_bits(&self) -> usize {
-        let coeff = self.coeffs_meta.meta.log_delta;
+        let coeff = ckks_log_delta(&self.coeffs_meta.meta);
         let input_log_delta = self.f_mod_log_delta;
         // `bsgs_consumed_bits`'s depth model is parity-independent (the parameter
         // is documentation-only), so no per-family parity is threaded here; the
@@ -359,7 +359,7 @@ impl EvalModPlan {
         }
         let strategy = self.split_strategy;
         let input = self.f_mod_log_delta;
-        let coeff = self.coeffs_meta.meta.log_delta;
+        let coeff = ckks_log_delta(&self.coeffs_meta.meta);
         bsgs_eval_depth(folded, strategy) < bsgs_eval_depth(full, strategy)
             && bsgs_consumed_bits(folded, strategy, Parity::Full, Basis::Chebyshev, input, coeff) + input
                 <= bsgs_consumed_bits(full, strategy, Parity::Full, Basis::Chebyshev, input, coeff)
@@ -779,7 +779,7 @@ impl<F, P> EvalMod<F, P> {
     /// `input_log_delta` each) + the optional arcsine inverse. Matches the actual
     /// runtime consumption and [`EvalModPlan::consumed_bits`].
     pub fn consumed_bits(&self) -> usize {
-        let coeff = self.plan.coeffs_meta.meta.log_delta;
+        let coeff = ckks_log_delta(&self.plan.coeffs_meta.meta);
         let log_delta = self.plan.f_mod_log_delta;
         let base = match &self.f_mod_bsgs {
             EvalModBsgs::Real(p) => p.consumed_bits(log_delta, coeff),

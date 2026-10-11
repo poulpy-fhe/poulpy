@@ -3,8 +3,9 @@ use super::{
     helpers::{Snapshot, assert_untagged, fixture_ciphertext, snapshot, with_scratch},
     keys::{key_layout, prepared_tensor_key},
 };
+use crate::Scale;
 use crate::{
-    CKKSLayout, CKKSMeta, CoeffsMeta, SlotsKind,
+    CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotsKind,
     api::{
         CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSEncodingHostOps, CKKSEncodingScalar, CKKSEvalModOps,
         CKKSPolynomialEvaluationOps,
@@ -59,10 +60,10 @@ where
             k: (12 * b + 1).into(),
             rank: 1usize.into(),
         },
-        meta: CKKSMeta {
-            log_delta: 10,
-            log_sparsity: 1,
+        meta: GLWEPlaintextMeta {
+            scale: Scale::Log(10),
             slots: SlotsKind::Real,
+            log_sparsity: 1,
         },
     };
     let key = key_layout(module.n(), b, layout.k().as_usize(), 1, 1, 1);

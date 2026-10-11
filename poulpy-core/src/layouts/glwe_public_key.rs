@@ -59,6 +59,7 @@ fn entry<D: Data, W: ZnxWord>(
         base2k,
         k,
         canonical: true,
+        plaintext_meta: None,
     }
 }
 

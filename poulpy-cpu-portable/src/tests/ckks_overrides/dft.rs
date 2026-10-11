@@ -227,7 +227,9 @@ use super::OverrideBackend;
 use poulpy_ckks::api::LtDiagonalMeta;
 use poulpy_ckks::layouts::{CKKSModuleAlloc, DFTMatrixPrepared};
 use poulpy_ckks::{CKKSCtBounds, CKKSResult as Result, SetCKKSInfos};
-use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos, LinearTransformation};
+use poulpy_core::layouts::{
+    GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos, LinearTransformation, SetGLWEPlaintextInfos,
+};
 use poulpy_core::reference::linear_transformation::DiagonalProd;
 use poulpy_hal::layouts::ScratchArena;
 use std::cell::{Cell, RefCell};

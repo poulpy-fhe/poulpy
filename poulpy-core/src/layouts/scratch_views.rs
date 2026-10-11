@@ -12,13 +12,13 @@ use crate::{
         GGLWEPreparedBackendRef, GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef, GGLWEToBackendMut, GGLWEToBackendRef,
         GGSW, GGSWBackendMut, GGSWBackendRef, GGSWInfos, GGSWPrepared, GGSWPreparedBackendMut, GGSWPreparedBackendRef,
         GGSWPreparedToBackendMut, GGSWPreparedToBackendRef, GGSWToBackendMut, GGSWToBackendRef, GLWE, GLWEBackendMut,
-        GLWEBackendRef, GLWEPlaintext, GLWESecret, GLWESecretBackendMut, GLWESecretBackendRef, GLWESecretPrepared,
-        GLWESecretPreparedBackendMut, GLWESecretPreparedBackendRef, GLWESecretPreparedToBackendMut,
-        GLWESecretPreparedToBackendRef, GLWESecretTensor, GLWESecretTensorBackendMut, GLWESecretTensorBackendRef,
-        GLWESecretTensorToBackendMut, GLWESecretTensorToBackendRef, GLWESecretToBackendMut, GLWESecretToBackendRef, GLWETensor,
-        GLWEToBackendMut, GLWEToBackendRef, LWE, LWEBackendMut, LWEBackendRef, LWEPlaintext, LWEPlaintextBackendMut,
-        LWEPlaintextBackendRef, LWEPlaintextToBackendMut, LWEPlaintextToBackendRef, LWEToBackendMut, LWEToBackendRef, Rank,
-        SetBase2k, SetGGLWEInfos, SetK, TorusPrecision,
+        GLWEBackendRef, GLWEPlaintext, GLWEPlaintextInfos, GLWEPlaintextMeta, GLWESecret, GLWESecretBackendMut,
+        GLWESecretBackendRef, GLWESecretPrepared, GLWESecretPreparedBackendMut, GLWESecretPreparedBackendRef,
+        GLWESecretPreparedToBackendMut, GLWESecretPreparedToBackendRef, GLWESecretTensor, GLWESecretTensorBackendMut,
+        GLWESecretTensorBackendRef, GLWESecretTensorToBackendMut, GLWESecretTensorToBackendRef, GLWESecretToBackendMut,
+        GLWESecretToBackendRef, GLWETensor, GLWEToBackendMut, GLWEToBackendRef, LWE, LWEBackendMut, LWEBackendRef, LWEPlaintext,
+        LWEPlaintextBackendMut, LWEPlaintextBackendRef, LWEPlaintextToBackendMut, LWEPlaintextToBackendRef, LWEToBackendMut,
+        LWEToBackendRef, Rank, SetBase2k, SetGGLWEInfos, SetGLWEPlaintextInfos, SetK, TorusPrecision,
     },
 };
 
@@ -329,7 +329,7 @@ impl<BE: Backend> LWEPlaintextToBackendMut<BE> for LWEPlaintextViewMut<'_, BE> {
 }
 
 macro_rules! impl_glwe_to_backend {
-    ($name:ident, |$this:ident| $canonical:expr, |$this_mut:ident, $flag:ident| $set_canonical:expr) => {
+    ($name:ident, |$this:ident| ($canonical:expr, $plaintext_meta:expr), |$this_mut:ident, $flag:ident| $set_canonical:expr) => {
         impl<'a, BE: Backend + 'a> GLWEToBackendRef<BE> for $name<'a, BE> {
             fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
                 let $this = self;
@@ -338,6 +338,7 @@ macro_rules! impl_glwe_to_backend {
                     base2k: self.inner.base2k,
                     k: self.inner.k,
                     canonical: $canonical,
+                    plaintext_meta: $plaintext_meta,
                     data: vec_znx_backend_ref_from_mut::<BE>(&self.inner.data),
                 }
             }
@@ -350,13 +351,14 @@ macro_rules! impl_glwe_to_backend {
 
             fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
                 let $this = &*self;
-                let canonical = $canonical;
+                let (canonical, plaintext_meta) = ($canonical, $plaintext_meta);
                 self.inner.record_noise(None);
                 GLWE {
                     noise: None,
                     base2k: self.inner.base2k,
                     k: self.inner.k,
                     canonical,
+                    plaintext_meta,
                     data: vec_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
                 }
             }
@@ -369,12 +371,41 @@ macro_rules! impl_glwe_to_backend {
     };
 }
 
-impl_glwe_to_backend!(GLWEViewMut, |this| this.inner.canonical, |this, canonical| this
-    .inner
-    .canonical =
-    canonical);
-impl_glwe_to_backend!(GLWEPlaintextViewMut, |_this| true, |_this, _canonical| ());
-impl_glwe_to_backend!(GLWETensorViewMut, |_this| true, |_this, _canonical| ());
+impl_glwe_to_backend!(
+    GLWEViewMut,
+    |this| (this.inner.canonical, this.inner.plaintext_meta),
+    |this, canonical| this.inner.canonical = canonical
+);
+impl_glwe_to_backend!(
+    GLWEPlaintextViewMut,
+    |this| (true, this.inner.plaintext_meta),
+    |_this, _canonical| ()
+);
+impl_glwe_to_backend!(GLWETensorViewMut, |_this| (true, Default::default()), |_this, _canonical| ());
+
+macro_rules! impl_plaintext_infos {
+    ($($name:ident),*) => {$(
+        impl<'a, BE: Backend + 'a> GLWEPlaintextInfos for $name<'a, BE> {
+            fn plaintext_meta(&self) -> Option<GLWEPlaintextMeta> {
+                self.inner.plaintext_meta
+            }
+        }
+    )*};
+}
+
+impl_plaintext_infos!(GLWEViewMut, GLWEViewRef, GLWEPlaintextViewMut);
+
+impl<BE: Backend> SetGLWEPlaintextInfos for GLWEViewMut<'_, BE> {
+    fn set_plaintext_meta(&mut self, meta: Option<GLWEPlaintextMeta>) {
+        self.inner.plaintext_meta = meta
+    }
+}
+
+impl<BE: Backend> SetGLWEPlaintextInfos for GLWEPlaintextViewMut<'_, BE> {
+    fn set_plaintext_meta(&mut self, meta: Option<GLWEPlaintextMeta>) {
+        self.inner.plaintext_meta = meta
+    }
+}
 
 impl<BE: Backend> GLWEToBackendRef<BE> for GLWEViewRef<'_, BE> {
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
@@ -383,6 +414,7 @@ impl<BE: Backend> GLWEToBackendRef<BE> for GLWEViewRef<'_, BE> {
             base2k: self.inner.base2k,
             k: self.inner.k,
             canonical: self.inner.canonical,
+            plaintext_meta: self.inner.plaintext_meta,
             data: vec_znx_backend_ref_from_ref::<BE>(&self.inner.data),
         }
     }

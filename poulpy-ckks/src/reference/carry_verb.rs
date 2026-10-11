@@ -15,7 +15,7 @@ use poulpy_hal::{
 };
 
 use crate::SlotsKind;
-use crate::{CKKSMeta, SetCKKSInfos, layouts::CKKSModuleAlloc};
+use crate::{GLWEPlaintextMeta, Scale, SetCKKSInfos, ckks_log_delta, layouts::CKKSModuleAlloc};
 
 /// Builds the backend-resident constant-`1.0` plaintext used by the
 /// add-one/sub-one facades.
@@ -27,14 +27,14 @@ where
     BE: Backend,
     M: CKKSModuleAlloc<BE> + ?Sized,
 {
-    let meta = CKKSMeta {
-        log_sparsity: 0,
-        log_delta: 1,
+    let meta = GLWEPlaintextMeta {
+        scale: Scale::Log(1),
         slots: SlotsKind::Real,
+        log_sparsity: 0,
     };
 
     // Monomial plaintext: total torus width is `log_delta` (budget 0).
-    let k_total: usize = meta.log_delta;
+    let k_total: usize = ckks_log_delta(&meta);
 
     // The constant is integer-exact: 1.0 at scale `2^log_delta` is the single
     // coefficient `1 << log_delta`, so its limbs are built on the host with the
@@ -46,7 +46,12 @@ where
         1,
         size,
     );
-    limbs.encode_vec_i64(base2k.as_usize(), 0, size * base2k.as_usize(), &[1i64 << meta.log_delta]);
+    limbs.encode_vec_i64(
+        base2k.as_usize(),
+        0,
+        size * base2k.as_usize(),
+        &[1i64 << ckks_log_delta(&meta)],
+    );
 
     let mut pt = module.ckks_pt_coeffs_alloc(1, base2k, k_total.into());
     pt.set_meta(meta);
@@ -221,6 +226,7 @@ macro_rules! ckks_carry_verb_reference {
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
                     CKKSPlaintextReference::[<ckks_ $verb _pt_vec_into_reference>](self, dst, pt, scratch)?;
+                    dst.set_log_sparsity(dst.log_sparsity().min(dst.log_n() - pt.log_n()));
                     dst.set_slots(dst.slots().join(pt.slots()));
                     Ok(())
                 }

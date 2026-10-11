@@ -18,16 +18,16 @@
 //! The crate uses a bivariate polynomial representation over the Torus
 //! (base-`2^{base2k}` digits) instead of the RNS representation used by
 //! most other CKKS libraries. Public precision management is exposed through
-//! [`CKKSMeta`]:
+//! the wrapped GLWE's [`GLWEPlaintextMeta`]:
 //!
-//! - `log_delta`: base-2 logarithm of the encoded plaintext scaling factor
+//! - `scale`: [`Scale::Log`] of the encoded plaintext scaling factor, `log_delta`
 //! - `log_sparsity`: base-2 logarithm of the slot replication
 //!
 //! Remaining homomorphic headroom, `log_budget`, is derived from the wrapped
 //! ciphertext or plaintext width as `k() - log_delta`; it is not stored in
-//! [`CKKSMeta`].
+//! [`GLWEPlaintextMeta`].
 //!
-//! [`CKKSMeta`] also records the [`SlotsKind`] of a value: whether its slots are
+//! [`GLWEPlaintextMeta`] also records the [`SlotsKind`] of a value: whether its slots are
 //! known to be real, or may carry an imaginary part. Operations compose that
 //! claim, keeping `Real` only when every operand is real, so a caller can state
 //! it once at encoding time and have the pipelines specialize on it.
@@ -63,8 +63,9 @@
 //! | [`api::CKKSPaCoOps`] | PaCo bootstrapping without ModUp or EvalMod; parameterized by [`layouts::PaCoPlan`] and a compiled [`layouts::PaCoContext`] |
 
 use poulpy_core::layouts::{
-    Base2K, Degree, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, TorusPrecision,
+    Base2K, Degree, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetK, TorusPrecision,
 };
+pub use poulpy_core::layouts::{GLWEPlaintextInfos, GLWEPlaintextMeta, Scale, SetGLWEPlaintextInfos, SlotsKind};
 use poulpy_hal::layouts::Backend;
 use poulpy_hal::layouts::CyclotomicOrder;
 use poulpy_hal::layouts::Module;
@@ -104,8 +105,10 @@ pub mod prelude {
     };
     pub use crate::layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, PolynomialApproximation};
     pub use crate::{
-        CKKSCompositionError, CKKSError, CKKSInfos, CKKSLayout, CKKSMeta, CKKSResult, CoeffsMeta, Quad, SetCKKSInfos, SlotsKind,
+        CKKSCompositionError, CKKSError, CKKSInfos, CKKSLayout, CKKSResult, CoeffsMeta, GLWEPlaintextInfos, GLWEPlaintextMeta,
+        Quad, Scale, SetCKKSInfos, SetGLWEPlaintextInfos, SlotsKind,
     };
+    pub use poulpy_core::layouts::SetK;
 }
 pub mod oep;
 pub mod polynomial;
@@ -172,85 +175,28 @@ impl<BE: Backend> CKKSModuleInfos for Module<BE> {
     }
 }
 
-/// Which subfield the encoded slots are known to live in.
-///
-/// The reals are a subring of the complexes, so the two variants are ordered
-/// claims rather than exclusive tags: [`SlotsKind::Real`] is the stronger one,
-/// [`SlotsKind::Complex`] is always sound. Operations compose the claim with
-/// [`SlotsKind::join`], which keeps `Real` only when every operand is `Real`.
-/// `Complex` is the default, so a value that never states its kind is never
-/// mistaken for a real one.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-pub enum SlotsKind {
-    /// Every slot has a zero imaginary part.
-    Real,
-    /// Slots may carry a nonzero imaginary part.
-    #[default]
-    Complex,
+/// `log_delta` of a CKKS scale.
+pub(crate) fn ckks_log_delta(meta: &GLWEPlaintextMeta) -> usize {
+    let Scale::Log(log_delta) = meta.scale;
+    log_delta
 }
 
-impl SlotsKind {
-    /// Kind of a value built from two operands: `Real` only when both are.
-    pub fn join(self, other: Self) -> Self {
-        match (self, other) {
-            (Self::Real, Self::Real) => Self::Real,
-            _ => Self::Complex,
-        }
-    }
-
-    /// Kind of a value that lies in both fields: `Complex` only when both are.
-    pub fn meet(self, other: Self) -> Self {
-        match (self, other) {
-            (Self::Complex, Self::Complex) => Self::Complex,
-            _ => Self::Real,
-        }
-    }
-
-    /// Whether the slots are known to be real.
-    pub fn is_real(self) -> bool {
-        self == Self::Real
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-/// CKKS semantic precision metadata carried by ciphertexts and plaintexts.
-///
-/// `log_delta` is the scaling precision of the encoded value. The remaining
-/// homomorphic headroom (`log_budget`) is *not* stored here: it is derived from
-/// the wrapped GLWE's torus width `k` as `log_budget = k - log_delta`.
-pub struct CKKSMeta {
-    /// Base 2 logarithm of the decimal precision.
-    pub log_delta: usize,
-    /// Sparse-packing factor: `log2` of the coefficient gap (equivalently, of the
-    /// slot replication). Dense packing has `N/2` complex slots in the standard
-    /// ring or `N` real slots in the conjugate invariant ring. With
-    /// `log_sparsity = s`, `M(X^{2^s})` carries `max_slots >> s` distinct slots,
-    /// each replicated `2^s` times.
-    ///
-    /// A plaintext may store its `M` compactly, at the degree
-    /// `ckks_pt_vec_alloc_compact` picks for its slot count; its own `n()` is
-    /// then below the ring degree and every consumer reads it through the ring
-    /// embedding. `log_sparsity` keeps counting the gap under the ring
-    /// embedding, `log2` of the replication among the ring slots,
-    /// whatever degree the plaintext is stored at.
-    pub log_sparsity: usize,
-    /// Subfield the slots are known to live in. See [`SlotsKind`].
-    pub slots: SlotsKind,
-}
-
-/// Common metadata accessors for CKKS ciphertext and plaintext containers.
+/// CKKS reading of the plaintext metadata, implemented by the CKKS containers
+/// only: a core GLWE is not a CKKS operand.
 ///
 /// This trait exposes the semantic precision of a value independently from the
 /// raw limb storage used by the underlying torus representation. `log_budget` is
 /// derived from the container's torus width `k` (from the wrapped GLWE) and
-/// `log_delta`, so it is only available on containers, not on a bare [`CKKSMeta`].
-pub trait CKKSInfos: LWEInfos {
-    /// Returns the complete metadata pair.
-    fn meta(&self) -> CKKSMeta;
+/// `log_delta`, so it is only available on containers, not on a bare [`GLWEPlaintextMeta`].
+pub trait CKKSInfos: LWEInfos + GLWEPlaintextInfos {
+    /// Returns the plaintext metadata; unset metadata reads as the default.
+    fn meta(&self) -> GLWEPlaintextMeta {
+        self.plaintext_meta().unwrap_or_default()
+    }
 
     /// Returns the base-2 logarithm of the encoded decimal scaling factor.
     fn log_delta(&self) -> usize {
-        self.meta().log_delta
+        ckks_log_delta(&self.meta())
     }
 
     /// Returns the base-2 logarithm of the remaining homomorphic capacity,
@@ -258,37 +204,23 @@ pub trait CKKSInfos: LWEInfos {
     fn log_budget(&self) -> usize {
         self.k().as_usize().saturating_sub(self.log_delta())
     }
-
-    /// Returns the sparse-packing factor (`log2` of the coefficient gap / slot
-    /// replication); `0` is dense. See [`CKKSMeta::log_sparsity`].
-    fn log_sparsity(&self) -> usize {
-        self.meta().log_sparsity
-    }
-
-    /// Returns the subfield the slots are known to live in. See [`SlotsKind`].
-    fn slots(&self) -> SlotsKind {
-        self.meta().slots
-    }
 }
 
-/// Mutable CKKS metadata access for ciphertext/plaintext containers.
-pub trait SetCKKSInfos: CKKSInfos {
-    /// Replaces the semantic CKKS metadata (`log_delta`, `log_sparsity`). Does not
-    /// touch the wrapped GLWE's torus width `k`, so `log_budget` is re-derived
-    /// against the (unchanged) `k`. Use [`Self::set_log_delta`] to relabel the
-    /// scale while preserving `log_budget`.
-    fn set_meta(&mut self, meta: CKKSMeta);
-
-    /// Sets the wrapped GLWE's torus width `k` (the total `log_delta + log_budget`).
-    fn set_k(&mut self, k: TorusPrecision);
+/// Mutable CKKS metadata access, implemented for every [`CKKSInfos`] container
+/// that can set its metadata and `k`.
+pub trait SetCKKSInfos: CKKSInfos + SetGLWEPlaintextInfos + SetK {
+    /// Replaces the plaintext metadata. Does not touch the wrapped GLWE's torus
+    /// width `k`, so `log_budget` is re-derived against the (unchanged) `k`. Use
+    /// [`Self::set_log_delta`] to relabel the scale while preserving `log_budget`.
+    fn set_meta(&mut self, meta: GLWEPlaintextMeta) {
+        self.set_plaintext_meta(Some(meta));
+    }
 
     /// Updates only the base-2 logarithm of the encoded scaling factor, preserving
     /// `log_budget` by shifting the torus width `k` accordingly.
     fn set_log_delta(&mut self, log_delta: usize) {
         let log_budget = self.log_budget();
-        let mut meta = self.meta();
-        meta.log_delta = log_delta;
-        self.set_meta(meta);
+        self.set_scale(Scale::Log(log_delta));
         self.set_k((log_budget + log_delta).into());
     }
 
@@ -297,32 +229,20 @@ pub trait SetCKKSInfos: CKKSInfos {
     fn set_log_budget(&mut self, log_budget: usize) {
         self.set_k((log_budget + self.log_delta()).into());
     }
-
-    /// Updates only the sparse-packing factor. See [`CKKSMeta::log_sparsity`].
-    fn set_log_sparsity(&mut self, log_sparsity: usize) {
-        let mut meta = self.meta();
-        meta.log_sparsity = log_sparsity;
-        self.set_meta(meta);
-    }
-
-    /// Updates only the slot kind. See [`SlotsKind`].
-    fn set_slots(&mut self, slots: SlotsKind) {
-        let mut meta = self.meta();
-        meta.slots = slots;
-        self.set_meta(meta);
-    }
 }
+
+impl<T: CKKSInfos + SetGLWEPlaintextInfos + SetK + ?Sized> SetCKKSInfos for T {}
 
 /// Allocation / precision spec for a CKKS value.
 ///
 /// Bundles a core [`GLWELayout`] — which carries `n`, `base2k`, the torus width
-/// `k`, and `rank` — with the [`CKKSMeta`] (`log_delta`, `log_sparsity`). The
+/// `k`, and `rank` — with the [`GLWEPlaintextMeta`]. The
 /// budget is derived as `log_budget = k - log_delta`, so `k` lives in the GLWE
 /// layout exactly as it does on a wrapped ciphertext/plaintext.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CKKSLayout {
     pub glwe_layout: GLWELayout,
-    pub meta: CKKSMeta,
+    pub meta: GLWEPlaintextMeta,
 }
 
 /// Coefficient metadata for plan-compiled operands: the DFT factor diagonals
@@ -331,7 +251,7 @@ pub struct CKKSLayout {
 /// ([`polynomial::EncodeBSGS`]).
 ///
 /// The reduced form of a [`CKKSLayout`]: only the torus width `k` the operand
-/// plaintexts are allocated with and the [`CKKSMeta`] they are stamped with.
+/// plaintexts are allocated with and the [`GLWEPlaintextMeta`] they are stamped with.
 /// Plans carry no ring or radix information — `n` follows the module and
 /// `base2k` is passed explicitly at compile time — so there is nothing to fill
 /// with placeholders.
@@ -339,36 +259,35 @@ pub struct CKKSLayout {
 pub struct CoeffsMeta {
     /// Torus width the operand plaintexts are allocated with.
     pub k: TorusPrecision,
-    /// CKKS metadata (`log_delta`, `log_sparsity`) the operands are stamped with.
-    pub meta: CKKSMeta,
+    /// Plaintext metadata the operands are stamped with.
+    pub meta: GLWEPlaintextMeta,
 }
 
 impl CoeffsMeta {
-    /// Dense (`log_sparsity = 0`) coefficient meta with
-    /// `k = log_delta + log_budget`.
+    /// Coefficient meta with `k = log_delta + log_budget`.
     pub fn from_delta_budget(log_delta: usize, log_budget: usize) -> Self {
         Self {
             k: (log_delta + log_budget).into(),
-            meta: CKKSMeta {
-                log_delta,
-                log_sparsity: 0,
+            meta: GLWEPlaintextMeta {
+                scale: Scale::Log(log_delta),
                 slots: SlotsKind::Complex,
+                log_sparsity: 0,
             },
         }
     }
 
     /// The operand encoding scale.
     pub fn log_delta(&self) -> usize {
-        self.meta.log_delta
+        ckks_log_delta(&self.meta)
     }
 
     /// The operand headroom: `k − log_delta` (saturating).
     pub fn log_budget(&self) -> usize {
-        usize::from(self.k).saturating_sub(self.meta.log_delta)
+        usize::from(self.k).saturating_sub(self.log_delta())
     }
 }
 
-/// Narrowing conversion: keeps `k` and the [`CKKSMeta`], drops the ring/radix
+/// Narrowing conversion: keeps `k` and the [`GLWEPlaintextMeta`], drops the ring/radix
 /// fields plans never consume.
 impl From<CKKSLayout> for CoeffsMeta {
     fn from(layout: CKKSLayout) -> Self {
@@ -403,11 +322,13 @@ impl GLWEInfos for CKKSLayout {
     }
 }
 
-impl CKKSInfos for CKKSLayout {
-    fn meta(&self) -> CKKSMeta {
-        self.meta
+impl GLWEPlaintextInfos for CKKSLayout {
+    fn plaintext_meta(&self) -> Option<GLWEPlaintextMeta> {
+        Some(self.meta)
     }
 }
+
+impl CKKSInfos for CKKSLayout {}
 
 /// Bits a binary add/sub must shift its result down to fit `res`: the excess of
 /// the **natural result width** — `min(log_delta) + min(log_budget)`, the meta
@@ -567,10 +488,10 @@ mod offset_tests {
                 k: (log_delta + log_budget).into(),
                 rank: Rank(1),
             },
-            meta: CKKSMeta {
-                log_delta,
-                log_sparsity: 0,
+            meta: GLWEPlaintextMeta {
+                scale: Scale::Log(log_delta),
                 slots: SlotsKind::Complex,
+                log_sparsity: 0,
             },
         }
     }

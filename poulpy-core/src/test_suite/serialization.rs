@@ -280,6 +280,8 @@ where
     // column counts. Reject the header before it replaces the trusted shape.
     let mut glwe_header = none_prefix.clone();
     glwe_header.extend(BASE2K.0.to_le_bytes());
+    // Unset plaintext metadata.
+    glwe_header.push(0);
     for value in [0u64, 1u64 << 32, 1, 0] {
         glwe_header.extend(value.to_le_bytes());
     }

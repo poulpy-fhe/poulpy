@@ -23,13 +23,14 @@
 //! the SlotToCoeff chain. Grouping radices `g ∈ {1, 2}` cover both the
 //! one-layer-per-factor and merged schedules.
 
+use crate::Scale;
 use std::collections::HashMap;
 
 use anyhow::ensure;
 
 use crate::SlotsKind;
 use crate::{
-    CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos,
+    CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos,
     api::{CKKSEncodingOps, CKKSLinearTransformationOps},
     encoding::paco::cpx::Cpx,
     layouts::ComplexDiagonals,
@@ -76,10 +77,10 @@ fn chain_params(base: &CKKSTestParams, num_factors: usize) -> CKKSTestParams {
         n: base.n,
         base2k: base.base2k,
         k: (log_delta * (num_factors + 3)).next_multiple_of(base.base2k),
-        prec_meta: CKKSMeta {
-            log_sparsity: 0,
-            log_delta,
+        prec_meta: GLWEPlaintextMeta {
+            scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,
+            log_sparsity: 0,
         },
         prec_log_budget: 10,
         hw: base.hw.min(base.n / 2),
@@ -114,20 +115,18 @@ where
     let mut scratch = alloc_scratch(&params, &module);
 
     // Factor plaintext layout: per-factor scale log_delta; sub-`N/2` factors
-    // are gap-mapped sparse encodings (tiled slot values), tracked via
-    // log_sparsity. Chains may mix dimensions (the fused StC first factor is
-    // a 2C tile, the remaining Decode factors C/2), so the encoder and layout
-    // are built per factor.
+    // are stored compactly (tiled slot values). Chains may mix dimensions (the
+    // fused StC first factor is a 2C tile, the remaining Decode factors C/2),
+    // so the layout is built per factor.
     let lts: Vec<_> = factors
         .iter()
         .map(|cd| {
-            let m_dim = cd.slots();
             let factor_layout = CoeffsMeta {
                 k: TorusPrecision((log_delta + 10) as u32),
-                meta: CKKSMeta {
-                    log_sparsity: (m_full / m_dim).trailing_zeros() as usize,
-                    log_delta,
+                meta: GLWEPlaintextMeta {
+                    scale: Scale::Log(log_delta),
                     slots: SlotsKind::Complex,
+                    log_sparsity: 0,
                 },
             };
             crate::reference::ckks_encode_linear_transformation_from_diagonals(
@@ -189,10 +188,10 @@ where
     let want_im: Vec<F> = w.iter().map(|x| x.im).collect();
 
     let mut pt_want = module.ckks_pt_vec_alloc(ct.base2k(), ct.k());
-    pt_want.set_meta(CKKSMeta {
-        log_sparsity: ct.log_sparsity(),
-        log_delta: ct.log_delta(),
+    pt_want.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(ct.log_delta()),
         slots: SlotsKind::Complex,
+        log_sparsity: 0,
     });
     encoder_full.encode_reim(&mut pt_want, &want_re, &want_im).unwrap();
     let noise = module.glwe_noise(&ct, &pt_want, &sk, &mut scratch.borrow()).std().log2();

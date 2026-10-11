@@ -1,5 +1,6 @@
 //! Encapsulated modulus raising and the bootstrapping pipeline, including
 //! optimized and fallback shapes.
+use crate::{Scale, ckks_log_delta};
 use std::collections::HashMap;
 
 use super::{
@@ -7,7 +8,7 @@ use super::{
     keys::{fixture_gglwe, key_layout, prepared_automorphism_key, prepared_gglwe, prepared_tensor_key},
 };
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSMeta, CoeffsMeta, SlotsKind,
+    CKKSCtBounds, CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotsKind,
     api::{CKKSAllOpsTmpBytes, CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
     layouts::{
         BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan,
@@ -56,10 +57,10 @@ where
                 k: small.into(),
                 rank: params.rank.into(),
             },
-            meta: CKKSMeta {
-                log_delta: b,
-                log_sparsity: 1,
+            meta: GLWEPlaintextMeta {
+                scale: Scale::Log(b),
                 slots: SlotsKind::Complex,
+                log_sparsity: 1,
             },
         };
         let dst_layout = CKKSLayout {
@@ -98,8 +99,8 @@ where
             if result.is_ok() {
                 assert_eq!(
                     dst.meta(),
-                    CKKSMeta {
-                        log_delta: src_layout.meta.log_delta + scale,
+                    GLWEPlaintextMeta {
+                        scale: Scale::Log(ckks_log_delta(&src_layout.meta) + scale),
                         ..src_layout.meta
                     }
                 );
@@ -223,10 +224,10 @@ fn ct_layout(n: usize, base2k: usize, k: usize, log_delta: usize, slots: SlotsKi
             k: k.into(),
             rank: 1usize.into(),
         },
-        meta: CKKSMeta {
-            log_delta,
-            log_sparsity: 0,
+        meta: GLWEPlaintextMeta {
+            scale: Scale::Log(log_delta),
             slots,
+            log_sparsity: 0,
         },
     }
 }

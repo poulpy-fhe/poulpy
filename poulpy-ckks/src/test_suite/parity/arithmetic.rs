@@ -1,6 +1,7 @@
 //! Exact arithmetic parity on canonical coefficients, independent of encryption.
 use super::helpers::*;
-use crate::{CKKSInfos, CKKSLayout, CKKSMeta, SlotsKind, api::CKKSModuleInfos, oep::*, test_suite::CKKSTestParams};
+use crate::Scale;
+use crate::{CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SlotsKind, api::CKKSModuleInfos, oep::*, test_suite::CKKSTestParams};
 use poulpy_core::{GLWEAdd, GLWEMaskFill, layouts::*, oep::GLWENormalizeImpl};
 use poulpy_hal::layouts::{Backend, Module};
 
@@ -22,10 +23,10 @@ pub fn layout(params: CKKSTestParams, rank: usize, k: usize, delta: usize, spars
             k: k.into(),
             rank: rank.into(),
         },
-        meta: CKKSMeta {
-            log_delta: delta,
-            log_sparsity: sparse,
+        meta: GLWEPlaintextMeta {
+            scale: Scale::Log(delta),
             slots,
+            log_sparsity: sparse,
         },
     }
 }

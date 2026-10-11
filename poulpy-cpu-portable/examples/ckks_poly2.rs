@@ -20,8 +20,9 @@
 //! 6. `verification`
 
 use anyhow::Result;
+use poulpy_ckks::Scale;
 use poulpy_ckks::{
-    CKKSInfos, CKKSLayout, CKKSMeta, CoeffsMeta, SetCKKSInfos, SlotsKind,
+    CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::CKKSEncodingHostOps,
     api::{CKKSAllOpsTmpBytes, CKKSDecryptOps, CKKSEncryptOps, CKKSPolynomialEvaluationOps},
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
@@ -67,10 +68,10 @@ const PREC_CT: CKKSLayout = CKKSLayout {
         k: TorusPrecision(45 + 5),
         rank: Rank(1),
     },
-    meta: CKKSMeta {
-        log_sparsity: 0,
-        log_delta: 45,
+    meta: GLWEPlaintextMeta {
+        scale: Scale::Log(45),
         slots: SlotsKind::Complex,
+        log_sparsity: 0,
     },
 };
 
@@ -79,10 +80,10 @@ const PREC_CT: CKKSLayout = CKKSLayout {
 /// follows the module, `base2k` is passed at encode time).
 const COEFF_META: CoeffsMeta = CoeffsMeta {
     k: TorusPrecision(45 + 1),
-    meta: CKKSMeta {
-        log_sparsity: 0,
-        log_delta: 45,
+    meta: GLWEPlaintextMeta {
+        scale: Scale::Log(45),
         slots: SlotsKind::Complex,
+        log_sparsity: 0,
     },
 };
 const ABS_ERROR_TOLERANCE: f64 = 5e-5;

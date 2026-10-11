@@ -227,6 +227,7 @@ pub fn download_glwe<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>>(
         k: src.k,
         base2k: src.base2k,
         canonical: src.canonical,
+        plaintext_meta: src.plaintext_meta,
     }
 }
 
@@ -247,6 +248,7 @@ pub fn download_glwe_plaintext<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = 
     GLWEPlaintext {
         data: poulpy_hal::layouts::VecZnx::from_shape(AlignedBuf::from(BE::to_host_bytes(src.data.data())), shape),
         k: src.k,
+        plaintext_meta: src.plaintext_meta,
         base2k: src.base2k,
     }
 }

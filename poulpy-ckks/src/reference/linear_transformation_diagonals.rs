@@ -9,13 +9,14 @@
 
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{
-    Base2K, DiagonalArithmetic, LinearTransformationDiagonal, LinearTransformationGiantStep, LinearTransformationStrategy,
+    Base2K, DiagonalArithmetic, GLWEPlaintextInfos, LinearTransformationDiagonal, LinearTransformationGiantStep,
+    LinearTransformationStrategy,
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::api::CKKSModuleInfos;
 use crate::{
-    CKKSInfos, CoeffsMeta,
+    CoeffsMeta,
     api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, LinearTransformation},
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
 };

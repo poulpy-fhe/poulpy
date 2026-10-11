@@ -633,8 +633,8 @@ fn test_glwe_public_key_rank1_golden() {
     use poulpy_cpu_oracle::test_suite::{ControlledSamplingFFT64Oracle, ControlledSamplingNTT4x30Oracle};
     // Pins the discrete-Gaussian sampler and PNM3 component-noise wire format.
     // Digests cover the public key, encryption of a message, and encryption of zero.
-    const FFT64: [u64; 3] = [15206321185833343840, 16014056909502571106, 12098182843825841058];
-    const NTT4X30: [u64; 3] = [3710393567399427478, 13637453161361644367, 8699844452920164836];
+    const FFT64: [u64; 3] = [9615310425194628740, 1969118651227205468, 6537548132563225856];
+    const NTT4X30: [u64; 3] = [9915393708676454290, 9177372829677904665, 15298276994712787542];
     assert_eq!(
         (
             glwe_public_key_rank1_digests(&Module::<FFT64Portable>::new(256), 17),
@@ -1716,7 +1716,7 @@ mod ckks_noncanonical_compact_dst {
     use crate::FFT64Portable;
     use poulpy_ckks::api::{CKKSAddOps, CKKSCopyOps, CKKSImagOps, CKKSNegOps, CKKSPow2Ops, CKKSSubOps};
     use poulpy_ckks::layouts::{CKKSCiphertextOwned, CKKSModuleAlloc};
-    use poulpy_ckks::{CKKSMeta, SetCKKSInfos};
+    use poulpy_ckks::{GLWEPlaintextMeta, Scale, SetCKKSInfos};
     use poulpy_core::layouts::{GLWELayout, GLWEToBackendMut};
     use poulpy_core::{GLWECopy, GLWENormalize};
     use poulpy_hal::api::{ScratchOwnedAlloc, ScratchOwnedBorrow};
@@ -1729,8 +1729,8 @@ mod ckks_noncanonical_compact_dst {
             k: k.into(),
             rank: 1u32.into(),
         });
-        ct.set_meta(CKKSMeta {
-            log_delta: 16,
+        ct.set_meta(GLWEPlaintextMeta {
+            scale: Scale::Log(16),
             ..Default::default()
         });
         ct
