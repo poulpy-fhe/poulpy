@@ -6,13 +6,13 @@ use std::{
 };
 
 use poulpy_ckks::{
-    CKKSCompositionError, CKKSInfos, CKKSLayout, CKKSModuleInfos, CKKSResult, GLWEPlaintextMeta, Scale, SetCKKSInfos,
-    SetGLWEPlaintextInfos,
+    CKKSCompositionError, CKKSInfos, CKKSLayout, CKKSModuleInfos, CKKSResult, GLWEPlaintextInfos, GLWEPlaintextMeta, Scale,
+    SetCKKSInfos, SetGLWEPlaintextInfos, SlotsKind,
     api::LinearTransformationPrepared,
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
     test_suite::{
         CKKSTestParams,
-        helpers::{TestContextBackend, TestContextSharedModule, TestScalar, assert_decrypt_precision, ckks_encrypt},
+        helpers::{TestContextBackend, TestContextSharedModule, TestScalar, assert_decrypt_precision_at_log_delta, ckks_encrypt},
         parity::helpers::{Snapshot, snapshot, with_scratch},
         reference_encoder::ReferenceEncoder,
     },
@@ -29,7 +29,9 @@ use poulpy_hal::{
     layouts::{Backend, Data, HostBytesBackend, HostDataMut, HostDataRef, Module, Ring, ScratchArena, ZnxWord},
 };
 
-use crate::layouts::{BlasCiphertext, BlasCiphertextOwned, BlasGridInfos, BlasLayout, BlasModuleAlloc, grid::split_into_blocks};
+use crate::layouts::{
+    BlasCiphertext, BlasCiphertextOwned, BlasGridInfos, BlasLayout, BlasModuleAlloc, grid::split_into_blocks, layout_of,
+};
 
 /// One complex `rows d x cols d` matrix per lane, `d = 2^log_d`: lane `s`, entry `(r, c)` at
 /// `(s * rows * d + r) * cols * d + c`.
@@ -223,7 +225,54 @@ where
     module.blas_ciphertext_alloc_from_infos(&BlasLayout::new(block, log_d, rows, cols))
 }
 
-/// Decrypts every block of `ct` and checks it against `want` at the block's precision; every functional test ends here.
+/// The layout of a `rows x cols` result whose blocks take `a`'s at torus width `k` and slot kind `slots`.
+fn result_layout(a: &impl BlasGridInfos, rows: usize, cols: usize, k: usize, slots: SlotsKind) -> BlasLayout {
+    let mut block = a.block_layout();
+    block.glwe_layout.k = k.into();
+    block.meta.slots = slots;
+    BlasLayout::new(block, a.log_d(), rows, cols)
+}
+
+/// The metadata a copy or a rotation of `a` gives a `rows x cols` result written into blocks of width `res_k`: `a`'s
+/// layout at `min(res_k, a.k)`.
+pub fn copied_layout(a: &impl BlasGridInfos, rows: usize, cols: usize, res_k: usize) -> BlasLayout {
+    let block = a.block_layout();
+    result_layout(a, rows, cols, res_k.min(block.k().as_usize()), block.slots())
+}
+
+/// The metadata a map of scale `scale`, a context map or a public operand, on `a` gives a `rows x cols` result written
+/// into blocks of width `res_k`: `a`'s layout at `min(res_k, a.k - scale)`, its slots joined with the maps' `Real`.
+pub fn mapped_layout(a: &impl BlasGridInfos, rows: usize, cols: usize, res_k: usize, scale: usize) -> BlasLayout {
+    let block = a.block_layout();
+    let k = res_k.min(block.k().as_usize() - scale);
+    result_layout(a, rows, cols, k, block.slots().join(SlotsKind::Real))
+}
+
+/// The metadata today's product of `a` and `b` gives a `rows x cols` result written into blocks of width `res_k`. Its
+/// terms multiply operands that maps narrowed by `consumed` bits, so: poulpy-ckks's ct x ct rule on those operands, the
+/// smaller label, and the slots of both joined with the maps' `Real`.
+pub fn product_layout(
+    a: &impl BlasGridInfos,
+    b: &impl BlasGridInfos,
+    rows: usize,
+    cols: usize,
+    res_k: usize,
+    consumed: usize,
+) -> BlasLayout {
+    let (la, lb) = (a.block_layout(), b.block_layout());
+    let (da, db) = (la.log_delta(), lb.log_delta());
+    let budget = (la.k().as_usize() - consumed - da).min(lb.k().as_usize() - consumed - db) - da.max(db);
+    let slots = la.slots().join(lb.slots()).join(SlotsKind::Real);
+    let mut layout = result_layout(a, rows, cols, res_k.min(da.min(db) + budget), slots);
+    layout.block.meta.scale = Scale::Log(da.min(db));
+    layout.block.meta.log_sparsity = la.log_sparsity().min(lb.log_sparsity());
+    layout
+}
+
+/// Decrypts every block of `ct` and checks it against `want`; every functional test ends here. First the metadata
+/// against `layout`, from [`copied_layout`], [`mapped_layout`] or [`product_layout`]: the grid's shape, every block's
+/// label, layout and empty noise tag, and the grid's record of the batch the label proves. Then the values, at
+/// `layout`'s `log_delta`, so a result left unwritten or stamped at another scale fails.
 pub fn assert_grid_decrypt<BE, F, E>(
     label: &str,
     params: &CKKSTestParams,
@@ -232,6 +281,7 @@ pub fn assert_grid_decrypt<BE, F, E>(
     ct: &BlasCiphertextOwned<BE>,
     sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     want: &Grid,
+    layout: &BlasLayout,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: TestContextBackend,
@@ -241,13 +291,19 @@ pub fn assert_grid_decrypt<BE, F, E>(
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
-    assert_eq!(
-        (ct.log_d(), ct.rows(), ct.cols()),
-        (want.log_d, want.rows, want.cols),
-        "{label}: grid shape"
-    );
+    let shape = (layout.log_d, layout.rows, layout.cols);
+    assert_eq!((ct.log_d(), ct.rows(), ct.cols()), shape, "{label}: grid shape");
+    assert_eq!((want.log_d, want.rows, want.cols), shape, "{label}: model shape");
+    let want_block = layout.block;
+    for (b, block) in ct.blocks().iter().enumerate() {
+        assert_eq!(block.log_sparsity(), want_block.log_sparsity(), "{label} block {b}: label");
+        assert_eq!(layout_of(block), want_block, "{label} block {b}: layout");
+        assert!(block.noise().is_none(), "{label} block {b}: kept a noise tag");
+    }
+    let batch = ((params.n / 2) >> want_block.log_sparsity()) >> (2 * layout.log_d);
+    assert_eq!(ct.mat_slots(), Some(batch), "{label}: batch record");
     for (b, (block, (re, im))) in ct.blocks().iter().zip(want.blocks(params.n / 2)).enumerate() {
-        assert_decrypt_precision::<BE, F, E>(
+        assert_decrypt_precision_at_log_delta::<BE, F, E>(
             &format!("{label} block {b}"),
             params,
             module,
@@ -256,6 +312,7 @@ pub fn assert_grid_decrypt<BE, F, E>(
             sk,
             &to_f::<F>(&re),
             &to_f::<F>(&im),
+            want_block.log_delta(),
             scratch,
         );
     }

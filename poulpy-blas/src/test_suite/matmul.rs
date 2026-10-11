@@ -24,8 +24,8 @@ use super::helpers::{
     Grid,
     Rejection::{InvalidPlan, MissingKey, MissingTensorKey},
     TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, assert_guard_on, assert_short_scratch, assert_short_scratch_on,
-    blas_context, context_and_keys, encrypt_grid, foreign_contexts, grid_snapshot, map_galois_elements, rejected_grids, relabel,
-    rotation_keys,
+    blas_context, context_and_keys, encrypt_grid, foreign_contexts, grid_snapshot, map_galois_elements, mapped_layout,
+    product_layout, rejected_grids, relabel, rotation_keys,
 };
 use crate::{
     api::BlasMatMulOps,
@@ -109,6 +109,7 @@ pub fn test_blas_matmul<BE, F, E>(
         &res,
         &sk,
         &a.matmul(&b),
+        &product_layout(&ct_a, &ct_b, m, n, params.k, 2 * params.prec().log_delta()),
         &mut scratch.borrow(),
     );
 
@@ -220,6 +221,7 @@ pub fn test_blas_matmul_pt<BE, F, E>(
             &res,
             &sk,
             &a.matmul_public(n, *count, public_entry),
+            &mapped_layout(&ct, m, n, res_k, params.prec().log_delta()),
             &mut scratch.borrow(),
         );
     }

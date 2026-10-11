@@ -15,8 +15,8 @@ use poulpy_hal::{
 use super::helpers::{
     Grid,
     Rejection::{InvalidPlan, MissingKey},
-    TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, assert_short_scratch, encrypt_grid, rejected_grids, relabel,
-    rotation_keys,
+    TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, assert_short_scratch, copied_layout, encrypt_grid, rejected_grids,
+    relabel, rotation_keys,
 };
 use crate::{
     api::BlasMatInterOps,
@@ -76,6 +76,7 @@ pub fn test_blas_rotate<BE, F, E>(
             &res,
             &sk,
             &a.rotate_lanes(r),
+            &copied_layout(&ct, 2, 2, res_k),
             &mut scratch.borrow(),
         );
     }
@@ -125,6 +126,7 @@ where
             &res,
             &sk,
             &a.sum_lanes(),
+            &copied_layout(&ct, 2, 2, res_k),
             &mut scratch.borrow(),
         );
     }

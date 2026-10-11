@@ -1,7 +1,7 @@
 //! The metadata operations leave on their results: the batch's sparsity and record, the noise tag and the slot kind.
 
 use poulpy_ckks::{
-    GLWEPlaintextInfos, SetCKKSInfos, SlotsKind,
+    CKKSInfos, GLWEPlaintextInfos, SetCKKSInfos, SlotsKind,
     api::{CKKSAddOps, CKKSEncodingOps, CKKSLinearTransformationOps},
     layouts::CKKSModuleAlloc,
     test_suite::{
@@ -16,40 +16,29 @@ use poulpy_ckks::{
 use poulpy_core::layouts::{DiagonalArithmetic, LWEInfos};
 use poulpy_hal::{
     api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{
-        CyclotomicOrder, Data, HostBytesBackend, HostDataMut, HostDataRef, Module, Ring, ScratchArena, ScratchOwned, Standard,
-        ZnxWord,
-    },
+    layouts::{CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchArena, ScratchOwned, Standard},
 };
 
 use super::helpers::{
-    Grid, Rejection::InvalidPlan, TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, context_and_keys, encrypt_grid,
-    relabel, to_f,
+    Grid, Rejection::InvalidPlan, TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, context_and_keys, copied_layout,
+    encrypt_grid, mapped_layout, product_layout, relabel, to_f,
 };
 use crate::{
     api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
     layouts::{
-        BlasCiphertext, BlasGridInfos, BlasMatMulLeft, BlasMatMulRight, BlasModuleAlloc, BlasPtOperandUnprepared,
-        sum_galois_elements,
+        BlasCiphertext, BlasCiphertextOwned, BlasGridInfos, BlasLayout, BlasMatMulLeft, BlasMatMulRight, BlasModuleAlloc,
+        BlasPtOperandUnprepared, sum_galois_elements,
     },
     oep::BlasImpl,
 };
 
-/// Asserts `g` records `mat_slots` matrices and every block has sparsity `log_sparsity` and no noise tag.
-fn assert_meta<DG: Data, W: ZnxWord, R: Ring>(label: &str, g: &BlasCiphertext<DG, W, R>, log_sparsity: usize, mat_slots: usize) {
-    assert_eq!(g.mat_slots(), Some(mat_slots), "{label}: mat_slots");
-    for block in g.blocks() {
-        assert_eq!(block.log_sparsity(), log_sparsity, "{label}: log_sparsity");
-        assert!(block.noise().is_none(), "{label}: kept a noise tag");
-    }
-}
-
-/// Every per-matrix map and the matrix-slot rotation give their result the sparsity and the batch record of their
-/// input, whatever `res` held: transpose, row and column rotations across blocks, within one block and by whole
-/// blocks, the operand preparations, the product by public matrices and the rotation, from a half-full batch into a
-/// fresh grid and from a full batch into a grid labelled and recorded half full. Summing a transposed half-full batch
-/// adds each of its matrices once and records them. Copies, the shifts by whole blocks and the sum of one matrix leave
-/// no noise tag, and transpose keeps real slots real. On one matrix slot no batch is half full: only the full one runs.
+/// Every per-matrix map, the matrix-slot rotation and the sum give their result the metadata [`copied_layout`] or
+/// [`mapped_layout`] derives from their input, whatever `res` held, and the values of their cleartext model: transpose, row and
+/// column rotations across blocks, within one block and by whole blocks, the operand preparations (sigma and tau of
+/// every block), the product by public matrices and the rotation, from a half-full batch into a fresh grid and from a
+/// full batch into a grid labelled and recorded half full. Summing a transposed half-full batch adds each of its
+/// matrices once and records them. The sum of one matrix copies it, and the transpose of a real batch keeps its slots
+/// real. On one matrix slot no batch is half full: only the full one runs.
 pub fn test_blas_result_meta<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -65,17 +54,19 @@ pub fn test_blas_result_meta<BE, F, E>(
 {
     let slots = params.n / 2;
     let (d, lanes) = (1 << log_d, slots >> (2 * log_d));
+    let (k, p) = (params.k, params.prec().log_delta());
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
     let (ctx, mut atks) = context_and_keys::<BE, F>(&params, module, log_d, &sk_raw, &mut scratch.borrow());
+    let entry = |m: usize, r: usize, c: usize| ((m + r * 4 + c) * 3 % 5) as f64 / 4.0 - 0.5;
     let pt = BlasPtOperandUnprepared::encode::<F>(
         module,
         log_d,
         2,
         1,
         1,
-        |m, r, c| F::from_f64(((m + r * 4 + c) * 3 % 5) as f64 / 4.0 - 0.5).unwrap(),
+        |m, r, c| F::from_f64(entry(m, r, c)).unwrap(),
         params.base2k.into(),
         params.prec().into(),
         &mut scratch.borrow(),
@@ -97,15 +88,19 @@ pub fn test_blas_result_meta<BE, F, E>(
             scratch,
         )
     };
+    let full = (Grid::model(log_d, 1, 2, lanes, 3), Grid::model(log_d, 2, 1, lanes, 4));
     let (full_row, full_column) = (
-        encrypt(&Grid::model(log_d, 1, 2, lanes, 3), 0, &mut scratch.borrow()),
-        encrypt(&Grid::model(log_d, 2, 1, lanes, 4), 0, &mut scratch.borrow()),
+        encrypt(&full.0, 0, &mut scratch.borrow()),
+        encrypt(&full.1, 0, &mut scratch.borrow()),
     );
     let one_log_sparsity = lanes.ilog2() as usize;
-    let one = encrypt(&Grid::model(log_d, 1, 2, 1, 5), one_log_sparsity, &mut scratch.borrow());
-    let mut real = Grid::model(log_d, 1, 2, lanes, 6);
-    real.im.fill(0.0);
-    let real = relabel(&encrypt(&real, 0, &mut scratch.borrow()), |meta| meta.slots = SlotsKind::Real);
+    let one_model = Grid::model(log_d, 1, 2, 1, 5);
+    let one = encrypt(&one_model, one_log_sparsity, &mut scratch.borrow());
+    let mut real_model = Grid::model(log_d, 1, 2, lanes, 6);
+    real_model.im.fill(0.0);
+    let real = relabel(&encrypt(&real_model, 0, &mut scratch.borrow()), |meta| {
+        meta.slots = SlotsKind::Real
+    });
     let order = module.cyclotomic_order();
     for p in ctx
         .plan()
@@ -134,61 +129,109 @@ pub fn test_blas_result_meta<BE, F, E>(
         )
         .unwrap()
     };
+    let check =
+        |label: &str, res: &BlasCiphertextOwned<BE>, want: &Grid, layout: &BlasLayout, scratch: &mut ScratchArena<'_, BE>| {
+            assert_grid_decrypt::<BE, F, E>(label, &params, module, &encoder, res, &sk, want, layout, scratch)
+        };
+    // `grid` with every block mapped in place: entry `(r, c)` of a block reads entry `map(r, c)` of that block.
+    let per_block = |grid: &Grid, map: &dyn Fn(usize, usize) -> (usize, usize)| {
+        Grid::from_fn(log_d, grid.rows, grid.cols, grid.lanes(), |s, r, c| {
+            let (r2, c2) = map(r % d, c % d);
+            grid.at(s, r - r % d + r2, c - c % d + c2)
+        })
+    };
+    let (sigma, tau) = (|r, c| (r, (r + c) % d), |r, c| ((r + c) % d, c));
 
     // A half-full batch into a fresh grid, then a full batch into a grid labelled and recorded half full; on one matrix
     // slot, the full batch into a fresh grid alone.
-    let half = Grid::model(log_d, 1, 2, lanes / 2, 1);
+    let half = (Grid::model(log_d, 1, 2, lanes / 2, 1), Grid::model(log_d, 2, 1, lanes / 2, 2));
     let half_grids = (lanes > 1).then(|| {
         (
-            encrypt(&half, 1, &mut scratch.borrow()),
-            encrypt(&Grid::model(log_d, 2, 1, lanes / 2, 2), 1, &mut scratch.borrow()),
+            encrypt(&half.0, 1, &mut scratch.borrow()),
+            encrypt(&half.1, 1, &mut scratch.borrow()),
         )
     });
-    let mut cases: Vec<_> = half_grids.iter().map(|(row, column)| (row, column, 1, 0)).collect();
-    cases.push((&full_row, &full_column, 0, usize::from(lanes > 1)));
+    let mut cases: Vec<_> = half_grids.iter().map(|(row, column)| (row, column, &half, 1, 0)).collect();
+    cases.push((&full_row, &full_column, &full, 0, usize::from(lanes > 1)));
     // A shift by 1 crosses blocks along the axis two blocks long and stays in the block along the other; a shift by `d`
     // copies whole blocks.
-    for (row, column, want, stale) in cases {
+    for (row, column, (row_model, column_model), want, stale) in cases {
         let label = |op: &str| format!("{op} from log_sparsity {want} into {stale}");
-        let batch = lanes >> want;
         let mut res = alloc(2, 1, stale);
         module
             .blas_transpose(&mut res, row, &ctx, &keys, &mut op_scratch.borrow())
             .unwrap();
-        assert_meta(&label("transpose"), &res, want, batch);
-        for k in [1, d] {
-            for a in [row, column] {
-                let shape = format!("{}x{} k={k}", a.rows(), a.cols());
-                let mut res = alloc(a.rows(), a.cols(), stale);
+        let layout = mapped_layout(row, 2, 1, k, p);
+        check(
+            &label("transpose"),
+            &res,
+            &row_model.transpose(),
+            &layout,
+            &mut scratch.borrow(),
+        );
+        for shift in [1, d] {
+            for (a, model) in [(row, row_model), (column, column_model)] {
+                let (rows, cols) = (a.rows(), a.cols());
+                let shape = format!("{rows}x{cols} k={shift}");
+                let layout = if shift == d {
+                    copied_layout(a, rows, cols, k)
+                } else {
+                    mapped_layout(a, rows, cols, k, p)
+                };
+                let mut res = alloc(rows, cols, stale);
                 module
-                    .blas_rotate_rows(&mut res, a, k, &ctx, &keys, &mut op_scratch.borrow())
+                    .blas_rotate_rows(&mut res, a, shift, &ctx, &keys, &mut op_scratch.borrow())
                     .unwrap();
-                assert_meta(&label(&format!("rotate_rows {shape}")), &res, want, batch);
-                let mut res = alloc(a.rows(), a.cols(), stale);
+                let op = label(&format!("rotate_rows {shape}"));
+                check(&op, &res, &model.rotate_rows(shift), &layout, &mut scratch.borrow());
+                let mut res = alloc(rows, cols, stale);
                 module
-                    .blas_rotate_cols(&mut res, a, k, &ctx, &keys, &mut op_scratch.borrow())
+                    .blas_rotate_cols(&mut res, a, shift, &ctx, &keys, &mut op_scratch.borrow())
                     .unwrap();
-                assert_meta(&label(&format!("rotate_cols {shape}")), &res, want, batch);
+                let op = label(&format!("rotate_cols {shape}"));
+                check(&op, &res, &model.rotate_cols(shift), &layout, &mut scratch.borrow());
             }
         }
         let mut left = BlasMatMulLeft::from_grid(alloc(1, 2, stale));
         module
             .blas_matmul_prepare_left(&mut left, row, &ctx, &keys, &mut op_scratch.borrow())
             .unwrap();
-        assert_meta(&label("prepare_left"), left.as_grid(), want, batch);
+        let (want_left, layout) = (per_block(row_model, &sigma), mapped_layout(row, 1, 2, k, p));
+        check(
+            &label("prepare_left"),
+            left.as_grid(),
+            &want_left,
+            &layout,
+            &mut scratch.borrow(),
+        );
         let mut right = BlasMatMulRight::from_grid(alloc(2, 1, stale));
         module
             .blas_matmul_prepare_right(&mut right, column, &ctx, &keys, &mut op_scratch.borrow())
             .unwrap();
-        assert_meta(&label("prepare_right"), right.as_grid(), want, batch);
+        let (want_right, layout) = (per_block(column_model, &tau), mapped_layout(column, 2, 1, k, p));
+        check(
+            &label("prepare_right"),
+            right.as_grid(),
+            &want_right,
+            &layout,
+            &mut scratch.borrow(),
+        );
         let mut res = alloc(1, 1, stale);
         module
             .blas_matmul_pt(&mut res, row, &pt, &keys, &mut op_scratch.borrow())
             .unwrap();
-        assert_meta(&label("matmul_pt"), &res, want, batch);
+        let (want_pt, layout) = (row_model.matmul_public(1, 1, entry), mapped_layout(row, 1, 1, k, p));
+        check(&label("matmul_pt"), &res, &want_pt, &layout, &mut scratch.borrow());
         let mut res = alloc(1, 2, stale);
         module.blas_rotate(&mut res, row, 1, &keys, &mut op_scratch.borrow()).unwrap();
-        assert_meta(&label("rotate"), &res, want, batch);
+        let layout = copied_layout(row, 1, 2, k);
+        check(
+            &label("rotate"),
+            &res,
+            &row_model.rotate_lanes(1),
+            &layout,
+            &mut scratch.borrow(),
+        );
     }
 
     if let Some((half_row, _)) = &half_grids {
@@ -200,30 +243,28 @@ pub fn test_blas_result_meta<BE, F, E>(
         module
             .blas_sum(&mut res, &transposed, &keys, &mut op_scratch.borrow())
             .unwrap();
-        assert_eq!(res.mat_slots(), Some(lanes / 2), "sum of a half-full transpose: mat_slots");
-        assert_grid_decrypt::<BE, F, E>(
-            "sum of a half-full transpose",
-            &params,
-            module,
-            &encoder,
-            &res,
-            &sk,
-            &half.transpose().sum_lanes(),
-            &mut scratch.borrow(),
-        );
+        let want = half.0.transpose().sum_lanes();
+        let layout = copied_layout(&transposed, 2, 1, k);
+        check("sum of a half-full transpose", &res, &want, &layout, &mut scratch.borrow());
     }
 
     let mut res = alloc(1, 2, 0);
     module.blas_sum(&mut res, &one, &keys, &mut op_scratch.borrow()).unwrap();
-    assert_meta("sum of one matrix", &res, one_log_sparsity, 1);
+    let layout = copied_layout(&one, 1, 2, k);
+    check("sum of one matrix", &res, &one_model, &layout, &mut scratch.borrow());
 
     let mut res = alloc(2, 1, 0);
     module
         .blas_transpose(&mut res, &real, &ctx, &keys, &mut op_scratch.borrow())
         .unwrap();
-    assert!(
-        res.blocks().iter().all(|block| block.slots() == SlotsKind::Real),
-        "the transpose of a real batch has complex slots"
+    let layout = mapped_layout(&real, 2, 1, k, p);
+    assert_eq!(layout.block.slots(), SlotsKind::Real);
+    check(
+        "transpose of a real batch",
+        &res,
+        &real_model.transpose(),
+        &layout,
+        &mut scratch.borrow(),
     );
 }
 
@@ -302,6 +343,7 @@ pub fn test_blas_batch_record<BE, F, E>(
         &res,
         &sk,
         &pair.sum_lanes(),
+        &copied_layout(&ct_pair, 1, 2, params.k),
         &mut scratch.borrow(),
     );
 
@@ -359,6 +401,7 @@ pub fn test_blas_batch_record<BE, F, E>(
             &res,
             &sk,
             &a.matmul(b),
+            &product_layout(ct_a, ct_b, 1, 1, params.k, 2 * params.prec().log_delta()),
             &mut scratch.borrow(),
         );
 

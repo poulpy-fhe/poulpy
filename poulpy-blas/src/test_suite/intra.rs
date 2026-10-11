@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use poulpy_ckks::{
+    CKKSInfos,
     api::{CKKSEncodingOps, CKKSLinearTransformationOps},
     test_suite::{
         CKKSTestParams,
@@ -10,7 +11,7 @@ use poulpy_ckks::{
         reference_encoder::ReferenceEncoder,
     },
 };
-use poulpy_core::layouts::DiagonalArithmetic;
+use poulpy_core::layouts::{DiagonalArithmetic, LWEInfos};
 use poulpy_hal::{
     api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
@@ -19,12 +20,12 @@ use poulpy_hal::{
 use super::helpers::{
     Grid,
     Rejection::{InvalidPlan, MissingKey},
-    TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, assert_short_scratch, blas_context, context_and_keys, encrypt_grid,
-    foreign_contexts, rejected_grids, relabel, rotation_keys,
+    TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, assert_short_scratch, blas_context, context_and_keys, copied_layout,
+    encrypt_grid, foreign_contexts, mapped_layout, rejected_grids, relabel, rotation_keys,
 };
 use crate::{
     api::BlasMatIntraOps,
-    layouts::{BlasGridInfos, BlasPlan},
+    layouts::{BlasCiphertextOwned, BlasGridInfos, BlasPlan},
     oep::BlasMatIntraImpl,
 };
 
@@ -82,6 +83,7 @@ pub fn test_blas_transpose<BE, F, E>(
             &res,
             &sk,
             &a.transpose(),
+            &mapped_layout(&ct, cols, rows, res_k, params.prec().log_delta()),
             &mut scratch.borrow(),
         );
     }
@@ -155,6 +157,16 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
             &a,
             &mut scratch.borrow(),
         );
+        // A shift by whole blocks copies them, any other one maps every block; both narrow to the width `res` has when
+        // the shift writes it.
+        let want_layout = |k: usize, res: &BlasCiphertextOwned<BE>| {
+            let res_k = res.block_layout().k().as_usize();
+            if k.is_multiple_of(d) {
+                copied_layout(&ct, rows, cols, res_k)
+            } else {
+                mapped_layout(&ct, rows, cols, res_k, params.prec().log_delta())
+            }
+        };
         for &res_k in res_widths {
             let mut res = alloc_grid(&params, module, log_d, rows, cols, res_k);
             let bytes = module
@@ -162,6 +174,7 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
                 .max(module.blas_rotate_cols_tmp_bytes(&res, &ct, &params.atk_layout()));
             let mut op_scratch = ScratchOwned::<BE>::alloc(bytes);
             for &k in row_shifts {
+                let layout = want_layout(k, &res);
                 module
                     .blas_rotate_rows(&mut res, &ct, k, &ctx, &row_keys[k % d], &mut op_scratch.borrow())
                     .unwrap();
@@ -173,10 +186,12 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
                     &res,
                     &sk,
                     &a.rotate_rows(k),
+                    &layout,
                     &mut scratch.borrow(),
                 );
             }
             for &k in col_shifts {
+                let layout = want_layout(k, &res);
                 module
                     .blas_rotate_cols(&mut res, &ct, k, &ctx, &col_keys[k % d], &mut op_scratch.borrow())
                     .unwrap();
@@ -188,6 +203,7 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
                     &res,
                     &sk,
                     &a.rotate_cols(k),
+                    &layout,
                     &mut scratch.borrow(),
                 );
             }
