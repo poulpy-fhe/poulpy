@@ -168,15 +168,21 @@ pub trait BlasMatMulOps<BE: BlasMatMulImpl> {
 
     /// `res` receives the product of every matrix of `a` with the public matrix `b` holds for its matrix slot.
     ///
+    /// Each block of `res` is one linear transformation over its `K = a.cols()` terms, which share their giant steps: a
+    /// block costs the giant-step key switches of one of `b`'s maps, whatever `K`. Each giant step adds `K` times its
+    /// diagonals' products in the transform domain before its rotation, so choose `base2k` for that many products,
+    /// with `Module::max_base2k(n, K x the diagonals of a giant step, ..)`, as for poulpy-core's own linear
+    /// transformation.
+    ///
     /// No circuit privacy: as for every evaluation in this workspace (`SECURITY.md`), `res` may reveal `b` to the holder
     /// of the secret key. Re-randomize `res`, or flood its noise, before returning it when `b` must stay private.
     ///
     /// # Errors
     ///
     /// The errors of [`validate_blas_matmul_pt`](crate::reference::validate_blas_matmul_pt), raised before the backend
-    /// runs, so `res` and the inputs are untouched: `InvalidOperand` for a grid, shape, layout, operand, count or lazy
-    /// sum it rejects, `MissingAutomorphismKey` for a key `atk` lacks at its width. Then poulpy-ckks's budget errors,
-    /// such as `InsufficientHomomorphicCapacity` when `res` is narrower than `a`'s scale, raised before any write.
+    /// runs, so `res` and the inputs are untouched: `InvalidOperand` for a grid, shape, layout, operand or count it
+    /// rejects, `MissingAutomorphismKey` for a key `atk` lacks at its width. Then poulpy-ckks's budget errors, such as
+    /// `InsufficientHomomorphicCapacity` when `res` is narrower than `a`'s scale, raised before any write.
     fn blas_matmul_pt<R, A, K>(
         &self,
         res: &mut R,

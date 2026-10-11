@@ -31,9 +31,12 @@ use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, BlasPtOp
 /// - one JKLS kernel per block of `res`, [`crate::oep::BlasJklsImpl::blas_jkls_block_impl`], over its `K d` pairs of
 ///   terms `(a_il[k], b_lj[k])`; the kernel's `# Safety` fixes its circuit;
 /// - the key widths: sigma's (tau's) baby steps at `a.k` and giant steps at `a.k - p`, the shifts' giant steps at `w`,
-///   the tensor key at the wider of both sides' `w`;
-/// - the product by public matrices adds one term per `l` through `b`'s maps, in that order, normalizing each block of
-///   `res` before a term would take it past `2^(63 - base2k)` lazy terms.
+///   the tensor key at the wider of both sides' `w`; the public operand's baby steps at `a.k` and giant steps at
+///   `min(res.k, a.k - p_B)` for its scale `p_B`;
+/// - the product by public matrices shares its giant steps across the inner index: block `res_ij` is poulpy-ckks's
+///   `ckks_eval_linear_transformation_sum_into` of its `K` terms `(a_il, b_lj)` in ascending `l`, then stamped with
+///   `a`'s label. Each giant step sums the products of every term in the transform domain, in that order, before its
+///   one rotation; an FFT backend rounds that sum, so the order is part of the bits.
 ///
 /// **Free (bit-identical):** the order and split of the blocks over workers; materializing or streaming the terms;
 /// caching them or their convolution forms; sharing baby-step caches; batching key switches. Hoisting the shifts

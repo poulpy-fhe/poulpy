@@ -17,7 +17,7 @@ pub use matmul::{
 use std::{cell::RefCell, sync::Mutex};
 
 use poulpy_ckks::{
-    CKKSCompositionError, CKKSCtBounds, CKKSError, CKKSInfos, CKKSResult as Result, GLWEPlaintextInfos, SetCKKSInfos,
+    CKKSCompositionError, CKKSCtBounds, CKKSError, CKKSInfos, CKKSResult as Result, GLWEPlaintextInfos,
     api::{CKKSLinearTransformationOps, CKKSModuleInfos, LinearTransformation, LinearTransformationPrepared, LtDiagonalMeta},
 };
 use poulpy_core::layouts::{
@@ -347,13 +347,6 @@ where
         .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(a, key)
         .max(module.ckks_eval_linear_transformation_tmp_bytes(a, key))
         .max(module.ckks_eval_linear_transformation_tmp_bytes(res, key))
-}
-
-/// Stamps the sparsity of `a` on every block of `res`: a per-matrix map keeps the batch, while poulpy-ckks's linear
-/// transformations leave the destination's sparsity.
-pub(crate) fn stamp_sparsity(res: &mut [impl SetCKKSInfos], a: &impl BlasGridInfos) {
-    let log_sparsity = a.block_layout().log_sparsity();
-    res.iter_mut().for_each(|block| block.set_log_sparsity(log_sparsity));
 }
 
 /// Most workers a reference splits its blocks over, as poulpy-core's baby steps do.

@@ -189,11 +189,22 @@ backend's own `enable-blas`, replaces that family alone:
 unsafe impl poulpy_blas::oep::BlasJklsImpl for MyBackend { /* the kernel and its query */ }
 ```
 
-The rotation, the sum, the hook and the prepared product split their blocks
-over up to four workers of the backend's `TaskExecutor`, each on its own
-scratch slice (and, in the hook, its own baby-step cache), so a Rayon backend
-writes nothing; the prepared product calls the JKLS kernel once per block of
-`res`, concurrently on a parallel executor. Their
+The product by public matrices, `blas_matmul_pt`, enters no hook: each block
+`res_ij` is one poulpy-ckks `ckks_eval_linear_transformation_sum_into` over its
+`K` terms `(a_il, b_lj)`, in ascending `l`, from one baby-step cache per block
+of `a`, which serves its whole row of `res`. The sum shares the giant steps:
+each giant step adds the products of every term in the transform domain, in
+that order, before its one rotation, so a block costs the giant-step key
+switches of one of `b`'s maps. An FFT backend rounds that sum, so the order is
+part of the bits, and the radix must hold `K` times a giant step's products
+(`Module::max_base2k`).
+
+The rotation, the sum, the hook, the prepared product and the product by public
+matrices split their blocks (block rows, for the last) over up to four workers
+of the backend's `TaskExecutor`, each on its own scratch slice (and, in the hook
+and the product by public matrices, its own baby-step caches), so a Rayon
+backend writes nothing; the prepared product calls the JKLS kernel once per
+block of `res`, concurrently on a parallel executor. Their
 queries reserve one slice per worker on a parallel executor and keep the
 serial size otherwise. On failure they return the error of the lowest block, as
 a serial loop would. Copies and additions run serially.
