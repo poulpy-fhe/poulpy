@@ -20,7 +20,7 @@ use poulpy_hal::{
 };
 
 use super::helpers::{
-    Grid, Rejection::InvalidPlan, TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, context_and_keys, copied_layout,
+    Grid, Rejection::InvalidOperand, TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, context_and_keys, copied_layout,
     encrypt_grid, mapped_layout, product_layout, relabel, to_f,
 };
 use crate::{
@@ -356,7 +356,7 @@ pub fn test_blas_batch_record<BE, F, E>(
     for block in added.blocks_mut() {
         module.ckks_add_pt_vec_assign(block, &dense, &mut scratch.borrow()).unwrap();
     }
-    assert_guard::<BE, _>("dense plaintext added", "blas_sum", InvalidPlan, &mut res, |res| {
+    assert_guard::<BE, _>("dense plaintext added", "blas_sum", InvalidOperand, &mut res, |res| {
         module.blas_sum(res, &added, &keys, &mut op_scratch.borrow())
     });
 

@@ -24,6 +24,16 @@ Each operation's `_tmp_bytes` query belongs to the same family.
 aggregates the three families as a test bound; it has a blanket implementation
 and is never implemented directly.
 
+The API checks every rotation, sum, transpose and shift before it reaches the
+implementation, from metadata alone, with the `validate_*` functions of
+`poulpy_blas::reference`: shapes, layouts, batch records, the context and every
+key at its width. A rejected operand returns
+`CKKSCompositionError::InvalidOperand`, a missing key
+`MissingAutomorphismKey`, and neither changes `res`. An implementation
+therefore runs only on accepted inputs and returns `Ok` on them; the one error
+it may return is poulpy-ckks's budget error, which the reference raises before
+any write.
+
 ## Grids and keys
 
 Rotations, sums, the transpose and the row and column shifts take `res` as a
@@ -139,7 +149,10 @@ modules of degree `params.n`. Both backends run on identical fixtures and keys,
 and the operations are called through the API, which forwards to their `*Impl`
 methods. Every call, encodings and preparations included, gets exactly the
 bytes its query reports, poisoned and guarded. Every output is compared: its
-batch record, and every block bit for bit, digits and CKKS metadata. Storage and ring are free: the bounds are `BlasParityBackend`
+batch record, and every block bit for bit, digits and CKKS metadata. Inter and
+intra parity also run calls that poulpy-ckks rejects for their budget: both
+backends return the same error and leave `res` and the inputs unchanged.
+Storage and ring are free: the bounds are `BlasParityBackend`
 (`Backend<ZnxWord = i64>` and every BLAS family) and `BlasParityModule`. Rank
 and `dsize` follow `params`, as in CKKS parity.
 

@@ -18,7 +18,7 @@ use poulpy_ckks::{
     },
 };
 use poulpy_core::layouts::{
-    GLWELayout, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, TorusPrecision,
+    Base2K, Degree, GLWELayout, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, TorusPrecision,
     prepared::{
         GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef,
         GLWESecretPrepared, GLWETensorKeyPrepared, GLWETensorKeyPreparedBackendRef, GLWETensorKeyPreparedToBackendRef,
@@ -370,6 +370,25 @@ where
     ]
 }
 
+/// Fresh grids of the dimensions and block layout of `grid`, by label, that an operation rejects beside it: at twice its
+/// degree, one radix lower and one rank higher. Each records the dense batch of its own degree.
+pub fn foreign_layouts<BE>(module: &Module<BE>, grid: &impl BlasGridInfos) -> [(&'static str, BlasCiphertextOwned<BE>); 3]
+where
+    BE: Backend,
+    Module<BE>: CKKSModuleAlloc<BE>,
+{
+    let alloc = |edit: fn(&mut GLWELayout)| {
+        let mut block = grid.block_layout();
+        edit(&mut block.glwe_layout);
+        module.blas_ciphertext_alloc_from_infos(&BlasLayout::new(block, grid.log_d(), grid.rows(), grid.cols()))
+    };
+    [
+        ("degree", alloc(|layout| layout.n = Degree(2 * layout.n.0))),
+        ("base2k", alloc(|layout| layout.base2k = Base2K(layout.base2k.0 - 1))),
+        ("rank", alloc(|layout| layout.rank = Rank(layout.rank.0 + 1))),
+    ]
+}
+
 /// `grid` read as `rows x cols` blocks whatever it holds: a [`BlasGrid`] whose blocks do not tile the shape it reports,
 /// which every operation rejects before `res` changes.
 pub struct Misshapen<G> {
@@ -431,16 +450,19 @@ where
 /// The rejection a guard test expects.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Rejection {
-    /// `CKKSCompositionError::InvalidPlan`.
-    InvalidPlan,
+    /// `CKKSCompositionError::InvalidOperand`.
+    InvalidOperand,
     /// `CKKSCompositionError::MissingAutomorphismKey`.
     MissingKey,
     /// `CKKSCompositionError::MissingRelinearizationKey`.
     MissingTensorKey,
+    /// A poulpy-ckks budget error, `InsufficientHomomorphicCapacity` or `MultiplicationPrecisionUnderflow`, raised by
+    /// the poulpy-ckks operation named in its place, inside the implementation.
+    Budget,
 }
 
 /// Runs `call` on `target` and asserts it fails with `rejection` raised by `op` and leaves `target` unchanged, its batch
-/// record included.
+/// record included. A budget error names the poulpy-ckks operation that raised it.
 pub fn assert_guard<BE, DG>(
     label: &str,
     op: &str,
@@ -472,9 +494,13 @@ pub fn assert_guard_on<BE, X, DG>(
     let before = state(target);
     let e = call(target).expect_err(label);
     let raised = match e.composition() {
-        Some(CKKSCompositionError::InvalidPlan { plan, .. }) => Some((Rejection::InvalidPlan, *plan)),
+        Some(CKKSCompositionError::InvalidOperand { op, .. }) => Some((Rejection::InvalidOperand, *op)),
         Some(CKKSCompositionError::MissingAutomorphismKey { op, .. }) => Some((Rejection::MissingKey, *op)),
         Some(CKKSCompositionError::MissingRelinearizationKey { op, .. }) => Some((Rejection::MissingTensorKey, *op)),
+        Some(
+            CKKSCompositionError::InsufficientHomomorphicCapacity { op, .. }
+            | CKKSCompositionError::MultiplicationPrecisionUnderflow { op, .. },
+        ) => Some((Rejection::Budget, *op)),
         _ => None,
     };
     assert_eq!(raised, Some((rejection, op)), "{label}: {op} raised {e}");

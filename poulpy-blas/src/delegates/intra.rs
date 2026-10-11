@@ -4,8 +4,9 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     api::BlasMatIntraOps,
-    layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, batch_of},
+    layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut},
     oep::BlasMatIntraImpl,
+    reference::{validate_blas_rotate_cols, validate_blas_rotate_rows, validate_blas_transpose},
 };
 
 impl<BE: Backend + BlasMatIntraImpl> BlasMatIntraOps<BE> for Module<BE> {
@@ -31,8 +32,9 @@ impl<BE: Backend + BlasMatIntraImpl> BlasMatIntraOps<BE> for Module<BE> {
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync,
     {
+        let batch = validate_blas_transpose(self, &*res, a, ctx, atk)?;
         BE::blas_transpose_impl(self, res, a, ctx, atk, scratch)?;
-        res.set_mat_slots(batch_of::<BE::Ring>(a));
+        res.set_mat_slots(batch);
         Ok(())
     }
 
@@ -59,8 +61,9 @@ impl<BE: Backend + BlasMatIntraImpl> BlasMatIntraOps<BE> for Module<BE> {
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync,
     {
+        let batch = validate_blas_rotate_rows(self, &*res, a, k, ctx, atk)?;
         BE::blas_rotate_rows_impl(self, res, a, k, ctx, atk, scratch)?;
-        res.set_mat_slots(batch_of::<BE::Ring>(a));
+        res.set_mat_slots(batch);
         Ok(())
     }
 
@@ -87,8 +90,9 @@ impl<BE: Backend + BlasMatIntraImpl> BlasMatIntraOps<BE> for Module<BE> {
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync,
     {
+        let batch = validate_blas_rotate_cols(self, &*res, a, k, ctx, atk)?;
         BE::blas_rotate_cols_impl(self, res, a, k, ctx, atk, scratch)?;
-        res.set_mat_slots(batch_of::<BE::Ring>(a));
+        res.set_mat_slots(batch);
         Ok(())
     }
 }

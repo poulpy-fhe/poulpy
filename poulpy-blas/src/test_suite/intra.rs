@@ -19,9 +19,10 @@ use poulpy_hal::{
 
 use super::helpers::{
     Grid, Misshapen,
-    Rejection::{InvalidPlan, MissingKey},
+    Rejection::{Budget, InvalidOperand, MissingKey},
     TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, assert_guard_on, assert_short_scratch, blas_context,
-    context_and_keys, copied_layout, encrypt_grid, foreign_contexts, mapped_layout, rejected_grids, relabel, rotation_keys,
+    context_and_keys, copied_layout, encrypt_grid, foreign_contexts, foreign_layouts, mapped_layout, rejected_grids, relabel,
+    rotation_keys,
 };
 use crate::{
     api::BlasMatIntraOps,
@@ -211,11 +212,11 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
     }
 }
 
-/// Every grid [`rejected_grids`] builds, as `a` or as `res`, a shape mismatch, a copy relabelled past `log2` of the ring
-/// degree, a [`Misshapen`] grid as `a` or as `res`, a context encoded on a module of another degree or at another
-/// radix, and a missing rotation key are
-/// rejected before `res` changes; each operation one scratch byte short of its query, a row or column shift along one
-/// block or across blocks, panics before `res` changes.
+/// Every grid [`rejected_grids`] and [`foreign_layouts`] build, as `a` or as `res`, a shape mismatch, a copy relabelled
+/// past `log2` of the ring degree, a [`Misshapen`] grid as `a` or as `res`, a context encoded on a module of another
+/// degree or at another radix, and a missing rotation key are rejected through the API before `res` changes, as is a
+/// `res` narrower than the scale of `a`, by poulpy-ckks's budget check; each operation one scratch byte short of its
+/// query, a row or column shift along one block or across blocks, panics before `res` changes.
 pub fn test_blas_intra_guards<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -254,13 +255,13 @@ pub fn test_blas_intra_guards<BE, F, E>(
 
     // `res` shaped like `a` for the transpose, like its transpose for the rotations.
     let (mut wrong, mut wrong_t) = (alloc(cols, rows), alloc(rows, cols));
-    assert_guard::<BE, _>("shape", "blas_transpose", InvalidPlan, &mut wrong_t, |res| {
+    assert_guard::<BE, _>("shape", "blas_transpose", InvalidOperand, &mut wrong_t, |res| {
         module.blas_transpose(res, &ct, &ctx, &keys, &mut op_scratch.borrow())
     });
-    assert_guard::<BE, _>("shape", "blas_rotate_rows", InvalidPlan, &mut wrong, |res| {
+    assert_guard::<BE, _>("shape", "blas_rotate_rows", InvalidOperand, &mut wrong, |res| {
         module.blas_rotate_rows(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow())
     });
-    assert_guard::<BE, _>("shape", "blas_rotate_cols", InvalidPlan, &mut wrong, |res| {
+    assert_guard::<BE, _>("shape", "blas_rotate_cols", InvalidOperand, &mut wrong, |res| {
         module.blas_rotate_cols(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow())
     });
 
@@ -270,38 +271,45 @@ pub fn test_blas_intra_guards<BE, F, E>(
         let a = relabel(&ct, |meta| meta.log_sparsity = log_sparsity);
         (format!("sparsity {log_sparsity}"), a)
     });
-    let rejected = rejected_grids(module, &ct).map(|(label, a)| (format!("{label} a"), a));
-    for (label, a) in rejected.into_iter().chain(sparse) {
-        assert_guard::<BE, _>(&label, "blas_transpose", InvalidPlan, &mut res_t, |res| {
+    let rejected = rejected_grids(module, &ct)
+        .into_iter()
+        .chain(foreign_layouts(module, &ct))
+        .map(|(label, a)| (format!("{label} a"), a));
+    for (label, a) in rejected.chain(sparse) {
+        assert_guard::<BE, _>(&label, "blas_transpose", InvalidOperand, &mut res_t, |res| {
             module.blas_transpose(res, &a, &ctx, &keys, &mut op_scratch.borrow())
         });
-        assert_guard::<BE, _>(&label, "blas_rotate_rows", InvalidPlan, &mut res, |res| {
+        assert_guard::<BE, _>(&label, "blas_rotate_rows", InvalidOperand, &mut res, |res| {
             module.blas_rotate_rows(res, &a, 1, &ctx, &keys, &mut op_scratch.borrow())
         });
-        assert_guard::<BE, _>(&label, "blas_rotate_cols", InvalidPlan, &mut res, |res| {
+        assert_guard::<BE, _>(&label, "blas_rotate_cols", InvalidOperand, &mut res, |res| {
             module.blas_rotate_cols(res, &a, 1, &ctx, &keys, &mut op_scratch.borrow())
         });
     }
-    for ((label, mut bad), (_, mut bad_t)) in rejected_grids(module, &res).into_iter().zip(rejected_grids(module, &res_t)) {
+    let bad_res = rejected_grids(module, &res).into_iter().chain(foreign_layouts(module, &res));
+    let bad_res_t = rejected_grids(module, &res_t)
+        .into_iter()
+        .chain(foreign_layouts(module, &res_t));
+    for ((label, mut bad), (_, mut bad_t)) in bad_res.zip(bad_res_t) {
         let label = &format!("{label} res");
-        assert_guard::<BE, _>(label, "blas_transpose", InvalidPlan, &mut bad_t, |res| {
+        assert_guard::<BE, _>(label, "blas_transpose", InvalidOperand, &mut bad_t, |res| {
             module.blas_transpose(res, &ct, &ctx, &keys, &mut op_scratch.borrow())
         });
-        assert_guard::<BE, _>(label, "blas_rotate_rows", InvalidPlan, &mut bad, |res| {
+        assert_guard::<BE, _>(label, "blas_rotate_rows", InvalidOperand, &mut bad, |res| {
             module.blas_rotate_rows(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow())
         });
-        assert_guard::<BE, _>(label, "blas_rotate_cols", InvalidPlan, &mut bad, |res| {
+        assert_guard::<BE, _>(label, "blas_rotate_cols", InvalidOperand, &mut bad, |res| {
             module.blas_rotate_cols(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow())
         });
     }
     for (label, ctx) in &foreign {
-        assert_guard::<BE, _>(label, "blas_transpose", InvalidPlan, &mut res_t, |res| {
+        assert_guard::<BE, _>(label, "blas_transpose", InvalidOperand, &mut res_t, |res| {
             module.blas_transpose(res, &ct, ctx, &keys, &mut op_scratch.borrow())
         });
-        assert_guard::<BE, _>(label, "blas_rotate_rows", InvalidPlan, &mut res, |res| {
+        assert_guard::<BE, _>(label, "blas_rotate_rows", InvalidOperand, &mut res, |res| {
             module.blas_rotate_rows(res, &ct, 1, ctx, &keys, &mut op_scratch.borrow())
         });
-        assert_guard::<BE, _>(label, "blas_rotate_cols", InvalidPlan, &mut res, |res| {
+        assert_guard::<BE, _>(label, "blas_rotate_cols", InvalidOperand, &mut res, |res| {
             module.blas_rotate_cols(res, &ct, 1, ctx, &keys, &mut op_scratch.borrow())
         });
     }
@@ -312,20 +320,20 @@ pub fn test_blas_intra_guards<BE, F, E>(
         grid,
     };
     let short_a = short(ct.clone().split_rows(1).0);
-    assert_guard::<BE, _>("misshapen a", "blas_transpose", InvalidPlan, &mut res_t, |res| {
+    assert_guard::<BE, _>("misshapen a", "blas_transpose", InvalidOperand, &mut res_t, |res| {
         module.blas_transpose(res, &short_a, &ctx, &keys, &mut op_scratch.borrow())
     });
-    assert_guard::<BE, _>("misshapen a", "blas_rotate_rows", InvalidPlan, &mut res, |res| {
+    assert_guard::<BE, _>("misshapen a", "blas_rotate_rows", InvalidOperand, &mut res, |res| {
         module.blas_rotate_rows(res, &short_a, 1, &ctx, &keys, &mut op_scratch.borrow())
     });
-    assert_guard::<BE, _>("misshapen a", "blas_rotate_cols", InvalidPlan, &mut res, |res| {
+    assert_guard::<BE, _>("misshapen a", "blas_rotate_cols", InvalidOperand, &mut res, |res| {
         module.blas_rotate_cols(res, &short_a, 1, &ctx, &keys, &mut op_scratch.borrow())
     });
     let (mut short_res, mut short_res_t) = (short(alloc(rows - 1, cols)), short(alloc(cols - 1, rows)));
     assert_guard_on::<BE, _, _>(
         "misshapen res",
         "blas_transpose",
-        InvalidPlan,
+        InvalidOperand,
         &mut short_res_t,
         |res| &res.grid,
         |res| module.blas_transpose(res, &ct, &ctx, &keys, &mut op_scratch.borrow()),
@@ -333,7 +341,7 @@ pub fn test_blas_intra_guards<BE, F, E>(
     assert_guard_on::<BE, _, _>(
         "misshapen res",
         "blas_rotate_rows",
-        InvalidPlan,
+        InvalidOperand,
         &mut short_res,
         |res| &res.grid,
         |res| module.blas_rotate_rows(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow()),
@@ -341,7 +349,7 @@ pub fn test_blas_intra_guards<BE, F, E>(
     assert_guard_on::<BE, _, _>(
         "misshapen res",
         "blas_rotate_cols",
-        InvalidPlan,
+        InvalidOperand,
         &mut short_res,
         |res| &res.grid,
         |res| module.blas_rotate_cols(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow()),
@@ -359,6 +367,23 @@ pub fn test_blas_intra_guards<BE, F, E>(
     });
     assert_guard::<BE, _>("no keys", "blas_transpose", MissingKey, &mut res_t, |res| {
         module.blas_transpose(res, &ct, &ctx, &no_keys, &mut op_scratch.borrow())
+    });
+
+    // `res` narrower than the scale of `a`: poulpy-ckks rejects the budget of the first map's product inside the
+    // implementation, before any write.
+    let narrow = ct.block_layout().log_delta() - 1;
+    let (mut narrow_res, mut narrow_res_t) = (
+        alloc_grid(&params, module, log_d, rows, cols, narrow),
+        alloc_grid(&params, module, log_d, cols, rows, narrow),
+    );
+    assert_guard::<BE, _>("budget", "mul", Budget, &mut narrow_res_t, |res| {
+        module.blas_transpose(res, &ct, &ctx, &keys, &mut op_scratch.borrow())
+    });
+    assert_guard::<BE, _>("budget", "mul", Budget, &mut narrow_res, |res| {
+        module.blas_rotate_rows(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow())
+    });
+    assert_guard::<BE, _>("budget", "mul", Budget, &mut narrow_res, |res| {
+        module.blas_rotate_cols(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow())
     });
 
     // A shift by 1 takes both half maps along two or three blocks, the whole map along one.

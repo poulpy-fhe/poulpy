@@ -1,6 +1,6 @@
 use poulpy_ckks::{
     CKKSResult as Result,
-    api::{CKKSAddOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSModuleInfos},
+    api::{CKKSAddOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSModuleInfos, LinearTransformationPrepared},
     layouts::ScratchArenaTakeCKKS,
 };
 use poulpy_core::{
@@ -9,10 +9,127 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use super::{KeyLayouts, assert_scratch, ensure_grid, ensure_lt_keys, ensure_maps, ensure_shape, lt_tmp_bytes, stamp_sparsity};
-use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut};
+use super::{
+    KeyLayouts, assert_scratch, ensure_grid, ensure_layouts, ensure_lt_keys, ensure_maps, ensure_shape, lt_tmp_bytes,
+    stamp_sparsity,
+};
+use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, batch_of};
 
-/// Reference compositions of [`crate::api::BlasMatIntraOps`].
+/// Checks a [`crate::api::BlasMatIntraOps::blas_transpose`] call from metadata alone, before any implementation runs,
+/// and returns the batch `res` records, `a`'s: `a` and `res` are grids at the context's `log_d` whose blocks tile their
+/// shape and share one layout whose label allows their batch record ([`BlasGrid::blocks`],
+/// [`BlasGridInfos::mat_slots`]), `res` has the transposed shape of `a` and its blocks `a`'s degree, radix and rank,
+/// `ctx` was encoded on a module of `module`'s slot count at `a`'s radix, and `atk` holds every key of the transpose at
+/// the width it is looked up at.
+///
+/// # Errors
+///
+/// `InvalidOperand` for a grid, shape, layout or context it rejects, then `MissingAutomorphismKey`. It checks no
+/// budget: poulpy-ckks rejects those inside the implementation, before any write.
+pub fn validate_blas_transpose<BE: Backend>(
+    module: &Module<BE>,
+    res: &impl BlasGrid<BE>,
+    a: &impl BlasGrid<BE>,
+    ctx: &BlasContext<BE>,
+    atk: &impl GetAutomorphismKey<BE>,
+) -> Result<usize> {
+    let op = "blas_transpose";
+    ensure_mapped(op, module, res, a, ctx, a.cols(), a.rows())?;
+    ensure_lt_keys(op, module, ctx.transpose(), atk, a.block_layout().k(), res.block_layout().k())?;
+    Ok(batch_of::<BE::Ring>(a))
+}
+
+/// Checks a [`crate::api::BlasMatIntraOps::blas_rotate_rows`] call as [`validate_blas_transpose`] does, `res` of `a`'s
+/// shape and the keys of the maps the shift by `k` applies, and returns the batch `res` records, `a`'s.
+///
+/// # Errors
+///
+/// As [`validate_blas_transpose`].
+pub fn validate_blas_rotate_rows<BE: Backend>(
+    module: &Module<BE>,
+    res: &impl BlasGrid<BE>,
+    a: &impl BlasGrid<BE>,
+    k: usize,
+    ctx: &BlasContext<BE>,
+    atk: &impl GetAutomorphismKey<BE>,
+) -> Result<usize> {
+    validate_shift(module, res, a, k, true, ctx, atk)
+}
+
+/// [`validate_blas_rotate_rows`] for [`crate::api::BlasMatIntraOps::blas_rotate_cols`].
+///
+/// # Errors
+///
+/// As [`validate_blas_transpose`].
+pub fn validate_blas_rotate_cols<BE: Backend>(
+    module: &Module<BE>,
+    res: &impl BlasGrid<BE>,
+    a: &impl BlasGrid<BE>,
+    k: usize,
+    ctx: &BlasContext<BE>,
+    atk: &impl GetAutomorphismKey<BE>,
+) -> Result<usize> {
+    validate_shift(module, res, a, k, false, ctx, atk)
+}
+
+/// `a` and `res` are grids at the context's `log_d`, `res` of `rows x cols` blocks of `a`'s degree, radix and rank, and
+/// the context's maps read `a`.
+fn ensure_mapped<BE: Backend>(
+    op: &'static str,
+    module: &Module<BE>,
+    res: &impl BlasGrid<BE>,
+    a: &impl BlasGrid<BE>,
+    ctx: &BlasContext<BE>,
+    rows: usize,
+    cols: usize,
+) -> Result<()> {
+    ensure_grid::<BE::Ring>(op, ctx.log_d(), a, a.blocks())?;
+    ensure_grid::<BE::Ring>(op, ctx.log_d(), res, res.blocks())?;
+    ensure_shape(op, res, rows, cols)?;
+    ensure_layouts(op, res, &[a])?;
+    ensure_maps(op, module, ctx.slots(), ctx.base2k(), &[a])
+}
+
+/// The checks of a row (`rows`) or column shift by `k`.
+fn validate_shift<BE: Backend>(
+    module: &Module<BE>,
+    res: &impl BlasGrid<BE>,
+    a: &impl BlasGrid<BE>,
+    k: usize,
+    rows: bool,
+    ctx: &BlasContext<BE>,
+    atk: &impl GetAutomorphismKey<BE>,
+) -> Result<usize> {
+    let op = if rows { "blas_rotate_rows" } else { "blas_rotate_cols" };
+    ensure_mapped(op, module, res, a, ctx, a.rows(), a.cols())?;
+    let extent = if rows { a.rows() } else { a.cols() };
+    for lt in shift_maps(ctx, k % (1 << ctx.log_d()), rows, extent) {
+        ensure_lt_keys(op, module, lt, atk, a.block_layout().k(), res.block_layout().k())?;
+    }
+    Ok(batch_of::<BE::Ring>(a))
+}
+
+/// The maps a row (`rows`) or column shift by `k1 = k mod d` applies along a block axis of extent `extent`: none for
+/// `k1 = 0`, a copy; psi^k1 (phi^k1) on one block; otherwise both half maps, the first of block `q`, the second of
+/// block `q + 1`.
+fn shift_maps<BE: Backend>(
+    ctx: &BlasContext<BE>,
+    k1: usize,
+    rows: bool,
+    extent: usize,
+) -> Vec<&LinearTransformationPrepared<BE>> {
+    match (k1, extent, rows) {
+        (0, ..) => Vec::new(),
+        (_, 1, true) => vec![ctx.rotate_rows(k1)],
+        (_, 1, false) => vec![ctx.rotate_cols(k1)],
+        (_, _, true) => vec![ctx.rows_upper(k1), ctx.rows_lower(k1)],
+        (_, _, false) => vec![ctx.cols_left(k1), ctx.cols_right(k1)],
+    }
+}
+
+/// Reference compositions of [`crate::api::BlasMatIntraOps`], on inputs [`validate_blas_transpose`],
+/// [`validate_blas_rotate_rows`] and [`validate_blas_rotate_cols`] accepted: they check nothing but their scratch, and
+/// return poulpy-ckks's budget errors before any write.
 pub trait BlasMatIntraReference<BE: Backend> {
     fn blas_transpose_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, _ctx: &BlasContext<BE>, atk: &K) -> usize
     where
@@ -40,12 +157,8 @@ pub trait BlasMatIntraReference<BE: Backend> {
         K: GetAutomorphismKey<BE> + Sync,
     {
         let op = "blas_transpose";
-        ensure_grid::<BE::Ring>(op, ctx.log_d(), a, a.blocks())?;
-        ensure_grid::<BE::Ring>(op, ctx.log_d(), &*res, res.blocks())?;
-        ensure_shape(op, res, a.cols(), a.rows())?;
-        ensure_maps(op, self, ctx.slots(), ctx.base2k(), &[a])?;
         let used = KeyLayouts::new(atk);
-        ensure_lt_keys(op, self, ctx.transpose(), &used, a.block_layout().k(), res.block_layout().k())?;
+        let _ = ensure_lt_keys(op, self, ctx.transpose(), &used, a.block_layout().k(), res.block_layout().k());
         let bytes = used.max_bytes(|key| self.blas_transpose_tmp_bytes_reference(&*res, a, ctx, key));
         assert_scratch(op, bytes, scratch);
         let (rows, cols) = (a.rows(), a.cols());
@@ -168,10 +281,6 @@ where
     A: BlasGrid<BE>,
     K: GetAutomorphismKey<BE> + Sync,
 {
-    ensure_grid::<BE::Ring>(op, ctx.log_d(), a, a.blocks())?;
-    ensure_grid::<BE::Ring>(op, ctx.log_d(), &*res, res.blocks())?;
-    ensure_shape(op, res, a.rows(), a.cols())?;
-    ensure_maps(op, module, ctx.slots(), ctx.base2k(), &[a])?;
     let d = 1usize << ctx.log_d();
     let (a_rows, a_cols) = (a.rows(), a.cols());
     let extent = if rows { a_rows } else { a_cols };
@@ -194,26 +303,19 @@ where
         }
         return Ok(());
     }
-    let (input_k, res_k) = (a.block_layout().k(), res.block_layout().k());
+    let maps = shift_maps(ctx, k1, rows, extent);
     let used = KeyLayouts::new(atk);
-    if extent == 1 {
-        let whole = if rows { ctx.rotate_rows(k1) } else { ctx.rotate_cols(k1) };
-        ensure_lt_keys(op, module, whole, &used, input_k, res_k)?;
-        assert_scratch(op, used.max_bytes(|key| rotate_tmp_bytes(module, &*res, a, key)), scratch);
+    for lt in &maps {
+        let _ = ensure_lt_keys(op, module, lt, &used, a.block_layout().k(), res.block_layout().k());
+    }
+    assert_scratch(op, used.max_bytes(|key| rotate_tmp_bytes(module, &*res, a, key)), scratch);
+    let [first, second] = maps[..] else {
         for (dst, src) in res.blocks_mut().iter_mut().zip(a.blocks()) {
-            module.ckks_eval_linear_transformation_self_into(dst, src, whole, atk, scratch)?;
+            module.ckks_eval_linear_transformation_self_into(dst, src, maps[0], atk, scratch)?;
         }
         stamp_sparsity(res.blocks_mut(), a);
         return Ok(());
-    }
-    let (first, second) = if rows {
-        (ctx.rows_upper(k1), ctx.rows_lower(k1))
-    } else {
-        (ctx.cols_left(k1), ctx.cols_right(k1))
     };
-    ensure_lt_keys(op, module, first, &used, input_k, res_k)?;
-    ensure_lt_keys(op, module, second, &used, input_k, res_k)?;
-    assert_scratch(op, used.max_bytes(|key| rotate_tmp_bytes(module, &*res, a, key)), scratch);
     let res_layout = res.block_layout();
     for (i, j) in blocks {
         let dst = &mut res.blocks_mut()[i * a_cols + j];

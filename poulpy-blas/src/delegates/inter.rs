@@ -4,8 +4,9 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     api::BlasMatInterOps,
-    layouts::{BlasGrid, BlasGridInfos, BlasGridMut, batch_of},
+    layouts::{BlasGrid, BlasGridInfos, BlasGridMut},
     oep::BlasMatInterImpl,
+    reference::{validate_blas_rotate, validate_blas_sum},
 };
 
 impl<BE: Backend + BlasMatInterImpl> BlasMatInterOps<BE> for Module<BE> {
@@ -24,8 +25,9 @@ impl<BE: Backend + BlasMatInterImpl> BlasMatInterOps<BE> for Module<BE> {
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync,
     {
+        let batch = validate_blas_rotate(self, &*res, a, r, atk)?;
         BE::blas_rotate_impl(self, res, a, r, atk, scratch)?;
-        res.set_mat_slots(batch_of::<BE::Ring>(a));
+        res.set_mat_slots(batch);
         Ok(())
     }
 
@@ -44,8 +46,9 @@ impl<BE: Backend + BlasMatInterImpl> BlasMatInterOps<BE> for Module<BE> {
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync,
     {
+        let batch = validate_blas_sum(self, &*res, a, atk)?;
         BE::blas_sum_impl(self, res, a, atk, scratch)?;
-        res.set_mat_slots(batch_of::<BE::Ring>(a));
+        res.set_mat_slots(batch);
         Ok(())
     }
 }

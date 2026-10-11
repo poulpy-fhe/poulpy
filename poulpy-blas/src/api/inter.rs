@@ -15,6 +15,13 @@ pub trait BlasMatInterOps<BE: Backend> {
         K: GGLWEInfos;
 
     /// `res` receives `a` with matrix slot `s` holding matrix slot `(s + r) mod mat_slots` of `a`.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`validate_blas_rotate`](crate::reference::validate_blas_rotate), raised before the backend runs,
+    /// so `res` and the inputs are untouched: `InvalidOperand` for a grid, shape or layout it rejects,
+    /// `MissingAutomorphismKey` for a key `atk` lacks at its width. Then poulpy-ckks's budget errors, such as
+    /// `InsufficientHomomorphicCapacity` when `res` is narrower than `a`'s scale, raised before any write.
     fn blas_rotate<R, A, K>(&self, res: &mut R, a: &A, r: i64, atk: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         R: BlasGridMut<BE>,
@@ -29,6 +36,13 @@ pub trait BlasMatInterOps<BE: Backend> {
         K: GGLWEInfos;
 
     /// Every matrix slot of `res` receives the sum of all matrix slots of `a`.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`validate_blas_sum`](crate::reference::validate_blas_sum), raised before the backend runs, so
+    /// `res` and the inputs are untouched: `InvalidOperand` for a grid, shape, layout or term count it rejects,
+    /// `MissingAutomorphismKey` for a key `atk` lacks at its width. Then poulpy-ckks's budget errors, such as
+    /// `InsufficientHomomorphicCapacity` when `res` is narrower than `a`'s scale, raised before any write.
     fn blas_sum<R, A, K>(&self, res: &mut R, a: &A, atk: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         R: BlasGridMut<BE>,

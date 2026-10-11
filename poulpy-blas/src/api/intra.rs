@@ -16,6 +16,13 @@ pub trait BlasMatIntraOps<BE: Backend> {
         K: GGLWEInfos;
 
     /// `res` receives the transpose of every matrix of `a`.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`validate_blas_transpose`](crate::reference::validate_blas_transpose), raised before the backend
+    /// runs, so `res` and the inputs are untouched: `InvalidOperand` for a grid, shape, layout or context it rejects,
+    /// `MissingAutomorphismKey` for a key `atk` lacks at its width. Then poulpy-ckks's budget errors, such as
+    /// `InsufficientHomomorphicCapacity` when `res` is narrower than `a`'s scale, raised before any write.
     fn blas_transpose<R, A, K>(
         &self,
         res: &mut R,
@@ -38,6 +45,13 @@ pub trait BlasMatIntraOps<BE: Backend> {
         K: GGLWEInfos;
 
     /// `res` receives every matrix of `a` with row `r` replaced by row `r + k` modulo the matrix height.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`validate_blas_rotate_rows`](crate::reference::validate_blas_rotate_rows), raised before the
+    /// backend runs, so `res` and the inputs are untouched: `InvalidOperand` for a grid, shape, layout or context it
+    /// rejects, `MissingAutomorphismKey` for a key `atk` lacks at its width. Then poulpy-ckks's budget errors, such as
+    /// `InsufficientHomomorphicCapacity` when `res` is narrower than `a`'s scale, raised before any write.
     fn blas_rotate_rows<R, A, K>(
         &self,
         res: &mut R,
@@ -61,6 +75,13 @@ pub trait BlasMatIntraOps<BE: Backend> {
         K: GGLWEInfos;
 
     /// `res` receives every matrix of `a` with column `c` replaced by column `c + k` modulo the matrix width.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`validate_blas_rotate_cols`](crate::reference::validate_blas_rotate_cols), raised before the
+    /// backend runs, so `res` and the inputs are untouched: `InvalidOperand` for a grid, shape, layout or context it
+    /// rejects, `MissingAutomorphismKey` for a key `atk` lacks at its width. Then poulpy-ckks's budget errors, such as
+    /// `InsufficientHomomorphicCapacity` when `res` is narrower than `a`'s scale, raised before any write.
     fn blas_rotate_cols<R, A, K>(
         &self,
         res: &mut R,

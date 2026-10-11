@@ -4,8 +4,8 @@ mod inter;
 mod intra;
 mod matmul;
 
-pub use inter::BlasMatInterReference;
-pub use intra::BlasMatIntraReference;
+pub use inter::{BlasMatInterReference, validate_blas_rotate, validate_blas_sum};
+pub use intra::{BlasMatIntraReference, validate_blas_rotate_cols, validate_blas_rotate_rows, validate_blas_transpose};
 pub use matmul::BlasMatMulReference;
 
 use std::cell::RefCell;
@@ -15,23 +15,28 @@ use poulpy_ckks::{
     api::{CKKSLinearTransformationOps, CKKSModuleInfos, LinearTransformation, LtDiagonalMeta},
 };
 use poulpy_core::layouts::{
-    Base2K, GGLWEInfos, GGLWELayout, GetAutomorphismKey, GetTensorKey, LWEInfos, TorusPrecision,
+    Base2K, GGLWEInfos, GGLWELayout, GLWEInfos, GetAutomorphismKey, GetTensorKey, LWEInfos, TorusPrecision,
     prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWETensorKeyPreparedBackendRef},
 };
 use poulpy_hal::layouts::{Backend, Ring, ScratchArena};
 
 use crate::layouts::{BlasGridInfos, batch_fits, batch_of, layout_of};
 
-/// The `InvalidPlan` rejection of `op` for `reason`.
-pub fn reject(op: &'static str, reason: String) -> CKKSError {
-    CKKSCompositionError::InvalidPlan { plan: op, reason }.into()
+/// The `InvalidOperand` rejection of `op` for `reason`.
+pub(crate) fn reject(op: &'static str, reason: String) -> CKKSError {
+    CKKSCompositionError::InvalidOperand { op, reason }.into()
 }
 
 /// Rejects `g`, whose blocks are `blocks`, unless it reads `2^log_d x 2^log_d` blocks, at least one and exactly
 /// `rows x cols` of them, that share one layout, whose `log_delta` does not exceed their `k`, and whose label allows its
 /// batch on ring `R`: a power of two from the batch the label proves to the slots' dense batch, with the label at most
 /// `log2` of the degree.
-pub fn ensure_grid<R: Ring>(op: &'static str, log_d: usize, g: &impl BlasGridInfos, blocks: &[impl CKKSCtBounds]) -> Result<()> {
+pub(crate) fn ensure_grid<R: Ring>(
+    op: &'static str,
+    log_d: usize,
+    g: &impl BlasGridInfos,
+    blocks: &[impl CKKSCtBounds],
+) -> Result<()> {
     if g.log_d() != log_d {
         return Err(reject(op, format!("grid dimension 2^{} differs from 2^{log_d}", g.log_d())));
     }
@@ -70,7 +75,7 @@ pub fn ensure_grid<R: Ring>(op: &'static str, log_d: usize, g: &impl BlasGridInf
 }
 
 /// Rejects `g` unless it has `rows x cols` blocks.
-pub fn ensure_shape<G: BlasGridInfos>(op: &'static str, g: &G, rows: usize, cols: usize) -> Result<()> {
+pub(crate) fn ensure_shape<G: BlasGridInfos>(op: &'static str, g: &G, rows: usize, cols: usize) -> Result<()> {
     if (g.rows(), g.cols()) != (rows, cols) {
         return Err(reject(
             op,
@@ -80,8 +85,32 @@ pub fn ensure_shape<G: BlasGridInfos>(op: &'static str, g: &G, rows: usize, cols
     Ok(())
 }
 
+/// Rejects `inputs` unless each holds blocks of the degree, radix and rank of `res`'s.
+pub(crate) fn ensure_layouts(op: &'static str, res: &dyn BlasGridInfos, inputs: &[&dyn BlasGridInfos]) -> Result<()> {
+    let ring = |g: &dyn BlasGridInfos| {
+        let block = g.block_layout();
+        (block.n().as_usize(), block.base2k().as_usize(), block.rank().as_usize())
+    };
+    if let Some(input) = inputs.iter().find(|g| ring(**g) != ring(res)) {
+        return Err(reject(
+            op,
+            format!(
+                "blocks of (n, base2k, rank) = {:?} read into blocks of {:?}",
+                ring(*input),
+                ring(res)
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// Most lazy terms an `i64` digit at radix `base2k` holds: poulpy-ckks's `2^(63 - base2k)`.
+pub(crate) fn max_lazy_terms(base2k: usize) -> usize {
+    63usize.checked_sub(base2k).map_or(0, |shift| 1 << shift)
+}
+
 /// Rejects a product whose left operand's `a_cols` block columns differ from its right operand's `b_rows` block rows.
-pub fn ensure_inner(op: &'static str, a_cols: usize, b_rows: usize) -> Result<()> {
+pub(crate) fn ensure_inner(op: &'static str, a_cols: usize, b_rows: usize) -> Result<()> {
     if a_cols != b_rows {
         return Err(reject(op, format!("{a_cols} block columns against {b_rows} block rows")));
     }
@@ -90,7 +119,7 @@ pub fn ensure_inner(op: &'static str, a_cols: usize, b_rows: usize) -> Result<()
 
 /// Rejects maps encoded on a module of `slots` slots at radix `base2k` unless `module` has `slots` slots and every grid
 /// of `inputs`, the grids they read, holds blocks at `base2k`.
-pub fn ensure_maps<M: CKKSModuleInfos + ?Sized>(
+pub(crate) fn ensure_maps<M: CKKSModuleInfos + ?Sized>(
     op: &'static str,
     module: &M,
     slots: usize,
@@ -120,7 +149,7 @@ pub fn ensure_maps<M: CKKSModuleInfos + ?Sized>(
 }
 
 /// Fails with `MissingAutomorphismKey` on the first rotation that has no key at width `k`.
-pub fn ensure_keys<BE, M, K>(
+pub(crate) fn ensure_keys<BE, M, K>(
     op: &'static str,
     module: &M,
     rotations: impl IntoIterator<Item = i64>,
@@ -148,7 +177,7 @@ where
 }
 
 /// Fails with `MissingRelinearizationKey` unless `keys` holds a tensor key at width `k`.
-pub fn ensure_tensor_key<BE: Backend, K: GetTensorKey<BE>>(op: &'static str, keys: &K, k: TorusPrecision) -> Result<()> {
+pub(crate) fn ensure_tensor_key<BE: Backend, K: GetTensorKey<BE>>(op: &'static str, keys: &K, k: TorusPrecision) -> Result<()> {
     keys.get_tensor_key(k)
         .map_err(|_| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into() })?;
     Ok(())
@@ -156,7 +185,7 @@ pub fn ensure_tensor_key<BE: Backend, K: GetTensorKey<BE>>(op: &'static str, key
 
 /// Width poulpy-ckks gives `lt` evaluated from a ciphertext of width `src_k` into one of width `dst_k`, on an input it
 /// evaluates: the diagonals' scale comes off the source, capped at the destination.
-pub fn lt_output_k<P: LtDiagonalMeta>(
+pub(crate) fn lt_output_k<P: LtDiagonalMeta>(
     lt: &LinearTransformation<P>,
     src_k: TorusPrecision,
     dst_k: TorusPrecision,
@@ -171,7 +200,7 @@ pub fn lt_output_k<P: LtDiagonalMeta>(
 /// These are poulpy-ckks's widths on inputs it evaluates. On an input it rejects with a budget error, this check may
 /// ask for a key poulpy-ckks never looks up for that input: a store holding exactly the widths in use then fails here
 /// with `MissingAutomorphismKey` instead of that budget error.
-pub fn ensure_lt_keys<BE, M, P, K>(
+pub(crate) fn ensure_lt_keys<BE, M, P, K>(
     op: &'static str,
     module: &M,
     lt: &LinearTransformation<P>,
@@ -191,7 +220,8 @@ where
 }
 
 /// `keys`, recording the layout of every key looked up through it: an operation sizes its scratch query on the keys its
-/// checks look up, so a call that looks up no key does not assert its scratch.
+/// checks look up, so a call that looks up no key does not assert its scratch. A reference runs on keys its validator
+/// accepted, so it repeats the validator's look-ups through it only to record their layouts.
 pub(crate) struct KeyLayouts<'a, K> {
     keys: &'a K,
     atks: RefCell<Vec<GGLWELayout>>,

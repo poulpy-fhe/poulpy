@@ -17,7 +17,7 @@ use poulpy_hal::{
 
 use super::{
     KeyLayouts, assert_scratch, ensure_grid, ensure_inner, ensure_lt_keys, ensure_maps, ensure_shape, ensure_tensor_key,
-    lt_output_k, lt_tmp_bytes, reject, stamp_sparsity,
+    lt_output_k, lt_tmp_bytes, max_lazy_terms, reject, stamp_sparsity,
 };
 use crate::layouts::{BlasCiphertext, BlasContext, BlasGridInfos, BlasMatMulLeft, BlasMatMulRight, BlasPtOperand};
 
@@ -367,11 +367,6 @@ where
     ensure_shape(op, res, a.rows(), b.cols())?;
     ensure_maps(op, module, ctx.slots(), ctx.base2k(), &[a, b])?;
     ensure_lazy_sums(op, res.block_layout().base2k().as_usize(), a.cols(), 1 << ctx.log_d())
-}
-
-/// Most lazy terms an `i64` digit at radix `base2k` holds: poulpy-ckks's `2^(63 - base2k)`.
-fn max_lazy_terms(base2k: usize) -> usize {
-    63usize.checked_sub(base2k).map_or(0, |shift| 1 << shift)
 }
 
 /// Rejects `inner` steps of `step` lazy terms each into blocks at radix `base2k` when one step passes [`max_lazy_terms`]

@@ -1,11 +1,12 @@
 //! Paired backends on identical fixtures, compared bit for bit through the extension points, which the API calls and
-//! then stamps with the output's batch record.
+//! then stamps with the output's batch record. Inter and intra calls that poulpy-ckks rejects for their budget inside the
+//! implementation return the same error on both, `res` and the inputs unchanged.
 //!
 //! Every call, encodings and preparations included, runs under [`with_scratch`]: exactly the bytes its query reports,
 //! poisoned and guarded. Storage and ring are free; rank and `dsize` follow `params`.
 
 use poulpy_ckks::{
-    CoeffsMeta, SlotsKind,
+    CKKSCompositionError, CKKSLayout, CKKSResult, CoeffsMeta, SlotsKind,
     api::{CKKSEncodingOps, CKKSLinearTransformationOps, CKKSModuleInfos},
     layouts::CKKSModuleAlloc,
     test_suite::{
@@ -131,8 +132,38 @@ where
     Module<B>: GLWEMaskFill<B>,
 {
     let la = layout(params, params.rank, width(params), params.base2k - 1, 0, SlotsKind::Complex);
+    grid_of(module, &la, log_d, rows, cols, seed)
+}
+
+/// [`operand`] at a width below its scale, `base2k - 1`: poulpy-ckks rejects the budget of any operation into it.
+fn narrow<B: Backend<ZnxWord = i64>>(
+    params: CKKSTestParams,
+    module: &Module<B>,
+    log_d: usize,
+    rows: usize,
+    cols: usize,
+    seed: u8,
+) -> BlasCiphertextOwned<B>
+where
+    Module<B>: GLWEMaskFill<B>,
+{
+    let la = layout(params, params.rank, params.base2k - 2, 0, 0, SlotsKind::Complex);
+    grid_of(module, &la, log_d, rows, cols, seed)
+}
+
+fn grid_of<B: Backend<ZnxWord = i64>>(
+    module: &Module<B>,
+    la: &CKKSLayout,
+    log_d: usize,
+    rows: usize,
+    cols: usize,
+    seed: u8,
+) -> BlasCiphertextOwned<B>
+where
+    Module<B>: GLWEMaskFill<B>,
+{
     let blocks = (0..rows * cols)
-        .map(|t| fixture_ciphertext(module, &la, seed + t as u8))
+        .map(|t| fixture_ciphertext(module, la, seed + t as u8))
         .collect();
     BlasCiphertext::from_blocks(blocks, log_d, rows, cols).unwrap()
 }
@@ -203,6 +234,53 @@ where
     out
 }
 
+/// The errors of calls that fail, by operation.
+type Failures = Vec<(&'static str, Option<CKKSCompositionError>)>;
+
+/// Runs `call`, which must fail, and asserts it leaves `res`, its batch record included, and `inputs` unchanged.
+fn failure<B: BlasParityBackend>(
+    op: &'static str,
+    res: &mut BlasCiphertextOwned<B>,
+    inputs: &[&BlasCiphertextOwned<B>],
+    call: impl FnOnce(&mut BlasCiphertextOwned<B>) -> CKKSResult<()>,
+) -> (&'static str, Option<CKKSCompositionError>) {
+    let state = |res: &BlasCiphertextOwned<B>| {
+        let inputs: Vec<_> = inputs.iter().map(|g| grid_snapshot::<B, _>(g)).collect();
+        (output::<B>(op, res), inputs)
+    };
+    let before = state(res);
+    let e = call(res).expect_err(op);
+    assert!(state(res) == before, "{op} changed res or an input before failing");
+    (op, e.composition().cloned())
+}
+
+/// A rotation and a sum into [`narrow`] grids, which poulpy-ckks rejects for their budget inside the implementation.
+fn inter_budget<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) -> Failures
+where
+    B: BlasParityBackend,
+    Module<B>: BlasParityModule<B, F>,
+    F: TestScalar,
+{
+    let a = operand(params, module, log_d, 2, 2, 61);
+    let mut elements = sum_galois_elements(module, &a);
+    elements.extend(BlasPlan::new(log_d).rotate_galois_elements(module.cyclotomic_order(), 3));
+    let keys = fixture_keys(params, module, &elements, false);
+    let key = atk_layout(params);
+    let mut res = narrow(params, module, log_d, 2, 2, 72);
+    vec![
+        failure::<B>("blas_rotate", &mut res, &[&a], |res| {
+            with_scratch::<B, _>(module.blas_rotate_tmp_bytes(res, &a, &key), |s| {
+                module.blas_rotate(res, &a, 3, &keys, s)
+            })
+        }),
+        failure::<B>("blas_sum", &mut res, &[&a], |res| {
+            with_scratch::<B, _>(module.blas_sum_tmp_bytes(res, &a, &key), |s| {
+                module.blas_sum(res, &a, &keys, s)
+            })
+        }),
+    ]
+}
+
 fn intra<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) -> Outputs
 where
     B: BlasParityBackend,
@@ -244,6 +322,42 @@ where
     .unwrap();
     out.push(output::<B>("blas_rotate_rows one row", &res_row));
     out
+}
+
+/// A transpose and both shifts across blocks into [`narrow`] grids, which poulpy-ckks rejects for the budget of their
+/// first map inside the implementation.
+fn intra_budget<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) -> Failures
+where
+    B: BlasParityBackend,
+    Module<B>: BlasParityModule<B, F>,
+    F: TestScalar + DiagonalArithmetic,
+{
+    let ctx = context::<B, F>(params, module, log_d);
+    let keys = fixture_keys(params, module, &ctx.plan().galois_elements(module.cyclotomic_order()), false);
+    let key = atk_layout(params);
+    let d = 1usize << log_d;
+    let a = operand(params, module, log_d, 2, 3, 80);
+    let (mut res, mut res_t) = (
+        narrow(params, module, log_d, 2, 3, 100),
+        narrow(params, module, log_d, 3, 2, 90),
+    );
+    vec![
+        failure::<B>("blas_transpose", &mut res_t, &[&a], |res| {
+            with_scratch::<B, _>(module.blas_transpose_tmp_bytes(res, &a, &ctx, &key), |s| {
+                module.blas_transpose(res, &a, &ctx, &keys, s)
+            })
+        }),
+        failure::<B>("blas_rotate_rows", &mut res, &[&a], |res| {
+            with_scratch::<B, _>(module.blas_rotate_rows_tmp_bytes(res, &a, &ctx, &key), |s| {
+                module.blas_rotate_rows(res, &a, 1, &ctx, &keys, s)
+            })
+        }),
+        failure::<B>("blas_rotate_cols", &mut res, &[&a], |res| {
+            with_scratch::<B, _>(module.blas_rotate_cols_tmp_bytes(res, &a, &ctx, &key), |s| {
+                module.blas_rotate_cols(res, &a, d / 2, &ctx, &keys, s)
+            })
+        }),
+    ]
 }
 
 fn matmul<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) -> Outputs
@@ -327,7 +441,8 @@ fn compare(label: &str, want: Outputs, got: Outputs) {
     assert_eq!(want, got, "{label}");
 }
 
-/// Matrix-slot rotation and sum agree bit for bit at every swept `log_d`.
+/// Matrix-slot rotation and sum agree bit for bit at every swept `log_d`, and fail alike on a budget poulpy-ckks rejects,
+/// leaving `res` and `a` unchanged.
 pub fn test_blas_inter_parity<BR, BT, F>(params: CKKSTestParams, shapes: &BlasParityShapes, r: &Module<BR>, t: &Module<BT>)
 where
     BR: BlasParityBackend,
@@ -339,10 +454,16 @@ where
     for log_d in swept_log_d(shapes, r.ckks_max_slots()) {
         let label = format!("inter, log_d {log_d}");
         compare(&label, inter::<BR, F>(params, r, log_d), inter::<BT, F>(params, t, log_d));
+        let (want, got) = (
+            inter_budget::<BR, F>(params, r, log_d),
+            inter_budget::<BT, F>(params, t, log_d),
+        );
+        assert_eq!(want, got, "{label}: budget failures");
     }
 }
 
-/// Transpose and row and column rotations agree bit for bit at every swept `log_d`.
+/// Transpose and row and column rotations agree bit for bit at every swept `log_d`, and fail alike on a budget
+/// poulpy-ckks rejects, leaving `res` and `a` unchanged.
 pub fn test_blas_intra_parity<BR, BT, F>(params: CKKSTestParams, shapes: &BlasParityShapes, r: &Module<BR>, t: &Module<BT>)
 where
     BR: BlasParityBackend,
@@ -354,6 +475,11 @@ where
     for log_d in swept_log_d(shapes, r.ckks_max_slots()) {
         let label = format!("intra, log_d {log_d}");
         compare(&label, intra::<BR, F>(params, r, log_d), intra::<BT, F>(params, t, log_d));
+        let (want, got) = (
+            intra_budget::<BR, F>(params, r, log_d),
+            intra_budget::<BT, F>(params, t, log_d),
+        );
+        assert_eq!(want, got, "{label}: budget failures");
     }
 }
 

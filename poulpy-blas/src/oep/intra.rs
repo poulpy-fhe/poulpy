@@ -11,6 +11,12 @@ use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut};
 /// Every method reproduces its `_reference` counterpart in
 /// [`crate::reference::BlasMatIntraReference`] bit for bit, within the scratch the matching
 /// `_tmp_bytes_impl` reports. With less, a call that uses a key panics before it writes `res`, as the reference does.
+///
+/// The API runs [`crate::reference::validate_blas_transpose`], [`crate::reference::validate_blas_rotate_rows`] or
+/// [`crate::reference::validate_blas_rotate_cols`] first, so a method runs only on inputs its validator accepted, and
+/// must return `Ok` on them, except for a budget error: that error is the reference's, the one poulpy-ckks raises,
+/// returned before any write to `res`. Any other `Err` is a backend fault (a validator gap or a device failure), and
+/// `res` is then unspecified.
 pub unsafe trait BlasMatIntraImpl: Backend {
     fn blas_transpose_tmp_bytes_impl<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, atk: &K) -> usize
     where
