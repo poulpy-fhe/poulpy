@@ -32,8 +32,7 @@ pub trait CKKSMulReference<BE: Backend> {
     {
         // The op carves its tensor intermediate at the operands' effective
         // width `max(a.k, b.k)` (`ckks_mul_into`) or `max(dst.k, a.k)`
-        // (`ckks_mul_assign`), matching the `cnv_offset` rule in
-        // `mul_ct_params_raw` (which is already expressed on effective `k`).
+        // (`ckks_mul_assign`), which bounds the product's stamped width.
         // `res.k` is its pre-call metadata and does not size this intermediate.
         let tensor_layout = GLWELayout {
             n: res.n(),
@@ -666,14 +665,14 @@ pub(crate) fn mul_ct_params_raw(
     let res_log_delta = a_log_delta.min(b_log_delta);
 
     let res_offset = (res_log_budget + res_log_delta).saturating_sub(res_max_k);
-    // Addition/subtraction align to the shared, lower effective precision
-    // (`ckks_offset_binary` uses `min`). Multiplication is different: the
-    // bivariate convolution must traverse every live input limb, so the
-    // convolution offset starts after the wider operand span and then skips any
-    // extra limbs that cannot fit in `res`. This matches the already-rescaled
-    // multiplication rule documented by `CKKSMulOps` and the bivariate Torus
-    // analysis cited in the README/ePrint 2023/771.
-    let cnv_offset = a_k.max(b_k) + res_offset;
+    // An operand holds its message at `2^-log_budget` on the torus and the
+    // convolution returns `a * b * 2^cnv_offset`, so lifting the product from
+    // `2^-(a_log_budget + b_log_budget)` to the stamped budget
+    // `min(log_budget) - max(log_delta) - res_offset` takes
+    // `max(log_budget) + max(log_delta) + res_offset`. That is
+    // `max(a_k, b_k) + res_offset` only when the operand with the larger budget
+    // also has the larger or equal scale.
+    let cnv_offset = a_log_budget.max(b_log_budget) + a_log_delta.max(b_log_delta) + res_offset;
 
     Ok((
         checked_log_budget_sub("mul", res_log_budget, res_offset)?,

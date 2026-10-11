@@ -246,6 +246,10 @@ macro_rules! ckks_backend_rank2_test_suite {
             run_test_result!(neg_assign, $crate::test_suite::neg::test_neg_assign);
             run_test!(mul_ct_aligned, $crate::test_suite::mul::test_mul_ct_aligned);
             run_test!(
+                mul_ct_larger_budget_smaller_scale,
+                $crate::test_suite::mul::test_mul_ct_larger_budget_smaller_scale
+            );
+            run_test!(
                 mul_ct_assign_aligned,
                 $crate::test_suite::mul::test_mul_ct_assign_aligned
             );
@@ -645,6 +649,10 @@ macro_rules! ckks_backend_test_suite {
             run_test!(
                 mul_ct_delta_log_delta,
                 $crate::test_suite::mul::test_mul_ct_delta_log_delta
+            );
+            run_test!(
+                mul_ct_larger_budget_smaller_scale,
+                $crate::test_suite::mul::test_mul_ct_larger_budget_smaller_scale
             );
             run_test!(
                 mul_ct_smaller_output,

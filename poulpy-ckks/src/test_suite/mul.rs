@@ -9,6 +9,7 @@
 //! | [`test_mul_ct_aligned`] | both inputs at same `log_budget()` |
 //! | [`test_mul_ct_delta_a_lt_b`] | `a.log_budget() < b.log_budget()` |
 //! | [`test_mul_ct_delta_a_gt_b`] | `a.log_budget() > b.log_budget()` |
+//! | [`test_mul_ct_larger_budget_smaller_scale`] | the operand with the larger `log_budget()` has the smaller `log_delta()`, both orders, also `_assign`, `_prepared_assign` and the dot product |
 //! | [`test_mul_ct_smaller_output`] | output has smaller `max_k()` than inputs |
 //! | [`test_mul_ct_smaller_output_exact_scratch`] | same, on a scratch arena of exactly `ckks_mul_tmp_bytes` |
 //!
@@ -46,7 +47,11 @@
 //! | Function | Path exercised |
 //! |----------|----------------|
 //! | [`test_mul_pt_vec_assign`] | - |
-use crate::{CKKSCompositionError, CKKSInfos, api::CKKSMulOps, layouts::CKKSModuleAlloc};
+use crate::{
+    CKKSCompositionError, CKKSInfos,
+    api::{CKKSDotProductOps, CKKSMulOps},
+    layouts::CKKSModuleAlloc,
+};
 use poulpy_core::layouts::{GLWEToBackendMut, LWEInfos};
 
 use poulpy_hal::{
@@ -317,6 +322,106 @@ where
         &sk,
         &want_re,
         &want_im,
+        low_log_delta,
+        &mut scratch.borrow(),
+    );
+}
+
+/// Operands at the same `k` where the one with the larger budget has the smaller scale, in both orders,
+/// through `ckks_mul_into`, `ckks_mul_assign`, `ckks_mul_prepared_assign` and `ckks_dot_product_ct`.
+pub fn test_mul_ct_larger_budget_smaller_scale<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+
+    let low_log_delta = params.prec().log_delta() - DELTA_LOG_DELTA;
+    let (a_re, a_im) = quantized_vector(host_module, &encoder, &params, TestVector::First, params.prec().log_delta());
+    let (b_re, b_im) = quantized_vector(host_module, &encoder, &params, TestVector::Second, low_log_delta);
+    let ct1 = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &a_re,
+        &a_im,
+        &mut scratch.borrow(),
+    );
+    let ct2 = ckks_encrypt_with_prec(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &b_re,
+        &b_im,
+        precision_at(&params, low_log_delta),
+        &mut scratch.borrow(),
+    );
+    assert_eq!(ct2.log_budget(), ct1.log_budget() + DELTA_LOG_DELTA);
+    let (want_re, want_im) = want_mul(&a_re, &a_im, &b_re, &b_im);
+
+    for (order, a, b) in [("a*b", &ct1, &ct2), ("b*a", &ct2, &ct1)] {
+        let label = format!("mul_ct larger_budget_smaller_scale {order}");
+        let mut ct_res = alloc_ct(&params, module, params.k);
+        module.ckks_mul_into(&mut ct_res, a, b, &tsk, &mut scratch.borrow()).unwrap();
+        assert_mul_ct_output_meta(&label, &ct_res, a, b);
+
+        let mut assigned = a.clone();
+        module.ckks_mul_assign(&mut assigned, b, &tsk, &mut scratch.borrow()).unwrap();
+
+        let prepared = module.ckks_prepare_right(b, &mut scratch.borrow()).unwrap();
+        let mut prepared_result = a.clone();
+        module
+            .ckks_mul_prepared_assign(&mut prepared_result, &prepared, &tsk, &mut scratch.borrow())
+            .unwrap();
+
+        for (variant, ct) in [("into", &ct_res), ("assign", &assigned), ("prepared", &prepared_result)] {
+            assert_decrypt_precision_at_log_delta(
+                &format!("{label} {variant}"),
+                &params,
+                module,
+                &encoder,
+                ct,
+                &sk,
+                &want_re,
+                &want_im,
+                low_log_delta,
+                &mut scratch.borrow(),
+            );
+        }
+    }
+
+    // The dot product sums one `ckks_mul_into` per term: `a*b + b*a`.
+    let mut dot = alloc_ct(&params, module, params.k);
+    module
+        .ckks_dot_product_ct(&mut dot, &[&ct1, &ct2], &[&ct2, &ct1], &tsk, &mut scratch.borrow())
+        .unwrap();
+    let twice = |v: &[F]| v.iter().map(|&x| x + x).collect::<Vec<F>>();
+    assert_decrypt_precision_at_log_delta(
+        "mul_ct larger_budget_smaller_scale dot_product",
+        &params,
+        module,
+        &encoder,
+        &dot,
+        &sk,
+        &twice(&want_re),
+        &twice(&want_im),
         low_log_delta,
         &mut scratch.borrow(),
     );
