@@ -18,11 +18,14 @@ CKKS and core overrides remain effective inside them.
 | `BlasMatInterImpl` | `blas_rotate`, `blas_sum` | `BlasMatInterReference`, [`reference/inter.rs`](../src/reference/inter.rs) | `impl_blas_inter_reference!` |
 | `BlasMatIntraImpl` | `blas_transpose`, `blas_rotate_rows`, `blas_rotate_cols`, provided over the map hook `blas_map_blocks` | `BlasMatIntraReference` (the hook), [`reference/intra.rs`](../src/reference/intra.rs) | `impl_blas_intra_reference!` |
 | `BlasMatMulImpl` | `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, `blas_matmul_prepared`, `blas_matmul_pt`, and `blas_matmul` provided over the preparations and the prepared product | `BlasMatMulReference`, [`reference/matmul.rs`](../src/reference/matmul.rs) | `impl_blas_matmul_reference!` |
+| `BlasJklsImpl` | the JKLS kernel `blas_jkls_block`, one output block of the prepared product | `BlasMatMulReference::blas_jkls_block_reference`, [`reference/matmul.rs`](../src/reference/matmul.rs) | `impl_blas_jkls_reference!` |
 
 Each operation's `_tmp_bytes` query belongs to the same family.
-`impl_blas_reference_full!` expands to the three family macros. `BlasImpl`
-aggregates the three families as a test bound; it has a blanket implementation
-and is never implemented directly.
+`impl_blas_reference_full!` expands to the four family macros. `BlasImpl`
+aggregates the four families as a test bound; it has a blanket implementation
+and is never implemented directly. The matrix-product reference prepares its
+operands through the backend's map hook and multiplies them through its JKLS
+kernel, so `impl_blas_matmul_reference!` needs both other families.
 
 The API checks every operation before it reaches the implementation, from
 metadata alone, with the `validate_*` functions of `poulpy_blas::reference`:
@@ -30,16 +33,10 @@ shapes, layouts, batch records, the context and every key at its width. A
 rejected operand returns `CKKSCompositionError::InvalidOperand`, a missing key
 `MissingAutomorphismKey` or `MissingRelinearizationKey`, and none changes
 `res`. An implementation therefore runs only on accepted inputs and returns
-`Ok` on them, except for the reference's own errors:
-
-- poulpy-ckks's budget error, which the reference raises before any write;
-- until the terms of a prepared operand share one width, two errors of the
-  matrix products. The prepared product's validator reads the operands' infos
-  alone, which report the widest term, so the reference checks the tensor key
-  at each narrower term's width before any write and returns
-  `MissingRelinearizationKey` for one `tsk` lacks. And a budget error that only
-  the products of the narrower terms meet comes after the first terms are
-  written: `res` is then partly written.
+`Ok` on them, or poulpy-ckks's budget error, which the reference raises before
+any write to `res`. Every block of a grid shares one layout, so the first
+block's poulpy-ckks call fails before any block is written; an override returns
+that same error before it writes.
 
 ## Grids and keys
 
@@ -167,6 +164,31 @@ one call with both half maps over every block of `a`, into a heap grid of
 provided shifts hold that whole grid, and a backend that needs less memory
 overrides them to chunk it.
 
+The prepared operands of the reference hold `d` terms per block, all at one
+width, `a.k - 2p` for the maps' scale `p`: sigma (tau) of the block, narrowed
+exactly to that width by `ckks_copy`, then its `d - 1` shifts. The preparations
+make two hook calls: sigma over every block, then every shift of every sigma
+result, from one baby-step cache per result. The prepared product then runs one
+JKLS kernel, `BlasJklsImpl::blas_jkls_block_impl`, per block of `res`, so both
+`blas_matmul` and `blas_matmul_prepared` reach it. The reference kernel is
+poulpy-ckks's `ckks_dot_product_ct` over the block's `K d` pairs of terms: each
+tensor product is rounded on its own at the terms' width, the products are
+summed exactly, `res` is stamped and relinearized once, with the tensor key at
+the wider term width. The order, grouping and split of the terms over workers
+leave the bits unchanged, as do extra exact normalizations of the sum, provided
+no accumulator, partial sums included, holds more than `2^(63 - base2k)` terms
+since its last normalization, a normalized sum counting as one: partial sums
+are normalized before they are combined unless their counts fit together.
+Summing unrounded products changes the bits. A fused kernel, behind the
+backend's own `enable-blas`, replaces that family alone:
+
+```rust
+::poulpy_blas::impl_blas_inter_reference!(MyBackend);
+::poulpy_blas::impl_blas_intra_reference!(MyBackend);
+::poulpy_blas::impl_blas_matmul_reference!(MyBackend);
+unsafe impl poulpy_blas::oep::BlasJklsImpl for MyBackend { /* the kernel and its query */ }
+```
+
 The rotation, the sum and the hook split their blocks over up to four workers
 of the backend's `TaskExecutor`, each on its own scratch slice (and, in the
 hook, its own baby-step cache), so a Rayon backend writes nothing. Their
@@ -211,9 +233,9 @@ batch record, and every block bit for bit, digits and CKKS metadata. Prepared
 operands are compared through their infos alone, `(log_d, rows, cols,
 block_layout, mat_slots)`, which must also equal their input's term layout and
 batch; the prepared product runs twice on one pair and must equal
-`blas_matmul` both times. Inter and
-intra parity also run calls that poulpy-ckks rejects for their budget: both
-backends return the same error and leave `res` and the inputs unchanged.
+`blas_matmul` both times. Each family's parity also runs calls that
+poulpy-ckks rejects for their budget: both backends return the same error and
+leave `res` and the inputs unchanged.
 Storage and ring are free: the bounds are `BlasParityBackend`
 (`Backend<ZnxWord = i64>` and every BLAS family) and `BlasParityModule`. Rank
 and `dsize` follow `params`, as in CKKS parity.

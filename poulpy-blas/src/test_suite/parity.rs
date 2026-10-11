@@ -1,5 +1,5 @@
 //! Paired backends on identical fixtures, compared bit for bit through the extension points, which the API calls and
-//! then stamps with the output's batch record. Inter and intra calls that poulpy-ckks rejects for their budget inside the
+//! then stamps with the output's batch record. Calls that poulpy-ckks rejects for their budget inside the
 //! implementation return the same error on both, `res` and the inputs unchanged.
 //!
 //! Every call, encodings and preparations included, runs under [`with_scratch`]: exactly the bytes its query reports,
@@ -453,6 +453,49 @@ where
     (out, infos)
 }
 
+/// A product and a prepared product into a [`narrow`] grid, which poulpy-ckks rejects for the budget of the first
+/// block's JKLS kernel inside the implementation, after the preparations: no block of `res` is written.
+fn matmul_budget<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) -> Failures
+where
+    B: BlasParityBackend,
+    Module<B>: BlasParityModule<B, F>,
+    F: TestScalar + DiagonalArithmetic,
+{
+    let ctx = context::<B, F>(params, module, log_d);
+    let keys = fixture_keys(
+        params,
+        module,
+        &ctx.plan().matmul_galois_elements(module.cyclotomic_order()),
+        true,
+    );
+    let (atk, tsk) = (atk_layout(params), tsk_layout(params));
+    let (a, b) = (
+        operand(params, module, log_d, 2, 2, 120),
+        operand(params, module, log_d, 2, 1, 124),
+    );
+    let left = with_scratch::<B, _>(module.blas_matmul_prepare_left_tmp_bytes(&a, &ctx, &atk), |s| {
+        module.blas_matmul_prepare_left(&a, &ctx, &keys, s)
+    })
+    .unwrap();
+    let right = with_scratch::<B, _>(module.blas_matmul_prepare_right_tmp_bytes(&b, &ctx, &atk), |s| {
+        module.blas_matmul_prepare_right(&b, &ctx, &keys, s)
+    })
+    .unwrap();
+    let mut res = narrow(params, module, log_d, 2, 1, 128);
+    vec![
+        failure::<B>("blas_matmul", &mut res, &[&a, &b], |res| {
+            with_scratch::<B, _>(module.blas_matmul_tmp_bytes(res, &a, &b, &ctx, &tsk, &atk), |s| {
+                module.blas_matmul(res, &a, &b, &ctx, &keys, &keys, s)
+            })
+        }),
+        failure::<B>("blas_matmul_prepared", &mut res, &[], |res| {
+            with_scratch::<B, _>(module.blas_matmul_prepared_tmp_bytes(res, &left, &right, &tsk), |s| {
+                module.blas_matmul_prepared(res, &left, &right, &keys, s)
+            })
+        }),
+    ]
+}
+
 fn compare(label: &str, want: Outputs, got: Outputs) {
     assert_untagged(label, want.iter().flat_map(|(_, _, s)| s));
     assert_eq!(want, got, "{label}");
@@ -501,7 +544,8 @@ where
 }
 
 /// The products and the prepared product agree bit for bit at every swept `log_d`, and the prepared operands' infos,
-/// `(log_d, rows, cols, block_layout, mat_slots)`, agree; prepared storage is never compared.
+/// `(log_d, rows, cols, block_layout, mat_slots)`, agree; prepared storage is never compared. Both products fail alike
+/// on a budget poulpy-ckks rejects, leaving `res` and the factors unchanged.
 pub fn test_blas_matmul_parity<BR, BT, F>(params: CKKSTestParams, shapes: &BlasParityShapes, r: &Module<BR>, t: &Module<BT>)
 where
     BR: BlasParityBackend,
@@ -515,5 +559,10 @@ where
         let ((want, want_infos), (got, got_infos)) = (matmul::<BR, F>(params, r, log_d), matmul::<BT, F>(params, t, log_d));
         compare(&label, want, got);
         assert_eq!(want_infos, got_infos, "{label}: prepared operands");
+        let (want, got) = (
+            matmul_budget::<BR, F>(params, r, log_d),
+            matmul_budget::<BT, F>(params, t, log_d),
+        );
+        assert_eq!(want, got, "{label}: budget failures");
     }
 }

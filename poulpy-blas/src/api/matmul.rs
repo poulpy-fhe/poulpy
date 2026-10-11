@@ -34,11 +34,10 @@ pub trait BlasMatMulOps<BE: BlasMatMulImpl> {
     /// # Errors
     ///
     /// The errors of [`validate_blas_matmul`](crate::reference::validate_blas_matmul), raised before the backend runs, so
-    /// `res` and the inputs are untouched: `InvalidOperand` for a grid, shape, layout, context or lazy sum it rejects,
-    /// `MissingAutomorphismKey` for a key `atk` lacks at its width, `MissingRelinearizationKey` for one `tsk` lacks.
-    /// Then poulpy-ckks's budget errors, such as `InsufficientHomomorphicCapacity`, before any write to `res`, except
-    /// one that only the products of the shifted terms meet, narrower than the first: until the terms share one width,
-    /// it comes after the first terms are written, and `res` is then partly written.
+    /// `res` and the inputs are untouched: `InvalidOperand` for a grid, shape, layout, context or radix above 62 it
+    /// rejects, `MissingAutomorphismKey` for a key `atk` lacks at its width, `MissingRelinearizationKey` for one `tsk`
+    /// lacks at the operands' term width. Then poulpy-ckks's budget errors, such as `InsufficientHomomorphicCapacity`,
+    /// before any write to `res`.
     #[allow(clippy::too_many_arguments)]
     fn blas_matmul<R, A, B, T, K>(
         &self,
@@ -141,12 +140,9 @@ pub trait BlasMatMulOps<BE: BlasMatMulImpl> {
     ///
     /// The errors of [`validate_blas_matmul_prepared`](crate::reference::validate_blas_matmul_prepared), raised before
     /// the backend runs, so `res` and the operands are untouched: `InvalidOperand` for an operand without a batch record,
-    /// or a grid, shape, layout or lazy sum it rejects, `MissingRelinearizationKey` for a tensor key `tsk` lacks at the
-    /// operands' width. Until the terms share one width, the reference then checks `tsk` at the shifted terms' narrower
-    /// width, `MissingRelinearizationKey` before any write. Then poulpy-ckks's budget errors, such as
-    /// `InsufficientHomomorphicCapacity`, before any write to `res`, except one that only the products of the shifted
-    /// terms meet: until the terms share one width, it comes after the first terms are written, and `res` is then partly
-    /// written.
+    /// or a grid, shape, layout or radix above 62 it rejects, `MissingRelinearizationKey` for a tensor key `tsk` lacks at
+    /// the operands' term width. Then poulpy-ckks's budget errors, such as `InsufficientHomomorphicCapacity`, before any
+    /// write to `res`.
     fn blas_matmul_prepared<R, T>(
         &self,
         res: &mut R,

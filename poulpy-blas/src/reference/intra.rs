@@ -128,8 +128,10 @@ pub(crate) fn shift_maps<BE: Backend>(
 }
 
 /// Reference of the map hook of [`crate::oep::BlasMatIntraImpl`], under which the transpose and the shifts are
-/// provided. It runs on the inputs of an operation its validator accepted ([`validate_blas_transpose`],
-/// [`validate_blas_rotate_rows`], [`validate_blas_rotate_cols`]): it checks nothing but its scratch, and returns
+/// provided, and through which the reference preparations of products run. It runs on the inputs of an operation its
+/// validator accepted ([`validate_blas_transpose`], [`validate_blas_rotate_rows`], [`validate_blas_rotate_cols`],
+/// [`crate::reference::validate_blas_matmul_prepare_left`], [`crate::reference::validate_blas_matmul_prepare_right`],
+/// [`crate::reference::validate_blas_matmul`]): it checks nothing but its scratch, and returns
 /// poulpy-ckks's budget errors before any write. It splits the sources over up to four workers of `BE`'s task executor,
 /// each with its own scratch slice and baby-step cache, and returns the error of the lowest failing source, as a serial
 /// loop would.

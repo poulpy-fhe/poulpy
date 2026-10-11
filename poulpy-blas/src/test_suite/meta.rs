@@ -34,13 +34,14 @@ use crate::{
 };
 
 /// Every per-matrix map, the matrix-slot rotation and the sum give their result the metadata [`copied_layout`] or
-/// [`mapped_layout`] derives from their input, whatever `res` held, and the values of their cleartext model: transpose, row and
-/// column rotations across blocks, within one block and by whole blocks, the product by public matrices and the
+/// [`mapped_layout`] derives from their input, whatever `res` held, and the values of their cleartext model: transpose,
+/// row and column rotations across blocks, within one block and by whole blocks, the product by public matrices and the
 /// rotation, from a half-full batch into a fresh grid and from a full batch into a grid labelled and recorded half
-/// full. The operand preparations report their input's dimensions and batch and the layout of sigma (tau) of its blocks,
-/// which [`blas_matmul_term_layout`] gives. Summing a transposed half-full batch adds each of its
-/// matrices once and records them. The sum of one matrix copies it, the transpose of a real batch keeps its slots real,
-/// and the terms of an integer batch are real. On one matrix slot no batch is half full: only the full one runs.
+/// full. The operand preparations report their input's dimensions and batch and the layout of their terms, sigma (tau)
+/// then a shift of its blocks, which [`blas_matmul_term_layout`] gives. Summing a transposed half-full batch adds each
+/// of its matrices once and records them. The sum of one matrix copies it, the transpose of a real batch keeps its
+/// slots real, and the terms of an integer batch are real. On one matrix slot no batch is half full: only the full one
+/// runs.
 pub fn test_blas_result_meta<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -199,7 +200,7 @@ pub fn test_blas_result_meta<BE, F, E>(
             ("prepare_left", grid_infos(&left), row),
             ("prepare_right", grid_infos(&right), column),
         ] {
-            let layout = mapped_layout(a, a.rows(), a.cols(), k, p);
+            let layout = mapped_layout(a, a.rows(), a.cols(), k, 2 * p);
             assert_eq!(blas_matmul_term_layout(a, &ctx), layout, "{}: term layout", label(op));
             assert_eq!(operand, (layout, a.mat_slots()), "{}: operand infos", label(op));
         }
@@ -259,7 +260,7 @@ pub fn test_blas_result_meta<BE, F, E>(
     let left = module
         .blas_matmul_prepare_left(&integer, &ctx, &keys, &mut op_scratch.borrow())
         .unwrap();
-    let layout = mapped_layout(&integer, 1, 2, k, p);
+    let layout = mapped_layout(&integer, 1, 2, k, 2 * p);
     assert_eq!(layout.block.slots(), SlotsKind::Real);
     assert_eq!(blas_matmul_term_layout(&integer, &ctx), layout, "integer batch: term layout");
     assert_eq!(
@@ -404,7 +405,7 @@ pub fn test_blas_batch_record<BE, F, E>(
             &res,
             &sk,
             &a.matmul(b),
-            &product_layout(ct_a, ct_b, 1, 1, params.k, 2 * params.prec().log_delta()),
+            &product_layout(ct_a, ct_b, 1, 1, params.k, params.prec().log_delta()),
             &mut scratch.borrow(),
         );
 

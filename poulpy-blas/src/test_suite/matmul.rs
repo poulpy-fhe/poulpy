@@ -34,9 +34,10 @@ use crate::{
     reference::{blas_matmul_term_layout, validate_blas_matmul_prepared},
 };
 
-/// `dec(matmul(enc(A), enc(B)))` is `A B` for every matrix of the batch, for a `2 x 3` grid times a `3 x 2` grid, and
-/// `blas_matmul` equals `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, then `blas_matmul_prepared`, bit for bit,
-/// all with the rotation keys of the plan's product set alone, which both preparations take.
+/// `dec(matmul(enc(A), enc(B)))` is `A B` for every matrix of the batch, for a `2 x 3` grid times a `3 x 2` grid, with
+/// the JKLS product's metadata and canonical blocks, and `blas_matmul` equals `blas_matmul_prepare_left`,
+/// `blas_matmul_prepare_right`, then `blas_matmul_prepared`, bit for bit, all with the rotation keys of the plan's
+/// product set alone, which both preparations take.
 pub fn test_blas_matmul<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -108,8 +109,13 @@ pub fn test_blas_matmul<BE, F, E>(
         &res,
         &sk,
         &a.matmul(&b),
-        &product_layout(&ct_a, &ct_b, m, n, params.k, 2 * params.prec().log_delta()),
+        &product_layout(&ct_a, &ct_b, m, n, params.k, params.prec().log_delta()),
         &mut scratch.borrow(),
+    );
+    // One relinearization leaves every block normalized.
+    assert!(
+        res.blocks().iter().all(|block| block.is_canonical()),
+        "matmul: a block is not canonical"
     );
 
     let bytes = module.blas_matmul_prepare_left_tmp_bytes(&ct_a, &ctx, &atk_layout);
@@ -393,13 +399,13 @@ pub fn test_blas_matmul_pt_guards<BE, F, E>(
 /// Rejected before `res` changes, by the product and, of these cases, by those that meet them, the preparations and the
 /// prepared product: every grid [`rejected_grids`] builds, in place of a factor or of `res`, or as the input of a
 /// preparation; a `res` shape mismatch or of another degree, radix or rank, and an input of a preparation of another
-/// degree or radix ([`foreign_layouts`]); a copy relabelled
-/// past `log2` of the ring degree; a context encoded on a module of another degree or at another radix; a factor at a
-/// radix other than the context's; an inner-dimension mismatch; a radix whose digits cannot take a second inner index;
-/// and a missing rotation or tensor key. The prepared product's validator also rejects operand infos without a batch
-/// record, at another dimension, without a block, or whose label does not allow their record. The preparations take no
-/// tensor key and the prepared product no rotation key. Each of these operations one scratch byte short of its query
-/// panics before `res` changes.
+/// degree or radix ([`foreign_layouts`]); a copy relabelled past `log2` of the ring degree; a context encoded on a
+/// module of another degree or at another radix; a factor at a radix other than the context's; an inner-dimension
+/// mismatch; a radix above 62, whose digits cannot hold the JKLS kernel's two lazy terms; and a missing rotation or
+/// tensor key. The prepared product's validator also rejects operand infos without a batch record, at another
+/// dimension, without a block, or whose label does not allow their record. The preparations take no tensor key and the
+/// prepared product no rotation key. Each of these operations one scratch byte short of its query panics before `res`
+/// changes.
 pub fn test_blas_matmul_guards<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -551,13 +557,10 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         assert_rejected(label, "blas_matmul_prepare_right", InvalidOperand, right);
     }
 
-    // `res` at radix `63 - log_d`: its digits hold `d` lazy terms, short of the `d + 1` a second inner index brings to a
-    // normalized block. Its radix is not the factors' either, so the reason tells the two checks apart.
-    let lazy = CKKSTestParams {
-        base2k: 63 - log_d,
-        ..params
-    };
-    let mut res = alloc_grid(&lazy, module, log_d, 1, 1, params.k);
+    // `res` at radix 63: its digits hold one lazy term, short of the two the JKLS kernel sums between normalizations. Its
+    // radix is not the factors' either, so the reason tells the two checks apart.
+    let radix_63 = CKKSTestParams { base2k: 63, ..params };
+    let mut res = alloc_grid(&radix_63, module, log_d, 1, 1, params.k);
     assert_guard::<BE, _>("lazy sums", "blas_matmul", InvalidOperand, &mut res, |res| {
         module.blas_matmul(res, &ct, &column, &ctx, &keys, &keys, &mut op_scratch.borrow())
     });
@@ -660,9 +663,9 @@ pub fn test_blas_matmul_guards<BE, F, E>(
 }
 
 /// Lazy sums three times longer than the `2^(63 - base2k)` terms an `i64` digit holds: `dec(matmul(enc(A), enc(B)))` is
-/// `A B` for a `1 x K` grid times a `K x 1` grid, `blas_matmul_prepared` equals `blas_matmul` bit for bit, and
-/// `dec(matmul_pt(enc(A), B))` is `A B`. Every block is a copy of one ciphertext, so the terms' digits add up coherently,
-/// and so does their noise.
+/// `A B` for a `1 x K` grid times a `K x 1` grid, whose `K d` tensor products the JKLS kernel normalizes as it sums
+/// them, `blas_matmul_prepared` equals `blas_matmul` bit for bit, and `dec(matmul_pt(enc(A), B))` is `A B`. Every block
+/// is a copy of one ciphertext, so the terms' digits add up coherently, and so does their noise.
 ///
 /// The bound is in reach only at a high radix: at `N = 32`, NTT4x30's `MaxBase2k` is 57, a bound of 64 terms, while
 /// FFT64's stops near 23, a bound of `2^40`. Suites below radix 52 return.

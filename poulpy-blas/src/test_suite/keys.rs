@@ -91,7 +91,7 @@ fn assert_key_widths<BE, X>(
 
 /// With a key store answering only at the widths poulpy-ckks uses each key at, read off real results (a rotation at its
 /// input's width, a sum's rotations at its result's, baby steps at the source's width, giant steps at the result's, the
-/// tensor key at the wider factor of each product), every operation runs and matches its result under the full store
+/// tensor key at the wider of the products' term widths), every operation runs and matches its result under the full store
 /// bit for bit, and rejects the store short of any one of these keys before it writes. Rotations, sums, transposes, row
 /// and column shifts and products by public matrices write results half as wide as their inputs, narrower than any
 /// map's output, then one limb wider than their inputs; the matrix products run on factors of one width, then on a
@@ -287,7 +287,7 @@ pub fn test_blas_key_widths<BE, F, E>(
     for (a, b) in [(&row, &column), (&short_row, &column), (&row, &short_column)] {
         let factors = format!("a_k={} b_k={}", width(a), width(b));
         // The widths of the terms, read off real results: sigma (tau) evaluated into a block of its input's width,
-        // then phi^1 (psi^1) of that into a block of its width, which gives the width of every shift.
+        // then phi^1 (psi^1) of that into a block of its width, which gives the width of every term.
         let term_widths = |src: &BlasCiphertextOwned<BE>, first, shift| {
             let bytes = module.blas_matmul_prepare_left_tmp_bytes(src, &ctx, &atk_layout);
             let mut s = alloc(1, 1, width(src));
@@ -323,7 +323,8 @@ pub fn test_blas_key_widths<BE, F, E>(
             .into_iter()
             .chain((1..d).flat_map(|k| uses(ctx.rotate_rows(k), t_k, q_k)))
             .collect();
-        let products = [s_k.max(t_k), p_k.max(q_k)];
+        // Every term sits at the shifts' width, the one width the product looks the tensor key up at.
+        let products = [p_k.max(q_k)];
 
         let mut full = alloc(1, 1, a_k);
         let bytes = module.blas_matmul_tmp_bytes(&full, a, b, &ctx, &tsk_layout, &atk_layout);

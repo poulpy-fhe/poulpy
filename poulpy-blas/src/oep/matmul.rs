@@ -21,23 +21,28 @@ use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, BlasPtOp
 /// [`grid_batch::<Self::Ring>(a)`](crate::layouts::grid_batch), which reads the batch of an input without a record from
 /// its label: the `_prepared` validator, the batch the API records and the provided `blas_matmul` query read nothing
 /// else. The prepared product of two operands equals the reference's on the reference's operands of the same sources.
-/// The reference's, [`crate::reference::BlasMatMulOperand`], holds the `d` terms the product multiplies: on the left,
-/// sigma of a block, then phi^k of that for `k` in `1..d`, each into a block of `a`'s layout; tau and psi^k on the right.
 /// The preparations look up rotation keys only, the prepared product the tensor key only.
 ///
-/// **The products.** The prepared product writes the blocks of `res` only, adding the terms of each inner index `l`
-/// and each `k` in `0..d` in that order, every product of two terms rounded by poulpy-ckks's `ckks_mul_into` before it is
-/// added; each block of `res` is normalized before an `l` whose `d` terms would take it past `2^(63 - base2k)` lazy
-/// terms. The product by public matrices does so for one term per `l`, through `b`'s maps. Any other order or grouping
-/// changes bits.
+/// **Fixed** (anything not listed as free changes bits):
+/// - the `d` terms of a source block `a_il`, all at the width `w = a.k - 2p` for the maps' scale `p`: term `0` is sigma
+///   of `a_il` evaluated into a block of `a`'s layout, which leaves it at `a.k - p`, then narrowed exactly to `w` by
+///   poulpy-ckks's `ckks_copy`; term `k` is phi^k of that sigma into a block of width `w`, through the `Direct` shift
+///   maps the plan records. On the right, tau and psi^k;
+/// - one JKLS kernel per block of `res`, [`crate::oep::BlasJklsImpl::blas_jkls_block_impl`], over its `K d` pairs of
+///   terms `(a_il[k], b_lj[k])`; the kernel's `# Safety` fixes its circuit;
+/// - the key widths: sigma's (tau's) baby steps at `a.k` and giant steps at `a.k - p`, the shifts' giant steps at `w`,
+///   the tensor key at the wider of both sides' `w`;
+/// - the product by public matrices adds one term per `l` through `b`'s maps, in that order, normalizing each block of
+///   `res` before a term would take it past `2^(63 - base2k)` lazy terms.
+///
+/// **Free (bit-identical):** the order and split of the blocks over workers; materializing or streaming the terms;
+/// caching them or their convolution forms; sharing baby-step caches; batching key switches. Hoisting the shifts
+/// changes bits and the key widths, so it would arrive as a plan variant.
 ///
 /// The API runs [`crate::reference::validate_blas_matmul`], [`crate::reference::validate_blas_matmul_prepare_left`],
 /// [`crate::reference::validate_blas_matmul_prepare_right`], [`crate::reference::validate_blas_matmul_prepared`] or
 /// [`crate::reference::validate_blas_matmul_pt`] first, so a method runs only on inputs its validator accepted, and must
-/// return `Ok` on them, except for the reference's own errors: poulpy-ckks's budget errors, and, from the prepared
-/// product, `MissingRelinearizationKey` for a tensor key at a term narrower than the operands' reported width. They
-/// come before any write to `res`, except a budget error that only the products of terms narrower than the first meet:
-/// it comes after the first terms are written, and leaves `res` partly written. Any other `Err` is a backend fault (a
+/// return `Ok` on them, or poulpy-ckks's budget error before any write to `res`. Any other `Err` is a backend fault (a
 /// validator gap or a device failure), and `res` is then unspecified.
 pub unsafe trait BlasMatMulImpl: Backend {
     /// The prepared left operand of [`Self::blas_matmul_prepared_impl`].
@@ -163,7 +168,8 @@ pub unsafe trait BlasMatMulImpl: Backend {
 }
 
 /// Selects [`crate::reference::BlasMatMulReference`] for `$be`, with [`crate::reference::BlasMatMulOperand`] as both
-/// prepared operands, under the provided `blas_matmul`.
+/// prepared operands, under the provided `blas_matmul`. The reference prepares through `$be`'s map hook and multiplies
+/// through its JKLS kernel, so `$be` also implements [`crate::oep::BlasMatIntraImpl`] and [`crate::oep::BlasJklsImpl`].
 #[macro_export]
 macro_rules! impl_blas_matmul_reference {
     ($be:ty) => {

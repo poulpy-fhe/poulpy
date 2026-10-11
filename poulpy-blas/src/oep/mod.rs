@@ -7,10 +7,12 @@
 pub(crate) mod derived;
 mod inter;
 mod intra;
+mod jkls;
 mod matmul;
 
 pub use inter::BlasMatInterImpl;
 pub use intra::BlasMatIntraImpl;
+pub use jkls::BlasJklsImpl;
 pub use matmul::BlasMatMulImpl;
 
 /// Selects every reference implementation for `$be`.
@@ -20,6 +22,7 @@ macro_rules! impl_blas_reference_full {
         $crate::impl_blas_inter_reference!($be);
         $crate::impl_blas_intra_reference!($be);
         $crate::impl_blas_matmul_reference!($be);
+        $crate::impl_blas_jkls_reference!($be);
     };
 }
 
@@ -28,6 +31,6 @@ macro_rules! impl_blas_reference_full {
 /// # Safety
 ///
 /// Implemented only through the blanket impl.
-pub unsafe trait BlasImpl: BlasMatInterImpl + BlasMatIntraImpl + BlasMatMulImpl {}
+pub unsafe trait BlasImpl: BlasMatInterImpl + BlasMatIntraImpl + BlasMatMulImpl + BlasJklsImpl {}
 
-unsafe impl<BE: BlasMatInterImpl + BlasMatIntraImpl + BlasMatMulImpl> BlasImpl for BE {}
+unsafe impl<BE: BlasMatInterImpl + BlasMatIntraImpl + BlasMatMulImpl + BlasJklsImpl> BlasImpl for BE {}

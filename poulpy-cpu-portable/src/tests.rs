@@ -10,6 +10,8 @@ use poulpy_hal::{
 use crate::{FFT64Portable, NTT4x30Portable};
 
 #[cfg(feature = "enable-blas")]
+mod blas_overrides;
+#[cfg(feature = "enable-blas")]
 mod blas_tests;
 #[cfg(feature = "enable-ckks")]
 mod ckks_tests;

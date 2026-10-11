@@ -249,20 +249,22 @@ pub fn mapped_layout(a: &impl BlasGridInfos, rows: usize, cols: usize, res_k: us
     result_layout(a, rows, cols, k, block.slots().join(SlotsKind::Real))
 }
 
-/// The metadata today's product of `a` and `b` gives a `rows x cols` result written into blocks of width `res_k`. Its
-/// terms multiply operands that maps narrowed by `consumed` bits, so: poulpy-ckks's ct x ct rule on those operands, the
-/// smaller label, and the slots of both joined with the maps' `Real`.
+/// The metadata the JKLS product of `a` and `b`, through maps of scale `p`, gives a `rows x cols` result written into
+/// blocks of width `res_k`. Its terms all sit at `a.k - 2p` on the left and `b.k - 2p` on the right, so: poulpy-ckks's
+/// ct x ct rule on those widths, `min(res_k, min(wa - da, wb - db) - max(da, db) + min(da, db))` for scales `da` and
+/// `db`, at the smaller scale and label, and the slots of both joined with the maps' `Real`.
 pub fn product_layout(
     a: &impl BlasGridInfos,
     b: &impl BlasGridInfos,
     rows: usize,
     cols: usize,
     res_k: usize,
-    consumed: usize,
+    p: usize,
 ) -> BlasLayout {
     let (la, lb) = (a.block_layout(), b.block_layout());
     let (da, db) = (la.log_delta(), lb.log_delta());
-    let budget = (la.k().as_usize() - consumed - da).min(lb.k().as_usize() - consumed - db) - da.max(db);
+    let (wa, wb) = (la.k().as_usize() - 2 * p, lb.k().as_usize() - 2 * p);
+    let budget = (wa - da).min(wb - db) - da.max(db);
     let slots = la.slots().join(lb.slots()).join(SlotsKind::Real);
     let mut layout = result_layout(a, rows, cols, res_k.min(da.min(db) + budget), slots);
     layout.block.meta.scale = Scale::Log(da.min(db));
