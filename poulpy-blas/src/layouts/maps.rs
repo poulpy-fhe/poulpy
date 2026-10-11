@@ -23,6 +23,17 @@ where
     F: DiagonalArithmetic + PartialEq,
     I: IntoIterator<Item = (usize, usize, F)>,
 {
+    let acc = accumulate(slots, log_d, count, terms);
+    let period = acc.values().map(|values| min_period(values)).max().unwrap_or(1);
+    truncate(slots, acc, period)
+}
+
+/// The values of every diagonal of [`per_lane_map`], `count d^2` slots each, by offset.
+fn accumulate<F, I>(slots: usize, log_d: usize, count: usize, terms: impl Fn(usize, usize, usize) -> I) -> BTreeMap<i64, Vec<F>>
+where
+    F: DiagonalArithmetic,
+    I: IntoIterator<Item = (usize, usize, F)>,
+{
     let d = 1usize << log_d;
     assert_tiles(slots, d, count);
     let mut acc: BTreeMap<i64, Vec<F>> = BTreeMap::new();
@@ -40,8 +51,13 @@ where
             }
         }
     }
-    // One period for every diagonal: prepared maps take the plaintext degree of their first diagonal.
-    let period = acc.values().map(|values| min_period(values)).max().unwrap_or(1);
+    acc
+}
+
+/// Every diagonal of `acc` stored at `period`, which each of them repeats with.
+fn truncate<F: DiagonalArithmetic>(slots: usize, acc: BTreeMap<i64, Vec<F>>, period: usize) -> Diagonals<F> {
+    // One period for every diagonal is only a hedge: upstream re-encodes every diagonal of a map at the least common
+    // multiple of their periods.
     let mut diagonals = Diagonals::new(slots);
     for (offset, mut values) in acc {
         values.truncate(period);
@@ -113,6 +129,9 @@ pub fn cols_right<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: 
 }
 
 /// Right product in every matrix slot: output `(r, c)` of matrix slot `s` is `sum_l in(r, l) b(s mod count, l, c)`.
+///
+/// Its diagonals are stored at a period fixed by the structure, never by `b`'s values: `d` for one public matrix, whose
+/// diagonals vary with the column alone, `count d^2` otherwise. Every diagonal offset is stored, zero or not.
 pub fn right_mul<F: DiagonalArithmetic + PartialEq>(
     slots: usize,
     log_d: usize,
@@ -121,7 +140,8 @@ pub fn right_mul<F: DiagonalArithmetic + PartialEq>(
 ) -> Diagonals<F> {
     let d = 1usize << log_d;
     let b = &b;
-    per_lane_map(slots, log_d, count, |s, r, c| (0..d).map(move |l| (r, l, b(s, l, c))))
+    let acc = accumulate(slots, log_d, count, |s, r, c| (0..d).map(move |l| (r, l, b(s, l, c))));
+    truncate(slots, acc, if count == 1 { d } else { count * d * d })
 }
 
 #[cfg(test)]
@@ -212,6 +232,40 @@ mod tests {
                 })
                 .collect();
             assert_eq!(apply(&map, &x), want);
+        }
+    }
+
+    /// The right product stores `d` slots per diagonal for one public matrix and `count d^2` for more, at every offset
+    /// and whatever the entries: generic, identity, constant, zero, and every matrix equal. Its values stay exact.
+    #[test]
+    fn right_mul_stores_a_structural_period() {
+        type Entry = fn(usize, usize, usize) -> f64;
+        let variants: [(&str, Entry); 5] = [
+            ("generic", |m, l, c| ((m * 5 + l * D + c) % 7) as f64 - 3.0),
+            ("identity", |_, l, c| f64::from(l == c)),
+            ("constant", |_, _, _| 2.0),
+            ("zero", |_, _, _| 0.0),
+            ("equal", |_, l, c| ((l * D + c) % 7) as f64 - 3.0),
+        ];
+        let x = input(12);
+        let offsets = right_mul(SLOTS, LOG_D, 1, variants[0].1).indexes();
+        assert_eq!(offsets.len(), 2 * D - 1);
+        for count in [1, 2] {
+            let period = if count == 1 { D } else { count * D * D };
+            for (label, b) in variants {
+                let map = right_mul(SLOTS, LOG_D, count, b);
+                assert_eq!(map.indexes(), offsets, "{label} count={count}");
+                for &i in &offsets {
+                    assert_eq!(map.period(i), Some(period), "{label} count={count} offset={i}");
+                }
+                let want: Vec<f64> = (0..SLOTS)
+                    .map(|t| {
+                        let (s, r, c) = (t / (D * D), (t / D) % D, t % D);
+                        (0..D).map(|l| x[s * D * D + r * D + l] * b(s % count, l, c)).sum()
+                    })
+                    .collect();
+                assert_eq!(apply(&map, &x), want, "{label} count={count}");
+            }
         }
     }
 

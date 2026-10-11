@@ -447,7 +447,8 @@ impl<BE: Backend> BlasPtOperandUnprepared<BE> {
 
     /// Encodes block `(l, j)` as `A -> A B_lj` at `coeffs_meta`, matrix slot `s` reading public matrix `s mod count`
     /// through `entry(m, row, col)`, `m < count`, `row < rows * d`, `col < cols * d`. Operations reject the operand on a
-    /// module whose slot count differs from `module`'s, and on inputs whose blocks are not at `base2k`.
+    /// module whose slot count differs from `module`'s, and on inputs whose blocks are not at `base2k`. Every block
+    /// stores its diagonals at a degree set by `log_d` and `count`, whatever the entries ([`maps::right_mul`]).
     ///
     /// `scratch` must hold [`Self::encode_tmp_bytes`]; operations size their scratch assuming the diagonals'
     /// `coeffs_meta.k` is not wider than the operand ciphertexts.

@@ -122,6 +122,9 @@ pub trait BlasMatMulOps<BE: Backend> {
         K: GGLWEInfos;
 
     /// `res` receives the product of every matrix of `a` with the public matrix `b` holds for its matrix slot.
+    ///
+    /// No circuit privacy: as for every evaluation in this workspace (`SECURITY.md`), `res` may reveal `b` to the holder
+    /// of the secret key. Re-randomize `res`, or flood its noise, before returning it when `b` must stay private.
     fn blas_matmul_pt<DR, DA, K>(
         &self,
         res: &mut BlasCiphertext<DR, BE::ZnxWord, BE::Ring>,
