@@ -364,6 +364,30 @@ where
 /// What each prepared operand reports through its infos, by operation: never its storage.
 type Infos = Vec<(&'static str, (BlasLayout, Option<usize>))>;
 
+/// A `2 x 1` grid of public matrices of `2^log_d x 2^log_d` blocks, `count` per batch, prepared.
+fn public_operand<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize, count: usize) -> BlasPtOperand<B>
+where
+    B: BlasParityBackend,
+    Module<B>: BlasParityModule<B, F>,
+    F: TestScalar + DiagonalArithmetic,
+{
+    let pt = with_scratch::<B, _>(BlasPtOperandUnprepared::encode_tmp_bytes::<F>(module, log_d, count), |s| {
+        BlasPtOperandUnprepared::encode::<F>(
+            module,
+            log_d,
+            2,
+            1,
+            count,
+            |m, r, c| F::from_f64(((m + r * 4 + c) * 3 % 5) as f64 - 2.0).unwrap(),
+            params.base2k.into(),
+            diagonal_meta(params),
+            s,
+        )
+    })
+    .unwrap();
+    with_scratch::<B, _>(pt.prepare_tmp_bytes(module), |s| pt.prepare(module, s))
+}
+
 /// The products, both prepared operands' infos, which must equal their inputs' term layouts and batches, and the
 /// prepared product run twice on the same operands, which must give `blas_matmul`'s blocks both times.
 fn matmul<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) -> (Outputs, Infos)
@@ -375,26 +399,7 @@ where
     let order = module.cyclotomic_order();
     let ctx = context::<B, F>(params, module, log_d);
     // One public matrix for every matrix slot, then two alternating across them.
-    let pts: Vec<BlasPtOperand<B>> = [1, 2]
-        .into_iter()
-        .map(|count| {
-            let pt = with_scratch::<B, _>(BlasPtOperandUnprepared::encode_tmp_bytes::<F>(module, log_d, count), |s| {
-                BlasPtOperandUnprepared::encode::<F>(
-                    module,
-                    log_d,
-                    2,
-                    1,
-                    count,
-                    |m, r, c| F::from_f64(((m + r * 4 + c) * 3 % 5) as f64 - 2.0).unwrap(),
-                    params.base2k.into(),
-                    diagonal_meta(params),
-                    s,
-                )
-            })
-            .unwrap();
-            with_scratch::<B, _>(pt.prepare_tmp_bytes(module), |s| pt.prepare(module, s))
-        })
-        .collect();
+    let pts = [1, 2].map(|count| public_operand::<B, F>(params, module, log_d, count));
     let mut elements = ctx.plan().matmul_galois_elements(order);
     elements.extend(ctx.plan().matmul_pt_galois_elements(order));
     elements.sort_unstable();
@@ -454,20 +459,22 @@ where
 }
 
 /// A product and a prepared product into a [`narrow`] grid, which poulpy-ckks rejects for the budget of the first
-/// block's JKLS kernel inside the implementation, after the preparations: no block of `res` is written.
+/// block's JKLS kernel inside the implementation, after the preparations, and a product by public matrices, rejected
+/// for the budget of its first map: no block of `res` is written.
 fn matmul_budget<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) -> Failures
 where
     B: BlasParityBackend,
     Module<B>: BlasParityModule<B, F>,
     F: TestScalar + DiagonalArithmetic,
 {
+    let order = module.cyclotomic_order();
     let ctx = context::<B, F>(params, module, log_d);
-    let keys = fixture_keys(
-        params,
-        module,
-        &ctx.plan().matmul_galois_elements(module.cyclotomic_order()),
-        true,
-    );
+    let mut elements = ctx.plan().matmul_galois_elements(order);
+    elements.extend(ctx.plan().matmul_pt_galois_elements(order));
+    elements.sort_unstable();
+    elements.dedup();
+    let keys = fixture_keys(params, module, &elements, true);
+    let pt = public_operand::<B, F>(params, module, log_d, 1);
     let (atk, tsk) = (atk_layout(params), tsk_layout(params));
     let (a, b) = (
         operand(params, module, log_d, 2, 2, 120),
@@ -491,6 +498,11 @@ where
         failure::<B>("blas_matmul_prepared", &mut res, &[], |res| {
             with_scratch::<B, _>(module.blas_matmul_prepared_tmp_bytes(res, &left, &right, &tsk), |s| {
                 module.blas_matmul_prepared(res, &left, &right, &keys, s)
+            })
+        }),
+        failure::<B>("blas_matmul_pt", &mut res, &[&a], |res| {
+            with_scratch::<B, _>(module.blas_matmul_pt_tmp_bytes(res, &a, &pt, &atk), |s| {
+                module.blas_matmul_pt(res, &a, &pt, &keys, s)
             })
         }),
     ]
@@ -544,8 +556,9 @@ where
 }
 
 /// The products and the prepared product agree bit for bit at every swept `log_d`, and the prepared operands' infos,
-/// `(log_d, rows, cols, block_layout, mat_slots)`, agree; prepared storage is never compared. Both products fail alike
-/// on a budget poulpy-ckks rejects, leaving `res` and the factors unchanged.
+/// `(log_d, rows, cols, block_layout, mat_slots)`, agree; prepared storage is never compared. The product, the prepared
+/// product and the product by public matrices fail alike on a budget poulpy-ckks rejects, leaving `res` and the factors
+/// unchanged.
 pub fn test_blas_matmul_parity<BR, BT, F>(params: CKKSTestParams, shapes: &BlasParityShapes, r: &Module<BR>, t: &Module<BT>)
 where
     BR: BlasParityBackend,

@@ -398,14 +398,14 @@ pub fn test_blas_matmul_pt_guards<BE, F, E>(
 
 /// Rejected before `res` changes, by the product and, of these cases, by those that meet them, the preparations and the
 /// prepared product: every grid [`rejected_grids`] builds, in place of a factor or of `res`, or as the input of a
-/// preparation; a `res` shape mismatch or of another degree, radix or rank, and an input of a preparation of another
-/// degree or radix ([`foreign_layouts`]); a copy relabelled past `log2` of the ring degree; a context encoded on a
-/// module of another degree or at another radix; a factor at a radix other than the context's; an inner-dimension
-/// mismatch; a radix above 62, whose digits cannot hold the JKLS kernel's two lazy terms; and a missing rotation or
-/// tensor key. The prepared product's validator also rejects operand infos without a batch record, at another
-/// dimension, without a block, or whose label does not allow their record. The preparations take no tensor key and the
-/// prepared product no rotation key. Each of these operations one scratch byte short of its query panics before `res`
-/// changes.
+/// preparation; a `res` shape mismatch; a `res`, one factor or one prepared operand of another degree, radix or rank,
+/// and an input of a preparation of another degree or radix ([`foreign_layouts`]); a copy relabelled past `log2` of the
+/// ring degree; a context encoded on a module of another degree or at another radix; a factor at a radix other than the
+/// context's; an inner-dimension mismatch; a radix above 62, whose digits cannot hold the JKLS kernel's two lazy terms;
+/// and a missing rotation or tensor key. The prepared product's validator also rejects operand infos without a batch
+/// record, at another dimension, without a block, or whose label does not allow their record. The preparations take no
+/// tensor key and the prepared product no rotation key. Each of these operations one scratch byte short of its query
+/// panics before `res` changes.
 pub fn test_blas_matmul_guards<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -505,6 +505,22 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         assert_guard::<BE, _>(label, "blas_matmul_prepared", InvalidOperand, &mut bad, |res| {
             module.blas_matmul_prepared(res, &left_column, &row_right, &keys, &mut op_scratch.borrow())
         });
+    }
+    // Each grid of another degree, radix or rank as one factor of `column ct` beside a valid one, and, read through its
+    // infos, as one prepared operand: each factor is compared with `res` on its own.
+    for ((label, bad_column), (_, bad_row)) in foreign_layouts(module, &column).into_iter().zip(foreign_layouts(module, &ct)) {
+        for (side, a, b) in [("a", &bad_column, &ct), ("b", &column, &bad_row)] {
+            let label = &format!("{label} {side}");
+            let mut res = alloc(2, 2);
+            assert_guard::<BE, _>(label, "blas_matmul", InvalidOperand, &mut res, |res| {
+                module.blas_matmul(res, a, b, &ctx, &keys, &keys, &mut op_scratch.borrow())
+            });
+        }
+        let res = alloc(2, 2);
+        let infos = validate_blas_matmul_prepared(module, &res, &bad_column, &row_right, &keys);
+        assert_rejected(&format!("{label} a infos"), "blas_matmul_prepared", InvalidOperand, infos);
+        let infos = validate_blas_matmul_prepared(module, &res, &left_column, &bad_row, &keys);
+        assert_rejected(&format!("{label} b infos"), "blas_matmul_prepared", InvalidOperand, infos);
     }
 
     // Copies relabelled past `log2` of the ring degree, which keep recording the dense batch.
