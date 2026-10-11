@@ -361,7 +361,8 @@ pub trait CKKSDotProductOps<BE: Backend> {
         A: CKKSCtBounds,
         P: CKKSInfos;
 
-    /// Computes `dst = Σ a[i] * b[i]` over ciphertext–ciphertext pairs.
+    /// Computes `dst = Σ a[i] * b[i]` over ciphertext–ciphertext pairs, of any
+    /// ciphertext types, as [`CKKSMulOps::ckks_mul_into`](crate::api::CKKSMulOps::ckks_mul_into) takes.
     ///
     /// When there are several pairs, every `a[i]` shares one layout and scale,
     /// every `b[i]` shares one, and `dst.base2k() <= 62`, the tensor products
@@ -383,18 +384,18 @@ pub trait CKKSDotProductOps<BE: Backend> {
     /// log_delta_out  = a[i].log_delta
     /// log_budget_out = a[i].log_budget − a[i].log_delta − offset
     /// ```
-    fn ckks_dot_product_ct<Dst: Data, D: Data, E: Data, H>(
+    fn ckks_dot_product_ct<Dst, A, B, H>(
         &self,
-        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
-        a: &[&CKKSCiphertext<D, BE::ZnxWord, BE::Ring>],
-        b: &[&CKKSCiphertext<E, BE::ZnxWord, BE::Ring>],
+        dst: &mut Dst,
+        a: &[&A],
+        b: &[&B],
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
-        CKKSCiphertext<E, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetTensorKey<BE>;
 
     /// Computes `dst = Σ a[i] * b[i]` over ciphertext–plaintext-polynomial pairs.

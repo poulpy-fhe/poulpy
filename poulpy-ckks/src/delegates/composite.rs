@@ -440,18 +440,17 @@ where
     Ok(())
 }
 
-fn accumulate<BE, D, F>(
+fn accumulate<BE, Dst, F>(
     module: &Module<BE>,
-    dst: &mut CKKSCiphertext<D, BE::ZnxWord, BE::Ring>,
+    dst: &mut Dst,
     n: usize,
     scratch: &mut ScratchArena<'_, BE>,
     mut mul_term_into_tmp: F,
 ) -> Result<()>
 where
     BE: Backend,
-    D: Data,
     Module<BE>: CKKSAddOps<BE>,
-    CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
+    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     F: for<'a> FnMut(&mut CKKSCiphertextViewMut<'a, BE>, usize, &mut ScratchArena<'a, BE>) -> Result<()>,
 {
     if n <= 1 {
@@ -527,18 +526,18 @@ where
                 .max(self.ckks_add_tmp_bytes(res.size()))
     }
 
-    fn ckks_dot_product_ct<Dst: Data, D: Data, E: Data, H>(
+    fn ckks_dot_product_ct<Dst, A, B, H>(
         &self,
-        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
-        a: &[&CKKSCiphertext<D, BE::ZnxWord, BE::Ring>],
-        b: &[&CKKSCiphertext<E, BE::ZnxWord, BE::Ring>],
+        dst: &mut Dst,
+        a: &[&A],
+        b: &[&B],
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + GLWEInfos,
-        CKKSCiphertext<E, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + GLWEInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetTensorKey<BE>,
     {
         check_lengths("ckks_dot_product_ct", a.len(), b.len())?;
