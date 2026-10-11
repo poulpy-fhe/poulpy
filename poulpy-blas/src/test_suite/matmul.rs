@@ -14,17 +14,18 @@ use poulpy_ckks::{
         reference_encoder::ReferenceEncoder,
     },
 };
-use poulpy_core::layouts::{Base2K, DiagonalArithmetic};
+use poulpy_core::layouts::DiagonalArithmetic;
 use poulpy_hal::{
     api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchArena, ScratchOwned, Standard},
 };
 
 use super::helpers::{
-    D, Grid, LOG_D,
+    Grid,
     Rejection::{InvalidPlan, MissingKey, MissingTensorKey},
-    TestKeys, assert_grid_decrypt, assert_guard, assert_guard_on, assert_short_scratch, assert_short_scratch_on, blas_context,
-    context_and_keys, encrypt_grid, foreign_contexts, grid_snapshot, map_galois_elements, rejected_grids, relabel, rotation_keys,
+    TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, assert_guard_on, assert_short_scratch, assert_short_scratch_on,
+    blas_context, context_and_keys, encrypt_grid, foreign_contexts, grid_snapshot, map_galois_elements, rejected_grids, relabel,
+    rotation_keys,
 };
 use crate::{
     api::BlasMatMulOps,
@@ -38,8 +39,12 @@ use crate::{
 /// `dec(matmul(enc(A), enc(B)))` is `A B` for every matrix of the batch, for a `2 x 3` grid times a `3 x 2` grid, and
 /// `blas_matmul` equals `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, then `blas_matmul_prepared`, bit for bit,
 /// all with the rotation keys of the plan's product set alone.
-pub fn test_blas_matmul<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
-where
+pub fn test_blas_matmul<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+    log_d: usize,
+) where
     BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
@@ -51,7 +56,7 @@ where
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let ctx = blas_context::<BE, F>(&params, module, &mut scratch.borrow());
+    let ctx = blas_context::<BE, F>(&params, module, log_d, &mut scratch.borrow());
     // The keys of the products' set alone, which covers both preparations and the prepared product.
     let elements = ctx.plan().matmul_galois_elements(module.cyclotomic_order());
     let keys = TestKeys::<BE> {
@@ -59,8 +64,8 @@ where
         tsk: Some(gen_tsk(&params, module, &sk_raw, &mut scratch.borrow())),
     };
     let (m, inner, n) = (2, 3, 2);
-    let lanes = slots / (D * D);
-    let (a, b) = (Grid::model(m, inner, lanes, 7), Grid::model(inner, n, lanes, 8));
+    let lanes = slots >> (2 * log_d);
+    let (a, b) = (Grid::model(log_d, m, inner, lanes, 7), Grid::model(log_d, inner, n, lanes, 8));
     let ct_a = encrypt_grid::<BE, F, E>(
         &params,
         module,
@@ -84,7 +89,7 @@ where
         &mut scratch.borrow(),
     );
     let (tsk_layout, atk_layout) = (params.tsk_layout(), params.atk_layout());
-    let mut res = module.blas_ciphertext_alloc(LOG_D, m, n, params.base2k.into(), params.k.into());
+    let mut res = alloc_grid(&params, module, log_d, m, n, params.k);
     let bytes = module.blas_matmul_tmp_bytes(&res, &ct_a, &ct_b, &tsk_layout, &atk_layout);
     module
         .blas_matmul(
@@ -118,7 +123,7 @@ where
     module
         .blas_matmul_prepare_right(&mut right, &ct_b, &ctx, &keys, &mut ScratchOwned::<BE>::alloc(bytes).borrow())
         .unwrap();
-    let mut prepared = module.blas_ciphertext_alloc(LOG_D, m, n, params.base2k.into(), params.k.into());
+    let mut prepared = alloc_grid(&params, module, log_d, m, n, params.k);
     let bytes = module.blas_matmul_prepared_tmp_bytes(&prepared, left.as_grid(), right.as_grid(), &tsk_layout, &atk_layout);
     module
         .blas_matmul_prepared(
@@ -139,9 +144,14 @@ fn public_entry(m: usize, r: usize, c: usize) -> f64 {
 }
 
 /// `dec(matmul_pt(enc(A), B))` is `A B_(s mod count)` in matrix slot `s`, for a `2 x 3` grid times a `3 x 2` operand
-/// with one, two, and one public matrix per matrix slot, all with the keys of the plan's set alone.
-pub fn test_blas_matmul_pt<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
-where
+/// with one, two, and one public matrix per matrix slot, of these counts those that divide the matrix slots, all with
+/// the keys of the plan's set alone.
+pub fn test_blas_matmul_pt<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+    log_d: usize,
+) where
     BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
@@ -150,17 +160,19 @@ where
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     let slots = params.n / 2;
-    let lanes = slots / (D * D);
+    let lanes = slots >> (2 * log_d);
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
     let (m, inner, n) = (2, 3, 2);
-    let operands: Vec<(usize, BlasPtOperand<BE>)> = [1, 2, lanes]
+    let mut counts: Vec<usize> = [1, 2, lanes].into_iter().filter(|c| lanes.is_multiple_of(*c)).collect();
+    counts.dedup();
+    let operands: Vec<(usize, BlasPtOperand<BE>)> = counts
         .into_iter()
         .map(|count| {
             let b = BlasPtOperandUnprepared::encode::<F>(
                 module,
-                LOG_D,
+                log_d,
                 inner,
                 n,
                 count,
@@ -175,12 +187,12 @@ where
         })
         .collect();
     // The keys of the plan's set alone, whatever the operand's count.
-    let elements = BlasPlan::new(LOG_D).matmul_pt_galois_elements(module.cyclotomic_order());
+    let elements = BlasPlan::new(log_d).matmul_pt_galois_elements(module.cyclotomic_order());
     let keys = TestKeys::<BE> {
         atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
         tsk: None,
     };
-    let a = Grid::model(m, inner, lanes, 9);
+    let a = Grid::model(log_d, m, inner, lanes, 9);
     let ct = encrypt_grid::<BE, F, E>(
         &params,
         module,
@@ -195,7 +207,7 @@ where
     for (count, b) in &operands {
         // `res` one limb wider than `a` for one public matrix.
         let res_k = if *count == 1 { params.k + params.base2k } else { params.k };
-        let mut res = module.blas_ciphertext_alloc(LOG_D, m, n, params.base2k.into(), res_k.into());
+        let mut res = alloc_grid(&params, module, log_d, m, n, res_k);
         let mut op_scratch = ScratchOwned::<BE>::alloc(module.blas_matmul_pt_tmp_bytes(&res, &ct, &params.atk_layout()));
         module
             .blas_matmul_pt(&mut res, &ct, b, &keys, &mut op_scratch.borrow())
@@ -214,12 +226,16 @@ where
 }
 
 /// An inner-dimension or `res` shape mismatch, more public matrices than a sparse input records, a copy relabelled past
-/// `log2` of the ring degree, an operand encoded on a module of another degree, at another radix or at
-/// another dimension, every grid [`rejected_grids`] builds, as `a` or as `res`, a radix whose digits cannot take a second
+/// `log2` of the ring degree, an operand encoded on a module of another degree, at another radix or at another
+/// dimension, every grid [`rejected_grids`] builds, as `a` or as `res`, a radix whose digits cannot take a second
 /// inner index, and a missing rotation key are rejected before `res` changes; a product one scratch byte short of its
 /// query panics before `res` changes; an operand whose block count overflows `usize` does not encode.
-pub fn test_blas_matmul_pt_guards<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
-where
+pub fn test_blas_matmul_pt_guards<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+    log_d: usize,
+) where
     BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
@@ -228,7 +244,7 @@ where
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     let slots = params.n / 2;
-    let lanes = slots / (D * D);
+    let lanes = slots >> (2 * log_d);
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -247,19 +263,19 @@ where
         .unwrap()
         .prepare(module, scratch)
     };
-    let b = encode(module, LOG_D, lanes, params.base2k, &mut scratch.borrow());
-    // One public matrix: `lanes` of them do not divide the matrix slots of a module of half the degree, nor those of a
-    // grid read at the next dimension.
-    let one = encode(module, LOG_D, 1, params.base2k, &mut scratch.borrow());
-    // At the previous dimension, whose smaller matrices fit wherever a block does.
-    let small = encode(module, LOG_D - 1, 1, params.base2k, &mut scratch.borrow());
-    let half = Module::<BE>::new(params.n as u64 / 2);
+    let b = encode(module, log_d, lanes, params.base2k, &mut scratch.borrow());
+    // One public matrix, which divides the matrix slots of any module and of a grid read at any dimension.
+    let one = encode(module, log_d, 1, params.base2k, &mut scratch.borrow());
+    // At the previous dimension, whose smaller matrices fit wherever a block does, or the next one from 2 x 2 blocks.
+    let other_log_d = if log_d > 1 { log_d - 1 } else { log_d + 1 };
+    let other = encode(module, other_log_d, 1, params.base2k, &mut scratch.borrow());
+    let double = Module::<BE>::new(2 * params.n as u64);
     let foreign = [
-        ("degree", encode(&half, LOG_D, 1, params.base2k, &mut scratch.borrow())),
-        ("base2k", encode(module, LOG_D, 1, params.base2k - 1, &mut scratch.borrow())),
+        ("degree", encode(&double, log_d, 1, params.base2k, &mut scratch.borrow())),
+        ("base2k", encode(module, log_d, 1, params.base2k - 1, &mut scratch.borrow())),
     ];
     // Keys for the other operands too, so no missing key stops `blas_matmul_pt` from evaluating them.
-    let blocks = [&b, &one, &small]
+    let blocks = [&b, &one, &other]
         .into_iter()
         .chain(foreign.iter().map(|(_, b)| b))
         .flat_map(|b| (0..b.rows()).flat_map(move |l| (0..b.cols()).map(move |j| b.block(l, j))));
@@ -277,13 +293,13 @@ where
             &sk,
             params.k,
             0,
-            &Grid::model(rows, cols, lanes, seed),
+            &Grid::model(log_d, rows, cols, lanes, seed),
             scratch,
         )
     };
     let ct = encrypt(1, 2, 11, &mut scratch.borrow());
     let narrow = encrypt(1, 3, 12, &mut scratch.borrow());
-    let sparse = BlasCiphertext::from_blocks(relabel(&ct, |meta| meta.log_sparsity = 1).into_blocks(), LOG_D, 1, 2).unwrap();
+    let sparse = BlasCiphertext::from_blocks(relabel(&ct, |meta| meta.log_sparsity = 1).into_blocks(), log_d, 1, 2).unwrap();
     let sparse_64 = relabel(&ct, |meta| meta.log_sparsity = 64);
     let sparse_65 = relabel(&ct, |meta| meta.log_sparsity = 65);
     let mut op_scratch = ScratchOwned::<BE>::alloc(module.blas_matmul_pt_tmp_bytes(&ct, &ct, &params.atk_layout()));
@@ -297,26 +313,26 @@ where
         ("sparsity 64", 1, 1, &sparse_64),
         ("sparsity 65", 1, 1, &sparse_65),
     ] {
-        let mut res = module.blas_ciphertext_alloc(LOG_D, rows, cols, params.base2k.into(), params.k.into());
+        let mut res = alloc_grid(&params, module, log_d, rows, cols, params.k);
         assert_guard::<BE, _>(label, "blas_matmul_pt", InvalidPlan, &mut res, |res| {
             module.blas_matmul_pt(res, a, &b, &keys, &mut op_scratch.borrow())
         });
     }
     for (label, b) in &foreign {
-        let mut res = module.blas_ciphertext_alloc(LOG_D, 1, 1, params.base2k.into(), params.k.into());
+        let mut res = alloc_grid(&params, module, log_d, 1, 1, params.k);
         assert_guard::<BE, _>(label, "blas_matmul_pt", InvalidPlan, &mut res, |res| {
             module.blas_matmul_pt(res, &ct, b, &keys, &mut op_scratch.borrow())
         });
     }
-    // An operand encoded at the previous dimension, which `ct` and `res` are not read at.
-    let mut res = module.blas_ciphertext_alloc(LOG_D, 1, 1, params.base2k.into(), params.k.into());
+    // An operand encoded at another dimension, which `ct` and `res` are not read at.
+    let mut res = alloc_grid(&params, module, log_d, 1, 1, params.k);
     assert_guard::<BE, _>("operand dimension", "blas_matmul_pt", InvalidPlan, &mut res, |res| {
-        module.blas_matmul_pt(res, &ct, &small, &keys, &mut op_scratch.borrow())
+        module.blas_matmul_pt(res, &ct, &other, &keys, &mut op_scratch.borrow())
     });
 
     // Each rejected grid as `a` or as `res` of a 2 x 2 grid times one public matrix.
     let square = encrypt(2, 2, 13, &mut scratch.borrow());
-    let res_2x1 = module.blas_ciphertext_alloc(LOG_D, 2, 1, params.base2k.into(), params.k.into());
+    let res_2x1 = alloc_grid(&params, module, log_d, 2, 1, params.k);
     for ((label, a), (_, mut bad)) in rejected_grids(module, &square)
         .into_iter()
         .zip(rejected_grids(module, &res_2x1))
@@ -331,12 +347,13 @@ where
     }
 
     // `res` at radix 63: its digits hold one lazy term, short of the two a second inner index brings to a normalized block.
-    let mut res = module.blas_ciphertext_alloc(LOG_D, 1, 1, Base2K(63), params.k.into());
+    let radix_63 = CKKSTestParams { base2k: 63, ..params };
+    let mut res = alloc_grid(&radix_63, module, log_d, 1, 1, params.k);
     assert_guard::<BE, _>("lazy sums", "blas_matmul_pt", InvalidPlan, &mut res, |res| {
         module.blas_matmul_pt(res, &ct, &b, &keys, &mut op_scratch.borrow())
     });
 
-    let mut res = module.blas_ciphertext_alloc(LOG_D, 1, 1, params.base2k.into(), params.k.into());
+    let mut res = alloc_grid(&params, module, log_d, 1, 1, params.k);
     let no_keys = TestKeys::<BE> {
         atks: HashMap::new(),
         tsk: None,
@@ -353,7 +370,7 @@ where
     // (2^62 + 1) x 4 blocks overflow a usize on 64 bits.
     let overflow = BlasPtOperandUnprepared::encode::<F>(
         module,
-        LOG_D,
+        log_d,
         usize::MAX / 4 + 2,
         4,
         lanes,
@@ -371,8 +388,12 @@ where
 /// preparations; so are an inner-dimension mismatch, one factor at a radix other than the context's, a radix whose
 /// digits cannot take a second inner index, and a missing tensor key, for the product and its prepared form. Each of
 /// these operations one scratch byte short of its query panics before `res` changes.
-pub fn test_blas_matmul_guards<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
-where
+pub fn test_blas_matmul_guards<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+    log_d: usize,
+) where
     BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
@@ -381,12 +402,12 @@ where
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     let slots = params.n / 2;
-    let lanes = slots / (D * D);
+    let lanes = slots >> (2 * log_d);
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let (ctx, mut atks) = context_and_keys::<BE, F>(&params, module, &sk_raw, &mut scratch.borrow());
-    let foreign = foreign_contexts::<BE, F>(&params, module, &sk_raw, &mut atks, &mut scratch.borrow());
+    let (ctx, mut atks) = context_and_keys::<BE, F>(&params, module, log_d, &sk_raw, &mut scratch.borrow());
+    let foreign = foreign_contexts::<BE, F>(&params, module, log_d, &sk_raw, &mut atks, &mut scratch.borrow());
     let keys = TestKeys::<BE> {
         atks,
         tsk: Some(gen_tsk(&params, module, &sk_raw, &mut scratch.borrow())),
@@ -399,11 +420,11 @@ where
         &sk,
         params.k,
         0,
-        &Grid::model(1, 2, lanes, 10),
+        &Grid::model(log_d, 1, 2, lanes, 10),
         &mut scratch.borrow(),
     );
-    let column = BlasCiphertext::from_blocks(ct.clone().into_blocks(), LOG_D, 2, 1).unwrap();
-    let alloc = |rows: usize, cols: usize| module.blas_ciphertext_alloc(LOG_D, rows, cols, params.base2k.into(), params.k.into());
+    let column = BlasCiphertext::from_blocks(ct.clone().into_blocks(), log_d, 2, 1).unwrap();
+    let alloc = |rows: usize, cols: usize| alloc_grid(&params, module, log_d, rows, cols, params.k);
     let (tsk_layout, atk_layout) = (params.tsk_layout(), params.atk_layout());
     // `column ct`, the widest product below.
     let bytes = module.blas_matmul_tmp_bytes(&alloc(2, 2), &column, &ct, &tsk_layout, &atk_layout);
@@ -579,8 +600,11 @@ where
     }
 
     // One operand at a radix other than the context's, the other at the context's.
-    let radix =
-        |rows: usize, cols: usize| module.blas_ciphertext_alloc(LOG_D, rows, cols, (params.base2k - 1).into(), params.k.into());
+    let below = CKKSTestParams {
+        base2k: params.base2k - 1,
+        ..params
+    };
+    let radix = |rows: usize, cols: usize| alloc_grid(&below, module, log_d, rows, cols, params.k);
     for (label, a, b) in [("radix a", radix(1, 2), column.clone()), ("radix b", ct.clone(), radix(2, 1))] {
         let mut res = alloc(1, 1);
         assert_guard::<BE, _>(label, "blas_matmul", InvalidPlan, &mut res, |res| {
@@ -592,9 +616,13 @@ where
         });
     }
 
-    // `res` at radix 61: its digits hold 4 lazy terms, short of the `d + 1` a second inner index brings to a normalized
-    // block.
-    let mut res = module.blas_ciphertext_alloc(LOG_D, 1, 1, Base2K(61), params.k.into());
+    // `res` at radix `63 - log_d`: its digits hold `d` lazy terms, short of the `d + 1` a second inner index brings to a
+    // normalized block.
+    let lazy = CKKSTestParams {
+        base2k: 63 - log_d,
+        ..params
+    };
+    let mut res = alloc_grid(&lazy, module, log_d, 1, 1, params.k);
     assert_guard::<BE, _>("lazy sums", "blas_matmul", InvalidPlan, &mut res, |res| {
         module.blas_matmul(res, &ct, &column, &ctx, &keys, &mut op_scratch.borrow())
     });
@@ -697,16 +725,18 @@ where
     };
     let module = &Module::<BE>::new(params.n as u64);
     let host_module = &Module::<HostBytesBackend>::new(params.n as u64);
+    // One 4 x 4 block fills the 16 slots, whatever the suite's dimension.
+    let (log_d, d) = (2, 4);
     let (slots, bound) = (params.n / 2, 1usize << (63 - params.base2k));
-    let lanes = slots / (D * D);
+    let lanes = slots / (d * d);
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let (ctx, atks) = context_and_keys::<BE, F>(&params, module, &sk_raw, &mut scratch.borrow());
+    let (ctx, atks) = context_and_keys::<BE, F>(&params, module, log_d, &sk_raw, &mut scratch.borrow());
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let keys = TestKeys::<BE> { atks, tsk: Some(tsk) };
     let (tsk_layout, atk_layout) = (params.tsk_layout(), params.atk_layout());
-    let (a0, b0) = (Grid::model(1, 1, lanes, 7), Grid::model(1, 1, lanes, 8));
+    let (a0, b0) = (Grid::model(log_d, 1, 1, lanes, 7), Grid::model(log_d, 1, 1, lanes, 8));
     let ct_a0 = encrypt_grid::<BE, F, E>(
         &params,
         module,
@@ -730,7 +760,7 @@ where
         &mut scratch.borrow(),
     );
     let repeat = |g: &BlasCiphertextOwned<BE>, rows: usize, cols: usize| {
-        BlasCiphertext::from_blocks(vec![g.block(0, 0).clone(); rows * cols], LOG_D, rows, cols).unwrap()
+        BlasCiphertext::from_blocks(vec![g.block(0, 0).clone(); rows * cols], log_d, rows, cols).unwrap()
     };
     // `copies` equal terms repeat their noise as often: `log2(copies)` bits of precision go.
     let check = |label: &str, res: &BlasCiphertextOwned<BE>, want: &Grid, copies: usize, scratch: &mut ScratchArena<'_, BE>| {
@@ -752,11 +782,11 @@ where
     };
 
     // `d` terms per inner block: `K d` is three times the bound.
-    let inner = 3 * bound / D;
-    let a = Grid::from_fn(1, inner, lanes, |s, r, c| a0.at(s, r, c % D));
-    let b = Grid::from_fn(inner, 1, lanes, |s, r, c| b0.at(s, r % D, c));
+    let inner = 3 * bound / d;
+    let a = Grid::from_fn(log_d, 1, inner, lanes, |s, r, c| a0.at(s, r, c % d));
+    let b = Grid::from_fn(log_d, inner, 1, lanes, |s, r, c| b0.at(s, r % d, c));
     let (ct_a, ct_b) = (repeat(&ct_a0, 1, inner), repeat(&ct_b0, inner, 1));
-    let mut res = module.blas_ciphertext_alloc(LOG_D, 1, 1, params.base2k.into(), params.k.into());
+    let mut res = alloc_grid(&params, module, log_d, 1, 1, params.k);
     let bytes = module.blas_matmul_tmp_bytes(&res, &ct_a, &ct_b, &tsk_layout, &atk_layout);
     module
         .blas_matmul(
@@ -789,7 +819,7 @@ where
         .unwrap();
     let left = BlasMatMulLeft::from_grid(repeat(left.as_grid(), 1, inner));
     let right = BlasMatMulRight::from_grid(repeat(right.as_grid(), inner, 1));
-    let mut prepared = module.blas_ciphertext_alloc(LOG_D, 1, 1, params.base2k.into(), params.k.into());
+    let mut prepared = alloc_grid(&params, module, log_d, 1, 1, params.k);
     let bytes = module.blas_matmul_prepared_tmp_bytes(&prepared, left.as_grid(), right.as_grid(), &tsk_layout, &atk_layout);
     module
         .blas_matmul_prepared(
@@ -805,10 +835,10 @@ where
 
     // One term per inner block: `K` is three times the bound.
     let inner = 3 * bound;
-    let entry = |m: usize, r: usize, c: usize| public_entry(m, r % D, c);
+    let entry = |m: usize, r: usize, c: usize| public_entry(m, r % d, c);
     let b = BlasPtOperandUnprepared::encode::<F>(
         module,
-        LOG_D,
+        log_d,
         inner,
         1,
         1,
@@ -824,9 +854,9 @@ where
         atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
         tsk: None,
     };
-    let a = Grid::from_fn(1, inner, lanes, |s, r, c| a0.at(s, r, c % D));
+    let a = Grid::from_fn(log_d, 1, inner, lanes, |s, r, c| a0.at(s, r, c % d));
     let ct = repeat(&ct_a0, 1, inner);
-    let mut res = module.blas_ciphertext_alloc(LOG_D, 1, 1, params.base2k.into(), params.k.into());
+    let mut res = alloc_grid(&params, module, log_d, 1, 1, params.k);
     let bytes = module.blas_matmul_pt_tmp_bytes(&res, &ct, &atk_layout);
     module
         .blas_matmul_pt(&mut res, &ct, &b, &keys, &mut ScratchOwned::<BE>::alloc(bytes).borrow())

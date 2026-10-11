@@ -6,7 +6,8 @@ use std::{
 };
 
 use poulpy_ckks::{
-    CKKSCompositionError, CKKSInfos, CKKSModuleInfos, CKKSResult, GLWEPlaintextMeta, Scale, SetCKKSInfos, SetGLWEPlaintextInfos,
+    CKKSCompositionError, CKKSInfos, CKKSLayout, CKKSModuleInfos, CKKSResult, GLWEPlaintextMeta, Scale, SetCKKSInfos,
+    SetGLWEPlaintextInfos,
     api::LinearTransformationPrepared,
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
     test_suite::{
@@ -17,7 +18,7 @@ use poulpy_ckks::{
     },
 };
 use poulpy_core::layouts::{
-    GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, TorusPrecision,
+    GLWELayout, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, TorusPrecision,
     prepared::{
         GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef,
         GLWESecretPrepared, GLWETensorKeyPrepared, GLWETensorKeyPreparedBackendRef, GLWETensorKeyPreparedToBackendRef,
@@ -28,17 +29,13 @@ use poulpy_hal::{
     layouts::{Backend, Data, HostBytesBackend, HostDataMut, HostDataRef, Module, Ring, ScratchArena, ZnxWord},
 };
 
-use crate::layouts::{BlasCiphertext, BlasCiphertextOwned, BlasGridInfos, grid::split_into_blocks};
+use crate::layouts::{BlasCiphertext, BlasCiphertextOwned, BlasGridInfos, BlasLayout, BlasModuleAlloc, grid::split_into_blocks};
 
-/// `log2` of the block dimension every functional test uses.
-pub const LOG_D: usize = 2;
-
-/// The block dimension every functional test uses.
-pub const D: usize = 1 << LOG_D;
-
-/// One complex `rows d x cols d` matrix per lane: lane `s`, entry `(r, c)` at `(s * rows * d + r) * cols * d + c`.
+/// One complex `rows d x cols d` matrix per lane, `d = 2^log_d`: lane `s`, entry `(r, c)` at
+/// `(s * rows * d + r) * cols * d + c`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Grid {
+    pub log_d: usize,
     pub rows: usize,
     pub cols: usize,
     pub re: Vec<f64>,
@@ -46,44 +43,55 @@ pub struct Grid {
 }
 
 impl Grid {
-    /// `lanes` matrices of `rows x cols` blocks with entry `(s, r, c) = f(s, r, c)`.
-    pub fn from_fn(rows: usize, cols: usize, lanes: usize, f: impl Fn(usize, usize, usize) -> (f64, f64)) -> Grid {
-        let (h, w) = (rows * D, cols * D);
+    /// `lanes` matrices of `rows x cols` blocks of dimension `2^log_d` with entry `(s, r, c) = f(s, r, c)`.
+    pub fn from_fn(log_d: usize, rows: usize, cols: usize, lanes: usize, f: impl Fn(usize, usize, usize) -> (f64, f64)) -> Grid {
+        let (h, w) = (rows << log_d, cols << log_d);
         let (re, im) = (0..lanes * h * w).map(|t| f(t / (h * w), (t / w) % h, t % w)).unzip();
-        Grid { rows, cols, re, im }
+        Grid {
+            log_d,
+            rows,
+            cols,
+            re,
+            im,
+        }
     }
 
-    /// Deterministic test matrices, entries in `[-1, 1]`.
-    pub fn model(rows: usize, cols: usize, lanes: usize, seed: u64) -> Grid {
+    /// Deterministic test matrices, entries dyadic, in `[-1, 1]`, so that every model value is exact at any scalar.
+    pub fn model(log_d: usize, rows: usize, cols: usize, lanes: usize, seed: u64) -> Grid {
         let value = |t: usize, salt: u64| {
             let x = (t as u64)
                 .wrapping_mul(2654435761)
                 .wrapping_add(seed.wrapping_mul(40503).wrapping_add(salt))
                 % 2001;
-            x as f64 / 1000.0 - 1.0
+            x as f64 / 1024.0 - 1.0
         };
-        let w = cols * D;
-        Grid::from_fn(rows, cols, lanes, |s, r, c| {
-            let t = (s * rows * D + r) * w + c;
+        let (h, w) = (rows << log_d, cols << log_d);
+        Grid::from_fn(log_d, rows, cols, lanes, |s, r, c| {
+            let t = (s * h + r) * w + c;
             (value(t, 0), value(t, 7))
         })
     }
 
+    /// The block dimension `d`.
+    pub fn d(&self) -> usize {
+        1 << self.log_d
+    }
+
     /// Number of matrices.
     pub fn lanes(&self) -> usize {
-        self.re.len() / (self.rows * self.cols * D * D)
+        self.re.len() / (self.rows * self.cols * self.d() * self.d())
     }
 
     /// Entry `(r, c)` of matrix `s`.
     pub fn at(&self, s: usize, r: usize, c: usize) -> (f64, f64) {
-        let t = (s * self.rows * D + r) * self.cols * D + c;
+        let t = (s * self.rows * self.d() + r) * self.cols * self.d() + c;
         (self.re[t], self.im[t])
     }
 
     /// Per-lane complex product `self * other`.
     pub fn matmul(&self, other: &Grid) -> Grid {
-        Grid::from_fn(self.rows, other.cols, self.lanes(), |s, r, c| {
-            (0..self.cols * D).fold((0.0, 0.0), |(acc_re, acc_im), l| {
+        Grid::from_fn(self.log_d, self.rows, other.cols, self.lanes(), |s, r, c| {
+            (0..self.cols * self.d()).fold((0.0, 0.0), |(acc_re, acc_im), l| {
                 let ((ar, ai), (br, bi)) = (self.at(s, r, l), other.at(s, l, c));
                 (acc_re + ar * br - ai * bi, acc_im + ar * bi + ai * br)
             })
@@ -92,8 +100,8 @@ impl Grid {
 
     /// Per-lane product by the real public matrix `b(s mod count, row, col)` of `cols` block columns.
     pub fn matmul_public(&self, cols: usize, count: usize, b: impl Fn(usize, usize, usize) -> f64) -> Grid {
-        Grid::from_fn(self.rows, cols, self.lanes(), |s, r, c| {
-            (0..self.cols * D).fold((0.0, 0.0), |(acc_re, acc_im), l| {
+        Grid::from_fn(self.log_d, self.rows, cols, self.lanes(), |s, r, c| {
+            (0..self.cols * self.d()).fold((0.0, 0.0), |(acc_re, acc_im), l| {
                 let ((ar, ai), w) = (self.at(s, r, l), b(s % count, l, c));
                 (acc_re + ar * w, acc_im + ai * w)
             })
@@ -102,34 +110,34 @@ impl Grid {
 
     /// Per-lane transpose.
     pub fn transpose(&self) -> Grid {
-        Grid::from_fn(self.cols, self.rows, self.lanes(), |s, r, c| self.at(s, c, r))
+        Grid::from_fn(self.log_d, self.cols, self.rows, self.lanes(), |s, r, c| self.at(s, c, r))
     }
 
     /// Row `r` of every matrix replaced by row `r + k` modulo the height.
     pub fn rotate_rows(&self, k: usize) -> Grid {
-        Grid::from_fn(self.rows, self.cols, self.lanes(), |s, r, c| {
-            self.at(s, (r + k) % (self.rows * D), c)
+        Grid::from_fn(self.log_d, self.rows, self.cols, self.lanes(), |s, r, c| {
+            self.at(s, (r + k) % (self.rows * self.d()), c)
         })
     }
 
     /// Column `c` of every matrix replaced by column `c + k` modulo the width.
     pub fn rotate_cols(&self, k: usize) -> Grid {
-        Grid::from_fn(self.rows, self.cols, self.lanes(), |s, r, c| {
-            self.at(s, r, (c + k) % (self.cols * D))
+        Grid::from_fn(self.log_d, self.rows, self.cols, self.lanes(), |s, r, c| {
+            self.at(s, r, (c + k) % (self.cols * self.d()))
         })
     }
 
     /// Lane `s` replaced by lane `s + r` modulo the lane count.
     pub fn rotate_lanes(&self, r: i64) -> Grid {
         let lanes = self.lanes() as i64;
-        Grid::from_fn(self.rows, self.cols, self.lanes(), |s, row, c| {
+        Grid::from_fn(self.log_d, self.rows, self.cols, self.lanes(), |s, row, c| {
             self.at((s as i64 + r).rem_euclid(lanes) as usize, row, c)
         })
     }
 
     /// Every lane replaced by the sum over lanes.
     pub fn sum_lanes(&self) -> Grid {
-        Grid::from_fn(self.rows, self.cols, self.lanes(), |_, r, c| {
+        Grid::from_fn(self.log_d, self.rows, self.cols, self.lanes(), |_, r, c| {
             (0..self.lanes()).fold((0.0, 0.0), |(acc_re, acc_im), s| {
                 let (re, im) = self.at(s, r, c);
                 (acc_re + re, acc_im + im)
@@ -139,8 +147,9 @@ impl Grid {
 
     /// Real and imaginary slot vectors of every block, row-major, each `slots` long.
     pub fn blocks(&self, slots: usize) -> Vec<(Vec<f64>, Vec<f64>)> {
-        let re = split_into_blocks(self.rows, self.cols, LOG_D, slots, self.lanes(), |s, r, c| self.at(s, r, c).0);
-        let im = split_into_blocks(self.rows, self.cols, LOG_D, slots, self.lanes(), |s, r, c| self.at(s, r, c).1);
+        let (log_d, lanes) = (self.log_d, self.lanes());
+        let re = split_into_blocks(self.rows, self.cols, log_d, slots, lanes, |s, r, c| self.at(s, r, c).0);
+        let im = split_into_blocks(self.rows, self.cols, log_d, slots, lanes, |s, r, c| self.at(s, r, c).1);
         re.into_iter().zip(im).collect()
     }
 }
@@ -188,7 +197,30 @@ where
             block
         })
         .collect();
-    BlasCiphertext::from_blocks(blocks, LOG_D, grid.rows, grid.cols).unwrap()
+    BlasCiphertext::from_blocks(blocks, grid.log_d, grid.rows, grid.cols).unwrap()
+}
+
+/// A grid of `rows x cols` blocks of dimension `2^log_d` at torus width `k`, at the radix and rank of `params`, recording
+/// the dense batch.
+pub fn alloc_grid<BE: Backend>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    log_d: usize,
+    rows: usize,
+    cols: usize,
+    k: usize,
+) -> BlasCiphertextOwned<BE>
+where
+    Module<BE>: CKKSModuleAlloc<BE>,
+{
+    let block = CKKSLayout {
+        glwe_layout: GLWELayout {
+            k: k.into(),
+            ..params.glwe_layout()
+        },
+        meta: GLWEPlaintextMeta::default(),
+    };
+    module.blas_ciphertext_alloc_from_infos(&BlasLayout::new(block, log_d, rows, cols))
 }
 
 /// Decrypts every block of `ct` and checks it against `want` at the block's precision; every functional test ends here.
@@ -211,7 +243,7 @@ pub fn assert_grid_decrypt<BE, F, E>(
 {
     assert_eq!(
         (ct.log_d(), ct.rows(), ct.cols()),
-        (LOG_D, want.rows, want.cols),
+        (want.log_d, want.rows, want.cols),
         "{label}: grid shape"
     );
     for (b, (block, (re, im))) in ct.blocks().iter().zip(want.blocks(params.n / 2)).enumerate() {
@@ -258,8 +290,9 @@ where
     let (log_d, rows, cols, layout) = (grid.log_d(), grid.rows(), grid.cols(), grid.block_layout());
     assert!(rows * cols > 1, "one block cannot be uneven");
     let mut uneven = grid.clone().into_blocks();
-    *uneven.last_mut().unwrap() =
-        module.ckks_ciphertext_alloc(layout.base2k(), (layout.k().as_usize() - layout.base2k().as_usize()).into());
+    let mut narrow = layout;
+    narrow.glwe_layout.k = (layout.k().as_usize() - layout.base2k().as_usize()).into();
+    *uneven.last_mut().unwrap() = module.ckks_ciphertext_alloc_from_infos(&narrow);
     let labelled = |log_sparsity: usize| {
         let blocks = relabel(grid, |meta| meta.log_sparsity = log_sparsity).into_blocks();
         BlasCiphertext::from_blocks(blocks, log_d, rows, cols).unwrap()
@@ -493,10 +526,11 @@ where
         .collect()
 }
 
-/// The context at `LOG_D` and `params.prec()`.
+/// The context of `2^log_d x 2^log_d` blocks at `params.prec()`.
 pub fn blas_context<BE, F>(
     params: &CKKSTestParams,
     module: &Module<BE>,
+    log_d: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> crate::layouts::BlasContext<BE>
 where
@@ -507,7 +541,7 @@ where
         + poulpy_hal::api::CnvPVecAlloc<BE>,
     F: TestScalar + poulpy_core::layouts::DiagonalArithmetic,
 {
-    let plan = crate::layouts::BlasPlan::new(LOG_D);
+    let plan = crate::layouts::BlasPlan::new(log_d);
     crate::layouts::BlasContextUnprepared::encode::<F>(module, plan, params.base2k.into(), params.prec().into(), scratch)
         .unwrap()
         .prepare(module, scratch)
@@ -541,6 +575,7 @@ where
 pub fn context_and_keys<BE, F>(
     params: &CKKSTestParams,
     module: &Module<BE>,
+    log_d: usize,
     sk_raw: &poulpy_core::layouts::BackendGLWESecret<BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> (
@@ -556,7 +591,7 @@ where
     F: TestScalar + poulpy_core::layouts::DiagonalArithmetic,
 {
     use poulpy_hal::layouts::CyclotomicOrder;
-    let ctx = blas_context::<BE, F>(params, module, scratch);
+    let ctx = blas_context::<BE, F>(params, module, log_d, scratch);
     let atks = rotation_keys(
         params,
         module,
@@ -594,12 +629,13 @@ pub fn map_galois_elements<'a, BE: Backend + 'a>(
     elements
 }
 
-/// Contexts an operation on `module` rejects, by label: one encoded on a module of half the degree, one at a radix one
-/// below `params.base2k`. `atks` gains a key for every rotation they take on `module`, so no missing key stops an
-/// operation from evaluating them.
+/// Contexts of `2^log_d x 2^log_d` blocks an operation on `module` rejects, by label: one encoded on a module of twice
+/// the degree, one at a radix one below `params.base2k`. `atks` gains a key for every rotation they take on `module`, so
+/// no missing key stops an operation from evaluating them.
 pub fn foreign_contexts<BE, F>(
     params: &CKKSTestParams,
     module: &Module<BE>,
+    log_d: usize,
     sk_raw: &poulpy_core::layouts::BackendGLWESecret<BE>,
     atks: &mut HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
     scratch: &mut ScratchArena<'_, BE>,
@@ -613,15 +649,15 @@ where
     F: TestScalar + poulpy_core::layouts::DiagonalArithmetic,
 {
     use poulpy_hal::layouts::CyclotomicOrder;
-    let half = Module::<BE>::new(params.n as u64 / 2);
-    let plan = crate::layouts::BlasPlan::new(LOG_D);
+    let double = Module::<BE>::new(2 * params.n as u64);
+    let plan = crate::layouts::BlasPlan::new(log_d);
     let mut encode = |module: &Module<BE>, base2k: usize| {
         crate::layouts::BlasContextUnprepared::encode::<F>(module, plan, base2k.into(), params.prec().into(), scratch)
             .unwrap()
             .prepare(module, scratch)
     };
     let contexts = [
-        ("degree", encode(&half, params.base2k)),
+        ("degree", encode(&double, params.base2k)),
         ("base2k", encode(module, params.base2k - 1)),
     ];
     for p in contexts

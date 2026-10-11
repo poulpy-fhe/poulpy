@@ -23,8 +23,8 @@ use poulpy_hal::{
 };
 
 use super::helpers::{
-    D, Grid, LOG_D, Rejection::InvalidPlan, TestKeys, assert_grid_decrypt, assert_guard, context_and_keys, encrypt_grid, relabel,
-    to_f,
+    Grid, Rejection::InvalidPlan, TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, context_and_keys, encrypt_grid,
+    relabel, to_f,
 };
 use crate::{
     api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
@@ -49,9 +49,13 @@ fn assert_meta<DG: Data, W: ZnxWord, R: Ring>(label: &str, g: &BlasCiphertext<DG
 /// blocks, the operand preparations, the product by public matrices and the rotation, from a half-full batch into a
 /// fresh grid and from a full batch into a grid labelled and recorded half full. Summing a transposed half-full batch
 /// adds each of its matrices once and records them. Copies, the shifts by whole blocks and the sum of one matrix leave
-/// no noise tag, and transpose keeps real slots real.
-pub fn test_blas_result_meta<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
-where
+/// no noise tag, and transpose keeps real slots real. On one matrix slot no batch is half full: only the full one runs.
+pub fn test_blas_result_meta<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+    log_d: usize,
+) where
     BE: TestContextBackend<Ring = Standard> + BlasImpl,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
@@ -60,14 +64,14 @@ where
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     let slots = params.n / 2;
-    let lanes = slots / (D * D);
+    let (d, lanes) = (1 << log_d, slots >> (2 * log_d));
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let (ctx, mut atks) = context_and_keys::<BE, F>(&params, module, &sk_raw, &mut scratch.borrow());
+    let (ctx, mut atks) = context_and_keys::<BE, F>(&params, module, log_d, &sk_raw, &mut scratch.borrow());
     let pt = BlasPtOperandUnprepared::encode::<F>(
         module,
-        LOG_D,
+        log_d,
         2,
         1,
         1,
@@ -93,18 +97,13 @@ where
             scratch,
         )
     };
-    let half = Grid::model(1, 2, lanes / 2, 1);
-    let (half_row, half_column) = (
-        encrypt(&half, 1, &mut scratch.borrow()),
-        encrypt(&Grid::model(2, 1, lanes / 2, 2), 1, &mut scratch.borrow()),
-    );
     let (full_row, full_column) = (
-        encrypt(&Grid::model(1, 2, lanes, 3), 0, &mut scratch.borrow()),
-        encrypt(&Grid::model(2, 1, lanes, 4), 0, &mut scratch.borrow()),
+        encrypt(&Grid::model(log_d, 1, 2, lanes, 3), 0, &mut scratch.borrow()),
+        encrypt(&Grid::model(log_d, 2, 1, lanes, 4), 0, &mut scratch.borrow()),
     );
     let one_log_sparsity = lanes.ilog2() as usize;
-    let one = encrypt(&Grid::model(1, 2, 1, 5), one_log_sparsity, &mut scratch.borrow());
-    let mut real = Grid::model(1, 2, lanes, 6);
+    let one = encrypt(&Grid::model(log_d, 1, 2, 1, 5), one_log_sparsity, &mut scratch.borrow());
+    let mut real = Grid::model(log_d, 1, 2, lanes, 6);
     real.im.fill(0.0);
     let real = relabel(&encrypt(&real, 0, &mut scratch.borrow()), |meta| meta.slots = SlotsKind::Real);
     let order = module.cyclotomic_order();
@@ -126,19 +125,30 @@ where
     let mut op_scratch = ScratchOwned::<BE>::alloc(bytes);
     // A fresh grid labelled `log_sparsity`, recording the batch that label proves.
     let alloc = |rows: usize, cols: usize, log_sparsity: usize| {
-        let grid = module.blas_ciphertext_alloc(LOG_D, rows, cols, params.base2k.into(), params.k.into());
+        let grid = alloc_grid(&params, module, log_d, rows, cols, params.k);
         BlasCiphertext::from_blocks(
             relabel(&grid, |meta| meta.log_sparsity = log_sparsity).into_blocks(),
-            LOG_D,
+            log_d,
             rows,
             cols,
         )
         .unwrap()
     };
 
-    // A shift by 1 crosses blocks along the axis two blocks long and stays in the block along the other; a shift by `D`
+    // A half-full batch into a fresh grid, then a full batch into a grid labelled and recorded half full; on one matrix
+    // slot, the full batch into a fresh grid alone.
+    let half = Grid::model(log_d, 1, 2, lanes / 2, 1);
+    let half_grids = (lanes > 1).then(|| {
+        (
+            encrypt(&half, 1, &mut scratch.borrow()),
+            encrypt(&Grid::model(log_d, 2, 1, lanes / 2, 2), 1, &mut scratch.borrow()),
+        )
+    });
+    let mut cases: Vec<_> = half_grids.iter().map(|(row, column)| (row, column, 1, 0)).collect();
+    cases.push((&full_row, &full_column, 0, usize::from(lanes > 1)));
+    // A shift by 1 crosses blocks along the axis two blocks long and stays in the block along the other; a shift by `d`
     // copies whole blocks.
-    for (row, column, want, stale) in [(&half_row, &half_column, 1, 0), (&full_row, &full_column, 0, 1)] {
+    for (row, column, want, stale) in cases {
         let label = |op: &str| format!("{op} from log_sparsity {want} into {stale}");
         let batch = lanes >> want;
         let mut res = alloc(2, 1, stale);
@@ -146,7 +156,7 @@ where
             .blas_transpose(&mut res, row, &ctx, &keys, &mut op_scratch.borrow())
             .unwrap();
         assert_meta(&label("transpose"), &res, want, batch);
-        for k in [1, D] {
+        for k in [1, d] {
             for a in [row, column] {
                 let shape = format!("{}x{} k={k}", a.rows(), a.cols());
                 let mut res = alloc(a.rows(), a.cols(), stale);
@@ -181,25 +191,27 @@ where
         assert_meta(&label("rotate"), &res, want, batch);
     }
 
-    let mut transposed = alloc(2, 1, 0);
-    module
-        .blas_transpose(&mut transposed, &half_row, &ctx, &keys, &mut op_scratch.borrow())
-        .unwrap();
-    let mut res = alloc(2, 1, 0);
-    module
-        .blas_sum(&mut res, &transposed, &keys, &mut op_scratch.borrow())
-        .unwrap();
-    assert_eq!(res.mat_slots(), Some(lanes / 2), "sum of a half-full transpose: mat_slots");
-    assert_grid_decrypt::<BE, F, E>(
-        "sum of a half-full transpose",
-        &params,
-        module,
-        &encoder,
-        &res,
-        &sk,
-        &half.transpose().sum_lanes(),
-        &mut scratch.borrow(),
-    );
+    if let Some((half_row, _)) = &half_grids {
+        let mut transposed = alloc(2, 1, 0);
+        module
+            .blas_transpose(&mut transposed, half_row, &ctx, &keys, &mut op_scratch.borrow())
+            .unwrap();
+        let mut res = alloc(2, 1, 0);
+        module
+            .blas_sum(&mut res, &transposed, &keys, &mut op_scratch.borrow())
+            .unwrap();
+        assert_eq!(res.mat_slots(), Some(lanes / 2), "sum of a half-full transpose: mat_slots");
+        assert_grid_decrypt::<BE, F, E>(
+            "sum of a half-full transpose",
+            &params,
+            module,
+            &encoder,
+            &res,
+            &sk,
+            &half.transpose().sum_lanes(),
+            &mut scratch.borrow(),
+        );
+    }
 
     let mut res = alloc(1, 2, 0);
     module.blas_sum(&mut res, &one, &keys, &mut op_scratch.borrow()).unwrap();
@@ -218,9 +230,14 @@ where
 /// The batch record. Blocks encrypted from compact plaintexts of `count d^2` slots record `count` matrices, and the sum
 /// of a compact pair adds each matrix once. A dense plaintext added to its blocks drops their label below that record,
 /// so the next operation rejects the grid before `res` changes. A product, and its prepared form, records the larger
-/// batch of its factors, with either factor the sparse one, and broadcasts the smaller.
-pub fn test_blas_batch_record<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
-where
+/// batch of its factors, with either factor the sparse one, and broadcasts the smaller. One matrix slot holds no batch
+/// to record, so the test returns there.
+pub fn test_blas_batch_record<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+    log_d: usize,
+) where
     BE: TestContextBackend<Ring = Standard> + BlasImpl,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
@@ -229,20 +246,23 @@ where
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     let slots = params.n / 2;
-    let lanes = slots / (D * D);
+    let (d, lanes) = (1 << log_d, slots >> (2 * log_d));
+    if lanes < 2 {
+        return;
+    }
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let (ctx, mut atks) = context_and_keys::<BE, F>(&params, module, &sk_raw, &mut scratch.borrow());
+    let (ctx, mut atks) = context_and_keys::<BE, F>(&params, module, log_d, &sk_raw, &mut scratch.borrow());
     let prec = params.prec();
     // Every block of `grid` encrypted from a compact plaintext of `lanes d^2` slots, at the degree the backend allocates
     // it.
     let encrypt_compact = |grid: &Grid, scratch: &mut ScratchArena<'_, BE>| {
         let count = grid.lanes();
-        let encoder = ReferenceEncoder::<E>::new(count * D * D).unwrap();
-        let degree = (2 * count * D * D).max(BE::MIN_DEGREE).min(params.n);
+        let encoder = ReferenceEncoder::<E>::new(count * d * d).unwrap();
+        let degree = (2 * count * d * d).max(BE::MIN_DEGREE).min(params.n);
         let blocks = grid
-            .blocks(count * D * D)
+            .blocks(count * d * d)
             .iter()
             .map(|(re, im)| {
                 let mut pt = host_module.ckks_pt_coeffs_alloc(degree, params.base2k.into(), prec.k());
@@ -251,14 +271,14 @@ where
                 ckks_encrypt_pt(&params, module, &sk, params.k, &pt, scratch)
             })
             .collect();
-        BlasCiphertext::from_blocks(blocks, LOG_D, grid.rows, grid.cols).unwrap()
+        BlasCiphertext::from_blocks(blocks, log_d, grid.rows, grid.cols).unwrap()
     };
     for count in [1, 2, lanes / 2] {
-        let ct = encrypt_compact(&Grid::model(1, 1, count, count as u64), &mut scratch.borrow());
+        let ct = encrypt_compact(&Grid::model(log_d, 1, 1, count, count as u64), &mut scratch.borrow());
         assert_eq!(ct.mat_slots(), Some(count), "compact count={count}");
     }
 
-    let pair = Grid::model(1, 2, 2, 1);
+    let pair = Grid::model(log_d, 1, 2, 2, 1);
     let ct_pair = encrypt_compact(&pair, &mut scratch.borrow());
     for p in sum_galois_elements(module, &ct_pair) {
         atks.entry(p)
@@ -271,7 +291,7 @@ where
     let (tsk_layout, atk_layout) = (params.tsk_layout(), params.atk_layout());
     let bytes = module.blas_sum_tmp_bytes(&ct_pair, &ct_pair, &atk_layout);
     let mut op_scratch = ScratchOwned::<BE>::alloc(bytes);
-    let mut res = module.blas_ciphertext_alloc(LOG_D, 1, 2, params.base2k.into(), params.k.into());
+    let mut res = alloc_grid(&params, module, log_d, 1, 2, params.k);
     module.blas_sum(&mut res, &ct_pair, &keys, &mut op_scratch.borrow()).unwrap();
     assert_eq!(res.mat_slots(), Some(2), "sum of a compact pair: mat_slots");
     assert_grid_decrypt::<BE, F, E>(
@@ -285,7 +305,7 @@ where
         &mut scratch.borrow(),
     );
 
-    let (re, im) = &Grid::model(1, 1, lanes, 2).blocks(slots)[0];
+    let (re, im) = &Grid::model(log_d, 1, 1, lanes, 2).blocks(slots)[0];
     let mut dense = host_module.ckks_pt_vec_alloc(params.base2k.into(), prec.k());
     dense.set_meta(prec.meta);
     encoder.encode_reim(&mut dense, &to_f::<F>(re), &to_f::<F>(im)).unwrap();
@@ -298,7 +318,7 @@ where
         module.blas_sum(res, &added, &keys, &mut op_scratch.borrow())
     });
 
-    let full = Grid::model(1, 1, lanes, 3);
+    let full = Grid::model(log_d, 1, 1, lanes, 3);
     let ct_full = encrypt_grid::<BE, F, E>(
         &params,
         module,
@@ -310,9 +330,9 @@ where
         &full,
         &mut scratch.borrow(),
     );
-    let half = Grid::model(1, 1, 2, 4);
+    let half = Grid::model(log_d, 1, 1, 2, 4);
     let ct_half = encrypt_compact(&half, &mut scratch.borrow());
-    let spread = Grid::from_fn(1, 1, lanes, |s, r, c| half.at(s % 2, r, c));
+    let spread = Grid::from_fn(log_d, 1, 1, lanes, |s, r, c| half.at(s % 2, r, c));
     for (label, (a, ct_a), (b, ct_b)) in [
         ("pair times full", (&spread, &ct_half), (&full, &ct_full)),
         ("full times pair", (&full, &ct_full), (&spread, &ct_half)),

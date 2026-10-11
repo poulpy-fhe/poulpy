@@ -25,6 +25,41 @@ blas_backend_test_suite!(
     params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
 );
 
+blas_backend_test_suite!(
+    mod ntt4x30_f128,
+    backend = crate::NTT4x30Oracle,
+    scalar = poulpy_ckks::Quad,
+    encoder = crate::EncodingFft<poulpy_ckks::Quad>,
+    params = poulpy_ckks::test_suite::BASE52_PARAMS_QUAD,
+);
+
+blas_backend_test_suite!(
+    mod ntt4x30_f64_rank2,
+    backend = crate::NTT4x30Oracle,
+    scalar = f64,
+    encoder = crate::EncodingFft<f64>,
+    params = poulpy_ckks::test_suite::BASE52_PARAMS_F64_RANK2,
+);
+
+// 2 x 2 blocks, then 8 x 8 blocks filling the 64 slots of N = 128: one matrix per block.
+blas_backend_test_suite!(
+    mod fft64_f64_log_d1,
+    backend = crate::FFT64Oracle,
+    scalar = f64,
+    encoder = crate::EncodingFft<f64>,
+    params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
+    log_d = 1,
+);
+
+blas_backend_test_suite!(
+    mod fft64_f64_log_d3,
+    backend = crate::FFT64Oracle,
+    scalar = f64,
+    encoder = crate::EncodingFft<f64>,
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 128, hw: 64, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
+    log_d = 3,
+);
+
 // Parity between the two oracle families.
 blas_parity_test_suite! {
     mod blas_parity_fft64oracle_f64,

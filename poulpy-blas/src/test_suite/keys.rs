@@ -20,15 +20,15 @@ use poulpy_hal::{
 };
 
 use super::helpers::{
-    D, Grid, LOG_D,
+    Grid,
     Rejection::{MissingKey, MissingTensorKey},
-    StrictKeys, TestKeys, assert_guard_on, context_and_keys, encrypt_grid, grid_snapshot, lt_key_uses,
+    StrictKeys, TestKeys, alloc_grid, assert_guard_on, context_and_keys, encrypt_grid, grid_snapshot, lt_key_uses,
 };
 use crate::{
     api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasGridInfos, BlasMatMulLeft, BlasMatMulRight, BlasModuleAlloc,
-        BlasPtOperandUnprepared, sum_galois_elements,
+        BlasCiphertext, BlasCiphertextOwned, BlasGridInfos, BlasMatMulLeft, BlasMatMulRight, BlasPtOperandUnprepared,
+        sum_galois_elements,
     },
     oep::BlasImpl,
 };
@@ -99,8 +99,12 @@ fn assert_key_widths<BE, X>(
 /// and column shifts, products by public matrices and the preparations write results half as wide as their inputs,
 /// narrower than any map's output, then one limb wider than their inputs; the matrix products run on factors of one
 /// width, then on a narrower left or right factor.
-pub fn test_blas_key_widths<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
-where
+pub fn test_blas_key_widths<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+    log_d: usize,
+) where
     BE: TestContextBackend<Ring = Standard> + BlasImpl,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
@@ -109,14 +113,14 @@ where
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     let slots = params.n / 2;
-    let lanes = slots / (D * D);
+    let (d, lanes) = (1 << log_d, slots >> (2 * log_d));
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let (ctx, mut atks) = context_and_keys::<BE, F>(&params, module, &sk_raw, &mut scratch.borrow());
+    let (ctx, mut atks) = context_and_keys::<BE, F>(&params, module, log_d, &sk_raw, &mut scratch.borrow());
     let pt = BlasPtOperandUnprepared::encode::<F>(
         module,
-        LOG_D,
+        log_d,
         2,
         1,
         1,
@@ -128,7 +132,7 @@ where
     .unwrap()
     .prepare(module, &mut scratch.borrow());
     let encrypt = |rows: usize, cols: usize, k: usize, seed: u64, scratch: &mut ScratchArena<'_, BE>| {
-        let grid = Grid::model(rows, cols, lanes, seed);
+        let grid = Grid::model(log_d, rows, cols, lanes, seed);
         encrypt_grid::<BE, F, E>(&params, module, host_module, &encoder, &sk, k, 0, &grid, scratch)
     };
     let a_k = params.k;
@@ -147,8 +151,7 @@ where
         atks,
         tsk: Some(gen_tsk(&params, module, &sk_raw, &mut scratch.borrow())),
     };
-    let alloc =
-        |rows: usize, cols: usize, k: usize| module.blas_ciphertext_alloc(LOG_D, rows, cols, params.base2k.into(), k.into());
+    let alloc = |rows: usize, cols: usize, k: usize| alloc_grid(&params, module, log_d, rows, cols, k);
     let uses = |lt, src_k, res_k| lt_key_uses(module, lt, src_k, res_k);
     let (tsk_layout, atk_layout) = (params.tsk_layout(), params.atk_layout());
     // Half as wide as the inputs, so that the result's width caps the maps' giant steps, then one limb wider.
@@ -166,7 +169,7 @@ where
         module
             .blas_rotate(&mut full, &row, 1, &keys, &mut op_scratch.borrow())
             .unwrap();
-        let rotation = [(module.ckks_galois_element((D * D) as i64), a_k)];
+        let rotation = [(module.ckks_galois_element((d * d) as i64), a_k)];
         assert_key_widths(
             &format!("rotate res_k={res_k}"),
             "blas_rotate",
@@ -349,7 +352,7 @@ where
             )
             .unwrap();
         let (p_k, q_k) = (width(&p), width(&q));
-        let shifts: Vec<(i64, usize)> = (1..D)
+        let shifts: Vec<(i64, usize)> = (1..d)
             .flat_map(|k| {
                 uses(ctx.rotate_cols(k), s_k, p_k)
                     .into_iter()

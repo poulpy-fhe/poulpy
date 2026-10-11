@@ -104,8 +104,10 @@ the decrypted values and the output metadata against cleartext expectations,
 along with the input guards, key widths, and the plan's key sets against the
 encoded maps; each operation runs on the keys of its own set alone. They read
 coefficients on the host and use the standard ring, so they need a host backend
-of the standard ring; `poulpy-cpu-oracle` runs them for `FFT64Oracle` and
-`NTT4x30Oracle`.
+of the standard ring. An optional `log_d = …` sets the blocks to
+`2^log_d x 2^log_d`, 2 by default. `poulpy-cpu-oracle` runs them for
+`FFT64Oracle` and `NTT4x30Oracle`: at `log_d` 1, 2 and 3 (the last at `N = 128`,
+where one block fills a ciphertext), in `f64` and `Quad`, and at rank 2.
 
 `blas_parity_test_suite!` compares `backend_test` with `backend_ref`:
 
