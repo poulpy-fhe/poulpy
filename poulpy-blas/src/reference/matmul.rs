@@ -260,6 +260,46 @@ pub fn validate_blas_matmul_pt<BE: Backend>(
     Ok(batch)
 }
 
+/// Checks a [`crate::api::BlasMatMulOps::blas_matmul_pt_left`] call from metadata alone, before any implementation runs,
+/// and returns the batch `res` records, `a`'s: `a` and `res` are grids at `b`'s `log_d` whose blocks tile their shape
+/// and share one layout whose label allows their batch record, `b`'s columns match `a`'s rows, `res` has `b`'s rows and
+/// `a`'s columns, its blocks have the module's degree and `a`'s radix and rank, `b` was encoded on a module of
+/// `module`'s slot count at `a`'s radix, `b`'s public matrices divide `a`'s batch, and `atk` holds every key of every
+/// map of `b` at the width it is looked up at.
+///
+/// # Errors
+///
+/// As [`validate_blas_matmul_pt`].
+pub fn validate_blas_matmul_pt_left<BE: Backend>(
+    module: &Module<BE>,
+    res: &impl BlasGrid<BE>,
+    b: &BlasPtOperand<BE, Left>,
+    a: &impl BlasGrid<BE>,
+    atk: &impl GetAutomorphismKey<BE>,
+) -> Result<usize> {
+    let op = "blas_matmul_pt_left";
+    ensure_grid::<BE::Ring>(op, b.log_d(), a, a.blocks())?;
+    ensure_grid::<BE::Ring>(op, b.log_d(), res, res.blocks())?;
+    ensure_inner(op, b.cols(), a.rows())?;
+    ensure_shape(op, res, b.rows(), a.cols())?;
+    ensure_layouts(op, module.n(), res, &[a])?;
+    ensure_maps(op, module, b.slots(), b.base2k(), &[a])?;
+    let batch = grid_batch::<BE::Ring>(a);
+    if !batch.is_multiple_of(b.count()) {
+        return Err(reject(
+            op,
+            format!("{} public matrices do not divide the {batch} matrix slots", b.count()),
+        ));
+    }
+    let res_k = res.block_layout().k();
+    for i in 0..b.rows() {
+        for l in 0..b.cols() {
+            ensure_lt_keys(op, module, b.at(i, l), atk, a.block_layout().k(), res_k)?;
+        }
+    }
+    Ok(batch)
+}
+
 /// `a` is a grid at the context's `log_d` of blocks of the module's degree, which the context's maps read.
 fn ensure_factor<BE: Backend>(op: &'static str, module: &Module<BE>, a: &impl BlasGrid<BE>, ctx: &BlasContext<BE>) -> Result<()> {
     ensure_grid::<BE::Ring>(op, ctx.log_d(), a, a.blocks())?;
@@ -322,8 +362,8 @@ fn ensure_term_keys<'c, BE: Backend + 'c>(
 /// preparations make [`BlasMatMulOperand`]s through the map hook of [`BlasMatIntraImpl`]; the prepared product reads
 /// them one output block at a time through the JKLS kernel of [`BlasJklsImpl`], the blocks split over up to four workers
 /// of `BE`'s task executor, each on its own scratch slice, and returns the error of the lowest failing block, as a
-/// serial loop would. The product by public matrices evaluates one poulpy-ckks summed linear transformation per output
-/// block, its block rows split the same way.
+/// serial loop would. The products by public matrices evaluate one poulpy-ckks summed linear transformation per output
+/// block, their block rows (columns, on the left) split the same way.
 pub trait BlasMatMulReference<BE: Backend> {
     /// The largest of the map hook's queries through sigma, from `a`'s blocks into blocks of their layout, and through
     /// every shift, from those into blocks of the terms' layout, and of the copy of one into a block of the terms'
@@ -482,6 +522,51 @@ pub trait BlasMatMulReference<BE: Backend> {
         let rows = res.blocks_mut().chunks_mut(n).map(|row| row.iter_mut().collect()).collect();
         let source = |i: usize, l: usize| &blocks[i * inner + l];
         shared_giants(self, rows, inner, source, |_, j, l| b.at(l, j), &maps, atk, scratch)
+    }
+
+    /// As [`Self::blas_matmul_pt_tmp_bytes_reference`], one task per block column of `res`.
+    fn blas_matmul_pt_left_tmp_bytes_reference<R, A, K>(&self, res: &R, _b: &BlasPtOperand<BE, Left>, a: &A, atk: &K) -> usize
+    where
+        Self: CKKSLinearTransformationOps<BE>,
+        R: BlasGridInfos,
+        A: BlasGridInfos,
+        K: GGLWEInfos,
+    {
+        let block = summed_lt_tmp_bytes(self, &res.block_layout(), &a.block_layout(), atk);
+        tasks_tmp_bytes::<BE>(res.cols(), block)
+    }
+
+    /// `res = b a`. For every block column `j` of `res`: one baby-step cache per block `a_lj`, `l < K`, covering the baby
+    /// steps of every map of `b`, then every block `res_ij` is poulpy-ckks's summed linear transformation of the `K`
+    /// terms `(a_lj, b_il)`, in ascending `l`, which shares the giant steps across them, stamped with `a`'s label. The
+    /// block columns split over up to four workers of `BE`'s task executor, in runs of consecutive columns, each worker
+    /// with its own caches and scratch slice.
+    fn blas_matmul_pt_left_reference<R, A, K>(
+        &self,
+        res: &mut R,
+        b: &BlasPtOperand<BE, Left>,
+        a: &A,
+        atk: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Self: CKKSLinearTransformationOps<BE> + CKKSModuleInfos + ModuleN + CnvPVecAlloc<BE> + Sized + Sync,
+        R: BlasGridMut<BE>,
+        A: BlasGrid<BE>,
+        K: GetAutomorphismKey<BE> + Sync,
+    {
+        let (inner, n) = (a.rows(), a.cols());
+        let maps: Vec<_> = (0..b.rows()).flat_map(|i| (0..inner).map(move |l| b.at(i, l))).collect();
+        let (src_k, dst_k) = (a.block_layout().k(), res.block_layout().k());
+        let bytes = |key: &GGLWELayout| self.blas_matmul_pt_left_tmp_bytes_reference(&*res, b, a, key);
+        assert_maps_scratch("blas_matmul_pt_left", self, &maps, atk, src_k, dst_k, bytes, scratch);
+        let mut columns: Vec<Vec<_>> = (0..n).map(|_| Vec::new()).collect();
+        for (t, block) in res.blocks_mut().iter_mut().enumerate() {
+            columns[t % n].push(block);
+        }
+        let blocks = a.blocks();
+        let source = |j: usize, l: usize| &blocks[l * n + j];
+        shared_giants(self, columns, inner, source, |_, i, l| b.at(i, l), &maps, atk, scratch)
     }
 }
 

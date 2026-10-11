@@ -68,6 +68,12 @@ macro_rules! blas_backend_test_suite {
             run_test_with_arg!(matmul_pt, $crate::test_suite::matmul::test_blas_matmul_pt, log_d());
             run_test_with_arg!(matmul_guards, $crate::test_suite::matmul::test_blas_matmul_guards, log_d());
             run_test_with_arg!(matmul_pt_guards, $crate::test_suite::matmul::test_blas_matmul_pt_guards, log_d());
+            run_test_with_arg!(matmul_pt_left, $crate::test_suite::matmul::test_blas_matmul_pt_left, log_d());
+            run_test_with_arg!(
+                matmul_pt_left_guards,
+                $crate::test_suite::matmul::test_blas_matmul_pt_left_guards,
+                log_d()
+            );
             run_test!(matmul_long_sums, $crate::test_suite::matmul::test_blas_matmul_long_sums);
             run_test_with_arg!(key_widths, $crate::test_suite::keys::test_blas_key_widths, log_d());
             run_test_with_arg!(result_meta, $crate::test_suite::meta::test_blas_result_meta, log_d());

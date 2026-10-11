@@ -7,8 +7,8 @@ use crate::{
     layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, BlasMatMulLeft, BlasMatMulRight, BlasPtOperand},
     oep::BlasMatMulImpl,
     reference::{
-        validate_blas_matmul, validate_blas_matmul_prepare_left, validate_blas_matmul_prepare_right,
-        validate_blas_matmul_prepared, validate_blas_matmul_pt,
+        Left, validate_blas_matmul, validate_blas_matmul_prepare_left, validate_blas_matmul_prepare_right,
+        validate_blas_matmul_prepared, validate_blas_matmul_pt, validate_blas_matmul_pt_left,
     },
 };
 
@@ -145,6 +145,34 @@ impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
     {
         let batch = validate_blas_matmul_pt(self, &*res, a, b, atk)?;
         BE::blas_matmul_pt_impl(self, res, a, b, atk, scratch)?;
+        res.set_mat_slots(batch);
+        Ok(())
+    }
+
+    fn blas_matmul_pt_left_tmp_bytes<R, A, K>(&self, res: &R, b: &BlasPtOperand<BE, Left>, a: &A, atk: &K) -> usize
+    where
+        R: BlasGridInfos,
+        A: BlasGridInfos,
+        K: GGLWEInfos,
+    {
+        BE::blas_matmul_pt_left_tmp_bytes_impl(self, res, b, a, atk)
+    }
+
+    fn blas_matmul_pt_left<R, A, K>(
+        &self,
+        res: &mut R,
+        b: &BlasPtOperand<BE, Left>,
+        a: &A,
+        atk: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        R: BlasGridMut<BE>,
+        A: BlasGrid<BE>,
+        K: GetAutomorphismKey<BE> + Sync,
+    {
+        let batch = validate_blas_matmul_pt_left(self, &*res, b, a, atk)?;
+        BE::blas_matmul_pt_left_impl(self, res, b, a, atk, scratch)?;
         res.set_mat_slots(batch);
         Ok(())
     }

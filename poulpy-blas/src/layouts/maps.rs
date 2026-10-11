@@ -144,6 +144,22 @@ pub fn right_mul<F: DiagonalArithmetic + PartialEq>(
     truncate(slots, acc, if count == 1 { d } else { count * d * d })
 }
 
+/// Left product in every matrix slot: output `(r, c)` of matrix slot `s` is `sum_l b(s mod count, r, l) in(l, c)`.
+///
+/// Its `2d - 1` diagonals sit at the offsets `(l - r) d`, every one stored, zero or not, at `count d^2` slots, a period
+/// fixed by the structure, never by `b`'s values.
+pub fn left_mul<F: DiagonalArithmetic + PartialEq>(
+    slots: usize,
+    log_d: usize,
+    count: usize,
+    b: impl Fn(usize, usize, usize) -> F,
+) -> Diagonals<F> {
+    let d = 1usize << log_d;
+    let b = &b;
+    let acc = accumulate(slots, log_d, count, |s, r, c| (0..d).map(move |l| (l, c, b(s, r, l))));
+    truncate(slots, acc, count * d * d)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -262,6 +278,40 @@ mod tests {
                     .map(|t| {
                         let (s, r, c) = (t / (D * D), (t / D) % D, t % D);
                         (0..D).map(|l| x[s * D * D + r * D + l] * b(s % count, l, c)).sum()
+                    })
+                    .collect();
+                assert_eq!(apply(&map, &x), want, "{label} count={count}");
+            }
+        }
+    }
+
+    /// The left product reads one public matrix per matrix slot, stores its `2d - 1` diagonals at the offsets `(l - r) d`
+    /// and at `count d^2` slots each, whatever the entries, and its values stay exact.
+    #[test]
+    fn left_mul_stores_a_structural_period() {
+        type Entry = fn(usize, usize, usize) -> f64;
+        let variants: [(&str, Entry); 4] = [
+            ("generic", |m, r, l| ((m * 5 + r * D + l) % 7) as f64 - 3.0),
+            ("identity", |_, r, l| f64::from(r == l)),
+            ("constant", |_, _, _| 2.0),
+            ("zero", |_, _, _| 0.0),
+        ];
+        let mut offsets: Vec<i64> = (1 - D as i64..D as i64)
+            .map(|j| (j * D as i64).rem_euclid(SLOTS as i64))
+            .collect();
+        offsets.sort_unstable();
+        let x = input(13);
+        for count in [1, 2, MATS] {
+            for (label, b) in variants {
+                let map = left_mul(SLOTS, LOG_D, count, b);
+                assert_eq!(map.indexes(), offsets, "{label} count={count}");
+                for &i in &offsets {
+                    assert_eq!(map.period(i), Some(count * D * D), "{label} count={count} offset={i}");
+                }
+                let want: Vec<f64> = (0..SLOTS)
+                    .map(|t| {
+                        let (s, r, c) = (t / (D * D), (t / D) % D, t % D);
+                        (0..D).map(|l| b(s % count, r, l) * x[s * D * D + l * D + c]).sum()
                     })
                     .collect();
                 assert_eq!(apply(&map, &x), want, "{label} count={count}");

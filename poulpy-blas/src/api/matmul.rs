@@ -5,10 +5,12 @@ use poulpy_hal::layouts::ScratchArena;
 use crate::{
     layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, BlasMatMulLeft, BlasMatMulRight, BlasPtOperand},
     oep::BlasMatMulImpl,
+    reference::Left,
 };
 
 /// Matrix products of every matrix of the batch, across the blocks of a grid. A product records the larger batch of its
-/// operands ([`BlasGridInfos::mat_slots`]); a prepared operand and the product by public matrices record their input's.
+/// operands ([`BlasGridInfos::mat_slots`]); a prepared operand and the products by public matrices record their
+/// input's.
 pub trait BlasMatMulOps<BE: BlasMatMulImpl> {
     /// Scratch bytes [`Self::blas_matmul`] needs into `res` from `a` and `b` with the maps of `ctx`, a tensor key of
     /// layout `tsk` and rotation keys of layout `atk`.
@@ -188,6 +190,50 @@ pub trait BlasMatMulOps<BE: BlasMatMulImpl> {
         res: &mut R,
         a: &A,
         b: &BlasPtOperand<BE>,
+        atk: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        R: BlasGridMut<BE>,
+        A: BlasGrid<BE>,
+        K: GetAutomorphismKey<BE> + Sync;
+
+    /// Scratch bytes [`Self::blas_matmul_pt_left`] needs into `res` through `b` from `a` with rotation keys of layout
+    /// `atk`.
+    ///
+    /// # Panics
+    ///
+    /// May panic on blocks of a degree other than the module's, which the operation rejects.
+    fn blas_matmul_pt_left_tmp_bytes<R, A, K>(&self, res: &R, b: &BlasPtOperand<BE, Left>, a: &A, atk: &K) -> usize
+    where
+        R: BlasGridInfos,
+        A: BlasGridInfos,
+        K: GGLWEInfos;
+
+    /// `res = B A`: `res` receives the product of the public matrix `b` holds for each matrix slot with the matrix of `a`
+    /// there. It consumes `b`'s scale alone, where the same product through transposes, `transpose(transpose(a) B^T)` by
+    /// [`Self::blas_matmul_pt`], consumes the context's scale twice more.
+    ///
+    /// Each block of `res` is one linear transformation over its `K = a.rows()` terms, which share their giant steps: a
+    /// block costs the giant-step key switches of one of `b`'s maps, whatever `K`. Each giant step adds `K` times its
+    /// diagonals' products in the transform domain before its rotation, so choose `base2k` for that many products,
+    /// with `Module::max_base2k(n, K x the diagonals of a giant step, ..)`, as for poulpy-core's own linear
+    /// transformation.
+    ///
+    /// No circuit privacy: as for every evaluation in this workspace (`SECURITY.md`), `res` may reveal `b` to the holder
+    /// of the secret key. Re-randomize `res`, or flood its noise, before returning it when `b` must stay private.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`validate_blas_matmul_pt_left`](crate::reference::validate_blas_matmul_pt_left), raised before the
+    /// backend runs, so `res` and the inputs are untouched: `InvalidOperand` for a grid, shape, layout, operand or count
+    /// it rejects, `MissingAutomorphismKey` for a key `atk` lacks at its width. Then poulpy-ckks's budget errors, such
+    /// as `InsufficientHomomorphicCapacity` when `res` is narrower than `a`'s scale, raised before any write.
+    fn blas_matmul_pt_left<R, A, K>(
+        &self,
+        res: &mut R,
+        b: &BlasPtOperand<BE, Left>,
+        a: &A,
         atk: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>

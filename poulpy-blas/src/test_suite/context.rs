@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use poulpy_ckks::{
-    api::{CKKSEncodingOps, CKKSLinearTransformationOps},
+    api::{CKKSEncodingOps, CKKSLinearTransformationOps, LinearTransformationPrepared},
     test_suite::{
         CKKSTestParams,
         helpers::{TestContextBackend, TestContextModule, TestScalar, alloc_scratch},
@@ -12,18 +12,25 @@ use poulpy_ckks::{
 use poulpy_core::layouts::{DiagonalArithmetic, LWEInfos};
 use poulpy_hal::{
     api::{CnvPVecAlloc, ScratchOwnedBorrow},
-    layouts::{CyclotomicOrder, HostBytesBackend, Module, ScratchArena, Standard},
+    layouts::{Backend, CyclotomicOrder, HostBytesBackend, Module, ScratchArena, Standard},
 };
 
 use super::helpers::{context_maps, map_galois_elements};
-use crate::layouts::{BlasContextUnprepared, BlasPlan, BlasPtOperandUnprepared};
+use crate::layouts::{BlasContextUnprepared, BlasPlan, BlasPtOperand, BlasPtOperandUnprepared};
+
+/// Every block map of `b`.
+fn operand_maps<BE: Backend, S>(b: &BlasPtOperand<BE, S>) -> Vec<&LinearTransformationPrepared<BE>> {
+    (0..b.rows())
+        .flat_map(|l| (0..b.cols()).map(move |j| b.block(l, j)))
+        .collect()
+}
 
 /// At `log_d` 1 to 3, each key set of the plan equals the Galois elements of the maps its operation evaluates, as the
 /// context encodes them: the transpose, the row and column shifts by every `k` below `2 d`, the matrix products, and
-/// the products by public operands of any values, grid shape and count, of the counts that divide the matrix slots.
-/// Public operands of one count store their diagonals at one degree, whatever their values. The union of these sets,
-/// and the plan's own, equals the context's. The context rejects matrices wider than the slots; a public operand's
-/// count divides the matrix slots. Assumes `params.n` is 128 or 256.
+/// the products by public operands, on either side, of any values, grid shape and count, of the counts that divide the
+/// matrix slots. Public operands of one side and count store their diagonals at one degree, whatever their values. The
+/// union of these sets, and the plan's own, equals the context's. The context rejects matrices wider than the slots; a
+/// public operand's count divides the matrix slots. Assumes `params.n` is 128 or 256.
 pub fn test_blas_context<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend<Ring = Standard>,
@@ -35,6 +42,19 @@ where
     type Entry = fn(usize, usize, usize) -> f64;
     let encode = |log_d: usize, rows: usize, cols: usize, count: usize, entry: Entry, scratch: &mut ScratchArena<'_, BE>| {
         BlasPtOperandUnprepared::encode(
+            module,
+            log_d,
+            rows,
+            cols,
+            count,
+            move |m, r, c| F::from_f64(entry(m, r, c)).unwrap(),
+            params.base2k.into(),
+            params.prec().into(),
+            scratch,
+        )
+    };
+    let encode_left = |log_d: usize, rows: usize, cols: usize, count: usize, entry: Entry, scratch: &mut ScratchArena<'_, BE>| {
+        BlasPtOperandUnprepared::encode_left(
             module,
             log_d,
             rows,
@@ -98,37 +118,44 @@ where
             union.extend(plan_rows.into_iter().chain(plan_cols));
         }
 
-        let matmul_pt = plan.matmul_pt_galois_elements(order);
-        // The degrees the diagonals of each count's operands are stored at.
-        let mut degrees = BTreeMap::<usize, BTreeSet<usize>>::new();
+        let (matmul_pt, matmul_pt_left) = (
+            plan.matmul_pt_galois_elements(order),
+            plan.matmul_pt_left_galois_elements(order),
+        );
+        // The degrees the diagonals of each side's and count's operands are stored at.
+        let mut degrees = BTreeMap::<(&str, usize), BTreeSet<usize>>::new();
         for (label, rows, cols, count, entry) in operands {
             if !((params.n / 2) >> (2 * log_d)).is_multiple_of(count) {
                 continue;
             }
-            let b = encode(log_d, rows, cols, count, entry, &mut scratch.borrow())
+            let right = encode(log_d, rows, cols, count, entry, &mut scratch.borrow())
                 .unwrap()
                 .prepare(module, &mut scratch.borrow());
-            let blocks: Vec<_> = (0..rows)
-                .flat_map(|l| (0..cols).map(move |j| (l, j)))
-                .map(|(l, j)| b.block(l, j))
-                .collect();
-            assert_eq!(
-                matmul_pt,
-                map_galois_elements(blocks.iter().copied(), order),
-                "matmul_pt {label} log_d={log_d}"
-            );
-            let diagonals = blocks
-                .iter()
-                .flat_map(|lt| lt.giant_steps.iter().flat_map(|gs| &gs.diagonals));
-            degrees
-                .entry(count)
-                .or_default()
-                .extend(diagonals.map(|diagonal| diagonal.plaintext.n().as_usize()));
+            let left = encode_left(log_d, rows, cols, count, entry, &mut scratch.borrow())
+                .unwrap()
+                .prepare(module, &mut scratch.borrow());
+            for (side, set, blocks) in [
+                ("matmul_pt", &matmul_pt, operand_maps(&right)),
+                ("matmul_pt_left", &matmul_pt_left, operand_maps(&left)),
+            ] {
+                assert_eq!(
+                    *set,
+                    map_galois_elements(blocks.iter().copied(), order),
+                    "{side} {label} log_d={log_d}"
+                );
+                let diagonals = blocks
+                    .iter()
+                    .flat_map(|lt| lt.giant_steps.iter().flat_map(|gs| &gs.diagonals));
+                degrees
+                    .entry((side, count))
+                    .or_default()
+                    .extend(diagonals.map(|diagonal| diagonal.plaintext.n().as_usize()));
+            }
         }
-        for (count, degrees) in degrees {
-            assert_eq!(degrees.len(), 1, "matmul_pt degrees {degrees:?} count={count} log_d={log_d}");
+        for ((side, count), degrees) in degrees {
+            assert_eq!(degrees.len(), 1, "{side} degrees {degrees:?} count={count} log_d={log_d}");
         }
-        union.extend(matmul_pt);
+        union.extend(matmul_pt.into_iter().chain(matmul_pt_left));
         union.sort_unstable();
         union.dedup();
         let every = encoded(context_maps(&ctx));

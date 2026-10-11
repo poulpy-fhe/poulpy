@@ -11,7 +11,7 @@ pub use intra::{BlasMatIntraReference, validate_blas_rotate_cols, validate_blas_
 pub use matmul::{
     BlasMatMulOperand, BlasMatMulReference, Left, Right, blas_matmul_term_layout, validate_blas_matmul,
     validate_blas_matmul_prepare_left, validate_blas_matmul_prepare_right, validate_blas_matmul_prepared,
-    validate_blas_matmul_pt,
+    validate_blas_matmul_pt, validate_blas_matmul_pt_left,
 };
 
 use std::{cell::RefCell, sync::Mutex};

@@ -111,6 +111,16 @@ impl Grid {
         })
     }
 
+    /// Per-lane product by the real public matrix `b(s mod count, row, col)` of `rows` block rows, on the left.
+    pub fn public_matmul(&self, rows: usize, count: usize, b: impl Fn(usize, usize, usize) -> f64) -> Grid {
+        Grid::from_fn(self.log_d, rows, self.cols, self.lanes(), |s, r, c| {
+            (0..self.rows * self.d()).fold((0.0, 0.0), |(acc_re, acc_im), l| {
+                let (w, (ar, ai)) = (b(s % count, r, l), self.at(s, l, c));
+                (acc_re + w * ar, acc_im + w * ai)
+            })
+        })
+    }
+
     /// Per-lane transpose.
     pub fn transpose(&self) -> Grid {
         Grid::from_fn(self.log_d, self.cols, self.rows, self.lanes(), |s, r, c| self.at(s, c, r))

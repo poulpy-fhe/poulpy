@@ -91,13 +91,13 @@ fn assert_key_widths<BE, X>(
 
 /// With a key store answering only at the widths poulpy-ckks uses each key at, read off real results (a rotation at its
 /// input's width, a sum's rotations at its result's, baby steps at the source's width, giant steps at the result's, the
-/// tensor key at the wider of the products' term widths), every operation runs and matches its result under the full store
-/// bit for bit, and rejects the store short of any one of these keys before it writes. Rotations, sums, transposes, row
-/// and column shifts and products by public matrices write results half as wide as their inputs, narrower than any
-/// map's output, then one limb wider than their inputs; the matrix products run on factors of one width, then on a
-/// narrower left or right factor. The preparations look up every rotation key of the product, each checked through
-/// the prepared product of its operand under the full store, and the prepared product the tensor key alone. Every call
-/// runs on exactly the scratch its own query reports.
+/// tensor key at the wider of the products' term widths), every operation runs and matches its result under the full
+/// store bit for bit, and rejects the store short of any one of these keys before it writes. Rotations, sums,
+/// transposes, row and column shifts and products by public matrices, on either side, write results half as wide as
+/// their inputs, narrower than any map's output, then one limb wider than their inputs; the matrix products run on
+/// factors of one width, then on a narrower left or right factor. The preparations look up every rotation key of the
+/// product, each checked through the prepared product of its operand under the full store, and the prepared product the
+/// tensor key alone. Every call runs on exactly the scratch its own query reports.
 pub fn test_blas_key_widths<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -130,6 +130,20 @@ pub fn test_blas_key_widths<BE, F, E>(
     )
     .unwrap()
     .prepare(module, &mut scratch.borrow());
+    // `1 x 2` blocks on the left, whose products take a grid of two block rows.
+    let pt_left = BlasPtOperandUnprepared::encode_left::<F>(
+        module,
+        log_d,
+        1,
+        2,
+        1,
+        |m, r, c| F::from_f64(((m + r * 4 + c) * 3 % 5) as f64 / 4.0 - 0.5).unwrap(),
+        params.base2k.into(),
+        params.prec().into(),
+        &mut scratch.borrow(),
+    )
+    .unwrap()
+    .prepare(module, &mut scratch.borrow());
     let encrypt = |rows: usize, cols: usize, k: usize, seed: u64, scratch: &mut ScratchArena<'_, BE>| {
         let grid = Grid::model(log_d, rows, cols, lanes, seed);
         encrypt_grid::<BE, F, E>(&params, module, host_module, &encoder, &sk, k, 0, &grid, scratch)
@@ -137,10 +151,12 @@ pub fn test_blas_key_widths<BE, F, E>(
     let a_k = params.k;
     let row = encrypt(1, 2, a_k, 11, &mut scratch.borrow());
     let column = encrypt(2, 1, a_k, 12, &mut scratch.borrow());
+    let order = module.cyclotomic_order();
     for p in ctx
         .plan()
-        .matmul_pt_galois_elements(module.cyclotomic_order())
+        .matmul_pt_galois_elements(order)
         .into_iter()
+        .chain(ctx.plan().matmul_pt_left_galois_elements(order))
         .chain(sum_galois_elements(module, &row))
     {
         atks.entry(p)
@@ -277,6 +293,24 @@ pub fn test_blas_key_widths<BE, F, E>(
             &mut alloc(1, 1, res_k),
             |g| g,
             |res, keys| module.blas_matmul_pt(res, &row, &pt, keys, &mut own(bytes).borrow()),
+        );
+
+        let mut full = alloc(1, 1, res_k);
+        let bytes = module.blas_matmul_pt_left_tmp_bytes(&full, &pt_left, &column, &atk_layout);
+        module
+            .blas_matmul_pt_left(&mut full, &pt_left, &column, &keys, &mut own(bytes).borrow())
+            .unwrap();
+        let used: Vec<(i64, usize)> = (0..2).flat_map(|l| uses(pt_left.block(0, l), a_k, width(&full))).collect();
+        assert_key_widths(
+            &format!("matmul_pt_left res_k={res_k}"),
+            "blas_matmul_pt_left",
+            &keys,
+            used,
+            [],
+            &full,
+            &mut alloc(1, 1, res_k),
+            |g| g,
+            |res, keys| module.blas_matmul_pt_left(res, &pt_left, &column, keys, &mut own(bytes).borrow()),
         );
     }
 

@@ -1,7 +1,7 @@
 //! The plan of the circuit, its per-operation key sets, and the per-matrix maps encoded once, at a caller-chosen
 //! precision.
 
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, marker::PhantomData};
 
 use anyhow::{Context, Result, ensure};
 use poulpy_ckks::{
@@ -22,6 +22,7 @@ use poulpy_hal::{
 };
 
 use super::{BlasGridInfos, ciphertext::mat_slots_in, maps};
+use crate::reference::{Left, Right};
 
 type Encoded<BE> = LinearTransformation<CKKSPlaintextOwned<BE>>;
 
@@ -109,6 +110,15 @@ impl BlasPlan {
     pub fn matmul_pt_galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
         self.elements(cyclotomic_order, |slots| {
             vec![(maps::right_mul(slots, self.log_d, 1, |_, _, _| 1.0), false)]
+        })
+    }
+
+    /// Galois elements `blas_matmul_pt_left` looks up, for public matrices of any values, grid shape and count: the left
+    /// product stores a diagonal at every offset `(l - r) d`, whatever the entries. These are tau's offsets, scheduled
+    /// alike, so the set is tau's.
+    pub fn matmul_pt_left_galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
+        self.elements(cyclotomic_order, |slots| {
+            vec![(maps::left_mul(slots, self.log_d, 1, |_, _, _| 1.0), false)]
         })
     }
 
@@ -419,18 +429,21 @@ impl<BE: Backend> BlasContext<BE> {
     }
 }
 
-/// A grid of right products by public matrices, encoded and not yet prepared.
-pub struct BlasPtOperandUnprepared<BE: Backend> {
+/// A grid of products by public matrices, encoded and not yet prepared: on the right of an encrypted grid `A`, `A B`
+/// ([`Right`], from [`Self::encode`]), or on its left, `B A` ([`Left`], from [`Self::encode_left`]).
+pub struct BlasPtOperandUnprepared<BE: Backend, S = Right> {
     log_d: usize,
     slots: usize,
     rows: usize,
     cols: usize,
     count: usize,
     blocks: Vec<Encoded<BE>>,
+    _side: PhantomData<fn() -> S>,
 }
 
 impl<BE: Backend> BlasPtOperandUnprepared<BE> {
-    /// Scratch bytes [`Self::encode`] needs at `log_d` and `count`: the encoding of one `count d^2`-slot diagonal.
+    /// Scratch bytes [`Self::encode`] and [`BlasPtOperandUnprepared::encode_left`] need at `log_d` and `count`: the
+    /// encoding of one `count d^2`-slot diagonal.
     pub fn encode_tmp_bytes<F>(module: &Module<BE>, log_d: usize, count: usize) -> usize
     where
         Module<BE>: CKKSEncodingOps<BE, F>,
@@ -468,31 +481,110 @@ impl<BE: Backend> BlasPtOperandUnprepared<BE> {
         Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
         F: DiagonalArithmetic + CKKSEncodingScalar,
     {
-        ensure_fits(module, log_d)?;
-        ensure!(rows > 0 && cols > 0, "a grid has at least one block");
-        let (slots, d) = (module.ckks_max_slots(), 1usize << log_d);
-        let mat_slots = slots >> (2 * log_d);
-        ensure!(
-            count > 0 && mat_slots.is_multiple_of(count),
-            "{count} public matrices do not divide the {mat_slots} matrix slots"
-        );
-        let blocks = (0..rows.checked_mul(cols).context("rows * cols overflows usize")?)
-            .map(|t| {
-                let (l, j) = (t / cols, t % cols);
-                let diagonals = maps::right_mul(slots, log_d, count, |m, r, c| entry(m, l * d + r, j * d + c));
-                encode_map(module, base2k, coeffs_meta, diagonals, &BlasPlan::new(log_d), false, scratch)
-            })
-            .collect::<Result<_>>()?;
-        Ok(Self {
+        encode_operand(
+            module,
             log_d,
-            slots,
             rows,
             cols,
             count,
-            blocks,
-        })
+            base2k,
+            coeffs_meta,
+            scratch,
+            |slots, block_row, block_col| {
+                let d = 1usize << log_d;
+                maps::right_mul(slots, log_d, count, |m, r, c| entry(m, block_row * d + r, block_col * d + c))
+            },
+        )
     }
+}
 
+impl<BE: Backend> BlasPtOperandUnprepared<BE, Left> {
+    /// Encodes block `(i, l)` as `A -> B_il A` at `coeffs_meta`, for the left product `B A`: matrix slot `s` reads
+    /// public matrix `s mod count` through `entry(m, row, col)`, `m < count`, `row < rows * d`, `col < cols * d`, so `B`
+    /// has `rows` block rows and `cols` block columns, as many as the encrypted grid has block rows. Operations reject
+    /// the operand as [`BlasPtOperandUnprepared::encode`] states. Every block stores its diagonals at `count d^2` slots,
+    /// whatever the entries ([`maps::left_mul`]).
+    ///
+    /// `scratch` must hold [`BlasPtOperandUnprepared::encode_tmp_bytes`] at `log_d` and `count`; operations size their
+    /// scratch assuming the diagonals' `coeffs_meta.k` is not wider than the operand ciphertexts.
+    #[allow(clippy::too_many_arguments)]
+    pub fn encode_left<F>(
+        module: &Module<BE>,
+        log_d: usize,
+        rows: usize,
+        cols: usize,
+        count: usize,
+        entry: impl Fn(usize, usize, usize) -> F,
+        base2k: Base2K,
+        coeffs_meta: CoeffsMeta,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<Self>
+    where
+        Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+        F: DiagonalArithmetic + CKKSEncodingScalar,
+    {
+        encode_operand(
+            module,
+            log_d,
+            rows,
+            cols,
+            count,
+            base2k,
+            coeffs_meta,
+            scratch,
+            |slots, block_row, block_col| {
+                let d = 1usize << log_d;
+                maps::left_mul(slots, log_d, count, |m, r, c| entry(m, block_row * d + r, block_col * d + c))
+            },
+        )
+    }
+}
+
+/// The `rows x cols` blocks of a public operand of `count` matrices, block `(i, j)` encoding `block(slots, i, j)`, once
+/// `log_d` fits the module, the grid has a block and `count` divides the matrix slots.
+#[allow(clippy::too_many_arguments)]
+fn encode_operand<BE, F, S>(
+    module: &Module<BE>,
+    log_d: usize,
+    rows: usize,
+    cols: usize,
+    count: usize,
+    base2k: Base2K,
+    coeffs_meta: CoeffsMeta,
+    scratch: &mut ScratchArena<'_, BE>,
+    block: impl Fn(usize, usize, usize) -> Diagonals<F>,
+) -> Result<BlasPtOperandUnprepared<BE, S>>
+where
+    BE: Backend,
+    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+    F: DiagonalArithmetic + CKKSEncodingScalar,
+{
+    ensure_fits(module, log_d)?;
+    ensure!(rows > 0 && cols > 0, "a grid has at least one block");
+    let slots = module.ckks_max_slots();
+    let mat_slots = slots >> (2 * log_d);
+    ensure!(
+        count > 0 && mat_slots.is_multiple_of(count),
+        "{count} public matrices do not divide the {mat_slots} matrix slots"
+    );
+    let blocks = (0..rows.checked_mul(cols).context("rows * cols overflows usize")?)
+        .map(|t| {
+            let diagonals = block(slots, t / cols, t % cols);
+            encode_map(module, base2k, coeffs_meta, diagonals, &BlasPlan::new(log_d), false, scratch)
+        })
+        .collect::<Result<_>>()?;
+    Ok(BlasPtOperandUnprepared {
+        log_d,
+        slots,
+        rows,
+        cols,
+        count,
+        blocks,
+        _side: PhantomData,
+    })
+}
+
+impl<BE: Backend, S> BlasPtOperandUnprepared<BE, S> {
     /// Scratch bytes [`Self::prepare`] needs.
     pub fn prepare_tmp_bytes(&self, module: &Module<BE>) -> usize
     where
@@ -501,8 +593,8 @@ impl<BE: Backend> BlasPtOperandUnprepared<BE> {
         self.blocks.iter().map(|lt| prepare_tmp_bytes(module, lt)).max().unwrap_or(0)
     }
 
-    /// Prepares every block into the resident form operations evaluate.
-    pub fn prepare(self, module: &Module<BE>, scratch: &mut ScratchArena<'_, BE>) -> BlasPtOperand<BE>
+    /// Prepares every block into the resident form operations evaluate, on the same side.
+    pub fn prepare(self, module: &Module<BE>, scratch: &mut ScratchArena<'_, BE>) -> BlasPtOperand<BE, S>
     where
         Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     {
@@ -513,21 +605,24 @@ impl<BE: Backend> BlasPtOperandUnprepared<BE> {
             cols: self.cols,
             count: self.count,
             blocks: self.blocks.iter().map(|lt| prepare_lt(module, lt, scratch)).collect(),
+            _side: PhantomData,
         }
     }
 }
 
-/// A prepared grid of right products by public matrices.
-pub struct BlasPtOperand<BE: Backend> {
+/// A prepared grid of products by public matrices, on the right of an encrypted grid ([`Right`], which
+/// `blas_matmul_pt` takes) or on its left ([`Left`], which `blas_matmul_pt_left` takes).
+pub struct BlasPtOperand<BE: Backend, S = Right> {
     log_d: usize,
     slots: usize,
     rows: usize,
     cols: usize,
     count: usize,
     blocks: Vec<LinearTransformationPrepared<BE>>,
+    _side: PhantomData<fn() -> S>,
 }
 
-impl<BE: Backend> BlasPtOperand<BE> {
+impl<BE: Backend, S> BlasPtOperand<BE, S> {
     /// `log2` of the block dimension.
     pub fn log_d(&self) -> usize {
         self.log_d
@@ -561,7 +656,7 @@ impl<BE: Backend> BlasPtOperand<BE> {
         self.count
     }
 
-    /// The prepared map `A -> A B_lj` of block `(l, j)`.
+    /// The prepared map of block `(l, j)`: `A -> A B_lj` on the right, `A -> B_lj A` on the left.
     pub fn block(&self, l: usize, j: usize) -> &LinearTransformationPrepared<BE> {
         assert!(
             l < self.rows && j < self.cols,
@@ -633,6 +728,20 @@ mod tests {
         }
     }
 
+    /// The right product's diagonals sit at sigma's offsets, `l - c`, and the left product's at tau's, multiples of `d`,
+    /// so each shares that map's schedule and key set, at every dimension a block fits, one matrix slot included.
+    #[test]
+    fn public_products_share_sigma_and_tau_keys() {
+        for (order, log_d) in [(512, 1), (512, 2), (512, 3), (256, 3)] {
+            let plan = BlasPlan::new(log_d);
+            let sigma = plan.elements(order, |slots| vec![(maps::sigma(slots, log_d), false)]);
+            let tau = plan.elements(order, |slots| vec![(maps::tau(slots, log_d), false)]);
+            assert!(!sigma.is_empty() && !tau.is_empty(), "order={order} log_d={log_d}");
+            assert_eq!(plan.matmul_pt_galois_elements(order), sigma, "order={order} log_d={log_d}");
+            assert_eq!(plan.matmul_pt_left_galois_elements(order), tau, "order={order} log_d={log_d}");
+        }
+    }
+
     /// The key sets on 128 slots (cyclotomic order 512), by hand: a shift map rotates by each of its diagonals, psi^k'
     /// by `k' d` and `k' d - d^2`, phi^k' by `k'` and `k' - d`; BSGS rotates by the baby and giant parts of the others'
     /// diagonals, at the cost-optimal giant step. At `d = 2` those parts are the diagonals themselves. At `d = 4` the
@@ -647,6 +756,7 @@ mod tests {
         assert_eq!(plan.log_d(), 1);
         assert_eq!(plan.transpose_galois_elements(ORDER), rotations(&[1, 127]));
         assert_eq!(plan.matmul_pt_galois_elements(ORDER), rotations(&[1, 127]));
+        assert_eq!(plan.matmul_pt_left_galois_elements(ORDER), rotations(&[2, 126]));
         assert_eq!(plan.matmul_galois_elements(ORDER), rotations(&[1, 2, 126, 127]));
         assert_eq!(plan.galois_elements(ORDER), rotations(&[1, 2, 126, 127]));
         for k in [1, 3] {
@@ -666,6 +776,7 @@ mod tests {
         let plan = BlasPlan::new(2);
         assert_eq!(plan.transpose_galois_elements(ORDER), rotations(&[2, 3, 5, 6, 114, 120]));
         assert_eq!(plan.matmul_pt_galois_elements(ORDER), rotations(&[1, 2, 3, 125]));
+        assert_eq!(plan.matmul_pt_left_galois_elements(ORDER), rotations(&[4, 8, 12, 116]));
         // Sigma, tau, then phi^k and psi^k for k = 1, 2, 3.
         let matmul = [1, 2, 3, 125, 4, 8, 12, 116, 1, 125, 2, 126, 3, 127, 4, 116, 8, 120, 12, 124];
         assert_eq!(plan.matmul_galois_elements(ORDER), rotations(&matmul));
@@ -701,6 +812,7 @@ mod tests {
                 plan.rotate_galois_elements(ORDER, 1),
                 plan.matmul_galois_elements(ORDER),
                 plan.matmul_pt_galois_elements(ORDER),
+                plan.matmul_pt_left_galois_elements(ORDER),
             ];
             assert!(sets.iter().all(Vec::is_empty), "log_d={log_d}");
         }

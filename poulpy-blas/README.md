@@ -11,6 +11,7 @@ from the slot vectors of the blocks.
 Intra operations apply one map to every matrix of the batch: `blas_matmul` (JKLS, ciphertext x ciphertext),
 `blas_matmul_prepare_left`, `blas_matmul_prepare_right` and `blas_matmul_prepared` (the same product from transformed
 operands reused across calls), `blas_matmul_pt` (ciphertext x public matrices, shared or one per matrix slot),
+`blas_matmul_pt_left` (public matrices x ciphertext),
 `blas_transpose`, `blas_rotate_rows`, `blas_rotate_cols`. Inter operations move whole matrices across the batch:
 `blas_rotate`, `blas_sum`.
 
@@ -25,7 +26,8 @@ and rescaling are poulpy-ckks operations applied to each block.
 The plan lists the rotation keys each operation looks up, from the ring's cyclotomic order alone:
 `transpose_galois_elements`, `rotate_rows_galois_elements(k)`, `rotate_cols_galois_elements(k)`,
 `rotate_galois_elements(r)`, `matmul_galois_elements` (the product and both preparations) and
-`matmul_pt_galois_elements` (any public matrices); `galois_elements` covers every map of a context, and
+`matmul_pt_galois_elements` and `matmul_pt_left_galois_elements` (any public matrices, on the right or on the left);
+`galois_elements` covers every map of a context, and
 `sum_galois_elements` lists `blas_sum`'s for a grid's batch. A client therefore plans its keys with no module, context
 or public matrix: it generates the union of its pipeline's sets, and a tensor key only if it calls `blas_matmul` or
 `blas_matmul_prepared`. The server checks each grid's batch, `mat_slots()`, against the one the summed keys were

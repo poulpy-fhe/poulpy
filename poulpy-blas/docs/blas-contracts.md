@@ -17,7 +17,7 @@ CKKS and core overrides remain effective inside them.
 |---|---|---|---|
 | `BlasMatInterImpl` | `blas_rotate`, `blas_sum` | `BlasMatInterReference`, [`reference/inter.rs`](../src/reference/inter.rs) | `impl_blas_inter_reference!` |
 | `BlasMatIntraImpl` | `blas_transpose`, `blas_rotate_rows`, `blas_rotate_cols`, provided over the map hook `blas_map_blocks` | `BlasMatIntraReference` (the hook), [`reference/intra.rs`](../src/reference/intra.rs) | `impl_blas_intra_reference!` |
-| `BlasMatMulImpl` | `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, `blas_matmul_prepared`, `blas_matmul_pt`, and `blas_matmul` provided over the preparations and the prepared product | `BlasMatMulReference`, [`reference/matmul.rs`](../src/reference/matmul.rs) | `impl_blas_matmul_reference!` |
+| `BlasMatMulImpl` | `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, `blas_matmul_prepared`, `blas_matmul_pt`, `blas_matmul_pt_left`, and `blas_matmul` provided over the preparations and the prepared product | `BlasMatMulReference`, [`reference/matmul.rs`](../src/reference/matmul.rs) | `impl_blas_matmul_reference!` |
 | `BlasJklsImpl` | the JKLS kernel `blas_jkls_block`, one output block of the prepared product | `BlasMatMulReference::blas_jkls_block_reference`, [`reference/matmul.rs`](../src/reference/matmul.rs) | `impl_blas_jkls_reference!` |
 
 Each operation's `_tmp_bytes` query belongs to the same family.
@@ -135,9 +135,9 @@ else, and parity compares these infos, never the storage. The reference's
 operand, `BlasMatMulOperand<BE, Left>` (`Right`), holds the `d` terms of every
 block the product multiplies, which `term(row, col, k)` returns. A backend with
 its own layout sets both types, implements the preparations and the prepared
-product, and forwards `blas_matmul_pt` to `BlasMatMulReference`; `blas_matmul`
-is provided as both preparations then the prepared product, so it reaches the
-backend's methods.
+product, and forwards `blas_matmul_pt` and `blas_matmul_pt_left` to
+`BlasMatMulReference`; `blas_matmul` is provided as both preparations then the
+prepared product, so it reaches the backend's methods.
 
 A family macro and a handwritten implementation of the same trait are mutually
 exclusive. The family traits are `unsafe`; their `# Safety` sections state what
@@ -197,13 +197,16 @@ each giant step adds the products of every term in the transform domain, in
 that order, before its one rotation, so a block costs the giant-step key
 switches of one of `b`'s maps. An FFT backend rounds that sum, so the order is
 part of the bits, and the radix must hold `K` times a giant step's products
-(`Module::max_base2k`).
+(`Module::max_base2k`). The left product `blas_matmul_pt_left`, `res = B A` from
+a `BlasPtOperand<BE, Left>` that `BlasPtOperandUnprepared::encode_left` makes,
+does the same with the terms `(a_lj, b_il)`, from one cache per block of `a`,
+which serves its whole column of `res`.
 
-The rotation, the sum, the hook, the prepared product and the product by public
-matrices split their blocks (block rows, for the last) over up to four workers
-of the backend's `TaskExecutor`, each on its own scratch slice (and, in the hook
-and the product by public matrices, its own baby-step caches), so a Rayon
-backend writes nothing; the prepared product calls the JKLS kernel once per
+The rotation, the sum, the hook, the prepared product and the products by public
+matrices split their blocks (block rows or columns, for the last) over up to four
+workers of the backend's `TaskExecutor`, each on its own scratch slice (and, in
+the hook and the products by public matrices, its own baby-step caches), so a
+Rayon backend writes nothing; the prepared product calls the JKLS kernel once per
 block of `res`, concurrently on a parallel executor. Their
 queries reserve one slice per worker on a parallel executor and keep the
 serial size otherwise. On failure they return the error of the lowest block, as

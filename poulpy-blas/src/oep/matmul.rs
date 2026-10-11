@@ -3,11 +3,14 @@ use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey, GetTensorKey};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use super::derived;
-use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, BlasPtOperand};
+use crate::{
+    layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, BlasPtOperand},
+    reference::Left,
+};
 
 /// Extension point of [`crate::api::BlasMatMulOps`]: the prepared operands, the preparations, the prepared product and
-/// the product by public matrices are required, and `blas_matmul` is provided over the preparations and the prepared
-/// product.
+/// the products by public matrices, on the right and on the left, are required, and `blas_matmul` is provided over the
+/// preparations and the prepared product.
 ///
 /// # Safety
 ///
@@ -31,22 +34,24 @@ use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, BlasPtOp
 /// - one JKLS kernel per block of `res`, [`crate::oep::BlasJklsImpl::blas_jkls_block_impl`], over its `K d` pairs of
 ///   terms `(a_il[k], b_lj[k])`; the kernel's `# Safety` fixes its circuit;
 /// - the key widths: sigma's (tau's) baby steps at `a.k` and giant steps at `a.k - p`, the shifts' giant steps at `w`,
-///   the tensor key at the wider of both sides' `w`; the public operand's baby steps at `a.k` and giant steps at
+///   the tensor key at the wider of both sides' `w`; a public operand's baby steps at `a.k` and giant steps at
 ///   `min(res.k, a.k - p_B)` for its scale `p_B`;
-/// - the product by public matrices shares its giant steps across the inner index: block `res_ij` is poulpy-ckks's
-///   `ckks_eval_linear_transformation_sum_into` of its `K` terms `(a_il, b_lj)` in ascending `l`, then stamped with
-///   `a`'s label. Each giant step sums the products of every term in the transform domain, in that order, before its
-///   one rotation; an FFT backend rounds that sum, so the order is part of the bits.
+/// - the products by public matrices share their giant steps across the inner index: block `res_ij` is poulpy-ckks's
+///   `ckks_eval_linear_transformation_sum_into` of its `K` terms in ascending `l`, `(a_il, b_lj)` on the right and
+///   `(a_lj, b_il)` on the left, then stamped with `a`'s label. Each giant step sums the products of every term in the
+///   transform domain, in that order, before its one rotation; an FFT backend rounds that sum, so the order is part of
+///   the bits.
 ///
 /// **Free (bit-identical):** the order and split of the blocks over workers; materializing or streaming the terms;
 /// caching them or their convolution forms; sharing baby-step caches; batching key switches. Hoisting the shifts
 /// changes bits and the key widths, so it would arrive as a plan variant.
 ///
 /// The API runs [`crate::reference::validate_blas_matmul`], [`crate::reference::validate_blas_matmul_prepare_left`],
-/// [`crate::reference::validate_blas_matmul_prepare_right`], [`crate::reference::validate_blas_matmul_prepared`] or
-/// [`crate::reference::validate_blas_matmul_pt`] first, so a method runs only on inputs its validator accepted, and must
-/// return `Ok` on them, or poulpy-ckks's budget error before any write to `res`. Any other `Err` is a backend fault (a
-/// validator gap or a device failure), and `res` is then unspecified.
+/// [`crate::reference::validate_blas_matmul_prepare_right`], [`crate::reference::validate_blas_matmul_prepared`],
+/// [`crate::reference::validate_blas_matmul_pt`] or [`crate::reference::validate_blas_matmul_pt_left`] first, so a
+/// method runs only on inputs its validator accepted, and must return `Ok` on them, or poulpy-ckks's budget error before
+/// any write to `res`. Any other `Err` is a backend fault (a validator gap or a device failure), and `res` is then
+/// unspecified.
 pub unsafe trait BlasMatMulImpl: Backend {
     /// The prepared left operand of [`Self::blas_matmul_prepared_impl`].
     type MatMulLeft: BlasGridInfos + Send + Sync;
@@ -118,6 +123,32 @@ pub unsafe trait BlasMatMulImpl: Backend {
         res: &mut R,
         a: &A,
         b: &BlasPtOperand<Self>,
+        atk: &K,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        R: BlasGridMut<Self>,
+        A: BlasGrid<Self>,
+        K: GetAutomorphismKey<Self> + Sync;
+
+    fn blas_matmul_pt_left_tmp_bytes_impl<R, A, K>(
+        module: &Module<Self>,
+        res: &R,
+        b: &BlasPtOperand<Self, Left>,
+        a: &A,
+        atk: &K,
+    ) -> usize
+    where
+        R: BlasGridInfos,
+        A: BlasGridInfos,
+        K: GGLWEInfos;
+
+    /// `res = b a`, the product by public matrices on the left.
+    fn blas_matmul_pt_left_impl<R, A, K>(
+        module: &Module<Self>,
+        res: &mut R,
+        b: &BlasPtOperand<Self, Left>,
+        a: &A,
         atk: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
@@ -294,6 +325,37 @@ macro_rules! impl_blas_matmul_reference {
                 K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
             {
                 $crate::reference::BlasMatMulReference::blas_matmul_pt_reference(module, res, a, b, atk, scratch)
+            }
+
+            fn blas_matmul_pt_left_tmp_bytes_impl<R, A, K>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &R,
+                b: &$crate::layouts::BlasPtOperand<Self, $crate::reference::Left>,
+                a: &A,
+                atk: &K,
+            ) -> usize
+            where
+                R: $crate::layouts::BlasGridInfos,
+                A: $crate::layouts::BlasGridInfos,
+                K: ::poulpy_core::layouts::GGLWEInfos,
+            {
+                $crate::reference::BlasMatMulReference::blas_matmul_pt_left_tmp_bytes_reference(module, res, b, a, atk)
+            }
+
+            fn blas_matmul_pt_left_impl<R, A, K>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &mut R,
+                b: &$crate::layouts::BlasPtOperand<Self, $crate::reference::Left>,
+                a: &A,
+                atk: &K,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> ::poulpy_ckks::CKKSResult<()>
+            where
+                R: $crate::layouts::BlasGridMut<Self>,
+                A: $crate::layouts::BlasGrid<Self>,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
+            {
+                $crate::reference::BlasMatMulReference::blas_matmul_pt_left_reference(module, res, b, a, atk, scratch)
             }
         }
     };

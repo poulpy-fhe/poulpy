@@ -35,13 +35,13 @@ use crate::{
 
 /// Every per-matrix map, the matrix-slot rotation and the sum give their result the metadata [`copied_layout`] or
 /// [`mapped_layout`] derives from their input, whatever `res` held, and the values of their cleartext model: transpose,
-/// row and column rotations across blocks, within one block and by whole blocks, the product by public matrices and the
-/// rotation, from a half-full batch into a fresh grid and from a full batch into a grid labelled and recorded half
-/// full. The operand preparations report their input's dimensions and batch and the layout of their terms, sigma (tau)
-/// then a shift of its blocks, which [`blas_matmul_term_layout`] gives. Summing a transposed half-full batch adds each
-/// of its matrices once and records them. The sum of one matrix copies it, the transpose of a real batch keeps its
-/// slots real, and the terms of an integer batch are real. On one matrix slot no batch is half full: only the full one
-/// runs.
+/// row and column rotations across blocks, within one block and by whole blocks, the products by public matrices on
+/// either side and the rotation, from a half-full batch into a fresh grid and from a full batch into a grid labelled
+/// and recorded half full. The operand preparations report their input's dimensions and batch and the layout of their
+/// terms, sigma (tau) then a shift of its blocks, which [`blas_matmul_term_layout`] gives. Summing a transposed
+/// half-full batch adds each of its matrices once and records them. The sum of one matrix copies it, the transpose of a
+/// real batch keeps its slots real, and the terms of an integer batch are real. On one matrix slot no batch is half
+/// full: only the full one runs.
 pub fn test_blas_result_meta<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -68,6 +68,20 @@ pub fn test_blas_result_meta<BE, F, E>(
         log_d,
         2,
         1,
+        1,
+        |m, r, c| F::from_f64(entry(m, r, c)).unwrap(),
+        params.base2k.into(),
+        params.prec().into(),
+        &mut scratch.borrow(),
+    )
+    .unwrap()
+    .prepare(module, &mut scratch.borrow());
+    // `1 x 2` blocks on the left, whose product takes the two block rows of a column.
+    let pt_left = BlasPtOperandUnprepared::encode_left::<F>(
+        module,
+        log_d,
+        1,
+        2,
         1,
         |m, r, c| F::from_f64(entry(m, r, c)).unwrap(),
         params.base2k.into(),
@@ -109,6 +123,7 @@ pub fn test_blas_result_meta<BE, F, E>(
         .plan()
         .matmul_pt_galois_elements(order)
         .into_iter()
+        .chain(ctx.plan().matmul_pt_left_galois_elements(order))
         .chain(sum_galois_elements(module, &full_row))
     {
         atks.entry(p)
@@ -122,7 +137,8 @@ pub fn test_blas_result_meta<BE, F, E>(
         .max(module.blas_rotate_tmp_bytes(&full_row, &full_row, &atk))
         .max(module.blas_matmul_prepare_left_tmp_bytes(&full_row, &ctx, &atk))
         .max(module.blas_matmul_prepare_right_tmp_bytes(&full_column, &ctx, &atk))
-        .max(module.blas_matmul_pt_tmp_bytes(&full_row, &full_row, &pt, &atk));
+        .max(module.blas_matmul_pt_tmp_bytes(&full_row, &full_row, &pt, &atk))
+        .max(module.blas_matmul_pt_left_tmp_bytes(&full_row, &pt_left, &full_column, &atk));
     let mut op_scratch = ScratchOwned::<BE>::alloc(bytes);
     // A fresh grid labelled `log_sparsity`, recording the batch that label proves.
     let alloc = |rows: usize, cols: usize, log_sparsity: usize| {
@@ -210,6 +226,12 @@ pub fn test_blas_result_meta<BE, F, E>(
             .unwrap();
         let (want_pt, layout) = (row_model.matmul_public(1, 1, entry), mapped_layout(row, 1, 1, k, p));
         check(&label("matmul_pt"), &res, &want_pt, &layout, &mut scratch.borrow());
+        let mut res = alloc(1, 1, stale);
+        module
+            .blas_matmul_pt_left(&mut res, &pt_left, column, &keys, &mut op_scratch.borrow())
+            .unwrap();
+        let (want_left, layout) = (column_model.public_matmul(1, 1, entry), mapped_layout(column, 1, 1, k, p));
+        check(&label("matmul_pt_left"), &res, &want_left, &layout, &mut scratch.borrow());
         let mut res = alloc(1, 2, stale);
         module.blas_rotate(&mut res, row, 1, &keys, &mut op_scratch.borrow()).unwrap();
         let layout = copied_layout(row, 1, 2, k);
