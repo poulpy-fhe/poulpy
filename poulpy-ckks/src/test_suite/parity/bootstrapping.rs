@@ -240,6 +240,8 @@ fn ct_layout(n: usize, base2k: usize, k: usize, log_delta: usize, slots: SlotsKi
 
 fn keys_layout(atk: &GGLWELayout, d2s: &GGLWELayout, s2d: &GGLWELayout, encapsulate: bool) -> BootstrappingKeysLayout {
     BootstrappingKeysLayout {
+        rotation_keys: Default::default(),
+        narrow_tensor_keys: Vec::new(),
         automorphism_key: GLWEAutomorphismKeyLayout {
             n: atk.n,
             base2k: atk.base2k,

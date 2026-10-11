@@ -221,6 +221,13 @@ impl GGLWELayout {
     pub fn gadget_k(&self) -> TorusPrecision {
         TorusPrecision(self.dnum.0 * self.k_digit().0)
     }
+
+    /// Widest input the key switches whole and without visible key noise: what
+    /// its digits cover, and no more than its precision less one digit (see
+    /// [`key_k`](crate::layouts::key_k)).
+    pub fn max_input_k(&self) -> TorusPrecision {
+        TorusPrecision(self.gadget_k().0.min(self.k().0.saturating_sub(self.k_digit().0)))
+    }
 }
 
 impl LWEInfos for GGLWELayout {

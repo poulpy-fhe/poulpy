@@ -94,7 +94,7 @@ where
         let base2k = preset.base2k();
         let input_layout = preset.input_layout();
         let bootstrap_layout = preset.bootstrap_layout();
-        let keys_layout = *preset.keys_layout();
+        let keys_layout = preset.keys_layout().clone();
         let module = Module::<BE>::new(n as u64);
 
         let scratch_size = bootstrap_setup_tmp_bytes(&module, &bootstrap_layout, plan, &keys_layout);
@@ -140,7 +140,9 @@ where
             for key in keys.rotation_keys.values() {
                 roundtrip(key, module.glwe_automorphism_key_alloc_from_infos(key));
             }
-            roundtrip(&keys.tensor_key, module.glwe_tensor_key_alloc_from_infos(&keys.tensor_key));
+            for key in core::iter::once(&keys.tensor_key).chain(&keys.narrow_tensor_keys) {
+                roundtrip(key, module.glwe_tensor_key_alloc_from_infos(key));
+            }
             let (dense_to_sparse, sparse_to_dense) = keys.encapsulation_keys.as_ref().expect("preset needs encapsulation keys");
             roundtrip(dense_to_sparse, module.glwe_switching_key_alloc_from_infos(dense_to_sparse));
             roundtrip(sparse_to_dense, module.glwe_switching_key_alloc_from_infos(sparse_to_dense));
@@ -303,15 +305,17 @@ where
     Module<BE>: CKKSAllOpsTmpBytes<BE>,
 {
     let coeffs = plan.eval_mod().coeffs_meta;
-    module.ckks_all_ops_with_atk_tmp_bytes(
-        layout,
-        &keys.tensor_key,
-        &keys.automorphism_key,
-        &ckks_spec(
-            layout.n().as_usize(),
-            layout.base2k().as_usize(),
-            coeffs.log_delta(),
-            coeffs.log_budget(),
-        ),
-    )
+    let coeffs = ckks_spec(
+        layout.n().as_usize(),
+        layout.base2k().as_usize(),
+        coeffs.log_delta(),
+        coeffs.log_budget(),
+    );
+    let mut bytes = 0;
+    for atk in &keys.rotation_key_layouts() {
+        for tsk in keys.tensor_key_layouts() {
+            bytes = bytes.max(module.ckks_all_ops_with_atk_tmp_bytes(layout, tsk, atk, &coeffs));
+        }
+    }
+    bytes
 }

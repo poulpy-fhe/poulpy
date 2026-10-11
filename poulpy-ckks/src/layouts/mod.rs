@@ -122,7 +122,7 @@ pub use bootstrapping::{
 };
 pub use bootstrapping_keys::{
     BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, CKKSFoldKeysLayout,
-    EncapsulationKeysLayout, RingSwitchKeySet, RingSwitchKeys, RingSwitchKeysLayout, RingSwitchKeysPrepared,
+    EncapsulationKeysLayout, RingSwitchKeySet, RingSwitchKeys, RingSwitchKeysLayout, RingSwitchKeysPrepared, TensorKeysByWidth,
 };
 pub use ciphertext::{CKKSCiphertext, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSRingCiphertext, ScratchArenaTakeCKKS};
 pub use complex_diagonals::ComplexDiagonals;
