@@ -207,8 +207,8 @@ impl GGLWELayout {
     /// This is the inverse of [`Self::gadget_k`] and the rounding rule used by
     /// [`key_work_size`](crate::layouts::key_work_size): the gadget is consumed
     /// in whole digits, so a partial digit counts as a full one. The auxiliary
-    /// guard `k_aux` is chosen by the caller (typically `k_digit + log2(n)`)
-    /// and is not part of this derivation. The digit width must be nonzero.
+    /// guard `k_aux` is chosen by the caller (see [`key_k`](crate::layouts::key_k) for what
+    /// it must cover) and is not part of this derivation. The digit width must be nonzero.
     pub fn dnum_for_input(input_k: TorusPrecision, k_digit: TorusPrecision) -> Dnum {
         debug_assert!(k_digit.0 > 0, "dnum_for_input requires a nonzero gadget digit");
         Dnum(input_k.0.div_ceil(k_digit.0))

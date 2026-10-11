@@ -1397,14 +1397,13 @@ impl Degree {
 /// `k_aux`. Independent of the key radix.
 /// This is what `LWEInfos::k()` reports for the GGLWE/GGSW key families, so
 /// encryption places the error at the physical bottom limb.
+///
+/// The guard is what keeps the key noise, scaled by a digit, below the input:
+/// a key switches an input of `input_k` bits without visible noise while
+/// `k >= input_k + k_digit` plus a margin. A guard of a full digit always
+/// satisfies it; a key whose last digit the input only partly fills can do
+/// with less, which is how a wide digit fits under a bound on `k`.
 pub fn key_k(dnum: Dnum, k_digit: TorusPrecision, k_aux: TorusPrecision) -> TorusPrecision {
-    debug_assert!(
-        k_aux.0 >= k_digit.0,
-        "k_aux ({}) must be at least k_digit ({}): the auxiliary guard must cover at least one \
-         full gadget digit, otherwise operations truncate mid-digit",
-        k_aux.0,
-        k_digit.0,
-    );
     TorusPrecision(dnum.0 * k_digit.0 + k_aux.0)
 }
 

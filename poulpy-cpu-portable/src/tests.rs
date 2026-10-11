@@ -30,7 +30,7 @@ fn bootstrapping_presets_keep_fixture_radices() {
     for preset in all().unwrap() {
         let fft = preset_with_max_base2k(&preset, 19).unwrap();
         let ntt = preset_with_max_base2k(&preset, 52).unwrap();
-        let fft_dsize = if preset.log_n() == 15 { 2 } else { 7 };
+        let fft_dsize = if preset.log_n() == 15 { 3 } else { 7 };
         assert_eq!(
             (fft.base2k(), fft.key_dsize(), fft.dense_to_sparse_dsize()),
             (19, fft_dsize, 1)

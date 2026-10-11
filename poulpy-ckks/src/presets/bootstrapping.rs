@@ -9,7 +9,8 @@
 //! A preset is named by what it offers, one token per axis, in the order an
 //! application chooses them: `n{log_n}_d{log_delta}_k{output_k}_p{log2_precision}_{circuit}`.
 //!
-//! - `n`: ring-degree exponent, which with the secret weights fixes the modulus bounds;
+//! - `n`: ring-degree exponent, which with the secret weights fixes the modulus bounds
+//!   (see [Security](#security));
 //! - `d`: input scale exponent the caller must arrive at;
 //! - `k`: output width in bits, at the input scale. The usable budget is
 //!   `output_k - input_k`.
@@ -19,6 +20,19 @@
 //!
 //! `n16_d35_k600_p19_c2s` is thus the C2S-first preset at `N = 2^16` for inputs at
 //! scale `2^35`, producing 600-bit ciphertexts at scale `2^35` with at least 19 bits of precision.
+//!
+//! ## Security
+//!
+//! Each secret of a preset comes with the largest modulus `q = 2^k`, in bits, that
+//! any object under it may use for 128 bits of security: a ternary secret of that
+//! Hamming weight, an error of deviation 3.2, at the preset's ring degree. The
+//! values are those of <https://github.com/jdumezy/sparse-key-estimate>, estimates
+//! against the hybrid attacks on sparse secrets, not proofs.
+//!
+//! Every object under a secret counts, the keys included: their modulus is the
+//! widest in a preset, and a key's error sits at its last bit, so the bound
+//! applies to its precision `k`. Building a preset checks every key layout against
+//! the bounds of its secrets.
 
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{
@@ -53,6 +67,35 @@ struct EvalModSpec {
     log_delta: usize,
 }
 
+/// A secret of a preset: its Hamming weight and the largest modulus, in bits, an
+/// object under it may use (see [Security](self#security)).
+#[derive(Clone, Copy, Debug)]
+struct SecretBound {
+    hamming_weight: usize,
+    max_log_modulus: usize,
+}
+
+/// The dense secret of the logN16 presets.
+const N16_DENSE_SECRET: SecretBound = SecretBound {
+    hamming_weight: 1024,
+    max_log_modulus: 1707,
+};
+/// The ephemeral sparse secret of the logN16 presets.
+const N16_SPARSE_SECRET: SecretBound = SecretBound {
+    hamming_weight: 32,
+    max_log_modulus: 345,
+};
+/// The dense secret of the logN15 preset.
+const N15_DENSE_SECRET: SecretBound = SecretBound {
+    hamming_weight: 1024,
+    max_log_modulus: 851,
+};
+/// The ephemeral sparse secret of the logN15 preset.
+const N15_SPARSE_SECRET: SecretBound = SecretBound {
+    hamming_weight: 32,
+    max_log_modulus: 162,
+};
+
 #[derive(Clone, Copy, Debug)]
 struct PresetSpec {
     name: &'static str,
@@ -62,10 +105,8 @@ struct PresetSpec {
     log_delta: usize,
     output_k: usize,
     log2_precision: usize,
-    dense_secret_hamming_weight: usize,
-    sparse_secret_hamming_weight: usize,
-    max_dense_modulus: usize,
-    max_sparse_modulus: usize,
+    dense_secret: SecretBound,
+    sparse_secret: SecretBound,
     key_dsize: usize,
     dense_to_sparse_dsize: usize,
     pipeline: BootstrappingPipeline,
@@ -98,6 +139,8 @@ pub struct BootstrappingPreset {
     input_k: usize,
     output_k: usize,
     bootstrap_k: usize,
+    max_dense_modulus: usize,
+    max_sparse_modulus: usize,
 }
 
 impl BootstrappingPreset {
@@ -146,22 +189,22 @@ impl BootstrappingPreset {
 
     /// Hamming weight of the dense application secret.
     pub fn dense_secret_hamming_weight(&self) -> usize {
-        self.spec.dense_secret_hamming_weight
+        self.spec.dense_secret.hamming_weight
     }
 
     /// Hamming weight of the ephemeral sparse ModUp secret.
     pub fn sparse_secret_hamming_weight(&self) -> usize {
-        self.spec.sparse_secret_hamming_weight
+        self.spec.sparse_secret.hamming_weight
     }
 
-    /// Configured modulus bound for objects under the dense secret.
+    /// Modulus bound for objects under the dense secret (see [Security](self#security)).
     pub fn max_dense_modulus(&self) -> usize {
-        self.spec.max_dense_modulus
+        self.max_dense_modulus
     }
 
-    /// Configured modulus bound for objects under the ephemeral sparse secret.
+    /// Modulus bound for objects under the ephemeral sparse secret (see [Security](self#security)).
     pub fn max_sparse_modulus(&self) -> usize {
-        self.spec.max_sparse_modulus
+        self.max_sparse_modulus
     }
 
     /// Gadget digit size (in limbs) of the automorphism, tensor, and sparse-to-dense keys.
@@ -185,7 +228,7 @@ impl BootstrappingPreset {
 
     /// Re-derives the preset with gadget digit sizes `key_dsize` for the
     /// high-modulus keys and `dense_to_sparse_dsize` for the dense-to-sparse
-    /// key, re-validating the key moduli against the bounds.
+    /// key. Fails for a digit too wide for the modulus bound of its secret.
     pub fn with_dsizes(&self, key_dsize: usize, dense_to_sparse_dsize: usize) -> Result<Self> {
         build(PresetSpec {
             key_dsize,
@@ -271,11 +314,9 @@ pub fn n16_d35_k600_p19_c2s() -> Result<BootstrappingPreset> {
         log_delta: 35,
         output_k: 600,
         log2_precision: 19,
-        dense_secret_hamming_weight: 1024,
-        sparse_secret_hamming_weight: 32,
-        max_dense_modulus: 1714,
-        max_sparse_modulus: 120,
-        key_dsize: 4,
+        dense_secret: N16_DENSE_SECRET,
+        sparse_secret: N16_SPARSE_SECRET,
+        key_dsize: 5,
         dense_to_sparse_dsize: 1,
         pipeline: BootstrappingPipeline::C2SFirst,
         log_msg_ratio: 5,
@@ -307,11 +348,9 @@ pub fn n16_d35_k720_p19_s2c() -> Result<BootstrappingPreset> {
         log_delta: 35,
         output_k: 720,
         log2_precision: 19,
-        dense_secret_hamming_weight: 1024,
-        sparse_secret_hamming_weight: 32,
-        max_dense_modulus: 1714,
-        max_sparse_modulus: 120,
-        key_dsize: 4,
+        dense_secret: N16_DENSE_SECRET,
+        sparse_secret: N16_SPARSE_SECRET,
+        key_dsize: 6,
         dense_to_sparse_dsize: 1,
         pipeline: BootstrappingPipeline::S2CFirst,
         log_msg_ratio: 13,
@@ -331,7 +370,7 @@ pub fn n16_d35_k720_p19_s2c() -> Result<BootstrappingPreset> {
 ///
 /// The input and raised widths are 40 and 780 bits. The output has 140 usable
 /// bits (four levels) at the input scale. Total key moduli are bounded by
-/// 854 bits for the weight-1024 dense secret and 164 bits for the weight-32 sparse secret.
+/// 851 bits for the weight-1024 dense secret and 162 bits for the weight-32 sparse secret.
 pub fn n15_d35_k180_p18_c2s() -> Result<BootstrappingPreset> {
     build(PresetSpec {
         name: "n15_d35_k180_p18_c2s",
@@ -341,10 +380,8 @@ pub fn n15_d35_k180_p18_c2s() -> Result<BootstrappingPreset> {
         log_delta: 35,
         output_k: 180,
         log2_precision: 18,
-        dense_secret_hamming_weight: 1024,
-        sparse_secret_hamming_weight: 32,
-        max_dense_modulus: 854,
-        max_sparse_modulus: 164,
+        dense_secret: N15_DENSE_SECRET,
+        sparse_secret: N15_SPARSE_SECRET,
         key_dsize: 1,
         dense_to_sparse_dsize: 1,
         pipeline: BootstrappingPipeline::C2SFirst,
@@ -417,7 +454,7 @@ fn build(spec: PresetSpec) -> Result<BootstrappingPreset> {
         spec.pipeline,
         BootstrappingTechniques {
             sparse_secret_encapsulation: Some(SparseSecretEncapsulation {
-                hamming_weight: spec.sparse_secret_hamming_weight,
+                hamming_weight: spec.sparse_secret.hamming_weight,
             }),
             eval_round_plus: None,
         },
@@ -461,9 +498,13 @@ fn build(spec: PresetSpec) -> Result<BootstrappingPreset> {
         "bootstrapping preset output width {output_k} is below its input width {input_k}"
     );
     let bootstrap_k = plan.bootstrap_k(output_k, spec.log_delta);
-    let keys_layout = keys_layout(&spec, n, bootstrap_k, log_modulus);
+    let bounds = ModulusBounds {
+        dense: spec.dense_secret.max_log_modulus,
+        sparse: spec.sparse_secret.max_log_modulus,
+    };
+    let keys_layout = keys_layout(&spec, n, bootstrap_k, log_modulus, bounds)?;
 
-    validate_modulus_bounds(&spec, bootstrap_k, &keys_layout)?;
+    validate_modulus_bounds(bounds, bootstrap_k, &keys_layout)?;
     Ok(BootstrappingPreset {
         spec,
         n,
@@ -472,12 +513,33 @@ fn build(spec: PresetSpec) -> Result<BootstrappingPreset> {
         input_k,
         output_k,
         bootstrap_k,
+        max_dense_modulus: bounds.dense,
+        max_sparse_modulus: bounds.sparse,
     })
 }
 
-fn keys_layout(spec: &PresetSpec, n: usize, bootstrap_k: usize, log_modulus: usize) -> BootstrappingKeysLayout {
-    let (dnum, k_aux) = key_shape(spec, bootstrap_k, spec.key_dsize);
-    let (dense_to_sparse_dnum, dense_to_sparse_k_aux) = key_shape(spec, log_modulus, spec.dense_to_sparse_dsize);
+/// Modulus bounds of the two secrets of a preset.
+#[derive(Clone, Copy)]
+struct ModulusBounds {
+    dense: usize,
+    sparse: usize,
+}
+
+fn keys_layout(
+    spec: &PresetSpec,
+    n: usize,
+    bootstrap_k: usize,
+    log_modulus: usize,
+    bounds: ModulusBounds,
+) -> Result<BootstrappingKeysLayout> {
+    let (dnum, k_aux) = key_shape(spec, "high-modulus", bootstrap_k, spec.key_dsize, bounds.dense)?;
+    let (dense_to_sparse_dnum, dense_to_sparse_k_aux) = key_shape(
+        spec,
+        "dense-to-sparse",
+        log_modulus,
+        spec.dense_to_sparse_dsize,
+        bounds.sparse,
+    )?;
     let n = Degree(n as u32);
     let base2k = Base2K(spec.base2k as u32);
     let rank = Rank(spec.rank as u32);
@@ -493,7 +555,7 @@ fn keys_layout(spec: &PresetSpec, n: usize, bootstrap_k: usize, log_modulus: usi
         k_digit,
     };
 
-    BootstrappingKeysLayout {
+    Ok(BootstrappingKeysLayout {
         automorphism_key: GLWEAutomorphismKeyLayout {
             n,
             base2k,
@@ -522,15 +584,30 @@ fn keys_layout(spec: &PresetSpec, n: usize, bootstrap_k: usize, log_modulus: usi
             },
             sparse_to_dense: high_modulus_switch,
         }),
-    }
+    })
 }
 
-/// Gadget shape of a key covering an input of `input_k` bits: the digit count
-/// from [`GGLWELayout::dnum_for_input`] and the preset's guard convention
-/// `dsize * base2k + log_n`.
-fn key_shape(spec: &PresetSpec, input_k: usize, dsize: usize) -> (Dnum, TorusPrecision) {
+/// Bits a key keeps between its modulus and the input plus one digit. The
+/// key noise, scaled by a digit, starts to show in the bootstrapped precision
+/// 8 bits past that point; this stays 10 bits inside it.
+const KEY_NOISE_MARGIN: usize = 2;
+
+/// Gadget shape of a `dsize`-limb key covering an input of `input_k` bits
+/// under a modulus bound of `limit` bits: the digit count from
+/// [`GGLWELayout::dnum_for_input`], and behind it a digit and `log_n` bits of
+/// guard, or what the bound leaves when that is less. The latter is enough
+/// while the input does not fill the last digit, by [`KEY_NOISE_MARGIN`].
+fn key_shape(spec: &PresetSpec, name: &str, input_k: usize, dsize: usize, limit: usize) -> Result<(Dnum, TorusPrecision)> {
     let dnum = GGLWELayout::dnum_for_input(TorusPrecision(input_k as u32), k_digit_of(spec.base2k, dsize));
-    (dnum, TorusPrecision((dsize * spec.base2k + spec.log_n) as u32))
+    let digit = dsize * spec.base2k;
+    let gadget = dnum.as_usize() * digit;
+    let k_aux = (digit + spec.log_n).min(limit.saturating_sub(gadget));
+    ensure!(
+        gadget + k_aux >= input_k + digit + KEY_NOISE_MARGIN,
+        "{name} key: a digit of {dsize} limbs on a {input_k}-bit input needs a modulus of {} bits, above {limit}",
+        input_k + digit + KEY_NOISE_MARGIN
+    );
+    Ok((dnum, TorusPrecision(k_aux as u32)))
 }
 
 /// Gadget precision of `key` (see [`GGLWELayout::gadget_k`]).
@@ -538,20 +615,20 @@ fn gadget_k<K: GGLWEInfos>(key: &K) -> usize {
     key.gglwe_layout().gadget_k().as_usize()
 }
 
-fn validate_modulus_bounds(spec: &PresetSpec, bootstrap_k: usize, keys: &BootstrappingKeysLayout) -> Result<()> {
+fn validate_modulus_bounds(bounds: ModulusBounds, bootstrap_k: usize, keys: &BootstrappingKeysLayout) -> Result<()> {
     ensure!(
-        bootstrap_k <= spec.max_dense_modulus,
+        bootstrap_k <= bounds.dense,
         "bootstrap modulus {bootstrap_k} exceeds dense-secret limit {}",
-        spec.max_dense_modulus
+        bounds.dense
     );
-    validate_key("automorphism", &keys.automorphism_key, spec.max_dense_modulus)?;
-    validate_key("tensor", &keys.tensor_key, spec.max_dense_modulus)?;
+    validate_key("automorphism", &keys.automorphism_key, bounds.dense)?;
+    validate_key("tensor", &keys.tensor_key, bounds.dense)?;
     let encapsulation = keys
         .encapsulation
         .as_ref()
         .context("bootstrapping preset is missing encapsulation keys")?;
-    validate_key("dense-to-sparse", &encapsulation.dense_to_sparse, spec.max_sparse_modulus)?;
-    validate_key("sparse-to-dense", &encapsulation.sparse_to_dense, spec.max_dense_modulus)
+    validate_key("dense-to-sparse", &encapsulation.dense_to_sparse, bounds.sparse)?;
+    validate_key("sparse-to-dense", &encapsulation.sparse_to_dense, bounds.dense)
 }
 
 fn validate_key<K: GGLWEInfos + LWEInfos>(name: &str, key: &K, limit: usize) -> Result<()> {
@@ -591,11 +668,11 @@ mod tests {
         );
         assert_eq!(
             (preset.dense_secret_hamming_weight(), preset.max_dense_modulus()),
-            (1024, 854)
+            (1024, 851)
         );
         assert_eq!(
             (preset.sparse_secret_hamming_weight(), preset.max_sparse_modulus()),
-            (32, 164)
+            (32, 162)
         );
 
         let keys = preset.keys_layout();
@@ -608,8 +685,10 @@ mod tests {
         assert_eq!(encapsulation.sparse_to_dense.k().as_usize(), 847);
         assert_eq!(encapsulation.dense_to_sparse.k().as_usize(), 119);
         assert!(preset.with_dsizes(2, 1).is_err());
-        assert!(preset.with_dsizes(1, 2).is_err());
-        assert!(preset.with_base2k(18).unwrap().with_dsizes(3, 1).is_err());
+        // The dense-to-sparse input leaves its last digit mostly empty, so two limbs fit.
+        assert!(preset.with_dsizes(1, 2).is_ok());
+        assert!(preset.with_dsizes(1, 3).is_err());
+        assert!(preset.with_base2k(18).unwrap().with_dsizes(4, 1).is_err());
     }
 
     #[test]
@@ -631,7 +710,7 @@ mod tests {
             16 * preset.log_delta()
         );
 
-        assert_layouts_within_bounds(&preset);
+        assert_layouts_within_bounds(&preset, 5);
     }
 
     #[test]
@@ -651,20 +730,23 @@ mod tests {
             16 * preset.log_delta()
         );
 
-        assert_layouts_within_bounds(&preset);
+        assert_layouts_within_bounds(&preset, 6);
     }
 
-    fn assert_layouts_within_bounds(preset: &BootstrappingPreset) {
+    /// Both presets fill the dense bound: their digit is the widest whose last
+    /// one the raised input leaves room behind.
+    fn assert_layouts_within_bounds(preset: &BootstrappingPreset, dsize: usize) {
         let keys = preset.keys_layout();
         let encapsulation = keys.encapsulation.as_ref().unwrap();
 
-        assert_eq!(keys.automorphism_key.dsize().as_usize(), 4);
-        assert_eq!(gadget_k(&keys.automorphism_key), 1456);
-        assert_eq!(keys.automorphism_key.k_aux.as_usize(), 224);
-        assert_eq!(keys.automorphism_key.k().as_usize(), 1680);
-        assert_eq!(keys.tensor_key.k().as_usize(), 1680);
-        assert_eq!(encapsulation.sparse_to_dense.k().as_usize(), 1680);
-        assert!(keys.automorphism_key.k().as_usize() <= preset.max_dense_modulus());
+        assert_eq!((preset.max_dense_modulus(), preset.max_sparse_modulus()), (1707, 345));
+        assert_eq!(keys.automorphism_key.dsize().as_usize(), dsize);
+        assert_eq!(gadget_k(&keys.automorphism_key), 1560);
+        assert_eq!(keys.automorphism_key.k_aux.as_usize(), 147);
+        assert_eq!(keys.automorphism_key.k().as_usize(), 1707);
+        assert_eq!(keys.tensor_key.k().as_usize(), 1707);
+        assert_eq!(encapsulation.sparse_to_dense.k().as_usize(), 1707);
+        assert!(preset.with_dsizes(dsize + 1, 1).is_err());
 
         assert_eq!(encapsulation.dense_to_sparse.dsize().as_usize(), 1);
         assert_eq!(gadget_k(&encapsulation.dense_to_sparse), 52);
@@ -687,7 +769,7 @@ mod tests {
         for (preset, fft_dsize) in [
             (n16_d35_k600_p19_c2s().unwrap(), 7),
             (n16_d35_k720_p19_s2c().unwrap(), 7),
-            (n15_d35_k180_p18_c2s().unwrap(), 2),
+            (n15_d35_k180_p18_c2s().unwrap(), 3),
         ] {
             let widths = (preset.input_k(), preset.output_k(), preset.bootstrap_k());
 
@@ -703,7 +785,12 @@ mod tests {
                 keys.automorphism_key.dnum.as_usize(),
                 preset.bootstrap_k().div_ceil(fft_dsize * 18)
             );
-            assert_eq!(keys.automorphism_key.k_aux.as_usize(), fft_dsize * 18 + preset.log_n());
+            // A digit and `log_n` bits of guard, or what the bound leaves.
+            let gadget = keys.automorphism_key.dnum.as_usize() * fft_dsize * 18;
+            assert_eq!(
+                keys.automorphism_key.k_aux.as_usize(),
+                (fft_dsize * 18 + preset.log_n()).min(fft.max_dense_modulus() - gadget)
+            );
             assert!(keys.automorphism_key.k().as_usize() <= fft.max_dense_modulus());
 
             let small_key = &keys.encapsulation.as_ref().unwrap().dense_to_sparse;
@@ -715,8 +802,7 @@ mod tests {
 
             // Oversized digits are rejected for both secret bounds.
             assert!(preset.with_dsizes(10, 1).is_err());
-            assert!(preset.with_dsizes(4, 2).is_err());
-            assert!(preset.with_dsizes(4, 3).is_err());
+            assert!(preset.with_dsizes(1, 7).is_err());
         }
     }
 }
