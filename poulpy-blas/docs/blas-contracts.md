@@ -248,16 +248,30 @@ bytes its query reports, poisoned and guarded. Every output is compared: its
 batch record, and every block bit for bit, digits and CKKS metadata. Prepared
 operands are compared through their infos alone, `(log_d, rows, cols,
 block_layout, mat_slots)`, which must also equal their input's term layout and
-batch; the prepared product runs twice on one pair and must equal
-`blas_matmul` both times. Each family's parity also runs calls that
-poulpy-ckks rejects for their budget: both backends return the same error and
-leave `res` and the inputs unchanged.
+batch; the prepared product runs on one pair into `res` of three widths and
+must equal `blas_matmul` each time. Each call looks its keys up in a store of
+its operation's set alone, from `BlasPlan` or `sum_galois_elements`, which
+records every lookup: a store may answer per width, so the tested backend may
+look up only keys, at widths, that the reference looked up in the same call. No
+call may write its inputs. The calls reach every branch of the circuit: identity
+rotations, one matrix slot, the copies of row and column shifts by `d` and
+`2d` along three blocks, one-row and one-column grids, `res` wider and narrower
+than the result, factors one limb apart in both orders, lazy inputs on real
+slots, sparse unless one matrix fills them, copies of lazy inputs, public
+products of one matrix and of one per matrix slot, and, where some `K <= 32`
+reaches it, a `1 x K` by `K x 1` product of more than the `2^(63 - base2k)`
+terms the kernel sums between normalizations. That product pins that the kernel
+accepts such a sum and returns the reference's bits, not that it normalizes: a
+64-bit digit holds `2^(64 - base2k)` canonical terms, more than the product
+sums, so a kernel that skips every normalization before the last still passes.
+Each family's parity also runs calls that poulpy-ckks rejects for their budget:
+both backends return the same error and leave `res` and the inputs unchanged.
 Storage and ring are free: the bounds are `BlasParityBackend`
 (`Backend<ZnxWord = i64>` and every BLAS family) and `BlasParityModule`. Rank
 and `dsize` follow `params`, as in CKKS parity.
 
 The optional `shapes` argument, a `BlasParityShapes`, sets the swept block
-dimensions `log_d` (default `[1, 2]`). A `log_d` below 1, or whose `d^2` reaches
+dimensions `log_d` (default `[1, 2]`). A `log_d` below 1, or whose `d^2` exceeds
 the slot count, is skipped with a message, and the test fails when none remains.
 A backend that lacks a block dimension restricts the sweep instead of dropping
 the suite:
