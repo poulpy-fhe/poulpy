@@ -85,6 +85,7 @@ macro_rules! core_backend_test_suite {
                 test_glwe_mul_plain_plaintext_degree => $crate::test_suite::noise::glwe_tensor::test_glwe_mul_plain_plaintext_degree,
                 test_glwe_mul_const => $crate::test_suite::noise::glwe_tensor::test_glwe_mul_const,
                 glwe_keyswitch => $crate::test_suite::noise::keyswitch::test_glwe_keyswitch,
+                glwe_small_switch => $crate::test_suite::noise::small_switch::test_glwe_small_switch,
                 glwe_keyswitch_assign => $crate::test_suite::noise::keyswitch::test_glwe_keyswitch_assign,
                 glwe_automorphism => $crate::test_suite::noise::automorphism::test_glwe_automorphism,
                 glwe_automorphism_assign => $crate::test_suite::noise::automorphism::test_glwe_automorphism_assign,

@@ -1,5 +1,6 @@
 pub mod glwe;
 pub mod lwe;
+pub mod small;
 
 pub(crate) use glwe::*;
 

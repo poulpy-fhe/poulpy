@@ -20,6 +20,7 @@ mod glwe_packing;
 mod k_digit;
 mod rotate;
 mod shift;
+pub mod small_switch;
 mod trace;
 
 pub use conversion::*;
