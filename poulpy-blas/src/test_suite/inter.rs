@@ -192,8 +192,12 @@ pub fn test_blas_inter_guards<BE, F, E>(
         .into_iter()
         .chain(foreign_layouts(module, &ct))
         .map(|(label, res)| (format!("{label} res"), res, &ct));
+    // `a` and `res` both of another degree than the module's.
+    let wide = |grid: &BlasCiphertextOwned<BE>| foreign_layouts(module, grid).into_iter().next().unwrap().1;
+    let wide_a = wide(&ct);
     let others = [
         ("shape", alloc(log_d, 2, 1), &ct),
+        ("degree a and res", wide(&alloc(log_d, 2, 2)), &wide_a),
         ("sparsity 64", alloc(log_d, 2, 2), &sparse_64),
         ("sparsity 65", alloc(log_d, 2, 2), &sparse_65),
     ]

@@ -29,7 +29,7 @@ pub fn validate_blas_rotate<BE: Backend>(
     atk: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     let op = "blas_rotate";
-    ensure_same_grids(op, res, a)?;
+    ensure_same_grids(op, module, res, a)?;
     ensure_keys(op, module, [r << (2 * a.log_d())], atk, a.block_layout().k())?;
     Ok(batch_of::<BE::Ring>(a))
 }
@@ -49,7 +49,7 @@ pub fn validate_blas_sum<BE: Backend>(
     atk: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     let op = "blas_sum";
-    ensure_same_grids(op, res, a)?;
+    ensure_same_grids(op, module, res, a)?;
     let batch = batch_of::<BE::Ring>(a);
     let (terms, base2k) = (batch.ilog2() as usize + 1, res.block_layout().base2k().as_usize());
     if terms > max_lazy_terms(base2k) {
@@ -59,12 +59,18 @@ pub fn validate_blas_sum<BE: Backend>(
     Ok(batch)
 }
 
-/// `a` and `res` are grids at `a`'s `log_d`, `res` of `a`'s shape and its blocks of `a`'s degree, radix and rank.
-fn ensure_same_grids<BE: Backend>(op: &'static str, res: &impl BlasGrid<BE>, a: &impl BlasGrid<BE>) -> Result<()> {
+/// `a` and `res` are grids at `a`'s `log_d`, `res` of `a`'s shape and its blocks of the module's degree and `a`'s radix
+/// and rank.
+fn ensure_same_grids<BE: Backend>(
+    op: &'static str,
+    module: &Module<BE>,
+    res: &impl BlasGrid<BE>,
+    a: &impl BlasGrid<BE>,
+) -> Result<()> {
     ensure_grid::<BE::Ring>(op, a.log_d(), a, a.blocks())?;
     ensure_grid::<BE::Ring>(op, a.log_d(), res, res.blocks())?;
     ensure_shape(op, res, a.rows(), a.cols())?;
-    ensure_layouts(op, res, &[a])
+    ensure_layouts(op, module.n(), res, &[a])
 }
 
 /// The width `blas_sum` rotates at: `ckks_copy` leaves `res` at the narrower of `a` and `res`.

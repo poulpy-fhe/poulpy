@@ -85,12 +85,19 @@ pub(crate) fn ensure_shape<G: BlasGridInfos>(op: &'static str, g: &G, rows: usiz
     Ok(())
 }
 
-/// Rejects `inputs` unless each holds blocks of the degree, radix and rank of `res`'s.
-pub(crate) fn ensure_layouts(op: &'static str, res: &dyn BlasGridInfos, inputs: &[&dyn BlasGridInfos]) -> Result<()> {
+/// Rejects `res` unless its blocks are of degree `n`, the module's, and `inputs` unless each holds blocks of the degree,
+/// radix and rank of `res`'s.
+pub(crate) fn ensure_layouts(op: &'static str, n: usize, res: &dyn BlasGridInfos, inputs: &[&dyn BlasGridInfos]) -> Result<()> {
     let ring = |g: &dyn BlasGridInfos| {
         let block = g.block_layout();
         (block.n().as_usize(), block.base2k().as_usize(), block.rank().as_usize())
     };
+    if ring(res).0 != n {
+        return Err(reject(
+            op,
+            format!("blocks of degree {} on a module of degree {n}", ring(res).0),
+        ));
+    }
     if let Some(input) = inputs.iter().find(|g| ring(**g) != ring(res)) {
         return Err(reject(
             op,

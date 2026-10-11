@@ -302,6 +302,19 @@ pub fn test_blas_intra_guards<BE, F, E>(
             module.blas_rotate_cols(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow())
         });
     }
+    // `a` and `res` both of another degree than the module's.
+    let wide = |grid: &BlasCiphertextOwned<BE>| foreign_layouts(module, grid).into_iter().next().unwrap().1;
+    let (wide_a, mut wide_res, mut wide_res_t) = (wide(&ct), wide(&res), wide(&res_t));
+    let label = "degree a and res";
+    assert_guard::<BE, _>(label, "blas_transpose", InvalidOperand, &mut wide_res_t, |res| {
+        module.blas_transpose(res, &wide_a, &ctx, &keys, &mut op_scratch.borrow())
+    });
+    assert_guard::<BE, _>(label, "blas_rotate_rows", InvalidOperand, &mut wide_res, |res| {
+        module.blas_rotate_rows(res, &wide_a, 1, &ctx, &keys, &mut op_scratch.borrow())
+    });
+    assert_guard::<BE, _>(label, "blas_rotate_cols", InvalidOperand, &mut wide_res, |res| {
+        module.blas_rotate_cols(res, &wide_a, 1, &ctx, &keys, &mut op_scratch.borrow())
+    });
     for (label, ctx) in &foreign {
         assert_guard::<BE, _>(label, "blas_transpose", InvalidOperand, &mut res_t, |res| {
             module.blas_transpose(res, &ct, ctx, &keys, &mut op_scratch.borrow())

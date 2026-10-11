@@ -86,7 +86,7 @@ fn ensure_mapped<BE: Backend>(
     ensure_grid::<BE::Ring>(op, ctx.log_d(), a, a.blocks())?;
     ensure_grid::<BE::Ring>(op, ctx.log_d(), res, res.blocks())?;
     ensure_shape(op, res, rows, cols)?;
-    ensure_layouts(op, res, &[a])?;
+    ensure_layouts(op, module.n(), res, &[a])?;
     ensure_maps(op, module, ctx.slots(), ctx.base2k(), &[a])
 }
 
