@@ -6,9 +6,10 @@ pub mod maps;
 mod ciphertext;
 mod context;
 
-pub(crate) use ciphertext::layout_of;
 pub use ciphertext::{
-    BlasCiphertext, BlasCiphertextOwned, BlasGridInfos, BlasLayout, BlasMatMulLeft, BlasMatMulRight, BlasModuleAlloc,
+    BlasCiphertext, BlasCiphertextOwned, BlasGrid, BlasGridInfos, BlasGridMut, BlasLayout, BlasMatMulLeft, BlasMatMulRight,
+    BlasModuleAlloc,
 };
+pub(crate) use ciphertext::{batch_fits, batch_of, layout_of};
 pub(crate) use context::sum_rotations;
 pub use context::{BlasContext, BlasContextUnprepared, BlasPlan, BlasPtOperand, BlasPtOperandUnprepared, sum_galois_elements};

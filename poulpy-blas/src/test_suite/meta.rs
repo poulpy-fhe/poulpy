@@ -114,7 +114,7 @@ pub fn test_blas_result_meta<BE, F, E>(
     let keys = TestKeys::<BE> { atks, tsk: None };
     let atk = params.atk_layout();
     let bytes = module
-        .blas_rotate_rows_tmp_bytes(&full_row, &full_row, &atk)
+        .blas_rotate_rows_tmp_bytes(&full_row, &full_row, &ctx, &atk)
         .max(module.blas_sum_tmp_bytes(&full_row, &full_row, &atk))
         .max(module.blas_rotate_tmp_bytes(&full_row, &full_row, &atk));
     let mut op_scratch = ScratchOwned::<BE>::alloc(bytes);

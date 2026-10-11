@@ -216,7 +216,7 @@ where
     let mut out = Vec::new();
     let a = operand(params, module, log_d, 2, 3, 80);
     let mut res = operand(params, module, log_d, 3, 2, 90);
-    with_scratch::<B, _>(module.blas_transpose_tmp_bytes(&res, &a, &key), |s| {
+    with_scratch::<B, _>(module.blas_transpose_tmp_bytes(&res, &a, &ctx, &key), |s| {
         module.blas_transpose(&mut res, &a, &ctx, &keys, s)
     })
     .unwrap();
@@ -227,18 +227,18 @@ where
     let mut res = operand(params, module, log_d, 2, 3, 100);
     let mut res_row = operand(params, module, log_d, 1, 2, 112);
     for k in [1, d + 1] {
-        with_scratch::<B, _>(module.blas_rotate_rows_tmp_bytes(&res, &a, &key), |s| {
+        with_scratch::<B, _>(module.blas_rotate_rows_tmp_bytes(&res, &a, &ctx, &key), |s| {
             module.blas_rotate_rows(&mut res, &a, k, &ctx, &keys, s)
         })
         .unwrap();
         out.push(output::<B>("blas_rotate_rows", &res));
-        with_scratch::<B, _>(module.blas_rotate_cols_tmp_bytes(&res, &a, &key), |s| {
+        with_scratch::<B, _>(module.blas_rotate_cols_tmp_bytes(&res, &a, &ctx, &key), |s| {
             module.blas_rotate_cols(&mut res, &a, k * d / 2, &ctx, &keys, s)
         })
         .unwrap();
         out.push(output::<B>("blas_rotate_cols", &res));
     }
-    with_scratch::<B, _>(module.blas_rotate_rows_tmp_bytes(&res_row, &a_row, &key), |s| {
+    with_scratch::<B, _>(module.blas_rotate_rows_tmp_bytes(&res_row, &a_row, &ctx, &key), |s| {
         module.blas_rotate_rows(&mut res_row, &a_row, 1, &ctx, &keys, s)
     })
     .unwrap();

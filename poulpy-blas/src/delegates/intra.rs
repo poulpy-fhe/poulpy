@@ -1,100 +1,94 @@
-use poulpy_ckks::{CKKSResult as Result, layouts::CKKSCiphertext};
-use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
+use poulpy_ckks::CKKSResult as Result;
+use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     api::BlasMatIntraOps,
-    layouts::{BlasCiphertext, BlasContext, BlasGridInfos},
+    layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, batch_of},
     oep::BlasMatIntraImpl,
 };
 
 impl<BE: Backend + BlasMatIntraImpl> BlasMatIntraOps<BE> for Module<BE> {
-    fn blas_transpose_tmp_bytes<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
+    fn blas_transpose_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, atk: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        BE::blas_transpose_tmp_bytes_impl(self, res, a, key)
+        BE::blas_transpose_tmp_bytes_impl(self, res, a, ctx, atk)
     }
 
-    fn blas_transpose<DR, DA, K>(
+    fn blas_transpose<R, A, K>(
         &self,
-        res: &mut BlasCiphertext<DR, BE::ZnxWord, BE::Ring>,
-        a: &BlasCiphertext<DA, BE::ZnxWord, BE::Ring>,
+        res: &mut R,
+        a: &A,
         ctx: &BlasContext<BE>,
-        keys: &K,
+        atk: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        DR: Data,
-        DA: Data,
-        CKKSCiphertext<DR, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<DA, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
-        K: GetAutomorphismKey<BE>,
+        R: BlasGridMut<BE>,
+        A: BlasGrid<BE>,
+        K: GetAutomorphismKey<BE> + Sync,
     {
-        BE::blas_transpose_impl(self, res, a, ctx, keys, scratch)?;
-        res.mat_slots = a.mat_slots;
+        BE::blas_transpose_impl(self, res, a, ctx, atk, scratch)?;
+        res.set_mat_slots(batch_of::<BE::Ring>(a));
         Ok(())
     }
 
-    fn blas_rotate_rows_tmp_bytes<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
+    fn blas_rotate_rows_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, atk: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        BE::blas_rotate_rows_tmp_bytes_impl(self, res, a, key)
+        BE::blas_rotate_rows_tmp_bytes_impl(self, res, a, ctx, atk)
     }
 
-    fn blas_rotate_rows<DR, DA, K>(
+    fn blas_rotate_rows<R, A, K>(
         &self,
-        res: &mut BlasCiphertext<DR, BE::ZnxWord, BE::Ring>,
-        a: &BlasCiphertext<DA, BE::ZnxWord, BE::Ring>,
+        res: &mut R,
+        a: &A,
         k: usize,
         ctx: &BlasContext<BE>,
-        keys: &K,
+        atk: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        DR: Data,
-        DA: Data,
-        CKKSCiphertext<DR, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<DA, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
-        K: GetAutomorphismKey<BE>,
+        R: BlasGridMut<BE>,
+        A: BlasGrid<BE>,
+        K: GetAutomorphismKey<BE> + Sync,
     {
-        BE::blas_rotate_rows_impl(self, res, a, k, ctx, keys, scratch)?;
-        res.mat_slots = a.mat_slots;
+        BE::blas_rotate_rows_impl(self, res, a, k, ctx, atk, scratch)?;
+        res.set_mat_slots(batch_of::<BE::Ring>(a));
         Ok(())
     }
 
-    fn blas_rotate_cols_tmp_bytes<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
+    fn blas_rotate_cols_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, atk: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        BE::blas_rotate_cols_tmp_bytes_impl(self, res, a, key)
+        BE::blas_rotate_cols_tmp_bytes_impl(self, res, a, ctx, atk)
     }
 
-    fn blas_rotate_cols<DR, DA, K>(
+    fn blas_rotate_cols<R, A, K>(
         &self,
-        res: &mut BlasCiphertext<DR, BE::ZnxWord, BE::Ring>,
-        a: &BlasCiphertext<DA, BE::ZnxWord, BE::Ring>,
+        res: &mut R,
+        a: &A,
         k: usize,
         ctx: &BlasContext<BE>,
-        keys: &K,
+        atk: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        DR: Data,
-        DA: Data,
-        CKKSCiphertext<DR, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<DA, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
-        K: GetAutomorphismKey<BE>,
+        R: BlasGridMut<BE>,
+        A: BlasGrid<BE>,
+        K: GetAutomorphismKey<BE> + Sync,
     {
-        BE::blas_rotate_cols_impl(self, res, a, k, ctx, keys, scratch)?;
-        res.mat_slots = a.mat_slots;
+        BE::blas_rotate_cols_impl(self, res, a, k, ctx, atk, scratch)?;
+        res.set_mat_slots(batch_of::<BE::Ring>(a));
         Ok(())
     }
 }

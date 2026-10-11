@@ -30,7 +30,8 @@ use poulpy_hal::{
 };
 
 use crate::layouts::{
-    BlasCiphertext, BlasCiphertextOwned, BlasGridInfos, BlasLayout, BlasModuleAlloc, grid::split_into_blocks, layout_of,
+    BlasCiphertext, BlasCiphertextOwned, BlasGrid, BlasGridInfos, BlasGridMut, BlasLayout, BlasModuleAlloc,
+    grid::split_into_blocks, layout_of,
 };
 
 /// One complex `rows d x cols d` matrix per lane, `d = 2^log_d`: lane `s`, entry `(r, c)` at
@@ -367,6 +368,54 @@ where
             relabel(grid, |meta| meta.scale = Scale::Log(layout.k().as_usize() + 1)),
         ),
     ]
+}
+
+/// `grid` read as `rows x cols` blocks whatever it holds: a [`BlasGrid`] whose blocks do not tile the shape it reports,
+/// which every operation rejects before `res` changes.
+pub struct Misshapen<G> {
+    pub grid: G,
+    pub rows: usize,
+    pub cols: usize,
+}
+
+impl<G: BlasGridInfos> BlasGridInfos for Misshapen<G> {
+    fn log_d(&self) -> usize {
+        self.grid.log_d()
+    }
+
+    fn rows(&self) -> usize {
+        self.rows
+    }
+
+    fn cols(&self) -> usize {
+        self.cols
+    }
+
+    fn block_layout(&self) -> CKKSLayout {
+        self.grid.block_layout()
+    }
+
+    fn mat_slots(&self) -> Option<usize> {
+        self.grid.mat_slots()
+    }
+}
+
+impl<BE: Backend, G: BlasGrid<BE>> BlasGrid<BE> for Misshapen<G> {
+    type Block = G::Block;
+
+    fn blocks(&self) -> &[Self::Block] {
+        self.grid.blocks()
+    }
+}
+
+impl<BE: Backend, G: BlasGridMut<BE>> BlasGridMut<BE> for Misshapen<G> {
+    fn blocks_mut(&mut self) -> &mut [Self::Block] {
+        self.grid.blocks_mut()
+    }
+
+    fn set_mat_slots(&mut self, mat_slots: usize) {
+        self.grid.set_mat_slots(mat_slots);
+    }
 }
 
 /// Snapshots of every block, compared before and after a rejected call.

@@ -17,7 +17,8 @@ operands reused across calls), `blas_matmul_pt` (ciphertext x public matrices, s
 A `BlasPlan` fixes the block dimension and how each block map is evaluated. The maps are encoded once from it, at a
 caller-chosen precision, into a `BlasContext`, and public matrices into a `BlasPtOperand`. Operations take the context
 and any key store implementing poulpy-core's `GetAutomorphismKey` (and `GetTensorKey` for the ciphertext x ciphertext
-products). Slot-wise additions, products and rescaling are poulpy-ckks operations applied to each block.
+products). Rotations, sums, the transpose and the shifts take any grid implementing `BlasGrid` (`BlasGridMut` for the
+result) and a `Sync` key store. Slot-wise additions, products and rescaling are poulpy-ckks operations applied to each block.
 
 The plan lists the rotation keys each operation looks up, from the ring's cyclotomic order alone:
 `transpose_galois_elements`, `rotate_rows_galois_elements(k)`, `rotate_cols_galois_elements(k)`,

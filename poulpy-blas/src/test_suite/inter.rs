@@ -13,14 +13,14 @@ use poulpy_hal::{
 };
 
 use super::helpers::{
-    Grid,
+    Grid, Misshapen,
     Rejection::{InvalidPlan, MissingKey},
-    TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, assert_short_scratch, copied_layout, encrypt_grid, rejected_grids,
-    relabel, rotation_keys,
+    TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, assert_guard_on, assert_short_scratch, copied_layout, encrypt_grid,
+    rejected_grids, relabel, rotation_keys,
 };
 use crate::{
     api::BlasMatInterOps,
-    layouts::{BlasCiphertext, BlasPlan, sum_galois_elements},
+    layouts::{BlasCiphertext, BlasCiphertextOwned, BlasGridInfos, BlasPlan, sum_galois_elements},
     oep::BlasMatInterImpl,
 };
 
@@ -133,7 +133,8 @@ where
 }
 
 /// Every grid [`rejected_grids`] builds, as `a` or as `res`, a shape mismatch, a copy relabelled past `log2` of the ring
-/// degree, a missing rotation key, and blocks wider than the slots are rejected before `res` changes; a rotation
+/// degree, a [`Misshapen`] grid as `a` or as `res`, a missing rotation key, and blocks wider than the slots are
+/// rejected before `res` changes; a rotation
 /// or a sum one scratch byte short of its query panics before `res` changes; `from_blocks` rejects a block count
 /// overflowing `usize`. On one matrix slot, where every rotation is the identity, the missing-key and scratch cases are
 /// skipped.
@@ -197,6 +198,37 @@ pub fn test_blas_inter_guards<BE, F, E>(
             module.blas_sum(res, a, &keys, &mut op_scratch.borrow())
         });
     }
+
+    // A grid one block row short of the shape it reports, as `a`, then as `res`.
+    let short = |grid: BlasCiphertextOwned<BE>| Misshapen {
+        rows: grid.rows() + 1,
+        cols: grid.cols(),
+        grid,
+    };
+    let (one_row, mut res) = (short(ct.clone().split_rows(1).0), alloc(log_d, 2, 2));
+    assert_guard::<BE, _>("misshapen a", "blas_rotate", InvalidPlan, &mut res, |res| {
+        module.blas_rotate(res, &one_row, 1, &keys, &mut op_scratch.borrow())
+    });
+    assert_guard::<BE, _>("misshapen a", "blas_sum", InvalidPlan, &mut res, |res| {
+        module.blas_sum(res, &one_row, &keys, &mut op_scratch.borrow())
+    });
+    let mut short_res = short(alloc(log_d, 1, 2));
+    assert_guard_on::<BE, _, _>(
+        "misshapen res",
+        "blas_rotate",
+        InvalidPlan,
+        &mut short_res,
+        |res| &res.grid,
+        |res| module.blas_rotate(res, &ct, 1, &keys, &mut op_scratch.borrow()),
+    );
+    assert_guard_on::<BE, _, _>(
+        "misshapen res",
+        "blas_sum",
+        InvalidPlan,
+        &mut short_res,
+        |res| &res.grid,
+        |res| module.blas_sum(res, &ct, &keys, &mut op_scratch.borrow()),
+    );
 
     // Valid grids, empty key store; on one matrix slot every rotation is the identity, which takes no key.
     let mut res = alloc(log_d, 2, 2);

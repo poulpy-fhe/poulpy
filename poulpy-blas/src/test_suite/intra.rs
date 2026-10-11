@@ -18,10 +18,10 @@ use poulpy_hal::{
 };
 
 use super::helpers::{
-    Grid,
+    Grid, Misshapen,
     Rejection::{InvalidPlan, MissingKey},
-    TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, assert_short_scratch, blas_context, context_and_keys, copied_layout,
-    encrypt_grid, foreign_contexts, mapped_layout, rejected_grids, relabel, rotation_keys,
+    TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, assert_guard_on, assert_short_scratch, blas_context,
+    context_and_keys, copied_layout, encrypt_grid, foreign_contexts, mapped_layout, rejected_grids, relabel, rotation_keys,
 };
 use crate::{
     api::BlasMatIntraOps,
@@ -71,7 +71,7 @@ pub fn test_blas_transpose<BE, F, E>(
     // Once with `res` as wide as `a`, once one limb wider.
     for res_k in [params.k, params.k + params.base2k] {
         let mut res = alloc_grid(&params, module, log_d, cols, rows, res_k);
-        let mut op_scratch = ScratchOwned::<BE>::alloc(module.blas_transpose_tmp_bytes(&res, &ct, &params.atk_layout()));
+        let mut op_scratch = ScratchOwned::<BE>::alloc(module.blas_transpose_tmp_bytes(&res, &ct, &ctx, &params.atk_layout()));
         module
             .blas_transpose(&mut res, &ct, &ctx, &keys, &mut op_scratch.borrow())
             .unwrap();
@@ -170,8 +170,8 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
         for &res_k in res_widths {
             let mut res = alloc_grid(&params, module, log_d, rows, cols, res_k);
             let bytes = module
-                .blas_rotate_rows_tmp_bytes(&res, &ct, &params.atk_layout())
-                .max(module.blas_rotate_cols_tmp_bytes(&res, &ct, &params.atk_layout()));
+                .blas_rotate_rows_tmp_bytes(&res, &ct, &ctx, &params.atk_layout())
+                .max(module.blas_rotate_cols_tmp_bytes(&res, &ct, &ctx, &params.atk_layout()));
             let mut op_scratch = ScratchOwned::<BE>::alloc(bytes);
             for &k in row_shifts {
                 let layout = want_layout(k, &res);
@@ -212,7 +212,8 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
 }
 
 /// Every grid [`rejected_grids`] builds, as `a` or as `res`, a shape mismatch, a copy relabelled past `log2` of the ring
-/// degree, a context encoded on a module of another degree or at another radix, and a missing rotation key are
+/// degree, a [`Misshapen`] grid as `a` or as `res`, a context encoded on a module of another degree or at another
+/// radix, and a missing rotation key are
 /// rejected before `res` changes; each operation one scratch byte short of its query, a row or column shift along one
 /// block or across blocks, panics before `res` changes.
 pub fn test_blas_intra_guards<BE, F, E>(
@@ -249,7 +250,7 @@ pub fn test_blas_intra_guards<BE, F, E>(
         &mut scratch.borrow(),
     );
     let alloc = |rows: usize, cols: usize| alloc_grid(&params, module, log_d, rows, cols, params.k);
-    let mut op_scratch = ScratchOwned::<BE>::alloc(module.blas_rotate_rows_tmp_bytes(&ct, &ct, &params.atk_layout()));
+    let mut op_scratch = ScratchOwned::<BE>::alloc(module.blas_rotate_rows_tmp_bytes(&ct, &ct, &ctx, &params.atk_layout()));
 
     // `res` shaped like `a` for the transpose, like its transpose for the rotations.
     let (mut wrong, mut wrong_t) = (alloc(cols, rows), alloc(rows, cols));
@@ -304,6 +305,48 @@ pub fn test_blas_intra_guards<BE, F, E>(
             module.blas_rotate_cols(res, &ct, 1, ctx, &keys, &mut op_scratch.borrow())
         });
     }
+    // A grid one block row short of the shape it reports, as `a`, then as `res`: its shape alone would pass.
+    let short = |grid: BlasCiphertextOwned<BE>| Misshapen {
+        rows: grid.rows() + 1,
+        cols: grid.cols(),
+        grid,
+    };
+    let short_a = short(ct.clone().split_rows(1).0);
+    assert_guard::<BE, _>("misshapen a", "blas_transpose", InvalidPlan, &mut res_t, |res| {
+        module.blas_transpose(res, &short_a, &ctx, &keys, &mut op_scratch.borrow())
+    });
+    assert_guard::<BE, _>("misshapen a", "blas_rotate_rows", InvalidPlan, &mut res, |res| {
+        module.blas_rotate_rows(res, &short_a, 1, &ctx, &keys, &mut op_scratch.borrow())
+    });
+    assert_guard::<BE, _>("misshapen a", "blas_rotate_cols", InvalidPlan, &mut res, |res| {
+        module.blas_rotate_cols(res, &short_a, 1, &ctx, &keys, &mut op_scratch.borrow())
+    });
+    let (mut short_res, mut short_res_t) = (short(alloc(rows - 1, cols)), short(alloc(cols - 1, rows)));
+    assert_guard_on::<BE, _, _>(
+        "misshapen res",
+        "blas_transpose",
+        InvalidPlan,
+        &mut short_res_t,
+        |res| &res.grid,
+        |res| module.blas_transpose(res, &ct, &ctx, &keys, &mut op_scratch.borrow()),
+    );
+    assert_guard_on::<BE, _, _>(
+        "misshapen res",
+        "blas_rotate_rows",
+        InvalidPlan,
+        &mut short_res,
+        |res| &res.grid,
+        |res| module.blas_rotate_rows(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow()),
+    );
+    assert_guard_on::<BE, _, _>(
+        "misshapen res",
+        "blas_rotate_cols",
+        InvalidPlan,
+        &mut short_res,
+        |res| &res.grid,
+        |res| module.blas_rotate_cols(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow()),
+    );
+
     let no_keys = TestKeys::<BE> {
         atks: HashMap::new(),
         tsk: None,
@@ -323,16 +366,16 @@ pub fn test_blas_intra_guards<BE, F, E>(
     let (one_row, one_column) = (ct.clone().split_rows(1).0, ct.clone().split_cols(1).0);
     for a in [&ct, &one_row, &one_column] {
         let mut res = alloc(a.rows(), a.cols());
-        let bytes = module.blas_rotate_rows_tmp_bytes(&res, a, &atk);
+        let bytes = module.blas_rotate_rows_tmp_bytes(&res, a, &ctx, &atk);
         assert_short_scratch::<BE, _>("blas_rotate_rows", &mut res, bytes, |res, s| {
             module.blas_rotate_rows(res, a, 1, &ctx, &keys, s)
         });
-        let bytes = module.blas_rotate_cols_tmp_bytes(&res, a, &atk);
+        let bytes = module.blas_rotate_cols_tmp_bytes(&res, a, &ctx, &atk);
         assert_short_scratch::<BE, _>("blas_rotate_cols", &mut res, bytes, |res, s| {
             module.blas_rotate_cols(res, a, 1, &ctx, &keys, s)
         });
     }
-    let bytes = module.blas_transpose_tmp_bytes(&res_t, &ct, &atk);
+    let bytes = module.blas_transpose_tmp_bytes(&res_t, &ct, &ctx, &atk);
     assert_short_scratch::<BE, _>("blas_transpose", &mut res_t, bytes, |res, s| {
         module.blas_transpose(res, &ct, &ctx, &keys, s)
     });

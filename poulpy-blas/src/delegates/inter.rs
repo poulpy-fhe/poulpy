@@ -1,68 +1,51 @@
-use poulpy_ckks::{CKKSResult as Result, layouts::CKKSCiphertext};
-use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
+use poulpy_ckks::CKKSResult as Result;
+use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     api::BlasMatInterOps,
-    layouts::{BlasCiphertext, BlasGridInfos},
+    layouts::{BlasGrid, BlasGridInfos, BlasGridMut, batch_of},
     oep::BlasMatInterImpl,
 };
 
 impl<BE: Backend + BlasMatInterImpl> BlasMatInterOps<BE> for Module<BE> {
-    fn blas_rotate_tmp_bytes<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
+    fn blas_rotate_tmp_bytes<R, A, K>(&self, res: &R, a: &A, atk: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        BE::blas_rotate_tmp_bytes_impl(self, res, a, key)
+        BE::blas_rotate_tmp_bytes_impl(self, res, a, atk)
     }
 
-    fn blas_rotate<DR, DA, K>(
-        &self,
-        res: &mut BlasCiphertext<DR, BE::ZnxWord, BE::Ring>,
-        a: &BlasCiphertext<DA, BE::ZnxWord, BE::Ring>,
-        r: i64,
-        keys: &K,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    fn blas_rotate<R, A, K>(&self, res: &mut R, a: &A, r: i64, atk: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        DR: Data,
-        DA: Data,
-        CKKSCiphertext<DR, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<DA, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
-        K: GetAutomorphismKey<BE>,
+        R: BlasGridMut<BE>,
+        A: BlasGrid<BE>,
+        K: GetAutomorphismKey<BE> + Sync,
     {
-        BE::blas_rotate_impl(self, res, a, r, keys, scratch)?;
-        res.mat_slots = a.mat_slots;
+        BE::blas_rotate_impl(self, res, a, r, atk, scratch)?;
+        res.set_mat_slots(batch_of::<BE::Ring>(a));
         Ok(())
     }
 
-    fn blas_sum_tmp_bytes<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
+    fn blas_sum_tmp_bytes<R, A, K>(&self, res: &R, a: &A, atk: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        BE::blas_sum_tmp_bytes_impl(self, res, a, key)
+        BE::blas_sum_tmp_bytes_impl(self, res, a, atk)
     }
 
-    fn blas_sum<DR, DA, K>(
-        &self,
-        res: &mut BlasCiphertext<DR, BE::ZnxWord, BE::Ring>,
-        a: &BlasCiphertext<DA, BE::ZnxWord, BE::Ring>,
-        keys: &K,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    fn blas_sum<R, A, K>(&self, res: &mut R, a: &A, atk: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        DR: Data,
-        DA: Data,
-        CKKSCiphertext<DR, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<DA, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
-        K: GetAutomorphismKey<BE>,
+        R: BlasGridMut<BE>,
+        A: BlasGrid<BE>,
+        K: GetAutomorphismKey<BE> + Sync,
     {
-        BE::blas_sum_impl(self, res, a, keys, scratch)?;
-        res.mat_slots = a.mat_slots;
+        BE::blas_sum_impl(self, res, a, atk, scratch)?;
+        res.set_mat_slots(batch_of::<BE::Ring>(a));
         Ok(())
     }
 }

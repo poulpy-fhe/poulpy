@@ -292,8 +292,8 @@ pub trait BlasMatMulReference<BE: Backend> {
         K: GetAutomorphismKey<BE>,
     {
         let op = "blas_matmul_pt";
-        ensure_grid(op, b.log_d(), a)?;
-        ensure_grid(op, b.log_d(), res)?;
+        ensure_grid::<BE::Ring>(op, b.log_d(), a, a.blocks())?;
+        ensure_grid::<BE::Ring>(op, b.log_d(), res, res.blocks())?;
         ensure_inner(op, a.cols(), b.rows())?;
         ensure_shape(op, res, a.rows(), b.cols())?;
         ensure_maps(op, self, b.slots(), b.base2k(), &[a])?;
@@ -333,7 +333,7 @@ pub trait BlasMatMulReference<BE: Backend> {
                 }
             }
         }
-        stamp_sparsity(res, a);
+        stamp_sparsity(res.blocks_mut(), a);
         Ok(())
     }
 }
@@ -360,9 +360,9 @@ where
     R: Ring,
     BE: Backend,
 {
-    ensure_grid(op, ctx.log_d(), a)?;
-    ensure_grid(op, ctx.log_d(), b)?;
-    ensure_grid(op, ctx.log_d(), res)?;
+    ensure_grid::<R>(op, ctx.log_d(), a, a.blocks())?;
+    ensure_grid::<R>(op, ctx.log_d(), b, b.blocks())?;
+    ensure_grid::<R>(op, ctx.log_d(), res, res.blocks())?;
     ensure_inner(op, a.cols(), b.rows())?;
     ensure_shape(op, res, a.rows(), b.cols())?;
     ensure_maps(op, module, ctx.slots(), ctx.base2k(), &[a, b])?;
@@ -429,8 +429,8 @@ where
     CKKSCiphertext<DA, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
     K: GetAutomorphismKey<BE>,
 {
-    ensure_grid(op, ctx.log_d(), a)?;
-    ensure_grid(op, ctx.log_d(), res)?;
+    ensure_grid::<BE::Ring>(op, ctx.log_d(), a, a.blocks())?;
+    ensure_grid::<BE::Ring>(op, ctx.log_d(), res, res.blocks())?;
     ensure_shape(op, res, a.rows(), a.cols())?;
     ensure_maps(op, module, ctx.slots(), ctx.base2k(), &[a])?;
     let used = KeyLayouts::new(keys);
@@ -440,7 +440,7 @@ where
     for (dst, src) in res.blocks_mut().iter_mut().zip(a.blocks()) {
         module.ckks_eval_linear_transformation_self_into(dst, src, lt, keys, scratch)?;
     }
-    stamp_sparsity(res, a);
+    stamp_sparsity(res.blocks_mut(), a);
     Ok(())
 }
 

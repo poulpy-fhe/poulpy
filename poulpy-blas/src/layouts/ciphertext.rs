@@ -2,10 +2,10 @@
 
 use anyhow::{Result, ensure};
 use poulpy_ckks::{
-    CKKSInfos, CKKSLayout, GLWEPlaintextInfos,
+    CKKSCtBounds, CKKSInfos, CKKSLayout, GLWEPlaintextInfos, SetCKKSInfos,
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
 };
-use poulpy_core::layouts::{Base2K, GLWEInfos, LWEInfos, TorusPrecision};
+use poulpy_core::layouts::{Base2K, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision};
 use poulpy_hal::layouts::{Backend, Data, Module, Ring, ZnxWord};
 
 /// An `rows x cols` grid of `2^log_d x 2^log_d` blocks: block `(i, j)` is one CKKS ciphertext whose matrix slot `s`
@@ -46,6 +46,26 @@ pub trait BlasGridInfos {
     fn mat_slots(&self) -> Option<usize> {
         None
     }
+}
+
+/// A grid the operations read: its blocks, row-major, shareable across the tasks of a parallel implementation.
+pub trait BlasGrid<BE: Backend>: BlasGridInfos {
+    /// One block ciphertext.
+    type Block: GLWEToBackendRef<BE> + CKKSCtBounds + Sync;
+
+    /// Every block, row-major: block `(i, j)` at `i * cols + j`, so exactly `rows * cols` of them, at least one. Every
+    /// operation rejects a grid that breaks this.
+    fn blocks(&self) -> &[Self::Block];
+}
+
+/// A grid the operations write: each block can move into its own task.
+pub trait BlasGridMut<BE: Backend>: BlasGrid<BE, Block: GLWEToBackendMut<BE> + SetCKKSInfos + Send> {
+    /// Every block, row-major, mutably.
+    fn blocks_mut(&mut self) -> &mut [Self::Block];
+
+    /// Records the batch, [`BlasGridInfos::mat_slots`]. Only the API calls it, on `res` after `Ok`: implementations
+    /// write blocks only.
+    fn set_mat_slots(&mut self, mat_slots: usize);
 }
 
 /// A grid's dimensions and block layout, without ciphertexts; its batch is the one its blocks' label proves.
@@ -111,6 +131,27 @@ fn slots_of<R: Ring>(n: usize) -> usize {
     n * R::CYCLOTOMIC_ORDER_FACTOR as usize / 4
 }
 
+/// The batch of `g`, on ring `R`: its record, or for a grid without one the batch its blocks' label proves.
+pub(crate) fn batch_of<R: Ring>(g: &impl BlasGridInfos) -> usize {
+    g.mat_slots().unwrap_or_else(|| {
+        let block = g.block_layout();
+        mat_slots_in(slots_of::<R>(block.n().as_usize()), g.log_d(), block.log_sparsity())
+    })
+}
+
+/// Whether the label of the blocks of `g`, on ring `R`, allows its batch ([`batch_of`]): with `S` slots, label `s` and
+/// degree `n`, a power of two with `s <= log2 n` and `(S >> s) / d^2 <= mat_slots <= S / d^2`. The lower bound covers
+/// whole periods of the slots, so rotations modulo the batch and sums over it keep their meaning.
+pub(crate) fn batch_fits<R: Ring>(g: &impl BlasGridInfos) -> bool {
+    let block = g.block_layout();
+    let (n, s) = (block.n().as_usize(), block.log_sparsity());
+    let (slots, mat_slots) = (slots_of::<R>(n), batch_of::<R>(g));
+    mat_slots.is_power_of_two()
+        && s <= n.ilog2() as usize
+        && mat_slots_in(slots, g.log_d(), s) <= mat_slots
+        && mat_slots <= mat_slots_in(slots, g.log_d(), 0)
+}
+
 impl<D: Data, W: ZnxWord, R: Ring> BlasCiphertext<D, W, R> {
     /// Reads `blocks`, row-major, as a `rows x cols` grid of `2^log_d x 2^log_d` blocks, recording the batch the label
     /// of block `(0, 0)` proves: with `S` slots and label `s`, `(S >> s) / d^2` matrices, `0` when one block does not
@@ -145,19 +186,6 @@ impl<D: Data, W: ZnxWord, R: Ring> BlasCiphertext<D, W, R> {
             cols,
             mat_slots,
         })
-    }
-
-    /// Whether the label of block `(0, 0)` allows the record: with `S` slots, label `s` and degree `n`, a power of two
-    /// with `s <= log2 n` and `(S >> s) / d^2 <= mat_slots <= S / d^2`. The lower bound covers whole periods of the
-    /// slots, so rotations modulo the batch and sums over it keep their meaning.
-    pub(crate) fn batch_fits(&self) -> bool {
-        let block = &self.blocks[0];
-        let (n, s) = (block.n().as_usize(), block.log_sparsity());
-        let slots = slots_of::<R>(n);
-        self.mat_slots.is_power_of_two()
-            && s <= n.ilog2() as usize
-            && mat_slots_in(slots, self.log_d, s) <= self.mat_slots
-            && self.mat_slots <= mat_slots_in(slots, self.log_d, 0)
     }
 
     fn index(&self, i: usize, j: usize) -> usize {
@@ -332,6 +360,30 @@ impl<D: Data, W: ZnxWord, R: Ring> BlasGridInfos for BlasCiphertext<D, W, R> {
     }
 }
 
+impl<BE: Backend, D: Data + Sync> BlasGrid<BE> for BlasCiphertext<D, BE::ZnxWord, BE::Ring>
+where
+    CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
+{
+    type Block = CKKSCiphertext<D, BE::ZnxWord, BE::Ring>;
+
+    fn blocks(&self) -> &[Self::Block] {
+        &self.blocks
+    }
+}
+
+impl<BE: Backend, D: Data + Send + Sync> BlasGridMut<BE> for BlasCiphertext<D, BE::ZnxWord, BE::Ring>
+where
+    CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
+{
+    fn blocks_mut(&mut self) -> &mut [Self::Block] {
+        &mut self.blocks
+    }
+
+    fn set_mat_slots(&mut self, mat_slots: usize) {
+        self.mat_slots = mat_slots;
+    }
+}
+
 /// The left operand of [`crate::api::BlasMatMulOps::blas_matmul_prepared`]: sigma of every block, filled by
 /// [`crate::api::BlasMatMulOps::blas_matmul_prepare_left`].
 ///
@@ -436,10 +488,31 @@ impl<BE: Backend> BlasModuleAlloc<BE> for Module<BE> where Module<BE>: CKKSModul
 #[cfg(test)]
 mod tests {
     use super::*;
-    use poulpy_ckks::SetGLWEPlaintextInfos;
-    use poulpy_hal::layouts::HostBytesBackend;
+    use crate::layouts::{BlasContext, BlasPtOperand};
+    use poulpy_ckks::{CKKSError, SetGLWEPlaintextInfos};
+    use poulpy_hal::layouts::{HostBytesBackend, Standard};
 
     type Grid = BlasCiphertextOwned<HostBytesBackend>;
+
+    /// Grids over owned storage are inputs and outputs of every operation on every backend, with no unsafe impl, and
+    /// contexts, public operands and errors cross tasks. Borrowed views are not grids, their blocks not being
+    /// `GLWEToBackendRef`; they are as thread-safe as their buffers: `BufRef` views `Sync`, `BufMut` views only `Send`.
+    fn assert_thread_safe<'a, BE: Backend + 'a>() {
+        fn output<BE: Backend, G: BlasGridMut<BE> + Send + Sync>() {}
+        fn sync<T: Sync>() {}
+        fn send<T: Send>() {}
+        output::<BE, BlasCiphertextOwned<BE>>();
+        sync::<BlasContext<BE>>();
+        sync::<BlasPtOperand<BE>>();
+        send::<CKKSError>();
+        sync::<BlasCiphertext<BE::BufRef<'a>, BE::ZnxWord, BE::Ring>>();
+        send::<BlasCiphertext<BE::BufMut<'a>, BE::ZnxWord, BE::Ring>>();
+    }
+
+    #[test]
+    fn grids_are_send_and_sync() {
+        assert_thread_safe::<HostBytesBackend>();
+    }
 
     fn module() -> Module<HostBytesBackend> {
         Module::<HostBytesBackend>::new(256)
@@ -491,12 +564,16 @@ mod tests {
         ] {
             ct.block_mut(0, 0).set_log_sparsity(log_sparsity);
             ct.mat_slots = mat_slots;
-            assert_eq!(ct.batch_fits(), fits, "log_sparsity={log_sparsity}, mat_slots={mat_slots}");
+            assert_eq!(
+                batch_fits::<Standard>(&ct),
+                fits,
+                "log_sparsity={log_sparsity}, mat_slots={mat_slots}"
+            );
         }
         // 16 x 16 blocks do not fit 128 slots, whatever the record.
         let mut ct = relabelled(ct, 4, 0);
         ct.mat_slots = 1;
-        assert!(!ct.batch_fits());
+        assert!(!batch_fits::<Standard>(&ct));
     }
 
     #[test]

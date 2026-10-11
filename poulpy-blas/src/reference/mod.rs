@@ -11,31 +11,38 @@ pub use matmul::BlasMatMulReference;
 use std::cell::RefCell;
 
 use poulpy_ckks::{
-    CKKSCompositionError, CKKSError, CKKSInfos, CKKSLayout, CKKSResult as Result, GLWEPlaintextInfos, SetGLWEPlaintextInfos,
+    CKKSCompositionError, CKKSCtBounds, CKKSError, CKKSInfos, CKKSLayout, CKKSResult as Result, GLWEPlaintextInfos, SetCKKSInfos,
     api::{CKKSLinearTransformationOps, CKKSModuleInfos, LinearTransformation, LtDiagonalMeta},
 };
 use poulpy_core::layouts::{
     Base2K, GGLWEInfos, GGLWELayout, GetAutomorphismKey, GetTensorKey, LWEInfos, TorusPrecision,
     prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWETensorKeyPreparedBackendRef},
 };
-use poulpy_hal::layouts::{Backend, Data, Ring, ScratchArena, ZnxWord};
+use poulpy_hal::layouts::{Backend, Ring, ScratchArena};
 
-use crate::layouts::{BlasCiphertext, BlasGridInfos, layout_of};
+use crate::layouts::{BlasGridInfos, batch_fits, batch_of, layout_of};
 
 /// The `InvalidPlan` rejection of `op` for `reason`.
 pub fn reject(op: &'static str, reason: String) -> CKKSError {
     CKKSCompositionError::InvalidPlan { plan: op, reason }.into()
 }
 
-/// Rejects `g` unless it reads `2^log_d x 2^log_d` blocks that share one layout, whose `log_delta` does not exceed their
-/// `k`, and whose label allows its batch record: a power of two from the batch the label proves to the slots' dense
-/// batch, with the label at most `log2` of the degree.
-pub fn ensure_grid<D: Data, W: ZnxWord, R: Ring>(op: &'static str, log_d: usize, g: &BlasCiphertext<D, W, R>) -> Result<()> {
+/// Rejects `g`, whose blocks are `blocks`, unless it reads `2^log_d x 2^log_d` blocks, at least one and exactly
+/// `rows x cols` of them, that share one layout, whose `log_delta` does not exceed their `k`, and whose label allows its
+/// batch on ring `R`: a power of two from the batch the label proves to the slots' dense batch, with the label at most
+/// `log2` of the degree.
+pub fn ensure_grid<R: Ring>(op: &'static str, log_d: usize, g: &impl BlasGridInfos, blocks: &[impl CKKSCtBounds]) -> Result<()> {
     if g.log_d() != log_d {
         return Err(reject(op, format!("grid dimension 2^{} differs from 2^{log_d}", g.log_d())));
     }
+    if blocks.is_empty() || g.rows().checked_mul(g.cols()) != Some(blocks.len()) {
+        return Err(reject(
+            op,
+            format!("{} blocks do not form a {} x {} grid", blocks.len(), g.rows(), g.cols()),
+        ));
+    }
     let first = g.block_layout();
-    if g.blocks().iter().any(|block| layout_of(block) != first) {
+    if blocks.iter().any(|block| layout_of(block) != first) {
         return Err(reject(op, "the blocks of a grid do not share one layout".into()));
     }
     if first.log_delta() > first.k().as_usize() {
@@ -48,12 +55,12 @@ pub fn ensure_grid<D: Data, W: ZnxWord, R: Ring>(op: &'static str, log_d: usize,
             ),
         ));
     }
-    if !g.batch_fits() {
+    if !batch_fits::<R>(g) {
         return Err(reject(
             op,
             format!(
                 "a batch of {} matrices of 2^{log_d} x 2^{log_d} blocks does not fit blocks of degree {} labelled log_sparsity={}",
-                g.mat_slots,
+                batch_of::<R>(g),
                 first.n().as_usize(),
                 first.log_sparsity()
             ),
@@ -77,14 +84,6 @@ pub fn ensure_shape<G: BlasGridInfos>(op: &'static str, g: &G, rows: usize, cols
 pub fn ensure_inner(op: &'static str, a_cols: usize, b_rows: usize) -> Result<()> {
     if a_cols != b_rows {
         return Err(reject(op, format!("{a_cols} block columns against {b_rows} block rows")));
-    }
-    Ok(())
-}
-
-/// Rejects a shift `k` that is not below `bound`.
-pub fn ensure_shift(op: &'static str, k: usize, bound: usize) -> Result<()> {
-    if k >= bound {
-        return Err(reject(op, format!("shift {k} is not below {bound}")));
     }
     Ok(())
 }
@@ -276,12 +275,7 @@ where
 
 /// Stamps the sparsity of `a` on every block of `res`: a per-matrix map keeps the batch, while poulpy-ckks's linear
 /// transformations leave the destination's sparsity.
-pub(crate) fn stamp_sparsity<DR: Data, DA: Data, W: ZnxWord, R: Ring>(
-    res: &mut BlasCiphertext<DR, W, R>,
-    a: &BlasCiphertext<DA, W, R>,
-) {
+pub(crate) fn stamp_sparsity(res: &mut [impl SetCKKSInfos], a: &impl BlasGridInfos) {
     let log_sparsity = a.block_layout().log_sparsity();
-    res.blocks_mut()
-        .iter_mut()
-        .for_each(|block| block.set_log_sparsity(log_sparsity));
+    res.iter_mut().for_each(|block| block.set_log_sparsity(log_sparsity));
 }

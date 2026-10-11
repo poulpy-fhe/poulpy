@@ -159,7 +159,7 @@ pub fn test_blas_key_widths<BE, F, E>(
     let bytes = module
         .blas_matmul_tmp_bytes(&alloc(1, 1, a_k), &row, &column, &tsk_layout, &atk_layout)
         .max(module.blas_matmul_pt_tmp_bytes(&alloc(1, 1, wide), &row, &atk_layout))
-        .max(module.blas_rotate_rows_tmp_bytes(&alloc(2, 1, wide), &column, &atk_layout))
+        .max(module.blas_rotate_rows_tmp_bytes(&alloc(2, 1, wide), &column, &ctx, &atk_layout))
         .max(module.blas_rotate_tmp_bytes(&alloc(1, 2, wide), &row, &atk_layout))
         .max(module.blas_sum_tmp_bytes(&alloc(1, 2, wide), &row, &atk_layout));
     let mut op_scratch = ScratchOwned::<BE>::alloc(bytes);

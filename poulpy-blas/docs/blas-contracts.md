@@ -24,12 +24,25 @@ Each operation's `_tmp_bytes` query belongs to the same family.
 aggregates the three families as a test bound; it has a blanket implementation
 and is never implemented directly.
 
+## Grids and keys
+
+Rotations, sums, the transpose and the row and column shifts take `res` as a
+`BlasGridMut<BE>` and `a` as a `BlasGrid<BE>`, which expose the blocks of a
+grid as a row-major slice. Input blocks are `Sync`, output blocks `Send`, and
+the rotation key store `atk` is `Sync`, so an implementation may spread blocks
+over the backend's task executor. A grid's blocks number exactly `rows x cols`,
+at least one, and every operation rejects a grid that breaks this.
+`BlasCiphertext` over owned storage implements both traits on every backend.
+Borrowed views are not grids: a `BufRef` view is `Sync`, but its blocks are not
+`GLWEToBackendRef`.
+
 ## Batches
 
 A grid records its batch, `BlasGridInfos::mat_slots`: the number of matrices
 its blocks hold. `BlasCiphertext::from_blocks` records the batch the blocks'
-label proves, and every operation rejects a grid whose label does not allow its
-record. The API stamps the record of `res` once the implementation returns
+label proves, and a grid without a record (`mat_slots()` is `None`) is read at
+that batch. Every operation rejects a grid whose label does not allow its
+batch. The API stamps the record of `res` once the implementation returns
 `Ok`: products record the larger batch of their operands, every other operation
 its input's. An implementation writes blocks only, and reads an input's batch
 from its record, as the references do.

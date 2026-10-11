@@ -1,134 +1,136 @@
 use poulpy_ckks::{
     CKKSResult as Result,
     api::{CKKSAddOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSModuleInfos},
-    layouts::{CKKSCiphertext, ScratchArenaTakeCKKS},
+    layouts::ScratchArenaTakeCKKS,
 };
 use poulpy_core::{
     GLWEBytesOf,
-    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos},
+    layouts::{GGLWEInfos, GLWEToBackendMut, GetAutomorphismKey, LWEInfos},
 };
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use super::{KeyLayouts, assert_scratch, ensure_grid, ensure_lt_keys, ensure_maps, ensure_shape, lt_tmp_bytes, stamp_sparsity};
-use crate::layouts::{BlasCiphertext, BlasContext, BlasGridInfos};
+use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut};
 
 /// Reference compositions of [`crate::api::BlasMatIntraOps`].
 pub trait BlasMatIntraReference<BE: Backend> {
-    fn blas_transpose_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
+    fn blas_transpose_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, _ctx: &BlasContext<BE>, atk: &K) -> usize
     where
         Self: CKKSLinearTransformationOps<BE>,
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        lt_tmp_bytes(self, &res.block_layout(), &a.block_layout(), key)
+        lt_tmp_bytes(self, &res.block_layout(), &a.block_layout(), atk)
     }
 
     /// `res_ji = transpose(a_ij)`, one linear transformation per block.
-    fn blas_transpose_reference<DR, DA, K>(
+    fn blas_transpose_reference<R, A, K>(
         &self,
-        res: &mut BlasCiphertext<DR, BE::ZnxWord, BE::Ring>,
-        a: &BlasCiphertext<DA, BE::ZnxWord, BE::Ring>,
+        res: &mut R,
+        a: &A,
         ctx: &BlasContext<BE>,
-        keys: &K,
+        atk: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Self: CKKSLinearTransformationOps<BE> + CKKSModuleInfos,
-        DR: Data,
-        DA: Data,
-        CKKSCiphertext<DR, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<DA, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
-        K: GetAutomorphismKey<BE>,
+        R: BlasGridMut<BE>,
+        A: BlasGrid<BE>,
+        K: GetAutomorphismKey<BE> + Sync,
     {
         let op = "blas_transpose";
-        ensure_grid(op, ctx.log_d(), a)?;
-        ensure_grid(op, ctx.log_d(), res)?;
+        ensure_grid::<BE::Ring>(op, ctx.log_d(), a, a.blocks())?;
+        ensure_grid::<BE::Ring>(op, ctx.log_d(), &*res, res.blocks())?;
         ensure_shape(op, res, a.cols(), a.rows())?;
         ensure_maps(op, self, ctx.slots(), ctx.base2k(), &[a])?;
-        let used = KeyLayouts::new(keys);
+        let used = KeyLayouts::new(atk);
         ensure_lt_keys(op, self, ctx.transpose(), &used, a.block_layout().k(), res.block_layout().k())?;
-        let bytes = used.max_bytes(|key| self.blas_transpose_tmp_bytes_reference(&*res, a, key));
+        let bytes = used.max_bytes(|key| self.blas_transpose_tmp_bytes_reference(&*res, a, ctx, key));
         assert_scratch(op, bytes, scratch);
-        for i in 0..a.rows() {
-            for j in 0..a.cols() {
-                self.ckks_eval_linear_transformation_self_into(res.at_mut(j, i), a.at(i, j), ctx.transpose(), keys, scratch)?;
+        let (rows, cols) = (a.rows(), a.cols());
+        let (dst, src) = (res.blocks_mut(), a.blocks());
+        for i in 0..rows {
+            for j in 0..cols {
+                self.ckks_eval_linear_transformation_self_into(
+                    &mut dst[j * rows + i],
+                    &src[i * cols + j],
+                    ctx.transpose(),
+                    atk,
+                    scratch,
+                )?;
             }
         }
-        stamp_sparsity(res, a);
+        stamp_sparsity(res.blocks_mut(), a);
         Ok(())
     }
 
     /// One block-shaped temporary on top of the linear transformation, the addition and the copy.
-    fn blas_rotate_rows_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
+    fn blas_rotate_rows_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, _ctx: &BlasContext<BE>, atk: &K) -> usize
     where
         Self: CKKSLinearTransformationOps<BE> + CKKSAddOps<BE> + CKKSCopyOps<BE> + GLWEBytesOf<BE>,
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        rotate_tmp_bytes(self, res, a, key)
+        rotate_tmp_bytes(self, res, a, atk)
     }
 
     /// With `k mod rows d = q d + k'`: block row `i + q` copied for `k' = 0`, psi^k' per block on one block row,
     /// otherwise `rows_upper(k')` of block row `i + q` plus `rows_lower(k')` of block row `i + q + 1`.
-    fn blas_rotate_rows_reference<DR, DA, K>(
+    fn blas_rotate_rows_reference<R, A, K>(
         &self,
-        res: &mut BlasCiphertext<DR, BE::ZnxWord, BE::Ring>,
-        a: &BlasCiphertext<DA, BE::ZnxWord, BE::Ring>,
+        res: &mut R,
+        a: &A,
         k: usize,
         ctx: &BlasContext<BE>,
-        keys: &K,
+        atk: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Self: CKKSLinearTransformationOps<BE> + CKKSAddOps<BE> + CKKSCopyOps<BE> + CKKSModuleInfos + GLWEBytesOf<BE>,
-        DR: Data,
-        DA: Data,
-        CKKSCiphertext<DR, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<DA, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
-        K: GetAutomorphismKey<BE>,
+        R: BlasGridMut<BE>,
+        A: BlasGrid<BE>,
+        K: GetAutomorphismKey<BE> + Sync,
     {
-        rotate_blocks(self, "blas_rotate_rows", res, a, k, true, ctx, keys, scratch)
+        rotate_blocks(self, "blas_rotate_rows", res, a, k, true, ctx, atk, scratch)
     }
 
     /// One block-shaped temporary on top of the linear transformation, the addition and the copy.
-    fn blas_rotate_cols_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
+    fn blas_rotate_cols_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, _ctx: &BlasContext<BE>, atk: &K) -> usize
     where
         Self: CKKSLinearTransformationOps<BE> + CKKSAddOps<BE> + CKKSCopyOps<BE> + GLWEBytesOf<BE>,
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        rotate_tmp_bytes(self, res, a, key)
+        rotate_tmp_bytes(self, res, a, atk)
     }
 
     /// With `k mod cols d = q d + k'`: block column `j + q` copied for `k' = 0`, phi^k' per block on one block column,
     /// otherwise `cols_left(k')` of block column `j + q` plus `cols_right(k')` of block column `j + q + 1`.
-    fn blas_rotate_cols_reference<DR, DA, K>(
+    fn blas_rotate_cols_reference<R, A, K>(
         &self,
-        res: &mut BlasCiphertext<DR, BE::ZnxWord, BE::Ring>,
-        a: &BlasCiphertext<DA, BE::ZnxWord, BE::Ring>,
+        res: &mut R,
+        a: &A,
         k: usize,
         ctx: &BlasContext<BE>,
-        keys: &K,
+        atk: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Self: CKKSLinearTransformationOps<BE> + CKKSAddOps<BE> + CKKSCopyOps<BE> + CKKSModuleInfos + GLWEBytesOf<BE>,
-        DR: Data,
-        DA: Data,
-        CKKSCiphertext<DR, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<DA, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
-        K: GetAutomorphismKey<BE>,
+        R: BlasGridMut<BE>,
+        A: BlasGrid<BE>,
+        K: GetAutomorphismKey<BE> + Sync,
     {
-        rotate_blocks(self, "blas_rotate_cols", res, a, k, false, ctx, keys, scratch)
+        rotate_blocks(self, "blas_rotate_cols", res, a, k, false, ctx, atk, scratch)
     }
 }
 
 impl<BE: Backend> BlasMatIntraReference<BE> for Module<BE> {}
 
-fn rotate_tmp_bytes<BE, M, R, A, K>(module: &M, res: &R, a: &A, key: &K) -> usize
+fn rotate_tmp_bytes<BE, M, R, A, K>(module: &M, res: &R, a: &A, atk: &K) -> usize
 where
     BE: Backend,
     M: CKKSLinearTransformationOps<BE> + CKKSAddOps<BE> + CKKSCopyOps<BE> + GLWEBytesOf<BE> + ?Sized,
@@ -138,7 +140,7 @@ where
 {
     let (res, a) = (res.block_layout(), a.block_layout());
     BE::scratch_aligned(module.glwe_bytes_of_from_infos(&res))
-        + lt_tmp_bytes(module, &res, &a, key)
+        + lt_tmp_bytes(module, &res, &a, atk)
             .max(module.ckks_add_tmp_bytes(res.size()))
             .max(module.ckks_copy_tmp_bytes(&res, &a))
 }
@@ -148,60 +150,60 @@ where
 /// to the block; otherwise `res_ij` receives the first half map of `src(q)`, then the second half map of `src(q + 1)`
 /// is evaluated into a temporary of `res`'s block layout and added.
 #[allow(clippy::too_many_arguments)]
-fn rotate_blocks<BE, M, DR, DA, K>(
+fn rotate_blocks<BE, M, R, A, K>(
     module: &M,
     op: &'static str,
-    res: &mut BlasCiphertext<DR, BE::ZnxWord, BE::Ring>,
-    a: &BlasCiphertext<DA, BE::ZnxWord, BE::Ring>,
+    res: &mut R,
+    a: &A,
     k: usize,
     rows: bool,
     ctx: &BlasContext<BE>,
-    keys: &K,
+    atk: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
     M: CKKSLinearTransformationOps<BE> + CKKSAddOps<BE> + CKKSCopyOps<BE> + CKKSModuleInfos + GLWEBytesOf<BE> + ?Sized,
-    DR: Data,
-    DA: Data,
-    CKKSCiphertext<DR, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-    CKKSCiphertext<DA, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
-    K: GetAutomorphismKey<BE>,
+    R: BlasGridMut<BE>,
+    A: BlasGrid<BE>,
+    K: GetAutomorphismKey<BE> + Sync,
 {
-    ensure_grid(op, ctx.log_d(), a)?;
-    ensure_grid(op, ctx.log_d(), res)?;
+    ensure_grid::<BE::Ring>(op, ctx.log_d(), a, a.blocks())?;
+    ensure_grid::<BE::Ring>(op, ctx.log_d(), &*res, res.blocks())?;
     ensure_shape(op, res, a.rows(), a.cols())?;
     ensure_maps(op, module, ctx.slots(), ctx.base2k(), &[a])?;
     let d = 1usize << ctx.log_d();
-    let extent = if rows { a.rows() } else { a.cols() };
+    let (a_rows, a_cols) = (a.rows(), a.cols());
+    let extent = if rows { a_rows } else { a_cols };
     // `k mod extent d = q d + k1`, without forming `extent d`.
     let (q, k1) = (k / d % extent, k % d);
     let src = |i: usize, j: usize, o: usize| {
         if rows {
-            a.at((i + o) % a.rows(), j)
+            &a.blocks()[(i + o) % a_rows * a_cols + j]
         } else {
-            a.at(i, (j + o) % a.cols())
+            &a.blocks()[i * a_cols + (j + o) % a_cols]
         }
     };
-    let blocks = (0..a.rows()).flat_map(|i| (0..a.cols()).map(move |j| (i, j)));
+    // `res` has `a`'s shape, so block `(i, j)` of both sits at `i * a_cols + j`.
+    let blocks = (0..a_rows).flat_map(|i| (0..a_cols).map(move |j| (i, j)));
     if k1 == 0 {
         for (i, j) in blocks {
-            let dst = res.at_mut(i, j);
+            let dst = &mut res.blocks_mut()[i * a_cols + j];
             module.ckks_copy(dst, src(i, j, q), scratch)?;
             dst.set_noise(None);
         }
         return Ok(());
     }
     let (input_k, res_k) = (a.block_layout().k(), res.block_layout().k());
-    let used = KeyLayouts::new(keys);
+    let used = KeyLayouts::new(atk);
     if extent == 1 {
         let whole = if rows { ctx.rotate_rows(k1) } else { ctx.rotate_cols(k1) };
         ensure_lt_keys(op, module, whole, &used, input_k, res_k)?;
         assert_scratch(op, used.max_bytes(|key| rotate_tmp_bytes(module, &*res, a, key)), scratch);
-        for (i, j) in blocks {
-            module.ckks_eval_linear_transformation_self_into(res.at_mut(i, j), a.at(i, j), whole, keys, scratch)?;
+        for (dst, src) in res.blocks_mut().iter_mut().zip(a.blocks()) {
+            module.ckks_eval_linear_transformation_self_into(dst, src, whole, atk, scratch)?;
         }
-        stamp_sparsity(res, a);
+        stamp_sparsity(res.blocks_mut(), a);
         return Ok(());
     }
     let (first, second) = if rows {
@@ -214,14 +216,14 @@ where
     assert_scratch(op, used.max_bytes(|key| rotate_tmp_bytes(module, &*res, a, key)), scratch);
     let res_layout = res.block_layout();
     for (i, j) in blocks {
-        let dst = res.at_mut(i, j);
-        module.ckks_eval_linear_transformation_self_into(dst, src(i, j, q), first, keys, scratch)?;
+        let dst = &mut res.blocks_mut()[i * a_cols + j];
+        module.ckks_eval_linear_transformation_self_into(dst, src(i, j, q), first, atk, scratch)?;
         scratch.scope(|s| -> Result<()> {
             let (mut tmp, mut s) = s.take_ckks_ciphertext_like_scratch(&res_layout);
-            module.ckks_eval_linear_transformation_self_into(&mut tmp, src(i, j, q + 1), second, keys, &mut s)?;
+            module.ckks_eval_linear_transformation_self_into(&mut tmp, src(i, j, q + 1), second, atk, &mut s)?;
             module.ckks_add_assign(dst, &tmp, &mut s)
         })?;
     }
-    stamp_sparsity(res, a);
+    stamp_sparsity(res.blocks_mut(), a);
     Ok(())
 }
