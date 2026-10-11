@@ -1,18 +1,19 @@
-//! The provided methods of [`BlasMatIntraImpl`]: the transpose and the row and column shifts, each composed over the
-//! map hook [`BlasMatIntraImpl::blas_map_blocks_impl`] and poulpy-ckks's copy and addition.
+//! The provided methods of [`BlasMatIntraImpl`], the transpose and the row and column shifts, each composed over the
+//! map hook [`BlasMatIntraImpl::blas_map_blocks_impl`] and poulpy-ckks's copy and addition; and of [`BlasMatMulImpl`],
+//! `blas_matmul` over the preparations and the prepared product.
 
 use poulpy_ckks::{
     CKKSResult as Result,
     api::{CKKSAddOps, CKKSCopyOps},
     layouts::CKKSModuleAlloc,
 };
-use poulpy_core::layouts::{GGLWEInfos, GGLWELayout, GLWEToBackendMut, GetAutomorphismKey, LWEInfos};
+use poulpy_core::layouts::{GGLWEInfos, GGLWELayout, GLWEToBackendMut, GetAutomorphismKey, GetTensorKey, LWEInfos};
 use poulpy_hal::layouts::{Module, ScratchArena};
 
-use super::BlasMatIntraImpl;
+use super::{BlasMatIntraImpl, BlasMatMulImpl};
 use crate::{
     layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut},
-    reference::{assert_maps_scratch, shift_maps},
+    reference::{assert_maps_scratch, blas_matmul_term_layout, shift_maps},
 };
 
 /// The hook's scratch for the transpose of every block of `a` into a block of `res`.
@@ -154,4 +155,53 @@ where
         module.ckks_add_into(dst, &halves[2 * src(t, q)], &halves[2 * src(t, q + 1) + 1], scratch)?;
     }
     Ok(())
+}
+
+/// The larger of both preparations' scratch and the prepared product's on the layouts the preparations give.
+pub(crate) fn blas_matmul_tmp_bytes<BE, R, A, B, T, K>(
+    module: &Module<BE>,
+    res: &R,
+    a: &A,
+    b: &B,
+    ctx: &BlasContext<BE>,
+    tsk: &T,
+    atk: &K,
+) -> usize
+where
+    BE: BlasMatMulImpl,
+    R: BlasGridInfos,
+    A: BlasGridInfos,
+    B: BlasGridInfos,
+    T: GGLWEInfos,
+    K: GGLWEInfos,
+{
+    let (left, right) = (blas_matmul_term_layout(a, ctx), blas_matmul_term_layout(b, ctx));
+    BE::blas_matmul_prepare_left_tmp_bytes_impl(module, a, ctx, atk)
+        .max(BE::blas_matmul_prepare_right_tmp_bytes_impl(module, b, ctx, atk))
+        .max(BE::blas_matmul_prepared_tmp_bytes_impl(module, res, &left, &right, tsk))
+}
+
+/// `res = a b`: both operands prepared, then their prepared product.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn blas_matmul<BE, R, A, B, T, K>(
+    module: &Module<BE>,
+    res: &mut R,
+    a: &A,
+    b: &B,
+    ctx: &BlasContext<BE>,
+    tsk: &T,
+    atk: &K,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: BlasMatMulImpl,
+    R: BlasGridMut<BE>,
+    A: BlasGrid<BE>,
+    B: BlasGrid<BE>,
+    T: GetTensorKey<BE> + Sync,
+    K: GetAutomorphismKey<BE> + Sync,
+{
+    let left = BE::blas_matmul_prepare_left_impl(module, a, ctx, atk, scratch)?;
+    let right = BE::blas_matmul_prepare_right_impl(module, b, ctx, atk, scratch)?;
+    BE::blas_matmul_prepared_impl(module, res, &left, &right, tsk, scratch)
 }

@@ -13,7 +13,7 @@ use super::{
     WORKERS, assert_maps_scratch, ensure_grid, ensure_layouts, ensure_lt_keys, ensure_maps, ensure_shape, lt_tmp_bytes,
     run_tasks, tasks_tmp_bytes,
 };
-use crate::layouts::{BlasContext, BlasGrid, batch_of};
+use crate::layouts::{BlasContext, BlasGrid, grid_batch};
 
 /// Checks a [`crate::api::BlasMatIntraOps::blas_transpose`] call from metadata alone, before any implementation runs,
 /// and returns the batch `res` records, `a`'s: `a` and `res` are grids at the context's `log_d` whose blocks tile their
@@ -36,7 +36,7 @@ pub fn validate_blas_transpose<BE: Backend>(
     let op = "blas_transpose";
     ensure_mapped(op, module, res, a, ctx, a.cols(), a.rows())?;
     ensure_lt_keys(op, module, ctx.transpose(), atk, a.block_layout().k(), res.block_layout().k())?;
-    Ok(batch_of::<BE::Ring>(a))
+    Ok(grid_batch::<BE::Ring>(a))
 }
 
 /// Checks a [`crate::api::BlasMatIntraOps::blas_rotate_rows`] call as [`validate_blas_transpose`] does, `res` of `a`'s
@@ -106,7 +106,7 @@ fn validate_shift<BE: Backend>(
     for lt in shift_maps(ctx, k % (1 << ctx.log_d()), rows, extent) {
         ensure_lt_keys(op, module, lt, atk, a.block_layout().k(), res.block_layout().k())?;
     }
-    Ok(batch_of::<BE::Ring>(a))
+    Ok(grid_batch::<BE::Ring>(a))
 }
 
 /// The maps a row (`rows`) or column shift by `k1 = k mod d` applies along a block axis of extent `extent`: none for

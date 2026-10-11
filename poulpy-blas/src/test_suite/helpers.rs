@@ -492,7 +492,16 @@ pub fn assert_guard_on<BE, X, DG>(
 {
     let state = |target: &X| (grid(target).mat_slots(), grid_snapshot::<BE, _>(grid(target)));
     let before = state(target);
-    let e = call(target).expect_err(label);
+    assert_rejected(label, op, rejection, call(target));
+    assert!(state(target) == before, "{label}: {op} changed its output");
+}
+
+/// Asserts `result` is the failure `rejection` raised by `op`. A budget error names the poulpy-ckks operation that
+/// raised it.
+pub fn assert_rejected<T>(label: &str, op: &str, rejection: Rejection, result: CKKSResult<T>) {
+    let Err(e) = result else {
+        panic!("{label}: {op} succeeded");
+    };
     let raised = match e.composition() {
         Some(CKKSCompositionError::InvalidOperand { op, .. }) => Some((Rejection::InvalidOperand, *op)),
         Some(CKKSCompositionError::MissingAutomorphismKey { op, .. }) => Some((Rejection::MissingKey, *op)),
@@ -504,7 +513,6 @@ pub fn assert_guard_on<BE, X, DG>(
         _ => None,
     };
     assert_eq!(raised, Some((rejection, op)), "{label}: {op} raised {e}");
-    assert!(state(target) == before, "{label}: {op} changed its output");
 }
 
 /// Runs `call` on `target` with a scratch one byte short of `bytes`, its query, and asserts it panics before `target`
@@ -519,28 +527,26 @@ pub fn assert_short_scratch<BE, DG>(
     DG: Data,
     CKKSCiphertext<DG, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
 {
-    assert_short_scratch_on::<BE, _, _>(op, target, |grid| grid, bytes, call);
-}
-
-/// [`assert_short_scratch`] on a value holding a grid, read through `grid`.
-pub fn assert_short_scratch_on<BE, X, DG>(
-    op: &str,
-    target: &mut X,
-    grid: impl Fn(&X) -> &BlasCiphertext<DG, BE::ZnxWord, BE::Ring>,
-    bytes: usize,
-    call: impl FnOnce(&mut X, &mut ScratchArena<'_, BE>) -> CKKSResult<()>,
-) where
-    BE: Backend<ZnxWord = i64>,
-    DG: Data,
-    CKKSCiphertext<DG, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
-{
-    let before = grid_snapshot::<BE, _>(grid(target));
-    let run = catch_unwind(AssertUnwindSafe(|| with_scratch::<BE, _>(bytes - 1, |s| call(target, s))));
-    assert!(run.is_err(), "{op} ran one byte short of its scratch query");
+    let before = grid_snapshot::<BE, _>(target);
+    assert_short_scratch_panics::<BE, _>(op, bytes, |s| call(target, s));
     assert!(
-        grid_snapshot::<BE, _>(grid(target)) == before,
+        grid_snapshot::<BE, _>(target) == before,
         "{op} changed its output before panicking"
     );
+}
+
+/// Runs `call` with a scratch one byte short of `bytes`, its query, and asserts it panics.
+pub fn assert_short_scratch_panics<BE: Backend, T>(op: &str, bytes: usize, call: impl FnOnce(&mut ScratchArena<'_, BE>) -> T) {
+    let run = catch_unwind(AssertUnwindSafe(|| with_scratch::<BE, _>(bytes - 1, call)));
+    assert!(run.is_err(), "{op} ran one byte short of its scratch query");
+}
+
+/// What a prepared operand, or any grid, reports through [`BlasGridInfos`]: its layout and its batch record.
+pub fn grid_infos(g: &impl BlasGridInfos) -> (BlasLayout, Option<usize>) {
+    (
+        BlasLayout::new(g.block_layout(), g.log_d(), g.rows(), g.cols()),
+        g.mat_slots(),
+    )
 }
 
 /// Prepared rotation keys by Galois element plus an optional tensor key.

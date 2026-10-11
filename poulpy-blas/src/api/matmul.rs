@@ -1,14 +1,23 @@
-use poulpy_ckks::{CKKSResult as Result, layouts::CKKSCiphertext};
-use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey};
-use poulpy_hal::layouts::{Backend, Data, ScratchArena};
+use poulpy_ckks::CKKSResult as Result;
+use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey, GetTensorKey};
+use poulpy_hal::layouts::ScratchArena;
 
-use crate::layouts::{BlasCiphertext, BlasContext, BlasGridInfos, BlasMatMulLeft, BlasMatMulRight, BlasPtOperand};
+use crate::{
+    layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, BlasMatMulLeft, BlasMatMulRight, BlasPtOperand},
+    oep::BlasMatMulImpl,
+};
 
 /// Matrix products of every matrix of the batch, across the blocks of a grid. A product records the larger batch of its
-/// operands ([`BlasGridInfos::mat_slots`]); a preparation and the product by public matrices record their input's.
-pub trait BlasMatMulOps<BE: Backend> {
-    /// Scratch bytes [`Self::blas_matmul`] needs on these layouts.
-    fn blas_matmul_tmp_bytes<R, A, B, T, K>(&self, res: &R, a: &A, b: &B, tsk: &T, atk: &K) -> usize
+/// operands ([`BlasGridInfos::mat_slots`]); a prepared operand and the product by public matrices record their input's.
+pub trait BlasMatMulOps<BE: BlasMatMulImpl> {
+    /// Scratch bytes [`Self::blas_matmul`] needs into `res` from `a` and `b` with the maps of `ctx`, a tensor key of
+    /// layout `tsk` and rotation keys of layout `atk`.
+    ///
+    /// # Panics
+    ///
+    /// May panic on layouts [`validate_blas_matmul`](crate::reference::validate_blas_matmul) rejects: blocks of a degree
+    /// other than the module's, or factors of different radices.
+    fn blas_matmul_tmp_bytes<R, A, B, T, K>(&self, res: &R, a: &A, b: &B, ctx: &BlasContext<BE>, tsk: &T, atk: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -16,106 +25,146 @@ pub trait BlasMatMulOps<BE: Backend> {
         T: GGLWEInfos,
         K: GGLWEInfos;
 
-    /// `res` receives the product of every matrix of `a` with the matching matrix of `b`.
+    /// `res` receives the product of every matrix of `a` with the matching matrix of `b`: `a` and `b` prepared with the
+    /// rotation keys `atk`, then their prepared product with the tensor key `tsk`, bit for bit.
     ///
     /// Batches of different sizes broadcast: with `m_a` and `m_b` matrices in `a` and `b`, matrix slot `s` of `res` holds
     /// `A_(s mod m_a) B_(s mod m_b)`, so `res` holds the larger batch, at the smaller `log_sparsity` of the two.
-    fn blas_matmul<DR, DA, DB, K>(
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`validate_blas_matmul`](crate::reference::validate_blas_matmul), raised before the backend runs, so
+    /// `res` and the inputs are untouched: `InvalidOperand` for a grid, shape, layout, context or lazy sum it rejects,
+    /// `MissingAutomorphismKey` for a key `atk` lacks at its width, `MissingRelinearizationKey` for one `tsk` lacks.
+    /// Then poulpy-ckks's budget errors, such as `InsufficientHomomorphicCapacity`, before any write to `res`, except
+    /// one that only the products of the shifted terms meet, narrower than the first: until the terms share one width,
+    /// it comes after the first terms are written, and `res` is then partly written.
+    #[allow(clippy::too_many_arguments)]
+    fn blas_matmul<R, A, B, T, K>(
         &self,
-        res: &mut BlasCiphertext<DR, BE::ZnxWord, BE::Ring>,
-        a: &BlasCiphertext<DA, BE::ZnxWord, BE::Ring>,
-        b: &BlasCiphertext<DB, BE::ZnxWord, BE::Ring>,
+        res: &mut R,
+        a: &A,
+        b: &B,
         ctx: &BlasContext<BE>,
-        keys: &K,
+        tsk: &T,
+        atk: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        DR: Data,
-        DA: Data,
-        DB: Data,
-        CKKSCiphertext<DR, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<DA, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
-        CKKSCiphertext<DB, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
-        K: GetTensorKey<BE> + GetAutomorphismKey<BE>;
+        R: BlasGridMut<BE>,
+        A: BlasGrid<BE>,
+        B: BlasGrid<BE>,
+        T: GetTensorKey<BE> + Sync,
+        K: GetAutomorphismKey<BE> + Sync;
 
-    /// Scratch bytes [`Self::blas_matmul_prepare_left`] needs into `res` from `a` with keys of layout `key`.
-    fn blas_matmul_prepare_left_tmp_bytes<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
+    /// Scratch bytes [`Self::blas_matmul_prepare_left`] needs from `a` with the maps of `ctx` and rotation keys of layout
+    /// `atk`.
+    ///
+    /// # Panics
+    ///
+    /// May panic on blocks of a degree other than the module's, which the operation rejects.
+    fn blas_matmul_prepare_left_tmp_bytes<A, K>(&self, a: &A, ctx: &BlasContext<BE>, atk: &K) -> usize
     where
-        R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos;
 
-    /// `res` receives sigma of every block of `a`, the left operand of [`Self::blas_matmul_prepared`].
-    fn blas_matmul_prepare_left<DR, DA, K>(
+    /// The left operand of [`Self::blas_matmul_prepared`] from `a`, with every rotation of the product: sigma of every
+    /// block and its shifts. It records `a`'s batch, and its [`BlasGridInfos`] report `a`'s dimensions and the layout
+    /// [`blas_matmul_term_layout`](crate::reference::blas_matmul_term_layout) gives.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`validate_blas_matmul_prepare_left`](crate::reference::validate_blas_matmul_prepare_left), raised
+    /// before the backend runs: `InvalidOperand` for a grid, layout or context it rejects, `MissingAutomorphismKey` for a
+    /// key `atk` lacks at its width. Then poulpy-ckks's budget errors, such as `InsufficientHomomorphicCapacity` when
+    /// `a` is narrower than twice the maps' scale.
+    fn blas_matmul_prepare_left<A, K>(
         &self,
-        res: &mut BlasMatMulLeft<DR, BE::ZnxWord, BE::Ring>,
-        a: &BlasCiphertext<DA, BE::ZnxWord, BE::Ring>,
+        a: &A,
         ctx: &BlasContext<BE>,
-        keys: &K,
+        atk: &K,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    ) -> Result<BlasMatMulLeft<BE>>
     where
-        DR: Data,
-        DA: Data,
-        CKKSCiphertext<DR, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<DA, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
-        K: GetAutomorphismKey<BE>;
+        A: BlasGrid<BE>,
+        K: GetAutomorphismKey<BE> + Sync;
 
-    /// Scratch bytes [`Self::blas_matmul_prepare_right`] needs into `res` from `b` with keys of layout `key`.
-    fn blas_matmul_prepare_right_tmp_bytes<R, B, K>(&self, res: &R, b: &B, key: &K) -> usize
+    /// Scratch bytes [`Self::blas_matmul_prepare_right`] needs from `b` with the maps of `ctx` and rotation keys of
+    /// layout `atk`.
+    ///
+    /// # Panics
+    ///
+    /// As [`Self::blas_matmul_prepare_left_tmp_bytes`].
+    fn blas_matmul_prepare_right_tmp_bytes<B, K>(&self, b: &B, ctx: &BlasContext<BE>, atk: &K) -> usize
     where
-        R: BlasGridInfos,
         B: BlasGridInfos,
         K: GGLWEInfos;
 
-    /// `res` receives tau of every block of `b`, the right operand of [`Self::blas_matmul_prepared`].
-    fn blas_matmul_prepare_right<DR, DB, K>(
+    /// The right operand of [`Self::blas_matmul_prepared`] from `b`: tau of every block and its shifts, as
+    /// [`Self::blas_matmul_prepare_left`].
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::blas_matmul_prepare_left`], from
+    /// [`validate_blas_matmul_prepare_right`](crate::reference::validate_blas_matmul_prepare_right).
+    fn blas_matmul_prepare_right<B, K>(
         &self,
-        res: &mut BlasMatMulRight<DR, BE::ZnxWord, BE::Ring>,
-        b: &BlasCiphertext<DB, BE::ZnxWord, BE::Ring>,
+        b: &B,
         ctx: &BlasContext<BE>,
-        keys: &K,
+        atk: &K,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    ) -> Result<BlasMatMulRight<BE>>
     where
-        DR: Data,
-        DB: Data,
-        CKKSCiphertext<DR, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<DB, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
-        K: GetAutomorphismKey<BE>;
+        B: BlasGrid<BE>,
+        K: GetAutomorphismKey<BE> + Sync;
 
-    /// Scratch bytes [`Self::blas_matmul_prepared`] needs; `a` and `b` are the grids of the prepared operands
-    /// (`left.as_grid()`, `right.as_grid()`), not the original inputs.
-    fn blas_matmul_prepared_tmp_bytes<R, A, B, T, K>(&self, res: &R, a: &A, b: &B, tsk: &T, atk: &K) -> usize
+    /// Scratch bytes [`Self::blas_matmul_prepared`] needs into `res` with a tensor key of layout `tsk`, from the prepared
+    /// operands `a` and `b`, or, before preparing them, from the layouts
+    /// [`blas_matmul_term_layout`](crate::reference::blas_matmul_term_layout) gives.
+    ///
+    /// # Panics
+    ///
+    /// May panic on layouts [`validate_blas_matmul_prepared`](crate::reference::validate_blas_matmul_prepared) rejects:
+    /// blocks of a degree other than the module's, or operands of different radices.
+    fn blas_matmul_prepared_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
         B: BlasGridInfos,
-        T: GGLWEInfos,
-        K: GGLWEInfos;
+        T: GGLWEInfos;
 
-    /// `res` receives the product of the grids `a` and `b` were prepared from; batches of different sizes broadcast as
-    /// in [`Self::blas_matmul`].
-    fn blas_matmul_prepared<DR, DA, DB, K>(
+    /// `res` receives the product of the grids `a` and `b` were prepared from, as [`Self::blas_matmul`] gives it, with the
+    /// tensor key alone; batches of different sizes broadcast as there. `a` and `b` are unchanged, so they serve any
+    /// number of products.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`validate_blas_matmul_prepared`](crate::reference::validate_blas_matmul_prepared), raised before
+    /// the backend runs, so `res` and the operands are untouched: `InvalidOperand` for an operand without a batch record,
+    /// or a grid, shape, layout or lazy sum it rejects, `MissingRelinearizationKey` for a tensor key `tsk` lacks at the
+    /// operands' width. Until the terms share one width, the reference then checks `tsk` at the shifted terms' narrower
+    /// width, `MissingRelinearizationKey` before any write. Then poulpy-ckks's budget errors, such as
+    /// `InsufficientHomomorphicCapacity`, before any write to `res`, except one that only the products of the shifted
+    /// terms meet: until the terms share one width, it comes after the first terms are written, and `res` is then partly
+    /// written.
+    fn blas_matmul_prepared<R, T>(
         &self,
-        res: &mut BlasCiphertext<DR, BE::ZnxWord, BE::Ring>,
-        a: &BlasMatMulLeft<DA, BE::ZnxWord, BE::Ring>,
-        b: &BlasMatMulRight<DB, BE::ZnxWord, BE::Ring>,
-        ctx: &BlasContext<BE>,
-        keys: &K,
+        res: &mut R,
+        a: &BlasMatMulLeft<BE>,
+        b: &BlasMatMulRight<BE>,
+        tsk: &T,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        DR: Data,
-        DA: Data,
-        DB: Data,
-        CKKSCiphertext<DR, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<DA, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
-        CKKSCiphertext<DB, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
-        K: GetTensorKey<BE> + GetAutomorphismKey<BE>;
+        R: BlasGridMut<BE>,
+        T: GetTensorKey<BE> + Sync;
 
-    /// Scratch bytes [`Self::blas_matmul_pt`] needs into `res` from `a` with keys of layout `key`.
-    fn blas_matmul_pt_tmp_bytes<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
+    /// Scratch bytes [`Self::blas_matmul_pt`] needs into `res` from `a` through `b` with rotation keys of layout `atk`.
+    ///
+    /// # Panics
+    ///
+    /// May panic on blocks of a degree other than the module's, which the operation rejects.
+    fn blas_matmul_pt_tmp_bytes<R, A, K>(&self, res: &R, a: &A, b: &BlasPtOperand<BE>, atk: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -125,18 +174,23 @@ pub trait BlasMatMulOps<BE: Backend> {
     ///
     /// No circuit privacy: as for every evaluation in this workspace (`SECURITY.md`), `res` may reveal `b` to the holder
     /// of the secret key. Re-randomize `res`, or flood its noise, before returning it when `b` must stay private.
-    fn blas_matmul_pt<DR, DA, K>(
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`validate_blas_matmul_pt`](crate::reference::validate_blas_matmul_pt), raised before the backend
+    /// runs, so `res` and the inputs are untouched: `InvalidOperand` for a grid, shape, layout, operand, count or lazy
+    /// sum it rejects, `MissingAutomorphismKey` for a key `atk` lacks at its width. Then poulpy-ckks's budget errors,
+    /// such as `InsufficientHomomorphicCapacity` when `res` is narrower than `a`'s scale, raised before any write.
+    fn blas_matmul_pt<R, A, K>(
         &self,
-        res: &mut BlasCiphertext<DR, BE::ZnxWord, BE::Ring>,
-        a: &BlasCiphertext<DA, BE::ZnxWord, BE::Ring>,
+        res: &mut R,
+        a: &A,
         b: &BlasPtOperand<BE>,
-        keys: &K,
+        atk: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        DR: Data,
-        DA: Data,
-        CKKSCiphertext<DR, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<DA, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
-        K: GetAutomorphismKey<BE>;
+        R: BlasGridMut<BE>,
+        A: BlasGrid<BE>,
+        K: GetAutomorphismKey<BE> + Sync;
 }

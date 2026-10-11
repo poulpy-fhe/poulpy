@@ -28,14 +28,15 @@ use poulpy_hal::{
     layouts::{Backend, CyclotomicOrder, Module},
 };
 
-use super::helpers::{TestKeys, grid_snapshot};
+use super::helpers::{TestKeys, grid_infos, grid_snapshot};
 use crate::{
     api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextUnprepared, BlasGridInfos, BlasMatMulLeft, BlasMatMulRight,
-        BlasPlan, BlasPtOperand, BlasPtOperandUnprepared, sum_galois_elements,
+        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextUnprepared, BlasGridInfos, BlasLayout, BlasPlan,
+        BlasPtOperand, BlasPtOperandUnprepared, sum_galois_elements,
     },
     oep::BlasImpl,
+    reference::blas_matmul_term_layout,
 };
 
 /// Bounds of a backend taking part in blas parity: any storage, any ring.
@@ -360,7 +361,12 @@ where
     ]
 }
 
-fn matmul<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) -> Outputs
+/// What each prepared operand reports through its infos, by operation: never its storage.
+type Infos = Vec<(&'static str, (BlasLayout, Option<usize>))>;
+
+/// The products, both prepared operands' infos, which must equal their inputs' term layouts and batches, and the
+/// prepared product run twice on the same operands, which must give `blas_matmul`'s blocks both times.
+fn matmul<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) -> (Outputs, Infos)
 where
     B: BlasParityBackend,
     Module<B>: BlasParityModule<B, F>,
@@ -401,39 +407,50 @@ where
     );
     let mut out = Vec::new();
     let mut res = operand(params, module, log_d, 2, 1, 126);
-    with_scratch::<B, _>(module.blas_matmul_tmp_bytes(&res, &a, &b, &tsk, &atk), |s| {
-        module.blas_matmul(&mut res, &a, &b, &ctx, &keys, s)
+    with_scratch::<B, _>(module.blas_matmul_tmp_bytes(&res, &a, &b, &ctx, &tsk, &atk), |s| {
+        module.blas_matmul(&mut res, &a, &b, &ctx, &keys, &keys, s)
     })
     .unwrap();
     out.push(output::<B>("blas_matmul", &res));
-    let mut left = BlasMatMulLeft::from_grid(operand(params, module, log_d, 2, 2, 130));
-    with_scratch::<B, _>(module.blas_matmul_prepare_left_tmp_bytes(left.as_grid(), &a, &atk), |s| {
-        module.blas_matmul_prepare_left(&mut left, &a, &ctx, &keys, s)
+    let left = with_scratch::<B, _>(module.blas_matmul_prepare_left_tmp_bytes(&a, &ctx, &atk), |s| {
+        module.blas_matmul_prepare_left(&a, &ctx, &keys, s)
     })
     .unwrap();
-    out.push(output::<B>("blas_matmul_prepare_left", left.as_grid()));
-    let mut right = BlasMatMulRight::from_grid(operand(params, module, log_d, 2, 1, 134));
-    with_scratch::<B, _>(module.blas_matmul_prepare_right_tmp_bytes(right.as_grid(), &b, &atk), |s| {
-        module.blas_matmul_prepare_right(&mut right, &b, &ctx, &keys, s)
+    let right = with_scratch::<B, _>(module.blas_matmul_prepare_right_tmp_bytes(&b, &ctx, &atk), |s| {
+        module.blas_matmul_prepare_right(&b, &ctx, &keys, s)
     })
     .unwrap();
-    out.push(output::<B>("blas_matmul_prepare_right", right.as_grid()));
-    let mut res = operand(params, module, log_d, 2, 1, 136);
-    let bytes = module.blas_matmul_prepared_tmp_bytes(&res, left.as_grid(), right.as_grid(), &tsk, &atk);
-    with_scratch::<B, _>(bytes, |s| {
-        module.blas_matmul_prepared(&mut res, &left, &right, &ctx, &keys, s)
-    })
-    .unwrap();
-    out.push(output::<B>("blas_matmul_prepared", &res));
+    let infos: Infos = vec![
+        ("blas_matmul_prepare_left", grid_infos(&left)),
+        ("blas_matmul_prepare_right", grid_infos(&right)),
+    ];
+    for ((op, operand), input) in infos.iter().zip([&a, &b]) {
+        let term = (blas_matmul_term_layout(input, &ctx), input.mat_slots());
+        assert_eq!(
+            *operand, term,
+            "{op}: the operand's infos are not its input's term layout and batch"
+        );
+    }
+    for seed in [136, 137] {
+        let mut res = operand(params, module, log_d, 2, 1, seed);
+        let bytes = module.blas_matmul_prepared_tmp_bytes(&res, &left, &right, &tsk);
+        with_scratch::<B, _>(bytes, |s| module.blas_matmul_prepared(&mut res, &left, &right, &keys, s)).unwrap();
+        let prepared = output::<B>("blas_matmul_prepared", &res);
+        assert!(
+            prepared.1 == out[0].1 && prepared.2 == out[0].2,
+            "blas_matmul_prepared differs from blas_matmul"
+        );
+        out.push(prepared);
+    }
     for pt in &pts {
         let mut res = operand(params, module, log_d, 2, 1, 138);
-        with_scratch::<B, _>(module.blas_matmul_pt_tmp_bytes(&res, &a, &atk), |s| {
+        with_scratch::<B, _>(module.blas_matmul_pt_tmp_bytes(&res, &a, pt, &atk), |s| {
             module.blas_matmul_pt(&mut res, &a, pt, &keys, s)
         })
         .unwrap();
         out.push(output::<B>("blas_matmul_pt", &res));
     }
-    out
+    (out, infos)
 }
 
 fn compare(label: &str, want: Outputs, got: Outputs) {
@@ -483,7 +500,8 @@ where
     }
 }
 
-/// The products, the operand preparations and the prepared product agree bit for bit at every swept `log_d`.
+/// The products and the prepared product agree bit for bit at every swept `log_d`, and the prepared operands' infos,
+/// `(log_d, rows, cols, block_layout, mat_slots)`, agree; prepared storage is never compared.
 pub fn test_blas_matmul_parity<BR, BT, F>(params: CKKSTestParams, shapes: &BlasParityShapes, r: &Module<BR>, t: &Module<BT>)
 where
     BR: BlasParityBackend,
@@ -494,6 +512,8 @@ where
 {
     for log_d in swept_log_d(shapes, r.ckks_max_slots()) {
         let label = format!("matmul, log_d {log_d}");
-        compare(&label, matmul::<BR, F>(params, r, log_d), matmul::<BT, F>(params, t, log_d));
+        let ((want, want_infos), (got, got_infos)) = (matmul::<BR, F>(params, r, log_d), matmul::<BT, F>(params, t, log_d));
+        compare(&label, want, got);
+        assert_eq!(want_infos, got_infos, "{label}: prepared operands");
     }
 }

@@ -13,7 +13,7 @@ use super::{
     KeyLayouts, assert_scratch, ensure_grid, ensure_keys, ensure_layouts, ensure_shape, max_lazy_terms, reject, run_tasks,
     tasks_tmp_bytes,
 };
-use crate::layouts::{BlasGrid, BlasGridInfos, BlasGridMut, batch_of, sum_rotations};
+use crate::layouts::{BlasGrid, BlasGridInfos, BlasGridMut, grid_batch, sum_rotations};
 
 /// Checks a [`crate::api::BlasMatInterOps::blas_rotate`] call from metadata alone, before any implementation runs, and
 /// returns the batch `res` records, `a`'s: `a` and `res` are grids at `a`'s `log_d` whose blocks tile their shape and
@@ -34,7 +34,7 @@ pub fn validate_blas_rotate<BE: Backend>(
     let op = "blas_rotate";
     ensure_same_grids(op, module, res, a)?;
     ensure_keys(op, module, [r << (2 * a.log_d())], atk, a.block_layout().k())?;
-    Ok(batch_of::<BE::Ring>(a))
+    Ok(grid_batch::<BE::Ring>(a))
 }
 
 /// Checks a [`crate::api::BlasMatInterOps::blas_sum`] call as [`validate_blas_rotate`] does, the rotation keys of the
@@ -53,7 +53,7 @@ pub fn validate_blas_sum<BE: Backend>(
 ) -> Result<usize> {
     let op = "blas_sum";
     ensure_same_grids(op, module, res, a)?;
-    let batch = batch_of::<BE::Ring>(a);
+    let batch = grid_batch::<BE::Ring>(a);
     let (terms, base2k) = (batch.ilog2() as usize + 1, res.block_layout().base2k().as_usize());
     if terms > max_lazy_terms(base2k) {
         return Err(reject(op, format!("{terms} lazy terms risk i64 overflow at base2k={base2k}")));
@@ -154,7 +154,7 @@ pub trait BlasMatInterReference<BE: Backend> {
         K: GetAutomorphismKey<BE> + Sync,
     {
         let op = "blas_sum";
-        let rotations: Vec<i64> = sum_rotations(a.log_d(), batch_of::<BE::Ring>(a)).collect();
+        let rotations: Vec<i64> = sum_rotations(a.log_d(), grid_batch::<BE::Ring>(a)).collect();
         let used = KeyLayouts::new(atk);
         let _ = ensure_keys(op, self, rotations.iter().copied(), &used, sum_key_width(&*res, a));
         let bytes = used.max_bytes(|key| self.blas_sum_tmp_bytes_reference(&*res, a, key));

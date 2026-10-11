@@ -26,10 +26,7 @@ use super::helpers::{
 };
 use crate::{
     api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
-    layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasGridInfos, BlasMatMulLeft, BlasMatMulRight, BlasPtOperandUnprepared,
-        sum_galois_elements,
-    },
+    layouts::{BlasCiphertext, BlasCiphertextOwned, BlasGridInfos, BlasPtOperandUnprepared, sum_galois_elements},
     oep::BlasImpl,
 };
 
@@ -96,9 +93,11 @@ fn assert_key_widths<BE, X>(
 /// input's width, a sum's rotations at its result's, baby steps at the source's width, giant steps at the result's, the
 /// tensor key at the wider factor of each product), every operation runs and matches its result under the full store
 /// bit for bit, and rejects the store short of any one of these keys before it writes. Rotations, sums, transposes, row
-/// and column shifts, products by public matrices and the preparations write results half as wide as their inputs,
-/// narrower than any map's output, then one limb wider than their inputs; the matrix products run on factors of one
-/// width, then on a narrower left or right factor.
+/// and column shifts and products by public matrices write results half as wide as their inputs, narrower than any
+/// map's output, then one limb wider than their inputs; the matrix products run on factors of one width, then on a
+/// narrower left or right factor. The preparations look up every rotation key of the product, each checked through
+/// the prepared product of its operand under the full store, and the prepared product the tensor key alone. Every call
+/// runs on exactly the scratch its own query reports.
 pub fn test_blas_key_widths<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -154,20 +153,16 @@ pub fn test_blas_key_widths<BE, F, E>(
     let alloc = |rows: usize, cols: usize, k: usize| alloc_grid(&params, module, log_d, rows, cols, k);
     let uses = |lt, src_k, res_k| lt_key_uses(module, lt, src_k, res_k);
     let (tsk_layout, atk_layout) = (params.tsk_layout(), params.atk_layout());
+    // Every call runs on exactly the scratch its own query reports.
+    let own = |bytes: usize| ScratchOwned::<BE>::alloc(bytes);
     // Half as wide as the inputs, so that the result's width caps the maps' giant steps, then one limb wider.
     let (narrow, wide) = (a_k / 2, a_k + params.base2k);
-    let bytes = module
-        .blas_matmul_tmp_bytes(&alloc(1, 1, a_k), &row, &column, &tsk_layout, &atk_layout)
-        .max(module.blas_matmul_pt_tmp_bytes(&alloc(1, 1, wide), &row, &atk_layout))
-        .max(module.blas_rotate_rows_tmp_bytes(&alloc(2, 1, wide), &column, &ctx, &atk_layout))
-        .max(module.blas_rotate_tmp_bytes(&alloc(1, 2, wide), &row, &atk_layout))
-        .max(module.blas_sum_tmp_bytes(&alloc(1, 2, wide), &row, &atk_layout));
-    let mut op_scratch = ScratchOwned::<BE>::alloc(bytes);
 
     for res_k in [narrow, wide] {
         let mut full = alloc(1, 2, res_k);
+        let bytes = module.blas_rotate_tmp_bytes(&full, &row, &atk_layout);
         module
-            .blas_rotate(&mut full, &row, 1, &keys, &mut op_scratch.borrow())
+            .blas_rotate(&mut full, &row, 1, &keys, &mut own(bytes).borrow())
             .unwrap();
         let rotation = [(module.ckks_galois_element((d * d) as i64), a_k)];
         assert_key_widths(
@@ -179,11 +174,12 @@ pub fn test_blas_key_widths<BE, F, E>(
             &full,
             &mut alloc(1, 2, res_k),
             |g| g,
-            |res, keys| module.blas_rotate(res, &row, 1, keys, &mut op_scratch.borrow()),
+            |res, keys| module.blas_rotate(res, &row, 1, keys, &mut own(bytes).borrow()),
         );
 
         let mut full = alloc(1, 2, res_k);
-        module.blas_sum(&mut full, &row, &keys, &mut op_scratch.borrow()).unwrap();
+        let bytes = module.blas_sum_tmp_bytes(&full, &row, &atk_layout);
+        module.blas_sum(&mut full, &row, &keys, &mut own(bytes).borrow()).unwrap();
         let sum = sum_galois_elements(module, &row).into_iter().map(|p| (p, width(&full)));
         assert_key_widths(
             &format!("sum res_k={res_k}"),
@@ -194,12 +190,13 @@ pub fn test_blas_key_widths<BE, F, E>(
             &full,
             &mut alloc(1, 2, res_k),
             |g| g,
-            |res, keys| module.blas_sum(res, &row, keys, &mut op_scratch.borrow()),
+            |res, keys| module.blas_sum(res, &row, keys, &mut own(bytes).borrow()),
         );
 
         let mut full = alloc(2, 1, res_k);
+        let bytes = module.blas_transpose_tmp_bytes(&full, &row, &ctx, &atk_layout);
         module
-            .blas_transpose(&mut full, &row, &ctx, &keys, &mut op_scratch.borrow())
+            .blas_transpose(&mut full, &row, &ctx, &keys, &mut own(bytes).borrow())
             .unwrap();
         let transpose = uses(ctx.transpose(), a_k, width(&full));
         assert_key_widths(
@@ -211,7 +208,7 @@ pub fn test_blas_key_widths<BE, F, E>(
             &full,
             &mut alloc(2, 1, res_k),
             |g| g,
-            |res, keys| module.blas_transpose(res, &row, &ctx, keys, &mut op_scratch.borrow()),
+            |res, keys| module.blas_transpose(res, &row, &ctx, keys, &mut own(bytes).borrow()),
         );
 
         // A shift by 1 takes both half maps along two blocks, the whole map along one.
@@ -219,8 +216,9 @@ pub fn test_blas_key_widths<BE, F, E>(
             let (rows, cols) = (a.rows(), a.cols());
             let case = format!("{rows}x{cols} res_k={res_k}");
             let mut full = alloc(rows, cols, res_k);
+            let bytes = module.blas_rotate_rows_tmp_bytes(&full, a, &ctx, &atk_layout);
             module
-                .blas_rotate_rows(&mut full, a, 1, &ctx, &keys, &mut op_scratch.borrow())
+                .blas_rotate_rows(&mut full, a, 1, &ctx, &keys, &mut own(bytes).borrow())
                 .unwrap();
             let maps = if rows == 1 {
                 vec![ctx.rotate_rows(1)]
@@ -237,11 +235,12 @@ pub fn test_blas_key_widths<BE, F, E>(
                 &full,
                 &mut alloc(rows, cols, res_k),
                 |g| g,
-                |res, keys| module.blas_rotate_rows(res, a, 1, &ctx, keys, &mut op_scratch.borrow()),
+                |res, keys| module.blas_rotate_rows(res, a, 1, &ctx, keys, &mut own(bytes).borrow()),
             );
             let mut full = alloc(rows, cols, res_k);
+            let bytes = module.blas_rotate_cols_tmp_bytes(&full, a, &ctx, &atk_layout);
             module
-                .blas_rotate_cols(&mut full, a, 1, &ctx, &keys, &mut op_scratch.borrow())
+                .blas_rotate_cols(&mut full, a, 1, &ctx, &keys, &mut own(bytes).borrow())
                 .unwrap();
             let maps = if cols == 1 {
                 vec![ctx.rotate_cols(1)]
@@ -258,13 +257,14 @@ pub fn test_blas_key_widths<BE, F, E>(
                 &full,
                 &mut alloc(rows, cols, res_k),
                 |g| g,
-                |res, keys| module.blas_rotate_cols(res, a, 1, &ctx, keys, &mut op_scratch.borrow()),
+                |res, keys| module.blas_rotate_cols(res, a, 1, &ctx, keys, &mut own(bytes).borrow()),
             );
         }
 
         let mut full = alloc(1, 1, res_k);
+        let bytes = module.blas_matmul_pt_tmp_bytes(&full, &row, &pt, &atk_layout);
         module
-            .blas_matmul_pt(&mut full, &row, &pt, &keys, &mut op_scratch.borrow())
+            .blas_matmul_pt(&mut full, &row, &pt, &keys, &mut own(bytes).borrow())
             .unwrap();
         let used: Vec<(i64, usize)> = (0..2).flat_map(|l| uses(pt.block(l, 0), a_k, width(&full))).collect();
         assert_key_widths(
@@ -276,38 +276,7 @@ pub fn test_blas_key_widths<BE, F, E>(
             &full,
             &mut alloc(1, 1, res_k),
             |g| g,
-            |res, keys| module.blas_matmul_pt(res, &row, &pt, keys, &mut op_scratch.borrow()),
-        );
-
-        let mut full = BlasMatMulLeft::from_grid(alloc(1, 2, res_k));
-        module
-            .blas_matmul_prepare_left(&mut full, &row, &ctx, &keys, &mut op_scratch.borrow())
-            .unwrap();
-        assert_key_widths(
-            &format!("prepare_left res_k={res_k}"),
-            "blas_matmul_prepare_left",
-            &keys,
-            uses(ctx.sigma(), a_k, width(full.as_grid())),
-            [],
-            full.as_grid(),
-            &mut BlasMatMulLeft::from_grid(alloc(1, 2, res_k)),
-            |left| left.as_grid(),
-            |left, keys| module.blas_matmul_prepare_left(left, &row, &ctx, keys, &mut op_scratch.borrow()),
-        );
-        let mut full = BlasMatMulRight::from_grid(alloc(2, 1, res_k));
-        module
-            .blas_matmul_prepare_right(&mut full, &column, &ctx, &keys, &mut op_scratch.borrow())
-            .unwrap();
-        assert_key_widths(
-            &format!("prepare_right res_k={res_k}"),
-            "blas_matmul_prepare_right",
-            &keys,
-            uses(ctx.tau(), a_k, width(full.as_grid())),
-            [],
-            full.as_grid(),
-            &mut BlasMatMulRight::from_grid(alloc(2, 1, res_k)),
-            |right| right.as_grid(),
-            |right, keys| module.blas_matmul_prepare_right(right, &column, &ctx, keys, &mut op_scratch.borrow()),
+            |res, keys| module.blas_matmul_pt(res, &row, &pt, keys, &mut own(bytes).borrow()),
         );
     }
 
@@ -317,79 +286,113 @@ pub fn test_blas_key_widths<BE, F, E>(
     let short_column = encrypt(2, 1, short_k, 14, &mut scratch.borrow());
     for (a, b) in [(&row, &column), (&short_row, &column), (&row, &short_column)] {
         let factors = format!("a_k={} b_k={}", width(a), width(b));
-        // The transformed operands are allocated as wide as the inputs, so every step runs at the widths `blas_matmul`
-        // uses.
-        let mut left = BlasMatMulLeft::from_grid(alloc(1, 2, width(a)));
-        module
-            .blas_matmul_prepare_left(&mut left, a, &ctx, &keys, &mut op_scratch.borrow())
-            .unwrap();
-        let mut right = BlasMatMulRight::from_grid(alloc(2, 1, width(b)));
-        module
-            .blas_matmul_prepare_right(&mut right, b, &ctx, &keys, &mut op_scratch.borrow())
-            .unwrap();
-        let (s_k, t_k) = (width(left.as_grid()), width(right.as_grid()));
-
-        // The shifts are carved at the widths of sigma's and tau's results; phi^1 and psi^1 give the width of every
-        // shift.
-        let mut p = alloc(1, 1, s_k);
-        module
-            .ckks_eval_linear_transformation_self_into(
-                p.block_mut(0, 0),
-                left.as_grid().block(0, 0),
-                ctx.rotate_cols(1),
-                &keys,
-                &mut op_scratch.borrow(),
-            )
-            .unwrap();
-        let mut q = alloc(1, 1, t_k);
-        module
-            .ckks_eval_linear_transformation_self_into(
-                q.block_mut(0, 0),
-                right.as_grid().block(0, 0),
-                ctx.rotate_rows(1),
-                &keys,
-                &mut op_scratch.borrow(),
-            )
-            .unwrap();
-        let (p_k, q_k) = (width(&p), width(&q));
-        let shifts: Vec<(i64, usize)> = (1..d)
-            .flat_map(|k| {
-                uses(ctx.rotate_cols(k), s_k, p_k)
-                    .into_iter()
-                    .chain(uses(ctx.rotate_rows(k), t_k, q_k))
-            })
-            .collect();
-        let transforms: Vec<(i64, usize)> = uses(ctx.sigma(), width(a), s_k)
+        // The widths of the terms, read off real results: sigma (tau) evaluated into a block of its input's width,
+        // then phi^1 (psi^1) of that into a block of its width, which gives the width of every shift.
+        let term_widths = |src: &BlasCiphertextOwned<BE>, first, shift| {
+            let bytes = module.blas_matmul_prepare_left_tmp_bytes(src, &ctx, &atk_layout);
+            let mut s = alloc(1, 1, width(src));
+            module
+                .ckks_eval_linear_transformation_self_into(
+                    s.block_mut(0, 0),
+                    src.block(0, 0),
+                    first,
+                    &keys,
+                    &mut own(bytes).borrow(),
+                )
+                .unwrap();
+            let mut p = alloc(1, 1, width(&s));
+            module
+                .ckks_eval_linear_transformation_self_into(
+                    p.block_mut(0, 0),
+                    s.block(0, 0),
+                    shift,
+                    &keys,
+                    &mut own(bytes).borrow(),
+                )
+                .unwrap();
+            (width(&s), width(&p))
+        };
+        let (s_k, p_k) = term_widths(a, ctx.sigma(), ctx.rotate_cols(1));
+        let (t_k, q_k) = term_widths(b, ctx.tau(), ctx.rotate_rows(1));
+        // The keys of each preparation: its first map from its input's width, every shift from the first map's result.
+        let left_uses: Vec<(i64, usize)> = uses(ctx.sigma(), width(a), s_k)
             .into_iter()
-            .chain(uses(ctx.tau(), width(b), t_k))
+            .chain((1..d).flat_map(|k| uses(ctx.rotate_cols(k), s_k, p_k)))
+            .collect();
+        let right_uses: Vec<(i64, usize)> = uses(ctx.tau(), width(b), t_k)
+            .into_iter()
+            .chain((1..d).flat_map(|k| uses(ctx.rotate_rows(k), t_k, q_k)))
             .collect();
         let products = [s_k.max(t_k), p_k.max(q_k)];
 
         let mut full = alloc(1, 1, a_k);
+        let bytes = module.blas_matmul_tmp_bytes(&full, a, b, &ctx, &tsk_layout, &atk_layout);
         module
-            .blas_matmul(&mut full, a, b, &ctx, &keys, &mut op_scratch.borrow())
+            .blas_matmul(&mut full, a, b, &ctx, &keys, &keys, &mut own(bytes).borrow())
             .unwrap();
         assert_key_widths(
             &format!("matmul {factors}"),
             "blas_matmul",
             &keys,
-            transforms.iter().chain(&shifts).copied(),
+            left_uses.iter().chain(&right_uses).copied(),
             products,
             &full,
             &mut alloc(1, 1, a_k),
             |g| g,
-            |res, keys| module.blas_matmul(res, a, b, &ctx, keys, &mut op_scratch.borrow()),
+            |res, keys| module.blas_matmul(res, a, b, &ctx, keys, keys, &mut own(bytes).borrow()),
+        );
+
+        // Each preparation under the restricted rotation keys alone, its product with the other operand under the full
+        // store: a missing key stops the preparation before `res` changes, and the operand's every term reaches `res`.
+        let (left_bytes, right_bytes) = (
+            module.blas_matmul_prepare_left_tmp_bytes(a, &ctx, &atk_layout),
+            module.blas_matmul_prepare_right_tmp_bytes(b, &ctx, &atk_layout),
+        );
+        let left = module
+            .blas_matmul_prepare_left(a, &ctx, &keys, &mut own(left_bytes).borrow())
+            .unwrap();
+        let right = module
+            .blas_matmul_prepare_right(b, &ctx, &keys, &mut own(right_bytes).borrow())
+            .unwrap();
+        let prepared_bytes = module.blas_matmul_prepared_tmp_bytes(&alloc(1, 1, a_k), &left, &right, &tsk_layout);
+        assert_key_widths(
+            &format!("prepare_left {factors}"),
+            "blas_matmul_prepare_left",
+            &keys,
+            left_uses.iter().copied(),
+            [],
+            &full,
+            &mut alloc(1, 1, a_k),
+            |g| g,
+            |res, strict| {
+                let left = module.blas_matmul_prepare_left(a, &ctx, strict, &mut own(left_bytes).borrow())?;
+                module.blas_matmul_prepared(res, &left, &right, &keys, &mut own(prepared_bytes).borrow())
+            },
+        );
+        assert_key_widths(
+            &format!("prepare_right {factors}"),
+            "blas_matmul_prepare_right",
+            &keys,
+            right_uses.iter().copied(),
+            [],
+            &full,
+            &mut alloc(1, 1, a_k),
+            |g| g,
+            |res, strict| {
+                let right = module.blas_matmul_prepare_right(b, &ctx, strict, &mut own(right_bytes).borrow())?;
+                module.blas_matmul_prepared(res, &left, &right, &keys, &mut own(prepared_bytes).borrow())
+            },
         );
         assert_key_widths(
             &format!("matmul_prepared {factors}"),
             "blas_matmul_prepared",
             &keys,
-            shifts.iter().copied(),
+            [],
             products,
             &full,
             &mut alloc(1, 1, a_k),
             |g| g,
-            |res, keys| module.blas_matmul_prepared(res, &left, &right, &ctx, keys, &mut op_scratch.borrow()),
+            |res, keys| module.blas_matmul_prepared(res, &left, &right, keys, &mut own(prepared_bytes).borrow()),
         );
     }
 }

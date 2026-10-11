@@ -131,21 +131,23 @@ fn slots_of<R: Ring>(n: usize) -> usize {
     n * R::CYCLOTOMIC_ORDER_FACTOR as usize / 4
 }
 
-/// The batch of `g`, on ring `R`: its record, or for a grid without one the batch its blocks' label proves.
-pub(crate) fn batch_of<R: Ring>(g: &impl BlasGridInfos) -> usize {
+/// The batch of `g`, the number of matrices its blocks hold, on ring `R` (`BE::Ring`): its record
+/// ([`BlasGridInfos::mat_slots`]), or for a grid without one the batch its blocks' label proves. Every operation reads an
+/// input's batch so, and a preparation records it on its operand.
+pub fn grid_batch<R: Ring>(g: &impl BlasGridInfos) -> usize {
     g.mat_slots().unwrap_or_else(|| {
         let block = g.block_layout();
         mat_slots_in(slots_of::<R>(block.n().as_usize()), g.log_d(), block.log_sparsity())
     })
 }
 
-/// Whether the label of the blocks of `g`, on ring `R`, allows its batch ([`batch_of`]): with `S` slots, label `s` and
+/// Whether the label of the blocks of `g`, on ring `R`, allows its batch ([`grid_batch`]): with `S` slots, label `s` and
 /// degree `n`, a power of two with `s <= log2 n` and `(S >> s) / d^2 <= mat_slots <= S / d^2`. The lower bound covers
 /// whole periods of the slots, so rotations modulo the batch and sums over it keep their meaning.
 pub(crate) fn batch_fits<R: Ring>(g: &impl BlasGridInfos) -> bool {
     let block = g.block_layout();
     let (n, s) = (block.n().as_usize(), block.log_sparsity());
-    let (slots, mat_slots) = (slots_of::<R>(n), batch_of::<R>(g));
+    let (slots, mat_slots) = (slots_of::<R>(n), grid_batch::<R>(g));
     mat_slots.is_power_of_two()
         && s <= n.ilog2() as usize
         && mat_slots_in(slots, g.log_d(), s) <= mat_slots
@@ -207,16 +209,6 @@ impl<D: Data, W: ZnxWord, R: Ring> BlasCiphertext<D, W, R> {
     pub fn block_mut(&mut self, i: usize, j: usize) -> &mut CKKSCiphertext<D, W, R> {
         let t = self.index(i, j);
         &mut self.blocks[t]
-    }
-
-    /// Block `(i, j)` without the bounds assertion, for the references' loops after validation.
-    pub(crate) fn at(&self, i: usize, j: usize) -> &CKKSCiphertext<D, W, R> {
-        &self.blocks[i * self.cols + j]
-    }
-
-    /// Block `(i, j)`, mutably, without the bounds assertion.
-    pub(crate) fn at_mut(&mut self, i: usize, j: usize) -> &mut CKKSCiphertext<D, W, R> {
-        &mut self.blocks[i * self.cols + j]
     }
 
     /// Every block, row-major.
@@ -384,63 +376,13 @@ where
     }
 }
 
-/// The left operand of [`crate::api::BlasMatMulOps::blas_matmul_prepared`]: sigma of every block, filled by
-/// [`crate::api::BlasMatMulOps::blas_matmul_prepare_left`].
-///
-/// Preparing both operands then calling `blas_matmul_prepared` equals `blas_matmul` bit for bit only when this grid is
-/// allocated with the input's block layouts, for example `blas_ciphertext_alloc_from_infos(&a)`.
-pub struct BlasMatMulLeft<D: Data, W: ZnxWord, R: Ring>(BlasCiphertext<D, W, R>);
+/// The left operand of [`crate::api::BlasMatMulOps::blas_matmul_prepared`], in `BE`'s representation, which only
+/// [`crate::api::BlasMatMulOps::blas_matmul_prepare_left`] makes.
+pub type BlasMatMulLeft<BE> = <BE as crate::oep::BlasMatMulImpl>::MatMulLeft;
 
-impl<D: Data, W: ZnxWord, R: Ring> BlasMatMulLeft<D, W, R> {
-    /// Wraps a caller-allocated grid shaped like the left operand.
-    pub fn from_grid(grid: BlasCiphertext<D, W, R>) -> Self {
-        Self(grid)
-    }
-
-    /// The transformed grid.
-    pub fn as_grid(&self) -> &BlasCiphertext<D, W, R> {
-        &self.0
-    }
-
-    /// The transformed grid, mutably.
-    pub fn as_grid_mut(&mut self) -> &mut BlasCiphertext<D, W, R> {
-        &mut self.0
-    }
-
-    /// Returns the wrapped grid.
-    pub fn into_grid(self) -> BlasCiphertext<D, W, R> {
-        self.0
-    }
-}
-
-/// The right operand of [`crate::api::BlasMatMulOps::blas_matmul_prepared`]: tau of every block, filled by
-/// [`crate::api::BlasMatMulOps::blas_matmul_prepare_right`].
-///
-/// Preparing both operands then calling `blas_matmul_prepared` equals `blas_matmul` bit for bit only when this grid is
-/// allocated with the input's block layouts, for example `blas_ciphertext_alloc_from_infos(&b)`.
-pub struct BlasMatMulRight<D: Data, W: ZnxWord, R: Ring>(BlasCiphertext<D, W, R>);
-
-impl<D: Data, W: ZnxWord, R: Ring> BlasMatMulRight<D, W, R> {
-    /// Wraps a caller-allocated grid shaped like the right operand.
-    pub fn from_grid(grid: BlasCiphertext<D, W, R>) -> Self {
-        Self(grid)
-    }
-
-    /// The transformed grid.
-    pub fn as_grid(&self) -> &BlasCiphertext<D, W, R> {
-        &self.0
-    }
-
-    /// The transformed grid, mutably.
-    pub fn as_grid_mut(&mut self) -> &mut BlasCiphertext<D, W, R> {
-        &mut self.0
-    }
-
-    /// Returns the wrapped grid.
-    pub fn into_grid(self) -> BlasCiphertext<D, W, R> {
-        self.0
-    }
-}
+/// The right operand of [`crate::api::BlasMatMulOps::blas_matmul_prepared`], in `BE`'s representation, which only
+/// [`crate::api::BlasMatMulOps::blas_matmul_prepare_right`] makes.
+pub type BlasMatMulRight<BE> = <BE as crate::oep::BlasMatMulImpl>::MatMulRight;
 
 /// Allocation of grids.
 pub trait BlasModuleAlloc<BE: Backend>: CKKSModuleAlloc<BE> {
@@ -488,14 +430,17 @@ impl<BE: Backend> BlasModuleAlloc<BE> for Module<BE> where Module<BE>: CKKSModul
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layouts::{BlasContext, BlasPtOperand};
+    use crate::{
+        layouts::{BlasContext, BlasPtOperand},
+        reference::{BlasMatMulOperand, Left, Right},
+    };
     use poulpy_ckks::{CKKSError, SetGLWEPlaintextInfos};
     use poulpy_hal::layouts::{HostBytesBackend, Standard};
 
     type Grid = BlasCiphertextOwned<HostBytesBackend>;
 
     /// Grids over owned storage are inputs and outputs of every operation on every backend, with no unsafe impl, and
-    /// contexts, public operands and errors cross tasks. Borrowed views are not grids, their blocks not being
+    /// contexts, public operands, the reference's prepared operands and errors cross tasks. Borrowed views are not grids, their blocks not being
     /// `GLWEToBackendRef`; they are as thread-safe as their buffers: `BufRef` views `Sync`, `BufMut` views only `Send`.
     fn assert_thread_safe<'a, BE: Backend + 'a>() {
         fn output<BE: Backend, G: BlasGridMut<BE> + Send + Sync>() {}
@@ -504,6 +449,8 @@ mod tests {
         output::<BE, BlasCiphertextOwned<BE>>();
         sync::<BlasContext<BE>>();
         sync::<BlasPtOperand<BE>>();
+        sync::<BlasMatMulOperand<BE, Left>>();
+        send::<BlasMatMulOperand<BE, Right>>();
         send::<CKKSError>();
         sync::<BlasCiphertext<BE::BufRef<'a>, BE::ZnxWord, BE::Ring>>();
         send::<BlasCiphertext<BE::BufMut<'a>, BE::ZnxWord, BE::Ring>>();

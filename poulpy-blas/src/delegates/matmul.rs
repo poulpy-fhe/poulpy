@@ -1,15 +1,19 @@
-use poulpy_ckks::{CKKSResult as Result, layouts::CKKSCiphertext};
-use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey};
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
+use poulpy_ckks::CKKSResult as Result;
+use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey, GetTensorKey};
+use poulpy_hal::layouts::{Module, ScratchArena};
 
 use crate::{
     api::BlasMatMulOps,
-    layouts::{BlasCiphertext, BlasContext, BlasGridInfos, BlasMatMulLeft, BlasMatMulRight, BlasPtOperand},
+    layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, BlasMatMulLeft, BlasMatMulRight, BlasPtOperand},
     oep::BlasMatMulImpl,
+    reference::{
+        validate_blas_matmul, validate_blas_matmul_prepare_left, validate_blas_matmul_prepare_right,
+        validate_blas_matmul_prepared, validate_blas_matmul_pt,
+    },
 };
 
-impl<BE: Backend + BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
-    fn blas_matmul_tmp_bytes<R, A, B, T, K>(&self, res: &R, a: &A, b: &B, tsk: &T, atk: &K) -> usize
+impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
+    fn blas_matmul_tmp_bytes<R, A, B, T, K>(&self, res: &R, a: &A, b: &B, ctx: &BlasContext<BE>, tsk: &T, atk: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -17,150 +21,131 @@ impl<BE: Backend + BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
         T: GGLWEInfos,
         K: GGLWEInfos,
     {
-        BE::blas_matmul_tmp_bytes_impl(self, res, a, b, tsk, atk)
+        BE::blas_matmul_tmp_bytes_impl(self, res, a, b, ctx, tsk, atk)
     }
 
-    fn blas_matmul<DR, DA, DB, K>(
+    fn blas_matmul<R, A, B, T, K>(
         &self,
-        res: &mut BlasCiphertext<DR, BE::ZnxWord, BE::Ring>,
-        a: &BlasCiphertext<DA, BE::ZnxWord, BE::Ring>,
-        b: &BlasCiphertext<DB, BE::ZnxWord, BE::Ring>,
+        res: &mut R,
+        a: &A,
+        b: &B,
         ctx: &BlasContext<BE>,
-        keys: &K,
+        tsk: &T,
+        atk: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        DR: Data,
-        DA: Data,
-        DB: Data,
-        CKKSCiphertext<DR, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<DA, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
-        CKKSCiphertext<DB, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
-        K: GetTensorKey<BE> + GetAutomorphismKey<BE>,
+        R: BlasGridMut<BE>,
+        A: BlasGrid<BE>,
+        B: BlasGrid<BE>,
+        T: GetTensorKey<BE> + Sync,
+        K: GetAutomorphismKey<BE> + Sync,
     {
-        BE::blas_matmul_impl(self, res, a, b, ctx, keys, scratch)?;
-        res.mat_slots = a.mat_slots.max(b.mat_slots);
+        let batch = validate_blas_matmul(self, &*res, a, b, ctx, tsk, atk)?;
+        BE::blas_matmul_impl(self, res, a, b, ctx, tsk, atk, scratch)?;
+        res.set_mat_slots(batch);
         Ok(())
     }
 
-    fn blas_matmul_prepare_left_tmp_bytes<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
+    fn blas_matmul_prepare_left_tmp_bytes<A, K>(&self, a: &A, ctx: &BlasContext<BE>, atk: &K) -> usize
     where
-        R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        BE::blas_matmul_prepare_left_tmp_bytes_impl(self, res, a, key)
+        BE::blas_matmul_prepare_left_tmp_bytes_impl(self, a, ctx, atk)
     }
 
-    fn blas_matmul_prepare_left<DR, DA, K>(
+    fn blas_matmul_prepare_left<A, K>(
         &self,
-        res: &mut BlasMatMulLeft<DR, BE::ZnxWord, BE::Ring>,
-        a: &BlasCiphertext<DA, BE::ZnxWord, BE::Ring>,
+        a: &A,
         ctx: &BlasContext<BE>,
-        keys: &K,
+        atk: &K,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    ) -> Result<BlasMatMulLeft<BE>>
     where
-        DR: Data,
-        DA: Data,
-        CKKSCiphertext<DR, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<DA, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
-        K: GetAutomorphismKey<BE>,
+        A: BlasGrid<BE>,
+        K: GetAutomorphismKey<BE> + Sync,
     {
-        BE::blas_matmul_prepare_left_impl(self, res, a, ctx, keys, scratch)?;
-        res.as_grid_mut().mat_slots = a.mat_slots;
-        Ok(())
+        validate_blas_matmul_prepare_left(self, a, ctx, atk)?;
+        BE::blas_matmul_prepare_left_impl(self, a, ctx, atk, scratch)
     }
 
-    fn blas_matmul_prepare_right_tmp_bytes<R, B, K>(&self, res: &R, b: &B, key: &K) -> usize
+    fn blas_matmul_prepare_right_tmp_bytes<B, K>(&self, b: &B, ctx: &BlasContext<BE>, atk: &K) -> usize
     where
-        R: BlasGridInfos,
         B: BlasGridInfos,
         K: GGLWEInfos,
     {
-        BE::blas_matmul_prepare_right_tmp_bytes_impl(self, res, b, key)
+        BE::blas_matmul_prepare_right_tmp_bytes_impl(self, b, ctx, atk)
     }
 
-    fn blas_matmul_prepare_right<DR, DB, K>(
+    fn blas_matmul_prepare_right<B, K>(
         &self,
-        res: &mut BlasMatMulRight<DR, BE::ZnxWord, BE::Ring>,
-        b: &BlasCiphertext<DB, BE::ZnxWord, BE::Ring>,
+        b: &B,
         ctx: &BlasContext<BE>,
-        keys: &K,
+        atk: &K,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    ) -> Result<BlasMatMulRight<BE>>
     where
-        DR: Data,
-        DB: Data,
-        CKKSCiphertext<DR, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<DB, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
-        K: GetAutomorphismKey<BE>,
+        B: BlasGrid<BE>,
+        K: GetAutomorphismKey<BE> + Sync,
     {
-        BE::blas_matmul_prepare_right_impl(self, res, b, ctx, keys, scratch)?;
-        res.as_grid_mut().mat_slots = b.mat_slots;
-        Ok(())
+        validate_blas_matmul_prepare_right(self, b, ctx, atk)?;
+        BE::blas_matmul_prepare_right_impl(self, b, ctx, atk, scratch)
     }
 
-    fn blas_matmul_prepared_tmp_bytes<R, A, B, T, K>(&self, res: &R, a: &A, b: &B, tsk: &T, atk: &K) -> usize
+    fn blas_matmul_prepared_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
         B: BlasGridInfos,
         T: GGLWEInfos,
-        K: GGLWEInfos,
     {
-        BE::blas_matmul_prepared_tmp_bytes_impl(self, res, a, b, tsk, atk)
+        BE::blas_matmul_prepared_tmp_bytes_impl(self, res, a, b, tsk)
     }
 
-    fn blas_matmul_prepared<DR, DA, DB, K>(
+    fn blas_matmul_prepared<R, T>(
         &self,
-        res: &mut BlasCiphertext<DR, BE::ZnxWord, BE::Ring>,
-        a: &BlasMatMulLeft<DA, BE::ZnxWord, BE::Ring>,
-        b: &BlasMatMulRight<DB, BE::ZnxWord, BE::Ring>,
-        ctx: &BlasContext<BE>,
-        keys: &K,
+        res: &mut R,
+        a: &BlasMatMulLeft<BE>,
+        b: &BlasMatMulRight<BE>,
+        tsk: &T,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        DR: Data,
-        DA: Data,
-        DB: Data,
-        CKKSCiphertext<DR, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<DA, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
-        CKKSCiphertext<DB, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
-        K: GetTensorKey<BE> + GetAutomorphismKey<BE>,
+        R: BlasGridMut<BE>,
+        T: GetTensorKey<BE> + Sync,
     {
-        BE::blas_matmul_prepared_impl(self, res, a, b, ctx, keys, scratch)?;
-        res.mat_slots = a.as_grid().mat_slots.max(b.as_grid().mat_slots);
+        let batch = validate_blas_matmul_prepared(self, &*res, a, b, tsk)?;
+        BE::blas_matmul_prepared_impl(self, res, a, b, tsk, scratch)?;
+        res.set_mat_slots(batch);
         Ok(())
     }
 
-    fn blas_matmul_pt_tmp_bytes<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
+    fn blas_matmul_pt_tmp_bytes<R, A, K>(&self, res: &R, a: &A, b: &BlasPtOperand<BE>, atk: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        BE::blas_matmul_pt_tmp_bytes_impl(self, res, a, key)
+        BE::blas_matmul_pt_tmp_bytes_impl(self, res, a, b, atk)
     }
 
-    fn blas_matmul_pt<DR, DA, K>(
+    fn blas_matmul_pt<R, A, K>(
         &self,
-        res: &mut BlasCiphertext<DR, BE::ZnxWord, BE::Ring>,
-        a: &BlasCiphertext<DA, BE::ZnxWord, BE::Ring>,
+        res: &mut R,
+        a: &A,
         b: &BlasPtOperand<BE>,
-        keys: &K,
+        atk: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        DR: Data,
-        DA: Data,
-        CKKSCiphertext<DR, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<DA, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
-        K: GetAutomorphismKey<BE>,
+        R: BlasGridMut<BE>,
+        A: BlasGrid<BE>,
+        K: GetAutomorphismKey<BE> + Sync,
     {
-        BE::blas_matmul_pt_impl(self, res, a, b, keys, scratch)?;
-        res.mat_slots = a.mat_slots;
+        let batch = validate_blas_matmul_pt(self, &*res, a, b, atk)?;
+        BE::blas_matmul_pt_impl(self, res, a, b, atk, scratch)?;
+        res.set_mat_slots(batch);
         Ok(())
     }
 }

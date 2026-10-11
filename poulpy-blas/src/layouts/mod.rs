@@ -8,8 +8,8 @@ mod context;
 
 pub use ciphertext::{
     BlasCiphertext, BlasCiphertextOwned, BlasGrid, BlasGridInfos, BlasGridMut, BlasLayout, BlasMatMulLeft, BlasMatMulRight,
-    BlasModuleAlloc,
+    BlasModuleAlloc, grid_batch,
 };
-pub(crate) use ciphertext::{batch_fits, batch_of, layout_of};
+pub(crate) use ciphertext::{batch_fits, layout_of};
 pub(crate) use context::sum_rotations;
 pub use context::{BlasContext, BlasContextUnprepared, BlasPlan, BlasPtOperand, BlasPtOperandUnprepared, sum_galois_elements};

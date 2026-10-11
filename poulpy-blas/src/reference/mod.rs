@@ -1,4 +1,5 @@
-//! Reference compositions over poulpy-ckks; the contract every override reproduces.
+//! Reference compositions over poulpy-ckks, the contract every override reproduces; the validators every API call runs
+//! first; the reference's prepared operand.
 
 mod inter;
 mod intra;
@@ -7,7 +8,11 @@ mod matmul;
 pub use inter::{BlasMatInterReference, validate_blas_rotate, validate_blas_sum};
 pub(crate) use intra::shift_maps;
 pub use intra::{BlasMatIntraReference, validate_blas_rotate_cols, validate_blas_rotate_rows, validate_blas_transpose};
-pub use matmul::BlasMatMulReference;
+pub use matmul::{
+    BlasMatMulOperand, BlasMatMulReference, Left, Right, blas_matmul_term_layout, validate_blas_matmul,
+    validate_blas_matmul_prepare_left, validate_blas_matmul_prepare_right, validate_blas_matmul_prepared,
+    validate_blas_matmul_pt,
+};
 
 use std::{cell::RefCell, sync::Mutex};
 
@@ -24,7 +29,7 @@ use poulpy_hal::{
     layouts::{Backend, Ring, ScratchArena},
 };
 
-use crate::layouts::{BlasGridInfos, batch_fits, batch_of, layout_of};
+use crate::layouts::{BlasGridInfos, batch_fits, grid_batch, layout_of};
 
 /// The `InvalidOperand` rejection of `op` for `reason`.
 pub(crate) fn reject(op: &'static str, reason: String) -> CKKSError {
@@ -41,9 +46,7 @@ pub(crate) fn ensure_grid<R: Ring>(
     g: &impl BlasGridInfos,
     blocks: &[impl CKKSCtBounds],
 ) -> Result<()> {
-    if g.log_d() != log_d {
-        return Err(reject(op, format!("grid dimension 2^{} differs from 2^{log_d}", g.log_d())));
-    }
+    ensure_dimension(op, log_d, g)?;
     if blocks.is_empty() || g.rows().checked_mul(g.cols()) != Some(blocks.len()) {
         return Err(reject(
             op,
@@ -54,6 +57,21 @@ pub(crate) fn ensure_grid<R: Ring>(
     if blocks.iter().any(|block| layout_of(block) != first) {
         return Err(reject(op, "the blocks of a grid do not share one layout".into()));
     }
+    ensure_record::<R>(op, g)
+}
+
+/// Rejects `g` unless it reads `2^log_d x 2^log_d` blocks.
+pub(crate) fn ensure_dimension(op: &'static str, log_d: usize, g: &impl BlasGridInfos) -> Result<()> {
+    if g.log_d() != log_d {
+        return Err(reject(op, format!("grid dimension 2^{} differs from 2^{log_d}", g.log_d())));
+    }
+    Ok(())
+}
+
+/// Rejects `g` unless the `log_delta` of its block layout does not exceed its `k` and its label allows its batch on
+/// ring `R`, as [`ensure_grid`] states.
+pub(crate) fn ensure_record<R: Ring>(op: &'static str, g: &impl BlasGridInfos) -> Result<()> {
+    let (first, log_d) = (g.block_layout(), g.log_d());
     if first.log_delta() > first.k().as_usize() {
         return Err(reject(
             op,
@@ -69,7 +87,7 @@ pub(crate) fn ensure_grid<R: Ring>(
             op,
             format!(
                 "a batch of {} matrices of 2^{log_d} x 2^{log_d} blocks does not fit blocks of degree {} labelled log_sparsity={}",
-                batch_of::<R>(g),
+                grid_batch::<R>(g),
                 first.n().as_usize(),
                 first.log_sparsity()
             ),
@@ -253,13 +271,9 @@ impl<'a, K> KeyLayouts<'a, K> {
         self.atks.borrow().iter().map(bytes).max().unwrap_or(0)
     }
 
-    /// The largest `bytes` over the pairs of a tensor key and a rotation key looked up, `0` without any.
-    pub(crate) fn max_pair_bytes(&self, bytes: impl Fn(&GGLWELayout, &GGLWELayout) -> usize) -> usize {
-        let tsks = self.tsks.borrow();
-        tsks.iter()
-            .map(|tsk| self.max_bytes(|atk| bytes(tsk, atk)))
-            .max()
-            .unwrap_or(0)
+    /// The largest `bytes` over the tensor keys looked up, `0` without any.
+    pub(crate) fn max_tensor_bytes(&self, bytes: impl Fn(&GGLWELayout) -> usize) -> usize {
+        self.tsks.borrow().iter().map(bytes).max().unwrap_or(0)
     }
 }
 
