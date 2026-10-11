@@ -69,6 +69,7 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
                 k: infos.k(),
                 base2k: infos.base2k(),
                 canonical: false,
+                plaintext_meta: None,
                 data: data.into_inner(),
             }),
             scratch,
@@ -121,6 +122,7 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
         (
             GLWEPlaintextViewMut::from_inner(GLWEPlaintext {
                 k: infos.k(),
+                plaintext_meta: None,
                 base2k: infos.base2k(),
                 data: data.into_inner(),
             }),

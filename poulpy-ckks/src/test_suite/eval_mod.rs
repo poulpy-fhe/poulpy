@@ -1,3 +1,4 @@
+use crate::Scale;
 use crate::api::CKKSEncodingOps;
 use poulpy_core::layouts::{
     GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
@@ -9,7 +10,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos,
+    CKKSCtBounds, CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos,
     api::{CKKSAllOpsTmpBytes, CKKSEncodingHostOps, CKKSEvalModOps},
     layouts::{
         CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned,
@@ -164,10 +165,10 @@ fn run_eval_mod_case<BE, F, E>(
         // rounded to `dsize·base2k` so the tensor-key gadget layout stays valid.
         k: (lit.consumed_bits() + input_log_delta + 2 * params.base2k).next_multiple_of(dsize * params.base2k),
         hw: 192,
-        prec_meta: CKKSMeta {
-            log_sparsity: 0,
-            log_delta: input_log_delta,
+        prec_meta: GLWEPlaintextMeta {
+            scale: Scale::Log(input_log_delta),
             slots: SlotsKind::Complex,
+            log_sparsity: 0,
         },
         prec_log_budget: 10,
         dsize,

@@ -1,10 +1,11 @@
+use poulpy_ckks::Scale;
 use poulpy_hal::AlignedBuf;
 use std::{collections::HashMap, hint::black_box};
 
 use crate::schemes::params::CkksBenchParams;
 use criterion::{Bencher, measurement::Measurement};
 use poulpy_ckks::{
-    CKKSMeta, SetCKKSInfos,
+    GLWEPlaintextMeta, SetCKKSInfos,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSEncodingOps, CKKSMulOps, CKKSNegOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps},
     layouts::{CKKSEncodingBuffer, CKKSModuleAlloc},
 };
@@ -30,11 +31,11 @@ fn ckks_layout(cp: &CkksBenchParams) -> GLWELayout {
     }
 }
 
-fn ckks_ct_meta(cp: &CkksBenchParams) -> CKKSMeta {
-    CKKSMeta {
-        log_sparsity: 0,
-        log_delta: cp.log_delta,
+fn ckks_ct_meta(cp: &CkksBenchParams) -> GLWEPlaintextMeta {
+    GLWEPlaintextMeta {
+        scale: Scale::Log(cp.log_delta),
         slots: cp.slots,
+        log_sparsity: 0,
     }
 }
 

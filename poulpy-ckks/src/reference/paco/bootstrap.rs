@@ -9,13 +9,14 @@
 use crate::{CKKSResult as Result, ckks_ensure};
 use anyhow::Context;
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, TorusPrecision,
+    GGLWEInfos, GLWEInfos, GLWEPlaintextInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos,
+    TorusPrecision,
 };
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
 
 use super::ops::PaCoSlotOps;
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSMeta,
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSSubOps, PaCoScalar},
     layouts::{
         CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned,
@@ -473,10 +474,10 @@ where
         gap.is_power_of_two(),
         "PaCo branch coefficient gap {gap} is not a power of two"
     );
-    output.set_meta_checked(CKKSMeta {
-        log_delta: output_scale,
-        log_sparsity: gap.trailing_zeros() as usize,
+    output.set_meta_checked(GLWEPlaintextMeta {
+        scale: Scale::Log(output_scale),
         slots: input.slots(),
+        log_sparsity: gap.trailing_zeros() as usize,
     })?;
 
     // Write the result into the caller's destination. The accumulator already carries

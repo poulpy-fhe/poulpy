@@ -22,6 +22,17 @@
 - `vmp_apply_dft_to_dft_add` of the FFT64 backends accumulates each block as it is computed, where it filled a zeroed scratch vector and added it afterwards.
 - **Fix:** `ZnxPortable::znx_normalize_middle_step` ignored its `OVERWRITE` parameter and always overwrote.
 
+### `poulpy-core`
+
+- **Breaking:** `GLWE`, `GLWEPlaintext` and `GLWECompressed` carry an optional, scheme-managed `GLWEPlaintextMeta` (`Scale`, `SlotsKind`, `log_sparsity`) through `GLWEPlaintextInfos` and `SetGLWEPlaintextInfos`, which also read and set each field; `SlotsKind` moves from `poulpy-ckks` and gains `Integer`.
+- **Breaking, format:** serialized `GLWE` and `GLWECompressed` carry their plaintext metadata.
+
+### `poulpy-ckks`
+
+- **Breaking:** `CKKSMeta` is removed for the wrapped GLWE's `GLWEPlaintextMeta` (`Scale::Log(log_delta)`, `slots`, `log_sparsity`), taken by `set_meta`, `CKKSLayout::meta` and `CoeffsMeta::meta`; `CKKSInfos` extends the core traits, which the prelude re-exports with `SetK`, and `SetCKKSInfos` is blanket-implemented over them (`set_k`, `slots`, `log_sparsity`, `set_slots` and `set_log_sparsity` move there), and a plaintext is dense at its own degree, so `ckks_encrypt_sk` and `ckks_{add,sub,mul}_pt_vec*` derive its sparsity as `log2(N / n)` ([#342](https://github.com/poulpy-fhe/poulpy/issues/342)).
+- **Breaking:** the `impl_ckks_infos!` arms `inner_meta` and `self_meta` are renamed `ckks_inner` and `glwe_inner`.
+- `test_suite::parity::helpers`, `test_suite::parity::keys` and `test_suite::parity::layout` are public under `test-utils`, so downstream crates build parity tests from the same fixtures.
+
 ## [0.9.0] - 2026-10-08
 
 Reworks the HAL around a smaller operation basis with documented contracts and backend-generic derived defaults ([#234](https://github.com/poulpy-fhe/poulpy/issues/234)), adds the conjugate-invariant ring, multi-degree modules and compact operands ([#266](https://github.com/poulpy-fhe/poulpy/issues/266)), moves sampling into `poulpy-core` behind a unified `Noise` with per-component noise metadata ([#372](https://github.com/poulpy-fhe/poulpy/issues/372)), and makes CKKS encoding byte identical across backends and targets. `poulpy-cpu-ref` is renamed `poulpy-cpu-portable`; new crates: `poulpy-mhe` (multiparty HE) and the unpublished `poulpy-cpu-oracle`.

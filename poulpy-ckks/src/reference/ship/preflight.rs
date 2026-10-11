@@ -7,7 +7,7 @@ use poulpy_core::{
     reference::keyswitching::glwe::GGLWEProductReference,
 };
 
-use crate::{CKKSLayout, CKKSMeta};
+use crate::{CKKSLayout, GLWEPlaintextMeta, Scale};
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
@@ -77,10 +77,10 @@ where
     };
     let raised = CKKSLayout {
         glwe_layout: GLWELayout { k: kk.into(), ..bottom },
-        meta: CKKSMeta {
-            log_delta: plan.log_delta_work(),
-            log_sparsity: 0,
+        meta: GLWEPlaintextMeta {
+            scale: Scale::Log(plan.log_delta_work()),
             slots: SlotsKind::Complex,
+            log_sparsity: 0,
         },
     };
 

@@ -14,7 +14,7 @@ use poulpy_hal::{
 
 /// Observable CKKS representation. Prepared backend storage is never compared.
 #[derive(PartialEq, Eq)]
-pub(crate) struct Snapshot {
+pub struct Snapshot {
     pub layout: CKKSLayout,
     pub canonical: bool,
     pub noise: Option<ComponentNoise>,
@@ -33,7 +33,8 @@ impl std::fmt::Debug for Snapshot {
     }
 }
 
-pub(crate) fn snapshot<B, A>(value: &A) -> Snapshot
+/// Copies the digits, layout and metadata of `value` to the host.
+pub fn snapshot<B, A>(value: &A) -> Snapshot
 where
     B: Backend<ZnxWord = i64>,
     A: CKKSInfos + GLWEInfos + GLWEToBackendRef<B>,
@@ -58,17 +59,14 @@ where
 }
 
 /// Asserts evaluation outputs carry no noise tag, which equality between backends would miss.
-pub(crate) fn assert_untagged<'a>(label: &str, outputs: impl IntoIterator<Item = &'a Snapshot>) {
+pub fn assert_untagged<'a>(label: &str, outputs: impl IntoIterator<Item = &'a Snapshot>) {
     for (i, output) in outputs.into_iter().enumerate() {
         assert!(output.noise.is_none(), "{label} output {i} kept a noise tag");
     }
 }
 
-pub(crate) fn fixture_ciphertext<B: Backend<ZnxWord = i64>>(
-    module: &Module<B>,
-    layout: &CKKSLayout,
-    seed: u8,
-) -> CKKSCiphertextOwned<B>
+/// A ciphertext of `layout` filled from `seed`, tagged with a fresh noise estimate.
+pub fn fixture_ciphertext<B: Backend<ZnxWord = i64>>(module: &Module<B>, layout: &CKKSLayout, seed: u8) -> CKKSCiphertextOwned<B>
 where
     Module<B>: GLWEMaskFill<B>,
 {
@@ -82,7 +80,7 @@ where
 
 /// With `lazy`, adds a fixture filled over whole limbs: the digits leave the
 /// canonical range, bits below `k` must round away, and the flag is clear.
-pub(crate) fn fixture_operand<B: Backend<ZnxWord = i64>>(
+pub fn fixture_operand<B: Backend<ZnxWord = i64>>(
     module: &Module<B>,
     layout: &CKKSLayout,
     seed: u8,
@@ -100,11 +98,8 @@ where
     out
 }
 
-pub(crate) fn fixture_plaintext<B: Backend<ZnxWord = i64>>(
-    module: &Module<B>,
-    layout: &CKKSLayout,
-    seed: u8,
-) -> CKKSPlaintextOwned<B>
+/// A plaintext of `layout` filled from `seed`.
+pub fn fixture_plaintext<B: Backend<ZnxWord = i64>>(module: &Module<B>, layout: &CKKSLayout, seed: u8) -> CKKSPlaintextOwned<B>
 where
     Module<B>: GLWEMaskFill<B>,
 {
@@ -115,7 +110,7 @@ where
 
 /// Runs with exactly `bytes` accessible poisoned scratch bytes, surrounded by
 /// guards. Both allocation and guard downloads work for opaque backend storage.
-pub(crate) fn with_scratch<B: Backend, R>(bytes: usize, run: impl FnOnce(&mut ScratchArena<'_, B>) -> R) -> R {
+pub fn with_scratch<B: Backend, R>(bytes: usize, run: impl FnOnce(&mut ScratchArena<'_, B>) -> R) -> R {
     let guard = B::scratch_aligned(64);
     let mut owned = ScratchOwned::<B> {
         data: B::from_host_bytes(&vec![0xA5; guard + bytes + guard]),

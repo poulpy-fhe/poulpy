@@ -19,7 +19,7 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::{Backend, Module, galois_element};
 
-use crate::{CKKSMeta, CoeffsMeta, layouts::CKKSPlaintextOwned};
+use crate::{CoeffsMeta, GLWEPlaintextMeta, layouts::CKKSPlaintextOwned};
 
 /// Distinguishes the two homomorphic transforms.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -495,7 +495,7 @@ impl DFTPlan {
     ///
     /// The value `s` paired with a diagonal means that, encoded on a ring of
     /// degree `2^log_n`, the diagonal's plaintext polynomial is `M(X^(2^s))`
-    /// (the [`CKKSMeta::log_sparsity`] convention): the diagonal repeats every
+    /// (the [`GLWEPlaintextInfos::log_sparsity`](poulpy_core::layouts::GLWEPlaintextInfos::log_sparsity) convention): the diagonal repeats every
     /// `2^(log_n - 1 - s)` slots and stores compactly at degree `2^(log_n - s)`;
     /// `0` is a dense diagonal at full packing.
     ///
@@ -756,7 +756,7 @@ impl<BE: Backend, Dir, Fmt, R> DFTMatrix<BE, Dir, Fmt, R> {
     }
 
     /// `log_budget` bits consumed per factor (the per-factor plaintext `log_delta`).
-    pub fn meta(&self) -> CKKSMeta {
+    pub fn meta(&self) -> GLWEPlaintextMeta {
         self.inner.plan.coeffs_meta.meta
     }
 

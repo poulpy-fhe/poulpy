@@ -524,6 +524,7 @@ fn gglwe_compressed_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
         rank: gglwe.rank_out,
         data: mat_znx_at_backend_mut_from_mut::<BE>(&mut gglwe.data, row, col),
         seed: gglwe.seed[rank_in * row + col],
+        plaintext_meta: None,
     }
 }
 
@@ -540,6 +541,7 @@ fn gglwe_compressed_at_backend_ref_from_ref<'a, 'b, BE: Backend>(
         rank: gglwe.rank_out,
         data: mat_znx_at_backend_ref_from_ref::<BE>(&gglwe.data, row, col),
         seed: gglwe.seed[rank_in * row + col],
+        plaintext_meta: None,
     }
 }
 

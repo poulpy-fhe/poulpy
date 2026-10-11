@@ -6,8 +6,9 @@ use super::helpers::{
     gen_sk, quantized_slots, test_vector_1,
 };
 use super::parity::helpers::snapshot;
+use crate::Scale;
 use crate::{
-    CKKSCompositionError, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos,
+    CKKSCompositionError, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos,
     api::{CKKSDecryptOps, CKKSEncryptOps},
     layouts::CKKSModuleAlloc,
 };
@@ -69,7 +70,7 @@ fn assert_decrypt_extract_success<BE, F, E>(
     assert_ct_meta(&format!("{label} src"), &ct, src_prec.log_delta(), src_prec.log_budget());
 
     let pt = ckks_decrypt_with_prec(module, &ct, &sk, dst_prec, &mut scratch.borrow()).unwrap();
-    assert_eq!(pt.meta, dst_prec.meta, "{label}: decrypt changed destination metadata");
+    assert_eq!(pt.meta(), dst_prec.meta, "{label}: decrypt changed destination metadata");
 
     let mut re_out = vec![F::zero(); m];
     let mut im_out = vec![F::zero(); m];
@@ -376,10 +377,10 @@ pub fn test_decrypt_extract_output_hom_rem_too_large<BE, F, E>(
         params.base2k.into(),
         (src_prec.log_delta() + src_prec.log_budget() + 1).into(),
     );
-    pt.set_meta(CKKSMeta {
-        log_sparsity: 0,
-        log_delta: src_prec.log_delta(),
+    pt.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(src_prec.log_delta()),
         slots: SlotsKind::Complex,
+        log_sparsity: 0,
     });
     let err = module.ckks_decrypt(&mut pt, &ct, &sk, &mut scratch.borrow()).unwrap_err();
     assert_ckks_error(

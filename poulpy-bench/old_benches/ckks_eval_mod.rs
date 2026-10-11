@@ -5,10 +5,11 @@
 //! inverse depth).
 
 use std::hint::black_box;
+use poulpy_ckks::Scale;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use poulpy_ckks::{
-    CKKSInfos, CKKSLayout, CKKSMeta, CoeffsMeta, SlotsKind,
+    CKKSInfos, CKKSLayout, GLWEPlaintextMeta, CoeffsMeta, SlotsKind,
     api::CKKSEvalModOps,
     api::{CKKSAddOps, CKKSCopyOps, CKKSEncodingHostOps, CKKSMulOps},
     layouts::{
@@ -33,29 +34,18 @@ const EVAL_MOD_LOG_DELTA: usize = 60;
 const DSIZE: usize = 1;
 
 // Plaintext-operand layout used only to size the const-multiply scratch.
-const PT_LAYOUT: CKKSLayout = CKKSLayout {
-    glwe_layout: GLWELayout {
+const PT_LAYOUT: CKKSLayout = CKKSLayout { glwe_layout: GLWELayout {
         n: Degree(N as u32),
         base2k: Base2K(BASE2K as u32),
         k: TorusPrecision((EVAL_MOD_LOG_DELTA + BASE2K) as u32),
         rank: Rank(1),
-    },
-    meta: CKKSMeta {
-        log_delta: EVAL_MOD_LOG_DELTA,
-        log_sparsity: 0,
-        slots: SlotsKind::Complex,
-    },
-};
+    }, meta: GLWEPlaintextMeta { scale: Scale::Log(EVAL_MOD_LOG_DELTA), slots: SlotsKind::Complex, log_sparsity: 0 } };
 
 // Coefficient meta the EvalMod operands are encoded with; equals
 // `CoeffsMeta::from_delta_budget(EVAL_MOD_LOG_DELTA, BASE2K)`.
 const COEFF_META: CoeffsMeta = CoeffsMeta {
     k: TorusPrecision((EVAL_MOD_LOG_DELTA + BASE2K) as u32),
-    meta: CKKSMeta {
-        log_delta: EVAL_MOD_LOG_DELTA,
-        log_sparsity: 0,
-        slots: SlotsKind::Complex,
-    },
+    meta: GLWEPlaintextMeta { scale: Scale::Log(EVAL_MOD_LOG_DELTA), slots: SlotsKind::Complex, log_sparsity: 0 },
 };
 
 struct Case {
@@ -169,11 +159,7 @@ fn bench_ntt4x30_portable(c: &mut Criterion) {
     let module = Module::<BE>::new(N as u64);
     let glwe_layout = glwe_layout();
     let tsk_layout = tsk_layout();
-    let input_meta = CKKSMeta {
-        log_delta: LOG_DELTA,
-        log_sparsity: 0,
-        slots: SlotsKind::Complex,
-    };
+    let input_meta = GLWEPlaintextMeta { scale: Scale::Log(LOG_DELTA), slots: SlotsKind::Complex, log_sparsity: 0 };
 
     let ct_template = module.ckks_ciphertext_alloc_from_glwe_infos(&glwe_layout);
     let mul_bytes = module.ckks_mul_tmp_bytes(&ct_template, &ct_template, &ct_template, &tsk_layout);

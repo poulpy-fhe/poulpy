@@ -1,6 +1,7 @@
 //! Exact arithmetic parity on canonical coefficients, independent of encryption.
 use super::helpers::*;
-use crate::{CKKSInfos, CKKSLayout, CKKSMeta, SlotsKind, api::CKKSModuleInfos, oep::*, test_suite::CKKSTestParams};
+use crate::Scale;
+use crate::{CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SlotsKind, api::CKKSModuleInfos, oep::*, test_suite::CKKSTestParams};
 use poulpy_core::{GLWEAdd, GLWEMaskFill, layouts::*, oep::GLWENormalizeImpl};
 use poulpy_hal::layouts::{Backend, Module};
 
@@ -13,7 +14,8 @@ impl<B> ArithmeticParityBackend for B where
 {
 }
 
-pub(crate) fn layout(params: CKKSTestParams, rank: usize, k: usize, delta: usize, sparse: usize, slots: SlotsKind) -> CKKSLayout {
+/// A CKKS layout at the parameter set's degree and radix.
+pub fn layout(params: CKKSTestParams, rank: usize, k: usize, delta: usize, sparse: usize, slots: SlotsKind) -> CKKSLayout {
     CKKSLayout {
         glwe_layout: GLWELayout {
             n: params.n.into(),
@@ -21,10 +23,10 @@ pub(crate) fn layout(params: CKKSTestParams, rank: usize, k: usize, delta: usize
             k: k.into(),
             rank: rank.into(),
         },
-        meta: CKKSMeta {
-            log_delta: delta,
-            log_sparsity: sparse,
+        meta: GLWEPlaintextMeta {
+            scale: Scale::Log(delta),
             slots,
+            log_sparsity: sparse,
         },
     }
 }

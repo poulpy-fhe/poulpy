@@ -10,7 +10,10 @@ use poulpy_hal::{
 
 use crate::{
     api::GLWEMaskFill,
-    layouts::{Base2K, Degree, GLWEInfos, GLWEToBackendMut, GetDegree, LWEInfos, Rank, SetBase2k, TorusPrecision},
+    layouts::{
+        Base2K, Degree, GLWEInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, GLWEToBackendMut, GetDegree, LWEInfos, Rank, SetBase2k,
+        SetGLWEPlaintextInfos, TorusPrecision,
+    },
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use poulpy_hal::layouts::ZnxWord;
@@ -31,6 +34,7 @@ pub struct GLWECompressed<D: Data, W: ZnxWord> {
     pub(crate) base2k: Base2K,
     pub(crate) rank: Rank,
     pub(crate) seed: [u8; 32],
+    pub(crate) plaintext_meta: Option<GLWEPlaintextMeta>,
 }
 
 pub type GLWECompressedBackendRef<'a, BE> = GLWECompressed<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord>;
@@ -206,6 +210,18 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWECompressed<D, W> {
         self.k
     }
 }
+impl<D: Data, W: ZnxWord> GLWEPlaintextInfos for GLWECompressed<D, W> {
+    fn plaintext_meta(&self) -> Option<GLWEPlaintextMeta> {
+        self.plaintext_meta
+    }
+}
+
+impl<D: Data, W: ZnxWord> SetGLWEPlaintextInfos for GLWECompressed<D, W> {
+    fn set_plaintext_meta(&mut self, meta: Option<GLWEPlaintextMeta>) {
+        self.plaintext_meta = meta
+    }
+}
+
 impl<D: Data, W: ZnxWord> GLWEInfos for GLWECompressed<D, W> {
     fn rank(&self) -> Rank {
         self.rank
@@ -267,6 +283,7 @@ impl<D: Data, W: ZnxWord> GLWECompressed<D, W> {
             k,
             rank,
             seed: [0u8; 32],
+            plaintext_meta: None,
         }
     }
 
@@ -284,7 +301,7 @@ impl<D: Data, W: ZnxWord> GLWECompressed<D, W> {
     }
 }
 
-/// Deserializes the metadata (k, base2k, rank, seed) followed by the stored data.
+/// Deserializes the metadata (base2k, rank, seed, plaintext) followed by the stored data.
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWECompressed<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.noise = None;
@@ -296,16 +313,21 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWECompressed<D, W> {
         }
         let mut seed = [0u8; 32];
         reader.read_exact(&mut seed)?;
+        let plaintext_meta = GLWEPlaintextMeta::read_from(reader)?;
         crate::layouts::read_vec_znx_with_shape(&mut self.data, reader, None, 1)?;
+        if let Some(meta) = plaintext_meta {
+            meta.validate_degree(self.data.n())?;
+        }
         crate::layouts::validate_noise_components(noise.as_ref(), self.rank.as_usize() + 1)?;
         self.base2k = base2k;
         self.seed = seed;
         self.noise = noise;
+        self.plaintext_meta = plaintext_meta;
         Ok(())
     }
 }
 
-/// Serializes the metadata (k, base2k, rank, seed) followed by the stored data.
+/// Serializes the metadata (base2k, rank, seed, plaintext) followed by the stored data.
 impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWECompressed<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         crate::layouts::validate_noise_components(self.noise.as_ref(), self.rank.as_usize() + 1)?;
@@ -313,6 +335,7 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWECompressed<D, W> {
         writer.write_u32::<LittleEndian>(self.base2k.into())?;
         writer.write_u32::<LittleEndian>(self.rank.into())?;
         writer.write_all(&self.seed)?;
+        GLWEPlaintextMeta::write_to(&self.plaintext_meta, writer)?;
         self.data.write_to(writer)
     }
 }
@@ -330,11 +353,12 @@ where
     /// Decompresses `other` into `res` by copying the stored data and regenerating the mask.
     fn decompress_glwe<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GLWEToBackendMut<Self::Backend> + SetBase2k,
+        R: GLWEToBackendMut<Self::Backend> + SetBase2k + SetGLWEPlaintextInfos,
         O: GLWECompressedToBackendRef<Self::Backend> + GLWEInfos,
     {
         let noise = other.to_backend_ref().noise();
         let other = other.to_backend_ref();
+        let plaintext_meta = other.plaintext_meta;
         {
             let res = &mut res.to_backend_mut();
             operand_degree(self.ring_degree().as_usize(), &[res.n(), other.n()]);
@@ -347,6 +371,7 @@ where
         self.fill_glwe_mask_from_seed(res, other.seed);
         res.set_noise(noise);
         res.set_canonical(true);
+        res.set_plaintext_meta(plaintext_meta);
     }
 }
 
@@ -368,6 +393,7 @@ impl<BE: Backend> GLWECompressedToBackendRef<BE> for GLWECompressed<BE::OwnedBuf
         GLWECompressed {
             noise: crate::layouts::LWEInfos::noise(&self),
             seed: self.seed,
+            plaintext_meta: self.plaintext_meta,
             k: self.k,
             base2k: self.base2k,
             rank: self.rank,
@@ -381,6 +407,7 @@ impl<BE: Backend> GLWECompressedToBackendRef<BE> for GLWECompressedViewRef<'_, B
         GLWECompressed {
             noise: crate::layouts::LWEInfos::noise(&self.inner),
             seed: self.inner.seed,
+            plaintext_meta: self.inner.plaintext_meta,
             k: self.k,
             base2k: self.inner.base2k,
             rank: self.inner.rank,
@@ -394,6 +421,7 @@ impl<BE: Backend> GLWECompressedToBackendRef<BE> for GLWECompressedViewMut<'_, B
         GLWECompressed {
             noise: crate::layouts::LWEInfos::noise(&self.inner),
             seed: self.inner.seed,
+            plaintext_meta: self.inner.plaintext_meta,
             k: self.k,
             base2k: self.inner.base2k,
             rank: self.inner.rank,
@@ -420,6 +448,7 @@ impl<BE: Backend> GLWECompressedToBackendMut<BE> for GLWECompressed<BE::OwnedBuf
         GLWECompressed {
             noise: None,
             seed: self.seed,
+            plaintext_meta: self.plaintext_meta,
             k: self.k,
             base2k: self.base2k,
             rank: self.rank,
@@ -438,6 +467,7 @@ impl<BE: Backend> GLWECompressedToBackendMut<BE> for GLWECompressedViewMut<'_, B
         GLWECompressed {
             noise: None,
             seed: self.inner.seed,
+            plaintext_meta: self.inner.plaintext_meta,
             k: self.inner.k,
             base2k: self.inner.base2k,
             rank: self.inner.rank,

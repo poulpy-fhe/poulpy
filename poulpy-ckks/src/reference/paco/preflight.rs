@@ -11,8 +11,8 @@ use poulpy_core::layouts::prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWE
 use poulpy_core::{
     GLWEAutomorphism, GLWEBytesOf, GLWEKeyswitch, GLWELinearTransformations, GLWERotate,
     layouts::{
-        Degree, GGLWEPreparedToBackendRef, GLWEInfos, GLWELayout, GLWESwitchingKeyDegrees, GLWEToBackendRef, GetAutomorphismKey,
-        GetTensorKey, LWEInfos, Rank, TorusPrecision,
+        Degree, GGLWEPreparedToBackendRef, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEPlaintextMeta, GLWESwitchingKeyDegrees,
+        GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, Scale, TorusPrecision,
     },
 };
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
@@ -24,7 +24,7 @@ use crate::layouts::paco::{
     keyset::{PaCoKeys, validate_gadget_backend_view},
 };
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSMeta,
+    CKKSCtBounds, CKKSInfos, CKKSLayout,
     api::{
         CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSRotateOps, CKKSSubOps, PaCoScalar,
     },
@@ -42,7 +42,7 @@ use crate::{
 struct BranchScratchLayout {
     glwe_layout: GLWELayout,
     max_size: usize,
-    meta: CKKSMeta,
+    meta: GLWEPlaintextMeta,
 }
 
 impl LWEInfos for BranchScratchLayout {
@@ -69,11 +69,13 @@ impl GLWEInfos for BranchScratchLayout {
     }
 }
 
-impl CKKSInfos for BranchScratchLayout {
-    fn meta(&self) -> CKKSMeta {
-        self.meta
+impl GLWEPlaintextInfos for BranchScratchLayout {
+    fn plaintext_meta(&self) -> Option<GLWEPlaintextMeta> {
+        Some(self.meta)
     }
 }
+
+impl CKKSInfos for BranchScratchLayout {}
 
 fn automorphism_layout_for<'a, BE: Backend, H>(
     keys: &'a H,
@@ -160,10 +162,10 @@ where
             k: TorusPrecision(beta_k),
             rank: Rank(1),
         },
-        meta: CKKSMeta {
-            log_sparsity: 0,
-            log_delta: plan.log_delta_bsk(),
+        meta: GLWEPlaintextMeta {
+            scale: Scale::Log(plan.log_delta_bsk()),
             slots: SlotsKind::Complex,
+            log_sparsity: 0,
         },
     };
 
@@ -190,10 +192,10 @@ where
             k: TorusPrecision(factor_k),
             rank: Rank(1),
         },
-        meta: CKKSMeta {
-            log_sparsity: 0,
-            log_delta: plan.c2s().log_delta().max(plan.stc().log_delta()),
+        meta: GLWEPlaintextMeta {
+            scale: Scale::Log(plan.c2s().log_delta().max(plan.stc().log_delta())),
             slots: SlotsKind::Complex,
+            log_sparsity: 0,
         },
     };
 

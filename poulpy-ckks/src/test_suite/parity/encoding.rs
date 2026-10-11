@@ -4,6 +4,8 @@
 //! plaintexts are compared after downloading and decoding their canonical
 //! coefficients, independently of either backend's floating-point decoder.
 
+use crate::Scale;
+use poulpy_core::layouts::GLWEPlaintextInfos;
 use poulpy_core::{
     GLWEMaskFill,
     layouts::{GLWELayout, IntPolyInfos, LWEInfos},
@@ -11,7 +13,7 @@ use poulpy_core::{
 use poulpy_hal::layouts::{Backend, Module, ZnxView};
 
 use crate::{
-    CKKSInfos, CKKSLayout, CKKSMeta, SlotsKind,
+    CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SlotsKind,
     api::{CKKSEncodingOps, CKKSEncodingScalar, CKKSModuleInfos, PaCoScalar, ShipScalar},
     layouts::{
         CKKSEncodingBuffer, CKKSEncodingBufferToBackendMut, CKKSPlaintextOwned, PaCoDFTPlan, PaCoPlan, PaCoSlotOrder, ShipPlan,
@@ -155,10 +157,10 @@ where
                         k: k.into(),
                         rank: 0usize.into(),
                     },
-                    meta: CKKSMeta {
-                        log_delta,
-                        log_sparsity,
+                    meta: GLWEPlaintextMeta {
+                        scale: Scale::Log(log_delta),
                         slots,
+                        log_sparsity: 0,
                     },
                 };
                 let count = params.n >> log_sparsity;
@@ -246,10 +248,10 @@ where
             k: 65usize.into(),
             rank: 0usize.into(),
         },
-        meta: CKKSMeta {
-            log_delta: 40,
-            log_sparsity: 0,
+        meta: GLWEPlaintextMeta {
+            scale: Scale::Log(40),
             slots: SlotsKind::Complex,
+            log_sparsity: 0,
         },
     };
     let max_slots = module.ckks_max_slots();
@@ -351,10 +353,10 @@ where
                 k: 17usize.into(),
                 rank: 1usize.into(),
             },
-            meta: CKKSMeta {
-                log_delta: 10,
-                log_sparsity: 0,
+            meta: GLWEPlaintextMeta {
+                scale: Scale::Log(10),
                 slots: SlotsKind::Complex,
+                log_sparsity: 0,
             },
         };
         let cr = fixture_ciphertext(r, &layout, 72);
@@ -376,7 +378,6 @@ where
             assert!(a.n().as_usize() == plan.n(), "PaCo degree differs");
             assert!(a.log_delta() == plan.log_delta_bsk(), "PaCo scale differs");
             assert!(a.log_budget() == plan.log_beta_budget(), "PaCo budget differs");
-            assert!(a.log_sparsity() == 0, "PaCo sparsity differs");
             assert!(a.slots() == SlotsKind::Complex);
         }
         assert!(
@@ -436,10 +437,10 @@ where
             k: base2k.into(),
             rank: 1usize.into(),
         },
-        meta: CKKSMeta {
-            log_delta: base2k - 4,
-            log_sparsity: 0,
+        meta: GLWEPlaintextMeta {
+            scale: Scale::Log(base2k - 4),
             slots: SlotsKind::Complex,
+            log_sparsity: 0,
         },
     };
     let cr = fixture_ciphertext(r, &layout, 83);

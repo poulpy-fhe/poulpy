@@ -21,7 +21,7 @@ use poulpy_core::{
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    CKKSCtBounds, CKKSMeta, SetCKKSInfos,
+    CKKSCtBounds, GLWEPlaintextMeta, Scale, SetCKKSInfos,
     api::{
         CKKSAddOps, CKKSComplexPolynomialEvaluationOps, CKKSCopyOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops,
         CKKSSubOps, PolynomialInputTransform,
@@ -174,10 +174,10 @@ where
         k: (s_budget + s_eval).into(),
         rank: Rank(1),
     };
-    let work_meta = CKKSMeta {
-        log_delta: s_eval,
-        log_sparsity: ct.log_sparsity(),
+    let work_meta = GLWEPlaintextMeta {
+        scale: Scale::Log(s_eval),
         slots: ct.slots(),
+        log_sparsity: ct.log_sparsity(),
     };
 
     match &params.f_mod_bsgs {
@@ -264,7 +264,7 @@ fn eval_mod_input<BE, C>(
     module: &Module<BE>,
     ct: &C,
     layout: &GLWELayout,
-    meta: CKKSMeta,
+    meta: GLWEPlaintextMeta,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> CKKSCiphertextOwned<BE>
 where

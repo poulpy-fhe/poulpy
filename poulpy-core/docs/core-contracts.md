@@ -238,6 +238,13 @@ cannot turn a prior untrusted shape into a metadata allocation bound.
 Unsupported metadata markers are rejected. ENCAPSULATED provenance is recorded
 as NONE, retaining an unknown-law estimate without serializing a process-local tag.
 
+## Plaintext metadata
+
+`Option<GLWEPlaintextMeta>` (scale, slot kind, sparsity) records what a `GLWE`,
+`GLWEPlaintext` or `GLWECompressed` plaintext is, for the scheme that manages
+it; `None` claims nothing. Operations never read or write it. Views, clones,
+transfers, decompression and serialization carry it, and equality compares it.
+
 ## Testing a replacement
 
 Select the comparison backend with `backend_ref` and the backend under test

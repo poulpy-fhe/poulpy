@@ -453,6 +453,7 @@ impl<BE: Backend> GGLWEAtBackendRef<BE> for GGLWE<BE::OwnedBuf, BE::ZnxWord> {
             base2k: self.base2k,
             k: self.k(),
             canonical: true,
+            plaintext_meta: None,
             data,
         }
     }
@@ -469,6 +470,7 @@ pub(crate) fn gglwe_at_backend_ref_from_ref<'a, 'b, BE: Backend>(
         base2k: gglwe.base2k,
         k: gglwe.k(),
         canonical: true,
+        plaintext_meta: None,
         data,
     }
 }
@@ -496,6 +498,7 @@ pub(crate) fn gglwe_at_backend_ref_from_mut<'a, 'b, BE: Backend>(
         base2k: gglwe.base2k,
         k: gglwe.k(),
         canonical: true,
+        plaintext_meta: None,
         data,
     }
 }
@@ -526,6 +529,7 @@ impl<BE: Backend> GGLWEAtBackendMut<BE> for GGLWE<BE::OwnedBuf, BE::ZnxWord> {
             base2k,
             k,
             canonical: true,
+            plaintext_meta: None,
             data,
         }
     }
@@ -545,6 +549,7 @@ pub(crate) fn gglwe_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
         base2k,
         k,
         canonical: true,
+        plaintext_meta: None,
         data,
     }
 }
@@ -594,6 +599,7 @@ impl<D: HostDataRef, W: ZnxWord> GGLWE<D, W> {
             base2k: self.base2k,
             k: self.k(),
             canonical: true,
+            plaintext_meta: None,
             data,
         }
     }
@@ -610,6 +616,7 @@ impl<D: HostDataMut, W: ZnxWord> GGLWE<D, W> {
             base2k,
             k,
             canonical: true,
+            plaintext_meta: None,
             data,
         }
     }

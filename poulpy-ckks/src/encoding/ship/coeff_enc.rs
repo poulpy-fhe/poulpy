@@ -12,7 +12,7 @@ use poulpy_hal::layouts::{Backend, HostDataRef, Module, Standard};
 
 use crate::SlotsKind;
 use crate::{
-    CKKSMeta,
+    GLWEPlaintextMeta, Scale,
     api::{CKKSEncodingOps, ShipScalar},
     encoding::paco::coeff_enc::glwe_column_residues,
     layouts::{CKKSCiphertext, CKKSEncodingBuffer, CKKSModuleAlloc, CKKSPlaintextOwned, ShipCoeffEncodings, ShipPlan},
@@ -51,10 +51,10 @@ where
     values[re.len()..].copy_from_slice(im);
     let mut buffer = CKKSEncodingBuffer::<BE::OwnedBuf, F>::from_host::<BE>(&values);
     let mut pt = module.ckks_pt_vec_alloc(base2k, k_pt.into());
-    pt.set_meta_checked(CKKSMeta {
-        log_delta,
-        log_sparsity: 0,
+    pt.set_meta_checked(GLWEPlaintextMeta {
+        scale: Scale::Log(log_delta),
         slots: SlotsKind::Complex,
+        log_sparsity: 0,
     })?;
     module.ckks_encode_slots_assign_into(&mut pt, &mut buffer)?;
     Ok(pt)

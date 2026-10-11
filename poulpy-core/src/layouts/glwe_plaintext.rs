@@ -7,7 +7,8 @@ use poulpy_hal::layouts::{
 };
 
 use crate::layouts::{
-    Base2K, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetBase2k, SetK, TorusPrecision,
+    Base2K, Degree, GLWE, GLWEInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
+    SetBase2k, SetGLWEPlaintextInfos, SetK, TorusPrecision,
 };
 
 /// Width vocabulary for **integer-polynomial** (non-Torus) operands.
@@ -76,6 +77,7 @@ pub struct GLWEPlaintext<D: Data, W: ZnxWord> {
     pub(crate) data: VecZnx<D, W>,
     pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
+    pub(crate) plaintext_meta: Option<GLWEPlaintextMeta>,
 }
 
 pub type GLWEPlaintextBackendRef<'a, BE> = GLWEPlaintext<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord>;
@@ -123,6 +125,18 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWEPlaintext<D, W> {
     }
 }
 
+impl<D: Data, W: ZnxWord> GLWEPlaintextInfos for GLWEPlaintext<D, W> {
+    fn plaintext_meta(&self) -> Option<GLWEPlaintextMeta> {
+        self.plaintext_meta
+    }
+}
+
+impl<D: Data, W: ZnxWord> SetGLWEPlaintextInfos for GLWEPlaintext<D, W> {
+    fn set_plaintext_meta(&mut self, meta: Option<GLWEPlaintextMeta>) {
+        self.plaintext_meta = meta
+    }
+}
+
 impl<D: Data, W: ZnxWord> GLWEInfos for GLWEPlaintext<D, W> {
     fn rank(&self) -> Rank {
         Rank(self.data.cols() as u32 - 1)
@@ -165,6 +179,7 @@ impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {
             data: self.data.to_host_owned::<BE>(),
             base2k: self.base2k,
             k: self.k,
+            plaintext_meta: self.plaintext_meta,
         }
     }
 
@@ -189,6 +204,7 @@ impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {
             data: VecZnx::from_shape(data, shape),
             base2k: self.base2k,
             k: self.k,
+            plaintext_meta: self.plaintext_meta,
         }
     }
 }
@@ -223,6 +239,7 @@ impl<W: ZnxWord> GLWEPlaintext<AlignedBuf, W> {
             ),
             base2k: infos.base2k(),
             k: infos.k(),
+            plaintext_meta: None,
         }
     }
 
@@ -237,6 +254,7 @@ impl<W: ZnxWord> GLWEPlaintext<AlignedBuf, W> {
             ),
             base2k,
             k,
+            plaintext_meta: None,
         }
     }
 }
@@ -267,6 +285,7 @@ where
             base2k: self.base2k,
             k: self.k,
             canonical: true,
+            plaintext_meta: self.plaintext_meta,
             data: self.data.to_backend_ref(),
         }
     }
@@ -284,6 +303,7 @@ where
             base2k: self.base2k,
             k: self.k,
             canonical: true,
+            plaintext_meta: self.plaintext_meta,
             data: self.data.to_backend_mut(),
         }
     }
@@ -303,6 +323,7 @@ impl<'b, BE: Backend + 'b> GLWEPlaintextReborrowBackendRef<BE> for GLWEPlaintext
             base2k: self.base2k,
             k: self.k,
             canonical: true,
+            plaintext_meta: self.plaintext_meta,
             data: <VecZnx<BE::BufMut<'b>, BE::ZnxWord> as VecZnxReborrowBackendRef<BE>>::reborrow_backend_ref(&self.data),
         }
     }
@@ -320,6 +341,7 @@ impl<'b, BE: Backend + 'b> GLWEPlaintextReborrowBackendMut<BE> for GLWEPlaintext
             base2k: self.base2k,
             k: self.k,
             canonical: true,
+            plaintext_meta: self.plaintext_meta,
             data: <VecZnx<BE::BufMut<'b>, BE::ZnxWord> as VecZnxReborrowBackendMut<BE>>::reborrow_backend_mut(&mut self.data),
         }
     }

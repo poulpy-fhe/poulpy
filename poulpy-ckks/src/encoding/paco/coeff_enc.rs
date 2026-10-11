@@ -22,7 +22,7 @@ use poulpy_hal::layouts::{Backend, HostDataRef, Module, Standard, VecZnx};
 
 use crate::api::{CKKSEncodingOps, PaCoScalar};
 use crate::{
-    CKKSMeta,
+    GLWEPlaintextMeta, Scale,
     layouts::{CKKSEncodingBuffer, CKKSModuleAlloc},
 };
 
@@ -257,10 +257,10 @@ where
             *im_slot = value.im;
         }
         let mut pt = module.ckks_pt_vec_alloc(base2k, k_pt.into());
-        pt.set_meta_checked(CKKSMeta {
-            log_sparsity: 0,
-            log_delta,
+        pt.set_meta_checked(GLWEPlaintextMeta {
+            scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,
+            log_sparsity: 0,
         })?;
         encoding_values[..re.len()].copy_from_slice(&re);
         encoding_values[re.len()..].copy_from_slice(&im);

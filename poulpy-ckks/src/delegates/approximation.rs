@@ -3,13 +3,13 @@
 use poulpy_core::GLWEBytesOf;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::{
-    BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, SetBSGSMeta,
+    BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, SetBSGSMeta, SetGLWEPlaintextInfos,
     prepared::{GLWETensorKeyPrepared, GLWETensorKeyPreparedToBackendRef},
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSResult as Result, SetCKKSInfos,
+    CKKSCtBounds, CKKSInfos, CKKSResult as Result, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSApproximationOps, CKKSCopyOps, CKKSPolynomialEvaluationOps,
         CKKSPow2Ops,
@@ -90,6 +90,7 @@ where
                         self.ckks_mul_pow2_into(&mut normalized, input, exponent as usize, &mut scratch_local)?;
                     } else {
                         self.ckks_copy(&mut normalized, input, &mut scratch_local)?;
+                        normalized.set_slots(input.slots().join(SlotsKind::Real));
                         self.ckks_div_pow2_assign(&mut normalized, exponent.unsigned_abs() as usize)?;
                     }
                     self.ckks_add_pt_const_assign(&mut normalized, 0, affine, 0, &mut scratch_local)?;

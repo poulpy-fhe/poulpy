@@ -1,3 +1,4 @@
+use crate::{Scale, ckks_log_delta};
 use poulpy_core::{
     layouts::GLWETensorKeyPrepared,
     layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef},
@@ -8,7 +9,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
+    CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos,
     api::{CKKSComplexPolynomialEvaluationOps, CKKSMulOps, CKKSPolynomialEvaluationOps},
     layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec},
     polynomial::{
@@ -367,7 +368,7 @@ pub fn test_encode_bsgs_preserves_chebyshev_eval<BE, F, E>(
     let bsgs = poly
         .encode_bsgs(host_module, params.base2k.into(), coeff_meta)
         .expect("encode_bsgs should succeed for degree-31 Chebyshev polynomial");
-    let tolerance = (-F::from_usize(coeff_meta.meta.log_delta).unwrap()).exp2() * F::from_usize(1024).unwrap();
+    let tolerance = (-F::from_usize(ckks_log_delta(&coeff_meta.meta)).unwrap()).exp2() * F::from_usize(1024).unwrap();
 
     for i in 0..=64 {
         let x = -F::one() + (F::one() + F::one()) * F::from_usize(i).unwrap() / F::from_usize(64).unwrap();
@@ -1754,10 +1755,10 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
         n,
         base2k,
         k,
-        prec_meta: CKKSMeta {
-            log_sparsity: 0,
-            log_delta: input_log_delta,
+        prec_meta: GLWEPlaintextMeta {
+            scale: Scale::Log(input_log_delta),
             slots: SlotsKind::Complex,
+            log_sparsity: 0,
         },
         prec_log_budget: k - input_log_delta,
         hw: m,

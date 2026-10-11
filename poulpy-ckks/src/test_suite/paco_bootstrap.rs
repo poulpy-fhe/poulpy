@@ -17,6 +17,7 @@
 //! `≈ log_delta − log q` bits).
 
 use crate::api::CKKSEncodingOps;
+use poulpy_core::layouts::{GLWEPlaintextInfos, SetGLWEPlaintextInfos};
 use std::collections::HashMap;
 
 use poulpy_core::{
@@ -30,7 +31,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSInfos, SetCKKSInfos,
+    CKKSInfos,
     api::{CKKSLinearTransformationOps, CKKSPaCoOps, PaCoScalar},
     encoding::paco::coeff_enc::glwe_column_residues,
     layouts::{CKKSModuleAlloc, PaCoContext, PaCoDFTPlan, PaCoKeysPrepared, PaCoPlan, PaCoSecretSpec, ScratchArenaTakeCKKS},
