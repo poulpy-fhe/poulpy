@@ -9,7 +9,7 @@ pub(crate) use intra::shift_maps;
 pub use intra::{BlasMatIntraReference, validate_blas_rotate_cols, validate_blas_rotate_rows, validate_blas_transpose};
 pub use matmul::BlasMatMulReference;
 
-use std::cell::RefCell;
+use std::{cell::RefCell, sync::Mutex};
 
 use poulpy_ckks::{
     CKKSCompositionError, CKKSCtBounds, CKKSError, CKKSInfos, CKKSResult as Result, GLWEPlaintextInfos, SetCKKSInfos,
@@ -19,7 +19,10 @@ use poulpy_core::layouts::{
     Base2K, GGLWEInfos, GGLWELayout, GLWEInfos, GetAutomorphismKey, GetTensorKey, LWEInfos, TorusPrecision,
     prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWETensorKeyPreparedBackendRef},
 };
-use poulpy_hal::layouts::{Backend, Ring, ScratchArena};
+use poulpy_hal::{
+    execution::{TaskExecutor, for_each_with_scratch, scratch_workers, worker_count, worker_scratch_bytes},
+    layouts::{Backend, Ring, ScratchArena},
+};
 
 use crate::layouts::{BlasGridInfos, batch_fits, batch_of, layout_of};
 
@@ -337,4 +340,105 @@ where
 pub(crate) fn stamp_sparsity(res: &mut [impl SetCKKSInfos], a: &impl BlasGridInfos) {
     let log_sparsity = a.block_layout().log_sparsity();
     res.iter_mut().for_each(|block| block.set_log_sparsity(log_sparsity));
+}
+
+/// Most workers a reference splits its blocks over, as poulpy-core's baby steps do.
+pub(crate) const WORKERS: usize = 4;
+
+/// Scratch of `tasks` independent tasks of `task_bytes` each: a slice per worker the executor of `BE` reserves, or
+/// `task_bytes` alone on a serial executor.
+pub(crate) fn tasks_tmp_bytes<BE: Backend>(tasks: usize, task_bytes: usize) -> usize {
+    match scratch_workers::<BE::TaskExecutor>(WORKERS.min(tasks)) {
+        1 => task_bytes,
+        workers => workers * worker_scratch_bytes::<BE>(task_bytes),
+    }
+}
+
+/// Runs `task` on every item over the workers of `E`, each on an even share of `scratch`, and returns the error of the
+/// lowest failing index, the one a serial loop meets first. With one worker, the items run in order on `scratch` and
+/// the first error stops them.
+pub(crate) fn run_tasks<E: TaskExecutor, BE: Backend, T: Send>(
+    items: &mut [T],
+    scratch: &mut ScratchArena<'_, BE>,
+    task: impl Fn(&mut T, &mut ScratchArena<'_, BE>) -> Result<()> + Sync,
+) -> Result<()> {
+    let workers = worker_count::<E>(WORKERS, items.len());
+    if workers <= 1 {
+        return items.iter_mut().try_for_each(|item| task(item, scratch));
+    }
+    let share = scratch.available() / workers / BE::SCRATCH_ALIGN * BE::SCRATCH_ALIGN;
+    let (arenas, _) = scratch.borrow().split(workers, share);
+    let first: Mutex<Option<(usize, CKKSError)>> = Mutex::new(None);
+    for_each_with_scratch::<E, BE, _, _>(items, 0, arenas, &|index, item, scratch| {
+        if let Err(e) = task(item, scratch) {
+            let mut first = first.lock().unwrap();
+            if first.as_ref().is_none_or(|(lowest, _)| index < *lowest) {
+                *first = Some((index, e));
+            }
+        }
+    });
+    first.into_inner().unwrap().map_or(Ok(()), |(_, e)| Err(e))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use poulpy_ckks::CKKSCompositionError;
+    use poulpy_hal::{
+        api::ScratchOwnedAlloc,
+        execution::TaskExecutor,
+        layouts::{HostBytesBackend, ScratchOwned},
+    };
+
+    use super::{reject, run_tasks};
+
+    /// A parallel executor whose joins run their right half first, so later tasks end before earlier ones.
+    struct RightFirst;
+
+    impl TaskExecutor for RightFirst {
+        const IS_PARALLEL: bool = true;
+
+        fn max_parallelism() -> usize {
+            4
+        }
+
+        fn join<A, B, RA, RB>(left: A, right: B) -> (RA, RB)
+        where
+            A: FnOnce() -> RA + Send,
+            B: FnOnce() -> RB + Send,
+            RA: Send,
+            RB: Send,
+        {
+            let right = right();
+            (left(), right)
+        }
+    }
+
+    #[test]
+    fn parallel_tasks_return_the_error_of_the_lowest_index() {
+        let mut scratch = ScratchOwned::<HostBytesBackend>::alloc(4096);
+        let mut items: Vec<usize> = (0..8).collect();
+        let ran = Mutex::new(Vec::new());
+        let result = run_tasks::<RightFirst, HostBytesBackend, _>(&mut items, &mut scratch.arena(), |&mut t, s| {
+            assert!(s.available() >= 1024, "worker {t} has {} bytes", s.available());
+            ran.lock().unwrap().push(t);
+            if t == 2 || t == 5 {
+                Err(reject("task", t.to_string()))
+            } else {
+                Ok(())
+            }
+        });
+        let ran = ran.into_inner().unwrap();
+        assert_eq!(ran.len(), 8, "{ran:?}");
+        let at = |t| ran.iter().position(|&r| r == t);
+        assert!(at(5) < at(2), "task 5 must fail first: {ran:?}");
+        assert_eq!(
+            result.unwrap_err().composition(),
+            Some(&CKKSCompositionError::InvalidOperand {
+                op: "task",
+                reason: "2".into()
+            })
+        );
+    }
 }

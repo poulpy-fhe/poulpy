@@ -137,6 +137,13 @@ one call with both half maps over every block of `a`, into a heap grid of
 provided shifts hold that whole grid, and a backend that needs less memory
 overrides them to chunk it.
 
+The rotation, the sum and the hook split their blocks over up to four workers
+of the backend's `TaskExecutor`, each on its own scratch slice (and, in the
+hook, its own baby-step cache), so a Rayon backend writes nothing. Their
+queries reserve one slice per worker on a parallel executor and keep the
+serial size otherwise. On failure they return the error of the lowest block, as
+a serial loop would. Copies and additions run serially.
+
 ## Testing a backend
 
 Enable `test-utils` on a `poulpy-blas` dev-dependency. It exports two
