@@ -2,11 +2,13 @@ use super::{FFT64Neon, NTT4x30Neon};
 use poulpy_ckks::{
     impl_ckks_bootstrapping_reference, impl_ckks_complex_polynomial_evaluation_reference, impl_ckks_conjugate_reference,
     impl_ckks_dft_reference, impl_ckks_encapsulated_mod_up_reference, impl_ckks_eval_mod_reference, impl_ckks_fold_reference,
-    impl_ckks_imag_reference,
+    impl_ckks_imag_reference, impl_ckks_mod_up_first_factor_reference,
 };
 
 impl_ckks_encapsulated_mod_up_reference!(FFT64Neon);
+impl_ckks_mod_up_first_factor_reference!(FFT64Neon);
 impl_ckks_encapsulated_mod_up_reference!(NTT4x30Neon);
+impl_ckks_mod_up_first_factor_reference!(NTT4x30Neon);
 // `f64` encodes through the NEON kernels and `Quad` through the portable
 // kernels, both on the canonical twiddles. Rust has no specialization, so
 // accelerated backends list their precisions explicitly.
@@ -100,9 +102,13 @@ select_neon_encoding_transform!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_encapsulated_mod_up_reference!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]
+impl_ckks_mod_up_first_factor_reference!(super::FFT64NeonRayon);
+#[cfg(feature = "enable-rayon")]
 select_neon_encoding_transform!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_encapsulated_mod_up_reference!(super::NTT4x30NeonRayon);
+#[cfg(feature = "enable-rayon")]
+impl_ckks_mod_up_first_factor_reference!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]
 select_neon_encoding_transform!(super::FFT64CINeonRayon);
 #[cfg(feature = "enable-rayon")]

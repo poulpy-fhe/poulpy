@@ -52,7 +52,8 @@ mod sub;
 pub use add::CKKSAddImpl;
 pub use add::impl_ckks_add_reference;
 pub use bootstrapping::{
-    CKKSBootstrappingImpl, CKKSEncapsulatedModUpImpl, impl_ckks_bootstrapping_reference, impl_ckks_encapsulated_mod_up_reference,
+    CKKSBootstrappingImpl, CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl, impl_ckks_bootstrapping_reference,
+    impl_ckks_encapsulated_mod_up_reference, impl_ckks_mod_up_first_factor_reference,
 };
 pub use ckks_impl::CKKSImpl;
 pub use conjugate::CKKSConjugateImpl;

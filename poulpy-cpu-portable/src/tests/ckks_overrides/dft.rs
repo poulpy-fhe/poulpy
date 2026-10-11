@@ -393,6 +393,7 @@ impl<F: poulpy_ckks::api::CKKSEncodingScalar> crate::ckks_encoding::CKKSEncoding
 }
 crate::impl_ckks_encoding!(OverrideBackend);
 poulpy_ckks::impl_ckks_encapsulated_mod_up_reference!(OverrideBackend);
+poulpy_ckks::impl_ckks_mod_up_first_factor_reference!(OverrideBackend);
 poulpy_ckks::impl_ckks_bootstrapping_reference!(OverrideBackend);
 unsafe impl<F: poulpy_ckks::api::CKKSEncodingScalar + poulpy_ckks::reference::dft::DftScalar> poulpy_ckks::oep::DFTMatrixImpl<F>
     for OverrideBackend
@@ -447,6 +448,7 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
     };
     let keys = BootstrappingKeysLayout {
         rotation_keys: Default::default(),
+        first_factor_key: None,
         automorphism_key: poulpy_core::layouts::GLWEAutomorphismKeyLayout {
             n: key.n,
             base2k: key.base2k,

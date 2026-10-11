@@ -4,7 +4,7 @@ use poulpy_core::{
     GLWECopy, GLWEKeyswitch, GLWEShift,
     layouts::{
         BSGSMeta, GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
-        GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, SetBSGSMeta, SetK, TorusPrecision,
+        GetAutomorphismKey, GetTensorKey, LWEInfos, LinearTransformation, Rank, SetBSGSMeta, SetK, TorusPrecision,
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
@@ -128,6 +128,20 @@ where
             &in_layout,
             &encaps.dense_to_sparse,
             &encaps.sparse_to_dense,
+        ));
+    }
+
+    // A raise that applies the first CoeffsToSlots factor works on a few small
+    // ciphertexts; two limbs bound any lift it is given.
+    if let (Some(factor), Some(key)) = (ctx.coeffs_to_slots_first_factor(), &keys_layout.first_factor_key) {
+        nested = nested.max(BE::ckks_mod_up_first_factor_tmp_bytes(
+            module,
+            &boot_layout,
+            &in_layout,
+            2 * base2k.as_usize(),
+            factor,
+            keys_layout.encapsulation.as_ref().map(|encaps| &encaps.dense_to_sparse),
+            &key.glwe,
         ));
     }
 
@@ -449,29 +463,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        // The pipeline carves rank-1 intermediates, so reject higher-rank inputs
-        // rather than silently copying into a rank-1 scratch ciphertext.
-        ckks_ensure!(
-            src.rank().as_usize() == 1 && dst.rank().as_usize() == 1,
-            "ckks_bootstrap_mod_up supports rank-1 ciphertexts only, got rank {} -> {}",
-            src.rank().as_usize(),
-            dst.rank().as_usize()
-        );
-
-        // The input-width copy is scoped so its scratch is released right after
-        // ModUp widens it into `dst`.
-        scratch.scope(|scratch_inner| {
-            let (mut ct0, mut scratch_inner) = scratch_inner.take_ckks_ciphertext_scratch(src, src.meta());
-            self.ckks_copy(&mut ct0, src, &mut scratch_inner)?;
-            ckks_bootstrap_mod_up_from_mut(self, dst, &mut ct0, Some(eval_mod), 0, keys, &mut scratch_inner)
-        })?;
-
-        dst.set_meta(GLWEPlaintextMeta {
-            scale: Scale::Log(dst.log_delta() + eval_mod.log_msg_ratio),
-            slots: src.slots(),
-            log_sparsity: src.log_sparsity(),
-        });
-        Ok(())
+        bootstrap_mod_up(self, dst, src, eval_mod, None, keys, scratch)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -550,7 +542,15 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
             // integer wrap-around `I·q` exposed by ModUp is bounded by the *sparse* secret's
             // Hamming weight (https://eprint.iacr.org/2022/024).
             let (mut ct, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta());
-            self.ckks_bootstrap_mod_up_reference(&mut ct, ct_in, &ctx.eval_mod().plan, keys, &mut scratch_local)?;
+            bootstrap_mod_up(
+                self,
+                &mut ct,
+                ct_in,
+                &ctx.eval_mod().plan,
+                ctx.coeffs_to_slots_first_factor(),
+                keys,
+                &mut scratch_local,
+            )?;
 
             // CoeffsToSlots (split): coefficients → (real, imag) slots. In the standard
             // pipeline this feeds EvalMod directly; in EvalRound+ it is the low-precision
@@ -859,12 +859,68 @@ where
     Ok(())
 }
 
+/// Whole raise step of the C2S-first pipeline: lift to the plan's message
+/// ratio, (encapsulated) ModUp, and the first CoeffsToSlots factor when the
+/// plan leaves it to the raise.
+fn bootstrap_mod_up<BE, Dst, Src, K>(
+    module: &Module<BE>,
+    dst: &mut Dst,
+    src: &Src,
+    eval_mod: &EvalModPlan,
+    first_factor: Option<&LinearTransformation<CKKSPlaintextOwned<BE>>>,
+    keys: &K,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend + CKKSEncapsulatedModUpImpl,
+    Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSPow2Ops<BE> + CKKSCopyOps<BE>,
+    K: BootstrappingKeys<BE>,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+{
+    // The pipeline carves rank-1 intermediates, so reject higher-rank inputs
+    // rather than silently copying into a rank-1 scratch ciphertext.
+    ckks_ensure!(
+        src.rank().as_usize() == 1 && dst.rank().as_usize() == 1,
+        "ckks_bootstrap_mod_up supports rank-1 ciphertexts only, got rank {} -> {}",
+        src.rank().as_usize(),
+        dst.rank().as_usize()
+    );
+
+    // The input-width copy is scoped so its scratch is released right after
+    // ModUp widens it into `dst`.
+    scratch.scope(|scratch_inner| {
+        let (mut ct0, mut scratch_inner) = scratch_inner.take_ckks_ciphertext_scratch(src, src.meta());
+        module.ckks_copy(&mut ct0, src, &mut scratch_inner)?;
+        ckks_bootstrap_mod_up_from_mut(
+            module,
+            dst,
+            &mut ct0,
+            Some(eval_mod),
+            0,
+            first_factor,
+            keys,
+            &mut scratch_inner,
+        )
+    })?;
+
+    dst.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(dst.log_delta() + eval_mod.log_msg_ratio),
+        slots: src.slots(),
+        log_sparsity: src.log_sparsity(),
+    });
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
 fn ckks_bootstrap_mod_up_from_mut<BE, Dst, Src, K>(
     module: &Module<BE>,
     dst: &mut Dst,
     src: &mut Src,
     lift: Option<&EvalModPlan>,
     mut scale_up: usize,
+    first_factor: Option<&LinearTransformation<CKKSPlaintextOwned<BE>>>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -890,6 +946,12 @@ where
             src.set_meta(meta);
         }
         scale_up = plan.raised_scale_up(src.log_delta())?;
+    }
+
+    // A first CoeffsToSlots factor left to the raise is applied here, on the
+    // raised ciphertext while it is small; its switches replace sparse-to-dense.
+    if let Some(factor) = first_factor {
+        return BE::ckks_mod_up_first_factor(module, dst, src, scale_up, factor, keys, scratch);
     }
 
     match keys.encapsulation_keys() {
@@ -1176,6 +1238,7 @@ where
             &mut ct_coeffs,
             None,
             ctx.c2s_guard_bits(),
+            ctx.coeffs_to_slots_first_factor(),
             keys,
             &mut scratch_inner,
         )?;

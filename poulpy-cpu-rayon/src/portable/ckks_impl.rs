@@ -1,7 +1,8 @@
 //! `poulpy-ckks` extension points of the portable Rayon backends.
 
 use poulpy_ckks::{
-    CKKSCtBounds, CKKSResult, SetCKKSInfos, impl_ckks_encapsulated_mod_up_reference, oep::CKKSEncapsulatedModUpImpl,
+    CKKSCtBounds, CKKSResult, SetCKKSInfos, impl_ckks_encapsulated_mod_up_reference, impl_ckks_mod_up_first_factor_reference,
+    oep::CKKSEncapsulatedModUpImpl,
 };
 use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GGLWEPreparedBackendRef};
 use poulpy_cpu_portable::{
@@ -13,6 +14,8 @@ use poulpy_hal::layouts::{Module, Ring, ScratchArena, VecZnxDftBackendMut, VecZn
 use super::{FFT64PortableRayon, NTT4x30PortableRayon, core_impl::digits_strided};
 
 impl_ckks_encapsulated_mod_up_reference!(FFT64PortableRayon);
+impl_ckks_mod_up_first_factor_reference!(FFT64PortableRayon);
+impl_ckks_mod_up_first_factor_reference!(NTT4x30PortableRayon);
 
 // The portable backends encode every precision with the canonical table.
 impl<R: Ring, F> CKKSEncodingTransform<F> for FFT64PortableRayon<R>

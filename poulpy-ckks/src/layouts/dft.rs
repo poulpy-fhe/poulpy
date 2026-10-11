@@ -96,6 +96,10 @@ pub struct DFTPlan {
     /// are allocated with, and the scale (`log_delta` — the `log_budget` bits
     /// each factor consumes) they are encoded at.
     pub(crate) coeffs_meta: CoeffsMeta,
+    /// The first factor is applied by the modulus raise, on the raised
+    /// ciphertext while it is still small. Set via
+    /// [`Self::with_first_factor_on_raise`].
+    pub(crate) first_factor_on_raise: bool,
 }
 
 /// Single source of truth for the radix-2 merge geometry, shared by the factor
@@ -285,6 +289,7 @@ impl DFTPlan {
             scaling: None,
             bit_reversed: false,
             coeffs_meta,
+            first_factor_on_raise: false,
         };
         plan.schedule.check("DFTPlan")?;
         if plan.num_factors().checked_mul(plan.coeffs_meta.log_delta()).is_none() {
@@ -316,6 +321,47 @@ impl DFTPlan {
         }
         self.scaling = Some(scaling);
         Ok(self)
+    }
+
+    /// Leaves the first factor to the modulus raise of a bootstrap.
+    ///
+    /// A raised ciphertext is small until its first key switch: a plaintext
+    /// product followed by a division then keeps it at the same precision, so
+    /// the first factor consumes no modulus. Its diagonals are applied one by
+    /// one before their rotation (giant step 1, no baby step), and each
+    /// rotation is the first key switch of its term
+    /// ([`poulpy_core::reference::keyswitching::small`]).
+    ///
+    /// The compiled matrix then holds the remaining factors only:
+    /// [`Self::consumed_bits`] and [`Self::galois_elements`] leave the first
+    /// one out, and [`Self::first_factor_rotations`] lists its rotations.
+    pub fn with_first_factor_on_raise(mut self) -> Self {
+        self.first_factor_on_raise = true;
+        self.schedule.steps[0].giant_step = 1;
+        self
+    }
+
+    /// Whether the first factor is left to the modulus raise
+    /// ([`Self::with_first_factor_on_raise`]).
+    pub fn first_factor_on_raise(&self) -> bool {
+        self.first_factor_on_raise
+    }
+
+    /// Factors the compiled matrix evaluates: all of them, or all but the
+    /// first when it is left to the modulus raise.
+    pub fn num_evaluated_factors(&self) -> usize {
+        self.num_factors() - usize::from(self.first_factor_on_raise)
+    }
+
+    /// Slot rotations of the diagonals of the first factor, in `[0, slots)`:
+    /// one key each when the factor is left to the modulus raise.
+    pub fn first_factor_rotations(&self, log_n: usize) -> Vec<i64> {
+        let slots = 1i64 << (self.log_slots() + usize::from(self.is_sparse_repack(log_n)));
+        let rotations: BTreeSet<i64> = self.diagonal_indexes(log_n)[0]
+            .iter()
+            .map(|index| index.rem_euclid(slots))
+            .collect();
+        rotations.into_iter().collect()
     }
 
     /// Applies the transform bit-reversed (and expects bit-reversed inputs).
@@ -400,8 +446,10 @@ impl DFTPlan {
         self.schedule.num_factors()
     }
 
+    /// `log_budget` bits the transform consumes: one factor scale per
+    /// evaluated factor ([`Self::num_evaluated_factors`]).
     pub fn consumed_bits(&self) -> usize {
-        self.num_factors() * self.coeffs_meta.log_delta()
+        self.num_evaluated_factors() * self.coeffs_meta.log_delta()
     }
 
     /// Whether this plan resolves to the sparse `RepackImagAsReal` path on a ring
@@ -599,7 +647,12 @@ impl DFTPlan {
         self.diagonal_indexes(log_n)
             .into_iter()
             .zip(&self.schedule.steps)
-            .map(|(indexes, step)| {
+            .enumerate()
+            .map(|(factor, (indexes, step))| {
+                // A first factor left to the modulus raise rotates with keys of its own.
+                if factor == 0 && self.first_factor_on_raise {
+                    return Vec::new();
+                }
                 let layout = LinearTransformationLayout {
                     indexes,
                     slots: slot_count,
@@ -820,7 +873,7 @@ fn check_factor_operands<BE: Backend, P: GLWEInfos + IntPolyInfos + crate::api::
         "dense DFT requires Split instead of Repack"
     );
     crate::ckks_ensure!(
-        factors.len() == plan.num_factors(),
+        factors.len() == plan.num_evaluated_factors(),
         "DFT factor count does not match its plan"
     );
     let mut base2k = None;

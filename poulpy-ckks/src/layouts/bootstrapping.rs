@@ -28,7 +28,7 @@ use std::collections::BTreeMap;
 use crate::layouts::CKKSPlaintextOwned;
 use anyhow::{Result, ensure};
 use poulpy_core::{
-    layouts::{Base2K, GLWEToBackendRef, LWEInfos},
+    layouts::{Base2K, GLWEToBackendRef, LWEInfos, LinearTransformation},
     reference::linear_transformation::DiagonalProd,
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -144,6 +144,16 @@ impl BootstrappingPlan {
         }
         if slots_to_coeffs.kind() != DFTType::Decode {
             return Err(invalid("slots_to_coeffs must be a DFTType::Decode plan".to_string()));
+        }
+        if coeffs_to_slots.first_factor_on_raise() && techniques.eval_round_plus.is_some() {
+            return Err(invalid(
+                "a first CoeffsToSlots factor on the raise cannot be combined with EvalRound+".to_string(),
+            ));
+        }
+        if slots_to_coeffs.first_factor_on_raise() {
+            return Err(invalid(
+                "only CoeffsToSlots follows the raise: slots_to_coeffs cannot leave its first factor to it".to_string(),
+            ));
         }
         eval_mod.validate()?;
         let coeffs_to_slots = coeffs_to_slots.with_scaling(eval_mod.input_scaling()?)?;
@@ -357,6 +367,12 @@ pub struct BootstrappingContext<BE: Backend, F> {
     /// The plan constructor scales this transform for its EvalMod variant.
     coeffs_to_slots: DFTMatrixPrepared<BE, Encode, Split>,
 
+    /// First CoeffsToSlots factor, when the plan leaves it to the modulus
+    /// raise ([`DFTPlan::with_first_factor_on_raise`]): one giant step per
+    /// diagonal, the diagonal rotated back by its own index. Kept unprepared,
+    /// its products run on a ciphertext of a few limbs.
+    coeffs_to_slots_first_factor: Option<LinearTransformation<CKKSPlaintextOwned<BE>>>,
+
     /// Prepared bypass CoeffsToSlots matrix
     coeffs_to_slots_bypass: Option<DFTMatrixPrepared<BE, Encode, Split>>,
 
@@ -419,9 +435,11 @@ impl KeyWidths<'_> {
                     widen(p, start);
                 }
             }
+            // A first factor applied by the raise has no element here and costs no width.
+            let free = usize::from(dft.first_factor_on_raise());
             for (factor, elements) in factors.iter().enumerate() {
                 for &p in elements {
-                    widen(p, start - factor * log_delta);
+                    widen(p, start - (factor - free) * log_delta);
                 }
             }
         }
@@ -478,6 +496,13 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
         &self.coeffs_to_slots
     }
 
+    /// First CoeffsToSlots factor, when the modulus raise applies it
+    /// ([`DFTPlan::with_first_factor_on_raise`]); [`Self::coeffs_to_slots`]
+    /// then holds the remaining factors.
+    pub fn coeffs_to_slots_first_factor(&self) -> Option<&LinearTransformation<CKKSPlaintextOwned<BE>>> {
+        self.coeffs_to_slots_first_factor.as_ref()
+    }
+
     /// Prepared EvalRound+ bypass matrix, when enabled.
     pub fn coeffs_to_slots_bypass(&self) -> Option<&DFTMatrixPrepared<BE, Encode, Split>> {
         self.coeffs_to_slots_bypass.as_ref()
@@ -510,6 +535,7 @@ pub struct BootstrappingContextUnprepared<BE: Backend, F> {
     c2s_guard_bits: usize,
     functional_message_modulus: Option<usize>,
     coeffs_to_slots: DFTMatrix<BE, Encode, Split>,
+    coeffs_to_slots_first_factor: Option<LinearTransformation<CKKSPlaintextOwned<BE>>>,
     coeffs_to_slots_bypass: Option<DFTMatrix<BE, Encode, Split>>,
     slots_to_coeffs: DFTMatrix<BE, Decode, Split>,
     eval_mod: EvalMod<F, CKKSPlaintextOwned<BE>>,
@@ -545,6 +571,7 @@ impl<BE: Backend, F> BootstrappingContextUnprepared<BE, F> {
             c2s_guard_bits,
             functional_message_modulus,
             coeffs_to_slots,
+            coeffs_to_slots_first_factor,
             coeffs_to_slots_bypass,
             slots_to_coeffs,
             eval_mod,
@@ -565,6 +592,7 @@ impl<BE: Backend, F> BootstrappingContextUnprepared<BE, F> {
             c2s_guard_bits,
             functional_message_modulus,
             coeffs_to_slots,
+            coeffs_to_slots_first_factor,
             coeffs_to_slots_bypass,
             slots_to_coeffs,
             eval_mod,
@@ -612,7 +640,13 @@ where
     where
         Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     {
-        let coeffs_to_slots = module.ckks_new_dft_matrix::<Encode, Split>(base2k, &plan.coeffs_to_slots, scratch)?;
+        let mut coeffs_to_slots = module.ckks_new_dft_matrix::<Encode, Split>(base2k, &plan.coeffs_to_slots, scratch)?;
+        // A first factor left to the modulus raise is evaluated from its plaintexts,
+        // not by the matrix.
+        let coeffs_to_slots_first_factor = plan
+            .coeffs_to_slots
+            .first_factor_on_raise()
+            .then(|| coeffs_to_slots.inner.factors.remove(0));
         let slots_to_coeffs = module.ckks_new_dft_matrix::<Decode, Split>(base2k, &plan.slots_to_coeffs, scratch)?;
         let eval_mod = compile_eval_mod::<BE, F>(base2k, plan.eval_mod, module, scratch)?;
         let coeffs_to_slots_bypass = match plan.coeffs_to_slots_bypass() {
@@ -624,6 +658,7 @@ where
             c2s_guard_bits: plan.c2s_guard_bits,
             functional_message_modulus: plan.functional_message_modulus,
             coeffs_to_slots,
+            coeffs_to_slots_first_factor,
             coeffs_to_slots_bypass,
             slots_to_coeffs,
             eval_mod,

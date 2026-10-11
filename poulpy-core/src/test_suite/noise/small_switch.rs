@@ -2,12 +2,15 @@
 //! held as an integer polynomial at the bottom of the Torus.
 //!
 //! A plaintext product followed by a division keeps it at the same width; an
-//! automorphism needs no key; and its mask times a GLWE encryption of the
-//! input secret is its key switch ([`glwe_keyswitch_small`]).
+//! automorphism needs no key; and its mask times row 0 of a one-digit
+//! switching key is its key switch ([`glwe_keyswitch_small_accumulate`]).
 
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphism, VecZnxCopy, VecZnxFillUniformSource, VecZnxRshAdd},
-    layouts::{Module, ScratchOwned, ZnxView, ZnxViewMut, galois_element},
+    api::{
+        CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphism, VecZnxBigNormalize, VecZnxCopy,
+        VecZnxDftAlloc, VecZnxFillUniformSource, VecZnxIdftApply, VecZnxRshAdd,
+    },
+    layouts::{CnvPVecRToBackendRef, Module, ScratchOwned, VecZnxDftToBackendMut, ZnxView, ZnxViewMut, galois_element},
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut},
 };
@@ -15,11 +18,13 @@ use poulpy_hal::{
 use crate::{
     GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEMulPlain, GLWENoise, GLWEShift,
     layouts::{
-        GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWESecretSampling, GLWEToBackendMut,
-        GLWEToBackendRef, ModuleCoreAlloc, prepared::GLWESecretPrepared,
+        GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWESecretSampling, LWEInfos, ModuleCoreAlloc,
+        prepared::GLWESecretPrepared,
     },
     reference::keyswitching::small::{
-        glwe_keyswitch_small, glwe_keyswitch_small_tmp_bytes, glwe_secret_automorphism, glwe_small_switching_key_encrypt_sk,
+        glwe_automorphism_keyless, glwe_keyswitch_small_acc_size, glwe_keyswitch_small_accumulate, glwe_keyswitch_small_finish,
+        glwe_secret_automorphism, glwe_small_switching_key_encrypt_sk, glwe_small_switching_key_prepare,
+        glwe_small_switching_key_prepared_alloc,
     },
     test_suite::noise::glwe_noise_checked,
 };
@@ -33,6 +38,12 @@ where
         + VecZnxAutomorphism<BE>
         + VecZnxCopy<BE>
         + VecZnxRshAdd<BE>
+        + VecZnxDftAlloc<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxBigNormalize<BE>
+        + Convolution<BE>
+        + CnvPVecAlloc<BE>
+        + crate::GLWENormalize<BE>
         + GLWEEncryptSk<BE>
         + GLWEDecrypt<BE>
         + GLWEMulPlain<BE>
@@ -108,15 +119,7 @@ where
     // A slot rotation, with no key: the ciphertext is then under the rotated secret.
     let p: i64 = galois_element(5, 2 * n as i64);
     let mut rotated: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&small_layout);
-    for col in 0..2 {
-        module.vec_znx_automorphism(
-            p,
-            &mut GLWEToBackendMut::<BE>::to_backend_mut(&mut rotated).data,
-            col,
-            &GLWEToBackendRef::<BE>::to_backend_ref(&product).data,
-            col,
-        );
-    }
+    glwe_automorphism_keyless(module, &mut rotated, p, &product);
     let mut sk_rotated: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(1u32.into());
     glwe_secret_automorphism(module, &mut sk_rotated, p, &sk_in);
 
@@ -134,9 +137,27 @@ where
         &mut scratch.borrow(),
     );
 
+    // The switch: the key prepared once, the masked part accumulated in the transform
+    // domain, then brought back with the body.
+    let mut prepared = glwe_small_switching_key_prepared_alloc(module, &key);
+    glwe_small_switching_key_prepare(module, &mut prepared, &key, &mut scratch.borrow());
+    let mut acc = module.vec_znx_dft_alloc(n, 2, glwe_keyswitch_small_acc_size(key.size()));
     let mut switched: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&wide_layout);
-    assert!(glwe_keyswitch_small_tmp_bytes(module, &switched, &rotated, &key) <= 1 << 24);
-    glwe_keyswitch_small(module, &mut switched, &rotated, &key, &mut scratch.borrow());
+    glwe_keyswitch_small_accumulate(
+        module,
+        &mut acc.to_backend_mut(),
+        true,
+        &rotated,
+        &prepared.to_backend_ref(),
+        &mut scratch.borrow(),
+    );
+    glwe_keyswitch_small_finish(
+        module,
+        &mut switched,
+        &mut acc.to_backend_mut(),
+        &rotated,
+        &mut scratch.borrow(),
+    );
 
     // Expected: the raised integers times `X^3`, rotated, on the last limbs of the destination.
     let mut want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&wide_layout);

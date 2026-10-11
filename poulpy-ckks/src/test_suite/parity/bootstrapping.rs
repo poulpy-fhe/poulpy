@@ -241,6 +241,7 @@ fn ct_layout(n: usize, base2k: usize, k: usize, log_delta: usize, slots: SlotsKi
 fn keys_layout(atk: &GGLWELayout, d2s: &GGLWELayout, s2d: &GGLWELayout, encapsulate: bool) -> BootstrappingKeysLayout {
     BootstrappingKeysLayout {
         rotation_keys: Default::default(),
+        first_factor_key: None,
         automorphism_key: (*atk).into(),
         tensor_key: (*atk).into(),
         encapsulation: encapsulate.then(|| EncapsulationKeysLayout {

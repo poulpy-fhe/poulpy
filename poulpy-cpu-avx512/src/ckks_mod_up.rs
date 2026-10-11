@@ -304,6 +304,7 @@ where
 
 macro_rules! impl_encapsulated_mod_up {
     ($be:ty) => {
+        ::poulpy_ckks::impl_ckks_mod_up_first_factor_reference!($be);
         unsafe impl CKKSEncapsulatedModUpImpl for $be {
             fn ckks_encapsulated_mod_up_tmp_bytes<Dst, Src, D2S, S2D>(
                 module: &Module<$be>,

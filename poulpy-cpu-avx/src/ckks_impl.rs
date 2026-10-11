@@ -2,10 +2,11 @@ use super::{FFT64Avx, FFT64CIAvx, NTT4x30Avx, NTT4x30CIAvx};
 use poulpy_ckks::{
     impl_ckks_bootstrapping_reference, impl_ckks_complex_polynomial_evaluation_reference, impl_ckks_conjugate_reference,
     impl_ckks_dft_reference, impl_ckks_encapsulated_mod_up_reference, impl_ckks_eval_mod_reference, impl_ckks_fold_reference,
-    impl_ckks_imag_reference,
+    impl_ckks_imag_reference, impl_ckks_mod_up_first_factor_reference,
 };
 
 impl_ckks_encapsulated_mod_up_reference!(FFT64Avx);
+impl_ckks_mod_up_first_factor_reference!(FFT64Avx);
 // `f64` encodes through the AVX2/FMA kernels and `Quad` through the portable
 // kernels, both on the canonical twiddles. Rust has no specialization, so
 // accelerated backends list their precisions explicitly.
@@ -98,6 +99,8 @@ poulpy_cpu_portable::impl_cpu_ckks_defaults!(super::NTT4x30CIAvxRayon);
 select_avx_encoding_transform!(super::FFT64AvxRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_encapsulated_mod_up_reference!(super::FFT64AvxRayon);
+#[cfg(feature = "enable-rayon")]
+impl_ckks_mod_up_first_factor_reference!(super::FFT64AvxRayon);
 #[cfg(feature = "enable-rayon")]
 select_avx_encoding_transform!(super::NTT4x30AvxRayon);
 #[cfg(feature = "enable-rayon")]

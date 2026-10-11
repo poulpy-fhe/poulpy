@@ -34,8 +34,8 @@ use crate::{
 };
 use num_traits::{Float, FromPrimitive, ToPrimitive};
 use poulpy_core::{
-    GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECIKeyEncryptSk, GLWEDecrypt, GLWEKeyswitch, GLWENormalize, GLWESub,
-    GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ScratchArenaTakeCore, TransferInto,
+    GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECIKeyEncryptSk, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEKeyswitch,
+    GLWENormalize, GLWESub, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ScratchArenaTakeCore, TransferInto,
     layouts::{
         BackendGLWESecret, Base2K, Degree, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory,
         GLWECIEmbedKeyPrepared, GLWECIKeyPreparedFactory, GLWECITraceKeyPrepared, GLWELayout, GLWESecretPreparedFactory,
@@ -202,8 +202,14 @@ pub trait TestContextSharedModule<BE: Backend>:
     + GLWETensorKeyEncryptSk<BE>
     + GLWEAutomorphismKeyEncryptSk<BE>
     + GLWESwitchingKeyEncryptSk<BE>
+    + GLWEEncryptSk<BE>
+    + poulpy_hal::api::VecZnxNormalize<BE>
     + GLWESwitchingKeyPreparedFactory<BE>
     + GLWEKeyswitch<BE>
+    + GLWECopy<BE>
+    + poulpy_hal::api::VecZnxAutomorphism<BE>
+    + poulpy_hal::api::Convolution<BE>
+    + poulpy_hal::api::CnvPVecAlloc<BE>
     + GaloisElement
 {
 }
@@ -239,8 +245,14 @@ impl<BE: Backend, M> TestContextSharedModule<BE> for M where
         + GLWETensorKeyEncryptSk<BE>
         + GLWEAutomorphismKeyEncryptSk<BE>
         + GLWESwitchingKeyEncryptSk<BE>
+        + GLWEEncryptSk<BE>
+        + poulpy_hal::api::VecZnxNormalize<BE>
         + GLWESwitchingKeyPreparedFactory<BE>
         + GLWEKeyswitch<BE>
+        + GLWECopy<BE>
+        + poulpy_hal::api::VecZnxAutomorphism<BE>
+        + poulpy_hal::api::Convolution<BE>
+        + poulpy_hal::api::CnvPVecAlloc<BE>
         + GaloisElement
 {
 }

@@ -177,6 +177,7 @@
   Backends get it from `impl_operations_reference_full!`, or from `impl_glwe_mul_prepared_plain_sum_reference_full!` with the OEP family `GLWEMulPreparedPlainSumImpl` and its reference `GLWEMulPreparedPlainSumReference`.
 - Add `GGLWELayout::max_input_k`, the widest input a key switches whole: what its digits cover, and no more than its precision less one digit.
 - Add `From<GGLWELayout>` for `GLWEAutomorphismKeyLayout`, `GLWESwitchingKeyLayout` and `GLWETensorKeyLayout`. Each panics on a coarsened view.
+- Add `reference::keyswitching::small`: the key switch of a small ciphertext (one raised to a wider precision, integers of a few limbs) by a product of its mask with its key, a GLWE encryption of the input secret at the destination's bottom bit (`glwe_small_switching_key_encrypt_sk`) prepared as a convolution operand, accumulated in the transform domain over several terms; with `glwe_automorphism_keyless` and `glwe_secret_automorphism`. The key has no gadget: its noise is scaled by the mask, so the guard behind the secret must exceed the mask's bits.
 
 ### `poulpy-ckks`
 
@@ -317,6 +318,8 @@
   The counts are those `blas_matmul` and `blas_matmul_pt_right` document.
 - `validate_blas_sum` rejects with `InvalidOperand` a `base2k` whose digits cannot hold the `log2(mat_slots) + 1` lazy terms the sum adds within `2^62`, as the products reject one above 62.
 - Calls with distinct `res` and `scratch` may run concurrently over a shared module, context, public operands, prepared operands and key stores, and an override keeps no state across calls.
+- Add the modulus raise that applies the first `CoeffsToSlots` factor on the raised ciphertext while it is small (`DFTPlan::with_first_factor_on_raise`, after ePrint 2025/1403): the factor consumes no modulus, each of its diagonals is switched by one small key, a GLWE encryption of the rotated raise secret (`FirstFactorKeyLayout`, `BootstrappingKeysLayout::first_factor_key`, `BootstrappingKeys::first_factor_key`), and the sparse-to-dense switch is not used. `BootstrappingPreset::with_first_factor_on_raise` re-derives a preset with it. Not combined with EvalRound+.
+- **Breaking:** `CKKSEncapsulatedModUpImpl` requires `CKKSModUpFirstFactorImpl` (`impl_ckks_mod_up_first_factor_reference!`); `BootstrappingKeysLayout`, `BootstrappingKeySet` and `BootstrappingKeysPrepared` gain the first-factor key fields; `BootstrappingContext::generate_keys` requires `VecZnxAutomorphism`, `GLWEEncryptSk`, `GLWESecretPreparedFactory` and `VecZnxNormalize`, `BootstrappingKeySet::prepare` requires `Convolution`, `CnvPVecAlloc` and `GLWENormalize`.
 
 ### `poulpy-cpu-arm`
 
