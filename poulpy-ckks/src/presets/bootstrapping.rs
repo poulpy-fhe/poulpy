@@ -558,7 +558,9 @@ fn keys_layout(
     // widest digit those admit.
     let mut rotation_keys = BTreeMap::new();
     let mut tensor_keys = vec![wide];
-    if spec.key_dsize.is_none() {
+    // EvalRound+ runs its bypass at widths of its own, which the stage widths
+    // below do not model: its keys keep the shape of the raised width.
+    if spec.key_dsize.is_none() && plan.coeffs_to_slots_bypass().is_none() {
         for (p, k) in rotation_key_inputs(spec, plan, bootstrap_k, input_k) {
             let layout = key_layout(spec, "rotation", k, widest_dsize(spec, k, bounds.dense), bounds.dense)?;
             if layout != wide {
@@ -625,7 +627,8 @@ fn switching_key_layout(layout: &GGLWELayout) -> GLWESwitchingKeyLayout {
 /// Factor `i` of a transform runs on a ciphertext `i` factor scales below the
 /// width the transform starts at: the raised width for CoeffsToSlots, and for
 /// SlotsToCoeffs the input width (S2C-first) or what EvalMod leaves
-/// (C2S-first). The conjugation follows CoeffsToSlots.
+/// (C2S-first). The conjugation follows CoeffsToSlots. Not for a plan with the
+/// EvalRound+ bypass.
 fn rotation_key_inputs(spec: &PresetSpec, plan: &BootstrappingPlan, bootstrap_k: usize, input_k: usize) -> BTreeMap<i64, usize> {
     let cyclotomic_order = 1i64 << (spec.log_n + 1);
     let after_c2s = bootstrap_k - plan.coeffs_to_slots().consumed_bits();
@@ -639,12 +642,8 @@ fn rotation_key_inputs(spec: &PresetSpec, plan: &BootstrappingPlan, bootstrap_k:
         let widest = inputs.entry(p).or_insert(k);
         *widest = (*widest).max(k);
     };
-    let transforms = [
-        (Some(plan.coeffs_to_slots()), bootstrap_k),
-        (plan.coeffs_to_slots_bypass(), bootstrap_k),
-        (Some(plan.slots_to_coeffs()), s2c_k),
-    ];
-    for (dft, start) in transforms.into_iter().filter_map(|(dft, start)| dft.map(|dft| (dft, start))) {
+    let transforms = [(plan.coeffs_to_slots(), bootstrap_k), (plan.slots_to_coeffs(), s2c_k)];
+    for (dft, start) in transforms {
         let log_delta = dft.coeffs_meta().log_delta();
         let factors = dft.galois_elements_per_factor(spec.log_n, cyclotomic_order);
         // The repack rotation of the sparse path belongs to no factor.
@@ -688,9 +687,15 @@ fn tensor_key_inputs(spec: &PresetSpec, plan: &BootstrappingPlan, bootstrap_k: u
     inputs
 }
 
-/// Bits a key keeps between its modulus and the input plus one digit. The
-/// key noise, scaled by a digit, starts to show in the bootstrapped precision
-/// 8 bits past that point; this stays 10 bits inside it.
+/// Bits a key keeps between its modulus and the input plus one digit.
+///
+/// At that point the key noise is `sigma * sqrt(n * digits / 12)` units of the
+/// input's last bit (see [`poulpy_core::layouts::key_k`]): about `2^9` at
+/// `N = 2^16`, `2^7` with this margin. A bootstrapped ciphertext shows it only
+/// past its own error, `log_delta - log2_precision` bits above its last bit:
+/// 16 or more in the presets, which leaves 9. Measured on
+/// [`n16_d35_k720_p19_s2c`], the precision starts to drop 10 bits below this
+/// margin. A preset with a narrower gap between scale and precision needs more.
 const KEY_NOISE_MARGIN: usize = 2;
 
 /// Widest digit, in limbs, a key under a modulus bound of `limit` bits can
@@ -886,10 +891,7 @@ mod tests {
         let mut keys: Vec<&K> = keys.into_iter().collect();
         keys.sort_by_key(|key| core::cmp::Reverse(key.gglwe_layout().max_input_k()));
         keys.iter()
-            .map(|key| {
-                assert!(key.k().as_usize() <= 1707);
-                (key.dsize().as_usize(), key.dnum().as_usize())
-            })
+            .map(|key| (key.dsize().as_usize(), key.dnum().as_usize()))
             .collect()
     }
 

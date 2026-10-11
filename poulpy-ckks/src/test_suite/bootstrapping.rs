@@ -206,9 +206,25 @@ where
 
     // One scratch for the whole pipeline (plaintext precision sized for the
     // largest plaintext op, EvalMod).
+    // Keys shaped by use, as the presets do: a second tensor key for the lower
+    // half of EvalMod, and rotation keys of the last CoeffsToSlots factor sized
+    // for the width that factor runs at.
+    let c2s = plan.coeffs_to_slots();
+    let after_c2s = k_boot - c2s.consumed_bits();
+    let after_eval_mod = after_c2s - plan.eval_mod().consumed_bits();
+    let narrow = |k: usize| CKKSTestParams { k, ..tp };
+    let factors = c2s.galois_elements_per_factor(tp.log_n(), 2 * n as i64);
+    let last = factors.len() - 1;
+    let last_k = k_boot - last * c2s.coeffs_meta().log_delta();
+    let rotation_keys: std::collections::BTreeMap<_, _> = factors[last]
+        .iter()
+        .filter(|p| !factors[..last].iter().any(|elements| elements.contains(p)))
+        .map(|&p| (p, narrow(last_k).atk_layout()))
+        .collect();
+    assert!(!rotation_keys.is_empty());
     let keys_layout = BootstrappingKeysLayout {
-        rotation_keys: Default::default(),
-        narrow_tensor_keys: Vec::new(),
+        rotation_keys,
+        narrow_tensor_keys: vec![narrow((after_c2s + after_eval_mod) / 2).tsk_layout()],
         automorphism_key: tp.atk_layout(),
         tensor_key: tp.tsk_layout(),
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
@@ -261,6 +277,24 @@ where
         )
         .unwrap()
         .prepare(&module, &mut scratch.borrow());
+
+    // Each relinearization gets the key of fewest rows covering its input,
+    // and no key at all past the widest.
+    {
+        use crate::layouts::{BootstrappingKeys, TensorKeysByWidth};
+        use poulpy_core::layouts::{GGLWEInfos, GetTensorKey};
+        let tensor_keys = TensorKeysByWidth::new(&bsk);
+        let rows = |k: usize| tensor_keys.get_tensor_key(k.into()).map(|key| key.dnum().as_usize());
+        let (wide, narrow) = (
+            bsk.tensor_key().dnum().as_usize(),
+            bsk.narrow_tensor_keys()[0].dnum().as_usize(),
+        );
+        assert!(narrow < wide);
+        assert_eq!(rows(after_c2s).unwrap(), wide);
+        assert_eq!(rows((after_c2s + after_eval_mod) / 2).unwrap(), narrow);
+        assert_eq!(rows(after_eval_mod).unwrap(), narrow);
+        assert!(rows(bsk.tensor_key().gglwe_layout().max_input_k().as_usize() + 1).is_err());
+    }
 
     // Encrypt z at the input ("level 0") modulus.
     let (re, im) = test_vector_1::<F>(m);
@@ -386,7 +420,7 @@ where
             &mut res_real,
             &ct_real,
             ctx.eval_mod(),
-            bsk.tensor_key(),
+            &crate::layouts::TensorKeysByWidth::new(&bsk),
             &mut scratch.borrow(),
         )
         .unwrap();
@@ -395,7 +429,7 @@ where
             &mut res_imag,
             &ct_imag,
             ctx.eval_mod(),
-            bsk.tensor_key(),
+            &crate::layouts::TensorKeysByWidth::new(&bsk),
             &mut scratch.borrow(),
         )
         .unwrap();

@@ -155,6 +155,8 @@
   It transforms no operand, so prepared ciphertexts serve every output that shares them, and `glwe_mul_prepared_plain_sum_tmp_bytes` does not grow with the number of terms. It checks every operand against the degree and rank of `res`, every element odd, and its scratch, before writing `res`. One term through `1` is `glwe_mul_plain` of the sources bit for bit.
   Backends get it from `impl_operations_reference_full!`, or from `impl_glwe_mul_prepared_plain_sum_reference_full!` with the OEP family `GLWEMulPreparedPlainSumImpl` and its reference `GLWEMulPreparedPlainSumReference`.
 - `key_k` no longer requires `k_aux` to hold a full gadget digit: a key switches an input of `input_k` bits while `k >= input_k + dsize * base2k`, so a wide digit fits under a bound on `k` when the input leaves the last digit partly empty; add `GGLWELayout::max_input_k`.
+- `key_k` no longer requires `k_aux` to hold a full gadget digit, and documents the key noise a digit and a precision give: a wide digit fits under a bound on `k` when the input leaves the last digit partly empty or carries more error than its last bit; add `GGLWELayout::max_input_k`.
+- A gadget product on a key with a short `k_aux` takes its guard limbs from the next digit when the input uses fewer digits than the key has.
 
 ### `poulpy-ckks`
 
@@ -229,8 +231,8 @@
 - `CKKSDotProductOps::ckks_dot_product_prepared_pt` and its `_tmp_bytes` sum the products of ciphertexts prepared by `ckks_prepare_left` by plaintexts prepared by `ckks_prepare_right`, each plaintext read through an odd Galois element (`ckks_galois_element(r)` for its slots rotated by `r`), through core's `glwe_mul_prepared_plain_sum`, at the metadata rule of `ckks_mul_pt_vec_into`.
   They check their operands as `ckks_dot_product_prepared` does, and return `InvalidOperand` for an even element, before writing `dst`; one term through `1` is `ckks_mul_pt_vec_into` bit for bit. Backends get them from `impl_ckks_dot_product_reference!`, over `CKKSDotProductReference`; they require `Module: GLWEMulPreparedPlainSum`, which every CPU backend implements.
 - **Breaking:** `BootstrappingKeysLayout` gains `rotation_keys` (layouts of single rotation keys, by Galois element) and `narrow_tensor_keys`, and is no longer `Copy`; `BootstrappingKeySet` and `BootstrappingKeysPrepared` gain `narrow_tensor_keys`.
-- **Breaking:** the bootstrapping presets take their modulus bounds from `presets::security::max_log_modulus` (1707 and 345 bits at `N = 2^16` for weights 1024 and 32, 851 and 162 at `N = 2^15`) and give each key the widest digit its use admits: rotation keys by CoeffsToSlots factor, and one tensor key per row count. Key sets generated for 0.9.0 presets do not match. `BootstrappingPreset::with_dsizes` still gives every high-modulus key one digit.
-- Add `BootstrappingKeys::narrow_tensor_keys` (provided, empty by default) and `TensorKeysByWidth`, through which EvalMod relinearizes with the key of fewest rows covering its input; add `DFTPlan::galois_elements_per_factor`.
+- **Breaking:** the bootstrapping presets check every key against the modulus bounds of their secrets, 128-bit estimates documented with the presets (1707 and 345 bits at `N = 2^16` for weights 1024 and 32, 851 and 162 at `N = 2^15`), and give each key the widest digit its use admits: rotation keys by CoeffsToSlots factor, and one tensor key per row count (a plan with the EvalRound+ bypass keeps one shape). Key sets generated for 0.9.0 presets do not match. `BootstrappingPreset::with_dsizes` still gives every high-modulus key one digit.
+- Add `BootstrappingKeys::narrow_tensor_keys` (provided, empty by default) and `TensorKeysByWidth`, through which EvalMod relinearizes with the key of fewest rows covering its input, failing when none covers it; add `DFTPlan::galois_elements_per_factor`.
 - The bootstrap scratch bound covers every key shape of the layout.
 
 ### `poulpy-bin-fhe`

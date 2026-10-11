@@ -44,11 +44,22 @@ where
 
     for rank_in in 1_usize..3 {
         for rank_out in 1_usize..3 {
-            for dsize in 1_usize..max_dsize + 1 {
-                let k_out: usize = k_in + key_base2k * dsize; // better capture noise
-
+            for (dsize, short_guard) in (1_usize..max_dsize + 1).flat_map(|dsize| [(dsize, false), (dsize, true)]) {
                 let n: usize = module.n();
-                let dnum: usize = k_in.div_ceil(key_base2k * dsize);
+                let digit: usize = key_base2k * dsize;
+                // A full digit of guard, or a key with one digit more than the
+                // input fills and next to no guard: the product then takes its
+                // guard limbs from that digit.
+                let (k_in, dnum, k_aux) = if short_guard {
+                    let whole: usize = k_in / digit * digit;
+                    if whole == 0 {
+                        continue;
+                    }
+                    (whole, whole / digit + 1, 3)
+                } else {
+                    (k_in, k_in.div_ceil(digit), digit + module.log_n())
+                };
+                let k_out: usize = k_in + digit; // better capture noise
 
                 let glwe_in_infos = GLWELayout {
                     n: n.into(),
@@ -68,7 +79,7 @@ where
                     n: n.into(),
                     base2k: key_base2k.into(),
                     dnum: dnum.into(),
-                    k_aux: (dsize * key_base2k + module.log_n()).into(),
+                    k_aux: k_aux.into(),
                     k_digit: crate::layouts::k_digit_of(key_base2k, dsize),
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),

@@ -90,7 +90,13 @@ pub trait BootstrappingKeys<BE: Backend> {
 /// The tensor keys of a [`BootstrappingKeys`] store as one source.
 ///
 /// A relinearization takes the narrow key with the fewest rows among those
-/// covering its input ([`GGLWELayout::max_input_k`]), else the wide one.
+/// covering its input ([`GGLWELayout::max_input_k`]), else the wide one, and
+/// fails when that one does not cover it either.
+///
+/// The product of a relinearization can hold one limb more than its input.
+/// On a key the input fills, that limb falls past the last row and is dropped:
+/// an error below the key's gadget precision, far under what EvalMod's scale
+/// resolves.
 pub struct TensorKeysByWidth<'a, T> {
     wide: &'a T,
     narrow: &'a [T],
@@ -112,12 +118,18 @@ impl<'a, T> TensorKeysByWidth<'a, T> {
 
 impl<BE: Backend, T: GetTensorKey<BE> + GGLWEInfos> GetTensorKey<BE> for TensorKeysByWidth<'_, T> {
     fn get_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
-        self.narrow
-            .iter()
-            .filter(|key| key.gglwe_layout().max_input_k() >= k)
-            .min_by_key(|key| key.dnum().as_usize())
-            .unwrap_or(self.wide)
-            .get_tensor_key(k)
+        let covers = |key: &&T| key.gglwe_layout().max_input_k() >= k;
+        match self.narrow.iter().filter(covers).min_by_key(|key| key.dnum().as_usize()) {
+            Some(key) => key.get_tensor_key(k),
+            None if covers(&self.wide) => self.wide.get_tensor_key(k),
+            None => Err(poulpy_core::CoreError::GGLWEKeyUse {
+                op: "get_tensor_key",
+                detail: format!(
+                    "no tensor key covers k={k}: the widest is laid out for k={}",
+                    self.wide.gglwe_layout().max_input_k()
+                ),
+            }),
+        }
     }
 }
 
