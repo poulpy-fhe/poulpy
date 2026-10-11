@@ -32,7 +32,7 @@ use crate::{
     api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
     layouts::{
         BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextUnprepared, BlasGridInfos, BlasMatMulLeft, BlasMatMulRight,
-        BlasPtOperand, BlasPtOperandUnprepared, sum_galois_elements,
+        BlasPlan, BlasPtOperand, BlasPtOperandUnprepared, sum_galois_elements,
     },
     oep::BlasImpl,
 };
@@ -164,7 +164,7 @@ where
     F: TestScalar + DiagonalArithmetic,
 {
     let ctx = with_scratch::<B, _>(BlasContextUnprepared::encode_tmp_bytes::<F>(module, log_d), |s| {
-        BlasContextUnprepared::encode::<F>(module, log_d, params.base2k.into(), diagonal_meta(params), s)
+        BlasContextUnprepared::encode::<F>(module, BlasPlan::new(log_d), params.base2k.into(), diagonal_meta(params), s)
     })
     .unwrap();
     with_scratch::<B, _>(ctx.prepare_tmp_bytes(module), |s| ctx.prepare(module, s))
@@ -185,7 +185,7 @@ where
 {
     let a = operand(params, module, log_d, 2, 2, 61);
     let mut elements = sum_galois_elements(module, &a);
-    elements.push(module.ckks_galois_element(3 << (2 * log_d)));
+    elements.extend(BlasPlan::new(log_d).rotate_galois_elements(module.cyclotomic_order(), 3));
     let keys = fixture_keys(params, module, &elements, false);
     let key = atk_layout(params);
     let mut out = Vec::new();
@@ -210,7 +210,7 @@ where
     F: TestScalar + DiagonalArithmetic,
 {
     let ctx = context::<B, F>(params, module, log_d);
-    let keys = fixture_keys(params, module, &ctx.galois_elements(module.cyclotomic_order()), false);
+    let keys = fixture_keys(params, module, &ctx.plan().galois_elements(module.cyclotomic_order()), false);
     let key = atk_layout(params);
     let d = 1usize << log_d;
     let mut out = Vec::new();
@@ -275,8 +275,8 @@ where
             with_scratch::<B, _>(pt.prepare_tmp_bytes(module), |s| pt.prepare(module, s))
         })
         .collect();
-    let mut elements = ctx.galois_elements(order);
-    elements.extend(pts.iter().flat_map(|pt| pt.galois_elements(order)));
+    let mut elements = ctx.plan().matmul_galois_elements(order);
+    elements.extend(ctx.plan().matmul_pt_galois_elements(order));
     elements.sort_unstable();
     elements.dedup();
     let keys = fixture_keys(params, module, &elements, true);

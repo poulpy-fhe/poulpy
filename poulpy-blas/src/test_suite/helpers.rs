@@ -493,7 +493,50 @@ where
         .collect()
 }
 
-/// The context at `params.prec()` plus a rotation key for each of its Galois elements.
+/// The context at `LOG_D` and `params.prec()`.
+pub fn blas_context<BE, F>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> crate::layouts::BlasContext<BE>
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE>
+        + poulpy_ckks::api::CKKSEncodingOps<BE, F>
+        + poulpy_ckks::api::CKKSLinearTransformationOps<BE>
+        + poulpy_hal::api::CnvPVecAlloc<BE>,
+    F: TestScalar + poulpy_core::layouts::DiagonalArithmetic,
+{
+    let plan = crate::layouts::BlasPlan::new(LOG_D);
+    crate::layouts::BlasContextUnprepared::encode::<F>(module, plan, params.base2k.into(), params.prec().into(), scratch)
+        .unwrap()
+        .prepare(module, scratch)
+}
+
+/// A rotation key for each of `elements`, and no other.
+pub fn rotation_keys<BE>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    sk_raw: &poulpy_core::layouts::BackendGLWESecret<BE>,
+    elements: impl IntoIterator<Item = i64>,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE>,
+{
+    elements
+        .into_iter()
+        .map(|p| {
+            (
+                p,
+                poulpy_ckks::test_suite::helpers::gen_atk(params, module, p, sk_raw, scratch),
+            )
+        })
+        .collect()
+}
+
+/// [`blas_context`] plus a rotation key for each Galois element of its plan.
 #[allow(clippy::type_complexity)]
 pub fn context_and_keys<BE, F>(
     params: &CKKSTestParams,
@@ -513,21 +556,42 @@ where
     F: TestScalar + poulpy_core::layouts::DiagonalArithmetic,
 {
     use poulpy_hal::layouts::CyclotomicOrder;
-    let ctx =
-        crate::layouts::BlasContextUnprepared::encode::<F>(module, LOG_D, params.base2k.into(), params.prec().into(), scratch)
-            .unwrap()
-            .prepare(module, scratch);
-    let atks = ctx
-        .galois_elements(module.cyclotomic_order())
-        .into_iter()
-        .map(|p| {
-            (
-                p,
-                poulpy_ckks::test_suite::helpers::gen_atk(params, module, p, sk_raw, scratch),
-            )
-        })
-        .collect();
+    let ctx = blas_context::<BE, F>(params, module, scratch);
+    let atks = rotation_keys(
+        params,
+        module,
+        sk_raw,
+        ctx.plan().galois_elements(module.cyclotomic_order()),
+        scratch,
+    );
     (ctx, atks)
+}
+
+/// Every map of `ctx`.
+pub fn context_maps<BE: Backend>(ctx: &crate::layouts::BlasContext<BE>) -> Vec<&LinearTransformationPrepared<BE>> {
+    let mut maps = vec![ctx.sigma(), ctx.tau(), ctx.transpose()];
+    for k in 1..1 << ctx.log_d() {
+        maps.extend([
+            ctx.rotate_rows(k),
+            ctx.rotate_cols(k),
+            ctx.rows_upper(k),
+            ctx.rows_lower(k),
+            ctx.cols_left(k),
+            ctx.cols_right(k),
+        ]);
+    }
+    maps
+}
+
+/// The Galois elements the encoded `maps` rotate by on a ring of cyclotomic order `order`, sorted and deduplicated.
+pub fn map_galois_elements<'a, BE: Backend + 'a>(
+    maps: impl IntoIterator<Item = &'a LinearTransformationPrepared<BE>>,
+    order: i64,
+) -> Vec<i64> {
+    let mut elements: Vec<i64> = maps.into_iter().flat_map(|lt| lt.galois_elements(order)).collect();
+    elements.sort_unstable();
+    elements.dedup();
+    elements
 }
 
 /// Contexts an operation on `module` rejects, by label: one encoded on a module of half the degree, one at a radix one
@@ -550,8 +614,9 @@ where
 {
     use poulpy_hal::layouts::CyclotomicOrder;
     let half = Module::<BE>::new(params.n as u64 / 2);
+    let plan = crate::layouts::BlasPlan::new(LOG_D);
     let mut encode = |module: &Module<BE>, base2k: usize| {
-        crate::layouts::BlasContextUnprepared::encode::<F>(module, LOG_D, base2k.into(), params.prec().into(), scratch)
+        crate::layouts::BlasContextUnprepared::encode::<F>(module, plan, base2k.into(), params.prec().into(), scratch)
             .unwrap()
             .prepare(module, scratch)
     };
@@ -561,7 +626,7 @@ where
     ];
     for p in contexts
         .iter()
-        .flat_map(|(_, ctx)| ctx.galois_elements(module.cyclotomic_order()))
+        .flat_map(|(_, ctx)| map_galois_elements(context_maps(ctx), module.cyclotomic_order()))
     {
         atks.entry(p)
             .or_insert_with(|| poulpy_ckks::test_suite::helpers::gen_atk(params, module, p, sk_raw, scratch));

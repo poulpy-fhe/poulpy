@@ -1,7 +1,7 @@
-//! The encoded maps of a context and of a public operand.
+//! The plan's key sets against the encoded maps of a context and of public operands.
 
 use poulpy_ckks::{
-    api::{CKKSEncodingOps, CKKSLinearTransformationOps, CKKSModuleInfos},
+    api::{CKKSEncodingOps, CKKSLinearTransformationOps},
     test_suite::{
         CKKSTestParams,
         helpers::{TestContextBackend, TestContextModule, TestScalar, alloc_scratch},
@@ -13,10 +13,14 @@ use poulpy_hal::{
     layouts::{CyclotomicOrder, HostBytesBackend, Module, ScratchArena, Standard},
 };
 
-use crate::layouts::{BlasContextUnprepared, BlasPtOperandUnprepared};
+use super::helpers::{context_maps, map_galois_elements};
+use crate::layouts::{BlasContextUnprepared, BlasPlan, BlasPtOperandUnprepared};
 
-/// The context lists the rotations of every map and rejects matrices wider than the slots; a public operand is a grid
-/// of maps whose count divides the matrix slots. Assumes `params.n = 256`.
+/// At `log_d` 1 to 3, each key set of the plan equals the Galois elements of the maps its operation evaluates, as the
+/// context encodes them: the transpose, the row and column shifts by every `k` below `2 d`, the matrix products, and
+/// the products by public operands of any values, grid shape and count. The union of these sets, and the plan's own,
+/// equals the context's. The context rejects matrices wider than the slots; a public operand's count divides the
+/// matrix slots. Assumes `params.n = 256`.
 pub fn test_blas_context<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend<Ring = Standard>,
@@ -24,20 +28,100 @@ where
     F: TestScalar + DiagonalArithmetic,
 {
     let mut scratch = alloc_scratch(&params, module);
-    let ctx = BlasContextUnprepared::encode::<F>(module, 2, params.base2k.into(), params.prec().into(), &mut scratch.borrow())
+    let order = module.cyclotomic_order();
+    type Entry = fn(usize, usize, usize) -> f64;
+    let encode = |log_d: usize, rows: usize, cols: usize, count: usize, entry: Entry, scratch: &mut ScratchArena<'_, BE>| {
+        BlasPtOperandUnprepared::encode(
+            module,
+            log_d,
+            rows,
+            cols,
+            count,
+            move |m, r, c| F::from_f64(entry(m, r, c)).unwrap(),
+            params.base2k.into(),
+            params.prec().into(),
+            scratch,
+        )
+    };
+    // Generic, identity, constant and zero matrices, one per matrix slot; then generic, equal and zero pairs.
+    let operands: [(&str, usize, usize, usize, Entry); 7] = [
+        ("generic", 3, 2, 1, |m, r, c| ((m + r * 3 + c) % 5) as f64 - 2.0),
+        ("identity", 1, 1, 1, |_, r, c| f64::from(r == c)),
+        ("constant", 2, 1, 1, |_, _, _| 1.0),
+        ("zero", 1, 2, 1, |_, _, _| 0.0),
+        ("generic pair", 3, 2, 2, |m, r, c| ((m + r * 3 + c) % 5) as f64 - 2.0),
+        ("equal pair", 1, 1, 2, |_, r, c| ((r * 3 + c) % 5) as f64 - 2.0),
+        ("zero pair", 2, 2, 2, |_, _, _| 0.0),
+    ];
+    for log_d in 1..=3 {
+        let plan = BlasPlan::new(log_d);
+        let ctx = BlasContextUnprepared::encode::<F>(
+            module,
+            plan,
+            params.base2k.into(),
+            params.prec().into(),
+            &mut scratch.borrow(),
+        )
         .unwrap()
         .prepare(module, &mut scratch.borrow());
-    assert_eq!(ctx.log_d(), 2);
-    let elements = ctx.galois_elements(module.cyclotomic_order());
-    // phi^1 rotates by 1 and by 1 - d.
-    assert!(elements.contains(&module.ckks_galois_element(1)));
-    assert!(elements.contains(&module.ckks_galois_element(1 - 4)));
+        assert_eq!((*ctx.plan(), ctx.log_d()), (plan, log_d));
+        let d = 1 << log_d;
+        let encoded = |maps: Vec<_>| map_galois_elements(maps, order);
+        let mut union = plan.transpose_galois_elements(order);
+        assert_eq!(union, encoded(vec![ctx.transpose()]), "transpose log_d={log_d}");
+
+        let matmul = plan.matmul_galois_elements(order);
+        let mut maps = vec![ctx.sigma(), ctx.tau()];
+        (1..d).for_each(|k| maps.extend([ctx.rotate_cols(k), ctx.rotate_rows(k)]));
+        assert_eq!(matmul, encoded(maps), "matmul log_d={log_d}");
+        union.extend(matmul);
+
+        for k in 0..2 * d {
+            let k1 = k % d;
+            let (rows, cols) = if k1 == 0 {
+                (vec![], vec![])
+            } else {
+                (
+                    vec![ctx.rotate_rows(k1), ctx.rows_upper(k1), ctx.rows_lower(k1)],
+                    vec![ctx.rotate_cols(k1), ctx.cols_left(k1), ctx.cols_right(k1)],
+                )
+            };
+            let (plan_rows, plan_cols) = (
+                plan.rotate_rows_galois_elements(order, k),
+                plan.rotate_cols_galois_elements(order, k),
+            );
+            assert_eq!(plan_rows, encoded(rows), "rotate_rows log_d={log_d} k={k}");
+            assert_eq!(plan_cols, encoded(cols), "rotate_cols log_d={log_d} k={k}");
+            union.extend(plan_rows.into_iter().chain(plan_cols));
+        }
+
+        let matmul_pt = plan.matmul_pt_galois_elements(order);
+        for (label, rows, cols, count, entry) in operands {
+            let b = encode(log_d, rows, cols, count, entry, &mut scratch.borrow())
+                .unwrap()
+                .prepare(module, &mut scratch.borrow());
+            let blocks = (0..rows)
+                .flat_map(|l| (0..cols).map(move |j| (l, j)))
+                .map(|(l, j)| b.block(l, j));
+            assert_eq!(
+                matmul_pt,
+                map_galois_elements(blocks, order),
+                "matmul_pt {label} log_d={log_d}"
+            );
+        }
+        union.extend(matmul_pt);
+        union.sort_unstable();
+        union.dedup();
+        let every = encoded(context_maps(&ctx));
+        assert_eq!(union, every, "union log_d={log_d}");
+        assert_eq!(plan.galois_elements(order), every, "galois_elements log_d={log_d}");
+    }
 
     // 128 slots hold no 16 x 16 matrix; 2^40 x 2^40 has more entries than a usize counts.
     for log_d in [4, 40] {
         let res = BlasContextUnprepared::encode::<F>(
             module,
-            log_d,
+            BlasPlan::new(log_d),
             params.base2k.into(),
             params.prec().into(),
             &mut scratch.borrow(),
@@ -45,28 +129,13 @@ where
         assert!(res.is_err());
     }
 
-    let entry = |m: usize, r: usize, c: usize| F::from_f64(((m + r * 3 + c) % 5) as f64 - 2.0).unwrap();
-    let encode = |count: usize, scratch: &mut ScratchArena<'_, BE>| {
-        BlasPtOperandUnprepared::encode(
-            module,
-            2,
-            3,
-            2,
-            count,
-            entry,
-            params.base2k.into(),
-            params.prec().into(),
-            scratch,
-        )
-    };
     // 128 slots hold 8 matrix slots: 3 and 0 public matrices do not divide them.
+    let generic = operands[0].4;
     for count in [0, 3] {
-        assert!(encode(count, &mut scratch.borrow()).is_err());
+        assert!(encode(2, 3, 2, count, generic, &mut scratch.borrow()).is_err());
     }
-    let b = encode(2, &mut scratch.borrow())
+    let b = encode(2, 3, 2, 2, generic, &mut scratch.borrow())
         .unwrap()
         .prepare(module, &mut scratch.borrow());
     assert_eq!((b.log_d(), b.rows(), b.cols(), b.count()), (2, 3, 2, 2));
-    let order = module.cyclotomic_order();
-    assert_eq!(b.galois_elements(order), b.block(2, 1).galois_elements(order));
 }

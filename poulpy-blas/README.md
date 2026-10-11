@@ -14,10 +14,19 @@ operands reused across calls), `blas_matmul_pt` (ciphertext x public matrices, s
 `blas_transpose`, `blas_rotate_rows`, `blas_rotate_cols`. Inter operations move whole matrices across the batch:
 `blas_rotate`, `blas_sum`.
 
-The block maps are encoded once, at a caller-chosen precision, into a `BlasContext`, and public matrices into a
-`BlasPtOperand`. Operations take the context and any key store implementing poulpy-core's `GetAutomorphismKey` (and
-`GetTensorKey` for the ciphertext x ciphertext products). Slot-wise additions, products and rescaling are poulpy-ckks
-operations applied to each block.
+A `BlasPlan` fixes the block dimension and how each block map is evaluated. The maps are encoded once from it, at a
+caller-chosen precision, into a `BlasContext`, and public matrices into a `BlasPtOperand`. Operations take the context
+and any key store implementing poulpy-core's `GetAutomorphismKey` (and `GetTensorKey` for the ciphertext x ciphertext
+products). Slot-wise additions, products and rescaling are poulpy-ckks operations applied to each block.
+
+The plan lists the rotation keys each operation looks up, from the ring's cyclotomic order alone:
+`transpose_galois_elements`, `rotate_rows_galois_elements(k)`, `rotate_cols_galois_elements(k)`,
+`rotate_galois_elements(r)`, `matmul_galois_elements` (the product and both preparations) and
+`matmul_pt_galois_elements` (any public matrices); `galois_elements` covers every map of a context, and
+`sum_galois_elements` lists `blas_sum`'s for a grid's batch. A client therefore plans its keys with no module, context
+or public matrix: it generates the union of its pipeline's sets, and a tensor key only if it calls `blas_matmul` or
+`blas_matmul_prepared`. The server checks each grid's batch, `mat_slots()`, against the one the summed keys were
+planned for.
 
 ## Tests and backend integration
 

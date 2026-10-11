@@ -13,22 +13,23 @@ use poulpy_ckks::{
 use poulpy_core::layouts::DiagonalArithmetic;
 use poulpy_hal::{
     api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
+    layouts::{CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
 };
 
 use super::helpers::{
     D, Grid, LOG_D,
     Rejection::{InvalidPlan, MissingKey},
-    TestKeys, assert_grid_decrypt, assert_guard, assert_short_scratch, context_and_keys, encrypt_grid, foreign_contexts,
-    rejected_grids, relabel,
+    TestKeys, assert_grid_decrypt, assert_guard, assert_short_scratch, blas_context, context_and_keys, encrypt_grid,
+    foreign_contexts, rejected_grids, relabel, rotation_keys,
 };
 use crate::{
     api::BlasMatIntraOps,
-    layouts::{BlasGridInfos, BlasModuleAlloc},
+    layouts::{BlasGridInfos, BlasModuleAlloc, BlasPlan},
     oep::BlasMatIntraImpl,
 };
 
-/// `dec(transpose(enc(A)))` is `A^T` for every matrix of the batch, on a `2 x 3` grid.
+/// `dec(transpose(enc(A)))` is `A^T` for every matrix of the batch, on a `2 x 3` grid, with the keys of the plan's
+/// transpose set alone.
 pub fn test_blas_transpose<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend<Ring = Standard> + BlasMatIntraImpl,
@@ -42,8 +43,13 @@ where
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let (ctx, atks) = context_and_keys::<BE, F>(&params, module, &sk_raw, &mut scratch.borrow());
-    let keys = TestKeys::<BE> { atks, tsk: None };
+    let ctx = blas_context::<BE, F>(&params, module, &mut scratch.borrow());
+    // The keys of the transpose's set alone.
+    let elements = ctx.plan().transpose_galois_elements(module.cyclotomic_order());
+    let keys = TestKeys::<BE> {
+        atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
+        tsk: None,
+    };
     let (rows, cols) = (2, 3);
     let a = Grid::model(rows, cols, slots / (D * D), 4);
     let ct = encrypt_grid::<BE, F, E>(
@@ -79,7 +85,7 @@ where
 
 /// `dec(rotate_rows(enc(A), k))` and `dec(rotate_cols(enc(A), k))` shift every matrix by `k` rows or columns: shifts
 /// by whole blocks, shifts crossing a block boundary, shifts past the matrix height or width, and grids one block high
-/// or wide.
+/// or wide, each shift with the keys of the plan's set for `k` alone.
 pub fn test_blas_rotate_rows_cols<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend<Ring = Standard> + BlasMatIntraImpl,
@@ -93,8 +99,27 @@ where
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let (ctx, atks) = context_and_keys::<BE, F>(&params, module, &sk_raw, &mut scratch.borrow());
-    let keys = TestKeys::<BE> { atks, tsk: None };
+    let ctx = blas_context::<BE, F>(&params, module, &mut scratch.borrow());
+    // Each shift runs on the keys of its own set alone: one store per row and per column shift below `D`.
+    let order = module.cyclotomic_order();
+    let mut stores = |elements: fn(&BlasPlan, i64, usize) -> Vec<i64>| -> Vec<TestKeys<BE>> {
+        (0..D)
+            .map(|k| TestKeys::<BE> {
+                atks: rotation_keys(
+                    &params,
+                    module,
+                    &sk_raw,
+                    elements(ctx.plan(), order, k),
+                    &mut scratch.borrow(),
+                ),
+                tsk: None,
+            })
+            .collect()
+    };
+    let (row_keys, col_keys) = (
+        stores(BlasPlan::rotate_rows_galois_elements),
+        stores(BlasPlan::rotate_cols_galois_elements),
+    );
     // `3 D + 3`, `5 D + 1` and `D + 1` are `D + 3`, `2 D + 1` and `1` plus the matrix height or width.
     let shapes: [(usize, usize, &[usize], &[usize]); 3] = [
         (
@@ -130,7 +155,7 @@ where
             let mut op_scratch = ScratchOwned::<BE>::alloc(bytes);
             for &k in row_shifts {
                 module
-                    .blas_rotate_rows(&mut res, &ct, k, &ctx, &keys, &mut op_scratch.borrow())
+                    .blas_rotate_rows(&mut res, &ct, k, &ctx, &row_keys[k % D], &mut op_scratch.borrow())
                     .unwrap();
                 assert_grid_decrypt::<BE, F, E>(
                     &format!("rotate_rows {rows}x{cols} k={k} res_k={res_k}"),
@@ -145,7 +170,7 @@ where
             }
             for &k in col_shifts {
                 module
-                    .blas_rotate_cols(&mut res, &ct, k, &ctx, &keys, &mut op_scratch.borrow())
+                    .blas_rotate_cols(&mut res, &ct, k, &ctx, &col_keys[k % D], &mut op_scratch.borrow())
                     .unwrap();
                 assert_grid_decrypt::<BE, F, E>(
                     &format!("rotate_cols {rows}x{cols} k={k} res_k={res_k}"),

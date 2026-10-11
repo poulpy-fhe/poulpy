@@ -108,8 +108,9 @@ where
     real.im.fill(0.0);
     let real = relabel(&encrypt(&real, 0, &mut scratch.borrow()), |meta| meta.slots = SlotsKind::Real);
     let order = module.cyclotomic_order();
-    for p in pt
-        .galois_elements(order)
+    for p in ctx
+        .plan()
+        .matmul_pt_galois_elements(order)
         .into_iter()
         .chain(sum_galois_elements(module, &full_row))
     {

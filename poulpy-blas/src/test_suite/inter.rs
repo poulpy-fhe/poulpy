@@ -2,31 +2,29 @@
 
 use std::collections::HashMap;
 
-use poulpy_ckks::{
-    api::CKKSModuleInfos,
-    test_suite::{
-        CKKSTestParams,
-        helpers::{TestContextBackend, TestContextModule, TestScalar, alloc_scratch, gen_atk, gen_sk_with_raw},
-        reference_encoder::ReferenceEncoder,
-    },
+use poulpy_ckks::test_suite::{
+    CKKSTestParams,
+    helpers::{TestContextBackend, TestContextModule, TestScalar, alloc_scratch, gen_atk, gen_sk_with_raw},
+    reference_encoder::ReferenceEncoder,
 };
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
+    layouts::{CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
 };
 
 use super::helpers::{
     D, Grid, LOG_D,
     Rejection::{InvalidPlan, MissingKey},
-    TestKeys, assert_grid_decrypt, assert_guard, assert_short_scratch, encrypt_grid, rejected_grids, relabel,
+    TestKeys, assert_grid_decrypt, assert_guard, assert_short_scratch, encrypt_grid, rejected_grids, relabel, rotation_keys,
 };
 use crate::{
     api::BlasMatInterOps,
-    layouts::{BlasCiphertext, BlasModuleAlloc, sum_galois_elements},
+    layouts::{BlasCiphertext, BlasModuleAlloc, BlasPlan, sum_galois_elements},
     oep::BlasMatInterImpl,
 };
 
-/// `dec(rotate(enc(A), r))` holds matrix `s + r` of `A` in matrix slot `s`, in every block of a `2 x 2` grid.
+/// `dec(rotate(enc(A), r))` holds matrix `s + r` of `A` in matrix slot `s`, in every block of a `2 x 2` grid, with the
+/// keys of the plan's set for `r` alone.
 pub fn test_blas_rotate<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend<Ring = Standard> + BlasMatInterImpl,
@@ -52,11 +50,12 @@ where
         &a,
         &mut scratch.borrow(),
     );
-    let d2 = (D * D) as i64;
+    let plan = BlasPlan::new(LOG_D);
     for r in [1i64, -1, 3] {
-        let p = module.ckks_galois_element(r * d2);
+        // The keys of the rotation's set alone.
+        let elements = plan.rotate_galois_elements(module.cyclotomic_order(), r);
         let keys = TestKeys::<BE> {
-            atks: HashMap::from([(p, gen_atk(&params, module, p, &sk_raw, &mut scratch.borrow()))]),
+            atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
             tsk: None,
         };
         // `res` one limb wider than `a` for r = 3.

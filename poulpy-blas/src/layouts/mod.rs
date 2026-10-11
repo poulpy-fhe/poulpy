@@ -11,4 +11,4 @@ pub use ciphertext::{
     BlasCiphertext, BlasCiphertextOwned, BlasGridInfos, BlasLayout, BlasMatMulLeft, BlasMatMulRight, BlasModuleAlloc,
 };
 pub(crate) use context::sum_rotations;
-pub use context::{BlasContext, BlasContextUnprepared, BlasPtOperand, BlasPtOperandUnprepared, sum_galois_elements};
+pub use context::{BlasContext, BlasContextUnprepared, BlasPlan, BlasPtOperand, BlasPtOperandUnprepared, sum_galois_elements};

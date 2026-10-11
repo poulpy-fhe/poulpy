@@ -42,6 +42,15 @@ and a raised degree records a larger batch. A compact batch therefore records
 ring and `count d^2` on the conjugate-invariant one, reaches every target's
 `MIN_DEGREE`; otherwise encrypt it dense.
 
+## Keys
+
+Callers generate rotation keys from the per-operation sets of `BlasPlan`
+(`transpose_galois_elements`, `rotate_rows_galois_elements`, …) and from
+`sum_galois_elements`, which list the rotations of the reference's maps as the
+plan schedules them: shift maps `Direct`, the others at the cost-optimal BSGS
+giant step. An implementation looks up no rotation key outside its operation's
+set, so a store holding that set alone suffices.
+
 ## Wiring a backend crate
 
 A backend crate of this workspace wires BLAS behind its own `enable-blas`
@@ -92,7 +101,8 @@ registration macros.
 `blas_backend_test_suite!` registers the functional tests for one backend,
 scalar, encoder and parameter set. They encrypt, run every operation, and check
 the decrypted values and the output metadata against cleartext expectations,
-along with the input guards, key widths and context encoding. They read
+along with the input guards, key widths, and the plan's key sets against the
+encoded maps; each operation runs on the keys of its own set alone. They read
 coefficients on the host and use the standard ring, so they need a host backend
 of the standard ring; `poulpy-cpu-oracle` runs them for `FFT64Oracle` and
 `NTT4x30Oracle`.

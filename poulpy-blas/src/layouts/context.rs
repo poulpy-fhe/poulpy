@@ -1,4 +1,7 @@
-//! The per-matrix maps encoded once, at a caller-chosen precision.
+//! The plan of the circuit, its per-operation key sets, and the per-matrix maps encoded once, at a caller-chosen
+//! precision.
+
+use std::collections::BTreeSet;
 
 use anyhow::{Context, Result, ensure};
 use poulpy_ckks::{
@@ -10,24 +13,165 @@ use poulpy_ckks::{
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
     reference::ckks_encode_linear_transformation_from_diagonals,
 };
-use poulpy_core::layouts::{Base2K, DiagonalArithmetic, Diagonals, LWEInfos, LinearTransformationStrategy};
+use poulpy_core::layouts::{
+    Base2K, DiagonalArithmetic, Diagonals, LWEInfos, LinearTransformationLayout, LinearTransformationStrategy,
+};
 use poulpy_hal::{
     api::CnvPVecAlloc,
-    layouts::{Backend, Module, ScratchArena},
+    layouts::{Backend, Module, ScratchArena, galois_elements_from_rotations},
 };
 
 use super::{BlasGridInfos, ciphertext::mat_slots_in, maps};
 
 type Encoded<BE> = LinearTransformation<CKKSPlaintextOwned<BE>>;
 
-/// Encodes a real map with an empty imaginary part, its diagonals marked real; `bsgs` picks the cost-optimal giant step,
-/// otherwise one giant step per diagonal.
+/// The block dimension and the schedule of every map: what a client and a server agree on, and the one source of the
+/// rotation keys each operation looks up.
+///
+/// Shift maps (phi^k, psi^k and their halves) are evaluated `Direct`, one giant step per diagonal; sigma, tau, the
+/// transpose and the products by public matrices take the cost-optimal BSGS giant step. The key sets take the ring's
+/// cyclotomic order, a power of two whose quarter is the slot count, and build the maps on the host without encoding
+/// them, so a client plans its keys with no module, context or public matrix. A pipeline needs the union of its
+/// operations' sets, [`sum_galois_elements`] for each grid it sums, and a tensor key if and only if it calls
+/// `blas_matmul` or `blas_matmul_prepared`. Every set is empty when a block does not fit the slots.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BlasPlan {
+    log_d: usize,
+}
+
+impl BlasPlan {
+    /// The circuit on `2^log_d x 2^log_d` blocks.
+    pub fn new(log_d: usize) -> Self {
+        Self { log_d }
+    }
+
+    /// `log2` of the block dimension.
+    pub fn log_d(&self) -> usize {
+        self.log_d
+    }
+
+    /// The schedule of `map`: `Direct` for a shift map, the cost-optimal BSGS giant step otherwise.
+    pub(crate) fn strategy<F>(&self, map: &Diagonals<F>, shift: bool) -> LinearTransformationStrategy {
+        if shift {
+            LinearTransformationStrategy::Direct
+        } else {
+            LinearTransformationStrategy::Bsgs {
+                giant_step: optimal_bsgs_giant_step(map.indexes(), map.slots()),
+            }
+        }
+    }
+
+    /// Galois elements of every map a context encodes, which cover every operation's set but `blas_rotate`'s.
+    pub fn galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
+        self.elements(cyclotomic_order, |slots| {
+            let mut list = self.matmul_maps(slots);
+            list.push((maps::transpose(slots, self.log_d), false));
+            for k in 1..1 << self.log_d {
+                list.extend(self.shift_maps(slots, k, true));
+                list.extend(self.shift_maps(slots, k, false));
+            }
+            list
+        })
+    }
+
+    /// Galois elements `blas_transpose` looks up.
+    pub fn transpose_galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
+        self.elements(cyclotomic_order, |slots| vec![(maps::transpose(slots, self.log_d), false)])
+    }
+
+    /// Galois elements `blas_rotate_rows` by `k` looks up, on a grid of any height; none when `d` divides `k`.
+    pub fn rotate_rows_galois_elements(&self, cyclotomic_order: i64, k: usize) -> Vec<i64> {
+        self.elements(cyclotomic_order, |slots| self.shift_maps(slots, k, true))
+    }
+
+    /// Galois elements `blas_rotate_cols` by `k` looks up, on a grid of any width; none when `d` divides `k`.
+    pub fn rotate_cols_galois_elements(&self, cyclotomic_order: i64, k: usize) -> Vec<i64> {
+        self.elements(cyclotomic_order, |slots| self.shift_maps(slots, k, false))
+    }
+
+    /// Galois elements `blas_rotate` by `r` matrix slots looks up; none when the matrix slot count divides `r`.
+    pub fn rotate_galois_elements(&self, cyclotomic_order: i64, r: i64) -> Vec<i64> {
+        let Some(slots) = self.slots(cyclotomic_order) else {
+            return Vec::new();
+        };
+        let mat_slots = (slots >> (2 * self.log_d)) as i64;
+        galois_elements_from_rotations([r.rem_euclid(mat_slots) << (2 * self.log_d)], cyclotomic_order)
+    }
+
+    /// Galois elements `blas_matmul`, `blas_matmul_prepare_left` and `blas_matmul_prepare_right` look up, which cover
+    /// `blas_matmul_prepared`'s.
+    pub fn matmul_galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
+        self.elements(cyclotomic_order, |slots| self.matmul_maps(slots))
+    }
+
+    /// Galois elements `blas_matmul_pt` looks up, for public matrices of any values, grid shape and count: the right
+    /// product stores a diagonal at every offset `l - c`, whatever the entries.
+    pub fn matmul_pt_galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
+        self.elements(cyclotomic_order, |slots| {
+            vec![(maps::right_mul(slots, self.log_d, 1, |_, _, _| 1.0), false)]
+        })
+    }
+
+    /// The slot count of a ring of cyclotomic order `cyclotomic_order`, if a block fits it.
+    fn slots(&self, cyclotomic_order: i64) -> Option<usize> {
+        let slots = usize::try_from(cyclotomic_order / 4).ok().filter(|&slots| slots > 0)?;
+        (self.log_d <= slots.ilog2() as usize / 2).then_some(slots)
+    }
+
+    /// The Galois elements of the maps `maps(slots)` lists, each flagged a shift map, scheduled as the context encodes
+    /// them; none when a block does not fit the slots.
+    fn elements(&self, cyclotomic_order: i64, maps: impl FnOnce(usize) -> Vec<(Diagonals<f64>, bool)>) -> Vec<i64> {
+        let Some(slots) = self.slots(cyclotomic_order) else {
+            return Vec::new();
+        };
+        let mut elements = BTreeSet::new();
+        for (map, shift) in maps(slots) {
+            let layout = LinearTransformationLayout {
+                indexes: map.indexes(),
+                slots,
+                strategy: self.strategy(&map, shift),
+            };
+            elements.extend(layout.galois_elements(cyclotomic_order));
+        }
+        elements.into_iter().collect()
+    }
+
+    /// Sigma and tau, then phi^k and psi^k for `1 <= k < d`.
+    fn matmul_maps(&self, slots: usize) -> Vec<(Diagonals<f64>, bool)> {
+        let log_d = self.log_d;
+        let mut list = vec![(maps::sigma(slots, log_d), false), (maps::tau(slots, log_d), false)];
+        for k in 1..1 << log_d {
+            list.push((maps::rotate_cols(slots, log_d, k), true));
+            list.push((maps::rotate_rows(slots, log_d, k), true));
+        }
+        list
+    }
+
+    /// With `k' = k mod d`: psi^k' and its two halves (`rows`), else phi^k' and its two halves; none for `k' = 0`, a
+    /// copy.
+    fn shift_maps(&self, slots: usize, k: usize, rows: bool) -> Vec<(Diagonals<f64>, bool)> {
+        let (log_d, k) = (self.log_d, k % (1 << self.log_d));
+        if k == 0 {
+            return Vec::new();
+        }
+        let family = if rows {
+            [maps::rotate_rows, maps::rows_upper, maps::rows_lower]
+        } else {
+            [maps::rotate_cols, maps::cols_left, maps::cols_right]
+        };
+        family.into_iter().map(|map| (map(slots, log_d, k), true)).collect()
+    }
+}
+
+/// Encodes a real map with an empty imaginary part, its diagonals marked real, scheduled by `plan` as a shift map
+/// (`shift`) or not.
 fn encode_map<BE, F>(
     module: &Module<BE>,
     base2k: Base2K,
     mut coeffs_meta: CoeffsMeta,
     diagonals: Diagonals<F>,
-    bsgs: bool,
+    plan: &BlasPlan,
+    shift: bool,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<Encoded<BE>>
 where
@@ -35,13 +179,7 @@ where
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
 {
-    let strategy = if bsgs {
-        LinearTransformationStrategy::Bsgs {
-            giant_step: optimal_bsgs_giant_step(diagonals.indexes(), diagonals.slots()),
-        }
-    } else {
-        LinearTransformationStrategy::Direct
-    };
+    let strategy = plan.strategy(&diagonals, shift);
     let im = Diagonals::new(diagonals.slots());
     coeffs_meta.meta.slots = SlotsKind::Real;
     ckks_encode_linear_transformation_from_diagonals(
@@ -87,7 +225,7 @@ where
 
 /// The JKLS maps of one matrix dimension and their one-diagonal halves, encoded and not yet prepared.
 pub struct BlasContextUnprepared<BE: Backend> {
-    log_d: usize,
+    plan: BlasPlan,
     slots: usize,
     sigma: Encoded<BE>,
     tau: Encoded<BE>,
@@ -101,7 +239,7 @@ pub struct BlasContextUnprepared<BE: Backend> {
 }
 
 impl<BE: Backend> BlasContextUnprepared<BE> {
-    /// Scratch bytes [`Self::encode`] needs at `log_d`: the encoding of one `d^2`-slot diagonal.
+    /// Scratch bytes [`Self::encode`] needs for a plan at `log_d`: the encoding of one `d^2`-slot diagonal.
     pub fn encode_tmp_bytes<F>(module: &Module<BE>, log_d: usize) -> usize
     where
         Module<BE>: CKKSEncodingOps<BE, F>,
@@ -113,14 +251,14 @@ impl<BE: Backend> BlasContextUnprepared<BE> {
         )
     }
 
-    /// Encodes every map for `2^log_d x 2^log_d` matrices at `coeffs_meta`. Operations reject the context on a module
-    /// whose slot count differs from `module`'s, and on inputs whose blocks are not at `base2k`.
+    /// Encodes every map of `plan` at `coeffs_meta`, each scheduled as `plan` schedules it. Operations reject the context
+    /// on a module whose slot count differs from `module`'s, and on inputs whose blocks are not at `base2k`.
     ///
     /// `scratch` must hold [`Self::encode_tmp_bytes`]; operations size their scratch assuming the diagonals'
     /// `coeffs_meta.k` is not wider than the operand ciphertexts.
     pub fn encode<F>(
         module: &Module<BE>,
-        log_d: usize,
+        plan: BlasPlan,
         base2k: Base2K,
         coeffs_meta: CoeffsMeta,
         scratch: &mut ScratchArena<'_, BE>,
@@ -129,29 +267,30 @@ impl<BE: Backend> BlasContextUnprepared<BE> {
         Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
         F: DiagonalArithmetic + CKKSEncodingScalar,
     {
+        let log_d = plan.log_d();
         ensure_fits(module, log_d)?;
         let slots = module.ckks_max_slots();
         let d = 1usize << log_d;
-        let sigma = encode_map(module, base2k, coeffs_meta, maps::sigma::<F>(slots, log_d), true, scratch)?;
-        let tau = encode_map(module, base2k, coeffs_meta, maps::tau::<F>(slots, log_d), true, scratch)?;
-        let transpose = encode_map(module, base2k, coeffs_meta, maps::transpose::<F>(slots, log_d), true, scratch)?;
-        let mut direct = |map: fn(usize, usize, usize) -> Diagonals<F>| -> Result<Vec<Encoded<BE>>> {
-            (1..d)
-                .map(|k| encode_map(module, base2k, coeffs_meta, map(slots, log_d, k), false, scratch))
-                .collect()
+        let mut encode =
+            |diagonals: Diagonals<F>, shift: bool| encode_map(module, base2k, coeffs_meta, diagonals, &plan, shift, scratch);
+        let sigma = encode(maps::sigma::<F>(slots, log_d), false)?;
+        let tau = encode(maps::tau::<F>(slots, log_d), false)?;
+        let transpose = encode(maps::transpose::<F>(slots, log_d), false)?;
+        let mut shifts = |map: fn(usize, usize, usize) -> Diagonals<F>| -> Result<Vec<Encoded<BE>>> {
+            (1..d).map(|k| encode(map(slots, log_d, k), true)).collect()
         };
         Ok(Self {
-            log_d,
+            plan,
             slots,
             sigma,
             tau,
             transpose,
-            rotate_rows: direct(maps::rotate_rows::<F>)?,
-            rotate_cols: direct(maps::rotate_cols::<F>)?,
-            rows_upper: direct(maps::rows_upper::<F>)?,
-            rows_lower: direct(maps::rows_lower::<F>)?,
-            cols_left: direct(maps::cols_left::<F>)?,
-            cols_right: direct(maps::cols_right::<F>)?,
+            rotate_rows: shifts(maps::rotate_rows::<F>)?,
+            rotate_cols: shifts(maps::rotate_cols::<F>)?,
+            rows_upper: shifts(maps::rows_upper::<F>)?,
+            rows_lower: shifts(maps::rows_lower::<F>)?,
+            cols_left: shifts(maps::cols_left::<F>)?,
+            cols_right: shifts(maps::cols_right::<F>)?,
         })
     }
 
@@ -180,7 +319,7 @@ impl<BE: Backend> BlasContextUnprepared<BE> {
     {
         let mut prep = |lt: &Encoded<BE>| prepare_lt(module, lt, scratch);
         BlasContext {
-            log_d: self.log_d,
+            plan: self.plan,
             slots: self.slots,
             sigma: prep(&self.sigma),
             tau: prep(&self.tau),
@@ -197,7 +336,7 @@ impl<BE: Backend> BlasContextUnprepared<BE> {
 
 /// The prepared JKLS maps of one matrix dimension and their one-diagonal halves.
 pub struct BlasContext<BE: Backend> {
-    log_d: usize,
+    plan: BlasPlan,
     slots: usize,
     sigma: LinearTransformationPrepared<BE>,
     tau: LinearTransformationPrepared<BE>,
@@ -211,9 +350,14 @@ pub struct BlasContext<BE: Backend> {
 }
 
 impl<BE: Backend> BlasContext<BE> {
+    /// The plan the maps were encoded from.
+    pub fn plan(&self) -> &BlasPlan {
+        &self.plan
+    }
+
     /// `log2` of the matrix dimension.
     pub fn log_d(&self) -> usize {
-        self.log_d
+        self.plan.log_d()
     }
 
     /// Slots of the module the maps were encoded on.
@@ -272,23 +416,6 @@ impl<BE: Backend> BlasContext<BE> {
     /// The columns of phi^k that wrap around the block, for `1 <= k < d`.
     pub fn cols_right(&self, k: usize) -> &LinearTransformationPrepared<BE> {
         &self.cols_right[k - 1]
-    }
-
-    /// Galois elements of every rotation the maps use.
-    pub fn galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
-        let mut elements: Vec<i64> = [&self.sigma, &self.tau, &self.transpose]
-            .into_iter()
-            .chain(&self.rotate_rows)
-            .chain(&self.rotate_cols)
-            .chain(&self.rows_upper)
-            .chain(&self.rows_lower)
-            .chain(&self.cols_left)
-            .chain(&self.cols_right)
-            .flat_map(|lt| lt.galois_elements(cyclotomic_order))
-            .collect();
-        elements.sort_unstable();
-        elements.dedup();
-        elements
     }
 }
 
@@ -352,7 +479,7 @@ impl<BE: Backend> BlasPtOperandUnprepared<BE> {
             .map(|t| {
                 let (l, j) = (t / cols, t % cols);
                 let diagonals = maps::right_mul(slots, log_d, count, |m, r, c| entry(m, l * d + r, j * d + c));
-                encode_map(module, base2k, coeffs_meta, diagonals, true, scratch)
+                encode_map(module, base2k, coeffs_meta, diagonals, &BlasPlan::new(log_d), false, scratch)
             })
             .collect::<Result<_>>()?;
         Ok(Self {
@@ -448,18 +575,6 @@ impl<BE: Backend> BlasPtOperand<BE> {
     pub(crate) fn at(&self, l: usize, j: usize) -> &LinearTransformationPrepared<BE> {
         &self.blocks[l * self.cols + j]
     }
-
-    /// Galois elements of every rotation the blocks use.
-    pub fn galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
-        let mut elements: Vec<i64> = self
-            .blocks
-            .iter()
-            .flat_map(|lt| lt.galois_elements(cyclotomic_order))
-            .collect();
-        elements.sort_unstable();
-        elements.dedup();
-        elements
-    }
 }
 
 /// Galois elements `blas_sum` needs on a grid of layout `infos`: at its recorded batch, or for a layout without one
@@ -514,6 +629,79 @@ mod tests {
         for log_d in [4, 40, usize::MAX] {
             layout.log_d = log_d;
             assert!(sum_galois_elements(&module, &layout).is_empty(), "log_d={log_d}");
+        }
+    }
+
+    /// The key sets on 128 slots (cyclotomic order 512), by hand: a shift map rotates by each of its diagonals, psi^k'
+    /// by `k' d` and `k' d - d^2`, phi^k' by `k'` and `k' - d`; BSGS rotates by the baby and giant parts of the others'
+    /// diagonals, at the cost-optimal giant step. At `d = 2` those parts are the diagonals themselves. At `d = 4` the
+    /// transpose's diagonals, the multiples of 3 from -9 to 9, split at giant step 6; sigma's and the right product's,
+    /// -3 to 3, at 125; tau's, the multiples of 4 from -12 to 12, at 116.
+    #[test]
+    fn plan_sets_by_hand() {
+        const ORDER: i64 = 512;
+        let rotations = |r: &[i64]| galois_elements_from_rotations(r.iter().copied(), ORDER);
+
+        let plan = BlasPlan::new(1);
+        assert_eq!(plan.log_d(), 1);
+        assert_eq!(plan.transpose_galois_elements(ORDER), rotations(&[1, 127]));
+        assert_eq!(plan.matmul_pt_galois_elements(ORDER), rotations(&[1, 127]));
+        assert_eq!(plan.matmul_galois_elements(ORDER), rotations(&[1, 2, 126, 127]));
+        assert_eq!(plan.galois_elements(ORDER), rotations(&[1, 2, 126, 127]));
+        for k in [1, 3] {
+            assert_eq!(plan.rotate_rows_galois_elements(ORDER, k), rotations(&[2, 126]), "k={k}");
+            assert_eq!(plan.rotate_cols_galois_elements(ORDER, k), rotations(&[1, 127]), "k={k}");
+        }
+        for k in [0, 2] {
+            assert!(plan.rotate_rows_galois_elements(ORDER, k).is_empty(), "k={k}");
+            assert!(plan.rotate_cols_galois_elements(ORDER, k).is_empty(), "k={k}");
+        }
+        // 32 matrix slots.
+        for (r, rotation) in [(1, 4), (-1, 124), (33, 4)] {
+            assert_eq!(plan.rotate_galois_elements(ORDER, r), rotations(&[rotation]), "r={r}");
+        }
+        assert!(plan.rotate_galois_elements(ORDER, 32).is_empty());
+
+        let plan = BlasPlan::new(2);
+        assert_eq!(plan.transpose_galois_elements(ORDER), rotations(&[2, 3, 5, 6, 114, 120]));
+        assert_eq!(plan.matmul_pt_galois_elements(ORDER), rotations(&[1, 2, 3, 125]));
+        // Sigma, tau, then phi^k and psi^k for k = 1, 2, 3.
+        let matmul = [1, 2, 3, 125, 4, 8, 12, 116, 1, 125, 2, 126, 3, 127, 4, 116, 8, 120, 12, 124];
+        assert_eq!(plan.matmul_galois_elements(ORDER), rotations(&matmul));
+        let every: Vec<i64> = matmul.into_iter().chain([2, 3, 5, 6, 114, 120]).collect();
+        assert_eq!(plan.galois_elements(ORDER), rotations(&every));
+        for k in 1..8 {
+            let k1 = (k % 4) as i64;
+            let (rows, cols) = (
+                plan.rotate_rows_galois_elements(ORDER, k),
+                plan.rotate_cols_galois_elements(ORDER, k),
+            );
+            if k1 == 0 {
+                assert!(rows.is_empty() && cols.is_empty(), "k={k}");
+            } else {
+                assert_eq!(rows, rotations(&[4 * k1, 128 + 4 * k1 - 16]), "k={k}");
+                assert_eq!(cols, rotations(&[k1, 128 + k1 - 4]), "k={k}");
+            }
+        }
+        // 8 matrix slots.
+        for (r, rotation) in [(1, 16), (-1, 112), (9, 16)] {
+            assert_eq!(plan.rotate_galois_elements(ORDER, r), rotations(&[rotation]), "r={r}");
+        }
+        assert!(plan.rotate_galois_elements(ORDER, 8).is_empty());
+
+        // A block wider than the slots, or a dimension past the word width: no key, no panic.
+        for log_d in [4, 40, usize::MAX] {
+            let plan = BlasPlan::new(log_d);
+            let sets = [
+                plan.galois_elements(ORDER),
+                plan.transpose_galois_elements(ORDER),
+                plan.rotate_rows_galois_elements(ORDER, 1),
+                plan.rotate_cols_galois_elements(ORDER, 1),
+                plan.rotate_galois_elements(ORDER, 1),
+                plan.matmul_galois_elements(ORDER),
+                plan.matmul_pt_galois_elements(ORDER),
+            ];
+            assert!(sets.iter().all(Vec::is_empty), "log_d={log_d}");
         }
     }
 }

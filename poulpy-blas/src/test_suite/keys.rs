@@ -134,8 +134,9 @@ where
     let a_k = params.k;
     let row = encrypt(1, 2, a_k, 11, &mut scratch.borrow());
     let column = encrypt(2, 1, a_k, 12, &mut scratch.borrow());
-    for p in pt
-        .galois_elements(module.cyclotomic_order())
+    for p in ctx
+        .plan()
+        .matmul_pt_galois_elements(module.cyclotomic_order())
         .into_iter()
         .chain(sum_galois_elements(module, &row))
     {

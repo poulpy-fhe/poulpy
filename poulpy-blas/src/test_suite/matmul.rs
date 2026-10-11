@@ -8,7 +8,7 @@ use poulpy_ckks::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, alloc_scratch, assert_decrypt_precision_at_log_delta, gen_atk,
+            TestContextBackend, TestContextModule, TestScalar, alloc_scratch, assert_decrypt_precision_at_log_delta,
             gen_sk_with_raw, gen_tsk,
         },
         reference_encoder::ReferenceEncoder,
@@ -23,20 +23,21 @@ use poulpy_hal::{
 use super::helpers::{
     D, Grid, LOG_D,
     Rejection::{InvalidPlan, MissingKey, MissingTensorKey},
-    TestKeys, assert_grid_decrypt, assert_guard, assert_guard_on, assert_short_scratch, assert_short_scratch_on,
-    context_and_keys, encrypt_grid, foreign_contexts, grid_snapshot, rejected_grids, relabel,
+    TestKeys, assert_grid_decrypt, assert_guard, assert_guard_on, assert_short_scratch, assert_short_scratch_on, blas_context,
+    context_and_keys, encrypt_grid, foreign_contexts, grid_snapshot, map_galois_elements, rejected_grids, relabel, rotation_keys,
 };
 use crate::{
     api::BlasMatMulOps,
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasMatMulLeft, BlasMatMulRight, BlasModuleAlloc, BlasPtOperand,
+        BlasCiphertext, BlasCiphertextOwned, BlasMatMulLeft, BlasMatMulRight, BlasModuleAlloc, BlasPlan, BlasPtOperand,
         BlasPtOperandUnprepared,
     },
     oep::BlasMatMulImpl,
 };
 
 /// `dec(matmul(enc(A), enc(B)))` is `A B` for every matrix of the batch, for a `2 x 3` grid times a `3 x 2` grid, and
-/// `blas_matmul` equals `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, then `blas_matmul_prepared`, bit for bit.
+/// `blas_matmul` equals `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, then `blas_matmul_prepared`, bit for bit,
+/// all with the rotation keys of the plan's product set alone.
 pub fn test_blas_matmul<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl,
@@ -50,9 +51,13 @@ where
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let (ctx, atks) = context_and_keys::<BE, F>(&params, module, &sk_raw, &mut scratch.borrow());
-    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
-    let keys = TestKeys::<BE> { atks, tsk: Some(tsk) };
+    let ctx = blas_context::<BE, F>(&params, module, &mut scratch.borrow());
+    // The keys of the products' set alone, which covers both preparations and the prepared product.
+    let elements = ctx.plan().matmul_galois_elements(module.cyclotomic_order());
+    let keys = TestKeys::<BE> {
+        atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
+        tsk: Some(gen_tsk(&params, module, &sk_raw, &mut scratch.borrow())),
+    };
     let (m, inner, n) = (2, 3, 2);
     let lanes = slots / (D * D);
     let (a, b) = (Grid::model(m, inner, lanes, 7), Grid::model(inner, n, lanes, 8));
@@ -134,7 +139,7 @@ fn public_entry(m: usize, r: usize, c: usize) -> f64 {
 }
 
 /// `dec(matmul_pt(enc(A), B))` is `A B_(s mod count)` in matrix slot `s`, for a `2 x 3` grid times a `3 x 2` operand
-/// with one, two, and one public matrix per matrix slot.
+/// with one, two, and one public matrix per matrix slot, all with the keys of the plan's set alone.
 pub fn test_blas_matmul_pt<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl,
@@ -169,15 +174,12 @@ where
             (count, b)
         })
         .collect();
-    let order = module.cyclotomic_order();
-    let mut elements: Vec<i64> = operands.iter().flat_map(|(_, b)| b.galois_elements(order)).collect();
-    elements.sort_unstable();
-    elements.dedup();
-    let atks = elements
-        .into_iter()
-        .map(|p| (p, gen_atk(&params, module, p, &sk_raw, &mut scratch.borrow())))
-        .collect();
-    let keys = TestKeys::<BE> { atks, tsk: None };
+    // The keys of the plan's set alone, whatever the operand's count.
+    let elements = BlasPlan::new(LOG_D).matmul_pt_galois_elements(module.cyclotomic_order());
+    let keys = TestKeys::<BE> {
+        atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
+        tsk: None,
+    };
     let a = Grid::model(m, inner, lanes, 9);
     let ct = encrypt_grid::<BE, F, E>(
         &params,
@@ -257,19 +259,15 @@ where
         ("base2k", encode(module, LOG_D, 1, params.base2k - 1, &mut scratch.borrow())),
     ];
     // Keys for the other operands too, so no missing key stops `blas_matmul_pt` from evaluating them.
-    let order = module.cyclotomic_order();
-    let mut elements: Vec<i64> = [&b, &one, &small]
+    let blocks = [&b, &one, &small]
         .into_iter()
         .chain(foreign.iter().map(|(_, b)| b))
-        .flat_map(|b| b.galois_elements(order))
-        .collect();
-    elements.sort_unstable();
-    elements.dedup();
-    let atks = elements
-        .into_iter()
-        .map(|p| (p, gen_atk(&params, module, p, &sk_raw, &mut scratch.borrow())))
-        .collect();
-    let keys = TestKeys::<BE> { atks, tsk: None };
+        .flat_map(|b| (0..b.rows()).flat_map(move |l| (0..b.cols()).map(move |j| b.block(l, j))));
+    let elements = map_galois_elements(blocks, module.cyclotomic_order());
+    let keys = TestKeys::<BE> {
+        atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
+        tsk: None,
+    };
     let encrypt = |rows: usize, cols: usize, seed: u64, scratch: &mut ScratchArena<'_, BE>| {
         encrypt_grid::<BE, F, E>(
             &params,
@@ -821,12 +819,11 @@ where
     )
     .unwrap()
     .prepare(module, &mut scratch.borrow());
-    let atks = b
-        .galois_elements(module.cyclotomic_order())
-        .into_iter()
-        .map(|p| (p, gen_atk(&params, module, p, &sk_raw, &mut scratch.borrow())))
-        .collect();
-    let keys = TestKeys::<BE> { atks, tsk: None };
+    let elements = ctx.plan().matmul_pt_galois_elements(module.cyclotomic_order());
+    let keys = TestKeys::<BE> {
+        atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
+        tsk: None,
+    };
     let a = Grid::from_fn(1, inner, lanes, |s, r, c| a0.at(s, r, c % D));
     let ct = repeat(&ct_a0, 1, inner);
     let mut res = module.blas_ciphertext_alloc(LOG_D, 1, 1, params.base2k.into(), params.k.into());
