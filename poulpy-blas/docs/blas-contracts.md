@@ -369,12 +369,14 @@ DFT.
 **Normalization.** Whatever the grouping, no accumulator, partial sums
 included, holds more than `2^(63 - base2k)` terms since its last normalization,
 a normalized sum counting as one: partial sums are normalized before they are
-combined unless their counts fit together. Parity cannot check this rule. A
-canonical digit is at most `2^(base2k - 1)` in magnitude, so a 64-bit digit
-holds `2^(64 - base2k)` terms, twice the bound, and random terms add up far
-below it: a kernel that skips every normalization but the last still matches
-the reference on every registered case. The rule is an obligation of the
-`# Safety` section, met by construction.
+combined unless their counts fit together. A canonical digit is at most
+`2^(base2k - 1)` in magnitude, so a 64-bit digit holds `2^(64 - base2k)` terms,
+twice the bound. Random terms add up far below it, but parity from radix 57 (58
+at `log_d` 1) also sums at least three times the bound in copies of one block,
+each adding the same sum of `d` terms: a kernel that normalizes only at the end
+overflows there ([the radix rule](#testing-a-backend)). Parity cannot pin how
+often a kernel normalizes, so the rule stays an obligation of the `# Safety`
+section, met by construction.
 
 Within the scratch its query reports for `res`, `lhs[0]`, `rhs[0]`, the pair
 count and the key, it returns `Ok`, or poulpy-ckks's budget error before any
@@ -503,8 +505,9 @@ apart in both orders, lazy inputs on real slots, sparse unless one matrix fills
 them, copies of lazy inputs, public products of one matrix and of one per matrix
 slot, maps and public matrices at scales below and above the operands', factors
 at two scales, in either order, through those maps, whose terms keep one budget,
-and, where some `K <= 32` reaches it, a `1 x K` by `K x 1` product of more than
-the `2^(63 - base2k)` terms the kernel sums between normalizations. Each
+and `1 x K` by `K x 1` products past the `2^(63 - base2k)` terms the kernel sums
+between normalizations, of distinct blocks, where some `K <= 32` of them pass
+that bound, and of copies of one block, from radix 57 (58 at `log_d` 1). Each
 family's parity also runs calls that poulpy-ckks rejects for their budget: both
 backends return the same error and leave `res` and the inputs unchanged. Storage
 and ring are free: the bounds are `BlasParityBackend` (`Backend<ZnxWord = i64>`
@@ -524,14 +527,20 @@ dropping the suite:
 `log_d` is the only shapes axis: rank and `dsize` come from `params`, and one
 macro registers all three families, so none can be dropped silently.
 
-**The radix rule.** The long product runs only where some `K <= 32` sums
-more than `2^(63 - base2k)` terms: from radix 57 at `log_d` 2 (58 at `log_d`
-1), far above the radix an FFT64 transform holds, which stops near 23. An
-NTT-family backend therefore registers parity with one parameter set at
-`base2k >= 57`, `log_d` 2 swept, on each ring it supports. That registration
-pins that the kernel accepts a sum past the bound and returns the reference's
-bits; it does not show that the kernel normalizes, which stays a `# Safety`
-obligation ([The JKLS kernel](#the-jkls-kernel)).
+**The radix rule.** The long products run only at a radix far above the one an
+FFT64 transform holds, which stops near 23. One has the fewest distinct blocks
+whose `K d` terms pass the `2^(63 - base2k)` terms the kernel sums between
+normalizations, where some `K <= 32` does: from radix `59 - log_d`. The other
+has `3 * 2^(63 - base2k) / min(d, 4)` copies of one block, at least three times
+the bound in terms, where they are at most 48: from radix 57 (58 at `log_d` 1).
+Every copy adds the same sum of `d` terms, whose digits grow like `sqrt(d)`
+times a term's, so in a kernel that normalizes only at the end the copies
+overflow about 1.6% of the 64-bit digits at `d = 4`, and more at any other `d`.
+An NTT-family backend therefore registers parity with one parameter set at
+`base2k >= 57`, a `log_d` of 2 or more swept, on each ring it supports. That
+registration pins that the kernel accepts sums past the bound, normalizes as it
+sums them and returns the reference's bits; how often it normalizes stays a
+`# Safety` obligation ([The JKLS kernel](#the-jkls-kernel)).
 
 In this workspace the oracle runs the functional tests and parity between its
 FFT64 and NTT4x30 families, standard and conjugate-invariant, in both

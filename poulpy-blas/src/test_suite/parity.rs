@@ -708,13 +708,15 @@ fn preparation<B: BlasParityBackend>(
 /// either order, either grid two bits lower and as much narrower, so that their terms keep one budget (not crossed),
 /// into `res` as wide as the wider factor. Products into `2 x 2` grids, of factors one limb apart, in both orders,
 /// since the tensor key is looked up at the wider side's width, and of a lazy grid of real slots labelled 1 by itself.
-/// When some `K <= 32` reaches it, a `1 x K` by `K x 1` product of more terms than the `2^(63 - base2k)` the kernel
-/// sums between normalizations: it pins that the kernel accepts such a sum and returns the reference's bits. It cannot
-/// see a normalization skipped before the end: an `i64` digit holds `2^(64 - base2k)` canonical terms, more than the
-/// product sums, and normalizing only at the end gives the same bits. The products by public matrices on either side:
-/// of one matrix, of one per matrix slot, and of one on the lazy grid into `res` one limb narrower than it, below the
-/// products' width, which caps them and at whose width their giant steps are looked up, at the operands' scale; then of
-/// one matrix at each other scale.
+/// `1 x K` by `K x 1` products past the `2^(63 - base2k)` terms the kernel sums between normalizations pin that the
+/// kernel accepts such a sum and returns the reference's bits: one of the fewest distinct blocks whose `K d` terms pass
+/// the bound, where some `K <= 32` does, and, from radix 57 (58 at `log_d` 1), one of `3 * 2^(63 - base2k) / min(d, 4)`
+/// copies of one block, at least three times the bound in terms. Every copy adds the same sum of `d` terms, so the
+/// copies overflow an `i64` digit in a kernel that normalizes only at the end; since a term equals every term a
+/// multiple of `d` away, only the distinct blocks see a kernel that sums one in place of another. The products by
+/// public matrices on either side: of one matrix, of one per matrix slot, and of one on the lazy grid into `res` one
+/// limb narrower than it, below the products' width, which caps them and at whose width their giant steps are looked
+/// up, at the operands' scale; then of one matrix at each other scale.
 fn matmul<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) -> Vec<Output>
 where
     B: BlasParityBackend,
@@ -742,14 +744,27 @@ where
     );
     let thin = sized(params, module, log_d, 2, 2, w - base2k, 140);
     let lazy = lazy_real(params, module, log_d, 2, 2, 144);
-    // The fewest inner blocks whose `K d` terms pass the bound.
-    let inner = max_lazy_terms(base2k) / (1 << log_d) + 1;
-    let long = (inner <= 32).then(|| {
-        (
+    // Past the bound: the fewest distinct inner blocks whose `K d` terms pass it, and `3 bound / min(d, 4)` copies of
+    // one block. Every copy adds the same sum of `d` distinct terms, whose digits grow like `sqrt(d)` times a term's,
+    // so in a kernel that normalizes only at the end the copies overflow about 1.6% of the `i64` digits at `d = 4`,
+    // and more at any other `d`.
+    let (bound, d) = (max_lazy_terms(base2k), 1usize << log_d);
+    let (inner, copies) = (bound / d + 1, (3 * bound).div_ceil(d.min(4)));
+    let repeat = |seed, rows, cols| {
+        let la = block(params, w, 0, SlotsKind::Complex);
+        let blocks = (0..rows * cols).map(|_| fixture_operand(module, &la, seed, false)).collect();
+        BlasCiphertext::from_blocks(blocks, log_d, rows, cols).unwrap()
+    };
+    let mut long = Vec::new();
+    if inner <= 32 {
+        long.push((
             operand(params, module, log_d, 1, inner, 160),
             operand(params, module, log_d, inner, 1, 200),
-        )
-    });
+        ));
+    }
+    if copies <= 48 {
+        long.push((repeat(150, 1, copies), repeat(152, copies, 1)));
+    }
     let mut inputs = vec![&a, &b, &a_low, &b_low, &thin, &lazy];
     inputs.extend(long.iter().flat_map(|(x, y)| [x, y]));
     let before = snapshots::<B>(&inputs);
@@ -954,8 +969,11 @@ where
 /// The products, the prepared product and the products by public matrices agree bit for bit at every swept `log_d`,
 /// through maps and public matrices at the factors' scale and at scales other than theirs, there also of factors at two
 /// scales in either order, and the prepared operands' infos, `(log_d, rows, cols, block_layout, mat_slots)`, agree;
-/// prepared storage is never compared. The product, the prepared product and the products by public matrices on either
-/// side fail alike on a budget poulpy-ckks rejects, leaving `res` and the factors unchanged.
+/// prepared storage is never compared. Products past the `2^(63 - base2k)` terms the JKLS kernel sums between
+/// normalizations agree too: of distinct blocks, where some `K <= 32` of them pass that bound, and, from radix 57 (58
+/// at `log_d` 1), of copies of one block, which overflow an `i64` digit in a kernel that normalizes only at the end.
+/// The product, the prepared product and the products by public matrices on either side fail alike on a budget
+/// poulpy-ckks rejects, leaving `res` and the factors unchanged.
 pub fn test_blas_matmul_parity<BR, BT, F>(params: CKKSTestParams, shapes: &BlasParityShapes, r: &Module<BR>, t: &Module<BT>)
 where
     BR: BlasParityBackend,

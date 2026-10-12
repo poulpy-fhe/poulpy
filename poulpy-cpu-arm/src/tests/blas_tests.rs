@@ -51,8 +51,8 @@ blas_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
 }
 
-// Radix 57, where `matmul` sums more terms than the kernel sums between normalizations: an NTT-family type registers a
-// parameter set at base2k >= 57.
+// Radix 57, where `matmul` sums past the terms the kernel sums between normalizations, and copies of one block overflow
+// a kernel that normalizes only at the end: an NTT-family type registers a parameter set at base2k >= 57.
 blas_parity_test_suite! {
     mod blas_parity_ntt4x30neon_base2k57,
     backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,

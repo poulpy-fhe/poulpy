@@ -118,11 +118,12 @@ macro_rules! blas_conjugate_invariant_test_suite {
 /// [`BlasParityShapes`](crate::test_suite::parity::BlasParityShapes), narrows the `log_d` sweep. The expansion names
 /// `::poulpy_hal`, so the invoking crate depends on it directly.
 ///
-/// `matmul` runs a product of more terms than the `2^(63 - base2k)` the JKLS kernel sums between normalizations, a
-/// `1 x K` grid by a `K x 1` grid, only where some `K <= 32` reaches that bound: from `base2k` 57 at `log_d` 2 (58 at
-/// `log_d` 1). An NTT-family `backend_test`, on either ring, therefore registers a parameter set at `base2k >= 57`,
-/// `log_d` 2 swept. The product pins that the kernel accepts such a sum and returns the reference's bits, not that it
-/// normalizes.
+/// `matmul` runs products of more terms than the `2^(63 - base2k)` the JKLS kernel sums between normalizations, `1 x K`
+/// grids by `K x 1` grids: of distinct blocks, where some `K <= 32` of them pass that bound, and, from `base2k` 57 (58
+/// at `log_d` 1), of copies of one block, which overflow an `i64` digit in a kernel that normalizes only at the end. An
+/// NTT-family `backend_test`, on either ring, therefore registers a parameter set at `base2k >= 57` with a `log_d` of 2
+/// or more swept: it pins that the kernel accepts such sums, normalizes as it sums them and returns the reference's
+/// bits.
 #[macro_export]
 macro_rules! blas_parity_test_suite {
     (mod $modname:ident, backend_ref = $reference:ty, backend_test = $tested:ty, scalar = $scalar:ty, params = $params:expr
