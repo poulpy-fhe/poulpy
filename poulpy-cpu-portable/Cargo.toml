@@ -57,6 +57,10 @@ name = "ckks_hello"
 required-features = ["enable-ckks"]
 
 [[example]]
+name = "blas_pipeline"
+required-features = ["enable-blas"]
+
+[[example]]
 name = "core_encryption"
 required-features = ["enable-core"]
 

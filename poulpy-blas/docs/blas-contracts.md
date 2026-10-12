@@ -95,7 +95,10 @@ them: shift maps `Direct`, the others at the cost-optimal BSGS giant step.
 `galois_elements(order)` covers every map of a context, so every operation's
 set but `blas_rotate`'s and `blas_sum`'s. The tensor key is needed if and only
 if a pipeline calls `blas_matmul` or `blas_matmul_prepared`, at `max(w_a, w_b)`,
-the wider of the operands' term widths `a.k - 2p` and `b.k - 2p`.
+the wider of the operands' term widths `a.k - 2p` and `b.k - 2p`. The
+[pipeline example](../../poulpy-cpu-portable/examples/blas_pipeline.rs) plans
+its keys this way, with one rotation-key layout covering its widest input and a
+tensor key covering the terms, and prints the width each operation consumes.
 
 These sets and widths bind implementations: `GetAutomorphismKey` and
 `GetTensorKey` receive the width, so a store may answer per width. An

@@ -33,6 +33,14 @@ or public matrix: it generates the union of its pipeline's sets, and a tensor ke
 `blas_matmul_prepared`. The server checks each grid's batch, `mat_slots()`, against the one the summed keys were
 planned for.
 
+The [pipeline example](../poulpy-cpu-portable/examples/blas_pipeline.rs) plans its keys this way, runs `blas_matmul`,
+`blas_transpose`, `blas_matmul_pt`, `blas_matmul_pt_left` and `blas_sum` on a batch of encrypted matrices, prints the
+torus width each one consumes and checks the result in the clear:
+
+```sh
+cargo run -p poulpy-cpu-portable --example blas_pipeline --features enable-blas
+```
+
 ## Tests and backend integration
 
 poulpy-blas imports no backend. Backend crates select the reference compositions with
