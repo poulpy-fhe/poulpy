@@ -248,6 +248,101 @@ fn gglwe_product_digits_strided_matches_reference() {
     digits_case(&MODULE_CI, 16, 27, 4, 7, 1, 2, 33, 30, 2, false);
 }
 
+/// The product that runs the first inverse launch of its result itself,
+/// completed column by column, against the product followed by the whole
+/// inverse transform and the normalization: the same coefficients.
+#[test]
+fn product_with_fused_inverse_matches_product_then_inverse() {
+    // (a_size, dsize, rows, key_size, res_size, product_limbs)
+    let cases = [
+        (27, 6, 5, 33, 30, 3),
+        (27, 4, 7, 33, 33, 2),
+        (14, 7, 2, 20, 16, 3),
+        (5, 1, 5, 6, 6, 1),
+        (2, 3, 4, 6, 5, 1),
+        (11, 3, 4, 9, 2, 0),
+        (40, 2, 20, 5, 9, 1),
+    ];
+    for log_n in [13usize, 16] {
+        let n = 1usize << log_n;
+        let module = Module::<Gpu>::new(n as u64);
+        let mut scratch = ScratchOwned::<Gpu>::alloc(1 << 24);
+        for (index, &(a_size, dsize, rows, key_size, res_size, product_limbs)) in cases.iter().enumerate() {
+            // The full degree only on the two bootstrapping shapes.
+            if log_n == 16 && index != 0 && index != 2 {
+                continue;
+            }
+            let mut seed = 0x51ce_f00d_0bad_cafeu64 ^ ((a_size * 131 + dsize * 17 + rows * 7 + res_size + log_n * 1009) as u64);
+            let a = transformed(&module, n, 1, a_size, &mut seed);
+            let matrix = MatZnx::from_data(
+                Gpu::from_host_bytes(&coefficients(n * rows * 2 * key_size, &mut seed)),
+                n,
+                rows,
+                1,
+                2,
+                key_size,
+            );
+            let mut pmat = module.vmp_pmat_alloc(n, rows, 1, 2, key_size, PrepareHint::Reuse);
+            module.vmp_prepare(
+                &mut pmat.to_backend_mut(),
+                &poulpy_hal::layouts::MatZnxToBackendRef::<Gpu>::to_backend_ref(&matrix),
+                &mut scratch.arena(),
+            );
+            let mut want_dft = transformed(&module, n, 2, res_size, &mut seed);
+            let mut have_dft = transformed(&module, n, 2, res_size, &mut seed);
+            let mut want = vector::<poulpy_hal::layouts::Standard>(n, 2, res_size, &mut seed);
+            let mut have = vector::<poulpy_hal::layouts::Standard>(n, 2, res_size, &mut seed);
+            crate::hal_impl::gglwe_product_digits_strided(
+                &mut want_dft.to_backend_mut(),
+                &a.to_backend_ref(),
+                dsize,
+                product_limbs,
+                &pmat.to_backend_ref(),
+            );
+            assert!(crate::hal_impl::gglwe_product_digits_strided_inverse(
+                &module,
+                &mut have_dft.to_backend_mut(),
+                &a.to_backend_ref(),
+                dsize,
+                product_limbs,
+                &pmat.to_backend_ref(),
+                [None, None],
+            ));
+            for col in 0..2 {
+                module.vec_znx_idft_normalize(
+                    &mut vec_znx_backend_mut::<Gpu>(&mut want),
+                    52,
+                    res_size * 52,
+                    0,
+                    col,
+                    &mut want_dft.to_backend_mut(),
+                    col,
+                    52,
+                    None,
+                    &mut scratch.arena(),
+                );
+                crate::hal_impl::idft_tail_normalize(
+                    &module,
+                    &mut vec_znx_backend_mut::<Gpu>(&mut have),
+                    52,
+                    res_size * 52,
+                    0,
+                    col,
+                    &mut have_dft.to_backend_mut(),
+                    col,
+                    52,
+                    None,
+                );
+            }
+            assert!(
+                download_vec_znx::<Gpu>(&want) == download_vec_znx::<Gpu>(&have),
+                "fused inverse differs: log_n={log_n} a_size={a_size} dsize={dsize} rows={rows} key_size={key_size} \
+                 res_size={res_size} product_limbs={product_limbs}"
+            );
+        }
+    }
+}
+
 /// Accumulators at their largest: every product is `(q - 1)^2`. With seven
 /// digits of nine rows and only some of them reaching a result limb, a limb
 /// accumulates eighteen products across digits whose own folds are skipped.

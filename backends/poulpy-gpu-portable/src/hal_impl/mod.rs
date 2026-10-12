@@ -19,4 +19,10 @@ pub(crate) use operand::{
 };
 #[cfg(any(test, feature = "enable-core"))]
 #[cfg_attr(not(feature = "enable-core"), allow(unused_imports))]
+pub(crate) use vec_znx_dft::idft_tail_normalize;
+#[cfg(any(test, feature = "enable-core"))]
+#[cfg_attr(not(feature = "enable-core"), allow(unused_imports))]
+pub(crate) use vmp::gglwe_product_digits_strided_inverse;
+#[cfg(any(test, feature = "enable-core"))]
+#[cfg_attr(not(feature = "enable-core"), allow(unused_imports))]
 pub(crate) use vmp::{gglwe_product_digits_strided, gglwe_product_fused};

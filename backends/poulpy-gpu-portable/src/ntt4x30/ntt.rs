@@ -133,7 +133,7 @@ fn ct(x: u32, y: u32, wq: u32, w: u32, q: u32) -> (u32, u32) {
 
 /// Inverse butterfly on lanes in `[0, 2q)`.
 #[cube]
-fn gs(u: u32, v: u32, wq: u32, w: u32, q: u32) -> (u32, u32) {
+pub(super) fn gs(u: u32, v: u32, wq: u32, w: u32, q: u32) -> (u32, u32) {
     let q2 = q + q;
     let s = u + v;
     let d = u - v + q2;
@@ -495,9 +495,29 @@ pub(crate) fn forward<RT: GpuRuntime>(tables: &Tables<RT>, res: &DftColumn, a: &
     }
 }
 
+/// Stages of the first launch of an inverse transform of degree `2^log_n`
+/// when it has two launches: the last `mt` stages of the transform, on
+/// contiguous blocks of `2^mt` lanes. `None` when the transform is one launch
+/// or has more than two.
+pub(crate) fn inverse_head<RT: GpuRuntime>(log_n: u32) -> Option<u32> {
+    let passes = passes(RT::NTT, log_n, true);
+    (passes.len() == 2 && passes[0].first + passes[0].mt == log_n).then_some(passes[0].mt)
+}
+
+/// The launches of [`inverse`] after the first, in place: `dst` holds the
+/// lanes the first launch leaves, written by it or by a kernel that ran its
+/// stages itself.
+pub(crate) fn inverse_tail<RT: GpuRuntime>(tables: &Tables<RT>, dst: &DftColumn, limbs: usize) {
+    inverse_from::<RT>(tables, dst, dst, limbs, 1);
+}
+
 /// `dst[j] = idft(src[j])` in the negacyclic basis for the first `limbs`
 /// limbs. `dst` may be `src` itself; otherwise `src` is left unchanged.
 pub(crate) fn inverse<RT: GpuRuntime>(tables: &Tables<RT>, dst: &DftColumn, src: &DftColumn, limbs: usize) {
+    inverse_from::<RT>(tables, dst, src, limbs, 0);
+}
+
+fn inverse_from<RT: GpuRuntime>(tables: &Tables<RT>, dst: &DftColumn, src: &DftColumn, limbs: usize, skip: usize) {
     assert!(dst.n == src.n, "transform between different degrees");
     assert!(limbs <= dst.size.min(src.size));
     if limbs == 0 {
@@ -505,7 +525,7 @@ pub(crate) fn inverse<RT: GpuRuntime>(tables: &Tables<RT>, dst: &DftColumn, src:
     }
     let table = tables.of(dst.n);
     let passes = passes(RT::NTT, dst.n.ilog2(), true);
-    for (index, &tile) in passes.iter().enumerate() {
+    for (index, &tile) in passes.iter().enumerate().skip(skip) {
         let last = index + 1 == passes.len();
         let from = if index == 0 { src } else { dst };
         launch::<RT>(

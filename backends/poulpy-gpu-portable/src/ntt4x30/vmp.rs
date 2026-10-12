@@ -28,6 +28,7 @@ use cubecl::prelude::*;
 
 use super::{
     AutomorphismPlan, DftColumn,
+    ntt::gs,
     primes::{Consts, FOLD_TERMS, barrett60, fold64, sel4},
 };
 use crate::runtime::{Binding, GpuRuntime, Label, launch};
@@ -420,6 +421,305 @@ pub(crate) fn digit_product<RT: GpuRuntime>(
             shift,
         ];
         [Consts::get(), terms, accumulate]
+    );
+}
+
+/// [`product_kernel`] of one source without a tail, followed by the first
+/// launch of the inverse transform of every result limb: its last `mt`
+/// stages, on the contiguous block of `2^mt` lanes a workgroup owns in one
+/// plane. A thread computes the product at its own point, as
+/// `product_kernel` does; every time a result limb is complete the workgroup
+/// passes it through shared memory, one barrier per stage, and stores the
+/// lanes the inverse launch would have stored. The stages run while the
+/// matrix streams.
+#[cube(launch_unchecked)]
+#[allow(clippy::too_many_arguments, clippy::collapsible_if)]
+fn product_inverse_kernel(
+    res: &mut [u32],
+    a: &[u32],
+    key: &[u32],
+    tw: &[u32],
+    add0: &[u32],
+    add1: &[u32],
+    log_n: u32,
+    res_base: u32,
+    res_size: u32,
+    a_base: u32,
+    key_base: u32,
+    key_size: u32,
+    limb_offset: u32,
+    product_limbs: u32,
+    add0_base: u32,
+    add0_stride: u32,
+    add0_size: u32,
+    add1_base: u32,
+    add1_stride: u32,
+    add1_size: u32,
+    #[comptime] c: Consts,
+    #[comptime] t: Terms,
+    #[comptime] mt: u32,
+) {
+    let log_block = log_n + 2u32;
+    let cols_in = t.cols_in;
+    let cols_out = t.cols_out;
+    let dsize = t.dsize;
+    let rows = comptime!(t.rows());
+    let mut sh = Shared::<[u32]>::new_slice(comptime!((t.cols_out as usize) << mt));
+    let u = UNIT_POS;
+    let tile = CUBE_POS as u32;
+    let word = (tile << mt) + u;
+    // Threads past the planes take the barriers and touch no memory.
+    let active = word < (1u32 << log_block);
+    let plane = min(word >> log_n, 3u32);
+    let q = sel4(plane, c.q);
+    let r = sel4(plane, c.r);
+    let mu = sel4(plane, c.mu60);
+    // The block of the workgroup in its plane, and its twiddle entry at the
+    // first of the stages: see `tile_pass`.
+    let block = tile - (plane << (log_n - mt));
+    let tile_tb = (1u32 << (log_n - mt)) + block;
+    let toff = (plane << log_n) + (4u32 << log_n);
+
+    let mut xs = Sequence::<u32>::new();
+    #[unroll]
+    for l in 0..t.limbs {
+        #[unroll]
+        for col in 0..cols_in {
+            let mut x = 0u32;
+            if active {
+                x = a[(a_base + ((l * cols_in + col) << log_block) + word) as usize];
+            }
+            xs.push(x);
+        }
+    }
+
+    let reach = key_size - min(key_size, limb_offset);
+    let first = min(res_size, reach);
+    let mut widths = Sequence::<u32>::new();
+    widths.push(first);
+    #[unroll]
+    for di in 1..dsize {
+        let span = dsize - di;
+        let omitted = span - min(span, product_limbs);
+        let kept = key_size - min(key_size, omitted);
+        widths.push(min(min(res_size, kept), reach - min(reach, di)));
+    }
+
+    let mut window = Sequence::<RuntimeCell<u64>>::new();
+    #[unroll]
+    for _ in 0..comptime!(dsize * cols_out) {
+        window.push(RuntimeCell::<u64>::new(0u64));
+    }
+
+    // Result limbs that are not zero: those of the product and of the addends.
+    let filled = max(first, max(add0_size, add1_size));
+    for step in 0..filled + dsize - 1u32 {
+        let mut live = Sequence::<bool>::new();
+        let mut any = false;
+        #[unroll]
+        for di in 0..dsize {
+            let reached = step - di < *widths.index(di as usize);
+            live.push(reached);
+            any = any || reached;
+        }
+        if any && active {
+            let h = step + limb_offset;
+            #[unroll]
+            for d in 0..cols_out {
+                let mut ks = Sequence::<u32>::new();
+                #[unroll]
+                for row in 0..rows {
+                    #[unroll]
+                    for col in 0..cols_in {
+                        let block = ((row * cols_in + col) * key_size + h) * cols_out + d;
+                        ks.push(key[(key_base + (block << log_block) + word) as usize]);
+                    }
+                }
+                #[unroll]
+                for di in 0..dsize {
+                    if *live.index(di as usize) {
+                        let slot = window.index((d * dsize + dsize - 1 - di) as usize);
+                        let mut acc = slot.read();
+                        #[unroll]
+                        for row in 0..comptime!(t.digit_rows(di)) {
+                            #[unroll]
+                            for col in 0..cols_in {
+                                if comptime!(t.fold_before(di, row, col)) {
+                                    acc = fold64(acc, r);
+                                }
+                                let x = *xs.index(((dsize - 1 - di + row * dsize) * cols_in + col) as usize);
+                                let k = *ks.index((row * cols_in + col) as usize);
+                                acc += u64::cast_from(x) * u64::cast_from(k);
+                            }
+                        }
+                        slot.store(acc);
+                    }
+                }
+            }
+        }
+        // No limb is complete before step `dsize - 1`: the same for every thread.
+        if step >= dsize - 1u32 {
+            // The complete limb of every output column, to the workgroup.
+            let j = step - (dsize - 1u32);
+            #[unroll]
+            for d in 0..cols_out {
+                let mut value = barrett60(fold64(window.index((d * dsize) as usize).read(), r), q, mu);
+                if comptime!(t.addend >> d & 1 == 1) {
+                    let mut y = 0u32;
+                    if comptime!(d == 0) {
+                        if j < add0_size && active {
+                            y = add0[(add0_base + j * add0_stride + word) as usize];
+                        }
+                    } else if j < add1_size && active {
+                        y = add1[(add1_base + j * add1_stride + word) as usize];
+                    }
+                    let sum = value + y;
+                    value = min(sum, sum - q);
+                }
+                sh[((d << mt) + u) as usize] = value;
+            }
+            sync_cube();
+            // Stage `mt - 1 - e` of the block pairs lanes `2^e` apart. With two
+            // output columns every thread runs one butterfly of a stage: thread
+            // `u` that of index `u mod 2^(mt-1)` in column `u >> (mt - 1)`.
+            // Otherwise the thread of the lower lane of a pair runs it in every
+            // column.
+            #[unroll]
+            for e in 0..mt {
+                let half = comptime!(1u32 << e);
+                if comptime!(cols_out == 2) {
+                    if active {
+                        let pair_index = u & comptime!((1u32 << (mt - 1)) - 1);
+                        let low = ((pair_index >> e) << comptime!(e + 1)) | (pair_index & comptime!(half - 1));
+                        let wq = tw[(toff + tile_tb * comptime!(1u32 << (mt - 1 - e)) + (low >> comptime!(e + 1))) as usize];
+                        let w = wq.mul_hi(q) + 1u32;
+                        let i0 = (((u >> comptime!(mt - 1)) << mt) + low) as usize;
+                        let i1 = i0 + half as usize;
+                        let pair = gs(sh[i0], sh[i1], wq, w, q);
+                        sh[i0] = pair.0;
+                        sh[i1] = pair.1;
+                    }
+                } else if (u & half) == 0u32 && active {
+                    let wq = tw[(toff + tile_tb * comptime!(1u32 << (mt - 1 - e)) + (u >> comptime!(e + 1))) as usize];
+                    let w = wq.mul_hi(q) + 1u32;
+                    #[unroll]
+                    for d in 0..cols_out {
+                        let i0 = ((d << mt) + u) as usize;
+                        let i1 = i0 + half as usize;
+                        let pair = gs(sh[i0], sh[i1], wq, w, q);
+                        sh[i0] = pair.0;
+                        sh[i1] = pair.1;
+                    }
+                }
+                sync_cube();
+            }
+        }
+        #[unroll]
+        for d in 0..cols_out {
+            if step >= dsize - 1u32 && active {
+                let j = step - (dsize - 1u32);
+                res[(res_base + ((j * cols_out + d) << log_block) + word) as usize] = sh[((d << mt) + u) as usize];
+            }
+            #[unroll]
+            for k in 1..dsize {
+                window
+                    .index((d * dsize + k - 1) as usize)
+                    .store(window.index((d * dsize + k) as usize).read());
+            }
+            window.index((d * dsize + dsize - 1) as usize).store(0u64);
+        }
+    }
+    // Past the product and the addends the result is zero, and so is its transform.
+    if active {
+        #[unroll]
+        for d in 0..cols_out {
+            for j in filled..res_size {
+                res[(res_base + ((j * cols_out + d) << log_block) + word) as usize] = 0u32;
+            }
+        }
+    }
+}
+
+/// [`digit_product`] of one source into a fresh result, with `addends` on its
+/// first two columns and no automorphism, and with the first launch of the
+/// inverse transform of the result fused in:
+/// `res` receives the lanes [`super::inverse_tail`] completes. `mt` is the
+/// stage count of that launch ([`super::inverse_head`]).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn digit_product_inverse<RT: GpuRuntime>(
+    table: &crate::runtime::GpuBuf<RT>,
+    res: &DftColumn,
+    a: &DftColumn,
+    pmat: &Pmat,
+    dsize: usize,
+    product_limbs: usize,
+    addends: [Option<&DftColumn>; 2],
+    mt: u32,
+) {
+    let n = pmat.n;
+    let block = 4 * n;
+    assert!(dsize >= 1, "digit size must be positive");
+    assert!(res.n == n && a.n == n, "vector-matrix product between different degrees");
+    assert_eq!(a.stride as usize, pmat.cols_in * block, "a.cols() != pmat.cols_in()");
+    assert_eq!(res.stride as usize, pmat.cols_out * block, "res.cols() != pmat.cols_out()");
+    assert!(
+        (1..=10).contains(&mt) && mt < n.ilog2(),
+        "fused product: no such inverse launch"
+    );
+    let limbs = a.size.min(pmat.rows * dsize);
+    assert!(limbs != 0 && res.size != 0, "fused product: nothing to multiply");
+    let narrow = |value: usize| u32::try_from(value).expect("vector-matrix product beyond the 32-bit range");
+    narrow(pmat.base as usize + pmat.blocks().size * block);
+    let terms = Terms {
+        cols_in: narrow(pmat.cols_in),
+        cols_out: narrow(pmat.cols_out),
+        dsize: narrow(dsize),
+        limbs: narrow(limbs),
+        addend: addends[0].is_some() as u32 | (addends[1].is_some() as u32) << 1,
+        permute: false,
+    };
+    for (col, addend) in addends.iter().enumerate() {
+        if let Some(addend) = addend {
+            assert_eq!(addend.n, n, "fused product: addend of another degree");
+            assert!(col < pmat.cols_out, "fused product: addend column out of range");
+        }
+    }
+    // An absent addend is bound to a buffer of the launch and never read.
+    let [(add0, add0_size), (add1, add1_size)] =
+        addends.map(|addend| addend.map_or((a, 0), |addend| (addend, addend.size.min(res.size))));
+    let table = table.view().binding().expect("transform tables hold storage");
+    let key_limbs = pmat.size.min(res.size + dsize - 1);
+    let words = limbs * pmat.cols_in
+        + pmat.cols_out * (terms.rows() as usize * pmat.cols_in * key_limbs + res.size)
+        + add0_size
+        + add1_size;
+    launch!(
+        RT, Label::VmpDigitProductInverse, block * 4 * words, product_inverse_kernel, (block, 1 << mt, 1 << mt);
+        [
+            res.binding => u32,
+            a.binding => u32,
+            pmat.binding => u32,
+            table => u32,
+            add0.binding => u32,
+            add1.binding => u32,
+        ];
+        [
+            n.ilog2(),
+            res.base,
+            narrow(res.size),
+            a.base,
+            pmat.base,
+            narrow(pmat.size),
+            0u32,
+            narrow(product_limbs.min(dsize)),
+            add0.base,
+            add0.stride,
+            narrow(add0_size),
+            add1.base,
+            add1.stride,
+            narrow(add1_size),
+        ];
+        [Consts::get(), terms, mt]
     );
 }
 

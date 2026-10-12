@@ -31,11 +31,11 @@ pub(crate) use crt::{crt_at, to_big, to_big_clearing};
 #[cfg_attr(not(feature = "enable-core"), allow(unused_imports))]
 pub(crate) use elementwise::gather;
 pub(crate) use elementwise::{DftTerm, combine};
-pub(crate) use ntt::{forward, inverse};
+pub(crate) use ntt::{forward, inverse, inverse_head, inverse_tail};
 pub(crate) use primes::Consts;
 pub(crate) use svp::scale;
 pub(crate) use tables::Tables;
-pub(crate) use vmp::{Pmat, Tail, digit_product, extract_rows};
+pub(crate) use vmp::{Pmat, Tail, digit_product, digit_product_inverse, extract_rows};
 
 use crate::runtime::Binding;
 

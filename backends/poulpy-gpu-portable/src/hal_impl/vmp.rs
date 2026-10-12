@@ -11,7 +11,9 @@ use super::operand::{all_blocks, all_dft_blocks, column_ref, dft_column_mut, dft
 use crate::{
     NTT4x30Gpu,
     module::handle,
-    ntt4x30::{AutomorphismPlan, DftTerm, Tail, combine, digit_product, extract_rows, forward},
+    ntt4x30::{
+        AutomorphismPlan, DftTerm, Tail, combine, digit_product, digit_product_inverse, extract_rows, forward, inverse_head,
+    },
     runtime::GpuRuntime,
 };
 
@@ -91,6 +93,54 @@ pub(crate) fn gglwe_product_fused<RT: GpuRuntime, R: Ring>(
             automorphism: plan,
         },
     );
+}
+
+/// [`gglwe_product_fused`] without an automorphism into a fresh `res`, with
+/// the first launch of the inverse transform of `res` run by the product
+/// itself: `res` is then completed by [`super::idft_tail_normalize`] column by
+/// column. Returns `false`, having done nothing, when the degree has no such
+/// launch to take over.
+#[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
+#[allow(clippy::type_complexity)]
+pub(crate) fn gglwe_product_digits_strided_inverse<RT: GpuRuntime, R: Ring>(
+    module: &Module<NTT4x30Gpu<RT, R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Gpu<RT, R>>,
+    dsize: usize,
+    product_limbs: usize,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Gpu<RT, R>>,
+    addends: [Option<(&VecZnxDftBackendRef<'_, NTT4x30Gpu<RT, R>>, usize)>; 2],
+) -> bool {
+    assert!(
+        a.n() == res.n() && pmat.n() == res.n(),
+        "fused product: operand degrees differ"
+    );
+    assert_eq!(a.cols(), pmat.cols_in(), "fused product: a.cols() != pmat.cols_in()");
+    assert_eq!(res.cols(), pmat.cols_out(), "fused product: res.cols() != pmat.cols_out()");
+    let Some(mt) = inverse_head::<RT>(res.n().ilog2()) else {
+        return false;
+    };
+    let res = dft_column_mut(res, 0).expect("fused product: res holds no storage");
+    let a = dft_column_ref(a, 0).expect("fused product: a holds no storage");
+    let pmat = self::pmat(pmat).expect("fused product: pmat holds no storage");
+    let addends = addends.map(|addend| {
+        addend.map(|(addend, col)| {
+            assert_eq!(addend.n(), res.n, "fused product: addend of another degree");
+            dft_column_ref(addend, col).expect("fused product: an addend holds no storage")
+        })
+    });
+    let table = handle(module).tables().of(res.n);
+    digit_product_inverse::<RT>(
+        table,
+        &res,
+        &a,
+        &pmat,
+        dsize,
+        product_limbs,
+        [addends[0].as_ref(), addends[1].as_ref()],
+        mt,
+    );
+    true
 }
 
 fn product<RT: GpuRuntime, R: Ring>(

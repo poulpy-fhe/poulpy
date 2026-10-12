@@ -128,6 +128,8 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
         gglwe_product_idft_normalize_tmp_bytes_reference(module, res_size, product_size, a_size, key_infos)
     }
 
+    // The product runs the first inverse launch of its result; each column then takes the
+    // remaining launches and the normalization.
     fn gglwe_product_idft_normalize(
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,
@@ -143,9 +145,40 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
         a_base2k: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        gglwe_product_idft_normalize_reference(
-            module, res, res_base2k, res_k, res_offset, res_dft, a, key, term_count, addends, body, a_base2k, scratch,
-        )
+        let dsize = key.dsize().as_usize();
+        let product_limbs = if dsize == 1 { 1 } else { gglwe_product_limbs(key, term_count) };
+        let addend = |column: usize| addends.get(column).copied().flatten();
+        let fused = key.stride() == 1
+            && a.size() != 0
+            && addends.len() <= 2
+            && crate::hal_impl::gglwe_product_digits_strided_inverse(
+                module,
+                res_dft,
+                a,
+                dsize,
+                product_limbs,
+                key.data(),
+                [addend(0), addend(1)],
+            );
+        if !fused {
+            return gglwe_product_idft_normalize_reference(
+                module, res, res_base2k, res_k, res_offset, res_dft, a, key, term_count, addends, body, a_base2k, scratch,
+            );
+        }
+        for col in 0..res_dft.cols() {
+            crate::hal_impl::idft_tail_normalize(
+                module,
+                res,
+                res_base2k,
+                res_k,
+                res_offset,
+                col,
+                res_dft,
+                col,
+                a_base2k,
+                if col == 0 { body } else { None },
+            );
+        }
     }
 }
 
