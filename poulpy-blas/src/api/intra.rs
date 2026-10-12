@@ -47,8 +47,8 @@ pub trait BlasMatIntraOps<BE: Backend> {
     ///
     /// - [`validate_blas_transpose`](crate::reference::validate_blas_transpose) runs before the backend, so on its
     ///   errors `res`, its batch record and `a` are untouched: `InvalidOperand` for a grid, shape, layout or context it
-    ///   rejects, then `MissingAutomorphismKey` for a key of the map `atk` lacks, its baby steps at `a.k` and its giant
-    ///   steps at the result's `k`.
+    ///   rejects, then, key by key, `MissingAutomorphismKey` for a key of the map `atk` lacks, its baby steps at `a.k`
+    ///   and its giant steps at the result's `k`, or `InvalidOperand` for one of another rank than `a`'s blocks.
     /// - poulpy-ckks's budget errors come from inside the backend before any write, and leave them untouched too:
     ///   `MultiplicationPrecisionUnderflow` when `a`'s budget, `a.k - a.log_delta`, is below `p`, and
     ///   `InsufficientHomomorphicCapacity` when `res.k` is below `a.log_delta`.
@@ -103,8 +103,9 @@ pub trait BlasMatIntraOps<BE: Backend> {
     ///
     /// - [`validate_blas_rotate_rows`](crate::reference::validate_blas_rotate_rows) runs before the backend, so on its
     ///   errors `res`, its batch record and `a` are untouched: `InvalidOperand` for a grid, shape, layout or context it
-    ///   rejects, then `MissingAutomorphismKey` for a key of the maps the shift evaluates `atk` lacks, at the widths
-    ///   [`Self::blas_transpose`] looks its keys up at. A copy takes no key.
+    ///   rejects, then, key by key, `MissingAutomorphismKey` for a key of the maps the shift evaluates `atk` lacks, at
+    ///   the widths [`Self::blas_transpose`] looks its keys up at, or `InvalidOperand` for one of another rank than `a`'s
+    ///   blocks. A copy takes no key.
     /// - poulpy-ckks's budget errors come from inside the backend before any write, and leave them untouched too: those
     ///   of [`Self::blas_transpose`], or for `k' = 0` the copy's `InsufficientHomomorphicCapacity` when `res.k` is below
     ///   `a.log_delta`.

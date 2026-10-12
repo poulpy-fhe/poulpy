@@ -7,7 +7,7 @@ use poulpy_ckks::{
     api::{CKKSAddOps, CKKSCopyOps},
     layouts::CKKSModuleAlloc,
 };
-use poulpy_core::layouts::{GGLWEInfos, GGLWELayout, GLWEToBackendMut, GetAutomorphismKey, GetTensorKey, LWEInfos};
+use poulpy_core::layouts::{GGLWEInfos, GGLWELayout, GLWEInfos, GLWEToBackendMut, GetAutomorphismKey, GetTensorKey, LWEInfos};
 use poulpy_hal::layouts::{Module, ScratchArena};
 
 use super::{BlasMatIntraImpl, BlasMatMulImpl};
@@ -51,9 +51,9 @@ where
     K: GetAutomorphismKey<BE> + Sync,
 {
     let lts = [ctx.transpose()];
-    let (src_k, dst_k) = (a.block_layout().k(), res.block_layout().k());
+    let (src_k, dst_k, rank) = (a.block_layout().k(), res.block_layout().k(), a.block_layout().rank());
     let bytes = |key: &GGLWELayout| blas_transpose_tmp_bytes(module, &*res, a, ctx, key);
-    assert_maps_scratch("blas_transpose", module, &lts, atk, src_k, dst_k, bytes, scratch);
+    assert_maps_scratch("blas_transpose", module, &lts, atk, src_k, dst_k, rank, bytes, scratch);
     let (rows, cols, blocks) = (a.rows(), a.cols(), a.blocks());
     let src: Vec<_> = (0..cols)
         .flat_map(|j| (0..rows).map(move |i| &blocks[i * cols + j]))
@@ -137,9 +137,9 @@ where
         return Ok(());
     }
     let lts = shift_maps(ctx, k1, rows, extent);
-    let (src_k, dst_k) = (a.block_layout().k(), res.block_layout().k());
+    let (src_k, dst_k, rank) = (a.block_layout().k(), res.block_layout().k(), a.block_layout().rank());
     let bytes = |key: &GGLWELayout| blas_shift_tmp_bytes(module, &*res, a, rows, ctx, key);
-    assert_maps_scratch(op, module, &lts, atk, src_k, dst_k, bytes, scratch);
+    assert_maps_scratch(op, module, &lts, atk, src_k, dst_k, rank, bytes, scratch);
     let sources: Vec<_> = a.blocks().iter().collect();
     if lts.len() == 1 {
         // One block along the axis: `q = 0`, so block `t` maps into block `t`.

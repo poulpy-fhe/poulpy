@@ -46,7 +46,8 @@ pub trait BlasMatInterOps<BE: Backend> {
     ///
     /// - [`validate_blas_rotate`](crate::reference::validate_blas_rotate) runs before the backend, so on its errors
     ///   `res`, its batch record and `a` are untouched: `InvalidOperand` for a grid, shape or layout it rejects, then
-    ///   `MissingAutomorphismKey` for the rotation key `atk` lacks at `a.k`.
+    ///   `MissingAutomorphismKey` for the rotation key `atk` lacks at `a.k`, or `InvalidOperand` when that key is of
+    ///   another rank than `a`'s blocks.
     /// - poulpy-ckks's budget error, `InsufficientHomomorphicCapacity` when `res.k` is below `a.log_delta`, comes from
     ///   inside the backend before any write, and leaves them untouched too.
     /// - Any other `Err` is a backend fault (a validator gap or a device failure), and `res` is then unspecified.
@@ -88,8 +89,9 @@ pub trait BlasMatInterOps<BE: Backend> {
     ///
     /// - [`validate_blas_sum`](crate::reference::validate_blas_sum) runs before the backend, so on its errors `res`,
     ///   its batch record and `a` are untouched: `InvalidOperand` for a grid, shape or layout it rejects, or for more
-    ///   terms, `log2(mat_slots) + 1`, than a digit of radix `base2k` sums lazily, `2^(63 - base2k)`; then
-    ///   `MissingAutomorphismKey` for a rotation key `atk` lacks at `min(res.k, a.k)`.
+    ///   terms, `log2(mat_slots) + 1`, than a digit of radix `base2k` sums lazily, `2^(63 - base2k)`; then, key by
+    ///   key, `MissingAutomorphismKey` for a rotation key `atk` lacks at `min(res.k, a.k)`, or `InvalidOperand` for one
+    ///   of another rank than `a`'s blocks.
     /// - poulpy-ckks's budget error, `InsufficientHomomorphicCapacity` from the copy when `res.k` is below
     ///   `a.log_delta`, comes from inside the backend before any write, and leaves them untouched too.
     /// - Any other `Err` is a backend fault (a validator gap or a device failure), and `res` is then unspecified.

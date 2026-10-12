@@ -62,9 +62,9 @@ pub trait BlasMatMulOps<BE: BlasMatMulImpl> {
     ///
     /// - [`validate_blas_matmul`](crate::reference::validate_blas_matmul) runs before the backend, so on its errors
     ///   `res`, its batch record and the factors are untouched: `InvalidOperand` for a grid, shape, layout, context or
-    ///   radix above 62 it rejects, then `MissingAutomorphismKey` for a key of the preparations `atk` lacks, at the widths
-    ///   [`Self::blas_matmul_prepare_left`] states, or `MissingRelinearizationKey` for the tensor key `tsk` lacks at
-    ///   `max(w_a, w_b)`.
+    ///   radix above 62 it rejects, then, key by key, `MissingAutomorphismKey` for a key of the preparations `atk` lacks,
+    ///   at the widths [`Self::blas_matmul_prepare_left`] states, or `MissingRelinearizationKey` for the tensor key `tsk`
+    ///   lacks at `max(w_a, w_b)`, or `InvalidOperand` for a key of another rank than the factors' blocks.
     /// - poulpy-ckks's budget errors come from inside the backend before any write to `res`, and leave it untouched
     ///   too: the preparations' `MultiplicationPrecisionUnderflow` when the budget of `a` or `b`, its `k - log_delta`,
     ///   is below `2p`, then the product's, `MultiplicationPrecisionUnderflow` when
@@ -124,9 +124,9 @@ pub trait BlasMatMulOps<BE: BlasMatMulImpl> {
     /// # Errors
     ///
     /// - [`validate_blas_matmul_prepare_left`](crate::reference::validate_blas_matmul_prepare_left) runs before the
-    ///   backend: `InvalidOperand` for a grid, layout or context it rejects, then `MissingAutomorphismKey` for a key
-    ///   `atk` lacks: sigma's baby steps at `a.k` and giant steps at `a.k - p`, each phi^k's baby steps at `a.k - p` and
-    ///   giant steps at `a.k - 2p`.
+    ///   backend: `InvalidOperand` for a grid, layout or context it rejects, then, key by key, `MissingAutomorphismKey`
+    ///   for a key `atk` lacks: sigma's baby steps at `a.k` and giant steps at `a.k - p`, each phi^k's baby steps at
+    ///   `a.k - p` and giant steps at `a.k - 2p`; or `InvalidOperand` for one of another rank than `a`'s blocks.
     /// - poulpy-ckks's budget error comes from inside the backend: `MultiplicationPrecisionUnderflow` when `a`'s budget,
     ///   `a.k - a.log_delta`, is below `2p`.
     /// - Any other `Err` is a backend fault (a validator gap or a device failure).
@@ -217,7 +217,8 @@ pub trait BlasMatMulOps<BE: BlasMatMulImpl> {
     /// - [`validate_blas_matmul_prepared`](crate::reference::validate_blas_matmul_prepared) runs before the backend, so
     ///   on its errors `res`, its batch record and the operands are untouched: `InvalidOperand` for an operand without a
     ///   batch record, or a grid, shape, layout or radix above 62 it rejects, then `MissingRelinearizationKey` for the
-    ///   tensor key `tsk` lacks at `max(a.k, b.k)`.
+    ///   tensor key `tsk` lacks at `max(a.k, b.k)`, or `InvalidOperand` when it is of another rank than the operands'
+    ///   terms.
     /// - poulpy-ckks's budget errors come from inside the backend before any write, and leave them untouched too:
     ///   `MultiplicationPrecisionUnderflow` when `min(a.k - a.log_delta, b.k - b.log_delta)` is below
     ///   `max(a.log_delta, b.log_delta)`, and `InsufficientHomomorphicCapacity` when `res.k` is below `log_delta`.
@@ -276,8 +277,9 @@ pub trait BlasMatMulOps<BE: BlasMatMulImpl> {
     ///
     /// - [`validate_blas_matmul_pt`](crate::reference::validate_blas_matmul_pt) runs before the backend, so on its
     ///   errors `res`, its batch record and `a` are untouched: `InvalidOperand` for a grid, shape, layout, operand or
-    ///   count it rejects, then `MissingAutomorphismKey` for a key of `b`'s maps `atk` lacks, their baby steps at `a.k`
-    ///   and their giant steps at the result's `k`.
+    ///   count it rejects, then, key by key, `MissingAutomorphismKey` for a key of `b`'s maps `atk` lacks, their baby
+    ///   steps at `a.k` and their giant steps at the result's `k`, or `InvalidOperand` for one of another rank than `a`'s
+    ///   blocks.
     /// - poulpy-ckks's budget errors come from inside the backend before any write, and leave them untouched too:
     ///   `MultiplicationPrecisionUnderflow` when `a`'s budget, `a.k - a.log_delta`, is below `p_B`, and
     ///   `InsufficientHomomorphicCapacity` when `res.k` is below `a.log_delta`.

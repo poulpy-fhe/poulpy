@@ -2,7 +2,9 @@ use poulpy_ckks::{
     CKKSCtBounds, CKKSResult as Result, SetCKKSInfos,
     api::{CKKSLinearTransformationOps, CKKSModuleInfos, LinearTransformationBabySteps, LinearTransformationPrepared},
 };
-use poulpy_core::layouts::{GGLWEInfos, GGLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos};
+use poulpy_core::layouts::{
+    GGLWEInfos, GGLWELayout, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
+};
 use poulpy_hal::{
     api::{CnvPVecAlloc, ModuleN},
     execution::worker_count,
@@ -20,12 +22,13 @@ use crate::layouts::{BlasContext, BlasGrid, grid_batch};
 /// shape and share one layout whose label allows their batch record ([`BlasGrid::blocks`],
 /// [`crate::layouts::BlasGridInfos::mat_slots`]), `res` has the transposed shape of `a` and its blocks `a`'s degree,
 /// radix and rank, `ctx` was encoded on a module of `module`'s slot count at `a`'s radix, and `atk` holds every key of
-/// the transpose at the width it is looked up at.
+/// the transpose at the width it is looked up at, of `a`'s rank.
 ///
 /// # Errors
 ///
-/// `InvalidOperand` for a grid, shape, layout or context it rejects, then `MissingAutomorphismKey`. It checks no
-/// budget: poulpy-ckks rejects those inside the implementation, before any write.
+/// `InvalidOperand` for a grid, shape, layout or context it rejects, then, key by key, `MissingAutomorphismKey`, or
+/// `InvalidOperand` for a key of another rank. It checks no budget: poulpy-ckks rejects those inside the
+/// implementation, before any write.
 pub fn validate_blas_transpose<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
@@ -35,7 +38,8 @@ pub fn validate_blas_transpose<BE: Backend>(
 ) -> Result<usize> {
     let op = "blas_transpose";
     ensure_mapped(op, module, res, a, ctx, a.cols(), a.rows())?;
-    ensure_lt_keys(op, module, ctx.transpose(), atk, a.block_layout().k(), res.block_layout().k())?;
+    let (block, res_k) = (a.block_layout(), res.block_layout().k());
+    ensure_lt_keys(op, module, ctx.transpose(), atk, block.k(), res_k, block.rank())?;
     Ok(grid_batch::<BE::Ring>(a))
 }
 
@@ -103,8 +107,9 @@ fn validate_shift<BE: Backend>(
     let op = if rows { "blas_rotate_rows" } else { "blas_rotate_cols" };
     ensure_mapped(op, module, res, a, ctx, a.rows(), a.cols())?;
     let extent = if rows { a.rows() } else { a.cols() };
+    let (block, res_k) = (a.block_layout(), res.block_layout().k());
     for lt in shift_maps(ctx, k % (1 << ctx.log_d()), rows, extent) {
-        ensure_lt_keys(op, module, lt, atk, a.block_layout().k(), res.block_layout().k())?;
+        ensure_lt_keys(op, module, lt, atk, block.k(), res_k, block.rank())?;
     }
     Ok(grid_batch::<BE::Ring>(a))
 }
@@ -189,7 +194,7 @@ pub trait BlasMatIntraReference<BE: Backend> {
             return Ok(());
         };
         let bytes = |key: &GGLWELayout| self.blas_map_blocks_tmp_bytes_reference(first_dst, first, src.len(), lts, key);
-        assert_maps_scratch(op, self, lts, atk, first.k(), first_dst.k(), bytes, scratch);
+        assert_maps_scratch(op, self, lts, atk, first.k(), first_dst.k(), first.rank(), bytes, scratch);
         let rotations: Vec<i64> = lts.iter().flat_map(|lt| lt.baby_steps().iter().copied()).collect();
         let run = src.len().div_ceil(worker_count::<BE::TaskExecutor>(WORKERS, src.len()));
         let mut runs: Vec<_> = src.chunks(run).zip(dst.chunks_mut(run * lts.len())).collect();

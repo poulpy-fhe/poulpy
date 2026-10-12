@@ -5,7 +5,7 @@ use poulpy_ckks::{
 };
 use poulpy_core::{
     GLWEBytesOf,
-    layouts::{GGLWEInfos, GLWEToBackendMut, GetAutomorphismKey, LWEInfos, TorusPrecision},
+    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GetAutomorphismKey, LWEInfos, TorusPrecision},
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
@@ -18,12 +18,13 @@ use crate::layouts::{BlasGrid, BlasGridInfos, BlasGridMut, grid_batch, sum_rotat
 /// Checks a [`crate::api::BlasMatInterOps::blas_rotate`] call from metadata alone, before any implementation runs, and
 /// returns the batch `res` records, `a`'s: `a` and `res` are grids at `a`'s `log_d` whose blocks tile their shape and
 /// share one layout whose label allows their batch record ([`BlasGrid::blocks`], [`BlasGridInfos::mat_slots`]), `res`
-/// has `a`'s shape and its blocks `a`'s degree, radix and rank, and `atk` holds the rotation key at `a`'s width.
+/// has `a`'s shape and its blocks `a`'s degree, radix and rank, and `atk` holds the rotation key at `a`'s width, of
+/// `a`'s rank.
 ///
 /// # Errors
 ///
-/// `InvalidOperand` for a grid, shape or layout it rejects, then `MissingAutomorphismKey`. It checks no budget:
-/// poulpy-ckks rejects those inside the implementation, before any write.
+/// `InvalidOperand` for a grid, shape or layout it rejects, then `MissingAutomorphismKey`, or `InvalidOperand` for a key
+/// of another rank. It checks no budget: poulpy-ckks rejects those inside the implementation, before any write.
 pub fn validate_blas_rotate<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
@@ -33,18 +34,20 @@ pub fn validate_blas_rotate<BE: Backend>(
 ) -> Result<usize> {
     let op = "blas_rotate";
     ensure_same_grids(op, module, res, a)?;
-    ensure_keys(op, module, [r << (2 * a.log_d())], atk, a.block_layout().k())?;
+    let block = a.block_layout();
+    ensure_keys(op, module, [r << (2 * a.log_d())], atk, block.k(), block.rank())?;
     Ok(grid_batch::<BE::Ring>(a))
 }
 
 /// Checks a [`crate::api::BlasMatInterOps::blas_sum`] call as [`validate_blas_rotate`] does, the rotation keys of the
-/// batch at the narrower of `a`'s and `res`'s widths, and that the `log2(mat_slots) + 1` terms the sum adds up fit
-/// `res`'s digits (`2^(63 - base2k)`), and returns the batch `res` records, `a`'s.
+/// batch at the narrower of `a`'s and `res`'s widths, of `a`'s rank, and that the `log2(mat_slots) + 1` terms the sum
+/// adds up fit `res`'s digits (`2^(63 - base2k)`), and returns the batch `res` records, `a`'s.
 ///
 /// # Errors
 ///
-/// `InvalidOperand` for a grid, shape, layout or term count it rejects, then `MissingAutomorphismKey`. It checks no
-/// budget: poulpy-ckks rejects those inside the implementation, before any write.
+/// `InvalidOperand` for a grid, shape, layout or term count it rejects, then, key by key, `MissingAutomorphismKey`, or
+/// `InvalidOperand` for a key of another rank. It checks no budget: poulpy-ckks rejects those inside the
+/// implementation, before any write.
 pub fn validate_blas_sum<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
@@ -58,7 +61,8 @@ pub fn validate_blas_sum<BE: Backend>(
     if terms > max_lazy_terms(base2k) {
         return Err(reject(op, format!("{terms} lazy terms risk i64 overflow at base2k={base2k}")));
     }
-    ensure_keys(op, module, sum_rotations(a.log_d(), batch), atk, sum_key_width(res, a))?;
+    let rank = a.block_layout().rank();
+    ensure_keys(op, module, sum_rotations(a.log_d(), batch), atk, sum_key_width(res, a), rank)?;
     Ok(batch)
 }
 
@@ -118,7 +122,8 @@ pub trait BlasMatInterReference<BE: Backend> {
         let op = "blas_rotate";
         let rotation = r << (2 * a.log_d());
         let used = KeyLayouts::new(atk);
-        let _ = ensure_keys(op, self, [rotation], &used, a.block_layout().k());
+        let block = a.block_layout();
+        let _ = ensure_keys(op, self, [rotation], &used, block.k(), block.rank());
         let bytes = used.max_bytes(|key| self.blas_rotate_tmp_bytes_reference(&*res, a, key));
         assert_scratch(op, bytes, scratch);
         let mut blocks: Vec<_> = res.blocks_mut().iter_mut().zip(a.blocks()).collect();
@@ -156,7 +161,8 @@ pub trait BlasMatInterReference<BE: Backend> {
         let op = "blas_sum";
         let rotations: Vec<i64> = sum_rotations(a.log_d(), grid_batch::<BE::Ring>(a)).collect();
         let used = KeyLayouts::new(atk);
-        let _ = ensure_keys(op, self, rotations.iter().copied(), &used, sum_key_width(&*res, a));
+        let (k, rank) = (sum_key_width(&*res, a), a.block_layout().rank());
+        let _ = ensure_keys(op, self, rotations.iter().copied(), &used, k, rank);
         let bytes = used.max_bytes(|key| self.blas_sum_tmp_bytes_reference(&*res, a, key));
         assert_scratch(op, bytes, scratch);
         for (dst, src) in res.blocks_mut().iter_mut().zip(a.blocks()) {

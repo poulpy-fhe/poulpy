@@ -5,7 +5,7 @@ use std::{collections::HashMap, sync::Mutex};
 use poulpy_ckks::{
     CKKSInfos, GLWEPlaintextInfos, SetGLWEPlaintextInfos,
     api::{CKKSEncodingOps, CKKSLinearTransformationOps, LinearTransformationBabySteps, LinearTransformationPrepared},
-    layouts::CKKSCiphertextOwned,
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
     test_suite::{
         CKKSTestParams,
         helpers::{
@@ -17,7 +17,8 @@ use poulpy_ckks::{
     },
 };
 use poulpy_core::layouts::{
-    DiagonalArithmetic, GetAutomorphismKey, LWEInfos, TorusPrecision, prepared::GLWEAutomorphismKeyPreparedBackendRef,
+    DiagonalArithmetic, GLWETensorKeyLayout, GetAutomorphismKey, LWEInfos, Rank, TorusPrecision,
+    prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWETensorKeyPreparedFactory},
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -28,7 +29,7 @@ use poulpy_hal::{
 
 use super::helpers::{
     Grid, Misshapen,
-    Rejection::{InvalidOperand, MissingKey, MissingTensorKey},
+    Rejection::{Budget, InvalidOperand, MissingKey, MissingTensorKey},
     TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, assert_rejected, assert_short_scratch, assert_short_scratch_panics,
     at_scale, blas_context, context_and_keys, encrypt_grid, foreign_contexts, foreign_layouts, grid_infos, grid_snapshot,
     map_galois_elements, mapped_layout, other_scales, product_layout, rejected_grids, relabel, rotation_keys,
@@ -433,11 +434,28 @@ pub fn test_blas_matmul_pt<BE, F, E>(
     assert_eq!(grid_snapshot::<BE, _>(&res), want, "matmul_pt at radix 26: summed terms");
 }
 
+/// A `1 x 1` grid one bit narrower than `log_delta`, into which poulpy-ckks rejects the budget of a product of blocks at
+/// that scale. Where the slots hold two matrices or more, it records half of them, where a product of dense inputs
+/// records them all, so that a record stamped on failure shows.
+fn res_below_scale<BE>(params: &CKKSTestParams, module: &Module<BE>, log_d: usize, log_delta: usize) -> BlasCiphertextOwned<BE>
+where
+    BE: TestContextBackend<Ring = Standard>,
+    Module<BE>: CKKSModuleAlloc<BE>,
+{
+    let res = alloc_grid(params, module, log_d, 1, 1, log_delta - 1);
+    if (params.n / 2) >> (2 * log_d) < 2 {
+        return res;
+    }
+    BlasCiphertext::from_blocks(relabel(&res, |meta| meta.log_sparsity = 1).into_blocks(), log_d, 1, 1).unwrap()
+}
+
 /// An inner-dimension or `res` shape mismatch, more public matrices than a sparse input records, a copy relabelled past
 /// `log2` of the ring degree, an operand encoded on a module of another degree, at another radix or at another
 /// dimension, every grid [`rejected_grids`] builds, as `a` or as `res`, a `res` of another degree, radix or rank
-/// ([`foreign_layouts`]), and a missing rotation key are rejected before `res` changes; a product one scratch byte short
-/// of its query panics before `res` changes; an operand whose block count overflows `usize` does not encode.
+/// ([`foreign_layouts`]), a missing rotation key, and `a` and `res` both of another rank than the keys are rejected
+/// before `res` changes, as is a `res` narrower than the scale of `a`, by poulpy-ckks's budget check, which leaves `a`
+/// unchanged too; a product one scratch byte short of its query panics before `res` changes; an operand whose block
+/// count overflows `usize` does not encode.
 pub fn test_blas_matmul_pt_guards<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -567,6 +585,21 @@ pub fn test_blas_matmul_pt_guards<BE, F, E>(
     assert_guard::<BE, _>("no keys", "blas_matmul_pt", MissingKey, &mut res, |res| {
         module.blas_matmul_pt(res, &ct, &b, &no_keys, &mut op_scratch.borrow())
     });
+
+    // `a` and `res` both of another rank than the keys, which the first key of `b`'s maps rejects.
+    let ([.., (_, rank_a)], [.., (_, mut rank_res)]) = (foreign_layouts(module, &ct), foreign_layouts(module, &res));
+    assert_guard::<BE, _>("key rank", "blas_matmul_pt", InvalidOperand, &mut rank_res, |res| {
+        module.blas_matmul_pt(res, &rank_a, &b, &keys, &mut op_scratch.borrow())
+    });
+
+    // `res` narrower than the scale of `a`: poulpy-ckks rejects the budget of the first block's summed transformation
+    // inside the implementation, before any write.
+    let input = grid_snapshot::<BE, _>(&ct);
+    let mut narrow_res = res_below_scale(&params, module, log_d, ct.block_layout().log_delta());
+    assert_guard::<BE, _>("budget", "mul", Budget, &mut narrow_res, |res| {
+        module.blas_matmul_pt(res, &ct, &b, &keys, &mut op_scratch.borrow())
+    });
+    assert!(grid_snapshot::<BE, _>(&ct) == input, "budget: blas_matmul_pt changed a");
 
     let bytes = module.blas_matmul_pt_tmp_bytes(&res, &ct, &b, &params.atk_layout());
     assert_short_scratch::<BE, _>("blas_matmul_pt", &mut res, bytes, |res, s| {
@@ -812,9 +845,11 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
 /// The guards of [`test_blas_matmul_pt_guards`] for `B A`, through `blas_matmul_pt_left`: an inner-dimension or `res`
 /// shape mismatch, more public matrices than a sparse input records, a copy relabelled past `log2` of the ring degree,
 /// an operand encoded on a module of another degree, at another radix or at another dimension, every grid
-/// [`rejected_grids`] builds, as `a` or as `res`, a `res` of another degree, radix or rank ([`foreign_layouts`]), and a
-/// missing rotation key are rejected before `res` changes; a product one scratch byte short of its query panics before
-/// `res` changes; an operand whose block count overflows `usize` does not encode.
+/// [`rejected_grids`] builds, as `a` or as `res`, a `res` of another degree, radix or rank ([`foreign_layouts`]), a
+/// missing rotation key, and `a` and `res` both of another rank than the keys are rejected before `res` changes, as is
+/// a `res` narrower than the scale of `a`, by poulpy-ckks's budget check, which leaves `a` unchanged too; a product one
+/// scratch byte short of its query panics before `res` changes; an operand whose block count overflows `usize` does not
+/// encode.
 pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -948,6 +983,21 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
         module.blas_matmul_pt_left(res, &b, &ct, &no_keys, &mut op_scratch.borrow())
     });
 
+    // `a` and `res` both of another rank than the keys, which the first key of `b`'s maps rejects.
+    let ([.., (_, rank_a)], [.., (_, mut rank_res)]) = (foreign_layouts(module, &ct), foreign_layouts(module, &res));
+    assert_guard::<BE, _>("key rank", op, InvalidOperand, &mut rank_res, |res| {
+        module.blas_matmul_pt_left(res, &b, &rank_a, &keys, &mut op_scratch.borrow())
+    });
+
+    // `res` narrower than the scale of `a`: poulpy-ckks rejects the budget of the first block's summed transformation
+    // inside the implementation, before any write.
+    let input = grid_snapshot::<BE, _>(&ct);
+    let mut narrow_res = res_below_scale(&params, module, log_d, ct.block_layout().log_delta());
+    assert_guard::<BE, _>("budget", "mul", Budget, &mut narrow_res, |res| {
+        module.blas_matmul_pt_left(res, &b, &ct, &keys, &mut op_scratch.borrow())
+    });
+    assert!(grid_snapshot::<BE, _>(&ct) == input, "budget: blas_matmul_pt_left changed a");
+
     let bytes = module.blas_matmul_pt_left_tmp_bytes(&res, &b, &ct, &params.atk_layout());
     assert_short_scratch::<BE, _>(op, &mut res, bytes, |res, s| {
         module.blas_matmul_pt_left(res, &b, &ct, &keys, s)
@@ -971,13 +1021,17 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
 /// Rejected before `res` changes, by the product and, of these cases, by those that meet them, the preparations and the
 /// prepared product: every grid [`rejected_grids`] builds, in place of a factor or of `res`, or as the input of a
 /// preparation; a `res` shape mismatch; a `res`, one factor or one prepared operand of another degree, radix or rank,
-/// and an input of a preparation of another degree or radix ([`foreign_layouts`]); a copy relabelled past `log2` of the
-/// ring degree; a context encoded on a module of another degree or at another radix; a factor at a radix other than the
-/// context's; an inner-dimension mismatch; a radix above 62, whose digits cannot hold the JKLS kernel's two lazy terms;
-/// and a missing rotation or tensor key. The prepared product's validator also rejects operand infos without a batch
-/// record, at another dimension, without a block, or whose label does not allow their record. The preparations take no
-/// tensor key and the prepared product no rotation key. Each of these operations one scratch byte short of its query
-/// panics before `res` changes.
+/// and an input of a preparation of another degree, radix or rank ([`foreign_layouts`]), whose rank its keys reject;
+/// factors and `res` all of another rank than the rotation keys; a copy relabelled past `log2` of the ring degree; a
+/// context encoded on a module of another degree or at another radix; a factor at a radix other than the context's; an
+/// inner-dimension mismatch; a radix above 62, whose digits cannot hold the JKLS kernel's two lazy terms; a missing
+/// rotation or tensor key; and a tensor key of another rank than the blocks. The prepared product's validator also
+/// rejects operand infos without a batch record, at another dimension, without a block, or whose label does not allow
+/// their record, and operands and `res` all of another rank than the tensor key. poulpy-ckks's budget check rejects a
+/// `res` narrower than the factors' scale in the product and the prepared product before `res` or a factor changes, and
+/// an input one bit short of the `2p` its maps spend, in either preparation and as a factor of the product, before it
+/// or `res` changes. The preparations take no tensor key and the prepared product no rotation key. Each of these
+/// operations one scratch byte short of its query panics before `res` changes.
 pub fn test_blas_matmul_guards<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -1137,8 +1191,9 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     assert_rejected("radix", "blas_matmul_prepare_left", InvalidOperand, left_radix);
     let right_radix = module.blas_matmul_prepare_right(&radix(2, 1), &ctx, &keys, &mut op_scratch.borrow());
     assert_rejected("radix", "blas_matmul_prepare_right", InvalidOperand, right_radix);
-    // A grid of another degree or radix, alone: no `res` to compare it with.
-    for (label, bad) in foreign_layouts(module, &ct).into_iter().filter(|(label, _)| *label != "rank") {
+    // A grid of another degree, radix or rank, alone: no `res` to compare it with, so the rank is compared with the
+    // keys'.
+    for (label, bad) in foreign_layouts(module, &ct) {
         let left = module.blas_matmul_prepare_left(&bad, &ctx, &keys, &mut op_scratch.borrow());
         assert_rejected(label, "blas_matmul_prepare_left", InvalidOperand, left);
         let right = module.blas_matmul_prepare_right(&bad, &ctx, &keys, &mut op_scratch.borrow());
@@ -1198,6 +1253,77 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     );
     let empty = validate_blas_matmul_prepared(module, &res, &no_cols, &no_rows, &keys);
     assert_rejected("no block", op, InvalidOperand, empty);
+
+    // Factors and `res` all one rank above the keys, beside a tensor key of their rank, so that only the rotation keys'
+    // rank differs: the product meets it at its first rotation key. Read as operand infos beside the keys' tensor key,
+    // they meet the prepared product's validator at that key. Then that tensor key beside valid factors and `res`: both
+    // products meet it, the product past its rotation keys. No case uses the tensor key, so an allocated key serves.
+    let rank_tsk = module.alloc_tensor_key_prepared_from_infos(&GLWETensorKeyLayout {
+        rank: Rank(params.rank as u32 + 1),
+        ..params.tsk_layout()
+    });
+    let ([.., (_, rank_row)], [.., (_, rank_column)]) = (foreign_layouts(module, &ct), foreign_layouts(module, &column));
+    let [.., (_, mut rank_res)] = foreign_layouts(module, &res);
+    assert_guard::<BE, _>("key rank", "blas_matmul", InvalidOperand, &mut rank_res, |res| {
+        module.blas_matmul(res, &rank_row, &rank_column, &ctx, &rank_tsk, &keys, &mut op_scratch.borrow())
+    });
+    let infos = validate_blas_matmul_prepared(module, &rank_res, &rank_row, &rank_column, &keys);
+    assert_rejected("key rank infos", op, InvalidOperand, infos);
+    let mut res = alloc(1, 1);
+    assert_guard::<BE, _>("tensor key rank", "blas_matmul", InvalidOperand, &mut res, |res| {
+        module.blas_matmul(res, &ct, &column, &ctx, &rank_tsk, &keys, &mut op_scratch.borrow())
+    });
+    assert_guard::<BE, _>("tensor key rank", op, InvalidOperand, &mut res, |res| {
+        module.blas_matmul_prepared(res, &left, &right, &rank_tsk, &mut op_scratch.borrow())
+    });
+
+    // `res` narrower than the factors' scale: poulpy-ckks rejects the budget of the first block's JKLS kernel inside the
+    // implementation, after the preparations in `blas_matmul`, before any write.
+    let factors = [&ct, &column].map(grid_snapshot::<BE, _>);
+    let operands = [grid_infos(&left), grid_infos(&right)];
+    let mut narrow_res = res_below_scale(&params, module, log_d, ct.block_layout().log_delta());
+    assert_guard::<BE, _>("budget", "mul", Budget, &mut narrow_res, |res| {
+        module.blas_matmul(res, &ct, &column, &ctx, &keys, &keys, &mut op_scratch.borrow())
+    });
+    assert_guard::<BE, _>("budget", "mul", Budget, &mut narrow_res, |res| {
+        module.blas_matmul_prepared(res, &left, &right, &keys, &mut op_scratch.borrow())
+    });
+    assert!(
+        [&ct, &column].map(grid_snapshot::<BE, _>) == factors,
+        "budget: blas_matmul changed a factor"
+    );
+    // The prepared operands are opaque: their infos are what a test reads.
+    assert!(
+        [grid_infos(&left), grid_infos(&right)] == operands,
+        "budget: blas_matmul_prepared changed an operand"
+    );
+    // An input whose budget, `k - log_delta`, is one bit short of the `2p` its preparation spends, `p` the scale of the
+    // maps of `ctx`, `params.prec()`'s: poulpy-ckks rejects the budget of its first shift, after sigma (tau), inside the
+    // implementation, and the product's left preparation does so before any write to `res`.
+    let p = params.prec().log_delta();
+    let short = encrypt_grid::<BE, F, E>(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        ct.block_layout().log_delta() + 2 * p - 1,
+        0,
+        &Grid::model(log_d, 1, 2, lanes, 10),
+        &mut scratch.borrow(),
+    );
+    let input = grid_snapshot::<BE, _>(&short);
+    let left_short = module.blas_matmul_prepare_left(&short, &ctx, &keys, &mut op_scratch.borrow());
+    assert_rejected("budget", "mul", Budget, left_short);
+    let right_short = module.blas_matmul_prepare_right(&short, &ctx, &keys, &mut op_scratch.borrow());
+    assert_rejected("budget", "mul", Budget, right_short);
+    assert_guard::<BE, _>("budget factor", "mul", Budget, &mut res, |res| {
+        module.blas_matmul(res, &short, &column, &ctx, &keys, &keys, &mut op_scratch.borrow())
+    });
+    assert!(
+        grid_snapshot::<BE, _>(&short) == input,
+        "budget: a preparation changed its input"
+    );
 
     // Each operation one scratch byte short of its query.
     let mut res = alloc(1, 1);

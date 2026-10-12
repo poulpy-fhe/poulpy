@@ -21,7 +21,7 @@ use poulpy_ckks::{
     api::{CKKSLinearTransformationOps, CKKSModuleInfos, LinearTransformation, LinearTransformationPrepared, LtDiagonalMeta},
 };
 use poulpy_core::layouts::{
-    Base2K, GGLWEInfos, GGLWELayout, GLWEInfos, GetAutomorphismKey, GetTensorKey, LWEInfos, TorusPrecision,
+    Base2K, GGLWEInfos, GGLWELayout, GLWEInfos, GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, TorusPrecision,
     prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWETensorKeyPreparedBackendRef},
 };
 use poulpy_hal::{
@@ -177,13 +177,15 @@ pub(crate) fn ensure_maps<M: CKKSModuleInfos + ?Sized>(
     Ok(())
 }
 
-/// Fails with `MissingAutomorphismKey` on the first rotation that has no key at width `k`.
+/// Fails, rotation by rotation, with `MissingAutomorphismKey` on the first that has no key at width `k`, or with
+/// `InvalidOperand` on the first whose key is not of `rank`, that of the blocks it switches.
 pub(crate) fn ensure_keys<BE, M, K>(
     op: &'static str,
     module: &M,
     rotations: impl IntoIterator<Item = i64>,
     keys: &K,
     k: TorusPrecision,
+    rank: Rank,
 ) -> Result<()>
 where
     BE: Backend,
@@ -193,22 +195,40 @@ where
     for rotation in rotations {
         let p = module.ckks_galois_element(rotation);
         // Element 1 is the identity, which poulpy-ckks applies without a key.
-        if p != 1 && keys.get_automorphism_key(p, k).is_err() {
-            return Err(CKKSCompositionError::MissingAutomorphismKey {
+        if p == 1 {
+            continue;
+        }
+        let key = keys
+            .get_automorphism_key(p, k)
+            .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
                 op,
                 rotation,
                 k: k.into(),
-            }
-            .into());
-        }
+            })?;
+        ensure_key_rank(op, "rotation", key.rank(), rank)?;
     }
     Ok(())
 }
 
-/// Fails with `MissingRelinearizationKey` unless `keys` holds a tensor key at width `k`.
-pub(crate) fn ensure_tensor_key<BE: Backend, K: GetTensorKey<BE>>(op: &'static str, keys: &K, k: TorusPrecision) -> Result<()> {
-    keys.get_tensor_key(k)
+/// Fails with `MissingRelinearizationKey` unless `keys` holds a tensor key at width `k`, then with `InvalidOperand`
+/// unless it is of `rank`, that of the blocks it relinearizes.
+pub(crate) fn ensure_tensor_key<BE: Backend, K: GetTensorKey<BE>>(
+    op: &'static str,
+    keys: &K,
+    k: TorusPrecision,
+    rank: Rank,
+) -> Result<()> {
+    let key = keys
+        .get_tensor_key(k)
         .map_err(|_| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into() })?;
+    ensure_key_rank(op, "tensor", key.rank(), rank)
+}
+
+/// Rejects a `kind` key of rank `key` for blocks of rank `blocks`, on which poulpy-core's key switch would panic.
+fn ensure_key_rank(op: &'static str, kind: &str, key: Rank, blocks: Rank) -> Result<()> {
+    if key != blocks {
+        return Err(reject(op, format!("a {kind} key of rank {key} for blocks of rank {blocks}")));
+    }
     Ok(())
 }
 
@@ -223,8 +243,9 @@ pub(crate) fn lt_output_k<P: LtDiagonalMeta>(
     src_k.as_usize().saturating_sub(scale).min(dst_k.as_usize()).into()
 }
 
-/// Fails with `MissingAutomorphismKey` unless `keys` holds every key evaluating `lt` from width `src_k` into a
-/// ciphertext of width `dst_k` looks up: the baby steps at `src_k`, the non-empty giant steps at [`lt_output_k`].
+/// Fails as [`ensure_keys`] unless `keys` holds every key evaluating `lt` from blocks of rank `rank` and width `src_k`
+/// into a ciphertext of width `dst_k` looks up, of that rank: the baby steps at `src_k`, the non-empty giant steps at
+/// [`lt_output_k`].
 ///
 /// These are poulpy-ckks's widths on inputs it evaluates. On an input it rejects with a budget error, this check may
 /// ask for a key poulpy-ckks never looks up for that input: a store holding exactly the widths in use then fails here
@@ -236,6 +257,7 @@ pub(crate) fn ensure_lt_keys<BE, M, P, K>(
     keys: &K,
     src_k: TorusPrecision,
     dst_k: TorusPrecision,
+    rank: Rank,
 ) -> Result<()>
 where
     BE: Backend,
@@ -243,9 +265,9 @@ where
     P: LtDiagonalMeta,
     K: GetAutomorphismKey<BE>,
 {
-    ensure_keys(op, module, lt.baby_steps().iter().copied(), keys, src_k)?;
+    ensure_keys(op, module, lt.baby_steps().iter().copied(), keys, src_k, rank)?;
     let giants = lt.giant_steps.iter().filter(|gs| !gs.diagonals.is_empty()).map(|gs| gs.rot);
-    ensure_keys(op, module, giants, keys, lt_output_k(lt, src_k, dst_k))
+    ensure_keys(op, module, giants, keys, lt_output_k(lt, src_k, dst_k), rank)
 }
 
 /// `keys`, recording the layout of every key looked up through it: an operation sizes its scratch query on the keys its
@@ -316,8 +338,8 @@ pub(crate) fn assert_scratch<BE: Backend>(op: &str, required: usize, scratch: &S
 }
 
 /// Panics unless `scratch` holds the largest `bytes` over the layouts of the rotation keys that evaluating `lts` from
-/// width `src_k` into width `dst_k` looks up in `atk`, as [`assert_scratch`]; a call that looks up none asserts
-/// nothing. The keys passed `op`'s validator, so the look-ups only record their layouts.
+/// blocks of rank `rank` and width `src_k` into width `dst_k` looks up in `atk`, as [`assert_scratch`]; a call that
+/// looks up none asserts nothing. The keys passed `op`'s validator, so the look-ups only record their layouts.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn assert_maps_scratch<BE: Backend, M: CKKSModuleInfos + ?Sized>(
     op: &'static str,
@@ -326,12 +348,13 @@ pub(crate) fn assert_maps_scratch<BE: Backend, M: CKKSModuleInfos + ?Sized>(
     atk: &impl GetAutomorphismKey<BE>,
     src_k: TorusPrecision,
     dst_k: TorusPrecision,
+    rank: Rank,
     bytes: impl Fn(&GGLWELayout) -> usize,
     scratch: &ScratchArena<'_, BE>,
 ) {
     let used = KeyLayouts::new(atk);
     for lt in lts {
-        let _ = ensure_lt_keys(op, module, lt, &used, src_k, dst_k);
+        let _ = ensure_lt_keys(op, module, lt, &used, src_k, dst_k, rank);
     }
     assert_scratch(op, used.max_bytes(bytes), scratch);
 }

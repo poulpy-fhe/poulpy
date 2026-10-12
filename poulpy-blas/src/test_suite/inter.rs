@@ -136,11 +136,12 @@ where
 }
 
 /// Every grid [`rejected_grids`] and [`foreign_layouts`] build, as `a` or as `res`, a shape mismatch, a copy relabelled
-/// past `log2` of the ring degree, a [`Misshapen`] grid as `a` or as `res`, a missing rotation key, blocks wider than the
-/// slots, and a sum of more lazy terms than its radix holds are rejected through the API before `res` changes, as is a
-/// `res` narrower than the scale of `a`, by poulpy-ckks's budget check; a rotation or a sum one scratch byte short of its
-/// query panics before `res` changes; `from_blocks` rejects a block count overflowing `usize`. On one matrix slot, where
-/// every rotation is the identity, the missing-key, lazy-term and scratch cases are skipped.
+/// past `log2` of the ring degree, a [`Misshapen`] grid as `a` or as `res`, a missing rotation key, `a` and `res` both
+/// of another rank than the keys, blocks wider than the slots, and a sum of more lazy terms than its radix holds are
+/// rejected through the API before `res` changes, as is a `res` narrower than the scale of `a`, by poulpy-ckks's budget
+/// check; a rotation or a sum one scratch byte short of its query panics before `res` changes; `from_blocks` rejects a
+/// block count overflowing `usize`. On one matrix slot, where every rotation is the identity, the missing-key, key-rank,
+/// lazy-term and scratch cases are skipped.
 pub fn test_blas_inter_guards<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -293,6 +294,18 @@ pub fn test_blas_inter_guards<BE, F, E>(
     assert_guard::<BE, _>("budget", "copy", Budget, &mut narrow, |res| {
         module.blas_sum(res, &ct, &sum_keys, &mut op_scratch.borrow())
     });
+
+    // `a` and `res` both of another rank than the keys, which the first rotation key rejects.
+    if lanes > 1 {
+        let [.., (_, rank_a)] = foreign_layouts(module, &ct);
+        let mut rank_res = rank_a.clone();
+        assert_guard::<BE, _>("key rank", "blas_rotate", InvalidOperand, &mut rank_res, |res| {
+            module.blas_rotate(res, &rank_a, 1, &sum_keys, &mut op_scratch.borrow())
+        });
+        assert_guard::<BE, _>("key rank", "blas_sum", InvalidOperand, &mut rank_res, |res| {
+            module.blas_sum(res, &rank_a, &sum_keys, &mut op_scratch.borrow())
+        });
+    }
 
     // A call that looks up no key, on one matrix slot, asserts no scratch.
     if lanes > 1 {

@@ -99,6 +99,7 @@ the wider of the operands' term widths `a.k - 2p` and `b.k - 2p`. The
 [pipeline example](../../poulpy-cpu-portable/examples/blas_pipeline.rs) plans
 its keys this way, with one rotation-key layout covering its widest input and a
 tensor key covering the terms, and prints the width each operation consumes.
+Every key has the rank of the blocks it switches.
 
 These sets and widths bind implementations: `GetAutomorphismKey` and
 `GetTensorKey` receive the width, so a store may answer per width. An
@@ -203,9 +204,12 @@ The validators check this crate's rules and fail in this order:
    batch record; and lazy sums a digit cannot hold: more `blas_sum` terms,
    `log2(mat_slots) + 1`, than `2^(63 - base2k)`, or a product at a radix
    above 62.
-2. `MissingAutomorphismKey` for a rotation key missing at the width the
-   operation looks it up at ([Keys](#keys)), then `MissingRelinearizationKey`
-   for the tensor key.
+2. Key by key, the rotation keys first, each at the width the operation
+   looks it up at ([Keys](#keys)): `MissingAutomorphismKey`, or
+   `MissingRelinearizationKey` for the tensor key, when the store lacks it,
+   and `InvalidOperand` when it is of another rank than the blocks it
+   switches, on which poulpy-core's key switch would panic. A preparation's
+   input has no `res` to match, so this is where its rank is checked.
 
 They check no budget. poulpy-ckks raises the budget errors,
 `MultiplicationPrecisionUnderflow` and `InsufficientHomomorphicCapacity`,
@@ -344,7 +348,7 @@ product, `res = sum_t lhs[t] rhs[t]`, as poulpy-ckks's `ckks_dot_product_ct`
 does for pairs that share one layout per side, which is the reference. It is
 called with `lhs.len() == rhs.len() >= 1` pairs, every `lhs` of one layout and
 every `rhs` of another, at a radix of 62 at most, after the validator found the
-tensor key at the tensor width `max(lhs.k, rhs.k)`.
+tensor key at the tensor width `max(lhs.k, rhs.k)`, of their rank.
 
 **Fixed:**
 

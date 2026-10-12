@@ -181,8 +181,8 @@ fn assert_rejected<T>(label: &str, result: CKKSResult<T>) {
 /// `blas_matmul_prepared` one JKLS call per block of `res`, and `blas_matmul` both preparations' and the prepared
 /// product's. Then no call the API rejects enters either hook: every grid [`rejected_grids`] and [`foreign_layouts`]
 /// build, a grid of another shape and one at radix 63, as an input or as `res` of each of these operations (a lone
-/// preparation input of another rank or shape is valid), an inner-dimension mismatch, foreign contexts, and key stores
-/// without rotation keys or without the tensor key.
+/// preparation input of another shape is valid; one of another rank than the keys is not), an inner-dimension mismatch,
+/// foreign contexts, and key stores without rotation keys or without the tensor key.
 #[test]
 fn blas_hooks_run_on_accepted_calls_alone() {
     let _counting = counting();
@@ -266,7 +266,7 @@ fn blas_hooks_run_on_accepted_calls_alone() {
         rejected("matmul b", module.blas_matmul(res, &a, &bad, &ctx, &keys, &keys, s));
         rejected("matmul res", module.blas_matmul(&mut bad, &a, &a, &ctx, &keys, &keys, s));
         rejected("prepared res", module.blas_matmul_prepared(&mut bad, &left, &right, &keys, s));
-        if !matches!(label, "rank" | "shape") {
+        if label != "shape" {
             assert_rejected(
                 &format!("{label}: prepare_left"),
                 module.blas_matmul_prepare_left(&bad, &ctx, &keys, s),

@@ -9,7 +9,7 @@ use poulpy_ckks::{
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
 };
 use poulpy_core::layouts::{
-    GGLWEInfos, GGLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos,
+    GGLWEInfos, GGLWELayout, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos,
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, ModuleN},
@@ -127,13 +127,13 @@ fn mapped_block<BE: Backend>(mut block: CKKSLayout, lt: &LinearTransformationPre
 /// returns the batch `res` records, the larger of `a`'s and `b`'s: `a` and `b` as their preparations check them
 /// ([`validate_blas_matmul_prepare_left`], [`validate_blas_matmul_prepare_right`]), `res` against them as
 /// [`validate_blas_matmul_prepared`] checks it against their operands, and `tsk` at the wider of their term widths
-/// ([`blas_matmul_term_layout`]).
+/// ([`blas_matmul_term_layout`]), of their rank.
 ///
 /// # Errors
 ///
-/// `InvalidOperand` for a grid, shape, layout, radix or context it rejects, then `MissingAutomorphismKey` or
-/// `MissingRelinearizationKey`. It checks no budget: poulpy-ckks rejects those inside the implementation, before any
-/// write to `res`.
+/// `InvalidOperand` for a grid, shape, layout, radix or context it rejects, then, key by key, `MissingAutomorphismKey`
+/// or `MissingRelinearizationKey`, or `InvalidOperand` for a key of another rank. It checks no budget: poulpy-ckks
+/// rejects those inside the implementation, before any write to `res`.
 pub fn validate_blas_matmul<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
@@ -149,8 +149,8 @@ pub fn validate_blas_matmul<BE: Backend>(
     ensure_product(op, module, res, a, b)?;
     ensure_term_keys(op, module, a, ctx.sigma(), |k| ctx.rotate_cols(k), atk)?;
     ensure_term_keys(op, module, b, ctx.tau(), |k| ctx.rotate_rows(k), atk)?;
-    let (left, right) = (blas_matmul_term_layout(a, ctx), blas_matmul_term_layout(b, ctx));
-    ensure_tensor_key(op, tsk, left.block.k().max(right.block.k()))?;
+    let (left, right) = (blas_matmul_term_layout(a, ctx).block, blas_matmul_term_layout(b, ctx).block);
+    ensure_tensor_key(op, tsk, left.k().max(right.k()), left.rank())?;
     Ok(grid_batch::<BE::Ring>(a).max(grid_batch::<BE::Ring>(b)))
 }
 
@@ -158,12 +158,13 @@ pub fn validate_blas_matmul<BE: Backend>(
 /// runs: `a` is a grid at the context's `log_d` whose blocks tile its shape and share one layout whose label allows its
 /// batch record, of the module's degree, `ctx` was encoded on a module of `module`'s slot count at `a`'s radix, and
 /// `atk` holds every key of sigma from `a`'s width and of each phi^k from sigma's result into the terms' width, at the
-/// width it is looked up at.
+/// width it is looked up at, of `a`'s rank.
 ///
 /// # Errors
 ///
-/// `InvalidOperand` for a grid, layout or context it rejects, then `MissingAutomorphismKey`. It checks no budget:
-/// poulpy-ckks rejects those inside the implementation.
+/// `InvalidOperand` for a grid, layout or context it rejects, then, key by key, `MissingAutomorphismKey`, or
+/// `InvalidOperand` for a key of another rank. It checks no budget: poulpy-ckks rejects those inside the
+/// implementation.
 pub fn validate_blas_matmul_prepare_left<BE: Backend>(
     module: &Module<BE>,
     a: &impl BlasGrid<BE>,
@@ -198,13 +199,13 @@ pub fn validate_blas_matmul_prepare_right<BE: Backend>(
 /// a grid at that `log_d` whose blocks tile its shape and share one layout whose label allows its batch record, of `a`'s
 /// rows and `b`'s columns, of the module's degree and the operands' radix and rank, at a radix of 62 at most; `a`'s
 /// columns match `b`'s rows; and `tsk` holds the tensor key at the wider of the operands' term widths, the one width the
-/// product looks it up at.
+/// product looks it up at, of their rank.
 ///
 /// # Errors
 ///
 /// `InvalidOperand` for an operand without a batch record, or a grid, shape, layout or radix it rejects, then
-/// `MissingRelinearizationKey`. It checks no budget: poulpy-ckks rejects those inside the implementation, before any
-/// write to `res`.
+/// `MissingRelinearizationKey`, or `InvalidOperand` for a tensor key of another rank. It checks no budget: poulpy-ckks
+/// rejects those inside the implementation, before any write to `res`.
 pub fn validate_blas_matmul_prepared<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
@@ -215,7 +216,8 @@ pub fn validate_blas_matmul_prepared<BE: Backend>(
     let op = "blas_matmul_prepared";
     let batch = ensure_operand::<BE>(op, a.log_d(), a)?.max(ensure_operand::<BE>(op, a.log_d(), b)?);
     ensure_product(op, module, res, a, b)?;
-    ensure_tensor_key(op, tsk, a.block_layout().k().max(b.block_layout().k()))?;
+    let (left, right) = (a.block_layout(), b.block_layout());
+    ensure_tensor_key(op, tsk, left.k().max(right.k()), left.rank())?;
     Ok(batch)
 }
 
@@ -224,12 +226,13 @@ pub fn validate_blas_matmul_prepared<BE: Backend>(
 /// share one layout whose label allows their batch record, `a`'s columns match `b`'s rows, `res` has `a`'s rows and
 /// `b`'s columns, its blocks have the module's degree and `a`'s radix and rank, `b` was encoded on a module of
 /// `module`'s slot count at `a`'s radix, `b`'s public matrices divide `a`'s batch, and `atk` holds every key of every
-/// map of `b` at the width it is looked up at.
+/// map of `b` at the width it is looked up at, of `a`'s rank.
 ///
 /// # Errors
 ///
-/// `InvalidOperand` for a grid, shape, layout, operand or count it rejects, then `MissingAutomorphismKey`. It checks no
-/// budget: poulpy-ckks rejects those inside the implementation, before any write.
+/// `InvalidOperand` for a grid, shape, layout, operand or count it rejects, then, key by key, `MissingAutomorphismKey`,
+/// or `InvalidOperand` for a key of another rank. It checks no budget: poulpy-ckks rejects those inside the
+/// implementation, before any write.
 pub fn validate_blas_matmul_pt<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
@@ -251,10 +254,10 @@ pub fn validate_blas_matmul_pt<BE: Backend>(
             format!("{} public matrices do not divide the {batch} matrix slots", b.count()),
         ));
     }
-    let res_k = res.block_layout().k();
+    let (block, res_k) = (a.block_layout(), res.block_layout().k());
     for l in 0..b.rows() {
         for j in 0..b.cols() {
-            ensure_lt_keys(op, module, b.at(l, j), atk, a.block_layout().k(), res_k)?;
+            ensure_lt_keys(op, module, b.at(l, j), atk, block.k(), res_k, block.rank())?;
         }
     }
     Ok(batch)
@@ -265,7 +268,7 @@ pub fn validate_blas_matmul_pt<BE: Backend>(
 /// and share one layout whose label allows their batch record, `b`'s columns match `a`'s rows, `res` has `b`'s rows and
 /// `a`'s columns, its blocks have the module's degree and `a`'s radix and rank, `b` was encoded on a module of
 /// `module`'s slot count at `a`'s radix, `b`'s public matrices divide `a`'s batch, and `atk` holds every key of every
-/// map of `b` at the width it is looked up at.
+/// map of `b` at the width it is looked up at, of `a`'s rank.
 ///
 /// # Errors
 ///
@@ -291,10 +294,10 @@ pub fn validate_blas_matmul_pt_left<BE: Backend>(
             format!("{} public matrices do not divide the {batch} matrix slots", b.count()),
         ));
     }
-    let res_k = res.block_layout().k();
+    let (block, res_k) = (a.block_layout(), res.block_layout().k());
     for i in 0..b.rows() {
         for l in 0..b.cols() {
-            ensure_lt_keys(op, module, b.at(i, l), atk, a.block_layout().k(), res_k)?;
+            ensure_lt_keys(op, module, b.at(i, l), atk, block.k(), res_k, block.rank())?;
         }
     }
     Ok(batch)
@@ -340,9 +343,9 @@ fn ensure_product<BE: Backend>(
     ensure_layouts(op, module.n(), res, &[a, b])
 }
 
-/// Checks the keys preparing `a` looks up: `first` (sigma or tau) from `a`'s width into a block of `a`'s layout, then
-/// `shift(k)` (phi^k or psi^k) of that result for every `k` in `1..d`, each into a block of the terms' width, which caps
-/// nothing, as the reference evaluates them.
+/// Checks the keys preparing `a` looks up, of `a`'s rank: `first` (sigma or tau) from `a`'s width into a block of `a`'s
+/// layout, then `shift(k)` (phi^k or psi^k) of that result for every `k` in `1..d`, each into a block of the terms'
+/// width, which caps nothing, as the reference evaluates them.
 fn ensure_term_keys<'c, BE: Backend + 'c>(
     op: &'static str,
     module: &(impl CKKSModuleInfos + ?Sized),
@@ -351,10 +354,10 @@ fn ensure_term_keys<'c, BE: Backend + 'c>(
     shift: impl Fn(usize) -> &'c LinearTransformationPrepared<BE>,
     atk: &impl GetAutomorphismKey<BE>,
 ) -> Result<()> {
-    let a_k = a.block_layout().k();
-    ensure_lt_keys(op, module, first, atk, a_k, a_k)?;
+    let (a_k, rank) = (a.block_layout().k(), a.block_layout().rank());
+    ensure_lt_keys(op, module, first, atk, a_k, a_k, rank)?;
     let s_k = lt_output_k(first, a_k, a_k);
-    (1..1usize << a.log_d()).try_for_each(|k| ensure_lt_keys(op, module, shift(k), atk, s_k, s_k))
+    (1..1usize << a.log_d()).try_for_each(|k| ensure_lt_keys(op, module, shift(k), atk, s_k, s_k, rank))
 }
 
 /// Reference compositions of [`crate::api::BlasMatMulOps`] and the JKLS kernel, on inputs their validators accepted:
@@ -474,7 +477,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         if let (Some(&l), Some(&r)) = (lhs.first(), rhs.first()) {
             let op = "blas_jkls_block";
             let used = KeyLayouts::new(tsk);
-            let _ = ensure_tensor_key(op, &used, l.k().max(r.k()));
+            let _ = ensure_tensor_key(op, &used, l.k().max(r.k()), l.rank());
             let bytes = used.max_tensor_bytes(|tsk| self.blas_jkls_block_tmp_bytes_reference(&*res, l, r, lhs.len(), tsk));
             assert_scratch(op, bytes, scratch);
         }
@@ -515,9 +518,9 @@ pub trait BlasMatMulReference<BE: Backend> {
     {
         let (inner, n) = (a.cols(), b.cols());
         let maps: Vec<_> = (0..inner).flat_map(|l| (0..n).map(move |j| b.at(l, j))).collect();
-        let (src_k, dst_k) = (a.block_layout().k(), res.block_layout().k());
+        let (src_k, dst_k, rank) = (a.block_layout().k(), res.block_layout().k(), a.block_layout().rank());
         let bytes = |key: &GGLWELayout| self.blas_matmul_pt_tmp_bytes_reference(&*res, a, b, key);
-        assert_maps_scratch("blas_matmul_pt", self, &maps, atk, src_k, dst_k, bytes, scratch);
+        assert_maps_scratch("blas_matmul_pt", self, &maps, atk, src_k, dst_k, rank, bytes, scratch);
         let blocks = a.blocks();
         let rows = res.blocks_mut().chunks_mut(n).map(|row| row.iter_mut().collect()).collect();
         let source = |i: usize, l: usize| &blocks[i * inner + l];
@@ -557,9 +560,9 @@ pub trait BlasMatMulReference<BE: Backend> {
     {
         let (inner, n) = (a.rows(), a.cols());
         let maps: Vec<_> = (0..b.rows()).flat_map(|i| (0..inner).map(move |l| b.at(i, l))).collect();
-        let (src_k, dst_k) = (a.block_layout().k(), res.block_layout().k());
+        let (src_k, dst_k, rank) = (a.block_layout().k(), res.block_layout().k(), a.block_layout().rank());
         let bytes = |key: &GGLWELayout| self.blas_matmul_pt_left_tmp_bytes_reference(&*res, b, a, key);
-        assert_maps_scratch("blas_matmul_pt_left", self, &maps, atk, src_k, dst_k, bytes, scratch);
+        assert_maps_scratch("blas_matmul_pt_left", self, &maps, atk, src_k, dst_k, rank, bytes, scratch);
         let mut columns: Vec<Vec<_>> = (0..n).map(|_| Vec::new()).collect();
         for (t, block) in res.blocks_mut().iter_mut().enumerate() {
             columns[t % n].push(block);
@@ -663,7 +666,8 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
     {
         let op = "blas_matmul_prepared";
         let used = KeyLayouts::new(tsk);
-        let _ = ensure_tensor_key(op, &used, a.block_layout().k().max(b.block_layout().k()));
+        let (left, right) = (a.block_layout(), b.block_layout());
+        let _ = ensure_tensor_key(op, &used, left.k().max(right.k()), left.rank());
         let bytes = used.max_tensor_bytes(|tsk| self.blas_matmul_prepared_tmp_bytes_reference(&*res, a, b, tsk));
         assert_scratch(op, bytes, scratch);
         let (d, n) = (1usize << a.log_d(), b.cols());

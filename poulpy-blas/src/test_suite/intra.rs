@@ -264,10 +264,11 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
 }
 
 /// Every grid [`rejected_grids`] and [`foreign_layouts`] build, as `a` or as `res`, a shape mismatch, a copy relabelled
-/// past `log2` of the ring degree, a [`Misshapen`] grid as `a` or as `res`, a context encoded on a module of another
-/// degree or at another radix, and a missing rotation key are rejected through the API before `res` changes, as is a
-/// `res` narrower than the scale of `a`, by poulpy-ckks's budget check; each operation one scratch byte short of its
-/// query, a row or column shift along one block or across blocks, panics before `res` changes.
+/// past `log2` of the ring degree, a [`Misshapen`] grid as `a` or as `res`, `a` and `res` both of another degree than
+/// the module's or of another rank than the keys, a context encoded on a module of another degree or at another radix,
+/// and a missing rotation key are rejected through the API before `res` changes, as is a `res` narrower than the scale
+/// of `a`, by poulpy-ckks's budget check; each operation one scratch byte short of its query, a row or column shift
+/// along one block or across blocks, panics before `res` changes.
 pub fn test_blas_intra_guards<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -353,19 +354,21 @@ pub fn test_blas_intra_guards<BE, F, E>(
             module.blas_rotate_cols(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow())
         });
     }
-    // `a` and `res` both of another degree than the module's.
-    let wide = |grid: &BlasCiphertextOwned<BE>| foreign_layouts(module, grid).into_iter().next().unwrap().1;
-    let (wide_a, mut wide_res, mut wide_res_t) = (wide(&ct), wide(&res), wide(&res_t));
-    let label = "degree a and res";
-    assert_guard::<BE, _>(label, "blas_transpose", InvalidOperand, &mut wide_res_t, |res| {
-        module.blas_transpose(res, &wide_a, &ctx, &keys, &mut op_scratch.borrow())
-    });
-    assert_guard::<BE, _>(label, "blas_rotate_rows", InvalidOperand, &mut wide_res, |res| {
-        module.blas_rotate_rows(res, &wide_a, 1, &ctx, &keys, &mut op_scratch.borrow())
-    });
-    assert_guard::<BE, _>(label, "blas_rotate_cols", InvalidOperand, &mut wide_res, |res| {
-        module.blas_rotate_cols(res, &wide_a, 1, &ctx, &keys, &mut op_scratch.borrow())
-    });
+    // `a` and `res` both of another degree than the module's, then both of another rank than the keys, which the first
+    // key of the maps rejects.
+    for (label, i) in [("degree a and res", 0), ("rank a and res", 2)] {
+        let other = |grid: &BlasCiphertextOwned<BE>| foreign_layouts(module, grid).into_iter().nth(i).unwrap().1;
+        let (other_a, mut other_res, mut other_res_t) = (other(&ct), other(&res), other(&res_t));
+        assert_guard::<BE, _>(label, "blas_transpose", InvalidOperand, &mut other_res_t, |res| {
+            module.blas_transpose(res, &other_a, &ctx, &keys, &mut op_scratch.borrow())
+        });
+        assert_guard::<BE, _>(label, "blas_rotate_rows", InvalidOperand, &mut other_res, |res| {
+            module.blas_rotate_rows(res, &other_a, 1, &ctx, &keys, &mut op_scratch.borrow())
+        });
+        assert_guard::<BE, _>(label, "blas_rotate_cols", InvalidOperand, &mut other_res, |res| {
+            module.blas_rotate_cols(res, &other_a, 1, &ctx, &keys, &mut op_scratch.borrow())
+        });
+    }
     for (label, ctx) in &foreign {
         assert_guard::<BE, _>(label, "blas_transpose", InvalidOperand, &mut res_t, |res| {
             module.blas_transpose(res, &ct, ctx, &keys, &mut op_scratch.borrow())

@@ -26,10 +26,10 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 ///
 /// It is called with `lhs.len() == rhs.len() >= 1` pairs, every `lhs` of one layout and every `rhs` of another, on
 /// inputs the prepared product's validator accepted, at a radix of 62 at most, which checked the tensor key at that
-/// width. Within the scratch [`Self::blas_jkls_block_tmp_bytes_impl`] reports for `res`, `lhs[0]`, `rhs[0]`, the pair
-/// count and the key, it returns `Ok`, or poulpy-ckks's budget error before any write to `res`; with less scratch it
-/// panics before any write, as the reference does. Any other `Err` is a backend fault (a validator gap or a device
-/// failure), and `res` is then unspecified. The reference prepared product calls it for the blocks of `res`
+/// width and of their rank. Within the scratch [`Self::blas_jkls_block_tmp_bytes_impl`] reports for `res`, `lhs[0]`,
+/// `rhs[0]`, the pair count and the key, it returns `Ok`, or poulpy-ckks's budget error before any write to `res`; with
+/// less scratch it panics before any write, as the reference does. Any other `Err` is a backend fault (a validator gap
+/// or a device failure), and `res` is then unspecified. The reference prepared product calls it for the blocks of `res`
 /// concurrently on a parallel executor, each call on its own block and scratch slice. The pairs and the key are `Sync`,
 /// so an implementation may split one block's terms over workers.
 pub unsafe trait BlasJklsImpl: Backend {
