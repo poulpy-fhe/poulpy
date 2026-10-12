@@ -62,7 +62,8 @@ impl BlasPlan {
         }
     }
 
-    /// Galois elements of every map a context encodes, which cover every operation's set but `blas_rotate`'s.
+    /// Galois elements of every map a context encodes, which cover every operation's set but `blas_rotate`'s and
+    /// `blas_sum`'s.
     pub fn galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
         self.elements(cyclotomic_order, |slots| {
             let mut list = self.matmul_maps(slots);

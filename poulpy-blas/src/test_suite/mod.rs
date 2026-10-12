@@ -5,7 +5,7 @@
 //! conjugate-invariant ring by [`blas_conjugate_invariant_test_suite!`](crate::blas_conjugate_invariant_test_suite);
 //! parity tests take `(params, shapes, reference_module, tested_module)` and are instantiated by
 //! [`blas_parity_test_suite!`](crate::blas_parity_test_suite). The backend guide, `docs/blas-contracts.md`, covers
-//! wiring, registration and attestation.
+//! wiring, the override contract, registration and attestation.
 
 pub mod conjugate_invariant;
 pub mod context;

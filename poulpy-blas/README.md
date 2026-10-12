@@ -57,4 +57,4 @@ parity test passing against an attested backend: the oracle inside this workspac
 from the same git revision as every other poulpy crate, or the published `poulpy-cpu-portable` with `enable-blas`.
 
 See the [repository README](../README.md) for commands and CI coverage, and
-[Implementing BLAS operations](docs/blas-contracts.md) for wiring, registration and attestation.
+[Implementing BLAS operations](docs/blas-contracts.md) for wiring, the override contract, registration and attestation.
