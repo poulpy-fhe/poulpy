@@ -1,12 +1,14 @@
-//! BLAS parity tests for the AVX-512 backends: each type, Rayon included, against
-//! its same-family oracle (NTT4x30Oracle for IFMA), bit for bit.
+//! BLAS tests for the AVX-512 backends: parity of each type, Rayon
+//! included, against its same-family oracle (NTT4x30Oracle for IFMA), bit for
+//! bit, and the conjugate-invariant suite on the conjugate-invariant types.
 //!
 //! All test logic lives in `poulpy_blas::test_suite` as backend-generic
 //! functions; this file only instantiates the parity suite for each concrete
-//! `(reference, backend, scalar, params)` combination via `blas_parity_test_suite!`.
+//! `(reference, backend, scalar, params)` combination via `blas_parity_test_suite!`,
+//! and the conjugate-invariant suite via `blas_conjugate_invariant_test_suite!`.
 //! There should be no hand-written test here.
 
-use poulpy_blas::blas_parity_test_suite;
+use poulpy_blas::{blas_conjugate_invariant_test_suite, blas_parity_test_suite};
 
 blas_parity_test_suite! {
     mod blas_parity_fft64avx512_f64,
@@ -249,3 +251,43 @@ blas_parity_test_suite! {
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
 }
+
+blas_conjugate_invariant_test_suite!(
+    mod blas_ci_fft64avx512,
+    backend = crate::FFT64CIAvx512,
+    params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
+);
+
+blas_conjugate_invariant_test_suite!(
+    mod blas_ci_ntt4x30avx512,
+    backend = crate::NTT4x30CIAvx512,
+    params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
+);
+
+#[cfg(feature = "enable-rayon")]
+blas_conjugate_invariant_test_suite!(
+    mod blas_ci_fft64avx512rayon,
+    backend = crate::FFT64CIAvx512Rayon,
+    params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
+);
+
+#[cfg(feature = "enable-rayon")]
+blas_conjugate_invariant_test_suite!(
+    mod blas_ci_ntt4x30avx512rayon,
+    backend = crate::NTT4x30CIAvx512Rayon,
+    params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
+);
+
+#[cfg(feature = "enable-ifma")]
+blas_conjugate_invariant_test_suite!(
+    mod blas_ci_ntt3x42ifma,
+    backend = crate::NTT3x42CIIfma,
+    params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
+);
+
+#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
+blas_conjugate_invariant_test_suite!(
+    mod blas_ci_ntt3x42ifmarayon,
+    backend = crate::NTT3x42CIIfmaRayon,
+    params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
+);

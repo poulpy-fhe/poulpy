@@ -147,7 +147,7 @@ pub fn test_blas_matmul<BE, F, E>(
 }
 
 /// The public matrices of a `rows x cols` operand grid, entries in `[-0.5, 0.5]`.
-fn public_entry(m: usize, r: usize, c: usize) -> f64 {
+pub(crate) fn public_entry(m: usize, r: usize, c: usize) -> f64 {
     ((m * 7 + r * 5 + c * 3) % 9) as f64 / 8.0 - 0.5
 }
 

@@ -214,7 +214,7 @@ a serial loop would. Copies and additions run serially.
 
 ## Testing a backend
 
-Enable `test-utils` on a `poulpy-blas` dev-dependency. It exports two
+Enable `test-utils` on a `poulpy-blas` dev-dependency. It exports three
 registration macros.
 
 `blas_backend_test_suite!` registers the functional tests for one backend,
@@ -227,6 +227,14 @@ of the standard ring. An optional `log_d = …` sets the blocks to
 `2^log_d x 2^log_d`, 2 by default. `poulpy-cpu-oracle` runs them for
 `FFT64Oracle` and `NTT4x30Oracle`: at `log_d` 1, 2 and 3 (the last at `N = 128`,
 where one block fills a ciphertext), in `f64` and `Quad`, and at rank 2.
+
+`blas_conjugate_invariant_test_suite!(mod m, backend = …, params = …)` registers
+the test `conjugate_invariant` for a backend of the conjugate-invariant ring,
+whose `N` slots are real. It encrypts real matrices of `4 x 4` blocks with the
+module's own encoder, runs every operation once, each on exactly the bytes its
+query reports, and checks the decrypted values and the output metadata, as the
+functional tests do, and that every output, the prepared operands included, has
+`Real` slots.
 
 `blas_parity_test_suite!` compares `backend_test` with `backend_ref`:
 
@@ -285,7 +293,8 @@ macro registers all three families, so none can be dropped silently.
 
 In this workspace the oracle runs the functional tests and parity between its
 FFT64 and NTT4x30 families, standard and conjugate-invariant, in both
-directions. Every other backend type registers parity against
+directions, and every conjugate-invariant type, the oracle's included, runs the
+conjugate-invariant suite. Every other backend type registers parity against
 the oracle of its family: `NTT3x42` types against `NTT4x30Oracle`,
 conjugate-invariant types against the conjugate-invariant oracles, and Rayon
 types against the oracle rather than their serial sibling.

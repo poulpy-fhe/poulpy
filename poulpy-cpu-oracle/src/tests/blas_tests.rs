@@ -4,10 +4,11 @@
 //!
 //! All test logic lives in `poulpy_blas::test_suite` as backend-generic
 //! functions; this file only instantiates that suite for each concrete
-//! `(backend, scalar, encoder, params)` combination via `blas_backend_test_suite!`
-//! and `blas_parity_test_suite!`. There should be no hand-written test here.
+//! `(backend, scalar, encoder, params)` combination via `blas_backend_test_suite!`,
+//! `blas_conjugate_invariant_test_suite!` and `blas_parity_test_suite!`. There
+//! should be no hand-written test here.
 
-use poulpy_blas::{blas_backend_test_suite, blas_parity_test_suite};
+use poulpy_blas::{blas_backend_test_suite, blas_conjugate_invariant_test_suite, blas_parity_test_suite};
 
 blas_backend_test_suite!(
     mod fft64_f64,
@@ -58,6 +59,19 @@ blas_backend_test_suite!(
     encoder = crate::EncodingFft<f64>,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 128, hw: 64, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
     log_d = 3,
+);
+
+// The conjugate-invariant ring, whose slots are real.
+blas_conjugate_invariant_test_suite!(
+    mod blas_ci_fft64,
+    backend = crate::FFT64CIOracle,
+    params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
+);
+
+blas_conjugate_invariant_test_suite!(
+    mod blas_ci_ntt4x30,
+    backend = crate::NTT4x30CIOracle,
+    params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
 );
 
 // Parity between the two oracle families.

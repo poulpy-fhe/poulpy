@@ -1,11 +1,13 @@
 //! Backend-generic poulpy-blas tests.
 //!
 //! Functional tests take `(params, module, host_module)`, most of them then the block dimension's `log_d`, and are
-//! instantiated per backend by [`blas_backend_test_suite!`](crate::blas_backend_test_suite); parity tests take
-//! `(params, shapes, reference_module, tested_module)` and are instantiated by
+//! instantiated per backend by [`blas_backend_test_suite!`](crate::blas_backend_test_suite), or on the
+//! conjugate-invariant ring by [`blas_conjugate_invariant_test_suite!`](crate::blas_conjugate_invariant_test_suite);
+//! parity tests take `(params, shapes, reference_module, tested_module)` and are instantiated by
 //! [`blas_parity_test_suite!`](crate::blas_parity_test_suite). The backend guide, `docs/blas-contracts.md`, covers
 //! wiring, registration and attestation.
 
+pub mod conjugate_invariant;
 pub mod context;
 pub mod helpers;
 pub mod inter;
@@ -79,6 +81,27 @@ macro_rules! blas_backend_test_suite {
             run_test_with_arg!(result_meta, $crate::test_suite::meta::test_blas_result_meta, log_d());
             run_test_with_arg!(batch_record, $crate::test_suite::meta::test_blas_batch_record, log_d());
             run_test!(context, $crate::test_suite::context::test_blas_context);
+        }
+    };
+}
+
+/// Registers [`test_blas_conjugate_invariant`](crate::test_suite::conjugate_invariant::test_blas_conjugate_invariant),
+/// every operation once on real slots, as the test `conjugate_invariant`, for one backend of the conjugate-invariant
+/// ring and parameter set. The expansion names `::poulpy_hal`, so the invoking crate depends on it directly.
+#[macro_export]
+macro_rules! blas_conjugate_invariant_test_suite {
+    (mod $modname:ident, backend = $backend:ty, params = $params:expr $(,)?) => {
+        mod $modname {
+            #[test]
+            fn conjugate_invariant() {
+                use ::poulpy_hal::layouts::{ConjugateInvariant, HostBytesBackend, Module};
+                let params = $params;
+                $crate::test_suite::conjugate_invariant::test_blas_conjugate_invariant(
+                    params,
+                    &Module::<$backend>::new(params.n as u64),
+                    &Module::<HostBytesBackend<ConjugateInvariant>>::new(params.n as u64),
+                );
+            }
         }
     };
 }

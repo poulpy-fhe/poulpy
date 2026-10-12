@@ -49,11 +49,12 @@ cargo test -p poulpy-blas
 ```
 
 The `test-utils` feature exposes the functional suite, registered with `blas_backend_test_suite!` and run by
-`poulpy-cpu-oracle`, and the parity suite, registered with `blas_parity_test_suite!`. Parity compares a tested backend
-with a reference backend bit for bit, at every block dimension that the optional `shapes` argument
-(`test_suite::parity::BlasParityShapes`, `log_d` 1 and 2 by default) selects. Every override ships with that parity
-test passing against an attested backend: the oracle inside this workspace; outside it, either the oracle taken from
-the same git revision as every other poulpy crate, or the published `poulpy-cpu-portable` with `enable-blas`.
+`poulpy-cpu-oracle`, its conjugate-invariant counterpart, registered with `blas_conjugate_invariant_test_suite!` and run
+by every conjugate-invariant backend type, and the parity suite, registered with `blas_parity_test_suite!`. Parity
+compares a tested backend with a reference backend bit for bit, at every block dimension that the optional `shapes`
+argument (`test_suite::parity::BlasParityShapes`, `log_d` 1 and 2 by default) selects. Every override ships with that
+parity test passing against an attested backend: the oracle inside this workspace; outside it, either the oracle taken
+from the same git revision as every other poulpy crate, or the published `poulpy-cpu-portable` with `enable-blas`.
 
 See the [repository README](../README.md) for commands and CI coverage, and
 [Implementing BLAS operations](docs/blas-contracts.md) for wiring, registration and attestation.
