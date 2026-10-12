@@ -18,10 +18,15 @@ pub mod meta;
 pub mod parity;
 
 /// Registers the functional tests for one backend, scalar, encoder and parameter set, on blocks of dimension
-/// `2^log_d`: 2 unless the optional `log_d` sets it. `test_blas_context` sweeps its own dimensions.
-/// `test_blas_matmul_long_sums`, sums past the `2^(63 - base2k)` terms the JKLS kernel sums between normalizations,
-/// runs on its own ring at the registered radix when `base2k >= 57`, where such sums are short, and every other suite
-/// skips it with a message: an NTT-family backend registers a parameter set at `base2k >= 57`.
+/// `2^log_d`: 2 unless the optional `log_d` sets it. `test_blas_context` sweeps its own dimensions. Maps and public
+/// matrices run at the parameter set's scale and a quarter of it below and above
+/// ([`other_scales`](crate::test_suite::helpers::other_scales)), so its `k` must hold two maps at the larger scale and
+/// a product; through the latter, the products also multiply factors at two scales, in either order, one an eighth of
+/// the scale lower and as much narrower. `test_blas_key_widths` runs with the maps and the public matrices below that
+/// scale, where a key width taken from it in place of theirs, or capped by it, finds no key.
+/// `test_blas_matmul_long_sums`, sums past the `2^(63 - base2k)` terms the JKLS kernel sums between normalizations, runs
+/// on its own ring at the registered radix when `base2k >= 57`, where such sums are short, and every other suite skips
+/// it with a message: an NTT-family backend registers a parameter set at `base2k >= 57`.
 #[macro_export]
 macro_rules! blas_backend_test_suite {
     (mod $modname:ident, backend = $backend:ty, scalar = $scalar:ty, encoder = $encoder:ty, params = $params:expr

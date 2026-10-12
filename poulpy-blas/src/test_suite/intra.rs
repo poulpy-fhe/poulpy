@@ -20,9 +20,9 @@ use poulpy_hal::{
 use super::helpers::{
     Grid, Misshapen,
     Rejection::{Budget, InvalidOperand, MissingKey},
-    TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, assert_guard_on, assert_short_scratch, blas_context,
-    context_and_keys, copied_layout, encrypt_grid, foreign_contexts, foreign_layouts, mapped_layout, rejected_grids, relabel,
-    rotation_keys,
+    TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, assert_guard_on, assert_short_scratch, at_scale, blas_context,
+    context_and_keys, copied_layout, encrypt_grid, foreign_contexts, foreign_layouts, mapped_layout, other_scales,
+    rejected_grids, relabel, rotation_keys,
 };
 use crate::{
     api::BlasMatIntraOps,
@@ -31,7 +31,8 @@ use crate::{
 };
 
 /// `dec(transpose(enc(A)))` is `A^T` for every matrix of the batch, on a `2 x 3` grid, with the keys of the plan's
-/// transpose set alone.
+/// transpose set alone, through maps at `A`'s scale and at scales below and above it ([`other_scales`]), whose scale
+/// the transpose consumes in place of `A`'s, each into `res` as wide as `A` and one limb wider.
 pub fn test_blas_transpose<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -49,9 +50,8 @@ pub fn test_blas_transpose<BE, F, E>(
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let ctx = blas_context::<BE, F>(&params, module, log_d, &mut scratch.borrow());
-    // The keys of the transpose's set alone.
-    let elements = ctx.plan().transpose_galois_elements(module.cyclotomic_order());
+    // The keys of the transpose's set alone, whatever the maps' scale.
+    let elements = BlasPlan::new(log_d).transpose_galois_elements(module.cyclotomic_order());
     let keys = TestKeys::<BE> {
         atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
         tsk: None,
@@ -69,30 +69,36 @@ pub fn test_blas_transpose<BE, F, E>(
         &a,
         &mut scratch.borrow(),
     );
-    // Once with `res` as wide as `a`, once one limb wider.
-    for res_k in [params.k, params.k + params.base2k] {
-        let mut res = alloc_grid(&params, module, log_d, cols, rows, res_k);
-        let mut op_scratch = ScratchOwned::<BE>::alloc(module.blas_transpose_tmp_bytes(&res, &ct, &ctx, &params.atk_layout()));
-        module
-            .blas_transpose(&mut res, &ct, &ctx, &keys, &mut op_scratch.borrow())
-            .unwrap();
-        assert_grid_decrypt::<BE, F, E>(
-            &format!("transpose res_k={res_k}"),
-            &params,
-            module,
-            &encoder,
-            &res,
-            &sk,
-            &a.transpose(),
-            &mapped_layout(&ct, cols, rows, res_k, params.prec().log_delta()),
-            &mut scratch.borrow(),
-        );
+    // Maps at `a`'s scale, then at scales below and above it, each into `res` as wide as `a` and one limb wider.
+    for p in [params.prec().log_delta()].into_iter().chain(other_scales(&params)) {
+        let maps = at_scale(&params, p);
+        let ctx = blas_context::<BE, F>(&maps, module, log_d, &mut scratch.borrow());
+        for res_k in [params.k, params.k + params.base2k] {
+            let mut res = alloc_grid(&params, module, log_d, cols, rows, res_k);
+            let bytes = module.blas_transpose_tmp_bytes(&res, &ct, &ctx, &params.atk_layout());
+            module
+                .blas_transpose(&mut res, &ct, &ctx, &keys, &mut ScratchOwned::<BE>::alloc(bytes).borrow())
+                .unwrap();
+            assert_grid_decrypt::<BE, F, E>(
+                &format!("transpose p={p} res_k={res_k}"),
+                &maps,
+                module,
+                &encoder,
+                &res,
+                &sk,
+                &a.transpose(),
+                &mapped_layout(&ct, cols, rows, res_k, p),
+                &mut scratch.borrow(),
+            );
+        }
     }
 }
 
 /// `dec(rotate_rows(enc(A), k))` and `dec(rotate_cols(enc(A), k))` shift every matrix by `k` rows or columns: shifts
 /// by whole blocks, shifts crossing a block boundary, shifts past the matrix height or width, and grids one block high
-/// or wide, each shift with the keys of the plan's set for `k` alone.
+/// or wide, each shift with the keys of the plan's set for `k` alone. On the `2 x 3` grid, shifts by 1 through both half
+/// maps also run on maps at scales below and above `A`'s ([`other_scales`]), whose scale they consume in place of
+/// `A`'s.
 pub fn test_blas_rotate_rows_cols<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -208,6 +214,51 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
                     &mut scratch.borrow(),
                 );
             }
+        }
+        if (rows, cols) != (2, 3) {
+            continue;
+        }
+        // Maps at scales below and above `a`'s: a shift by 1 along either axis takes both half maps, whose scale it
+        // consumes in place of `a`'s.
+        for p in other_scales(&params) {
+            let maps = at_scale(&params, p);
+            let ctx = blas_context::<BE, F>(&maps, module, log_d, &mut scratch.borrow());
+            let mut res = alloc_grid(&params, module, log_d, rows, cols, params.k);
+            let bytes = module
+                .blas_rotate_rows_tmp_bytes(&res, &ct, &ctx, &params.atk_layout())
+                .max(module.blas_rotate_cols_tmp_bytes(&res, &ct, &ctx, &params.atk_layout()));
+            let mut op_scratch = ScratchOwned::<BE>::alloc(bytes);
+            let layout = mapped_layout(&ct, rows, cols, params.k, p);
+            module
+                .blas_rotate_rows(&mut res, &ct, 1, &ctx, &row_keys[1], &mut op_scratch.borrow())
+                .unwrap();
+            let label = format!("rotate_rows {rows}x{cols} k=1 p={p}");
+            assert_grid_decrypt::<BE, F, E>(
+                &label,
+                &maps,
+                module,
+                &encoder,
+                &res,
+                &sk,
+                &a.rotate_rows(1),
+                &layout,
+                &mut scratch.borrow(),
+            );
+            module
+                .blas_rotate_cols(&mut res, &ct, 1, &ctx, &col_keys[1], &mut op_scratch.borrow())
+                .unwrap();
+            let label = format!("rotate_cols {rows}x{cols} k=1 p={p}");
+            assert_grid_decrypt::<BE, F, E>(
+                &label,
+                &maps,
+                module,
+                &encoder,
+                &res,
+                &sk,
+                &a.rotate_cols(1),
+                &layout,
+                &mut scratch.borrow(),
+            );
         }
     }
 }

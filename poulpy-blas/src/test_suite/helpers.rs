@@ -284,8 +284,10 @@ pub fn product_layout(
 
 /// Decrypts every block of `ct` and checks it against `want`; every functional test ends here. First the metadata
 /// against `layout`, from [`copied_layout`], [`mapped_layout`] or [`product_layout`]: the grid's shape, every block's
-/// label, layout and empty noise tag, and the grid's record of the batch the label proves. Then the values, at
-/// `layout`'s `log_delta`, so a result left unwritten or stamped at another scale fails.
+/// label, layout and empty noise tag, and the grid's record of the batch the label proves. Then the values, at the
+/// smaller of `layout`'s `log_delta` and that of `params.prec()`, the scale the maps and public matrices `ct` went
+/// through were encoded at ([`at_scale`]): a map below its input's scale bounds the result's precision with its own,
+/// although the result keeps its input's scale. A result left unwritten or stamped at another scale fails.
 pub fn assert_grid_decrypt<BE, F, E>(
     label: &str,
     params: &CKKSTestParams,
@@ -315,6 +317,7 @@ pub fn assert_grid_decrypt<BE, F, E>(
     }
     let batch = ((params.n / 2) >> want_block.log_sparsity()) >> (2 * layout.log_d);
     assert_eq!(ct.mat_slots(), Some(batch), "{label}: batch record");
+    let log_prec = want_block.log_delta().min(params.prec().log_delta());
     for (b, (block, (re, im))) in ct.blocks().iter().zip(want.blocks(params.n / 2)).enumerate() {
         assert_decrypt_precision_at_log_delta::<BE, F, E>(
             &format!("{label} block {b}"),
@@ -325,7 +328,7 @@ pub fn assert_grid_decrypt<BE, F, E>(
             sk,
             &to_f::<F>(&re),
             &to_f::<F>(&im),
-            want_block.log_delta(),
+            log_prec,
             scratch,
         );
     }
@@ -674,6 +677,26 @@ where
         .chain(giants)
         .map(|(rotation, k)| (module.ckks_galois_element(rotation), k))
         .collect()
+}
+
+/// `params` with `prec()` at scale `log_delta`, its budget unchanged: given to [`blas_context`] or to an encoding of
+/// public matrices, it encodes them at that scale, and given to [`assert_grid_decrypt`], it checks a result through
+/// them at their precision.
+pub fn at_scale(params: &CKKSTestParams, log_delta: usize) -> CKKSTestParams {
+    CKKSTestParams {
+        prec_meta: GLWEPlaintextMeta {
+            scale: Scale::Log(log_delta),
+            ..params.prec_meta
+        },
+        ..*params
+    }
+}
+
+/// Scales of maps and public matrices other than the inputs' scale, `params.prec()`'s: a quarter of it below and a
+/// quarter above. An operation consumes its maps' scale, whatever its inputs'.
+pub fn other_scales(params: &CKKSTestParams) -> [usize; 2] {
+    let delta = params.prec().log_delta();
+    [delta - delta / 4, delta + delta / 4]
 }
 
 /// The context of `2^log_d x 2^log_d` blocks at `params.prec()`.

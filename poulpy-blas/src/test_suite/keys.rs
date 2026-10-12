@@ -22,7 +22,8 @@ use poulpy_hal::{
 use super::helpers::{
     Grid,
     Rejection::{MissingKey, MissingTensorKey},
-    StrictKeys, TestKeys, alloc_grid, assert_guard_on, context_and_keys, encrypt_grid, grid_snapshot, lt_key_uses,
+    StrictKeys, TestKeys, alloc_grid, assert_guard_on, at_scale, context_and_keys, encrypt_grid, grid_snapshot, lt_key_uses,
+    other_scales,
 };
 use crate::{
     api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
@@ -95,9 +96,11 @@ fn assert_key_widths<BE, X>(
 /// store bit for bit, and rejects the store short of any one of these keys before it writes. Rotations, sums,
 /// transposes, row and column shifts and products by public matrices, on either side, write results half as wide as
 /// their inputs, narrower than any map's output, then one limb wider than their inputs; the matrix products run on
-/// factors of one width, then on a narrower left or right factor. The preparations look up every rotation key of the
-/// product, each checked through the prepared product of its operand under the full store, and the prepared product the
-/// tensor key alone. Every operation runs on exactly the scratch its own query reports.
+/// factors of one width, then on a narrower left or right factor. The context's maps and the public matrices sit a
+/// quarter of the inputs' scale below it ([`other_scales`]), where a width taken from the inputs' scale in place of the
+/// maps' `p` or the public matrices' `p_B`, or capped by it, finds no key. The preparations look up every rotation key
+/// of the product, each checked through the prepared product of its operand under the full store, and the prepared
+/// product the tensor key alone. Every operation runs on exactly the scratch its own query reports.
 pub fn test_blas_key_widths<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -116,7 +119,9 @@ pub fn test_blas_key_widths<BE, F, E>(
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let (ctx, mut atks) = context_and_keys::<BE, F>(&params, module, log_d, &sk_raw, &mut scratch.borrow());
+    // The maps and the public matrices below the inputs' scale, where even a width capped by it differs from theirs.
+    let below = at_scale(&params, other_scales(&params)[0]);
+    let (ctx, mut atks) = context_and_keys::<BE, F>(&below, module, log_d, &sk_raw, &mut scratch.borrow());
     let pt = BlasPtOperandUnprepared::encode::<F>(
         module,
         log_d,
@@ -125,7 +130,7 @@ pub fn test_blas_key_widths<BE, F, E>(
         1,
         |m, r, c| F::from_f64(((m + r * 4 + c) * 3 % 5) as f64 / 4.0 - 0.5).unwrap(),
         params.base2k.into(),
-        params.prec().into(),
+        below.prec().into(),
         &mut scratch.borrow(),
     )
     .unwrap()
@@ -139,7 +144,7 @@ pub fn test_blas_key_widths<BE, F, E>(
         1,
         |m, r, c| F::from_f64(((m + r * 4 + c) * 3 % 5) as f64 / 4.0 - 0.5).unwrap(),
         params.base2k.into(),
-        params.prec().into(),
+        below.prec().into(),
         &mut scratch.borrow(),
     )
     .unwrap()

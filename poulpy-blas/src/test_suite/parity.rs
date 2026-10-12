@@ -114,9 +114,20 @@ fn swept_log_d(shapes: &BlasParityShapes, slots: usize) -> Vec<usize> {
     run
 }
 
-/// Operand width: two diagonal levels and one product at `log_delta = base2k - 1` fit with room to spare.
+/// Operand width: two maps at any scale of [`scale`] and [`other_scales`] and one product at the operands' scale fit
+/// with room to spare.
 fn width(params: CKKSTestParams) -> usize {
     6 * params.base2k + 5
+}
+
+/// The operands' scale, `base2k - 1`, at which the maps and public matrices are encoded unless a case says otherwise.
+fn scale(params: CKKSTestParams) -> usize {
+    params.base2k - 1
+}
+
+/// Scales of maps and public matrices below and above the operands', half a limb off their limb grid.
+fn other_scales(params: CKKSTestParams) -> [usize; 2] {
+    [params.base2k / 2, params.base2k + params.base2k / 2]
 }
 
 /// Rotation keys at the operand width, `params.rank` and `params.dsize`.
@@ -130,9 +141,10 @@ fn tsk_layout(params: CKKSTestParams) -> GGLWELayout {
     key_layout(params.n, params.base2k, width(params), params.dsize, pairs, params.rank)
 }
 
-/// Blocks at `params.rank` and torus width `k`, at scale `base2k - 1`, labelled `log_sparsity`, of slot kind `slots`.
+/// Blocks at `params.rank` and torus width `k`, at the operands' [`scale`], labelled `log_sparsity`, of slot kind
+/// `slots`.
 fn block(params: CKKSTestParams, k: usize, log_sparsity: usize, slots: SlotsKind) -> CKKSLayout {
-    layout(params, params.rank, k, params.base2k - 1, log_sparsity, slots)
+    layout(params, params.rank, k, scale(params), log_sparsity, slots)
 }
 
 /// A `rows x cols` grid of `2^log_d`-blocks of layout `la`, block `t` filled from `seed + t`, with lazy digits with
@@ -298,18 +310,26 @@ where
     }
 }
 
-fn diagonal_meta(params: CKKSTestParams) -> CoeffsMeta {
-    CoeffsMeta::from_delta_budget(params.base2k - 1, params.base2k)
+/// Diagonals at scale `p`, with a limb of room above it.
+fn diagonal_meta(params: CKKSTestParams, p: usize) -> CoeffsMeta {
+    CoeffsMeta::from_delta_budget(p, params.base2k)
 }
 
-fn context<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) -> BlasContext<B>
+/// The context of `2^log_d x 2^log_d` blocks, its maps at scale `p`.
+fn context<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize, p: usize) -> BlasContext<B>
 where
     B: BlasParityBackend,
     Module<B>: BlasParityModule<B, F>,
     F: TestScalar + DiagonalArithmetic,
 {
     let ctx = with_scratch::<B, _>(BlasContextUnprepared::encode_tmp_bytes::<F>(module, log_d), |s| {
-        BlasContextUnprepared::encode::<F>(module, BlasPlan::new(log_d), params.base2k.into(), diagonal_meta(params), s)
+        BlasContextUnprepared::encode::<F>(
+            module,
+            BlasPlan::new(log_d),
+            params.base2k.into(),
+            diagonal_meta(params, p),
+            s,
+        )
     })
     .unwrap();
     with_scratch::<B, _>(ctx.prepare_tmp_bytes(module), |s| ctx.prepare(module, s))
@@ -449,14 +469,16 @@ where
 /// column shifts of the `2 x 3` grid, three blocks along the shifted axis, by `k`: `k mod d != 0` through both half
 /// maps, within the first block and past it (column shifts by `k d / 2` keep `k mod d != 0` at `d = 2`), then `k = d`
 /// and `2 d`, copies of the block one and two steps along, whose noise tag must clear. Shifts of a one-row grid (psi)
-/// and of a one-column grid (phi), and of the lazy grid: rows by 1, then rows and columns by `d`, copies.
+/// and of a one-column grid (phi), and of the lazy grid: rows by 1, then rows and columns by `d`, copies. Then, through
+/// maps at scales below and above the operands' ([`other_scales`]), whose scale they consume in place of the operands',
+/// the transpose and the row and column shifts through both half maps.
 fn intra<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) -> Vec<Output>
 where
     B: BlasParityBackend,
     Module<B>: BlasParityModule<B, F>,
     F: TestScalar + DiagonalArithmetic,
 {
-    let ctx = context::<B, F>(params, module, log_d);
+    let ctx = context::<B, F>(params, module, log_d, scale(params));
     let (plan, order, key, w) = (ctx.plan(), module.cyclotomic_order(), atk_layout(params), width(params));
     let d = 1usize << log_d;
     let a = operand(params, module, log_d, 2, 3, 80);
@@ -491,23 +513,34 @@ where
         (true, &lazy, d),
         (false, &lazy, d),
     ];
-    for (rows, src, k) in shifts {
+    let shift = |rows: bool, src: &BlasCiphertextOwned<B>, k: usize, ctx: &BlasContext<B>| {
         let mut res = operand(params, module, log_d, src.rows(), src.cols(), 100);
         if rows {
             let keys = fixture_keys(params, module, &plan.rotate_rows_galois_elements(order, k), false);
-            with_scratch::<B, _>(module.blas_rotate_rows_tmp_bytes(&res, src, &ctx, &key), |s| {
-                module.blas_rotate_rows(&mut res, src, k, &ctx, &keys, s)
+            with_scratch::<B, _>(module.blas_rotate_rows_tmp_bytes(&res, src, ctx, &key), |s| {
+                module.blas_rotate_rows(&mut res, src, k, ctx, &keys, s)
             })
             .unwrap();
-            out.push(output("blas_rotate_rows", &res, &keys));
+            output("blas_rotate_rows", &res, &keys)
         } else {
             let keys = fixture_keys(params, module, &plan.rotate_cols_galois_elements(order, k), false);
-            with_scratch::<B, _>(module.blas_rotate_cols_tmp_bytes(&res, src, &ctx, &key), |s| {
-                module.blas_rotate_cols(&mut res, src, k, &ctx, &keys, s)
+            with_scratch::<B, _>(module.blas_rotate_cols_tmp_bytes(&res, src, ctx, &key), |s| {
+                module.blas_rotate_cols(&mut res, src, k, ctx, &keys, s)
             })
             .unwrap();
-            out.push(output("blas_rotate_cols", &res, &keys));
+            output("blas_rotate_cols", &res, &keys)
         }
+    };
+    out.extend(shifts.into_iter().map(|(rows, src, k)| shift(rows, src, k, &ctx)));
+    for p in other_scales(params) {
+        let ctx = context::<B, F>(params, module, log_d, p);
+        let mut res = operand(params, module, log_d, 3, 2, 90);
+        with_scratch::<B, _>(module.blas_transpose_tmp_bytes(&res, &a, &ctx, &key), |s| {
+            module.blas_transpose(&mut res, &a, &ctx, &keys, s)
+        })
+        .unwrap();
+        out.push(output("blas_transpose", &res, &keys));
+        out.extend([shift(true, &tall, 1, &ctx), shift(false, &a, d / 2, &ctx)]);
     }
     assert_unchanged::<B>(&format!("intra, log_d {log_d}"), &inputs, &before);
     out
@@ -521,7 +554,7 @@ where
     Module<B>: BlasParityModule<B, F>,
     F: TestScalar + DiagonalArithmetic,
 {
-    let ctx = context::<B, F>(params, module, log_d);
+    let ctx = context::<B, F>(params, module, log_d, scale(params));
     let (plan, order, key) = (ctx.plan(), module.cyclotomic_order(), atk_layout(params));
     let d = 1usize << log_d;
     let transpose = fixture_keys(params, module, &plan.transpose_galois_elements(order), false);
@@ -572,8 +605,9 @@ where
     with_scratch::<B, _>(pt.prepare_tmp_bytes(module), |s| pt.prepare(module, s))
 }
 
-/// A `2 x 1` grid of public matrices of `2^log_d x 2^log_d` blocks, `count` per batch, on the right, prepared.
-fn public_operand<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize, count: usize) -> BlasPtOperand<B>
+/// A `2 x 1` grid of public matrices of `2^log_d x 2^log_d` blocks, `count` per batch, at scale `p`, on the right,
+/// prepared.
+fn public_operand<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize, count: usize, p: usize) -> BlasPtOperand<B>
 where
     B: BlasParityBackend,
     Module<B>: BlasParityModule<B, F>,
@@ -589,14 +623,20 @@ where
             count,
             public_entry::<F>,
             base2k,
-            diagonal_meta(params),
+            diagonal_meta(params, p),
             s,
         )
     })
 }
 
 /// As [`public_operand`], a `2 x 2` grid on the left.
-fn public_left_operand<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize, count: usize) -> BlasPtOperand<B, Left>
+fn public_left_operand<B, F>(
+    params: CKKSTestParams,
+    module: &Module<B>,
+    log_d: usize,
+    count: usize,
+    p: usize,
+) -> BlasPtOperand<B, Left>
 where
     B: BlasParityBackend,
     Module<B>: BlasParityModule<B, F>,
@@ -612,7 +652,7 @@ where
             count,
             public_entry::<F>,
             base2k,
-            diagonal_meta(params),
+            diagonal_meta(params, p),
             s,
         )
     })
@@ -662,29 +702,44 @@ fn preparation<B: BlasParityBackend>(
 
 /// Both preparations of a `2 x 2` grid and a `2 x 1` grid, then their product into `res` of their width, one limb
 /// wider, and one limb narrower than the product's natural width, which the kernel's offset absorbs: each time by
-/// `blas_matmul` and by `blas_matmul_prepared` on the one pair of prepared operands, which must agree. Products into
-/// `2 x 2` grids, of factors one limb apart, in both orders, since the tensor key is looked up at the wider side's
-/// width, and of a lazy grid of real slots labelled 1 by itself. When some `K <= 32` reaches it, a `1 x K` by
-/// `K x 1` product of more terms than the `2^(63 - base2k)` the kernel sums between normalizations: it pins that the
-/// kernel accepts such a sum and returns the reference's bits. It cannot see a normalization skipped before the end:
-/// an `i64` digit holds `2^(64 - base2k)` canonical terms, more than the product sums, and normalizing only at the end
-/// gives the same bits. The products by public matrices on either side: of one matrix, of one per matrix slot, and of
-/// one on the lazy grid into `res` one limb narrower than it, below the products' width, which caps them and at whose
-/// width their giant steps are looked up.
+/// `blas_matmul` and by `blas_matmul_prepared` on the one pair of prepared operands, which must agree; all of it
+/// through maps at the operands' scale, then at scales below and above it ([`other_scales`]), whose scale the
+/// preparations consume twice in place of the operands'. Through the latter, the same for factors at two scales, in
+/// either order, either grid two bits lower and as much narrower, so that their terms keep one budget (not crossed),
+/// into `res` as wide as the wider factor. Products into `2 x 2` grids, of factors one limb apart, in both orders,
+/// since the tensor key is looked up at the wider side's width, and of a lazy grid of real slots labelled 1 by itself.
+/// When some `K <= 32` reaches it, a `1 x K` by `K x 1` product of more terms than the `2^(63 - base2k)` the kernel
+/// sums between normalizations: it pins that the kernel accepts such a sum and returns the reference's bits. It cannot
+/// see a normalization skipped before the end: an `i64` digit holds `2^(64 - base2k)` canonical terms, more than the
+/// product sums, and normalizing only at the end gives the same bits. The products by public matrices on either side:
+/// of one matrix, of one per matrix slot, and of one on the lazy grid into `res` one limb narrower than it, below the
+/// products' width, which caps them and at whose width their giant steps are looked up, at the operands' scale; then of
+/// one matrix at each other scale.
 fn matmul<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) -> Vec<Output>
 where
     B: BlasParityBackend,
     Module<B>: BlasParityModule<B, F>,
     F: TestScalar + DiagonalArithmetic,
 {
-    let (order, base2k, w) = (module.cyclotomic_order(), params.base2k, width(params));
-    let ctx = context::<B, F>(params, module, log_d);
+    let (order, base2k, w, delta) = (module.cyclotomic_order(), params.base2k, width(params), scale(params));
+    // The maps at the operands' scale, then at scales below and above it.
+    let [low, high] = other_scales(params);
+    let scales = [delta, low, high];
+    let contexts = scales.map(|p| context::<B, F>(params, module, log_d, p));
+    let ctx = &contexts[0];
     let plan = ctx.plan();
     let products = fixture_keys(params, module, &plan.matmul_galois_elements(order), true);
     let tensor = fixture_keys(params, module, &[], true);
     let (atk, tsk) = (atk_layout(params), tsk_layout(params));
     let a = operand(params, module, log_d, 2, 2, 120);
     let b = operand(params, module, log_d, 2, 1, 124);
+    // `a` and `b` two bits below their scale and as much narrower: either times the other multiplies factors at two
+    // scales whose terms keep one budget, not crossed.
+    let below = layout(params, params.rank, w - 2, delta - 2, 0, SlotsKind::Complex);
+    let (a_low, b_low) = (
+        grid_of(module, &below, log_d, 2, 2, 128, false),
+        grid_of(module, &below, log_d, 2, 1, 132, false),
+    );
     let thin = sized(params, module, log_d, 2, 2, w - base2k, 140);
     let lazy = lazy_real(params, module, log_d, 2, 2, 144);
     // The fewest inner blocks whose `K d` terms pass the bound.
@@ -695,58 +750,71 @@ where
             operand(params, module, log_d, inner, 1, 200),
         )
     });
-    let mut inputs = vec![&a, &b, &thin, &lazy];
+    let mut inputs = vec![&a, &b, &a_low, &b_low, &thin, &lazy];
     inputs.extend(long.iter().flat_map(|(x, y)| [x, y]));
     let before = snapshots::<B>(&inputs);
     let mut out = Vec::new();
-    let left = with_scratch::<B, _>(module.blas_matmul_prepare_left_tmp_bytes(&a, &ctx, &atk), |s| {
-        module.blas_matmul_prepare_left(&a, &ctx, &products, s)
-    })
-    .unwrap();
-    out.push(preparation("blas_matmul_prepare_left", &left, &a, &ctx, &products));
-    let right = with_scratch::<B, _>(module.blas_matmul_prepare_right_tmp_bytes(&b, &ctx, &atk), |s| {
-        module.blas_matmul_prepare_right(&b, &ctx, &products, s)
-    })
-    .unwrap();
-    out.push(preparation("blas_matmul_prepare_right", &right, &b, &ctx, &products));
-    // Factors of one width and scale: poulpy-ckks's ct x ct rule leaves the terms' width less their scale.
-    let term = blas_matmul_term_layout(&a, &ctx).block;
-    let natural = term.k().as_usize() - term.log_delta();
-    for k in [w, w + base2k, natural - base2k] {
-        let from_factors = product(params, module, &ctx, &products, (&a, &b), k);
-        let mut res = sized(params, module, log_d, 2, 1, k, 136);
-        let bytes = module.blas_matmul_prepared_tmp_bytes(&res, &left, &right, &tsk);
-        with_scratch::<B, _>(bytes, |s| module.blas_matmul_prepared(&mut res, &left, &right, &tensor, s)).unwrap();
-        let from_operands = output("blas_matmul_prepared", &res, &tensor);
-        assert!(
-            from_operands.infos == from_factors.infos && from_operands.blocks == from_factors.blocks,
-            "blas_matmul_prepared differs from blas_matmul into res of width {k}"
-        );
-        out.extend([from_factors, from_operands]);
+    for (p, ctx) in scales.into_iter().zip(&contexts) {
+        // Factors of one width and scale: poulpy-ckks's ct x ct rule leaves the terms' width less their scale.
+        let term = blas_matmul_term_layout(&a, ctx).block;
+        let natural = term.k().as_usize() - term.log_delta();
+        let mut pairs = vec![(&a, &b, vec![w, w + base2k, natural - base2k])];
+        // Through maps at a scale apart from both, factors at two scales, in either order.
+        if p != delta {
+            pairs.extend([(&a, &b_low, vec![w]), (&a_low, &b, vec![w])]);
+        }
+        for (x, y, widths) in pairs {
+            let left = with_scratch::<B, _>(module.blas_matmul_prepare_left_tmp_bytes(x, ctx, &atk), |s| {
+                module.blas_matmul_prepare_left(x, ctx, &products, s)
+            })
+            .unwrap();
+            out.push(preparation("blas_matmul_prepare_left", &left, x, ctx, &products));
+            let right = with_scratch::<B, _>(module.blas_matmul_prepare_right_tmp_bytes(y, ctx, &atk), |s| {
+                module.blas_matmul_prepare_right(y, ctx, &products, s)
+            })
+            .unwrap();
+            out.push(preparation("blas_matmul_prepare_right", &right, y, ctx, &products));
+            for k in widths {
+                let from_factors = product(params, module, ctx, &products, (x, y), k);
+                let mut res = sized(params, module, log_d, 2, 1, k, 136);
+                let bytes = module.blas_matmul_prepared_tmp_bytes(&res, &left, &right, &tsk);
+                with_scratch::<B, _>(bytes, |s| module.blas_matmul_prepared(&mut res, &left, &right, &tensor, s)).unwrap();
+                let from_operands = output("blas_matmul_prepared", &res, &tensor);
+                assert!(
+                    from_operands.infos == from_factors.infos && from_operands.blocks == from_factors.blocks,
+                    "blas_matmul_prepared differs from blas_matmul into res of width {k}, maps at scale {p}"
+                );
+                out.extend([from_factors, from_operands]);
+            }
+        }
     }
     for factors in [(&a, &thin), (&thin, &a), (&lazy, &lazy)]
         .into_iter()
         .chain(long.iter().map(|(x, y)| (x, y)))
     {
-        out.push(product(params, module, &ctx, &products, factors, w));
+        out.push(product(params, module, ctx, &products, factors, w));
     }
     let pt_keys = fixture_keys(params, module, &plan.matmul_pt_galois_elements(order), false);
     let left_keys = fixture_keys(params, module, &plan.matmul_pt_left_galois_elements(order), false);
     let batch = a.mat_slots().unwrap();
-    let mut cases = vec![(&a, &b, 1, w)];
+    let mut cases = vec![(&a, &b, 1, w, delta)];
     if batch > 1 {
-        cases.push((&a, &b, batch, w));
+        cases.push((&a, &b, batch, w, delta));
     }
-    cases.push((&lazy, &lazy, 1, w - base2k));
-    for (x, y, count, k) in cases {
-        let pt = public_operand::<B, F>(params, module, log_d, count);
+    cases.extend([
+        (&lazy, &lazy, 1, w - base2k, delta),
+        (&a, &b, 1, w, low),
+        (&a, &b, 1, w, high),
+    ]);
+    for (x, y, count, k, p) in cases {
+        let pt = public_operand::<B, F>(params, module, log_d, count, p);
         let mut res = sized(params, module, log_d, x.rows(), pt.cols(), k, 138);
         with_scratch::<B, _>(module.blas_matmul_pt_tmp_bytes(&res, x, &pt, &atk), |s| {
             module.blas_matmul_pt(&mut res, x, &pt, &pt_keys, s)
         })
         .unwrap();
         out.push(output("blas_matmul_pt", &res, &pt_keys));
-        let pt = public_left_operand::<B, F>(params, module, log_d, count);
+        let pt = public_left_operand::<B, F>(params, module, log_d, count, p);
         let mut res = sized(params, module, log_d, pt.rows(), y.cols(), k, 139);
         with_scratch::<B, _>(module.blas_matmul_pt_left_tmp_bytes(&res, &pt, y, &atk), |s| {
             module.blas_matmul_pt_left(&mut res, &pt, y, &left_keys, s)
@@ -769,14 +837,14 @@ where
     F: TestScalar + DiagonalArithmetic,
 {
     let order = module.cyclotomic_order();
-    let ctx = context::<B, F>(params, module, log_d);
+    let ctx = context::<B, F>(params, module, log_d, scale(params));
     let plan = ctx.plan();
     let products = fixture_keys(params, module, &plan.matmul_galois_elements(order), true);
     let tensor = fixture_keys(params, module, &[], true);
     let pt_keys = fixture_keys(params, module, &plan.matmul_pt_galois_elements(order), false);
     let left_keys = fixture_keys(params, module, &plan.matmul_pt_left_galois_elements(order), false);
-    let pt = public_operand::<B, F>(params, module, log_d, 1);
-    let pt_left = public_left_operand::<B, F>(params, module, log_d, 1);
+    let pt = public_operand::<B, F>(params, module, log_d, 1, scale(params));
+    let pt_left = public_left_operand::<B, F>(params, module, log_d, 1, scale(params));
     let (atk, tsk) = (atk_layout(params), tsk_layout(params));
     let (a, b) = (
         operand(params, module, log_d, 2, 2, 120),
@@ -862,8 +930,8 @@ where
 }
 
 /// Transposes and row and column rotations agree bit for bit at every swept `log_d`, through every branch of the
-/// shifts, a narrower `res`, and lazy real inputs, and fail alike on a budget poulpy-ckks rejects, leaving `res` and
-/// `a` unchanged.
+/// shifts, a narrower `res`, lazy real inputs, and maps at scales other than the inputs', and fail alike on a budget
+/// poulpy-ckks rejects, leaving `res` and `a` unchanged.
 pub fn test_blas_intra_parity<BR, BT, F>(params: CKKSTestParams, shapes: &BlasParityShapes, r: &Module<BR>, t: &Module<BT>)
 where
     BR: BlasParityBackend,
@@ -884,9 +952,10 @@ where
 }
 
 /// The products, the prepared product and the products by public matrices agree bit for bit at every swept `log_d`,
-/// and the prepared operands' infos, `(log_d, rows, cols, block_layout, mat_slots)`, agree; prepared storage is never
-/// compared. The product, the prepared product and the products by public matrices on either side fail alike on a
-/// budget poulpy-ckks rejects, leaving `res` and the factors unchanged.
+/// through maps and public matrices at the factors' scale and at scales other than theirs, there also of factors at two
+/// scales in either order, and the prepared operands' infos, `(log_d, rows, cols, block_layout, mat_slots)`, agree;
+/// prepared storage is never compared. The product, the prepared product and the products by public matrices on either
+/// side fail alike on a budget poulpy-ckks rejects, leaving `res` and the factors unchanged.
 pub fn test_blas_matmul_parity<BR, BT, F>(params: CKKSTestParams, shapes: &BlasParityShapes, r: &Module<BR>, t: &Module<BT>)
 where
     BR: BlasParityBackend,

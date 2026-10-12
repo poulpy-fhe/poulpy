@@ -438,9 +438,18 @@ registration macros.
 scalar, encoder and parameter set. They encrypt, run every operation, and check
 the decrypted values and the output metadata against cleartext expectations,
 along with the input guards, key widths, and the plan's key sets against the
-encoded maps; each operation runs on the keys of its own set alone. They read
-coefficients on the host and use the standard ring, so they need a host backend
-of the standard ring. An optional `log_d = …` sets the blocks to
+encoded maps; each operation runs on the keys of its own set alone. The
+transpose, the shifts through both half maps, the preparations, the products and
+the products by public matrices also run with maps or public matrices a quarter
+of the parameter set's scale below and above it, which they consume in place of
+their inputs' scale, so the parameter set's `k` must hold two maps at the larger
+scale and a product. Through those maps, the products also multiply factors at
+two scales, in either order, one an eighth of the scale lower and as much
+narrower, so that their terms keep one budget. `test_blas_key_widths` runs with
+the maps and the public matrices a quarter below that scale, where a key width
+taken from the inputs' scale in place of `p` or `p_B`, or capped by it, finds no
+key. They read coefficients on the host and use the standard ring, so they need
+a host backend of the standard ring. An optional `log_d = …` sets the blocks to
 `2^log_d x 2^log_d`, 2 by default. `poulpy-cpu-oracle` runs them on
 `FFT64Oracle` at `log_d` 1, 2 and 3 (the last at `N = 128`, where one block
 fills the 64 slots), and on `NTT4x30Oracle` in `f64`, in `Quad` and at rank 2,
@@ -477,23 +486,26 @@ bytes its query reports, poisoned and guarded. Every output is compared: its
 batch record, and every block bit for bit, digits and CKKS metadata. Prepared
 operands are compared through their infos alone, `(log_d, rows, cols,
 block_layout, mat_slots)`, which must also equal their input's term layout and
-batch; the prepared product runs on one pair into `res` of three widths and
-must equal `blas_matmul` each time. Each call looks its keys up in a store of
-its operation's set alone, from `BlasPlan` or `sum_galois_elements`, which
-records every lookup: the tested backend may look up only keys, at widths, that
-the reference looked up in the same call. No call may write its inputs. The
-calls reach every branch of the circuit: identity rotations, one matrix slot,
-the copies of row and column shifts by `d` and `2d` along three blocks,
-one-row and one-column grids, `res` wider and narrower than the result, factors
-one limb apart in both orders, lazy inputs on real slots, sparse unless one
-matrix fills them, copies of lazy inputs, public products of one matrix and of
-one per matrix slot, and, where some `K <= 32` reaches it, a `1 x K` by `K x 1`
-product of more than the `2^(63 - base2k)` terms the kernel sums between
-normalizations. Each family's parity also runs calls that poulpy-ckks rejects
-for their budget: both backends return the same error and leave `res` and the
-inputs unchanged. Storage and ring are free: the bounds are
-`BlasParityBackend` (`Backend<ZnxWord = i64>` and every BLAS family) and
-`BlasParityModule`. Rank and `dsize` follow `params`, as in CKKS parity.
+batch; the prepared product runs on one pair per scale of the maps into `res` of
+three widths, and on pairs at two scales into `res` of one, and must equal
+`blas_matmul` each time. Each call looks its keys up in a store of its
+operation's set alone, from `BlasPlan` or `sum_galois_elements`, which records
+every lookup: the tested backend may look up only keys, at widths, that the
+reference looked up in the same call. No call may write its inputs. The calls
+reach every branch of the circuit: identity rotations, one matrix slot, the
+copies of row and column shifts by `d` and `2d` along three blocks, one-row and
+one-column grids, `res` wider and narrower than the result, factors one limb
+apart in both orders, lazy inputs on real slots, sparse unless one matrix fills
+them, copies of lazy inputs, public products of one matrix and of one per matrix
+slot, maps and public matrices at scales below and above the operands', factors
+at two scales, in either order, through those maps, whose terms keep one budget,
+and, where some `K <= 32` reaches it, a `1 x K` by `K x 1` product of more than
+the `2^(63 - base2k)` terms the kernel sums between normalizations. Each
+family's parity also runs calls that poulpy-ckks rejects for their budget: both
+backends return the same error and leave `res` and the inputs unchanged. Storage
+and ring are free: the bounds are `BlasParityBackend` (`Backend<ZnxWord = i64>`
+and every BLAS family) and `BlasParityModule`. Rank and `dsize` follow `params`,
+as in CKKS parity.
 
 The optional `shapes` argument, a `BlasParityShapes`, sets the swept block
 dimensions `log_d` (default `[1, 2]`). A `log_d` below 1, or whose `d^2`

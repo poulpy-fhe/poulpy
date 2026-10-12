@@ -30,8 +30,8 @@ use super::helpers::{
     Grid, Misshapen,
     Rejection::{InvalidOperand, MissingKey, MissingTensorKey},
     TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, assert_rejected, assert_short_scratch, assert_short_scratch_panics,
-    blas_context, context_and_keys, encrypt_grid, foreign_contexts, foreign_layouts, grid_snapshot, map_galois_elements,
-    mapped_layout, product_layout, rejected_grids, relabel, rotation_keys,
+    at_scale, blas_context, context_and_keys, encrypt_grid, foreign_contexts, foreign_layouts, grid_infos, grid_snapshot,
+    map_galois_elements, mapped_layout, other_scales, product_layout, rejected_grids, relabel, rotation_keys,
 };
 use crate::{
     api::{BlasMatIntraOps, BlasMatMulOps},
@@ -43,7 +43,11 @@ use crate::{
 /// `dec(matmul(enc(A), enc(B)))` is `A B` for every matrix of the batch, for a `2 x 3` grid times a `3 x 2` grid, with
 /// the JKLS product's metadata and canonical blocks, and `blas_matmul` equals `blas_matmul_prepare_left`,
 /// `blas_matmul_prepare_right`, then `blas_matmul_prepared`, bit for bit, all with the rotation keys of the plan's
-/// product set alone, which both preparations take.
+/// product set alone, which both preparations take. Through maps at the factors' scale and at scales below and above
+/// it ([`other_scales`]), and through the latter also of factors at two scales, in either order, one an eighth of the
+/// scale lower and as much narrower, so that the terms of both keep one budget (not crossed): each preparation reports
+/// its input's dimensions and batch and its terms' layout, its input's `2p` narrower for the maps' scale `p`, and the
+/// product follows from those terms, at the smaller of the factors' scales.
 pub fn test_blas_matmul<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -61,9 +65,8 @@ pub fn test_blas_matmul<BE, F, E>(
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let ctx = blas_context::<BE, F>(&params, module, log_d, &mut scratch.borrow());
-    // The keys of the products' set alone, which covers both preparations and the prepared product.
-    let elements = ctx.plan().matmul_galois_elements(module.cyclotomic_order());
+    // The keys of the products' set alone, which covers both preparations and the prepared product, at any scale.
+    let elements = BlasPlan::new(log_d).matmul_galois_elements(module.cyclotomic_order());
     let keys = TestKeys::<BE> {
         atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
         tsk: Some(gen_tsk(&params, module, &sk_raw, &mut scratch.borrow())),
@@ -93,57 +96,97 @@ pub fn test_blas_matmul<BE, F, E>(
         &b,
         &mut scratch.borrow(),
     );
+    // `A` and `B` again an eighth of their scale lower and as much narrower, so that either times the other at `delta`
+    // multiplies factors at two scales whose terms keep one budget: not crossed. The lower scale lies strictly between
+    // `delta` and the lower of `other_scales`.
+    let delta = params.prec().log_delta();
+    let gap = delta / 8;
+    let [ct_a_low, ct_b_low] = [&a, &b].map(|grid| {
+        encrypt_grid::<BE, F, E>(
+            &at_scale(&params, delta - gap),
+            module,
+            host_module,
+            &encoder,
+            &sk,
+            params.k - gap,
+            0,
+            grid,
+            &mut scratch.borrow(),
+        )
+    });
     let (tsk_layout, atk_layout) = (params.tsk_layout(), params.atk_layout());
-    let mut res = alloc_grid(&params, module, log_d, m, n, params.k);
-    let bytes = module.blas_matmul_tmp_bytes(&res, &ct_a, &ct_b, &ctx, &tsk_layout, &atk_layout);
-    module
-        .blas_matmul(
-            &mut res,
-            &ct_a,
-            &ct_b,
-            &ctx,
-            &keys,
-            &keys,
-            &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
-        )
-        .unwrap();
-    assert_grid_decrypt::<BE, F, E>(
-        "matmul",
-        &params,
-        module,
-        &encoder,
-        &res,
-        &sk,
-        &a.matmul(&b),
-        &product_layout(&ct_a, &ct_b, m, n, params.k, params.prec().log_delta()),
-        &mut scratch.borrow(),
-    );
-    // One relinearization leaves every block normalized.
-    assert!(
-        res.blocks().iter().all(|block| block.is_canonical()),
-        "matmul: a block is not canonical"
-    );
+    for p in [delta].into_iter().chain(other_scales(&params)) {
+        let maps = at_scale(&params, p);
+        let ctx = blas_context::<BE, F>(&maps, module, log_d, &mut scratch.borrow());
+        // Factors at one scale; through maps at a scale apart from both, also at two scales, in either order.
+        let mut pairs = vec![(&ct_a, &ct_b)];
+        if p != delta {
+            pairs.extend([(&ct_a, &ct_b_low), (&ct_a_low, &ct_b)]);
+        }
+        for (x, y) in pairs {
+            let (dx, dy) = (x.block_layout().log_delta(), y.block_layout().log_delta());
+            let label = format!("matmul p={p} delta_a={dx} delta_b={dy}");
+            let mut res = alloc_grid(&params, module, log_d, m, n, params.k);
+            let bytes = module.blas_matmul_tmp_bytes(&res, x, y, &ctx, &tsk_layout, &atk_layout);
+            module
+                .blas_matmul(
+                    &mut res,
+                    x,
+                    y,
+                    &ctx,
+                    &keys,
+                    &keys,
+                    &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
+                )
+                .unwrap();
+            assert_grid_decrypt::<BE, F, E>(
+                &label,
+                &maps,
+                module,
+                &encoder,
+                &res,
+                &sk,
+                &a.matmul(&b),
+                &product_layout(x, y, m, n, params.k, p),
+                &mut scratch.borrow(),
+            );
+            // One relinearization leaves every block normalized.
+            assert!(
+                res.blocks().iter().all(|block| block.is_canonical()),
+                "{label}: a block is not canonical"
+            );
 
-    let bytes = module.blas_matmul_prepare_left_tmp_bytes(&ct_a, &ctx, &atk_layout);
-    let left = module
-        .blas_matmul_prepare_left(&ct_a, &ctx, &keys, &mut ScratchOwned::<BE>::alloc(bytes).borrow())
-        .unwrap();
-    let bytes = module.blas_matmul_prepare_right_tmp_bytes(&ct_b, &ctx, &atk_layout);
-    let right = module
-        .blas_matmul_prepare_right(&ct_b, &ctx, &keys, &mut ScratchOwned::<BE>::alloc(bytes).borrow())
-        .unwrap();
-    let mut prepared = alloc_grid(&params, module, log_d, m, n, params.k);
-    let bytes = module.blas_matmul_prepared_tmp_bytes(&prepared, &left, &right, &tsk_layout);
-    module
-        .blas_matmul_prepared(
-            &mut prepared,
-            &left,
-            &right,
-            &keys,
-            &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
-        )
-        .unwrap();
-    assert_eq!(grid_snapshot::<BE, _>(&prepared), grid_snapshot::<BE, _>(&res));
+            let bytes = module.blas_matmul_prepare_left_tmp_bytes(x, &ctx, &atk_layout);
+            let left = module
+                .blas_matmul_prepare_left(x, &ctx, &keys, &mut ScratchOwned::<BE>::alloc(bytes).borrow())
+                .unwrap();
+            let bytes = module.blas_matmul_prepare_right_tmp_bytes(y, &ctx, &atk_layout);
+            let right = module
+                .blas_matmul_prepare_right(y, &ctx, &keys, &mut ScratchOwned::<BE>::alloc(bytes).borrow())
+                .unwrap();
+            // Two maps of scale `p` below each input's width, at the input's scale.
+            for (side, operand, ct) in [("left", grid_infos(&left), x), ("right", grid_infos(&right), y)] {
+                let terms = mapped_layout(ct, ct.rows(), ct.cols(), params.k, 2 * p);
+                assert_eq!(operand, (terms, ct.mat_slots()), "{label}: {side} operand infos");
+            }
+            let mut prepared = alloc_grid(&params, module, log_d, m, n, params.k);
+            let bytes = module.blas_matmul_prepared_tmp_bytes(&prepared, &left, &right, &tsk_layout);
+            module
+                .blas_matmul_prepared(
+                    &mut prepared,
+                    &left,
+                    &right,
+                    &keys,
+                    &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
+                )
+                .unwrap();
+            assert_eq!(
+                grid_snapshot::<BE, _>(&prepared),
+                grid_snapshot::<BE, _>(&res),
+                "{label}: prepared"
+            );
+        }
+    }
 }
 
 /// The public matrices of a `rows x cols` operand grid, entries in `[-0.5, 0.5]`.
@@ -232,8 +275,9 @@ where
 }
 
 /// `dec(matmul_pt(enc(A), B))` is `A B_(s mod count)` in matrix slot `s`, for a `2 x 3` grid times a `3 x 2` operand
-/// with one, two, and one public matrix per matrix slot, of these counts those that divide the matrix slots, all with
-/// the keys of the plan's set alone, at the metadata [`mapped_layout`] gives, its blocks canonical. Each block of `res`
+/// with one, two, and one public matrix per matrix slot, of these counts those that divide the matrix slots, at `A`'s
+/// scale, and with one public matrix at scales below and above it ([`other_scales`]), all with the keys of the plan's
+/// set alone, at the metadata [`mapped_layout`] gives for `B`'s scale, its blocks canonical. Each block of `res`
 /// is poulpy-ckks's summed linear transformation of its three terms in ascending inner index, bit for bit, also at
 /// radix 26, where an FFT backend's transform-domain sums round, so that the order of the terms shows in the bits. A
 /// counting key store sees the giant steps' keys looked up for one key switch per giant step and block of `res`.
@@ -293,11 +337,15 @@ pub fn test_blas_matmul_pt<BE, F, E>(
             &a,
             &mut scratch.borrow(),
         );
-        for count in counts {
-            let b = encode(&params, count, &mut scratch.borrow());
+        // At `a`'s scale, then one public matrix at scales below and above it.
+        let delta = params.prec().log_delta();
+        let cases = counts.into_iter().map(|count| (count, delta));
+        for (count, p_b) in cases.chain(other_scales(&params).map(|p_b| (1, p_b))) {
+            let public = at_scale(&params, p_b);
+            let b = encode(&public, count, &mut scratch.borrow());
             // `res` one limb wider than `a` for one public matrix.
             let res_k = if count == 1 { params.k + params.base2k } else { params.k };
-            let label = format!("matmul_pt count={count} res_k={res_k}");
+            let label = format!("matmul_pt count={count} p_B={p_b} res_k={res_k}");
             let mut res = alloc_grid(&params, module, log_d, m, n, res_k);
             let bytes = module.blas_matmul_pt_tmp_bytes(&res, &ct, &b, &params.atk_layout());
             let mut op_scratch = ScratchOwned::<BE>::alloc(bytes);
@@ -307,13 +355,13 @@ pub fn test_blas_matmul_pt<BE, F, E>(
                 .unwrap();
             assert_grid_decrypt::<BE, F, E>(
                 &label,
-                &params,
+                &public,
                 module,
                 &encoder,
                 &res,
                 &sk,
                 &a.matmul_public(n, count, public_entry),
-                &mapped_layout(&ct, m, n, res_k, params.prec().log_delta()),
+                &mapped_layout(&ct, m, n, res_k, p_b),
                 &mut scratch.borrow(),
             );
             // The giant loop normalizes each block once.
@@ -542,11 +590,12 @@ pub fn test_blas_matmul_pt_guards<BE, F, E>(
 
 /// `dec(matmul_pt_left(B, enc(A)))` is `B_(s mod count) A` in matrix slot `s`, for a `2 x 3` operand times a `3 x 2`
 /// grid with one, two and eight public matrices per matrix slot, of these counts those that divide the matrix slots,
-/// all with the keys of the plan's left set alone, at the metadata [`mapped_layout`] gives, its blocks canonical. Each
-/// block of `res` is poulpy-ckks's summed linear transformation of its three terms in ascending inner index, bit for
-/// bit, also at radix 26, where an FFT backend's transform-domain sums round. The product spends `B`'s scale alone: the
-/// same product through transposes, `transpose(blas_matmul_pt(transpose(A), B^T))`, gives the same values two context
-/// scales narrower.
+/// at `A`'s scale, and with one public matrix at scales below and above it ([`other_scales`]), all with the keys of the
+/// plan's left set alone, at the metadata [`mapped_layout`] gives for `B`'s scale, its blocks canonical. Each block of
+/// `res` is poulpy-ckks's summed linear transformation of its three terms in ascending inner index, bit for bit, also
+/// at radix 26, where an FFT backend's transform-domain sums round. The product spends `B`'s scale alone: the same
+/// product through transposes, `transpose(blas_matmul_pt(transpose(A), B^T))`, with the context's maps at one of
+/// these other scales and `B^T` at the other, gives the same values two context scales narrower.
 pub fn test_blas_matmul_pt_left<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -602,11 +651,16 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
             &a,
             &mut scratch.borrow(),
         );
-        // `B`'s scale, which the left product spends, and the context's, which each transpose spends.
-        let (p_b, p) = (params.prec().log_delta(), params.prec().log_delta());
-        for count in [1, 2, 8].into_iter().filter(|c| lanes.is_multiple_of(*c)) {
-            let b = encode(&params, count, &mut scratch.borrow());
-            let label = format!("matmul_pt_left count={count}");
+        // At `a`'s scale, then one public matrix at scales below and above it.
+        let delta = params.prec().log_delta();
+        let counts = [1, 2, 8]
+            .into_iter()
+            .filter(|c| lanes.is_multiple_of(*c))
+            .map(|count| (count, delta));
+        for (count, p_b) in counts.chain(other_scales(&params).map(|p_b| (1, p_b))) {
+            let public = at_scale(&params, p_b);
+            let b = encode(&public, count, &mut scratch.borrow());
+            let label = format!("matmul_pt_left count={count} p_B={p_b}");
             let mut res = alloc_grid(&params, module, log_d, m, n, params.k);
             let bytes = module.blas_matmul_pt_left_tmp_bytes(&res, &b, &ct, &params.atk_layout());
             let mut op_scratch = ScratchOwned::<BE>::alloc(bytes);
@@ -615,7 +669,7 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
                 .unwrap();
             assert_grid_decrypt::<BE, F, E>(
                 &label,
-                &params,
+                &public,
                 module,
                 &encoder,
                 &res,
@@ -639,8 +693,11 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
             assert_eq!(grid_snapshot::<BE, _>(&res), want, "{label}: summed terms");
         }
 
-        // `transpose(blas_matmul_pt(transpose(A), B^T))`, with `B^T` of `inner x m` blocks on the right.
-        let ctx = blas_context::<BE, F>(&params, module, log_d, &mut scratch.borrow());
+        // `transpose(blas_matmul_pt(transpose(A), B^T))`, with `B^T` of `inner x m` blocks on the right, the context's
+        // maps at one scale other than `a`'s and `B^T` at the other: the left product spends `B`'s scale, `p_b`, the
+        // transposes the context's, `p`, twice more.
+        let [p, p_b] = other_scales(&params);
+        let ctx = blas_context::<BE, F>(&at_scale(&params, p), module, log_d, &mut scratch.borrow());
         let route = plan
             .transpose_galois_elements(order)
             .into_iter()
@@ -657,7 +714,7 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
             1,
             |s, r, c| F::from_f64(public_entry(s, c, r)).unwrap(),
             params.base2k.into(),
-            params.prec().into(),
+            at_scale(&params, p_b).prec().into(),
             &mut scratch.borrow(),
         )
         .unwrap()
@@ -699,7 +756,7 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
         );
         assert_grid_decrypt::<BE, F, E>(
             "matmul_pt_left through transposes",
-            &params,
+            &at_scale(&params, p.min(p_b)),
             module,
             &encoder,
             &res,
