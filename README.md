@@ -179,9 +179,12 @@ cargo run -p poulpy-cpu-portable --example ckks_poly2 --features enable-ckks
 
 BLAS runs its functional suite on `poulpy-cpu-oracle` and registers bit-exact
 parity through `blas_parity_test_suite!`: every other backend type, Rayon and
-IFMA variants included, is compared against the oracle of its family in `f64`
-and `Quad`. Native CI runs the `blas_parity` groups; the emulated jobs and the
-optional QEMU run do not. See [implementing BLAS operations](poulpy-blas/docs/blas-contracts.md).
+IFMA variants included, is compared against the oracle of its family (`NTT3x42`
+types against the `NTT4x30` oracles) in `f64` and `Quad`. Every
+conjugate-invariant backend type, the oracle's included, also runs
+`blas_conjugate_invariant_test_suite!`. Native CI runs the `blas_parity`
+groups; the emulated jobs and the optional QEMU run do not. See
+[implementing BLAS operations](poulpy-blas/docs/blas-contracts.md).
 
 Run portable BLAS parity with:
 
