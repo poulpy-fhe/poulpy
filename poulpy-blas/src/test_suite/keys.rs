@@ -97,7 +97,7 @@ fn assert_key_widths<BE, X>(
 /// their inputs, narrower than any map's output, then one limb wider than their inputs; the matrix products run on
 /// factors of one width, then on a narrower left or right factor. The preparations look up every rotation key of the
 /// product, each checked through the prepared product of its operand under the full store, and the prepared product the
-/// tensor key alone. Every call runs on exactly the scratch its own query reports.
+/// tensor key alone. Every operation runs on exactly the scratch its own query reports.
 pub fn test_blas_key_widths<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -169,7 +169,7 @@ pub fn test_blas_key_widths<BE, F, E>(
     let alloc = |rows: usize, cols: usize, k: usize| alloc_grid(&params, module, log_d, rows, cols, k);
     let uses = |lt, src_k, res_k| lt_key_uses(module, lt, src_k, res_k);
     let (tsk_layout, atk_layout) = (params.tsk_layout(), params.atk_layout());
-    // Every call runs on exactly the scratch its own query reports.
+    // Every operation runs on exactly the scratch its own query reports.
     let own = |bytes: usize| ScratchOwned::<BE>::alloc(bytes);
     // Half as wide as the inputs, so that the result's width caps the maps' giant steps, then one limb wider.
     let (narrow, wide) = (a_k / 2, a_k + params.base2k);

@@ -226,7 +226,11 @@ coefficients on the host and use the standard ring, so they need a host backend
 of the standard ring. An optional `log_d = …` sets the blocks to
 `2^log_d x 2^log_d`, 2 by default. `poulpy-cpu-oracle` runs them for
 `FFT64Oracle` and `NTT4x30Oracle`: at `log_d` 1, 2 and 3 (the last at `N = 128`,
-where one block fills a ciphertext), in `f64` and `Quad`, and at rank 2.
+where one block fills a ciphertext), in `f64` and `Quad`, and at rank 2, each
+also at radix 57. `test_blas_matmul_long_sums`, sums at least three times
+longer than the `2^(63 - base2k)` terms the JKLS kernel sums between
+normalizations, runs only at a radix of at least 57, which an NTT-family
+backend registers; every other suite skips it with a message.
 
 `blas_conjugate_invariant_test_suite!(mod m, backend = …, params = …)` registers
 the test `conjugate_invariant` for a backend of the conjugate-invariant ring,
@@ -297,7 +301,13 @@ directions, and every conjugate-invariant type, the oracle's included, runs the
 conjugate-invariant suite. Every other backend type registers parity against
 the oracle of its family: `NTT3x42` types against `NTT4x30Oracle`,
 conjugate-invariant types against the conjugate-invariant oracles, and Rayon
-types against the oracle rather than their serial sibling.
+types against the oracle rather than their serial sibling. The NTT types among
+them also register parity at radix 57, where the long product runs: at `N = 64`
+on the standard ring, and at `N = 32` on the conjugate-invariant ring, whose
+products are twice as long, since the cross-modulus `NTT3x42` parity needs
+NTT4x30's modulus to hold every radix-57 product. The FFT64 types of the
+standard ring also register parity at `N = 32`, where one `4 x 4` block fills
+the 16 slots.
 [`blas_tests.rs`](../../poulpy-cpu-portable/src/tests/blas_tests.rs) in
 `poulpy-cpu-portable` shows the registrations; commands and CI coverage belong
 in the [repository README](../../README.md#testing-a-backend).

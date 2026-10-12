@@ -61,6 +61,32 @@ blas_backend_test_suite!(
     log_d = 3,
 );
 
+// Radix 57, where `matmul_long_sums` runs, in f64, Quad and at rank 2: an NTT-family backend registers a parameter set
+// at base2k >= 57.
+blas_backend_test_suite!(
+    mod ntt4x30_f64_base2k57,
+    backend = crate::NTT4x30Oracle,
+    scalar = f64,
+    encoder = crate::EncodingFft<f64>,
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 128, hw: 64, base2k: 57, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
+);
+
+blas_backend_test_suite!(
+    mod ntt4x30_f128_base2k57,
+    backend = crate::NTT4x30Oracle,
+    scalar = poulpy_ckks::Quad,
+    encoder = crate::EncodingFft<poulpy_ckks::Quad>,
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 128, hw: 64, base2k: 57, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
+);
+
+blas_backend_test_suite!(
+    mod ntt4x30_f64_rank2_base2k57,
+    backend = crate::NTT4x30Oracle,
+    scalar = f64,
+    encoder = crate::EncodingFft<f64>,
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 128, hw: 64, base2k: 57, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64_RANK2 },
+);
+
 // The conjugate-invariant ring, whose slots are real.
 blas_conjugate_invariant_test_suite!(
     mod blas_ci_fft64,

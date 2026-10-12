@@ -37,7 +37,7 @@ use crate::{
     api::{BlasMatIntraOps, BlasMatMulOps},
     layouts::{BlasCiphertext, BlasCiphertextOwned, BlasGridInfos, BlasPlan, BlasPtOperand, BlasPtOperandUnprepared},
     oep::{BlasImpl, BlasMatMulImpl},
-    reference::{Left, blas_matmul_term_layout, validate_blas_matmul_prepared},
+    reference::{Left, blas_matmul_term_layout, max_lazy_terms, validate_blas_matmul_prepared},
 };
 
 /// `dec(matmul(enc(A), enc(B)))` is `A B` for every matrix of the batch, for a `2 x 3` grid times a `3 x 2` grid, with
@@ -1193,14 +1193,16 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         .unwrap();
 }
 
-/// Lazy sums three times longer than the `2^(63 - base2k)` terms an `i64` digit holds: `dec(matmul(enc(A), enc(B)))` is
-/// `A B` for a `1 x K` grid times a `K x 1` grid, whose `K d` tensor products the JKLS kernel normalizes as it sums
-/// them, and `blas_matmul_prepared` equals `blas_matmul` bit for bit. Every block is a copy of one ciphertext, so the
-/// terms' digits add up coherently, and so does their noise. The product by public matrices sums no coefficient-domain
-/// terms: its giant steps add their products in the transform domain, whose radix rule `blas_matmul_pt` documents.
+/// Lazy sums at least three times longer than the `2^(63 - base2k)` terms the JKLS kernel sums between normalizations:
+/// `dec(matmul(enc(A), enc(B)))` is `A B` for a `1 x K` grid times a `K x 1` grid, whose `K d` tensor products the JKLS
+/// kernel normalizes as it sums them, and `blas_matmul_prepared` equals `blas_matmul` bit for bit. Every block is a copy
+/// of one ciphertext, so the terms' digits add up coherently, and so does their noise. The product by public matrices
+/// sums no coefficient-domain terms: its giant steps add their products in the transform domain, whose radix rule
+/// `blas_matmul_pt` documents.
 ///
-/// The bound is in reach only at a high radix: at `N = 32`, NTT4x30's `MaxBase2k` is 57, a bound of 64 terms, while
-/// FFT64's stops near 23, a bound of `2^40`. Suites below radix 52 return.
+/// The bound is in reach only at a high radix: 64 terms at radix 57, `2^40` at FFT64's, which stops near 23. The test
+/// therefore runs, on its own ring `N = 32`, only for a suite registered at `base2k >= 57`, and every other suite skips
+/// it with a message: an NTT-family backend registers a parameter set at `base2k >= 57`.
 pub fn test_blas_matmul_long_sums<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl,
@@ -1210,20 +1212,19 @@ where
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
-    if params.base2k < 52 {
+    if params.base2k < 57 {
+        eprintln!(
+            "test_blas_matmul_long_sums skips base2k {}: it needs base2k >= 57, which NTT-family suites register",
+            params.base2k
+        );
         return;
     }
-    let params = CKKSTestParams {
-        n: 32,
-        base2k: 57,
-        hw: 16,
-        ..params
-    };
+    let params = CKKSTestParams { n: 32, hw: 16, ..params };
     let module = &Module::<BE>::new(params.n as u64);
     let host_module = &Module::<HostBytesBackend>::new(params.n as u64);
     // One 4 x 4 block fills the 16 slots, whatever the suite's dimension.
     let (log_d, d) = (2, 4);
-    let (slots, bound) = (params.n / 2, 1usize << (63 - params.base2k));
+    let (slots, bound) = (params.n / 2, max_lazy_terms(params.base2k));
     let lanes = slots / (d * d);
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
@@ -1277,8 +1278,8 @@ where
         );
     };
 
-    // `d` terms per inner block: `K d` is three times the bound.
-    let inner = 3 * bound / d;
+    // `d` terms per inner block: `K d` is at least three times the bound.
+    let inner = (3 * bound).div_ceil(d);
     let a = Grid::from_fn(log_d, 1, inner, lanes, |s, r, c| a0.at(s, r, c % d));
     let b = Grid::from_fn(log_d, inner, 1, lanes, |s, r, c| b0.at(s, r % d, c));
     let (ct_a, ct_b) = (repeat(&ct_a0, 1, inner), repeat(&ct_b0, inner, 1));
