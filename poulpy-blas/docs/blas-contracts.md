@@ -450,8 +450,11 @@ the products by public matrices also run with maps or public matrices a quarter
 of the parameter set's scale below and above it, which they consume in place of
 their inputs' scale, so the parameter set's `k` must hold two maps at the larger
 scale and a product. Through those maps, the products also multiply factors at
-two scales, in either order, one an eighth of the scale lower and as much
-narrower, so that their terms keep one budget. `test_blas_key_widths` runs with
+two scales, in either order, one an eighth of the scale lower and either as
+much narrower, so that their terms keep one budget, or as wide, so that its
+terms have the larger budget: crossed scales, where the larger budget plus the
+larger scale, from which the ct x ct rule takes its offset, exceeds the wider
+term's width. `test_blas_key_widths` runs with
 the maps and the public matrices a quarter below that scale, where a key width
 taken from the inputs' scale in place of `p` or `p_B`, or capped by it, finds no
 key. They read coefficients on the host and use the standard ring, so they need
@@ -513,8 +516,10 @@ one-column grids, `res` wider and narrower than the result, factors one limb
 apart in both orders, lazy inputs on real slots, sparse unless one matrix fills
 them, copies of lazy inputs, public products of one matrix and of one per matrix
 slot, maps and public matrices at scales below and above the operands', factors
-at two scales, in either order, through those maps, whose terms keep one budget,
-and `1 x K` by `K x 1` products past the `2^(63 - base2k)` terms the kernel sums
+at two scales, in either order, through those maps, whose terms keep one budget
+or give the lower scale the larger budget (crossed scales, where a kernel that
+takes its offset from the wider term's width changes the bits), and `1 x K` by
+`K x 1` products past the `2^(63 - base2k)` terms the kernel sums
 between normalizations, of distinct blocks, where some `K <= 32` of them pass
 that bound, and of copies of one block, from radix 57 (58 at `log_d` 1). Each
 family's parity also runs calls that poulpy-ckks rejects for their budget: both

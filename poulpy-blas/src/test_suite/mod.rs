@@ -26,7 +26,8 @@ pub mod parity;
 /// message too. Maps and public matrices run at the parameter set's scale and a quarter of it below and above
 /// ([`other_scales`](crate::test_suite::helpers::other_scales)), so its `k` must hold two maps at the larger scale and
 /// a product; through the latter, the products also multiply factors at two scales, in either order, one an eighth of
-/// the scale lower and as much narrower. `test_blas_key_widths` runs with the maps and the public matrices below that
+/// the scale lower and either as much narrower, so that their terms keep one budget, or as wide, so that its terms have
+/// the larger budget (crossed scales). `test_blas_key_widths` runs with the maps and the public matrices below that
 /// scale, where a key width taken from it in place of theirs, or capped by it, finds no key.
 /// `test_blas_matmul_long_sums`, sums past the `2^(63 - base2k)` terms the JKLS kernel sums between normalizations, runs
 /// on its own ring at the registered radix when `base2k >= 57`, where such sums are short, and every other suite skips

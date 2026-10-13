@@ -705,8 +705,10 @@ fn preparation<B: BlasParityBackend>(
 /// `blas_matmul` and by `blas_matmul_prepared` on the one pair of prepared operands, which must agree; all of it
 /// through maps at the operands' scale, then at scales below and above it ([`other_scales`]), whose scale the
 /// preparations consume twice in place of the operands'. Through the latter, the same for factors at two scales, in
-/// either order, either grid two bits lower and as much narrower, so that their terms keep one budget (not crossed),
-/// into `res` as wide as the wider factor. Products into `2 x 2` grids, of factors one limb apart, in both orders,
+/// either order, into `res` as wide as the wider factor: one two bits lower and either as much narrower, so that their
+/// terms keep one budget, or as wide, so that its terms have the larger budget (crossed scales), where the larger
+/// budget plus the larger scale exceeds the wider term's width: a kernel taking its offset from that width, not from
+/// that sum, changes the bits. Products into `2 x 2` grids, of factors one limb apart, in both orders,
 /// since the tensor key is looked up at the wider side's width, and of a lazy grid of real slots labelled 1 by itself.
 /// `1 x K` by `K x 1` products past the `2^(63 - base2k)` terms the kernel sums between normalizations pin that the
 /// kernel accepts such a sum and returns the reference's bits: one of the fewest distinct blocks whose `K d` terms pass
@@ -735,13 +737,16 @@ where
     let (atk, tsk) = (atk_layout(params), tsk_layout(params));
     let a = operand(params, module, log_d, 2, 2, 120);
     let b = operand(params, module, log_d, 2, 1, 124);
-    // `a` and `b` two bits below their scale and as much narrower: either times the other multiplies factors at two
-    // scales whose terms keep one budget, not crossed.
-    let below = layout(params, params.rank, w - 2, delta - 2, 0, SlotsKind::Complex);
-    let (a_low, b_low) = (
-        grid_of(module, &below, log_d, 2, 2, 128, false),
-        grid_of(module, &below, log_d, 2, 1, 132, false),
-    );
+    // `a` and `b` two bits below their scale: either times the other multiplies factors at two scales, as much
+    // narrower, whose terms keep one budget, and as wide, whose terms at the lower scale have the larger budget
+    // (crossed scales).
+    let [(a_low, b_low), (a_crossed, b_crossed)] = [(w - 2, 128), (w, 192)].map(|(k, seed)| {
+        let below = layout(params, params.rank, k, delta - 2, 0, SlotsKind::Complex);
+        (
+            grid_of(module, &below, log_d, 2, 2, seed, false),
+            grid_of(module, &below, log_d, 2, 1, seed + 4, false),
+        )
+    });
     let thin = sized(params, module, log_d, 2, 2, w - base2k, 140);
     let lazy = lazy_real(params, module, log_d, 2, 2, 144);
     // Past the bound: the fewest distinct inner blocks whose `K d` terms pass it, and `3 bound / min(d, 4)` copies of
@@ -765,7 +770,7 @@ where
     if copies <= 48 {
         long.push((repeat(150, 1, copies), repeat(152, copies, 1)));
     }
-    let mut inputs = vec![&a, &b, &a_low, &b_low, &thin, &lazy];
+    let mut inputs = vec![&a, &b, &a_low, &b_low, &a_crossed, &b_crossed, &thin, &lazy];
     inputs.extend(long.iter().flat_map(|(x, y)| [x, y]));
     let before = snapshots::<B>(&inputs);
     let mut out = Vec::new();
@@ -774,9 +779,14 @@ where
         let term = blas_matmul_term_layout(&a, ctx).block;
         let natural = term.k().as_usize() - term.log_delta();
         let mut pairs = vec![(&a, &b, vec![w, w + base2k, natural - base2k])];
-        // Through maps at a scale apart from both, factors at two scales, in either order.
+        // Through maps at a scale apart from both, factors at two scales, in either order, crossed or not.
         if p != delta {
-            pairs.extend([(&a, &b_low, vec![w]), (&a_low, &b, vec![w])]);
+            pairs.extend([
+                (&a, &b_low, vec![w]),
+                (&a_low, &b, vec![w]),
+                (&a, &b_crossed, vec![w]),
+                (&a_crossed, &b, vec![w]),
+            ]);
         }
         for (x, y, widths) in pairs {
             let left = with_scratch::<B, _>(module.blas_matmul_prepare_left_tmp_bytes(x, ctx, &atk), |s| {
@@ -968,10 +978,11 @@ where
 
 /// The products, the prepared product and the products by public matrices agree bit for bit at every swept `log_d`,
 /// through maps and public matrices at the factors' scale and at scales other than theirs, there also of factors at two
-/// scales in either order, and the prepared operands' infos, `(log_d, rows, cols, block_layout, mat_slots)`, agree;
-/// prepared storage is never compared. Products past the `2^(63 - base2k)` terms the JKLS kernel sums between
-/// normalizations agree too: of distinct blocks, where some `K <= 32` of them pass that bound, and, from radix 57 (58
-/// at `log_d` 1), of copies of one block, which overflow an `i64` digit in a kernel that normalizes only at the end.
+/// scales in either order, the terms at the lower scale with the other's budget or a larger one (crossed scales), and
+/// the prepared operands' infos, `(log_d, rows, cols, block_layout, mat_slots)`, agree; prepared storage is never
+/// compared. Products past the `2^(63 - base2k)` terms the JKLS kernel sums between normalizations agree too: of
+/// distinct blocks, where some `K <= 32` of them pass that bound, and, from radix 57 (58 at `log_d` 1), of copies of
+/// one block, which overflow an `i64` digit in a kernel that normalizes only at the end.
 /// The product, the prepared product and the products by public matrices on either side fail alike on a budget
 /// poulpy-ckks rejects, leaving `res` and the factors unchanged.
 pub fn test_blas_matmul_parity<BR, BT, F>(params: CKKSTestParams, shapes: &BlasParityShapes, r: &Module<BR>, t: &Module<BT>)

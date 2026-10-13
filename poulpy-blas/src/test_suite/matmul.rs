@@ -46,9 +46,10 @@ use crate::{
 /// `blas_matmul_prepare_right`, then `blas_matmul_prepared`, bit for bit, all with the rotation keys of the plan's
 /// product set alone, which both preparations take. Through maps at the factors' scale and at scales below and above
 /// it ([`other_scales`]), and through the latter also of factors at two scales, in either order, one an eighth of the
-/// scale lower and as much narrower, so that the terms of both keep one budget (not crossed): each preparation reports
-/// its input's dimensions and batch and its terms' layout, its input's `2p` narrower for the maps' scale `p`, and the
-/// product follows from those terms, at the smaller of the factors' scales.
+/// scale lower and either as much narrower, so that the terms of both keep one budget, or as wide, so that its terms
+/// have the larger budget (crossed scales): each preparation reports its input's dimensions and batch and its terms'
+/// layout, its input's `2p` narrower for the maps' scale `p`, and the product follows from those terms, at the smaller
+/// of the factors' scales.
 pub fn test_blas_matmul<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -97,36 +98,52 @@ pub fn test_blas_matmul<BE, F, E>(
         &b,
         &mut scratch.borrow(),
     );
-    // `A` and `B` again an eighth of their scale lower and as much narrower, so that either times the other at `delta`
-    // multiplies factors at two scales whose terms keep one budget: not crossed. The lower scale lies strictly between
+    // `A` and `B` again an eighth of their scale lower, so that either times the other at `delta` multiplies factors at
+    // two scales: as much narrower, so that the terms of both keep one budget, and as wide, so that the terms at the
+    // lower scale have the larger budget (crossed scales), where the larger budget plus the larger scale, from which
+    // the product takes its offset, lies `gap` bits above the wider term's width. The lower scale lies strictly between
     // `delta` and the lower of `other_scales`.
     let delta = params.prec().log_delta();
     let gap = delta / 8;
-    let [ct_a_low, ct_b_low] = [&a, &b].map(|grid| {
-        encrypt_grid::<BE, F, E>(
-            &at_scale(&params, delta - gap),
-            module,
-            host_module,
-            &encoder,
-            &sk,
-            params.k - gap,
-            0,
-            grid,
-            &mut scratch.borrow(),
-        )
+    let [[ct_a_low, ct_b_low], [ct_a_crossed, ct_b_crossed]] = [params.k - gap, params.k].map(|k| {
+        [&a, &b].map(|grid| {
+            encrypt_grid::<BE, F, E>(
+                &at_scale(&params, delta - gap),
+                module,
+                host_module,
+                &encoder,
+                &sk,
+                k,
+                0,
+                grid,
+                &mut scratch.borrow(),
+            )
+        })
     });
     let (tsk_layout, atk_layout) = (params.tsk_layout(), params.atk_layout());
     for p in [delta].into_iter().chain(other_scales(&params)) {
         let maps = at_scale(&params, p);
         let ctx = blas_context::<BE, F>(&maps, module, log_d, &mut scratch.borrow());
-        // Factors at one scale; through maps at a scale apart from both, also at two scales, in either order.
+        // Factors at one scale; through maps at a scale apart from both, also at two scales, in either order, crossed
+        // or not.
         let mut pairs = vec![(&ct_a, &ct_b)];
         if p != delta {
-            pairs.extend([(&ct_a, &ct_b_low), (&ct_a_low, &ct_b)]);
+            pairs.extend([
+                (&ct_a, &ct_b_low),
+                (&ct_a_low, &ct_b),
+                (&ct_a, &ct_b_crossed),
+                (&ct_a_crossed, &ct_b),
+            ]);
         }
         for (x, y) in pairs {
-            let (dx, dy) = (x.block_layout().log_delta(), y.block_layout().log_delta());
-            let label = format!("matmul p={p} delta_a={dx} delta_b={dy}");
+            let (lx, ly) = (x.block_layout(), y.block_layout());
+            let label = format!(
+                "matmul p={p} k_a={} delta_a={} k_b={} delta_b={}",
+                lx.k().as_usize(),
+                lx.log_delta(),
+                ly.k().as_usize(),
+                ly.log_delta()
+            );
             let mut res = alloc_grid(&params, module, log_d, m, n, params.k);
             let bytes = module.blas_matmul_tmp_bytes(&res, x, y, &ctx, &tsk_layout, &atk_layout);
             module
