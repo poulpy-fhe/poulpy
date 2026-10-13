@@ -41,6 +41,7 @@
 //! |----------|----------------|
 //! | [`test_mul_pt_vec_into_aligned`] | input and output at same `log_budget()` |
 //! | [`test_mul_pt_vec_into_smaller_output`] | output at smaller `log_budget()` |
+//! | [`test_mul_pt_scale_above_ct`] | `pt.log_delta() > a.log_delta()`, also `_assign` and the constant forms |
 //!
 //! ## ct x pt inplace (`GLWE<_, CKKS>::mul_pt_vec_assign`)
 //!
@@ -957,7 +958,7 @@ where
     module
         .ckks_mul_pt_vec_into(&mut ct_res, &ct, &pt, &mut scratch.borrow())
         .unwrap();
-    assert_mul_pt_output_meta("mul_pt_vec_into_aligned", &ct_res, &ct, &pt);
+    assert_mul_pt_output_meta("mul_pt_vec_into_aligned", &ct_res, params.k, &ct, &pt);
     assert_decrypt_precision(
         "mul_pt_vec_into_aligned",
         &params,
@@ -1012,7 +1013,7 @@ pub fn test_mul_pt_vec_into_delta_log_delta<BE, F, E>(
     module
         .ckks_mul_pt_vec_into(&mut ct_res, &ct, &pt, &mut scratch.borrow())
         .unwrap();
-    assert_mul_pt_output_meta("mul_pt_vec_into_delta_log_delta", &ct_res, &ct, &pt);
+    assert_mul_pt_output_meta("mul_pt_vec_into_delta_log_delta", &ct_res, params.k, &ct, &pt);
     assert_decrypt_precision_at_log_delta(
         "mul_pt_vec_into_delta_log_delta",
         &params,
@@ -1064,11 +1065,12 @@ pub fn test_mul_pt_vec_into_smaller_output<BE, F, E>(
         &quantize(&re2, params.prec().log_delta()),
         &quantize(&im2, params.prec().log_delta()),
     );
-    let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
+    let dst_k = params.k - params.base2k - 1;
+    let mut ct_res = alloc_ct(&params, module, dst_k);
     module
         .ckks_mul_pt_vec_into(&mut ct_res, &ct, &pt, &mut scratch.borrow())
         .unwrap();
-    assert_mul_pt_output_meta("mul_pt_vec_into_smaller_output", &ct_res, &ct, &pt);
+    assert_mul_pt_output_meta("mul_pt_vec_into_smaller_output", &ct_res, dst_k, &ct, &pt);
     assert_decrypt_precision(
         "mul_pt_vec_into_smaller_output",
         &params,
@@ -1120,7 +1122,7 @@ where
     );
     let ct_meta = ckks_snapshot(&ct);
     module.ckks_mul_pt_vec_assign(&mut ct, &pt, &mut scratch.borrow()).unwrap();
-    assert_mul_pt_output_meta("mul_pt_vec_assign", &ct, &ct_meta, &pt);
+    assert_mul_pt_output_meta("mul_pt_vec_assign", &ct, ct_meta.k().as_usize(), &ct_meta, &pt);
     assert_decrypt_precision(
         "mul_pt_vec_assign",
         &params,
@@ -1181,7 +1183,7 @@ pub fn test_mul_pt_const_into_aligned<BE, F, E>(
     module
         .ckks_mul_pt_const_into(&mut ct_res, &ct, &cst, 0, &mut scratch.borrow())
         .unwrap();
-    assert_mul_pt_output_meta("mul_const_into_aligned", &ct_res, &ct, &PT_PREC);
+    assert_mul_pt_output_meta("mul_const_into_aligned", &ct_res, params.k, &ct, &PT_PREC);
     assert_decrypt_precision(
         "mul_const_into_aligned",
         &params,
@@ -1237,7 +1239,7 @@ where
     module
         .ckks_mul_pt_const_assign(&mut ct, &cst, 0, &mut scratch.borrow())
         .unwrap();
-    assert_mul_pt_output_meta("mul_const_assign", &ct, &ct_meta, &PT_PREC);
+    assert_mul_pt_output_meta("mul_const_assign", &ct, ct_meta.k().as_usize(), &ct_meta, &PT_PREC);
     assert_decrypt_precision(
         "mul_const_assign",
         &params,
@@ -1296,7 +1298,7 @@ pub fn test_mul_pt_const_into_delta_log_delta<BE, F, E>(
     module
         .ckks_mul_pt_const_into(&mut ct_res, &ct, &cst, 0, &mut scratch.borrow())
         .unwrap();
-    assert_mul_pt_output_meta("mul_const_into_delta_log_delta", &ct_res, &ct, &PT_PREC);
+    assert_mul_pt_output_meta("mul_const_into_delta_log_delta", &ct_res, params.k, &ct, &PT_PREC);
     assert_decrypt_precision_at_log_delta(
         "mul_const_into_delta_log_delta",
         &params,
@@ -1309,6 +1311,88 @@ pub fn test_mul_pt_const_into_delta_log_delta<BE, F, E>(
         PT_PREC.log_delta(),
         &mut scratch.borrow(),
     );
+}
+
+/// A plaintext at a larger scale than the ciphertext's (`pt.log_delta() > a.log_delta()`), as a vector
+/// and as a constant, through `_into` and `_assign`: the product keeps `a.log_delta()` and spends
+/// `pt.log_delta()` bits of budget.
+pub fn test_mul_pt_scale_above_ct<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let (re1, im1) = super::helpers::test_vector_1::<F>(m);
+    let (re2, im2) = super::helpers::test_vector_2::<F>(m);
+    let sk = super::helpers::gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+
+    let ct = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re1,
+        &im1,
+        &mut scratch.borrow(),
+    );
+    let pt_prec = precision_at(&params, params.prec().log_delta() + DELTA_LOG_DELTA);
+    let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), pt_prec, &re2, &im2);
+    let cst = ckks_pt_cst_full::<BE, F>(host_module, module, params.base2k.into(), pt_prec, m, Some(MUL_CONST.0), None);
+    let want_vec = want_mul(
+        &re1,
+        &im1,
+        &quantize(&re2, pt_prec.log_delta()),
+        &quantize(&im2, pt_prec.log_delta()),
+    );
+    let (const_re, const_im) = quantized_const::<F>(MUL_CONST.0, 0.0, pt_prec.log_delta());
+    let want_const = super::helpers::want_mul_const(&re1, &im1, const_re, const_im);
+
+    let mut vec_into = alloc_ct(&params, module, params.k);
+    module
+        .ckks_mul_pt_vec_into(&mut vec_into, &ct, &pt, &mut scratch.borrow())
+        .unwrap();
+    let mut vec_assign = ct.clone();
+    module
+        .ckks_mul_pt_vec_assign(&mut vec_assign, &pt, &mut scratch.borrow())
+        .unwrap();
+    let mut const_into = alloc_ct(&params, module, params.k);
+    module
+        .ckks_mul_pt_const_into(&mut const_into, &ct, &cst, 0, &mut scratch.borrow())
+        .unwrap();
+    let mut const_assign = ct.clone();
+    module
+        .ckks_mul_pt_const_assign(&mut const_assign, &cst, 0, &mut scratch.borrow())
+        .unwrap();
+
+    for (variant, res, b, (want_re, want_im)) in [
+        ("vec_into", &vec_into, &pt, &want_vec),
+        ("vec_assign", &vec_assign, &pt, &want_vec),
+        ("const_into", &const_into, &cst, &want_const),
+        ("const_assign", &const_assign, &cst, &want_const),
+    ] {
+        let label = format!("mul_pt_scale_above_ct {variant}");
+        // Every destination asks for `params.k`: `_into` allocates it there, `_assign` writes `ct`, encrypted there.
+        assert_mul_pt_output_meta(&label, res, params.k, &ct, b);
+        assert_decrypt_precision(
+            &label,
+            &params,
+            module,
+            &encoder,
+            res,
+            &sk,
+            want_re,
+            want_im,
+            &mut scratch.borrow(),
+        );
+    }
 }
 
 // ─── error test ──────────────────────────────────────────────────────────────

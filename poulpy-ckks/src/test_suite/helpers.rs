@@ -1405,16 +1405,21 @@ pub fn assert_mul_ct_output_meta<D: Data, W: ZnxWord, R: Ring>(
     assert!(ct.is_canonical(), "{label}: a relinearized product is canonical");
 }
 
+/// Asserts the metadata a ct × pt product stamps on `ct`, computed from its inputs as
+/// [`CKKSMulOps`] states it: `log_delta = a.log_delta()` and
+/// `log_budget = a.log_budget() - b.log_delta()`, less the bits by which that product
+/// exceeds `dst_k`, the destination's `k()` before the call (`a.k()` for `_assign`).
+/// The product targets that requested width, with value-preserving rounding, not the
+/// buffer's capacity.
 pub fn assert_mul_pt_output_meta<D: Data, W: ZnxWord, R: Ring>(
     label: &str,
     ct: &CKKSCiphertext<D, W, R>,
+    dst_k: usize,
     a: &impl CKKSInfos,
     b: &impl CKKSInfos,
 ) {
-    let log_budget = a.log_budget() - a.log_delta().min(b.log_delta());
-    let log_delta = a.log_delta().max(b.log_delta());
-    // ct×pt targets the destination's requested `k()` (with value-preserving rounding),
-    // not its buffer capacity, so the result width is bounded by `k`, not `max_k`.
-    let offset = (log_budget + log_delta).saturating_sub(ct.k().as_usize());
+    let log_delta = a.log_delta();
+    let log_budget = a.log_budget() - b.log_delta();
+    let offset = (log_budget + log_delta).saturating_sub(dst_k);
     assert_ct_meta(label, ct, log_delta, log_budget - offset);
 }

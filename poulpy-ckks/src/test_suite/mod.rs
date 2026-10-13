@@ -273,6 +273,10 @@ macro_rules! ckks_backend_rank2_test_suite {
             );
             run_test!(mul_pt_vec_assign, $crate::test_suite::mul::test_mul_pt_vec_assign);
             run_test!(
+                mul_pt_scale_above_ct,
+                $crate::test_suite::mul::test_mul_pt_scale_above_ct
+            );
+            run_test!(
                 compact_plaintext_add_sub_mul,
                 $crate::test_suite::compact::test_compact_plaintext_add_sub_mul
             );
@@ -710,6 +714,10 @@ macro_rules! ckks_backend_test_suite {
             run_test!(
                 mul_const_into_delta_log_delta,
                 $crate::test_suite::mul::test_mul_pt_const_into_delta_log_delta
+            );
+            run_test!(
+                mul_pt_scale_above_ct,
+                $crate::test_suite::mul::test_mul_pt_scale_above_ct
             );
             run_test!(
                 mul_prepared_layout_mismatch_error,
