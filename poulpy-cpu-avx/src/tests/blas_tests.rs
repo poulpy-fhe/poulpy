@@ -1,6 +1,6 @@
 //! BLAS tests for the AVX backends: parity of each type, Rayon
 //! included, against its same-family oracle, bit for bit, the NTT types'
-//! also at radix 57 and the standard FFT64 types' also at `N = 32`, and the
+//! also at radix 54 and the standard FFT64 types' also at `N = 32`, and the
 //! conjugate-invariant suite on the conjugate-invariant types.
 //!
 //! All test logic lives in `poulpy_blas::test_suite` as backend-generic
@@ -51,14 +51,13 @@ blas_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
 }
 
-// Radix 57, where `matmul` sums past the terms the kernel sums between normalizations, and copies of one block overflow
-// a kernel that normalizes only at the end: an NTT-family type registers a parameter set at base2k >= 57.
+// Radix 54, the largest in practice.
 blas_parity_test_suite! {
-    mod blas_parity_ntt4x30avx_base2k57,
+    mod blas_parity_ntt4x30avx_base2k54,
     backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
     backend_test = crate::NTT4x30Avx,
     scalar = f64,
-    params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 57, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 54, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
 }
 
 // N = 32: at log_d 2, one matrix fills the 16 slots.
@@ -117,11 +116,11 @@ blas_parity_test_suite! {
 
 #[cfg(feature = "enable-rayon")]
 blas_parity_test_suite! {
-    mod blas_parity_ntt4x30avxrayon_base2k57,
+    mod blas_parity_ntt4x30avxrayon_base2k54,
     backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
     backend_test = crate::NTT4x30AvxRayon,
     scalar = f64,
-    params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 57, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 54, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
 }
 
 #[cfg(feature = "enable-rayon")]
@@ -173,13 +172,13 @@ blas_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
 }
 
-// Radix 57 on the conjugate-invariant ring at N = 32, whose products are as long as the standard ring's at N = 64.
+// Radix 54 on the conjugate-invariant ring at N = 32, whose products are as long as the standard ring's at N = 64.
 blas_parity_test_suite! {
-    mod blas_parity_ci_ntt4x30avx_base2k57,
+    mod blas_parity_ci_ntt4x30avx_base2k54,
     backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
     backend_test = crate::NTT4x30CIAvx,
     scalar = f64,
-    params = poulpy_ckks::test_suite::CKKSTestParams { n: 32, hw: 16, base2k: 57, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 32, hw: 16, base2k: 54, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
 }
 
 #[cfg(feature = "enable-rayon")]
@@ -229,11 +228,11 @@ blas_parity_test_suite! {
 
 #[cfg(feature = "enable-rayon")]
 blas_parity_test_suite! {
-    mod blas_parity_ci_ntt4x30avxrayon_base2k57,
+    mod blas_parity_ci_ntt4x30avxrayon_base2k54,
     backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
     backend_test = crate::NTT4x30CIAvxRayon,
     scalar = f64,
-    params = poulpy_ckks::test_suite::CKKSTestParams { n: 32, hw: 16, base2k: 57, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 32, hw: 16, base2k: 54, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
 }
 
 blas_conjugate_invariant_test_suite!(

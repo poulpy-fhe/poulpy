@@ -16,15 +16,14 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 /// - each term is one core tensor product of `(lhs[t], rhs[t])` at the offset poulpy-ckks's ct x ct rule gives for
 ///   `res`, rounded on its own at the tensor width `max(lhs.k, rhs.k)`; summing unrounded products, as
 ///   `cnv_apply_dft_sum` would, changes bits;
-/// - the terms are summed exactly and normalized at that width, `res` is stamped with the rule's budget and scale, the
-///   smallest label and the joined slot kind, then relinearized once into `res` with the tensor key at that width;
-///   `res` comes back canonical, without a noise tag.
+/// - the terms are summed exactly, the sum normalized at that width before the relinearization reads it, `res` stamped
+///   with the rule's budget and scale, the smallest label and the joined slot kind, then relinearized once into `res`
+///   with the tensor key at that width; `res` comes back canonical, without a noise tag.
 ///
-/// **Free (bit-identical):** the order, grouping and split of the terms over workers, materialized or streamed; extra
-/// exact normalizations of the sum; caching the operands or their convolution forms; normalizing an operand read
-/// through a DFT. Whatever the grouping, no accumulator, partial sums included, holds more than `2^(63 - base2k)` terms
-/// since its last normalization, a normalized sum counting as one: partial sums are normalized before they are combined
-/// unless their counts fit together. Anything else changes bits.
+/// **Free (bit-identical):** the order, grouping and split of the terms over workers, materialized or streamed;
+/// normalizing partial sums, or leaving them unnormalized until the DFT that reads the sum: normalization preserves the
+/// value, so its placement never changes the bits; caching the operands or their convolution forms; normalizing an
+/// operand read through a DFT. Anything else changes bits.
 ///
 /// It is called with `lhs.len() == rhs.len() >= 1` pairs, every `lhs` of one layout and every `rhs` of another, on
 /// inputs the prepared product's validator accepted, at a radix of 62 at most, which checked the tensor key at that

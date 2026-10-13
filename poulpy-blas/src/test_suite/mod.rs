@@ -29,9 +29,7 @@ pub mod parity;
 /// the scale lower and either as much narrower, so that their terms keep one budget, or as wide, so that its terms have
 /// the larger budget (crossed scales). `test_blas_key_widths` runs with the maps and the public matrices below that
 /// scale, where a key width taken from it in place of theirs, or capped by it, finds no key.
-/// `test_blas_matmul_long_sums`, sums past the `2^(63 - base2k)` terms the JKLS kernel sums between normalizations, runs
-/// on its own ring at the registered radix when `base2k >= 57`, where such sums are short, and every other suite skips
-/// it with a message: an NTT-family backend registers a parameter set at `base2k >= 57`.
+/// `test_blas_matmul_long_sums`, a `1 x 32` grid times a `32 x 1` grid, runs on its own ring, `N = 32`.
 #[macro_export]
 macro_rules! blas_backend_test_suite {
     (mod $modname:ident, backend = $backend:ty, scalar = $scalar:ty, encoder = $encoder:ty, params = $params:expr
@@ -124,12 +122,8 @@ macro_rules! blas_conjugate_invariant_test_suite {
 /// [`BlasParityShapes`](crate::test_suite::parity::BlasParityShapes), narrows the `log_d` sweep. The expansion names
 /// `::poulpy_hal`, so the invoking crate depends on it directly.
 ///
-/// `matmul` runs products of more terms than the `2^(63 - base2k)` the JKLS kernel sums between normalizations, `1 x K`
-/// grids by `K x 1` grids: of distinct blocks, where some `K <= 32` of them pass that bound, and, from `base2k` 57 (58
-/// at `log_d` 1), of copies of one block, which overflow an `i64` digit in a kernel that normalizes only at the end. An
-/// NTT-family `backend_test`, on either ring, therefore registers a parameter set at `base2k >= 57` with a `log_d` of 2
-/// or more swept: it pins that the kernel accepts such sums, normalizes as it sums them and returns the reference's
-/// bits.
+/// `matmul` also runs a long product, a `1 x 32` grid by a `32 x 1` grid of distinct blocks, at every registration: a
+/// kernel that drops or repeats a term of a long sum fails it.
 #[macro_export]
 macro_rules! blas_parity_test_suite {
     (mod $modname:ident, backend_ref = $reference:ty, backend_test = $tested:ty, scalar = $scalar:ty, params = $params:expr

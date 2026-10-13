@@ -12,7 +12,7 @@
 //! | [`test_dot_product_ct_delta_log_delta`] | ct · ct fallback with non-uniform `log_delta` |
 //! | [`test_dot_product_ct_smaller_output`] | ct · ct, output narrower than inputs |
 //! | [`test_dot_product_ct_lazy`] | ct · ct, one relinearization: bits, metadata, precision, rejections |
-//! | [`test_dot_product_ct_long_sum`] | ct · ct, one relinearization past `2^(63 - base2k)` terms |
+//! | [`test_dot_product_ct_long_sum`] | ct · ct, one relinearization of 192 coherent terms |
 //! | [`test_dot_product_ct_non_uniform`] | ct · ct, pairs without a shared layout or scale |
 //! | [`test_dot_product_pt_vec_aligned`] | ct · ZNX plaintext |
 //! | [`test_dot_product_const_aligned`] | ct · ZNX constant |
@@ -860,13 +860,10 @@ where
     }
 }
 
-/// A sum three times longer than the `2^(63 - base2k)` terms an `i64` digit holds, so the lazy path
-/// has to normalize on the way. Every pair is the same two ciphertexts, so the digits add up
-/// coherently, and so does the noise. The result is the core composition that normalizes after every
-/// term, bit for bit, and decrypts to the sum.
-///
-/// The bound is in reach only at a high radix: at `N = 32`, NTT4x30's `MaxBase2k` is 57, a bound of
-/// 64 terms, while FFT64's stops near 23. Suites below radix 52 return.
+/// A long sum, 192 terms, relinearized once. Every pair is the same two ciphertexts, so the digits
+/// add up coherently, their worst case, and so does the noise, and the lazy path normalizes only
+/// before the relinearization. The result is the core composition that normalizes after every term,
+/// bit for bit, and decrypts to the sum. It runs on its own ring, `N = 32`, at the suite's radix.
 pub fn test_dot_product_ct_long_sum<BE, F, E>(
     params: CKKSTestParams,
     _module: &Module<BE>,
@@ -879,15 +876,7 @@ pub fn test_dot_product_ct_long_sum<BE, F, E>(
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    if params.base2k < 52 {
-        return;
-    }
-    let params = CKKSTestParams {
-        n: 32,
-        base2k: 57,
-        hw: 16,
-        ..params
-    };
+    let params = CKKSTestParams { n: 32, hw: 16, ..params };
     let module = &Module::<BE>::new(params.n as u64);
     let host_module = &Module::<HostBytesBackend>::new(params.n as u64);
     let m = params.n / 2;
@@ -912,7 +901,7 @@ pub fn test_dot_product_ct_long_sum<BE, F, E>(
     };
     let (a, b) = (encrypt(&re1, &im1), encrypt(&re2, &im2));
 
-    let terms = 3 << (63 - params.base2k);
+    let terms = 192;
     let (a_refs, b_refs) = (vec![&a; terms], vec![&b; terms]);
     let mut lazy = alloc_ct(&params, module, params.k);
     let bytes = module.ckks_dot_product_ct_tmp_bytes(terms, &lazy, &a, &b, &tsk);

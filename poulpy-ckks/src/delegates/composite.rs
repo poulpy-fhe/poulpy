@@ -377,10 +377,10 @@ fn share_layout<C: CKKSCtBounds>(cts: &[&C]) -> bool {
 /// `dst = Σ a[i] · b[i]` with one relinearization, for pairs that share one ct × ct rule.
 ///
 /// Checks the tensor key and the rule before writing `dst`. Each term is one tensor product,
-/// canonical at the tensor width, so the partial sums are exact and normalizing them leaves the
-/// bits unchanged. The sum is normalized before it would hold more than `2^(63 - base2k)` terms,
-/// which an `i64` digit holds, and once at the end. `dst` is stamped before the relinearization,
-/// which normalizes at the stamped width, as in `ckks_mul_into`.
+/// canonical at the tensor width, and the terms are added without normalizing, as other lazy
+/// additions: the sum is exact, and it is normalized once, right before the relinearization reads
+/// it through a DFT. `dst` is stamped before the relinearization, which normalizes at the stamped
+/// width, as in `ckks_mul_into`.
 fn dot_product_ct_lazy<BE, Dst, A, B, H>(
     module: &Module<BE>,
     dst: &mut Dst,
@@ -414,23 +414,16 @@ where
     let metas = || a.iter().map(|ct| ct.meta()).chain(b.iter().map(|ct| ct.meta()));
     let log_sparsity = metas().map(|meta| meta.log_sparsity).min().unwrap();
     let slots = metas().map(|meta| meta.slots).reduce(SlotsKind::join).unwrap();
-    let max_terms: usize = 1 << (63 - dst.base2k().as_usize());
 
     let scratch = scratch.borrow();
     let (mut acc, scratch) = scratch.take_glwe_tensor_scratch(&tensor_layout);
     let (mut term, mut scratch) = scratch.take_glwe_tensor_scratch(&tensor_layout);
     module.glwe_tensor_apply(cnv_offset, &mut acc, a[0], b[0], &mut scratch);
-    let mut terms: usize = 1;
     for (ai, bi) in a.iter().zip(b).skip(1) {
-        if terms == max_terms {
-            module.glwe_normalize_assign(&mut acc, &mut scratch);
-            terms = 1;
-        }
         module.glwe_tensor_apply(cnv_offset, &mut term, *ai, *bi, &mut scratch);
         module.glwe_add_assign(&mut acc, &term);
-        terms += 1;
     }
-    // A tensor view reports canonical, so it must hold canonical digits.
+    // A tensor view reports canonical, so it must hold canonical digits before the relinearization's DFT.
     module.glwe_normalize_assign(&mut acc, &mut scratch);
     dst.set_log_budget(log_budget);
     dst.set_log_delta(log_delta);
@@ -542,7 +535,7 @@ where
     {
         check_lengths("ckks_dot_product_ct", a.len(), b.len())?;
         let n: usize = a.len();
-        // Between normalizations the lazy sum holds at least two terms, which an `i64` digit fits up to base2k 62.
+        // The lazy sum holds at least two terms, which an `i64` digit fits up to base2k 62.
         if n > 1 && dst.base2k().as_usize() <= 62 && share_layout(a) && share_layout(b) {
             return dot_product_ct_lazy(self, dst, a, b, tsk, scratch);
         }

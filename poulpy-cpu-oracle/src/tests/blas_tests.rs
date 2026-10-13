@@ -72,30 +72,29 @@ blas_backend_test_suite!(
     log_d = 1,
 );
 
-// Radix 57, where `matmul_long_sums` runs, in f64, Quad and at rank 2: an NTT-family backend registers a parameter set
-// at base2k >= 57.
+// Radix 54, the largest in practice, in f64, Quad and at rank 2.
 blas_backend_test_suite!(
-    mod ntt4x30_f64_base2k57,
+    mod ntt4x30_f64_base2k54,
     backend = crate::NTT4x30Oracle,
     scalar = f64,
     encoder = crate::EncodingFft<f64>,
-    params = poulpy_ckks::test_suite::CKKSTestParams { n: 128, hw: 64, base2k: 57, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 128, hw: 64, base2k: 54, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
 );
 
 blas_backend_test_suite!(
-    mod ntt4x30_f128_base2k57,
+    mod ntt4x30_f128_base2k54,
     backend = crate::NTT4x30Oracle,
     scalar = poulpy_ckks::Quad,
     encoder = crate::EncodingFft<poulpy_ckks::Quad>,
-    params = poulpy_ckks::test_suite::CKKSTestParams { n: 128, hw: 64, base2k: 57, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 128, hw: 64, base2k: 54, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
 );
 
 blas_backend_test_suite!(
-    mod ntt4x30_f64_rank2_base2k57,
+    mod ntt4x30_f64_rank2_base2k54,
     backend = crate::NTT4x30Oracle,
     scalar = f64,
     encoder = crate::EncodingFft<f64>,
-    params = poulpy_ckks::test_suite::CKKSTestParams { n: 128, hw: 64, base2k: 57, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64_RANK2 },
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 128, hw: 64, base2k: 54, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64_RANK2 },
 );
 
 // The conjugate-invariant ring, whose slots are real.

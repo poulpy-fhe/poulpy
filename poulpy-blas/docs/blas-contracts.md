@@ -356,27 +356,24 @@ tensor key at the tensor width `max(lhs.k, rhs.k)`, of their rank.
   poulpy-ckks's ct x ct rule gives for `res`, rounded on its own at the tensor
   width. Summing unrounded products, as `cnv_apply_dft_sum` would, changes
   bits.
-- The terms are summed exactly and normalized at that width; `res` is stamped
-  with the rule's budget and scale, the smallest label and the joined slot
-  kind, then relinearized once, with the tensor key at that width. `res` comes
-  back canonical, without a noise tag.
+- The terms are summed exactly, and the sum is normalized at that width before
+  the relinearization reads it; `res` is stamped with the rule's budget and
+  scale, the smallest label and the joined slot kind, then relinearized once,
+  with the tensor key at that width. `res` comes back canonical, without a
+  noise tag.
 
 **Free:** the order, grouping and split of the terms over workers,
-materialized or streamed; extra exact normalizations of the sum; caching the
-operands or their convolution forms; normalizing an operand read through a
-DFT.
+materialized or streamed; normalizing partial sums, or leaving them
+unnormalized until the DFT that reads the sum; caching the operands or their
+convolution forms; normalizing an operand read through a DFT.
 
-**Normalization.** Whatever the grouping, no accumulator, partial sums
-included, holds more than `2^(63 - base2k)` terms since its last normalization,
-a normalized sum counting as one: partial sums are normalized before they are
-combined unless their counts fit together. A canonical digit is at most
-`2^(base2k - 1)` in magnitude, so a 64-bit digit holds `2^(64 - base2k)` terms,
-twice the bound. Random terms add up far below it, but parity from radix 57 (58
-at `log_d` 1) also sums at least three times the bound in copies of one block,
-each adding the same sum of `d` terms: a kernel that normalizes only at the end
-overflows there ([the radix rule](#testing-a-backend)). Parity cannot pin how
-often a kernel normalizes, so the rule stays an obligation of the `# Safety`
-section, met by construction.
+**Normalization.** Partial sums may stay unnormalized until the next DFT. A
+normalization is exact carry propagation that preserves the value, so where it
+happens never changes the bits: the only obligation is the reference's bits.
+The reference normalizes once, right before the relinearization. Like any lazy
+addition, the sum must fit a 64-bit digit, which the caller's parameters
+ensure: signed terms grow slowly, like an Irwin–Hall sum, and radixes in
+practice are 54 or less.
 
 Within the scratch its query reports for `res`, `lhs[0]`, `rhs[0]`, the pair
 count and the key, it returns `Ok`, or poulpy-ckks's budget error before any
@@ -470,10 +467,9 @@ blocks fit, are skipped with a message too. `poulpy-cpu-oracle` runs them on
 `FFT64Oracle` at `log_d` 1, 2 and 3 (the last at `N = 128`, where one block
 fills the 64 slots), at `log_d` 1 also at `N = 16`, whose 8 slots hold no
 `4 x 4` block, and on `NTT4x30Oracle` in `f64`, in `Quad` and at rank 2,
-each also at radix 57 (`N = 128`). `test_blas_matmul_long_sums`, sums at least
-three times longer than the `2^(63 - base2k)` terms the JKLS kernel sums
-between normalizations, runs only for a suite registered at `base2k >= 57`;
-every other suite skips it with a message.
+each also at radix 54 (`N = 128`), the largest in practice.
+`test_blas_matmul_long_sums`, a `1 x 32` grid times a `32 x 1` grid of copies
+of one block, runs on its own ring, `N = 32`.
 
 `blas_conjugate_invariant_test_suite!(mod m, backend = …, params = …)` registers
 the test `conjugate_invariant` for a backend of the conjugate-invariant ring,
@@ -518,10 +514,9 @@ them, copies of lazy inputs, public products of one matrix and of one per matrix
 slot, maps and public matrices at scales below and above the operands', factors
 at two scales, in either order, through those maps, whose terms keep one budget
 or give the lower scale the larger budget (crossed scales, where a kernel that
-takes its offset from the wider term's width changes the bits), and `1 x K` by
-`K x 1` products past the `2^(63 - base2k)` terms the kernel sums
-between normalizations, of distinct blocks, where some `K <= 32` of them pass
-that bound, and of copies of one block, from radix 57 (58 at `log_d` 1). Each
+takes its offset from the wider term's width changes the bits), and a long
+product, `1 x 32` by `32 x 1` distinct blocks, at every registration, which a
+kernel that drops or repeats a term of a long sum fails. Each
 family's parity also runs calls that poulpy-ckks rejects for their budget: both
 backends return the same error and leave `res` and the inputs unchanged. Storage
 and ring are free: the bounds are `BlasParityBackend` (`Backend<ZnxWord = i64>`
@@ -541,21 +536,6 @@ dropping the suite:
 `log_d` is the only shapes axis: rank and `dsize` come from `params`, and one
 macro registers all three families, so none can be dropped silently.
 
-**The radix rule.** The long products run only at a radix far above the one an
-FFT64 transform holds, which stops near 23. One has the fewest distinct blocks
-whose `K d` terms pass the `2^(63 - base2k)` terms the kernel sums between
-normalizations, where some `K <= 32` does: from radix `59 - log_d`. The other
-has `3 * 2^(63 - base2k) / min(d, 4)` copies of one block, at least three times
-the bound in terms, where they are at most 48: from radix 57 (58 at `log_d` 1).
-Every copy adds the same sum of `d` terms, whose digits grow like `sqrt(d)`
-times a term's, so in a kernel that normalizes only at the end the copies
-overflow about 1.6% of the 64-bit digits at `d = 4`, and more at any other `d`.
-An NTT-family backend therefore registers parity with one parameter set at
-`base2k >= 57`, a `log_d` of 2 or more swept, on each ring it supports. That
-registration pins that the kernel accepts sums past the bound, normalizes as it
-sums them and returns the reference's bits; how often it normalizes stays a
-`# Safety` obligation ([The JKLS kernel](#the-jkls-kernel)).
-
 In this workspace the oracle runs the functional tests and parity between its
 FFT64 and NTT4x30 families, standard and conjugate-invariant, in both
 directions, and every conjugate-invariant type, the oracle's included, runs the
@@ -563,10 +543,9 @@ conjugate-invariant suite. Every other backend type registers parity against
 the oracle of its family: `NTT3x42` types against `NTT4x30Oracle`,
 conjugate-invariant types against the conjugate-invariant oracles, and Rayon
 types against the oracle rather than their serial sibling. The NTT types among
-them also register parity at radix 57: at `N = 64` on the standard ring, and at
-`N = 32` on the conjugate-invariant ring, whose products are as long as the
-standard ring's at `N = 64`, since the cross-modulus `NTT3x42` parity needs
-NTT4x30's modulus to hold every radix-57 product. The FFT64 types of the
+them also register parity at radix 54, the largest in practice: at `N = 64` on
+the standard ring, and at `N = 32` on the conjugate-invariant ring, whose
+products are as long as the standard ring's at `N = 64`. The FFT64 types of the
 standard ring also register parity at `N = 32`, where one `4 x 4` block fills
 the 16 slots.
 [`blas_tests.rs`](../../poulpy-cpu-portable/src/tests/blas_tests.rs) in

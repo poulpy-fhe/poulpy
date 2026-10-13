@@ -324,8 +324,8 @@ fn ensure_operand<BE: Backend>(op: &'static str, log_d: usize, g: &impl BlasGrid
 }
 
 /// `res` is a grid at `a`'s `log_d` of `a`'s rows and `b`'s columns, `a`'s columns match `b`'s rows, its radix is at
-/// most 62, so that its digits hold the two lazy terms the JKLS kernel sums between normalizations, and the blocks of
-/// `res` have the module's degree and `a` and `b` its radix and rank.
+/// most 62, so that its digits hold the two lazy terms the JKLS kernel sums at least, and the blocks of `res` have the
+/// module's degree and `a` and `b` its radix and rank.
 fn ensure_product<BE: Backend>(
     op: &'static str,
     module: &Module<BE>,
@@ -452,8 +452,8 @@ pub trait BlasMatMulReference<BE: Backend> {
     }
 
     /// The JKLS kernel: `res = sum_t lhs[t] rhs[t]` by poulpy-ckks's `ckks_dot_product_ct`. On pairs that share one
-    /// layout per side, it rounds each tensor product at `max(lhs.k, rhs.k)`, sums them exactly, normalizing every
-    /// `2^(63 - base2k)` terms and once at the end, stamps `res` and relinearizes once, with the tensor key at that
+    /// layout per side, it rounds each tensor product at `max(lhs.k, rhs.k)`, sums them exactly and normalizes the sum
+    /// once, right before the relinearization reads it, stamps `res` and relinearizes once, with the tensor key at that
     /// width.
     ///
     /// # Panics
