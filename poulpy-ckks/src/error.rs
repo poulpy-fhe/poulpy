@@ -159,7 +159,7 @@ pub enum CKKSCompositionError {
     /// numeric invariant required to compile or evaluate it.
     InvalidPlan { plan: &'static str, reason: String },
     /// An operand does not fit the operation: its shape, dimension, count, shift,
-    /// batch or context, as opposed to a plan literal ([`Self::InvalidPlan`]).
+    /// batch, context or width, as opposed to a plan literal ([`Self::InvalidPlan`]).
     InvalidOperand { op: &'static str, reason: String },
     /// A prepared right multiplication operand was built under a different
     /// ring degree, limb radix, or rank than the destination it is applied to.

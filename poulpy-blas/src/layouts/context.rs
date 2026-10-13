@@ -267,6 +267,11 @@ impl<BE: Backend> BlasContextUnprepared<BE> {
     ///
     /// `scratch` must hold [`Self::encode_tmp_bytes`]; operations size their scratch assuming the diagonals'
     /// `coeffs_meta.k` is not wider than the operand ciphertexts.
+    ///
+    /// # Errors
+    ///
+    /// When the plan's `log_d` is 0 or its blocks do not fit the module's slots; then poulpy-ckks's encoding errors,
+    /// among them `InvalidOperand` for `coeffs_meta.k = 0`, raised before any map is encoded.
     pub fn encode<F>(
         module: &Module<BE>,
         plan: BlasPlan,
@@ -466,6 +471,12 @@ impl<BE: Backend> BlasPtOperandUnprepared<BE> {
     ///
     /// `scratch` must hold [`Self::encode_tmp_bytes`]; operations size their scratch assuming the diagonals'
     /// `coeffs_meta.k` is not wider than the operand ciphertexts.
+    ///
+    /// # Errors
+    ///
+    /// When `log_d` is 0 or its blocks do not fit the module's slots, the grid has no block or more than a `usize`
+    /// counts, or `count` does not divide the matrix slots; then poulpy-ckks's encoding errors, among them
+    /// `InvalidOperand` for `coeffs_meta.k = 0`, raised before any block is encoded.
     #[allow(clippy::too_many_arguments)]
     pub fn encode<F>(
         module: &Module<BE>,
@@ -508,6 +519,10 @@ impl<BE: Backend> BlasPtOperandUnprepared<BE, Left> {
     ///
     /// `scratch` must hold [`BlasPtOperandUnprepared::encode_tmp_bytes`] at `log_d` and `count`; operations size their
     /// scratch assuming the diagonals' `coeffs_meta.k` is not wider than the operand ciphertexts.
+    ///
+    /// # Errors
+    ///
+    /// As [`BlasPtOperandUnprepared::encode`].
     #[allow(clippy::too_many_arguments)]
     pub fn encode_left<F>(
         module: &Module<BE>,

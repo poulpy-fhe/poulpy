@@ -1,12 +1,20 @@
-use crate::{CKKSCompositionError, CKKSInfos, SetCKKSInfos, api::CKKSAddOps, layouts::CKKSModuleAlloc};
-use poulpy_core::layouts::LWEInfos;
+use crate::{
+    CKKSCompositionError, CKKSInfos, CoeffsMeta, SetCKKSInfos,
+    api::{CKKSAddOps, CKKSEncodingOps},
+    layouts::{CKKSModuleAlloc, ComplexDiagonals},
+    reference::ckks_encode_linear_transformation_from_diagonals,
+};
+use poulpy_core::layouts::{Diagonals, LWEInfos, LinearTransformationStrategy};
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, Standard},
 };
 
-use super::helpers::{
-    TestContextBackend, TestContextModule, TestScalar, alloc_scratch, assert_ckks_error, ckks_encrypt, gen_sk, test_vector_1,
+use super::{
+    helpers::{
+        TestContextBackend, TestContextModule, TestScalar, alloc_scratch, assert_ckks_error, ckks_encrypt, gen_sk, test_vector_1,
+    },
+    parity::helpers::with_scratch,
 };
 
 use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
@@ -56,6 +64,46 @@ pub fn test_add_pt_vec_alignment_error<BE, F, E>(
             // Alignment is checked against the plaintext's effective (meaningful)
             // precision `log_delta + log_budget`, not its physical `max_k`.
             pt_k: params.prec().log_delta() + params.prec().log_budget(),
+        },
+    );
+}
+
+/// `ckks_encode_linear_transformation_from_diagonals` rejects a zero torus width, `coeffs_meta.k = 0`, with
+/// `InvalidOperand` before it allocates or writes anything: here on an empty scratch, on which encoding a diagonal
+/// fails with another error.
+pub fn test_encode_linear_transformation_zero_k_error<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    _host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<Ring = Standard>,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let slots = params.n / 2;
+    let mut re = Diagonals::new(slots);
+    re.set(0, vec![F::from_f64(1.0).unwrap(); slots]);
+    let identity = ComplexDiagonals::new(re, Diagonals::new(slots));
+    let err = with_scratch::<BE, _>(0, |scratch| {
+        ckks_encode_linear_transformation_from_diagonals(
+            module,
+            params.base2k.into(),
+            CoeffsMeta::from_delta_budget(0, 0),
+            &identity,
+            LinearTransformationStrategy::Direct,
+            false,
+            scratch,
+        )
+        .map(drop)
+    })
+    .unwrap_err();
+    assert_ckks_error(
+        "encode_linear_transformation_zero_k",
+        &err.into(),
+        CKKSCompositionError::InvalidOperand {
+            op: "ckks_encode_linear_transformation_from_diagonals",
+            reason: "the diagonals' torus width, coeffs_meta.k, is 0".into(),
         },
     );
 }

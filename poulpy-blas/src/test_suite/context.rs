@@ -3,6 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use poulpy_ckks::{
+    CoeffsMeta,
     api::{CKKSEncodingOps, CKKSLinearTransformationOps, LinearTransformationPrepared},
     test_suite::{
         CKKSTestParams,
@@ -15,7 +16,7 @@ use poulpy_hal::{
     layouts::{Backend, CyclotomicOrder, HostBytesBackend, Module, ScratchArena, Standard},
 };
 
-use super::helpers::{context_maps, map_galois_elements};
+use super::helpers::{Rejection, assert_rejected, context_maps, map_galois_elements};
 use crate::layouts::{BlasContextUnprepared, BlasPlan, BlasPtOperand, BlasPtOperandUnprepared};
 
 /// Every block map of `b`.
@@ -31,7 +32,8 @@ fn operand_maps<BE: Backend, S>(b: &BlasPtOperand<BE, S>) -> Vec<&LinearTransfor
 /// grid shape and count, of the counts that divide the matrix slots. Public operands of one side and count store their
 /// diagonals at one degree, whatever their values. The union of these sets, and the plan's own, equals the context's.
 /// A `log_d` whose blocks do not fit is skipped with a message. The context rejects matrices wider than the slots; a
-/// public operand's count divides the matrix slots.
+/// public operand's count divides the matrix slots. Both reject a zero torus width, `coeffs_meta.k = 0`, with
+/// poulpy-ckks's `InvalidOperand`.
 pub fn test_blas_context<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend<Ring = Standard>,
@@ -195,4 +197,40 @@ where
         .unwrap()
         .prepare(module, &mut scratch.borrow());
     assert_eq!((b.log_d(), b.rows(), b.cols(), b.count()), (log_d, 3, 2, count));
+
+    // poulpy-ckks's encoder rejects a zero torus width with `InvalidOperand`, for the context and for a public operand
+    // on either side.
+    let zero = CoeffsMeta::from_delta_budget(0, 0);
+    let one = |_: usize, _: usize, _: usize| F::from_f64(1.0).unwrap();
+    let rejected = [
+        (
+            "context",
+            BlasContextUnprepared::encode::<F>(
+                module,
+                BlasPlan::new(log_d),
+                params.base2k.into(),
+                zero,
+                &mut scratch.borrow(),
+            )
+            .map(drop),
+        ),
+        (
+            "right operand",
+            BlasPtOperandUnprepared::encode(module, log_d, 1, 1, 1, one, params.base2k.into(), zero, &mut scratch.borrow())
+                .map(drop),
+        ),
+        (
+            "left operand",
+            BlasPtOperandUnprepared::encode_left(module, log_d, 1, 1, 1, one, params.base2k.into(), zero, &mut scratch.borrow())
+                .map(drop),
+        ),
+    ];
+    for (label, res) in rejected {
+        assert_rejected(
+            label,
+            "ckks_encode_linear_transformation_from_diagonals",
+            Rejection::InvalidOperand,
+            res.map_err(Into::into),
+        );
+    }
 }
