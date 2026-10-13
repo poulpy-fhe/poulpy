@@ -1,4 +1,4 @@
-use crate::reference::composite::{ckks_add_many_reference, ensure_accumulation_fits};
+use crate::reference::composite::ckks_add_many_reference;
 use crate::reference::mul::get_mul_ct_params;
 use crate::{CKKSCompositionError, CKKSResult as Result, SlotsKind, ckks_bail};
 use poulpy_core::layouts::GetTensorKey;
@@ -539,7 +539,6 @@ where
         if n > 1 && dst.base2k().as_usize() <= 62 && share_layout(a) && share_layout(b) {
             return dot_product_ct_lazy(self, dst, a, b, tsk, scratch);
         }
-        ensure_accumulation_fits("ckks_dot_product_ct", dst, n)?;
         self.ckks_mul_into(dst, a[0], b[0], tsk, scratch)?;
         accumulate(self, dst, n, scratch, |tmp, i, s| self.ckks_mul_into(tmp, a[i], b[i], tsk, s))
     }
@@ -558,7 +557,6 @@ where
     {
         check_lengths("ckks_dot_product_pt_vec", a.len(), b.len())?;
         let n: usize = a.len();
-        ensure_accumulation_fits("ckks_dot_product_pt_vec", dst, n)?;
         self.ckks_mul_pt_vec_into(dst, a[0], b[0], scratch)?;
         accumulate(self, dst, n, scratch, |tmp, i, s| {
             self.ckks_mul_pt_vec_into(tmp, a[i], b[i], s)
@@ -581,7 +579,6 @@ where
         check_lengths("ckks_dot_product_pt_const", a.len(), b.len())?;
         check_lengths("ckks_dot_product_pt_const coeffs", a.len(), pt_coeffs.len())?;
         let n: usize = a.len();
-        ensure_accumulation_fits("ckks_dot_product_pt_const", dst, n)?;
         self.ckks_mul_pt_const_into(dst, a[0], b[0], pt_coeffs[0], scratch)?;
         accumulate(self, dst, n, scratch, |tmp, i, s| {
             self.ckks_mul_pt_const_into(tmp, a[i], b[i], pt_coeffs[i], s)

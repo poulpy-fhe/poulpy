@@ -18,7 +18,7 @@ use poulpy_hal::{
 
 use super::{
     KeyLayouts, assert_maps_scratch, assert_scratch, ensure_dimension, ensure_grid, ensure_inner, ensure_layouts, ensure_lt_keys,
-    ensure_maps, ensure_record, ensure_shape, ensure_tensor_key, lt_output_k, max_lazy_terms, reject,
+    ensure_maps, ensure_record, ensure_shape, ensure_tensor_key, lt_output_k, reject,
 };
 use crate::{
     layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, BlasLayout, BlasPtOperand, grid_batch, layout_of},
@@ -335,7 +335,7 @@ fn ensure_product<BE: Backend>(
     ensure_inner(op, a.cols(), b.rows())?;
     ensure_shape(op, res, a.rows(), b.cols())?;
     let base2k = res.block_layout().base2k().as_usize();
-    if max_lazy_terms(base2k) < 2 {
+    if base2k > 62 {
         return Err(reject(op, format!("2 lazy terms risk i64 overflow at base2k={base2k}")));
     }
     ensure_layouts(op, module.n(), res, &[a, b])

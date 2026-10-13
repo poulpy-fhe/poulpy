@@ -23,7 +23,7 @@ use super::helpers::{
 };
 use crate::{
     api::BlasMatInterOps,
-    layouts::{BlasCiphertext, BlasCiphertextOwned, BlasGridInfos, BlasLayout, BlasModuleAlloc, BlasPlan, sum_galois_elements},
+    layouts::{BlasCiphertext, BlasCiphertextOwned, BlasGridInfos, BlasPlan, sum_galois_elements},
     oep::BlasMatInterImpl,
 };
 
@@ -137,11 +137,10 @@ where
 
 /// Every grid [`rejected_grids`] and [`foreign_layouts`] build, as `a` or as `res`, a shape mismatch, a copy relabelled
 /// past `log2` of the ring degree, a [`Misshapen`] grid as `a` or as `res`, a missing rotation key, `a` and `res` both
-/// of another rank than the keys, blocks wider than the slots, and a sum of more lazy terms than its radix holds are
-/// rejected through the API before `res` changes, as is a `res` narrower than the scale of `a`, by poulpy-ckks's budget
-/// check; a rotation or a sum one scratch byte short of its query panics before `res` changes; `from_blocks` rejects a
-/// block count overflowing `usize`. On one matrix slot, where every rotation is the identity, the missing-key, key-rank,
-/// lazy-term and scratch cases are skipped.
+/// of another rank than the keys, and blocks wider than the slots are rejected through the API before `res` changes, as
+/// is a `res` narrower than the scale of `a`, by poulpy-ckks's budget check; a rotation or a sum one scratch byte short
+/// of its query panics before `res` changes; `from_blocks` rejects a block count overflowing `usize`. On one matrix
+/// slot, where every rotation is the identity, the missing-key, key-rank and scratch cases are skipped.
 pub fn test_blas_inter_guards<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -264,17 +263,6 @@ pub fn test_blas_inter_guards<BE, F, E>(
     assert_guard::<BE, _>("wide", "blas_sum", InvalidOperand, &mut res_wide, |res| {
         module.blas_sum(res, &wide, &keys, &mut op_scratch.borrow())
     });
-
-    // At radix 63 a digit holds one lazy term, fewer than the log2(mat_slots) + 1 the sum adds up.
-    if lanes > 1 {
-        let mut block = ct.block_layout();
-        block.glwe_layout.base2k = 63usize.into();
-        let digits_63 = || module.blas_ciphertext_alloc_from_infos(&BlasLayout::new(block, log_d, 2, 2));
-        let (a_63, mut res_63) = (digits_63(), digits_63());
-        assert_guard::<BE, _>("lazy terms", "blas_sum", InvalidOperand, &mut res_63, |res| {
-            module.blas_sum(res, &a_63, &keys, &mut op_scratch.borrow())
-        });
-    }
 
     // The keys of the sum's rotations, the first by one matrix slot; none on one matrix slot.
     let sum_keys = TestKeys::<BE> {

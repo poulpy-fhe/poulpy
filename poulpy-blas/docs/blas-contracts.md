@@ -201,9 +201,8 @@ The validators check this crate's rules and fail in this order:
    another degree than the module's, or inputs of another radix or rank than
    `res`; a context or public operand encoded for another slot count or radix;
    public matrices that do not divide the batch; a prepared operand without a
-   batch record; and lazy sums a digit cannot hold: more `blas_sum` terms,
-   `log2(mat_slots) + 1`, than `2^(63 - base2k)`, or a product at a radix
-   above 62.
+   batch record; and a product at a radix above 62, whose digits cannot hold
+   the JKLS kernel's two lazy terms.
 2. Key by key, the rotation keys first, each at the width the operation
    looks it up at ([Keys](#keys)): `MissingAutomorphismKey`, or
    `MissingRelinearizationKey` for the tensor key, when the store lacks it,

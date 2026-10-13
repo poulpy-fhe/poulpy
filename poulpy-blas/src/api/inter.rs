@@ -88,8 +88,7 @@ pub trait BlasMatInterOps<BE: Backend> {
     /// # Errors
     ///
     /// - [`validate_blas_sum`](crate::reference::validate_blas_sum) runs before the backend, so on its errors `res`,
-    ///   its batch record and `a` are untouched: `InvalidOperand` for a grid, shape or layout it rejects, or for more
-    ///   terms, `log2(mat_slots) + 1`, than a digit of radix `base2k` sums lazily, `2^(63 - base2k)`; then, key by
+    ///   its batch record and `a` are untouched: `InvalidOperand` for a grid, shape or layout it rejects; then, key by
     ///   key, `MissingAutomorphismKey` for a rotation key `atk` lacks at `min(res.k, a.k)`, or `InvalidOperand` for one
     ///   of another rank than `a`'s blocks.
     /// - poulpy-ckks's budget error, `InsufficientHomomorphicCapacity` from the copy when `res.k` is below

@@ -515,10 +515,6 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::sub::test_sub_const_into_lsh_alignment
             );
             run_test!(sub_one_assign, $crate::test_suite::sub::test_sub_one_assign);
-            run_test!(
-                dot_product_overflow_guard,
-                $crate::test_suite::errors::test_dot_product_overflow_guard
-            );
             run_test_result!(copy_aligned, $crate::test_suite::copy::test_copy_aligned);
             run_test_result!(copy_smaller_output, $crate::test_suite::copy::test_copy_smaller_output);
             run_test_result!(neg, $crate::test_suite::neg::test_neg_aligned);

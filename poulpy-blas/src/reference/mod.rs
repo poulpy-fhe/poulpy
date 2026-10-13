@@ -130,11 +130,6 @@ pub(crate) fn ensure_layouts(op: &'static str, n: usize, res: &dyn BlasGridInfos
     Ok(())
 }
 
-/// Most lazy terms an `i64` digit at radix `base2k` holds: poulpy-ckks's `2^(63 - base2k)`.
-pub(crate) fn max_lazy_terms(base2k: usize) -> usize {
-    63usize.checked_sub(base2k).map_or(0, |shift| 1 << shift)
-}
-
 /// Rejects a product whose left operand's `a_cols` block columns differ from its right operand's `b_rows` block rows.
 pub(crate) fn ensure_inner(op: &'static str, a_cols: usize, b_rows: usize) -> Result<()> {
     if a_cols != b_rows {

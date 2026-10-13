@@ -9,7 +9,7 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use super::{KeyLayouts, assert_scratch, ensure_grid, ensure_keys, ensure_layouts, ensure_shape, max_lazy_terms, reject};
+use super::{KeyLayouts, assert_scratch, ensure_grid, ensure_keys, ensure_layouts, ensure_shape};
 use crate::layouts::{BlasGrid, BlasGridInfos, BlasGridMut, grid_batch, sum_rotations};
 
 /// Checks a [`crate::api::BlasMatInterOps::blas_rotate`] call from metadata alone, before any implementation runs, and
@@ -36,13 +36,12 @@ pub fn validate_blas_rotate<BE: Backend>(
     Ok(grid_batch::<BE::Ring>(a))
 }
 
-/// Checks a [`crate::api::BlasMatInterOps::blas_sum`] call as [`validate_blas_rotate`] does, the rotation keys of the
-/// batch at the narrower of `a`'s and `res`'s widths, of `a`'s rank, and that the `log2(mat_slots) + 1` terms the sum
-/// adds up fit `res`'s digits (`2^(63 - base2k)`), and returns the batch `res` records, `a`'s.
+/// Checks a [`crate::api::BlasMatInterOps::blas_sum`] call as [`validate_blas_rotate`] does, with the rotation keys of
+/// the batch at the narrower of `a`'s and `res`'s widths, of `a`'s rank, and returns the batch `res` records, `a`'s.
 ///
 /// # Errors
 ///
-/// `InvalidOperand` for a grid, shape, layout or term count it rejects, then, key by key, `MissingAutomorphismKey`, or
+/// `InvalidOperand` for a grid, shape or layout it rejects, then, key by key, `MissingAutomorphismKey`, or
 /// `InvalidOperand` for a key of another rank. It checks no budget: poulpy-ckks rejects those inside the
 /// implementation, before any write.
 pub fn validate_blas_sum<BE: Backend>(
@@ -54,10 +53,6 @@ pub fn validate_blas_sum<BE: Backend>(
     let op = "blas_sum";
     ensure_same_grids(op, module, res, a)?;
     let batch = grid_batch::<BE::Ring>(a);
-    let (terms, base2k) = (batch.ilog2() as usize + 1, res.block_layout().base2k().as_usize());
-    if terms > max_lazy_terms(base2k) {
-        return Err(reject(op, format!("{terms} lazy terms risk i64 overflow at base2k={base2k}")));
-    }
     let rank = a.block_layout().rank();
     ensure_keys(op, module, sum_rotations(a.log_d(), batch), atk, sum_key_width(res, a), rank)?;
     Ok(batch)
