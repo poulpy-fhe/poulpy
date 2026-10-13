@@ -52,6 +52,12 @@ macro_rules! core_backend_test_suite {
                 glwe_base2k_conv => $crate::test_suite::noise::test_glwe_base2k_conversion,
                 glwe_copy => $crate::test_suite::copy::test_glwe_copy,
                 test_glwe_tensoring => $crate::test_suite::noise::glwe_tensor::test_glwe_tensoring,
+                #[should_panic(expected = "one-pass product sum has no pairs")]
+                glwe_mul_relinearize_sum_rejects_no_pairs =>
+                    $crate::test_suite::noise::glwe_tensor::test_glwe_mul_relinearize_sum_rejects_no_pairs,
+                #[should_panic(expected = "summed product 1 does not share the first pair's layouts")]
+                glwe_mul_relinearize_sum_rejects_mismatched_layouts =>
+                    $crate::test_suite::noise::glwe_tensor::test_glwe_mul_relinearize_sum_rejects_mismatched_layouts,
                 test_glwe_tensor_square => $crate::test_suite::noise::glwe_tensor::test_glwe_tensor_square,
                 glwe_tensor_relinearize_coarsened => $crate::test_suite::parity::test_glwe_tensor_relinearize_coarsened,
                 test_glwe_mul_plain => $crate::test_suite::noise::glwe_tensor::test_glwe_mul_plain,

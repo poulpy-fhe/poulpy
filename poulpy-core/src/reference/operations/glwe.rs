@@ -692,6 +692,40 @@ pub trait GLWETensoringReference<BE: Backend> {
         b: &CnvPVecRBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     );
+
+    /// Scratch bytes of [`Self::glwe_mul_relinearize_sum_reference`], whatever the number of pairs: the backend's
+    /// [`GLWETensoringImpl::glwe_mul_relinearize_tmp_bytes`], one more set of product columns and one column of
+    /// digits.
+    fn glwe_mul_relinearize_sum_tmp_bytes_reference<R, B>(
+        &self,
+        res: &R,
+        a_size: usize,
+        b_size: usize,
+        tensor_k: TorusPrecision,
+        tsk: &B,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        B: GGLWEInfos;
+
+    /// [`Self::glwe_mul_relinearize_reference`] of a sum of products, relinearized once.
+    ///
+    /// The first pair runs as [`Self::glwe_mul_relinearize_reference`]. Each later pair is prepared into the first
+    /// one's operands, its columns are formed by [`GLWETensoringImpl::glwe_mul_columns`] and added to the first
+    /// pair's in the transform domain, in slice order, before `d2` is brought back to digits.
+    fn glwe_mul_relinearize_sum_reference<R, A, B, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: TorusPrecision,
+        pairs: &[(&A, &B)],
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        B: GLWEToBackendRef<BE> + GLWEInfos,
+        H: GetTensorKey<BE>;
 }
 
 impl<BE: Backend> GLWETensoringReference<BE> for Module<BE>
@@ -1184,6 +1218,7 @@ where
             res_k,
             Some(a),
             MulRight::<B, CnvPVecROwned<BE>>::Operand(b),
+            &[],
             tsk,
             scratch,
         )
@@ -1209,6 +1244,7 @@ where
             res_k,
             None::<&A>,
             MulRight::<A, CnvPVecROwned<BE>>::Operand(a),
+            &[],
             tsk,
             scratch,
         )
@@ -1234,6 +1270,7 @@ where
             res_k,
             Some(a),
             MulRight::<A, CnvPVecROwned<BE>>::Left,
+            &[],
             tsk,
             scratch,
         )
@@ -1257,6 +1294,7 @@ where
             res_k,
             None::<&NoOperand<BE>>,
             MulRight::<NoOperand<BE>, CnvPVecROwned<BE>>::Left,
+            &[],
             tsk,
             scratch,
         )
@@ -1291,6 +1329,7 @@ where
                 size: b_size,
                 k: b_k,
             },
+            &[],
             tsk,
             scratch,
         )
@@ -1323,6 +1362,7 @@ where
                 size: a_size,
                 k: a_k,
             },
+            &[],
             tsk,
             scratch,
         )
@@ -1345,6 +1385,73 @@ where
         self.vec_znx_dft_sub_assign(cross, 0, &diag_ref, 0);
         self.vec_znx_dft_sub_assign(cross, 0, &diag_ref, 1);
     }
+
+    fn glwe_mul_relinearize_sum_tmp_bytes_reference<R, B>(
+        &self,
+        res: &R,
+        a_size: usize,
+        b_size: usize,
+        tensor_k: TorusPrecision,
+        tsk: &B,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        B: GGLWEInfos,
+    {
+        BE::glwe_mul_relinearize_tmp_bytes(self, res, a_size, b_size, tensor_k, tsk)
+            + one_pass_sum_extra_bytes(self, res, a_size, b_size, tensor_k, tsk)
+    }
+
+    fn glwe_mul_relinearize_sum_reference<R, A, B, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: TorusPrecision,
+        pairs: &[(&A, &B)],
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        B: GLWEToBackendRef<BE> + GLWEInfos,
+        H: GetTensorKey<BE>,
+    {
+        let ((a, b), rest) = pairs.split_first().expect("one-pass product sum has no pairs");
+        glwe_mul_relinearize_one_pass(
+            self,
+            cnv_offset,
+            res,
+            res_k,
+            Some(*a),
+            MulRight::<B, CnvPVecROwned<BE>>::Operand(*b),
+            rest,
+            tsk,
+            scratch,
+        )
+    }
+}
+
+/// Scratch a sum adds to that of one product: a second set of product columns, and room for the digits of `d2`,
+/// which stay allocated while the later pairs are prepared.
+fn one_pass_sum_extra_bytes<BE, R, B>(
+    module: &Module<BE>,
+    res: &R,
+    a_size: usize,
+    b_size: usize,
+    tensor_k: TorusPrecision,
+    tsk: &B,
+) -> usize
+where
+    BE: Backend,
+    R: GLWEInfos,
+    B: GGLWEInfos,
+{
+    let n: usize = operand_degree(module.n(), &[res.n(), tsk.n()]);
+    let base2k = res.base2k().as_usize();
+    let dft_size = normalize_input_limb_bound_worst_case(a_size + b_size, tensor_k.as_usize().div_ceil(base2k), base2k, base2k);
+    module.bytes_of_vec_znx_dft(n, 2, dft_size)
+        + module.bytes_of_vec_znx_dft(n, 1, dft_size)
+        + BE::bytes_of_vec_znx(n, 1, dft_size)
 }
 
 /// Right operand of [`glwe_mul_relinearize_one_pass`].
@@ -1361,6 +1468,10 @@ enum MulRight<'a, B, BP> {
 type NoOperand<BE> = GLWE<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
 
 /// Shared body of the one-pass products: `left` is the left operand, or `None` when it is `res` itself.
+///
+/// `rest` holds the pairs after the first of a sum, which share its layouts: each is prepared into the first pair's
+/// operands, and its columns are added to the first pair's before `d2` is brought back to digits. Only the sum
+/// passes any; with none, the instructions and the scratch layout are those of a single product.
 #[allow(clippy::too_many_arguments)]
 fn glwe_mul_relinearize_one_pass<BE, R, A, B, BP, H>(
     module: &Module<BE>,
@@ -1369,6 +1480,7 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, BP, H>(
     res_k: TorusPrecision,
     left: Option<&A>,
     right: MulRight<'_, B, BP>,
+    rest: &[(&A, &B)],
     tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
@@ -1413,6 +1525,19 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, BP, H>(
         }
         MulRight::Prepared { size, k, .. } => (*k, *size),
     };
+    for (i, (a, b)) in rest.iter().enumerate() {
+        assert!(
+            a.base2k().as_usize() == base2k
+                && b.base2k().as_usize() == base2k
+                && a.rank().as_usize() == 1
+                && b.rank().as_usize() == 1
+                && (a.k(), b.k()) == (left_k, right_k)
+                && a_size <= a.max_size()
+                && b_size <= b.max_size(),
+            "summed product {} does not share the first pair's layouts",
+            i + 1
+        );
+    }
     // The width the two-step path gives its tensor intermediate.
     let tensor_k = left_k.max(right_k);
     let tensor_infos = GLWELayout {
@@ -1430,12 +1555,40 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, BP, H>(
     assert_eq!(tsk.base2k().as_usize(), base2k, "tsk.base2k() != res.base2k()");
     assert_eq!(tsk.rank_out().as_usize(), 1, "rank 1 only");
     let scratch = scratch.borrow();
+    let bytes = module.glwe_mul_relinearize_tmp_bytes_reference(&res_infos, a_size, b_size, tensor_k, tsk);
+    let (query, bytes) = if rest.is_empty() {
+        ("GLWETensoring::glwe_mul_relinearize_tmp_bytes", bytes)
+    } else {
+        (
+            "GLWEMulRelinearizeSum::glwe_mul_relinearize_sum_tmp_bytes",
+            bytes + one_pass_sum_extra_bytes(module, &res_infos, a_size, b_size, tensor_k, tsk),
+        )
+    };
     assert!(
-        scratch.available() >= module.glwe_mul_relinearize_tmp_bytes_reference(&res_infos, a_size, b_size, tensor_k, tsk),
-        "scratch.available(): {} < GLWETensoring::glwe_mul_relinearize_tmp_bytes: {}",
-        scratch.available(),
-        module.glwe_mul_relinearize_tmp_bytes_reference(&res_infos, a_size, b_size, tensor_k, tsk)
+        scratch.available() >= bytes,
+        "scratch.available(): {} < {query}: {bytes}",
+        scratch.available()
     );
+
+    // A normalized copy keeps the width of its operand.
+    let left_infos = GLWELayout {
+        k: left_k,
+        ..tensor_infos
+    };
+    let right_infos = GLWELayout {
+        k: right_k,
+        ..tensor_infos
+    };
+    macro_rules! canonical {
+        ($operand:expr, $tmp:ident, $scratch:ident) => {
+            if $operand.is_canonical() {
+                $operand.to_backend_ref()
+            } else {
+                module.glwe_normalize(&mut $tmp, $operand, &mut $scratch.borrow());
+                $tmp.to_backend_ref()
+            }
+        };
+    }
 
     // Both operands are read here, and `res` is only written once they are prepared.
     let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(n, 2, a_size, PrepareHint::Reuse);
@@ -1446,35 +1599,16 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, BP, H>(
     };
     let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(n, 2, own_right_size, PrepareHint::Reuse);
     {
-        // A normalized copy keeps the width of its operand.
-        let left_infos = GLWELayout {
-            k: left_k,
-            ..tensor_infos
-        };
-        let right_infos = GLWELayout {
-            k: right_k,
-            ..tensor_infos
-        };
         let (mut left_tmp, prep_scratch) = scratch.borrow().take_glwe_scratch(&left_infos);
         let (mut right_tmp, mut prep_scratch) = prep_scratch.take_glwe_scratch(&right_infos);
-        macro_rules! canonical {
-            ($operand:expr, $tmp:ident) => {
-                if $operand.is_canonical() {
-                    $operand.to_backend_ref()
-                } else {
-                    module.glwe_normalize(&mut $tmp, $operand, &mut prep_scratch.borrow());
-                    $tmp.to_backend_ref()
-                }
-            };
-        }
         macro_rules! prepare {
             ($left:expr) => {{
-                let left = canonical!($left, left_tmp);
+                let left = canonical!($left, left_tmp, prep_scratch);
                 match &right {
                     MulRight::Left => module.cnv_prepare_self(&mut a_prep, &mut b_prep, &left.data, &mut prep_scratch.borrow()),
                     MulRight::Operand(b) => {
                         module.cnv_prepare_left(&mut a_prep, &left.data, &mut prep_scratch.borrow());
-                        let b = canonical!(*b, right_tmp);
+                        let b = canonical!(*b, right_tmp, prep_scratch);
                         module.cnv_prepare_right(&mut b_prep, &b.data, &mut prep_scratch.borrow());
                     }
                     MulRight::Prepared { .. } => module.cnv_prepare_left(&mut a_prep, &left.data, &mut prep_scratch.borrow()),
@@ -1517,6 +1651,34 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, BP, H>(
             &b_prep,
             &mut scratch.borrow(),
         );
+    }
+
+    // Each later pair of a sum, in slice order, is prepared into the first pair's operands, then its columns are added
+    // to the first pair's.
+    for (a, b) in rest {
+        {
+            let (mut left_tmp, prep_scratch) = scratch.borrow().take_glwe_scratch(&left_infos);
+            let (mut right_tmp, mut prep_scratch) = prep_scratch.take_glwe_scratch(&right_infos);
+            let a = canonical!(*a, left_tmp, prep_scratch);
+            module.cnv_prepare_left(&mut a_prep, &a.data, &mut prep_scratch.borrow());
+            let b = canonical!(*b, right_tmp, prep_scratch);
+            module.cnv_prepare_right(&mut b_prep, &b.data, &mut prep_scratch.borrow());
+        }
+        let (mut pair_diag, pair_scratch) = scratch.borrow().take_vec_znx_dft_scratch(n, 2, dft_size);
+        let (mut pair_cross, mut pair_scratch) = pair_scratch.take_vec_znx_dft_scratch(n, 1, dft_size);
+        BE::glwe_mul_columns(
+            module,
+            cnv_offset_hi,
+            &mut pair_diag,
+            &mut pair_cross,
+            &a_prep.to_backend_ref(),
+            &b_prep.to_backend_ref(),
+            &mut pair_scratch,
+        );
+        for col in 0..2 {
+            module.vec_znx_dft_add_assign(&mut diag, col, &pair_diag.to_backend_ref(), col);
+        }
+        module.vec_znx_dft_add_assign(&mut cross, 0, &pair_cross.to_backend_ref(), 0);
     }
 
     // The inverse consumes column 1 of `diag` and leaves d0 in column 0.

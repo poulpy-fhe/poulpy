@@ -1,7 +1,7 @@
 //! Trace, packing, relinearization and tensor-secret parity.
-use super::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe};
+use super::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe, unnormalized_twin};
 use crate::{
-    Distribution, GLWEMaskFill, GLWEPacking, GLWETensorDecrypt, GLWETensoring, GLWETrace, GetDistribution,
+    Distribution, GLWEMaskFill, GLWEMulRelinearizeSum, GLWEPacking, GLWETensorDecrypt, GLWETensoring, GLWETrace, GetDistribution,
     api::TransferInto,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecretLayout, GLWESecretTensorFactory,
@@ -361,12 +361,14 @@ where
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
     Module<BR>: GLWETensoring<BR>
+        + GLWEMulRelinearizeSum<BR>
         + GLWETensorDecrypt<BR>
         + GLWETensorKeyPreparedFactory<BR>
         + GLWESecretPreparedFactory<BR>
         + GLWESecretTensorFactory<BR>
         + GLWESecretTensorPreparedFactory<BR>,
     Module<BT>: GLWETensoring<BT>
+        + GLWEMulRelinearizeSum<BT>
         + GLWETensorDecrypt<BT>
         + GLWETensorKeyPreparedFactory<BT>
         + GLWESecretPreparedFactory<BT>
@@ -507,30 +509,48 @@ where
                     x_r.transfer_into(&mut x_t);
                     let mut y_t = t.glwe_alloc_from_infos(&g);
                     y_r.transfer_into(&mut y_t);
+                    let mut x_twin_t = t.glwe_alloc_from_infos(&g);
+                    unnormalized_twin::<BR, BT>(&x_r, &mut x_twin_t);
+                    let mut y_twin_t = t.glwe_alloc_from_infos(&g);
+                    unnormalized_twin::<BR, BT>(&y_r, &mut y_twin_t);
                     let size = precision.div_ceil(b);
                     for cnv_offset in [b, precision] {
-                        for role in 0..3 {
+                        for role in 0..4 {
                             let mut out_r = r.glwe_alloc_from_infos(&g);
                             x_r.transfer_into(&mut out_r);
                             let mut out_t = t.glwe_alloc_from_infos(&g);
                             out_r.transfer_into(&mut out_t);
+                            // `$x2` and `$y2` hold the values of `$x` and `$y`: the test side passes unnormalized twins.
                             macro_rules! one_pass {
-                                ($be:ty, $m:expr, $out:expr, $x:expr, $y:expr, $key:expr) => {{
-                                    let bytes = $m.glwe_mul_relinearize_tmp_bytes(&g, size, size, g.k, &key);
+                                ($be:ty, $m:expr, $out:expr, $x:expr, $y:expr, $x2:expr, $y2:expr, $key:expr) => {{
+                                    let bytes = if role == 3 {
+                                        $m.glwe_mul_relinearize_sum_tmp_bytes(&g, size, size, g.k, &key)
+                                    } else {
+                                        $m.glwe_mul_relinearize_tmp_bytes(&g, size, size, g.k, &key)
+                                    };
                                     let mut scratch = poisoned_scratch::<$be>(bytes);
                                     // Role 0 is a product, role 1 reads its left operand from the destination,
-                                    // role 2 is a squaring.
+                                    // role 2 is a squaring, role 3 a sum of three products whose second pair the
+                                    // test side reads from unnormalized twins.
                                     match role {
                                         1 => {
                                             $m.glwe_mul_relinearize_assign(cnv_offset, $out, g.k, $y, $key, &mut scratch.borrow())
                                         }
                                         2 => $m.glwe_square_relinearize(cnv_offset, $out, g.k, $x, $key, &mut scratch.borrow()),
+                                        3 => $m.glwe_mul_relinearize_sum(
+                                            cnv_offset,
+                                            $out,
+                                            g.k,
+                                            &[($x, $y), ($y2, $x2), ($x, $x)],
+                                            $key,
+                                            &mut scratch.borrow(),
+                                        ),
                                         _ => $m.glwe_mul_relinearize(cnv_offset, $out, g.k, $x, $y, $key, &mut scratch.borrow()),
                                     }
                                 }};
                             }
-                            one_pass!(BR, r, &mut out_r, &x_r, &y_r, &kp_r);
-                            one_pass!(BT, t, &mut out_t, &x_t, &y_t, &kp_t);
+                            one_pass!(BR, r, &mut out_r, &x_r, &y_r, &x_r, &y_r, &kp_r);
+                            one_pass!(BT, t, &mut out_t, &x_t, &y_t, &x_twin_t, &y_twin_t, &kp_t);
                             let mut have = r.glwe_alloc_from_infos(&g);
                             out_t.transfer_into(&mut have);
                             assert_glwe_eq!(

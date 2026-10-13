@@ -331,6 +331,60 @@ pub trait GLWETensoring<BE: Backend> {
         H: GetTensorKey<BE>;
 }
 
+/// Sums of products of rank-1 GLWE ciphertexts, relinearized once. The operands are read canonical at their
+/// `k`, as for [`GLWETensoring`]: one whose canonical flag is clear is normalized into scratch first.
+pub trait GLWEMulRelinearizeSum<BE: Backend> {
+    /// Scratch bytes of [`Self::glwe_mul_relinearize_sum`], whatever the number of pairs: those of
+    /// [`GLWETensoring::glwe_mul_relinearize`] for the same arguments, one more set of product columns and one
+    /// column of digits.
+    fn glwe_mul_relinearize_sum_tmp_bytes<R, B>(
+        &self,
+        res: &R,
+        a_size: usize,
+        b_size: usize,
+        tensor_k: crate::layouts::TorusPrecision,
+        tsk: &B,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        B: GGLWEInfos;
+
+    /// `res = relinearize(Σ_i a_i * b_i)` over `pairs[i] = (a_i, b_i)`, in one pass, under the conditions of
+    /// [`GLWETensoring::glwe_mul_relinearize`]: rank 1, one `base2k` across `res`, the operands and the tensor key,
+    /// and `cnv_offset >= base2k`. Every pair shares the first one's layouts; the tensor key is looked up at the
+    /// larger of the two operand widths.
+    ///
+    /// The result is written at width `res_k`, canonical: the caller sets the width of `res` afterwards.
+    ///
+    /// Each pair's three product columns are added to the first pair's in the transform domain, in slice order.
+    /// Only the key-switched column of the sum is brought back to digits; the other two stay in the transform
+    /// domain until the single final normalization. One pair is [`GLWETensoring::glwe_mul_relinearize`], bit for
+    /// bit. Relinearizing a sum of [`GLWETensoring::glwe_tensor_apply`] products rounds every term instead: the two
+    /// agree up to rounding, not bit for bit. An FFT backend adds in floating point, so the slice order is part of
+    /// the result.
+    ///
+    /// Every pair's products accumulate in the transform domain before one inverse transform: pick `base2k` for
+    /// `pairs.len()` times the products of one pair (`Module::max_base2k`), up to `2 * min(a_size, b_size)` per
+    /// output limb in the cross column `a0 * b1 + a1 * b0`.
+    ///
+    /// Panics, before writing `res`, if `pairs` is empty, if a pair does not share the first one's layouts, if
+    /// `res` or an operand is not of rank 1 or of `res`'s `base2k`, if `cnv_offset < base2k`, if `tsk` has no key
+    /// at the tensor width or one of another `base2k`, or if `scratch` holds less than the call needs.
+    fn glwe_mul_relinearize_sum<R, A, B, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        pairs: &[(&A, &B)],
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        B: GLWEToBackendRef<BE> + GLWEInfos,
+        H: GetTensorKey<BE>;
+}
+
 pub trait GLWEAdd<BE: Backend> {
     fn glwe_add_into<R, A, B>(&self, res: &mut R, a: &A, b: &B)
     where

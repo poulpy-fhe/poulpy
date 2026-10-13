@@ -5,8 +5,8 @@ use poulpy_hal::layouts::{Backend, CnvPVecRToBackendRef, Module, ScratchArena};
 
 use crate::{
     api::{
-        GGSWRotate, GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWEMulXpMinusOne, GLWENegate, GLWENormalize, GLWEPacking,
-        GLWERotate, GLWEShift, GLWESub, GLWETensoring, GLWETrace, GLWEZero,
+        GGSWRotate, GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWEMulRelinearizeSum, GLWEMulXpMinusOne, GLWENegate,
+        GLWENormalize, GLWEPacking, GLWERotate, GLWEShift, GLWESub, GLWETensoring, GLWETrace, GLWEZero,
     },
     layouts::{
         GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
@@ -17,6 +17,7 @@ use crate::{
         GLWENormalizeImpl, GLWEPackImpl, GLWERotateImpl, GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, GLWETraceImpl,
         GLWEZeroImpl,
     },
+    reference::operations::GLWETensoringReference,
 };
 
 macro_rules! impl_operations_delegate {
@@ -375,6 +376,45 @@ impl_operations_delegate!(
         BE::glwe_mul_prepared_relinearize_assign(self, cnv_offset, res, res_k, a, a_size, a_k, tsk, scratch)
     }
 );
+
+// Hand-written: the provided OEP methods run the reference, so this delegate also requires it.
+impl<BE> GLWEMulRelinearizeSum<BE> for Module<BE>
+where
+    BE: Backend + GLWETensoringImpl,
+    Module<BE>: GLWETensoringReference<BE>,
+{
+    fn glwe_mul_relinearize_sum_tmp_bytes<R, B>(
+        &self,
+        res: &R,
+        a_size: usize,
+        b_size: usize,
+        tensor_k: crate::layouts::TorusPrecision,
+        tsk: &B,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        B: GGLWEInfos,
+    {
+        BE::glwe_mul_relinearize_sum_tmp_bytes(self, res, a_size, b_size, tensor_k, tsk)
+    }
+
+    fn glwe_mul_relinearize_sum<R, A, B, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        pairs: &[(&A, &B)],
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        B: GLWEToBackendRef<BE> + GLWEInfos,
+        H: GetTensorKey<BE>,
+    {
+        BE::glwe_mul_relinearize_sum(self, cnv_offset, res, res_k, pairs, tsk, scratch)
+    }
+}
 
 impl_operations_delegate!(
     GLWERotate<BE>,

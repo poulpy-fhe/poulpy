@@ -9,6 +9,7 @@ use crate::layouts::{
     GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
     GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
 };
+use crate::reference::operations::GLWETensoringReference;
 
 /// Backend-provided GLWE constant-multiplication operations.
 ///
@@ -283,6 +284,45 @@ pub unsafe trait GLWETensoringImpl: Backend {
         b: &CnvPVecRBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     );
+
+    /// Scratch bytes of [`Self::glwe_mul_relinearize_sum`]. The default is this backend's
+    /// [`Self::glwe_mul_relinearize_tmp_bytes`], one more set of product columns and one column of digits.
+    fn glwe_mul_relinearize_sum_tmp_bytes<R, B>(
+        module: &Module<Self>,
+        res: &R,
+        a_size: usize,
+        b_size: usize,
+        tensor_k: crate::layouts::TorusPrecision,
+        tsk: &B,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        B: GGLWEInfos,
+        Module<Self>: GLWETensoringReference<Self>,
+    {
+        module.glwe_mul_relinearize_sum_tmp_bytes_reference(res, a_size, b_size, tensor_k, tsk)
+    }
+
+    /// The summed one-pass product of [`GLWEMulRelinearizeSum`](crate::api::GLWEMulRelinearizeSum). The default
+    /// forms each pair's columns with [`Self::glwe_mul_columns`]. Overrides must reproduce
+    /// [`GLWETensoringReference::glwe_mul_relinearize_sum_reference`] bit for bit, the order of the pairs included.
+    fn glwe_mul_relinearize_sum<R, A, B, H>(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        pairs: &[(&A, &B)],
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        A: GLWEToBackendRef<Self> + GLWEInfos,
+        B: GLWEToBackendRef<Self> + GLWEInfos,
+        H: GetTensorKey<Self>,
+        Module<Self>: GLWETensoringReference<Self>,
+    {
+        module.glwe_mul_relinearize_sum_reference(cnv_offset, res, res_k, pairs, tsk, scratch)
+    }
 }
 
 /// Backend-provided GLWE addition operations.
