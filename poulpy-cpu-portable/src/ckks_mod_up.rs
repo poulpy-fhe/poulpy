@@ -39,7 +39,9 @@ where
     S2D: GGLWEInfos,
 {
     let dsize = sparse_to_dense.dsize().as_usize();
+    // A strided key view is gathered by the reference body only.
     dst.base2k() == sparse_to_dense.base2k()
+        && sparse_to_dense.stride() == 1
         && (2..=STRIDED_MAX_DSIZE).contains(&dsize)
         && scale_up.is_none_or(|scale_up| dst.k().as_usize() >= src.k().as_usize() + scale_up)
 }

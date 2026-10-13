@@ -22,9 +22,9 @@ use crate::{
 use poulpy_core::{
     GLWEAdd, GLWEMaskFill,
     layouts::{
-        GGLWEInfos, GGLWELayout, GGLWEPrepared, GGLWEPreparedFactory, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared,
-        GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWESwitchingKeyLayout, GLWETensorKeyLayout, GLWETensorKeyPrepared,
-        GLWETensorKeyPreparedFactory, GLWEToBackendRef, LWEInfos,
+        Dsize, GGLWEInfos, GGLWELayout, GGLWEPrepared, GGLWEPreparedFactory, GLWEAutomorphismKeyLayout,
+        GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWESwitchingKeyLayout, GLWETensorKeyLayout,
+        GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, GLWEToBackendRef, LWEInfos,
         prepared::{GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
     reference::linear_transformation::DiagonalProd,
@@ -41,14 +41,16 @@ where
     let mut results = Vec::new();
     // Matching radix and multi-limb digits permit the optimized path. Other
     // cases require the general composition; widths also cover partial limbs,
-    // no zero-prefix limbs, several full zero-prefix limbs, and rejected raises.
-    for (dsize, key_b, extra, scale) in [
-        (2, b, 4 * b + 3, 0),
-        (2, b, 3 * b + 5, b + 1),
-        (2, b, 5, 4),
-        (1, b, 2 * b + 1, 1),
-        (2, b - 1, 2 * b + 3, 0),
-        (2, b, 0, 1),
+    // no zero-prefix limbs, several full zero-prefix limbs, rejected raises,
+    // and a key stored at one dsize read through a view at a multiple of it.
+    for (dsize, view_dsize, key_b, extra, scale) in [
+        (2, 2, b, 4 * b + 3, 0),
+        (2, 2, b, 3 * b + 5, b + 1),
+        (2, 2, b, 5, 4),
+        (1, 1, b, 2 * b + 1, 1),
+        (2, 2, b - 1, 2 * b + 3, 0),
+        (2, 2, b, 0, 1),
+        (1, 2, b, 4 * b + 3, 0),
     ] {
         let src_layout = CKKSLayout {
             glwe_layout: GLWELayout {
@@ -80,20 +82,13 @@ where
                 module.gglwe_prepare(prepared, &coefficients, scratch)
             });
         }
-        let bytes = B::ckks_encapsulated_mod_up_tmp_bytes(module, &dst_layout, &src_layout, &d2s_layout, &s2d_layout);
+        let s2d = s2d.with_dsize(Dsize(view_dsize)).unwrap();
+        let bytes = B::ckks_encapsulated_mod_up_tmp_bytes(module, &dst_layout, &src_layout, &d2s_layout, &s2d);
         for (seed, lazy) in [(41, false), (43, true)] {
             let mut src = fixture_operand(module, &src_layout, seed, lazy);
             let mut dst = fixture_ciphertext(module, &dst_layout, 47);
             let result = with_scratch::<B, _>(bytes, |scratch| {
-                B::ckks_encapsulated_mod_up(
-                    module,
-                    &mut dst,
-                    &mut src,
-                    scale,
-                    &d2s.to_backend_ref(),
-                    &s2d.to_backend_ref(),
-                    scratch,
-                )
+                B::ckks_encapsulated_mod_up(module, &mut dst, &mut src, scale, &d2s.to_backend_ref(), &s2d, scratch)
             });
             assert_eq!(result.is_ok(), extra >= scale, "modulus raise acceptance changed");
             if result.is_ok() {

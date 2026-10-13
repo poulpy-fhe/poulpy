@@ -196,7 +196,12 @@ where
 {
     let k_large = dst.k().as_usize();
     let k_small = src.k().as_usize();
-    if dst.base2k() != sparse_to_dense.base2k() || sparse_to_dense.dsize().as_usize() < 2 || k_large < k_small + scale_up {
+    // A strided key view is gathered by the reference body only.
+    if dst.base2k() != sparse_to_dense.base2k()
+        || sparse_to_dense.stride() != 1
+        || sparse_to_dense.dsize().as_usize() < 2
+        || k_large < k_small + scale_up
+    {
         return ckks_encapsulated_mod_up_reference(module, dst, src, scale_up, dense_to_sparse, sparse_to_dense, scratch);
     }
 
