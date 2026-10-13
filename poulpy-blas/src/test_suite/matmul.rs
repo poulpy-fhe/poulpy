@@ -449,13 +449,26 @@ where
     BlasCiphertext::from_blocks(relabel(&res, |meta| meta.log_sparsity = 1).into_blocks(), log_d, 1, 1).unwrap()
 }
 
+/// The block dimension beside `log_d` for an operand at another dimension: the previous one, whose smaller matrices fit
+/// wherever a block does, or the next one from 2 x 2 blocks, if it fits the `slots`; otherwise `test` skips that case
+/// with a message.
+fn other_log_d(test: &str, log_d: usize, slots: usize) -> Option<usize> {
+    let other = if log_d > 1 { log_d - 1 } else { log_d + 1 };
+    if 2 * other > slots.ilog2() as usize {
+        eprintln!("{test} skips an operand at log_d {other}: it needs d^2 <= {slots} slots");
+        return None;
+    }
+    Some(other)
+}
+
 /// An inner-dimension or `res` shape mismatch, more public matrices than a sparse input records, a copy relabelled past
 /// `log2` of the ring degree, an operand encoded on a module of another degree, at another radix or at another
 /// dimension, every grid [`rejected_grids`] builds, as `a` or as `res`, a `res` of another degree, radix or rank
 /// ([`foreign_layouts`]), a missing rotation key, and `a` and `res` both of another rank than the keys are rejected
 /// before `res` changes, as is a `res` narrower than the scale of `a`, by poulpy-ckks's budget check, which leaves `a`
 /// unchanged too; a product one scratch byte short of its query panics before `res` changes; an operand whose block
-/// count overflows `usize` does not encode.
+/// count overflows `usize` does not encode. Beside `2 x 2` blocks on fewer than 16 slots, where no other dimension
+/// fits, the operand at another dimension is skipped with a message.
 pub fn test_blas_matmul_pt_guards<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -492,17 +505,17 @@ pub fn test_blas_matmul_pt_guards<BE, F, E>(
     let b = encode(module, log_d, lanes, params.base2k, &mut scratch.borrow());
     // One public matrix, which divides the matrix slots of any module and of a grid read at any dimension.
     let one = encode(module, log_d, 1, params.base2k, &mut scratch.borrow());
-    // At the previous dimension, whose smaller matrices fit wherever a block does, or the next one from 2 x 2 blocks.
-    let other_log_d = if log_d > 1 { log_d - 1 } else { log_d + 1 };
-    let other = encode(module, other_log_d, 1, params.base2k, &mut scratch.borrow());
+    let other = other_log_d("test_blas_matmul_pt_guards", log_d, slots)
+        .map(|other| encode(module, other, 1, params.base2k, &mut scratch.borrow()));
     let double = Module::<BE>::new(2 * params.n as u64);
     let foreign = [
         ("degree", encode(&double, log_d, 1, params.base2k, &mut scratch.borrow())),
         ("base2k", encode(module, log_d, 1, params.base2k - 1, &mut scratch.borrow())),
     ];
     // Keys for the other operands too, so no missing key stops `blas_matmul_pt` from evaluating them.
-    let blocks = [&b, &one, &other]
+    let blocks = [&b, &one]
         .into_iter()
+        .chain(&other)
         .chain(foreign.iter().map(|(_, b)| b))
         .flat_map(|b| (0..b.rows()).flat_map(move |l| (0..b.cols()).map(move |j| b.block(l, j))));
     let elements = map_galois_elements(blocks, module.cyclotomic_order());
@@ -551,10 +564,12 @@ pub fn test_blas_matmul_pt_guards<BE, F, E>(
         });
     }
     // An operand encoded at another dimension, which `ct` and `res` are not read at.
-    let mut res = alloc_grid(&params, module, log_d, 1, 1, params.k);
-    assert_guard::<BE, _>("operand dimension", "blas_matmul_pt", InvalidOperand, &mut res, |res| {
-        module.blas_matmul_pt(res, &ct, &other, &keys, &mut op_scratch.borrow())
-    });
+    if let Some(other) = &other {
+        let mut res = alloc_grid(&params, module, log_d, 1, 1, params.k);
+        assert_guard::<BE, _>("operand dimension", "blas_matmul_pt", InvalidOperand, &mut res, |res| {
+            module.blas_matmul_pt(res, &ct, other, &keys, &mut op_scratch.borrow())
+        });
+    }
 
     // Each rejected grid as `a` or as `res` of a 2 x 2 grid times one public matrix.
     let square = encrypt(2, 2, 13, &mut scratch.borrow());
@@ -849,7 +864,8 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
 /// missing rotation key, and `a` and `res` both of another rank than the keys are rejected before `res` changes, as is
 /// a `res` narrower than the scale of `a`, by poulpy-ckks's budget check, which leaves `a` unchanged too; a product one
 /// scratch byte short of its query panics before `res` changes; an operand whose block count overflows `usize` does not
-/// encode.
+/// encode. Beside `2 x 2` blocks on fewer than 16 slots, where no other dimension fits, the operand at another
+/// dimension is skipped with a message.
 pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -888,17 +904,17 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
     let b = encode(module, log_d, lanes, params.base2k, &mut scratch.borrow());
     // One public matrix, which divides the matrix slots of any module and of a grid read at any dimension.
     let one = encode(module, log_d, 1, params.base2k, &mut scratch.borrow());
-    // At the previous dimension, whose smaller matrices fit wherever a block does, or the next one from 2 x 2 blocks.
-    let other_log_d = if log_d > 1 { log_d - 1 } else { log_d + 1 };
-    let other = encode(module, other_log_d, 1, params.base2k, &mut scratch.borrow());
+    let other = other_log_d("test_blas_matmul_pt_left_guards", log_d, slots)
+        .map(|other| encode(module, other, 1, params.base2k, &mut scratch.borrow()));
     let double = Module::<BE>::new(2 * params.n as u64);
     let foreign = [
         ("degree", encode(&double, log_d, 1, params.base2k, &mut scratch.borrow())),
         ("base2k", encode(module, log_d, 1, params.base2k - 1, &mut scratch.borrow())),
     ];
     // Keys for the other operands too, so no missing key stops `blas_matmul_pt_left` from evaluating them.
-    let blocks = [&b, &one, &other]
+    let blocks = [&b, &one]
         .into_iter()
+        .chain(&other)
         .chain(foreign.iter().map(|(_, b)| b))
         .flat_map(|b| (0..b.rows()).flat_map(move |i| (0..b.cols()).map(move |l| b.block(i, l))));
     let elements = map_galois_elements(blocks, module.cyclotomic_order());
@@ -950,10 +966,12 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
         });
     }
     // An operand encoded at another dimension, which `ct` and `res` are not read at.
-    let mut res = alloc_grid(&params, module, log_d, 1, 1, params.k);
-    assert_guard::<BE, _>("operand dimension", op, InvalidOperand, &mut res, |res| {
-        module.blas_matmul_pt_left(res, &other, &ct, &keys, &mut op_scratch.borrow())
-    });
+    if let Some(other) = &other {
+        let mut res = alloc_grid(&params, module, log_d, 1, 1, params.k);
+        assert_guard::<BE, _>("operand dimension", op, InvalidOperand, &mut res, |res| {
+            module.blas_matmul_pt_left(res, other, &ct, &keys, &mut op_scratch.borrow())
+        });
+    }
 
     // Each rejected grid as `a` or as `res` of one public matrix times a 2 x 2 grid.
     for ((label, a), (_, mut bad)) in rejected_grids(module, &square)

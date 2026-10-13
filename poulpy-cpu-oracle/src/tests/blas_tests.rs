@@ -61,6 +61,17 @@ blas_backend_test_suite!(
     log_d = 3,
 );
 
+// 2 x 2 blocks on the 8 slots of N = 16, which hold no 4 x 4 block: the tests and cases that need one skip it with a
+// message.
+blas_backend_test_suite!(
+    mod fft64_f64_n16,
+    backend = crate::FFT64Oracle,
+    scalar = f64,
+    encoder = crate::EncodingFft<f64>,
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 16, hw: 8, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
+    log_d = 1,
+);
+
 // Radix 57, where `matmul_long_sums` runs, in f64, Quad and at rank 2: an NTT-family backend registers a parameter set
 // at base2k >= 57.
 blas_backend_test_suite!(

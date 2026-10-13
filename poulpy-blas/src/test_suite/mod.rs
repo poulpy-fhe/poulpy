@@ -18,8 +18,12 @@ pub mod meta;
 pub mod parity;
 
 /// Registers the functional tests for one backend, scalar, encoder and parameter set, on blocks of dimension
-/// `2^log_d`: 2 unless the optional `log_d` sets it. `test_blas_context` sweeps its own dimensions. Maps and public
-/// matrices run at the parameter set's scale and a quarter of it below and above
+/// `2^log_d`: 2 unless the optional `log_d` sets it. The ring degree `N` is free within two bounds: the blocks fit the
+/// `N / 2` slots, `d^2 <= N / 2` (`N >= 32` at the default), and the guards encode on a module of degree `2 N`, which
+/// the backend must support (`N <= 2^16` at most). `test_blas_context` sweeps `log_d` 1 to 3 and skips with a message
+/// those whose blocks do not fit; `test_blas_batch_record`, below four matrix slots, and the operand at another
+/// dimension in the guards of the products by public matrices, where only `2 x 2` blocks fit, are skipped with a
+/// message too. Maps and public matrices run at the parameter set's scale and a quarter of it below and above
 /// ([`other_scales`](crate::test_suite::helpers::other_scales)), so its `k` must hold two maps at the larger scale and
 /// a product; through the latter, the products also multiply factors at two scales, in either order, one an eighth of
 /// the scale lower and as much narrower. `test_blas_key_widths` runs with the maps and the public matrices below that
@@ -94,7 +98,8 @@ macro_rules! blas_backend_test_suite {
 
 /// Registers [`test_blas_conjugate_invariant`](crate::test_suite::conjugate_invariant::test_blas_conjugate_invariant),
 /// every operation once on real slots, as the test `conjugate_invariant`, for one backend of the conjugate-invariant
-/// ring and parameter set. The expansion names `::poulpy_hal`, so the invoking crate depends on it directly.
+/// ring and parameter set. It runs on `4 x 4` blocks, which the `N` slots hold from `N = 16`; below, it is skipped with
+/// a message. The expansion names `::poulpy_hal`, so the invoking crate depends on it directly.
 #[macro_export]
 macro_rules! blas_conjugate_invariant_test_suite {
     (mod $modname:ident, backend = $backend:ty, params = $params:expr $(,)?) => {

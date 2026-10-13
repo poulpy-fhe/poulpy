@@ -40,7 +40,8 @@ use crate::{
 /// `blas_rotate_rows` and `blas_rotate_cols` across blocks, both preparations then `blas_matmul_prepared`,
 /// `blas_matmul`, `blas_matmul_pt` and `blas_matmul_pt_left`, each on exactly the scratch its query reports.
 /// Every output decrypts to its cleartext model at the metadata [`copied_layout`], [`mapped_layout`] or
-/// [`product_layout`] gives, and its slots, like the prepared operands', are `Real`.
+/// [`product_layout`] gives, and its slots, like the prepared operands', are `Real`. On fewer than 16 slots, which hold
+/// no `4 x 4` block, it is skipped with a message.
 pub fn test_blas_conjugate_invariant<BE>(
     mut params: CKKSTestParams,
     module: &Module<BE>,
@@ -52,9 +53,13 @@ pub fn test_blas_conjugate_invariant<BE>(
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     params.prec_meta.slots = SlotsKind::Real;
-    let log_d = 2;
+    let (log_d, slots) = (2, module.ckks_max_slots());
+    if 2 * log_d > slots.ilog2() as usize {
+        eprintln!("test_blas_conjugate_invariant skips log_d {log_d}: it needs d^2 <= {slots} slots");
+        return;
+    }
     let (k, p) = (params.k, params.prec().log_delta());
-    let lanes = module.ckks_max_slots() >> (2 * log_d);
+    let lanes = slots >> (2 * log_d);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
     let ctx = blas_context::<BE, f64>(&params, module, log_d, &mut scratch.borrow());

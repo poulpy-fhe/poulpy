@@ -25,12 +25,13 @@ fn operand_maps<BE: Backend, S>(b: &BlasPtOperand<BE, S>) -> Vec<&LinearTransfor
         .collect()
 }
 
-/// At `log_d` 1 to 3, each key set of the plan equals the Galois elements of the maps its operation evaluates, as the
-/// context encodes them: the transpose, the row and column shifts by every `k` below `2 d`, the matrix products, and
-/// the products by public operands, on either side, of any values, grid shape and count, of the counts that divide the
-/// matrix slots. Public operands of one side and count store their diagonals at one degree, whatever their values. The
-/// union of these sets, and the plan's own, equals the context's. The context rejects matrices wider than the slots; a
-/// public operand's count divides the matrix slots. Assumes `params.n` is 128 or 256.
+/// At each `log_d` from 1 to 3 whose blocks fit the `S` slots, `d^2 <= S`, each key set of the plan equals the Galois
+/// elements of the maps its operation evaluates, as the context encodes them: the transpose, the row and column shifts
+/// by every `k` below `2 d`, the matrix products, and the products by public operands, on either side, of any values,
+/// grid shape and count, of the counts that divide the matrix slots. Public operands of one side and count store their
+/// diagonals at one degree, whatever their values. The union of these sets, and the plan's own, equals the context's.
+/// A `log_d` whose blocks do not fit is skipped with a message. The context rejects matrices wider than the slots; a
+/// public operand's count divides the matrix slots.
 pub fn test_blas_context<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend<Ring = Standard>,
@@ -76,7 +77,14 @@ where
         ("equal pair", 1, 1, 2, |_, r, c| ((r * 3 + c) % 5) as f64 - 2.0),
         ("zero pair", 2, 2, 2, |_, _, _| 0.0),
     ];
-    for log_d in 1..=3 {
+    // The largest `log_d` whose blocks fit the slots, `d^2 <= S`; the sweep skips the others with a message.
+    let slots = params.n / 2;
+    let fits = slots.ilog2() as usize / 2;
+    let (sweep, skipped): (Vec<usize>, Vec<usize>) = (1..=3).partition(|&log_d| log_d <= fits);
+    if !skipped.is_empty() {
+        eprintln!("test_blas_context skips log_d {skipped:?}: it needs d^2 <= {slots} slots");
+    }
+    for log_d in sweep {
         let plan = BlasPlan::new(log_d);
         let ctx = BlasContextUnprepared::encode::<F>(
             module,
@@ -125,7 +133,7 @@ where
         // The degrees the diagonals of each side's and count's operands are stored at.
         let mut degrees = BTreeMap::<(&str, usize), BTreeSet<usize>>::new();
         for (label, rows, cols, count, entry) in operands {
-            if !((params.n / 2) >> (2 * log_d)).is_multiple_of(count) {
+            if !(slots >> (2 * log_d)).is_multiple_of(count) {
                 continue;
             }
             let right = encode(log_d, rows, cols, count, entry, &mut scratch.borrow())
@@ -163,8 +171,9 @@ where
         assert_eq!(plan.galois_elements(order), every, "galois_elements log_d={log_d}");
     }
 
-    // The slots hold no 16 x 16 matrix; 2^40 x 2^40 has more entries than a usize counts.
-    for log_d in [4, 40] {
+    // The slots hold no matrix one dimension past the largest that fits; 2^40 x 2^40 has more entries than a usize
+    // counts.
+    for log_d in [fits + 1, 40] {
         let res = BlasContextUnprepared::encode::<F>(
             module,
             BlasPlan::new(log_d),
@@ -175,13 +184,15 @@ where
         assert!(res.is_err());
     }
 
-    // The slots hold 4 or 8 matrix slots of 4 x 4 blocks: 3 and 0 public matrices do not divide them.
-    let generic = operands[0].4;
+    // Matrix slots of 4 x 4 blocks, or of 2 x 2 blocks where those do not fit, are a power of two: 3 and 0 public
+    // matrices do not divide them; 2 does, or 1 on one matrix slot.
+    let (log_d, generic) = (fits.min(2), operands[0].4);
     for count in [0, 3] {
-        assert!(encode(2, 3, 2, count, generic, &mut scratch.borrow()).is_err());
+        assert!(encode(log_d, 3, 2, count, generic, &mut scratch.borrow()).is_err());
     }
-    let b = encode(2, 3, 2, 2, generic, &mut scratch.borrow())
+    let count = (slots >> (2 * log_d)).min(2);
+    let b = encode(log_d, 3, 2, count, generic, &mut scratch.borrow())
         .unwrap()
         .prepare(module, &mut scratch.borrow());
-    assert_eq!((b.log_d(), b.rows(), b.cols(), b.count()), (2, 3, 2, 2));
+    assert_eq!((b.log_d(), b.rows(), b.cols(), b.count()), (log_d, 3, 2, count));
 }

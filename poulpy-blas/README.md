@@ -8,12 +8,11 @@ its batch, up to `S / d^2` matrices repeated over the slots, from its blocks' la
 `layouts::grid::{split_into_blocks, join_blocks}` move matrices, read and written through element accessors, to and
 from the slot vectors of the blocks.
 
-Intra operations apply one map to every matrix of the batch: `blas_matmul` (JKLS, ciphertext x ciphertext),
-`blas_matmul_prepare_left`, `blas_matmul_prepare_right` and `blas_matmul_prepared` (the same product from transformed
-operands reused across calls), `blas_matmul_pt` (ciphertext x public matrices, shared or one per matrix slot),
-`blas_matmul_pt_left` (public matrices x ciphertext),
-`blas_transpose`, `blas_rotate_rows`, `blas_rotate_cols`. Inter operations move whole matrices across the batch:
-`blas_rotate`, `blas_sum`.
+Intra operations apply one map to every matrix of the batch: `blas_transpose`, `blas_rotate_rows`, `blas_rotate_cols`.
+Inter operations move whole matrices across the batch: `blas_rotate`, `blas_sum`. Products multiply every matrix of the
+batch: `blas_matmul` (JKLS, ciphertext x ciphertext), `blas_matmul_prepare_left`, `blas_matmul_prepare_right` and
+`blas_matmul_prepared` (the same product from transformed operands reused across calls), `blas_matmul_pt` (ciphertext x
+public matrices, shared or one per matrix slot) and `blas_matmul_pt_left` (public matrices x ciphertext).
 
 A `BlasPlan` fixes the block dimension and how each block map is evaluated. The maps are encoded once from it, at a
 caller-chosen precision, into a `BlasContext`, and public matrices into a `BlasPtOperand`. Operations take the context

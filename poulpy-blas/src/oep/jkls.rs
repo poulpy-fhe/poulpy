@@ -12,11 +12,13 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 /// for bit, digits and CKKS metadata: `res = sum_t lhs[t] rhs[t]` as poulpy-ckks's `ckks_dot_product_ct` computes it
 /// for pairs that share one layout per side.
 ///
-/// **Fixed:** - each term is one core tensor product of `(lhs[t], rhs[t])` at the offset poulpy-ckks's ct x ct rule
-/// gives for `res`, rounded on its own at the tensor width `max(lhs.k, rhs.k)`; summing unrounded products, as
-/// `cnv_apply_dft_sum` would, changes bits; - the terms are summed exactly and normalized at that width, `res` is
-/// stamped with the rule's budget and scale, the smallest label and the joined slot kind, then relinearized once into
-/// `res` with the tensor key at that width. `res` comes back canonical, without a noise tag.
+/// **Fixed:**
+/// - each term is one core tensor product of `(lhs[t], rhs[t])` at the offset poulpy-ckks's ct x ct rule gives for
+///   `res`, rounded on its own at the tensor width `max(lhs.k, rhs.k)`; summing unrounded products, as
+///   `cnv_apply_dft_sum` would, changes bits;
+/// - the terms are summed exactly and normalized at that width, `res` is stamped with the rule's budget and scale, the
+///   smallest label and the joined slot kind, then relinearized once into `res` with the tensor key at that width;
+///   `res` comes back canonical, without a noise tag.
 ///
 /// **Free (bit-identical):** the order, grouping and split of the terms over workers, materialized or streamed; extra
 /// exact normalizations of the sum; caching the operands or their convolution forms; normalizing an operand read

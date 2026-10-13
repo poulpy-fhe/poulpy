@@ -456,9 +456,17 @@ the maps and the public matrices a quarter below that scale, where a key width
 taken from the inputs' scale in place of `p` or `p_B`, or capped by it, finds no
 key. They read coefficients on the host and use the standard ring, so they need
 a host backend of the standard ring. An optional `log_d = …` sets the blocks to
-`2^log_d x 2^log_d`, 2 by default. `poulpy-cpu-oracle` runs them on
+`2^log_d x 2^log_d`, 2 by default. The ring degree `N` is free within two
+bounds: the blocks fit the `N / 2` slots, `d^2 <= N / 2` (`N >= 32` at the
+default), and the guards encode on a module of degree `2N`, which the backend
+must support (`N <= 2^16` at most). `test_blas_context` sweeps `log_d` 1 to 3
+and skips with a message those whose blocks do not fit;
+`test_blas_batch_record`, below four matrix slots, and the operand at another
+dimension in the guards of the products by public matrices, where only `2 x 2`
+blocks fit, are skipped with a message too. `poulpy-cpu-oracle` runs them on
 `FFT64Oracle` at `log_d` 1, 2 and 3 (the last at `N = 128`, where one block
-fills the 64 slots), and on `NTT4x30Oracle` in `f64`, in `Quad` and at rank 2,
+fills the 64 slots), at `log_d` 1 also at `N = 16`, whose 8 slots hold no
+`4 x 4` block, and on `NTT4x30Oracle` in `f64`, in `Quad` and at rank 2,
 each also at radix 57 (`N = 128`). `test_blas_matmul_long_sums`, sums at least
 three times longer than the `2^(63 - base2k)` terms the JKLS kernel sums
 between normalizations, runs only for a suite registered at `base2k >= 57`;
@@ -470,7 +478,8 @@ whose `N` slots are real. It encrypts real matrices of `4 x 4` blocks with the
 module's own encoder, runs every operation once, each on exactly the bytes its
 query reports, and checks the decrypted values and the output metadata, as the
 functional tests do, and that every output, the prepared operands included, has
-`Real` slots.
+`Real` slots. Below `N = 16`, whose slots hold no such block, it is skipped
+with a message.
 
 `blas_parity_test_suite!` compares `backend_test` with `backend_ref`:
 

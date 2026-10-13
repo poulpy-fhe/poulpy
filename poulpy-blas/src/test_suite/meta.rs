@@ -296,7 +296,7 @@ pub fn test_blas_result_meta<BE, F, E>(
 /// of a compact pair adds each matrix once. A dense plaintext added to its blocks drops their label below that record,
 /// so the next operation rejects the grid before `res` changes. A product, and its prepared form, records the larger
 /// batch of its factors, with either factor the sparse one, and broadcasts the smaller; a prepared operand records its
-/// input's. The pair must leave matrix slots free, so the test returns below four of them.
+/// input's. The pair must leave matrix slots free, so below four of them the test is skipped with a message.
 pub fn test_blas_batch_record<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -313,6 +313,7 @@ pub fn test_blas_batch_record<BE, F, E>(
     let slots = params.n / 2;
     let (d, lanes) = (1 << log_d, slots >> (2 * log_d));
     if lanes < 4 {
+        eprintln!("test_blas_batch_record skips log_d {log_d}: it needs 4 d^2 <= {slots} slots");
         return;
     }
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
