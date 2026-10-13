@@ -185,10 +185,11 @@ fn apply_terms<BE, E: TaskExecutor, const PAIRWISE: bool>(
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
+    let (n, res_cols) = (res.n(), res.cols());
+    assert!(res_col < res_cols, "convolution: result column out of range");
     if limbs == 0 {
         return;
     }
-    let (n, res_cols) = (res.n(), res.cols());
     let n_blocks = n / 4;
     let res_u32 = cast_slice_mut::<_, u32>(res.raw_mut());
     assert!(res_u32.len() >= limbs * res_cols * 4 * n);

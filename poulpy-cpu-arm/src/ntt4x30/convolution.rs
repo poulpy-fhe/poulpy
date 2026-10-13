@@ -505,6 +505,7 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     let b0 = col_slice(b_raw, b.n(), b_size, b0_col);
     let b1 = col_slice(b_raw, b.n(), b_size, b1_col);
     let res_cols = res.cols();
+    assert!(res_col < res_cols, "convolution: result column out of range");
     let res_u32 = cast_slice_mut::<_, u32>(res.raw_mut());
     assert!(res_u32.len() >= min_size * res_cols * 4 * n);
     let res_ptr = SendPtr(res_u32.as_mut_ptr());
@@ -622,6 +623,7 @@ pub(crate) unsafe fn cnv_apply_dft_sum_neon<BE, E: TaskExecutor>(
     let (n, res_size, res_cols) = (res.n(), res.size(), res.cols());
     check_degree::<BE>(module.n(), n);
     assert!(n.is_multiple_of(4));
+    assert!(res_col < res_cols, "convolution: result column out of range");
     let n_blocks = n / 4;
     // Limbs written so far: a group overwrites the limbs no earlier group reached and adds to the others.
     let mut written = 0;

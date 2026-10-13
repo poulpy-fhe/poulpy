@@ -516,6 +516,7 @@ unsafe fn conv_columns_packed<R: Ring, E: TaskExecutor, const ACC: bool, const P
     let n_tiles = min_size.div_ceil(TILE);
     let task_tmp_len = 3 * 8 * win_rows + 3 * 8 * b_size + 3 * 8 * n_tiles * TILE + 32 * b_size;
     let res_cols = res.cols();
+    assert!(res_col < res_cols, "convolution: result column out of range");
     let res_ptr = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
     let cached_overwrite = cached_overwrite_stores(n, min_size);
 
@@ -1214,6 +1215,7 @@ pub(crate) unsafe fn cnv_apply_dft_sum_ifma<R: Ring, E: TaskExecutor>(
     }
 
     let res_cols = res.cols();
+    assert!(res_col < res_cols, "convolution: result column out of range");
     let res_ptr = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
     let cached_overwrite = cached_overwrite_stores(n, max_size);
     let run_group = |local_tmp: &mut [u64], group: usize| {

@@ -452,6 +452,7 @@ unsafe fn apply<R: Ring, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>
     let b0 = col_slice(b_raw, b.n(), b_size, b0_col);
     let b1 = col_slice(b_raw, b.n(), b_size, b1_col);
     let res_cols = res.cols();
+    assert!(res_col < res_cols, "convolution: result column out of range");
     let res_ptr = SendPtr(cast_slice_mut::<_, u32>(res.data_mut()).as_mut_ptr());
     E::for_each(n / GROUP, |group| unsafe {
         let meta = module.get_bbc_meta();
