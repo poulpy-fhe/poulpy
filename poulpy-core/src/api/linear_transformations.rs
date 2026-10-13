@@ -109,9 +109,9 @@ pub trait GLWELinearTransformations<BE: Backend> {
     /// Panics, before writing `res`, if `rhs` has no diagonal or a giant step
     /// without one, if a giant step's first diagonal is not as wide as the
     /// transform's first diagonal, or if `lhs` lacks a baby rotation that `rhs`
-    /// reads. A giant step's other diagonals are assumed to share its first
-    /// one's width and degree and are not checked: where they differ, this can
-    /// panic after writing `res`.
+    /// reads. The other diagonals are not checked: every diagonal of a
+    /// transform shares one width, scale and degree, as the encoder produces
+    /// them, and preparing asserts the degree.
     fn glwe_eval_linear_transformation_into<R, P, H>(
         &self,
         cnv_offset: usize,
@@ -142,9 +142,9 @@ pub trait GLWELinearTransformations<BE: Backend> {
     /// rotation that its transform reads. Also panics before writing `res`
     /// unless every term shares the first one's giant schedule, source layout,
     /// and first diagonal's layout, width and scale, and every giant step's
-    /// first diagonal has that width. A giant step's other diagonals are
-    /// assumed to share its first one's width and degree and are not checked:
-    /// where they differ, this can panic after writing `res`.
+    /// first diagonal has that width. The other diagonals are not checked:
+    /// every diagonal of a transform shares one width, scale and degree, as the
+    /// encoder produces them, and preparing asserts the degree.
     fn glwe_eval_linear_transformation_sum_into<R, H>(
         &self,
         cnv_offset: usize,

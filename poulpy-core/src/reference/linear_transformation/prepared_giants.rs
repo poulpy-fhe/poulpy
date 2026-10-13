@@ -136,10 +136,10 @@ pub fn glwe_accumulate_streamed_baby_steps_dft<BE, M, P>(
 ///
 /// Panics, before reading a key or writing `res`, if a giant step of a term has
 /// no diagonal, if its first diagonal is not as wide as the first transform's
-/// first diagonal, or if it reads a baby rotation the term's cache lacks. A
-/// giant step's other diagonals are assumed to share its first one's width and
-/// degree and are not checked: where they differ, PROD can still panic after
-/// the fallback has written `res`, which it does from the first giant step on.
+/// first diagonal, or if it reads a baby rotation the term's cache lacks. The
+/// other diagonals are not checked: every diagonal of a transform shares one
+/// width, scale and degree, as the encoder produces them, and preparing asserts
+/// the degree.
 ///
 /// Writes the encryption of `Σ_t M_t·v_t` into `res`.
 pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(

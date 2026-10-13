@@ -139,9 +139,9 @@ Only the per-giant `accumulate_prod` differs; the rotate/accumulate tail is shar
 
 Before reading a key, the loop checks every giant step of every term: it has a diagonal,
 its first diagonal is as wide as the first transform's first diagonal, and it reads only
-baby rotations the term's cache holds. A giant step's other diagonals are assumed to share
-its first one's width and degree and are not checked: where they differ, PROD can still
-panic after the fallback below has written `res`, which it does from the first giant step on.
+baby rotations the term's cache holds. The other diagonals are not checked: every diagonal
+of a transform shares one width, scale and degree, as the encoder produces them, and
+preparing asserts the degree.
 
 The loop picks one of two strategies up front
 ([prepared_giants.rs:244-266](../../poulpy-core/src/reference/linear_transformation/prepared_giants.rs#L244-L266)):
