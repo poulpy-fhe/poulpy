@@ -154,14 +154,14 @@ fn test_transform_domain_packed_byte_sizes() {
     );
 }
 
-/// The packed kernels reject a result column past the last one.
+/// The packed kernels reject a result column past the last one and an operand of another degree.
 #[test]
 fn test_packed_kernels_reject_out_of_range_operands() {
     use poulpy_hal::{
-        api::{CnvPVecAlloc, Convolution, ScratchOwnedAlloc, VecZnxDftAlloc},
+        api::{CnvPVecAlloc, Convolution, ScratchOwnedAlloc, VecZnxDftAdd, VecZnxDftAlloc},
         layouts::{
             CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, PrepareHint, ScratchOwned,
-            VecZnxDftToBackendMut, vec_znx_backend_ref,
+            VecZnxDftToBackendMut, VecZnxDftToBackendRef, vec_znx_backend_ref,
         },
     };
     let (n, cols, size) = (64, 2, 3);
@@ -192,6 +192,8 @@ fn test_packed_kernels_reject_out_of_range_operands() {
     );
 
     let mut res = module.vec_znx_dft_alloc(n, cols, size);
+    let b = module.vec_znx_dft_alloc(n, cols, size);
+    let wide = module.vec_znx_dft_alloc(2 * n, cols, size);
     rejects("cnv_apply_dft_add", &mut || {
         module.cnv_apply_dft_add(
             0,
@@ -202,6 +204,16 @@ fn test_packed_kernels_reject_out_of_range_operands() {
             &right.to_backend_ref(),
             0,
             &mut scratch.arena(),
+        )
+    });
+    rejects("vec_znx_dft_add", &mut || {
+        module.vec_znx_dft_add(
+            &mut res.to_backend_mut(),
+            0,
+            &wide.to_backend_ref(),
+            0,
+            &b.to_backend_ref(),
+            0,
         )
     });
 }
