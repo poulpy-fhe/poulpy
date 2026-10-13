@@ -193,7 +193,8 @@ pub fn glwe_prepare_linear_transformation_baby_steps_reference<BE, M, A, H>(
 /// and a plaintext `P` streams each diagonal — the rest of the loop is shared.
 ///
 /// Asserts at least one non-empty giant step (a fully-pruned transform is a
-/// caller bug), then delegates to the shared `glwe_eval_giant_steps` loop.
+/// caller bug), then delegates to the shared `glwe_eval_giant_steps` loop,
+/// which checks every giant step before reading a key or writing `res`.
 pub fn glwe_eval_linear_transformation_into_reference<BE, M, R, P, H>(
     module: &M,
     cnv_offset: usize,
@@ -292,8 +293,10 @@ where
 /// shared giant loop, so one term is [`glwe_eval_linear_transformation_into_reference`].
 ///
 /// Asserts, before reading a key or writing `res`, that every term shares the
-/// first one's giant schedule, diagonal layout, width and scale, and its
+/// first one's giant schedule, first diagonal's layout, width and scale, and
 /// source layout: one schedule, PROD bucket and `cnv_offset` serve them all.
+/// The shared loop then checks every giant step of every term, also before
+/// reading a key or writing `res`.
 pub fn glwe_eval_linear_transformation_sum_into_reference<BE, M, R, H>(
     module: &M,
     cnv_offset: usize,

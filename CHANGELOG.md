@@ -8,6 +8,7 @@
 - **Breaking, format:** serialized `GLWE` and `GLWECompressed` carry their plaintext metadata.
 - **Breaking:** `LinearTransformationImpl` requires `glwe_eval_linear_transformation_sum_into` and `glwe_eval_linear_transformation_sum_tmp_bytes`; a hand-written impl forwards them to `glwe_eval_linear_transformation_sum_into_reference` and `glwe_eval_linear_transformation_sum_tmp_bytes_reference`.
 - Add `GLWELinearTransformations::glwe_eval_linear_transformation_sum_into` and its `_tmp_bytes`: `Σ_t M_t(a_t)` over resident transforms that share one giant schedule, at the giant key-switch cost of one transform; the terms are added in slice order, in floating point on FFT backends.
+- **Fix:** `glwe_eval_linear_transformation_into` checks every giant step before writing `res`, as `glwe_eval_linear_transformation_sum_into` does: on the per-giant fallback, a giant step after the first that had no diagonal, started with a diagonal of another width, or read a baby rotation missing from the cache panicked after `res` was written. A giant step's other diagonals are still assumed to share its first one's width and degree. Valid calls are unchanged.
 
 ### `poulpy-ckks`
 

@@ -137,8 +137,14 @@ Only the per-giant `accumulate_prod` differs; the rotate/accumulate tail is shar
 
 ### 4.1 Path selection
 
+Before reading a key, the loop checks every giant step of every term: it has a diagonal,
+its first diagonal is as wide as the first transform's first diagonal, and it reads only
+baby rotations the term's cache holds. A giant step's other diagonals are assumed to share
+its first one's width and degree and are not checked: where they differ, PROD can still
+panic after the fallback below has written `res`, which it does from the first giant step on.
+
 The loop picks one of two strategies up front
-([prepared_giants.rs:218-236](../../poulpy-core/src/reference/linear_transformation/prepared_giants.rs#L218-L236)):
+([prepared_giants.rs:244-266](../../poulpy-core/src/reference/linear_transformation/prepared_giants.rs#L244-L266)):
 
 - **Lazy DFT path** (the hot path) — taken when `res`, the PROD output, and the keys all
   share a `base2k` (or when there is no giant rotation at all). Everything rides in DFT
@@ -195,7 +201,7 @@ this final normalize.
 | #3 Free identities | `rot == 0` branches in baby_steps.rs **and** prepared_giants.rs |
 | #4 Lazy normalize across giants | DFT accumulator + single final normalize (lazy.rs) |
 | #5 Lazy normalize inside PROD | DFT accumulation in inner_product.rs |
-| #6 Skip `j=0` mask normalize | `rot == 0` giant branch (prepared_giants.rs:258) |
+| #6 Skip `j=0` mask normalize | `rot == 0` giant branch (prepared_giants.rs:292) |
 | #7 Prune zero diagonals | schedule only stores real `(j,k)` (linear_transformation.rs) |
 | #8 Setup-time preparation | prepare.rs (RHS) + baby_steps.rs (LHS) |
 | #9 One rescale level | single `glwe_normalize_big_into` (lazy.rs) |

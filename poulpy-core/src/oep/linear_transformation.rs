@@ -67,6 +67,8 @@ pub unsafe trait LinearTransformationImpl: Backend {
         A: GLWEToBackendRef<Self> + GLWEInfos,
         H: GetAutomorphismKey<Self>;
 
+    /// Checks `rhs` and `lhs` before writing `res`; see
+    /// [`crate::GLWELinearTransformations::glwe_eval_linear_transformation_into`].
     fn glwe_eval_linear_transformation_into<R, P, H>(
         module: &Module<Self>,
         cnv_offset: usize,

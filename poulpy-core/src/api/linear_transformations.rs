@@ -105,6 +105,13 @@ pub trait GLWELinearTransformations<BE: Backend> {
     /// Both paths share this single evaluator and give the same result. `lhs` may
     /// carry exactly `rhs.baby_steps` or a superset (e.g. the union of baby
     /// rotations needed by several transforms).
+    ///
+    /// Panics, before writing `res`, if `rhs` has no diagonal or a giant step
+    /// without one, if a giant step's first diagonal is not as wide as the
+    /// transform's first diagonal, or if `lhs` lacks a baby rotation that `rhs`
+    /// reads. A giant step's other diagonals are assumed to share its first
+    /// one's width and degree and are not checked: where they differ, this can
+    /// panic after writing `res`.
     fn glwe_eval_linear_transformation_into<R, P, H>(
         &self,
         cnv_offset: usize,
@@ -131,8 +138,13 @@ pub trait GLWELinearTransformations<BE: Backend> {
     /// pick `base2k` for that many products (`Module::max_base2k`).
     ///
     /// Panics, before writing `res`, if `terms` is empty, if a transform has no
-    /// diagonal, or unless every term shares the first one's giant schedule,
-    /// diagonal layout, width and scale, and source layout.
+    /// diagonal or a giant step without one, or if a cache lacks a baby
+    /// rotation that its transform reads. Also panics before writing `res`
+    /// unless every term shares the first one's giant schedule, source layout,
+    /// and first diagonal's layout, width and scale, and every giant step's
+    /// first diagonal has that width. A giant step's other diagonals are
+    /// assumed to share its first one's width and degree and are not checked:
+    /// where they differ, this can panic after writing `res`.
     fn glwe_eval_linear_transformation_sum_into<R, H>(
         &self,
         cnv_offset: usize,

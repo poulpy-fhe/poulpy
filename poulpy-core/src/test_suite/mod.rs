@@ -93,6 +93,30 @@ macro_rules! core_backend_test_suite {
                 #[should_panic(expected = "summed linear transformation 1 does not share the first one's source layout")]
                 glwe_linear_transformation_sum_rejects_mismatched_source =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_mismatched_source,
+                #[should_panic(expected = "linear transformation sum has no terms")]
+                glwe_linear_transformation_sum_rejects_no_terms =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_no_terms,
+                #[should_panic(expected = "linear transformation has no non-empty giant steps")]
+                glwe_linear_transformation_sum_rejects_first_term_without_giant_steps =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_first_term_without_giant_steps,
+                #[should_panic(expected = "linear transformation has no non-empty giant steps")]
+                glwe_linear_transformation_rejects_no_giant_steps =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_rejects_no_giant_steps,
+                #[should_panic(expected = "giant step 1 of linear transformation 0 has no diagonals")]
+                glwe_linear_transformation_rejects_empty_giant_step =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_rejects_empty_giant_step,
+                #[should_panic(expected = "giant step 1 of linear transformation 1 has no diagonals")]
+                glwe_linear_transformation_sum_rejects_empty_giant_step =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_empty_giant_step,
+                #[should_panic(expected = "missing prepared baby-step rotation 1 of linear transformation 1")]
+                glwe_linear_transformation_sum_rejects_missing_baby_step =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_missing_baby_step,
+                #[should_panic(expected = "giant step 1 of linear transformation 0 is not as wide as the first diagonal")]
+                glwe_linear_transformation_rejects_uneven_giant_step_width =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_rejects_uneven_giant_step_width,
+                #[should_panic(expected = "giant step 1 of linear transformation 1 is not as wide as the first diagonal")]
+                glwe_linear_transformation_sum_rejects_uneven_giant_step_width =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_uneven_giant_step_width,
                 glwe_packing => $crate::test_suite::noise::test_glwe_packing,
                 gglwe_switching_key_encrypt_sk => $crate::test_suite::noise::encryption::test_gglwe_switching_key_encrypt_sk,
                 gglwe_switching_key_compressed_encrypt_sk =>

@@ -134,6 +134,13 @@ pub fn glwe_accumulate_streamed_baby_steps_dft<BE, M, P>(
 /// summed over them by `sum_giant_prod` before its single rotation, so one
 /// pair is the single transform.
 ///
+/// Panics, before reading a key or writing `res`, if a giant step of a term has
+/// no diagonal, if its first diagonal is not as wide as the first transform's
+/// first diagonal, or if it reads a baby rotation the term's cache lacks. A
+/// giant step's other diagonals are assumed to share its first one's width and
+/// degree and are not checked: where they differ, PROD can still panic after
+/// the fallback has written `res`, which it does from the first giant step on.
+///
 /// Writes the encryption of `Σ_t M_t·v_t` into `res`.
 pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
     module: &M,
@@ -192,6 +199,28 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
     let diagonal_size = first_diagonal.size();
     let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, prod_base2k.as_usize());
     let prod_size = crate::reference::operations::prod_dft_size(baby_size, diagonal_size, cnv_offset_hi);
+
+    for (t, &(lhs, lt)) in terms.iter().enumerate() {
+        for (g, gs) in lt.giant_steps.iter().enumerate() {
+            assert!(
+                !gs.diagonals.is_empty(),
+                "giant step {g} of linear transformation {t} has no diagonals"
+            );
+            // The size both PROD impls assert on entry, from the step's first diagonal.
+            assert_eq!(
+                crate::reference::operations::prod_dft_size(lhs.size(), gs.diagonals[0].plaintext.max_size(), cnv_offset_hi),
+                prod_size,
+                "giant step {g} of linear transformation {t} is not as wide as the first diagonal"
+            );
+            for d in &gs.diagonals {
+                assert!(
+                    lhs.contains_baby_step(d.baby),
+                    "missing prepared baby-step rotation {} of linear transformation {t}",
+                    d.baby
+                );
+            }
+        }
+    }
 
     let nonzero_giant_rotations = rhs.giant_steps.iter().filter(|gs| gs.rot != 0).count();
     let has_nonzero_giant_rotation = nonzero_giant_rotations != 0;

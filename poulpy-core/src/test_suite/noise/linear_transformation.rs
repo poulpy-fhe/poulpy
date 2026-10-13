@@ -550,11 +550,139 @@ pub fn test_glwe_linear_transformation_sum_rejects_mismatched_source<BE: crate::
     eval_mismatched_sum(params, module, vec![0, 1], 1, 0, 2);
 }
 
+/// A sum needs a term.
+pub fn test_glwe_linear_transformation_sum_rejects_no_terms<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: GLWELinearTransformations<BE> + CnvPVecAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    eval_without_keys(params, module, &[], true);
+}
+
+/// A sum's first term needs a giant step.
+pub fn test_glwe_linear_transformation_sum_rejects_first_term_without_giant_steps<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: GLWELinearTransformations<BE> + CnvPVecAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let (babies_a, mut lt_a) = direct_term(params, module, vec![0, 1], 1, 0, 1);
+    let (babies_b, lt_b) = direct_term(params, module, vec![0, 1], 1, 0, 1);
+    lt_a.giant_steps.clear();
+    eval_without_keys(params, module, &[(&babies_a, &lt_a), (&babies_b, &lt_b)], true);
+}
+
+/// A transform needs a giant step.
+pub fn test_glwe_linear_transformation_rejects_no_giant_steps<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: GLWELinearTransformations<BE> + CnvPVecAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let (babies, mut lt) = direct_term(params, module, vec![0, 1], 1, 0, 1);
+    lt.giant_steps.clear();
+    eval_without_keys(params, module, &[(&babies, &lt)], false);
+}
+
+/// Every giant step of a transform needs a diagonal, checked before the
+/// fallback writes `res` at the first one.
+pub fn test_glwe_linear_transformation_rejects_empty_giant_step<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: GLWELinearTransformations<BE> + CnvPVecAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let (babies, mut lt) = direct_term(params, module, vec![0, 1], 1, 0, 1);
+    lt.giant_steps[1].diagonals.clear();
+    eval_without_keys(params, module, &[(&babies, &lt)], false);
+}
+
+/// Every giant step of every summed transform needs a diagonal, checked
+/// before the fallback writes `res` at the first one.
+pub fn test_glwe_linear_transformation_sum_rejects_empty_giant_step<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: GLWELinearTransformations<BE> + CnvPVecAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let (babies_a, lt_a) = direct_term(params, module, vec![0, 1], 1, 0, 1);
+    let (babies_b, mut lt_b) = direct_term(params, module, vec![0, 1], 1, 0, 1);
+    lt_b.giant_steps[1].diagonals.clear();
+    eval_without_keys(params, module, &[(&babies_a, &lt_a), (&babies_b, &lt_b)], true);
+}
+
+/// Every baby rotation a summed transform reads must be in its cache, checked
+/// before the fallback writes `res` at the first giant step.
+pub fn test_glwe_linear_transformation_sum_rejects_missing_baby_step<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: GLWELinearTransformations<BE> + CnvPVecAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let (babies_a, lt_a) = direct_term(params, module, vec![0, 1], 1, 0, 1);
+    let (babies_b, mut lt_b) = direct_term(params, module, vec![0, 1], 1, 0, 1);
+    lt_b.giant_steps[1].diagonals[0].baby = 1;
+    eval_without_keys(params, module, &[(&babies_a, &lt_a), (&babies_b, &lt_b)], true);
+}
+
+/// Every giant step of a transform must start with a diagonal as wide as its
+/// first one, checked before the fallback writes `res` at the first giant step.
+pub fn test_glwe_linear_transformation_rejects_uneven_giant_step_width<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: GLWELinearTransformations<BE> + CnvPVecAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let (babies, mut lt) = direct_term(params, module, vec![0, 1], 1, 0, 1);
+    let (_, mut wide) = direct_term(params, module, vec![0, 1], 2, 0, 1);
+    std::mem::swap(&mut lt.giant_steps[1].diagonals, &mut wide.giant_steps[1].diagonals);
+    eval_without_keys(params, module, &[(&babies, &lt)], false);
+}
+
+/// Every giant step of every summed transform must start with a diagonal as
+/// wide as the first transform's first one, beyond the first diagonals the sum
+/// compares, checked before the fallback writes `res` at the first giant step.
+pub fn test_glwe_linear_transformation_sum_rejects_uneven_giant_step_width<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: GLWELinearTransformations<BE> + CnvPVecAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let (babies_a, lt_a) = direct_term(params, module, vec![0, 1], 1, 0, 1);
+    let (babies_b, mut lt_b) = direct_term(params, module, vec![0, 1], 1, 0, 1);
+    let (_, mut wide) = direct_term(params, module, vec![0, 1], 2, 0, 1);
+    std::mem::swap(&mut lt_b.giant_steps[1].diagonals, &mut wide.giant_steps[1].diagonals);
+    eval_without_keys(params, module, &[(&babies_a, &lt_a), (&babies_b, &lt_b)], true);
+}
+
 /// Sums a `Direct` transform over `[0, 1]`, with one-limb diagonals at scale 0
 /// and a one-limb source, and one over `indexes`, with `pt_limbs`-limb
-/// diagonals at scale `log_scale` and a `ct_limbs`-limb source. There are no
-/// keys and no scratch, so a mismatch must panic before any key is read or
-/// `res` is written.
+/// diagonals at scale `log_scale` and a `ct_limbs`-limb source.
 fn eval_mismatched_sum<BE: crate::test_suite::noise::TestBackend>(
     params: &TestParams,
     module: &Module<BE>,
@@ -568,32 +696,70 @@ fn eval_mismatched_sum<BE: crate::test_suite::noise::TestBackend>(
     Module<BE>: GLWELinearTransformations<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    let layout = |limbs: usize, rank: u32| GLWELayout {
+    let (babies_a, lt_a) = direct_term(params, module, vec![0, 1], 1, 0, 1);
+    let (babies_b, lt_b) = direct_term(params, module, indexes, pt_limbs, log_scale, ct_limbs);
+    eval_without_keys(params, module, &[(&babies_a, &lt_a), (&babies_b, &lt_b)], true);
+}
+
+/// A `Direct` transform over `indexes` (giant steps at those rotations, each
+/// with one diagonal at baby rotation 0), with `pt_limbs`-limb diagonals at
+/// scale `log_scale`, and the cache of baby rotation 0 of a `ct_limbs`-limb source.
+fn direct_term<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+    indexes: Vec<i64>,
+    pt_limbs: usize,
+    log_scale: usize,
+    ct_limbs: usize,
+) -> (LinearTransformationBabySteps<BE>, LinearTransformationPrepared<BE>)
+where
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: GLWELinearTransformations<BE> + CnvPVecAlloc<BE>,
+{
+    let schedule = LinearTransformationLayout {
+        indexes,
+        slots: module.n() / 2,
+        strategy: LinearTransformationStrategy::Direct,
+    };
+    let mut lt: LinearTransformationPrepared<BE> =
+        LinearTransformation::alloc_prepared(module, &schedule, &limbs_layout(params, module, pt_limbs, 0));
+    lt.set_log_scale(log_scale);
+    let babies = LinearTransformationBabySteps::alloc(module, &[0], &limbs_layout(params, module, ct_limbs, 1));
+    (babies, lt)
+}
+
+/// Evaluates the sum of `terms`, or its first term alone if `!sum`, into a
+/// one-limb `res`. There are no keys and no scratch, so a rejection must panic
+/// before any key is read or `res` is written.
+fn eval_without_keys<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+    terms: &[(&LinearTransformationBabySteps<BE>, &LinearTransformationPrepared<BE>)],
+    sum: bool,
+) where
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: GLWELinearTransformations<BE> + CnvPVecAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = HashMap::new();
+    let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&limbs_layout(params, module, 1, 1));
+    let mut scratch = ScratchOwned::<BE>::alloc(0);
+    if sum {
+        module.glwe_eval_linear_transformation_sum_into(0, &mut res, terms, &keys, &mut scratch.borrow());
+    } else {
+        let (babies, lt) = terms[0];
+        module.glwe_eval_linear_transformation_into(0, &mut res, babies, lt, &keys, &mut scratch.borrow());
+    }
+}
+
+/// A `limbs`-limb GLWE layout of rank `rank` at the test's `base2k`.
+fn limbs_layout<BE: Backend>(params: &TestParams, module: &Module<BE>, limbs: usize, rank: u32) -> GLWELayout {
+    GLWELayout {
         n: module.n().into(),
         base2k: params.base2k.into(),
         k: (limbs * params.base2k).into(),
         rank: rank.into(),
-    };
-    let term = |indexes: Vec<i64>, pt_limbs: usize, log_scale: usize, ct_limbs: usize| {
-        let schedule = LinearTransformationLayout {
-            indexes,
-            slots: module.n() / 2,
-            strategy: LinearTransformationStrategy::Direct,
-        };
-        let mut lt: LinearTransformationPrepared<BE> =
-            LinearTransformation::alloc_prepared(module, &schedule, &layout(pt_limbs, 0));
-        lt.set_log_scale(log_scale);
-        (LinearTransformationBabySteps::alloc(module, &[0], &layout(ct_limbs, 1)), lt)
-    };
-    let (babies_a, lt_a) = term(vec![0, 1], 1, 0, 1);
-    let (babies_b, lt_b) = term(indexes, pt_limbs, log_scale, ct_limbs);
-    let keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = HashMap::new();
-    let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout(1, 1));
-    module.glwe_eval_linear_transformation_sum_into(
-        0,
-        &mut res,
-        &[(&babies_a, &lt_a), (&babies_b, &lt_b)],
-        &keys,
-        &mut ScratchOwned::<BE>::alloc(0).borrow(),
-    );
+    }
 }
