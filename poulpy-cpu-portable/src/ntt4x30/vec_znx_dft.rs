@@ -422,12 +422,10 @@ pub(crate) fn vec_znx_dft_automorphism<R: Ring>(
     a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
     a_col: usize,
 ) {
-    {
-        assert_eq!(a.n(), res.n());
-        assert_eq!(plan.perm.len(), res.n());
-    }
-
     let n = res.n();
+    check_operand(n, res, res_col);
+    check_operand(n, a, a_col);
+    assert_eq!(plan.perm.len(), n);
     let (rc, ac) = (res.cols(), a.cols());
     let size = res.size().min(a.size());
     let rs = res.size();
@@ -455,12 +453,10 @@ pub(crate) fn vec_znx_dft_automorphism_add<R: Ring, E: TaskExecutor>(
     a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
     a_col: usize,
 ) {
-    {
-        assert_eq!(a.n(), res.n());
-        assert_eq!(plan.perm.len(), res.n());
-    }
-
     let n = res.n();
+    check_operand(n, res, res_col);
+    check_operand(n, a, a_col);
+    assert_eq!(plan.perm.len(), n);
     let (rc, ac) = (res.cols(), a.cols());
     let size = res.size().min(a.size());
     let res_ptr = cast_slice_mut::<_, u32>(res.data_mut()).as_mut_ptr() as usize;

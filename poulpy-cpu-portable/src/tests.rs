@@ -158,7 +158,10 @@ fn test_transform_domain_packed_byte_sizes() {
 #[test]
 fn test_packed_kernels_reject_out_of_range_operands() {
     use poulpy_hal::{
-        api::{CnvPVecAlloc, Convolution, ScratchOwnedAlloc, VecZnxDftAdd, VecZnxDftAlloc},
+        api::{
+            CnvPVecAlloc, Convolution, ScratchOwnedAlloc, VecZnxDftAdd, VecZnxDftAlloc, VecZnxDftAutomorphism,
+            VecZnxDftAutomorphismPlan,
+        },
         layouts::{
             CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, PrepareHint, ScratchOwned,
             VecZnxDftToBackendMut, VecZnxDftToBackendRef, vec_znx_backend_ref,
@@ -214,6 +217,17 @@ fn test_packed_kernels_reject_out_of_range_operands() {
             0,
             &b.to_backend_ref(),
             0,
+        )
+    });
+    let plan = module.vec_znx_dft_automorphism_plan(n, 5);
+    rejects("vec_znx_dft_automorphism_add_with_plan", &mut || {
+        module.vec_znx_dft_automorphism_add_with_plan(
+            &plan,
+            &mut res.to_backend_mut(),
+            cols,
+            &b.to_backend_ref(),
+            0,
+            &mut scratch.arena(),
         )
     });
 }
