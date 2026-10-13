@@ -105,7 +105,7 @@ impl<'a> Term<'a> {
             b_size,
             b_log_gap,
             offset,
-            limbs: res_size.min((bound + 1).saturating_sub(offset)),
+            limbs: res_size.min(bound - offset),
         }
     }
 

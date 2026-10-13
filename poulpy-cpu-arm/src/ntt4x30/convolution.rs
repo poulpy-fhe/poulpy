@@ -505,7 +505,7 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     }
     let bound = a_size + b_size - 1;
     let offset = cnv_offset.min(bound);
-    let min_size = res_size.min((bound + 1).saturating_sub(offset));
+    let min_size = res_size.min(bound - offset);
     let a_raw: &[u32] = cast_slice(a.raw());
     let b_raw: &[u32] = cast_slice(b.raw());
     let a0 = col_slice(a_raw, n, a_size, a0_col);
@@ -664,7 +664,7 @@ pub(crate) unsafe fn cnv_apply_dft_sum_neon<BE, E: TaskExecutor>(
                 b_size,
                 b_log_gap,
                 offset,
-                limbs: res_size.min((bound + 1).saturating_sub(offset)),
+                limbs: res_size.min(bound - offset),
             };
             limbs = limbs.max(dst.limbs);
         }

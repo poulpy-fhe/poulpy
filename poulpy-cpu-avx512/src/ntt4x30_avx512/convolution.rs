@@ -439,7 +439,7 @@ unsafe fn apply<R: Ring, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>
     }
     let bound = a_size + b_size - 1;
     let offset = cnv_offset.min(bound);
-    let min_size = res_size.min((bound + 1).saturating_sub(offset));
+    let min_size = res_size.min(bound - offset);
     let a_raw: &[u32] = cast_slice(a.data());
     let b_raw: &[u32] = cast_slice(b.data());
     let a0 = col_slice(a_raw, n, a_size, a0_col);
@@ -602,7 +602,7 @@ unsafe fn rank1_dft<const CROSS: bool, R: Ring, E: TaskExecutor>(
     }
     let bound = a_size + b_size - 1;
     let offset = cnv_offset.min(bound);
-    let min_size = res_size.min((bound + 1).saturating_sub(offset));
+    let min_size = res_size.min(bound - offset);
     let a_raw: &[u32] = cast_slice(a.data());
     let b_raw: &[u32] = cast_slice(b.data());
     let (a0, a1) = (col_slice(a_raw, n, a_size, 0), col_slice(a_raw, n, a_size, 1));

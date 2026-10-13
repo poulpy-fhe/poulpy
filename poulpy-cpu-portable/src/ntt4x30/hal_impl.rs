@@ -3,10 +3,9 @@
 use std::mem::size_of;
 
 use poulpy_hal::{
-    api::HostBufMut,
     execution::SerialTaskExecutor,
     layouts::{
-        Backend, DataView, DataViewMut, MatZnxBackendRef, Module, Ring, ScalarZnxBackendRef, ScratchArena, SvpPPolBackendMut,
+        DataView, DataViewMut, MatZnxBackendRef, Module, Ring, ScalarZnxBackendRef, ScratchArena, SvpPPolBackendMut,
         SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut,
         VmpPMatBackendRef,
     },
@@ -23,23 +22,7 @@ use crate::kernels::{
     znx::ZnxAutomorphism,
 };
 
-#[inline]
-pub(super) fn take_host_typed<'a, BE, T>(arena: ScratchArena<'a, BE>, len: usize) -> (&'a mut [T], ScratchArena<'a, BE>)
-where
-    BE: Backend<ZnxWord = i64> + 'a,
-    BE::BufMut<'a>: HostBufMut<'a>,
-    T: Copy,
-{
-    assert!(BE::SCRATCH_ALIGN.is_multiple_of(std::mem::align_of::<T>()));
-    let byte_len = len
-        .checked_mul(std::mem::size_of::<T>())
-        .expect("typed scratch byte size overflows usize");
-    let (buf, arena) = arena.take_region(byte_len);
-    let bytes: &'a mut [u8] = buf.into_bytes();
-    assert!((bytes.as_mut_ptr() as usize).is_multiple_of(std::mem::align_of::<T>()));
-    let slice = unsafe { std::slice::from_raw_parts_mut(bytes.as_mut_ptr() as *mut T, len) };
-    (slice, arena)
-}
+pub(super) use crate::hal_defaults::take_host_typed;
 
 unsafe impl<R: Ring> HalVmpImpl for NTT4x30Portable<R>
 where
