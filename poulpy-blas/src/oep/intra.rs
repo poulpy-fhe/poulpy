@@ -28,9 +28,8 @@ use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut};
 /// The reference preparations of [`crate::oep::BlasMatMulImpl`] call the hook too: sigma (tau) over every block of
 /// their input, then every shift of every result, into blocks of the terms' width.
 ///
-/// **Free:** the order of the blocks and their split over workers; sharing one baby-step cache across the maps of a
-/// source, as the reference does; batching key switches; normalizing a source that is read through a DFT. Anything else
-/// changes bits.
+/// **Free:** the order of the blocks; sharing one baby-step cache across the maps of a source, as the reference does;
+/// batching key switches; normalizing a source that is read through a DFT. Anything else changes bits.
 ///
 /// **The provided methods** fix the rest of the circuit, so an implementation that overrides one reproduces it:
 /// - `blas_transpose`: `res_ji = transpose(a_ij)`;

@@ -36,7 +36,6 @@ use std::{
     },
 };
 
-// Atomics, so that hooks entered from the workers of a parallel executor count too.
 static MAP_CALLS: AtomicUsize = AtomicUsize::new(0);
 static JKLS_CALLS: AtomicUsize = AtomicUsize::new(0);
 /// Held by every test that enters the hooks, which share the counters.

@@ -20,19 +20,19 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 ///   with the rule's budget and scale, the smallest label and the joined slot kind, then relinearized once into `res`
 ///   with the tensor key at that width; `res` comes back canonical, without a noise tag.
 ///
-/// **Free (bit-identical):** the order, grouping and split of the terms over workers, materialized or streamed;
-/// normalizing partial sums, or leaving them unnormalized until the DFT that reads the sum: normalization preserves the
-/// value, so its placement never changes the bits; caching the operands or their convolution forms; normalizing an
-/// operand read through a DFT. Anything else changes bits.
+/// **Free (bit-identical):** the order and grouping of the terms, computed in turn or concurrently, materialized or
+/// streamed; normalizing partial sums, or leaving them unnormalized until the DFT that reads the sum: normalization
+/// preserves the value, so its placement never changes the bits; caching the operands or their convolution forms;
+/// normalizing an operand read through a DFT. Anything else changes bits.
 ///
 /// It is called with `lhs.len() == rhs.len() >= 1` pairs, every `lhs` of one layout and every `rhs` of another, on
 /// inputs the prepared product's validator accepted, at a radix of 62 at most, which checked the tensor key at that
 /// width and of their rank. Within the scratch [`Self::blas_jkls_block_tmp_bytes_impl`] reports for `res`, `lhs[0]`,
 /// `rhs[0]`, the pair count and the key, it returns `Ok`, or poulpy-ckks's budget error before any write to `res`; with
 /// less scratch it panics before any write, as the reference does. Any other `Err` is a backend fault (a validator gap
-/// or a device failure), and `res` is then unspecified. The reference prepared product calls it for the blocks of `res`
-/// concurrently on a parallel executor, each call on its own block and scratch slice. The pairs and the key are `Sync`,
-/// so an implementation may split one block's terms over workers.
+/// or a device failure), and `res` is then unspecified. The reference prepared product calls it once per block of `res`,
+/// block after block, on one scratch. The pairs and the key are `Sync`, so an implementation may compute one block's
+/// terms concurrently, within the one operation.
 pub unsafe trait BlasJklsImpl: Backend {
     /// Scratch bytes of [`Self::blas_jkls_block_impl`] into a block of layout `res` from `terms` pairs of layouts `lhs`
     /// and `rhs`, with a tensor key of layout `tsk`.

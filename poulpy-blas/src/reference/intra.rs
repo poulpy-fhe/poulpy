@@ -7,14 +7,10 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, ModuleN},
-    execution::worker_count,
     layouts::{Backend, Module, ScratchArena},
 };
 
-use super::{
-    WORKERS, assert_maps_scratch, ensure_grid, ensure_layouts, ensure_lt_keys, ensure_maps, ensure_shape, lt_tmp_bytes,
-    run_tasks, tasks_tmp_bytes,
-};
+use super::{assert_maps_scratch, ensure_grid, ensure_layouts, ensure_lt_keys, ensure_maps, ensure_shape, lt_tmp_bytes};
 use crate::layouts::{BlasContext, BlasGrid, grid_batch};
 
 /// Checks a [`crate::api::BlasMatIntraOps::blas_transpose`] call from metadata alone, before any implementation runs,
@@ -137,17 +133,16 @@ pub(crate) fn shift_maps<BE: Backend>(
 /// validator accepted ([`validate_blas_transpose`], [`validate_blas_rotate_rows`], [`validate_blas_rotate_cols`],
 /// [`crate::reference::validate_blas_matmul_prepare_left`], [`crate::reference::validate_blas_matmul_prepare_right`],
 /// [`crate::reference::validate_blas_matmul`]): it checks nothing but its scratch, and returns
-/// poulpy-ckks's budget errors before any write. It splits the sources over up to four workers of `BE`'s task executor,
-/// each with its own scratch slice and baby-step cache, and returns the error of the lowest failing source, as a serial
-/// loop would.
+/// poulpy-ckks's budget errors before any write. It runs source after source on one scratch and one baby-step cache,
+/// and the first error stops it.
 pub trait BlasMatIntraReference<BE: Backend> {
     /// Filling a baby-step cache from a source of layout `src`, and the evaluation of a map from it into a block of
-    /// layout `dst`, on each worker's slice.
+    /// layout `dst`.
     fn blas_map_blocks_tmp_bytes_reference<D, S, K>(
         &self,
         dst: &D,
         src: &S,
-        sources: usize,
+        _sources: usize,
         _lts: &[&LinearTransformationPrepared<BE>],
         atk: &K,
     ) -> usize
@@ -157,12 +152,11 @@ pub trait BlasMatIntraReference<BE: Backend> {
         S: CKKSCtBounds,
         K: GGLWEInfos,
     {
-        tasks_tmp_bytes::<BE>(sources, lt_tmp_bytes(self, dst, src, atk))
+        lt_tmp_bytes(self, dst, src, atk)
     }
 
     /// `dst[t * lts.len() + m] = lts[m](src[t])`, stamped with the label of `src[t]`. Per source, one baby-step cache
-    /// covers the baby steps of every map, then each map is evaluated from it with `ckks_eval_linear_transformation_into`;
-    /// each worker takes a run of consecutive sources.
+    /// covers the baby steps of every map, then each map is evaluated from it with `ckks_eval_linear_transformation_into`.
     ///
     /// # Panics
     ///
@@ -177,7 +171,7 @@ pub trait BlasMatIntraReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSLinearTransformationOps<BE> + CKKSModuleInfos + ModuleN + CnvPVecAlloc<BE> + Sized + Sync,
+        Self: CKKSLinearTransformationOps<BE> + CKKSModuleInfos + ModuleN + CnvPVecAlloc<BE> + Sized,
         D: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Send,
         S: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
         K: GetAutomorphismKey<BE> + Sync,
@@ -196,19 +190,15 @@ pub trait BlasMatIntraReference<BE: Backend> {
         let bytes = |key: &GGLWELayout| self.blas_map_blocks_tmp_bytes_reference(first_dst, first, src.len(), lts, key);
         assert_maps_scratch(op, self, lts, atk, first.k(), first_dst.k(), first.rank(), bytes, scratch);
         let rotations: Vec<i64> = lts.iter().flat_map(|lt| lt.baby_steps().iter().copied()).collect();
-        let run = src.len().div_ceil(worker_count::<BE::TaskExecutor>(WORKERS, src.len()));
-        let mut runs: Vec<_> = src.chunks(run).zip(dst.chunks_mut(run * lts.len())).collect();
-        run_tasks::<BE::TaskExecutor, _, _>(&mut runs, scratch, |(src, dst), scratch| {
-            let mut babies = LinearTransformationBabySteps::alloc(self, &rotations, first);
-            for (&src, dst) in src.iter().zip(dst.chunks_mut(lts.len())) {
-                self.ckks_prepare_linear_transformation_baby_steps(&mut babies, src, atk, scratch)?;
-                for (dst, lt) in dst.iter_mut().zip(lts) {
-                    self.ckks_eval_linear_transformation_into(dst, src, &babies, lt, atk, scratch)?;
-                    dst.set_log_sparsity(src.log_sparsity());
-                }
+        let mut babies = LinearTransformationBabySteps::alloc(self, &rotations, first);
+        for (&src, dst) in src.iter().zip(dst.chunks_mut(lts.len())) {
+            self.ckks_prepare_linear_transformation_baby_steps(&mut babies, src, atk, scratch)?;
+            for (dst, lt) in dst.iter_mut().zip(lts) {
+                self.ckks_eval_linear_transformation_into(dst, src, &babies, lt, atk, scratch)?;
+                dst.set_log_sparsity(src.log_sparsity());
             }
-            Ok(())
-        })
+        }
+        Ok(())
     }
 }
 

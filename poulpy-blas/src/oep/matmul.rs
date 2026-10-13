@@ -42,9 +42,9 @@ use crate::{
 ///   transform domain, in that order, before its one rotation; an FFT backend rounds that sum, so the order is part of
 ///   the bits.
 ///
-/// **Free (bit-identical):** the order and split of the blocks over workers; materializing or streaming the terms;
-/// caching them or their convolution forms; sharing baby-step caches; batching key switches. Hoisting the shifts
-/// changes bits and the key widths, so it would arrive as a plan variant.
+/// **Free (bit-identical):** the order of the blocks; materializing or streaming the terms; caching them or their
+/// convolution forms; sharing baby-step caches; batching key switches. Hoisting the shifts changes bits and the key
+/// widths, so it would arrive as a plan variant.
 ///
 /// The API runs [`crate::reference::validate_blas_matmul`], [`crate::reference::validate_blas_matmul_prepare_left`],
 /// [`crate::reference::validate_blas_matmul_prepare_right`], [`crate::reference::validate_blas_matmul_prepared`],

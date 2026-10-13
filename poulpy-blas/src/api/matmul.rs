@@ -183,8 +183,7 @@ pub trait BlasMatMulOps<BE: BlasMatMulImpl> {
     /// # Panics
     ///
     /// May panic on layouts [`validate_blas_matmul_prepared`](crate::reference::validate_blas_matmul_prepared) rejects:
-    /// blocks of a degree other than the module's, operands of different radices, or a `res` whose `rows * cols`
-    /// overflows `usize`.
+    /// blocks of a degree other than the module's, or operands of different radices.
     fn blas_matmul_prepared_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: BlasGridInfos,

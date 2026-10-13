@@ -48,8 +48,8 @@ blocks are not `GLWEToBackendRef`.
 Rotation keys come as `atk` and the tensor key as `tsk`, two separate stores:
 the rotations, the sums, the maps, the preparations and the products by public
 matrices take `atk` alone, the prepared product `tsk` alone, and `blas_matmul`
-both. The traits' `Send` and `Sync` bounds let an implementation spread blocks
-over the backend's task executor ([Parallelism](#parallelism)).
+both. The traits' `Send` and `Sync` bounds leave an implementation its own
+choice of concurrency ([Parallelism](#parallelism)).
 
 ## Batches
 
@@ -172,8 +172,8 @@ Three replacements cover most needs:
 A backend may also override a provided method, for example the shifts, to
 chunk their heap grid, or `blas_matmul`, to stream its operands; it then
 reproduces the circuit the provided body fixes. A Rayon backend writes
-nothing: the references already split their blocks over the backend's task
-executor ([Parallelism](#parallelism)).
+nothing: its kernels already run in parallel inside each operation
+([Parallelism](#parallelism)).
 
 ## What an override must preserve
 
@@ -216,9 +216,8 @@ They check no budget. poulpy-ckks raises the budget errors,
 inside the implementation, from the rotations, the copies, the maps, the
 products by public matrices and the JKLS kernel's dot product, before any write
 to `res`: every block of a grid shares one layout, so the first block's call
-fails before any block is written, and each parallel task fails before it
-writes its own block. A preparation writes only the operand it returns, and
-`blas_matmul` meets the preparations' errors before the product's.
+fails before any block is written. A preparation writes only the operand it
+returns, and `blas_matmul` meets the preparations' errors before the product's.
 
 A rejected call therefore leaves `res`, its batch record and the inputs
 untouched, whichever backend runs it. An implementation runs only on inputs
@@ -244,7 +243,7 @@ block by block.
   block by `2^i d^2` slots into a block of `res`'s layout and adds that with
   `ckks_add_assign`.
 
-**Free:** the order of the blocks and their split over workers.
+**Free:** the order of the blocks.
 
 ### The map hook
 
@@ -262,9 +261,9 @@ the width of `src` and its giant-step keys at `min(dst.k, src.k - p)`. Within
 the scratch its query reports for `dst`, `src`, the source count, the maps and
 every key it looks up, it returns `Ok`, or poulpy-ckks's budget error before
 any write to `dst`; with less scratch it panics before any write. **Free:** the
-order of the blocks and their split over workers; one baby-step cache per
-source across its maps, as the reference keeps; batching key switches;
-normalizing a source read through a DFT.
+order of the blocks; one baby-step cache per source across its maps, as the
+reference keeps; batching key switches; normalizing a source read through a
+DFT.
 
 **The provided methods** fix the rest of the circuit, which an override of one
 of them reproduces:
@@ -331,9 +330,9 @@ returns.
   products (`Module::max_base2k`). The reference caches the baby steps of each
   block of `a` once for its row of `res` (its column, on the left).
 
-**Free:** the order and split of the blocks over workers; materializing or
-streaming the terms; caching them or their convolution forms; sharing
-baby-step caches; batching key switches.
+**Free:** the order of the blocks; materializing or streaming the terms;
+caching them or their convolution forms; sharing baby-step caches; batching key
+switches.
 
 `blas_matmul` is provided as both preparations, then the prepared product, so
 it reaches the backend's methods; for an `m x K` by `K x n` product it holds
@@ -362,10 +361,10 @@ tensor key at the tensor width `max(lhs.k, rhs.k)`, of their rank.
   with the tensor key at that width. `res` comes back canonical, without a
   noise tag.
 
-**Free:** the order, grouping and split of the terms over workers,
-materialized or streamed; normalizing partial sums, or leaving them
-unnormalized until the DFT that reads the sum; caching the operands or their
-convolution forms; normalizing an operand read through a DFT.
+**Free:** the order and grouping of the terms, computed in turn or
+concurrently, materialized or streamed; normalizing partial sums, or leaving
+them unnormalized until the DFT that reads the sum; caching the operands or
+their convolution forms; normalizing an operand read through a DFT.
 
 **Normalization.** Partial sums may stay unnormalized until the next DFT. A
 normalization is exact carry propagation that preserves the value, so where it
@@ -378,8 +377,8 @@ practice are 54 or less.
 Within the scratch its query reports for `res`, `lhs[0]`, `rhs[0]`, the pair
 count and the key, it returns `Ok`, or poulpy-ckks's budget error before any
 write to `res`; with less scratch it panics before any write. The reference
-prepared product calls it once per block of `res`, concurrently on a parallel
-executor, each call on its own block and scratch slice.
+prepared product calls it once per block of `res`, in row-major order, on one
+scratch.
 
 ## Scratch
 
@@ -402,8 +401,9 @@ largest of both preparations' queries and the prepared product's on the term
 layouts. An override of the hook or of the kernel that needs other scratch
 reports it in its own query, and every operation over it follows.
 
-On a parallel executor the reference queries reserve one slice per worker, up
-to four, and keep the serial size otherwise ([Parallelism](#parallelism)).
+The references run their steps one after another on one scratch, so their
+queries report the largest single step, on every executor
+([Parallelism](#parallelism)).
 Temporaries that outlive a hook call live on the heap, not in scratch: the
 sigma results and terms of a preparation, and the heap grid of a shift across
 blocks. A query may panic on layouts its validator rejects, as its `# Panics`
@@ -411,26 +411,21 @@ section states.
 
 ## Parallelism
 
-Executor tasks are `Fn + Send + Sync`, and an implementation cannot add bounds
-its trait lacks, so the traits carry them: input blocks and key stores are
-`Sync`, output blocks `Send`, the hook's sources `Sync` and its destinations
-`Send`, the kernel's pairs and key `Sync`, and the prepared operands
-`Send + Sync`.
+Concurrency is intra-ciphertext: it lives inside the backend's kernels, within
+one ciphertext operation. A Rayon backend parallelizes there, as poulpy-core's
+baby steps do, and BLAS never splits work across ciphertexts: each reference
+runs its blocks, sources and kernel calls in order, on one scratch, the first
+error stopping it, and its query reports the largest single step
+([Scratch](#scratch)).
 
-The references split their work over up to four workers of `BE::TaskExecutor`,
-each on its own scratch slice: the rotation and the sum by block; the hook by
-runs of consecutive sources, each worker with its own baby-step cache; the
-prepared product by block of `res`, one kernel call each; and the products by
-public matrices by runs of block rows (block columns, on the left), each worker
-with its own caches. On failure they return the error of the lowest failing
-task, as a serial loop would; a serial executor runs the tasks in order and
-stops at the first error. The sum's first copies, the shifts' copies and
-additions and the preparations' narrowing copies run serially.
-
-The split is free. A product with fewer output blocks, rows or columns than
-workers leaves workers idle in the reference; an override may split finer, for
-example one block's JKLS terms over workers, as long as its bits and its error
-are the reference's, and its query reserves what its own split uses.
+An override may choose its own level instead, never both: a backend whose
+kernels are serial, a device queue for example, may run the blocks of an
+operation concurrently, as long as its bits and its error are the reference's
+and its query reserves what its own schedule uses. An implementation cannot add
+bounds its trait lacks, so the traits carry the ones that choice needs: input
+blocks and key stores are `Sync`, output blocks `Send`, the hook's sources
+`Sync` and its destinations `Send`, the kernel's pairs and key `Sync`, and the
+prepared operands `Send + Sync`.
 
 ## Testing a backend
 

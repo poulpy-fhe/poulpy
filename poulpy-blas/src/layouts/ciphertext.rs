@@ -441,8 +441,8 @@ mod tests {
     type Grid = BlasCiphertextOwned<HostBytesBackend>;
 
     /// Grids over owned storage are inputs and outputs of every operation on every backend, with no unsafe impl, and
-    /// contexts, public operands, the reference's prepared operands, poulpy-core's prepared tensor key, which the
-    /// prepared product's tasks capture as they are, and errors cross tasks. Borrowed views are not grids, their blocks
+    /// contexts, public operands, the reference's prepared operands, poulpy-core's prepared tensor key and errors cross
+    /// threads: they meet the traits' `Send` and `Sync` bounds as they are. Borrowed views are not grids, their blocks
     /// not being `GLWEToBackendRef`; they are as thread-safe as their buffers: `BufRef` views `Sync`, `BufMut` views
     /// only `Send`.
     fn assert_thread_safe<'a, BE: Backend + 'a>() {

@@ -18,7 +18,7 @@ pub trait BlasMatInterOps<BE: Backend> {
     /// # Panics
     ///
     /// May panic on layouts [`validate_blas_rotate`](crate::reference::validate_blas_rotate) rejects: blocks of a degree
-    /// other than the module's, or `rows * cols` overflowing `usize`.
+    /// other than the module's.
     fn blas_rotate_tmp_bytes<R, A, K>(&self, res: &R, a: &A, atk: &K) -> usize
     where
         R: BlasGridInfos,

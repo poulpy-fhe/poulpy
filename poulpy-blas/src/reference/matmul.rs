@@ -13,14 +13,12 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, ModuleN},
-    execution::worker_count,
     layouts::{Backend, Module, ScratchArena},
 };
 
 use super::{
-    KeyLayouts, WORKERS, assert_maps_scratch, assert_scratch, ensure_dimension, ensure_grid, ensure_inner, ensure_layouts,
-    ensure_lt_keys, ensure_maps, ensure_record, ensure_shape, ensure_tensor_key, lt_output_k, max_lazy_terms, reject, run_tasks,
-    tasks_tmp_bytes,
+    KeyLayouts, assert_maps_scratch, assert_scratch, ensure_dimension, ensure_grid, ensure_inner, ensure_layouts, ensure_lt_keys,
+    ensure_maps, ensure_record, ensure_shape, ensure_tensor_key, lt_output_k, max_lazy_terms, reject,
 };
 use crate::{
     layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, BlasLayout, BlasPtOperand, grid_batch, layout_of},
@@ -363,10 +361,9 @@ fn ensure_term_keys<'c, BE: Backend + 'c>(
 /// Reference compositions of [`crate::api::BlasMatMulOps`] and the JKLS kernel, on inputs their validators accepted:
 /// they check nothing but their scratch, and return poulpy-ckks's budget errors before any write to `res`. The
 /// preparations make [`BlasMatMulOperand`]s through the map hook of [`BlasMatIntraImpl`]; the prepared product reads
-/// them one output block at a time through the JKLS kernel of [`BlasJklsImpl`], the blocks split over up to four workers
-/// of `BE`'s task executor, each on its own scratch slice, and returns the error of the lowest failing block, as a
-/// serial loop would. The products by public matrices evaluate one poulpy-ckks summed linear transformation per output
-/// block, their block rows (columns, on the left) split the same way.
+/// them one output block at a time through the JKLS kernel of [`BlasJklsImpl`]. The products by public matrices
+/// evaluate one poulpy-ckks summed linear transformation per output block. They run block after block on one scratch,
+/// and the first error stops them.
 pub trait BlasMatMulReference<BE: Backend> {
     /// The largest of the map hook's queries through sigma, from `a`'s blocks into blocks of their layout, and through
     /// every shift, from those into blocks of the terms' layout, and of the copy of one into a block of the terms'
@@ -415,7 +412,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         K: GetAutomorphismKey<BE> + Sync;
 
     /// The JKLS kernel's query for a block of `res` and the `K d` pairs of terms of the operands `a` and `b`, or of the
-    /// layouts [`blas_matmul_term_layout`] gives, on each worker's slice.
+    /// layouts [`blas_matmul_term_layout`] gives.
     fn blas_matmul_prepared_tmp_bytes_reference<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         BE: BlasJklsImpl,
@@ -424,8 +421,8 @@ pub trait BlasMatMulReference<BE: Backend> {
         B: BlasGridInfos,
         T: GGLWEInfos;
 
-    /// For every block `(i, j)` of `res`, one JKLS kernel, [`BlasJklsImpl::blas_jkls_block_impl`], over the `K d` pairs
-    /// `(a_il[k], b_lj[k])`, `l`-major, the blocks in parallel.
+    /// For every block `(i, j)` of `res`, row-major, one JKLS kernel, [`BlasJklsImpl::blas_jkls_block_impl`], over the
+    /// `K d` pairs `(a_il[k], b_lj[k])`, `l`-major.
     fn blas_matmul_prepared_reference<R, T>(
         &self,
         res: &mut R,
@@ -485,7 +482,7 @@ pub trait BlasMatMulReference<BE: Backend> {
     }
 
     /// The baby steps of one block of `a` and one summed linear transformation from blocks of `a`'s layout into a block
-    /// of `res`'s, on each worker's slice, one task per block row of `res`.
+    /// of `res`'s.
     fn blas_matmul_pt_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, _b: &BlasPtOperand<BE>, atk: &K) -> usize
     where
         Self: CKKSLinearTransformationOps<BE>,
@@ -493,15 +490,12 @@ pub trait BlasMatMulReference<BE: Backend> {
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        let block = summed_lt_tmp_bytes(self, &res.block_layout(), &a.block_layout(), atk);
-        tasks_tmp_bytes::<BE>(res.rows(), block)
+        summed_lt_tmp_bytes(self, &res.block_layout(), &a.block_layout(), atk)
     }
 
-    /// For every block row `i` of `res`: one baby-step cache per block `a_il`, `l < K`, covering the baby steps of every
-    /// map of `b`, then every block `res_ij` is poulpy-ckks's summed linear transformation of the `K` terms
-    /// `(a_il, b_lj)`, in ascending `l`, which shares the giant steps across them, stamped with `a`'s label. The block
-    /// rows split over up to four workers of `BE`'s task executor, in runs of consecutive rows, each worker with its own
-    /// caches and scratch slice.
+    /// For every block row `i` of `res`, in order: one baby-step cache per block `a_il`, `l < K`, covering the baby
+    /// steps of every map of `b`, then every block `res_ij` is poulpy-ckks's summed linear transformation of the `K`
+    /// terms `(a_il, b_lj)`, in ascending `l`, which shares the giant steps across them, stamped with `a`'s label.
     fn blas_matmul_pt_reference<R, A, K>(
         &self,
         res: &mut R,
@@ -511,7 +505,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSLinearTransformationOps<BE> + CKKSModuleInfos + ModuleN + CnvPVecAlloc<BE> + Sized + Sync,
+        Self: CKKSLinearTransformationOps<BE> + CKKSModuleInfos + ModuleN + CnvPVecAlloc<BE> + Sized,
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync,
@@ -527,7 +521,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         shared_giants(self, rows, inner, source, |_, j, l| b.at(l, j), &maps, atk, scratch)
     }
 
-    /// As [`Self::blas_matmul_pt_tmp_bytes_reference`], one task per block column of `res`.
+    /// As [`Self::blas_matmul_pt_tmp_bytes_reference`].
     fn blas_matmul_pt_left_tmp_bytes_reference<R, A, K>(&self, res: &R, _b: &BlasPtOperand<BE, Left>, a: &A, atk: &K) -> usize
     where
         Self: CKKSLinearTransformationOps<BE>,
@@ -535,15 +529,13 @@ pub trait BlasMatMulReference<BE: Backend> {
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        let block = summed_lt_tmp_bytes(self, &res.block_layout(), &a.block_layout(), atk);
-        tasks_tmp_bytes::<BE>(res.cols(), block)
+        summed_lt_tmp_bytes(self, &res.block_layout(), &a.block_layout(), atk)
     }
 
-    /// `res = b a`. For every block column `j` of `res`: one baby-step cache per block `a_lj`, `l < K`, covering the baby
-    /// steps of every map of `b`, then every block `res_ij` is poulpy-ckks's summed linear transformation of the `K`
-    /// terms `(a_lj, b_il)`, in ascending `l`, which shares the giant steps across them, stamped with `a`'s label. The
-    /// block columns split over up to four workers of `BE`'s task executor, in runs of consecutive columns, each worker
-    /// with its own caches and scratch slice.
+    /// `res = b a`. For every block column `j` of `res`, in order: one baby-step cache per block `a_lj`, `l < K`,
+    /// covering the baby steps of every map of `b`, then every block `res_ij` is poulpy-ckks's summed linear
+    /// transformation of the `K` terms `(a_lj, b_il)`, in ascending `l`, which shares the giant steps across them,
+    /// stamped with `a`'s label.
     fn blas_matmul_pt_left_reference<R, A, K>(
         &self,
         res: &mut R,
@@ -553,7 +545,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSLinearTransformationOps<BE> + CKKSModuleInfos + ModuleN + CnvPVecAlloc<BE> + Sized + Sync,
+        Self: CKKSLinearTransformationOps<BE> + CKKSModuleInfos + ModuleN + CnvPVecAlloc<BE> + Sized,
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync,
@@ -646,9 +638,8 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         B: BlasGridInfos,
         T: GGLWEInfos,
     {
-        let (dst, lhs, rhs) = (res.block_layout(), a.block_layout(), b.block_layout());
-        let block = BE::blas_jkls_block_tmp_bytes_impl(self, &dst, &lhs, &rhs, a.cols() << a.log_d(), tsk);
-        tasks_tmp_bytes::<BE>(res.rows() * res.cols(), block)
+        let (res, lhs, rhs) = (res.block_layout(), a.block_layout(), b.block_layout());
+        BE::blas_jkls_block_tmp_bytes_impl(self, &res, &lhs, &rhs, a.cols() << a.log_d(), tsk)
     }
 
     fn blas_matmul_prepared_reference<R, T>(
@@ -671,13 +662,13 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         let bytes = used.max_tensor_bytes(|tsk| self.blas_matmul_prepared_tmp_bytes_reference(&*res, a, b, tsk));
         assert_scratch(op, bytes, scratch);
         let (d, n) = (1usize << a.log_d(), b.cols());
-        let mut blocks: Vec<_> = res.blocks_mut().iter_mut().enumerate().collect();
-        run_tasks::<BE::TaskExecutor, _, _>(&mut blocks, scratch, |(t, dst), scratch| {
-            let (i, j) = (*t / n, *t % n);
+        for (t, dst) in res.blocks_mut().iter_mut().enumerate() {
+            let (i, j) = (t / n, t % n);
             let pairs = (0..a.cols()).flat_map(|l| (0..d).map(move |k| (l, k)));
             let (lhs, rhs): (Vec<_>, Vec<_>) = pairs.map(|(l, k)| (a.term(i, l, k), b.term(l, j, k))).unzip();
-            BE::blas_jkls_block_impl(self, *dst, &lhs, &rhs, tsk, scratch)
-        })
+            BE::blas_jkls_block_impl(self, dst, &lhs, &rhs, tsk, scratch)?;
+        }
+        Ok(())
     }
 }
 
@@ -776,50 +767,43 @@ where
 /// The products by public matrices, which share their giant steps across their `inner` terms: group `g` of `groups`
 /// holds the blocks `o` of `res` it writes, block `o` receiving poulpy-ckks's summed linear transformation of the terms
 /// `(source(g, l), map(g, o, l))` in ascending `l`, then the label of `source(g, 0)`. The `inner` sources of a group get
-/// one baby-step cache each, covering the baby steps of every map of `maps`, which serve all its blocks. The groups
-/// split over up to four workers of `BE`'s task executor, in runs of consecutive groups, each worker with its own
-/// caches and scratch slice, and the error of the lowest failing group is returned, as a serial loop would.
+/// one baby-step cache each, covering the baby steps of every map of `maps`, which serve all its blocks. The groups run
+/// in order, refilling the same caches, and the first error stops them.
 #[allow(clippy::too_many_arguments)]
 fn shared_giants<'s, BE, M, D, S, K>(
     module: &M,
     groups: Vec<Vec<&mut D>>,
     inner: usize,
-    source: impl Fn(usize, usize) -> &'s S + Sync,
-    map: impl Fn(usize, usize, usize) -> &'s LinearTransformationPrepared<BE> + Sync,
+    source: impl Fn(usize, usize) -> &'s S,
+    map: impl Fn(usize, usize, usize) -> &'s LinearTransformationPrepared<BE>,
     maps: &[&LinearTransformationPrepared<BE>],
     atk: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend + 's,
-    M: CKKSLinearTransformationOps<BE> + ModuleN + CnvPVecAlloc<BE> + Sync,
-    D: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Send,
-    S: GLWEToBackendRef<BE> + CKKSCtBounds + Sync + 's,
-    K: GetAutomorphismKey<BE> + Sync,
+    M: CKKSLinearTransformationOps<BE> + ModuleN + CnvPVecAlloc<BE>,
+    D: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    S: GLWEToBackendRef<BE> + CKKSCtBounds + 's,
+    K: GetAutomorphismKey<BE>,
 {
     let rotations: Vec<i64> = maps.iter().flat_map(|lt| lt.baby_steps().iter().copied()).collect();
-    let mut groups: Vec<(usize, Vec<&mut D>)> = groups.into_iter().enumerate().collect();
-    // ponytail: splits whole groups only, so fewer than four leave workers idle; split their blocks if that matters.
-    let run = groups.len().div_ceil(worker_count::<BE::TaskExecutor>(WORKERS, groups.len()));
-    let mut runs: Vec<_> = groups.chunks_mut(run).collect();
-    run_tasks::<BE::TaskExecutor, _, _>(&mut runs, scratch, |run, scratch| {
-        let mut caches: Vec<_> = (0..inner)
-            .map(|_| LinearTransformationBabySteps::alloc(module, &rotations, source(0, 0)))
-            .collect();
-        for (g, blocks) in run.iter_mut() {
-            for (l, cache) in caches.iter_mut().enumerate() {
-                module.ckks_prepare_linear_transformation_baby_steps(cache, source(*g, l), atk, scratch)?;
-            }
-            for (o, dst) in blocks.iter_mut().enumerate() {
-                let terms: Vec<_> = caches
-                    .iter()
-                    .enumerate()
-                    .map(|(l, cache)| (source(*g, l), cache, map(*g, o, l)))
-                    .collect();
-                module.ckks_eval_linear_transformation_sum_into(&mut **dst, &terms, atk, scratch)?;
-                dst.set_log_sparsity(source(*g, 0).log_sparsity());
-            }
+    let mut caches: Vec<_> = (0..inner)
+        .map(|_| LinearTransformationBabySteps::alloc(module, &rotations, source(0, 0)))
+        .collect();
+    for (g, blocks) in groups.into_iter().enumerate() {
+        for (l, cache) in caches.iter_mut().enumerate() {
+            module.ckks_prepare_linear_transformation_baby_steps(cache, source(g, l), atk, scratch)?;
         }
-        Ok(())
-    })
+        for (o, dst) in blocks.into_iter().enumerate() {
+            let terms: Vec<_> = caches
+                .iter()
+                .enumerate()
+                .map(|(l, cache)| (source(g, l), cache, map(g, o, l)))
+                .collect();
+            module.ckks_eval_linear_transformation_sum_into(&mut *dst, &terms, atk, scratch)?;
+            dst.set_log_sparsity(source(g, 0).log_sparsity());
+        }
+    }
+    Ok(())
 }

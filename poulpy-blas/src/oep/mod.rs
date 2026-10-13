@@ -3,6 +3,10 @@
 //! override reproduces the reference bit for bit within the scratch its `_tmp_bytes_impl` reports. It writes blocks
 //! only: the API stamps the batch record of `res` after `Ok`. Implementations run only on inputs their `validate_*` in
 //! [`crate::reference`] accepted.
+//!
+//! The references run serially, block after block: concurrency stays inside the backend's kernels, within one
+//! ciphertext operation. An override may choose its own level instead, for example the blocks of an operation on a
+//! backend whose kernels are serial, but never both; the traits' `Send` and `Sync` bounds leave that choice open.
 
 pub(crate) mod derived;
 mod inter;
