@@ -335,13 +335,15 @@ pub(crate) fn cnv_prepare_tmp_bytes(n: usize) -> usize {
 /// Scatters one packed limb of canonical residues into row `limb` of every block of a prepared column, centered.
 ///
 /// `src` keeps its canonical residues.
-fn scatter_centered_limb(dst: &mut [u32], src: &[u32], n: usize, size: usize, limb: usize) {
+///
+/// # Safety
+/// `col` addresses a prepared column of `size` limbs, and no other access touches the rows of `limb` meanwhile.
+unsafe fn scatter_centered_limb(col: *mut u32, src: &[u32], n: usize, size: usize, limb: usize) {
     assert!(src.len() >= 4 * n);
-    assert!(dst.len() >= packed_row_offset(size, limb, n / 4 - 1) + ROW);
     unsafe {
         let c = planes();
         for blk in 0..n / 4 {
-            let row = dst.as_mut_ptr().add(packed_row_offset(size, limb, blk));
+            let row = col.add(packed_row_offset(size, limb, blk));
             for (p, c) in c.iter().enumerate() {
                 vst1q_u32(row.add(4 * p), center(vld1q_u32(src.as_ptr().add(p * n + 4 * blk)), c));
             }
@@ -349,10 +351,11 @@ fn scatter_centered_limb(dst: &mut [u32], src: &[u32], n: usize, size: usize, li
     }
 }
 
-fn zero_prepared_limb(dst: &mut [u32], n: usize, size: usize, limb: usize) {
+/// # Safety
+/// `col` addresses a prepared column of `size` limbs, and no other access touches the rows of `limb` meanwhile.
+unsafe fn zero_prepared_limb(col: *mut u32, n: usize, size: usize, limb: usize) {
     for blk in 0..n / 4 {
-        let off = packed_row_offset(size, limb, blk);
-        dst[off..off + ROW].fill(0);
+        unsafe { std::slice::from_raw_parts_mut(col.add(packed_row_offset(size, limb, blk)), ROW) }.fill(0);
     }
 }
 
@@ -386,14 +389,19 @@ fn prepare<BE, E: TaskExecutor>(
     }
     let min_size = size.min(a.size());
     let stride = 4 * n * size;
-    let left_ptr = left.map(|res| SendPtr(cast_slice_mut::<_, u32>(res.raw_mut()).as_mut_ptr()));
-    let right_ptr = right.map(|res| SendPtr(cast_slice_mut::<_, u32>(res.raw_mut()).as_mut_ptr()));
-    // Tasks write distinct limbs of distinct columns.
-    E::for_each_chunked(cols * size, tmp, prepare_tmp_words(n), |tmp, task| {
+    let col_ptr = |res: &mut [u32]| {
+        assert!(res.len() >= cols * stride);
+        SendPtr(res.as_mut_ptr())
+    };
+    let left_ptr = left.map(|res| col_ptr(cast_slice_mut(res.raw_mut())));
+    let right_ptr = right.map(|res| col_ptr(cast_slice_mut(res.raw_mut())));
+    // Tasks write the rows of distinct limbs of distinct columns: the rows of one limb interleave with the others.
+    // SAFETY: the columns lie within the buffers, checked above, and each task is the only one on the rows of its limb.
+    E::for_each_chunked(cols * size, tmp, prepare_tmp_words(n), |tmp, task| unsafe {
         let col = task / size;
         let limb = task % size;
-        let dst_l = left_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
-        let dst_r = right_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
+        let dst_l = left_ptr.map(|ptr| ptr.get().add(col * stride));
+        let dst_r = right_ptr.map(|ptr| ptr.get().add(col * stride));
         if limb < min_size {
             let tmp_packed: &mut [u32] = &mut cast_slice_mut(tmp)[..4 * n];
             module.packed_dft_limb(n, tmp_packed, a.at(col, limb), dst_l.is_none());

@@ -227,10 +227,11 @@ pub(crate) fn cnv_prepare_tmp_bytes(n: usize) -> usize {
     prepare_tmp_words(n) * size_of::<u64>()
 }
 
-fn zero_prepared_limb(dst: &mut [u32], n: usize, size: usize, limb: usize) {
+/// # Safety
+/// `col` addresses a prepared column of `size` limbs, and no other access touches the rows of `limb` meanwhile.
+unsafe fn zero_prepared_limb(col: *mut u32, n: usize, size: usize, limb: usize) {
     for blk in 0..n / 4 {
-        let off = packed_row_offset(size, limb, blk);
-        dst[off..off + ROW].fill(0);
+        unsafe { std::slice::from_raw_parts_mut(col.add(packed_row_offset(size, limb, blk)), ROW) }.fill(0);
     }
 }
 
@@ -263,32 +264,39 @@ fn prepare<BE, E: TaskExecutor>(
     }
     let min_size = size.min(a.size());
     let stride = 4 * n * size;
-    let left_ptr = left.map(|res| SendPtr(cast_slice_mut::<_, u32>(res.raw_mut()).as_mut_ptr()));
-    let right_ptr = right.map(|res| SendPtr(cast_slice_mut::<_, u32>(res.raw_mut()).as_mut_ptr()));
-    // Tasks write distinct limbs of distinct columns.
+    let col_ptr = |res: &mut [u32]| {
+        assert!(res.len() >= cols * stride);
+        SendPtr(res.as_mut_ptr())
+    };
+    let left_ptr = left.map(|res| col_ptr(cast_slice_mut(res.raw_mut())));
+    let right_ptr = right.map(|res| col_ptr(cast_slice_mut(res.raw_mut())));
+    // Tasks write the rows of distinct limbs of distinct columns: the rows of one limb interleave with the others.
     E::for_each_chunked(cols * size, tmp, prepare_tmp_words(n), |tmp, task| {
         let col = task / size;
         let limb = task % size;
-        let dst_l = left_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
-        let dst_r = right_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
-        if limb < min_size {
-            let tmp_packed: &mut [u32] = &mut cast_slice_mut(tmp)[..4 * n];
-            module.packed_dft_limb(n, tmp_packed, a.at(col, limb), dst_l.is_none());
-            if let Some(dst) = dst_l {
-                scatter_centered_limb(n, dst, tmp_packed, |blk| packed_row_offset(size, limb, blk));
-                if dst_r.is_some() {
-                    limb_to_prepared(n, tmp_packed);
+        let dst_l = left_ptr.map(|ptr| unsafe { ptr.get().add(col * stride) });
+        let dst_r = right_ptr.map(|ptr| unsafe { ptr.get().add(col * stride) });
+        // SAFETY: the column lies within the buffer, checked above, and this task is the only one on the rows of `limb`.
+        unsafe {
+            if limb < min_size {
+                let tmp_packed: &mut [u32] = &mut cast_slice_mut(tmp)[..4 * n];
+                module.packed_dft_limb(n, tmp_packed, a.at(col, limb), dst_l.is_none());
+                if let Some(dst) = dst_l {
+                    scatter_centered_limb(n, dst, tmp_packed, |blk| packed_row_offset(size, limb, blk));
+                    if dst_r.is_some() {
+                        limb_to_prepared(n, tmp_packed);
+                    }
                 }
-            }
-            if let Some(dst) = dst_r {
-                scatter_centered_limb(n, dst, tmp_packed, |blk| packed_row_offset(size, size - 1 - limb, blk));
-            }
-        } else {
-            if let Some(dst) = dst_l {
-                zero_prepared_limb(dst, n, size, limb);
-            }
-            if let Some(dst) = dst_r {
-                zero_prepared_limb(dst, n, size, size - 1 - limb);
+                if let Some(dst) = dst_r {
+                    scatter_centered_limb(n, dst, tmp_packed, |blk| packed_row_offset(size, size - 1 - limb, blk));
+                }
+            } else {
+                if let Some(dst) = dst_l {
+                    zero_prepared_limb(dst, n, size, limb);
+                }
+                if let Some(dst) = dst_r {
+                    zero_prepared_limb(dst, n, size, size - 1 - limb);
+                }
             }
         }
     });

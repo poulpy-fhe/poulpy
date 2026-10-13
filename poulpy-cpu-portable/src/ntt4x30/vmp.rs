@@ -50,12 +50,18 @@ pub(crate) fn vmp_prepare<R: Ring>(
     let tmp_packed: &mut [u32] = &mut cast_slice_mut(tmp)[..4 * n];
     let mat_i64: &[i64] = a.raw();
     let pmat: &mut [u32] = cast_slice_mut(res.data_mut());
+    assert!(pmat.len() >= n / 4 * ncols * nrows * ROW);
 
     for row_i in 0..nrows {
         for col_i in 0..ncols {
             let pos = n * (row_i * ncols + col_i);
             dft_limb_scaled(module, n, tmp_packed, &mat_i64[pos..pos + n], true);
-            scatter_centered_limb(n, pmat, tmp_packed, |blk| ((blk * ncols + col_i) * nrows + row_i) * ROW);
+            // SAFETY: every row lies within `pmat`, checked above.
+            unsafe {
+                scatter_centered_limb(n, pmat.as_mut_ptr(), tmp_packed, |blk| {
+                    ((blk * ncols + col_i) * nrows + row_i) * ROW
+                })
+            };
         }
     }
 }

@@ -360,11 +360,15 @@ pub(crate) fn gather_limb(n: usize, blk: usize, len: usize, limb: &[u32], x: &mu
 }
 
 /// Scatters one packed limb of canonical residues into the rows at `offset(blk)` of a block-major buffer, centered.
+///
+/// # Safety
+/// `dst` is valid for writes of the [`ROW`] words at `offset(blk)` for every block, and no other access touches them meanwhile.
 #[inline(always)]
-pub(crate) fn scatter_centered_limb(n: usize, dst: &mut [u32], src: &[u32], offset: impl Fn(usize) -> usize) {
+pub(crate) unsafe fn scatter_centered_limb(n: usize, dst: *mut u32, src: &[u32], offset: impl Fn(usize) -> usize) {
     for (p, (plane, q)) in planes(n, src).enumerate() {
         for (blk, src) in plane.chunks_exact(4).enumerate() {
-            let row = &mut dst[offset(blk) + 4 * p..][..4];
+            // Tasks write distinct rows, so each takes only its own.
+            let row = unsafe { std::slice::from_raw_parts_mut(dst.add(offset(blk) + 4 * p), 4) };
             for (d, &s) in row.iter_mut().zip(src) {
                 *d = center(s, q);
             }
