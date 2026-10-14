@@ -881,7 +881,6 @@ where
 
         let a_base2k: usize = a.base2k().into();
         let key_base2k: usize = tsk.base2k().into();
-        let res_base2k: usize = res.base2k().into();
 
         let cols: usize = tsk.rank_out().as_usize() + 1;
         let pairs: usize = tsk.rank_in().as_usize();
@@ -894,23 +893,19 @@ where
 
         let lvl_0: usize = self.bytes_of_vec_znx_dft(n, pairs, a_dft_size);
 
-        let lvl_1_pre_conv: usize = if a_base2k != key_base2k {
+        // `a` comes to the key's radix one column at a time: before the product,
+        // and again while the key-switched sum is held.
+        let lvl_1_conv: usize = if a_base2k != key_base2k {
             BE::bytes_of_vec_znx(n, 1, a_dft_size) + self.vec_znx_normalize_tmp_bytes()
         } else {
             0
         };
         let lvl_1_res_dft: usize = self.bytes_of_vec_znx_dft(n, cols, output_size);
         let lvl_1_gglwe_product: usize = self.gglwe_product_dft_tmp_bytes_reference(output_size, a_dft_size, tsk);
-        let lvl_1_post_conv: usize = if res_base2k != key_base2k {
-            BE::bytes_of_vec_znx(n, 1, a_dft_size) + self.vec_znx_normalize_tmp_bytes()
-        } else {
-            0
-        };
         let lvl_1_big_norm: usize = self.bytes_of_vec_znx_big(n, cols, output_size)
-            + BE::bytes_of_vec_znx(n, 1, res.size())
-            + self.vec_znx_big_normalize_tmp_bytes();
-        let lvl_1_main: usize = lvl_1_res_dft + lvl_1_gglwe_product.max(lvl_1_post_conv).max(lvl_1_big_norm);
-        let lvl_1: usize = lvl_1_pre_conv.max(lvl_1_main);
+            + (BE::bytes_of_vec_znx(n, 1, res.size()) + self.vec_znx_big_normalize_tmp_bytes()).max(lvl_1_conv);
+        let lvl_1_main: usize = lvl_1_res_dft + lvl_1_gglwe_product.max(lvl_1_big_norm);
+        let lvl_1: usize = lvl_1_conv.max(lvl_1_main);
 
         lvl_0 + lvl_1
     }

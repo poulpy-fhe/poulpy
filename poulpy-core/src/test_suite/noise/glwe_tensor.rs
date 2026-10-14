@@ -1268,6 +1268,11 @@ where
 ///
 /// The check is the width identity plus completion: under the defect the
 /// product is handed one limb too many and rejects the call outright.
+///
+/// The relinearization runs on exactly the scratch its query returns, at rank 1
+/// and 2, also with a key at a quarter of the operand's radix: the call converts
+/// the operand to the key's radix a second time while it holds the key-switched
+/// sum, which the query must count.
 pub fn test_glwe_tensor_relinearize_cross_radix<BE: crate::test_suite::noise::TestBackend>(
     params: &TestParams,
     module: &Module<BE>,
@@ -1287,7 +1292,6 @@ pub fn test_glwe_tensor_relinearize_cross_radix<BE: crate::test_suite::noise::Te
         + GLWETensorKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    let rank: usize = 1;
     let n: usize = module.n();
 
     // Keep both radices inside the envelope selected by the caller. A fixed
@@ -1297,7 +1301,8 @@ pub fn test_glwe_tensor_relinearize_cross_radix<BE: crate::test_suite::noise::Te
 
     // (operand radix, key radix, operand precision), chosen so that the storage
     // width and the exact precision round to different key-limb counts.
-    for (a_base2k, key_base2k) in [(hi, lo), (lo, hi)] {
+    let radixes = [(hi, lo), (lo, hi), (hi, (hi / 4).max(1))];
+    for (rank, (a_base2k, key_base2k)) in [1usize, 2].into_iter().flat_map(|rank| radixes.map(|radix| (rank, radix))) {
         let k: usize = a_base2k
             .checked_mul(4)
             .and_then(|v| v.checked_add(1))
@@ -1370,7 +1375,10 @@ pub fn test_glwe_tensor_relinearize_cross_radix<BE: crate::test_suite::noise::Te
         module.prepare_tensor_key(&mut tsk_prep, &tsk, &mut scratch.borrow());
         // Reaching the end is the regression: deriving the operand width from
         // the storage precision hands the product a limb count its bound does
-        // not accept, and it rejects the call before doing any work.
-        module.glwe_tensor_relinearize(&mut res_cross, &res_tensor, &tsk_prep, &mut scratch.borrow());
+        // not accept, and it rejects the call before doing any work; a query
+        // short of what the call takes runs out of this exact scratch.
+        let mut exact =
+            ScratchOwned::<BE>::alloc(module.glwe_tensor_relinearize_tmp_bytes(&res_cross, &res_tensor, &cross_infos));
+        module.glwe_tensor_relinearize(&mut res_cross, &res_tensor, &tsk_prep, &mut exact.borrow());
     }
 }
