@@ -144,8 +144,9 @@ The noise suite runs in `poulpy-cpu-portable` alone: the scheme-level model is b
 
 Backend crates register the core and CKKS suites for portable FFT/NTT, AVX,
 AVX-512/IFMA, NEON and supported Rayon variants. Native CI runs the full registered
-sweeps. AVX and AVX-512 jobs fall back to Intel SDE for HAL and core contracts only;
-CKKS runs natively, with an additional optional NEON run under QEMU.
+sweeps. AVX and AVX-512 jobs fall back to Intel SDE for HAL and core contracts, and
+the AVX-512 job also for BLAS parity (below); CKKS runs natively, with an additional
+optional NEON run under QEMU.
 
 Each x86 backend job compiles its test binary separately, then enforces a five-minute
 test execution budget. SDE uses bounded degrees for ordinary HAL/core sweeps and
@@ -182,8 +183,10 @@ parity through `blas_parity_test_suite!`: every other backend type, Rayon and
 IFMA variants included, is compared against the oracle of its family (`NTT3x42`
 types against the `NTT4x30` oracles) in `f64` and `Quad`. Every
 conjugate-invariant backend type, the oracle's included, also runs
-`blas_conjugate_invariant_test_suite!`. Native CI runs the `blas_parity`
-groups; the emulated jobs and the optional QEMU run do not. See
+`blas_conjugate_invariant_test_suite!`. Native CI runs every BLAS test. Under
+Intel SDE, the AVX-512 job runs the `f64` parity of each of its types once, in a
+step with its own execution budget; the emulated AVX job and the optional QEMU
+run do not run BLAS. See
 [implementing BLAS operations](poulpy-blas/docs/blas-contracts.md).
 
 Run portable BLAS parity with:
@@ -292,7 +295,7 @@ RUSTFLAGS="-C target-feature=+avx2,+fma" cargo test -p poulpy-cpu-avx --features
 ```
 
 Native CI runs binary-FHE parity for the supported FFT/NTT and Rayon backends.
-Intel SDE remains limited to HAL/core, keeping instruction emulation within the
+Intel SDE runs no binary-FHE, keeping instruction emulation within the
 five-minute test execution budget. Scheme parity runs with its own compact
 fixtures; full correctness workflows remain in the backend test suites.
 

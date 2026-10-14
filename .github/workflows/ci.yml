@@ -299,8 +299,8 @@ jobs:
   avx512:
     name: AVX-512 backend (native or SDE)
     runs-on: ubuntu-24.04
-    # Cold compilation is separate from the five-minute test execution budget.
-    timeout-minutes: 20
+    # Cold compilation is separate from the test execution budgets; SDE runs BLAS under a second one.
+    timeout-minutes: 28
 
     # Hosted runners need not expose AVX-512, so we keep AVX-512 flags
     # off the host toolchain (build scripts, proc-macros). We pin --target and
@@ -387,6 +387,12 @@ jobs:
       - name: Test AVX-512 backend
         timeout-minutes: 8
         run: bash .github/scripts/test-backend.sh test avx512 '${{ steps.avx512.outputs.mode }}'
+
+      # Native runs every BLAS test above; SDE runs each AVX-512/IFMA type once, under its own budget.
+      - name: Test AVX-512 BLAS under SDE
+        if: steps.avx512.outputs.mode == 'emulated'
+        timeout-minutes: 8
+        run: bash .github/scripts/test-backend.sh test avx512 emulated blas
 
   neon:
     name: NEON backend (aarch64 native)

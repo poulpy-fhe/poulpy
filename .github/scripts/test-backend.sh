@@ -5,7 +5,10 @@ set -euo pipefail
 stage=${1:?expected build or test}
 backend=${2:?expected avx or avx512}
 mode=${3:?expected native or emulated}
+# Optional `blas`: run only the BLAS tests AVX-512 emulation keeps, with a budget of their own.
+group=${4:-}
 case "$stage" in build|test) ;; *) echo "Invalid stage: $stage" >&2; exit 2 ;; esac
+case "$group" in ''|blas) ;; *) echo "Invalid test group: $group" >&2; exit 2 ;; esac
 case "$backend" in
   avx) features=enable-avx,enable-rayon ;;
   avx512) features=enable-ifma,enable-rayon ;;
@@ -13,7 +16,10 @@ case "$backend" in
 esac
 case "$mode" in
   native) features+=,enable-ckks,enable-bin-fhe,enable-blas; unset POULPY_TEST_EMULATED ;;
-  emulated) export POULPY_TEST_EMULATED=1 ;;
+  emulated)
+    export POULPY_TEST_EMULATED=1
+    # One AVX-512 binary serves the contracts and the `blas` group.
+    if [[ "$backend" == avx512 ]]; then features+=,enable-ckks,enable-blas; fi ;;
   *) echo "Invalid execution mode: $mode" >&2; exit 2 ;;
 esac
 
@@ -25,11 +31,14 @@ fi
 
 filters=()
 # Native AVX retains its full unit suite. AVX-512 retains all existing contracts.
-if [[ "$backend" == avx512 || "$mode" == emulated ]]; then
+if [[ "$group" == blas ]]; then
+  # Each AVX-512/IFMA type once, through its f64 parity; native runs every BLAS test with the contracts.
+  filters=(blas_parity --skip _quad --skip _rank2 --skip _base2k54 --skip _n32)
+elif [[ "$backend" == avx512 || "$mode" == emulated ]]; then
   filters=(test_vec_znx test_svp test_vmp test_convolution test_cnv test_word_compat
     test_transfer raw_transform_matches_contract core_parity core_encryption glwe_copy)
   if [[ "$mode" == native ]]; then
-    filters+=(ckks_parity bin_fhe_parity blas_parity prepared_tensor_tests finish_matches_composition_edges determinism
+    filters+=(ckks_parity bin_fhe_parity blas_tests prepared_tensor_tests finish_matches_composition_edges determinism
       consume_parity one_pass_parity relinearize_tests)
   else
     filters+=(--skip ::ntt_n)
@@ -44,7 +53,7 @@ if [[ "$backend" == avx512 || "$mode" == emulated ]]; then
   fi
 fi
 
-echo "Running $backend $mode tests (400-second execution budget; compilation is separate)."
+echo "Running $backend $mode ${group:+$group }tests (400-second execution budget; compilation is separate)."
 if timeout --signal=TERM --kill-after=10s 400s "${command[@]}" -- "${filters[@]}" \
   --test-threads=2 -Z unstable-options --report-time; then
   exit 0
