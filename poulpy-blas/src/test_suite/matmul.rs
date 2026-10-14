@@ -1158,10 +1158,10 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
 /// `res` all of another rank than the keys. poulpy-ckks's budget check rejects a `res` narrower than the factors' scale
 /// in the product and in every mix of the prepared product before `res` or a factor changes, and an input one bit short
 /// of the `2p` its maps spend in a cold preparation, as a factor of the product, and in the prepared product of its hot
-/// operand, which its preparation accepts, before it or `res` changes. The preparations take no tensor key, the prepared
-/// product of cold operands no rotation key, and that of a hot one the rotation keys of its terms. Each of these
-/// operations, under every hint and mix, runs on exactly the scratch its query reports, and one byte short panics before
-/// `res` changes.
+/// operand, which its preparation accepts, before it or `res` changes; of two short factors, the left one's error,
+/// whichever side the product holds. The preparations take no tensor key, the prepared product of cold operands no
+/// rotation key, and that of a hot one the rotation keys of its terms. Each of these operations, under every hint and
+/// mix, runs on exactly the scratch its query reports, and one byte short panics before `res` changes.
 pub fn test_blas_matmul_guards<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -1557,6 +1557,55 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         grid_snapshot::<BE, _>(&short) == input,
         "budget: a preparation changed its input"
     );
+    // Both factors short, `A` by one bit and `B` by two bits: whichever side the product holds, `A`'s terms come first,
+    // so `blas_matmul` and the prepared product of hot operands return the error `A` alone gives, not `B`'s, before
+    // any write. `1 x 2` by `2 x 1` holds `A`; `2 x 1` by `1 x 1` holds `B`.
+    let short_b = encrypt_grid::<BE, F, E>(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        ct.block_layout().log_delta() + 2 * p - 2,
+        0,
+        &Grid::model(log_d, 1, 2, lanes, 11),
+        &mut scratch.borrow(),
+    );
+    let as_column = |g: &BlasCiphertextOwned<BE>| BlasCiphertext::from_blocks(g.clone().into_blocks(), log_d, 2, 1).unwrap();
+    let (short_column, short_b_column) = (as_column(&short), as_column(&short_b));
+    let (ct_block, short_b_block) = (ct.clone().split_cols(1).0, short_b.clone().split_cols(1).0);
+    let error = |result: &Result<(), poulpy_ckks::CKKSError>| result.as_ref().err().and_then(|e| e.composition().cloned());
+    for (label, short_a, short_b, a, b) in [
+        ("A held", &short, &short_b_column, &ct, &column),
+        ("B held", &short_column, &short_b_block, &column, &ct_block),
+    ] {
+        let mut res = alloc(short_a.rows(), short_b.cols());
+        let mut matmul = |x: &BlasCiphertextOwned<BE>, y: &BlasCiphertextOwned<BE>, res: &mut BlasCiphertextOwned<BE>| {
+            module.blas_matmul(res, x, y, &ctx, &keys, &keys, &mut op_scratch.borrow())
+        };
+        let left_error = error(&matmul(short_a, b, &mut res));
+        let right_error = error(&matmul(a, short_b, &mut res));
+        assert!(
+            left_error.is_some() && left_error != right_error,
+            "{label}: one error for both sides"
+        );
+        let mut both = None;
+        assert_guard::<BE, _>(&format!("budget {label}"), "mul", Budget, &mut res, |res| {
+            let result = matmul(short_a, short_b, res);
+            both = error(&result);
+            result
+        });
+        assert_eq!(both, left_error, "{label}: blas_matmul returned the right terms' error first");
+        let s = &mut op_scratch.borrow();
+        let hot_a = module.blas_matmul_prepare_left(short_a, &ctx, &keys, OneShot, s).unwrap();
+        let hot_b = module.blas_matmul_prepare_right(short_b, &ctx, &keys, OneShot, s).unwrap();
+        let prepared = module.blas_matmul_prepared(&mut res, &hot_a, &hot_b, &ctx, &keys, &keys, s);
+        assert_eq!(
+            error(&prepared),
+            left_error,
+            "{label}: the prepared product returned the right terms' error first"
+        );
+    }
 
     // Each operation, under every hint and mix, on exactly its query, then one byte short of it.
     let mut res = alloc(1, 1);

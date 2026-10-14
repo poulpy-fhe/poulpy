@@ -177,13 +177,14 @@ fn assert_rejected<T>(label: &str, result: CKKSResult<T>) {
 
 /// On `2 x 2` grids of `4 x 4` blocks, every operation over a hook enters it as the reference composes it: the
 /// transpose and both shifts across blocks one map-hook call, a cold preparation two per block row (sigma or tau, then
-/// every shift) and a hot one none, `blas_matmul_prepared` one JKLS call per block of `res` beside the map-hook calls
-/// of a cold preparation for each hot side, and `blas_matmul` those of its two hot sides. Then no call the API rejects
-/// enters either hook: every grid [`rejected_grids`] and [`foreign_layouts`] build, a grid of another shape and one at
-/// radix 63, as an input or as `res` of each of these operations, preparations under either hint and prepared products
-/// of every mix (a lone preparation input of another shape is valid; one of another rank than the keys is not), an
-/// inner-dimension mismatch, foreign contexts, which a hot side's product rejects too, and key stores without rotation
-/// keys, which a hot side's product needs, or without the tensor key.
+/// every shift) and a hot one none, `blas_matmul_prepared` one JKLS call per block of `res` beside two map-hook calls
+/// per block row of a hot `a` and per block column of a hot `b`, which it makes the terms of one at a time, and
+/// `blas_matmul` those of its two hot sides. Then no call the API rejects enters either hook: every grid
+/// [`rejected_grids`] and [`foreign_layouts`] build, a grid of another shape and one at radix 63, as an input or as
+/// `res` of each of these operations, preparations under either hint and prepared products of every mix (a lone
+/// preparation input of another shape is valid; one of another rank than the keys is not), an inner-dimension mismatch,
+/// foreign contexts, which a hot side's product rejects too, and key stores without rotation keys, which a hot side's
+/// product needs, or without the tensor key.
 #[test]
 fn blas_hooks_run_on_accepted_calls_alone() {
     let _counting = counting();
@@ -245,8 +246,8 @@ fn blas_hooks_run_on_accepted_calls_alone() {
             module.blas_matmul_prepare_right(&a, &ctx, &keys, hint, &mut op_scratch.borrow())
         })
     });
-    // A hot side's terms cost the product what a cold preparation of its source costs.
-    let hot = |hint| calls(Reuse).0 - calls(hint).0;
+    // A hot side's terms cost the product two map-hook calls per unit, its 2 block rows of `a` or block columns of `b`.
+    let hot = |hint| if hint == Reuse { 0 } else { 2 * 2 };
     for (hl, hr) in MIXES {
         let maps = hot(hl) + hot(hr);
         assert_enters(&format!("blas_matmul_prepared {hl:?} x {hr:?}"), (maps, 4), || {

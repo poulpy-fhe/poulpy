@@ -30,10 +30,10 @@ The provided methods, in the crate-private [`oep/derived.rs`](../src/oep/derived
 call the backend's selected methods: the transpose and both shifts call its
 map hook, and `blas_matmul` its preparations and prepared product. The
 reference's cold preparations likewise call the backend's map hook, and the
-reference prepared product calls it for the terms of a hot operand, then its
-JKLS kernel. So `impl_blas_matmul_reference!` needs the intra and JKLS
-families, and an override of the hook or of the kernel reaches every operation
-built on it.
+reference prepared product, like the reference `blas_matmul` the family macro
+selects, calls it for the terms of a hot operand, then its JKLS kernel. So
+`impl_blas_matmul_reference!` needs the intra and JKLS families, and an
+override of the hook or of the kernel reaches every operation built on it.
 
 ## Grids and keys
 
@@ -147,8 +147,8 @@ an implementation must reproduce, which
 Three replacements cover most needs:
 
 - **The map hook**, for a backend that evaluates maps its own way. It covers
-  the transpose, both shifts, the cold preparations and the prepared product's
-  hot sides, so `blas_matmul` too:
+  the transpose, both shifts, the cold preparations and the hot sides of the
+  products, `blas_matmul` included:
 
   ```rust
   ::poulpy_blas::impl_blas_inter_reference!(MyBackend);
@@ -171,16 +171,15 @@ Three replacements cover most needs:
   cold. The inter, intra and JKLS families keep their macros, and
   `BlasMatMulImpl` is written by hand: it sets both operand types, implements
   both preparations and the prepared product, and forwards `blas_matmul_pt`
-  and `blas_matmul_pt_left` to `BlasMatMulReference`, while `blas_matmul` stays
-  provided. The JKLS kernel reads poulpy-ckks's prepared terms, so a backend
-  that holds its terms in another representation replaces this family rather
-  than the kernel.
+  and `blas_matmul_pt_left` to `BlasMatMulReference`. `blas_matmul` stays
+  provided, as both hot preparations then the prepared product. The JKLS
+  kernel reads poulpy-ckks's prepared terms, so a backend that holds its terms
+  in another representation replaces this family rather than the kernel.
 
 A backend may also override a provided method, for example the shifts, to
-chunk their heap grid, or `blas_matmul`, to stream its operands; it then
-reproduces the circuit the provided body fixes. A Rayon backend writes
-nothing: its kernels already run in parallel inside each operation
-([Parallelism](#parallelism)).
+chunk their heap grid; it then reproduces the circuit the provided body fixes.
+A Rayon backend writes nothing: its kernels already run in parallel inside
+each operation ([Parallelism](#parallelism)).
 
 ## What an override must preserve
 
@@ -343,9 +342,10 @@ and `CKKSPreparedRight<BE>` on the right.
   plan records. On the right, tau and psi^k. Each term is converted once, on
   its `ceil(w / base2k)` limbs. The terms depend on neither `res` nor the other
   factor: the kernel's offset absorbs a narrower `res`. The reference makes
-  them block row after block row, with two hook calls per row, sigma over its
-  blocks, then every shift of every sigma result, from one baby-step cache per
-  result.
+  them a unit at a time, with two hook calls per unit, sigma over its blocks,
+  then every shift of every sigma result, from one baby-step cache per result:
+  a cold preparation block row after block row, the products a block row of a
+  hot `a` or a block column of a hot `b`.
 - The bits, whatever the hints: the prepared product equals the reference's
   on the reference's operands of the same sources and hints under the same
   contexts, so an operand prepared under the product's context gives the same
@@ -382,12 +382,33 @@ streams; materializing or streaming the terms; caching them or their
 convolution forms; sharing baby-step caches; batching key switches.
 
 `blas_matmul` is provided as both hot preparations, then the prepared product,
-so it reaches the backend's methods. For an `m x K` by `K x n` product, the
-reference prepared product holds the terms of its hot sides for the call,
-`K (m + n) d` of them in the backend's transform-domain form for
-`blas_matmul`; streaming them is free. Hoisting the shifts is the one reserved
-variant: it changes the bits and the key widths, so it would arrive as a
-`BlasPlan` variant, not as an override.
+so it reaches the backend's methods. `impl_blas_matmul_reference!` overrides it
+with `BlasMatMulReference::blas_matmul_reference`, the same product on the
+grids read in place, without the preparations' copies. It asserts the
+reference's composition of the `blas_matmul` query, from the reference's
+preparation and product queries, which is the provided query under
+`impl_blas_matmul_reference!`. Hoisting the shifts is the one reserved variant:
+it changes the bits and the key widths, so it would arrive as a `BlasPlan`
+variant, not as an override.
+
+**Memory.** The reference products make every term once and convert it once,
+which fixes the transform count at its minimum, and keep a term only while it
+serves. With `T = K d` terms in a unit, a block row of `a` or a block column
+of `b`, of `La` and `Lb` limbs, for an `m x K` by `K x n` product:
+
+- two cold operands: no term;
+- one hot side: one unit of its terms at a time, beside its `K` sigma (tau)
+  results while the unit is made;
+- two hot sides, and `blas_matmul`: one side is held, `a` when
+  `(m - 1) La <= (n - 1) Lb`, the fewer limbs for the held terms plus one unit
+  of the other side, and the other streams, a unit at a time; with `b` held,
+  `a`'s first unit is made first, so the left terms' budget errors still lead.
+
+The heap of `blas_matmul` beyond its inputs and `res` is then the held side's
+terms plus one unit, whatever the extent of the streamed side; the held terms
+are in the backend's transform-domain form, which takes 1 (FFT64), 2 (NTT AVX,
+AVX-512 and IFMA) or 4 (NTT portable) times their coefficient size. A cold
+operand holds `d` such terms per block of its grid.
 
 ### The JKLS kernel
 
@@ -446,8 +467,8 @@ above bounds them.
 Within the scratch its query reports for `res`, `lhs[0]`, `rhs[0]`, the pair
 count and the key, it returns `Ok`, or poulpy-ckks's budget error before any
 write to `res`; with less scratch it panics before any write. The reference
-prepared product calls it once per block of `res`, in row-major order, on one
-scratch.
+products call it once per block of `res`, row by row, or column by column
+when they stream `b`, on one scratch.
 
 ## Scratch
 
@@ -467,20 +488,24 @@ queries: the provided transpose the hook's; the provided shifts the hook's, the
 copy's and the addition's; a reference hot preparation the copy's; a reference
 cold preparation the hook's through sigma (tau) and through the shifts over a
 block row, the copy's, and poulpy-ckks's `ckks_prepare_tmp_bytes` for a term;
-the reference prepared product the kernel's, and for each hot side the cold
-preparation's of its source; and the provided `blas_matmul` the largest of
-both hot preparations' queries and the prepared product's on the layouts they
-give. An override of the hook or of the kernel that needs other scratch
-reports it in its own query, and every operation over it follows.
+the reference prepared product the kernel's, and for each hot side the query
+of one unit of its terms, `K` blocks of its source; and the provided
+`blas_matmul` the largest of both hot preparations' queries and the prepared
+product's on the layouts they give. The reference `blas_matmul` asserts the
+reference's composition of that query, which is the provided query under
+`impl_blas_matmul_reference!`. An override of the hook or of the kernel that
+needs other scratch reports it in its own query, and every operation over it
+follows.
 
 The references run their steps one after another on one scratch, so their
 queries report the largest single step, on every executor
 ([Parallelism](#parallelism)).
 Temporaries that outlive a hook call live on the heap, not in scratch: the
 copies of a hot preparation; the sigma results and terms of a cold preparation,
-or of a hot side in the prepared product, each coefficient term dropped once
-converted; and the heap grid of a shift across blocks. A query may panic on
-layouts its validator rejects, as its `# Panics` section states.
+or of a hot side's units in a product, the held ones and the one streamed, each
+coefficient term dropped once converted; and the heap grid of a shift across
+blocks. A query may panic on layouts its validator rejects, as its `# Panics`
+section states.
 
 ## Parallelism
 

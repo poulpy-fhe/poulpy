@@ -15,7 +15,9 @@ batch: `blas_matmul` (JKLS, ciphertext x ciphertext), `blas_matmul_prepare_left`
 (ciphertext x public matrices, shared or one per matrix slot) and `blas_matmul_pt_left` (public matrices x ciphertext).
 A preparation takes a `PrepareHint`: hot, `OneShot`, for one product, a relabel of its input whose terms the product
 evaluates under its own context; cold, `Reuse`, for many, every term under the preparation's context, converted once to
-the transform domain. `blas_matmul` multiplies two hot operands.
+the transform domain. `blas_matmul` multiplies two hot operands. The reference products make a hot side's terms once, a
+block row or column at a time; of two hot sides they hold one side's terms and stream the other's, so the heap of
+`blas_matmul` does not grow with the streamed side.
 
 A `BlasPlan` fixes the block dimension and how each block map is evaluated. The maps are encoded once from it, at a
 caller-chosen precision, into a `BlasContext`, and public matrices into a `BlasPtOperand`. Operations take the context

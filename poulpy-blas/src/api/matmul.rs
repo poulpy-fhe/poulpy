@@ -59,6 +59,13 @@ pub trait BlasMatMulOps<BE: BlasMatMulImpl> {
     /// floating point, in the order of the pairs `(a_il[k], b_lj[k])`, `l`-major: ascending `l`, then ascending `k`
     /// within each `l`. That order is then part of the bits.
     ///
+    /// The reference reads `a` and `b` in place and makes every term once, converted once to the transform domain. For
+    /// `a` of `m x K` blocks and `b` of `K x n`, it holds the terms of the side that, with one unit of the other, takes
+    /// fewer limbs (`a` when `m <= n` at one term width), and makes those of the other side a unit at a time, a block
+    /// row of `a` or a block column of `b`, each serving its row (column) of `res`. So beside `a`, `b` and `res` its heap
+    /// holds the held side's `K d` terms per block row (column), in the backend's transform-domain form, and one unit of
+    /// the other with its sigma (tau) results, whatever the extent of the streamed side.
+    ///
     /// # Metadata
     ///
     /// Every block of `res` is one JKLS product of the terms of `a` and `b`, as [`Self::blas_matmul_prepared`] makes it:
@@ -247,8 +254,10 @@ pub trait BlasMatMulOps<BE: BlasMatMulImpl> {
     /// across the blocks and the tensor key and an offset of at least `base2k` in poulpy-ckks's ct x ct rule, which
     /// `max(w_a, w_b) >= base2k` guarantees, choose `base2k` as [`Self::blas_matmul`] states, `L` the limbs of the
     /// narrower of the terms' widths `w_a` and `w_b`: the kernel adds the products of every pair in the transform
-    /// domain before one inverse transform, in the order [`Self::blas_matmul`] states. The reference holds the terms of
-    /// the hot sides, in the backend's transform-domain form, for the call.
+    /// domain before one inverse transform, in the order [`Self::blas_matmul`] states. The reference makes a hot side's
+    /// terms a block row of `a` or a block column of `b` at a time, each once, and keeps a row (column) only while it
+    /// serves: beside a cold side, one at a time; of two hot sides, it holds one side's, as [`Self::blas_matmul`] does.
+    /// Of two cold operands it makes no term.
     ///
     /// # Metadata
     ///

@@ -226,7 +226,9 @@ pub unsafe trait BlasMatMulImpl: Backend {
     }
 
     /// [`Self::blas_matmul_prepare_left_impl`] on `a` and [`Self::blas_matmul_prepare_right_impl`] on `b`, both hot,
-    /// `OneShot`, then [`Self::blas_matmul_prepared_impl`] into `res` under `ctx`.
+    /// `OneShot`, then [`Self::blas_matmul_prepared_impl`] into `res` under `ctx`. [`crate::impl_blas_matmul_reference!`]
+    /// overrides it with [`crate::reference::BlasMatMulReference::blas_matmul_reference`], the same product on the
+    /// borrowed grids, without the copies.
     #[allow(clippy::too_many_arguments)]
     fn blas_matmul_impl<R, A, B, T, K>(
         module: &Module<Self>,
@@ -250,10 +252,10 @@ pub unsafe trait BlasMatMulImpl: Backend {
 }
 
 /// Selects [`crate::reference::BlasMatMulReference`] for `$be`, with [`crate::reference::BlasMatMulOperand`] as both
-/// prepared operands, under the provided `blas_matmul`. The reference prepares cold operands, and the terms of hot
-/// ones inside the product, through `$be`'s map hook, converts them through its poulpy-ckks preparations and multiplies
-/// them through its JKLS kernel, so `$be` also implements [`crate::oep::BlasMatIntraImpl`] and
-/// [`crate::oep::BlasJklsImpl`].
+/// prepared operands, and its `blas_matmul`, which streams the borrowed grids without the hot preparations' copies,
+/// under the provided query. The reference prepares cold operands, and the terms of hot ones inside the product,
+/// through `$be`'s map hook, converts them through its poulpy-ckks preparations and multiplies them through its JKLS
+/// kernel, so `$be` also implements [`crate::oep::BlasMatIntraImpl`] and [`crate::oep::BlasJklsImpl`].
 #[macro_export]
 macro_rules! impl_blas_matmul_reference {
     ($be:ty) => {
@@ -354,6 +356,26 @@ macro_rules! impl_blas_matmul_reference {
                 K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
             {
                 $crate::reference::BlasMatMulReference::blas_matmul_prepared_reference(module, res, a, b, ctx, tsk, atk, scratch)
+            }
+
+            fn blas_matmul_impl<R, A, B, T, K>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &mut R,
+                a: &A,
+                b: &B,
+                ctx: &$crate::layouts::BlasContext<Self>,
+                tsk: &T,
+                atk: &K,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> ::poulpy_ckks::CKKSResult<()>
+            where
+                R: $crate::layouts::BlasGridMut<Self>,
+                A: $crate::layouts::BlasGrid<Self>,
+                B: $crate::layouts::BlasGrid<Self>,
+                T: ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
+            {
+                $crate::reference::BlasMatMulReference::blas_matmul_reference(module, res, a, b, ctx, tsk, atk, scratch)
             }
 
             fn blas_matmul_pt_tmp_bytes_impl<R, A, K>(

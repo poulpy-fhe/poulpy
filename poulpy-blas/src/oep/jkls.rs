@@ -5,9 +5,10 @@ use poulpy_ckks::{
 use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GetTensorKey};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-/// Extension point of the JKLS kernel, one output block of the prepared product: the reference
-/// [`crate::reference::BlasMatMulReference::blas_matmul_prepared_reference`] runs one [`Self::blas_jkls_block_impl`]
-/// per block of `res`, so both `blas_matmul` and `blas_matmul_prepared` reach it, whatever the hints of the operands.
+/// Extension point of the JKLS kernel, one output block of the prepared product: the references
+/// [`crate::reference::BlasMatMulReference::blas_matmul_prepared_reference`] and
+/// [`crate::reference::BlasMatMulReference::blas_matmul_reference`] run one [`Self::blas_jkls_block_impl`] per block of
+/// `res`, so both `blas_matmul` and `blas_matmul_prepared` reach it, whatever the hints of the operands.
 ///
 /// # Safety
 ///
@@ -43,10 +44,10 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 /// the tensor key at that width and of their rank. Within the scratch [`Self::blas_jkls_block_tmp_bytes_impl`] reports
 /// for `res`, `lhs[0]`, `rhs[0]`, the pair count and the key, it returns `Ok`, or poulpy-ckks's budget error before any
 /// write to `res`; with less scratch it panics before any write, as the reference does. Any other `Err` is a backend
-/// fault (a validator gap or a device failure), and `res` is then unspecified. The reference prepared product calls it
-/// once per block of `res`, block after block, on one scratch. The pairs and the key are `Sync`, so an implementation
-/// may compute one block's terms concurrently, within the one operation. A backend that holds the terms in its own
-/// representation overrides [`crate::oep::BlasMatMulImpl`] instead.
+/// fault (a validator gap or a device failure), and `res` is then unspecified. The reference products call it once per
+/// block of `res`, block after block, row by row or column by column, on one scratch. The pairs and the key are `Sync`,
+/// so an implementation may compute one block's terms concurrently, within the one operation. A backend that holds the
+/// terms in its own representation overrides [`crate::oep::BlasMatMulImpl`] instead.
 pub unsafe trait BlasJklsImpl: Backend {
     /// Scratch bytes of [`Self::blas_jkls_block_impl`] into a block of layout `res` from `terms` pairs prepared from terms
     /// of layouts `lhs` and `rhs`, with a tensor key of layout `tsk`.

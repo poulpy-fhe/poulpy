@@ -432,10 +432,12 @@ fn ensure_term_keys<'c, BE: Backend + 'c>(
 /// Reference compositions of [`crate::api::BlasMatMulOps`] and the JKLS kernel, on inputs their validators accepted:
 /// they check nothing but their scratch, and return poulpy-ckks's budget errors before any write to `res`. A hot
 /// preparation copies its input; a cold one makes its terms through the map hook of [`BlasMatIntraImpl`], block row
-/// after block row, each converted once by poulpy-ckks's preparations. The prepared product makes a hot side's terms
-/// the same way under its context, then reads the terms one output block at a time through the JKLS kernel of
-/// [`BlasJklsImpl`]. The products by public matrices evaluate one poulpy-ckks summed linear transformation per output
-/// block. They run block after block on one scratch, and the first error stops them.
+/// after block row, each converted once by poulpy-ckks's preparations. The prepared product, and `blas_matmul` on the
+/// borrowed grids, make a hot side's terms the same way under their context, a block row of `a` or a block column of
+/// `b` at a time, holding, of two hot sides, the smaller one's terms and streaming the other's, and read the terms one
+/// output block at a time through the JKLS kernel of [`BlasJklsImpl`]. The products by public matrices evaluate one
+/// poulpy-ckks summed linear transformation per output block. They run block after block on one scratch, and the first
+/// error stops them.
 pub trait BlasMatMulReference<BE: Backend> {
     /// Under `OneShot`, the copy of a block of `a` into a block of its layout. Under `Reuse`, the largest of the map
     /// hook's queries through sigma, from a block row of `a` into blocks of its layout, and through every shift, from
@@ -507,7 +509,8 @@ pub trait BlasMatMulReference<BE: Backend> {
 
     /// The largest of the JKLS kernel's query for a block of `res` and the `K d` pairs of terms of the operands `a` and
     /// `b`, or of the layouts [`blas_matmul_operand_layout`] gives, a hot side's terms at the layout
-    /// [`blas_matmul_term_layout`] gives under `ctx`, and for each hot side, the cold preparation's query of its source.
+    /// [`blas_matmul_term_layout`] gives under `ctx`, and for each hot side, the query of the terms of one of its units,
+    /// `K` blocks of its source: a block row of `a`, a block column of `b`.
     #[allow(clippy::too_many_arguments)]
     fn blas_matmul_prepared_tmp_bytes_reference<R, A, B, T, K>(
         &self,
@@ -527,10 +530,22 @@ pub trait BlasMatMulReference<BE: Backend> {
         T: GGLWEInfos,
         K: GGLWEInfos;
 
-    /// The terms of each hot side under `ctx`, the left side's first, as the cold preparation of its source makes them
-    /// but converted under `OneShot`, held for the call; then for every block `(i, j)` of `res`, row-major, one JKLS
-    /// kernel, [`BlasJklsImpl::blas_jkls_block_impl`], over the `K d` pairs `(a_il[k], b_lj[k])`, `l`-major: ascending
-    /// `l`, then ascending `k` within each `l`.
+    /// For every block `(i, j)` of `res`, one JKLS kernel, [`BlasJklsImpl::blas_jkls_block_impl`], over the `K d` pairs
+    /// `(a_il[k], b_lj[k])`, `l`-major: ascending `l`, then ascending `k` within each `l`. A cold side brings its terms.
+    /// A hot side's are made under `ctx` as the cold preparation of its source makes them, but converted under
+    /// `OneShot`, one unit at a time: a block row of `a` or a block column of `b`, `K` blocks, through two hook calls,
+    /// sigma (tau) over the unit, then every shift of every result. Each unit is made once and every term converted
+    /// once:
+    /// - one hot side streams: each of its units serves its row (column) of `res`, then is dropped, the other side's
+    ///   terms read in place;
+    /// - two hot sides: one is held and the other streams. For `res` of `m x n` blocks and terms of `La` and `Lb` limbs,
+    ///   `a` is held when `(m - 1) La <= (n - 1) Lb`, the fewer limbs for the held terms plus one unit of the other
+    ///   side; `b` otherwise, after `a`'s first unit.
+    ///
+    /// So beside `res` and the operands the heap holds the held terms, if any, in the backend's transform-domain form,
+    /// and one unit with its sigma (tau) results; the blocks of `res` are written row by row, or column by column when
+    /// `b` streams. poulpy-ckks's budget errors come before any write to `res`: the left terms', then the right terms',
+    /// then the first block's ct x ct rule.
     #[allow(clippy::too_many_arguments)]
     fn blas_matmul_prepared_reference<R, T, K>(
         &self,
@@ -546,6 +561,31 @@ pub trait BlasMatMulReference<BE: Backend> {
         BE: BlasJklsImpl + BlasMatIntraImpl,
         Self: CKKSMulOps<BE>,
         R: BlasGridMut<BE>,
+        T: GetTensorKey<BE> + Sync,
+        K: GetAutomorphismKey<BE> + Sync;
+
+    /// `res = a b`: [`Self::blas_matmul_prepared_reference`] of two hot operands of `a` and `b`, bit for bit, reading
+    /// the blocks of `a` and `b` in place, without the copies of the hot preparations. It asserts the reference's
+    /// composition of the `blas_matmul` query, the largest of both reference hot preparations' queries and the
+    /// reference prepared product's on the layouts they give, over the keys it looks up: the provided query under
+    /// [`crate::impl_blas_matmul_reference!`], so that query stays exact.
+    #[allow(clippy::too_many_arguments)]
+    fn blas_matmul_reference<R, A, B, T, K>(
+        &self,
+        res: &mut R,
+        a: &A,
+        b: &B,
+        ctx: &BlasContext<BE>,
+        tsk: &T,
+        atk: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        BE: BlasJklsImpl + BlasMatIntraImpl,
+        Self: CKKSMulOps<BE>,
+        R: BlasGridMut<BE>,
+        A: BlasGrid<BE>,
+        B: BlasGrid<BE>,
         T: GetTensorKey<BE> + Sync,
         K: GetAutomorphismKey<BE> + Sync;
 
@@ -801,54 +841,234 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         K: GetAutomorphismKey<BE> + Sync,
     {
         let op = "blas_matmul_prepared";
-        let (tsks, atks) = (KeyLayouts::new(tsk), KeyLayouts::new(atk));
-        let (left, right) = (product_terms(a, ctx), product_terms(b, ctx));
-        let _ = ensure_tensor_key(op, &tsks, left.k().max(right.k()), left.rank());
-        if a.hint() == PrepareHint::OneShot {
-            let _ = ensure_term_keys(op, self, a, ctx.sigma(), |k| ctx.rotate_cols(k), &atks);
-        }
-        if b.hint() == PrepareHint::OneShot {
-            let _ = ensure_term_keys(op, self, b, ctx.tau(), |k| ctx.rotate_rows(k), &atks);
-        }
-        let bytes = tsks
-            .max_tensor_bytes(|tsk| kernel_tmp_bytes(self, &*res, a, b, ctx, tsk))
-            .max(atks.max_bytes(|atk| hot_tmp_bytes(self, a, b, ctx, atk)));
-        assert_scratch(op, bytes, scratch);
-        // ponytail: every term of a hot side, held for the call; streaming one block row or column bounds the heap.
-        let (log_d, hot) = (a.log_d, PrepareHint::OneShot);
-        let hot_left;
-        let lhs = match &a.terms {
-            Terms::Prepared(terms) => terms,
-            Terms::Source(blocks) => {
-                let convert =
-                    |term: &CKKSCiphertextOwned<BE>, hint, s: &mut ScratchArena<'_, BE>| self.ckks_prepare_left(term, hint, s);
-                let (first, shift) = (ctx.sigma(), |k| ctx.rotate_cols(k));
-                hot_left = prepare_terms(self, blocks, a.cols, log_d, first, shift, atk, hot, convert, scratch)?;
-                &hot_left
-            }
-        };
-        let hot_right;
-        let rhs = match &b.terms {
-            Terms::Prepared(terms) => terms,
-            Terms::Source(blocks) => {
-                let convert =
-                    |term: &CKKSCiphertextOwned<BE>, hint, s: &mut ScratchArena<'_, BE>| self.ckks_prepare_right(term, hint, s);
-                let (first, shift) = (ctx.tau(), |k| ctx.rotate_rows(k));
-                hot_right = prepare_terms(self, blocks, b.cols, log_d, first, shift, atk, hot, convert, scratch)?;
-                &hot_right
-            }
-        };
-        let (inner, n) = (a.cols, b.cols);
-        for (t, dst) in res.blocks_mut().iter_mut().enumerate() {
-            let (i, j) = (t / n, t % n);
-            let pairs = (0..inner).flat_map(|l| (0..1usize << log_d).map(move |k| (l, k)));
-            let (lhs, rhs): (Vec<_>, Vec<_>) = pairs
-                .map(|(l, k)| (&lhs[((i * inner + l) << log_d) + k], &rhs[((l * n + j) << log_d) + k]))
-                .unzip();
-            BE::blas_jkls_block_impl(self, dst, &lhs, &rhs, tsk, scratch)?;
-        }
-        Ok(())
+        assert_scratch(op, product_scratch(self, op, &*res, a, b, ctx, tsk, atk), scratch);
+        product(self, res, a.side(), b.side(), a.cols, a.log_d, ctx, tsk, atk, scratch)
     }
+
+    fn blas_matmul_reference<R, A, B, T, K>(
+        &self,
+        res: &mut R,
+        a: &A,
+        b: &B,
+        ctx: &BlasContext<BE>,
+        tsk: &T,
+        atk: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        BE: BlasJklsImpl + BlasMatIntraImpl,
+        Self: CKKSMulOps<BE>,
+        R: BlasGridMut<BE>,
+        A: BlasGrid<BE>,
+        B: BlasGrid<BE>,
+        T: GetTensorKey<BE> + Sync,
+        K: GetAutomorphismKey<BE> + Sync,
+    {
+        let op = "blas_matmul";
+        let hot = PrepareHint::OneShot;
+        let (left, right) = (
+            blas_matmul_operand_layout(a, ctx, hot),
+            blas_matmul_operand_layout(b, ctx, hot),
+        );
+        let bytes = product_scratch(self, op, &*res, &left, &right, ctx, tsk, atk)
+            .max(copy_tmp_bytes(self, a))
+            .max(copy_tmp_bytes(self, b));
+        assert_scratch(op, bytes, scratch);
+        let (a_side, b_side) = (Side::Hot(a.blocks()), Side::Hot(b.blocks()));
+        product(self, res, a_side, b_side, a.cols(), a.log_d(), ctx, tsk, atk, scratch)
+    }
+}
+
+impl<BE: Backend, P> BlasMatMulOperand<BE, P> {
+    /// The side the operand is in a product: its source blocks when hot, its terms when cold.
+    fn side(&self) -> Side<'_, CKKSCiphertextOwned<BE>, P> {
+        match &self.terms {
+            Terms::Source(blocks) => Side::Hot(blocks),
+            Terms::Prepared(terms) => Side::Cold(terms),
+        }
+    }
+}
+
+/// One side of a product: a hot side's source blocks, row-major, whose terms the product makes under its context, or a
+/// cold side's terms, block `(i, j)`'s term `k` at `(i * cols + j) * d + k`.
+enum Side<'a, S, P> {
+    Hot(&'a [S]),
+    Cold(&'a [P]),
+}
+
+/// The prepared product's query on the layouts of the keys it looks up in `tsk` and `atk`, for `res` and the operands,
+/// or their layouts, `a` and `b` under `ctx`: the tensor key's for the kernel, a hot side's rotation keys for its terms.
+/// The keys passed `op`'s validator, so the look-ups only record their layouts; a call that looks up none asks for `0`.
+#[allow(clippy::too_many_arguments)]
+fn product_scratch<BE, T, K>(
+    module: &Module<BE>,
+    op: &'static str,
+    res: &impl BlasGridInfos,
+    a: &impl BlasMatMulOperandInfos,
+    b: &impl BlasMatMulOperandInfos,
+    ctx: &BlasContext<BE>,
+    tsk: &T,
+    atk: &K,
+) -> usize
+where
+    BE: BlasJklsImpl + BlasMatIntraImpl,
+    Module<BE>: CKKSMulOps<BE>,
+    T: GetTensorKey<BE>,
+    K: GetAutomorphismKey<BE>,
+{
+    let (tsks, atks) = (KeyLayouts::new(tsk), KeyLayouts::new(atk));
+    let (left, right) = (product_terms(a, ctx), product_terms(b, ctx));
+    let _ = ensure_tensor_key(op, &tsks, left.k().max(right.k()), left.rank());
+    if a.hint() == PrepareHint::OneShot {
+        let _ = ensure_term_keys(op, module, a, ctx.sigma(), |k| ctx.rotate_cols(k), &atks);
+    }
+    if b.hint() == PrepareHint::OneShot {
+        let _ = ensure_term_keys(op, module, b, ctx.tau(), |k| ctx.rotate_rows(k), &atks);
+    }
+    tsks.max_tensor_bytes(|tsk| kernel_tmp_bytes(module, res, a, b, ctx, tsk))
+        .max(atks.max_bytes(|atk| hot_tmp_bytes(module, a, b, ctx, atk)))
+}
+
+/// `res = a b` under `ctx`, `res` of `m x n` blocks, for the left side `a` of `m x K` blocks and the right side `b` of
+/// `K x n`, `K = inner`, as [`BlasMatMulReference::blas_matmul_prepared_reference`] states: one JKLS kernel per block
+/// `(i, j)` of `res` over the `K d` pairs `(a_il[k], b_lj[k])`, `l`-major, a hot side's terms made one unit at a time,
+/// a block row of `a` or a block column of `b`, by [`unit_terms`] under `OneShot`. Each unit is made once, the held
+/// side's first, `a`'s first unit before `b`'s, so the budget errors come in the order the contract fixes, before any
+/// write to `res`.
+#[allow(clippy::too_many_arguments)]
+fn product<BE, R, SA, SB, T, K>(
+    module: &Module<BE>,
+    res: &mut R,
+    a: Side<'_, SA, CKKSPreparedLeft<BE>>,
+    b: Side<'_, SB, CKKSPreparedRight<BE>>,
+    inner: usize,
+    log_d: usize,
+    ctx: &BlasContext<BE>,
+    tsk: &T,
+    atk: &K,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: BlasJklsImpl + BlasMatIntraImpl,
+    Module<BE>: CKKSMulOps<BE>,
+    R: BlasGridMut<BE>,
+    SA: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
+    SB: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
+    T: GetTensorKey<BE> + Sync,
+    K: GetAutomorphismKey<BE> + Sync,
+{
+    let (m, n, d, hot) = (res.rows(), res.cols(), 1usize << log_d, PrepareHint::OneShot);
+    // The terms of block row `i` of a hot `a`, and of block column `j` of a hot `b`, `l`-major.
+    let a_row = |blocks: &[SA], i: usize, scratch: &mut ScratchArena<'_, BE>| {
+        let sources: Vec<_> = blocks[i * inner..(i + 1) * inner].iter().collect();
+        let convert =
+            |term: &CKKSCiphertextOwned<BE>, hint, s: &mut ScratchArena<'_, BE>| module.ckks_prepare_left(term, hint, s);
+        unit_terms(
+            module,
+            &sources,
+            log_d,
+            ctx.sigma(),
+            |k| ctx.rotate_cols(k),
+            atk,
+            hot,
+            convert,
+            scratch,
+        )
+    };
+    let b_col = |blocks: &[SB], j: usize, scratch: &mut ScratchArena<'_, BE>| {
+        let sources: Vec<_> = (0..inner).map(|l| &blocks[l * n + j]).collect();
+        let convert =
+            |term: &CKKSCiphertextOwned<BE>, hint, s: &mut ScratchArena<'_, BE>| module.ckks_prepare_right(term, hint, s);
+        unit_terms(
+            module,
+            &sources,
+            log_d,
+            ctx.tau(),
+            |k| ctx.rotate_rows(k),
+            atk,
+            hot,
+            convert,
+            scratch,
+        )
+    };
+    let mut jkls =
+        |i: usize, j: usize, lhs: &[&CKKSPreparedLeft<BE>], rhs: &[&CKKSPreparedRight<BE>], s: &mut ScratchArena<'_, BE>| {
+            BE::blas_jkls_block_impl(module, &mut res.blocks_mut()[i * n + j], lhs, rhs, tsk, s)
+        };
+    match (a, b) {
+        (Side::Cold(at), Side::Cold(bt)) => {
+            for i in 0..m {
+                let lhs = cold_row(at, i, inner, d);
+                for j in 0..n {
+                    jkls(i, j, &lhs, &cold_col(bt, j, inner, n, d), scratch)?;
+                }
+            }
+        }
+        (Side::Hot(ab), Side::Cold(bt)) => {
+            for i in 0..m {
+                let row = a_row(ab, i, scratch)?;
+                let lhs: Vec<_> = row.iter().collect();
+                for j in 0..n {
+                    jkls(i, j, &lhs, &cold_col(bt, j, inner, n, d), scratch)?;
+                }
+            }
+        }
+        (Side::Cold(at), Side::Hot(bb)) => {
+            for j in 0..n {
+                let col = b_col(bb, j, scratch)?;
+                let rhs: Vec<_> = col.iter().collect();
+                for i in 0..m {
+                    jkls(i, j, &cold_row(at, i, inner, d), &rhs, scratch)?;
+                }
+            }
+        }
+        (Side::Hot(ab), Side::Hot(bb)) => {
+            // ponytail: H1, the held side transform-domain, f = 2 or 4 times its coefficient bytes on NTT backends;
+            // held in coefficients it would be transformed again for every streamed unit, and fewest transforms win.
+            let limbs = |block: CKKSLayout, first, shift| mapped_block(mapped_block(block, first), shift).size();
+            let la = limbs(layout_of(&ab[0]), ctx.sigma(), ctx.rotate_cols(1));
+            let lb = limbs(layout_of(&bb[0]), ctx.tau(), ctx.rotate_rows(1));
+            if (m - 1) * la <= (n - 1) * lb {
+                let held = (0..m).map(|i| a_row(ab, i, scratch)).collect::<Result<Vec<_>>>()?;
+                let lhs: Vec<Vec<_>> = held.iter().map(|row| row.iter().collect()).collect();
+                for j in 0..n {
+                    let col = b_col(bb, j, scratch)?;
+                    let rhs: Vec<_> = col.iter().collect();
+                    for (i, lhs) in lhs.iter().enumerate() {
+                        jkls(i, j, lhs, &rhs, scratch)?;
+                    }
+                }
+            } else {
+                let mut first = Some(a_row(ab, 0, scratch)?);
+                let held = (0..n).map(|j| b_col(bb, j, scratch)).collect::<Result<Vec<_>>>()?;
+                let rhs: Vec<Vec<_>> = held.iter().map(|col| col.iter().collect()).collect();
+                for i in 0..m {
+                    let row = match first.take() {
+                        Some(row) => row,
+                        None => a_row(ab, i, scratch)?,
+                    };
+                    let lhs: Vec<_> = row.iter().collect();
+                    for (j, rhs) in rhs.iter().enumerate() {
+                        jkls(i, j, &lhs, rhs, scratch)?;
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The terms of block row `i` of a cold left side of `inner` block columns and `d` terms per block, `l`-major.
+fn cold_row<P>(terms: &[P], i: usize, inner: usize, d: usize) -> Vec<&P> {
+    terms[i * inner * d..(i + 1) * inner * d].iter().collect()
+}
+
+/// The terms of block column `j` of a cold right side of `inner` block rows, `n` block columns and `d` terms per block,
+/// `l`-major.
+fn cold_col<P>(terms: &[P], j: usize, inner: usize, n: usize, d: usize) -> Vec<&P> {
+    (0..inner)
+        .flat_map(|l| &terms[(l * n + j) * d..(l * n + j + 1) * d])
+        .collect()
 }
 
 /// The JKLS kernel's query for a block of `res` and the `K d` pairs of the terms of `a` and `b` in a product under `ctx`.
@@ -864,8 +1084,8 @@ fn kernel_tmp_bytes<BE: BlasJklsImpl>(
     BE::blas_jkls_block_tmp_bytes_impl(module, &res, &lhs, &rhs, a.cols() << a.log_d(), tsk)
 }
 
-/// The scratch of the terms of the hot sides of `a` and `b` in a product under `ctx`, block row after block row, as their
-/// cold preparations make them; `0` without a hot side.
+/// The scratch of the terms of the hot sides of `a` and `b` in a product under `ctx`, a unit at a time, `K` blocks each:
+/// a block row of `a`, a block column of `b`; `0` without a hot side.
 fn hot_tmp_bytes<BE>(
     module: &Module<BE>,
     a: &impl BlasMatMulOperandInfos,
@@ -882,10 +1102,16 @@ where
         PrepareHint::Reuse => 0,
     };
     let right = match b.hint() {
-        PrepareHint::OneShot => unit_tmp_bytes(module, b, ctx.tau(), |k| ctx.rotate_rows(k), atk, b.cols()),
+        PrepareHint::OneShot => unit_tmp_bytes(module, b, ctx.tau(), |k| ctx.rotate_rows(k), atk, b.rows()),
         PrepareHint::Reuse => 0,
     };
     left.max(right)
+}
+
+/// Scratch of a hot preparation of `a`: the copy of a block of `a` into a block of its layout.
+fn copy_tmp_bytes<BE: BlasMatIntraImpl>(module: &Module<BE>, a: &impl BlasGridInfos) -> usize {
+    let block = a.block_layout();
+    module.ckks_copy_tmp_bytes(&block, &block)
 }
 
 /// Scratch of a preparation of `a` under `hint` with `first` (sigma or tau) and `shift(k)` (phi^k or psi^k): the copy
@@ -904,10 +1130,7 @@ where
     K: GGLWEInfos,
 {
     match hint {
-        PrepareHint::OneShot => {
-            let block = a.block_layout();
-            module.ckks_copy_tmp_bytes(&block, &block)
-        }
+        PrepareHint::OneShot => copy_tmp_bytes(module, a),
         PrepareHint::Reuse => unit_tmp_bytes(module, a, first, shift, atk, a.cols()),
     }
 }
@@ -961,8 +1184,7 @@ where
 {
     let terms = match hint {
         PrepareHint::OneShot => {
-            let block = a.block_layout();
-            assert_scratch(op, module.ckks_copy_tmp_bytes(&block, &block), scratch);
+            assert_scratch(op, copy_tmp_bytes(module, a), scratch);
             let blocks = a.blocks().iter().map(|block| verbatim(module, block, scratch));
             Terms::Source(blocks.collect::<Result<_>>()?)
         }
