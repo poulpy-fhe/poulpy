@@ -32,7 +32,8 @@ use crate::{
 ///   poulpy-ckks's `ckks_copy`; term `k` is phi^k of that sigma into a block of width `w`, through the `Direct` shift
 ///   maps the plan records. On the right, tau and psi^k;
 /// - one JKLS kernel per block of `res`, [`crate::oep::BlasJklsImpl::blas_jkls_block_impl`], over its `K d` pairs of
-///   terms `(a_il[k], b_lj[k])`; the kernel's `# Safety` fixes its circuit;
+///   terms `(a_il[k], b_lj[k])`, `l`-major: ascending `l`, then ascending `k` within each `l`, the order the one-pass
+///   kernel sums them in, part of the bits on FFT; the kernel's `# Safety` fixes its circuit;
 /// - the key widths: sigma's (tau's) baby steps at `a.k` and giant steps at `a.k - p`, the shifts' giant steps at `w`,
 ///   the tensor key at the wider of both sides' `w`; a public operand's baby steps at `a.k` and giant steps at
 ///   `min(res.k, a.k - p_B)` for its scale `p_B`;

@@ -1,6 +1,6 @@
 //! Tests for `CKKSDotProductOps` — inner-product variants.
 //!
-//! All tests use `n = 3` terms.
+//! All tests use `n = 3` pairs, except the long sum's 32.
 //!
 //! # Test inventory
 //!
@@ -11,14 +11,14 @@
 //! | [`test_dot_product_ct_unaligned_b`] | ct · ct, one b-side input rescaled |
 //! | [`test_dot_product_ct_delta_log_delta`] | ct · ct fallback with non-uniform `log_delta` |
 //! | [`test_dot_product_ct_smaller_output`] | ct · ct, output narrower than inputs |
-//! | [`test_dot_product_ct_lazy`] | ct · ct, one relinearization: bits, metadata, precision, rejections |
-//! | [`test_dot_product_ct_long_sum`] | ct · ct, one relinearization of 192 coherent terms |
+//! | [`test_dot_product_ct_lazy`] | ct · ct, one relinearization: bits, zero padding, metadata, precision, rejections |
+//! | [`test_dot_product_ct_long_sum`] | ct · ct, one relinearization of 32 distinct pairs |
 //! | [`test_dot_product_ct_non_uniform`] | ct · ct, pairs without a shared layout or scale |
 //! | [`test_dot_product_pt_vec_aligned`] | ct · ZNX plaintext |
 //! | [`test_dot_product_const_aligned`] | ct · ZNX constant |
 
 use poulpy_core::{
-    CoreError, GLWEAdd, GLWENormalize, GLWETensoring, ScratchArenaTakeCore,
+    CoreError, GLWEAdd, GLWEMulRelinearizeSum, GLWENormalize, GLWESub, GLWETensoring, ScratchArenaTakeCore,
     layouts::{
         GLWEInfos, GLWELayout, GetTensorKey, LWEInfos, SetGLWEPlaintextInfos, TorusPrecision,
         prepared::GLWETensorKeyPreparedBackendRef,
@@ -33,14 +33,14 @@ use crate::{
     CKKSCompositionError, CKKSError, CKKSInfos, Scale, SetCKKSInfos, SlotsKind,
     api::{CKKSAddOps, CKKSDotProductOps, CKKSMulOps},
     layouts::{CKKSCiphertextOwned, ScratchArenaTakeCKKS, plaintext::CKKSPlaintext},
-    reference::mul::get_mul_ct_params,
+    reference::mul::{get_mul_ct_params, mul_one_pass},
 };
 
 use super::helpers::{
     PT_PREC, TestContextBackend, TestContextModule, TestScalar, TestVector, alloc_ct, alloc_scratch, assert_ckks_error,
     assert_decrypt_precision, assert_decrypt_precision_at_log_delta, ckks_decrypt_decode, ckks_encrypt, ckks_encrypt_with_prec,
-    ckks_pt_cst_full, encode_and_upload_pt, gen_sk_with_raw, gen_tsk, precision_at, precision_stats, quantize, quantized_const,
-    quantized_vector, test_vector_1, test_vector_2, want_mul,
+    ckks_pt_cst_full, encode_and_upload_pt, expected_log2_precision, gen_sk_with_raw, gen_tsk, precision_at, precision_stats,
+    quantize, quantized_const, quantized_vector, test_vector_1, test_vector_2, want_mul,
 };
 use super::parity::helpers::{snapshot, with_scratch};
 
@@ -526,10 +526,35 @@ pub fn test_dot_product_ct_smaller_output<BE, F, E>(
     );
 }
 
-/// The single-relinearization circuit from core steps: each pair's tensor product at `ckks_mul_into`'s
-/// width `max(a.k, b.k)`, added and normalized one at a time, then `dst` stamped with the ct × ct rule
-/// and relinearized once.
+/// The single-relinearization circuit from core steps, routed as `ckks_dot_product_ct` routes it: where
+/// `ckks_mul_into` takes its one-pass product, core's summed one-pass product of every pair at the width
+/// the ct × ct rule stamps, then that stamp; otherwise [`two_pass_reference`].
 fn lazy_reference<BE: TestContextBackend, H: GetTensorKey<BE>>(
+    module: &Module<BE>,
+    dst: &mut CKKSCiphertextOwned<BE>,
+    a: &[&CKKSCiphertextOwned<BE>],
+    b: &[&CKKSCiphertextOwned<BE>],
+    tsk: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    Module<BE>: GLWETensoring<BE> + GLWEMulRelinearizeSum<BE> + GLWEAdd<BE> + GLWENormalize<BE>,
+{
+    let (log_budget, log_delta, cnv_offset) = get_mul_ct_params(&*dst, a[0], b[0]).unwrap();
+    let tensor_k = a[0].k().max(b[0].k());
+    if !mul_one_pass(&*dst, &[a[0].base2k(), b[0].base2k()], tensor_k, cnv_offset, tsk) {
+        return two_pass_reference(module, dst, a, b, tsk, scratch);
+    }
+    let pairs: Vec<_> = a.iter().copied().zip(b.iter().copied()).collect();
+    let res_k = TorusPrecision((log_budget + log_delta) as u32);
+    module.glwe_mul_relinearize_sum(cnv_offset, dst, res_k, &pairs, tsk, scratch);
+    dst.set_log_budget(log_budget);
+    dst.set_log_delta(log_delta);
+}
+
+/// The two-pass circuit from core steps: each pair's tensor product at `ckks_mul_into`'s width
+/// `max(a.k, b.k)`, added and normalized one at a time, then `dst` stamped with the ct × ct rule and
+/// relinearized once.
+fn two_pass_reference<BE: TestContextBackend, H: GetTensorKey<BE>>(
     module: &Module<BE>,
     dst: &mut CKKSCiphertextOwned<BE>,
     a: &[&CKKSCiphertextOwned<BE>],
@@ -644,18 +669,22 @@ where
 /// budget, at four widths (all equal, a narrower `dst`, `b` narrower than `a`, `dst` wider than both) and
 /// with `b` at a lower scale than `a`.
 ///
-/// The result is a test-local composition of the core steps bit for bit, which also normalizes after
-/// every term. Its metadata and noise tag are the eager path's: the smaller scale, the smallest label and
-/// the joined slot kind of all six operands. Its precision is at least the eager path's, and it is canonical.
-/// The tensor key is looked up at `max(a.k, b.k)` only, as `ckks_mul_into` does, whatever `dst`'s width.
-/// Wrong lengths, a missing tensor key, inputs without the budget and a too narrow `dst` are rejected
-/// with `dst` untouched.
+/// The result is a test-local composition of the core steps bit for bit, routed as the operation routes
+/// it: on rank 1, where every case meets `ckks_mul_into`'s one-pass rule, core's summed one-pass product;
+/// on rank 2, the two-pass circuit, which also normalizes after every term. Independently of that
+/// composition, the first pair beside two pairs of zeros is `ckks_mul_into` of that pair, bit for bit,
+/// metadata and canonical flag included. On rank 1 the result agrees with the two-pass circuit up to
+/// rounding, to the precision the suite expects of a product. Its metadata and noise tag are the eager
+/// path's: the smaller scale, the smallest label and the joined slot kind of all six operands. Its
+/// precision is at least the eager path's, and it is canonical. The tensor key is looked up at
+/// `max(a.k, b.k)` only, as `ckks_mul_into` does, whatever `dst`'s width. Wrong lengths, a missing tensor
+/// key, inputs without the budget and a too narrow `dst` are rejected with `dst` untouched.
 pub fn test_dot_product_ct_lazy<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + GLWETensoring<BE> + GLWEAdd<BE>,
+    Module<BE>: TestContextModule<BE> + GLWETensoring<BE> + GLWEMulRelinearizeSum<BE> + GLWEAdd<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -740,6 +769,50 @@ where
             "{label}: not the core composition"
         );
 
+        // Pairs of zeros add nothing to the products, whichever circuit sums them.
+        let zero = |ct: &CKKSCiphertextOwned<BE>| {
+            let mut zero = ct.clone();
+            module.glwe_sub(&mut zero, ct, ct);
+            zero
+        };
+        let (za, zb) = (zero(a_refs[0]), zero(b_refs[0]));
+        let mut padded = alloc_ct(&params, module, dst_k);
+        with_scratch::<BE, _>(bytes, |scratch| {
+            module.ckks_dot_product_ct(&mut padded, &[a_refs[0], &za, &za], &[b_refs[0], &zb, &zb], &tsk, scratch)
+        })
+        .unwrap();
+        let mut product = alloc_ct(&params, module, dst_k);
+        module
+            .ckks_mul_into(&mut product, a_refs[0], b_refs[0], &tsk, &mut scratch.borrow())
+            .unwrap();
+        assert_eq!(
+            snapshot::<BE, _>(&padded),
+            snapshot::<BE, _>(&product),
+            "{label}: a pair beside pairs of zeros is not its product"
+        );
+
+        // The one-pass sum rounds once where the two-pass circuit rounds every tensor product.
+        let mut two_pass = alloc_ct(&params, module, dst_k);
+        two_pass_reference(
+            module,
+            &mut two_pass,
+            &a_refs,
+            &b_refs,
+            &tsk,
+            &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
+        );
+        let mut decode = |ct: &CKKSCiphertextOwned<BE>| -> Vec<F> {
+            let (re, im) = ckks_decrypt_decode(&params, module, &encoder, ct, &sk, &mut scratch.borrow());
+            re.into_iter().chain(im).collect()
+        };
+        let (have_slots, two_pass_slots) = (decode(&lazy), decode(&two_pass));
+        let agreement = precision_stats(&have_slots, &two_pass_slots, lazy.log_delta()).min_log2_prec;
+        let floor = expected_log2_precision(lazy.log_delta(), params.n);
+        assert!(
+            agreement >= floor,
+            "{label}: {agreement:.2} bits from the two-pass circuit < {floor:.2}"
+        );
+
         let mut eager = alloc_ct(&params, module, dst_k);
         eager_reference(
             module,
@@ -794,7 +867,7 @@ where
             &mut scratch.borrow(),
         );
         // Strict: the lazy sum rounds and relinearizes once, the eager one once per term. Every FFT64 and
-        // NTT4x30 suite measured the lazy path 0.37 to 0.84 bits ahead.
+        // NTT4x30 suite measured the lazy path 0.30 to 0.85 bits ahead, the one-pass sum on rank 1 included.
         assert!(
             lazy_prec >= eager_prec,
             "{label}: precision {lazy_prec:.2} bits < eager {eager_prec:.2} bits"
@@ -860,10 +933,11 @@ where
     }
 }
 
-/// A long sum, 192 terms, relinearized once. Every pair is the same two ciphertexts, so the digits
-/// add up coherently, their worst case, and so does the noise, and the lazy path normalizes only
-/// before the relinearization. The result is the core composition that normalizes after every term,
-/// bit for bit, and decrypts to the sum. It runs on its own ring, `N = 32`, at the suite's radix.
+/// A long sum, 32 pairs, relinearized once. The pairs are fresh encryptions of the same two messages,
+/// so their digits are independent, as `Module::max_base2k`'s model assumes: copies of one pair would
+/// add up coherently, outside it, past what an FFT suite's radix holds once the products accumulate in
+/// the transform domain. The result is the core composition, routed as the operation routes it, bit
+/// for bit, and decrypts to the sum. It runs on its own ring, `N = 32`, at the suite's radix.
 pub fn test_dot_product_ct_long_sum<BE, F, E>(
     params: CKKSTestParams,
     _module: &Module<BE>,
@@ -872,7 +946,7 @@ pub fn test_dot_product_ct_long_sum<BE, F, E>(
     BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + GLWETensoring<BE> + GLWEAdd<BE>,
+    Module<BE>: TestContextModule<BE> + GLWETensoring<BE> + GLWEMulRelinearizeSum<BE> + GLWEAdd<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -899,12 +973,11 @@ pub fn test_dot_product_ct_long_sum<BE, F, E>(
             &mut scratch.borrow(),
         )
     };
-    let (a, b) = (encrypt(&re1, &im1), encrypt(&re2, &im2));
-
-    let terms = 192;
-    let (a_refs, b_refs) = (vec![&a; terms], vec![&b; terms]);
+    let terms = 32;
+    let (a, b): (Vec<_>, Vec<_>) = (0..terms).map(|_| (encrypt(&re1, &im1), encrypt(&re2, &im2))).unzip();
+    let (a_refs, b_refs): (Vec<&_>, Vec<&_>) = (a.iter().collect(), b.iter().collect());
     let mut lazy = alloc_ct(&params, module, params.k);
-    let bytes = module.ckks_dot_product_ct_tmp_bytes(terms, &lazy, &a, &b, &tsk);
+    let bytes = module.ckks_dot_product_ct_tmp_bytes(terms, &lazy, &a[0], &b[0], &tsk);
     with_scratch::<BE, _>(bytes, |scratch| {
         module.ckks_dot_product_ct(&mut lazy, &a_refs, &b_refs, &tsk, scratch)
     })
@@ -926,7 +999,7 @@ pub fn test_dot_product_ct_long_sum<BE, F, E>(
 
     let (re, im) = want_mul(&re1, &im1, &re2, &im2);
     let copies = F::from_usize(terms).unwrap();
-    // `terms` equal terms repeat their noise as often: `log2(terms)` bits of precision go.
+    // `terms` terms add their noise: at most `log2(terms)` bits of precision go.
     let log_delta = lazy.log_delta() - terms.next_power_of_two().ilog2() as usize;
     assert_decrypt_precision_at_log_delta(
         "dot_product_ct_long_sum",

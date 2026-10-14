@@ -42,6 +42,15 @@ pub trait BlasMatMulOps<BE: BlasMatMulImpl> {
     /// Batches of different sizes broadcast: with `m_a` and `m_b` matrices in `a` and `b`, matrix slot `s` of `res` holds
     /// `A_(s mod m_a) B_(s mod m_b)`, so `res` holds the larger batch, at the smaller `log_sparsity` of the two.
     ///
+    /// Each block of `res` is one JKLS kernel over its `K d` pairs of terms, `K = a.cols()`, relinearized once. On rank
+    /// 1, with one `base2k` across the blocks and the tensor key and an offset of at least `base2k` in poulpy-ckks's ct x
+    /// ct rule, which `max(w_a, w_b) >= base2k` guarantees, the kernel adds the products of every pair in the transform
+    /// domain before one inverse transform, so choose `base2k` for `K d` times the products of one pair, up to `2 L` per
+    /// output limb, `L` the limbs of the narrower terms, `min(w_a, w_b)` over `base2k` rounded up: with
+    /// `Module::max_base2k(n, 2 L K d, ..)`, as for poulpy-core's `glwe_mul_relinearize_sum`. An FFT backend adds them in
+    /// floating point, in the order of the pairs `(a_il[k], b_lj[k])`, `l`-major: ascending `l`, then ascending `k`
+    /// within each `l`. That order is then part of the bits.
+    ///
     /// # Metadata
     ///
     /// Every block of `res` is one JKLS product of the terms of `a` and `b`, as [`Self::blas_matmul_prepared`] makes it:
@@ -194,6 +203,12 @@ pub trait BlasMatMulOps<BE: BlasMatMulImpl> {
     /// `res` receives the product of the grids `a` and `b` were prepared from, as [`Self::blas_matmul`] gives it, with the
     /// tensor key alone; batches of different sizes broadcast as there. `a` and `b` are unchanged, so they serve any
     /// number of products.
+    ///
+    /// Each block of `res` is one JKLS kernel over its `K d` pairs of terms, `K = a.cols()`. On rank 1, with one `base2k`
+    /// across the blocks and the tensor key and an offset of at least `base2k` in poulpy-ckks's ct x ct rule, which
+    /// `max(a.k, b.k) >= base2k` guarantees, choose `base2k` as [`Self::blas_matmul`] states, `L` the limbs of the
+    /// narrower of the terms' widths `a.k` and `b.k`: the kernel adds the products of every pair in the transform domain
+    /// before one inverse transform, in the order [`Self::blas_matmul`] states.
     ///
     /// # Metadata
     ///

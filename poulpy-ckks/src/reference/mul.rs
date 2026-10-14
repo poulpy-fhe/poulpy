@@ -581,7 +581,7 @@ where
 ///
 /// The one-pass path needs rank 1, one `base2k` across `dst`, the operands other than `dst` and the
 /// tensor key, and `cnv_offset >= base2k`. Other products go through the tensor intermediate.
-fn mul_one_pass<BE, Dst, T>(
+pub(crate) fn mul_one_pass<BE, Dst, T>(
     dst: &Dst,
     operands_base2k: &[poulpy_core::layouts::Base2K],
     tensor_k: TorusPrecision,

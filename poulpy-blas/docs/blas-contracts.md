@@ -202,7 +202,7 @@ The validators check this crate's rules and fail in this order:
    `res`; a context or public operand encoded for another slot count or radix;
    public matrices that do not divide the batch; a prepared operand without a
    batch record; and a product at a radix above 62, whose digits cannot hold
-   the JKLS kernel's two lazy terms.
+   two lazy terms of the JKLS kernel's two-pass circuit.
 2. Key by key, the rotation keys first, each at the width the operation
    looks it up at ([Keys](#keys)): `MissingAutomorphismKey`, or
    `MissingRelinearizationKey` for the tensor key, when the store lacks it,
@@ -315,7 +315,9 @@ returns.
   reference makes them with two hook calls, sigma over every block, then every
   shift of every sigma result, from one baby-step cache per result.
 - One JKLS kernel per block `res_ij`, over its `K d` pairs of terms
-  `(a_il[k], b_lj[k])` ([The JKLS kernel](#the-jkls-kernel)).
+  `(a_il[k], b_lj[k])`, `l`-major: ascending `l`, then ascending `k` within
+  each `l`, the order the one-pass kernel sums them in, part of the bits on FFT
+  ([The JKLS kernel](#the-jkls-kernel)).
 - The products by public matrices share their giant steps across the inner
   index: block `res_ij` is poulpy-ckks's
   `ckks_eval_linear_transformation_sum_into` of its `K` terms in ascending `l`,
@@ -350,28 +352,42 @@ tensor key at the tensor width `max(lhs.k, rhs.k)`, of their rank.
 
 **Fixed:**
 
-- Each term is one core tensor product of `(lhs[t], rhs[t])` at the offset
-  poulpy-ckks's ct x ct rule gives for `res`, rounded on its own at the tensor
-  width. Summing unrounded products, as `cnv_apply_dft_sum` would, changes
-  bits.
-- The terms are summed exactly, and the sum is normalized at that width before
-  the relinearization reads it; `res` is stamped with the rule's budget and
-  scale, the smallest label and the joined slot kind, then relinearized once,
-  with the tensor key at that width. `res` comes back canonical, without a
-  noise tag.
+- The circuit. It is one-pass where poulpy-ckks's `ckks_mul_into` takes its
+  one-pass product: rank 1, one `base2k` across `res`, the terms and the tensor
+  key, and an offset of at least `base2k`. It is two-pass otherwise, as at
+  rank 2.
+- One-pass: poulpy-core's `glwe_mul_relinearize_sum` over the pairs, in slice
+  order, at the offset poulpy-ckks's ct x ct rule gives for `res` and the width
+  it stamps. Every pair's products are added in the transform domain, in that
+  order, and only the key-switched column of the sum comes back to digits
+  before the one final normalization. An FFT backend adds in floating point, so
+  the order is part of the bits. The radix must hold `lhs.len()` times the
+  products of one pair (`Module::max_base2k`), as `blas_matmul` states.
+- Two-pass: each term is one core tensor product of `(lhs[t], rhs[t])` at that
+  offset, rounded on its own at the tensor width. Summing unrounded products,
+  as `cnv_apply_dft_sum` would, changes bits. The terms are summed exactly, and
+  the sum is normalized at that width before the relinearization reads it.
+- Either way, `res` is stamped with the rule's budget and scale, the smallest
+  label and the joined slot kind, and relinearized once, with the tensor key at
+  the tensor width. `res` comes back canonical, without a noise tag.
 
-**Free:** the order and grouping of the terms, computed in turn or
-concurrently, materialized or streamed; normalizing partial sums, or leaving
-them unnormalized until the DFT that reads the sum; caching the operands or
-their convolution forms; normalizing an operand read through a DFT.
+**Free:** materializing or streaming the terms; caching the operands or their
+convolution forms; normalizing an operand read through a DFT. On the two-pass
+circuit, also the order and grouping of the terms, computed in turn or
+concurrently, and normalizing partial sums, or leaving them unnormalized until
+the DFT that reads the sum. On the one-pass circuit, the order and grouping of
+the pairs are free only on an NTT backend, whose transform-domain additions are
+exact.
 
-**Normalization.** Partial sums may stay unnormalized until the next DFT. A
-normalization is exact carry propagation that preserves the value, so where it
-happens never changes the bits: the only obligation is the reference's bits.
-The reference normalizes once, right before the relinearization. Like any lazy
-addition, the sum must fit a 64-bit digit, which the caller's parameters
-ensure: signed terms grow slowly, like an Irwin–Hall sum, and radixes in
-practice are 54 or less.
+**Normalization.** On the two-pass circuit, partial sums may stay unnormalized
+until the next DFT. A normalization is exact carry propagation that preserves
+the value, so where it happens never changes the bits: the only obligation is
+the reference's bits. The reference normalizes once, right before the
+relinearization. Like any lazy addition, the sum must fit a 64-bit digit, which
+the caller's parameters ensure: signed terms grow slowly, like an Irwin–Hall
+sum, and radixes in practice are 54 or less. The one-pass circuit adds no
+digits: its products accumulate in the transform domain, and the radix rule
+above bounds them.
 
 Within the scratch its query reports for `res`, `lhs[0]`, `rhs[0]`, the pair
 count and the key, it returns `Ok`, or poulpy-ckks's budget error before any
@@ -462,8 +478,8 @@ blocks fit, are skipped with a message too. `poulpy-cpu-oracle` runs them on
 fills the 64 slots), at `log_d` 1 also at `N = 16`, whose 8 slots hold no
 `4 x 4` block, and on `NTT4x30Oracle` in `f64`, in `Quad` and at rank 2,
 each also at radix 54 (`N = 128`), the largest in practice.
-`test_blas_matmul_long_sums`, a `1 x 32` grid times a `32 x 1` grid of copies
-of one block, runs on its own ring, `N = 32`.
+`test_blas_matmul_long_sums`, a `1 x 8` grid times an `8 x 1` grid of
+distinct blocks, runs on its own ring, `N = 32`.
 
 `blas_conjugate_invariant_test_suite!(mod m, backend = …, params = …)` registers
 the test `conjugate_invariant` for a backend of the conjugate-invariant ring,
@@ -509,8 +525,9 @@ slot, maps and public matrices at scales below and above the operands', factors
 at two scales, in either order, through those maps, whose terms keep one budget
 or give the lower scale the larger budget (crossed scales, where a kernel that
 takes its offset from the wider term's width changes the bits), and a long
-product, `1 x 32` by `32 x 1` distinct blocks, at every registration, which a
-kernel that drops or repeats a term of a long sum fails. Each
+product, `1 x 32` by `32 x 1` distinct blocks (`1 x 16` by `16 x 1` above
+radix 52), at every registration, which a kernel that drops or repeats a term
+of a long sum fails. Each
 family's parity also runs calls that poulpy-ckks rejects for their budget: both
 backends return the same error and leave `res` and the inputs unchanged. Storage
 and ring are free: the bounds are `BlasParityBackend` (`Backend<ZnxWord = i64>`

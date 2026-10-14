@@ -6,12 +6,12 @@ use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
 use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSCiphertext};
 
-/// Tree-reduction sum over a slice of ciphertexts.
+/// Sum over a slice of ciphertexts.
 pub trait CKKSAddManyOps<BE: Backend> {
     fn ckks_add_many_tmp_bytes(&self, res_size: usize) -> usize;
 
-    /// Computes `dst = inputs[0] + inputs[1] + … + inputs[n-1]` using a
-    /// balanced binary tree of pairwise additions.
+    /// Computes `dst = inputs[0] + inputs[1] + … + inputs[n-1]`, adding the
+    /// inputs to `dst` from left to right.
     ///
     /// # Metadata
     ///
@@ -365,12 +365,27 @@ pub trait CKKSDotProductOps<BE: Backend> {
     /// ciphertext types, as [`CKKSMulOps::ckks_mul_into`](crate::api::CKKSMulOps::ckks_mul_into) takes.
     ///
     /// When there are several pairs, every `a[i]` shares one layout and scale,
-    /// every `b[i]` shares one, and `dst.base2k() <= 62`, the tensor products
-    /// are summed and relinearized once, with the tensor key at
-    /// `max(a[0].k(), b[0].k())`, as in `ckks_mul_into`. That path returns its errors before
-    /// writing `dst` and leaves `dst` canonical. Other inputs are equivalent to
-    /// a `ckks_mul_into` followed by `ckks_mul_add_ct_into` calls, and a later
-    /// pair can fail after `dst` was written.
+    /// every `b[i]` shares one, and `dst.base2k() <= 62`, the products are
+    /// summed and relinearized once, with the tensor key at
+    /// `max(a[0].k(), b[0].k())`, as in `ckks_mul_into`. Where `ckks_mul_into`
+    /// takes its one-pass product, the sum is poulpy-core's
+    /// `glwe_mul_relinearize_sum`. That product needs rank 1, one `base2k`
+    /// across `dst`, the operands and the tensor key, and a convolution offset
+    /// of at least `base2k`. The offset, `max(log_budget) + max(log_delta)`
+    /// over `a[0]` and `b[0]` plus the metadata's `offset`, is at least
+    /// `max(a[0].k(), b[0].k())`, so operands one limb wide or more meet it.
+    /// Every pair's products are then added in the transform domain, in slice
+    /// order, before one inverse transform. An FFT backend adds in floating
+    /// point, so the order is part of the result. On every backend, `base2k`
+    /// must hold `a.len()` times the products of one pair: pick it with
+    /// `Module::max_base2k`, counting up to `2 * min(a_size, b_size)` limb
+    /// products per pair and output limb, `a_size` and `b_size` the limbs of
+    /// `a[0].k()` and `b[0].k()`. Otherwise each tensor product is rounded on
+    /// its own and their exact sum is relinearized. Either way, that path
+    /// returns its errors before writing `dst` and leaves `dst` canonical.
+    /// Other inputs are equivalent to a `ckks_mul_into` followed by
+    /// `ckks_mul_add_ct_into` calls, and a later pair can fail after `dst` was
+    /// written.
     ///
     /// # Metadata
     ///

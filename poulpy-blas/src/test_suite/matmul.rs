@@ -1059,14 +1059,14 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
 /// and an input of a preparation of another degree, radix or rank ([`foreign_layouts`]), whose rank its keys reject;
 /// factors and `res` all of another rank than the rotation keys; a copy relabelled past `log2` of the ring degree; a
 /// context encoded on a module of another degree or at another radix; a factor at a radix other than the context's; an
-/// inner-dimension mismatch; a radix above 62, whose digits cannot hold the JKLS kernel's two lazy terms; a missing
-/// rotation or tensor key; and a tensor key of another rank than the blocks. The prepared product's validator also
-/// rejects operand infos without a batch record, at another dimension, without a block, or whose label does not allow
-/// their record, and operands and `res` all of another rank than the tensor key. poulpy-ckks's budget check rejects a
-/// `res` narrower than the factors' scale in the product and the prepared product before `res` or a factor changes, and
-/// an input one bit short of the `2p` its maps spend, in either preparation and as a factor of the product, before it
-/// or `res` changes. The preparations take no tensor key and the prepared product no rotation key. Each of these
-/// operations one scratch byte short of its query panics before `res` changes.
+/// inner-dimension mismatch; a radix above 62, whose digits cannot hold two lazy terms of the JKLS kernel's two-pass
+/// circuit; a missing rotation or tensor key; and a tensor key of another rank than the blocks. The prepared product's
+/// validator also rejects operand infos without a batch record, at another dimension, without a block, or whose label
+/// does not allow their record, and operands and `res` all of another rank than the tensor key. poulpy-ckks's budget
+/// check rejects a `res` narrower than the factors' scale in the product and the prepared product before `res` or a
+/// factor changes, and an input one bit short of the `2p` its maps spend, in either preparation and as a factor of the
+/// product, before it or `res` changes. The preparations take no tensor key and the prepared product no rotation key.
+/// Each of these operations one scratch byte short of its query panics before `res` changes.
 pub fn test_blas_matmul_guards<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -1235,8 +1235,8 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         assert_rejected(label, "blas_matmul_prepare_right", InvalidOperand, right);
     }
 
-    // `res` at radix 63: its digits hold one lazy term, short of the two the JKLS kernel sums at least. Its radix is not
-    // the factors' either, so the reason tells the two checks apart.
+    // `res` at radix 63: its digits hold one lazy term, short of the two the JKLS kernel's two-pass circuit sums at
+    // least. Its radix is not the factors' either, so the reason tells the two checks apart.
     let radix_63 = CKKSTestParams { base2k: 63, ..params };
     let mut res = alloc_grid(&radix_63, module, log_d, 1, 1, params.k);
     assert_guard::<BE, _>("lazy sums", "blas_matmul", InvalidOperand, &mut res, |res| {
@@ -1411,12 +1411,12 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         .unwrap();
 }
 
-/// A long lazy sum: `dec(matmul(enc(A), enc(B)))` is `A B` for a `1 x 32` grid times a `32 x 1` grid of `4 x 4` blocks,
-/// whose 128 tensor products the JKLS kernel adds in one lazy sum, and `blas_matmul_prepared` equals `blas_matmul` bit
-/// for bit.
-/// Every block is a copy of one ciphertext, so the terms' digits add up coherently, their worst case, and so does their
-/// noise. It runs on its own ring, `N = 32`, at the suite's radix. The product by public matrices sums no
-/// coefficient-domain terms: its giant steps add their products in the transform domain, whose radix rule
+/// A long product: `dec(matmul(enc(A), enc(B)))` is `A B` for a `1 x 8` grid times an `8 x 1` grid of distinct `4 x 4`
+/// blocks, whose 32 products one JKLS kernel sums, and `blas_matmul_prepared` equals `blas_matmul` bit for bit.
+/// The blocks are distinct encryptions, so the terms' digits are independent, as `Module::max_base2k`'s model assumes:
+/// copies of one block would add up coherently, outside it, past what an FFT suite's radix holds once the products
+/// accumulate in the transform domain. It runs on its own ring, `N = 32`, at the suite's radix. The product by public
+/// matrices is not repeated here: its giant steps add their products in the transform domain too, whose radix rule
 /// `blas_matmul_pt` documents.
 pub fn test_blas_matmul_long_sums<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
@@ -1441,37 +1441,27 @@ where
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let keys = TestKeys::<BE> { atks, tsk: Some(tsk) };
     let (tsk_layout, atk_layout) = (params.tsk_layout(), params.atk_layout());
-    let (a0, b0) = (Grid::model(log_d, 1, 1, lanes, 7), Grid::model(log_d, 1, 1, lanes, 8));
-    let ct_a0 = encrypt_grid::<BE, F, E>(
-        &params,
-        module,
-        host_module,
-        &encoder,
-        &sk,
-        params.k,
-        0,
-        &a0,
-        &mut scratch.borrow(),
-    );
-    let ct_b0 = encrypt_grid::<BE, F, E>(
-        &params,
-        module,
-        host_module,
-        &encoder,
-        &sk,
-        params.k,
-        0,
-        &b0,
-        &mut scratch.borrow(),
-    );
-    let repeat = |g: &BlasCiphertextOwned<BE>, rows: usize, cols: usize| {
-        BlasCiphertext::from_blocks(vec![g.block(0, 0).clone(); rows * cols], log_d, rows, cols).unwrap()
-    };
-    // `copies` equal terms repeat their noise as often: `log2(copies)` bits of precision go.
-    let check = |label: &str, res: &BlasCiphertextOwned<BE>, want: &Grid, copies: usize, scratch: &mut ScratchArena<'_, BE>| {
+    // `d` terms per inner block.
+    let inner = 8;
+    let (a, b) = (Grid::model(log_d, 1, inner, lanes, 7), Grid::model(log_d, inner, 1, lanes, 8));
+    let [ct_a, ct_b] = [&a, &b].map(|grid| {
+        encrypt_grid::<BE, F, E>(
+            &params,
+            module,
+            host_module,
+            &encoder,
+            &sk,
+            params.k,
+            0,
+            grid,
+            &mut scratch.borrow(),
+        )
+    });
+    // `inner` blocks add their noise: at most `log2(inner)` bits of precision go.
+    let check = |label: &str, res: &BlasCiphertextOwned<BE>, want: &Grid, scratch: &mut ScratchArena<'_, BE>| {
         let (block, (re, im)) = (res.block(0, 0), &want.blocks(slots)[0]);
         let to_f = |v: &[f64]| v.iter().map(|&x| F::from_f64(x).unwrap()).collect::<Vec<F>>();
-        let log_delta = block.log_delta() - copies.next_power_of_two().ilog2() as usize;
+        let log_delta = block.log_delta() - inner.next_power_of_two().ilog2() as usize;
         assert_decrypt_precision_at_log_delta::<BE, F, E>(
             label,
             &params,
@@ -1486,11 +1476,6 @@ where
         );
     };
 
-    // `d` terms per inner block.
-    let inner = 32;
-    let a = Grid::from_fn(log_d, 1, inner, lanes, |s, r, c| a0.at(s, r, c % d));
-    let b = Grid::from_fn(log_d, inner, 1, lanes, |s, r, c| b0.at(s, r % d, c));
-    let (ct_a, ct_b) = (repeat(&ct_a0, 1, inner), repeat(&ct_b0, inner, 1));
     let mut res = alloc_grid(&params, module, log_d, 1, 1, params.k);
     let bytes = module.blas_matmul_tmp_bytes(&res, &ct_a, &ct_b, &ctx, &tsk_layout, &atk_layout);
     module
@@ -1504,7 +1489,7 @@ where
             &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
         )
         .unwrap();
-    check("matmul", &res, &a.matmul(&b), inner, &mut scratch.borrow());
+    check("matmul", &res, &a.matmul(&b), &mut scratch.borrow());
 
     let bytes = module
         .blas_matmul_prepare_left_tmp_bytes(&ct_a, &ctx, &atk_layout)

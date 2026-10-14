@@ -710,11 +710,12 @@ fn preparation<B: BlasParityBackend>(
 /// budget plus the larger scale exceeds the wider term's width: a kernel taking its offset from that width, not from
 /// that sum, changes the bits. Products into `2 x 2` grids, of factors one limb apart, in both orders,
 /// since the tensor key is looked up at the wider side's width, of a lazy grid of real slots labelled 1 by itself, and
-/// a long product, `1 x 32` by `32 x 1` distinct blocks, whose `32 d` terms one lazy sum adds: a kernel that drops,
-/// repeats or swaps a term changes the bits. The products by public matrices on either side: of one matrix, of one per
-/// matrix slot, and of one on the lazy grid into `res` one limb narrower than it, below the products' width, which caps
-/// them and at whose width their giant steps are looked up, at the operands' scale; then of one matrix at each other
-/// scale.
+/// a long product, `1 x 32` by `32 x 1` distinct blocks, whose `32 d` terms one JKLS kernel sums, or `1 x 16` by
+/// `16 x 1` above radix 52, where `Module::max_base2k`'s model leaves `32 d` pairs less than 3 bits of slack at
+/// `d = 4`: a kernel that drops, repeats or swaps a term changes the bits. The products by public matrices on either
+/// side: of one matrix, of one per matrix slot, and of one on the lazy grid into `res` one limb narrower than it, below
+/// the products' width, which caps them and at whose width their giant steps are looked up, at the operands' scale;
+/// then of one matrix at each other scale.
 fn matmul<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) -> Vec<Output>
 where
     B: BlasParityBackend,
@@ -745,10 +746,11 @@ where
     });
     let thin = sized(params, module, log_d, 2, 2, w - base2k, 140);
     let lazy = lazy_real(params, module, log_d, 2, 2, 144);
-    // A long product: `32 d` terms of distinct blocks in one lazy sum.
+    // A long product: `inner d` terms of distinct blocks in one JKLS kernel.
+    let inner = if base2k > 52 { 16 } else { 32 };
     let (long_a, long_b) = (
-        operand(params, module, log_d, 1, 32, 160),
-        operand(params, module, log_d, 32, 1, 200),
+        operand(params, module, log_d, 1, inner, 160),
+        operand(params, module, log_d, inner, 1, 200),
     );
     let inputs = [&a, &b, &a_low, &b_low, &a_crossed, &b_crossed, &thin, &lazy, &long_a, &long_b];
     let before = snapshots::<B>(&inputs);
@@ -956,7 +958,7 @@ where
 /// through maps and public matrices at the factors' scale and at scales other than theirs, there also of factors at two
 /// scales in either order, the terms at the lower scale with the other's budget or a larger one (crossed scales), and
 /// the prepared operands' infos, `(log_d, rows, cols, block_layout, mat_slots)`, agree; prepared storage is never
-/// compared. A long product, `1 x 32` by `32 x 1` distinct blocks, agrees too.
+/// compared. A long product, `1 x 32` by `32 x 1` distinct blocks (`1 x 16` by `16 x 1` above radix 52), agrees too.
 /// The product, the prepared product and the products by public matrices on either side fail alike on a budget
 /// poulpy-ckks rejects, leaving `res` and the factors unchanged.
 pub fn test_blas_matmul_parity<BR, BT, F>(params: CKKSTestParams, shapes: &BlasParityShapes, r: &Module<BR>, t: &Module<BT>)

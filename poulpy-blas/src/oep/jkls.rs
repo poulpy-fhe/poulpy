@@ -13,17 +13,26 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 /// for pairs that share one layout per side.
 ///
 /// **Fixed:**
-/// - each term is one core tensor product of `(lhs[t], rhs[t])` at the offset poulpy-ckks's ct x ct rule gives for
-///   `res`, rounded on its own at the tensor width `max(lhs.k, rhs.k)`; summing unrounded products, as
-///   `cnv_apply_dft_sum` would, changes bits;
-/// - the terms are summed exactly, the sum normalized at that width before the relinearization reads it, `res` stamped
-///   with the rule's budget and scale, the smallest label and the joined slot kind, then relinearized once into `res`
-///   with the tensor key at that width; `res` comes back canonical, without a noise tag.
+/// - the circuit, one-pass where poulpy-ckks's `ckks_mul_into` takes its one-pass product: rank 1, one `base2k` across
+///   `res`, the terms and the tensor key, and an offset of at least `base2k`; two-pass otherwise;
+/// - one-pass: poulpy-core's `glwe_mul_relinearize_sum` over the pairs, in slice order, at the offset poulpy-ckks's
+///   ct x ct rule gives for `res` and the width it stamps, with the tensor key at the tensor width `max(lhs.k, rhs.k)`:
+///   every pair's products are added in the transform domain, in that order, and only the key-switched column of the
+///   sum comes back to digits before the one final normalization; an FFT backend adds in floating point, so the order
+///   of the pairs is part of the bits; then `res` is stamped with the rule's budget and scale, the smallest label and
+///   the joined slot kind;
+/// - two-pass: each term is one core tensor product of `(lhs[t], rhs[t])` at that offset, rounded on its own at the
+///   tensor width (summing unrounded products, as `cnv_apply_dft_sum` would, changes bits); the terms are summed
+///   exactly, the sum normalized at that width before the relinearization reads it, `res` stamped as above, then
+///   relinearized once into `res` with the tensor key at that width;
+/// - either way, `res` comes back canonical, without a noise tag.
 ///
-/// **Free (bit-identical):** the order and grouping of the terms, computed in turn or concurrently, materialized or
-/// streamed; normalizing partial sums, or leaving them unnormalized until the DFT that reads the sum: normalization
-/// preserves the value, so its placement never changes the bits; caching the operands or their convolution forms;
-/// normalizing an operand read through a DFT. Anything else changes bits.
+/// **Free (bit-identical):** materializing or streaming the terms; caching the operands or their convolution forms;
+/// normalizing an operand read through a DFT. On the two-pass circuit, also the order and grouping of the terms,
+/// computed in turn or concurrently, and normalizing partial sums or leaving them unnormalized until the DFT that reads
+/// the sum: normalization preserves the value, so its placement never changes the bits. On the one-pass circuit, the
+/// order and grouping of the pairs are free only on an NTT backend, whose transform-domain additions are exact.
+/// Anything else changes bits.
 ///
 /// It is called with `lhs.len() == rhs.len() >= 1` pairs, every `lhs` of one layout and every `rhs` of another, on
 /// inputs the prepared product's validator accepted, at a radix of 62 at most, which checked the tensor key at that
