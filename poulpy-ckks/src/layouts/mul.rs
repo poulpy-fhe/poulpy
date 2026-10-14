@@ -1,7 +1,6 @@
 //! Prepared operands for hoisted CKKS `ct×ct` multiplication.
 
 use crate::CKKSInfos;
-use poulpy_core::ComponentNoise;
 use poulpy_core::layouts::{
     Base2K, Degree, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEPlaintextMeta, LWEInfos, Rank, TorusPrecision,
 };
@@ -13,9 +12,10 @@ use poulpy_hal::layouts::{Backend, CnvPVecLOwned, CnvPVecROwned};
 /// [`CKKSMulOps::ckks_prepare_left`](crate::api::CKKSMulOps::ckks_prepare_left)
 /// and consumed by
 /// [`CKKSDotProductOps::ckks_dot_product_prepared`](crate::api::CKKSDotProductOps::ckks_dot_product_prepared).
-/// It bundles the backend-resident convolution operand with the layout,
-/// metadata and noise estimate of the ciphertext it was prepared from, which
-/// its infos report, so a product reads the operand without its source.
+/// It bundles the backend-resident convolution operand with the layout and
+/// metadata of the ciphertext it was prepared from, which its infos report, so
+/// a product reads the operand without its source. It carries no noise
+/// estimate: only fresh ciphertexts do.
 pub struct CKKSPreparedLeft<BE: Backend> {
     /// Backend-resident prepared convolution operand.
     pub(crate) prep: CnvPVecLOwned<BE>,
@@ -25,8 +25,6 @@ pub struct CKKSPreparedLeft<BE: Backend> {
     pub(crate) layout: GLWELayout,
     /// Plaintext metadata of the source ciphertext.
     pub(crate) meta: GLWEPlaintextMeta,
-    /// Noise estimate of the source ciphertext.
-    pub(crate) noise: Option<ComponentNoise>,
 }
 
 /// A CKKS ciphertext prepared as the right operand of a `ct×ct` product.
@@ -36,10 +34,10 @@ pub struct CKKSPreparedLeft<BE: Backend> {
 /// and consumed by
 /// [`CKKSMulOps::ckks_mul_prepared_assign`](crate::api::CKKSMulOps::ckks_mul_prepared_assign)
 /// and [`CKKSDotProductOps::ckks_dot_product_prepared`](crate::api::CKKSDotProductOps::ckks_dot_product_prepared).
-/// It bundles the backend-resident convolution operand with the layout,
-/// metadata and noise estimate of the ciphertext it was prepared from, which
-/// its infos report, so the multiply can derive the result precision without
-/// re-reading the source.
+/// It bundles the backend-resident convolution operand with the layout and
+/// metadata of the ciphertext it was prepared from, which its infos report, so
+/// the multiply can derive the result precision without re-reading the source.
+/// It carries no noise estimate: only fresh ciphertexts do.
 /// Preparing once and multiplying many times (e.g. the same `X^{gsp}` across a
 /// BSGS giant-step level) hoists the forward transform out of the per-multiply
 /// path.
@@ -54,8 +52,6 @@ pub struct CKKSPreparedRight<BE: Backend> {
     pub(crate) layout: GLWELayout,
     /// Plaintext metadata of the source ciphertext.
     pub(crate) meta: GLWEPlaintextMeta,
-    /// Noise estimate of the source ciphertext.
-    pub(crate) noise: Option<ComponentNoise>,
 }
 
 impl<BE: Backend> CKKSPreparedLeft<BE> {
@@ -77,10 +73,6 @@ impl<BE: Backend> CKKSPreparedRight<BE> {
 macro_rules! impl_prepared_infos {
     ($name:ident) => {
         impl<BE: Backend> LWEInfos for $name<BE> {
-            fn noise(&self) -> Option<ComponentNoise> {
-                self.noise.clone()
-            }
-
             fn n(&self) -> Degree {
                 self.layout.n
             }

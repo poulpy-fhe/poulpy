@@ -184,7 +184,6 @@ pub trait CKKSMulReference<BE: Backend> {
             size,
             layout: a.glwe_layout(),
             meta: a.meta(),
-            noise: a.noise(),
         })
     }
 
@@ -209,7 +208,6 @@ pub trait CKKSMulReference<BE: Backend> {
             size,
             layout: a.glwe_layout(),
             meta: a.meta(),
-            noise: a.noise(),
         })
     }
 

@@ -1185,16 +1185,12 @@ where
                 .collect();
             assert!(a[0].noise().is_some(), "a fresh ciphertext carries a noise estimate");
             for (prepared, ct) in left.iter().flatten().zip(a.iter().cycle()) {
-                assert_eq!(
-                    (prepared.glwe_layout(), prepared.meta(), prepared.noise()),
-                    (ct.glwe_layout(), ct.meta(), ct.noise())
-                );
+                assert_eq!((prepared.glwe_layout(), prepared.meta()), (ct.glwe_layout(), ct.meta()));
+                assert_eq!(prepared.noise(), None, "a prepared operand carries no noise estimate");
             }
             for (prepared, ct) in right.iter().flatten().zip(b.iter().cycle()) {
-                assert_eq!(
-                    (prepared.glwe_layout(), prepared.meta(), prepared.noise()),
-                    (ct.glwe_layout(), ct.meta(), ct.noise())
-                );
+                assert_eq!((prepared.glwe_layout(), prepared.meta()), (ct.glwe_layout(), ct.meta()));
+                assert_eq!(prepared.noise(), None, "a prepared operand carries no noise estimate");
             }
             Radix {
                 params,

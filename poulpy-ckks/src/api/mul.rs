@@ -172,8 +172,8 @@ pub trait CKKSMulOps<BE: Backend> {
     /// [`PrepareHint::Reuse`] for many; it may pick another representation for
     /// each, but the products give the same bits under either. The returned
     /// [`CKKSPreparedRight`] is backend-resident (heap-owned), so it draws no
-    /// scratch once produced, and its infos report `a`'s layout, metadata and
-    /// noise estimate. Producing it takes [`Self::ckks_prepare_tmp_bytes`] of
+    /// scratch once produced, and its infos report `a`'s layout and metadata
+    /// (no noise estimate: only fresh ciphertexts carry one). Producing it takes [`Self::ckks_prepare_tmp_bytes`] of
     /// scratch, which [`Self::ckks_mul_tmp_bytes`] covers.
     fn ckks_prepare_right<A>(
         &self,
