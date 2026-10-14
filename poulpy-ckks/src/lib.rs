@@ -54,8 +54,8 @@
 //! parameters keep a sum within an `i64` digit, which a long sum at a
 //! practical radix (54 or less) is far from filling. Where its pairs share
 //! layouts and `ckks_mul_into` takes its one-pass product, on rank 1,
-//! `ckks_dot_product_ct` adds its products in the transform domain instead,
-//! and the radix must hold them, as it states.
+//! `ckks_dot_product_ct` and `ckks_dot_product_prepared` add their products in
+//! the transform domain instead, and the radix must hold them, as they state.
 //!
 //! ## Modules
 //!

@@ -2,9 +2,12 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::GLWEToBackendMut;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendRef, GetTensorKey};
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, PrepareHint, ScratchArena};
 
-use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight};
+use crate::{
+    CKKSCtBounds, CKKSInfos, SetCKKSInfos,
+    layouts::{CKKSPreparedLeft, CKKSPreparedRight},
+};
 
 /// Ciphertext–ciphertext and ciphertext–plaintext multiplication.
 ///
@@ -96,8 +99,8 @@ pub trait CKKSMulOps<BE: Backend> {
     /// at `max(a.k(), b.k())`; `res` supplies its physical result shape and
     /// capacity, but its pre-call precision does not widen the intermediate.
     /// For `_assign` pass `dst` as both `res` and `a`; for
-    /// `_prepared_assign` pass the operand the [`CKKSPreparedRight`] was
-    /// prepared from.
+    /// `_prepared_assign` pass the [`CKKSPreparedRight`], whose infos report
+    /// the operand it was prepared from.
     fn ckks_mul_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
@@ -143,14 +146,41 @@ pub trait CKKSMulOps<BE: Backend> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetTensorKey<BE>;
 
-    /// Prepares `a` as a reusable right operand for [`Self::ckks_mul_prepared_assign`].
+    /// Scratch bytes of [`Self::ckks_prepare_left`] and [`Self::ckks_prepare_right`]
+    /// for an operand shaped like `a`: a GLWE shaped like `a`, to normalize it
+    /// into when its canonical flag is clear, and the larger of the
+    /// normalization's and the forward transform's scratch.
+    fn ckks_prepare_tmp_bytes<A>(&self, a: &A) -> usize
+    where
+        A: CKKSCtBounds;
+
+    /// Prepares `a` as a left operand of
+    /// [`CKKSDotProductOps::ckks_dot_product_prepared`](crate::api::CKKSDotProductOps::ckks_dot_product_prepared),
+    /// as [`Self::ckks_prepare_right`] prepares a right one.
+    fn ckks_prepare_left<A>(&self, a: &A, hint: PrepareHint, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedLeft<BE>>
+    where
+        A: GLWEToBackendRef<BE> + CKKSCtBounds;
+
+    /// Prepares `a` as a reusable right operand for [`Self::ckks_mul_prepared_assign`]
+    /// and [`CKKSDotProductOps::ckks_dot_product_prepared`](crate::api::CKKSDotProductOps::ckks_dot_product_prepared).
     ///
     /// Hoists the forward transform of `a` so the same operand can multiply many
     /// destinations without re-preparing it (e.g. one `X^{gsp}` across a BSGS
-    /// giant-step level). The returned [`CKKSPreparedRight`] is backend-resident
-    /// (heap-owned), so it draws no scratch once produced. The scratch needed to
-    /// produce it is bounded by [`Self::ckks_mul_tmp_bytes`].
-    fn ckks_prepare_right<A>(&self, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
+    /// giant-step level): `a`, normalized first if its canonical flag is clear,
+    /// on its `ceil(k / base2k)` limbs. `hint` tells the backend how the operand
+    /// will be used, [`PrepareHint::OneShot`] for one product and
+    /// [`PrepareHint::Reuse`] for many; it may pick another representation for
+    /// each, but the products give the same bits under either. The returned
+    /// [`CKKSPreparedRight`] is backend-resident (heap-owned), so it draws no
+    /// scratch once produced, and its infos report `a`'s layout, metadata and
+    /// noise estimate. Producing it takes [`Self::ckks_prepare_tmp_bytes`] of
+    /// scratch, which [`Self::ckks_mul_tmp_bytes`] covers.
+    fn ckks_prepare_right<A>(
+        &self,
+        a: &A,
+        hint: PrepareHint,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<CKKSPreparedRight<BE>>
     where
         A: GLWEToBackendRef<BE> + CKKSCtBounds;
 

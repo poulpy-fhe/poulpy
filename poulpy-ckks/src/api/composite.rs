@@ -4,7 +4,10 @@ use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos};
 use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
-use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSCiphertext};
+use crate::{
+    CKKSCtBounds, CKKSInfos, SetCKKSInfos,
+    layouts::{CKKSCiphertext, CKKSPreparedLeft, CKKSPreparedRight},
+};
 
 /// Sum over a slice of ciphertexts.
 pub trait CKKSAddManyOps<BE: Backend> {
@@ -341,7 +344,9 @@ pub trait CKKSMulSubOps<BE: Backend> {
 pub trait CKKSDotProductOps<BE: Backend> {
     /// Scratch bytes for [`Self::ckks_dot_product_ct`] over `n` input pairs;
     /// `a`/`b` describe the widest input pair (the internal products are carved
-    /// at `max(a.k, b.k)`).
+    /// at `max(a.k, b.k)`). They also cover [`Self::ckks_dot_product_prepared`]
+    /// over `n` pairs prepared from such ciphertexts: pass the prepared
+    /// operands, whose infos report them.
     fn ckks_dot_product_ct_tmp_bytes<R, A, B, T>(&self, n: usize, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
@@ -411,6 +416,41 @@ pub trait CKKSDotProductOps<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
+        H: GetTensorKey<BE>;
+
+    /// Computes `dst = Σ a[i] * b[i]` over operands prepared once by
+    /// [`CKKSMulOps::ckks_prepare_left`](crate::api::CKKSMulOps::ckks_prepare_left)
+    /// and [`CKKSMulOps::ckks_prepare_right`](crate::api::CKKSMulOps::ckks_prepare_right),
+    /// under either hint: [`Self::ckks_dot_product_ct`] of the ciphertexts they
+    /// were prepared from, bit for bit, metadata and canonical flag included,
+    /// with no operand transformed in the call. It takes the path of that
+    /// operation that relinearizes once, under the same conditions on the
+    /// radix, for any number of pairs: one pair gives what `ckks_dot_product_ct`
+    /// gives through `ckks_mul_into`.
+    ///
+    /// Every operand must be of the degree, `base2k` and rank of `dst`, or the
+    /// call returns `PreparedOperandLayoutMismatch`. Every `a[i]` must share
+    /// one layout and scale, every `b[i]` one, and `dst.base2k()` must be at
+    /// most 62, or it returns `InvalidOperand`: prepared pairs have no eager
+    /// path. It checks the lengths, the operands, the tensor key at
+    /// `max(a[0].k(), b[0].k())` and the budget, in that order, before writing
+    /// `dst`. The scratch is [`Self::ckks_dot_product_ct_tmp_bytes`] of the
+    /// prepared operands.
+    ///
+    /// # Metadata
+    ///
+    /// The rule of [`Self::ckks_dot_product_ct`], read from the infos of the
+    /// prepared operands, which report the ciphertexts they were prepared from.
+    fn ckks_dot_product_prepared<Dst, H>(
+        &self,
+        dst: &mut Dst,
+        a: &[&CKKSPreparedLeft<BE>],
+        b: &[&CKKSPreparedRight<BE>],
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>;
 
     /// Computes `dst = Σ a[i] * b[i]` over ciphertext–plaintext-polynomial pairs.

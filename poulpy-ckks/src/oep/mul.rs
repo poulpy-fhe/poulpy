@@ -3,9 +3,12 @@ use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 
 use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, LWEInfos, TorusPrecision};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, PrepareHint, ScratchArena};
 
-use crate::{CKKSCtBounds, CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos, layouts::CKKSPreparedRight};
+use crate::{
+    CKKSCtBounds, CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos,
+    layouts::{CKKSPreparedLeft, CKKSPreparedRight},
+};
 
 /// # Safety
 ///
@@ -62,9 +65,22 @@ pub unsafe trait CKKSMulImpl: Backend {
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<Self>;
+    /// Scratch bytes of [`Self::ckks_prepare_left_impl`] and [`Self::ckks_prepare_right_impl`].
+    fn ckks_prepare_tmp_bytes_impl<A: GLWEInfos>(module: &Module<Self>, a: &A) -> usize;
+    /// Prepares a left operand. Whatever `hint` selects, the products must give the reference's bits.
+    fn ckks_prepare_left_impl<A>(
+        module: &Module<Self>,
+        a: &A,
+        hint: PrepareHint,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<CKKSPreparedLeft<Self>>
+    where
+        A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos;
+    /// Prepares a right operand. Whatever `hint` selects, the products must give the reference's bits.
     fn ckks_prepare_right_impl<A>(
         module: &Module<Self>,
         a: &A,
+        hint: PrepareHint,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<CKKSPreparedRight<Self>>
     where
@@ -233,15 +249,35 @@ macro_rules! impl_ckks_mul_reference {
                 $crate::reference::mul::CKKSMulReference::ckks_mul_assign_reference(module, dst, a, tsk, scratch)
             }
 
+            fn ckks_prepare_tmp_bytes_impl<A: ::poulpy_core::layouts::GLWEInfos>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                a: &A,
+            ) -> usize {
+                $crate::reference::mul::CKKSMulReference::ckks_prepare_tmp_bytes_reference(module, a)
+            }
+
+            fn ckks_prepare_left_impl<A>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                a: &A,
+                hint: ::poulpy_hal::layouts::PrepareHint,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> $crate::CKKSResult<$crate::layouts::CKKSPreparedLeft<Self>>
+            where
+                A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSInfos + ::poulpy_core::layouts::GLWEInfos,
+            {
+                $crate::reference::mul::CKKSMulReference::ckks_prepare_left_reference(module, a, hint, scratch)
+            }
+
             fn ckks_prepare_right_impl<A>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 a: &A,
+                hint: ::poulpy_hal::layouts::PrepareHint,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<$crate::layouts::CKKSPreparedRight<Self>>
             where
                 A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSInfos + ::poulpy_core::layouts::GLWEInfos,
             {
-                $crate::reference::mul::CKKSMulReference::ckks_prepare_right_reference(module, a, scratch)
+                $crate::reference::mul::CKKSMulReference::ckks_prepare_right_reference(module, a, hint, scratch)
             }
 
             fn ckks_mul_prepared_assign_impl<Dst, T>(

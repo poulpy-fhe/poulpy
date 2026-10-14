@@ -57,7 +57,7 @@ use poulpy_core::layouts::{GLWEToBackendMut, LWEInfos};
 
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
+    layouts::{HostBytesBackend, Module, PrepareHint, ScratchOwned, Standard},
 };
 
 use super::helpers::{
@@ -121,7 +121,9 @@ where
     let metadata = ct1.noise();
     assert!(metadata.is_some());
     assert_eq!(ct_res.noise(), None);
-    let prepared = module.ckks_prepare_right(&ct2, &mut scratch.borrow()).unwrap();
+    let prepared = module
+        .ckks_prepare_right(&ct2, PrepareHint::OneShot, &mut scratch.borrow())
+        .unwrap();
     let mut prepared_result = ct1.clone();
     module
         .ckks_mul_prepared_assign(&mut prepared_result, &prepared, &tsk, &mut scratch.borrow())
@@ -131,7 +133,9 @@ where
 
     let mut unknown = ct2.clone();
     GLWEToBackendMut::<BE>::set_noise(&mut unknown, None);
-    let prepared = module.ckks_prepare_right(&unknown, &mut scratch.borrow()).unwrap();
+    let prepared = module
+        .ckks_prepare_right(&unknown, PrepareHint::Reuse, &mut scratch.borrow())
+        .unwrap();
     let mut prepared_result = ct1.clone();
     module
         .ckks_mul_prepared_assign(&mut prepared_result, &prepared, &tsk, &mut scratch.borrow())
@@ -386,7 +390,9 @@ pub fn test_mul_ct_larger_budget_smaller_scale<BE, F, E>(
         let mut assigned = a.clone();
         module.ckks_mul_assign(&mut assigned, b, &tsk, &mut scratch.borrow()).unwrap();
 
-        let prepared = module.ckks_prepare_right(b, &mut scratch.borrow()).unwrap();
+        let prepared = module
+            .ckks_prepare_right(b, PrepareHint::OneShot, &mut scratch.borrow())
+            .unwrap();
         let mut prepared_result = a.clone();
         module
             .ckks_mul_prepared_assign(&mut prepared_result, &prepared, &tsk, &mut scratch.borrow())
@@ -1455,7 +1461,9 @@ pub fn test_mul_prepared_layout_mismatch_error<BE, F, E>(
     let mismatched_base2k = params.base2k / 2;
     let mut other = module.ckks_ciphertext_alloc(mismatched_base2k.into(), params.k.into());
     other.set_meta(params.prec().meta);
-    let prepared = module.ckks_prepare_right(&other, &mut scratch.borrow()).unwrap();
+    let prepared = module
+        .ckks_prepare_right(&other, PrepareHint::Reuse, &mut scratch.borrow())
+        .unwrap();
     let err = module
         .ckks_mul_prepared_assign(&mut dst, &prepared, &tsk, &mut scratch.borrow())
         .unwrap_err();

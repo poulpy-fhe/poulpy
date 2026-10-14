@@ -1,6 +1,6 @@
 //! Tests for `CKKSDotProductOps` — inner-product variants.
 //!
-//! All tests use `n = 3` pairs, except the long sum's 32.
+//! All tests use `n = 3` pairs, except the long sum's 32 and the prepared products' 1 and 16.
 //!
 //! # Test inventory
 //!
@@ -14,25 +14,28 @@
 //! | [`test_dot_product_ct_lazy`] | ct · ct, one relinearization: bits, zero padding, metadata, precision, rejections |
 //! | [`test_dot_product_ct_long_sum`] | ct · ct, one relinearization of 32 distinct pairs |
 //! | [`test_dot_product_ct_non_uniform`] | ct · ct, pairs without a shared layout or scale |
+//! | [`test_dot_product_prepared`] | prepared ct · prepared ct: the bits of ct · ct, under every pair of hints; rejections |
 //! | [`test_dot_product_pt_vec_aligned`] | ct · ZNX plaintext |
 //! | [`test_dot_product_const_aligned`] | ct · ZNX constant |
 
 use poulpy_core::{
     CoreError, GLWEAdd, GLWEMulRelinearizeSum, GLWENormalize, GLWESub, GLWETensoring, ScratchArenaTakeCore,
     layouts::{
-        GLWEInfos, GLWELayout, GetTensorKey, LWEInfos, SetGLWEPlaintextInfos, TorusPrecision,
+        GLWEInfos, GLWELayout, GetTensorKey, LWEInfos, Rank, SetGLWEPlaintextInfos, TorusPrecision,
         prepared::GLWETensorKeyPreparedBackendRef,
     },
 };
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBytesBackend, Module, ScratchArena, ScratchOwned, Standard},
+    layouts::{Backend, HostBytesBackend, Module, PrepareHint, ScratchArena, ScratchOwned, Standard},
 };
 
 use crate::{
     CKKSCompositionError, CKKSError, CKKSInfos, Scale, SetCKKSInfos, SlotsKind,
     api::{CKKSAddOps, CKKSDotProductOps, CKKSMulOps},
-    layouts::{CKKSCiphertextOwned, ScratchArenaTakeCKKS, plaintext::CKKSPlaintext},
+    layouts::{
+        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPreparedLeft, CKKSPreparedRight, ScratchArenaTakeCKKS, plaintext::CKKSPlaintext,
+    },
     reference::mul::{get_mul_ct_params, mul_one_pass},
 };
 
@@ -1084,6 +1087,295 @@ pub fn test_dot_product_ct_non_uniform<BE, F, E>(
             "dot_product_ct_non_uniform {label}: not the eager path"
         );
     }
+}
+
+/// Runs a prepared dot product expected to fail on `bytes` of poisoned scratch, checks that `dst` is
+/// untouched, and returns the error.
+fn assert_prepared_rejected<BE: TestContextBackend, H: GetTensorKey<BE>>(
+    module: &Module<BE>,
+    dst: &mut CKKSCiphertextOwned<BE>,
+    a: &[&CKKSPreparedLeft<BE>],
+    b: &[&CKKSPreparedRight<BE>],
+    tsk: &H,
+    bytes: usize,
+) -> CKKSError
+where
+    Module<BE>: TestContextModule<BE>,
+{
+    let before = snapshot::<BE, _>(&*dst);
+    let err = with_scratch::<BE, _>(bytes, |scratch| module.ckks_dot_product_prepared(dst, a, b, tsk, scratch)).unwrap_err();
+    assert_eq!(
+        snapshot::<BE, _>(&*dst),
+        before,
+        "a rejected prepared dot product wrote dst: {err}"
+    );
+    err
+}
+
+/// Pairs prepared by `ckks_prepare_left` and `ckks_prepare_right` give `ckks_dot_product_ct` of the ciphertexts they
+/// were prepared from, bit for bit, metadata, noise tag and canonical flag included, for one pair and for 16 fresh
+/// pairs, under every pair of hints, with a tensor key of the operands' radix and one of another, at the suite's radix
+/// and at radix 12 (11 if the suite's is 12). On rank 1 the key of the operands' radix takes the one-pass sum and the
+/// other key the two-pass circuit; the rank-2 suite takes the two-pass circuit. Each preparation runs on the exact
+/// poisoned budget of `ckks_prepare_tmp_bytes`, and each prepared operand reports its source's layout, metadata and
+/// noise estimate, so `ckks_dot_product_ct_tmp_bytes` of the prepared operands is that of the ciphertexts, on whose
+/// exact poisoned budget both products run. Wrong lengths, operands of another degree, radix or rank, mixed layouts, a
+/// missing tensor key and inputs without the budget are rejected, in that order, with `dst` untouched.
+pub fn test_dot_product_prepared<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    const PAIRS: usize = 16;
+    const HINTS: [PrepareHint; 2] = [PrepareHint::OneShot, PrepareHint::Reuse];
+    const OP: &str = "ckks_dot_product_prepared";
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let (re2, im2) = test_vector_2::<F>(m);
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let prepare_left = |ct: &CKKSCiphertextOwned<BE>, hint| {
+        with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(ct), |s| module.ckks_prepare_left(ct, hint, s)).unwrap()
+    };
+    let prepare_right = |ct: &CKKSCiphertextOwned<BE>, hint| {
+        with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(ct), |s| module.ckks_prepare_right(ct, hint, s)).unwrap()
+    };
+
+    // At the suite's radix and at a small other one: the tensor key, `PAIRS` fresh pairs, and each operand prepared
+    // under each hint.
+    struct Radix<BE: Backend, K> {
+        params: CKKSTestParams,
+        tsk: K,
+        a: Vec<CKKSCiphertextOwned<BE>>,
+        b: Vec<CKKSCiphertextOwned<BE>>,
+        left: Vec<Vec<CKKSPreparedLeft<BE>>>,
+        right: Vec<Vec<CKKSPreparedRight<BE>>>,
+    }
+    let radixes: Vec<_> = [params.base2k, if params.base2k == 12 { 11 } else { 12 }]
+        .into_iter()
+        .map(|base2k| {
+            let params = CKKSTestParams { base2k, ..params };
+            let mut scratch = alloc_scratch(&params, module);
+            let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+            let mut encrypt = |re: &[F], im: &[F]| {
+                ckks_encrypt(
+                    &params,
+                    module,
+                    host_module,
+                    &encoder,
+                    &sk,
+                    params.k,
+                    re,
+                    im,
+                    &mut scratch.borrow(),
+                )
+            };
+            let (a, b): (Vec<_>, Vec<_>) = (0..PAIRS).map(|_| (encrypt(&re1, &im1), encrypt(&re2, &im2))).unzip();
+            let left: Vec<Vec<_>> = HINTS
+                .iter()
+                .map(|&hint| a.iter().map(|ct| prepare_left(ct, hint)).collect())
+                .collect();
+            let right: Vec<Vec<_>> = HINTS
+                .iter()
+                .map(|&hint| b.iter().map(|ct| prepare_right(ct, hint)).collect())
+                .collect();
+            assert!(a[0].noise().is_some(), "a fresh ciphertext carries a noise estimate");
+            for (prepared, ct) in left.iter().flatten().zip(a.iter().cycle()) {
+                assert_eq!(
+                    (prepared.glwe_layout(), prepared.meta(), prepared.noise()),
+                    (ct.glwe_layout(), ct.meta(), ct.noise())
+                );
+            }
+            for (prepared, ct) in right.iter().flatten().zip(b.iter().cycle()) {
+                assert_eq!(
+                    (prepared.glwe_layout(), prepared.meta(), prepared.noise()),
+                    (ct.glwe_layout(), ct.meta(), ct.noise())
+                );
+            }
+            Radix {
+                params,
+                tsk,
+                a,
+                b,
+                left,
+                right,
+            }
+        })
+        .collect();
+
+    for radix in &radixes {
+        let p = &radix.params;
+        for key in &radixes {
+            for n in [1, PAIRS] {
+                let label = format!(
+                    "dot_product_prepared base2k={} key.base2k={} pairs={n}",
+                    p.base2k, key.params.base2k
+                );
+                let (a, b): (Vec<&_>, Vec<&_>) = (radix.a[..n].iter().collect(), radix.b[..n].iter().collect());
+                let mut want = alloc_ct(p, module, p.k);
+                let bytes = module.ckks_dot_product_ct_tmp_bytes(n, &want, a[0], b[0], &key.tsk);
+                with_scratch::<BE, _>(bytes, |scratch| {
+                    module.ckks_dot_product_ct(&mut want, &a, &b, &key.tsk, scratch)
+                })
+                .unwrap();
+                let want = snapshot::<BE, _>(&want);
+                for (ha, hb) in [(0, 0), (1, 1), (0, 1), (1, 0)] {
+                    let lhs: Vec<&_> = radix.left[ha][..n].iter().collect();
+                    let rhs: Vec<&_> = radix.right[hb][..n].iter().collect();
+                    let hints = (HINTS[ha], HINTS[hb]);
+                    let mut have = alloc_ct(p, module, p.k);
+                    assert_eq!(
+                        module.ckks_dot_product_ct_tmp_bytes(n, &have, lhs[0], rhs[0], &key.tsk),
+                        bytes,
+                        "{label} {hints:?}: scratch query"
+                    );
+                    with_scratch::<BE, _>(bytes, |scratch| {
+                        module.ckks_dot_product_prepared(&mut have, &lhs, &rhs, &key.tsk, scratch)
+                    })
+                    .unwrap();
+                    assert_eq!(snapshot::<BE, _>(&have), want, "{label} {hints:?}: not ckks_dot_product_ct");
+                }
+            }
+        }
+    }
+
+    // Rejections at the suite's radix.
+    let Radix {
+        params: p,
+        tsk,
+        a,
+        left,
+        right,
+        ..
+    } = &radixes[0];
+    let lhs: Vec<&_> = left[1].iter().collect();
+    let rhs: Vec<&_> = right[1].iter().collect();
+    let mut dst = alloc_ct(p, module, p.k);
+    let bytes = module.ckks_dot_product_ct_tmp_bytes(PAIRS, &dst, lhs[0], rhs[0], tsk);
+    let no_key = TensorKeyAt(tsk, TorusPrecision(1));
+    /// `side` with `odd` at `at`.
+    fn with<'a, T>(side: &[&'a T], at: usize, odd: &'a T) -> Vec<&'a T> {
+        let mut side = side.to_vec();
+        side[at] = odd;
+        side
+    }
+
+    let err = assert_prepared_rejected(module, &mut dst, &[], &[], tsk, bytes);
+    assert!(err.to_string().contains("at least one pair"), "{err}");
+    let err = assert_prepared_rejected(module, &mut dst, &lhs, &rhs[..PAIRS - 1], tsk, bytes);
+    assert!(err.to_string().contains("length mismatch"), "{err}");
+
+    // Operands of another degree, radix or rank, on either side, before the layouts each side shares.
+    let foreign_cts: Vec<_> = [
+        GLWELayout {
+            n: (p.n / 2).into(),
+            ..p.glwe_layout()
+        },
+        GLWELayout {
+            rank: Rank((p.rank % 2 + 1) as u32),
+            ..p.glwe_layout()
+        },
+    ]
+    .iter()
+    .map(|layout| {
+        let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos(layout);
+        ct.set_meta(p.prec().meta);
+        ct
+    })
+    .collect();
+    let foreign_left: Vec<_> = foreign_cts
+        .iter()
+        .map(|ct| prepare_left(ct, PrepareHint::Reuse))
+        .chain([prepare_left(&radixes[1].a[0], PrepareHint::Reuse)])
+        .collect();
+    let foreign_right: Vec<_> = foreign_cts
+        .iter()
+        .map(|ct| prepare_right(ct, PrepareHint::Reuse))
+        .chain([prepare_right(&radixes[1].b[0], PrepareHint::Reuse)])
+        .collect();
+    let mismatch = |odd: GLWELayout| CKKSCompositionError::PreparedOperandLayoutMismatch {
+        op: OP,
+        dst_n: p.n,
+        dst_base2k: p.base2k,
+        dst_rank: p.rank,
+        prep_n: odd.n.as_usize(),
+        prep_base2k: odd.base2k.as_usize(),
+        prep_rank: odd.rank.as_usize(),
+    };
+    for (odd_left, odd_right) in foreign_left.iter().zip(&foreign_right) {
+        // The lengths come first.
+        let err = assert_prepared_rejected(module, &mut dst, &with(&lhs, 0, odd_left), &rhs[1..], tsk, bytes);
+        assert!(err.to_string().contains("length mismatch"), "{err}");
+        let err = assert_prepared_rejected(module, &mut dst, &with(&lhs, PAIRS - 1, odd_left), &rhs, tsk, bytes);
+        assert_ckks_error("foreign left operand", &err, mismatch(odd_left.glwe_layout()));
+        let err = assert_prepared_rejected(module, &mut dst, &lhs, &with(&rhs, 0, odd_right), tsk, bytes);
+        assert_ckks_error("foreign right operand", &err, mismatch(odd_right.glwe_layout()));
+    }
+
+    // A side that does not share one layout and scale: a narrower operand, then one at a lower scale.
+    let mut narrow = a[1].clone();
+    narrow.set_log_budget(narrow.log_budget() - 1);
+    let narrow = prepare_left(&narrow, PrepareHint::Reuse);
+    let mut low_scale = radixes[0].b[1].clone();
+    low_scale.set_log_delta(low_scale.log_delta() - 1);
+    let low_scale = prepare_right(&low_scale, PrepareHint::Reuse);
+    let invalid = |err: &CKKSError| matches!(err.composition(), Some(CKKSCompositionError::InvalidOperand { op: OP, .. }));
+    for (lhs, rhs) in [
+        (with(&lhs, 1, &narrow), rhs.clone()),
+        (lhs.clone(), with(&rhs, 1, &low_scale)),
+    ] {
+        let err = assert_prepared_rejected(module, &mut dst, &lhs, &rhs, &no_key, bytes);
+        assert!(invalid(&err), "mixed layouts, before the tensor key: {err}");
+    }
+    // The operands' layouts come first.
+    let err = assert_prepared_rejected(
+        module,
+        &mut dst,
+        &with(&lhs, 1, &narrow),
+        &with(&rhs, 0, &foreign_right[0]),
+        tsk,
+        bytes,
+    );
+    assert_ckks_error("mixed and foreign", &err, mismatch(foreign_right[0].glwe_layout()));
+
+    // No tensor key at `max(a.k, b.k)`.
+    let err = assert_prepared_rejected(module, &mut dst, &lhs, &rhs, &no_key, bytes);
+    assert_ckks_error(
+        "missing tensor key",
+        &err,
+        CKKSCompositionError::MissingRelinearizationKey { op: OP, k: p.k as u32 },
+    );
+
+    // Inputs whose budget is below their scale, after the tensor key.
+    let thin: Vec<_> = a
+        .iter()
+        .map(|ct| {
+            let mut ct = ct.clone();
+            ct.set_log_budget(ct.log_delta() - 1);
+            prepare_left(&ct, PrepareHint::Reuse)
+        })
+        .collect();
+    let thin: Vec<&_> = thin.iter().collect();
+    let err = assert_prepared_rejected(module, &mut dst, &thin, &rhs, &no_key, bytes);
+    assert!(
+        matches!(
+            err.composition(),
+            Some(CKKSCompositionError::MissingRelinearizationKey { .. })
+        ),
+        "{err}"
+    );
+    let err = assert_prepared_rejected(module, &mut dst, &thin, &rhs, tsk, bytes);
+    assert!(
+        matches!(
+            err.composition(),
+            Some(CKKSCompositionError::MultiplicationPrecisionUnderflow { .. })
+        ),
+        "{err}"
+    );
 }
 
 pub fn test_dot_product_pt_vec_aligned<BE, F, E>(

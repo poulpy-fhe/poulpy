@@ -3,7 +3,7 @@ use super::helpers::*;
 use crate::Scale;
 use crate::{CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SlotsKind, api::CKKSModuleInfos, oep::*, test_suite::CKKSTestParams};
 use poulpy_core::{GLWEAdd, GLWEMaskFill, layouts::*, oep::GLWENormalizeImpl};
-use poulpy_hal::layouts::{Backend, Module};
+use poulpy_hal::layouts::{Backend, Module, PrepareHint};
 
 pub trait ArithmeticParityBackend:
     Backend<ZnxWord = i64> + CKKSAddImpl + CKKSSubImpl + CKKSCopyImpl + CKKSNegImpl + CKKSPow2Impl + GLWENormalizeImpl
@@ -338,7 +338,10 @@ where
             })
             .unwrap();
             let ordinary = snapshot::<B, _>(&assigned);
-            let prepared = with_scratch::<B, _>(bytes, |scratch| B::ckks_prepare_right_impl(module, &rhs, scratch)).unwrap();
+            let prepared = with_scratch::<B, _>(bytes, |scratch| {
+                B::ckks_prepare_right_impl(module, &rhs, PrepareHint::OneShot, scratch)
+            })
+            .unwrap();
             let mut assigned = fixture_operand(module, &la, 51, lazy);
             with_scratch::<B, _>(bytes, |scratch| {
                 B::ckks_mul_prepared_assign_impl(module, &mut assigned, &prepared, &key, scratch)
@@ -460,7 +463,10 @@ where
             let before = snapshot::<B, _>(&a);
             let bytes =
                 B::ckks_mul_tmp_bytes_impl(module, &a, &a, &a, &key).max(B::ckks_square_tmp_bytes_impl(module, &a, &a, &key));
-            let prepared = with_scratch::<B, _>(bytes, |scratch| B::ckks_prepare_right_impl(module, &a, scratch)).unwrap();
+            let prepared = with_scratch::<B, _>(bytes, |scratch| {
+                B::ckks_prepare_right_impl(module, &a, PrepareHint::Reuse, scratch)
+            })
+            .unwrap();
             let mut ordinary = fixture_operand(module, &infos, 81, lazy);
             with_scratch::<B, _>(bytes, |scratch| {
                 B::ckks_mul_assign_impl(module, &mut ordinary, &a, &key, scratch)

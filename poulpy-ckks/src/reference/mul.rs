@@ -2,7 +2,8 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    GLWECopy, GLWEMulConst, GLWEMulPlain, GLWENormalize, GLWETensoring, ScratchArenaTakeCore, glwe_prepare_right,
+    GLWECopy, GLWEMulConst, GLWEMulPlain, GLWENormalize, GLWETensoring, ScratchArenaTakeCore, glwe_prepare_left,
+    glwe_prepare_right,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextLayout, GLWETensorViewMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         ModuleCoreAlloc, TorusPrecision,
@@ -13,10 +14,11 @@ use poulpy_hal::{
     layouts::{Backend, PrepareHint, ScratchArena},
 };
 
-use crate::{CKKSCompositionError, CKKSError, SlotsKind};
+use crate::{CKKSCompositionError, SlotsKind};
 use crate::{
-    CKKSInfos, SetCKKSInfos, checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget,
-    ensure_plaintext_degree_embeds, layouts::CKKSPreparedRight,
+    CKKSInfos, GLWEPlaintextInfos, SetCKKSInfos, checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget,
+    ensure_plaintext_degree_embeds,
+    layouts::{CKKSPreparedLeft, CKKSPreparedRight},
 };
 use poulpy_core::GLWEBytesOf;
 
@@ -148,7 +150,50 @@ pub trait CKKSMulReference<BE: Backend> {
         )
     }
 
-    fn ckks_prepare_right_reference<A>(&self, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
+    /// A GLWE shaped like `a`, to normalize it into, and the larger of the normalization's and the transform's
+    /// scratch: what `glwe_prepare_left` and `glwe_prepare_right` take.
+    fn ckks_prepare_tmp_bytes_reference<A>(&self, a: &A) -> usize
+    where
+        Self: GLWEBytesOf<BE> + GLWENormalize<BE> + Convolution<BE>,
+        A: GLWEInfos,
+    {
+        let size = a.size();
+        BE::scratch_aligned(self.glwe_bytes_of_from_infos(a))
+            + self
+                .glwe_normalize_tmp_bytes()
+                .max(self.cnv_prepare_left_tmp_bytes(size, size))
+                .max(self.cnv_prepare_right_tmp_bytes(size, size))
+    }
+
+    fn ckks_prepare_left_reference<A>(
+        &self,
+        a: &A,
+        hint: PrepareHint,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<CKKSPreparedLeft<BE>>
+    where
+        Self: ModuleN + Convolution<BE> + CnvPVecAlloc<BE> + GLWENormalize<BE> + Sized,
+        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+    {
+        // As `ckks_prepare_right_reference`, into a left operand.
+        let size = a.size();
+        let mut prep = self.cnv_pvec_left_alloc(a.n().as_usize(), a.rank().as_usize() + 1, size, hint);
+        glwe_prepare_left(self, &mut prep, a, a.k().as_usize(), scratch);
+        Ok(CKKSPreparedLeft {
+            prep,
+            size,
+            layout: a.glwe_layout(),
+            meta: a.meta(),
+            noise: a.noise(),
+        })
+    }
+
+    fn ckks_prepare_right_reference<A>(
+        &self,
+        a: &A,
+        hint: PrepareHint,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<CKKSPreparedRight<BE>>
     where
         Self: ModuleN + Convolution<BE> + CnvPVecAlloc<BE> + GLWENormalize<BE> + Sized,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
@@ -156,24 +201,15 @@ pub trait CKKSMulReference<BE: Backend> {
         // Hoist `a` once into a backend-resident right operand. `glwe_prepare_right`
         // reads only the top `k` limbs, so the operand is sized to that
         // effective limb count.
-        let cols = a.rank().as_usize() + 1;
-        let k: usize = a.k().into();
-        let size = k.div_ceil(a.base2k().as_usize());
-        let mut prep = self.cnv_pvec_right_alloc(a.n().as_usize(), cols, size, PrepareHint::Reuse);
-        glwe_prepare_right(self, &mut prep, a, k, scratch);
+        let size = a.size();
+        let mut prep = self.cnv_pvec_right_alloc(a.n().as_usize(), a.rank().as_usize() + 1, size, hint);
+        glwe_prepare_right(self, &mut prep, a, a.k().as_usize(), scratch);
         Ok(CKKSPreparedRight {
             prep,
             size,
-            log_delta: a.log_delta(),
-            k,
-            log_sparsity: a.log_sparsity(),
-            slots: a.slots(),
-            layout: GLWELayout {
-                n: a.n(),
-                base2k: a.base2k(),
-                k: a.k(),
-                rank: a.rank(),
-            },
+            layout: a.glwe_layout(),
+            meta: a.meta(),
+            noise: a.noise(),
         })
     }
 
@@ -189,9 +225,7 @@ pub trait CKKSMulReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
-        let k = dst.k().max(TorusPrecision(u32::try_from(prepared.k).map_err(|_| {
-            CKKSError::Internal(anyhow::anyhow!("prepared precision {} exceeds u32", prepared.k))
-        })?));
+        let k = dst.k().max(prepared.k());
         tsk.get_tensor_key(k)
             .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
                 op: "ckks_mul_prepared_assign",
@@ -200,7 +234,7 @@ pub trait CKKSMulReference<BE: Backend> {
 
         let (res_log_budget, res_log_delta, cnv_offset, tensor_k) = get_mul_prepared_params(&*dst, prepared)?;
 
-        let one_pass = mul_one_pass(dst, &[prepared.layout.base2k], tensor_k, cnv_offset, tsk).then_some(
+        let one_pass = mul_one_pass(dst, &[prepared.base2k()], tensor_k, cnv_offset, tsk).then_some(
             |dst: &mut Dst, res_k, s: &mut ScratchArena<'_, BE>| {
                 self.glwe_mul_prepared_relinearize_assign(
                     cnv_offset,
@@ -208,7 +242,7 @@ pub trait CKKSMulReference<BE: Backend> {
                     res_k,
                     &prepared.prep,
                     prepared.size,
-                    prepared.layout.k,
+                    prepared.k(),
                     tsk,
                     s,
                 )
@@ -226,8 +260,8 @@ pub trait CKKSMulReference<BE: Backend> {
                 log_budget: res_log_budget,
                 log_delta: res_log_delta,
                 // The product of values sparse at `s` and `t` is sparse at `min(s, t)`.
-                log_sparsity: Some(dst.log_sparsity().min(prepared.log_sparsity)),
-                slots: Some(dst.slots().join(prepared.slots)),
+                log_sparsity: Some(dst.log_sparsity().min(prepared.log_sparsity())),
+                slots: Some(dst.slots().join(prepared.slots())),
             },
             StampOrder::AfterApply,
             scratch,
@@ -601,16 +635,16 @@ where
 
 /// Prepared operands are long-lived cached objects: reject one built under a
 /// different ring degree, radix or rank before touching `dst`.
-pub(crate) fn check_prepared_layout<BE: Backend, D: GLWEInfos>(dst: &D, prepared: &CKKSPreparedRight<BE>) -> Result<()> {
-    if prepared.layout.n != dst.n() || prepared.layout.base2k != dst.base2k() || prepared.layout.rank != dst.rank() {
+pub(crate) fn check_prepared_layout<D: GLWEInfos, P: GLWEInfos>(op: &'static str, dst: &D, prepared: &P) -> Result<()> {
+    if (prepared.n(), prepared.base2k(), prepared.rank()) != (dst.n(), dst.base2k(), dst.rank()) {
         return Err(crate::CKKSCompositionError::PreparedOperandLayoutMismatch {
-            op: "mul_prepared",
+            op,
             dst_n: dst.n().as_usize(),
             dst_base2k: dst.base2k().as_usize(),
             dst_rank: dst.rank().as_usize(),
-            prep_n: prepared.layout.n.as_usize(),
-            prep_base2k: prepared.layout.base2k.as_usize(),
-            prep_rank: prepared.layout.rank.as_usize(),
+            prep_n: prepared.n().as_usize(),
+            prep_base2k: prepared.base2k().as_usize(),
+            prep_rank: prepared.rank().as_usize(),
         }
         .into());
     }
@@ -626,16 +660,14 @@ pub(crate) fn get_mul_prepared_params<BE: Backend, D: GLWEInfos + CKKSInfos>(
     dst: &D,
     prepared: &CKKSPreparedRight<BE>,
 ) -> Result<(usize, usize, usize, TorusPrecision)> {
-    check_prepared_layout(dst, prepared)?;
-    let prepared_k = u32::try_from(prepared.k)
-        .map_err(|_| crate::CKKSError::Internal(anyhow::anyhow!("prepared precision {} exceeds u32", prepared.k)))?;
-    let tensor_k = dst.k().max(TorusPrecision(prepared_k));
+    check_prepared_layout("mul_prepared", dst, prepared)?;
+    let tensor_k = dst.k().max(prepared.k());
     let (log_budget, log_delta, cnv_offset) = mul_ct_params_raw(
         dst.k().as_usize(),
         dst.log_delta(),
         dst.k().into(),
-        prepared.log_delta,
-        prepared.k,
+        prepared.log_delta(),
+        prepared.k().into(),
     )?;
     Ok((log_budget, log_delta, cnv_offset, tensor_k))
 }

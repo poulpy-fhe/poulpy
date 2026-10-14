@@ -1,11 +1,13 @@
 use crate::reference::composite::ckks_add_many_reference;
-use crate::reference::mul::{get_mul_ct_params, mul_one_pass};
+use crate::reference::mul::{check_prepared_layout, get_mul_ct_params, mul_one_pass};
 use crate::{CKKSCompositionError, CKKSResult as Result, SlotsKind, ckks_bail};
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    GLWEAdd, GLWEMulRelinearizeSum, GLWENormalize, GLWETensoring, ScratchArenaTakeCore,
-    layouts::{GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision},
+    GLWEAdd, GLWEMulRelinearizeSum, GLWENormalize, GLWEPreparedTensoring, GLWETensoring, ScratchArenaTakeCore,
+    layouts::{
+        GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorViewMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision,
+    },
 };
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
@@ -13,7 +15,7 @@ use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::CKKSCopyOps,
     api::{CKKSAddManyOps, CKKSAddOps, CKKSAffineOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSSubOps},
-    layouts::{CKKSCiphertext, CKKSCiphertextViewMut, ScratchArenaTakeCKKS},
+    layouts::{CKKSCiphertext, CKKSCiphertextViewMut, CKKSPreparedLeft, CKKSPreparedRight, ScratchArenaTakeCKKS},
 };
 use poulpy_core::GLWEBytesOf;
 
@@ -374,29 +376,35 @@ fn share_layout<C: CKKSCtBounds>(cts: &[&C]) -> bool {
         .all(|ct| (ct.glwe_layout(), ct.log_delta()) == (cts[0].glwe_layout(), cts[0].log_delta()))
 }
 
-/// `dst = Σ a[i] · b[i]` with one relinearization, for pairs that share one ct × ct rule.
+/// `dst = Σ a[i] · b[i]` with one relinearization, for pairs that share one ct × ct rule: the body of
+/// `ckks_dot_product_ct`'s lazy path and of `ckks_dot_product_prepared`, which form the products of their pairs with
+/// `one_pass` and `tensor`.
 ///
-/// Checks the tensor key and the rule before writing `dst`. Where `ckks_mul_into` takes its
-/// one-pass product, the sum is one `glwe_mul_relinearize_sum`, which adds the products in the
-/// transform domain: it writes `dst` at the stamped width, then `dst` is stamped, as in
-/// `ckks_mul_into`. Otherwise each term is one tensor product, canonical at the tensor width, and
-/// the terms are added without normalizing, as other lazy additions: the sum is exact, and it is
-/// normalized once, right before the relinearization reads it through a DFT. `dst` is stamped
-/// before the relinearization, which normalizes at the stamped width, as in `ckks_mul_into`.
-fn dot_product_ct_lazy<BE, Dst, A, B, H>(
+/// Checks the tensor key and the rule before writing `dst`. Where `ckks_mul_into` takes its one-pass product, the
+/// sum is `one_pass(dst, cnv_offset, res_k)`, which adds the products in the transform domain: it writes `dst` at the
+/// stamped width `res_k`, then `dst` is stamped, as in `ckks_mul_into`. Otherwise `tensor(t, i, cnv_offset)` writes
+/// pair `i`'s tensor product into `t`, canonical at the tensor width, and the terms are added without normalizing, as
+/// other lazy additions: the sum is exact, and it is normalized once, right before the relinearization reads it
+/// through a DFT. One pair is no sum: one tensor, not normalized, as in `ckks_mul_into`. `dst` is stamped before the
+/// relinearization, which normalizes at the stamped width, as in `ckks_mul_into`.
+#[allow(clippy::too_many_arguments)]
+fn dot_product_lazy<BE, Dst, A, B, H>(
     module: &Module<BE>,
+    op: &'static str,
     dst: &mut Dst,
     a: &[&A],
     b: &[&B],
     tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
+    one_pass: impl FnOnce(&mut Dst, usize, TorusPrecision, &mut ScratchArena<'_, BE>),
+    mut tensor: impl for<'t> FnMut(&mut GLWETensorViewMut<'t, BE>, usize, usize, &mut ScratchArena<'t, BE>),
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: GLWETensoring<BE> + GLWEMulRelinearizeSum<BE> + GLWEAdd<BE> + GLWENormalize<BE>,
+    Module<BE>: GLWETensoring<BE> + GLWEAdd<BE> + GLWENormalize<BE>,
     Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-    A: GLWEToBackendRef<BE> + CKKSCtBounds,
-    B: GLWEToBackendRef<BE> + CKKSCtBounds,
+    A: CKKSCtBounds,
+    B: CKKSCtBounds,
     H: GetTensorKey<BE>,
 {
     // `ckks_mul_into`'s tensor width, and so its key width, whatever `dst`'s width.
@@ -408,7 +416,7 @@ where
     };
     tsk.get_tensor_key(tensor_layout.k)
         .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
-            op: "ckks_dot_product_ct",
+            op,
             k: tensor_layout.k.into(),
         })?;
     let (log_budget, log_delta, cnv_offset) = get_mul_ct_params(dst, a[0], b[0])?;
@@ -418,9 +426,7 @@ where
     let slots = metas().map(|meta| meta.slots).reduce(SlotsKind::join).unwrap();
 
     if mul_one_pass(dst, &[a[0].base2k(), b[0].base2k()], tensor_layout.k, cnv_offset, tsk) {
-        let pairs: Vec<(&A, &B)> = a.iter().copied().zip(b.iter().copied()).collect();
-        let res_k = TorusPrecision((log_budget + log_delta) as u32);
-        module.glwe_mul_relinearize_sum(cnv_offset, dst, res_k, &pairs, tsk, scratch);
+        one_pass(dst, cnv_offset, TorusPrecision((log_budget + log_delta) as u32), scratch);
         dst.set_log_budget(log_budget);
         dst.set_log_delta(log_delta);
         dst.set_log_sparsity(log_sparsity);
@@ -432,14 +438,22 @@ where
 
     let scratch = scratch.borrow();
     let (mut acc, scratch) = scratch.take_glwe_tensor_scratch(&tensor_layout);
-    let (mut term, mut scratch) = scratch.take_glwe_tensor_scratch(&tensor_layout);
-    module.glwe_tensor_apply(cnv_offset, &mut acc, a[0], b[0], &mut scratch);
-    for (ai, bi) in a.iter().zip(b).skip(1) {
-        module.glwe_tensor_apply(cnv_offset, &mut term, *ai, *bi, &mut scratch);
-        module.glwe_add_assign(&mut acc, &term);
+    let (mut term, mut scratch) = match a.len() {
+        1 => (None, scratch),
+        _ => {
+            let (term, scratch) = scratch.take_glwe_tensor_scratch(&tensor_layout);
+            (Some(term), scratch)
+        }
+    };
+    tensor(&mut acc, 0, cnv_offset, &mut scratch);
+    if let Some(term) = term.as_mut() {
+        for i in 1..a.len() {
+            tensor(term, i, cnv_offset, &mut scratch);
+            module.glwe_add_assign(&mut acc, &*term);
+        }
+        // A tensor view reports canonical, so it must hold canonical digits before the relinearization's DFT.
+        module.glwe_normalize_assign(&mut acc, &mut scratch);
     }
-    // A tensor view reports canonical, so it must hold canonical digits before the relinearization's DFT.
-    module.glwe_normalize_assign(&mut acc, &mut scratch);
     dst.set_log_budget(log_budget);
     dst.set_log_delta(log_delta);
     dst.set_log_sparsity(log_sparsity);
@@ -476,7 +490,13 @@ where
 
 impl<BE: Backend> CKKSDotProductOps<BE> for Module<BE>
 where
-    Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + GLWETensoring<BE> + GLWEMulRelinearizeSum<BE> + GLWEAdd<BE> + GLWENormalize<BE>,
+    Module<BE>: CKKSAddOps<BE>
+        + CKKSMulOps<BE>
+        + GLWETensoring<BE>
+        + GLWEMulRelinearizeSum<BE>
+        + GLWEPreparedTensoring<BE>
+        + GLWEAdd<BE>
+        + GLWENormalize<BE>,
 {
     fn ckks_dot_product_ct_tmp_bytes<R, A, B, T>(&self, n: usize, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
@@ -489,12 +509,8 @@ where
         // intermediate and the apply scratch scale with the operand widths, not
         // only with `res` (which may legitimately be narrower).
         let mul_scratch: usize = self.ckks_mul_tmp_bytes(res, a, b, tsk);
-        if n <= 1 {
-            return mul_scratch;
-        }
-        let ct_bytes: usize = self.glwe_bytes_of_from_infos(res);
-        let fallback: usize = ct_bytes + mul_scratch.max(self.ckks_add_tmp_bytes(res.size()));
-        // The lazy path: an accumulator and a term at this layout.
+        // The path that relinearizes once, over ciphertexts or prepared operands: an accumulator at this layout,
+        // and a term for a sum.
         let tensor_layout = GLWELayout {
             n: res.n(),
             base2k: res.base2k(),
@@ -502,14 +518,22 @@ where
             rank: res.rank(),
         };
         let tensor_bytes: usize = BE::scratch_aligned(self.glwe_tensor_bytes_of_from_infos(&tensor_layout));
-        let inner: usize = self
+        let apply: usize = self
             .glwe_tensor_apply_tmp_bytes(&tensor_layout, a, b)
-            .max(self.glwe_normalize_tmp_bytes())
-            .max(self.glwe_tensor_relinearize_tmp_bytes(res, &tensor_layout, tsk));
-        let fast: usize = 2 * tensor_bytes + inner;
+            .max(self.glwe_tensor_apply_prepared_tmp_bytes(&tensor_layout, a, b));
+        let relinearize: usize = self.glwe_tensor_relinearize_tmp_bytes(res, &tensor_layout, tsk);
+        if n <= 1 {
+            // `ckks_mul_into`, or one prepared pair: one tensor, not normalized.
+            return mul_scratch.max(tensor_bytes + apply.max(relinearize));
+        }
+        let ct_bytes: usize = self.glwe_bytes_of_from_infos(res);
+        let fallback: usize = ct_bytes + mul_scratch.max(self.ckks_add_tmp_bytes(res.size()));
+        let fast: usize = 2 * tensor_bytes + apply.max(self.glwe_normalize_tmp_bytes()).max(relinearize);
         // Its one-pass form, whatever the number of pairs.
         let size: usize = tensor_layout.k.as_usize().div_ceil(res.base2k().as_usize());
-        let one_pass: usize = self.glwe_mul_relinearize_sum_tmp_bytes(res, size, size, tensor_layout.k, tsk);
+        let one_pass: usize = self
+            .glwe_mul_relinearize_sum_tmp_bytes(res, size, size, tensor_layout.k, tsk)
+            .max(self.glwe_mul_prepared_relinearize_sum_tmp_bytes(res, size, size, tensor_layout.k, tsk));
         fallback.max(fast).max(one_pass)
     }
 
@@ -556,10 +580,74 @@ where
         // Past base2k 62, two canonical tensor digits can overflow an `i64`, and no backend models a
         // product there (`Module::max_base2k`): such pairs keep the eager path.
         if n > 1 && dst.base2k().as_usize() <= 62 && share_layout(a) && share_layout(b) {
-            return dot_product_ct_lazy(self, dst, a, b, tsk, scratch);
+            return dot_product_lazy(
+                self,
+                "ckks_dot_product_ct",
+                dst,
+                a,
+                b,
+                tsk,
+                scratch,
+                |dst, cnv_offset, res_k, s| {
+                    let pairs: Vec<(&A, &B)> = a.iter().copied().zip(b.iter().copied()).collect();
+                    self.glwe_mul_relinearize_sum(cnv_offset, dst, res_k, &pairs, tsk, s)
+                },
+                |term, i, cnv_offset, s| self.glwe_tensor_apply(cnv_offset, term, a[i], b[i], s),
+            );
         }
         self.ckks_mul_into(dst, a[0], b[0], tsk, scratch)?;
         accumulate(self, dst, n, scratch, |tmp, i, s| self.ckks_mul_into(tmp, a[i], b[i], tsk, s))
+    }
+
+    fn ckks_dot_product_prepared<Dst, H>(
+        &self,
+        dst: &mut Dst,
+        a: &[&CKKSPreparedLeft<BE>],
+        b: &[&CKKSPreparedRight<BE>],
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        H: GetTensorKey<BE>,
+    {
+        const OP: &str = "ckks_dot_product_prepared";
+        check_lengths(OP, a.len(), b.len())?;
+        for operand in a {
+            check_prepared_layout(OP, dst, *operand)?;
+        }
+        for operand in b {
+            check_prepared_layout(OP, dst, *operand)?;
+        }
+        let invalid = |reason: String| -> Result<()> { Err(CKKSCompositionError::InvalidOperand { op: OP, reason }.into()) };
+        if !share_layout(a) || !share_layout(b) {
+            return invalid("every a[i] must share one layout and scale, and every b[i] one".into());
+        }
+        // Past base2k 62, where `ckks_dot_product_ct` keeps the eager path, which prepared pairs do not have.
+        if dst.base2k().as_usize() > 62 {
+            return invalid(format!(
+                "base2k {} > 62: two canonical tensor digits can overflow an i64",
+                dst.base2k().as_usize()
+            ));
+        }
+        dot_product_lazy(
+            self,
+            OP,
+            dst,
+            a,
+            b,
+            tsk,
+            scratch,
+            |dst, cnv_offset, res_k, s| {
+                let pairs: Vec<_> = a.iter().zip(b).map(|(ai, bi)| (ai.cnv(), bi.cnv())).collect();
+                let (a, b) = (a[0], b[0]);
+                self.glwe_mul_prepared_relinearize_sum(cnv_offset, dst, res_k, &pairs, a.size(), a.k(), b.size(), b.k(), tsk, s)
+            },
+            |term, i, cnv_offset, s| {
+                let (a, b) = (a[i], b[i]);
+                self.glwe_tensor_apply_prepared(cnv_offset, term, a.cnv(), a.size(), b.cnv(), b.size(), a.base2k(), s)
+            },
+        )
     }
 
     fn ckks_dot_product_pt_vec<Dst: Data, D: Data, E>(
