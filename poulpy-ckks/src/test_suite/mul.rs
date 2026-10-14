@@ -117,7 +117,7 @@ where
     module
         .ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, &mut scratch.borrow())
         .unwrap();
-    assert_mul_ct_output_meta("mul_ct_aligned", &ct_res, &ct1, &ct2);
+    assert_mul_ct_output_meta("mul_ct_aligned", &ct_res, params.k, &ct1, &ct2);
     let metadata = ct1.noise();
     assert!(metadata.is_some());
     assert_eq!(ct_res.noise(), None);
@@ -194,7 +194,7 @@ where
     module
         .ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, &mut scratch.borrow())
         .unwrap();
-    assert_mul_ct_output_meta("mul_ct a_lt_b", &ct_res, &ct1, &ct2);
+    assert_mul_ct_output_meta("mul_ct a_lt_b", &ct_res, params.k, &ct1, &ct2);
     assert_decrypt_precision(
         "mul_ct a_lt_b",
         &params,
@@ -252,7 +252,7 @@ where
     module
         .ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, &mut scratch.borrow())
         .unwrap();
-    assert_mul_ct_output_meta("mul_ct a_gt_b", &ct_res, &ct1, &ct2);
+    assert_mul_ct_output_meta("mul_ct a_gt_b", &ct_res, params.k, &ct1, &ct2);
     assert_decrypt_precision(
         "mul_ct a_gt_b",
         &params,
@@ -313,7 +313,7 @@ where
     module
         .ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, &mut scratch.borrow())
         .unwrap();
-    assert_mul_ct_output_meta("mul_ct delta_log_delta", &ct_res, &ct1, &ct2);
+    assert_mul_ct_output_meta("mul_ct delta_log_delta", &ct_res, params.k, &ct1, &ct2);
     assert_decrypt_precision_at_log_delta(
         "mul_ct delta_log_delta",
         &params,
@@ -381,7 +381,7 @@ pub fn test_mul_ct_larger_budget_smaller_scale<BE, F, E>(
         let label = format!("mul_ct larger_budget_smaller_scale {order}");
         let mut ct_res = alloc_ct(&params, module, params.k);
         module.ckks_mul_into(&mut ct_res, a, b, &tsk, &mut scratch.borrow()).unwrap();
-        assert_mul_ct_output_meta(&label, &ct_res, a, b);
+        assert_mul_ct_output_meta(&label, &ct_res, params.k, a, b);
 
         let mut assigned = a.clone();
         module.ckks_mul_assign(&mut assigned, b, &tsk, &mut scratch.borrow()).unwrap();
@@ -468,11 +468,12 @@ where
         &mut scratch.borrow(),
     );
     let (want_re, want_im) = want_mul(&re1, &im1, &re2, &im2);
-    let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
+    let dst_k = params.k - params.base2k - 1;
+    let mut ct_res = alloc_ct(&params, module, dst_k);
     module
         .ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, &mut scratch.borrow())
         .unwrap();
-    assert_mul_ct_output_meta("mul_ct smaller_output", &ct_res, &ct1, &ct2);
+    assert_mul_ct_output_meta("mul_ct smaller_output", &ct_res, dst_k, &ct1, &ct2);
     assert_decrypt_precision(
         "mul_ct smaller_output",
         &params,
@@ -536,13 +537,14 @@ pub fn test_mul_ct_smaller_output_exact_scratch<BE, F, E>(
         &mut scratch.borrow(),
     );
     let (want_re, want_im) = want_mul(&re1, &im1, &re2, &im2);
-    let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
+    let dst_k = params.k - params.base2k - 1;
+    let mut ct_res = alloc_ct(&params, module, dst_k);
     let exact_bytes = module.ckks_mul_tmp_bytes(&ct_res, &ct1, &ct2, &tsk);
     let mut mul_scratch = ScratchOwned::<BE>::alloc(exact_bytes);
     module
         .ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, &mut mul_scratch.borrow())
         .unwrap();
-    assert_mul_ct_output_meta("mul_ct smaller_output_exact_scratch", &ct_res, &ct1, &ct2);
+    assert_mul_ct_output_meta("mul_ct smaller_output_exact_scratch", &ct_res, dst_k, &ct1, &ct2);
     assert_decrypt_precision(
         "mul_ct smaller_output_exact_scratch",
         &params,
@@ -602,7 +604,13 @@ where
     module
         .ckks_mul_assign(&mut ct_res, &ct1, &tsk, &mut scratch.borrow())
         .unwrap();
-    assert_mul_ct_output_meta("mul_ct_assign_aligned", &ct_res, &ct_res_meta, &ct1);
+    assert_mul_ct_output_meta(
+        "mul_ct_assign_aligned",
+        &ct_res,
+        ct_res_meta.k().as_usize(),
+        &ct_res_meta,
+        &ct1,
+    );
     assert_decrypt_precision(
         "mul_ct_assign_aligned",
         &params,
@@ -660,7 +668,13 @@ where
     module
         .ckks_mul_assign(&mut ct_res, &ct1, &tsk, &mut scratch.borrow())
         .unwrap();
-    assert_mul_ct_output_meta("mul_ct_assign_self_lt", &ct_res, &ct_res_meta, &ct1);
+    assert_mul_ct_output_meta(
+        "mul_ct_assign_self_lt",
+        &ct_res,
+        ct_res_meta.k().as_usize(),
+        &ct_res_meta,
+        &ct1,
+    );
     assert_decrypt_precision(
         "mul_ct_assign_self_lt",
         &params,
@@ -718,7 +732,13 @@ where
     module
         .ckks_mul_assign(&mut ct_res, &ct1, &tsk, &mut scratch.borrow())
         .unwrap();
-    assert_mul_ct_output_meta("mul_ct_assign_self_gt", &ct_res, &ct_res_meta, &ct1);
+    assert_mul_ct_output_meta(
+        "mul_ct_assign_self_gt",
+        &ct_res,
+        ct_res_meta.k().as_usize(),
+        &ct_res_meta,
+        &ct1,
+    );
     assert_decrypt_precision(
         "mul_ct_assign_self_gt",
         &params,
@@ -766,7 +786,7 @@ where
     module
         .ckks_square_into(&mut ct_res, &ct, &tsk, &mut scratch.borrow())
         .unwrap();
-    assert_mul_ct_output_meta("square_aligned", &ct_res, &ct, &ct);
+    assert_mul_ct_output_meta("square_aligned", &ct_res, params.k, &ct, &ct);
     assert_decrypt_precision(
         "square_aligned",
         &params,
@@ -812,7 +832,7 @@ where
     module
         .ckks_square_into(&mut ct_res, &ct, &tsk, &mut scratch.borrow())
         .unwrap();
-    assert_mul_ct_output_meta("square_rescaled_input", &ct_res, &ct, &ct);
+    assert_mul_ct_output_meta("square_rescaled_input", &ct_res, params.k, &ct, &ct);
     assert_decrypt_precision(
         "square_rescaled_input",
         &params,
@@ -854,11 +874,12 @@ where
         &mut scratch.borrow(),
     );
     let (want_re, want_im) = want_square(&re1, &im1);
-    let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
+    let dst_k = params.k - params.base2k - 1;
+    let mut ct_res = alloc_ct(&params, module, dst_k);
     module
         .ckks_square_into(&mut ct_res, &ct, &tsk, &mut scratch.borrow())
         .unwrap();
-    assert_mul_ct_output_meta("square_smaller_output", &ct_res, &ct, &ct);
+    assert_mul_ct_output_meta("square_smaller_output", &ct_res, dst_k, &ct, &ct);
     assert_decrypt_precision(
         "square_smaller_output",
         &params,
@@ -904,7 +925,7 @@ where
     let (want_re, want_im) = want_square(&re1, &im1);
     let ct_in_meta = ckks_snapshot(&ct);
     module.ckks_square_assign(&mut ct, &tsk, &mut scratch.borrow()).unwrap();
-    assert_mul_ct_output_meta("square_assign", &ct, &ct_in_meta, &ct_in_meta);
+    assert_mul_ct_output_meta("square_assign", &ct, ct_in_meta.k().as_usize(), &ct_in_meta, &ct_in_meta);
     assert_decrypt_precision(
         "square_assign",
         &params,

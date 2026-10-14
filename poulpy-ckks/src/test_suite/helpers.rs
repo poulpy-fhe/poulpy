@@ -1363,44 +1363,48 @@ pub fn assert_ckks_error(label: &str, err: &crate::CKKSError, want: CKKSComposit
     assert_eq!(err.composition(), Some(&want), "{label}: unexpected error: {err}");
 }
 
+/// Asserts the metadata a unary op stamps on `ct`: `input`'s, less the bits by which
+/// `input.k()` exceeds `dst_k`, the destination's `k()` before the call.
 pub fn assert_unary_output_meta<D: Data, W: ZnxWord, R: Ring>(
     label: &str,
     ct: &CKKSCiphertext<D, W, R>,
+    dst_k: usize,
     input: &CKKSCiphertext<impl Data, W, R>,
 ) {
-    assert_ct_meta(
-        label,
-        ct,
-        input.log_delta(),
-        input.log_budget() - crate::ckks_offset_unary(ct, input),
-    );
+    let offset = input.k().as_usize().saturating_sub(dst_k);
+    assert_ct_meta(label, ct, input.log_delta(), input.log_budget() - offset);
 }
 
+/// Asserts the metadata an addition or subtraction stamps on `ct`: `min(log_delta)` and
+/// `min(log_budget)`, less the bits by which their sum exceeds `dst_k`, the destination's
+/// `k()` before the call.
 pub fn assert_binary_output_meta<D: Data, W: ZnxWord, R: Ring>(
     label: &str,
     ct: &CKKSCiphertext<D, W, R>,
+    dst_k: usize,
     a: &CKKSCiphertext<impl Data, W, R>,
     b: &CKKSCiphertext<impl Data, W, R>,
 ) {
-    assert_ct_meta(
-        label,
-        ct,
-        a.log_delta().min(b.log_delta()),
-        a.log_budget().min(b.log_budget()) - crate::ckks_offset_binary(ct, a, b),
-    );
+    let log_delta = a.log_delta().min(b.log_delta());
+    let log_budget = a.log_budget().min(b.log_budget());
+    let offset = (log_budget + log_delta).saturating_sub(dst_k);
+    assert_ct_meta(label, ct, log_delta, log_budget - offset);
 }
 
+/// Asserts the metadata a ct × ct product stamps on `ct`, and that `ct` is canonical:
+/// `log_delta = min(log_delta)` and `log_budget = min(log_budget) - max(log_delta)`,
+/// less the bits by which that product exceeds `dst_k`, the destination's `k()` before
+/// the call (`a.k()` for `_assign`).
 pub fn assert_mul_ct_output_meta<D: Data, W: ZnxWord, R: Ring>(
     label: &str,
     ct: &CKKSCiphertext<D, W, R>,
+    dst_k: usize,
     a: &impl CKKSInfos,
     b: &impl CKKSInfos,
 ) {
     let log_budget = a.log_budget().min(b.log_budget()) - a.log_delta().max(b.log_delta());
     let log_delta = a.log_delta().min(b.log_delta());
-    // ct×ct (like ct×pt) targets the destination's requested `k()` with value-preserving
-    // rounding, not its buffer capacity, so the result width is bounded by `k`, not `max_k`.
-    let offset = (log_budget + log_delta).saturating_sub(ct.k().as_usize());
+    let offset = (log_budget + log_delta).saturating_sub(dst_k);
     assert_ct_meta(label, ct, log_delta, log_budget - offset);
     assert!(ct.is_canonical(), "{label}: a relinearized product is canonical");
 }
