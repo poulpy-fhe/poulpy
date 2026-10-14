@@ -7,8 +7,8 @@ mod ciphertext;
 mod context;
 
 pub use ciphertext::{
-    BlasCiphertext, BlasCiphertextOwned, BlasGrid, BlasGridInfos, BlasGridMut, BlasLayout, BlasMatMulLeft, BlasMatMulRight,
-    BlasModuleAlloc, grid_batch,
+    BlasCiphertext, BlasCiphertextOwned, BlasGrid, BlasGridInfos, BlasGridMut, BlasLayout, BlasMatMulLeft,
+    BlasMatMulOperandInfos, BlasMatMulOperandLayout, BlasMatMulRight, BlasModuleAlloc, grid_batch,
 };
 pub(crate) use ciphertext::{batch_fits, layout_of};
 pub(crate) use context::sum_rotations;

@@ -6,7 +6,7 @@ use poulpy_ckks::{
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
 };
 use poulpy_core::layouts::{Base2K, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision};
-use poulpy_hal::layouts::{Backend, Data, Module, Ring, ZnxWord};
+use poulpy_hal::layouts::{Backend, Data, Module, PrepareHint, Ring, ZnxWord};
 
 /// An `rows x cols` grid of `2^log_d x 2^log_d` blocks: block `(i, j)` is one CKKS ciphertext whose matrix slot `s`
 /// holds block `(i, j)` of the `s`-th matrix of the batch.
@@ -105,6 +105,60 @@ impl BlasGridInfos for BlasLayout {
 
     fn block_layout(&self) -> CKKSLayout {
         self.block
+    }
+}
+
+/// A prepared operand of [`crate::api::BlasMatMulOps::blas_matmul_prepared`], beyond its [`BlasGridInfos`]: the hint
+/// it was prepared under and the block layout of the grid it was prepared from. A hot operand, `OneShot`, reports that
+/// layout as its block layout too, since the context of the product it enters defines its terms; a cold one, `Reuse`,
+/// reports the layout of its terms.
+pub trait BlasMatMulOperandInfos: BlasGridInfos {
+    /// `OneShot` for a hot operand, prepared for one product; `Reuse` for a cold one, prepared for many.
+    fn hint(&self) -> PrepareHint;
+
+    /// The block layout of the grid the operand was prepared from.
+    fn source_block_layout(&self) -> CKKSLayout;
+}
+
+/// The infos a preparation of a grid under a hint reports, before preparing it, as
+/// [`blas_matmul_operand_layout`](crate::reference::blas_matmul_operand_layout) gives them, for the prepared product's
+/// query. Like a [`BlasLayout`], it carries no batch record.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct BlasMatMulOperandLayout {
+    /// The grid's dimensions and the block layout the operand reports: the source's when hot, its terms' when cold.
+    pub grid: BlasLayout,
+    /// The block layout of the source grid.
+    pub source: CKKSLayout,
+    /// The hint of the preparation.
+    pub hint: PrepareHint,
+}
+
+impl BlasGridInfos for BlasMatMulOperandLayout {
+    fn log_d(&self) -> usize {
+        self.grid.log_d
+    }
+
+    fn rows(&self) -> usize {
+        self.grid.rows
+    }
+
+    fn cols(&self) -> usize {
+        self.grid.cols
+    }
+
+    fn block_layout(&self) -> CKKSLayout {
+        self.grid.block
+    }
+}
+
+impl BlasMatMulOperandInfos for BlasMatMulOperandLayout {
+    fn hint(&self) -> PrepareHint {
+        self.hint
+    }
+
+    fn source_block_layout(&self) -> CKKSLayout {
+        self.source
     }
 }
 
@@ -376,12 +430,12 @@ where
     }
 }
 
-/// The left operand of [`crate::api::BlasMatMulOps::blas_matmul_prepared`], in `BE`'s representation, which only
-/// [`crate::api::BlasMatMulOps::blas_matmul_prepare_left`] makes.
+/// The left operand of [`crate::api::BlasMatMulOps::blas_matmul_prepared`], hot or cold, in `BE`'s representation,
+/// which only [`crate::api::BlasMatMulOps::blas_matmul_prepare_left`] makes.
 pub type BlasMatMulLeft<BE> = <BE as crate::oep::BlasMatMulImpl>::MatMulLeft;
 
-/// The right operand of [`crate::api::BlasMatMulOps::blas_matmul_prepared`], in `BE`'s representation, which only
-/// [`crate::api::BlasMatMulOps::blas_matmul_prepare_right`] makes.
+/// The right operand of [`crate::api::BlasMatMulOps::blas_matmul_prepared`], hot or cold, in `BE`'s representation,
+/// which only [`crate::api::BlasMatMulOps::blas_matmul_prepare_right`] makes.
 pub type BlasMatMulRight<BE> = <BE as crate::oep::BlasMatMulImpl>::MatMulRight;
 
 /// Allocation of grids.
@@ -432,28 +486,34 @@ mod tests {
     use super::*;
     use crate::{
         layouts::{BlasContext, BlasPtOperand},
-        reference::{BlasMatMulOperand, Left, Right},
+        reference::BlasMatMulOperand,
     };
-    use poulpy_ckks::{CKKSError, SetGLWEPlaintextInfos};
+    use poulpy_ckks::{
+        CKKSError, SetGLWEPlaintextInfos,
+        layouts::{CKKSPreparedLeft, CKKSPreparedRight},
+    };
     use poulpy_core::layouts::prepared::GLWETensorKeyPrepared;
     use poulpy_hal::layouts::{HostBytesBackend, Standard};
 
     type Grid = BlasCiphertextOwned<HostBytesBackend>;
 
     /// Grids over owned storage are inputs and outputs of every operation on every backend, with no unsafe impl, and
-    /// contexts, public operands, the reference's prepared operands, poulpy-core's prepared tensor key and errors cross
-    /// threads: they meet the traits' `Send` and `Sync` bounds as they are. Borrowed views are not grids, their blocks
-    /// not being `GLWEToBackendRef`; they are as thread-safe as their buffers: `BufRef` views `Sync`, `BufMut` views
-    /// only `Send`.
+    /// contexts, public operands, the reference's prepared operands and the prepared terms the JKLS kernel shares across
+    /// one block's tasks, poulpy-core's prepared tensor key and errors cross threads: they meet the traits' `Send` and
+    /// `Sync` bounds as they are. Borrowed views are not grids, their blocks not being `GLWEToBackendRef`; they are as
+    /// thread-safe as their buffers: `BufRef` views `Sync`, `BufMut` views only `Send`.
     fn assert_thread_safe<'a, BE: Backend + 'a>() {
         fn output<BE: Backend, G: BlasGridMut<BE> + Send + Sync>() {}
         fn sync<T: Sync>() {}
         fn send<T: Send>() {}
+        fn operand<T: Send + Sync>() {}
         output::<BE, BlasCiphertextOwned<BE>>();
         sync::<BlasContext<BE>>();
         sync::<BlasPtOperand<BE>>();
-        sync::<BlasMatMulOperand<BE, Left>>();
-        send::<BlasMatMulOperand<BE, Right>>();
+        operand::<BlasMatMulOperand<BE, CKKSPreparedLeft<BE>>>();
+        operand::<BlasMatMulOperand<BE, CKKSPreparedRight<BE>>>();
+        sync::<CKKSPreparedLeft<BE>>();
+        sync::<CKKSPreparedRight<BE>>();
         sync::<GLWETensorKeyPrepared<BE::OwnedBuf, BE>>();
         send::<CKKSError>();
         sync::<BlasCiphertext<BE::BufRef<'a>, BE::ZnxWord, BE::Ring>>();

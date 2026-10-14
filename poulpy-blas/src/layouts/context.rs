@@ -100,8 +100,8 @@ impl BlasPlan {
         galois_elements_from_rotations([r.rem_euclid(mat_slots) << (2 * self.log_d)], cyclotomic_order)
     }
 
-    /// Galois elements `blas_matmul`, `blas_matmul_prepare_left` and `blas_matmul_prepare_right` look up;
-    /// `blas_matmul_prepared` looks up none.
+    /// Galois elements `blas_matmul`, `blas_matmul_prepare_left` and `blas_matmul_prepare_right` look up, and
+    /// `blas_matmul_prepared` for a hot operand, whose terms it evaluates; of two cold operands it looks up none.
     pub fn matmul_galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
         self.elements(cyclotomic_order, |slots| self.matmul_maps(slots))
     }

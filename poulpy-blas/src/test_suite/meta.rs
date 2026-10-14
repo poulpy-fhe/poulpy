@@ -16,12 +16,16 @@ use poulpy_ckks::{
 use poulpy_core::layouts::{DiagonalArithmetic, LWEInfos};
 use poulpy_hal::{
     api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchArena, ScratchOwned, Standard},
+    layouts::{
+        CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module,
+        PrepareHint::{OneShot, Reuse},
+        ScratchArena, ScratchOwned, Standard,
+    },
 };
 
 use super::helpers::{
-    Grid, Rejection::InvalidOperand, TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, context_and_keys, copied_layout,
-    encrypt_grid, grid_infos, mapped_layout, product_layout, relabel, to_f,
+    Grid, HINTS, MIXES, Rejection::InvalidOperand, TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, context_and_keys,
+    copied_layout, encrypt_grid, mapped_layout, operand_infos, product_layout, relabel, to_f, want_operand_infos,
 };
 use crate::{
     api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
@@ -30,18 +34,19 @@ use crate::{
         sum_galois_elements,
     },
     oep::BlasImpl,
-    reference::blas_matmul_term_layout,
+    reference::{blas_matmul_operand_layout, blas_matmul_term_layout},
 };
 
 /// Every per-matrix map, the matrix-slot rotation and the sum give their result the metadata [`copied_layout`] or
 /// [`mapped_layout`] derives from their input, whatever `res` held, and the values of their cleartext model: transpose,
 /// row and column rotations across blocks, within one block and by whole blocks, the products by public matrices on
 /// either side and the rotation, from a half-full batch into a fresh grid and from a full batch into a grid labelled
-/// and recorded half full. The operand preparations report their input's dimensions and batch and the layout of their
-/// terms, sigma (tau) then a shift of its blocks, which [`blas_matmul_term_layout`] gives. Summing a transposed
-/// half-full batch adds each of its matrices once and records them. The sum of one matrix copies it, the transpose of a
-/// real batch keeps its slots real, and the terms of an integer batch are real. On one matrix slot no batch is half
-/// full: only the full one runs.
+/// and recorded half full. The operand preparations report their hint, their input's dimensions, batch and layout as
+/// their source, and as their layout their input's when hot and that of their terms when cold, sigma (tau) then a
+/// shift of its blocks, which [`blas_matmul_term_layout`] gives, as [`blas_matmul_operand_layout`] gives them all before
+/// preparing. Summing a transposed half-full batch adds each of its matrices once and records them. The sum of one
+/// matrix copies it, the transpose of a real batch keeps its slots real, and the terms of an integer batch are real,
+/// while its hot operand reports its own slots. On one matrix slot no batch is half full: only the full one runs.
 pub fn test_blas_result_meta<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -135,8 +140,10 @@ pub fn test_blas_result_meta<BE, F, E>(
         .blas_rotate_rows_tmp_bytes(&full_row, &full_row, &ctx, &atk)
         .max(module.blas_sum_tmp_bytes(&full_row, &full_row, &atk))
         .max(module.blas_rotate_tmp_bytes(&full_row, &full_row, &atk))
-        .max(module.blas_matmul_prepare_left_tmp_bytes(&full_row, &ctx, &atk))
-        .max(module.blas_matmul_prepare_right_tmp_bytes(&full_column, &ctx, &atk))
+        .max(module.blas_matmul_prepare_left_tmp_bytes(&full_row, &ctx, &atk, Reuse))
+        .max(module.blas_matmul_prepare_right_tmp_bytes(&full_column, &ctx, &atk, Reuse))
+        .max(module.blas_matmul_prepare_left_tmp_bytes(&full_row, &ctx, &atk, OneShot))
+        .max(module.blas_matmul_prepare_right_tmp_bytes(&full_column, &ctx, &atk, OneShot))
         .max(module.blas_matmul_pt_tmp_bytes(&full_row, &full_row, &pt, &atk))
         .max(module.blas_matmul_pt_left_tmp_bytes(&full_row, &pt_left, &full_column, &atk));
     let mut op_scratch = ScratchOwned::<BE>::alloc(bytes);
@@ -206,19 +213,29 @@ pub fn test_blas_result_meta<BE, F, E>(
                 check(&op, &res, &model.rotate_cols(shift), &layout, &mut scratch.borrow());
             }
         }
-        let left = module
-            .blas_matmul_prepare_left(row, &ctx, &keys, &mut op_scratch.borrow())
-            .unwrap();
-        let right = module
-            .blas_matmul_prepare_right(column, &ctx, &keys, &mut op_scratch.borrow())
-            .unwrap();
-        for (op, operand, a) in [
-            ("prepare_left", grid_infos(&left), row),
-            ("prepare_right", grid_infos(&right), column),
-        ] {
-            let layout = mapped_layout(a, a.rows(), a.cols(), k, 2 * p);
-            assert_eq!(blas_matmul_term_layout(a, &ctx), layout, "{}: term layout", label(op));
-            assert_eq!(operand, (layout, a.mat_slots()), "{}: operand infos", label(op));
+        for hint in HINTS {
+            let left = module
+                .blas_matmul_prepare_left(row, &ctx, &keys, hint, &mut op_scratch.borrow())
+                .unwrap();
+            let right = module
+                .blas_matmul_prepare_right(column, &ctx, &keys, hint, &mut op_scratch.borrow())
+                .unwrap();
+            for (op, operand, a) in [
+                ("prepare_left", operand_infos(&left), row),
+                ("prepare_right", operand_infos(&right), column),
+            ] {
+                let op = &label(&format!("{op} {hint:?}"));
+                let terms = mapped_layout(a, a.rows(), a.cols(), k, 2 * p);
+                assert_eq!(blas_matmul_term_layout(a, &ctx), terms, "{op}: term layout");
+                let want = want_operand_infos(a, hint, terms);
+                assert_eq!(operand, want, "{op}: operand infos");
+                let before = blas_matmul_operand_layout(a, &ctx, hint);
+                assert_eq!(
+                    (before.grid, before.mat_slots(), before.hint, before.source),
+                    (want.0, None, want.2, want.3),
+                    "{op}: layout before preparing"
+                );
+            }
         }
         let mut res = alloc(1, 1, stale);
         module
@@ -277,26 +294,29 @@ pub fn test_blas_result_meta<BE, F, E>(
         &mut scratch.borrow(),
     );
 
-    // Labelled integer, the batch's terms take the maps' `Real` slots.
+    // Labelled integer, the batch's terms take the maps' `Real` slots; its hot operand reports its own.
     let integer = relabel(&real, |meta| meta.slots = SlotsKind::Integer);
-    let left = module
-        .blas_matmul_prepare_left(&integer, &ctx, &keys, &mut op_scratch.borrow())
-        .unwrap();
     let layout = mapped_layout(&integer, 1, 2, k, 2 * p);
     assert_eq!(layout.block.slots(), SlotsKind::Real);
     assert_eq!(blas_matmul_term_layout(&integer, &ctx), layout, "integer batch: term layout");
-    assert_eq!(
-        grid_infos(&left),
-        (layout, integer.mat_slots()),
-        "integer batch: operand infos"
-    );
+    for hint in HINTS {
+        let left = module
+            .blas_matmul_prepare_left(&integer, &ctx, &keys, hint, &mut op_scratch.borrow())
+            .unwrap();
+        assert_eq!(
+            operand_infos(&left),
+            want_operand_infos(&integer, hint, layout),
+            "integer batch: {hint:?} operand infos"
+        );
+    }
 }
 
 /// The batch record. Blocks encrypted from compact plaintexts of `count d^2` slots record `count` matrices, and the sum
 /// of a compact pair adds each matrix once. A dense plaintext added to its blocks drops their label below that record,
-/// so the next operation rejects the grid before `res` changes. A product, and its prepared form, records the larger
-/// batch of its factors, with either factor the sparse one, and broadcasts the smaller; a prepared operand records its
-/// input's. The pair must leave matrix slots free, so below four of them the test is skipped with a message.
+/// so the next operation rejects the grid before `res` changes. A product, and its prepared form of every mix of hot
+/// and cold operands, records the larger batch of its factors, with either factor the sparse one, and broadcasts the
+/// smaller; a prepared operand records its input's, under either hint. The pair must leave matrix slots free, so below
+/// four of them the test is skipped with a message.
 pub fn test_blas_batch_record<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -431,32 +451,46 @@ pub fn test_blas_batch_record<BE, F, E>(
             &mut scratch.borrow(),
         );
 
-        let bytes = module
-            .blas_matmul_prepare_left_tmp_bytes(ct_a, &ctx, &atk_layout)
-            .max(module.blas_matmul_prepare_right_tmp_bytes(ct_b, &ctx, &atk_layout));
-        let mut prepare_scratch = ScratchOwned::<BE>::alloc(bytes);
-        let left = module
-            .blas_matmul_prepare_left(ct_a, &ctx, &keys, &mut prepare_scratch.borrow())
-            .unwrap();
-        let right = module
-            .blas_matmul_prepare_right(ct_b, &ctx, &keys, &mut prepare_scratch.borrow())
-            .unwrap();
-        assert_eq!(
-            (left.mat_slots(), right.mat_slots()),
-            (ct_a.mat_slots(), ct_b.mat_slots()),
-            "{label}: operand records"
-        );
-        let mut prepared = module.blas_ciphertext_alloc_from_infos(&ct_half);
-        let bytes = module.blas_matmul_prepared_tmp_bytes(&prepared, &left, &right, &tsk_layout);
-        module
-            .blas_matmul_prepared(
-                &mut prepared,
-                &left,
-                &right,
-                &keys,
-                &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
-            )
-            .unwrap();
-        assert_eq!(prepared.mat_slots(), Some(lanes), "{label}: prepared mat_slots");
+        let prepare = |hint| {
+            let bytes = module
+                .blas_matmul_prepare_left_tmp_bytes(ct_a, &ctx, &atk_layout, hint)
+                .max(module.blas_matmul_prepare_right_tmp_bytes(ct_b, &ctx, &atk_layout, hint));
+            let mut prepare_scratch = ScratchOwned::<BE>::alloc(bytes);
+            let left = module
+                .blas_matmul_prepare_left(ct_a, &ctx, &keys, hint, &mut prepare_scratch.borrow())
+                .unwrap();
+            let right = module
+                .blas_matmul_prepare_right(ct_b, &ctx, &keys, hint, &mut prepare_scratch.borrow())
+                .unwrap();
+            assert_eq!(
+                (left.mat_slots(), right.mat_slots()),
+                (ct_a.mat_slots(), ct_b.mat_slots()),
+                "{label}: {hint:?} operand records"
+            );
+            (left, right)
+        };
+        let [hot, cold] = HINTS.map(prepare);
+        for (hl, hr) in MIXES {
+            let left = if hl == OneShot { &hot.0 } else { &cold.0 };
+            let right = if hr == OneShot { &hot.1 } else { &cold.1 };
+            let mut prepared = module.blas_ciphertext_alloc_from_infos(&ct_half);
+            let bytes = module.blas_matmul_prepared_tmp_bytes(&prepared, left, right, &ctx, &tsk_layout, &atk_layout);
+            module
+                .blas_matmul_prepared(
+                    &mut prepared,
+                    left,
+                    right,
+                    &ctx,
+                    &keys,
+                    &keys,
+                    &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
+                )
+                .unwrap();
+            assert_eq!(
+                prepared.mat_slots(),
+                Some(lanes),
+                "{label}: prepared {hl:?} x {hr:?} mat_slots"
+            );
+        }
     }
 }

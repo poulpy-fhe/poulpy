@@ -9,8 +9,8 @@ pub use inter::{BlasMatInterReference, validate_blas_rotate, validate_blas_sum};
 pub(crate) use intra::shift_maps;
 pub use intra::{BlasMatIntraReference, validate_blas_rotate_cols, validate_blas_rotate_rows, validate_blas_transpose};
 pub use matmul::{
-    BlasMatMulOperand, BlasMatMulReference, Left, Right, blas_matmul_term_layout, validate_blas_matmul,
-    validate_blas_matmul_prepare_left, validate_blas_matmul_prepare_right, validate_blas_matmul_prepared,
+    BlasMatMulOperand, BlasMatMulReference, Left, Right, blas_matmul_operand_layout, blas_matmul_term_layout,
+    validate_blas_matmul, validate_blas_matmul_prepare_left, validate_blas_matmul_prepare_right, validate_blas_matmul_prepared,
     validate_blas_matmul_pt, validate_blas_matmul_pt_left,
 };
 

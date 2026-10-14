@@ -18,11 +18,15 @@ use poulpy_ckks::{
 use poulpy_core::layouts::{LWEInfos, prepared::GLWESecretPrepared};
 use poulpy_hal::{
     api::{CnvPVecAlloc, ScratchOwnedBorrow},
-    layouts::{ConjugateInvariant, CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchArena},
+    layouts::{
+        ConjugateInvariant, CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, PrepareHint, ScratchArena,
+    },
 };
 
 use super::{
-    helpers::{Grid, TestKeys, alloc_grid, blas_context, copied_layout, mapped_layout, product_layout, rotation_keys},
+    helpers::{
+        Grid, HINTS, MIXES, TestKeys, alloc_grid, blas_context, copied_layout, mapped_layout, product_layout, rotation_keys,
+    },
     matmul::public_entry,
 };
 use crate::{
@@ -37,7 +41,8 @@ use crate::{
 
 /// Every operation once on the conjugate-invariant ring, on real matrices of `4 x 4` blocks encoded with the module's
 /// own encoder (the standard decoding helper reads complex slots): `blas_rotate`, `blas_sum`, `blas_transpose`,
-/// `blas_rotate_rows` and `blas_rotate_cols` across blocks, both preparations then `blas_matmul_prepared`,
+/// `blas_rotate_rows` and `blas_rotate_cols` across blocks, both preparations under either hint then
+/// `blas_matmul_prepared` of every mix,
 /// `blas_matmul`, `blas_matmul_pt` and `blas_matmul_pt_left`, each on exactly the scratch its query reports.
 /// Every output decrypts to its cleartext model at the metadata [`copied_layout`], [`mapped_layout`] or
 /// [`product_layout`] gives, and its slots, like the prepared operands', are `Real`. On fewer than 16 slots, which hold
@@ -134,23 +139,41 @@ pub fn test_blas_conjugate_invariant<BE>(
     .unwrap();
     check("rotate_cols", &res, &a.rotate_cols(1), layout, &mut scratch.borrow());
 
-    let left = with_scratch::<BE, _>(module.blas_matmul_prepare_left_tmp_bytes(&ct_a, &ctx, &atk), |s| {
-        module.blas_matmul_prepare_left(&ct_a, &ctx, &keys, s)
-    })
-    .unwrap();
-    let right = with_scratch::<BE, _>(module.blas_matmul_prepare_right_tmp_bytes(&ct_b, &ctx, &atk), |s| {
-        module.blas_matmul_prepare_right(&ct_b, &ctx, &keys, s)
-    })
-    .unwrap();
-    assert_eq!(left.block_layout().slots(), SlotsKind::Real, "prepare_left: slots");
-    assert_eq!(right.block_layout().slots(), SlotsKind::Real, "prepare_right: slots");
+    // Both operands under either hint, hot first, then the prepared product of every mix.
+    let lefts = HINTS.map(|hint| {
+        let left = with_scratch::<BE, _>(module.blas_matmul_prepare_left_tmp_bytes(&ct_a, &ctx, &atk, hint), |s| {
+            module.blas_matmul_prepare_left(&ct_a, &ctx, &keys, hint, s)
+        })
+        .unwrap();
+        assert_eq!(left.block_layout().slots(), SlotsKind::Real, "prepare_left {hint:?}: slots");
+        left
+    });
+    let rights = HINTS.map(|hint| {
+        let right = with_scratch::<BE, _>(module.blas_matmul_prepare_right_tmp_bytes(&ct_b, &ctx, &atk, hint), |s| {
+            module.blas_matmul_prepare_right(&ct_b, &ctx, &keys, hint, s)
+        })
+        .unwrap();
+        assert_eq!(right.block_layout().slots(), SlotsKind::Real, "prepare_right {hint:?}: slots");
+        right
+    });
     let (ab, layout) = (a.matmul(&b), product_layout(&ct_a, &ct_b, 2, 2, k, p));
-    let mut res = alloc(2, 2);
-    with_scratch::<BE, _>(module.blas_matmul_prepared_tmp_bytes(&res, &left, &right, &tsk), |s| {
-        module.blas_matmul_prepared(&mut res, &left, &right, &keys, s)
-    })
-    .unwrap();
-    check("matmul_prepared", &res, &ab, layout, &mut scratch.borrow());
+    let side = |hint| usize::from(hint == PrepareHint::Reuse);
+    for (hl, hr) in MIXES {
+        let (left, right) = (&lefts[side(hl)], &rights[side(hr)]);
+        let mut res = alloc(2, 2);
+        with_scratch::<BE, _>(
+            module.blas_matmul_prepared_tmp_bytes(&res, left, right, &ctx, &tsk, &atk),
+            |s| module.blas_matmul_prepared(&mut res, left, right, &ctx, &keys, &keys, s),
+        )
+        .unwrap();
+        check(
+            &format!("matmul_prepared {hl:?} x {hr:?}"),
+            &res,
+            &ab,
+            layout,
+            &mut scratch.borrow(),
+        );
+    }
 
     let mut res = alloc(2, 2);
     with_scratch::<BE, _>(module.blas_matmul_tmp_bytes(&res, &ct_a, &ct_b, &ctx, &tsk, &atk), |s| {

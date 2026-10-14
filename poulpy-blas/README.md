@@ -11,20 +11,24 @@ from the slot vectors of the blocks.
 Intra operations apply one map to every matrix of the batch: `blas_transpose`, `blas_rotate_rows`, `blas_rotate_cols`.
 Inter operations move whole matrices across the batch: `blas_rotate`, `blas_sum`. Products multiply every matrix of the
 batch: `blas_matmul` (JKLS, ciphertext x ciphertext), `blas_matmul_prepare_left`, `blas_matmul_prepare_right` and
-`blas_matmul_prepared` (the same product from transformed operands reused across calls), `blas_matmul_pt` (ciphertext x
-public matrices, shared or one per matrix slot) and `blas_matmul_pt_left` (public matrices x ciphertext).
+`blas_matmul_prepared` (the same product from prepared operands, bit for bit under the same context), `blas_matmul_pt`
+(ciphertext x public matrices, shared or one per matrix slot) and `blas_matmul_pt_left` (public matrices x ciphertext).
+A preparation takes a `PrepareHint`: hot, `OneShot`, for one product, a relabel of its input whose terms the product
+evaluates under its own context; cold, `Reuse`, for many, every term under the preparation's context, converted once to
+the transform domain. `blas_matmul` multiplies two hot operands.
 
 A `BlasPlan` fixes the block dimension and how each block map is evaluated. The maps are encoded once from it, at a
 caller-chosen precision, into a `BlasContext`, and public matrices into a `BlasPtOperand`. Operations take the context
 and `Sync` key stores: rotation keys through poulpy-core's `GetAutomorphismKey` (`atk`), the tensor key through
-`GetTensorKey` (`tsk`). The preparations take only `atk`, so `blas_matmul_prepared` takes only `tsk`; `blas_matmul`
-takes both. Every operation takes any grid implementing `BlasGrid` (`BlasGridMut` for the result). A prepared operand
-is opaque, in the backend's representation, and reports its input's dimensions and batch. Slot-wise additions, products
-and rescaling are poulpy-ckks operations applied to each block.
+`GetTensorKey` (`tsk`). The preparations take only `atk`, and the products both: `blas_matmul_prepared` looks up the
+rotation keys of a hot operand's terms, and of two cold operands the tensor key alone. Every operation takes any grid
+implementing `BlasGrid` (`BlasGridMut` for the result). A prepared operand is opaque, in the backend's representation,
+and reports its hint and its input's dimensions, batch and layout (`BlasMatMulOperandInfos`). Slot-wise additions,
+products and rescaling are poulpy-ckks operations applied to each block.
 
 The plan lists the rotation keys each operation looks up, from the ring's cyclotomic order alone:
 `transpose_galois_elements`, `rotate_rows_galois_elements(k)`, `rotate_cols_galois_elements(k)`,
-`rotate_galois_elements(r)`, `matmul_galois_elements` (the product and both preparations) and
+`rotate_galois_elements(r)`, `matmul_galois_elements` (the products and both preparations) and
 `matmul_pt_galois_elements` and `matmul_pt_left_galois_elements` (any public matrices, on the right or on the left);
 `galois_elements` covers every map of a context, and
 `sum_galois_elements` lists `blas_sum`'s for a grid's batch. A client therefore plans its keys with no module, context

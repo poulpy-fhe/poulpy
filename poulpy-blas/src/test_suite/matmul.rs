@@ -12,7 +12,7 @@ use poulpy_ckks::{
             TestContextBackend, TestContextModule, TestScalar, alloc_scratch, assert_decrypt_precision_at_log_delta,
             gen_sk_with_raw, gen_tsk,
         },
-        parity::helpers::Snapshot,
+        parity::helpers::{Snapshot, with_scratch},
         reference_encoder::ReferenceEncoder,
     },
 };
@@ -23,33 +23,43 @@ use poulpy_core::layouts::{
 use poulpy_hal::{
     api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{
-        Backend, CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchArena, ScratchOwned, Standard,
+        Backend, CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, PrepareHint,
+        PrepareHint::{OneShot, Reuse},
+        ScratchArena, ScratchOwned, Standard,
     },
 };
 
 use super::helpers::{
-    Grid, Misshapen,
+    Grid, HINTS, MIXES, Misshapen, OperandInfos,
     Rejection::{Budget, InvalidOperand, MissingKey, MissingTensorKey},
     TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, assert_rejected, assert_short_scratch, assert_short_scratch_panics,
-    at_scale, blas_context, context_and_keys, encrypt_grid, foreign_contexts, foreign_layouts, grid_infos, grid_snapshot,
-    map_galois_elements, mapped_layout, other_scales, product_layout, rejected_grids, relabel, rotation_keys,
+    at_scale, blas_context, context_and_keys, encrypt_grid, foreign_contexts, foreign_layouts, grid_snapshot,
+    map_galois_elements, mapped_layout, operand_infos, other_scales, product_layout, rejected_grids, relabel, rotation_keys,
+    want_operand_infos,
 };
 use crate::{
     api::{BlasMatIntraOps, BlasMatMulOps},
-    layouts::{BlasCiphertext, BlasCiphertextOwned, BlasGridInfos, BlasPlan, BlasPtOperand, BlasPtOperandUnprepared},
+    layouts::{
+        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasGridInfos, BlasMatMulLeft, BlasMatMulRight, BlasPlan,
+        BlasPtOperand, BlasPtOperandUnprepared,
+    },
     oep::{BlasImpl, BlasMatMulImpl},
-    reference::{Left, blas_matmul_term_layout, validate_blas_matmul_prepared},
+    reference::{Left, blas_matmul_operand_layout, validate_blas_matmul_prepared},
 };
 
 /// `dec(matmul(enc(A), enc(B)))` is `A B` for every matrix of the batch, for a `2 x 3` grid times a `3 x 2` grid, with
-/// the JKLS product's metadata and canonical blocks, and `blas_matmul` equals `blas_matmul_prepare_left`,
-/// `blas_matmul_prepare_right`, then `blas_matmul_prepared`, bit for bit, all with the rotation keys of the plan's
-/// product set alone, which both preparations take. Through maps at the factors' scale and at scales below and above
-/// it ([`other_scales`]), and through the latter also of factors at two scales, in either order, one an eighth of the
-/// scale lower and either as much narrower, so that the terms of both keep one budget, or as wide, so that its terms
-/// have the larger budget (crossed scales): each preparation reports its input's dimensions and batch and its terms'
-/// layout, its input's `2p` narrower for the maps' scale `p`, and the product follows from those terms, at the smaller
-/// of the factors' scales.
+/// the JKLS product's metadata and canonical blocks, and `blas_matmul` equals `blas_matmul_prepared` of every mix of hot
+/// and cold operands, bit for bit, all with the rotation keys of the plan's product set alone. Through maps at the
+/// factors' scale and at scales below and above it ([`other_scales`]), and through the latter also of factors at two
+/// scales, in either order, one an eighth of the scale lower and either as much narrower, so that the terms of both
+/// keep one budget, or as wide, so that its terms have the larger budget (crossed scales): each cold operand reports
+/// its input's dimensions and batch and its terms' layout, its input's `2p` narrower for the maps' scale `p`, each hot
+/// one its input's layout, both their hint and their input's layout as their source, and the product follows from the
+/// terms, at the smaller of the factors' scales. The hot operands are prepared once, under the maps at the factors'
+/// scale, and serve the products under every context, which defines their terms; those of `A` and `B` come from copies,
+/// dropped or overwritten once prepared. One cold operand of `B` under each context multiplies every left factor there,
+/// hot and cold. Beside `B` cold under the maps below the factors' scale, the hot `A` gives, under the maps above it,
+/// `A` cold under those times that `B`, which decrypts to `A B` at the ct x ct rule's metadata on the terms.
 pub fn test_blas_matmul<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -121,21 +131,74 @@ pub fn test_blas_matmul<BE, F, E>(
         })
     });
     let (tsk_layout, atk_layout) = (params.tsk_layout(), params.atk_layout());
-    for p in [delta].into_iter().chain(other_scales(&params)) {
+    let scales: Vec<usize> = [delta].into_iter().chain(other_scales(&params)).collect();
+    let contexts: Vec<_> = scales
+        .iter()
+        .map(|&p| blas_context::<BE, F>(&at_scale(&params, p), module, log_d, &mut scratch.borrow()))
+        .collect();
+    // Each preparation and product on exactly the scratch its query reports.
+    let prepare_left = |x: &BlasCiphertextOwned<BE>, ctx: &BlasContext<BE>, hint| {
+        let bytes = module.blas_matmul_prepare_left_tmp_bytes(x, ctx, &atk_layout, hint);
+        module
+            .blas_matmul_prepare_left(x, ctx, &keys, hint, &mut ScratchOwned::<BE>::alloc(bytes).borrow())
+            .unwrap()
+    };
+    let prepare_right = |y: &BlasCiphertextOwned<BE>, ctx: &BlasContext<BE>, hint| {
+        let bytes = module.blas_matmul_prepare_right_tmp_bytes(y, ctx, &atk_layout, hint);
+        module
+            .blas_matmul_prepare_right(y, ctx, &keys, hint, &mut ScratchOwned::<BE>::alloc(bytes).borrow())
+            .unwrap()
+    };
+    let product = |left: &BlasMatMulLeft<BE>, right: &BlasMatMulRight<BE>, ctx: &BlasContext<BE>| {
+        let mut res = alloc_grid(&params, module, log_d, m, n, params.k);
+        let bytes = module.blas_matmul_prepared_tmp_bytes(&res, left, right, ctx, &tsk_layout, &atk_layout);
+        module
+            .blas_matmul_prepared(
+                &mut res,
+                left,
+                right,
+                ctx,
+                &keys,
+                &keys,
+                &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
+            )
+            .unwrap();
+        res
+    };
+    // Hot operands of every factor, prepared once under the context at the factors' scale: the product evaluates their
+    // terms under its own, so they serve the products under every context. Those of `A` and `B` come from copies,
+    // dropped or overwritten once prepared, which the operands, owning their storage, do not see.
+    let (lefts, rights) = ([&ct_a, &ct_a_low, &ct_a_crossed], [&ct_b, &ct_b_low, &ct_b_crossed]);
+    let hot_a = prepare_left(&ct_a.clone(), &contexts[0], OneShot);
+    let mut copy = ct_b.clone();
+    let hot_b = prepare_right(&copy, &contexts[0], OneShot);
+    for (block, other) in copy.blocks_mut().iter_mut().zip(ct_b_low.blocks()) {
+        *block = other.clone();
+    }
+    let hot_lefts = [
+        hot_a,
+        prepare_left(lefts[1], &contexts[0], OneShot),
+        prepare_left(lefts[2], &contexts[0], OneShot),
+    ];
+    let hot_rights = [
+        hot_b,
+        prepare_right(rights[1], &contexts[0], OneShot),
+        prepare_right(rights[2], &contexts[0], OneShot),
+    ];
+    for (&p, ctx) in scales.iter().zip(&contexts) {
         let maps = at_scale(&params, p);
-        let ctx = blas_context::<BE, F>(&maps, module, log_d, &mut scratch.borrow());
         // Factors at one scale; through maps at a scale apart from both, also at two scales, in either order, crossed
-        // or not.
-        let mut pairs = vec![(&ct_a, &ct_b)];
-        if p != delta {
-            pairs.extend([
-                (&ct_a, &ct_b_low),
-                (&ct_a_low, &ct_b),
-                (&ct_a, &ct_b_crossed),
-                (&ct_a_crossed, &ct_b),
-            ]);
-        }
-        for (x, y) in pairs {
+        // or not, every one cold under `ctx`: the cold `B` multiplies `A`, `A` low and `A` crossed, hot and cold.
+        let (pairs, used): (&[(usize, usize)], usize) = if p == delta {
+            (&[(0, 0)], 1)
+        } else {
+            (&[(0, 0), (0, 1), (1, 0), (0, 2), (2, 0)], 3)
+        };
+        let cold_lefts: Vec<_> = lefts[..used].iter().map(|x| prepare_left(x, ctx, Reuse)).collect();
+        let cold_rights: Vec<_> = rights[..used].iter().map(|y| prepare_right(y, ctx, Reuse)).collect();
+        let cold_b = operand_infos(&cold_rights[0]);
+        for &(i, j) in pairs {
+            let (x, y) = (lefts[i], rights[j]);
             let (lx, ly) = (x.block_layout(), y.block_layout());
             let label = format!(
                 "matmul p={p} k_a={} delta_a={} k_b={} delta_b={}",
@@ -145,13 +208,13 @@ pub fn test_blas_matmul<BE, F, E>(
                 ly.log_delta()
             );
             let mut res = alloc_grid(&params, module, log_d, m, n, params.k);
-            let bytes = module.blas_matmul_tmp_bytes(&res, x, y, &ctx, &tsk_layout, &atk_layout);
+            let bytes = module.blas_matmul_tmp_bytes(&res, x, y, ctx, &tsk_layout, &atk_layout);
             module
                 .blas_matmul(
                     &mut res,
                     x,
                     y,
-                    &ctx,
+                    ctx,
                     &keys,
                     &keys,
                     &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
@@ -174,37 +237,65 @@ pub fn test_blas_matmul<BE, F, E>(
                 "{label}: a block is not canonical"
             );
 
-            let bytes = module.blas_matmul_prepare_left_tmp_bytes(x, &ctx, &atk_layout);
-            let left = module
-                .blas_matmul_prepare_left(x, &ctx, &keys, &mut ScratchOwned::<BE>::alloc(bytes).borrow())
-                .unwrap();
-            let bytes = module.blas_matmul_prepare_right_tmp_bytes(y, &ctx, &atk_layout);
-            let right = module
-                .blas_matmul_prepare_right(y, &ctx, &keys, &mut ScratchOwned::<BE>::alloc(bytes).borrow())
-                .unwrap();
-            // Two maps of scale `p` below each input's width, at the input's scale.
-            for (side, operand, ct) in [("left", grid_infos(&left), x), ("right", grid_infos(&right), y)] {
+            // Each operand reports its hint, its input's batch and block layout as its source, and as its block layout
+            // its input's when hot and its terms', two maps of scale `p` below its input's width, when cold.
+            for (side, ct, (hot, cold)) in [
+                ("left", x, (operand_infos(&hot_lefts[i]), operand_infos(&cold_lefts[i]))),
+                ("right", y, (operand_infos(&hot_rights[j]), operand_infos(&cold_rights[j]))),
+            ] {
                 let terms = mapped_layout(ct, ct.rows(), ct.cols(), params.k, 2 * p);
-                assert_eq!(operand, (terms, ct.mat_slots()), "{label}: {side} operand infos");
+                assert_eq!(
+                    hot,
+                    want_operand_infos(ct, OneShot, terms),
+                    "{label}: hot {side} operand infos"
+                );
+                assert_eq!(
+                    cold,
+                    want_operand_infos(ct, Reuse, terms),
+                    "{label}: cold {side} operand infos"
+                );
             }
-            let mut prepared = alloc_grid(&params, module, log_d, m, n, params.k);
-            let bytes = module.blas_matmul_prepared_tmp_bytes(&prepared, &left, &right, &tsk_layout);
-            module
-                .blas_matmul_prepared(
-                    &mut prepared,
-                    &left,
-                    &right,
-                    &keys,
-                    &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
-                )
-                .unwrap();
-            assert_eq!(
-                grid_snapshot::<BE, _>(&prepared),
-                grid_snapshot::<BE, _>(&res),
-                "{label}: prepared"
-            );
+            // Every mix of hot and cold operands is `blas_matmul`, bit for bit.
+            for (hl, hr) in MIXES {
+                let left = if hl == OneShot { &hot_lefts[i] } else { &cold_lefts[i] };
+                let right = if hr == OneShot { &hot_rights[j] } else { &cold_rights[j] };
+                assert_eq!(
+                    grid_snapshot::<BE, _>(&product(left, right, ctx)),
+                    grid_snapshot::<BE, _>(&res),
+                    "{label}: {hl:?} x {hr:?}"
+                );
+            }
         }
+        assert_eq!(
+            operand_infos(&cold_rights[0]),
+            cold_b,
+            "p={p}: the products changed the cold B"
+        );
     }
+
+    // A hot side takes the terms of the product's context beside a cold side prepared under another: each side's maps
+    // spend their own scale, and the product stamps by the ct x ct rule on the terms. Under the maps above the factors'
+    // scale, the hot `A` times `B` cold under those below is `A` cold under the former times that `B`, which decrypts to
+    // `A B` at the rule's metadata.
+    let (low, high) = (&contexts[1], &contexts[2]);
+    let (cold_a, cold_b) = (prepare_left(&ct_a, high, Reuse), prepare_right(&ct_b, low, Reuse));
+    let want = product(&cold_a, &cold_b, high);
+    assert_grid_decrypt::<BE, F, E>(
+        "matmul across contexts",
+        &at_scale(&params, scales[1]),
+        module,
+        &encoder,
+        &want,
+        &sk,
+        &a.matmul(&b),
+        &product_layout(&cold_a, &cold_b, m, n, params.k, 0),
+        &mut scratch.borrow(),
+    );
+    assert_eq!(
+        grid_snapshot::<BE, _>(&product(&hot_lefts[0], &cold_b, high)),
+        grid_snapshot::<BE, _>(&want),
+        "matmul across contexts: hot A x cold B"
+    );
 }
 
 /// The public matrices of a `rows x cols` operand grid, entries in `[-0.5, 0.5]`.
@@ -1053,20 +1144,24 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
     assert!(overflow.is_err());
 }
 
-/// Rejected before `res` changes, by the product and, of these cases, by those that meet them, the preparations and the
-/// prepared product: every grid [`rejected_grids`] builds, in place of a factor or of `res`, or as the input of a
-/// preparation; a `res` shape mismatch; a `res`, one factor or one prepared operand of another degree, radix or rank,
-/// and an input of a preparation of another degree, radix or rank ([`foreign_layouts`]), whose rank its keys reject;
-/// factors and `res` all of another rank than the rotation keys; a copy relabelled past `log2` of the ring degree; a
-/// context encoded on a module of another degree or at another radix; a factor at a radix other than the context's; an
-/// inner-dimension mismatch; a radix above 62, whose digits cannot hold two lazy terms of the JKLS kernel's two-pass
-/// circuit; a missing rotation or tensor key; and a tensor key of another rank than the blocks. The prepared product's
-/// validator also rejects operand infos without a batch record, at another dimension, without a block, or whose label
-/// does not allow their record, and operands and `res` all of another rank than the tensor key. poulpy-ckks's budget
-/// check rejects a `res` narrower than the factors' scale in the product and the prepared product before `res` or a
-/// factor changes, and an input one bit short of the `2p` its maps spend, in either preparation and as a factor of the
-/// product, before it or `res` changes. The preparations take no tensor key and the prepared product no rotation key.
-/// Each of these operations one scratch byte short of its query panics before `res` changes.
+/// Rejected before `res` changes, by the product and, of these cases, by those that meet them, the preparations under
+/// either hint and the prepared product of every mix of hot and cold operands: every grid [`rejected_grids`] builds, in
+/// place of a factor or of `res`, or as the input of a preparation; a `res` shape mismatch; a `res`, one factor or one
+/// prepared operand of another degree, radix or rank, and an input of a preparation of another degree, radix or rank
+/// ([`foreign_layouts`]), whose rank its keys reject; factors and `res` all of another rank than the rotation keys; a
+/// copy relabelled past `log2` of the ring degree; a context encoded on a module of another degree or at another radix,
+/// or at another dimension, which the prepared product of a hot operand rejects too, and that of two cold operands
+/// ignores; a factor at a radix other than the context's; an inner-dimension mismatch; a radix above 62, whose digits
+/// cannot hold two lazy terms of the JKLS kernel's two-pass circuit; a missing rotation or tensor key; and a tensor key
+/// of another rank than the blocks. The prepared product's validator also rejects operand infos of either hint without
+/// a batch record, at another dimension, without a block, or whose label does not allow their record, and operands and
+/// `res` all of another rank than the keys. poulpy-ckks's budget check rejects a `res` narrower than the factors' scale
+/// in the product and in every mix of the prepared product before `res` or a factor changes, and an input one bit short
+/// of the `2p` its maps spend in a cold preparation, as a factor of the product, and in the prepared product of its hot
+/// operand, which its preparation accepts, before it or `res` changes. The preparations take no tensor key, the prepared
+/// product of cold operands no rotation key, and that of a hot one the rotation keys of its terms. Each of these
+/// operations, under every hint and mix, runs on exactly the scratch its query reports, and one byte short panics before
+/// `res` changes.
 pub fn test_blas_matmul_guards<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -1086,7 +1181,13 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
     let (ctx, mut atks) = context_and_keys::<BE, F>(&params, module, log_d, &sk_raw, &mut scratch.borrow());
-    let foreign = foreign_contexts::<BE, F>(&params, module, log_d, &sk_raw, &mut atks, &mut scratch.borrow());
+    let mut foreign: Vec<_> = foreign_contexts::<BE, F>(&params, module, log_d, &sk_raw, &mut atks, &mut scratch.borrow()).into();
+    if let Some(other) = other_log_d("test_blas_matmul_guards", log_d, slots) {
+        foreign.push((
+            "dimension",
+            blas_context::<BE, F>(&params, module, other, &mut scratch.borrow()),
+        ));
+    }
     let keys = TestKeys::<BE> {
         atks,
         tsk: Some(gen_tsk(&params, module, &sk_raw, &mut scratch.borrow())),
@@ -1105,7 +1206,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     let column = BlasCiphertext::from_blocks(ct.clone().into_blocks(), log_d, 2, 1).unwrap();
     let alloc = |rows: usize, cols: usize| alloc_grid(&params, module, log_d, rows, cols, params.k);
     let (tsk_layout, atk_layout) = (params.tsk_layout(), params.atk_layout());
-    // `column ct`, the widest product below, which covers both preparations.
+    // `column ct`, the widest product below, which covers both preparations under either hint.
     let bytes = module.blas_matmul_tmp_bytes(&alloc(2, 2), &column, &ct, &ctx, &tsk_layout, &atk_layout);
     let mut op_scratch = ScratchOwned::<BE>::alloc(bytes);
 
@@ -1115,23 +1216,36 @@ pub fn test_blas_matmul_guards<BE, F, E>(
             module.blas_matmul(res, &ct, b, &ctx, &keys, &keys, &mut op_scratch.borrow())
         });
     }
-    let left = module
-        .blas_matmul_prepare_left(&ct, &ctx, &keys, &mut op_scratch.borrow())
-        .unwrap();
-    let left_column = module
-        .blas_matmul_prepare_left(&column, &ctx, &keys, &mut op_scratch.borrow())
-        .unwrap();
-    let right = module
-        .blas_matmul_prepare_right(&column, &ctx, &keys, &mut op_scratch.borrow())
-        .unwrap();
-    let row_right = module
-        .blas_matmul_prepare_right(&ct, &ctx, &keys, &mut op_scratch.borrow())
-        .unwrap();
+    // Both preparations of `ct` and `column`, by hint: hot at `side(OneShot)`, cold at `side(Reuse)`.
+    let side = |hint: PrepareHint| usize::from(hint == Reuse);
+    let left = HINTS.map(|hint| {
+        module
+            .blas_matmul_prepare_left(&ct, &ctx, &keys, hint, &mut op_scratch.borrow())
+            .unwrap()
+    });
+    let left_column = HINTS.map(|hint| {
+        module
+            .blas_matmul_prepare_left(&column, &ctx, &keys, hint, &mut op_scratch.borrow())
+            .unwrap()
+    });
+    let right = HINTS.map(|hint| {
+        module
+            .blas_matmul_prepare_right(&column, &ctx, &keys, hint, &mut op_scratch.borrow())
+            .unwrap()
+    });
+    let row_right = HINTS.map(|hint| {
+        module
+            .blas_matmul_prepare_right(&ct, &ctx, &keys, hint, &mut op_scratch.borrow())
+            .unwrap()
+    });
     let mut wide = alloc(1, 2);
-    for (label, right) in [("inner", &row_right), ("shape", &right)] {
-        assert_guard::<BE, _>(label, "blas_matmul_prepared", InvalidOperand, &mut wide, |res| {
-            module.blas_matmul_prepared(res, &left, right, &keys, &mut op_scratch.borrow())
-        });
+    for (hl, hr) in MIXES {
+        for (label, right) in [("inner", &row_right[side(hr)]), ("shape", &right[side(hr)])] {
+            let label = &format!("{label} {hl:?} x {hr:?}");
+            assert_guard::<BE, _>(label, "blas_matmul_prepared", InvalidOperand, &mut wide, |res| {
+                module.blas_matmul_prepared(res, &left[side(hl)], right, &ctx, &keys, &keys, &mut op_scratch.borrow())
+            });
+        }
     }
 
     // Each rejected grid as a factor of `column ct`, a 2 x 2 product, and as the input of either preparation.
@@ -1141,10 +1255,13 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         assert_guard::<BE, _>(label, "blas_matmul", InvalidOperand, &mut res, |res| {
             module.blas_matmul(res, &bad, &ct, &ctx, &keys, &keys, &mut op_scratch.borrow())
         });
-        let left = module.blas_matmul_prepare_left(&bad, &ctx, &keys, &mut op_scratch.borrow());
-        assert_rejected(label, "blas_matmul_prepare_left", InvalidOperand, left);
-        let right = module.blas_matmul_prepare_right(&bad, &ctx, &keys, &mut op_scratch.borrow());
-        assert_rejected(label, "blas_matmul_prepare_right", InvalidOperand, right);
+        for hint in HINTS {
+            let label = &format!("{label} {hint:?}");
+            let left = module.blas_matmul_prepare_left(&bad, &ctx, &keys, hint, &mut op_scratch.borrow());
+            assert_rejected(label, "blas_matmul_prepare_left", InvalidOperand, left);
+            let right = module.blas_matmul_prepare_right(&bad, &ctx, &keys, hint, &mut op_scratch.borrow());
+            assert_rejected(label, "blas_matmul_prepare_right", InvalidOperand, right);
+        }
     }
     for (label, bad) in rejected_grids(module, &ct) {
         let label = &format!("{label} row");
@@ -1154,7 +1271,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         });
     }
     // Each rejected grid, and each grid of another degree, radix or rank, as `res` of `column ct` and of its prepared
-    // form.
+    // form, of every mix.
     let bad_res = rejected_grids(module, &alloc(2, 2))
         .into_iter()
         .chain(foreign_layouts(module, &alloc(2, 2)));
@@ -1163,12 +1280,19 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         assert_guard::<BE, _>(label, "blas_matmul", InvalidOperand, &mut bad, |res| {
             module.blas_matmul(res, &column, &ct, &ctx, &keys, &keys, &mut op_scratch.borrow())
         });
-        assert_guard::<BE, _>(label, "blas_matmul_prepared", InvalidOperand, &mut bad, |res| {
-            module.blas_matmul_prepared(res, &left_column, &row_right, &keys, &mut op_scratch.borrow())
-        });
+        for (hl, hr) in MIXES {
+            let (l, r) = (&left_column[side(hl)], &row_right[side(hr)]);
+            assert_guard::<BE, _>(
+                &format!("{label} {hl:?} x {hr:?}"),
+                "blas_matmul_prepared",
+                InvalidOperand,
+                &mut bad,
+                |res| module.blas_matmul_prepared(res, l, r, &ctx, &keys, &keys, &mut op_scratch.borrow()),
+            );
+        }
     }
     // Each grid of another degree, radix or rank as one factor of `column ct` beside a valid one, and, read through its
-    // infos, as one prepared operand: each factor is compared with `res` on its own.
+    // infos, as one prepared operand of either hint: each factor is compared with `res` on its own.
     for ((label, bad_column), (_, bad_row)) in foreign_layouts(module, &column).into_iter().zip(foreign_layouts(module, &ct)) {
         for (side, a, b) in [("a", &bad_column, &ct), ("b", &column, &bad_row)] {
             let label = &format!("{label} {side}");
@@ -1178,10 +1302,24 @@ pub fn test_blas_matmul_guards<BE, F, E>(
             });
         }
         let res = alloc(2, 2);
-        let infos = validate_blas_matmul_prepared(module, &res, &bad_column, &row_right, &keys);
-        assert_rejected(&format!("{label} a infos"), "blas_matmul_prepared", InvalidOperand, infos);
-        let infos = validate_blas_matmul_prepared(module, &res, &left_column, &bad_row, &keys);
-        assert_rejected(&format!("{label} b infos"), "blas_matmul_prepared", InvalidOperand, infos);
+        for hint in HINTS {
+            let a = OperandInfos(&bad_column, hint);
+            let infos = validate_blas_matmul_prepared(module, &res, &a, &row_right[side(Reuse)], &ctx, &keys, &keys);
+            assert_rejected(
+                &format!("{label} a {hint:?} infos"),
+                "blas_matmul_prepared",
+                InvalidOperand,
+                infos,
+            );
+            let b = OperandInfos(&bad_row, hint);
+            let infos = validate_blas_matmul_prepared(module, &res, &left_column[side(Reuse)], &b, &ctx, &keys, &keys);
+            assert_rejected(
+                &format!("{label} b {hint:?} infos"),
+                "blas_matmul_prepared",
+                InvalidOperand,
+                infos,
+            );
+        }
     }
 
     // Copies relabelled past `log2` of the ring degree, which keep recording the dense batch.
@@ -1193,21 +1331,41 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         assert_guard::<BE, _>(label, "blas_matmul", InvalidOperand, &mut res, |res| {
             module.blas_matmul(res, &sparse_row, &column, &ctx, &keys, &keys, &mut op_scratch.borrow())
         });
-        let left = module.blas_matmul_prepare_left(&sparse_row, &ctx, &keys, &mut op_scratch.borrow());
-        assert_rejected(label, "blas_matmul_prepare_left", InvalidOperand, left);
-        let right = module.blas_matmul_prepare_right(&sparse_column, &ctx, &keys, &mut op_scratch.borrow());
-        assert_rejected(label, "blas_matmul_prepare_right", InvalidOperand, right);
+        for hint in HINTS {
+            let label = &format!("{label} {hint:?}");
+            let left = module.blas_matmul_prepare_left(&sparse_row, &ctx, &keys, hint, &mut op_scratch.borrow());
+            assert_rejected(label, "blas_matmul_prepare_left", InvalidOperand, left);
+            let right = module.blas_matmul_prepare_right(&sparse_column, &ctx, &keys, hint, &mut op_scratch.borrow());
+            assert_rejected(label, "blas_matmul_prepare_right", InvalidOperand, right);
+        }
     }
 
+    // Contexts of another degree, radix or dimension. The prepared product evaluates a hot side's terms under its
+    // context, which must read them; two cold operands bring their terms and read none.
     for (label, ctx) in &foreign {
         let mut res = alloc(1, 1);
         assert_guard::<BE, _>(label, "blas_matmul", InvalidOperand, &mut res, |res| {
             module.blas_matmul(res, &ct, &column, ctx, &keys, &keys, &mut op_scratch.borrow())
         });
-        let left = module.blas_matmul_prepare_left(&ct, ctx, &keys, &mut op_scratch.borrow());
-        assert_rejected(label, "blas_matmul_prepare_left", InvalidOperand, left);
-        let right = module.blas_matmul_prepare_right(&column, ctx, &keys, &mut op_scratch.borrow());
-        assert_rejected(label, "blas_matmul_prepare_right", InvalidOperand, right);
+        for hint in HINTS {
+            let label = &format!("{label} {hint:?}");
+            let left = module.blas_matmul_prepare_left(&ct, ctx, &keys, hint, &mut op_scratch.borrow());
+            assert_rejected(label, "blas_matmul_prepare_left", InvalidOperand, left);
+            let right = module.blas_matmul_prepare_right(&column, ctx, &keys, hint, &mut op_scratch.borrow());
+            assert_rejected(label, "blas_matmul_prepare_right", InvalidOperand, right);
+        }
+        for (hl, hr) in MIXES {
+            let (l, r) = (&left[side(hl)], &right[side(hr)]);
+            let mut call = |res: &mut BlasCiphertextOwned<BE>| {
+                module.blas_matmul_prepared(res, l, r, ctx, &keys, &keys, &mut op_scratch.borrow())
+            };
+            let label = &format!("{label} context {hl:?} x {hr:?}");
+            if (hl, hr) == (Reuse, Reuse) {
+                call(&mut res).unwrap_or_else(|e| panic!("{label}: {e}"));
+            } else {
+                assert_guard::<BE, _>(label, "blas_matmul_prepared", InvalidOperand, &mut res, call);
+            }
+        }
     }
 
     // One factor at a radix other than the context's, the other at the context's.
@@ -1222,58 +1380,54 @@ pub fn test_blas_matmul_guards<BE, F, E>(
             module.blas_matmul(res, &a, &b, &ctx, &keys, &keys, &mut op_scratch.borrow())
         });
     }
-    let left_radix = module.blas_matmul_prepare_left(&radix(1, 2), &ctx, &keys, &mut op_scratch.borrow());
-    assert_rejected("radix", "blas_matmul_prepare_left", InvalidOperand, left_radix);
-    let right_radix = module.blas_matmul_prepare_right(&radix(2, 1), &ctx, &keys, &mut op_scratch.borrow());
-    assert_rejected("radix", "blas_matmul_prepare_right", InvalidOperand, right_radix);
-    // A grid of another degree, radix or rank, alone: no `res` to compare it with, so the rank is compared with the
-    // keys'.
-    for (label, bad) in foreign_layouts(module, &ct) {
-        let left = module.blas_matmul_prepare_left(&bad, &ctx, &keys, &mut op_scratch.borrow());
-        assert_rejected(label, "blas_matmul_prepare_left", InvalidOperand, left);
-        let right = module.blas_matmul_prepare_right(&bad, &ctx, &keys, &mut op_scratch.borrow());
-        assert_rejected(label, "blas_matmul_prepare_right", InvalidOperand, right);
+    for hint in HINTS {
+        let label = &format!("radix {hint:?}");
+        let left_radix = module.blas_matmul_prepare_left(&radix(1, 2), &ctx, &keys, hint, &mut op_scratch.borrow());
+        assert_rejected(label, "blas_matmul_prepare_left", InvalidOperand, left_radix);
+        let right_radix = module.blas_matmul_prepare_right(&radix(2, 1), &ctx, &keys, hint, &mut op_scratch.borrow());
+        assert_rejected(label, "blas_matmul_prepare_right", InvalidOperand, right_radix);
+        // A grid of another degree, radix or rank, alone: no `res` to compare it with, so the rank is compared with the
+        // keys'.
+        for (label, bad) in foreign_layouts(module, &ct) {
+            let label = &format!("{label} {hint:?}");
+            let left = module.blas_matmul_prepare_left(&bad, &ctx, &keys, hint, &mut op_scratch.borrow());
+            assert_rejected(label, "blas_matmul_prepare_left", InvalidOperand, left);
+            let right = module.blas_matmul_prepare_right(&bad, &ctx, &keys, hint, &mut op_scratch.borrow());
+            assert_rejected(label, "blas_matmul_prepare_right", InvalidOperand, right);
+        }
     }
 
     // `res` at radix 63: its digits hold one lazy term, short of the two the JKLS kernel's two-pass circuit sums at
     // least. Its radix is not the factors' either, so the reason tells the two checks apart.
     let radix_63 = CKKSTestParams { base2k: 63, ..params };
     let mut res = alloc_grid(&radix_63, module, log_d, 1, 1, params.k);
-    assert_guard::<BE, _>("lazy sums", "blas_matmul", InvalidOperand, &mut res, |res| {
-        module.blas_matmul(res, &ct, &column, &ctx, &keys, &keys, &mut op_scratch.borrow())
-    });
-    assert_guard::<BE, _>("lazy sums", "blas_matmul_prepared", InvalidOperand, &mut res, |res| {
-        module.blas_matmul_prepared(res, &left, &right, &keys, &mut op_scratch.borrow())
-    });
-    let errors = [
+    let mut errors = vec![
         module
             .blas_matmul(&mut res, &ct, &column, &ctx, &keys, &keys, &mut op_scratch.borrow())
             .unwrap_err(),
-        module
-            .blas_matmul_prepared(&mut res, &left, &right, &keys, &mut op_scratch.borrow())
-            .unwrap_err(),
     ];
+    assert_guard::<BE, _>("lazy sums", "blas_matmul", InvalidOperand, &mut res, |res| {
+        module.blas_matmul(res, &ct, &column, &ctx, &keys, &keys, &mut op_scratch.borrow())
+    });
+    for (hl, hr) in MIXES {
+        let (l, r) = (&left[side(hl)], &right[side(hr)]);
+        let mut call = |res: &mut BlasCiphertextOwned<BE>| {
+            module.blas_matmul_prepared(res, l, r, &ctx, &keys, &keys, &mut op_scratch.borrow())
+        };
+        errors.push(call(&mut res).unwrap_err());
+        let label = &format!("lazy sums {hl:?} x {hr:?}");
+        assert_guard::<BE, _>(label, "blas_matmul_prepared", InvalidOperand, &mut res, call);
+    }
     for e in errors {
         assert!(e.to_string().contains("lazy terms"), "lazy sums: {e}");
     }
 
-    // Operand infos the prepared product's validator rejects, beside a valid operand: without a batch record (term
-    // layouts), at another dimension, with a label that does not allow the record or a scale wider than the blocks
-    // (the recorded grids `rejected_grids` builds, read through their infos; an uneven grid reports only its first
-    // block's layout), and without a block.
+    // Operand infos the prepared product's validator rejects, beside a valid operand, under either hint: without a
+    // batch record (the layouts `blas_matmul_operand_layout` gives), at another dimension, with a label that does not
+    // allow the record or a scale wider than the blocks (the recorded grids `rejected_grids` builds, read through their
+    // infos; an uneven grid reports only its first block's layout), and without a block.
     let op = "blas_matmul_prepared";
     let res = alloc(1, 1);
-    let unrecorded = validate_blas_matmul_prepared(module, &res, &blas_matmul_term_layout(&ct, &ctx), &right, &keys);
-    assert_rejected("no record a", op, InvalidOperand, unrecorded);
-    let unrecorded = validate_blas_matmul_prepared(module, &res, &left, &blas_matmul_term_layout(&column, &ctx), &keys);
-    assert_rejected("no record b", op, InvalidOperand, unrecorded);
-    for (label, bad) in rejected_grids(module, &column)
-        .into_iter()
-        .filter(|(label, _)| *label != "uneven")
-    {
-        let infos = validate_blas_matmul_prepared(module, &res, &left, &bad, &keys);
-        assert_rejected(&format!("{label} infos"), op, InvalidOperand, infos);
-    }
     let (no_cols, no_rows) = (
         Misshapen {
             grid: ct.clone(),
@@ -1286,13 +1440,31 @@ pub fn test_blas_matmul_guards<BE, F, E>(
             cols: 1,
         },
     );
-    let empty = validate_blas_matmul_prepared(module, &res, &no_cols, &no_rows, &keys);
-    assert_rejected("no block", op, InvalidOperand, empty);
+    let (cold_left, cold_right) = (&left[side(Reuse)], &right[side(Reuse)]);
+    for hint in HINTS {
+        let unrecorded = blas_matmul_operand_layout(&ct, &ctx, hint);
+        let infos = validate_blas_matmul_prepared(module, &res, &unrecorded, cold_right, &ctx, &keys, &keys);
+        assert_rejected(&format!("no record a {hint:?}"), op, InvalidOperand, infos);
+        let unrecorded = blas_matmul_operand_layout(&column, &ctx, hint);
+        let infos = validate_blas_matmul_prepared(module, &res, cold_left, &unrecorded, &ctx, &keys, &keys);
+        assert_rejected(&format!("no record b {hint:?}"), op, InvalidOperand, infos);
+        for (label, bad) in rejected_grids(module, &column)
+            .into_iter()
+            .filter(|(label, _)| *label != "uneven")
+        {
+            let infos = validate_blas_matmul_prepared(module, &res, cold_left, &OperandInfos(&bad, hint), &ctx, &keys, &keys);
+            assert_rejected(&format!("{label} {hint:?} infos"), op, InvalidOperand, infos);
+        }
+        let (a, b) = (OperandInfos(&no_cols, hint), OperandInfos(&no_rows, hint));
+        let empty = validate_blas_matmul_prepared(module, &res, &a, &b, &ctx, &keys, &keys);
+        assert_rejected(&format!("no block {hint:?}"), op, InvalidOperand, empty);
+    }
 
     // Factors and `res` all one rank above the keys, beside a tensor key of their rank, so that only the rotation keys'
     // rank differs: the product meets it at its first rotation key. Read as operand infos beside the keys' tensor key,
-    // they meet the prepared product's validator at that key. Then that tensor key beside valid factors and `res`: both
-    // products meet it, the product past its rotation keys. No case uses the tensor key, so an allocated key serves.
+    // they meet the prepared product's validator at the first key it looks up: of a hot side's terms, or the tensor key.
+    // Then that tensor key beside valid factors and `res`: both products meet it, the product past its rotation keys,
+    // the prepared product past those of its hot sides. No case uses the tensor key, so an allocated key serves.
     let rank_tsk = module.alloc_tensor_key_prepared_from_infos(&GLWETensorKeyLayout {
         rank: Rank(params.rank as u32 + 1),
         ..params.tsk_layout()
@@ -1302,39 +1474,51 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     assert_guard::<BE, _>("key rank", "blas_matmul", InvalidOperand, &mut rank_res, |res| {
         module.blas_matmul(res, &rank_row, &rank_column, &ctx, &rank_tsk, &keys, &mut op_scratch.borrow())
     });
-    let infos = validate_blas_matmul_prepared(module, &rank_res, &rank_row, &rank_column, &keys);
-    assert_rejected("key rank infos", op, InvalidOperand, infos);
+    for (hl, hr) in MIXES {
+        let (a, b) = (OperandInfos(&rank_row, hl), OperandInfos(&rank_column, hr));
+        let infos = validate_blas_matmul_prepared(module, &rank_res, &a, &b, &ctx, &keys, &keys);
+        assert_rejected(&format!("key rank {hl:?} x {hr:?} infos"), op, InvalidOperand, infos);
+    }
     let mut res = alloc(1, 1);
     assert_guard::<BE, _>("tensor key rank", "blas_matmul", InvalidOperand, &mut res, |res| {
         module.blas_matmul(res, &ct, &column, &ctx, &rank_tsk, &keys, &mut op_scratch.borrow())
     });
-    assert_guard::<BE, _>("tensor key rank", op, InvalidOperand, &mut res, |res| {
-        module.blas_matmul_prepared(res, &left, &right, &rank_tsk, &mut op_scratch.borrow())
-    });
+    for (hl, hr) in MIXES {
+        let (l, r) = (&left[side(hl)], &right[side(hr)]);
+        assert_guard::<BE, _>(
+            &format!("tensor key rank {hl:?} x {hr:?}"),
+            op,
+            InvalidOperand,
+            &mut res,
+            |res| module.blas_matmul_prepared(res, l, r, &ctx, &rank_tsk, &keys, &mut op_scratch.borrow()),
+        );
+    }
 
     // `res` narrower than the factors' scale: poulpy-ckks rejects the budget of the first block's JKLS kernel inside the
-    // implementation, after the preparations in `blas_matmul`, before any write.
+    // implementation, after the terms of the hot sides, before any write.
     let factors = [&ct, &column].map(grid_snapshot::<BE, _>);
-    let operands = [grid_infos(&left), grid_infos(&right)];
+    let infos = || (left.each_ref().map(operand_infos), right.each_ref().map(operand_infos));
+    let operands = infos();
     let mut narrow_res = res_below_scale(&params, module, log_d, ct.block_layout().log_delta());
     assert_guard::<BE, _>("budget", "mul", Budget, &mut narrow_res, |res| {
         module.blas_matmul(res, &ct, &column, &ctx, &keys, &keys, &mut op_scratch.borrow())
     });
-    assert_guard::<BE, _>("budget", "mul", Budget, &mut narrow_res, |res| {
-        module.blas_matmul_prepared(res, &left, &right, &keys, &mut op_scratch.borrow())
-    });
+    for (hl, hr) in MIXES {
+        let (l, r) = (&left[side(hl)], &right[side(hr)]);
+        assert_guard::<BE, _>(&format!("budget {hl:?} x {hr:?}"), "mul", Budget, &mut narrow_res, |res| {
+            module.blas_matmul_prepared(res, l, r, &ctx, &keys, &keys, &mut op_scratch.borrow())
+        });
+    }
     assert!(
         [&ct, &column].map(grid_snapshot::<BE, _>) == factors,
         "budget: blas_matmul changed a factor"
     );
     // The prepared operands are opaque: their infos are what a test reads.
-    assert!(
-        [grid_infos(&left), grid_infos(&right)] == operands,
-        "budget: blas_matmul_prepared changed an operand"
-    );
-    // An input whose budget, `k - log_delta`, is one bit short of the `2p` its preparation spends, `p` the scale of the
-    // maps of `ctx`, `params.prec()`'s: poulpy-ckks rejects the budget of its first shift, after sigma (tau), inside the
-    // implementation, and the product's left preparation does so before any write to `res`.
+    assert!(infos() == operands, "budget: blas_matmul_prepared changed an operand");
+    // An input whose budget, `k - log_delta`, is one bit short of the `2p` its terms spend, `p` the scale of the maps of
+    // `ctx`, `params.prec()`'s: poulpy-ckks rejects the budget of its first shift, after sigma (tau), inside the
+    // implementation. A cold preparation returns that error; a hot one checks no budget, and the prepared product of
+    // its operand returns it before any write to `res`, as the product of the input does.
     let p = params.prec().log_delta();
     let short = encrypt_grid::<BE, F, E>(
         &params,
@@ -1348,38 +1532,64 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         &mut scratch.borrow(),
     );
     let input = grid_snapshot::<BE, _>(&short);
-    let left_short = module.blas_matmul_prepare_left(&short, &ctx, &keys, &mut op_scratch.borrow());
+    let left_short = module.blas_matmul_prepare_left(&short, &ctx, &keys, Reuse, &mut op_scratch.borrow());
     assert_rejected("budget", "mul", Budget, left_short);
-    let right_short = module.blas_matmul_prepare_right(&short, &ctx, &keys, &mut op_scratch.borrow());
+    let right_short = module.blas_matmul_prepare_right(&short, &ctx, &keys, Reuse, &mut op_scratch.borrow());
     assert_rejected("budget", "mul", Budget, right_short);
     assert_guard::<BE, _>("budget factor", "mul", Budget, &mut res, |res| {
         module.blas_matmul(res, &short, &column, &ctx, &keys, &keys, &mut op_scratch.borrow())
+    });
+    let hot_short = module
+        .blas_matmul_prepare_left(&short, &ctx, &keys, OneShot, &mut op_scratch.borrow())
+        .unwrap();
+    assert_guard::<BE, _>("budget hot left", "mul", Budget, &mut res, |res| {
+        module.blas_matmul_prepared(res, &hot_short, cold_right, &ctx, &keys, &keys, &mut op_scratch.borrow())
+    });
+    // `short` is 1 x 2: on the right, it multiplies `column`'s 2 x 1 operand into 2 x 2.
+    let hot_short = module
+        .blas_matmul_prepare_right(&short, &ctx, &keys, OneShot, &mut op_scratch.borrow())
+        .unwrap();
+    assert_guard::<BE, _>("budget hot right", "mul", Budget, &mut alloc(2, 2), |res| {
+        let left = &left_column[side(Reuse)];
+        module.blas_matmul_prepared(res, left, &hot_short, &ctx, &keys, &keys, &mut op_scratch.borrow())
     });
     assert!(
         grid_snapshot::<BE, _>(&short) == input,
         "budget: a preparation changed its input"
     );
 
-    // Each operation one scratch byte short of its query.
+    // Each operation, under every hint and mix, on exactly its query, then one byte short of it.
     let mut res = alloc(1, 1);
     let bytes = module.blas_matmul_tmp_bytes(&res, &ct, &column, &ctx, &tsk_layout, &atk_layout);
     assert_short_scratch::<BE, _>("blas_matmul", &mut res, bytes, |res, s| {
         module.blas_matmul(res, &ct, &column, &ctx, &keys, &keys, s)
     });
-    let bytes = module.blas_matmul_prepared_tmp_bytes(&res, &left, &right, &tsk_layout);
-    assert_short_scratch::<BE, _>("blas_matmul_prepared", &mut res, bytes, |res, s| {
-        module.blas_matmul_prepared(res, &left, &right, &keys, s)
-    });
-    let bytes = module.blas_matmul_prepare_left_tmp_bytes(&ct, &ctx, &atk_layout);
-    assert_short_scratch_panics::<BE, _>("blas_matmul_prepare_left", bytes, |s| {
-        module.blas_matmul_prepare_left(&ct, &ctx, &keys, s)
-    });
-    let bytes = module.blas_matmul_prepare_right_tmp_bytes(&column, &ctx, &atk_layout);
-    assert_short_scratch_panics::<BE, _>("blas_matmul_prepare_right", bytes, |s| {
-        module.blas_matmul_prepare_right(&column, &ctx, &keys, s)
-    });
+    for (hl, hr) in MIXES {
+        let (l, r) = (&left[side(hl)], &right[side(hr)]);
+        let op = &format!("blas_matmul_prepared {hl:?} x {hr:?}");
+        let bytes = module.blas_matmul_prepared_tmp_bytes(&res, l, r, &ctx, &tsk_layout, &atk_layout);
+        with_scratch::<BE, _>(bytes, |s| module.blas_matmul_prepared(&mut res, l, r, &ctx, &keys, &keys, s))
+            .unwrap_or_else(|e| panic!("{op}: {e}"));
+        assert_short_scratch::<BE, _>(op, &mut res, bytes, |res, s| {
+            module.blas_matmul_prepared(res, l, r, &ctx, &keys, &keys, s)
+        });
+    }
+    for hint in HINTS {
+        let op = &format!("blas_matmul_prepare_left {hint:?}");
+        let bytes = module.blas_matmul_prepare_left_tmp_bytes(&ct, &ctx, &atk_layout, hint);
+        with_scratch::<BE, _>(bytes, |s| module.blas_matmul_prepare_left(&ct, &ctx, &keys, hint, s))
+            .unwrap_or_else(|e| panic!("{op}: {e}"));
+        assert_short_scratch_panics::<BE, _>(op, bytes, |s| module.blas_matmul_prepare_left(&ct, &ctx, &keys, hint, s));
+        let op = &format!("blas_matmul_prepare_right {hint:?}");
+        let bytes = module.blas_matmul_prepare_right_tmp_bytes(&column, &ctx, &atk_layout, hint);
+        with_scratch::<BE, _>(bytes, |s| module.blas_matmul_prepare_right(&column, &ctx, &keys, hint, s))
+            .unwrap_or_else(|e| panic!("{op}: {e}"));
+        assert_short_scratch_panics::<BE, _>(op, bytes, |s| module.blas_matmul_prepare_right(&column, &ctx, &keys, hint, s));
+    }
 
-    // Valid grids, a key store without rotation keys or without a tensor key.
+    // Valid grids, a key store without rotation keys or without a tensor key. The preparations look up rotation keys
+    // under either hint and no tensor key; the prepared product looks up the tensor key, and the rotation keys of a hot
+    // side's terms.
     let TestKeys { atks, tsk } = keys;
     let no_atks = TestKeys::<BE> {
         atks: HashMap::new(),
@@ -1393,26 +1603,40 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     assert_guard::<BE, _>("no tensor key", "blas_matmul", MissingTensorKey, &mut res, |res| {
         module.blas_matmul(res, &ct, &column, &ctx, &no_tsk, &no_tsk, &mut op_scratch.borrow())
     });
-    assert_guard::<BE, _>("no tensor key", "blas_matmul_prepared", MissingTensorKey, &mut res, |res| {
-        module.blas_matmul_prepared(res, &left, &right, &no_tsk, &mut op_scratch.borrow())
-    });
-    let left = module.blas_matmul_prepare_left(&ct, &ctx, &no_atks, &mut op_scratch.borrow());
-    assert_rejected("no rotation keys", "blas_matmul_prepare_left", MissingKey, left);
-    let right = module.blas_matmul_prepare_right(&column, &ctx, &no_atks, &mut op_scratch.borrow());
-    assert_rejected("no rotation keys", "blas_matmul_prepare_right", MissingKey, right);
-    let left = module
-        .blas_matmul_prepare_left(&ct, &ctx, &no_tsk, &mut op_scratch.borrow())
-        .unwrap();
-    let right = module
-        .blas_matmul_prepare_right(&column, &ctx, &no_tsk, &mut op_scratch.borrow())
-        .unwrap();
-    module
-        .blas_matmul_prepared(&mut res, &left, &right, &no_atks, &mut op_scratch.borrow())
-        .unwrap();
+    for hint in HINTS {
+        let label = &format!("no rotation keys {hint:?}");
+        let left = module.blas_matmul_prepare_left(&ct, &ctx, &no_atks, hint, &mut op_scratch.borrow());
+        assert_rejected(label, "blas_matmul_prepare_left", MissingKey, left);
+        let right = module.blas_matmul_prepare_right(&column, &ctx, &no_atks, hint, &mut op_scratch.borrow());
+        assert_rejected(label, "blas_matmul_prepare_right", MissingKey, right);
+        module
+            .blas_matmul_prepare_left(&ct, &ctx, &no_tsk, hint, &mut op_scratch.borrow())
+            .unwrap();
+        module
+            .blas_matmul_prepare_right(&column, &ctx, &no_tsk, hint, &mut op_scratch.borrow())
+            .unwrap();
+    }
+    for (hl, hr) in MIXES {
+        let (l, r) = (&left[side(hl)], &right[side(hr)]);
+        let label = &format!("no tensor key {hl:?} x {hr:?}");
+        assert_guard::<BE, _>(label, op, MissingTensorKey, &mut res, |res| {
+            module.blas_matmul_prepared(res, l, r, &ctx, &no_tsk, &no_tsk, &mut op_scratch.borrow())
+        });
+        let mut call = |res: &mut BlasCiphertextOwned<BE>| {
+            module.blas_matmul_prepared(res, l, r, &ctx, &no_atks, &no_atks, &mut op_scratch.borrow())
+        };
+        let label = &format!("no rotation keys {hl:?} x {hr:?}");
+        if (hl, hr) == (Reuse, Reuse) {
+            call(&mut res).unwrap_or_else(|e| panic!("{label}: {e}"));
+        } else {
+            assert_guard::<BE, _>(label, op, MissingKey, &mut res, call);
+        }
+    }
 }
 
 /// A long product: `dec(matmul(enc(A), enc(B)))` is `A B` for a `1 x 8` grid times an `8 x 1` grid of distinct `4 x 4`
-/// blocks, whose 32 products one JKLS kernel sums, and `blas_matmul_prepared` equals `blas_matmul` bit for bit.
+/// blocks, whose 32 products one JKLS kernel sums, and `blas_matmul_prepared` of cold operands equals `blas_matmul` bit
+/// for bit.
 /// The blocks are distinct encryptions, so the terms' digits are independent, as `Module::max_base2k`'s model assumes:
 /// copies of one block would add up coherently, outside it, past what an FFT suite's radix holds once the products
 /// accumulate in the transform domain. It runs on its own ring, `N = 32`, at the suite's radix. The product by public
@@ -1492,22 +1716,24 @@ where
     check("matmul", &res, &a.matmul(&b), &mut scratch.borrow());
 
     let bytes = module
-        .blas_matmul_prepare_left_tmp_bytes(&ct_a, &ctx, &atk_layout)
-        .max(module.blas_matmul_prepare_right_tmp_bytes(&ct_b, &ctx, &atk_layout));
+        .blas_matmul_prepare_left_tmp_bytes(&ct_a, &ctx, &atk_layout, Reuse)
+        .max(module.blas_matmul_prepare_right_tmp_bytes(&ct_b, &ctx, &atk_layout, Reuse));
     let mut prepare_scratch = ScratchOwned::<BE>::alloc(bytes);
     let left = module
-        .blas_matmul_prepare_left(&ct_a, &ctx, &keys, &mut prepare_scratch.borrow())
+        .blas_matmul_prepare_left(&ct_a, &ctx, &keys, Reuse, &mut prepare_scratch.borrow())
         .unwrap();
     let right = module
-        .blas_matmul_prepare_right(&ct_b, &ctx, &keys, &mut prepare_scratch.borrow())
+        .blas_matmul_prepare_right(&ct_b, &ctx, &keys, Reuse, &mut prepare_scratch.borrow())
         .unwrap();
     let mut prepared = alloc_grid(&params, module, log_d, 1, 1, params.k);
-    let bytes = module.blas_matmul_prepared_tmp_bytes(&prepared, &left, &right, &tsk_layout);
+    let bytes = module.blas_matmul_prepared_tmp_bytes(&prepared, &left, &right, &ctx, &tsk_layout, &atk_layout);
     module
         .blas_matmul_prepared(
             &mut prepared,
             &left,
             &right,
+            &ctx,
+            &keys,
             &keys,
             &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
         )

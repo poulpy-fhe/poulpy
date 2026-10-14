@@ -29,10 +29,11 @@ and is never implemented directly.
 The provided methods, in the crate-private [`oep/derived.rs`](../src/oep/derived.rs),
 call the backend's selected methods: the transpose and both shifts call its
 map hook, and `blas_matmul` its preparations and prepared product. The
-reference preparations likewise call the backend's map hook, and the reference
-prepared product its JKLS kernel. So `impl_blas_matmul_reference!` needs the
-intra and JKLS families, and an override of the hook or of the kernel reaches
-every operation built on it.
+reference's cold preparations likewise call the backend's map hook, and the
+reference prepared product calls it for the terms of a hot operand, then its
+JKLS kernel. So `impl_blas_matmul_reference!` needs the intra and JKLS
+families, and an override of the hook or of the kernel reaches every operation
+built on it.
 
 ## Grids and keys
 
@@ -47,9 +48,10 @@ blocks are not `GLWEToBackendRef`.
 
 Rotation keys come as `atk` and the tensor key as `tsk`, two separate stores:
 the rotations, the sums, the maps, the preparations and the products by public
-matrices take `atk` alone, the prepared product `tsk` alone, and `blas_matmul`
-both. The traits' `Send` and `Sync` bounds leave an implementation its own
-choice of concurrency ([Parallelism](#parallelism)).
+matrices take `atk` alone, and the products both. The prepared product looks
+up rotation keys only for a hot operand, whose terms it evaluates: of two cold
+operands it reads `tsk` alone. The traits' `Send` and `Sync` bounds leave an
+implementation its own choice of concurrency ([Parallelism](#parallelism)).
 
 ## Batches
 
@@ -87,15 +89,17 @@ public operand's scale `p_B`:
 | `blas_sum` | `sum_galois_elements(module, a)` | `min(res.k, a.k)` |
 | `blas_transpose` | `transpose_galois_elements(order)` | baby steps at `a.k`, giant steps at `min(res.k, a.k - p)` |
 | `blas_rotate_rows`, `blas_rotate_cols` by `k` | `rotate_rows_galois_elements(order, k)`, `rotate_cols_galois_elements(order, k)` | as the transpose; none for a shift by a multiple of `d`, a copy |
-| `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, `blas_matmul` | `matmul_galois_elements(order)` | sigma's (tau's) baby steps at `a.k` and giant steps at `a.k - p`; the shifts' giant steps at `a.k - 2p` |
+| `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, `blas_matmul`, and `blas_matmul_prepared` of a hot operand | `matmul_galois_elements(order)` | sigma's (tau's) baby steps at `a.k` and giant steps at `a.k - p`; the shifts' giant steps at `a.k - 2p` |
 | `blas_matmul_pt`, `blas_matmul_pt_left` | `matmul_pt_galois_elements(order)`, `matmul_pt_left_galois_elements(order)` | baby steps at `a.k`, giant steps at `min(res.k, a.k - p_B)` |
 
 The sets list the rotations of the reference's maps as the plan schedules
 them: shift maps `Direct`, the others at the cost-optimal BSGS giant step.
 `galois_elements(order)` covers every map of a context, so every operation's
-set but `blas_rotate`'s and `blas_sum`'s. The tensor key is needed if and only
-if a pipeline calls `blas_matmul` or `blas_matmul_prepared`, at `max(w_a, w_b)`,
-the wider of the operands' term widths `a.k - 2p` and `b.k - 2p`. The
+set but `blas_rotate`'s and `blas_sum`'s. The preparations check the keys of
+their terms under either hint, and the prepared product those of a hot
+operand's under its own context. The tensor key is needed if and only if a
+pipeline calls `blas_matmul` or `blas_matmul_prepared`, at `max(w_a, w_b)`, the
+wider of the operands' term widths `a.k - 2p` and `b.k - 2p`. The
 [pipeline example](../../poulpy-cpu-portable/examples/blas_pipeline.rs) plans
 its keys this way, with one rotation-key layout covering its widest input and a
 tensor key covering the terms, and prints the width each operation consumes.
@@ -143,7 +147,8 @@ an implementation must reproduce, which
 Three replacements cover most needs:
 
 - **The map hook**, for a backend that evaluates maps its own way. It covers
-  the transpose, both shifts and both preparations, so `blas_matmul` too:
+  the transpose, both shifts, the cold preparations and the prepared product's
+  hot sides, so `blas_matmul` too:
 
   ```rust
   ::poulpy_blas::impl_blas_inter_reference!(MyBackend);
@@ -162,12 +167,14 @@ Three replacements cover most needs:
   unsafe impl poulpy_blas::oep::BlasJklsImpl for MyBackend { /* the kernel and its query */ }
   ```
 
-- **The products**, for prepared operands in the backend's own layout. The
-  inter, intra and JKLS families keep their macros, and `BlasMatMulImpl` is
-  written by hand: it sets both operand types, implements both preparations
-  and the prepared product, and forwards `blas_matmul_pt` and
-  `blas_matmul_pt_left` to `BlasMatMulReference`, while `blas_matmul` stays
-  provided.
+- **The products**, for prepared operands in the backend's own layout, hot or
+  cold. The inter, intra and JKLS families keep their macros, and
+  `BlasMatMulImpl` is written by hand: it sets both operand types, implements
+  both preparations and the prepared product, and forwards `blas_matmul_pt`
+  and `blas_matmul_pt_left` to `BlasMatMulReference`, while `blas_matmul` stays
+  provided. The JKLS kernel reads poulpy-ckks's prepared terms, so a backend
+  that holds its terms in another representation replaces this family rather
+  than the kernel.
 
 A backend may also override a provided method, for example the shifts, to
 chunk their heap grid, or `blas_matmul`, to stream its operands; it then
@@ -201,8 +208,11 @@ The validators check this crate's rules and fail in this order:
    another degree than the module's, or inputs of another radix or rank than
    `res`; a context or public operand encoded for another slot count or radix;
    public matrices that do not divide the batch; a prepared operand without a
-   batch record; and a product at a radix above 62, whose digits cannot hold
-   two lazy terms of the JKLS kernel's two-pass circuit.
+   batch record, or a hot one at another `log_d` than the product's context
+   or under a context encoded for another slot count or radix; and a product
+   at a radix above 62, whose digits cannot hold two lazy terms of the JKLS
+   kernel's two-pass circuit. A hot operand's scale is not checked: the
+   product spends that of its context's maps.
 2. Key by key, the rotation keys first, each at the width the operation
    looks it up at ([Keys](#keys)): `MissingAutomorphismKey`, or
    `MissingRelinearizationKey` for the tensor key, when the store lacks it,
@@ -216,7 +226,10 @@ inside the implementation, from the rotations, the copies, the maps, the
 products by public matrices and the JKLS kernel's dot product, before any write
 to `res`: every block of a grid shares one layout, so the first block's call
 fails before any block is written. A preparation writes only the operand it
-returns, and `blas_matmul` meets the preparations' errors before the product's.
+returns. A hot operand's terms are evaluated by the product, so its budget
+error comes from the product, the left side's before the right side's, and
+before the kernel's; a hot preparation checks no budget. So `blas_matmul`,
+whose operands are hot, meets its factors' budget errors before the kernel's.
 
 A rejected call therefore leaves `res`, its batch record and the inputs
 untouched, whichever backend runs it. An implementation runs only on inputs
@@ -282,26 +295,43 @@ of them reproduces:
   The shift maps are `Direct`, as the plan records. The heap grid is the
   provided shifts' memory ceiling; an override may chunk it.
 
-The reference preparations call the hook too ([Products](#products)), so a
-backend that overrides the hook alone evaluates every map of this crate but
-those of the products by public matrices.
+The reference cold preparations call the hook too, and the reference prepared
+product for the terms of a hot operand ([Products](#products)), so a backend
+that overrides the hook alone evaluates every map of this crate but those of
+the products by public matrices.
 
 ### Products
 
 **Prepared operands.** `MatMulLeft` and `MatMulRight`, which the API names
 `BlasMatMulLeft<BE>` and `BlasMatMulRight<BE>`, may hold any representation,
 such as device memory, contiguous or DFT-domain terms, and only the
-preparations make one. Through `BlasGridInfos`, an operand prepared from `a`
-under `ctx` reports `a`'s dimensions, the layout
-`poulpy_blas::reference::blas_matmul_term_layout(a, ctx)` gives, and `Some` of
-`a`'s batch, `grid_batch::<BE::Ring>(a)`: the prepared product's validator,
-the batch the API records and the provided `blas_matmul` query read nothing
-else, and parity compares these infos, never the storage. The prepared product
-of two operands equals the reference's on the reference's operands of the same
-sources. The preparations look up rotation keys only, the prepared product
-the tensor key only. The reference's operand, `BlasMatMulOperand<BE, Left>`
-(`Right`), holds the `d` terms of every block, which `term(row, col, k)`
-returns.
+preparations make one, under a `PrepareHint`:
+
+- **hot**, `OneShot`, prepared for one product: the reference relabels its
+  input, a verbatim copy of every block, through no map, key or transform. The
+  product evaluates its terms under the product's own context, whatever the
+  context the operand was prepared under, at whatever scale: the maps spend
+  their scale from the operand's budget, and the product stamps by the ct x ct
+  rule, at the smaller scale;
+- **cold**, `Reuse`, prepared for many products: every term, each converted
+  once to the transform domain by poulpy-ckks's `ckks_prepare_left` or
+  `ckks_prepare_right`, under the preparation's context.
+
+Through `BlasMatMulOperandInfos`, an operand prepared from `a` reports its
+hint, `a`'s block layout as its source, `a`'s dimensions, `Some` of `a`'s
+batch, `grid_batch::<BE::Ring>(a)`, and as its block layout `a`'s when hot and
+the layout `poulpy_blas::reference::blas_matmul_term_layout(a, ctx)` gives
+when cold; `blas_matmul_operand_layout(a, ctx, hint)` gives these infos before
+preparing. The prepared product's validator, the batch the API records and
+the provided `blas_matmul` query read nothing else, and parity compares these
+infos, never the storage. The prepared product of two operands, of any hints,
+equals the reference's on the reference's operands of the same sources and
+hints under the same contexts. The preparations' validators check the
+rotation keys of the terms under either hint; a cold preparation looks them
+up, and the prepared product looks up those of each hot side's terms, and the
+tensor key. The reference's operand, `BlasMatMulOperand<BE, P>`, holds either
+the copied blocks or the terms, `P` being `CKKSPreparedLeft<BE>` on the left
+and `CKKSPreparedRight<BE>` on the right.
 
 **Fixed:**
 
@@ -310,14 +340,25 @@ returns.
   layout, which leaves it at `a.k - p`, then narrowed exactly to `w` by
   `ckks_copy`, which charges the shift to the budget; term `k` is phi^k of that
   sigma result into a block of width `w`, through the `Direct` shift maps the
-  plan records. On the right, tau and psi^k. The terms depend on neither `res`
-  nor the other factor: the kernel's offset absorbs a narrower `res`. The
-  reference makes them with two hook calls, sigma over every block, then every
-  shift of every sigma result, from one baby-step cache per result.
+  plan records. On the right, tau and psi^k. Each term is converted once, on
+  its `ceil(w / base2k)` limbs. The terms depend on neither `res` nor the other
+  factor: the kernel's offset absorbs a narrower `res`. The reference makes
+  them block row after block row, with two hook calls per row, sigma over its
+  blocks, then every shift of every sigma result, from one baby-step cache per
+  result.
+- The bits, whatever the hints: the prepared product equals the reference's
+  on the reference's operands of the same sources and hints under the same
+  contexts, so an operand prepared under the product's context gives the same
+  products under either hint, and `blas_matmul` is the prepared product of two
+  hot operands.
 - One JKLS kernel per block `res_ij`, over its `K d` pairs of terms
   `(a_il[k], b_lj[k])`, `l`-major: ascending `l`, then ascending `k` within
   each `l`, the order the one-pass kernel sums them in, part of the bits on FFT
   ([The JKLS kernel](#the-jkls-kernel)).
+- The errors and their order: the validator's, then poulpy-ckks's budget
+  errors before any write to `res`, the left terms', the right terms', then the
+  first block's ct x ct rule. A hot side's come from the product, so a hot
+  preparation of an input short of its budget returns `Ok`.
 - The products by public matrices share their giant steps across the inner
   index: block `res_ij` is poulpy-ckks's
   `ckks_eval_linear_transformation_sum_into` of its `K` terms in ascending `l`,
@@ -331,24 +372,36 @@ returns.
   products (`Module::max_base2k`). The reference caches the baby steps of each
   block of `a` once for its row of `res` (its column, on the left).
 
-**Free:** the order of the blocks; materializing or streaming the terms;
-caching them or their convolution forms; sharing baby-step caches; batching key
-switches.
+**Free:** the representation of an operand under either hint: a hot operand
+may hold its source and evaluate its terms in the product, as the reference
+does, or prepare them eagerly, as long as it reports `OneShot` and its source,
+returns its budget error from the product, and gives the terms of the
+product's context, recomputing them when that context is not the one they came
+from; the order of the blocks; which side the product holds and which it
+streams; materializing or streaming the terms; caching them or their
+convolution forms; sharing baby-step caches; batching key switches.
 
-`blas_matmul` is provided as both preparations, then the prepared product, so
-it reaches the backend's methods; for an `m x K` by `K x n` product it holds
-`K (m + n) d` heap terms, and a streaming variant overrides it. Hoisting the
-shifts is the one reserved variant: it changes the bits and the key widths, so
-it would arrive as a `BlasPlan` variant, not as an override.
+`blas_matmul` is provided as both hot preparations, then the prepared product,
+so it reaches the backend's methods. For an `m x K` by `K x n` product, the
+reference prepared product holds the terms of its hot sides for the call,
+`K (m + n) d` of them in the backend's transform-domain form for
+`blas_matmul`; streaming them is free. Hoisting the shifts is the one reserved
+variant: it changes the bits and the key widths, so it would arrive as a
+`BlasPlan` variant, not as an override.
 
 ### The JKLS kernel
 
 `BlasJklsImpl::blas_jkls_block_impl` computes one block of the prepared
-product, `res = sum_t lhs[t] rhs[t]`, as poulpy-ckks's `ckks_dot_product_ct`
-does for pairs that share one layout per side, which is the reference. It is
-called with `lhs.len() == rhs.len() >= 1` pairs, every `lhs` of one layout and
-every `rhs` of another, at a radix of 62 at most, after the validator found the
-tensor key at the tensor width `max(lhs.k, rhs.k)`, of their rank.
+product, `res = sum_t lhs[t] rhs[t]`, over terms prepared once by
+poulpy-ckks's `ckks_prepare_left` and `ckks_prepare_right`, which give their
+convolution operands through `cnv()` and report the terms they were prepared
+from: the kernel transforms no operand. The reference is poulpy-ckks's
+`ckks_dot_product_prepared`, which is `ckks_dot_product_ct` of those terms, bit
+for bit, for pairs that share one layout per side. It is called with
+`lhs.len() == rhs.len() >= 1` pairs, every `lhs` prepared from terms of one
+layout and every `rhs` from terms of another, at a radix of 62 at most, after
+the validator found the tensor key at the tensor width `max(lhs.k, rhs.k)`, of
+their rank.
 
 **Fixed:**
 
@@ -356,24 +409,25 @@ tensor key at the tensor width `max(lhs.k, rhs.k)`, of their rank.
   one-pass product: rank 1, one `base2k` across `res`, the terms and the tensor
   key, and an offset of at least `base2k`. It is two-pass otherwise, as at
   rank 2.
-- One-pass: poulpy-core's `glwe_mul_relinearize_sum` over the pairs, in slice
-  order, at the offset poulpy-ckks's ct x ct rule gives for `res` and the width
-  it stamps. Every pair's products are added in the transform domain, in that
-  order, and only the key-switched column of the sum comes back to digits
-  before the one final normalization. An FFT backend adds in floating point, so
-  the order is part of the bits. The radix must hold `lhs.len()` times the
-  products of one pair (`Module::max_base2k`), as `blas_matmul` states.
-- Two-pass: each term is one core tensor product of `(lhs[t], rhs[t])` at that
-  offset, rounded on its own at the tensor width. Summing unrounded products,
-  as `cnv_apply_dft_sum` would, changes bits. The terms are summed exactly, and
-  the sum is normalized at that width before the relinearization reads it.
+- One-pass: poulpy-core's `glwe_mul_prepared_relinearize_sum` over the pairs,
+  in slice order, at the offset poulpy-ckks's ct x ct rule gives for `res` and
+  the width it stamps. Every pair's products are added in the transform domain,
+  in that order, and only the key-switched column of the sum comes back to
+  digits before the one final normalization. An FFT backend adds in floating
+  point, so the order is part of the bits. The radix must hold `lhs.len()`
+  times the products of one pair (`Module::max_base2k`), as `blas_matmul`
+  states.
+- Two-pass: each term is one poulpy-core `glwe_tensor_apply_prepared` of
+  `(lhs[t], rhs[t])` at that offset, rounded on its own at the tensor width.
+  Summing unrounded products, as `cnv_apply_dft_sum` would, changes bits. The
+  terms are summed exactly, and the sum is normalized at that width before the
+  relinearization reads it.
 - Either way, `res` is stamped with the rule's budget and scale, the smallest
   label and the joined slot kind, and relinearized once, with the tensor key at
   the tensor width. `res` comes back canonical, without a noise tag.
 
-**Free:** materializing or streaming the terms; caching the operands or their
-convolution forms; normalizing an operand read through a DFT. On the two-pass
-circuit, also the order and grouping of the terms, computed in turn or
+**Free:** streaming the pairs; caching other forms of the operands. On the
+two-pass circuit, also the order and grouping of the terms, computed in turn or
 concurrently, and normalizing partial sums, or leaving them unnormalized until
 the DFT that reads the sum. On the one-pass circuit, the order and grouping of
 the pairs are free only on an NTT backend, whose transform-domain additions are
@@ -406,23 +460,27 @@ a key.
 
 The queries read layouts (`BlasGridInfos`, `CKKSCtBounds`, `GGLWEInfos`), never
 ciphertext data: the prepared product's query receives the prepared operands,
-or, before preparing, the layouts `blas_matmul_term_layout` gives, so it reads
-nothing but their infos. The provided and reference queries call the selected
-implementations' queries: the provided transpose the hook's; the provided
-shifts the hook's, the copy's and the addition's; the reference preparations
-the hook's through sigma (tau) and through the shifts, and the copy's; the
-reference prepared product the kernel's; and the provided `blas_matmul` the
-largest of both preparations' queries and the prepared product's on the term
-layouts. An override of the hook or of the kernel that needs other scratch
+or, before preparing, the layouts `blas_matmul_operand_layout` gives, and the
+context, under which it sizes a hot side's terms, so it reads nothing but their
+infos. The provided and reference queries call the selected implementations'
+queries: the provided transpose the hook's; the provided shifts the hook's, the
+copy's and the addition's; a reference hot preparation the copy's; a reference
+cold preparation the hook's through sigma (tau) and through the shifts over a
+block row, the copy's, and poulpy-ckks's `ckks_prepare_tmp_bytes` for a term;
+the reference prepared product the kernel's, and for each hot side the cold
+preparation's of its source; and the provided `blas_matmul` the largest of
+both hot preparations' queries and the prepared product's on the layouts they
+give. An override of the hook or of the kernel that needs other scratch
 reports it in its own query, and every operation over it follows.
 
 The references run their steps one after another on one scratch, so their
 queries report the largest single step, on every executor
 ([Parallelism](#parallelism)).
 Temporaries that outlive a hook call live on the heap, not in scratch: the
-sigma results and terms of a preparation, and the heap grid of a shift across
-blocks. A query may panic on layouts its validator rejects, as its `# Panics`
-section states.
+copies of a hot preparation; the sigma results and terms of a cold preparation,
+or of a hot side in the prepared product, each coefficient term dropped once
+converted; and the heap grid of a shift across blocks. A query may panic on
+layouts its validator rejects, as its `# Panics` section states.
 
 ## Parallelism
 
@@ -439,8 +497,8 @@ operation concurrently, as long as its bits and its error are the reference's
 and its query reserves what its own schedule uses. An implementation cannot add
 bounds its trait lacks, so the traits carry the ones that choice needs: input
 blocks and key stores are `Sync`, output blocks `Send`, the hook's sources
-`Sync` and its destinations `Send`, the kernel's pairs and key `Sync`, and the
-prepared operands `Send + Sync`.
+`Sync` and its destinations `Send`, the kernel's prepared pairs and key
+`Sync`, and the prepared operands `Send + Sync`.
 
 ## Testing a backend
 
@@ -451,12 +509,16 @@ registration macros.
 scalar, encoder and parameter set. They encrypt, run every operation, and check
 the decrypted values and the output metadata against cleartext expectations,
 along with the input guards, key widths, and the plan's key sets against the
-encoded maps; each operation runs on the keys of its own set alone. The
-transpose, the shifts through both half maps, the preparations, the products and
-the products by public matrices also run with maps or public matrices a quarter
-of the parameter set's scale below and above it, which they consume in place of
-their inputs' scale, so the parameter set's `k` must hold two maps at the larger
-scale and a product. Through those maps, the products also multiply factors at
+encoded maps; each operation runs on the keys of its own set alone, and the
+preparations and the prepared product under every hint and mix of hot and cold
+operands. The transpose, the shifts through both half maps, the preparations,
+the products and the products by public matrices also run with maps or public
+matrices a quarter of the parameter set's scale below and above it, which they
+consume in place of their inputs' scale, so the parameter set's `k` must hold
+two maps at the larger scale and a product. Hot operands prepared under one
+context serve the products under all three, and a hot operand beside a cold
+one prepared under another context gives the product of their terms. Through
+those maps, the products also multiply factors at
 two scales, in either order, one an eighth of the scale lower and either as
 much narrower, so that their terms keep one budget, or as wide, so that its
 terms have the larger budget: crossed scales, where the larger budget plus the
@@ -508,11 +570,14 @@ and the operations are called through the API, which forwards to their `*Impl`
 methods. Every call, encodings and preparations included, gets exactly the
 bytes its query reports, poisoned and guarded. Every output is compared: its
 batch record, and every block bit for bit, digits and CKKS metadata. Prepared
-operands are compared through their infos alone, `(log_d, rows, cols,
-block_layout, mat_slots)`, which must also equal their input's term layout and
-batch; the prepared product runs on one pair per scale of the maps into `res` of
-three widths, and on pairs at two scales into `res` of one, and must equal
-`blas_matmul` each time. Each call looks its keys up in a store of its
+operands, made under either hint, are compared through their infos alone,
+`(log_d, rows, cols, block_layout, mat_slots)`, which must also equal their
+input's batch and, as the layout, their input's when hot and its term layout
+when cold, beside their hint and their input's layout as their source; the
+prepared product of every mix of hot and cold operands runs on one pair per
+scale of the maps into `res` of three widths, and on pairs at two scales into
+`res` of one, and must equal `blas_matmul` each time. Each call looks its keys
+up in a store of its
 operation's set alone, from `BlasPlan` or `sum_galois_elements`, which records
 every lookup: the tested backend may look up only keys, at widths, that the
 reference looked up in the same call. No call may write its inputs. The calls
@@ -528,8 +593,10 @@ takes its offset from the wider term's width changes the bits), and a long
 product, `1 x 32` by `32 x 1` distinct blocks (`1 x 16` by `16 x 1` above
 radix 52), at every registration, which a kernel that drops or repeats a term
 of a long sum fails. Each
-family's parity also runs calls that poulpy-ckks rejects for their budget: both
-backends return the same error and leave `res` and the inputs unchanged. Storage
+family's parity also runs calls that poulpy-ckks rejects for their budget,
+among them the prepared product of a hot operand one bit short of the `2p` its
+terms spend: both backends return the same error and leave `res` and the inputs
+unchanged. Storage
 and ring are free: the bounds are `BlasParityBackend` (`Backend<ZnxWord = i64>`
 and every BLAS family) and `BlasParityModule`. Rank and `dsize` follow `params`,
 as in CKKS parity.

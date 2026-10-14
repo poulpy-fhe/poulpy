@@ -25,8 +25,9 @@ use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut};
 /// key it looks up, it returns `Ok`, or poulpy-ckks's budget error before any write to `dst`; with less scratch it
 /// panics before any write, as the reference does when it looks up a key.
 ///
-/// The reference preparations of [`crate::oep::BlasMatMulImpl`] call the hook too: sigma (tau) over every block of
-/// their input, then every shift of every result, into blocks of the terms' width.
+/// The reference's cold preparations of [`crate::oep::BlasMatMulImpl`] call the hook too, and its prepared product for
+/// a hot operand: block row after block row, sigma (tau) over every block of the row, then every shift of every result,
+/// into blocks of the terms' width.
 ///
 /// **Free:** the order of the blocks; sharing one baby-step cache across the maps of a source, as the reference does;
 /// batching key switches; normalizing a source that is read through a DFT. Anything else changes bits.

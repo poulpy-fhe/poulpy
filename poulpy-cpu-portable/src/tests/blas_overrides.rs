@@ -8,7 +8,8 @@ use poulpy_blas::{
     reference::{BlasMatIntraReference, BlasMatMulReference},
     test_suite::{
         helpers::{
-            Grid, TestKeys, alloc_grid, context_and_keys, encrypt_grid, foreign_contexts, foreign_layouts, rejected_grids,
+            Grid, HINTS, MIXES, TestKeys, alloc_grid, context_and_keys, encrypt_grid, foreign_contexts, foreign_layouts,
+            rejected_grids,
         },
         parity::{BlasParityShapes, test_blas_inter_parity, test_blas_intra_parity, test_blas_matmul_parity},
     },
@@ -16,6 +17,7 @@ use poulpy_blas::{
 use poulpy_ckks::{
     CKKSCtBounds, CKKSResult, SetCKKSInfos,
     api::LinearTransformationPrepared,
+    layouts::{CKKSPreparedLeft, CKKSPreparedRight},
     test_suite::{
         BASE19_PARAMS_F64, CKKSTestParams,
         helpers::{alloc_scratch, gen_sk_with_raw, gen_tsk},
@@ -26,7 +28,7 @@ use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAu
 use poulpy_cpu_oracle::FFT64Oracle;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, ScratchArena, ScratchOwned},
+    layouts::{HostBytesBackend, Module, PrepareHint::Reuse, ScratchArena, ScratchOwned},
 };
 use std::{
     collections::HashMap,
@@ -114,18 +116,16 @@ unsafe impl BlasJklsImpl for OverrideBackend {
         module.blas_jkls_block_tmp_bytes_reference(res, lhs, rhs, terms, tsk)
     }
 
-    fn blas_jkls_block_impl<R, L, Rh, T>(
+    fn blas_jkls_block_impl<R, T>(
         module: &Module<Self>,
         res: &mut R,
-        lhs: &[&L],
-        rhs: &[&Rh],
+        lhs: &[&CKKSPreparedLeft<Self>],
+        rhs: &[&CKKSPreparedRight<Self>],
         tsk: &T,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
     where
         R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
-        L: GLWEToBackendRef<Self> + CKKSCtBounds + Sync,
-        Rh: GLWEToBackendRef<Self> + CKKSCtBounds + Sync,
         T: GetTensorKey<Self> + Sync,
     {
         JKLS_CALLS.fetch_add(1, Relaxed);
@@ -176,12 +176,14 @@ fn assert_rejected<T>(label: &str, result: CKKSResult<T>) {
 }
 
 /// On `2 x 2` grids of `4 x 4` blocks, every operation over a hook enters it as the reference composes it: the
-/// transpose and both shifts across blocks one map-hook call, each preparation two (sigma or tau, then every shift),
-/// `blas_matmul_prepared` one JKLS call per block of `res`, and `blas_matmul` both preparations' and the prepared
-/// product's. Then no call the API rejects enters either hook: every grid [`rejected_grids`] and [`foreign_layouts`]
-/// build, a grid of another shape and one at radix 63, as an input or as `res` of each of these operations (a lone
-/// preparation input of another shape is valid; one of another rank than the keys is not), an inner-dimension mismatch,
-/// foreign contexts, and key stores without rotation keys or without the tensor key.
+/// transpose and both shifts across blocks one map-hook call, a cold preparation two per block row (sigma or tau, then
+/// every shift) and a hot one none, `blas_matmul_prepared` one JKLS call per block of `res` beside the map-hook calls
+/// of a cold preparation for each hot side, and `blas_matmul` those of its two hot sides. Then no call the API rejects
+/// enters either hook: every grid [`rejected_grids`] and [`foreign_layouts`] build, a grid of another shape and one at
+/// radix 63, as an input or as `res` of each of these operations, preparations under either hint and prepared products
+/// of every mix (a lone preparation input of another shape is valid; one of another rank than the keys is not), an
+/// inner-dimension mismatch, foreign contexts, which a hot side's product rejects too, and key stores without rotation
+/// keys, which a hot side's product needs, or without the tensor key.
 #[test]
 fn blas_hooks_run_on_accepted_calls_alone() {
     let _counting = counting();
@@ -214,6 +216,8 @@ fn blas_hooks_run_on_accepted_calls_alone() {
     let (tsk_layout, atk_layout) = (params.tsk_layout(), params.atk_layout());
     let bytes = module
         .blas_matmul_tmp_bytes(&res, &a, &a, &ctx, &tsk_layout, &atk_layout)
+        .max(module.blas_matmul_prepare_left_tmp_bytes(&a, &ctx, &atk_layout, Reuse))
+        .max(module.blas_matmul_prepare_right_tmp_bytes(&a, &ctx, &atk_layout, Reuse))
         .max(module.blas_transpose_tmp_bytes(&res, &a, &ctx, &atk_layout))
         .max(module.blas_rotate_rows_tmp_bytes(&res, &a, &ctx, &atk_layout))
         .max(module.blas_rotate_cols_tmp_bytes(&res, &a, &ctx, &atk_layout));
@@ -228,16 +232,29 @@ fn blas_hooks_run_on_accepted_calls_alone() {
     assert_enters("blas_rotate_cols", (1, 0), || {
         module.blas_rotate_cols(&mut res, &a, 1, &ctx, &keys, &mut op_scratch.borrow())
     });
-    let left = assert_enters("blas_matmul_prepare_left", (2, 0), || {
-        module.blas_matmul_prepare_left(&a, &ctx, &keys, &mut op_scratch.borrow())
+    // Hot operands at `side(OneShot)`, cold ones at `side(Reuse)`.
+    let side = |hint| usize::from(hint == Reuse);
+    let calls = |hint| if hint == Reuse { (4, 0) } else { (0, 0) };
+    let left = HINTS.map(|hint| {
+        assert_enters(&format!("blas_matmul_prepare_left {hint:?}"), calls(hint), || {
+            module.blas_matmul_prepare_left(&a, &ctx, &keys, hint, &mut op_scratch.borrow())
+        })
     });
-    let right = assert_enters("blas_matmul_prepare_right", (2, 0), || {
-        module.blas_matmul_prepare_right(&a, &ctx, &keys, &mut op_scratch.borrow())
+    let right = HINTS.map(|hint| {
+        assert_enters(&format!("blas_matmul_prepare_right {hint:?}"), calls(hint), || {
+            module.blas_matmul_prepare_right(&a, &ctx, &keys, hint, &mut op_scratch.borrow())
+        })
     });
-    assert_enters("blas_matmul_prepared", (0, 4), || {
-        module.blas_matmul_prepared(&mut res, &left, &right, &keys, &mut op_scratch.borrow())
-    });
-    assert_enters("blas_matmul", (4, 4), || {
+    // A hot side's terms cost the product what a cold preparation of its source costs.
+    let hot = |hint| calls(Reuse).0 - calls(hint).0;
+    for (hl, hr) in MIXES {
+        let maps = hot(hl) + hot(hr);
+        assert_enters(&format!("blas_matmul_prepared {hl:?} x {hr:?}"), (maps, 4), || {
+            let (l, r) = (&left[side(hl)], &right[side(hr)]);
+            module.blas_matmul_prepared(&mut res, l, r, &ctx, &keys, &keys, &mut op_scratch.borrow())
+        });
+    }
+    assert_enters("blas_matmul", (8, 4), || {
         module.blas_matmul(&mut res, &a, &a, &ctx, &keys, &keys, &mut op_scratch.borrow())
     });
 
@@ -264,16 +281,22 @@ fn blas_hooks_run_on_accepted_calls_alone() {
         rejected("matmul a", module.blas_matmul(res, &bad, &a, &ctx, &keys, &keys, s));
         rejected("matmul b", module.blas_matmul(res, &a, &bad, &ctx, &keys, &keys, s));
         rejected("matmul res", module.blas_matmul(&mut bad, &a, &a, &ctx, &keys, &keys, s));
-        rejected("prepared res", module.blas_matmul_prepared(&mut bad, &left, &right, &keys, s));
+        for (hl, hr) in MIXES {
+            let (l, r) = (&left[side(hl)], &right[side(hr)]);
+            let call = format!("prepared {hl:?} x {hr:?} res");
+            rejected(&call, module.blas_matmul_prepared(&mut bad, l, r, &ctx, &keys, &keys, s));
+        }
         if label != "shape" {
-            assert_rejected(
-                &format!("{label}: prepare_left"),
-                module.blas_matmul_prepare_left(&bad, &ctx, &keys, s),
-            );
-            assert_rejected(
-                &format!("{label}: prepare_right"),
-                module.blas_matmul_prepare_right(&bad, &ctx, &keys, s),
-            );
+            for hint in HINTS {
+                assert_rejected(
+                    &format!("{label}: prepare_left {hint:?}"),
+                    module.blas_matmul_prepare_left(&bad, &ctx, &keys, hint, s),
+                );
+                assert_rejected(
+                    &format!("{label}: prepare_right {hint:?}"),
+                    module.blas_matmul_prepare_right(&bad, &ctx, &keys, hint, s),
+                );
+            }
         }
     }
     let s = &mut op_scratch.borrow();
@@ -285,14 +308,22 @@ fn blas_hooks_run_on_accepted_calls_alone() {
         rejected("rotate_rows", module.blas_rotate_rows(&mut res, &a, 1, ctx, &keys, s));
         rejected("rotate_cols", module.blas_rotate_cols(&mut res, &a, 1, ctx, &keys, s));
         rejected("matmul", module.blas_matmul(&mut res, &a, &a, ctx, &keys, &keys, s));
-        assert_rejected(
-            &format!("{label} context: prepare_left"),
-            module.blas_matmul_prepare_left(&a, ctx, &keys, s),
-        );
-        assert_rejected(
-            &format!("{label} context: prepare_right"),
-            module.blas_matmul_prepare_right(&a, ctx, &keys, s),
-        );
+        for hint in HINTS {
+            assert_rejected(
+                &format!("{label} context: prepare_left {hint:?}"),
+                module.blas_matmul_prepare_left(&a, ctx, &keys, hint, s),
+            );
+            assert_rejected(
+                &format!("{label} context: prepare_right {hint:?}"),
+                module.blas_matmul_prepare_right(&a, ctx, &keys, hint, s),
+            );
+        }
+        // A hot side's terms are evaluated under the product's context, which must read them.
+        for (hl, hr) in MIXES.into_iter().filter(|&mix| mix != (Reuse, Reuse)) {
+            let (l, r) = (&left[side(hl)], &right[side(hr)]);
+            let call = format!("prepared {hl:?} x {hr:?}");
+            rejected(&call, module.blas_matmul_prepared(&mut res, l, r, ctx, &keys, &keys, s));
+        }
     }
     let TestKeys { atks, tsk } = keys;
     let (no_atks, no_tsk) = (
@@ -307,20 +338,31 @@ fn blas_hooks_run_on_accepted_calls_alone() {
     rejected("rotate_rows", module.blas_rotate_rows(&mut res, &a, 1, &ctx, &no_atks, s));
     rejected("rotate_cols", module.blas_rotate_cols(&mut res, &a, 1, &ctx, &no_atks, s));
     rejected("matmul", module.blas_matmul(&mut res, &a, &a, &ctx, &no_atks, &no_atks, s));
-    assert_rejected(
-        "no rotation keys: prepare_left",
-        module.blas_matmul_prepare_left(&a, &ctx, &no_atks, s),
-    );
-    assert_rejected(
-        "no rotation keys: prepare_right",
-        module.blas_matmul_prepare_right(&a, &ctx, &no_atks, s),
-    );
+    for hint in HINTS {
+        assert_rejected(
+            &format!("no rotation keys: prepare_left {hint:?}"),
+            module.blas_matmul_prepare_left(&a, &ctx, &no_atks, hint, s),
+        );
+        assert_rejected(
+            &format!("no rotation keys: prepare_right {hint:?}"),
+            module.blas_matmul_prepare_right(&a, &ctx, &no_atks, hint, s),
+        );
+    }
+    for (hl, hr) in MIXES {
+        let (l, r) = (&left[side(hl)], &right[side(hr)]);
+        if (hl, hr) != (Reuse, Reuse) {
+            rejected(
+                &format!("prepared {hl:?} x {hr:?}"),
+                module.blas_matmul_prepared(&mut res, l, r, &ctx, &no_atks, &no_atks, s),
+            );
+        }
+        assert_rejected(
+            &format!("no tensor key: prepared {hl:?} x {hr:?}"),
+            module.blas_matmul_prepared(&mut res, l, r, &ctx, &no_tsk, &no_tsk, s),
+        );
+    }
     assert_rejected(
         "no tensor key: matmul",
         module.blas_matmul(&mut res, &a, &a, &ctx, &no_tsk, &no_tsk, s),
-    );
-    assert_rejected(
-        "no tensor key: prepared",
-        module.blas_matmul_prepared(&mut res, &left, &right, &no_tsk, s),
     );
 }

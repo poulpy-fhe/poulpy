@@ -34,15 +34,19 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::CnvPVecAlloc,
-    layouts::{Backend, CyclotomicOrder, Module, ScratchArena},
+    layouts::{
+        Backend, CyclotomicOrder, Module, PrepareHint,
+        PrepareHint::{OneShot, Reuse},
+        ScratchArena,
+    },
 };
 
-use super::helpers::{TestKeys, grid_infos, grid_snapshot};
+use super::helpers::{HINTS, MIXES, TestKeys, grid_infos, grid_snapshot};
 use crate::{
     api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextUnprepared, BlasGridInfos, BlasLayout, BlasPlan,
-        BlasPtOperand, BlasPtOperandUnprepared, sum_galois_elements,
+        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextUnprepared, BlasGridInfos, BlasLayout,
+        BlasMatMulOperandInfos, BlasPlan, BlasPtOperand, BlasPtOperandUnprepared, sum_galois_elements,
     },
     oep::BlasImpl,
     reference::{Left, blas_matmul_term_layout},
@@ -676,20 +680,26 @@ where
     output("blas_matmul", &res, keys)
 }
 
-/// The [`Output`] of the preparation `op` of `input`: the operand's infos, which must be its input's term layout and
-/// batch.
+/// The [`Output`] of the preparation `op` of `input` under `hint`: the operand's infos, which must be its input's
+/// batch and, as its layout, its input's when hot and its input's term layout when cold; its hint and its source's
+/// layout, its input's, are checked too.
 fn preparation<B: BlasParityBackend>(
     op: &'static str,
-    operand: &impl BlasGridInfos,
+    operand: &impl BlasMatMulOperandInfos,
     input: &BlasCiphertextOwned<B>,
     ctx: &BlasContext<B>,
+    hint: PrepareHint,
     keys: &Recorded<B>,
 ) -> Output {
     let infos = grid_infos(operand);
+    let layout = match hint {
+        OneShot => BlasLayout::new(input.block_layout(), input.log_d(), input.rows(), input.cols()),
+        Reuse => blas_matmul_term_layout(input, ctx),
+    };
     assert_eq!(
-        infos,
-        (blas_matmul_term_layout(input, ctx), input.mat_slots()),
-        "{op}: the operand's infos are not its input's term layout and batch"
+        (infos, operand.hint(), operand.source_block_layout()),
+        ((layout, input.mat_slots()), hint, input.block_layout()),
+        "{op} {hint:?}: the operand's infos are not its input's"
     );
     Output {
         op,
@@ -700,11 +710,12 @@ fn preparation<B: BlasParityBackend>(
     }
 }
 
-/// Both preparations of a `2 x 2` grid and a `2 x 1` grid, then their product into `res` of their width, one limb
-/// wider, and one limb narrower than the product's natural width, which the kernel's offset absorbs: each time by
-/// `blas_matmul` and by `blas_matmul_prepared` on the one pair of prepared operands, which must agree; all of it
-/// through maps at the operands' scale, then at scales below and above it ([`other_scales`]), whose scale the
-/// preparations consume twice in place of the operands'. Through the latter, the same for factors at two scales, in
+/// Both preparations of a `2 x 2` grid and a `2 x 1` grid under either hint, then their product into `res` of their
+/// width, one limb wider, and one limb narrower than the product's natural width, which the kernel's offset absorbs:
+/// each time by `blas_matmul` and by `blas_matmul_prepared` of every mix of hot and cold operands, which must agree,
+/// with the keys of the products' set when a side is hot and the tensor key alone for two cold operands; all of it
+/// through maps at the operands' scale, then at scales below and above it ([`other_scales`]), whose scale the terms
+/// consume twice in place of the operands'. Through the latter, the same for factors at two scales, in
 /// either order, into `res` as wide as the wider factor: one two bits lower and either as much narrower, so that their
 /// terms keep one budget, or as wide, so that its terms have the larger budget (crossed scales), where the larger
 /// budget plus the larger scale exceeds the wider term's width: a kernel taking its offset from that width, not from
@@ -770,27 +781,44 @@ where
             ]);
         }
         for (x, y, widths) in pairs {
-            let left = with_scratch::<B, _>(module.blas_matmul_prepare_left_tmp_bytes(x, ctx, &atk), |s| {
-                module.blas_matmul_prepare_left(x, ctx, &products, s)
-            })
-            .unwrap();
-            out.push(preparation("blas_matmul_prepare_left", &left, x, ctx, &products));
-            let right = with_scratch::<B, _>(module.blas_matmul_prepare_right_tmp_bytes(y, ctx, &atk), |s| {
-                module.blas_matmul_prepare_right(y, ctx, &products, s)
-            })
-            .unwrap();
-            out.push(preparation("blas_matmul_prepare_right", &right, y, ctx, &products));
+            // Hot operands at `side(OneShot)`, cold ones at `side(Reuse)`.
+            let side = |hint| usize::from(hint == Reuse);
+            let lefts = HINTS.map(|hint| {
+                let left = with_scratch::<B, _>(module.blas_matmul_prepare_left_tmp_bytes(x, ctx, &atk, hint), |s| {
+                    module.blas_matmul_prepare_left(x, ctx, &products, hint, s)
+                })
+                .unwrap();
+                out.push(preparation("blas_matmul_prepare_left", &left, x, ctx, hint, &products));
+                left
+            });
+            let rights = HINTS.map(|hint| {
+                let right = with_scratch::<B, _>(module.blas_matmul_prepare_right_tmp_bytes(y, ctx, &atk, hint), |s| {
+                    module.blas_matmul_prepare_right(y, ctx, &products, hint, s)
+                })
+                .unwrap();
+                out.push(preparation("blas_matmul_prepare_right", &right, y, ctx, hint, &products));
+                right
+            });
             for k in widths {
                 let from_factors = product(params, module, ctx, &products, (x, y), k);
-                let mut res = sized(params, module, log_d, 2, 1, k, 136);
-                let bytes = module.blas_matmul_prepared_tmp_bytes(&res, &left, &right, &tsk);
-                with_scratch::<B, _>(bytes, |s| module.blas_matmul_prepared(&mut res, &left, &right, &tensor, s)).unwrap();
-                let from_operands = output("blas_matmul_prepared", &res, &tensor);
-                assert!(
-                    from_operands.infos == from_factors.infos && from_operands.blocks == from_factors.blocks,
-                    "blas_matmul_prepared differs from blas_matmul into res of width {k}, maps at scale {p}"
-                );
-                out.extend([from_factors, from_operands]);
+                for (hl, hr) in MIXES {
+                    let (left, right) = (&lefts[side(hl)], &rights[side(hr)]);
+                    let keys = if (hl, hr) == (Reuse, Reuse) { &tensor } else { &products };
+                    let mut res = sized(params, module, log_d, 2, 1, k, 136);
+                    let bytes = module.blas_matmul_prepared_tmp_bytes(&res, left, right, ctx, &tsk, &atk);
+                    with_scratch::<B, _>(bytes, |s| {
+                        module.blas_matmul_prepared(&mut res, left, right, ctx, keys, keys, s)
+                    })
+                    .unwrap();
+                    let from_operands = output("blas_matmul_prepared", &res, keys);
+                    assert!(
+                        from_operands.infos == from_factors.infos && from_operands.blocks == from_factors.blocks,
+                        "blas_matmul_prepared {hl:?} x {hr:?} differs from blas_matmul into res of width {k}, maps at \
+                         scale {p}"
+                    );
+                    out.push(from_operands);
+                }
+                out.push(from_factors);
             }
         }
     }
@@ -829,10 +857,12 @@ where
     out
 }
 
-/// The preparations of a `2 x 2` and a `2 x 1` grid, then their product and their prepared product into a [`narrow`]
-/// grid, which poulpy-ckks rejects for the budget of the first block's JKLS kernel inside the implementation, after the
-/// preparations, and the products by public matrices on either side, rejected for the budget of their first map: no
-/// block of `res` is written.
+/// The cold preparations of a `2 x 2` and a `2 x 1` grid, then their product and their prepared product into a
+/// [`narrow`] grid, which poulpy-ckks rejects for the budget of the first block's JKLS kernel inside the
+/// implementation, after the preparations, and the products by public matrices on either side, rejected for the
+/// budget of their first map; then the hot operand of a `2 x 2` grid one bit short of the `2p` its terms spend, which
+/// its preparation accepts and the prepared product rejects for the budget of its first shift: no block of `res` is
+/// written.
 fn matmul_budget<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) -> Vec<Output>
 where
     B: BlasParityBackend,
@@ -853,16 +883,16 @@ where
         operand(params, module, log_d, 2, 2, 120),
         operand(params, module, log_d, 2, 1, 124),
     );
-    let left = with_scratch::<B, _>(module.blas_matmul_prepare_left_tmp_bytes(&a, &ctx, &atk), |s| {
-        module.blas_matmul_prepare_left(&a, &ctx, &products, s)
+    let left = with_scratch::<B, _>(module.blas_matmul_prepare_left_tmp_bytes(&a, &ctx, &atk, Reuse), |s| {
+        module.blas_matmul_prepare_left(&a, &ctx, &products, Reuse, s)
     })
     .unwrap();
-    let mut out = vec![preparation("blas_matmul_prepare_left", &left, &a, &ctx, &products)];
-    let right = with_scratch::<B, _>(module.blas_matmul_prepare_right_tmp_bytes(&b, &ctx, &atk), |s| {
-        module.blas_matmul_prepare_right(&b, &ctx, &products, s)
+    let mut out = vec![preparation("blas_matmul_prepare_left", &left, &a, &ctx, Reuse, &products)];
+    let right = with_scratch::<B, _>(module.blas_matmul_prepare_right_tmp_bytes(&b, &ctx, &atk, Reuse), |s| {
+        module.blas_matmul_prepare_right(&b, &ctx, &products, Reuse, s)
     })
     .unwrap();
-    out.push(preparation("blas_matmul_prepare_right", &right, &b, &ctx, &products));
+    out.push(preparation("blas_matmul_prepare_right", &right, &b, &ctx, Reuse, &products));
     let mut res = narrow(params, module, log_d, 2, 1, 128);
     out.extend([
         failure::<B>("blas_matmul", &mut res, &[&a, &b], &products, |res| {
@@ -871,9 +901,10 @@ where
             })
         }),
         failure::<B>("blas_matmul_prepared", &mut res, &[], &tensor, |res| {
-            with_scratch::<B, _>(module.blas_matmul_prepared_tmp_bytes(res, &left, &right, &tsk), |s| {
-                module.blas_matmul_prepared(res, &left, &right, &tensor, s)
-            })
+            with_scratch::<B, _>(
+                module.blas_matmul_prepared_tmp_bytes(res, &left, &right, &ctx, &tsk, &atk),
+                |s| module.blas_matmul_prepared(res, &left, &right, &ctx, &tensor, &tensor, s),
+            )
         }),
         failure::<B>("blas_matmul_pt", &mut res, &[&a], &pt_keys, |res| {
             with_scratch::<B, _>(module.blas_matmul_pt_tmp_bytes(res, &a, &pt, &atk), |s| {
@@ -886,6 +917,29 @@ where
             })
         }),
     ]);
+    // Budget `k - log_delta` one bit short of the `2p` its terms spend, at the operands' scale `p`, into `res` of the
+    // operand width.
+    let p = scale(params);
+    let short = sized(params, module, log_d, 2, 2, 3 * p - 1, 132);
+    let hot = with_scratch::<B, _>(module.blas_matmul_prepare_left_tmp_bytes(&short, &ctx, &atk, OneShot), |s| {
+        module.blas_matmul_prepare_left(&short, &ctx, &products, OneShot, s)
+    })
+    .unwrap();
+    out.push(preparation(
+        "blas_matmul_prepare_left",
+        &hot,
+        &short,
+        &ctx,
+        OneShot,
+        &products,
+    ));
+    let mut res = sized(params, module, log_d, 2, 1, width(params), 134);
+    out.push(failure::<B>("blas_matmul_prepared", &mut res, &[&short], &products, |res| {
+        with_scratch::<B, _>(
+            module.blas_matmul_prepared_tmp_bytes(res, &hot, &right, &ctx, &tsk, &atk),
+            |s| module.blas_matmul_prepared(res, &hot, &right, &ctx, &products, &products, s),
+        )
+    }));
     out
 }
 
@@ -954,11 +1008,12 @@ where
     }
 }
 
-/// The products, the prepared product and the products by public matrices agree bit for bit at every swept `log_d`,
-/// through maps and public matrices at the factors' scale and at scales other than theirs, there also of factors at two
-/// scales in either order, the terms at the lower scale with the other's budget or a larger one (crossed scales), and
-/// the prepared operands' infos, `(log_d, rows, cols, block_layout, mat_slots)`, agree; prepared storage is never
-/// compared. A long product, `1 x 32` by `32 x 1` distinct blocks (`1 x 16` by `16 x 1` above radix 52), agrees too.
+/// The products, the prepared product of every mix of hot and cold operands and the products by public matrices agree
+/// bit for bit at every swept `log_d`, through maps and public matrices at the factors' scale and at scales other than
+/// theirs, there also of factors at two scales in either order, the terms at the lower scale with the other's budget or
+/// a larger one (crossed scales), and the prepared operands' infos, `(log_d, rows, cols, block_layout, mat_slots)`,
+/// agree, beside their hints and their inputs' layouts as their sources; prepared storage is never compared. A long
+/// product, `1 x 32` by `32 x 1` distinct blocks (`1 x 16` by `16 x 1` above radix 52), agrees too.
 /// The product, the prepared product and the products by public matrices on either side fail alike on a budget
 /// poulpy-ckks rejects, leaving `res` and the factors unchanged.
 pub fn test_blas_matmul_parity<BR, BT, F>(params: CKKSTestParams, shapes: &BlasParityShapes, r: &Module<BR>, t: &Module<BT>)

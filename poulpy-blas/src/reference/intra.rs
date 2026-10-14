@@ -129,12 +129,13 @@ pub(crate) fn shift_maps<BE: Backend>(
 }
 
 /// Reference of the map hook of [`crate::oep::BlasMatIntraImpl`], under which the transpose and the shifts are
-/// provided, and through which the reference preparations of products run. It runs on the inputs of an operation its
-/// validator accepted ([`validate_blas_transpose`], [`validate_blas_rotate_rows`], [`validate_blas_rotate_cols`],
-/// [`crate::reference::validate_blas_matmul_prepare_left`], [`crate::reference::validate_blas_matmul_prepare_right`],
-/// [`crate::reference::validate_blas_matmul`]): it checks nothing but its scratch, and returns
-/// poulpy-ckks's budget errors before any write. It runs source after source on one scratch and one baby-step cache,
-/// and the first error stops it.
+/// provided, and through which the reference cold preparations of products run, and the reference prepared product's
+/// hot sides. It runs on the inputs of an operation its validator accepted ([`validate_blas_transpose`],
+/// [`validate_blas_rotate_rows`], [`validate_blas_rotate_cols`], [`crate::reference::validate_blas_matmul_prepare_left`],
+/// [`crate::reference::validate_blas_matmul_prepare_right`], [`crate::reference::validate_blas_matmul_prepared`],
+/// [`crate::reference::validate_blas_matmul`]): it checks nothing but its scratch, and returns poulpy-ckks's budget
+/// errors before any write. It runs source after source on one scratch and one baby-step cache, and the first error
+/// stops it.
 pub trait BlasMatIntraReference<BE: Backend> {
     /// Filling a baby-step cache from a source of layout `src`, and the evaluation of a map from it into a block of
     /// layout `dst`.

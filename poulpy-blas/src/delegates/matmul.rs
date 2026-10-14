@@ -1,10 +1,12 @@
 use poulpy_ckks::CKKSResult as Result;
 use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey, GetTensorKey};
-use poulpy_hal::layouts::{Module, ScratchArena};
+use poulpy_hal::layouts::{Module, PrepareHint, ScratchArena};
 
 use crate::{
     api::BlasMatMulOps,
-    layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, BlasMatMulLeft, BlasMatMulRight, BlasPtOperand},
+    layouts::{
+        BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, BlasMatMulLeft, BlasMatMulOperandInfos, BlasMatMulRight, BlasPtOperand,
+    },
     oep::BlasMatMulImpl,
     reference::{
         Left, validate_blas_matmul, validate_blas_matmul_prepare_left, validate_blas_matmul_prepare_right,
@@ -47,12 +49,12 @@ impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
         Ok(())
     }
 
-    fn blas_matmul_prepare_left_tmp_bytes<A, K>(&self, a: &A, ctx: &BlasContext<BE>, atk: &K) -> usize
+    fn blas_matmul_prepare_left_tmp_bytes<A, K>(&self, a: &A, ctx: &BlasContext<BE>, atk: &K, hint: PrepareHint) -> usize
     where
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        BE::blas_matmul_prepare_left_tmp_bytes_impl(self, a, ctx, atk)
+        BE::blas_matmul_prepare_left_tmp_bytes_impl(self, a, ctx, atk, hint)
     }
 
     fn blas_matmul_prepare_left<A, K>(
@@ -60,6 +62,7 @@ impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
         a: &A,
         ctx: &BlasContext<BE>,
         atk: &K,
+        hint: PrepareHint,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<BlasMatMulLeft<BE>>
     where
@@ -67,15 +70,15 @@ impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
         K: GetAutomorphismKey<BE> + Sync,
     {
         validate_blas_matmul_prepare_left(self, a, ctx, atk)?;
-        BE::blas_matmul_prepare_left_impl(self, a, ctx, atk, scratch)
+        BE::blas_matmul_prepare_left_impl(self, a, ctx, atk, hint, scratch)
     }
 
-    fn blas_matmul_prepare_right_tmp_bytes<B, K>(&self, b: &B, ctx: &BlasContext<BE>, atk: &K) -> usize
+    fn blas_matmul_prepare_right_tmp_bytes<B, K>(&self, b: &B, ctx: &BlasContext<BE>, atk: &K, hint: PrepareHint) -> usize
     where
         B: BlasGridInfos,
         K: GGLWEInfos,
     {
-        BE::blas_matmul_prepare_right_tmp_bytes_impl(self, b, ctx, atk)
+        BE::blas_matmul_prepare_right_tmp_bytes_impl(self, b, ctx, atk, hint)
     }
 
     fn blas_matmul_prepare_right<B, K>(
@@ -83,6 +86,7 @@ impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
         b: &B,
         ctx: &BlasContext<BE>,
         atk: &K,
+        hint: PrepareHint,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<BlasMatMulRight<BE>>
     where
@@ -90,33 +94,45 @@ impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
         K: GetAutomorphismKey<BE> + Sync,
     {
         validate_blas_matmul_prepare_right(self, b, ctx, atk)?;
-        BE::blas_matmul_prepare_right_impl(self, b, ctx, atk, scratch)
+        BE::blas_matmul_prepare_right_impl(self, b, ctx, atk, hint, scratch)
     }
 
-    fn blas_matmul_prepared_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
+    fn blas_matmul_prepared_tmp_bytes<R, A, B, T, K>(
+        &self,
+        res: &R,
+        a: &A,
+        b: &B,
+        ctx: &BlasContext<BE>,
+        tsk: &T,
+        atk: &K,
+    ) -> usize
     where
         R: BlasGridInfos,
-        A: BlasGridInfos,
-        B: BlasGridInfos,
+        A: BlasMatMulOperandInfos,
+        B: BlasMatMulOperandInfos,
         T: GGLWEInfos,
+        K: GGLWEInfos,
     {
-        BE::blas_matmul_prepared_tmp_bytes_impl(self, res, a, b, tsk)
+        BE::blas_matmul_prepared_tmp_bytes_impl(self, res, a, b, ctx, tsk, atk)
     }
 
-    fn blas_matmul_prepared<R, T>(
+    fn blas_matmul_prepared<R, T, K>(
         &self,
         res: &mut R,
         a: &BlasMatMulLeft<BE>,
         b: &BlasMatMulRight<BE>,
+        ctx: &BlasContext<BE>,
         tsk: &T,
+        atk: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         R: BlasGridMut<BE>,
         T: GetTensorKey<BE> + Sync,
+        K: GetAutomorphismKey<BE> + Sync,
     {
-        let batch = validate_blas_matmul_prepared(self, &*res, a, b, tsk)?;
-        BE::blas_matmul_prepared_impl(self, res, a, b, tsk, scratch)?;
+        let batch = validate_blas_matmul_prepared(self, &*res, a, b, ctx, tsk, atk)?;
+        BE::blas_matmul_prepared_impl(self, res, a, b, ctx, tsk, atk, scratch)?;
         res.set_mat_slots(batch);
         Ok(())
     }

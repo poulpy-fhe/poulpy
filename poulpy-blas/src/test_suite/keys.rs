@@ -14,20 +14,24 @@ use poulpy_core::layouts::{DiagonalArithmetic, GLWEToBackendRef, LWEInfos};
 use poulpy_hal::{
     api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{
-        Backend, CyclotomicOrder, Data, HostBytesBackend, HostDataMut, HostDataRef, Module, Ring, ScratchArena, ScratchOwned,
-        Standard, ZnxWord,
+        Backend, CyclotomicOrder, Data, HostBytesBackend, HostDataMut, HostDataRef, Module,
+        PrepareHint::{OneShot, Reuse},
+        Ring, ScratchArena, ScratchOwned, Standard, ZnxWord,
     },
 };
 
 use super::helpers::{
-    Grid,
+    Grid, HINTS, MIXES,
     Rejection::{MissingKey, MissingTensorKey},
     StrictKeys, TestKeys, alloc_grid, assert_guard_on, at_scale, context_and_keys, encrypt_grid, grid_snapshot, lt_key_uses,
     other_scales,
 };
 use crate::{
     api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
-    layouts::{BlasCiphertext, BlasCiphertextOwned, BlasGridInfos, BlasPtOperandUnprepared, sum_galois_elements},
+    layouts::{
+        BlasCiphertext, BlasCiphertextOwned, BlasGridInfos, BlasMatMulLeft, BlasMatMulRight, BlasPtOperandUnprepared,
+        sum_galois_elements,
+    },
     oep::BlasImpl,
 };
 
@@ -98,9 +102,10 @@ fn assert_key_widths<BE, X>(
 /// their inputs, narrower than any map's output, then one limb wider than their inputs; the matrix products run on
 /// factors of one width, then on a narrower left or right factor. The context's maps and the public matrices sit a
 /// quarter of the inputs' scale below it ([`other_scales`]), where a width taken from the inputs' scale in place of the
-/// maps' `p` or the public matrices' `p_B`, or capped by it, finds no key. The preparations look up every rotation key
-/// of the product, each checked through the prepared product of its operand under the full store, and the prepared
-/// product the tensor key alone. Every operation runs on exactly the scratch its own query reports.
+/// maps' `p` or the public matrices' `p_B`, or capped by it, finds no key. The preparations, under either hint, look up
+/// every rotation key of their terms, each checked through the prepared product of their operand beside a cold one;
+/// the prepared product looks up those of each hot side's terms and the tensor key, and of two cold operands the tensor
+/// key alone. Every operation runs on exactly the scratch its own query reports.
 pub fn test_blas_key_widths<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -328,7 +333,7 @@ pub fn test_blas_key_widths<BE, F, E>(
         // The widths of the terms, read off real results: sigma (tau) evaluated into a block of its input's width,
         // then phi^1 (psi^1) of that into a block of its width, which gives the width of every term.
         let term_widths = |src: &BlasCiphertextOwned<BE>, first, shift| {
-            let bytes = module.blas_matmul_prepare_left_tmp_bytes(src, &ctx, &atk_layout);
+            let bytes = module.blas_matmul_prepare_left_tmp_bytes(src, &ctx, &atk_layout, Reuse);
             let mut s = alloc(1, 1, width(src));
             module
                 .ckks_eval_linear_transformation_self_into(
@@ -382,57 +387,75 @@ pub fn test_blas_key_widths<BE, F, E>(
             |res, keys| module.blas_matmul(res, a, b, &ctx, keys, keys, &mut own(bytes).borrow()),
         );
 
-        // Each preparation under the restricted rotation keys alone, its product with the other operand under the full
-        // store: a missing key stops the preparation before `res` changes, and the operand's every term reaches `res`.
-        let (left_bytes, right_bytes) = (
-            module.blas_matmul_prepare_left_tmp_bytes(a, &ctx, &atk_layout),
-            module.blas_matmul_prepare_right_tmp_bytes(b, &ctx, &atk_layout),
-        );
-        let left = module
-            .blas_matmul_prepare_left(a, &ctx, &keys, &mut own(left_bytes).borrow())
-            .unwrap();
-        let right = module
-            .blas_matmul_prepare_right(b, &ctx, &keys, &mut own(right_bytes).borrow())
-            .unwrap();
-        let prepared_bytes = module.blas_matmul_prepared_tmp_bytes(&alloc(1, 1, a_k), &left, &right, &tsk_layout);
-        assert_key_widths(
-            &format!("prepare_left {factors}"),
-            "blas_matmul_prepare_left",
-            &keys,
-            left_uses.iter().copied(),
-            [],
-            &full,
-            &mut alloc(1, 1, a_k),
-            |g| g,
-            |res, strict| {
-                let left = module.blas_matmul_prepare_left(a, &ctx, strict, &mut own(left_bytes).borrow())?;
-                module.blas_matmul_prepared(res, &left, &right, &keys, &mut own(prepared_bytes).borrow())
-            },
-        );
-        assert_key_widths(
-            &format!("prepare_right {factors}"),
-            "blas_matmul_prepare_right",
-            &keys,
-            right_uses.iter().copied(),
-            [],
-            &full,
-            &mut alloc(1, 1, a_k),
-            |g| g,
-            |res, strict| {
-                let right = module.blas_matmul_prepare_right(b, &ctx, strict, &mut own(right_bytes).borrow())?;
-                module.blas_matmul_prepared(res, &left, &right, &keys, &mut own(prepared_bytes).borrow())
-            },
-        );
-        assert_key_widths(
-            &format!("matmul_prepared {factors}"),
-            "blas_matmul_prepared",
-            &keys,
-            [],
-            products,
-            &full,
-            &mut alloc(1, 1, a_k),
-            |g| g,
-            |res, keys| module.blas_matmul_prepared(res, &left, &right, keys, &mut own(prepared_bytes).borrow()),
-        );
+        // Each preparation, under either hint, under the restricted rotation keys alone, its product with the other
+        // operand cold under the full store: a missing key stops the preparation before `res` changes, whatever the
+        // hint, and the operand's every term reaches `res`.
+        let prepared_bytes = |left: &BlasMatMulLeft<BE>, right: &BlasMatMulRight<BE>| {
+            module.blas_matmul_prepared_tmp_bytes(&alloc(1, 1, a_k), left, right, &ctx, &tsk_layout, &atk_layout)
+        };
+        let prepare_left = |hint, keys: &StrictKeys<'_, BE>| {
+            let bytes = module.blas_matmul_prepare_left_tmp_bytes(a, &ctx, &atk_layout, hint);
+            module.blas_matmul_prepare_left(a, &ctx, keys, hint, &mut own(bytes).borrow())
+        };
+        let prepare_right = |hint, keys: &StrictKeys<'_, BE>| {
+            let bytes = module.blas_matmul_prepare_right_tmp_bytes(b, &ctx, &atk_layout, hint);
+            module.blas_matmul_prepare_right(b, &ctx, keys, hint, &mut own(bytes).borrow())
+        };
+        let all = keys.at_widths(left_uses.iter().chain(&right_uses).copied(), products);
+        let lefts = HINTS.map(|hint| prepare_left(hint, &all).unwrap());
+        let rights = HINTS.map(|hint| prepare_right(hint, &all).unwrap());
+        // Hot operands at `side(OneShot)`, cold ones at `side(Reuse)`.
+        let side = |hint| usize::from(hint == Reuse);
+        let (cold_left, cold_right) = (&lefts[side(Reuse)], &rights[side(Reuse)]);
+        for hint in HINTS {
+            assert_key_widths(
+                &format!("prepare_left {hint:?} {factors}"),
+                "blas_matmul_prepare_left",
+                &keys,
+                left_uses.iter().copied(),
+                [],
+                &full,
+                &mut alloc(1, 1, a_k),
+                |g| g,
+                |res, strict| {
+                    let left = prepare_left(hint, strict)?;
+                    let bytes = prepared_bytes(&left, cold_right);
+                    module.blas_matmul_prepared(res, &left, cold_right, &ctx, &keys, &keys, &mut own(bytes).borrow())
+                },
+            );
+            assert_key_widths(
+                &format!("prepare_right {hint:?} {factors}"),
+                "blas_matmul_prepare_right",
+                &keys,
+                right_uses.iter().copied(),
+                [],
+                &full,
+                &mut alloc(1, 1, a_k),
+                |g| g,
+                |res, strict| {
+                    let right = prepare_right(hint, strict)?;
+                    let bytes = prepared_bytes(cold_left, &right);
+                    module.blas_matmul_prepared(res, cold_left, &right, &ctx, &keys, &keys, &mut own(bytes).borrow())
+                },
+            );
+        }
+        // The prepared product of every mix: the keys of each hot side's terms, as its preparation looks them up, and
+        // the tensor key; of two cold operands, the tensor key alone.
+        for (hl, hr) in MIXES {
+            let (left, right) = (&lefts[side(hl)], &rights[side(hr)]);
+            let hot = |hint, uses: &[(i64, usize)]| if hint == OneShot { uses.to_vec() } else { Vec::new() };
+            let bytes = prepared_bytes(left, right);
+            assert_key_widths(
+                &format!("matmul_prepared {hl:?} x {hr:?} {factors}"),
+                "blas_matmul_prepared",
+                &keys,
+                hot(hl, &left_uses).into_iter().chain(hot(hr, &right_uses)),
+                products,
+                &full,
+                &mut alloc(1, 1, a_k),
+                |g| g,
+                |res, keys| module.blas_matmul_prepared(res, left, right, &ctx, keys, keys, &mut own(bytes).borrow()),
+            );
+        }
     }
 }

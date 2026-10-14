@@ -1,6 +1,6 @@
 //! The provided methods of [`BlasMatIntraImpl`], the transpose and the row and column shifts, each composed over the
 //! map hook [`BlasMatIntraImpl::blas_map_blocks_impl`] and poulpy-ckks's copy and addition; and of [`BlasMatMulImpl`],
-//! `blas_matmul` over the preparations and the prepared product.
+//! `blas_matmul` over both hot preparations and the prepared product.
 
 use poulpy_ckks::{
     CKKSResult as Result,
@@ -8,12 +8,12 @@ use poulpy_ckks::{
     layouts::CKKSModuleAlloc,
 };
 use poulpy_core::layouts::{GGLWEInfos, GGLWELayout, GLWEInfos, GLWEToBackendMut, GetAutomorphismKey, GetTensorKey, LWEInfos};
-use poulpy_hal::layouts::{Module, ScratchArena};
+use poulpy_hal::layouts::{Module, PrepareHint, ScratchArena};
 
 use super::{BlasMatIntraImpl, BlasMatMulImpl};
 use crate::{
     layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut},
-    reference::{assert_maps_scratch, blas_matmul_term_layout, shift_maps},
+    reference::{assert_maps_scratch, blas_matmul_operand_layout, shift_maps},
 };
 
 /// The hook's scratch for the transpose of every block of `a` into a block of `res`.
@@ -157,7 +157,7 @@ where
     Ok(())
 }
 
-/// The larger of both preparations' scratch and the prepared product's on the layouts the preparations give.
+/// The larger of both hot preparations' scratch and the prepared product's on the layouts they give.
 pub(crate) fn blas_matmul_tmp_bytes<BE, R, A, B, T, K>(
     module: &Module<BE>,
     res: &R,
@@ -175,13 +175,19 @@ where
     T: GGLWEInfos,
     K: GGLWEInfos,
 {
-    let (left, right) = (blas_matmul_term_layout(a, ctx), blas_matmul_term_layout(b, ctx));
-    BE::blas_matmul_prepare_left_tmp_bytes_impl(module, a, ctx, atk)
-        .max(BE::blas_matmul_prepare_right_tmp_bytes_impl(module, b, ctx, atk))
-        .max(BE::blas_matmul_prepared_tmp_bytes_impl(module, res, &left, &right, tsk))
+    let hot = PrepareHint::OneShot;
+    let (left, right) = (
+        blas_matmul_operand_layout(a, ctx, hot),
+        blas_matmul_operand_layout(b, ctx, hot),
+    );
+    BE::blas_matmul_prepare_left_tmp_bytes_impl(module, a, ctx, atk, hot)
+        .max(BE::blas_matmul_prepare_right_tmp_bytes_impl(module, b, ctx, atk, hot))
+        .max(BE::blas_matmul_prepared_tmp_bytes_impl(
+            module, res, &left, &right, ctx, tsk, atk,
+        ))
 }
 
-/// `res = a b`: both operands prepared, then their prepared product.
+/// `res = a b`: both operands prepared hot, then their prepared product under `ctx`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn blas_matmul<BE, R, A, B, T, K>(
     module: &Module<BE>,
@@ -201,7 +207,7 @@ where
     T: GetTensorKey<BE> + Sync,
     K: GetAutomorphismKey<BE> + Sync,
 {
-    let left = BE::blas_matmul_prepare_left_impl(module, a, ctx, atk, scratch)?;
-    let right = BE::blas_matmul_prepare_right_impl(module, b, ctx, atk, scratch)?;
-    BE::blas_matmul_prepared_impl(module, res, &left, &right, tsk, scratch)
+    let left = BE::blas_matmul_prepare_left_impl(module, a, ctx, atk, PrepareHint::OneShot, scratch)?;
+    let right = BE::blas_matmul_prepare_right_impl(module, b, ctx, atk, PrepareHint::OneShot, scratch)?;
+    BE::blas_matmul_prepared_impl(module, res, &left, &right, ctx, tsk, atk, scratch)
 }

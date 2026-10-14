@@ -26,13 +26,24 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::{
     api::NegacyclicFFT,
-    layouts::{Backend, Data, HostBytesBackend, HostDataMut, HostDataRef, Module, Ring, ScratchArena, ZnxWord},
+    layouts::{Backend, Data, HostBytesBackend, HostDataMut, HostDataRef, Module, PrepareHint, Ring, ScratchArena, ZnxWord},
 };
 
 use crate::layouts::{
-    BlasCiphertext, BlasCiphertextOwned, BlasGrid, BlasGridInfos, BlasGridMut, BlasLayout, BlasModuleAlloc,
-    grid::split_into_blocks, layout_of,
+    BlasCiphertext, BlasCiphertextOwned, BlasGrid, BlasGridInfos, BlasGridMut, BlasLayout, BlasMatMulOperandInfos,
+    BlasModuleAlloc, grid::split_into_blocks, layout_of,
 };
+
+/// Both preparation hints: hot, `OneShot`, then cold, `Reuse`.
+pub const HINTS: [PrepareHint; 2] = [PrepareHint::OneShot, PrepareHint::Reuse];
+
+/// The four hint mixes of a prepared product's operands, `(left, right)`.
+pub const MIXES: [(PrepareHint, PrepareHint); 4] = [
+    (PrepareHint::OneShot, PrepareHint::OneShot),
+    (PrepareHint::OneShot, PrepareHint::Reuse),
+    (PrepareHint::Reuse, PrepareHint::OneShot),
+    (PrepareHint::Reuse, PrepareHint::Reuse),
+];
 
 /// One complex `rows d x cols d` matrix per lane, `d = 2^log_d`: lane `s`, entry `(r, c)` at
 /// `(s * rows * d + r) * cols * d + c`.
@@ -562,6 +573,65 @@ pub fn grid_infos(g: &impl BlasGridInfos) -> (BlasLayout, Option<usize>) {
         BlasLayout::new(g.block_layout(), g.log_d(), g.rows(), g.cols()),
         g.mat_slots(),
     )
+}
+
+/// What a preparation of `a` under `hint` reports, from [`grid_infos`]: hot, `a`'s own; cold, `a`'s dimensions and batch
+/// at the layout of its terms, `terms` ([`mapped_layout`] of two maps); then `hint` and `a`'s block layout as the
+/// source's, which [`operand_infos`] reads off an operand.
+pub fn want_operand_infos(
+    a: &impl BlasGridInfos,
+    hint: PrepareHint,
+    terms: BlasLayout,
+) -> (BlasLayout, Option<usize>, PrepareHint, CKKSLayout) {
+    let (own, batch) = grid_infos(a);
+    let grid = match hint {
+        PrepareHint::OneShot => own,
+        PrepareHint::Reuse => terms,
+    };
+    (grid, batch, hint, a.block_layout())
+}
+
+/// What a prepared operand reports through [`BlasMatMulOperandInfos`]: [`grid_infos`], its hint and its source's block
+/// layout.
+pub fn operand_infos(g: &impl BlasMatMulOperandInfos) -> (BlasLayout, Option<usize>, PrepareHint, CKKSLayout) {
+    let (layout, batch) = grid_infos(g);
+    (layout, batch, g.hint(), g.source_block_layout())
+}
+
+/// The grid `.0` read as a prepared operand of hint `.1`, its block layout reported as its source's too: operand infos
+/// no preparation makes, for the prepared product's validator.
+pub struct OperandInfos<'a, G>(pub &'a G, pub PrepareHint);
+
+impl<G: BlasGridInfos> BlasGridInfos for OperandInfos<'_, G> {
+    fn log_d(&self) -> usize {
+        self.0.log_d()
+    }
+
+    fn rows(&self) -> usize {
+        self.0.rows()
+    }
+
+    fn cols(&self) -> usize {
+        self.0.cols()
+    }
+
+    fn block_layout(&self) -> CKKSLayout {
+        self.0.block_layout()
+    }
+
+    fn mat_slots(&self) -> Option<usize> {
+        self.0.mat_slots()
+    }
+}
+
+impl<G: BlasGridInfos> BlasMatMulOperandInfos for OperandInfos<'_, G> {
+    fn hint(&self) -> PrepareHint {
+        self.1
+    }
+
+    fn source_block_layout(&self) -> CKKSLayout {
+        self.0.block_layout()
+    }
 }
 
 /// Prepared rotation keys by Galois element plus an optional tensor key.
