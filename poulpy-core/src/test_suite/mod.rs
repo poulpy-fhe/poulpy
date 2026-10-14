@@ -58,6 +58,15 @@ macro_rules! core_backend_test_suite {
                 #[should_panic(expected = "summed product 1 does not share the first pair's layouts")]
                 glwe_mul_relinearize_sum_rejects_mismatched_layouts =>
                     $crate::test_suite::noise::glwe_tensor::test_glwe_mul_relinearize_sum_rejects_mismatched_layouts,
+                #[should_panic(expected = "one-pass product sum has no pairs")]
+                glwe_mul_prepared_relinearize_sum_rejects_no_pairs =>
+                    $crate::test_suite::noise::glwe_tensor::test_glwe_mul_prepared_relinearize_sum_rejects_no_pairs,
+                #[should_panic(expected = "prepared pair 1 does not match res's degree, rank 1 and the given sizes")]
+                glwe_mul_prepared_relinearize_sum_rejects_mismatched_pairs =>
+                    $crate::test_suite::noise::glwe_tensor::test_glwe_mul_prepared_relinearize_sum_rejects_mismatched_pairs,
+                #[should_panic(expected = "prepared operands do not match res's degree and rank and the given sizes")]
+                glwe_tensor_apply_prepared_rejects_mismatched_operands =>
+                    $crate::test_suite::noise::glwe_tensor::test_glwe_tensor_apply_prepared_rejects_mismatched_operands,
                 test_glwe_tensor_square => $crate::test_suite::noise::glwe_tensor::test_glwe_tensor_square,
                 glwe_tensor_relinearize_coarsened => $crate::test_suite::parity::test_glwe_tensor_relinearize_coarsened,
                 test_glwe_mul_plain => $crate::test_suite::noise::glwe_tensor::test_glwe_mul_plain,

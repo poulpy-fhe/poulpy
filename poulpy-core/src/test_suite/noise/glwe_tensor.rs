@@ -1,8 +1,9 @@
 use poulpy_hal::{
     api::{
-        ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxSwitchRing,
+        CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource, VecZnxNormalize,
+        VecZnxNormalizeAssign, VecZnxSwitchRing,
     },
-    layouts::{Backend, HostDataRef, Module, ScratchOwned, VecZnx, ZnxView, ZnxViewMut},
+    layouts::{Backend, HostDataRef, Module, PrepareHint, ScratchOwned, VecZnx, ZnxView, ZnxViewMut},
     source::Source,
     test_suite::convolution::bivariate_convolution_naive,
     test_suite::{TestParams, vec_znx_backend_mut, vec_znx_backend_ref},
@@ -13,8 +14,9 @@ use std::f64::consts::SQRT_2;
 use crate::layouts::GLWESecretSampling;
 use crate::test_suite::noise::glwe_decrypt_checked;
 use crate::{
-    GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEMaskFill, GLWEMulConst, GLWEMulPlain, GLWEMulRelinearizeSum, GLWESub,
-    GLWETensorDecrypt, GLWETensorKeyEncryptSk, GLWETensoring,
+    GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEMaskFill, GLWEMulConst, GLWEMulPlain, GLWEMulRelinearizeSum,
+    GLWENormalize, GLWEPreparedTensoring, GLWESub, GLWETensorDecrypt, GLWETensorKeyEncryptSk, GLWETensoring, glwe_prepare_left,
+    glwe_prepare_right,
     layouts::{
         Dnum, Dsize, GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWESecret, GLWESecretPreparedFactory,
         GLWESecretTensor, GLWESecretTensorFactory, GLWESecretTensorPrepared, GLWESecretTensorPreparedFactory, GLWETensor,
@@ -57,6 +59,11 @@ where
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: GLWETensoring<BE>
         + GLWEMulRelinearizeSum<BE>
+        + GLWEPreparedTensoring<BE>
+        + CnvPVecAlloc<BE>
+        + Convolution<BE>
+        + GLWENormalize<BE>
+        + GLWEAdd<BE>
         + GLWEEncryptSk<BE>
         + GLWEDecrypt<BE>
         + GLWETensorDecrypt<BE>
@@ -115,6 +122,7 @@ where
                 .glwe_encrypt_sk_tmp_bytes(&glwe_in_infos)
                 .max((module).glwe_decrypt_tmp_bytes(&glwe_out_infos))
                 .max(module.glwe_tensor_apply_tmp_bytes(&res_tensor, &a, &b))
+                .max(module.glwe_tensor_apply_prepared_tmp_bytes(&res_tensor, &a, &b))
                 .max(module.glwe_secret_tensor_prepare_tmp_bytes(rank.into()))
                 .max(module.glwe_tensor_relinearize_tmp_bytes(&res_relin, &res_tensor, &tsk_infos)),
         );
@@ -216,9 +224,31 @@ where
         module.glwe_encrypt_sk(&mut a, &pt_in, &sk_dft, &mut source_xe, &mut source_xa, &mut scratch.borrow());
         module.glwe_encrypt_sk(&mut b, &pt_in, &sk_dft, &mut source_xe, &mut source_xa, &mut scratch.borrow());
 
+        // The same product of operands prepared once, under either hint.
+        let size: usize = k.div_ceil(in_base2k);
+        let mut a_prep = module.cnv_pvec_left_alloc(n, rank + 1, size, PrepareHint::OneShot);
+        glwe_prepare_left(module, &mut a_prep, &a, k, &mut scratch.borrow());
+        let mut b_prep = module.cnv_pvec_right_alloc(n, rank + 1, size, PrepareHint::Reuse);
+        glwe_prepare_right(module, &mut b_prep, &b, k, &mut scratch.borrow());
+        let mut res_prepared: GLWETensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_alloc_from_infos(&glwe_out_infos);
+
         for res_offset in 0..scale {
             module.glwe_tensor_apply(scale + res_offset, &mut res_tensor, &a, &b, &mut scratch.borrow());
             assert_canonical(res_tensor.data(), out_base2k, k);
+            module.glwe_tensor_apply_prepared(
+                scale + res_offset,
+                &mut res_prepared,
+                &a_prep,
+                size,
+                &b_prep,
+                size,
+                in_base2k.into(),
+                &mut scratch.borrow(),
+            );
+            assert!(
+                res_prepared.data() == res_tensor.data(),
+                "prepared tensor product, rank {rank}, offset {res_offset}: not the product"
+            );
 
             module.glwe_tensor_decrypt(&res_tensor, &mut pt_have, &sk_dft, &sk_tensor_prep, &mut scratch.borrow());
             module.vec_znx_normalize(
@@ -283,7 +313,7 @@ where
 /// Rank 1 with one radix for the operands, the result and the tensor key, which the one-pass path requires.
 /// Covers the operand roles: a product, a squaring, a product whose left operand is the destination, and a sum of
 /// three products over operands of two plaintexts, held to three times the bound on exactly its scratch. One pair,
-/// alone or beside a pair of zeros, is the product bit for bit.
+/// alone or beside a pair of zeros, is the product bit for bit, and pairs prepared once give the sum bit for bit.
 fn one_pass_product_noise<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
@@ -291,6 +321,11 @@ where
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: GLWETensoring<BE>
         + GLWEMulRelinearizeSum<BE>
+        + GLWEPreparedTensoring<BE>
+        + CnvPVecAlloc<BE>
+        + Convolution<BE>
+        + GLWENormalize<BE>
+        + GLWEAdd<BE>
         + GLWEEncryptSk<BE>
         + GLWEDecrypt<BE>
         + GLWESecretPreparedFactory<BE>
@@ -458,8 +493,60 @@ where
     ));
     let zero: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
 
+    // The same pairs prepared once, under either hint, `s = a + c` among them: its canonical flag is clear and its
+    // digits carry, so both forms normalize it first.
+    let mut s: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
+    module.glwe_add_into(&mut s, &a, &c);
+    assert!(!s.is_canonical());
+    let mixed = [(&a, &b), (&s, &c), (&c, &s)];
+    let prepared: Vec<_> = mixed
+        .iter()
+        .map(|(l, r)| {
+            let mut l_prep = module.cnv_pvec_left_alloc(n, 2, size, PrepareHint::OneShot);
+            glwe_prepare_left(module, &mut l_prep, *l, k, &mut scratch.borrow());
+            let mut r_prep = module.cnv_pvec_right_alloc(n, 2, size, PrepareHint::Reuse);
+            glwe_prepare_right(module, &mut r_prep, *r, k, &mut scratch.borrow());
+            (l_prep, r_prep)
+        })
+        .collect();
+    let prepared_pairs: Vec<_> = prepared.iter().map(|(l, r)| (l, r)).collect();
+    let mut prepared_scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_mul_prepared_relinearize_sum_tmp_bytes(
+        &glwe_infos,
+        size,
+        size,
+        TorusPrecision(k as u32),
+        &tsk_infos,
+    ));
+
     let res_k = TorusPrecision(k as u32);
     for res_offset in [0, 1, base2k - 1] {
+        let mut want: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
+        module.glwe_mul_relinearize_sum(
+            scale + res_offset,
+            &mut want,
+            res_k,
+            &mixed,
+            &tsk_prep,
+            &mut sum_scratch.borrow(),
+        );
+        let mut have: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
+        module.glwe_mul_prepared_relinearize_sum(
+            scale + res_offset,
+            &mut have,
+            res_k,
+            &prepared_pairs,
+            size,
+            glwe_infos.k,
+            size,
+            glwe_infos.k,
+            &tsk_prep,
+            &mut prepared_scratch.borrow(),
+        );
+        assert!(
+            have.data() == want.data() && have.is_canonical(),
+            "one-pass sum of prepared pairs, offset {res_offset}: not the sum"
+        );
+
         for role in ["product", "square", "left is the destination", "sum of three products"] {
             let sum_role = role == "sum of three products";
             module.vec_znx_normalize(
@@ -601,6 +688,97 @@ where
     let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
     let pairs = if mismatched { vec![(&a, &a), (&narrow, &a)] } else { vec![] };
     module.glwe_mul_relinearize_sum(base2k, &mut res, infos.k, &pairs, &tsk, &mut ScratchOwned::alloc(0).borrow());
+}
+
+/// A sum of prepared pairs needs a pair.
+pub fn test_glwe_mul_prepared_relinearize_sum_rejects_no_pairs<BE: Backend>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: GLWEPreparedTensoring<BE> + GLWETensorKeyPreparedFactory<BE> + CnvPVecAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    rejected_prepared_sum(params, module, false);
+}
+
+/// Every prepared pair of a sum is of the degree of `res`, of rank 1 and of the given sizes, checked before anything
+/// else.
+pub fn test_glwe_mul_prepared_relinearize_sum_rejects_mismatched_pairs<BE: Backend>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: GLWEPreparedTensoring<BE> + GLWETensorKeyPreparedFactory<BE> + CnvPVecAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    rejected_prepared_sum(params, module, true);
+}
+
+/// Runs a sum of prepared pairs without scratch and with an unfilled key: no pairs, or a second pair whose left
+/// operand is one limb narrower than the given size.
+fn rejected_prepared_sum<BE: Backend>(params: &TestParams, module: &Module<BE>, mismatched: bool)
+where
+    Module<BE>: GLWEPreparedTensoring<BE> + GLWETensorKeyPreparedFactory<BE> + CnvPVecAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k = params.base2k;
+    let n = module.n();
+    let infos = GLWELayout {
+        n: n.into(),
+        base2k: base2k.into(),
+        k: (2 * base2k).into(),
+        rank: 1u32.into(),
+    };
+    let tsk: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&GLWETensorKeyLayout {
+        n: infos.n,
+        base2k: infos.base2k,
+        dnum: Dnum(2),
+        k_aux: (base2k + 1).into(),
+        rank: infos.rank,
+        dsize: Dsize(1),
+    });
+    let a = module.cnv_pvec_left_alloc(n, 2, 2, PrepareHint::Reuse);
+    let narrow = module.cnv_pvec_left_alloc(n, 2, 1, PrepareHint::Reuse);
+    let b = module.cnv_pvec_right_alloc(n, 2, 2, PrepareHint::Reuse);
+    let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
+    let pairs = if mismatched { vec![(&a, &b), (&narrow, &b)] } else { vec![] };
+    module.glwe_mul_prepared_relinearize_sum(
+        base2k,
+        &mut res,
+        infos.k,
+        &pairs,
+        2,
+        infos.k,
+        2,
+        infos.k,
+        &tsk,
+        &mut ScratchOwned::alloc(0).borrow(),
+    );
+}
+
+/// The prepared operands of a tensor product are of the degree and rank of `res` and of the given sizes, checked
+/// before the scratch: the product runs without scratch on a right operand one limb narrower than the given size.
+pub fn test_glwe_tensor_apply_prepared_rejects_mismatched_operands<BE: Backend>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: GLWEPreparedTensoring<BE> + CnvPVecAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k = params.base2k;
+    let n = module.n();
+    let infos = GLWELayout {
+        n: n.into(),
+        base2k: base2k.into(),
+        k: (2 * base2k).into(),
+        rank: 1u32.into(),
+    };
+    let a = module.cnv_pvec_left_alloc(n, 2, 2, PrepareHint::Reuse);
+    let narrow = module.cnv_pvec_right_alloc(n, 2, 1, PrepareHint::Reuse);
+    let mut res: GLWETensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_alloc_from_infos(&infos);
+    module.glwe_tensor_apply_prepared(
+        base2k,
+        &mut res,
+        &a,
+        2,
+        &narrow,
+        2,
+        infos.base2k,
+        &mut ScratchOwned::alloc(0).borrow(),
+    );
 }
 
 pub fn test_glwe_tensor_square<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)

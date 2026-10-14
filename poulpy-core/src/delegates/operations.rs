@@ -1,12 +1,12 @@
 use crate::layouts::IntPolyInfos;
 use std::collections::HashMap;
 
-use poulpy_hal::layouts::{Backend, CnvPVecRToBackendRef, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Module, ScratchArena};
 
 use crate::{
     api::{
         GGSWRotate, GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWEMulRelinearizeSum, GLWEMulXpMinusOne, GLWENegate,
-        GLWENormalize, GLWEPacking, GLWERotate, GLWEShift, GLWESub, GLWETensoring, GLWETrace, GLWEZero,
+        GLWENormalize, GLWEPacking, GLWEPreparedTensoring, GLWERotate, GLWEShift, GLWESub, GLWETensoring, GLWETrace, GLWEZero,
     },
     layouts::{
         GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
@@ -413,6 +413,76 @@ where
         H: GetTensorKey<BE>,
     {
         BE::glwe_mul_relinearize_sum(self, cnv_offset, res, res_k, pairs, tsk, scratch)
+    }
+}
+
+// Hand-written, as above.
+impl<BE> GLWEPreparedTensoring<BE> for Module<BE>
+where
+    BE: Backend + GLWETensoringImpl,
+    Module<BE>: GLWETensoringReference<BE>,
+{
+    fn glwe_mul_prepared_relinearize_sum_tmp_bytes<R, B>(
+        &self,
+        res: &R,
+        a_size: usize,
+        b_size: usize,
+        tensor_k: crate::layouts::TorusPrecision,
+        tsk: &B,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        B: GGLWEInfos,
+    {
+        BE::glwe_mul_prepared_relinearize_sum_tmp_bytes(self, res, a_size, b_size, tensor_k, tsk)
+    }
+
+    fn glwe_mul_prepared_relinearize_sum<R, AP, BP, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        pairs: &[(&AP, &BP)],
+        a_size: usize,
+        a_k: crate::layouts::TorusPrecision,
+        b_size: usize,
+        b_k: crate::layouts::TorusPrecision,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<BE>,
+        BP: CnvPVecRToBackendRef<BE>,
+        H: GetTensorKey<BE>,
+    {
+        BE::glwe_mul_prepared_relinearize_sum(self, cnv_offset, res, res_k, pairs, a_size, a_k, b_size, b_k, tsk, scratch)
+    }
+
+    fn glwe_tensor_apply_prepared_tmp_bytes<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: GLWEInfos,
+    {
+        BE::glwe_tensor_apply_prepared_tmp_bytes(self, res, a, b)
+    }
+
+    fn glwe_tensor_apply_prepared<R, AP, BP>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &AP,
+        a_size: usize,
+        b: &BP,
+        b_size: usize,
+        base2k: crate::layouts::Base2K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<BE>,
+        BP: CnvPVecRToBackendRef<BE>,
+    {
+        BE::glwe_tensor_apply_prepared(self, cnv_offset, res, a, a_size, b, b_size, base2k, scratch)
     }
 }
 
