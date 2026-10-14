@@ -2,6 +2,7 @@ use crate::{
     CKKSCompositionError, CKKSInfos, CoeffsMeta, SetCKKSInfos,
     api::{CKKSAddOps, CKKSEncodingOps},
     layouts::{CKKSModuleAlloc, ComplexDiagonals},
+    polynomial::{Basis, EncodeBSGS, Polynomial, SplitStrategy},
     reference::ckks_encode_linear_transformation_from_diagonals,
 };
 use poulpy_core::layouts::{Diagonals, LWEInfos, LinearTransformationStrategy};
@@ -106,4 +107,36 @@ pub fn test_encode_linear_transformation_zero_k_error<BE, F, E>(
             reason: "the diagonals' torus width, coeffs_meta.k, is 0".into(),
         },
     );
+}
+
+/// `EncodeBSGS::encode_bsgs_with` and `encode_bsgs_folded_with` reject a zero torus width, `coeff_meta.k = 0`, with
+/// `InvalidOperand` before they allocate anything: here on an odd polynomial both would otherwise encode, panicking on
+/// the first baby step.
+pub fn test_encode_bsgs_zero_k_error<BE, F, E>(
+    params: CKKSTestParams,
+    _module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<Ring = Standard>,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    // x + x³: odd, so the folded entry folds it.
+    let poly = Polynomial::new(Basis::Monomial, vec![F::zero(), F::one(), F::zero(), F::one()]);
+    let base2k = params.base2k.into();
+    let zero_k = CoeffsMeta::from_delta_budget(0, 0);
+    let split = SplitStrategy::MinDepth;
+    let with = poly.encode_bsgs_with(host_module, base2k, zero_k, split).map(drop);
+    let folded = poly.encode_bsgs_folded_with(host_module, base2k, zero_k, split).map(drop);
+    for (op, res) in [("encode_bsgs_with", with), ("encode_bsgs_folded_with", folded)] {
+        assert_ckks_error(
+            op,
+            &res.unwrap_err().into(),
+            CKKSCompositionError::InvalidOperand {
+                op,
+                reason: "the baby steps' torus width, coeff_meta.k, is 0".into(),
+            },
+        );
+    }
 }

@@ -415,6 +415,10 @@ macro_rules! ckks_backend_test_suite {
                 encode_linear_transformation_zero_k_error,
                 $crate::test_suite::errors::test_encode_linear_transformation_zero_k_error
             );
+            run_test!(
+                encode_bsgs_zero_k_error,
+                $crate::test_suite::errors::test_encode_bsgs_zero_k_error
+            );
             run_test!(add_ct_aligned, $crate::test_suite::add::test_add_ct_aligned);
             run_test!(add_ct_delta_a_lt_b, $crate::test_suite::add::test_add_ct_delta_a_lt_b);
             run_test!(add_ct_delta_a_gt_b, $crate::test_suite::add::test_add_ct_delta_a_gt_b);
