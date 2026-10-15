@@ -179,12 +179,12 @@ fn assert_rejected<T>(label: &str, result: CKKSResult<T>) {
 /// transpose and both shifts across blocks one map-hook call, a cold preparation two per block row (sigma or tau, then
 /// every shift) and a hot one none, `blas_matmul_prepared` one JKLS call per block of `res` beside two map-hook calls
 /// per block row of a hot `a` and per block column of a hot `b`, which it makes the terms of one at a time, and
-/// `blas_matmul` those of its two hot sides. Then no call the API rejects enters either hook: every grid
-/// [`rejected_grids`] and [`foreign_layouts`] build, a grid of another shape and one at radix 63, as an input or as
-/// `res` of each of these operations, preparations under either hint and prepared products of every mix (a lone
-/// preparation input of another shape is valid; one of another rank than the keys is not), an inner-dimension mismatch,
-/// foreign contexts, which a hot side's product rejects too, and key stores without rotation keys, which a hot side's
-/// product needs, or without the tensor key.
+/// `blas_matmul` those of its two hot sides, each unit once, whether it holds `a` or, beside a `2 x 1` grid, `b`. Then
+/// no call the API rejects enters either hook: every grid [`rejected_grids`] and [`foreign_layouts`] build, a grid of
+/// another shape and one at radix 63, as an input or as `res` of each of these operations, preparations under either
+/// hint and prepared products of every mix (a lone preparation input of another shape is valid; one of another rank
+/// than the keys is not), an inner-dimension mismatch, foreign contexts, which a hot side's product rejects too, and
+/// key stores without rotation keys, which a hot side's product needs, or without the tensor key.
 #[test]
 fn blas_hooks_run_on_accepted_calls_alone() {
     let _counting = counting();
@@ -212,11 +212,23 @@ fn blas_hooks_run_on_accepted_calls_alone() {
         &Grid::model(log_d, 2, 2, slots >> (2 * log_d), 7),
         &mut scratch.borrow(),
     );
+    let col = encrypt_grid::<OverrideBackend, f64, EncodingFFTTable<f64>>(
+        &params,
+        &module,
+        &host_module,
+        &encoder,
+        &sk,
+        params.k,
+        0,
+        &Grid::model(log_d, 2, 1, slots >> (2 * log_d), 8),
+        &mut scratch.borrow(),
+    );
     let alloc = |rows: usize, cols: usize| alloc_grid(&params, &module, log_d, rows, cols, params.k);
-    let mut res = alloc(2, 2);
+    let (mut res, mut res_col) = (alloc(2, 2), alloc(2, 1));
     let (tsk_layout, atk_layout) = (params.tsk_layout(), params.atk_layout());
     let bytes = module
         .blas_matmul_tmp_bytes(&res, &a, &a, &ctx, &tsk_layout, &atk_layout)
+        .max(module.blas_matmul_tmp_bytes(&res_col, &a, &col, &ctx, &tsk_layout, &atk_layout))
         .max(module.blas_matmul_prepare_left_tmp_bytes(&a, &ctx, &atk_layout, Reuse))
         .max(module.blas_matmul_prepare_right_tmp_bytes(&a, &ctx, &atk_layout, Reuse))
         .max(module.blas_transpose_tmp_bytes(&res, &a, &ctx, &atk_layout))
@@ -257,6 +269,10 @@ fn blas_hooks_run_on_accepted_calls_alone() {
     }
     assert_enters("blas_matmul", (8, 4), || {
         module.blas_matmul(&mut res, &a, &a, &ctx, &keys, &keys, &mut op_scratch.borrow())
+    });
+    // Beside a `2 x 1` grid, `blas_matmul` holds its block column and streams the 2 block rows of `a`.
+    assert_enters("blas_matmul by 2 x 1", (6, 2), || {
+        module.blas_matmul(&mut res_col, &a, &col, &ctx, &keys, &keys, &mut op_scratch.borrow())
     });
 
     reset();
