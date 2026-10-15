@@ -2,8 +2,8 @@ use crate::{
     api::{
         VecZnxDftAdd, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism,
         VecZnxDftAutomorphismAddWithPlanTmpBytes, VecZnxDftAutomorphismPlan, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftSub,
-        VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA,
-        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
+        VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
+        VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
     },
     layouts::{
         Backend, Module, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
@@ -81,19 +81,6 @@ impl_vec_znx_dft_delegate!(
         B::vec_znx_idft_normalize_consume(
             self, res, res_base2k, res_k, res_offset, res_col, a, a_col, a_base2k, addend, scratch,
         );
-    }
-);
-
-impl_vec_znx_dft_delegate!(
-    VecZnxIdftApplyTmpA<B>,
-    fn vec_znx_idft_apply_tmpa(
-        &self,
-        res: &mut VecZnxBigBackendMut<'_, B>,
-        res_col: usize,
-        a: &mut VecZnxDftBackendMut<'_, B>,
-        a_col: usize,
-    ) {
-        B::vec_znx_idft_apply_tmpa(self, res, res_col, a, a_col);
     }
 );
 

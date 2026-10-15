@@ -11,7 +11,7 @@ use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigNormalize,
         VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismAddWithPlanTmpBytes, VecZnxDftBytesOf,
-        VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
+        VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
     },
     layouts::{
         Backend, ScratchArena, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendMut,
@@ -185,16 +185,17 @@ where
 pub(super) fn glwe_idft_dft_into_big<BE, M>(
     module: &M,
     res_big: &mut VecZnxBigBackendMut<'_, BE>,
-    a: &mut VecZnxDftBackendMut<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: VecZnxIdftApplyTmpA<BE>,
+    M: VecZnxIdftApply<BE>,
 {
     let cols = res_big.cols();
     assert_eq!(a.cols(), cols);
     assert_eq!(res_big.size(), a.size());
     for col in 0..cols {
-        module.vec_znx_idft_apply_tmpa(res_big, col, a, col);
+        module.vec_znx_idft_apply(res_big, col, a, col, scratch);
     }
 }
 

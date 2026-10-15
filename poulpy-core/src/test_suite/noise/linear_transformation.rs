@@ -5,12 +5,13 @@ use poulpy_hal::layouts::CnvPVecRToBackendRef;
 use poulpy_hal::layouts::VecZnxBigToBackendMut;
 use poulpy_hal::layouts::VecZnxBigToBackendRef;
 use poulpy_hal::layouts::VecZnxDftToBackendMut;
+use poulpy_hal::layouts::VecZnxDftToBackendRef;
 use std::collections::HashMap;
 
 use poulpy_hal::{
     api::{
         CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxBigAlloc, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxFillUniformSource, VecZnxIdftApplyTmpA,
+        VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxFillUniformSource, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
     },
     layouts::{Backend, GaloisElement, HostDataMut, HostDataRef, Module, PrepareHint, ScratchOwned, VecZnx},
     source::Source,
@@ -78,7 +79,8 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxDftAlloc<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxFillUniformSource<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -131,7 +133,8 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
             | module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &atk_infos)
             | module.cnv_prepare_right_tmp_bytes(pt.size(), pt.size())
             | module.cnv_apply_dft_tmp_bytes(0, product_size, ct_infos.size(), pt.size())
-            | module.vec_znx_big_normalize_tmp_bytes(),
+            | module.vec_znx_big_normalize_tmp_bytes()
+            | module.vec_znx_idft_apply_tmp_bytes(),
     );
 
     module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
@@ -250,7 +253,13 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
                     0,
                     &mut scratch.borrow(),
                 );
-                module.vec_znx_idft_apply_tmpa(&mut have_big.to_backend_mut(), 0, &mut have_dft.to_backend_mut(), 0);
+                module.vec_znx_idft_apply(
+                    &mut have_big.to_backend_mut(),
+                    0,
+                    &have_dft.to_backend_ref(),
+                    0,
+                    &mut scratch.borrow(),
+                );
                 module.vec_znx_big_normalize(
                     &mut vec_znx_backend_mut::<BE>(&mut have),
                     ct.base2k().as_usize(),
@@ -273,7 +282,13 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
                     0,
                     &mut scratch.borrow(),
                 );
-                module.vec_znx_idft_apply_tmpa(&mut want_big.to_backend_mut(), 0, &mut want_dft.to_backend_mut(), 0);
+                module.vec_znx_idft_apply(
+                    &mut want_big.to_backend_mut(),
+                    0,
+                    &want_dft.to_backend_ref(),
+                    0,
+                    &mut scratch.borrow(),
+                );
                 module.vec_znx_big_normalize(
                     &mut vec_znx_backend_mut::<BE>(&mut want),
                     ct.base2k().as_usize(),

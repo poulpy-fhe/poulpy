@@ -6,7 +6,7 @@ use poulpy_hal::{
     api::{
         ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxBigAlloc, VecZnxDftAdd, VecZnxDftAddAssign,
         VecZnxDftAlloc, VecZnxDftApply, VecZnxDftSub, VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxIdftApply,
-        VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
+        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
     },
     layouts::{Backend, Module, ScratchOwned, VecZnxBigOwned, VecZnxDftOwned},
     source::Source,
@@ -105,29 +105,6 @@ where
         let mut res = vec_znx_big_backend_mut(&mut res);
         for i in 0..sweep.cols {
             module.vec_znx_idft_apply(&mut res, i, &a, i, &mut scratch.borrow());
-        }
-        black_box(());
-    });
-}
-
-pub fn runner_vec_znx_idft_apply_tmpa<B: Backend<ZnxWord = i64>, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
-    sweep: &HalSweepParms,
-) where
-    Module<B>: VecZnxIdftApplyTmpA<B> + ModuleNew<B> + VecZnxDftAlloc<B> + VecZnxBigAlloc<B>,
-{
-    let module: Module<B> = Module::<B>::new(sweep.n as u64);
-
-    let mut source: Source = Source::new([0u8; 32]);
-
-    let mut res: VecZnxBigOwned<B> = module.vec_znx_big_alloc(module.n(), sweep.cols, sweep.size);
-    let mut a: VecZnxDftOwned<B> = random_backend_vec_znx_dft::<B>(module.n(), sweep.cols, sweep.size, &mut source);
-
-    bencher.iter(|| {
-        let mut res = vec_znx_big_backend_mut(&mut res);
-        let mut a = vec_znx_dft_backend_mut(&mut a);
-        for i in 0..sweep.cols {
-            module.vec_znx_idft_apply_tmpa(&mut res, i, &mut a, i);
         }
         black_box(());
     });

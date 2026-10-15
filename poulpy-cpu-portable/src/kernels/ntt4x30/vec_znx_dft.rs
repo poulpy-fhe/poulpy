@@ -5,8 +5,7 @@
 //! - The [`NttModuleHandle`] trait, which exposes precomputed NTT/iNTT
 //!   tables and multiply–accumulate metadata from a module handle.
 //! - Forward (`ntt4x30_vec_znx_dft_apply_portable`) and inverse
-//!   (`ntt4x30_vec_znx_idft_apply_portable`, `ntt4x30_vec_znx_idft_apply_tmpa_portable`) DFT
-//!   operations.
+//!   (`ntt4x30_vec_znx_idft_apply_portable`) DFT operations.
 //! - Component-wise DFT-domain arithmetic (add, sub, negate, copy, zero).
 //!
 //! # Scalar layout
@@ -334,43 +333,6 @@ pub fn ntt4x30_vec_znx_idft_apply_portable<BE>(
         BE::ntt_copy(tmp_n, a_slice);
         BE::ntt_dft_execute(table, tmp_n);
         BE::ntt_to_znx128(res.at_mut(res_col, j), n, tmp_n);
-    }
-
-    for j in min_size..res_size {
-        res.at_mut(res_col, j).fill(0i128);
-    }
-}
-
-/// Inverse NTT (destructive): decode `a[a_col]` into `res[res_col]`.
-///
-/// Like [`ntt4x30_vec_znx_idft_apply_portable`] but applies the inverse NTT
-/// **in place** to `a`, modifying it.  Requires no scratch space.
-pub fn ntt4x30_vec_znx_idft_apply_tmpa_portable<BE>(
-    module: &Module<BE>,
-    res: &mut VecZnxBigBackendMut<'_, BE>,
-    res_col: usize,
-    a: &mut VecZnxDftBackendMut<'_, BE>,
-    a_col: usize,
-) where
-    Module<BE>: NttModuleHandle,
-    BE: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64>
-        + NttDFTExecute<NttTableInv<Primes30, <Module<BE> as crate::kernels::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
-        + NttToZnx128,
-    for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
-{
-    poulpy_hal::layouts::assert_dense(res, "ntt4x30_vec_znx_idft_apply_tmpa");
-    let n = res.n();
-    check_degree::<BE>(module.n(), n);
-    assert_eq!(a.n(), n, "vec_znx_idft_apply_tmpa: a.n():{} != res.n():{n}", a.n());
-    let res_size = res.size();
-    let min_size = res_size.min(a.size());
-
-    let table = module.get_intt_table_for(n);
-
-    for j in 0..min_size {
-        BE::ntt_dft_execute(table, limb_u64_mut::<_, BE>(a, a_col, j));
-        let a_slice: &[u64] = limb_u64::<_, BE>(a, a_col, j);
-        BE::ntt_to_znx128(res.at_mut(res_col, j), n, a_slice);
     }
 
     for j in min_size..res_size {

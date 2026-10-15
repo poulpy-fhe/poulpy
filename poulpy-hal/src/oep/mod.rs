@@ -13,9 +13,8 @@
 //! [`crate::oep::derived`]); a backend inherits these compositions and may
 //! override them with fused kernels. A *variant* classification does not imply
 //! an inherited body: mutation variants such as
-//! [`HalVecZnxBigImpl::vec_znx_big_add_small_assign`](crate::oep::HalVecZnxBigImpl::vec_znx_big_add_small_assign),
-//! [`HalVecZnxDftImpl::vec_znx_idft_apply_tmpa`](crate::oep::HalVecZnxDftImpl::vec_znx_idft_apply_tmpa), and
-//! [`HalSvpImpl::svp_apply_dft_to_dft_assign`](crate::oep::HalSvpImpl::svp_apply_dft_to_dft_assign) remain required because their
+//! [`HalVecZnxBigImpl::vec_znx_big_add_small_assign`](crate::oep::HalVecZnxBigImpl::vec_znx_big_add_small_assign)
+//! and [`HalSvpImpl::svp_apply_dft_to_dft_assign`](crate::oep::HalSvpImpl::svp_apply_dft_to_dft_assign) remain required because their
 //! signatures cannot supply the temporary storage needed by a generic
 //! composition. Their individual method docs explain these requirements.
 //!

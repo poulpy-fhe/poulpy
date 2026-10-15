@@ -13,7 +13,7 @@ use poulpy_hal::layouts::{
 };
 
 use super::NTT4x30Portable;
-use super::ntt32::{Ntt32Table, intt32, intt32_assign, intt32_compact, ntt32};
+use super::ntt32::{Ntt32Table, intt32, intt32_compact, ntt32};
 use super::packed::{
     Q, SendPtr, add_mod, limb_add, limb_add_assign, limb_negate_assign, limb_sub, limb_sub_assign, limb_sub_negate_assign,
 };
@@ -91,16 +91,6 @@ pub fn idft_limb<R: Ring, E: TaskExecutor>(
     intt32::<E>(packed_table(module, n), dst, src, cast_slice_mut(tmp));
 }
 
-/// Inverse transform of one packed limb, which it overwrites.
-pub fn idft_limb_tmpa<R: Ring, E: TaskExecutor>(
-    module: &Module<NTT4x30Portable<R>>,
-    n: usize,
-    dst: &mut [i128],
-    src: &mut [u32],
-) {
-    intt32_assign::<E>(packed_table(module, n), dst, src);
-}
-
 /// Inverse transform of the packed limb `slot` into `n` coefficients that overwrite it.
 ///
 /// The planes move to `tmp`, which holds [`idft_tmp_words`] words, so the coefficients can take the place of the limb.
@@ -175,36 +165,6 @@ pub(crate) fn vec_znx_idft_apply<R: Ring>(
             res.at_mut(res_col, limb),
             packed_limb(a_data, n, a_cols, a_col, limb),
             tmp,
-        );
-    }
-    for limb in min_size..res.size() {
-        res.at_mut(res_col, limb).fill(0);
-    }
-}
-
-pub(crate) fn vec_znx_idft_apply_tmpa<R: Ring>(
-    module: &Module<NTT4x30Portable<R>>,
-    res: &mut VecZnxBigBackendMut<'_, NTT4x30Portable<R>>,
-    res_col: usize,
-    a: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
-    a_col: usize,
-) where
-    NTT4x30Portable<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
-{
-    poulpy_hal::layouts::assert_dense(res, "vec_znx_idft_apply_tmpa");
-    let n = res.n();
-    check_operand(n, res, res_col);
-    check_degree::<NTT4x30Portable<R>>(module.n(), n);
-    check_operand(n, a, a_col);
-    let min_size = res.size().min(a.size());
-    let a_cols = a.cols();
-    let a_data: &mut [u32] = cast_slice_mut(a.data_mut());
-    for limb in 0..min_size {
-        idft_limb_tmpa::<_, poulpy_hal::execution::SerialTaskExecutor>(
-            module,
-            n,
-            res.at_mut(res_col, limb),
-            packed_limb_mut(a_data, n, a_cols, a_col, limb),
         );
     }
     for limb in min_size..res.size() {

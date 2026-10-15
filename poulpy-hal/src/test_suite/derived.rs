@@ -28,11 +28,11 @@ use crate::{
         VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
         VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxBigSubSmallA, VecZnxBigSubSmallB, VecZnxCopy, VecZnxDftAddAssign,
         VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan, VecZnxDftZero, VecZnxFillUniformSource,
-        VecZnxFillUniformSourceAll, VecZnxIdftApplyTmpA, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub,
-        VecZnxLshTmpBytes, VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNormalize,
-        VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign, VecZnxRshSub,
-        VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd,
-        VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        VecZnxFillUniformSourceAll, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign,
+        VecZnxLshSub, VecZnxLshTmpBytes, VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes,
+        VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign,
+        VecZnxRshSub, VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft,
+        VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
         CnvDftAccTerm, CnvPVecLOwned, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecROwned, CnvPVecRToBackendMut,
@@ -73,7 +73,8 @@ where
         + VecZnxDftZero<BE>
         + VecZnxDftApply<BE>
         + VecZnxBigAlloc<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -103,7 +104,8 @@ where
         module
             .vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size)
             .max(module.vmp_apply_dft_tmp_bytes(size, size, rows, cols_in, cols_out, size))
-            .max(module.vec_znx_big_normalize_tmp_bytes()),
+            .max(module.vec_znx_big_normalize_tmp_bytes())
+            .max(module.vec_znx_idft_apply_tmp_bytes()),
     );
 
     let mut pmat = module.vmp_pmat_alloc(params.n, rows, cols_in, cols_out, size, PrepareHint::Reuse);
@@ -154,7 +156,13 @@ where
         let mut want_backend = upload_vec_znx::<BE>(&want_template);
         let mut have_backend = upload_vec_znx::<BE>(&have_template);
 
-        module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut res_oracle.to_backend_mut(), col);
+        module.vec_znx_idft_apply(
+            &mut big.to_backend_mut(),
+            0,
+            &res_oracle.to_backend_ref(),
+            col,
+            &mut scratch.borrow(),
+        );
         module.vec_znx_big_normalize(
             &mut vec_znx_backend_mut::<BE>(&mut want_backend),
             base2k,
@@ -166,7 +174,13 @@ where
             0,
             &mut scratch.borrow(),
         );
-        module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut res_derived.to_backend_mut(), col);
+        module.vec_znx_idft_apply(
+            &mut big.to_backend_mut(),
+            0,
+            &res_derived.to_backend_ref(),
+            col,
+            &mut scratch.borrow(),
+        );
         module.vec_znx_big_normalize(
             &mut vec_znx_backend_mut::<BE>(&mut have_backend),
             base2k,
@@ -194,7 +208,7 @@ where
 /// backend's own `module.vmp_apply_dft_to_dft_add` dispatch, the inherited
 /// default on backends with no fused override, the fused kernel on backends
 /// that have one. All three are compared bit for bit after
-/// `vec_znx_idft_apply_tmpa` + `vec_znx_big_normalize`, the same comparison
+/// `vec_znx_idft_apply` + `vec_znx_big_normalize`, the same comparison
 /// `test_vmp_apply_dft_to_dft_add` in `test_suite/vmp.rs` uses for
 /// DFT-domain results. The scratch for the derived call is sized only by
 /// `vmp_apply_dft_to_dft_add_tmp_bytes_derived`, so a decomposition that
@@ -213,7 +227,8 @@ where
         + VecZnxDftApply<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxBigAlloc<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -256,7 +271,8 @@ where
                 .vmp_prepare_tmp_bytes(rows, cols_in, cols_out, mat_size)
                 .max(module.vmp_apply_dft_to_dft_tmp_bytes(res_size, a_size, rows, cols_in, cols_out, mat_size))
                 .max(module.vmp_apply_dft_to_dft_add_tmp_bytes(res_size, a_size, rows, cols_in, cols_out, mat_size))
-                .max(module.vec_znx_big_normalize_tmp_bytes()),
+                .max(module.vec_znx_big_normalize_tmp_bytes())
+                .max(module.vec_znx_idft_apply_tmp_bytes()),
         );
 
         let mut pmat = module.vmp_pmat_alloc(params.n, rows, cols_in, cols_out, mat_size, PrepareHint::Reuse);
@@ -336,7 +352,13 @@ where
                 let mut derived_backend = upload_vec_znx::<BE>(&want_template);
                 let mut module_backend = upload_vec_znx::<BE>(&want_template);
 
-                module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut res_oracle.to_backend_mut(), j);
+                module.vec_znx_idft_apply(
+                    &mut big.to_backend_mut(),
+                    0,
+                    &res_oracle.to_backend_ref(),
+                    j,
+                    &mut scratch.borrow(),
+                );
                 module.vec_znx_big_normalize(
                     &mut vec_znx_backend_mut::<BE>(&mut oracle_backend),
                     base2k,
@@ -348,7 +370,13 @@ where
                     0,
                     &mut scratch.borrow(),
                 );
-                module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut res_derived.to_backend_mut(), j);
+                module.vec_znx_idft_apply(
+                    &mut big.to_backend_mut(),
+                    0,
+                    &res_derived.to_backend_ref(),
+                    j,
+                    &mut scratch.borrow(),
+                );
                 module.vec_znx_big_normalize(
                     &mut vec_znx_backend_mut::<BE>(&mut derived_backend),
                     base2k,
@@ -360,7 +388,13 @@ where
                     0,
                     &mut scratch.borrow(),
                 );
-                module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut res_module.to_backend_mut(), j);
+                module.vec_znx_idft_apply(
+                    &mut big.to_backend_mut(),
+                    0,
+                    &res_module.to_backend_ref(),
+                    j,
+                    &mut scratch.borrow(),
+                );
                 module.vec_znx_big_normalize(
                     &mut vec_znx_backend_mut::<BE>(&mut module_backend),
                     base2k,
@@ -1690,7 +1724,7 @@ where
 }
 
 /// `vec_znx_idft_normalize_consume`: the OEP default body against an
-/// independent oracle, `idft_apply_tmpa` into a `VecZnxBig`, the optional
+/// independent oracle, `vec_znx_idft_apply` into a `VecZnxBig`, the optional
 /// `big_add_small_assign`, then `big_normalize`, driven through the public
 /// api traits. The op clobbers its input, so each side transforms its own
 /// copy of the same host operand. Both arenas are sized by their own side's
@@ -1701,7 +1735,8 @@ where
         + VecZnxAlloc<BE>
         + VecZnxDftAlloc<BE>
         + VecZnxDftApply<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigAlloc<BE>
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigNormalize<BE>
@@ -1710,7 +1745,11 @@ where
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
-    let mut oracle_scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_big_normalize_tmp_bytes());
+    let mut oracle_scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .vec_znx_big_normalize_tmp_bytes()
+            .max(module.vec_znx_idft_apply_tmp_bytes()),
+    );
 
     // (a_size, res_size): equal, res shorter, res longer.
     for (a_size, res_size) in [(3usize, 3usize), (4, 2), (2, 4)] {
@@ -1755,7 +1794,13 @@ where
             // Oracle: idft into a BIG, the optional small add, then normalize,
             // through the public api traits rather than the OEP dispatch.
             let mut big = module.vec_znx_big_alloc(params.n, 1, a_size);
-            module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut want_dft.to_backend_mut(), 0);
+            module.vec_znx_idft_apply(
+                &mut big.to_backend_mut(),
+                0,
+                &want_dft.to_backend_ref(),
+                0,
+                &mut oracle_scratch.borrow(),
+            );
             if with_addend {
                 module.vec_znx_big_add_small_assign(&mut big.to_backend_mut(), 0, &addend_ref, 0);
             }
@@ -1797,7 +1842,8 @@ pub fn test_vec_znx_dft_automorphism_add_with_plan_derived<BE: TestBackend + Hal
         + VecZnxDftAddAssign<BE>
         + VecZnxDftAutomorphism<BE>
         + VecZnxDftAutomorphismPlan<BE, Plan = BE::AutomorphismPlan>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigAlloc<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
@@ -1805,7 +1851,11 @@ pub fn test_vec_znx_dft_automorphism_add_with_plan_derived<BE: TestBackend + Hal
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([1u8; 32]);
-    let mut oracle_scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_big_normalize_tmp_bytes());
+    let mut oracle_scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .vec_znx_big_normalize_tmp_bytes()
+            .max(module.vec_znx_idft_apply_tmp_bytes()),
+    );
 
     let cols: usize = 2;
 
@@ -1876,7 +1926,13 @@ pub fn test_vec_znx_dft_automorphism_add_with_plan_derived<BE: TestBackend + Hal
                 let mut big = module.vec_znx_big_alloc(params.n, 1, res_size);
                 for (dft, out) in [(&mut have_dft, &mut have_backend), (&mut want_dft, &mut want_backend)] {
                     for normalized in 0..cols {
-                        module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut dft.to_backend_mut(), normalized);
+                        module.vec_znx_idft_apply(
+                            &mut big.to_backend_mut(),
+                            0,
+                            &dft.to_backend_ref(),
+                            normalized,
+                            &mut oracle_scratch.borrow(),
+                        );
                         module.vec_znx_big_normalize(
                             &mut vec_znx_backend_mut::<BE>(out),
                             base2k,
@@ -1915,7 +1971,8 @@ where
         + VecZnxDftApply<BE>
         + VecZnxDftAutomorphism<BE>
         + VecZnxDftAutomorphismPlan<BE, Plan = BE::AutomorphismPlan>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigAlloc<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
@@ -1923,7 +1980,11 @@ where
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([1u8; 32]);
-    let mut oracle_scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_big_normalize_tmp_bytes());
+    let mut oracle_scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .vec_znx_big_normalize_tmp_bytes()
+            .max(module.vec_znx_idft_apply_tmp_bytes()),
+    );
     let cols: usize = 2;
     for (res_size, a_size) in [(3usize, 3usize), (2, 4), (4, 2)] {
         let mut a_backend = module.vec_znx_alloc(params.n, cols, a_size);
@@ -1971,7 +2032,13 @@ where
                     (&mut api_dft, &mut api_backend),
                     (&mut want_dft, &mut want_backend),
                 ] {
-                    module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut dft.to_backend_mut(), col);
+                    module.vec_znx_idft_apply(
+                        &mut big.to_backend_mut(),
+                        0,
+                        &dft.to_backend_ref(),
+                        col,
+                        &mut oracle_scratch.borrow(),
+                    );
                     module.vec_znx_big_normalize(
                         &mut vec_znx_backend_mut::<BE>(out),
                         base2k,
@@ -2011,7 +2078,8 @@ where
         + VecZnxAlloc<BE>
         + VecZnxDftAlloc<BE>
         + VecZnxDftApply<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigAlloc<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
@@ -2022,7 +2090,11 @@ where
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([2u8; 32]);
-    let mut oracle_scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_big_normalize_tmp_bytes());
+    let mut oracle_scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .vec_znx_big_normalize_tmp_bytes()
+            .max(module.vec_znx_idft_apply_tmp_bytes()),
+    );
 
     let cols: usize = 2;
 
@@ -2111,7 +2183,13 @@ where
             let mut big = module.vec_znx_big_alloc(params.n, 1, res_size);
             for (dft, out) in [(&mut have_dft, &mut have_backend), (&mut want_dft, &mut want_backend)] {
                 for normalized in 0..cols {
-                    module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut dft.to_backend_mut(), normalized);
+                    module.vec_znx_idft_apply(
+                        &mut big.to_backend_mut(),
+                        0,
+                        &dft.to_backend_ref(),
+                        normalized,
+                        &mut oracle_scratch.borrow(),
+                    );
                     module.vec_znx_big_normalize(
                         &mut vec_znx_backend_mut::<BE>(out),
                         base2k,
@@ -2140,7 +2218,7 @@ where
 /// `vec_znx_dft_add_assign`), and versus the backend's own
 /// `module.cnv_apply_dft_add`, the inherited default on backends with no
 /// fused override, the fused kernel on backends that have one. DFT-domain
-/// results are compared after `vec_znx_idft_apply_tmpa` +
+/// results are compared after `vec_znx_idft_apply` +
 /// `vec_znx_big_normalize`, as the rest of this suite states DFT-domain
 /// equality. The arena for the derived call is sized only by
 /// `cnv_apply_dft_add_tmp_bytes_derived`, so a decomposition that
@@ -2153,7 +2231,8 @@ where
         + VecZnxDftAlloc<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxBigAlloc<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -2252,7 +2331,7 @@ where
 /// fused override, the fused kernel on backends that have one. One-, two- and
 /// three-term sums are swept, so the first-term overwrite and the folding of
 /// the rest are both covered. DFT-domain results are compared after
-/// `vec_znx_idft_apply_tmpa` + `vec_znx_big_normalize`, as the rest of this
+/// `vec_znx_idft_apply` + `vec_znx_big_normalize`, as the rest of this
 /// suite states DFT-domain equality. The arena for the derived call is sized
 /// only by `cnv_apply_dft_sum_tmp_bytes_derived`, so a decomposition that
 /// under-reports its own scratch panics here.
@@ -2263,7 +2342,8 @@ where
         + CnvPVecAlloc<BE>
         + VecZnxDftAlloc<BE>
         + VecZnxBigAlloc<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -2378,7 +2458,8 @@ where
         + CnvPVecAlloc<BE>
         + VecZnxDftAlloc<BE>
         + VecZnxBigAlloc<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -2480,7 +2561,8 @@ where
         + VecZnxAlloc<BE>
         + VecZnxDftAlloc<BE>
         + VecZnxBigAlloc<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -2728,7 +2810,8 @@ where
             .max(module.cnv_pairwise_apply_dft_tmp_bytes(0, res_size, a_size, b_size))
             .max(module.cnv_prepare_left_tmp_bytes(a_size, a_size))
             .max(module.cnv_prepare_right_tmp_bytes(b_size, b_size))
-            .max(module.vec_znx_big_normalize_tmp_bytes()),
+            .max(module.vec_znx_big_normalize_tmp_bytes())
+            .max(module.vec_znx_idft_apply_tmp_bytes()),
     );
 
     let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(n, cols, a_size, PrepareHint::Reuse);
@@ -2758,13 +2841,19 @@ fn normalize_dft_column<BE: TestBackend>(
     scratch: &mut ScratchOwned<BE>,
 ) -> crate::layouts::VecZnxOwned<i64>
 where
-    Module<BE>: ModuleN + VecZnxAlloc<BE> + VecZnxIdftApplyTmpA<BE> + VecZnxBigNormalize<BE>,
+    Module<BE>: ModuleN + VecZnxAlloc<BE> + VecZnxIdftApply<BE> + VecZnxIdftApplyTmpBytes + VecZnxBigNormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let size: usize = ZnxInfos::size(big);
     let template: VecZnxOwned<i64> = VecZnx::alloc(big.n(), 1, size);
     let mut backend = upload_vec_znx::<BE>(&template);
-    module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut res.to_backend_mut(), res_col);
+    module.vec_znx_idft_apply(
+        &mut big.to_backend_mut(),
+        0,
+        &res.to_backend_ref(),
+        res_col,
+        &mut scratch.borrow(),
+    );
     module.vec_znx_big_normalize(
         &mut vec_znx_backend_mut::<BE>(&mut backend),
         base2k,

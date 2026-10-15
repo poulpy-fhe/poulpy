@@ -492,16 +492,6 @@ where
         super::vec_znx_dft::vec_znx_idft_apply(module, res, res_col, a, a_col, tmp);
     }
 
-    fn vec_znx_idft_apply_tmpa(
-        module: &Module<Self>,
-        res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
-        res_col: usize,
-        a: &mut VecZnxDftBackendMut<'_, Self>,
-        a_col: usize,
-    ) {
-        super::vec_znx_dft::vec_znx_idft_apply_tmpa(module, res, res_col, a, a_col);
-    }
-
     fn vec_znx_dft_add(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,

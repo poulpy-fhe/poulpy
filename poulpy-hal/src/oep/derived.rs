@@ -39,7 +39,8 @@ use crate::{
         ScalarZnxBackendRef, ScratchArena, SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
         VecZnxBigBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
         VecZnxDftToBackendRef, VecZnxInfos, VecZnxToBackendMut, VecZnxToBackendRef, VmpPMatBackendRef, ZnxInfos,
-        scalar_znx_as_vec_znx_backend_ref_from_ref, vec_znx_backend_ref_from_mut, vec_znx_reborrow_backend_mut,
+        scalar_znx_as_vec_znx_backend_ref_from_ref, vec_znx_backend_ref_from_mut, vec_znx_dft_backend_ref_from_mut,
+        vec_znx_reborrow_backend_mut,
     },
     oep::{HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVecZnxMonomialImpl, HalVmpImpl},
     source::Source,
@@ -546,13 +547,15 @@ pub fn vec_znx_big_sub_small_b_derived<BE>(
 }
 
 /// Scratch for [`vec_znx_idft_normalize_consume_derived`]: the `VecZnxBig` the
-/// inverse transform lands in, plus the big normalization's own carry.
+/// inverse transform lands in, plus the larger of the inverse transform's and
+/// the big normalization's own scratch.
 #[doc(hidden)]
 pub fn vec_znx_idft_normalize_consume_tmp_bytes_derived<BE>(module: &Module<BE>, _res_size: usize, a_size: usize) -> usize
 where
     BE: HalVecZnxDftImpl,
 {
-    BE::scratch_aligned(BE::bytes_of_vec_znx_big(module.n(), 1, a_size)) + BE::vec_znx_big_normalize_tmp_bytes(module)
+    BE::scratch_aligned(BE::bytes_of_vec_znx_big(module.n(), 1, a_size))
+        + BE::vec_znx_idft_apply_tmp_bytes(module).max(BE::vec_znx_big_normalize_tmp_bytes(module))
 }
 
 /// `res = normalize(idft(a) + addend)`, clobbering `a`.
@@ -574,7 +577,7 @@ pub fn vec_znx_idft_normalize_consume_derived<BE>(
 {
     let a_size: usize = ZnxInfos::size(a);
     let (mut big, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_big_scratch(scratch.borrow(), ZnxInfos::n(a), 1, a_size);
-    BE::vec_znx_idft_apply_tmpa(module, &mut big, 0, a, a_col);
+    BE::vec_znx_idft_apply(module, &mut big, 0, &vec_znx_dft_backend_ref_from_mut(a), a_col, &mut scratch);
     if let Some((add, add_col)) = addend {
         BE::vec_znx_big_add_small_assign(module, &mut big, 0, add, add_col);
     }

@@ -1,7 +1,8 @@
 use poulpy_hal::{
     api::{
         ModuleN, SvpApplyDftToDftAssign, VecZnxAddScalarAssign, VecZnxBigAddAssign, VecZnxBigBytesOf, VecZnxBigFromSmall,
-        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxSubAssign,
+        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply,
+        VecZnxIdftApplyTmpBytes, VecZnxSubAssign,
     },
     layouts::{
         Backend, HostBackend, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendRef, ScratchArena, Stats, ZnxZero,
@@ -53,7 +54,8 @@ where
         + VecZnxBigFromSmall<BE>
         + VecZnxDftApply<BE>
         + SvpApplyDftToDftAssign<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigAddAssign<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,

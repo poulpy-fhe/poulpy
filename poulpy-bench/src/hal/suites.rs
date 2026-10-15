@@ -7,10 +7,10 @@ use poulpy_hal::{
         VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigNegate, VecZnxBigNegateAssign,
         VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign,
         VecZnxBigSubSmallA, VecZnxBigSubSmallB, VecZnxDftAdd, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftSub,
-        VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
-        VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub,
-        VecZnxLshTmpBytes, VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNegate,
-        VecZnxNegateAssign, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign,
+        VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume,
+        VecZnxIdftNormalizeConsumeTmpBytes, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes,
+        VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNegate, VecZnxNegateAssign,
+        VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign,
         VecZnxRotateAssignTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign, VecZnxRshSub, VecZnxRshTmpBytes, VecZnxSub,
         VecZnxSubAssign, VecZnxSubNegateAssign, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd,
         VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
@@ -70,7 +70,7 @@ where
 
 // ── vec_znx_dft ──────────────────────────────────────────────────────────────
 
-pub fn vec_znx_dft_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> [BenchOp<M, HalSweepParms>; 9]
+pub fn vec_znx_dft_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> [BenchOp<M, HalSweepParms>; 8]
 where
     Module<B>: VecZnxIdftNormalizeConsume<B>
         + VecZnxIdftNormalizeConsumeTmpBytes
@@ -84,7 +84,6 @@ where
         + VecZnxIdftApplyTmpBytes
         + VecZnxIdftNormalizeConsume<B>
         + VecZnxIdftNormalizeConsumeTmpBytes
-        + VecZnxIdftApplyTmpA<B>
         + VecZnxDftSub<B>
         + VecZnxDftSubAssign<B>
         + VecZnxDftSubNegateAssign<B>,
@@ -110,11 +109,6 @@ where
             layer: "hal",
             name: "vec_znx_idft_apply",
             runner: vec_znx_dft::runner_vec_znx_idft_apply::<B, M>,
-        },
-        BenchOp {
-            layer: "hal",
-            name: "vec_znx_idft_apply_tmpa",
-            runner: vec_znx_dft::runner_vec_znx_idft_apply_tmpa::<B, M>,
         },
         BenchOp {
             layer: "hal",
@@ -622,7 +616,6 @@ where
         + VecZnxIdftApplyTmpBytes
         + VecZnxIdftNormalizeConsume<B>
         + VecZnxIdftNormalizeConsumeTmpBytes
-        + VecZnxIdftApplyTmpA<B>
         + VecZnxDftSub<B>
         + VecZnxDftSubAssign<B>
         + VecZnxDftSubNegateAssign<B>
@@ -775,7 +768,6 @@ where
         + VecZnxIdftApplyTmpBytes
         + VecZnxIdftNormalizeConsume<B>
         + VecZnxIdftNormalizeConsumeTmpBytes
-        + VecZnxIdftApplyTmpA<B>
         + VecZnxDftSub<B>
         + VecZnxDftSubAssign<B>
         + VecZnxDftSubNegateAssign<B>
@@ -882,7 +874,6 @@ where
         + VecZnxIdftApplyTmpBytes
         + VecZnxIdftNormalizeConsume<B>
         + VecZnxIdftNormalizeConsumeTmpBytes
-        + VecZnxIdftApplyTmpA<B>
         + VecZnxDftSub<B>
         + VecZnxDftSubAssign<B>
         + VecZnxDftSubNegateAssign<B>

@@ -15,8 +15,8 @@ use poulpy_hal::{
         VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromSmall,
         VecZnxBigNormalize, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism,
         VecZnxDftAutomorphismAddWithPlanTmpBytes, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply,
-        VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
-        VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
+        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes, VecZnxNormalizeAssign,
+        VecZnxNormalizeTmpBytes,
     },
     layouts::{Backend, GaloisElement, PrepareHint, ScratchArena},
 };
@@ -99,7 +99,8 @@ where
     // then rotates that accumulator in place (both operands therefore use res).
     let fallback_work = inner_dft
         .max(module.glwe_automorphism_tmp_bytes(res, res, key))
-        .max(module.vec_znx_normalize_tmp_bytes());
+        .max(module.vec_znx_normalize_tmp_bytes())
+        .max(module.vec_znx_idft_apply_tmp_bytes());
     let fallback_path = prod_dft + prod_col_big + fallback_work;
     let lazy_dft_rot = rot_dft + lazy_dft;
     let lazy_dft_path = prod_dft + lazy_acc_dft + inner_dft + lazy_dft_rot + lazy_acc_big;
@@ -229,7 +230,6 @@ pub fn glwe_eval_linear_transformation_into_reference<BE, M, R, P, H>(
         + VecZnxDftCopy<BE>
         + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>
-        + VecZnxIdftApplyTmpA<BE>
         + VecZnxIdftApplyTmpBytes
         + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes

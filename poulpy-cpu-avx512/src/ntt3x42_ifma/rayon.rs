@@ -668,45 +668,6 @@ where
         NTT3x42Ifma::<R>::vec_znx_idft_apply(base_module(module), &mut res, res_col, &a, a_col, &mut scratch)
     }
 
-    #[inline(always)]
-    fn vec_znx_idft_apply_tmpa(
-        module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
-        res_col: usize,
-        a: &mut VecZnxDftBackendMut<'_, Self>,
-        a_col: usize,
-    ) {
-        poulpy_hal::layouts::check_degree::<NTT3x42Ifma<R>>(module.n(), res.n());
-        assert_eq!(
-            a.n(),
-            res.n(),
-            "vec_znx_idft_apply_tmpa: a.n():{} != res.n():{}",
-            a.n(),
-            res.n()
-        );
-        assert!(res_col < res.cols(), "result column out of range");
-        assert!(a_col < a.cols(), "operand column out of range");
-        if parallel_limb_tasks(res.size()) {
-            let n = res.n();
-            let res_cols = res.cols();
-            let min_size = res.size().min(a.size());
-            let a_cols = a.cols();
-            let src = cast_slice::<_, u64>(a.data_mut());
-            res.raw_mut().par_chunks_mut(n * res_cols).enumerate().for_each_init(
-                || vec![0u64; 3 * n],
-                |scratch, (j, group)| {
-                    let dst = &mut group[n * res_col..][..n];
-                    let src = (j < min_size).then(|| &src[2 * n * (j * a_cols + a_col)..][..2 * n]);
-                    super::vec_znx_dft::vec_znx_idft_apply_tmpa_limb_ifma(base_module(module), n, dst, src, scratch);
-                },
-            );
-            return;
-        }
-        let mut res = base_big_mut::<R>(res);
-        let mut a = base_dft_mut::<R>(a);
-        NTT3x42Ifma::<R>::vec_znx_idft_apply_tmpa(base_module(module), &mut res, res_col, &mut a, a_col)
-    }
-
     fn vec_znx_dft_add(
         _module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,

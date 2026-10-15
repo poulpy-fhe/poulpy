@@ -2,7 +2,7 @@ use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{
         ModuleN, SvpApplyDftToDftAssign, VecZnxBigAddAssign, VecZnxBigBytesOf, VecZnxBigFromSmall, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxSubAssign,
+        VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxSubAssign,
     },
     layouts::{Backend, HostBackend, HostDataMut, Module, ScratchArena, Stats},
 };
@@ -37,7 +37,8 @@ where
         + VecZnxBigFromSmall<BE>
         + VecZnxDftApply<BE>
         + SvpApplyDftToDftAssign<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigAddAssign<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
@@ -76,7 +77,8 @@ where
         + VecZnxBigFromSmall<BE>
         + VecZnxDftApply<BE>
         + SvpApplyDftToDftAssign<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigAddAssign<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
@@ -119,7 +121,13 @@ where
 pub(crate) fn glwe_noise_body_tmp_bytes<M, BE, A>(module: &M, infos: &A) -> usize
 where
     BE: Backend,
-    M: GLWEBytesOf<BE> + GLWENormalize<BE> + ModuleN + VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
+    M: GLWEBytesOf<BE>
+        + GLWENormalize<BE>
+        + ModuleN
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxIdftApplyTmpBytes,
     A: GLWEInfos,
 {
     let lvl_0: usize = module.glwe_plaintext_bytes_of_from_infos(infos);

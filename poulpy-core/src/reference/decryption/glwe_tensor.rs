@@ -1,7 +1,8 @@
 use poulpy_hal::{
     api::{
         ModuleN, SvpApplyDftToDftAssign, SvpPPolBytesOf, SvpPPolCopy, VecZnxBigAddAssign, VecZnxBigBytesOf, VecZnxBigFromSmall,
-        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApplyTmpA,
+        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply,
+        VecZnxIdftApplyTmpBytes,
     },
     layouts::{Backend, Data, ScratchArena},
 };
@@ -25,6 +26,7 @@ where
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes
+        + VecZnxIdftApplyTmpBytes
         + SvpPPolBytesOf
         + GLWESecretPreparedFactory<BE>,
     A: GLWEInfos,
@@ -52,7 +54,8 @@ pub fn glwe_tensor_decrypt_reference<M, BE: Backend, R: Data, P: Data, S0: Data,
         + VecZnxBigFromSmall<BE>
         + VecZnxDftApply<BE>
         + SvpApplyDftToDftAssign<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigAddAssign<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes

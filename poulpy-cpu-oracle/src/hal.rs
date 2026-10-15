@@ -614,18 +614,6 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxDftImpl for Oracle<F, R> {
         map_poly(res, res_col, a, a_col, |r, x| ring::inverse(module, r, x));
     }
 
-    fn vec_znx_idft_apply_tmpa(
-        module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
-        res_col: usize,
-        a: &mut VecZnxDftBackendMut<'_, Self>,
-        a_col: usize,
-    ) {
-        assert_dense(res, "vec_znx_idft_apply_tmpa");
-        assert_eq!(res.n(), a.n());
-        map_poly(res, res_col, a, a_col, |r, x| ring::inverse(module, r, x));
-    }
-
     fn vec_znx_dft_add(
         _module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,

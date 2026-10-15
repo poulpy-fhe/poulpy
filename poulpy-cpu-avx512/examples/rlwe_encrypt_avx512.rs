@@ -5,6 +5,7 @@ use poulpy_cpu_portable::layouts::SvpPPolToBackendRef;
 use poulpy_cpu_portable::layouts::VecZnxBigToBackendMut;
 use poulpy_cpu_portable::layouts::VecZnxBigToBackendRef;
 use poulpy_cpu_portable::layouts::VecZnxDftToBackendMut;
+use poulpy_cpu_portable::layouts::VecZnxDftToBackendRef;
 use poulpy_hal::AlignedBuf;
 
 #[cfg(all(feature = "enable-avx512f", target_arch = "x86_64", target_feature = "avx512f"))]
@@ -16,7 +17,7 @@ use poulpy_hal::{
     api::{
         ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare, VecZnxBigAddSmallAssign,
         VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallNegateAssign, VecZnxDftAlloc,
-        VecZnxDftApply, VecZnxFillUniformSource, VecZnxIdftApplyTmpA, VecZnxNormalizeAssign,
+        VecZnxDftApply, VecZnxFillUniformSource, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalizeAssign,
     },
     layouts::{
         Module, PrepareHint, ScalarZnx, ScalarZnxToBackendRef, ScratchOwned, VecZnx, VecZnxBigOwned, VecZnxDftOwned,
@@ -36,7 +37,11 @@ fn main() {
     let noise = Noise::ENCRYPTION;
     let module = Module::<BackendImpl>::new(n as u64);
 
-    let mut scratch = ScratchOwned::<BackendImpl>::alloc(module.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch = ScratchOwned::<BackendImpl>::alloc(
+        module
+            .vec_znx_big_normalize_tmp_bytes()
+            .max(module.vec_znx_idft_apply_tmp_bytes()),
+    );
 
     let seed: [u8; 32] = [0; 32];
     let mut source: Source = Source::new(seed);
@@ -86,11 +91,15 @@ fn main() {
         0,                             // Selects the first column of s_dft
     );
 
-    // Alias scratch space (VecZnxDft<B> is always at least as big as VecZnxBig<B>)
-
     // BIG(ct[1] * s) <- IDFT(DFT(ct[1] * s)) (not normalized)
     let mut buf_big: VecZnxBigOwned<BackendImpl> = module.vec_znx_big_alloc(module.n(), 1, ct_size);
-    module.vec_znx_idft_apply_tmpa(&mut buf_big.to_backend_mut(), 0, &mut buf_dft.to_backend_mut(), 0);
+    module.vec_znx_idft_apply(
+        &mut buf_big.to_backend_mut(),
+        0,
+        &buf_dft.to_backend_ref(),
+        0,
+        &mut scratch.borrow(),
+    );
 
     // Creates a plaintext: VecZnx with 1 column
     let mut m = module.vec_znx_alloc(
@@ -158,7 +167,13 @@ fn main() {
     );
 
     // BIG(c1 * s) = IDFT(DFT(c1 * s))
-    module.vec_znx_idft_apply_tmpa(&mut buf_big.to_backend_mut(), 0, &mut buf_dft.to_backend_mut(), 0);
+    module.vec_znx_idft_apply(
+        &mut buf_big.to_backend_mut(),
+        0,
+        &buf_dft.to_backend_ref(),
+        0,
+        &mut scratch.borrow(),
+    );
 
     // BIG(c1 * s) + ct[0]
     module.vec_znx_big_add_small_assign(

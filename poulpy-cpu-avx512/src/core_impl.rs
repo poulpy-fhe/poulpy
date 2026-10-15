@@ -32,14 +32,14 @@ use poulpy_hal::layouts::{DataViewMut, VecZnxDft};
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApplyTmpA,
+        VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
         VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
         VecZnxSubAssign,
     },
     layouts::{
         Backend, CnvPVecLBackendRef, CnvPVecLToBackendRef, CnvPVecRBackendRef, CnvPVecRToBackendRef, Module, PrepareHint, Ring,
         ScratchArena, VecZnxBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
-        VecZnxDftToBackendRef, VmpPMatBackendRef,
+        VecZnxDftToBackendRef, VmpPMatBackendRef, vec_znx_dft_backend_ref_from_mut,
     },
 };
 
@@ -59,9 +59,12 @@ impl_gglwe_product_digits_strided_reference!(FFT64CIAvx512Rayon);
 trait RankOneTensorDft: Backend {
     fn tensor_finish_tmp_bytes(module: &Module<Self>, n: usize, size: usize) -> usize
     where
-        Module<Self>: VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
+        Module<Self>: VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes + VecZnxIdftApplyTmpBytes,
     {
-        module.bytes_of_vec_znx_big(n, 1, size) + module.vec_znx_big_normalize_tmp_bytes()
+        module.bytes_of_vec_znx_big(n, 1, size)
+            + module
+                .vec_znx_big_normalize_tmp_bytes()
+                .max(module.vec_znx_idft_apply_tmp_bytes())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -77,10 +80,10 @@ trait RankOneTensorDft: Backend {
         a_base2k: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Module<Self>: VecZnxIdftApplyTmpA<Self> + VecZnxBigNormalize<Self>,
+        Module<Self>: VecZnxIdftApply<Self> + VecZnxIdftApplyTmpBytes + VecZnxBigNormalize<Self>,
     {
         let (mut big, mut scratch) = scratch.borrow().take_vec_znx_big_scratch(a.n(), 1, a.size());
-        module.vec_znx_idft_apply_tmpa(&mut big, 0, a, a_col);
+        module.vec_znx_idft_apply(&mut big, 0, &vec_znx_dft_backend_ref_from_mut(a), a_col, &mut scratch);
         module.vec_znx_big_normalize(
             res,
             res_base2k,
@@ -403,7 +406,8 @@ fn rank_one_tensor_work_bytes<BE: RankOneTensorDft>(
     b_size: usize,
 ) -> usize
 where
-    Module<BE>: VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes + VecZnxNormalizeTmpBytes,
+    Module<BE>:
+        VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes + VecZnxIdftApplyTmpBytes + VecZnxNormalizeTmpBytes,
 {
     let kernel = BE::rank_one_tensor_dft_tmp_bytes(dft_size, a_size, b_size);
     let normalize = BE::bytes_of_vec_znx(n, 1, res_size)
@@ -420,6 +424,7 @@ where
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes
+        + VecZnxIdftApplyTmpBytes
         + VecZnxNormalizeTmpBytes
         + GLWENormalize<BE>,
     R: GLWEInfos,
@@ -452,6 +457,7 @@ where
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes
+        + VecZnxIdftApplyTmpBytes
         + VecZnxNormalizeTmpBytes
         + GLWENormalize<BE>,
     R: GLWEInfos,
@@ -485,7 +491,8 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
     Module<BE>: ModuleN
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxCopy<BE>
@@ -597,7 +604,8 @@ fn rank_one_tensor_apply<BE, R, A, B>(
         + Convolution<BE>
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxCopy<BE>
@@ -665,7 +673,8 @@ fn rank_one_tensor_square<BE, R, A>(
         + Convolution<BE>
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxCopy<BE>

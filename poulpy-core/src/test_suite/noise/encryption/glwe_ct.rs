@@ -3,7 +3,8 @@ use poulpy_hal::{
     api::{
         ScalarZnxAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDft, SvpPPolAlloc, SvpPrepare,
         VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
-        VecZnxDftAlloc, VecZnxDftBytesOf, VecZnxDftZero, VecZnxFillUniformSource, VecZnxIdftApplyTmpA, VmpApplyDftToDftTmpBytes,
+        VecZnxDftAlloc, VecZnxDftBytesOf, VecZnxDftZero, VecZnxFillUniformSource, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
+        VmpApplyDftToDftTmpBytes,
     },
     layouts::{
         Module, PrepareHint, ReaderFrom, Ring, ScratchOwned, SvpPPolToBackendMut, SvpPPolToBackendRef, ToOwnedDeep,
@@ -798,7 +799,8 @@ where
         + VmpApplyDftToDftTmpBytes
         + VecZnxDftZero<BE>
         + VecZnxDftAddAssign<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigAlloc<BE>
         + VecZnxBigAddNoise<BE>
         + VecZnxBigAddSmallAssign<BE>
@@ -839,7 +841,8 @@ where
                     .max(module.glwe_public_key_generate_tmp_bytes(&pk_infos))
                     .max(module.glwe_public_key_prepare_tmp_bytes(&pk_infos))
                     .max(module.glwe_prepare_tmp_bytes(&pk_infos))
-                    .max(module.vec_znx_big_normalize_tmp_bytes()),
+                    .max(module.vec_znx_big_normalize_tmp_bytes())
+                    .max(module.vec_znx_idft_apply_tmp_bytes()),
             );
 
             let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&infos);
@@ -927,7 +930,7 @@ where
                     );
                     module.vec_znx_dft_add_assign(&mut acc.to_backend_mut(), 0, &prod.to_backend_ref(), 0);
                 }
-                module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut acc.to_backend_mut(), 0);
+                module.vec_znx_idft_apply(&mut big.to_backend_mut(), 0, &acc.to_backend_ref(), 0, &mut scratch.borrow());
                 module.vec_znx_big_add_noise(
                     base2k,
                     sample_k,

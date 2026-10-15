@@ -12,8 +12,8 @@ use anyhow::Result;
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, VecZnxAddAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
-        VecZnxCopy, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxNegate, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
-        VecZnxSubAssign,
+        VecZnxCopy, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNegate, VecZnxNormalizeAssign,
+        VecZnxNormalizeTmpBytes, VecZnxSubAssign,
     },
     layouts::{Backend, Module, ScratchArena},
 };
@@ -32,7 +32,8 @@ pub trait GiantStepTensorBounds<BE: Backend>:
     + CnvPVecBytesOf
     + VecZnxDftBytesOf
     + VecZnxBigBytesOf
-    + VecZnxIdftApplyTmpA<BE>
+    + VecZnxIdftApply<BE>
+    + VecZnxIdftApplyTmpBytes
     + VecZnxBigNormalize<BE>
     + Convolution<BE>
     + VecZnxSubAssign<BE>
@@ -54,7 +55,8 @@ impl<BE: Backend, M> GiantStepTensorBounds<BE> for M where
         + CnvPVecBytesOf
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + Convolution<BE>
         + VecZnxSubAssign<BE>

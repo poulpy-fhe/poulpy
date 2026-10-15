@@ -1349,49 +1349,6 @@ unsafe impl HalVecZnxDftImpl for $rayon {
         });
     }
 
-    fn vec_znx_idft_apply_tmpa(
-        module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
-        res_col: usize,
-        a: &mut VecZnxDftBackendMut<'_, Self>,
-        a_col: usize,
-    ) {
-        $crate::__private::poulpy_cpu_portable::kernels::fft64::vec_znx_dft::check_operand(res.n(), res, res_col);
-        $crate::__private::poulpy_cpu_portable::kernels::fft64::vec_znx_dft::check_operand(res.n(), a, a_col);
-        if !$crate::parallel_limb_tasks(res.size()) {
-            return <$base as HalVecZnxDftImpl>::vec_znx_idft_apply_tmpa(
-                base_module(module),
-                &mut base_big_mut(res),
-                res_col,
-                &mut base_dft_mut(a),
-                a_col,
-            );
-        }
-
-        let n = res.n();
-        $crate::__private::poulpy_hal::layouts::check_degree::<Self>(module.n(), n);
-        let res_cols = res.cols();
-        let a_cols = a.cols();
-        let min_size = res.size().min(a.size());
-        let active_words = min_size * n * res_cols;
-        let (res_active, res_zero) = res.raw_mut().split_at_mut(active_words);
-        let plan = module.get_fft_plan(n);
-        let divisor = plan.divisor();
-
-        res_active
-            .par_chunks_mut(n * res_cols)
-            .zip(a.raw_mut().par_chunks_mut(n * a_cols))
-            .for_each(|(res_group, a_group)| {
-                let dst = &mut res_group[n * res_col..][..n];
-                let src = &mut a_group[n * a_col..][..n];
-                plan.inverse::<$base>(src);
-                <$base as ReimArith>::reim_to_znx(dst, divisor, src);
-            });
-        res_zero
-            .par_chunks_mut(n * res_cols)
-            .for_each(|group| <$base as ZnxZero>::znx_zero(&mut group[n * res_col..][..n]));
-    }
-
     fn vec_znx_dft_add(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,

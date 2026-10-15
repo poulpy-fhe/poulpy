@@ -297,20 +297,6 @@ pub(crate) fn vec_znx_idft_apply<R: Ring>(
     }
 }
 
-pub(crate) fn vec_znx_idft_apply_tmpa<R: Ring>(
-    module: &Module<NTT4x30Avx<R>>,
-    res: &mut VecZnxBigBackendMut<'_, NTT4x30Avx<R>>,
-    res_col: usize,
-    a: &mut VecZnxDftBackendMut<'_, NTT4x30Avx<R>>,
-    a_col: usize,
-) where
-    NTT4x30Avx<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
-{
-    let mut tmp = vec![0u64; 4 * a.n()];
-    let a_ref = poulpy_hal::layouts::vec_znx_dft_backend_ref_from_mut(a);
-    vec_znx_idft_apply(module, res, res_col, &a_ref, a_col, &mut tmp);
-}
-
 pub(crate) fn idft_compact_in_place<R: Ring>(
     module: &Module<NTT4x30Avx<R>>,
     a: &mut VecZnxDftBackendMut<'_, NTT4x30Avx<R>>,

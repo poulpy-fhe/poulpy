@@ -73,15 +73,6 @@ macro_rules! __hal_impl_vec_znx_dft_common {
             <Self as $defaults>::vec_znx_idft_apply_default(module, res, res_col, a, a_col, &mut scratch);
         }
 
-        fn vec_znx_idft_apply_tmpa(
-            module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
-            res_col: usize,
-            a: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
-            a_col: usize,
-        ) {
-            <Self as $defaults>::vec_znx_idft_apply_tmpa_default(module, res, res_col, a, a_col)
-        }
         fn vec_znx_dft_add(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,

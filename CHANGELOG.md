@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### `poulpy-hal`
+
+- **Breaking:** `VecZnxIdftApplyTmpA`, `HalVecZnxDftImpl::vec_znx_idft_apply_tmpa` and `test_vec_znx_idft_apply_tmpa` are removed; callers use `vec_znx_idft_apply` with `vec_znx_idft_apply_tmp_bytes` of scratch, which also removes the per-call allocation of the AVX-512 NTT4x30 and IFMA backends ([#339](https://github.com/poulpy-fhe/poulpy/issues/339)), and the default `vec_znx_idft_normalize_consume_tmp_bytes` covers that scratch.
+
 ### CPU backends
 
 - Add `FFT64PortableRayon` and `NTT4x30PortableRayon`, the Rayon variants of the portable backends, with their conjugate-invariant aliases `FFT64CIPortableRayon` and `NTT4x30CIPortableRayon`.
@@ -40,18 +44,21 @@
   `vec_znx_dft_automorphism_add` wrote past the buffer for a result column past the last one, and the parallel `vec_znx_idft_apply` of the FFT64 Rayon backends read another limb for a source column past the last one.
   Every FFT64 DFT kernel now panics on an out-of-range column, also on vectors of no limb (#422).
 - `poulpy_cpu_portable::hal_defaults::take_host_typed` is public, and the SIMD backends use it in place of their own copies.
+- **Breaking:** the kernels of `vec_znx_idft_apply_tmpa` are removed with it: `vec_znx_idft_apply_tmpa_portable` and `ntt4x30_vec_znx_idft_apply_tmpa_portable` of `poulpy_cpu_portable::kernels`, and `PackedNtt4x30Base::idft_limb_tmpa` of `poulpy-cpu-rayon`.
 
 ### `poulpy-core`
 
 - **Breaking:** `GLWE`, `GLWEPlaintext` and `GLWECompressed` carry an optional, scheme-managed `GLWEPlaintextMeta` (`Scale`, `SlotsKind`, `log_sparsity`) through `GLWEPlaintextInfos` and `SetGLWEPlaintextInfos`, which also read and set each field; `SlotsKind` moves from `poulpy-ckks` and gains `Integer`.
 - **Breaking, format:** serialized `GLWE` and `GLWECompressed` carry their plaintext metadata.
 - `reference::keyswitching::glwe::gglwe_product_limbs` returns the `product_limbs` the reference key switch passes to `GGLWEProductDigitsStridedImpl`, so that backend overrides derive the same.
+- The scratch of GLWE encryption, decryption, plaintext multiplication, tensoring, relinearization, linear transformations and GGSW noise covers `vec_znx_idft_apply_tmp_bytes`.
 
 ### `poulpy-ckks`
 
 - **Breaking:** `CKKSMeta` is removed for the wrapped GLWE's `GLWEPlaintextMeta` (`Scale::Log(log_delta)`, `slots`, `log_sparsity`), taken by `set_meta`, `CKKSLayout::meta` and `CoeffsMeta::meta`; `CKKSInfos` extends the core traits, which the prelude re-exports with `SetK`, and `SetCKKSInfos` is blanket-implemented over them (`set_k`, `slots`, `log_sparsity`, `set_slots` and `set_log_sparsity` move there), and a plaintext is dense at its own degree, so `ckks_encrypt_sk` and `ckks_{add,sub,mul}_pt_vec*` derive its sparsity as `log2(N / n)` ([#342](https://github.com/poulpy-fhe/poulpy/issues/342)).
 - **Breaking:** the `impl_ckks_infos!` arms `inner_meta` and `self_meta` are renamed `ckks_inner` and `glwe_inner`.
 - `test_suite::parity::helpers`, `test_suite::parity::keys` and `test_suite::parity::layout` are public under `test-utils`, so downstream crates build parity tests from the same fixtures.
+- The scratch of the SHIP masking accumulation and mux-rotate covers `vec_znx_idft_apply_tmp_bytes`.
 
 ## [0.9.0] - 2026-10-08
 

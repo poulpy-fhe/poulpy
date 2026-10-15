@@ -205,36 +205,6 @@ pub fn vec_znx_idft_apply_portable<BE>(
     }
 }
 
-pub fn vec_znx_idft_apply_tmpa_portable<BE>(
-    plan: &FFT64Plan<f64, BE::Ring>,
-    res: &mut VecZnxBigBackendMut<'_, BE>,
-    res_col: usize,
-    a: &mut VecZnxDftBackendMut<'_, BE>,
-    a_col: usize,
-) where
-    BE: Backend<DftWord = f64, BigWord = i64, ZnxWord = i64> + ReimArith + Fft64RingArith + ZnxZero,
-    for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
-{
-    poulpy_hal::layouts::assert_dense(res, "vec_znx_idft_apply_tmpa");
-    assert_eq!(plan.fft().m() << 1, res.n());
-    check_operand(res.n(), res, res_col);
-    check_operand(res.n(), a, a_col);
-
-    let res_size = res.size();
-    let min_size: usize = res_size.min(a.size());
-
-    let divisor = BE::fft64_divisor(plan);
-
-    for j in 0..min_size {
-        BE::fft64_inverse(plan, a.at_mut(a_col, j));
-        BE::reim_to_znx(res.at_mut(res_col, j), divisor, a.at(a_col, j));
-    }
-
-    for j in min_size..res_size {
-        BE::znx_zero(res.at_mut(res_col, j));
-    }
-}
-
 // Kept as dormant internal code for the removed consume path.
 // It is intentionally retained because the in-place DFT -> big conversion
 // may still be useful as a future optimization, even though the current

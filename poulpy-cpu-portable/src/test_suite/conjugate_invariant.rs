@@ -227,7 +227,8 @@ macro_rules! conjugate_invariant_test_suite {
                             .vec_znx_automorphism_assign_tmp_bytes()
                             .max(module.vec_znx_big_automorphism_assign_tmp_bytes())
                             .max(module.svp_apply_dft_tmp_bytes(2))
-                            .max(module.vec_znx_dft_automorphism_add_with_plan_tmp_bytes(3, 3)),
+                            .max(module.vec_znx_dft_automorphism_add_with_plan_tmp_bytes(3, 3))
+                            .max(module.vec_znx_idft_apply_tmp_bytes()),
                     );
                     for p in [1, -1, 5, 17, 25, 29, -29, i64::MAX, i64::MIN + 1] {
                         module.vec_znx_automorphism(
@@ -245,7 +246,13 @@ macro_rules! conjugate_invariant_test_suite {
                         }
                         module.vec_znx_dft_apply(1, 0, &mut dft.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&a), 0);
                         module.vec_znx_dft_automorphism(p, &mut auto_dft.to_backend_mut(), 0, &dft.to_backend_ref(), 0);
-                        module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut auto_dft.to_backend_mut(), 0);
+                        module.vec_znx_idft_apply(
+                            &mut big.to_backend_mut(),
+                            0,
+                            &auto_dft.to_backend_ref(),
+                            0,
+                            &mut scratch.arena(),
+                        );
                         for limb in 0..3 {
                             for j in 0..n {
                                 assert_eq!(
@@ -279,7 +286,13 @@ macro_rules! conjugate_invariant_test_suite {
                             0,
                             &mut scratch.arena(),
                         );
-                        module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut auto_dft.to_backend_mut(), 0);
+                        module.vec_znx_idft_apply(
+                            &mut big.to_backend_mut(),
+                            0,
+                            &auto_dft.to_backend_ref(),
+                            0,
+                            &mut scratch.arena(),
+                        );
                         for limb in 0..2 {
                             let want = $crate::test_suite::conjugate_invariant::ambient_automorphism(a.at(0, limb), p);
                             for j in 0..n {
@@ -307,7 +320,13 @@ macro_rules! conjugate_invariant_test_suite {
                         0,
                         &mut scratch.arena(),
                     );
-                    module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut dft.to_backend_mut(), 0);
+                    module.vec_znx_idft_apply(
+                        &mut big.to_backend_mut(),
+                        0,
+                        &dft.to_backend_ref(),
+                        0,
+                        &mut scratch.arena(),
+                    );
                     for limb in 0..2 {
                         let want = $crate::test_suite::conjugate_invariant::ambient_product(a.at(0, limb), b.at(0, 0));
                         for j in 0..n {
@@ -367,7 +386,8 @@ macro_rules! conjugate_invariant_test_suite {
                 let mut scratch = ScratchOwned::<BE>::alloc(
                     module
                         .cnv_prepare_self_tmp_bytes(2, 2)
-                        .max(module.cnv_pairwise_apply_dft_tmp_bytes(0, 4, 2, 2)),
+                        .max(module.cnv_pairwise_apply_dft_tmp_bytes(0, 4, 2, 2))
+                        .max(module.vec_znx_idft_apply_tmp_bytes()),
                 );
                 module.cnv_prepare_self(
                     &mut left.to_backend_mut(),
@@ -405,7 +425,13 @@ macro_rules! conjugate_invariant_test_suite {
                             second,
                             &mut scratch.arena(),
                         );
-                        module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut dft.to_backend_mut(), 0);
+                        module.vec_znx_idft_apply(
+                            &mut big.to_backend_mut(),
+                            0,
+                            &dft.to_backend_ref(),
+                            0,
+                            &mut scratch.arena(),
+                        );
                         for limb in 0..4 {
                             for j in 0..n {
                                 assert_eq!(

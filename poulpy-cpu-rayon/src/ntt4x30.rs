@@ -48,9 +48,6 @@ pub trait PackedNtt4x30Base: PackedWord + HalVecZnxDftImpl {
     /// Inverse transform of the limb `src` into `dst`, with [`Self::idft_tmp_words`] words in `tmp`.
     fn idft_limb<E: TaskExecutor>(module: &Module<Self>, n: usize, dst: &mut [i128], src: &[u32], tmp: &mut [u64]);
 
-    /// Inverse transform of the limb `src` into `dst`, overwriting the limb.
-    fn idft_limb_tmpa<E: TaskExecutor>(module: &Module<Self>, n: usize, dst: &mut [i128], src: &mut [u32]);
-
     /// Inverse transform of the limb `slot` into coefficients that take its place.
     fn idft_limb_compact<E: TaskExecutor>(module: &Module<Self>, n: usize, slot: &mut [u32], tmp: &mut [u64]);
 
@@ -1310,44 +1307,6 @@ unsafe impl HalVecZnxDftImpl for $rayon
                 dst.fill(0);
             }
         });
-    }
-
-    fn vec_znx_idft_apply_tmpa(
-        module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
-        res_col: usize,
-        a: &mut VecZnxDftBackendMut<'_, Self>,
-        a_col: usize,
-    ) {
-        $crate::ntt4x30::check_packed_operand(res.n(), res, res_col);
-        $crate::ntt4x30::check_packed_operand(res.n(), a, a_col);
-        if !parallel_limb_tasks(res.size()) {
-            return <$base>::vec_znx_idft_apply_tmpa(
-                base_module(module),
-                &mut base_big_mut(res),
-                res_col,
-                &mut base_dft_mut(a),
-                a_col,
-            );
-        }
-
-        $crate::__private::poulpy_hal::layouts::check_degree::<$base>(module.n(), res.n());
-        let n = res.n();
-        let res_cols = res.cols();
-        let a_cols = a.cols();
-        let min_size = res.size().min(a.size());
-        let module = base_module(module);
-        let (res_active, res_zero) = res.raw_mut().split_at_mut(min_size * n * res_cols);
-        let a_data: &mut [u32] = cast_slice_mut(a.raw_mut());
-        res_active
-            .par_chunks_mut(n * res_cols)
-            .zip(a_data.par_chunks_mut(4 * n * a_cols))
-            .for_each(|(res_group, a_group)| {
-                <$base as $crate::ntt4x30::PackedNtt4x30Base>::idft_limb_tmpa::<RayonTaskExecutor>(module, n, &mut res_group[n * res_col..][..n], &mut a_group[4 * n * a_col..][..4 * n]);
-            });
-        res_zero
-            .par_chunks_mut(n * res_cols)
-            .for_each(|group| group[n * res_col..][..n].fill(0));
     }
 
     fn vec_znx_dft_add(
