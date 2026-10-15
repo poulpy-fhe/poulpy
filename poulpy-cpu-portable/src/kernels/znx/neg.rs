@@ -5,13 +5,13 @@ pub fn znx_negate_portable(res: &mut [i64], src: &[i64]) {
     }
 
     for i in 0..res.len() {
-        res[i] = -src[i]
+        res[i] = src[i].wrapping_neg()
     }
 }
 
 #[inline(always)]
 pub fn znx_negate_assign_portable(res: &mut [i64]) {
     for value in res {
-        *value = -*value
+        *value = value.wrapping_neg()
     }
 }

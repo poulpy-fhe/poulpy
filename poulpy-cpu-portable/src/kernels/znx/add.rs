@@ -7,7 +7,7 @@ pub fn znx_add_portable(res: &mut [i64], a: &[i64], b: &[i64]) {
 
     let n: usize = res.len();
     for i in 0..n {
-        res[i] = a[i] + b[i];
+        res[i] = a[i].wrapping_add(b[i]);
     }
 }
 
@@ -18,6 +18,6 @@ pub fn znx_add_assign_portable(res: &mut [i64], a: &[i64]) {
 
     let n: usize = res.len();
     for i in 0..n {
-        res[i] += a[i];
+        res[i] = res[i].wrapping_add(a[i]);
     }
 }

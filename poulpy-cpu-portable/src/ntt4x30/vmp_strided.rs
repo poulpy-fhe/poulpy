@@ -15,12 +15,12 @@ use super::packed::{DotState, ROW, SendPtr, gather_limb, stage_flush, stage_stor
 use super::vmp::{GROUP, STAGE_OUTPUT, STAGE_OUTPUTS, apply_tmp_words};
 
 /// Largest `dsize` the fused interleaved-digit product handles.
-pub(crate) const STRIDED_MAX_DSIZE: usize = 16;
+pub const STRIDED_MAX_DSIZE: usize = 16;
 
 /// Scratch space (in bytes) of the fused interleaved-digit product, per worker.
 ///
 /// Holds the input rows of one group of blocks for every digit, and the stage: the digits partition the input limbs.
-pub(crate) fn gglwe_product_digits_strided_tmp_bytes(a_cols: usize, a_size: usize) -> usize {
+pub fn gglwe_product_digits_strided_tmp_bytes(a_cols: usize, a_size: usize) -> usize {
     apply_tmp_words(a_size * a_cols) * size_of::<u32>()
 }
 
@@ -38,13 +38,9 @@ struct Digit {
     out_limbs: usize,
 }
 
-/// Interleaved-digit GGLWE product in one pass over the prepared matrix.
+/// Interleaved-digit GGLWE product in one pass over the prepared matrix, on one worker's scratch taken from `scratch`.
 ///
-/// Digit `di` gathers the input limbs congruent to `dsize - 1 - di` modulo `dsize` and reads the matrix `di` limbs ahead.
-/// Returns the residues of `gglwe_product_digits_strided_reference`.
-///
-/// `zero_prefix`, when given, is a number of leading input limbs the caller knows to be zero in every column.
-/// Those limbs are then not read, so they need not hold anything, and the scan for leading zero limbs is skipped.
+/// See [`gglwe_product_digits_strided_with`].
 pub(crate) fn gglwe_product_digits_strided<R: Ring, E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
     a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
@@ -53,6 +49,29 @@ pub(crate) fn gglwe_product_digits_strided<R: Ring, E: TaskExecutor>(
     pmat: &VmpPMatBackendRef<'_, NTT4x30Portable<R>>,
     zero_prefix: Option<usize>,
     scratch: &mut ScratchArena<'_, NTT4x30Portable<R>>,
+) {
+    let bytes = gglwe_product_digits_strided_tmp_bytes(a.cols(), a.size());
+    let (tmp, _) = take_host_typed::<NTT4x30Portable<R>, u32>(scratch.borrow(), bytes / size_of::<u32>());
+    gglwe_product_digits_strided_with::<R, E>(res, a, dsize, product_limbs, pmat, zero_prefix, tmp);
+}
+
+/// Interleaved-digit GGLWE product in one pass over the prepared matrix.
+///
+/// Digit `di` gathers the input limbs congruent to `dsize - 1 - di` modulo `dsize` and reads the matrix `di` limbs ahead.
+/// Returns the residues of `gglwe_product_digits_strided_reference`.
+///
+/// `zero_prefix`, when given, is a number of leading input limbs the caller knows to be zero in every column.
+/// Those limbs are then not read, so they need not hold anything, and the scan for leading zero limbs is skipped.
+///
+/// `tmp` holds [`gglwe_product_digits_strided_tmp_bytes`] bytes for each worker of `E`.
+pub fn gglwe_product_digits_strided_with<R: Ring, E: TaskExecutor>(
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
+    dsize: usize,
+    product_limbs: usize,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Portable<R>>,
+    zero_prefix: Option<usize>,
+    tmp: &mut [u32],
 ) {
     assert_eq!(res.n(), pmat.n());
     assert_eq!(a.n(), pmat.n());
@@ -66,8 +85,6 @@ pub(crate) fn gglwe_product_digits_strided<R: Ring, E: TaskExecutor>(
     let ncols = cols_out * key_size;
     let (a_size, res_size) = (a.size(), res.size());
 
-    let bytes = gglwe_product_digits_strided_tmp_bytes(a.cols(), a.size());
-    let (tmp, _) = take_host_typed::<NTT4x30Portable<R>, u32>(scratch.borrow(), bytes / size_of::<u32>());
     let res_u32: &mut [u32] = cast_slice_mut(res.raw_mut());
     let a_u32: &[u32] = cast_slice(a.raw());
     let pmat_u32: &[u32] = cast_slice(pmat.data());

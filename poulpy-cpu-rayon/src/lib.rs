@@ -2,7 +2,11 @@
 
 pub mod fft64;
 pub mod normalize;
+pub mod ntt4x30;
+mod portable;
 pub mod tuning;
+
+pub use portable::{FFT64CIPortableRayon, FFT64PortableRayon, NTT4x30CIPortableRayon, NTT4x30PortableRayon};
 
 /// Re-exports for the crate's macros. Not a stable API.
 #[doc(hidden)]

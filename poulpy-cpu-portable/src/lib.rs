@@ -38,7 +38,8 @@ pub mod ckks_encoding;
 #[cfg(feature = "enable-ckks")]
 mod ckks_impl;
 #[cfg(feature = "enable-ckks")]
-mod ckks_mod_up;
+#[doc(hidden)]
+pub mod ckks_mod_up;
 #[cfg(feature = "enable-ckks")]
 pub mod ckks_paco;
 #[cfg(feature = "enable-ckks")]
