@@ -9,6 +9,7 @@ use poulpy_cpu_portable::kernels::ntt4x30::{
     primes::{PrimeSet, Primes30},
     vec_znx_dft::{NttAutomorphismPlan, NttModuleHandle},
 };
+use poulpy_cpu_portable::ntt4x30::drivers::for_each_limb;
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::Ring;
 use poulpy_hal::layouts::{
@@ -111,18 +112,16 @@ where
     NTT4x30Avx512::<R>::ntt_dft_execute(module.get_ntt_table_for(n), dst);
 }
 
-pub(crate) fn dft_limb<R: Ring>(
-    module: &Module<NTT4x30Avx512<R>>,
-    n: usize,
-    dst: &mut [u32],
-    src: Option<&[i64]>,
-    tmp: &mut [u64],
-) where
+pub(crate) fn dft_limb<R: Ring>(module: &Module<NTT4x30Avx512<R>>, n: usize, dst: &mut [u32], src: Option<&[i64]>)
+where
     NTT4x30Avx512<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
 {
     if let Some(src) = src {
-        dft_limb_wide(module, n, tmp, src);
-        unsafe { pack_limb_q120(n, dst, tmp) };
+        // The q120 form takes twice the destination limb, and `vec_znx_dft_apply` has no scratch.
+        poulpy_cpu_portable::kernels::with_thread_buffer(4 * n, |tmp| {
+            dft_limb_wide(module, n, tmp, src);
+            unsafe { pack_limb_q120(n, dst, tmp) };
+        });
     } else {
         dst.fill(0);
     }
@@ -251,12 +250,11 @@ pub(crate) fn vec_znx_dft_apply<R: Ring>(
     let cols = res.cols();
     let res_size = res.size();
     let a_size = a.size();
-    let mut tmp = vec![0u64; 4 * n];
     let res_data: &mut [u32] = cast_slice_mut(res.data_mut());
     for limb in 0..res_size {
         let dst = packed_limb_mut(res_data, n, cols, res_col, limb);
         let src_limb = offset + limb * step;
-        dft_limb(module, n, dst, (src_limb < a_size).then(|| a.at(a_col, src_limb)), &mut tmp);
+        dft_limb(module, n, dst, (src_limb < a_size).then(|| a.at(a_col, src_limb)));
     }
 }
 
@@ -324,40 +322,6 @@ where
     NTT4x30Avx512::<R>::ntt_dft_execute(module.get_intt_table_for(n), tmp);
     let dst = unsafe { std::slice::from_raw_parts_mut(slot.as_mut_ptr() as *mut i128, n) };
     NTT4x30Avx512::<R>::ntt_to_znx128(dst, n, tmp);
-}
-
-#[derive(Clone, Copy)]
-struct SendPtr(*mut u32);
-
-unsafe impl Send for SendPtr {}
-unsafe impl Sync for SendPtr {}
-
-impl SendPtr {
-    fn get(self) -> *mut u32 {
-        self.0
-    }
-}
-
-/// Runs `task` on limb `0..count` of column `col` of `data`, as tasks of the executor `E`.
-fn for_each_limb<E: TaskExecutor>(
-    data: &mut [u32],
-    n: usize,
-    cols: usize,
-    col: usize,
-    count: usize,
-    task: impl Fn(usize, &mut [u32]) + Send + Sync,
-) {
-    if count == 0 {
-        return;
-    }
-    assert!(col < cols && data.len() >= 4 * n * cols * count);
-    let ptr = SendPtr(data.as_mut_ptr());
-    E::for_each(count, |limb| {
-        // Limbs are disjoint, one task each.
-        task(limb, unsafe {
-            std::slice::from_raw_parts_mut(ptr.get().add(4 * n * (limb * cols + col)), 4 * n)
-        })
-    });
 }
 
 pub(crate) fn vec_znx_dft_add<R: Ring, E: TaskExecutor>(

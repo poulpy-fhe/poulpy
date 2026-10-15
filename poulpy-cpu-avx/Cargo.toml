@@ -15,7 +15,7 @@ doctest = false
 [features]
 enable-bin-fhe = ["dep:poulpy-bin-fhe", "poulpy-cpu-portable/enable-bin-fhe"]
 enable-avx = []
-enable-rayon = ["enable-avx", "dep:rayon", "dep:poulpy-cpu-rayon"]
+enable-rayon = ["enable-avx", "dep:poulpy-cpu-rayon"]
 enable-ckks = ["dep:poulpy-ckks", "poulpy-cpu-portable/enable-ckks"]
 
 [dependencies]
@@ -34,7 +34,6 @@ byteorder = {workspace = true}
 once_cell = {workspace = true}
 rand_chacha = {workspace = true}
 paste = {workspace = true}
-rayon = {workspace = true, optional = true}
 
 [dev-dependencies]
 # Shared test helpers and portable comparison backends.

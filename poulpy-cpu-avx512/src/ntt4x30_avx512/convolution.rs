@@ -4,11 +4,10 @@ use core::arch::x86_64::{
     _mm256_storeu_si256, _mm512_add_epi64, _mm512_and_si512, _mm512_cvtepi64_epi32, _mm512_cvtepu32_epi64, _mm512_loadu_si512,
     _mm512_mul_epu32, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_srl_epi64, _mm512_srli_epi64, _mm512_sub_epi64,
 };
+use poulpy_cpu_portable::kernels::SendPtr;
 use poulpy_cpu_portable::kernels::ntt4x30::{mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle};
 use poulpy_cpu_portable::kernels::sparse_log_gap_portable;
 use poulpy_hal::execution::TaskExecutor;
-#[cfg(feature = "enable-rayon")]
-use poulpy_hal::layouts::CnvDftAccTerm;
 use poulpy_hal::layouts::Ring;
 use poulpy_hal::layouts::{
     Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, CrtWord, DataView, DataViewMut,
@@ -22,18 +21,6 @@ use super::{
 };
 
 const GROUP: usize = 8;
-
-#[derive(Clone, Copy)]
-struct SendPtr<T>(*mut T);
-
-unsafe impl<T> Send for SendPtr<T> {}
-unsafe impl<T> Sync for SendPtr<T> {}
-
-impl<T> SendPtr<T> {
-    fn get(self) -> *mut T {
-        self.0
-    }
-}
 
 #[inline(always)]
 fn packed_row_offset(size: usize, limb: usize, group: usize) -> usize {
@@ -542,43 +529,6 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft<BE, E: TaskExecutor>(
         unsafe { apply::<BE, E, false, false>(module, meta, cnv_offset, res, res_col, a, i, i, b, i, i) };
     } else {
         unsafe { apply::<BE, E, false, true>(module, meta, cnv_offset, res, res_col, a, i, j, b, i, j) };
-    }
-}
-
-/// `res[res_col]` receives the sum of `terms`: the first overwrites, the others accumulate.
-#[cfg(feature = "enable-rayon")]
-pub(crate) unsafe fn cnv_apply_dft_sum<BE, E: TaskExecutor>(
-    module: &Module<BE>,
-    meta: &BbcMeta<Primes30>,
-    cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
-    res_col: usize,
-    terms: &[CnvDftAccTerm<'_, BE>],
-) where
-    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
-    for<'a> BE::BufRef<'a>: HostDataRef,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-{
-    if terms.is_empty() {
-        for limb in 0..res.size() {
-            zero_res_limb(res, res_col, limb);
-        }
-        return;
-    }
-    for (index, term) in terms.iter().enumerate() {
-        if index == 0 {
-            unsafe {
-                apply::<BE, E, false, false>(
-                    module, meta, cnv_offset, res, res_col, &term.a, term.a_col, term.a_col, &term.b, term.b_col, term.b_col,
-                )
-            };
-        } else {
-            unsafe {
-                apply::<BE, E, true, false>(
-                    module, meta, cnv_offset, res, res_col, &term.a, term.a_col, term.a_col, &term.b, term.b_col, term.b_col,
-                )
-            };
-        }
     }
 }
 

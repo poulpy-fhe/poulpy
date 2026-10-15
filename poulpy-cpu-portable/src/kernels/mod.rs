@@ -30,15 +30,21 @@ pub fn sparse_log_gap_portable(module_n: usize, n: usize) -> usize {
     (module_n / n).trailing_zeros() as usize
 }
 
+/// A pointer shared by tasks that write distinct ranges behind it.
+///
+/// Shared by the CPU backends and their Rayon variants.
+#[doc(hidden)]
 #[derive(Clone, Copy)]
-pub(crate) struct SendPtr<T>(*mut T);
+pub struct SendPtr<T>(pub *mut T);
 
 impl<T> SendPtr<T> {
-    pub(crate) fn new(ptr: *mut T) -> Self {
+    #[inline(always)]
+    pub fn new(ptr: *mut T) -> Self {
         Self(ptr)
     }
 
-    pub(crate) fn get(self) -> *mut T {
+    #[inline(always)]
+    pub fn get(self) -> *mut T {
         self.0
     }
 }
@@ -46,6 +52,27 @@ impl<T> SendPtr<T> {
 // Dereferencing remains unsafe; users must enforce the pointee's aliasing rules.
 unsafe impl<T> Send for SendPtr<T> {}
 unsafe impl<T> Sync for SendPtr<T> {}
+
+std::thread_local! {
+    static THREAD_BUFFER: std::cell::RefCell<Vec<u64>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Runs `f` on `len` words of a buffer this thread keeps across calls, for kernels whose HAL entry point takes no scratch.
+///
+/// The buffer grows to the largest `len` asked on the thread and is never shrunk, and its words hold whatever an earlier call left.
+/// A call nested in `f` on the same thread gets a buffer of its own.
+#[doc(hidden)]
+pub fn with_thread_buffer<T>(len: usize, f: impl FnOnce(&mut [u64]) -> T) -> T {
+    THREAD_BUFFER.with(|cell| match cell.try_borrow_mut() {
+        Ok(mut buf) => {
+            if buf.len() < len {
+                buf.resize(len, 0);
+            }
+            f(&mut buf[..len])
+        }
+        Err(_) => f(&mut vec![0u64; len]),
+    })
+}
 
 /// Portable HAL primitives and CPU-specific normalization kernels.
 pub mod znx;

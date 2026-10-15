@@ -197,7 +197,8 @@ pub(crate) fn idft_compact_in_place<R: Ring>(
 }
 
 /// Runs `task` on limb `0..count` of column `col` of `data`, as tasks of the executor `E`.
-fn for_each_limb<E: TaskExecutor>(
+#[doc(hidden)]
+pub fn for_each_limb<E: TaskExecutor>(
     data: &mut [u32],
     n: usize,
     cols: usize,

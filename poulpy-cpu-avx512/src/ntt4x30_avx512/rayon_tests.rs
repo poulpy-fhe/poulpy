@@ -267,3 +267,21 @@ fn test_gglwe_product_digits_strided_scratch_workers() {
     let actual = BE::gglwe_product_digits_strided_tmp_bytes(&module, 28, 1, 28, dsize, 7, 1, 2, 28);
     assert_eq!(actual, metadata + workers * (one_worker - metadata));
 }
+
+// The element-wise ops split their limbs across tasks from degree `2^13` only, so they get their own degree.
+// Not bounded under emulation: the ops are element-wise and cheap at this degree.
+cross_backend_test_suite! {
+    mod vec_znx_dft_parallel_limbs,
+    backend_ref = crate::NTT4x30Avx512,
+    backend_test = crate::NTT4x30Avx512Rayon,
+    params = TestParams { size: 1 << 13, base2k: 50, n: 1 << 13 },
+    tests = {
+        test_vec_znx_dft_copy => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_copy,
+        test_vec_znx_dft_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add,
+        test_vec_znx_dft_add_assign => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add_assign,
+        test_vec_znx_dft_sub => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_sub,
+        test_vec_znx_dft_sub_assign => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_sub_assign,
+        test_vec_znx_dft_sub_negate_assign => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_sub_negate_assign,
+        test_vec_znx_dft_automorphism_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism_add,
+    }
+}

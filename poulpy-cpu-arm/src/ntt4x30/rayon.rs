@@ -18,21 +18,11 @@ macro_rules! impl_packed_base {
     ($ring:ty) => {
         #[allow(clippy::too_many_arguments)]
         impl PackedNtt4x30Base for NTT4x30Neon<$ring> {
-            fn dft_tmp_words(_n: usize) -> usize {
-                0
-            }
-
             fn idft_tmp_words(n: usize) -> usize {
                 vec_znx_dft::idft_tmp_words(n)
             }
 
-            fn dft_limb<E: TaskExecutor>(
-                module: &Module<Self>,
-                n: usize,
-                dst: &mut [u32],
-                src: Option<&[i64]>,
-                _tmp: &mut [u64],
-            ) {
+            fn dft_limb<E: TaskExecutor>(module: &Module<Self>, n: usize, dst: &mut [u32], src: Option<&[i64]>) {
                 vec_znx_dft::dft_limb::<$ring, E>(module, n, dst, src)
             }
 
@@ -196,6 +186,7 @@ macro_rules! impl_packed_base {
             }
 
             fn cnv_apply_dft<BE: PackedWord, E: TaskExecutor>(
+                _base: &Module<Self>,
                 module: &Module<BE>,
                 cnv_offset: usize,
                 res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -214,6 +205,7 @@ macro_rules! impl_packed_base {
             }
 
             fn cnv_apply_dft_add<BE: PackedWord, E: TaskExecutor>(
+                _base: &Module<Self>,
                 module: &Module<BE>,
                 cnv_offset: usize,
                 res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -232,6 +224,7 @@ macro_rules! impl_packed_base {
             }
 
             fn cnv_apply_dft_sum<BE: PackedWord, E: TaskExecutor>(
+                _base: &Module<Self>,
                 module: &Module<BE>,
                 cnv_offset: usize,
                 res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -247,6 +240,7 @@ macro_rules! impl_packed_base {
             }
 
             fn cnv_pairwise_apply_dft<BE: PackedWord, E: TaskExecutor>(
+                _base: &Module<Self>,
                 module: &Module<BE>,
                 cnv_offset: usize,
                 res: &mut VecZnxDftBackendMut<'_, BE>,

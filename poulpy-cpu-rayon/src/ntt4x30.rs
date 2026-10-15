@@ -10,7 +10,7 @@ use poulpy_hal::{
     layouts::{
         Backend, CnvDftAccTerm, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, CrtWord,
         HostDataMut, HostDataRef, Module, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxInfos,
-        VmpPMatBackendRef,
+        VmpPMatBackendRef, ZnxViewMut,
     },
     oep::HalVecZnxDftImpl,
 };
@@ -35,17 +35,16 @@ impl<BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>> PackedWord fo
 /// The operations that split their work take the executor as `E` and run serially on `SerialTaskExecutor`.
 /// The limb transforms may split one limb further, into its planes.
 /// The convolution drivers are generic over the backend `BE` that tags their operands, so that the wrapper passes its own layouts.
-/// The limb transforms that take `tmp` receive it per task, zero words when the backend transforms in place.
+/// The inverse limb transforms receive `tmp` per task, zero words when the backend transforms in place.
 #[allow(clippy::too_many_arguments)]
 pub trait PackedNtt4x30Base: PackedWord + HalVecZnxDftImpl {
-    /// `u64` words of scratch the forward transform of one limb of degree `n` needs.
-    fn dft_tmp_words(n: usize) -> usize;
-
     /// `u64` words of scratch the inverse transform of one limb of degree `n` needs.
     fn idft_tmp_words(n: usize) -> usize;
 
-    /// Forward transform of `src` into the limb `dst`, or zeros when `src` is `None`, with [`Self::dft_tmp_words`] words in `tmp`.
-    fn dft_limb<E: TaskExecutor>(module: &Module<Self>, n: usize, dst: &mut [u32], src: Option<&[i64]>, tmp: &mut [u64]);
+    /// Forward transform of `src` into the limb `dst`, or zeros when `src` is `None`.
+    ///
+    /// `vec_znx_dft_apply` carries no scratch, so a backend that needs working memory keeps its own.
+    fn dft_limb<E: TaskExecutor>(module: &Module<Self>, n: usize, dst: &mut [u32], src: Option<&[i64]>);
 
     /// Inverse transform of the limb `src` into `dst`, with [`Self::idft_tmp_words`] words in `tmp`.
     fn idft_limb<E: TaskExecutor>(module: &Module<Self>, n: usize, dst: &mut [i128], src: &[u32], tmp: &mut [u64]);
@@ -169,6 +168,7 @@ pub trait PackedNtt4x30Base: PackedWord + HalVecZnxDftImpl {
     fn cnv_apply_tmp_words(res_size: usize) -> usize;
 
     fn cnv_apply_dft<BE: PackedWord, E: TaskExecutor>(
+        base: &Module<Self>,
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -183,6 +183,7 @@ pub trait PackedNtt4x30Base: PackedWord + HalVecZnxDftImpl {
         for<'a> BE::BufMut<'a>: HostDataMut;
 
     fn cnv_apply_dft_add<BE: PackedWord, E: TaskExecutor>(
+        base: &Module<Self>,
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -196,7 +197,12 @@ pub trait PackedNtt4x30Base: PackedWord + HalVecZnxDftImpl {
         for<'a> BE::BufRef<'a>: HostDataRef,
         for<'a> BE::BufMut<'a>: HostDataMut;
 
+    /// `res[res_col] = sum of a_t (x) b_t` over `terms`.
+    ///
+    /// The default overwrites with the first term and adds the others, and zeroes the column when `terms` is empty.
+    /// A backend with a fused kernel overrides it.
     fn cnv_apply_dft_sum<BE: PackedWord, E: TaskExecutor>(
+        base: &Module<Self>,
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -205,9 +211,35 @@ pub trait PackedNtt4x30Base: PackedWord + HalVecZnxDftImpl {
         tmp: &mut [u32],
     ) where
         for<'a> BE::BufRef<'a>: HostDataRef,
-        for<'a> BE::BufMut<'a>: HostDataMut;
+        for<'a> BE::BufMut<'a>: HostDataMut,
+    {
+        let Some((first, rest)) = terms.split_first() else {
+            for limb in 0..res.size() {
+                bytemuck::cast_slice_mut::<_, u32>(res.at_mut(res_col, limb)).fill(0);
+            }
+            return;
+        };
+        Self::cnv_apply_dft::<BE, E>(
+            base,
+            module,
+            cnv_offset,
+            res,
+            res_col,
+            &first.a,
+            first.a_col,
+            &first.b,
+            first.b_col,
+            tmp,
+        );
+        for term in rest {
+            Self::cnv_apply_dft_add::<BE, E>(
+                base, module, cnv_offset, res, res_col, &term.a, term.a_col, &term.b, term.b_col, tmp,
+            );
+        }
+    }
 
     fn cnv_pairwise_apply_dft<BE: PackedWord, E: TaskExecutor>(
+        base: &Module<Self>,
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -228,6 +260,249 @@ macro_rules! rayon_forward_i128_big {
     ($base:ty, $method:ident($($arg:ident: $atype:ty),* $(,)?)) => {
         fn $method($($arg: $atype),*) {
             <$base as I128BigOps>::$method($($arg),*)
+        }
+    };
+}
+
+/// Implements [`PackedNtt4x30Base`] for `$backend<$ring>` on the drivers of an AVX NTT4x30 backend.
+///
+/// The AVX2 and AVX-512 backends share the driver names, so both use this macro.
+/// It is invoked where the modules `vec_znx_dft`, `convolution` and `vmp` of the backend are in scope.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! impl_packed_ntt4x30_base_avx {
+    ($backend:ident, $ring:ty) => {
+        #[allow(clippy::too_many_arguments)]
+        impl $crate::ntt4x30::PackedNtt4x30Base for $backend<$ring> {
+            fn idft_tmp_words(n: usize) -> usize {
+                4 * n
+            }
+
+            fn dft_limb<E: $crate::__private::poulpy_hal::execution::TaskExecutor>(module: &$crate::__private::poulpy_hal::layouts::Module<Self>, n: usize, dst: &mut [u32], src: Option<&[i64]>) {
+                vec_znx_dft::dft_limb(module, n, dst, src)
+            }
+
+            fn idft_limb<E: $crate::__private::poulpy_hal::execution::TaskExecutor>(module: &$crate::__private::poulpy_hal::layouts::Module<Self>, n: usize, dst: &mut [i128], src: &[u32], tmp: &mut [u64]) {
+                vec_znx_dft::idft_limb(module, n, dst, src, tmp)
+            }
+
+            fn idft_limb_compact<E: $crate::__private::poulpy_hal::execution::TaskExecutor>(module: &$crate::__private::poulpy_hal::layouts::Module<Self>, n: usize, slot: &mut [u32], tmp: &mut [u64]) {
+                vec_znx_dft::idft_compact_limb(module, n, slot, tmp)
+            }
+
+            fn vmp_apply_tmp_bytes(a_size: usize, b_rows: usize, b_cols_in: usize) -> usize {
+                vmp::vmp_apply_tmp_bytes_avx(a_size, b_rows, b_cols_in)
+            }
+
+            fn vmp_apply_dft_to_dft<E: $crate::__private::poulpy_hal::execution::TaskExecutor>(
+                module: &$crate::__private::poulpy_hal::layouts::Module<Self>,
+                res: &mut $crate::__private::poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+                a: &$crate::__private::poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+                pmat: &$crate::__private::poulpy_hal::layouts::VmpPMatBackendRef<'_, Self>,
+                limb_offset: usize,
+                tmp: &mut [u64],
+            ) {
+                vmp::vmp_apply_dft_to_dft_avx::<$ring, E>(module, res, a, pmat, limb_offset, tmp)
+            }
+
+            fn vmp_apply_dft_to_dft_add<E: $crate::__private::poulpy_hal::execution::TaskExecutor>(
+                module: &$crate::__private::poulpy_hal::layouts::Module<Self>,
+                res: &mut $crate::__private::poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+                a: &$crate::__private::poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+                pmat: &$crate::__private::poulpy_hal::layouts::VmpPMatBackendRef<'_, Self>,
+                limb_offset: usize,
+                tmp: &mut [u64],
+            ) {
+                vmp::vmp_apply_dft_to_dft_add_avx::<$ring, E>(module, res, a, pmat, limb_offset, tmp)
+            }
+
+            fn vec_znx_dft_add<E: $crate::__private::poulpy_hal::execution::TaskExecutor>(
+                res: &mut $crate::__private::poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+                res_col: usize,
+                a: &$crate::__private::poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+                a_col: usize,
+                b: &$crate::__private::poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+                b_col: usize,
+            ) {
+                vec_znx_dft::vec_znx_dft_add::<$ring, E>(res, res_col, a, a_col, b, b_col)
+            }
+
+            fn vec_znx_dft_add_assign<E: $crate::__private::poulpy_hal::execution::TaskExecutor>(
+                res: &mut $crate::__private::poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+                res_col: usize,
+                a: &$crate::__private::poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+                a_col: usize,
+            ) {
+                vec_znx_dft::vec_znx_dft_add_assign::<$ring, E>(res, res_col, a, a_col)
+            }
+
+            fn vec_znx_dft_sub<E: $crate::__private::poulpy_hal::execution::TaskExecutor>(
+                res: &mut $crate::__private::poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+                res_col: usize,
+                a: &$crate::__private::poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+                a_col: usize,
+                b: &$crate::__private::poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+                b_col: usize,
+            ) {
+                vec_znx_dft::vec_znx_dft_sub::<$ring, E>(res, res_col, a, a_col, b, b_col)
+            }
+
+            fn vec_znx_dft_sub_assign<E: $crate::__private::poulpy_hal::execution::TaskExecutor>(
+                res: &mut $crate::__private::poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+                res_col: usize,
+                a: &$crate::__private::poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+                a_col: usize,
+            ) {
+                vec_znx_dft::vec_znx_dft_sub_assign::<$ring, E>(res, res_col, a, a_col)
+            }
+
+            fn vec_znx_dft_sub_negate_assign<E: $crate::__private::poulpy_hal::execution::TaskExecutor>(
+                res: &mut $crate::__private::poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+                res_col: usize,
+                a: &$crate::__private::poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+                a_col: usize,
+            ) {
+                vec_znx_dft::vec_znx_dft_sub_negate_assign::<$ring, E>(res, res_col, a, a_col)
+            }
+
+            fn vec_znx_dft_copy<E: $crate::__private::poulpy_hal::execution::TaskExecutor>(
+                step: usize,
+                offset: usize,
+                res: &mut $crate::__private::poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+                res_col: usize,
+                a: &$crate::__private::poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+                a_col: usize,
+            ) {
+                vec_znx_dft::vec_znx_dft_copy::<$ring, E>(step, offset, res, res_col, a, a_col)
+            }
+
+            fn vec_znx_dft_automorphism_add<E: $crate::__private::poulpy_hal::execution::TaskExecutor>(
+                plan: &<Self as $crate::__private::poulpy_hal::oep::HalVecZnxDftImpl>::AutomorphismPlan,
+                res: &mut $crate::__private::poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+                res_col: usize,
+                a: &$crate::__private::poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+                a_col: usize,
+            ) {
+                vec_znx_dft::vec_znx_dft_automorphism_add::<$ring, E>(plan, res, res_col, a, a_col)
+            }
+
+            fn cnv_prepare_tmp_bytes(n: usize) -> usize {
+                convolution::cnv_prepare_tmp_bytes(n)
+            }
+
+            fn cnv_prepare_left<BE: $crate::ntt4x30::PackedWord, E: $crate::__private::poulpy_hal::execution::TaskExecutor>(
+                base: &$crate::__private::poulpy_hal::layouts::Module<Self>,
+                module: &$crate::__private::poulpy_hal::layouts::Module<BE>,
+                res: &mut $crate::__private::poulpy_hal::layouts::CnvPVecLBackendMut<'_, BE>,
+                a: &$crate::__private::poulpy_hal::layouts::VecZnxBackendRef<'_, BE>,
+                tmp: &mut [u64],
+            ) where
+                for<'a> BE::BufRef<'a>: $crate::__private::poulpy_hal::layouts::HostDataRef,
+                for<'a> BE::BufMut<'a>: $crate::__private::poulpy_hal::layouts::HostDataMut,
+            {
+                convolution::cnv_prepare_left::<BE, E>(module, res, a, tmp, |n, dst, src| {
+                    vec_znx_dft::dft_limb_wide(base, n, dst, src)
+                })
+            }
+
+            fn cnv_prepare_right<BE: $crate::ntt4x30::PackedWord, E: $crate::__private::poulpy_hal::execution::TaskExecutor>(
+                base: &$crate::__private::poulpy_hal::layouts::Module<Self>,
+                module: &$crate::__private::poulpy_hal::layouts::Module<BE>,
+                res: &mut $crate::__private::poulpy_hal::layouts::CnvPVecRBackendMut<'_, BE>,
+                a: &$crate::__private::poulpy_hal::layouts::VecZnxBackendRef<'_, BE>,
+                tmp: &mut [u64],
+            ) where
+                for<'a> BE::BufRef<'a>: $crate::__private::poulpy_hal::layouts::HostDataRef,
+                for<'a> BE::BufMut<'a>: $crate::__private::poulpy_hal::layouts::HostDataMut,
+            {
+                convolution::cnv_prepare_right::<BE, E>(module, res, a, tmp, |n, dst, src| {
+                    vec_znx_dft::dft_limb_wide(base, n, dst, src)
+                })
+            }
+
+            fn cnv_prepare_self<BE: $crate::ntt4x30::PackedWord, E: $crate::__private::poulpy_hal::execution::TaskExecutor>(
+                base: &$crate::__private::poulpy_hal::layouts::Module<Self>,
+                module: &$crate::__private::poulpy_hal::layouts::Module<BE>,
+                left: &mut $crate::__private::poulpy_hal::layouts::CnvPVecLBackendMut<'_, BE>,
+                right: &mut $crate::__private::poulpy_hal::layouts::CnvPVecRBackendMut<'_, BE>,
+                a: &$crate::__private::poulpy_hal::layouts::VecZnxBackendRef<'_, BE>,
+                tmp: &mut [u64],
+            ) where
+                for<'a> BE::BufRef<'a>: $crate::__private::poulpy_hal::layouts::HostDataRef,
+                for<'a> BE::BufMut<'a>: $crate::__private::poulpy_hal::layouts::HostDataMut,
+            {
+                convolution::cnv_prepare_self::<BE, E>(module, left, right, a, tmp, |n, dst, src| {
+                    vec_znx_dft::dft_limb_wide(base, n, dst, src)
+                })
+            }
+
+            fn cnv_apply_tmp_words(_res_size: usize) -> usize {
+                0
+            }
+
+            fn cnv_apply_dft<BE: $crate::ntt4x30::PackedWord, E: $crate::__private::poulpy_hal::execution::TaskExecutor>(
+                base: &$crate::__private::poulpy_hal::layouts::Module<Self>,
+                module: &$crate::__private::poulpy_hal::layouts::Module<BE>,
+                cnv_offset: usize,
+                res: &mut $crate::__private::poulpy_hal::layouts::VecZnxDftBackendMut<'_, BE>,
+                res_col: usize,
+                a: &$crate::__private::poulpy_hal::layouts::CnvPVecLBackendRef<'_, BE>,
+                a_col: usize,
+                b: &$crate::__private::poulpy_hal::layouts::CnvPVecRBackendRef<'_, BE>,
+                b_col: usize,
+                tmp: &mut [u32],
+            ) where
+                for<'a> BE::BufRef<'a>: $crate::__private::poulpy_hal::layouts::HostDataRef,
+                for<'a> BE::BufMut<'a>: $crate::__private::poulpy_hal::layouts::HostDataMut,
+            {
+                let _ = tmp;
+                unsafe {
+                    convolution::cnv_apply_dft::<BE, E>(module, <$crate::__private::poulpy_hal::layouts::Module<Self> as $crate::__private::poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttModuleHandle>::get_bbc_meta(base), cnv_offset, res, res_col, a, a_col, b, b_col)
+                }
+            }
+
+            fn cnv_apply_dft_add<BE: $crate::ntt4x30::PackedWord, E: $crate::__private::poulpy_hal::execution::TaskExecutor>(
+                base: &$crate::__private::poulpy_hal::layouts::Module<Self>,
+                module: &$crate::__private::poulpy_hal::layouts::Module<BE>,
+                cnv_offset: usize,
+                res: &mut $crate::__private::poulpy_hal::layouts::VecZnxDftBackendMut<'_, BE>,
+                res_col: usize,
+                a: &$crate::__private::poulpy_hal::layouts::CnvPVecLBackendRef<'_, BE>,
+                a_col: usize,
+                b: &$crate::__private::poulpy_hal::layouts::CnvPVecRBackendRef<'_, BE>,
+                b_col: usize,
+                tmp: &mut [u32],
+            ) where
+                for<'a> BE::BufRef<'a>: $crate::__private::poulpy_hal::layouts::HostDataRef,
+                for<'a> BE::BufMut<'a>: $crate::__private::poulpy_hal::layouts::HostDataMut,
+            {
+                let _ = tmp;
+                unsafe {
+                    convolution::cnv_apply_dft_add::<BE, E>(module, <$crate::__private::poulpy_hal::layouts::Module<Self> as $crate::__private::poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttModuleHandle>::get_bbc_meta(base), cnv_offset, res, res_col, a, a_col, b, b_col)
+                }
+            }
+
+
+            fn cnv_pairwise_apply_dft<BE: $crate::ntt4x30::PackedWord, E: $crate::__private::poulpy_hal::execution::TaskExecutor>(
+                base: &$crate::__private::poulpy_hal::layouts::Module<Self>,
+                module: &$crate::__private::poulpy_hal::layouts::Module<BE>,
+                cnv_offset: usize,
+                res: &mut $crate::__private::poulpy_hal::layouts::VecZnxDftBackendMut<'_, BE>,
+                res_col: usize,
+                a: &$crate::__private::poulpy_hal::layouts::CnvPVecLBackendRef<'_, BE>,
+                b: &$crate::__private::poulpy_hal::layouts::CnvPVecRBackendRef<'_, BE>,
+                i: usize,
+                j: usize,
+                tmp: &mut [u32],
+            ) where
+                for<'a> BE::BufRef<'a>: $crate::__private::poulpy_hal::layouts::HostDataRef,
+                for<'a> BE::BufMut<'a>: $crate::__private::poulpy_hal::layouts::HostDataMut,
+            {
+                let _ = tmp;
+                unsafe {
+                    convolution::cnv_pairwise_apply_dft::<BE, E>(module, <$crate::__private::poulpy_hal::layouts::Module<Self> as $crate::__private::poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttModuleHandle>::get_bbc_meta(base), cnv_offset, res, res_col, a, b, i, j)
+                }
+            }
         }
     };
 }
@@ -348,7 +623,7 @@ const LIMB_TASKS_MIN_N: usize = 1 << 13;
 
 #[inline]
 fn limb_tasks(n: usize, size: usize) -> bool {
-    n >= LIMB_TASKS_MIN_N && parallel_limb_tasks(size)
+    n >= LIMB_TASKS_MIN_N && parallel_limb_tasks(size) && !RayonTaskExecutor::should_serialize_inner()
 }
 
 /// Scratch (in bytes) of the convolution applies: one stage per worker.
@@ -909,7 +1184,7 @@ unsafe impl HalConvolutionImpl for $rayon
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let tmp = apply_scratch(res.size(), scratch);
-        <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_apply_dft::<Self, RayonTaskExecutor>(module, cnv_offset, res, res_col, a, a_col, b, b_col, tmp);
+        <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_apply_dft::<Self, RayonTaskExecutor>(base_module(module), module, cnv_offset, res, res_col, a, a_col, b, b_col, tmp);
     }
 
     fn cnv_apply_dft_add_tmp_bytes(
@@ -935,7 +1210,7 @@ unsafe impl HalConvolutionImpl for $rayon
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let tmp = apply_scratch(res.size(), scratch);
-        <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_apply_dft_add::<Self, RayonTaskExecutor>(module, cnv_offset, res, res_col, a, a_col, b, b_col, tmp);
+        <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_apply_dft_add::<Self, RayonTaskExecutor>(base_module(module), module, cnv_offset, res, res_col, a, a_col, b, b_col, tmp);
     }
 
     fn cnv_apply_dft_sum_tmp_bytes(
@@ -957,7 +1232,7 @@ unsafe impl HalConvolutionImpl for $rayon
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let tmp = apply_scratch(res.size(), scratch);
-        <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_apply_dft_sum::<Self, RayonTaskExecutor>(module, cnv_offset, res, res_col, terms, tmp);
+        <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_apply_dft_sum::<Self, RayonTaskExecutor>(base_module(module), module, cnv_offset, res, res_col, terms, tmp);
     }
 
     fn cnv_pairwise_apply_dft_tmp_bytes(
@@ -984,7 +1259,7 @@ unsafe impl HalConvolutionImpl for $rayon
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let tmp = apply_scratch(res.size(), scratch);
-        <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_pairwise_apply_dft::<Self, RayonTaskExecutor>(module, cnv_offset, res, res_col, a, b, i, j, tmp);
+        <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_pairwise_apply_dft::<Self, RayonTaskExecutor>(base_module(module), module, cnv_offset, res, res_col, a, b, i, j, tmp);
     }
 
     fn cnv_prepare_self_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
@@ -1163,7 +1438,6 @@ unsafe impl HalVecZnxDftImpl for $rayon
         let n = a.n();
         $crate::__private::poulpy_hal::layouts::check_degree::<$base>(module.n(), n);
         let cols = a.cols();
-        assert!(a_col < cols, "input column out of bounds");
         let size = a.size();
         let per_worker = <$base as $crate::ntt4x30::PackedNtt4x30Base>::idft_tmp_words(n);
         let (carry, arena) = $crate::take_scratch::<Self, i128>(scratch.borrow(), 3 * n);
@@ -1243,21 +1517,16 @@ unsafe impl HalVecZnxDftImpl for $rayon
         let cols = res.cols();
         let a_size = a.size();
         let base = base_module(module);
-        let tmp_words = <$base as $crate::ntt4x30::PackedNtt4x30Base>::dft_tmp_words(n);
         let data: &mut [u32] = cast_slice_mut(res.raw_mut());
-        data.par_chunks_mut(4 * n * cols).enumerate().for_each_init(
-            || vec![0u64; tmp_words],
-            |tmp, (limb, group)| {
-                let src_limb = offset + limb * step;
-                <$base as $crate::ntt4x30::PackedNtt4x30Base>::dft_limb::<RayonTaskExecutor>(
-                    base,
-                    n,
-                    &mut group[4 * n * res_col..][..4 * n],
-                    (src_limb < a_size).then(|| a.at(a_col, src_limb)),
-                    tmp,
-                );
-            },
-        );
+        data.par_chunks_mut(4 * n * cols).enumerate().for_each(|(limb, group)| {
+            let src_limb = offset + limb * step;
+            <$base as $crate::ntt4x30::PackedNtt4x30Base>::dft_limb::<RayonTaskExecutor>(
+                base,
+                n,
+                &mut group[4 * n * res_col..][..4 * n],
+                (src_limb < a_size).then(|| a.at(a_col, src_limb)),
+            );
+        });
     }
 
     fn vec_znx_idft_apply_tmp_bytes(module: &Module<Self>) -> usize {

@@ -3,11 +3,10 @@ use core::arch::x86_64::{
     __m256i, _mm256_add_epi64, _mm256_and_si256, _mm256_castsi256_si128, _mm256_cvtepu32_epi64, _mm256_extracti128_si256,
     _mm256_loadu_si256, _mm256_mul_epu32, _mm256_set1_epi64x, _mm256_setzero_si256, _mm256_srli_epi64, _mm256_storeu_si256,
 };
+use poulpy_cpu_portable::kernels::SendPtr;
 use poulpy_cpu_portable::kernels::ntt4x30::{mat_vec::BbcMeta, primes::Primes30};
 use poulpy_cpu_portable::kernels::sparse_log_gap_portable;
 use poulpy_hal::execution::TaskExecutor;
-#[cfg(feature = "enable-rayon")]
-use poulpy_hal::layouts::CnvDftAccTerm;
 use poulpy_hal::layouts::{
     Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, CrtWord, HostDataMut, HostDataRef,
     Module, VecZnxBackendRef, VecZnxDftBackendMut, ZnxView, ZnxViewMut, check_degree,
@@ -20,18 +19,6 @@ use super::{
     vec_znx_dft::pack_two_q120,
 };
 const GROUP: usize = 8;
-
-#[derive(Clone, Copy)]
-struct SendPtr<T>(*mut T);
-
-unsafe impl<T> Send for SendPtr<T> {}
-unsafe impl<T> Sync for SendPtr<T> {}
-
-impl<T> SendPtr<T> {
-    fn get(self) -> *mut T {
-        self.0
-    }
-}
 
 #[inline(always)]
 fn packed_row_offset(size: usize, limb: usize, group: usize) -> usize {
@@ -438,43 +425,6 @@ pub(crate) unsafe fn cnv_apply_dft_add<BE, E: TaskExecutor>(
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     unsafe { apply::<BE, E, true, false>(module, meta, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
-}
-
-#[cfg(feature = "enable-rayon")]
-pub(crate) unsafe fn cnv_apply_dft_sum_avx<BE, E: TaskExecutor>(
-    module: &Module<BE>,
-    meta: &BbcMeta<Primes30>,
-    cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
-    res_col: usize,
-    terms: &[CnvDftAccTerm<'_, BE>],
-) where
-    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
-    for<'a> BE::BufRef<'a>: HostDataRef,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-{
-    if terms.is_empty() {
-        for limb in 0..res.size() {
-            zero_res_limb(res, res_col, limb);
-        }
-        return;
-    }
-
-    for (index, term) in terms.iter().enumerate() {
-        if index == 0 {
-            unsafe {
-                apply::<BE, E, false, false>(
-                    module, meta, cnv_offset, res, res_col, &term.a, term.a_col, term.a_col, &term.b, term.b_col, term.b_col,
-                )
-            };
-        } else {
-            unsafe {
-                apply::<BE, E, true, false>(
-                    module, meta, cnv_offset, res, res_col, &term.a, term.a_col, term.a_col, &term.b, term.b_col, term.b_col,
-                )
-            };
-        }
-    }
 }
 
 #[allow(clippy::too_many_arguments)]

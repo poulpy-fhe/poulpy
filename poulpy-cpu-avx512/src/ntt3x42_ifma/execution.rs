@@ -1,16 +1,4 @@
-#[derive(Clone, Copy)]
-pub(crate) struct SendPtr<T>(pub(crate) *mut T);
-
-// Dereferencing remains unsafe; users must enforce the pointee's aliasing rules.
-unsafe impl<T> Send for SendPtr<T> {}
-unsafe impl<T> Sync for SendPtr<T> {}
-
-impl<T> SendPtr<T> {
-    #[inline(always)]
-    pub(crate) fn get(self) -> *mut T {
-        self.0
-    }
-}
+pub(crate) use poulpy_cpu_portable::kernels::SendPtr;
 
 #[inline(always)]
 pub(crate) fn for_index_with<S>(count: usize, _work: usize, init: impl FnOnce() -> S, mut task: impl FnMut(&mut S, usize)) {

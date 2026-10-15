@@ -408,19 +408,7 @@ pub(crate) unsafe fn stage_flush(n: usize, dst: *mut u32, stage: &[u32], run: us
     }
 }
 
-/// A pointer shared by tasks that write distinct ranges behind it.
-#[derive(Clone, Copy)]
-pub(crate) struct SendPtr<T>(pub(crate) *mut T);
-
-unsafe impl<T> Send for SendPtr<T> {}
-unsafe impl<T> Sync for SendPtr<T> {}
-
-impl<T> SendPtr<T> {
-    #[inline(always)]
-    pub(crate) fn get(self) -> *mut T {
-        self.0
-    }
-}
+pub(crate) use crate::kernels::SendPtr;
 
 #[cfg(test)]
 mod tests {
