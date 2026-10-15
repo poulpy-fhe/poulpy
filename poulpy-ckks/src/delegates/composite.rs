@@ -522,15 +522,16 @@ where
             .glwe_tensor_apply_tmp_bytes(&tensor_layout, a, b)
             .max(self.glwe_tensor_apply_prepared_tmp_bytes(&tensor_layout, a, b));
         let relinearize: usize = self.glwe_tensor_relinearize_tmp_bytes(res, &tensor_layout, tsk);
+        let size: usize = tensor_layout.k.as_usize().div_ceil(res.base2k().as_usize());
         if n <= 1 {
-            // `ckks_mul_into`, or one prepared pair: one tensor, not normalized.
-            return mul_scratch.max(tensor_bytes + apply.max(relinearize));
+            // `ckks_mul_into`, or one prepared pair: in one pass, or one tensor, not normalized.
+            let one_pass: usize = self.glwe_mul_relinearize_tmp_bytes(res, size, size, tensor_layout.k, tsk);
+            return mul_scratch.max(one_pass).max(tensor_bytes + apply.max(relinearize));
         }
         let ct_bytes: usize = self.glwe_bytes_of_from_infos(res);
         let fallback: usize = ct_bytes + mul_scratch.max(self.ckks_add_tmp_bytes(res.size()));
         let fast: usize = 2 * tensor_bytes + apply.max(self.glwe_normalize_tmp_bytes()).max(relinearize);
         // Its one-pass form, whatever the number of pairs.
-        let size: usize = tensor_layout.k.as_usize().div_ceil(res.base2k().as_usize());
         let one_pass: usize = self
             .glwe_mul_relinearize_sum_tmp_bytes(res, size, size, tensor_layout.k, tsk)
             .max(self.glwe_mul_prepared_relinearize_sum_tmp_bytes(res, size, size, tensor_layout.k, tsk));
