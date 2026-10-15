@@ -9,10 +9,21 @@ use poulpy_hal::{
     execution::TaskExecutor,
     layouts::{
         Backend, CnvDftAccTerm, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, CrtWord,
-        HostDataMut, HostDataRef, Module, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef,
+        HostDataMut, HostDataRef, Module, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxInfos,
+        VmpPMatBackendRef,
     },
     oep::HalVecZnxDftImpl,
 };
+
+/// Panics unless `a` has degree `n` and a column `col`, as the base kernels check before they slice a limb.
+///
+/// The parallel paths of [`impl_ntt4x30_rayon_backend!`] slice limbs themselves, so they check first.
+#[doc(hidden)]
+#[inline]
+pub fn check_packed_operand(n: usize, a: &impl VecZnxInfos, col: usize) {
+    assert_eq!(a.n(), n, "operand degree differs from the result degree");
+    assert!(col < a.cols(), "operand column out of range");
+}
 
 /// A backend whose transform domain a wrapper can retag as its own: the packed NTT4x30 word.
 pub trait PackedWord: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64> {}
@@ -1148,9 +1159,10 @@ unsafe impl HalVecZnxDftImpl for $rayon
         addend: Option<(&VecZnxBackendRef<'_, Self>, usize)>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
+        $crate::ntt4x30::check_packed_operand(res.n(), res, res_col);
+        $crate::ntt4x30::check_packed_operand(res.n(), a, a_col);
         let n = a.n();
         $crate::__private::poulpy_hal::layouts::check_degree::<$base>(module.n(), n);
-        assert_eq!(res.n(), n, "vec_znx_idft_normalize_consume: res.n():{} != a.n():{n}", res.n());
         let cols = a.cols();
         let size = a.size();
         let per_worker = <$base as $crate::ntt4x30::PackedNtt4x30Base>::idft_tmp_words(n);
@@ -1210,6 +1222,8 @@ unsafe impl HalVecZnxDftImpl for $rayon
         a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     ) {
+        $crate::ntt4x30::check_packed_operand(res.n(), res, res_col);
+        $crate::ntt4x30::check_packed_operand(res.n(), a, a_col);
         $crate::__private::poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
         assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
         if !parallel_limb_tasks(res.size()) {
@@ -1225,7 +1239,6 @@ unsafe impl HalVecZnxDftImpl for $rayon
         }
 
         $crate::__private::poulpy_hal::layouts::check_degree::<$base>(module.n(), res.n());
-        assert!(a.n() == res.n(), "vec_znx_dft_apply: a.n() != res.n()");
         let n = res.n();
         let cols = res.cols();
         let a_size = a.size();
@@ -1258,6 +1271,8 @@ unsafe impl HalVecZnxDftImpl for $rayon
         a_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
+        $crate::ntt4x30::check_packed_operand(res.n(), res, res_col);
+        $crate::ntt4x30::check_packed_operand(res.n(), a, a_col);
         if !parallel_limb_tasks(res.size()) {
             let mut base_scratch = scratch.borrow().into_backend::<$base>();
             return <$base>::vec_znx_idft_apply(
@@ -1271,7 +1286,6 @@ unsafe impl HalVecZnxDftImpl for $rayon
         }
 
         $crate::__private::poulpy_hal::layouts::check_degree::<$base>(module.n(), res.n());
-        assert_eq!(a.n(), res.n(), "vec_znx_idft_apply: a.n():{} != res.n():{}", a.n(), res.n());
         let n = res.n();
         let res_cols = res.cols();
         let a_cols = a.cols();
@@ -1305,6 +1319,8 @@ unsafe impl HalVecZnxDftImpl for $rayon
         a: &mut VecZnxDftBackendMut<'_, Self>,
         a_col: usize,
     ) {
+        $crate::ntt4x30::check_packed_operand(res.n(), res, res_col);
+        $crate::ntt4x30::check_packed_operand(res.n(), a, a_col);
         if !parallel_limb_tasks(res.size()) {
             return <$base>::vec_znx_idft_apply_tmpa(
                 base_module(module),
@@ -1316,13 +1332,6 @@ unsafe impl HalVecZnxDftImpl for $rayon
         }
 
         $crate::__private::poulpy_hal::layouts::check_degree::<$base>(module.n(), res.n());
-        assert_eq!(
-            a.n(),
-            res.n(),
-            "vec_znx_idft_apply_tmpa: a.n():{} != res.n():{}",
-            a.n(),
-            res.n()
-        );
         let n = res.n();
         let res_cols = res.cols();
         let a_cols = a.cols();

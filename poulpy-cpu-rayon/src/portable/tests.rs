@@ -146,6 +146,16 @@ backend_test_suite! {
     }
 }
 
+backend_test_suite! {
+    mod operand_validation_ntt4x30,
+    backend = crate::NTT4x30PortableRayon,
+    params = TestParams { size: 16, base2k: 50, n: 8 },
+    tests = {
+        test_vec_znx_dft_rejects_invalid_operands => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_rejects_invalid_operands,
+        test_vec_znx_dft_transforms_reject_invalid_operands => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_transforms_reject_invalid_operands,
+    }
+}
+
 #[test]
 fn test_convolution_ntt4x30() {
     let module = Module::<NTT4x30PortableRayon>::new(1 << 8);
