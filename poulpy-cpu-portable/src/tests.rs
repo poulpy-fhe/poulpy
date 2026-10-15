@@ -1945,3 +1945,13 @@ mod ckks_noncanonical_compact_dst {
         }
     }
 }
+
+backend_test_suite! {
+    mod vec_znx_dft_operand_validation_fft64,
+    backend = crate::FFT64Portable,
+    params = TestParams { size: 16, base2k: 12, n: 8 },
+    tests = {
+        test_vec_znx_dft_rejects_invalid_operands => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_rejects_invalid_operands,
+        test_vec_znx_dft_transforms_reject_invalid_operands => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_transforms_reject_invalid_operands,
+    }
+}

@@ -36,6 +36,9 @@
 - **Fix:** the encapsulated ModUp of the AVX2 and AVX-512 backends read a sparse-to-dense key view taken with `with_dsize` above the stored `dsize` as the stored matrix, and returned another ciphertext than the reference body; such a view now takes the reference body.
 - **Fix:** the NTT convolution apply kernels of the AVX2, AVX-512 and NEON backends checked the size of the result but not its column, and wrote past the buffer for a column past the last one; they now panic.
 - **Fix:** the convolution prepare of the NTT4x30 AVX2, AVX-512 and NEON backends gave each parallel task a mutable view of the whole column while the tasks of the other limbs of that column wrote to it; each task now writes only the rows of its limb.
+- **Fix:** the FFT64 DFT kernels of the portable, AVX2, AVX-512 and NEON backends checked operand degrees but not columns.
+  `vec_znx_dft_automorphism_add` wrote past the buffer for a result column past the last one, and the parallel `vec_znx_idft_apply` of the FFT64 Rayon backends read another limb for a source column past the last one.
+  Every FFT64 DFT kernel now panics on an out-of-range column, also on vectors of no limb (#422).
 - `poulpy_cpu_portable::hal_defaults::take_host_typed` is public, and the SIMD backends use it in place of their own copies.
 
 ### `poulpy-core`
