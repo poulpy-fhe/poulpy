@@ -246,3 +246,24 @@ fn test_convolution_by_const_add_rayon() {
     let module = Module::<crate::FFT64NeonRayon>::new(1 << 8);
     test_convolution_by_const_add(&module, module.n(), 12);
 }
+
+poulpy_hal::backend_test_suite! {
+    mod vec_znx_dft_operand_validation,
+    backend = crate::FFT64Neon,
+    params = TestParams { size: 16, base2k: 12, n: 8 },
+    tests = {
+        test_vec_znx_dft_rejects_invalid_operands => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_rejects_invalid_operands,
+        test_vec_znx_dft_transforms_reject_invalid_operands => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_transforms_reject_invalid_operands,
+    }
+}
+
+#[cfg(feature = "enable-rayon")]
+poulpy_hal::backend_test_suite! {
+    mod vec_znx_dft_operand_validation_rayon,
+    backend = crate::FFT64NeonRayon,
+    params = TestParams { size: 16, base2k: 12, n: 8 },
+    tests = {
+        test_vec_znx_dft_rejects_invalid_operands => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_rejects_invalid_operands,
+        test_vec_znx_dft_transforms_reject_invalid_operands => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_transforms_reject_invalid_operands,
+    }
+}

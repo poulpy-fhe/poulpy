@@ -297,3 +297,13 @@ mod ckks {
         params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
     }
 }
+
+backend_test_suite! {
+    mod operand_validation_fft64,
+    backend = crate::FFT64PortableRayon,
+    params = TestParams { size: 16, base2k: 12, n: 8 },
+    tests = {
+        test_vec_znx_dft_rejects_invalid_operands => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_rejects_invalid_operands,
+        test_vec_znx_dft_transforms_reject_invalid_operands => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_transforms_reject_invalid_operands,
+    }
+}

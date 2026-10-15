@@ -12,6 +12,18 @@ use crate::{
         ZnxView, ZnxViewMut,
     },
 };
+use poulpy_hal::layouts::VecZnxInfos;
+
+/// Panics unless `a` has degree `n` and a column `col`.
+///
+/// The kernels check every operand up front, so an out-of-range column is rejected even when no limb is touched,
+/// and the paths that index the raw buffer never reach another column or limb.
+#[doc(hidden)]
+#[inline]
+pub fn check_operand(n: usize, a: &impl VecZnxInfos, col: usize) {
+    assert_eq!(a.n(), n, "operand degree differs from the result degree");
+    assert!(col < a.cols(), "operand column out of range");
+}
 
 pub fn vec_znx_dft_add_portable<BE>(
     res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -25,10 +37,9 @@ pub fn vec_znx_dft_add_portable<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    {
-        assert_eq!(a.n(), res.n());
-        assert_eq!(b.n(), res.n());
-    }
+    check_operand(res.n(), res, res_col);
+    check_operand(res.n(), a, a_col);
+    check_operand(res.n(), b, b_col);
 
     let res_size: usize = res.size();
     let a_size: usize = a.size();
@@ -77,9 +88,8 @@ pub fn vec_znx_dft_add_assign_portable<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    {
-        assert_eq!(a.n(), res.n());
-    }
+    check_operand(res.n(), res, res_col);
+    check_operand(res.n(), a, a_col);
 
     let res_size: usize = res.size();
     let a_size: usize = a.size();
@@ -103,10 +113,9 @@ pub fn vec_znx_dft_copy_portable<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    {
-        assert_eq!(res.n(), a.n());
-        assert!(step >= 1, "vec_znx_dft_copy: step must be >= 1");
-    }
+    assert!(step >= 1, "vec_znx_dft_copy: step must be >= 1");
+    check_operand(res.n(), res, res_col);
+    check_operand(res.n(), a, a_col);
 
     let steps: usize = a.size().div_ceil(step);
     let min_steps: usize = res.size().min(steps);
@@ -137,11 +146,10 @@ pub fn vec_znx_dft_apply_portable<BE>(
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
     poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
-    {
-        assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
-        assert_eq!(plan.fft().m() << 1, res.n());
-        assert_eq!(a.n(), res.n());
-    }
+    assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
+    assert_eq!(plan.fft().m() << 1, res.n());
+    check_operand(res.n(), res, res_col);
+    check_operand(res.n(), a, a_col);
 
     let a_size: usize = a.size();
     let res_size: usize = res.size();
@@ -176,10 +184,9 @@ pub fn vec_znx_idft_apply_portable<BE>(
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
     poulpy_hal::layouts::assert_dense(res, "vec_znx_idft_apply");
-    {
-        assert_eq!(plan.fft().m() << 1, res.n());
-        assert_eq!(a.n(), res.n());
-    }
+    assert_eq!(plan.fft().m() << 1, res.n());
+    check_operand(res.n(), res, res_col);
+    check_operand(res.n(), a, a_col);
 
     let res_size: usize = res.size();
     let min_size: usize = res_size.min(a.size());
@@ -209,10 +216,9 @@ pub fn vec_znx_idft_apply_tmpa_portable<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {
     poulpy_hal::layouts::assert_dense(res, "vec_znx_idft_apply_tmpa");
-    {
-        assert_eq!(plan.fft().m() << 1, res.n());
-        assert_eq!(a.n(), res.n());
-    }
+    assert_eq!(plan.fft().m() << 1, res.n());
+    check_operand(res.n(), res, res_col);
+    check_operand(res.n(), a, a_col);
 
     let res_size = res.size();
     let min_size: usize = res_size.min(a.size());
@@ -270,10 +276,9 @@ pub fn vec_znx_dft_sub_portable<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    {
-        assert_eq!(a.n(), res.n());
-        assert_eq!(b.n(), res.n());
-    }
+    check_operand(res.n(), res, res_col);
+    check_operand(res.n(), a, a_col);
+    check_operand(res.n(), b, b_col);
 
     let res_size: usize = res.size();
     let a_size: usize = a.size();
@@ -322,9 +327,8 @@ pub fn vec_znx_dft_sub_assign_portable<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    {
-        assert_eq!(a.n(), res.n());
-    }
+    check_operand(res.n(), res, res_col);
+    check_operand(res.n(), a, a_col);
 
     let res_size: usize = res.size();
     let a_size: usize = a.size();
@@ -346,9 +350,8 @@ pub fn vec_znx_dft_sub_negate_assign_portable<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    {
-        assert_eq!(a.n(), res.n());
-    }
+    check_operand(res.n(), res, res_col);
+    check_operand(res.n(), a, a_col);
 
     let res_size: usize = res.size();
     let a_size: usize = a.size();
@@ -369,6 +372,7 @@ where
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {
+    check_operand(res.n(), res, res_col);
     for j in 0..res.size() {
         BE::reim_zero(res.at_mut(res_col, j))
     }
@@ -405,7 +409,8 @@ pub fn vec_znx_dft_automorphism_portable<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    assert_eq!(a.n(), res.n());
+    check_operand(res.n(), res, res_col);
+    check_operand(res.n(), a, a_col);
     let res_size: usize = res.size();
     let min_size: usize = res_size.min(a.size());
     for limb in 0..min_size {
@@ -427,7 +432,8 @@ pub fn vec_znx_dft_automorphism_add_portable<BE, E: poulpy_hal::execution::TaskE
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    assert_eq!(a.n(), res.n());
+    check_operand(res.n(), res, res_col);
+    check_operand(res.n(), a, a_col);
     let n = res.n();
     let cols = res.cols();
     let size = res.size().min(a.size());

@@ -1220,9 +1220,10 @@ unsafe impl HalVecZnxDftImpl for $rayon {
         addend: Option<(&VecZnxBackendRef<'_, Self>, usize)>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
+        $crate::__private::poulpy_cpu_portable::kernels::fft64::vec_znx_dft::check_operand(res.n(), res, res_col);
+        $crate::__private::poulpy_cpu_portable::kernels::fft64::vec_znx_dft::check_operand(res.n(), a, a_col);
         let n = a.n();
         $crate::__private::poulpy_hal::layouts::check_degree::<Self>(module.n(), n);
-        assert_eq!(res.n(), n, "vec_znx_idft_normalize_consume: res.n():{} != a.n():{n}", res.n());
         let a_cols = a.cols();
         let a_size = a.size();
         let plan = module.get_fft_plan(n);
@@ -1267,6 +1268,8 @@ unsafe impl HalVecZnxDftImpl for $rayon {
         a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     ) {
+        $crate::__private::poulpy_cpu_portable::kernels::fft64::vec_znx_dft::check_operand(res.n(), res, res_col);
+        $crate::__private::poulpy_cpu_portable::kernels::fft64::vec_znx_dft::check_operand(res.n(), a, a_col);
         $crate::__private::poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
         assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
         if !$crate::parallel_limb_tasks(res.size()) {
@@ -1283,7 +1286,6 @@ unsafe impl HalVecZnxDftImpl for $rayon {
 
         let n = res.n();
         $crate::__private::poulpy_hal::layouts::check_degree::<Self>(module.n(), n);
-        assert_eq!(a.n(), n, "vec_znx_dft_apply: a.n():{} != res.n():{n}", a.n());
         let cols = res.cols();
         let a_size = a.size();
         let plan = module.get_fft_plan(n);
@@ -1311,6 +1313,8 @@ unsafe impl HalVecZnxDftImpl for $rayon {
         a_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
+        $crate::__private::poulpy_cpu_portable::kernels::fft64::vec_znx_dft::check_operand(res.n(), res, res_col);
+        $crate::__private::poulpy_cpu_portable::kernels::fft64::vec_znx_dft::check_operand(res.n(), a, a_col);
         if !$crate::parallel_limb_tasks(res.size()) {
             let mut scratch = scratch.borrow().into_backend::<$base>();
             return <$base as HalVecZnxDftImpl>::vec_znx_idft_apply(
@@ -1325,7 +1329,6 @@ unsafe impl HalVecZnxDftImpl for $rayon {
 
         let n = res.n();
         $crate::__private::poulpy_hal::layouts::check_degree::<Self>(module.n(), n);
-        assert_eq!(a.n(), n, "vec_znx_idft_apply: a.n():{} != res.n():{n}", a.n());
         let res_cols = res.cols();
         let a_cols = a.cols();
         let min_size = res.size().min(a.size());
@@ -1353,6 +1356,8 @@ unsafe impl HalVecZnxDftImpl for $rayon {
         a: &mut VecZnxDftBackendMut<'_, Self>,
         a_col: usize,
     ) {
+        $crate::__private::poulpy_cpu_portable::kernels::fft64::vec_znx_dft::check_operand(res.n(), res, res_col);
+        $crate::__private::poulpy_cpu_portable::kernels::fft64::vec_znx_dft::check_operand(res.n(), a, a_col);
         if !$crate::parallel_limb_tasks(res.size()) {
             return <$base as HalVecZnxDftImpl>::vec_znx_idft_apply_tmpa(
                 base_module(module),
@@ -1365,7 +1370,6 @@ unsafe impl HalVecZnxDftImpl for $rayon {
 
         let n = res.n();
         $crate::__private::poulpy_hal::layouts::check_degree::<Self>(module.n(), n);
-        assert_eq!(a.n(), n, "vec_znx_idft_apply_tmpa: a.n():{} != res.n():{n}", a.n());
         let res_cols = res.cols();
         let a_cols = a.cols();
         let min_size = res.size().min(a.size());
