@@ -126,7 +126,7 @@ macro_rules! consume_case {
                             &mut dft.to_backend_mut(), col, 52, None, &mut scratch.arena(),
                         );
                     })).unwrap_err();
-                    assert_eq!(panic.downcast_ref::<&str>(), Some(&"input column out of bounds"));
+                    assert_eq!(panic.downcast_ref::<&str>(), Some(&"operand column out of range"));
                 }
             }
         }
