@@ -115,7 +115,7 @@ pub(crate) fn vec_znx_dft_apply<R: Ring>(
     assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
     let n = res.n();
     check_degree::<NTT4x30Portable<R>>(module.n(), n);
-    assert!(a.n() == n, "vec_znx_dft_apply: a.n() != res.n()");
+    check_operand(n, a, a_col);
     check_operand(n, res, res_col);
     let cols = res.cols();
     let res_size = res.size();
@@ -144,6 +144,7 @@ pub(crate) fn vec_znx_idft_apply<R: Ring>(
 {
     poulpy_hal::layouts::assert_dense(res, "vec_znx_idft_apply");
     let n = res.n();
+    check_operand(n, res, res_col);
     check_degree::<NTT4x30Portable<R>>(module.n(), n);
     check_operand(n, a, a_col);
     let min_size = res.size().min(a.size());
@@ -174,6 +175,7 @@ pub(crate) fn vec_znx_idft_apply_tmpa<R: Ring>(
 {
     poulpy_hal::layouts::assert_dense(res, "vec_znx_idft_apply_tmpa");
     let n = res.n();
+    check_operand(n, res, res_col);
     check_degree::<NTT4x30Portable<R>>(module.n(), n);
     check_operand(n, a, a_col);
     let min_size = res.size().min(a.size());
@@ -247,6 +249,7 @@ pub(crate) fn vec_znx_dft_add<R: Ring, E: TaskExecutor>(
     b_col: usize,
 ) {
     let n = res.n();
+    check_operand(n, res, res_col);
     check_operand(n, a, a_col);
     check_operand(n, b, b_col);
     let (rc, ac, bc) = (res.cols(), a.cols(), b.cols());
@@ -287,6 +290,7 @@ pub(crate) fn vec_znx_dft_add_assign<R: Ring, E: TaskExecutor>(
     a_col: usize,
 ) {
     let n = res.n();
+    check_operand(n, res, res_col);
     check_operand(n, a, a_col);
     let (rc, ac) = (res.cols(), a.cols());
     let size = res.size().min(a.size());
@@ -306,6 +310,7 @@ pub(crate) fn vec_znx_dft_sub<R: Ring, E: TaskExecutor>(
     b_col: usize,
 ) {
     let n = res.n();
+    check_operand(n, res, res_col);
     check_operand(n, a, a_col);
     check_operand(n, b, b_col);
     let (rc, ac, bc) = (res.cols(), a.cols(), b.cols());
@@ -346,6 +351,7 @@ pub(crate) fn vec_znx_dft_sub_assign<R: Ring, E: TaskExecutor>(
     a_col: usize,
 ) {
     let n = res.n();
+    check_operand(n, res, res_col);
     check_operand(n, a, a_col);
     let (rc, ac) = (res.cols(), a.cols());
     let size = res.size().min(a.size());
@@ -363,6 +369,7 @@ pub(crate) fn vec_znx_dft_sub_negate_assign<R: Ring, E: TaskExecutor>(
     a_col: usize,
 ) {
     let n = res.n();
+    check_operand(n, res, res_col);
     check_operand(n, a, a_col);
     let (rc, ac) = (res.cols(), a.cols());
     let rs = res.size();
@@ -388,6 +395,7 @@ pub(crate) fn vec_znx_dft_copy<R: Ring, E: TaskExecutor>(
 ) {
     assert!(step >= 1, "vec_znx_dft_copy: step must be >= 1");
     let n = res.n();
+    check_operand(n, res, res_col);
     check_operand(n, a, a_col);
     let (rc, ac) = (res.cols(), a.cols());
     let size = res.size();

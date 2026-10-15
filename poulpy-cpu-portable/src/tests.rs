@@ -527,6 +527,16 @@ cross_backend_test_suite! {
 }
 
 backend_test_suite! {
+    mod vec_znx_dft_operand_validation_ntt4x30,
+    backend = crate::NTT4x30Portable,
+    params = TestParams { size: 16, base2k: 50, n: 8 },
+    tests = {
+        test_vec_znx_dft_rejects_invalid_operands => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_rejects_invalid_operands,
+        test_vec_znx_dft_transforms_reject_invalid_operands => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_transforms_reject_invalid_operands,
+    }
+}
+
+backend_test_suite! {
     mod derived_fft64,
     backend = crate::FFT64Portable,
     params = TestParams { size: 1<<8, base2k: 12, n: 8 },
