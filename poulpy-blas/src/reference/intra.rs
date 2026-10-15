@@ -11,7 +11,7 @@ use poulpy_hal::{
 };
 
 use super::{assert_maps_scratch, ensure_grid, ensure_layouts, ensure_lt_keys, ensure_maps, ensure_shape, lt_tmp_bytes};
-use crate::layouts::{BlasContext, BlasGrid, grid_batch};
+use crate::layouts::{BlasContext, BlasGrid, grid_batch, layout_of};
 
 /// Checks a [`crate::api::BlasMatIntraOps::blas_transpose`] call from metadata alone, before any implementation runs,
 /// and returns the batch `res` records, `a`'s: `a` and `res` are grids at the context's `log_d` whose blocks tile their
@@ -188,7 +188,9 @@ pub trait BlasMatIntraReference<BE: Backend> {
         let (Some(&first), Some(first_dst)) = (src.first(), dst.first()) else {
             return Ok(());
         };
-        let bytes = |key: &GGLWELayout| self.blas_map_blocks_tmp_bytes_reference(first_dst, first, src.len(), lts, key);
+        // At the blocks' widths, as the callers' queries read them, not their allocations.
+        let (dst_layout, src_layout) = (layout_of(first_dst), layout_of(first));
+        let bytes = |key: &GGLWELayout| self.blas_map_blocks_tmp_bytes_reference(&dst_layout, &src_layout, src.len(), lts, key);
         assert_maps_scratch(op, self, lts, atk, first.k(), first_dst.k(), first.rank(), bytes, scratch);
         let rotations: Vec<i64> = lts.iter().flat_map(|lt| lt.baby_steps().iter().copied()).collect();
         let mut babies = LinearTransformationBabySteps::alloc(self, &rotations, first);

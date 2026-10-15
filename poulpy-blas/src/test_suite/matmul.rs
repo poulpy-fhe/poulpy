@@ -4,7 +4,9 @@ use std::{collections::HashMap, sync::Mutex};
 
 use poulpy_ckks::{
     CKKSInfos, GLWEPlaintextInfos, SetGLWEPlaintextInfos,
-    api::{CKKSEncodingOps, CKKSLinearTransformationOps, LinearTransformationBabySteps, LinearTransformationPrepared},
+    api::{
+        CKKSCopyOps, CKKSEncodingOps, CKKSLinearTransformationOps, LinearTransformationBabySteps, LinearTransformationPrepared,
+    },
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
     test_suite::{
         CKKSTestParams,
@@ -270,6 +272,38 @@ pub fn test_blas_matmul<BE, F, E>(
             operand_infos(&cold_rights[0]),
             cold_b,
             "p={p}: the products changed the cold B"
+        );
+    }
+
+    // `A` copied into blocks one limb wider, `k < max_k`: the queries and the products read the blocks' widths, so
+    // each runs on exactly the scratch its query reports, and gives `A B`'s bits under every mix of hot and cold
+    // operands.
+    let ctx = &contexts[0];
+    let want = grid_snapshot::<BE, _>(&product(&hot_lefts[0], &hot_rights[0], ctx));
+    let mut wide_a = alloc_grid(&params, module, log_d, m, inner, params.k + params.base2k);
+    for (dst, src) in wide_a.blocks_mut().iter_mut().zip(ct_a.blocks()) {
+        module.ckks_copy(dst, src, &mut scratch.borrow()).unwrap();
+    }
+    let mut res = alloc_grid(&params, module, log_d, m, n, params.k);
+    let bytes = module.blas_matmul_tmp_bytes(&res, &wide_a, &ct_b, ctx, &tsk_layout, &atk_layout);
+    module
+        .blas_matmul(
+            &mut res,
+            &wide_a,
+            &ct_b,
+            ctx,
+            &keys,
+            &keys,
+            &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
+        )
+        .unwrap();
+    assert_eq!(grid_snapshot::<BE, _>(&res), want, "matmul k < max_k");
+    for (hl, hr) in MIXES {
+        let (left, right) = (prepare_left(&wide_a, ctx, hl), prepare_right(&ct_b, ctx, hr));
+        assert_eq!(
+            grid_snapshot::<BE, _>(&product(&left, &right, ctx)),
+            want,
+            "matmul k < max_k: {hl:?} x {hr:?}"
         );
     }
 

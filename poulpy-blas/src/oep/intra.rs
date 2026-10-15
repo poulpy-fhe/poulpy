@@ -20,10 +20,11 @@ use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut};
 /// `ckks_eval_linear_transformation_into`, then the label (`log_sparsity`) of `src[t]`. It is called with at least one
 /// map and `src.len() * lts.len()` blocks of `dst`, the blocks of `dst` sharing one layout and those of `src` another,
 /// on inputs the calling operation's validator accepted. It looks up the keys of a map at the widths that evaluation
-/// does: the baby steps at the width of `src`, the giant steps at `src`'s width less the maps' scale, capped at `dst`'s.
-/// Within the scratch [`Self::blas_map_blocks_tmp_bytes_impl`] reports for `dst`, `src`, `src.len()`, `lts` and every
-/// key it looks up, it returns `Ok`, or poulpy-ckks's budget error before any write to `dst`; with less scratch it
-/// panics before any write, as the reference does when it looks up a key.
+/// does: the baby steps at the width of `src`, the giant steps at `src`'s width less the maps' scale, capped at
+/// `dst`'s. Within the scratch [`Self::blas_map_blocks_tmp_bytes_impl`] reports for the layouts of `dst` and `src`, at
+/// their widths whatever their allocations, `src.len()`, `lts` and every key it looks up, it returns `Ok`, or
+/// poulpy-ckks's budget error before any write to `dst`; with less scratch it panics before any write, as the reference
+/// does when it looks up a key.
 ///
 /// The references of [`crate::oep::BlasMatMulImpl`] call the hook too: a cold preparation block row after block row,
 /// and the products for a hot side, a block row of `a` or a block column of `b` at a time; each time sigma (tau) over
