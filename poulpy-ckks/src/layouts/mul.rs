@@ -23,8 +23,8 @@ pub struct CKKSPreparedLeft<BE: Backend> {
     pub(crate) size: usize,
     /// Ring degree, radix, width `k` and rank of the source ciphertext.
     pub(crate) layout: GLWELayout,
-    /// Plaintext metadata of the source ciphertext.
-    pub(crate) meta: GLWEPlaintextMeta,
+    /// Plaintext metadata of the source ciphertext, `None` when it has none.
+    pub(crate) meta: Option<GLWEPlaintextMeta>,
 }
 
 /// A CKKS ciphertext prepared as the right operand of a `ct×ct` product.
@@ -50,8 +50,8 @@ pub struct CKKSPreparedRight<BE: Backend> {
     /// prepared operands are long-lived cached objects, so the products
     /// validate it against the destination before use.
     pub(crate) layout: GLWELayout,
-    /// Plaintext metadata of the source ciphertext.
-    pub(crate) meta: GLWEPlaintextMeta,
+    /// Plaintext metadata of the source ciphertext, `None` when it has none.
+    pub(crate) meta: Option<GLWEPlaintextMeta>,
 }
 
 impl<BE: Backend> CKKSPreparedLeft<BE> {
@@ -98,7 +98,7 @@ macro_rules! impl_prepared_infos {
 
         impl<BE: Backend> GLWEPlaintextInfos for $name<BE> {
             fn plaintext_meta(&self) -> Option<GLWEPlaintextMeta> {
-                Some(self.meta)
+                self.meta
             }
         }
 
