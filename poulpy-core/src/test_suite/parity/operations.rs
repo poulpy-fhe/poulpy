@@ -541,41 +541,42 @@ fn test_glwe_tensor_parity_case<BR, BT>(
     let mut b_prep_test = module_test.cnv_pvec_right_alloc(n, cols, b_size, PrepareHint::Reuse);
     let mut a_prep_ref = module_ref.cnv_pvec_left_alloc(n, cols, b_size, PrepareHint::OneShot);
     let mut a_prep_test = module_test.cnv_pvec_left_alloc(n, cols, b_size, PrepareHint::OneShot);
+    // Each preparation on exactly its own budget: a copy of the operand, then its conversion or normalization.
     let prep_bytes = |bytes_of: usize, prepare: usize, normalize: usize| bytes_of + prepare.max(normalize);
-    let mut scratch_ref = poisoned_scratch::<BR>(prep_bytes(
-        module_ref.glwe_bytes_of_from_infos(a_infos),
-        module_ref
-            .cnv_prepare_right_tmp_bytes(b_size, b_size)
-            .max(module_ref.cnv_prepare_left_tmp_bytes(b_size, b_size)),
-        module_ref.glwe_normalize_tmp_bytes(),
-    ));
-    let mut scratch_test = poisoned_scratch::<BT>(prep_bytes(
-        module_test.glwe_bytes_of_from_infos(a_infos),
-        module_test
-            .cnv_prepare_right_tmp_bytes(b_size, b_size)
-            .max(module_test.cnv_prepare_left_tmp_bytes(b_size, b_size)),
-        module_test.glwe_normalize_tmp_bytes(),
-    ));
+    let ref_scratch = |prepare: usize| {
+        poisoned_scratch::<BR>(prep_bytes(
+            module_ref.glwe_bytes_of_from_infos(a_infos),
+            prepare,
+            module_ref.glwe_normalize_tmp_bytes(),
+        ))
+    };
+    let test_scratch = |prepare: usize| {
+        poisoned_scratch::<BT>(prep_bytes(
+            module_test.glwe_bytes_of_from_infos(a_infos),
+            prepare,
+            module_test.glwe_normalize_tmp_bytes(),
+        ))
+    };
     glwe_prepare_right(
         module_ref,
         &mut b_prep_ref,
         &b_ref,
         a_infos.k.as_usize(),
-        &mut scratch_ref.borrow(),
+        &mut ref_scratch(module_ref.cnv_prepare_right_tmp_bytes(b_size, b_size)).borrow(),
     );
     glwe_prepare_right(
         module_test,
         &mut b_prep_test,
         &b_test,
         a_infos.k.as_usize(),
-        &mut scratch_test.borrow(),
+        &mut test_scratch(module_test.cnv_prepare_right_tmp_bytes(b_size, b_size)).borrow(),
     );
     glwe_prepare_left(
         module_ref,
         &mut a_prep_ref,
         &a_ref,
         a_infos.k.as_usize(),
-        &mut scratch_ref.borrow(),
+        &mut ref_scratch(module_ref.cnv_prepare_left_tmp_bytes(b_size, b_size)).borrow(),
     );
     // The test side prepares its left operand from the unnormalized twin, when there is one.
     glwe_prepare_left(
@@ -583,7 +584,7 @@ fn test_glwe_tensor_parity_case<BR, BT>(
         &mut a_prep_test,
         twins.as_ref().map_or(&a_test, |(twin_a, _)| twin_a),
         a_infos.k.as_usize(),
-        &mut scratch_test.borrow(),
+        &mut test_scratch(module_test.cnv_prepare_left_tmp_bytes(b_size, b_size)).borrow(),
     );
     for (i, &cnv_offset) in offsets.iter().enumerate() {
         let twins = twins.as_ref().filter(|_| i == 0);

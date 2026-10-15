@@ -524,21 +524,26 @@ where
                     let mut y_twin_t = t.glwe_alloc_from_infos(&g);
                     unnormalized_twin::<BR, BT>(&y_r, &mut y_twin_t);
                     let size = precision.div_ceil(b);
-                    // Role 3's pairs prepared once, under either hint, on poisoned scratch.
+                    // Role 3's pairs prepared once, under either hint, each on exactly its poisoned budget: a copy of
+                    // the operand, then its conversion or normalization.
                     macro_rules! prepared_pairs {
                         ($be:ty, $m:expr, $pairs:expr) => {{
-                            let bytes = $m.glwe_bytes_of_from_infos(&g)
-                                + $m.cnv_prepare_left_tmp_bytes(size, size)
-                                    .max($m.cnv_prepare_right_tmp_bytes(size, size))
-                                    .max($m.glwe_normalize_tmp_bytes());
-                            let mut scratch = poisoned_scratch::<$be>(bytes);
+                            let scratch = |prepare: usize| {
+                                poisoned_scratch::<$be>(
+                                    $m.glwe_bytes_of_from_infos(&g) + prepare.max($m.glwe_normalize_tmp_bytes()),
+                                )
+                            };
+                            let (left, right) = (
+                                $m.cnv_prepare_left_tmp_bytes(size, size),
+                                $m.cnv_prepare_right_tmp_bytes(size, size),
+                            );
                             $pairs
                                 .iter()
                                 .map(|(l, r)| {
                                     let mut l_prep = $m.cnv_pvec_left_alloc(params.n, 2, size, PrepareHint::OneShot);
-                                    glwe_prepare_left($m, &mut l_prep, *l, precision, &mut scratch.borrow());
+                                    glwe_prepare_left($m, &mut l_prep, *l, precision, &mut scratch(left).borrow());
                                     let mut r_prep = $m.cnv_pvec_right_alloc(params.n, 2, size, PrepareHint::Reuse);
-                                    glwe_prepare_right($m, &mut r_prep, *r, precision, &mut scratch.borrow());
+                                    glwe_prepare_right($m, &mut r_prep, *r, precision, &mut scratch(right).borrow());
                                     (l_prep, r_prep)
                                 })
                                 .collect::<Vec<_>>()
@@ -563,15 +568,21 @@ where
                                     };
                                     let mut scratch = poisoned_scratch::<$be>(bytes);
                                     // Role 0 is a product, role 1 reads its left operand from the destination,
-                                    // role 2 is a squaring, role 3 a sum of three products whose second pair the
-                                    // test side reads from unnormalized twins, role 4 the same sum over pairs
-                                    // prepared once, the test side's second pair prepared from the twins, and
-                                    // role 5 the first prepared pair alone, on a single product's scratch.
+                                    // role 2 is a squaring, each reading the twins on the test side, role 3 a sum
+                                    // of three products whose second pair the test side reads from the twins, role
+                                    // 4 the same sum over pairs prepared once, the test side's second pair prepared
+                                    // from the twins, and role 5 the first prepared pair alone, on a single
+                                    // product's scratch.
                                     match role {
-                                        1 => {
-                                            $m.glwe_mul_relinearize_assign(cnv_offset, $out, g.k, $y, $key, &mut scratch.borrow())
-                                        }
-                                        2 => $m.glwe_square_relinearize(cnv_offset, $out, g.k, $x, $key, &mut scratch.borrow()),
+                                        1 => $m.glwe_mul_relinearize_assign(
+                                            cnv_offset,
+                                            $out,
+                                            g.k,
+                                            $y2,
+                                            $key,
+                                            &mut scratch.borrow(),
+                                        ),
+                                        2 => $m.glwe_square_relinearize(cnv_offset, $out, g.k, $x2, $key, &mut scratch.borrow()),
                                         3 => $m.glwe_mul_relinearize_sum(
                                             cnv_offset,
                                             $out,
@@ -595,7 +606,9 @@ where
                                             $key,
                                             &mut scratch.borrow(),
                                         ),
-                                        _ => $m.glwe_mul_relinearize(cnv_offset, $out, g.k, $x, $y, $key, &mut scratch.borrow()),
+                                        _ => {
+                                            $m.glwe_mul_relinearize(cnv_offset, $out, g.k, $x2, $y2, $key, &mut scratch.borrow())
+                                        }
                                     }
                                 }};
                             }
