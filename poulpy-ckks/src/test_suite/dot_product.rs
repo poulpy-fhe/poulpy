@@ -21,7 +21,7 @@
 use poulpy_core::{
     CoreError, GLWEAdd, GLWEMulRelinearizeSum, GLWENormalize, GLWESub, GLWETensoring, ScratchArenaTakeCore,
     layouts::{
-        GLWEInfos, GLWELayout, GetTensorKey, LWEInfos, Rank, SetGLWEPlaintextInfos, TorusPrecision,
+        GLWEInfos, GLWELayout, GLWEPlaintextInfos, GetTensorKey, LWEInfos, Rank, SetGLWEPlaintextInfos, TorusPrecision,
         prepared::GLWETensorKeyPreparedBackendRef,
     },
 };
@@ -1118,9 +1118,10 @@ where
 /// and at radix 12 (11 if the suite's is 12). On rank 1 the key of the operands' radix takes the one-pass sum and the
 /// other key the two-pass circuit; the rank-2 suite takes the two-pass circuit. Each preparation runs on the exact
 /// poisoned budget of `ckks_prepare_tmp_bytes`, and each prepared operand reports its source's layout, metadata and
-/// noise estimate, so `ckks_dot_product_ct_tmp_bytes` of the prepared operands is that of the ciphertexts, on whose
-/// exact poisoned budget both products run. Wrong lengths, operands of another degree, radix or rank, mixed layouts, a
-/// missing tensor key and inputs without the budget are rejected, in that order, with `dst` untouched.
+/// noise estimate, `None` from a source without metadata, so `ckks_dot_product_ct_tmp_bytes` of the prepared operands
+/// is that of the ciphertexts, on whose exact poisoned budget both products run. Wrong lengths, operands of another
+/// degree, radix or rank, mixed layouts, radix 63, a missing tensor key and inputs without the budget are rejected, in
+/// that order, with `dst` untouched.
 pub fn test_dot_product_prepared<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend<Ring = Standard>,
@@ -1185,11 +1186,17 @@ where
                 .collect();
             assert!(a[0].noise().is_some(), "a fresh ciphertext carries a noise estimate");
             for (prepared, ct) in left.iter().flatten().zip(a.iter().cycle()) {
-                assert_eq!((prepared.glwe_layout(), prepared.meta()), (ct.glwe_layout(), ct.meta()));
+                assert_eq!(
+                    (prepared.glwe_layout(), prepared.plaintext_meta()),
+                    (ct.glwe_layout(), ct.plaintext_meta())
+                );
                 assert_eq!(prepared.noise(), None, "a prepared operand carries no noise estimate");
             }
             for (prepared, ct) in right.iter().flatten().zip(b.iter().cycle()) {
-                assert_eq!((prepared.glwe_layout(), prepared.meta()), (ct.glwe_layout(), ct.meta()));
+                assert_eq!(
+                    (prepared.glwe_layout(), prepared.plaintext_meta()),
+                    (ct.glwe_layout(), ct.plaintext_meta())
+                );
                 assert_eq!(prepared.noise(), None, "a prepared operand carries no noise estimate");
             }
             Radix {
@@ -1238,6 +1245,20 @@ where
             }
         }
     }
+
+    // A source without plaintext metadata gives operands without it.
+    let mut bare = radixes[0].a[0].clone();
+    bare.set_plaintext_meta(None);
+    assert_eq!(
+        prepare_left(&bare, PrepareHint::Reuse).plaintext_meta(),
+        None,
+        "left of a bare source"
+    );
+    assert_eq!(
+        prepare_right(&bare, PrepareHint::Reuse).plaintext_meta(),
+        None,
+        "right of a bare source"
+    );
 
     // Rejections at the suite's radix.
     let Radix {
@@ -1337,6 +1358,21 @@ where
         bytes,
     );
     assert_ckks_error("mixed and foreign", &err, mismatch(foreign_right[0].glwe_layout()));
+
+    // Radix 63, past the radix of two lazy terms, before the tensor key.
+    let radix_63 = GLWELayout {
+        base2k: 63usize.into(),
+        ..p.glwe_layout()
+    };
+    let mut wide = module.ckks_ciphertext_alloc_from_glwe_infos(&radix_63);
+    wide.set_meta(p.prec().meta);
+    let (wide_left, wide_right) = (
+        prepare_left(&wide, PrepareHint::Reuse),
+        prepare_right(&wide, PrepareHint::Reuse),
+    );
+    let mut wide_dst = module.ckks_ciphertext_alloc_from_glwe_infos(&radix_63);
+    let err = assert_prepared_rejected(module, &mut wide_dst, &[&wide_left], &[&wide_right], &no_key, bytes);
+    assert!(invalid(&err) && err.to_string().contains("base2k 63 > 62"), "{err}");
 
     // No tensor key at `max(a.k, b.k)`.
     let err = assert_prepared_rejected(module, &mut dst, &lhs, &rhs, &no_key, bytes);
