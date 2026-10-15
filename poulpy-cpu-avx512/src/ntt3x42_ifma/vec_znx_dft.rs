@@ -294,6 +294,13 @@ fn packed_limb_mut(data: &mut [u64], n: usize, cols: usize, col: usize, j: usize
     &mut data[start..start + 2 * n]
 }
 
+/// Panics unless `a` has degree `n` and a column `col`: packed limb access trusts both.
+#[inline]
+fn check_operand(n: usize, a: &impl VecZnxInfos, col: usize) {
+    assert_eq!(a.n(), n, "operand degree differs from the result degree");
+    assert!(col < a.cols(), "operand column out of range");
+}
+
 #[inline(always)]
 unsafe fn packed_limb_raw_mut<'a>(data: *mut u64, n: usize, cols: usize, col: usize, j: usize) -> &'a mut [u64] {
     let start = 2 * n * (j * cols + col);
@@ -565,6 +572,10 @@ pub(crate) fn idft_compact_in_place_ifma<R: Ring, E: poulpy_hal::execution::Task
         Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
 {
     let n = a.n();
+    check_operand(n, a, a_col);
+    if let Some((add, col)) = addend {
+        check_operand(n, add, col);
+    }
     check_degree::<NTT3x42Ifma<R>>(module.n(), n);
     let table = handle(module).table_intt_for(n);
     let a_cols = a.cols();
@@ -793,8 +804,9 @@ pub(crate) fn vec_znx_idft_apply_tmpa_ifma<R: Ring>(
         Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
 {
     let n = res.n();
+    check_operand(n, res, res_col);
+    check_operand(n, a, a_col);
     check_degree::<NTT3x42Ifma<R>>(module.n(), n);
-    assert_eq!(a.n(), n, "vec_znx_idft_apply_tmpa: a.n():{} != res.n():{n}", a.n());
     let table = handle(module).table_intt_for(n);
     let min_size = res.size().min(a.size());
     let a_cols = a.cols();
@@ -868,8 +880,9 @@ pub(crate) fn vec_znx_dft_apply<R: Ring>(
     let a_size = a.size();
     let res_size = res.size();
     let n = res.n();
+    check_operand(n, res, res_col);
+    check_operand(n, a, a_col);
     check_degree::<NTT3x42Ifma<R>>(module.n(), n);
-    assert!(a.n() == n, "vec_znx_dft_apply: a.n() != res.n()");
     let cols = res.cols();
     let steps = a_size.div_ceil(step);
     let min_steps = res_size.min(steps);
@@ -934,8 +947,9 @@ pub(crate) fn vec_znx_idft_apply<R: Ring>(
         Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
 {
     let n = res.n();
+    check_operand(n, res, res_col);
+    check_operand(n, a, a_col);
     check_degree::<NTT3x42Ifma<R>>(module.n(), n);
-    assert_eq!(a.n(), n, "vec_znx_idft_apply: a.n():{} != res.n():{n}", a.n());
     let res_cols = res.cols();
     let res_size = res.size();
     let min_size = res_size.min(a.size());
@@ -980,6 +994,9 @@ pub(crate) fn vec_znx_dft_add<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
     b_col: usize,
 ) {
     let n = res.n();
+    check_operand(n, res, res_col);
+    check_operand(n, a, a_col);
+    check_operand(n, b, b_col);
     let (rc, ac, bc) = (res.cols(), a.cols(), b.cols());
     let (res_size, a_size, b_size) = (res.size(), a.size(), b.size());
     let (sum_size, cpy_size, cpy_from_b) = if a_size <= b_size {
@@ -1018,6 +1035,8 @@ pub(crate) fn vec_znx_dft_add_assign<R: Ring, E: poulpy_hal::execution::TaskExec
     a_col: usize,
 ) {
     let n = res.n();
+    check_operand(n, res, res_col);
+    check_operand(n, a, a_col);
     let (rc, ac) = (res.cols(), a.cols());
     let sum_size = res.size().min(a.size());
     let rp: &mut [u64] = cast_slice_mut(res.data_mut());
@@ -1040,6 +1059,9 @@ pub(crate) fn vec_znx_dft_sub<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
     b_col: usize,
 ) {
     let n = res.n();
+    check_operand(n, res, res_col);
+    check_operand(n, a, a_col);
+    check_operand(n, b, b_col);
     let (rc, ac, bc) = (res.cols(), a.cols(), b.cols());
     let (res_size, a_size, b_size) = (res.size(), a.size(), b.size());
     let (sum_size, cpy_size, negate_tail) = if a_size <= b_size {
@@ -1079,6 +1101,8 @@ pub(crate) fn vec_znx_dft_sub_assign<R: Ring, E: poulpy_hal::execution::TaskExec
     a_col: usize,
 ) {
     let n = res.n();
+    check_operand(n, res, res_col);
+    check_operand(n, a, a_col);
     let (rc, ac) = (res.cols(), a.cols());
     let sum_size = res.size().min(a.size());
     let rp: &mut [u64] = cast_slice_mut(res.data_mut());
@@ -1099,6 +1123,8 @@ pub(crate) fn vec_znx_dft_sub_negate_assign<R: Ring, E: poulpy_hal::execution::T
     a_col: usize,
 ) {
     let n = res.n();
+    check_operand(n, res, res_col);
+    check_operand(n, a, a_col);
     let (rc, ac) = (res.cols(), a.cols());
     let res_size = res.size();
     let sum_size = res_size.min(a.size());
@@ -1125,12 +1151,10 @@ pub(crate) fn vec_znx_dft_copy<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
     a: &VecZnxDftBackendRef<'_, NTT3x42Ifma<R>>,
     a_col: usize,
 ) {
-    {
-        assert_eq!(res.n(), a.n());
-        assert!(step >= 1, "vec_znx_dft_copy: step must be >= 1");
-    }
-
+    assert!(step >= 1, "vec_znx_dft_copy: step must be >= 1");
     let n = res.n();
+    check_operand(n, res, res_col);
+    check_operand(n, a, a_col);
     let (rc, ac) = (res.cols(), a.cols());
     let res_size = res.size();
     let a_size = a.size();
@@ -1158,6 +1182,7 @@ pub(crate) fn vec_znx_dft_zero<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
     res_col: usize,
 ) {
     let n = res.n();
+    check_operand(n, res, res_col);
     let rc = res.cols();
     let res_size = res.size();
     let rp: &mut [u64] = cast_slice_mut(res.data_mut());
@@ -1176,12 +1201,10 @@ pub(crate) fn vec_znx_dft_automorphism_add<R: Ring, E: poulpy_hal::execution::Ta
     a: &VecZnxDftBackendRef<'_, NTT3x42Ifma<R>>,
     a_col: usize,
 ) {
-    {
-        assert_eq!(a.n(), res.n());
-        assert_eq!(plan.perm.len(), res.n());
-    }
-
+    assert_eq!(plan.perm.len(), res.n());
     let n: usize = res.n();
+    check_operand(n, res, res_col);
+    check_operand(n, a, a_col);
     let (rc, ac) = (res.cols(), a.cols());
     let min_size: usize = res.size().min(a.size());
     let perm: &[u32] = &plan.perm;
@@ -1233,12 +1256,10 @@ pub(crate) fn vec_znx_dft_automorphism<R: Ring, E: poulpy_hal::execution::TaskEx
     a: &VecZnxDftBackendRef<'_, NTT3x42Ifma<R>>,
     a_col: usize,
 ) {
-    {
-        assert_eq!(a.n(), res.n());
-        assert_eq!(plan.perm.len(), res.n());
-    }
-
+    assert_eq!(plan.perm.len(), res.n());
     let n: usize = res.n();
+    check_operand(n, res, res_col);
+    check_operand(n, a, a_col);
     let (rc, ac) = (res.cols(), a.cols());
     let res_size: usize = res.size();
     let a_size: usize = a.size();

@@ -14,7 +14,7 @@
 - The vector-matrix product and the convolutions of `NTT4x30Portable` share one inner product on signed accumulators, 24 products per Montgomery step, gather their inputs and stage their outputs in runs of 32 blocks of four coefficients, and take that staging buffer from scratch.
   `vmp_apply_dft_to_dft_add`, `cnv_apply_dft_add`, `cnv_apply_dft_sum` and `cnv_pairwise_apply_dft` accumulate in the same pass, `svp_apply_dft` transforms each limb into its destination, and `vec_znx_idft_normalize_consume` writes the coefficients over the limb it transforms.
 - `NTT4x30Portable` implements `GGLWEProductDigitsStridedImpl` with a fused kernel for up to 16 gadget digits, which returns the residues of the reference body and skips the rows of leading input limbs that are zero in every column.
-- `NTT4x30Portable` implements `CKKSEncapsulatedModUpImpl` natively: the limbs that the raise to the large modulus leaves at zero are neither transformed nor multiplied, and the reference body stays in use where the layouts differ or the key has fewer than two or more than 16 digits.
+- `NTT4x30Portable` implements `CKKSEncapsulatedModUpImpl` natively: the limbs that the raise to the large modulus leaves at zero are neither transformed nor multiplied, and the reference body stays in use where the layouts differ, the key is a strided view or has fewer than two or more than 16 digits.
 - The middle step of the portable `i128` normalization takes the digit and the carry of the sum of the input and the incoming carry in one step.
   It returns the same values as the two-step form.
 - The portable FFT64 passes load, combine and store four elements at a time, and the two merged layers of a pass run in one sweep.
@@ -22,11 +22,16 @@
 - `vmp_apply_dft_to_dft_add` of the FFT64 backends, serial and Rayon, accumulates each block as it is computed, where it filled a zeroed scratch vector and added it afterwards.
   Its scratch shrinks to the one of `vmp_apply_dft_to_dft`.
 - **Fix:** `ZnxPortable::znx_normalize_middle_step` ignored its `OVERWRITE` parameter and always overwrote.
+- **Fix:** the encapsulated ModUp of the AVX2 and AVX-512 backends read a sparse-to-dense key view taken with `with_dsize` above the stored `dsize` as the stored matrix, and returned another ciphertext than the reference body; such a view now takes the reference body.
+- **Fix:** the NTT convolution apply kernels of the AVX2, AVX-512 and NEON backends checked the size of the result but not its column, and wrote past the buffer for a column past the last one; they now panic.
+- **Fix:** the convolution prepare of the NTT4x30 AVX2, AVX-512 and NEON backends gave each parallel task a mutable view of the whole column while the tasks of the other limbs of that column wrote to it; each task now writes only the rows of its limb.
+- `poulpy_cpu_portable::hal_defaults::take_host_typed` is public, and the SIMD backends use it in place of their own copies.
 
 ### `poulpy-core`
 
 - **Breaking:** `GLWE`, `GLWEPlaintext` and `GLWECompressed` carry an optional, scheme-managed `GLWEPlaintextMeta` (`Scale`, `SlotsKind`, `log_sparsity`) through `GLWEPlaintextInfos` and `SetGLWEPlaintextInfos`, which also read and set each field; `SlotsKind` moves from `poulpy-ckks` and gains `Integer`.
 - **Breaking, format:** serialized `GLWE` and `GLWECompressed` carry their plaintext metadata.
+- `reference::keyswitching::glwe::gglwe_product_limbs` returns the `product_limbs` the reference key switch passes to `GGLWEProductDigitsStridedImpl`, so that backend overrides derive the same.
 
 ### `poulpy-ckks`
 

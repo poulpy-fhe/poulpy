@@ -203,16 +203,22 @@ fn gglwe_product_pmat<BE>(
     if dsize == 1 {
         module.vmp_apply_dft_to_dft(res, a, pmat, 0, scratch);
     } else {
-        let product_terms = key
-            .n()
-            .as_usize()
-            .saturating_mul(key.dnum().as_usize())
-            .saturating_mul(dsize)
-            .saturating_mul(key.rank_in().as_usize().max(1))
-            .saturating_mul(term_count.max(1));
-        let product_limbs = gadget_product_limbs(key.base2k(), product_terms);
+        let product_limbs = gglwe_product_limbs(key, term_count);
         BE::gglwe_product_digits_strided(module, res, a, dsize, product_limbs, pmat, scratch);
     }
+}
+
+/// Spill width `product_limbs` of [`GGLWEProductDigitsStridedImpl::gglwe_product_digits_strided`] for products against
+/// `key`, accumulated `term_count` times before normalization.
+pub fn gglwe_product_limbs<K: GGLWEInfos>(key: &K, term_count: usize) -> usize {
+    let product_terms = key
+        .n()
+        .as_usize()
+        .saturating_mul(key.dnum().as_usize())
+        .saturating_mul(key.dsize().as_usize())
+        .saturating_mul(key.rank_in().as_usize().max(1))
+        .saturating_mul(term_count.max(1));
+    gadget_product_limbs(key.base2k(), product_terms)
 }
 
 /// Default DFT-domain gadget product used by key-switching and external products.

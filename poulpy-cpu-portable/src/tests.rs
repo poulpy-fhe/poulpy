@@ -154,6 +154,84 @@ fn test_transform_domain_packed_byte_sizes() {
     );
 }
 
+/// The packed kernels reject a result column past the last one and an operand of another degree.
+#[test]
+fn test_packed_kernels_reject_out_of_range_operands() {
+    use poulpy_hal::{
+        api::{
+            CnvPVecAlloc, Convolution, ScratchOwnedAlloc, VecZnxDftAdd, VecZnxDftAlloc, VecZnxDftAutomorphism,
+            VecZnxDftAutomorphismPlan,
+        },
+        layouts::{
+            CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, PrepareHint, ScratchOwned,
+            VecZnxDftToBackendMut, VecZnxDftToBackendRef, vec_znx_backend_ref,
+        },
+    };
+    let (n, cols, size) = (64, 2, 3);
+    let module = Module::<NTT4x30Portable>::new(2 * n as u64);
+    let rejects = |what: &str, op: &mut dyn FnMut()| {
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(op)).is_err();
+        assert!(panicked, "{what} accepted an out-of-range operand");
+    };
+
+    let a = module.vec_znx_alloc(n, cols, size);
+    let mut left = module.cnv_pvec_left_alloc(n, cols, size, PrepareHint::Reuse);
+    let mut right = module.cnv_pvec_right_alloc(n, cols, size, PrepareHint::Reuse);
+    let mut scratch: ScratchOwned<NTT4x30Portable> = ScratchOwned::alloc(
+        module
+            .cnv_apply_dft_add_tmp_bytes(0, size, size, size)
+            .max(module.cnv_prepare_left_tmp_bytes(size, size))
+            .max(module.cnv_prepare_right_tmp_bytes(size, size)),
+    );
+    module.cnv_prepare_left(
+        &mut left.to_backend_mut(),
+        &vec_znx_backend_ref::<NTT4x30Portable>(&a),
+        &mut scratch.arena(),
+    );
+    module.cnv_prepare_right(
+        &mut right.to_backend_mut(),
+        &vec_znx_backend_ref::<NTT4x30Portable>(&a),
+        &mut scratch.arena(),
+    );
+
+    let mut res = module.vec_znx_dft_alloc(n, cols, size);
+    let b = module.vec_znx_dft_alloc(n, cols, size);
+    let wide = module.vec_znx_dft_alloc(2 * n, cols, size);
+    rejects("cnv_apply_dft_add", &mut || {
+        module.cnv_apply_dft_add(
+            0,
+            &mut res.to_backend_mut(),
+            cols,
+            &left.to_backend_ref(),
+            0,
+            &right.to_backend_ref(),
+            0,
+            &mut scratch.arena(),
+        )
+    });
+    rejects("vec_znx_dft_add", &mut || {
+        module.vec_znx_dft_add(
+            &mut res.to_backend_mut(),
+            0,
+            &wide.to_backend_ref(),
+            0,
+            &b.to_backend_ref(),
+            0,
+        )
+    });
+    let plan = module.vec_znx_dft_automorphism_plan(n, 5);
+    rejects("vec_znx_dft_automorphism_add_with_plan", &mut || {
+        module.vec_znx_dft_automorphism_add_with_plan(
+            &plan,
+            &mut res.to_backend_mut(),
+            cols,
+            &b.to_backend_ref(),
+            0,
+            &mut scratch.arena(),
+        )
+    });
+}
+
 /// The fused interleaved-digit product against the core reference body, on the same backend.
 #[cfg(feature = "enable-core")]
 #[test]
@@ -445,6 +523,16 @@ cross_backend_test_suite! {
         test_vmp_apply_dft_to_dft_add => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_add,
         test_vmp_zero => poulpy_hal::test_suite::vmp::test_vmp_zero,
         test_word_compat_prepare_hint_sizes => poulpy_hal::test_suite::word_compat::test_word_compat_prepare_hint_sizes,
+    }
+}
+
+backend_test_suite! {
+    mod vec_znx_dft_operand_validation_ntt4x30,
+    backend = crate::NTT4x30Portable,
+    params = TestParams { size: 16, base2k: 50, n: 8 },
+    tests = {
+        test_vec_znx_dft_rejects_invalid_operands => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_rejects_invalid_operands,
+        test_vec_znx_dft_transforms_reject_invalid_operands => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_transforms_reject_invalid_operands,
     }
 }
 

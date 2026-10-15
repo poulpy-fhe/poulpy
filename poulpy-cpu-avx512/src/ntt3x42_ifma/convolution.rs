@@ -509,13 +509,14 @@ unsafe fn conv_columns_packed<R: Ring, E: TaskExecutor, const ACC: bool, const P
     let res_size = res.size();
     let bound = a_size + b_size - 1;
     let offset = cnv_offset.min(bound);
-    let min_size = res_size.min((bound + 1).saturating_sub(offset));
+    let min_size = res_size.min(bound - offset);
 
     let win_rows = a_size + 2 * (TILE - 1);
     let n_groups = n / 8;
     let n_tiles = min_size.div_ceil(TILE);
     let task_tmp_len = 3 * 8 * win_rows + 3 * 8 * b_size + 3 * 8 * n_tiles * TILE + 32 * b_size;
     let res_cols = res.cols();
+    assert!(res_col < res_cols, "convolution: result column out of range");
     let res_ptr = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
     let cached_overwrite = cached_overwrite_stores(n, min_size);
 
@@ -834,7 +835,7 @@ unsafe fn tensor_rank1_run<R: Ring, E: TaskExecutor>(
 
     let bound = a_size + b_size - 1;
     let offset = cnv_offset.min(bound);
-    let min_size = res_size.min((bound + 1).saturating_sub(offset));
+    let min_size = res_size.min(bound - offset);
     let win_rows = a_size + 2 * (TILE - 1);
     let staged = min_size.div_ceil(TILE) * TILE;
     let task_tmp_len = 6 * 8 * win_rows + 6 * 8 * b_size + 9 * 8 * staged;
@@ -1181,7 +1182,7 @@ pub(crate) unsafe fn cnv_apply_dft_sum_ifma<R: Ring, E: TaskExecutor>(
             let b_size = term.b.size();
             let bound = a_size + b_size - 1;
             let offset = cnv_offset.min(bound);
-            let min_size = res_size.min((bound + 1).saturating_sub(offset));
+            let min_size = res_size.min(bound - offset);
             max_size = max_size.max(min_size);
             max_a_size = max_a_size.max(a_size);
             max_b_size = max_b_size.max(b_size);
@@ -1214,6 +1215,7 @@ pub(crate) unsafe fn cnv_apply_dft_sum_ifma<R: Ring, E: TaskExecutor>(
     }
 
     let res_cols = res.cols();
+    assert!(res_col < res_cols, "convolution: result column out of range");
     let res_ptr = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
     let cached_overwrite = cached_overwrite_stores(n, max_size);
     let run_group = |local_tmp: &mut [u64], group: usize| {

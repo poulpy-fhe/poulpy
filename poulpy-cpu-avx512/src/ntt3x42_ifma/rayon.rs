@@ -596,6 +596,8 @@ where
         assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
         poulpy_hal::layouts::check_degree::<NTT3x42Ifma<R>>(module.n(), res.n());
         assert!(a.n() == res.n(), "vec_znx_dft_apply: a.n() != res.n()");
+        assert!(res_col < res.cols(), "result column out of range");
+        assert!(a_col < a.cols(), "operand column out of range");
         if parallel_limb_tasks(res.size()) {
             let n = res.n();
             let cols = res.cols();
@@ -636,6 +638,8 @@ where
     ) {
         poulpy_hal::layouts::check_degree::<NTT3x42Ifma<R>>(module.n(), res.n());
         assert_eq!(a.n(), res.n(), "vec_znx_idft_apply: a.n():{} != res.n():{}", a.n(), res.n());
+        assert!(res_col < res.cols(), "result column out of range");
+        assert!(a_col < a.cols(), "operand column out of range");
         if parallel_limb_tasks(res.size()) {
             let n = res.n();
             let res_cols = res.cols();
@@ -680,6 +684,8 @@ where
             a.n(),
             res.n()
         );
+        assert!(res_col < res.cols(), "result column out of range");
+        assert!(a_col < a.cols(), "operand column out of range");
         if parallel_limb_tasks(res.size()) {
             let n = res.n();
             let res_cols = res.cols();

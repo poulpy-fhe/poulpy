@@ -15,7 +15,7 @@ use poulpy_core::{
         GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef},
     },
-    reference::keyswitching::glwe::gglwe_product_output_size,
+    reference::keyswitching::glwe::{gglwe_product_limbs, gglwe_product_output_size},
 };
 use poulpy_hal::{
     api::{
@@ -39,7 +39,9 @@ where
     S2D: GGLWEInfos,
 {
     let dsize = sparse_to_dense.dsize().as_usize();
+    // A strided key view is gathered by the reference body only.
     dst.base2k() == sparse_to_dense.base2k()
+        && sparse_to_dense.stride() == 1
         && (2..=STRIDED_MAX_DSIZE).contains(&dsize)
         && scale_up.is_none_or(|scale_up| dst.k().as_usize() >= src.k().as_usize() + scale_up)
 }
@@ -128,19 +130,7 @@ unsafe impl CKKSEncapsulatedModUpImpl for BE {
         let output_cols = dst.rank().as_usize() + 1;
         let mask_cols = dst.rank().as_usize();
         let dsize = key.dsize().as_usize();
-        let product_terms = key
-            .n()
-            .as_usize()
-            .saturating_mul(key.dnum().as_usize())
-            .saturating_mul(dsize)
-            .saturating_mul(mask_cols.max(1));
-        let accumulation_bits = if product_terms <= 1 {
-            0
-        } else {
-            usize::BITS as usize - (product_terms - 1).leading_zeros() as usize
-        };
-        let base2k = key.base2k().as_usize();
-        let product_limbs = base2k.saturating_mul(2).saturating_add(accumulation_bits).div_ceil(base2k);
+        let product_limbs = gglwe_product_limbs(&key, 1);
         let (mut res_dft, mut scratch_1) = scratch
             .borrow()
             .take_vec_znx_dft_scratch(module.n(), output_cols, output_size);

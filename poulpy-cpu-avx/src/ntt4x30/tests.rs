@@ -388,3 +388,24 @@ fn large_ring_ntt_log17() {
 fn large_ring_ntt_rayon_log17() {
     poulpy_cpu_portable::test_suite::ntt::test_ntt_ring_degree::<crate::NTT4x30AvxRayon>(1 << 17);
 }
+
+poulpy_hal::backend_test_suite! {
+    mod vec_znx_dft_operand_validation,
+    backend = crate::NTT4x30Avx,
+    params = TestParams { size: 16, base2k: 50, n: 8 },
+    tests = {
+        test_vec_znx_dft_rejects_invalid_operands => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_rejects_invalid_operands,
+        test_vec_znx_dft_transforms_reject_invalid_operands => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_transforms_reject_invalid_operands,
+    }
+}
+
+#[cfg(feature = "enable-rayon")]
+poulpy_hal::backend_test_suite! {
+    mod vec_znx_dft_operand_validation_rayon,
+    backend = crate::NTT4x30AvxRayon,
+    params = TestParams { size: 16, base2k: 50, n: 8 },
+    tests = {
+        test_vec_znx_dft_rejects_invalid_operands => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_rejects_invalid_operands,
+        test_vec_znx_dft_transforms_reject_invalid_operands => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_transforms_reject_invalid_operands,
+    }
+}

@@ -257,7 +257,7 @@ fn ntt4x30_conv_columns<BE, const ACC: bool, const PAIRWISE: bool>(
     let res_size = res.size();
     let bound = a_size + b_size - 1;
     let offset = cnv_offset.min(bound);
-    let min_size = res_size.min((bound + 1).saturating_sub(offset));
+    let min_size = res_size.min(bound - offset);
     let n_blks = n / 2;
     let group_count = n_blks.div_ceil(CNV_ACC_GROUP);
     let res_limb_words = cast_slice::<Q120bScalar, u64>(res.at(res_col, 0)).len();
@@ -442,7 +442,7 @@ pub fn cnv_accumulate_schedule_portable(
         }
         let bound = a_size + b_size - 1;
         let offset = cnv_offset.min(bound);
-        let min_size = res_size.min((bound + 1).saturating_sub(offset));
+        let min_size = res_size.min(bound - offset);
         for (k, sched_k) in sched.iter_mut().enumerate().take(min_size) {
             let k_abs = k + offset;
             let j_min = k_abs.saturating_sub(a_size - 1);

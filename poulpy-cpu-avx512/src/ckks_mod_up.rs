@@ -22,7 +22,7 @@ use poulpy_core::{
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef},
     },
     oep::GGLWEProductDigitsStridedImpl,
-    reference::keyswitching::glwe::gglwe_product_output_size,
+    reference::keyswitching::glwe::{gglwe_product_limbs, gglwe_product_output_size},
 };
 use poulpy_hal::{
     api::{
@@ -196,7 +196,12 @@ where
 {
     let k_large = dst.k().as_usize();
     let k_small = src.k().as_usize();
-    if dst.base2k() != sparse_to_dense.base2k() || sparse_to_dense.dsize().as_usize() < 2 || k_large < k_small + scale_up {
+    // A strided key view is gathered by the reference body only.
+    if dst.base2k() != sparse_to_dense.base2k()
+        || sparse_to_dense.stride() != 1
+        || sparse_to_dense.dsize().as_usize() < 2
+        || k_large < k_small + scale_up
+    {
         return ckks_encapsulated_mod_up_reference(module, dst, src, scale_up, dense_to_sparse, sparse_to_dense, scratch);
     }
 
@@ -217,19 +222,7 @@ where
     let output_cols = dst.rank().as_usize() + 1;
     let mask_cols = dst.rank().as_usize();
     let dsize = key.dsize().as_usize();
-    let product_terms = key
-        .n()
-        .as_usize()
-        .saturating_mul(key.dnum().as_usize())
-        .saturating_mul(dsize)
-        .saturating_mul(mask_cols.max(1));
-    let accumulation_bits = if product_terms <= 1 {
-        0
-    } else {
-        usize::BITS as usize - (product_terms - 1).leading_zeros() as usize
-    };
-    let base2k = key.base2k().as_usize();
-    let product_limbs = base2k.saturating_mul(2).saturating_add(accumulation_bits).div_ceil(base2k);
+    let product_limbs = gglwe_product_limbs(&key, 1);
     let (mut res_dft, mut scratch_1) = scratch
         .borrow()
         .take_vec_znx_dft_scratch(module.n(), output_cols, output_size);

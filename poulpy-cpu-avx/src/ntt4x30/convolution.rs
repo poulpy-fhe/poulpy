@@ -183,7 +183,7 @@ pub(crate) fn cnv_prepare_tmp_bytes(n: usize) -> usize {
 }
 
 #[target_feature(enable = "avx2")]
-unsafe fn pack_prepared_limb(dst: &mut [u32], src: &[u64], n: usize, size: usize, limb: usize) {
+unsafe fn pack_prepared_limb(dst: *mut u32, src: &[u64], n: usize, size: usize, limb: usize) {
     unsafe {
         let q = _mm256_loadu_si256(super::arithmetic_avx::Q_VEC.as_ptr() as *const __m256i);
         let mu = _mm256_loadu_si256(super::arithmetic_avx::BARRETT_MU.as_ptr() as *const __m256i);
@@ -204,7 +204,7 @@ unsafe fn pack_prepared_limb(dst: &mut [u32], src: &[u64], n: usize, size: usize
                     mu,
                     pow32,
                 );
-                _mm256_storeu_si256(dst.as_mut_ptr().add(dst_off + pair * 8) as *mut __m256i, pack_two_q120(a, b));
+                _mm256_storeu_si256(dst.add(dst_off + pair * 8) as *mut __m256i, pack_two_q120(a, b));
             }
         }
     }
@@ -246,31 +246,29 @@ fn prepare<BE, E: TaskExecutor>(
     let task_count = cols * size;
     if E::is_parallel() && task_count > 1 {
         let stride = 4 * n * size;
-        let left_ptr = left.as_deref_mut().map(|data| SendPtr(data.as_mut_ptr()));
-        let right_ptr = right.as_deref_mut().map(|data| SendPtr(data.as_mut_ptr()));
-        E::for_each_chunked(task_count, tmp, 4 * n, |tmp, task| {
+        let col_ptr = |data: &mut [u32]| {
+            assert!(data.len() >= cols * stride);
+            SendPtr(data.as_mut_ptr())
+        };
+        let left_ptr = left.as_deref_mut().map(col_ptr);
+        let right_ptr = right.as_deref_mut().map(col_ptr);
+        // Tasks write the rows of distinct limbs of distinct columns: the rows of one limb interleave with the others.
+        // SAFETY: the columns lie within the buffers, checked above, and each task is the only one on the rows of its limb.
+        E::for_each_chunked(task_count, tmp, 4 * n, |tmp, task| unsafe {
             let col = task / size;
             let limb = task % size;
-            let mut dst_l = left_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
-            let mut dst_r = right_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
+            let dst_l = left_ptr.map(|ptr| (ptr.get().add(col * stride), limb));
+            let dst_r = right_ptr.map(|ptr| (ptr.get().add(col * stride), size - 1 - limb));
             if limb < min_size {
                 BE::ntt_from_znx64(tmp, a.at(col, limb));
                 BE::ntt_dft_execute(table, tmp);
-                if let Some(dst) = dst_l.as_deref_mut() {
-                    unsafe { pack_prepared_limb(dst, tmp, n, size, limb) };
-                }
-                if let Some(dst) = dst_r.as_deref_mut() {
-                    unsafe { pack_prepared_limb(dst, tmp, n, size, size - 1 - limb) };
+                for (dst, row) in dst_l.into_iter().chain(dst_r) {
+                    pack_prepared_limb(dst, tmp, n, size, row);
                 }
             } else {
-                for group in 0..n / GROUP {
-                    if let Some(dst) = dst_l.as_deref_mut() {
-                        let off = packed_row_offset(size, limb, group);
-                        dst[off..off + 4 * GROUP].fill(0);
-                    }
-                    if let Some(dst) = dst_r.as_deref_mut() {
-                        let off = packed_row_offset(size, size - 1 - limb, group);
-                        dst[off..off + 4 * GROUP].fill(0);
+                for (dst, row) in dst_l.into_iter().chain(dst_r) {
+                    for group in 0..n / GROUP {
+                        std::slice::from_raw_parts_mut(dst.add(packed_row_offset(size, row, group)), 4 * GROUP).fill(0);
                     }
                 }
             }
@@ -286,10 +284,10 @@ fn prepare<BE, E: TaskExecutor>(
             BE::ntt_from_znx64(tmp, a.at(col, limb));
             BE::ntt_dft_execute(table, tmp);
             if let Some(dst) = dst_l.as_deref_mut() {
-                unsafe { pack_prepared_limb(dst, tmp, n, size, limb) };
+                unsafe { pack_prepared_limb(dst.as_mut_ptr(), tmp, n, size, limb) };
             }
             if let Some(dst) = dst_r.as_deref_mut() {
-                unsafe { pack_prepared_limb(dst, tmp, n, size, size - 1 - limb) };
+                unsafe { pack_prepared_limb(dst.as_mut_ptr(), tmp, n, size, size - 1 - limb) };
             }
         }
         for limb in min_size..size {
@@ -392,7 +390,7 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     }
     let bound = a_size + b_size - 1;
     let offset = cnv_offset.min(bound);
-    let min_size = res_size.min((bound + 1).saturating_sub(offset));
+    let min_size = res_size.min(bound - offset);
     let a_raw: &[u32] = cast_slice(a.raw());
     let b_raw: &[u32] = cast_slice(b.raw());
     let a0 = col_slice(a_raw, n, a_size, a0_col);
@@ -400,6 +398,7 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     let b0 = col_slice(b_raw, b.n(), b_size, b0_col);
     let b1 = col_slice(b_raw, b.n(), b_size, b1_col);
     let res_cols = res.cols();
+    assert!(res_col < res_cols, "convolution: result column out of range");
     let res_ptr = SendPtr(cast_slice_mut::<_, u32>(res.raw_mut()).as_mut_ptr());
     E::for_each(n / GROUP, |group| unsafe {
         conv_group::<ACC, PAIRWISE>(

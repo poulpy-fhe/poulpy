@@ -1109,9 +1109,10 @@ where
         addend: Option<(&VecZnxBackendRef<'_, Self>, usize)>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
+        super::vec_znx_dft::check_operand(res.n(), res, res_col);
+        super::vec_znx_dft::check_operand(res.n(), a, a_col);
         let n = a.n();
         poulpy_hal::layouts::check_degree::<NTT4x30Neon<R>>(module.n(), n);
-        assert_eq!(res.n(), n, "vec_znx_idft_normalize_consume: res.n():{} != a.n():{n}", res.n());
         let cols = a.cols();
         let size = a.size();
         let per_worker = super::vec_znx_dft::idft_tmp_words(n);
@@ -1172,6 +1173,8 @@ where
         a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     ) {
+        super::vec_znx_dft::check_operand(res.n(), res, res_col);
+        super::vec_znx_dft::check_operand(res.n(), a, a_col);
         poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
         assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
         if !parallel_limb_tasks(res.size()) {
@@ -1187,7 +1190,6 @@ where
         }
 
         poulpy_hal::layouts::check_degree::<NTT4x30Neon<R>>(module.n(), res.n());
-        assert!(a.n() == res.n(), "vec_znx_dft_apply: a.n() != res.n()");
         let n = res.n();
         let cols = res.cols();
         let a_size = a.size();
@@ -1219,6 +1221,8 @@ where
         a_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
+        super::vec_znx_dft::check_operand(res.n(), res, res_col);
+        super::vec_znx_dft::check_operand(res.n(), a, a_col);
         if !parallel_limb_tasks(res.size()) {
             let mut base_scratch = scratch.borrow().into_backend::<NTT4x30Neon<R>>();
             return NTT4x30Neon::<R>::vec_znx_idft_apply(
@@ -1232,7 +1236,6 @@ where
         }
 
         poulpy_hal::layouts::check_degree::<NTT4x30Neon<R>>(module.n(), res.n());
-        assert_eq!(a.n(), res.n(), "vec_znx_idft_apply: a.n():{} != res.n():{}", a.n(), res.n());
         let n = res.n();
         let res_cols = res.cols();
         let a_cols = a.cols();
@@ -1268,6 +1271,8 @@ where
         a: &mut VecZnxDftBackendMut<'_, Self>,
         a_col: usize,
     ) {
+        super::vec_znx_dft::check_operand(res.n(), res, res_col);
+        super::vec_znx_dft::check_operand(res.n(), a, a_col);
         if !parallel_limb_tasks(res.size()) {
             return NTT4x30Neon::<R>::vec_znx_idft_apply_tmpa(
                 base_module(module),
@@ -1279,13 +1284,6 @@ where
         }
 
         poulpy_hal::layouts::check_degree::<NTT4x30Neon<R>>(module.n(), res.n());
-        assert_eq!(
-            a.n(),
-            res.n(),
-            "vec_znx_idft_apply_tmpa: a.n():{} != res.n():{}",
-            a.n(),
-            res.n()
-        );
         let n = res.n();
         let res_cols = res.cols();
         let a_cols = a.cols();

@@ -8,8 +8,8 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::Ring;
 use poulpy_hal::layouts::{
-    DataView, DataViewMut, Module, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef, ZnxView,
-    ZnxViewMut, check_degree,
+    DataView, DataViewMut, Module, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxInfos,
+    ZnxView, ZnxViewMut, check_degree,
 };
 
 use super::NTT4x30Portable;
@@ -28,6 +28,13 @@ pub(crate) fn packed_limb(data: &[u32], n: usize, cols: usize, col: usize, limb:
 pub(crate) fn packed_limb_mut(data: &mut [u32], n: usize, cols: usize, col: usize, limb: usize) -> &mut [u32] {
     let start = 4 * n * (limb * cols + col);
     &mut data[start..start + 4 * n]
+}
+
+/// Panics unless `a` has degree `n` and a column `col`: [`packed_limb`] trusts both.
+#[inline]
+fn check_operand(n: usize, a: &impl VecZnxInfos, col: usize) {
+    assert_eq!(a.n(), n, "operand degree differs from the result degree");
+    assert!(col < a.cols(), "operand column out of range");
 }
 
 /// Tables of the packed NTT of degree `n`.
@@ -108,7 +115,8 @@ pub(crate) fn vec_znx_dft_apply<R: Ring>(
     assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
     let n = res.n();
     check_degree::<NTT4x30Portable<R>>(module.n(), n);
-    assert!(a.n() == n, "vec_znx_dft_apply: a.n() != res.n()");
+    check_operand(n, a, a_col);
+    check_operand(n, res, res_col);
     let cols = res.cols();
     let res_size = res.size();
     let a_size = a.size();
@@ -136,8 +144,9 @@ pub(crate) fn vec_znx_idft_apply<R: Ring>(
 {
     poulpy_hal::layouts::assert_dense(res, "vec_znx_idft_apply");
     let n = res.n();
+    check_operand(n, res, res_col);
     check_degree::<NTT4x30Portable<R>>(module.n(), n);
-    assert_eq!(a.n(), n, "vec_znx_idft_apply: a.n():{} != res.n():{n}", a.n());
+    check_operand(n, a, a_col);
     let min_size = res.size().min(a.size());
     let a_cols = a.cols();
     let a_data: &[u32] = cast_slice(a.data());
@@ -166,8 +175,9 @@ pub(crate) fn vec_znx_idft_apply_tmpa<R: Ring>(
 {
     poulpy_hal::layouts::assert_dense(res, "vec_znx_idft_apply_tmpa");
     let n = res.n();
+    check_operand(n, res, res_col);
     check_degree::<NTT4x30Portable<R>>(module.n(), n);
-    assert_eq!(a.n(), n, "vec_znx_idft_apply_tmpa: a.n():{} != res.n():{n}", a.n());
+    check_operand(n, a, a_col);
     let min_size = res.size().min(a.size());
     let a_cols = a.cols();
     let a_data: &mut [u32] = cast_slice_mut(a.data_mut());
@@ -194,6 +204,7 @@ pub(crate) fn idft_compact_in_place<R: Ring>(
 {
     let n = a.n();
     check_degree::<NTT4x30Portable<R>>(module.n(), n);
+    check_operand(n, a, a_col);
     let cols = a.cols();
     let size = a.size();
     let data: &mut [u32] = cast_slice_mut(a.data_mut());
@@ -238,6 +249,9 @@ pub(crate) fn vec_znx_dft_add<R: Ring, E: TaskExecutor>(
     b_col: usize,
 ) {
     let n = res.n();
+    check_operand(n, res, res_col);
+    check_operand(n, a, a_col);
+    check_operand(n, b, b_col);
     let (rc, ac, bc) = (res.cols(), a.cols(), b.cols());
     let (rs, asz, bsz) = (res.size(), a.size(), b.size());
     let (sum_size, copy_size, copy_b) = if asz <= bsz {
@@ -276,6 +290,8 @@ pub(crate) fn vec_znx_dft_add_assign<R: Ring, E: TaskExecutor>(
     a_col: usize,
 ) {
     let n = res.n();
+    check_operand(n, res, res_col);
+    check_operand(n, a, a_col);
     let (rc, ac) = (res.cols(), a.cols());
     let size = res.size().min(a.size());
     let rp: &mut [u32] = cast_slice_mut(res.data_mut());
@@ -294,6 +310,9 @@ pub(crate) fn vec_znx_dft_sub<R: Ring, E: TaskExecutor>(
     b_col: usize,
 ) {
     let n = res.n();
+    check_operand(n, res, res_col);
+    check_operand(n, a, a_col);
+    check_operand(n, b, b_col);
     let (rc, ac, bc) = (res.cols(), a.cols(), b.cols());
     let (rs, asz, bsz) = (res.size(), a.size(), b.size());
     let (sub_size, copy_size, negate_b) = if asz <= bsz {
@@ -332,6 +351,8 @@ pub(crate) fn vec_znx_dft_sub_assign<R: Ring, E: TaskExecutor>(
     a_col: usize,
 ) {
     let n = res.n();
+    check_operand(n, res, res_col);
+    check_operand(n, a, a_col);
     let (rc, ac) = (res.cols(), a.cols());
     let size = res.size().min(a.size());
     let rp: &mut [u32] = cast_slice_mut(res.data_mut());
@@ -348,6 +369,8 @@ pub(crate) fn vec_znx_dft_sub_negate_assign<R: Ring, E: TaskExecutor>(
     a_col: usize,
 ) {
     let n = res.n();
+    check_operand(n, res, res_col);
+    check_operand(n, a, a_col);
     let (rc, ac) = (res.cols(), a.cols());
     let rs = res.size();
     let size = rs.min(a.size());
@@ -372,6 +395,8 @@ pub(crate) fn vec_znx_dft_copy<R: Ring, E: TaskExecutor>(
 ) {
     assert!(step >= 1, "vec_znx_dft_copy: step must be >= 1");
     let n = res.n();
+    check_operand(n, res, res_col);
+    check_operand(n, a, a_col);
     let (rc, ac) = (res.cols(), a.cols());
     let size = res.size();
     let a_size = a.size();
@@ -389,6 +414,7 @@ pub(crate) fn vec_znx_dft_copy<R: Ring, E: TaskExecutor>(
 
 pub(crate) fn vec_znx_dft_zero<R: Ring>(res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>, res_col: usize) {
     let n = res.n();
+    check_operand(n, res, res_col);
     let cols = res.cols();
     let size = res.size();
     let data: &mut [u32] = cast_slice_mut(res.data_mut());
@@ -404,12 +430,10 @@ pub(crate) fn vec_znx_dft_automorphism<R: Ring>(
     a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
     a_col: usize,
 ) {
-    {
-        assert_eq!(a.n(), res.n());
-        assert_eq!(plan.perm.len(), res.n());
-    }
-
     let n = res.n();
+    check_operand(n, res, res_col);
+    check_operand(n, a, a_col);
+    assert_eq!(plan.perm.len(), n);
     let (rc, ac) = (res.cols(), a.cols());
     let size = res.size().min(a.size());
     let rs = res.size();
@@ -437,12 +461,10 @@ pub(crate) fn vec_znx_dft_automorphism_add<R: Ring, E: TaskExecutor>(
     a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
     a_col: usize,
 ) {
-    {
-        assert_eq!(a.n(), res.n());
-        assert_eq!(plan.perm.len(), res.n());
-    }
-
     let n = res.n();
+    check_operand(n, res, res_col);
+    check_operand(n, a, a_col);
+    assert_eq!(plan.perm.len(), n);
     let (rc, ac) = (res.cols(), a.cols());
     let size = res.size().min(a.size());
     let res_ptr = cast_slice_mut::<_, u32>(res.data_mut()).as_mut_ptr() as usize;
