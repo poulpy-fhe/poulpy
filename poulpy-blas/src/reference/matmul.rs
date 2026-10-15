@@ -70,7 +70,6 @@ impl<BE: Backend, P: GLWEInfos + CKKSInfos> std::fmt::Debug for BlasMatMulOperan
             Terms::Prepared(terms) => terms.len(),
         };
         f.debug_struct("BlasMatMulOperand")
-            .field("terms", &std::any::type_name::<P>())
             .field("hint", &self.hint())
             .field("log_d", &self.log_d)
             .field("rows", &self.rows)
@@ -932,9 +931,9 @@ where
 /// `res = a b` under `ctx`, `res` of `m x n` blocks, for the left side `a` of `m x K` blocks and the right side `b` of
 /// `K x n`, `K = inner`, as [`BlasMatMulReference::blas_matmul_prepared_reference`] states: one JKLS kernel per block
 /// `(i, j)` of `res` over the `K d` pairs `(a_il[k], b_lj[k])`, `l`-major, a hot side's terms made one unit at a time,
-/// a block row of `a` or a block column of `b`, by [`unit_terms`] under `OneShot`. Each unit is made once, the held
-/// side's first, `a`'s first unit before `b`'s, so the budget errors come in the order the contract fixes, before any
-/// write to `res`.
+/// a block row of `a` or a block column of `b`, by [`unit_terms`] under `OneShot`. Each unit is made once, and `a`'s
+/// first before any of `b`'s, so the budget errors come in the order the contract fixes, before any write to `res`: of
+/// two hot sides, the held side's units come first, after `a`'s first when `b` is held.
 #[allow(clippy::too_many_arguments)]
 fn product<BE, R, SA, SB, T, K>(
     module: &Module<BE>,

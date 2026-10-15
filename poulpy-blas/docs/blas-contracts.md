@@ -295,9 +295,9 @@ of them reproduces:
   provided shifts' memory ceiling; an override may chunk it.
 
 The reference cold preparations call the hook too, and the reference prepared
-product for the terms of a hot operand ([Products](#products)), so a backend
-that overrides the hook alone evaluates every map of this crate but those of
-the products by public matrices.
+product and the reference `blas_matmul` for the terms of a hot operand
+([Products](#products)), so a backend that overrides the hook alone evaluates
+every map of this crate but those of the products by public matrices.
 
 ### Products
 
@@ -365,12 +365,12 @@ and `CKKSPreparedRight<BE>` on the right.
   `(a_il, b_lj)` for `blas_matmul_pt` and `(a_lj, b_il)` for
   `blas_matmul_pt_left`, `res = B A` from a `BlasPtOperand<BE, Left>` that
   `BlasPtOperandUnprepared::encode_left` encodes and `prepare` prepares, then
-  stamped with `a`'s label.
-  Each giant step adds the products of every term in the transform domain, in
-  that order, before its one rotation; an FFT backend rounds that sum, so the
-  order is part of the bits, and the radix must hold `K` times a giant step's
-  products (`Module::max_base2k`). The reference caches the baby steps of each
-  block of `a` once for its row of `res` (its column, on the left).
+  stamped with `a`'s label. Each giant step adds the products of every term in
+  the transform domain, in that order, before its one rotation; an FFT backend
+  rounds that sum, so the order is part of the bits, and the radix must hold
+  `K` times a giant step's products (`Module::max_base2k`). The reference
+  caches the baby steps of each block of `a` once for its row of `res` (its
+  column, on the left).
 
 **Free:** the representation of an operand under either hint: a hot operand
 may hold its source and evaluate its terms in the product, as the reference
@@ -407,7 +407,7 @@ of `b`, of `La` and `Lb` limbs, for an `m x K` by `K x n` product:
 The heap of `blas_matmul` beyond its inputs and `res` is then the held side's
 terms plus one unit, whatever the extent of the streamed side; the held terms
 are in the backend's transform-domain form, which takes 1 (FFT64), 2 (NTT AVX,
-AVX-512 and IFMA) or 4 (NTT portable) times their coefficient size. A cold
+AVX-512, IFMA and NEON) or 4 (NTT portable) times their coefficient size. A cold
 operand holds `d` such terms per block of its grid.
 
 ### The JKLS kernel
@@ -499,13 +499,12 @@ follows.
 
 The references run their steps one after another on one scratch, so their
 queries report the largest single step, on every executor
-([Parallelism](#parallelism)).
-Temporaries that outlive a hook call live on the heap, not in scratch: the
-copies of a hot preparation; the sigma results and terms of a cold preparation,
-or of a hot side's units in a product, the held ones and the one streamed, each
-coefficient term dropped once converted; and the heap grid of a shift across
-blocks. A query may panic on layouts its validator rejects, as its `# Panics`
-section states.
+([Parallelism](#parallelism)). Temporaries that outlive a hook call live on the
+heap, not in scratch: the copies of a hot preparation; the sigma results and
+terms of a cold preparation, or of a hot side's units in a product, the held
+ones and the one streamed, each coefficient term dropped once converted; and
+the heap grid of a shift across blocks. A query may panic on layouts its
+validator rejects, as its `# Panics` section states.
 
 ## Parallelism
 
@@ -541,32 +540,31 @@ the products and the products by public matrices also run with maps or public
 matrices a quarter of the parameter set's scale below and above it, which they
 consume in place of their inputs' scale, so the parameter set's `k` must hold
 two maps at the larger scale and a product. Hot operands prepared under one
-context serve the products under all three, and a hot operand beside a cold
-one prepared under another context gives the product of their terms. Through
-those maps, the products also multiply factors at
-two scales, in either order, one an eighth of the scale lower and either as
-much narrower, so that their terms keep one budget, or as wide, so that its
-terms have the larger budget: crossed scales, where the larger budget plus the
-larger scale, from which the ct x ct rule takes its offset, exceeds the wider
-term's width. `test_blas_key_widths` runs with
-the maps and the public matrices a quarter below that scale, where a key width
-taken from the inputs' scale in place of `p` or `p_B`, or capped by it, finds no
-key. They read coefficients on the host and use the standard ring, so they need
-a host backend of the standard ring. An optional `log_d = …` sets the blocks to
-`2^log_d x 2^log_d`, 2 by default. The ring degree `N` is free within two
-bounds: the blocks fit the `N / 2` slots, `d^2 <= N / 2` (`N >= 32` at the
-default), and the guards encode on a module of degree `2N`, which the backend
-must support (`N <= 2^16` at most). `test_blas_context` sweeps `log_d` 1 to 3
-and skips with a message those whose blocks do not fit;
+context serve the products under all three, and a hot operand beside a cold one
+prepared under another context gives the product of their terms. Through those
+maps, the products also multiply factors at two scales, in either order, one an
+eighth of the scale lower and either as much narrower, so that their terms keep
+one budget, or as wide, so that its terms have the larger budget: crossed
+scales, where the larger budget plus the larger scale, from which the ct x ct
+rule takes its offset, exceeds the wider term's width. `test_blas_key_widths`
+runs with the maps and the public matrices a quarter below that scale, where a
+key width taken from the inputs' scale in place of `p` or `p_B`, or capped by
+it, finds no key. They read coefficients on the host and use the standard ring,
+so they need a host backend of the standard ring. An optional `log_d = …` sets
+the blocks to `2^log_d x 2^log_d`, 2 by default. The ring degree `N` is free
+within two bounds: the blocks fit the `N / 2` slots, `d^2 <= N / 2` (`N >= 32`
+at the default), and the guards encode on a module of degree `2N`, which the
+backend must support (`N <= 2^16` at most). `test_blas_context` sweeps `log_d`
+1 to 3 and skips with a message those whose blocks do not fit;
 `test_blas_batch_record`, below four matrix slots, and the operand at another
 dimension in the guards of the products by public matrices, where only `2 x 2`
 blocks fit, are skipped with a message too. `poulpy-cpu-oracle` runs them on
 `FFT64Oracle` at `log_d` 1, 2 and 3 (the last at `N = 128`, where one block
 fills the 64 slots), at `log_d` 1 also at `N = 16`, whose 8 slots hold no
-`4 x 4` block, and on `NTT4x30Oracle` in `f64`, in `Quad` and at rank 2,
-each also at radix 54 (`N = 128`), the largest in practice.
-`test_blas_matmul_long_sums`, a `1 x 8` grid times an `8 x 1` grid of
-distinct blocks, runs on its own ring, `N = 32`.
+`4 x 4` block, and on `NTT4x30Oracle` in `f64`, in `Quad` and at rank 2, each
+also at radix 54 (`N = 128`), the largest in practice.
+`test_blas_matmul_long_sums`, a `1 x 8` grid times an `8 x 1` grid of distinct
+blocks, runs on its own ring, `N = 32`.
 
 `blas_conjugate_invariant_test_suite!(mod m, backend = …, params = …)` registers
 the test `conjugate_invariant` for a backend of the conjugate-invariant ring,
@@ -602,29 +600,27 @@ when cold, beside their hint and their input's layout as their source; the
 prepared product of every mix of hot and cold operands runs on one pair per
 scale of the maps into `res` of three widths, and on pairs at two scales into
 `res` of one, and must equal `blas_matmul` each time. Each call looks its keys
-up in a store of its
-operation's set alone, from `BlasPlan` or `sum_galois_elements`, which records
-every lookup: the tested backend may look up only keys, at widths, that the
-reference looked up in the same call. No call may write its inputs. The calls
-reach every branch of the circuit: identity rotations, one matrix slot, the
-copies of row and column shifts by `d` and `2d` along three blocks, one-row and
-one-column grids, `res` wider and narrower than the result, factors one limb
-apart in both orders, lazy inputs on real slots, sparse unless one matrix fills
-them, copies of lazy inputs, public products of one matrix and of one per matrix
-slot, maps and public matrices at scales below and above the operands', factors
-at two scales, in either order, through those maps, whose terms keep one budget
-or give the lower scale the larger budget (crossed scales, where a kernel that
-takes its offset from the wider term's width changes the bits), and a long
-product, `1 x 32` by `32 x 1` distinct blocks (`1 x 16` by `16 x 1` above
-radix 52), at every registration, which a kernel that drops or repeats a term
-of a long sum fails. Each
-family's parity also runs calls that poulpy-ckks rejects for their budget,
-among them the prepared product of a hot operand one bit short of the `2p` its
-terms spend: both backends return the same error and leave `res` and the inputs
-unchanged. Storage
-and ring are free: the bounds are `BlasParityBackend` (`Backend<ZnxWord = i64>`
-and every BLAS family) and `BlasParityModule`. Rank and `dsize` follow `params`,
-as in CKKS parity.
+up in a store of its operation's set alone, from `BlasPlan` or
+`sum_galois_elements`, which records every lookup: the tested backend may look
+up only keys, at widths, that the reference looked up in the same call. No call
+may write its inputs. The calls reach every branch of the circuit: identity
+rotations, one matrix slot, the copies of row and column shifts by `d` and `2d`
+along three blocks, one-row and one-column grids, `res` wider and narrower than
+the result, factors one limb apart in both orders, lazy inputs on real slots,
+sparse unless one matrix fills them, copies of lazy inputs, public products of
+one matrix and of one per matrix slot, maps and public matrices at scales below
+and above the operands', factors at two scales, in either order, through those
+maps, whose terms keep one budget or give the lower scale the larger budget
+(crossed scales, where a kernel that takes its offset from the wider term's
+width changes the bits), and a long product, `1 x 32` by `32 x 1` distinct
+blocks (`1 x 16` by `16 x 1` above radix 52), at every registration, which a
+kernel that drops or repeats a term of a long sum fails. Each family's parity
+also runs calls that poulpy-ckks rejects for their budget, among them the
+prepared product of a hot operand one bit short of the `2p` its terms spend:
+both backends return the same error and leave `res` and the inputs unchanged.
+Storage and ring are free: the bounds are `BlasParityBackend`
+(`Backend<ZnxWord = i64>` and every BLAS family) and `BlasParityModule`. Rank
+and `dsize` follow `params`, as in CKKS parity.
 
 The optional `shapes` argument, a `BlasParityShapes`, sets the swept block
 dimensions `log_d` (default `[1, 2]`). A `log_d` below 1, or whose `d^2`

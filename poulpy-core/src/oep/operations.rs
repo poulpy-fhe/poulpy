@@ -326,7 +326,8 @@ pub unsafe trait GLWETensoringImpl: Backend {
     }
 
     /// Scratch bytes of [`Self::glwe_mul_prepared_relinearize_sum`]. The default is this backend's
-    /// [`Self::glwe_mul_relinearize_sum_tmp_bytes`], of which the prepared sum takes a part.
+    /// [`Self::glwe_mul_relinearize_sum_tmp_bytes`], of which the prepared sum takes a part. Whatever an override
+    /// reports, the prepared sum of one pair runs within [`Self::glwe_mul_relinearize_tmp_bytes`], as the API states.
     fn glwe_mul_prepared_relinearize_sum_tmp_bytes<R, B>(
         module: &Module<Self>,
         res: &R,

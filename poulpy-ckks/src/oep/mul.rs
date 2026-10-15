@@ -65,7 +65,9 @@ pub unsafe trait CKKSMulImpl: Backend {
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<Self>;
-    /// Scratch bytes of [`Self::ckks_prepare_left_impl`] and [`Self::ckks_prepare_right_impl`].
+    /// Scratch bytes of [`Self::ckks_prepare_left_impl`] and [`Self::ckks_prepare_right_impl`] for an operand shaped
+    /// like `a`, which [`Self::ckks_mul_tmp_bytes_impl`] of a product reading such an operand covers, as the API
+    /// promises.
     fn ckks_prepare_tmp_bytes_impl<A: GLWEInfos>(module: &Module<Self>, a: &A) -> usize;
     /// Prepares a left operand. Whatever `hint` selects, the products must give the reference's bits.
     fn ckks_prepare_left_impl<A>(

@@ -393,7 +393,8 @@ pub trait GLWEMulRelinearizeSum<BE: Backend> {
 /// each of its `rank + 1` columns on `ceil(k / base2k)` limbs. Operands prepared so give the unprepared products of
 /// the ciphertexts they were prepared from, bit for bit.
 pub trait GLWEPreparedTensoring<BE: Backend> {
-    /// Scratch bytes of [`Self::glwe_mul_prepared_relinearize_sum`], whatever the number of pairs. The default is
+    /// Scratch bytes of [`Self::glwe_mul_prepared_relinearize_sum`], whatever the number of pairs: on a backend that
+    /// keeps the default of [`GLWETensoringImpl`](crate::oep::GLWETensoringImpl),
     /// [`GLWEMulRelinearizeSum::glwe_mul_relinearize_sum_tmp_bytes`] for the same arguments, of which the prepared sum
     /// takes a part. One pair needs no more than [`GLWETensoring::glwe_mul_relinearize_tmp_bytes`].
     fn glwe_mul_prepared_relinearize_sum_tmp_bytes<R, B>(
@@ -437,8 +438,9 @@ pub trait GLWEPreparedTensoring<BE: Backend> {
         H: GetTensorKey<BE>;
 
     /// Scratch bytes of [`Self::glwe_tensor_apply_prepared`] for operands prepared from ciphertexts of the layouts of
-    /// `a` and `b`. The default is [`GLWETensoring::glwe_tensor_apply_tmp_bytes`] for the same arguments, of which the
-    /// prepared product takes a part.
+    /// `a` and `b`: on a backend that keeps the default of [`GLWETensoringImpl`](crate::oep::GLWETensoringImpl),
+    /// [`GLWETensoring::glwe_tensor_apply_tmp_bytes`] for the same arguments, of which the prepared product takes a
+    /// part.
     fn glwe_tensor_apply_prepared_tmp_bytes<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,
