@@ -19,6 +19,212 @@ use crate::{
 use crate::layouts::VecZnxBigOwned;
 use crate::layouts::VecZnxDftOwned;
 
+/// Invalid operands must be rejected before any destination bytes are changed.
+///
+/// Extra backing limbs keep the regression cases in bounds even if a kernel
+/// accidentally uses the invalid column or the result degree for a source.
+pub fn test_vec_znx_dft_rejects_invalid_operands<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: VecZnxDftApply<BE>
+        + VecZnxDftAdd<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxDftSub<BE>
+        + VecZnxDftSubAssign<BE>
+        + VecZnxDftSubNegateAssign<BE>
+        + VecZnxDftCopy<BE>
+        + VecZnxDftZero<BE>
+        + VecZnxDftAutomorphism<BE>
+        + VecZnxDftAutomorphismAddWithPlanTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+{
+    use crate::layouts::VecZnxShape;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    let (n, cols) = (params.n, 2);
+    let other_n = if n == params.size { n / 2 } else { params.size };
+    assert!(other_n >= BE::MIN_DEGREE && other_n != n);
+    let seeded = |degree, size| {
+        let mut input = module.vec_znx_alloc(degree, cols, 2 * (size + 1));
+        module.vec_znx_fill_uniform_source_all(8, 8 * input.size(), &mut input, &mut Source::new([17; 32]));
+        dft_of_uploaded_vec_znx(module, &input, 1, 0).with_shape(VecZnxShape::new(degree, cols, size))
+    };
+    let plan = module.vec_znx_dft_automorphism_plan(n, 5);
+
+    for size in [0, 3] {
+        let b = seeded(n, size);
+        for (degree, res_col, a_col) in [(n, cols, 0), (n, 0, cols), (other_n, 0, 0)] {
+            let a = seeded(degree, size);
+            let mut res = seeded(n, size);
+            let mut scratch = ScratchOwned::alloc(module.vec_znx_dft_automorphism_add_with_plan_tmp_bytes(size, size));
+            macro_rules! rejects {
+                ($op:expr) => {{
+                    let before = BE::to_host_bytes(&res.data);
+                    let panicked = catch_unwind(AssertUnwindSafe(|| $op)).is_err();
+                    assert_eq!(
+                        before,
+                        BE::to_host_bytes(&res.data),
+                        "{} wrote before rejecting its operands",
+                        stringify!($op)
+                    );
+                    assert!(
+                        panicked,
+                        "{} accepted degree={degree}, res_col={res_col}, a_col={a_col}, size={size}",
+                        stringify!($op)
+                    );
+                }};
+            }
+            rejects!(module.vec_znx_dft_add(
+                &mut res.to_backend_mut(),
+                res_col,
+                &a.to_backend_ref(),
+                a_col,
+                &b.to_backend_ref(),
+                0
+            ));
+            rejects!(module.vec_znx_dft_add(
+                &mut res.to_backend_mut(),
+                res_col,
+                &b.to_backend_ref(),
+                0,
+                &a.to_backend_ref(),
+                a_col
+            ));
+            rejects!(module.vec_znx_dft_sub(
+                &mut res.to_backend_mut(),
+                res_col,
+                &a.to_backend_ref(),
+                a_col,
+                &b.to_backend_ref(),
+                0
+            ));
+            rejects!(module.vec_znx_dft_sub(
+                &mut res.to_backend_mut(),
+                res_col,
+                &b.to_backend_ref(),
+                0,
+                &a.to_backend_ref(),
+                a_col
+            ));
+            rejects!(module.vec_znx_dft_add_assign(&mut res.to_backend_mut(), res_col, &a.to_backend_ref(), a_col));
+            rejects!(module.vec_znx_dft_sub_assign(&mut res.to_backend_mut(), res_col, &a.to_backend_ref(), a_col));
+            rejects!(module.vec_znx_dft_sub_negate_assign(&mut res.to_backend_mut(), res_col, &a.to_backend_ref(), a_col));
+            rejects!(module.vec_znx_dft_copy(1, 0, &mut res.to_backend_mut(), res_col, &a.to_backend_ref(), a_col));
+            // An offset past the source must not hide an invalid column/degree.
+            rejects!(module.vec_znx_dft_copy(1, size, &mut res.to_backend_mut(), res_col, &a.to_backend_ref(), a_col));
+            rejects!(module.vec_znx_dft_automorphism_with_plan(
+                &plan,
+                &mut res.to_backend_mut(),
+                res_col,
+                &a.to_backend_ref(),
+                a_col
+            ));
+            rejects!(module.vec_znx_dft_automorphism_add_with_plan(
+                &plan,
+                &mut res.to_backend_mut(),
+                res_col,
+                &a.to_backend_ref(),
+                a_col,
+                &mut scratch.arena()
+            ));
+            if res_col == cols {
+                rejects!(module.vec_znx_dft_zero(&mut res.to_backend_mut(), res_col));
+            }
+        }
+    }
+}
+
+/// Forward and inverse transforms reject invalid shapes before touching either
+/// their result or an in-place input, including empty vectors.
+pub fn test_vec_znx_dft_transforms_reject_invalid_operands<BE: crate::test_suite::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    Module<BE>: VecZnxDftApply<BE> + VecZnxIdftApply<BE> + VecZnxIdftApplyTmpA<BE> + VecZnxIdftApplyTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+{
+    use crate::layouts::VecZnxShape;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    let (n, cols) = (params.n, 2);
+    let other_n = if n == params.size { n / 2 } else { params.size };
+    assert!(other_n >= BE::MIN_DEGREE && other_n != n);
+    for size in [0, 3] {
+        for (degree, res_col, a_col) in [(n, cols, 0), (n, 0, cols), (other_n, 0, 0)] {
+            let mut input = module.vec_znx_alloc(degree, cols, 2 * (size + 1));
+            module.vec_znx_fill_uniform_source_all(8, 8 * input.size(), &mut input, &mut Source::new([23; 32]));
+            let mut a = dft_of_uploaded_vec_znx(module, &input, 1, 0).with_shape(VecZnxShape::new(degree, cols, size));
+            let input = input.with_shape(VecZnxShape::new(degree, cols, size));
+            let mut res = module
+                .vec_znx_dft_alloc(n, cols, 2 * (size + 1))
+                .with_shape(VecZnxShape::new(n, cols, size));
+            macro_rules! rejects {
+                ($dst:ident, $op:expr) => {{
+                    let before = BE::to_host_bytes(&$dst.data);
+                    let panicked = catch_unwind(AssertUnwindSafe(|| $op)).is_err();
+                    assert_eq!(
+                        before,
+                        BE::to_host_bytes(&$dst.data),
+                        "{} wrote before rejecting its operands",
+                        stringify!($op)
+                    );
+                    assert!(
+                        panicked,
+                        "{} accepted degree={degree}, res_col={res_col}, a_col={a_col}, size={size}",
+                        stringify!($op)
+                    );
+                }};
+            }
+            rejects!(
+                res,
+                module.vec_znx_dft_apply(
+                    1,
+                    0,
+                    &mut res.to_backend_mut(),
+                    res_col,
+                    &vec_znx_backend_ref::<BE>(&input),
+                    a_col
+                )
+            );
+            rejects!(
+                res,
+                module.vec_znx_dft_apply(
+                    1,
+                    size,
+                    &mut res.to_backend_mut(),
+                    res_col,
+                    &vec_znx_backend_ref::<BE>(&input),
+                    a_col
+                )
+            );
+
+            let mut big = module
+                .vec_znx_big_alloc(n, cols, 2 * (size + 1))
+                .with_shape(VecZnxShape::new(n, cols, size));
+            let mut scratch = ScratchOwned::alloc(module.vec_znx_idft_apply_tmp_bytes());
+            rejects!(
+                big,
+                module.vec_znx_idft_apply(
+                    &mut big.to_backend_mut(),
+                    res_col,
+                    &a.to_backend_ref(),
+                    a_col,
+                    &mut scratch.arena()
+                )
+            );
+            let before_a = BE::to_host_bytes(&a.data);
+            rejects!(
+                big,
+                module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), res_col, &mut a.to_backend_mut(), a_col)
+            );
+            assert_eq!(
+                before_a,
+                BE::to_host_bytes(&a.data),
+                "in-place IDFT changed its input before rejection"
+            );
+        }
+    }
+}
+
 fn idft_into_alloc<BE>(module: &Module<BE>, a: &mut VecZnxDftOwned<BE>) -> VecZnxBigOwned<BE>
 where
     BE: crate::test_suite::TestBackend,
