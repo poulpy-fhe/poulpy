@@ -2,8 +2,8 @@ use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDftAssign, VecZnxAddAssign, VecZnxBigAddSmallAssign, VecZnxBigBytesOf,
         VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero,
-        VecZnxFillUniformSource, VecZnxIdftApplyTmpA, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
-        VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxZero, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
+        VecZnxFillUniformSource, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeAssign,
+        VecZnxNormalizeTmpBytes, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxZero, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
     },
     layouts::{
         Backend, Module, ScalarZnxToBackendMut, ScratchArena, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
@@ -115,6 +115,7 @@ where
         + ModuleN
         + VecZnxNormalizeTmpBytes
         + VecZnxBigNormalizeTmpBytes
+        + VecZnxIdftApplyTmpBytes
         + VecZnxDftBytesOf
         + GLWEMaskFill<BE>
         + GLWEEncryptSkInternal<BE>,
@@ -131,7 +132,9 @@ where
         let lvl_2: usize = self.vec_znx_normalize_tmp_bytes().max(
             self.bytes_of_vec_znx_dft(n, 1, size)
                 + self.bytes_of_vec_znx_big(n, 1, size)
-                + self.vec_znx_big_normalize_tmp_bytes(),
+                + self
+                    .vec_znx_idft_apply_tmp_bytes()
+                    .max(self.vec_znx_big_normalize_tmp_bytes()),
         );
 
         lvl_0 + lvl_1 + lvl_2
@@ -300,7 +303,12 @@ pub trait GLWEEncryptPkReference<BE: Backend> {
 
 impl<BE: Backend> GLWEEncryptPkReference<BE> for Module<BE>
 where
-    Self: GLWEEncryptPkInternal<BE> + VecZnxDftBytesOf + VmpApplyDftToDftTmpBytes + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
+    Self: GLWEEncryptPkInternal<BE>
+        + VecZnxDftBytesOf
+        + VmpApplyDftToDftTmpBytes
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxIdftApplyTmpBytes,
 {
     fn glwe_encrypt_pk_tmp_bytes_reference<R, K>(&self, res_infos: &R, pk_infos: &K) -> usize
     where
@@ -314,8 +322,12 @@ where
         let lvl_1: usize = self.bytes_of_vec_znx_dft(n, rank, 1);
         let lvl_2: usize = self.bytes_of_vec_znx_dft(n, rank + 1, size);
         let vmp: usize = self.vmp_apply_dft_to_dft_tmp_bytes(size, 1, 1, rank, rank + 1, size);
-        let lvl_3: usize = BE::bytes_of_vec_znx(n, 1, vmp.div_ceil(BE::bytes_of_vec_znx(n, 1, 1)))
-            .max(self.bytes_of_vec_znx_big(n, 1, size) + self.vec_znx_big_normalize_tmp_bytes());
+        let lvl_3: usize = BE::bytes_of_vec_znx(n, 1, vmp.div_ceil(BE::bytes_of_vec_znx(n, 1, 1))).max(
+            self.bytes_of_vec_znx_big(n, 1, size)
+                + self
+                    .vec_znx_idft_apply_tmp_bytes()
+                    .max(self.vec_znx_big_normalize_tmp_bytes()),
+        );
 
         lvl_0 + lvl_1 + lvl_2 + lvl_3
     }
@@ -381,7 +393,8 @@ where
         + VmpApplyDftToDftTmpBytes
         + VecZnxDftZero<BE>
         + VecZnxZero<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigAddNoise<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigAddSmallAssign<BE>
@@ -480,7 +493,7 @@ where
             {
                 let (mut ci_big, mut scratch_2) = scratch_1.borrow().take_vec_znx_big_scratch(n, 1, big_size);
                 for i in 0..rank + 1 {
-                    self.vec_znx_idft_apply_tmpa(&mut ci_big.to_backend_mut(), 0, &mut res_dft.to_backend_mut(), i);
+                    self.vec_znx_idft_apply(&mut ci_big.to_backend_mut(), 0, &res_dft.to_backend_ref(), i, &mut scratch_2);
                     if i > 0 || body_noise {
                         // The product keeps only leading whole limbs of the key. Add
                         // fresh error at the selected grid, then normalize once.
@@ -535,7 +548,8 @@ where
         + VecZnxBigNormalize<BE>
         + VecZnxDftApply<BE>
         + SvpApplyDftToDftAssign<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxNormalizeTmpBytes
         + VecZnxFillUniformSource<BE>
         + VecZnxAddAssign<BE>
@@ -601,7 +615,13 @@ where
                 self.vec_znx_dft_apply(1, 0, &mut ci_dft.to_backend_mut(), 0, &ci.to_backend_ref(), 0);
                 self.svp_apply_dft_to_dft_assign(&mut ci_dft.to_backend_mut(), 0, &sk.data, i - 1);
                 let (mut ci_big, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(res.n(), 1, size);
-                self.vec_znx_idft_apply_tmpa(&mut ci_big.to_backend_mut(), 0, &mut ci_dft.to_backend_mut(), 0);
+                self.vec_znx_idft_apply(
+                    &mut ci_big.to_backend_mut(),
+                    0,
+                    &ci_dft.to_backend_ref(),
+                    0,
+                    &mut scratch_4.borrow(),
+                );
                 self.vec_znx_big_normalize(
                     &mut ci.to_backend_mut(),
                     base2k,

@@ -583,16 +583,6 @@ where
         crate::ntt4x30_avx512::vec_znx_dft::vec_znx_idft_apply(module, res, res_col, a, a_col, tmp);
     }
 
-    fn vec_znx_idft_apply_tmpa(
-        module: &Module<Self>,
-        res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
-        res_col: usize,
-        a: &mut VecZnxDftBackendMut<'_, Self>,
-        a_col: usize,
-    ) {
-        crate::ntt4x30_avx512::vec_znx_dft::vec_znx_idft_apply_tmpa(module, res, res_col, a, a_col);
-    }
-
     fn vec_znx_dft_add(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -1003,16 +993,6 @@ mod ifma_impl {
             let bytes = crate::ntt3x42_ifma::vec_znx_dft::vec_znx_idft_apply_tmp_bytes(res.n());
             let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
             crate::ntt3x42_ifma::vec_znx_dft::vec_znx_idft_apply(module, res, res_col, a, a_col, tmp);
-        }
-
-        fn vec_znx_idft_apply_tmpa(
-            module: &Module<Self>,
-            res: &mut VecZnxBigBackendMut<'_, Self>,
-            res_col: usize,
-            a: &mut VecZnxDftBackendMut<'_, Self>,
-            a_col: usize,
-        ) {
-            crate::ntt3x42_ifma::vec_znx_dft::vec_znx_idft_apply_tmpa_ifma(module, res, res_col, a, a_col);
         }
 
         fn vec_znx_dft_add(

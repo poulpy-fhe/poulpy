@@ -655,17 +655,6 @@ pub unsafe trait HalVecZnxDftImpl: Backend + HalVecZnxBigImpl {
         scratch: &mut ScratchArena<'_, Self>,
     );
 
-    /// Required, not derived: the composition is `vec_znx_idft_apply(res, a)`,
-    /// which needs `vec_znx_idft_apply_tmp_bytes` scratch this signature does
-    /// not carry.
-    fn vec_znx_idft_apply_tmpa(
-        module: &Module<Self>,
-        res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
-        res_col: usize,
-        a: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>,
-        a_col: usize,
-    );
-
     /// Returns scratch bytes required for
     /// [`Self::vec_znx_idft_normalize_consume`]. Default body:
     /// `vec_znx_idft_normalize_consume_tmp_bytes_derived`, the `a_size`-limb

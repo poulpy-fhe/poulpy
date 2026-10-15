@@ -1,9 +1,10 @@
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDftAssign, VecZnxBigAddAssign, VecZnxBigBytesOf, VecZnxBigFromSmall,
-        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApplyTmpA,
+        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply,
+        VecZnxIdftApplyTmpBytes,
     },
-    layouts::{Backend, ScratchArena, VecZnxBackendRef, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut},
+    layouts::{Backend, ScratchArena, VecZnxBackendRef, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef},
 };
 
 pub use crate::api::GLWEDecrypt;
@@ -20,7 +21,13 @@ use crate::{
 
 pub fn glwe_decrypt_tmp_bytes_reference<M, BE: Backend, A>(module: &M, infos: &A) -> usize
 where
-    M: ModuleN + VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes + GLWENormalize<BE> + GLWEBytesOf<BE>,
+    M: ModuleN
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxIdftApplyTmpBytes
+        + GLWENormalize<BE>
+        + GLWEBytesOf<BE>,
     A: GLWEInfos,
 {
     BE::scratch_aligned(module.glwe_bytes_of_from_infos(infos))
@@ -29,15 +36,17 @@ where
 
 pub(crate) fn glwe_decrypt_body_tmp_bytes<M, A>(module: &M, infos: &A) -> usize
 where
-    M: ModuleN + VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
+    M: ModuleN + VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes + VecZnxIdftApplyTmpBytes,
     A: GLWEInfos,
 {
     let size: usize = infos.size();
     let n: usize = operand_degree(module.n(), &[infos.n()]);
 
     let lvl_0: usize = module.bytes_of_vec_znx_big(n, 1, size);
-    let lvl_1: usize = (module.bytes_of_vec_znx_dft(n, 1, size) + module.bytes_of_vec_znx_big(n, 1, size))
-        .max(module.vec_znx_big_normalize_tmp_bytes());
+    let lvl_1: usize = (module.bytes_of_vec_znx_dft(n, 1, size)
+        + module.bytes_of_vec_znx_big(n, 1, size)
+        + module.vec_znx_idft_apply_tmp_bytes())
+    .max(module.vec_znx_big_normalize_tmp_bytes());
 
     lvl_0 + lvl_1
 }
@@ -55,7 +64,8 @@ pub fn glwe_decrypt_reference<M, BE: Backend, R, P, S>(
         + VecZnxBigFromSmall<BE>
         + VecZnxDftApply<BE>
         + SvpApplyDftToDftAssign<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigAddAssign<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
@@ -102,7 +112,8 @@ pub(crate) fn glwe_decrypt_backend_inner<'arena, 'scratch, M, BE: Backend>(
         + VecZnxBigFromSmall<BE>
         + VecZnxDftApply<BE>
         + SvpApplyDftToDftAssign<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigAddAssign<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
@@ -151,7 +162,8 @@ fn phase_backend_inner<'arena, 'scratch, M, BE: Backend>(
         + VecZnxBigFromSmall<BE>
         + VecZnxDftApply<BE>
         + SvpApplyDftToDftAssign<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigAddAssign<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
@@ -163,7 +175,7 @@ fn phase_backend_inner<'arena, 'scratch, M, BE: Backend>(
     }
 
     for i in 0..rank {
-        let (mut ci_dft, scratch_2) = scratch_1.borrow().take_vec_znx_dft_scratch(n, 1, size);
+        let (mut ci_dft, mut scratch_2) = scratch_1.borrow().take_vec_znx_dft_scratch(n, 1, size);
         module.vec_znx_dft_apply(1, 0, &mut ci_dft, 0, data, mask + i);
         {
             let mut ci_dft_backend = ci_dft.to_backend_mut();
@@ -171,17 +183,11 @@ fn phase_backend_inner<'arena, 'scratch, M, BE: Backend>(
         }
         // Without a body, the first product starts the sum.
         if body.is_none() && i == 0 {
-            let mut c0_big_backend = c0_big.to_backend_mut();
-            let mut ci_dft_backend = ci_dft.to_backend_mut();
-            module.vec_znx_idft_apply_tmpa(&mut c0_big_backend, 0, &mut ci_dft_backend, 0);
+            module.vec_znx_idft_apply(&mut c0_big, 0, &ci_dft.to_backend_ref(), 0, &mut scratch_2);
             continue;
         }
-        let (mut ci_big, _) = scratch_2.take_vec_znx_big_scratch(n, 1, size);
-        {
-            let mut ci_big_backend = ci_big.to_backend_mut();
-            let mut ci_dft_backend = ci_dft.to_backend_mut();
-            module.vec_znx_idft_apply_tmpa(&mut ci_big_backend, 0, &mut ci_dft_backend, 0);
-        }
+        let (mut ci_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(n, 1, size);
+        module.vec_znx_idft_apply(&mut ci_big, 0, &ci_dft.to_backend_ref(), 0, &mut scratch_3);
         let ci_big_ref = ci_big.to_backend_ref();
         module.vec_znx_big_add_assign(&mut c0_big, 0, &ci_big_ref, 0);
     }
@@ -206,7 +212,7 @@ fn phase_backend_inner<'arena, 'scratch, M, BE: Backend>(
 
 pub fn glwe_mask_inner_product_tmp_bytes_reference<M, A>(module: &M, infos: &A) -> usize
 where
-    M: ModuleN + VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
+    M: ModuleN + VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes + VecZnxIdftApplyTmpBytes,
     A: GLWEInfos,
 {
     glwe_decrypt_body_tmp_bytes::<M, _>(module, infos)
@@ -226,7 +232,8 @@ pub fn glwe_mask_inner_product_reference<M, BE: Backend, R, A, S>(
         + VecZnxBigFromSmall<BE>
         + VecZnxDftApply<BE>
         + SvpApplyDftToDftAssign<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigAddAssign<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,

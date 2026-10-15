@@ -12,8 +12,7 @@ use poulpy_hal::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigAddAssign, VecZnxBigAlloc,
         VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromSmall,
         VecZnxBigNormalize, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf,
-        VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxNormalizeAssign,
-        VecZnxNormalizeTmpBytes,
+        VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
     },
     layouts::{
         Backend, GaloisElement, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut,
@@ -166,7 +165,6 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
         + VecZnxDftCopy<BE>
         + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>
-        + VecZnxIdftApplyTmpA<BE>
         + VecZnxIdftApplyTmpBytes
         + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes
@@ -296,9 +294,13 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
 
         let (mut lazy_acc_big, mut scratch_phase) = scratch_phase.take_vec_znx_big_scratch(res.n().as_usize(), cols, lazy_size);
         {
-            let mut lazy_acc_dft_backend = lazy_acc_dft.to_backend_mut();
             let mut lazy_acc_big_backend = lazy_acc_big.to_backend_mut();
-            glwe_idft_dft_into_big(module, &mut lazy_acc_big_backend, &mut lazy_acc_dft_backend);
+            glwe_idft_dft_into_big(
+                module,
+                &mut lazy_acc_big_backend,
+                &lazy_acc_dft.to_backend_ref(),
+                &mut scratch_phase,
+            );
         }
 
         let lazy_acc_ref = lazy_acc_big.to_backend_ref();
@@ -333,8 +335,9 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
                 &mut scratch_phase,
             );
             let mut acc_backend = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendMut<BE>>::to_backend_mut(&mut fallback_acc);
+            let prod_dft_ref = poulpy_hal::layouts::vec_znx_dft_backend_ref_from_mut(&prod_dft_backend);
             for col in 0..cols {
-                module.vec_znx_idft_apply_tmpa(&mut prod_col_big, 0, &mut prod_dft_backend, col);
+                module.vec_znx_idft_apply(&mut prod_col_big, 0, &prod_dft_ref, col, &mut scratch_phase.borrow());
                 let prod_col_big_ref = prod_col_big.to_backend_ref();
                 module.vec_znx_big_normalize(
                     &mut acc_backend.data,

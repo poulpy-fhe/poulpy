@@ -146,18 +146,6 @@ pub(crate) fn idft_limb<R: Ring, E: TaskExecutor>(
     unsafe { idft_limb_planes::<R, E>(module, n, dst.as_mut_ptr(), src.as_ptr(), work.as_mut_ptr()) };
 }
 
-/// Inverse transform of one packed limb, which it overwrites.
-pub(crate) fn idft_limb_tmpa<R: Ring, E: TaskExecutor>(
-    module: &Module<NTT4x30Neon<R>>,
-    n: usize,
-    dst: &mut [i128],
-    src: &mut [u32],
-) {
-    assert!(dst.len() >= n && src.len() >= 4 * n);
-    let src = src.as_mut_ptr();
-    unsafe { idft_limb_planes::<R, E>(module, n, dst.as_mut_ptr(), src, src) };
-}
-
 /// Inverse transform of the packed limb `slot` into `n` coefficients that overwrite it.
 ///
 /// The planes move to `tmp`, which holds [`idft_tmp_words`] words, so the coefficients can take the place of the limb.
@@ -265,36 +253,6 @@ pub(crate) fn vec_znx_idft_apply<R: Ring>(
             res.at_mut(res_col, limb),
             packed_limb(a_data, n, a_cols, a_col, limb),
             tmp,
-        );
-    }
-    for limb in min_size..res.size() {
-        res.at_mut(res_col, limb).fill(0);
-    }
-}
-
-pub(crate) fn vec_znx_idft_apply_tmpa<R: Ring>(
-    module: &Module<NTT4x30Neon<R>>,
-    res: &mut VecZnxBigBackendMut<'_, NTT4x30Neon<R>>,
-    res_col: usize,
-    a: &mut VecZnxDftBackendMut<'_, NTT4x30Neon<R>>,
-    a_col: usize,
-) where
-    NTT4x30Neon<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
-{
-    poulpy_hal::layouts::assert_dense(res, "vec_znx_idft_apply_tmpa");
-    let n = res.n();
-    check_operand(n, res, res_col);
-    check_degree::<NTT4x30Neon<R>>(module.n(), n);
-    check_operand(n, a, a_col);
-    let min_size = res.size().min(a.size());
-    let a_cols = a.cols();
-    let a_data: &mut [u32] = cast_slice_mut(a.data_mut());
-    for limb in 0..min_size {
-        idft_limb_tmpa::<R, SerialTaskExecutor>(
-            module,
-            n,
-            res.at_mut(res_col, limb),
-            packed_limb_mut(a_data, n, a_cols, a_col, limb),
         );
     }
     for limb in min_size..res.size() {

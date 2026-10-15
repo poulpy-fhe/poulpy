@@ -31,10 +31,6 @@ macro_rules! impl_packed_base {
                 drivers::idft_limb::<$ring, E>(module, n, dst, src, tmp)
             }
 
-            fn idft_limb_tmpa<E: TaskExecutor>(module: &Module<Self>, n: usize, dst: &mut [i128], src: &mut [u32]) {
-                drivers::idft_limb_tmpa::<$ring, E>(module, n, dst, src)
-            }
-
             fn idft_limb_compact<E: TaskExecutor>(module: &Module<Self>, n: usize, slot: &mut [u32], tmp: &mut [u64]) {
                 drivers::idft_limb_compact::<$ring, E>(module, n, slot, tmp)
             }

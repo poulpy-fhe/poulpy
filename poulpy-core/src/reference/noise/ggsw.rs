@@ -1,12 +1,12 @@
 use poulpy_hal::{
     api::{
         ScratchArenaTakeBasic, SvpApplyDftToDftAssign, VecZnxAddScalarAssign, VecZnxBigAddAssign, VecZnxBigBytesOf,
-        VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf,
-        VecZnxIdftApplyTmpA, VecZnxSubAssign,
+        VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply,
+        VecZnxIdftApplyTmpBytes, VecZnxSubAssign,
     },
     layouts::{
         Backend, HostBackend, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendRef, ScratchArena, Stats,
-        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, ZnxZero,
+        VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, ZnxZero,
     },
 };
 
@@ -50,7 +50,8 @@ where
     Module<BE>: VecZnxAddScalarAssign<BE>
         + VecZnxDftApply<BE>
         + SvpApplyDftToDftAssign<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigBytesOf
         + VecZnxDftBytesOf
         + VecZnxBigFromSmall<BE>
@@ -74,7 +75,9 @@ where
         let lvl_1_glwe_noise: usize = glwe_noise_body_tmp_bytes(self, infos);
         let lvl_1_mul: usize = self.bytes_of_vec_znx_dft(n, 1, infos.size())
             + self.bytes_of_vec_znx_big(n, 1, infos.size())
-            + self.vec_znx_big_normalize_tmp_bytes();
+            + self
+                .vec_znx_idft_apply_tmp_bytes()
+                .max(self.vec_znx_big_normalize_tmp_bytes());
         let lvl_1: usize = lvl_1_glwe_noise.max(lvl_1_mul);
 
         lvl_0 + lvl_1
@@ -134,11 +137,7 @@ where
                 self.svp_apply_dft_to_dft_assign(&mut pt_dft_backend, 0, &sk_backend.data, res_col - 1);
             }
             let (mut pt_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(res.n().as_usize(), 1, res_backend.size());
-            {
-                let mut pt_big_backend = pt_big.to_backend_mut();
-                let mut pt_dft_backend = pt_dft.to_backend_mut();
-                self.vec_znx_idft_apply_tmpa(&mut pt_big_backend, 0, &mut pt_dft_backend, 0);
-            }
+            self.vec_znx_idft_apply(&mut pt_big, 0, &pt_dft.to_backend_ref(), 0, &mut scratch_3.borrow());
             {
                 let mut pt_backend = pt.to_backend_mut();
                 self.vec_znx_big_normalize(

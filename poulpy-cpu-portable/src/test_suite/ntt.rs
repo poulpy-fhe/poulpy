@@ -1,7 +1,10 @@
 use poulpy_hal::{
-    api::{ModuleNew, VecZnxBigAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApplyTmpA},
+    api::{
+        ModuleNew, ScratchOwnedAlloc, VecZnxBigAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
+    },
     layouts::{
-        Backend, HostBytesBackend, HostDataRef, Module, VecZnxBigToBackendMut, VecZnxDftToBackendMut, ZnxView, ZnxViewMut,
+        Backend, HostBytesBackend, HostDataRef, Module, ScratchOwned, VecZnxBigToBackendMut, VecZnxDftToBackendMut,
+        VecZnxDftToBackendRef, ZnxView, ZnxViewMut,
     },
     test_suite::{upload_vec_znx, vec_znx_backend_ref},
 };
@@ -11,7 +14,13 @@ pub fn test_ntt_ring_degree<BE>(n: usize)
 where
     BE: Backend<ZnxWord = i64, BigWord = i128>,
     BE::OwnedBuf: HostDataRef,
-    Module<BE>: ModuleNew<BE> + VecZnxBigAlloc<BE> + VecZnxDftAlloc<BE> + VecZnxDftApply<BE> + VecZnxIdftApplyTmpA<BE>,
+    Module<BE>: ModuleNew<BE>
+        + VecZnxBigAlloc<BE>
+        + VecZnxDftAlloc<BE>
+        + VecZnxDftApply<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let module = Module::<BE>::new(n as u64);
     let host = Module::<HostBytesBackend>::new(n as u64);
@@ -29,7 +38,8 @@ where
     let mut dft = module.vec_znx_dft_alloc(n, 1, 2);
     let mut big = module.vec_znx_big_alloc(n, 1, 2);
     module.vec_znx_dft_apply(1, 0, &mut dft.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&input), 0);
-    module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut dft.to_backend_mut(), 0);
+    let mut scratch = ScratchOwned::<BE>::alloc(module.vec_znx_idft_apply_tmp_bytes());
+    module.vec_znx_idft_apply(&mut big.to_backend_mut(), 0, &dft.to_backend_ref(), 0, &mut scratch.arena());
     for limb in 0..2 {
         for (i, (&got, &want)) in big.at(0, limb).iter().zip(a.at(0, limb)).enumerate() {
             assert_eq!(got, want as i128, "roundtrip n={n} limb={limb} i={i}");

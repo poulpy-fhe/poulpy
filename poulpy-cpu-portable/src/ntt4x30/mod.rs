@@ -63,9 +63,8 @@ pub mod drivers {
         cnv_prepare_left, cnv_prepare_right, cnv_prepare_self, cnv_prepare_tmp_bytes,
     };
     pub use super::vec_znx_dft::{
-        dft_limb, dft_limb_scaled, idft_limb, idft_limb_compact, idft_limb_tmpa, idft_tmp_words, vec_znx_dft_add,
-        vec_znx_dft_add_assign, vec_znx_dft_automorphism_add, vec_znx_dft_copy, vec_znx_dft_sub, vec_znx_dft_sub_assign,
-        vec_znx_dft_sub_negate_assign,
+        dft_limb, dft_limb_scaled, idft_limb, idft_limb_compact, idft_tmp_words, vec_znx_dft_add, vec_znx_dft_add_assign,
+        vec_znx_dft_automorphism_add, vec_znx_dft_copy, vec_znx_dft_sub, vec_znx_dft_sub_assign, vec_znx_dft_sub_negate_assign,
     };
     pub use super::vmp::{vmp_apply_dft_to_dft, vmp_apply_dft_to_dft_add, vmp_apply_tmp_bytes};
     #[cfg(feature = "enable-core")]

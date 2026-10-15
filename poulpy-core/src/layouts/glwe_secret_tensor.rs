@@ -6,7 +6,7 @@ use poulpy_hal::{AlignedBuf, alloc_aligned};
 use poulpy_hal::{
     api::{
         ModuleN, SvpApplyDftToDft, SvpPrepare, VecZnxBigAlloc, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
-        VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApplyTmpA,
+        VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
     },
     layouts::{
         Backend, Data, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendRef, ScratchArena, ScratchOwned,
@@ -222,7 +222,8 @@ where
         + VecZnxBigNormalize<BE>
         + VecZnxDftApply<BE>
         + SvpApplyDftToDft<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
@@ -276,7 +277,10 @@ where
             let a_prepared_backend_ref = a_prepared.data.reborrow_backend_ref();
             let mut a_ij_big_backend = self.vec_znx_big_alloc(n, 1, 1);
             let mut norm_scratch = ScratchOwned {
-                data: BE::alloc_bytes(self.vec_znx_big_normalize_tmp_bytes()),
+                data: BE::alloc_bytes(
+                    self.vec_znx_big_normalize_tmp_bytes()
+                        .max(self.vec_znx_idft_apply_tmp_bytes()),
+                ),
                 _phantom: std::marker::PhantomData,
             };
             // Tag of the base secret `a`, carried over as-is: the products below
@@ -294,11 +298,13 @@ where
                         let mut a_ij_dft_backend = a_ij_dft.to_backend_mut();
                         self.svp_apply_dft_to_dft(&mut a_ij_dft_backend, 0, &a_prepared_backend_ref, j, &a_dft_ref, i);
                     }
-                    {
-                        let mut a_ij_big = a_ij_big_backend.to_backend_mut();
-                        let mut a_ij_dft = a_ij_dft.to_backend_mut();
-                        self.vec_znx_idft_apply_tmpa(&mut a_ij_big, 0, &mut a_ij_dft, 0);
-                    }
+                    self.vec_znx_idft_apply(
+                        &mut a_ij_big_backend.to_backend_mut(),
+                        0,
+                        &a_ij_dft.to_backend_ref(),
+                        0,
+                        &mut norm_scratch.arena(),
+                    );
                     {
                         let a_ij_big = a_ij_big_backend.to_backend_ref();
                         let res_k = res_backend.size() * base2k;

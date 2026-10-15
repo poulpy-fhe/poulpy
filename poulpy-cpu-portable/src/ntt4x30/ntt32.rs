@@ -678,14 +678,6 @@ pub(crate) fn intt32<E: TaskExecutor>(table: &Ntt32Table, dst: &mut [i128], src:
     crt_planes::<E>(parallel, n, dst, work);
 }
 
-/// Inverse transform of the packed limb `work` into `n` coefficients, overwriting the limb with its intermediate planes.
-pub(crate) fn intt32_assign<E: TaskExecutor>(table: &Ntt32Table, dst: &mut [i128], work: &mut [u32]) {
-    let n = table.n;
-    let parallel = plane_tasks::<E>(n);
-    for_each_of_four::<E, _>(parallel, planes_mut(n, work), |p, work| intt32_plane(table, p, work, None));
-    crt_planes::<E>(parallel, n, dst, work);
-}
-
 /// Inverse transform of the packed limb `slot` into `n` coefficients that overwrite it.
 ///
 /// The planes move to `work` during the transform, and the coefficients take the 16 bytes per coefficient of the limb.
@@ -781,9 +773,6 @@ mod tests {
             slot.copy_from_slice(&planes);
             intt32_compact::<poulpy_hal::execution::SerialTaskExecutor>(&table, &mut slot, &mut work);
             assert_eq!(cast_slice::<u32, i128>(&slot), &want[..], "log_n={log_n} inverse compacted");
-            let mut got = vec![0i128; n];
-            intt32_assign::<poulpy_hal::execution::SerialTaskExecutor>(&table, &mut got, &mut planes);
-            assert_eq!(got, want, "log_n={log_n} inverse in place");
         }
     }
 

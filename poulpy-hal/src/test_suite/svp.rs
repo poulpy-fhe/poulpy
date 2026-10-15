@@ -4,7 +4,6 @@ use super::{
 };
 use crate::layouts::SvpPPolToBackendMut;
 use crate::layouts::SvpPPolToBackendRef;
-use crate::layouts::VecZnxBigToBackendMut;
 use crate::layouts::VecZnxBigToBackendRef;
 use crate::layouts::VecZnxDftToBackendMut;
 use crate::layouts::VecZnxDftToBackendRef;
@@ -13,30 +12,14 @@ use crate::{
     api::{
         ScratchOwnedAlloc, SvpApplyDft, SvpApplyDftTmpBytes, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPPolCopy,
         SvpPrepare, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxDftApply,
-        VecZnxFillUniformSource, VecZnxFillUniformSourceAll, VecZnxIdftApplyTmpA,
+        VecZnxFillUniformSource, VecZnxFillUniformSourceAll, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
     },
-    layouts::{Backend, Module, PrepareHint, ScalarZnxAsVecZnxBackendMut, ScratchOwned, SvpPPolOwned, VecZnxOwned},
+    layouts::{Module, PrepareHint, ScalarZnxAsVecZnxBackendMut, ScratchOwned, SvpPPolOwned, VecZnxOwned},
     source::Source,
 };
 
-use crate::layouts::VecZnxBigOwned;
 use crate::layouts::VecZnxDftOwned;
-
-fn idft_into_alloc<BE>(module: &Module<BE>, a: &mut VecZnxDftOwned<BE>) -> VecZnxBigOwned<BE>
-where
-    BE: Backend,
-    Module<BE>: VecZnxBigAlloc<BE> + VecZnxIdftApplyTmpA<BE>,
-{
-    let cols = a.cols();
-    let size = a.size();
-    let mut res = module.vec_znx_big_alloc(a.n(), cols, size);
-    for j in 0..cols {
-        let mut res_backend = res.to_backend_mut();
-        let mut a_backend = a.to_backend_mut();
-        module.vec_znx_idft_apply_tmpa(&mut res_backend, j, &mut a_backend, j);
-    }
-    res
-}
+use crate::test_suite::vec_znx_dft::idft_into_alloc;
 
 pub fn test_svp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
@@ -50,7 +33,8 @@ pub fn test_svp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
         + VecZnxDftAlloc<BR>
         + VecZnxBigAlloc<BR>
         + VecZnxBigNormalize<BR>
-        + VecZnxIdftApplyTmpA<BR>
+        + VecZnxIdftApply<BR>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: SvpPrepare<BT>
         + SvpApplyDft<BT>
@@ -59,7 +43,8 @@ pub fn test_svp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
         + VecZnxDftAlloc<BT>
         + VecZnxBigAlloc<BT>
         + VecZnxBigNormalize<BT>
-        + VecZnxIdftApplyTmpA<BT>
+        + VecZnxIdftApply<BT>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
@@ -139,8 +124,8 @@ pub fn test_svp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                 );
             }
 
-            let res_big_ref = idft_into_alloc(module_ref, &mut res_dft_ref);
-            let res_big_test = idft_into_alloc(module_test, &mut res_dft_test);
+            let res_big_ref = idft_into_alloc(module_ref, &res_dft_ref);
+            let res_big_test = idft_into_alloc(module_test, &res_dft_test);
 
             let res_host_template = VecZnxOwned::<i64>::alloc(params.n, cols, res_size);
             let mut res_ref_backend = upload_vec_znx::<BR>(&res_host_template);
@@ -191,7 +176,8 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
         + VecZnxBigAlloc<BR>
         + VecZnxBigNormalize<BR>
         + VecZnxDftApply<BR>
-        + VecZnxIdftApplyTmpA<BR>
+        + VecZnxIdftApply<BR>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: SvpPrepare<BT>
         + SvpApplyDftToDft<BT>
@@ -201,7 +187,8 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
         + VecZnxBigAlloc<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxDftApply<BT>
-        + VecZnxIdftApplyTmpA<BT>
+        + VecZnxIdftApply<BT>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
@@ -325,8 +312,8 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                 );
             }
 
-            let res_big_ref = idft_into_alloc(module_ref, &mut res_dft_ref);
-            let res_big_test = idft_into_alloc(module_test, &mut res_dft_test);
+            let res_big_ref = idft_into_alloc(module_ref, &res_dft_ref);
+            let res_big_test = idft_into_alloc(module_test, &res_dft_test);
 
             let res_host_template = VecZnxOwned::<i64>::alloc(params.n, cols, res_size);
             let mut res_ref_backend = upload_vec_znx::<BR>(&res_host_template);
@@ -376,7 +363,8 @@ pub fn test_svp_apply_dft_to_dft_assign<BR: crate::test_suite::TestBackend, BT: 
         + VecZnxBigAlloc<BR>
         + VecZnxBigNormalize<BR>
         + VecZnxDftApply<BR>
-        + VecZnxIdftApplyTmpA<BR>
+        + VecZnxIdftApply<BR>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: SvpPrepare<BT>
         + SvpApplyDftToDftAssign<BT>
@@ -385,7 +373,8 @@ pub fn test_svp_apply_dft_to_dft_assign<BR: crate::test_suite::TestBackend, BT: 
         + VecZnxBigAlloc<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxDftApply<BT>
-        + VecZnxIdftApplyTmpA<BT>
+        + VecZnxIdftApply<BT>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
@@ -464,8 +453,8 @@ pub fn test_svp_apply_dft_to_dft_assign<BR: crate::test_suite::TestBackend, BT: 
             module_test.svp_apply_dft_to_dft_assign(&mut res_dft_test.to_backend_mut(), j, &svp_test.to_backend_ref(), j);
         }
 
-        let res_big_ref = idft_into_alloc(module_ref, &mut res_dft_ref);
-        let res_big_test = idft_into_alloc(module_test, &mut res_dft_test);
+        let res_big_ref = idft_into_alloc(module_ref, &res_dft_ref);
+        let res_big_test = idft_into_alloc(module_test, &res_dft_test);
 
         let res_host_template = VecZnxOwned::<i64>::alloc(params.n, cols, res_size);
         let mut res_ref_backend = upload_vec_znx::<BR>(&res_host_template);

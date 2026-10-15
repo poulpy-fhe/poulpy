@@ -534,31 +534,6 @@ unsafe fn packed_negate_assign(n: usize, dst: &mut [u64]) {
 // Forward / inverse NTT
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[inline(always)]
-#[cfg(feature = "enable-rayon")]
-pub(crate) fn vec_znx_idft_apply_tmpa_limb_ifma<R: Ring>(
-    module: &Module<NTT3x42Ifma<R>>,
-    n: usize,
-    dst: &mut [i128],
-    src: Option<&[u64]>,
-    scratch: &mut [u64],
-) where
-    NTT3x42Ifma<R>:
-        Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
-{
-    assert_eq!(dst.len(), n);
-    assert!(scratch.len() >= 3 * n);
-    let Some(src) = src else {
-        dst.fill(0);
-        return;
-    };
-    assert_eq!(src.len(), 2 * n);
-    unsafe {
-        unpack_limb_3x42(n, scratch, src);
-        intt_then_compact_ifma(n, 1, scratch.as_mut_ptr(), dst.as_mut_ptr(), handle(module).table_intt_for(n));
-    }
-}
-
 /// In-place iNTT of `a[a_col]`'s limbs: each packed limb is replaced by its
 /// `i128` compaction, leaving that column of the buffer in `VecZnxBig` layout.
 pub(crate) fn idft_compact_in_place_ifma<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
@@ -790,50 +765,6 @@ fn stream_finish<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
     for j in active..output_size {
         res.at_mut(res_col, j).fill(0);
     }
-}
-
-/// `VecZnxIdftApplyTmpA` packed fast path.
-pub(crate) fn vec_znx_idft_apply_tmpa_ifma<R: Ring>(
-    module: &Module<crate::NTT3x42Ifma<R>>,
-    res: &mut VecZnxBigBackendMut<'_, crate::NTT3x42Ifma<R>>,
-    res_col: usize,
-    a: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma<R>>,
-    a_col: usize,
-) where
-    NTT3x42Ifma<R>:
-        Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
-{
-    let n = res.n();
-    check_operand(n, res, res_col);
-    check_operand(n, a, a_col);
-    check_degree::<NTT3x42Ifma<R>>(module.n(), n);
-    let table = handle(module).table_intt_for(n);
-    let min_size = res.size().min(a.size());
-    let a_cols = a.cols();
-    let res_cols = res.cols();
-    let res_size = res.size();
-
-    let src_data: &[u64] = cast_slice(a.data());
-    let dst_data = res.raw_mut();
-
-    for_index_with(
-        res_size,
-        3 * n * res_size,
-        || vec![0u64; 3 * n],
-        |scratch, j| {
-            let start = n * (j * res_cols + res_col);
-            let dst = &mut dst_data[start..start + n];
-            if j < min_size {
-                let src = packed_limb(src_data, n, a_cols, a_col, j);
-                unsafe {
-                    unpack_limb_3x42(n, scratch, src);
-                    intt_then_compact_ifma(n, 1, scratch.as_mut_ptr(), dst.as_mut_ptr(), table);
-                }
-            } else {
-                dst.fill(0i128);
-            }
-        },
-    );
 }
 
 #[inline(always)]

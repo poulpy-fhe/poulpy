@@ -6,11 +6,11 @@ use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, LWEInfos};
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
-        VecZnxDftBytesOf, VecZnxIdftApplyTmpA,
+        VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
     },
     layouts::{
         Backend, CnvDftAccTerm, CnvPVecL, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Module, PrepareHint, ScratchArena,
-        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut,
+        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
     },
 };
 
@@ -24,7 +24,12 @@ use crate::{
 pub(crate) fn ship_masking_tmp_bytes<BE>(module: &Module<BE>, plan: &ShipPlan, base2k: usize) -> usize
 where
     BE: Backend,
-    Module<BE>: Convolution<BE> + CnvPVecBytesOf + VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
+    Module<BE>: Convolution<BE>
+        + CnvPVecBytesOf
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxIdftApplyTmpBytes,
 {
     let a_size = plan.raised_k(base2k).div_ceil(base2k);
     let b_size = (plan.log_delta_work() + base2k).div_ceil(base2k);
@@ -34,7 +39,12 @@ where
     let work = module
         .cnv_prepare_right_tmp_bytes(b_size, b_size)
         .max(module.cnv_apply_dft_sum_tmp_bytes(0, res_dft_size, a_size, b_size))
-        .max(module.bytes_of_vec_znx_big(module.n(), 2, res_dft_size) + module.vec_znx_big_normalize_tmp_bytes());
+        .max(
+            module.bytes_of_vec_znx_big(module.n(), 2, res_dft_size)
+                + module
+                    .vec_znx_big_normalize_tmp_bytes()
+                    .max(module.vec_znx_idft_apply_tmp_bytes()),
+        );
     module.bytes_of_vec_znx_dft(module.n(), 2, res_dft_size) + preps + work
 }
 
@@ -51,7 +61,12 @@ pub(crate) fn ship_masking_accumulate<BE>(
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: Convolution<BE> + CnvPVecBytesOf + VecZnxDftBytesOf + VecZnxIdftApplyTmpA<BE> + VecZnxBigNormalize<BE>,
+    Module<BE>: Convolution<BE>
+        + CnvPVecBytesOf
+        + VecZnxDftBytesOf
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxBigNormalize<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
 {
@@ -115,9 +130,9 @@ where
     let (mut res_big, mut scratch_2) = rest.take_vec_znx_big_scratch(module.n(), 2, res_dft_size);
     {
         let mut res_big_mut = res_big.to_backend_mut();
-        let mut sum_dft_mut = sum_dft.to_backend_mut();
+        let sum_dft_ref = sum_dft.to_backend_ref();
         for col in 0..2 {
-            module.vec_znx_idft_apply_tmpa(&mut res_big_mut, col, &mut sum_dft_mut, col);
+            module.vec_znx_idft_apply(&mut res_big_mut, col, &sum_dft_ref, col, &mut scratch_2.borrow());
         }
     }
     acc.set_log_budget(res_log_budget);

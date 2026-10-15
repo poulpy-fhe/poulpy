@@ -16,7 +16,6 @@ use crate::kernels::{
             vec_znx_dft_sub_negate_assign_portable as fft64_vec_znx_dft_sub_negate_assign,
             vec_znx_dft_sub_portable as fft64_vec_znx_dft_sub, vec_znx_dft_zero_portable as fft64_vec_znx_dft_zero,
             vec_znx_idft_apply_portable as fft64_vec_znx_idft_apply,
-            vec_znx_idft_apply_tmpa_portable as fft64_vec_znx_idft_apply_tmpa,
         },
     },
     ntt4x30::{
@@ -39,7 +38,6 @@ use crate::kernels::{
             ntt4x30_vec_znx_dft_zero_portable as ntt4x30_default_vec_znx_dft_zero,
             ntt4x30_vec_znx_idft_apply_portable as ntt4x30_default_vec_znx_idft_apply,
             ntt4x30_vec_znx_idft_apply_tmp_bytes_portable as ntt4x30_default_vec_znx_idft_apply_tmp_bytes,
-            ntt4x30_vec_znx_idft_apply_tmpa_portable as ntt4x30_default_vec_znx_idft_apply_tmpa,
         },
     },
     znx::ZnxZero,
@@ -105,21 +103,6 @@ where
         fft64_vec_znx_idft_apply::<Self>(module.get_fft_plan(n), res, res_col, a, a_col);
     }
 
-    fn vec_znx_idft_apply_tmpa_default(
-        module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
-        res_col: usize,
-        a: &mut VecZnxDftBackendMut<'_, Self>,
-        a_col: usize,
-    ) where
-        Module<Self>: FFTModuleHandle<f64, Ring = Self::Ring>,
-        Self: Backend<DftWord = f64, BigWord = i64, ZnxWord = i64> + ReimArith + Fft64RingArith + ZnxZero,
-        for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
-    {
-        let n: usize = res.n();
-        check_degree::<Self>(module.n(), n);
-        fft64_vec_znx_idft_apply_tmpa::<Self>(module.get_fft_plan(n), res, res_col, a, a_col);
-    }
     fn vec_znx_dft_add_default(
         _module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -327,21 +310,6 @@ where
         ntt4x30_default_vec_znx_idft_apply::<Self>(module, res, res_col, a, a_col, tmp);
     }
 
-    fn vec_znx_idft_apply_tmpa_default(
-        module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
-        res_col: usize,
-        a: &mut VecZnxDftBackendMut<'_, Self>,
-        a_col: usize,
-    ) where
-        Module<Self>: NttModuleHandle,
-        Self: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64>
-            + NttDFTExecute<NttTableInv<Primes30, <Module<Self> as crate::kernels::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
-            + NttToZnx128,
-        for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
-    {
-        ntt4x30_default_vec_znx_idft_apply_tmpa::<Self>(module, res, res_col, a, a_col);
-    }
     fn vec_znx_dft_add_default(
         _module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,

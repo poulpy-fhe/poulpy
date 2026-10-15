@@ -96,28 +96,6 @@ pub trait VecZnxIdftApply<B: Backend> {
     );
 }
 
-/// Inverse DFT of a DFT-domain vector into a big-word vector, consuming the source.
-///
-/// ```text
-/// op         vec_znx_idft_apply_tmpa(res, res_col, a, a_col)
-/// class      variant
-/// mutation   out-of-place
-/// definition res[res_col,j] = idft(old(a))[a_col,j]; a[a_col] is unspecified afterwards; columns of res other than res_col and columns of a other than a_col are unchanged
-/// domain     res: a dense VecZnxBig; a: a VecZnxDft of the same degree, taken mutably
-/// ensures    the pre-call selected source column is inverse-transformed into big words; result limbs from a.size() onward are zero
-/// test       test_vec_znx_idft_apply_tmpa
-/// ```
-pub trait VecZnxIdftApplyTmpA<B: Backend> {
-    /// Writes the inverse DFT of the pre-call `a` into `res`.
-    fn vec_znx_idft_apply_tmpa(
-        &self,
-        res: &mut VecZnxBigBackendMut<'_, B>,
-        res_col: usize,
-        a: &mut VecZnxDftBackendMut<'_, B>,
-        a_col: usize,
-    );
-}
-
 /// Scratch size of the inverse DFT fused with normalization.
 ///
 /// ```text

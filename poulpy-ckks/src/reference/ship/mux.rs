@@ -8,7 +8,8 @@ use poulpy_core::{
 use poulpy_hal::{
     api::{
         ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
-        VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApplyTmpA,
+        VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApply,
+        VecZnxIdftApplyTmpBytes,
     },
     layouts::{
         Backend, Module, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
@@ -51,13 +52,17 @@ where
     BE: Backend,
     C: LWEInfos,
     K: GGLWEInfos,
-    Module<BE>: VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes + GGLWEProductReference<BE>,
+    Module<BE>:
+        VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes + VecZnxIdftApplyTmpBytes + GGLWEProductReference<BE>,
 {
     let a_size = ct.size();
     let output_size = gglwe_product_accumulation_output_size::<BE, _, _, _>(ct, ct, key, term_count);
     let product = module.gglwe_product_dft_tmp_bytes_reference(output_size, a_size, key);
     let mux = 2 * module.bytes_of_vec_znx_dft(module.n(), 2, output_size) + product;
-    let finalize = module.bytes_of_vec_znx_big(module.n(), 2, output_size) + module.vec_znx_big_normalize_tmp_bytes();
+    let finalize = module.bytes_of_vec_znx_big(module.n(), 2, output_size)
+        + module
+            .vec_znx_big_normalize_tmp_bytes()
+            .max(module.vec_znx_idft_apply_tmp_bytes());
     module.bytes_of_vec_znx_dft(module.n(), 2, a_size)
         + module.bytes_of_vec_znx_dft(module.n(), 2, output_size)
         + mux.max(finalize)
@@ -81,7 +86,8 @@ where
         + VecZnxDftZero<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftAutomorphism<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxDftBytesOf
         + GGLWEProductReference<BE>,
@@ -155,9 +161,9 @@ where
     let (mut res_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(module.n(), 2, output_size);
     {
         let mut res_big_mut = res_big.to_backend_mut();
-        let mut sum_dft_mut = sum_dft.to_backend_mut();
+        let sum_dft_ref = sum_dft.to_backend_ref();
         for col in 0..2 {
-            module.vec_znx_idft_apply_tmpa(&mut res_big_mut, col, &mut sum_dft_mut, col);
+            module.vec_znx_idft_apply(&mut res_big_mut, col, &sum_dft_ref, col, &mut scratch_3.borrow());
         }
     }
     let k = ct.k().as_usize();

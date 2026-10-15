@@ -1455,51 +1455,6 @@ where
         });
     }
 
-    fn vec_znx_idft_apply_tmpa(
-        module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
-        res_col: usize,
-        a: &mut VecZnxDftBackendMut<'_, Self>,
-        a_col: usize,
-    ) {
-        super::vec_znx_dft::check_operand(res.n(), res, res_col);
-        super::vec_znx_dft::check_operand(res.n(), a, a_col);
-        if !parallel_limb_tasks(res.size()) {
-            return NTT4x30Avx512::<R>::vec_znx_idft_apply_tmpa(
-                base_module(module),
-                &mut base_big_mut::<R>(res),
-                res_col,
-                &mut base_dft_mut::<R>(a),
-                a_col,
-            );
-        }
-
-        poulpy_hal::layouts::check_degree::<NTT4x30Avx512<R>>(module.n(), res.n());
-        let n = res.n();
-        let res_cols = res.cols();
-        let a_cols = a.cols();
-        let min_size = res.size().min(a.size());
-        let a_data: &[u32] = cast_slice(a.raw());
-        let module = base_module(module);
-        res.raw_mut().par_chunks_mut(n * res_cols).enumerate().for_each_init(
-            || vec![0u64; 4 * n],
-            |tmp, (limb, group)| {
-                let dst = &mut group[n * res_col..][..n];
-                if limb < min_size {
-                    super::vec_znx_dft::idft_limb(
-                        module,
-                        n,
-                        dst,
-                        super::vec_znx_dft::packed_limb(a_data, n, a_cols, a_col, limb),
-                        tmp,
-                    );
-                } else {
-                    dst.fill(0);
-                }
-            },
-        );
-    }
-
     fn vec_znx_dft_add(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,

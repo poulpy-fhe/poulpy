@@ -7,8 +7,8 @@ use poulpy_core::{
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
-        VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApplyTmpA,
-        VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
+        VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply,
+        VecZnxIdftApplyTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
     },
     layouts::{Backend, Module, ScratchArena},
 };
@@ -44,7 +44,8 @@ where
         + VecZnxDftCopy<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftAutomorphism<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VmpApplyDftToDft<BE>
         + VecZnxDftBytesOf

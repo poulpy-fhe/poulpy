@@ -100,7 +100,8 @@ where
         + poulpy_hal::api::VecZnxBigFromSmall<BE>
         + poulpy_hal::api::VecZnxDftApply<BE>
         + poulpy_hal::api::SvpApplyDftToDftAssign<BE>
-        + poulpy_hal::api::VecZnxIdftApplyTmpA<BE>
+        + poulpy_hal::api::VecZnxIdftApply<BE>
+        + poulpy_hal::api::VecZnxIdftApplyTmpBytes
         + poulpy_hal::api::VecZnxBigAddAssign<BE>
         + poulpy_hal::api::VecZnxBigNormalize<BE>
         + poulpy_hal::api::SvpPPolCopy<BE>

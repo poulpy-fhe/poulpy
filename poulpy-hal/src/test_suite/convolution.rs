@@ -14,7 +14,7 @@ use crate::{
     api::{
         CnvPVecAlloc, Convolution, ModuleN, ScratchOwnedAlloc, VecZnxAdd, VecZnxAlloc, VecZnxBigAlloc, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxFillUniformSourceAll,
-        VecZnxIdftApplyTmpA, VecZnxNormalizeAssign, VecZnxSwitchRing,
+        VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalizeAssign, VecZnxSwitchRing,
     },
     layouts::{
         CnvDftAccTerm, CnvPVecL, CnvPVecR, DataView, Module, PrepareHint, ScratchArena, ScratchOwned, VecZnx, VecZnxOwned,
@@ -235,7 +235,8 @@ where
         + CnvPVecAlloc<BE>
         + VecZnxDftAlloc<BE>
         + VecZnxDftApply<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxNormalizeAssign<BE>
@@ -275,7 +276,8 @@ where
             .cnv_apply_dft_tmp_bytes(0, res_size, a_size, b_size)
             .max(module.cnv_prepare_left_tmp_bytes(res_size, a_size))
             .max(module.cnv_prepare_right_tmp_bytes(res_size, b_size))
-            .max(module.vec_znx_big_normalize_tmp_bytes()),
+            .max(module.vec_znx_big_normalize_tmp_bytes())
+            .max(module.vec_znx_idft_apply_tmp_bytes()),
     );
 
     {
@@ -309,7 +311,13 @@ where
                     &mut scratch.arena(),
                 );
 
-                module.vec_znx_idft_apply_tmpa(&mut res_big.to_backend_mut(), 0, &mut res_dft.to_backend_mut(), res_dft_col);
+                module.vec_znx_idft_apply(
+                    &mut res_big.to_backend_mut(),
+                    0,
+                    &res_dft.to_backend_ref(),
+                    res_dft_col,
+                    &mut scratch.arena(),
+                );
 
                 let res_host_template = VecZnx::alloc(n, 1, res_size);
                 let mut res_have_backend = upload_vec_znx::<BE>(&res_host_template);
@@ -474,7 +482,8 @@ where
         + Convolution<BE>
         + CnvPVecAlloc<BE>
         + VecZnxDftAlloc<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxBigAlloc<BE>
@@ -513,7 +522,8 @@ where
             .max(module.cnv_apply_dft_tmp_bytes(0, res_size, a_size, b_size))
             .max(module.cnv_prepare_left_tmp_bytes(res_size, a_size))
             .max(module.cnv_prepare_right_tmp_bytes(res_size, b_size))
-            .max(module.vec_znx_big_normalize_tmp_bytes()),
+            .max(module.vec_znx_big_normalize_tmp_bytes())
+            .max(module.vec_znx_idft_apply_tmp_bytes()),
     );
 
     {
@@ -583,8 +593,20 @@ where
         }
 
         // Compare in the normalized coefficient domain.
-        module.vec_znx_idft_apply_tmpa(&mut big_fused.to_backend_mut(), 0, &mut res_fused.to_backend_mut(), res_col);
-        module.vec_znx_idft_apply_tmpa(&mut big_ref.to_backend_mut(), 0, &mut res_ref.to_backend_mut(), res_col);
+        module.vec_znx_idft_apply(
+            &mut big_fused.to_backend_mut(),
+            0,
+            &res_fused.to_backend_ref(),
+            res_col,
+            &mut scratch.arena(),
+        );
+        module.vec_znx_idft_apply(
+            &mut big_ref.to_backend_mut(),
+            0,
+            &res_ref.to_backend_ref(),
+            res_col,
+            &mut scratch.arena(),
+        );
 
         let host_template = VecZnx::alloc(n, 1, res_size);
         let mut have_backend = upload_vec_znx::<BE>(&host_template);
@@ -624,7 +646,8 @@ where
         + CnvPVecAlloc<BE>
         + VecZnxDftAlloc<BE>
         + VecZnxDftApply<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxNormalizeAssign<BE>
@@ -665,7 +688,8 @@ where
             .cnv_pairwise_apply_dft_tmp_bytes(0, res_size, a_size, b_size)
             .max(module.cnv_prepare_left_tmp_bytes(res_size, a_size))
             .max(module.cnv_prepare_right_tmp_bytes(res_size, b_size))
-            .max(module.vec_znx_big_normalize_tmp_bytes()),
+            .max(module.vec_znx_big_normalize_tmp_bytes())
+            .max(module.vec_znx_idft_apply_tmp_bytes()),
     );
 
     {
@@ -699,7 +723,13 @@ where
                     &mut scratch.arena(),
                 );
 
-                module.vec_znx_idft_apply_tmpa(&mut res_big.to_backend_mut(), 0, &mut res_dft.to_backend_mut(), res_dft_col);
+                module.vec_znx_idft_apply(
+                    &mut res_big.to_backend_mut(),
+                    0,
+                    &res_dft.to_backend_ref(),
+                    res_dft_col,
+                    &mut scratch.arena(),
+                );
 
                 let res_host_template = VecZnx::alloc(n, 1, res_size);
                 let mut res_have_backend = upload_vec_znx::<BE>(&res_host_template);
@@ -1088,17 +1118,23 @@ where
 fn idft_normalized<M, BE: crate::test_suite::TestBackend>(
     module: &M,
     base2k: usize,
-    res_dft: &mut VecZnxDftOwned<BE>,
+    res_dft: &VecZnxDftOwned<BE>,
     res_col: usize,
     scratch: &mut ScratchOwned<BE>,
 ) -> VecZnx<AlignedBuf, i64>
 where
-    M: ModuleN + VecZnxIdftApplyTmpA<BE> + VecZnxBigAlloc<BE> + VecZnxBigNormalize<BE>,
+    M: ModuleN + VecZnxIdftApply<BE> + VecZnxIdftApplyTmpBytes + VecZnxBigAlloc<BE> + VecZnxBigNormalize<BE>,
 {
     let n = res_dft.n();
     let res_size = res_dft.size();
     let mut res_big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(n, 1, res_size);
-    module.vec_znx_idft_apply_tmpa(&mut res_big.to_backend_mut(), 0, &mut res_dft.to_backend_mut(), res_col);
+    module.vec_znx_idft_apply(
+        &mut res_big.to_backend_mut(),
+        0,
+        &res_dft.to_backend_ref(),
+        res_col,
+        &mut scratch.arena(),
+    );
     let mut out = upload_vec_znx::<BE>(&VecZnx::alloc(n, 1, res_size));
     module.vec_znx_big_normalize(
         &mut vec_znx_backend_mut::<BE>(&mut out),
@@ -1134,7 +1170,8 @@ where
         + Convolution<BE>
         + CnvPVecAlloc<BE>
         + VecZnxDftAlloc<BE>
-        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
         + VecZnxBigAlloc<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
@@ -1157,7 +1194,8 @@ where
             .max(module.cnv_prepare_left_tmp_bytes(a_size, a_size))
             .max(module.cnv_prepare_right_tmp_bytes(b_size, b_size))
             .max(module.cnv_prepare_self_tmp_bytes(a_size, a_size))
-            .max(module.vec_znx_big_normalize_tmp_bytes()),
+            .max(module.vec_znx_big_normalize_tmp_bytes())
+            .max(module.vec_znx_idft_apply_tmp_bytes()),
     );
 
     // The left operand is dense at the module degree, shared by every form.
@@ -1200,8 +1238,8 @@ where
             let mut have_dft: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(params.n, 2, res_size);
             form(&mut want_dft, &b_prep_dense, &mut scratch);
             form(&mut have_dft, &b_prep, &mut scratch);
-            let want = idft_normalized(module, base2k, &mut want_dft, res_col, &mut scratch);
-            let have = idft_normalized(module, base2k, &mut have_dft, res_col, &mut scratch);
+            let want = idft_normalized(module, base2k, &want_dft, res_col, &mut scratch);
+            let have = idft_normalized(module, base2k, &have_dft, res_col, &mut scratch);
             assert_eq!(want, have, "{what} {label}");
         };
 
