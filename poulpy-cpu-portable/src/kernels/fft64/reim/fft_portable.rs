@@ -19,7 +19,7 @@ use std::fmt::Debug;
 
 use rand_distr::num_traits::{Float, FloatConst};
 
-use crate::kernels::fft64::reim::{as_arr, as_arr_mut};
+use crate::kernels::fft64::reim::{LANES, as_arr, as_arr_mut, load};
 
 /// Forward negacyclic FFT in reim layout, rounding every product.
 #[inline(always)]
@@ -350,18 +350,6 @@ fn fft_bfs_16_portable<R: Float + FloatConst + Debug, const FUSED: bool>(
     pos
 }
 
-/// Elements a pass loads, combines and stores as a unit.
-///
-/// Working on local copies is what lets a compiler use vector instructions without proving that the
-/// quarters of a block do not overlap. Every element goes through the same operations in the same order
-/// as in an element by element pass, so the results are bit-identical.
-const LANES: usize = 4;
-
-#[inline(always)]
-fn load<R: Float>(x: &[R]) -> [R; LANES] {
-    [x[0], x[1], x[2], x[3]]
-}
-
 #[inline(always)]
 fn twiddle_fft_portable<R: Float + FloatConst, const FUSED: bool>(h: usize, re: &mut [R], im: &mut [R], omg: &[R; 2]) {
     let romg = omg[0];
@@ -396,6 +384,7 @@ fn twiddle_fft_portable<R: Float + FloatConst, const FUSED: bool>(h: usize, re: 
 /// Two merged layers over a block of `4 * h` elements, `h` a multiple of [`LANES`].
 #[inline(always)]
 fn bitwiddle_fft_portable<R: Float + FloatConst, const FUSED: bool>(h: usize, re: &mut [R], im: &mut [R], omg: &[R; 4]) {
+    debug_assert!(h.is_multiple_of(LANES), "h:{h} is not a multiple of {LANES}");
     let (r0, r2) = re.split_at_mut(2 * h);
     let (r0, r1) = r0.split_at_mut(h);
     let (r2, r3) = r2.split_at_mut(h);

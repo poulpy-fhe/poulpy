@@ -4,14 +4,13 @@
 //!
 //! - [`NTT4x30PortableHandle`]: the opaque handle stored inside a `Module<NTT4x30Portable>`
 //!   (and, over the conjugate invariant ring, `Module<NTT4x30CIPortable>`),
-//!   holding precomputed NTT and iNTT twiddle-factor tables and multiply-accumulate metadata.
+//!   holding the tables of the packed NTT.
 //! - The [`Backend`] trait implementation, which defines scalar types and the
 //!   handle destruction path.
 //! - The [`NttHandleFactory`] implementation, which builds the handle stored
 //!   inside the `Module`.
-//! - The [`NttHandleProvider`] impl for [`NTT4x30PortableHandle`], wiring the handle into
-//!   the blanket `NttModuleHandle` impl provided by `poulpy-hal`.
 
+use std::marker::PhantomData;
 use std::ptr::NonNull;
 
 use poulpy_hal::{
@@ -19,11 +18,7 @@ use poulpy_hal::{
     layouts::{Backend, Host},
 };
 
-use crate::kernels::ntt4x30::{
-    mat_vec::{BbbMeta, BbcMeta},
-    primes::Primes30,
-    vec_znx_dft::{NttHandleFactory, NttHandleProvider, NttPlan, NttPlanSet},
-};
+use crate::kernels::ntt4x30::{primes::Primes30, vec_znx_dft::NttHandleFactory};
 use poulpy_hal::layouts::{CrtWord, Ring, Standard};
 
 use super::NTT4x30Portable;
@@ -33,15 +28,12 @@ use super::ntt32::{MIN_N, Ntt32Table};
 /// ([`NTT4x30Portable`](super::NTT4x30Portable) and [`NTT4x30CIPortable`](crate::NTT4x30CIPortable)).
 ///
 /// Holds the tables of the packed NTT of every degree the module serves.
-/// The q120 plans and metadata are kept for the bodies that are generic over the q120 layout.
 ///
 /// This struct is heap-allocated during module creation and freed when the
 /// `Module` is dropped (via [`Backend::destroy`]).
 #[repr(C)]
 pub struct NTT4x30PortableHandle<R: Ring = Standard> {
-    ring_plans: NttPlanSet<Primes30, R>,
-    meta_bbc: BbcMeta<Primes30>,
-    meta_bbb: BbbMeta<Primes30>,
+    _ring: PhantomData<R>,
     table_cache: crate::table_cache::ModuleTableCache,
     /// Tables of the packed NTT, indexed by `log2(n)`.
     packed: Vec<Option<Ntt32Table>>,
@@ -197,12 +189,10 @@ impl<R: Ring> Backend for NTT4x30Portable<R> {
 /// # Safety
 ///
 /// The returned handle must be fully initialized for `n`.
-unsafe impl<R: Ring> NttHandleFactory for NTT4x30PortableHandle<R>
-where
-    crate::kernels::ntt4x30::vec_znx_dft::NttPlan<Primes30, R>: crate::kernels::ntt4x30::vec_znx_dft::NttPlanNew,
-{
+unsafe impl<R: Ring> NttHandleFactory for NTT4x30PortableHandle<R> {
     fn create_ntt_handle(n: usize) -> Self {
         NTT4x30PortableHandle {
+            _ring: PhantomData,
             table_cache: Default::default(),
             packed: (0..=n.ilog2())
                 .map(|log_n| {
@@ -210,29 +200,7 @@ where
                     (n >= MIN_N).then(|| Ntt32Table::new(n, R::CYCLOTOMIC_ORDER_FACTOR == 4))
                 })
                 .collect(),
-            ring_plans: NttPlanSet::new(n),
-            meta_bbc: BbcMeta::new(),
-            meta_bbb: BbbMeta::new(),
         }
-    }
-}
-
-/// # Safety
-///
-/// The returned references are valid for the lifetime of `&self`.
-/// All fields are fully initialised by the [`NttHandleFactory`] impl above.
-unsafe impl<R: Ring> NttHandleProvider for NTT4x30PortableHandle<R> {
-    type Ring = R;
-    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30, R> {
-        self.ring_plans.for_ring(n)
-    }
-
-    fn get_bbc_meta(&self) -> &BbcMeta<Primes30> {
-        &self.meta_bbc
-    }
-
-    fn get_bbb_meta(&self) -> &BbbMeta<Primes30> {
-        &self.meta_bbb
     }
 }
 

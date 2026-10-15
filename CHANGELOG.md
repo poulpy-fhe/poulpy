@@ -19,7 +19,8 @@
   It returns the same values as the two-step form.
 - The portable FFT64 passes load, combine and store four elements at a time, and the two merged layers of a pass run in one sweep.
   Every element goes through the same operations in the same order, so the transforms return the same bytes.
-- `vmp_apply_dft_to_dft_add` of the FFT64 backends accumulates each block as it is computed, where it filled a zeroed scratch vector and added it afterwards.
+- `vmp_apply_dft_to_dft_add` of the FFT64 backends, serial and Rayon, accumulates each block as it is computed, where it filled a zeroed scratch vector and added it afterwards.
+  Its scratch shrinks to the one of `vmp_apply_dft_to_dft`.
 - **Fix:** `ZnxPortable::znx_normalize_middle_step` ignored its `OVERWRITE` parameter and always overwrote.
 - **Fix:** the encapsulated ModUp of the AVX2 and AVX-512 backends read a sparse-to-dense key view taken with `with_dsize` above the stored `dsize` as the stored matrix, and returned another ciphertext than the reference body; such a view now takes the reference body.
 - **Fix:** the NTT convolution apply kernels of the AVX2, AVX-512 and NEON backends checked the size of the result but not its column, and wrote past the buffer for a column past the last one; they now panic.

@@ -280,9 +280,13 @@ unsafe fn vmp_apply_dft_to_dft_block<const OVERWRITE: bool, REIM>(
             std::ptr::copy_nonoverlapping(src.as_ptr(), base, 4);
             std::ptr::copy_nonoverlapping(src.as_ptr().add(4), base.add(m), 4);
         } else {
-            for i in 0..4 {
-                *base.add(i) += src[i];
-                *base.add(m + i) += src[4 + i];
+            // Local copies, so the sums vectorize without proving that `base` and `src` do not overlap.
+            for (dst, src) in [(base, &src[..4]), (base.add(m), &src[4..8])] {
+                let mut acc: [f64; 4] = std::ptr::read_unaligned(dst as *const [f64; 4]);
+                for (acc, &s) in acc.iter_mut().zip(src) {
+                    *acc += s;
+                }
+                std::ptr::write_unaligned(dst as *mut [f64; 4], acc);
             }
         }
     };
