@@ -151,7 +151,7 @@ impl ZnxNormalizeFirstStep for ZnxPortable {
 impl ZnxNormalizeMiddleStep for ZnxPortable {
     #[inline(always)]
     fn znx_normalize_middle_step<const OVERWRITE: bool>(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
-        znx_normalize_middle_step_portable::<true>(base2k, lsh, x, a, carry);
+        znx_normalize_middle_step_portable::<OVERWRITE>(base2k, lsh, x, a, carry);
     }
 }
 

@@ -26,13 +26,12 @@ A prepared key holds one DFT-domain word per coefficient per limb, so what matte
 | backend / layout | bytes per coefficient | benchmark `base2k` | bytes per torus bit |
 | --- | --- | --- | --- |
 | `NTT3x42` (IFMA) | 16 | 52 | 0.31 |
-| `NTT4x30` (AVX2 / AVX-512 / Neon) | 16 | 52 | 0.31 |
+| `NTT4x30` (every backend) | 16 | 52 | 0.31 |
 | `FFT64` | 8 | 19 | 0.42 |
-| `NTT4x30` (reference) | 32 | 52 | 0.62 |
 
 A wider limb is only worth what it costs to store.
-The AVX2, AVX-512 and Neon `NTT4x30` backends store their four residues as `u32`, so each transformed coefficient occupies 16 bytes.
-At the same radix they therefore have the same storage density as `NTT3x42`; the reference implementation stores four `u64` residues and occupies 32 bytes per transformed coefficient.
+The `NTT4x30` backends, the portable one included, store their four residues as `u32`, so each transformed coefficient occupies 16 bytes.
+At the same radix they therefore have the same storage density as `NTT3x42`.
 
 At the benchmark radices, for leveled work where a parameter set fixes the torus precision and the limb counts follow from it, either packed NTT backend uses about 27% less prepared-key storage per bit than `FFT64`.
 `NTT3x42` remains the fastest because it evaluates three residue streams rather than four.
@@ -68,7 +67,7 @@ At realistic leveled parameters its keys are smaller than `FFT64` keys, while it
 This reduces the FFT advantage on key-switch-heavy work and can put NTT4 ahead on a mixed pipeline such as bootstrapping.
 It is not universal: the FFT's cheaper transform can still win an isolated key-switch or relinearized multiplication, and the margin depends on the ring degree and ISA.
 
-The qualification matters: `NTT4x30Portable` uses the 32-byte transformed representation, so its choice against `FFT64` is operation- and machine-dependent.
+`NTT4x30Portable` uses the same 16-byte representation in plain scalar code, so the same reasoning applies to it, at the lower speed of a backend without intrinsics.
 For AVX2 and AVX-512, start with NTT4 for a full CKKS pipeline and FFT for a small, switch-heavy one, then benchmark the actual circuit.
 
 ## 2. Backend

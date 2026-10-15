@@ -181,6 +181,43 @@ pub fn vmp_apply_dft_to_dft_with_kernel_portable<BE, KERNEL, E>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
+    vmp_apply_dft_to_dft_dispatch::<true, BE, KERNEL, E>(res, a, pmat, limb_offset, tmp_bytes);
+}
+
+/// `res += a * pmat`, accumulated block by block as the products are computed.
+///
+/// Takes the scratch of [`vmp_apply_dft_to_dft_with_kernel_portable`].
+#[inline(always)]
+pub fn vmp_apply_dft_to_dft_add_with_kernel_portable<BE, KERNEL, E>(
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE>,
+    pmat: &VmpPMatBackendRef<'_, BE>,
+    limb_offset: usize,
+    tmp_bytes: &mut [f64],
+) where
+    BE: Backend<DftWord = f64, ZnxWord = i64>,
+    KERNEL: ReimArith + Reim4BlkMatVec + Fft64RingArith,
+    E: TaskExecutor,
+    for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+{
+    vmp_apply_dft_to_dft_dispatch::<false, BE, KERNEL, E>(res, a, pmat, limb_offset, tmp_bytes);
+}
+
+#[inline(always)]
+fn vmp_apply_dft_to_dft_dispatch<const OVERWRITE: bool, BE, KERNEL, E>(
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE>,
+    pmat: &VmpPMatBackendRef<'_, BE>,
+    limb_offset: usize,
+    tmp_bytes: &mut [f64],
+) where
+    BE: Backend<DftWord = f64, ZnxWord = i64>,
+    KERNEL: ReimArith + Reim4BlkMatVec + Fft64RingArith,
+    E: TaskExecutor,
+    for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+{
     {
         assert_eq!(res.n(), pmat.n());
         assert_eq!(a.n(), pmat.n());
@@ -200,9 +237,9 @@ pub fn vmp_apply_dft_to_dft_with_kernel_portable<BE, KERNEL, E>(
     // the runtime expression `limb_offset * pmat.cols_out()`. Blind rotation
     // always calls this with `limb_offset == 0`.
     if limb_offset == 0 {
-        vmp_apply_dft_to_dft_core::<true, KERNEL, E>(n, res_raw, a_raw, pmat_raw, 0, nrows, ncols, tmp_bytes)
+        vmp_apply_dft_to_dft_core::<OVERWRITE, KERNEL, E>(n, res_raw, a_raw, pmat_raw, 0, nrows, ncols, tmp_bytes)
     } else {
-        vmp_apply_dft_to_dft_core::<true, KERNEL, E>(
+        vmp_apply_dft_to_dft_core::<OVERWRITE, KERNEL, E>(
             n,
             res_raw,
             a_raw,
@@ -243,9 +280,13 @@ unsafe fn vmp_apply_dft_to_dft_block<const OVERWRITE: bool, REIM>(
             std::ptr::copy_nonoverlapping(src.as_ptr(), base, 4);
             std::ptr::copy_nonoverlapping(src.as_ptr().add(4), base.add(m), 4);
         } else {
-            for i in 0..4 {
-                *base.add(i) += src[i];
-                *base.add(m + i) += src[4 + i];
+            // Local copies, so the sums vectorize without proving that `base` and `src` do not overlap.
+            for (dst, src) in [(base, &src[..4]), (base.add(m), &src[4..8])] {
+                let mut acc: [f64; 4] = std::ptr::read_unaligned(dst as *const [f64; 4]);
+                for (acc, &s) in acc.iter_mut().zip(src) {
+                    *acc += s;
+                }
+                std::ptr::write_unaligned(dst as *mut [f64; 4], acc);
             }
         }
     };

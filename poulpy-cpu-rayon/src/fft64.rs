@@ -138,7 +138,6 @@ use $crate::__private::poulpy_hal::{
     },
     oep::{
         HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl,
-        vmp_apply_dft_to_dft_add_tmp_bytes_derived,
     },
 };
 
@@ -798,12 +797,9 @@ unsafe impl HalVmpImpl for $rayon {
         b_cols_out: usize,
         b_size: usize,
     ) -> usize {
-        // `vmp_apply_dft_to_dft_tmp_bytes` below is this backend's own
-        // override, already scaled by `ScratchWorkers::VMP`; this reproduces
-        // the deleted `_add_tmp_bytes_default` total (`D + VMP * T`) exactly.
-        vmp_apply_dft_to_dft_add_tmp_bytes_derived::<Self>(
-            module, res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size,
-        )
+        // The add accumulates into `res`, so it takes the scratch of the product,
+        // already scaled by `ScratchWorkers::VMP`.
+        <Self as HalVmpImpl>::vmp_apply_dft_to_dft_tmp_bytes(module, res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size)
     }
 
     fn vmp_apply_dft_to_dft_add(

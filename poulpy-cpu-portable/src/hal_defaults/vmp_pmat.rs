@@ -10,6 +10,7 @@ use crate::kernels::{
         reim::ReimArith,
         reim4::Reim4BlkMatVec,
         vmp::{
+            vmp_apply_dft_to_dft_add_with_kernel_portable as fft64_vmp_apply_dft_to_dft_add_with_kernel,
             vmp_apply_dft_to_dft_tmp_bytes_portable as fft64_vmp_apply_dft_to_dft_tmp_bytes,
             vmp_apply_dft_to_dft_with_kernel_portable as fft64_vmp_apply_dft_to_dft_with_kernel,
             vmp_extract_selected_rows_portable as fft64_vmp_extract_selected_rows, vmp_prepare_portable as fft64_vmp_prepare,
@@ -30,11 +31,11 @@ use crate::kernels::{
     },
 };
 use poulpy_hal::{
-    api::{HostBufMut, ModuleN, ScratchArenaTakeBasic, VecZnxDftAddAssign, VecZnxDftBytesOf, VecZnxDftZero},
+    api::HostBufMut,
     execution::TaskExecutor,
     layouts::{
         Backend, HostDataMut, HostDataRef, MatZnxBackendRef, Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftBackendRef,
-        VecZnxDftToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, check_degree,
+        VmpPMatBackendMut, VmpPMatBackendRef, check_degree,
     },
 };
 
@@ -161,10 +162,36 @@ where
         fft64_vmp_apply_dft_to_dft_with_kernel::<Self, KERNEL, E>(res, a, b, limb_offset, tmp);
     }
 
+    #[inline(always)]
+    fn vmp_apply_dft_to_dft_add_default(
+        _module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self>,
+        b: &VmpPMatBackendRef<'_, Self>,
+        limb_offset: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith,
+        for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
+        for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
+        for<'x> Self::BufMut<'x>: HostBufMut<'x>,
+    {
+        Self::vmp_apply_dft_to_dft_add_with_kernel_default::<Self, Self::TaskExecutor>(
+            _module,
+            res,
+            a,
+            b,
+            limb_offset,
+            1,
+            scratch,
+        );
+    }
+
+    /// Accumulates into `res` directly, so it takes only the scratch of the product.
     #[allow(clippy::too_many_arguments)]
     #[inline(always)]
     fn vmp_apply_dft_to_dft_add_with_kernel_default<KERNEL, E>(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         a: &VecZnxDftBackendRef<'_, Self>,
         b: &VmpPMatBackendRef<'_, Self>,
@@ -172,7 +199,6 @@ where
         workers: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Module<Self>: VecZnxDftBytesOf + ModuleN + VecZnxDftAddAssign<Self> + VecZnxDftZero<Self>,
         Self: Backend<DftWord = f64, ZnxWord = i64>,
         KERNEL: ReimArith + Reim4BlkMatVec + Fft64RingArith,
         E: TaskExecutor,
@@ -180,20 +206,10 @@ where
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
-        let cols_out = res.cols();
-        let res_size = res.size();
-        let (mut tmp, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(res.n(), cols_out, res_size);
-        for col in 0..cols_out {
-            module.vec_znx_dft_zero(&mut tmp, col);
-        }
         let per_worker = fft64_vmp_apply_dft_to_dft_tmp_bytes(a.size(), b.rows(), b.cols_in());
-        let bytes = workers.max(1).min(scratch_1.available() / per_worker.max(1)).max(1) * per_worker;
-        let (kernel_tmp, _) = take_host_typed::<Self, f64>(scratch_1, bytes / size_of::<f64>());
-        fft64_vmp_apply_dft_to_dft_with_kernel::<Self, KERNEL, E>(&mut tmp, a, b, limb_offset, kernel_tmp);
-        let tmp_ref = tmp.to_backend_ref();
-        for col in 0..cols_out {
-            module.vec_znx_dft_add_assign(res, col, &tmp_ref, col);
-        }
+        let bytes = workers.max(1).min(scratch.available() / per_worker.max(1)).max(1) * per_worker;
+        let (tmp, _) = take_host_typed::<Self, f64>(scratch.borrow(), bytes / size_of::<f64>());
+        fft64_vmp_apply_dft_to_dft_add_with_kernel::<Self, KERNEL, E>(res, a, b, limb_offset, tmp);
     }
 
     fn vmp_extract_selected_rows_default(
