@@ -19,7 +19,8 @@
   It returns the same values as the two-step form.
 - The portable FFT64 passes load, combine and store four elements at a time, and the two merged layers of a pass run in one sweep.
   Every element goes through the same operations in the same order, so the transforms return the same bytes.
-- `vmp_apply_dft_to_dft_add` of the FFT64 backends accumulates each block as it is computed, where it filled a zeroed scratch vector and added it afterwards.
+- `vmp_apply_dft_to_dft_add` of the FFT64 backends, serial and Rayon, accumulates each block as it is computed, where it filled a zeroed scratch vector and added it afterwards.
+  Its scratch shrinks to the one of `vmp_apply_dft_to_dft`.
 - **Fix:** `ZnxPortable::znx_normalize_middle_step` ignored its `OVERWRITE` parameter and always overwrote.
 
 ### `poulpy-core`

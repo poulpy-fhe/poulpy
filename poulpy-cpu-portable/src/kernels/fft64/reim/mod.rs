@@ -33,6 +33,18 @@ pub use table_fft::*;
 pub use table_ifft::*;
 pub use zero::*;
 
+/// Elements a pass loads, combines and stores as a unit.
+///
+/// Working on local copies is what lets a compiler use vector instructions without proving that the
+/// quarters of a block do not overlap. Every element goes through the same operations in the same order
+/// as in an element by element pass, so the results are bit-identical.
+pub(crate) const LANES: usize = 4;
+
+#[inline(always)]
+pub(crate) fn load<R: Float>(x: &[R]) -> [R; LANES] {
+    [x[0], x[1], x[2], x[3]]
+}
+
 #[inline(always)]
 pub(crate) fn as_arr<const SIZE: usize, R: Float + FloatConst>(x: &[R]) -> &[R; SIZE] {
     assert!(x.len() >= SIZE, "x.len():{} < size:{}", x.len(), SIZE);
