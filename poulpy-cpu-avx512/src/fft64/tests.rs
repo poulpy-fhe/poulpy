@@ -265,7 +265,7 @@ fn test_convolution_by_const_add_rayon() {
 poulpy_hal::backend_test_suite! {
     mod vec_znx_dft_operand_validation,
     backend = crate::FFT64Avx512,
-    params = TestParams { size: 16, base2k: 12, n: 8 },
+    params = TestParams { size: 32, base2k: 12, n: 16 },
     tests = {
         test_vec_znx_dft_rejects_invalid_operands => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_rejects_invalid_operands,
         test_vec_znx_dft_transforms_reject_invalid_operands => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_transforms_reject_invalid_operands,
@@ -276,7 +276,7 @@ poulpy_hal::backend_test_suite! {
 poulpy_hal::backend_test_suite! {
     mod vec_znx_dft_operand_validation_rayon,
     backend = crate::FFT64Avx512Rayon,
-    params = TestParams { size: 16, base2k: 12, n: 8 },
+    params = TestParams { size: 32, base2k: 12, n: 16 },
     tests = {
         test_vec_znx_dft_rejects_invalid_operands => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_rejects_invalid_operands,
         test_vec_znx_dft_transforms_reject_invalid_operands => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_transforms_reject_invalid_operands,
