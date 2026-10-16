@@ -55,6 +55,8 @@
 
 ### `poulpy-ckks`
 
+- The FFT64 bootstrapping benchmarks (portable, AVX2, AVX-512) and preset precision tests (portable, AVX2, oracle) run the presets at `base2k = 18` instead of 19, and `docs/bootstrapping.md` and `docs/performance.md` follow.
+  At logN16 the giant steps of CoeffsToSlots and SlotsToCoeffs accumulate several hundred key-switch products in the DFT domain before one inverse transform, which `f64` no longer represents exactly at `base2k = 19`: the bootstrap returned garbage there, and returns 19.85 bits at 18.
 - **Breaking:** `CKKSMeta` is removed for the wrapped GLWE's `GLWEPlaintextMeta` (`Scale::Log(log_delta)`, `slots`, `log_sparsity`), taken by `set_meta`, `CKKSLayout::meta` and `CoeffsMeta::meta`; `CKKSInfos` extends the core traits, which the prelude re-exports with `SetK`, and `SetCKKSInfos` is blanket-implemented over them (`set_k`, `slots`, `log_sparsity`, `set_slots` and `set_log_sparsity` move there), and a plaintext is dense at its own degree, so `ckks_encrypt_sk` and `ckks_{add,sub,mul}_pt_vec*` derive its sparsity as `log2(N / n)` ([#342](https://github.com/poulpy-fhe/poulpy/issues/342)).
 - **Breaking:** the `impl_ckks_infos!` arms `inner_meta` and `self_meta` are renamed `ckks_inner` and `glwe_inner`.
 - `test_suite::parity::helpers`, `test_suite::parity::keys` and `test_suite::parity::layout` are public under `test-utils`, so downstream crates build parity tests from the same fixtures.

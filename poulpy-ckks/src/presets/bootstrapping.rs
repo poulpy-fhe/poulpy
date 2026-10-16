@@ -613,7 +613,7 @@ mod tests {
         assert_eq!(encapsulation.dense_to_sparse.k().as_usize(), 119);
         assert!(preset.with_dsizes(2, 1).is_err());
         assert!(preset.with_dsizes(1, 2).is_err());
-        assert!(preset.with_base2k(19).unwrap().with_dsizes(3, 1).is_err());
+        assert!(preset.with_base2k(18).unwrap().with_dsizes(3, 1).is_err());
     }
 
     #[test]
@@ -695,25 +695,25 @@ mod tests {
         ] {
             let widths = (preset.input_k(), preset.output_k(), preset.bootstrap_k());
 
-            let fft = preset.with_base2k(19).unwrap().with_dsizes(fft_dsize, 1).unwrap();
+            let fft = preset.with_base2k(18).unwrap().with_dsizes(fft_dsize, 1).unwrap();
             assert_eq!((fft.input_k(), fft.output_k(), fft.bootstrap_k()), widths);
             assert_eq!(
                 (fft.base2k(), fft.key_dsize(), fft.dense_to_sparse_dsize()),
-                (19, fft_dsize, 1)
+                (18, fft_dsize, 1)
             );
-            assert_eq!(fft.bootstrap_layout().glwe_layout.base2k.as_usize(), 19);
+            assert_eq!(fft.bootstrap_layout().glwe_layout.base2k.as_usize(), 18);
             let keys = fft.keys_layout();
             assert_eq!(
                 keys.automorphism_key.dnum.as_usize(),
-                preset.bootstrap_k().div_ceil(fft_dsize * 19)
+                preset.bootstrap_k().div_ceil(fft_dsize * 18)
             );
-            assert_eq!(keys.automorphism_key.k_aux.as_usize(), fft_dsize * 19 + preset.log_n());
+            assert_eq!(keys.automorphism_key.k_aux.as_usize(), fft_dsize * 18 + preset.log_n());
             assert!(keys.automorphism_key.k().as_usize() <= fft.max_dense_modulus());
 
             let small_key = &keys.encapsulation.as_ref().unwrap().dense_to_sparse;
             assert_eq!(
                 small_key.k().as_usize(),
-                preset.log_modulus().div_ceil(19) * 19 + 19 + preset.log_n()
+                preset.log_modulus().div_ceil(18) * 18 + 18 + preset.log_n()
             );
             assert!(small_key.k().as_usize() <= fft.max_sparse_modulus());
 

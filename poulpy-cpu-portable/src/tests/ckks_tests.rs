@@ -60,7 +60,7 @@ mod bootstrapping_presets {
     #[test]
     #[ignore = "runs a full logN16 bootstrap per preset; opt in with --ignored"]
     fn fft64_presets_meet_precision() {
-        bootstrapping_presets_meet_precision::<crate::FFT64Portable>(19);
+        bootstrapping_presets_meet_precision::<crate::FFT64Portable>(18);
     }
 }
 

@@ -27,13 +27,13 @@ A prepared key holds one DFT-domain word per coefficient per limb, so what matte
 | --- | --- | --- | --- |
 | `NTT3x42` (IFMA) | 16 | 52 | 0.31 |
 | `NTT4x30` (every backend) | 16 | 52 | 0.31 |
-| `FFT64` | 8 | 19 | 0.42 |
+| `FFT64` | 8 | 18 | 0.44 |
 
 A wider limb is only worth what it costs to store.
 The `NTT4x30` backends, the portable one included, store their four residues as `u32`, so each transformed coefficient occupies 16 bytes.
 At the same radix they therefore have the same storage density as `NTT3x42`.
 
-At the benchmark radices, for leveled work where a parameter set fixes the torus precision and the limb counts follow from it, either packed NTT backend uses about 27% less prepared-key storage per bit than `FFT64`.
+At the benchmark radices, for leveled work where a parameter set fixes the torus precision and the limb counts follow from it, either packed NTT backend uses about 31% less prepared-key storage per bit than `FFT64`.
 `NTT3x42` remains the fastest because it evaluates three residue streams rather than four.
 Packed `NTT4x30` has denser keys than `FFT64`, but its four modular transforms can leave it behind `FFT64` on an isolated key-switch or relinearized multiplication, especially at smaller ring degrees.
 
@@ -139,7 +139,7 @@ A given torus precision needs `⌈k / base2k⌉` limbs, and cost grows with the 
 Halving `base2k` therefore roughly doubles the work, and the whole span from a small limb to the backend's maximum is worth several times the runtime on every backend we measured.
 
 Also reserve coefficient-word headroom for additions and subtractions before normalization; the query only models DFT-domain products.
-The key-size table above uses the benchmark radices, 19 for FFT64 and 52 for NTT; recalculate its bytes-per-bit figures for your chosen radix.
+The key-size table above uses the benchmark radices, 18 for FFT64 and 52 for NTT; recalculate its bytes-per-bit figures for your chosen radix.
 
 ## 5. `dsize`
 
