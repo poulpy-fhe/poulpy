@@ -32,8 +32,7 @@ if [[ "$backend" == avx512 || "$mode" == emulated ]]; then
     filters+=(ckks_parity bin_fhe_parity prepared_tensor_tests finish_matches_composition_edges determinism
       consume_parity one_pass_parity relinearize_tests)
   else
-    # The degree-2^13 element-wise suites check the parallel limb path, which only native runs reach in budget.
-    filters+=(--skip ::ntt_n --skip ::vec_znx_dft_parallel_limbs)
+    filters+=(--skip ::ntt_n)
     if [[ "$backend" == avx512 ]]; then
       # Large-ring kernel paths have focused cases; exhaustive sweeps remain native.
       filters+=(core_emulated_tensor one_pass_parity::ifma_fallback one_pass_parity::ifma_rayon_fallback

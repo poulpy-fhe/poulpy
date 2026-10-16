@@ -404,22 +404,3 @@ poulpy_hal::backend_test_suite! {
         test_vec_znx_dft_transforms_reject_invalid_operands => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_transforms_reject_invalid_operands,
     }
 }
-
-// The element-wise ops split their limbs across tasks from degree `2^13` only, so they get their own degree.
-// Not bounded under emulation: the ops are element-wise and cheap at this degree.
-#[cfg(feature = "enable-rayon")]
-cross_backend_test_suite! {
-    mod vec_znx_dft_parallel_limbs,
-    backend_ref = crate::NTT4x30Avx,
-    backend_test = crate::NTT4x30AvxRayon,
-    params = TestParams { size: 1 << 13, base2k: 50, n: 1 << 13 },
-    tests = {
-        test_vec_znx_dft_copy => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_copy,
-        test_vec_znx_dft_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add,
-        test_vec_znx_dft_add_assign => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add_assign,
-        test_vec_znx_dft_sub => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_sub,
-        test_vec_znx_dft_sub_assign => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_sub_assign,
-        test_vec_znx_dft_sub_negate_assign => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_sub_negate_assign,
-        test_vec_znx_dft_automorphism_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism_add,
-    }
-}

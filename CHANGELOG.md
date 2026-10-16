@@ -19,7 +19,8 @@
   The plane tasks now go through `RayonTaskExecutor::join`, so they follow its nesting budget and idle polling, and the backend items are implemented per ring instead of generically over `R: Ring`.
 - The convolution applies of `PackedNtt4x30Base` take the base module, and `cnv_apply_dft_sum` has a default body that overwrites with the first term and adds the others.
   The element-wise operations of `impl_ntt4x30_rayon_backend!` run serially inside a nested Rayon region, as its other operations do.
-- `poulpy-cpu-rayon` gains `impl_packed_ntt4x30_base_avx!`, the one driver binding of the AVX2 and AVX-512 NTT4x30 backends.
+- `poulpy-cpu-rayon` gains `impl_packed_ntt4x30_base!`, which implements `PackedNtt4x30Base` by forwarding each method to a driver module of the backend that carries the method's name and arguments.
+  The AVX2 and AVX-512 NTT4x30 backends each provide such a module, with their own adaptations.
 - `poulpy_cpu_portable::kernels` exposes, as hidden items, the `SendPtr` and the per-thread working buffer that the CPU backends share, and `poulpy_cpu_portable::ntt4x30::drivers::for_each_limb`.
   The NEON, AVX2, AVX-512 and IFMA backends and `poulpy-cpu-rayon` use them in place of their own copies.
 - `NTT4x30AvxRayon` and `NTT4x30Avx512Rayon` are built with `impl_ntt4x30_rayon_backend!` on the drivers of `NTT4x30Avx` and `NTT4x30Avx512`, in place of their hand-written wiring.
