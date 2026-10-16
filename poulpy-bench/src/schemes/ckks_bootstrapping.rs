@@ -77,7 +77,7 @@ where
 /// Exercises every preset at the caller's fixture radix limit.
 ///
 /// `FIXTURE_BASE2K` selects the benchmark shape; it carries no failure-probability
-/// guarantee. The registered FFT and NTT fixtures use 19 and 52 respectively.
+/// guarantee. The registered FFT and NTT fixtures use 18 and 52 respectively.
 pub fn bench_ckks_bootstrapping<BE, const FIXTURE_BASE2K: usize>(c: &mut Criterion<WallTime>)
 where
     BE: TestContextBackend<Ring = Standard>,

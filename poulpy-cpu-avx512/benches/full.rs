@@ -46,7 +46,7 @@ criterion_group! {
      bench_hal_ifma,
      bench_ckks_bootstrapping_ifma,
      bench_ckks_bootstrapping_ifma_rayon,
-     bench_ckks_bootstrapping::<Fft, 19>,
+     bench_ckks_bootstrapping::<Fft, 18>,
      bench_binfhe::<Fft, CGGI>
 }
 
