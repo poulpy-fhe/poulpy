@@ -49,11 +49,12 @@ pub struct PreparedDiagonal<D: Data, BE: Backend> {
     pub(crate) k: TorusPrecision,
     /// Base-2 log of the plaintext scaling factor. The only scheme-provided
     /// quantity the convolution-offset computation needs; the core engine treats
-    /// it as opaque and never reads it. Mirrors the streamed plaintext's
-    /// `log_delta`; set by the scheme layer during the populate step.
+    /// it as opaque and only checks that summed transforms share it. Mirrors the
+    /// streamed plaintext's `log_delta`; set by the scheme layer during the
+    /// populate step.
     pub(crate) log_scale: usize,
     /// Whether the scheme claims the diagonal's slots are real. Opaque to the
-    /// core engine like `log_scale`; `false` (no claim) until the scheme sets it.
+    /// core engine; `false` (no claim) until the scheme sets it.
     pub(crate) real_slots: bool,
 }
 
@@ -68,7 +69,8 @@ impl<D: Data, BE: Backend> PreparedDiagonal<D, BE> {
         &mut self.cnv
     }
 
-    /// Base-2 log of the plaintext scaling factor (opaque to the core engine).
+    /// Base-2 log of the plaintext scaling factor; the core engine only checks
+    /// that summed transforms share it.
     pub fn log_scale(&self) -> usize {
         self.log_scale
     }

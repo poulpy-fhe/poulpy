@@ -65,6 +65,14 @@ operand. Reference free functions remain independently callable. Tensor products
 normalize diagonal and pairwise products to full output limbs before subtraction,
 then round all tensor columns to the requested precision.
 
+Products of operands prepared once by `glwe_prepare_left` and `glwe_prepare_right`
+are `GLWEPreparedTensoring` operations: `glwe_mul_prepared_relinearize_sum` and
+`glwe_tensor_apply_prepared` transform no operand and must give the unprepared
+products of the ciphertexts the operands were prepared from, bit for bit, whatever
+`PrepareHint` each operand was prepared under. `GLWETensoringImpl` provides them over
+the reference, and their queries default to the backend's unprepared ones. One
+prepared pair runs within `glwe_mul_relinearize_tmp_bytes`, as one product does.
+
 ## Matching the result
 
 Every OEP override must implement the same circuit as the reference

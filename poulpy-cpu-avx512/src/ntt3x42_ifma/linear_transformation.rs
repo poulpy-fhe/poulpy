@@ -46,6 +46,18 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
         >(module, res, a, pt, key)
     }
 
+    fn glwe_eval_linear_transformation_sum_tmp_bytes<R, A, B, K>(module: &Module<BE>, res: &R, a: &A, pt: &B, key: &K) -> usize
+    where
+        R: poulpy_core::layouts::GLWEInfos,
+        A: poulpy_core::layouts::GLWEInfos,
+        B: poulpy_core::layouts::GLWEInfos,
+        K: poulpy_core::layouts::GGLWEInfos,
+    {
+        poulpy_core::reference::linear_transformation::glwe_eval_linear_transformation_sum_tmp_bytes_reference::<BE, _, _, _, _, _>(
+            module, res, a, pt, key,
+        )
+    }
+
     fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(module: &Module<BE>, a: &A, key: &K) -> usize
     where
         A: poulpy_core::layouts::GLWEInfos,
@@ -112,6 +124,25 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
         H: poulpy_core::layouts::GetAutomorphismKey<BE>,
     {
         eval(module, cnv_offset, res, lhs, rhs, keys, scratch)
+    }
+
+    fn glwe_eval_linear_transformation_sum_into<R, H>(
+        module: &Module<BE>,
+        cnv_offset: usize,
+        res: &mut R,
+        terms: &[(
+            &poulpy_core::layouts::prepared::LinearTransformationBabySteps<BE>,
+            &poulpy_core::layouts::prepared::LinearTransformationPrepared<BE>,
+        )],
+        keys: &H,
+        scratch: &mut ::poulpy_hal::layouts::ScratchArena<BE>,
+    ) where
+        R: poulpy_core::layouts::GLWEToBackendMut<BE> + poulpy_core::layouts::GLWEInfos,
+        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
+    {
+        poulpy_core::reference::linear_transformation::glwe_eval_linear_transformation_sum_into_reference::<BE, _, _, _>(
+            module, cnv_offset, res, terms, keys, scratch,
+        )
     }
 }
 

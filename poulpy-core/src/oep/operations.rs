@@ -2,13 +2,15 @@ use crate::layouts::IntPolyInfos;
 use std::collections::HashMap;
 
 use poulpy_hal::layouts::{
-    Backend, CnvPVecLBackendRef, CnvPVecRBackendRef, CnvPVecRToBackendRef, Module, ScratchArena, VecZnxDftBackendMut,
+    Backend, CnvPVecLBackendRef, CnvPVecLToBackendRef, CnvPVecRBackendRef, CnvPVecRToBackendRef, Module, ScratchArena,
+    VecZnxDftBackendMut,
 };
 
 use crate::layouts::{
     GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
     GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
 };
+use crate::reference::operations::GLWETensoringReference;
 
 /// Backend-provided GLWE constant-multiplication operations.
 ///
@@ -283,6 +285,129 @@ pub unsafe trait GLWETensoringImpl: Backend {
         b: &CnvPVecRBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     );
+
+    /// Scratch bytes of [`Self::glwe_mul_relinearize_sum`]. The default is this backend's
+    /// [`Self::glwe_mul_relinearize_tmp_bytes`], one more set of product columns and one column of digits.
+    fn glwe_mul_relinearize_sum_tmp_bytes<R, B>(
+        module: &Module<Self>,
+        res: &R,
+        a_size: usize,
+        b_size: usize,
+        tensor_k: crate::layouts::TorusPrecision,
+        tsk: &B,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        B: GGLWEInfos,
+        Module<Self>: GLWETensoringReference<Self>,
+    {
+        module.glwe_mul_relinearize_sum_tmp_bytes_reference(res, a_size, b_size, tensor_k, tsk)
+    }
+
+    /// The summed one-pass product of [`GLWEMulRelinearizeSum`](crate::api::GLWEMulRelinearizeSum). The default
+    /// forms each pair's columns with [`Self::glwe_mul_columns`]. Overrides must reproduce
+    /// [`GLWETensoringReference::glwe_mul_relinearize_sum_reference`] bit for bit, the order of the pairs included.
+    fn glwe_mul_relinearize_sum<R, A, B, H>(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        pairs: &[(&A, &B)],
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        A: GLWEToBackendRef<Self> + GLWEInfos,
+        B: GLWEToBackendRef<Self> + GLWEInfos,
+        H: GetTensorKey<Self>,
+        Module<Self>: GLWETensoringReference<Self>,
+    {
+        module.glwe_mul_relinearize_sum_reference(cnv_offset, res, res_k, pairs, tsk, scratch)
+    }
+
+    /// Scratch bytes of [`Self::glwe_mul_prepared_relinearize_sum`]. The default is this backend's
+    /// [`Self::glwe_mul_relinearize_sum_tmp_bytes`], of which the prepared sum takes a part. Whatever an override
+    /// reports, the prepared sum of one pair runs within [`Self::glwe_mul_relinearize_tmp_bytes`], as the API states.
+    fn glwe_mul_prepared_relinearize_sum_tmp_bytes<R, B>(
+        module: &Module<Self>,
+        res: &R,
+        a_size: usize,
+        b_size: usize,
+        tensor_k: crate::layouts::TorusPrecision,
+        tsk: &B,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        B: GGLWEInfos,
+        Module<Self>: GLWETensoringReference<Self>,
+    {
+        Self::glwe_mul_relinearize_sum_tmp_bytes(module, res, a_size, b_size, tensor_k, tsk)
+    }
+
+    /// The summed one-pass product over prepared pairs of
+    /// [`GLWEPreparedTensoring`](crate::api::GLWEPreparedTensoring). The default forms each pair's columns with
+    /// [`Self::glwe_mul_columns`]. Overrides must reproduce
+    /// [`GLWETensoringReference::glwe_mul_prepared_relinearize_sum_reference`] bit for bit, the order of the pairs
+    /// included, whatever the hint each operand was prepared under, and run one pair within
+    /// [`Self::glwe_mul_relinearize_tmp_bytes`].
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_prepared_relinearize_sum<R, AP, BP, H>(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        pairs: &[(&AP, &BP)],
+        a_size: usize,
+        a_k: crate::layouts::TorusPrecision,
+        b_size: usize,
+        b_k: crate::layouts::TorusPrecision,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<Self>,
+        BP: CnvPVecRToBackendRef<Self>,
+        H: GetTensorKey<Self>,
+        Module<Self>: GLWETensoringReference<Self>,
+    {
+        module.glwe_mul_prepared_relinearize_sum_reference(cnv_offset, res, res_k, pairs, a_size, a_k, b_size, b_k, tsk, scratch)
+    }
+
+    /// Scratch bytes of [`Self::glwe_tensor_apply_prepared`]. The default is this backend's
+    /// [`Self::glwe_tensor_apply_tmp_bytes`], of which the reference prepared product takes a part: a backend that
+    /// sizes that query for a fused kernel needing less than the reference loop overrides this one.
+    fn glwe_tensor_apply_prepared_tmp_bytes<R, A, B>(module: &Module<Self>, res: &R, a: &A, b: &B) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: GLWEInfos,
+        Module<Self>: GLWETensoringReference<Self>,
+    {
+        Self::glwe_tensor_apply_tmp_bytes(module, res, a, b)
+    }
+
+    /// The tensor product of prepared operands of [`GLWEPreparedTensoring`](crate::api::GLWEPreparedTensoring).
+    /// Overrides must reproduce [`GLWETensoringReference::glwe_tensor_apply_prepared_reference`] bit for bit, whatever
+    /// the hint each operand was prepared under.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_tensor_apply_prepared<R, AP, BP>(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &AP,
+        a_size: usize,
+        b: &BP,
+        b_size: usize,
+        base2k: crate::layouts::Base2K,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<Self>,
+        BP: CnvPVecRToBackendRef<Self>,
+        Module<Self>: GLWETensoringReference<Self>,
+    {
+        module.glwe_tensor_apply_prepared_reference(cnv_offset, res, a, a_size, b, b_size, base2k, scratch)
+    }
 }
 
 /// Backend-provided GLWE addition operations.

@@ -194,6 +194,25 @@ where
                     );
                 }
 
+                // A second source for the summed evaluations below.
+                let input2_r = ref_glwe(r, &ct, &mut source);
+                let mut input2_t = t.glwe_alloc_from_infos(&ct);
+                input2_r.transfer_into(&mut input2_t);
+                let mut lhs2_r = LinearTransformationBabySteps::alloc(r, &baby_steps, &ct);
+                let mut lhs2_t = LinearTransformationBabySteps::alloc(t, &baby_steps, &ct);
+                r.glwe_prepare_linear_transformation_baby_steps(
+                    &mut lhs2_r,
+                    &input2_r,
+                    &keys_r,
+                    &mut poisoned_scratch::<BR>(r.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, &key)).borrow(),
+                );
+                t.glwe_prepare_linear_transformation_baby_steps(
+                    &mut lhs2_t,
+                    &input2_t,
+                    &keys_t,
+                    &mut poisoned_scratch::<BT>(t.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, &key)).borrow(),
+                );
+
                 if dsize == 1 && pt_k == base + 1 {
                     // A single identity diagonal has an exact mathematical
                     // oracle; it must copy every input coefficient and require
@@ -309,72 +328,82 @@ where
                     assert_eq!(have, want, "backend streamed identity rank={rank}");
                 }
 
-                let mut rhs_r = LinearTransformation {
-                    baby_steps: plan.baby_steps.clone(),
-                    giant_steps: Vec::new(),
-                };
-                let mut rhs_t = LinearTransformation {
-                    baby_steps: plan.baby_steps.clone(),
-                    giant_steps: Vec::new(),
-                };
-                for (&rot, babies) in plan.giant_steps.iter().zip(&plan.index) {
-                    let mut diagonals_r = Vec::new();
-                    let mut diagonals_t = Vec::new();
-                    for &baby in babies {
-                        let diagonal_r = ref_glwe(r, &pt, &mut source);
-                        let mut diagonal_t = t.glwe_alloc_from_infos(&pt);
-                        diagonal_r.transfer_into(&mut diagonal_t);
-                        diagonals_r.push(LinearTransformationDiagonal {
-                            baby,
-                            plaintext: StreamedDiagonal(diagonal_r),
+                // Random diagonals on `schedule`, the same on both backends, and
+                // their resident preparations.
+                let transform = |source: &mut Source| {
+                    let mut rhs_r = LinearTransformation {
+                        baby_steps: plan.baby_steps.clone(),
+                        giant_steps: Vec::new(),
+                    };
+                    let mut rhs_t = LinearTransformation {
+                        baby_steps: plan.baby_steps.clone(),
+                        giant_steps: Vec::new(),
+                    };
+                    for (&rot, babies) in plan.giant_steps.iter().zip(&plan.index) {
+                        let mut diagonals_r = Vec::new();
+                        let mut diagonals_t = Vec::new();
+                        for &baby in babies {
+                            let diagonal_r = ref_glwe(r, &pt, source);
+                            let mut diagonal_t = t.glwe_alloc_from_infos(&pt);
+                            diagonal_r.transfer_into(&mut diagonal_t);
+                            diagonals_r.push(LinearTransformationDiagonal {
+                                baby,
+                                plaintext: StreamedDiagonal(diagonal_r),
+                            });
+                            diagonals_t.push(LinearTransformationDiagonal {
+                                baby,
+                                plaintext: StreamedDiagonal(diagonal_t),
+                            });
+                        }
+                        rhs_r.giant_steps.push(LinearTransformationGiantStep {
+                            rot,
+                            diagonals: diagonals_r,
                         });
-                        diagonals_t.push(LinearTransformationDiagonal {
-                            baby,
-                            plaintext: StreamedDiagonal(diagonal_t),
+                        rhs_t.giant_steps.push(LinearTransformationGiantStep {
+                            rot,
+                            diagonals: diagonals_t,
                         });
                     }
-                    rhs_r.giant_steps.push(LinearTransformationGiantStep {
-                        rot,
-                        diagonals: diagonals_r,
-                    });
-                    rhs_t.giant_steps.push(LinearTransformationGiantStep {
-                        rot,
-                        diagonals: diagonals_t,
-                    });
-                }
-                let mut resident_r: LinearTransformation<PreparedDiagonal<BR::OwnedBuf, BR>> =
-                    LinearTransformation::alloc_prepared(r, &schedule, &pt);
-                let mut resident_t: LinearTransformation<PreparedDiagonal<BT::OwnedBuf, BT>> =
-                    LinearTransformation::alloc_prepared(t, &schedule, &pt);
-                for giant in &mut resident_r.giant_steps {
-                    for diagonal in &mut giant.diagonals {
-                        poison::<BR>(diagonal.plaintext.cnv_mut().data_mut());
+                    let mut resident_r: LinearTransformation<PreparedDiagonal<BR::OwnedBuf, BR>> =
+                        LinearTransformation::alloc_prepared(r, &schedule, &pt);
+                    let mut resident_t: LinearTransformation<PreparedDiagonal<BT::OwnedBuf, BT>> =
+                        LinearTransformation::alloc_prepared(t, &schedule, &pt);
+                    for giant in &mut resident_r.giant_steps {
+                        for diagonal in &mut giant.diagonals {
+                            poison::<BR>(diagonal.plaintext.cnv_mut().data_mut());
+                        }
                     }
-                }
-                for giant in &mut resident_t.giant_steps {
-                    for diagonal in &mut giant.diagonals {
-                        poison::<BT>(diagonal.plaintext.cnv_mut().data_mut());
+                    for giant in &mut resident_t.giant_steps {
+                        for diagonal in &mut giant.diagonals {
+                            poison::<BT>(diagonal.plaintext.cnv_mut().data_mut());
+                        }
                     }
-                }
-                resident_r.set_log_scale(19);
-                resident_t.set_log_scale(19);
-                r.glwe_prepare_linear_transformation_rhs(
-                    &mut resident_r,
-                    &rhs_r,
-                    &mut poisoned_scratch::<BR>(r.glwe_prepare_linear_transformation_rhs_tmp_bytes(&pt)).borrow(),
-                );
-                t.glwe_prepare_linear_transformation_rhs(
-                    &mut resident_t,
-                    &rhs_t,
-                    &mut poisoned_scratch::<BT>(t.glwe_prepare_linear_transformation_rhs_tmp_bytes(&pt)).borrow(),
-                );
-                assert_eq!(resident_r.index(), resident_t.index());
-                assert_eq!((resident_r.log_scale(), resident_t.log_scale()), (19, 19));
-                for (gr, gt) in resident_r.giant_steps.iter().zip(&resident_t.giant_steps) {
-                    for (dr, dt) in gr.diagonals.iter().zip(&gt.diagonals) {
-                        assert_eq!(dr.plaintext.glwe_layout(), dt.plaintext.glwe_layout());
+                    resident_r.set_log_scale(19);
+                    resident_t.set_log_scale(19);
+                    r.glwe_prepare_linear_transformation_rhs(
+                        &mut resident_r,
+                        &rhs_r,
+                        &mut poisoned_scratch::<BR>(r.glwe_prepare_linear_transformation_rhs_tmp_bytes(&pt)).borrow(),
+                    );
+                    t.glwe_prepare_linear_transformation_rhs(
+                        &mut resident_t,
+                        &rhs_t,
+                        &mut poisoned_scratch::<BT>(t.glwe_prepare_linear_transformation_rhs_tmp_bytes(&pt)).borrow(),
+                    );
+                    assert_eq!(resident_r.index(), resident_t.index());
+                    assert_eq!((resident_r.log_scale(), resident_t.log_scale()), (19, 19));
+                    for (gr, gt) in resident_r.giant_steps.iter().zip(&resident_t.giant_steps) {
+                        for (dr, dt) in gr.diagonals.iter().zip(&gt.diagonals) {
+                            assert_eq!(dr.plaintext.glwe_layout(), dt.plaintext.glwe_layout());
+                        }
                     }
-                }
+                    (rhs_r, rhs_t, resident_r, resident_t)
+                };
+                let (rhs_r, rhs_t, resident_r, resident_t) = transform(&mut source);
+                // The summed evaluations' second transform: with one transform
+                // for both terms, a sum that applied the first term's transform
+                // to every term would give the same bits.
+                let (_, _, resident2_r, resident2_t) = transform(&mut source);
                 // Different destination radix forces the per-giant normalized
                 // fallback instead of the lazy DFT accumulation path.
                 for out_base in [base, base - 1] {
@@ -446,6 +475,32 @@ where
                             out_r,
                             streamed_r,
                             "resident/streamed linear transform rank={rank} dsize={dsize} offset={offset} out_base={out_base}"
+                        );
+                        // The second term goes through the sum's scratch bucket.
+                        let mut sum_r = ref_glwe(r, &out, &mut source);
+                        let mut sum_t = t.glwe_alloc_from_infos(&out);
+                        sum_r.transfer_into(&mut sum_t);
+                        r.glwe_eval_linear_transformation_sum_into(
+                            offset,
+                            &mut sum_r,
+                            &[(&lhs_r, &resident_r), (&lhs2_r, &resident2_r)],
+                            &keys_r,
+                            &mut poisoned_scratch::<BR>(r.glwe_eval_linear_transformation_sum_tmp_bytes(&out, &ct, &pt, &key))
+                                .borrow(),
+                        );
+                        t.glwe_eval_linear_transformation_sum_into(
+                            offset,
+                            &mut sum_t,
+                            &[(&lhs_t, &resident_t), (&lhs2_t, &resident2_t)],
+                            &keys_t,
+                            &mut poisoned_scratch::<BT>(t.glwe_eval_linear_transformation_sum_tmp_bytes(&out, &ct, &pt, &key))
+                                .borrow(),
+                        );
+                        sum_t.transfer_into(&mut have);
+                        assert_glwe_eq!(
+                            sum_r,
+                            have,
+                            "summed linear transform rank={rank} dsize={dsize} offset={offset} out_base={out_base}"
                         );
                     }
                 }

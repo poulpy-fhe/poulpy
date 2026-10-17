@@ -3,13 +3,16 @@ use poulpy_hal::{layouts::Module, test_suite::TestParams};
 
 macro_rules! one_pass_case {
     ($name:ident, $tested:ty, $oracle:ty, $n:expr, $module_n:expr) => {
+        one_pass_case!($name, $tested, $oracle, $n, $module_n, 52);
+    };
+    ($name:ident, $tested:ty, $oracle:ty, $n:expr, $module_n:expr, $base2k:expr) => {
         #[test]
         fn $name() {
             test_tensor_relinearize_decrypt_parity(
                 &TestParams {
                     n: $n,
                     size: $module_n,
-                    base2k: 52,
+                    base2k: $base2k,
                 },
                 &ParityShapes {
                     ranks: vec![1],
@@ -54,12 +57,14 @@ one_pass_case!(
 );
 one_pass_case!(ifma_fallback, crate::NTT3x42Ifma, poulpy_cpu_oracle::NTT4x30Oracle, 128, 256);
 one_pass_case!(ifma_n16, crate::NTT3x42Ifma, poulpy_cpu_oracle::NTT4x30Oracle, 65536, 65536);
+// No radix model on this ring: at base2k 52 the sum of three pairs, one a square, exceeds the oracle's 120-bit NTT.
 one_pass_case!(
     ifma_ci_n16,
     crate::NTT3x42CIIfma,
     poulpy_cpu_oracle::NTT4x30CIOracle,
     65536,
-    65536
+    65536,
+    50
 );
 #[cfg(feature = "enable-rayon")]
 one_pass_case!(
@@ -83,5 +88,6 @@ one_pass_case!(
     crate::NTT3x42CIIfmaRayon,
     poulpy_cpu_oracle::NTT4x30CIOracle,
     65536,
-    65536
+    65536,
+    50
 );

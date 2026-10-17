@@ -1,7 +1,7 @@
 use crate::layouts::IntPolyInfos;
 use std::collections::HashMap;
 
-use poulpy_hal::layouts::{Backend, CnvPVecRToBackendRef, ScratchArena};
+use poulpy_hal::layouts::{Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, ScratchArena};
 
 use crate::layouts::{
     GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
@@ -329,6 +329,145 @@ pub trait GLWETensoring<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         AP: poulpy_hal::layouts::CnvPVecRToBackendRef<BE>,
         H: GetTensorKey<BE>;
+}
+
+/// Sums of products of rank-1 GLWE ciphertexts, relinearized once. The operands are read canonical at their
+/// `k`, as for [`GLWETensoring`]: one whose canonical flag is clear is normalized into scratch first.
+pub trait GLWEMulRelinearizeSum<BE: Backend> {
+    /// Scratch bytes of [`Self::glwe_mul_relinearize_sum`], whatever the number of pairs: those of
+    /// [`GLWETensoring::glwe_mul_relinearize`] for the same arguments, one more set of product columns and one
+    /// column of digits.
+    fn glwe_mul_relinearize_sum_tmp_bytes<R, B>(
+        &self,
+        res: &R,
+        a_size: usize,
+        b_size: usize,
+        tensor_k: crate::layouts::TorusPrecision,
+        tsk: &B,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        B: GGLWEInfos;
+
+    /// `res = relinearize(Σ_i a_i * b_i)` over `pairs[i] = (a_i, b_i)`, in one pass, under the conditions of
+    /// [`GLWETensoring::glwe_mul_relinearize`]: rank 1, one `base2k` across `res`, the operands and the tensor key,
+    /// and `cnv_offset >= base2k`. Every pair shares the first one's layouts; the tensor key is looked up at the
+    /// larger of the two operand widths.
+    ///
+    /// The result is written at width `res_k`, canonical: the caller sets the width of `res` afterwards.
+    ///
+    /// Each pair's three product columns are added to the first pair's in the transform domain, in slice order.
+    /// Only the key-switched column of the sum is brought back to digits; the other two stay in the transform
+    /// domain until the single final normalization. One pair is [`GLWETensoring::glwe_mul_relinearize`], bit for
+    /// bit. Relinearizing a sum of [`GLWETensoring::glwe_tensor_apply`] products rounds every term instead: the two
+    /// agree up to rounding, not bit for bit. An FFT backend adds in floating point, so the slice order is part of
+    /// the result.
+    ///
+    /// Every pair's products accumulate in the transform domain before one inverse transform: pick `base2k` for
+    /// `pairs.len()` times the products of one pair (`Module::max_base2k`), up to `2 * min(a_size, b_size)` per
+    /// output limb in the cross column `a0 * b1 + a1 * b0`.
+    ///
+    /// Panics, before writing `res`, if `pairs` is empty, if a pair does not share the first one's layouts, if
+    /// `res` or an operand is not of rank 1 or of `res`'s `base2k`, if `cnv_offset < base2k`, if `tsk` has no key
+    /// at the tensor width or one of another `base2k`, or if `scratch` holds less than the call needs.
+    fn glwe_mul_relinearize_sum<R, A, B, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        pairs: &[(&A, &B)],
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        B: GLWEToBackendRef<BE> + GLWEInfos,
+        H: GetTensorKey<BE>;
+}
+
+/// Products of GLWE ciphertexts over operands prepared once by [`crate::glwe_prepare_left`] and
+/// [`crate::glwe_prepare_right`]: the call transforms no operand.
+///
+/// An operand prepared from a ciphertext of width `k`, under either [`PrepareHint`](poulpy_hal::layouts::PrepareHint),
+/// holds it as the unprepared products read it: canonical at `k` (normalized first if its canonical flag is clear),
+/// each of its `rank + 1` columns on `ceil(k / base2k)` limbs. Operands prepared so give the unprepared products of
+/// the ciphertexts they were prepared from, bit for bit.
+pub trait GLWEPreparedTensoring<BE: Backend> {
+    /// Scratch bytes of [`Self::glwe_mul_prepared_relinearize_sum`], whatever the number of pairs: on a backend that
+    /// keeps the default of [`GLWETensoringImpl`](crate::oep::GLWETensoringImpl),
+    /// [`GLWEMulRelinearizeSum::glwe_mul_relinearize_sum_tmp_bytes`] for the same arguments, of which the prepared sum
+    /// takes a part. One pair needs no more than [`GLWETensoring::glwe_mul_relinearize_tmp_bytes`].
+    fn glwe_mul_prepared_relinearize_sum_tmp_bytes<R, B>(
+        &self,
+        res: &R,
+        a_size: usize,
+        b_size: usize,
+        tensor_k: crate::layouts::TorusPrecision,
+        tsk: &B,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        B: GGLWEInfos;
+
+    /// [`GLWEMulRelinearizeSum::glwe_mul_relinearize_sum`] over prepared pairs `pairs[i] = (a_i, b_i)`: `a_size` and
+    /// `b_size` limbs of rank-1 ciphertexts of widths `a_k` and `b_k`, of the degree and `base2k` of `res`.
+    ///
+    /// The pairs feed the product columns where they are, in slice order, under the conditions of the unprepared sum,
+    /// whose result they give.
+    ///
+    /// Panics, before writing `res`, if `pairs` is empty, if a prepared operand is not of the degree of `res`, of two
+    /// columns and of its given size, or under the conditions of
+    /// [`GLWEMulRelinearizeSum::glwe_mul_relinearize_sum`].
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_prepared_relinearize_sum<R, AP, BP, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        pairs: &[(&AP, &BP)],
+        a_size: usize,
+        a_k: crate::layouts::TorusPrecision,
+        b_size: usize,
+        b_k: crate::layouts::TorusPrecision,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<BE>,
+        BP: CnvPVecRToBackendRef<BE>,
+        H: GetTensorKey<BE>;
+
+    /// Scratch bytes of [`Self::glwe_tensor_apply_prepared`] for operands prepared from ciphertexts of the layouts of
+    /// `a` and `b`: on a backend that keeps the default of [`GLWETensoringImpl`](crate::oep::GLWETensoringImpl),
+    /// [`GLWETensoring::glwe_tensor_apply_tmp_bytes`] for the same arguments, of which the prepared product takes a
+    /// part.
+    fn glwe_tensor_apply_prepared_tmp_bytes<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: GLWEInfos;
+
+    /// [`GLWETensoring::glwe_tensor_apply`] of a prepared left operand of `a_size` limbs and a prepared right operand
+    /// of `b_size` limbs, at radix `base2k`, each with one column per column of a ciphertext of the rank of `res`:
+    /// the canonical tensor at `res.k()` that the unprepared product gives.
+    ///
+    /// Panics, before writing `res`, if an operand is not of the degree of `res`, of `rank + 1` columns and of its
+    /// given size, or if `scratch` holds less than the call needs.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_tensor_apply_prepared<R, AP, BP>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &AP,
+        a_size: usize,
+        b: &BP,
+        b_size: usize,
+        base2k: crate::layouts::Base2K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<BE>,
+        BP: CnvPVecRToBackendRef<BE>;
 }
 
 pub trait GLWEAdd<BE: Backend> {

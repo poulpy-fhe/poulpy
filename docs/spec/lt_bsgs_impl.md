@@ -137,8 +137,14 @@ Only the per-giant `accumulate_prod` differs; the rotate/accumulate tail is shar
 
 ### 4.1 Path selection
 
+Before reading a key, the loop checks every giant step of every term: it has a diagonal,
+its first diagonal is as wide as the first transform's first diagonal, and it reads only
+baby rotations the term's cache holds. The other diagonals are not checked: every diagonal
+of a transform shares one width, scale and degree, as the encoder produces them, and
+preparing asserts the degree.
+
 The loop picks one of two strategies up front
-([prepared_giants.rs:218-236](../../poulpy-core/src/reference/linear_transformation/prepared_giants.rs#L218-L236)):
+([prepared_giants.rs:244-266](../../poulpy-core/src/reference/linear_transformation/prepared_giants.rs#L244-L266)):
 
 - **Lazy DFT path** (the hot path) — taken when `res`, the PROD output, and the keys all
   share a `base2k` (or when there is no giant rotation at all). Everything rides in DFT
@@ -195,7 +201,7 @@ this final normalize.
 | #3 Free identities | `rot == 0` branches in baby_steps.rs **and** prepared_giants.rs |
 | #4 Lazy normalize across giants | DFT accumulator + single final normalize (lazy.rs) |
 | #5 Lazy normalize inside PROD | DFT accumulation in inner_product.rs |
-| #6 Skip `j=0` mask normalize | `rot == 0` giant branch (prepared_giants.rs:258) |
+| #6 Skip `j=0` mask normalize | `rot == 0` giant branch (prepared_giants.rs:292) |
 | #7 Prune zero diagonals | schedule only stores real `(j,k)` (linear_transformation.rs) |
 | #8 Setup-time preparation | prepare.rs (RHS) + baby_steps.rs (LHS) |
 | #9 One rescale level | single `glwe_normalize_big_into` (lazy.rs) |
@@ -213,6 +219,7 @@ These `*_reference` free functions are what a backend forwards to from its
 | `glwe_prepare_linear_transformation_baby_steps_reference` | Setup §3.2 / Phase A (baby_steps.rs). |
 | `glwe_eval_linear_transformation_into_reference` | Prepared eval (§4) — asserts ≥ 1 non-empty giant step, then `glwe_eval_giant_steps`. |
 | `glwe_eval_linear_transformation_into_reference` with unprepared diagonals | Streamed eval (§6). |
+| `glwe_eval_linear_transformation_sum_into_reference` | `Σ_t M_t·v_t` over prepared transforms sharing one giant schedule, checks the terms, then `glwe_eval_giant_steps` sums each giant's PROD over them in DFT, in slice order, before its one rotation. |
 | `*_tmp_bytes_reference` siblings | Scratch sizing. |
 
 **Scratch sizing.** The `*_tmp_bytes` functions follow the additive-layout pattern of
@@ -220,7 +227,7 @@ These `*_reference` free functions are what a backend forwards to from its
 plain) and take the `max`. The eval budget covers the hoisted `a_dft`, the DFT PROD buffer
 + DFT temp, the DFT giant accumulator, the rotation scratch, the final BIG accumulator, and
 the per-op VMP/IDFT/normalize/convolution `*_tmp_bytes`. The streamed variant adds one
-resident `CnvPVecR` slot and a `cnv_prepare_right` scratch on top.
+resident `CnvPVecR` slot and a `cnv_prepare_right` scratch on top, and the sum one PROD bucket.
 
 ---
 
