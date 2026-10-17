@@ -1,11 +1,15 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey};
+use poulpy_hal::layouts::{Backend, Module, PrepareHint, ScratchArena};
 
 use crate::api::CKKSMulOps;
 
-use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight, oep::CKKSMulImpl};
+use crate::{
+    CKKSCtBounds, CKKSInfos, SetCKKSInfos,
+    layouts::{CKKSPreparedLeft, CKKSPreparedRight},
+    oep::CKKSMulImpl,
+};
 
 impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
     fn ckks_mul_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
@@ -67,11 +71,67 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
         BE::ckks_mul_assign_impl(self, dst, a, tsk, scratch)
     }
 
-    fn ckks_prepare_right<A>(&self, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
+    fn ckks_prepare_tmp_bytes<A>(&self, a: &A) -> usize
+    where
+        A: CKKSCtBounds,
+    {
+        BE::ckks_prepare_tmp_bytes_impl(self, a)
+    }
+
+    fn ckks_prepared_left_bytes_of_from_infos<A>(&self, infos: &A, hint: PrepareHint) -> usize
+    where
+        A: GLWEInfos,
+    {
+        BE::ckks_prepared_left_bytes_of_from_infos_impl(self, infos, hint)
+    }
+
+    fn ckks_prepared_right_bytes_of_from_infos<A>(&self, infos: &A, hint: PrepareHint) -> usize
+    where
+        A: GLWEInfos,
+    {
+        BE::ckks_prepared_right_bytes_of_from_infos_impl(self, infos, hint)
+    }
+
+    fn ckks_prepared_left_alloc_from_infos<A>(&self, infos: &A, hint: PrepareHint) -> CKKSPreparedLeft<BE>
+    where
+        A: GLWEInfos,
+    {
+        BE::ckks_prepared_left_alloc_from_infos_impl(self, infos, hint)
+    }
+
+    fn ckks_prepared_right_alloc_from_infos<A>(&self, infos: &A, hint: PrepareHint) -> CKKSPreparedRight<BE>
+    where
+        A: GLWEInfos,
+    {
+        BE::ckks_prepared_right_alloc_from_infos_impl(self, infos, hint)
+    }
+
+    fn ckks_prepare_left_into<A>(&self, res: &mut CKKSPreparedLeft<BE>, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BE::ckks_prepare_right_impl(self, a, scratch)
+        BE::ckks_prepare_left_into_impl(self, res, a, scratch)
+    }
+
+    fn ckks_prepare_right_into<A>(&self, res: &mut CKKSPreparedRight<BE>, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+    {
+        BE::ckks_prepare_right_into_impl(self, res, a, scratch)
+    }
+
+    fn ckks_prepare_left<A>(&self, a: &A, hint: PrepareHint, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedLeft<BE>>
+    where
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+    {
+        BE::ckks_prepare_left_impl(self, a, hint, scratch)
+    }
+
+    fn ckks_prepare_right<A>(&self, a: &A, hint: PrepareHint, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
+    where
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+    {
+        BE::ckks_prepare_right_impl(self, a, hint, scratch)
     }
 
     fn ckks_mul_prepared_assign<Dst, H>(

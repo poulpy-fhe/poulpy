@@ -349,12 +349,12 @@ Leveled operations are invoked through traits implemented on
 | `CKKSAddOps` | ciphertext and plaintext addition |
 | `CKKSSubOps` | ciphertext and plaintext subtraction |
 | `CKKSNegOps` | negation |
-| `CKKSMulOps` | ciphertext–ciphertext and ciphertext–plaintext multiplication |
+| `CKKSMulOps` | ciphertext–ciphertext and ciphertext–plaintext multiplication, and ciphertexts prepared once as product operands |
 | `CKKSMulAddOps` | fused `dst += a * b` variants |
 | `CKKSMulSubOps` | fused `dst -= a * b` variants |
 | `CKKSAffineOps` | fused affine: `dst = a * scale_coeff + offset_coeff` |
-| `CKKSAddManyOps` | tree-reduction add over slices |
-| `CKKSDotProductOps` | inner product of ciphertext or plaintext slices |
+| `CKKSAddManyOps` | sum of a slice, added left to right |
+| `CKKSDotProductOps` | inner product of ciphertext, prepared-ciphertext or plaintext slices |
 | `CKKSImagOps` | multiplication and division by `i` (imaginary unit rotation) |
 | `CKKSCopyOps` | level-aware ciphertext copy |
 | `CKKSRotateOps` | homomorphic slot rotation |
