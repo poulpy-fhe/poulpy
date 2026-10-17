@@ -7,4 +7,7 @@
 //! operations move whole matrices across it. Products follow Jiang, Kim, Lauter and Song (2018), with every block map
 //! encoded once at a caller-chosen precision.
 
+pub mod api;
+mod delegates;
 pub mod layouts;
+pub mod oep;
