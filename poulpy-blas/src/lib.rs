@@ -12,3 +12,6 @@ mod delegates;
 pub mod layouts;
 pub mod oep;
 pub mod reference;
+#[cfg(feature = "test-utils")]
+#[allow(clippy::too_many_arguments)]
+pub mod test_suite;

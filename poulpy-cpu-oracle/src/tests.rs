@@ -8,6 +8,8 @@ use poulpy_hal::{
 
 use crate::{FFT64Oracle, NTT4x30Oracle};
 
+#[cfg(feature = "enable-blas")]
+mod blas_tests;
 #[cfg(feature = "enable-ckks")]
 mod ckks_tests;
 mod conjugate_invariant;

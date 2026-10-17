@@ -57,6 +57,10 @@ name = "ckks_hello"
 required-features = ["enable-ckks"]
 
 [[example]]
+name = "blas_pipeline"
+required-features = ["enable-blas"]
+
+[[example]]
 name = "core_encryption"
 required-features = ["enable-core"]
 
@@ -72,10 +76,15 @@ required-features = ["enable-bin-fhe"]
 name = "max_array"
 required-features = ["enable-bin-fhe"]
 
+[[test]]
+name = "blas_streaming_memory"
+required-features = ["enable-blas"]
+
 [dev-dependencies]
-poulpy-cpu-oracle = {workspace = true, features = ["enable-ckks", "enable-bin-fhe"]}
+poulpy-cpu-oracle = {workspace = true, features = ["enable-ckks", "enable-bin-fhe", "enable-blas"]}
 paste = {workspace = true}
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
+poulpy-blas = {workspace = true, features = ["test-utils"]}
 poulpy-bin-fhe = {workspace = true}
 criterion = {workspace = true}
 # TODO: poulpy-bench's lib is currently #![cfg]-gated on its bench features

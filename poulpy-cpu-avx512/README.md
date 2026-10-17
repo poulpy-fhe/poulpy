@@ -90,8 +90,10 @@ contracts separately. On hosts without the required instructions, SDE runs HAL
 and core contracts with `POULPY_TEST_EMULATED=1`: ordinary HAL degrees are capped
 at 256 and core degrees at 64. Explicit large-degree HAL sweeps are excluded in
 that mode; focused tensor cases retain both specialized degrees, 32,768 and
-65,536. Statistical sampling fixtures keep their original sizes. Native runs
-keep the original sweep sizes and CKKS coverage.
+65,536. Statistical sampling fixtures keep their original sizes. A second step,
+under its own execution budget, runs the BLAS parity of each backend type once, in
+`f64` (`test-backend.sh test avx512 emulated blas`). Native runs keep the original
+sweep sizes, CKKS coverage and every BLAS test.
 
 To measure actual AVX-512 emulation on an AVX-512-capable host, add
 `-force_emulate skx -force_emulate icl` to the SDE runner. `-icl` alone may execute
@@ -167,4 +169,4 @@ Enable `enable-ifma` as well to select this accelerated backend; `enable-rayon` 
 RUSTFLAGS="-C target-feature=+avx2,+fma,+avx512f,+avx512dq,+avx512bw,+avx512vl,+avx512ifma" cargo test -p poulpy-cpu-avx512 --features enable-ifma,enable-rayon,enable-bin-fhe bin_fhe_parity
 ```
 
-CI executes binary-FHE when native hardware is available. The Intel SDE fallback runs HAL/core only.
+CI executes binary-FHE when native hardware is available. The Intel SDE fallback runs HAL/core and BLAS parity only.
