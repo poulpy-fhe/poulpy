@@ -164,3 +164,47 @@ pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
         derived::blas_shift(module, "blas_rotate_cols", res, a, k, false, ctx, atk, scratch)
     }
 }
+
+/// Selects `reference::BlasMatIntraReference` for `$be`: the map hook and its query, under the provided
+/// transpose and shifts.
+#[macro_export]
+macro_rules! impl_blas_intra_reference {
+    ($be:ty) => {
+        unsafe impl $crate::oep::BlasMatIntraImpl for $be {
+            fn blas_map_blocks_tmp_bytes_impl<D, S, K>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                dst: &D,
+                src: &S,
+                sources: usize,
+                lts: &[&::poulpy_ckks::api::LinearTransformationPrepared<Self>],
+                atk: &K,
+            ) -> usize
+            where
+                D: ::poulpy_ckks::CKKSCtBounds,
+                S: ::poulpy_ckks::CKKSCtBounds,
+                K: ::poulpy_core::layouts::GGLWEInfos,
+            {
+                $crate::reference::BlasMatIntraReference::blas_map_blocks_tmp_bytes_reference(module, dst, src, sources, lts, atk)
+            }
+
+            fn blas_map_blocks_impl<D, S, K>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                dst: &mut [D],
+                src: &[&S],
+                lts: &[&::poulpy_ckks::api::LinearTransformationPrepared<Self>],
+                atk: &K,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> ::poulpy_ckks::CKKSResult<()>
+            where
+                D: ::poulpy_core::layouts::GLWEToBackendMut<Self>
+                    + ::poulpy_ckks::CKKSCtBounds
+                    + ::poulpy_ckks::SetCKKSInfos
+                    + Send,
+                S: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_ckks::CKKSCtBounds + Sync,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
+            {
+                $crate::reference::BlasMatIntraReference::blas_map_blocks_reference(module, dst, src, lts, atk, scratch)
+            }
+        }
+    };
+}

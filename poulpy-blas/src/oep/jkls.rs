@@ -79,3 +79,43 @@ pub unsafe trait BlasJklsImpl: Backend {
         R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         T: GetTensorKey<Self> + Sync;
 }
+
+/// Selects `reference::BlasMatMulReference::blas_jkls_block_reference` as the JKLS kernel of `$be`.
+#[macro_export]
+macro_rules! impl_blas_jkls_reference {
+    ($be:ty) => {
+        unsafe impl $crate::oep::BlasJklsImpl for $be {
+            fn blas_jkls_block_tmp_bytes_impl<R, L, Rh, T>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &R,
+                lhs: &L,
+                rhs: &Rh,
+                terms: usize,
+                tsk: &T,
+            ) -> usize
+            where
+                R: ::poulpy_ckks::CKKSCtBounds,
+                L: ::poulpy_ckks::CKKSCtBounds,
+                Rh: ::poulpy_ckks::CKKSCtBounds,
+                T: ::poulpy_core::layouts::GGLWEInfos,
+            {
+                $crate::reference::BlasMatMulReference::blas_jkls_block_tmp_bytes_reference(module, res, lhs, rhs, terms, tsk)
+            }
+
+            fn blas_jkls_block_impl<R, T>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &mut R,
+                lhs: &[&::poulpy_ckks::layouts::CKKSPreparedLeft<Self>],
+                rhs: &[&::poulpy_ckks::layouts::CKKSPreparedRight<Self>],
+                tsk: &T,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> ::poulpy_ckks::CKKSResult<()>
+            where
+                R: ::poulpy_core::layouts::GLWEToBackendMut<Self> + ::poulpy_ckks::CKKSCtBounds + ::poulpy_ckks::SetCKKSInfos,
+                T: ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
+            {
+                $crate::reference::BlasMatMulReference::blas_jkls_block_reference(module, res, lhs, rhs, tsk, scratch)
+            }
+        }
+    };
+}
