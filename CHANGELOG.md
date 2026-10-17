@@ -59,6 +59,9 @@
   Every FFT64 DFT kernel now panics on an out-of-range column, also on vectors of no limb (#422).
 - `poulpy_cpu_portable::hal_defaults::take_host_typed` is public, and the SIMD backends use it in place of their own copies.
 - **Breaking:** the kernels of `vec_znx_idft_apply_tmpa` are removed with it: `vec_znx_idft_apply_tmpa_portable` and `ntt4x30_vec_znx_idft_apply_tmpa_portable` of `poulpy_cpu_portable::kernels`, and `PackedNtt4x30Base::idft_limb_tmpa` of `poulpy-cpu-rayon`.
+- The AVX-512 backends run `glwe_tensor_apply_prepared` at rank 1 on the fused kernel of `glwe_tensor_apply`.
+- `NTT3x42IfmaRayon` runs `glwe_eval_linear_transformation_sum_into` on the parallel evaluation of `glwe_eval_linear_transformation_into`.
+  Both run the reference checks before resolving a key, and take the reference path for a destination below the module degree.
 
 ### `poulpy-core`
 
@@ -66,6 +69,22 @@
 - **Breaking, format:** serialized `GLWE` and `GLWECompressed` carry their plaintext metadata.
 - `reference::keyswitching::glwe::gglwe_product_limbs` returns the `product_limbs` the reference key switch passes to `GGLWEProductDigitsStridedImpl`, so that backend overrides derive the same.
 - The scratch of GLWE encryption, decryption, plaintext multiplication, tensoring, relinearization, linear transformations and GGSW noise covers `vec_znx_idft_apply_tmp_bytes`.
+- **Breaking:** `LinearTransformationImpl` requires `glwe_eval_linear_transformation_sum_into` and `glwe_eval_linear_transformation_sum_tmp_bytes`; a hand-written impl forwards them to `glwe_eval_linear_transformation_sum_into_reference` and `glwe_eval_linear_transformation_sum_tmp_bytes_reference`.
+- Add `GLWELinearTransformations::glwe_eval_linear_transformation_sum_into` and its `_tmp_bytes`: `Σ_t M_t(a_t)` over resident transforms that share one giant schedule, at the giant key-switch cost of one transform.
+- `reference::linear_transformation` exports the checks its evaluations run before reading a key, `assert_linear_transformation_into` and `assert_linear_transformation_sum`, so that overrides fail as the reference does.
+- **Breaking:** `GLWETensoringImpl` requires `glwe_mul_relinearize_sum`, `glwe_mul_prepared_relinearize_sum`, `glwe_tensor_apply_prepared` and their `_tmp_bytes`; a hand-written impl forwards them to the `GLWETensoringReference` methods of the same names with the `_reference` suffix.
+- Add `GLWEMulRelinearizeSum::glwe_mul_relinearize_sum` and its `_tmp_bytes`: `relinearize(Σ_i a_i * b_i)` in one pass, over rank-1 pairs that share the first pair's layouts.
+  Each pair's product columns are added to the first pair's in the transform domain, and only the key-switched column of the sum comes back to digits before the single final normalization, so the scratch does not grow with the number of pairs.
+  One pair is `glwe_mul_relinearize`, bit for bit.
+  The products of every pair accumulate before one inverse transform: pick `base2k` for `pairs.len()` times the products of one pair (`Module::max_base2k`), up to `2 * min(a_size, b_size)` per output limb in the cross column.
+- Add `glwe_prepare_left`, the left-hand mirror of `glwe_prepare_right`, and the queries `glwe_prepare_left_tmp_bytes` and `glwe_prepare_right_tmp_bytes`.
+- **Breaking, behaviour:** `glwe_prepare_right` panics unless `b_prep` has `ceil(b_k / base2k)` limbs, as `glwe_prepare_left` does, so that a prepared operand holds its ciphertext at width `b_k`.
+- Add `GLWEPreparedTensoring`: `glwe_mul_prepared_relinearize_sum` and `glwe_tensor_apply_prepared`, with their `_tmp_bytes`, are `glwe_mul_relinearize_sum` and `glwe_tensor_apply` over operands prepared once, which transform no operand in the call.
+  Operands prepared from ciphertexts of width `k` on `ceil(k / base2k)` limbs, under either `PrepareHint`, give the unprepared products of those ciphertexts bit for bit.
+  Both check every prepared operand against the degree of `res`, its rank and the given sizes before writing `res`, and the summed product checks that each given size is the limb count of its width.
+  Their queries count only what the prepared products use, and one prepared pair needs no more than `glwe_mul_relinearize_tmp_bytes`.
+- **Fix:** `glwe_eval_linear_transformation_into` checks every giant step before writing `res`, as `glwe_eval_linear_transformation_sum_into` does: on the per-giant fallback, a giant step after the first that had no diagonal, started with a diagonal of another width, or read a baby rotation missing from the cache panicked after `res` was written. The other diagonals are not checked: every diagonal of a transform shares one width, scale and degree, as the encoder produces them. Valid calls are unchanged.
+- **Fix:** `glwe_tensor_relinearize_tmp_bytes` counts the operand's second conversion to the tensor key's radix where `glwe_tensor_relinearize` takes it, while the key-switched sum is held. It counted a conversion beside the key product instead, and only for a key of another radix than the output's, so with a key of another `base2k` than the operand's the relinearization could run out of the scratch its query returned and panic, as `ckks_mul_into` did at rank 2 with a key of radix 12 on radix-52 ciphertexts. The query changes only for keys of another radix than the operand's or the output's, and bits are unchanged.
 
 ### `poulpy-ckks`
 

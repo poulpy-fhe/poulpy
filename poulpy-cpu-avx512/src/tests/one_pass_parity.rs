@@ -1,20 +1,34 @@
-use poulpy_core::test_suite::parity::{ParityShapes, test_tensor_relinearize_decrypt_parity};
+use poulpy_core::test_suite::parity::{
+    ONE_PASS_PRODUCT_ROLES, ONE_PASS_SUM_ROLES, ParityShapes, test_tensor_relinearize_decrypt_parity_roles,
+};
 use poulpy_hal::{layouts::Module, test_suite::TestParams};
 
 macro_rules! one_pass_case {
     ($name:ident, $tested:ty, $oracle:ty, $n:expr, $module_n:expr) => {
+        one_pass_case!(
+            $name,
+            $tested,
+            $oracle,
+            $n,
+            $module_n,
+            52,
+            &[&ONE_PASS_PRODUCT_ROLES[..], &ONE_PASS_SUM_ROLES[..]].concat()
+        );
+    };
+    ($name:ident, $tested:ty, $oracle:ty, $n:expr, $module_n:expr, $base2k:expr, $roles:expr) => {
         #[test]
         fn $name() {
-            test_tensor_relinearize_decrypt_parity(
+            test_tensor_relinearize_decrypt_parity_roles(
                 &TestParams {
                     n: $n,
                     size: $module_n,
-                    base2k: 52,
+                    base2k: $base2k,
                 },
                 &ParityShapes {
                     ranks: vec![1],
                     dsizes: Some(vec![1, 2]),
                 },
+                $roles,
                 &Module::<$oracle>::new($module_n as u64),
                 &Module::<$tested>::new($module_n as u64),
             );
@@ -59,7 +73,19 @@ one_pass_case!(
     crate::NTT3x42CIIfma,
     poulpy_cpu_oracle::NTT4x30CIOracle,
     65536,
-    65536
+    65536,
+    52,
+    &ONE_PASS_PRODUCT_ROLES
+);
+// No radix model on this ring: at base2k 52 the sum of three pairs, one a square, exceeds the oracle's 120-bit NTT.
+one_pass_case!(
+    ifma_ci_n16_sums,
+    crate::NTT3x42CIIfma,
+    poulpy_cpu_oracle::NTT4x30CIOracle,
+    65536,
+    65536,
+    50,
+    &ONE_PASS_SUM_ROLES
 );
 #[cfg(feature = "enable-rayon")]
 one_pass_case!(
@@ -83,5 +109,17 @@ one_pass_case!(
     crate::NTT3x42CIIfmaRayon,
     poulpy_cpu_oracle::NTT4x30CIOracle,
     65536,
-    65536
+    65536,
+    52,
+    &ONE_PASS_PRODUCT_ROLES
+);
+#[cfg(feature = "enable-rayon")]
+one_pass_case!(
+    ifma_ci_rayon_n16_sums,
+    crate::NTT3x42CIIfmaRayon,
+    poulpy_cpu_oracle::NTT4x30CIOracle,
+    65536,
+    65536,
+    50,
+    &ONE_PASS_SUM_ROLES
 );

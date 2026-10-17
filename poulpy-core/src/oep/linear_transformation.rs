@@ -4,7 +4,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::layouts::{
     GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation,
-    prepared::{LinearTransformationBabySteps, PreparedDiagonal},
+    prepared::{LinearTransformationBabySteps, LinearTransformationPrepared, PreparedDiagonal},
 };
 
 /// Backend hook for the linear-transformation family.
@@ -27,6 +27,13 @@ pub unsafe trait LinearTransformationImpl: Backend {
         pt: &B,
         key: &K,
     ) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: GLWEInfos,
+        K: GGLWEInfos;
+
+    fn glwe_eval_linear_transformation_sum_tmp_bytes<R, A, B, K>(module: &Module<Self>, res: &R, a: &A, pt: &B, key: &K) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
@@ -60,6 +67,8 @@ pub unsafe trait LinearTransformationImpl: Backend {
         A: GLWEToBackendRef<Self> + GLWEInfos,
         H: GetAutomorphismKey<Self>;
 
+    /// Checks `rhs` and `lhs` before writing `res`; see
+    /// [`crate::GLWELinearTransformations::glwe_eval_linear_transformation_into`].
     fn glwe_eval_linear_transformation_into<R, P, H>(
         module: &Module<Self>,
         cnv_offset: usize,
@@ -71,6 +80,19 @@ pub unsafe trait LinearTransformationImpl: Backend {
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos,
         P: crate::reference::linear_transformation::DiagonalProd<Self>,
+        H: GetAutomorphismKey<Self>;
+
+    /// Checks every term before writing `res`; see
+    /// [`crate::GLWELinearTransformations::glwe_eval_linear_transformation_sum_into`].
+    fn glwe_eval_linear_transformation_sum_into<R, H>(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut R,
+        terms: &[(&LinearTransformationBabySteps<Self>, &LinearTransformationPrepared<Self>)],
+        keys: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
         H: GetAutomorphismKey<Self>;
 }
 
@@ -115,6 +137,18 @@ macro_rules! impl_linear_transformation_reference_full {
                     _,
                     _,
                 >(module, res, a, pt, key)
+            }
+
+            fn glwe_eval_linear_transformation_sum_tmp_bytes<R, A, B, K>(module: &::poulpy_hal::layouts::Module<$be>, res: &R, a: &A, pt: &B, key: &K) -> usize
+            where
+                R: $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEInfos,
+                B: $crate::layouts::GLWEInfos,
+                K: $crate::layouts::GGLWEInfos,
+            {
+                $crate::reference::linear_transformation::glwe_eval_linear_transformation_sum_tmp_bytes_reference::<$be, _, _, _, _, _>(
+                    module, res, a, pt, key,
+                )
             }
 
             fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(module: &::poulpy_hal::layouts::Module<$be>, a: &A, key: &K) -> usize
@@ -184,6 +218,25 @@ macro_rules! impl_linear_transformation_reference_full {
             {
                 $crate::reference::linear_transformation::glwe_eval_linear_transformation_into_reference::<$be, _, _, _, _>(
                     module, cnv_offset, res, lhs, rhs, keys, scratch,
+                )
+            }
+
+            fn glwe_eval_linear_transformation_sum_into<R, H>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                cnv_offset: usize,
+                res: &mut R,
+                terms: &[(
+                    &$crate::layouts::prepared::LinearTransformationBabySteps<$be>,
+                    &$crate::layouts::prepared::LinearTransformationPrepared<$be>,
+                )],
+                keys: &H,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
+            ) where
+                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+                H: $crate::layouts::GetAutomorphismKey<$be>,
+            {
+                $crate::reference::linear_transformation::glwe_eval_linear_transformation_sum_into_reference::<$be, _, _, _>(
+                    module, cnv_offset, res, terms, keys, scratch,
                 )
             }
         }
