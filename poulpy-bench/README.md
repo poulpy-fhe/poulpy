@@ -48,8 +48,9 @@ the same underlying `*_ops` tables.
 | [`hal`](src/hal) | `poulpy-hal` trait operations: `vec_znx`, `vec_znx_dft`, `vec_znx_big`, `svp`, `vmp`, `convolution`, `reim` |
 | [`core`](src/core) | `poulpy-core` GLWE/GGSW operations: encryption, decryption, keyswitch, automorphism, external product, tensoring |
 | [`schemes`](src/schemes) | `poulpy-ckks` (CKKS) and `poulpy-bin-fhe` (blind rotation, circuit bootstrapping) |
+| [`blas`](src/blas) | `poulpy-blas` encrypted matrix operations on one `d x d` block: `blas_matmul` by a dense and by a replicated right factor, `blas_matmul_pt_right` and `blas_matmul_pt_left` under `Diagonal` and `Jkls`, `blas_transpose` |
 
-Each of `hal`, `core`, and `schemes` has its own `params` submodule (e.g.
+Each of `hal`, `core`, `schemes` and `blas` has its own `params` submodule (e.g.
 [`hal::params`](src/hal/params.rs)) holding that layer's sweep-parameter
 structs and `default_bench_params_*` builders, so every backend sweeps the
 same reasonable defaults.
@@ -59,8 +60,8 @@ same reasonable defaults.
 For a backend implementing the full HAL/core/CKKS/bin-fhe surface, add
 `poulpy-bench` as a dev-dependency and register the ready-made `bench_*`
 functions directly in `criterion_group!` — each layer's `suites` module
-(`hal::suites`, `core::suites`, `schemes::suites`) exposes them for all
-three tiers:
+(`hal::suites`, `core::suites`, `schemes::suites`, and `blas::suites` for the
+BLAS layer, see [below](#blas-benchmarks)) exposes them for all three tiers:
 
 - `bench_hal_ckks`/`bench_hal_binfhe`, `bench_core_ckks`/`bench_core_binfhe`,
   `bench_ckks`, `bench_binfhe` (top of each `suites` module): the **full**
@@ -179,6 +180,59 @@ cargo bench -p poulpy-cpu-portable --bench full --features enable-ckks -- n15_d3
 # Run the logN15 preset on the portable NTT backend
 cargo bench -p poulpy-cpu-portable --bench full --features enable-ckks -- 'NTT4x30Portable/ckks/ckks_bootstrapping/n15_d35_k180_p18_c2s'
 ```
+
+### BLAS benchmarks
+
+`blas::suites` benchmarks `poulpy-blas` on NTT backends, on one `d x d` block per operand, at radix `base2k` 52, `k` 208
+and scales `log_delta = p = 40`:
+
+| Operation | Variant |
+|---|---|
+| `blas_matmul` | a dense right factor, distinct matrices per matrix slot (not run where one matrix fills the slots) |
+| `blas_matmul_replicated` | a replicated right factor, one matrix whose compact encryption proves it |
+| `blas_matmul_pt_right_diagonal`, `blas_matmul_pt_right_jkls` | one public matrix shared by the batch, on the right |
+| `blas_matmul_pt_left_diagonal`, `blas_matmul_pt_left_jkls` | one public matrix shared by the batch, on the left |
+| `blas_transpose` | |
+
+The sweep is over the ring degree `N` and the block dimension `d`, which fill the `N / 2` slots with `N / (2 d^2)`
+matrices: light `(2^14, 64)`; standard `(2^13, 32)`, `(2^14, 64)`, `(2^15, 128)`; full adds `(2^15, 64)`, `(2^16, 64)`
+and `(2^16, 128)`.
+
+A runner builds its point once, since Criterion calls it again for every sample: only the rotation keys the operation
+looks up (and the tensor key of `blas_matmul`), the encrypted inputs, the context or the public operand, and the scratch
+its `*_tmp_bytes` reports. Before timing, it checks `base2k` against the operation's radix helper at 128 failure bits,
+runs the call once, decrypts and asserts every entry within `blas::matmul::error_bound` of the cleartext, and prints
+the measured error in a `PRECISION` line. The group runs under `blas_criterion_config()`, ten samples.
+
+A backend binary registers the group next to its main one, behind its `enable-blas` feature, with the `main` that
+`criterion_main!` would expand to:
+
+```rust
+#[cfg(feature = "enable-blas")]
+criterion_group! {
+    name = blas_benches;
+    config = poulpy_bench::blas_criterion_config();
+    targets = bench_blas::<Ntt>
+}
+
+fn main() {
+    benches();
+    #[cfg(feature = "enable-blas")]
+    blas_benches();
+
+    criterion::Criterion::default().configure_from_args().final_summary();
+}
+```
+
+```sh
+# The light tier of the BLAS group only
+cargo bench -p poulpy-cpu-portable --bench light --features enable-ckks,enable-bin-fhe,enable-blas -- blas
+```
+
+Memory: a point holds its context, keys and operands at once, and its rotation keys, tens of MB each at `N = 2^15`
+and `2^16`, dominate. The key set of `blas_matmul` is 125 keys at `(2^13, 32)`, about 250 at `d = 64`, 381 at
+`(2^15, 128)` and 509 at `(2^16, 128)`; the process peaks at about 11 GB at `(2^15, 128)` and 28 GB at `(2^16, 128)`, so
+the full tier needs a host sized for that. The keys of one point are freed before the next is built.
 
 ## Normalization sweep
 
