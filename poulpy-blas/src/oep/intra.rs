@@ -17,16 +17,16 @@ use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut};
 /// The memory, layout and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 ///
 /// **The hook.** [`Self::blas_map_blocks_impl`] reproduces
-/// `reference::BlasMatIntraReference::blas_map_blocks_reference` bit for bit, digits and CKKS metadata: block
-/// `t * lts.len() + m` of `dst` receives `lts[m]` evaluated from `src[t]` by poulpy-ckks's
-/// `ckks_eval_linear_transformation_into`, then the label (`log_sparsity`) of `src[t]`. It is called with at least one
-/// map and `src.len() * lts.len()` blocks of `dst`, the blocks of `dst` sharing one layout and those of `src` another,
-/// on inputs the calling operation's validator accepted. It looks up the keys of a map at the widths that evaluation
-/// does: the baby steps at the width of `src`, the giant steps at `src`'s width less the map's scale (`0` for
-/// [`BlasContext::rotate_rows_rep`]), capped at `dst`'s. Within the scratch [`Self::blas_map_blocks_tmp_bytes_impl`]
-/// reports for the layouts of `dst` and `src`, at their widths whatever their allocations, `src.len()`, `lts` and every
-/// key it looks up, it returns `Ok`, or poulpy-ckks's budget error before any write to `dst`; with less scratch it
-/// panics before any write, as the reference does when it looks up a key.
+/// [`BlasMatIntraReference::blas_map_blocks_reference`](crate::reference::BlasMatIntraReference::blas_map_blocks_reference)
+/// bit for bit, digits and CKKS metadata: block `t * lts.len() + m` of `dst` receives `lts[m]` evaluated from `src[t]`
+/// by poulpy-ckks's `ckks_eval_linear_transformation_into`, then the label (`log_sparsity`) of `src[t]`. It is called
+/// with at least one map and `src.len() * lts.len()` blocks of `dst`, the blocks of `dst` sharing one layout and those
+/// of `src` another, on inputs the calling operation's validator accepted. It looks up the keys of a map at the widths
+/// that evaluation does: the baby steps at the width of `src`, the giant steps at `src`'s width less the map's scale
+/// (`0` for [`BlasContext::rotate_rows_rep`]), capped at `dst`'s. Within the scratch
+/// [`Self::blas_map_blocks_tmp_bytes_impl`] reports for the layouts of `dst` and `src`, at their widths whatever their
+/// allocations, `src.len()`, `lts` and every key it looks up, it returns `Ok`, or poulpy-ckks's budget error before any
+/// write to `dst`; with less scratch it panics before any write, as the reference does when it looks up a key.
 ///
 /// The references of [`crate::oep::BlasMatMulImpl`] call the hook too: a cold preparation block row after block row,
 /// and the products for a hot side, a block row of `a` or a block column of `b` at a time; each time sigma (tau) over
@@ -166,4 +166,48 @@ pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
     {
         derived::blas_rotate_cols_derived(module, res, a, k, ctx, atk, scratch)
     }
+}
+
+/// Selects [`BlasMatIntraReference`](crate::reference::BlasMatIntraReference) for `$be`: the map hook and its query,
+/// under the provided transpose and shifts.
+#[macro_export]
+macro_rules! impl_blas_intra_reference {
+    ($be:ty) => {
+        unsafe impl $crate::oep::BlasMatIntraImpl for $be {
+            fn blas_map_blocks_tmp_bytes_impl<D, S, K>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                dst: &D,
+                src: &S,
+                sources: usize,
+                lts: &[&::poulpy_ckks::api::LinearTransformationPrepared<Self>],
+                atk: &K,
+            ) -> usize
+            where
+                D: ::poulpy_ckks::CKKSCtBounds,
+                S: ::poulpy_ckks::CKKSCtBounds,
+                K: ::poulpy_core::layouts::GGLWEInfos,
+            {
+                $crate::reference::BlasMatIntraReference::blas_map_blocks_tmp_bytes_reference(module, dst, src, sources, lts, atk)
+            }
+
+            fn blas_map_blocks_impl<D, S, K>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                dst: &mut [D],
+                src: &[&S],
+                lts: &[&::poulpy_ckks::api::LinearTransformationPrepared<Self>],
+                atk: &K,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> ::poulpy_ckks::CKKSResult<()>
+            where
+                D: ::poulpy_core::layouts::GLWEToBackendMut<Self>
+                    + ::poulpy_ckks::CKKSCtBounds
+                    + ::poulpy_ckks::SetCKKSInfos
+                    + Send,
+                S: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_ckks::CKKSCtBounds + Sync,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
+            {
+                $crate::reference::BlasMatIntraReference::blas_map_blocks_reference(module, dst, src, lts, atk, scratch)
+            }
+        }
+    };
 }

@@ -179,7 +179,7 @@ pub(crate) fn ensure_maps<M: CKKSModuleInfos + ?Sized>(
 
 /// One rotation-key look-up of an operation: the rotation, the width of the input it key-switches, and the rank of the
 /// blocks. The enumerators of an operation's look-ups yield these in the order its validator checks them; a validator
-/// checks each against the store, a `reference::BlasKeyUses` query collects them.
+/// checks each against the store, a [`BlasKeyUses`](crate::reference::BlasKeyUses) query collects them.
 #[derive(Clone, Copy)]
 pub(crate) struct RotationUse {
     pub(crate) rotation: i64,
