@@ -1,8 +1,10 @@
 //! Trace, packing, relinearization and tensor-secret parity.
-use super::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe};
+use super::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe, unnormalized_twin};
 use crate::{
-    Distribution, GLWEMaskFill, GLWEPacking, GLWETensorDecrypt, GLWETensoring, GLWETrace, GetDistribution,
+    Distribution, GLWEMaskFill, GLWEMulRelinearizeSum, GLWENormalize, GLWEPacking, GLWEPreparedTensoring, GLWETensorDecrypt,
+    GLWETensoring, GLWETrace, GetDistribution,
     api::TransferInto,
+    glwe_prepare_left, glwe_prepare_left_tmp_bytes, glwe_prepare_right, glwe_prepare_right_tmp_bytes,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecretLayout, GLWESecretTensorFactory,
         GLWETensorKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
@@ -14,7 +16,7 @@ use crate::{
     test_suite::keys::fill_by_digit,
 };
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostDataMut, Module, ScratchOwned, ZnxViewMut},
     source::Source,
     test_suite::TestParams,
@@ -353,6 +355,15 @@ where
     }
 }
 
+/// One-pass product roles of [`test_tensor_relinearize_decrypt_parity_roles`] that hold one product: a product, a
+/// product reading its left operand from the destination and a squaring, the test side reading unnormalized twins (0
+/// to 2) or canonical operands (6 to 8), and one prepared pair (5).
+pub const ONE_PASS_PRODUCT_ROLES: [usize; 7] = [0, 1, 2, 5, 6, 7, 8];
+
+/// One-pass product roles of [`test_tensor_relinearize_decrypt_parity_roles`] that sum three products: over
+/// ciphertexts (3) and over pairs prepared once (4).
+pub const ONE_PASS_SUM_ROLES: [usize; 2] = [3, 4];
+
 /// Relinearization and tensor decryption use explicitly staged coefficient
 /// inputs; secret preparation itself is compared before its prepared form is used.
 pub fn test_tensor_relinearize_decrypt_parity<BR, BT>(params: &TestParams, shapes: &ParityShapes, r: &Module<BR>, t: &Module<BT>)
@@ -361,12 +372,63 @@ where
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
     Module<BR>: GLWETensoring<BR>
+        + GLWEMulRelinearizeSum<BR>
+        + GLWEPreparedTensoring<BR>
+        + CnvPVecAlloc<BR>
+        + Convolution<BR>
+        + GLWENormalize<BR>
         + GLWETensorDecrypt<BR>
         + GLWETensorKeyPreparedFactory<BR>
         + GLWESecretPreparedFactory<BR>
         + GLWESecretTensorFactory<BR>
         + GLWESecretTensorPreparedFactory<BR>,
     Module<BT>: GLWETensoring<BT>
+        + GLWEMulRelinearizeSum<BT>
+        + GLWEPreparedTensoring<BT>
+        + CnvPVecAlloc<BT>
+        + Convolution<BT>
+        + GLWENormalize<BT>
+        + GLWETensorDecrypt<BT>
+        + GLWETensorKeyPreparedFactory<BT>
+        + GLWESecretPreparedFactory<BT>
+        + GLWESecretTensorFactory<BT>
+        + GLWESecretTensorPreparedFactory<BT>,
+    ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
+    ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
+{
+    let roles: Vec<usize> = ONE_PASS_PRODUCT_ROLES.into_iter().chain(ONE_PASS_SUM_ROLES).collect();
+    test_tensor_relinearize_decrypt_parity_roles(params, shapes, &roles, r, t);
+}
+
+/// [`test_tensor_relinearize_decrypt_parity`] on the given one-pass product roles only: a radix at which the oracle
+/// holds one product may not hold a sum.
+pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
+    params: &TestParams,
+    shapes: &ParityShapes,
+    roles: &[usize],
+    r: &Module<BR>,
+    t: &Module<BT>,
+) where
+    BR: ParityBackend,
+    BT: ParityBackend,
+    BR::OwnedBuf: HostDataMut,
+    Module<BR>: GLWETensoring<BR>
+        + GLWEMulRelinearizeSum<BR>
+        + GLWEPreparedTensoring<BR>
+        + CnvPVecAlloc<BR>
+        + Convolution<BR>
+        + GLWENormalize<BR>
+        + GLWETensorDecrypt<BR>
+        + GLWETensorKeyPreparedFactory<BR>
+        + GLWESecretPreparedFactory<BR>
+        + GLWESecretTensorFactory<BR>
+        + GLWESecretTensorPreparedFactory<BR>,
+    Module<BT>: GLWETensoring<BT>
+        + GLWEMulRelinearizeSum<BT>
+        + GLWEPreparedTensoring<BT>
+        + CnvPVecAlloc<BT>
+        + Convolution<BT>
+        + GLWENormalize<BT>
         + GLWETensorDecrypt<BT>
         + GLWETensorKeyPreparedFactory<BT>
         + GLWESecretPreparedFactory<BT>
@@ -507,36 +569,125 @@ where
                     x_r.transfer_into(&mut x_t);
                     let mut y_t = t.glwe_alloc_from_infos(&g);
                     y_r.transfer_into(&mut y_t);
+                    let mut x_twin_t = t.glwe_alloc_from_infos(&g);
+                    unnormalized_twin::<BR, BT>(&x_r, &mut x_twin_t);
+                    let mut y_twin_t = t.glwe_alloc_from_infos(&g);
+                    unnormalized_twin::<BR, BT>(&y_r, &mut y_twin_t);
                     let size = precision.div_ceil(b);
+                    // Role 3's pairs prepared once, under both hints on each side, each on exactly its poisoned budget.
+                    macro_rules! prepared_pairs {
+                        ($be:ty, $m:expr, $pairs:expr) => {{
+                            $pairs
+                                .iter()
+                                .enumerate()
+                                .map(|(i, (l, r))| {
+                                    let (l_hint, r_hint) = crate::test_suite::prepare_hints(i);
+                                    let mut l_prep = $m.cnv_pvec_left_alloc(params.n, 2, size, l_hint);
+                                    glwe_prepare_left(
+                                        $m,
+                                        &mut l_prep,
+                                        *l,
+                                        precision,
+                                        &mut poisoned_scratch::<$be>(glwe_prepare_left_tmp_bytes($m, size, &g)).borrow(),
+                                    );
+                                    let mut r_prep = $m.cnv_pvec_right_alloc(params.n, 2, size, r_hint);
+                                    glwe_prepare_right(
+                                        $m,
+                                        &mut r_prep,
+                                        *r,
+                                        precision,
+                                        &mut poisoned_scratch::<$be>(glwe_prepare_right_tmp_bytes($m, size, &g)).borrow(),
+                                    );
+                                    (l_prep, r_prep)
+                                })
+                                .collect::<Vec<_>>()
+                        }};
+                    }
+                    let prep_r = prepared_pairs!(BR, r, [(&x_r, &y_r), (&y_r, &x_r), (&x_r, &x_r)]);
+                    let prep_t = prepared_pairs!(BT, t, [(&x_t, &y_t), (&y_twin_t, &x_twin_t), (&x_t, &x_t)]);
                     for cnv_offset in [b, precision] {
-                        for role in 0..3 {
+                        let mut outs = std::collections::HashMap::new();
+                        for &role in roles {
                             let mut out_r = r.glwe_alloc_from_infos(&g);
                             x_r.transfer_into(&mut out_r);
                             let mut out_t = t.glwe_alloc_from_infos(&g);
                             out_r.transfer_into(&mut out_t);
+                            // `$x2` and `$y2` hold the values of `$x` and `$y`: the test side passes unnormalized twins.
                             macro_rules! one_pass {
-                                ($be:ty, $m:expr, $out:expr, $x:expr, $y:expr, $key:expr) => {{
-                                    let bytes = $m.glwe_mul_relinearize_tmp_bytes(&g, size, size, g.k, &key);
+                                ($be:ty, $m:expr, $out:expr, $x:expr, $y:expr, $x2:expr, $y2:expr, $prep:expr, $key:expr) => {{
+                                    let (op, x2, y2) = if role >= 6 {
+                                        (role - 6, $x, $y)
+                                    } else {
+                                        (role, $x2, $y2)
+                                    };
+                                    let bytes = match op {
+                                        3 => $m.glwe_mul_relinearize_sum_tmp_bytes(&g, size, size, g.k, &key),
+                                        4 => $m.glwe_mul_prepared_relinearize_sum_tmp_bytes(&g, size, size, g.k, &key),
+                                        _ => $m.glwe_mul_relinearize_tmp_bytes(&g, size, size, g.k, &key),
+                                    };
                                     let mut scratch = poisoned_scratch::<$be>(bytes);
                                     // Role 0 is a product, role 1 reads its left operand from the destination,
-                                    // role 2 is a squaring.
-                                    match role {
+                                    // role 2 is a squaring, roles 6 to 8 the same on canonical operands, role 3 a
+                                    // sum of three products whose second pair the test side reads from the twins,
+                                    // role 4 the same sum over pairs prepared once, the test side's second pair
+                                    // prepared from the twins, and role 5 the first prepared pair alone, on a single
+                                    // product's scratch.
+                                    match op {
                                         1 => {
-                                            $m.glwe_mul_relinearize_assign(cnv_offset, $out, g.k, $y, $key, &mut scratch.borrow())
+                                            $m.glwe_mul_relinearize_assign(cnv_offset, $out, g.k, y2, $key, &mut scratch.borrow())
                                         }
-                                        2 => $m.glwe_square_relinearize(cnv_offset, $out, g.k, $x, $key, &mut scratch.borrow()),
-                                        _ => $m.glwe_mul_relinearize(cnv_offset, $out, g.k, $x, $y, $key, &mut scratch.borrow()),
+                                        2 => $m.glwe_square_relinearize(cnv_offset, $out, g.k, x2, $key, &mut scratch.borrow()),
+                                        3 => $m.glwe_mul_relinearize_sum(
+                                            cnv_offset,
+                                            $out,
+                                            g.k,
+                                            &[($x, $y), ($y2, $x2), ($x, $x)],
+                                            $key,
+                                            &mut scratch.borrow(),
+                                        ),
+                                        4 | 5 => $m.glwe_mul_prepared_relinearize_sum(
+                                            cnv_offset,
+                                            $out,
+                                            g.k,
+                                            &$prep[..if role == 5 { 1 } else { 3 }]
+                                                .iter()
+                                                .map(|(l, r)| (l, r))
+                                                .collect::<Vec<_>>(),
+                                            size,
+                                            g.k,
+                                            size,
+                                            g.k,
+                                            $key,
+                                            &mut scratch.borrow(),
+                                        ),
+                                        _ => $m.glwe_mul_relinearize(cnv_offset, $out, g.k, x2, y2, $key, &mut scratch.borrow()),
                                     }
                                 }};
                             }
-                            one_pass!(BR, r, &mut out_r, &x_r, &y_r, &kp_r);
-                            one_pass!(BT, t, &mut out_t, &x_t, &y_t, &kp_t);
+                            one_pass!(BR, r, &mut out_r, &x_r, &y_r, &x_r, &y_r, &prep_r, &kp_r);
+                            one_pass!(BT, t, &mut out_t, &x_t, &y_t, &x_twin_t, &y_twin_t, &prep_t, &kp_t);
                             let mut have = r.glwe_alloc_from_infos(&g);
                             out_t.transfer_into(&mut have);
                             assert_glwe_eq!(
                                 out_r,
                                 have,
                                 "one-pass product role={role} k={precision} dsize={dsize} offset={cnv_offset}"
+                            );
+                            outs.insert(role, out_r);
+                        }
+                        // Prepared pairs give the sum, and the first alone the product, bit for bit.
+                        if let (Some(sum), Some(prepared)) = (outs.get(&3), outs.get(&4)) {
+                            assert_glwe_eq!(
+                                *sum,
+                                *prepared,
+                                "one-pass sum versus prepared pairs k={precision} dsize={dsize} offset={cnv_offset}"
+                            );
+                        }
+                        if let (Some(product), Some(prepared)) = (outs.get(&0), outs.get(&5)) {
+                            assert_glwe_eq!(
+                                *product,
+                                *prepared,
+                                "one-pass product versus one prepared pair k={precision} dsize={dsize} offset={cnv_offset}"
                             );
                         }
                     }

@@ -6,7 +6,7 @@ use crate::{
     api::GLWELinearTransformations,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation,
-        prepared::{LinearTransformationBabySteps, PreparedDiagonal},
+        prepared::{LinearTransformationBabySteps, LinearTransformationPrepared, PreparedDiagonal},
     },
     oep::LinearTransformationImpl,
 };
@@ -33,6 +33,16 @@ where
         K: GGLWEInfos,
     {
         BE::glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(self, res, a, pt, key)
+    }
+
+    fn glwe_eval_linear_transformation_sum_tmp_bytes<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: GLWEInfos,
+        K: GGLWEInfos,
+    {
+        BE::glwe_eval_linear_transformation_sum_tmp_bytes(self, res, a, pt, key)
     }
 
     fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(&self, a: &A, key: &K) -> usize
@@ -88,5 +98,19 @@ where
         H: GetAutomorphismKey<BE>,
     {
         BE::glwe_eval_linear_transformation_into(self, cnv_offset, res, lhs, rhs, keys, scratch)
+    }
+
+    fn glwe_eval_linear_transformation_sum_into<R, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        terms: &[(&LinearTransformationBabySteps<BE>, &LinearTransformationPrepared<BE>)],
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        H: GetAutomorphismKey<BE>,
+    {
+        BE::glwe_eval_linear_transformation_sum_into(self, cnv_offset, res, terms, keys, scratch)
     }
 }

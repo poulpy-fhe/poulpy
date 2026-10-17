@@ -2,7 +2,8 @@ use crate::layouts::IntPolyInfos;
 use std::collections::HashMap;
 
 use poulpy_hal::layouts::{
-    Backend, CnvPVecLBackendRef, CnvPVecRBackendRef, CnvPVecRToBackendRef, Module, ScratchArena, VecZnxDftBackendMut,
+    Backend, CnvPVecLBackendRef, CnvPVecLToBackendRef, CnvPVecRBackendRef, CnvPVecRToBackendRef, Module, ScratchArena,
+    VecZnxDftBackendMut,
 };
 
 use crate::layouts::{
@@ -283,6 +284,105 @@ pub unsafe trait GLWETensoringImpl: Backend {
         b: &CnvPVecRBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     );
+
+    /// Scratch bytes of [`Self::glwe_mul_relinearize_sum`], whatever the number of pairs.
+    fn glwe_mul_relinearize_sum_tmp_bytes<R, B>(
+        module: &Module<Self>,
+        res: &R,
+        a_size: usize,
+        b_size: usize,
+        tensor_k: crate::layouts::TorusPrecision,
+        tsk: &B,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        B: GGLWEInfos;
+
+    /// The summed one-pass product of [`GLWEMulRelinearizeSum`](crate::api::GLWEMulRelinearizeSum). Overrides must
+    /// reproduce
+    /// [`GLWETensoringReference::glwe_mul_relinearize_sum_reference`](crate::reference::operations::GLWETensoringReference::glwe_mul_relinearize_sum_reference)
+    /// bit for bit.
+    fn glwe_mul_relinearize_sum<R, A, B, H>(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        pairs: &[(&A, &B)],
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        A: GLWEToBackendRef<Self> + GLWEInfos,
+        B: GLWEToBackendRef<Self> + GLWEInfos,
+        H: GetTensorKey<Self>;
+
+    /// Scratch bytes of [`Self::glwe_mul_prepared_relinearize_sum`], whatever the number of pairs.
+    fn glwe_mul_prepared_relinearize_sum_tmp_bytes<R, B>(
+        module: &Module<Self>,
+        res: &R,
+        a_size: usize,
+        b_size: usize,
+        tensor_k: crate::layouts::TorusPrecision,
+        tsk: &B,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        B: GGLWEInfos;
+
+    /// The summed one-pass product over prepared pairs of
+    /// [`GLWEPreparedTensoring`](crate::api::GLWEPreparedTensoring). Overrides must reproduce
+    /// [`GLWETensoringReference::glwe_mul_prepared_relinearize_sum_reference`](crate::reference::operations::GLWETensoringReference::glwe_mul_prepared_relinearize_sum_reference)
+    /// bit for bit, whatever the hint each operand was prepared under, and run one pair within
+    /// [`Self::glwe_mul_relinearize_tmp_bytes`].
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_prepared_relinearize_sum<R, AP, BP, H>(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut R,
+        res_k: crate::layouts::TorusPrecision,
+        pairs: &[(&AP, &BP)],
+        a_size: usize,
+        a_k: crate::layouts::TorusPrecision,
+        b_size: usize,
+        b_k: crate::layouts::TorusPrecision,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<Self>,
+        BP: CnvPVecRToBackendRef<Self>,
+        H: GetTensorKey<Self>;
+
+    /// Scratch bytes of [`Self::glwe_tensor_apply_prepared`].
+    fn glwe_tensor_apply_prepared_tmp_bytes<R>(
+        module: &Module<Self>,
+        res: &R,
+        a_size: usize,
+        b_size: usize,
+        base2k: crate::layouts::Base2K,
+    ) -> usize
+    where
+        R: GLWEInfos;
+
+    /// The tensor product of prepared operands of [`GLWEPreparedTensoring`](crate::api::GLWEPreparedTensoring).
+    /// Overrides must reproduce
+    /// [`GLWETensoringReference::glwe_tensor_apply_prepared_reference`](crate::reference::operations::GLWETensoringReference::glwe_tensor_apply_prepared_reference)
+    /// bit for bit, whatever the hint each operand was prepared under.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_tensor_apply_prepared<R, AP, BP>(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &AP,
+        a_size: usize,
+        b: &BP,
+        b_size: usize,
+        base2k: crate::layouts::Base2K,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<Self>,
+        BP: CnvPVecRToBackendRef<Self>;
 }
 
 /// Backend-provided GLWE addition operations.
@@ -830,6 +930,119 @@ macro_rules! impl_glwe_tensoring_reference {
             ) {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_columns_reference(
                     module, cnv_offset_hi, diag, cross, a, b, scratch,
+                )
+            }
+
+            fn glwe_mul_relinearize_sum_tmp_bytes<R, B>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res: &R,
+                a_size: usize,
+                b_size: usize,
+                tensor_k: $crate::layouts::TorusPrecision,
+                tsk: &B,
+            ) -> usize
+            where
+                R: $crate::layouts::GLWEInfos,
+                B: $crate::layouts::GGLWEInfos,
+            {
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_relinearize_sum_tmp_bytes_reference(
+                    module, res, a_size, b_size, tensor_k, tsk,
+                )
+            }
+
+            fn glwe_mul_relinearize_sum<R, A, B, H>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                cnv_offset: usize,
+                res: &mut R,
+                res_k: $crate::layouts::TorusPrecision,
+                pairs: &[(&A, &B)],
+                tsk: &H,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) where
+                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                B: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                H: $crate::layouts::GetTensorKey<$be>,
+            {
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_relinearize_sum_reference(
+                    module, cnv_offset, res, res_k, pairs, tsk, scratch,
+                )
+            }
+
+            fn glwe_mul_prepared_relinearize_sum_tmp_bytes<R, B>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res: &R,
+                a_size: usize,
+                b_size: usize,
+                tensor_k: $crate::layouts::TorusPrecision,
+                tsk: &B,
+            ) -> usize
+            where
+                R: $crate::layouts::GLWEInfos,
+                B: $crate::layouts::GGLWEInfos,
+            {
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_prepared_relinearize_sum_tmp_bytes_reference(
+                    module, res, a_size, b_size, tensor_k, tsk,
+                )
+            }
+
+            #[allow(clippy::too_many_arguments)]
+            fn glwe_mul_prepared_relinearize_sum<R, AP, BP, H>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                cnv_offset: usize,
+                res: &mut R,
+                res_k: $crate::layouts::TorusPrecision,
+                pairs: &[(&AP, &BP)],
+                a_size: usize,
+                a_k: $crate::layouts::TorusPrecision,
+                b_size: usize,
+                b_k: $crate::layouts::TorusPrecision,
+                tsk: &H,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) where
+                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+                AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be>,
+                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be>,
+                H: $crate::layouts::GetTensorKey<$be>,
+            {
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_prepared_relinearize_sum_reference(
+                    module, cnv_offset, res, res_k, pairs, a_size, a_k, b_size, b_k, tsk, scratch,
+                )
+            }
+
+            fn glwe_tensor_apply_prepared_tmp_bytes<R>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res: &R,
+                a_size: usize,
+                b_size: usize,
+                base2k: $crate::layouts::Base2K,
+            ) -> usize
+            where
+                R: $crate::layouts::GLWEInfos,
+            {
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_apply_prepared_tmp_bytes_reference(
+                    module, res, a_size, b_size, base2k,
+                )
+            }
+
+            #[allow(clippy::too_many_arguments)]
+            fn glwe_tensor_apply_prepared<R, AP, BP>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                cnv_offset: usize,
+                res: &mut R,
+                a: &AP,
+                a_size: usize,
+                b: &BP,
+                b_size: usize,
+                base2k: $crate::layouts::Base2K,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) where
+                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+                AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be>,
+                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be>,
+            {
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_apply_prepared_reference(
+                    module, cnv_offset, res, a, a_size, b, b_size, base2k, scratch,
                 )
             }
         }
