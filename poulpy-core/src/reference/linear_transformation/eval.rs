@@ -23,7 +23,7 @@ use poulpy_hal::{
 
 use crate::{
     GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain, LinearTransformation,
-    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, ModuleCoreAlloc},
+    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, ModuleCoreAlloc},
     reference::{
         keyswitching::{GGLWEProductReference, GLWEKeyswitchInternal},
         linear_transformation::{
@@ -32,12 +32,12 @@ use crate::{
             },
             inner_product::glwe_accumulate_prepared_baby_steps_dft_tmp_bytes,
             lazy::{glwe_lazy_giant_automorphism_from_dft_tmp_bytes, glwe_lazy_giant_automorphism_tmp_bytes},
-            prepared_giants::{DiagonalProd, glwe_eval_giant_steps},
+            prepared_giants::{DiagonalProd, assert_linear_transformation_giant_steps, glwe_eval_giant_steps},
         },
     },
 };
 
-use super::LinearTransformationBabySteps;
+use super::{LinearTransformationBabySteps, LinearTransformationPrepared};
 use crate::api::GLWEBytesOf;
 
 /// HAL/op bounds required by the eval reference path. Repeated on each free
@@ -193,8 +193,8 @@ pub fn glwe_prepare_linear_transformation_baby_steps_reference<BE, M, A, H>(
 /// via [`DiagonalProd`], so `P = PreparedDiagonal` runs the resident fused path
 /// and a plaintext `P` streams each diagonal — the rest of the loop is shared.
 ///
-/// Asserts at least one non-empty giant step (a fully-pruned transform is a
-/// caller bug), then delegates to the shared `glwe_eval_giant_steps` loop.
+/// Runs [`assert_linear_transformation_into`] (a fully-pruned transform is a
+/// caller bug), then the shared `glwe_eval_giant_steps` loop.
 pub fn glwe_eval_linear_transformation_into_reference<BE, M, R, P, H>(
     module: &M,
     cnv_offset: usize,
@@ -239,13 +239,142 @@ pub fn glwe_eval_linear_transformation_into_reference<BE, M, R, P, H>(
     P: DiagonalProd<BE>,
     H: GetAutomorphismKey<BE>,
 {
-    assert!(
-        rhs.giant_steps.iter().any(|gs| !gs.diagonals.is_empty()),
-        "linear transformation has no non-empty giant steps"
-    );
-
-    glwe_eval_giant_steps(module, cnv_offset, res, lhs, rhs, keys, scratch);
+    assert_linear_transformation_into(lhs, rhs);
+    glwe_eval_giant_steps(module, cnv_offset, res, &[(lhs, rhs)], keys, scratch);
     res.set_canonical(true);
+}
+
+/// The checks of [`glwe_eval_linear_transformation_into_reference`], run before it reads a key or writes `res`.
+pub fn assert_linear_transformation_into<BE, P>(lhs: &LinearTransformationBabySteps<BE>, rhs: &LinearTransformation<P>)
+where
+    BE: Backend,
+    P: DiagonalProd<BE>,
+{
+    assert_linear_transformation_giant_steps(&[(lhs, rhs)]);
+}
+
+/// Reference impl: scratch bytes for [`glwe_eval_linear_transformation_sum_into_reference`],
+/// the single-transform budget plus the PROD bucket every term after the first is computed into.
+pub fn glwe_eval_linear_transformation_sum_tmp_bytes_reference<BE, M, R, A, B, K>(
+    module: &M,
+    res: &R,
+    a: &A,
+    pt: &B,
+    key: &K,
+) -> usize
+where
+    BE: Backend,
+    M: GLWEBytesOf<BE>
+        + poulpy_hal::api::ModuleN
+        + GLWEAutomorphism<BE>
+        + GLWEMulPlain<BE>
+        + Convolution<BE>
+        + GGLWEProductReference<BE>
+        + crate::reference::keyswitching::GLWEKeyswitchInternal<BE>
+        + VecZnxAutomorphismAssign<BE>
+        + VecZnxBigAutomorphismAssignTmpBytes
+        + VecZnxBigBytesOf
+        + VecZnxDftApply<BE>
+        + VecZnxDftAutomorphismAddWithPlanTmpBytes
+        + VecZnxDftBytesOf
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxIdftNormalizeConsumeTmpBytes
+        + VecZnxNormalizeTmpBytes,
+    R: GLWEInfos,
+    A: GLWEInfos,
+    B: GLWEInfos,
+    K: GGLWEInfos,
+{
+    // Sized like the single budget's PROD buffer.
+    let bucket =
+        BE::scratch_aligned(module.bytes_of_vec_znx_dft(module.n(), a.rank().as_usize() + 1, a.max_size() + pt.max_size()));
+    glwe_eval_linear_transformation_tmp_bytes_reference::<BE, _, _, _, _, _>(module, res, a, pt, key) + bucket
+}
+
+/// Reference impl: `res = Σ_t M_t(a_t)` for resident transforms sharing one giant schedule.
+///
+/// `terms[t]` pairs the baby cache of `a_t` with `M_t`. Each giant step's PROD is
+/// summed over the terms in DFT, then rotated once by the
+/// shared giant loop, so one term is [`glwe_eval_linear_transformation_into_reference`].
+///
+/// Runs [`assert_linear_transformation_sum`] first: every term shares the first
+/// one's giant schedule, first diagonal's layout, width and scale, and source
+/// layout, so one schedule, PROD bucket and `cnv_offset` serve them all.
+pub fn glwe_eval_linear_transformation_sum_into_reference<BE, M, R, H>(
+    module: &M,
+    cnv_offset: usize,
+    res: &mut R,
+    terms: &[(&LinearTransformationBabySteps<BE>, &LinearTransformationPrepared<BE>)],
+    keys: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: GLWEBytesOf<BE>
+        + GLWEAutomorphism<BE>
+        + GLWEAdd<BE>
+        + GLWECopy<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + CnvPVecBytesOf
+        + Convolution<BE>
+        + poulpy_hal::api::ModuleN
+        + GGLWEProductReference<BE>
+        + GLWEKeyswitchInternal<BE>
+        + VecZnxBigAddAssign<BE>
+        + VecZnxBigAlloc<BE>
+        + VecZnxBigAutomorphismAssign<BE>
+        + VecZnxBigAutomorphismAssignTmpBytes
+        + VecZnxBigBytesOf
+        + VecZnxBigFromSmall<BE>
+        + VecZnxBigNormalize<BE>
+        + VecZnxCopy<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxDftApply<BE>
+        + VecZnxDftAutomorphism<BE>
+        + VecZnxDftBytesOf
+        + VecZnxDftCopy<BE>
+        + VecZnxDftZero<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxNormalizeAssign<BE>
+        + VecZnxNormalizeTmpBytes
+        + GLWEMulPlain<BE>
+        + GaloisElement,
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+    H: GetAutomorphismKey<BE>,
+{
+    assert_linear_transformation_sum(terms);
+    glwe_eval_giant_steps(module, cnv_offset, res, terms, keys, scratch);
+    res.set_canonical(true);
+}
+
+/// The checks of [`glwe_eval_linear_transformation_sum_into_reference`], run before it reads a key or writes `res`.
+pub fn assert_linear_transformation_sum<BE: Backend>(
+    terms: &[(&LinearTransformationBabySteps<BE>, &LinearTransformationPrepared<BE>)],
+) {
+    let &(lhs, rhs) = terms.first().expect("linear transformation sum has no terms");
+    // First, so that a later term's cache holds the rotations its schedule reads before its layout is read.
+    assert_linear_transformation_giant_steps(terms);
+    let diagonals = |lt: &LinearTransformationPrepared<BE>| {
+        lt.first_diagonal_plaintext()
+            .map(|d| (d.glwe_layout(), d.max_size(), d.log_scale()))
+    };
+    for (t, &(l, r)) in terms.iter().enumerate().skip(1) {
+        assert!(
+            r.giant_steps
+                .iter()
+                .map(|gs| gs.rot)
+                .eq(rhs.giant_steps.iter().map(|gs| gs.rot)),
+            "summed linear transformation {t} does not share the first one's giant schedule"
+        );
+        assert!(
+            diagonals(r) == diagonals(rhs),
+            "summed linear transformation {t} does not share the first one's diagonal layout, width and scale"
+        );
+        assert!(
+            (l.size(), l.cols()) == (lhs.size(), lhs.cols()),
+            "summed linear transformation {t} does not share the first one's source layout"
+        );
+    }
 }
 
 /// Reference impl: scratch bytes for the streamed (unprepared-RHS) evaluation.
