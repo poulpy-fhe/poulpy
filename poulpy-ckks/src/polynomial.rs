@@ -1,13 +1,13 @@
 use std::fmt::Debug;
 
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, ensure};
 use num_traits::{Float, FloatConst, FromPrimitive};
 use poulpy_core::layouts::Base2K;
 use poulpy_hal::layouts::{HostBytesBackend, Module, Ring};
 
 use crate::SlotsKind;
 use crate::{
-    CoeffsMeta, SetCKKSInfos,
+    CKKSCompositionError, CoeffsMeta, SetCKKSInfos,
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, CKKSScalar},
 };
 
@@ -17,6 +17,9 @@ pub use poulpy_core::layouts::{
 };
 
 /// CKKS encoding of a [`Polynomial`] into a [`BSGSPolynomial`] of plaintexts.
+///
+/// Each encoder rejects a zero torus width, `coeff_meta.k = 0`, with
+/// [`CKKSCompositionError::InvalidOperand`] before allocating anything.
 pub trait EncodeBSGS {
     /// Decomposes and encodes using [`DEFAULT_SPLIT_STRATEGY`].
     fn encode_bsgs<R: Ring>(
@@ -66,6 +69,14 @@ where
         coeff_meta: CoeffsMeta,
         strategy: SplitStrategy,
     ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend<R>>>> {
+        // A baby step without a limb would panic in the encoder, after its allocation.
+        ensure!(
+            coeff_meta.k.as_usize() > 0,
+            CKKSCompositionError::InvalidOperand {
+                op: "encode_bsgs_with",
+                reason: "the baby steps' torus width, coeff_meta.k, is 0".into(),
+            }
+        );
         let mut step_idx = 0usize;
         self.decompose_bsgs_with(strategy, |baby_coeffs| {
             let mut pt = module.ckks_pt_coeffs_alloc(baby_coeffs.len(), base2k, coeff_meta.k);
@@ -86,6 +97,14 @@ where
         coeff_meta: CoeffsMeta,
         strategy: SplitStrategy,
     ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend<R>>>> {
+        // A baby step without a limb would panic in the encoder, after its allocation.
+        ensure!(
+            coeff_meta.k.as_usize() > 0,
+            CKKSCompositionError::InvalidOperand {
+                op: "encode_bsgs_folded_with",
+                reason: "the baby steps' torus width, coeff_meta.k, is 0".into(),
+            }
+        );
         let mut step_idx = 0usize;
         self.decompose_bsgs_folded_with(strategy, |baby_coeffs| {
             let mut pt = module.ckks_pt_coeffs_alloc(baby_coeffs.len(), base2k, coeff_meta.k);

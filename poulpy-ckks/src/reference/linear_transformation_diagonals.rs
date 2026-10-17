@@ -16,7 +16,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::api::CKKSModuleInfos;
 use crate::{
-    CoeffsMeta,
+    CKKSCompositionError, CoeffsMeta,
     api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, LinearTransformation},
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
 };
@@ -75,7 +75,9 @@ fn validate_compile_inputs<F>(
 /// Returns an error when the CKKS layout is inconsistent, a diagonal cannot
 /// be represented at the requested scale, the diagonal map or BSGS schedule
 /// is malformed, the backend cannot encode a generated diagonal, or the
-/// caller-provided arena is too small.
+/// caller-provided arena is too small. A zero torus width, `coeffs_meta.k = 0`,
+/// is [`CKKSCompositionError::InvalidOperand`], returned before anything is
+/// allocated or written.
 ///
 /// # Migration
 ///
@@ -100,6 +102,14 @@ where
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
 {
+    // A diagonal without a limb would panic in the encoder, after its allocation.
+    ensure!(
+        coeffs_meta.k.as_usize() > 0,
+        CKKSCompositionError::InvalidOperand {
+            op: "ckks_encode_linear_transformation_from_diagonals",
+            reason: "the diagonals' torus width, coeffs_meta.k, is 0".into(),
+        }
+    );
     validate_compile_inputs(module.ckks_max_slots(), base2k, diagonals, strategy)?;
 
     encode_linear_transformation_from_diagonals(module, base2k, coeffs_meta, diagonals, strategy, transpose, scratch)

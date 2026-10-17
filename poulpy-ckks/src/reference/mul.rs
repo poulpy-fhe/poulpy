@@ -2,21 +2,23 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    GLWECopy, GLWEMulConst, GLWEMulPlain, GLWENormalize, GLWETensoring, ScratchArenaTakeCore, glwe_prepare_right,
+    GLWECopy, GLWEMulConst, GLWEMulPlain, GLWENormalize, GLWETensoring, ScratchArenaTakeCore, glwe_prepare_left,
+    glwe_prepare_right,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextLayout, GLWETensorViewMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         ModuleCoreAlloc, TorusPrecision,
     },
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, Convolution, ModuleN, VecZnxCopy},
+    api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution, VecZnxCopy},
     layouts::{Backend, PrepareHint, ScratchArena},
 };
 
-use crate::{CKKSCompositionError, CKKSError, SlotsKind};
+use crate::{CKKSCompositionError, SlotsKind};
 use crate::{
-    CKKSInfos, SetCKKSInfos, checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget,
-    ensure_plaintext_degree_embeds, layouts::CKKSPreparedRight,
+    CKKSInfos, GLWEPlaintextInfos, SetCKKSInfos, checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget,
+    ensure_plaintext_degree_embeds,
+    layouts::{CKKSPreparedLeft, CKKSPreparedRight},
 };
 use poulpy_core::GLWEBytesOf;
 
@@ -32,8 +34,7 @@ pub trait CKKSMulReference<BE: Backend> {
     {
         // The op carves its tensor intermediate at the operands' effective
         // width `max(a.k, b.k)` (`ckks_mul_into`) or `max(dst.k, a.k)`
-        // (`ckks_mul_assign`), matching the `cnv_offset` rule in
-        // `mul_ct_params_raw` (which is already expressed on effective `k`).
+        // (`ckks_mul_assign`), which bounds the product's stamped width.
         // `res.k` is its pre-call metadata and does not size this intermediate.
         let tensor_layout = GLWELayout {
             n: res.n(),
@@ -149,33 +150,104 @@ pub trait CKKSMulReference<BE: Backend> {
         )
     }
 
-    fn ckks_prepare_right_reference<A>(&self, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
+    /// A GLWE shaped like `a`, to normalize it into, and the larger of the normalization's and the transform's
+    /// scratch: what `glwe_prepare_left` and `glwe_prepare_right` take.
+    fn ckks_prepare_tmp_bytes_reference<A>(&self, a: &A) -> usize
     where
-        Self: ModuleN + Convolution<BE> + CnvPVecAlloc<BE> + GLWENormalize<BE> + Sized,
+        Self: GLWEBytesOf<BE> + GLWENormalize<BE> + Convolution<BE>,
+        A: GLWEInfos,
+    {
+        let size = a.size();
+        BE::scratch_aligned(self.glwe_bytes_of_from_infos(a))
+            + self
+                .glwe_normalize_tmp_bytes()
+                .max(self.cnv_prepare_left_tmp_bytes(size, size))
+                .max(self.cnv_prepare_right_tmp_bytes(size, size))
+    }
+
+    /// The bytes of a left operand of `infos` under `hint`: its convolution operand on `ceil(k / base2k)` limbs and
+    /// `rank + 1` columns.
+    fn ckks_prepared_left_bytes_of_from_infos_reference<A>(&self, infos: &A, hint: PrepareHint) -> usize
+    where
+        Self: CnvPVecBytesOf,
+        A: GLWEInfos,
+    {
+        self.bytes_of_cnv_pvec_left(infos.n().as_usize(), infos.rank().as_usize() + 1, infos.size(), hint)
+    }
+
+    /// As [`Self::ckks_prepared_left_bytes_of_from_infos_reference`], for a right operand.
+    fn ckks_prepared_right_bytes_of_from_infos_reference<A>(&self, infos: &A, hint: PrepareHint) -> usize
+    where
+        Self: CnvPVecBytesOf,
+        A: GLWEInfos,
+    {
+        self.bytes_of_cnv_pvec_right(infos.n().as_usize(), infos.rank().as_usize() + 1, infos.size(), hint)
+    }
+
+    /// A left operand of `infos` under `hint`, of unspecified contents, reporting `infos` and no metadata.
+    fn ckks_prepared_left_alloc_from_infos_reference<A>(&self, infos: &A, hint: PrepareHint) -> CKKSPreparedLeft<BE>
+    where
+        Self: CnvPVecAlloc<BE>,
+        A: GLWEInfos,
+    {
+        let size = infos.size();
+        CKKSPreparedLeft {
+            prep: self.cnv_pvec_left_alloc(infos.n().as_usize(), infos.rank().as_usize() + 1, size, hint),
+            size,
+            layout: infos.glwe_layout(),
+            meta: None,
+        }
+    }
+
+    /// As [`Self::ckks_prepared_left_alloc_from_infos_reference`], for a right operand.
+    fn ckks_prepared_right_alloc_from_infos_reference<A>(&self, infos: &A, hint: PrepareHint) -> CKKSPreparedRight<BE>
+    where
+        Self: CnvPVecAlloc<BE>,
+        A: GLWEInfos,
+    {
+        let size = infos.size();
+        CKKSPreparedRight {
+            prep: self.cnv_pvec_right_alloc(infos.n().as_usize(), infos.rank().as_usize() + 1, size, hint),
+            size,
+            layout: infos.glwe_layout(),
+            meta: None,
+        }
+    }
+
+    /// `glwe_prepare_left` of `a`, normalized first if its canonical flag is clear, on its `ceil(k / base2k)` limbs,
+    /// into `res`, which then reports `a`'s metadata. `InvalidOperand` for an `a` of another layout than `res`'s,
+    /// before any write.
+    fn ckks_prepare_left_into_reference<A>(
+        &self,
+        res: &mut CKKSPreparedLeft<BE>,
+        a: &A,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Self: Convolution<BE> + GLWENormalize<BE> + Sized,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
     {
-        // Hoist `a` once into a backend-resident right operand. `glwe_prepare_right`
-        // reads only the top `k` limbs, so the operand is sized to that
-        // effective limb count.
-        let cols = a.rank().as_usize() + 1;
-        let k: usize = a.k().into();
-        let size = k.div_ceil(a.base2k().as_usize());
-        let mut prep = self.cnv_pvec_right_alloc(a.n().as_usize(), cols, size, PrepareHint::Reuse);
-        glwe_prepare_right(self, &mut prep, a, k, scratch);
-        Ok(CKKSPreparedRight {
-            prep,
-            size,
-            log_delta: a.log_delta(),
-            k,
-            log_sparsity: a.log_sparsity(),
-            slots: a.slots(),
-            layout: GLWELayout {
-                n: a.n(),
-                base2k: a.base2k(),
-                k: a.k(),
-                rank: a.rank(),
-            },
-        })
+        check_source_layout("ckks_prepare_left_into", res, a)?;
+        glwe_prepare_left(self, &mut res.prep, a, a.k().as_usize(), scratch);
+        res.meta = a.plaintext_meta();
+        Ok(())
+    }
+
+    /// As [`Self::ckks_prepare_left_into_reference`], by `glwe_prepare_right` into a right operand.
+    fn ckks_prepare_right_into_reference<A>(
+        &self,
+        res: &mut CKKSPreparedRight<BE>,
+        a: &A,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Self: Convolution<BE> + GLWENormalize<BE> + Sized,
+        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+    {
+        check_source_layout("ckks_prepare_right_into", res, a)?;
+        glwe_prepare_right(self, &mut res.prep, a, a.k().as_usize(), scratch);
+        res.meta = a.plaintext_meta();
+        Ok(())
     }
 
     fn ckks_mul_prepared_assign_reference<Dst, T>(
@@ -190,9 +262,7 @@ pub trait CKKSMulReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
-        let k = dst.k().max(TorusPrecision(u32::try_from(prepared.k).map_err(|_| {
-            CKKSError::Internal(anyhow::anyhow!("prepared precision {} exceeds u32", prepared.k))
-        })?));
+        let k = dst.k().max(prepared.k());
         tsk.get_tensor_key(k)
             .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
                 op: "ckks_mul_prepared_assign",
@@ -201,7 +271,7 @@ pub trait CKKSMulReference<BE: Backend> {
 
         let (res_log_budget, res_log_delta, cnv_offset, tensor_k) = get_mul_prepared_params(&*dst, prepared)?;
 
-        let one_pass = mul_one_pass(dst, &[prepared.layout.base2k], tensor_k, cnv_offset, tsk).then_some(
+        let one_pass = mul_one_pass(dst, &[prepared.base2k()], tensor_k, cnv_offset, tsk).then_some(
             |dst: &mut Dst, res_k, s: &mut ScratchArena<'_, BE>| {
                 self.glwe_mul_prepared_relinearize_assign(
                     cnv_offset,
@@ -209,7 +279,7 @@ pub trait CKKSMulReference<BE: Backend> {
                     res_k,
                     &prepared.prep,
                     prepared.size,
-                    prepared.layout.k,
+                    prepared.k(),
                     tsk,
                     s,
                 )
@@ -227,8 +297,8 @@ pub trait CKKSMulReference<BE: Backend> {
                 log_budget: res_log_budget,
                 log_delta: res_log_delta,
                 // The product of values sparse at `s` and `t` is sparse at `min(s, t)`.
-                log_sparsity: Some(dst.log_sparsity().min(prepared.log_sparsity)),
-                slots: Some(dst.slots().join(prepared.slots)),
+                log_sparsity: Some(dst.log_sparsity().min(prepared.log_sparsity())),
+                slots: Some(dst.slots().join(prepared.slots())),
             },
             StampOrder::AfterApply,
             scratch,
@@ -582,7 +652,7 @@ where
 ///
 /// The one-pass path needs rank 1, one `base2k` across `dst`, the operands other than `dst` and the
 /// tensor key, and `cnv_offset >= base2k`. Other products go through the tensor intermediate.
-fn mul_one_pass<BE, Dst, T>(
+pub(crate) fn mul_one_pass<BE, Dst, T>(
     dst: &Dst,
     operands_base2k: &[poulpy_core::layouts::Base2K],
     tensor_k: TorusPrecision,
@@ -602,16 +672,28 @@ where
 
 /// Prepared operands are long-lived cached objects: reject one built under a
 /// different ring degree, radix or rank before touching `dst`.
-pub(crate) fn check_prepared_layout<BE: Backend, D: GLWEInfos>(dst: &D, prepared: &CKKSPreparedRight<BE>) -> Result<()> {
-    if prepared.layout.n != dst.n() || prepared.layout.base2k != dst.base2k() || prepared.layout.rank != dst.rank() {
+pub(crate) fn check_prepared_layout<D: GLWEInfos, P: GLWEInfos>(op: &'static str, dst: &D, prepared: &P) -> Result<()> {
+    if (prepared.n(), prepared.base2k(), prepared.rank()) != (dst.n(), dst.base2k(), dst.rank()) {
         return Err(crate::CKKSCompositionError::PreparedOperandLayoutMismatch {
-            op: "mul_prepared",
+            op,
             dst_n: dst.n().as_usize(),
             dst_base2k: dst.base2k().as_usize(),
             dst_rank: dst.rank().as_usize(),
-            prep_n: prepared.layout.n.as_usize(),
-            prep_base2k: prepared.layout.base2k.as_usize(),
-            prep_rank: prepared.layout.rank.as_usize(),
+            prep_n: prepared.n().as_usize(),
+            prep_base2k: prepared.base2k().as_usize(),
+            prep_rank: prepared.rank().as_usize(),
+        }
+        .into());
+    }
+    Ok(())
+}
+
+/// Rejects a source of another layout than the prepared operand `res` was allocated for, before any write.
+fn check_source_layout(op: &'static str, res: &impl GLWEInfos, a: &impl GLWEInfos) -> Result<()> {
+    if res.glwe_layout() != a.glwe_layout() {
+        return Err(crate::CKKSCompositionError::InvalidOperand {
+            op,
+            reason: "the source's layout differs from the prepared operand's".into(),
         }
         .into());
     }
@@ -627,16 +709,14 @@ pub(crate) fn get_mul_prepared_params<BE: Backend, D: GLWEInfos + CKKSInfos>(
     dst: &D,
     prepared: &CKKSPreparedRight<BE>,
 ) -> Result<(usize, usize, usize, TorusPrecision)> {
-    check_prepared_layout(dst, prepared)?;
-    let prepared_k = u32::try_from(prepared.k)
-        .map_err(|_| crate::CKKSError::Internal(anyhow::anyhow!("prepared precision {} exceeds u32", prepared.k)))?;
-    let tensor_k = dst.k().max(TorusPrecision(prepared_k));
+    check_prepared_layout("mul_prepared", dst, prepared)?;
+    let tensor_k = dst.k().max(prepared.k());
     let (log_budget, log_delta, cnv_offset) = mul_ct_params_raw(
         dst.k().as_usize(),
         dst.log_delta(),
         dst.k().into(),
-        prepared.log_delta,
-        prepared.k,
+        prepared.log_delta(),
+        prepared.k().into(),
     )?;
     Ok((log_budget, log_delta, cnv_offset, tensor_k))
 }
@@ -666,14 +746,14 @@ pub(crate) fn mul_ct_params_raw(
     let res_log_delta = a_log_delta.min(b_log_delta);
 
     let res_offset = (res_log_budget + res_log_delta).saturating_sub(res_max_k);
-    // Addition/subtraction align to the shared, lower effective precision
-    // (`ckks_offset_binary` uses `min`). Multiplication is different: the
-    // bivariate convolution must traverse every live input limb, so the
-    // convolution offset starts after the wider operand span and then skips any
-    // extra limbs that cannot fit in `res`. This matches the already-rescaled
-    // multiplication rule documented by `CKKSMulOps` and the bivariate Torus
-    // analysis cited in the README/ePrint 2023/771.
-    let cnv_offset = a_k.max(b_k) + res_offset;
+    // An operand holds its message at `2^-log_budget` on the torus and the
+    // convolution returns `a * b * 2^cnv_offset`, so lifting the product from
+    // `2^-(a_log_budget + b_log_budget)` to the stamped budget
+    // `min(log_budget) - max(log_delta) - res_offset` takes
+    // `max(log_budget) + max(log_delta) + res_offset`. That is
+    // `max(a_k, b_k) + res_offset` only when the operand with the larger budget
+    // also has the larger or equal scale.
+    let cnv_offset = a_log_budget.max(b_log_budget) + a_log_delta.max(b_log_delta) + res_offset;
 
     Ok((
         checked_log_budget_sub("mul", res_log_budget, res_offset)?,
