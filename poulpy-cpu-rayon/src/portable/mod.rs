@@ -5,6 +5,8 @@
 
 #[cfg(feature = "enable-bin-fhe")]
 mod bin_fhe_impl;
+#[cfg(feature = "enable-blas")]
+mod blas_impl;
 #[cfg(feature = "enable-ckks")]
 mod ckks_impl;
 #[cfg(feature = "enable-core")]

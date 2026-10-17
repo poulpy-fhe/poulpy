@@ -26,6 +26,7 @@ Transform tests check against direct polynomial evaluation, and the prime set ag
 `enable-core` registers the generic Core compositions.
 `enable-ckks` adds CKKS, with the canonical encoding circuit of the CKKS reference over the oracle FFT, which is generic over the float precision, and `enable-bin-fhe` adds binary FHE.
 Both register the generic scheme compositions and imply `enable-core`.
+`enable-blas` implies `enable-ckks` and wires the oracle backends into `poulpy-blas`.
 Generic HAL, Core and scheme compositions are shared with the production backends, so cross-backend tests validate backend implementations, not the correctness of a shared composition itself.
 The existing expected-result, noise, and cleartext tests complement these comparisons.
 

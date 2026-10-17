@@ -53,7 +53,7 @@ poulpy-cpu-avx512           ← AVX-512/IFMA-accelerated backend
 poulpy-cpu-arm              ← NEON/ASIMD-accelerated backend (AArch64)
 ```
 
-Backend crates (`poulpy-cpu-portable`, `poulpy-cpu-avx`, `poulpy-cpu-avx512`, `poulpy-cpu-arm`, …) implement the open extension points defined in `poulpy-hal/oep`. Core, CKKS and binary-FHE keep concrete backend wiring in backend crates. Each layer provides explicit operation contracts, reusable reference algorithms and caller-selected parity suites.
+Backend crates (`poulpy-cpu-portable`, `poulpy-cpu-avx`, `poulpy-cpu-avx512`, `poulpy-cpu-arm`, …) implement the open extension points defined in `poulpy-hal/oep`. Core, CKKS, BLAS and binary-FHE keep concrete backend wiring in backend crates. Each layer provides explicit operation contracts, reusable reference algorithms and caller-selected parity suites.
 
 ### Layer Anatomy
 
@@ -100,6 +100,7 @@ bootstrap another.
 2. Implement each required HAL OEP method and inherit or override its derived defaults.
 3. Implement the core `*Impl` traits, or use family macros to select reference algorithms and derived defaults.
 4. Optionally, do the same for `poulpy-ckks` using the `impl_ckks_*_reference!` macros or direct OEP trait implementations.
+5. Optionally, do the same for `poulpy-blas` using `impl_blas_reference_full!`, its per-family macros or direct OEP trait implementations; see [implementing BLAS operations](poulpy-blas/docs/blas-contracts.md).
 
 A family macro and a handwritten implementation of the same trait are mutually
 exclusive. Use individual family macros when customizing a core backend, and
@@ -107,7 +108,7 @@ validate its implementations with the shared conformance tests. The
 [core backend guide](poulpy-core/docs/core-contracts.md) explains reference
 forwarding, derived defaults, scratch requirements and controlled sampling.
 
-See `poulpy-cpu-portable` for a complete implementation of all four steps. Its
+See `poulpy-cpu-portable` for a complete implementation of all five steps. Its
 [compiled override example](poulpy-cpu-portable/src/tests/delegating_backend.rs)
 checks reference forwarding and dispatch through custom core methods; the
 [encryption example](poulpy-cpu-portable/examples/core_encryption.rs) shows public API use.

@@ -33,6 +33,7 @@ Higher-level backend wiring is feature-gated:
 
 - `enable-core` wires the portable backends into the `poulpy-core` reference implementations.
 - `enable-ckks` wires the portable backends into the `poulpy-ckks` reference implementations and also enables core support.
+- `enable-blas` wires the portable backends into the `poulpy-blas` reference implementations and also enables CKKS support.
 - `enable-test-suite` ships controlled-sampling comparison adapters, for encryption parity against backends whose sampling streams differ from the host sampler. Those adapters answer from a controlled-sampling scope and panic outside one, so enable this from `[dev-dependencies]` only, never in a shipping build.
 
 Useful test commands:

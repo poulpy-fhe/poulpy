@@ -25,6 +25,7 @@
 //!   feature. Required to use this crate on either side of a cross-backend
 //!   comparison.
 //! - `enable-ckks`: implies `enable-core` and adds the `poulpy-ckks` layer.
+//! - `enable-blas`: implies `enable-ckks` and wires the enabled backends into `poulpy-blas`.
 //!
 //! # Platform support
 //!
@@ -33,6 +34,8 @@
 
 mod backend_defaults;
 
+#[cfg(feature = "enable-blas")]
+mod blas_impl;
 #[cfg(feature = "enable-ckks")]
 pub mod ckks_encoding;
 #[cfg(feature = "enable-ckks")]

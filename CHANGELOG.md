@@ -45,6 +45,7 @@
   Every FFT64 DFT kernel now panics on an out-of-range column, also on vectors of no limb (#422).
 - `poulpy_cpu_portable::hal_defaults::take_host_typed` is public, and the SIMD backends use it in place of their own copies.
 - **Breaking:** the kernels of `vec_znx_idft_apply_tmpa` are removed with it: `vec_znx_idft_apply_tmpa_portable` and `ntt4x30_vec_znx_idft_apply_tmpa_portable` of `poulpy_cpu_portable::kernels`, and `PackedNtt4x30Base::idft_limb_tmpa` of `poulpy-cpu-rayon`.
+- Add `enable-blas` to `poulpy-cpu-portable`, `poulpy-cpu-rayon`, `poulpy-cpu-avx`, `poulpy-cpu-avx512`, `poulpy-cpu-arm` and `poulpy-cpu-oracle`: it implies the crate's `enable-ckks` and selects the `poulpy-blas` reference for their standard and conjugate-invariant backends, Rayon and IFMA ones included. The oracle runs `blas_backend_test_suite!` and parity between its families, every other backend type registers parity against the oracle of its family (`NTT3x42` types against the `NTT4x30` oracles), and every conjugate-invariant type, the oracle's included, runs `blas_conjugate_invariant_test_suite!`.
 
 ### `poulpy-core`
 
