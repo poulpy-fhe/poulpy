@@ -363,22 +363,7 @@ pub fn workers_within(cap: usize, per_worker: usize, available: usize) -> usize 
 }
 
 #[doc(hidden)]
-#[derive(Clone, Copy)]
-pub struct SendPtr<T>(*mut T);
-
-// Dereferencing remains unsafe; users must enforce the pointee's aliasing rules.
-unsafe impl<T> Send for SendPtr<T> {}
-unsafe impl<T> Sync for SendPtr<T> {}
-
-impl<T> SendPtr<T> {
-    pub fn new(ptr: *mut T) -> Self {
-        Self(ptr)
-    }
-
-    pub fn get(self) -> *mut T {
-        self.0
-    }
-}
+pub use poulpy_cpu_portable::kernels::SendPtr;
 
 /// Backend-local thresholds for Rayon scheduling.
 pub trait RayonTuning {

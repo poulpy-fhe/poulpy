@@ -9,6 +9,7 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::aarch64::{
     int64x2_t, uint32x4_t, vaddq_u32, vdupq_n_s64, vdupq_n_u32, vld1q_dup_u32, vld1q_u32, vst1q_u32, vzip1q_u32, vzip2q_u32,
 };
+use poulpy_cpu_portable::kernels::SendPtr;
 use poulpy_cpu_portable::kernels::ntt4x30::primes::Primes30;
 use poulpy_cpu_portable::kernels::sparse_log_gap_portable;
 use poulpy_hal::execution::TaskExecutor;
@@ -28,18 +29,6 @@ use crate::neon::ntt4x30_packed::{
 const ROW: usize = 16;
 /// Blocks per parallel task.
 const TASK_BLOCKS: usize = 64;
-
-#[derive(Clone, Copy)]
-pub(super) struct SendPtr<T>(pub(super) *mut T);
-
-unsafe impl<T> Send for SendPtr<T> {}
-unsafe impl<T> Sync for SendPtr<T> {}
-
-impl<T> SendPtr<T> {
-    pub(super) fn get(self) -> *mut T {
-        self.0
-    }
-}
 
 #[inline(always)]
 fn packed_row_offset(size: usize, limb: usize, blk: usize) -> usize {

@@ -186,6 +186,7 @@ macro_rules! impl_packed_base {
             }
 
             fn cnv_apply_dft<BE: PackedWord, E: TaskExecutor>(
+                _base: &Module<Self>,
                 module: &Module<BE>,
                 cnv_offset: usize,
                 res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -204,6 +205,7 @@ macro_rules! impl_packed_base {
             }
 
             fn cnv_apply_dft_add<BE: PackedWord, E: TaskExecutor>(
+                _base: &Module<Self>,
                 module: &Module<BE>,
                 cnv_offset: usize,
                 res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -222,6 +224,7 @@ macro_rules! impl_packed_base {
             }
 
             fn cnv_apply_dft_sum<BE: PackedWord, E: TaskExecutor>(
+                _base: &Module<Self>,
                 module: &Module<BE>,
                 cnv_offset: usize,
                 res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -237,6 +240,7 @@ macro_rules! impl_packed_base {
             }
 
             fn cnv_pairwise_apply_dft<BE: PackedWord, E: TaskExecutor>(
+                _base: &Module<Self>,
                 module: &Module<BE>,
                 cnv_offset: usize,
                 res: &mut VecZnxDftBackendMut<'_, BE>,

@@ -6,6 +6,7 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::aarch64::{vaddq_u32, vdupq_n_u32, vld1q_u32, vminq_u32, vst1q_u32, vsubq_u32};
 use poulpy_cpu_portable::kernels::ntt4x30::ntt::{NttTable, NttTableInv};
 use poulpy_cpu_portable::kernels::ntt4x30::{NttDFTExecute, primes::Primes30, vec_znx_dft::NttAutomorphismPlan};
+use poulpy_cpu_portable::ntt4x30::drivers::for_each_limb;
 use poulpy_hal::execution::{SerialTaskExecutor, TaskExecutor};
 use poulpy_hal::layouts::Ring;
 use poulpy_hal::layouts::{
@@ -14,9 +15,9 @@ use poulpy_hal::layouts::{
 };
 
 use super::NTT4x30Neon;
-use super::convolution::SendPtr;
 use crate::neon::ntt4x30_ntt32::{Ntt32Table, intt32, intt32_crt, intt32_plane, ntt32, ntt32_plane};
 use crate::neon::ntt4x30_packed::{OP_ADD, OP_NEG, OP_SUB, Q, limb_op};
+use poulpy_cpu_portable::kernels::SendPtr;
 
 #[inline(always)]
 pub(crate) fn packed_limb(data: &[u32], n: usize, cols: usize, col: usize, limb: usize) -> &[u32] {
@@ -277,28 +278,6 @@ pub(crate) fn idft_compact_in_place<R: Ring>(
     for limb in 0..size {
         idft_limb_compact::<R, SerialTaskExecutor>(module, n, packed_limb_mut(data, n, cols, a_col, limb), tmp);
     }
-}
-
-/// Runs `task` on limb `0..count` of column `col` of `data`, as tasks of the executor `E`.
-fn for_each_limb<E: TaskExecutor>(
-    data: &mut [u32],
-    n: usize,
-    cols: usize,
-    col: usize,
-    count: usize,
-    task: impl Fn(usize, &mut [u32]) + Send + Sync,
-) {
-    if count == 0 {
-        return;
-    }
-    assert!(col < cols && data.len() >= 4 * n * cols * count);
-    let ptr = SendPtr(data.as_mut_ptr());
-    E::for_each(count, |limb| {
-        // Limbs are disjoint, one task each.
-        task(limb, unsafe {
-            std::slice::from_raw_parts_mut(ptr.get().add(4 * n * (limb * cols + col)), 4 * n)
-        })
-    });
 }
 
 pub(crate) fn vec_znx_dft_add<R: Ring, E: TaskExecutor>(

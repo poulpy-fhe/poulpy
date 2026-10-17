@@ -4,38 +4,23 @@ use core::arch::x86_64::{
     _mm256_storeu_si256, _mm512_add_epi64, _mm512_and_si512, _mm512_cvtepi64_epi32, _mm512_cvtepu32_epi64, _mm512_loadu_si512,
     _mm512_mul_epu32, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_srl_epi64, _mm512_srli_epi64, _mm512_sub_epi64,
 };
-use poulpy_cpu_portable::kernels::ntt4x30::ntt::{NttTable, NttTableInv};
-use poulpy_cpu_portable::kernels::ntt4x30::{
-    NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle,
-};
+use poulpy_cpu_portable::kernels::SendPtr;
+use poulpy_cpu_portable::kernels::ntt4x30::{mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle};
 use poulpy_cpu_portable::kernels::sparse_log_gap_portable;
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::Ring;
 use poulpy_hal::layouts::{
-    CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, DataView, DataViewMut, Module,
-    VecZnxBackendRef, VecZnxDftBackendMut, ZnxView, check_degree,
+    Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, CrtWord, DataView, DataViewMut,
+    HostDataMut, HostDataRef, Module, VecZnxBackendRef, VecZnxDftBackendMut, ZnxView, ZnxViewMut, check_degree,
 };
 use std::mem::size_of;
 
 use super::{
     NTT4x30Avx512,
     arithmetic_avx512::{BARRETT_MU, POW32, Q_VEC, bcast_quad, cond_sub_512, reduce_b_to_canonical_512},
-    vec_znx_dft::packed_limb_mut,
 };
 
 const GROUP: usize = 8;
-
-#[derive(Clone, Copy)]
-struct SendPtr<T>(*mut T);
-
-unsafe impl<T> Send for SendPtr<T> {}
-unsafe impl<T> Sync for SendPtr<T> {}
-
-impl<T> SendPtr<T> {
-    fn get(self) -> *mut T {
-        self.0
-    }
-}
 
 #[inline(always)]
 fn packed_row_offset(size: usize, limb: usize, group: usize) -> usize {
@@ -65,10 +50,12 @@ fn col_slice_mut(raw: &mut [u32], n: usize, size: usize, col: usize) -> &mut [u3
     &mut raw[col * stride..(col + 1) * stride]
 }
 
-fn zero_res_limb<R: Ring>(res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>, col: usize, limb: usize) {
-    let (n, cols) = (res.n(), res.cols());
-    let data: &mut [u32] = cast_slice_mut(res.data_mut());
-    packed_limb_mut(data, n, cols, col, limb).fill(0);
+fn zero_res_limb<BE>(res: &mut VecZnxDftBackendMut<'_, BE>, col: usize, limb: usize)
+where
+    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+{
+    cast_slice_mut::<_, u32>(res.at_mut(col, limb)).fill(0);
 }
 
 #[inline(always)]
@@ -284,14 +271,20 @@ unsafe fn pack_prepared_limb(dst: *mut u32, src: &[u64], n: usize, size: usize, 
     }
 }
 
-fn prepare<R: Ring, E: TaskExecutor>(
-    module: &Module<NTT4x30Avx512<R>>,
-    left: Option<&mut CnvPVecLBackendMut<'_, NTT4x30Avx512<R>>>,
-    right: Option<&mut CnvPVecRBackendMut<'_, NTT4x30Avx512<R>>>,
-    a: &VecZnxBackendRef<'_, NTT4x30Avx512<R>>,
+/// Prepares `a` into `left`, `right`, or both.
+///
+/// `dft(n, dst, src)` is the forward transform of `src` into `dst`, one `u64` per residue.
+fn prepare<BE, E: TaskExecutor>(
+    module: &Module<BE>,
+    left: Option<&mut CnvPVecLBackendMut<'_, BE>>,
+    right: Option<&mut CnvPVecRBackendMut<'_, BE>>,
+    a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut [u64],
+    dft: impl Fn(usize, &mut [u64], &[i64]) + Send + Sync,
 ) where
-    NTT4x30Avx512<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
 {
     poulpy_hal::layouts::assert_dense(a, "prepare");
     let (n, cols, size) = if let Some(res) = left.as_ref() {
@@ -300,7 +293,7 @@ fn prepare<R: Ring, E: TaskExecutor>(
         let res = right.as_ref().unwrap();
         (res.n(), res.cols(), res.size())
     };
-    check_degree::<NTT4x30Avx512<R>>(module.n(), n);
+    check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "prepare: a.n():{} != res.n():{n}", a.n());
     assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
     if let (Some(l), Some(r)) = (left.as_ref(), right.as_ref()) {
@@ -308,10 +301,9 @@ fn prepare<R: Ring, E: TaskExecutor>(
         assert_eq!(r.cols(), l.cols(), "right.cols():{} != left.cols():{}", r.cols(), l.cols());
         assert_eq!(r.size(), l.size(), "right.size():{} != left.size():{}", r.size(), l.size());
     }
-    let table = module.get_ntt_table_for(n);
     let min_size = size.min(a.size());
-    let mut left = left.map(|res| cast_slice_mut::<_, u32>(res.data_mut()));
-    let mut right = right.map(|res| cast_slice_mut::<_, u32>(res.data_mut()));
+    let mut left = left.map(|res| cast_slice_mut::<_, u32>(res.raw_mut()));
+    let mut right = right.map(|res| cast_slice_mut::<_, u32>(res.raw_mut()));
     let task_count = cols * size;
     if E::is_parallel() && task_count > 1 {
         let stride = 4 * n * size;
@@ -329,8 +321,7 @@ fn prepare<R: Ring, E: TaskExecutor>(
             let dst_l = left_ptr.map(|ptr| (ptr.get().add(col * stride), limb));
             let dst_r = right_ptr.map(|ptr| (ptr.get().add(col * stride), size - 1 - limb));
             if limb < min_size {
-                NTT4x30Avx512::<R>::ntt_from_znx64(tmp, a.at(col, limb));
-                NTT4x30Avx512::<R>::ntt_dft_execute(table, tmp);
+                dft(n, tmp, a.at(col, limb));
                 for (dst, row) in dst_l.into_iter().chain(dst_r) {
                     pack_prepared_limb(dst, tmp, n, size, row);
                 }
@@ -350,8 +341,7 @@ fn prepare<R: Ring, E: TaskExecutor>(
         let mut dst_l = left.as_deref_mut().map(|data| col_slice_mut(data, n, size, col));
         let mut dst_r = right.as_deref_mut().map(|data| col_slice_mut(data, n, size, col));
         for limb in 0..min_size {
-            NTT4x30Avx512::<R>::ntt_from_znx64(tmp, a.at(col, limb));
-            NTT4x30Avx512::<R>::ntt_dft_execute(table, tmp);
+            dft(n, tmp, a.at(col, limb));
             if let Some(dst) = dst_l.as_deref_mut() {
                 unsafe { pack_prepared_limb(dst.as_mut_ptr(), tmp, n, size, limb) };
             }
@@ -374,38 +364,47 @@ fn prepare<R: Ring, E: TaskExecutor>(
     }
 }
 
-pub(crate) fn cnv_prepare_left<R: Ring, E: TaskExecutor>(
-    module: &Module<NTT4x30Avx512<R>>,
-    res: &mut CnvPVecLBackendMut<'_, NTT4x30Avx512<R>>,
-    a: &VecZnxBackendRef<'_, NTT4x30Avx512<R>>,
+pub(crate) fn cnv_prepare_left<BE, E: TaskExecutor>(
+    module: &Module<BE>,
+    res: &mut CnvPVecLBackendMut<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut [u64],
+    dft: impl Fn(usize, &mut [u64], &[i64]) + Send + Sync,
 ) where
-    NTT4x30Avx512<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
 {
-    prepare::<_, E>(module, Some(res), None, a, tmp);
+    prepare::<BE, E>(module, Some(res), None, a, tmp, dft);
 }
 
-pub(crate) fn cnv_prepare_right<R: Ring, E: TaskExecutor>(
-    module: &Module<NTT4x30Avx512<R>>,
-    res: &mut CnvPVecRBackendMut<'_, NTT4x30Avx512<R>>,
-    a: &VecZnxBackendRef<'_, NTT4x30Avx512<R>>,
+pub(crate) fn cnv_prepare_right<BE, E: TaskExecutor>(
+    module: &Module<BE>,
+    res: &mut CnvPVecRBackendMut<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut [u64],
+    dft: impl Fn(usize, &mut [u64], &[i64]) + Send + Sync,
 ) where
-    NTT4x30Avx512<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
 {
-    prepare::<_, E>(module, None, Some(res), a, tmp);
+    prepare::<BE, E>(module, None, Some(res), a, tmp, dft);
 }
 
-pub(crate) fn cnv_prepare_self<R: Ring, E: TaskExecutor>(
-    module: &Module<NTT4x30Avx512<R>>,
-    left: &mut CnvPVecLBackendMut<'_, NTT4x30Avx512<R>>,
-    right: &mut CnvPVecRBackendMut<'_, NTT4x30Avx512<R>>,
-    a: &VecZnxBackendRef<'_, NTT4x30Avx512<R>>,
+pub(crate) fn cnv_prepare_self<BE, E: TaskExecutor>(
+    module: &Module<BE>,
+    left: &mut CnvPVecLBackendMut<'_, BE>,
+    right: &mut CnvPVecRBackendMut<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE>,
     tmp: &mut [u64],
+    dft: impl Fn(usize, &mut [u64], &[i64]) + Send + Sync,
 ) where
-    NTT4x30Avx512<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
 {
-    prepare::<_, E>(module, Some(left), Some(right), a, tmp);
+    prepare::<BE, E>(module, Some(left), Some(right), a, tmp, dft);
 }
 
 pub(crate) fn cnv_apply_dft_tmp_bytes(_res_size: usize, _a_size: usize, _b_size: usize) -> usize {
@@ -413,20 +412,25 @@ pub(crate) fn cnv_apply_dft_tmp_bytes(_res_size: usize, _a_size: usize, _b_size:
 }
 
 #[allow(clippy::too_many_arguments)]
-unsafe fn apply<R: Ring, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
-    module: &Module<NTT4x30Avx512<R>>,
+unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
+    module: &Module<BE>,
+    meta: &BbcMeta<Primes30>,
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, NTT4x30Avx512<R>>,
+    a: &CnvPVecLBackendRef<'_, BE>,
     a0_col: usize,
     a1_col: usize,
-    b: &CnvPVecRBackendRef<'_, NTT4x30Avx512<R>>,
+    b: &CnvPVecRBackendRef<'_, BE>,
     b0_col: usize,
     b1_col: usize,
-) {
+) where
+    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+{
     let (n, res_size, a_size, b_size) = (res.n(), res.size(), a.size(), b.size());
-    check_degree::<NTT4x30Avx512<R>>(module.n(), n);
+    check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
     let b_log_gap = sparse_log_gap_portable(n, b.n());
     if res_size == 0 || a_size == 0 || b_size == 0 {
@@ -440,17 +444,16 @@ unsafe fn apply<R: Ring, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>
     let bound = a_size + b_size - 1;
     let offset = cnv_offset.min(bound);
     let min_size = res_size.min(bound - offset);
-    let a_raw: &[u32] = cast_slice(a.data());
-    let b_raw: &[u32] = cast_slice(b.data());
+    let a_raw: &[u32] = cast_slice(a.raw());
+    let b_raw: &[u32] = cast_slice(b.raw());
     let a0 = col_slice(a_raw, n, a_size, a0_col);
     let a1 = col_slice(a_raw, n, a_size, a1_col);
     let b0 = col_slice(b_raw, b.n(), b_size, b0_col);
     let b1 = col_slice(b_raw, b.n(), b_size, b1_col);
     let res_cols = res.cols();
     assert!(res_col < res_cols, "convolution: result column out of range");
-    let res_ptr = SendPtr(cast_slice_mut::<_, u32>(res.data_mut()).as_mut_ptr());
+    let res_ptr = SendPtr(cast_slice_mut::<_, u32>(res.raw_mut()).as_mut_ptr());
     E::for_each(n / GROUP, |group| unsafe {
-        let meta = module.get_bbc_meta();
         if b_log_gap > 0 {
             conv_group::<ACC, PAIRWISE, true>(
                 meta, res_ptr, res_col, n, res_cols, min_size, offset, group, a0, a1, a_size, b0, b1, b_size, b_log_gap,
@@ -469,48 +472,63 @@ unsafe fn apply<R: Ring, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn cnv_apply_dft<R: Ring, E: TaskExecutor>(
-    module: &Module<NTT4x30Avx512<R>>,
+pub(crate) unsafe fn cnv_apply_dft<BE, E: TaskExecutor>(
+    module: &Module<BE>,
+    meta: &BbcMeta<Primes30>,
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, NTT4x30Avx512<R>>,
+    a: &CnvPVecLBackendRef<'_, BE>,
     a_col: usize,
-    b: &CnvPVecRBackendRef<'_, NTT4x30Avx512<R>>,
+    b: &CnvPVecRBackendRef<'_, BE>,
     b_col: usize,
-) {
-    unsafe { apply::<_, E, false, false>(module, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
+) where
+    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+{
+    unsafe { apply::<BE, E, false, false>(module, meta, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn cnv_apply_dft_add<R: Ring, E: TaskExecutor>(
-    module: &Module<NTT4x30Avx512<R>>,
+pub(crate) unsafe fn cnv_apply_dft_add<BE, E: TaskExecutor>(
+    module: &Module<BE>,
+    meta: &BbcMeta<Primes30>,
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, NTT4x30Avx512<R>>,
+    a: &CnvPVecLBackendRef<'_, BE>,
     a_col: usize,
-    b: &CnvPVecRBackendRef<'_, NTT4x30Avx512<R>>,
+    b: &CnvPVecRBackendRef<'_, BE>,
     b_col: usize,
-) {
-    unsafe { apply::<_, E, true, false>(module, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
+) where
+    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+{
+    unsafe { apply::<BE, E, true, false>(module, meta, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn cnv_pairwise_apply_dft<R: Ring, E: TaskExecutor>(
-    module: &Module<NTT4x30Avx512<R>>,
+pub(crate) unsafe fn cnv_pairwise_apply_dft<BE, E: TaskExecutor>(
+    module: &Module<BE>,
+    meta: &BbcMeta<Primes30>,
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, NTT4x30Avx512<R>>,
-    b: &CnvPVecRBackendRef<'_, NTT4x30Avx512<R>>,
+    a: &CnvPVecLBackendRef<'_, BE>,
+    b: &CnvPVecRBackendRef<'_, BE>,
     i: usize,
     j: usize,
-) {
+) where
+    BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+{
     if i == j {
-        unsafe { apply::<_, E, false, false>(module, cnv_offset, res, res_col, a, i, i, b, i, i) };
+        unsafe { apply::<BE, E, false, false>(module, meta, cnv_offset, res, res_col, a, i, i, b, i, i) };
     } else {
-        unsafe { apply::<_, E, false, true>(module, cnv_offset, res, res_col, a, i, j, b, i, j) };
+        unsafe { apply::<BE, E, false, true>(module, meta, cnv_offset, res, res_col, a, i, j, b, i, j) };
     }
 }
 
