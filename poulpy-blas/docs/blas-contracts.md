@@ -395,4 +395,181 @@ Calls with distinct `res` and `scratch` may run concurrently over a shared
 module, context, public operands, prepared operands and key stores: BLAS spawns
 no thread and holds no shared mutable state, and the types they share are
 `Send` and `Sync`. An override keeps no state across calls, so disjoint
-concurrent calls stay valid.
+concurrent calls stay valid. The parity test `concurrency` runs a
+`blas_matmul`, a `blas_matmul_prepared` of cold operands and a
+`blas_matmul_pt_right`, each twice, at once over one module, context, key
+store, public operand and pair of prepared operands, and requires each result
+bit for bit equal to the same call run alone.
+
+## Testing a backend
+
+Enable `test-utils` on a `poulpy-blas` dev-dependency. It exports four
+registration macros.
+
+`blas_backend_test_suite!` registers the functional tests for one backend,
+scalar, encoder and parameter set. They encrypt, run every operation, and check
+the decrypted values and the output metadata against cleartext expectations,
+along with the input guards, key widths, and the plan's key sets against the
+encoded maps; each operation runs on the keys of its own set alone, and the
+preparations and the prepared product under every hint and mix of hot and cold
+operands. The transpose, the shifts through both half maps, the preparations,
+the products and the products by public matrices, under `Diagonal` and `Jkls`,
+also run with maps or public matrices a quarter of the parameter set's scale
+below and above it, which they consume in place of their inputs' scale, so the
+parameter set's `k` must hold two maps at the larger scale and a product. Hot
+operands prepared under one context serve the products under all three, and a
+hot operand beside a cold one prepared under another context gives the product
+of their terms. Through those maps, the products also multiply factors at two
+scales, in either order, one an eighth of the scale lower and either as much
+narrower, so that their terms keep one budget, or as wide, so that its terms
+have the larger budget: crossed scales, where the larger budget plus the larger
+scale, from which the ct x ct rule takes its offset, exceeds the wider term's
+width. The masked products by public matrices, `JklsStored` and `JklsGalois`,
+run under a context holding their masks at the parameter set's scale, three
+scales deep, on the right of one public matrix and on the left of one, two and
+every public matrix per matrix slot, and their guards reject a right operand of
+two public matrices on more than one matrix slot, a right product under a
+context encoded on a module of another degree, at another radix, at another
+dimension or wider than its input, and a left product under a context without
+masks. `test_blas_key_widths` runs with the maps and the public matrices a
+quarter below that scale, where a key width taken from the inputs' scale in
+place of `p` or `p_B`, or capped by it, finds no key. They read coefficients on
+the host and use the standard ring, so they need a host backend of the standard
+ring. An optional `log_d = …` sets the blocks to `2^log_d x 2^log_d`, 2 by
+default. The ring degree `N` is free within two bounds: the blocks fit the
+`N / 2` slots, `d^2 <= N / 2` (`N >= 32` at the default), and the guards encode
+on a module of degree `2N`, which the backend must support (`N <= 2^16` at
+most). `test_blas_context` sweeps `log_d` 1 to 3 and skips with a message those
+whose blocks do not fit; `test_blas_batch_record`, below four matrix slots,
+and, in the guards of the products by public matrices, the operand at another
+dimension, where only `2 x 2` blocks fit, and the relabelled grid, on one
+matrix slot, are skipped with a message too.
+`test_blas_matmul_long_sums`, a `1 x 8` grid times an `8 x 1` grid of
+distinct blocks, runs on its own ring, `N = 32`.
+
+`blas_conjugate_invariant_test_suite!(mod m, backend = …, params = …)`
+registers the test `conjugate_invariant` for a backend of the
+conjugate-invariant ring, whose `N` slots are real. It encrypts real matrices
+of `4 x 4` blocks with the module's own encoder, runs every operation once,
+each on exactly the bytes its query reports, the products also by a right
+factor whose compact encryption proves it holds one matrix and the products by
+public matrices under every algorithm, the masked ones on the right of one
+public matrix, and checks the decrypted values and the output metadata, as the
+functional tests do, and that every output, the prepared operands included, has
+`Real` slots. Below `N = 16`, whose slots hold no such block, it is skipped
+with a message.
+
+`blas_parity_test_suite!` compares `backend_test` with `backend_ref`, an
+attested backend:
+
+```rust
+poulpy_blas::blas_parity_test_suite! {
+    mod blas_parity_my_backend_f64,
+    backend_ref = attested::Backend,
+    backend_test = crate::MyBackend,
+    scalar = f64,
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
+}
+```
+
+It registers the tests `inter`, `intra` and `matmul`, each on its own
+pair of modules of degree `params.n`, and `concurrency`, on the tested
+backend's module alone ([Parallelism](#parallelism)). Both backends
+run on identical fixtures and keys, and the operations are called
+through the API, which forwards to their `*Impl` methods. Every call,
+encodings and preparations included, gets exactly the
+bytes its query reports, poisoned and guarded. Every output is compared: its
+batch record, and every block bit for bit, digits and CKKS metadata. Prepared
+operands, made under either hint, are compared through their infos alone,
+`(log_d, rows, cols, block_layout, mat_slots)`, which must also equal their
+input's batch and, as the layout, their input's when hot and its term layout
+when cold, beside their hint and their input's layout as their source; the
+prepared product of every mix of hot and cold operands runs on one pair per
+scale of the maps into `res` of three widths, and on pairs at two scales into
+`res` of one, and must equal `blas_matmul` each time. Each call looks its keys
+up in a store of its operation's set alone, from `BlasPlan` or
+`sum_galois_elements`, which records every lookup: the tested backend may look
+up only keys, at widths, that the reference looked up in the same call. No call
+may write its inputs. The calls reach every branch of the circuit: identity
+rotations, one matrix slot, the copies of row and column shifts by `d` and `2d`
+along three blocks, one-row and one-column grids, `res` wider and narrower than
+the result, factors one limb apart in both orders, lazy inputs on real slots,
+sparse unless one matrix fills them, copies of lazy inputs, a right factor
+holding one matrix, public products, under every algorithm, of one matrix and
+of one per matrix slot, the masked ones on the right of one matrix only, under
+a context holding their masks, maps and public matrices at scales below and
+above the operands', factors at two scales, in either order, through those
+maps, whose terms keep one budget or give the lower scale the larger budget
+(crossed scales, where a kernel that takes its offset from the wider term's
+width changes the bits), and a long product, `1 x 32` by `32 x 1` distinct
+blocks (`1 x 16` by `16 x 1` above radix 52), at every registration, which a
+kernel that drops or repeats a term of a long sum fails. Each family's parity also
+runs calls that poulpy-ckks rejects for their budget, among them the prepared
+product of a hot operand one bit short of the `2p` its terms spend, the product
+by a right factor of budget `3p - 1` holding distinct matrices, which one
+holding one matrix passes, and the JKLS products by public matrices one bit
+short of the first map's scale, then of both maps': both backends return the
+same error and leave `res` and the inputs unchanged. Storage and ring are free:
+the bounds are `BlasParityBackend` (`Backend<ZnxWord = i64>` and every BLAS
+family) and `BlasParityModule`. Rank and `dsize` follow `params`, as in CKKS
+parity.
+
+The optional `shapes` argument, a `BlasParityShapes`, sets the swept block
+dimensions `log_d` (default `[1, 2]`). A `log_d` below 1, or whose `d^2`
+exceeds the slot count, is skipped with a message, and the test fails when none
+remains. A backend that lacks a block dimension restricts the sweep instead of
+dropping the suite:
+
+```rust
+    shapes = poulpy_blas::test_suite::parity::BlasParityShapes { log_d: vec![2] },
+```
+
+`log_d` is the only shapes axis: rank and `dsize` come from `params`, and one
+macro registers all three families, so none can be dropped silently.
+
+`blas_max_base2k_test_suite!` registers the test `max_base2k` for one backend,
+scalar and parameter set: `blas_matmul_max_base2k`,
+`blas_matmul_pt_right_max_base2k` and `blas_matmul_pt_left_max_base2k` on
+`4 x 4` blocks and `n = 64`, under every algorithm, against counts made by
+hand, at every failure target from 1 to 1000 bits. It needs a backend that
+implements `MaxBase2k`; a backend without a model, as the conjugate-invariant
+ring, must return `None`.
+
+The registrations of this workspace, and the commands and CI coverage, are in
+the [repository README](../../README.md#testing-a-backend).
+
+## Attestation
+
+Parity is bit-exact, so an override must compute the reference's circuit. An
+algorithm that is only numerically close fails it.
+
+An override ships with its parity test passing against an attested backend.
+Attestation is transitive ([CONTRIBUTING](../../CONTRIBUTING.md#coding-conventions)):
+a backend that passes parity against an attested one can serve as the reference
+for the next, for the same operations and parameter ranges. The repository
+README lists the attested backends a crate outside the workspace can compare
+against.
+
+## Backends outside the workspace
+
+Everything above applies to a backend crate outside this workspace,
+closed-source ones included. It defines its own backend type, implements the
+HAL, core and CKKS families for it, and may then take any BLAS family from its
+macro or override it. Three Rust rules constrain its wiring:
+
+- **It wires only its own types.** Implementing a BLAS trait for another
+  crate's type, a backend of this workspace included, breaks the orphan rule
+  (E0117).
+- **One source.** `poulpy-hal`, `poulpy-core`, `poulpy-ckks`, `poulpy-blas` and
+  the comparison backend come from one source and revision. Two copies of a
+  crate define distinct types and traits, so a crates.io copy beside a git one
+  does not compile: trait bounds fail (E0277) and the module lacks the expected
+  methods (E0599), which rustc traces to multiple versions of a crate in the
+  dependency graph.
+- **Direct dependency names.** The wiring macros expand to `::poulpy_hal`,
+  `::poulpy_core` and `::poulpy_ckks`, and the registration macros to
+  `::poulpy_hal`, so the crate that invokes them depends on `poulpy-hal`,
+  `poulpy-core` and `poulpy-ckks` directly, under those names (E0433
+  otherwise). The parameter sets a registration passes as `params` live in
+  `poulpy_ckks::test_suite`, which the `test-utils` feature of `poulpy-blas`
+  enables.

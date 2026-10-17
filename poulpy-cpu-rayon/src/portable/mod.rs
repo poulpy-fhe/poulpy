@@ -7,6 +7,8 @@
 mod bin_fhe_impl;
 #[cfg(feature = "enable-blas")]
 mod blas_impl;
+#[cfg(all(test, feature = "enable-blas"))]
+mod blas_tests;
 #[cfg(feature = "enable-ckks")]
 mod ckks_impl;
 #[cfg(feature = "enable-core")]
