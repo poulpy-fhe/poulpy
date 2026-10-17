@@ -4,8 +4,13 @@
 //! `poulpy_bench::{hal,core,schemes}::suites::light` for the shared
 //! implementation; this binary just wires it up against
 //! `poulpy-cpu-avx512`'s backends.
+//!
+//! With `enable-blas`, a second group runs the BLAS layer on the NTT backend
+//! (`poulpy_bench::blas::suites`) under its own Criterion configuration.
 
-use criterion::{criterion_group, criterion_main};
+use criterion::criterion_group;
+#[cfg(feature = "enable-blas")]
+use poulpy_bench::blas::suites::light::bench_blas;
 use poulpy_bench::core::suites::light::{bench_core_binfhe, bench_core_ckks};
 use poulpy_bench::hal::suites::light::{bench_hal_binfhe, bench_hal_ckks};
 use poulpy_bench::schemes::suites::bench_binfhe;
@@ -27,4 +32,18 @@ criterion_group! {
      bench_binfhe::<Fft, CGGI>
 }
 
-criterion_main!(benches);
+#[cfg(feature = "enable-blas")]
+criterion_group! {
+    name = blas_benches;
+    config = poulpy_bench::blas_criterion_config();
+    targets = bench_blas::<Ntt>
+}
+
+// What `criterion_main!(benches)` expands to, with the BLAS group between the others and the final summary.
+fn main() {
+    benches();
+    #[cfg(feature = "enable-blas")]
+    blas_benches();
+
+    criterion::Criterion::default().configure_from_args().final_summary();
+}
