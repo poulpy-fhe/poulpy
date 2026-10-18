@@ -73,6 +73,10 @@
 
 ### `poulpy-core`
 
+- **Breaking:** the gadget key geometry is computed from a digit width in bits, `digit_k`, instead of a digit size in limbs ([#188](https://github.com/poulpy-fhe/poulpy/issues/188)).
+  `key_k` drops its `base2k` argument and returns `dnum * digit_k + k_aux`, and `key_size`, `key_work_size` and `GGLWELayout::dnum_for_input` take `digit_k`, the latter without `base2k`.
+  `GGLWEInfos` and `GGSWInfos` gain `digit_k()`, for now `dsize * base2k`, which `digit_k_of` computes, and the guard rule becomes `k_aux >= digit_k`.
+  The noise models and the CKKS key validation read `digit_k`, and every value is unchanged.
 - **Breaking:** `GLWE`, `GLWEPlaintext` and `GLWECompressed` carry an optional, scheme-managed `GLWEPlaintextMeta` (`Scale`, `SlotsKind`, `log_sparsity`) through `GLWEPlaintextInfos` and `SetGLWEPlaintextInfos`, which also read and set each field; `SlotsKind` moves from `poulpy-ckks` and gains `Integer`.
 - **Breaking, format:** serialized `GLWE` and `GLWECompressed` carry their plaintext metadata.
 - `reference::keyswitching::glwe::gglwe_product_limbs` returns the `product_limbs` the reference key switch passes to `GGLWEProductDigitsStridedImpl`, so that backend overrides derive the same.

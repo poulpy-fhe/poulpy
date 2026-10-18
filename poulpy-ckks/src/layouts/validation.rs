@@ -32,21 +32,22 @@ pub(crate) fn validate_gadget_key<K: GGLWEInfos + ?Sized>(
         key.base2k(),
     );
     ensure!(key.dnum().as_usize() > 0, "{name} must have at least one decomposition digit");
-    ensure!(key.dsize().as_usize() > 0, "{name} decomposition digits must be non-empty");
-    let size = key.k().as_usize().div_ceil(base2k.as_usize());
+    ensure!(key.digit_k().as_usize() > 0, "{name} decomposition digits must be non-empty");
     ensure!(
-        size > key.dsize().as_usize(),
-        "{name} decomposition digit size {} must be smaller than the {size}-limb key width",
-        key.dsize(),
+        key.k().as_usize() > key.digit_k().as_usize(),
+        "{name} decomposition digit of {} bits must be narrower than the {}-bit key",
+        key.digit_k(),
+        key.k(),
     );
-    let decomposition_limbs = key
+    let gadget_k = key
         .dnum()
         .as_usize()
-        .checked_mul(key.dsize().as_usize())
+        .checked_mul(key.digit_k().as_usize())
         .with_context(|| format!("{name} decomposition size overflows usize"))?;
     ensure!(
-        decomposition_limbs <= size,
-        "{name} decomposition uses {decomposition_limbs} limbs, exceeding its {size}-limb key width",
+        gadget_k <= key.k().as_usize(),
+        "{name} decomposition covers {gadget_k} bits, exceeding its {}-bit key",
+        key.k(),
     );
     let required_size = working_size
         .checked_add(key.dsize().as_usize())
@@ -91,7 +92,7 @@ where
             && reported.rank_in() == view.rank_in()
             && reported.rank_out() == view.rank_out()
             && reported.dnum() == view.dnum()
-            && reported.dsize() == view.dsize(),
+            && reported.digit_k() == view.digit_k(),
         "{name} reported layout does not match its backend-native view",
     );
     Ok(())

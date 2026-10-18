@@ -488,7 +488,15 @@ where
         let (rows, size) = (parent.dnum.as_usize(), parent.max_size());
         let sel_rows = sel_dnum.as_usize();
         // Coarsening moves rows into the guard, so the two spans agree.
-        assert_eq!(key_size(parent.base2k, sel_dnum, effective, sel_k_aux), size);
+        assert_eq!(
+            key_size(
+                parent.base2k,
+                sel_dnum,
+                crate::layouts::digit_k_of(parent.base2k, effective),
+                sel_k_aux
+            ),
+            size
+        );
 
         let mut prep = ScratchOwned::<BE>::alloc(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size));
 

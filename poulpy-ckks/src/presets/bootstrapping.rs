@@ -530,9 +530,8 @@ fn keys_layout(spec: &PresetSpec, n: usize, bootstrap_k: usize, log_modulus: usi
 /// `dsize * base2k + log_n`.
 fn key_shape(spec: &PresetSpec, input_k: usize, dsize: usize) -> (Dnum, TorusPrecision) {
     let dnum = GGLWELayout::dnum_for_input(
-        Base2K(spec.base2k as u32),
         TorusPrecision(input_k as u32),
-        Dsize(dsize as u32),
+        poulpy_core::layouts::digit_k_of(Base2K(spec.base2k as u32), Dsize(dsize as u32)),
     );
     (dnum, TorusPrecision((dsize * spec.base2k + spec.log_n) as u32))
 }

@@ -24,11 +24,15 @@ where
 {
     /// Auxiliary guard precision (in bits) stored below the gadget region and
     /// used for noise management during key operations. Free value, need not be
-    /// a multiple of `base2k`. In practice `dsize*base2k + logN`.
+    /// a multiple of `base2k`. In practice `digit_k + logN`.
     fn k_aux(&self) -> TorusPrecision;
     /// Number of gadget-decomposition rows.
     fn dnum(&self) -> Dnum;
     fn dsize(&self) -> Dsize;
+    /// Width in bits of one gadget digit: row `q` carries `2^-((q + 1) * digit_k)`.
+    fn digit_k(&self) -> TorusPrecision {
+        crate::layouts::digit_k_of(self.base2k(), self.dsize())
+    }
     fn rank_in(&self) -> Rank;
     fn rank_out(&self) -> Rank;
     /// Row stride into the stored matrix: digit `i` is stored row
@@ -185,29 +189,24 @@ impl GGLWELayout {
 
 impl GGLWELayout {
     /// Number of gadget digits a key needs to cover an input ciphertext of
-    /// precision `input_k`: `ceil(input_k / (dsize * base2k))`.
+    /// precision `input_k`: `ceil(input_k / digit_k)`.
     ///
     /// This is the inverse of [`Self::gadget_k`] and the rounding rule used by
     /// [`key_work_size`](crate::layouts::key_work_size): the gadget is consumed
     /// in whole digits, so a partial digit counts as a full one. The auxiliary
-    /// guard `k_aux` is chosen by the caller (typically `dsize * base2k + log2(n)`)
+    /// guard `k_aux` is chosen by the caller (typically `digit_k + log2(n)`)
     /// and is not part of this derivation. The digit width must be nonzero.
-    pub fn dnum_for_input(base2k: Base2K, input_k: TorusPrecision, dsize: Dsize) -> Dnum {
-        let digit_bits: u32 = dsize.0 * base2k.0;
-        debug_assert!(
-            digit_bits > 0,
-            "dnum_for_input requires a nonzero gadget digit (dsize * base2k)"
-        );
-        Dnum(input_k.0.div_ceil(digit_bits))
+    pub fn dnum_for_input(input_k: TorusPrecision, digit_k: TorusPrecision) -> Dnum {
+        debug_assert!(digit_k.0 > 0, "dnum_for_input requires a nonzero gadget digit");
+        Dnum(input_k.0.div_ceil(digit_k.0))
     }
 
-    /// Gadget precision of the key: `dnum * dsize * base2k`, i.e. the width
-    /// covered by its `dnum` digits of `dsize` limbs at radix `base2k`, excluding
-    /// the auxiliary guard `k_aux`. An input ciphertext of at most this many bits
-    /// is decomposed entirely by the key. Any [`GGLWEInfos`] reaches it through
-    /// [`GGLWEInfos::gglwe_layout`].
+    /// Gadget precision of the key: `dnum * digit_k`, i.e. the width covered by
+    /// its `dnum` digits, excluding the auxiliary guard `k_aux`. An input
+    /// ciphertext of at most this many bits is decomposed entirely by the key.
+    /// Any [`GGLWEInfos`] reaches it through [`GGLWEInfos::gglwe_layout`].
     pub fn gadget_k(&self) -> TorusPrecision {
-        TorusPrecision(self.dnum.0 * self.dsize.0 * self.base2k.0)
+        TorusPrecision(self.dnum.0 * self.digit_k().0)
     }
 }
 
@@ -221,11 +220,16 @@ impl LWEInfos for GGLWELayout {
     }
 
     fn max_size(&self) -> usize {
-        crate::layouts::key_size(self.base2k, self.dnum, self.dsize, self.k_aux)
+        crate::layouts::key_size(
+            self.base2k,
+            self.dnum,
+            crate::layouts::digit_k_of(self.base2k, self.dsize),
+            self.k_aux,
+        )
     }
 
     fn k(&self) -> TorusPrecision {
-        crate::layouts::key_k(self.base2k, self.dnum, self.dsize, self.k_aux)
+        crate::layouts::key_k(self.dnum, crate::layouts::digit_k_of(self.base2k, self.dsize), self.k_aux)
     }
 }
 
@@ -401,7 +405,7 @@ impl<D: Data, W: ZnxWord> LWEInfos for GGLWE<D, W> {
     }
 
     fn k(&self) -> TorusPrecision {
-        crate::layouts::key_k(self.base2k, self.dnum(), self.dsize, self.k_aux)
+        crate::layouts::key_k(self.dnum(), crate::layouts::digit_k_of(self.base2k, self.dsize), self.k_aux)
     }
 }
 
@@ -674,7 +678,7 @@ impl<W: ZnxWord> GGLWE<AlignedBuf, W> {
         rank_in: Rank,
         rank_out: Rank,
     ) -> Self {
-        let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
+        let size: usize = crate::layouts::key_size(base2k, dnum, crate::layouts::digit_k_of(base2k, dsize), k_aux);
 
         GGLWE {
             noise: None,
@@ -722,7 +726,7 @@ impl<W: ZnxWord> GGLWE<AlignedBuf, W> {
         rank_in: Rank,
         rank_out: Rank,
     ) -> usize {
-        let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
+        let size: usize = crate::layouts::key_size(base2k, dnum, crate::layouts::digit_k_of(base2k, dsize), k_aux);
 
         MatZnx::<AlignedBuf, W>::bytes_of(n.into(), dnum.into(), rank_in.into(), (rank_out + 1).into(), size)
     }

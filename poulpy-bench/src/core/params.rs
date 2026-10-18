@@ -47,7 +47,11 @@ pub fn key_dnum_k_aux(k: u32, base2k: u32, dsize: u32) -> (u32, u32) {
         "k ({k}) must hold at least one gadget digit plus one digit of guard ({digit} bits each)"
     );
     let k_aux: u32 = digit + k % digit;
-    let dnum: u32 = GGLWELayout::dnum_for_input(Base2K(base2k), TorusPrecision(k - k_aux), Dsize(dsize)).0;
+    let dnum: u32 = GGLWELayout::dnum_for_input(
+        TorusPrecision(k - k_aux),
+        poulpy_core::layouts::digit_k_of(Base2K(base2k), Dsize(dsize)),
+    )
+    .0;
     (dnum, k_aux)
 }
 

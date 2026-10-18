@@ -41,11 +41,16 @@ impl<D: Data, B: Backend> LWEInfos for GGSWPrepared<D, B> {
     }
 
     fn max_size(&self) -> usize {
-        crate::layouts::key_size(self.base2k, self.dnum(), self.dsize, self.k_aux)
+        crate::layouts::key_size(
+            self.base2k,
+            self.dnum(),
+            crate::layouts::digit_k_of(self.base2k, self.dsize),
+            self.k_aux,
+        )
     }
 
     fn k(&self) -> TorusPrecision {
-        crate::layouts::key_k(self.base2k, self.dnum(), self.dsize, self.k_aux)
+        crate::layouts::key_k(self.dnum(), crate::layouts::digit_k_of(self.base2k, self.dsize), self.k_aux)
     }
 }
 
@@ -98,7 +103,7 @@ where
         A: GGSWInfos,
     {
         let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
-        let size: usize = crate::layouts::key_size(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux());
+        let size: usize = crate::layouts::key_size(infos.base2k(), infos.dnum(), infos.digit_k(), infos.k_aux());
         GGSWPrepared {
             noise: None,
             data: self.vmp_pmat_alloc(
@@ -131,7 +136,7 @@ where
         A: GGSWInfos,
     {
         let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
-        let size: usize = crate::layouts::key_size(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux());
+        let size: usize = crate::layouts::key_size(infos.base2k(), infos.dnum(), infos.digit_k(), infos.k_aux());
         self.bytes_of_vmp_pmat(
             n,
             infos.dnum().into(),

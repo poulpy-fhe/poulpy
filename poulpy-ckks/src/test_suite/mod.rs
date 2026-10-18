@@ -67,9 +67,8 @@ impl CKKSTestParams {
     /// from [`GGLWELayout::dnum_for_input`] and the guard `dsize * base2k + log_n`.
     fn key_shape(&self, k_in: usize) -> (Dnum, TorusPrecision) {
         let dnum = GGLWELayout::dnum_for_input(
-            Base2K(self.base2k as u32),
             TorusPrecision(k_in as u32),
-            Dsize(self.dsize as u32),
+            poulpy_core::layouts::digit_k_of(Base2K(self.base2k as u32), Dsize(self.dsize as u32)),
         );
         (dnum, TorusPrecision((self.dsize * self.base2k + self.log_n()) as u32))
     }

@@ -220,11 +220,16 @@ impl<D: Data, W: ZnxWord> LWEInfos for GGSWCompressed<D, W> {
     }
 
     fn max_size(&self) -> usize {
-        crate::layouts::key_size(self.base2k, self.dnum(), self.dsize, self.k_aux)
+        crate::layouts::key_size(
+            self.base2k,
+            self.dnum(),
+            crate::layouts::digit_k_of(self.base2k, self.dsize),
+            self.k_aux,
+        )
     }
 
     fn k(&self) -> TorusPrecision {
-        crate::layouts::key_k(self.base2k, self.dnum(), self.dsize, self.k_aux)
+        crate::layouts::key_k(self.dnum(), crate::layouts::digit_k_of(self.base2k, self.dsize), self.k_aux)
     }
 }
 impl<D: Data, W: ZnxWord> GLWEInfos for GGSWCompressed<D, W> {
@@ -291,7 +296,7 @@ impl<D: Data, W: ZnxWord> GGSWCompressed<D, W> {
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> Self {
-        let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
+        let size: usize = crate::layouts::key_size(base2k, dnum, crate::layouts::digit_k_of(base2k, dsize), k_aux);
 
         GGSWCompressed {
             noise: None,
@@ -328,7 +333,7 @@ impl<D: Data, W: ZnxWord> GGSWCompressed<D, W> {
 
     /// Returns the serialized byte size for a compressed GGSW with the given parameters.
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
-        let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
+        let size: usize = crate::layouts::key_size(base2k, dnum, crate::layouts::digit_k_of(base2k, dsize), k_aux);
 
         MatZnx::<AlignedBuf, W>::bytes_of(n.into(), dnum.into(), (rank + 1).into(), 1, size)
     }

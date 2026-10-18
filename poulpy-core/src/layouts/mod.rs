@@ -389,7 +389,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
 
     fn gglwe_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GGLWE<B::OwnedBuf, B::ZnxWord> {
         let dnum = infos.dnum();
-        let size = crate::layouts::key_size(infos.base2k(), dnum, infos.dsize(), infos.k_aux());
+        let size = crate::layouts::key_size(infos.base2k(), dnum, infos.digit_k(), infos.k_aux());
 
         GGLWE {
             noise: None,
@@ -435,7 +435,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
 
     fn ggsw_alloc_from_infos<A: GGSWInfos>(&self, infos: &A) -> GGSW<B::OwnedBuf, B::ZnxWord> {
         let dnum = infos.dnum();
-        let size = crate::layouts::key_size(infos.base2k(), dnum, infos.dsize(), infos.k_aux());
+        let size = crate::layouts::key_size(infos.base2k(), dnum, infos.digit_k(), infos.k_aux());
 
         GGSW {
             noise: None,
@@ -1372,47 +1372,48 @@ impl Degree {
     }
 }
 
-/// Total torus precision of a key: `dnum * dsize * base2k + k_aux`, i.e. the
-/// gadget precision (see [`GGLWELayout::gadget_k`]) plus the auxiliary guard
-/// region `k_aux`.
+/// Total torus precision of a key: `dnum * digit_k + k_aux`, i.e. the gadget
+/// precision (see [`GGLWELayout::gadget_k`]) plus the auxiliary guard region
+/// `k_aux`. Independent of the key radix.
 /// This is what `LWEInfos::k()` reports for the GGLWE/GGSW key families, so
 /// encryption places the error at the physical bottom limb.
-pub fn key_k(base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision) -> TorusPrecision {
+pub fn key_k(dnum: Dnum, digit_k: TorusPrecision, k_aux: TorusPrecision) -> TorusPrecision {
     debug_assert!(
-        k_aux.0 >= dsize.0 * base2k.0,
-        "k_aux ({}) must be at least dsize * base2k ({} * {} = {}): the auxiliary guard must \
-         cover at least one full gadget digit, otherwise operations truncate mid-digit",
+        k_aux.0 >= digit_k.0,
+        "k_aux ({}) must be at least digit_k ({}): the auxiliary guard must cover at least one \
+         full gadget digit, otherwise operations truncate mid-digit",
         k_aux.0,
-        dsize.0,
-        base2k.0,
-        dsize.0 * base2k.0
+        digit_k.0,
     );
-    TorusPrecision(dnum.0 * dsize.0 * base2k.0 + k_aux.0)
+    TorusPrecision(dnum.0 * digit_k.0 + k_aux.0)
 }
 
-/// Number of limbs stored per row of a key: `ceil((dnum*dsize*base2k + k_aux) / base2k)`,
-/// i.e. the `dnum * dsize` gadget limbs plus `ceil(k_aux / base2k)` auxiliary
-/// (guard) limbs used for noise management.
-pub fn key_size(base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision) -> usize {
-    key_k(base2k, dnum, dsize, k_aux).0.div_ceil(base2k.0) as usize
+/// Number of limbs stored per row of a key: `ceil((dnum * digit_k + k_aux) / base2k)`.
+pub fn key_size(base2k: Base2K, dnum: Dnum, digit_k: TorusPrecision, k_aux: TorusPrecision) -> usize {
+    key_k(dnum, digit_k, k_aux).0.div_ceil(base2k.0) as usize
+}
+
+/// Digit width of `dsize` whole limbs at radix `base2k`: `dsize * base2k`.
+pub fn digit_k_of(base2k: impl Into<Base2K>, dsize: impl Into<Dsize>) -> TorusPrecision {
+    TorusPrecision(base2k.into().0 * dsize.into().0)
 }
 
 /// Number of key limbs an operation should process for an input ciphertext of
 /// precision `input_k` (clamped to the key size by callers). Replaces the old
 /// explicit `key_size`/`tsk_size` argument.
 ///
-/// The gadget is consumed in whole digits of `dsize` limbs each, so the region
-/// covering `input_k` must be rounded up to a digit boundary — truncating
+/// The gadget is consumed in whole digits of `digit_k` bits each, so the region
+/// covering `input_k` must be rounded up to a digit boundary: truncating
 /// mid-digit would drop a gadget row entirely and wreck the decomposition.
-/// The auxiliary guard `k_aux` then adds `ceil(k_aux / base2k)` limbs on top:
+/// The auxiliary guard `k_aux` then sits below it:
 ///
 /// ```text
-/// digits = ceil(input_k / (dsize * base2k))
-/// work   = digits * dsize + ceil(k_aux / base2k)
+/// digits = ceil(input_k / digit_k)
+/// work   = ceil((digits * digit_k + k_aux) / base2k)
 /// ```
-pub fn key_work_size(base2k: Base2K, input_k: TorusPrecision, dsize: Dsize, k_aux: TorusPrecision) -> usize {
-    let digits: u32 = GGLWELayout::dnum_for_input(base2k, input_k, dsize).0;
-    (digits * dsize.0 + k_aux.0.div_ceil(base2k.0)) as usize
+pub fn key_work_size(base2k: Base2K, input_k: TorusPrecision, digit_k: TorusPrecision, k_aux: TorusPrecision) -> usize {
+    let digits: u32 = GGLWELayout::dnum_for_input(input_k, digit_k).0;
+    (digits * digit_k.0 + k_aux.0).div_ceil(base2k.0) as usize
 }
 
 /// Practical limb window used for an immediately normalized GGSW external
@@ -1442,7 +1443,7 @@ where
         key_base2k: ggsw_infos.base2k(),
         input_k: a_infos.k(),
         output_k: res_infos.k(),
-        dsize: ggsw_infos.dsize(),
+        digit_k: ggsw_infos.digit_k(),
         k_aux: ggsw_infos.k_aux(),
         product_terms,
         extra_live_limbs: 0,
@@ -1455,7 +1456,7 @@ pub(crate) struct GadgetProductOutputSizeParams {
     pub(crate) key_base2k: Base2K,
     pub(crate) input_k: TorusPrecision,
     pub(crate) output_k: TorusPrecision,
-    pub(crate) dsize: Dsize,
+    pub(crate) digit_k: TorusPrecision,
     pub(crate) k_aux: TorusPrecision,
     pub(crate) product_terms: usize,
     pub(crate) extra_live_limbs: usize,
@@ -1529,12 +1530,12 @@ pub(crate) fn gadget_product_output_size(params: GadgetProductOutputSizeParams) 
         key_base2k,
         input_k,
         output_k,
-        dsize,
+        digit_k,
         k_aux,
         product_terms,
         extra_live_limbs,
     } = params;
-    let work_size = key_size.min(key_work_size(key_base2k, input_k, dsize, k_aux));
+    let work_size = key_size.min(key_work_size(key_base2k, input_k, digit_k, k_aux));
 
     let base2k = key_base2k.as_usize();
     let live_limbs = input_k
@@ -1674,7 +1675,7 @@ mod gadget_sizing_tests {
     fn dnum_for_input_is_the_inverse_of_gadget_k() {
         let (base2k, dsize) = (Base2K(52), Dsize(4));
         let digit = dsize.0 * base2k.0;
-        let dnum_for = |input_k: u32| GGLWELayout::dnum_for_input(base2k, TorusPrecision(input_k), dsize);
+        let dnum_for = |input_k: u32| GGLWELayout::dnum_for_input(TorusPrecision(input_k), digit_k_of(base2k, dsize));
         // A partial digit counts as a full one, an exact multiple does not add one.
         assert_eq!(dnum_for(1404), Dnum(7));
         assert_eq!(dnum_for(7 * digit), Dnum(7));
@@ -1695,9 +1696,9 @@ mod gadget_sizing_tests {
             let gadget = layout.gadget_k();
             assert_eq!(gadget.0, dnum * digit);
             assert_eq!(dnum_for(gadget.0), Dnum(dnum));
-            assert_eq!(key_k(base2k, Dnum(dnum), dsize, k_aux).0, gadget.0 + k_aux.0);
+            assert_eq!(key_k(Dnum(dnum), digit_k_of(base2k, dsize), k_aux).0, gadget.0 + k_aux.0);
             assert_eq!(
-                key_work_size(base2k, gadget, dsize, k_aux),
+                key_work_size(base2k, gadget, digit_k_of(base2k, dsize), k_aux),
                 (dnum * dsize.0 + k_aux.0.div_ceil(base2k.0)) as usize
             );
         }
@@ -1706,7 +1707,15 @@ mod gadget_sizing_tests {
     #[test]
     fn work_size_rounds_input_to_a_whole_digit_before_aux_limbs() {
         // Two 2-limb digits plus two auxiliary limbs.
-        assert_eq!(key_work_size(Base2K(30), TorusPrecision(61), Dsize(2), TorusPrecision(31)), 6);
+        assert_eq!(
+            key_work_size(
+                Base2K(30),
+                TorusPrecision(61),
+                digit_k_of(Base2K(30), Dsize(2)),
+                TorusPrecision(31)
+            ),
+            6
+        );
     }
 
     #[test]
@@ -1717,7 +1726,7 @@ mod gadget_sizing_tests {
                 key_base2k: Base2K(30),
                 input_k: TorusPrecision(61),
                 output_k: TorusPrecision(91),
-                dsize: Dsize(2),
+                digit_k: digit_k_of(Base2K(30), Dsize(2)),
                 k_aux: TorusPrecision(31),
                 product_terms: 1,
                 extra_live_limbs: 0,
@@ -1734,7 +1743,7 @@ mod gadget_sizing_tests {
                 key_base2k: Base2K(base2k),
                 input_k: TorusPrecision(input_k),
                 output_k: TorusPrecision(output_k),
-                dsize: Dsize(1),
+                digit_k: digit_k_of(Base2K(base2k), Dsize(1)),
                 k_aux: TorusPrecision(180),
                 product_terms,
                 extra_live_limbs: 0,

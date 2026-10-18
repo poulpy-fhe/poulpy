@@ -432,7 +432,7 @@ where
         key_base2k: key_infos.base2k(),
         input_k: a_infos.k(),
         output_k: res_infos.k(),
-        dsize: key_infos.dsize(),
+        digit_k: key_infos.digit_k(),
         k_aux: key_infos.k_aux(),
         product_terms,
         extra_live_limbs,

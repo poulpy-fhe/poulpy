@@ -98,11 +98,16 @@ impl LWEInfos for GLWETensorKeyLayout {
     }
 
     fn max_size(&self) -> usize {
-        crate::layouts::key_size(self.base2k, self.dnum, self.dsize, self.k_aux)
+        crate::layouts::key_size(
+            self.base2k,
+            self.dnum,
+            crate::layouts::digit_k_of(self.base2k, self.dsize),
+            self.k_aux,
+        )
     }
 
     fn k(&self) -> TorusPrecision {
-        crate::layouts::key_k(self.base2k, self.dnum, self.dsize, self.k_aux)
+        crate::layouts::key_k(self.dnum, crate::layouts::digit_k_of(self.base2k, self.dsize), self.k_aux)
     }
 }
 

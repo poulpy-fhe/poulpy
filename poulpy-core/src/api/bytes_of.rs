@@ -99,7 +99,7 @@ impl<B: Backend> GLWEBytesOf<B> for Module<B> {
     }
 
     fn gglwe_bytes_of_from_infos<A: GGLWEInfos>(&self, infos: &A) -> usize {
-        let size: usize = key_size(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux());
+        let size: usize = key_size(infos.base2k(), infos.dnum(), infos.digit_k(), infos.k_aux());
         B::bytes_of_mat_znx(
             infos.n().into(),
             infos.dnum().into(),
@@ -110,7 +110,7 @@ impl<B: Backend> GLWEBytesOf<B> for Module<B> {
     }
 
     fn ggsw_bytes_of_from_infos<A: GGSWInfos>(&self, infos: &A) -> usize {
-        let size: usize = key_size(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux());
+        let size: usize = key_size(infos.base2k(), infos.dnum(), infos.digit_k(), infos.k_aux());
         B::bytes_of_mat_znx(
             infos.n().into(),
             infos.dnum().into(),

@@ -241,7 +241,7 @@ where
             "invalid finalization: key output rank differs from the GGSW's"
         );
         assert!(
-            key.dnum().as_usize() * key.dsize().as_usize() * key.base2k().as_usize() >= share.k().as_usize(),
+            key.dnum().as_usize() * key.digit_k().as_usize() >= share.k().as_usize(),
             "invalid finalization: key does not cover the GGSW precision"
         );
         let (dnum, rank) = (share.dnum().as_usize(), share.rank().as_usize());
@@ -326,7 +326,7 @@ fn fresh_ggsw_metadata<BE: Backend, K: GGLWEInfos>(share: &GGSWShareOwned<BE>, k
         return Some(metadata.with_components(components));
     }
     let n = share.n().as_usize();
-    let digit_bits = key.dsize().as_usize() * key.base2k().as_usize();
+    let digit_bits = key.digit_k().as_usize();
     let digit_factor = (1.0 - (-(digit_bits as f64)).exp2()) / (1.0 - (-(key.base2k().as_usize() as f64)).exp2());
     let digits = k.as_usize().div_ceil(digit_bits).min(key.dnum().as_usize());
     // Bounded balanced digits require no uniform-digit assumption. Fold their

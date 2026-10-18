@@ -30,7 +30,7 @@ use crate::blind_rotation::BlindRotationAlgo;
 /// - `base2k`: Decomposition base (bits per limb).
 /// - `dnum`: Number of gadget decomposition digits (`dsize` fixed to 1); the
 ///   gadget precision is `dnum * dsize * base2k` and the full precision is
-///   `key_k(base2k, dnum, Dsize(1), k_aux)`.
+///   `key_k(dnum, digit_k_of(base2k, Dsize(1)), k_aux)`.
 /// - `k_aux`: Auxiliary guard precision (torus bits) below the gadget region.
 /// - `rank`: GLWE rank (0 for plain LWE, ≥ 1 for GLWE / Module-LWE).
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
@@ -83,11 +83,16 @@ impl LWEInfos for BlindRotationKeyLayout {
     }
 
     fn max_size(&self) -> usize {
-        poulpy_core::layouts::key_size(self.base2k, self.dnum, Dsize(1), self.k_aux)
+        poulpy_core::layouts::key_size(
+            self.base2k,
+            self.dnum,
+            poulpy_core::layouts::digit_k_of(self.base2k, Dsize(1)),
+            self.k_aux,
+        )
     }
 
     fn k(&self) -> TorusPrecision {
-        poulpy_core::layouts::key_k(self.base2k, self.dnum, Dsize(1), self.k_aux)
+        poulpy_core::layouts::key_k(self.dnum, poulpy_core::layouts::digit_k_of(self.base2k, Dsize(1)), self.k_aux)
     }
 }
 

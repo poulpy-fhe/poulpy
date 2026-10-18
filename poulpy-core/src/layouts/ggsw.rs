@@ -29,6 +29,10 @@ where
     fn dnum(&self) -> Dnum;
     /// Returns the decomposition digit size.
     fn dsize(&self) -> Dsize;
+    /// Width in bits of one gadget digit, see [`crate::layouts::GGLWEInfos::digit_k`].
+    fn digit_k(&self) -> TorusPrecision {
+        crate::layouts::digit_k_of(self.base2k(), self.dsize())
+    }
     /// Returns a plain-data [`GGSWLayout`] snapshot of the current parameters.
     fn ggsw_layout(&self) -> GGSWLayout {
         GGSWLayout {
@@ -69,11 +73,16 @@ impl LWEInfos for GGSWLayout {
     }
 
     fn max_size(&self) -> usize {
-        crate::layouts::key_size(self.base2k, self.dnum, self.dsize, self.k_aux)
+        crate::layouts::key_size(
+            self.base2k,
+            self.dnum,
+            crate::layouts::digit_k_of(self.base2k, self.dsize),
+            self.k_aux,
+        )
     }
 
     fn k(&self) -> TorusPrecision {
-        crate::layouts::key_k(self.base2k, self.dnum, self.dsize, self.k_aux)
+        crate::layouts::key_k(self.dnum, crate::layouts::digit_k_of(self.base2k, self.dsize), self.k_aux)
     }
 }
 impl GLWEInfos for GGSWLayout {
@@ -336,7 +345,7 @@ impl<D: Data, W: ZnxWord> LWEInfos for GGSW<D, W> {
     }
 
     fn k(&self) -> TorusPrecision {
-        crate::layouts::key_k(self.base2k, self.dnum(), self.dsize, self.k_aux)
+        crate::layouts::key_k(self.dnum(), crate::layouts::digit_k_of(self.base2k, self.dsize), self.k_aux)
     }
 }
 
@@ -577,7 +586,7 @@ impl<W: ZnxWord> GGSW<AlignedBuf, W> {
     }
 
     pub(crate) fn alloc(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> Self {
-        let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
+        let size: usize = crate::layouts::key_size(base2k, dnum, crate::layouts::digit_k_of(base2k, dsize), k_aux);
 
         GGSW {
             noise: None,
@@ -616,7 +625,7 @@ impl<W: ZnxWord> GGSW<AlignedBuf, W> {
     }
 
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
-        let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
+        let size: usize = crate::layouts::key_size(base2k, dnum, crate::layouts::digit_k_of(base2k, dsize), k_aux);
 
         MatZnx::<AlignedBuf, W>::bytes_of(n.into(), dnum.into(), (rank + 1).into(), (rank + 1).into(), size)
     }
