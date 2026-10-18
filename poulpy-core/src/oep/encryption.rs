@@ -1,7 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use poulpy_hal::{
-    api::{VecZnxAddScalarAssign, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxZero},
+    api::{VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes},
     layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena, ZnxInfos},
     source::Source,
 };
@@ -332,7 +332,7 @@ pub unsafe trait EncryptionImpl: Backend {
         R: GGSWToBackendMut<Self> + GGSWInfos + GGSWAtViewMut<Self>,
         P: ScalarZnxToBackendRef<Self> + ZnxInfos,
         K: GLWEPublicKeyPreparedToBackendRef<Self> + GLWEInfos,
-        Module<Self>: VecZnxZero<Self> + VecZnxAddScalarAssign<Self> + VecZnxNormalizeAssign<Self> + VecZnxNormalizeTmpBytes,
+        Module<Self>: VecZnxNormalize<Self> + VecZnxNormalizeTmpBytes,
     {
         super::derived::encryption::ggsw_encrypt_pk_derived(module, res, pt, pk, source_xu, source_xe, scratch)
     }

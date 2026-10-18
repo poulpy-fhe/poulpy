@@ -4,7 +4,7 @@ use poulpy_core::{
     layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWEPublicKeyPreparedToBackendRef, GLWESecretToBackendRef, LWEInfos},
 };
 use poulpy_hal::{
-    api::{VecZnxAddScalarAssign, VecZnxZero},
+    api::{VecZnxNormalize, VecZnxNormalizeTmpBytes},
     layouts::{Backend, Module, ScratchArena},
     source::Source,
 };
@@ -33,7 +33,7 @@ pub trait GLWETensorKeyMHEProtocolReference<BE: Backend> {
 
 impl<BE: Backend> GLWETensorKeyMHEProtocolReference<BE> for Module<BE>
 where
-    Self: GLWEEncryptPk<BE> + GLWEBytesOf<BE> + VecZnxZero<BE> + VecZnxAddScalarAssign<BE>,
+    Self: GLWEEncryptPk<BE> + GLWEBytesOf<BE> + VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
 {
     fn mhe_glwe_tensor_key_share_gen_tmp_bytes_reference<A, B>(&self, res_infos: &A, pk_infos: &B) -> usize
     where
@@ -45,7 +45,9 @@ where
             "invalid layout: degree differs from the module's"
         );
         BE::scratch_aligned(self.glwe_plaintext_bytes_of_from_infos(res_infos))
-            + self.glwe_encrypt_pk_tmp_bytes(res_infos, pk_infos)
+            + self
+                .glwe_encrypt_pk_tmp_bytes(res_infos, pk_infos)
+                .max(self.vec_znx_normalize_tmp_bytes())
     }
 
     fn mhe_glwe_tensor_key_share_gen_reference<S, K>(
@@ -92,18 +94,29 @@ where
             "invalid share: public key needs a samplable distribution"
         );
         super::assert_public_key_distribution::<BE, _>(pk);
-        let (dnum, dsize): (usize, usize) = (res.dnum().into(), res.dsize().into());
+        let (dnum, digit_k): (usize, usize) = (res.dnum().into(), res.digit_k().as_usize());
         let tmp_bytes: usize = self.mhe_glwe_tensor_key_share_gen_tmp_bytes_reference(&*res, pk);
         let mut metadata = None;
         {
             let sk = sk.to_backend_ref();
             let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(&*res);
+            let (base2k, k): (usize, usize) = (pt.base2k().into(), pt.k().as_usize());
             let mut res_be = GGLWEToBackendMut::<BE>::to_backend_mut(&mut res.key);
             for row in 0..dnum {
                 for a in 0..rank {
                     for b in a..rank {
-                        self.vec_znx_zero(pt.data_mut(), 0);
-                        self.vec_znx_add_scalar_assign(pt.data_mut(), 0, (dsize - 1) + row * dsize, sk.data(), b);
+                        poulpy_core::reference::encryption::gadget_row_plaintext(
+                            self,
+                            pt.data_mut(),
+                            0,
+                            base2k,
+                            k,
+                            row,
+                            digit_k,
+                            sk.data(),
+                            b,
+                            &mut scratch_1.borrow(),
+                        );
                         // Mask column 1 + a meets S_a at decryption: s_b there sums to S_a * S_b.
                         let mut cell = res_be.at_view_mut(row, a * rank + b - a * (a + 1) / 2);
                         self.glwe_encrypt_pk_at_col(&mut cell, &pt, 1 + a, pk, source_xu, source_xe, &mut scratch_1.borrow());

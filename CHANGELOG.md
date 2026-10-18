@@ -83,6 +83,10 @@
   Coarser views take a width: `with_dsize` and `at_dsize` become `with_digit_k` and `at_digit_k`, and `SetGGLWEInfos::set_dsize` becomes `set_digit_k`.
   Every layout built so far keeps `digit_k = dsize * base2k`, so no key, product or noise value changes.
 - **Breaking, format:** serialized GGLWE and GGSW keys, compressed or not, store `digit_k` in place of `dsize`, so keys written before cannot be read back.
+- `reference::encryption::gadget_row_plaintext` writes the plaintext of gadget row `row` at bit `(row + 1) * digit_k`, on or off a limb boundary ([#188](https://github.com/poulpy-fhe/poulpy/issues/188)).
+  Secret-key GGLWE and GGSW encryption, compressed or not, public-key GGSW encryption and the GGLWE and GGSW noise references place their rows through it, bit for bit as before when `digit_k = dsize * base2k`.
+  The scratch of the GGLWE and GGSW noise references covers `vec_znx_normalize_tmp_bytes`.
+- **Breaking:** `EncryptionImpl::ggsw_encrypt_pk`, the `GGSWEncryptPk` delegate and the reference GGLWE and GGSW encryption traits require `VecZnxNormalize` in place of `VecZnxZero`, `VecZnxAddScalarAssign` and `VecZnxNormalizeAssign`.
 - **Breaking:** `GLWE`, `GLWEPlaintext` and `GLWECompressed` carry an optional, scheme-managed `GLWEPlaintextMeta` (`Scale`, `SlotsKind`, `log_sparsity`) through `GLWEPlaintextInfos` and `SetGLWEPlaintextInfos`, which also read and set each field; `SlotsKind` moves from `poulpy-ckks` and gains `Integer`.
 - **Breaking, format:** serialized `GLWE` and `GLWECompressed` carry their plaintext metadata.
 - `reference::keyswitching::glwe::gglwe_product_limbs` returns the `product_limbs` the reference key switch passes to `GGLWEProductDigitsStridedImpl`, so that backend overrides derive the same.
@@ -103,10 +107,12 @@
 ### `poulpy-bin-fhe`
 
 - **Breaking:** `FheUintPrepared` and `FheUintPreparedDebug` allocators take `digit_k` in place of `dsize`, and the blind rotation keys report one-limb digits as `digit_k = base2k`.
+- The scalar-to-GGSW blind rotation reference places its gadget rows through `gadget_row_plaintext`, requires `VecZnxNormalize` in place of `VecZnxAddScalarAssign` and `VecZnxNormalizeAssign`, and its scratch covers `vec_znx_normalize_tmp_bytes`.
 
 ### `poulpy-mhe`
 
 - **Breaking:** the `MHEModuleAlloc` share allocators take `digit_k` in place of `dsize`.
+- GGSW and tensor key share generation place their gadget rows through `gadget_row_plaintext`, and the tensor key share scratch covers `vec_znx_normalize_tmp_bytes`.
 
 ## [0.9.0] - 2026-10-08
 

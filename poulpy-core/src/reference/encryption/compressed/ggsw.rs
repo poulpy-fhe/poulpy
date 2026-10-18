@@ -1,7 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use poulpy_hal::{
-    api::{ModuleN, VecZnxAddScalarAssign, VecZnxCopy, VecZnxNormalizeAssign, VecZnxZero},
+    api::{ModuleN, VecZnxCopy, VecZnxNormalize},
     layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena},
     source::Source,
 };
@@ -40,14 +40,7 @@ pub trait GGSWCompressedEncryptSkReference<BE: Backend> {
 
 impl<BE: Backend> GGSWCompressedEncryptSkReference<BE> for Module<BE>
 where
-    Self: ModuleN
-        + GLWEEncryptSkInternal<BE>
-        + GGSWEncryptSk<BE>
-        + GLWEMaskFill<BE>
-        + VecZnxCopy<BE>
-        + VecZnxAddScalarAssign<BE>
-        + VecZnxNormalizeAssign<BE>
-        + VecZnxZero<BE>,
+    Self: ModuleN + GLWEEncryptSkInternal<BE> + GGSWEncryptSk<BE> + GLWEMaskFill<BE> + VecZnxCopy<BE> + VecZnxNormalize<BE>,
 {
     fn ggsw_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -76,7 +69,7 @@ where
             let base2k: usize = res.base2k().into();
             let rank: usize = res.rank().into();
             let cols: usize = rank + 1;
-            let dsize: usize = res.dsize().into();
+            let digit_k: usize = res.digit_k().as_usize();
 
             let sk_ref = sk.to_backend_ref();
             let pt_backend = pt.to_backend_ref();
@@ -102,16 +95,20 @@ where
                 let mut source = Source::new(seed_xa);
 
                 for row_i in 0..res.dnum().into() {
-                    self.vec_znx_zero(&mut tmp_pt.data, 0);
-
-                    // Adds the scalar_znx_pt to the i-th limb of the vec_znx_pt
-                    {
-                        let mut tmp_pt_backend = tmp_pt.to_backend_mut();
-                        self.vec_znx_add_scalar_assign(&mut tmp_pt_backend.data, 0, (dsize - 1) + row_i * dsize, &pt_backend, 0);
-                    }
                     scratch_1 = scratch_1.apply_mut(|scratch| {
                         let mut tmp_pt_backend = tmp_pt.to_backend_mut();
-                        self.vec_znx_normalize_assign(base2k, tmp_pt_k, 0, &mut tmp_pt_backend.data, 0, scratch)
+                        crate::reference::encryption::gadget_row_plaintext(
+                            self,
+                            &mut tmp_pt_backend.data,
+                            0,
+                            base2k,
+                            tmp_pt_k,
+                            row_i,
+                            digit_k,
+                            &pt_backend,
+                            0,
+                            scratch,
+                        )
                     });
 
                     for col_j in 0..rank + 1 {

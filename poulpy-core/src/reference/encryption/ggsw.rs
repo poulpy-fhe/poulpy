@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ModuleN, VecZnxAddScalarAssign, VecZnxDftBytesOf, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxZero},
+    api::{ModuleN, VecZnxDftBytesOf, VecZnxNormalize, VecZnxNormalizeTmpBytes},
     layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena, ZnxInfos},
     source::Source,
 };
@@ -10,7 +10,7 @@ use crate::{
     GLWEEncryptSk, GLWEEncryptSkInternal, ScratchArenaTakeCore,
     api::GLWEMaskFill,
     layouts::{
-        GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendRef, LWEInfos,
         prepared::GLWESecretPreparedToBackendRef,
     },
 };
@@ -44,10 +44,8 @@ where
         + GLWEEncryptSk<BE>
         + GLWEMaskFill<BE>
         + VecZnxDftBytesOf
-        + VecZnxNormalizeAssign<BE>
-        + VecZnxAddScalarAssign<BE>
-        + VecZnxNormalizeTmpBytes
-        + VecZnxZero<BE>,
+        + VecZnxNormalize<BE>
+        + VecZnxNormalizeTmpBytes,
 {
     fn ggsw_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -86,25 +84,23 @@ where
 
             let base2k: usize = res.base2k().into();
             let rank: usize = res.rank().into();
-            let dsize: usize = res.dsize().into();
+            let digit_k: usize = res.digit_k().as_usize();
             let (mut tmp_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(res);
             let tmp_pt_k = tmp_pt.k().as_usize();
 
             for row_i in 0..res.dnum().into() {
-                self.vec_znx_zero(&mut tmp_pt.data, 0);
-                // Adds the scalar_znx_pt to the i-th limb of the vec_znx_pt
-                {
-                    let mut tmp_pt_backend = tmp_pt.to_backend_mut();
-                    self.vec_znx_add_scalar_assign(
-                        &mut tmp_pt_backend.data,
-                        0,
-                        (dsize - 1) + row_i * dsize,
-                        &pt.to_backend_ref(),
-                        0,
-                    );
-                }
-
-                self.vec_znx_normalize_assign(base2k, tmp_pt_k, 0, &mut tmp_pt.data, 0, &mut scratch_1.borrow());
+                super::gadget_row_plaintext(
+                    self,
+                    &mut tmp_pt.data,
+                    0,
+                    base2k,
+                    tmp_pt_k,
+                    row_i,
+                    digit_k,
+                    &pt.to_backend_ref(),
+                    0,
+                    &mut scratch_1.borrow(),
+                );
                 for col_j in 0..rank + 1 {
                     let mut ct = res.at_view_mut(row_i, col_j);
                     self.fill_glwe_mask_from_source(&mut ct, source_xa);

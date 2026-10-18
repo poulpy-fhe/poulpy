@@ -11,10 +11,13 @@ pub fn scalar_to_ggsw_blind_rotation_tmp_bytes_reference<T: UnsignedInteger, BE:
 where
     R: GLWEInfos,
     K: GGSWInfos,
-    Module<BE>: GLWEBytesOf<BE> + GLWEBlindRotation<BE> + GLWEZero<BE> + VecZnxAddScalarAssign<BE> + VecZnxNormalizeAssign<BE>,
+    Module<BE>: GLWEBytesOf<BE> + GLWEBlindRotation<BE> + GLWEZero<BE> + VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
 {
     let temporary = res_infos.glwe_layout();
-    module.glwe_blind_rotation_tmp_bytes(res_infos, &temporary, k_infos) + module.glwe_bytes_of_from_infos(&temporary)
+    module
+        .glwe_blind_rotation_tmp_bytes(res_infos, &temporary, k_infos)
+        .max(module.vec_znx_normalize_tmp_bytes())
+        + module.glwe_bytes_of_from_infos(&temporary)
 }
 #[allow(clippy::too_many_arguments)]
 /// Independently callable canonical implementation of [`GGSWBlindRotation::scalar_to_ggsw_blind_rotation`].
@@ -33,10 +36,10 @@ pub fn scalar_to_ggsw_blind_rotation_reference<T: UnsignedInteger, BE, R, A, K>(
     A: ScalarZnxToBackendRef<BE>,
     K: GetGGSWBit<BE>,
     BE: Backend<ZnxWord = i64>,
-    Module<BE>: GLWEBytesOf<BE> + GLWEBlindRotation<BE> + GLWEZero<BE> + VecZnxAddScalarAssign<BE> + VecZnxNormalizeAssign<BE>,
+    Module<BE>: GLWEBytesOf<BE> + GLWEBlindRotation<BE> + GLWEZero<BE> + VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
 {
     let base2k: usize = res.base2k().into();
-    let dsize: usize = res.dsize().into();
+    let digit_k: usize = res.digit_k().as_usize();
     let (mut tmp_glwe, mut scratch_1) = scratch.borrow().take_glwe_scratch(res);
     let tmp_glwe_k = tmp_glwe.k().as_usize();
     let test_vector = test_vector.to_backend_ref();
@@ -47,8 +50,18 @@ pub fn scalar_to_ggsw_blind_rotation_reference<T: UnsignedInteger, BE, R, A, K>(
             {
                 let mut tmp_glwe_inner = tmp_glwe.data_mut();
                 let mut tmp_glwe_data = VecZnxToBackendMut::<BE>::to_backend_mut(&mut tmp_glwe_inner);
-                module.vec_znx_add_scalar_assign(&mut tmp_glwe_data, col, (dsize - 1) + row * dsize, &test_vector, 0);
-                module.vec_znx_normalize_assign(base2k, tmp_glwe_k, 0, &mut tmp_glwe_data, col, &mut scratch_1.borrow());
+                poulpy_core::reference::encryption::gadget_row_plaintext(
+                    module,
+                    &mut tmp_glwe_data,
+                    col,
+                    base2k,
+                    tmp_glwe_k,
+                    row,
+                    digit_k,
+                    &test_vector,
+                    0,
+                    &mut scratch_1.borrow(),
+                );
             }
 
             module.glwe_blind_rotation(

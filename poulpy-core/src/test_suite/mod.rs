@@ -102,6 +102,7 @@ macro_rules! core_backend_test_suite {
                     $crate::test_suite::noise::automorphism::test_gglwe_automorphism_key_automorphism,
                 gglwe_automorphism_key_automorphism_assign =>
                     $crate::test_suite::noise::automorphism::test_gglwe_automorphism_key_automorphism_assign,
+                gadget_row_plaintext => $crate::test_suite::encryption::test_gadget_row_plaintext,
                 ggsw_encrypt_sk => $crate::test_suite::noise::encryption::test_ggsw_encrypt_sk,
                 ggsw_encrypt_pk => $crate::test_suite::noise::encryption::test_ggsw_encrypt_pk,
                 ggsw_encrypt_pk_unnormalized_plaintext =>

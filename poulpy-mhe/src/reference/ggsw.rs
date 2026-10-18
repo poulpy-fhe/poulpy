@@ -139,7 +139,7 @@ where
         let tmp_bytes: usize = self.mhe_ggsw_share_gen_tmp_bytes_reference(&*res);
         {
             let (n, r) = (res.n().as_usize(), rank.as_usize());
-            let (dnum, dsize, base2k) = (res.dnum().as_usize(), res.dsize().as_usize(), res.base2k().as_usize());
+            let (dnum, digit_k, base2k) = (res.dnum().as_usize(), res.digit_k().as_usize(), res.base2k().as_usize());
             let circ = ggsw_share_part_layout(&*res, rank, rank);
             let k = circ.k().as_usize();
             let mut seeds = Source::new(seed);
@@ -171,10 +171,21 @@ where
                         }
                     }
                     for (l, col) in cols.iter_mut().enumerate() {
-                        self.vec_znx_zero(row_pt.data_mut(), 0);
                         if l == j {
-                            self.vec_znx_add_scalar_assign(row_pt.data_mut(), 0, (dsize - 1) + row * dsize, &pt_ref, 0);
-                            self.vec_znx_normalize_assign(base2k, k, 0, row_pt.data_mut(), 0, &mut scratch_2);
+                            poulpy_core::reference::encryption::gadget_row_plaintext(
+                                self,
+                                row_pt.data_mut(),
+                                0,
+                                base2k,
+                                k,
+                                row,
+                                digit_k,
+                                &pt_ref,
+                                0,
+                                &mut scratch_2,
+                            );
+                        } else {
+                            self.vec_znx_zero(row_pt.data_mut(), 0);
                         }
                         self.glwe_encrypt_sk_with_mask(col, &row_pt, u, source_xe, &mut scratch_2);
                         let mut dst = GGLWECompressedToBackendMut::<BE>::to_backend_mut(circ_u);

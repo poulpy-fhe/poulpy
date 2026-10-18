@@ -39,10 +39,7 @@ macro_rules! impl_encryption_delegate {
         impl<BE> $trait for Module<BE>
         where
             BE: Backend + EncryptionImpl,
-            Module<BE>: poulpy_hal::api::VecZnxZero<BE>
-                + poulpy_hal::api::VecZnxAddScalarAssign<BE>
-                + poulpy_hal::api::VecZnxNormalizeAssign<BE>
-                + poulpy_hal::api::VecZnxNormalizeTmpBytes,
+            Module<BE>: poulpy_hal::api::VecZnxNormalize<BE> + poulpy_hal::api::VecZnxNormalizeTmpBytes,
         {
             $($body)+
         }
