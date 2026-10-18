@@ -12,8 +12,8 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
 use crate::{
     CKKSCtBounds, CKKSResult, SetCKKSInfos,
     layouts::{
-        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned, CKKSPlaintextOwned, EncodedLut,
-        EvalModPlan,
+        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, CKKSCiphertextOwned,
+        CKKSPlaintextOwned, EncodedLut, EvalModPlan,
     },
 };
 
@@ -73,7 +73,7 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
     where
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
-        K: BootstrappingKeys<Self>;
+        K: BootstrappingLinearKeys<Self>;
 
     fn ckks_bootstrap_impl<F, K>(
         module: &Module<Self>,
@@ -140,7 +140,7 @@ pub unsafe trait CKKSModUpFirstFactorImpl: Backend<Ring = Standard> {
     where
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
-        K: BootstrappingKeys<Self>;
+        K: BootstrappingLinearKeys<Self>;
 }
 
 /// Backend implementation of
@@ -268,7 +268,7 @@ macro_rules! impl_ckks_bootstrapping_reference {
                     + $crate::CKKSCtBounds
                     + $crate::SetCKKSInfos,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds,
-                K: $crate::layouts::BootstrappingKeys<$be>,
+                K: $crate::layouts::BootstrappingLinearKeys<$be>,
             {
                 $crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_bootstrap_mod_up_reference(
                     module, dst, src, eval_mod, keys, scratch,
@@ -415,7 +415,7 @@ macro_rules! impl_ckks_mod_up_first_factor_reference {
                     + ::poulpy_core::layouts::GLWEToBackendRef<$be>
                     + $crate::CKKSCtBounds
                     + $crate::SetCKKSInfos,
-                K: $crate::layouts::BootstrappingKeys<$be>,
+                K: $crate::layouts::BootstrappingLinearKeys<$be>,
             {
                 $crate::reference::first_factor::ckks_mod_up_first_factor_reference(
                     module, dst, src, scale_up, factor, keys, scratch,

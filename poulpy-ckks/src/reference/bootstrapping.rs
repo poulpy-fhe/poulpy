@@ -21,8 +21,9 @@ use crate::{
     },
     eval_lut::{ckks_eval_lut, ckks_eval_lut_binary, ckks_eval_lut_from_basis, ckks_lut_power_basis},
     layouts::{
-        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, CKKSCiphertextOwned,
-        CKKSModuleAlloc, CKKSPlaintextOwned, CoveringKeys, EncodedLut, EncodedLutKind, EvalModType, ScratchArenaTakeCKKS,
+        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingLinearKeysLayout,
+        BootstrappingPipeline, CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, CoveringKeys, EncodedLut,
+        EncodedLutKind, EvalModType, ScratchArenaTakeCKKS,
     },
     oep::{CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl},
 };
@@ -231,6 +232,64 @@ where
     Ok(())
 }
 
+/// Scratch of [`ckks_bootstrap_s2c_mod_up`] into a ciphertext like `ct_raised`
+/// followed by CoeffsToSlots on it, with every rotation key shape against the
+/// widest ciphertext: the linear stages of an S2C-first bootstrap.
+pub(crate) fn s2c_first_linear_tmp_bytes<BE, C1, C2, F>(
+    module: &Module<BE>,
+    ct_raised: &C1,
+    ct_in: &C2,
+    ctx: &BootstrappingContext<BE, F>,
+    keys_layout: &BootstrappingLinearKeysLayout,
+) -> usize
+where
+    BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
+    Module<BE>: GLWEBytesOf<BE> + CKKSDFTOps<BE> + CKKSPow2Ops<BE> + GLWEShift<BE> + GLWEKeyswitch<BE>,
+    C1: CKKSCtBounds,
+    C2: CKKSCtBounds,
+{
+    let (boot_layout, in_layout) = bootstrap_layouts(ct_raised, ct_in);
+    // The raise: a shift, under encapsulation between two switches, or with the
+    // first factor, on a few small ciphertexts as wide as its keys switch.
+    let mut raise = module.glwe_shift_tmp_bytes(boot_layout.size());
+    if let Some((encaps, sparse_to_dense)) = keys_layout
+        .encapsulation
+        .as_ref()
+        .and_then(|encaps| encaps.sparse_to_dense.as_ref().map(|s2d| (encaps, s2d)))
+    {
+        raise = raise.max(BE::ckks_encapsulated_mod_up_tmp_bytes(
+            module,
+            &boot_layout,
+            &in_layout,
+            &encaps.dense_to_sparse,
+            sparse_to_dense,
+        ));
+    }
+    if let (Some(factor), Some(key)) = (ctx.coeffs_to_slots_first_factor(), &keys_layout.first_factor_key) {
+        raise = raise.max(BE::ckks_mod_up_first_factor_tmp_bytes(
+            module,
+            &boot_layout,
+            &in_layout,
+            factor,
+            keys_layout.encapsulation.as_ref().map(|encaps| &encaps.dense_to_sparse),
+            key,
+        ));
+    }
+    // SlotsToCoeffs and the raise work on a copy of the input, CoeffsToSlots on
+    // the raised ciphertext.
+    let in_ct_bytes = module.glwe_bytes_of_from_infos(&in_layout);
+    let mut bytes = 0;
+    for atk in &keys_layout.rotation_key_layouts() {
+        let s2c_mod_up = module
+            .ckks_dft_tmp_bytes(&in_layout, &in_layout, ctx.slots_to_coeffs(), atk)
+            .max(module.ckks_mul_pow2_tmp_bytes(in_layout.size()))
+            .max(raise);
+        let c2s = module.ckks_dft_tmp_bytes(&boot_layout, &boot_layout, ctx.coeffs_to_slots(), atk);
+        bytes = bytes.max(in_ct_bytes + s2c_mod_up).max(c2s);
+    }
+    bytes
+}
+
 fn bootstrap_layouts<C1, C2>(ct_out: &C1, ct_in: &C2) -> (CKKSLayout, CKKSLayout)
 where
     C1: CKKSCtBounds,
@@ -327,7 +386,7 @@ pub trait CKKSBootstrappingReference<BE: Backend> {
     ) -> Result<()>
     where
         Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSPow2Ops<BE> + CKKSCopyOps<BE>,
-        K: BootstrappingKeys<BE>,
+        K: BootstrappingLinearKeys<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
@@ -497,7 +556,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
     ) -> Result<()>
     where
         Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSPow2Ops<BE> + CKKSCopyOps<BE>,
-        K: BootstrappingKeys<BE>,
+        K: BootstrappingLinearKeys<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -915,7 +974,7 @@ fn bootstrap_mod_up<BE, Dst, Src, K>(
 where
     BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
     Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSPow2Ops<BE> + CKKSCopyOps<BE>,
-    K: BootstrappingKeys<BE>,
+    K: BootstrappingLinearKeys<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -971,7 +1030,7 @@ fn ckks_bootstrap_mod_up_from_mut<BE, Dst, Src, K>(
 where
     BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
     Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSPow2Ops<BE>,
-    K: BootstrappingKeys<BE>,
+    K: BootstrappingLinearKeys<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
@@ -1049,7 +1108,7 @@ fn ckks_bootstrap_coeffs_to_slots<BE, F, K, C, R>(
 where
     BE: Backend + CKKSEncapsulatedModUpImpl,
     Module<BE>: CKKSDFTOps<BE>,
-    K: BootstrappingKeys<BE>,
+    K: BootstrappingLinearKeys<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
@@ -1074,7 +1133,7 @@ fn ckks_bootstrap_coeffs_to_slots_real<BE, F, K, R1, R2>(
 where
     BE: Backend + CKKSEncapsulatedModUpImpl,
     Module<BE>: CKKSDFTOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
-    K: BootstrappingKeys<BE>,
+    K: BootstrappingLinearKeys<BE>,
     R1: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     R2: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
@@ -1255,7 +1314,7 @@ pub(crate) fn ckks_bootstrap_s2c_mod_up<BE, F, K, R>(
 where
     BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
     Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSCopyOps<BE> + CKKSPow2Ops<BE> + CKKSDFTOps<BE>,
-    K: BootstrappingKeys<BE>,
+    K: BootstrappingLinearKeys<BE>,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
 {

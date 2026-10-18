@@ -127,7 +127,8 @@ pub use bootstrapping_ci::{
 };
 pub(crate) use bootstrapping_keys::CoveringKeys;
 pub use bootstrapping_keys::{
-    BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, CKKSFoldKeysLayout,
+    BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, BootstrappingLinearKeySet,
+    BootstrappingLinearKeys, BootstrappingLinearKeysLayout, BootstrappingLinearKeysPrepared, CKKSFoldKeysLayout,
     EncapsulationKeys, EncapsulationKeysLayout, RingSwitchKeySet, RingSwitchKeys, RingSwitchKeysLayout, RingSwitchKeysPrepared,
 };
 pub use ciphertext::{CKKSCiphertext, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSRingCiphertext, ScratchArenaTakeCKKS};

@@ -26,7 +26,9 @@
 //!    even coefficients, the ciphertext of degree `N` under `s`.
 //!
 //! The keys of the conversions are of degree `2N`, from `s(X²)` to the CI secret
-//! and back; EvalMod relinearizes with CI tensor keys of degree `N`.
+//! and back; EvalMod relinearizes with a CI tensor key of degree `N`. The linear
+//! stages take the keys of the base plan less those the pipeline never uses: the
+//! tensor keys of the standard ring and conjugation ([`BootstrappingCIKeysLayout`]).
 
 use anyhow::{Result, ensure};
 use poulpy_core::{
@@ -48,8 +50,8 @@ use crate::{
     Base2K, CKKSCtBounds, CKKSModuleInfos, GLWEPlaintextMeta, Scale, SlotsKind,
     api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
     layouts::{
-        BootstrappingContext, BootstrappingKeySet, BootstrappingKeysLayout, BootstrappingKeysPrepared, BootstrappingPipeline,
-        BootstrappingPlan, CKKSModuleAlloc, CKKSPlaintextOwned,
+        BootstrappingContext, BootstrappingLinearKeySet, BootstrappingLinearKeysLayout, BootstrappingLinearKeysPrepared,
+        BootstrappingPipeline, BootstrappingPlan, CKKSModuleAlloc, CKKSPlaintextOwned,
         eval_mod::{EvalMod, EvalModType, compile_eval_mod},
     },
 };
@@ -233,8 +235,9 @@ where
 /// Key layouts of a [`BootstrappingCIPlan`].
 #[derive(Clone, Debug)]
 pub struct BootstrappingCIKeysLayout {
-    /// The keys of the standard stages, as for the base plan.
-    pub base: BootstrappingKeysLayout,
+    /// The keys of the linear stages, as for the base plan. CoeffsToSlots is not
+    /// split, so there is no conjugation key.
+    pub linear: BootstrappingLinearKeysLayout,
     /// CI tensor key for EvalMod, covering its widest product.
     pub tensor_key: GLWETensorKeyLayout,
     /// Key of degree `2N` from `s(X²)` to the embedded CI secret, covering the
@@ -247,8 +250,8 @@ pub struct BootstrappingCIKeysLayout {
 
 /// The unprepared keys of a [`BootstrappingCIPlan`].
 pub struct BootstrappingCIKeySet<D: Data, W: ZnxWord> {
-    /// The keys of the standard stages.
-    pub base: BootstrappingKeySet<D, W>,
+    /// The keys of the linear stages.
+    pub linear: BootstrappingLinearKeySet<D, W>,
     /// CI tensor key for EvalMod.
     pub tensor_key: GLWETensorKey<D, W>,
     /// From `s(X²)` to the embedded CI secret.
@@ -259,8 +262,8 @@ pub struct BootstrappingCIKeySet<D: Data, W: ZnxWord> {
 
 /// The prepared keys of a [`BootstrappingCIPlan`].
 pub struct BootstrappingCIKeysPrepared<D: Data, BE: Backend, BCI: Backend> {
-    /// The keys of the standard stages.
-    pub base: BootstrappingKeysPrepared<D, BE>,
+    /// The keys of the linear stages.
+    pub linear: BootstrappingLinearKeysPrepared<D, BE>,
     /// CI tensor key for EvalMod.
     pub tensor_key: GLWETensorKeyPrepared<D, BCI>,
     /// From `s(X²)` to the embedded CI secret.
@@ -275,9 +278,9 @@ where
     BCI: Backend<Ring = ConjugateInvariant>,
 {
     /// Generates the unprepared keys for the dense secret `sk_dense` of degree `N`:
-    /// the base keys ([`BootstrappingContext::generate_keys`]), a CI secret of the
-    /// same Hamming weight, its tensor keys, and the conversion keys of degree `2N`
-    /// between it and `s(X²)`.
+    /// the keys of the linear stages ([`BootstrappingContext::generate_linear_keys`],
+    /// without conjugation), a CI secret of the same Hamming weight, its tensor
+    /// keys, and the conversion keys of degree `2N` between it and `s(X²)`.
     ///
     /// `scratch` serves the base and conversion keys, `scratch_ci` the CI tensor keys.
     #[allow(clippy::too_many_arguments)]
@@ -300,7 +303,6 @@ where
         Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + poulpy_hal::layouts::CyclotomicOrder
             + poulpy_core::GLWEAutomorphismKeyEncryptSk<BE>
-            + GLWETensorKeyEncryptSk<BE>
             + poulpy_core::GLWESwitchingKeyEncryptSk<BE>
             + GLWESecretSampling<BE>
             + poulpy_hal::api::VecZnxAutomorphism<BE>
@@ -314,9 +316,16 @@ where
             wide.n() == 2 * module.n() && ci.n() == module.n(),
             "EvalMod on the CI ring takes a standard module of degree 2N and a CI module of degree N"
         );
-        let base = self
-            .base
-            .generate_keys(module, sk_dense, &layout.base, source_xs, source_xe, source_xa, scratch)?;
+        let linear = self.base.generate_linear_keys(
+            module,
+            sk_dense,
+            &layout.linear,
+            false,
+            source_xs,
+            source_xe,
+            source_xa,
+            scratch,
+        )?;
 
         // `s(X²)`, the secret of the embedded ciphertext.
         let mut sk_wide = wide.glwe_secret_alloc_from_infos(&GLWESecretLayout {
@@ -353,7 +362,7 @@ where
         wide.glwe_ci_embed_key_encrypt_sk(&mut embed_key, &sk_ci, &sk_wide, source_xe, source_xa, scratch);
 
         Ok(BootstrappingCIKeySet {
-            base,
+            linear,
             tensor_key,
             trace_key,
             embed_key,
@@ -362,8 +371,8 @@ where
 }
 
 impl<D: Data, W: ZnxWord> BootstrappingCIKeySet<D, W> {
-    /// Prepares every key: the base keys on `module`, the CI tensor keys on `ci`,
-    /// the conversion keys on `wide`.
+    /// Prepares every key: the keys of the linear stages on `module`, the CI tensor
+    /// keys on `ci`, the conversion keys on `wide`.
     pub fn prepare<BE, BCI>(
         &self,
         module: &Module<BE>,
@@ -378,19 +387,18 @@ impl<D: Data, W: ZnxWord> BootstrappingCIKeySet<D, W> {
         D: HostDataRef,
         poulpy_core::layouts::GLWEAutomorphismKey<D, W>:
             GGLWEToBackendRef<BE> + poulpy_core::layouts::GetGaloisElement + GGLWEInfos,
-        GLWETensorKey<D, W>: GGLWEToBackendRef<BE> + GGLWEToBackendRef<BCI> + GGLWEInfos,
+        GLWETensorKey<D, W>: GGLWEToBackendRef<BCI> + GGLWEInfos,
         poulpy_core::layouts::GLWESwitchingKey<D, W>:
             GGLWEToBackendRef<BE> + poulpy_core::layouts::GLWESwitchingKeyDegrees + GGLWEInfos,
         GLWECITraceKey<D, W>: GGLWEToBackendRef<BE> + GGLWEInfos,
         GLWECIEmbedKey<D, W>: GGLWEToBackendRef<BE> + GGLWEInfos,
         Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + poulpy_core::layouts::GLWEAutomorphismKeyPreparedFactory<BE>
-            + GLWETensorKeyPreparedFactory<BE>
             + poulpy_core::layouts::GLWESwitchingKeyPreparedFactory<BE>
             + GLWECIKeyPreparedFactory<BE>,
         Module<BCI>: GLWETensorKeyPreparedFactory<BCI>,
     {
-        let base = self.base.prepare(module, scratch);
+        let linear = self.linear.prepare(module, scratch);
         let mut tensor_key = ci.alloc_tensor_key_prepared_from_infos(&self.tensor_key);
         ci.prepare_tensor_key(&mut tensor_key, &self.tensor_key, scratch_ci);
         let mut trace_key = wide.glwe_ci_trace_key_prepared_alloc_from_infos(&self.trace_key);
@@ -398,7 +406,7 @@ impl<D: Data, W: ZnxWord> BootstrappingCIKeySet<D, W> {
         let mut embed_key = wide.glwe_ci_embed_key_prepared_alloc_from_infos(&self.embed_key);
         wide.glwe_ci_key_prepare(&mut embed_key, &self.embed_key, scratch);
         BootstrappingCIKeysPrepared {
-            base,
+            linear,
             tensor_key,
             trace_key,
             embed_key,

@@ -49,9 +49,9 @@ use crate::{
         CKKSAddOps, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTOps, CKKSDecryptOps, CKKSEvalModOps, CKKSPow2Ops, CKKSSubOps,
     },
     layouts::{
-        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan,
-        BootstrappingTechniques, CKKSModuleAlloc, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout, EvalRoundPlus,
-        SparseSecretEncapsulation,
+        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingPipeline,
+        BootstrappingPlan, BootstrappingTechniques, CKKSModuleAlloc, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout,
+        EvalRoundPlus, SparseSecretEncapsulation,
         eval_mod::{EvalModPlan, EvalModType},
     },
     polynomial::SplitStrategy,

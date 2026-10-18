@@ -7,7 +7,8 @@ use crate::{
     api::{CKKSDFTOps, CKKSEvalModOps},
     layouts::EvalModPlan,
     layouts::{
-        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned, CKKSPlaintextOwned, EncodedLut,
+        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, CKKSCiphertextOwned,
+        CKKSPlaintextOwned, EncodedLut,
     },
 };
 
@@ -31,7 +32,7 @@ use crate::{
 /// EvalRound+ is selected separately by either recipe's optional bypass.
 /// Sparse-secret encapsulation is also selected by the compiled recipe; the
 /// supplied keys must carry the matching
-/// [encapsulation keys](BootstrappingKeys::encapsulation_keys).
+/// [encapsulation keys](BootstrappingLinearKeys::encapsulation_keys).
 pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE> {
     /// Returns scratch bytes required by [`Self::ckks_mod_up_into`].
     fn ckks_mod_up_tmp_bytes(&self, res_size: usize) -> usize;
@@ -112,14 +113,14 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: BootstrappingKeys<BE>;
+        K: BootstrappingLinearKeys<BE>;
 
     /// One-shot CKKS bootstrap, driven by the compiled context.
     ///
     /// `ct_in` is at the input ("level 0") modulus; `ct_out` must be allocated at
     /// the bootstrap modulus (its `k()` sets the working width). When the compiled
     /// recipe enables sparse-secret encapsulation, `keys` must carry the matching
-    /// [encapsulation keys](BootstrappingKeys::encapsulation_keys), which wrap ModUp
+    /// [encapsulation keys](BootstrappingLinearKeys::encapsulation_keys), which wrap ModUp
     /// (`denseToSparse → ModUp → sparseToDense`). [`BootstrappingPlan::new`](crate::layouts::BootstrappingPlan::new)
     /// folds EvalMod's required input scaling into CoeffsToSlots, so no further
     /// scaling is needed at call time.

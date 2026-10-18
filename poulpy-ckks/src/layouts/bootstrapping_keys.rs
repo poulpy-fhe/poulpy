@@ -26,9 +26,10 @@
 //! [`BootstrappingKeySet::prepare`] produces a **prepared**
 //! [`BootstrappingKeysPrepared`] bundle (everything preprocessed up front) for the
 //! straightforward CPU path. [`BootstrappingKeysPrepared`] implements
-//! [`BootstrappingKeys`], the pipeline-facing access trait; a custom key manager
-//! (lazy / streaming / on-the-fly-prepared) can implement [`BootstrappingKeys`]
-//! directly instead of materializing the whole bundle.
+//! [`BootstrappingKeys`], the pipeline-facing access trait, and its supertrait
+//! [`BootstrappingLinearKeys`], which the linear stages take; a custom key manager
+//! (lazy / streaming / on-the-fly-prepared) can implement both directly instead of
+//! materializing the whole bundle.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -60,30 +61,23 @@ use crate::layouts::BootstrappingContext;
 use poulpy_core::layouts::GLWESecretSampling;
 use poulpy_core::{Distribution, GetDistribution, GetDistributionMut};
 
-/// Pipeline-facing access to the **prepared** evaluation keys a CKKS bootstrap
-/// consumes.
+/// Pipeline-facing access to the **prepared** keys of the linear stages of a CKKS
+/// bootstrap: the two homomorphic DFTs and ModUp.
 ///
-/// The bootstrap stages take their keys through this trait, so any key store that
-/// can answer the four queries below can drive a bootstrap. The key types are
-/// associated (not fixed to a backend buffer), so an implementation is free to
-/// back them with any data representation and to prepare them lazily / on the fly.
-/// [`BootstrappingKeysPrepared`] is the eager in-memory implementation.
-pub trait BootstrappingKeys<BE: Backend> {
+/// The key types are associated (not fixed to a backend buffer), so an
+/// implementation is free to back them with any data representation and to
+/// prepare them lazily / on the fly. [`BootstrappingLinearKeysPrepared`] and
+/// [`BootstrappingKeysPrepared`] are the eager in-memory implementations.
+pub trait BootstrappingLinearKeys<BE: Backend> {
     /// The rotation-key collection passed to the homomorphic DFT stages.
     type RotationKeys: GetAutomorphismKey<BE>;
-
-    /// The prepared tensor (relinearization) key type for EvalMod.
-    type TensorKey: GetTensorKey<BE>;
 
     /// The prepared key-switching key type for sparse-secret encapsulation.
     type SwitchingKey: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
-    /// Rotation (automorphism) keys, Galois element `−1` among them.
+    /// Rotation (automorphism) keys, Galois element `−1` among them when the
+    /// pipeline splits CoeffsToSlots.
     fn rotation_keys(&self) -> &Self::RotationKeys;
-
-    /// Relinearization (tensor) key for EvalMod's `ct×ct` squaring. It covers
-    /// the widest ciphertext EvalMod relinearizes.
-    fn tensor_key(&self) -> &Self::TensorKey;
 
     /// Sparse-secret encapsulation keys `(denseToSparse, sparseToDense)`, or
     /// `None` when the trick is disabled. There is no `sparseToDense` key when
@@ -98,6 +92,21 @@ pub trait BootstrappingKeys<BE: Backend> {
     fn first_factor_key(&self, _rotation: i64) -> Option<&Self::SwitchingKey> {
         None
     }
+}
+
+/// Pipeline-facing access to the **prepared** evaluation keys a CKKS bootstrap
+/// consumes: those of the linear stages and the tensor keys of EvalMod.
+///
+/// The bootstrap stages take their keys through this trait, so any key store that
+/// can answer its queries can drive a bootstrap. [`BootstrappingKeysPrepared`] is
+/// the eager in-memory implementation.
+pub trait BootstrappingKeys<BE: Backend>: BootstrappingLinearKeys<BE> {
+    /// The prepared tensor (relinearization) key type for EvalMod.
+    type TensorKey: GetTensorKey<BE>;
+
+    /// Relinearization (tensor) key for EvalMod's `ct×ct` squaring. It covers
+    /// the widest ciphertext EvalMod relinearizes.
+    fn tensor_key(&self) -> &Self::TensorKey;
 }
 
 /// A key source that refuses a key not covering the precision it is asked for.
@@ -181,30 +190,156 @@ pub struct BootstrappingKeysPrepared<D: Data, BE: Backend> {
     pub first_factor_keys: HashMap<i64, GLWESwitchingKeyPrepared<D, BE>>,
 }
 
+/// The linear-stage keys of [`BootstrappingKeysPrepared`] and
+/// [`BootstrappingLinearKeysPrepared`], which hold them in fields of the same names.
+macro_rules! impl_bootstrapping_linear_keys {
+    ($keys:ident) => {
+        impl<D: Data, BE: Backend> BootstrappingLinearKeys<BE> for $keys<D, BE>
+        where
+            GLWEAutomorphismKeyPrepared<D, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
+            GLWESwitchingKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+        {
+            type RotationKeys = HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>;
+            type SwitchingKey = GLWESwitchingKeyPrepared<D, BE>;
+
+            fn rotation_keys(&self) -> &Self::RotationKeys {
+                &self.rotation_keys
+            }
+
+            fn encapsulation_keys(&self) -> Option<(&Self::SwitchingKey, Option<&Self::SwitchingKey>)> {
+                self.encapsulation_keys.as_ref().map(|(d2s, s2d)| (d2s, s2d.as_ref()))
+            }
+
+            fn first_factor_key(&self, rotation: i64) -> Option<&Self::SwitchingKey> {
+                self.first_factor_keys.get(&rotation)
+            }
+        }
+    };
+}
+
+impl_bootstrapping_linear_keys!(BootstrappingKeysPrepared);
+impl_bootstrapping_linear_keys!(BootstrappingLinearKeysPrepared);
+
 impl<D: Data, BE: Backend> BootstrappingKeys<BE> for BootstrappingKeysPrepared<D, BE>
 where
     GLWEAutomorphismKeyPrepared<D, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
     GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE>,
     GLWESwitchingKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    type RotationKeys = HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>;
     type TensorKey = GLWETensorKeyPrepared<D, BE>;
-    type SwitchingKey = GLWESwitchingKeyPrepared<D, BE>;
-
-    fn rotation_keys(&self) -> &Self::RotationKeys {
-        &self.rotation_keys
-    }
 
     fn tensor_key(&self) -> &Self::TensorKey {
         &self.tensor_key
     }
+}
 
-    fn encapsulation_keys(&self) -> Option<(&Self::SwitchingKey, Option<&Self::SwitchingKey>)> {
-        self.encapsulation_keys.as_ref().map(|(d2s, s2d)| (d2s, s2d.as_ref()))
+/// The **unprepared** keys of the linear stages of a bootstrap
+/// ([`BootstrappingLinearKeys`]): a [`BootstrappingKeySet`] without tensor keys,
+/// for a pipeline that relinearizes EvalMod with keys of its own.
+pub struct BootstrappingLinearKeySet<D: Data, W: ZnxWord> {
+    /// Rotation keys indexed by Galois element.
+    pub rotation_keys: HashMap<i64, GLWEAutomorphismKey<D, W>>,
+    /// `(denseToSparse, sparseToDense)` encapsulation keys, or `None`; no
+    /// `sparseToDense` key with the first factor on the raise.
+    pub encapsulation_keys: Option<EncapsulationKeys<GLWESwitchingKey<D, W>>>,
+    /// First-factor keys by slot rotation, possibly none.
+    pub first_factor_keys: HashMap<i64, GLWESwitchingKey<D, W>>,
+}
+
+/// The **prepared** keys of the linear stages of a bootstrap; implements
+/// [`BootstrappingLinearKeys`].
+pub struct BootstrappingLinearKeysPrepared<D: Data, BE: Backend> {
+    /// Prepared rotation keys indexed by Galois element.
+    pub rotation_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>,
+    /// Prepared `(denseToSparse, sparseToDense)` encapsulation keys, or `None`;
+    /// no `sparseToDense` key with the first factor on the raise.
+    pub encapsulation_keys: Option<EncapsulationKeys<GLWESwitchingKeyPrepared<D, BE>>>,
+    /// Prepared first-factor keys by slot rotation, possibly none.
+    pub first_factor_keys: HashMap<i64, GLWESwitchingKeyPrepared<D, BE>>,
+}
+
+type PreparedRotationKeys<BE> = HashMap<i64, GLWEAutomorphismKeyPrepared<<BE as Backend>::OwnedBuf, BE>>;
+type PreparedEncapsulationKeys<BE> = Option<EncapsulationKeys<GLWESwitchingKeyPrepared<<BE as Backend>::OwnedBuf, BE>>>;
+type PreparedFirstFactorKeys<BE> = HashMap<i64, GLWESwitchingKeyPrepared<<BE as Backend>::OwnedBuf, BE>>;
+
+/// Prepares the keys of the linear stages, as [`BootstrappingKeySet`] and
+/// [`BootstrappingLinearKeySet`] hold them.
+fn prepare_linear_keys<D, W, BE>(
+    module: &Module<BE>,
+    rotation_keys: &HashMap<i64, GLWEAutomorphismKey<D, W>>,
+    encapsulation_keys: Option<&EncapsulationKeys<GLWESwitchingKey<D, W>>>,
+    first_factor_keys: &HashMap<i64, GLWESwitchingKey<D, W>>,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> (
+    PreparedRotationKeys<BE>,
+    PreparedEncapsulationKeys<BE>,
+    PreparedFirstFactorKeys<BE>,
+)
+where
+    D: HostDataRef,
+    W: ZnxWord,
+    BE: Backend,
+    GLWEAutomorphismKey<D, W>: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+    GLWESwitchingKey<D, W>: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees + GGLWEInfos,
+    Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + GLWESwitchingKeyPreparedFactory<BE>,
+{
+    let mut rotations = HashMap::with_capacity(rotation_keys.len());
+    for (&p, atk) in rotation_keys {
+        let mut prepared = module.glwe_automorphism_key_prepared_alloc_from_infos(atk);
+        module.glwe_automorphism_key_prepare(&mut prepared, atk, scratch);
+        rotations.insert(p, prepared);
     }
 
-    fn first_factor_key(&self, rotation: i64) -> Option<&Self::SwitchingKey> {
-        self.first_factor_keys.get(&rotation)
+    let encapsulation = encapsulation_keys.map(|(d2s, s2d)| {
+        let mut d2s_prepared = module.glwe_switching_key_prepared_alloc_from_infos(d2s);
+        module.glwe_switching_key_prepare(&mut d2s_prepared, d2s, scratch);
+        let s2d_prepared = s2d.as_ref().map(|s2d| {
+            let mut prepared = module.glwe_switching_key_prepared_alloc_from_infos(s2d);
+            module.glwe_switching_key_prepare(&mut prepared, s2d, scratch);
+            prepared
+        });
+        (d2s_prepared, s2d_prepared)
+    });
+
+    let mut first_factor = HashMap::with_capacity(first_factor_keys.len());
+    for (&rotation, key) in first_factor_keys {
+        let mut prepared = module.glwe_switching_key_prepared_alloc_from_infos(key);
+        module.glwe_switching_key_prepare(&mut prepared, key, scratch);
+        first_factor.insert(rotation, prepared);
+    }
+    (rotations, encapsulation, first_factor)
+}
+
+impl<D: Data, W: ZnxWord> BootstrappingLinearKeySet<D, W> {
+    /// Preprocesses every key into a [`BootstrappingLinearKeysPrepared`] bundle
+    /// (see [`BootstrappingKeySet::prepare`]).
+    pub fn prepare<BE: Backend>(
+        &self,
+        module: &Module<BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> BootstrappingLinearKeysPrepared<BE::OwnedBuf, BE>
+    where
+        D: HostDataRef,
+        GLWEAutomorphismKey<D, W>: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        GLWESwitchingKey<D, W>: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees + GGLWEInfos,
+        Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+            + GLWEAutomorphismKeyPreparedFactory<BE>
+            + GLWESwitchingKeyPreparedFactory<BE>,
+    {
+        let (rotation_keys, encapsulation_keys, first_factor_keys) = prepare_linear_keys(
+            module,
+            &self.rotation_keys,
+            self.encapsulation_keys.as_ref(),
+            &self.first_factor_keys,
+            scratch,
+        );
+        BootstrappingLinearKeysPrepared {
+            rotation_keys,
+            encapsulation_keys,
+            first_factor_keys,
+        }
     }
 }
 
@@ -229,33 +364,16 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
             + GLWETensorKeyPreparedFactory<BE>
             + GLWESwitchingKeyPreparedFactory<BE>,
     {
-        let mut rotation_keys = HashMap::with_capacity(self.rotation_keys.len());
-        for (&p, atk) in &self.rotation_keys {
-            let mut prepared = module.glwe_automorphism_key_prepared_alloc_from_infos(atk);
-            module.glwe_automorphism_key_prepare(&mut prepared, atk, scratch);
-            rotation_keys.insert(p, prepared);
-        }
-
         let mut tensor_key = module.alloc_tensor_key_prepared_from_infos(&self.tensor_key);
         module.prepare_tensor_key(&mut tensor_key, &self.tensor_key, scratch);
 
-        let encapsulation_keys = self.encapsulation_keys.as_ref().map(|(d2s, s2d)| {
-            let mut d2s_prepared = module.glwe_switching_key_prepared_alloc_from_infos(d2s);
-            module.glwe_switching_key_prepare(&mut d2s_prepared, d2s, scratch);
-            let s2d_prepared = s2d.as_ref().map(|s2d| {
-                let mut prepared = module.glwe_switching_key_prepared_alloc_from_infos(s2d);
-                module.glwe_switching_key_prepare(&mut prepared, s2d, scratch);
-                prepared
-            });
-            (d2s_prepared, s2d_prepared)
-        });
-
-        let mut first_factor_keys = HashMap::with_capacity(self.first_factor_keys.len());
-        for (&rotation, key) in &self.first_factor_keys {
-            let mut prepared = module.glwe_switching_key_prepared_alloc_from_infos(key);
-            module.glwe_switching_key_prepare(&mut prepared, key, scratch);
-            first_factor_keys.insert(rotation, prepared);
-        }
+        let (rotation_keys, encapsulation_keys, first_factor_keys) = prepare_linear_keys(
+            module,
+            &self.rotation_keys,
+            self.encapsulation_keys.as_ref(),
+            &self.first_factor_keys,
+            scratch,
+        );
 
         BootstrappingKeysPrepared {
             rotation_keys,
@@ -299,6 +417,21 @@ pub struct BootstrappingKeysLayout {
     pub first_factor_key: Option<GLWESwitchingKeyLayout>,
 }
 
+/// The distinct layouts of `rotation_keys` and of the shared `automorphism_key`, the
+/// shared one first.
+fn distinct_rotation_key_layouts(
+    automorphism_key: GLWEAutomorphismKeyLayout,
+    rotation_keys: &BTreeMap<i64, GLWEAutomorphismKeyLayout>,
+) -> Vec<GLWEAutomorphismKeyLayout> {
+    let mut layouts = vec![automorphism_key];
+    for layout in rotation_keys.values() {
+        if !layouts.contains(layout) {
+            layouts.push(*layout);
+        }
+    }
+    layouts
+}
+
 impl BootstrappingKeysLayout {
     /// Layout of the rotation key of Galois element `p`.
     pub fn rotation_key(&self, p: i64) -> GLWEAutomorphismKeyLayout {
@@ -307,13 +440,44 @@ impl BootstrappingKeysLayout {
 
     /// The distinct rotation key layouts, the shared one first.
     pub fn rotation_key_layouts(&self) -> Vec<GLWEAutomorphismKeyLayout> {
-        let mut layouts = vec![self.automorphism_key];
-        for layout in self.rotation_keys.values() {
-            if !layouts.contains(layout) {
-                layouts.push(*layout);
-            }
+        distinct_rotation_key_layouts(self.automorphism_key, &self.rotation_keys)
+    }
+
+    /// The layouts of the keys of the linear stages.
+    pub fn linear(&self) -> BootstrappingLinearKeysLayout {
+        BootstrappingLinearKeysLayout {
+            automorphism_key: self.automorphism_key,
+            rotation_keys: self.rotation_keys.clone(),
+            encapsulation: self.encapsulation,
+            first_factor_key: self.first_factor_key,
         }
-        layouts
+    }
+}
+
+/// Layout parameters for the keys of the linear stages
+/// ([`BootstrappingLinearKeys`]): those of a [`BootstrappingKeysLayout`] without
+/// its tensor keys.
+#[derive(Clone, Debug)]
+pub struct BootstrappingLinearKeysLayout {
+    /// Layout of the rotation keys `rotation_keys` does not list.
+    pub automorphism_key: GLWEAutomorphismKeyLayout,
+    /// Layouts of single rotation keys, by Galois element.
+    pub rotation_keys: BTreeMap<i64, GLWEAutomorphismKeyLayout>,
+    /// Layouts of the sparse-secret encapsulation keys, or `None`.
+    pub encapsulation: Option<EncapsulationKeysLayout>,
+    /// Layout of the first-factor keys, or `None`.
+    pub first_factor_key: Option<GLWESwitchingKeyLayout>,
+}
+
+impl BootstrappingLinearKeysLayout {
+    /// Layout of the rotation key of Galois element `p`.
+    pub fn rotation_key(&self, p: i64) -> GLWEAutomorphismKeyLayout {
+        self.rotation_keys.get(&p).copied().unwrap_or(self.automorphism_key)
+    }
+
+    /// The distinct rotation key layouts, the shared one first.
+    pub fn rotation_key_layouts(&self) -> Vec<GLWEAutomorphismKeyLayout> {
+        distinct_rotation_key_layouts(self.automorphism_key, &self.rotation_keys)
     }
 }
 
@@ -382,6 +546,81 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
             + GLWESecretSampling<BE>
             + VecZnxAutomorphism<BE>,
     {
+        let linear = layout.linear();
+        let rotation_keys = self.generate_rotation_keys(module, sk_dense, &linear, true, source_xe, source_xa, scratch)?;
+
+        // Tensor (relinearization) key for EvalMod's ct×ct squaring.
+        let mut tensor_key = module.glwe_tensor_key_alloc_from_infos(&layout.tensor_key);
+        module.glwe_tensor_key_encrypt_sk(&mut tensor_key, sk_dense, source_xe, source_xa, scratch);
+
+        let (encapsulation_keys, first_factor_keys) =
+            self.generate_raise_keys(module, sk_dense, &linear, source_xs, source_xe, source_xa, scratch);
+
+        Ok(BootstrappingKeySet {
+            rotation_keys,
+            tensor_key,
+            encapsulation_keys,
+            first_factor_keys,
+        })
+    }
+
+    /// Generates the **unprepared** keys of the linear stages for `sk_dense`, as
+    /// [`Self::generate_keys`] does but without tensor keys, and with the
+    /// conjugation key only when `conjugation` is set: a pipeline that does not
+    /// split CoeffsToSlots does not use it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn generate_linear_keys(
+        &self,
+        module: &Module<BE>,
+        sk_dense: &BackendGLWESecret<BE>,
+        layout: &BootstrappingLinearKeysLayout,
+        conjugation: bool,
+        source_xs: &mut Source,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<BootstrappingLinearKeySet<BE::OwnedBuf, BE::ZnxWord>>
+    where
+        BE: Backend<Ring = Standard>,
+        BE::OwnedBuf: HostDataMut,
+        Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+            + CyclotomicOrder
+            + GLWEAutomorphismKeyEncryptSk<BE>
+            + GLWESwitchingKeyEncryptSk<BE>
+            + GLWESecretSampling<BE>
+            + VecZnxAutomorphism<BE>,
+    {
+        let rotation_keys = self.generate_rotation_keys(module, sk_dense, layout, conjugation, source_xe, source_xa, scratch)?;
+        let (encapsulation_keys, first_factor_keys) =
+            self.generate_raise_keys(module, sk_dense, layout, source_xs, source_xe, source_xa, scratch);
+        Ok(BootstrappingLinearKeySet {
+            rotation_keys,
+            encapsulation_keys,
+            first_factor_keys,
+        })
+    }
+
+    /// Checks `layout` against the compiled recipe and generates the rotation keys:
+    /// the union of both DFTs' (and the bypass') Galois elements, and conjugation
+    /// when `conjugation` is set.
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::type_complexity)]
+    fn generate_rotation_keys(
+        &self,
+        module: &Module<BE>,
+        sk_dense: &BackendGLWESecret<BE>,
+        layout: &BootstrappingLinearKeysLayout,
+        conjugation: bool,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<HashMap<i64, GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord>>>
+    where
+        BE: Backend<Ring = Standard>,
+        BE::OwnedBuf: HostDataMut,
+        Module<BE>:
+            ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + CyclotomicOrder + GLWEAutomorphismKeyEncryptSk<BE>,
+    {
         let sparse_secret_hamming_weight = self.sparse_secret_hamming_weight();
         anyhow::ensure!(
             sparse_secret_hamming_weight.is_some() == layout.encapsulation.is_some(),
@@ -389,12 +628,7 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
             sparse_secret_hamming_weight.is_some(),
             layout.encapsulation.is_some()
         );
-
-        let order = module.cyclotomic_order();
-        let first_factor_rotations: Vec<i64> = self
-            .coeffs_to_slots_first_factor()
-            .map(|factor| factor.giant_steps.iter().map(|giant| giant.rot).collect())
-            .unwrap_or_default();
+        let first_factor_rotations = self.first_factor_rotations();
         anyhow::ensure!(
             first_factor_rotations.is_empty() == layout.first_factor_key.is_none(),
             "bootstrapping key layout has {} first-factor key layout, the compiled recipe has {} first-factor rotations",
@@ -409,7 +643,7 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
             );
         }
 
-        // Rotation keys: the union of both DFTs' (and the bypass') Galois elements.
+        let order = module.cyclotomic_order();
         let mut gal_set: BTreeSet<i64> = BTreeSet::new();
         gal_set.extend(self.coeffs_to_slots().galois_elements(order));
         if let Some(bypass) = self.coeffs_to_slots_bypass() {
@@ -417,7 +651,9 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
         }
         gal_set.extend(self.slots_to_coeffs().galois_elements(order));
         // Conjugation, for the split forward transform.
-        gal_set.insert(-1);
+        if conjugation {
+            gal_set.insert(-1);
+        }
 
         let mut rotation_keys = HashMap::with_capacity(gal_set.len());
         for p in gal_set {
@@ -425,10 +661,43 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
             module.glwe_automorphism_key_encrypt_sk(&mut atk, p, sk_dense, source_xe, source_xa, scratch);
             rotation_keys.insert(p, atk);
         }
+        Ok(rotation_keys)
+    }
 
-        // Tensor (relinearization) key for EvalMod's ct×ct squaring.
-        let mut tensor_key = module.glwe_tensor_key_alloc_from_infos(&layout.tensor_key);
-        module.glwe_tensor_key_encrypt_sk(&mut tensor_key, sk_dense, source_xe, source_xa, scratch);
+    fn first_factor_rotations(&self) -> Vec<i64> {
+        self.coeffs_to_slots_first_factor()
+            .map(|factor| factor.giant_steps.iter().map(|giant| giant.rot).collect())
+            .unwrap_or_default()
+    }
+
+    /// The keys of the raise, on a layout [`Self::generate_rotation_keys`] checked:
+    /// the encapsulation keys, under a fresh sparse secret, and the first-factor keys.
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::type_complexity)]
+    fn generate_raise_keys(
+        &self,
+        module: &Module<BE>,
+        sk_dense: &BackendGLWESecret<BE>,
+        layout: &BootstrappingLinearKeysLayout,
+        source_xs: &mut Source,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> (
+        Option<EncapsulationKeys<GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord>>>,
+        HashMap<i64, GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord>>,
+    )
+    where
+        BE: Backend<Ring = Standard>,
+        BE::OwnedBuf: HostDataMut,
+        Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+            + CyclotomicOrder
+            + GLWESwitchingKeyEncryptSk<BE>
+            + GLWESecretSampling<BE>
+            + VecZnxAutomorphism<BE>,
+    {
+        let order = module.cyclotomic_order();
+        let first_factor_rotations = self.first_factor_rotations();
 
         // First-factor keys: each diagonal's term is rotated with no key, which leaves
         // it under the rotated raise secret, then switched to the dense secret.
@@ -462,10 +731,9 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
             }
             keys
         };
-        let first_factor_keys;
 
         // Sparse-secret encapsulation key-switching keys.
-        let encapsulation_keys = match (sparse_secret_hamming_weight, &layout.encapsulation) {
+        match (self.sparse_secret_hamming_weight(), &layout.encapsulation) {
             (Some(hamming_weight), Some(encaps)) => {
                 let sk_layout = GLWESecretLayout {
                     n: sk_dense.n(),
@@ -483,22 +751,12 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
                     key
                 });
                 // The raise runs under the sparse secret: so do the first factor's products.
-                first_factor_keys = first_factor(&sk_sparse, source_xe, source_xa, scratch);
-                Some((dense_to_sparse, sparse_to_dense))
+                let first_factor_keys = first_factor(&sk_sparse, source_xe, source_xa, scratch);
+                (Some((dense_to_sparse, sparse_to_dense)), first_factor_keys)
             }
-            (None, None) => {
-                first_factor_keys = first_factor(sk_dense, source_xe, source_xa, scratch);
-                None
-            }
-            _ => unreachable!("recipe/layout encapsulation mismatch validated above"),
-        };
-
-        Ok(BootstrappingKeySet {
-            rotation_keys,
-            tensor_key,
-            encapsulation_keys,
-            first_factor_keys,
-        })
+            (None, None) => (None, first_factor(sk_dense, source_xe, source_xa, scratch)),
+            _ => unreachable!("recipe/layout encapsulation mismatch validated with the rotation keys"),
+        }
     }
 }
 

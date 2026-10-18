@@ -165,6 +165,7 @@ The S2C-first pipeline leaves the `N` real coefficients in `N/2` complex slots a
 The conjugate-invariant ring of degree `N` has `N` real slots: `CKKSBootstrappingCIOps::ckks_bootstrap_ci` (`layouts::bootstrapping_ci`) moves the ciphertext there, evaluates EvalMod once on all coefficients, and moves it back.
 Both conversions go through the standard ring of degree `2N`, which contains the two: the ciphertext of degree `N` is embedded as `z(X²)`, which holds each slot twice; a plaintext product (`1` on one copy, `−i` on the other) and the trace onto the CI ring keep the real part of each copy, `c_j` and `c_{j+N/2}` in two slots; after EvalMod, the embedding back, a product with `1` and `i` and the keyless trace `x + x(−X)` pair them back as `r_j + i·r_{j+N/2}`.
 The two products cost a level each (`EvalModCIPlan`), and the conversion keys are of degree `2N`; EvalMod relinearizes with a tensor key of the CI ring, of degree `N`. The preset `n16_d35_k685_p19_s2c_fast` uses it with the first factor on the raise.
+The linear stages take the keys of the base plan without conjugation, which the unsplit CoeffsToSlots does not use (`BootstrappingLinearKeys`, `BootstrappingContext::generate_linear_keys`); no tensor key of the standard ring is generated.
 The entry point takes the standard module of degree `N`, a standard module of degree `2N` and a CI module of degree `N` whose backend shares the buffers of the standard one.
 
 ## Pipeline order and EvalRound+

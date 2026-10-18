@@ -64,9 +64,9 @@ use crate::numerics::CKKSFloat;
 use crate::{
     CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, Scale, SlotsKind,
     layouts::{
-        BootstrappingCIKeysLayout, BootstrappingCIPlan, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan,
-        BootstrappingTechniques, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout, EvalModCIPlan, EvalModPlan,
-        EvalModType, SparseSecretEncapsulation,
+        BootstrappingCIKeysLayout, BootstrappingCIPlan, BootstrappingKeysLayout, BootstrappingLinearKeysLayout,
+        BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, DFTOutputFormat, DFTPlan, DFTType,
+        EncapsulationKeysLayout, EvalModCIPlan, EvalModPlan, EvalModType, SparseSecretEncapsulation,
     },
     polynomial::SplitStrategy,
     reference::first_factor::{first_factor_diagonal_growth, first_factor_small_bits, first_factor_work},
@@ -619,7 +619,10 @@ fn build_ci(name: &'static str, spec: PresetSpec, conversion: EvalModCIPlan) -> 
     let plan = BootstrappingCIPlan::new(base.plan.clone(), conversion)?;
     let bootstrap_k = plan.bootstrap_k(base.output_k, spec.log_delta);
     let base_keys = keys_layout(&spec, plan.base(), bootstrap_k, base.input_k)?;
-    validate_modulus_bounds(&spec, bootstrap_k, &base_keys)?;
+    // The linear stages, without conjugation: CoeffsToSlots is not split.
+    let mut linear = base_keys.linear();
+    linear.rotation_keys.remove(&-1);
+    validate_linear_bounds(&spec, bootstrap_k, &linear)?;
     let dense = spec.dense_secret.max_log_modulus;
 
     // The conversion keys are of degree 2N. Their secrets lie in subrings of rank N
@@ -639,7 +642,7 @@ fn build_ci(name: &'static str, spec: PresetSpec, conversion: EvalModCIPlan) -> 
         Ok(key_layout(&wide, name, k, widest_k_digit(&wide, k, dense), dense)?.into())
     };
     let keys_layout = BootstrappingCIKeysLayout {
-        base: base_keys.clone(),
+        linear,
         tensor_key: tensor_key.into(),
         trace_key: conversion_key("CI trace", traced)?,
         embed_key: conversion_key("CI embed", embedded)?,
@@ -976,6 +979,11 @@ fn gadget_k<K: GGLWEInfos>(key: &K) -> usize {
 }
 
 fn validate_modulus_bounds(spec: &PresetSpec, bootstrap_k: usize, keys: &BootstrappingKeysLayout) -> Result<()> {
+    validate_key("tensor", &keys.tensor_key, spec.dense_secret.max_log_modulus)?;
+    validate_linear_bounds(spec, bootstrap_k, &keys.linear())
+}
+
+fn validate_linear_bounds(spec: &PresetSpec, bootstrap_k: usize, keys: &BootstrappingLinearKeysLayout) -> Result<()> {
     let (dense, sparse) = (spec.dense_secret.max_log_modulus, spec.sparse_secret.max_log_modulus);
     ensure!(
         bootstrap_k <= dense,
@@ -984,7 +992,6 @@ fn validate_modulus_bounds(spec: &PresetSpec, bootstrap_k: usize, keys: &Bootstr
     for key in keys.rotation_key_layouts() {
         validate_key("automorphism", &key, dense)?;
     }
-    validate_key("tensor", &keys.tensor_key, dense)?;
     if let Some(key) = &keys.first_factor_key {
         validate_key("first-factor", key, dense)?;
     }
@@ -1113,8 +1120,8 @@ mod tests {
         }
         assert_eq!(keys.tensor_key.n().as_usize(), 1 << 16);
         assert!(keys.tensor_key.k().as_usize() <= preset.base().max_dense_modulus());
-        assert!(keys.base.automorphism_key.k().as_usize() <= preset.base().max_dense_modulus());
-        let first_factor = keys.base.first_factor_key.unwrap();
+        assert!(keys.linear.automorphism_key.k().as_usize() <= preset.base().max_dense_modulus());
+        let first_factor = keys.linear.first_factor_key.unwrap();
         assert!(first_factor.k().as_usize() <= preset.base().max_dense_modulus());
     }
 
