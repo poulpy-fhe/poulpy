@@ -1410,6 +1410,12 @@ pub fn digit_k_of(base2k: impl Into<Base2K>, dsize: impl Into<Dsize>) -> TorusPr
     TorusPrecision(base2k.into().0 * dsize.into().0)
 }
 
+/// Whether digits of `digit_k` bits are whole limbs at radix `base2k`, so a
+/// gadget product reads the input limbs directly as its operand.
+pub fn digits_aligned(base2k: Base2K, digit_k: TorusPrecision) -> bool {
+    digit_k.0.is_multiple_of(base2k.0)
+}
+
 /// Number of key limbs an operation should process for an input ciphertext of
 /// precision `input_k` (clamped to the key size by callers). Replaces the old
 /// explicit `key_size`/`tsk_size` argument.
@@ -1769,6 +1775,32 @@ mod gadget_sizing_tests {
         // At a 12-bit radix the accumulation costs a guard limb.
         assert_eq!(size(12, 24, 36, 1), 5);
         assert_eq!(size(12, 24, 36, 1 << 30), 6);
+    }
+
+    #[test]
+    fn digits_aligned_is_decided_on_the_stored_digit() {
+        let key = |digit_k: u32| GGLWELayout {
+            n: Degree(16),
+            base2k: Base2K(26),
+            dnum: Dnum(4),
+            k_aux: TorusPrecision(52),
+            rank_in: Rank(1),
+            rank_out: Rank(1),
+            digit_k: TorusPrecision(digit_k),
+            stride: 1,
+        };
+        assert!(key(26).digits_aligned());
+        assert!(key(52).digits_aligned());
+        assert!(!key(13).digits_aligned());
+        assert!(!key(27).digits_aligned());
+        // Two 13-bit digits read as one 26-bit digit: a whole limb, but the
+        // stored digits are not, so the view agrees with the key it reads.
+        let view = key(13).at_digit_k(TorusPrecision(26)).unwrap();
+        assert_eq!((view.digit_k, view.stride), (TorusPrecision(26), 2));
+        assert!(!view.digits_aligned());
+        assert!(key(26).at_digit_k(TorusPrecision(52)).unwrap().digits_aligned());
+        assert!(!digits_aligned(Base2K(52), TorusPrecision(49)));
+        assert!(digits_aligned(Base2K(49), TorusPrecision(98)));
     }
 
     #[test]

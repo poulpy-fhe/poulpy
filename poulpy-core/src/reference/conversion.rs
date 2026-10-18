@@ -427,6 +427,13 @@ pub fn ggsw_expand_row_reference<BE, M, R>(
         scratch.available(),
         ggsw_expand_rows_tmp_bytes_reference::<BE, _, _, _>(module, &res_backend, tsk)
     );
+    // The rows are products over the DFT of the input limbs, which only whole-limb digits read.
+    assert!(
+        tsk.digits_aligned(),
+        "ggsw_expand_rows: tensor key digits of {} bits are not whole limbs of {} bits",
+        tsk.digit_k(),
+        tsk.base2k()
+    );
 
     let rank: usize = res_backend.rank().into();
     let cols: usize = rank + 1;

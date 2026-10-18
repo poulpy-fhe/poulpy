@@ -103,6 +103,11 @@ where
         keys[0].key.base2k().as_usize() == base2k,
         "{OP}: ciphertext/key base2k mismatch"
     );
+    // The products run over the DFT of the input limbs, which only whole-limb digits read.
+    ckks_ensure!(
+        keys.iter().all(|key| key.key.digits_aligned()),
+        "{OP}: key digits are not whole limbs of {base2k} bits"
+    );
 
     let scratch = scratch.borrow();
     let (mut a_dft, scratch_1) = scratch.take_vec_znx_dft_scratch(module.n(), 2, a_size);

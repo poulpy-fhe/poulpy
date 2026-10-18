@@ -840,7 +840,9 @@ macro_rules! impl_rank_one_tensoring {
                     return module.glwe_tensor_relinearize_reference(res, a, tsk, scratch);
                 }
                 let key = tsk.get_tensor_key(a.k()).unwrap_or_else(|e| panic!("{e}"));
-                if a.base2k() != key.base2k() {
+                // The packed path DFTs the input limbs, which digits off a limb
+                // boundary do not read: those keys take the reference, sized alike.
+                if a.base2k() != key.base2k() || !key.digits_aligned() {
                     return module.glwe_tensor_relinearize_reference(res, a, tsk, scratch);
                 }
                 let n = assert_degrees(module, [res.n(), a.n(), key.n()]);
@@ -889,7 +891,7 @@ macro_rules! impl_rank_one_tensoring {
                 A: GLWEInfos,
                 B: GGLWEInfos,
             {
-                if !$consume || a.base2k() != tsk.base2k() {
+                if !$consume || a.base2k() != tsk.base2k() || !tsk.digits_aligned() {
                     return module.glwe_tensor_relinearize_tmp_bytes_reference(res, a, tsk);
                 }
                 let n = assert_degrees(module, [res.n(), a.n(), tsk.n()]);

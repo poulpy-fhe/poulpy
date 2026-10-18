@@ -147,6 +147,7 @@ fn eval<R, P, H>(
         key.base2k().as_usize() != base
             || key.base2k() != res.base2k()
             || key.stride() != 1
+            || !key.digits_aligned()
             || key.dsize().as_usize() < 2
             || key.n().as_usize() != module.n()
             || key.rank_in().as_usize() != 1

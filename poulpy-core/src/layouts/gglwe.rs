@@ -45,6 +45,14 @@ where
     fn stride(&self) -> usize {
         1
     }
+    /// Whether the stored digits are whole limbs (see [`crate::layouts::digits_aligned`]).
+    ///
+    /// A view reads `stride` stored digits as one, so this is decided on
+    /// `digit_k / stride`: a key and every coarser view of it agree, and a
+    /// backend gating a native path on it sizes and runs the same branch.
+    fn digits_aligned(&self) -> bool {
+        crate::layouts::digits_aligned(self.base2k(), TorusPrecision(self.digit_k().0 / self.stride() as u32))
+    }
     fn gglwe_layout(&self) -> GGLWELayout {
         let stride = self.stride();
         GGLWELayout {

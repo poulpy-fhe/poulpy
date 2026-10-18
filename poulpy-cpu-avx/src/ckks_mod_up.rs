@@ -134,9 +134,11 @@ where
 {
     let k_large = dst.k().as_usize();
     let k_small = src.k().as_usize();
-    // A strided key view is gathered by the reference body only.
+    // A strided key view is gathered by the reference body only, and so are
+    // digits off a limb boundary, whose operand is not the input limbs.
     if dst.base2k() != sparse_to_dense.base2k()
         || sparse_to_dense.stride() != 1
+        || !sparse_to_dense.digits_aligned()
         || sparse_to_dense.dsize().as_usize() < 2
         || k_large < k_small + scale_up
     {

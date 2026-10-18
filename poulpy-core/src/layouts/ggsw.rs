@@ -33,6 +33,10 @@ where
     fn dsize(&self) -> Dsize {
         Dsize(self.digit_k().0.div_ceil(self.base2k().0))
     }
+    /// Whether the digits are whole limbs (see [`crate::layouts::digits_aligned`]).
+    fn digits_aligned(&self) -> bool {
+        crate::layouts::digits_aligned(self.base2k(), self.digit_k())
+    }
     /// Returns a plain-data [`GGSWLayout`] snapshot of the current parameters.
     fn ggsw_layout(&self) -> GGSWLayout {
         GGSWLayout {
