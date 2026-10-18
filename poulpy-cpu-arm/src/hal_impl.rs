@@ -342,12 +342,13 @@ where
         a_col: usize,
         b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
         b_col: usize,
+        b_galois: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let _ = scratch;
         unsafe {
             crate::ntt4x30::convolution::cnv_apply_dft::<_, SerialTaskExecutor>(
-                module, cnv_offset, res, res_col, a, a_col, b, b_col,
+                module, cnv_offset, res, res_col, a, a_col, b, b_col, b_galois,
             )
         };
     }
@@ -372,12 +373,13 @@ where
         a_col: usize,
         b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
         b_col: usize,
+        b_galois: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let _ = scratch;
         unsafe {
             crate::ntt4x30::convolution::cnv_apply_dft_add::<_, SerialTaskExecutor>(
-                module, cnv_offset, res, res_col, a, a_col, b, b_col,
+                module, cnv_offset, res, res_col, a, a_col, b, b_col, b_galois,
             )
         };
     }

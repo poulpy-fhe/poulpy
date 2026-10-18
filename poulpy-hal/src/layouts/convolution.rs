@@ -302,6 +302,8 @@ pub struct CnvDftAccTerm<'a, BE: Backend + 'a> {
     pub b: CnvPVecRBackendRef<'a, BE>,
     /// Column of `b` to convolve.
     pub b_col: usize,
+    /// Galois element applied to `b`, odd; 1 for `b` itself.
+    pub b_galois: i64,
 }
 
 /// Borrow a `CnvPVecR` as a shared reference view.

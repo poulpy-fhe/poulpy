@@ -411,11 +411,11 @@ macro_rules! fft64_ring_arith_ci {
             a_size: usize,
             b: &[f64],
             b_size: usize,
-            b_log_gap: usize,
+            b_read: $crate::kernels::RightRead,
             tmp: &mut [f64],
         ) {
             <Self as $crate::kernels::fft64::reim4::Reim4Convolution>::reim4_real_convolution_apply(
-                m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, b_log_gap, tmp,
+                m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, b_read, tmp,
             )
         }
         fn fft64_convolution_apply_accumulate(
@@ -428,11 +428,11 @@ macro_rules! fft64_ring_arith_ci {
             a_size: usize,
             b: &[f64],
             b_size: usize,
-            b_log_gap: usize,
+            b_read: $crate::kernels::RightRead,
             tmp: &mut [f64],
         ) {
             <Self as $crate::kernels::fft64::reim4::Reim4Convolution>::reim4_real_convolution_apply_accumulate(
-                m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, b_log_gap, tmp,
+                m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, b_read, tmp,
             )
         }
         fn fft64_convolution_pairwise_apply(
@@ -447,11 +447,11 @@ macro_rules! fft64_ring_arith_ci {
             b0: &[f64],
             b1: &[f64],
             b_size: usize,
-            b_log_gap: usize,
+            b_read: $crate::kernels::RightRead,
             tmp: &mut [f64],
         ) {
             <Self as $crate::kernels::fft64::reim4::Reim4Convolution>::reim4_real_convolution_pairwise_apply(
-                m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, b_log_gap, tmp,
+                m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, b_read, tmp,
             )
         }
         fn fft64_automorphism_plan(n: usize, p: i64) -> $crate::kernels::fft64::vec_znx_dft::Fft64AutomorphismPlan {

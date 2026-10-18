@@ -494,6 +494,7 @@ fn run_probe<BE>(
             0,
             &right.to_backend_ref(),
             0,
+            1,
             &mut scratch.borrow(),
         ),
         2 => module.vec_znx_idft_apply(&mut big.to_backend_mut(), 0, &a.to_backend_ref(), 0, &mut scratch.borrow()),

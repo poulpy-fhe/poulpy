@@ -2264,6 +2264,7 @@ where
                     0,
                     &b_prep.to_backend_ref(),
                     0,
+                    1,
                     &mut scratch.borrow(),
                 );
             }
@@ -2277,6 +2278,7 @@ where
                 1,
                 &b_prep.to_backend_ref(),
                 0,
+                1,
                 &mut scratch.borrow(),
             );
             module.vec_znx_dft_add_assign(&mut res_oracle.to_backend_mut(), res_col, &fresh.to_backend_ref(), 0);
@@ -2294,6 +2296,7 @@ where
                 1,
                 &b_prep.to_backend_ref(),
                 0,
+                1,
                 &mut derived_scratch.borrow(),
             );
 
@@ -2306,6 +2309,7 @@ where
                 1,
                 &b_prep.to_backend_ref(),
                 0,
+                1,
                 &mut scratch.borrow(),
             );
 
@@ -2371,6 +2375,7 @@ where
         for cnv_offset in [0usize, 1usize] {
             // Oracle: the contract definition, spelled out through the api traits.
             for (idx, &(a_col, b_col)) in term_cols[..n_terms].iter().enumerate() {
+                let b_galois: i64 = if idx == 1 { 5 } else { 1 };
                 if idx == 0 {
                     module.cnv_apply_dft(
                         cnv_offset,
@@ -2380,6 +2385,7 @@ where
                         a_col,
                         &b_prep.to_backend_ref(),
                         b_col,
+                        b_galois,
                         &mut scratch.borrow(),
                     );
                 } else {
@@ -2391,6 +2397,7 @@ where
                         a_col,
                         &b_prep.to_backend_ref(),
                         b_col,
+                        b_galois,
                         &mut scratch.borrow(),
                     );
                 }
@@ -2398,11 +2405,13 @@ where
 
             let terms: Vec<CnvDftAccTerm<'_, BE>> = term_cols[..n_terms]
                 .iter()
-                .map(|&(a_col, b_col)| CnvDftAccTerm {
+                .enumerate()
+                .map(|(idx, &(a_col, b_col))| CnvDftAccTerm {
                     a: a_prep.to_backend_ref(),
                     a_col,
                     b: b_prep.to_backend_ref(),
                     b_col,
+                    b_galois: if idx == 1 { 5 } else { 1 },
                 })
                 .collect();
 
@@ -2489,6 +2498,7 @@ where
                 i,
                 &b_prep.to_backend_ref(),
                 i,
+                1,
                 &mut scratch.borrow(),
             );
             if i != j {
@@ -2501,6 +2511,7 @@ where
                         a_col,
                         &b_prep.to_backend_ref(),
                         b_col,
+                        1,
                         &mut scratch.borrow(),
                     );
                 }
@@ -2628,6 +2639,7 @@ where
                 col,
                 &right.to_backend_ref(),
                 col,
+                1,
                 &mut scratch.borrow(),
             );
             normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_dft, res_col, scratch)

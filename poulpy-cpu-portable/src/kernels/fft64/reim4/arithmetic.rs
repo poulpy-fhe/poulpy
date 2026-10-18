@@ -16,6 +16,7 @@
 // ----------------------------------------------------------------------
 
 use crate::kernels::fft64::reim::{as_arr, as_arr_mut, reim_zero_portable};
+use crate::kernels::galois::RightRead;
 
 #[inline(always)]
 pub fn reim4_extract_1blk_from_reim_contiguous_portable(m: usize, rows: usize, blk: usize, dst: &mut [f64], src: &[f64]) {
@@ -346,38 +347,72 @@ pub fn reim4_convolution_by_real_const_2coeffs_portable(k: usize, dst: &mut [f64
     reim4_convolution_by_real_const_1coeff_portable(k + 1, as_arr_mut(&mut dst[8..]), a, a_size, b);
 }
 
-/// Rows `0..size` of degree-`N` reim4 block `blk`, gathered from a degree-`n`
-/// prepared operand `src` (block-major, `size` rows of 8 f64 per block, lane
-/// `l` of a row at `l` for re and `4 + l` for im), `N = n << log_gap`: degree-`N`
-/// slot `i` reads degree-`n` slot `i >> log_gap`, so a whole block reads one
-/// slot once `log_gap >= 2`. `dst` receives `size` contiguous rows.
-pub fn reim4_gather_sparse_block_portable(dst: &mut [f64], src: &[f64], size: usize, blk: usize, log_gap: usize) {
+/// Rows `0..size` of destination block `blk`, read from `src` through `read`: lane `l` holds slot `4 blk + l`,
+/// re at `l` and im at `4 + l`, conjugated when `read` conjugates.
+pub fn reim4_gather_block_portable(dst: &mut [f64], src: &[f64], size: usize, blk: usize, read: RightRead) {
+    let sign = if read.conj() { -1.0 } else { 1.0 };
     for lane in 0..4 {
-        let slot: usize = (4 * blk + lane) >> log_gap;
-        let base: usize = (slot >> 2) * size * 8 + (slot & 3);
+        let slot = read.source(4 * blk + lane);
+        let base = (slot >> 2) * size * 8 + (slot & 3);
         for r in 0..size {
             dst[8 * r + lane] = src[base + 8 * r];
-            dst[8 * r + 4 + lane] = src[base + 8 * r + 4];
+            dst[8 * r + 4 + lane] = sign * src[base + 8 * r + 4];
         }
     }
 }
 
-/// [`reim4_gather_sparse_block_portable`] of `src0` plus the same rows of `src1`: the
-/// pairwise operand sum of two columns of one degree-`n` operand.
-pub fn reim4_gather_sparse_block_sum_portable(
+/// [`reim4_gather_block_portable`] of `src0` plus the same rows of `src1`: the pairwise operand sum of two
+/// columns of one operand, read without a Galois element.
+pub fn reim4_gather_block_sum_portable(dst: &mut [f64], src0: &[f64], src1: &[f64], size: usize, blk: usize, read: RightRead) {
+    debug_assert!(!read.conj());
+    for lane in 0..4 {
+        let slot = read.source(4 * blk + lane);
+        let base = (slot >> 2) * size * 8 + (slot & 3);
+        for r in 0..size {
+            dst[8 * r + lane] = src0[base + 8 * r] + src1[base + 8 * r];
+            dst[8 * r + 4 + lane] = src0[base + 8 * r + 4] + src1[base + 8 * r + 4];
+        }
+    }
+}
+
+/// [`reim4_gather_block_portable`] on real slots: lane `l` holds slot `4 blk + l`, lane `4 + l` slot
+/// `m + 4 blk + l`, each read from the half of `src` its source slot lies in.
+pub fn reim4_real_gather_block_portable(dst: &mut [f64], src: &[f64], size: usize, blk: usize, m: usize, read: RightRead) {
+    let m_b = m >> read.log_gap();
+    let log_m_b = m_b.trailing_zeros();
+    for half in 0..2 {
+        for lane in 0..4 {
+            let slot = read.source(half * m + 4 * blk + lane);
+            let (h, q) = (slot >> log_m_b, slot & (m_b - 1));
+            let base = (q >> 2) * size * 8 + 4 * h + (q & 3);
+            for r in 0..size {
+                dst[8 * r + 4 * half + lane] = src[base + 8 * r];
+            }
+        }
+    }
+}
+
+/// [`reim4_real_gather_block_portable`] of `src0` plus the same rows of `src1`.
+pub fn reim4_real_gather_block_sum_portable(
     dst: &mut [f64],
     src0: &[f64],
     src1: &[f64],
     size: usize,
     blk: usize,
-    log_gap: usize,
+    m: usize,
+    read: RightRead,
 ) {
-    for lane in 0..4 {
-        let slot: usize = (4 * blk + lane) >> log_gap;
-        let base: usize = (slot >> 2) * size * 8 + (slot & 3);
-        for r in 0..size {
-            dst[8 * r + lane] = src0[base + 8 * r] + src1[base + 8 * r];
-            dst[8 * r + 4 + lane] = src0[base + 8 * r + 4] + src1[base + 8 * r + 4];
+    debug_assert!(!read.conj());
+    let m_b = m >> read.log_gap();
+    let log_m_b = m_b.trailing_zeros();
+    for half in 0..2 {
+        for lane in 0..4 {
+            let slot = read.source(half * m + 4 * blk + lane);
+            let (h, q) = (slot >> log_m_b, slot & (m_b - 1));
+            let base = (q >> 2) * size * 8 + 4 * h + (q & 3);
+            for r in 0..size {
+                dst[8 * r + 4 * half + lane] = src0[base + 8 * r] + src1[base + 8 * r];
+            }
         }
     }
 }

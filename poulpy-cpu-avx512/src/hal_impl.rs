@@ -342,6 +342,7 @@ where
         a_col: usize,
         b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
         b_col: usize,
+        b_galois: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let _ = scratch;
@@ -356,6 +357,7 @@ where
                 a_col,
                 b,
                 b_col,
+                b_galois,
             )
         };
     }
@@ -380,6 +382,7 @@ where
         a_col: usize,
         b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
         b_col: usize,
+        b_galois: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let _ = scratch;
@@ -394,6 +397,7 @@ where
                 a_col,
                 b,
                 b_col,
+                b_galois,
             )
         };
     }
@@ -1271,13 +1275,14 @@ mod ifma_impl {
             a_col: usize,
             b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
             b_col: usize,
+            b_galois: i64,
             scratch: &mut ScratchArena<'_, Self>,
         ) {
             let bytes = crate::ntt3x42_ifma::convolution::cnv_apply_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
             unsafe {
                 crate::ntt3x42_ifma::convolution::cnv_apply_dft_ifma::<_, SerialTaskExecutor>(
-                    module, res, cnv_offset, res_col, a, a_col, b, b_col, tmp,
+                    module, res, cnv_offset, res_col, a, a_col, b, b_col, b_galois, tmp,
                 );
             }
         }
@@ -1302,13 +1307,14 @@ mod ifma_impl {
             a_col: usize,
             b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
             b_col: usize,
+            b_galois: i64,
             scratch: &mut ScratchArena<'_, Self>,
         ) {
             let bytes = crate::ntt3x42_ifma::convolution::cnv_apply_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
             unsafe {
                 crate::ntt3x42_ifma::convolution::cnv_apply_dft_add_ifma::<_, SerialTaskExecutor>(
-                    module, res, cnv_offset, res_col, a, a_col, b, b_col, tmp,
+                    module, res, cnv_offset, res_col, a, a_col, b, b_col, b_galois, tmp,
                 );
             }
         }

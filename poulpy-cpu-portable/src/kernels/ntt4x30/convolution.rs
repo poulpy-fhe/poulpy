@@ -15,6 +15,7 @@ use poulpy_hal::execution::TaskExecutor;
 
 use crate::{
     kernels::{
+        RightRead,
         ntt4x30::{
             NttAddAssign, NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc1ColX2, NttPackLeft1BlkX2,
             ntt::NttTable,
@@ -22,7 +23,7 @@ use crate::{
             types::Q120bScalar,
             vec_znx_dft::NttModuleHandle,
         },
-        sparse_log_gap_portable,
+        right_read_ntt,
     },
     layouts::{
         Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, HostDataMut, HostDataRef,
@@ -81,13 +82,12 @@ fn canonical_sum_row(dst: &mut [u32], a: &[u32], b: &[u32]) {
 
 /// Rows `0..size` of degree-`N` x2 block `blk`, gathered from a degree-`n`
 /// prepared right operand column `src` (block-major, `size` rows of 16 u32 per
-/// block, slot `s` of a row at `[8s, 8s + 8)`), `N = n << log_gap`: degree-`N` slot `i` reads
-/// degree-`n` slot `i >> log_gap`, so the two slots of a block read one slot
-/// once `log_gap >= 1`. Row order is preserved, which keeps the reversed limb
+/// block, slot `s` of a row at `[8s, 8s + 8)`): degree-`N` slot `i` reads the
+/// degree-`n` slot `read.source(i)`. Row order is preserved, which keeps the reversed limb
 /// order of a `CnvPVecR` column.
-fn gather_sparse_x2_rows(dst: &mut [u32], src: &[u32], size: usize, blk: usize, log_gap: usize) {
+fn gather_sparse_x2_rows(dst: &mut [u32], src: &[u32], size: usize, blk: usize, read: RightRead) {
     for lane in 0..2 {
-        let slot: usize = (2 * blk + lane) >> log_gap;
+        let slot: usize = read.source(2 * blk + lane);
         let base: usize = (slot >> 1) * size * 16 + 8 * (slot & 1);
         for r in 0..size {
             dst[16 * r + 8 * lane..16 * r + 8 * lane + 8].copy_from_slice(&src[base + 16 * r..base + 16 * r + 8]);
@@ -102,7 +102,7 @@ fn gather_sparse_x2_rows(dst: &mut [u32], src: &[u32], size: usize, blk: usize, 
 ///   of overwriting.
 /// - `PAIRWISE`: operands are `(a0 + a1) mod q` and the lazy sum `b0 + b1`.
 ///
-/// `b_log_gap` is `log2(N / n)` of a degree-`n` right operand (zero when dense):
+/// `b_read` maps each slot to the slot of the degree-`n` right operand it reads:
 /// its x2 rows are gathered block by block through [`gather_sparse_x2_rows`].
 /// `a` takes the module degree.
 #[allow(clippy::too_many_arguments)]
@@ -122,7 +122,7 @@ unsafe fn ntt4x30_conv_block_group<BE, const ACC: bool, const PAIRWISE: bool>(
     b0_col: &[u32],
     b1_col: &[u32],
     b_size: usize,
-    b_log_gap: usize,
+    b_read: RightRead,
     tmp: &mut [u8],
 ) where
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttAddAssign + NttMulBbc1ColX2,
@@ -166,7 +166,7 @@ unsafe fn ntt4x30_conv_block_group<BE, const ACC: bool, const PAIRWISE: bool>(
         } else {
             win[16 * pad..16 * (pad + a_size)].copy_from_slice(a_blk);
         }
-        let b_blk: &[u32] = if b_log_gap == 0 {
+        let b_blk: &[u32] = if b_read.is_direct() {
             let b0_blk: &[u32] = &b0_col[blk * 16 * b_size..(blk + 1) * 16 * b_size];
             if PAIRWISE {
                 let b1_blk: &[u32] = &b1_col[blk * 16 * b_size..(blk + 1) * 16 * b_size];
@@ -178,9 +178,9 @@ unsafe fn ntt4x30_conv_block_group<BE, const ACC: bool, const PAIRWISE: bool>(
                 b0_blk
             }
         } else {
-            gather_sparse_x2_rows(b_stage, b0_col, b_size, blk, b_log_gap);
+            gather_sparse_x2_rows(b_stage, b0_col, b_size, blk, b_read);
             if PAIRWISE {
-                gather_sparse_x2_rows(b1_stage, b1_col, b_size, blk, b_log_gap);
+                gather_sparse_x2_rows(b1_stage, b1_col, b_size, blk, b_read);
                 for (d, x) in b_stage.iter_mut().zip(b1_stage.iter()) {
                     *d += *x;
                 }
@@ -246,7 +246,7 @@ fn ntt4x30_conv_columns<BE, const ACC: bool, const PAIRWISE: bool>(
     b0_col: &[u32],
     b1_col: &[u32],
     b_size: usize,
-    b_log_gap: usize,
+    b_read: RightRead,
     tmp: &mut [u8],
 ) where
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttAddAssign + NttMulBbc1ColX2,
@@ -288,7 +288,7 @@ fn ntt4x30_conv_columns<BE, const ACC: bool, const PAIRWISE: bool>(
                 b0_col,
                 b1_col,
                 b_size,
-                b_log_gap,
+                b_read,
                 local_tmp,
             );
         });
@@ -312,7 +312,7 @@ fn ntt4x30_conv_columns<BE, const ACC: bool, const PAIRWISE: bool>(
                     b0_col,
                     b1_col,
                     b_size,
-                    b_log_gap,
+                    b_read,
                     tmp,
                 );
             }
@@ -348,6 +348,7 @@ pub fn ntt4x30_cnv_apply_dft_portable<BE>(
     a_col: usize,
     b: &CnvPVecRBackendRef<'_, BE>,
     b_col: usize,
+    b_galois: i64,
     tmp: &mut [u8],
 ) where
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttAddAssign + NttMulBbc1ColX2,
@@ -357,7 +358,7 @@ pub fn ntt4x30_cnv_apply_dft_portable<BE>(
     let n = res.n();
     check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap = sparse_log_gap_portable(n, b.n());
+    let b_read = right_read_ntt::<BE::Ring>(n, b.n(), b_galois);
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -371,7 +372,7 @@ pub fn ntt4x30_cnv_apply_dft_portable<BE>(
     let a_col_u32 = col_slice_u32(a.raw(), n, a_size, a_col);
     let b_col_u32 = col_slice_u32(b.raw(), b.n(), b_size, b_col);
     ntt4x30_conv_columns::<BE, false, false>(
-        module, cnv_offset, res, res_col, a_col_u32, a_col_u32, a_size, b_col_u32, b_col_u32, b_size, b_log_gap, tmp,
+        module, cnv_offset, res, res_col, a_col_u32, a_col_u32, a_size, b_col_u32, b_col_u32, b_size, b_read, tmp,
     );
 }
 
@@ -388,6 +389,7 @@ pub fn ntt4x30_cnv_apply_dft_add_portable<BE>(
     a_col: usize,
     b: &CnvPVecRBackendRef<'_, BE>,
     b_col: usize,
+    b_galois: i64,
     tmp: &mut [u8],
 ) where
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttAddAssign + NttMulBbc1ColX2,
@@ -397,7 +399,7 @@ pub fn ntt4x30_cnv_apply_dft_add_portable<BE>(
     let n = res.n();
     check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap = sparse_log_gap_portable(n, b.n());
+    let b_read = right_read_ntt::<BE::Ring>(n, b.n(), b_galois);
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -408,7 +410,7 @@ pub fn ntt4x30_cnv_apply_dft_add_portable<BE>(
     let a_col_u32 = col_slice_u32(a.raw(), n, a_size, a_col);
     let b_col_u32 = col_slice_u32(b.raw(), b.n(), b_size, b_col);
     ntt4x30_conv_columns::<BE, true, false>(
-        module, cnv_offset, res, res_col, a_col_u32, a_col_u32, a_size, b_col_u32, b_col_u32, b_size, b_log_gap, tmp,
+        module, cnv_offset, res, res_col, a_col_u32, a_col_u32, a_size, b_col_u32, b_col_u32, b_size, b_read, tmp,
     );
 }
 
@@ -491,7 +493,7 @@ pub fn ntt4x30_cnv_apply_dft_sum_portable<BE>(
     let res_size = res.size();
 
     #[allow(clippy::type_complexity)]
-    let term_cols: Vec<(&[u32], &[u32], usize, usize, usize)> = terms
+    let term_cols: Vec<(&[u32], &[u32], usize, usize, RightRead)> = terms
         .iter()
         .map(|t| {
             let a_size = t.a.size();
@@ -502,7 +504,7 @@ pub fn ntt4x30_cnv_apply_dft_sum_portable<BE>(
                 col_slice_u32(t.b.raw(), t.b.n(), b_size, t.b_col),
                 a_size,
                 b_size,
-                sparse_log_gap_portable(n, t.b.n()),
+                right_read_ntt::<BE::Ring>(n, t.b.n(), t.b_galois),
             )
         })
         .collect();
@@ -535,28 +537,37 @@ pub fn ntt4x30_cnv_apply_dft_sum_portable<BE>(
     // Gather buffer of a sparse term's right-operand x2 rows, allocated once (a
     // dense term reads its rows in place and never touches it).
     let mut yb = [[0u32; 8]; 2];
+    // Row-0 offsets of the two slots a gathered term reads in the current block.
+    let mut lanes: Vec<[usize; 2]> = vec![[0; 2]; term_cols.len()];
     let term_a_rows: Vec<&[[u32; 8]]> = term_cols.iter().map(|&(a_col, _, _, _, _)| cast_slice(a_col)).collect();
     let term_b_rows: Vec<&[[u32; 8]]> = term_cols.iter().map(|&(_, b_col, _, _, _)| cast_slice(b_col)).collect();
 
     for blk in 0..n_blks {
         let grp_pos = blk % CNV_ACC_GROUP;
+        for (lanes, &(_, _, _, b_size, b_read)) in lanes.iter_mut().zip(&term_cols) {
+            if !b_read.is_direct() {
+                *lanes = std::array::from_fn(|lane| {
+                    let slot: usize = b_read.source(2 * blk + lane);
+                    (slot >> 1) * b_size * 16 + 8 * (slot & 1)
+                });
+            }
+        }
 
         for (k, sched_k) in sched.iter().enumerate() {
             let mut s = [[0u64; 8]; 2];
             for e in sched_k {
-                let (_, b_col, a_size, b_size, b_log_gap) = term_cols[e.term];
+                let (_, b_col, a_size, b_size, b_read) = term_cols[e.term];
                 let a_rows = term_a_rows[e.term];
                 let b_rows = term_b_rows[e.term];
                 for i in 0..e.len {
                     let r = 2 * (blk * a_size + e.a_row + i);
                     let row = e.b_row + i;
-                    let y: &[[u32; 8]] = if b_log_gap == 0 {
+                    let y: &[[u32; 8]] = if b_read.is_direct() {
                         let br = 2 * (blk * b_size + row);
                         &b_rows[br..br + 2]
                     } else {
-                        for (lane, dst) in yb.iter_mut().enumerate() {
-                            let slot: usize = (2 * blk + lane) >> b_log_gap;
-                            let idx: usize = ((slot >> 1) * b_size + row) * 16 + 8 * (slot & 1);
+                        for (dst, &lane) in yb.iter_mut().zip(&lanes[e.term]) {
+                            let idx: usize = lane + row * 16;
                             dst.copy_from_slice(&b_col[idx..idx + 8]);
                         }
                         &yb[..]
@@ -604,14 +615,14 @@ pub fn ntt4x30_cnv_pairwise_apply_dft_portable<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
     if col_i == col_j {
-        ntt4x30_cnv_apply_dft_portable::<BE>(module, cnv_offset, res, res_col, a, col_i, b, col_j, tmp);
+        ntt4x30_cnv_apply_dft_portable::<BE>(module, cnv_offset, res, res_col, a, col_i, b, col_j, 1, tmp);
         return;
     }
 
     let n = res.n();
     check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap = sparse_log_gap_portable(n, b.n());
+    let b_read = RightRead::sparse(n, b.n());
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -626,9 +637,7 @@ pub fn ntt4x30_cnv_pairwise_apply_dft_portable<BE>(
     let a1 = col_slice_u32(a.raw(), n, a_size, col_j);
     let b0 = col_slice_u32(b.raw(), b.n(), b_size, col_i);
     let b1 = col_slice_u32(b.raw(), b.n(), b_size, col_j);
-    ntt4x30_conv_columns::<BE, false, true>(
-        module, cnv_offset, res, res_col, a0, a1, a_size, b0, b1, b_size, b_log_gap, tmp,
-    );
+    ntt4x30_conv_columns::<BE, false, true>(module, cnv_offset, res, res_col, a0, a1, a_size, b0, b1, b_size, b_read, tmp);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

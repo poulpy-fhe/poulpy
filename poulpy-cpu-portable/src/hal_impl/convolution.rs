@@ -125,10 +125,22 @@ macro_rules! hal_impl_convolution {
             a_col: usize,
             b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
             b_col: usize,
+            b_galois: i64,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as $defaults>::cnv_apply_dft_default(module, cnv_offset, &mut res, res_col, a, a_col, b, b_col, &mut scratch);
+            <Self as $defaults>::cnv_apply_dft_default(
+                module,
+                cnv_offset,
+                &mut res,
+                res_col,
+                a,
+                a_col,
+                b,
+                b_col,
+                b_galois,
+                &mut scratch,
+            );
         }
 
         fn cnv_apply_dft_add_tmp_bytes(
@@ -151,6 +163,7 @@ macro_rules! hal_impl_convolution {
             a_col: usize,
             b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
             b_col: usize,
+            b_galois: i64,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
@@ -163,6 +176,7 @@ macro_rules! hal_impl_convolution {
                 a_col,
                 b,
                 b_col,
+                b_galois,
                 &mut scratch,
             );
         }

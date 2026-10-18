@@ -7,11 +7,12 @@
 
 use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::aarch64::{
-    int64x2_t, uint32x4_t, vaddq_u32, vdupq_n_s64, vdupq_n_u32, vld1q_dup_u32, vld1q_u32, vst1q_u32, vzip1q_u32, vzip2q_u32,
+    int64x2_t, uint8x16_t, uint32x4_t, vaddq_u32, vdupq_n_s64, vdupq_n_u8, vdupq_n_u32, vld1q_dup_u32, vld1q_u8, vld1q_u32,
+    vqtbl1q_u8, vreinterpretq_u8_u32, vreinterpretq_u32_u8, vst1q_u32, vzip1q_u32, vzip2q_u32,
 };
 use poulpy_cpu_portable::kernels::SendPtr;
 use poulpy_cpu_portable::kernels::ntt4x30::primes::Primes30;
-use poulpy_cpu_portable::kernels::sparse_log_gap_portable;
+use poulpy_cpu_portable::kernels::{RightRead, right_read_ntt};
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::CnvDftAccTerm;
 use poulpy_hal::layouts::{
@@ -76,6 +77,38 @@ unsafe fn load_right<const MODE: u8>(p: *const u32) -> uint32x4_t {
     }
 }
 
+/// Byte indices of `vqtbl1q_u8` that put lane `src[l]` of the four lanes of one prime in lane `l`.
+#[inline(always)]
+fn lane_table(src: [usize; 4]) -> [u8; 16] {
+    std::array::from_fn(|i| (4 * src[i / 4] + i % 4) as u8)
+}
+
+/// The `vqtbl1q_u8` index of each key of [`RightRead::lane_table`], zero without a Galois element.
+#[inline(always)]
+unsafe fn lane_tables(read: RightRead) -> [uint8x16_t; 4] {
+    unsafe {
+        if read.galois().is_none() {
+            return [vdupq_n_u8(0); 4];
+        }
+        read.lane_table::<4>()
+            .map(|lanes| vld1q_u8(lane_table(lanes.map(usize::from)).as_ptr()))
+    }
+}
+
+/// Through a Galois element, the offset of the stored block that block `blk` reads and the index of its lanes.
+#[inline(always)]
+fn galois_block(read: RightRead, tbls: &[uint8x16_t; 4], blk: usize, b_size: usize) -> Option<(usize, uint8x16_t)> {
+    read.galois().map(|_| {
+        let first = read.source(4 * blk);
+        ((first / 4) * b_size * ROW, tbls[first % 4])
+    })
+}
+
+#[inline(always)]
+unsafe fn load_right_perm(p: *const u32, tbl: uint8x16_t) -> uint32x4_t {
+    unsafe { vreinterpretq_u32_u8(vqtbl1q_u8(vreinterpretq_u8_u32(vld1q_u32(p)), tbl)) }
+}
+
 /// Running inner product of one output limb of one block, fed one run of rows at a time.
 ///
 /// The state is passed and returned by value so that it stays in registers.
@@ -127,6 +160,21 @@ impl Acc {
     /// Adds the inner product of `rows` rows, the right operand read through `MODE`.
     #[inline(always)]
     unsafe fn push_rows<const PAIRWISE: bool, const MODE: u8>(
+        self,
+        c: &[Plane; 4],
+        a0: *const u32,
+        a1: *const u32,
+        b0: *const u32,
+        b1: *const u32,
+        rows: usize,
+    ) -> Self {
+        unsafe { self.push_rows_with::<PAIRWISE>(c, a0, a1, b0, b1, rows, |p| load_right::<MODE>(p)) }
+    }
+
+    /// As [`Self::push_rows`], reading each right row with `load`.
+    #[allow(clippy::too_many_arguments)]
+    #[inline(always)]
+    unsafe fn push_rows_with<const PAIRWISE: bool>(
         mut self,
         c: &[Plane; 4],
         a0: *const u32,
@@ -134,6 +182,7 @@ impl Acc {
         b0: *const u32,
         b1: *const u32,
         rows: usize,
+        load: impl Fn(*const u32) -> uint32x4_t,
     ) -> Self {
         unsafe {
             let mut row = 0;
@@ -150,10 +199,10 @@ impl Acc {
                     for p in 0..4 {
                         let o = ROW * row + 4 * p;
                         let mut xv = vld1q_u32(a0.add(o));
-                        let mut mv = load_right::<MODE>(b0.add(o));
+                        let mut mv = load(b0.add(o));
                         if PAIRWISE {
                             xv = vaddq_u32(xv, vld1q_u32(a1.add(o)));
-                            mv = vaddq_u32(mv, load_right::<MODE>(b1.add(o)));
+                            mv = vaddq_u32(mv, load(b1.add(o)));
                         }
                         mla_centered(&mut lo[p], &mut hi[p], xv, mv);
                     }
@@ -168,7 +217,8 @@ impl Acc {
 
     /// Adds `rows` rows of block `blk`, with a possibly sparse right operand.
     ///
-    /// Slot `s` of the dense operand reads slot `s >> b_log_gap` of the sparse one (spec 4.5).
+    /// Slot `s` of the dense operand reads slot `s >> log_gap` of the sparse one, then goes through the Galois map,
+    /// whose block is `galois` ([`galois_block`]).
     /// `b0` and `b1` are right columns offset to their first row, with rows `b_size` limbs apart in their own block order.
     #[allow(clippy::too_many_arguments)]
     #[inline(always)]
@@ -181,10 +231,18 @@ impl Acc {
         b0: *const u32,
         b1: *const u32,
         b_size: usize,
-        b_log_gap: usize,
+        b_read: RightRead,
+        galois: Option<(usize, uint8x16_t)>,
         rows: usize,
     ) -> Self {
         unsafe {
+            if let Some((block, tbl)) = galois {
+                // The four slots of a block read one stored block, lanes permuted; never pairwise.
+                debug_assert!(!PAIRWISE);
+                let b0 = b0.add(block);
+                return self.push_rows_with::<PAIRWISE>(c, a0, a1, b0, b0, rows, |p| load_right_perm(p, tbl));
+            }
+            let b_log_gap = b_read.log_gap();
             let slot = (4 * blk) >> b_log_gap;
             let block = (slot / 4) * b_size * ROW;
             let (b0, b1) = (b0.add(block), b1.add(block));
@@ -280,7 +338,8 @@ unsafe fn conv_run<const ACC: bool, const PAIRWISE: bool>(
     b0: *const u32,
     b1: *const u32,
     b_size: usize,
-    b_log_gap: usize,
+    b_read: RightRead,
+    tbls: &[uint8x16_t; 4],
 ) {
     unsafe {
         let mut stage = Stage::uninit();
@@ -289,6 +348,7 @@ unsafe fn conv_run<const ACC: bool, const PAIRWISE: bool>(
         while first < min_size {
             let count = (min_size - first).min(STAGE_LIMBS);
             for b in 0..len {
+                let galois = galois_block(b_read, tbls, blk + b, b_size);
                 for k in 0..count {
                     let k_abs = first + k + offset;
                     let j_min = k_abs.saturating_sub(a_size - 1);
@@ -303,7 +363,8 @@ unsafe fn conv_run<const ACC: bool, const PAIRWISE: bool>(
                         b0.add(b_off),
                         b1.add(b_off),
                         b_size,
-                        b_log_gap,
+                        b_read,
+                        galois,
                         j_max - j_min,
                     );
                     stage_store(sp, k, b, &acc.finish(c));
@@ -477,6 +538,7 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     b: &CnvPVecRBackendRef<'_, BE>,
     b0_col: usize,
     b1_col: usize,
+    b_galois: i64,
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -486,7 +548,7 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
     assert!(n.is_multiple_of(4));
-    let b_log_gap = sparse_log_gap_portable(n, b.n());
+    let b_read = right_read_ntt::<BE::Ring>(n, b.n(), b_galois);
     if res_size == 0 || a_size == 0 || b_size == 0 {
         if !ACC {
             for limb in 0..res_size {
@@ -510,6 +572,7 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     assert!(res_u32.len() >= min_size * res_cols * 4 * n);
     let res_ptr = SendPtr(res_u32.as_mut_ptr());
     let n_blocks = n / 4;
+    let tbls = unsafe { lane_tables(b_read) };
     E::for_each(n_blocks.div_ceil(TASK_BLOCKS), |task| unsafe {
         let c = planes();
         let end = ((task + 1) * TASK_BLOCKS).min(n_blocks);
@@ -530,7 +593,8 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
                 b0.as_ptr(),
                 b1.as_ptr(),
                 b_size,
-                b_log_gap,
+                b_read,
+                &tbls,
             )
         }
     });
@@ -551,12 +615,13 @@ pub(crate) unsafe fn cnv_apply_dft<BE, E: TaskExecutor>(
     a_col: usize,
     b: &CnvPVecRBackendRef<'_, BE>,
     b_col: usize,
+    b_galois: i64,
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
-    unsafe { apply::<BE, E, false, false>(module, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
+    unsafe { apply::<BE, E, false, false>(module, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col, b_galois) };
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -569,12 +634,13 @@ pub(crate) unsafe fn cnv_apply_dft_add<BE, E: TaskExecutor>(
     a_col: usize,
     b: &CnvPVecRBackendRef<'_, BE>,
     b_col: usize,
+    b_galois: i64,
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
-    unsafe { apply::<BE, E, true, false>(module, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
+    unsafe { apply::<BE, E, true, false>(module, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col, b_galois) };
 }
 
 pub(crate) fn cnv_apply_dft_sum_neon_tmp_bytes(_res_size: usize) -> usize {
@@ -592,7 +658,9 @@ struct SumTerm {
     b: *const u32,
     a_size: usize,
     b_size: usize,
-    b_log_gap: usize,
+    b_read: RightRead,
+    /// The [`lane_tables`] of `b_read`.
+    tbls: [uint8x16_t; 4],
     offset: usize,
     /// Output limbs the term contributes to.
     limbs: usize,
@@ -630,7 +698,8 @@ pub(crate) unsafe fn cnv_apply_dft_sum_neon<BE, E: TaskExecutor>(
             b: std::ptr::null(),
             a_size: 0,
             b_size: 0,
-            b_log_gap: 0,
+            b_read: RightRead::sparse(1, 1),
+            tbls: unsafe { [vdupq_n_u8(0); 4] },
             offset: 0,
             limbs: 0,
         }; SUM_TERMS];
@@ -638,7 +707,7 @@ pub(crate) unsafe fn cnv_apply_dft_sum_neon<BE, E: TaskExecutor>(
         for (dst, term) in sum_terms.iter_mut().zip(group) {
             let (a_size, b_size) = (term.a.size(), term.b.size());
             assert_eq!(term.a.n(), n, "a.n():{} != res.n():{n}", term.a.n());
-            let b_log_gap = sparse_log_gap_portable(n, term.b.n());
+            let b_read = right_read_ntt::<BE::Ring>(n, term.b.n(), term.b_galois);
             if a_size == 0 || b_size == 0 {
                 continue;
             }
@@ -651,7 +720,8 @@ pub(crate) unsafe fn cnv_apply_dft_sum_neon<BE, E: TaskExecutor>(
                 b: col_slice(b_raw, term.b.n(), b_size, term.b_col).as_ptr(),
                 a_size,
                 b_size,
-                b_log_gap,
+                b_read,
+                tbls: unsafe { lane_tables(b_read) },
                 offset,
                 limbs: res_size.min(bound - offset),
             };
@@ -672,9 +742,14 @@ pub(crate) unsafe fn cnv_apply_dft_sum_neon<BE, E: TaskExecutor>(
                 while first < limbs {
                     let count = (limbs - first).min(STAGE_LIMBS);
                     for b in 0..len {
+                        let galois: [Option<(usize, uint8x16_t)>; SUM_TERMS] = std::array::from_fn(|t| {
+                            sum_terms
+                                .get(t)
+                                .and_then(|term| galois_block(term.b_read, &term.tbls, blk + b, term.b_size))
+                        });
                         for k in first..first + count {
                             let mut acc = Acc::new();
-                            for term in sum_terms {
+                            for (term, &galois) in sum_terms.iter().zip(&galois) {
                                 if k < term.limbs {
                                     let k_abs = k + term.offset;
                                     let j_min = k_abs.saturating_sub(term.a_size - 1);
@@ -689,7 +764,8 @@ pub(crate) unsafe fn cnv_apply_dft_sum_neon<BE, E: TaskExecutor>(
                                         b_row,
                                         b_row,
                                         term.b_size,
-                                        term.b_log_gap,
+                                        term.b_read,
+                                        galois,
                                         j_max - j_min,
                                     );
                                 }
@@ -725,9 +801,9 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft<BE, E: TaskExecutor>(
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     if i == j {
-        unsafe { apply::<BE, E, false, false>(module, cnv_offset, res, res_col, a, i, i, b, i, i) };
+        unsafe { apply::<BE, E, false, false>(module, cnv_offset, res, res_col, a, i, i, b, i, i, 1) };
     } else {
-        unsafe { apply::<BE, E, false, true>(module, cnv_offset, res, res_col, a, i, j, b, i, j) };
+        unsafe { apply::<BE, E, false, true>(module, cnv_offset, res, res_col, a, i, j, b, i, j, 1) };
     }
 }
 

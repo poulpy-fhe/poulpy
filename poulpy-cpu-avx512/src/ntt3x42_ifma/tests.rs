@@ -212,6 +212,7 @@ mod ntt3x42_ifma_tests {
             test_vec_znx_sparse_add_sub => poulpy_hal::test_suite::sparse::test_vec_znx_sparse_add_sub,
             test_vec_znx_big_sparse_add_sub => poulpy_hal::test_suite::sparse::test_vec_znx_big_sparse_add_sub,
             test_convolution_sparse => poulpy_hal::test_suite::convolution::test_convolution_sparse,
+            test_convolution_galois => poulpy_hal::test_suite::convolution::test_convolution_galois,
             test_convolution_by_const_degree_rejected => poulpy_hal::test_suite::convolution::test_convolution_by_const_degree_rejected,
         }
     }
@@ -233,6 +234,7 @@ mod ntt3x42_ifma_tests {
             test_vec_znx_sparse_add_sub => poulpy_hal::test_suite::sparse::test_vec_znx_sparse_add_sub,
             test_vec_znx_big_sparse_add_sub => poulpy_hal::test_suite::sparse::test_vec_znx_big_sparse_add_sub,
             test_convolution_sparse => poulpy_hal::test_suite::convolution::test_convolution_sparse,
+            test_convolution_galois => poulpy_hal::test_suite::convolution::test_convolution_galois,
             test_convolution_by_const_degree_rejected => poulpy_hal::test_suite::convolution::test_convolution_by_const_degree_rejected,
         }
     }

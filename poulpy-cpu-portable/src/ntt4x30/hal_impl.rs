@@ -241,10 +241,13 @@ where
         a_col: usize,
         b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
         b_col: usize,
+        b_galois: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let (tmp, _) = take_host_typed::<Self, u32>(scratch.borrow(), super::convolution::apply_tmp_words(res.size()));
-        super::convolution::cnv_apply_dft::<_, SerialTaskExecutor>(module, cnv_offset, res, res_col, a, a_col, b, b_col, tmp);
+        super::convolution::cnv_apply_dft::<_, SerialTaskExecutor>(
+            module, cnv_offset, res, res_col, a, a_col, b, b_col, b_galois, tmp,
+        );
     }
 
     fn cnv_apply_dft_add_tmp_bytes(
@@ -267,10 +270,13 @@ where
         a_col: usize,
         b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
         b_col: usize,
+        b_galois: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let (tmp, _) = take_host_typed::<Self, u32>(scratch.borrow(), super::convolution::apply_tmp_words(res.size()));
-        super::convolution::cnv_apply_dft_add::<_, SerialTaskExecutor>(module, cnv_offset, res, res_col, a, a_col, b, b_col, tmp);
+        super::convolution::cnv_apply_dft_add::<_, SerialTaskExecutor>(
+            module, cnv_offset, res, res_col, a, a_col, b, b_col, b_galois, tmp,
+        );
     }
 
     fn cnv_apply_dft_sum_tmp_bytes(

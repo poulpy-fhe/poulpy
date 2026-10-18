@@ -3,6 +3,7 @@ mod arithmetic;
 pub use arithmetic::*;
 
 use crate::kernels::fft64::reim::as_arr_mut;
+use crate::kernels::galois::RightRead;
 
 pub trait Reim4BlkMatVec {
     fn reim4_extract_1blk_contiguous(m: usize, rows: usize, blk: usize, dst: &mut [f64], src: &[f64]) {
@@ -102,9 +103,9 @@ pub trait Reim4Convolution {
     ///
     /// `dst_stride` is the distance, in f64, between consecutive limbs of the
     /// destination column: `2m` for a one-column `VecZnxDft`, `2m * cols` for a
-    /// column of a multi-column (column-interleaved) one. `b_log_gap` is
-    /// `log2(N / n)` for a degree-`n` right operand (zero when dense): its block
-    /// rows are gathered through [`reim4_gather_sparse_block_portable`]. `a` takes the
+    /// column of a multi-column (column-interleaved) one. `b_read` is
+    /// how the right operand is read (sparse degree, Galois element): its block
+    /// rows are gathered through [`reim4_gather_block_portable`] unless the read is direct. `a` takes the
     /// module degree. `tmp` holds at least `8 * (b_size + min_size)` f64.
     #[allow(clippy::too_many_arguments)]
     fn reim4_convolution_apply(
@@ -117,7 +118,7 @@ pub trait Reim4Convolution {
         a_size: usize,
         b: &[f64],
         b_size: usize,
-        b_log_gap: usize,
+        b_read: RightRead,
         tmp: &mut [f64],
     ) where
         Self: Reim4BlkMatVec + Sized,
@@ -127,10 +128,10 @@ pub trait Reim4Convolution {
         let (tmp_b, tmp_res) = tmp.split_at_mut(b_row);
         let mut a_idx: usize = 0;
         for blk_i in 0..m / 4 {
-            let b_blk: &[f64] = if b_log_gap == 0 {
+            let b_blk: &[f64] = if b_read.is_direct() {
                 &b[blk_i * b_row..(blk_i + 1) * b_row]
             } else {
-                reim4_gather_sparse_block_portable(tmp_b, b, b_size, blk_i, b_log_gap);
+                reim4_gather_block_portable(tmp_b, b, b_size, blk_i, b_read);
                 &*tmp_b
             };
             Self::reim4_convolution(tmp_res, min_size, offset, &a[a_idx..], a_size, b_blk, b_size);
@@ -154,7 +155,7 @@ pub trait Reim4Convolution {
         a_size: usize,
         b: &[f64],
         b_size: usize,
-        b_log_gap: usize,
+        b_read: RightRead,
         tmp: &mut [f64],
     ) where
         Self: Reim4BlkMatVec + Sized,
@@ -164,10 +165,10 @@ pub trait Reim4Convolution {
         let (tmp_b, tmp_res) = tmp.split_at_mut(b_row);
         let mut a_idx: usize = 0;
         for blk_i in 0..m / 4 {
-            let b_blk: &[f64] = if b_log_gap == 0 {
+            let b_blk: &[f64] = if b_read.is_direct() {
                 &b[blk_i * b_row..(blk_i + 1) * b_row]
             } else {
-                reim4_gather_sparse_block_portable(tmp_b, b, b_size, blk_i, b_log_gap);
+                reim4_real_gather_block_portable(tmp_b, b, b_size, blk_i, m, b_read);
                 &*tmp_b
             };
             Self::reim4_real_convolution(tmp_res, min_size, offset, &a[a_idx..], a_size, b_blk, b_size);
@@ -195,7 +196,7 @@ pub trait Reim4Convolution {
         a_size: usize,
         b: &[f64],
         b_size: usize,
-        b_log_gap: usize,
+        b_read: RightRead,
         tmp: &mut [f64],
     ) where
         Self: Reim4BlkMatVec + Sized,
@@ -205,10 +206,10 @@ pub trait Reim4Convolution {
         let (tmp_b, tmp_res) = tmp.split_at_mut(b_row);
         let mut a_idx: usize = 0;
         for blk_i in 0..m / 4 {
-            let b_blk: &[f64] = if b_log_gap == 0 {
+            let b_blk: &[f64] = if b_read.is_direct() {
                 &b[blk_i * b_row..(blk_i + 1) * b_row]
             } else {
-                reim4_gather_sparse_block_portable(tmp_b, b, b_size, blk_i, b_log_gap);
+                reim4_gather_block_portable(tmp_b, b, b_size, blk_i, b_read);
                 &*tmp_b
             };
             Self::reim4_convolution(tmp_res, min_size, offset, &a[a_idx..], a_size, b_blk, b_size);
@@ -234,7 +235,7 @@ pub trait Reim4Convolution {
         a_size: usize,
         b: &[f64],
         b_size: usize,
-        b_log_gap: usize,
+        b_read: RightRead,
         tmp: &mut [f64],
     ) where
         Self: Reim4BlkMatVec + Sized,
@@ -244,10 +245,10 @@ pub trait Reim4Convolution {
         let (tmp_b, tmp_res) = tmp.split_at_mut(b_row);
         let mut a_idx: usize = 0;
         for blk_i in 0..m / 4 {
-            let b_blk: &[f64] = if b_log_gap == 0 {
+            let b_blk: &[f64] = if b_read.is_direct() {
                 &b[blk_i * b_row..(blk_i + 1) * b_row]
             } else {
-                reim4_gather_sparse_block_portable(tmp_b, b, b_size, blk_i, b_log_gap);
+                reim4_real_gather_block_portable(tmp_b, b, b_size, blk_i, m, b_read);
                 &*tmp_b
             };
             Self::reim4_real_convolution(tmp_res, min_size, offset, &a[a_idx..], a_size, b_blk, b_size);
@@ -264,9 +265,8 @@ pub trait Reim4Convolution {
 
     /// Pairwise column-level convolution `(a0 + a1) ⊛ (b0 + b1)`; `tmp` must
     /// additionally hold `8 * (a_size + b_size)` f64 for the summed rows.
-    /// `b_log_gap` is `log2(N / n)` for a degree-`n` right operand (zero when
-    /// dense): its block rows are summed through
-    /// [`reim4_gather_sparse_block_sum_portable`]. `a0` and `a1` take the module degree.
+    /// `b_read` is the sparse degree of the right operand (no Galois element): its block
+    /// rows are summed through [`reim4_gather_block_sum_portable`]. `a0` and `a1` take the module degree.
     #[allow(clippy::too_many_arguments)]
     fn reim4_convolution_pairwise_apply(
         m: usize,
@@ -280,7 +280,7 @@ pub trait Reim4Convolution {
         b0: &[f64],
         b1: &[f64],
         b_size: usize,
-        b_log_gap: usize,
+        b_read: RightRead,
         tmp: &mut [f64],
     ) where
         Self: Reim4BlkMatVec + crate::kernels::fft64::reim::ReimArith + Sized,
@@ -292,14 +292,14 @@ pub trait Reim4Convolution {
         let mut idx_a: usize = 0;
         for blk_i in 0..m / 4 {
             Self::reim_add(tmp_a, &a0[idx_a..idx_a + a_row], &a1[idx_a..idx_a + a_row]);
-            if b_log_gap == 0 {
+            if b_read.is_direct() {
                 Self::reim_add(
                     tmp_b,
                     &b0[blk_i * b_row..(blk_i + 1) * b_row],
                     &b1[blk_i * b_row..(blk_i + 1) * b_row],
                 );
             } else {
-                reim4_gather_sparse_block_sum_portable(tmp_b, b0, b1, b_size, blk_i, b_log_gap);
+                reim4_gather_block_sum_portable(tmp_b, b0, b1, b_size, blk_i, b_read);
             }
             Self::reim4_convolution(tmp_res, min_size, offset, tmp_a, a_size, tmp_b, b_size);
             for k in 0..min_size {
@@ -324,7 +324,7 @@ pub trait Reim4Convolution {
         b0: &[f64],
         b1: &[f64],
         b_size: usize,
-        b_log_gap: usize,
+        b_read: RightRead,
         tmp: &mut [f64],
     ) where
         Self: Reim4BlkMatVec + crate::kernels::fft64::reim::ReimArith + Sized,
@@ -336,14 +336,14 @@ pub trait Reim4Convolution {
         let mut idx_a: usize = 0;
         for blk_i in 0..m / 4 {
             Self::reim_add(tmp_a, &a0[idx_a..idx_a + a_row], &a1[idx_a..idx_a + a_row]);
-            if b_log_gap == 0 {
+            if b_read.is_direct() {
                 Self::reim_add(
                     tmp_b,
                     &b0[blk_i * b_row..(blk_i + 1) * b_row],
                     &b1[blk_i * b_row..(blk_i + 1) * b_row],
                 );
             } else {
-                reim4_gather_sparse_block_sum_portable(tmp_b, b0, b1, b_size, blk_i, b_log_gap);
+                reim4_real_gather_block_sum_portable(tmp_b, b0, b1, b_size, blk_i, m, b_read);
             }
             Self::reim4_real_convolution(tmp_res, min_size, offset, tmp_a, a_size, tmp_b, b_size);
             for k in 0..min_size {

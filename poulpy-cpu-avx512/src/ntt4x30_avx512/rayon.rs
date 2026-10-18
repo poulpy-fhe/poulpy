@@ -152,12 +152,26 @@ mod drivers {
         a_col: usize,
         b: &CnvPVecRBackendRef<'_, BE>,
         b_col: usize,
+        b_galois: i64,
         _tmp: &mut [u32],
     ) where
         for<'a> BE::BufRef<'a>: HostDataRef,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
-        unsafe { convolution::cnv_apply_dft::<BE, E>(module, base.get_bbc_meta(), cnv_offset, res, res_col, a, a_col, b, b_col) }
+        unsafe {
+            convolution::cnv_apply_dft::<BE, E>(
+                module,
+                base.get_bbc_meta(),
+                cnv_offset,
+                res,
+                res_col,
+                a,
+                a_col,
+                b,
+                b_col,
+                b_galois,
+            )
+        }
     }
 
     pub(super) fn cnv_apply_dft_add<R: Ring, BE: PackedWord, E: TaskExecutor>(
@@ -170,13 +184,25 @@ mod drivers {
         a_col: usize,
         b: &CnvPVecRBackendRef<'_, BE>,
         b_col: usize,
+        b_galois: i64,
         _tmp: &mut [u32],
     ) where
         for<'a> BE::BufRef<'a>: HostDataRef,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
         unsafe {
-            convolution::cnv_apply_dft_add::<BE, E>(module, base.get_bbc_meta(), cnv_offset, res, res_col, a, a_col, b, b_col)
+            convolution::cnv_apply_dft_add::<BE, E>(
+                module,
+                base.get_bbc_meta(),
+                cnv_offset,
+                res,
+                res_col,
+                a,
+                a_col,
+                b,
+                b_col,
+                b_galois,
+            )
         }
     }
 

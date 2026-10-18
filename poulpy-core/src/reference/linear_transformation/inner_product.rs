@@ -66,6 +66,7 @@ pub(super) fn glwe_accumulate_prepared_baby_steps_dft<BE, M>(
                     a_col: col,
                     b: diagonal.to_backend_ref(),
                     b_col: 0,
+                    b_galois: 1,
                 }
             })
             .collect();
@@ -156,6 +157,7 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
                     col,
                     &diagonal.to_backend_ref(),
                     0,
+                    1,
                     &mut scratch_1.borrow(),
                 );
             } else {
@@ -167,6 +169,7 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
                     col,
                     &diagonal.to_backend_ref(),
                     0,
+                    1,
                     &mut scratch_1.borrow(),
                 );
             }

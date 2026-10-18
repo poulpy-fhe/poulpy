@@ -1,13 +1,14 @@
 use crate::kernels::fft64::ring_arith::Fft64RingArith;
 use crate::{
     kernels::{
+        RightRead,
         fft64::{
             module::FFT64Plan,
             reim::ReimArith,
             reim4::{Reim4BlkMatVec, Reim4Convolution},
             vec_znx_dft::vec_znx_dft_apply_portable,
         },
-        sparse_log_gap_portable,
+        right_read_fft64,
     },
     layouts::{
         Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, HostDataRef, VecZnxBackendRef,
@@ -320,6 +321,7 @@ pub fn convolution_apply_dft_portable<BE>(
     a_col: usize,
     b: &CnvPVecRBackendRef<'_, BE>,
     b_col: usize,
+    b_galois: i64,
     tmp: &mut [f64],
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64> + Reim4BlkMatVec + Reim4Convolution + Fft64RingArith,
@@ -328,7 +330,7 @@ pub fn convolution_apply_dft_portable<BE>(
 {
     let n: usize = res.n();
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap: usize = sparse_log_gap_portable(n, b.n());
+    let b_read: RightRead = right_read_fft64::<BE::Ring>(n, b.n(), b_galois);
     let m: usize = n >> 1;
 
     let res_size: usize = res.size();
@@ -356,7 +358,7 @@ pub fn convolution_apply_dft_portable<BE>(
         a_size,
         &b_raw[b_col * b.n() * b_size..],
         b_size,
-        b_log_gap,
+        b_read,
         tmp,
     );
 
@@ -376,6 +378,7 @@ pub fn convolution_apply_dft_add_portable<BE>(
     a_col: usize,
     b: &CnvPVecRBackendRef<'_, BE>,
     b_col: usize,
+    b_galois: i64,
     tmp: &mut [f64],
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64> + Reim4BlkMatVec + Reim4Convolution + Fft64RingArith,
@@ -384,7 +387,7 @@ pub fn convolution_apply_dft_add_portable<BE>(
 {
     let n: usize = res.n();
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap: usize = sparse_log_gap_portable(n, b.n());
+    let b_read: RightRead = right_read_fft64::<BE::Ring>(n, b.n(), b_galois);
     let m: usize = n >> 1;
 
     let res_size: usize = res.size();
@@ -412,7 +415,7 @@ pub fn convolution_apply_dft_add_portable<BE>(
         a_size,
         &b_raw[b_col * b.n() * b_size..],
         b_size,
-        b_log_gap,
+        b_read,
         tmp,
     );
 }
@@ -437,7 +440,7 @@ pub fn convolution_pairwise_apply_dft_portable<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
     if col_i == col_j {
-        convolution_apply_dft_portable::<BE>(cnv_offset, res, res_col, a, col_i, b, col_j, tmp);
+        convolution_apply_dft_portable::<BE>(cnv_offset, res, res_col, a, col_i, b, col_j, 1, tmp);
         return;
     }
 
@@ -445,7 +448,7 @@ pub fn convolution_pairwise_apply_dft_portable<BE>(
     let m: usize = n >> 1;
 
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap: usize = sparse_log_gap_portable(n, b.n());
+    let b_read: RightRead = RightRead::sparse(n, b.n());
 
     let res_size: usize = res.size();
     let a_size: usize = a.size();
@@ -476,7 +479,7 @@ pub fn convolution_pairwise_apply_dft_portable<BE>(
         &b_raw[col_i * b.n() * b_size..],
         &b_raw[col_j * b.n() * b_size..],
         b_size,
-        b_log_gap,
+        b_read,
         tmp,
     );
 

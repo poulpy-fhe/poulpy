@@ -988,7 +988,7 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalConvolutionImpl for Oracle<F, R> {
     }
 
     // res[j] = sum_{i + l = j + cnv_offset} a[a_col, i] b[b_col, l]. A sparse
-    // right operand is read through its degree embedding.
+    // right operand is read through its degree embedding, then the galois element.
     fn cnv_apply_dft(
         _module: &Module<Self>,
         cnv_offset: usize,
@@ -998,16 +998,26 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalConvolutionImpl for Oracle<F, R> {
         a_col: usize,
         b: &CnvPVecRBackendRef<'_, Self>,
         b_col: usize,
+        b_galois: i64,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
+        assert!(b_galois & 1 == 1, "convolution: b_galois must be odd");
         let n = res.n();
         assert_eq!(n, a.n());
         assert!(b.n().is_power_of_two() && n.is_multiple_of(b.n()));
-        let lifted: Option<Vec<Vec<F::Dft>>> = (b.n() != n).then(|| {
+        let lifted: Option<Vec<Vec<F::Dft>>> = (b.n() != n || b_galois != 1).then(|| {
             (0..b.size())
                 .map(|l| {
                     let mut limb = vec![F::Dft::default(); n];
-                    ring::dft_embed::<F, R>(&mut limb, b.at(b_col, l));
+                    if b.n() == n {
+                        limb.copy_from_slice(b.at(b_col, l));
+                    } else {
+                        ring::dft_embed::<F, R>(&mut limb, b.at(b_col, l));
+                    }
+                    if b_galois != 1 {
+                        let image = limb.clone();
+                        ring::dft_automorphism::<F, R>(b_galois, &mut limb, &image);
+                    }
                     limb
                 })
                 .collect()

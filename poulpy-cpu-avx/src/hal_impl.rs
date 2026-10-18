@@ -343,6 +343,7 @@ where
         a_col: usize,
         b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
         b_col: usize,
+        b_galois: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let _ = scratch;
@@ -357,6 +358,7 @@ where
                 a_col,
                 b,
                 b_col,
+                b_galois,
             )
         };
     }
@@ -381,6 +383,7 @@ where
         a_col: usize,
         b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
         b_col: usize,
+        b_galois: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let _ = scratch;
@@ -395,6 +398,7 @@ where
                 a_col,
                 b,
                 b_col,
+                b_galois,
             )
         };
     }

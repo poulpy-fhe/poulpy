@@ -30,7 +30,7 @@ if [[ "$backend" == avx512 || "$mode" == emulated ]]; then
     test_transfer raw_transform_matches_contract core_parity core_encryption glwe_copy)
   if [[ "$mode" == native ]]; then
     filters+=(ckks_parity bin_fhe_parity prepared_tensor_tests finish_matches_composition_edges determinism
-      consume_parity one_pass_parity relinearize_tests)
+      consume_parity one_pass_parity relinearize_tests conjugate_invariant_sparse_convolution)
   else
     filters+=(--skip ::ntt_n)
     if [[ "$backend" == avx512 ]]; then

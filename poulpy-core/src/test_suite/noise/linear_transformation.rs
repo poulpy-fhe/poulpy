@@ -251,6 +251,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
                     col,
                     &right_ref,
                     0,
+                    1,
                     &mut scratch.borrow(),
                 );
                 module.vec_znx_idft_apply(
@@ -280,6 +281,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
                     col,
                     &right_ref,
                     0,
+                    1,
                     &mut scratch.borrow(),
                 );
                 module.vec_znx_idft_apply(

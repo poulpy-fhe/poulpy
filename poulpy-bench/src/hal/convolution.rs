@@ -70,7 +70,7 @@ where
     });
 }
 
-pub fn runner_cnv_apply_dft<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
+fn cnv_apply_dft_runner<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms, b_galois: i64)
 where
     BE: Backend<ZnxWord = i64> + 'static,
     Module<BE>: ModuleNew<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
@@ -103,10 +103,32 @@ where
             0,
             &b_prep.to_backend_ref(),
             0,
+            b_galois,
             &mut scratch.borrow(),
         );
         black_box(());
     });
+}
+
+pub fn runner_cnv_apply_dft<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
+where
+    BE: Backend<ZnxWord = i64> + 'static,
+    Module<BE>: ModuleNew<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    cnv_apply_dft_runner::<BE, M>(bencher, sweep, 1);
+}
+
+/// Galois element of the timed apply: 5 generates the slot rotations.
+const BENCH_GALOIS: i64 = 5;
+
+pub fn runner_cnv_apply_dft_galois<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
+where
+    BE: Backend<ZnxWord = i64> + 'static,
+    Module<BE>: ModuleNew<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    cnv_apply_dft_runner::<BE, M>(bencher, sweep, BENCH_GALOIS);
 }
 
 pub fn runner_cnv_apply_dft_add<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
@@ -141,6 +163,7 @@ where
             0,
             &b_prep.to_backend_ref(),
             0,
+            1,
             &mut scratch.borrow(),
         );
     }
@@ -155,6 +178,7 @@ where
             0,
             &b_prep.to_backend_ref(),
             0,
+            1,
             &mut scratch.borrow(),
         );
         black_box(());
@@ -200,6 +224,7 @@ where
             a_col: t,
             b: b_prep.to_backend_ref(),
             b_col: t,
+            b_galois: 1,
         })
         .collect();
 

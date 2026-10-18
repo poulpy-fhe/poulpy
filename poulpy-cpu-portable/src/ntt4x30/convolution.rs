@@ -17,7 +17,7 @@ use std::mem::size_of;
 use super::packed::{DotState, ROW, SendPtr, limb_to_prepared, scatter_centered_limb, stage_flush, stage_store};
 use super::vec_znx_dft::prepare_tmp_words;
 use crate::kernels::ntt4x30::primes::Primes30;
-use crate::kernels::sparse_log_gap_portable;
+use crate::kernels::{RightRead, right_read_ntt};
 
 /// Blocks per parallel task.
 const TASK_BLOCKS: usize = 64;
@@ -51,25 +51,27 @@ struct Term<'a> {
     b1: &'a [u32],
     a_size: usize,
     b_size: usize,
-    /// Slot `s` of the left operand reads slot `s >> b_log_gap` of the right one.
-    b_log_gap: usize,
+    /// The right-operand slot each left slot reads.
+    b_read: RightRead,
     offset: usize,
     /// Output limbs the term contributes to.
     limbs: usize,
 }
 
 impl<'a> Term<'a> {
-    const EMPTY: Self = Self {
-        a0: &[],
-        a1: &[],
-        b0: &[],
-        b1: &[],
-        a_size: 0,
-        b_size: 0,
-        b_log_gap: 0,
-        offset: 0,
-        limbs: 0,
-    };
+    fn empty() -> Self {
+        Self {
+            a0: &[],
+            a1: &[],
+            b0: &[],
+            b1: &[],
+            a_size: 0,
+            b_size: 0,
+            b_read: RightRead::sparse(1, 1),
+            offset: 0,
+            limbs: 0,
+        }
+    }
 
     /// The term over `n` coefficients for a result of `res_size` limbs, or the empty term when an operand has no limb.
     #[allow(clippy::too_many_arguments)]
@@ -81,6 +83,7 @@ impl<'a> Term<'a> {
         a_cols: (usize, usize),
         b: &'a CnvPVecRBackendRef<'_, BE>,
         b_cols: (usize, usize),
+        b_galois: i64,
     ) -> Self
     where
         BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
@@ -88,9 +91,9 @@ impl<'a> Term<'a> {
     {
         let (a_size, b_size) = (a.size(), b.size());
         assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-        let b_log_gap = sparse_log_gap_portable(n, b.n());
+        let b_read = right_read_ntt::<BE::Ring>(n, b.n(), b_galois);
         if a_size == 0 || b_size == 0 {
-            return Self::EMPTY;
+            return Self::empty();
         }
         let bound = a_size + b_size - 1;
         let offset = cnv_offset.min(bound);
@@ -103,30 +106,42 @@ impl<'a> Term<'a> {
             b1: col_slice(b_raw, b.n(), b_size, b_cols.1),
             a_size,
             b_size,
-            b_log_gap,
+            b_read,
             offset,
             limbs: res_size.min(bound - offset),
         }
     }
 
-    /// Adds the products of output limb `k` of block `blk` to `state`.
+    /// Whether [`Self::push`] reads its right rows through [`Self::lanes`].
     #[inline(always)]
-    fn push<const PAIRWISE: bool>(&self, state: DotState, blk: usize, k: usize) -> DotState {
+    fn gathers<const PAIRWISE: bool>(&self) -> bool {
+        PAIRWISE || !self.b_read.is_direct()
+    }
+
+    /// Offset of row 0 of the right-operand lane each lane of block `blk` reads, in the block order of that operand.
+    #[inline(always)]
+    fn lanes(&self, blk: usize) -> [usize; 4] {
+        std::array::from_fn(|l| {
+            let slot = self.b_read.source(4 * blk + l);
+            packed_row_offset(self.b_size, 0, slot / 4) + slot % 4
+        })
+    }
+
+    /// Adds the products of output limb `k` of block `blk` to `state`; `lanes` is [`Self::lanes`] of `blk` when
+    /// the term [gathers](Self::gathers).
+    #[inline(always)]
+    fn push<const PAIRWISE: bool>(&self, state: DotState, blk: usize, k: usize, lanes: &[usize; 4]) -> DotState {
         let k_abs = k + self.offset;
         let j_min = k_abs.saturating_sub(self.a_size - 1);
         let j_max = (k_abs + 1).min(self.b_size);
         let rows = j_max - j_min;
         let a_off = packed_row_offset(self.a_size, k_abs + 1 - j_max, blk);
         let b_row = self.b_size - j_max;
-        if !PAIRWISE && self.b_log_gap == 0 {
+        if !self.gathers::<PAIRWISE>() {
             let b_off = packed_row_offset(self.b_size, b_row, blk);
             return state.push_rows(&self.a0[a_off..][..rows * ROW], &self.b0[b_off..]);
         }
-        // Lane `l` reads the lane of the right operand its slot maps to, in the block order of that operand.
-        let lane: [usize; 4] = std::array::from_fn(|l| {
-            let slot = (4 * blk + l) >> self.b_log_gap;
-            packed_row_offset(self.b_size, b_row, slot / 4) + slot % 4
-        });
+        let lane: [usize; 4] = lanes.map(|o| o + b_row * ROW);
         let (a0, a1) = (&self.a0[a_off..][..rows * ROW], &self.a1[if PAIRWISE { a_off } else { 0 }..]);
         // The sum of two centered residues is twice as large, so a pairwise product weighs four plain ones.
         state.push_with(rows, if PAIRWISE { 4 } else { 1 }, |i| {
@@ -197,16 +212,22 @@ fn apply_terms<BE, E: TaskExecutor, const PAIRWISE: bool>(
     let per_worker = apply_tmp_words(limbs);
     E::for_each_chunked(n_blocks.div_ceil(TASK_BLOCKS), tmp, per_worker, |stage, task| {
         let end = ((task + 1) * TASK_BLOCKS).min(n_blocks);
+        let mut lanes: Vec<[usize; 4]> = vec![[0; 4]; terms.len()];
         for blk in (task * TASK_BLOCKS..end).step_by(RUN) {
             let len = RUN.min(end - blk);
             for first in (0..limbs).step_by(STAGE_LIMBS) {
                 let count = (limbs - first).min(STAGE_LIMBS);
                 for b in 0..len {
+                    for (lanes, term) in lanes.iter_mut().zip(terms) {
+                        if term.gathers::<PAIRWISE>() {
+                            *lanes = term.lanes(blk + b);
+                        }
+                    }
                     for (k, stage) in stage.chunks_exact_mut(STAGE_LIMB).take(count).enumerate() {
                         let mut state = DotState::new();
-                        for term in terms {
+                        for (term, lanes) in terms.iter().zip(&lanes) {
                             if first + k < term.limbs {
-                                state = term.push::<PAIRWISE>(state, blk + b, first + k);
+                                state = term.push::<PAIRWISE>(state, blk + b, first + k, lanes);
                             }
                         }
                         stage_store(stage, RUN, b, &state.finish());
@@ -364,6 +385,7 @@ fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     a_cols: (usize, usize),
     b: &CnvPVecRBackendRef<'_, BE>,
     b_cols: (usize, usize),
+    b_galois: i64,
     tmp: &mut [u32],
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
@@ -372,7 +394,7 @@ fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
 {
     let (n, res_size) = (res.n(), res.size());
     check_degree::<BE>(module.n(), n);
-    let term = Term::new(n, res_size, cnv_offset, a, a_cols, b, b_cols);
+    let term = Term::new(n, res_size, cnv_offset, a, a_cols, b, b_cols, b_galois);
     apply_terms::<BE, E, PAIRWISE>(res, res_col, &[term], term.limbs, if ACC { term.limbs } else { 0 }, tmp);
     if !ACC {
         for limb in term.limbs..res_size {
@@ -391,13 +413,25 @@ pub fn cnv_apply_dft<BE, E: TaskExecutor>(
     a_col: usize,
     b: &CnvPVecRBackendRef<'_, BE>,
     b_col: usize,
+    b_galois: i64,
     tmp: &mut [u32],
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
-    apply::<BE, E, false, false>(module, cnv_offset, res, res_col, a, (a_col, a_col), b, (b_col, b_col), tmp);
+    apply::<BE, E, false, false>(
+        module,
+        cnv_offset,
+        res,
+        res_col,
+        a,
+        (a_col, a_col),
+        b,
+        (b_col, b_col),
+        b_galois,
+        tmp,
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -410,13 +444,25 @@ pub fn cnv_apply_dft_add<BE, E: TaskExecutor>(
     a_col: usize,
     b: &CnvPVecRBackendRef<'_, BE>,
     b_col: usize,
+    b_galois: i64,
     tmp: &mut [u32],
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
-    apply::<BE, E, true, false>(module, cnv_offset, res, res_col, a, (a_col, a_col), b, (b_col, b_col), tmp);
+    apply::<BE, E, true, false>(
+        module,
+        cnv_offset,
+        res,
+        res_col,
+        a,
+        (a_col, a_col),
+        b,
+        (b_col, b_col),
+        b_galois,
+        tmp,
+    );
 }
 
 /// Terms fused in one pass of [`cnv_apply_dft_sum`].
@@ -442,7 +488,7 @@ pub fn cnv_apply_dft_sum<BE, E: TaskExecutor>(
     // Limbs written so far: a group overwrites the limbs no earlier group reached and adds to the others.
     let mut written = 0;
     for group in terms.chunks(SUM_TERMS) {
-        let mut sum_terms = [Term::EMPTY; SUM_TERMS];
+        let mut sum_terms = [Term::empty(); SUM_TERMS];
         let mut limbs = 0;
         for (dst, term) in sum_terms.iter_mut().zip(group) {
             *dst = Term::new(
@@ -453,6 +499,7 @@ pub fn cnv_apply_dft_sum<BE, E: TaskExecutor>(
                 (term.a_col, term.a_col),
                 &term.b,
                 (term.b_col, term.b_col),
+                term.b_galois,
             );
             limbs = limbs.max(dst.limbs);
         }
@@ -481,8 +528,8 @@ pub fn cnv_pairwise_apply_dft<BE, E: TaskExecutor>(
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     if i == j {
-        apply::<BE, E, false, false>(module, cnv_offset, res, res_col, a, (i, i), b, (i, i), tmp);
+        apply::<BE, E, false, false>(module, cnv_offset, res, res_col, a, (i, i), b, (i, i), 1, tmp);
     } else {
-        apply::<BE, E, false, true>(module, cnv_offset, res, res_col, a, (i, j), b, (i, j), tmp);
+        apply::<BE, E, false, true>(module, cnv_offset, res, res_col, a, (i, j), b, (i, j), 1, tmp);
     }
 }

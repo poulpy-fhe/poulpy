@@ -367,6 +367,7 @@ where
                     i,
                     &b_prep.to_backend_ref(),
                     0,
+                    1,
                     &mut scratch_3,
                 );
             }
@@ -446,6 +447,7 @@ where
                     i,
                     &a_prep.to_backend_ref(),
                     0,
+                    1,
                     &mut scratch_3,
                 );
             }
@@ -1338,7 +1340,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) {
         for i in 0..2 {
-            self.cnv_apply_dft(cnv_offset_hi, diag, i, a, i, b, i, scratch);
+            self.cnv_apply_dft(cnv_offset_hi, diag, i, a, i, b, i, 1, scratch);
         }
         self.cnv_pairwise_apply_dft(cnv_offset_hi, cross, 0, a, b, 0, 1, scratch);
         let diag_ref = poulpy_hal::layouts::vec_znx_dft_backend_ref_from_mut(diag);
@@ -1613,6 +1615,7 @@ fn glwe_tensor_square_apply_symmetric<BE, M, R, AP, BP>(
                 i,
                 &b_prep.to_backend_ref(),
                 i,
+                1,
                 &mut cnv_scratch,
             );
         }
@@ -1771,6 +1774,7 @@ pub(crate) fn glwe_tensor_apply_loop<BE, M, R, AP, BP>(
                 i,
                 &b_prep.to_backend_ref(),
                 i,
+                1,
                 &mut scratch_3,
             );
         }

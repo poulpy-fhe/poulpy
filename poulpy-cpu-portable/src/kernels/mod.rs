@@ -10,10 +10,13 @@
 //! and tables retain their type-scoped names.
 
 pub mod fft64;
+pub mod galois;
 pub mod normalization;
 pub mod ntt4x30;
 pub mod vec_znx;
 pub mod vmp_select;
+
+pub use galois::{GaloisSlots, RightRead, right_read_fft64, right_read_ntt};
 
 /// `log2(N / n)` for an operand of degree `n` under a module of degree `N`:
 /// zero for a dense operand. A sparse operand needs a power-of-two degree that
