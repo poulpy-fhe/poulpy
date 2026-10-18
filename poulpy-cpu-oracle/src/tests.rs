@@ -120,6 +120,7 @@ cross_backend_test_suite! {
         test_vec_znx_mul_xp_minus_one => poulpy_hal::test_suite::vec_znx::test_vec_znx_mul_xp_minus_one,
         test_vec_znx_mul_xp_minus_one_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_mul_xp_minus_one_assign,
         test_vec_znx_normalize => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize,
+        test_vec_znx_gadget_decompose => poulpy_hal::test_suite::vec_znx::test_vec_znx_gadget_decompose,
         test_vec_znx_normalize_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize_assign,
         test_vec_znx_switch_ring => poulpy_hal::test_suite::vec_znx::test_vec_znx_switch_ring,
         test_vec_znx_switch_ring_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_switch_ring_matches_wrapper,

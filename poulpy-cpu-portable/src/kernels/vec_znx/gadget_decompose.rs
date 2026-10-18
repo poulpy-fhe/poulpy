@@ -1,0 +1,176 @@
+//! Gadget digit layout of a coefficient column, see
+//! [`VecZnxGadgetDecompose`](poulpy_hal::api::VecZnxGadgetDecompose).
+//!
+//! The column is read limb by limb from the least significant one and the
+//! limbs of the digit grid are emitted from the bottom up, carrying through
+//! a per-coefficient accumulator. Coefficients go by chunks so that the carry
+//! buffers stay in L1, and every inner loop is a plain map over a chunk.
+//!
+//! A digit's lower limbs are centered at `base2k` bits. Its top limb is
+//! first centered at its own width `w` and then moved up by `2^w` when it
+//! sits at `-2^(w - 1)` and the lower limbs are negative: that is exactly
+//! when the digit, centered at `digit_k` bits, takes its top value. The sign
+//! of the lower limbs is the sign of the last nonzero one emitted. Every
+//! inner loop is branch free.
+
+use poulpy_hal::layouts::{Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut};
+
+/// Coefficients per pass: three `i64` buffers of this length live on the stack.
+const CHUNK: usize = 512;
+
+pub fn vec_znx_gadget_decompose_portable<'r, 'a, BE>(
+    res: &mut VecZnxBackendMut<'r, BE>,
+    res_col: usize,
+    a: &VecZnxBackendRef<'a, BE>,
+    a_col: usize,
+    base2k: usize,
+    digit_k: usize,
+) where
+    BE: Backend<ZnxWord = i64>,
+    BE::BufMut<'r>: HostDataMut,
+    BE::BufRef<'a>: HostDataRef,
+{
+    assert!((1..=62).contains(&base2k), "base2k={base2k} outside 1..=62");
+    assert!(digit_k > 0, "digit_k must be positive");
+    assert_eq!(res.n(), a.n());
+    let r: usize = digit_k.div_ceil(base2k);
+    let rem: usize = digit_k - (r - 1) * base2k;
+    assert!(
+        res.size() > 0 && res.size().is_multiple_of(r),
+        "res.size()={} is not a nonzero multiple of {r} sub-limbs",
+        res.size()
+    );
+    let dnum: usize = res.size() / r;
+    let n: usize = res.n();
+    let a_size: usize = a.size();
+    let gadget_k: usize = dnum * digit_k;
+    // Limb holding bit `gadget_k` (bit 1 is the most significant), and its bits below it.
+    let j0: usize = gadget_k.div_ceil(base2k) - 1;
+    let low: usize = (j0 + 1) * base2k - gadget_k;
+
+    let mut acc = [0i64; CHUNK];
+    let mut carry = [0i64; CHUNK];
+    let mut neg = [0i64; CHUNK];
+    let mut start = 0;
+    while start < n {
+        let len = CHUNK.min(n - start);
+        let range = start..start + len;
+        let (acc, carry, neg) = (&mut acc[..len], &mut carry[..len], &mut neg[..len]);
+
+        // Rounding at `gadget_k`, half up: floor((tail + 2^(drop - 1)) / 2^drop),
+        // carried exactly through the limbs below the straddling one.
+        if j0 < a_size {
+            carry.fill(0);
+            for j in (j0 + 1..a_size).rev() {
+                let half: i64 = if j == j0 + 1 && low == 0 { 1 << (base2k - 1) } else { 0 };
+                for (c, &v) in carry.iter_mut().zip(&a.at(a_col, j)[range.clone()]) {
+                    *c = (v + *c + half) >> base2k;
+                }
+            }
+            let half: i64 = if low > 0 { 1 << (low - 1) } else { 0 };
+            for ((x, &c), &v) in acc.iter_mut().zip(carry.iter()).zip(&a.at(a_col, j0)[range.clone()]) {
+                *x = (v + c + half) >> low;
+            }
+        } else {
+            acc.fill(0);
+        }
+
+        // Cells from the bottom up, `acc` in units of the current one. At most
+        // one input limb has its least significant bit in a cell: it is split
+        // there, its low part joining the cell and its high part the carry, so
+        // no shift overflows.
+        let mut next: usize = j0.min(a_size);
+        let mut pos: usize = gadget_k;
+        for q in (0..dnum).rev() {
+            if r > 1 {
+                neg.fill(0);
+            }
+            for t in 0..r {
+                let w: usize = if t == r - 1 { rem } else { base2k };
+                let top: bool = t == r - 1 && r > 1;
+                let half: i64 = 1 << (w - 1);
+                let mask: i64 = (1i64 << w) - 1;
+                let limb = if next > 0 && next * base2k > pos - w {
+                    let s: usize = pos - next * base2k;
+                    next -= 1;
+                    Some((s as u32, (w - s) as u32, &a.at(a_col, next)[range.clone()]))
+                } else {
+                    None
+                };
+                let out = &mut res.at_mut(res_col, q * r + r - 1 - t)[range.clone()];
+                match (limb, top) {
+                    (Some((s, split, v)), false) if r == 1 => {
+                        let lo_mask: i64 = (1i64 << split) - 1;
+                        for ((x, o), &v) in acc.iter_mut().zip(out.iter_mut()).zip(v) {
+                            let y = *x + ((v & lo_mask) << s);
+                            let d = ((y + half) & mask) - half;
+                            *x = ((y - d) >> w) + (v >> split);
+                            *o = d;
+                        }
+                    }
+                    (Some((s, split, v)), false) => {
+                        let lo_mask: i64 = (1i64 << split) - 1;
+                        for (((x, o), n), &v) in acc.iter_mut().zip(out.iter_mut()).zip(neg.iter_mut()).zip(v) {
+                            let y = *x + ((v & lo_mask) << s);
+                            let d = ((y + half) & mask) - half;
+                            *x = ((y - d) >> w) + (v >> split);
+                            *o = d;
+                            *n = track_sign(*n, d);
+                        }
+                    }
+                    (None, false) if r == 1 => {
+                        // One limb per digit: no top limb to correct, no sign to keep.
+                        for (x, o) in acc.iter_mut().zip(out.iter_mut()) {
+                            let d = ((*x + half) & mask) - half;
+                            *x = (*x - d) >> w;
+                            *o = d;
+                        }
+                    }
+                    (None, false) => {
+                        for ((x, o), n) in acc.iter_mut().zip(out.iter_mut()).zip(neg.iter_mut()) {
+                            let d = ((*x + half) & mask) - half;
+                            *x = (*x - d) >> w;
+                            *o = d;
+                            *n = track_sign(*n, d);
+                        }
+                    }
+                    (Some((s, split, v)), true) => {
+                        let lo_mask: i64 = (1i64 << split) - 1;
+                        for (((x, o), &n), &v) in acc.iter_mut().zip(out.iter_mut()).zip(neg.iter()).zip(v) {
+                            let y = *x + ((v & lo_mask) << s);
+                            let d = top_limb(y, half, mask, n);
+                            *x = ((y - d) >> w) + (v >> split);
+                            *o = d;
+                        }
+                    }
+                    (None, true) => {
+                        for ((x, o), &n) in acc.iter_mut().zip(out.iter_mut()).zip(neg.iter()) {
+                            let d = top_limb(*x, half, mask, n);
+                            *x = (*x - d) >> w;
+                            *o = d;
+                        }
+                    }
+                }
+                pos -= w;
+            }
+        }
+        start += len;
+    }
+}
+
+/// All ones if the lower limbs emitted so far are negative: the sign of the
+/// last nonzero one, kept when `d` is zero.
+#[inline(always)]
+fn track_sign(neg: i64, d: i64) -> i64 {
+    let nonzero: i64 = -((d != 0) as i64);
+    (neg & !nonzero) | ((d >> 63) & nonzero)
+}
+
+/// Top limb of a digit: centered at its width, then moved up by `2^w` when it
+/// sits at `-2^(w - 1)` over negative lower limbs, so the digit is centered.
+#[inline(always)]
+fn top_limb(x: i64, half: i64, mask: i64, neg: i64) -> i64 {
+    let centered: i64 = ((x + half) & mask) - half;
+    let at_bottom: i64 = -((centered == -half) as i64);
+    centered + (at_bottom & neg & (half << 1))
+}

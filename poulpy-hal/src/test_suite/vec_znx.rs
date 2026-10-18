@@ -9,10 +9,11 @@ use crate::{
     api::{
         ScalarZnxAutomorphism, ScalarZnxCIEmbed, ScratchOwnedAlloc, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign,
         VecZnxAutomorphism, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxCIEmbed, VecZnxCITrace, VecZnxCopy,
-        VecZnxFillUniformSource, VecZnxFillUniformSourceAll, VecZnxLsh, VecZnxLshAssign, VecZnxLshTmpBytes, VecZnxMulXpMinusOne,
-        VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize,
-        VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign, VecZnxRotateAssignTmpBytes, VecZnxRsh,
-        VecZnxRshAssign, VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxSwitchRing, VecZnxZero,
+        VecZnxFillUniformSource, VecZnxFillUniformSourceAll, VecZnxGadgetDecompose, VecZnxGadgetDecomposeTmpBytes, VecZnxLsh,
+        VecZnxLshAssign, VecZnxLshTmpBytes, VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes,
+        VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate,
+        VecZnxRotateAssign, VecZnxRotateAssignTmpBytes, VecZnxRsh, VecZnxRshAssign, VecZnxRshTmpBytes, VecZnxSub,
+        VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxSwitchRing, VecZnxZero,
     },
     layouts::{
         DigestU64, HostDataRef, Module, ScalarZnxAsVecZnxBackendMut, ScratchOwned, VecZnx, VecZnxOwned, ZnxView, ZnxViewMut,
@@ -2166,6 +2167,276 @@ pub fn test_vec_znx_switch_ring_matches_wrapper<BR: crate::test_suite::TestBacke
                     download_vec_znx::<BT>(&wrapper_backend),
                     download_vec_znx::<BT>(&backend_backend)
                 );
+            }
+        }
+    }
+}
+
+/// `vec_znx_gadget_decompose` against the reference backend and against its
+/// contract.
+///
+/// Sweeps radixes, digit widths on and off limb boundaries, input sizes and
+/// digit counts that round the input or pad it, on uniform canonical inputs,
+/// inputs of extreme digits (rounding and centering ties) and non-canonical
+/// inputs at the edge of the domain. Each result is compared bit for bit with
+/// the reference, checked for its limb ranges and centered digits, and
+/// recomposed with `vec_znx_normalize` to the input rounded at the gadget
+/// precision. One case per shape also writes a window of one column of a
+/// prefilled vector, which must leave every other limb and column as it was.
+///
+/// The sweep runs at `params.n` and again, on a reduced set of shapes, at the
+/// module degree, which the suites register above the kernel's chunk length.
+pub fn test_vec_znx_gadget_decompose<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+    params: &TestParams,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
+    Module<BR>: VecZnxGadgetDecompose<BR>
+        + VecZnxGadgetDecomposeTmpBytes
+        + VecZnxFillUniformSourceAll<BR>
+        + VecZnxNormalize<BR>
+        + VecZnxNormalizeTmpBytes
+        + VecZnxAddAssign<BR>,
+    Module<BT>: VecZnxGadgetDecompose<BT> + VecZnxGadgetDecomposeTmpBytes,
+    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
+    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
+{
+    assert_eq!(module_ref.n(), module_test.n());
+    let mut source: Source = Source::new([7u8; 32]);
+    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(
+        module_ref
+            .vec_znx_gadget_decompose_tmp_bytes()
+            .max(module_ref.vec_znx_normalize_tmp_bytes()),
+    );
+    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_gadget_decompose_tmp_bytes());
+    let cols: usize = 2;
+
+    let mut degrees = vec![(params.n, false)];
+    if module_ref.n() != params.n {
+        degrees.push((module_ref.n(), true));
+    }
+    for (n, reduced) in degrees {
+        let radixes: &[usize] = if reduced { &[12, 52] } else { &[1, 5, 12, 17, 30, 52, 62] };
+        for &base2k in radixes {
+            let mut digit_ks: Vec<usize> = if reduced {
+                vec![base2k - 1, base2k + 1, 3 * base2k - 1]
+            } else {
+                vec![1, base2k, 2 * base2k, base2k + 1, 3 * base2k - 1, 7, 61]
+            };
+            digit_ks.dedup();
+            for digit_k in digit_ks {
+                let r = digit_k.div_ceil(base2k);
+                let w = digit_k - (r - 1) * base2k;
+                let a_sizes: &[usize] = if reduced { &[5] } else { &[1, 2, 5] };
+                for &a_size in a_sizes {
+                    for dnum in [1usize, 2, 3] {
+                        for pattern in 0..5 {
+                            let case =
+                                format!("n={n} base2k={base2k} digit_k={digit_k} a_size={a_size} dnum={dnum} pattern={pattern}");
+                            let mut a = module_ref.vec_znx_alloc(n, cols, a_size);
+                            module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
+                            let mut a_host = download_vec_znx::<BR>(&a);
+                            let half = 1i64 << (base2k - 1);
+                            for col in 0..cols {
+                                for limb in 0..a_size {
+                                    for (i, x) in a_host.at_mut(col, limb).iter_mut().enumerate() {
+                                        *x = match pattern {
+                                            1 | 2 => match (pattern + i + limb) % 3 {
+                                                0 => -half,
+                                                1 => half - 1,
+                                                _ => 0,
+                                            },
+                                            // Non-canonical, at the edge of the domain.
+                                            3 => source.next_i64() >> 2,
+                                            _ => *x,
+                                        };
+                                    }
+                                }
+                            }
+                            // A rounding tie off a limb boundary: the bits below the gadget
+                            // precision are exactly one half of its last unit.
+                            let gadget_k = dnum * digit_k;
+                            let (j0, low) = (gadget_k.div_ceil(base2k) - 1, gadget_k.div_ceil(base2k) * base2k - gadget_k);
+                            if pattern == 4 && low > 0 && j0 < a_size {
+                                for col in 0..cols {
+                                    for x in a_host.at_mut(col, j0).iter_mut() {
+                                        *x = ((*x >> low) << low) + (1i64 << (low - 1));
+                                    }
+                                    for limb in j0 + 1..a_size {
+                                        a_host.at_mut(col, limb).fill(0);
+                                    }
+                                }
+                            }
+                            let a_ref = upload_vec_znx::<BR>(&a_host);
+                            let a_test = upload_vec_znx::<BT>(&a_host);
+                            let mut res_ref = module_ref.vec_znx_alloc(n, cols, dnum * r);
+                            let mut res_test = module_test.vec_znx_alloc(n, cols, dnum * r);
+                            for col in 0..cols {
+                                module_ref.vec_znx_gadget_decompose(
+                                    &mut vec_znx_backend_mut::<BR>(&mut res_ref),
+                                    col,
+                                    &vec_znx_backend_ref::<BR>(&a_ref),
+                                    col,
+                                    base2k,
+                                    digit_k,
+                                    &mut scratch_ref.arena(),
+                                );
+                                module_test.vec_znx_gadget_decompose(
+                                    &mut vec_znx_backend_mut::<BT>(&mut res_test),
+                                    col,
+                                    &vec_znx_backend_ref::<BT>(&a_test),
+                                    col,
+                                    base2k,
+                                    digit_k,
+                                    &mut scratch_test.arena(),
+                                );
+                            }
+                            let res_host = download_vec_znx::<BR>(&res_ref);
+                            assert_eq!(res_host, download_vec_znx::<BT>(&res_test), "{case}");
+
+                            // Limb ranges, and centered digits where they fit an i128.
+                            let top_half = 1i64 << (w - 1);
+                            for col in 0..cols {
+                                for q in 0..dnum {
+                                    assert!(
+                                        res_host.at(col, q * r).iter().all(|&d| (-top_half..=top_half).contains(&d)),
+                                        "{case}: top limb out of range"
+                                    );
+                                    for t in 1..r {
+                                        assert!(
+                                            res_host.at(col, q * r + t).iter().all(|&d| (-half..half).contains(&d)),
+                                            "{case}: lower limb out of range"
+                                        );
+                                    }
+                                    if r * base2k <= 120 {
+                                        for i in 0..n {
+                                            let d: i128 = (0..r)
+                                                .map(|t| (res_host.at(col, q * r + r - 1 - t)[i] as i128) << (t * base2k))
+                                                .sum();
+                                            assert!(
+                                                (-(1i128 << (digit_k - 1))..(1i128 << (digit_k - 1))).contains(&d),
+                                                "{case}: digit {q} of coefficient {i} is not centered"
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Recomposition: the digits sum to the input rounded at the gadget precision.
+                            let size = gadget_k.div_ceil(base2k);
+                            for col in 0..cols {
+                                let mut want = module_ref.vec_znx_alloc(n, 1, size);
+                                module_ref.vec_znx_normalize(
+                                    &mut vec_znx_backend_mut::<BR>(&mut want),
+                                    base2k,
+                                    gadget_k,
+                                    0,
+                                    0,
+                                    &vec_znx_backend_ref::<BR>(&a_ref),
+                                    base2k,
+                                    col,
+                                    &mut scratch_ref.arena(),
+                                );
+                                let mut sum = module_ref.vec_znx_alloc(n, 1, size);
+                                let mut term = module_ref.vec_znx_alloc(n, 1, size);
+                                for q in 0..dnum {
+                                    let block = vec_znx_backend_ref::<BR>(&res_ref).window_limbs(q * r, 1, r);
+                                    module_ref.vec_znx_normalize(
+                                        &mut vec_znx_backend_mut::<BR>(&mut term),
+                                        base2k,
+                                        gadget_k,
+                                        (r * base2k) as i64 - ((q + 1) * digit_k) as i64,
+                                        0,
+                                        &block,
+                                        base2k,
+                                        col,
+                                        &mut scratch_ref.arena(),
+                                    );
+                                    module_ref.vec_znx_add_assign(
+                                        &mut vec_znx_backend_mut::<BR>(&mut sum),
+                                        0,
+                                        &vec_znx_backend_ref::<BR>(&term),
+                                        0,
+                                    );
+                                }
+                                let mut have = module_ref.vec_znx_alloc(n, 1, size);
+                                module_ref.vec_znx_normalize(
+                                    &mut vec_znx_backend_mut::<BR>(&mut have),
+                                    base2k,
+                                    gadget_k,
+                                    0,
+                                    0,
+                                    &vec_znx_backend_ref::<BR>(&sum),
+                                    base2k,
+                                    0,
+                                    &mut scratch_ref.arena(),
+                                );
+                                assert_eq!(
+                                    download_vec_znx::<BR>(&have),
+                                    download_vec_znx::<BR>(&want),
+                                    "{case}: recomposition"
+                                );
+                            }
+
+                            // Windows, plain and strided, of both operands, decomposing column 1 of
+                            // `a` into column 0 of `res`: everything else stays as it was.
+                            if pattern == 0 {
+                                for step in [1usize, 2] {
+                                    let res_len = 2 + step * (dnum * r);
+                                    let mut wide = module_ref.vec_znx_alloc(n, cols, res_len);
+                                    module_ref.vec_znx_fill_uniform_source_all(base2k, res_len * base2k, &mut wide, &mut source);
+                                    let before = download_vec_znx::<BR>(&wide);
+                                    let mut wide_test = upload_vec_znx::<BT>(&before);
+                                    let a_len = 1 + step * a_size;
+                                    let mut a_wide = module_ref.vec_znx_alloc(n, cols, a_len);
+                                    module_ref.vec_znx_fill_uniform_source_all(base2k, a_len * base2k, &mut a_wide, &mut source);
+                                    let mut a_wide_host = download_vec_znx::<BR>(&a_wide);
+                                    for col in 0..cols {
+                                        for limb in 0..a_size {
+                                            a_wide_host.at_mut(col, 1 + step * limb).copy_from_slice(a_host.at(col, limb));
+                                        }
+                                    }
+                                    let a_wide_test = upload_vec_znx::<BT>(&a_wide_host);
+                                    {
+                                        let mut view = vec_znx_backend_mut::<BT>(&mut wide_test).window_limbs(1, step, dnum * r);
+                                        let a_view = vec_znx_backend_ref::<BT>(&a_wide_test).window_limbs(1, step, a_size);
+                                        module_test.vec_znx_gadget_decompose(
+                                            &mut view,
+                                            0,
+                                            &a_view,
+                                            1,
+                                            base2k,
+                                            digit_k,
+                                            &mut scratch_test.arena(),
+                                        );
+                                    }
+                                    let after = download_vec_znx::<BT>(&wide_test);
+                                    for limb in 0..res_len {
+                                        assert_eq!(
+                                            after.at(1, limb),
+                                            before.at(1, limb),
+                                            "{case} step={step}: other column written"
+                                        );
+                                        let inside = limb >= 1 && (limb - 1).is_multiple_of(step) && (limb - 1) / step < dnum * r;
+                                        if inside {
+                                            assert_eq!(
+                                                after.at(0, limb),
+                                                res_host.at(1, (limb - 1) / step),
+                                                "{case} step={step}: window result"
+                                            );
+                                        } else {
+                                            assert_eq!(
+                                                after.at(0, limb),
+                                                before.at(0, limb),
+                                                "{case} step={step}: limb outside the window written"
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
