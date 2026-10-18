@@ -26,6 +26,15 @@ mod bootstrapping_presets {
     fn ntt4x30_neon_rayon() {
         bootstrapping_presets_meet_precision::<crate::NTT4x30NeonRayon>(52);
     }
+
+    #[test]
+    #[ignore = "full logN16 bootstrapping presets with EvalMod on the conjugate-invariant ring"]
+    fn ntt4x30_neon_rayon_ci() {
+        poulpy_ckks::test_suite::presets::bootstrapping_ci_presets_meet_precision::<
+            crate::NTT4x30NeonRayon,
+            crate::NTT4x30CINeonRayon,
+        >();
+    }
 }
 
 #[cfg(feature = "enable-rayon")]

@@ -102,7 +102,7 @@ fn layout<A: GLWEInfos>(infos: &A, size: usize) -> GLWELayout {
 
 /// `res = phi_p(a)` column by column, with no key: `res` is under `phi_p` of
 /// the secret of `a`.
-fn glwe_automorphism_keyless<BE, R, A>(module: &Module<BE>, res: &mut R, p: i64, a: &A)
+pub(crate) fn glwe_automorphism_keyless<BE, R, A>(module: &Module<BE>, res: &mut R, p: i64, a: &A)
 where
     BE: Backend,
     Module<BE>: VecZnxAutomorphism<BE>,

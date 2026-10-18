@@ -101,6 +101,7 @@ macro_rules! impl_ckks_infos {
 mod alloc;
 mod approximation;
 pub mod bootstrapping;
+pub mod bootstrapping_ci;
 pub mod bootstrapping_keys;
 pub mod ciphertext;
 pub mod complex_diagonals;
@@ -119,6 +120,10 @@ pub use approximation::PolynomialApproximation;
 pub use bootstrapping::{
     BootstrappingContext, BootstrappingContextUnprepared, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
     EvalRoundPlus, SparseSecretEncapsulation,
+};
+pub use bootstrapping_ci::{
+    BootstrappingCIContext, BootstrappingCIKeySet, BootstrappingCIKeysLayout, BootstrappingCIKeysPrepared, BootstrappingCIPlan,
+    EvalModCIPlan,
 };
 pub(crate) use bootstrapping_keys::CoveringKeys;
 pub use bootstrapping_keys::{

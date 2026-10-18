@@ -19,6 +19,9 @@
 //! - `circuit`: `c2s` (C2S-first) or `s2c` (S2C-first), extended with a suffix for further techniques:
 //!   `ffr` for the first CoeffsToSlots factor on the raise.
 //!
+//! The suffix `fast` marks the preset tuned for speed,
+//! [`n16_d35_k685_p19_s2c_fast`], at the widths its techniques leave room for.
+//!
 //! `n16_d35_k636_p20_c2s` is thus the C2S-first preset at `N = 2^16` for inputs at
 //! scale `2^35`, producing 636-bit ciphertexts at scale `2^35` with at least 20 bits of precision.
 //!
@@ -61,8 +64,9 @@ use crate::numerics::CKKSFloat;
 use crate::{
     CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, Scale, SlotsKind,
     layouts::{
-        BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, DFTOutputFormat, DFTPlan,
-        DFTType, EncapsulationKeysLayout, EvalModPlan, EvalModType, SparseSecretEncapsulation,
+        BootstrappingCIKeysLayout, BootstrappingCIPlan, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan,
+        BootstrappingTechniques, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout, EvalModCIPlan, EvalModPlan,
+        EvalModType, SparseSecretEncapsulation,
     },
     polynomial::SplitStrategy,
     reference::first_factor::{first_factor_diagonal_growth, first_factor_small_bits, first_factor_work},
@@ -518,6 +522,138 @@ pub(crate) fn insecure_n11_d35_k180_p20_s2c() -> Result<BootstrappingPreset> {
     })
 }
 
+/// Scales of the conversions to and from the conjugate-invariant ring: `u` before
+/// EvalMod carries the overflow of the raise, `v` after it only the message.
+const EVALMOD_CI_CONVERSION: EvalModCIPlan = EvalModCIPlan {
+    pre_log_delta: 46,
+    post_log_delta: 38,
+};
+
+/// CoeffsToSlots with its first factor, of three layers, applied by the raise.
+const C2S_FFR_SCHEDULE: [(usize, usize); 4] = [(3, 1), (4, 1024), (4, 64), (4, 4)];
+/// Four factors of SlotsToCoeffs for the fast preset.
+const S2C_FAST_SCHEDULE: [(usize, usize); 4] = [(3, 4), (4, 32), (4, 512), (4, 8192)];
+
+/// S2C-first full-slot preset at `N = 2^16` for inputs at scale `2^35`, tuned for
+/// speed: 685-bit ciphertexts with at least 19 bits of precision.
+///
+/// - The first CoeffsToSlots factor, of three layers, is applied by the modulus
+///   raise ([`BootstrappingPreset::with_first_factor_on_raise`]), with eight small
+///   keys in place of the sparse-to-dense switch; three paid factors of four
+///   layers follow at scale `2^48`.
+/// - EvalMod runs once, on the conjugate-invariant ring
+///   ([`crate::layouts::bootstrapping_ci`]), instead of twice; the conversions
+///   there and back cost 84 bits.
+/// - SlotsToCoeffs has four factors at scale `2^28`, below ModUp: the input width
+///   is 160 bits, and 525 bits (15 rescales) are usable.
+///
+/// The first-factor keys hold the raised width under the dense-secret bound, hence
+/// the narrower precision and budget than [`n16_d35_k733_p20_s2c`]. At 1383 bits,
+/// 35 below a 16-level budget, every key at the widest levels has one row fewer.
+/// It runs through [`CKKSBootstrappingCIOps`](crate::api::CKKSBootstrappingCIOps).
+pub fn n16_d35_k685_p19_s2c_fast() -> Result<BootstrappingCIPreset> {
+    build_ci(
+        "n16_d35_k685_p19_s2c_fast",
+        PresetSpec {
+            name: "n16_d35_k685_p19_s2c_fast",
+            output_k: 685,
+            log2_precision: 19,
+            c2s_schedule: &C2S_FFR_SCHEDULE,
+            c2s_first_factor_on_raise: true,
+            c2s_log_delta: 48,
+            s2c_schedule: &S2C_FAST_SCHEDULE,
+            s2c_log_delta: 28,
+            ..n16_d35_k733_p20_s2c()?.spec
+        },
+        EVALMOD_CI_CONVERSION,
+    )
+}
+
+/// Every preset with EvalMod on the conjugate-invariant ring, in a stable order.
+pub fn all_ci() -> Result<Vec<BootstrappingCIPreset>> {
+    const PRESETS: &[fn() -> Result<BootstrappingCIPreset>] = &[n16_d35_k685_p19_s2c_fast];
+    PRESETS.iter().map(|build| build()).collect()
+}
+
+/// A [`BootstrappingPreset`] whose EvalMod runs on the conjugate-invariant ring:
+/// the input and output layouts of the preset it extends, a raised width wider
+/// by the two conversions, and the keys of [`BootstrappingCIKeysLayout`].
+///
+/// [`Self::base`] is the extended preset at that width: its bootstrap layout and
+/// key layouts are those of the CI pipeline's standard stages.
+#[derive(Clone, Debug)]
+pub struct BootstrappingCIPreset {
+    name: &'static str,
+    base: BootstrappingPreset,
+    plan: BootstrappingCIPlan,
+    keys_layout: BootstrappingCIKeysLayout,
+}
+
+impl BootstrappingCIPreset {
+    /// Stable descriptive name of the preset.
+    pub fn name(&self) -> &'static str {
+        self.name
+    }
+
+    /// The extended preset, at the raised width of this one.
+    pub fn base(&self) -> &BootstrappingPreset {
+        &self.base
+    }
+
+    pub fn plan(&self) -> &BootstrappingCIPlan {
+        &self.plan
+    }
+
+    pub fn keys_layout(&self) -> &BootstrappingCIKeysLayout {
+        &self.keys_layout
+    }
+
+    /// Raised width, the conversions included.
+    pub fn bootstrap_k(&self) -> usize {
+        self.base.bootstrap_k
+    }
+}
+
+fn build_ci(name: &'static str, spec: PresetSpec, conversion: EvalModCIPlan) -> Result<BootstrappingCIPreset> {
+    let mut base = build(spec)?;
+    let plan = BootstrappingCIPlan::new(base.plan.clone(), conversion)?;
+    let bootstrap_k = plan.bootstrap_k(base.output_k, spec.log_delta);
+    let base_keys = keys_layout(&spec, plan.base(), bootstrap_k, base.input_k)?;
+    validate_modulus_bounds(&spec, bootstrap_k, &base_keys)?;
+    let dense = spec.dense_secret.max_log_modulus;
+
+    // The conversion keys are of degree 2N. Their secrets lie in subrings of rank N
+    // (`s(X²)`, the embedded CI secret): the bounds of degree N apply.
+    let wide = PresetSpec {
+        log_n: spec.log_n + 1,
+        ..spec
+    };
+    let traced =
+        bootstrap_k - plan.base().coeffs_to_slots().consumed_bits() + plan.base().c2s_guard_bits() - conversion.pre_log_delta;
+    let embedded = traced - plan.base().eval_mod().consumed_bits();
+    // EvalMod runs on the traced ciphertext.
+    let k = plan.base().key_widths().eval_mod_relinearization_k(traced, spec.log_delta);
+    let tensor_key = key_layout(&spec, "CI tensor", k, widest_k_digit(&spec, k, dense), dense)?;
+    validate_key("CI tensor", &tensor_key, dense)?;
+    let conversion_key = |name: &str, k: usize| -> Result<GLWESwitchingKeyLayout> {
+        Ok(key_layout(&wide, name, k, widest_k_digit(&wide, k, dense), dense)?.into())
+    };
+    let keys_layout = BootstrappingCIKeysLayout {
+        base: base_keys.clone(),
+        tensor_key: tensor_key.into(),
+        trace_key: conversion_key("CI trace", traced)?,
+        embed_key: conversion_key("CI embed", embedded)?,
+    };
+    base.bootstrap_k = bootstrap_k;
+    base.keys_layout = base_keys;
+    Ok(BootstrappingCIPreset {
+        name,
+        base,
+        plan,
+        keys_layout,
+    })
+}
+
 /// Every preset, in a stable order.
 pub fn all() -> Result<Vec<BootstrappingPreset>> {
     const PRESETS: &[fn() -> Result<BootstrappingPreset>] = &[
@@ -683,7 +819,7 @@ fn keys_layout(
                 rotation_keys.insert(p, layout.into());
             }
         }
-        let k = widths.eval_mod_relinearization_k(bootstrap_k, spec.log_delta);
+        let k = widths.eval_mod_relinearization_k(bootstrap_k - plan.coeffs_to_slots().consumed_bits(), spec.log_delta);
         tensor_key = key_layout(spec, "tensor", k, widest_k_digit(spec, k, dense), dense)?;
     }
 
@@ -957,6 +1093,29 @@ mod tests {
             [(208, 7), (260, 5), (416, 3), (780, 1), (728, 1)]
         );
         assert_eq!(key_shapes([&keys.tensor_key]), [(416, 3)]);
+    }
+
+    #[test]
+    fn n16_d35_k685_p19_s2c_fast_fits_the_dense_bound() {
+        let preset = n16_d35_k685_p19_s2c_fast().unwrap();
+        assert_eq!((preset.base().input_k(), preset.base().output_k()), (160, 685));
+        assert_eq!(preset.base().log2_precision(), 19);
+        // Three paid CoeffsToSlots factors, EvalMod, and the two conversions.
+        assert_eq!(preset.plan().base().coeffs_to_slots().consumed_bits(), 3 * 48);
+        assert_eq!(preset.plan().conversion_consumed_bits(), 84);
+        assert_eq!(preset.bootstrap_k(), 1383);
+        assert_eq!(preset.base().bootstrap_layout().k().as_usize(), 1383);
+        assert!(preset.plan().base().coeffs_to_slots().first_factor_on_raise());
+        let keys = preset.keys_layout();
+        for key in [&keys.trace_key, &keys.embed_key] {
+            assert_eq!(key.n().as_usize(), 1 << 17);
+            assert!(key.k().as_usize() <= preset.base().max_dense_modulus());
+        }
+        assert_eq!(keys.tensor_key.n().as_usize(), 1 << 16);
+        assert!(keys.tensor_key.k().as_usize() <= preset.base().max_dense_modulus());
+        assert!(keys.base.automorphism_key.k().as_usize() <= preset.base().max_dense_modulus());
+        let first_factor = keys.base.first_factor_key.unwrap();
+        assert!(first_factor.k().as_usize() <= preset.base().max_dense_modulus());
     }
 
     #[test]

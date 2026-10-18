@@ -215,6 +215,11 @@
 
 ### `poulpy-ckks`
 
+- Add S2C-first bootstrapping with EvalMod on the conjugate-invariant ring: `CKKSBootstrappingCIOps::ckks_bootstrap_ci` and `layouts::bootstrapping_ci` (`BootstrappingCIPlan`, `EvalModCIPlan`, `BootstrappingCIContext`, `BootstrappingCIKeysLayout`, `BootstrappingCIKeySet`, `BootstrappingCIKeysPrepared`).
+  After CoeffsToSlots the ciphertext is embedded in the standard ring of degree `2N` and traced onto the CI ring of degree `N`, whose `N` real slots hold every coefficient: EvalMod runs once instead of twice, and the result comes back the same way. The two conversions cost a level each, and their keys are of degree `2N`; EvalMod relinearizes with a CI tensor key of degree `N`.
+  The entry point takes a standard module of degree `2N` and a CI module of degree `N`, whose backend shares the buffers of the standard one.
+- Add the preset `n16_d35_k685_p19_s2c_fast` (`BootstrappingCIPreset`, `all_ci`): S2C-first with the transforms of the former `n16_d35_k720_p19_s2c`, the first factor on the raise and EvalMod on the CI ring, 15 usable levels and a raised width of 1383 bits, which the dense-secret bound leaves for the first-factor keys.
+- Add `test_suite::presets::bootstrapping_ci_presets_meet_precision`.
 - `CKKSEvalModImpl` no longer requires the standard ring. `impl_ckks_eval_mod_real_reference!` implements it on a ring with real slots only, such as the conjugate-invariant ring, through `reference::eval_mod::ckks_eval_mod_real_reference`: the real families are evaluated as on the standard ring, and `EvalModType::ExpCmplx`, whose polynomial is complex, is rejected.
 - Add the modulus raise that applies the first `CoeffsToSlots` factor on the raised ciphertext while it is small (`DFTPlan::with_first_factor_on_raise`, after ePrint 2025/1403): the factor consumes no modulus, and the raised width drops by one CoeffsToSlots scale.
   Each diagonal's term is rotated with no key and switched to the dense secret by a `GLWESwitchingKey` of its own, from the rotated raise secret, whose rows sit `k_offset` bits under the term's few limbs and end at the raise's working width (`BootstrappingKeysLayout::first_factor_key`, `BootstrappingKeys::first_factor_key`); the switches are summed with `glwe_keyswitch_dft_add` and rounded once.
@@ -381,10 +386,12 @@
   The counts are those `blas_matmul` and `blas_matmul_pt_right` document.
 - `validate_blas_sum` rejects with `InvalidOperand` a `base2k` whose digits cannot hold the `log2(mat_slots) + 1` lazy terms the sum adds within `2^62`, as the products reject one above 62.
 - Calls with distinct `res` and `scratch` may run concurrently over a shared module, context, public operands, prepared operands and key stores, and an override keeps no state across calls.
+- `CKKSEvalModImpl` no longer requires the standard ring. `impl_ckks_eval_mod_real_reference!` implements it on a ring with real slots only, such as the conjugate-invariant ring, through `reference::eval_mod::ckks_eval_mod_real_reference`: the real families are evaluated as on the standard ring, and `EvalModType::ExpCmplx`, whose polynomial is complex, is rejected.
 
 ### `poulpy-cpu-arm`
 
 - Add the full-size bootstrapping preset precision test for `NTT4x30NeonRayon`.
+- Add the full-size precision test of the presets with EvalMod on the CI ring for `NTT4x30NeonRayon` and `NTT4x30CINeonRayon`.
 
 ## [0.9.0] - 2026-10-08
 

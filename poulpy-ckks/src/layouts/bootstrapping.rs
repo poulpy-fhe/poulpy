@@ -88,7 +88,7 @@ pub struct BootstrappingTechniques {
 pub struct BootstrappingPlan {
     pipeline: BootstrappingPipeline,
     c2s_guard_bits: usize,
-    functional_message_modulus: Option<usize>,
+    pub(crate) functional_message_modulus: Option<usize>,
 
     techniques: BootstrappingTechniques,
 
@@ -475,21 +475,21 @@ impl KeyWidths<'_> {
         }
     }
 
-    /// Widest ciphertext EvalMod relinearizes, in bits, for an input of scale
-    /// `2^input_log_delta`.
+    /// Widest ciphertext EvalMod relinearizes, in bits, for an EvalMod input of
+    /// `eval_mod_k` bits and a bootstrap input of scale `2^input_log_delta`.
     ///
     /// EvalMod relabels its input at its own scale and keeps its budget, so its
     /// widest product is at that budget plus `f_mod_log_delta`. The budget is what
-    /// CoeffsToSlots leaves of the raised width above the scale the raise labels:
-    /// EvalMod's own scale (C2S-first), or the input scale, the message ratio and
-    /// the guard bits (S2C-first).
-    pub(crate) fn eval_mod_relinearization_k(&self, bootstrap_k: usize, input_log_delta: usize) -> usize {
+    /// the input holds above the scale the raise labels: EvalMod's own scale
+    /// (C2S-first), or the input scale, the message ratio and the guard bits
+    /// (S2C-first).
+    pub(crate) fn eval_mod_relinearization_k(&self, eval_mod_k: usize, input_log_delta: usize) -> usize {
         let f_mod_log_delta = self.eval_mod.f_mod_log_delta;
         let raised_log_delta = match self.pipeline {
             BootstrappingPipeline::C2SFirst => f_mod_log_delta,
             BootstrappingPipeline::S2CFirst => input_log_delta + self.eval_mod.log_msg_ratio + self.c2s_guard_bits,
         };
-        bootstrap_k - self.coeffs_to_slots.consumed_bits() - raised_log_delta + f_mod_log_delta
+        eval_mod_k - raised_log_delta + f_mod_log_delta
     }
 }
 

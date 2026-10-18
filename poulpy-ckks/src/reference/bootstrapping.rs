@@ -188,7 +188,8 @@ where
                     source,
                 })?;
         }
-        let k = TorusPrecision(widths.eval_mod_relinearization_k(bootstrap_k, ct_in.log_delta()) as u32);
+        let eval_mod_k = bootstrap_k - ctx.coeffs_to_slots().consumed_bits();
+        let k = TorusPrecision(widths.eval_mod_relinearization_k(eval_mod_k, ct_in.log_delta()) as u32);
         CoveringKeys(keys.tensor_key())
             .get_tensor_key(k)
             .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source })?;
@@ -1243,7 +1244,7 @@ where
     Ok(())
 }
 
-fn ckks_bootstrap_s2c_mod_up<BE, F, K, R>(
+pub(crate) fn ckks_bootstrap_s2c_mod_up<BE, F, K, R>(
     module: &Module<BE>,
     ct_raised: &mut R,
     ct_in: &CKKSCiphertextOwned<BE>,

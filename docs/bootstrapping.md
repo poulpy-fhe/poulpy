@@ -159,6 +159,14 @@ Real slots are selected by the input's metadata rather than by a separate entry 
 Its cosine polynomial is controlled by `degree`, `k_interval`, and `log_interval_reduction`; it skips EvalMod and is cheaper than the general construction.
 For now it still uses a `BootstrappingPlan` containing an EvalMod plan because EvalMod is not optional in the compiled context, although those tables are not evaluated by the binary path.
 
+### EvalMod on the conjugate-invariant ring
+
+The S2C-first pipeline leaves the `N` real coefficients in `N/2` complex slots after CoeffsToSlots, and EvalMod's real polynomial only reduces real inputs, so the standard pipeline evaluates it twice, once per half.
+The conjugate-invariant ring of degree `N` has `N` real slots: `CKKSBootstrappingCIOps::ckks_bootstrap_ci` (`layouts::bootstrapping_ci`) moves the ciphertext there, evaluates EvalMod once on all coefficients, and moves it back.
+Both conversions go through the standard ring of degree `2N`, which contains the two: the ciphertext of degree `N` is embedded as `z(X²)`, which holds each slot twice; a plaintext product (`1` on one copy, `−i` on the other) and the trace onto the CI ring keep the real part of each copy, `c_j` and `c_{j+N/2}` in two slots; after EvalMod, the embedding back, a product with `1` and `i` and the keyless trace `x + x(−X)` pair them back as `r_j + i·r_{j+N/2}`.
+The two products cost a level each (`EvalModCIPlan`), and the conversion keys are of degree `2N`; EvalMod relinearizes with a tensor key of the CI ring, of degree `N`. The preset `n16_d35_k685_p19_s2c_fast` uses it with the first factor on the raise.
+The entry point takes the standard module of degree `N`, a standard module of degree `2N` and a CI module of degree `N` whose backend shares the buffers of the standard one.
+
 ## Pipeline order and EvalRound+
 
 The orchestrator selects the pipeline from the compiled context.
@@ -259,6 +267,7 @@ The presets take inputs at scale `2^35` and use an optimized Han–Ki EvalMod:
 | `n16_d35_k636_p20_c2s` | C2S-first | 41 | 636 | 20 bits | 595 (17) | 1381 |
 | `n16_d35_k636_p20_c2s_ffr` | C2S-first | 41 | 636 | 20 bits | 595 (17) | 1330 |
 | `n16_d35_k733_p20_s2c` | S2C-first | 138 | 733 | 20 bits | 595 (17) | 1353 |
+| `n16_d35_k685_p19_s2c_fast` | S2C-first, first factor on the raise, EvalMod on the CI ring | 160 | 685 | 19 bits | 525 (15) | 1383 |
 
 The logN15 preset merges each transform into two seven-layer factors: C2S uses `[(7, 2048), (7, 16)]` at matrix scale `2^50`, and S2C uses the reversed schedule at scale `2^29`. EvalMod keeps the degree-30, interval-16 Han–Ki polynomial, three range-reduction steps, and coefficient scale `2^42`, with evaluation scale `2^53`. C2S, EvalMod, and S2C consume 100, 424, and 58 bits; restoring scale `2^35` consumes another 18 bits. Thus `780 - 100 - 424 - 58 - 18 = 180`, leaving four 35-bit levels above the 40-bit input width.
 

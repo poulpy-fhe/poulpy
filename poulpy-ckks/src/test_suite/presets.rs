@@ -21,14 +21,14 @@ use poulpy_hal::{
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::{
-        CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps,
-        CKKSEncryptOps,
+        CKKSAllOpsTmpBytes, CKKSBootstrappingCIOps, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDecryptOps, CKKSEncodingHostOps,
+        CKKSEncodingOps, CKKSEncryptOps,
     },
     layouts::{
-        BootstrappingContext, BootstrappingKeysLayout, BootstrappingKeysPrepared, BootstrappingPlan, CKKSCiphertextOwned,
-        CKKSModuleAlloc, CKKSPlaintextOwned,
+        BootstrappingCIContext, BootstrappingContext, BootstrappingKeysLayout, BootstrappingKeysPrepared, BootstrappingPlan,
+        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned,
     },
-    presets::bootstrapping::{BootstrappingPreset, all},
+    presets::bootstrapping::{BootstrappingPreset, all, all_ci},
     test_suite::helpers::{
         PrecisionStats, TestContextBackend, TestContextModule, assert_canonical_at_k, ckks_spec, precision_stats, test_vector_1,
     },
@@ -379,4 +379,170 @@ where
         bytes = bytes.max(module.ckks_all_ops_with_atk_tmp_bytes(layout, &keys.tensor_key, atk, &coeffs));
     }
     bytes
+}
+
+/// Runs every preset with EvalMod on the conjugate-invariant ring
+/// ([`all_ci`]) once, with `BE` for the standard stages and `BCI` for
+/// EvalMod, and checks the measured output precision against the precision the
+/// preset advertises, at the output width and scale of the preset it extends.
+/// Full-size bootstraps are slow, so backends register this as an ignored test.
+pub fn bootstrapping_ci_presets_meet_precision<BE, BCI>()
+where
+    BE: TestContextBackend<Ring = Standard> + crate::oep::CKKSEncapsulatedModUpImpl,
+    BCI: TestContextBackend<Ring = poulpy_hal::layouts::ConjugateInvariant>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, f64>
+        + CKKSBootstrappingOps<BE>
+        + CKKSDFTMatrixOps<BE, f64>
+        + CKKSBootstrappingCIOps<BE, BCI>
+        + poulpy_core::GLWECIKeyEncryptSk<BE>
+        + poulpy_core::layouts::GLWECIKeyPreparedFactory<BE>,
+    Module<BCI>: crate::test_suite::helpers::TestContextSharedModule<BCI> + CKKSEncodingOps<BCI, f64>,
+    for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+    ScratchOwned<BCI>: ScratchOwnedAlloc<BCI>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    poulpy_core::layouts::BackendGLWESecret<BCI>: poulpy_core::layouts::GLWESecretToBackendRef<BE>,
+    poulpy_core::layouts::GLWETensorKey<BE::OwnedBuf, BE::ZnxWord>: poulpy_core::layouts::GGLWEToBackendRef<BCI>,
+{
+    let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
+    for preset in all_ci().unwrap() {
+        let base = preset.base();
+        let (n, base2k) = (base.n(), base.base2k());
+        let input_layout = base.input_layout();
+        let bootstrap_layout = base.bootstrap_layout();
+        let module = Module::<BE>::new(n as u64);
+        let wide = Module::<BE>::new(2 * n as u64);
+        let ci = Module::<BCI>::new(n as u64);
+
+        let scratch_size = bootstrap_setup_tmp_bytes(&module, &bootstrap_layout, base.plan(), base.keys_layout());
+        let mut scratch = ScratchOwned::<BE>::alloc(scratch_size.max(1 << 30));
+        let mut scratch_ci = ScratchOwned::<BCI>::alloc(1 << 30);
+        let context = BootstrappingCIContext::<BE, BCI, f64>::compile(
+            &module,
+            &wide,
+            &ci,
+            base2k.into(),
+            preset.plan(),
+            &mut scratch.borrow(),
+            &mut scratch_ci.borrow(),
+        )
+        .unwrap();
+        let (boot_scratch, boot_scratch_ci) =
+            module.ckks_bootstrap_ci_tmp_bytes(&wide, &ci, &bootstrap_layout, &input_layout, &context, preset.keys_layout());
+        if boot_scratch > BE::len_bytes(&scratch.data) {
+            scratch = ScratchOwned::<BE>::alloc(boot_scratch);
+        }
+        if boot_scratch_ci > BCI::len_bytes(&scratch_ci.data) {
+            scratch_ci = ScratchOwned::<BCI>::alloc(boot_scratch_ci);
+        }
+
+        let mut source_sk = Source::new([0; 32]);
+        let mut sk_raw = module.glwe_secret_alloc_from_infos(&bootstrap_layout.glwe_layout);
+        module.glwe_secret_fill_ternary_hw(&mut sk_raw, base.dense_secret_hamming_weight(), &mut source_sk);
+        let mut sk = module.glwe_secret_prepared_alloc_from_infos(&bootstrap_layout.glwe_layout);
+        module.glwe_secret_prepare(&mut sk, &sk_raw);
+        let (mut source_xs, mut source_xa, mut source_xe) = (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
+        let keys = context
+            .generate_keys(
+                &module,
+                &wide,
+                &ci,
+                &sk_raw,
+                preset.keys_layout(),
+                &mut source_xs,
+                &mut source_xe,
+                &mut source_xa,
+                &mut scratch.borrow(),
+                &mut scratch_ci.borrow(),
+            )
+            .unwrap()
+            .prepare::<BE, BCI>(&module, &wide, &ci, &mut scratch.borrow(), &mut scratch_ci.borrow());
+
+        let (want_re, want_im) = test_vector_1::<f64>(n / 2);
+        let mut input_pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), base2k.into(), input_layout.k());
+        input_pt.set_meta(input_layout.meta());
+        module
+            .ckks_encode_reim_into(&mut input_pt, &want_re, &want_im, &mut scratch.borrow())
+            .unwrap();
+        let mut input = module.ckks_ciphertext_alloc_from_glwe_infos(&input_layout);
+        let (mut input_xa, mut input_xe) = (Source::new([3; 32]), Source::new([4; 32]));
+        module
+            .ckks_encrypt_sk(
+                &mut input,
+                &input_pt,
+                &sk,
+                &mut input_xe,
+                &mut input_xa,
+                &mut scratch.borrow(),
+            )
+            .unwrap();
+
+        let mut output = module.ckks_ciphertext_alloc_from_glwe_infos(&bootstrap_layout);
+        output.set_k(preset.bootstrap_k().into());
+        module
+            .ckks_bootstrap_ci(
+                &wide,
+                &ci,
+                &mut output,
+                &input,
+                &context,
+                &keys,
+                &mut scratch.borrow(),
+                &mut scratch_ci.borrow(),
+            )
+            .unwrap();
+        assert_eq!(output.k().as_usize(), base.output_k(), "{}: output width", preset.name());
+        assert_eq!(
+            output.meta(),
+            base.output_layout().meta(),
+            "{}: output metadata",
+            preset.name()
+        );
+
+        assert_canonical_at_k::<BE>("bootstrap CI preset", &output);
+        let log_budget = output
+            .log_budget()
+            .min(PRECISION_LOG_BUDGET)
+            .min(127usize.saturating_sub(output.log_delta()));
+        let mut output_pt = module.ckks_pt_vec_alloc(
+            module.ckks_max_slots(),
+            output.base2k(),
+            (output.log_delta() + log_budget).into(),
+        );
+        output_pt.set_meta(GLWEPlaintextMeta {
+            scale: Scale::Log(output.log_delta()),
+            slots: SlotsKind::Complex,
+            log_sparsity: 0,
+        });
+        module
+            .ckks_decrypt(&mut output_pt, &output, &sk, &mut scratch.borrow())
+            .unwrap();
+        let (mut got_re, mut got_im) = (vec![0.0; n / 2], vec![0.0; n / 2]);
+        module
+            .ckks_decode_reim_into(&output_pt, &mut got_re, &mut got_im, &mut scratch.borrow())
+            .unwrap();
+        let re = precision_stats(&got_re, &want_re, base.log_delta());
+        let im = precision_stats(&got_im, &want_im, base.log_delta());
+        println!(
+            "PRECISION backend={backend} preset={} base2k={base2k} re_min={:.2}b re_avg={:.2}b im_min={:.2}b im_avg={:.2}b (advertised {}b)",
+            preset.name(),
+            re.min_log2_prec,
+            re.avg_log2_prec,
+            im.min_log2_prec,
+            im.avg_log2_prec,
+            base.log2_precision(),
+        );
+        let advertised = base.log2_precision() as f64;
+        assert!(
+            re.min_log2_prec >= advertised && im.min_log2_prec >= advertised,
+            "preset {} advertises {advertised} bits but measured re_min={:.2} im_min={:.2}",
+            preset.name(),
+            re.min_log2_prec,
+            im.min_log2_prec
+        );
+    }
 }
