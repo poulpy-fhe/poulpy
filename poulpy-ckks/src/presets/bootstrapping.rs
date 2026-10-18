@@ -62,6 +62,7 @@ use crate::{
         DFTType, EncapsulationKeysLayout, EvalModPlan, EvalModType, FirstFactorKeyLayout, SparseSecretEncapsulation,
     },
     polynomial::SplitStrategy,
+    reference::first_factor::first_factor_work,
 };
 
 /// Three factors of five layers for the logN16 presets, with the giant steps that
@@ -662,12 +663,11 @@ fn keys_layout(
 }
 
 /// Layout of the keys of a first CoeffsToSlots factor applied by the raise:
-/// the rotated secret at the bottom of the width the raise works at (a limb
-/// more than the raised width), and behind it the bit size of a raised mask
-/// plus 16 bits, since the key noise is scaled by that mask and by nothing else.
+/// the rotated secret at the bottom of the width the raise works at
+/// ([`first_factor_work`]), and behind it the bit size of a raised mask plus
+/// 16 bits, since the key noise is scaled by that mask and by nothing else.
 fn first_factor_key_layout(spec: &PresetSpec, bootstrap_k: usize) -> FirstFactorKeyLayout {
-    let work = bootstrap_k.div_ceil(spec.base2k) + 1;
-    let guard = work * spec.base2k - bootstrap_k;
+    let (work, guard) = first_factor_work(spec.base2k, bootstrap_k);
     // The raised modulus, a lift of at most a limb, the guard of the working
     // width, the growth of a product by a diagonal.
     let mask = spec.log_delta + spec.log_msg_ratio + spec.base2k + guard + spec.c2s_log_budget + spec.log_n + 2;
@@ -795,6 +795,7 @@ fn validate_key<K: GGLWEInfos + LWEInfos>(name: &str, key: &K, limit: usize) -> 
 mod tests {
     use super::*;
     use crate::CKKSInfos;
+    use crate::reference::first_factor::FIRST_FACTOR_GUARD_BITS;
 
     /// Diagonals of a first CoeffsToSlots factor of three layers.
     const FIRST_FACTOR_DIAGONALS: usize = 8;
@@ -966,7 +967,10 @@ mod tests {
         // and behind it more than a raised mask.
         let keys = preset.keys_layout();
         let key = keys.first_factor_key.unwrap();
-        assert_eq!(key.k_secret.as_usize(), (preset.bootstrap_k().div_ceil(52) + 1) * 52);
+        assert_eq!(
+            key.k_secret.as_usize(),
+            (preset.bootstrap_k() + FIRST_FACTOR_GUARD_BITS).div_ceil(52) * 52
+        );
         assert!(key.glwe.k > key.k_secret && key.glwe.k.as_usize() <= preset.max_dense_modulus());
         assert!(base.keys_layout().first_factor_key.is_none());
 

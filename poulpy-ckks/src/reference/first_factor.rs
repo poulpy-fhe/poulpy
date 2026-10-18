@@ -42,17 +42,28 @@ struct Widths {
     /// Limbs of the small ciphertext: the raised integers, the guard below
     /// them, and the growth of a product by a diagonal.
     small: usize,
-    /// Limbs the terms are switched and summed at: one more than the raised
-    /// precision, so each term keeps guard bits and the sum is rounded once.
+    /// Limbs the terms are switched and summed at: at least
+    /// [`FIRST_FACTOR_GUARD_BITS`] below the raised precision, so each term keeps
+    /// guard bits and the sum is rounded once.
     work: usize,
     /// Bits from the bottom of the working width to the raised precision: the
     /// small ciphertext keeps its last bit that far above its bottom.
     guard: usize,
 }
 
+/// Fewest bits the raise keeps below the raised precision while it sums its
+/// terms: room for the rounding of a few dozen terms and of their keys.
+pub const FIRST_FACTOR_GUARD_BITS: usize = 16;
+
+/// Limbs a raise to `k_large` bits works at, and the bits its working width
+/// keeps below them.
+pub fn first_factor_work(base2k: usize, k_large: usize) -> (usize, usize) {
+    let work = (k_large + FIRST_FACTOR_GUARD_BITS).div_ceil(base2k);
+    (work, work * base2k - k_large)
+}
+
 fn widths(base2k: usize, log_n: usize, k_small: usize, k_large: usize, scale_up: usize, diagonal_growth: usize) -> Widths {
-    let work = k_large.div_ceil(base2k) + 1;
-    let guard = work * base2k - k_large;
+    let (work, guard) = first_factor_work(base2k, k_large);
     // The mask of a fresh ciphertext fills `k_small` bits; a product by a
     // diagonal sums up to `n` terms.
     let small = (k_small + scale_up + guard + diagonal_growth + log_n + 2).div_ceil(base2k);
