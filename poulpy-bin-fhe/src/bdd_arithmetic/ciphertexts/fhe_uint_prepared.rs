@@ -31,7 +31,7 @@ use poulpy_core::GLWEBytesOf;
 /// ## Invariants
 ///
 /// - `bits.len() == T::BITS`.
-/// - All GGSW entries share the same `n`, `base2k`, `k`, `dnum`, `dsize`, and
+/// - All GGSW entries share the same `n`, `base2k`, `k`, `dnum`, `digit_k`, and
 ///   `rank` parameters.
 ///
 /// ## Lifecycle

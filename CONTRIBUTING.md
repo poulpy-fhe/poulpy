@@ -18,7 +18,7 @@ For anything better suited to a direct exchange, reach the maintainer at [jean-p
 
 ## Reporting bugs and requesting features
 
-File bugs at [https://github.com/poulpy-fhe/poulpy/issues](https://github.com/poulpy-fhe/poulpy/issues). A useful report names the affected crate, the backend and parameters (ring degree, `base2k`, `k`, `rank`, `dsize`), and the smallest reproduction you can manage.
+File bugs at [https://github.com/poulpy-fhe/poulpy/issues](https://github.com/poulpy-fhe/poulpy/issues). A useful report names the affected crate, the backend and parameters (ring degree, `base2k`, `k`, `rank`, `digit_k`), and the smallest reproduction you can manage.
 
 Feature requests belong there too. Please make sure the feature is self-contained, easy to define, and generic enough to serve more than one use case, and describe the use case you have in mind.
 

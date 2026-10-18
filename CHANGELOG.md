@@ -101,6 +101,7 @@
   The hoisted baby steps lay the input out once for the whole key set, and so take that route when every key has whole-limb digits or all share one digit width and digit count.
 - The relinearization and linear-transformation parity suites also sweep digit widths off a limb boundary.
 - `test_suite::noise::test_glwe_keyswitch_digit_k` and `test_glwe_external_product_digit_k`, registered in `core_backend_test_suite!`, run a key switch and an external product at every digit width from 2 bits to three limbs and check the output noise, and the gadget term alone, against the noise model to within one bit.
+- The getting-started guide, the performance guide, the bootstrapping and linear-transformation docs, the CKKS README and the MHE contracts describe gadget digits by their width in bits, `digit_k`.
 - **Breaking:** `GLWE`, `GLWEPlaintext` and `GLWECompressed` carry an optional, scheme-managed `GLWEPlaintextMeta` (`Scale`, `SlotsKind`, `log_sparsity`) through `GLWEPlaintextInfos` and `SetGLWEPlaintextInfos`, which also read and set each field; `SlotsKind` moves from `poulpy-ckks` and gains `Integer`.
 - **Breaking, format:** serialized `GLWE` and `GLWECompressed` carry their plaintext metadata.
 - `reference::keyswitching::glwe::gglwe_product_limbs` returns the `product_limbs` the reference key switch passes to `GGLWEProductDigitsStridedImpl`, so that backend overrides derive the same.

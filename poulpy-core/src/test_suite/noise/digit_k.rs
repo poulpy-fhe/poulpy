@@ -31,7 +31,7 @@ fn digit_ks(base2k: usize) -> impl Iterator<Item = usize> {
     2..=3 * base2k
 }
 
-/// Key switch with digits of every width in [`digit_ks`], from radix
+/// Key switch with digits of every width from 2 bits to three limbs, from radix
 /// `base2k - 1` through a key at `base2k` to radix `base2k - 2`.
 pub fn test_glwe_keyswitch_digit_k<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
@@ -173,7 +173,7 @@ where
     }
 }
 
-/// External product with a GGSW of digits of every width in [`digit_ks`].
+/// External product with a GGSW of digits of every width from 2 bits to three limbs.
 pub fn test_glwe_external_product_digit_k<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,

@@ -28,9 +28,9 @@ use crate::blind_rotation::BlindRotationAlgo;
 /// - `n_lwe`: Number of LWE ciphertext dimensions; equals the number of GGSW
 ///   ciphertexts stored in the key.
 /// - `base2k`: Decomposition base (bits per limb).
-/// - `dnum`: Number of gadget decomposition digits (`dsize` fixed to 1); the
-///   gadget precision is `dnum * dsize * base2k` and the full precision is
-///   `key_k(dnum, digit_k_of(base2k, Dsize(1)), k_aux)`.
+/// - `dnum`: Number of gadget decomposition digits, each one limb wide
+///   (`digit_k = base2k`). The gadget precision is `dnum * base2k` and the
+///   full precision is `key_k(dnum, base2k, k_aux)`.
 /// - `k_aux`: Auxiliary guard precision (torus bits) below the gadget region.
 /// - `rank`: GLWE rank (0 for plain LWE, ≥ 1 for GLWE / Module-LWE).
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]

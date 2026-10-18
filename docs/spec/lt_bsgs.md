@@ -311,7 +311,7 @@ Total key-switches `(n1 − 1) + (n2 − 1)` is minimized at `n1 ≈ n2 ≈ √|
 
 - **`n1`** (baby steps): default `n1 = round(√|I|)`; expose it so callers can align it
   with the diagonal structure of `M`. `n2 = ⌈(max_i + 1)/n1⌉`.
-- **Key sizes / `dnum`,`dsize`**: the automorphism keys' gadget parameters set the
+- **Key sizes / `dnum`, `digit_k`**: the automorphism keys' gadget parameters set the
   key-switch noise and the `BIG` headroom; reuse the project's existing GGLWE key
   layout conventions.
 - **Diagonal encoding scale `Δ_pt`**: chosen so the post-multiply scale `Δ_ct · Δ_pt`
@@ -350,7 +350,10 @@ from poulpy-ckks they are not.
   `dsize > 1` it is the digit-decomposition loop already implemented and tested in
   `gglwe_product_dft_reference`
   ([keyswitching/glwe.rs:123](../../poulpy-core/src/reference/keyswitching/glwe.rs)) — reuse
-  it, do not reimplement it in HAL.
+  it, do not reimplement it in HAL. Keys whose digits are not whole limbs first lay the
+  input out on their digit grid with `vec_znx_gadget_decompose`, then take the same DFT
+  and product. A hoisted operand is shared only by keys with whole-limb digits or with
+  one common digit width.
 - **Glue is raw HAL.** Everything around the VMP is HAL: `vec_znx_idft_apply`,
   `vec_znx_big_add_small_assign` / `vec_znx_big_add_assign`, `vec_znx_automorphism` /
   `vec_znx_big_automorphism_assign`, `vec_znx_big_normalize`, and the `Convolution` trait

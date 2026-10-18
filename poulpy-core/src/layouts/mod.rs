@@ -25,7 +25,7 @@
 //! | [`TorusPrecision`] | Total number of precision bits over the torus *T = R/Z* |
 //! | [`Rank`] | GLWE rank (number of mask polynomials; 0 for plain LWE) |
 //! | [`Dnum`] | Number of gadget-decomposition digits |
-//! | [`Dsize`] | Size (in limbs) of each gadget digit |
+//! | [`Dsize`] | Limbs one gadget digit spans, `ceil(digit_k / base2k)`, derived from the digit width `digit_k` in bits |
 
 #[macro_use]
 mod macros;
