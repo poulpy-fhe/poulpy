@@ -65,7 +65,7 @@ pub use dot_product::{CKKSDotProductImpl, impl_ckks_dot_product_reference};
 pub use encoding::CKKSEncodingImpl;
 pub use encryption::CKKSEncryptionImpl;
 pub use encryption::impl_ckks_encryption_reference;
-pub use eval_mod::{CKKSEvalModImpl, impl_ckks_eval_mod_reference};
+pub use eval_mod::{CKKSEvalModImpl, impl_ckks_eval_mod_real_reference, impl_ckks_eval_mod_reference};
 pub use fold::{CKKSFoldImpl, CKKSFoldLayoutImpl, impl_ckks_fold_reference};
 pub use imag::CKKSImagImpl;
 pub use imag::impl_ckks_imag_reference;

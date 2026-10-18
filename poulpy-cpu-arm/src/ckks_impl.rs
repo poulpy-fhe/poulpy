@@ -92,11 +92,17 @@ poulpy_cpu_portable::impl_ckks_paco_coeff_encoding!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]
 poulpy_cpu_portable::impl_ckks_ship_coeff_encoding!(super::NTT4x30NeonRayon);
 poulpy_cpu_portable::impl_cpu_ckks_defaults!(super::FFT64CINeon);
+poulpy_ckks::impl_ckks_eval_mod_real_reference!(super::FFT64CINeon);
 poulpy_cpu_portable::impl_cpu_ckks_defaults!(super::NTT4x30CINeon);
+poulpy_ckks::impl_ckks_eval_mod_real_reference!(super::NTT4x30CINeon);
 #[cfg(feature = "enable-rayon")]
 poulpy_cpu_portable::impl_cpu_ckks_defaults!(super::FFT64CINeonRayon);
 #[cfg(feature = "enable-rayon")]
+poulpy_ckks::impl_ckks_eval_mod_real_reference!(super::FFT64CINeonRayon);
+#[cfg(feature = "enable-rayon")]
 poulpy_cpu_portable::impl_cpu_ckks_defaults!(super::NTT4x30CINeonRayon);
+#[cfg(feature = "enable-rayon")]
+poulpy_ckks::impl_ckks_eval_mod_real_reference!(super::NTT4x30CINeonRayon);
 #[cfg(feature = "enable-rayon")]
 select_neon_encoding_transform!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]

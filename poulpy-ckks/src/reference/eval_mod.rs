@@ -30,6 +30,7 @@ use crate::{
         CKKSCiphertextOwned, CKKSModuleAlloc, ScratchArenaTakeCKKS,
         eval_mod::{EvalMod, EvalModBsgs},
     },
+    polynomial::ComplexBSGSPolynomial,
     power_basis::{PowerBasis, PowerBasisGen},
 };
 
@@ -100,7 +101,142 @@ where
         P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
         H: GetTensorKey<BE>,
     {
-        eval_mod(self, res, ct, params, tsk, scratch)
+        eval_mod::<WithComplexSlots, _, _, _, _, _, _>(self, res, ct, params, tsk, scratch)
+    }
+}
+
+/// [`CKKSEvalModOpsReference::ckks_eval_mod_reference`] on a ring with real slots
+/// only, such as the conjugate-invariant ring: the real families are evaluated
+/// the same way, and [`EvalModType::ExpCmplx`](crate::layouts::eval_mod::EvalModType::ExpCmplx),
+/// whose polynomial is complex, is rejected.
+pub fn ckks_eval_mod_real_reference<R, C, P, F, BE, H>(
+    module: &Module<BE>,
+    res: &mut R,
+    ct: &C,
+    params: &EvalMod<F, P>,
+    tsk: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: CKKSPolynomialEvaluationOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSMulOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSModuleAlloc<BE>
+        + CKKSPow2Ops<BE>
+        + GLWECopy<BE>
+        + GLWENormalize<BE>,
+    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+    C: GLWEToBackendRef<BE> + CKKSCtBounds,
+    P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
+    H: GetTensorKey<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+{
+    eval_mod::<RealSlotsOnly, _, _, _, _, _, _>(module, res, ct, params, tsk, scratch)
+}
+
+/// The evaluation of the complex base polynomial of
+/// [`EvalModType::ExpCmplx`](crate::layouts::eval_mod::EvalModType::ExpCmplx):
+/// available on rings with complex slots, rejected on the others.
+trait ComplexBasePolynomial<BE: Backend> {
+    #[allow(clippy::too_many_arguments)]
+    fn eval<R, C, P, H>(
+        module: &Module<BE>,
+        res: &mut R,
+        ct: &C,
+        bsgs: &ComplexBSGSPolynomial<P>,
+        reductions: usize,
+        work_layout: &GLWELayout,
+        work_meta: GLWEPlaintextMeta,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        C: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
+        H: GetTensorKey<BE>;
+}
+
+struct WithComplexSlots;
+
+impl<BE: Backend> ComplexBasePolynomial<BE> for WithComplexSlots
+where
+    Module<BE>: CKKSComplexPolynomialEvaluationOps<BE>
+        + CKKSPolynomialEvaluationOps<BE>
+        + CKKSMulOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSPow2Ops<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWECopy<BE>
+        + GLWENormalize<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+{
+    fn eval<R, C, P, H>(
+        module: &Module<BE>,
+        res: &mut R,
+        ct: &C,
+        bsgs: &ComplexBSGSPolynomial<P>,
+        reductions: usize,
+        work_layout: &GLWELayout,
+        work_meta: GLWEPlaintextMeta,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        C: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
+        H: GetTensorKey<BE>,
+    {
+        if bsgs.re.input_transform() == PolynomialInputTransform::Identity
+            && bsgs.im.input_transform() == PolynomialInputTransform::Identity
+        {
+            let x1 = eval_mod_input(module, ct, work_layout, work_meta, scratch);
+            let mut power_basis = PowerBasis::new(bsgs.re.basis(), x1);
+            power_basis.populate(bsgs.re.degree(), bsgs.re.log_split(), bsgs.re.parity(), module, tsk, scratch)?;
+            module.ckks_eval_poly_complex_const_coeffs_from_power_basis(res, bsgs, &power_basis, tsk, scratch)?;
+        } else {
+            scratch.scope(|scratch_local| {
+                let (mut input, mut nested) = scratch_local.take_ckks_ciphertext_scratch(work_layout, work_meta);
+                module.glwe_copy(&mut input, ct, &mut nested);
+                module.ckks_eval_poly_complex_const_coeffs(res, &input, bsgs, tsk, &mut nested)
+            })?;
+        }
+        for _ in 0..reductions {
+            module.ckks_square_assign(res, tsk, scratch)?;
+        }
+        Ok(())
+    }
+}
+
+struct RealSlotsOnly;
+
+impl<BE: Backend> ComplexBasePolynomial<BE> for RealSlotsOnly {
+    fn eval<R, C, P, H>(
+        _: &Module<BE>,
+        _: &mut R,
+        _: &C,
+        _: &ComplexBSGSPolynomial<P>,
+        _: usize,
+        _: &GLWELayout,
+        _: GLWEPlaintextMeta,
+        _: &H,
+        _: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        C: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
+        H: GetTensorKey<BE>,
+    {
+        ckks_ensure!(
+            false,
+            "ckks_eval_mod: ExpCmplx needs complex slots, which this ring does not have"
+        );
+        Ok(())
     }
 }
 
@@ -119,7 +255,7 @@ where
 /// `res` receives the result; `tsk` is the relinearization (tensor) key for the
 /// squarings, and `scratch` supplies the working memory sized by
 /// [`CKKSEvalModOps::ckks_eval_mod_tmp_bytes`](crate::api::CKKSEvalModOps::ckks_eval_mod_tmp_bytes).
-fn eval_mod<R, C, P, F, BE, H>(
+fn eval_mod<X, R, C, P, F, BE, H>(
     module: &Module<BE>,
     res: &mut R,
     ct: &C,
@@ -129,8 +265,8 @@ fn eval_mod<R, C, P, F, BE, H>(
 ) -> Result<()>
 where
     BE: Backend,
+    X: ComplexBasePolynomial<BE>,
     Module<BE>: CKKSPolynomialEvaluationOps<BE>
-        + CKKSComplexPolynomialEvaluationOps<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSMulOps<BE>
@@ -221,25 +357,17 @@ where
                 })?;
             }
         }
-        EvalModBsgs::Complex(bsgs) => {
-            if bsgs.re.input_transform() == PolynomialInputTransform::Identity
-                && bsgs.im.input_transform() == PolynomialInputTransform::Identity
-            {
-                let x1 = eval_mod_input(module, ct, &work_layout, work_meta, scratch);
-                let mut power_basis = PowerBasis::new(bsgs.re.basis(), x1);
-                power_basis.populate(bsgs.re.degree(), bsgs.re.log_split(), bsgs.re.parity(), module, tsk, scratch)?;
-                module.ckks_eval_poly_complex_const_coeffs_from_power_basis(res, bsgs, &power_basis, tsk, scratch)?;
-            } else {
-                scratch.scope(|scratch_local| {
-                    let (mut input, mut nested) = scratch_local.take_ckks_ciphertext_scratch(&work_layout, work_meta);
-                    module.glwe_copy(&mut input, ct, &mut nested);
-                    module.ckks_eval_poly_complex_const_coeffs(res, &input, bsgs, tsk, &mut nested)
-                })?;
-            }
-            for _ in 0..params.plan.f_mod_log_interval_reduction {
-                module.ckks_square_assign(res, tsk, scratch)?;
-            }
-        }
+        EvalModBsgs::Complex(bsgs) => X::eval(
+            module,
+            res,
+            ct,
+            bsgs,
+            params.plan.f_mod_log_interval_reduction,
+            &work_layout,
+            work_meta,
+            tsk,
+            scratch,
+        )?,
     }
 
     // Restore the input scale on the result. This is a pure metadata relabel

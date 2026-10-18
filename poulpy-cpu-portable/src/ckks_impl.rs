@@ -44,4 +44,6 @@ crate::impl_cpu_ckks_defaults!(super::NTT4x30Portable);
 crate::impl_ckks_paco_coeff_encoding!(super::NTT4x30Portable);
 crate::impl_ckks_ship_coeff_encoding!(super::NTT4x30Portable);
 crate::impl_cpu_ckks_defaults!(super::FFT64CIPortable);
+::poulpy_ckks::impl_ckks_eval_mod_real_reference!(super::FFT64CIPortable);
 crate::impl_cpu_ckks_defaults!(super::NTT4x30CIPortable);
+::poulpy_ckks::impl_ckks_eval_mod_real_reference!(super::NTT4x30CIPortable);

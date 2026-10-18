@@ -2,7 +2,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{BSGSMeta, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos, layouts::eval_mod::EvalMod};
 
@@ -16,7 +16,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos, layouts::eval_mod::EvalMod};
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
-pub unsafe trait CKKSEvalModImpl: Backend<Ring = Standard> {
+pub unsafe trait CKKSEvalModImpl: Backend {
     fn ckks_eval_mod_tmp_bytes_impl<R, C, P, F, T>(
         module: &Module<Self>,
         res: &R,
@@ -94,3 +94,54 @@ macro_rules! impl_ckks_eval_mod_reference {
     };
 }
 pub use crate::impl_ckks_eval_mod_reference;
+
+/// Implements [`CKKSEvalModImpl`] on a backend whose ring has real slots only,
+/// such as the conjugate-invariant ring, with
+/// [`ckks_eval_mod_real_reference`](crate::reference::eval_mod::ckks_eval_mod_real_reference):
+/// the real families, without `ExpCmplx`.
+#[macro_export]
+macro_rules! impl_ckks_eval_mod_real_reference {
+    ($be:ty) => {
+        unsafe impl $crate::oep::CKKSEvalModImpl for $be {
+            fn ckks_eval_mod_tmp_bytes_impl<R, C, P, F, T>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &R,
+                ct: &C,
+                params: &$crate::layouts::eval_mod::EvalMod<F, P>,
+                tsk: &T,
+            ) -> usize
+            where
+                R: $crate::CKKSCtBounds,
+                C: $crate::CKKSCtBounds,
+                P: $crate::CKKSCtBounds,
+                T: poulpy_core::layouts::GGLWEInfos,
+            {
+                $crate::reference::eval_mod::ckks_eval_mod_tmp_bytes_reference(module, res, ct, params, tsk)
+            }
+            fn ckks_eval_mod_impl<R, C, P, F, H>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &mut R,
+                ct: &C,
+                params: &$crate::layouts::eval_mod::EvalMod<F, P>,
+                tsk: &H,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> $crate::CKKSResult<()>
+            where
+                R: ::poulpy_core::layouts::GLWEToBackendMut<Self>
+                    + ::poulpy_core::layouts::GLWEToBackendRef<Self>
+                    + $crate::CKKSCtBounds
+                    + $crate::SetCKKSInfos
+                    + ::poulpy_core::layouts::SetBSGSMeta,
+                C: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSCtBounds,
+                P: ::poulpy_core::layouts::GLWEToBackendRef<Self>
+                    + ::poulpy_core::layouts::IntPolyInfos
+                    + $crate::CKKSCtBounds
+                    + ::poulpy_core::layouts::BSGSMeta,
+                H: ::poulpy_core::layouts::GetTensorKey<Self>,
+            {
+                $crate::reference::eval_mod::ckks_eval_mod_real_reference(module, res, ct, params, tsk, scratch)
+            }
+        }
+    };
+}
+pub use crate::impl_ckks_eval_mod_real_reference;

@@ -109,6 +109,7 @@
   Each backend picks its lane widths through the associated types of `ZnxNormalize`, portable widths by default; the AVX-512 backends fill zmm registers.
   `poulpy-cpu-portable` enables the nightly features `portable_simd`, `hint_prefetch` and `associated_type_defaults`.
 - The portable `vec_znx_gadget_decompose` kernel bounds-checks its columns once and reads its limbs through raw pointers, where it called `at` and `at_mut` per limb and per chunk of coefficients ([#460](https://github.com/poulpy-fhe/poulpy/issues/460)). Results are unchanged.
+- The conjugate-invariant backends (portable, Rayon, NEON, AVX2, AVX-512, IFMA, oracle) implement `CKKSEvalModImpl` with `impl_ckks_eval_mod_real_reference!`.
 
 ### `poulpy-core`
 
@@ -214,6 +215,7 @@
 
 ### `poulpy-ckks`
 
+- `CKKSEvalModImpl` no longer requires the standard ring. `impl_ckks_eval_mod_real_reference!` implements it on a ring with real slots only, such as the conjugate-invariant ring, through `reference::eval_mod::ckks_eval_mod_real_reference`: the real families are evaluated as on the standard ring, and `EvalModType::ExpCmplx`, whose polynomial is complex, is rejected.
 - Add the modulus raise that applies the first `CoeffsToSlots` factor on the raised ciphertext while it is small (`DFTPlan::with_first_factor_on_raise`, after ePrint 2025/1403): the factor consumes no modulus, and the raised width drops by one CoeffsToSlots scale.
   Each diagonal's term is rotated with no key and switched to the dense secret by a `GLWESwitchingKey` of its own, from the rotated raise secret, whose rows sit `k_offset` bits under the term's few limbs and end at the raise's working width (`BootstrappingKeysLayout::first_factor_key`, `BootstrappingKeys::first_factor_key`); the switches are summed with `glwe_keyswitch_dft_add` and rounded once.
   The sparse-to-dense switch is not used, nor its key generated.
