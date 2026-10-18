@@ -1356,6 +1356,7 @@ fn ifma_prepared_tensor<R, A, BP>(
             input,
             &b.to_backend_ref(),
             input,
+            1,
             &mut work,
         );
         BE::tensor_finish(

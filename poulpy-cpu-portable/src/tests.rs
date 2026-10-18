@@ -206,6 +206,7 @@ fn test_packed_kernels_reject_out_of_range_operands() {
             0,
             &right.to_backend_ref(),
             0,
+            1,
             &mut scratch.arena(),
         )
     });
@@ -652,6 +653,7 @@ backend_test_suite! {
         test_vec_znx_sparse_add_sub => poulpy_hal::test_suite::sparse::test_vec_znx_sparse_add_sub,
         test_vec_znx_big_sparse_add_sub => poulpy_hal::test_suite::sparse::test_vec_znx_big_sparse_add_sub,
         test_convolution_sparse => poulpy_hal::test_suite::convolution::test_convolution_sparse,
+        test_convolution_galois => poulpy_hal::test_suite::convolution::test_convolution_galois,
         test_convolution_by_const_degree_rejected => poulpy_hal::test_suite::convolution::test_convolution_by_const_degree_rejected,
         test_transfer_padded_lengths => poulpy_hal::test_suite::transfer::test_transfer_padded_lengths,
     }
@@ -673,6 +675,7 @@ backend_test_suite! {
         test_vec_znx_sparse_add_sub => poulpy_hal::test_suite::sparse::test_vec_znx_sparse_add_sub,
         test_vec_znx_big_sparse_add_sub => poulpy_hal::test_suite::sparse::test_vec_znx_big_sparse_add_sub,
         test_convolution_sparse => poulpy_hal::test_suite::convolution::test_convolution_sparse,
+        test_convolution_galois => poulpy_hal::test_suite::convolution::test_convolution_galois,
         test_convolution_by_const_degree_rejected => poulpy_hal::test_suite::convolution::test_convolution_by_const_degree_rejected,
         test_transfer_padded_lengths => poulpy_hal::test_suite::transfer::test_transfer_padded_lengths,
     }

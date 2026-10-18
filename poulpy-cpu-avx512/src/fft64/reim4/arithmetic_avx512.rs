@@ -17,25 +17,23 @@
 
 use core::arch::x86_64::__m512i;
 
-/// Lane permutation of one degree-`N` reim4 block gathered from a degree-`n` prepared
-/// operand under `log_gap >= 1`: every lane of the block reads compact block
-/// `blk >> log_gap`, lane `l` reading compact lane `((4 * blk + l) >> log_gap) & 3` for
-/// re and `4 + ..` for im, so the whole block is one row load plus one permute.
+use poulpy_cpu_portable::kernels::RightRead;
+
+/// The lane permutation of a gathered row for each key of [`RightRead::lane_table`]: lane `l` reads lane
+/// `table[key][l]` of the stored block for re and `4 + ..` for im, so a row is one load plus one permute.
 ///
 /// # Safety
 /// Caller must ensure the CPU supports AVX-512F.
 #[target_feature(enable = "avx512f")]
 #[inline]
-unsafe fn reim4_sparse_block_permutation(blk: usize, log_gap: usize) -> __m512i {
+unsafe fn reim4_lane_permutations(read: RightRead) -> [__m512i; 4] {
     use core::arch::x86_64::_mm512_loadu_si512;
 
-    let mut lanes: [i64; 8] = [0; 8];
-    for lane in 0..4 {
-        let l: i64 = (((4 * blk + lane) >> log_gap) & 3) as i64;
-        lanes[lane] = l;
-        lanes[4 + lane] = 4 + l;
-    }
-    unsafe { _mm512_loadu_si512(lanes.as_ptr() as *const __m512i) }
+    read.lane_table::<4>().map(|lanes| {
+        let idx: [i64; 8] = std::array::from_fn(|i| (4 * (i / 4) + lanes[i % 4] as usize) as i64);
+        // SAFETY: `idx` holds the 64 bytes the unaligned load reads.
+        unsafe { _mm512_loadu_si512(idx.as_ptr() as *const __m512i) }
+    })
 }
 
 /// # Safety
@@ -795,12 +793,12 @@ pub unsafe fn reim4_convolution_apply_avx512(
     a_size: usize,
     b: &[f64],
     b_size: usize,
-    b_log_gap: usize,
+    b_read: RightRead,
     tmp: &mut [f64],
 ) {
     unsafe {
         reim4_convolution_apply_core_avx512::<false, false>(
-            m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size, b_log_gap, tmp,
+            m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size, b_read, tmp,
         )
     }
 }
@@ -808,7 +806,7 @@ pub unsafe fn reim4_convolution_apply_avx512(
 /// Pairwise variant of [`reim4_convolution_apply_avx512`]: `(a0 + a1) ⊛ (b0 + b1)`.
 ///
 /// `tmp` must hold at least `8 * (a_size + 6 + 2*b_size + 16 * min_size)` f64.
-/// `b_log_gap` is `log2(N / n)` for a degree-`n` right operand, zero when dense.
+/// `b_read` is how the right operand is read: sparse degree and Galois element.
 ///
 /// # Safety
 /// Caller must ensure the CPU supports AVX-512F (e.g. `is_x86_feature_detected!("avx512f")`).
@@ -826,12 +824,12 @@ pub unsafe fn reim4_convolution_pairwise_apply_avx512(
     b0: &[f64],
     b1: &[f64],
     b_size: usize,
-    b_log_gap: usize,
+    b_read: RightRead,
     tmp: &mut [f64],
 ) {
     unsafe {
         reim4_convolution_apply_core_avx512::<true, false>(
-            m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, b_log_gap, tmp,
+            m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, b_read, tmp,
         )
     }
 }
@@ -853,12 +851,12 @@ pub unsafe fn reim4_convolution_apply_accumulate_avx512(
     a_size: usize,
     b: &[f64],
     b_size: usize,
-    b_log_gap: usize,
+    b_read: RightRead,
     tmp: &mut [f64],
 ) {
     unsafe {
         reim4_convolution_apply_core_avx512::<false, true>(
-            m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size, b_log_gap, tmp,
+            m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size, b_read, tmp,
         )
     }
 }
@@ -877,13 +875,13 @@ unsafe fn reim4_convolution_apply_core_avx512<const PAIRWISE: bool, const ACC: b
     b0: &[f64],
     b1: &[f64],
     b_size: usize,
-    b_log_gap: usize,
+    b_read: RightRead,
     tmp: &mut [f64],
 ) {
     use core::arch::x86_64::{
         __m256d, __m512d, _mm256_add_pd, _mm256_loadu_pd, _mm256_storeu_pd, _mm256_sub_pd, _mm512_add_pd, _mm512_castpd256_pd512,
-        _mm512_castpd512_pd256, _mm512_extractf64x4_pd, _mm512_fmadd_pd, _mm512_insertf64x4, _mm512_loadu_pd,
-        _mm512_permutexvar_pd, _mm512_setzero_pd, _mm512_shuffle_f64x2, _mm512_storeu_pd,
+        _mm512_castpd512_pd256, _mm512_extractf64x4_pd, _mm512_fmadd_pd, _mm512_insertf64x4, _mm512_loadu_pd, _mm512_mask_sub_pd,
+        _mm512_permutexvar_pd, _mm512_setzero_pd, _mm512_setzero_si512, _mm512_shuffle_f64x2, _mm512_storeu_pd,
     };
 
     assert!(a_size > 0);
@@ -891,7 +889,7 @@ unsafe fn reim4_convolution_apply_core_avx512<const PAIRWISE: bool, const ACC: b
     assert!(m.is_multiple_of(4));
     assert!(tmp.len() >= 8 * (a_size + 6 + 2 * b_size + 16 * min_size));
     assert!(a0.len() >= (m / 4) * 8 * a_size);
-    assert!(b0.len() >= ((m >> b_log_gap) / 4) * 8 * b_size);
+    assert!(b0.len() >= ((m >> b_read.log_gap()) / 4) * 8 * b_size);
     assert!(dst_stride >= 2 * m);
     assert!(dst.len() >= dst_stride * (min_size - 1) + 2 * m);
 
@@ -905,6 +903,13 @@ unsafe fn reim4_convolution_apply_core_avx512<const PAIRWISE: bool, const ACC: b
 
         // Pad rows are zeroed once and never overwritten.
         let zero: __m512d = _mm512_setzero_pd();
+        // Imaginary lanes of a row, negated when the read conjugates.
+        let conj_lanes: u8 = if b_read.conj() { 0xF0 } else { 0 };
+        let perms: [__m512i; 4] = if b_read.is_direct() {
+            [_mm512_setzero_si512(); 4]
+        } else {
+            reim4_lane_permutations(b_read)
+        };
         for r in 0..3 {
             _mm512_storeu_pd(a_pad.as_mut_ptr().add(8 * r), zero);
             _mm512_storeu_pd(a_pad.as_mut_ptr().add(8 * (a_size + 3 + r)), zero);
@@ -930,11 +935,12 @@ unsafe fn reim4_convolution_apply_core_avx512<const PAIRWISE: bool, const ACC: b
                     _mm512_storeu_pd(a_pad.as_mut_ptr().add(8 * (3 + r)), _mm512_loadu_pd(a_blk.add(8 * r)));
                 }
             }
-            let b_src: *const f64 = if b_log_gap != 0 {
-                let idx: __m512i = reim4_sparse_block_permutation(blk, b_log_gap);
-                let b_blk: *const f64 = b0.as_ptr().add((blk >> b_log_gap) * 8 * b_size);
+            let b_src: *const f64 = if !b_read.is_direct() {
+                let (src_blk, key) = b_read.block::<4>(blk);
+                let idx = perms[key];
+                let b_blk: *const f64 = b0.as_ptr().add(src_blk * 8 * b_size);
                 if PAIRWISE {
-                    let b1_blk: *const f64 = b1.as_ptr().add((blk >> b_log_gap) * 8 * b_size);
+                    let b1_blk: *const f64 = b1.as_ptr().add(src_blk * 8 * b_size);
                     for r in 0..b_size {
                         let s: __m512d = _mm512_add_pd(_mm512_loadu_pd(b_blk.add(8 * r)), _mm512_loadu_pd(b1_blk.add(8 * r)));
                         let v: __m512d = _mm512_permutexvar_pd(idx, s);
@@ -944,6 +950,7 @@ unsafe fn reim4_convolution_apply_core_avx512<const PAIRWISE: bool, const ACC: b
                 } else {
                     for r in 0..b_size {
                         let v: __m512d = _mm512_permutexvar_pd(idx, _mm512_loadu_pd(b_blk.add(8 * r)));
+                        let v: __m512d = _mm512_mask_sub_pd(v, conj_lanes, zero, v);
                         _mm512_storeu_pd(b_sum.as_mut_ptr().add(8 * r), v);
                         _mm512_storeu_pd(b_swp.as_mut_ptr().add(8 * r), _mm512_shuffle_f64x2::<0b01_00_11_10>(v, v));
                     }
@@ -1122,6 +1129,7 @@ pub(crate) unsafe fn reim4_real_convolution_1coeff_avx512(
 #[cfg(all(test, target_feature = "avx512f"))]
 mod tests {
 
+    use poulpy_cpu_portable::kernels::RightRead;
     use poulpy_cpu_portable::kernels::fft64::reim4::{
         reim4_convolution_1coeff_portable, reim4_convolution_2coeffs_portable, reim4_extract_1blk_from_reim_contiguous_portable,
         reim4_save_1blk_to_reim_contiguous_portable, reim4_vec_mat1col_product_portable, reim4_vec_mat2cols_product_portable,
@@ -1280,7 +1288,7 @@ mod tests {
                                 a_size,
                                 &b,
                                 b_size,
-                                0,
+                                RightRead::sparse(2 * m, 2 * m),
                                 &mut tmp,
                             )
                         };

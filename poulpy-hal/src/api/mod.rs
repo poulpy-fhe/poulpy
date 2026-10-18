@@ -112,7 +112,8 @@
 //! - `addend_limb(None,j) = 0`, while `addend_limb(Some((a,c)),j) = a[c,j]`
 //!   denotes a limb of an optional selected-column addend.
 //! - `terms[t]` is term `t` of a convolution list, with fields `a`, `a_col`,
-//!   `b` and `b_col` naming its prepared operands and selected columns.
+//!   `b` and `b_col` naming its prepared operands and selected columns, and
+//!   `b_galois`, the Galois element read on `b`.
 //! - `wrap(x)` is the signed residue of `x` modulo `2^w` in
 //!   `[-2^(w-1), 2^(w-1))`, where `w` is the destination's big coefficient
 //!   width; it applies coefficient-wise to polynomials.

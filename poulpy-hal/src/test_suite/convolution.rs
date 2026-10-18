@@ -12,9 +12,9 @@ use rand::Rng;
 
 use crate::{
     api::{
-        CnvPVecAlloc, Convolution, ModuleN, ScratchOwnedAlloc, VecZnxAdd, VecZnxAlloc, VecZnxBigAlloc, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxFillUniformSourceAll,
-        VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalizeAssign, VecZnxSwitchRing,
+        CnvPVecAlloc, Convolution, ModuleN, ScratchOwnedAlloc, VecZnxAdd, VecZnxAlloc, VecZnxAutomorphism, VecZnxBigAlloc,
+        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply,
+        VecZnxFillUniformSourceAll, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalizeAssign, VecZnxSwitchRing,
     },
     layouts::{
         CnvDftAccTerm, CnvPVecL, CnvPVecR, DataView, Module, PrepareHint, ScratchArena, ScratchOwned, VecZnx, VecZnxOwned,
@@ -308,6 +308,7 @@ where
                     a_col,
                     &b_prep.to_backend_ref(),
                     b_col,
+                    1,
                     &mut scratch.arena(),
                 );
 
@@ -423,6 +424,7 @@ where
             0,
             &b_prep.to_backend_ref(),
             0,
+            1,
             &mut scratch.arena(),
         );
         module.cnv_apply_dft(
@@ -433,6 +435,7 @@ where
             0,
             &b_prep.to_backend_ref(),
             0,
+            1,
             &mut scratch.arena(),
         );
 
@@ -447,6 +450,7 @@ where
                         a_col,
                         &b_prep.to_backend_ref(),
                         b_col,
+                        1,
                         &mut scratch.arena(),
                     );
 
@@ -458,6 +462,7 @@ where
                         a_col,
                         &b_prep.to_backend_ref(),
                         b_col,
+                        1,
                         &mut scratch.arena(),
                     );
                     module.vec_znx_dft_add_assign(&mut res_ref.to_backend_mut(), res_col, &tmp_dft.to_backend_ref(), 0);
@@ -555,6 +560,7 @@ where
                     a_col,
                     b: b_prep.to_backend_ref(),
                     b_col,
+                    b_galois: 1,
                 })
                 .collect();
             module.cnv_apply_dft_sum(
@@ -576,6 +582,7 @@ where
                     a_col,
                     &b_prep.to_backend_ref(),
                     b_col,
+                    1,
                     &mut scratch.arena(),
                 );
             } else {
@@ -587,6 +594,7 @@ where
                     a_col,
                     &b_prep.to_backend_ref(),
                     b_col,
+                    1,
                     &mut scratch.arena(),
                 );
             }
@@ -1253,6 +1261,7 @@ where
                     0,
                     &b.to_backend_ref(),
                     1,
+                    1,
                     &mut scratch.arena(),
                 );
             });
@@ -1266,6 +1275,7 @@ where
                     1,
                     &b_prep_dense.to_backend_ref(),
                     0,
+                    1,
                     &mut scratch.arena(),
                 );
                 module.cnv_apply_dft_add(
@@ -1275,6 +1285,7 @@ where
                     &a_prep.to_backend_ref(),
                     0,
                     &b.to_backend_ref(),
+                    1,
                     1,
                     &mut scratch.arena(),
                 );
@@ -1286,12 +1297,14 @@ where
                         a_col: 0,
                         b: b.to_backend_ref(),
                         b_col: 1,
+                        b_galois: 1,
                     },
                     CnvDftAccTerm {
                         a: a_prep.to_backend_ref(),
                         a_col: 1,
                         b: b.to_backend_ref(),
                         b_col: 0,
+                        b_galois: 1,
                     },
                 ];
                 module.cnv_apply_dft_sum(cnv_offset, &mut res.to_backend_mut(), res_col, &terms, &mut scratch.arena());
@@ -1386,9 +1399,248 @@ where
             0,
             &b_full.to_backend_ref(),
             1,
+            1,
             &mut scratch.arena(),
         );
     }))
     .is_err();
     assert!(panicked, "cnv_apply_dft accepted a.n() != res.n()");
+}
+
+/// Galois reads: the apply of a prepared right operand `b` through `σ_p` equals, bit for bit after `idft` and
+/// normalization, the identity apply of the operand prepared from `σ_p` of the coefficients of `b`, for
+/// `cnv_apply_dft`, `cnv_apply_dft_add` and `cnv_apply_dft_sum` (the sum mixing two Galois elements), on dense and
+/// compact right operands; an even `b_galois` is rejected.
+pub fn test_convolution_galois<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: ModuleN
+        + Convolution<BE>
+        + CnvPVecAlloc<BE>
+        + VecZnxDftAlloc<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxBigAlloc<BE>
+        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxAutomorphism<BE>
+        + VecZnxFillUniformSourceAll<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+{
+    let n = params.n;
+    let base2k = params.base2k;
+    let cols = 2usize;
+    let (a_size, b_size, res_size) = (3usize, 4usize, 6usize);
+    let res_col = 1usize;
+    let mut source = Source::new([5u8; 32]);
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .cnv_apply_dft_tmp_bytes(0, res_size, a_size, b_size)
+            .max(module.cnv_apply_dft_add_tmp_bytes(0, res_size, a_size, b_size))
+            .max(module.cnv_apply_dft_sum_tmp_bytes(0, res_size, a_size, b_size))
+            .max(module.cnv_prepare_left_tmp_bytes(a_size, a_size))
+            .max(module.cnv_prepare_right_tmp_bytes(b_size, b_size))
+            .max(module.vec_znx_big_normalize_tmp_bytes())
+            .max(module.vec_znx_idft_apply_tmp_bytes()),
+    );
+    let mut a_be = module.vec_znx_alloc(n, cols, a_size);
+    module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_be, &mut source);
+    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(n, cols, a_size, PrepareHint::Reuse);
+    module.cnv_prepare_left(
+        &mut a_prep.to_backend_mut(),
+        &vec_znx_backend_ref::<BE>(&a_be),
+        &mut scratch.arena(),
+    );
+
+    let a_ref = &a_prep;
+    let prepare_right = |b: &VecZnx<BE::OwnedBuf, i64>, scratch: &mut ScratchOwned<BE>| {
+        let mut prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(b.n(), cols, b_size, PrepareHint::Reuse);
+        module.cnv_prepare_right(
+            &mut prep.to_backend_mut(),
+            &vec_znx_backend_ref::<BE>(b),
+            &mut scratch.arena(),
+        );
+        prep
+    };
+    let automorphism = |p: i64, b: &VecZnx<BE::OwnedBuf, i64>| {
+        let mut res = module.vec_znx_alloc(b.n(), cols, b_size);
+        for col in 0..cols {
+            module.vec_znx_automorphism(
+                p,
+                &mut vec_znx_backend_mut::<BE>(&mut res),
+                col,
+                &vec_znx_backend_ref::<BE>(b),
+                col,
+            );
+        }
+        res
+    };
+
+    for b_n in (0..=2).map(|g| n >> g).filter(|&d| d >= BE::MIN_DEGREE) {
+        let mut b_be = module.vec_znx_alloc(b_n, cols, b_size);
+        module.vec_znx_fill_uniform_source_all(base2k, b_size * base2k, &mut b_be, &mut source);
+        let b_prep = prepare_right(&b_be, &mut scratch);
+        let b_auto5 = prepare_right(&automorphism(5, &b_be), &mut scratch);
+        let auto5_ref = &b_auto5;
+        let two_n = 2 * b_n as i64;
+        for p in [1i64, 5, 25, 3, -1, two_n - 1, two_n + 5, 4 * two_n - 7] {
+            let b_auto = prepare_right(&automorphism(p, &b_be), &mut scratch);
+            let label = format!("b.n()={b_n} p={p}");
+            let mut check = |what: &str, want_form: &ConvolutionForm<'_, BE>, have_form: &ConvolutionForm<'_, BE>| {
+                let mut want_dft: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(n, 2, res_size);
+                let mut have_dft: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(n, 2, res_size);
+                want_form(&mut want_dft, &b_auto, &mut scratch);
+                have_form(&mut have_dft, &b_prep, &mut scratch);
+                let want = idft_normalized(module, base2k, &want_dft, res_col, &mut scratch);
+                let have = idft_normalized(module, base2k, &have_dft, res_col, &mut scratch);
+                assert_eq!(want, have, "{what} {label}");
+            };
+            for cnv_offset in [0usize, 1, 3] {
+                let apply = |galois: i64| {
+                    move |res: &mut VecZnxDftOwned<BE>, b: &CnvPVecROwned<BE>, scratch: &mut ScratchOwned<BE>| {
+                        module.cnv_apply_dft(
+                            cnv_offset,
+                            &mut res.to_backend_mut(),
+                            res_col,
+                            &a_ref.to_backend_ref(),
+                            0,
+                            &b.to_backend_ref(),
+                            1,
+                            galois,
+                            &mut scratch.arena(),
+                        );
+                    }
+                };
+                check(&format!("cnv_apply_dft cnv_offset={cnv_offset}"), &apply(1), &apply(p));
+                let add = |galois: i64| {
+                    move |res: &mut VecZnxDftOwned<BE>, b: &CnvPVecROwned<BE>, scratch: &mut ScratchOwned<BE>| {
+                        module.cnv_apply_dft(
+                            cnv_offset,
+                            &mut res.to_backend_mut(),
+                            res_col,
+                            &a_ref.to_backend_ref(),
+                            1,
+                            &b.to_backend_ref(),
+                            0,
+                            galois,
+                            &mut scratch.arena(),
+                        );
+                        module.cnv_apply_dft_add(
+                            cnv_offset,
+                            &mut res.to_backend_mut(),
+                            res_col,
+                            &a_ref.to_backend_ref(),
+                            0,
+                            &b.to_backend_ref(),
+                            1,
+                            galois,
+                            &mut scratch.arena(),
+                        );
+                    }
+                };
+                check(&format!("cnv_apply_dft_add cnv_offset={cnv_offset}"), &add(1), &add(p));
+                // Term 0 reads `b` through `p` (want: the pre-automorphed operand); term 1 reads `b` through `5`
+                // (want: `b_auto5`).
+                let sum = |first_galois: i64, second_is_b: bool, second_galois: i64| {
+                    move |res: &mut VecZnxDftOwned<BE>, b: &CnvPVecROwned<BE>, scratch: &mut ScratchOwned<BE>| {
+                        let terms = [
+                            CnvDftAccTerm {
+                                a: a_ref.to_backend_ref(),
+                                a_col: 0,
+                                b: b.to_backend_ref(),
+                                b_col: 1,
+                                b_galois: first_galois,
+                            },
+                            CnvDftAccTerm {
+                                a: a_ref.to_backend_ref(),
+                                a_col: 1,
+                                b: (if second_is_b { b } else { auto5_ref }).to_backend_ref(),
+                                b_col: 0,
+                                b_galois: second_galois,
+                            },
+                        ];
+                        module.cnv_apply_dft_sum(cnv_offset, &mut res.to_backend_mut(), res_col, &terms, &mut scratch.arena());
+                    }
+                };
+                check(
+                    &format!("cnv_apply_dft_sum cnv_offset={cnv_offset}"),
+                    &sum(1, false, 1),
+                    &sum(p, true, 5),
+                );
+            }
+        }
+    }
+
+    let mut b_be = module.vec_znx_alloc(n, cols, b_size);
+    module.vec_znx_fill_uniform_source_all(base2k, b_size * base2k, &mut b_be, &mut source);
+    let b_prep = prepare_right(&b_be, &mut scratch);
+    let mut res_dft: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(n, 2, res_size);
+    // A product the rejected terms below would overwrite: a rejection must leave it in place.
+    module.cnv_apply_dft(
+        0,
+        &mut res_dft.to_backend_mut(),
+        res_col,
+        &a_ref.to_backend_ref(),
+        0,
+        &b_prep.to_backend_ref(),
+        1,
+        1,
+        &mut scratch.arena(),
+    );
+    let mut expect_rejected = |what: &str, run: &mut dyn FnMut(&mut VecZnxDftOwned<BE>, &mut ScratchOwned<BE>)| {
+        let before = idft_normalized(module, base2k, &res_dft, res_col, &mut scratch);
+        let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(&mut res_dft, &mut scratch)));
+        let payload = rejected.expect_err(what);
+        let message = payload
+            .downcast_ref::<&str>()
+            .map(|s| s.to_string())
+            .or_else(|| payload.downcast_ref::<String>().cloned())
+            .unwrap_or_default();
+        assert_eq!(message, "convolution: b_galois must be odd", "{what}");
+        let after = idft_normalized(module, base2k, &res_dft, res_col, &mut scratch);
+        assert_eq!(before, after, "{what}: res written before the rejection");
+    };
+    expect_rejected("cnv_apply_dft rejects an even b_galois", &mut |res, scratch| {
+        module.cnv_apply_dft(
+            0,
+            &mut res.to_backend_mut(),
+            res_col,
+            &a_ref.to_backend_ref(),
+            0,
+            &b_prep.to_backend_ref(),
+            1,
+            4,
+            &mut scratch.arena(),
+        );
+    });
+    expect_rejected("cnv_apply_dft_add rejects an even b_galois", &mut |res, scratch| {
+        module.cnv_apply_dft_add(
+            0,
+            &mut res.to_backend_mut(),
+            res_col,
+            &a_ref.to_backend_ref(),
+            0,
+            &b_prep.to_backend_ref(),
+            1,
+            4,
+            &mut scratch.arena(),
+        );
+    });
+    // 17 terms put the even one past a fused group of 16.
+    for count in [2usize, 17] {
+        expect_rejected(
+            &format!("cnv_apply_dft_sum rejects an even b_galois in term {}", count - 1),
+            &mut |res, scratch| {
+                let terms: Vec<_> = (0..count)
+                    .map(|t| CnvDftAccTerm {
+                        a: a_ref.to_backend_ref(),
+                        a_col: 1,
+                        b: b_prep.to_backend_ref(),
+                        b_col: 0,
+                        b_galois: if t + 1 == count { 4 } else { 1 },
+                    })
+                    .collect();
+                module.cnv_apply_dft_sum(0, &mut res.to_backend_mut(), res_col, &terms, &mut scratch.arena());
+            },
+        );
+    }
 }

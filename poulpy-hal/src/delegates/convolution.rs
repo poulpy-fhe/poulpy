@@ -108,9 +108,10 @@ impl_convolution_delegate!(
         a_col: usize,
         b: &CnvPVecRBackendRef<'_, BE>,
         b_col: usize,
+        b_galois: i64,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        BE::cnv_apply_dft(self, cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
+        BE::cnv_apply_dft(self, cnv_offset, res, res_col, a, a_col, b, b_col, b_galois, scratch)
     },
     fn cnv_apply_dft_add_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
         BE::cnv_apply_dft_add_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)
@@ -124,9 +125,10 @@ impl_convolution_delegate!(
         a_col: usize,
         b: &CnvPVecRBackendRef<'_, BE>,
         b_col: usize,
+        b_galois: i64,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        BE::cnv_apply_dft_add(self, cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
+        BE::cnv_apply_dft_add(self, cnv_offset, res, res_col, a, a_col, b, b_col, b_galois, scratch)
     },
     fn cnv_apply_dft_sum_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
         BE::cnv_apply_dft_sum_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)

@@ -490,7 +490,7 @@ where
 
 // ── convolution ──────────────────────────────────────────────────────────────
 
-pub fn convolution_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> [BenchOp<M, CnvSweepParms>; 10]
+pub fn convolution_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> [BenchOp<M, CnvSweepParms>; 11]
 where
     Module<B>: ModuleNew<B> + Convolution<B> + CnvPVecAlloc<B> + VecZnxDftAlloc<B> + VecZnxBigAlloc<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
@@ -510,6 +510,11 @@ where
             layer: "hal",
             name: "cnv_apply_dft",
             runner: convolution::runner_cnv_apply_dft::<B, M>,
+        },
+        BenchOp {
+            layer: "hal",
+            name: "cnv_apply_dft_galois",
+            runner: convolution::runner_cnv_apply_dft_galois::<B, M>,
         },
         BenchOp {
             layer: "hal",

@@ -1065,6 +1065,7 @@ pub unsafe trait HalConvolutionImpl: Backend + HalVecZnxDftImpl + HalVecZnxBigIm
         a_col: usize,
         b: &crate::layouts::CnvPVecRBackendRef<'_, Self>,
         b_col: usize,
+        b_galois: i64,
         scratch: &mut ScratchArena<'_, Self>,
     );
 
@@ -1079,7 +1080,7 @@ pub unsafe trait HalConvolutionImpl: Backend + HalVecZnxDftImpl + HalVecZnxBigIm
         crate::oep::cnv_apply_dft_add_tmp_bytes_derived::<Self>(module, cnv_offset, res_size, a_size, b_size)
     }
 
-    /// `res[res_col] += a (x) b`. Default body: `cnv_apply_dft_add_derived`,
+    /// `res[res_col] += a (x) sigma_{b_galois}(b)`. Default body: `cnv_apply_dft_add_derived`,
     /// which carves a `res.size()`-limb staging `VecZnxDft` out of
     /// [`Self::cnv_apply_dft_add_tmp_bytes`] and adds it into `res`.
     #[allow(clippy::too_many_arguments)]
@@ -1092,9 +1093,10 @@ pub unsafe trait HalConvolutionImpl: Backend + HalVecZnxDftImpl + HalVecZnxBigIm
         a_col: usize,
         b: &crate::layouts::CnvPVecRBackendRef<'_, Self>,
         b_col: usize,
+        b_galois: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        crate::oep::cnv_apply_dft_add_derived::<Self>(module, cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
+        crate::oep::cnv_apply_dft_add_derived::<Self>(module, cnv_offset, res, res_col, a, a_col, b, b_col, b_galois, scratch)
     }
 
     /// Returns scratch bytes required for [`HalConvolutionImpl::cnv_apply_dft_sum`].
@@ -1112,7 +1114,7 @@ pub unsafe trait HalConvolutionImpl: Backend + HalVecZnxDftImpl + HalVecZnxBigIm
         crate::oep::cnv_apply_dft_sum_tmp_bytes_derived::<Self>(module, cnv_offset, res_size, a_size, b_size)
     }
 
-    /// Computes `res[res_col] = Σ_t a_t ⊛ b_t` (overwriting).
+    /// Computes `res[res_col] = Σ_t a_t ⊛ sigma_{b_galois_t}(b_t)` (overwriting).
     ///
     /// The default implementation overwrites with the first term
     /// (`cnv_apply_dft`, which also zeroes the limbs past the convolution

@@ -177,6 +177,7 @@ pub trait PackedNtt4x30Base: PackedWord + HalVecZnxDftImpl {
         a_col: usize,
         b: &CnvPVecRBackendRef<'_, BE>,
         b_col: usize,
+        b_galois: i64,
         tmp: &mut [u32],
     ) where
         for<'a> BE::BufRef<'a>: HostDataRef,
@@ -192,15 +193,17 @@ pub trait PackedNtt4x30Base: PackedWord + HalVecZnxDftImpl {
         a_col: usize,
         b: &CnvPVecRBackendRef<'_, BE>,
         b_col: usize,
+        b_galois: i64,
         tmp: &mut [u32],
     ) where
         for<'a> BE::BufRef<'a>: HostDataRef,
         for<'a> BE::BufMut<'a>: HostDataMut;
 
-    /// `res[res_col] = sum of a_t (x) b_t` over `terms`.
+    /// `res[res_col] = sum of a_t (x) sigma_{b_galois_t}(b_t)` over `terms`.
     ///
     /// The default overwrites with the first term and adds the others, and zeroes the column when `terms` is empty.
-    /// A backend with a fused kernel overrides it.
+    /// A backend with a fused kernel overrides it, reading every term's `b_galois` and rejecting an even one before
+    /// its first write.
     fn cnv_apply_dft_sum<BE: PackedWord, E: TaskExecutor>(
         base: &Module<Self>,
         module: &Module<BE>,
@@ -219,6 +222,7 @@ pub trait PackedNtt4x30Base: PackedWord + HalVecZnxDftImpl {
             }
             return;
         };
+        terms.iter().for_each(|term| poulpy_hal::layouts::check_galois(term.b_galois));
         Self::cnv_apply_dft::<BE, E>(
             base,
             module,
@@ -229,11 +233,22 @@ pub trait PackedNtt4x30Base: PackedWord + HalVecZnxDftImpl {
             first.a_col,
             &first.b,
             first.b_col,
+            first.b_galois,
             tmp,
         );
         for term in rest {
             Self::cnv_apply_dft_add::<BE, E>(
-                base, module, cnv_offset, res, res_col, &term.a, term.a_col, &term.b, term.b_col, tmp,
+                base,
+                module,
+                cnv_offset,
+                res,
+                res_col,
+                &term.a,
+                term.a_col,
+                &term.b,
+                term.b_col,
+                term.b_galois,
+                tmp,
             );
         }
     }
@@ -462,12 +477,15 @@ macro_rules! impl_packed_ntt4x30_base {
                 a_col: usize,
                 b: &$crate::__private::poulpy_hal::layouts::CnvPVecRBackendRef<'_, BE>,
                 b_col: usize,
+                b_galois: i64,
                 tmp: &mut [u32],
             ) where
                 for<'a> BE::BufRef<'a>: $crate::__private::poulpy_hal::layouts::HostDataRef,
                 for<'a> BE::BufMut<'a>: $crate::__private::poulpy_hal::layouts::HostDataMut,
             {
-                $drivers::cnv_apply_dft::<$ring, BE, E>(base, module, cnv_offset, res, res_col, a, a_col, b, b_col, tmp)
+                $drivers::cnv_apply_dft::<$ring, BE, E>(
+                    base, module, cnv_offset, res, res_col, a, a_col, b, b_col, b_galois, tmp,
+                )
             }
 
             fn cnv_apply_dft_add<BE: $crate::ntt4x30::PackedWord, E: $crate::__private::poulpy_hal::execution::TaskExecutor>(
@@ -480,12 +498,15 @@ macro_rules! impl_packed_ntt4x30_base {
                 a_col: usize,
                 b: &$crate::__private::poulpy_hal::layouts::CnvPVecRBackendRef<'_, BE>,
                 b_col: usize,
+                b_galois: i64,
                 tmp: &mut [u32],
             ) where
                 for<'a> BE::BufRef<'a>: $crate::__private::poulpy_hal::layouts::HostDataRef,
                 for<'a> BE::BufMut<'a>: $crate::__private::poulpy_hal::layouts::HostDataMut,
             {
-                $drivers::cnv_apply_dft_add::<$ring, BE, E>(base, module, cnv_offset, res, res_col, a, a_col, b, b_col, tmp)
+                $drivers::cnv_apply_dft_add::<$ring, BE, E>(
+                    base, module, cnv_offset, res, res_col, a, a_col, b, b_col, b_galois, tmp,
+                )
             }
 
             fn cnv_pairwise_apply_dft<
@@ -1186,10 +1207,11 @@ unsafe impl HalConvolutionImpl for $rayon
         a_col: usize,
         b: &$crate::__private::poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
         b_col: usize,
+        b_galois: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let tmp = apply_scratch(res.size(), scratch);
-        <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_apply_dft::<Self, RayonTaskExecutor>(base_module(module), module, cnv_offset, res, res_col, a, a_col, b, b_col, tmp);
+        <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_apply_dft::<Self, RayonTaskExecutor>(base_module(module), module, cnv_offset, res, res_col, a, a_col, b, b_col, b_galois, tmp);
     }
 
     fn cnv_apply_dft_add_tmp_bytes(
@@ -1212,10 +1234,11 @@ unsafe impl HalConvolutionImpl for $rayon
         a_col: usize,
         b: &$crate::__private::poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
         b_col: usize,
+        b_galois: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let tmp = apply_scratch(res.size(), scratch);
-        <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_apply_dft_add::<Self, RayonTaskExecutor>(base_module(module), module, cnv_offset, res, res_col, a, a_col, b, b_col, tmp);
+        <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_apply_dft_add::<Self, RayonTaskExecutor>(base_module(module), module, cnv_offset, res, res_col, a, a_col, b, b_col, b_galois, tmp);
     }
 
     fn cnv_apply_dft_sum_tmp_bytes(

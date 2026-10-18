@@ -5,7 +5,7 @@ use core::arch::x86_64::{
 };
 use poulpy_cpu_portable::kernels::SendPtr;
 use poulpy_cpu_portable::kernels::ntt4x30::{mat_vec::BbcMeta, primes::Primes30};
-use poulpy_cpu_portable::kernels::sparse_log_gap_portable;
+use poulpy_cpu_portable::kernels::{RightRead, right_read_ntt};
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::{
     Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, CrtWord, HostDataMut, HostDataRef,
@@ -23,17 +23,6 @@ const GROUP: usize = 8;
 #[inline(always)]
 fn packed_row_offset(size: usize, limb: usize, group: usize) -> usize {
     (group * size + limb) * 4 * GROUP
-}
-
-/// u32 offset, inside a prepared right operand column whose own degree is
-/// `N >> log_gap`, of row `row0` of the slot that degree-`N` slot
-/// `group * GROUP + slot_in_group` reads: the slot itself when dense, slot
-/// `>> log_gap` when sparse (spec 4.5). Consecutive rows of that slot are
-/// `4 * GROUP` u32 apart.
-#[inline(always)]
-fn slot_offset(size: usize, row0: usize, group: usize, slot_in_group: usize, log_gap: usize) -> usize {
-    let slot = (group * GROUP + slot_in_group) >> log_gap;
-    packed_row_offset(size, row0, slot / GROUP) + 4 * (slot % GROUP)
 }
 
 #[inline(always)]
@@ -91,6 +80,7 @@ unsafe fn load_coeff(row: *const u32, coeff: usize) -> __m256i {
     unsafe { _mm256_cvtepu32_epi64(core::arch::x86_64::_mm_loadu_si128(row.add(4 * coeff) as *const _)) }
 }
 
+/// `b` is read through `b_read`, whose [`RightRead::lane_table`] is `b_lanes`.
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx2")]
 unsafe fn conv_group<const ACC: bool, const PAIRWISE: bool>(
@@ -108,10 +98,15 @@ unsafe fn conv_group<const ACC: bool, const PAIRWISE: bool>(
     b0: &[u32],
     b1: &[u32],
     b_size: usize,
-    b_log_gap: usize,
+    b_read: RightRead,
+    b_lanes: &[[u8; GROUP]; GROUP],
 ) {
     unsafe {
         let q = _mm256_loadu_si256(Q_VEC.as_ptr() as *const __m256i);
+        // Row-0 offset of the slot each slot of the group reads; limb rows are `4 * GROUP` u32 apart.
+        let (src, key) = b_read.block::<GROUP>(group);
+        let (base, lanes) = (packed_row_offset(b_size, 0, src), &b_lanes[key]);
+        let b_slots: [usize; GROUP] = std::array::from_fn(|l| base + 4 * lanes[l] as usize);
         for k in 0..min_size {
             let k_abs = k + offset;
             let j_min = k_abs.saturating_sub(a_size - 1);
@@ -119,8 +114,8 @@ unsafe fn conv_group<const ACC: bool, const PAIRWISE: bool>(
             let a_start = k_abs + 1 - j_max;
             let b_start = b_size - j_max;
             for pair in 0..GROUP / 2 {
-                let b_off0 = slot_offset(b_size, b_start, group, 2 * pair, b_log_gap);
-                let b_off1 = slot_offset(b_size, b_start, group, 2 * pair + 1, b_log_gap);
+                let row0 = b_start * 4 * GROUP;
+                let (b_off0, b_off1) = (b_slots[2 * pair] + row0, b_slots[2 * pair + 1] + row0);
                 let mut lo0 = _mm256_setzero_si256();
                 let mut hi0 = _mm256_setzero_si256();
                 let mut lo1 = _mm256_setzero_si256();
@@ -348,6 +343,7 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     b: &CnvPVecRBackendRef<'_, BE>,
     b0_col: usize,
     b1_col: usize,
+    b_galois: i64,
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -356,7 +352,7 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     let (n, res_size, a_size, b_size) = (res.n(), res.size(), a.size(), b.size());
     check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap = sparse_log_gap_portable(n, b.n());
+    let b_read = right_read_ntt::<BE::Ring>(n, b.n(), b_galois);
     if res_size == 0 || a_size == 0 || b_size == 0 {
         if !ACC {
             for limb in 0..res_size {
@@ -377,9 +373,10 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     let res_cols = res.cols();
     assert!(res_col < res_cols, "convolution: result column out of range");
     let res_ptr = SendPtr(cast_slice_mut::<_, u32>(res.raw_mut()).as_mut_ptr());
+    let b_lanes = b_read.lane_table::<GROUP>();
     E::for_each(n / GROUP, |group| unsafe {
         conv_group::<ACC, PAIRWISE>(
-            meta, res_ptr, res_col, n, res_cols, min_size, offset, group, a0, a1, a_size, b0, b1, b_size, b_log_gap,
+            meta, res_ptr, res_col, n, res_cols, min_size, offset, group, a0, a1, a_size, b0, b1, b_size, b_read, &b_lanes,
         )
     });
     if !ACC {
@@ -400,12 +397,17 @@ pub(crate) unsafe fn cnv_apply_dft<BE, E: TaskExecutor>(
     a_col: usize,
     b: &CnvPVecRBackendRef<'_, BE>,
     b_col: usize,
+    b_galois: i64,
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
-    unsafe { apply::<BE, E, false, false>(module, meta, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
+    unsafe {
+        apply::<BE, E, false, false>(
+            module, meta, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col, b_galois,
+        )
+    };
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -419,12 +421,17 @@ pub(crate) unsafe fn cnv_apply_dft_add<BE, E: TaskExecutor>(
     a_col: usize,
     b: &CnvPVecRBackendRef<'_, BE>,
     b_col: usize,
+    b_galois: i64,
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
-    unsafe { apply::<BE, E, true, false>(module, meta, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
+    unsafe {
+        apply::<BE, E, true, false>(
+            module, meta, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col, b_galois,
+        )
+    };
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -444,9 +451,9 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft<BE, E: TaskExecutor>(
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     if i == j {
-        unsafe { apply::<BE, E, false, false>(module, meta, cnv_offset, res, res_col, a, i, i, b, i, i) };
+        unsafe { apply::<BE, E, false, false>(module, meta, cnv_offset, res, res_col, a, i, i, b, i, i, 1) };
     } else {
-        unsafe { apply::<BE, E, false, true>(module, meta, cnv_offset, res, res_col, a, i, j, b, i, j) };
+        unsafe { apply::<BE, E, false, true>(module, meta, cnv_offset, res, res_col, a, i, j, b, i, j, 1) };
     }
 }
 

@@ -2,11 +2,12 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::x86_64::{
     __m128i, __m256i, __m512i, _mm_cvtsi64_si128, _mm_loadu_si128, _mm256_broadcastsi128_si256, _mm256_loadu_si256,
     _mm256_storeu_si256, _mm512_add_epi64, _mm512_and_si512, _mm512_cvtepi64_epi32, _mm512_cvtepu32_epi64, _mm512_loadu_si512,
-    _mm512_mul_epu32, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_srl_epi64, _mm512_srli_epi64, _mm512_sub_epi64,
+    _mm512_mul_epu32, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_shuffle_i64x2, _mm512_srl_epi64, _mm512_srli_epi64,
+    _mm512_sub_epi64,
 };
 use poulpy_cpu_portable::kernels::SendPtr;
 use poulpy_cpu_portable::kernels::ntt4x30::{mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle};
-use poulpy_cpu_portable::kernels::sparse_log_gap_portable;
+use poulpy_cpu_portable::kernels::{RightRead, right_read_ntt};
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::Ring;
 use poulpy_hal::layouts::{
@@ -25,17 +26,6 @@ const GROUP: usize = 8;
 #[inline(always)]
 fn packed_row_offset(size: usize, limb: usize, group: usize) -> usize {
     (group * size + limb) * 4 * GROUP
-}
-
-/// u32 offset, inside a prepared right operand column whose own degree is
-/// `N >> log_gap`, of row `row0` of the slot that degree-`N` slot
-/// `group * GROUP + slot_in_group` reads: the slot itself when dense, slot
-/// `>> log_gap` when sparse (spec 4.5). Consecutive rows of that slot are
-/// `4 * GROUP` u32 apart.
-#[inline(always)]
-fn slot_offset(size: usize, row0: usize, group: usize, slot_in_group: usize, log_gap: usize) -> usize {
-    let slot = (group * GROUP + slot_in_group) >> log_gap;
-    packed_row_offset(size, row0, slot / GROUP) + 4 * (slot % GROUP)
 }
 
 #[inline(always)]
@@ -92,17 +82,79 @@ unsafe fn load_pair(row: *const u32, pair: usize) -> __m512i {
     unsafe { _mm512_cvtepu32_epi64(_mm256_loadu_si256(row.add(8 * pair) as *const __m256i)) }
 }
 
-/// The four residues of one slot duplicated into both halves of a pair: the two
-/// slots of a pair of a sparse right operand read the same degree-`n` slot (their
-/// degree-`N` indices differ in the low bit, which `>> log_gap` drops).
+/// The four residues of one slot duplicated into both halves of a pair, for two destination slots that read the same source slot.
 #[inline(always)]
 unsafe fn load_slot_dup(slot: *const u32) -> __m512i {
     unsafe { _mm512_cvtepu32_epi64(_mm256_broadcastsi128_si256(_mm_loadu_si128(slot as *const __m128i))) }
 }
 
+/// A pair of `b` read as stored.
+const B_PAIR: u8 = 0;
+/// A stored pair with its two slots swapped.
+const B_SWAP: u8 = 1;
+/// One stored slot in both halves of a pair.
+const B_DUP: u8 = 2;
+
+#[inline(always)]
+unsafe fn load_b<const MODE: u8>(p: *const u32) -> __m512i {
+    unsafe {
+        match MODE {
+            B_DUP => load_slot_dup(p),
+            B_SWAP => {
+                let v = load_pair(p, 0);
+                _mm512_shuffle_i64x2::<0b01_00_11_10>(v, v)
+            }
+            _ => load_pair(p, 0),
+        }
+    }
+}
+
+/// The reduced sum over `rows` rows of pair `pair` of row `a_start + row` of `a` times row `b_off + row` of `b`,
+/// `b` read through `MODE`.
 #[allow(clippy::too_many_arguments)]
+#[inline(always)]
+unsafe fn pair_product<const PAIRWISE: bool, const MODE: u8>(
+    meta: &BbcMeta<Primes30>,
+    q: __m512i,
+    a0: &[u32],
+    a1: &[u32],
+    a_size: usize,
+    a_start: usize,
+    group: usize,
+    pair: usize,
+    b0: &[u32],
+    b1: &[u32],
+    b_off: usize,
+    rows: usize,
+) -> __m512i {
+    unsafe {
+        let mut lo = _mm512_setzero_si512();
+        let mut hi = _mm512_setzero_si512();
+        for row in 0..rows {
+            let ao = packed_row_offset(a_size, a_start + row, group);
+            let ro = row * 4 * GROUP;
+            let mut av = load_pair(a0.as_ptr().add(ao), pair);
+            let mut bv = load_b::<MODE>(b0.as_ptr().add(b_off + ro));
+            if PAIRWISE {
+                let bv1 = load_b::<MODE>(b1.as_ptr().add(b_off + ro));
+                av = cond_sub_512(_mm512_add_epi64(av, load_pair(a1.as_ptr().add(ao), pair)), q);
+                bv = cond_sub_512(_mm512_add_epi64(bv, bv1), q);
+            }
+            accumulate_product(&mut lo, &mut hi, av, bv);
+        }
+        reduce_accum(meta, lo, hi)
+    }
+}
+
+/// With `B_GATHER`, `b` is read through `b_read`, whose [`RightRead::lane_table`] is `b_lanes`; with `DUP` too,
+/// both slots of a pair read one slot (a sparse read), otherwise one stored pair, straight or swapped.
+#[expect(
+    clippy::too_many_arguments,
+    clippy::needless_range_loop,
+    reason = "the kernel takes both operand pairs and the read; iterating `b_pairs` instead of the pair range changes the identity-path code"
+)]
 #[target_feature(enable = "avx512f")]
-unsafe fn conv_group<const ACC: bool, const PAIRWISE: bool, const B_SPARSE: bool>(
+unsafe fn conv_group<const ACC: bool, const PAIRWISE: bool, const B_GATHER: bool, const DUP: bool>(
     meta: &BbcMeta<Primes30>,
     res: SendPtr<u32>,
     res_col: usize,
@@ -117,45 +169,49 @@ unsafe fn conv_group<const ACC: bool, const PAIRWISE: bool, const B_SPARSE: bool
     b0: &[u32],
     b1: &[u32],
     b_size: usize,
-    b_log_gap: usize,
+    b_read: RightRead,
+    b_lanes: &[[u8; GROUP]; GROUP],
 ) {
     unsafe {
         let q = bcast_quad(Q_VEC.as_ptr());
+        // Row-0 offset of what each pair reads and whether it comes swapped; limb rows are `4 * GROUP` u32 apart.
+        // A dense read maps an aligned destination pair onto one aligned stored pair (`lane_table` with `W = 2`).
+        let b_pairs: [(usize, bool); GROUP / 2] = if B_GATHER {
+            let (src, key) = b_read.block::<GROUP>(group);
+            let (base, lanes) = (packed_row_offset(b_size, 0, src), &b_lanes[key]);
+            std::array::from_fn(|pair| {
+                let lane = lanes[2 * pair] as usize;
+                if DUP {
+                    (base + 4 * lane, false)
+                } else {
+                    (base + 4 * (lane & !1), lane & 1 == 1)
+                }
+            })
+        } else {
+            [(0, false); GROUP / 2]
+        };
         for k in 0..min_size {
             let k_abs = k + offset;
             let j_min = k_abs.saturating_sub(a_size - 1);
             let j_max = (k_abs + 1).min(b_size);
             let a_start = k_abs + 1 - j_max;
             let b_start = b_size - j_max;
+            let rows = j_max - j_min;
             for pair in 0..GROUP / 2 {
-                let b_off = if B_SPARSE {
-                    slot_offset(b_size, b_start, group, 2 * pair, b_log_gap)
-                } else {
-                    packed_row_offset(b_size, b_start, group) + 8 * pair
-                };
-                let mut lo = _mm512_setzero_si512();
-                let mut hi = _mm512_setzero_si512();
-                for row in 0..j_max - j_min {
-                    let ao = packed_row_offset(a_size, a_start + row, group);
-                    let ro = row * 4 * GROUP;
-                    let mut av = load_pair(a0.as_ptr().add(ao), pair);
-                    let mut bv = if B_SPARSE {
-                        load_slot_dup(b0.as_ptr().add(b_off + ro))
+                let value = if B_GATHER {
+                    let (off, swap) = b_pairs[pair];
+                    let b_off = off + b_start * 4 * GROUP;
+                    if DUP {
+                        pair_product::<PAIRWISE, B_DUP>(meta, q, a0, a1, a_size, a_start, group, pair, b0, b1, b_off, rows)
+                    } else if swap {
+                        pair_product::<PAIRWISE, B_SWAP>(meta, q, a0, a1, a_size, a_start, group, pair, b0, b1, b_off, rows)
                     } else {
-                        load_pair(b0.as_ptr().add(b_off + ro), 0)
-                    };
-                    if PAIRWISE {
-                        let bv1 = if B_SPARSE {
-                            load_slot_dup(b1.as_ptr().add(b_off + ro))
-                        } else {
-                            load_pair(b1.as_ptr().add(b_off + ro), 0)
-                        };
-                        av = cond_sub_512(_mm512_add_epi64(av, load_pair(a1.as_ptr().add(ao), pair)), q);
-                        bv = cond_sub_512(_mm512_add_epi64(bv, bv1), q);
+                        pair_product::<PAIRWISE, B_PAIR>(meta, q, a0, a1, a_size, a_start, group, pair, b0, b1, b_off, rows)
                     }
-                    accumulate_product(&mut lo, &mut hi, av, bv);
-                }
-                let value = reduce_accum(meta, lo, hi);
+                } else {
+                    let b_off = packed_row_offset(b_size, b_start, group) + 8 * pair;
+                    pair_product::<PAIRWISE, B_PAIR>(meta, q, a0, a1, a_size, a_start, group, pair, b0, b1, b_off, rows)
+                };
                 let dst = res.get().add((k * res_cols + res_col) * 4 * n + group * 4 * GROUP + pair * 8);
                 if ACC {
                     let old = _mm512_cvtepu32_epi64(_mm256_loadu_si256(dst as *const __m256i));
@@ -424,6 +480,7 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     b: &CnvPVecRBackendRef<'_, BE>,
     b0_col: usize,
     b1_col: usize,
+    b_galois: i64,
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -432,7 +489,7 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     let (n, res_size, a_size, b_size) = (res.n(), res.size(), a.size(), b.size());
     check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap = sparse_log_gap_portable(n, b.n());
+    let b_read = right_read_ntt::<BE::Ring>(n, b.n(), b_galois);
     if res_size == 0 || a_size == 0 || b_size == 0 {
         if !ACC {
             for limb in 0..res_size {
@@ -453,14 +510,24 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     let res_cols = res.cols();
     assert!(res_col < res_cols, "convolution: result column out of range");
     let res_ptr = SendPtr(cast_slice_mut::<_, u32>(res.raw_mut()).as_mut_ptr());
+    let b_lanes = if b_read.is_direct() {
+        [[0; GROUP]; GROUP]
+    } else {
+        b_read.lane_table::<GROUP>()
+    };
+    let lanes = &b_lanes;
     E::for_each(n / GROUP, |group| unsafe {
-        if b_log_gap > 0 {
-            conv_group::<ACC, PAIRWISE, true>(
-                meta, res_ptr, res_col, n, res_cols, min_size, offset, group, a0, a1, a_size, b0, b1, b_size, b_log_gap,
+        if b_read.is_direct() {
+            conv_group::<ACC, PAIRWISE, false, false>(
+                meta, res_ptr, res_col, n, res_cols, min_size, offset, group, a0, a1, a_size, b0, b1, b_size, b_read, lanes,
+            )
+        } else if b_read.log_gap() > 0 {
+            conv_group::<ACC, PAIRWISE, true, true>(
+                meta, res_ptr, res_col, n, res_cols, min_size, offset, group, a0, a1, a_size, b0, b1, b_size, b_read, lanes,
             )
         } else {
-            conv_group::<ACC, PAIRWISE, false>(
-                meta, res_ptr, res_col, n, res_cols, min_size, offset, group, a0, a1, a_size, b0, b1, b_size, b_log_gap,
+            conv_group::<ACC, PAIRWISE, true, false>(
+                meta, res_ptr, res_col, n, res_cols, min_size, offset, group, a0, a1, a_size, b0, b1, b_size, b_read, lanes,
             )
         }
     });
@@ -482,12 +549,17 @@ pub(crate) unsafe fn cnv_apply_dft<BE, E: TaskExecutor>(
     a_col: usize,
     b: &CnvPVecRBackendRef<'_, BE>,
     b_col: usize,
+    b_galois: i64,
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
-    unsafe { apply::<BE, E, false, false>(module, meta, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
+    unsafe {
+        apply::<BE, E, false, false>(
+            module, meta, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col, b_galois,
+        )
+    };
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -501,12 +573,17 @@ pub(crate) unsafe fn cnv_apply_dft_add<BE, E: TaskExecutor>(
     a_col: usize,
     b: &CnvPVecRBackendRef<'_, BE>,
     b_col: usize,
+    b_galois: i64,
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
-    unsafe { apply::<BE, E, true, false>(module, meta, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
+    unsafe {
+        apply::<BE, E, true, false>(
+            module, meta, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col, b_galois,
+        )
+    };
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -526,9 +603,9 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft<BE, E: TaskExecutor>(
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     if i == j {
-        unsafe { apply::<BE, E, false, false>(module, meta, cnv_offset, res, res_col, a, i, i, b, i, i) };
+        unsafe { apply::<BE, E, false, false>(module, meta, cnv_offset, res, res_col, a, i, i, b, i, i, 1) };
     } else {
-        unsafe { apply::<BE, E, false, true>(module, meta, cnv_offset, res, res_col, a, i, j, b, i, j) };
+        unsafe { apply::<BE, E, false, true>(module, meta, cnv_offset, res, res_col, a, i, j, b, i, j, 1) };
     }
 }
 

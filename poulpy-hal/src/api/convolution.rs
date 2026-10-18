@@ -190,18 +190,18 @@ pub trait Convolution<BE: Backend> {
     );
 
     #[allow(clippy::too_many_arguments)]
-    /// Writes the convolution of `a[a_col]` and `b[b_col]` into `res[res_col]`, zero-filling the remaining limbs.
+    /// Writes the convolution of `a[a_col]` and `sigma_{b_galois}(b[b_col])` into `res[res_col]`, zero-filling the remaining limbs.
     ///
     /// ```text
-    /// op         cnv_apply_dft(cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
+    /// op         cnv_apply_dft(cnv_offset, res, res_col, a, a_col, b, b_col, b_galois, scratch)
     /// class      basis
     /// mutation   out-of-place
-    /// definition idft(res)[res_col,j] = sum_{0 <= u < a.size(), 0 <= v < b.size(), u + v = j + cnv_offset} a[a_col,u] * b[b_col,v]; other columns of res are unchanged
-    /// domain     res: a VecZnxDft and a: a CnvPVecL, both of degree N; b: a CnvPVecR of degree N or of a degree dividing it; res.size(), a.size() and b.size() >= 1
+    /// definition idft(res)[res_col,j] = sum_{0 <= u < a.size(), 0 <= v < b.size(), u + v = j + cnv_offset} a[a_col,u] * sigma_{b_galois}(b[b_col,v]); other columns of res are unchanged
+    /// domain     res: a VecZnxDft and a: a CnvPVecL, both of degree N; b: a CnvPVecR of degree N or of a degree dividing it; res.size(), a.size() and b.size() >= 1; b_galois odd, 1 for b itself
     /// requires   scratch >= cnv_apply_dft_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
     /// ensures    the selected inverse column holds the limb window of the convolution, scaled by 2^((cnv_offset + 1) * w) at any radix width w; the remaining limbs are zero-filled
     /// sparse     b may be a prepared right operand of degree n, n a power of two dividing N and not below the backend's minimum sparse degree, prepared at degree n; res and a take degree N; the degree embedding of the api module docs defines the correspondence that reads it
-    /// test       test_convolution, test_convolution_sparse
+    /// test       test_convolution, test_convolution_galois, test_convolution_sparse
     /// ```
     fn cnv_apply_dft(
         &self,
@@ -212,6 +212,7 @@ pub trait Convolution<BE: Backend> {
         a_col: usize,
         b: &CnvPVecRBackendRef<'_, BE>,
         b_col: usize,
+        b_galois: i64,
         scratch: &mut ScratchArena<'_, BE>,
     );
 
@@ -227,20 +228,20 @@ pub trait Convolution<BE: Backend> {
     /// ```
     fn cnv_apply_dft_add_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
 
-    /// Adds the convolution of `a[a_col]` and `b[b_col]` to `res[res_col]`, leaving the limbs outside its support unchanged.
+    /// Adds the convolution of `a[a_col]` and `sigma_{b_galois}(b[b_col])` to `res[res_col]`, leaving the limbs outside its support unchanged.
     ///
     /// ```text
-    /// op         cnv_apply_dft_add(cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
+    /// op         cnv_apply_dft_add(cnv_offset, res, res_col, a, a_col, b, b_col, b_galois, scratch)
     /// class      derived
     /// mutation   accumulate
-    /// definition idft(res)[res_col,j] = idft(old(res))[res_col,j] + sum_{0 <= u < a.size(), 0 <= v < b.size(), u + v = j + cnv_offset} a[a_col,u] * b[b_col,v]; selected-column limbs for which the sum index set is empty and other columns of res are unchanged
+    /// definition idft(res)[res_col,j] = idft(old(res))[res_col,j] + sum_{0 <= u < a.size(), 0 <= v < b.size(), u + v = j + cnv_offset} a[a_col,u] * sigma_{b_galois}(b[b_col,v]); selected-column limbs for which the sum index set is empty and other columns of res are unchanged
     /// domain     as for cnv_apply_dft
     /// requires   scratch >= cnv_apply_dft_add_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
     /// ensures    the selected column gains the convolution; limbs outside its support retain their old value
     /// sparse     as for cnv_apply_dft
     /// fallback   the convolution into a one-column res.size()-limb VecZnxDft, then vec_znx_dft_add_assign
     /// override   allowed, with cnv_apply_dft_add_tmp_bytes
-    /// test       test_convolution_add, test_cnv_apply_dft_add_derived, test_convolution_sparse
+    /// test       test_convolution_add, test_cnv_apply_dft_add_derived, test_convolution_galois, test_convolution_sparse
     /// ```
     #[allow(clippy::too_many_arguments)]
     fn cnv_apply_dft_add(
@@ -252,6 +253,7 @@ pub trait Convolution<BE: Backend> {
         a_col: usize,
         b: &CnvPVecRBackendRef<'_, BE>,
         b_col: usize,
+        b_galois: i64,
         scratch: &mut ScratchArena<'_, BE>,
     );
 
@@ -273,14 +275,14 @@ pub trait Convolution<BE: Backend> {
     /// op         cnv_apply_dft_sum(cnv_offset, res, res_col, terms, scratch)
     /// class      derived
     /// mutation   out-of-place
-    /// definition idft(res)[res_col,j] = sum_{0 <= t < terms.len()} sum_{0 <= u < terms[t].a.size(), 0 <= v < terms[t].b.size(), u + v = j + cnv_offset} terms[t].a[terms[t].a_col,u] * terms[t].b[terms[t].b_col,v]; an empty terms slice yields zero; other columns of res are unchanged
-    /// domain     res: a VecZnxDft of degree N; terms: prepared left operands of degree N and right operands of degree N or of a degree dividing it, with their column indices
+    /// definition idft(res)[res_col,j] = sum_{0 <= t < terms.len()} sum_{0 <= u < terms[t].a.size(), 0 <= v < terms[t].b.size(), u + v = j + cnv_offset} terms[t].a[terms[t].a_col,u] * sigma_{terms[t].b_galois}(terms[t].b[terms[t].b_col,v]); an empty terms slice yields zero; other columns of res are unchanged
+    /// domain     res: a VecZnxDft of degree N; terms: prepared left operands of degree N and right operands of degree N or of a degree dividing it, with their column indices; every terms[t].b_galois odd
     /// requires   scratch >= cnv_apply_dft_sum_tmp_bytes(cnv_offset, res.size(), max({0} union {terms[t].a.size() : 0 <= t < terms.len()}), max({0} union {terms[t].b.size() : 0 <= t < terms.len()}))
     /// ensures    the selected inverse column is the sum of the selected convolution limb windows; an empty slice zeroes the column
     /// sparse     per term, as for cnv_apply_dft
     /// fallback   an empty slice zeroes the selected column; otherwise cnv_apply_dft overwrites with the first term and cnv_apply_dft_add accumulates the remaining terms
     /// override   allowed, with cnv_apply_dft_sum_tmp_bytes
-    /// test       test_convolution_sum, test_cnv_apply_dft_sum_derived, test_convolution_sparse
+    /// test       test_convolution_sum, test_cnv_apply_dft_sum_derived, test_convolution_galois, test_convolution_sparse
     /// ```
     fn cnv_apply_dft_sum(
         &self,
@@ -315,7 +317,7 @@ pub trait Convolution<BE: Backend> {
     /// requires   scratch >= cnv_pairwise_apply_dft_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
     /// ensures    the selected inverse column contains one convolution when i == j and the convolution of the two column sums when i != j
     /// sparse     per product, as for cnv_apply_dft
-    /// fallback   cnv_apply_dft for columns (i,i), followed when i != j by cnv_apply_dft_add for (i,j), (j,i) and (j,j)
+    /// fallback   cnv_apply_dft with b_galois 1 for columns (i,i), followed when i != j by cnv_apply_dft_add with b_galois 1 for (i,j), (j,i) and (j,j)
     /// override   allowed, with cnv_pairwise_apply_dft_tmp_bytes
     /// test       test_convolution_pairwise, test_cnv_pairwise_apply_dft_derived, test_convolution_sparse
     /// ```

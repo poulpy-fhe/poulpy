@@ -302,6 +302,14 @@ pub struct CnvDftAccTerm<'a, BE: Backend + 'a> {
     pub b: CnvPVecRBackendRef<'a, BE>,
     /// Column of `b` to convolve.
     pub b_col: usize,
+    /// Galois element applied to `b`, odd; 1 for `b` itself.
+    pub b_galois: i64,
+}
+
+/// Asserts that a convolution Galois element is odd.
+#[inline]
+pub fn check_galois(b_galois: i64) {
+    assert!(b_galois & 1 == 1, "convolution: b_galois must be odd");
 }
 
 /// Borrow a `CnvPVecR` as a shared reference view.

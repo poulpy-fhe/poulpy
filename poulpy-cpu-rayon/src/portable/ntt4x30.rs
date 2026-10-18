@@ -195,12 +195,13 @@ macro_rules! impl_packed_base {
                 a_col: usize,
                 b: &CnvPVecRBackendRef<'_, BE>,
                 b_col: usize,
+                b_galois: i64,
                 tmp: &mut [u32],
             ) where
                 for<'a> BE::BufRef<'a>: HostDataRef,
                 for<'a> BE::BufMut<'a>: HostDataMut,
             {
-                drivers::cnv_apply_dft::<BE, E>(module, cnv_offset, res, res_col, a, a_col, b, b_col, tmp)
+                drivers::cnv_apply_dft::<BE, E>(module, cnv_offset, res, res_col, a, a_col, b, b_col, b_galois, tmp)
             }
 
             fn cnv_apply_dft_add<BE: PackedWord, E: TaskExecutor>(
@@ -213,12 +214,13 @@ macro_rules! impl_packed_base {
                 a_col: usize,
                 b: &CnvPVecRBackendRef<'_, BE>,
                 b_col: usize,
+                b_galois: i64,
                 tmp: &mut [u32],
             ) where
                 for<'a> BE::BufRef<'a>: HostDataRef,
                 for<'a> BE::BufMut<'a>: HostDataMut,
             {
-                drivers::cnv_apply_dft_add::<BE, E>(module, cnv_offset, res, res_col, a, a_col, b, b_col, tmp)
+                drivers::cnv_apply_dft_add::<BE, E>(module, cnv_offset, res, res_col, a, a_col, b, b_col, b_galois, tmp)
             }
 
             fn cnv_apply_dft_sum<BE: PackedWord, E: TaskExecutor>(

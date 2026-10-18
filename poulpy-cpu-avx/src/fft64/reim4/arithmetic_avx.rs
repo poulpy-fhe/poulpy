@@ -17,29 +17,27 @@
 
 use core::arch::x86_64::{__m256d, __m256i};
 
-/// Lane permutation of one degree-`N` reim4 block gathered from a degree-`n` prepared
-/// operand under `log_gap >= 1`: every lane of the block reads compact block
-/// `blk >> log_gap`, lane `l` reading compact lane `((4 * blk + l) >> log_gap) & 3`.
-/// The re half and the im half of a row are permuted by the same vector, addressed as
-/// pairs of 32-bit words since AVX2 has no variable cross-lane `f64` permute.
+use poulpy_cpu_portable::kernels::RightRead;
+
+/// The word permutation of a gathered row for each key of [`RightRead::lane_table`]: lane `l` reads lane
+/// `table[key][l]` of the stored block, for re and im alike, addressed as pairs of 32-bit words since AVX2 has no
+/// variable cross-lane `f64` permute.
 ///
 /// # Safety
 /// Caller must ensure the CPU supports AVX2.
 #[target_feature(enable = "avx2")]
 #[inline]
-unsafe fn reim4_sparse_block_permutation(blk: usize, log_gap: usize) -> __m256i {
+unsafe fn reim4_lane_permutations(read: RightRead) -> [__m256i; 4] {
     use core::arch::x86_64::_mm256_loadu_si256;
 
-    let mut words: [i32; 8] = [0; 8];
-    for lane in 0..4 {
-        let l: i32 = ((((4 * blk + lane) >> log_gap) & 3) * 2) as i32;
-        words[2 * lane] = l;
-        words[2 * lane + 1] = l + 1;
-    }
-    unsafe { _mm256_loadu_si256(words.as_ptr() as *const __m256i) }
+    read.lane_table::<4>().map(|lanes| {
+        let words: [i32; 8] = std::array::from_fn(|w| 2 * lanes[w / 2] as i32 + (w % 2) as i32);
+        // SAFETY: `words` holds the 32 bytes the unaligned load reads.
+        unsafe { _mm256_loadu_si256(words.as_ptr() as *const __m256i) }
+    })
 }
 
-/// One reim4 half-row (4 f64) gathered through [`reim4_sparse_block_permutation`].
+/// One reim4 half-row (4 f64) gathered through [`reim4_lane_permutations`].
 ///
 /// # Safety
 /// Caller must ensure the CPU supports AVX2.
@@ -880,12 +878,12 @@ pub unsafe fn reim4_convolution_apply_avx(
     a_size: usize,
     b: &[f64],
     b_size: usize,
-    b_log_gap: usize,
+    b_read: RightRead,
     tmp: &mut [f64],
 ) {
     unsafe {
         reim4_convolution_apply_core_avx::<false, false>(
-            m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size, b_log_gap, tmp,
+            m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size, b_read, tmp,
         )
     }
 }
@@ -893,7 +891,7 @@ pub unsafe fn reim4_convolution_apply_avx(
 /// Pairwise variant of [`reim4_convolution_apply_avx`]: `(a0 + a1) ⊛ (b0 + b1)`.
 ///
 /// `tmp` must hold at least `8 * (a_size + 4 + b_size + 16 * min_size)` f64.
-/// `b_log_gap` is `log2(N / n)` for a degree-`n` right operand, zero when dense.
+/// `b_read` is how the right operand is read: sparse degree and Galois element.
 ///
 /// # Safety
 /// Caller must ensure the CPU supports AVX2 and FMA (e.g. `is_x86_feature_detected!("avx2")`).
@@ -911,12 +909,12 @@ pub unsafe fn reim4_convolution_pairwise_apply_avx(
     b0: &[f64],
     b1: &[f64],
     b_size: usize,
-    b_log_gap: usize,
+    b_read: RightRead,
     tmp: &mut [f64],
 ) {
     unsafe {
         reim4_convolution_apply_core_avx::<true, false>(
-            m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, b_log_gap, tmp,
+            m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, b_read, tmp,
         )
     }
 }
@@ -938,12 +936,12 @@ pub unsafe fn reim4_convolution_apply_accumulate_avx(
     a_size: usize,
     b: &[f64],
     b_size: usize,
-    b_log_gap: usize,
+    b_read: RightRead,
     tmp: &mut [f64],
 ) {
     unsafe {
         reim4_convolution_apply_core_avx::<false, true>(
-            m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size, b_log_gap, tmp,
+            m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size, b_read, tmp,
         )
     }
 }
@@ -962,11 +960,12 @@ unsafe fn reim4_convolution_apply_core_avx<const PAIRWISE: bool, const ACC: bool
     b0: &[f64],
     b1: &[f64],
     b_size: usize,
-    b_log_gap: usize,
+    b_read: RightRead,
     tmp: &mut [f64],
 ) {
     use core::arch::x86_64::{
-        _mm256_add_pd, _mm256_fmadd_pd, _mm256_fnmadd_pd, _mm256_loadu_pd, _mm256_setzero_pd, _mm256_storeu_pd,
+        _mm256_add_pd, _mm256_fmadd_pd, _mm256_fnmadd_pd, _mm256_loadu_pd, _mm256_set1_pd, _mm256_setzero_pd,
+        _mm256_setzero_si256, _mm256_storeu_pd, _mm256_xor_pd,
     };
 
     assert!(a_size > 0);
@@ -974,13 +973,21 @@ unsafe fn reim4_convolution_apply_core_avx<const PAIRWISE: bool, const ACC: bool
     assert!(m.is_multiple_of(4));
     assert!(tmp.len() >= 8 * (a_size + 4 + b_size + 16 * min_size));
     assert!(a0.len() >= (m / 4) * 8 * a_size);
-    assert!(b0.len() >= ((m >> b_log_gap) / 4) * 8 * b_size);
+    assert!(b0.len() >= ((m >> b_read.log_gap()) / 4) * 8 * b_size);
     assert!(dst_stride >= 2 * m);
     assert!(dst.len() >= dst_stride * (min_size - 1) + 2 * m);
 
     const GROUP: usize = 16;
+    // Sign mask of the imaginary half, zero unless the read conjugates.
+    let conj_mask: f64 = if b_read.conj() { -0.0 } else { 0.0 };
 
     unsafe {
+        let conj: __m256d = _mm256_set1_pd(conj_mask);
+        let perms: [__m256i; 4] = if b_read.is_direct() {
+            [_mm256_setzero_si256(); 4]
+        } else {
+            reim4_lane_permutations(b_read)
+        };
         let (a_pad, rest) = tmp.split_at_mut(8 * (a_size + 4));
         let (b_sum, stage) = rest.split_at_mut(8 * b_size);
         let stage: &mut [f64] = &mut stage[..8 * GROUP * min_size];
@@ -1017,11 +1024,12 @@ unsafe fn reim4_convolution_apply_core_avx<const PAIRWISE: bool, const ACC: bool
                     _mm256_storeu_pd(a_pad.as_mut_ptr().add(8 * (2 + r) + 4), _mm256_loadu_pd(a_blk.add(8 * r + 4)));
                 }
             }
-            let b_src: *const f64 = if b_log_gap != 0 {
-                let idx: __m256i = reim4_sparse_block_permutation(blk, b_log_gap);
-                let b_blk: *const f64 = b0.as_ptr().add((blk >> b_log_gap) * 8 * b_size);
+            let b_src: *const f64 = if !b_read.is_direct() {
+                let (src_blk, key) = b_read.block::<4>(blk);
+                let idx = perms[key];
+                let b_blk: *const f64 = b0.as_ptr().add(src_blk * 8 * b_size);
                 if PAIRWISE {
-                    let b1_blk: *const f64 = b1.as_ptr().add((blk >> b_log_gap) * 8 * b_size);
+                    let b1_blk: *const f64 = b1.as_ptr().add(src_blk * 8 * b_size);
                     for r in 0..b_size {
                         let lo: __m256d = _mm256_add_pd(_mm256_loadu_pd(b_blk.add(8 * r)), _mm256_loadu_pd(b1_blk.add(8 * r)));
                         let hi: __m256d =
@@ -1032,7 +1040,7 @@ unsafe fn reim4_convolution_apply_core_avx<const PAIRWISE: bool, const ACC: bool
                 } else {
                     for r in 0..b_size {
                         let lo: __m256d = reim4_sparse_permute(_mm256_loadu_pd(b_blk.add(8 * r)), idx);
-                        let hi: __m256d = reim4_sparse_permute(_mm256_loadu_pd(b_blk.add(8 * r + 4)), idx);
+                        let hi: __m256d = _mm256_xor_pd(reim4_sparse_permute(_mm256_loadu_pd(b_blk.add(8 * r + 4)), idx), conj);
                         _mm256_storeu_pd(b_sum.as_mut_ptr().add(8 * r), lo);
                         _mm256_storeu_pd(b_sum.as_mut_ptr().add(8 * r + 4), hi);
                     }
@@ -1156,6 +1164,7 @@ unsafe fn reim4_convolution_apply_core_avx<const PAIRWISE: bool, const ACC: bool
 
 #[cfg(all(test, target_feature = "avx2"))]
 mod tests {
+    use poulpy_cpu_portable::kernels::RightRead;
     use poulpy_cpu_portable::kernels::fft64::reim4::{
         reim4_convolution_1coeff_portable, reim4_convolution_2coeffs_portable, reim4_extract_1blk_from_reim_contiguous_portable,
         reim4_save_1blk_to_reim_contiguous_portable, reim4_vec_mat1col_product_portable, reim4_vec_mat2cols_product_portable,
@@ -1314,7 +1323,7 @@ mod tests {
                                 a_size,
                                 &b,
                                 b_size,
-                                0,
+                                RightRead::sparse(2 * m, 2 * m),
                                 &mut tmp,
                             )
                         };

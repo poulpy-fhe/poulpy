@@ -38,7 +38,7 @@ use crate::{
         CnvDftAccTerm, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, MatZnxInfos, Module,
         ScalarZnxBackendRef, ScratchArena, SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
         VecZnxBigBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
-        VecZnxDftToBackendRef, VecZnxInfos, VecZnxToBackendMut, VecZnxToBackendRef, VmpPMatBackendRef, ZnxInfos,
+        VecZnxDftToBackendRef, VecZnxInfos, VecZnxToBackendMut, VecZnxToBackendRef, VmpPMatBackendRef, ZnxInfos, check_galois,
         scalar_znx_as_vec_znx_backend_ref_from_ref, vec_znx_backend_ref_from_mut, vec_znx_dft_backend_ref_from_mut,
         vec_znx_reborrow_backend_mut,
     },
@@ -725,13 +725,14 @@ pub fn cnv_apply_dft_add_derived<BE>(
     a_col: usize,
     b: &CnvPVecRBackendRef<'_, BE>,
     b_col: usize,
+    b_galois: i64,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: HalConvolutionImpl,
 {
     let res_size: usize = ZnxInfos::size(res);
     let (mut tmp, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_dft_scratch(scratch.borrow(), ZnxInfos::n(res), 1, res_size);
-    BE::cnv_apply_dft(module, cnv_offset, &mut tmp, 0, a, a_col, b, b_col, &mut scratch);
+    BE::cnv_apply_dft(module, cnv_offset, &mut tmp, 0, a, a_col, b, b_col, b_galois, &mut scratch);
     BE::vec_znx_dft_add_assign(module, res, res_col, &tmp.to_backend_ref(), 0);
 }
 
@@ -752,7 +753,7 @@ where
         .max(BE::cnv_apply_dft_add_tmp_bytes(module, cnv_offset, res_size, a_size, b_size))
 }
 
-/// `res[res_col] = Σ_t a_t (x) b_t` (overwriting): the first term overwrites
+/// `res[res_col] = Σ_t a_t (x) σ_{b_galois_t}(b_t)` (overwriting): the first term overwrites
 /// with `cnv_apply_dft`, which also zeroes the limbs past the convolution
 /// bound, and the remaining terms fold in with `cnv_apply_dft_add`. An empty
 /// `terms` slice zeroes the destination column.
@@ -771,14 +772,33 @@ pub fn cnv_apply_dft_sum_derived<BE>(
         BE::vec_znx_dft_zero(module, res, res_col);
         return;
     }
+    terms.iter().for_each(|term| check_galois(term.b_galois));
     for (idx, term) in terms.iter().enumerate() {
         if idx == 0 {
             BE::cnv_apply_dft(
-                module, cnv_offset, res, res_col, &term.a, term.a_col, &term.b, term.b_col, scratch,
+                module,
+                cnv_offset,
+                res,
+                res_col,
+                &term.a,
+                term.a_col,
+                &term.b,
+                term.b_col,
+                term.b_galois,
+                scratch,
             );
         } else {
             BE::cnv_apply_dft_add(
-                module, cnv_offset, res, res_col, &term.a, term.a_col, &term.b, term.b_col, scratch,
+                module,
+                cnv_offset,
+                res,
+                res_col,
+                &term.a,
+                term.a_col,
+                &term.b,
+                term.b_col,
+                term.b_galois,
+                scratch,
             );
         }
     }
@@ -857,11 +877,11 @@ pub fn cnv_pairwise_apply_dft_derived<BE>(
 ) where
     BE: HalConvolutionImpl,
 {
-    BE::cnv_apply_dft(module, cnv_offset, res, res_col, a, i, b, i, scratch);
+    BE::cnv_apply_dft(module, cnv_offset, res, res_col, a, i, b, i, 1, scratch);
     if i == j {
         return;
     }
-    BE::cnv_apply_dft_add(module, cnv_offset, res, res_col, a, i, b, j, scratch);
-    BE::cnv_apply_dft_add(module, cnv_offset, res, res_col, a, j, b, i, scratch);
-    BE::cnv_apply_dft_add(module, cnv_offset, res, res_col, a, j, b, j, scratch);
+    BE::cnv_apply_dft_add(module, cnv_offset, res, res_col, a, i, b, j, 1, scratch);
+    BE::cnv_apply_dft_add(module, cnv_offset, res, res_col, a, j, b, i, 1, scratch);
+    BE::cnv_apply_dft_add(module, cnv_offset, res, res_col, a, j, b, j, 1, scratch);
 }

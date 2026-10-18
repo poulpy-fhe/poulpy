@@ -121,6 +121,7 @@ where
                     a_col: col,
                     b: prep.to_backend_ref(),
                     b_col: 0,
+                    b_galois: 1,
                 })
                 .collect();
             module.cnv_apply_dft_sum(cnv_offset_hi, &mut sum_dft_mut, col, &terms, &mut rest.borrow());

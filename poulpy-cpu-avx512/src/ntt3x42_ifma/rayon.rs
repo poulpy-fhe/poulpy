@@ -1365,6 +1365,7 @@ where
         a_col: usize,
         b: &CnvPVecRBackendRef<'_, Self>,
         b_col: usize,
+        b_galois: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let per_worker = super::convolution::cnv_apply_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
@@ -1384,6 +1385,7 @@ where
                 a_col,
                 &base_cnv_r_ref::<R>(b),
                 b_col,
+                b_galois,
                 tmp,
             );
         }
@@ -1408,6 +1410,7 @@ where
         a_col: usize,
         b: &CnvPVecRBackendRef<'_, Self>,
         b_col: usize,
+        b_galois: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let per_worker = super::convolution::cnv_apply_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
@@ -1427,6 +1430,7 @@ where
                 a_col,
                 &base_cnv_r_ref::<R>(b),
                 b_col,
+                b_galois,
                 tmp,
             );
         }
@@ -1458,6 +1462,7 @@ where
                 a_col: term.a_col,
                 b: base_cnv_r_ref::<R>(&term.b),
                 b_col: term.b_col,
+                b_galois: term.b_galois,
             })
             .collect();
         let a_size = base_terms.iter().map(|term| term.a.size()).max().unwrap_or(0);

@@ -192,6 +192,7 @@ where
         a_col: usize,
         b: &CnvPVecRBackendRef<'_, Self>,
         b_col: usize,
+        b_galois: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         Self: Backend<DftWord = f64, ZnxWord = i64> + Reim4BlkMatVec + Reim4Convolution + Fft64RingArith,
@@ -204,7 +205,7 @@ where
         let per_worker = convolution_apply_dft_tmp_bytes_portable(res_ref.size(), a.size(), b.size());
         let bytes = reim4_block_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, f64>(scratch.borrow(), bytes / size_of::<f64>());
-        convolution_apply_dft_portable::<Self>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
+        convolution_apply_dft_portable::<Self>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_galois, tmp);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -217,6 +218,7 @@ where
         a_col: usize,
         b: &CnvPVecRBackendRef<'_, Self>,
         b_col: usize,
+        b_galois: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         Self: Backend<DftWord = f64, ZnxWord = i64> + Reim4BlkMatVec + Reim4Convolution + Fft64RingArith,
@@ -229,7 +231,7 @@ where
         let per_worker = convolution_apply_dft_tmp_bytes_portable(res_ref.size(), a.size(), b.size());
         let bytes = reim4_block_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, f64>(scratch.borrow(), bytes / size_of::<f64>());
-        convolution_apply_dft_add_portable::<Self>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
+        convolution_apply_dft_add_portable::<Self>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_galois, tmp);
     }
 
     fn cnv_pairwise_apply_dft_tmp_bytes_default(
@@ -499,6 +501,7 @@ where
         a_col: usize,
         b: &CnvPVecRBackendRef<'_, Self>,
         b_col: usize,
+        b_galois: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         Module<Self>: NttModuleHandle,
@@ -512,7 +515,7 @@ where
         let per_worker = ntt4x30_cnv_apply_dft_tmp_bytes_portable(res_ref.size(), a.size(), b.size());
         let bytes = cnv_group_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        ntt4x30_cnv_apply_dft_portable::<Self>(module, cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
+        ntt4x30_cnv_apply_dft_portable::<Self>(module, cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_galois, tmp);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -525,6 +528,7 @@ where
         a_col: usize,
         b: &CnvPVecRBackendRef<'_, Self>,
         b_col: usize,
+        b_galois: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         Module<Self>: NttModuleHandle,
@@ -538,7 +542,7 @@ where
         let per_worker = ntt4x30_cnv_apply_dft_tmp_bytes_portable(res_ref.size(), a.size(), b.size());
         let bytes = cnv_group_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        ntt4x30_cnv_apply_dft_add_portable::<Self>(module, cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
+        ntt4x30_cnv_apply_dft_add_portable::<Self>(module, cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_galois, tmp);
     }
 
     fn cnv_apply_dft_sum_tmp_bytes_default(

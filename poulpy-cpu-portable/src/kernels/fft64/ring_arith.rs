@@ -1,6 +1,7 @@
 //! FFT64 DFT-domain arithmetic that differs between the standard and the conjugate-invariant ring.
 
 use crate::{
+    kernels::RightRead,
     kernels::fft64::{module::FFT64Plan, vec_znx_dft::Fft64AutomorphismPlan},
     layouts::Backend,
 };
@@ -36,7 +37,7 @@ pub trait Fft64RingArith {
         a_size: usize,
         b: &[f64],
         b_size: usize,
-        b_log_gap: usize,
+        b_read: RightRead,
         tmp: &mut [f64],
     );
     fn fft64_convolution_apply_accumulate(
@@ -49,7 +50,7 @@ pub trait Fft64RingArith {
         a_size: usize,
         b: &[f64],
         b_size: usize,
-        b_log_gap: usize,
+        b_read: RightRead,
         tmp: &mut [f64],
     );
     fn fft64_convolution_pairwise_apply(
@@ -64,7 +65,7 @@ pub trait Fft64RingArith {
         b0: &[f64],
         b1: &[f64],
         b_size: usize,
-        b_log_gap: usize,
+        b_read: RightRead,
         tmp: &mut [f64],
     );
     fn fft64_automorphism_plan(n: usize, p: i64) -> Fft64AutomorphismPlan;

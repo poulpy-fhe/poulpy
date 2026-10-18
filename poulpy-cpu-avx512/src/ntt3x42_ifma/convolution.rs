@@ -14,7 +14,7 @@ use crate::ntt3x42_ifma::{
     tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv},
     traits::{Ntt3x42IfmaDFTExecute, Ntt3x42IfmaFromZnx64},
 };
-use poulpy_cpu_portable::kernels::sparse_log_gap_portable;
+use poulpy_cpu_portable::kernels::{RightRead, right_read_ntt};
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::{CnvDftAccTerm, Ring};
 use poulpy_hal::layouts::{
@@ -55,22 +55,21 @@ fn cached_overwrite_stores(n: usize, size: usize) -> bool {
 /// Scratch bytes for the packed apply kernels.
 pub(crate) fn cnv_apply_dft_ifma_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
     let staged = res_size.min(a_size + b_size).div_ceil(TILE) * TILE;
-    // the unpacked a window and b planes, the output tiles, and the gathered rows of a
-    // sparse b and b1 (32 u64 per row)
-    (3 * 8 * (a_size + 2 * (TILE - 1)) + 3 * 8 * b_size + 3 * 8 * staged + 32 * b_size) * size_of::<u64>()
+    // the unpacked a window and b planes, and the output tiles
+    (3 * 8 * (a_size + 2 * (TILE - 1)) + 3 * 8 * b_size + 3 * 8 * staged) * size_of::<u64>()
 }
 
 /// Staging u64 the sum kernel reserves after the window and the b planes: the
-/// fused accumulator pair with one gathered `b` row block, or the per-term path
-/// through [`conv_columns_packed_group`] with its two `b` blocks.
+/// fused accumulator pair, which also holds the output tiles of the per-term path
+/// through [`conv_columns_packed_group`].
 #[inline]
-fn sum_staging_len(staged: usize, b_size: usize) -> usize {
-    (6 * 8 * staged + 16 * b_size).max(3 * 8 * staged + 32 * b_size)
+fn sum_staging_len(staged: usize) -> usize {
+    6 * 8 * staged
 }
 
 pub(crate) fn cnv_apply_dft_sum_ifma_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
     let staged = res_size.min(a_size + b_size).div_ceil(TILE) * TILE;
-    (3 * 8 * (a_size + 2 * (TILE - 1)) + 3 * 8 * b_size + sum_staging_len(staged, b_size)) * size_of::<u64>()
+    (3 * 8 * (a_size + 2 * (TILE - 1)) + 3 * 8 * b_size + sum_staging_len(staged)) * size_of::<u64>()
 }
 
 /// Scratch bytes for pairwise packed apply.
@@ -119,35 +118,49 @@ fn packed_row_offset(size: usize, limb_row: usize, group: usize) -> usize {
     (group * size + limb_row) * 16
 }
 
-/// Rows `0..size` of degree-`N` group `group`, gathered from a degree-`n` prepared
-/// right operand column `src` ([`packed_row_offset`] layout: a row is 16 u64,
-/// lane `l` at `l` and `8 + l`), `N = n << log_gap`: degree-`N` slot `i` reads degree-`n` slot
-/// `i >> log_gap`, so the whole group reads one slot once `log_gap >= 3`.
+/// The lane permutation of a gathered row for each key of [`RightRead::lane_table`], zero for a direct read.
 ///
-/// For `log_gap >= 1` every lane of the group lands in compact group `group >> log_gap`,
-/// so a row is one aligned load per word plus one lane permute, the index vector being
-/// built once per group.
+/// # Safety
+/// Caller must ensure the CPU supports AVX-512F.
+#[target_feature(enable = "avx512f")]
+unsafe fn group_permutations(read: RightRead) -> [__m512i; 8] {
+    if read.is_direct() {
+        return [_mm512_setzero_si512(); 8];
+    }
+    read.lane_table::<8>().map(|lanes| {
+        let idx: [i64; 8] = lanes.map(i64::from);
+        // SAFETY: `idx` holds the 64 bytes the unaligned load reads.
+        unsafe { _mm512_loadu_si512(idx.as_ptr() as *const __m512i) }
+    })
+}
+
+/// Row `r` of a packed column from `base` ([`packed_row_offset`] layout: a row is 16 u64, lane `l` at `l` and `8 + l`),
+/// its lanes permuted by `perm` when the read gathers.
 ///
 /// # Safety
 /// Caller must ensure the CPU supports AVX-512F.
 #[target_feature(enable = "avx512f")]
 #[inline]
-unsafe fn gather_sparse_group_rows(dst: &mut [u64], src: &[u64], size: usize, group: usize, log_gap: usize) {
-    let mut lanes: [i64; 8] = [0; 8];
-    for (lane, slot) in lanes.iter_mut().enumerate() {
-        *slot = (((8 * group + lane) >> log_gap) & 7) as i64;
-    }
+unsafe fn load_row(base: *const u64, r: usize, perm: Option<__m512i>) -> (__m512i, __m512i) {
     unsafe {
-        let idx: __m512i = _mm512_loadu_si512(lanes.as_ptr() as *const __m512i);
-        let src_ptr: *const u64 = src.as_ptr().add(packed_row_offset(size, 0, group >> log_gap));
-        let dst_ptr: *mut u64 = dst.as_mut_ptr();
-        for r in 0..size {
-            let w0: __m512i = _mm512_loadu_si512(src_ptr.add(16 * r) as *const __m512i);
-            let w1: __m512i = _mm512_loadu_si512(src_ptr.add(16 * r + 8) as *const __m512i);
-            _mm512_storeu_si512(dst_ptr.add(16 * r) as *mut __m512i, _mm512_permutexvar_epi64(idx, w0));
-            _mm512_storeu_si512(dst_ptr.add(16 * r + 8) as *mut __m512i, _mm512_permutexvar_epi64(idx, w1));
+        let w0: __m512i = _mm512_loadu_si512(base.add(16 * r) as *const __m512i);
+        let w1: __m512i = _mm512_loadu_si512(base.add(16 * r + 8) as *const __m512i);
+        match perm {
+            Some(idx) => (_mm512_permutexvar_epi64(idx, w0), _mm512_permutexvar_epi64(idx, w1)),
+            None => (w0, w1),
         }
     }
+}
+
+/// The first row of the stored group that group `group` reads through `read`, and its lane permutation when the
+/// read gathers: every lane of a group lands in one stored group.
+#[inline(always)]
+fn group_read(size: usize, group: usize, read: RightRead, perms: &[__m512i; 8]) -> (usize, Option<__m512i>) {
+    if read.is_direct() {
+        return (packed_row_offset(size, 0, group), None);
+    }
+    let (src, key) = read.block::<8>(group);
+    (packed_row_offset(size, 0, src), Some(perms[key]))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -292,7 +305,8 @@ unsafe fn conv_columns_packed_group<const ACC: bool, const PAIRWISE: bool>(
     b0_col: &[u64],
     b1_col: &[u64],
     b_size: usize,
-    b_log_gap: usize,
+    b_read: RightRead,
+    b_perms: &[__m512i; 8],
     cached_overwrite: bool,
     tmp: &mut [u64],
 ) {
@@ -303,9 +317,7 @@ unsafe fn conv_columns_packed_group<const ACC: bool, const PAIRWISE: bool>(
     let pc = unsafe { [PrimeConsts512::new(0), PrimeConsts512::new(1), PrimeConsts512::new(2)] };
     let (win, rest) = tmp.split_at_mut(3 * 8 * win_rows);
     let (b_pl, rest) = rest.split_at_mut(3 * 8 * b_size);
-    let (out_st, rest) = rest.split_at_mut(3 * 8 * staged);
-    let (b_st, rest) = rest.split_at_mut(16 * b_size);
-    let b1_st: &mut [u64] = &mut rest[..16 * b_size];
+    let out_st: &mut [u64] = &mut rest[..3 * 8 * staged];
     let out_base = out_st.as_mut_ptr();
 
     unsafe {
@@ -342,25 +354,13 @@ unsafe fn conv_columns_packed_group<const ACC: bool, const PAIRWISE: bool>(
             }
         }
 
-        let (b0_base, b1_base): (*const u64, *const u64) = if b_log_gap == 0 {
-            (
-                b0_col.as_ptr().add(packed_row_offset(b_size, 0, group)),
-                b1_col.as_ptr().add(packed_row_offset(b_size, 0, group)),
-            )
-        } else {
-            gather_sparse_group_rows(b_st, b0_col, b_size, group, b_log_gap);
-            if PAIRWISE {
-                gather_sparse_group_rows(b1_st, b1_col, b_size, group, b_log_gap);
-            }
-            (b_st.as_ptr(), b1_st.as_ptr())
-        };
+        let (b_off, b_perm) = group_read(b_size, group, b_read, b_perms);
+        let (b0_base, b1_base) = (b0_col.as_ptr().add(b_off), b1_col.as_ptr().add(b_off));
         for r in 0..b_size {
-            let w0 = _mm512_loadu_si512(b0_base.add(16 * r) as *const __m512i);
-            let w1 = _mm512_loadu_si512(b0_base.add(16 * r + 8) as *const __m512i);
+            let (w0, w1) = load_row(b0_base, r, b_perm);
             let mut y = unpack_y(w0, w1, m42, m20);
             if PAIRWISE {
-                let v0 = _mm512_loadu_si512(b1_base.add(16 * r) as *const __m512i);
-                let v1 = _mm512_loadu_si512(b1_base.add(16 * r + 8) as *const __m512i);
+                let (v0, v1) = load_row(b1_base, r, b_perm);
                 let y1 = unpack_y(v0, v1, m42, m20);
                 y = [
                     _mm512_add_epi64(y[0], y1[0]),
@@ -502,7 +502,7 @@ unsafe fn conv_columns_packed<R: Ring, E: TaskExecutor, const ACC: bool, const P
     b0_col: &[u64],
     b1_col: &[u64],
     b_size: usize,
-    b_log_gap: usize,
+    b_read: RightRead,
     tmp: &mut [u64],
 ) {
     let n = res.n();
@@ -514,11 +514,13 @@ unsafe fn conv_columns_packed<R: Ring, E: TaskExecutor, const ACC: bool, const P
     let win_rows = a_size + 2 * (TILE - 1);
     let n_groups = n / 8;
     let n_tiles = min_size.div_ceil(TILE);
-    let task_tmp_len = 3 * 8 * win_rows + 3 * 8 * b_size + 3 * 8 * n_tiles * TILE + 32 * b_size;
+    let task_tmp_len = 3 * 8 * win_rows + 3 * 8 * b_size + 3 * 8 * n_tiles * TILE;
     let res_cols = res.cols();
     assert!(res_col < res_cols, "convolution: result column out of range");
     let res_ptr = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
     let cached_overwrite = cached_overwrite_stores(n, min_size);
+    // SAFETY: `avx512ifma` implies the AVX-512F that `group_permutations` needs.
+    let b_perms = unsafe { group_permutations(b_read) };
 
     let task_split = E::is_parallel() && n_groups > 1;
     if task_split {
@@ -538,7 +540,8 @@ unsafe fn conv_columns_packed<R: Ring, E: TaskExecutor, const ACC: bool, const P
                     b0_col,
                     b1_col,
                     b_size,
-                    b_log_gap,
+                    b_read,
+                    &b_perms,
                     cached_overwrite,
                     local_tmp,
                 );
@@ -567,7 +570,8 @@ unsafe fn conv_columns_packed<R: Ring, E: TaskExecutor, const ACC: bool, const P
                     b0_col,
                     b1_col,
                     b_size,
-                    b_log_gap,
+                    b_read,
+                    &b_perms,
                     cached_overwrite,
                     tmp,
                 );
@@ -914,12 +918,13 @@ pub(crate) unsafe fn cnv_apply_dft_ifma<R: Ring, E: TaskExecutor>(
     a_col: usize,
     b: &CnvPVecRBackendRef<'_, NTT3x42Ifma<R>>,
     b_col: usize,
+    b_galois: i64,
     tmp: &mut [u8],
 ) {
     let n = res.n();
     check_degree::<NTT3x42Ifma<R>>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap = sparse_log_gap_portable(n, b.n());
+    let b_read = right_read_ntt::<R>(n, b.n(), b_galois);
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -938,7 +943,7 @@ pub(crate) unsafe fn cnv_apply_dft_ifma<R: Ring, E: TaskExecutor>(
     let b_col_u64 = col_slice(cast_slice(b.data()), b.n(), b_size, b_col);
     unsafe {
         conv_columns_packed::<_, E, false, false>(
-            cnv_offset, res, res_col, a_col_u64, a_col_u64, a_size, b_col_u64, b_col_u64, b_size, b_log_gap, tmp_u64,
+            cnv_offset, res, res_col, a_col_u64, a_col_u64, a_size, b_col_u64, b_col_u64, b_size, b_read, tmp_u64,
         );
     }
 }
@@ -955,12 +960,13 @@ pub(crate) unsafe fn cnv_apply_dft_add_ifma<R: Ring, E: TaskExecutor>(
     a_col: usize,
     b: &CnvPVecRBackendRef<'_, NTT3x42Ifma<R>>,
     b_col: usize,
+    b_galois: i64,
     tmp: &mut [u8],
 ) {
     let n = res.n();
     check_degree::<NTT3x42Ifma<R>>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap = sparse_log_gap_portable(n, b.n());
+    let b_read = right_read_ntt::<R>(n, b.n(), b_galois);
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -976,7 +982,7 @@ pub(crate) unsafe fn cnv_apply_dft_add_ifma<R: Ring, E: TaskExecutor>(
     let b_col_u64 = col_slice(cast_slice(b.data()), b.n(), b_size, b_col);
     unsafe {
         conv_columns_packed::<_, E, true, false>(
-            cnv_offset, res, res_col, a_col_u64, a_col_u64, a_size, b_col_u64, b_col_u64, b_size, b_log_gap, tmp_u64,
+            cnv_offset, res, res_col, a_col_u64, a_col_u64, a_size, b_col_u64, b_col_u64, b_size, b_read, tmp_u64,
         );
     }
 }
@@ -986,7 +992,8 @@ struct PreparedAccTerm<'a> {
     a_size: usize,
     b_col: &'a [u64],
     b_size: usize,
-    b_log_gap: usize,
+    b_read: RightRead,
+    b_perms: [__m512i; 8],
     offset: usize,
     min_size: usize,
 }
@@ -1012,8 +1019,7 @@ unsafe fn conv_accumulate_terms_group(
     let (win, rest) = tmp.split_at_mut(3 * 8 * max_win_rows);
     let (b_pl, rest) = rest.split_at_mut(3 * 8 * max_b_size);
     let (acc_lo, rest) = rest.split_at_mut(3 * 8 * staged);
-    let (acc_hi, rest) = rest.split_at_mut(3 * 8 * staged);
-    let b_st: &mut [u64] = &mut rest[..16 * max_b_size];
+    let acc_hi: &mut [u64] = &mut rest[..3 * 8 * staged];
     acc_lo.fill(0);
     acc_hi.fill(0);
 
@@ -1047,19 +1053,11 @@ unsafe fn conv_accumulate_terms_group(
                 }
             }
 
-            let b_base: *const u64 = if term.b_log_gap == 0 {
-                term.b_col.as_ptr().add(packed_row_offset(term.b_size, 0, group))
-            } else {
-                gather_sparse_group_rows(&mut b_st[..16 * term.b_size], term.b_col, term.b_size, group, term.b_log_gap);
-                b_st.as_ptr()
-            };
+            let (b_off, b_perm) = group_read(term.b_size, group, term.b_read, &term.b_perms);
+            let b_base: *const u64 = term.b_col.as_ptr().add(b_off);
             for r in 0..term.b_size {
-                let y = unpack_y(
-                    _mm512_loadu_si512(b_base.add(16 * r) as *const __m512i),
-                    _mm512_loadu_si512(b_base.add(16 * r + 8) as *const __m512i),
-                    m42,
-                    m20,
-                );
+                let (w0, w1) = load_row(b_base, r, b_perm);
+                let y = unpack_y(w0, w1, m42, m20);
                 for (p, value) in y.iter().enumerate() {
                     _mm512_storeu_si512(b_pl.as_mut_ptr().add(p * 8 * term.b_size + 8 * r) as *mut __m512i, *value);
                 }
@@ -1176,8 +1174,9 @@ pub(crate) unsafe fn cnv_apply_dft_sum_ifma<R: Ring, E: TaskExecutor>(
     let mut max_b_size = 0;
     let prepared: Vec<_> = terms
         .iter()
-        .filter(|term| term.a.size() != 0 && term.b.size() != 0)
-        .map(|term| {
+        .map(|term| (term, right_read_ntt::<R>(n, term.b.n(), term.b_galois)))
+        .filter(|(term, _)| term.a.size() != 0 && term.b.size() != 0)
+        .map(|(term, b_read)| {
             let a_size = term.a.size();
             let b_size = term.b.size();
             let bound = a_size + b_size - 1;
@@ -1192,7 +1191,9 @@ pub(crate) unsafe fn cnv_apply_dft_sum_ifma<R: Ring, E: TaskExecutor>(
                 a_size,
                 b_col: col_slice(cast_slice(term.b.data()), term.b.n(), b_size, term.b_col),
                 b_size,
-                b_log_gap: sparse_log_gap_portable(n, term.b.n()),
+                b_read,
+                // SAFETY: `avx512ifma` implies the AVX-512F that `group_permutations` needs.
+                b_perms: unsafe { group_permutations(b_read) },
                 offset,
                 min_size,
             }
@@ -1207,7 +1208,7 @@ pub(crate) unsafe fn cnv_apply_dft_sum_ifma<R: Ring, E: TaskExecutor>(
     }
 
     let staged = max_size.div_ceil(TILE) * TILE;
-    let task_tmp_len = 3 * 8 * (max_a_size + 2 * (TILE - 1)) + 3 * 8 * max_b_size + sum_staging_len(staged, max_b_size);
+    let task_tmp_len = 3 * 8 * (max_a_size + 2 * (TILE - 1)) + 3 * 8 * max_b_size + sum_staging_len(staged);
     let fused = prepared.iter().map(|term| term.a_size.min(term.b_size)).sum::<usize>() < (1 << 12);
 
     for j in prepared[0].min_size..max_size {
@@ -1258,7 +1259,8 @@ pub(crate) unsafe fn cnv_apply_dft_sum_ifma<R: Ring, E: TaskExecutor>(
                         term.b_col,
                         term.b_col,
                         term.b_size,
-                        term.b_log_gap,
+                        term.b_read,
+                        &term.b_perms,
                         cached_overwrite,
                         local_tmp,
                     );
@@ -1277,7 +1279,8 @@ pub(crate) unsafe fn cnv_apply_dft_sum_ifma<R: Ring, E: TaskExecutor>(
                         term.b_col,
                         term.b_col,
                         term.b_size,
-                        term.b_log_gap,
+                        term.b_read,
+                        &term.b_perms,
                         cached_overwrite,
                         local_tmp,
                     );
@@ -1330,14 +1333,14 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma<R: Ring, E: TaskExecutor>(
     tmp: &mut [u8],
 ) {
     if col_0 == col_1 {
-        unsafe { cnv_apply_dft_ifma::<_, E>(module, res, cnv_offset, res_col, a, col_0, b, col_1, tmp) };
+        unsafe { cnv_apply_dft_ifma::<_, E>(module, res, cnv_offset, res_col, a, col_0, b, col_1, 1, tmp) };
         return;
     }
 
     let n = res.n();
     check_degree::<NTT3x42Ifma<R>>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap = sparse_log_gap_portable(n, b.n());
+    let b_read = RightRead::sparse(n, b.n());
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -1359,7 +1362,7 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma<R: Ring, E: TaskExecutor>(
     let b0 = col_slice(b_u64, b.n(), b_size, col_0);
     let b1 = col_slice(b_u64, b.n(), b_size, col_1);
     unsafe {
-        conv_columns_packed::<_, E, false, true>(cnv_offset, res, res_col, a0, a1, a_size, b0, b1, b_size, b_log_gap, tmp_u64)
+        conv_columns_packed::<_, E, false, true>(cnv_offset, res, res_col, a0, a1, a_size, b0, b1, b_size, b_read, tmp_u64)
     };
 }
 

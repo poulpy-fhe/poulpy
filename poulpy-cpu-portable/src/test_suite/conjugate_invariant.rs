@@ -347,6 +347,7 @@ macro_rules! conjugate_invariant_test_suite {
                         base2k: 10,
                     };
                     poulpy_hal::test_suite::convolution::test_convolution_sparse(&params, &module);
+                    poulpy_hal::test_suite::convolution::test_convolution_galois(&params, &module);
                     poulpy_hal::test_suite::sparse::test_vec_znx_sparse_add_sub(&params, &module);
                     poulpy_hal::test_suite::sparse::test_vec_znx_big_sparse_add_sub(&params, &module);
                 }
