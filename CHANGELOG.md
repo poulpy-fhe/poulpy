@@ -100,6 +100,7 @@
 - Relinearization, the one-pass multiply-and-relinearize and the linear transformations, hoisted baby steps and lazy giant steps included, run with tensor and automorphism key digits of any width, through the same operand layout as the key switch ([#188](https://github.com/poulpy-fhe/poulpy/issues/188)).
   The hoisted baby steps lay the input out once for the whole key set, and so take that route when every key has whole-limb digits or all share one digit width and digit count.
 - The relinearization and linear-transformation parity suites also sweep digit widths off a limb boundary.
+- `test_suite::noise::test_glwe_keyswitch_digit_k` and `test_glwe_external_product_digit_k`, registered in `core_backend_test_suite!`, run a key switch and an external product at every digit width from 2 bits to three limbs and check the output noise, and the gadget term alone, against the noise model to within one bit.
 - **Breaking:** `GLWE`, `GLWEPlaintext` and `GLWECompressed` carry an optional, scheme-managed `GLWEPlaintextMeta` (`Scale`, `SlotsKind`, `log_sparsity`) through `GLWEPlaintextInfos` and `SetGLWEPlaintextInfos`, which also read and set each field; `SlotsKind` moves from `poulpy-ckks` and gains `Integer`.
 - **Breaking, format:** serialized `GLWE` and `GLWECompressed` carry their plaintext metadata.
 - `reference::keyswitching::glwe::gglwe_product_limbs` returns the `product_limbs` the reference key switch passes to `GGLWEProductDigitsStridedImpl`, so that backend overrides derive the same.
