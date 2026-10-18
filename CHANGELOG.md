@@ -75,6 +75,9 @@
 - **Breaking:** the `impl_ckks_infos!` arms `inner_meta` and `self_meta` are renamed `ckks_inner` and `glwe_inner`.
 - `test_suite::parity::helpers`, `test_suite::parity::keys` and `test_suite::parity::layout` are public under `test-utils`, so downstream crates build parity tests from the same fixtures.
 - The scratch of the SHIP masking accumulation and mux-rotate covers `vec_znx_idft_apply_tmp_bytes`.
+- **Fix, breaking:** `ckks_ci_trace` keeps the input width and halves the trace exactly by relabeling the scale (`log_delta_out = log_delta + 1`, `k_out = k`) instead of normalizing one bit narrower.
+  The narrower normalization rounded every tie of both columns the same way, a bias that adds up in the first slots: about `2^-34` at slot 0 for a degree-`2^16` ciphertext at scale `2^54`, against `2^-43` elsewhere.
+  `ckks_unfold` of conjugate-invariant inputs labels its outputs one bit finer than the inputs, for the same budget.
 
 ## [0.9.0] - 2026-10-08
 

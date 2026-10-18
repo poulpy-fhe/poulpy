@@ -5,13 +5,13 @@ use poulpy_core::{
     GLWEBytesOf, GLWECIEmbed, GLWECITrace, GLWEKeyswitch,
     layouts::{
         GGLWEInfos, GGLWEPreparedToBackendRef, GLWE, GLWECIEmbedKeyPrepared, GLWECITraceKeyPrepared, GLWEInfos, GLWEToBackendMut,
-        GLWEToBackendRef, LWEInfos,
+        GLWEToBackendRef, LWEInfos, SetK,
     },
 };
 use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Module, ScratchArena, Standard};
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
+    CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
     api::CKKSCIRingMapOps,
     error::checked_log_budget_sub,
     layouts::{CKKSCiphertext, ScratchArenaTakeCKKS},
@@ -132,15 +132,18 @@ where
     Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
 {
     validate_ring_map(module, dst, src)?;
-    // Tr = 2·Re(m): normalizing it one bit narrower halves it into canonical digits;
-    // on a power-of-two modulus that bit is the cost of the halving.
-    let log_budget = checked_log_budget_sub("ckks_ci_trace", src.log_budget(), 1)?;
-    ensure_holds(dst, src.k().as_usize() - 1)?;
+    // Tr = 2·Re(m) is exact at the input width, and 2·Re(m) at scale 2^Δ is Re(m) at
+    // 2^(Δ+1): the halving relabels the scale and costs one bit of budget, with no
+    // rounding. Rounding the halved digits instead rounds every tie the same way, a
+    // bias of both columns that adds up in the first slots.
+    checked_log_budget_sub("ckks_ci_trace", src.log_budget(), 1)?;
+    ensure_holds(dst, src.k().as_usize())?;
+    dst.inner.set_k(src.k());
     dst.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(src.log_delta() + 1),
         slots: SlotsKind::Real,
         ..src.meta()
     });
-    dst.set_log_budget(log_budget);
     module.glwe_ci_trace(&mut dst.inner, src, scratch);
     Ok(())
 }

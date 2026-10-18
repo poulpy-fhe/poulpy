@@ -232,9 +232,10 @@ where
         rotated.set_meta(part.meta());
         for (out, src) in outs.iter_mut().zip([part, &rotated]) {
             ckks_ci_trace_keyless(module, out, src, scratch)?;
-            // Labeled at the input scale like standard outputs, keeping the trace's width.
+            // Labeled at the input scale like standard outputs, plus the bit the trace
+            // spends on its exact halving, keeping the trace's width.
             out.set_meta(GLWEPlaintextMeta {
-                scale: Scale::Log(log_delta),
+                scale: Scale::Log(log_delta + 1),
                 ..out.meta()
             });
         }

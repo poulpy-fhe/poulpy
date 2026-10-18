@@ -505,8 +505,6 @@ where
     Module<STD>: TestContextSharedModule<STD> + CKKSEncodingOps<STD, f64> + CKKSCIRingMapOps<STD> + GLWECIKeyEncryptSk<STD>,
 {
     params.prec_meta.slots = SlotsKind::Real;
-    // One bit above the radix grid, so the trace output (`k − 1` bits) can fill `back` exactly.
-    params.k += 1;
     let standard_params = CKKSTestParams {
         n: 2 * params.n,
         ..params
@@ -569,14 +567,39 @@ where
         assert_output!(standard, standard_params, extended, standard_sk, standard_scratch);
     }
 
-    let mut back = alloc_ct(&params, &ci, params.k - 1);
+    let mut back = alloc_ct(&params, &ci, params.k);
     standard
         .ckks_ci_trace(&mut back, &extended, &trace_key, &mut standard_scratch.borrow())
         .unwrap();
-    assert_eq!((back.log_delta(), back.slots()), (ct.log_delta(), SlotsKind::Real));
+    // The trace halves exactly through the scale: one bit finer, at the input width.
+    assert_eq!(
+        (back.log_delta(), back.k(), back.slots()),
+        (ct.log_delta() + 1, ct.k(), SlotsKind::Real)
+    );
     assert!(back.is_canonical());
     assert_eq!(back.noise(), None);
     assert_output!(ci, params, back, ci_sk, scratch);
+
+    // A rounded halving biases every coefficient alike, which shows as an outlier error
+    // in the first slots; the exact trace leaves them like the others.
+    {
+        let mut prec = precision_at(&params, back.log_delta());
+        prec.meta = back.meta();
+        let pt = ckks_decrypt_with_prec(&ci, &back, &ci_sk, prec, &mut scratch.borrow()).unwrap();
+        let (mut re, mut im) = (vec![0.0; slots], vec![0.0; slots]);
+        ci.ckks_decode_reim_into(&pt, &mut re, &mut im, &mut scratch.borrow())
+            .unwrap();
+        let mut errors: Vec<f64> = re.iter().zip(&want).map(|(got, want)| (got - want).abs()).collect();
+        let first = errors[..4].iter().cloned().fold(0.0, f64::max);
+        errors.sort_by(|a, b| a.total_cmp(b));
+        let median = errors[slots / 2];
+        assert!(
+            first <= 8.0 * median,
+            "trace error in the first slots 2^{:.1} is an outlier against the median 2^{:.1}",
+            first.log2(),
+            median.log2()
+        );
+    }
 
     let mut wrong_degree = alloc_ct(&params, &standard, params.k);
     assert!(
@@ -759,9 +782,14 @@ where
             )
             .unwrap();
         for (i, (out, msg)) in outs.iter().zip(&msgs).enumerate() {
+            // The trace spends its bit on the scale: one bit finer than the input.
+            let want_meta = GLWEPlaintextMeta {
+                scale: Scale::Log(ins[i].log_delta() + 1),
+                ..ins[i].meta()
+            };
             assert_eq!(
                 (out.meta(), out.log_sparsity()),
-                (ins[i].meta(), ins[i].log_sparsity()),
+                (want_meta, ins[i].log_sparsity()),
                 "unfolded {i}, {label}"
             );
             assert_eq!(out.noise(), None, "unfolded provenance {i}, {label}");

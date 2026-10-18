@@ -20,12 +20,12 @@ use crate::{CKKSCtBounds, SetCKKSInfos, layouts::CKKSCiphertext};
 /// # Metadata
 ///
 /// ```text
-/// embed: log_delta_out = src.log_delta, k_out = src.k
-/// trace: log_delta_out = src.log_delta, k_out = src.k − 1   (dst holds Re(m))
+/// embed: log_delta_out = src.log_delta,     k_out = src.k
+/// trace: log_delta_out = src.log_delta + 1, k_out = src.k   (dst holds Re(m))
 /// ```
 ///
-/// The trace doubles the real part and halves it by normalizing at `k − 1`, which
-/// spends one bit of budget. Both keep the sparsity, set the slot kind to
+/// The trace doubles the real part and halves it exactly by relabeling the scale,
+/// which spends one bit of budget. Both keep the sparsity, set the slot kind to
 /// `SlotsKind::Real` and leave canonical outputs.
 pub trait CKKSCIRingMapOps<BE: Backend> {
     fn ckks_ci_embed_tmp_bytes<R, K>(&self, res_infos: &R, key_infos: &K) -> usize
