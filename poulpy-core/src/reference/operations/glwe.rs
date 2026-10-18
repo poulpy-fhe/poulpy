@@ -18,6 +18,7 @@ use poulpy_hal::{
 
 use crate::layouts::operand_degree;
 use crate::oep::GLWETensoringImpl;
+use crate::reference::keyswitching::glwe::{gadget_dft_apply, gadget_dft_apply_tmp_bytes, gadget_input_size};
 use crate::{
     ScratchArenaTakeCore,
     api::{GLWEBytesOf, GLWENormalize},
@@ -695,6 +696,8 @@ where
     BE: GLWETensoringImpl,
     Self: Sized
         + ModuleN
+        + poulpy_hal::api::VecZnxGadgetDecompose<BE>
+        + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
         + CnvPVecBytesOf
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>
@@ -830,16 +833,19 @@ where
         // too many.
         let a_dft_size: usize = a.k().div_ceil(tsk.base2k()) as usize;
         let output_size = gglwe_product_output_size::<BE, _, _, _>(res, a, tsk);
+        let (gadget_base2k, digit_k, dnum) = (tsk.base2k(), tsk.digit_k(), tsk.dnum());
+        let gadget_size: usize = gadget_input_size(gadget_base2k, digit_k, dnum, a.k(), a_dft_size);
+        let gadget_bytes: usize = gadget_dft_apply_tmp_bytes::<BE, _>(self, gadget_base2k, digit_k, dnum, a.k(), a_dft_size);
 
-        let lvl_0: usize = self.bytes_of_vec_znx_dft(n, pairs, a_dft_size);
+        let lvl_0: usize = self.bytes_of_vec_znx_dft(n, pairs, gadget_size);
 
         let lvl_1_pre_conv: usize = if a_base2k != key_base2k {
-            BE::bytes_of_vec_znx(n, 1, a_dft_size) + self.vec_znx_normalize_tmp_bytes()
+            BE::bytes_of_vec_znx(n, 1, a_dft_size) + self.vec_znx_normalize_tmp_bytes().max(gadget_bytes)
         } else {
-            0
+            gadget_bytes
         };
         let lvl_1_res_dft: usize = self.bytes_of_vec_znx_dft(n, cols, output_size);
-        let lvl_1_gglwe_product: usize = self.gglwe_product_dft_tmp_bytes_reference(output_size, a_dft_size, tsk);
+        let lvl_1_gglwe_product: usize = self.gglwe_product_dft_tmp_bytes_reference(output_size, gadget_size, tsk);
         let lvl_1_post_conv: usize = if res_base2k != key_base2k {
             BE::bytes_of_vec_znx(n, 1, a_dft_size) + self.vec_znx_normalize_tmp_bytes()
         } else {
@@ -884,12 +890,25 @@ where
         let pairs: usize = tsk.rank_in().as_usize();
 
         let a_dft_size: usize = a.k().div_ceil(tsk.base2k()) as usize;
+        let (gadget_base2k, digit_k, dnum) = (tsk.base2k(), tsk.digit_k(), tsk.dnum());
+        let gadget_size: usize = gadget_input_size(gadget_base2k, digit_k, dnum, a.k(), a_dft_size);
 
-        let (mut a_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(res.n().as_usize(), pairs, a_dft_size);
+        let (mut a_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(res.n().as_usize(), pairs, gadget_size);
 
         if a_base2k == key_base2k {
             for i in 0..pairs {
-                self.vec_znx_dft_apply(1, 0, &mut a_dft, i, &a_backend.data, cols + i);
+                gadget_dft_apply(
+                    self,
+                    &mut a_dft,
+                    i,
+                    &a_backend.data,
+                    cols + i,
+                    gadget_base2k,
+                    digit_k,
+                    dnum,
+                    a.k(),
+                    &mut scratch.borrow(),
+                );
             }
         } else {
             let (mut a_conv, mut scratch_norm) = scratch.borrow().take_vec_znx_scratch(res.n().as_usize(), 1, a_dft_size);
@@ -907,7 +926,18 @@ where
                     &mut scratch_iter,
                 );
                 let a_conv_ref = a_conv.to_backend_ref();
-                self.vec_znx_dft_apply(1, 0, &mut a_dft, i, &a_conv_ref, 0);
+                gadget_dft_apply(
+                    self,
+                    &mut a_dft,
+                    i,
+                    &a_conv_ref,
+                    0,
+                    gadget_base2k,
+                    digit_k,
+                    dnum,
+                    a.k(),
+                    &mut scratch_norm.borrow(),
+                );
             }
         }
 
@@ -1153,11 +1183,18 @@ where
             .cnv_apply_dft_tmp_bytes(max_size, dft_size, a_size, b_size)
             .max(self.cnv_pairwise_apply_dft_tmp_bytes(max_size, dft_size, a_size, b_size));
         let digits = self.vec_znx_idft_normalize_consume_tmp_bytes(dft_size, dft_size);
-        let product = self.bytes_of_vec_znx_dft(n, 1, dft_size)
-            + self.bytes_of_vec_znx_dft(n, 2, ks_size)
-            + self
-                .gglwe_product_dft_tmp_bytes_reference(ks_size, dft_size, tsk)
-                .max(self.vec_znx_idft_normalize_consume_tmp_bytes(res.size(), ks_size));
+        // d2 is the gadget operand, at most `dft_size` full limbs.
+        let d2_k = TorusPrecision((dft_size * base2k) as u32);
+        let (gadget_base2k, digit_k, dnum) = (tsk.base2k(), tsk.digit_k(), tsk.dnum());
+        let gadget_size: usize = gadget_input_size(gadget_base2k, digit_k, dnum, d2_k, dft_size);
+        let gadget_bytes: usize = gadget_dft_apply_tmp_bytes::<BE, _>(self, gadget_base2k, digit_k, dnum, d2_k, dft_size);
+        let product = self.bytes_of_vec_znx_dft(n, 1, gadget_size)
+            + gadget_bytes.max(
+                self.bytes_of_vec_znx_dft(n, 2, ks_size)
+                    + self
+                        .gglwe_product_dft_tmp_bytes_reference(ks_size, gadget_size, tsk)
+                        .max(self.vec_znx_idft_normalize_consume_tmp_bytes(res.size(), ks_size)),
+            );
         let tail = columns + BE::bytes_of_vec_znx(n, 1, dft_size) + convolve.max(digits).max(product);
 
         prepared + prepare.max(tail)
@@ -1382,7 +1419,8 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, BP, H>(
         + VecZnxIdftNormalizeConsume<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftAddAssign<BE>
-        + GGLWEProductReference<BE>,
+        + GGLWEProductReference<BE>
+        + poulpy_hal::api::VecZnxGadgetDecompose<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     B: GLWEToBackendRef<BE> + GLWEInfos,
@@ -1535,8 +1573,22 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, BP, H>(
         &mut scratch.borrow(),
     );
 
-    let (mut d2_dft, scratch) = scratch.take_vec_znx_dft_scratch(n, 1, dft_size);
-    module.vec_znx_dft_apply(1, 0, &mut d2_dft, 0, &d2_digits.to_backend_ref(), 0);
+    let d2_k = TorusPrecision((dft_size * base2k) as u32);
+    let (gadget_base2k, digit_k, dnum) = (tsk.base2k(), tsk.digit_k(), tsk.dnum());
+    let gadget_size: usize = gadget_input_size(gadget_base2k, digit_k, dnum, d2_k, dft_size);
+    let (mut d2_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(n, 1, gadget_size);
+    gadget_dft_apply(
+        module,
+        &mut d2_dft,
+        0,
+        &d2_digits.to_backend_ref(),
+        0,
+        gadget_base2k,
+        digit_k,
+        dnum,
+        d2_k,
+        &mut scratch.borrow(),
+    );
 
     // One more output limb than the two-step path when the alignment adds a limb to d2.
     let ks_size = (output_size + dft_size.saturating_sub(tensor_size)).min(tsk.size());

@@ -13,7 +13,7 @@ use crate::{
     GLWELinearTransformations,
     api::TransferInto,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GLWE, GLWEAutomorphismKeyLayout, GLWEBackendRef, GLWEInfos, GLWELayout, GLWEToBackendRef,
+        Base2K, Degree, Dnum, GLWE, GLWEAutomorphismKeyLayout, GLWEBackendRef, GLWEInfos, GLWELayout, GLWEToBackendRef,
         IntPolyInfos, LWEInfos, LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep,
         LinearTransformationLayout, LinearTransformationStrategy, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::{GLWEAutomorphismKeyPreparedFactory, LinearTransformationBabySteps, PreparedDiagonal},
@@ -106,7 +106,7 @@ where
     // The cache may hold rotations unused by this matrix.
     let baby_steps = [0, 1, 3];
     for &rank in &shapes.ranks {
-        for dsize in shapes.dsizes(k, base) {
+        for digit_k in shapes.digit_ks(k, base) {
             let ct = GLWELayout {
                 n: params.n.into(),
                 base2k: base.into(),
@@ -123,9 +123,9 @@ where
                     n: ct.n,
                     base2k: ct.base2k,
                     rank: ct.rank,
-                    dnum: Dnum(k.div_ceil(base * dsize) as u32),
-                    digit_k: crate::layouts::digit_k_of(ct.base2k, Dsize(dsize as u32)),
-                    k_aux: TorusPrecision((base * dsize + (params.n.ilog2() as usize)) as u32),
+                    dnum: Dnum(k.div_ceil(digit_k) as u32),
+                    digit_k: TorusPrecision(digit_k as u32),
+                    k_aux: TorusPrecision((digit_k + (params.n.ilog2() as usize)) as u32),
                 };
                 let input_r = ref_glwe(r, &ct, &mut source);
                 let mut input_t = t.glwe_alloc_from_infos(&ct);
@@ -194,7 +194,7 @@ where
                     );
                 }
 
-                if dsize == 1 && pt_k == base + 1 {
+                if digit_k == base && pt_k == base + 1 {
                     // A single identity diagonal has an exact mathematical
                     // oracle; it must copy every input coefficient and require
                     // no giant rotation or key switching. The one-limb
@@ -409,7 +409,7 @@ where
                         assert_glwe_eq!(
                             out_r,
                             have,
-                            "resident linear transform rank={rank} dsize={dsize} offset={offset} out_base={out_base}"
+                            "resident linear transform rank={rank} digit_k={digit_k} offset={offset} out_base={out_base}"
                         );
                         let mut streamed_r = ref_glwe(r, &out, &mut source);
                         let mut streamed_t = t.glwe_alloc_from_infos(&out);
@@ -440,12 +440,12 @@ where
                         assert_glwe_eq!(
                             streamed_r,
                             have,
-                            "streamed linear transform rank={rank} dsize={dsize} offset={offset} out_base={out_base}"
+                            "streamed linear transform rank={rank} digit_k={digit_k} offset={offset} out_base={out_base}"
                         );
                         assert_glwe_eq!(
                             out_r,
                             streamed_r,
-                            "resident/streamed linear transform rank={rank} dsize={dsize} offset={offset} out_base={out_base}"
+                            "resident/streamed linear transform rank={rank} digit_k={digit_k} offset={offset} out_base={out_base}"
                         );
                     }
                 }
