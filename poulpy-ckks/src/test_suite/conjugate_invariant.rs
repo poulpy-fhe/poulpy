@@ -502,7 +502,14 @@ where
     BE: TestContextBackend<Ring = ConjugateInvariant>,
     STD: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, f64>,
-    Module<STD>: TestContextSharedModule<STD> + CKKSEncodingOps<STD, f64> + CKKSCIRingMapOps<STD> + GLWECIKeyEncryptSk<STD>,
+    Module<STD>: TestContextSharedModule<STD>
+        + CKKSEncodingOps<STD, f64>
+        + CKKSCIRingMapOps<STD>
+        + GLWECIKeyEncryptSk<STD>
+        + poulpy_core::GLWECITrace<STD>
+        + poulpy_core::GLWENormalize<STD>
+        + poulpy_core::GLWEShift<STD>
+        + poulpy_core::GLWESub<STD>,
 {
     params.prec_meta.slots = SlotsKind::Real;
     // One bit above the radix grid, so the trace output (`k − 1` bits) can fill `back` exactly.
@@ -573,10 +580,66 @@ where
     standard
         .ckks_ci_trace(&mut back, &extended, &trace_key, &mut standard_scratch.borrow())
         .unwrap();
-    assert_eq!((back.log_delta(), back.slots()), (ct.log_delta(), SlotsKind::Real));
+    assert_eq!(
+        (back.log_delta(), back.k(), back.slots()),
+        (ct.log_delta(), ct.k() - 1, SlotsKind::Real)
+    );
     assert!(back.is_canonical());
     assert_eq!(back.noise(), None);
     assert_output!(ci, params, back, ci_sk, scratch);
+
+    // Rounding the halving's ties one way biases every coefficient alike, which shows
+    // as an outlier error in the first slots; ties to even leave them like the others.
+    {
+        let mut prec = precision_at(&params, back.log_delta());
+        prec.meta = back.meta();
+        let pt = ckks_decrypt_with_prec(&ci, &back, &ci_sk, prec, &mut scratch.borrow()).unwrap();
+        let (mut re, mut im) = (vec![0.0; slots], vec![0.0; slots]);
+        ci.ckks_decode_reim_into(&pt, &mut re, &mut im, &mut scratch.borrow())
+            .unwrap();
+        let mut errors: Vec<f64> = re.iter().zip(&want).map(|(got, want)| (got - want).abs()).collect();
+        let first = errors[..4].iter().cloned().fold(0.0, f64::max);
+        errors.sort_by(|a, b| a.total_cmp(b));
+        let median = errors[slots / 2];
+        assert!(
+            first <= 8.0 * median,
+            "trace error in the first slots 2^{:.1} is an outlier against the median 2^{:.1}",
+            first.log2(),
+            median.log2()
+        );
+    }
+
+    // Exactly: every coefficient of both columns is the exact trace halved, its odd
+    // values to the even neighbour, which the first slots alone would not show.
+    {
+        let mut exact = alloc_ct(&params, &ci, params.k);
+        poulpy_core::GLWECITrace::glwe_ci_trace(&standard, &mut exact.inner, &extended, &mut standard_scratch.borrow());
+        let mut halved = alloc_ct(&params, &ci, params.k - 1);
+        crate::reference::ring_map::ckks_ci_trace_keyless(&standard, &mut halved, &extended, &mut standard_scratch.borrow())
+            .unwrap();
+        // The coefficient `i` of column `col` at `k` bits, modulo `2^128`.
+        let low_bits =
+            |ct: &crate::layouts::CKKSCiphertext<_, i64, ConjugateInvariant>, col: usize, k: usize, i: usize| -> i128 {
+                let (base2k, data) = (params.base2k, ct.inner.data());
+                let mut value = 0i128;
+                for limb in 0..k.div_ceil(base2k) {
+                    let digit = poulpy_hal::layouts::ZnxView::at(data, col, limb)[i] as i128;
+                    let bits = (k - limb * base2k).min(base2k);
+                    value = value.wrapping_shl(bits as u32).wrapping_add(digit >> (base2k - bits));
+                }
+                value
+            };
+        let mask = (1i128 << 100) - 1;
+        for col in 0..2 {
+            for i in 0..params.n {
+                let t = low_bits(&exact, col, params.k, i);
+                let floor = t >> 1;
+                let want = if t & 1 == 0 || floor & 1 == 0 { floor } else { floor + 1 };
+                let got = low_bits(&halved, col, params.k - 1, i);
+                assert_eq!(got.wrapping_sub(want) & mask, 0, "column {col}, coefficient {i}: trace {t}");
+            }
+        }
+    }
 
     let mut wrong_degree = alloc_ct(&params, &standard, params.k);
     assert!(

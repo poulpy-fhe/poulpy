@@ -25,7 +25,8 @@ use crate::{CKKSCtBounds, SetCKKSInfos, layouts::CKKSCiphertext};
 /// ```
 ///
 /// The trace doubles the real part and halves it by normalizing at `k − 1`, which
-/// spends one bit of budget. Both keep the sparsity, set the slot kind to
+/// spends one bit of budget; the halving rounds its ties to even, so they carry no
+/// bias. Both keep the sparsity, set the slot kind to
 /// `SlotsKind::Real` and leave canonical outputs.
 pub trait CKKSCIRingMapOps<BE: Backend> {
     fn ckks_ci_embed_tmp_bytes<R, K>(&self, res_infos: &R, key_infos: &K) -> usize
