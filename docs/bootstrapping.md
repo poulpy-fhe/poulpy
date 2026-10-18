@@ -254,9 +254,11 @@ The presets take inputs at scale `2^35` and use an optimized Han–Ki EvalMod:
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
 | `n15_d35_k180_p18_c2s` | C2S-first | 40 | 180 | 18 bits | 140 (4) | 780 |
 | `n16_d35_k600_p19_c2s` | C2S-first | 40 | 600 | 19 bits | 560 (16) | 1427 |
-| `n16_d35_k720_p19_s2c` | S2C-first | 160 | 720 | 19 bits | 560 (16) | 1382 |
+| `n16_d35_k733_p20_s2c` | S2C-first | 138 | 733 | 20 bits | 595 (17) | 1353 |
 
 The logN15 preset merges each transform into two seven-layer factors: C2S uses `[(7, 2048), (7, 16)]` at matrix scale `2^49`, and S2C uses the reversed schedule at scale `2^30`. EvalMod keeps the degree-30, interval-16 Han–Ki polynomial, three range-reduction steps, and coefficient scale `2^42`, with evaluation scale `2^53`. C2S, EvalMod, and S2C consume 98, 424, and 60 bits; restoring scale `2^35` consumes another 18 bits. Thus `780 - 98 - 424 - 60 - 18 = 180`, leaving four 35-bit levels above the 40-bit input width.
+
+The logN16 S2C-first preset uses three factors per transform: C2S `[(5, 4096), (5, 256), (5, 8)]` at matrix scale `2^50` and S2C `[(4, 4), (5, 128), (6, 4096)]` at `2^30`, each with the giant steps that need the fewest key switches. With three factors the precision of CoeffsToSlots depends far more on its scale than with four, hence the two extra bits. It keeps one more usable level than the C2S-first preset for a raised modulus 74 bits narrower.
 
 The logN16 C2S-first preset internally reaches 623 bits at scale `2^58`; `ckks_bootstrap` restores scale `2^35` and returns 600 bits automatically. This leaves exactly `600 - 40 = 560` bits before the next bootstrap. No caller-side scale adjustment is needed.
 

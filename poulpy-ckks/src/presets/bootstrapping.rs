@@ -53,7 +53,12 @@ use crate::{
 };
 
 const C2S_SCHEDULE: [(usize, usize); 4] = [(4, 8192), (4, 512), (4, 32), (3, 4)];
+/// Three factors of five layers for the S2C-first preset, with the giant steps that
+/// need the fewest key switches.
+const C2S_SCHEDULE_3: [(usize, usize); 3] = [(5, 4096), (5, 256), (5, 8)];
 const S2C_SCHEDULE: [(usize, usize); 4] = [(3, 4), (4, 32), (4, 512), (4, 8192)];
+/// Three factors of four, five and six layers for the S2C-first preset.
+const S2C_SCHEDULE_3: [(usize, usize); 3] = [(4, 4), (5, 128), (6, 4096)];
 
 #[derive(Clone, Copy, Debug)]
 struct EvalModSpec {
@@ -339,34 +344,35 @@ pub fn n16_d35_k600_p19_c2s() -> Result<BootstrappingPreset> {
 }
 
 /// S2C-first full-slot preset at `N = 2^16` for inputs at scale `2^35`,
-/// producing 720-bit ciphertexts with at least 19 bits of precision.
+/// producing 733-bit ciphertexts with at least 20 bits of precision.
 ///
-/// Uses an optimized Han–Ki EvalMod. The initial S2C is evaluated below ModUp,
-/// so the input width is 160 bits (the 48-bit ModUp modulus plus 112 bits of
-/// SlotsToCoeffs) and the raised width 1382 bits, including six C2S guard bits.
-/// The application must hand the ciphertext back at 160 bits: 560 bits (16 rescales at the input
-/// scale) are usable, the same budget as the C2S-first preset despite the larger `k`.
-pub fn n16_d35_k720_p19_s2c() -> Result<BootstrappingPreset> {
+/// Uses an optimized Han–Ki EvalMod and three factors per transform. The initial
+/// S2C is evaluated below ModUp, so the input width is 138 bits (the 48-bit ModUp
+/// modulus plus 90 bits of SlotsToCoeffs) and the raised width 1353 bits,
+/// including six C2S guard bits. The application must hand the ciphertext back at
+/// 138 bits: 595 bits (17 rescales at the input scale) are usable, one more than
+/// the C2S-first preset despite the larger `k`.
+pub fn n16_d35_k733_p20_s2c() -> Result<BootstrappingPreset> {
     build(PresetSpec {
-        name: "n16_d35_k720_p19_s2c",
+        name: "n16_d35_k733_p20_s2c",
         log_n: 16,
         base2k: 52,
         rank: 1,
         log_delta: 35,
-        output_k: 720,
-        log2_precision: 19,
+        output_k: 733,
+        log2_precision: 20,
         dense_secret: N16_DENSE_SECRET,
         sparse_secret: N16_SPARSE_SECRET,
         key_dsize: None,
         dense_to_sparse_dsize: 1,
         pipeline: BootstrappingPipeline::S2CFirst,
         log_msg_ratio: 13,
-        c2s_schedule: &C2S_SCHEDULE,
+        c2s_schedule: &C2S_SCHEDULE_3,
         c2s_guard_bits: 6,
-        c2s_log_delta: 48,
+        c2s_log_delta: 50,
         c2s_log_budget: 3,
-        s2c_schedule: &S2C_SCHEDULE,
-        s2c_log_delta: 28,
+        s2c_schedule: &S2C_SCHEDULE_3,
+        s2c_log_delta: 30,
         s2c_log_budget: 2,
         eval_mod: optimized_han_ki(),
     })
@@ -409,7 +415,7 @@ pub fn n15_d35_k180_p18_c2s() -> Result<BootstrappingPreset> {
 
 /// Every preset, in a stable order.
 pub fn all() -> Result<Vec<BootstrappingPreset>> {
-    const PRESETS: &[fn() -> Result<BootstrappingPreset>] = &[n16_d35_k600_p19_c2s, n16_d35_k720_p19_s2c, n15_d35_k180_p18_c2s];
+    const PRESETS: &[fn() -> Result<BootstrappingPreset>] = &[n16_d35_k600_p19_c2s, n16_d35_k733_p20_s2c, n15_d35_k180_p18_c2s];
     PRESETS.iter().map(|build| build()).collect()
 }
 
@@ -693,9 +699,9 @@ fn tensor_key_inputs(spec: &PresetSpec, plan: &BootstrappingPlan, bootstrap_k: u
 /// input's last bit (see [`poulpy_core::layouts::key_k`]): about `2^9` at
 /// `N = 2^16`, `2^7` with this margin. A bootstrapped ciphertext shows it only
 /// past its own error, `log_delta - log2_precision` bits above its last bit:
-/// 16 or more in the presets, which leaves 9. Measured on
-/// [`n16_d35_k720_p19_s2c`], the precision starts to drop 10 bits below this
-/// margin. A preset with a narrower gap between scale and precision needs more.
+/// 15 or more in the presets, which leaves 8. Measured on the S2C-first preset,
+/// the precision starts to drop about 10 bits below this margin. A preset with a
+/// narrower gap between scale and precision needs more.
 const KEY_NOISE_MARGIN: usize = 2;
 
 /// Widest digit, in limbs, a key under a modulus bound of `limit` bits can
@@ -852,33 +858,34 @@ mod tests {
     }
 
     #[test]
-    fn n16_d35_k720_p19_s2c_is_composable_and_within_bounds() {
-        let preset = n16_d35_k720_p19_s2c().unwrap();
+    fn n16_d35_k733_p20_s2c_is_composable_and_within_bounds() {
+        let preset = n16_d35_k733_p20_s2c().unwrap();
 
         assert_eq!(preset.plan().pipeline(), BootstrappingPipeline::S2CFirst);
         assert_eq!(preset.plan().eval_mod().eval_mod_type, EvalModType::CosHKEven);
         assert_eq!(preset.plan().eval_mod().consumed_bits(), 464);
-        assert_eq!(preset.plan().coeffs_to_slots().consumed_bits(), 192);
+        assert_eq!(preset.plan().coeffs_to_slots().consumed_bits(), 150);
         assert_eq!(preset.plan().c2s_guard_bits(), 6);
-        assert_eq!(preset.plan().slots_to_coeffs().consumed_bits(), 112);
-        assert_eq!((preset.input_k(), preset.output_k(), preset.bootstrap_k()), (160, 720, 1382));
-        assert_eq!(preset.log2_precision(), 19);
+        assert_eq!(preset.plan().slots_to_coeffs().consumed_bits(), 90);
+        assert_eq!((preset.input_k(), preset.output_k(), preset.bootstrap_k()), (138, 733, 1353));
+        assert_eq!(preset.log2_precision(), 20);
         assert_eq!(
             preset.output_layout().log_budget() - preset.input_layout().log_budget(),
-            16 * preset.log_delta()
+            17 * preset.log_delta()
         );
 
         assert_layouts_within_bounds(&preset, 6);
-        // The four CoeffsToSlots factors run at 1382, 1334, 1286 and 1238 bits,
-        // the conjugation and the first EvalMod level below them.
+        // The three CoeffsToSlots factors run at 1353, 1303 and 1253 bits, the
+        // conjugation and the first EvalMod level below them; SlotsToCoeffs runs
+        // on the 138-bit input.
         let keys = preset.keys_layout();
         assert_eq!(
             key_shapes(&keys.rotation_key_layouts()),
-            [(6, 5), (7, 4), (8, 4), (8, 3), (9, 3)]
+            [(6, 5), (7, 4), (8, 4), (9, 3), (3, 1), (2, 1)]
         );
         assert_eq!(key_shapes(keys.tensor_key_layouts()), [(9, 3), (11, 2), (16, 1)]);
         assert_eq!(keys.rotation_key(-1).gglwe_layout().max_input_k().as_usize(), 1239);
-        assert!(keys.tensor_key.gglwe_layout().max_input_k().as_usize() >= 1196);
+        assert!(keys.tensor_key.gglwe_layout().max_input_k().as_usize() >= 1203);
 
         // One digit for every key leaves a single shape.
         let uniform = preset.with_dsizes(6, 1).unwrap();
@@ -921,7 +928,7 @@ mod tests {
         let names: Vec<&str> = all().unwrap().iter().map(|p| p.name()).collect();
         assert_eq!(
             names,
-            ["n16_d35_k600_p19_c2s", "n16_d35_k720_p19_s2c", "n15_d35_k180_p18_c2s"]
+            ["n16_d35_k600_p19_c2s", "n16_d35_k733_p20_s2c", "n15_d35_k180_p18_c2s"]
         );
     }
 
@@ -929,7 +936,7 @@ mod tests {
     fn rederived_key_shape_keeps_widths_and_revalidates() {
         for (preset, fft_dsize) in [
             (n16_d35_k600_p19_c2s().unwrap(), 7),
-            (n16_d35_k720_p19_s2c().unwrap(), 7),
+            (n16_d35_k733_p20_s2c().unwrap(), 7),
             (n15_d35_k180_p18_c2s().unwrap(), 3),
         ] {
             let widths = (preset.input_k(), preset.output_k(), preset.bootstrap_k());

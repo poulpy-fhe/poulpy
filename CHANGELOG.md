@@ -160,6 +160,7 @@
 
 ### `poulpy-ckks`
 
+- **Breaking:** the S2C-first logN16 preset `n16_d35_k720_p19_s2c` is replaced by `n16_d35_k733_p20_s2c`: three factors per transform (C2S `[(5, 4096), (5, 256), (5, 8)]` at scale `2^50`, S2C `[(4, 4), (5, 128), (6, 4096)]` at `2^30`) for at least 20 bits of precision (20.4 measured, 23.0 on average), a 138-bit input, 595 usable bits (17 levels instead of 16) and a raised modulus of 1353 bits instead of 1382.
 - The FFT64 bootstrapping benchmarks (portable, AVX2, AVX-512) and preset precision tests (portable, AVX2, oracle) run the presets at `base2k = 18` instead of 19, and `docs/bootstrapping.md` and `docs/performance.md` follow.
   At logN16 the giant steps of CoeffsToSlots and SlotsToCoeffs accumulate several hundred key-switch products in the DFT domain before one inverse transform, which `f64` no longer represents exactly at `base2k = 19`: the bootstrap returned garbage there, and returns 19.85 bits at 18.
 - `CKKSCiphertext` implements `WriterTo` and `ReaderFrom` in the format of its inner `GLWE`, so a flag-clear ciphertext is rejected with `InvalidInput`; the ring stays a type parameter.
