@@ -14,6 +14,7 @@ macro_rules! one_pass_case {
                 &ParityShapes {
                     ranks: vec![1],
                     dsizes: Some(vec![1, 2]),
+                    unaligned_digits: true,
                 },
                 &Module::<$oracle>::new($module_n as u64),
                 &Module::<$tested>::new($module_n as u64),

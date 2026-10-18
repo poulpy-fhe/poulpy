@@ -455,7 +455,7 @@ where
                 BR::to_host_bytes(have.data.data()),
                 "tensor decrypt rank={rank} k={precision}"
             );
-            for digit_k in shapes.digit_ks(precision, b) {
+            for digit_k in shapes.digit_ks(precision, b, rank) {
                 let key = GLWETensorKeyLayout {
                     n: g.n,
                     base2k: g.base2k,

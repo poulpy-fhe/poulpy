@@ -55,7 +55,7 @@ pub fn test_glwe_external_product_parity<BR, BT>(
 
     for a_base2k in [base2k, base2k - 1] {
         for &rank in &shapes.ranks {
-            for digit_k in shapes.digit_ks(k, base2k) {
+            for digit_k in shapes.digit_ks(k, base2k, rank) {
                 let a_infos = GLWELayout {
                     n: Degree(n),
                     base2k: Base2K(a_base2k as u32),

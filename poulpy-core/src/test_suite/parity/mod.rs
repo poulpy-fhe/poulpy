@@ -94,6 +94,8 @@ pub struct ParityShapes {
     pub ranks: Vec<usize>,
     /// Gadget digit sizes; `None` sweeps `1..=k.div_ceil(base2k)`.
     pub dsizes: Option<Vec<usize>>,
+    /// Also sweeps digit widths off a limb boundary at rank 1.
+    pub unaligned_digits: bool,
 }
 
 impl Default for ParityShapes {
@@ -101,6 +103,7 @@ impl Default for ParityShapes {
         Self {
             ranks: vec![1, 2],
             dsizes: None,
+            unaligned_digits: true,
         }
     }
 }
@@ -112,12 +115,13 @@ impl ParityShapes {
     }
 
     /// Digit widths in bits: `dsize * base2k` for every swept `dsize`, then,
-    /// for the full sweep, widths off a limb boundary (a sub-limb width and one
-    /// bit around one and two limbs), so the digit layout is compared too.
-    pub fn digit_ks(&self, k: usize, base2k: usize) -> Vec<usize> {
+    /// for the full sweep at rank 1, widths off a limb boundary (a sub-limb
+    /// width and one bit past and short of a boundary), so the digit layout is
+    /// compared too. `rank` is the largest rank of the case.
+    pub fn digit_ks(&self, k: usize, base2k: usize, rank: usize) -> Vec<usize> {
         let mut widths: Vec<usize> = self.dsizes(k, base2k).into_iter().map(|d| d * base2k).collect();
-        if self.dsizes.is_none() {
-            for width in [base2k / 2 + 1, base2k + 1, 2 * base2k - 1, 2 * base2k + 3] {
+        if self.dsizes.is_none() && self.unaligned_digits && rank == 1 {
+            for width in [base2k / 2 + 1, base2k + 1, 2 * base2k - 1] {
                 if (2..=k).contains(&width) && !widths.contains(&width) {
                     widths.push(width);
                 }

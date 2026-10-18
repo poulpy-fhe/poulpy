@@ -60,7 +60,7 @@ pub fn test_glwe_automorphism_parity<BR, BT>(
     let mut source = Source::new([31u8; 32]);
 
     for &rank in &shapes.ranks {
-        for digit_k in shapes.digit_ks(k, base2k) {
+        for digit_k in shapes.digit_ks(k, base2k, rank) {
             for p in [-1i64, 5] {
                 let a_infos = GLWELayout {
                     n: Degree(n),

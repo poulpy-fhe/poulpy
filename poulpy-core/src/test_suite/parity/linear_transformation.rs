@@ -106,7 +106,7 @@ where
     // The cache may hold rotations unused by this matrix.
     let baby_steps = [0, 1, 3];
     for &rank in &shapes.ranks {
-        for digit_k in shapes.digit_ks(k, base) {
+        for digit_k in shapes.digit_ks(k, base, rank) {
             let ct = GLWELayout {
                 n: params.n.into(),
                 base2k: base.into(),

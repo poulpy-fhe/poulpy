@@ -496,6 +496,7 @@ macro_rules! conjugate_invariant_core_test_suite {
                 let shapes = poulpy_core::test_suite::parity::ParityShapes {
                     ranks: vec![1, 2],
                     dsizes: Some(vec![1, 2]),
+                    unaligned_digits: true,
                 };
                 poulpy_core::test_suite::parity::test_glwe_keyswitch_parity(&params, &shapes, &reference, &module);
                 poulpy_core::test_suite::parity::test_glwe_external_product_parity(&params, &shapes, &reference, &module);

@@ -200,7 +200,7 @@ pub fn test_glwe_keyswitch_parity<BR, BT>(
     for a_base2k in [base2k, base2k - 1] {
         for &rank_in in &shapes.ranks {
             for &rank_out in &shapes.ranks {
-                for digit_k in shapes.digit_ks(k_in, base2k) {
+                for digit_k in shapes.digit_ks(k_in, base2k, rank_in.max(rank_out)) {
                     let a_infos = GLWELayout {
                         n: Degree(n),
                         base2k: Base2K(a_base2k as u32),
@@ -307,7 +307,7 @@ pub fn test_glwe_keyswitch_assign_parity<BR, BT>(
 
     for res_base2k in [base2k, base2k - 1] {
         for &rank in &shapes.ranks {
-            for digit_k in shapes.digit_ks(k, base2k) {
+            for digit_k in shapes.digit_ks(k, base2k, rank) {
                 let res_infos = GLWELayout {
                     n: Degree(n),
                     base2k: Base2K(res_base2k as u32),
@@ -391,7 +391,7 @@ pub fn test_gglwe_keyswitch_parity<BR, BT>(
     let mut source = Source::new([23u8; 32]);
 
     for &rank in &shapes.ranks {
-        for digit_k in shapes.digit_ks(k, base2k) {
+        for digit_k in shapes.digit_ks(k, base2k, rank) {
             let a_infos = key_layout(n, base2k, k, 1, rank, rank);
             let res_infos = key_layout(n, base2k, k, 1, rank, rank);
             let key_infos = key_layout_bits(n, base2k, k, digit_k, rank, rank);

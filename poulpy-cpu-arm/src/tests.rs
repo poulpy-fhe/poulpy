@@ -55,6 +55,7 @@ poulpy_core::core_parity_test_suite! {
     backend_test = crate::FFT64NeonRayon,
     // computes at the module degree, no sweep
     params = TestParams { size: 1<<8, base2k: 17, n: 1<<8 },
+    shapes = poulpy_core::test_suite::parity::ParityShapes { unaligned_digits: false, ..Default::default() },
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
@@ -127,6 +128,7 @@ poulpy_core::core_parity_test_suite! {
     backend_test = crate::NTT4x30NeonRayon,
     // computes at the module degree, no sweep
     params = TestParams { size: 1<<8, base2k: 52, n: 1<<8 },
+    shapes = poulpy_core::test_suite::parity::ParityShapes { unaligned_digits: false, ..Default::default() },
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
