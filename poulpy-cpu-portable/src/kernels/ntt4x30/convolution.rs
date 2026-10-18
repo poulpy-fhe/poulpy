@@ -467,7 +467,7 @@ pub fn cnv_accumulate_schedule_portable(
     sched
 }
 
-/// Fused convolution accumulation: `res[res_col] = Σ_t a_t ⊛ b_t` (overwriting).
+/// Fused convolution accumulation: `res[res_col] = Σ_t a_t ⊛ σ_{b_galois_t}(b_t)` (overwriting).
 ///
 /// All terms of one output limb are summed in the lazy q120 accumulators and
 /// reduced once, and the destination column is written exactly once through the

@@ -10,7 +10,7 @@ use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::CnvDftAccTerm;
 use poulpy_hal::layouts::{
     Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, CrtWord, HostDataMut, HostDataRef,
-    Module, VecZnxBackendRef, VecZnxDftBackendMut, ZnxView, ZnxViewMut, check_degree,
+    Module, VecZnxBackendRef, VecZnxDftBackendMut, ZnxView, ZnxViewMut, check_degree, check_galois,
 };
 use std::mem::size_of;
 
@@ -59,19 +59,17 @@ struct Term<'a> {
 }
 
 impl<'a> Term<'a> {
-    fn empty() -> Self {
-        Self {
-            a0: &[],
-            a1: &[],
-            b0: &[],
-            b1: &[],
-            a_size: 0,
-            b_size: 0,
-            b_read: RightRead::sparse(1, 1),
-            offset: 0,
-            limbs: 0,
-        }
-    }
+    const EMPTY: Self = Self {
+        a0: &[],
+        a1: &[],
+        b0: &[],
+        b1: &[],
+        a_size: 0,
+        b_size: 0,
+        b_read: RightRead::IDENTITY,
+        offset: 0,
+        limbs: 0,
+    };
 
     /// The term over `n` coefficients for a result of `res_size` limbs, or the empty term when an operand has no limb.
     #[allow(clippy::too_many_arguments)]
@@ -93,7 +91,7 @@ impl<'a> Term<'a> {
         assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
         let b_read = right_read_ntt::<BE::Ring>(n, b.n(), b_galois);
         if a_size == 0 || b_size == 0 {
-            return Self::empty();
+            return Self::EMPTY;
         }
         let bound = a_size + b_size - 1;
         let offset = cnv_offset.min(bound);
@@ -202,6 +200,7 @@ fn apply_terms<BE, E: TaskExecutor, const PAIRWISE: bool>(
 {
     let (n, res_cols) = (res.n(), res.cols());
     assert!(res_col < res_cols, "convolution: result column out of range");
+    assert!(terms.len() <= SUM_TERMS);
     if limbs == 0 {
         return;
     }
@@ -212,7 +211,7 @@ fn apply_terms<BE, E: TaskExecutor, const PAIRWISE: bool>(
     let per_worker = apply_tmp_words(limbs);
     E::for_each_chunked(n_blocks.div_ceil(TASK_BLOCKS), tmp, per_worker, |stage, task| {
         let end = ((task + 1) * TASK_BLOCKS).min(n_blocks);
-        let mut lanes: Vec<[usize; 4]> = vec![[0; 4]; terms.len()];
+        let mut lanes = [[0usize; 4]; SUM_TERMS];
         for blk in (task * TASK_BLOCKS..end).step_by(RUN) {
             let len = RUN.min(end - blk);
             for first in (0..limbs).step_by(STAGE_LIMBS) {
@@ -468,7 +467,7 @@ pub fn cnv_apply_dft_add<BE, E: TaskExecutor>(
 /// Terms fused in one pass of [`cnv_apply_dft_sum`].
 const SUM_TERMS: usize = 16;
 
-/// `res[res_col] = sum_t a_t (x) b_t`, the terms of each group of `SUM_TERMS` accumulated in one pass.
+/// `res[res_col] = sum_t a_t (x) sigma_{b_galois_t}(b_t)`, the terms of each group of `SUM_TERMS` accumulated in one pass.
 ///
 /// An output limb is reduced and stored once per group, where a per-term loop reduces, reads and writes it for every term.
 pub fn cnv_apply_dft_sum<BE, E: TaskExecutor>(
@@ -485,10 +484,11 @@ pub fn cnv_apply_dft_sum<BE, E: TaskExecutor>(
 {
     let (n, res_size) = (res.n(), res.size());
     check_degree::<BE>(module.n(), n);
+    terms.iter().for_each(|term| check_galois(term.b_galois));
     // Limbs written so far: a group overwrites the limbs no earlier group reached and adds to the others.
     let mut written = 0;
     for group in terms.chunks(SUM_TERMS) {
-        let mut sum_terms = [Term::empty(); SUM_TERMS];
+        let mut sum_terms = [Term::EMPTY; SUM_TERMS];
         let mut limbs = 0;
         for (dst, term) in sum_terms.iter_mut().zip(group) {
             *dst = Term::new(

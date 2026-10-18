@@ -367,7 +367,7 @@ pub fn convolution_apply_dft_portable<BE>(
     }
 }
 
-/// Accumulating variant of [`convolution_apply_dft_portable`]: `res[res_col] += a (x) b`,
+/// Accumulating variant of [`convolution_apply_dft_portable`]: `res[res_col] += a (x) σ_{b_galois}(b)`,
 /// leaving limbs beyond `min(res.size(), a.size() + b.size() - 1)` untouched.
 #[allow(clippy::too_many_arguments)]
 pub fn convolution_apply_dft_add_portable<BE>(

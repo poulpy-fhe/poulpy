@@ -129,6 +129,7 @@ unsafe fn group_permutations(read: RightRead) -> [__m512i; 8] {
     }
     read.lane_table::<8>().map(|lanes| {
         let idx: [i64; 8] = lanes.map(i64::from);
+        // SAFETY: `idx` holds the 64 bytes the unaligned load reads.
         unsafe { _mm512_loadu_si512(idx.as_ptr() as *const __m512i) }
     })
 }
@@ -158,8 +159,8 @@ fn group_read(size: usize, group: usize, read: RightRead, perms: &[__m512i; 8]) 
     if read.is_direct() {
         return (packed_row_offset(size, 0, group), None);
     }
-    let first: usize = read.source(8 * group);
-    (packed_row_offset(size, 0, first >> 3), Some(perms[first & 7]))
+    let (src, key) = read.block::<8>(group);
+    (packed_row_offset(size, 0, src), Some(perms[key]))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -518,6 +519,7 @@ unsafe fn conv_columns_packed<R: Ring, E: TaskExecutor, const ACC: bool, const P
     assert!(res_col < res_cols, "convolution: result column out of range");
     let res_ptr = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
     let cached_overwrite = cached_overwrite_stores(n, min_size);
+    // SAFETY: `avx512ifma` implies the AVX-512F that `group_permutations` needs.
     let b_perms = unsafe { group_permutations(b_read) };
 
     let task_split = E::is_parallel() && n_groups > 1;
@@ -1190,6 +1192,7 @@ pub(crate) unsafe fn cnv_apply_dft_sum_ifma<R: Ring, E: TaskExecutor>(
                 b_col: col_slice(cast_slice(term.b.data()), term.b.n(), b_size, term.b_col),
                 b_size,
                 b_read,
+                // SAFETY: `avx512ifma` implies the AVX-512F that `group_permutations` needs.
                 b_perms: unsafe { group_permutations(b_read) },
                 offset,
                 min_size,

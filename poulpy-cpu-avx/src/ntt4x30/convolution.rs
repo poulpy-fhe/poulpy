@@ -104,8 +104,8 @@ unsafe fn conv_group<const ACC: bool, const PAIRWISE: bool>(
     unsafe {
         let q = _mm256_loadu_si256(Q_VEC.as_ptr() as *const __m256i);
         // Row-0 offset of the slot each slot of the group reads; limb rows are `4 * GROUP` u32 apart.
-        let first = b_read.source(group * GROUP);
-        let (base, lanes) = (packed_row_offset(b_size, 0, first / GROUP), &b_lanes[first % GROUP]);
+        let (src, key) = b_read.block::<GROUP>(group);
+        let (base, lanes) = (packed_row_offset(b_size, 0, src), &b_lanes[key]);
         let b_slots: [usize; GROUP] = std::array::from_fn(|l| base + 4 * lanes[l] as usize);
         for k in 0..min_size {
             let k_abs = k + offset;

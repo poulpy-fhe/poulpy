@@ -1574,7 +1574,20 @@ where
     module.vec_znx_fill_uniform_source_all(base2k, b_size * base2k, &mut b_be, &mut source);
     let b_prep = prepare_right(&b_be, &mut scratch);
     let mut res_dft: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(n, 2, res_size);
+    // A product the rejected terms below would overwrite: a rejection must leave it in place.
+    module.cnv_apply_dft(
+        0,
+        &mut res_dft.to_backend_mut(),
+        res_col,
+        &a_ref.to_backend_ref(),
+        0,
+        &b_prep.to_backend_ref(),
+        1,
+        1,
+        &mut scratch.arena(),
+    );
     let mut expect_rejected = |what: &str, run: &mut dyn FnMut(&mut VecZnxDftOwned<BE>, &mut ScratchOwned<BE>)| {
+        let before = idft_normalized(module, base2k, &res_dft, res_col, &mut scratch);
         let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(&mut res_dft, &mut scratch)));
         let payload = rejected.expect_err(what);
         let message = payload
@@ -1583,6 +1596,8 @@ where
             .or_else(|| payload.downcast_ref::<String>().cloned())
             .unwrap_or_default();
         assert_eq!(message, "convolution: b_galois must be odd", "{what}");
+        let after = idft_normalized(module, base2k, &res_dft, res_col, &mut scratch);
+        assert_eq!(before, after, "{what}: res written before the rejection");
     };
     expect_rejected("cnv_apply_dft rejects an even b_galois", &mut |res, scratch| {
         module.cnv_apply_dft(
@@ -1610,14 +1625,22 @@ where
             &mut scratch.arena(),
         );
     });
-    expect_rejected("cnv_apply_dft_sum rejects an even b_galois", &mut |res, scratch| {
-        let terms = [1, 4].map(|b_galois| CnvDftAccTerm {
-            a: a_ref.to_backend_ref(),
-            a_col: 0,
-            b: b_prep.to_backend_ref(),
-            b_col: 1,
-            b_galois,
-        });
-        module.cnv_apply_dft_sum(0, &mut res.to_backend_mut(), res_col, &terms, &mut scratch.arena());
-    });
+    // 17 terms put the even one past a fused group of 16.
+    for count in [2usize, 17] {
+        expect_rejected(
+            &format!("cnv_apply_dft_sum rejects an even b_galois in term {}", count - 1),
+            &mut |res, scratch| {
+                let terms: Vec<_> = (0..count)
+                    .map(|t| CnvDftAccTerm {
+                        a: a_ref.to_backend_ref(),
+                        a_col: 1,
+                        b: b_prep.to_backend_ref(),
+                        b_col: 0,
+                        b_galois: if t + 1 == count { 4 } else { 1 },
+                    })
+                    .collect();
+                module.cnv_apply_dft_sum(0, &mut res.to_backend_mut(), res_col, &terms, &mut scratch.arena());
+            },
+        );
+    }
 }

@@ -1,7 +1,7 @@
 //! The stored slot a convolution reads for each destination slot of its right operand, through a sparse
 //! embedding and a Galois automorphism, on the bit-reversed transforms of the CPU backends.
 
-use poulpy_hal::layouts::Ring;
+use poulpy_hal::layouts::{Ring, check_galois};
 
 use super::sparse_log_gap_portable;
 
@@ -16,8 +16,11 @@ pub struct GaloisSlots {
 impl GaloisSlots {
     /// `None` when `σ_p` fixes every slot. `stored` is `full` or `full / 2`.
     pub fn new(stored: usize, full: usize, p: i64) -> Option<Self> {
-        assert!(p & 1 == 1, "convolution: b_galois must be odd");
-        debug_assert!(full.is_power_of_two() && (stored == full || 2 * stored == full));
+        check_galois(p);
+        assert!(
+            full.is_power_of_two() && (stored == full || 2 * stored == full),
+            "galois read: stored must be full or full / 2, full a power of two"
+        );
         let two_f = 2 * full as i64;
         // A half spectrum holds the exponents 1 mod 4: -p sends them back into it.
         let flip = stored < full && p.rem_euclid(4) != 1;
@@ -55,6 +58,12 @@ pub struct RightRead {
 }
 
 impl RightRead {
+    /// The read of a dense operand without a Galois element.
+    pub const IDENTITY: Self = Self {
+        log_gap: 0,
+        galois: None,
+    };
+
     /// `stored` and `full` describe the degree-`b_n` operand's transform.
     pub fn new(module_n: usize, b_n: usize, b_galois: i64, stored: usize, full: usize) -> Self {
         Self {
@@ -99,10 +108,17 @@ impl RightRead {
         self.galois.is_some_and(|g| g.conj())
     }
 
-    /// Lane `l` of every aligned block of `W` destination slots reads lane `table[key][l]` of stored block
-    /// `source(W blk) / W`, where `key = source(W blk) % W`.
+    /// The stored block of `W` slots that destination block `blk` reads, and its key in [`Self::lane_table`].
+    #[inline(always)]
+    pub fn block<const W: usize>(&self, blk: usize) -> (usize, usize) {
+        let first = self.source(W * blk);
+        (first / W, first % W)
+    }
+
+    /// Lane `l` of destination block `blk` reads lane `table[key][l]` of stored block `src`, where
+    /// `(src, key) = self.block::<W>(blk)`.
     pub fn lane_table<const W: usize>(&self) -> [[u8; W]; W] {
-        debug_assert!(W.is_power_of_two() && W <= 256);
+        const { assert!(W.is_power_of_two() && W <= 256) };
         // The lane bits left by the sparse shift, which `σ_p` maps to `key + p x` in bit-reversed order.
         let bits = W.trailing_zeros().saturating_sub(self.log_gap as u32);
         let mask = (1usize << bits) - 1;
@@ -119,14 +135,20 @@ impl RightRead {
 pub fn right_read_fft64<R: Ring>(module_n: usize, b_n: usize, b_galois: i64) -> RightRead {
     let full = b_n * R::CYCLOTOMIC_ORDER_FACTOR as usize / 2;
     let stored = if full == b_n { b_n / 2 } else { b_n };
-    RightRead::new(module_n, b_n, b_galois, stored, full)
+    RightRead::new(module_n, b_n, ring_galois(b_n, full, b_galois), stored, full)
 }
 
 /// The read of a degree-`b_n` NTT right operand: every slot of the degree-`b_n` spectrum on the standard ring,
 /// the first half of the degree-`2 b_n` spectrum on the conjugate-invariant ring.
 pub fn right_read_ntt<R: Ring>(module_n: usize, b_n: usize, b_galois: i64) -> RightRead {
     let full = b_n * R::CYCLOTOMIC_ORDER_FACTOR as usize / 2;
-    RightRead::new(module_n, b_n, b_galois, b_n, full)
+    RightRead::new(module_n, b_n, ring_galois(b_n, full, b_galois), b_n, full)
+}
+
+/// `σ_p = σ_{-p}` on the conjugate-invariant ring (`full > b_n`): its residue `1 mod 4` reads without conjugation,
+/// so `σ_{-1}` reads in place.
+fn ring_galois(b_n: usize, full: usize, p: i64) -> i64 {
+    if full > b_n && p.rem_euclid(4) == 3 { -p } else { p }
 }
 
 #[cfg(test)]
@@ -215,10 +237,10 @@ mod tests {
         fn check<const W: usize>(read: RightRead, dest: usize, label: &str) {
             let table = read.lane_table::<W>();
             for blk in 0..dest / W {
-                let first = read.source(W * blk);
-                for (l, &lane) in table[first % W].iter().enumerate() {
+                let (src_blk, key) = read.block::<W>(blk);
+                for (l, &lane) in table[key].iter().enumerate() {
                     let src = read.source(W * blk + l);
-                    assert_eq!(src / W, first / W, "{label} W={W} blk={blk}");
+                    assert_eq!(src / W, src_blk, "{label} W={W} blk={blk}");
                     assert_eq!(src % W, lane as usize, "{label} W={W} blk={blk} l={l}");
                 }
             }
@@ -250,6 +272,20 @@ mod tests {
         assert!(RightRead::new(module_n, module_n, 1, module_n, module_n).is_direct());
         assert!(!RightRead::new(module_n, b_n, 1, b_n, b_n).is_direct());
         assert!(RightRead::new(module_n, module_n, 1 + 2 * module_n as i64, module_n, module_n).is_direct());
+    }
+
+    #[test]
+    fn conjugate_invariant_reads_never_conjugate() {
+        use poulpy_hal::layouts::{ConjugateInvariant, Standard};
+        for n in [16usize, 64] {
+            for p in odd_ps(2 * n) {
+                assert!(!right_read_ntt::<ConjugateInvariant>(n, n, p).conj(), "n={n} p={p}");
+                assert!(!right_read_fft64::<ConjugateInvariant>(n, n, p).conj(), "n={n} p={p}");
+            }
+            assert!(right_read_ntt::<ConjugateInvariant>(n, n, -1).is_direct());
+            assert!(right_read_fft64::<ConjugateInvariant>(n, n, -1).is_direct());
+            assert!(right_read_fft64::<Standard>(n, n, -1).conj());
+        }
     }
 
     #[test]

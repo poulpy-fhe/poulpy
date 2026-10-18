@@ -306,6 +306,12 @@ pub struct CnvDftAccTerm<'a, BE: Backend + 'a> {
     pub b_galois: i64,
 }
 
+/// Asserts that a convolution Galois element is odd.
+#[inline]
+pub fn check_galois(b_galois: i64) {
+    assert!(b_galois & 1 == 1, "convolution: b_galois must be odd");
+}
+
 /// Borrow a `CnvPVecR` as a shared reference view.
 /// Owned `CnvPVecR` backed by a backend-owned buffer.
 pub type CnvPVecROwned<B> = CnvPVecR<<B as Backend>::OwnedBuf, <B as Backend>::DftWord, B>;

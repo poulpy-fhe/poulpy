@@ -17,7 +17,7 @@ use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::CnvDftAccTerm;
 use poulpy_hal::layouts::{
     Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, CrtWord, HostDataMut, HostDataRef,
-    Module, VecZnxBackendRef, VecZnxDftBackendMut, ZnxView, ZnxViewMut, check_degree,
+    Module, VecZnxBackendRef, VecZnxDftBackendMut, ZnxView, ZnxViewMut, check_degree, check_galois,
 };
 use std::mem::size_of;
 
@@ -86,6 +86,7 @@ fn lane_table(src: [usize; 4]) -> [u8; 16] {
 /// The `vqtbl1q_u8` index of each key of [`RightRead::lane_table`], zero without a Galois element.
 #[inline(always)]
 unsafe fn lane_tables(read: RightRead) -> [uint8x16_t; 4] {
+    // SAFETY: NEON is in the aarch64 baseline, and each table holds the 16 bytes `vld1q_u8` reads.
     unsafe {
         if read.galois().is_none() {
             return [vdupq_n_u8(0); 4];
@@ -99,8 +100,8 @@ unsafe fn lane_tables(read: RightRead) -> [uint8x16_t; 4] {
 #[inline(always)]
 fn galois_block(read: RightRead, tbls: &[uint8x16_t; 4], blk: usize, b_size: usize) -> Option<(usize, uint8x16_t)> {
     read.galois().map(|_| {
-        let first = read.source(4 * blk);
-        ((first / 4) * b_size * ROW, tbls[first % 4])
+        let (src, key) = read.block::<4>(blk);
+        (src * b_size * ROW, tbls[key])
     })
 }
 
@@ -172,7 +173,10 @@ impl Acc {
     }
 
     /// As [`Self::push_rows`], reading each right row with `load`.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the two operand pairs, their row count and the right-row load"
+    )]
     #[inline(always)]
     unsafe fn push_rows_with<const PAIRWISE: bool>(
         mut self,
@@ -572,6 +576,7 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     assert!(res_u32.len() >= min_size * res_cols * 4 * n);
     let res_ptr = SendPtr(res_u32.as_mut_ptr());
     let n_blocks = n / 4;
+    // SAFETY: NEON is in the aarch64 baseline.
     let tbls = unsafe { lane_tables(b_read) };
     E::for_each(n_blocks.div_ceil(TASK_BLOCKS), |task| unsafe {
         let c = planes();
@@ -670,7 +675,7 @@ struct SumTerm {
 unsafe impl Send for SumTerm {}
 unsafe impl Sync for SumTerm {}
 
-/// `res[res_col] = sum_t a_t (x) b_t`, the terms of each group of `SUM_TERMS` accumulated in one pass.
+/// `res[res_col] = sum_t a_t (x) sigma_{b_galois_t}(b_t)`, the terms of each group of `SUM_TERMS` accumulated in one pass.
 ///
 /// An output limb is reduced and stored once per group, where the per-term fallback reduces, reads and writes it for every term.
 pub(crate) unsafe fn cnv_apply_dft_sum_neon<BE, E: TaskExecutor>(
@@ -689,6 +694,7 @@ pub(crate) unsafe fn cnv_apply_dft_sum_neon<BE, E: TaskExecutor>(
     check_degree::<BE>(module.n(), n);
     assert!(n.is_multiple_of(4));
     assert!(res_col < res_cols, "convolution: result column out of range");
+    terms.iter().for_each(|term| check_galois(term.b_galois));
     let n_blocks = n / 4;
     // Limbs written so far: a group overwrites the limbs no earlier group reached and adds to the others.
     let mut written = 0;
@@ -698,7 +704,8 @@ pub(crate) unsafe fn cnv_apply_dft_sum_neon<BE, E: TaskExecutor>(
             b: std::ptr::null(),
             a_size: 0,
             b_size: 0,
-            b_read: RightRead::sparse(1, 1),
+            b_read: RightRead::IDENTITY,
+            // SAFETY: NEON is in the aarch64 baseline.
             tbls: unsafe { [vdupq_n_u8(0); 4] },
             offset: 0,
             limbs: 0,
@@ -721,6 +728,7 @@ pub(crate) unsafe fn cnv_apply_dft_sum_neon<BE, E: TaskExecutor>(
                 a_size,
                 b_size,
                 b_read,
+                // SAFETY: NEON is in the aarch64 baseline.
                 tbls: unsafe { lane_tables(b_read) },
                 offset,
                 limbs: res_size.min(bound - offset),

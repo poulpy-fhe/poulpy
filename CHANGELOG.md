@@ -5,13 +5,16 @@
 ### `poulpy-hal`
 
 - **Breaking:** `cnv_apply_dft` and `cnv_apply_dft_add` take a Galois element `b_galois` after `b_col`, and `CnvDftAccTerm` has a `b_galois` field: the applies read their prepared right operand through `σ_{b_galois}`, so products by the automorphisms of one prepared operand store it once; `1` reads it as before.
-  An even `b_galois` panics with "convolution: b_galois must be odd".
+  An even `b_galois` panics with "convolution: b_galois must be odd", the message of the new `check_galois`, and a sum checks every term before its first write.
   Out-of-tree backends that override `cnv_apply_dft_sum` must read each term's `b_galois`: an override that ignores it still compiles.
 - **Breaking:** `VecZnxIdftApplyTmpA`, `HalVecZnxDftImpl::vec_znx_idft_apply_tmpa` and `test_vec_znx_idft_apply_tmpa` are removed; callers use `vec_znx_idft_apply` with `vec_znx_idft_apply_tmp_bytes` of scratch, which also removes the per-call allocation of the AVX-512 NTT4x30 and IFMA backends ([#339](https://github.com/poulpy-fhe/poulpy/issues/339)), and the default `vec_znx_idft_normalize_consume_tmp_bytes` covers that scratch.
 
 ### CPU backends
 
 - Every CPU backend reads the right operand of the convolution applies through the Galois element in the pass that reads a sparse operand.
+- **Breaking:** the `Reim4Convolution` and `Fft64RingArith` convolution methods take a `RightRead` in place of `b_log_gap`, built with `right_read_fft64` or `right_read_ntt`.
+  `reim4_gather_sparse_block_portable` and `reim4_gather_sparse_block_sum_portable` become `reim4_gather_block_portable` and `reim4_gather_block_sum_portable`, which read through a `RightRead`.
+  `convolution_apply_dft_portable`, `ntt4x30_cnv_apply_dft_portable`, their `_add` forms, the packed NTT4x30 drivers and `PackedNtt4x30Base::cnv_apply_dft` and `cnv_apply_dft_add` take `b_galois` after `b_col`.
 - Add `FFT64PortableRayon` and `NTT4x30PortableRayon`, the Rayon variants of the portable backends, with their conjugate-invariant aliases `FFT64CIPortableRayon` and `NTT4x30CIPortableRayon`.
   They live in `poulpy-cpu-rayon`, which already depends on `poulpy-cpu-portable`, behind no feature for the HAL and behind `enable-core`, `enable-ckks`, `enable-bin-fhe` and `enable-mhe` for the scheme layers.
   `NTT4x30PortableRayon` runs the fused interleaved-digit product and the encapsulated ModUp of `NTT4x30Portable` on per-worker scratch, and transforms the four planes of a limb as separate tasks from degree `2^13`.

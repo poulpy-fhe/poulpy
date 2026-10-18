@@ -199,10 +199,11 @@ pub trait PackedNtt4x30Base: PackedWord + HalVecZnxDftImpl {
         for<'a> BE::BufRef<'a>: HostDataRef,
         for<'a> BE::BufMut<'a>: HostDataMut;
 
-    /// `res[res_col] = sum of a_t (x) b_t` over `terms`.
+    /// `res[res_col] = sum of a_t (x) sigma_{b_galois_t}(b_t)` over `terms`.
     ///
     /// The default overwrites with the first term and adds the others, and zeroes the column when `terms` is empty.
-    /// A backend with a fused kernel overrides it.
+    /// A backend with a fused kernel overrides it, reading every term's `b_galois` and rejecting an even one before
+    /// its first write.
     fn cnv_apply_dft_sum<BE: PackedWord, E: TaskExecutor>(
         base: &Module<Self>,
         module: &Module<BE>,
@@ -221,6 +222,7 @@ pub trait PackedNtt4x30Base: PackedWord + HalVecZnxDftImpl {
             }
             return;
         };
+        terms.iter().for_each(|term| poulpy_hal::layouts::check_galois(term.b_galois));
         Self::cnv_apply_dft::<BE, E>(
             base,
             module,

@@ -32,6 +32,7 @@ unsafe fn reim4_lane_permutations(read: RightRead) -> [__m256i; 4] {
 
     read.lane_table::<4>().map(|lanes| {
         let words: [i32; 8] = std::array::from_fn(|w| 2 * lanes[w / 2] as i32 + (w % 2) as i32);
+        // SAFETY: `words` holds the 32 bytes the unaligned load reads.
         unsafe { _mm256_loadu_si256(words.as_ptr() as *const __m256i) }
     })
 }
@@ -1024,8 +1025,8 @@ unsafe fn reim4_convolution_apply_core_avx<const PAIRWISE: bool, const ACC: bool
                 }
             }
             let b_src: *const f64 = if !b_read.is_direct() {
-                let first: usize = b_read.source(4 * blk);
-                let (src_blk, idx) = (first >> 2, perms[first & 3]);
+                let (src_blk, key) = b_read.block::<4>(blk);
+                let idx = perms[key];
                 let b_blk: *const f64 = b0.as_ptr().add(src_blk * 8 * b_size);
                 if PAIRWISE {
                     let b1_blk: *const f64 = b1.as_ptr().add(src_blk * 8 * b_size);

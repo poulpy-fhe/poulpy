@@ -148,8 +148,11 @@ unsafe fn pair_product<const PAIRWISE: bool, const MODE: u8>(
 
 /// With `B_GATHER`, `b` is read through `b_read`, whose [`RightRead::lane_table`] is `b_lanes`; with `DUP` too,
 /// both slots of a pair read one slot (a sparse read), otherwise one stored pair, straight or swapped.
-// Iterating `b_pairs` instead of the pair range changes the identity-path code.
-#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
+#[expect(
+    clippy::too_many_arguments,
+    clippy::needless_range_loop,
+    reason = "the kernel takes both operand pairs and the read; iterating `b_pairs` instead of the pair range changes the identity-path code"
+)]
 #[target_feature(enable = "avx512f")]
 unsafe fn conv_group<const ACC: bool, const PAIRWISE: bool, const B_GATHER: bool, const DUP: bool>(
     meta: &BbcMeta<Primes30>,
@@ -174,8 +177,8 @@ unsafe fn conv_group<const ACC: bool, const PAIRWISE: bool, const B_GATHER: bool
         // Row-0 offset of what each pair reads and whether it comes swapped; limb rows are `4 * GROUP` u32 apart.
         // A dense read maps an aligned destination pair onto one aligned stored pair (`lane_table` with `W = 2`).
         let b_pairs: [(usize, bool); GROUP / 2] = if B_GATHER {
-            let first = b_read.source(group * GROUP);
-            let (base, lanes) = (packed_row_offset(b_size, 0, first / GROUP), &b_lanes[first % GROUP]);
+            let (src, key) = b_read.block::<GROUP>(group);
+            let (base, lanes) = (packed_row_offset(b_size, 0, src), &b_lanes[key]);
             std::array::from_fn(|pair| {
                 let lane = lanes[2 * pair] as usize;
                 if DUP {
