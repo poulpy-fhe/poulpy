@@ -110,6 +110,21 @@ impl ParityShapes {
     pub fn dsizes(&self, k: usize, base2k: usize) -> Vec<usize> {
         self.dsizes.clone().unwrap_or_else(|| (1..=k.div_ceil(base2k)).collect())
     }
+
+    /// Digit widths in bits: `dsize * base2k` for every swept `dsize`, then,
+    /// for the full sweep, widths off a limb boundary (a sub-limb width and one
+    /// bit around one and two limbs), so the digit layout is compared too.
+    pub fn digit_ks(&self, k: usize, base2k: usize) -> Vec<usize> {
+        let mut widths: Vec<usize> = self.dsizes(k, base2k).into_iter().map(|d| d * base2k).collect();
+        if self.dsizes.is_none() {
+            for width in [base2k / 2 + 1, base2k + 1, 2 * base2k - 1, 2 * base2k + 3] {
+                if (2..=k).contains(&width) && !widths.contains(&width) {
+                    widths.push(width);
+                }
+            }
+        }
+        widths
+    }
 }
 
 /// Coefficient word shared by every backend this suite compares.

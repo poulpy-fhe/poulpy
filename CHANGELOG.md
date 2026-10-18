@@ -91,6 +91,12 @@
 - `layouts::digits_aligned` and the provided `GGLWEInfos::digits_aligned` and `GGSWInfos::digits_aligned` tell whether the digits are whole limbs, so that a gadget product reads the input limbs as its operand.
   A view decides on its stored digit width, `digit_k / stride`, so a key and its coarser views agree.
 - GGSW row expansion panics on tensor key digits that are not whole limbs.
+- Key switching, automorphisms, traces and external products run with digits of any width ([#188](https://github.com/poulpy-fhe/poulpy/issues/188)).
+  Keys whose digits are whole limbs read the input limbs as before, bit for bit.
+  Other keys lay the input out on the digit grid with `vec_znx_gadget_decompose`, `ceil(digit_k / base2k)` sub-limbs per digit, and run the same interleaved product on that operand.
+  `reference::keyswitching::glwe::gadget_input_size`, `gadget_dft_apply` and `gadget_dft_apply_tmp_bytes` build that operand, and the key-switch and external-product scratch covers it.
+- **Breaking:** `GLWEKeyswitchInternal` and `GLWEExternalProductDftReference` require `VecZnxGadgetDecompose` and `VecZnxGadgetDecomposeTmpBytes`.
+- The key-switch, automorphism and external-product parity suites also sweep digit widths off a limb boundary.
 - **Breaking:** `GLWE`, `GLWEPlaintext` and `GLWECompressed` carry an optional, scheme-managed `GLWEPlaintextMeta` (`Scale`, `SlotsKind`, `log_sparsity`) through `GLWEPlaintextInfos` and `SetGLWEPlaintextInfos`, which also read and set each field; `SlotsKind` moves from `poulpy-ckks` and gains `Integer`.
 - **Breaking, format:** serialized `GLWE` and `GLWECompressed` carry their plaintext metadata.
 - `reference::keyswitching::glwe::gglwe_product_limbs` returns the `product_limbs` the reference key switch passes to `GGLWEProductDigitsStridedImpl`, so that backend overrides derive the same.

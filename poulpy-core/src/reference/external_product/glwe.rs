@@ -7,21 +7,46 @@ use poulpy_hal::layouts::VecZnxDftBackendMut;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply,
-        VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes, VmpApplyDftToDft,
-        VmpApplyDftToDftAdd, VmpApplyDftToDftTmpBytes,
+        VecZnxDftBytesOf, VecZnxGadgetDecompose, VecZnxGadgetDecomposeTmpBytes, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
+        VecZnxNormalize, VecZnxNormalizeTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd, VmpApplyDftToDftTmpBytes,
     },
-    layouts::{Backend, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
+    layouts::{
+        Backend, Module, ScratchArena, VecZnxBackendRef, VecZnxBigToBackendRef, VecZnxDftToBackendRef, VecZnxToBackendRef,
+    },
 };
 
 use crate::{
     ScratchArenaTakeCore,
     api::GLWEExternalProductInternal,
     layouts::{
-        GGSWInfos, GGSWPreparedBackendRef, GLWEBackendRef, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        GGSWInfos, GGSWPreparedBackendRef, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         gadget_product_limbs,
     },
     oep::{GLWEExternalProductReference, gglwe_product_digit_output_size},
+    reference::keyswitching::glwe::gadget_input_size,
 };
+
+/// Limbs of the external-product operand of `a_infos` against `ggsw_infos`,
+/// and the scratch its digit layout takes: none for whole-limb digits,
+/// otherwise every column of `a` laid out on the digit grid.
+fn external_product_operand<BE, M, A, G>(module: &M, a_infos: &A, ggsw_infos: &G) -> (usize, usize)
+where
+    BE: Backend,
+    M: ModuleN + VecZnxGadgetDecomposeTmpBytes,
+    A: GLWEInfos,
+    G: GGSWInfos,
+{
+    let (base2k, digit_k, dnum) = (ggsw_infos.base2k(), ggsw_infos.digit_k(), ggsw_infos.dnum());
+    let a_size: usize = a_infos.k().div_ceil(base2k) as usize;
+    let size: usize = gadget_input_size(base2k, digit_k, dnum, a_infos.k(), a_size);
+    let bytes: usize = if ggsw_infos.digits_aligned() {
+        0
+    } else {
+        BE::scratch_aligned(BE::bytes_of_vec_znx(module.n(), (ggsw_infos.rank() + 1).into(), size))
+            + module.vec_znx_gadget_decompose_tmp_bytes()
+    };
+    (size, bytes)
+}
 
 /// Compatibility export for the public layout calculation.
 pub use crate::layouts::glwe_external_product_output_size;
@@ -29,7 +54,7 @@ pub use crate::layouts::glwe_external_product_output_size;
 fn glwe_external_product_dft_fill<BE, M>(
     module: &M,
     res_dft: &mut VecZnxDftBackendMut<'_, BE>,
-    a: GLWEBackendRef<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE>,
     ggsw: &GGSWPreparedBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
@@ -76,12 +101,10 @@ fn glwe_external_product_dft_fill<BE, M>(
     // is folded into `vec_znx_dft_apply`, so no full-width DFT of `a` is
     // ever materialized.
     for di in 0..dsize {
-        let (mut a_dft, mut scratch_1) = scratch
-            .borrow()
-            .take_vec_znx_dft_scratch(a.n().as_usize(), cols, (a_size + di) / dsize);
+        let (mut a_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(a.n(), cols, (a_size + di) / dsize);
 
         for j in 0..cols {
-            module.vec_znx_dft_apply(dsize, dsize - 1 - di, &mut a_dft, j, &a.data, j);
+            module.vec_znx_dft_apply(dsize, dsize - 1 - di, &mut a_dft, j, a, j);
         }
 
         if di == 0 {
@@ -123,6 +146,8 @@ pub trait GLWEExternalProductDftReference<BE: Backend> {
 impl<BE: Backend> GLWEExternalProductDftReference<BE> for Module<BE>
 where
     Self: ModuleN
+        + VecZnxGadgetDecompose<BE>
+        + VecZnxGadgetDecomposeTmpBytes
         + VecZnxDftBytesOf
         + VmpApplyDftToDftTmpBytes
         + VecZnxNormalizeTmpBytes
@@ -143,10 +168,11 @@ where
         B: GGSWInfos,
     {
         let align: usize = BE::SCRATCH_ALIGN;
-        let in_size: usize = a_infos.k().div_ceil(b_infos.base2k()).div_ceil(b_infos.dsize().into()) as usize;
+        let (operand_size, operand_bytes) = external_product_operand::<BE, _, _, _>(self, a_infos, b_infos);
+        let in_size: usize = operand_size.div_ceil(b_infos.dsize().into());
         let output_size = glwe_external_product_output_size::<BE, _, _, _>(res_infos, a_infos, b_infos);
         let cols: usize = (b_infos.rank() + 1).into();
-        let lvl_0: usize = self.bytes_of_vec_znx_dft(self.n(), cols, in_size);
+        let lvl_0: usize = operand_bytes + self.bytes_of_vec_znx_dft(self.n(), cols, in_size);
         let lvl_1: usize = if b_infos.dsize() > 1 {
             self.bytes_of_vec_znx_dft(self.n(), cols, output_size)
         } else {
@@ -177,7 +203,28 @@ where
             self.glwe_normalize(&mut a_tmp, a, &mut scratch.borrow());
             a_tmp.to_backend_ref()
         };
-        glwe_external_product_dft_fill(self, res_dft, a, ggsw, &mut scratch);
+        if ggsw.digits_aligned() {
+            glwe_external_product_dft_fill(self, res_dft, &a.data, ggsw, &mut scratch);
+            return;
+        }
+        // Every column of `a` is a gadget operand: lay them all out on the
+        // digit grid once, and the interleaved loop reads that layout.
+        let cols: usize = (ggsw.rank() + 1).into();
+        let (base2k, digit_k) = (ggsw.base2k(), ggsw.digit_k());
+        let size: usize = gadget_input_size(base2k, digit_k, ggsw.dnum(), a.k(), a.size());
+        let (mut digits, mut scratch_1) = scratch.borrow().take_vec_znx_scratch(a.n().as_usize(), cols, size);
+        for j in 0..cols {
+            self.vec_znx_gadget_decompose(
+                &mut digits,
+                j,
+                &a.data,
+                j,
+                base2k.as_usize(),
+                digit_k.as_usize(),
+                &mut scratch_1.borrow(),
+            );
+        }
+        glwe_external_product_dft_fill(self, res_dft, &digits.to_backend_ref(), ggsw, &mut scratch_1);
     }
 }
 
@@ -186,15 +233,16 @@ where
 pub fn glwe_external_product_dft_fill_tmp_bytes_reference<BE, M, A, G>(module: &M, a_infos: &A, ggsw_infos: &G) -> usize
 where
     BE: Backend,
-    M: ModuleN + VecZnxDftBytesOf + VmpApplyDftToDftTmpBytes,
+    M: ModuleN + VecZnxDftBytesOf + VmpApplyDftToDftTmpBytes + VecZnxGadgetDecomposeTmpBytes,
     A: GLWEInfos,
     G: GGSWInfos,
 {
     let align: usize = BE::SCRATCH_ALIGN;
-    let in_size: usize = a_infos.k().div_ceil(ggsw_infos.base2k()).div_ceil(ggsw_infos.dsize().into()) as usize;
+    let (operand_size, operand_bytes) = external_product_operand::<BE, _, _, _>(module, a_infos, ggsw_infos);
+    let in_size: usize = operand_size.div_ceil(ggsw_infos.dsize().into());
     let ggsw_size: usize = ggsw_infos.size();
     let cols: usize = (ggsw_infos.rank() + 1).into();
-    let lvl_0: usize = module.bytes_of_vec_znx_dft(module.n(), cols, in_size);
+    let lvl_0: usize = operand_bytes + module.bytes_of_vec_znx_dft(module.n(), cols, in_size);
     let lvl_1: usize = if ggsw_infos.dsize() > 1 {
         module.bytes_of_vec_znx_dft(module.n(), cols, ggsw_size)
     } else {
