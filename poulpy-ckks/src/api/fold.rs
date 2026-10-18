@@ -35,16 +35,13 @@ pub trait CKKSFoldLayoutOps<BE: Backend> {
 /// packed alone, and consecutive real inputs in pairs `x + i·y`, at any input degree.
 /// It also supports `ConjugateInvariant` inputs of degree `n`: each is embedded into
 /// the standard ring of degree `2n` and paired, and unfolding takes the relative
-/// trace back, at one bit of budget spent on the scale: their outputs are labeled
-/// one bit finer than the inputs (`log_delta + 1`). Their keys are those of the
-/// embedded secret.
+/// trace back, at one bit of budget; their keys are those of the embedded secret.
 /// Ring packing merges `g = N/n` of the resulting ciphertexts of degree `n` as
 /// `Σ_j X^j·ct_j(X^g)` and
 /// switches them to the bootstrap secret with an inbound ring-switch key; unfolding
 /// switches back with an outbound one, splits and converts. Inputs under the
 /// bootstrap secret at its degree need no ring-switch key. Inputs must share their
-/// layout, scale and sparsity; outputs their layout, and are labeled like the inputs,
-/// up to the scale bit of conjugate-invariant outputs.
+/// layout, scale and sparsity; outputs their layout, and are labeled like the inputs.
 pub trait CKKSFoldOps<BE: Backend, R: Ring> {
     /// Number of ciphertexts of `degree` that `ins` folds into.
     fn ckks_fold_count(&self, ins: &[CKKSRingCiphertext<BE, R>], degree: Degree) -> usize;
@@ -79,8 +76,7 @@ pub trait CKKSFoldOps<BE: Backend, R: Ring> {
         S: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
     /// Unfolds `folded`, the ciphertexts of [`Self::ckks_fold`] once bootstrapped, into
-    /// `outs`, labeled like the inputs they were folded from (conjugate-invariant
-    /// outputs one bit finer, `log_delta + 1`): their slot kinds give the
+    /// `outs`, labeled like the inputs they were folded from: their slot kinds give the
     /// pairs, their scale and sparsity the split. Each output must have a requested
     /// width `k` at least as large as every refreshed ciphertext. `folded` is
     /// overwritten. Invalid layouts and missing or incompatible keys are rejected

@@ -176,6 +176,8 @@ where
         + GLWENormalize<BE>
         + GLWECIEmbed<BE>
         + GLWECITrace<BE>
+        + GLWEShift<BE>
+        + GLWESub<BE>
         + CKKSModuleAlloc<BE>,
     GLWE<BE::OwnedBuf, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -232,10 +234,9 @@ where
         rotated.set_meta(part.meta());
         for (out, src) in outs.iter_mut().zip([part, &rotated]) {
             ckks_ci_trace_keyless(module, out, src, scratch)?;
-            // Labeled at the input scale like standard outputs, plus the bit the trace
-            // spends on its exact halving, keeping the trace's width.
+            // Labeled at the input scale like standard outputs, keeping the trace's width.
             out.set_meta(GLWEPlaintextMeta {
-                scale: Scale::Log(log_delta + 1),
+                scale: Scale::Log(log_delta),
                 ..out.meta()
             });
         }
@@ -261,6 +262,8 @@ where
         + GLWEAutomorphism<BE>
         + GLWEShift<BE>
         + GLWECITrace<BE>
+        + GLWEShift<BE>
+        + GLWESub<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSImagOps<BE>

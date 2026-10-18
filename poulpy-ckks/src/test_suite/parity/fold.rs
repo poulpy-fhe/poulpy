@@ -512,8 +512,7 @@ where
 }
 
 /// Unfolding conjugate-invariant outputs at a larger scale than the refreshed
-/// ciphertext relabels them, one bit finer for the trace's halving, at the refreshed
-/// width and without widening them past their storage.
+/// ciphertext relabels them without widening them past their storage.
 fn check_ci_unfold_width<B>(module: &Module<B>)
 where
     B: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<ConjugateInvariant>,
@@ -543,7 +542,7 @@ where
     for out in &outs {
         assert_eq!(
             (out.k().as_usize(), out.log_delta()),
-            (48, 13),
+            (47, 12),
             "unfold output width and scale"
         );
     }
