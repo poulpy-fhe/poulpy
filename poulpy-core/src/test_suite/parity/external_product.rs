@@ -15,7 +15,7 @@ use crate::{
     GLWEExternalProduct, GLWEExternalProductInternal, GLWEMaskFill,
     api::TransferInto,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGSWAtViewMut, GGSWLayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, Dnum, GGSWAtViewMut, GGSWLayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::GGSWPreparedFactory,
     },
     test_suite::parity::{ParityBackend, ParityShapes, ref_glwe, unnormalized_twin},
@@ -72,7 +72,7 @@ pub fn test_glwe_external_product_parity<BR, BT>(
                     n: Degree(n),
                     base2k: Base2K(base2k as u32),
                     dnum: Dnum(k.div_ceil(base2k * dsize) as u32),
-                    dsize: Dsize(dsize as u32),
+                    digit_k: crate::layouts::digit_k_of(base2k, dsize),
                     k_aux: TorusPrecision((dsize * base2k) as u32),
                     rank: Rank(rank as u32),
                 };

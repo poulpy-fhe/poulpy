@@ -6,7 +6,7 @@ use poulpy_core::{
     layouts::{
         Base2K, Dnum, Dsize, GLWELayout, GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory, GLWESecret, GLWESecretLayout,
         GLWESecretPreparedFactory, GLWESecretSampling, GLWESecretTensor, GLWESecretTensorFactory, GLWETensorKey,
-        GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc, TorusPrecision,
+        GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc, TorusPrecision, digit_k_of,
     },
 };
 use poulpy_hal::{
@@ -194,7 +194,7 @@ fn tensor_key_layout<BE: Backend>(module: &Module<BE>, dnum: Dnum, dsize: Dsize)
         dnum,
         k_aux: TorusPrecision(dsize.0 * BASE2K.0 + module.log_n() as u32),
         rank: RANK,
-        dsize,
+        digit_k: digit_k_of(BASE2K, dsize),
     }
 }
 

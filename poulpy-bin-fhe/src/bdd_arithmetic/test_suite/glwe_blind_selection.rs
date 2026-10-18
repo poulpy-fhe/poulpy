@@ -5,7 +5,7 @@ use poulpy_core::test_suite::noise::glwe_decrypt_checked;
 use poulpy_core::{
     GGSWEncryptSk, GLWEDecrypt, GLWEEncryptSk,
     layouts::{
-        Base2K, Dnum, Dsize, GGSWLayout, GGSWPreparedFactory, GLWE, GLWELayout, GLWEPlaintext, GLWESecretPrepared,
+        Base2K, Dnum, GGSWLayout, GGSWPreparedFactory, GLWE, GLWELayout, GLWEPlaintext, GLWESecretPrepared,
         GLWESecretPreparedFactory, ModuleCoreAlloc, Rank, TorusPrecision,
     },
 };
@@ -59,7 +59,7 @@ where
         k_aux: TorusPrecision(k_ggsw.0 - 2 * base2k.0),
         rank,
         dnum,
-        dsize: Dsize(1),
+        digit_k: TorusPrecision(base2k.0),
     };
 
     let mut source: Source = Source::new([6u8; 32]);

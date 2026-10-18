@@ -1,6 +1,5 @@
 use poulpy_core::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGSWInfos, GLWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc, Rank,
-    TorusPrecision,
+    Base2K, Degree, Dnum, GGLWEInfos, GGSWInfos, GLWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc, Rank, TorusPrecision,
 };
 use poulpy_hal::layouts::{Backend, Module};
 
@@ -44,13 +43,13 @@ pub trait MHEModuleAlloc<BE: Backend>:
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        dsize: Dsize,
+        digit_k: TorusPrecision,
         k_aux: TorusPrecision,
         rank_in: Rank,
         rank_out: Rank,
     ) -> GGLWEPatCompressedOwned<BE> {
         GGLWEPatCompressed {
-            inner: self.gglwe_compressed_alloc(base2k, dnum, dsize, k_aux, rank_in, rank_out),
+            inner: self.gglwe_compressed_alloc(base2k, dnum, digit_k, k_aux, rank_in, rank_out),
         }
     }
 
@@ -64,13 +63,13 @@ pub trait MHEModuleAlloc<BE: Backend>:
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        dsize: Dsize,
+        digit_k: TorusPrecision,
         k_aux: TorusPrecision,
         rank_in: Rank,
         rank_out: Rank,
     ) -> GGLWEPatOwned<BE> {
         GGLWEPat {
-            inner: self.gglwe_alloc(base2k, dnum, dsize, k_aux, rank_in, rank_out),
+            inner: self.gglwe_alloc(base2k, dnum, digit_k, k_aux, rank_in, rank_out),
         }
     }
 
@@ -98,13 +97,13 @@ pub trait MHEModuleAlloc<BE: Backend>:
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        dsize: Dsize,
+        digit_k: TorusPrecision,
         k_aux: TorusPrecision,
         rank_in: Rank,
         rank_out: Rank,
     ) -> GLWESwitchingKeyShareOwned<BE> {
         GLWESwitchingKeyShare {
-            key: self.gglwe_pat_compressed_alloc(base2k, dnum, dsize, k_aux, rank_in, rank_out),
+            key: self.gglwe_pat_compressed_alloc(base2k, dnum, digit_k, k_aux, rank_in, rank_out),
             input_degree: Degree(0),
             output_degree: Degree(0),
         }
@@ -121,12 +120,12 @@ pub trait MHEModuleAlloc<BE: Backend>:
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        dsize: Dsize,
+        digit_k: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GLWEAutomorphismKeyShareOwned<BE> {
         GLWEAutomorphismKeyShare {
-            key: self.gglwe_pat_compressed_alloc(base2k, dnum, dsize, k_aux, rank, rank),
+            key: self.gglwe_pat_compressed_alloc(base2k, dnum, digit_k, k_aux, rank, rank),
             p: 0,
         }
     }
@@ -141,13 +140,13 @@ pub trait MHEModuleAlloc<BE: Backend>:
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        dsize: Dsize,
+        digit_k: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GLWETensorKeyShareOwned<BE> {
         let pairs = Rank(rank.0 * (rank.0 + 1) / 2);
         GLWETensorKeyShare {
-            key: self.gglwe_pat_alloc(base2k, dnum, dsize, k_aux, pairs, rank),
+            key: self.gglwe_pat_alloc(base2k, dnum, digit_k, k_aux, pairs, rank),
         }
     }
 
@@ -168,17 +167,17 @@ pub trait MHEModuleAlloc<BE: Backend>:
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        dsize: Dsize,
+        digit_k: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GGSWShareOwned<BE> {
         let circ = || -> Vec<GGLWEPatCompressedOwned<BE>> {
             (0..rank.as_usize())
-                .map(|_| self.gglwe_pat_compressed_alloc(base2k, dnum, dsize, k_aux, rank, rank))
+                .map(|_| self.gglwe_pat_compressed_alloc(base2k, dnum, digit_k, k_aux, rank, rank))
                 .collect()
         };
         GGSWShare {
-            col0: self.gglwe_pat_compressed_alloc(base2k, dnum, dsize, k_aux, Rank(1), rank),
+            col0: self.gglwe_pat_compressed_alloc(base2k, dnum, digit_k, k_aux, Rank(1), rank),
             circ_u: circ(),
             circ_s: circ(),
         }

@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use poulpy_core::layouts::{Base2K, Dsize, GGLWELayout, TorusPrecision};
+use poulpy_core::layouts::{GGLWELayout, TorusPrecision};
 use serde::{Deserialize, Serialize};
 
 /// Core GLWE layout parameters used by all core-layer and scheme-layer benchmarks.
@@ -47,11 +47,7 @@ pub fn key_dnum_k_aux(k: u32, base2k: u32, dsize: u32) -> (u32, u32) {
         "k ({k}) must hold at least one gadget digit plus one digit of guard ({digit} bits each)"
     );
     let k_aux: u32 = digit + k % digit;
-    let dnum: u32 = GGLWELayout::dnum_for_input(
-        TorusPrecision(k - k_aux),
-        poulpy_core::layouts::digit_k_of(Base2K(base2k), Dsize(dsize)),
-    )
-    .0;
+    let dnum: u32 = GGLWELayout::dnum_for_input(TorusPrecision(k - k_aux), poulpy_core::layouts::digit_k_of(base2k, dsize)).0;
     (dnum, k_aux)
 }
 

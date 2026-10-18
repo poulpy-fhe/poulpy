@@ -655,7 +655,7 @@ mod tests {
 
     #[test]
     fn invalid_key_provenance_fails_before_wrapper_headers() {
-        use crate::layouts::{Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKey, GLWESwitchingKey, Rank};
+        use crate::layouts::{Base2K, Degree, Dnum, GLWEAutomorphismKey, GLWESwitchingKey, Rank};
         use poulpy_hal::{
             AlignedBuf,
             layouts::{ReaderFrom, WriterTo},
@@ -666,14 +666,20 @@ mod tests {
             Degree(8),
             Base2K(12),
             Dnum(2),
-            Dsize(1),
+            TorusPrecision(12),
             TorusPrecision(15),
             Rank(1),
             Rank(1),
         );
         switching.key.noise = Some(invalid.clone());
-        let mut automorphism =
-            GLWEAutomorphismKey::<AlignedBuf, i64>::alloc(Degree(8), Base2K(12), Dnum(2), Dsize(1), TorusPrecision(15), Rank(1));
+        let mut automorphism = GLWEAutomorphismKey::<AlignedBuf, i64>::alloc(
+            Degree(8),
+            Base2K(12),
+            Dnum(2),
+            TorusPrecision(12),
+            TorusPrecision(15),
+            Rank(1),
+        );
         automorphism.key.noise = Some(invalid);
         let mut bytes = Vec::new();
         assert!(switching.write_to(&mut bytes).is_err());
@@ -685,8 +691,14 @@ mod tests {
         automorphism.key.noise = None;
         automorphism.p = 5;
         automorphism.write_to(&mut bytes).unwrap();
-        let mut receiver =
-            GLWEAutomorphismKey::<AlignedBuf, i64>::alloc(Degree(8), Base2K(12), Dnum(2), Dsize(1), TorusPrecision(15), Rank(2));
+        let mut receiver = GLWEAutomorphismKey::<AlignedBuf, i64>::alloc(
+            Degree(8),
+            Base2K(12),
+            Dnum(2),
+            TorusPrecision(12),
+            TorusPrecision(15),
+            Rank(2),
+        );
         receiver.p = 3;
         assert!(receiver.read_from(&mut bytes.as_slice()).is_err());
         assert_eq!(receiver.p, 3);

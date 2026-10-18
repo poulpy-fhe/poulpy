@@ -60,7 +60,13 @@ mod gglwe {
             b.rank_out()
         );
         assert!(res.dnum() <= a.dnum(), "res.dnum()={} > a.dnum()={}", res.dnum(), a.dnum());
-        assert_eq!(res.dsize(), a.dsize(), "res dsize: {} != a dsize: {}", res.dsize(), a.dsize());
+        assert_eq!(
+            res.digit_k(),
+            a.digit_k(),
+            "res digit_k: {} != a digit_k: {}",
+            res.digit_k(),
+            a.digit_k()
+        );
         assert_eq!(res.base2k(), a.base2k());
         assert!(
             scratch.available() >= gglwe_keyswitch_tmp_bytes_derived::<BE, _, _, _, _>(module, res, a, b),
@@ -177,7 +183,7 @@ mod ggsw {
         let a_backend = a.to_backend_ref();
 
         assert!(res_backend.dnum() <= a_backend.dnum());
-        assert_eq!(res_backend.dsize(), a_backend.dsize());
+        assert_eq!(res_backend.digit_k(), a_backend.digit_k());
         assert_eq!(res_backend.base2k(), a_backend.base2k());
         assert!(
             scratch.available()

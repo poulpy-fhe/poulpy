@@ -2,7 +2,7 @@ use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo};
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEAtBackendMut, GGLWEAtBackendRef, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut,
+    Base2K, Degree, Dnum, GGLWE, GGLWEAtBackendMut, GGLWEAtBackendRef, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut,
     GGLWEBackendRef, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWE, GLWEInfos, GLWEViewMut, GLWEViewRef, LWEInfos, Rank,
     TorusPrecision,
 };
@@ -23,7 +23,7 @@ pub struct GLWETensorKeyLayout {
     pub dnum: Dnum,
     pub k_aux: TorusPrecision,
     pub rank: Rank,
-    pub dsize: Dsize,
+    pub digit_k: TorusPrecision,
 }
 
 /// GLWE tensor key used for relinearisation after a tensor product.
@@ -79,8 +79,8 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWETensorKey<D, W> {
         self.0.rank_out()
     }
 
-    fn dsize(&self) -> Dsize {
-        self.0.dsize()
+    fn digit_k(&self) -> TorusPrecision {
+        self.0.digit_k()
     }
 
     fn dnum(&self) -> Dnum {
@@ -98,16 +98,11 @@ impl LWEInfos for GLWETensorKeyLayout {
     }
 
     fn max_size(&self) -> usize {
-        crate::layouts::key_size(
-            self.base2k,
-            self.dnum,
-            crate::layouts::digit_k_of(self.base2k, self.dsize),
-            self.k_aux,
-        )
+        crate::layouts::key_size(self.base2k, self.dnum, self.digit_k, self.k_aux)
     }
 
     fn k(&self) -> TorusPrecision {
-        crate::layouts::key_k(self.dnum, crate::layouts::digit_k_of(self.base2k, self.dsize), self.k_aux)
+        crate::layouts::key_k(self.dnum, self.digit_k, self.k_aux)
     }
 }
 
@@ -132,8 +127,8 @@ impl GGLWEInfos for GLWETensorKeyLayout {
         pairs.into()
     }
 
-    fn dsize(&self) -> Dsize {
-        self.dsize
+    fn digit_k(&self) -> TorusPrecision {
+        self.digit_k
     }
 
     fn rank_out(&self) -> Rank {
@@ -181,16 +176,23 @@ impl<W: ZnxWord> GLWETensorKey<AlignedBuf, W> {
             infos.n(),
             infos.base2k(),
             infos.dnum(),
-            infos.dsize(),
+            infos.digit_k(),
             infos.k_aux(),
             infos.rank(),
         )
     }
 
     /// Allocates a new [`GLWETensorKey`] with the given parameters.
-    pub(crate) fn alloc(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> Self {
+    pub(crate) fn alloc(
+        n: Degree,
+        base2k: Base2K,
+        dnum: Dnum,
+        digit_k: TorusPrecision,
+        k_aux: TorusPrecision,
+        rank: Rank,
+    ) -> Self {
         let pairs: u32 = (((rank.0 + 1) * rank.0) >> 1).max(1);
-        GLWETensorKey(GGLWE::alloc(n, base2k, dnum, dsize, k_aux, Rank(pairs), rank))
+        GLWETensorKey(GGLWE::alloc(n, base2k, dnum, digit_k, k_aux, Rank(pairs), rank))
     }
 
     /// Returns the byte count required for a [`GLWETensorKey`] with the given parameters.
@@ -202,16 +204,16 @@ impl<W: ZnxWord> GLWETensorKey<AlignedBuf, W> {
             infos.n(),
             infos.base2k(),
             infos.dnum(),
-            infos.dsize(),
+            infos.digit_k(),
             infos.k_aux(),
             infos.rank(),
         )
     }
 
     /// Returns the byte count required for a [`GLWETensorKey`] with the given parameters.
-    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
+    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, digit_k: TorusPrecision, k_aux: TorusPrecision, rank: Rank) -> usize {
         let pairs: u32 = (((rank.0 + 1) * rank.0) >> 1).max(1);
-        GGLWE::<AlignedBuf, W>::bytes_of(n, base2k, dnum, dsize, k_aux, Rank(pairs), rank)
+        GGLWE::<AlignedBuf, W>::bytes_of(n, base2k, dnum, digit_k, k_aux, Rank(pairs), rank)
     }
 }
 

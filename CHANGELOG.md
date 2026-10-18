@@ -77,6 +77,12 @@
   `key_k` drops its `base2k` argument and returns `dnum * digit_k + k_aux`, and `key_size`, `key_work_size` and `GGLWELayout::dnum_for_input` take `digit_k`, the latter without `base2k`.
   `GGLWEInfos` and `GGSWInfos` gain `digit_k()`, for now `dsize * base2k`, which `digit_k_of` computes, and the guard rule becomes `k_aux >= digit_k`.
   The noise models and the CKKS key validation read `digit_k`, and every value is unchanged.
+- **Breaking:** gadget layouts store their digit width in bits ([#188](https://github.com/poulpy-fhe/poulpy/issues/188)).
+  The `dsize` field of every key and GGSW layout, and the `dsize` argument of their allocators and `bytes_of`, become `digit_k: TorusPrecision`.
+  `digit_k()` is the required method of `GGLWEInfos` and `GGSWInfos`, and `dsize()` is derived from it as `ceil(digit_k / base2k)`, the sub-limb count of the interleaved-digit product.
+  Coarser views take a width: `with_dsize` and `at_dsize` become `with_digit_k` and `at_digit_k`, and `SetGGLWEInfos::set_dsize` becomes `set_digit_k`.
+  Every layout built so far keeps `digit_k = dsize * base2k`, so no key, product or noise value changes.
+- **Breaking, format:** serialized GGLWE and GGSW keys, compressed or not, store `digit_k` in place of `dsize`, so keys written before cannot be read back.
 - **Breaking:** `GLWE`, `GLWEPlaintext` and `GLWECompressed` carry an optional, scheme-managed `GLWEPlaintextMeta` (`Scale`, `SlotsKind`, `log_sparsity`) through `GLWEPlaintextInfos` and `SetGLWEPlaintextInfos`, which also read and set each field; `SlotsKind` moves from `poulpy-ckks` and gains `Integer`.
 - **Breaking, format:** serialized `GLWE` and `GLWECompressed` carry their plaintext metadata.
 - `reference::keyswitching::glwe::gglwe_product_limbs` returns the `product_limbs` the reference key switch passes to `GGLWEProductDigitsStridedImpl`, so that backend overrides derive the same.
@@ -93,6 +99,14 @@
 - Fix: the halving of `ckks_ci_trace`, and so of `ckks_unfold` of conjugate-invariant inputs, rounds its ties to even.
   It rounded every tie of both columns up, a bias that adds up in the first slots: about `2^-34` at slot 0 for a degree-`2^16` ciphertext at scale `2^54`, against `2^-43` elsewhere.
   The outputs keep the input scale at one bit narrower, as before.
+
+### `poulpy-bin-fhe`
+
+- **Breaking:** `FheUintPrepared` and `FheUintPreparedDebug` allocators take `digit_k` in place of `dsize`, and the blind rotation keys report one-limb digits as `digit_k = base2k`.
+
+### `poulpy-mhe`
+
+- **Breaking:** the `MHEModuleAlloc` share allocators take `digit_k` in place of `dsize`.
 
 ## [0.9.0] - 2026-10-08
 

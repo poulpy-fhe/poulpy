@@ -404,7 +404,7 @@ where
         k_aux: (b2k * dsize).into(),
         rank_in: Rank(2),
         rank_out: Rank(1),
-        dsize: dsize.into(),
+        digit_k: (b2k * dsize).into(),
     };
     let mut key = module.glwe_switching_key_alloc_from_infos(&ksk_infos);
     module.glwe_switching_key_encrypt_sk(&mut key, &sk_in, &sk_out, source_xe, source_xa, scratch);
@@ -545,7 +545,7 @@ impl<D: Data> ShipKeySet<D, i64> {
             k_aux: b2k.into(),
             rank_in: Rank(1),
             rank_out: Rank(1),
-            dsize: 1usize.into(),
+            digit_k: b2k.into(),
         };
         let mut dense_to_sparse = module.glwe_switching_key_alloc_from_infos(&d2s_infos);
         module.glwe_switching_key_encrypt_sk(&mut dense_to_sparse, &sk_dense, &sk_sparse, source_xe, source_xa, scratch);

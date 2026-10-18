@@ -24,7 +24,7 @@ use crate::{
     LinearTransformationBabySteps,
     error::{CoreError, Result},
     layouts::{
-        Dsize, GGLWEInfos, GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext, GLWESecret,
+        GGLWEInfos, GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext, GLWESecret,
         GLWESecretPreparedFactory, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation,
         LinearTransformationDiagonal, LinearTransformationGiantStep, LinearTransformationLayout, LinearTransformationStrategy,
         ModuleCoreAlloc, SetK, TorusPrecision,
@@ -39,7 +39,7 @@ use crate::{
 /// coarser `dsize`: one baby-step key set carrying two different layouts.
 struct MixedDsize<'a, BE: Backend> {
     atks: &'a HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
-    coarse: Dsize,
+    coarse: TorusPrecision,
     coarse_ps: &'a [i64],
 }
 
@@ -50,7 +50,7 @@ impl<BE: Backend> GetAutomorphismKey<BE> for MixedDsize<'_, BE> {
             detail: format!("no automorphism key for p={p}"),
         })?;
         if self.coarse_ps.contains(&p) {
-            key.with_dsize(self.coarse)
+            key.with_digit_k(self.coarse)
         } else {
             Ok(key.to_backend_ref())
         }
@@ -110,7 +110,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         dnum: dnum.into(),
         k_aux: (dsize * key_base2k + module.log_n()).into(),
         rank: rank.into(),
-        dsize: dsize.into(),
+        digit_k: crate::layouts::digit_k_of(key_base2k, dsize),
     };
 
     let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
@@ -122,8 +122,8 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     let baby_steps = vec![0, 1, 3, 5];
     let product_size = ct_infos.size() + pt.size();
 
-    let coarse_dsize = Dsize(2 * dsize as u32);
-    let coarse_infos = atk_infos.gglwe_layout().at_dsize(coarse_dsize).unwrap();
+    let coarse_dsize = TorusPrecision((2 * dsize * key_base2k) as u32);
+    let coarse_infos = atk_infos.gglwe_layout().at_digit_k(coarse_dsize).unwrap();
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&atk_infos)

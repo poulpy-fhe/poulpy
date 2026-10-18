@@ -5,7 +5,7 @@
 use poulpy_core::{
     ComponentNoise, DEFAULT_SIGMA_XE, Distribution, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct,
     layouts::{
-        Dnum, Dsize, GGLWEInfos, GGLWELayout, GGLWEPreparedToBackendMut, GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWELayout,
+        Dnum, GGLWEInfos, GGLWELayout, GGLWEPreparedToBackendMut, GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWELayout,
         GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKey, GLWESwitchingKeyPrepared,
         GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::{GGSWPrepared, GGSWPreparedToBackendRef},
@@ -42,11 +42,11 @@ fn ephemeral_key_layout<BE: Backend>(module: &Module<BE>, layout: &GGSWLayout) -
     GGLWELayout {
         n: layout.n,
         base2k: layout.base2k,
-        dnum: Dnum(layout.k().as_u32().div_ceil(layout.base2k.as_u32() * layout.dsize.as_u32())),
-        k_aux: TorusPrecision(layout.dsize.as_u32() * layout.base2k.as_u32() + module.log_n() as u32),
+        dnum: Dnum(layout.k().as_u32().div_ceil(layout.digit_k.as_u32())),
+        k_aux: TorusPrecision(layout.digit_k.as_u32() + module.log_n() as u32),
         rank_in: layout.rank,
         rank_out: layout.rank,
-        dsize: layout.dsize,
+        digit_k: layout.digit_k,
         stride: 1,
     }
 }
@@ -226,7 +226,7 @@ where
     let parties = PARTIES as f64;
     let secret_second = parties * 0.5 + if binary { parties * (parties - 1.0) * 0.25 } else { 0.0 };
     let circular_variance = 2.0 * rank_n * parties * secret_second * sigma2;
-    let digit_bits = key_layout.dsize.as_usize() * key_layout.base2k.as_usize();
+    let digit_bits = key_layout.digit_k.as_usize();
     let digits = k.div_ceil(digit_bits).min(key_layout.dnum.as_usize());
     let digit_factor = (1.0 - (-(digit_bits as f64)).exp2()) / (1.0 - (-(key_layout.base2k.as_usize() as f64)).exp2());
     let switching_variance = digit_factor.powi(2)
@@ -313,7 +313,7 @@ where
 {
     let layout = GGSWLayout {
         dnum: Dnum(2),
-        dsize: Dsize(2),
+        digit_k: TorusPrecision(2 * BASE2K.0),
         k_aux: TorusPrecision(2 * BASE2K.0 + module.log_n() as u32),
         rank: Rank(1),
         ..ggsw_layout(module)

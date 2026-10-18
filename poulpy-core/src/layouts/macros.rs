@@ -101,8 +101,8 @@ macro_rules! impl_gglwe_infos_for_inner {
                 self.$($field)+.rank_out()
             }
 
-            fn dsize(&self) -> Dsize {
-                self.$($field)+.dsize()
+            fn digit_k(&self) -> TorusPrecision {
+                self.$($field)+.digit_k()
             }
 
             fn dnum(&self) -> Dnum {

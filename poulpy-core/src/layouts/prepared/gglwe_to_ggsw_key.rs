@@ -5,8 +5,8 @@ use poulpy_hal::{
 
 use crate::layouts::prepared::{GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef};
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEPrepared, GGLWEPreparedFactory, GGLWEToGGSWKeyToBackendRef, GLWEInfos,
-    LWEInfos, Rank, TorusPrecision,
+    Base2K, Degree, Dnum, GGLWEInfos, GGLWEPrepared, GGLWEPreparedFactory, GGLWEToGGSWKeyToBackendRef, GLWEInfos, LWEInfos, Rank,
+    TorusPrecision,
 };
 
 /// DFT-domain (prepared) variant of [`GGLWEToGGSWKey`](crate::layouts::GGLWEToGGSWKey).
@@ -65,8 +65,8 @@ impl<D: Data, BE: Backend> GGLWEInfos for GGLWEToGGSWKeyPrepared<D, BE> {
         self.keys[0].rank_out()
     }
 
-    fn dsize(&self) -> Dsize {
-        self.keys[0].dsize()
+    fn digit_k(&self) -> TorusPrecision {
+        self.keys[0].digit_k()
     }
 
     fn dnum(&self) -> Dnum {
@@ -94,7 +94,7 @@ pub trait GGLWEToGGSWKeyPreparedFactory<BE: Backend> {
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        dsize: Dsize,
+        digit_k: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GGLWEToGGSWKeyPrepared<BE::OwnedBuf, BE>;
@@ -105,7 +105,14 @@ pub trait GGLWEToGGSWKeyPreparedFactory<BE: Backend> {
         A: GGLWEInfos;
 
     /// Returns the byte size required to store a [`GGLWEToGGSWKeyPrepared`] with explicit parameters.
-    fn bytes_of_gglwe_to_ggsw(&self, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize;
+    fn bytes_of_gglwe_to_ggsw(
+        &self,
+        base2k: Base2K,
+        dnum: Dnum,
+        digit_k: TorusPrecision,
+        k_aux: TorusPrecision,
+        rank: Rank,
+    ) -> usize;
 
     /// Returns the scratch-space bytes needed by [`gglwe_to_ggsw_key_prepare`](Self::gglwe_to_ggsw_key_prepare).
     fn gglwe_to_ggsw_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
@@ -145,13 +152,13 @@ where
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        dsize: Dsize,
+        digit_k: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GGLWEToGGSWKeyPrepared<BE::OwnedBuf, BE> {
         GGLWEToGGSWKeyPrepared {
             keys: (0..rank.as_usize())
-                .map(|_| self.gglwe_prepared_alloc(base2k, dnum, dsize, k_aux, rank, rank))
+                .map(|_| self.gglwe_prepared_alloc(base2k, dnum, digit_k, k_aux, rank, rank))
                 .collect(),
         }
     }
@@ -168,8 +175,15 @@ where
         infos.rank().as_usize() * self.gglwe_prepared_bytes_of_from_infos(infos)
     }
 
-    fn bytes_of_gglwe_to_ggsw(&self, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
-        rank.as_usize() * self.gglwe_prepared_bytes_of(base2k, dnum, dsize, k_aux, rank, rank)
+    fn bytes_of_gglwe_to_ggsw(
+        &self,
+        base2k: Base2K,
+        dnum: Dnum,
+        digit_k: TorusPrecision,
+        k_aux: TorusPrecision,
+        rank: Rank,
+    ) -> usize {
+        rank.as_usize() * self.gglwe_prepared_bytes_of(base2k, dnum, digit_k, k_aux, rank, rank)
     }
 
     fn gglwe_to_ggsw_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize

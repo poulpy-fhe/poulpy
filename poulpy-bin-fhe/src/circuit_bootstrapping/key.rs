@@ -209,7 +209,7 @@ impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> CircuitBootstrappingKeyInfos f
             base2k: atk.base2k(),
             dnum: atk.dnum(),
             k_aux: atk.k_aux(),
-            dsize: atk.dsize(),
+            digit_k: atk.digit_k(),
             rank: atk.rank(),
         }
     }
@@ -231,7 +231,7 @@ impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> CircuitBootstrappingKeyInfos f
             base2k: self.tsk.base2k(),
             dnum: self.tsk.dnum(),
             k_aux: self.tsk.k_aux(),
-            dsize: self.tsk.dsize(),
+            digit_k: self.tsk.digit_k(),
             rank: self.tsk.rank(),
         }
     }

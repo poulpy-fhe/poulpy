@@ -206,8 +206,8 @@ impl<BE: Backend> GGLWEInfos for GGLWEViewMut<'_, BE> {
         self.inner.dnum()
     }
 
-    fn dsize(&self) -> crate::layouts::Dsize {
-        self.inner.dsize()
+    fn digit_k(&self) -> crate::layouts::TorusPrecision {
+        self.inner.digit_k()
     }
 
     fn rank_in(&self) -> Rank {
@@ -228,8 +228,8 @@ impl<BE: Backend> GGLWEInfos for GGLWEPreparedViewMut<'_, BE> {
         self.inner.dnum()
     }
 
-    fn dsize(&self) -> crate::layouts::Dsize {
-        self.inner.dsize()
+    fn digit_k(&self) -> crate::layouts::TorusPrecision {
+        self.inner.digit_k()
     }
 
     fn rank_in(&self) -> Rank {
@@ -242,8 +242,8 @@ impl<BE: Backend> GGLWEInfos for GGLWEPreparedViewMut<'_, BE> {
 }
 
 impl<BE: Backend> SetGGLWEInfos for GGLWEViewMut<'_, BE> {
-    fn set_dsize(&mut self, dsize: usize) {
-        self.inner.dsize = dsize.into();
+    fn set_digit_k(&mut self, digit_k: TorusPrecision) {
+        self.inner.digit_k = digit_k;
     }
 }
 
@@ -256,8 +256,8 @@ impl<BE: Backend> GGSWInfos for GGSWViewMut<'_, BE> {
         self.inner.dnum()
     }
 
-    fn dsize(&self) -> crate::layouts::Dsize {
-        self.inner.dsize()
+    fn digit_k(&self) -> crate::layouts::TorusPrecision {
+        self.inner.digit_k()
     }
 }
 
@@ -270,8 +270,8 @@ impl<BE: Backend> GGSWInfos for GGSWPreparedViewMut<'_, BE> {
         self.inner.dnum()
     }
 
-    fn dsize(&self) -> crate::layouts::Dsize {
-        self.inner.dsize()
+    fn digit_k(&self) -> crate::layouts::TorusPrecision {
+        self.inner.digit_k()
     }
 }
 
@@ -494,7 +494,7 @@ impl<BE: Backend> GGLWEToBackendRef<BE> for GGLWEViewMut<'_, BE> {
             noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
-            dsize: self.inner.dsize,
+            digit_k: self.inner.digit_k,
             data: mat_znx_backend_ref_from_mut::<BE>(&self.inner.data),
         })
     }
@@ -511,7 +511,7 @@ impl<BE: Backend> GGLWEToBackendMut<BE> for GGLWEViewMut<'_, BE> {
             noise: None,
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
-            dsize: self.inner.dsize,
+            digit_k: self.inner.digit_k,
             data: mat_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
         })
     }
@@ -523,7 +523,7 @@ impl<BE: Backend> GGLWEPreparedToBackendRef<BE> for GGLWEPreparedViewMut<'_, BE>
             noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
-            dsize: self.inner.dsize,
+            digit_k: self.inner.digit_k,
             dnum: self.inner.dnum,
             stride: self.inner.stride,
             data: self.inner.data.reborrow_backend_ref(),
@@ -542,7 +542,7 @@ impl<BE: Backend> GGLWEPreparedToBackendMut<BE> for GGLWEPreparedViewMut<'_, BE>
             noise: None,
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
-            dsize: self.inner.dsize,
+            digit_k: self.inner.digit_k,
             dnum: self.inner.dnum,
             stride: self.inner.stride,
             data: self.inner.data.reborrow_backend_mut(),
@@ -556,7 +556,7 @@ impl<BE: Backend> GGSWToBackendRef<BE> for GGSWViewMut<'_, BE> {
             noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
-            dsize: self.inner.dsize,
+            digit_k: self.inner.digit_k,
             data: mat_znx_backend_ref_from_mut::<BE>(&self.inner.data),
         })
     }
@@ -573,7 +573,7 @@ impl<BE: Backend> GGSWToBackendMut<BE> for GGSWViewMut<'_, BE> {
             noise: None,
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
-            dsize: self.inner.dsize,
+            digit_k: self.inner.digit_k,
             data: mat_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
         })
     }
@@ -585,7 +585,7 @@ impl<BE: Backend> GGSWPreparedToBackendRef<BE> for GGSWPreparedViewMut<'_, BE> {
             noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
-            dsize: self.inner.dsize,
+            digit_k: self.inner.digit_k,
             data: self.inner.data.reborrow_backend_ref(),
         }
     }
@@ -602,7 +602,7 @@ impl<BE: Backend> GGSWPreparedToBackendMut<BE> for GGSWPreparedViewMut<'_, BE> {
             noise: None,
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
-            dsize: self.inner.dsize,
+            digit_k: self.inner.digit_k,
             data: self.inner.data.reborrow_backend_mut(),
         }
     }

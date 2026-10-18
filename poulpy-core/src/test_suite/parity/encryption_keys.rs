@@ -110,7 +110,7 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             n: (n as u32).into(),
             base2k: (b as u32).into(),
             dnum: Dnum(3),
-            dsize: Dsize(dsize as u32),
+            digit_k: crate::layouts::digit_k_of(b, dsize),
             k_aux: TorusPrecision((dsize * b + (n.ilog2() as usize) + 1) as u32),
             rank_in: Rank(rank as u32),
             rank_out: Rank(rank as u32),
@@ -171,7 +171,7 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             n: key.n,
             base2k: key.base2k,
             dnum: key.dnum,
-            dsize: key.dsize,
+            digit_k: key.digit_k,
             k_aux: key.k_aux,
             rank: key.rank_out,
         };
@@ -318,7 +318,7 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             n: key.n,
             base2k: key.base2k,
             dnum: key.dnum,
-            dsize: key.dsize,
+            digit_k: key.digit_k,
             k_aux: key.k_aux,
             rank: key.rank_out,
         };

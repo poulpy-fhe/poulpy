@@ -159,7 +159,7 @@ fn key_layout(n: u32, base2k: usize, k: usize, dsize: usize, rank_in: usize, ran
         n: Degree(n),
         base2k: Base2K(base2k as u32),
         dnum: Dnum(dnum as u32),
-        dsize: Dsize(dsize as u32),
+        digit_k: crate::layouts::digit_k_of(Base2K(base2k as u32), Dsize(dsize as u32)),
         k_aux: TorusPrecision((dsize * base2k) as u32),
         rank_in: Rank(rank_in as u32),
         rank_out: Rank(rank_out as u32),
@@ -475,28 +475,20 @@ where
             n: Degree(n),
             base2k: Base2K(base2k as u32),
             dnum: Dnum(dnum),
-            dsize: Dsize(dsize),
+            digit_k: crate::layouts::digit_k_of(Base2K(base2k as u32), Dsize(dsize)),
             k_aux: TorusPrecision(dsize * base2k as u32 + n.ilog2()),
             rank_in: Rank(1),
             rank_out: Rank(1),
             stride: 1,
         };
-        let effective = Dsize(dsize * s);
-        let coarse: GGLWELayout = parent.at_dsize(effective).unwrap();
+        let effective = TorusPrecision(dsize * s * base2k as u32);
+        let coarse: GGLWELayout = parent.at_digit_k(effective).unwrap();
         let (stride, sel_dnum, sel_k_aux) = (s as usize, coarse.dnum, coarse.k_aux);
         let (cols_in, cols_out) = (parent.rank_in.as_usize(), (parent.rank_out + 1).as_usize());
         let (rows, size) = (parent.dnum.as_usize(), parent.max_size());
         let sel_rows = sel_dnum.as_usize();
         // Coarsening moves rows into the guard, so the two spans agree.
-        assert_eq!(
-            key_size(
-                parent.base2k,
-                sel_dnum,
-                crate::layouts::digit_k_of(parent.base2k, effective),
-                sel_k_aux
-            ),
-            size
-        );
+        assert_eq!(key_size(parent.base2k, sel_dnum, effective, sel_k_aux), size);
 
         let mut prep = ScratchOwned::<BE>::alloc(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size));
 
@@ -571,7 +563,7 @@ where
                 noise: None,
                 data: pmat.to_backend_ref(),
                 base2k: layout.base2k,
-                dsize: layout.dsize,
+                digit_k: layout.digit_k,
                 k_aux: layout.k_aux,
                 dnum: layout.dnum,
                 stride,
@@ -579,7 +571,7 @@ where
         }
         let effective_layout = GGLWELayout {
             dnum: sel_dnum,
-            dsize: effective,
+            digit_k: effective,
             k_aux: sel_k_aux,
             stride,
             ..parent

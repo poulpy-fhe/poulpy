@@ -5,7 +5,7 @@ use std::fmt;
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo};
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos, GGLWEToBackendMut,
+    Base2K, Degree, Dnum, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos, GGLWEToBackendMut,
     GGLWEToBackendRef, GLWEInfos, GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, GLWEViewMut,
     GLWEViewRef, LWEInfos, Rank, TorusPrecision,
 };
@@ -28,16 +28,11 @@ impl LWEInfos for LWESwitchingKeyLayout {
     }
 
     fn max_size(&self) -> usize {
-        crate::layouts::key_size(
-            self.base2k,
-            self.dnum,
-            crate::layouts::digit_k_of(self.base2k, Dsize(1)),
-            self.k_aux,
-        )
+        crate::layouts::key_size(self.base2k, self.dnum, TorusPrecision(self.base2k.0), self.k_aux)
     }
 
     fn k(&self) -> TorusPrecision {
-        crate::layouts::key_k(self.dnum, crate::layouts::digit_k_of(self.base2k, Dsize(1)), self.k_aux)
+        crate::layouts::key_k(self.dnum, TorusPrecision(self.base2k.0), self.k_aux)
     }
 }
 
@@ -60,8 +55,8 @@ impl GGLWEInfos for LWESwitchingKeyLayout {
         Rank(1)
     }
 
-    fn dsize(&self) -> Dsize {
-        Dsize(1)
+    fn digit_k(&self) -> TorusPrecision {
+        TorusPrecision(self.base2k().0)
     }
 
     fn rank_out(&self) -> Rank {
@@ -105,8 +100,8 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for LWESwitchingKey<D, W> {
         self.0.k_aux()
     }
 
-    fn dsize(&self) -> Dsize {
-        self.0.dsize()
+    fn digit_k(&self) -> TorusPrecision {
+        self.0.digit_k()
     }
 
     fn rank_in(&self) -> Rank {
@@ -138,7 +133,15 @@ impl<W: ZnxWord> LWESwitchingKey<AlignedBuf, W> {
     }
 
     pub(crate) fn alloc(n: Degree, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision) -> Self {
-        LWESwitchingKey(GLWESwitchingKey::alloc(n, base2k, dnum, Dsize(1), k_aux, Rank(1), Rank(1)))
+        LWESwitchingKey(GLWESwitchingKey::alloc(
+            n,
+            base2k,
+            dnum,
+            TorusPrecision(base2k.0),
+            k_aux,
+            Rank(1),
+            Rank(1),
+        ))
     }
 
     pub fn bytes_of_from_infos<A>(infos: &A) -> usize
@@ -152,7 +155,7 @@ impl<W: ZnxWord> LWESwitchingKey<AlignedBuf, W> {
     }
 
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision) -> usize {
-        GLWESwitchingKey::<AlignedBuf, W>::bytes_of(n, base2k, dnum, Dsize(1), k_aux, Rank(1), Rank(1))
+        GLWESwitchingKey::<AlignedBuf, W>::bytes_of(n, base2k, dnum, TorusPrecision(base2k.0), k_aux, Rank(1), Rank(1))
     }
 }
 

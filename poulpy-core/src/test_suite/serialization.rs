@@ -8,8 +8,8 @@ use poulpy_hal::{
 
 use crate::dist::Distribution;
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWE, GGSW, GLWE, GLWEAutomorphismKey, GLWEInfos, GLWEPublicKey, GLWESwitchingKey,
-    GLWETensorKey, GLWEToLWEKey, LWE, LWEInfos, LWESwitchingKey, LWEToGLWEKey, Rank, TorusPrecision,
+    Base2K, Degree, Dnum, GGLWE, GGSW, GLWE, GLWEAutomorphismKey, GLWEInfos, GLWEPublicKey, GLWESwitchingKey, GLWETensorKey,
+    GLWEToLWEKey, LWE, LWEInfos, LWESwitchingKey, LWEToGLWEKey, Rank, TorusPrecision,
     compressed::{
         GGLWECompressed, GGSWCompressed, GLWEAutomorphismKeyCompressed, GLWECompressed, GLWESwitchingKeyCompressed,
         GLWETensorKeyCompressed, GLWEToLWESwitchingKeyCompressed, LWECompressed, LWESwitchingKeyCompressed,
@@ -88,10 +88,10 @@ const BASE2K: Base2K = Base2K(12);
 const K: TorusPrecision = TorusPrecision(33);
 const DNUM: Dnum = Dnum(3);
 const RANK: Rank = Rank(2);
-const DSIZE: Dsize = Dsize(1);
+const DSIZE: TorusPrecision = TorusPrecision(BASE2K.0);
 /// Auxiliary guard of a key: one full gadget digit (`dsize * base2k`) plus
 /// `log2(n)`. Must always be at least `dsize * base2k`.
-const K_KEY_AUX: TorusPrecision = TorusPrecision(DSIZE.0 * BASE2K.0 + N_GLWE.0.ilog2());
+const K_KEY_AUX: TorusPrecision = TorusPrecision(DSIZE.0 + N_GLWE.0.ilog2());
 
 /// Round-trips every core layout, standard and compressed, through
 /// `WriterTo`/`ReaderFrom`, on fixtures sampled by `module` (degree at least 64).

@@ -7,7 +7,7 @@ use std::{fmt, marker::PhantomData};
 
 use poulpy_core::{
     Distribution, TransferInto,
-    layouts::{Base2K, Degree, Dnum, Dsize, GGSW, GGSWInfos, GLWEInfos, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision},
+    layouts::{Base2K, Degree, Dnum, GGSW, GGSWInfos, GLWEInfos, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision},
 };
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -58,8 +58,8 @@ impl GGSWInfos for BlindRotationKeyLayout {
         self.k_aux
     }
 
-    fn dsize(&self) -> Dsize {
-        Dsize(1)
+    fn digit_k(&self) -> poulpy_core::layouts::TorusPrecision {
+        poulpy_core::layouts::TorusPrecision(self.base2k().0)
     }
 
     fn dnum(&self) -> Dnum {
@@ -86,13 +86,13 @@ impl LWEInfos for BlindRotationKeyLayout {
         poulpy_core::layouts::key_size(
             self.base2k,
             self.dnum,
-            poulpy_core::layouts::digit_k_of(self.base2k, Dsize(1)),
+            poulpy_core::layouts::TorusPrecision(self.base2k.0),
             self.k_aux,
         )
     }
 
     fn k(&self) -> TorusPrecision {
-        poulpy_core::layouts::key_k(self.dnum, poulpy_core::layouts::digit_k_of(self.base2k, Dsize(1)), self.k_aux)
+        poulpy_core::layouts::key_k(self.dnum, poulpy_core::layouts::TorusPrecision(self.base2k.0), self.k_aux)
     }
 }
 
@@ -291,8 +291,8 @@ impl<D: Data, BRT: BlindRotationAlgo, W: ZnxWord> GGSWInfos for BlindRotationKey
         self.keys[0].k_aux()
     }
 
-    fn dsize(&self) -> poulpy_core::layouts::Dsize {
-        Dsize(1)
+    fn digit_k(&self) -> poulpy_core::layouts::TorusPrecision {
+        poulpy_core::layouts::TorusPrecision(self.base2k().0)
     }
 
     fn dnum(&self) -> Dnum {

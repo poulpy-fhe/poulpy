@@ -52,7 +52,7 @@ where
             n: g.n,
             base2k: Base2K((b - 1) as u32),
             dnum: Dnum((2 * b + 1).div_ceil(b - 1) as u32),
-            dsize: Dsize(1),
+            digit_k: TorusPrecision((b - 1) as u32),
             k_aux: TorusPrecision(b as u32 + 1),
             rank: g.rank,
         };
@@ -460,7 +460,7 @@ where
                     n: g.n,
                     base2k: g.base2k,
                     dnum: Dnum(precision.div_ceil(b * dsize) as u32),
-                    dsize: Dsize(dsize as u32),
+                    digit_k: crate::layouts::digit_k_of(g.base2k, Dsize(dsize as u32)),
                     k_aux: TorusPrecision((b * dsize + 1) as u32),
                     rank: g.rank,
                 };

@@ -12,8 +12,8 @@ use poulpy_bin_fhe::{
 use poulpy_core::{
     GLWEDecrypt, GLWEEncryptSk,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWEToGGSWKeyLayout, GGSWLayout, GGSWPreparedFactory, GLWEAutomorphismKeyLayout,
-        GLWELayout, GLWESecretPreparedFactory, GLWESwitchingKeyLayout, GLWEToLWEKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, Dnum, GGLWEToGGSWKeyLayout, GGSWLayout, GGSWPreparedFactory, GLWEAutomorphismKeyLayout, GLWELayout,
+        GLWESecretPreparedFactory, GLWESwitchingKeyLayout, GLWEToLWEKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
     },
 };
 use poulpy_hal::{
@@ -86,7 +86,7 @@ where
         k_aux: TorusPrecision(K_AUX),
         rank: Rank(RANK),
         dnum: Dnum(2),
-        dsize: Dsize(1),
+        digit_k: TorusPrecision(BASE2K),
     };
 
     // Used to generate BDD Keys, for the arithmetic operations
@@ -105,7 +105,7 @@ where
                 base2k: Base2K(BASE2K),
                 dnum: Dnum(3),
                 k_aux: TorusPrecision(K_AUX),
-                dsize: Dsize(1),
+                digit_k: TorusPrecision(BASE2K),
                 rank: Rank(RANK),
             },
             tsk_layout: GGLWEToGGSWKeyLayout {
@@ -113,7 +113,7 @@ where
                 base2k: Base2K(BASE2K),
                 dnum: Dnum(3),
                 k_aux: TorusPrecision(K_AUX),
-                dsize: Dsize(1),
+                digit_k: TorusPrecision(BASE2K),
                 rank: Rank(RANK),
             },
         },
@@ -122,7 +122,7 @@ where
             base2k: Base2K(BASE2K),
             dnum: Dnum(3),
             k_aux: TorusPrecision(K_AUX),
-            dsize: Dsize(1),
+            digit_k: TorusPrecision(BASE2K),
             rank_in: Rank(RANK),
             rank_out: Rank(1),
         }),

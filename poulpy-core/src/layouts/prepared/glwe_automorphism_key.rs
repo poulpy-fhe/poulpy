@@ -3,8 +3,8 @@ use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::layouts::prepared::{GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef};
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef,
-    GGLWEPreparedFactory, GGLWEToBackendRef, GLWEInfos, GetGaloisElement, LWEInfos, Rank, SetGaloisElement, TorusPrecision,
+    Base2K, Degree, Dnum, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef, GGLWEPreparedFactory,
+    GGLWEToBackendRef, GLWEInfos, GetGaloisElement, LWEInfos, Rank, SetGaloisElement, TorusPrecision,
 };
 use poulpy_hal::layouts::vmp_pmat_backend_ref_from_ref;
 
@@ -67,8 +67,8 @@ impl<D: Data, B: Backend> GGLWEInfos for GLWEAutomorphismKeyPrepared<D, B> {
         self.key.rank_out()
     }
 
-    fn dsize(&self) -> Dsize {
-        self.key.dsize()
+    fn digit_k(&self) -> TorusPrecision {
+        self.key.digit_k()
     }
 
     fn dnum(&self) -> Dnum {
@@ -88,12 +88,12 @@ where
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        dsize: Dsize,
+        digit_k: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GLWEAutomorphismKeyPrepared<B::OwnedBuf, B> {
         GLWEAutomorphismKeyPrepared::<B::OwnedBuf, B> {
-            key: self.gglwe_prepared_alloc(base2k, dnum, dsize, k_aux, rank, rank),
+            key: self.gglwe_prepared_alloc(base2k, dnum, digit_k, k_aux, rank, rank),
             p: 0,
         }
     }
@@ -117,11 +117,11 @@ where
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        dsize: Dsize,
+        digit_k: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> usize {
-        self.gglwe_prepared_bytes_of(base2k, dnum, dsize, k_aux, rank, rank)
+        self.gglwe_prepared_bytes_of(base2k, dnum, digit_k, k_aux, rank, rank)
     }
 
     fn glwe_automorphism_key_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
@@ -173,13 +173,13 @@ pub type GLWEAutomorphismKeyPreparedBackendRef<'a, B> = GLWEAutomorphismKeyPrepa
 pub type GLWEAutomorphismKeyPreparedBackendMut<'a, B> = GLWEAutomorphismKeyPrepared<<B as Backend>::BufMut<'a>, B>;
 
 impl<D: Data, B: Backend> GLWEAutomorphismKeyPrepared<D, B> {
-    /// This key read through a coarser `dsize`. See [`GGLWEPrepared::with_dsize`].
-    pub fn with_dsize(&self, dsize: Dsize) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, B>>
+    /// This key read through a coarser `digit_k`. See [`GGLWEPrepared::with_digit_k`].
+    pub fn with_digit_k(&self, digit_k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, B>>
     where
         GGLWEPrepared<D, B>: GGLWEPreparedToBackendRef<B>,
     {
         Ok(GLWEAutomorphismKeyPrepared {
-            key: self.key.with_dsize(dsize)?,
+            key: self.key.with_digit_k(digit_k)?,
             p: self.p,
         })
     }
@@ -225,7 +225,7 @@ impl<B: Backend> GGLWEPreparedToBackendRef<B> for &GLWEAutomorphismKeyPrepared<B
             noise: self.key.noise.clone(),
             base2k: self.key.base2k,
             k_aux: self.key.k_aux,
-            dsize: self.key.dsize,
+            digit_k: self.key.digit_k,
             dnum: self.key.dnum,
             stride: self.key.stride,
             data: vmp_pmat_backend_ref_from_ref::<B>(&self.key.data),

@@ -4,7 +4,7 @@ use poulpy_core::{
     GLWEMaskFill,
     api::{GGSWRotate, GLWEAdd, GLWEAutomorphism, GLWEMulXpMinusOne, GLWENormalize, GLWERotate, GLWEShift, GLWETrace},
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGSWAtViewMut, GGSWInfos, GGSWLayout, GGSWToBackendMut, GLWE,
+        Base2K, Degree, Dnum, GGLWEInfos, GGSWAtViewMut, GGSWInfos, GGSWLayout, GGSWToBackendMut, GLWE,
         GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
         ModuleCoreAlloc, Rank, SetGaloisElement, TorusPrecision, prepared::GLWEAutomorphismKeyPreparedFactory,
     },
@@ -397,7 +397,7 @@ fn derived_ggsw_rotation_uses_selected_glwe_methods_and_scratch() {
         n: Degree(256),
         base2k: Base2K(17),
         dnum: Dnum(2),
-        dsize: Dsize(1),
+        digit_k: TorusPrecision(17),
         k_aux: TorusPrecision(18),
         rank: Rank(2),
     };
@@ -450,7 +450,7 @@ fn derived_trace_uses_selected_assign_and_its_larger_scratch_query() {
         n: input.n(),
         base2k: input.base2k(),
         dnum: Dnum(3),
-        dsize: Dsize(1),
+        digit_k: TorusPrecision(input.base2k().0),
         k_aux: TorusPrecision(18),
         rank: input.rank(),
     };

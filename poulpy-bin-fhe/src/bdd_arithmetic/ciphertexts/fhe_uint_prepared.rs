@@ -3,7 +3,7 @@ use poulpy_hal::AlignedBuf;
 use std::marker::PhantomData;
 
 use poulpy_core::layouts::{
-    Base2K, Dnum, Dsize, GGSWInfos, GGSWPreparedFactory, GLWEInfos, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+    Base2K, Dnum, GGSWInfos, GGSWPreparedFactory, GLWEInfos, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
     prepared::{GGSWPrepared, GGSWPreparedBackendMut},
 };
 use poulpy_core::layouts::{GGSWPreparedToBackendMut, GetAutomorphismKey};
@@ -132,13 +132,13 @@ where
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        dsize: Dsize,
+        digit_k: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> FheUintPrepared<BE::OwnedBuf, T, BE> {
         FheUintPrepared {
             bits: (0..T::BITS)
-                .map(|_| self.ggsw_prepared_alloc(base2k, dnum, dsize, k_aux, rank))
+                .map(|_| self.ggsw_prepared_alloc(base2k, dnum, digit_k, k_aux, rank))
                 .collect(),
             _phantom: PhantomData,
         }
@@ -148,7 +148,7 @@ where
     where
         A: GGSWInfos,
     {
-        self.alloc_fhe_uint_prepared(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux(), infos.rank())
+        self.alloc_fhe_uint_prepared(infos.base2k(), infos.dnum(), infos.digit_k(), infos.k_aux(), infos.rank())
     }
 }
 
@@ -161,11 +161,11 @@ impl<T: UnsignedInteger, BE: Backend> FheUintPrepared<BE::OwnedBuf, T, BE> {
         module.alloc_fhe_uint_prepared_from_infos(infos)
     }
 
-    pub fn alloc<M>(module: &M, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> Self
+    pub fn alloc<M>(module: &M, base2k: Base2K, dnum: Dnum, digit_k: TorusPrecision, k_aux: TorusPrecision, rank: Rank) -> Self
     where
         M: FheUintPreparedFactory<T, BE>,
     {
-        module.alloc_fhe_uint_prepared(base2k, dnum, dsize, k_aux, rank)
+        module.alloc_fhe_uint_prepared(base2k, dnum, digit_k, k_aux, rank)
     }
 }
 
@@ -244,8 +244,8 @@ impl<D: Data, T: UnsignedInteger, B: Backend> GGSWInfos for FheUintPrepared<D, T
         self.bits[0].k_aux()
     }
 
-    fn dsize(&self) -> poulpy_core::layouts::Dsize {
-        self.bits[0].dsize()
+    fn digit_k(&self) -> poulpy_core::layouts::TorusPrecision {
+        self.bits[0].digit_k()
     }
 
     fn dnum(&self) -> poulpy_core::layouts::Dnum {

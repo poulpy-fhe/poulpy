@@ -2,7 +2,7 @@ use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Module, ReaderFrom, WriterTo};
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut,
+    Base2K, Degree, Dnum, GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut,
     LWEInfos, Rank, TorusPrecision,
     compressed::{
         GGLWECompressedBackendMut, GGLWECompressedBackendRef, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef,
@@ -61,8 +61,8 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for LWEToGLWEKeyCompressed<D, W> {
         self.0.k_aux()
     }
 
-    fn dsize(&self) -> Dsize {
-        self.0.dsize()
+    fn digit_k(&self) -> TorusPrecision {
+        self.0.digit_k()
     }
 
     fn rank_in(&self) -> Rank {
@@ -131,7 +131,7 @@ impl<D: Data, W: ZnxWord> LWEToGLWEKeyCompressed<D, W> {
             n,
             base2k,
             dnum,
-            Dsize(1),
+            TorusPrecision(base2k.0),
             k_aux,
             Rank(1),
             rank_out,
@@ -156,7 +156,7 @@ impl<D: Data, W: ZnxWord> LWEToGLWEKeyCompressed<D, W> {
     }
 
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision) -> usize {
-        GLWESwitchingKeyCompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, Dsize(1), k_aux, Rank(1))
+        GLWESwitchingKeyCompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, TorusPrecision(base2k.0), k_aux, Rank(1))
     }
 }
 

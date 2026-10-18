@@ -1,7 +1,7 @@
 use std::fmt;
 
 use poulpy_core::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWEInfos,
+    Base2K, Degree, Dnum, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWEInfos,
     LWEInfos, Rank, TorusPrecision,
 };
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord};
@@ -67,8 +67,8 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWETensorKeyShare<D, W> {
         self.key.dnum()
     }
 
-    fn dsize(&self) -> Dsize {
-        self.key.dsize()
+    fn digit_k(&self) -> TorusPrecision {
+        self.key.digit_k()
     }
 
     fn rank_in(&self) -> Rank {

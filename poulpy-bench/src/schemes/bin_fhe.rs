@@ -5,9 +5,9 @@ use criterion::{Bencher, measurement::Measurement};
 use poulpy_core::{
     GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEMaskFill, LWEEncryptSk, LWEFillMask,
     layouts::{
-        Base2K, Dnum, Dsize, GGLWEToGGSWKeyLayout, GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWEAutomorphismKeyLayout,
-        GLWELayout, GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, LWE, LWEInfos, LWELayout,
-        LWESecret, LWESecretSampling, ModuleCoreAlloc, TorusPrecision,
+        Base2K, Dnum, GGLWEToGGSWKeyLayout, GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWEAutomorphismKeyLayout, GLWELayout,
+        GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, LWE, LWEInfos, LWELayout, LWESecret,
+        LWESecretSampling, ModuleCoreAlloc, TorusPrecision, digit_k_of,
     },
 };
 use poulpy_hal::{
@@ -162,7 +162,7 @@ pub fn runner_circuit_bootstrapping<
             base2k: params.bin_fhe_params.base2k.into(),
             k_aux: params.bin_fhe_params.k_aux.into(),
             dnum: Dnum(params.atk_dnum),
-            dsize: Dsize(params.atk_dsize),
+            digit_k: digit_k_of(params.bin_fhe_params.base2k, params.atk_dsize),
             rank: params.bin_fhe_params.rank.into(),
         },
         tsk_layout: GGLWEToGGSWKeyLayout {
@@ -170,7 +170,7 @@ pub fn runner_circuit_bootstrapping<
             base2k: params.bin_fhe_params.base2k.into(),
             k_aux: params.bin_fhe_params.k_aux.into(),
             dnum: Dnum(params.tsk_dnum),
-            dsize: Dsize(params.tsk_dsize),
+            digit_k: digit_k_of(params.bin_fhe_params.base2k, params.tsk_dsize),
             rank: params.bin_fhe_params.rank.into(),
         },
     };
@@ -179,7 +179,7 @@ pub fn runner_circuit_bootstrapping<
         base2k: params.bin_fhe_params.base2k.into(),
         k_aux: params.bin_fhe_params.k_aux.into(),
         dnum: Dnum(params.ggsw_dnum),
-        dsize: Dsize(params.ggsw_dsize),
+        digit_k: digit_k_of(params.bin_fhe_params.base2k, params.ggsw_dsize),
         rank: params.bin_fhe_params.rank.into(),
     };
     let lwe_infos: LWELayout = LWELayout {

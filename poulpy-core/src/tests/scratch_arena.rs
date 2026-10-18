@@ -157,7 +157,7 @@ fn scratch_arena_take_core_returns_disjoint_backend_regions() {
         dnum: Dnum(2),
         k_aux: TorusPrecision(24 - 2 * 8),
         rank: Rank(1),
-        dsize: Dsize(1),
+        digit_k: crate::layouts::digit_k_of(Base2K(8), Dsize(1)),
     };
 
     let mut scratch: ScratchOwned<TestBackend> = ScratchOwned {

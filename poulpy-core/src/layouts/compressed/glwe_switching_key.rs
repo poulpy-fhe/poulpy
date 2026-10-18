@@ -2,8 +2,8 @@ use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Module, ReaderFrom, WriterTo};
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWECompressed, GGLWECompressedSeedMut, GGLWEDecompress, GGLWEInfos, GGLWEToBackendMut,
-    GLWEInfos, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, LWEInfos, Rank, TorusPrecision,
+    Base2K, Degree, Dnum, GGLWECompressed, GGLWECompressedSeedMut, GGLWEDecompress, GGLWEInfos, GGLWEToBackendMut, GLWEInfos,
+    GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, LWEInfos, Rank, TorusPrecision,
     compressed::{
         GGLWECompressedBackendMut, GGLWECompressedBackendRef, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef,
     },
@@ -94,8 +94,8 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWESwitchingKeyCompressed<D, W> {
         self.key.rank_out()
     }
 
-    fn dsize(&self) -> Dsize {
-        self.key.dsize()
+    fn digit_k(&self) -> TorusPrecision {
+        self.key.digit_k()
     }
 
     fn dnum(&self) -> Dnum {
@@ -129,7 +129,7 @@ impl<D: Data, W: ZnxWord> GLWESwitchingKeyCompressed<D, W> {
             infos.n(),
             infos.base2k(),
             infos.dnum(),
-            infos.dsize(),
+            infos.digit_k(),
             infos.k_aux(),
             infos.rank_in(),
             infos.rank_out(),
@@ -141,13 +141,13 @@ impl<D: Data, W: ZnxWord> GLWESwitchingKeyCompressed<D, W> {
         n: Degree,
         base2k: Base2K,
         dnum: Dnum,
-        dsize: Dsize,
+        digit_k: TorusPrecision,
         k_aux: TorusPrecision,
         rank_in: Rank,
         rank_out: Rank,
     ) -> Self {
         GLWESwitchingKeyCompressed {
-            key: GGLWECompressed::alloc::<B>(n, base2k, dnum, dsize, k_aux, rank_in, rank_out),
+            key: GGLWECompressed::alloc::<B>(n, base2k, dnum, digit_k, k_aux, rank_in, rank_out),
             input_degree: Degree(0),
             output_degree: Degree(0),
         }
@@ -162,8 +162,15 @@ impl<D: Data, W: ZnxWord> GLWESwitchingKeyCompressed<D, W> {
     }
 
     /// Returns the serialized byte size for a compressed GLWE switching key with the given parameters.
-    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank_in: Rank) -> usize {
-        GGLWECompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, dsize, k_aux, rank_in)
+    pub fn bytes_of(
+        n: Degree,
+        base2k: Base2K,
+        dnum: Dnum,
+        digit_k: TorusPrecision,
+        k_aux: TorusPrecision,
+        rank_in: Rank,
+    ) -> usize {
+        GGLWECompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, digit_k, k_aux, rank_in)
     }
 }
 

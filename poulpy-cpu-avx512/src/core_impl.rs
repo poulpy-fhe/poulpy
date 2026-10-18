@@ -1428,7 +1428,7 @@ mod relinearize_tests {
                         let key_layout = GLWETensorKeyLayout {
                             n: n.into(),
                             base2k: key_base2k.into(),
-                            dsize: dsize.into(),
+                            digit_k: (key_base2k * dsize).into(),
                             dnum: 8usize.div_ceil(dsize).into(),
                             k_aux: (key_base2k * dsize + n.ilog2() as usize).into(),
                             rank: rank.into(),

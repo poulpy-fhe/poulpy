@@ -2,8 +2,8 @@ use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Module, ReaderFrom, WriterTo};
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWECompressed, GGLWECompressedSeedMut, GGLWEDecompress, GGLWEInfos, GGLWEToBackendMut,
-    GLWEInfos, LWEInfos, Rank, TorusPrecision,
+    Base2K, Degree, Dnum, GGLWECompressed, GGLWECompressedSeedMut, GGLWEDecompress, GGLWEInfos, GGLWEToBackendMut, GLWEInfos,
+    LWEInfos, Rank, TorusPrecision,
     compressed::{
         GGLWECompressedBackendMut, GGLWECompressedBackendRef, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef,
     },
@@ -69,8 +69,8 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWETensorKeyCompressed<D, W> {
         self.0.rank_out()
     }
 
-    fn dsize(&self) -> Dsize {
-        self.0.dsize()
+    fn digit_k(&self) -> TorusPrecision {
+        self.0.digit_k()
     }
 
     fn dnum(&self) -> Dnum {
@@ -101,7 +101,7 @@ impl<D: Data, W: ZnxWord> GLWETensorKeyCompressed<D, W> {
             infos.n(),
             infos.base2k(),
             infos.dnum(),
-            infos.dsize(),
+            infos.digit_k(),
             infos.k_aux(),
             infos.rank(),
         )
@@ -111,12 +111,20 @@ impl<D: Data, W: ZnxWord> GLWETensorKeyCompressed<D, W> {
         n: Degree,
         base2k: Base2K,
         dnum: Dnum,
-        dsize: Dsize,
+        digit_k: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> Self {
         let pairs: u32 = (((rank.as_u32() + 1) * rank.as_u32()) >> 1).max(1);
-        GLWETensorKeyCompressed(GGLWECompressed::alloc::<B>(n, base2k, dnum, dsize, k_aux, Rank(pairs), rank))
+        GLWETensorKeyCompressed(GGLWECompressed::alloc::<B>(
+            n,
+            base2k,
+            dnum,
+            digit_k,
+            k_aux,
+            Rank(pairs),
+            rank,
+        ))
     }
 
     pub fn bytes_of_from_infos<A>(infos: &A) -> usize
@@ -127,15 +135,15 @@ impl<D: Data, W: ZnxWord> GLWETensorKeyCompressed<D, W> {
             infos.n(),
             infos.base2k(),
             infos.dnum(),
-            infos.dsize(),
+            infos.digit_k(),
             infos.k_aux(),
             infos.rank(),
         )
     }
 
-    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
+    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, digit_k: TorusPrecision, k_aux: TorusPrecision, rank: Rank) -> usize {
         let pairs: u32 = (((rank.as_u32() + 1) * rank.as_u32()) >> 1).max(1);
-        GGLWECompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, dsize, k_aux, Rank(pairs))
+        GGLWECompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, digit_k, k_aux, Rank(pairs))
     }
 }
 

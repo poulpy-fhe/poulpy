@@ -1,8 +1,8 @@
 use poulpy_core::{
     DEFAULT_SIGMA_XE, GGSWEncryptSk, GGSWNoise, GLWEDecrypt, GLWEEncryptSk,
     layouts::{
-        Base2K, Dnum, Dsize, GGSW, GGSWInfos, GGSWLayout, GGSWPreparedFactory, GLWEInfos, GLWESecretPrepared,
-        GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Dnum, GGSW, GGSWInfos, GGSWLayout, GGSWPreparedFactory, GLWEInfos, GLWESecretPrepared, GLWESecretPreparedFactory,
+        LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
     },
 };
 use poulpy_hal::{
@@ -55,7 +55,7 @@ where
         k_aux: TorusPrecision(k_ggsw_res.0 - 2 * base2k.0),
         rank,
         dnum: Dnum(2),
-        dsize: Dsize(1),
+        digit_k: TorusPrecision(base2k.0),
     };
 
     let ggsw_k_infos: GGSWLayout = GGSWLayout {
@@ -64,7 +64,7 @@ where
         k_aux: TorusPrecision(k_ggsw_apply.0 - 3 * base2k.0),
         rank,
         dnum: Dnum(3),
-        dsize: Dsize(1),
+        digit_k: TorusPrecision(base2k.0),
     };
 
     let mut source: Source = Source::new([6u8; 32]);

@@ -57,7 +57,7 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::noise::Te
                 base2k: in_base2k.into(),
                 dnum: dnum_in.into(),
                 k_aux: (dsize_in * in_base2k + module.log_n()).into(),
-                dsize: dsize_in.into(),
+                digit_k: crate::layouts::digit_k_of(in_base2k, dsize_in),
                 rank: rank.into(),
             };
 
@@ -66,7 +66,7 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::noise::Te
                 base2k: out_base2k.into(),
                 dnum: dnum_in.into(),
                 k_aux: (dsize_in * out_base2k + module.log_n()).into(),
-                dsize: dsize_in.into(),
+                digit_k: crate::layouts::digit_k_of(out_base2k, dsize_in),
                 rank: rank.into(),
             };
 
@@ -75,7 +75,7 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::noise::Te
                 base2k: key_base2k.into(),
                 dnum: dnum_ksk.into(),
                 k_aux: (dsize * key_base2k + module.log_n()).into(),
-                dsize: dsize.into(),
+                digit_k: crate::layouts::digit_k_of(key_base2k, dsize),
                 rank: rank.into(),
             };
 
@@ -229,7 +229,7 @@ pub fn test_gglwe_automorphism_key_automorphism_assign<
                 base2k: out_base2k.into(),
                 dnum: dnum_in.into(),
                 k_aux: (dsize_in * out_base2k + module.log_n()).into(),
-                dsize: dsize_in.into(),
+                digit_k: crate::layouts::digit_k_of(out_base2k, dsize_in),
                 rank: rank.into(),
             };
 
@@ -238,7 +238,7 @@ pub fn test_gglwe_automorphism_key_automorphism_assign<
                 base2k: key_base2k.into(),
                 dnum: dnum_ksk.into(),
                 k_aux: (dsize * key_base2k + module.log_n()).into(),
-                dsize: dsize.into(),
+                digit_k: crate::layouts::digit_k_of(key_base2k, dsize),
                 rank: rank.into(),
             };
 

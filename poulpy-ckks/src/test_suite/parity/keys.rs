@@ -19,7 +19,7 @@ pub fn key_layout(n: usize, base2k: usize, k: usize, dsize: usize, rank_in: usiz
         n: n.into(),
         base2k: base2k.into(),
         dnum: k.div_ceil(base2k * dsize).into(),
-        dsize: dsize.into(),
+        digit_k: (base2k * dsize).into(),
         k_aux: (base2k * dsize).into(),
         rank_in: rank_in.into(),
         rank_out: rank_out.into(),

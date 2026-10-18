@@ -83,7 +83,7 @@ where
                 n: plain.n,
                 base2k: b,
                 dnum: dn,
-                dsize: ds,
+                digit_k: crate::layouts::digit_k_of(b, ds),
                 k_aux: aux,
                 rank_in: rank,
                 rank_out: rank,
@@ -97,12 +97,12 @@ where
                 n: plain.n,
                 base2k: b,
                 dnum: dn,
-                dsize: ds,
+                digit_k: crate::layouts::digit_k_of(b, ds),
                 k_aux: aux,
                 rank,
             };
             let lwe = GGLWELayout {
-                dsize: Dsize(1),
+                digit_k: crate::layouts::digit_k_of(b, 1u32),
                 rank_in: Rank(1),
                 rank_out: Rank(1),
                 ..gadget
@@ -187,7 +187,7 @@ where
                 gglwe_prepared_bytes_of,
                 gglwe_prepared_bytes_of_from_infos,
                 gadget,
-                [b, dn, ds, aux, rank, rank],
+                [b, dn, crate::layouts::digit_k_of(b, ds), aux, rank, rank],
                 p,
                 BE::len_bytes(p.data.data())
             );
@@ -203,7 +203,7 @@ where
                 ggsw_prepared_bytes_of,
                 ggsw_prepared_bytes_of_from_infos,
                 ggsw,
-                [b, dn, ds, aux, rank],
+                [b, dn, crate::layouts::digit_k_of(b, ds), aux, rank],
                 p,
                 BE::len_bytes(p.data.data())
             );
@@ -219,7 +219,7 @@ where
                 glwe_automorphism_key_prepared_bytes_of,
                 glwe_automorphism_key_prepared_bytes_of_from_infos,
                 gadget,
-                [b, dn, ds, aux, rank],
+                [b, dn, crate::layouts::digit_k_of(b, ds), aux, rank],
                 p,
                 BE::len_bytes(p.key.data.data())
             );
@@ -235,7 +235,7 @@ where
                 bytes_of_glwe_key_prepared,
                 glwe_switching_key_prepared_bytes_of_from_infos,
                 gadget,
-                [b, dn, ds, aux, rank, rank],
+                [b, dn, crate::layouts::digit_k_of(b, ds), aux, rank, rank],
                 p,
                 BE::len_bytes(p.key.data.data())
             );
@@ -251,7 +251,7 @@ where
                 bytes_of_tensor_key_prepared,
                 bytes_of_tensor_key_prepared_from_infos,
                 tensor_infos,
-                [b, dn, ds, aux, rank],
+                [b, dn, crate::layouts::digit_k_of(b, ds), aux, rank],
                 p,
                 BE::len_bytes(p.0.data.data())
             );
@@ -324,7 +324,7 @@ where
                 bytes_of_gglwe_to_ggsw,
                 bytes_of_gglwe_to_ggsw_from_infos,
                 gadget,
-                [b, dn, ds, aux, rank],
+                [b, dn, crate::layouts::digit_k_of(b, ds), aux, rank],
                 p,
                 p.keys.iter().map(|key| BE::len_bytes(key.data.data())).sum::<usize>()
             );

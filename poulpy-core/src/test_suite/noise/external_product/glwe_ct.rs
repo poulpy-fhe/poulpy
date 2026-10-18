@@ -69,7 +69,7 @@ where
                 base2k: key_base2k.into(),
                 dnum: dnum.into(),
                 k_aux: (dsize * key_base2k + module.log_n()).into(),
-                dsize: dsize.into(),
+                digit_k: crate::layouts::digit_k_of(key_base2k, dsize),
                 rank: rank.into(),
             };
 
@@ -218,7 +218,7 @@ where
                 base2k: key_base2k.into(),
                 dnum: dnum.into(),
                 k_aux: (dsize * key_base2k + module.log_n()).into(),
-                dsize: dsize.into(),
+                digit_k: crate::layouts::digit_k_of(key_base2k, dsize),
                 rank: rank.into(),
             };
 

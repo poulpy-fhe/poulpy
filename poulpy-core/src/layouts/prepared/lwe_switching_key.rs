@@ -1,7 +1,7 @@
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendRef, GGLWEPreparedToBackendMut,
+    Base2K, Degree, Dnum, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendRef, GGLWEPreparedToBackendMut,
     GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEInfos, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, LWEInfos, Rank,
     TorusPrecision,
     prepared::{
@@ -49,8 +49,8 @@ impl<D: Data, B: Backend> GGLWEInfos for LWESwitchingKeyPrepared<D, B> {
         self.0.k_aux()
     }
 
-    fn dsize(&self) -> Dsize {
-        self.0.dsize()
+    fn digit_k(&self) -> TorusPrecision {
+        self.0.digit_k()
     }
 
     fn rank_in(&self) -> Rank {
@@ -80,7 +80,14 @@ where
         dnum: Dnum,
         k_aux: TorusPrecision,
     ) -> LWESwitchingKeyPrepared<B::OwnedBuf, B> {
-        LWESwitchingKeyPrepared(self.glwe_switching_key_prepared_alloc(base2k, dnum, Dsize(1), k_aux, Rank(1), Rank(1)))
+        LWESwitchingKeyPrepared(self.glwe_switching_key_prepared_alloc(
+            base2k,
+            dnum,
+            TorusPrecision(base2k.0),
+            k_aux,
+            Rank(1),
+            Rank(1),
+        ))
     }
 
     fn lwe_switching_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> LWESwitchingKeyPrepared<B::OwnedBuf, B>
@@ -94,7 +101,7 @@ where
     }
 
     fn lwe_switching_key_prepared_bytes_of(&self, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision) -> usize {
-        self.bytes_of_glwe_key_prepared(base2k, dnum, Dsize(1), k_aux, Rank(1), Rank(1))
+        self.bytes_of_glwe_key_prepared(base2k, dnum, TorusPrecision(base2k.0), k_aux, Rank(1), Rank(1))
     }
 
     fn lwe_switching_key_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize

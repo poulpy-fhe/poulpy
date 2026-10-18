@@ -1,9 +1,9 @@
 use poulpy_core::{
     GGSWEncryptSk, GLWEAutomorphismKeyEncryptSk, GLWEEncryptPk, GLWEEncryptSk, GLWEPublicKeyGenerate,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGSWLayout, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout,
+        Base2K, Degree, Dnum, GGSWLayout, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout,
         GLWEPublicKeyPreparedFactory, GLWESecret, GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank,
-        TorusPrecision,
+        TorusPrecision, digit_k_of,
         prepared::{GLWEPublicKeyPrepared, GLWESecretPrepared},
     },
 };
@@ -136,7 +136,7 @@ where
         k_aux: TorusPrecision(k_aux),
         rank: Rank(cp.rank),
         dnum: Dnum(dnum),
-        dsize: Dsize(cp.dsize),
+        digit_k: digit_k_of(cp.base2k, cp.dsize),
     };
 
     let module: Module<BE> = Module::<BE>::new(cp.n as u64);
@@ -187,7 +187,7 @@ pub fn runner_glwe_automorphism_key_encrypt_sk<BE: Backend<ZnxWord = i64>, M: Me
         k_aux: TorusPrecision(k_aux),
         rank: Rank(cp.rank),
         dnum: Dnum(dnum),
-        dsize: Dsize(cp.dsize),
+        digit_k: digit_k_of(cp.base2k, cp.dsize),
     };
 
     let module: Module<BE> = Module::<BE>::new(cp.n as u64);

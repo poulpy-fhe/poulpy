@@ -1,7 +1,7 @@
 use std::fmt;
 
 use poulpy_core::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GLWEInfos, LWEInfos, Rank, TorusPrecision,
+    Base2K, Degree, Dnum, GGLWEInfos, GLWEInfos, LWEInfos, Rank, TorusPrecision,
     compressed::{
         GGLWECompressed, GGLWECompressedBackendMut, GGLWECompressedBackendRef, GGLWECompressedSeed, GGLWECompressedSeedMut,
         GGLWECompressedToBackendMut, GGLWECompressedToBackendRef,
@@ -69,8 +69,8 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GGLWEPatCompressed<D, W> {
         self.inner.dnum()
     }
 
-    fn dsize(&self) -> Dsize {
-        self.inner.dsize()
+    fn digit_k(&self) -> TorusPrecision {
+        self.inner.digit_k()
     }
 
     fn rank_in(&self) -> Rank {

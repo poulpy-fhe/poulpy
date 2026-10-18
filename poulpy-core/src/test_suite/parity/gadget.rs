@@ -42,12 +42,12 @@ where
                 n: Degree(params.n as u32),
                 base2k: Base2K(b as u32),
                 dnum: Dnum(3),
-                dsize: Dsize(1),
+                digit_k: crate::layouts::digit_k_of(Base2K(b as u32), Dsize(1)),
                 k_aux: TorusPrecision(b as u32 + 1),
                 rank: Rank(rank as u32),
             };
             let k = GGSWLayout {
-                dsize: Dsize(dsize as u32),
+                digit_k: crate::layouts::digit_k_of(Base2K(b as u32), Dsize(dsize as u32)),
                 k_aux: TorusPrecision((b * dsize + 1) as u32),
                 dnum: Dnum((4 * b + 1).div_ceil(b * dsize) as u32),
                 ..g
@@ -56,7 +56,7 @@ where
                 n: g.n,
                 base2k: g.base2k,
                 dnum: g.dnum,
-                dsize: g.dsize,
+                digit_k: g.digit_k,
                 k_aux: g.k_aux,
                 rank_in: g.rank,
                 rank_out: g.rank,
@@ -210,7 +210,7 @@ where
                 n: Degree(params.n as u32),
                 base2k: Base2K(b as u32),
                 dnum: Dnum(3),
-                dsize: Dsize(1),
+                digit_k: crate::layouts::digit_k_of(Base2K(b as u32), Dsize(1)),
                 k_aux: TorusPrecision(b as u32 + 1),
                 rank: Rank(rank as u32),
             };
@@ -218,7 +218,7 @@ where
                 n: g.n,
                 base2k: g.base2k,
                 dnum: Dnum((4 * b + 1).div_ceil(b * dsize) as u32),
-                dsize: Dsize(dsize as u32),
+                digit_k: crate::layouts::digit_k_of(g.base2k, Dsize(dsize as u32)),
                 k_aux: TorusPrecision((b * dsize + 1) as u32),
                 rank_in: g.rank,
                 rank_out: g.rank,
@@ -228,7 +228,7 @@ where
                 n: k.n,
                 base2k: k.base2k,
                 dnum: k.dnum,
-                dsize: k.dsize,
+                digit_k: k.digit_k,
                 k_aux: k.k_aux,
                 rank: g.rank,
             };
@@ -236,7 +236,7 @@ where
                 n: k.n,
                 base2k: k.base2k,
                 dnum: k.dnum,
-                dsize: k.dsize,
+                digit_k: k.digit_k,
                 k_aux: k.k_aux,
                 rank: g.rank,
             };
@@ -426,7 +426,7 @@ where
             assert_eval_eq!(out_r, have, "automorphism key assign: rank={rank} dsize={dsize}");
             let h = GGLWELayout {
                 dnum: g.dnum,
-                dsize: g.dsize,
+                digit_k: g.digit_k,
                 k_aux: g.k_aux,
                 ..k
             };

@@ -97,7 +97,7 @@ where
             dnum: k.div_ceil(tsk_base2k).into(),
             k_aux: (tsk_base2k + module.log_n()).into(),
             rank: rank.into(),
-            dsize: Dsize(1),
+            digit_k: crate::layouts::digit_k_of(tsk_base2k, Dsize(1)),
         };
 
         let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_in_infos);
@@ -314,7 +314,7 @@ where
         dnum: k.div_ceil(base2k).into(),
         k_aux: (base2k + module.log_n()).into(),
         rank: 1u32.into(),
-        dsize: Dsize(1),
+        digit_k: crate::layouts::digit_k_of(base2k, Dsize(1)),
     };
     // A result wider than the operands grows the key-switch output, up to the auxiliary limbs of a key of dsize 4.
     let wide_infos = GLWELayout {
@@ -324,7 +324,7 @@ where
     let wide_tsk_infos = GLWETensorKeyLayout {
         dnum: k.div_ceil(4 * base2k).into(),
         k_aux: (4 * base2k + module.log_n()).into(),
-        dsize: Dsize(4),
+        digit_k: crate::layouts::digit_k_of(base2k, 4u32),
         ..tsk_infos
     };
 
@@ -532,7 +532,7 @@ where
             dnum: k.div_ceil(tsk_base2k).into(),
             k_aux: (tsk_base2k + module.log_n()).into(),
             rank: rank.into(),
-            dsize: Dsize(1),
+            digit_k: crate::layouts::digit_k_of(tsk_base2k, Dsize(1)),
         };
 
         let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_in_infos);
@@ -1025,7 +1025,7 @@ pub fn test_glwe_tensor_relinearize_cross_radix<BE: crate::test_suite::noise::Te
             dnum: Dnum(k.div_ceil(base2k) as u32),
             k_aux: (base2k + module.log_n()).into(),
             rank: rank.into(),
-            dsize: Dsize(1),
+            digit_k: crate::layouts::digit_k_of(base2k, Dsize(1)),
         };
         let cross_infos = key_infos(key_base2k);
 

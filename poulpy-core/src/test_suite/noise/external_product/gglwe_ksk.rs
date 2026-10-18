@@ -55,7 +55,7 @@ pub fn test_gglwe_switching_key_external_product<BE: crate::test_suite::noise::T
                     base2k: in_base2k.into(),
                     dnum: dnum_in.into(),
                     k_aux: (dsize_in * in_base2k + module.log_n()).into(),
-                    dsize: dsize_in.into(),
+                    digit_k: crate::layouts::digit_k_of(in_base2k, dsize_in),
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
                 };
@@ -65,7 +65,7 @@ pub fn test_gglwe_switching_key_external_product<BE: crate::test_suite::noise::T
                     base2k: out_base2k.into(),
                     dnum: dnum_in.into(),
                     k_aux: (dsize_in * out_base2k + module.log_n()).into(),
-                    dsize: dsize_in.into(),
+                    digit_k: crate::layouts::digit_k_of(out_base2k, dsize_in),
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
                 };
@@ -75,7 +75,7 @@ pub fn test_gglwe_switching_key_external_product<BE: crate::test_suite::noise::T
                     base2k: key_base2k.into(),
                     dnum: dnum.into(),
                     k_aux: (dsize * key_base2k + module.log_n()).into(),
-                    dsize: dsize.into(),
+                    digit_k: crate::layouts::digit_k_of(key_base2k, dsize),
                     rank: rank_out.into(),
                 };
 
@@ -227,7 +227,7 @@ pub fn test_gglwe_switching_key_external_product_assign<BE: crate::test_suite::n
                     base2k: out_base2k.into(),
                     dnum: dnum_in.into(),
                     k_aux: (dsize_in * out_base2k + module.log_n()).into(),
-                    dsize: dsize_in.into(),
+                    digit_k: crate::layouts::digit_k_of(out_base2k, dsize_in),
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
                 };
@@ -237,7 +237,7 @@ pub fn test_gglwe_switching_key_external_product_assign<BE: crate::test_suite::n
                     base2k: key_base2k.into(),
                     dnum: dnum.into(),
                     k_aux: (dsize * key_base2k + module.log_n()).into(),
-                    dsize: dsize.into(),
+                    digit_k: crate::layouts::digit_k_of(key_base2k, dsize),
                     rank: rank_out.into(),
                 };
 

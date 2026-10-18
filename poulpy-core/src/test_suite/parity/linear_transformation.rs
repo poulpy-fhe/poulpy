@@ -124,7 +124,7 @@ where
                     base2k: ct.base2k,
                     rank: ct.rank,
                     dnum: Dnum(k.div_ceil(base * dsize) as u32),
-                    dsize: Dsize(dsize as u32),
+                    digit_k: crate::layouts::digit_k_of(ct.base2k, Dsize(dsize as u32)),
                     k_aux: TorusPrecision((base * dsize + (params.n.ilog2() as usize)) as u32),
                 };
                 let input_r = ref_glwe(r, &ct, &mut source);

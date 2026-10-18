@@ -12,7 +12,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 use poulpy_core::layouts::{
-    Diagonals, Dsize, Evaluate, GGLWEInfos, GetAutomorphismKey, LWEInfos, LinearTransformationStrategy, TorusPrecision,
+    Diagonals, Evaluate, GGLWEInfos, GetAutomorphismKey, LWEInfos, LinearTransformationStrategy, TorusPrecision, digit_k_of,
     prepared::{GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef},
 };
 use poulpy_hal::{
@@ -223,7 +223,7 @@ where
 /// through a coarser `dsize`: one key set carrying two different layouts.
 struct MixedDsize<BE: Backend> {
     keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
-    coarse: Dsize,
+    coarse: TorusPrecision,
     coarse_ps: HashSet<i64>,
 }
 
@@ -239,7 +239,7 @@ impl<BE: Backend> GetAutomorphismKey<BE> for MixedDsize<BE> {
         })?;
         let _ = k;
         if self.coarse_ps.contains(&p) {
-            key.with_dsize(self.coarse)
+            key.with_digit_k(self.coarse)
         } else {
             Ok(key.to_backend_ref())
         }
@@ -400,11 +400,11 @@ pub fn test_linear_transformation_mixed_key_layouts<BE, F, E>(
     elements.sort_unstable();
     let coarse_ps: HashSet<i64> = elements.iter().copied().step_by(2).collect();
     let stored_infos = key_params.atk_layout();
-    let coarse_dsize = Dsize(2 * key_params.dsize as u32);
-    let coarse_infos = stored_infos.gglwe_layout().at_dsize(coarse_dsize).unwrap();
+    let coarse_digit_k = digit_k_of(key_params.base2k, 2 * key_params.dsize);
+    let coarse_infos = stored_infos.gglwe_layout().at_digit_k(coarse_digit_k).unwrap();
     let keys = MixedDsize::<BE> {
         keys,
-        coarse: coarse_dsize,
+        coarse: coarse_digit_k,
         coarse_ps,
     };
 

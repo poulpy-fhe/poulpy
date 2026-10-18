@@ -2,7 +2,7 @@ use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Module, ReaderFrom, WriterTo};
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWECompressed, GGLWECompressedSeedMut, GGLWEDecompress, GGLWEInfos, GGLWEToBackendMut,
+    Base2K, Degree, Dnum, GGLWECompressed, GGLWECompressedSeedMut, GGLWEDecompress, GGLWEInfos, GGLWEToBackendMut,
     GLWEDecompress, GLWEInfos, GetGaloisElement, LWEInfos, Rank, SetGaloisElement, TorusPrecision,
     compressed::{
         GGLWECompressedBackendMut, GGLWECompressedBackendRef, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef,
@@ -68,8 +68,8 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWEAutomorphismKeyCompressed<D, W> {
         self.key.rank_out()
     }
 
-    fn dsize(&self) -> Dsize {
-        self.key.dsize()
+    fn digit_k(&self) -> TorusPrecision {
+        self.key.digit_k()
     }
 
     fn dnum(&self) -> Dnum {
@@ -98,7 +98,7 @@ impl<D: Data, W: ZnxWord> GLWEAutomorphismKeyCompressed<D, W> {
             infos.n(),
             infos.base2k(),
             infos.dnum(),
-            infos.dsize(),
+            infos.digit_k(),
             infos.k_aux(),
             infos.rank(),
         )
@@ -108,12 +108,12 @@ impl<D: Data, W: ZnxWord> GLWEAutomorphismKeyCompressed<D, W> {
         n: Degree,
         base2k: Base2K,
         dnum: Dnum,
-        dsize: Dsize,
+        digit_k: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> Self {
         GLWEAutomorphismKeyCompressed {
-            key: GGLWECompressed::alloc::<B>(n, base2k, dnum, dsize, k_aux, rank, rank),
+            key: GGLWECompressed::alloc::<B>(n, base2k, dnum, digit_k, k_aux, rank, rank),
             p: 0,
         }
     }
@@ -126,14 +126,14 @@ impl<D: Data, W: ZnxWord> GLWEAutomorphismKeyCompressed<D, W> {
             infos.n(),
             infos.base2k(),
             infos.dnum(),
-            infos.dsize(),
+            infos.digit_k(),
             infos.k_aux(),
             infos.rank(),
         )
     }
 
-    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
-        GGLWECompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, dsize, k_aux, rank)
+    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, digit_k: TorusPrecision, k_aux: TorusPrecision, rank: Rank) -> usize {
+        GGLWECompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, digit_k, k_aux, rank)
     }
 }
 

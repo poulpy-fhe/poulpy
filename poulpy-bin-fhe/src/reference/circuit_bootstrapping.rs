@@ -291,7 +291,7 @@ where
         base2k: atk_infos.base2k,
         dnum: atk_infos.dnum,
         k_aux: atk_infos.k_aux,
-        dsize: atk_infos.dsize,
+        digit_k: atk_infos.digit_k,
         rank_in: atk_infos.rank,
         rank_out: atk_infos.rank,
         stride: 1,

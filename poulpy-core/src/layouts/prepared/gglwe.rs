@@ -8,9 +8,7 @@ use poulpy_hal::{
 };
 
 use crate::layouts::operand_degree;
-use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEToBackendRef, GLWEInfos, GetDegree, LWEInfos, Rank, TorusPrecision,
-};
+use crate::layouts::{Base2K, Degree, Dnum, GGLWEInfos, GGLWEToBackendRef, GLWEInfos, GetDegree, LWEInfos, Rank, TorusPrecision};
 
 /// DFT-domain (prepared) variant of [`GGLWE`](crate::layouts::GGLWE).
 ///
@@ -26,10 +24,10 @@ pub struct GGLWEPrepared<D: Data, B: Backend> {
     pub(crate) data: VmpPMat<D, B::DftWord, B>,
     pub(crate) k_aux: TorusPrecision,
     pub(crate) base2k: Base2K,
-    pub(crate) dsize: Dsize,
-    /// Digits reachable at `dsize`: the stored rows, or fewer for a view.
+    pub(crate) digit_k: TorusPrecision,
+    /// Digits reachable at `digit_k`: the stored rows, or fewer for a view.
     pub(crate) dnum: Dnum,
-    /// Rows to skip between digits: 1 as stored, `dsize / stored dsize` for a view.
+    /// Rows to skip between digits: 1 as stored, `digit_k / stored digit_k` for a view.
     pub(crate) stride: usize,
 }
 
@@ -51,16 +49,11 @@ impl<D: Data, B: Backend> LWEInfos for GGLWEPrepared<D, B> {
     }
 
     fn max_size(&self) -> usize {
-        crate::layouts::key_size(
-            self.base2k,
-            self.dnum(),
-            crate::layouts::digit_k_of(self.base2k, self.dsize),
-            self.k_aux,
-        )
+        crate::layouts::key_size(self.base2k, self.dnum(), self.digit_k, self.k_aux)
     }
 
     fn k(&self) -> TorusPrecision {
-        crate::layouts::key_k(self.dnum(), crate::layouts::digit_k_of(self.base2k, self.dsize), self.k_aux)
+        crate::layouts::key_k(self.dnum(), self.digit_k, self.k_aux)
     }
 }
 
@@ -71,7 +64,7 @@ impl<D: Data, B: Backend> GLWEInfos for GGLWEPrepared<D, B> {
     }
 }
 
-/// Provides GGLWE-specific parameter accessors (input/output rank, dsize, dnum).
+/// Provides GGLWE-specific parameter accessors (input/output rank, digit_k, dnum).
 impl<D: Data, B: Backend> GGLWEInfos for GGLWEPrepared<D, B> {
     fn k_aux(&self) -> TorusPrecision {
         self.k_aux
@@ -85,8 +78,8 @@ impl<D: Data, B: Backend> GGLWEInfos for GGLWEPrepared<D, B> {
         Rank(self.data.cols_out() as u32 - 1)
     }
 
-    fn dsize(&self) -> Dsize {
-        self.dsize
+    fn digit_k(&self) -> TorusPrecision {
+        self.digit_k
     }
 
     fn dnum(&self) -> Dnum {
@@ -111,7 +104,7 @@ where
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        dsize: Dsize,
+        digit_k: TorusPrecision,
         k_aux: TorusPrecision,
         rank_in: Rank,
         rank_out: Rank,
@@ -123,7 +116,7 @@ where
             k_aux,
             rank_in,
             rank_out,
-            dsize,
+            digit_k,
             stride: 1,
         })
     }
@@ -146,7 +139,7 @@ where
                 PrepareHint::Reuse,
             ),
             base2k: infos.base2k(),
-            dsize: infos.dsize(),
+            digit_k: infos.digit_k(),
             k_aux: infos.k_aux(),
             dnum: infos.dnum(),
             stride: 1,
@@ -158,7 +151,7 @@ where
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        dsize: Dsize,
+        digit_k: TorusPrecision,
         k_aux: TorusPrecision,
         rank_in: Rank,
         rank_out: Rank,
@@ -170,7 +163,7 @@ where
             k_aux,
             rank_in,
             rank_out,
-            dsize,
+            digit_k,
             stride: 1,
         })
     }
@@ -208,7 +201,7 @@ where
 
     /// Transforms a standard [`GGLWE`](crate::layouts::GGLWE) into the DFT domain, writing the result into `res`.
     ///
-    /// Both `res` and `other` must share the same ring degree, base2k, precision, and dsize.
+    /// Both `res` and `other` must share the same ring degree, base2k, precision, and digit width.
     fn gglwe_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GGLWEPreparedToBackendMut<BE>,
@@ -222,7 +215,7 @@ where
             operand_degree(self.ring_degree().as_usize(), &[res.n(), other.n()]);
             assert_eq!(res.base2k, other.base2k);
             assert_eq!(res.size(), other.size());
-            assert_eq!(res.dsize, other.dsize);
+            assert_eq!(res.digit_k, other.digit_k);
             assert!(
                 scratch.available() >= self.gglwe_prepare_tmp_bytes(&res),
                 "scratch.available(): {} < GGLWEPreparedFactory::gglwe_prepare_tmp_bytes: {}",
@@ -252,16 +245,16 @@ impl<D: Data, B: Backend> GGLWEPrepared<D, B> {
 }
 
 impl<D: Data, B: Backend> GGLWEPrepared<D, B> {
-    /// This key read through a coarser `dsize`. No row is copied, only the
-    /// scalars change; see [`GGLWELayout::at_dsize`] for the rule.
-    pub fn with_dsize(&self, dsize: Dsize) -> Result<GGLWEPreparedBackendRef<'_, B>>
+    /// This key read through a coarser `digit_k`. No row is copied, only the
+    /// scalars change; see [`GGLWELayout::at_digit_k`] for the rule.
+    pub fn with_digit_k(&self, digit_k: TorusPrecision) -> Result<GGLWEPreparedBackendRef<'_, B>>
     where
         Self: GGLWEPreparedToBackendRef<B>,
     {
         let mut key: GGLWEPreparedBackendRef<'_, B> = self.to_backend_ref();
-        let coarse: GGLWELayout = key.gglwe_layout().at_dsize(dsize)?;
+        let coarse: GGLWELayout = key.gglwe_layout().at_digit_k(digit_k)?;
         key.stride = coarse.stride;
-        key.dsize = coarse.dsize;
+        key.digit_k = coarse.digit_k;
         key.dnum = coarse.dnum;
         key.k_aux = coarse.k_aux;
         Ok(key)
@@ -278,7 +271,7 @@ impl<B: Backend> GGLWEPreparedToBackendRef<B> for GGLWEPrepared<B::OwnedBuf, B> 
             noise: crate::layouts::LWEInfos::noise(&self),
             base2k: self.base2k,
             k_aux: self.k_aux,
-            dsize: self.dsize,
+            digit_k: self.digit_k,
             dnum: self.dnum,
             stride: self.stride,
             data: self.data.to_backend_ref(),
@@ -292,7 +285,7 @@ impl<B: Backend> GGLWEPreparedToBackendRef<B> for &GGLWEPrepared<B::BufRef<'_>, 
             noise: crate::layouts::LWEInfos::noise(&self),
             base2k: self.base2k,
             k_aux: self.k_aux,
-            dsize: self.dsize,
+            digit_k: self.digit_k,
             dnum: self.dnum,
             stride: self.stride,
             data: vmp_pmat_backend_ref_from_ref::<B>(&self.data),
@@ -319,7 +312,7 @@ impl<B: Backend> GGLWEPreparedToBackendMut<B> for GGLWEPrepared<B::OwnedBuf, B> 
             noise: None,
             base2k: self.base2k,
             k_aux: self.k_aux,
-            dsize: self.dsize,
+            digit_k: self.digit_k,
             dnum: self.dnum,
             stride: self.stride,
             data: self.data.to_backend_mut(),

@@ -1,7 +1,7 @@
 use std::fmt;
 
 use poulpy_core::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GLWEInfos, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, LWEInfos, Rank,
+    Base2K, Degree, Dnum, GGLWEInfos, GLWEInfos, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, LWEInfos, Rank,
     TorusPrecision,
     compressed::{
         GGLWECompressedBackendMut, GGLWECompressedBackendRef, GGLWECompressedSeed, GGLWECompressedSeedMut,
@@ -82,8 +82,8 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWESwitchingKeyShare<D, W> {
         self.key.dnum()
     }
 
-    fn dsize(&self) -> Dsize {
-        self.key.dsize()
+    fn digit_k(&self) -> TorusPrecision {
+        self.key.digit_k()
     }
 
     fn rank_in(&self) -> Rank {

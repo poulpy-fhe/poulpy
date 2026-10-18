@@ -5,9 +5,7 @@ use poulpy_hal::{
     layouts::{Backend, Data, Module, PrepareHint, ScratchArena, VmpPMat},
 };
 
-use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGSWInfos, GGSWToBackendRef, GLWEInfos, GetDegree, LWEInfos, Rank, TorusPrecision,
-};
+use crate::layouts::{Base2K, Degree, Dnum, GGSWInfos, GGSWToBackendRef, GLWEInfos, GetDegree, LWEInfos, Rank, TorusPrecision};
 use crate::layouts::{GGSWLayout, operand_degree};
 
 /// DFT-domain (prepared) variant of [`GGSW`](crate::layouts::GGSW).
@@ -21,7 +19,7 @@ pub struct GGSWPrepared<D: Data, B: Backend> {
     pub(crate) data: VmpPMat<D, B::DftWord, B>,
     pub(crate) k_aux: TorusPrecision,
     pub(crate) base2k: Base2K,
-    pub(crate) dsize: Dsize,
+    pub(crate) digit_k: TorusPrecision,
 }
 
 pub type GGSWPreparedBackendRef<'a, B> = GGSWPrepared<<B as Backend>::BufRef<'a>, B>;
@@ -41,16 +39,11 @@ impl<D: Data, B: Backend> LWEInfos for GGSWPrepared<D, B> {
     }
 
     fn max_size(&self) -> usize {
-        crate::layouts::key_size(
-            self.base2k,
-            self.dnum(),
-            crate::layouts::digit_k_of(self.base2k, self.dsize),
-            self.k_aux,
-        )
+        crate::layouts::key_size(self.base2k, self.dnum(), self.digit_k, self.k_aux)
     }
 
     fn k(&self) -> TorusPrecision {
-        crate::layouts::key_k(self.dnum(), crate::layouts::digit_k_of(self.base2k, self.dsize), self.k_aux)
+        crate::layouts::key_k(self.dnum(), self.digit_k, self.k_aux)
     }
 }
 
@@ -65,8 +58,8 @@ impl<D: Data, B: Backend> GGSWInfos for GGSWPrepared<D, B> {
         self.k_aux
     }
 
-    fn dsize(&self) -> Dsize {
-        self.dsize
+    fn digit_k(&self) -> TorusPrecision {
+        self.digit_k
     }
 
     fn dnum(&self) -> Dnum {
@@ -84,7 +77,7 @@ where
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        dsize: Dsize,
+        digit_k: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GGSWPrepared<B::OwnedBuf, B> {
@@ -94,7 +87,7 @@ where
             dnum,
             k_aux,
             rank,
-            dsize,
+            digit_k,
         })
     }
 
@@ -115,19 +108,26 @@ where
                 PrepareHint::Reuse,
             ),
             base2k: infos.base2k(),
-            dsize: infos.dsize(),
+            digit_k: infos.digit_k(),
             k_aux: infos.k_aux(),
         }
     }
 
-    fn ggsw_prepared_bytes_of(&self, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
+    fn ggsw_prepared_bytes_of(
+        &self,
+        base2k: Base2K,
+        dnum: Dnum,
+        digit_k: TorusPrecision,
+        k_aux: TorusPrecision,
+        rank: Rank,
+    ) -> usize {
         self.ggsw_prepared_bytes_of_from_infos(&GGSWLayout {
             n: self.ring_degree(),
             base2k,
             dnum,
             k_aux,
             rank,
-            dsize,
+            digit_k,
         })
     }
 
@@ -171,7 +171,7 @@ where
             let other = other.to_backend_ref();
             operand_degree(self.ring_degree().as_usize(), &[res.n(), other.n()]);
             assert_eq!(res.base2k, other.base2k);
-            assert_eq!(res.dsize, other.dsize);
+            assert_eq!(res.digit_k, other.digit_k);
             assert!(
                 scratch.available() >= self.ggsw_prepare_tmp_bytes(&res),
                 "scratch.available(): {} < GGSWPreparedFactory::ggsw_prepare_tmp_bytes: {}",
@@ -220,7 +220,7 @@ impl<B: Backend> GGSWPreparedToBackendRef<B> for GGSWPrepared<B::OwnedBuf, B> {
             noise: crate::layouts::LWEInfos::noise(&self),
             base2k: self.base2k,
             k_aux: self.k_aux,
-            dsize: self.dsize,
+            digit_k: self.digit_k,
             data: self.data.to_backend_ref(),
         }
     }
@@ -245,7 +245,7 @@ impl<B: Backend> GGSWPreparedToBackendMut<B> for GGSWPrepared<B::OwnedBuf, B> {
             noise: None,
             base2k: self.base2k,
             k_aux: self.k_aux,
-            dsize: self.dsize,
+            digit_k: self.digit_k,
             data: self.data.to_backend_mut(),
         }
     }

@@ -41,7 +41,7 @@ where
             base2k: base2k.into(),
             dnum: dnum.into(),
             k_aux: (base2k + module.log_n()).into(),
-            dsize: Dsize(1),
+            digit_k: crate::layouts::digit_k_of(base2k, Dsize(1)),
             rank: rank.into(),
         };
 
@@ -129,7 +129,7 @@ pub fn test_gglwe_tensor_key_compressed_encrypt_sk<BE: crate::test_suite::noise:
             base2k: base2k.into(),
             dnum: dnum.into(),
             k_aux: (base2k + module.log_n()).into(),
-            dsize: Dsize(1),
+            digit_k: crate::layouts::digit_k_of(base2k, Dsize(1)),
             rank: rank.into(),
         };
 

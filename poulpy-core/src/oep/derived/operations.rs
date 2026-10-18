@@ -16,7 +16,7 @@ where
     A: crate::layouts::GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos,
 {
     assert!(res.dnum() <= a.dnum());
-    assert_eq!(res.dsize(), a.dsize());
+    assert_eq!(res.digit_k(), a.digit_k());
     assert_eq!(res.rank(), a.rank());
     let rows: usize = res.dnum().into();
     let cols: usize = (res.rank() + 1).into();

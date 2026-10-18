@@ -2,8 +2,8 @@ use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo};
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEBackendMut, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWEInfos, LWEInfos,
-    Rank, TorusPrecision,
+    Base2K, Degree, Dnum, GGLWE, GGLWEBackendMut, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWEInfos, LWEInfos, Rank,
+    TorusPrecision,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use poulpy_hal::layouts::ZnxWord;
@@ -20,7 +20,7 @@ pub struct GGLWEToGGSWKeyLayout {
     pub dnum: Dnum,
     pub k_aux: TorusPrecision,
     pub rank: Rank,
-    pub dsize: Dsize,
+    pub digit_k: TorusPrecision,
 }
 
 #[derive(PartialEq, Eq, Clone)]
@@ -48,7 +48,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyBackendRef<'a, BE> {
             noise: key_i.noise.clone(),
             base2k: key_i.base2k,
             k_aux: key_i.k_aux,
-            dsize: key_i.dsize,
+            digit_k: key_i.digit_k,
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_ref::<BE>(&key_i.data),
         })
     }
@@ -82,7 +82,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyBackendMut<'a, BE> {
             noise: key_i.noise.clone(),
             base2k: key_i.base2k,
             k_aux: key_i.k_aux,
-            dsize: key_i.dsize,
+            digit_k: key_i.digit_k,
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_mut::<BE>(&key_i.data),
         })
     }
@@ -95,7 +95,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyBackendMut<'a, BE> {
             noise: None,
             base2k: key_i.base2k,
             k_aux: key_i.k_aux,
-            dsize: key_i.dsize,
+            digit_k: key_i.digit_k,
             data: poulpy_hal::layouts::mat_znx_backend_mut_from_mut::<BE>(&mut key_i.data),
         })
     }
@@ -159,8 +159,8 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GGLWEToGGSWKey<D, W> {
         self.keys[0].rank_out()
     }
 
-    fn dsize(&self) -> Dsize {
-        self.keys[0].dsize()
+    fn digit_k(&self) -> TorusPrecision {
+        self.keys[0].digit_k()
     }
 
     fn dnum(&self) -> Dnum {
@@ -178,16 +178,11 @@ impl LWEInfos for GGLWEToGGSWKeyLayout {
     }
 
     fn max_size(&self) -> usize {
-        crate::layouts::key_size(
-            self.base2k,
-            self.dnum,
-            crate::layouts::digit_k_of(self.base2k, self.dsize),
-            self.k_aux,
-        )
+        crate::layouts::key_size(self.base2k, self.dnum, self.digit_k, self.k_aux)
     }
 
     fn k(&self) -> TorusPrecision {
-        crate::layouts::key_k(self.dnum, crate::layouts::digit_k_of(self.base2k, self.dsize), self.k_aux)
+        crate::layouts::key_k(self.dnum, self.digit_k, self.k_aux)
     }
 }
 
@@ -210,8 +205,8 @@ impl GGLWEInfos for GGLWEToGGSWKeyLayout {
         self.rank
     }
 
-    fn dsize(&self) -> Dsize {
-        self.dsize
+    fn digit_k(&self) -> TorusPrecision {
+        self.digit_k
     }
 
     fn rank_out(&self) -> Rank {
@@ -253,16 +248,23 @@ impl<W: ZnxWord> GGLWEToGGSWKey<AlignedBuf, W> {
             infos.n(),
             infos.base2k(),
             infos.dnum(),
-            infos.dsize(),
+            infos.digit_k(),
             infos.k_aux(),
             infos.rank(),
         )
     }
 
-    pub(crate) fn alloc(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> Self {
+    pub(crate) fn alloc(
+        n: Degree,
+        base2k: Base2K,
+        dnum: Dnum,
+        digit_k: TorusPrecision,
+        k_aux: TorusPrecision,
+        rank: Rank,
+    ) -> Self {
         GGLWEToGGSWKey {
             keys: (0..rank.as_usize())
-                .map(|_| GGLWE::alloc(n, base2k, dnum, dsize, k_aux, rank, rank))
+                .map(|_| GGLWE::alloc(n, base2k, dnum, digit_k, k_aux, rank, rank))
                 .collect(),
         }
     }
@@ -280,14 +282,14 @@ impl<W: ZnxWord> GGLWEToGGSWKey<AlignedBuf, W> {
             infos.n(),
             infos.base2k(),
             infos.dnum(),
-            infos.dsize(),
+            infos.digit_k(),
             infos.k_aux(),
             infos.rank(),
         )
     }
 
-    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
-        rank.as_usize() * GGLWE::<AlignedBuf, W>::bytes_of(n, base2k, dnum, dsize, k_aux, rank, rank)
+    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, digit_k: TorusPrecision, k_aux: TorusPrecision, rank: Rank) -> usize {
+        rank.as_usize() * GGLWE::<AlignedBuf, W>::bytes_of(n, base2k, dnum, digit_k, k_aux, rank, rank)
     }
 }
 
