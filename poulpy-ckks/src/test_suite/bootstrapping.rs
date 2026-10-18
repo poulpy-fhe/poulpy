@@ -235,9 +235,10 @@ where
             first_factor_key: Some(first_factor_key),
             automorphism_key: tp.atk_layout(),
             tensor_key: tp.tsk_layout(),
+            // The first-factor keys switch back to the dense secret.
             encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
                 dense_to_sparse: tp.ksk_layout(log_modulus_in),
-                sparse_to_dense: tp.ksk_layout(k_boot),
+                sparse_to_dense: None,
             }),
         };
         let boot_spec = ckks_spec(n, base2k, log_delta, k_boot - log_delta);
@@ -390,7 +391,7 @@ where
         tensor_key: tp.tsk_layout(),
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
             dense_to_sparse: tp.ksk_layout(log_modulus_in),
-            sparse_to_dense: tp.ksk_layout(k_boot),
+            sparse_to_dense: Some(tp.ksk_layout(k_boot)),
         }),
     };
     let scratch_size = bootstrap_setup_tmp_bytes(
@@ -741,7 +742,7 @@ where
         tensor_key: tp.tsk_layout(),
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
             dense_to_sparse: tp.ksk_layout(log_modulus_in),
-            sparse_to_dense: tp.ksk_layout(k_boot),
+            sparse_to_dense: Some(tp.ksk_layout(k_boot)),
         }),
     };
     let scratch_size = bootstrap_setup_tmp_bytes(
@@ -1052,7 +1053,7 @@ where
         tensor_key: tp.tsk_layout(),
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
             dense_to_sparse: tp.ksk_layout(log_modulus_in),
-            sparse_to_dense: tp.ksk_layout(k_boot),
+            sparse_to_dense: Some(tp.ksk_layout(k_boot)),
         }),
     };
     let scratch_size = bootstrap_setup_tmp_bytes(

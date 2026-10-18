@@ -654,7 +654,7 @@ fn keys_layout(
         tensor_key: tensor_key.into(),
         encapsulation: Some(EncapsulationKeysLayout {
             dense_to_sparse: dense_to_sparse.into(),
-            sparse_to_dense: wide.into(),
+            sparse_to_dense: (!spec.c2s_first_factor_on_raise).then(|| wide.into()),
         }),
         first_factor_key: spec
             .c2s_first_factor_on_raise
@@ -776,7 +776,10 @@ fn validate_modulus_bounds(spec: &PresetSpec, bootstrap_k: usize, keys: &Bootstr
         .as_ref()
         .context("bootstrapping preset is missing encapsulation keys")?;
     validate_key("dense-to-sparse", &encapsulation.dense_to_sparse, sparse)?;
-    validate_key("sparse-to-dense", &encapsulation.sparse_to_dense, dense)
+    if let Some(key) = &encapsulation.sparse_to_dense {
+        validate_key("sparse-to-dense", key, dense)?;
+    }
+    Ok(())
 }
 
 fn validate_key<K: GGLWEInfos + LWEInfos>(name: &str, key: &K, limit: usize) -> Result<()> {
@@ -835,7 +838,7 @@ mod tests {
         assert_eq!(keys.automorphism_key.k().as_usize(), 847);
         // EvalMod starts 100 bits below the raised width: room for a 2-limb digit.
         assert_eq!(key_shapes([&keys.tensor_key]), [(104, 7)]);
-        assert_eq!(encapsulation.sparse_to_dense.k().as_usize(), 847);
+        assert_eq!(encapsulation.sparse_to_dense.unwrap().k().as_usize(), 847);
         assert_eq!(encapsulation.dense_to_sparse.k().as_usize(), 119);
         // A wider digit leaves less than a digit of guard under either bound.
         assert!(preset.with_dsizes(2, 1).is_err());
@@ -937,7 +940,7 @@ mod tests {
             wide
         );
         assert!(key.k_aux >= key.k_digit && key.k().as_usize() <= preset.max_dense_modulus());
-        assert_eq!(encapsulation.sparse_to_dense.k().as_usize(), wide.3);
+        assert_eq!(encapsulation.sparse_to_dense.unwrap().k().as_usize(), wide.3);
         assert!(preset.with_dsizes(5, 1).is_err());
         assert!(preset.with_dsizes(4, 1).is_ok());
 
@@ -973,6 +976,9 @@ mod tests {
         );
         assert!(key.glwe.k > key.k_secret && key.glwe.k.as_usize() <= preset.max_dense_modulus());
         assert!(base.keys_layout().first_factor_key.is_none());
+        // The first-factor keys switch to the dense secret: no sparse-to-dense key.
+        assert!(keys.encapsulation.unwrap().sparse_to_dense.is_none());
+        assert!(base.keys_layout().encapsulation.unwrap().sparse_to_dense.is_some());
 
         // The first paid factor runs at the raised width, where the first factor ran before.
         assert!(keys.automorphism_key.gglwe_layout().max_input_k().as_usize() >= preset.bootstrap_k());

@@ -91,8 +91,10 @@ pub trait BootstrappingKeys<BE: Backend> {
     fn tensor_key(&self) -> &Self::TensorKey;
 
     /// Sparse-secret encapsulation keys `(denseToSparse, sparseToDense)`, or
-    /// `None` when the trick is disabled.
-    fn encapsulation_keys(&self) -> Option<(&Self::SwitchingKey, &Self::SwitchingKey)>;
+    /// `None` when the trick is disabled. There is no `sparseToDense` key when
+    /// the first `CoeffsToSlots` factor is applied on the raise, whose keys
+    /// switch to the dense secret instead.
+    fn encapsulation_keys(&self) -> Option<(&Self::SwitchingKey, Option<&Self::SwitchingKey>)>;
 
     /// Key of the diagonal of slot rotation `rotation` of a first
     /// `CoeffsToSlots` factor left to the modulus raise: a GLWE encryption of
@@ -143,6 +145,10 @@ impl<BE: Backend, K: GetTensorKey<BE>> GetTensorKey<BE> for CoveringKeys<'_, K> 
     }
 }
 
+/// Sparse-secret encapsulation keys `(denseToSparse, sparseToDense)`, without
+/// `sparseToDense` when the first `CoeffsToSlots` factor is applied on the raise.
+pub type EncapsulationKeys<K> = (K, Option<K>);
+
 /// The **unprepared** bootstrapping keys: encrypted but not yet preprocessed.
 ///
 /// This is the form produced by [`BootstrappingContext::generate_keys`] and the
@@ -156,8 +162,9 @@ pub struct BootstrappingKeySet<D: Data, W: ZnxWord> {
     pub rotation_keys: HashMap<i64, GLWEAutomorphismKey<D, W>>,
     /// Relinearization (tensor) key for EvalMod, covering its widest ciphertext.
     pub tensor_key: GLWETensorKey<D, W>,
-    /// `(denseToSparse, sparseToDense)` encapsulation keys, or `None`.
-    pub encapsulation_keys: Option<(GLWESwitchingKey<D, W>, GLWESwitchingKey<D, W>)>,
+    /// `(denseToSparse, sparseToDense)` encapsulation keys, or `None`; no
+    /// `sparseToDense` key with the first factor on the raise.
+    pub encapsulation_keys: Option<EncapsulationKeys<GLWESwitchingKey<D, W>>>,
     /// First-factor keys by slot rotation, possibly none: encryptions under the
     /// dense secret of the rotated raise secret (the sparse one under
     /// encapsulation), see [`FirstFactorKeyLayout`].
@@ -173,8 +180,9 @@ pub struct BootstrappingKeysPrepared<D: Data, BE: Backend> {
     pub rotation_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>,
     /// Prepared relinearization (tensor) key for EvalMod, covering its widest ciphertext.
     pub tensor_key: GLWETensorKeyPrepared<D, BE>,
-    /// Prepared `(denseToSparse, sparseToDense)` encapsulation keys, or `None`.
-    pub encapsulation_keys: Option<(GLWESwitchingKeyPrepared<D, BE>, GLWESwitchingKeyPrepared<D, BE>)>,
+    /// Prepared `(denseToSparse, sparseToDense)` encapsulation keys, or `None`;
+    /// no `sparseToDense` key with the first factor on the raise.
+    pub encapsulation_keys: Option<EncapsulationKeys<GLWESwitchingKeyPrepared<D, BE>>>,
     /// Prepared first-factor keys by slot rotation, possibly none.
     pub first_factor_keys: HashMap<i64, CnvPVecR<D, BE::DftWord, BE>>,
 }
@@ -198,8 +206,8 @@ where
         &self.tensor_key
     }
 
-    fn encapsulation_keys(&self) -> Option<(&Self::SwitchingKey, &Self::SwitchingKey)> {
-        self.encapsulation_keys.as_ref().map(|(d2s, s2d)| (d2s, s2d))
+    fn encapsulation_keys(&self) -> Option<(&Self::SwitchingKey, Option<&Self::SwitchingKey>)> {
+        self.encapsulation_keys.as_ref().map(|(d2s, s2d)| (d2s, s2d.as_ref()))
     }
 
     fn first_factor_key(&self, rotation: i64) -> Option<CnvPVecRBackendRef<'_, BE>> {
@@ -247,8 +255,11 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
         let encapsulation_keys = self.encapsulation_keys.as_ref().map(|(d2s, s2d)| {
             let mut d2s_prepared = module.glwe_switching_key_prepared_alloc_from_infos(d2s);
             module.glwe_switching_key_prepare(&mut d2s_prepared, d2s, scratch);
-            let mut s2d_prepared = module.glwe_switching_key_prepared_alloc_from_infos(s2d);
-            module.glwe_switching_key_prepare(&mut s2d_prepared, s2d, scratch);
+            let s2d_prepared = s2d.as_ref().map(|s2d| {
+                let mut prepared = module.glwe_switching_key_prepared_alloc_from_infos(s2d);
+                module.glwe_switching_key_prepare(&mut prepared, s2d, scratch);
+                prepared
+            });
             (d2s_prepared, s2d_prepared)
         });
 
@@ -335,14 +346,16 @@ pub struct FirstFactorKeyLayout {
 ///
 /// The compiled recipe is the source of truth for whether encapsulation is
 /// enabled and for the ephemeral secret's Hamming weight. This type describes
-/// only the two physical key-switch layouts. Key generation rejects a layout
-/// whose optional presence disagrees with the recipe.
+/// only the physical key-switch layouts. Key generation rejects a layout whose
+/// optional presence disagrees with the recipe, here or for `sparseToDense`.
 #[derive(Clone, Copy, Debug)]
 pub struct EncapsulationKeysLayout {
     /// `denseToSparse` key layout (sized at the input modulus).
     pub dense_to_sparse: GLWESwitchingKeyLayout,
-    /// `sparseToDense` key layout (sized at the bootstrap modulus).
-    pub sparse_to_dense: GLWESwitchingKeyLayout,
+    /// `sparseToDense` key layout (sized at the bootstrap modulus), or `None`
+    /// when the first `CoeffsToSlots` factor is applied on the raise: its keys
+    /// switch each diagonal's term to the dense secret, and this key is unused.
+    pub sparse_to_dense: Option<GLWESwitchingKeyLayout>,
 }
 
 impl<BE: Backend, F> BootstrappingContext<BE, F> {
@@ -409,6 +422,13 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
             if layout.first_factor_key.is_some() { "a" } else { "no" },
             first_factor_rotations.len()
         );
+        if let Some(encaps) = &layout.encapsulation {
+            anyhow::ensure!(
+                encaps.sparse_to_dense.is_some() == first_factor_rotations.is_empty(),
+                "bootstrapping key layout {} a sparse-to-dense key, which the recipe uses only without the first factor on the raise",
+                if encaps.sparse_to_dense.is_some() { "has" } else { "lacks" }
+            );
+        }
 
         // Rotation keys: the union of both DFTs' (and the bypass') Galois elements.
         let mut gal_set: BTreeSet<i64> = BTreeSet::new();
@@ -476,13 +496,13 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
                 module.glwe_secret_fill_ternary_hw(&mut sk_sparse, hamming_weight, source_xs);
                 *sk_sparse.dist_mut() = Distribution::ENCAPSULATED("sparse-encapsulation");
 
-                let d2s_layout = encaps.dense_to_sparse;
-                let s2d_layout = encaps.sparse_to_dense;
-
-                let mut dense_to_sparse = module.glwe_switching_key_alloc_from_infos(&d2s_layout);
+                let mut dense_to_sparse = module.glwe_switching_key_alloc_from_infos(&encaps.dense_to_sparse);
                 module.glwe_switching_key_encrypt_sk(&mut dense_to_sparse, sk_dense, &sk_sparse, source_xe, source_xa, scratch);
-                let mut sparse_to_dense = module.glwe_switching_key_alloc_from_infos(&s2d_layout);
-                module.glwe_switching_key_encrypt_sk(&mut sparse_to_dense, &sk_sparse, sk_dense, source_xe, source_xa, scratch);
+                let sparse_to_dense = encaps.sparse_to_dense.map(|s2d_layout| {
+                    let mut key = module.glwe_switching_key_alloc_from_infos(&s2d_layout);
+                    module.glwe_switching_key_encrypt_sk(&mut key, &sk_sparse, sk_dense, source_xe, source_xa, scratch);
+                    key
+                });
                 // The raise runs under the sparse secret: so do the first factor's products.
                 first_factor_keys = first_factor(&sk_sparse, source_xe, source_xa, scratch);
                 Some((dense_to_sparse, sparse_to_dense))

@@ -169,8 +169,8 @@ where
         &self.tensor_key
     }
 
-    fn encapsulation_keys(&self) -> Option<(&Self::SwitchingKey, &Self::SwitchingKey)> {
-        self.encapsulation_keys.as_ref().map(|(d2s, s2d)| (d2s, s2d))
+    fn encapsulation_keys(&self) -> Option<(&Self::SwitchingKey, Option<&Self::SwitchingKey>)> {
+        self.encapsulation_keys.as_ref().map(|(d2s, s2d)| (d2s, Some(s2d)))
     }
 }
 
@@ -246,7 +246,7 @@ fn keys_layout(atk: &GGLWELayout, d2s: &GGLWELayout, s2d: &GGLWELayout, encapsul
         tensor_key: (*atk).into(),
         encapsulation: encapsulate.then(|| EncapsulationKeysLayout {
             dense_to_sparse: (*d2s).into(),
-            sparse_to_dense: (*s2d).into(),
+            sparse_to_dense: Some((*s2d).into()),
         }),
     }
 }

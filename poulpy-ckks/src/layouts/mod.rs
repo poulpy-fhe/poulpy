@@ -123,7 +123,7 @@ pub use bootstrapping::{
 pub(crate) use bootstrapping_keys::CoveringKeys;
 pub use bootstrapping_keys::{
     BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, CKKSFoldKeysLayout,
-    EncapsulationKeysLayout, FirstFactorKeyLayout, RingSwitchKeySet, RingSwitchKeys, RingSwitchKeysLayout,
+    EncapsulationKeys, EncapsulationKeysLayout, FirstFactorKeyLayout, RingSwitchKeySet, RingSwitchKeys, RingSwitchKeysLayout,
     RingSwitchKeysPrepared,
 };
 pub use ciphertext::{CKKSCiphertext, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSRingCiphertext, ScratchArenaTakeCKKS};

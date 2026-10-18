@@ -121,13 +121,17 @@ where
         carved += in_ct_bytes;
     }
 
-    if let Some(encaps) = &keys_layout.encapsulation {
+    if let Some((encaps, sparse_to_dense)) = keys_layout
+        .encapsulation
+        .as_ref()
+        .and_then(|encaps| encaps.sparse_to_dense.as_ref().map(|s2d| (encaps, s2d)))
+    {
         nested = nested.max(BE::ckks_encapsulated_mod_up_tmp_bytes(
             module,
             &boot_layout,
             &in_layout,
             &encaps.dense_to_sparse,
-            &encaps.sparse_to_dense,
+            sparse_to_dense,
         ));
     }
 
@@ -956,6 +960,11 @@ where
 
     match keys.encapsulation_keys() {
         Some((dense_to_sparse, sparse_to_dense)) => {
+            ckks_ensure!(
+                sparse_to_dense.is_some(),
+                "the encapsulated ModUp needs a sparse-to-dense key, which a key set for the first factor on the raise has not"
+            );
+            let sparse_to_dense = sparse_to_dense.unwrap();
             BE::ckks_encapsulated_mod_up(
                 module,
                 dst,
