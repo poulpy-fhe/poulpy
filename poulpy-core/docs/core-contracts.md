@@ -195,8 +195,8 @@ output-grid coefficient units:
 - `I = r*w*q_u*V_pk*2^(-2*a)`, the inherited public-key error; this assumes centered laws or zero inherited mask errors. Noncentered laws with inherited mask error record an unbounded estimate;
 - `T = r*w*q_u*(1 + r*w*q_S)*q_t` when key limbs are dropped (`d < a`) and zero otherwise: a dropped balanced-digit tail is uniform over one ulp of `k_sample`, of mean `-2^(-base2k-1)/(1 - 2^(-base2k))` ulps there, and `q_t` is its second moment;
 - `F = (1 + r*w*q_S)*sigma_fresh^2*2^(-2*d)`, the fresh body and mask error;
-- `R = (1 + r*w*q_S)*q_r` when `d > 0` and zero otherwise: rounding `d` uniform bits has variance `(1 - 4^-d)/12` and, ties rounding up, mean `-2^-(d+1)`; `q_r` is its second moment;
-- `C`, the coherent excess. Noncentered `u` and `S`, the tail mean and the rounding mean add up along ring products. With every error split into its mean and an independent fluctuation, `C` sums each product's average second moment from `Ring::product_moments`, less what `T` and `R` count. It is zero for centered laws on the negacyclic ring.
+- `R = (1 + r*w*q_S)*q_r` when `d > 0` and zero otherwise: rounding `d` uniform bits, ties to even, has mean 0 and second moment `q_r = (1 + 2*4^-d)/12`;
+- `C`, the coherent excess. Noncentered `u` and `S` and the tail mean add up along ring products. With every error split into its mean and an independent fluctuation, `C` sums each product's average second moment from `Ring::product_moments`, less what `T` and `R` count. It is zero for centered laws on the negacyclic ring.
 
 The phase estimate is `V_ct = I + T + F + R + C`. Each component records its
 inherited error, `r*w*q_u*q_t` when limbs are dropped, `sigma_fresh^2*2^(-2*d)`,

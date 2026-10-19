@@ -76,9 +76,9 @@ fn sample_precision(output: TorusPrecision, key: TorusPrecision, base2k: usize) 
 /// Second moment, averaged over coefficients, that the key-tail and rounding
 /// errors add to the phase beyond `(r*w*q_u*q_t + q_r) * (1 + r*w*q_S)`, the
 /// sum of their per-component terms. `u` and `s` are the ephemeral and secret
-/// `(mean, second moment)`, `tail` the `(mean, variance)` of a dropped-limb
-/// tail and `mu_r` the output rounding's mean. Each error is split into its
-/// mean and an independent fluctuation; products of distinct fluctuations are
+/// `(mean, second moment)` and `tail` the `(mean, variance)` of a dropped-limb
+/// tail; the output rounding is centered. Each error is split into its mean
+/// and an independent fluctuation; products of distinct fluctuations are
 /// uncorrelated, and `moments` gives each one's average weight.
 fn coherent_excess(
     m: &ProductMoments,
@@ -86,7 +86,6 @@ fn coherent_excess(
     (mu_u, q_u): (f64, f64),
     (mu_s, q_s): (f64, f64),
     (tau, v_t): (f64, f64),
-    mu_r: f64,
 ) -> f64 {
     let (r, w) = (rank, m.weight);
     let (v_u, v_s, q_t) = (q_u - mu_u * mu_u, q_s - mu_s * mu_s, v_t + tau * tau);
@@ -96,15 +95,12 @@ fn coherent_excess(
         - w * w * q_t * (v_u * mu_s * mu_s + v_s * mu_u * mu_u + mu_u * mu_u * mu_s * mu_s);
     // A fluctuating `u` or `S` against the means of the other factors.
     let single = mu_s * v_u * tau * tau * (2.0 * m.sum_cross_weight + r * mu_s * m.sum_weight)
-        + mu_u * v_s * tau * (r * mu_u * tau * m.sum_weight + 2.0 * mu_r * m.sum_cross_weight)
+        + r * (mu_u * tau).powi(2) * v_s * m.sum_weight
         + v_t * (mu_u * mu_s).powi(2) * m.sum_weight;
-    // The phase mean `-(a (1 1) + b (1 1 1))`, the body rounding's mean included.
-    let (a, b) = (r * (mu_u * tau + mu_r * mu_s), r * r * mu_u * mu_s * tau);
-    let mean = a * a * m.sum_square
-        + 2.0 * a * b * m.sum_triple_sum
-        + b * b * m.triple_sum_square
-        + 2.0 * mu_r * (a * m.sum + b * m.triple_sum);
-    r * r * triple + r * r * single + mean - r * w * (mu_u * mu_u * tau * tau + mu_s * mu_s * mu_r * mu_r)
+    // The phase mean `-(a (1 1) + b (1 1 1))`.
+    let (a, b) = (r * mu_u * tau, r * r * mu_u * mu_s * tau);
+    let mean = a * a * m.sum_square + 2.0 * a * b * m.sum_triple_sum + b * b * m.triple_sum_square;
+    r * r * (triple + single) + mean - r * w * mu_u * mu_u * tau * tau
 }
 
 fn public_key_noise<R: GLWEInfos>(
@@ -151,23 +147,19 @@ fn public_key_noise<R: GLWEInfos>(
     };
     // Normalizing to the output drops `d` uniform bits; ties go to even, so the
     // error has mean 0 and second moment `(1 + 2·4^-d)/12`.
-    let rounding = if sample > res.k() {
-        (0.0, (1.0 + 2.0 * scale) / 12.0)
-    } else {
-        (0.0, 0.0)
-    };
-    let excess = if tail == (0.0, 0.0) && rounding == (0.0, 0.0) {
+    let rounding = if sample > res.k() { (1.0 + 2.0 * scale) / 12.0 } else { 0.0 };
+    let excess = if tail == (0.0, 0.0) && rounding == 0.0 {
         0.0
     } else {
         match (ephemeral_moments, secret_mean, secret.coefficient_second_moment(n)) {
             (Some(u), Some(mean), Some(second)) => {
-                coherent_excess(&moments, rank as f64, u, (mean, second), tail, rounding.0) / (1.0 + secret_fold)
+                coherent_excess(&moments, rank as f64, u, (mean, second), tail) / (1.0 + secret_fold)
             }
             _ => f64::INFINITY,
         }
     };
     let tail_second = tail.0 * tail.0 + tail.1;
-    let rounding_second = rounding.0 * rounding.0 + rounding.1 + excess;
+    let rounding_second = rounding + excess;
     let fresh = FreshNoiseEstimate::new(Noise::ENCRYPTION.variance(), sample).variance_at(res.k());
     let body = match body_noise {
         PublicKeyBodyNoise::Sampled => fresh,
@@ -286,18 +278,16 @@ mod tests {
         // The 36-bit key lies within one limb past the output: no limb is dropped.
         let sigma2 = Noise::ENCRYPTION.variance() / 256.0;
         // Three binary parties have E[S²] = 3, while a new ephemeral has E[u²] = 1/2.
-        // Four dropped bits round with variance (1 - 4^-4)/12 and mean -2^-5;
-        // E[S] = 3/2 adds the means up along (1 1), of mean 1 and mean square 1366.
-        let rounding = (1.0 - 1.0 / 256.0) / 12.0 + 1.0 / 1024.0;
-        let excess = (4.0 * 2.25 * 1366.0 + 4.0 * 1.5 - 128.0 * 2.25) / 1024.0;
-        let component_rounding = rounding + excess / 385.0;
+        // Four dropped bits round ties to even, centered: E[S] = 3/2 meets no
+        // noncentered error, so there is no coherent excess.
+        let rounding = (1.0 + 2.0 / 256.0) / 12.0;
         let inherited = 128.0 * 0.5 * (3.0 * Noise::ENCRYPTION.variance() / 256.0);
-        let expected = excess + inherited + 385.0 * sigma2 + 385.0 * rounding;
+        let expected = inherited + 385.0 * sigma2 + 385.0 * rounding;
         assert_eq!(result.parties(), 3);
         assert_eq!(result.components().len(), layout.rank.as_usize() + 1);
-        assert!((result.body().variance() - (inherited + sigma2 + component_rounding)).abs() < 1e-12);
+        assert!((result.body().variance() - (inherited + sigma2 + rounding)).abs() < 1e-12);
         for component in &result.components()[1..] {
-            assert_eq!(component.variance(), sigma2 + component_rounding);
+            assert_eq!(component.variance(), sigma2 + rounding);
         }
         assert_eq!(result.phase_noise(layout.n.as_usize()).precision(), layout.k);
         assert!((result.phase_noise(layout.n.as_usize()).variance() - expected).abs() < expected * 1e-15);
@@ -327,7 +317,7 @@ mod tests {
         // -2^-9 / (1 - 2^-8) there; rounding to 32 bits drops 8 uniform bits.
         let unit = (-16.0_f64).exp2();
         let tail = (0.5 / 256.0 / (1.0 - 1.0 / 256.0_f64)).powi(2) * unit + unit / 12.0;
-        let rounding = unit / 4.0 + (1.0 - unit) / 12.0;
+        let rounding = (1.0 + 2.0 * unit) / 12.0;
         let fresh = Noise::ENCRYPTION.variance() * unit;
         let body = 32.0 * (Noise::ENCRYPTION.variance() * (-64.0_f64).exp2() + tail) + fresh + rounding;
         assert!((noise.body().variance() - body).abs() <= body * 1e-12);
