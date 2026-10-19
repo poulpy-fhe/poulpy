@@ -12,7 +12,7 @@ use poulpy_ckks::{
     reference::ckks_encode_linear_transformation_into,
 };
 use poulpy_core::layouts::{
-    Base2K, DiagonalArithmetic, Diagonals, GLWELayout, GetDegree, LWEInfos, LinearTransformationStrategy, Rank,
+    Base2K, DiagonalArithmetic, Diagonals, GLWELayout, GetDegree, LWEInfos, LinearTransformationStrategy, Rank, TorusPrecision,
 };
 use poulpy_hal::{
     api::CnvPVecAlloc,
@@ -286,8 +286,20 @@ pub trait BlasEncodingOps<BE: Backend>: CKKSModuleAlloc<BE> + GetDegree + Sized 
 
 impl<BE: Backend> BlasEncodingOps<BE> for Module<BE> where Module<BE>: CKKSModuleAlloc<BE> {}
 
-/// `block` after `lt`: at the width `lt` leaves of it, its slots joined with the map's, sparse where both are.
+/// `block` after `lt` evaluated into a ciphertext of width `dst_k`, at `block`'s label: a map never repeats with a longer
+/// period than the blocks it reads, so blas keeps their label, where poulpy-ckks reads one off the diagonals' degree,
+/// which a backend's minimum degree may raise.
+pub(crate) fn mapped_block_into<P: LtDiagonalMeta>(
+    block: CKKSLayout,
+    lt: &LinearTransformation<P>,
+    dst_k: TorusPrecision,
+) -> CKKSLayout {
+    let mut mapped = ckks_linear_transformation_output_layout(lt, block, dst_k);
+    mapped.meta.log_sparsity = block.meta.log_sparsity;
+    mapped
+}
+
+/// [`mapped_block_into`] at `block`'s width.
 pub(crate) fn mapped_block<P: LtDiagonalMeta>(block: CKKSLayout, lt: &LinearTransformation<P>) -> CKKSLayout {
-    let k = block.k();
-    ckks_linear_transformation_output_layout(lt, block, k)
+    mapped_block_into(block, lt, block.k())
 }
