@@ -415,18 +415,35 @@ unsafe fn same_base_block<L: NormalizeLanes, const WHOLE: bool>(g: &SameBase, re
             }
             s -= 1;
         }
-        let (low, high) = split::<L, WHOLE>(unsafe { load_limb::<L>(a, s, i) }, carry, b, g.lsh);
-        let kept = if g.padding > 0 {
-            let p = g.padding;
-            half = L::and(L::srl(low, p - 1), L::splat(1));
-            sticky = L::or(sticky, L::ne_zero(L::and(low, L::splat(low_mask(p - 1)))));
-            L::srl(low, p)
+        if WHOLE {
+            let w = b - g.padding;
+            let mut t = L::wide_add(unsafe { load_limb::<L>(a, s, i) }, carry);
+            if g.padding > 0 {
+                let p = g.padding;
+                let low = L::wide_low(t);
+                half = L::and(L::srl(low, p - 1), L::splat(1));
+                sticky = L::or(sticky, L::ne_zero(L::and(low, L::splat(low_mask(p - 1)))));
+                t = L::wide_sra(t, p);
+            }
+            t = L::wide_add_n(t, L::and(half, L::or(sticky, L::and(L::wide_low(t), L::splat(1)))));
+            carry = L::wide_sra(L::wide_add_n(t, L::splat(1 << (w - 1))), w);
+            // Sign-extends the low `w` bits and shifts the digit up by the padding in one step.
+            let digit = L::sra(L::shl(L::wide_low(t), 64 - w), 64 - b);
+            unsafe { L::store(res.ptr.add((g.active - 1) * res.stride + i), digit) };
         } else {
-            low
-        };
-        let (digit, up) = center::<L>(round_even::<L>(kept, half, sticky), b - g.padding);
-        carry = L::wide_add_n(high, up);
-        unsafe { L::store(res.ptr.add((g.active - 1) * res.stride + i), L::shl(digit, g.padding)) };
+            let (low, high) = split::<L, false>(unsafe { load_limb::<L>(a, s, i) }, carry, b, g.lsh);
+            let kept = if g.padding > 0 {
+                let p = g.padding;
+                half = L::and(L::srl(low, p - 1), L::splat(1));
+                sticky = L::or(sticky, L::ne_zero(L::and(low, L::splat(low_mask(p - 1)))));
+                L::srl(low, p)
+            } else {
+                low
+            };
+            let (digit, up) = center::<L>(round_even::<L>(kept, half, sticky), b - g.padding);
+            carry = L::wide_add_n(high, up);
+            unsafe { L::store(res.ptr.add((g.active - 1) * res.stride + i), L::shl(digit, g.padding)) };
+        }
         g.active - 1
     };
     for d in (0..top).rev() {
