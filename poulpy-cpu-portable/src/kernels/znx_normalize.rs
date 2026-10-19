@@ -369,8 +369,8 @@ struct SameBase {
 }
 
 impl SameBase {
-    /// With `|a| <= 2^62`, `a + carry` and `t + 2^(b-1)` fit an i64 when `2 <= b <= 62`:
-    /// `|carry| <= 2^62/(2^b - 1) <= 2^62/3`, the rounding unit included, and `2^(b-1) <= 2^61`.
+    /// With `|a| <= 2^62` and `2 <= b <= 62`, `t = a + carry` plus the rounding increment (at most
+    /// `2^(b-2)`) and `2^(b-1)` stays at most `1.75 * 2^62 + 2`: `|carry| <= 2^62/(2^b - 1) + 1`.
     fn whole(&self) -> bool {
         self.lsh == 0 && (2..=62).contains(&self.base)
     }
@@ -496,27 +496,36 @@ unsafe fn same_base_block<L: NormalizeLanes, const WHOLE: bool>(g: &SameBase, re
             let (low, high) = split::<L, WHOLE>(unsafe { load_limb::<L>(a, s, i) }, carry, b, g.lsh);
             carry = high;
             if g.padding == 0 && s == g.boundary + 1 {
-                half = L::srl(low, b - 1);
-                sticky = L::or(sticky, L::ne_zero(L::and(low, L::splat(low_mask(b - 1)))));
+                if WHOLE {
+                    // The whole dropped limb; rounded at the boundary below.
+                    half = low;
+                } else {
+                    half = L::srl(low, b - 1);
+                    sticky = L::or(sticky, L::ne_zero(L::and(low, L::splat(low_mask(b - 1)))));
+                }
             } else {
                 sticky = L::or(sticky, L::ne_zero(low));
             }
             s -= 1;
         }
         if WHOLE {
-            let w = b - g.padding;
+            let p = g.padding;
             let mut t = L::wide_add(unsafe { load_limb::<L>(a, s, i) }, carry);
-            if g.padding > 0 {
-                let p = g.padding;
-                let low = L::wide_low(t);
-                half = L::and(L::srl(low, p - 1), L::splat(1));
-                sticky = L::or(sticky, L::ne_zero(L::and(low, L::splat(low_mask(p - 1)))));
-                t = L::wide_sra(t, p);
+            // The `e` dropped bits (`p`, else `b`) plus `2^(e-1) - 1 + (odd | sticky)` carry out iff ties to even rounds up.
+            if p > 0 {
+                let odd = L::and(L::srl(L::wide_low(t), p), L::splat(1));
+                t = L::wide_add_n(t, L::add(L::or(odd, sticky), L::splat(low_mask(p - 1))));
+            } else {
+                let odd = L::and(L::wide_low(t), L::splat(1));
+                let up = L::srl(L::add(half, L::add(L::or(odd, sticky), L::splat(low_mask(b - 1)))), b);
+                t = L::wide_add_n(t, up);
             }
-            t = L::wide_add_n(t, L::and(half, L::or(sticky, L::and(L::wide_low(t), L::splat(1)))));
-            carry = L::wide_sra(L::wide_add_n(t, L::splat(1 << (w - 1))), w);
-            // Sign-extends the low `w` bits and shifts the digit up by the padding in one step.
-            let digit = L::sra(L::shl(L::wide_low(t), 64 - w), 64 - b);
+            let u = L::wide_add_n(t, L::splat(1 << (b - 1)));
+            carry = L::wide_sra(u, b);
+            let digit = L::sub(
+                L::and(L::wide_low(u), L::splat(low_mask(b) & !low_mask(p))),
+                L::splat(1 << (b - 1)),
+            );
             unsafe { L::store(res.ptr.add((g.active - 1) * res.stride + i), digit) };
         } else {
             let (low, high) = split::<L, false>(unsafe { load_limb::<L>(a, s, i) }, carry, b, g.lsh);
@@ -537,9 +546,9 @@ unsafe fn same_base_block<L: NormalizeLanes, const WHOLE: bool>(g: &SameBase, re
     for d in (0..top).rev() {
         let x = unsafe { load_limb::<L>(a, d as i64 + g.limb_offset, i) };
         let digit = if WHOLE {
-            let t = L::wide_add(x, carry);
-            carry = L::wide_sra(L::wide_add_n(t, L::splat(1 << (b - 1))), b);
-            L::sra(L::shl(L::wide_low(t), 64 - b), 64 - b)
+            let u = L::wide_add_n(L::wide_add(x, carry), L::splat(1 << (b - 1)));
+            carry = L::wide_sra(u, b);
+            L::sub(L::and(L::wide_low(u), L::splat(low_mask(b))), L::splat(1 << (b - 1)))
         } else {
             let (low, high) = split::<L, false>(x, carry, b, g.lsh);
             let (digit, up) = center::<L>(low, b);
