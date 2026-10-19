@@ -133,6 +133,8 @@ pub trait NormalizeLanes {
     fn or(x: Self::N, y: Self::N) -> Self::N;
     fn shl(x: Self::N, k: u32) -> Self::N;
     fn srl(x: Self::N, k: u32) -> Self::N;
+    /// Sign-filling right shift.
+    fn sra(x: Self::N, k: u32) -> Self::N;
     /// 1 in every lane where `x != 0`, else 0.
     fn ne_zero(x: Self::N) -> Self::N;
     fn wide_add(x: Self::W, y: Self::W) -> Self::W;
@@ -191,6 +193,10 @@ impl<S: NormalizeWord, const W: usize> NormalizeLanes for PortableLanes<S, W> {
     #[inline(always)]
     fn srl(x: [i64; W], k: u32) -> [i64; W] {
         std::array::from_fn(|i| ((x[i] as u64) >> k) as i64)
+    }
+    #[inline(always)]
+    fn sra(x: [i64; W], k: u32) -> [i64; W] {
+        std::array::from_fn(|i| x[i] >> k)
     }
     #[inline(always)]
     fn ne_zero(x: [i64; W]) -> [i64; W] {
@@ -275,6 +281,13 @@ struct SameBase {
     low: i64,
 }
 
+impl SameBase {
+    /// `a + carry` fits the word: `b >= 2` keeps `|carry|` below half the domain bound on `|a|`.
+    fn whole(&self) -> bool {
+        self.lsh == 0 && self.base >= 2
+    }
+}
+
 #[derive(Clone, Copy)]
 struct Cross {
     a_base: u32,
@@ -342,9 +355,13 @@ fn low_mask(bits: u32) -> i64 {
     ((1u64 << bits) - 1) as i64
 }
 
-/// `(t mod 2^b, floor(t / 2^b))` of `t = a * 2^lsh + carry`, without forming `t`.
+/// `(t mod 2^b, floor(t / 2^b))` of `t = a * 2^lsh + carry`; only `WHOLE` (`lsh == 0`, `t` fits) forms `t`.
 #[inline(always)]
-fn split<L: NormalizeLanes>(a: L::W, carry: L::W, b: u32, lsh: u32) -> (L::N, L::W) {
+fn split<L: NormalizeLanes, const WHOLE: bool>(a: L::W, carry: L::W, b: u32, lsh: u32) -> (L::N, L::W) {
+    if WHOLE {
+        let t = L::wide_add(a, carry);
+        return (L::and(L::wide_low(t), L::splat(low_mask(b))), L::wide_sra(t, b));
+    }
     let low = L::add(
         L::shl(L::and(L::wide_low(a), L::splat(low_mask(b - lsh))), lsh),
         L::and(L::wide_low(carry), L::splat(low_mask(b))),
@@ -377,43 +394,71 @@ unsafe fn load_limb<L: NormalizeLanes>(a: Limbs<L::Word>, s: i64, i: usize) -> L
 }
 
 #[inline(always)]
-unsafe fn same_base_block<L: NormalizeLanes>(g: &SameBase, res: LimbsMut<i64>, a: Limbs<L::Word>, i: usize) {
+unsafe fn same_base_block<L: NormalizeLanes, const WHOLE: bool>(g: &SameBase, res: LimbsMut<i64>, a: Limbs<L::Word>, i: usize) {
     let b = g.base;
     let mut carry = L::zero();
-    let mut sticky = L::splat(0);
-    let mut half = L::splat(0);
-    let mut s = g.low;
-    while s > g.boundary {
-        let (low, high) = split::<L>(unsafe { load_limb::<L>(a, s, i) }, carry, b, g.lsh);
-        carry = high;
-        if g.padding == 0 && s == g.boundary + 1 {
-            half = L::srl(low, b - 1);
-            sticky = L::or(sticky, L::ne_zero(L::and(low, L::splat(low_mask(b - 1)))));
-        } else {
-            sticky = L::or(sticky, L::ne_zero(low));
-        }
-        s -= 1;
-    }
-    let (low, high) = split::<L>(unsafe { load_limb::<L>(a, s, i) }, carry, b, g.lsh);
-    let kept = if g.padding > 0 {
-        let p = g.padding;
-        half = L::and(L::srl(low, p - 1), L::splat(1));
-        sticky = L::or(sticky, L::ne_zero(L::and(low, L::splat(low_mask(p - 1)))));
-        L::srl(low, p)
+    // Nothing below the boundary: nothing to round, it is a kept limb.
+    let top = if WHOLE && g.padding == 0 && g.low == g.boundary {
+        g.active
     } else {
-        low
-    };
-    let (digit, up) = center::<L>(round_even::<L>(kept, half, sticky), b - g.padding);
-    carry = L::wide_add_n(high, up);
-    unsafe { L::store(res.ptr.add((g.active - 1) * res.stride + i), L::shl(digit, g.padding)) };
-    for d in (0..g.active - 1).rev() {
-        let (low, high) = split::<L>(unsafe { load_limb::<L>(a, d as i64 + g.limb_offset, i) }, carry, b, g.lsh);
-        let (digit, up) = center::<L>(low, b);
+        let mut sticky = L::splat(0);
+        let mut half = L::splat(0);
+        let mut s = g.low;
+        while s > g.boundary {
+            let (low, high) = split::<L, WHOLE>(unsafe { load_limb::<L>(a, s, i) }, carry, b, g.lsh);
+            carry = high;
+            if g.padding == 0 && s == g.boundary + 1 {
+                half = L::srl(low, b - 1);
+                sticky = L::or(sticky, L::ne_zero(L::and(low, L::splat(low_mask(b - 1)))));
+            } else {
+                sticky = L::or(sticky, L::ne_zero(low));
+            }
+            s -= 1;
+        }
+        let (low, high) = split::<L, WHOLE>(unsafe { load_limb::<L>(a, s, i) }, carry, b, g.lsh);
+        let kept = if g.padding > 0 {
+            let p = g.padding;
+            half = L::and(L::srl(low, p - 1), L::splat(1));
+            sticky = L::or(sticky, L::ne_zero(L::and(low, L::splat(low_mask(p - 1)))));
+            L::srl(low, p)
+        } else {
+            low
+        };
+        let (digit, up) = center::<L>(round_even::<L>(kept, half, sticky), b - g.padding);
         carry = L::wide_add_n(high, up);
+        unsafe { L::store(res.ptr.add((g.active - 1) * res.stride + i), L::shl(digit, g.padding)) };
+        g.active - 1
+    };
+    for d in (0..top).rev() {
+        let x = unsafe { load_limb::<L>(a, d as i64 + g.limb_offset, i) };
+        let digit = if WHOLE {
+            let t = L::wide_add(x, carry);
+            carry = L::wide_sra(L::wide_add_n(t, L::splat(1 << (b - 1))), b);
+            L::sra(L::shl(L::wide_low(t), 64 - b), 64 - b)
+        } else {
+            let (low, high) = split::<L, false>(x, carry, b, g.lsh);
+            let (digit, up) = center::<L>(low, b);
+            carry = L::wide_add_n(high, up);
+            digit
+        };
         unsafe { L::store(res.ptr.add(d * res.stride + i), digit) };
     }
     for d in g.active..res.size {
         unsafe { L::store(res.ptr.add(d * res.stride + i), L::splat(0)) };
+    }
+}
+
+unsafe fn same_base<L, T, const WHOLE: bool>(g: &SameBase, res: LimbsMut<i64>, a: Limbs<L::Word>, len: usize)
+where
+    L: NormalizeLanes,
+    T: NormalizeLanes<Word = L::Word>,
+{
+    let full = len - len % L::WIDTH;
+    for i in (0..full).step_by(L::WIDTH) {
+        unsafe { same_base_block::<L, WHOLE>(g, res, a, i) };
+    }
+    for i in full..len {
+        unsafe { same_base_block::<T, WHOLE>(g, res, a, i) };
     }
 }
 
@@ -432,7 +477,7 @@ impl<L: NormalizeLanes> Bits<L> {
     #[inline(always)]
     unsafe fn refill(&mut self) {
         let s = self.a.size as i64 - 1 - self.next as i64;
-        let (digit, carry) = split::<L>(unsafe { load_limb::<L>(self.a, s, self.i) }, self.carry, self.base, 0);
+        let (digit, carry) = split::<L, false>(unsafe { load_limb::<L>(self.a, s, self.i) }, self.carry, self.base, 0);
         self.carry = carry;
         self.buf = digit;
         self.avail = self.base;
@@ -549,14 +594,8 @@ pub unsafe fn normalize_blocked<L, T>(
                 unsafe { std::ptr::write_bytes(res.ptr.add(j * res.stride), 0, len) };
             }
         }
-        Plan::Same(g) => {
-            for i in (0..full).step_by(L::WIDTH) {
-                unsafe { same_base_block::<L>(&g, res, a, i) };
-            }
-            for i in full..len {
-                unsafe { same_base_block::<T>(&g, res, a, i) };
-            }
-        }
+        Plan::Same(g) if g.whole() => unsafe { same_base::<L, T, true>(&g, res, a, len) },
+        Plan::Same(g) => unsafe { same_base::<L, T, false>(&g, res, a, len) },
         Plan::Cross(g) => {
             for i in (0..full).step_by(L::WIDTH) {
                 unsafe { cross_block::<L>(&g, res, a, i) };
@@ -841,31 +880,32 @@ mod tests {
     use super::*;
     use crate::test_suite::znx_normalize::oracle;
 
-    /// The portable driver over 11 coefficients (a full 8-lane block and a 3-coefficient tail).
-    fn run<S: NormalizeWord>(a: &[Vec<S>], ka: usize, kr: usize, k: usize, size: usize, offset: i64) -> Vec<Vec<i64>> {
+    /// `f(res, a, n)` on `a` laid out limb by limb; returns the `size` output limbs per coefficient.
+    fn layout<S: NormalizeWord>(a: &[Vec<S>], size: usize, f: impl FnOnce(LimbsMut<i64>, Limbs<S>, usize)) -> Vec<Vec<i64>> {
         let n = a.first().map_or(1, Vec::len);
         let src: Vec<S> = a.iter().flatten().copied().collect();
         let mut dst = vec![0x5a5a_i64; size * n];
-        unsafe {
-            normalize_blocked::<PortableLanes<S, 8>, PortableLanes<S, 1>>(
-                LimbsMut {
-                    ptr: dst.as_mut_ptr(),
-                    stride: n,
-                    size,
-                },
-                kr,
-                k,
-                offset,
-                Limbs {
-                    ptr: src.as_ptr(),
-                    stride: n,
-                    size: a.len(),
-                },
-                ka,
-                n,
-            )
-        };
+        f(
+            LimbsMut {
+                ptr: dst.as_mut_ptr(),
+                stride: n,
+                size,
+            },
+            Limbs {
+                ptr: src.as_ptr(),
+                stride: n,
+                size: a.len(),
+            },
+            n,
+        );
         (0..n).map(|i| (0..size).map(|j| dst[j * n + i]).collect()).collect()
+    }
+
+    /// The portable driver over 11 coefficients (a full 8-lane block and a 3-coefficient tail).
+    fn run<S: NormalizeWord>(a: &[Vec<S>], ka: usize, kr: usize, k: usize, size: usize, offset: i64) -> Vec<Vec<i64>> {
+        layout(a, size, |res, src, n| unsafe {
+            normalize_blocked::<PortableLanes<S, 8>, PortableLanes<S, 1>>(res, kr, k, offset, src, ka, n)
+        })
     }
 
     fn check(a: &[Vec<i128>], ka: usize, kr: usize, k: usize, size: usize, offset: i64) {
@@ -979,6 +1019,57 @@ mod tests {
                         ] {
                             check(&limbs, ka, kr, k, size, offset);
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The driver against the forced split path, same base, offset a whole number of limbs.
+    fn pin_whole_limbs<S: NormalizeWord>(a: &[Vec<S>], b: usize, k: usize, size: usize, offset: i64) {
+        let Plan::Same(g) = plan(b, k, offset, a.len(), b) else {
+            panic!("b={b} k={k} offset={offset}: not a same-base plan")
+        };
+        assert_eq!(g.whole(), b >= 2, "b={b} offset={offset}");
+        let general = layout(a, size, |res, src, n| unsafe {
+            same_base::<PortableLanes<S, 8>, PortableLanes<S, 1>, false>(&g, res, src, n)
+        });
+        assert_eq!(
+            run(a, b, b, k, size, offset),
+            general,
+            "b={b} k={k} size={size} offset={offset}"
+        );
+    }
+
+    #[test]
+    fn whole_limb_fast_path_matches_split_path() {
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        for b in [1usize, 2, 62] {
+            let limbs: Vec<Vec<i64>> = (0..3)
+                .map(|_| {
+                    (0..11)
+                        .map(|t| match t % 4 {
+                            0 => -(1i64 << 62),
+                            1 => 1i64 << 62,
+                            _ => {
+                                state ^= state << 13;
+                                state ^= state >> 7;
+                                state ^= state << 17;
+                                state as i64 >> 1
+                            }
+                        })
+                        .collect()
+                })
+                .collect();
+            let wide: Vec<Vec<i128>> = limbs
+                .iter()
+                .map(|l| l.iter().map(|&x| ((x as i128) << 63) + x as i128).collect())
+                .collect();
+            for offset in [0, -(b as i64)] {
+                for k in [3 * b, 3 * b - 1, b + 1] {
+                    for size in [3, 4] {
+                        pin_whole_limbs(&limbs, b, k, size, offset);
+                        pin_whole_limbs(&wide, b, k, size, offset);
                     }
                 }
             }
