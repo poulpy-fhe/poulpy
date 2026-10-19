@@ -149,10 +149,10 @@ fn public_key_noise<R: GLWEInfos>(
     } else {
         (0.0, 0.0)
     };
-    // Normalizing to the output drops `d` uniform bits: variance `(1 - 4^-d)/12`
-    // and, ties rounding up, mean `-2^-(d+1)`.
+    // Normalizing to the output drops `d` uniform bits; ties go to even, so the
+    // error has mean 0 and second moment `(1 + 2·4^-d)/12`.
     let rounding = if sample > res.k() {
-        (-0.5 * scale.sqrt(), (1.0 - scale) / 12.0)
+        (0.0, (1.0 + 2.0 * scale) / 12.0)
     } else {
         (0.0, 0.0)
     };

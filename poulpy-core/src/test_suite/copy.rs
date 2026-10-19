@@ -108,9 +108,15 @@ where
                             } else {
                                 let value = numerator(&src.data, col, j, base, src_k);
                                 if dst_k < src_k {
-                                    // Round ties toward +infinity, modulo the torus.
+                                    // Round ties to even, modulo the torus.
                                     let drop = src_k - dst_k;
-                                    ((value + (1i128 << (drop - 1))) >> drop).rem_euclid(1i128 << dst_k)
+                                    let (floor, rem, half) = (value >> drop, value & ((1i128 << drop) - 1), 1i128 << (drop - 1));
+                                    let rounded = if rem > half || (rem == half && floor & 1 == 1) {
+                                        floor + 1
+                                    } else {
+                                        floor
+                                    };
+                                    rounded.rem_euclid(1i128 << dst_k)
                                 } else {
                                     value << (dst_k - src_k)
                                 }

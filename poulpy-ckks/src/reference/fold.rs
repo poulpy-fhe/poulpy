@@ -176,8 +176,6 @@ where
         + GLWENormalize<BE>
         + GLWECIEmbed<BE>
         + GLWECITrace<BE>
-        + GLWEShift<BE>
-        + GLWESub<BE>
         + CKKSModuleAlloc<BE>,
     GLWE<BE::OwnedBuf, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -262,8 +260,6 @@ where
         + GLWEAutomorphism<BE>
         + GLWEShift<BE>
         + GLWECITrace<BE>
-        + GLWEShift<BE>
-        + GLWESub<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSImagOps<BE>

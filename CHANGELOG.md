@@ -188,9 +188,9 @@
   Polynomial evaluation prepares its giant steps under `Reuse`, as before, so its bits are unchanged.
 - `test_suite::parity::helpers`, `test_suite::parity::keys` and `test_suite::parity::layout` are public under `test-utils`, so downstream crates build parity tests from the same fixtures.
 - The scratch of the SHIP masking accumulation and mux-rotate covers `vec_znx_idft_apply_tmp_bytes`.
-- Fix: the halving of `ckks_ci_trace`, and so of `ckks_unfold` of conjugate-invariant inputs, rounds its ties to even.
-  It rounded every tie of both columns up, a bias that adds up in the first slots: about `2^-34` at slot 0 for a degree-`2^16` ciphertext at scale `2^54`, against `2^-43` elsewhere.
-  The outputs keep the input scale at one bit narrower, as before.
+- **Breaking:** normalization rounds ties to even instead of toward positive infinity (`rnd` in the HAL notation). Ties of a few dropped exact bits no longer push every coefficient the same way; outputs change only at exact ties.
+- `ckks_ci_trace` halves the trace with a plain normalization again; ties to even remove the first-slot bias it showed.
+- CPU backends normalize through one blocked kernel, `ZnxNormalize`, and take no normalization scratch: `vec_znx_normalize_tmp_bytes` and `vec_znx_big_normalize_tmp_bytes` return 0. The per-limb step kernel traits (`ZnxNormalize*Step*`, `I64NormalizeOps`, `I128NormalizeOps`) are removed.
 - The SHIP mux-rotate takes keys of any digit width: the rank-2 input shared by a group is laid out on the digit grid with `gadget_dft_apply`, and its scratch covers that operand.
   A group whose keys are not all whole-limb must share one digit width and count, and returns an error otherwise.
   The mux key generation takes the digit width in bits, and the mux test also runs widths below a limb, one bit past a limb and one bit short of two, and checks that a mixed group is rejected.

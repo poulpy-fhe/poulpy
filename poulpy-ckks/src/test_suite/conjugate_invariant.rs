@@ -494,10 +494,7 @@ where
         + CKKSEncodingOps<STD, f64>
         + CKKSCIRingMapOps<STD>
         + GLWECIKeyEncryptSk<STD>
-        + poulpy_core::GLWECITrace<STD>
-        + poulpy_core::GLWENormalize<STD>
-        + poulpy_core::GLWEShift<STD>
-        + poulpy_core::GLWESub<STD>,
+        + poulpy_core::GLWECITrace<STD>,
 {
     params.prec_meta.slots = SlotsKind::Real;
     // One bit above the radix grid, so the trace output (`k − 1` bits) can fill `back` exactly.
