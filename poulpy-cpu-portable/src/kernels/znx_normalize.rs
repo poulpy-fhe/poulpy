@@ -144,8 +144,6 @@ pub trait NormalizeLanes {
     fn or(x: Self::N, y: Self::N) -> Self::N;
     fn shl(x: Self::N, k: u32) -> Self::N;
     fn srl(x: Self::N, k: u32) -> Self::N;
-    /// Sign-filling right shift.
-    fn sra(x: Self::N, k: u32) -> Self::N;
     /// 1 in every lane where `x != 0`, else 0.
     fn ne_zero(x: Self::N) -> Self::N;
     fn wide_add(x: Self::W, y: Self::W) -> Self::W;
@@ -206,10 +204,6 @@ impl<S: NormalizeWord, const W: usize> NormalizeLanes for PortableLanes<S, W> {
         std::array::from_fn(|i| ((x[i] as u64) >> k) as i64)
     }
     #[inline(always)]
-    fn sra(x: [i64; W], k: u32) -> [i64; W] {
-        std::array::from_fn(|i| x[i] >> k)
-    }
-    #[inline(always)]
     fn ne_zero(x: [i64; W]) -> [i64; W] {
         std::array::from_fn(|i| (x[i] != 0) as i64)
     }
@@ -242,10 +236,12 @@ impl<const W: usize> NormalizeLanes for SimdLanes<W> {
 
     #[inline(always)]
     unsafe fn load(p: *const i64) -> Self::W {
+        // SAFETY: the caller guarantees `W` readable i64 at `p`; the read is unaligned.
         Simd::from_array(unsafe { p.cast::<[i64; W]>().read_unaligned() })
     }
     #[inline(always)]
     unsafe fn store(p: *mut i64, x: Self::N) {
+        // SAFETY: the caller guarantees `W` writable i64 at `p`; the write is unaligned.
         unsafe { p.cast::<[i64; W]>().write_unaligned(x.to_array()) }
     }
     #[inline(always)]
@@ -279,10 +275,6 @@ impl<const W: usize> NormalizeLanes for SimdLanes<W> {
     #[inline(always)]
     fn srl(x: Self::N, k: u32) -> Self::N {
         (x.cast::<u64>() >> k as u64).cast::<i64>()
-    }
-    #[inline(always)]
-    fn sra(x: Self::N, k: u32) -> Self::N {
-        x >> k as i64
     }
     #[inline(always)]
     fn ne_zero(x: Self::N) -> Self::N {
@@ -861,7 +853,7 @@ mod tests {
     /// The portable driver over 11 coefficients (a full 8-lane block and a 3-coefficient tail).
     fn run<S: NormalizeWord>(a: &[Vec<S>], ka: usize, kr: usize, k: usize, size: usize, offset: i64) -> Vec<Vec<i64>> {
         layout(a, size, |res, src, n| unsafe {
-            normalize_blocked_portable::<PortableLanes<S, 8>, PortableLanes<S, 1>>(res, kr, k, offset, src, ka, n)
+            normalize_blocked_portable::<S::Lanes, PortableLanes<S, 1>>(res, kr, k, offset, src, ka, n)
         })
     }
 
@@ -872,7 +864,7 @@ mod tests {
         };
         assert_eq!(g.whole(), (2..=62).contains(&b), "b={b} offset={offset}");
         let general = layout(a, size, |res, src, n| unsafe {
-            same_base::<PortableLanes<S, 8>, PortableLanes<S, 1>, false>(&g, res, src, n)
+            same_base::<S::Lanes, PortableLanes<S, 1>, false>(&g, res, src, n)
         });
         assert_eq!(
             run(a, b, b, k, size, offset),
