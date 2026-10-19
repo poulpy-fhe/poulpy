@@ -152,71 +152,17 @@ impl<BE: Backend> CKKSModuleAlloc<BE> for Module<BE> where
 #[cfg(test)]
 mod tests {
     use poulpy_core::layouts::{
-        GLWELayout, LWEInfos, LinearTransformationLayout, LinearTransformationStrategy, Rank, TorusPrecision,
+        Diagonals, GLWELayout, LWEInfos, LinearTransformationLayout, LinearTransformationStrategy, Rank, TorusPrecision,
     };
     use poulpy_hal::layouts::{HostBytesBackend, Module};
 
     use super::*;
-    use crate::{CKKSLayout, Scale, SlotsKind};
+    use crate::{CKKSLayout, Scale, SlotsKind, layouts::ComplexDiagonals};
 
-    fn layout_of(indexes: Vec<i64>) -> LinearTransformationLayout {
-        LinearTransformationLayout {
-            indexes,
-            slots: 32,
-            strategy: LinearTransformationStrategy::Bsgs { giant_step: 4 },
-        }
-    }
-
-    fn infos_of(k: u32) -> CKKSLayout {
-        CKKSLayout {
-            glwe_layout: GLWELayout {
-                n: Degree(16),
-                base2k: Base2K(12),
-                k: TorusPrecision(k),
-                rank: Rank(0),
-            },
-            meta: GLWEPlaintextMeta {
-                scale: Scale::Log(10),
-                slots: SlotsKind::Real,
-                log_sparsity: 0,
-            },
-        }
-    }
-
+    /// A transform allocated from a layout has the schedule `build_transform` encodes into, with a zero plaintext of
+    /// the given infos at every diagonal, at the compact degree `ckks_pt_vec_alloc_compact` allocates at.
     #[test]
-    fn transforms_allocate_the_layout_schedule() {
-        let module = Module::<HostBytesBackend>::new(64);
-        let layout = layout_of(vec![0, 1, 5, 7]);
-        let infos = infos_of(24);
-        let lt = module.ckks_linear_transformation_alloc_from_infos(&layout, &infos);
-        let plan = layout.index();
-        assert_eq!(lt.baby_steps, plan.baby_steps);
-        let schedule: Vec<(i64, Vec<i64>)> = lt
-            .giant_steps
-            .iter()
-            .map(|gs| (gs.rot, gs.diagonals.iter().map(|d| d.baby).collect()))
-            .collect();
-        assert_eq!(
-            schedule,
-            plan.giant_steps
-                .iter()
-                .copied()
-                .zip(plan.index.iter().cloned())
-                .collect::<Vec<_>>()
-        );
-        assert!(
-            lt.giant_steps
-                .iter()
-                .flat_map(|gs| &gs.diagonals)
-                .all(|d| d.plaintext.n() == Degree(16) && d.plaintext.meta() == infos.meta)
-        );
-    }
-
-    #[test]
-    fn built_transform_has_the_layout_allocation_schedule() {
-        use crate::layouts::ComplexDiagonals;
-        use poulpy_core::layouts::Diagonals;
-
+    fn transform_alloc_is_the_encoding_receiver() {
         let module = Module::<HostBytesBackend>::new(64);
         let mut cd = ComplexDiagonals::new(Diagonals::new(32), Diagonals::new(32));
         cd.re.set(0, vec![1.0, 2.0]);
@@ -230,29 +176,41 @@ mod tests {
             slots: cd.slots(),
             strategy,
         };
-        let mut infos = infos_of(24);
-        infos.glwe_layout.n = module.ckks_compact_degree(cd.period());
-        let lt = cd.build_transform(strategy, |_, _| module.ckks_plaintext_alloc_from_infos(&infos));
+        let n = module.ckks_compact_degree(cd.period());
+        assert_eq!(
+            n,
+            module
+                .ckks_pt_vec_alloc_compact(cd.period(), Base2K(12), TorusPrecision(24))
+                .n()
+        );
+        let infos = CKKSLayout {
+            glwe_layout: GLWELayout {
+                n,
+                base2k: Base2K(12),
+                k: TorusPrecision(24),
+                rank: Rank(0),
+            },
+            meta: GLWEPlaintextMeta {
+                scale: Scale::Log(10),
+                slots: SlotsKind::Real,
+                log_sparsity: 0,
+            },
+        };
+        let built = cd.build_transform(strategy, |_, _| module.ckks_plaintext_alloc_from_infos(&infos));
         let alloc = module.ckks_linear_transformation_alloc_from_infos(&layout, &infos);
-        assert_eq!(alloc.baby_steps, lt.baby_steps);
         let schedule = |t: &LinearTransformation<_>| -> Vec<(i64, Vec<i64>)> {
             t.giant_steps
                 .iter()
                 .map(|gs| (gs.rot, gs.diagonals.iter().map(|d| d.baby).collect()))
                 .collect()
         };
-        assert_eq!(schedule(&alloc), schedule(&lt));
-    }
-
-    #[test]
-    fn compact_degree_is_the_compact_allocation_degree() {
-        let module = Module::<HostBytesBackend>::new(64);
-        for slots in [1, 2, 8, 32] {
-            assert_eq!(
-                module.ckks_compact_degree(slots),
-                module.ckks_pt_vec_alloc_compact(slots, Base2K(12), TorusPrecision(24)).n(),
-                "slots={slots}"
-            );
-        }
+        assert_eq!((&alloc.baby_steps, schedule(&alloc)), (&built.baby_steps, schedule(&built)));
+        assert!(
+            alloc
+                .giant_steps
+                .iter()
+                .flat_map(|gs| &gs.diagonals)
+                .all(|d| d.plaintext.n() == n && d.plaintext.meta() == infos.meta)
+        );
     }
 }

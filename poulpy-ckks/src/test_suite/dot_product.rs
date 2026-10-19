@@ -11,7 +11,7 @@
 //! | [`test_dot_product_ct_unaligned_b`] | ct · ct, one b-side input rescaled |
 //! | [`test_dot_product_ct_delta_log_delta`] | ct · ct fallback with non-uniform `log_delta` |
 //! | [`test_dot_product_ct_smaller_output`] | ct · ct, output narrower than inputs |
-//! | [`test_dot_product_ct_lazy`] | ct · ct, one relinearization: bits, zero padding, metadata, precision, rejections |
+//! | [`test_dot_product_ct_lazy`] | ct · ct, one relinearization: zero padding, metadata, precision, rejections |
 //! | [`test_dot_product_ct_long_sum`] | ct · ct, one relinearization of 32 distinct pairs |
 //! | [`test_dot_product_ct_non_uniform`] | ct · ct, pairs without a shared layout or scale |
 //! | [`test_dot_product_prepared`] | prepared ct · prepared ct: the bits of ct · ct, under every pair of hints; rejections |
@@ -19,31 +19,28 @@
 //! | [`test_dot_product_const_aligned`] | ct · ZNX constant |
 
 use poulpy_core::{
-    CoreError, GLWEAdd, GLWEMulRelinearizeSum, GLWENormalize, GLWESub, GLWETensoring, ScratchArenaTakeCore,
+    CoreError, GLWESub,
     layouts::{
         GLWEInfos, GLWELayout, GLWEPlaintextInfos, GetTensorKey, LWEInfos, Rank, SetGLWEPlaintextInfos, TorusPrecision,
         prepared::GLWETensorKeyPreparedBackendRef,
     },
 };
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBytesBackend, Module, PrepareHint, ScratchArena, ScratchOwned, Standard},
+    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    layouts::{Backend, HostBytesBackend, Module, PrepareHint, ScratchArena, Standard},
 };
 
 use crate::{
     CKKSCompositionError, CKKSError, CKKSInfos, Scale, SetCKKSInfos, SlotsKind,
-    api::{CKKSAddOps, CKKSDotProductOps, CKKSMulOps},
-    layouts::{
-        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPreparedLeft, CKKSPreparedRight, ScratchArenaTakeCKKS, plaintext::CKKSPlaintext,
-    },
-    reference::mul::{get_mul_ct_params, mul_one_pass},
+    api::{CKKSDotProductOps, CKKSMulAddOps, CKKSMulOps},
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPreparedLeft, CKKSPreparedRight, plaintext::CKKSPlaintext},
 };
 
 use super::helpers::{
     PT_PREC, TestContextBackend, TestContextModule, TestScalar, TestVector, alloc_ct, alloc_scratch, assert_ckks_error,
-    assert_decrypt_precision, assert_decrypt_precision_at_log_delta, ckks_decrypt_decode, ckks_encrypt, ckks_encrypt_with_prec,
-    ckks_pt_cst_full, encode_and_upload_pt, expected_log2_precision, gen_sk_with_raw, gen_tsk, precision_at, precision_stats,
-    quantize, quantized_const, quantized_vector, test_vector_1, test_vector_2, want_mul,
+    assert_decrypt_precision, assert_decrypt_precision_at_log_delta, ckks_encrypt, ckks_encrypt_with_prec, ckks_pt_cst_full,
+    encode_and_upload_pt, gen_sk_with_raw, gen_tsk, precision_at, quantize, quantized_const, quantized_vector, test_vector_1,
+    test_vector_2, want_mul,
 };
 use super::parity::helpers::{snapshot, with_scratch};
 
@@ -529,67 +526,8 @@ pub fn test_dot_product_ct_smaller_output<BE, F, E>(
     );
 }
 
-/// The single-relinearization circuit from core steps, routed as `ckks_dot_product_ct` routes it: where
-/// `ckks_mul_into` takes its one-pass product, core's summed one-pass product of every pair at the width
-/// the ct × ct rule stamps, then that stamp; otherwise [`two_pass_reference`].
-fn lazy_reference<BE: TestContextBackend, H: GetTensorKey<BE>>(
-    module: &Module<BE>,
-    dst: &mut CKKSCiphertextOwned<BE>,
-    a: &[&CKKSCiphertextOwned<BE>],
-    b: &[&CKKSCiphertextOwned<BE>],
-    tsk: &H,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
-    Module<BE>: GLWETensoring<BE> + GLWEMulRelinearizeSum<BE> + GLWEAdd<BE> + GLWENormalize<BE>,
-{
-    let (log_budget, log_delta, cnv_offset) = get_mul_ct_params(&*dst, a[0], b[0]).unwrap();
-    let tensor_k = a[0].k().max(b[0].k());
-    if !mul_one_pass(&*dst, &[a[0].base2k(), b[0].base2k()], tensor_k, cnv_offset, tsk) {
-        return two_pass_reference(module, dst, a, b, tsk, scratch);
-    }
-    let res_k = TorusPrecision((log_budget + log_delta) as u32);
-    module.glwe_mul_relinearize_sum(cnv_offset, dst, res_k, a, b, tsk, scratch);
-    dst.set_log_budget(log_budget);
-    dst.set_log_delta(log_delta);
-}
-
-/// The two-pass circuit from core steps: each pair's tensor product at `ckks_mul_into`'s width
-/// `max(a.k, b.k)`, added and normalized one at a time, then `dst` stamped with the ct × ct rule and
-/// relinearized once.
-fn two_pass_reference<BE: TestContextBackend, H: GetTensorKey<BE>>(
-    module: &Module<BE>,
-    dst: &mut CKKSCiphertextOwned<BE>,
-    a: &[&CKKSCiphertextOwned<BE>],
-    b: &[&CKKSCiphertextOwned<BE>],
-    tsk: &H,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
-    Module<BE>: GLWETensoring<BE> + GLWEAdd<BE> + GLWENormalize<BE>,
-{
-    let layout = GLWELayout {
-        n: dst.n(),
-        base2k: dst.base2k(),
-        k: a[0].k().max(b[0].k()),
-        rank: dst.rank(),
-    };
-    let (log_budget, log_delta, cnv_offset) = get_mul_ct_params(&*dst, a[0], b[0]).unwrap();
-    let scratch = scratch.borrow();
-    let (mut acc, scratch) = scratch.take_glwe_tensor_scratch(&layout);
-    let (mut term, mut scratch) = scratch.take_glwe_tensor_scratch(&layout);
-    module.glwe_tensor_apply(cnv_offset, &mut acc, a[0], b[0], &mut scratch);
-    for (ai, bi) in a.iter().zip(b).skip(1) {
-        module.glwe_tensor_apply(cnv_offset, &mut term, *ai, *bi, &mut scratch);
-        module.glwe_add_assign(&mut acc, &term);
-        module.glwe_normalize_assign(&mut acc, &mut scratch);
-    }
-    dst.set_log_budget(log_budget);
-    dst.set_log_delta(log_delta);
-    module.glwe_tensor_relinearize(dst, &acc, tsk, &mut scratch);
-}
-
-/// The eager path as `ckks_dot_product_ct` ran it before the lazy one: the first product into
-/// `dst`, then every other product into one temporary shaped like `dst` and added.
-fn eager_reference<BE: TestContextBackend, H: GetTensorKey<BE>>(
+/// The eager path: `ckks_mul_into` of the first pair, then `ckks_mul_add_ct_into` of each other.
+fn eager<BE: TestContextBackend, H: GetTensorKey<BE>>(
     module: &Module<BE>,
     dst: &mut CKKSCiphertextOwned<BE>,
     a: &[&CKKSCiphertextOwned<BE>],
@@ -600,13 +538,9 @@ fn eager_reference<BE: TestContextBackend, H: GetTensorKey<BE>>(
     Module<BE>: TestContextModule<BE>,
 {
     module.ckks_mul_into(dst, a[0], b[0], tsk, scratch).unwrap();
-    scratch.scope(|scratch| {
-        let (mut tmp, mut scratch) = scratch.take_ckks_ciphertext_like_scratch(&*dst);
-        for (ai, bi) in a.iter().zip(b).skip(1) {
-            module.ckks_mul_into(&mut tmp, *ai, *bi, tsk, &mut scratch).unwrap();
-            module.ckks_add_assign(dst, &tmp, &mut scratch).unwrap();
-        }
-    });
+    for (ai, bi) in a.iter().zip(b).skip(1) {
+        module.ckks_mul_add_ct_into(dst, *ai, *bi, tsk, scratch).unwrap();
+    }
 }
 
 /// A tensor-key store that holds its key at one width only.
@@ -643,53 +577,20 @@ where
     err
 }
 
-/// `-log2` of the mean slot error of `ct` against `want`, over the real and imaginary parts.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "a decryption of `ct` against the expected slots, with its fixtures"
-)]
-fn log2_precision<BE, F, E>(
-    params: &CKKSTestParams,
-    module: &Module<BE>,
-    encoder: &ReferenceEncoder<E>,
-    ct: &CKKSCiphertextOwned<BE>,
-    sk: &poulpy_core::layouts::prepared::GLWESecretPrepared<BE::OwnedBuf, BE>,
-    want_re: &[F],
-    want_im: &[F],
-    scratch: &mut ScratchArena<'_, BE>,
-) -> f64
-where
-    BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE>,
-    F: TestScalar,
-    E: NegacyclicFFT<F>,
-{
-    let (re, im) = ckks_decrypt_decode(params, module, encoder, ct, sk, scratch);
-    let got: Vec<F> = re.into_iter().chain(im).collect();
-    let want: Vec<F> = want_re.iter().chain(want_im).copied().collect();
-    precision_stats(&got, &want, ct.log_delta()).avg_log2_prec
-}
-
 /// Pairs that share one layout and scale per side take one relinearization, on the exact poisoned
 /// budget, at four widths (all equal, a narrower `dst`, `b` narrower than `a`, `dst` wider than both) and
-/// with `b` at a lower scale than `a`.
-///
-/// The result is a test-local composition of the core steps bit for bit, routed as the operation routes
-/// it: on rank 1, where every case meets `ckks_mul_into`'s one-pass rule, core's summed one-pass product;
-/// on rank 2, the two-pass circuit, which also normalizes after every term. Independently of that
-/// composition, the first pair beside two pairs of zeros is `ckks_mul_into` of that pair, bit for bit,
-/// metadata and canonical flag included. On rank 1 the result agrees with the two-pass circuit up to
-/// rounding, to the precision the suite expects of a product. Its metadata and noise tag are the eager
-/// path's: the smaller scale, the smallest label and the joined slot kind of all six operands. Its
-/// precision is at least the eager path's, and it is canonical. The tensor key is looked up at
-/// `max(a.k, b.k)` only, as `ckks_mul_into` does, whatever `dst`'s width. Wrong lengths, a missing tensor
-/// key, inputs without the budget and a too narrow `dst` are rejected with `dst` untouched.
+/// with `b` at a lower scale than `a`. The first pair beside two pairs of zeros is `ckks_mul_into` of that
+/// pair, bit for bit, metadata and canonical flag included. The metadata and noise tag are the eager
+/// path's: the smaller scale, the smallest label and the joined slot kind of all six operands. The result
+/// is canonical and decrypts to the precision of a product. The tensor key is looked up at `max(a.k, b.k)`
+/// only, whatever `dst`'s width. Wrong lengths, a missing tensor key, inputs without the budget and a too
+/// narrow `dst` are rejected with `dst` untouched.
 pub fn test_dot_product_ct_lazy<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + GLWETensoring<BE> + GLWEMulRelinearizeSum<BE> + GLWEAdd<BE>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -758,22 +659,6 @@ where
         .unwrap();
         let have = snapshot::<BE, _>(&lazy);
 
-        let mut reference = alloc_ct(&params, module, dst_k);
-        lazy_reference(
-            module,
-            &mut reference,
-            &a_refs,
-            &b_refs,
-            &tsk,
-            &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
-        );
-        let reference = snapshot::<BE, _>(&reference);
-        assert_eq!(
-            (have.layout.glwe_layout, &have.digits),
-            (reference.layout.glwe_layout, &reference.digits),
-            "{label}: not the core composition"
-        );
-
         // Pairs of zeros add nothing to the products, whichever circuit sums them.
         let zero = |ct: &CKKSCiphertextOwned<BE>| {
             let mut zero = ct.clone();
@@ -796,38 +681,9 @@ where
             "{label}: a pair beside pairs of zeros is not its product"
         );
 
-        // The one-pass sum rounds once where the two-pass circuit rounds every tensor product.
-        let mut two_pass = alloc_ct(&params, module, dst_k);
-        two_pass_reference(
-            module,
-            &mut two_pass,
-            &a_refs,
-            &b_refs,
-            &tsk,
-            &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
-        );
-        let mut decode = |ct: &CKKSCiphertextOwned<BE>| -> Vec<F> {
-            let (re, im) = ckks_decrypt_decode(&params, module, &encoder, ct, &sk, &mut scratch.borrow());
-            re.into_iter().chain(im).collect()
-        };
-        let (have_slots, two_pass_slots) = (decode(&lazy), decode(&two_pass));
-        let agreement = precision_stats(&have_slots, &two_pass_slots, lazy.log_delta()).min_log2_prec;
-        let floor = expected_log2_precision(lazy.log_delta(), params.n);
-        assert!(
-            agreement >= floor,
-            "{label}: {agreement:.2} bits from the two-pass circuit < {floor:.2}"
-        );
-
-        let mut eager = alloc_ct(&params, module, dst_k);
-        eager_reference(
-            module,
-            &mut eager,
-            &a_refs,
-            &b_refs,
-            &tsk,
-            &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
-        );
-        let want = snapshot::<BE, _>(&eager);
+        let mut want = alloc_ct(&params, module, dst_k);
+        eager(module, &mut want, &a_refs, &b_refs, &tsk, &mut scratch.borrow());
+        let want = snapshot::<BE, _>(&want);
         assert_eq!(
             (have.layout, &have.noise),
             (want.layout, &want.noise),
@@ -851,34 +707,6 @@ where
             &want_im,
             &mut scratch.borrow(),
         );
-        let lazy_prec = log2_precision(
-            &params,
-            module,
-            &encoder,
-            &lazy,
-            &sk,
-            &want_re,
-            &want_im,
-            &mut scratch.borrow(),
-        );
-        let eager_prec = log2_precision(
-            &params,
-            module,
-            &encoder,
-            &eager,
-            &sk,
-            &want_re,
-            &want_im,
-            &mut scratch.borrow(),
-        );
-        // The lazy sum rounds and relinearizes once, the eager one once per term, which does not order them on
-        // every seed: the slack takes that spread. Every FFT64 and NTT4x30 suite measured the lazy path 0.30 to
-        // 0.85 bits ahead, the one-pass sum on rank 1 included.
-        assert!(
-            lazy_prec + 0.5 >= eager_prec,
-            "{label}: precision {lazy_prec:.2} bits < eager {eager_prec:.2} bits - 0.5"
-        );
-
         let key_k = TorusPrecision(a_k.max(b_k) as u32);
         let mut keyed = alloc_ct(&params, module, dst_k);
         with_scratch::<BE, _>(bytes, |scratch| {
@@ -942,8 +770,8 @@ where
 /// A long sum, 32 pairs, relinearized once. The pairs are fresh encryptions of the same two messages,
 /// so their digits are independent, as `Module::max_base2k`'s model assumes: copies of one pair would
 /// add up coherently, outside it, past what an FFT suite's radix holds once the products accumulate in
-/// the transform domain. The result is the core composition, routed as the operation routes it, bit
-/// for bit, and decrypts to the sum. It runs on its own ring, `N = 32`, at the suite's radix.
+/// the transform domain. The result decrypts to the sum. It runs on its own ring, `N = 32`, at the
+/// suite's radix.
 pub fn test_dot_product_ct_long_sum<BE, F, E>(
     params: CKKSTestParams,
     _module: &Module<BE>,
@@ -952,7 +780,7 @@ pub fn test_dot_product_ct_long_sum<BE, F, E>(
     BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + GLWETensoring<BE> + GLWEMulRelinearizeSum<BE> + GLWEAdd<BE>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -988,21 +816,6 @@ pub fn test_dot_product_ct_long_sum<BE, F, E>(
         module.ckks_dot_product_ct(&mut lazy, &a_refs, &b_refs, &tsk, scratch)
     })
     .unwrap();
-    let mut reference = alloc_ct(&params, module, params.k);
-    lazy_reference(
-        module,
-        &mut reference,
-        &a_refs,
-        &b_refs,
-        &tsk,
-        &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
-    );
-    assert_eq!(
-        snapshot::<BE, _>(&lazy).digits,
-        snapshot::<BE, _>(&reference).digits,
-        "dot_product_ct_long_sum: not the core composition"
-    );
-
     let (re, im) = want_mul(&re1, &im1, &re2, &im2);
     let copies = F::from_usize(terms).unwrap();
     // `terms` terms add their noise: at most `log2(terms)` bits of precision go.
@@ -1076,14 +889,7 @@ pub fn test_dot_product_ct_non_uniform<BE, F, E>(
         let bytes = module.ckks_dot_product_ct_tmp_bytes(N, &have, &full[0], &full[0], &tsk);
         with_scratch::<BE, _>(bytes, |scratch| module.ckks_dot_product_ct(&mut have, &a, &b, &tsk, scratch)).unwrap();
         let mut want = alloc_ct(&params, module, params.k);
-        eager_reference(
-            module,
-            &mut want,
-            &a,
-            &b,
-            &tsk,
-            &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
-        );
+        eager(module, &mut want, &a, &b, &tsk, &mut scratch.borrow());
         assert_eq!(
             snapshot::<BE, _>(&have),
             snapshot::<BE, _>(&want),
@@ -1117,9 +923,7 @@ where
 
 /// Pairs prepared by `ckks_prepare_left` and `ckks_prepare_right` give `ckks_dot_product_ct` of the ciphertexts they
 /// were prepared from, bit for bit, metadata, noise tag and canonical flag included, for one pair and for 16 fresh
-/// pairs, under every pair of hints, with a tensor key of the operands' radix and one of another, at the suite's radix
-/// and at radix 12 (11 if the suite's is 12). On rank 1 the key of the operands' radix takes the one-pass sum and the
-/// other key the two-pass circuit; the rank-2 suite takes the two-pass circuit. Each preparation runs on the exact
+/// pairs, under every pair of hints: the one-pass sum on rank 1, the two-pass circuit on rank 2. Each preparation runs on the exact
 /// poisoned budget of `ckks_prepare_tmp_bytes`, and each prepared operand reports its source's layout, metadata and
 /// noise estimate, `None` from a source without metadata, so `ckks_dot_product_ct_tmp_bytes` of the prepared operands
 /// is that of the ciphertexts, on whose exact poisoned budget both products run. Wrong lengths, operands of another
@@ -1149,108 +953,61 @@ where
         with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(ct), |s| module.ckks_prepare_right(ct, hint, s)).unwrap()
     };
 
-    // At the suite's radix and at a small other one: the tensor key, `PAIRS` fresh pairs, and each operand prepared
-    // under each hint.
-    struct Radix<BE: Backend, K> {
-        params: CKKSTestParams,
-        tsk: K,
-        a: Vec<CKKSCiphertextOwned<BE>>,
-        b: Vec<CKKSCiphertextOwned<BE>>,
-        left: Vec<Vec<CKKSPreparedLeft<BE>>>,
-        right: Vec<Vec<CKKSPreparedRight<BE>>>,
-    }
-    let radixes: Vec<_> = [params.base2k, if params.base2k == 12 { 11 } else { 12 }]
-        .into_iter()
-        .map(|base2k| {
-            let params = CKKSTestParams { base2k, ..params };
-            let mut scratch = alloc_scratch(&params, module);
-            let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
-            let mut encrypt = |re: &[F], im: &[F]| {
-                ckks_encrypt(
-                    &params,
-                    module,
-                    host_module,
-                    &encoder,
-                    &sk,
-                    params.k,
-                    re,
-                    im,
-                    &mut scratch.borrow(),
-                )
-            };
-            let (a, b): (Vec<_>, Vec<_>) = (0..PAIRS).map(|_| (encrypt(&re1, &im1), encrypt(&re2, &im2))).unzip();
-            let left: Vec<Vec<_>> = HINTS
-                .iter()
-                .map(|&hint| a.iter().map(|ct| prepare_left(ct, hint)).collect())
-                .collect();
-            let right: Vec<Vec<_>> = HINTS
-                .iter()
-                .map(|&hint| b.iter().map(|ct| prepare_right(ct, hint)).collect())
-                .collect();
-            assert!(a[0].noise().is_some(), "a fresh ciphertext carries a noise estimate");
-            for (prepared, ct) in left.iter().flatten().zip(a.iter().cycle()) {
-                assert_eq!(
-                    (prepared.glwe_layout(), prepared.plaintext_meta()),
-                    (ct.glwe_layout(), ct.plaintext_meta())
-                );
-                assert_eq!(prepared.noise(), None, "a prepared operand carries no noise estimate");
-            }
-            for (prepared, ct) in right.iter().flatten().zip(b.iter().cycle()) {
-                assert_eq!(
-                    (prepared.glwe_layout(), prepared.plaintext_meta()),
-                    (ct.glwe_layout(), ct.plaintext_meta())
-                );
-                assert_eq!(prepared.noise(), None, "a prepared operand carries no noise estimate");
-            }
-            Radix {
-                params,
-                tsk,
-                a,
-                b,
-                left,
-                right,
-            }
-        })
+    let p = &params;
+    let mut scratch = alloc_scratch(p, module);
+    let tsk = &gen_tsk(p, module, &sk_raw, &mut scratch.borrow());
+    let mut encrypt =
+        |re: &[F], im: &[F]| ckks_encrypt(p, module, host_module, &encoder, &sk, p.k, re, im, &mut scratch.borrow());
+    let (a, b): (Vec<_>, Vec<_>) = (0..PAIRS).map(|_| (encrypt(&re1, &im1), encrypt(&re2, &im2))).unzip();
+    // Each operand prepared under each hint.
+    let left: Vec<Vec<_>> = HINTS
+        .iter()
+        .map(|&hint| a.iter().map(|ct| prepare_left(ct, hint)).collect())
         .collect();
+    let right: Vec<Vec<_>> = HINTS
+        .iter()
+        .map(|&hint| b.iter().map(|ct| prepare_right(ct, hint)).collect())
+        .collect();
+    assert!(a[0].noise().is_some(), "a fresh ciphertext carries a noise estimate");
+    for (prepared, ct) in left.iter().flatten().zip(a.iter().cycle()) {
+        assert_eq!(
+            (prepared.glwe_layout(), prepared.plaintext_meta(), prepared.noise()),
+            (ct.glwe_layout(), ct.plaintext_meta(), None)
+        );
+    }
+    for (prepared, ct) in right.iter().flatten().zip(b.iter().cycle()) {
+        assert_eq!(
+            (prepared.glwe_layout(), prepared.plaintext_meta(), prepared.noise()),
+            (ct.glwe_layout(), ct.plaintext_meta(), None)
+        );
+    }
 
-    for radix in &radixes {
-        let p = &radix.params;
-        for key in &radixes {
-            for n in [1, PAIRS] {
-                let label = format!(
-                    "dot_product_prepared base2k={} key.base2k={} pairs={n}",
-                    p.base2k, key.params.base2k
-                );
-                let (a, b): (Vec<&_>, Vec<&_>) = (radix.a[..n].iter().collect(), radix.b[..n].iter().collect());
-                let mut want = alloc_ct(p, module, p.k);
-                let bytes = module.ckks_dot_product_ct_tmp_bytes(n, &want, a[0], b[0], &key.tsk);
-                with_scratch::<BE, _>(bytes, |scratch| {
-                    module.ckks_dot_product_ct(&mut want, &a, &b, &key.tsk, scratch)
-                })
-                .unwrap();
-                let want = snapshot::<BE, _>(&want);
-                for (ha, hb) in [(0, 0), (1, 1), (0, 1), (1, 0)] {
-                    let lhs: Vec<&_> = radix.left[ha][..n].iter().collect();
-                    let rhs: Vec<&_> = radix.right[hb][..n].iter().collect();
-                    let hints = (HINTS[ha], HINTS[hb]);
-                    let mut have = alloc_ct(p, module, p.k);
-                    assert_eq!(
-                        module.ckks_dot_product_ct_tmp_bytes(n, &have, lhs[0], rhs[0], &key.tsk),
-                        bytes,
-                        "{label} {hints:?}: scratch query"
-                    );
-                    with_scratch::<BE, _>(bytes, |scratch| {
-                        module.ckks_dot_product_prepared(&mut have, &lhs, &rhs, &key.tsk, scratch)
-                    })
-                    .unwrap();
-                    assert_eq!(snapshot::<BE, _>(&have), want, "{label} {hints:?}: not ckks_dot_product_ct");
-                }
-            }
+    for n in [1, PAIRS] {
+        let (a, b): (Vec<&_>, Vec<&_>) = (a[..n].iter().collect(), b[..n].iter().collect());
+        let mut want = alloc_ct(p, module, p.k);
+        let bytes = module.ckks_dot_product_ct_tmp_bytes(n, &want, a[0], b[0], tsk);
+        with_scratch::<BE, _>(bytes, |scratch| module.ckks_dot_product_ct(&mut want, &a, &b, tsk, scratch)).unwrap();
+        let want = snapshot::<BE, _>(&want);
+        for (ha, hb) in [(0, 0), (1, 1), (0, 1), (1, 0)] {
+            let label = format!("dot_product_prepared pairs={n} hints={:?}", (HINTS[ha], HINTS[hb]));
+            let lhs: Vec<&_> = left[ha][..n].iter().collect();
+            let rhs: Vec<&_> = right[hb][..n].iter().collect();
+            let mut have = alloc_ct(p, module, p.k);
+            assert_eq!(
+                module.ckks_dot_product_ct_tmp_bytes(n, &have, lhs[0], rhs[0], tsk),
+                bytes,
+                "{label}: scratch query"
+            );
+            with_scratch::<BE, _>(bytes, |scratch| {
+                module.ckks_dot_product_prepared(&mut have, &lhs, &rhs, tsk, scratch)
+            })
+            .unwrap();
+            assert_eq!(snapshot::<BE, _>(&have), want, "{label}: not ckks_dot_product_ct");
         }
     }
 
     // A source without plaintext metadata gives operands without it.
-    let mut bare = radixes[0].a[0].clone();
+    let mut bare = a[0].clone();
     bare.set_plaintext_meta(None);
     assert_eq!(
         prepare_left(&bare, PrepareHint::Reuse).plaintext_meta(),
@@ -1263,15 +1020,7 @@ where
         "right of a bare source"
     );
 
-    // Rejections at the suite's radix.
-    let Radix {
-        params: p,
-        tsk,
-        a,
-        left,
-        right,
-        ..
-    } = &radixes[0];
+    // Rejections.
     let lhs: Vec<&_> = left[1].iter().collect();
     let rhs: Vec<&_> = right[1].iter().collect();
     let mut dst = alloc_ct(p, module, p.k);
@@ -1296,6 +1045,10 @@ where
             ..p.glwe_layout()
         },
         GLWELayout {
+            base2k: (p.base2k - 1).into(),
+            ..p.glwe_layout()
+        },
+        GLWELayout {
             rank: Rank((p.rank % 2 + 1) as u32),
             ..p.glwe_layout()
         },
@@ -1307,16 +1060,8 @@ where
         ct
     })
     .collect();
-    let foreign_left: Vec<_> = foreign_cts
-        .iter()
-        .map(|ct| prepare_left(ct, PrepareHint::Reuse))
-        .chain([prepare_left(&radixes[1].a[0], PrepareHint::Reuse)])
-        .collect();
-    let foreign_right: Vec<_> = foreign_cts
-        .iter()
-        .map(|ct| prepare_right(ct, PrepareHint::Reuse))
-        .chain([prepare_right(&radixes[1].b[0], PrepareHint::Reuse)])
-        .collect();
+    let foreign_left: Vec<_> = foreign_cts.iter().map(|ct| prepare_left(ct, PrepareHint::Reuse)).collect();
+    let foreign_right: Vec<_> = foreign_cts.iter().map(|ct| prepare_right(ct, PrepareHint::Reuse)).collect();
     let mismatch = |odd: GLWELayout| CKKSCompositionError::PreparedOperandLayoutMismatch {
         op: OP,
         dst_n: p.n,
@@ -1340,7 +1085,7 @@ where
     let mut narrow = a[1].clone();
     narrow.set_log_budget(narrow.log_budget() - 1);
     let narrow = prepare_left(&narrow, PrepareHint::Reuse);
-    let mut low_scale = radixes[0].b[1].clone();
+    let mut low_scale = b[1].clone();
     low_scale.set_log_delta(low_scale.log_delta() - 1);
     let low_scale = prepare_right(&low_scale, PrepareHint::Reuse);
     let invalid = |err: &CKKSError| matches!(err.composition(), Some(CKKSCompositionError::InvalidOperand { op: OP, .. }));

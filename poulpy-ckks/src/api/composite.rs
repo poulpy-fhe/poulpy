@@ -366,30 +366,18 @@ pub trait CKKSDotProductOps<BE: Backend> {
         A: CKKSCtBounds,
         P: CKKSInfos;
 
-    /// Computes `dst = Σ a[i] * b[i]` over ciphertext–ciphertext pairs, of any
-    /// ciphertext types, as [`CKKSMulOps::ckks_mul_into`](crate::api::CKKSMulOps::ckks_mul_into) takes.
+    /// Computes `dst = Σ a[i] * b[i]` over ciphertext pairs, with the bounds of
+    /// [`CKKSMulOps::ckks_mul_into`](crate::api::CKKSMulOps::ckks_mul_into).
     ///
-    /// When there are several pairs, every `a[i]` shares one layout and scale,
-    /// every `b[i]` shares one, and `dst.base2k() <= 62`, the products are
-    /// summed and relinearized once, with the tensor key at
-    /// `max(a[0].k(), b[0].k())`, as in `ckks_mul_into`. Where `ckks_mul_into`
-    /// takes its one-pass product, the sum is poulpy-core's
-    /// `glwe_mul_relinearize_sum`. That product needs rank 1, one `base2k`
-    /// across `dst`, the operands and the tensor key, and a convolution offset
-    /// of at least `base2k`. The offset, `max(log_budget) + max(log_delta)`
-    /// over `a[0]` and `b[0]` plus the metadata's `offset`, is at least
-    /// `max(a[0].k(), b[0].k())`, so operands one limb wide or more meet it.
-    /// Every pair's products are then added in the transform domain, in slice
-    /// order, before one inverse transform. An FFT backend adds in floating
-    /// point, so the order is part of the result. On every backend, `base2k`
-    /// must hold `a.len()` times the products of one pair: pick it with
-    /// `Module::max_base2k`, counting up to `2 * min(a_size, b_size)` limb
-    /// products per pair and output limb, `a_size` and `b_size` the limbs of
-    /// `a[0].k()` and `b[0].k()`. Otherwise each tensor product is rounded on
-    /// its own and their exact sum is relinearized. Either way, that path
-    /// returns its errors before writing `dst` and leaves `dst` canonical.
-    /// Other inputs are equivalent to a `ckks_mul_into` followed by
-    /// `ckks_mul_add_ct_into` calls, and a later pair can fail after `dst` was
+    /// Two pairs or more, every `a[i]` of one layout and scale, every `b[i]` of
+    /// one, and `dst.base2k() <= 62`: the products are summed and relinearized
+    /// once, with the tensor key at `max(a[0].k(), b[0].k())`. Where
+    /// `ckks_mul_into` takes its one-pass product, the sum is core's
+    /// `glwe_mul_relinearize_sum`, which adds every pair in the transform domain
+    /// in slice order: `base2k` must hold `a.len()` times the products of one
+    /// pair (`Module::max_base2k`). This path returns its errors before writing
+    /// `dst` and leaves it canonical. Other inputs are `ckks_mul_into` then
+    /// `ckks_mul_add_ct_into` per pair, so a later pair can fail after `dst` was
     /// written.
     ///
     /// # Metadata
@@ -418,29 +406,17 @@ pub trait CKKSDotProductOps<BE: Backend> {
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetTensorKey<BE>;
 
-    /// Computes `dst = Σ a[i] * b[i]` over operands prepared once by
-    /// [`CKKSMulOps::ckks_prepare_left`](crate::api::CKKSMulOps::ckks_prepare_left)
+    /// [`Self::ckks_dot_product_ct`] of the ciphertexts `a[i]` and `b[i]` were
+    /// prepared from by [`CKKSMulOps::ckks_prepare_left`](crate::api::CKKSMulOps::ckks_prepare_left)
     /// and [`CKKSMulOps::ckks_prepare_right`](crate::api::CKKSMulOps::ckks_prepare_right),
-    /// under either hint: [`Self::ckks_dot_product_ct`] of the ciphertexts they
-    /// were prepared from, bit for bit, metadata and canonical flag included,
-    /// with no operand transformed in the call. It takes the path of that
-    /// operation that relinearizes once, under the same conditions on the
-    /// radix, for any number of pairs: one pair gives what `ckks_dot_product_ct`
-    /// gives through `ckks_mul_into`.
+    /// bit for bit, under either hint and for any number of pairs, with no
+    /// operand transformed in the call. Its scratch is
+    /// [`Self::ckks_dot_product_ct_tmp_bytes`] of the prepared operands.
     ///
-    /// Every operand must be of the degree, `base2k` and rank of `dst`, or the
-    /// call returns `PreparedOperandLayoutMismatch`. Every `a[i]` must share
-    /// one layout and scale, every `b[i]` one, and `dst.base2k()` must be at
-    /// most 62, or it returns `InvalidOperand`: prepared pairs have no eager
-    /// path. It checks the lengths, the operands, the tensor key at
-    /// `max(a[0].k(), b[0].k())` and the budget, in that order, before writing
-    /// `dst`. The scratch is [`Self::ckks_dot_product_ct_tmp_bytes`] of the
-    /// prepared operands.
-    ///
-    /// # Metadata
-    ///
-    /// The rule of [`Self::ckks_dot_product_ct`], read from the infos of the
-    /// prepared operands, which report the ciphertexts they were prepared from.
+    /// Returns, before writing `dst`, `PreparedOperandLayoutMismatch` for an
+    /// operand of another degree, `base2k` or rank than `dst`, and
+    /// `InvalidOperand` for a side whose operands do not share one layout and
+    /// scale, or past `base2k` 62: prepared pairs have no eager path.
     fn ckks_dot_product_prepared<Dst, H>(
         &self,
         dst: &mut Dst,

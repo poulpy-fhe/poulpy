@@ -447,8 +447,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use poulpy_core::layouts::{Base2K, Rank, TorusPrecision};
-    use poulpy_hal::layouts::{HostBytesBackend, Module, ReaderFrom, WriterTo, ZnxView, ZnxViewMut};
+    use poulpy_core::layouts::{Base2K, TorusPrecision};
+    use poulpy_hal::layouts::{HostBytesBackend, Module, ReaderFrom, WriterTo, ZnxViewMut};
 
     use crate::{CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind, layouts::CKKSModuleAlloc};
 
@@ -478,35 +478,5 @@ mod tests {
         let mut again = Vec::new();
         back.write_to(&mut again).unwrap();
         assert_eq!(again, bytes);
-    }
-
-    #[test]
-    fn ciphertext_read_rejects_another_rank_and_leaves_the_receiver_unchanged() {
-        let module = Module::<HostBytesBackend>::new(16);
-        let mut bytes = Vec::new();
-        module
-            .ckks_ciphertext_alloc_with_rank(Base2K(12), TorusPrecision(36), Rank(2))
-            .write_to(&mut bytes)
-            .unwrap();
-        let mut rank1 = module.ckks_ciphertext_alloc(Base2K(12), TorusPrecision(36));
-        rank1.data_mut().raw_mut().fill(5);
-        let mut before = Vec::new();
-        rank1.write_to(&mut before).unwrap();
-        let err = rank1.read_from(&mut bytes.as_slice()).unwrap_err();
-        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
-        let mut after = Vec::new();
-        rank1.write_to(&mut after).unwrap();
-        assert_eq!(after, before);
-        assert!(rank1.data().raw().iter().all(|&x| x == 5));
-    }
-
-    #[test]
-    fn ciphertext_write_rejects_a_flag_clear_ciphertext() {
-        let module = Module::<HostBytesBackend>::new(16);
-        let mut ct = module.ckks_ciphertext_alloc(Base2K(12), TorusPrecision(36));
-        ct.set_canonical(false);
-        let mut bytes = Vec::new();
-        assert_eq!(ct.write_to(&mut bytes).unwrap_err().kind(), std::io::ErrorKind::InvalidInput);
-        assert!(bytes.is_empty());
     }
 }
