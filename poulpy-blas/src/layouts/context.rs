@@ -23,7 +23,7 @@ use poulpy_hal::{
 use super::{
     BlasGridInfos,
     ciphertext::grid_batch_at,
-    encoding::{Encoded, Scheduled, encode_map_into, prepare_maps_into, real_map},
+    encoding::{DiagonalShape, Encoded, Scheduled, encode_map_into, prepare_maps_into, real_map, shape},
     maps,
 };
 
@@ -555,6 +555,19 @@ pub(crate) fn assert_fits(layout: &BlasContextLayout) {
         layout.coeffs_meta,
         layout.base2k,
     );
+}
+
+/// The maps of a context of `infos` as the planning queries read them, without encoding any.
+///
+/// # Panics
+///
+/// As [`assert_fits`].
+pub(crate) fn context_shapes(infos: &impl BlasContextInfos) -> ContextMaps<LinearTransformation<DiagonalShape>> {
+    let layout = infos.blas_context_layout();
+    assert_fits(&layout);
+    ContextMaps::build(layout.plan.log_d(), layout.slots, |id| {
+        shape(&context_map::<f64>(&layout, id).layout())
+    })
 }
 
 /// Panics unless maps of `owner` (a context or an operand) on blocks of dimension `2^log_d` fit: blocks at least `2 x 2`

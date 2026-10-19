@@ -166,10 +166,10 @@ impl BlasGridInfos for BlasLayout {
     }
 }
 
-/// A prepared operand of `api::BlasMatMulOps::blas_matmul_prepared`, beyond its [`BlasGridInfos`]: the hint
-/// it was prepared under and the block layout of the grid it was prepared from. A hot operand, `OneShot`, reports that
-/// layout as its block layout too, since the context of the product it enters defines its terms; a cold one, `Reuse`,
-/// reports the layout of its terms.
+/// A prepared operand of [`blas_matmul_prepared`](crate::api::BlasMatMulOps::blas_matmul_prepared), beyond its
+/// [`BlasGridInfos`]: the hint it was prepared under and the block layout of the grid it was prepared from. A hot
+/// operand, `OneShot`, reports that layout as its block layout too, since the context of the product it enters defines
+/// its terms; a cold one, `Reuse`, reports the layout of its terms.
 pub trait BlasMatMulOperandInfos: BlasGridInfos {
     /// `OneShot` for a hot operand, prepared for one product; `Reuse` for a cold one, prepared for many.
     fn hint(&self) -> PrepareHint;
@@ -179,8 +179,8 @@ pub trait BlasMatMulOperandInfos: BlasGridInfos {
 }
 
 /// The infos a preparation of a grid under a hint reports, before preparing it, as
-/// `blas_matmul_left_operand_layout` and
-/// `blas_matmul_right_operand_layout` give them, for the prepared
+/// [`blas_matmul_left_operand_layout`](crate::layouts::blas_matmul_left_operand_layout) and
+/// [`blas_matmul_right_operand_layout`](crate::layouts::blas_matmul_right_operand_layout) give them, for the prepared
 /// product's query. Like a [`BlasLayout`], it carries no batch record.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]

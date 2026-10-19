@@ -19,6 +19,10 @@
 - [PaCo Bootstrapping](paco.md) — refreshing selected coefficient classes with PaCo, including validated plans/keys, direct and encapsulated modes, bounded parallel evaluation, and metadata accounting.
 - [SHIP Bootstrapping](ship.md) — the shallow SHIP half bootstrap: sparse-secret encapsulation, hoisted mux blind rotations, and the product tree, with validated plans, integrated key generation, and real/complex entry points.
 
+## BLAS
+
+- [Implementing BLAS operations](../poulpy-blas/docs/blas-contracts.md), the rules every BLAS family shares: batches, key sets and widths, validation and error order, scratch and parallelism.
+
 ## Specifications
 
 The [`spec/`](spec) folder holds lower-level implementation specifications and code walkthroughs.

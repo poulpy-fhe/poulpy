@@ -3,19 +3,21 @@
 //! implementation, before any write.
 
 use poulpy_ckks::{
-    CKKSCompositionError, CKKSCtBounds, CKKSError, CKKSInfos, CKKSLayout, CKKSResult as Result, GLWEPlaintextInfos,
+    CKKSCompositionError, CKKSCtBounds, CKKSError, CKKSInfos, CKKSResult as Result, GLWEPlaintextInfos,
     api::{CKKSModuleInfos, LinearTransformation, LtDiagonalMeta, ckks_linear_transformation_output_k},
 };
 use poulpy_core::layouts::{Base2K, GLWEInfos, GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, TorusPrecision};
 use poulpy_hal::layouts::{Backend, Module, PrepareHint, Ring, ScratchArena};
 
 use super::{
-    BlasContext, BlasContextInfos, BlasGrid, BlasGridInfos, BlasLayout, BlasMatMulOperandInfos, BlasMatMulOperandLayout,
-    BlasPtOperand, BlasPtOperandInfos, Left,
+    BlasContext, BlasContextInfos, BlasGrid, BlasGridInfos, BlasMatMulOperandInfos, BlasMatMulOperandLayout, BlasPtOperand,
+    BlasPtOperandInfos, Left,
     ciphertext::{batch_fits, layout_of, replicated_at},
     context::{ContextMaps, shift_maps, sum_rotations},
     grid_batch,
-    matmul_operand::{left_operand_layout, left_term_layout, product_terms, right_maps, right_operand_layout, right_term_layout},
+    matmul_operand::{
+        left_operand_layout, left_term_layout, product_terms, right_maps, right_operand_layout, right_term_layout, same_shape,
+    },
     pt_operand::OperandMaps,
 };
 
@@ -273,10 +275,10 @@ pub(crate) fn assert_scratch<BE: Backend>(op: &str, required: usize, scratch: &S
     );
 }
 
-/// Checks a `api::BlasMatInterOps::blas_rotate` call, and returns the batch `res` records, `a`'s: `a` and `res` are
-/// grids at `a`'s `log_d` whose blocks tile their shape and share one layout whose label allows their batch record
-/// ([`BlasGrid::blocks`], [`BlasGridInfos::mat_slots`]), `res` has `a`'s shape and its blocks `a`'s degree, radix and
-/// rank, and `atk` holds the rotation key at `a`'s width, of `a`'s rank.
+/// Checks a [`blas_rotate`](crate::api::BlasMatInterOps::blas_rotate) call, and returns the batch `res` records, `a`'s:
+/// `a` and `res` are grids at `a`'s `log_d` whose blocks tile their shape and share one layout whose label allows their
+/// batch record ([`BlasGrid::blocks`], [`BlasGridInfos::mat_slots`]), `res` has `a`'s shape and its blocks `a`'s
+/// degree, radix and rank, and `atk` holds the rotation key at `a`'s width, of `a`'s rank.
 ///
 /// # Errors
 ///
@@ -295,8 +297,9 @@ pub fn validate_blas_rotate<BE: Backend>(
     Ok(grid_batch::<BE::Ring>(a))
 }
 
-/// Checks a `api::BlasMatInterOps::blas_sum` call as [`validate_blas_rotate`] does, with the rotation keys of
-/// the batch at the narrower of `a`'s and `res`'s widths, of `a`'s rank, and returns the batch `res` records, `a`'s.
+/// Checks a [`blas_sum`](crate::api::BlasMatInterOps::blas_sum) call as [`validate_blas_rotate`] does, with the
+/// rotation keys of the batch at the narrower of `a`'s and `res`'s widths, of `a`'s rank, and returns the batch `res`
+/// records, `a`'s.
 ///
 /// # Errors
 ///
@@ -349,11 +352,12 @@ fn sum_key_width(res: &impl BlasGridInfos, a: &impl BlasGridInfos) -> TorusPreci
     a.block_layout().k().min(res.block_layout().k())
 }
 
-/// Checks a `api::BlasMatIntraOps::blas_transpose` call, and returns the batch `res` records, `a`'s: `a` and `res` are
-/// grids at the context's `log_d` whose blocks tile their shape and share one layout whose label allows their batch
-/// record ([`BlasGrid::blocks`], [`crate::layouts::BlasGridInfos::mat_slots`]), `res` has the transposed shape of `a`
-/// and its blocks `a`'s degree, radix and rank, `ctx` was encoded on a module of `module`'s slot count at `a`'s radix,
-/// and `atk` holds every key of the transpose at the width it is looked up at, of `a`'s rank.
+/// Checks a [`blas_transpose`](crate::api::BlasMatIntraOps::blas_transpose) call, and returns the batch `res` records,
+/// `a`'s: `a` and `res` are grids at the context's `log_d` whose blocks tile their shape and share one layout whose
+/// label allows their batch record ([`BlasGrid::blocks`], [`crate::layouts::BlasGridInfos::mat_slots`]), `res` has the
+/// transposed shape of `a` and its blocks `a`'s degree, radix and rank, `ctx` was encoded on a module of `module`'s
+/// slot count at `a`'s radix, and `atk` holds every key of the transpose at the width it is looked up at, of `a`'s
+/// rank.
 ///
 /// # Errors
 ///
@@ -372,8 +376,9 @@ pub fn validate_blas_transpose<BE: Backend>(
     Ok(grid_batch::<BE::Ring>(a))
 }
 
-/// Checks a `api::BlasMatIntraOps::blas_rotate_rows` call as [`validate_blas_transpose`] does, `res` of `a`'s
-/// shape and the keys of the maps the shift by `k` applies, and returns the batch `res` records, `a`'s.
+/// Checks a [`blas_rotate_rows`](crate::api::BlasMatIntraOps::blas_rotate_rows) call as [`validate_blas_transpose`]
+/// does, `res` of `a`'s shape and the keys of the maps the shift by `k` applies, and returns the batch `res` records,
+/// `a`'s.
 ///
 /// # Errors
 ///
@@ -389,7 +394,7 @@ pub fn validate_blas_rotate_rows<BE: Backend>(
     validate_shift(module, res, a, k, true, ctx, atk)
 }
 
-/// [`validate_blas_rotate_rows`] for `api::BlasMatIntraOps::blas_rotate_cols`.
+/// [`validate_blas_rotate_rows`] for [`blas_rotate_cols`](crate::api::BlasMatIntraOps::blas_rotate_cols).
 ///
 /// # Errors
 ///
@@ -473,11 +478,12 @@ pub(crate) fn left_takes_replicated<T>(b: &OperandMaps<T>, a: &impl BlasGridInfo
     b.has_replicated() && replicated_at(b.slots(), a)
 }
 
-/// Checks a `api::BlasMatMulOps::blas_matmul` call, and returns the batch `res` records, the larger of `a`'s and `b`'s:
-/// `a` and `b` as their preparations check them ([`validate_blas_matmul_prepare_left`],
+/// Checks a [`blas_matmul`](crate::api::BlasMatMulOps::blas_matmul) call, and returns the batch `res` records, the
+/// larger of `a`'s and `b`'s: `a` and `b` as their preparations check them ([`validate_blas_matmul_prepare_left`],
 /// [`validate_blas_matmul_prepare_right`]), `res` against them as [`validate_blas_matmul_prepared`] checks it against
-/// their operands, and `tsk` at the wider of their term widths (`blas_matmul_left_term_layout`,
-/// `blas_matmul_right_term_layout`), of their rank.
+/// their operands, and `tsk` at the wider of their term widths
+/// ([`blas_matmul_left_term_layout`](crate::layouts::blas_matmul_left_term_layout),
+/// [`blas_matmul_right_term_layout`](crate::layouts::blas_matmul_right_term_layout)), of their rank.
 ///
 /// # Errors
 ///
@@ -502,13 +508,13 @@ pub fn validate_blas_matmul<BE: Backend>(
     Ok(grid_batch::<BE::Ring>(a).max(grid_batch::<BE::Ring>(b)))
 }
 
-/// Checks a `api::BlasMatMulOps::blas_matmul_prepare_left` call: `a` is a grid at the context's `log_d` whose blocks
-/// tile its shape and share one layout whose label allows its batch record, of the module's degree, `ctx` was encoded
-/// on a module of `module`'s slot count at `a`'s radix, `res` has the shape of the infos
-/// `blas_matmul_left_operand_layout` gives for `a`, `ctx` and `res`'s hint (the hint, the dimensions, and the degree,
-/// radix, width and rank of the source's and the reported blocks, whatever their metadata), and `atk` holds every key
-/// of sigma from `a`'s width and of each phi^k from sigma's result into the terms' width, at the width it is looked up
-/// at, of `a`'s rank.
+/// Checks a [`blas_matmul_prepare_left`](crate::api::BlasMatMulOps::blas_matmul_prepare_left) call: `a` is a grid at
+/// the context's `log_d` whose blocks tile its shape and share one layout whose label allows its batch record, of the
+/// module's degree, `ctx` was encoded on a module of `module`'s slot count at `a`'s radix, `res` has the shape of the
+/// infos [`blas_matmul_left_operand_layout`](crate::layouts::blas_matmul_left_operand_layout) gives for `a`, `ctx` and
+/// `res`'s hint (the hint, the dimensions, and the degree, radix, width and rank of the source's and the reported
+/// blocks, whatever their metadata), and `atk` holds every key of sigma from `a`'s width and of each phi^k from sigma's
+/// result into the terms' width, at the width it is looked up at, of `a`'s rank.
 ///
 /// # Errors
 ///
@@ -527,9 +533,10 @@ pub fn validate_blas_matmul_prepare_left<BE: Backend>(
     left_uses(a, &ctx.maps, &mut |u| ensure_rotation(op, module, atk, u))
 }
 
-/// [`validate_blas_matmul_prepare_left`] for `api::BlasMatMulOps::blas_matmul_prepare_right`, with tau and
-/// psi^k, or for a replicated `b` [`BlasContext::tau_rep`] and [`BlasContext::rotate_rows_rep`], and the infos
-/// `blas_matmul_right_operand_layout` gives.
+/// [`validate_blas_matmul_prepare_left`] for
+/// [`blas_matmul_prepare_right`](crate::api::BlasMatMulOps::blas_matmul_prepare_right), with tau and psi^k, or for a
+/// replicated `b` [`BlasContext::tau_rep`] and [`BlasContext::rotate_rows_rep`], and the infos
+/// [`blas_matmul_right_operand_layout`](crate::layouts::blas_matmul_right_operand_layout) gives.
 ///
 /// # Errors
 ///
@@ -551,17 +558,7 @@ pub fn validate_blas_matmul_prepare_right<BE: Backend>(
 /// the dimensions and the GLWE layouts of the source's and of the reported blocks. Their metadata may differ, and a
 /// preparation then reports `want`.
 fn ensure_allocated(op: &'static str, res: &impl BlasMatMulOperandInfos, want: BlasMatMulOperandLayout) -> Result<()> {
-    let shape = |hint, grid: BlasLayout, source: CKKSLayout| {
-        (
-            hint,
-            grid.log_d,
-            grid.rows,
-            grid.cols,
-            grid.block.glwe_layout,
-            source.glwe_layout,
-        )
-    };
-    if shape(res.hint(), res.blas_layout(), res.source_block_layout()) != shape(want.hint, want.grid, want.source) {
+    if !same_shape(res, &want) {
         return Err(reject(
             op,
             "the operand was allocated for another grid, context or hint".into(),
@@ -570,16 +567,16 @@ fn ensure_allocated(op: &'static str, res: &impl BlasMatMulOperandInfos, want: B
     Ok(())
 }
 
-/// Checks a `api::BlasMatMulOps::blas_matmul_prepared` call, and returns the batch `res` records, the larger of the
-/// operands': `a` and `b` are prepared operands, read through their [`BlasMatMulOperandInfos`], at one `log_d`, with at
-/// least one block each and a batch record their label allows, a hot operand at the `log_d` of `ctx`, which was encoded
-/// on a module of `module`'s slot count at its radix; `res` is a grid at that `log_d` whose blocks tile its shape and
-/// share one layout whose label allows its batch record, of `a`'s rows and `b`'s columns, of the module's degree and
-/// the operands' radix and rank, at a radix of 62 at most; `a`'s columns match `b`'s rows; `atk` holds every key of a
-/// hot side's terms under `ctx`, as the preparation of its source looks them up; and `tsk` holds the tensor key at the
-/// wider of the terms' widths, a cold side's own, a hot side's under `ctx`, the one width the product looks it up at,
-/// of their rank. A cold side reads neither `ctx` nor `atk`, and the check reads no hot side's scale: the product
-/// spends that of the maps of `ctx`.
+/// Checks a [`blas_matmul_prepared`](crate::api::BlasMatMulOps::blas_matmul_prepared) call, and returns the batch `res`
+/// records, the larger of the operands': `a` and `b` are prepared operands, read through their
+/// [`BlasMatMulOperandInfos`], at one `log_d`, with at least one block each and a batch record their label allows, a
+/// hot operand at the `log_d` of `ctx`, which was encoded on a module of `module`'s slot count at its radix; `res` is a
+/// grid at that `log_d` whose blocks tile its shape and share one layout whose label allows its batch record, of `a`'s
+/// rows and `b`'s columns, of the module's degree and the operands' radix and rank, at a radix of 62 at most; `a`'s
+/// columns match `b`'s rows; `atk` holds every key of a hot side's terms under `ctx`, as the preparation of its source
+/// looks them up; and `tsk` holds the tensor key at the wider of the terms' widths, a cold side's own, a hot side's
+/// under `ctx`, the one width the product looks it up at, of their rank. A cold side reads neither `ctx` nor `atk`, and
+/// the check reads no hot side's scale: the product spends that of the maps of `ctx`.
 ///
 /// # Errors
 ///
@@ -605,12 +602,12 @@ pub fn validate_blas_matmul_prepared<BE: Backend>(
     Ok(batch)
 }
 
-/// Checks a `api::BlasMatMulOps::blas_matmul_pt_right` call, and returns the batch `res` records, `a`'s: `a` and `res`
-/// are grids at `b`'s `log_d` whose blocks tile their shape and share one layout whose label allows their batch record,
-/// `a`'s columns match `b`'s rows, `res` has `a`'s rows and `b`'s columns, its blocks have the module's degree and
-/// `a`'s radix and rank, `b` was encoded on a module of `module`'s slot count at `a`'s radix, `b`'s public matrices
-/// divide `a`'s batch, and `atk` holds every key of `b`'s maps at the width it is looked up at, of `a`'s rank: under
-/// `Jkls` the first map's from `a`'s width, then the blocks' from the width it leaves.
+/// Checks a [`blas_matmul_pt_right`](crate::api::BlasMatMulOps::blas_matmul_pt_right) call, and returns the batch `res`
+/// records, `a`'s: `a` and `res` are grids at `b`'s `log_d` whose blocks tile their shape and share one layout whose
+/// label allows their batch record, `a`'s columns match `b`'s rows, `res` has `a`'s rows and `b`'s columns, its blocks
+/// have the module's degree and `a`'s radix and rank, `b` was encoded on a module of `module`'s slot count at `a`'s
+/// radix, `b`'s public matrices divide `a`'s batch, and `atk` holds every key of `b`'s maps at the width it is looked
+/// up at, of `a`'s rank: under `Jkls` the first map's from `a`'s width, then the blocks' from the width it leaves.
 ///
 /// # Errors
 ///
@@ -641,12 +638,12 @@ pub fn validate_blas_matmul_pt_right<BE: Backend>(
     Ok(batch)
 }
 
-/// Checks a `api::BlasMatMulOps::blas_matmul_pt_left` call, and returns the batch `res` records, `a`'s: `a` and `res`
-/// are grids at `b`'s `log_d` whose blocks tile their shape and share one layout whose label allows their batch record,
-/// `b`'s columns match `a`'s rows, `res` has `b`'s rows and `a`'s columns, its blocks have the module's degree and
-/// `a`'s radix and rank, `b` was encoded on a module of `module`'s slot count at `a`'s radix, `b`'s public matrices
-/// divide `a`'s batch, and `atk` holds every key of `b`'s maps at the width it is looked up at, of `a`'s rank: under
-/// `Jkls` the first map's from `a`'s width, then the blocks' from the width it leaves.
+/// Checks a [`blas_matmul_pt_left`](crate::api::BlasMatMulOps::blas_matmul_pt_left) call, and returns the batch `res`
+/// records, `a`'s: `a` and `res` are grids at `b`'s `log_d` whose blocks tile their shape and share one layout whose
+/// label allows their batch record, `b`'s columns match `a`'s rows, `res` has `b`'s rows and `a`'s columns, its blocks
+/// have the module's degree and `a`'s radix and rank, `b` was encoded on a module of `module`'s slot count at `a`'s
+/// radix, `b`'s public matrices divide `a`'s batch, and `atk` holds every key of `b`'s maps at the width it is looked
+/// up at, of `a`'s rank: under `Jkls` the first map's from `a`'s width, then the blocks' from the width it leaves.
 ///
 /// # Errors
 ///
@@ -866,6 +863,7 @@ mod tests {
     use poulpy_hal::layouts::HostBytesBackend;
 
     use super::*;
+    use crate::layouts::BlasLayout;
 
     #[test]
     fn maps_reject_blocks_of_another_ring_radix_or_a_narrower_width() {

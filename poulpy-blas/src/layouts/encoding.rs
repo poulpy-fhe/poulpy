@@ -87,6 +87,11 @@ impl MapLayout {
         }
     }
 
+    /// The sparsity the map's period proves on the module's degree: `log2` of its slots over its period.
+    pub(crate) fn log_sparsity(&self) -> usize {
+        (self.lt.slots / self.period).ilog2() as usize
+    }
+
     /// The schedule a prepared map holds: the layout's, with only the baby steps its diagonals use.
     pub(crate) fn prepared_index(&self) -> LinearTransformationPlan {
         skeleton(&self.lt.index(), ()).index()
@@ -144,6 +149,47 @@ pub(crate) fn skeleton<P: Copy>(plan: &LinearTransformationPlan, diagonal: P) ->
             })
             .collect(),
     }
+}
+
+/// What the planning queries read of a map's diagonals: their width, scale, slot kind and the sparsity their period
+/// proves on the module's degree.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct DiagonalShape {
+    pub(crate) k: TorusPrecision,
+    pub(crate) log_scale: usize,
+    pub(crate) slots: SlotsKind,
+    pub(crate) log_sparsity: usize,
+}
+
+impl LtDiagonalMeta for DiagonalShape {
+    fn lt_log_scale(&self) -> usize {
+        self.log_scale
+    }
+
+    fn lt_slots(&self) -> SlotsKind {
+        self.slots
+    }
+
+    fn lt_log_sparsity(&self, _log_n: usize) -> usize {
+        self.log_sparsity
+    }
+}
+
+/// `map` as the planning queries read it: the schedule its prepared form holds, every diagonal of its width, scale and
+/// slot kind.
+pub(crate) fn shape(map: &MapLayout) -> LinearTransformation<DiagonalShape> {
+    let slots = if map.meta.meta.slots.is_real() {
+        SlotsKind::Real
+    } else {
+        SlotsKind::Complex
+    };
+    let diagonal = DiagonalShape {
+        k: map.meta.k,
+        log_scale: map.meta.log_delta(),
+        slots,
+        log_sparsity: map.log_sparsity(),
+    };
+    skeleton(&map.prepared_index(), diagonal)
 }
 
 /// Encodes `map` into `lt`, allocated from its layout.
