@@ -4,9 +4,9 @@
 use poulpy_ckks::{
     CKKSLayout, CKKSResult, CoeffsMeta, SlotsKind,
     api::{
-        CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, Diagonal, GiantStep,
-        LinearTransformation, LinearTransformationLayout, LinearTransformationPlan, LinearTransformationPrepared, LtDiagonalMeta,
-        ckks_linear_transformation_output_layout,
+        CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, CKKSModuleInfos, Diagonal,
+        GiantStep, LinearTransformation, LinearTransformationLayout, LinearTransformationPlan, LinearTransformationPrepared,
+        LtDiagonalMeta, ckks_linear_transformation_output_layout,
     },
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
     reference::ckks_encode_linear_transformation_into,
@@ -30,7 +30,7 @@ pub(crate) type Encoded<BE> = LinearTransformation<CKKSPlaintextOwned<BE>>;
 /// One real map, the schedule it is evaluated by and the metadata its diagonals are encoded at.
 pub(crate) struct Scheduled<F> {
     map: ComplexDiagonals<F>,
-    strategy: LinearTransformationStrategy,
+    pub(crate) strategy: LinearTransformationStrategy,
     meta: CoeffsMeta,
 }
 
@@ -155,7 +155,7 @@ pub(crate) fn encode_map_into<BE, M, F>(
 ) -> CKKSResult<()>
 where
     BE: Backend,
-    M: CKKSEncodingOps<BE, F>,
+    M: CKKSModuleInfos + CKKSEncodingOps<BE, F>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
 {
     ckks_encode_linear_transformation_into(module, lt, map.meta.meta, &map.map, map.strategy, scratch)
@@ -209,7 +209,7 @@ pub trait BlasEncodingOps<BE: Backend>: CKKSModuleAlloc<BE> + GetDegree + Sized 
     /// operand of one public matrix on more than one matrix slot under the diagonal products also holds, per block, the
     /// map of a replicated input ([`maps::left_mul_rep`]). Every diagonal of `res` is overwritten, so encoding again
     /// into the same operand refills it, with no allocation of plaintexts. Operations reject the operand on inputs whose
-    /// blocks are not at its radix, and size their scratch assuming `coeffs_meta.k` is not wider than the ciphertexts.
+    /// blocks are not at its radix or are narrower than `coeffs_meta.k`.
     ///
     /// `scratch` must hold [`Self::blas_pt_operand_encode_tmp_bytes`].
     ///
@@ -258,8 +258,7 @@ pub trait BlasEncodingOps<BE: Backend>: CKKSModuleAlloc<BE> + GetDegree + Sized 
     /// step, and psi^k on a replicated input
     /// ([`BlasContext::rotate_rows_rep`](crate::layouts::BlasContext::rotate_rows_rep)), at no scale. Every diagonal is
     /// overwritten, so encoding again refills `res` with no allocation of plaintexts. Operations reject the context on a
-    /// module of other slots and on inputs whose blocks are not at its radix, and size their scratch assuming
-    /// `coeffs_meta.k` is not wider than the ciphertexts.
+    /// module of other slots and on inputs whose blocks are not at its radix or are narrower than `coeffs_meta.k`.
     ///
     /// `scratch` must hold [`Self::blas_context_encode_tmp_bytes`].
     ///
@@ -287,7 +286,7 @@ pub trait BlasEncodingOps<BE: Backend>: CKKSModuleAlloc<BE> + GetDegree + Sized 
 
 impl<BE: Backend> BlasEncodingOps<BE> for Module<BE> where Module<BE>: CKKSModuleAlloc<BE> {}
 
-/// `block` after `lt`: at the width `lt` leaves of it, its slots joined with the map's.
+/// `block` after `lt`: at the width `lt` leaves of it, its slots joined with the map's, sparse where both are.
 pub(crate) fn mapped_block<P: LtDiagonalMeta>(block: CKKSLayout, lt: &LinearTransformation<P>) -> CKKSLayout {
     let k = block.k();
     ckks_linear_transformation_output_layout(lt, block, k)

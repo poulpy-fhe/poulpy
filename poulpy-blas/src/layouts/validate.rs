@@ -132,13 +132,15 @@ pub(crate) fn ensure_inner(op: &'static str, a_cols: usize, b_rows: usize) -> Re
     Ok(())
 }
 
-/// Rejects maps encoded on a module of `slots` slots at radix `base2k` unless `module` has `slots` slots and every grid
-/// of `inputs`, the grids they read, holds blocks at `base2k`.
+/// Rejects maps encoded on a module of `slots` slots at radix `base2k` and torus width `k` unless `module` has `slots`
+/// slots and every grid of `inputs`, the grids they read, holds blocks at `base2k` no narrower than `k`: the scratch
+/// queries bound a diagonal by its input block.
 pub(crate) fn ensure_maps<M: CKKSModuleInfos + ?Sized>(
     op: &'static str,
     module: &M,
     slots: usize,
     base2k: Base2K,
+    k: TorusPrecision,
     inputs: &[&dyn BlasGridInfos],
 ) -> Result<()> {
     if module.ckks_max_slots() != slots {
@@ -157,6 +159,16 @@ pub(crate) fn ensure_maps<M: CKKSModuleInfos + ?Sized>(
                 "blocks at base2k={} read by maps at base2k={}",
                 input.block_layout().base2k().as_usize(),
                 base2k.as_usize()
+            ),
+        ));
+    }
+    if let Some(input) = inputs.iter().find(|g| g.block_layout().k() < k) {
+        return Err(reject(
+            op,
+            format!(
+                "blocks at k={} read by maps at k={}",
+                input.block_layout().k().as_usize(),
+                k.as_usize()
             ),
         ));
     }
@@ -408,7 +420,7 @@ fn ensure_mapped<BE: Backend>(
     ensure_grid::<BE::Ring>(op, ctx.log_d(), res, res.blocks())?;
     ensure_shape(op, res, rows, cols)?;
     ensure_layouts(op, module.n(), res, &[a])?;
-    ensure_maps(op, module, ctx.slots(), ctx.base2k(), &[a])
+    ensure_maps(op, module, ctx.slots(), ctx.base2k(), ctx.coeffs_meta().k, &[a])
 }
 
 /// The checks of a row (`rows`) or column shift by `k`.
@@ -617,7 +629,7 @@ pub fn validate_blas_matmul_pt_right<BE: Backend>(
     ensure_inner(op, a.cols(), b.rows())?;
     ensure_shape(op, res, a.rows(), b.cols())?;
     ensure_layouts(op, module.n(), res, &[a])?;
-    ensure_maps(op, module, b.slots(), b.base2k(), &[a])?;
+    ensure_maps(op, module, b.slots(), b.base2k(), b.coeffs_meta().k, &[a])?;
     let batch = grid_batch::<BE::Ring>(a);
     if !batch.is_multiple_of(b.count()) {
         return Err(reject(
@@ -652,7 +664,7 @@ pub fn validate_blas_matmul_pt_left<BE: Backend>(
     ensure_inner(op, b.cols(), a.rows())?;
     ensure_shape(op, res, b.rows(), a.cols())?;
     ensure_layouts(op, module.n(), res, &[a])?;
-    ensure_maps(op, module, b.slots(), b.base2k(), &[a])?;
+    ensure_maps(op, module, b.slots(), b.base2k(), b.coeffs_meta().k, &[a])?;
     let batch = grid_batch::<BE::Ring>(a);
     if !batch.is_multiple_of(b.count()) {
         return Err(reject(
@@ -668,7 +680,7 @@ pub fn validate_blas_matmul_pt_left<BE: Backend>(
 fn ensure_factor<BE: Backend>(op: &'static str, module: &Module<BE>, a: &impl BlasGrid<BE>, ctx: &BlasContext<BE>) -> Result<()> {
     ensure_grid::<BE::Ring>(op, ctx.log_d(), a, a.blocks())?;
     ensure_layouts(op, module.n(), a, &[])?;
-    ensure_maps(op, module, ctx.slots(), ctx.base2k(), &[a])
+    ensure_maps(op, module, ctx.slots(), ctx.base2k(), ctx.coeffs_meta().k, &[a])
 }
 
 /// For a hot operand `x`, whose terms the product evaluates, that `ctx` reads it: at its `log_d`, encoded for the
@@ -683,7 +695,7 @@ fn ensure_hot_context<BE: Backend>(
         return Ok(());
     }
     ensure_dimension(op, ctx.log_d(), x)?;
-    ensure_maps(op, module, ctx.slots(), ctx.base2k(), &[x])
+    ensure_maps(op, module, ctx.slots(), ctx.base2k(), ctx.coeffs_meta().k, &[x])
 }
 
 /// `g` is a prepared operand at `log_d`, with at least one block and a batch record its label allows; returns the record.
@@ -846,4 +858,36 @@ pub(crate) fn pt_left_uses<P: LtDiagonalMeta>(
     let rep = left_takes_replicated(b, a);
     let maps = (0..b.rows()).flat_map(|i| (0..b.cols()).map(move |l| b.at_for(i, l, rep)));
     pt_uses(res, a, b.first(), maps, f)
+}
+
+#[cfg(test)]
+mod tests {
+    use poulpy_ckks::layouts::CKKSModuleAlloc;
+    use poulpy_hal::layouts::HostBytesBackend;
+
+    use super::*;
+
+    #[test]
+    fn maps_reject_blocks_of_another_ring_radix_or_a_narrower_width() {
+        let module = Module::<HostBytesBackend>::new(256);
+        let block = layout_of(&module.ckks_ciphertext_alloc(19usize.into(), 60usize.into()));
+        let grid = BlasLayout::new(block, 2, 1, 1);
+        let check = |slots: usize, base2k: usize, k: usize| {
+            ensure_maps("op", &module, slots, base2k.into(), k.into(), &[&grid]).map_err(|err| err.composition().cloned())
+        };
+        assert!(check(128, 19, 60).is_ok());
+        assert!(check(128, 19, 40).is_ok());
+        let rejected = |reason: &str| {
+            Err(Some(CKKSCompositionError::InvalidOperand {
+                op: "op",
+                reason: reason.into(),
+            }))
+        };
+        assert_eq!(
+            check(64, 19, 60),
+            rejected("maps encoded for 64 slots on a module of 128 slots")
+        );
+        assert_eq!(check(128, 20, 60), rejected("blocks at base2k=19 read by maps at base2k=20"));
+        assert_eq!(check(128, 19, 61), rejected("blocks at k=60 read by maps at k=61"));
+    }
 }

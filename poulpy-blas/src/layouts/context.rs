@@ -22,8 +22,9 @@ use poulpy_hal::{
 
 use super::{
     BlasGridInfos,
+    ciphertext::grid_batch_at,
     encoding::{Encoded, Scheduled, encode_map_into, prepare_maps_into, real_map},
-    grid_batch, maps,
+    maps,
 };
 
 /// How the products by public matrices are evaluated, which a plan records for the public operands encoded from it.
@@ -547,16 +548,24 @@ impl<BE: Backend> BlasContext<BE> {
 /// Panics unless the blocks of `layout`, at least `2 x 2`, fit its slots, and its maps have a torus width and a radix in
 /// `1..=63`.
 pub(crate) fn assert_fits(layout: &BlasContextLayout) {
-    let log_d = layout.plan.log_d();
-    assert!(
-        log_d >= 1 && layout.slots > 0 && log_d <= layout.slots.ilog2() as usize / 2,
-        "the context's blocks do not fit its slots"
+    assert_maps_fit(
+        "context",
+        layout.plan.log_d(),
+        layout.slots,
+        layout.coeffs_meta,
+        layout.base2k,
     );
-    assert!(layout.coeffs_meta.k.as_usize() > 0, "the context's maps have no torus width");
+}
+
+/// Panics unless maps of `owner` (a context or an operand) on blocks of dimension `2^log_d` fit: blocks at least `2 x 2`
+/// that fit `slots`, a torus width and a radix in `1..=63`.
+pub(crate) fn assert_maps_fit(owner: &str, log_d: usize, slots: usize, coeffs_meta: CoeffsMeta, base2k: Base2K) {
     assert!(
-        (1..=63).contains(&layout.base2k.as_usize()),
-        "the context's radix is outside 1..=63"
+        log_d >= 1 && slots > 0 && log_d <= slots.ilog2() as usize / 2,
+        "the {owner}'s blocks do not fit its slots"
     );
+    assert!(coeffs_meta.k.as_usize() > 0, "the {owner}'s maps have no torus width");
+    assert!((1..=63).contains(&base2k.as_usize()), "the {owner}'s radix is outside 1..=63");
 }
 
 /// Panics unless `layout` fits, as [`assert_fits`] states, and is of `module`'s ring.
@@ -676,12 +685,11 @@ impl<BE: Backend> BlasContextPreparedFactory<BE> for Module<BE> where
 {
 }
 
-/// Galois elements `blas_sum` needs on a grid of layout `infos`: at its recorded batch, or for a layout without one
-/// the batch its label proves; none when one block does not fit the slots.
-pub fn sum_galois_elements<BE: Backend>(module: &Module<BE>, infos: &impl BlasGridInfos) -> Vec<i64> {
-    sum_rotations(infos.log_d(), grid_batch::<BE::Ring>(infos))
-        .map(|rotation| module.ckks_galois_element(rotation))
-        .collect()
+/// Galois elements `blas_sum` needs on a grid of layout `infos` on a ring of `cyclotomic_order`: at its recorded batch,
+/// or for a layout without one the batch its label proves; none when one block does not fit the slots.
+pub fn sum_galois_elements(cyclotomic_order: i64, infos: &impl BlasGridInfos) -> Vec<i64> {
+    let slots = usize::try_from(cyclotomic_order / 4).unwrap_or(0);
+    galois_elements_from_rotations(sum_rotations(infos.log_d(), grid_batch_at(slots, infos)), cyclotomic_order)
 }
 
 /// The rotations of `blas_sum` on `2^log_d x 2^log_d` blocks holding `mat_slots` matrices: `2^i d^2` for
@@ -710,7 +718,7 @@ mod tests {
     use super::*;
     use crate::layouts::{BlasLayout, BlasModuleAlloc, replicated};
     use poulpy_ckks::{CKKSInfos, SetGLWEPlaintextInfos};
-    use poulpy_hal::layouts::{HostBytesBackend, Standard};
+    use poulpy_hal::layouts::{CyclotomicOrder, HostBytesBackend, Standard};
 
     #[test]
     fn contexts_allocate_every_map_of_their_layout() {
@@ -751,29 +759,31 @@ mod tests {
         let module = Module::<HostBytesBackend>::new(256);
         let mut ct = module.blas_ciphertext_alloc(2, 1, 1, 19usize.into(), 60usize.into());
         let mut layout = BlasLayout::new(ct.block_layout(), 2, 2, 2);
+        let order = module.cyclotomic_order();
         // 128 slots hold 8 matrix slots of 4 x 4 blocks: rotations by 16, 32 and 64.
-        let want: Vec<i64> = [16, 32, 64].map(|r| module.ckks_galois_element(r)).into();
-        assert_eq!(sum_galois_elements(&module, &layout), want);
-        assert_eq!(sum_galois_elements(&module, &ct), want);
+        let want = |rotations: &[i64]| -> Vec<i64> { rotations.iter().map(|&r| module.ckks_galois_element(r)).collect() };
+        let sorted = |mut elements: Vec<i64>| {
+            elements.sort_unstable();
+            elements
+        };
+        assert_eq!(sum_galois_elements(order, &layout), sorted(want(&[16, 32, 64])));
+        assert_eq!(sum_galois_elements(order, &ct), sorted(want(&[16, 32, 64])));
         layout.block.meta.log_sparsity = 1;
-        assert_eq!(sum_galois_elements(&module, &layout), want[..2]);
+        assert_eq!(sum_galois_elements(order, &layout), sorted(want(&[16, 32])));
         // A grid plans from its record, not from its label.
         ct.block_mut(0, 0).set_log_sparsity(1);
-        assert_eq!(sum_galois_elements(&module, &ct), want);
+        assert_eq!(sum_galois_elements(order, &ct), sorted(want(&[16, 32, 64])));
         ct.mat_slots = 2;
-        assert_eq!(sum_galois_elements(&module, &ct), want[..1]);
+        assert_eq!(sum_galois_elements(order, &ct), want(&[16]));
         // No block fits, or a shift is past the word width: no key, no panic.
         for log_sparsity in [64, 65] {
             layout.block.meta.log_sparsity = log_sparsity;
-            assert!(
-                sum_galois_elements(&module, &layout).is_empty(),
-                "log_sparsity={log_sparsity}"
-            );
+            assert!(sum_galois_elements(order, &layout).is_empty(), "log_sparsity={log_sparsity}");
         }
         layout.block.meta.log_sparsity = 0;
         for log_d in [4, 40, usize::MAX] {
             layout.log_d = log_d;
-            assert!(sum_galois_elements(&module, &layout).is_empty(), "log_d={log_d}");
+            assert!(sum_galois_elements(order, &layout).is_empty(), "log_d={log_d}");
         }
     }
 

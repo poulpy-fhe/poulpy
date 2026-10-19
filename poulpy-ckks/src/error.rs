@@ -63,9 +63,14 @@ impl From<CKKSCompositionError> for CKKSError {
 /// [`CKKSError::Internal`] with its context preserved.
 impl From<anyhow::Error> for CKKSError {
     fn from(e: anyhow::Error) -> Self {
-        match e.downcast::<CKKSCompositionError>() {
-            Ok(c) => Self::Composition(c),
-            Err(e) => Self::Internal(e),
+        let composition = e.chain().find_map(|cause| {
+            cause
+                .downcast_ref::<CKKSCompositionError>()
+                .or_else(|| cause.downcast_ref::<CKKSError>()?.composition())
+        });
+        match composition {
+            Some(c) => Self::Composition(c.clone()),
+            None => Self::Internal(e),
         }
     }
 }

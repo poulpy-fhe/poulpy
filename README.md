@@ -24,7 +24,7 @@
 - **`poulpy-ckks`**: a backend-agnostic leveled CKKS implementation built on **`poulpy-core`** and **`poulpy-hal`**, including polynomial evaluation and bootstrappings.
 - **`poulpy-bin-fhe`**: the binary/gate-level FHE crate built on **`poulpy-core`** and **`poulpy-hal`**. It replaces the former `poulpy-schemes` crate and exposes backend-owned APIs with explicit operation overrides and reusable reference circuits.
 - **`poulpy-mhe`**: a backend-agnostic multiparty homomorphic encryption crate built on **`poulpy-core`** and **`poulpy-hal`**: collective public, switching, automorphism, tensor and GGSW keys, collective key switching, and conversions between encryptions and additive shares.
-- **`poulpy-blas`**: backend-agnostic encrypted matrix arithmetic built on **`poulpy-ckks`**: grids of CKKS block ciphertexts with JKLS products, transposition, and row, column and matrix-slot rotations and sums.
+- **`poulpy-blas`**: backend-agnostic encrypted matrix arithmetic built on **`poulpy-ckks`**: grids of CKKS block ciphertexts, and the encoded maps and public matrices its operations read.
 - **`poulpy-cpu-portable`**: the portable CPU implementation of **`poulpy-hal`** in plain scalar Rust, which runs on any target and whose scalar kernels back the SIMD backends.
 - **`poulpy-cpu-oracle`**: an unpublished, independent scalar backend that the other backends are compared against in the cross-backend and parity suites.
 - **`poulpy-cpu-rayon`**: the shared Rayon task executor and parallel kernels used by the optional multithreaded CPU backend variants.

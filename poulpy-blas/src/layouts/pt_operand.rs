@@ -11,7 +11,7 @@ use poulpy_ckks::{
     },
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned},
 };
-use poulpy_core::layouts::{Base2K, DiagonalArithmetic, GetDegree};
+use poulpy_core::layouts::{Base2K, DiagonalArithmetic, GetDegree, LinearTransformationStrategy};
 use poulpy_hal::{
     api::CnvPVecAlloc,
     layouts::{Backend, Module, ScratchArena},
@@ -19,6 +19,7 @@ use poulpy_hal::{
 
 use super::{
     BlasPlan, BlasPtAlgorithm,
+    context::assert_maps_fit,
     encoding::{Encoded, MapLayout, Scheduled, encode_map_into, prepare_maps_into, real_map},
     maps,
 };
@@ -306,14 +307,11 @@ impl<BE: Backend> BlasPtOperand<BE, Left> {
     }
 }
 
-/// Panics unless `layout` fits: blocks at least `2 x 2` that fit its slots, at least one block and a block count that a
-/// `usize` holds, a count of public matrices that divides the matrix slots, a torus width and a radix in `1..=63`.
+/// Panics unless `layout` fits: its maps as [`assert_maps_fit`] states, at least one block and a block count that a
+/// `usize` holds, and a count of public matrices that divides the matrix slots.
 fn assert_fits<S>(layout: &BlasPtOperandLayout<S>) {
     let log_d = layout.plan.log_d();
-    assert!(
-        log_d >= 1 && layout.slots > 0 && log_d <= layout.slots.ilog2() as usize / 2,
-        "the operand's blocks do not fit its slots"
-    );
+    assert_maps_fit("operand", log_d, layout.slots, layout.coeffs_meta, layout.base2k);
     assert!(
         matches!(layout.rows.checked_mul(layout.cols), Some(1..)),
         "the operand's grid has no block or more than a usize counts"
@@ -322,11 +320,6 @@ fn assert_fits<S>(layout: &BlasPtOperandLayout<S>) {
     assert!(
         layout.count > 0 && mat_slots.is_multiple_of(layout.count),
         "the operand's count does not divide its matrix slots"
-    );
-    assert!(layout.coeffs_meta.k.as_usize() > 0, "the operand's maps have no torus width");
-    assert!(
-        (1..=63).contains(&layout.base2k.as_usize()),
-        "the operand's radix is outside 1..=63"
     );
 }
 
@@ -364,8 +357,13 @@ where
 }
 
 /// The map of block `t`, row-major, holding `entry`: `A -> A B` on the right and `A -> B A` on the left, of the first
-/// map's results under JKLS.
-fn block_map<F, S>(layout: &BlasPtOperandLayout<S>, entry: &impl Fn(usize, usize, usize) -> F, t: usize) -> Scheduled<F>
+/// map's results under JKLS. Every block shares one schedule, so `strategy`, when given, skips its search.
+fn block_map<F, S>(
+    layout: &BlasPtOperandLayout<S>,
+    entry: &impl Fn(usize, usize, usize) -> F,
+    t: usize,
+    strategy: Option<LinearTransformationStrategy>,
+) -> Scheduled<F>
 where
     F: DiagonalArithmetic + PartialEq,
     S: BlasPtSide,
@@ -380,13 +378,18 @@ where
         (true, BlasPtAlgorithm::Diagonal) => maps::left_mul(slots, log_d, count, b),
         (true, BlasPtAlgorithm::Jkls) => maps::left_jkls(slots, log_d, count, b),
     };
-    let strategy = plan.strategy(&map, false);
+    let strategy = strategy.unwrap_or_else(|| plan.strategy(&map, false));
     real_map(map, strategy, layout.coeffs_meta)
 }
 
-/// The replicated-input map of block `t`, scheduled at the left product's giant step so that it rotates within that
-/// product's key set.
-fn rep_map<F, S>(layout: &BlasPtOperandLayout<S>, entry: &impl Fn(usize, usize, usize) -> F, t: usize) -> Scheduled<F>
+/// The replicated-input map of block `t`, scheduled by `strategy`, the plan's `left_mul_strategy`, so that it rotates
+/// within the left product's key set.
+fn rep_map<F, S>(
+    layout: &BlasPtOperandLayout<S>,
+    entry: &impl Fn(usize, usize, usize) -> F,
+    t: usize,
+    strategy: LinearTransformationStrategy,
+) -> Scheduled<F>
 where
     F: DiagonalArithmetic + PartialEq,
 {
@@ -394,7 +397,7 @@ where
     let d = 1usize << plan.log_d();
     let (i, j) = (t / layout.cols, t % layout.cols);
     let map = maps::left_mul_rep(slots, plan.log_d(), |m, r, c| entry(m, i * d + r, j * d + c));
-    real_map(map, plan.left_mul_strategy(slots), layout.coeffs_meta)
+    real_map(map, strategy, layout.coeffs_meta)
 }
 
 /// The shape of every map of an operand of `layout` on `module`, once `layout` fits and is of the module's slots. The
@@ -413,8 +416,9 @@ pub(crate) fn layouts_of<S: BlasPtSide>(layout: &BlasPtOperandLayout<S>) -> Oper
         slots: layout.slots,
         cols: layout.cols,
         first: first_map::<f64, S>(layout).map(|map| map.layout()),
-        blocks: vec![block_map(layout, &one, 0).layout(); blocks],
-        blocks_rep: holds_replicated(layout).then(|| vec![rep_map(layout, &one, 0).layout(); blocks]),
+        blocks: vec![block_map(layout, &one, 0, None).layout(); blocks],
+        blocks_rep: holds_replicated(layout)
+            .then(|| vec![rep_map(layout, &one, 0, layout.plan.left_mul_strategy(layout.slots)).layout(); blocks]),
     }
 }
 
@@ -447,11 +451,17 @@ where
     if let (Some(lt), Some(map)) = (&mut res.maps.first, first_map::<F, S>(&layout)) {
         encode_map_into(module, lt, map, scratch)?;
     }
+    let mut strategy = None;
     for (t, lt) in res.maps.blocks.iter_mut().enumerate() {
-        encode_map_into(module, lt, block_map(&layout, &entry, t), scratch)?;
+        let map = block_map(&layout, &entry, t, strategy);
+        strategy = Some(map.strategy);
+        encode_map_into(module, lt, map, scratch)?;
     }
-    for (t, lt) in res.maps.blocks_rep.iter_mut().flatten().enumerate() {
-        encode_map_into(module, lt, rep_map(&layout, &entry, t), scratch)?;
+    if let Some(blocks_rep) = &mut res.maps.blocks_rep {
+        let strategy = layout.plan.left_mul_strategy(layout.slots);
+        for (t, lt) in blocks_rep.iter_mut().enumerate() {
+            encode_map_into(module, lt, rep_map(&layout, &entry, t, strategy), scratch)?;
+        }
     }
     Ok(())
 }

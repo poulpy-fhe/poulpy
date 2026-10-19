@@ -65,6 +65,10 @@ impl<D: Data, W: ZnxWord, R: Ring> LtDiagonalMeta for CKKSPlaintext<D, W, R> {
     fn lt_slots(&self) -> SlotsKind {
         self.slots()
     }
+
+    fn lt_log_n(&self) -> usize {
+        self.log_n()
+    }
 }
 
 /// Resident-diagonal metadata: a core [`PreparedDiagonal`] carries the (opaque to
@@ -80,6 +84,10 @@ impl<D: Data, BE: Backend> LtDiagonalMeta for PreparedDiagonal<D, BE> {
         } else {
             SlotsKind::Complex
         }
+    }
+
+    fn lt_log_n(&self) -> usize {
+        self.log_n()
     }
 }
 
@@ -245,10 +253,13 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         let res_k: TorusPrecision = (res_log_budget + res_log_delta).into();
         debug_assert_eq!(res_k, crate::api::ckks_linear_transformation_output_k(lt, src.k(), dst.k()));
         check_required_keys(lt, babies, keys, self.cyclotomic_order(), res_k)?;
-        // `Σ diag ⊙ rot(src)` has real slots when `src` and the diagonals do.
+        // `Σ diag ⊙ rot(src)` has real slots when `src` and the diagonals do, and is sparse where both are: a diagonal is
+        // dense at its own degree.
         let slots = src.slots().join(pt_slots);
+        let log_sparsity = src.log_sparsity().min(src.log_n().saturating_sub(first.lt_log_n()));
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
+        dst.set_log_sparsity(log_sparsity);
         self.glwe_eval_linear_transformation_into(cnv_offset, dst, babies, lt, keys, scratch);
         dst.set_slots(slots);
         Ok(())
@@ -333,10 +344,14 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         for (&babies_t, &lt_t) in babies.iter().zip(lts) {
             check_required_keys(lt_t, babies_t, keys, self.cyclotomic_order(), res_k)?;
         }
-        // The sum has real slots when every source and the diagonals do.
+        // The sum has real slots when every source and the diagonals do, and is sparse where all of them are.
         let slots = srcs.iter().fold(pt_slots, |slots, src_t| slots.join(src_t.slots()));
+        let log_sparsity = srcs.iter().fold(src.log_n().saturating_sub(first.lt_log_n()), |s, src_t| {
+            s.min(src_t.log_sparsity())
+        });
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
+        dst.set_log_sparsity(log_sparsity);
         self.glwe_eval_linear_transformation_sum_into(cnv_offset, dst, babies, lts, keys, scratch);
         dst.set_slots(slots);
         Ok(())

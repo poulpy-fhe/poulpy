@@ -1,7 +1,7 @@
 //! A grid of CKKS ciphertexts, each holding one `d x d` block of every matrix of a batch.
 
 use anyhow::{Result, ensure};
-use byteorder::{LittleEndian, WriteBytesExt};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextInfos, SetCKKSInfos,
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
@@ -248,10 +248,13 @@ pub(crate) fn slots_of<R: Ring>(n: usize) -> usize {
 /// ([`BlasGridInfos::mat_slots`]), or for a grid without one the batch its blocks' label proves. Every operation reads an
 /// input's batch so, and a preparation records it on its operand.
 pub fn grid_batch<R: Ring>(g: &impl BlasGridInfos) -> usize {
-    g.mat_slots().unwrap_or_else(|| {
-        let block = g.block_layout();
-        mat_slots_in(slots_of::<R>(block.n().as_usize()), g.log_d(), block.log_sparsity())
-    })
+    grid_batch_at(slots_of::<R>(g.block_layout().n().as_usize()), g)
+}
+
+/// [`grid_batch`] at `slots` slots, which the caller supplies.
+pub(crate) fn grid_batch_at(slots: usize, g: &impl BlasGridInfos) -> usize {
+    g.mat_slots()
+        .unwrap_or_else(|| mat_slots_in(slots, g.log_d(), g.block_layout().log_sparsity()))
 }
 
 /// Whether every matrix slot of `g`, on ring `R`, holds the same matrix, as its label proves: the slots repeat with a
@@ -392,8 +395,16 @@ impl<D: Data, W: ZnxWord, R: Ring> BlasGridInfos for BlasCiphertext<D, W, R> {
 
 impl<D: Data, W: ZnxWord, R: Ring> BlasCiphertext<D, W, R> {
     /// The grid's header: `log_d` (u8), its rows and columns (u64), then the blocks' `n` (u64), `base2k`, `k` (u32) and
-    /// rank (u64).
+    /// rank (u64). Blocks that differ in `n`, `base2k`, `k` or rank, which it cannot describe, are
+    /// [`std::io::ErrorKind::InvalidInput`].
     fn header(&self) -> std::io::Result<Vec<u8>> {
+        let first = self.blocks[0].glwe_layout();
+        if self.blocks.iter().any(|block| block.glwe_layout() != first) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "the blocks of the grid do not share one layout",
+            ));
+        }
         let log_d = u8::try_from(self.log_d)
             .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "the block dimension exceeds 2^255"))?;
         let mut header = vec![log_d];
@@ -409,33 +420,28 @@ impl<D: Data, W: ZnxWord, R: Ring> BlasCiphertext<D, W, R> {
 }
 
 impl<D: HostDataRef, W: ZnxWord, R: Ring> WriterTo for BlasCiphertext<D, W, R> {
-    /// Serialises the grid in little-endian binary format: its header, then every block, row-major, as a
-    /// [`CKKSCiphertext`]. Blocks that differ in `n`, `base2k`, `k` or rank, which the header cannot describe, and a
-    /// flag-clear block, fail with [`std::io::ErrorKind::InvalidInput`], writing nothing: normalize it first. The batch
-    /// record is not written: a read records the batch the blocks' label proves.
+    /// Serialises the grid in little-endian binary format: its header, its batch record (u64), then every block,
+    /// row-major, as a [`CKKSCiphertext`]. Blocks that differ in `n`, `base2k`, `k` or rank, which the header cannot
+    /// describe, and a flag-clear block, fail with [`std::io::ErrorKind::InvalidInput`], writing nothing: normalize it
+    /// first.
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
-        let first = self.blocks[0].glwe_layout();
-        if self.blocks.iter().any(|block| block.glwe_layout() != first) {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "the blocks of the grid do not share one layout",
-            ));
-        }
+        let header = self.header()?;
         if self.blocks.iter().any(|block| !GLWE::is_canonical(block)) {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "a block is not canonical: normalize it before serializing",
             ));
         }
-        writer.write_all(&self.header()?)?;
+        writer.write_all(&header)?;
+        writer.write_u64::<LittleEndian>(self.mat_slots as u64)?;
         self.blocks.iter().try_for_each(|block| block.write_to(writer))
     }
 }
 
 impl<D: HostDataMut, W: ZnxWord, R: Ring> ReaderFrom for BlasCiphertext<D, W, R> {
-    /// Deserialises into a grid allocated from the writer's layout: another `log_d`, row or column count, or block
-    /// `n`, `base2k`, `k` or rank, fails with [`std::io::ErrorKind::InvalidData`] before any block is read. The grid
-    /// then records the batch its blocks' label proves, as [`Self::from_blocks`] does.
+    /// Deserialises into a grid allocated from the writer's layout: a receiver whose blocks differ in layout fails with
+    /// [`std::io::ErrorKind::InvalidInput`], another `log_d`, row or column count, or block `n`, `base2k`, `k` or rank
+    /// with [`std::io::ErrorKind::InvalidData`], before any block is read. The grid then records the written batch.
     fn read_from<Rd: std::io::Read>(&mut self, reader: &mut Rd) -> std::io::Result<()> {
         let header = self.header()?;
         let mut read = vec![0u8; header.len()];
@@ -446,9 +452,10 @@ impl<D: HostDataMut, W: ZnxWord, R: Ring> ReaderFrom for BlasCiphertext<D, W, R>
                 "the serialized layout differs from the receiver's",
             ));
         }
+        let mat_slots = usize::try_from(reader.read_u64::<LittleEndian>()?)
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "the batch record exceeds a usize"))?;
         self.blocks.iter_mut().try_for_each(|block| block.read_from(reader))?;
-        let block = &self.blocks[0];
-        self.mat_slots = mat_slots_in(slots_of::<R>(block.n().as_usize()), self.log_d, block.log_sparsity());
+        self.mat_slots = mat_slots;
         Ok(())
     }
 }
@@ -600,7 +607,7 @@ mod tests {
     };
     use poulpy_core::layouts::prepared::GLWETensorKeyPrepared;
     use poulpy_hal::layouts::{HostBytesBackend, Standard};
-    use poulpy_hal::layouts::{ReaderFrom, WriterTo, ZnxViewMut};
+    use poulpy_hal::layouts::{ReaderFrom, WriterTo, ZnxView, ZnxViewMut};
 
     type Grid = BlasCiphertextOwned<HostBytesBackend>;
 
@@ -756,6 +763,15 @@ mod tests {
         assert_eq!(again, bytes);
         assert_eq!(back.mat_slots(), grid.mat_slots());
 
+        // The record travels, though the label proves fewer matrices.
+        let mut sparse = relabelled(grid.clone(), 2, 1);
+        sparse.mat_slots = 8;
+        let mut sparse_bytes = Vec::new();
+        sparse.write_to(&mut sparse_bytes).unwrap();
+        back.mat_slots = 1;
+        back.read_from(&mut sparse_bytes.as_slice()).unwrap();
+        assert_eq!((back.mat_slots(), back.block_layout().log_sparsity()), (Some(8), 1));
+
         // Another shape is rejected before any block is read, the receiver left bit-equal.
         let mut other = module.blas_ciphertext_alloc(2, 3, 2, 19usize.into(), 60usize.into());
         other.blocks_mut()[0].data_mut().raw_mut()[0] = 7;
@@ -794,17 +810,28 @@ mod tests {
     }
 
     #[test]
-    fn grid_write_rejects_blocks_of_different_layouts_writing_nothing() {
+    fn grids_of_blocks_of_different_layouts_neither_write_nor_read() {
         let module = module();
         let blocks = (0..2usize)
             .map(|t| module.ckks_ciphertext_alloc(19usize.into(), (40 + 19 * t).into()))
             .collect();
-        let grid = BlasCiphertext::from_blocks(blocks, 2, 1, 2).unwrap();
+        let mut grid = BlasCiphertext::from_blocks(blocks, 2, 1, 2).unwrap();
         let mut bytes = Vec::new();
         assert_eq!(
             grid.write_to(&mut bytes).unwrap_err().kind(),
             std::io::ErrorKind::InvalidInput
         );
         assert!(bytes.is_empty());
+
+        // A stream whose header matches the first block is rejected before any block is read.
+        let mut uniform = module.blas_ciphertext_alloc(2, 1, 2, 19usize.into(), 40usize.into());
+        uniform.blocks_mut()[1].data_mut().raw_mut()[0] = 7;
+        uniform.write_to(&mut bytes).unwrap();
+        assert_eq!(
+            grid.read_from(&mut bytes.as_slice()).unwrap_err().kind(),
+            std::io::ErrorKind::InvalidInput
+        );
+        assert_eq!(grid.block(0, 1).k().as_usize(), 59);
+        assert!(grid.blocks().iter().all(|block| block.data().raw().iter().all(|&x| x == 0)));
     }
 }

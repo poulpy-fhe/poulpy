@@ -24,14 +24,9 @@ use crate::{
 
 fn validate_compile_inputs<F>(
     full_slots: usize,
-    base2k: Base2K,
     diagonals: &ComplexDiagonals<F>,
     strategy: LinearTransformationStrategy,
 ) -> Result<()> {
-    ensure!(
-        (1..=63).contains(&base2k.as_usize()),
-        "linear-transformation base2k must be in [1, 63], got {base2k}",
-    );
     let slots = diagonals.re.slots();
     ensure!(
         slots == diagonals.im.slots(),
@@ -104,7 +99,11 @@ where
     F: DiagonalArithmetic + CKKSEncodingScalar,
 {
     coeffs_meta.ensure_width("ckks_encode_linear_transformation_from_diagonals")?;
-    validate_compile_inputs(module.ckks_max_slots(), base2k, diagonals, strategy)?;
+    ensure!(
+        (1..=63).contains(&base2k.as_usize()),
+        "linear-transformation base2k must be in [1, 63], got {base2k}",
+    );
+    validate_compile_inputs(module.ckks_max_slots(), diagonals, strategy)?;
 
     let owned_transposed;
     let cd: &ComplexDiagonals<F> = if transpose {
@@ -141,8 +140,9 @@ where
 ///
 /// # Errors
 ///
-/// [`CKKSCompositionError::InvalidOperand`] when the schedule of `res` is not the one `diagonals` and `strategy` give,
-/// before anything is written; then the encoding's errors, after which the content of `res` is unspecified.
+/// The errors of [`ckks_encode_linear_transformation_from_diagonals`] for malformed `diagonals` or `strategy`, and
+/// [`CKKSCompositionError::InvalidOperand`] when the schedule of `res` is not the one they give, before anything is
+/// written; then the encoding's errors, after which the content of `res` is unspecified.
 pub fn ckks_encode_linear_transformation_into<BE, M, F>(
     module: &M,
     res: &mut LinearTransformation<CKKSPlaintextOwned<BE>>,
@@ -153,9 +153,10 @@ pub fn ckks_encode_linear_transformation_into<BE, M, F>(
 ) -> CKKSResult<()>
 where
     BE: Backend,
-    M: CKKSEncodingOps<BE, F>,
+    M: CKKSModuleInfos + CKKSEncodingOps<BE, F>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
 {
+    validate_compile_inputs(module.ckks_max_slots(), diagonals, strategy)?;
     let plan = LinearTransformationLayout {
         indexes: diagonals.indexes(),
         slots: diagonals.slots(),
@@ -232,11 +233,11 @@ mod tests {
             re,
             im: Diagonals::new(8),
         };
-        assert!(validate_compile_inputs(8, Base2K(2), &mismatched, LinearTransformationStrategy::Direct).is_err());
+        assert!(validate_compile_inputs(8, &mismatched, LinearTransformationStrategy::Direct).is_err());
 
         let mut re = Diagonals::new(4);
         re.set(0, vec![1.0; 4]);
         let valid = ComplexDiagonals::new(re, Diagonals::new(4));
-        assert!(validate_compile_inputs(8, Base2K(2), &valid, LinearTransformationStrategy::Bsgs { giant_step: 0 },).is_err());
+        assert!(validate_compile_inputs(8, &valid, LinearTransformationStrategy::Bsgs { giant_step: 0 },).is_err());
     }
 }
