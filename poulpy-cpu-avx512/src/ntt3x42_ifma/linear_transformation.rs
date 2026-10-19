@@ -6,7 +6,10 @@ use poulpy_core::{
     layouts::*,
     reference::{
         keyswitching::glwe::{GGLWEProductReference, gglwe_product_accumulation_output_size},
-        linear_transformation::{DiagonalProd, glwe_eval_linear_transformation_into_reference},
+        linear_transformation::{
+            DiagonalProd, assert_linear_transformation_into, assert_linear_transformation_sum,
+            glwe_eval_linear_transformation_into_reference, glwe_eval_linear_transformation_sum_into_reference,
+        },
     },
 };
 use poulpy_hal::{api::*, layouts::*};
@@ -44,6 +47,18 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
             _,
             _,
         >(module, res, a, pt, key)
+    }
+
+    fn glwe_eval_linear_transformation_sum_tmp_bytes<R, A, B, K>(module: &Module<BE>, res: &R, a: &A, pt: &B, key: &K) -> usize
+    where
+        R: poulpy_core::layouts::GLWEInfos,
+        A: poulpy_core::layouts::GLWEInfos,
+        B: poulpy_core::layouts::GLWEInfos,
+        K: poulpy_core::layouts::GGLWEInfos,
+    {
+        poulpy_core::reference::linear_transformation::glwe_eval_linear_transformation_sum_tmp_bytes_reference::<BE, _, _, _, _, _>(
+            module, res, a, pt, key,
+        )
     }
 
     fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(module: &Module<BE>, a: &A, key: &K) -> usize
@@ -111,26 +126,58 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
         P: poulpy_core::reference::linear_transformation::DiagonalProd<BE>,
         H: poulpy_core::layouts::GetAutomorphismKey<BE>,
     {
-        eval(module, cnv_offset, res, lhs, rhs, keys, scratch)
+        assert_linear_transformation_into(lhs, rhs);
+        if !eval(module, cnv_offset, res, &[lhs], &[rhs], keys, scratch) {
+            glwe_eval_linear_transformation_into_reference(module, cnv_offset, res, lhs, rhs, keys, scratch)
+        }
+    }
+
+    fn glwe_eval_linear_transformation_sum_into<R, H>(
+        module: &Module<BE>,
+        cnv_offset: usize,
+        res: &mut R,
+        babies: &[&poulpy_core::layouts::prepared::LinearTransformationBabySteps<BE>],
+        lts: &[&poulpy_core::layouts::prepared::LinearTransformationPrepared<BE>],
+        keys: &H,
+        scratch: &mut ::poulpy_hal::layouts::ScratchArena<BE>,
+    ) where
+        R: poulpy_core::layouts::GLWEToBackendMut<BE> + poulpy_core::layouts::GLWEInfos,
+        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
+    {
+        assert_linear_transformation_sum(babies, lts);
+        if !eval(module, cnv_offset, res, babies, lts, keys, scratch) {
+            glwe_eval_linear_transformation_sum_into_reference(module, cnv_offset, res, babies, lts, keys, scratch)
+        }
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Lowered under test so that the parity suites, whose destinations hold a few limbs, take the parallel path.
+const PARALLEL_EVAL_MIN_SIZE: usize = if cfg!(test) { 2 } else { 16 };
+
+/// The parallel evaluation of `Σ_t M_t(a_t)` over checked terms, each giant step's PROD summed over the terms as the
+/// reference sums it. Returns `false`, with `res` untouched, where it does not apply.
 fn eval<R, P, H>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut R,
-    lhs: &LinearTransformationBabySteps<BE>,
-    rhs: &LinearTransformation<P>,
+    babies: &[&LinearTransformationBabySteps<BE>],
+    lts: &[&LinearTransformation<P>],
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
-) where
+) -> bool
+where
     R: GLWEToBackendMut<BE> + GLWEInfos,
     P: DiagonalProd<BE>,
     H: GetAutomorphismKey<BE>,
 {
-    if !E::is_parallel() || res.size() < 16 || res.rank().as_usize() != 1 || module.n() < 8 {
-        return glwe_eval_linear_transformation_into_reference(module, cnv_offset, res, lhs, rhs, keys, scratch);
+    let (lhs, rhs) = (babies[0], lts[0]);
+    if !E::is_parallel()
+        || res.size() < PARALLEL_EVAL_MIN_SIZE
+        || res.rank().as_usize() != 1
+        || module.n() < 8
+        || res.n().as_usize() != module.n()
+    {
+        return false;
     }
     let base = rhs.first_diagonal_plaintext().unwrap().base2k().as_usize();
     let cols = res.rank().as_usize() + 1;
@@ -141,7 +188,12 @@ fn eval<R, P, H>(
     let giant_keys: Vec<_> = rhs
         .giant_steps
         .iter()
-        .map(|gs| (gs.rot != 0).then(|| keys.get_automorphism_key(module.galois_element(gs.rot), res.k()).unwrap()))
+        .map(|gs| {
+            (gs.rot != 0).then(|| {
+                keys.get_automorphism_key(module.galois_element(gs.rot), res.k())
+                    .unwrap_or_else(|e| panic!("giant-step rotation {}: {e}", gs.rot))
+            })
+        })
         .collect();
     if giant_keys.iter().flatten().any(|key| {
         key.base2k().as_usize() != base
@@ -153,7 +205,7 @@ fn eval<R, P, H>(
             || key.rank_in().as_usize() != 1
             || key.rank_out().as_usize() != 1
     }) {
-        return glwe_eval_linear_transformation_into_reference(module, cnv_offset, res, lhs, rhs, keys, scratch);
+        return false;
     }
     // Preserve the extra live product limb without widening the key input window.
     let widened = GLWELayout {
@@ -170,7 +222,7 @@ fn eval<R, P, H>(
         .unwrap_or(res.size());
     let lazy_size = output_size.max(prod_size);
     if lazy_size * cols > 128 {
-        return glwe_eval_linear_transformation_into_reference(module, cnv_offset, res, lhs, rhs, keys, scratch);
+        return false;
     }
     let (mut prod0, arena) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), cols, prod_size);
     let (mut acc0, mut work0) = arena.take_vec_znx_dft_scratch(module.n(), cols, lazy_size);
@@ -179,6 +231,13 @@ fn eval<R, P, H>(
     }
     for (g, key) in giant_keys.iter().enumerate() {
         P::accumulate_giant_prod(module, offset_hi, &mut prod0, lhs, &rhs.giant_steps[g], &mut work0);
+        for (&lhs, &rhs) in babies[1..].iter().zip(&lts[1..]) {
+            let (mut bucket, mut bucket_work) = work0.borrow().take_vec_znx_dft_scratch(module.n(), cols, prod_size);
+            P::accumulate_giant_prod(module, offset_hi, &mut bucket, lhs, &rhs.giant_steps[g], &mut bucket_work);
+            for col in 0..cols {
+                module.vec_znx_dft_add_assign(&mut prod0, col, &bucket.to_backend_ref(), col);
+            }
+        }
         finish_giant(
             module,
             &mut acc0,
@@ -209,6 +268,7 @@ fn eval<R, P, H>(
             &mut work0,
         );
     }
+    true
 }
 
 #[allow(clippy::too_many_arguments)]

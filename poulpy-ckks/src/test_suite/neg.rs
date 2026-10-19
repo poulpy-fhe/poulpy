@@ -66,7 +66,7 @@ where
     let (want_re, want_im) = want_neg(&re1, &im1);
     let mut ct_res = alloc_ct(&params, module, params.k);
     module.ckks_neg_into(&mut ct_res, &ct1, &mut scratch.borrow())?;
-    assert_unary_output_meta("neg", &ct_res, &ct1);
+    assert_unary_output_meta("neg", &ct_res, params.k, &ct1);
     assert_decrypt_precision(
         "neg",
         &params,
@@ -113,9 +113,10 @@ where
         &mut scratch.borrow(),
     );
     let (want_re, want_im) = want_neg(&re1, &im1);
-    let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
+    let dst_k = params.k - params.base2k - 1;
+    let mut ct_res = alloc_ct(&params, module, dst_k);
     module.ckks_neg_into(&mut ct_res, &ct1, &mut scratch.borrow())?;
-    assert_unary_output_meta("neg smaller_output", &ct_res, &ct1);
+    assert_unary_output_meta("neg smaller_output", &ct_res, dst_k, &ct1);
     assert_decrypt_precision(
         "neg",
         &params,
@@ -166,9 +167,10 @@ where
         &mut scratch.borrow(),
     );
     let (want_re, want_im) = want_neg(&re1, &im1);
-    let mut ct_res = alloc_ct(&params, module, params.k + params.base2k);
+    let dst_k = params.k + params.base2k;
+    let mut ct_res = alloc_ct(&params, module, dst_k);
     module.ckks_neg_into(&mut ct_res, &ct1, &mut scratch.borrow())?;
-    assert_unary_output_meta("neg wider_output", &ct_res, &ct1);
+    assert_unary_output_meta("neg wider_output", &ct_res, dst_k, &ct1);
     assert_decrypt_precision(
         "neg",
         &params,

@@ -161,7 +161,8 @@ pub const BASE52_PARAMS_QUAD: CKKSTestParams = CKKSTestParams {
 
 /// Registers the **rank-generic arithmetic subset** of the CKKS suite for a
 /// parameter set with `rank > 1`: encrypt/decrypt, add/sub (ct and pt), mul
-/// (ct, square, prepared, pt), neg, copy, pow2, rotate, and conjugate.
+/// (ct, square, prepared, pt), the ct and prepared dot products, neg, copy,
+/// pow2, rotate, and conjugate.
 ///
 /// The full [`ckks_backend_test_suite!`](crate::ckks_backend_test_suite) hardwires rank-1-only pipelines
 /// (bootstrapping, EvalMod, DFT, PaCo — which reject `rank != 1` by
@@ -242,6 +243,10 @@ macro_rules! ckks_backend_rank2_test_suite {
             run_test_result!(neg_assign, $crate::test_suite::neg::test_neg_assign);
             run_test!(mul_ct_aligned, $crate::test_suite::mul::test_mul_ct_aligned);
             run_test!(
+                mul_ct_larger_budget_smaller_scale,
+                $crate::test_suite::mul::test_mul_ct_larger_budget_smaller_scale
+            );
+            run_test!(
                 mul_ct_assign_aligned,
                 $crate::test_suite::mul::test_mul_ct_assign_aligned
             );
@@ -255,10 +260,22 @@ macro_rules! ckks_backend_rank2_test_suite {
             );
             run_test!(square_aligned, $crate::test_suite::mul::test_square_aligned);
             run_test!(
+                dot_product_ct_lazy,
+                $crate::test_suite::dot_product::test_dot_product_ct_lazy
+            );
+            run_test!(
+                dot_product_prepared,
+                $crate::test_suite::dot_product::test_dot_product_prepared
+            );
+            run_test!(
                 mul_pt_vec_into_aligned,
                 $crate::test_suite::mul::test_mul_pt_vec_into_aligned
             );
             run_test!(mul_pt_vec_assign, $crate::test_suite::mul::test_mul_pt_vec_assign);
+            run_test!(
+                mul_pt_scale_above_ct,
+                $crate::test_suite::mul::test_mul_pt_scale_above_ct
+            );
             run_test!(
                 compact_plaintext_add_sub_mul,
                 $crate::test_suite::compact::test_compact_plaintext_add_sub_mul
@@ -394,6 +411,14 @@ macro_rules! ckks_backend_test_suite {
                 add_pt_vec_alignment_error,
                 $crate::test_suite::errors::test_add_pt_vec_alignment_error
             );
+            run_test!(
+                encode_linear_transformation_zero_k_error,
+                $crate::test_suite::errors::test_encode_linear_transformation_zero_k_error
+            );
+            run_test!(
+                encode_bsgs_zero_k_error,
+                $crate::test_suite::errors::test_encode_bsgs_zero_k_error
+            );
             run_test!(add_ct_aligned, $crate::test_suite::add::test_add_ct_aligned);
             run_test!(add_ct_delta_a_lt_b, $crate::test_suite::add::test_add_ct_delta_a_lt_b);
             run_test!(add_ct_delta_a_gt_b, $crate::test_suite::add::test_add_ct_delta_a_gt_b);
@@ -502,10 +527,6 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::sub::test_sub_const_into_lsh_alignment
             );
             run_test!(sub_one_assign, $crate::test_suite::sub::test_sub_one_assign);
-            run_test!(
-                dot_product_overflow_guard,
-                $crate::test_suite::errors::test_dot_product_overflow_guard
-            );
             run_test_result!(copy_aligned, $crate::test_suite::copy::test_copy_aligned);
             run_test_result!(copy_smaller_output, $crate::test_suite::copy::test_copy_smaller_output);
             run_test_result!(neg, $crate::test_suite::neg::test_neg_aligned);
@@ -545,6 +566,10 @@ macro_rules! ckks_backend_test_suite {
             run_test!(
                 linear_transformation,
                 $crate::test_suite::linear_transformation::test_linear_transformation
+            );
+            run_test!(
+                linear_transformation_sum,
+                $crate::test_suite::linear_transformation::test_linear_transformation_sum
             );
             run_test!(
                 linear_transformation_mixed_key_layouts,
@@ -643,6 +668,10 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::mul::test_mul_ct_delta_log_delta
             );
             run_test!(
+                mul_ct_larger_budget_smaller_scale,
+                $crate::test_suite::mul::test_mul_ct_larger_budget_smaller_scale
+            );
+            run_test!(
                 mul_ct_smaller_output,
                 $crate::test_suite::mul::test_mul_ct_smaller_output
             );
@@ -695,9 +724,14 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::mul::test_mul_pt_const_into_delta_log_delta
             );
             run_test!(
+                mul_pt_scale_above_ct,
+                $crate::test_suite::mul::test_mul_pt_scale_above_ct
+            );
+            run_test!(
                 mul_prepared_layout_mismatch_error,
                 $crate::test_suite::mul::test_mul_prepared_layout_mismatch_error
             );
+            run_test!(prepare_into, $crate::test_suite::mul::test_prepare_into);
             run_test!(
                 mul_ct_explicit_metadata_error,
                 $crate::test_suite::mul::test_mul_ct_explicit_metadata_error
@@ -961,6 +995,22 @@ macro_rules! ckks_backend_test_suite {
             run_test!(
                 dot_product_ct_smaller_output,
                 $crate::test_suite::dot_product::test_dot_product_ct_smaller_output
+            );
+            run_test!(
+                dot_product_ct_lazy,
+                $crate::test_suite::dot_product::test_dot_product_ct_lazy
+            );
+            run_test!(
+                dot_product_ct_long_sum,
+                $crate::test_suite::dot_product::test_dot_product_ct_long_sum
+            );
+            run_test!(
+                dot_product_ct_non_uniform,
+                $crate::test_suite::dot_product::test_dot_product_ct_non_uniform
+            );
+            run_test!(
+                dot_product_prepared,
+                $crate::test_suite::dot_product::test_dot_product_prepared
             );
             run_test!(
                 dot_product_pt_vec_aligned,

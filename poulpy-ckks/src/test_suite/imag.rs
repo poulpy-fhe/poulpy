@@ -42,7 +42,7 @@ where
     let (want_re, want_im) = want_mul_i(&re1, &im1);
     let mut ct_res = alloc_ct(&params, module, params.k);
     module.ckks_mul_i_into(&mut ct_res, &ct, &mut scratch.borrow()).unwrap();
-    assert_unary_output_meta("mul_i", &ct_res, &ct);
+    assert_unary_output_meta("mul_i", &ct_res, params.k, &ct);
     assert_decrypt_precision(
         "mul_i",
         &params,
@@ -83,9 +83,10 @@ where
         &mut scratch.borrow(),
     );
     let (want_re, want_im) = want_mul_i(&re1, &im1);
-    let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
+    let dst_k = params.k - params.base2k - 1;
+    let mut ct_res = alloc_ct(&params, module, dst_k);
     module.ckks_mul_i_into(&mut ct_res, &ct, &mut scratch.borrow()).unwrap();
-    assert_unary_output_meta("mul_i smaller_output", &ct_res, &ct);
+    assert_unary_output_meta("mul_i smaller_output", &ct_res, dst_k, &ct);
     assert_decrypt_precision(
         "mul_i",
         &params,
@@ -172,7 +173,7 @@ where
     let (want_re, want_im) = want_div_i(&re1, &im1);
     let mut ct_res = alloc_ct(&params, module, params.k);
     module.ckks_div_i_into(&mut ct_res, &ct, &mut scratch.borrow()).unwrap();
-    assert_unary_output_meta("div_i", &ct_res, &ct);
+    assert_unary_output_meta("div_i", &ct_res, params.k, &ct);
     assert_decrypt_precision(
         "div_i",
         &params,
@@ -213,9 +214,10 @@ where
         &mut scratch.borrow(),
     );
     let (want_re, want_im) = want_div_i(&re1, &im1);
-    let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
+    let dst_k = params.k - params.base2k - 1;
+    let mut ct_res = alloc_ct(&params, module, dst_k);
     module.ckks_div_i_into(&mut ct_res, &ct, &mut scratch.borrow()).unwrap();
-    assert_unary_output_meta("div_i smaller_output", &ct_res, &ct);
+    assert_unary_output_meta("div_i smaller_output", &ct_res, dst_k, &ct);
     assert_decrypt_precision(
         "div_i",
         &params,

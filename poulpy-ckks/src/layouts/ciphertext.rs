@@ -17,7 +17,7 @@ use poulpy_core::layouts::{
     BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef,
     GLWEViewMut, GLWEViewRef, LWEInfos, Rank, SetBSGSMeta, SetGLWEPlaintextInfos, SetK, TorusPrecision,
 };
-use poulpy_hal::layouts::{Backend, Data, HostDataRef, Ring, ScratchArena, ZnxWord};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, Ring, ScratchArena, WriterTo, ZnxWord};
 
 use crate::{CKKSInfos, SetCKKSInfos, ckks_log_delta, error::CKKSCompositionError};
 
@@ -197,6 +197,21 @@ impl<D: Data, W: ZnxWord, R: Ring> SetBSGSMeta for CKKSCiphertext<D, W, R> {
 impl<D: HostDataRef, W: ZnxWord, R: Ring> fmt::Display for CKKSCiphertext<D, W, R> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.inner)
+    }
+}
+
+impl<D: HostDataRef, W: ZnxWord, R: Ring> WriterTo for CKKSCiphertext<D, W, R> {
+    /// The format of the inner [`GLWE`], which rejects a flag-clear ciphertext with
+    /// [`std::io::ErrorKind::InvalidInput`], writing nothing; the ring is the type's.
+    fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
+        self.inner.write_to(writer)
+    }
+}
+
+impl<D: HostDataMut, W: ZnxWord, R: Ring> ReaderFrom for CKKSCiphertext<D, W, R> {
+    /// Reads the inner [`GLWE`]'s format into a ciphertext of this ring.
+    fn read_from<Rd: std::io::Read>(&mut self, reader: &mut Rd) -> std::io::Result<()> {
+        self.inner.read_from(reader)
     }
 }
 
@@ -427,5 +442,41 @@ where
             CKKSEncodingBufferViewMut::from_inner(CKKSEncodingBuffer::from_data(data, len)),
             scratch,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use poulpy_core::layouts::{Base2K, TorusPrecision};
+    use poulpy_hal::layouts::{HostBytesBackend, Module, ReaderFrom, WriterTo, ZnxViewMut};
+
+    use crate::{CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind, layouts::CKKSModuleAlloc};
+
+    #[test]
+    fn ciphertext_round_trip_keeps_the_inner_format() {
+        let module = Module::<HostBytesBackend>::new(16);
+        let mut ct = module.ckks_ciphertext_alloc(Base2K(12), TorusPrecision(36));
+        let meta = GLWEPlaintextMeta {
+            scale: Scale::Log(20),
+            slots: SlotsKind::Complex,
+            log_sparsity: 2,
+        };
+        ct.set_meta(meta);
+        ct.data_mut()
+            .raw_mut()
+            .iter_mut()
+            .enumerate()
+            .for_each(|(t, x)| *x = t as i64 % 11 - 5);
+        let mut bytes = Vec::new();
+        ct.write_to(&mut bytes).unwrap();
+        let mut inner = Vec::new();
+        ct.inner.write_to(&mut inner).unwrap();
+        assert_eq!(bytes, inner);
+        let mut back = module.ckks_ciphertext_alloc(Base2K(12), TorusPrecision(36));
+        back.read_from(&mut bytes.as_slice()).unwrap();
+        assert_eq!(back.meta(), meta);
+        let mut again = Vec::new();
+        back.write_to(&mut again).unwrap();
+        assert_eq!(again, bytes);
     }
 }

@@ -71,6 +71,9 @@
   Every FFT64 DFT kernel now panics on an out-of-range column, also on vectors of no limb (#422).
 - `poulpy_cpu_portable::hal_defaults::take_host_typed` is public, and the SIMD backends use it in place of their own copies.
 - **Breaking:** the kernels of `vec_znx_idft_apply_tmpa` are removed with it: `vec_znx_idft_apply_tmpa_portable` and `ntt4x30_vec_znx_idft_apply_tmpa_portable` of `poulpy_cpu_portable::kernels`, and `PackedNtt4x30Base::idft_limb_tmpa` of `poulpy-cpu-rayon`.
+- The AVX-512 backends run `glwe_tensor_apply_prepared` at rank 1 on the fused kernel of `glwe_tensor_apply`.
+- `NTT3x42IfmaRayon` runs `glwe_eval_linear_transformation_sum_into` on the parallel evaluation of `glwe_eval_linear_transformation_into`.
+  Both run the reference checks before resolving a key, and take the reference path for a destination below the module degree.
 
 ### `poulpy-core`
 
@@ -107,19 +110,77 @@
 - **Breaking, format:** serialized `GLWE` and `GLWECompressed` carry their plaintext metadata.
 - `reference::keyswitching::glwe::gglwe_product_limbs` returns the `product_limbs` the reference key switch passes to `GGLWEProductDigitsStridedImpl`, so that backend overrides derive the same.
 - The scratch of GLWE encryption, decryption, plaintext multiplication, tensoring, relinearization, linear transformations and GGSW noise covers `vec_znx_idft_apply_tmp_bytes`.
+- **Breaking:** `LinearTransformationImpl` requires `glwe_eval_linear_transformation_sum_into` and `glwe_eval_linear_transformation_sum_tmp_bytes`; a hand-written impl forwards them to `glwe_eval_linear_transformation_sum_into_reference` and `glwe_eval_linear_transformation_sum_tmp_bytes_reference`.
+- Add `GLWELinearTransformations::glwe_eval_linear_transformation_sum_into` and its `_tmp_bytes`: `Σ_t M_t(a_t)` over resident transforms that share one giant schedule, at the giant key-switch cost of one transform.
+  It takes the baby caches `babies[t]` of the `a_t` and the transforms `lts[t]` as two slices of one length, so a caller passes its own without building pairs.
+- `reference::linear_transformation` exports the checks its evaluations run before reading a key, `assert_linear_transformation_into` and `assert_linear_transformation_sum`, so that overrides fail as the reference does.
+- **Breaking:** `GLWETensoringImpl` requires `glwe_mul_relinearize_sum`, `glwe_mul_prepared_relinearize_sum`, `glwe_tensor_apply_prepared` and their `_tmp_bytes`; a hand-written impl forwards them to the `GLWETensoringReference` methods of the same names with the `_reference` suffix.
+- Add `GLWEMulRelinearizeSum::glwe_mul_relinearize_sum` and its `_tmp_bytes`: `relinearize(Σ_i a[i] * b[i])` in one pass, over two slices of one length of rank-1 operands, whose pairs share the first pair's layouts.
+  Each pair's product columns are added to the first pair's in the transform domain, and only the key-switched column of the sum comes back to digits before the single final normalization, so the scratch does not grow with the number of pairs.
+  One pair is `glwe_mul_relinearize`, bit for bit.
+  The products of every pair accumulate before one inverse transform: pick `base2k` for `a.len()` times the products of one pair (`Module::max_base2k`), up to `2 * min(a_size, b_size)` per output limb in the cross column.
+- Add `glwe_prepare_left`, the left-hand mirror of `glwe_prepare_right`, and the queries `glwe_prepare_left_tmp_bytes` and `glwe_prepare_right_tmp_bytes`.
+- **Breaking, behaviour:** `glwe_prepare_right` panics unless `b_prep` has `ceil(b_k / base2k)` limbs, as `glwe_prepare_left` does, so that a prepared operand holds its ciphertext at width `b_k`.
+- Add `GLWEPreparedTensoring`: `glwe_mul_prepared_relinearize_sum` and `glwe_tensor_apply_prepared`, with their `_tmp_bytes`, are `glwe_mul_relinearize_sum` and `glwe_tensor_apply` over operands prepared once, which transform no operand in the call.
+  `glwe_mul_prepared_relinearize_sum` takes its left and right operands as two slices of one length, as `glwe_mul_relinearize_sum` does.
+  Operands prepared from ciphertexts of width `k` on `ceil(k / base2k)` limbs, under either `PrepareHint`, give the unprepared products of those ciphertexts bit for bit.
+  Both check every prepared operand against the degree of `res`, its rank and the given sizes before writing `res`, and the summed product checks that each given size is the limb count of its width.
+  Their queries count only what the prepared products use, and one prepared pair needs no more than `glwe_mul_relinearize_tmp_bytes`.
+- **Fix:** `glwe_eval_linear_transformation_into` checks every giant step before writing `res`, as `glwe_eval_linear_transformation_sum_into` does: on the per-giant fallback, a giant step after the first that had no diagonal, started with a diagonal of another width, or read a baby rotation missing from the cache panicked after `res` was written. The other diagonals are not checked: every diagonal of a transform shares one width, scale and degree, as the encoder produces them. Valid calls are unchanged.
+- **Fix:** `glwe_tensor_relinearize_tmp_bytes` counts the operand's second conversion to the tensor key's radix where `glwe_tensor_relinearize` takes it, while the key-switched sum is held. It counted a conversion beside the key product instead, and only for a key of another radix than the output's, so with a key of another `base2k` than the operand's the relinearization could run out of the scratch its query returned and panic, as `ckks_mul_into` did at rank 2 with a key of radix 12 on radix-52 ciphertexts. The query changes only for keys of another radix than the operand's or the output's, and bits are unchanged.
 
 ### `poulpy-ckks`
 
 - The FFT64 bootstrapping benchmarks (portable, AVX2, AVX-512) and preset precision tests (portable, AVX2, oracle) run the presets at `base2k = 18` instead of 19, and `docs/bootstrapping.md` and `docs/performance.md` follow.
   At logN16 the giant steps of CoeffsToSlots and SlotsToCoeffs accumulate several hundred key-switch products in the DFT domain before one inverse transform, which `f64` no longer represents exactly at `base2k = 19`: the bootstrap returned garbage there, and returns 19.85 bits at 18.
+- `CKKSCiphertext` implements `WriterTo` and `ReaderFrom` in the format of its inner `GLWE`, so a flag-clear ciphertext is rejected with `InvalidInput`; the ring stays a type parameter.
+  `CKKSModuleAlloc::ckks_linear_transformation_alloc_from_infos` allocates a transform of a `LinearTransformationLayout`'s schedule with a zero plaintext of the given infos at every diagonal, the receiver of an encoding, and `ckks_compact_degree` gives the degree `ckks_pt_vec_alloc_compact` allocates at.
+- **Breaking:** `CKKSPreparedLeft` and `CKKSPreparedRight` follow poulpy-core's prepared lifecycle: `CKKSMulOps::ckks_prepared_left_alloc_from_infos` (`_right_`) allocates one for a ciphertext layout under a `PrepareHint`, `ckks_prepared_left_bytes_of_from_infos` (`_right_`) sizes it, and `ckks_prepare_left_into` (`_right_`) fills it with no allocation, returning `InvalidOperand` for a source of another layout before any write.
+  `CKKSMulImpl` requires the matching `_impl`s, which `impl_ckks_mul_reference!` forwards to `CKKSMulReference`, and provides `ckks_prepare_left_impl` and `ckks_prepare_right_impl`, which allocate then prepare into, with unchanged bits.
+  `CKKSMulReference::ckks_prepare_left_reference` and `ckks_prepare_right_reference` are removed.
 - **Breaking:** `CKKSMeta` is removed for the wrapped GLWE's `GLWEPlaintextMeta` (`Scale::Log(log_delta)`, `slots`, `log_sparsity`), taken by `set_meta`, `CKKSLayout::meta` and `CoeffsMeta::meta`; `CKKSInfos` extends the core traits, which the prelude re-exports with `SetK`, and `SetCKKSInfos` is blanket-implemented over them (`set_k`, `slots`, `log_sparsity`, `set_slots` and `set_log_sparsity` move there), and a plaintext is dense at its own degree, so `ckks_encrypt_sk` and `ckks_{add,sub,mul}_pt_vec*` derive its sparsity as `log2(N / n)` ([#342](https://github.com/poulpy-fhe/poulpy/issues/342)).
 - **Breaking:** the `impl_ckks_infos!` arms `inner_meta` and `self_meta` are renamed `ckks_inner` and `glwe_inner`.
+- **Breaking:** `ckks_dot_product_ct` takes any ciphertext types, with the bounds of `ckks_mul_into`: its generic parameters change from `<Dst: Data, D: Data, E: Data, H>` over `CKKSCiphertext`s to `<Dst, A, B, H>`.
+  Callers that pass ciphertexts keep compiling, and their bits are unchanged.
+- **Breaking:** `test_suite::helpers::assert_mul_pt_output_meta` takes the destination's `k` before the call and expects what a ct × pt product stamps: `log_delta = a.log_delta` and `log_budget = a.log_budget - pt.log_delta`, less the bits past that `k`.
+  It expected `max(log_delta)` and `a.log_budget - min(log_delta)`, wrong when the plaintext's scale exceeds the ciphertext's, and took the offset from the output, so an output narrower than requested passed.
+  `ckks_backend_test_suite!` and `ckks_backend_rank2_test_suite!` run that case (`mul_pt_scale_above_ct`) for vectors and constants, `_into` and `_assign`.
+- **Breaking:** `test_suite::helpers::assert_mul_ct_output_meta`, `assert_unary_output_meta` and `assert_binary_output_meta` take the destination's `k` before the call (`a.k()` for `_assign`), as `assert_mul_pt_output_meta` does, and charge the expected budget the bits by which the result exceeds that `k`.
+  They took the offset from the output, so an output narrower than requested passed.
+- **Breaking:** `CKKSDotProductOps` and `CKKSLinearTransformationOps` dispatch through two new OEP families, `CKKSDotProductImpl` and `CKKSLinearTransformationImpl`, which `CKKSImpl` bundles: a backend registers `impl_ckks_dot_product_reference!` and `impl_ckks_linear_transformation_reference!`, as `impl_cpu_ckks_defaults!` does, or hand-writes the family.
+  Their reference algorithms are `CKKSDotProductReference` and `CKKSLinearTransformationReference`, which an override calls for the methods it keeps.
+  The plaintext dot products, `ckks_eval_linear_transformation_assign` and the self-caching evaluations are derived defaults, with unchanged bits.
+- **Breaking:** `CKKSMulOps::ckks_prepare_right` and `CKKSMulImpl::ckks_prepare_right_impl` take a `PrepareHint`, `OneShot` for an operand of one product and `Reuse` for one of many, which may select the backend's representation of the operand but not the bits of the products that read it.
+  `CKKSMulImpl` also requires `ckks_prepare_tmp_bytes_impl`: `impl_ckks_mul_reference!` forwards it, and a hand-written impl forwards it to `CKKSMulReference::ckks_prepare_tmp_bytes_reference`.
+  Polynomial evaluation prepares its giant steps under `Reuse`, as before, so its bits are unchanged.
 - `test_suite::parity::helpers`, `test_suite::parity::keys` and `test_suite::parity::layout` are public under `test-utils`, so downstream crates build parity tests from the same fixtures.
 - The scratch of the SHIP masking accumulation and mux-rotate covers `vec_znx_idft_apply_tmp_bytes`.
 - Fix: the halving of `ckks_ci_trace`, and so of `ckks_unfold` of conjugate-invariant inputs, rounds its ties to even.
   It rounded every tie of both columns up, a bias that adds up in the first slots: about `2^-34` at slot 0 for a degree-`2^16` ciphertext at scale `2^54`, against `2^-43` elsewhere.
   The outputs keep the input scale at one bit narrower, as before.
 - The SHIP mux-rotate returns an error on key digits that are not whole limbs.
+- Add `CKKSLinearTransformationOps::ckks_eval_linear_transformation_sum_into` and its `_tmp_bytes`: `Σ_t M_t · src_t`, over the slices `srcs`, `babies` and `lts` of one length, for resident transforms that share one giant schedule, at the giant key-switch cost of one transform, with the single transform's metadata.
+  Slices of different lengths, or a term that does not share the first one's schedule, diagonals, source or baby-cache layout, are `InvalidOperand`, returned before `dst` is written.
+- **Breaking, behaviour:** `ckks_dot_product_ct` relinearizes once for pairs that share layouts, which changes its bits: with two pairs or more, `dst.base2k() <= 62`, one layout and scale for every `a[i]` and one for every `b[i]`, it relinearizes once into a canonical `dst`, with the tensor key at `ckks_mul_into`'s width.
+  Whichever of its two circuits it takes, that path validates the lengths, the tensor key and the budget before writing `dst`, and a long sum is no longer rejected; other pairs keep the eager path and its bits.
+  Where `ckks_mul_into` takes its one-pass product (rank 1, one `base2k` across `dst`, the operands and the tensor key, and a convolution offset of at least `base2k`, which operands one limb wide or more meet), the sum is poulpy-core's `glwe_mul_relinearize_sum`: the products of every pair accumulate in the transform domain, in slice order, in floating point on FFT backends, before each column's inverse transform, so pick `base2k` for `a.len()` times the products of one pair (`Module::max_base2k`); it takes three inverse transforms in all, where the two-pass sum takes `3n + 2` for `n` pairs.
+  Otherwise, as at rank 2, it sums the tensor products at `max(a.k, b.k)` without normalizing, as other lazy additions, and normalizes the sum once, right before the relinearization reads it through a DFT.
+  `ckks_dot_product_ct_tmp_bytes` budgets the path that relinearizes once as the larger of `glwe_mul_relinearize_sum_tmp_bytes` at `max(a.k, b.k)`, whatever the number of pairs, and two tensors at that width plus the largest of the apply, normalize and relinearize scratch; it used `2n` ciphertexts plus one tensor at `max(res.k, a.k, b.k)`.
+- `ckks_add_many`, `ckks_dot_product_pt_vec`, `ckks_dot_product_pt_const` and `ckks_dot_product_ct` on its eager path no longer reject more than `2^(63 - base2k)` terms: they accumulate every term, and normalization is deferred to the next DFT that reads the sum, as for any lazy addition.
+  Valid calls keep their bits.
+- Add `CKKSCompositionError::InvalidOperand { op, reason }` for operands that do not fit an operation, as opposed to `InvalidPlan`'s plan literals.
+- Add `CKKSPreparedLeft`, the left operand `CKKSMulOps::ckks_prepare_left` prepares as `ckks_prepare_right` prepares a `CKKSPreparedRight`, and `ckks_prepare_tmp_bytes`, the scratch of both, which `ckks_mul_tmp_bytes` covers.
+  Both prepared types give their convolution operand through `cnv()`, and report the layout and metadata of the ciphertext they were prepared from, and no noise estimate, through `LWEInfos`, `GLWEInfos`, `GLWEPlaintextInfos` and `CKKSInfos`, so they are `CKKSCtBounds`.
+  They implement `CnvPVecLToBackendRef` and `CnvPVecRToBackendRef`, so the core prepared products read them where they are.
+- Add `CKKSDotProductOps::ckks_dot_product_prepared`: `ckks_dot_product_ct` of the ciphertexts its operands were prepared from, bit for bit, metadata and canonical flag included, under either hint and for any number of pairs, with no operand transformed in the call.
+  It shares the body of `ckks_dot_product_ct`'s path that relinearizes once: where `ckks_mul_into` takes its one-pass product, the sum is poulpy-core's `glwe_mul_prepared_relinearize_sum`; otherwise each pair is one `glwe_tensor_apply_prepared`.
+  It returns `PreparedOperandLayoutMismatch` for an operand of another degree, `base2k` or rank than `dst`, and `InvalidOperand` for a side whose operands do not share one layout and scale, or past `base2k` 62, since prepared pairs have no eager path; it checks the lengths, the operands, the tensor key and the budget, in that order, before writing `dst`.
+  `ckks_dot_product_ct_tmp_bytes` of the prepared operands covers it: the query also takes the prepared core products' queries, which leaves its value unchanged on backends that keep their defaults.
+- **Fix:** the product offset when the operand with the larger budget has the smaller scale.
+  `ckks_mul_into`, `ckks_mul_assign`, `ckks_mul_prepared_assign` and the compositions built on them (dot products, `ckks_mul_add_ct_into`, `ckks_mul_sub_ct_into`, power bases) shifted the product by `max(k)` instead of `max(log_budget) + max(log_delta)`, and decoded too small by `2^min(budget gap, scale gap)`.
+  The bits change only in that case, where results were wrong.
+- **Fix:** `ckks_encode_linear_transformation_from_diagonals`, `EncodeBSGS::encode_bsgs_with`, `EncodeBSGS::encode_bsgs_folded_with` and `compile_eval_mod` return `CKKSCompositionError::InvalidOperand` for a `CoeffsMeta` with `k = 0`, before allocating anything, and `encode_bsgs`, the `ComplexPolynomial` encoders and the bootstrapping plans return it through them.
+  At `log_delta = 0` the linear-transformation encoder panicked while encoding the first diagonal, and at `log_delta > 0` it returned `LimbReallocationShrinksBelowMetadata`; the BSGS and EvalMod encoders panicked while encoding the first baby step.
 
 ### `poulpy-bin-fhe`
 

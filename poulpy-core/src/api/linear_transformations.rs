@@ -12,7 +12,7 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::layouts::{
     GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation,
-    prepared::{LinearTransformationBabySteps, PreparedDiagonal},
+    prepared::{LinearTransformationBabySteps, LinearTransformationPrepared, PreparedDiagonal},
 };
 
 /// GLWE-level setup and evaluation of a resident (prepared) linear
@@ -34,6 +34,15 @@ pub trait GLWELinearTransformations<BE: Backend> {
     /// the RHS is *streamed* (an unprepared plaintext-diagonal `P`): the streamed
     /// inner product additionally holds one resident `CnvPVecR` diagonal slot.
     fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: GLWEInfos,
+        K: GGLWEInfos;
+
+    /// Scratch bytes required by [`Self::glwe_eval_linear_transformation_sum_into`]:
+    /// [`Self::glwe_eval_linear_transformation_tmp_bytes`] plus one giant-step product buffer.
+    fn glwe_eval_linear_transformation_sum_tmp_bytes<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
@@ -96,6 +105,13 @@ pub trait GLWELinearTransformations<BE: Backend> {
     /// Both paths share this single evaluator and give the same result. `lhs` may
     /// carry exactly `rhs.baby_steps` or a superset (e.g. the union of baby
     /// rotations needed by several transforms).
+    ///
+    /// Panics, before writing `res`, if `rhs` has no diagonal or a giant step
+    /// without one, if a giant step's first diagonal is not as wide as the
+    /// transform's first diagonal, or if `lhs` lacks a baby rotation that `rhs`
+    /// reads. The other diagonals are not checked: every diagonal of a
+    /// transform shares one width, scale and degree, as the encoder produces
+    /// them, and preparing asserts the degree.
     fn glwe_eval_linear_transformation_into<R, P, H>(
         &self,
         cnv_offset: usize,
@@ -107,5 +123,36 @@ pub trait GLWELinearTransformations<BE: Backend> {
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         P: crate::reference::linear_transformation::DiagonalProd<BE>,
+        H: GetAutomorphismKey<BE>;
+
+    /// Computes `res = Σ_t M_t(a_t)`, where `babies[t]` is the baby cache of
+    /// `a_t` and `lts[t]` the resident transform `M_t`, all sharing one giant
+    /// schedule.
+    ///
+    /// Each giant step's products are summed over the terms in the DFT domain
+    /// and rotated once, so the sum costs the giant key switches of one
+    /// transform, and `cnv_offset` applies to every term. One term is
+    /// [`Self::glwe_eval_linear_transformation_into`], bit for bit. A giant
+    /// step's products over every term accumulate in one unnormalized buffer:
+    /// pick `base2k` for that many products (`Module::max_base2k`).
+    ///
+    /// Panics, before writing `res`, if `babies` is empty or `lts` is not as
+    /// long, if a transform has no diagonal or a giant step without one, or if
+    /// a cache lacks a baby rotation that its transform reads. Also panics before writing `res`
+    /// unless every term shares the first one's giant schedule, source layout,
+    /// and first diagonal's layout, width and scale, and every giant step's
+    /// first diagonal has that width. The other diagonals are not checked:
+    /// every diagonal of a transform shares one width, scale and degree, as the
+    /// encoder produces them, and preparing asserts the degree.
+    fn glwe_eval_linear_transformation_sum_into<R, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        babies: &[&LinearTransformationBabySteps<BE>],
+        lts: &[&LinearTransformationPrepared<BE>],
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
         H: GetAutomorphismKey<BE>;
 }

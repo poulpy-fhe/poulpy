@@ -8,7 +8,7 @@ use poulpy_hal::{
         Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxRsh, VecZnxRshTmpBytes,
     },
     layouts::{
-        Backend, Data, Module, Ring, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut,
+        Backend, Data, Module, PrepareHint, Ring, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut,
         VecZnxToBackendRef, ZnxWord, vec_znx_backend_ref_from_ref,
     },
 };
@@ -297,7 +297,10 @@ where
     }
 
     fn prepare_right(&self, module: &Module<BE>, a: &A, scratch: &mut ScratchArena<'_, BE>) -> anyhow::Result<Self::Prepared> {
-        module.ckks_prepare_right(a, scratch).map_err(::anyhow::Error::from)
+        // `X^{gsp}` multiplies every pair of its giant-step level.
+        module
+            .ckks_prepare_right(a, PrepareHint::Reuse, scratch)
+            .map_err(::anyhow::Error::from)
     }
 
     fn mul_prepared_assign<H>(

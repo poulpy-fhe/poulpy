@@ -450,7 +450,6 @@ where
     assert_eq!(b.base2k().as_usize(), base2k);
     let a_size = a.k().as_usize().div_ceil(base2k);
     let b_size = b.k().as_usize().div_ceil(base2k);
-    let dft_size = (a_size + b_size).min((res.size() * res.base2k().as_usize() + base2k - 1).div_ceil(base2k));
     let prepared = module.bytes_of_cnv_pvec_left(n, 2, a_size, PrepareHint::Reuse)
         + module.bytes_of_cnv_pvec_right(n, 2, b_size, PrepareHint::Reuse);
     let prepare = module
@@ -458,8 +457,35 @@ where
         .max(module.cnv_prepare_right_tmp_bytes(b_size, b_size));
     BE::scratch_aligned(module.glwe_bytes_of_from_infos(a))
         + BE::scratch_aligned(module.glwe_bytes_of_from_infos(b))
-        + (prepared + prepare.max(rank_one_tensor_work_bytes(module, n, res.size(), dft_size, a_size, b_size)))
+        + (prepared + prepare.max(rank_one_tensor_prepared_tmp_bytes(module, res, a_size, b_size, base2k)))
             .max(module.glwe_normalize_tmp_bytes())
+}
+
+/// Scratch of [`rank_one_tensor_apply_prepared`].
+fn rank_one_tensor_prepared_tmp_bytes<BE, R>(
+    module: &Module<BE>,
+    res: &R,
+    a_size: usize,
+    b_size: usize,
+    in_base2k: usize,
+) -> usize
+where
+    BE: RankOneTensorDft,
+    Module<BE>:
+        VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes + VecZnxIdftApplyTmpBytes + VecZnxNormalizeTmpBytes,
+    R: GLWEInfos,
+{
+    let dft_size = (a_size + b_size).min((res.size() * res.base2k().as_usize() + in_base2k - 1).div_ceil(in_base2k));
+    rank_one_tensor_work_bytes(module, res.n().as_usize(), res.size(), dft_size, a_size, b_size)
+}
+
+/// Scratch the rank-one kernel of `glwe_mul_columns` adds to the reference one-pass products.
+fn rank_one_columns_tmp_bytes<BE: RankOneTensorDft, R: GLWEInfos>(res: &R, a_size: usize, b_size: usize) -> usize {
+    if rank_one_tensor_supported(res) {
+        BE::rank_one_tensor_dft_tmp_bytes(a_size + b_size, a_size, b_size)
+    } else {
+        0
+    }
 }
 
 fn rank_one_tensor_square_tmp_bytes<BE, R, A>(module: &Module<BE>, res: &R, a: &A) -> usize
@@ -672,6 +698,48 @@ fn rank_one_tensor_apply<BE, R, A, B>(
         base2k,
         &mut scratch,
     );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn rank_one_tensor_apply_prepared<BE, R, AP, BP>(
+    module: &Module<BE>,
+    cnv_offset: usize,
+    res: &mut R,
+    a: &AP,
+    a_size: usize,
+    b: &BP,
+    b_size: usize,
+    in_base2k: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: RankOneTensorDft,
+    Module<BE>: ModuleN
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxCopy<BE>
+        + VecZnxSubAssign<BE>
+        + VecZnxNormalizeAssign<BE>
+        + VecZnxNormalizeTmpBytes,
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+    AP: CnvPVecLToBackendRef<BE>,
+    BP: CnvPVecRToBackendRef<BE>,
+{
+    {
+        let n = res.n().as_usize();
+        let (a, b) = (a.to_backend_ref(), b.to_backend_ref());
+        assert!(
+            (a.n(), a.cols(), a.size(), b.n(), b.cols(), b.size()) == (n, 2, a_size, n, 2, b_size),
+            "prepared operands do not match res's degree and rank and the given sizes"
+        );
+    }
+    assert!(scratch.available() >= rank_one_tensor_prepared_tmp_bytes(module, res, a_size, b_size, in_base2k));
+    // As the reference: the kernel writes every limb normalized.
+    res.set_canonical(true);
+    rank_one_tensor_finish(module, cnv_offset, res, a, b, a_size, b_size, in_base2k, scratch);
 }
 
 fn rank_one_tensor_square<BE, R, A>(
@@ -916,13 +984,9 @@ macro_rules! impl_rank_one_tensoring {
                 R: GLWEInfos,
                 B: GGLWEInfos,
             {
-                let reference = module.glwe_mul_relinearize_tmp_bytes_reference(res, a_size, b_size, tensor_k, tsk);
-                if rank_one_tensor_supported(res) {
-                    // The kernel runs where the reference runs its convolutions: its scratch is added whole.
-                    reference + <$be as RankOneTensorDft>::rank_one_tensor_dft_tmp_bytes(a_size + b_size, a_size, b_size)
-                } else {
-                    reference
-                }
+                // The kernel runs where the reference runs its convolutions: its scratch is added whole.
+                module.glwe_mul_relinearize_tmp_bytes_reference(res, a_size, b_size, tensor_k, tsk)
+                    + rank_one_columns_tmp_bytes::<$be, _>(res, a_size, b_size)
             }
 
             #[allow(clippy::too_many_arguments)]
@@ -1044,6 +1108,131 @@ macro_rules! impl_rank_one_tensoring {
                     <$be as RankOneTensorDft>::rank_one_cross_dft(module, diag, cross, cnv_offset_hi, a, b, scratch)
                 } else {
                     module.glwe_mul_columns_reference(cnv_offset_hi, diag, cross, a, b, scratch)
+                }
+            }
+
+            fn glwe_mul_relinearize_sum_tmp_bytes<R, B>(
+                module: &Module<$be>,
+                res: &R,
+                a_size: usize,
+                b_size: usize,
+                tensor_k: poulpy_core::layouts::TorusPrecision,
+                tsk: &B,
+            ) -> usize
+            where
+                R: GLWEInfos,
+                B: GGLWEInfos,
+            {
+                module.glwe_mul_relinearize_sum_tmp_bytes_reference(res, a_size, b_size, tensor_k, tsk)
+                    + rank_one_columns_tmp_bytes::<$be, _>(res, a_size, b_size)
+            }
+
+            fn glwe_mul_relinearize_sum<R, A, B, H>(
+                module: &Module<$be>,
+                cnv_offset: usize,
+                res: &mut R,
+                res_k: poulpy_core::layouts::TorusPrecision,
+                a: &[&A],
+                b: &[&B],
+                tsk: &H,
+                scratch: &mut ScratchArena<'_, $be>,
+            ) where
+                R: GLWEToBackendMut<$be> + GLWEInfos,
+                A: GLWEToBackendRef<$be> + GLWEInfos,
+                B: GLWEToBackendRef<$be> + GLWEInfos,
+                H: poulpy_core::layouts::GetTensorKey<$be>,
+            {
+                module.glwe_mul_relinearize_sum_reference(cnv_offset, res, res_k, a, b, tsk, scratch)
+            }
+
+            fn glwe_mul_prepared_relinearize_sum_tmp_bytes<R, B>(
+                module: &Module<$be>,
+                res: &R,
+                a_size: usize,
+                b_size: usize,
+                tensor_k: poulpy_core::layouts::TorusPrecision,
+                tsk: &B,
+            ) -> usize
+            where
+                R: GLWEInfos,
+                B: GGLWEInfos,
+            {
+                module.glwe_mul_prepared_relinearize_sum_tmp_bytes_reference(res, a_size, b_size, tensor_k, tsk)
+                    + rank_one_columns_tmp_bytes::<$be, _>(res, a_size, b_size)
+            }
+
+            #[allow(clippy::too_many_arguments)]
+            fn glwe_mul_prepared_relinearize_sum<R, AP, BP, H>(
+                module: &Module<$be>,
+                cnv_offset: usize,
+                res: &mut R,
+                res_k: poulpy_core::layouts::TorusPrecision,
+                a: &[&AP],
+                b: &[&BP],
+                a_size: usize,
+                a_k: poulpy_core::layouts::TorusPrecision,
+                b_size: usize,
+                b_k: poulpy_core::layouts::TorusPrecision,
+                tsk: &H,
+                scratch: &mut ScratchArena<'_, $be>,
+            ) where
+                R: GLWEToBackendMut<$be> + GLWEInfos,
+                AP: CnvPVecLToBackendRef<$be>,
+                BP: CnvPVecRToBackendRef<$be>,
+                H: poulpy_core::layouts::GetTensorKey<$be>,
+            {
+                module.glwe_mul_prepared_relinearize_sum_reference(
+                    cnv_offset, res, res_k, a, b, a_size, a_k, b_size, b_k, tsk, scratch,
+                )
+            }
+
+            fn glwe_tensor_apply_prepared_tmp_bytes<R>(
+                module: &Module<$be>,
+                res: &R,
+                a_size: usize,
+                b_size: usize,
+                base2k: poulpy_core::layouts::Base2K,
+            ) -> usize
+            where
+                R: GLWEInfos,
+            {
+                if rank_one_tensor_supported(res) {
+                    rank_one_tensor_prepared_tmp_bytes(module, res, a_size, b_size, base2k.as_usize())
+                } else {
+                    module.glwe_tensor_apply_prepared_tmp_bytes_reference(res, a_size, b_size, base2k)
+                }
+            }
+
+            #[allow(clippy::too_many_arguments)]
+            fn glwe_tensor_apply_prepared<R, AP, BP>(
+                module: &Module<$be>,
+                cnv_offset: usize,
+                res: &mut R,
+                a: &AP,
+                a_size: usize,
+                b: &BP,
+                b_size: usize,
+                base2k: poulpy_core::layouts::Base2K,
+                scratch: &mut ScratchArena<'_, $be>,
+            ) where
+                R: GLWEToBackendMut<$be> + GLWEInfos,
+                AP: CnvPVecLToBackendRef<$be>,
+                BP: CnvPVecRToBackendRef<$be>,
+            {
+                if rank_one_tensor_supported(res) {
+                    rank_one_tensor_apply_prepared(
+                        module,
+                        cnv_offset,
+                        res,
+                        a,
+                        a_size,
+                        b,
+                        b_size,
+                        base2k.as_usize(),
+                        scratch,
+                    )
+                } else {
+                    module.glwe_tensor_apply_prepared_reference(cnv_offset, res, a, a_size, b, b_size, base2k, scratch)
                 }
             }
         }

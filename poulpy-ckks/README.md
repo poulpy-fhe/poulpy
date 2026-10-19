@@ -168,9 +168,9 @@ all parameters.
 | Module | Role |
 |---|---|
 | `api` | Public evaluator traits implemented on `Module<BE>`. |
-| `delegates` | Crate-private dispatch, validation, and API compositions such as affine operations and dot products. |
+| `delegates` | Crate-private dispatch and API compositions such as affine operations. |
 | `oep` | Explicit backend `*Impl` contracts; no blanket selection of operation implementations. `CKKSImpl` aggregates capabilities. |
-| `oep::derived` | Crate-private same-layer defaults: add/subtract one, one-shot polynomial evaluation, and the six DFT format/direction wrappers. |
+| `oep::derived` | Crate-private same-layer defaults: add/subtract one, one-shot polynomial evaluation, the plaintext dot products, the `_assign` and self-caching linear transformations, and the six DFT format/direction wrappers. |
 | `reference` | Callable lower-layer algorithms and canonical encoding definitions. Their implementation bounds do not constrain an unrelated override. |
 | `layouts` | Ciphertexts, plaintexts, metadata, allocation, prepared plans, and backend-resident encoding buffers. |
 | `encoding` | PaCo and SHIP scheme embeddings and explicitly named host helpers, also exposed through `reference::encoding`. |
@@ -354,12 +354,12 @@ Leveled operations are invoked through traits implemented on
 | `CKKSAddOps` | ciphertext and plaintext addition |
 | `CKKSSubOps` | ciphertext and plaintext subtraction |
 | `CKKSNegOps` | negation |
-| `CKKSMulOps` | ciphertext–ciphertext and ciphertext–plaintext multiplication |
+| `CKKSMulOps` | ciphertext–ciphertext and ciphertext–plaintext multiplication, and ciphertexts prepared once as product operands |
 | `CKKSMulAddOps` | fused `dst += a * b` variants |
 | `CKKSMulSubOps` | fused `dst -= a * b` variants |
 | `CKKSAffineOps` | fused affine: `dst = a * scale_coeff + offset_coeff` |
-| `CKKSAddManyOps` | tree-reduction add over slices |
-| `CKKSDotProductOps` | inner product of ciphertext or plaintext slices |
+| `CKKSAddManyOps` | sum of a slice, added left to right |
+| `CKKSDotProductOps` | inner product of ciphertext, prepared-ciphertext or plaintext slices |
 | `CKKSImagOps` | multiplication and division by `i` (imaginary unit rotation) |
 | `CKKSCopyOps` | level-aware ciphertext copy |
 | `CKKSRotateOps` | homomorphic slot rotation |

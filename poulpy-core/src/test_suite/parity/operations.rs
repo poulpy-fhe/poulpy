@@ -5,16 +5,16 @@
 
 use poulpy_hal::{
     api::{CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostDataMut, Module, PrepareHint, ScratchOwned, ZnxView, ZnxViewMut},
+    layouts::{HostDataMut, Module, ScratchOwned, ZnxView, ZnxViewMut},
     source::Source,
     test_suite::TestParams,
 };
 
 use crate::{
     GGSWRotate, GLWEAdd, GLWEBytesOf, GLWECopy, GLWEMaskFill, GLWEMulConst, GLWEMulPlain, GLWEMulXpMinusOne, GLWENegate,
-    GLWENormalize, GLWERotate, GLWEShift, GLWESub, GLWETensoring, GLWEZero,
+    GLWENormalize, GLWEPreparedTensoring, GLWERotate, GLWEShift, GLWESub, GLWETensoring, GLWEZero,
     api::TransferInto,
-    glwe_prepare_right,
+    glwe_prepare_left, glwe_prepare_left_tmp_bytes, glwe_prepare_right, glwe_prepare_right_tmp_bytes,
     layouts::{Base2K, Degree, GGSWAtViewMut, GLWELayout, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision},
     test_suite::parity::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe, unnormalized_twin},
 };
@@ -403,12 +403,14 @@ pub fn test_glwe_tensor_parity<BR, BT>(
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
     Module<BR>: GLWETensoring<BR>
+        + GLWEPreparedTensoring<BR>
         + ModuleCoreAlloc<OwnedBuf = BR::OwnedBuf, ZnxWord = i64>
         + CnvPVecAlloc<BR>
         + Convolution<BR>
         + GLWENormalize<BR>
         + GLWEBytesOf<BR>,
     Module<BT>: GLWETensoring<BT>
+        + GLWEPreparedTensoring<BT>
         + ModuleCoreAlloc<OwnedBuf = BT::OwnedBuf, ZnxWord = i64>
         + CnvPVecAlloc<BT>
         + Convolution<BT>
@@ -459,12 +461,14 @@ pub fn test_glwe_tensor_parity_for_layout<BR, BT>(
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
     Module<BR>: GLWETensoring<BR>
+        + GLWEPreparedTensoring<BR>
         + ModuleCoreAlloc<OwnedBuf = BR::OwnedBuf, ZnxWord = i64>
         + CnvPVecAlloc<BR>
         + Convolution<BR>
         + GLWENormalize<BR>
         + GLWEBytesOf<BR>,
     Module<BT>: GLWETensoring<BT>
+        + GLWEPreparedTensoring<BT>
         + ModuleCoreAlloc<OwnedBuf = BT::OwnedBuf, ZnxWord = i64>
         + CnvPVecAlloc<BT>
         + Convolution<BT>
@@ -489,12 +493,14 @@ fn test_glwe_tensor_parity_case<BR, BT>(
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
     Module<BR>: GLWETensoring<BR>
+        + GLWEPreparedTensoring<BR>
         + ModuleCoreAlloc<OwnedBuf = BR::OwnedBuf, ZnxWord = i64>
         + CnvPVecAlloc<BR>
         + Convolution<BR>
         + GLWENormalize<BR>
         + GLWEBytesOf<BR>,
     Module<BT>: GLWETensoring<BT>
+        + GLWEPreparedTensoring<BT>
         + ModuleCoreAlloc<OwnedBuf = BT::OwnedBuf, ZnxWord = i64>
         + CnvPVecAlloc<BT>
         + Convolution<BT>
@@ -531,32 +537,41 @@ fn test_glwe_tensor_parity_case<BR, BT>(
     let n = a_infos.n.as_usize();
     let cols = a_infos.rank.as_usize() + 1;
     let b_size = a_infos.k.as_usize().div_ceil(a_infos.base2k.as_usize());
-    let mut b_prep_ref = module_ref.cnv_pvec_right_alloc(n, cols, b_size, PrepareHint::Reuse);
-    let mut b_prep_test = module_test.cnv_pvec_right_alloc(n, cols, b_size, PrepareHint::Reuse);
-    let prep_bytes = |bytes_of: usize, prepare: usize, normalize: usize| bytes_of + prepare.max(normalize);
-    let mut scratch_ref = poisoned_scratch::<BR>(prep_bytes(
-        module_ref.glwe_bytes_of_from_infos(a_infos),
-        module_ref.cnv_prepare_right_tmp_bytes(b_size, b_size),
-        module_ref.glwe_normalize_tmp_bytes(),
-    ));
-    let mut scratch_test = poisoned_scratch::<BT>(prep_bytes(
-        module_test.glwe_bytes_of_from_infos(a_infos),
-        module_test.cnv_prepare_right_tmp_bytes(b_size, b_size),
-        module_test.glwe_normalize_tmp_bytes(),
-    ));
+    // The hints swap with the parity of `k`, which the layout sweep varies.
+    let (a_hint, b_hint) = crate::test_suite::prepare_hints(a_infos.k.as_usize());
+    let mut b_prep_ref = module_ref.cnv_pvec_right_alloc(n, cols, b_size, b_hint);
+    let mut b_prep_test = module_test.cnv_pvec_right_alloc(n, cols, b_size, b_hint);
+    let mut a_prep_ref = module_ref.cnv_pvec_left_alloc(n, cols, b_size, a_hint);
+    let mut a_prep_test = module_test.cnv_pvec_left_alloc(n, cols, b_size, a_hint);
+    // Each preparation on exactly its own budget.
     glwe_prepare_right(
         module_ref,
         &mut b_prep_ref,
         &b_ref,
         a_infos.k.as_usize(),
-        &mut scratch_ref.borrow(),
+        &mut poisoned_scratch::<BR>(glwe_prepare_right_tmp_bytes(module_ref, b_size, a_infos)).borrow(),
     );
     glwe_prepare_right(
         module_test,
         &mut b_prep_test,
         &b_test,
         a_infos.k.as_usize(),
-        &mut scratch_test.borrow(),
+        &mut poisoned_scratch::<BT>(glwe_prepare_right_tmp_bytes(module_test, b_size, a_infos)).borrow(),
+    );
+    glwe_prepare_left(
+        module_ref,
+        &mut a_prep_ref,
+        &a_ref,
+        a_infos.k.as_usize(),
+        &mut poisoned_scratch::<BR>(glwe_prepare_left_tmp_bytes(module_ref, b_size, a_infos)).borrow(),
+    );
+    // The test side prepares its left operand from the unnormalized twin, when there is one.
+    glwe_prepare_left(
+        module_test,
+        &mut a_prep_test,
+        twins.as_ref().map_or(&a_test, |(twin_a, _)| twin_a),
+        a_infos.k.as_usize(),
+        &mut poisoned_scratch::<BT>(glwe_prepare_left_tmp_bytes(module_test, b_size, a_infos)).borrow(),
     );
     for (i, &cnv_offset) in offsets.iter().enumerate() {
         let twins = twins.as_ref().filter(|_| i == 0);
@@ -617,6 +632,45 @@ fn test_glwe_tensor_parity_case<BR, BT>(
         assert_eq!(
             prepared_ref, have,
             "glwe_tensor_apply_prepared_right: k={:?} rank={:?} offset={cnv_offset}",
+            a_infos.k, a_infos.rank
+        );
+
+        // So does the product of two prepared operands, into fresh outputs.
+        let mut both_ref = module_ref.glwe_tensor_alloc_from_infos(&res_infos);
+        let mut both_test = module_test.glwe_tensor_alloc_from_infos(&res_infos);
+        let mut scratch_ref =
+            poisoned_scratch::<BR>(module_ref.glwe_tensor_apply_prepared_tmp_bytes(&out_ref, b_size, b_size, a_infos.base2k));
+        let mut scratch_test =
+            poisoned_scratch::<BT>(module_test.glwe_tensor_apply_prepared_tmp_bytes(&out_test, b_size, b_size, a_infos.base2k));
+        module_ref.glwe_tensor_apply_prepared(
+            cnv_offset,
+            &mut both_ref,
+            &a_prep_ref,
+            b_size,
+            &b_prep_ref,
+            b_size,
+            a_infos.base2k,
+            &mut scratch_ref.borrow(),
+        );
+        module_test.glwe_tensor_apply_prepared(
+            cnv_offset,
+            &mut both_test,
+            &a_prep_test,
+            b_size,
+            &b_prep_test,
+            b_size,
+            a_infos.base2k,
+            &mut scratch_test.borrow(),
+        );
+        assert_eq!(
+            both_ref, out_ref,
+            "glwe_tensor_apply_prepared versus glwe_tensor_apply: k={:?} rank={:?} offset={cnv_offset}",
+            a_infos.k, a_infos.rank
+        );
+        both_test.transfer_into(&mut have);
+        assert_eq!(
+            both_ref, have,
+            "glwe_tensor_apply_prepared: k={:?} rank={:?} offset={cnv_offset}",
             a_infos.k, a_infos.rank
         );
 

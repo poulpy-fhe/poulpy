@@ -107,6 +107,43 @@ pub fn glwe_accumulate_streamed_baby_steps_dft<BE, M, P>(
     glwe_accumulate_unprepared_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, gs, scratch);
 }
 
+/// Panics unless the first term has a giant step, and every giant step of every term has a diagonal as wide as its
+/// transform's first diagonal and reads only baby rotations its term's cache holds. The other diagonals are not
+/// checked: every diagonal of a transform shares one width, scale and degree, as the encoder produces them, and
+/// preparing asserts the degree. Reads no cache layout, so an empty cache fails on its first missing rotation.
+pub(super) fn assert_linear_transformation_giant_steps<BE, P>(
+    babies: &[&LinearTransformationBabySteps<BE>],
+    lts: &[&LinearTransformation<P>],
+) where
+    BE: Backend,
+    P: DiagonalProd<BE>,
+{
+    assert!(
+        !lts[0].giant_steps.is_empty(),
+        "linear transformation has no non-empty giant steps"
+    );
+    for (t, (&lhs, &lt)) in babies.iter().zip(lts).enumerate() {
+        let width = lt.first_diagonal_plaintext().map(|d| d.max_size());
+        for (g, gs) in lt.giant_steps.iter().enumerate() {
+            let first = gs
+                .diagonals
+                .first()
+                .unwrap_or_else(|| panic!("giant step {g} of linear transformation {t} has no diagonals"));
+            assert!(
+                Some(first.plaintext.max_size()) == width,
+                "giant step {g} of linear transformation {t} is not as wide as the first diagonal"
+            );
+            for d in &gs.diagonals {
+                assert!(
+                    lhs.contains_baby_step(d.baby),
+                    "missing prepared baby-step rotation {} of linear transformation {t}",
+                    d.baby
+                );
+            }
+        }
+    }
+}
+
 /// The shared Phase B/C driver: runs the BSGS giant-step loop and finalizes.
 ///
 /// Generic over the diagonal type `P: DiagonalProd`, so the *same* loop drives
@@ -128,14 +165,19 @@ pub fn glwe_accumulate_streamed_baby_steps_dft<BE, M, P>(
 ///   contribution is normalized to SMALL and rotated with the public normalized
 ///   `glwe_automorphism`. Correct, but gives up the lazy savings.
 ///
-/// Writes the encryption of `M·v` into `res`.
-#[allow(clippy::too_many_arguments)]
+/// The terms `(babies[t], lts[t])` share the first one's giant schedule and
+/// diagonal layout, checked by the callers with
+/// [`assert_linear_transformation_giant_steps`]: each giant step's PROD is
+/// summed over them by `sum_giant_prod` before its single rotation, so one
+/// pair is the single transform.
+///
+/// Writes the encryption of `Σ_t M_t·v_t` into `res`.
 pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
     module: &M,
     cnv_offset: usize,
     res: &mut R,
-    lhs: &LinearTransformationBabySteps<BE>,
-    rhs: &LinearTransformation<P>,
+    babies: &[&LinearTransformationBabySteps<BE>],
+    lts: &[&LinearTransformation<P>],
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
@@ -176,11 +218,10 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
     let cols = res.rank().as_usize() + 1;
     let res_base2k = res.base2k();
     let res_k = res.k().as_usize();
+    let (lhs, rhs) = (babies[0], lts[0]);
 
     // PROD writes its result in the diagonals' base2k.
-    let first_diagonal = rhs
-        .first_diagonal_plaintext()
-        .expect("linear transformation has no diagonals");
+    let first_diagonal = &rhs.giant_steps[0].diagonals[0].plaintext;
     let prod_base2k = first_diagonal.base2k();
     let baby_size = lhs.size();
     let diagonal_size = first_diagonal.size();
@@ -251,12 +292,13 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
         for (g, giant_key) in giant_keys.iter().enumerate() {
             {
                 let mut prod_dft_backend = prod_dft.to_backend_mut();
-                P::accumulate_giant_prod(
+                sum_giant_prod(
                     module,
                     cnv_offset_hi,
                     &mut prod_dft_backend,
-                    lhs,
-                    &rhs.giant_steps[g],
+                    babies,
+                    lts,
+                    g,
                     &mut scratch_phase,
                 );
             }
@@ -326,12 +368,13 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
     for (g, giant_key) in giant_keys.iter().enumerate() {
         {
             let mut prod_dft_backend = prod_dft.to_backend_mut();
-            P::accumulate_giant_prod(
+            sum_giant_prod(
                 module,
                 cnv_offset_hi,
                 &mut prod_dft_backend,
-                lhs,
-                &rhs.giant_steps[g],
+                babies,
+                lts,
+                g,
                 &mut scratch_phase,
             );
             let mut acc_backend = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendMut<BE>>::to_backend_mut(&mut fallback_acc);
@@ -375,5 +418,43 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
             col,
             &mut scratch_phase.borrow(),
         );
+    }
+}
+
+/// PROD of giant step `g` summed over the terms `(babies[t], lts[t])`: the first term writes
+/// `prod_dft`, each later one is computed into one scratch bucket, taken only
+/// for a sum, and added in DFT.
+fn sum_giant_prod<BE, M, P>(
+    module: &M,
+    cnv_offset_hi: usize,
+    prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
+    babies: &[&LinearTransformationBabySteps<BE>],
+    lts: &[&LinearTransformation<P>],
+    g: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: CnvPVecBytesOf + Convolution<BE> + ModuleN + VecZnxDftAddAssign<BE>,
+    P: DiagonalProd<BE>,
+{
+    let (lhs, rhs) = (babies[0], lts[0]);
+    P::accumulate_giant_prod(module, cnv_offset_hi, prod_dft, lhs, &rhs.giant_steps[g], scratch);
+    if babies.len() == 1 {
+        return;
+    }
+    let (mut bucket, mut scratch_bucket) =
+        scratch
+            .borrow()
+            .take_vec_znx_dft_scratch(prod_dft.n(), prod_dft.cols(), prod_dft.size());
+    for (&lhs, &rhs) in babies[1..].iter().zip(&lts[1..]) {
+        P::accumulate_giant_prod(
+            module,
+            cnv_offset_hi,
+            &mut bucket.to_backend_mut(),
+            lhs,
+            &rhs.giant_steps[g],
+            &mut scratch_bucket,
+        );
+        glwe_dft_add_dft_assign(module, prod_dft, &bucket.to_backend_ref());
     }
 }

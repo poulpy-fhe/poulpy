@@ -52,6 +52,33 @@ macro_rules! core_backend_test_suite {
                 glwe_base2k_conv => $crate::test_suite::noise::test_glwe_base2k_conversion,
                 glwe_copy => $crate::test_suite::copy::test_glwe_copy,
                 test_glwe_tensoring => $crate::test_suite::noise::glwe_tensor::test_glwe_tensoring,
+                #[should_panic(expected = "one-pass product sum has no pairs")]
+                glwe_mul_relinearize_sum_rejects_no_pairs =>
+                    $crate::test_suite::noise::glwe_tensor::test_glwe_mul_relinearize_sum_rejects_no_pairs,
+                #[should_panic(expected = "summed product 1 does not share the first pair's layouts")]
+                glwe_mul_relinearize_sum_rejects_mismatched_layouts =>
+                    $crate::test_suite::noise::glwe_tensor::test_glwe_mul_relinearize_sum_rejects_mismatched_layouts,
+                #[should_panic(expected = "one-pass product sum: a and b differ in length")]
+                glwe_mul_relinearize_sum_rejects_unequal_lengths =>
+                    $crate::test_suite::noise::glwe_tensor::test_glwe_mul_relinearize_sum_rejects_unequal_lengths,
+                #[should_panic(expected = "one-pass product sum has no pairs")]
+                glwe_mul_prepared_relinearize_sum_rejects_no_pairs =>
+                    $crate::test_suite::noise::glwe_tensor::test_glwe_mul_prepared_relinearize_sum_rejects_no_pairs,
+                #[should_panic(expected = "prepared pair 1 does not match res's degree, rank 1 and the given sizes")]
+                glwe_mul_prepared_relinearize_sum_rejects_mismatched_pairs =>
+                    $crate::test_suite::noise::glwe_tensor::test_glwe_mul_prepared_relinearize_sum_rejects_mismatched_pairs,
+                #[should_panic(expected = "prepared sizes are not ceil(a_k / base2k) and ceil(b_k / base2k)")]
+                glwe_mul_prepared_relinearize_sum_rejects_size_of_another_width =>
+                    $crate::test_suite::noise::glwe_tensor::test_glwe_mul_prepared_relinearize_sum_rejects_size_of_another_width,
+                #[should_panic(expected = "one-pass product sum: a and b differ in length")]
+                glwe_mul_prepared_relinearize_sum_rejects_unequal_lengths =>
+                    $crate::test_suite::noise::glwe_tensor::test_glwe_mul_prepared_relinearize_sum_rejects_unequal_lengths,
+                #[should_panic(expected = "prepared operands do not match res's degree and rank and the given sizes")]
+                glwe_tensor_apply_prepared_rejects_mismatched_operands =>
+                    $crate::test_suite::noise::glwe_tensor::test_glwe_tensor_apply_prepared_rejects_mismatched_operands,
+                #[should_panic(expected = "prepared operand size != ceil(a_k / base2k)")]
+                glwe_prepare_left_rejects_size_of_another_width =>
+                    $crate::test_suite::noise::glwe_tensor::test_glwe_prepare_left_rejects_size_of_another_width,
                 test_glwe_tensor_square => $crate::test_suite::noise::glwe_tensor::test_glwe_tensor_square,
                 glwe_tensor_relinearize_coarsened => $crate::test_suite::parity::test_glwe_tensor_relinearize_coarsened,
                 test_glwe_mul_plain => $crate::test_suite::noise::glwe_tensor::test_glwe_mul_plain,
@@ -82,6 +109,49 @@ macro_rules! core_backend_test_suite {
                 #[should_panic(expected = "linear transformation plaintext size does not match its effective precision")]
                 glwe_prepare_linear_transformation_rhs_rejects_wide_diagonal =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_prepare_linear_transformation_rhs_rejects_wide_diagonal,
+                glwe_linear_transformation_sum => $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum,
+                #[should_panic(expected = "summed linear transformation 1 does not share the first one's giant schedule")]
+                glwe_linear_transformation_sum_rejects_mismatched_schedule =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_mismatched_schedule,
+                #[should_panic(expected = "summed linear transformation 1 does not share the first one's diagonal layout, width and scale")]
+                glwe_linear_transformation_sum_rejects_mismatched_diagonal_width =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_mismatched_diagonal_width,
+                #[should_panic(expected = "summed linear transformation 1 does not share the first one's diagonal layout, width and scale")]
+                glwe_linear_transformation_sum_rejects_mismatched_diagonal_scale =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_mismatched_diagonal_scale,
+                #[should_panic(expected = "summed linear transformation 1 does not share the first one's source layout")]
+                glwe_linear_transformation_sum_rejects_mismatched_source =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_mismatched_source,
+                #[should_panic(expected = "linear transformation sum has no terms")]
+                glwe_linear_transformation_sum_rejects_no_terms =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_no_terms,
+                #[should_panic(expected = "linear transformation sum: babies and lts differ in length")]
+                glwe_linear_transformation_sum_rejects_unequal_lengths =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_unequal_lengths,
+                #[should_panic(expected = "linear transformation has no non-empty giant steps")]
+                glwe_linear_transformation_sum_rejects_first_term_without_giant_steps =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_first_term_without_giant_steps,
+                #[should_panic(expected = "linear transformation has no non-empty giant steps")]
+                glwe_linear_transformation_rejects_no_giant_steps =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_rejects_no_giant_steps,
+                #[should_panic(expected = "giant step 1 of linear transformation 0 has no diagonals")]
+                glwe_linear_transformation_rejects_empty_giant_step =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_rejects_empty_giant_step,
+                #[should_panic(expected = "giant step 1 of linear transformation 1 has no diagonals")]
+                glwe_linear_transformation_sum_rejects_empty_giant_step =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_empty_giant_step,
+                #[should_panic(expected = "missing prepared baby-step rotation 1 of linear transformation 1")]
+                glwe_linear_transformation_sum_rejects_missing_baby_step =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_missing_baby_step,
+                #[should_panic(expected = "missing prepared baby-step rotation 0 of linear transformation 1")]
+                glwe_linear_transformation_sum_rejects_empty_cache =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_empty_cache,
+                #[should_panic(expected = "giant step 1 of linear transformation 0 is not as wide as the first diagonal")]
+                glwe_linear_transformation_rejects_uneven_giant_step_width =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_rejects_uneven_giant_step_width,
+                #[should_panic(expected = "giant step 1 of linear transformation 1 is not as wide as the first diagonal")]
+                glwe_linear_transformation_sum_rejects_uneven_giant_step_width =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_uneven_giant_step_width,
                 glwe_packing => $crate::test_suite::noise::test_glwe_packing,
                 gglwe_switching_key_encrypt_sk => $crate::test_suite::noise::encryption::test_gglwe_switching_key_encrypt_sk,
                 gglwe_switching_key_compressed_encrypt_sk =>
@@ -148,4 +218,15 @@ pub fn assert_wipes_scratch<BE: poulpy_hal::layouts::Backend>(
         BE::to_host_bytes(&scratch.data).iter().all(|&b| b == 0),
         "the operation left data in its scratch"
     );
+}
+
+/// The left and right hints of prepared pair `i`: they swap from one pair to the next, so that two pairs cover both
+/// hints on each side.
+pub(crate) fn prepare_hints(i: usize) -> (poulpy_hal::layouts::PrepareHint, poulpy_hal::layouts::PrepareHint) {
+    use poulpy_hal::layouts::PrepareHint::{OneShot, Reuse};
+    if i.is_multiple_of(2) {
+        (OneShot, Reuse)
+    } else {
+        (Reuse, OneShot)
+    }
 }

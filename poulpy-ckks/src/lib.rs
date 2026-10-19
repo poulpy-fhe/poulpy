@@ -47,8 +47,15 @@
 //! DFT (products, rotations, conjugation, keyswitching, decryption) normalizes a
 //! flag-clear operand first. A value several such operations read is best
 //! normalized once with `glwe_normalize_assign`, and serializing requires a
-//! normalized ciphertext. Each lazy addition can grow the digits by one bit; a
-//! sum of `n` terms stays within `i64` while `n <= 2^(63 - base2k)`.
+//! normalized ciphertext. Nothing caps a sum, at any radix: `ckks_add_many`
+//! and the dot products accumulate every term, and the next DFT that reads
+//! the sum normalizes it. Each lazy addition can grow the digits by one bit at
+//! worst, but signed digits grow like an Irwin–Hall sum, and the caller's
+//! parameters keep a sum within an `i64` digit, which a long sum at a
+//! practical radix (54 or less) is far from filling. Where its pairs share
+//! layouts and `ckks_mul_into` takes its one-pass product, on rank 1,
+//! `ckks_dot_product_ct` and `ckks_dot_product_prepared` add their products in
+//! the transform domain instead, and the radix must hold them, as they state.
 //!
 //! ## Modules
 //!
@@ -284,6 +291,18 @@ impl CoeffsMeta {
     /// The operand headroom: `k − log_delta` (saturating).
     pub fn log_budget(&self) -> usize {
         usize::from(self.k).saturating_sub(self.log_delta())
+    }
+
+    /// `InvalidOperand` for a zero torus width, which every plan encoder rejects before allocating anything: an
+    /// operand without a limb would panic in the encoder, after its allocation.
+    pub(crate) fn ensure_width(&self, op: &'static str) -> Result<(), CKKSCompositionError> {
+        if self.k.as_usize() == 0 {
+            return Err(CKKSCompositionError::InvalidOperand {
+                op,
+                reason: "the operands' torus width, k, is 0".into(),
+            });
+        }
+        Ok(())
     }
 }
 
