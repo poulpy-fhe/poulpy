@@ -106,7 +106,8 @@ impl NormalizeWord for i128 {
     }
     #[inline(always)]
     fn sra(self, k: u32) -> Self {
-        self >> k
+        // The driver shifts by less than 64, so the k >= 64 select drops out.
+        self >> (k & 63)
     }
     #[inline(always)]
     fn wrapping_add(self, other: Self) -> Self {
