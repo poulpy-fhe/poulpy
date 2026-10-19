@@ -226,8 +226,7 @@ pub trait ZnxNormalize: Backend<ZnxWord = i64, BigWord: NormalizeWord> {
     /// `res = canon(a * 2^offset, res_base2k, res_k, res.size)` over `len` coefficients.
     ///
     /// # Safety
-    /// See [`normalize_blocked`].
-    #[allow(clippy::too_many_arguments)]
+    /// See [`normalize_blocked_portable`].
     unsafe fn znx_normalize(
         res: LimbsMut<Self::ZnxWord>,
         res_base2k: usize,
@@ -238,15 +237,16 @@ pub trait ZnxNormalize: Backend<ZnxWord = i64, BigWord: NormalizeWord> {
         len: usize,
     ) {
         unsafe {
-            normalize_blocked::<PortableLanes<i64, 8>, PortableLanes<i64, 1>>(res, res_base2k, res_k, offset, a, a_base2k, len)
+            normalize_blocked_portable::<PortableLanes<i64, 8>, PortableLanes<i64, 1>>(
+                res, res_base2k, res_k, offset, a, a_base2k, len,
+            )
         }
     }
 
     /// [`Self::znx_normalize`] from big-word limbs.
     ///
     /// # Safety
-    /// See [`normalize_blocked`].
-    #[allow(clippy::too_many_arguments)]
+    /// See [`normalize_blocked_portable`].
     unsafe fn znx_normalize_big(
         res: LimbsMut<Self::ZnxWord>,
         res_base2k: usize,
@@ -257,14 +257,15 @@ pub trait ZnxNormalize: Backend<ZnxWord = i64, BigWord: NormalizeWord> {
         len: usize,
     ) {
         unsafe {
-            normalize_blocked::<PortableLanes<Self::BigWord, 8>, PortableLanes<Self::BigWord, 1>>(
+            normalize_blocked_portable::<PortableLanes<Self::BigWord, 8>, PortableLanes<Self::BigWord, 1>>(
                 res, res_base2k, res_k, offset, a, a_base2k, len,
             )
         }
     }
 }
 
-/// Source positions past the source a call may walk before the scalar path is cheaper.
+/// Source limbs a plan may walk past the source; any farther and the source is below half a
+/// destination unit, so the result is zero.
 const MAX_EXTRA_LIMBS: i128 = 128;
 
 #[derive(Clone, Copy)]
@@ -282,7 +283,8 @@ struct SameBase {
 }
 
 impl SameBase {
-    /// With `|a| <= 2^62`, `a + carry` and `t + 2^(b-1)` fit an i64 when `2 <= b <= 62`: `|carry| < 2^61`, `2^(b-1) <= 2^61`.
+    /// With `|a| <= 2^62`, `a + carry` and `t + 2^(b-1)` fit an i64 when `2 <= b <= 62`:
+    /// `|carry| <= 2^62/(2^b - 1) <= 2^62/3`, the rounding unit included, and `2^(b-1) <= 2^61`.
     fn whole(&self) -> bool {
         self.lsh == 0 && (2..=62).contains(&self.base)
     }
@@ -318,11 +320,11 @@ fn plan(res_base2k: usize, res_k: usize, offset: i64, a_size: usize, a_base2k: u
         let b = res_base2k as i64;
         let limb_offset = offset.div_euclid(b);
         let Some(boundary) = (active as i64 - 1).checked_add(limb_offset) else {
-            return Plan::Exact;
+            return Plan::Zero;
         };
         let low = boundary.max(a_size as i64 - 1);
         if low as i128 - boundary as i128 > a_size as i128 + MAX_EXTRA_LIMBS {
-            return Plan::Exact;
+            return Plan::Zero;
         }
         return Plan::Same(SameBase {
             base: b as u32,
@@ -339,7 +341,7 @@ fn plan(res_base2k: usize, res_k: usize, offset: i64, a_size: usize, a_base2k: u
         return Plan::Zero;
     }
     if drop > (a_size as i128 + MAX_EXTRA_LIMBS) * a_base2k as i128 {
-        return Plan::Exact;
+        return Plan::Zero;
     }
     Plan::Cross(Cross {
         a_base: a_base2k as u32,
@@ -590,8 +592,7 @@ unsafe fn cross_block<L: NormalizeLanes>(g: &Cross, res: LimbsMut<i64>, a: Limbs
 /// Every limb of `res` and `a` is valid for `len` coefficients. `res` overlaps `a` only as the
 /// same column (same `ptr`, `stride` and `size`) with `a_base2k == res_base2k` and
 /// `offset < res_base2k`.
-#[allow(clippy::too_many_arguments)]
-pub unsafe fn normalize_blocked<L, T>(
+pub unsafe fn normalize_blocked_portable<L, T>(
     res: LimbsMut<i64>,
     res_base2k: usize,
     res_k: usize,
@@ -604,6 +605,8 @@ pub unsafe fn normalize_blocked<L, T>(
     T: NormalizeLanes<Word = L::Word>,
 {
     const { assert!(T::WIDTH == 1) };
+    assert!((1..=64).contains(&res_base2k), "normalize: destination radix out of range");
+    assert!((1..=127).contains(&a_base2k), "normalize: source radix out of range");
     assert!(res_k <= res.size * res_base2k, "normalize: precision exceeds the destination");
     let full = len - len % L::WIDTH;
     match plan(res_base2k, res_k, offset, a.size, a_base2k) {
@@ -626,172 +629,16 @@ pub unsafe fn normalize_blocked<L, T>(
             for i in 0..len {
                 let source = |j: usize| unsafe { a.ptr.add(j * a.stride + i).read() }.to_i128();
                 let output = |j: usize, digit: i64| unsafe { res.ptr.add(j * res.stride + i).write(digit) };
-                if size_of::<L::Word>() == size_of::<i64>() {
-                    normalize_exact::<true, _, _>(source, a.size, a_base2k, res.size, res_base2k, res_k, offset, output);
-                } else {
-                    normalize_exact::<false, _, _>(source, a.size, a_base2k, res.size, res_base2k, res_k, offset, output);
-                }
+                normalize_exact(source, a.size, a_base2k, res.size, res_base2k, res_k, offset, output);
             }
         }
     }
 }
 
-/// Reads the two's-complement bits of the exact radix-weighted input integer.
-pub(crate) struct NormalizationBits<F, const NARROW: bool> {
-    source: F,
-    left: usize,
-    base2k: usize,
-    carry: i128,
-    digit: u64,
-    available: usize,
-}
-
-impl<F: FnMut(usize) -> i128, const NARROW: bool> NormalizationBits<F, NARROW> {
-    pub(crate) fn new(source: F, size: usize, base2k: usize) -> Self {
-        Self {
-            source,
-            left: size,
-            base2k,
-            carry: 0,
-            digit: 0,
-            available: 0,
-        }
-    }
-
-    fn refill(&mut self) {
-        let mask = (1u64 << self.base2k) - 1;
-        if self.left != 0 {
-            self.left -= 1;
-            let a = (self.source)(self.left);
-            let low = (a as u64 & mask) + (self.carry as u64 & mask);
-            self.carry = if NARROW {
-                ((a as i64 >> self.base2k) + (self.carry as i64 >> self.base2k) + (low >> self.base2k) as i64) as i128
-            } else {
-                (a >> self.base2k) + (self.carry >> self.base2k) + (low >> self.base2k) as i128
-            };
-            self.digit = low & mask;
-        } else {
-            self.digit = self.carry as u64 & mask;
-            self.carry = if NARROW {
-                (self.carry as i64 >> self.base2k) as i128
-            } else {
-                self.carry >> self.base2k
-            };
-        }
-        self.available = self.base2k;
-    }
-
-    fn read(&mut self, mut count: usize) -> u64 {
-        let mut value = 0;
-        let mut written = 0;
-        while count != 0 {
-            if self.available == 0 {
-                self.refill();
-            }
-            let take = count.min(self.available);
-            value |= (self.digit & ((1u64 << take) - 1)) << written;
-            self.digit >>= take;
-            self.available -= take;
-            count -= take;
-            written += take;
-        }
-        value
-    }
-
-    fn skip(&mut self, mut count: i128) -> bool {
-        let mut sticky = false;
-        while count != 0 {
-            if self.available == 0 {
-                if self.left == 0 && (self.carry == 0 || self.carry == -1) {
-                    // Past the source every bit repeats the sign.
-                    return sticky || self.carry == -1;
-                }
-                self.refill();
-            }
-            let take = count.min(self.available as i128) as usize;
-            sticky |= self.digit & ((1u64 << take) - 1) != 0;
-            self.digit >>= take;
-            self.available -= take;
-            count -= take as i128;
-        }
-        sticky
-    }
-}
-
-/// Quantizes once at `res_k`, then emits centered digits with zero precision padding.
-/// `NARROW` requires every source coefficient to fit in i64.
+/// Scalar path for radixes past 63: quantizes once at `res_k`, then emits centered digits with
+/// zero precision padding.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn normalize_exact<const NARROW: bool, F: FnMut(usize) -> i128, G: FnMut(usize, i64)>(
-    source: F,
-    a_size: usize,
-    a_base2k: usize,
-    res_size: usize,
-    res_base2k: usize,
-    res_k: usize,
-    offset: i64,
-    mut output: G,
-) {
-    if a_base2k > 63 || res_base2k > 63 {
-        normalize_exact_wide(source, a_size, a_base2k, res_size, res_base2k, res_k, offset, output);
-        return;
-    }
-    let (active_size, precision_padding) = if res_k == res_size * res_base2k {
-        (res_size, 0)
-    } else {
-        let active_size = res_k.div_ceil(res_base2k);
-        (active_size, active_size * res_base2k - res_k)
-    };
-    let mut bits = NormalizationBits::<_, NARROW>::new(source, a_size, a_base2k);
-    let drop = a_size as i128 * a_base2k as i128 - res_k as i128 - offset as i128;
-    let (mut half, mut sticky) = (0u64, false);
-    let mut padding = 0i128;
-    if drop > 0 {
-        sticky = bits.skip(drop - 1);
-        half = bits.read(1);
-    } else {
-        padding = -drop;
-    }
-    let mut carry = 0u64;
-    // Only the lowest output window holds the rounding position.
-    let mut first = true;
-    let mut add_round = |raw: u64, carry: u64| -> u64 {
-        if std::mem::take(&mut first) {
-            raw + (half & (sticky as u64 | (raw & 1)))
-        } else {
-            raw + carry
-        }
-    };
-    let mut full_size = active_size;
-    if precision_padding != 0 {
-        full_size -= 1;
-        let width = res_base2k - precision_padding;
-        let zeroes = padding.min(width as i128) as usize;
-        padding -= zeroes as i128;
-        let raw = bits.read(width - zeroes) << zeroes;
-        let value = add_round(raw, carry);
-        carry = (value + (1u64 << (width - 1))) >> width;
-        output(
-            full_size,
-            ((value as i128 - ((carry as i128) << width)) << precision_padding) as i64,
-        );
-    }
-    let half = 1u64 << (res_base2k - 1);
-    for j in (0..full_size).rev() {
-        let zeroes = padding.min(res_base2k as i128) as usize;
-        padding -= zeroes as i128;
-        let raw = bits.read(res_base2k - zeroes) << zeroes;
-        let value = add_round(raw, carry);
-        carry = (value + half) >> res_base2k;
-        output(j, (value as i128 - ((carry as i128) << res_base2k)) as i64);
-    }
-    for j in active_size..res_size {
-        output(j, 0);
-    }
-}
-
-// Preserves the wider source radices and base-64 output supported by NTT.
-#[allow(clippy::too_many_arguments)]
-fn normalize_exact_wide<F: FnMut(usize) -> i128, G: FnMut(usize, i64)>(
+fn normalize_exact<F: FnMut(usize) -> i128, G: FnMut(usize, i64)>(
     mut source: F,
     a_size: usize,
     a_base2k: usize,
@@ -801,8 +648,6 @@ fn normalize_exact_wide<F: FnMut(usize) -> i128, G: FnMut(usize, i64)>(
     offset: i64,
     mut output: G,
 ) {
-    assert!((1..=127).contains(&a_base2k));
-    assert!((1..=64).contains(&res_base2k));
     let (active_size, precision_padding) = if res_k == res_size * res_base2k {
         (res_size, 0)
     } else {
@@ -922,7 +767,7 @@ mod tests {
     /// The portable driver over 11 coefficients (a full 8-lane block and a 3-coefficient tail).
     fn run<S: NormalizeWord>(a: &[Vec<S>], ka: usize, kr: usize, k: usize, size: usize, offset: i64) -> Vec<Vec<i64>> {
         layout(a, size, |res, src, n| unsafe {
-            normalize_blocked::<PortableLanes<S, 8>, PortableLanes<S, 1>>(res, kr, k, offset, src, ka, n)
+            normalize_blocked_portable::<PortableLanes<S, 8>, PortableLanes<S, 1>>(res, kr, k, offset, src, ka, n)
         })
     }
 

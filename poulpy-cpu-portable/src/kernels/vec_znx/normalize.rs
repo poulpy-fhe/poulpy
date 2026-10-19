@@ -41,8 +41,13 @@ pub fn vec_znx_normalize_portable<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
+    assert!(res_col < res.cols(), "operand column out of range");
+    if res.size() > 0 {
+        let _ = res.at_ptr(res_col, res.size() - 1);
+    }
     let (n, shape) = (res.n(), res.shape());
     let ptr = res.base_mut_ptr();
+    // SAFETY: `ptr` and `shape` come from `res`, bounds-checked above, and `&mut res` is exclusive.
     unsafe {
         vec_znx_normalize_range_raw_portable::<BE>(ptr, shape, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, 0, n)
     }
@@ -75,10 +80,7 @@ pub unsafe fn vec_znx_normalize_range_raw_portable<'a, BE>(
     BE::BufRef<'a>: HostDataRef,
 {
     assert_eq!(res_shape.n(), a.n(), "normalize: degree mismatch");
-    assert!(
-        res_col < res_shape.cols() && a_col < a.cols(),
-        "normalize: column out of range"
-    );
+    assert!(res_col < res_shape.cols() && a_col < a.cols(), "operand column out of range");
     assert!(
         coeff_start + coeff_len <= res_shape.n(),
         "normalize: coefficient range out of bounds"
@@ -87,6 +89,7 @@ pub unsafe fn vec_znx_normalize_range_raw_portable<'a, BE>(
         // Bounds-checks the last limb, the farthest one the kernel reads.
         let _ = a.at_ptr(a_col, a.size() - 1);
     }
+    // SAFETY: the caller's contract covers `res`; `a` is a checked view, bounds-checked above.
     unsafe {
         BE::znx_normalize(
             LimbsMut::new(res_ptr, res_shape, res_col, coeff_start),
@@ -110,8 +113,13 @@ pub fn vec_znx_normalize_assign_portable<'r, BE>(
     BE: ZnxNormalize,
     BE::BufMut<'r>: HostDataMut,
 {
+    assert!(res_col < res.cols(), "operand column out of range");
+    if res.size() > 0 {
+        let _ = res.at_ptr(res_col, res.size() - 1);
+    }
     let (n, shape) = (res.n(), res.shape());
     let ptr = res.base_mut_ptr();
+    // SAFETY: `ptr` and `shape` come from `res`, bounds-checked above, and `&mut res` is exclusive.
     unsafe { vec_znx_normalize_assign_range_raw_portable::<BE>(ptr, shape, base2k, res_k, res_offset, res_col, 0, n) }
 }
 
@@ -132,7 +140,7 @@ pub unsafe fn vec_znx_normalize_assign_range_raw_portable<BE: ZnxNormalize>(
     coeff_start: usize,
     coeff_len: usize,
 ) {
-    assert!(res_col < res_shape.cols(), "normalize_assign: column out of range");
+    assert!(res_col < res_shape.cols(), "operand column out of range");
     assert!(
         coeff_start + coeff_len <= res_shape.n(),
         "normalize_assign: coefficient range out of bounds"
@@ -158,6 +166,7 @@ pub unsafe fn vec_znx_normalize_assign_range_raw_portable<BE: ZnxNormalize>(
         stride: res.stride,
         size: res.size,
     };
+    // SAFETY: the caller's contract covers `res`; in place is the same column at one radix, offset below it.
     unsafe { BE::znx_normalize(res, base2k, res_k, res_offset, a, base2k, coeff_len) }
 }
 
@@ -406,32 +415,6 @@ fn test_vec_znx_normalize_limb_bounds() {
     }
 }
 
-/// Exact fixed-point quantization, with ties to even.
-#[cfg(test)]
-pub(crate) fn normalize_integer_oracle(a: &[i128], a_base2k: usize, res_base2k: usize, res_size: usize, offset: i64) -> Vec<i64> {
-    use dashu_int::IBig;
-    let mut value = IBig::ZERO;
-    for &limb in a {
-        value = (value << a_base2k) + IBig::from(limb);
-    }
-    let shift = res_size as i64 * res_base2k as i64 + offset - a.len() as i64 * a_base2k as i64;
-    if shift >= 0 {
-        value <<= shift as usize;
-    } else {
-        let drop = (-shift) as usize;
-        value = crate::test_suite::znx_normalize::round_ties_even(value, drop);
-    }
-    let radix = IBig::ONE << res_base2k;
-    let half = IBig::ONE << (res_base2k - 1);
-    let mut result = vec![0; res_size];
-    for limb in result.iter_mut().rev() {
-        let next = (&value + &half) >> res_base2k;
-        *limb = i64::try_from(&value - &next * &radix).unwrap();
-        value = next;
-    }
-    result
-}
-
 #[cfg(test)]
 fn check_normalize_integer(a: &[i128], a_base2k: usize, res_base2k: usize, res_size: usize, offset: i64) {
     use crate::{
@@ -459,7 +442,7 @@ fn check_normalize_integer(a: &[i128], a_base2k: usize, res_base2k: usize, res_s
     let have: Vec<i64> = (0..res_size).map(|j| output.at(0, j)[0]).collect();
     assert_eq!(
         have,
-        normalize_integer_oracle(a, a_base2k, res_base2k, res_size, offset),
+        crate::test_suite::znx_normalize::oracle(a, a_base2k, res_base2k, res_size * res_base2k, res_size, offset),
         "a={a:?}, a_base2k={a_base2k}, res_base2k={res_base2k}, res_size={res_size}, offset={offset}"
     );
 }
@@ -714,18 +697,14 @@ fn test_normalize_window_and_range_integer() {
                             a_base2k,
                             1,
                         );
-                        // Extreme offsets reduce to zero without enormous oracle allocations.
-                        let expected = if offset == i64::MIN || offset == i64::MAX {
-                            vec![0; size]
-                        } else {
-                            normalize_integer_oracle(
-                                &(0..size).map(|j| input.at(1, j)[i] as i128).collect::<Vec<_>>(),
-                                a_base2k,
-                                res_base2k,
-                                size,
-                                offset,
-                            )
-                        };
+                        let expected = crate::test_suite::znx_normalize::oracle(
+                            &(0..size).map(|j| input.at(1, j)[i] as i128).collect::<Vec<_>>(),
+                            a_base2k,
+                            res_base2k,
+                            size * res_base2k,
+                            size,
+                            offset,
+                        );
                         for (j, &digit) in expected.iter().enumerate() {
                             assert_eq!(
                                 whole.at(1, j)[i],
@@ -757,10 +736,11 @@ fn test_normalize_window_and_range_integer() {
                             .window_coeffs(i, 1),
                         1,
                     );
-                    let want = normalize_integer_oracle(
+                    let want = crate::test_suite::znx_normalize::oracle(
                         &(0..size).map(|j| input.at(1, j)[i] as i128).collect::<Vec<_>>(),
                         a_base2k,
                         a_base2k,
+                        size * a_base2k,
                         size,
                         0,
                     );

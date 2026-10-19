@@ -9,7 +9,9 @@ use poulpy_cpu_portable::kernels::{
     vec_znx_big_normalize::{vec_znx_big_normalize_portable, vec_znx_big_normalize_range_raw_portable},
     znx_normalize::ZnxNormalize,
 };
-use poulpy_hal::layouts::{Backend, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendRef, ZnxViewMut};
+use poulpy_hal::layouts::{
+    Backend, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendRef, ZnxView, ZnxViewMut,
+};
 use rayon::prelude::*;
 
 use crate::{RayonTaskExecutor, RayonTuning, SendPtr};
@@ -65,12 +67,17 @@ pub fn vec_znx_normalize_par<B, T>(
         return vec_znx_normalize_portable::<B>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col);
     }
 
+    assert!(res_col < res.cols(), "operand column out of range");
+    if res.size() > 0 {
+        let _ = res.at_ptr(res_col, res.size() - 1);
+    }
     let res_shape = res.shape();
     let a_shape = a.shape();
     let res_ptr = SendPtr::new(res.base_mut_ptr());
     let a_data: &[u8] = a.data();
     for_each_range(n, tasks, |start, len| {
         let a_view: VecZnxBackendRef<'_, B> = VecZnx::from_shape(a_data, a_shape);
+        // SAFETY: `res` is bounds-checked above and exclusive; tasks write disjoint coefficient ranges.
         unsafe {
             vec_znx_normalize_range_raw_portable::<B>(
                 res_ptr.get(),
@@ -108,8 +115,13 @@ pub fn vec_znx_normalize_assign_par<B, T>(
         return vec_znx_normalize_assign_portable::<B>(base2k, k, res_offset, res, res_col);
     }
 
+    assert!(res_col < res.cols(), "operand column out of range");
+    if res.size() > 0 {
+        let _ = res.at_ptr(res_col, res.size() - 1);
+    }
     let res_shape = res.shape();
     let res_ptr = SendPtr::new(res.base_mut_ptr());
+    // SAFETY: `res` is bounds-checked above and exclusive; tasks write disjoint coefficient ranges.
     for_each_range(n, tasks, |start, len| unsafe {
         vec_znx_normalize_assign_range_raw_portable::<B>(res_ptr.get(), res_shape, base2k, k, res_offset, res_col, start, len)
     });
@@ -138,12 +150,17 @@ pub fn vec_znx_big_normalize_par<B, T>(
         return vec_znx_big_normalize_portable::<B>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col);
     }
 
+    assert!(res_col < res.cols(), "operand column out of range");
+    if res.size() > 0 {
+        let _ = res.at_ptr(res_col, res.size() - 1);
+    }
     let res_shape = res.shape();
     let a_shape = a.shape();
     let res_ptr = SendPtr::new(res.base_mut_ptr());
     let a_data: &[u8] = a.data;
     for_each_range(n, tasks, |start, len| {
         let a_view: VecZnxBigBackendRef<'_, B> = VecZnxBig::from_shape(a_data, a_shape);
+        // SAFETY: `res` is bounds-checked above and exclusive; tasks write disjoint coefficient ranges.
         unsafe {
             vec_znx_big_normalize_range_raw_portable::<B>(
                 res_ptr.get(),

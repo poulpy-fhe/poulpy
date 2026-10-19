@@ -1002,9 +1002,9 @@ const NORMALIZE_IDFT_BOUND: i128 = (1_073_479_681i128 * 1_071_513_601 * 1_070_72
 
 #[test]
 fn test_vec_znx_big_normalize_input_bound_integer() {
-    use crate::kernels::{
-        vec_znx::{normalize_integer_oracle, vec_znx_normalize_portable},
-        vec_znx_big_normalize::vec_znx_big_normalize_portable,
+    use crate::{
+        kernels::{vec_znx::vec_znx_normalize_portable, vec_znx_big_normalize::vec_znx_big_normalize_portable},
+        test_suite::znx_normalize::oracle,
     };
     use poulpy_hal::layouts::{
         VecZnx, VecZnxBig, VecZnxBigToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut,
@@ -1104,7 +1104,7 @@ fn test_vec_znx_big_normalize_input_bound_integer() {
                         }
                         for i in 0..N {
                             let limbs: Vec<_> = (0..a_size).map(|j| input.at(0, j)[i]).collect();
-                            let want = normalize_integer_oracle(&limbs, a_base2k, res_base2k, res_size, offset);
+                            let want = oracle(&limbs, a_base2k, res_base2k, res_size * res_base2k, res_size, offset);
                             let got: Vec<_> = (0..res_size).map(|j| output.at(0, j)[i]).collect();
                             assert_eq!(
                                 got, want,
@@ -1192,7 +1192,7 @@ fn test_normalize_exact_canonical_precision() {
 
 #[test]
 fn test_vec_znx_big_normalize_wide_radices() {
-    use crate::kernels::{vec_znx::normalize_integer_oracle, vec_znx_big_normalize::vec_znx_big_normalize_portable};
+    use crate::{kernels::vec_znx_big_normalize::vec_znx_big_normalize_portable, test_suite::znx_normalize::oracle};
     use poulpy_hal::layouts::{VecZnx, VecZnxBig, VecZnxBigToBackendRef, VecZnxToBackendMut, ZnxView, ZnxViewMut};
     for a_base2k in [1, 63, 64, 65, 126, 127] {
         for res_base2k in [1, 17, 63, 64] {
@@ -1218,7 +1218,7 @@ fn test_vec_znx_big_normalize_wide_radices() {
                     );
                     for i in 0..2 {
                         let limbs: Vec<_> = (0..size).map(|j| input.at(0, j)[i]).collect();
-                        let want = normalize_integer_oracle(&limbs, a_base2k, res_base2k, size, offset);
+                        let want = oracle(&limbs, a_base2k, res_base2k, size * res_base2k, size, offset);
                         let got: Vec<_> = (0..size).map(|j| output.at(0, j)[i]).collect();
                         assert_eq!(got, want, "ka={a_base2k} kr={res_base2k} size={size} offset={offset}");
                     }

@@ -20,8 +20,13 @@ pub fn vec_znx_big_normalize_portable<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
+    assert!(res_col < res.cols(), "operand column out of range");
+    if res.size() > 0 {
+        let _ = res.at_ptr(res_col, res.size() - 1);
+    }
     let (n, shape) = (res.n(), res.shape());
     let ptr = res.base_mut_ptr();
+    // SAFETY: `ptr` and `shape` come from `res`, bounds-checked above, and `&mut res` is exclusive.
     unsafe {
         vec_znx_big_normalize_range_raw_portable::<BE>(
             ptr, shape, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, 0, n,
@@ -53,10 +58,7 @@ pub unsafe fn vec_znx_big_normalize_range_raw_portable<'a, BE>(
     BE::BufRef<'a>: HostDataRef,
 {
     assert_eq!(res_shape.n(), a.n(), "big normalize: degree mismatch");
-    assert!(
-        res_col < res_shape.cols() && a_col < a.cols(),
-        "big normalize: column out of range"
-    );
+    assert!(res_col < res_shape.cols() && a_col < a.cols(), "operand column out of range");
     assert!(
         coeff_start + coeff_len <= res_shape.n(),
         "big normalize: coefficient range out of bounds"
@@ -64,6 +66,7 @@ pub unsafe fn vec_znx_big_normalize_range_raw_portable<'a, BE>(
     if a.size() > 0 {
         let _ = a.at_ptr(a_col, a.size() - 1);
     }
+    // SAFETY: the caller's contract covers `res`; `a` is a checked view, bounds-checked above.
     unsafe {
         BE::znx_normalize_big(
             LimbsMut::new(res_ptr, res_shape, res_col, coeff_start),

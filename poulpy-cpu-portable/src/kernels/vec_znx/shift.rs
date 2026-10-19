@@ -17,22 +17,24 @@ where
     BE::BufMut<'r>: HostDataMut,
 {
     let (n, size, shape) = (res.n(), res.size(), res.shape());
-    assert!(res_col < res.cols(), "lsh_assign: column out of range");
+    assert!(res_col < res.cols(), "operand column out of range");
     if size > 0 {
         // Bounds-checks the last limb, the farthest one the kernel writes.
         let _ = res.at_ptr(res_col, size - 1);
     }
     let (steps, k_rem) = (k / base2k, k % base2k);
     let base = res.base_mut_ptr();
+    // SAFETY: every limb `j < size` of `res_col` lies in the buffer, bounds-checked above.
     let limb = |j: usize| unsafe { base.add(shape.scalar_offset(res_col, j)) };
     let kept = size.saturating_sub(steps);
     if steps > 0 {
         for j in 0..kept {
-            // Distinct limbs of one column never overlap.
+            // SAFETY: distinct limbs of one column never overlap.
             unsafe { std::ptr::copy_nonoverlapping(limb(j + steps), limb(j), n) };
         }
     }
     for j in kept..size {
+        // SAFETY: a limb holds `n` words.
         unsafe { std::ptr::write_bytes(limb(j), 0, n) };
     }
     if kept == 0 {
@@ -47,5 +49,6 @@ where
         stride: res.stride,
         size: kept,
     };
+    // SAFETY: in place on one column at one radix, with offset `k_rem < base2k`.
     unsafe { BE::znx_normalize(res, base2k, kept * base2k, k_rem as i64, a, base2k, n) }
 }
