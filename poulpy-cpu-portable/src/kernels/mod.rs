@@ -15,6 +15,7 @@ pub mod normalization;
 pub mod ntt4x30;
 pub mod vec_znx;
 pub mod vmp_select;
+pub mod znx_normalize;
 
 pub use galois::{GaloisSlots, RightRead, right_read_fft64, right_read_ntt};
 

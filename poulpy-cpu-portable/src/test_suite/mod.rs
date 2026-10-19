@@ -4,6 +4,7 @@ pub mod normalization;
 pub mod normalization_i128;
 pub mod ntt;
 pub mod reim_conversion;
+pub mod znx_normalize;
 
 pub mod conjugate_invariant;
 /// Optional portable FFT comparison adapters, one per ring, for encryption parity.
