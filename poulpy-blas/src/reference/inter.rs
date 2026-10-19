@@ -1,6 +1,6 @@
 use poulpy_ckks::{
     CKKSResult as Result,
-    api::{CKKSAddOps, CKKSCopyOps, CKKSModuleInfos, CKKSRotateOps},
+    api::{CKKSAddOps, CKKSCopyOps, CKKSRotateOps},
     layouts::ScratchArenaTakeCKKS,
 };
 use poulpy_core::{
@@ -37,18 +37,12 @@ pub fn blas_sum_output_layout(res: &impl BlasGridInfos, a: &impl BlasGridInfos) 
 }
 
 /// The keys [`crate::api::BlasMatInterOps::blas_rotate`] by `r` looks up for a grid `a`; see [`BlasKeyUses`].
-pub fn blas_rotate_key_uses<BE: Backend>(module: &Module<BE>, a: &impl BlasGridInfos, r: i64) -> BlasKeyUses
-where
-    Module<BE>: CKKSModuleInfos,
-{
+pub fn blas_rotate_key_uses<BE: Backend>(module: &Module<BE>, a: &impl BlasGridInfos, r: i64) -> BlasKeyUses {
     BlasKeyUses::collect(module, None, |f| rotate_uses(a, r, f))
 }
 
 /// The keys [`crate::api::BlasMatInterOps::blas_sum`] looks up for `a` into `res`; see [`BlasKeyUses`].
-pub fn blas_sum_key_uses<BE: Backend>(module: &Module<BE>, res: &impl BlasGridInfos, a: &impl BlasGridInfos) -> BlasKeyUses
-where
-    Module<BE>: CKKSModuleInfos,
-{
+pub fn blas_sum_key_uses<BE: Backend>(module: &Module<BE>, res: &impl BlasGridInfos, a: &impl BlasGridInfos) -> BlasKeyUses {
     BlasKeyUses::collect(module, None, |f| sum_uses::<BE::Ring>(res, a, f))
 }
 
@@ -80,7 +74,7 @@ pub trait BlasMatInterReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSRotateOps<BE> + CKKSModuleInfos,
+        Self: CKKSRotateOps<BE>,
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync;
@@ -104,7 +98,7 @@ pub trait BlasMatInterReference<BE: Backend> {
     /// Per block, `res = a`, then `res += rot(res, 2^i d^2)` for every `i < log2(mat_slots)` in order.
     fn blas_sum_reference<R, A, K>(&self, res: &mut R, a: &A, atk: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Self: CKKSRotateOps<BE> + CKKSAddOps<BE> + CKKSCopyOps<BE> + CKKSModuleInfos + GLWEBytesOf<BE>,
+        Self: CKKSRotateOps<BE> + CKKSAddOps<BE> + CKKSCopyOps<BE> + GLWEBytesOf<BE>,
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync;
@@ -120,7 +114,7 @@ impl<BE: Backend> BlasMatInterReference<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSRotateOps<BE> + CKKSModuleInfos,
+        Self: CKKSRotateOps<BE>,
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync,
@@ -141,7 +135,7 @@ impl<BE: Backend> BlasMatInterReference<BE> for Module<BE> {
 
     fn blas_sum_reference<R, A, K>(&self, res: &mut R, a: &A, atk: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Self: CKKSRotateOps<BE> + CKKSAddOps<BE> + CKKSCopyOps<BE> + CKKSModuleInfos + GLWEBytesOf<BE>,
+        Self: CKKSRotateOps<BE> + CKKSAddOps<BE> + CKKSCopyOps<BE> + GLWEBytesOf<BE>,
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync,

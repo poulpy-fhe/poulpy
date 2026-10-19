@@ -25,11 +25,11 @@ use poulpy_ckks::{
     api::{CKKSLinearTransformationOps, CKKSModuleInfos, LinearTransformation, LtDiagonalMeta, PreparedDiagonal},
 };
 use poulpy_core::layouts::{GGLWEInfos, LWEInfos, TorusPrecision};
-use poulpy_hal::layouts::{Backend, Data, Module, Ring};
+use poulpy_hal::layouts::{Backend, Data, Module};
 
 use crate::layouts::{
     BlasGridInfos, BlasPtOperandInfos, BlasPtSide,
-    ciphertext::{mat_slots_in, slots_of},
+    ciphertext::mat_slots_in,
     context::context_shapes,
     encoding::{DiagonalShape, shape},
     pt_operand::{OperandMaps, layouts_of},
@@ -55,10 +55,7 @@ impl BlasKeyUses {
         module: &Module<BE>,
         tensor: Option<TorusPrecision>,
         uses: impl FnOnce(UseSink<'_>) -> Result<()>,
-    ) -> Self
-    where
-        Module<BE>: CKKSModuleInfos,
-    {
+    ) -> Self {
         let mut rotations = Vec::new();
         let _ = uses(&mut |u| {
             rotations.push((module.ckks_galois_element(u.rotation), u.k));
@@ -71,13 +68,13 @@ impl BlasKeyUses {
     }
 }
 
-/// The label of a product of `a`, on ring `R`, by `count` public matrices, with `S` slots per block:
-/// `min(a.log_sparsity, log2(S / (count d^2)))`, the smaller of `a`'s label and the largest one `count` distinct
+/// The label of a product of `a` by `count` public matrices, with `slots` slots per block, the operand's:
+/// `min(a.log_sparsity, log2(slots / (count d^2)))`, the smaller of `a`'s label and the largest one `count` distinct
 /// matrices allow, as poulpy-ckks's plaintext product keeps the smaller of its operands' labels; `0` when `count`
 /// matrices do not fit.
-pub(crate) fn pt_label<R: Ring>(a: &impl BlasGridInfos, count: usize) -> usize {
+pub(crate) fn pt_label(slots: usize, a: &impl BlasGridInfos, count: usize) -> usize {
     let block = a.block_layout();
-    mat_slots_in(slots_of::<R>(block.n().as_usize()), a.log_d(), 0)
+    mat_slots_in(slots, a.log_d(), 0)
         .checked_div(count)
         .and_then(usize::checked_ilog2)
         .map_or(0, |log| block.log_sparsity().min(log as usize))
@@ -89,17 +86,26 @@ pub(crate) fn copied_block(mut block: CKKSLayout, dst_k: TorusPrecision) -> CKKS
     block
 }
 
-/// Scratch of one linear transformation from a block of layout `a` into a block of layout `res`.
-pub(crate) fn lt_tmp_bytes<BE, M, K>(module: &M, res: &impl CKKSCtBounds, a: &impl CKKSCtBounds, key: &K) -> usize
+/// Scratch of the baby steps of a block of layout `a` and of one linear transformation, summed when `summed`, from
+/// blocks of layout `a` into a block of layout `res`.
+pub(crate) fn lt_tmp_bytes<BE, M, K>(module: &M, res: &impl CKKSCtBounds, a: &impl CKKSCtBounds, key: &K, summed: bool) -> usize
 where
     BE: Backend,
     M: CKKSLinearTransformationOps<BE> + ?Sized,
     K: GGLWEInfos,
 {
+    let eval = if summed {
+        module
+            .ckks_eval_linear_transformation_sum_tmp_bytes(a, key)
+            .max(module.ckks_eval_linear_transformation_sum_tmp_bytes(res, key))
+    } else {
+        module
+            .ckks_eval_linear_transformation_tmp_bytes(a, key)
+            .max(module.ckks_eval_linear_transformation_tmp_bytes(res, key))
+    };
     module
         .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(a, key)
-        .max(module.ckks_eval_linear_transformation_tmp_bytes(a, key))
-        .max(module.ckks_eval_linear_transformation_tmp_bytes(res, key))
+        .max(eval)
 }
 
 /// A map's diagonal as the queries read it: its scale and slot kind, and its width.

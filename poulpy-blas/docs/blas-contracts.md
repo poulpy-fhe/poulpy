@@ -212,8 +212,9 @@ crate's rules and fail in this order:
    batch record, or a hot one at another `log_d` than the product's context
    or under a context encoded for another slot count or radix; and a product
    at a radix above 62, whose digits cannot hold two lazy terms of the JKLS
-   kernel's two-pass circuit. A hot operand's scale is not checked: the
-   product spends that of its context's maps.
+   kernel's two-pass circuit, or a sum at a radix whose digits cannot hold the
+   `log2(mat_slots) + 1` lazy terms it adds. A hot operand's scale is not
+   checked: the product spends that of its context's maps.
 2. Key by key, the rotation keys first, each at the width the operation
    looks it up at ([Keys](#keys)): `MissingAutomorphismKey`, or
    `MissingRelinearizationKey` for the tensor key, when the store lacks it,

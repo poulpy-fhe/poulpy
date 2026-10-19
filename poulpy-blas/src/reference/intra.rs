@@ -75,10 +75,7 @@ pub fn blas_transpose_key_uses<BE: Backend>(
     res: &impl BlasGridInfos,
     a: &impl BlasGridInfos,
     ctx: &impl BlasContextInfos,
-) -> BlasKeyUses
-where
-    Module<BE>: CKKSModuleInfos,
-{
+) -> BlasKeyUses {
     let maps = context_shapes(ctx);
     BlasKeyUses::collect(module, None, |f| transpose_uses(res, a, &maps, f))
 }
@@ -92,10 +89,7 @@ pub fn blas_rotate_rows_key_uses<BE: Backend>(
     a: &impl BlasGridInfos,
     k: usize,
     ctx: &impl BlasContextInfos,
-) -> BlasKeyUses
-where
-    Module<BE>: CKKSModuleInfos,
-{
+) -> BlasKeyUses {
     let maps = context_shapes(ctx);
     BlasKeyUses::collect(module, None, |f| shift_uses(res, a, k, true, &maps, f))
 }
@@ -107,10 +101,7 @@ pub fn blas_rotate_cols_key_uses<BE: Backend>(
     a: &impl BlasGridInfos,
     k: usize,
     ctx: &impl BlasContextInfos,
-) -> BlasKeyUses
-where
-    Module<BE>: CKKSModuleInfos,
-{
+) -> BlasKeyUses {
     let maps = context_shapes(ctx);
     BlasKeyUses::collect(module, None, |f| shift_uses(res, a, k, false, &maps, f))
 }
@@ -142,7 +133,7 @@ pub trait BlasMatIntraReference<BE: Backend> {
         S: CKKSCtBounds,
         K: GGLWEInfos,
     {
-        lt_tmp_bytes(self, dst, src, atk)
+        lt_tmp_bytes(self, dst, src, atk, false)
     }
 
     /// `dst[t * lts.len() + m] = lts[m](src[t])`, stamped with the label of `src[t]`. Per source, one baby-step cache
