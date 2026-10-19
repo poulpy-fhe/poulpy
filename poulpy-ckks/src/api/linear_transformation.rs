@@ -70,8 +70,9 @@ pub trait LtDiagonalMeta {
     /// Slot kind of the diagonal plaintext.
     fn lt_slots(&self) -> SlotsKind;
 
-    /// `log2` of the degree the diagonal plaintext is dense at.
-    fn lt_log_n(&self) -> usize;
+    /// Sparsity the diagonal plaintext imposes on its product with a ciphertext of degree `2^log_n`: `log2` of the
+    /// ratio of that degree to the one the diagonal is dense at.
+    fn lt_log_sparsity(&self, log_n: usize) -> usize;
 }
 
 /// Torus width of the result of [`CKKSLinearTransformationOps::ckks_eval_linear_transformation_into`] evaluating `lt`
@@ -96,7 +97,7 @@ pub fn ckks_linear_transformation_output_layout<P: LtDiagonalMeta>(
     src.glwe_layout.k = ckks_linear_transformation_output_k(lt, src.k(), dst_k);
     if let Some(diagonal) = lt.first_diagonal_plaintext() {
         src.meta.slots = src.meta.slots.join(diagonal.lt_slots());
-        src.meta.log_sparsity = src.meta.log_sparsity.min(src.log_n().saturating_sub(diagonal.lt_log_n()));
+        src.meta.log_sparsity = src.meta.log_sparsity.min(diagonal.lt_log_sparsity(src.log_n()));
     }
     src
 }

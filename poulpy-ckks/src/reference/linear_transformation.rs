@@ -66,8 +66,8 @@ impl<D: Data, W: ZnxWord, R: Ring> LtDiagonalMeta for CKKSPlaintext<D, W, R> {
         self.slots()
     }
 
-    fn lt_log_n(&self) -> usize {
-        self.log_n()
+    fn lt_log_sparsity(&self, log_n: usize) -> usize {
+        log_n.saturating_sub(self.log_n())
     }
 }
 
@@ -86,8 +86,8 @@ impl<D: Data, BE: Backend> LtDiagonalMeta for PreparedDiagonal<D, BE> {
         }
     }
 
-    fn lt_log_n(&self) -> usize {
-        self.log_n()
+    fn lt_log_sparsity(&self, log_n: usize) -> usize {
+        log_n.saturating_sub(self.log_n())
     }
 }
 
@@ -256,7 +256,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         // `Σ diag ⊙ rot(src)` has real slots when `src` and the diagonals do, and is sparse where both are: a diagonal is
         // dense at its own degree.
         let slots = src.slots().join(pt_slots);
-        let log_sparsity = src.log_sparsity().min(src.log_n().saturating_sub(first.lt_log_n()));
+        let log_sparsity = src.log_sparsity().min(first.lt_log_sparsity(src.log_n()));
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
         dst.set_log_sparsity(log_sparsity);
@@ -346,9 +346,9 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         }
         // The sum has real slots when every source and the diagonals do, and is sparse where all of them are.
         let slots = srcs.iter().fold(pt_slots, |slots, src_t| slots.join(src_t.slots()));
-        let log_sparsity = srcs.iter().fold(src.log_n().saturating_sub(first.lt_log_n()), |s, src_t| {
-            s.min(src_t.log_sparsity())
-        });
+        let log_sparsity = srcs
+            .iter()
+            .fold(first.lt_log_sparsity(src.log_n()), |s, src_t| s.min(src_t.log_sparsity()));
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
         dst.set_log_sparsity(log_sparsity);
