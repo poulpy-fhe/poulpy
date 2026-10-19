@@ -6,14 +6,14 @@
 //! `docs/linear_transformation.md`.
 
 use crate::SlotsKind;
-use crate::{CKKSResult as Result, ckks_ensure};
+use crate::{CKKSError, CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::GLWEPlaintextInfos;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    GLWECopy, GLWELinearTransformations, LinearTransformationBabySteps, LinearTransformationGiantStep,
-    LinearTransformationPrepared,
+    GLWELinearTransformations, LinearTransformationBabySteps, LinearTransformationGiantStep, LinearTransformationPrepared,
     layouts::{
-        GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, TorusPrecision, prepared::PreparedDiagonal,
+        GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, TorusPrecision,
+        prepared::PreparedDiagonal,
     },
     reference::linear_transformation::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft},
 };
@@ -24,8 +24,8 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, SetCKKSInfos,
-    api::{CKKSCopyOps, CKKSLinearTransformationOps, LinearTransformation, LtDiagonalMeta},
-    layouts::{CKKSModuleAlloc, CKKSPlaintext, ScratchArenaTakeCKKS},
+    api::{LinearTransformation, LtDiagonalMeta},
+    layouts::CKKSPlaintext,
     reference::mul::mul_pt_params_raw,
 };
 use poulpy_core::GLWEBytesOf;
@@ -83,21 +83,20 @@ impl<D: Data, BE: Backend> LtDiagonalMeta for PreparedDiagonal<D, BE> {
     }
 }
 
-impl<BE: Backend> CKKSLinearTransformationOps<BE> for Module<BE>
-where
-    Module<BE>: GLWELinearTransformations<BE> + GLWECopy<BE> + CKKSCopyOps<BE> + CKKSModuleAlloc<BE> + CyclotomicOrder,
-{
-    // ---------- tmp_bytes ----------
-
-    fn ckks_prepare_linear_transformation_rhs_tmp_bytes<P>(&self, pt_infos: &P) -> usize
+/// The reference algorithms of [`CKKSLinearTransformationImpl`](crate::oep::CKKSLinearTransformationImpl), which
+/// `impl_ckks_linear_transformation_reference!` forwards to and an override can call for the methods it keeps.
+pub trait CKKSLinearTransformationReference<BE: Backend> {
+    fn ckks_prepare_linear_transformation_rhs_tmp_bytes_reference<P>(&self, pt_infos: &P) -> usize
     where
+        Self: GLWELinearTransformations<BE>,
         P: LWEInfos,
     {
         self.glwe_prepare_linear_transformation_rhs_tmp_bytes(pt_infos)
     }
 
-    fn ckks_prepare_linear_transformation_baby_steps_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    fn ckks_prepare_linear_transformation_baby_steps_tmp_bytes_reference<C, K>(&self, ct: &C, key: &K) -> usize
     where
+        Self: GLWELinearTransformations<BE>,
         C: CKKSCtBounds,
         K: GGLWEInfos,
     {
@@ -105,8 +104,9 @@ where
     }
 
     /// The ciphertext stands in for the diagonal, so the budget is an upper bound for a compact diagonal.
-    fn ckks_eval_linear_transformation_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    fn ckks_eval_linear_transformation_tmp_bytes_reference<C, K>(&self, ct: &C, key: &K) -> usize
     where
+        Self: GLWELinearTransformations<BE> + GLWEBytesOf<BE>,
         C: CKKSCtBounds,
         K: GGLWEInfos,
     {
@@ -118,8 +118,9 @@ where
     }
 
     /// The ciphertext stands in for the diagonal, so the budget is an upper bound for a compact diagonal.
-    fn ckks_eval_linear_transformation_streamed_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    fn ckks_eval_linear_transformation_streamed_tmp_bytes_reference<C, K>(&self, ct: &C, key: &K) -> usize
     where
+        Self: GLWELinearTransformations<BE> + GLWEBytesOf<BE>,
         C: CKKSCtBounds,
         K: GGLWEInfos,
     {
@@ -130,14 +131,24 @@ where
             + BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
     }
 
-    // ---------- populate ----------
+    /// The ciphertext stands in for the diagonal, so the budget is an upper bound for a compact diagonal.
+    fn ckks_eval_linear_transformation_sum_tmp_bytes_reference<C, K>(&self, ct: &C, key: &K) -> usize
+    where
+        Self: GLWELinearTransformations<BE>,
+        C: CKKSCtBounds,
+        K: GGLWEInfos,
+    {
+        // No `_assign` wrapper, so no dst-shaped working copy.
+        self.glwe_eval_linear_transformation_sum_tmp_bytes(ct, ct, ct, key)
+    }
 
-    fn ckks_prepare_linear_transformation_rhs<P>(
+    fn ckks_prepare_linear_transformation_rhs_reference<P>(
         &self,
         prepared: &mut LinearTransformationPrepared<BE>,
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
+        Self: GLWELinearTransformations<BE>,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
     {
         // Stash the plaintext scale exponent and real-slot claim while filling the
@@ -163,7 +174,7 @@ where
         self.glwe_prepare_linear_transformation_rhs(prepared, lt, scratch);
     }
 
-    fn ckks_prepare_linear_transformation_baby_steps<Src, H>(
+    fn ckks_prepare_linear_transformation_baby_steps_reference<Src, H>(
         &self,
         babies: &mut LinearTransformationBabySteps<BE>,
         src: &Src,
@@ -171,6 +182,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
+        Self: GLWELinearTransformations<BE> + CyclotomicOrder,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
@@ -193,9 +205,7 @@ where
         Ok(())
     }
 
-    // ---------- eval (caller-supplied baby cache) ----------
-
-    fn ckks_eval_linear_transformation_into<Dst, Src, P, H>(
+    fn ckks_eval_linear_transformation_into_reference<Dst, Src, P, H>(
         &self,
         dst: &mut Dst,
         src: &Src,
@@ -205,6 +215,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
+        Self: GLWELinearTransformations<BE> + CyclotomicOrder,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
@@ -242,79 +253,118 @@ where
         Ok(())
     }
 
-    fn ckks_eval_linear_transformation_assign<Dst, P, H>(
+    fn ckks_eval_linear_transformation_sum_into_reference<Dst, Src, H>(
         &self,
         dst: &mut Dst,
-        babies: &LinearTransformationBabySteps<BE>,
-        lt: &LinearTransformation<P>,
+        srcs: &[&Src],
+        babies: &[&LinearTransformationBabySteps<BE>],
+        lts: &[&LinearTransformationPrepared<BE>],
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
-        H: GetAutomorphismKey<BE>,
-    {
-        // The dst-shaped working copy is carved from scratch (accounted for by
-        // `ckks_eval_linear_transformation_tmp_bytes`), not heap-allocated.
-        scratch.scope(|scratch_local| {
-            let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
-            self.ckks_eval_linear_transformation_into(&mut tmp, dst, babies, lt, keys, &mut scratch_local)?;
-            // `ckks_copy` moves both the limbs and the CKKS metadata the eval consumed
-            // into `dst` (a plain `glwe_copy` would leave the budget/scale stale).
-            self.ckks_copy(dst, &tmp, &mut scratch_local)
-        })
-    }
-
-    // ---------- eval (self-allocated baby cache) ----------
-
-    fn ckks_eval_linear_transformation_self_into<Dst, Src, P, H>(
-        &self,
-        dst: &mut Dst,
-        src: &Src,
-        lt: &LinearTransformation<P>,
-        keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
+        Self: GLWELinearTransformations<BE> + CyclotomicOrder,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
         H: GetAutomorphismKey<BE>,
     {
-        // Only the (small) input baby cache is materialized here; with a plaintext
-        // `lt` the matrix RHS itself is streamed inside the eval.
-        let mut babies = LinearTransformationBabySteps::alloc(self, lt.baby_steps(), src);
-        self.ckks_prepare_linear_transformation_baby_steps(&mut babies, src, keys, scratch)?;
-        self.ckks_eval_linear_transformation_into(dst, src, &babies, lt, keys, scratch)
-    }
-
-    fn ckks_eval_linear_transformation_self_assign<Dst, P, H>(
-        &self,
-        dst: &mut Dst,
-        lt: &LinearTransformation<P>,
-        keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
-        H: GetAutomorphismKey<BE>,
-    {
-        // The dst-shaped working copy is carved from scratch (accounted for by
-        // `ckks_eval_linear_transformation_tmp_bytes`), not heap-allocated.
-        scratch.scope(|scratch_local| {
-            let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
-            self.ckks_eval_linear_transformation_self_into(&mut tmp, dst, lt, keys, &mut scratch_local)?;
-            // `ckks_copy` moves both the limbs and the CKKS metadata the eval consumed
-            // into `dst` (a plain `glwe_copy` would leave the budget/scale stale).
-            self.ckks_copy(dst, &tmp, &mut scratch_local)
-        })
+        if babies.len() != srcs.len() || lts.len() != srcs.len() {
+            return Err(invalid_sum("srcs, babies and lts differ in length".into()));
+        }
+        let &src = srcs
+            .first()
+            .ok_or_else(|| invalid_sum("linear transformation sum has no terms".into()))?;
+        let (cache_0, lt) = (babies[0], lts[0]);
+        let first = lt
+            .first_diagonal_plaintext()
+            .ok_or_else(|| invalid_sum("linear transformation has no diagonals".into()))?;
+        let (pt_log_scale, pt_max_k, pt_slots) = (first.lt_log_scale(), first.encoded_k().as_usize(), first.lt_slots());
+        // Core sums each giant step's products over the terms before one rotation,
+        // at one `cnv_offset`, so the terms must agree on everything those read.
+        let diagonal = |lt: &LinearTransformationPrepared<BE>| {
+            lt.first_diagonal_plaintext()
+                .map(|d| (d.glwe_layout(), d.max_size(), d.lt_log_scale(), d.lt_slots()))
+        };
+        let source = |src: &Src| (src.glwe_layout(), src.log_delta());
+        // Core reads each source through its baby cache. A cache without the rotations its transform reads may hold
+        // none, so its layout is read only once those are checked.
+        let cache = |babies: &LinearTransformationBabySteps<BE>| (babies.size(), babies.cols());
+        check_babies(lt, cache_0)?;
+        for (t, ((&src_t, &babies_t), &lt_t)) in srcs.iter().zip(babies).zip(lts).enumerate().skip(1) {
+            let mismatch = |what: &str| {
+                Err(invalid_sum(format!(
+                    "summed linear transformation {t} does not share the first one's {what}"
+                )))
+            };
+            if !lt_t
+                .giant_steps
+                .iter()
+                .map(|gs| gs.rot)
+                .eq(lt.giant_steps.iter().map(|gs| gs.rot))
+            {
+                return mismatch("giant schedule");
+            }
+            if diagonal(lt_t) != diagonal(lt) {
+                return mismatch("diagonal layout, width, scale and slot kind");
+            }
+            if source(src_t) != source(src) {
+                return mismatch("source layout and scale");
+            }
+            check_babies(lt_t, babies_t)?;
+            if cache(babies_t) != cache(cache_0) {
+                return mismatch("baby-step cache layout");
+            }
+        }
+        for &lt_t in lts {
+            ensure_uniform_diagonals(lt_t, pt_log_scale, pt_max_k, pt_slots)?;
+        }
+        // The terms share the source and diagonal metadata, so the first term's
+        // ct × pt rule holds for all of them (see `ckks_eval_linear_transformation_into`).
+        let (res_log_budget, res_log_delta, cnv_offset) = mul_pt_params_raw(
+            dst.k().as_usize(),
+            src.log_delta(),
+            src.log_budget(),
+            pt_log_scale,
+            0,
+            pt_max_k,
+        )?;
+        let res_k: TorusPrecision = (res_log_budget + res_log_delta).into();
+        for (&babies_t, &lt_t) in babies.iter().zip(lts) {
+            check_required_keys(lt_t, babies_t, keys, self.cyclotomic_order(), res_k)?;
+        }
+        // The sum has real slots when every source and the diagonals do.
+        let slots = srcs.iter().fold(pt_slots, |slots, src_t| slots.join(src_t.slots()));
+        dst.set_log_budget(res_log_budget);
+        dst.set_log_delta(res_log_delta);
+        self.glwe_eval_linear_transformation_sum_into(cnv_offset, dst, babies, lts, keys, scratch);
+        dst.set_slots(slots);
+        Ok(())
     }
 }
 
-/// Verifies that all automorphism keys required by `lt` are present (keyed by
-/// Galois element) and that `babies` covers every baby rotation `lt` needs.
+impl<BE: Backend> CKKSLinearTransformationReference<BE> for Module<BE> {}
+
+fn invalid_sum(reason: String) -> CKKSError {
+    CKKSCompositionError::InvalidOperand {
+        op: "ckks_eval_linear_transformation_sum_into",
+        reason,
+    }
+    .into()
+}
+
+/// Verifies that `babies` covers every baby rotation `lt` needs.
+fn check_babies<BE: Backend, P>(lt: &LinearTransformation<P>, babies: &LinearTransformationBabySteps<BE>) -> Result<()> {
+    for rotation in lt.baby_steps().iter().copied() {
+        ckks_ensure!(
+            babies.contains_baby_step(rotation),
+            "missing prepared baby-step rotation {rotation}"
+        );
+    }
+    Ok(())
+}
+
+/// Verifies that `babies` covers every baby rotation `lt` needs and that all
+/// automorphism keys required by `lt` are present (keyed by Galois element).
 fn check_required_keys<BE: Backend, P, H>(
     lt: &LinearTransformation<P>,
     babies: &LinearTransformationBabySteps<BE>,
@@ -325,12 +375,7 @@ fn check_required_keys<BE: Backend, P, H>(
 where
     H: GetAutomorphismKey<BE>,
 {
-    for rotation in lt.baby_steps().iter().copied() {
-        ckks_ensure!(
-            babies.contains_baby_step(rotation),
-            "missing prepared baby-step rotation {rotation}"
-        );
-    }
+    check_babies(lt, babies)?;
     for rotation in lt
         .giant_steps
         .iter()

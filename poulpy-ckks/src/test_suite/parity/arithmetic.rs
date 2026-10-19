@@ -1,9 +1,14 @@
 //! Exact arithmetic parity on canonical coefficients, independent of encryption.
 use super::helpers::*;
 use crate::Scale;
-use crate::{CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SlotsKind, api::CKKSModuleInfos, oep::*, test_suite::CKKSTestParams};
+use crate::{
+    CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SlotsKind,
+    api::{CKKSDotProductOps, CKKSModuleInfos},
+    oep::*,
+    test_suite::CKKSTestParams,
+};
 use poulpy_core::{GLWEAdd, GLWEMaskFill, layouts::*, oep::GLWENormalizeImpl};
-use poulpy_hal::layouts::{Backend, Module};
+use poulpy_hal::layouts::{Backend, Module, PrepareHint};
 
 pub trait ArithmeticParityBackend:
     Backend<ZnxWord = i64> + CKKSAddImpl + CKKSSubImpl + CKKSCopyImpl + CKKSNegImpl + CKKSPow2Impl + GLWENormalizeImpl
@@ -301,7 +306,7 @@ where
 fn products<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
 where
     B: Backend<ZnxWord = i64> + CKKSMulImpl,
-    Module<B>: GLWETensorKeyPreparedFactory<B> + GLWEMaskFill<B> + GLWEAdd<B>,
+    Module<B>: GLWETensorKeyPreparedFactory<B> + GLWEMaskFill<B> + GLWEAdd<B> + CKKSDotProductOps<B>,
 {
     use super::keys::{key_layout, prepared_tensor_key};
     let b = params.base2k;
@@ -317,6 +322,15 @@ where
             let before_b = snapshot::<B, _>(&rhs);
             let key_infos = key_layout(params.n, b, 4 * b + 5, dsize, rank * (rank + 1) / 2, rank);
             let key = prepared_tensor_key(module, &key_infos, 53);
+            let prepare_bytes = B::ckks_prepare_tmp_bytes_impl(module, &a).max(B::ckks_prepare_tmp_bytes_impl(module, &rhs));
+            let left = with_scratch::<B, _>(prepare_bytes, |scratch| {
+                B::ckks_prepare_left_impl(module, &a, PrepareHint::Reuse, scratch)
+            })
+            .unwrap();
+            let right = with_scratch::<B, _>(prepare_bytes, |scratch| {
+                B::ckks_prepare_right_impl(module, &rhs, PrepareHint::OneShot, scratch)
+            })
+            .unwrap();
             for width in [2 * b + 3, 5 * b + 1] {
                 let lr = layout(params, rank, width, b - 1, 0, SlotsKind::Complex);
                 let mut out = fixture_ciphertext(module, &lr, 99);
@@ -330,6 +344,23 @@ where
                 let bytes = B::ckks_square_tmp_bytes_impl(module, &out, &a, &key);
                 with_scratch::<B, _>(bytes, |scratch| B::ckks_square_into_impl(module, &mut out, &a, &key, scratch)).unwrap();
                 results.push(("square_into", snapshot::<B, _>(&out)));
+                // Sides of other widths and scales than each other, prepared from the operands, lazy or not.
+                for pairs in [1, 2] {
+                    let mut want = fixture_ciphertext(module, &lr, 99);
+                    let bytes = module.ckks_dot_product_ct_tmp_bytes(pairs, &want, &a, &rhs, &key);
+                    with_scratch::<B, _>(bytes, |scratch| {
+                        module.ckks_dot_product_ct(&mut want, &vec![&a; pairs], &vec![&rhs; pairs], &key, scratch)
+                    })
+                    .unwrap();
+                    let mut have = fixture_ciphertext(module, &lr, 99);
+                    with_scratch::<B, _>(bytes, |scratch| {
+                        module.ckks_dot_product_prepared(&mut have, &vec![&left; pairs], &vec![&right; pairs], &key, scratch)
+                    })
+                    .unwrap();
+                    let want = snapshot::<B, _>(&want);
+                    assert_eq!(snapshot::<B, _>(&have), want, "prepared dot product of {pairs} pairs");
+                    results.push(("dot_product_prepared", want));
+                }
             }
             let mut assigned = fixture_operand(module, &la, 51, lazy);
             let bytes = B::ckks_mul_tmp_bytes_impl(module, &assigned, &assigned, &rhs, &key);
@@ -338,7 +369,10 @@ where
             })
             .unwrap();
             let ordinary = snapshot::<B, _>(&assigned);
-            let prepared = with_scratch::<B, _>(bytes, |scratch| B::ckks_prepare_right_impl(module, &rhs, scratch)).unwrap();
+            let prepared = with_scratch::<B, _>(bytes, |scratch| {
+                B::ckks_prepare_right_impl(module, &rhs, PrepareHint::OneShot, scratch)
+            })
+            .unwrap();
             let mut assigned = fixture_operand(module, &la, 51, lazy);
             with_scratch::<B, _>(bytes, |scratch| {
                 B::ckks_mul_prepared_assign_impl(module, &mut assigned, &prepared, &key, scratch)
@@ -417,13 +451,14 @@ where
     results
 }
 
-/// Ciphertext, square, prepared-right, vector and scalar multiplication.
+/// Ciphertext, square, prepared, vector and scalar multiplication, and the prepared dot product, which equals
+/// `ckks_dot_product_ct` of its operands' sources.
 pub fn test_multiplication_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR>, t: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSMulImpl,
     BT: Backend<ZnxWord = i64> + CKKSMulImpl,
-    Module<BR>: GLWETensorKeyPreparedFactory<BR> + GLWEMaskFill<BR> + GLWEAdd<BR>,
-    Module<BT>: GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
+    Module<BR>: GLWETensorKeyPreparedFactory<BR> + GLWEMaskFill<BR> + GLWEAdd<BR> + CKKSDotProductOps<BR>,
+    Module<BT>: GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT> + CKKSDotProductOps<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
     let want = products(params, r);
@@ -460,7 +495,10 @@ where
             let before = snapshot::<B, _>(&a);
             let bytes =
                 B::ckks_mul_tmp_bytes_impl(module, &a, &a, &a, &key).max(B::ckks_square_tmp_bytes_impl(module, &a, &a, &key));
-            let prepared = with_scratch::<B, _>(bytes, |scratch| B::ckks_prepare_right_impl(module, &a, scratch)).unwrap();
+            let prepared = with_scratch::<B, _>(bytes, |scratch| {
+                B::ckks_prepare_right_impl(module, &a, PrepareHint::Reuse, scratch)
+            })
+            .unwrap();
             let mut ordinary = fixture_operand(module, &infos, 81, lazy);
             with_scratch::<B, _>(bytes, |scratch| {
                 B::ckks_mul_assign_impl(module, &mut ordinary, &a, &key, scratch)

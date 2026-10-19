@@ -48,7 +48,7 @@ where
     module
         .ckks_mul_pow2_into(&mut ct_res, &ct, SHIFT_BITS, &mut scratch.borrow())
         .unwrap();
-    assert_unary_output_meta("mul_pow2", &ct_res, &ct);
+    assert_unary_output_meta("mul_pow2", &ct_res, params.k, &ct);
     assert_decrypt_precision_at_log_delta(
         "mul_pow2",
         &params,
@@ -90,11 +90,12 @@ where
         &mut scratch.borrow(),
     );
     let (want_re, want_im) = want_mul_pow2(&re1, &im1, SHIFT_BITS);
-    let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
+    let dst_k = params.k - params.base2k - 1;
+    let mut ct_res = alloc_ct(&params, module, dst_k);
     module
         .ckks_mul_pow2_into(&mut ct_res, &ct, SHIFT_BITS, &mut scratch.borrow())
         .unwrap();
-    assert_unary_output_meta("mul_pow2 smaller_output", &ct_res, &ct);
+    assert_unary_output_meta("mul_pow2 smaller_output", &ct_res, dst_k, &ct);
     assert_decrypt_precision_at_log_delta(
         "mul_pow2",
         &params,
@@ -228,11 +229,12 @@ where
         &mut scratch.borrow(),
     );
     let (want_re, want_im) = want_div_pow2(&re1, &im1, SHIFT_BITS);
-    let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
+    let dst_k = params.k - params.base2k - 1;
+    let mut ct_res = alloc_ct(&params, module, dst_k);
     module
         .ckks_div_pow2_into(&mut ct_res, &ct, SHIFT_BITS, &mut scratch.borrow())
         .unwrap();
-    let offset = ct.k().as_usize().saturating_sub(ct_res.k().as_usize());
+    let offset = ct.k().as_usize().saturating_sub(dst_k);
     assert_ct_meta(
         "div_pow2 smaller_output",
         &ct_res,

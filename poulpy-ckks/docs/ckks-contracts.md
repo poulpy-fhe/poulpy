@@ -22,7 +22,9 @@ operations, so their overrides remain effective.
 |---|---|
 | `CKKSAddImpl`, `CKKSSubImpl` | [`reference/add.rs`](../src/reference/add.rs), [`reference/sub.rs`](../src/reference/sub.rs); adding/subtracting one are derived plaintext compositions. |
 | `CKKSCopyImpl`, `CKKSNegImpl`, `CKKSPow2Impl`, `CKKSImagImpl` | Corresponding [`reference`](../src/reference/) modules; multiplication and division by `i` use direct core monomial rotations by `N/2` and `-N/2`. |
-| `CKKSMulImpl` | [`reference/mul.rs`](../src/reference/mul.rs), including ordinary/prepared and plaintext products. |
+| `CKKSMulImpl` | [`reference/mul.rs`](../src/reference/mul.rs), including the left and right preparations, ordinary/prepared and plaintext products. The prepared operands follow poulpy-core's lifecycle: `ckks_prepared_{left,right}_alloc_from_infos_impl` allocate one for a ciphertext layout under a `PrepareHint`, `ckks_prepared_{left,right}_bytes_of_from_infos_impl` give its bytes, and `ckks_prepare_{left,right}_into_impl` fill it with no allocation, rejecting a source of another layout with `InvalidOperand` before any write; the allocating `ckks_prepare_{left,right}_impl` are derived defaults, an allocation then a preparation into it. |
+| `CKKSDotProductImpl` | [`reference/dot_product.rs`](../src/reference/dot_product.rs): the ciphertext and prepared dot products, relinearized once where the pairs share one product rule, and their scratch; the plaintext dot products are derived defaults, a product then an addition per pair. |
+| `CKKSLinearTransformationImpl` | [`reference/linear_transformation.rs`](../src/reference/linear_transformation.rs): the preparations, the evaluation over a caller's baby cache and the summed evaluation; `_assign` and the self-caching evaluations are derived defaults. |
 | `CKKSRotateImpl`, `CKKSConjugateImpl` | [`reference/rotate.rs`](../src/reference/rotate.rs), [`reference/conjugate.rs`](../src/reference/conjugate.rs). |
 | `CKKSPlaintextZnxImpl` | [`reference/plaintext.rs`](../src/reference/plaintext.rs). |
 | `CKKSEncryptionImpl` | [`reference/encryption.rs`](../src/reference/encryption.rs), for encryption and decryption. |
@@ -36,9 +38,8 @@ operations, so their overrides remain effective.
 | `CKKSPaCoCoeffEncodingImpl`, `CKKSShipCoeffEncodingImpl` | Scheme embeddings exposed by [`reference::encoding`](../src/reference/encoding.rs), with explicitly named host reference helpers. |
 
 `CKKSImpl` aggregates capabilities; it does not choose operation
-implementations. Affine operations, dot products, linear transformations, and the
-conjugate-invariant ring maps are API compositions with integration tests, not
-additional OEP families.
+implementations. Affine operations and the conjugate-invariant ring maps are API
+compositions with integration tests, not additional OEP families.
 
 ## What an override must preserve
 
@@ -51,7 +52,9 @@ In particular, CKKS metadata is observable: `k`, radix, rank, `log_delta`,
 `log_sparsity`, and `SlotsKind` must agree, and `log_budget` remains derived from
 `k - log_delta`. Preserve the normalized/unnormalized typestate boundary and the
 core canonical-at-`k` representation. Prepared objects and encoding plans belong
-to their backend; compare their operation results rather than opaque storage.
+to their backend; compare their operation results rather than opaque storage. A
+preparation's `PrepareHint` may select its representation, never the bits of the
+products that read it.
 
 The resident encoding contracts take backend scalar buffers. Host reference
 helpers carry their own host-access requirements; a native override does not

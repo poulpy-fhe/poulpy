@@ -347,7 +347,7 @@ pub trait GLWEMulRelinearizeSum<BE: Backend> {
         R: GLWEInfos,
         B: GGLWEInfos;
 
-    /// `res = relinearize(Σ_i a_i * b_i)` over `pairs[i] = (a_i, b_i)`, in one pass, under the conditions of
+    /// `res = relinearize(Σ_i a[i] * b[i])`, in one pass, under the conditions of
     /// [`GLWETensoring::glwe_mul_relinearize`]: rank 1, one `base2k` across `res`, the operands and the tensor key,
     /// and `cnv_offset >= base2k`. Every pair shares the first one's layouts; the tensor key is looked up at the
     /// larger of the two operand widths.
@@ -361,18 +361,23 @@ pub trait GLWEMulRelinearizeSum<BE: Backend> {
     /// up to rounding, not bit for bit.
     ///
     /// Every pair's products accumulate in the transform domain before one inverse transform: pick `base2k` for
-    /// `pairs.len()` times the products of one pair (`Module::max_base2k`), up to `2 * min(a_size, b_size)` per
+    /// `a.len()` times the products of one pair (`Module::max_base2k`), up to `2 * min(a_size, b_size)` per
     /// output limb in the cross column `a0 * b1 + a1 * b0`.
     ///
-    /// Panics, before writing `res`, if `pairs` is empty, if a pair does not share the first one's layouts, if
-    /// `res` or an operand is not of rank 1 or of `res`'s `base2k`, if `cnv_offset < base2k`, if `tsk` has no key
-    /// at the tensor width or one of another `base2k`, or if `scratch` holds less than the call needs.
+    /// Panics, before writing `res`, if `a` is empty or `b` is not as long, if a pair does not share the first one's
+    /// layouts, if `res` or an operand is not of rank 1 or of `res`'s `base2k`, if `cnv_offset < base2k`, if `tsk`
+    /// has no key at the tensor width or one of another `base2k`, or if `scratch` holds less than the call needs.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the two operand slices of a sum beside the product's operands"
+    )]
     fn glwe_mul_relinearize_sum<R, A, B, H>(
         &self,
         cnv_offset: usize,
         res: &mut R,
         res_k: crate::layouts::TorusPrecision,
-        pairs: &[(&A, &B)],
+        a: &[&A],
+        b: &[&B],
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -404,23 +409,24 @@ pub trait GLWEPreparedTensoring<BE: Backend> {
         R: GLWEInfos,
         B: GGLWEInfos;
 
-    /// [`GLWEMulRelinearizeSum::glwe_mul_relinearize_sum`] over prepared pairs `pairs[i] = (a_i, b_i)`: `a_size` and
+    /// [`GLWEMulRelinearizeSum::glwe_mul_relinearize_sum`] over prepared pairs `(a[i], b[i])`: `a_size` and
     /// `b_size` limbs of rank-1 ciphertexts of widths `a_k` and `b_k`, of the degree and `base2k` of `res`, with
     /// `a_size = ceil(a_k / base2k)` and `b_size = ceil(b_k / base2k)`.
     ///
     /// The pairs feed the product columns where they are, under the conditions of the unprepared sum, whose result
     /// they give.
     ///
-    /// Panics, before writing `res`, if `pairs` is empty, if a given size is not the limb count of its width, if a
-    /// prepared operand is not of the degree of `res`, of two columns and of its given size, or under the conditions
-    /// of [`GLWEMulRelinearizeSum::glwe_mul_relinearize_sum`].
+    /// Panics, before writing `res`, if `a` is empty or `b` is not as long, if a given size is not the limb count of
+    /// its width, if a prepared operand is not of the degree of `res`, of two columns and of its given size, or under
+    /// the conditions of [`GLWEMulRelinearizeSum::glwe_mul_relinearize_sum`].
     #[allow(clippy::too_many_arguments)]
     fn glwe_mul_prepared_relinearize_sum<R, AP, BP, H>(
         &self,
         cnv_offset: usize,
         res: &mut R,
         res_k: crate::layouts::TorusPrecision,
-        pairs: &[(&AP, &BP)],
+        a: &[&AP],
+        b: &[&BP],
         a_size: usize,
         a_k: crate::layouts::TorusPrecision,
         b_size: usize,

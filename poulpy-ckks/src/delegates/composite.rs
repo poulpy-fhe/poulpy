@@ -1,18 +1,16 @@
-use crate::reference::composite::{ckks_add_many_reference, ensure_accumulation_fits};
-use crate::{CKKSResult as Result, ckks_bail};
+use crate::CKKSResult as Result;
+use crate::reference::composite::ckks_add_many_reference;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_core::{
-    GLWETensoring,
-    layouts::{GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, TorusPrecision},
-};
+use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::CKKSCopyOps,
     api::{CKKSAddManyOps, CKKSAddOps, CKKSAffineOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSSubOps},
-    layouts::{CKKSCiphertext, CKKSCiphertextViewMut, ScratchArenaTakeCKKS},
+    layouts::{CKKSCiphertext, CKKSCiphertextViewMut, CKKSPreparedLeft, CKKSPreparedRight, ScratchArenaTakeCKKS},
+    oep::CKKSDotProductImpl,
 };
 use poulpy_core::GLWEBytesOf;
 
@@ -357,47 +355,7 @@ where
 
 // --- CKKSDotProductOps ---
 
-fn check_lengths(op: &'static str, a_len: usize, b_len: usize) -> Result<()> {
-    if a_len == 0 {
-        ckks_bail!("{op}: inputs must contain at least one pair");
-    }
-    if a_len != b_len {
-        ckks_bail!("{op}: length mismatch between ct vector ({a_len}) and weight vector ({b_len})");
-    }
-    Ok(())
-}
-
-fn accumulate<BE, D, F>(
-    module: &Module<BE>,
-    dst: &mut CKKSCiphertext<D, BE::ZnxWord, BE::Ring>,
-    n: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-    mut mul_term_into_tmp: F,
-) -> Result<()>
-where
-    BE: Backend,
-    D: Data,
-    Module<BE>: CKKSAddOps<BE>,
-    CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-    F: for<'a> FnMut(&mut CKKSCiphertextViewMut<'a, BE>, usize, &mut ScratchArena<'a, BE>) -> Result<()>,
-{
-    if n <= 1 {
-        return Ok(());
-    }
-    scratch.scope(|scratch_local| {
-        let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
-        for i in 1..n {
-            mul_term_into_tmp(&mut tmp, i, &mut scratch_local)?;
-            module.ckks_add_assign(dst, &tmp, &mut scratch_local)?;
-        }
-        Ok(())
-    })
-}
-
-impl<BE: Backend> CKKSDotProductOps<BE> for Module<BE>
-where
-    Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + GLWETensoring<BE>,
-{
+impl<BE: Backend + CKKSDotProductImpl> CKKSDotProductOps<BE> for Module<BE> {
     fn ckks_dot_product_ct_tmp_bytes<R, A, B, T>(&self, n: usize, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
@@ -405,27 +363,7 @@ where
         B: CKKSCtBounds,
         T: GGLWEInfos,
     {
-        // `a`/`b` describe the widest input pair; the internal tensor
-        // intermediate and the apply scratch scale with the operand widths, not
-        // only with `res` (which may legitimately be narrower).
-        let mul_scratch: usize = self.ckks_mul_tmp_bytes(res, a, b, tsk);
-        if n <= 1 {
-            return mul_scratch;
-        }
-        let ct_bytes: usize = self.glwe_bytes_of_from_infos(res);
-        let fallback: usize = ct_bytes + mul_scratch.max(self.ckks_add_tmp_bytes(res.size()));
-        let tensor_layout = GLWELayout {
-            n: res.n(),
-            base2k: res.base2k(),
-            k: TorusPrecision(res.k().max(a.k()).max(b.k()).as_u32()),
-            rank: res.rank(),
-        };
-        let tensor_bytes: usize = self.glwe_tensor_bytes_of_from_infos(&tensor_layout);
-        let inner: usize = self
-            .glwe_tensor_apply_tmp_bytes(&tensor_layout, a, b)
-            .max(self.glwe_tensor_relinearize_tmp_bytes(res, &tensor_layout, tsk));
-        let fast: usize = 2 * n * ct_bytes + tensor_bytes + inner;
-        fallback.max(fast)
+        BE::ckks_dot_product_ct_tmp_bytes_impl(self, n, res, a, b, tsk)
     }
 
     fn ckks_dot_product_pt_vec_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
@@ -434,10 +372,7 @@ where
         A: CKKSCtBounds,
         P: CKKSInfos,
     {
-        self.glwe_bytes_of_from_infos(res)
-            + self
-                .ckks_mul_pt_vec_tmp_bytes(res, a, b)
-                .max(self.ckks_add_tmp_bytes(res.size()))
+        BE::ckks_dot_product_pt_vec_tmp_bytes_impl(self, res, a, b)
     }
 
     fn ckks_dot_product_pt_const_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
@@ -446,31 +381,39 @@ where
         A: CKKSCtBounds,
         P: CKKSInfos,
     {
-        self.glwe_bytes_of_from_infos(res)
-            + self
-                .ckks_mul_pt_const_tmp_bytes(res, a, b)
-                .max(self.ckks_add_tmp_bytes(res.size()))
+        BE::ckks_dot_product_pt_const_tmp_bytes_impl(self, res, a, b)
     }
 
-    fn ckks_dot_product_ct<Dst: Data, D: Data, E: Data, H>(
+    fn ckks_dot_product_ct<Dst, A, B, H>(
         &self,
-        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
-        a: &[&CKKSCiphertext<D, BE::ZnxWord, BE::Ring>],
-        b: &[&CKKSCiphertext<E, BE::ZnxWord, BE::Ring>],
+        dst: &mut Dst,
+        a: &[&A],
+        b: &[&B],
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + GLWEInfos,
-        CKKSCiphertext<E, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + GLWEInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetTensorKey<BE>,
     {
-        check_lengths("ckks_dot_product_ct", a.len(), b.len())?;
-        let n: usize = a.len();
-        ensure_accumulation_fits("ckks_dot_product_ct", dst, n)?;
-        self.ckks_mul_into(dst, a[0], b[0], tsk, scratch)?;
-        accumulate(self, dst, n, scratch, |tmp, i, s| self.ckks_mul_into(tmp, a[i], b[i], tsk, s))
+        BE::ckks_dot_product_ct_impl(self, dst, a, b, tsk, scratch)
+    }
+
+    fn ckks_dot_product_prepared<Dst, H>(
+        &self,
+        dst: &mut Dst,
+        a: &[&CKKSPreparedLeft<BE>],
+        b: &[&CKKSPreparedRight<BE>],
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        H: GetTensorKey<BE>,
+    {
+        BE::ckks_dot_product_prepared_impl(self, dst, a, b, tsk, scratch)
     }
 
     fn ckks_dot_product_pt_vec<Dst: Data, D: Data, E>(
@@ -485,13 +428,7 @@ where
         CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + GLWEInfos,
         E: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        check_lengths("ckks_dot_product_pt_vec", a.len(), b.len())?;
-        let n: usize = a.len();
-        ensure_accumulation_fits("ckks_dot_product_pt_vec", dst, n)?;
-        self.ckks_mul_pt_vec_into(dst, a[0], b[0], scratch)?;
-        accumulate(self, dst, n, scratch, |tmp, i, s| {
-            self.ckks_mul_pt_vec_into(tmp, a[i], b[i], s)
-        })
+        BE::ckks_dot_product_pt_vec_impl(self, dst, a, b, scratch)
     }
 
     fn ckks_dot_product_pt_const<Dst: Data, D: Data, E>(
@@ -507,13 +444,6 @@ where
         CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + GLWEInfos,
         E: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        check_lengths("ckks_dot_product_pt_const", a.len(), b.len())?;
-        check_lengths("ckks_dot_product_pt_const coeffs", a.len(), pt_coeffs.len())?;
-        let n: usize = a.len();
-        ensure_accumulation_fits("ckks_dot_product_pt_const", dst, n)?;
-        self.ckks_mul_pt_const_into(dst, a[0], b[0], pt_coeffs[0], scratch)?;
-        accumulate(self, dst, n, scratch, |tmp, i, s| {
-            self.ckks_mul_pt_const_into(tmp, a[i], b[i], pt_coeffs[i], s)
-        })
+        BE::ckks_dot_product_pt_const_impl(self, dst, a, b, pt_coeffs, scratch)
     }
 }

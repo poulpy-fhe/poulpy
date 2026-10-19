@@ -127,7 +127,7 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
         H: poulpy_core::layouts::GetAutomorphismKey<BE>,
     {
         assert_linear_transformation_into(lhs, rhs);
-        if !eval(module, cnv_offset, res, &[(lhs, rhs)], keys, scratch) {
+        if !eval(module, cnv_offset, res, &[lhs], &[rhs], keys, scratch) {
             glwe_eval_linear_transformation_into_reference(module, cnv_offset, res, lhs, rhs, keys, scratch)
         }
     }
@@ -136,19 +136,17 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut R,
-        terms: &[(
-            &poulpy_core::layouts::prepared::LinearTransformationBabySteps<BE>,
-            &poulpy_core::layouts::prepared::LinearTransformationPrepared<BE>,
-        )],
+        babies: &[&poulpy_core::layouts::prepared::LinearTransformationBabySteps<BE>],
+        lts: &[&poulpy_core::layouts::prepared::LinearTransformationPrepared<BE>],
         keys: &H,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<BE>,
     ) where
         R: poulpy_core::layouts::GLWEToBackendMut<BE> + poulpy_core::layouts::GLWEInfos,
         H: poulpy_core::layouts::GetAutomorphismKey<BE>,
     {
-        assert_linear_transformation_sum(terms);
-        if !eval(module, cnv_offset, res, terms, keys, scratch) {
-            glwe_eval_linear_transformation_sum_into_reference(module, cnv_offset, res, terms, keys, scratch)
+        assert_linear_transformation_sum(babies, lts);
+        if !eval(module, cnv_offset, res, babies, lts, keys, scratch) {
+            glwe_eval_linear_transformation_sum_into_reference(module, cnv_offset, res, babies, lts, keys, scratch)
         }
     }
 }
@@ -162,7 +160,8 @@ fn eval<R, P, H>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut R,
-    terms: &[(&LinearTransformationBabySteps<BE>, &LinearTransformation<P>)],
+    babies: &[&LinearTransformationBabySteps<BE>],
+    lts: &[&LinearTransformation<P>],
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> bool
@@ -171,7 +170,7 @@ where
     P: DiagonalProd<BE>,
     H: GetAutomorphismKey<BE>,
 {
-    let (lhs, rhs) = terms[0];
+    let (lhs, rhs) = (babies[0], lts[0]);
     if !E::is_parallel()
         || res.size() < PARALLEL_EVAL_MIN_SIZE
         || res.rank().as_usize() != 1
@@ -231,7 +230,7 @@ where
     }
     for (g, key) in giant_keys.iter().enumerate() {
         P::accumulate_giant_prod(module, offset_hi, &mut prod0, lhs, &rhs.giant_steps[g], &mut work0);
-        for &(lhs, rhs) in &terms[1..] {
+        for (&lhs, &rhs) in babies[1..].iter().zip(&lts[1..]) {
             let (mut bucket, mut bucket_work) = work0.borrow().take_vec_znx_dft_scratch(module.n(), cols, prod_size);
             P::accumulate_giant_prod(module, offset_hi, &mut bucket, lhs, &rhs.giant_steps[g], &mut bucket_work);
             for col in 0..cols {

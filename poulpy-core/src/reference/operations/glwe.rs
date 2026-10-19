@@ -709,12 +709,17 @@ pub trait GLWETensoringReference<BE: Backend> {
     /// The first pair runs as [`Self::glwe_mul_relinearize_reference`]. Each later pair is prepared into the first
     /// one's operands, its columns are formed by [`GLWETensoringImpl::glwe_mul_columns`] and added to the first
     /// pair's in the transform domain before `d2` is brought back to digits.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the two operand slices of a sum beside the product's operands"
+    )]
     fn glwe_mul_relinearize_sum_reference<R, A, B, H>(
         &self,
         cnv_offset: usize,
         res: &mut R,
         res_k: TorusPrecision,
-        pairs: &[(&A, &B)],
+        a: &[&A],
+        b: &[&B],
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -752,7 +757,8 @@ pub trait GLWETensoringReference<BE: Backend> {
         cnv_offset: usize,
         res: &mut R,
         res_k: TorusPrecision,
-        pairs: &[(&AP, &BP)],
+        a: &[&AP],
+        b: &[&BP],
         a_size: usize,
         a_k: TorusPrecision,
         b_size: usize,
@@ -1232,7 +1238,7 @@ where
             res_k,
             MulLeft::<A, CnvPVecLOwned<BE>>::Operand(a),
             MulRight::<B, CnvPVecROwned<BE>>::Operand(b),
-            MulRest::Operands(&[]),
+            MulRest::Operands(&[], &[]),
             tsk,
             scratch,
         )
@@ -1258,7 +1264,7 @@ where
             res_k,
             MulLeft::<A, CnvPVecLOwned<BE>>::Res,
             MulRight::<A, CnvPVecROwned<BE>>::Operand(a),
-            MulRest::Operands(&[]),
+            MulRest::Operands(&[], &[]),
             tsk,
             scratch,
         )
@@ -1284,7 +1290,7 @@ where
             res_k,
             MulLeft::<A, CnvPVecLOwned<BE>>::Operand(a),
             MulRight::<A, CnvPVecROwned<BE>>::Left,
-            MulRest::Operands(&[]),
+            MulRest::Operands(&[], &[]),
             tsk,
             scratch,
         )
@@ -1308,7 +1314,7 @@ where
             res_k,
             MulLeft::<NoOperand<BE>, CnvPVecLOwned<BE>>::Res,
             MulRight::<NoOperand<BE>, CnvPVecROwned<BE>>::Left,
-            MulRest::Operands(&[]),
+            MulRest::Operands(&[], &[]),
             tsk,
             scratch,
         )
@@ -1343,7 +1349,7 @@ where
                 size: b_size,
                 k: b_k,
             },
-            MulRest::Operands(&[]),
+            MulRest::Operands(&[], &[]),
             tsk,
             scratch,
         )
@@ -1376,7 +1382,7 @@ where
                 size: a_size,
                 k: a_k,
             },
-            MulRest::Operands(&[]),
+            MulRest::Operands(&[], &[]),
             tsk,
             scratch,
         )
@@ -1435,7 +1441,8 @@ where
         cnv_offset: usize,
         res: &mut R,
         res_k: TorusPrecision,
-        pairs: &[(&A, &B)],
+        a: &[&A],
+        b: &[&B],
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -1444,7 +1451,11 @@ where
         B: GLWEToBackendRef<BE> + GLWEInfos,
         H: GetTensorKey<BE>,
     {
-        let ((a, b), rest) = pairs.split_first().expect("one-pass product sum has no pairs");
+        assert_eq!(a.len(), b.len(), "one-pass product sum: a and b differ in length");
+        let ((a, a_rest), (b, b_rest)) = (
+            a.split_first().expect("one-pass product sum has no pairs"),
+            b.split_first().expect("one-pass product sum has no pairs"),
+        );
         glwe_mul_relinearize_one_pass(
             self,
             cnv_offset,
@@ -1452,7 +1463,7 @@ where
             res_k,
             MulLeft::<A, CnvPVecLOwned<BE>>::Operand(*a),
             MulRight::<B, CnvPVecROwned<BE>>::Operand(*b),
-            MulRest::Operands(rest),
+            MulRest::Operands(a_rest, b_rest),
             tsk,
             scratch,
         )
@@ -1464,7 +1475,8 @@ where
         cnv_offset: usize,
         res: &mut R,
         res_k: TorusPrecision,
-        pairs: &[(&AP, &BP)],
+        a: &[&AP],
+        b: &[&BP],
         a_size: usize,
         a_k: TorusPrecision,
         b_size: usize,
@@ -1482,14 +1494,18 @@ where
             (a_size, b_size) == (a_k.as_usize().div_ceil(base2k), b_k.as_usize().div_ceil(base2k)),
             "prepared sizes are not ceil(a_k / base2k) and ceil(b_k / base2k)"
         );
-        for (i, (a, b)) in pairs.iter().enumerate() {
-            let (a, b) = (a.to_backend_ref(), b.to_backend_ref());
+        assert_eq!(a.len(), b.len(), "one-pass product sum: a and b differ in length");
+        for (i, (ai, bi)) in a.iter().zip(b).enumerate() {
+            let (ai, bi) = (ai.to_backend_ref(), bi.to_backend_ref());
             assert!(
-                (a.n(), a.cols(), a.size(), b.n(), b.cols(), b.size()) == (n, 2, a_size, n, 2, b_size),
+                (ai.n(), ai.cols(), ai.size(), bi.n(), bi.cols(), bi.size()) == (n, 2, a_size, n, 2, b_size),
                 "prepared pair {i} does not match res's degree, rank 1 and the given sizes"
             );
         }
-        let ((a, b), rest) = pairs.split_first().expect("one-pass product sum has no pairs");
+        let ((a, a_rest), (b, b_rest)) = (
+            a.split_first().expect("one-pass product sum has no pairs"),
+            b.split_first().expect("one-pass product sum has no pairs"),
+        );
         glwe_mul_relinearize_one_pass(
             self,
             cnv_offset,
@@ -1505,7 +1521,7 @@ where
                 size: b_size,
                 k: b_k,
             },
-            MulRest::Prepared(rest),
+            MulRest::Prepared(a_rest, b_rest),
             tsk,
             scratch,
         )
@@ -1647,12 +1663,12 @@ enum MulRight<'a, B, BP> {
     Prepared { prep: &'a BP, size: usize, k: TorusPrecision },
 }
 
-/// The pairs of a sum after the first, which share its layouts.
+/// The pairs `(a[i], b[i])` of a sum after the first, which share its layouts.
 enum MulRest<'a, A, B, AP, BP> {
-    /// Ciphertexts, each prepared into the first pair's operands, which are ciphertexts too.
-    Operands(&'a [(&'a A, &'a B)]),
+    /// Ciphertexts, each pair prepared into the first pair's operands, which are ciphertexts too.
+    Operands(&'a [&'a A], &'a [&'a B]),
     /// Prepared pairs, read where they are, after a prepared first pair.
-    Prepared(&'a [(&'a AP, &'a BP)]),
+    Prepared(&'a [&'a AP], &'a [&'a BP]),
 }
 
 /// Names the unused operand type of the forms without a ciphertext operand.
@@ -1727,8 +1743,8 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
         MulRight::Prepared { size, k, .. } => (*k, *size),
     };
     // Prepared pairs are checked by `glwe_mul_prepared_relinearize_sum_reference`.
-    if let MulRest::Operands(rest) = &rest {
-        for (i, (a, b)) in rest.iter().enumerate() {
+    if let MulRest::Operands(rest_a, rest_b) = &rest {
+        for (i, (a, b)) in rest_a.iter().zip(rest_b.iter()).enumerate() {
             assert!(
                 a.base2k().as_usize() == base2k
                     && b.base2k().as_usize() == base2k
@@ -1760,15 +1776,15 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
     assert_eq!(tsk.rank_out().as_usize(), 1, "rank 1 only");
     let scratch = scratch.borrow();
     let (query, prepared_operands, summed) = match &rest {
-        MulRest::Operands([]) => ("GLWETensoring::glwe_mul_relinearize_tmp_bytes", false, false),
-        MulRest::Operands(_) => ("GLWEMulRelinearizeSum::glwe_mul_relinearize_sum_tmp_bytes", false, true),
+        MulRest::Operands([], _) => ("GLWETensoring::glwe_mul_relinearize_tmp_bytes", false, false),
+        MulRest::Operands(..) => ("GLWEMulRelinearizeSum::glwe_mul_relinearize_sum_tmp_bytes", false, true),
         // One prepared pair holds no second set of columns, so it fits a single product's scratch.
-        MulRest::Prepared([]) => (
+        MulRest::Prepared([], _) => (
             "GLWEPreparedTensoring::glwe_mul_prepared_relinearize_sum_tmp_bytes",
             true,
             false,
         ),
-        MulRest::Prepared(_) => (
+        MulRest::Prepared(..) => (
             "GLWEPreparedTensoring::glwe_mul_prepared_relinearize_sum_tmp_bytes",
             true,
             true,
@@ -1832,7 +1848,7 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
         MulLeft::Res => prepare!(&*res),
         // A prepared first pair, whose right operand is prepared too, has nothing to prepare.
         MulLeft::Prepared { .. } => debug_assert!(
-            matches!((&right, &rest), (MulRight::Prepared { .. }, MulRest::Prepared(_))),
+            matches!((&right, &rest), (MulRight::Prepared { .. }, MulRest::Prepared(..))),
             "a prepared left operand comes with prepared right operands and pairs"
         ),
     }
@@ -1894,8 +1910,8 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
     }
     match rest {
         // A pair of ciphertexts is prepared into the first pair's operands first.
-        MulRest::Operands(rest) => {
-            for (a, b) in rest {
+        MulRest::Operands(rest_a, rest_b) => {
+            for (a, b) in rest_a.iter().zip(rest_b.iter()) {
                 {
                     let (mut left_tmp, prep_scratch) = scratch.borrow().take_glwe_scratch(&left_infos);
                     let (mut right_tmp, mut prep_scratch) = prep_scratch.take_glwe_scratch(&right_infos);
@@ -1907,8 +1923,8 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
                 add_columns!(&a_prep.to_backend_ref(), &b_prep.to_backend_ref());
             }
         }
-        MulRest::Prepared(rest) => {
-            for (a, b) in rest {
+        MulRest::Prepared(rest_a, rest_b) => {
+            for (a, b) in rest_a.iter().zip(rest_b.iter()) {
                 add_columns!(&a.to_backend_ref(), &b.to_backend_ref());
             }
         }

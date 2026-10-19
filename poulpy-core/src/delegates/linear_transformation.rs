@@ -104,13 +104,14 @@ where
         &self,
         cnv_offset: usize,
         res: &mut R,
-        terms: &[(&LinearTransformationBabySteps<BE>, &LinearTransformationPrepared<BE>)],
+        babies: &[&LinearTransformationBabySteps<BE>],
+        lts: &[&LinearTransformationPrepared<BE>],
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         H: GetAutomorphismKey<BE>,
     {
-        BE::glwe_eval_linear_transformation_sum_into(self, cnv_offset, res, terms, keys, scratch)
+        BE::glwe_eval_linear_transformation_sum_into(self, cnv_offset, res, babies, lts, keys, scratch)
     }
 }

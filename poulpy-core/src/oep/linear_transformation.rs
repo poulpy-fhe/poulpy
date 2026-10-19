@@ -88,7 +88,8 @@ pub unsafe trait LinearTransformationImpl: Backend {
         module: &Module<Self>,
         cnv_offset: usize,
         res: &mut R,
-        terms: &[(&LinearTransformationBabySteps<Self>, &LinearTransformationPrepared<Self>)],
+        babies: &[&LinearTransformationBabySteps<Self>],
+        lts: &[&LinearTransformationPrepared<Self>],
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
@@ -225,10 +226,8 @@ macro_rules! impl_linear_transformation_reference_full {
                 module: &::poulpy_hal::layouts::Module<$be>,
                 cnv_offset: usize,
                 res: &mut R,
-                terms: &[(
-                    &$crate::layouts::prepared::LinearTransformationBabySteps<$be>,
-                    &$crate::layouts::prepared::LinearTransformationPrepared<$be>,
-                )],
+                babies: &[&$crate::layouts::prepared::LinearTransformationBabySteps<$be>],
+                lts: &[&$crate::layouts::prepared::LinearTransformationPrepared<$be>],
                 keys: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
@@ -236,7 +235,7 @@ macro_rules! impl_linear_transformation_reference_full {
                 H: $crate::layouts::GetAutomorphismKey<$be>,
             {
                 $crate::reference::linear_transformation::glwe_eval_linear_transformation_sum_into_reference::<$be, _, _, _>(
-                    module, cnv_offset, res, terms, keys, scratch,
+                    module, cnv_offset, res, babies, lts, keys, scratch,
                 )
             }
         }

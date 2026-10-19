@@ -240,7 +240,7 @@ pub fn glwe_eval_linear_transformation_into_reference<BE, M, R, P, H>(
     H: GetAutomorphismKey<BE>,
 {
     assert_linear_transformation_into(lhs, rhs);
-    glwe_eval_giant_steps(module, cnv_offset, res, &[(lhs, rhs)], keys, scratch);
+    glwe_eval_giant_steps(module, cnv_offset, res, &[lhs], &[rhs], keys, scratch);
     res.set_canonical(true);
 }
 
@@ -250,7 +250,7 @@ where
     BE: Backend,
     P: DiagonalProd<BE>,
 {
-    assert_linear_transformation_giant_steps(&[(lhs, rhs)]);
+    assert_linear_transformation_giant_steps(&[lhs], &[rhs]);
 }
 
 /// Reference impl: scratch bytes for [`glwe_eval_linear_transformation_sum_into_reference`],
@@ -293,7 +293,7 @@ where
 
 /// Reference impl: `res = Σ_t M_t(a_t)` for resident transforms sharing one giant schedule.
 ///
-/// `terms[t]` pairs the baby cache of `a_t` with `M_t`. Each giant step's PROD is
+/// `babies[t]` is the baby cache of `a_t` and `lts[t]` is `M_t`. Each giant step's PROD is
 /// summed over the terms in DFT, then rotated once by the
 /// shared giant loop, so one term is [`glwe_eval_linear_transformation_into_reference`].
 ///
@@ -304,7 +304,8 @@ pub fn glwe_eval_linear_transformation_sum_into_reference<BE, M, R, H>(
     module: &M,
     cnv_offset: usize,
     res: &mut R,
-    terms: &[(&LinearTransformationBabySteps<BE>, &LinearTransformationPrepared<BE>)],
+    babies: &[&LinearTransformationBabySteps<BE>],
+    lts: &[&LinearTransformationPrepared<BE>],
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
@@ -342,23 +343,29 @@ pub fn glwe_eval_linear_transformation_sum_into_reference<BE, M, R, H>(
     R: GLWEToBackendMut<BE> + GLWEInfos,
     H: GetAutomorphismKey<BE>,
 {
-    assert_linear_transformation_sum(terms);
-    glwe_eval_giant_steps(module, cnv_offset, res, terms, keys, scratch);
+    assert_linear_transformation_sum(babies, lts);
+    glwe_eval_giant_steps(module, cnv_offset, res, babies, lts, keys, scratch);
     res.set_canonical(true);
 }
 
 /// The checks of [`glwe_eval_linear_transformation_sum_into_reference`], run before it reads a key or writes `res`.
 pub fn assert_linear_transformation_sum<BE: Backend>(
-    terms: &[(&LinearTransformationBabySteps<BE>, &LinearTransformationPrepared<BE>)],
+    babies: &[&LinearTransformationBabySteps<BE>],
+    lts: &[&LinearTransformationPrepared<BE>],
 ) {
-    let &(lhs, rhs) = terms.first().expect("linear transformation sum has no terms");
+    assert_eq!(
+        babies.len(),
+        lts.len(),
+        "linear transformation sum: babies and lts differ in length"
+    );
+    let (&lhs, &rhs) = (babies.first().expect("linear transformation sum has no terms"), &lts[0]);
     // First, so that a later term's cache holds the rotations its schedule reads before its layout is read.
-    assert_linear_transformation_giant_steps(terms);
+    assert_linear_transformation_giant_steps(babies, lts);
     let diagonals = |lt: &LinearTransformationPrepared<BE>| {
         lt.first_diagonal_plaintext()
             .map(|d| (d.glwe_layout(), d.max_size(), d.log_scale()))
     };
-    for (t, &(l, r)) in terms.iter().enumerate().skip(1) {
+    for (t, (&l, &r)) in babies.iter().zip(lts).enumerate().skip(1) {
         assert!(
             r.giant_steps
                 .iter()

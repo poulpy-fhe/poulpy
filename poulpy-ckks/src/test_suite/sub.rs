@@ -59,7 +59,7 @@ where
     let (want_re, want_im) = want_sub(&re1, &im1, &re2, &im2);
     let mut ct_res = alloc_ct(&params, module, params.k);
     module.ckks_sub_into(&mut ct_res, &ct1, &ct2, &mut scratch.borrow()).unwrap();
-    assert_binary_output_meta("sub_ct_aligned", &ct_res, &ct1, &ct2);
+    assert_binary_output_meta("sub_ct_aligned", &ct_res, params.k, &ct1, &ct2);
     assert_decrypt_precision(
         "sub_ct_aligned",
         &params,
@@ -114,7 +114,7 @@ where
     let (want_re, want_im) = want_sub(&re1, &im1, &re2, &im2);
     let mut ct_res = alloc_ct(&params, module, params.k);
     module.ckks_sub_into(&mut ct_res, &ct1, &ct2, &mut scratch.borrow()).unwrap();
-    assert_binary_output_meta("sub_ct a_lt_b", &ct_res, &ct1, &ct2);
+    assert_binary_output_meta("sub_ct a_lt_b", &ct_res, params.k, &ct1, &ct2);
     assert_decrypt_precision(
         "sub_ct a_lt_b",
         &params,
@@ -169,7 +169,7 @@ where
     let (want_re, want_im) = want_sub(&re1, &im1, &re2, &im2);
     let mut ct_res = alloc_ct(&params, module, params.k);
     module.ckks_sub_into(&mut ct_res, &ct1, &ct2, &mut scratch.borrow()).unwrap();
-    assert_binary_output_meta("sub_ct a_gt_b", &ct_res, &ct1, &ct2);
+    assert_binary_output_meta("sub_ct a_gt_b", &ct_res, params.k, &ct1, &ct2);
     assert_decrypt_precision(
         "sub_ct a_gt_b",
         &params,
@@ -227,7 +227,7 @@ where
     let (want_re, want_im) = want_sub(&a_re, &a_im, &b_re, &b_im);
     let mut ct_res = alloc_ct(&params, module, params.k);
     module.ckks_sub_into(&mut ct_res, &ct1, &ct2, &mut scratch.borrow()).unwrap();
-    assert_binary_output_meta("sub_ct delta_log_delta", &ct_res, &ct1, &ct2);
+    assert_binary_output_meta("sub_ct delta_log_delta", &ct_res, params.k, &ct1, &ct2);
     assert_decrypt_precision_at_log_delta(
         "sub_ct delta_log_delta",
         &params,
@@ -281,9 +281,10 @@ where
         &mut scratch.borrow(),
     );
     let (want_re, want_im) = want_sub(&re1, &im1, &re2, &im2);
-    let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
+    let dst_k = params.k - params.base2k - 1;
+    let mut ct_res = alloc_ct(&params, module, dst_k);
     module.ckks_sub_into(&mut ct_res, &ct1, &ct2, &mut scratch.borrow()).unwrap();
-    assert_binary_output_meta("sub_ct smaller_output", &ct_res, &ct1, &ct2);
+    assert_binary_output_meta("sub_ct smaller_output", &ct_res, dst_k, &ct1, &ct2);
     assert_decrypt_precision(
         "sub_ct smaller_output",
         &params,
@@ -561,7 +562,7 @@ where
     module
         .ckks_sub_pt_vec_into(&mut ct_res, &ct1, &pt, &mut scratch.borrow())
         .unwrap();
-    assert_unary_output_meta("sub_pt_vec_into", &ct_res, &ct1);
+    assert_unary_output_meta("sub_pt_vec_into", &ct_res, params.k, &ct1);
     assert!(ct1.noise().is_some());
     assert_eq!(ct_res.noise(), None);
     assert_decrypt_precision(
@@ -618,7 +619,7 @@ pub fn test_sub_pt_vec_into_delta_log_delta<BE, F, E>(
     module
         .ckks_sub_pt_vec_into(&mut ct_res, &ct1, &pt, &mut scratch.borrow())
         .unwrap();
-    assert_unary_output_meta("sub_pt_vec_into delta_log_delta", &ct_res, &ct1);
+    assert_unary_output_meta("sub_pt_vec_into delta_log_delta", &ct_res, params.k, &ct1);
     assert_decrypt_precision_at_log_delta(
         "sub_pt_vec_into delta_log_delta",
         &params,
@@ -670,11 +671,12 @@ pub fn test_sub_pt_vec_into_smaller_output<BE, F, E>(
         &quantize(&re2, params.prec().log_delta()),
         &quantize(&im2, params.prec().log_delta()),
     );
-    let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
+    let dst_k = params.k - params.base2k - 1;
+    let mut ct_res = alloc_ct(&params, module, dst_k);
     module
         .ckks_sub_pt_vec_into(&mut ct_res, &ct1, &pt, &mut scratch.borrow())
         .unwrap();
-    assert_unary_output_meta("sub_pt_vec_into smaller_output", &ct_res, &ct1);
+    assert_unary_output_meta("sub_pt_vec_into smaller_output", &ct_res, dst_k, &ct1);
     assert_decrypt_precision(
         "sub_pt_vec_into smaller_output",
         &params,
@@ -728,7 +730,7 @@ pub fn test_sub_pt_const_into_aligned<BE, F, E>(
     module
         .ckks_sub_pt_const_assign(&mut ct_res, m, &cst, 1, &mut scratch.borrow())
         .unwrap();
-    assert_unary_output_meta("sub_pt_const_into_aligned", &ct_res, &ct);
+    assert_unary_output_meta("sub_pt_const_into_aligned", &ct_res, params.k, &ct);
     assert_decrypt_precision(
         "sub_pt_const_into_aligned",
         &params,
@@ -799,7 +801,7 @@ pub fn test_sub_const_into_lsh_alignment<BE, F, E>(
     module
         .ckks_sub_pt_const_assign(&mut ct_res, m, &cst, 1, &mut scratch.borrow())
         .unwrap();
-    assert_unary_output_meta("sub_const_into_lsh_alignment", &ct_res, &ct);
+    assert_unary_output_meta("sub_const_into_lsh_alignment", &ct_res, params.k, &ct);
     assert_decrypt_precision(
         "sub_const_into_lsh_alignment",
         &params,

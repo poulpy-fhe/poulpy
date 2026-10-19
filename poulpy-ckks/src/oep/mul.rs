@@ -3,9 +3,12 @@ use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 
 use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, LWEInfos, TorusPrecision};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, PrepareHint, ScratchArena};
 
-use crate::{CKKSCtBounds, CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos, layouts::CKKSPreparedRight};
+use crate::{
+    CKKSCtBounds, CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos,
+    layouts::{CKKSPreparedLeft, CKKSPreparedRight},
+};
 
 /// # Safety
 ///
@@ -62,13 +65,73 @@ pub unsafe trait CKKSMulImpl: Backend {
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<Self>;
+    /// Scratch bytes of [`Self::ckks_prepare_left_impl`], [`Self::ckks_prepare_right_impl`] and their `_into_impl`
+    /// forms for an operand shaped like `a`, which [`Self::ckks_mul_tmp_bytes_impl`] of a product reading such an
+    /// operand covers, as the API promises.
+    fn ckks_prepare_tmp_bytes_impl<A: GLWEInfos>(module: &Module<Self>, a: &A) -> usize;
+    /// The bytes [`Self::ckks_prepared_left_alloc_from_infos_impl`] allocates for `infos` under `hint`.
+    fn ckks_prepared_left_bytes_of_from_infos_impl<A: GLWEInfos>(module: &Module<Self>, infos: &A, hint: PrepareHint) -> usize;
+    /// The bytes [`Self::ckks_prepared_right_alloc_from_infos_impl`] allocates for `infos` under `hint`.
+    fn ckks_prepared_right_bytes_of_from_infos_impl<A: GLWEInfos>(module: &Module<Self>, infos: &A, hint: PrepareHint) -> usize;
+    /// A left operand of a ciphertext of `infos`, in the representation `hint` selects, which
+    /// [`Self::ckks_prepare_left_into_impl`] fills; its infos report `infos` and no metadata until then.
+    fn ckks_prepared_left_alloc_from_infos_impl<A: GLWEInfos>(
+        module: &Module<Self>,
+        infos: &A,
+        hint: PrepareHint,
+    ) -> CKKSPreparedLeft<Self>;
+    /// As [`Self::ckks_prepared_left_alloc_from_infos_impl`], for a right operand.
+    fn ckks_prepared_right_alloc_from_infos_impl<A: GLWEInfos>(
+        module: &Module<Self>,
+        infos: &A,
+        hint: PrepareHint,
+    ) -> CKKSPreparedRight<Self>;
+    /// Prepares `a` into `res`, with no allocation: `res` then reports `a`'s layout and metadata, and the products
+    /// that read it give the reference's bits. An `a` of another layout than `res` was allocated for is
+    /// `InvalidOperand`, before any write to `res`.
+    fn ckks_prepare_left_into_impl<A>(
+        module: &Module<Self>,
+        res: &mut CKKSPreparedLeft<Self>,
+        a: &A,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos;
+    /// As [`Self::ckks_prepare_left_into_impl`], into a right operand.
+    fn ckks_prepare_right_into_impl<A>(
+        module: &Module<Self>,
+        res: &mut CKKSPreparedRight<Self>,
+        a: &A,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos;
+    /// Prepares a left operand: [`Self::ckks_prepare_left_into_impl`] into
+    /// [`Self::ckks_prepared_left_alloc_from_infos_impl`] of `a` under `hint`.
+    fn ckks_prepare_left_impl<A>(
+        module: &Module<Self>,
+        a: &A,
+        hint: PrepareHint,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<CKKSPreparedLeft<Self>>
+    where
+        A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos,
+    {
+        super::derived::mul::ckks_prepare_left(module, a, hint, scratch)
+    }
+    /// Prepares a right operand: [`Self::ckks_prepare_right_into_impl`] into
+    /// [`Self::ckks_prepared_right_alloc_from_infos_impl`] of `a` under `hint`.
     fn ckks_prepare_right_impl<A>(
         module: &Module<Self>,
         a: &A,
+        hint: PrepareHint,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<CKKSPreparedRight<Self>>
     where
-        A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos;
+        A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos,
+    {
+        super::derived::mul::ckks_prepare_right(module, a, hint, scratch)
+    }
     fn ckks_mul_prepared_assign_impl<Dst, T>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -233,15 +296,67 @@ macro_rules! impl_ckks_mul_reference {
                 $crate::reference::mul::CKKSMulReference::ckks_mul_assign_reference(module, dst, a, tsk, scratch)
             }
 
-            fn ckks_prepare_right_impl<A>(
+            fn ckks_prepare_tmp_bytes_impl<A: ::poulpy_core::layouts::GLWEInfos>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 a: &A,
+            ) -> usize {
+                $crate::reference::mul::CKKSMulReference::ckks_prepare_tmp_bytes_reference(module, a)
+            }
+
+            fn ckks_prepared_left_bytes_of_from_infos_impl<A: ::poulpy_core::layouts::GLWEInfos>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                infos: &A,
+                hint: ::poulpy_hal::layouts::PrepareHint,
+            ) -> usize {
+                $crate::reference::mul::CKKSMulReference::ckks_prepared_left_bytes_of_from_infos_reference(module, infos, hint)
+            }
+
+            fn ckks_prepared_right_bytes_of_from_infos_impl<A: ::poulpy_core::layouts::GLWEInfos>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                infos: &A,
+                hint: ::poulpy_hal::layouts::PrepareHint,
+            ) -> usize {
+                $crate::reference::mul::CKKSMulReference::ckks_prepared_right_bytes_of_from_infos_reference(module, infos, hint)
+            }
+
+            fn ckks_prepared_left_alloc_from_infos_impl<A: ::poulpy_core::layouts::GLWEInfos>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                infos: &A,
+                hint: ::poulpy_hal::layouts::PrepareHint,
+            ) -> $crate::layouts::CKKSPreparedLeft<Self> {
+                $crate::reference::mul::CKKSMulReference::ckks_prepared_left_alloc_from_infos_reference(module, infos, hint)
+            }
+
+            fn ckks_prepared_right_alloc_from_infos_impl<A: ::poulpy_core::layouts::GLWEInfos>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                infos: &A,
+                hint: ::poulpy_hal::layouts::PrepareHint,
+            ) -> $crate::layouts::CKKSPreparedRight<Self> {
+                $crate::reference::mul::CKKSMulReference::ckks_prepared_right_alloc_from_infos_reference(module, infos, hint)
+            }
+
+            fn ckks_prepare_left_into_impl<A>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &mut $crate::layouts::CKKSPreparedLeft<Self>,
+                a: &A,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-            ) -> $crate::CKKSResult<$crate::layouts::CKKSPreparedRight<Self>>
+            ) -> $crate::CKKSResult<()>
             where
                 A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSInfos + ::poulpy_core::layouts::GLWEInfos,
             {
-                $crate::reference::mul::CKKSMulReference::ckks_prepare_right_reference(module, a, scratch)
+                $crate::reference::mul::CKKSMulReference::ckks_prepare_left_into_reference(module, res, a, scratch)
+            }
+
+            fn ckks_prepare_right_into_impl<A>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &mut $crate::layouts::CKKSPreparedRight<Self>,
+                a: &A,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> $crate::CKKSResult<()>
+            where
+                A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSInfos + ::poulpy_core::layouts::GLWEInfos,
+            {
+                $crate::reference::mul::CKKSMulReference::ckks_prepare_right_into_reference(module, res, a, scratch)
             }
 
             fn ckks_mul_prepared_assign_impl<Dst, T>(

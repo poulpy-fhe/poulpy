@@ -125,8 +125,9 @@ pub trait GLWELinearTransformations<BE: Backend> {
         P: crate::reference::linear_transformation::DiagonalProd<BE>,
         H: GetAutomorphismKey<BE>;
 
-    /// Computes `res = Σ_t M_t(a_t)`, where `terms[t]` pairs the baby cache of
-    /// `a_t` with the resident transform `M_t`, all sharing one giant schedule.
+    /// Computes `res = Σ_t M_t(a_t)`, where `babies[t]` is the baby cache of
+    /// `a_t` and `lts[t]` the resident transform `M_t`, all sharing one giant
+    /// schedule.
     ///
     /// Each giant step's products are summed over the terms in the DFT domain
     /// and rotated once, so the sum costs the giant key switches of one
@@ -135,9 +136,9 @@ pub trait GLWELinearTransformations<BE: Backend> {
     /// step's products over every term accumulate in one unnormalized buffer:
     /// pick `base2k` for that many products (`Module::max_base2k`).
     ///
-    /// Panics, before writing `res`, if `terms` is empty, if a transform has no
-    /// diagonal or a giant step without one, or if a cache lacks a baby
-    /// rotation that its transform reads. Also panics before writing `res`
+    /// Panics, before writing `res`, if `babies` is empty or `lts` is not as
+    /// long, if a transform has no diagonal or a giant step without one, or if
+    /// a cache lacks a baby rotation that its transform reads. Also panics before writing `res`
     /// unless every term shares the first one's giant schedule, source layout,
     /// and first diagonal's layout, width and scale, and every giant step's
     /// first diagonal has that width. The other diagonals are not checked:
@@ -147,7 +148,8 @@ pub trait GLWELinearTransformations<BE: Backend> {
         &self,
         cnv_offset: usize,
         res: &mut R,
-        terms: &[(&LinearTransformationBabySteps<BE>, &LinearTransformationPrepared<BE>)],
+        babies: &[&LinearTransformationBabySteps<BE>],
+        lts: &[&LinearTransformationPrepared<BE>],
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where

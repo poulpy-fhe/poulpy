@@ -58,6 +58,9 @@ macro_rules! core_backend_test_suite {
                 #[should_panic(expected = "summed product 1 does not share the first pair's layouts")]
                 glwe_mul_relinearize_sum_rejects_mismatched_layouts =>
                     $crate::test_suite::noise::glwe_tensor::test_glwe_mul_relinearize_sum_rejects_mismatched_layouts,
+                #[should_panic(expected = "one-pass product sum: a and b differ in length")]
+                glwe_mul_relinearize_sum_rejects_unequal_lengths =>
+                    $crate::test_suite::noise::glwe_tensor::test_glwe_mul_relinearize_sum_rejects_unequal_lengths,
                 #[should_panic(expected = "one-pass product sum has no pairs")]
                 glwe_mul_prepared_relinearize_sum_rejects_no_pairs =>
                     $crate::test_suite::noise::glwe_tensor::test_glwe_mul_prepared_relinearize_sum_rejects_no_pairs,
@@ -67,6 +70,9 @@ macro_rules! core_backend_test_suite {
                 #[should_panic(expected = "prepared sizes are not ceil(a_k / base2k) and ceil(b_k / base2k)")]
                 glwe_mul_prepared_relinearize_sum_rejects_size_of_another_width =>
                     $crate::test_suite::noise::glwe_tensor::test_glwe_mul_prepared_relinearize_sum_rejects_size_of_another_width,
+                #[should_panic(expected = "one-pass product sum: a and b differ in length")]
+                glwe_mul_prepared_relinearize_sum_rejects_unequal_lengths =>
+                    $crate::test_suite::noise::glwe_tensor::test_glwe_mul_prepared_relinearize_sum_rejects_unequal_lengths,
                 #[should_panic(expected = "prepared operands do not match res's degree and rank and the given sizes")]
                 glwe_tensor_apply_prepared_rejects_mismatched_operands =>
                     $crate::test_suite::noise::glwe_tensor::test_glwe_tensor_apply_prepared_rejects_mismatched_operands,
@@ -117,6 +123,9 @@ macro_rules! core_backend_test_suite {
                 #[should_panic(expected = "linear transformation sum has no terms")]
                 glwe_linear_transformation_sum_rejects_no_terms =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_no_terms,
+                #[should_panic(expected = "linear transformation sum: babies and lts differ in length")]
+                glwe_linear_transformation_sum_rejects_unequal_lengths =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_unequal_lengths,
                 #[should_panic(expected = "linear transformation has no non-empty giant steps")]
                 glwe_linear_transformation_sum_rejects_first_term_without_giant_steps =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_first_term_without_giant_steps,

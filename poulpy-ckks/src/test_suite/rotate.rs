@@ -77,7 +77,7 @@ pub fn test_rotate_aligned<BE, F, E>(
         module
             .ckks_rotate_into(&mut ct_res, &ct, r, &atks, &mut scratch.borrow())
             .unwrap();
-        assert_unary_output_meta(&format!("rotate({r})"), &ct_res, &ct);
+        assert_unary_output_meta(&format!("rotate({r})"), &ct_res, params.k, &ct);
         assert_decrypt_precision(
             &format!("rotate({r})"),
             &params,
@@ -132,11 +132,12 @@ pub fn test_rotate_smaller_output<BE, F, E>(
     );
     for &r in rotations {
         let (want_re, want_im) = want_rotate(&re1, &im1, r, m);
-        let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
+        let dst_k = params.k - params.base2k - 1;
+        let mut ct_res = alloc_ct(&params, module, dst_k);
         module
             .ckks_rotate_into(&mut ct_res, &ct, r, &atks, &mut scratch.borrow())
             .unwrap();
-        assert_unary_output_meta(&format!("rotate smaller_output({r})"), &ct_res, &ct);
+        assert_unary_output_meta(&format!("rotate smaller_output({r})"), &ct_res, dst_k, &ct);
         assert_decrypt_precision(
             &format!("rotate({r})"),
             &params,

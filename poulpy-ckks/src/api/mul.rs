@@ -1,10 +1,13 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::GLWEToBackendMut;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendRef, GetTensorKey};
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendRef, GetTensorKey};
+use poulpy_hal::layouts::{Backend, PrepareHint, ScratchArena};
 
-use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight};
+use crate::{
+    CKKSCtBounds, CKKSInfos, SetCKKSInfos,
+    layouts::{CKKSPreparedLeft, CKKSPreparedRight},
+};
 
 /// Ciphertext–ciphertext and ciphertext–plaintext multiplication.
 ///
@@ -96,8 +99,8 @@ pub trait CKKSMulOps<BE: Backend> {
     /// at `max(a.k(), b.k())`; `res` supplies its physical result shape and
     /// capacity, but its pre-call precision does not widen the intermediate.
     /// For `_assign` pass `dst` as both `res` and `a`; for
-    /// `_prepared_assign` pass the operand the [`CKKSPreparedRight`] was
-    /// prepared from.
+    /// `_prepared_assign` pass the [`CKKSPreparedRight`], whose infos report
+    /// the operand it was prepared from.
     fn ckks_mul_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
@@ -143,14 +146,91 @@ pub trait CKKSMulOps<BE: Backend> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetTensorKey<BE>;
 
-    /// Prepares `a` as a reusable right operand for [`Self::ckks_mul_prepared_assign`].
+    /// Scratch bytes of [`Self::ckks_prepare_left`] and [`Self::ckks_prepare_right`]
+    /// for an operand shaped like `a`: a GLWE shaped like `a`, to normalize it
+    /// into when its canonical flag is clear, and the larger of the
+    /// normalization's and the forward transform's scratch.
+    fn ckks_prepare_tmp_bytes<A>(&self, a: &A) -> usize
+    where
+        A: CKKSCtBounds;
+
+    /// Bytes of a left operand [`Self::ckks_prepared_left_alloc_from_infos`] allocates for `infos` under `hint`.
+    fn ckks_prepared_left_bytes_of_from_infos<A>(&self, infos: &A, hint: PrepareHint) -> usize
+    where
+        A: GLWEInfos;
+
+    /// Bytes of a right operand [`Self::ckks_prepared_right_alloc_from_infos`] allocates for `infos` under `hint`.
+    fn ckks_prepared_right_bytes_of_from_infos<A>(&self, infos: &A, hint: PrepareHint) -> usize
+    where
+        A: GLWEInfos;
+
+    /// A left operand for a ciphertext of `infos`, on its `ceil(k / base2k)` limbs and `rank + 1` columns, in the
+    /// representation `hint` selects, as [`Self::ckks_prepare_right`] describes it, which
+    /// [`Self::ckks_prepare_left_into`] fills. Its contents are unspecified until then, and its infos report `infos`
+    /// and no metadata.
+    fn ckks_prepared_left_alloc_from_infos<A>(&self, infos: &A, hint: PrepareHint) -> CKKSPreparedLeft<BE>
+    where
+        A: GLWEInfos;
+
+    /// As [`Self::ckks_prepared_left_alloc_from_infos`], a right operand, which [`Self::ckks_prepare_right_into`] fills.
+    fn ckks_prepared_right_alloc_from_infos<A>(&self, infos: &A, hint: PrepareHint) -> CKKSPreparedRight<BE>
+    where
+        A: GLWEInfos;
+
+    /// Prepares `a` into `res`, a left operand allocated for `a`'s layout, with no allocation: [`Self::ckks_prepare_left`]
+    /// of `a` under `res`'s hint, bit for bit. `res` then reports `a`'s layout and metadata; preparing again into it
+    /// refills it. Takes [`Self::ckks_prepare_tmp_bytes`] of scratch.
+    ///
+    /// # Errors
+    ///
+    /// `InvalidOperand` for an `a` of another degree, radix, width `k` or rank than `res` was allocated for, before
+    /// any write to `res`.
+    fn ckks_prepare_left_into<A>(&self, res: &mut CKKSPreparedLeft<BE>, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        A: GLWEToBackendRef<BE> + CKKSCtBounds;
+
+    /// As [`Self::ckks_prepare_left_into`], into a right operand: [`Self::ckks_prepare_right`] of `a`, bit for bit.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::ckks_prepare_left_into`].
+    fn ckks_prepare_right_into<A>(
+        &self,
+        res: &mut CKKSPreparedRight<BE>,
+        a: &A,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        A: GLWEToBackendRef<BE> + CKKSCtBounds;
+
+    /// Prepares `a` as a left operand of
+    /// [`CKKSDotProductOps::ckks_dot_product_prepared`](crate::api::CKKSDotProductOps::ckks_dot_product_prepared),
+    /// as [`Self::ckks_prepare_right`] prepares a right one.
+    fn ckks_prepare_left<A>(&self, a: &A, hint: PrepareHint, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedLeft<BE>>
+    where
+        A: GLWEToBackendRef<BE> + CKKSCtBounds;
+
+    /// Prepares `a` as a reusable right operand for [`Self::ckks_mul_prepared_assign`]
+    /// and [`CKKSDotProductOps::ckks_dot_product_prepared`](crate::api::CKKSDotProductOps::ckks_dot_product_prepared).
     ///
     /// Hoists the forward transform of `a` so the same operand can multiply many
     /// destinations without re-preparing it (e.g. one `X^{gsp}` across a BSGS
-    /// giant-step level). The returned [`CKKSPreparedRight`] is backend-resident
-    /// (heap-owned), so it draws no scratch once produced. The scratch needed to
-    /// produce it is bounded by [`Self::ckks_mul_tmp_bytes`].
-    fn ckks_prepare_right<A>(&self, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
+    /// giant-step level): `a`, normalized first if its canonical flag is clear,
+    /// on its `ceil(k / base2k)` limbs. `hint` tells the backend how the operand
+    /// will be used, [`PrepareHint::OneShot`] for one product and
+    /// [`PrepareHint::Reuse`] for many; it may pick another representation for
+    /// each, but the products give the same bits under either. The returned
+    /// [`CKKSPreparedRight`] is backend-resident (heap-owned), so it draws no
+    /// scratch once produced, and its infos report `a`'s layout and metadata
+    /// (no noise estimate: only fresh ciphertexts carry one). Producing it takes [`Self::ckks_prepare_tmp_bytes`] of
+    /// scratch, which [`Self::ckks_mul_tmp_bytes`] covers. It is [`Self::ckks_prepare_right_into`] of `a` into
+    /// [`Self::ckks_prepared_right_alloc_from_infos`] of `a` under `hint`.
+    fn ckks_prepare_right<A>(
+        &self,
+        a: &A,
+        hint: PrepareHint,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<CKKSPreparedRight<BE>>
     where
         A: GLWEToBackendRef<BE> + CKKSCtBounds;
 

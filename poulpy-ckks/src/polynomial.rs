@@ -17,6 +17,9 @@ pub use poulpy_core::layouts::{
 };
 
 /// CKKS encoding of a [`Polynomial`] into a [`BSGSPolynomial`] of plaintexts.
+///
+/// Each encoder rejects a zero torus width, `coeff_meta.k = 0`, with
+/// [`CKKSCompositionError::InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) before allocating anything.
 pub trait EncodeBSGS {
     /// Decomposes and encodes using [`DEFAULT_SPLIT_STRATEGY`].
     fn encode_bsgs<R: Ring>(
@@ -66,6 +69,7 @@ where
         coeff_meta: CoeffsMeta,
         strategy: SplitStrategy,
     ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend<R>>>> {
+        coeff_meta.ensure_width("encode_bsgs_with")?;
         let mut step_idx = 0usize;
         self.decompose_bsgs_with(strategy, |baby_coeffs| {
             let mut pt = module.ckks_pt_coeffs_alloc(baby_coeffs.len(), base2k, coeff_meta.k);
@@ -86,6 +90,7 @@ where
         coeff_meta: CoeffsMeta,
         strategy: SplitStrategy,
     ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend<R>>>> {
+        coeff_meta.ensure_width("encode_bsgs_folded_with")?;
         let mut step_idx = 0usize;
         self.decompose_bsgs_folded_with(strategy, |baby_coeffs| {
             let mut pt = module.ckks_pt_coeffs_alloc(baby_coeffs.len(), base2k, coeff_meta.k);
