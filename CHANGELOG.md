@@ -88,7 +88,11 @@
 - Add the `blas_pipeline` example to `poulpy-cpu-portable` (`--features enable-blas`): it plans its keys from `BlasPlan` and `sum_galois_elements`, runs `blas_matmul`, `blas_transpose`, `blas_matmul_pt_right`, `blas_matmul_pt_left` and `blas_sum` on a batch of encrypted matrices and checks the result in the clear.
   It plans every layout from the output-layout queries and generates each key once, at the widest width it is looked up at.
 - **Breaking:** CPU backends normalize through one blocked kernel, `ZnxNormalize`, and take no normalization scratch: `vec_znx_normalize_tmp_bytes` and `vec_znx_big_normalize_tmp_bytes` return 0.
-  The traits `ZnxNormalize*Step*`, `ZnxNormalizeDigit`, `ZnxExtractDigitAddMul`, `I64NormalizeOps` and `I128NormalizeOps` with their kernel functions, `I128NormalizePlan`, the exported macro `rayon_forward_znx_const!`, `ntt4x30_vec_znx_big_normalize*_portable`, `vec_znx_lsh_assign_carry_bytes_portable` and the `carry` parameter of the public normalize entries are removed.
+  The traits `ZnxNormalize*Step*`, `ZnxNormalizeDigit`, `ZnxExtractDigitAddMul`, `I64NormalizeOps` and `I128NormalizeOps` with their kernel functions, and `I128NormalizePlan`, are removed.
+  The `kernels::normalization` module, `AddOp`, `SubOp` and `AssignOp` of `kernels::ntt4x30::vec_znx_big`, `ntt4x30_vec_znx_big_normalize*_portable`, `kernels::fft64::vec_znx_big::vec_znx_big_normalize_tmp_bytes_portable` and `vec_znx_lsh_assign_carry_bytes_portable` are removed.
+  `vec_znx_big_normalize_portable` moves from `kernels::fft64::vec_znx_big` to `kernels::vec_znx_big_normalize` and serves both big words.
+  `poulpy_cpu_rayon::normalize::ntt4x30_vec_znx_big_normalize_par` is renamed `vec_znx_big_normalize_par`, the exported macro `rayon_forward_znx_const!` is removed, and the public normalize entries lose their `carry` parameter.
+  The shared suites `test_suite::normalization::test_normalization_kernels` and `test_suite::normalization_i128::test_i128_normalize_fused` are replaced by `test_suite::znx_normalize::test_znx_normalize`.
   Out-of-tree CPU backends implement `ZnxNormalize`, whose default methods run the portable kernel.
 
 ### `poulpy-core`
