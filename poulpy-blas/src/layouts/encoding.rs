@@ -1,4 +1,4 @@
-//! The shape of one encoded map, from which public operands and contexts allocate, size and prepare their maps, and the
+//! The shape of one encoded map, from which public operands and contexts allocate and prepare their maps, and the
 //! encoding of a map into its allocation.
 
 use poulpy_ckks::{
@@ -9,16 +9,12 @@ use poulpy_ckks::{
     },
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
 };
-use poulpy_core::{
-    GLWEBytesOf,
-    layouts::{
-        Base2K, DiagonalArithmetic, Diagonals, GLWELayout, GetDegree, LWEInfos, LinearTransformationStrategy, Rank,
-        TorusPrecision,
-    },
+use poulpy_core::layouts::{
+    Base2K, DiagonalArithmetic, Diagonals, GLWELayout, GetDegree, LWEInfos, LinearTransformationStrategy, Rank, TorusPrecision,
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, CnvPVecBytesOf},
-    layouts::{Backend, Module, PrepareHint, ScratchArena},
+    api::CnvPVecAlloc,
+    layouts::{Backend, Module, ScratchArena},
 };
 
 use super::validate::assert_scratch;
@@ -94,11 +90,6 @@ impl MapLayout {
         skeleton(&self.lt.index(), ()).index()
     }
 
-    /// Diagonals the map holds.
-    fn diagonals(&self) -> usize {
-        self.lt.index().index.iter().map(Vec::len).sum()
-    }
-
     /// The map's zero allocation on `module`, at radix `base2k`.
     pub(crate) fn alloc<BE, M>(&self, module: &M, base2k: Base2K) -> Encoded<BE>
     where
@@ -119,25 +110,6 @@ impl MapLayout {
             &self.prepared_index(),
             &self.plaintext::<BE, M>(module, base2k),
         )
-    }
-
-    /// Bytes of [`Self::alloc`].
-    pub(crate) fn bytes_of<BE, M>(&self, module: &M, base2k: Base2K) -> usize
-    where
-        BE: Backend,
-        M: CKKSModuleAlloc<BE> + GLWEBytesOf<BE> + GetDegree,
-    {
-        self.diagonals() * module.glwe_plaintext_bytes_of_from_infos(&self.plaintext::<BE, M>(module, base2k))
-    }
-
-    /// Bytes of [`Self::alloc_prepared`].
-    pub(crate) fn prepared_bytes_of<BE, M>(&self, module: &M, base2k: Base2K) -> usize
-    where
-        BE: Backend,
-        M: CKKSModuleAlloc<BE> + CnvPVecBytesOf + GetDegree,
-    {
-        let pt = self.plaintext::<BE, M>(module, base2k);
-        self.diagonals() * module.bytes_of_cnv_pvec_right(pt.n().as_usize(), 1, pt.size(), PrepareHint::Reuse)
     }
 
     /// Scratch of poulpy-ckks's preparation of the map.

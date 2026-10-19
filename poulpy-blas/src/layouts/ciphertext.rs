@@ -8,7 +8,7 @@ use poulpy_ckks::{
 };
 use poulpy_core::{
     GLWEBytesOf,
-    layouts::{Base2K, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetDegree, LWEInfos, Rank, TorusPrecision},
+    layouts::{Base2K, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetDegree, LWEInfos, TorusPrecision},
 };
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Module, PrepareHint, ReaderFrom, Ring, WriterTo, ZnxWord};
 
@@ -351,94 +351,6 @@ impl<D: Data, W: ZnxWord, R: Ring> BlasCiphertext<D, W, R> {
     pub fn into_blocks(self) -> Vec<CKKSCiphertext<D, W, R>> {
         self.blocks
     }
-
-    /// Moves the first `at` block columns into the first grid and the others into the second; panics unless
-    /// `0 < at < cols`.
-    pub fn split_cols(self, at: usize) -> (Self, Self) {
-        let (rows, cols, log_d, mat_slots) = (self.rows, self.cols, self.log_d, self.mat_slots);
-        assert!(0 < at && at < cols, "split_cols: {at} is not strictly inside 0..{cols}");
-        let (mut left, mut right) = (Vec::with_capacity(rows * at), Vec::with_capacity(rows * (cols - at)));
-        for (t, block) in self.blocks.into_iter().enumerate() {
-            if t % cols < at {
-                left.push(block);
-            } else {
-                right.push(block);
-            }
-        }
-        let grid = |blocks, cols| Self {
-            blocks,
-            log_d,
-            rows,
-            cols,
-            mat_slots,
-        };
-        (grid(left, at), grid(right, cols - at))
-    }
-
-    /// Moves the first `at` block rows into the first grid and the others into the second; panics unless
-    /// `0 < at < rows`.
-    pub fn split_rows(self, at: usize) -> (Self, Self) {
-        let (rows, cols, log_d, mat_slots) = (self.rows, self.cols, self.log_d, self.mat_slots);
-        assert!(0 < at && at < rows, "split_rows: {at} is not strictly inside 0..{rows}");
-        let mut top = self.blocks;
-        let bottom = top.split_off(at * cols);
-        let grid = |blocks, rows| Self {
-            blocks,
-            log_d,
-            rows,
-            cols,
-            mat_slots,
-        };
-        (grid(top, at), grid(bottom, rows - at))
-    }
-
-    /// Moves the blocks of `left` then `right` into one grid, the inverse of [`Self::split_cols`]; rejects grids of
-    /// different `log_d`, row counts or batch records.
-    pub fn concat_cols(left: Self, right: Self) -> Result<Self> {
-        ensure!(
-            (left.log_d, left.rows, left.mat_slots) == (right.log_d, right.rows, right.mat_slots),
-            "concat_cols: a 2^{} x {}-row grid of {} matrices against a 2^{} x {}-row grid of {}",
-            left.log_d,
-            left.rows,
-            left.mat_slots,
-            right.log_d,
-            right.rows,
-            right.mat_slots
-        );
-        let (rows, lc, rc, mat_slots) = (left.rows, left.cols, right.cols, left.mat_slots);
-        let mut blocks = Vec::with_capacity(rows * (lc + rc));
-        let (mut l, mut r) = (left.blocks.into_iter(), right.blocks.into_iter());
-        for _ in 0..rows {
-            blocks.extend(l.by_ref().take(lc));
-            blocks.extend(r.by_ref().take(rc));
-        }
-        Ok(Self {
-            mat_slots,
-            ..Self::from_blocks(blocks, left.log_d, rows, lc + rc)?
-        })
-    }
-
-    /// Moves the blocks of `top` then `bottom` into one grid, the inverse of [`Self::split_rows`]; rejects grids of
-    /// different `log_d`, column counts or batch records.
-    pub fn concat_rows(top: Self, bottom: Self) -> Result<Self> {
-        ensure!(
-            (top.log_d, top.cols, top.mat_slots) == (bottom.log_d, bottom.cols, bottom.mat_slots),
-            "concat_rows: a 2^{} x {}-column grid of {} matrices against a 2^{} x {}-column grid of {}",
-            top.log_d,
-            top.cols,
-            top.mat_slots,
-            bottom.log_d,
-            bottom.cols,
-            bottom.mat_slots
-        );
-        let (log_d, rows, cols, mat_slots) = (top.log_d, top.rows + bottom.rows, top.cols, top.mat_slots);
-        let mut blocks = top.blocks;
-        blocks.extend(bottom.blocks);
-        Ok(Self {
-            mat_slots,
-            ..Self::from_blocks(blocks, log_d, rows, cols)?
-        })
-    }
 }
 
 impl<D: Data, W: ZnxWord, R: Ring> Clone for BlasCiphertext<D, W, R>
@@ -653,19 +565,6 @@ impl<BE: Backend> BlasModuleAlloc<BE> for Module<BE> where Module<BE>: CKKSModul
 
 /// Byte sizes of grids, routed through the backend.
 pub trait BlasBytesOf<BE: Backend>: GLWEBytesOf<BE> + CKKSModuleAlloc<BE> + GetDegree + Sized {
-    /// Bytes of [`BlasModuleAlloc::blas_ciphertext_alloc`] with the same arguments: the block dimension `log_d` does not
-    /// change the bytes of `rows x cols` rank-1 blocks at torus width `k`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the bytes overflow `usize`.
-    fn blas_ciphertext_bytes_of(&self, _log_d: usize, rows: usize, cols: usize, base2k: Base2K, k: TorusPrecision) -> usize {
-        let block = self.glwe_bytes_of(self.ring_degree(), base2k, k, Rank(1));
-        rows.checked_mul(cols)
-            .and_then(|blocks| blocks.checked_mul(block))
-            .expect("the grid's bytes overflow usize")
-    }
-
     /// Bytes of [`BlasModuleAlloc::blas_ciphertext_alloc_from_infos`] of `infos`.
     ///
     /// # Panics
@@ -678,50 +577,6 @@ pub trait BlasBytesOf<BE: Backend>: GLWEBytesOf<BE> + CKKSModuleAlloc<BE> + GetD
             .checked_mul(infos.cols())
             .and_then(|blocks| blocks.checked_mul(block))
             .expect("the grid's bytes overflow usize")
-    }
-
-    /// Bytes of [`BlasModuleAlloc::blas_pt_operand_alloc`] with the same arguments.
-    ///
-    /// # Panics
-    ///
-    /// As [`BlasModuleAlloc::blas_pt_operand_alloc`].
-    fn blas_pt_operand_bytes_of<S: BlasPtSide>(
-        &self,
-        plan: BlasPlan,
-        rows: usize,
-        cols: usize,
-        count: usize,
-        base2k: Base2K,
-        coeffs_meta: CoeffsMeta,
-    ) -> usize {
-        let layout = BlasPtOperandLayout::<S>::new(plan, self.ckks_max_slots(), rows, cols, count, base2k, coeffs_meta);
-        self.blas_pt_operand_bytes_of_from_infos(&layout)
-    }
-
-    /// Bytes of [`BlasModuleAlloc::blas_pt_operand_alloc_from_infos`] of `infos`.
-    ///
-    /// # Panics
-    ///
-    /// As [`BlasModuleAlloc::blas_pt_operand_alloc_from_infos`].
-    fn blas_pt_operand_bytes_of_from_infos<A: BlasPtOperandInfos>(&self, infos: &A) -> usize {
-        pt_operand::bytes_of::<BE, Self, _>(self, &infos.blas_pt_operand_layout())
-    }
-    /// Bytes of [`BlasModuleAlloc::blas_context_alloc`] with the same arguments.
-    ///
-    /// # Panics
-    ///
-    /// As [`BlasModuleAlloc::blas_context_alloc`].
-    fn blas_context_bytes_of(&self, plan: BlasPlan, base2k: Base2K, coeffs_meta: CoeffsMeta) -> usize {
-        self.blas_context_bytes_of_from_infos(&context::module_layout(self, plan, base2k, coeffs_meta))
-    }
-
-    /// Bytes of [`BlasModuleAlloc::blas_context_alloc_from_infos`] of `infos`.
-    ///
-    /// # Panics
-    ///
-    /// As [`BlasModuleAlloc::blas_context_alloc_from_infos`].
-    fn blas_context_bytes_of_from_infos<A: BlasContextInfos>(&self, infos: &A) -> usize {
-        context::bytes_of::<BE, Self>(self, &infos.blas_context_layout())
     }
 }
 
@@ -832,47 +687,16 @@ mod tests {
     }
 
     #[test]
-    fn grids_check_their_shape_and_split_and_concat_by_moving_blocks() {
+    fn grids_check_their_shape() {
         let module = module();
         let blocks = || (0..6usize).map(|t| module.ckks_ciphertext_alloc(19usize.into(), (40 + t).into()));
         assert!(BlasCiphertext::from_blocks(blocks().take(5).collect(), 2, 2, 3).is_err());
         assert!(BlasCiphertext::from_blocks(blocks().take(0).collect(), 2, 0, 3).is_err());
         let mut grid = BlasCiphertext::from_blocks(blocks().collect(), 2, 2, 3).unwrap();
         assert_eq!((grid.rows(), grid.cols(), grid.block(1, 2).k().as_usize()), (2, 3, 45));
-        // A record other than the labels' 8, so that every grid below shows it carried.
+        // A clone carries the record, not the labels' 8.
         grid.mat_slots = 4;
         assert_eq!(grid.clone().mat_slots(), Some(4));
-        // Each block carries its own width, so the widths show where every block moved.
-        let parts = |g: &Grid| {
-            (
-                g.rows(),
-                g.cols(),
-                g.mat_slots,
-                g.blocks().iter().map(|b| b.k().as_usize()).collect(),
-            )
-        };
-        let (left, right) = grid.clone().split_cols(1);
-        assert_eq!(parts(&left), (2, 1, 4, vec![40, 43]));
-        assert_eq!(parts(&right), (2, 2, 4, vec![41, 42, 44, 45]));
-        let (top, bottom) = grid.clone().split_rows(1);
-        assert_eq!(parts(&top), (1, 3, 4, vec![40, 41, 42]));
-        assert_eq!(parts(&bottom), (1, 3, 4, vec![43, 44, 45]));
-
-        // Concatenation moves the blocks back, and rejects grids whose dimension, shared extent or record differ.
-        let joined = BlasCiphertext::concat_cols(left.clone(), right.clone()).unwrap();
-        assert_eq!(parts(&joined), parts(&grid));
-        let joined = BlasCiphertext::concat_rows(top.clone(), bottom.clone()).unwrap();
-        assert_eq!(parts(&joined), parts(&grid));
-        assert!(BlasCiphertext::concat_cols(left.clone(), top.clone()).is_err());
-        assert!(BlasCiphertext::concat_rows(top.clone(), left.clone()).is_err());
-        let other_d = BlasCiphertext::from_blocks(right.clone().into_blocks(), 3, 2, 2).unwrap();
-        assert!(BlasCiphertext::concat_cols(left.clone(), other_d).is_err());
-        let other_d = BlasCiphertext::from_blocks(bottom.clone().into_blocks(), 3, 1, 3).unwrap();
-        assert!(BlasCiphertext::concat_rows(top.clone(), other_d).is_err());
-        let (mut right, mut bottom) = (right, bottom);
-        (right.mat_slots, bottom.mat_slots) = (2, 2);
-        assert!(BlasCiphertext::concat_cols(left, right).is_err());
-        assert!(BlasCiphertext::concat_rows(top, bottom).is_err());
     }
 
     #[test]
@@ -902,7 +726,6 @@ mod tests {
             .iter()
             .map(|block| <HostBytesBackend as Backend>::len_bytes(block.data().data()))
             .sum();
-        assert_eq!(module.blas_ciphertext_bytes_of(2, 2, 3, 19usize.into(), 60usize.into()), held);
         assert_eq!(module.blas_ciphertext_bytes_of_from_infos(&grid), held);
         assert_eq!(module.blas_ciphertext_bytes_of_from_infos(&grid.blas_layout()), held);
         assert_eq!(module.blas_ciphertext_bytes_of_from_infos(&&grid), held);

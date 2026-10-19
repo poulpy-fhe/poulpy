@@ -12,14 +12,11 @@ use poulpy_ckks::{
     },
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned},
 };
-use poulpy_core::{
-    GLWEBytesOf,
-    layouts::{
-        Base2K, Degree, DiagonalArithmetic, Diagonals, GetDegree, LinearTransformationLayout, LinearTransformationStrategy,
-    },
+use poulpy_core::layouts::{
+    Base2K, Degree, DiagonalArithmetic, Diagonals, GetDegree, LinearTransformationLayout, LinearTransformationStrategy,
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, CnvPVecBytesOf},
+    api::CnvPVecAlloc,
     layouts::{Backend, Module, ScratchArena, galois_elements_from_rotations},
 };
 
@@ -681,22 +678,6 @@ where
     BlasContextUnprepared { layout: *layout, maps }
 }
 
-/// [`super::BlasBytesOf::blas_context_bytes_of_from_infos`].
-pub(crate) fn bytes_of<BE, M>(module: &M, layout: &BlasContextLayout) -> usize
-where
-    BE: Backend,
-    M: CKKSModuleAlloc<BE> + GLWEBytesOf<BE> + GetDegree,
-{
-    assert_fits_module(module, layout);
-    MapId::all(layout.plan.log_d())
-        .map(|id| {
-            context_map::<f64>(layout, id)
-                .layout()
-                .bytes_of::<BE, M>(module, layout.base2k)
-        })
-        .sum()
-}
-
 /// [`super::BlasEncodingOps::blas_context_encode_into`].
 pub(crate) fn encode_into<BE, M, F>(
     module: &M,
@@ -718,17 +699,8 @@ where
 
 /// Allocation, sizing and preparation of prepared contexts.
 pub trait BlasContextPreparedFactory<BE: Backend>:
-    CKKSModuleAlloc<BE> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + CnvPVecBytesOf + GetDegree + Sized
+    CKKSModuleAlloc<BE> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + GetDegree + Sized
 {
-    /// A prepared context of `plan` on this module's ring, which [`Self::blas_context_prepare`] fills.
-    ///
-    /// # Panics
-    ///
-    /// As [`super::BlasModuleAlloc::blas_context_alloc`].
-    fn blas_context_prepared_alloc(&self, plan: BlasPlan, base2k: Base2K, coeffs_meta: CoeffsMeta) -> BlasContext<BE> {
-        self.blas_context_prepared_alloc_from_infos(&module_layout(self, plan, base2k, coeffs_meta))
-    }
-
     /// A prepared context of `infos`, which must be of this module's ring.
     ///
     /// # Panics
@@ -743,24 +715,6 @@ pub trait BlasContextPreparedFactory<BE: Backend>:
                 .alloc_prepared::<BE, Self>(self, layout.base2k)
         });
         BlasContext { layout, maps }
-    }
-
-    /// Bytes of [`Self::blas_context_prepared_alloc`].
-    fn blas_context_prepared_bytes_of(&self, plan: BlasPlan, base2k: Base2K, coeffs_meta: CoeffsMeta) -> usize {
-        self.blas_context_prepared_bytes_of_from_infos(&module_layout(self, plan, base2k, coeffs_meta))
-    }
-
-    /// Bytes of [`Self::blas_context_prepared_alloc_from_infos`].
-    fn blas_context_prepared_bytes_of_from_infos<A: BlasContextInfos>(&self, infos: &A) -> usize {
-        let layout = infos.blas_context_layout();
-        assert_fits_module(self, &layout);
-        MapId::all(layout.plan.log_d())
-            .map(|id| {
-                context_map::<f64>(&layout, id)
-                    .layout()
-                    .prepared_bytes_of::<BE, Self>(self, layout.base2k)
-            })
-            .sum()
     }
 
     /// Scratch bytes [`Self::blas_context_prepare`] needs for a context of `infos`.
@@ -838,17 +792,9 @@ mod tests {
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
     use super::*;
-    use crate::layouts::{BlasBytesOf, BlasLayout, BlasModuleAlloc, replicated};
+    use crate::layouts::{BlasLayout, BlasModuleAlloc, replicated};
     use poulpy_ckks::{CKKSInfos, SetGLWEPlaintextInfos};
     use poulpy_hal::layouts::{HostBytesBackend, Standard};
-
-    /// The bytes every diagonal of `ctx` holds.
-    fn held(ctx: &BlasContextUnprepared<HostBytesBackend>) -> usize {
-        ctx.maps()
-            .flat_map(|lt| lt.giant_steps.iter().flat_map(|gs| &gs.diagonals))
-            .map(|d| <HostBytesBackend as Backend>::len_bytes(d.plaintext.data().data()))
-            .sum()
-    }
 
     #[test]
     fn contexts_allocate_every_map_of_their_layout() {
@@ -857,11 +803,6 @@ mod tests {
         let ctx = module.blas_context_alloc_from_infos(&layout);
         // Sigma, tau, tau on a replicated input and the transpose, then seven families of shifts for k = 1, 2, 3.
         assert_eq!(ctx.maps().count(), 4 + 7 * 3);
-        assert_eq!(module.blas_context_bytes_of_from_infos(&layout), held(&ctx));
-        assert_eq!(
-            module.blas_context_bytes_of(BlasPlan::new(2), Base2K(19), layout.coeffs_meta),
-            held(&ctx)
-        );
         assert_eq!(ctx.blas_context_layout(), layout);
         // psi^k on a replicated input is encoded at no scale, every other map at the layout's.
         let scales: Vec<usize> = ctx
@@ -902,8 +843,6 @@ mod tests {
         ] {
             let alloc = catch_unwind(AssertUnwindSafe(|| module.blas_context_alloc_from_infos(&layout)));
             assert!(alloc.is_err(), "{layout:?}");
-            let bytes = catch_unwind(AssertUnwindSafe(|| module.blas_context_bytes_of_from_infos(&layout)));
-            assert!(bytes.is_err(), "bytes_of {layout:?}");
         }
     }
 

@@ -7,28 +7,20 @@ use poulpy_core::layouts::{DiagonalArithmetic, Diagonals};
 
 use super::grid::assert_tiles;
 
-/// Diagonals over `slots` slots of the map whose output `(r, c)` in every matrix slot sums `w * in(r2, c2)` over `terms(r, c)`.
+/// Diagonals over `slots` slots of the map whose output `(r, c)` in every matrix slot sums `w * in(r2, c2)` over
+/// `terms(r, c)`, every diagonal stored at the smallest power-of-two period that holds them all.
 pub fn per_matrix_map<F, I>(slots: usize, log_d: usize, terms: impl Fn(usize, usize) -> I) -> Diagonals<F>
 where
     F: DiagonalArithmetic + PartialEq,
     I: IntoIterator<Item = (usize, usize, F)>,
 {
-    per_lane_map(slots, log_d, 1, |_, r, c| terms(r, c))
-}
-
-/// Diagonals over `slots` slots of the map whose output `(r, c)` in matrix slot `s` sums `w * in(r2, c2)` over
-/// `terms(s mod count, r, c)`, every diagonal stored at the smallest power-of-two period that holds them all.
-pub fn per_lane_map<F, I>(slots: usize, log_d: usize, count: usize, terms: impl Fn(usize, usize, usize) -> I) -> Diagonals<F>
-where
-    F: DiagonalArithmetic + PartialEq,
-    I: IntoIterator<Item = (usize, usize, F)>,
-{
-    let acc = accumulate(slots, log_d, count, terms);
+    let acc = accumulate(slots, log_d, 1, |_, r, c| terms(r, c));
     let period = acc.values().map(|values| min_period(values)).max().unwrap_or(1);
     truncate(slots, acc, period)
 }
 
-/// The values of every diagonal of [`per_lane_map`], `count d^2` slots each, by offset.
+/// The values of every diagonal of the map whose output `(r, c)` in matrix slot `s` sums `w * in(r2, c2)` over
+/// `terms(s mod count, r, c)`, `count d^2` slots each, by offset.
 fn accumulate<F, I>(slots: usize, log_d: usize, count: usize, terms: impl Fn(usize, usize, usize) -> I) -> BTreeMap<i64, Vec<F>>
 where
     F: DiagonalArithmetic,

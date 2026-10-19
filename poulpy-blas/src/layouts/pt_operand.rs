@@ -11,12 +11,9 @@ use poulpy_ckks::{
     },
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned},
 };
-use poulpy_core::{
-    GLWEBytesOf,
-    layouts::{Base2K, DiagonalArithmetic, GetDegree},
-};
+use poulpy_core::layouts::{Base2K, DiagonalArithmetic, GetDegree};
 use poulpy_hal::{
-    api::{CnvPVecAlloc, CnvPVecBytesOf},
+    api::CnvPVecAlloc,
     layouts::{Backend, Module, ScratchArena},
 };
 
@@ -549,19 +546,6 @@ where
     BlasPtOperandUnprepared { layout: *layout, maps }
 }
 
-/// [`super::BlasBytesOf::blas_pt_operand_bytes_of_from_infos`].
-pub(crate) fn bytes_of<BE, M, S>(module: &M, layout: &BlasPtOperandLayout<S>) -> usize
-where
-    BE: Backend,
-    M: CKKSModuleAlloc<BE> + GLWEBytesOf<BE> + GetDegree,
-    S: BlasPtSide,
-{
-    operand_layouts(module, layout)
-        .iter()
-        .map(|map| map.bytes_of::<BE, M>(module, layout.base2k))
-        .sum()
-}
-
 /// [`super::BlasEncodingOps::blas_pt_operand_encode_into`].
 pub(crate) fn encode_into<BE, M, F, S>(
     module: &M,
@@ -591,27 +575,8 @@ where
 
 /// Allocation, sizing and preparation of prepared public operands.
 pub trait BlasPtOperandPreparedFactory<BE: Backend>:
-    CKKSModuleAlloc<BE> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + CnvPVecBytesOf + GetDegree + Sized
+    CKKSModuleAlloc<BE> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + GetDegree + Sized
 {
-    /// A prepared operand of these dimensions on side `S`, on this module's slots, which [`Self::blas_pt_operand_prepare`]
-    /// fills.
-    ///
-    /// # Panics
-    ///
-    /// As [`super::BlasModuleAlloc::blas_pt_operand_alloc`].
-    fn blas_pt_operand_prepared_alloc<S: BlasPtSide>(
-        &self,
-        plan: BlasPlan,
-        rows: usize,
-        cols: usize,
-        count: usize,
-        base2k: Base2K,
-        coeffs_meta: CoeffsMeta,
-    ) -> BlasPtOperand<BE, S> {
-        let layout = BlasPtOperandLayout::<S>::new(plan, self.ckks_max_slots(), rows, cols, count, base2k, coeffs_meta);
-        self.blas_pt_operand_prepared_alloc_from_infos(&layout)
-    }
-
     /// A prepared operand of `infos`, which must be of this module's slots.
     ///
     /// # Panics
@@ -621,29 +586,6 @@ pub trait BlasPtOperandPreparedFactory<BE: Backend>:
         let layout = infos.blas_pt_operand_layout();
         let maps = operand_layouts(self, &layout).map(|map| map.alloc_prepared::<BE, Self>(self, layout.base2k));
         BlasPtOperand { layout, maps }
-    }
-
-    /// Bytes of [`Self::blas_pt_operand_prepared_alloc`].
-    fn blas_pt_operand_prepared_bytes_of<S: BlasPtSide>(
-        &self,
-        plan: BlasPlan,
-        rows: usize,
-        cols: usize,
-        count: usize,
-        base2k: Base2K,
-        coeffs_meta: CoeffsMeta,
-    ) -> usize {
-        let layout = BlasPtOperandLayout::<S>::new(plan, self.ckks_max_slots(), rows, cols, count, base2k, coeffs_meta);
-        self.blas_pt_operand_prepared_bytes_of_from_infos(&layout)
-    }
-
-    /// Bytes of [`Self::blas_pt_operand_prepared_alloc_from_infos`].
-    fn blas_pt_operand_prepared_bytes_of_from_infos<A: BlasPtOperandInfos>(&self, infos: &A) -> usize {
-        let layout = infos.blas_pt_operand_layout();
-        operand_layouts(self, &layout)
-            .iter()
-            .map(|map| map.prepared_bytes_of::<BE, Self>(self, layout.base2k))
-            .sum()
     }
 
     /// Scratch bytes [`Self::blas_pt_operand_prepare`] needs for an operand of `infos`.
@@ -695,7 +637,7 @@ mod tests {
     use poulpy_hal::layouts::{HostBytesBackend, Module};
 
     use super::*;
-    use crate::layouts::{BlasBytesOf, BlasModuleAlloc};
+    use crate::layouts::BlasModuleAlloc;
 
     fn module() -> Module<HostBytesBackend> {
         Module::<HostBytesBackend>::new(256)
@@ -719,14 +661,6 @@ mod tests {
         )
     }
 
-    /// The bytes every diagonal of `op` holds.
-    fn held<S>(op: &BlasPtOperandUnprepared<HostBytesBackend, S>) -> usize {
-        op.maps()
-            .flat_map(|lt| lt.giant_steps.iter().flat_map(|gs| &gs.diagonals))
-            .map(|d| <HostBytesBackend as Backend>::len_bytes(d.plaintext.data().data()))
-            .sum()
-    }
-
     #[test]
     fn operands_allocate_every_map_of_their_layout() {
         let module = module();
@@ -739,8 +673,6 @@ mod tests {
                 let rep = usize::from(algorithm == BlasPtAlgorithm::Diagonal && count == 1);
                 assert_eq!(right.maps().count(), first + 6, "right {algorithm:?} count={count}");
                 assert_eq!(left.maps().count(), first + 6 + 6 * rep, "left {algorithm:?} count={count}");
-                assert_eq!(module.blas_pt_operand_bytes_of_from_infos(&right), held(&right));
-                assert_eq!(module.blas_pt_operand_bytes_of_from_infos(&left), held(&left));
                 assert_eq!(right.blas_pt_operand_layout(), layout::<Right>(&module, algorithm, count));
             }
         }
@@ -779,8 +711,6 @@ mod tests {
         for layout in bad {
             let alloc = catch_unwind(AssertUnwindSafe(|| module.blas_pt_operand_alloc_from_infos(&layout)));
             assert!(alloc.is_err(), "{layout:?}");
-            let bytes = catch_unwind(AssertUnwindSafe(|| module.blas_pt_operand_bytes_of_from_infos(&layout)));
-            assert!(bytes.is_err(), "bytes_of {layout:?}");
         }
         // Slots that fit the blocks but are not the module's panic on the slot check, before anything is allocated.
         let other_slots = BlasPtOperandLayout { slots: 64, ..base };
