@@ -286,8 +286,10 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
                 .map(|d| (d.glwe_layout(), d.max_size(), d.lt_log_scale(), d.lt_slots()))
         };
         let source = |src: &Src| (src.glwe_layout(), src.log_delta());
-        // Core reads each source through its baby cache.
+        // Core reads each source through its baby cache. A cache without the rotations its transform reads may hold
+        // none, so its layout is read only once those are checked.
         let cache = |babies: &LinearTransformationBabySteps<BE>| (babies.size(), babies.cols());
+        check_babies(lt, cache_0)?;
         for (t, ((&src_t, &babies_t), &lt_t)) in srcs.iter().zip(babies).zip(lts).enumerate().skip(1) {
             let mismatch = |what: &str| {
                 Err(invalid_sum(format!(
@@ -308,6 +310,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
             if source(src_t) != source(src) {
                 return mismatch("source layout and scale");
             }
+            check_babies(lt_t, babies_t)?;
             if cache(babies_t) != cache(cache_0) {
                 return mismatch("baby-step cache layout");
             }
@@ -349,8 +352,19 @@ fn invalid_sum(reason: String) -> CKKSError {
     .into()
 }
 
-/// Verifies that all automorphism keys required by `lt` are present (keyed by
-/// Galois element) and that `babies` covers every baby rotation `lt` needs.
+/// Verifies that `babies` covers every baby rotation `lt` needs.
+fn check_babies<BE: Backend, P>(lt: &LinearTransformation<P>, babies: &LinearTransformationBabySteps<BE>) -> Result<()> {
+    for rotation in lt.baby_steps().iter().copied() {
+        ckks_ensure!(
+            babies.contains_baby_step(rotation),
+            "missing prepared baby-step rotation {rotation}"
+        );
+    }
+    Ok(())
+}
+
+/// Verifies that `babies` covers every baby rotation `lt` needs and that all
+/// automorphism keys required by `lt` are present (keyed by Galois element).
 fn check_required_keys<BE: Backend, P, H>(
     lt: &LinearTransformation<P>,
     babies: &LinearTransformationBabySteps<BE>,
@@ -361,12 +375,7 @@ fn check_required_keys<BE: Backend, P, H>(
 where
     H: GetAutomorphismKey<BE>,
 {
-    for rotation in lt.baby_steps().iter().copied() {
-        ckks_ensure!(
-            babies.contains_baby_step(rotation),
-            "missing prepared baby-step rotation {rotation}"
-        );
-    }
+    check_babies(lt, babies)?;
     for rotation in lt
         .giant_steps
         .iter()

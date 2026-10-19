@@ -416,6 +416,15 @@ pub fn test_linear_transformation_sum<BE, F, E>(
         "baby-step cache layout",
         true,
     );
+    // An empty cache holds no limb to read a layout from.
+    let empty_babies = LinearTransformationBabySteps::alloc(module, &[], &cts[1]);
+    reject(
+        &two,
+        &[&babies[0], &empty_babies],
+        &[&prepared[0], &prepared[1]],
+        "missing prepared baby-step rotation",
+        false,
+    );
     let no_babies = LinearTransformationBabySteps::alloc(module, &[0], &cts[1]);
     reject(
         &two,
