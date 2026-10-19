@@ -7,8 +7,6 @@ use crate::{
     layouts::{HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxShape, ZnxView, ZnxViewMut},
 };
 
-pub(crate) use crate::kernels::znx_normalize::normalize_exact;
-
 #[cfg(test)]
 use poulpy_hal::{AlignedBuf, alloc_aligned};
 

@@ -11,7 +11,6 @@
 
 pub mod fft64;
 pub mod galois;
-pub mod normalization;
 pub mod ntt4x30;
 pub mod vec_znx;
 pub mod vec_znx_big_normalize;
@@ -79,7 +78,7 @@ pub fn with_thread_buffer<T>(len: usize, f: impl FnOnce(&mut [u64]) -> T) -> T {
     })
 }
 
-/// Portable HAL primitives and CPU-specific normalization kernels.
+/// Portable HAL primitives.
 pub mod znx;
 
 pub mod noise;

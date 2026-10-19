@@ -12,11 +12,9 @@ use poulpy_cpu_portable::kernels::{
         reim4::{Reim4BlkMatVec, Reim4Convolution},
     },
     znx::{
-        ZnxAdd, ZnxAddAssign, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo, ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign,
-        ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep, ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep,
-        ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign,
-        ZnxNormalizeMiddleStepCarryOnly, ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero,
-        znx_copy_portable, znx_rotate_portable, znx_zero_portable,
+        ZnxAdd, ZnxAddAssign, ZnxCopy, ZnxMulAddPowerOfTwo, ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign,
+        ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero, znx_copy_portable, znx_rotate_portable,
+        znx_zero_portable,
     },
 };
 use poulpy_hal::{
@@ -47,12 +45,8 @@ use crate::{
         },
     },
     znx_avx::{
-        znx_add_assign_avx, znx_add_avx, znx_extract_digit_addmul_avx, znx_mul_add_power_of_two_avx,
-        znx_mul_power_of_two_assign_avx, znx_mul_power_of_two_avx, znx_negate_assign_avx, znx_negate_avx,
-        znx_normalize_digit_avx, znx_normalize_final_step_assign_avx, znx_normalize_final_step_avx,
-        znx_normalize_first_step_assign_avx, znx_normalize_first_step_avx, znx_normalize_first_step_carry_only_avx,
-        znx_normalize_middle_step_assign_avx, znx_normalize_middle_step_avx, znx_normalize_middle_step_carry_only_avx,
-        znx_sub_assign_avx, znx_sub_avx, znx_sub_negate_assign_avx, znx_switch_ring_avx,
+        znx_add_assign_avx, znx_add_avx, znx_mul_add_power_of_two_avx, znx_mul_power_of_two_assign_avx, znx_mul_power_of_two_avx,
+        znx_negate_assign_avx, znx_negate_avx, znx_sub_assign_avx, znx_sub_avx, znx_sub_negate_assign_avx, znx_switch_ring_avx,
     },
 };
 
@@ -345,151 +339,7 @@ impl<R: Ring> ZnxSwitchRing for FFT64Avx<R> {
     }
 }
 
-impl<R: Ring> ZnxNormalizeFirstStep for FFT64Avx<R> {
-    #[inline(always)]
-    fn znx_normalize_first_step<const OVERWRITE: bool>(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
-        unsafe {
-            znx_normalize_first_step_avx::<OVERWRITE>(base2k, lsh, x, a, carry);
-        }
-    }
-}
-
-impl<R: Ring> ZnxNormalizeMiddleStep for FFT64Avx<R> {
-    #[inline(always)]
-    fn znx_normalize_middle_step<const OVERWRITE: bool>(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
-        unsafe {
-            znx_normalize_middle_step_avx::<OVERWRITE>(base2k, lsh, x, a, carry);
-        }
-    }
-}
-
-impl<R: Ring> ZnxNormalizeFinalStep for FFT64Avx<R> {
-    #[inline(always)]
-    fn znx_normalize_final_step<const OVERWRITE: bool>(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
-        unsafe {
-            znx_normalize_final_step_avx::<OVERWRITE>(base2k, lsh, x, a, carry);
-        }
-    }
-}
-
-impl<R: Ring> ZnxNormalizeFinalStepAssign for FFT64Avx<R> {
-    #[inline(always)]
-    fn znx_normalize_final_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
-        unsafe {
-            znx_normalize_final_step_assign_avx(base2k, lsh, x, carry);
-        }
-    }
-}
-
-impl<R: Ring> ZnxNormalizeFirstStepCarryOnly for FFT64Avx<R> {
-    #[inline(always)]
-    fn znx_normalize_first_step_carry_only(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]) {
-        unsafe {
-            znx_normalize_first_step_carry_only_avx(base2k, lsh, x, carry);
-        }
-    }
-}
-
-impl<R: Ring> ZnxNormalizeFirstStepAssign for FFT64Avx<R> {
-    #[inline(always)]
-    fn znx_normalize_first_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
-        unsafe {
-            znx_normalize_first_step_assign_avx(base2k, lsh, x, carry);
-        }
-    }
-}
-
-impl<R: Ring> ZnxNormalizeMiddleStepCarryOnly for FFT64Avx<R> {
-    #[inline(always)]
-    fn znx_normalize_middle_step_carry_only(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]) {
-        unsafe {
-            znx_normalize_middle_step_carry_only_avx(base2k, lsh, x, carry);
-        }
-    }
-}
-
-impl<R: Ring> ZnxNormalizeMiddleStepAssign for FFT64Avx<R> {
-    #[inline(always)]
-    fn znx_normalize_middle_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
-        unsafe {
-            znx_normalize_middle_step_assign_avx(base2k, lsh, x, carry);
-        }
-    }
-}
-
-impl<R: Ring> ZnxExtractDigitAddMul for FFT64Avx<R> {
-    #[inline(always)]
-    fn znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
-        unsafe {
-            znx_extract_digit_addmul_avx(base2k, lsh, res, src);
-        }
-    }
-}
-
 impl<R: Ring> poulpy_cpu_portable::kernels::znx_normalize::ZnxNormalize for FFT64Avx<R> {}
-
-impl<R: Ring> poulpy_cpu_portable::kernels::normalization::I64NormalizeOps for FFT64Avx<R> {
-    #[inline(always)]
-    fn znx_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i64], carry: &mut [i64]) {
-        assert!(a.len() >= carry.len());
-        unsafe { crate::znx_avx::znx_normalize_floor_avx::<CARRY_IN, ROUND>(base2k, lsh, a, carry) }
-    }
-
-    #[inline(always)]
-    fn znx_normalize_round<const CARRY_IN: bool, const PAD: bool>(
-        base2k: usize,
-        lsh: usize,
-        padding: usize,
-        res: &mut [i64],
-        a: &[i64],
-        carry: &mut [i64],
-    ) {
-        assert!(a.len() >= res.len() && carry.len() >= res.len());
-        unsafe { crate::znx_avx::znx_normalize_round_avx::<CARRY_IN, PAD>(base2k, lsh, padding, res, a, carry) }
-    }
-
-    #[inline(always)]
-    fn znx_normalize_round_assign<const CARRY_IN: bool>(
-        base2k: usize,
-        lsh: usize,
-        padding: usize,
-        res: &mut [i64],
-        carry: &mut [i64],
-    ) {
-        assert!(carry.len() >= res.len());
-        unsafe { crate::znx_avx::znx_normalize_round_assign_avx::<CARRY_IN>(base2k, lsh, padding, res, carry) }
-    }
-
-    #[inline(always)]
-    fn znx_extract_digit_mul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
-        unsafe {
-            crate::znx_avx::znx_extract_digit_mul_avx(base2k, lsh, res, src);
-        }
-    }
-
-    #[inline(always)]
-    fn znx_extract_digit_addmul_normalize<const OVERWRITE: bool>(
-        base2k: usize,
-        lsh: usize,
-        res_base2k: usize,
-        res: &mut [i64],
-        src: &mut [i64],
-        carry: &mut [i64],
-    ) {
-        unsafe {
-            crate::znx_avx::znx_extract_digit_addmul_normalize_avx::<OVERWRITE>(base2k, lsh, res_base2k, res, src, carry);
-        }
-    }
-}
-
-impl<R: Ring> ZnxNormalizeDigit for FFT64Avx<R> {
-    #[inline(always)]
-    fn znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]) {
-        unsafe {
-            znx_normalize_digit_avx(base2k, res, src);
-        }
-    }
-}
 
 impl<R: Ring> ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Avx<R> {
     #[inline(always)]

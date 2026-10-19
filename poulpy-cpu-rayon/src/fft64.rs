@@ -80,18 +80,6 @@ macro_rules! rayon_forward_znx {
     };
 }
 
-#[macro_export]
-macro_rules! rayon_forward_znx_const {
-    ($rayon:ty, $base:ty, $trait:ident, $method:ident($($arg:ident: $atype:ty),* $(,)?)) => {
-        impl $trait for $rayon {
-            #[inline(always)]
-            fn $method<const OVERWRITE: bool>($($arg: $atype),*) {
-                <$base as $trait>::$method::<OVERWRITE>($($arg),*)
-            }
-        }
-    };
-}
-
 /// Implements the Rayon-scheduled FFT64 backend `$rayon` on top of the serial
 /// backend `$base`.
 ///
@@ -124,12 +112,8 @@ use $crate::__private::poulpy_cpu_portable::{
             vmp::{vmp_prepare_portable as fft64_vmp_prepare, vmp_prepare_tmp_bytes_portable as fft64_vmp_prepare_tmp_bytes},
         },
         znx::{
-            ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
-            ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
-            ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign,
-            ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign,
-            ZnxNormalizeMiddleStepCarryOnly, ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign,
-            ZnxSwitchRing, ZnxZero,
+            ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxMulAddPowerOfTwo, ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign,
+            ZnxNegate, ZnxNegateAssign, ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero,
         },
         znx_normalize::{Limbs, LimbsMut, ZnxNormalize},
     },
@@ -212,51 +196,7 @@ $crate::rayon_parallel_unary!($rayon, $base, ZnxNegateAssign, znx_negate_assign)
 $crate::rayon_forward_znx!($rayon, $base, ZnxRotate, znx_rotate(p: i64, res: &mut [i64], src: &[i64]));
 $crate::rayon_parallel_unary!($rayon, $base, ZnxZero, znx_zero);
 $crate::rayon_forward_znx!($rayon, $base, ZnxSwitchRing, znx_switch_ring(res: &mut [i64], a: &[i64]));
-$crate::rayon_forward_znx_const!($rayon, $base, ZnxNormalizeFirstStep, znx_normalize_first_step(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]));
-$crate::rayon_forward_znx_const!($rayon, $base, ZnxNormalizeMiddleStep, znx_normalize_middle_step(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]));
-$crate::rayon_forward_znx_const!($rayon, $base, ZnxNormalizeFinalStep, znx_normalize_final_step(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]));
-$crate::rayon_forward_znx!($rayon, $base, ZnxNormalizeFirstStepCarryOnly, znx_normalize_first_step_carry_only(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]));
-$crate::rayon_forward_znx!($rayon, $base, ZnxNormalizeFirstStepAssign, znx_normalize_first_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]));
-$crate::rayon_forward_znx!($rayon, $base, ZnxNormalizeMiddleStepCarryOnly, znx_normalize_middle_step_carry_only(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]));
-$crate::rayon_forward_znx!($rayon, $base, ZnxNormalizeMiddleStepAssign, znx_normalize_middle_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]));
-$crate::rayon_forward_znx!($rayon, $base, ZnxNormalizeFinalStepAssign, znx_normalize_final_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]));
-impl ZnxExtractDigitAddMul for $rayon {
-    #[inline(always)]
-    fn znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
-        <$base as ZnxExtractDigitAddMul>::znx_extract_digit_addmul(base2k, lsh, res, src);
-    }
-}
 
-impl poulpy_cpu_portable::kernels::normalization::I64NormalizeOps for $rayon {
-    #[inline(always)]
-    fn znx_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i64], carry: &mut [i64]) {
-        <$base as poulpy_cpu_portable::kernels::normalization::I64NormalizeOps>::znx_normalize_floor::<CARRY_IN, ROUND>(base2k, lsh, a, carry);
-    }
-
-    #[inline(always)]
-    fn znx_normalize_round<const CARRY_IN: bool, const PAD: bool>(base2k: usize, lsh: usize, padding: usize, res: &mut [i64], a: &[i64], carry: &mut [i64]) {
-        <$base as poulpy_cpu_portable::kernels::normalization::I64NormalizeOps>::znx_normalize_round::<CARRY_IN, PAD>(base2k, lsh, padding, res, a, carry);
-    }
-
-    #[inline(always)]
-    fn znx_normalize_round_assign<const CARRY_IN: bool>(base2k: usize, lsh: usize, padding: usize, res: &mut [i64], carry: &mut [i64]) {
-        <$base as poulpy_cpu_portable::kernels::normalization::I64NormalizeOps>::znx_normalize_round_assign::<CARRY_IN>(base2k, lsh, padding, res, carry);
-    }
-
-    #[inline(always)]
-    fn znx_extract_digit_mul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
-        <$base as poulpy_cpu_portable::kernels::normalization::I64NormalizeOps>::znx_extract_digit_mul(base2k, lsh, res, src);
-    }
-
-    #[inline(always)]
-    fn znx_extract_digit_addmul_normalize<const OVERWRITE: bool>(
-        base2k: usize, lsh: usize, res_base2k: usize,
-        res: &mut [i64], src: &mut [i64], carry: &mut [i64],
-    ) {
-        <$base as poulpy_cpu_portable::kernels::normalization::I64NormalizeOps>::znx_extract_digit_addmul_normalize::<OVERWRITE>(base2k, lsh, res_base2k, res, src, carry);
-    }
-}
-$crate::rayon_forward_znx!($rayon, $base, ZnxNormalizeDigit, znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]));
 impl ZnxNormalize for $rayon {
     unsafe fn znx_normalize(res: LimbsMut<i64>, res_base2k: usize, res_k: usize, offset: i64, a: Limbs<i64>, a_base2k: usize, len: usize) {
         unsafe { <$base as ZnxNormalize>::znx_normalize(res, res_base2k, res_k, offset, a, a_base2k, len) }

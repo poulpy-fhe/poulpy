@@ -1191,92 +1191,8 @@ fn test_normalize_exact_canonical_precision() {
 }
 
 #[test]
-fn test_i128_normalization_kernel_integer() {
-    use crate::kernels::ntt4x30::I128NormalizeOps;
-    use dashu_int::IBig;
-    for base2k in 1..=63 {
-        let half = 1i128 << (base2k - 1);
-        let a = [
-            -(1i128 << 126),
-            1i128 << 126,
-            -NORMALIZE_IDFT_BOUND,
-            NORMALIZE_IDFT_BOUND,
-            -half - 1,
-            -half,
-            half - 1,
-            half,
-            -1,
-            0,
-            1,
-        ];
-        for lsh in 0..base2k {
-            for offset in 0..a.len() {
-                let mut carry: Vec<_> = (0..a.len())
-                    .map(|i| {
-                        let total = IBig::from(a[(i + offset) % a.len()]) << lsh;
-                        i128::try_from((total + IBig::from(half)) >> base2k).unwrap()
-                    })
-                    .collect();
-                let mut want_res = Vec::new();
-                let mut want_carry = Vec::new();
-                for (&input, &previous) in a.iter().zip(&carry) {
-                    let total = (IBig::from(input) << lsh) + IBig::from(previous);
-                    let next = (&total + IBig::from(half)) >> base2k;
-                    want_res.push(i64::try_from(total - (&next << base2k)).unwrap());
-                    want_carry.push(i128::try_from(next).unwrap());
-                }
-                let mut res = vec![0i64; a.len()];
-                <NTT4x30Portable as I128NormalizeOps>::nfc_middle_step(base2k, lsh, &mut res, &a, &mut carry);
-                assert_eq!(res, want_res, "base2k={base2k} lsh={lsh}");
-                assert_eq!(carry, want_carry, "base2k={base2k} lsh={lsh}");
-            }
-        }
-    }
-}
-
-#[test]
-fn test_i128_normalize_fused_reference() {
-    use crate::kernels::{
-        ntt4x30::I128NormalizeOps,
-        znx::{get_carry_i128_portable, get_digit_i128_portable},
-    };
-    for base2k in 1..=63 {
-        for take in 1..=base2k {
-            let scale = base2k - take;
-            let mut src = [-NORMALIZE_IDFT_BOUND, NORMALIZE_IDFT_BOUND, -1, 0, 1];
-            let mut carry = [-1, 0, -1, 0, 0];
-            let quarter = if base2k > 1 { 1i64 << (base2k - 2) } else { 0 };
-            let mut res = [-quarter, quarter.saturating_sub(1), -1, 0, 1];
-            if base2k == 1 {
-                res.fill(0);
-            }
-            let mut want_src = src;
-            let mut want_carry = carry;
-            let mut want_res = res;
-            for (r, s) in want_res.iter_mut().zip(&mut want_src) {
-                let digit = get_digit_i128_portable(take, *s);
-                *s = get_carry_i128_portable(take, *s, digit);
-                *r = r.wrapping_add((digit as i64).wrapping_shl(scale as u32));
-            }
-            <NTT4x30Portable as I128NormalizeOps>::nfc_middle_step_assign(base2k, 0, &mut want_res, &mut want_carry);
-            <NTT4x30Portable as I128NormalizeOps>::znx_extract_digit_addmul_normalize_i128::<false>(
-                take, scale, base2k, &mut res, &mut src, &mut carry,
-            );
-            assert_eq!((res, src, carry), (want_res, want_src, want_carry));
-        }
-    }
-}
-
-#[test]
 fn test_vec_znx_big_normalize_wide_radices() {
-    use crate::kernels::{
-        ntt4x30::{
-            ntt4x30_vec_znx_big_normalize_assign_portable,
-            vec_znx_big::{AddOp, SubOp},
-        },
-        vec_znx::normalize_integer_oracle,
-        vec_znx_big_normalize::vec_znx_big_normalize_portable,
-    };
+    use crate::kernels::{vec_znx::normalize_integer_oracle, vec_znx_big_normalize::vec_znx_big_normalize_portable};
     use poulpy_hal::layouts::{VecZnx, VecZnxBig, VecZnxBigToBackendRef, VecZnxToBackendMut, ZnxView, ZnxViewMut};
     for a_base2k in [1, 63, 64, 65, 126, 127] {
         for res_base2k in [1, 17, 63, 64] {
@@ -1300,53 +1216,6 @@ fn test_vec_znx_big_normalize_wide_radices() {
                         a_base2k,
                         0,
                     );
-                    for sub in [false, true] {
-                        let mut assigned = VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0; 16 * size]), 2, 1, size);
-                        for j in 0..size {
-                            assigned.at_mut(0, j).copy_from_slice(&[-(1i64 << 62), 1i64 << 62]);
-                        }
-                        if sub {
-                            ntt4x30_vec_znx_big_normalize_assign_portable::<SubOp, _, _, NTT4x30Portable>(
-                                &mut assigned,
-                                res_base2k,
-                                offset,
-                                0,
-                                &input,
-                                a_base2k,
-                                0,
-                                &mut [0; 6],
-                            );
-                        } else {
-                            ntt4x30_vec_znx_big_normalize_assign_portable::<AddOp, _, _, NTT4x30Portable>(
-                                &mut assigned,
-                                res_base2k,
-                                offset,
-                                0,
-                                &input,
-                                a_base2k,
-                                0,
-                                &mut [0; 6],
-                            );
-                        }
-                        for i in 0..2 {
-                            let initial = [-(1i64 << 62), 1i64 << 62][i] as i128;
-                            let total: Vec<_> = (0..size)
-                                .map(|j| {
-                                    initial
-                                        + if sub {
-                                            -(output.at(0, j)[i] as i128)
-                                        } else {
-                                            output.at(0, j)[i] as i128
-                                        }
-                                })
-                                .collect();
-                            let stored: Vec<_> = (0..size).map(|j| assigned.at(0, j)[i] as i128).collect();
-                            assert_eq!(
-                                normalize_integer_oracle(&stored, res_base2k, res_base2k, size, 0),
-                                normalize_integer_oracle(&total, res_base2k, res_base2k, size, 0)
-                            );
-                        }
-                    }
                     for i in 0..2 {
                         let limbs: Vec<_> = (0..size).map(|j| input.at(0, j)[i]).collect();
                         let want = normalize_integer_oracle(&limbs, a_base2k, res_base2k, size, offset);
