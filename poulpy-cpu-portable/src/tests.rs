@@ -1003,10 +1003,12 @@ const NORMALIZE_IDFT_BOUND: i128 = (1_073_479_681i128 * 1_071_513_601 * 1_070_72
 #[test]
 fn test_vec_znx_big_normalize_input_bound_integer() {
     use crate::kernels::{
-        ntt4x30::ntt4x30_vec_znx_big_normalize_portable,
         vec_znx::{normalize_integer_oracle, vec_znx_normalize_portable},
+        vec_znx_big_normalize::vec_znx_big_normalize_portable,
     };
-    use poulpy_hal::layouts::{VecZnx, VecZnxBig, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut};
+    use poulpy_hal::layouts::{
+        VecZnx, VecZnxBig, VecZnxBigToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut,
+    };
 
     const N: usize = 8;
     let values = [
@@ -1019,7 +1021,6 @@ fn test_vec_znx_big_normalize_input_bound_integer() {
         -1,
         1,
     ];
-    let mut carry = [0i128; 3 * N];
     let mut random = 0x123456789abcdef0u128;
     for a_base2k in 1..=62 {
         for res_base2k in 1..=62 {
@@ -1074,16 +1075,15 @@ fn test_vec_znx_big_normalize_input_bound_integer() {
                         gap - a_base2k as i64,
                         gap - 1,
                     ] {
-                        ntt4x30_vec_znx_big_normalize_portable::<_, _, NTT4x30Portable>(
-                            &mut output,
+                        vec_znx_big_normalize_portable::<NTT4x30Portable>(
+                            &mut VecZnxToBackendMut::<NTT4x30Portable>::to_backend_mut(&mut output),
                             res_base2k,
                             res_size * res_base2k,
                             offset,
                             0,
-                            &input,
+                            &input.to_backend_ref(),
                             a_base2k,
                             0,
-                            &mut carry,
                         );
                         vec_znx_normalize_portable::<FFT64Portable>(
                             &mut <VecZnx<AlignedBuf, i64> as VecZnxToBackendMut<FFT64Portable>>::to_backend_mut(
@@ -1096,7 +1096,6 @@ fn test_vec_znx_big_normalize_input_bound_integer() {
                             &<VecZnx<AlignedBuf, i64> as VecZnxToBackendRef<FFT64Portable>>::to_backend_ref(&small_input),
                             a_base2k,
                             0,
-                            &mut [0i64; 3 * N],
                         );
                         for i in 4..=5 {
                             for j in 0..res_size {
@@ -1122,10 +1121,12 @@ fn test_vec_znx_big_normalize_input_bound_integer() {
 #[test]
 fn test_normalize_exact_canonical_precision() {
     use crate::kernels::{
-        ntt4x30::ntt4x30_vec_znx_big_normalize_portable,
         vec_znx::{vec_znx_normalize_assign_portable, vec_znx_normalize_portable},
+        vec_znx_big_normalize::vec_znx_big_normalize_portable,
     };
-    use poulpy_hal::layouts::{VecZnx, VecZnxBig, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut};
+    use poulpy_hal::layouts::{
+        VecZnx, VecZnxBig, VecZnxBigToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut,
+    };
 
     type Case<'a> = (&'a [i64], usize, usize, usize, i64, &'a [i64]);
     let cases: &[Case<'_>] = &[
@@ -1153,16 +1154,15 @@ fn test_normalize_exact_canonical_precision() {
         }
         let mut output =
             VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![93; 8 * expected.len()]), 1, 1, expected.len());
-        ntt4x30_vec_znx_big_normalize_portable::<_, _, NTT4x30Portable>(
-            &mut output,
+        vec_znx_big_normalize_portable::<NTT4x30Portable>(
+            &mut VecZnxToBackendMut::<NTT4x30Portable>::to_backend_mut(&mut output),
             res_base2k,
             res_k,
             offset,
             0,
-            &big,
+            &big.to_backend_ref(),
             a_base2k,
             0,
-            &mut [0; 3],
         );
         assert_eq!((0..expected.len()).map(|j| output.at(0, j)[0]).collect::<Vec<_>>(), expected);
         if a_base2k <= 62 && res_base2k <= 62 {
@@ -1175,7 +1175,6 @@ fn test_normalize_exact_canonical_precision() {
                 &<VecZnx<AlignedBuf, i64> as VecZnxToBackendRef<FFT64Portable>>::to_backend_ref(&small),
                 a_base2k,
                 0,
-                &mut [0; 3],
             );
             assert_eq!((0..expected.len()).map(|j| output.at(0, j)[0]).collect::<Vec<_>>(), expected);
         } else if a_base2k == 64 && res_base2k == 64 {
@@ -1185,109 +1184,8 @@ fn test_normalize_exact_canonical_precision() {
                 0,
                 &mut <VecZnx<AlignedBuf, i64> as VecZnxToBackendMut<FFT64Portable>>::to_backend_mut(&mut small),
                 0,
-                &mut [0],
             );
             assert_eq!(small.at(0, 0), expected);
-        }
-    }
-}
-
-#[test]
-fn test_vec_znx_big_normalize_assign_and_ranges() {
-    use crate::kernels::ntt4x30::{
-        ntt4x30_vec_znx_big_normalize_assign_portable, ntt4x30_vec_znx_big_normalize_portable,
-        ntt4x30_vec_znx_big_normalize_range_raw_portable,
-        vec_znx_big::{AddOp, SubOp},
-    };
-    use poulpy_hal::layouts::{VecZnx, VecZnxBig, VecZnxShape, ZnxView, ZnxViewMut};
-    let mut regression_input = VecZnxBig::<AlignedBuf, i128, NTT4x30Portable>::from_data(AlignedBuf::from(vec![0; 16]), 1, 1, 1);
-    regression_input.at_mut(0, 0)[0] = 3;
-    let mut regression_output = VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0; 24]), 1, 1, 3);
-    ntt4x30_vec_znx_big_normalize_assign_portable::<SubOp, _, _, NTT4x30Portable>(
-        &mut regression_output,
-        2,
-        -2,
-        0,
-        &regression_input,
-        1,
-        0,
-        &mut [0; 3],
-    );
-    assert_eq!((0..3).map(|j| regression_output.at(0, j)[0]).collect::<Vec<_>>(), [2, 2, 0]);
-    const N: usize = 17;
-    for a_base2k in [1, 2, 17, 50, 62] {
-        for res_base2k in [1, 2, 19, 51, 62] {
-            for offset in [i64::MIN, -400, -63, -1, 0, 1, 63, 400, i64::MAX] {
-                let mut input =
-                    VecZnxBig::<AlignedBuf, i128, NTT4x30Portable>::from_data(AlignedBuf::from(vec![0; 16 * N * 3]), N, 1, 3);
-                for j in 0..3 {
-                    for i in 0..N {
-                        input.at_mut(0, j)[i] = (NORMALIZE_IDFT_BOUND / (i as i128 + 1)) * if (i + j) % 2 == 0 { -1 } else { 1 };
-                    }
-                }
-                let alloc = || VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0; 8 * N * 3]), N, 1, 3);
-                let mut want = alloc();
-                let mut carry = [0i128; 3 * N];
-                ntt4x30_vec_znx_big_normalize_portable::<_, _, NTT4x30Portable>(
-                    &mut want,
-                    res_base2k,
-                    3 * res_base2k,
-                    offset,
-                    0,
-                    &input,
-                    a_base2k,
-                    0,
-                    &mut carry,
-                );
-                let mut split = alloc();
-                let ptr = split.data_mut().as_mut_ptr().cast::<i64>();
-                for (start, len) in [(0, 3), (3, 7), (10, 7)] {
-                    let mut private = vec![0i128; 3 * len];
-                    unsafe {
-                        ntt4x30_vec_znx_big_normalize_range_raw_portable::<_, NTT4x30Portable>(
-                            ptr,
-                            VecZnxShape::new(N, 1, 3),
-                            res_base2k,
-                            3 * res_base2k,
-                            offset,
-                            0,
-                            &input,
-                            a_base2k,
-                            0,
-                            start,
-                            len,
-                            &mut private,
-                        );
-                    }
-                }
-                assert_eq!(split, want);
-                for sub in [false, true] {
-                    let mut got = alloc();
-                    for j in 0..3 {
-                        got.at_mut(0, j).fill(37);
-                    }
-
-                    if sub {
-                        ntt4x30_vec_znx_big_normalize_assign_portable::<SubOp, _, _, NTT4x30Portable>(
-                            &mut got, res_base2k, offset, 0, &input, a_base2k, 0, &mut carry,
-                        );
-                    } else {
-                        ntt4x30_vec_znx_big_normalize_assign_portable::<AddOp, _, _, NTT4x30Portable>(
-                            &mut got, res_base2k, offset, 0, &input, a_base2k, 0, &mut carry,
-                        );
-                    }
-                    for j in 0..3 {
-                        for i in 0..N {
-                            let expected = if sub { 37 - want.at(0, j)[i] } else { 37 + want.at(0, j)[i] };
-                            assert_eq!(
-                                got.at(0, j)[i],
-                                expected,
-                                "ka={a_base2k} kr={res_base2k} offset={offset} sub={sub}"
-                            );
-                        }
-                    }
-                }
-            }
         }
     }
 }
@@ -1373,12 +1271,13 @@ fn test_i128_normalize_fused_reference() {
 fn test_vec_znx_big_normalize_wide_radices() {
     use crate::kernels::{
         ntt4x30::{
-            ntt4x30_vec_znx_big_normalize_assign_portable, ntt4x30_vec_znx_big_normalize_portable,
+            ntt4x30_vec_znx_big_normalize_assign_portable,
             vec_znx_big::{AddOp, SubOp},
         },
         vec_znx::normalize_integer_oracle,
+        vec_znx_big_normalize::vec_znx_big_normalize_portable,
     };
-    use poulpy_hal::layouts::{VecZnx, VecZnxBig, ZnxView, ZnxViewMut};
+    use poulpy_hal::layouts::{VecZnx, VecZnxBig, VecZnxBigToBackendRef, VecZnxToBackendMut, ZnxView, ZnxViewMut};
     for a_base2k in [1, 63, 64, 65, 126, 127] {
         for res_base2k in [1, 17, 63, 64] {
             for size in 1..=3 {
@@ -1391,16 +1290,15 @@ fn test_vec_znx_big_normalize_wide_radices() {
                 }
                 let mut output = VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0; 16 * size]), 2, 1, size);
                 for offset in [-400, -64, -(a_base2k as i64), -1, 0, 1, 64, 400] {
-                    ntt4x30_vec_znx_big_normalize_portable::<_, _, NTT4x30Portable>(
-                        &mut output,
+                    vec_znx_big_normalize_portable::<NTT4x30Portable>(
+                        &mut VecZnxToBackendMut::<NTT4x30Portable>::to_backend_mut(&mut output),
                         res_base2k,
                         size * res_base2k,
                         offset,
                         0,
-                        &input,
+                        &input.to_backend_ref(),
                         a_base2k,
                         0,
-                        &mut [0; 6],
                     );
                     for sub in [false, true] {
                         let mut assigned = VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0; 16 * size]), 2, 1, size);
@@ -1464,16 +1362,18 @@ mod canonical_precision_tests {
     use crate::{
         FFT64Portable, NTT4x30Portable,
         kernels::{
-            ntt4x30::{ntt4x30_vec_znx_big_normalize_portable, ntt4x30_vec_znx_big_normalize_range_raw_portable},
             vec_znx::{
                 vec_znx_normalize_assign_portable, vec_znx_normalize_assign_range_raw_portable, vec_znx_normalize_portable,
                 vec_znx_normalize_range_raw_portable,
             },
+            vec_znx_big_normalize::{vec_znx_big_normalize_portable, vec_znx_big_normalize_range_raw_portable},
         },
     };
     use dashu_int::IBig;
     use poulpy_hal::AlignedBuf;
-    use poulpy_hal::layouts::{VecZnx, VecZnxBig, VecZnxShape, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut};
+    use poulpy_hal::layouts::{
+        VecZnx, VecZnxBig, VecZnxBigToBackendRef, VecZnxShape, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut,
+    };
 
     const N: usize = 9;
     const IDFT_BOUND: i128 = (1_073_479_681i128 * 1_071_513_601 * 1_070_727_169 * 1_068_236_801 - 1) / 2;
@@ -1490,7 +1390,7 @@ mod canonical_precision_tests {
             value <<= shift as usize;
         } else {
             let drop = (-shift) as usize;
-            value = (value + (IBig::ONE << (drop - 1))) >> drop;
+            value = crate::test_suite::znx_normalize::round_ties_even(value, drop);
         }
         value <<= size * kr - k;
         for digit in result.iter_mut().rev() {
@@ -1555,7 +1455,6 @@ mod canonical_precision_tests {
                             1,
                             start,
                             len,
-                            &mut vec![73; 3 * len],
                         );
                     }
                 }
@@ -1569,17 +1468,17 @@ mod canonical_precision_tests {
                     &src,
                     ka,
                     1,
-                    &mut [73; 3 * N],
                 );
             }
             verify("narrow", &output);
         }
         output = small(size);
+        let wide = wide.to_backend_ref();
         if ranges {
             let ptr = output.data_mut().as_mut_ptr().cast::<i64>();
             for (start, len) in [(0, 2), (2, 3), (5, 4)] {
                 unsafe {
-                    ntt4x30_vec_znx_big_normalize_range_raw_portable::<_, NTT4x30Portable>(
+                    vec_znx_big_normalize_range_raw_portable::<NTT4x30Portable>(
                         ptr,
                         VecZnxShape::new(N, 2, size),
                         kr,
@@ -1591,13 +1490,12 @@ mod canonical_precision_tests {
                         1,
                         start,
                         len,
-                        &mut vec![73; 3 * len],
                     );
                 }
             }
         } else {
-            ntt4x30_vec_znx_big_normalize_portable::<_, _, NTT4x30Portable>(
-                &mut output,
+            vec_znx_big_normalize_portable::<NTT4x30Portable>(
+                &mut VecZnxToBackendMut::<NTT4x30Portable>::to_backend_mut(&mut output),
                 kr,
                 k,
                 offset,
@@ -1605,7 +1503,6 @@ mod canonical_precision_tests {
                 &wide,
                 ka,
                 1,
-                &mut [73; 3 * N],
             );
         }
         verify("wide", &output);
@@ -1623,7 +1520,6 @@ mod canonical_precision_tests {
                             1,
                             start,
                             len,
-                            &mut vec![73; len],
                         );
                     }
                 }
@@ -1634,7 +1530,6 @@ mod canonical_precision_tests {
                     0,
                     &mut <VecZnx<AlignedBuf, i64> as VecZnxToBackendMut<FFT64Portable>>::to_backend_mut(&mut input),
                     1,
-                    &mut [73; N],
                 );
             }
             verify("assign", &input);

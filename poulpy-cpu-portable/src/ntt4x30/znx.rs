@@ -215,6 +215,7 @@ impl<R: Ring> ZnxExtractDigitAddMul for NTT4x30Portable<R> {
 }
 
 impl<R: Ring> crate::kernels::normalization::I64NormalizeOps for NTT4x30Portable<R> {}
+impl<R: Ring> crate::kernels::znx_normalize::ZnxNormalize for NTT4x30Portable<R> {}
 
 impl<R: Ring> ZnxNormalizeDigit for NTT4x30Portable<R> {
     #[inline(always)]

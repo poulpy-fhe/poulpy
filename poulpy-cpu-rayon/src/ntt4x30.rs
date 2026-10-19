@@ -569,6 +569,7 @@ use $crate::__private::poulpy_cpu_portable::{
             ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxRotate, ZnxSub,
             ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero,
         },
+        znx_normalize::{Limbs, LimbsMut, ZnxNormalize},
     },
 };
 use $crate::__private::poulpy_hal::{
@@ -752,6 +753,22 @@ impl I64NormalizeOps for $rayon {
     }
 }
 $crate::rayon_forward_znx!($rayon, $base, ZnxNormalizeDigit, znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]));
+impl ZnxNormalize for $rayon {
+    unsafe fn znx_normalize(res: LimbsMut<i64>, res_base2k: usize, res_k: usize, offset: i64, a: Limbs<i64>, a_base2k: usize, len: usize) {
+        unsafe { <$base as ZnxNormalize>::znx_normalize(res, res_base2k, res_k, offset, a, a_base2k, len) }
+    }
+    unsafe fn znx_normalize_big(
+        res: LimbsMut<i64>,
+        res_base2k: usize,
+        res_k: usize,
+        offset: i64,
+        a: Limbs<<$base as Backend>::BigWord>,
+        a_base2k: usize,
+        len: usize,
+    ) {
+        unsafe { <$base as ZnxNormalize>::znx_normalize_big(res, res_base2k, res_k, offset, a, a_base2k, len) }
+    }
+}
 
 impl NttDFTExecute<NttTable<Primes30, <$base as Backend>::Ring>> for $rayon
 {
@@ -880,12 +897,9 @@ unsafe impl HalVecZnxImpl for $rayon
         a: &VecZnxBackendRef<'_, Self>,
         a_base2k: usize,
         a_col: usize,
-        scratch: &mut ScratchArena<'_, Self>,
+        _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let (carry, _) = $crate::take_scratch::<Self, i64>(scratch.borrow(), 3 * res.n());
-        $crate::normalize::vec_znx_normalize_par::<$base, Self>(
-            res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, carry,
-        );
+        $crate::normalize::vec_znx_normalize_par::<$base, Self>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col);
     }
 
     fn vec_znx_normalize_assign(
@@ -895,10 +909,9 @@ unsafe impl HalVecZnxImpl for $rayon
         a_offset: i64,
         a: &mut VecZnxBackendMut<'_, Self>,
         a_col: usize,
-        scratch: &mut ScratchArena<'_, Self>,
+        _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let (carry, _) = $crate::take_scratch::<Self, i64>(scratch.borrow(), 3 * a.n());
-        $crate::normalize::vec_znx_normalize_assign_par::<$base, Self>(base2k, k, a_offset, a, a_col, carry);
+        $crate::normalize::vec_znx_normalize_assign_par::<$base, Self>(base2k, k, a_offset, a, a_col);
     }
 }
 unsafe impl HalModuleImpl for $rayon
@@ -1326,10 +1339,9 @@ unsafe impl HalVecZnxBigImpl for $rayon
         a: &$crate::__private::poulpy_hal::layouts::VecZnxBigBackendRef<'_, Self>,
         a_base2k: usize,
         a_col: usize,
-        scratch: &mut ScratchArena<'_, Self>,
+        _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let (carry, _) = $crate::take_scratch::<Self, i128>(scratch.borrow(), 3 * res.n());
-        $crate::normalize::ntt4x30_vec_znx_big_normalize_par::<$base, Self>(
+        $crate::normalize::vec_znx_big_normalize_par::<$base, Self>(
             res,
             res_base2k,
             res_k,
@@ -1338,7 +1350,6 @@ unsafe impl HalVecZnxBigImpl for $rayon
             &base_big_ref(a),
             a_base2k,
             a_col,
-            carry,
         );
     }
 }
@@ -1444,7 +1455,7 @@ unsafe impl HalVecZnxDftImpl for $rayon
 {
     fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<Self>, _res_size: usize, a_size: usize) -> usize {
         let workers = $crate::workers(<Self as $crate::__private::poulpy_hal::execution::ScratchWorkers>::IDFT).min(a_size.max(1));
-        workers * <$base as $crate::ntt4x30::PackedNtt4x30Base>::idft_tmp_words(module.n()) * size_of::<u64>() + 3 * module.n() * size_of::<i128>()
+        workers * <$base as $crate::ntt4x30::PackedNtt4x30Base>::idft_tmp_words(module.n()) * size_of::<u64>()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1468,7 +1479,7 @@ unsafe impl HalVecZnxDftImpl for $rayon
         let cols = a.cols();
         let size = a.size();
         let per_worker = <$base as $crate::ntt4x30::PackedNtt4x30Base>::idft_tmp_words(n);
-        let (carry, arena) = $crate::take_scratch::<Self, i128>(scratch.borrow(), 3 * n);
+        let arena = scratch.borrow();
         let workers = $crate::workers_within(
             size.clamp(1, <Self as $crate::__private::poulpy_hal::execution::ScratchWorkers>::IDFT),
             per_worker * size_of::<u64>(),
@@ -1511,9 +1522,7 @@ unsafe impl HalVecZnxDftImpl for $rayon
         }
         let a_shape = a.shape();
         let big_ref: $crate::__private::poulpy_hal::layouts::VecZnxBigBackendRef<'_, $base> = VecZnxBig::from_shape(&**a.data(), a_shape);
-        $crate::normalize::ntt4x30_vec_znx_big_normalize_par::<$base, Self>(
-            res, res_base2k, res_k, res_offset, res_col, &big_ref, a_base2k, a_col, carry,
-        );
+        $crate::normalize::vec_znx_big_normalize_par::<$base, Self>(res, res_base2k, res_k, res_offset, res_col, &big_ref, a_base2k, a_col);
     }
     fn vec_znx_dft_apply(
         module: &Module<Self>,

@@ -1,22 +1,15 @@
 //! Coefficient-range-parallel normalization: carries propagate across limbs
-//! per coefficient, so disjoint coefficient ranges split freely and the carry
-//! reservation is unchanged.
+//! per coefficient, so disjoint coefficient ranges split freely.
 
 use poulpy_cpu_portable::kernels::{
-    ntt4x30::vec_znx_big::{
-        I128NormalizeOps, ntt4x30_vec_znx_big_normalize_portable, ntt4x30_vec_znx_big_normalize_range_raw_portable,
-    },
     vec_znx::{
         vec_znx_normalize_assign_portable, vec_znx_normalize_assign_range_raw_portable, vec_znx_normalize_portable,
         vec_znx_normalize_range_raw_portable,
     },
-    znx::{
-        I64NormalizeOps, ZnxAddAssign, ZnxCopy, ZnxMulPowerOfTwoAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
-        ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly,
-        ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxZero,
-    },
+    vec_znx_big_normalize::{vec_znx_big_normalize_portable, vec_znx_big_normalize_range_raw_portable},
+    znx_normalize::ZnxNormalize,
 };
-use poulpy_hal::layouts::{Backend, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendRef};
+use poulpy_hal::layouts::{Backend, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendRef, ZnxViewMut};
 use rayon::prelude::*;
 
 use crate::{RayonTaskExecutor, RayonTuning, SendPtr};
@@ -29,29 +22,24 @@ pub fn normalize_tasks<B: RayonTuning>(n: usize) -> usize {
     (n / B::NORMALIZE_MIN_TASK).clamp(1, ::rayon::current_num_threads())
 }
 
-/// Runs `run` in parallel over `tasks` coefficient ranges, each with its own
-/// `words`-per-coefficient slice of `carry`.
+/// Runs `run` in parallel over `tasks` coefficient ranges, each starting at a multiple of 8.
 ///
 /// `n` is the visible degree of the destination, so ranges index a window, not
 /// the buffer. The split path (`tasks >= 2`) is pinned on windows by the
 /// `window_rayon` suites that run at degree `1 << 13` (`poulpy-cpu-avx` NTT4x30,
 /// `poulpy-cpu-avx512` FFT64); suites at `1 << 8` only reach the serial fallback.
-fn for_each_range<T, F>(n: usize, tasks: usize, words: usize, carry: &mut [T], run: F)
+fn for_each_range<F>(n: usize, tasks: usize, run: F)
 where
-    T: Send,
-    F: Fn(usize, usize, &mut [T]) + Send + Sync,
+    F: Fn(usize, usize) + Send + Sync,
 {
     if n == 0 {
         return;
     }
     let chunk = n.div_ceil(tasks).next_multiple_of(8);
-    carry[..words * n]
-        .par_chunks_mut(words * chunk)
-        .enumerate()
-        .for_each(|(t, task_carry)| {
-            let start = t * chunk;
-            run(start, chunk.min(n - start), task_carry);
-        });
+    (0..n.div_ceil(chunk)).into_par_iter().for_each(|t| {
+        let start = t * chunk;
+        run(start, chunk.min(n - start));
+    });
 }
 
 /// Parallel [`vec_znx_normalize`], `B` being the serial kernel backend.
@@ -65,38 +53,23 @@ pub fn vec_znx_normalize_par<B, T>(
     a: &VecZnxBackendRef<'_, B>,
     a_base2k: usize,
     a_col: usize,
-    carry: &mut [i64],
 ) where
-    B: Backend<ZnxWord = i64>
-        + ZnxZero
-        + ZnxCopy
-        + ZnxAddAssign
-        + ZnxMulPowerOfTwoAssign
-        + ZnxNormalizeFirstStepCarryOnly
-        + ZnxNormalizeMiddleStepCarryOnly
-        + ZnxNormalizeMiddleStep
-        + ZnxNormalizeFinalStep
-        + ZnxNormalizeFirstStep
-        + I64NormalizeOps
-        + ZnxNormalizeMiddleStepAssign
-        + ZnxNormalizeFinalStepAssign
-        + ZnxNormalizeDigit,
+    B: ZnxNormalize,
     for<'x> B: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
     B: 'static,
     T: RayonTuning,
 {
-    assert!(res_k <= res.size() * res_base2k);
     let n = res.n();
     let tasks = normalize_tasks::<T>(n);
     if tasks < 2 {
-        return vec_znx_normalize_portable::<B>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, carry);
+        return vec_znx_normalize_portable::<B>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col);
     }
 
     let res_shape = res.shape();
     let a_shape = a.shape();
-    let res_ptr = SendPtr::new(res.data_mut().as_mut_ptr().cast::<i64>());
+    let res_ptr = SendPtr::new(res.base_mut_ptr());
     let a_data: &[u8] = a.data();
-    for_each_range(n, tasks, 3, carry, |start, len, task_carry| {
+    for_each_range(n, tasks, |start, len| {
         let a_view: VecZnxBackendRef<'_, B> = VecZnx::from_shape(a_data, a_shape);
         unsafe {
             vec_znx_normalize_range_raw_portable::<B>(
@@ -111,63 +84,40 @@ pub fn vec_znx_normalize_par<B, T>(
                 a_col,
                 start,
                 len,
-                task_carry,
             )
         }
     });
 }
 
 /// Parallel [`vec_znx_normalize_assign`], `B` being the serial kernel backend.
-#[allow(clippy::too_many_arguments)]
 pub fn vec_znx_normalize_assign_par<B, T>(
     base2k: usize,
     k: usize,
     res_offset: i64,
     res: &mut VecZnxBackendMut<'_, B>,
     res_col: usize,
-    carry: &mut [i64],
 ) where
-    B: Backend<ZnxWord = i64>
-        + I64NormalizeOps
-        + ZnxZero
-        + ZnxNormalizeFirstStepCarryOnly
-        + ZnxNormalizeMiddleStepCarryOnly
-        + ZnxNormalizeMiddleStep
-        + ZnxNormalizeFirstStepAssign
-        + ZnxNormalizeMiddleStepAssign
-        + ZnxNormalizeFinalStepAssign,
+    B: ZnxNormalize,
     for<'x> B: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
     B: 'static,
     T: RayonTuning,
 {
-    assert!(k <= res.size() * base2k);
     let n = res.n();
     let tasks = normalize_tasks::<T>(n);
     if tasks < 2 {
-        return vec_znx_normalize_assign_portable::<B>(base2k, k, res_offset, res, res_col, carry);
+        return vec_znx_normalize_assign_portable::<B>(base2k, k, res_offset, res, res_col);
     }
 
     let res_shape = res.shape();
-    let res_ptr = SendPtr::new(res.data_mut().as_mut_ptr().cast::<i64>());
-    for_each_range(n, tasks, 1, carry, |start, len, task_carry| unsafe {
-        vec_znx_normalize_assign_range_raw_portable::<B>(
-            res_ptr.get(),
-            res_shape,
-            base2k,
-            k,
-            res_offset,
-            res_col,
-            start,
-            len,
-            task_carry,
-        )
+    let res_ptr = SendPtr::new(res.base_mut_ptr());
+    for_each_range(n, tasks, |start, len| unsafe {
+        vec_znx_normalize_assign_range_raw_portable::<B>(res_ptr.get(), res_shape, base2k, k, res_offset, res_col, start, len)
     });
 }
 
-/// Parallel [`ntt4x30_vec_znx_big_normalize`], `B` being the serial kernel
-/// backend.
+/// Parallel [`vec_znx_big_normalize`], `B` being the serial kernel backend.
 #[allow(clippy::too_many_arguments)]
-pub fn ntt4x30_vec_znx_big_normalize_par<B, T>(
+pub fn vec_znx_big_normalize_par<B, T>(
     res: &mut VecZnxBackendMut<'_, B>,
     res_base2k: usize,
     res_k: usize,
@@ -176,9 +126,8 @@ pub fn ntt4x30_vec_znx_big_normalize_par<B, T>(
     a: &VecZnxBigBackendRef<'_, B>,
     a_base2k: usize,
     a_col: usize,
-    carry: &mut [i128],
 ) where
-    B: Backend<BigWord = i128, ZnxWord = i64> + I128NormalizeOps,
+    B: ZnxNormalize,
     for<'x> B: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
     B: 'static,
     T: RayonTuning,
@@ -186,41 +135,28 @@ pub fn ntt4x30_vec_znx_big_normalize_par<B, T>(
     let n = res.n();
     let tasks = normalize_tasks::<T>(n);
     if tasks < 2 {
-        let mut res_ref: &mut VecZnxBackendMut<'_, B> = res;
-        let a_ref: &VecZnxBigBackendRef<'_, B> = a;
-        return ntt4x30_vec_znx_big_normalize_portable::<_, _, B>(
-            &mut res_ref,
-            res_base2k,
-            res_k,
-            res_offset,
-            res_col,
-            &a_ref,
-            a_base2k,
-            a_col,
-            carry,
-        );
+        return vec_znx_big_normalize_portable::<B>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col);
     }
 
     let res_shape = res.shape();
     let a_shape = a.shape();
-    let res_ptr = SendPtr::new(res.data_mut().as_mut_ptr().cast::<i64>());
+    let res_ptr = SendPtr::new(res.base_mut_ptr());
     let a_data: &[u8] = a.data;
-    for_each_range(n, tasks, 3, carry, |start, len, task_carry| {
+    for_each_range(n, tasks, |start, len| {
         let a_view: VecZnxBigBackendRef<'_, B> = VecZnxBig::from_shape(a_data, a_shape);
         unsafe {
-            ntt4x30_vec_znx_big_normalize_range_raw_portable::<_, B>(
+            vec_znx_big_normalize_range_raw_portable::<B>(
                 res_ptr.get(),
                 res_shape,
                 res_base2k,
                 res_k,
                 res_offset,
                 res_col,
-                &&a_view,
+                &a_view,
                 a_base2k,
                 a_col,
                 start,
                 len,
-                task_carry,
             )
         }
     });
@@ -233,28 +169,18 @@ mod tests {
     use super::for_each_range;
 
     #[test]
-    fn test_normalization_ranges_private_scratch() {
+    fn test_normalization_ranges_cover_once() {
         rayon::ThreadPoolBuilder::new().num_threads(4).build().unwrap().install(|| {
             for n in 0..=129 {
                 for tasks in 1..=17 {
-                    for words in [1, 3] {
-                        let visits: Vec<_> = (0..n).map(|_| AtomicUsize::new(0)).collect();
-                        let mut scratch = vec![usize::MAX; words * n + 12];
-                        let carry = &mut scratch[5..5 + words * n];
-                        let base = carry.as_ptr() as usize;
-                        for_each_range(n, tasks, words, carry, |start, len, private| {
-                            assert!(len > 0 && start + len <= n);
-                            assert_eq!(private.len(), words * len);
-                            assert_eq!(private.as_ptr() as usize - base, words * start * size_of::<usize>());
-                            for visit in &visits[start..start + len] {
-                                assert_eq!(visit.fetch_add(1, Ordering::Relaxed), 0);
-                            }
-                            private.fill(start);
-                        });
-                        assert!(visits.iter().all(|v| v.load(Ordering::Relaxed) == 1));
-                        assert!(scratch[..5].iter().chain(&scratch[5 + words * n..]).all(|&v| v == usize::MAX));
-                        assert!(scratch[5..5 + words * n].iter().all(|&v| v < n));
-                    }
+                    let visits: Vec<_> = (0..n).map(|_| AtomicUsize::new(0)).collect();
+                    for_each_range(n, tasks, |start, len| {
+                        assert!(len > 0 && start + len <= n && start % 8 == 0);
+                        for visit in &visits[start..start + len] {
+                            assert_eq!(visit.fetch_add(1, Ordering::Relaxed), 0);
+                        }
+                    });
+                    assert!(visits.iter().all(|v| v.load(Ordering::Relaxed) == 1));
                 }
             }
         });

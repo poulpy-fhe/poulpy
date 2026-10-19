@@ -37,7 +37,7 @@ use crate::{
         noise::add_noise_portable,
         normalization::I64NormalizeOps,
         vec_znx::{
-            VecZnxRangeMut, vec_znx_add_assign_mixed_portable, vec_znx_add_mixed_portable, vec_znx_from_small_mixed_portable,
+            vec_znx_add_assign_mixed_portable, vec_znx_add_mixed_portable, vec_znx_from_small_mixed_portable,
             vec_znx_sub_assign_mixed_portable, vec_znx_sub_mixed_portable, vec_znx_sub_negate_assign_mixed_portable,
         },
         znx::{
@@ -51,6 +51,70 @@ use crate::{
     },
     source::Source,
 };
+
+#[inline]
+fn normalize_needs_exact(a_size: usize, a_base2k: usize, res_size: usize, res_base2k: usize, offset: i64) -> bool {
+    if a_size == 0 || res_size == 0 || a_base2k > 63 || res_base2k > 63 {
+        return true;
+    }
+    let a_bits = (a_size * a_base2k) as i64;
+    let res_bits = (res_size * res_base2k) as i64;
+    // Dropping at most one same-base limb rounds only in the first carry step.
+    let min_offset = if a_base2k == res_base2k {
+        (a_bits - a_base2k as i64) - res_bits
+    } else {
+        a_bits - res_bits
+    };
+    offset < min_offset || offset >= a_bits
+}
+
+#[inline]
+fn normalize_cross_needs_exact(a_size: usize, a_base2k: usize, res_base2k: usize, res_k: usize, offset: i64) -> bool {
+    if a_size == 0 || !(1..=63).contains(&a_base2k) || !(1..=63).contains(&res_base2k) {
+        return true;
+    }
+    let a_bits = a_size as i128 * a_base2k as i128;
+    let aligned_offset = offset.div_euclid(a_base2k as i64) as i128 * a_base2k as i128;
+    // The slice traversal needs a source limb at the rounding boundary.
+    a_bits + res_k as i128 > i64::MAX as i128 || res_k as i128 + aligned_offset <= 0 || offset as i128 >= a_bits
+}
+
+struct VecZnxRangeMut<'a> {
+    ptr: *mut i64,
+    shape: VecZnxShape,
+    col: usize,
+    start: usize,
+    len: usize,
+    marker: std::marker::PhantomData<&'a mut i64>,
+}
+
+impl<'a> VecZnxRangeMut<'a> {
+    /// # Safety
+    ///
+    /// `ptr` is the base of the dense buffer `shape` describes, and every element
+    /// `shape` selects in column `col`, coefficients `start..start + len`, is
+    /// exclusively writable for `'a`.
+    unsafe fn new(ptr: *mut i64, shape: VecZnxShape, col: usize, start: usize, len: usize) -> Self {
+        Self {
+            ptr,
+            shape,
+            col,
+            start,
+            len,
+            marker: std::marker::PhantomData,
+        }
+    }
+
+    fn at_mut(&mut self, limb: usize) -> &mut [i64] {
+        assert!(
+            limb < self.shape.size(),
+            "VecZnxRangeMut::at_mut: limb {limb} >= size {}",
+            self.shape.size()
+        );
+        let offset = self.shape.scalar_offset(self.col, limb) + self.start;
+        unsafe { std::slice::from_raw_parts_mut(self.ptr.add(offset), self.len) }
+    }
+}
 
 /// Exact same-radix normalization of materialized or streamed wide limbs.
 /// Process input limbs from least to most significant; the first step initializes carry.
@@ -1531,8 +1595,7 @@ pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw_portable<A, BE>(
     let partial = res_k != size * res_base2k;
     if res_base2k == a_base2k
         && res_base2k <= 63
-        && (partial
-            || crate::kernels::vec_znx::normalize_needs_exact(input.size(), a_base2k, active_size, res_base2k, res_offset))
+        && (partial || normalize_needs_exact(input.size(), a_base2k, active_size, res_base2k, res_offset))
         && let Some(plan) = I128NormalizePlan::new(res_base2k, res_k, res_offset, input.size())
     {
         let (boundary, limb_offset) = (plan.boundary(), plan.limb_offset());
@@ -1562,11 +1625,10 @@ pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw_portable<A, BE>(
         return;
     }
     let needs_exact = if a_base2k == res_base2k {
-        crate::kernels::vec_znx::normalize_needs_exact(input.size(), a_base2k, active_size, res_base2k, res_offset)
+        normalize_needs_exact(input.size(), a_base2k, active_size, res_base2k, res_offset)
             || (partial && input.size() as i128 * a_base2k as i128 > res_k as i128 + res_offset as i128)
     } else {
-        res_base2k > 62
-            || crate::kernels::vec_znx::normalize_cross_needs_exact(input.size(), a_base2k, res_base2k, res_k, res_offset)
+        res_base2k > 62 || normalize_cross_needs_exact(input.size(), a_base2k, res_base2k, res_k, res_offset)
     };
     if needs_exact {
         let input_limbs: Vec<&[i128]> = (0..input.size())

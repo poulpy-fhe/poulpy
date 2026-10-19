@@ -215,6 +215,7 @@ macro_rules! impl_fft64_delegating_backend {
         }
 
         impl crate::kernels::normalization::I64NormalizeOps for $be {}
+        impl crate::kernels::znx_normalize::ZnxNormalize for $be {}
         impl ZnxNormalizeDigit for $be {
             #[inline(always)]
             fn znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]) {

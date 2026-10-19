@@ -14,6 +14,7 @@ use poulpy_cpu_portable::{
             ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxRotate, ZnxSub,
             ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero,
         },
+        znx_normalize::{Limbs, LimbsMut, ZnxNormalize},
     },
 };
 use poulpy_hal::{
@@ -328,6 +329,32 @@ impl<R: Ring> poulpy_cpu_portable::kernels::normalization::I64NormalizeOps for N
 }
 forward_znx!(ZnxNormalizeDigit, znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]));
 
+impl<R: Ring> ZnxNormalize for NTT3x42IfmaRayon<R> {
+    unsafe fn znx_normalize(
+        res: LimbsMut<i64>,
+        res_base2k: usize,
+        res_k: usize,
+        offset: i64,
+        a: Limbs<i64>,
+        a_base2k: usize,
+        len: usize,
+    ) {
+        unsafe { <NTT3x42Ifma<R> as ZnxNormalize>::znx_normalize(res, res_base2k, res_k, offset, a, a_base2k, len) }
+    }
+
+    unsafe fn znx_normalize_big(
+        res: LimbsMut<i64>,
+        res_base2k: usize,
+        res_k: usize,
+        offset: i64,
+        a: Limbs<i128>,
+        a_base2k: usize,
+        len: usize,
+    ) {
+        unsafe { <NTT3x42Ifma<R> as ZnxNormalize>::znx_normalize_big(res, res_base2k, res_k, offset, a, a_base2k, len) }
+    }
+}
+
 unsafe impl<R: Ring> HalModuleImpl for NTT3x42IfmaRayon<R>
 where
     NTT3x42IfmaHandle<R>: NttHandleFactory,
@@ -364,11 +391,10 @@ where
         a: &VecZnxBackendRef<'_, Self>,
         a_base2k: usize,
         a_col: usize,
-        scratch: &mut ScratchArena<'_, Self>,
+        _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let (carry, _) = poulpy_cpu_rayon::take_scratch::<Self, i64>(scratch.borrow(), 3 * res.n());
         poulpy_cpu_rayon::normalize::vec_znx_normalize_par::<NTT3x42Ifma<R>, Self>(
-            res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, carry,
+            res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col,
         );
     }
 
@@ -379,10 +405,9 @@ where
         a_offset: i64,
         a: &mut VecZnxBackendMut<'_, Self>,
         a_col: usize,
-        scratch: &mut ScratchArena<'_, Self>,
+        _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let (carry, _) = poulpy_cpu_rayon::take_scratch::<Self, i64>(scratch.borrow(), 3 * a.n());
-        poulpy_cpu_rayon::normalize::vec_znx_normalize_assign_par::<NTT3x42Ifma<R>, Self>(base2k, k, a_offset, a, a_col, carry);
+        poulpy_cpu_rayon::normalize::vec_znx_normalize_assign_par::<NTT3x42Ifma<R>, Self>(base2k, k, a_offset, a, a_col);
     }
 }
 
@@ -513,10 +538,9 @@ where
         a: &poulpy_hal::layouts::VecZnxBigBackendRef<'_, Self>,
         a_base2k: usize,
         a_col: usize,
-        scratch: &mut ScratchArena<'_, Self>,
+        _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let (carry, _) = poulpy_cpu_rayon::take_scratch::<Self, i128>(scratch.borrow(), 3 * res.n());
-        poulpy_cpu_rayon::normalize::ntt4x30_vec_znx_big_normalize_par::<NTT3x42Ifma<R>, Self>(
+        poulpy_cpu_rayon::normalize::vec_znx_big_normalize_par::<NTT3x42Ifma<R>, Self>(
             res,
             res_base2k,
             res_k,
@@ -525,7 +549,6 @@ where
             &base_big_ref::<R>(a),
             a_base2k,
             a_col,
-            carry,
         );
     }
 }
@@ -538,7 +561,6 @@ where
 {
     fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::IDFT) * 3 * module.n() * size_of::<u64>()
-            + 3 * module.n() * size_of::<i128>()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -560,11 +582,9 @@ where
         let workers = poulpy_cpu_rayon::workers_within(
             a.size().min(<Self as poulpy_hal::execution::ScratchWorkers>::IDFT),
             3 * n * size_of::<u64>(),
-            scratch.available().saturating_sub(3 * n * size_of::<i128>()),
+            scratch.available(),
         );
-        let arena = scratch.borrow();
-        let (tmp, arena) = crate::hal_impl::take_host_typed::<Self, u64>(arena, workers * 3 * n);
-        let (carry, _) = crate::hal_impl::take_host_typed::<Self, i128>(arena, 3 * n);
+        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), workers * 3 * n);
         let mut a_base = base_dft_mut::<R>(a);
         let add_base = addend.map(|(add, col)| (poulpy_hal::layouts::VecZnx::from_shape(&**add.data(), add.shape()), col));
         super::vec_znx_dft::idft_normalize_consume_ifma::<_, NTT3x42IfmaRayonExecutor>(
@@ -579,7 +599,6 @@ where
             a_base2k,
             add_base.as_ref().map(|(add, col)| (add, *col)),
             tmp,
-            carry,
         );
     }
     #[inline(always)]

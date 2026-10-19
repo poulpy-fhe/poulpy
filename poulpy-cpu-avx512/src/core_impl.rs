@@ -148,10 +148,9 @@ macro_rules! ifma_tensor_finish {
             let workers = poulpy_hal::execution::scratch_workers_within::<$executor>(
                 a.size().min($cap),
                 3 * n * size_of::<u64>(),
-                scratch.available().saturating_sub(3 * n * size_of::<i128>()),
+                scratch.available(),
             );
-            let (tmp, arena) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), workers * 3 * n);
-            let (carry, _) = crate::hal_impl::take_host_typed::<Self, i128>(arena, 3 * n);
+            let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), workers * 3 * n);
             let shape = a.shape();
             let mut a = VecZnxDft::from_shape(&mut **a.data_mut(), shape);
             crate::ntt3x42_ifma::vec_znx_dft::idft_normalize_consume_ifma::<R, $executor>(
@@ -166,7 +165,6 @@ macro_rules! ifma_tensor_finish {
                 a_base2k,
                 None,
                 tmp,
-                carry,
             );
         }
     };

@@ -14,6 +14,7 @@ pub mod galois;
 pub mod normalization;
 pub mod ntt4x30;
 pub mod vec_znx;
+pub mod vec_znx_big_normalize;
 pub mod vmp_select;
 pub mod znx_normalize;
 

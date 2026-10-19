@@ -185,6 +185,8 @@ impl<R: Ring> ZnxExtractDigitAddMul for NTT3x42Ifma<R> {
     }
 }
 
+impl<R: Ring> poulpy_cpu_portable::kernels::znx_normalize::ZnxNormalize for NTT3x42Ifma<R> {}
+
 impl<R: Ring> poulpy_cpu_portable::kernels::normalization::I64NormalizeOps for NTT3x42Ifma<R> {
     #[inline(always)]
     fn znx_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i64], carry: &mut [i64]) {

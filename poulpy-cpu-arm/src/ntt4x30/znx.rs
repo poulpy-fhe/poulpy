@@ -211,6 +211,8 @@ impl<R: Ring> ZnxExtractDigitAddMul for NTT4x30Neon<R> {
     }
 }
 
+impl<R: Ring> poulpy_cpu_portable::kernels::znx_normalize::ZnxNormalize for NTT4x30Neon<R> {}
+
 impl<R: Ring> poulpy_cpu_portable::kernels::normalization::I64NormalizeOps for NTT4x30Neon<R> {
     #[cfg(target_arch = "aarch64")]
     #[inline(always)]

@@ -211,6 +211,8 @@ impl<R: Ring> ZnxExtractDigitAddMul for FFT64Neon<R> {
     }
 }
 
+impl<R: Ring> poulpy_cpu_portable::kernels::znx_normalize::ZnxNormalize for FFT64Neon<R> {}
+
 impl<R: Ring> poulpy_cpu_portable::kernels::normalization::I64NormalizeOps for FFT64Neon<R> {
     #[cfg(target_arch = "aarch64")]
     #[inline(always)]

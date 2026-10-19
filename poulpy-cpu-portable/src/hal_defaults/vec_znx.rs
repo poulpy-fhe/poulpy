@@ -6,23 +6,21 @@ use std::mem::size_of;
 use crate::kernels::vec_znx::{
     vec_znx_add_assign_portable, vec_znx_add_portable, vec_znx_automorphism_assign_portable,
     vec_znx_automorphism_assign_tmp_bytes_portable, vec_znx_automorphism_portable, vec_znx_copy_portable,
-    vec_znx_fill_uniform_portable, vec_znx_gadget_decompose_portable, vec_znx_lsh_assign_carry_bytes_portable,
-    vec_znx_lsh_assign_portable, vec_znx_mul_xp_minus_one_assign_portable, vec_znx_mul_xp_minus_one_assign_tmp_bytes_portable,
-    vec_znx_negate_assign_portable, vec_znx_negate_portable, vec_znx_normalize_assign_portable, vec_znx_normalize_portable,
-    vec_znx_normalize_tmp_bytes_portable, vec_znx_rotate_assign_portable, vec_znx_rotate_assign_tmp_bytes_portable,
-    vec_znx_rotate_portable, vec_znx_sub_assign_portable, vec_znx_sub_negate_assign_portable, vec_znx_sub_portable,
-    vec_znx_switch_ring_portable, vec_znx_zero_portable,
+    vec_znx_fill_uniform_portable, vec_znx_gadget_decompose_portable, vec_znx_lsh_assign_portable, vec_znx_mul_xp_minus_one_assign_portable,
+    vec_znx_mul_xp_minus_one_assign_tmp_bytes_portable, vec_znx_negate_assign_portable, vec_znx_negate_portable,
+    vec_znx_normalize_assign_portable, vec_znx_normalize_portable, vec_znx_normalize_tmp_bytes_portable,
+    vec_znx_rotate_assign_portable, vec_znx_rotate_assign_tmp_bytes_portable, vec_znx_rotate_portable,
+    vec_znx_sub_assign_portable, vec_znx_sub_negate_assign_portable, vec_znx_sub_portable, vec_znx_switch_ring_portable,
+    vec_znx_zero_portable,
 };
 use crate::kernels::znx::{
-    I64NormalizeOps, ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign,
-    ZnxNormalizeDigit, ZnxNormalizeFinalStep, ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign,
-    ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly,
-    ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero,
+    ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxNegate, ZnxNegateAssign, ZnxRotate, ZnxSub, ZnxSubAssign,
+    ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero,
 };
-use crate::kernels::{fft64::convolution::I64Ops, ntt4x30::I128BigOps};
+use crate::kernels::{fft64::convolution::I64Ops, ntt4x30::I128BigOps, znx_normalize::ZnxNormalize};
 use poulpy_hal::{
     api::HostBufMut,
-    layouts::{Backend, HostDataMut, Module, ScratchArena, VecZnxBackendMut, VecZnxBackendRef},
+    layouts::{Backend, HostDataMut, HostDataRef, Module, ScratchArena, VecZnxBackendMut, VecZnxBackendRef},
     source::Source,
 };
 
@@ -97,34 +95,13 @@ where
         a: &VecZnxBackendRef<'_, Self>,
         a_base2k: usize,
         a_col: usize,
-        scratch: &mut ScratchArena<'_, Self>,
+        _scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Self: ZnxZero
-            + ZnxCopy
-            + ZnxAddAssign
-            + ZnxMulPowerOfTwoAssign
-            + ZnxNormalizeFirstStepCarryOnly
-            + ZnxNormalizeMiddleStepCarryOnly
-            + ZnxNormalizeMiddleStep
-            + ZnxNormalizeFinalStep
-            + ZnxNormalizeFirstStep
-            + I64NormalizeOps
-            + ZnxNormalizeMiddleStepAssign
-            + ZnxNormalizeFinalStepAssign
-            + ZnxNormalizeDigit,
+        Self: ZnxNormalize,
         for<'x> Self::BufMut<'x>: HostDataMut,
-        for<'x> Self::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
-        for<'x> Self::BufMut<'x>: HostBufMut<'x>,
+        for<'x> Self::BufRef<'x>: HostDataRef,
     {
-        let byte_count = vec_znx_normalize_tmp_bytes_portable(res.n());
-        assert!(
-            byte_count.is_multiple_of(size_of::<i64>()),
-            "Scratch buffer size {} must be divisible by {}",
-            byte_count,
-            size_of::<i64>()
-        );
-        let (carry, _) = take_host_typed::<Self, i64>(scratch.borrow(), byte_count / size_of::<i64>());
-        vec_znx_normalize_portable::<Self>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, carry);
+        vec_znx_normalize_portable::<Self>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -135,28 +112,12 @@ where
         res_offset: i64,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        scratch: &mut ScratchArena<'_, Self>,
+        _scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Self: I64NormalizeOps
-            + ZnxZero
-            + ZnxNormalizeFirstStepCarryOnly
-            + ZnxNormalizeMiddleStepCarryOnly
-            + ZnxNormalizeMiddleStep
-            + ZnxNormalizeFirstStepAssign
-            + ZnxNormalizeMiddleStepAssign
-            + ZnxNormalizeFinalStepAssign,
+        Self: ZnxNormalize,
         for<'x> Self::BufMut<'x>: HostDataMut,
-        for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
-        let byte_count = vec_znx_normalize_tmp_bytes_portable(res.n());
-        assert!(
-            byte_count.is_multiple_of(size_of::<i64>()),
-            "Scratch buffer size {} must be divisible by {}",
-            byte_count,
-            size_of::<i64>()
-        );
-        let (carry, _) = take_host_typed::<Self, i64>(scratch.borrow(), byte_count / size_of::<i64>());
-        vec_znx_normalize_assign_portable::<Self>(base2k, k, res_offset, res, res_col, carry);
+        vec_znx_normalize_assign_portable::<Self>(base2k, k, res_offset, res, res_col);
     }
 
     fn vec_znx_add_default<'a>(
@@ -263,17 +224,12 @@ where
         k: usize,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        scratch: &mut ScratchArena<'_, Self>,
+        _scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Self: ZnxZero + ZnxCopy + ZnxNormalizeFirstStepAssign + ZnxNormalizeMiddleStepAssign + ZnxNormalizeFinalStepAssign,
+        Self: ZnxNormalize,
         for<'x> Self::BufMut<'x>: HostDataMut,
-        for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
-        let (carry, _) = take_host_typed::<Self, i64>(
-            scratch.borrow(),
-            vec_znx_lsh_assign_carry_bytes_portable(res.n()) / size_of::<i64>(),
-        );
-        vec_znx_lsh_assign_portable::<Self>(base2k, k, res, res_col, carry);
+        vec_znx_lsh_assign_portable::<Self>(base2k, k, res, res_col);
     }
 
     fn vec_znx_rotate_default(

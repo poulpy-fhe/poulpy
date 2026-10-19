@@ -223,6 +223,7 @@ impl<R: Ring> ZnxExtractDigitAddMul for FFT64Portable<R> {
 }
 
 impl<R: Ring> crate::kernels::normalization::I64NormalizeOps for FFT64Portable<R> {}
+impl<R: Ring> crate::kernels::znx_normalize::ZnxNormalize for FFT64Portable<R> {}
 
 impl<R: Ring> ZnxNormalizeDigit for FFT64Portable<R> {
     #[inline(always)]
@@ -237,5 +238,11 @@ mod normalization_tests {
     fn test_normalization_kernels_bounded_inputs() {
         crate::test_suite::normalization::test_normalization_kernels::<super::FFT64Portable>();
         crate::test_suite::normalization::test_normalization_kernels::<super::super::super::NTT4x30Portable>();
+    }
+
+    #[test]
+    fn test_znx_normalize_portable() {
+        crate::test_suite::znx_normalize::test_znx_normalize::<super::FFT64Portable>();
+        crate::test_suite::znx_normalize::test_znx_normalize::<super::super::super::NTT4x30Portable>();
     }
 }
