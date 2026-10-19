@@ -483,7 +483,8 @@ where
                         r.glwe_eval_linear_transformation_sum_into(
                             offset,
                             &mut sum_r,
-                            &[(&lhs_r, &resident_r), (&lhs2_r, &resident2_r)],
+                            &[&lhs_r, &lhs2_r],
+                            &[&resident_r, &resident2_r],
                             &keys_r,
                             &mut poisoned_scratch::<BR>(r.glwe_eval_linear_transformation_sum_tmp_bytes(&out, &ct, &pt, &key))
                                 .borrow(),
@@ -491,7 +492,8 @@ where
                         t.glwe_eval_linear_transformation_sum_into(
                             offset,
                             &mut sum_t,
-                            &[(&lhs_t, &resident_t), (&lhs2_t, &resident2_t)],
+                            &[&lhs_t, &lhs2_t],
+                            &[&resident_t, &resident2_t],
                             &keys_t,
                             &mut poisoned_scratch::<BT>(t.glwe_eval_linear_transformation_sum_tmp_bytes(&out, &ct, &pt, &key))
                                 .borrow(),
@@ -507,7 +509,8 @@ where
                         t.glwe_eval_linear_transformation_sum_into(
                             offset,
                             &mut one_t,
-                            &[(&lhs_t, &resident_t)],
+                            &[&lhs_t],
+                            &[&resident_t],
                             &keys_t,
                             &mut poisoned_scratch::<BT>(t.glwe_eval_linear_transformation_sum_tmp_bytes(&out, &ct, &pt, &key))
                                 .borrow(),

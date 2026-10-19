@@ -1130,7 +1130,8 @@ macro_rules! impl_rank_one_tensoring {
                 cnv_offset: usize,
                 res: &mut R,
                 res_k: poulpy_core::layouts::TorusPrecision,
-                pairs: &[(&A, &B)],
+                a: &[&A],
+                b: &[&B],
                 tsk: &H,
                 scratch: &mut ScratchArena<'_, $be>,
             ) where
@@ -1139,7 +1140,7 @@ macro_rules! impl_rank_one_tensoring {
                 B: GLWEToBackendRef<$be> + GLWEInfos,
                 H: poulpy_core::layouts::GetTensorKey<$be>,
             {
-                module.glwe_mul_relinearize_sum_reference(cnv_offset, res, res_k, pairs, tsk, scratch)
+                module.glwe_mul_relinearize_sum_reference(cnv_offset, res, res_k, a, b, tsk, scratch)
             }
 
             fn glwe_mul_prepared_relinearize_sum_tmp_bytes<R, B>(
@@ -1164,7 +1165,8 @@ macro_rules! impl_rank_one_tensoring {
                 cnv_offset: usize,
                 res: &mut R,
                 res_k: poulpy_core::layouts::TorusPrecision,
-                pairs: &[(&AP, &BP)],
+                a: &[&AP],
+                b: &[&BP],
                 a_size: usize,
                 a_k: poulpy_core::layouts::TorusPrecision,
                 b_size: usize,
@@ -1178,7 +1180,7 @@ macro_rules! impl_rank_one_tensoring {
                 H: poulpy_core::layouts::GetTensorKey<$be>,
             {
                 module.glwe_mul_prepared_relinearize_sum_reference(
-                    cnv_offset, res, res_k, pairs, a_size, a_k, b_size, b_k, tsk, scratch,
+                    cnv_offset, res, res_k, a, b, a_size, a_k, b_size, b_k, tsk, scratch,
                 )
             }
 

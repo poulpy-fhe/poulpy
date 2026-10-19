@@ -507,9 +507,10 @@ where
     let mut s: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
     module.glwe_add_into(&mut s, &a, &c);
     assert!(!s.is_canonical());
-    let mixed = [(&a, &b), (&s, &c), (&c, &s)];
-    let prepared: Vec<_> = mixed
+    let (mixed_a, mixed_b) = ([&a, &s, &c], [&b, &c, &s]);
+    let prepared: Vec<_> = mixed_a
         .iter()
+        .zip(&mixed_b)
         .enumerate()
         .map(|(i, (l, r))| {
             let (l_hint, r_hint) = crate::test_suite::prepare_hints(i);
@@ -520,7 +521,7 @@ where
             (l_prep, r_prep)
         })
         .collect();
-    let prepared_pairs: Vec<_> = prepared.iter().map(|(l, r)| (l, r)).collect();
+    let (prepared_a, prepared_b): (Vec<_>, Vec<_>) = prepared.iter().map(|(l, r)| (l, r)).unzip();
     let mut prepared_scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_mul_prepared_relinearize_sum_tmp_bytes(
         &glwe_infos,
         size,
@@ -536,7 +537,8 @@ where
             scale + res_offset,
             &mut want,
             res_k,
-            &mixed,
+            &mixed_a,
+            &mixed_b,
             &tsk_prep,
             &mut sum_scratch.borrow(),
         );
@@ -545,7 +547,8 @@ where
             scale + res_offset,
             &mut have,
             res_k,
-            &prepared_pairs,
+            &prepared_a,
+            &prepared_b,
             size,
             glwe_infos.k,
             size,
@@ -584,13 +587,14 @@ where
                     cnv_offset,
                     &mut res,
                     res_k,
-                    &[(&a, &b), (&b, &c), (&c, &a)],
+                    &[&a, &b, &c],
+                    &[&b, &c, &a],
                     &tsk_prep,
                     &mut sum_scratch.borrow(),
                 ),
                 _ => {
                     module.glwe_mul_relinearize(cnv_offset, &mut res, res_k, &a, &b, &tsk_prep, &mut scratch.borrow());
-                    let pairs = [(&a, &b), (&zero, &zero)];
+                    let (sum_a, sum_b) = ([&a, &zero], [&b, &zero]);
                     for len in 1..=2 {
                         // A fresh result each time, so that a sum which left it unwritten fails.
                         let mut sum: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
@@ -598,7 +602,8 @@ where
                             cnv_offset,
                             &mut sum,
                             res_k,
-                            &pairs[..len],
+                            &sum_a[..len],
+                            &sum_b[..len],
                             &tsk_prep,
                             &mut sum_scratch.borrow(),
                         );
@@ -657,7 +662,7 @@ where
     Module<BE>: GLWEMulRelinearizeSum<BE> + GLWETensorKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    rejected_sum(params, module, false);
+    rejected_sum(params, module, SumCase::NoPairs);
 }
 
 /// Every pair of a sum shares the first one's layouts, checked before `res` is written.
@@ -666,12 +671,28 @@ where
     Module<BE>: GLWEMulRelinearizeSum<BE> + GLWETensorKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    rejected_sum(params, module, true);
+    rejected_sum(params, module, SumCase::NarrowPair);
 }
 
-/// Runs a sum without scratch and with an unfilled key: no pairs, or a second pair whose left operand is one limb
-/// narrower than the first's.
-fn rejected_sum<BE: Backend>(params: &TestParams, module: &Module<BE>, mismatched: bool)
+/// A sum takes as many right operands as left ones, checked before `res` is written.
+pub fn test_glwe_mul_relinearize_sum_rejects_unequal_lengths<BE: Backend>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: GLWEMulRelinearizeSum<BE> + GLWETensorKeyPreparedFactory<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    rejected_sum(params, module, SumCase::UnequalLengths);
+}
+
+enum SumCase {
+    NoPairs,
+    /// A second pair whose left operand is one limb narrower than the first's.
+    NarrowPair,
+    /// Two left operands and one right one.
+    UnequalLengths,
+}
+
+/// Runs a sum without scratch and with an unfilled key.
+fn rejected_sum<BE: Backend>(params: &TestParams, module: &Module<BE>, case: SumCase)
 where
     Module<BE>: GLWEMulRelinearizeSum<BE> + GLWETensorKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -697,8 +718,20 @@ where
         ..infos
     });
     let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
-    let pairs = if mismatched { vec![(&a, &a), (&narrow, &a)] } else { vec![] };
-    module.glwe_mul_relinearize_sum(base2k, &mut res, infos.k, &pairs, &tsk, &mut ScratchOwned::alloc(0).borrow());
+    let (left, right) = match case {
+        SumCase::NoPairs => (vec![], vec![]),
+        SumCase::NarrowPair => (vec![&a, &narrow], vec![&a, &a]),
+        SumCase::UnequalLengths => (vec![&a, &a], vec![&a]),
+    };
+    module.glwe_mul_relinearize_sum(
+        base2k,
+        &mut res,
+        infos.k,
+        &left,
+        &right,
+        &tsk,
+        &mut ScratchOwned::alloc(0).borrow(),
+    );
 }
 
 /// A sum of prepared pairs needs a pair.
@@ -729,12 +762,23 @@ where
     rejected_prepared_sum(params, module, PreparedSumCase::WiderLeftWidth);
 }
 
+/// A prepared sum takes as many right operands as left ones, checked before anything else.
+pub fn test_glwe_mul_prepared_relinearize_sum_rejects_unequal_lengths<BE: Backend>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: GLWEPreparedTensoring<BE> + GLWETensorKeyPreparedFactory<BE> + CnvPVecAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    rejected_prepared_sum(params, module, PreparedSumCase::UnequalLengths);
+}
+
 enum PreparedSumCase {
     NoPairs,
     /// A second pair whose left operand is one limb narrower than the given size.
     NarrowPair,
     /// One pair, its left width one limb wider than the given size.
     WiderLeftWidth,
+    /// Two left operands and one right one.
+    UnequalLengths,
 }
 
 /// Runs a sum of prepared pairs without scratch and with an unfilled key.
@@ -763,16 +807,18 @@ where
     let narrow = module.cnv_pvec_left_alloc(n, 2, 1, PrepareHint::Reuse);
     let b = module.cnv_pvec_right_alloc(n, 2, 2, PrepareHint::Reuse);
     let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
-    let (pairs, a_k) = match case {
-        PreparedSumCase::NoPairs => (vec![], infos.k),
-        PreparedSumCase::NarrowPair => (vec![(&a, &b), (&narrow, &b)], infos.k),
-        PreparedSumCase::WiderLeftWidth => (vec![(&a, &b)], (3 * base2k).into()),
+    let (left, right, a_k) = match case {
+        PreparedSumCase::NoPairs => (vec![], vec![], infos.k),
+        PreparedSumCase::NarrowPair => (vec![&a, &narrow], vec![&b, &b], infos.k),
+        PreparedSumCase::WiderLeftWidth => (vec![&a], vec![&b], (3 * base2k).into()),
+        PreparedSumCase::UnequalLengths => (vec![&a, &a], vec![&b], infos.k),
     };
     module.glwe_mul_prepared_relinearize_sum(
         base2k,
         &mut res,
         infos.k,
-        &pairs,
+        &left,
+        &right,
         2,
         a_k,
         2,

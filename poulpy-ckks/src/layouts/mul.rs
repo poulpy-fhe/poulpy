@@ -4,7 +4,9 @@ use crate::CKKSInfos;
 use poulpy_core::layouts::{
     Base2K, Degree, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEPlaintextMeta, LWEInfos, Rank, TorusPrecision,
 };
-use poulpy_hal::layouts::{Backend, CnvPVecLOwned, CnvPVecROwned};
+use poulpy_hal::layouts::{
+    Backend, CnvPVecLBackendRef, CnvPVecLOwned, CnvPVecLToBackendRef, CnvPVecRBackendRef, CnvPVecROwned, CnvPVecRToBackendRef,
+};
 
 /// A CKKS ciphertext prepared as the left operand of a `ct×ct` product.
 ///
@@ -73,6 +75,19 @@ impl<BE: Backend> CKKSPreparedRight<BE> {
     /// The prepared convolution operand, on `ceil(k / base2k)` limbs and `rank + 1` columns of the source.
     pub fn cnv(&self) -> &CnvPVecROwned<BE> {
         &self.prep
+    }
+}
+
+// The core products read a prepared operand where it is, through its convolution operand.
+impl<BE: Backend> CnvPVecLToBackendRef<BE> for CKKSPreparedLeft<BE> {
+    fn to_backend_ref(&self) -> CnvPVecLBackendRef<'_, BE> {
+        self.prep.to_backend_ref()
+    }
+}
+
+impl<BE: Backend> CnvPVecRToBackendRef<BE> for CKKSPreparedRight<BE> {
+    fn to_backend_ref(&self) -> CnvPVecRBackendRef<'_, BE> {
+        self.prep.to_backend_ref()
     }
 }
 

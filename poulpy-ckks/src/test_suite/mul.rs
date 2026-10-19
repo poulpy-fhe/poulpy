@@ -1553,7 +1553,10 @@ where
 
 /// [`test_prepare_into`] on one side: `a` prepared into an allocation, again into it after poisoning it, then `other`,
 /// of another layout, rejected by `op`.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the allocation, both preparations and the views of one side"
+)]
 fn check_prepare_into<
     BE: poulpy_hal::layouts::Backend<OwnedBuf = AlignedBuf>,
     P: CKKSInfos + poulpy_core::layouts::GLWEInfos,

@@ -112,16 +112,17 @@ pub fn glwe_accumulate_streamed_baby_steps_dft<BE, M, P>(
 /// checked: every diagonal of a transform shares one width, scale and degree, as the encoder produces them, and
 /// preparing asserts the degree. Reads no cache layout, so an empty cache fails on its first missing rotation.
 pub(super) fn assert_linear_transformation_giant_steps<BE, P>(
-    terms: &[(&LinearTransformationBabySteps<BE>, &LinearTransformation<P>)],
+    babies: &[&LinearTransformationBabySteps<BE>],
+    lts: &[&LinearTransformation<P>],
 ) where
     BE: Backend,
     P: DiagonalProd<BE>,
 {
     assert!(
-        !terms[0].1.giant_steps.is_empty(),
+        !lts[0].giant_steps.is_empty(),
         "linear transformation has no non-empty giant steps"
     );
-    for (t, &(lhs, lt)) in terms.iter().enumerate() {
+    for (t, (&lhs, &lt)) in babies.iter().zip(lts).enumerate() {
         let width = lt.first_diagonal_plaintext().map(|d| d.max_size());
         for (g, gs) in lt.giant_steps.iter().enumerate() {
             let first = gs
@@ -164,8 +165,8 @@ pub(super) fn assert_linear_transformation_giant_steps<BE, P>(
 ///   contribution is normalized to SMALL and rotated with the public normalized
 ///   `glwe_automorphism`. Correct, but gives up the lazy savings.
 ///
-/// `terms` are `(baby cache, transform)` pairs sharing the first one's giant
-/// schedule and diagonal layout, checked by the callers with
+/// The terms `(babies[t], lts[t])` share the first one's giant schedule and
+/// diagonal layout, checked by the callers with
 /// [`assert_linear_transformation_giant_steps`]: each giant step's PROD is
 /// summed over them by `sum_giant_prod` before its single rotation, so one
 /// pair is the single transform.
@@ -175,7 +176,8 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
     module: &M,
     cnv_offset: usize,
     res: &mut R,
-    terms: &[(&LinearTransformationBabySteps<BE>, &LinearTransformation<P>)],
+    babies: &[&LinearTransformationBabySteps<BE>],
+    lts: &[&LinearTransformation<P>],
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
@@ -216,7 +218,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
     let cols = res.rank().as_usize() + 1;
     let res_base2k = res.base2k();
     let res_k = res.k().as_usize();
-    let (lhs, rhs) = terms[0];
+    let (lhs, rhs) = (babies[0], lts[0]);
 
     // PROD writes its result in the diagonals' base2k.
     let first_diagonal = &rhs.giant_steps[0].diagonals[0].plaintext;
@@ -290,7 +292,15 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
         for (g, giant_key) in giant_keys.iter().enumerate() {
             {
                 let mut prod_dft_backend = prod_dft.to_backend_mut();
-                sum_giant_prod(module, cnv_offset_hi, &mut prod_dft_backend, terms, g, &mut scratch_phase);
+                sum_giant_prod(
+                    module,
+                    cnv_offset_hi,
+                    &mut prod_dft_backend,
+                    babies,
+                    lts,
+                    g,
+                    &mut scratch_phase,
+                );
             }
             let rot = rhs.giant_steps[g].rot;
             if rot == 0 {
@@ -358,7 +368,15 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
     for (g, giant_key) in giant_keys.iter().enumerate() {
         {
             let mut prod_dft_backend = prod_dft.to_backend_mut();
-            sum_giant_prod(module, cnv_offset_hi, &mut prod_dft_backend, terms, g, &mut scratch_phase);
+            sum_giant_prod(
+                module,
+                cnv_offset_hi,
+                &mut prod_dft_backend,
+                babies,
+                lts,
+                g,
+                &mut scratch_phase,
+            );
             let mut acc_backend = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendMut<BE>>::to_backend_mut(&mut fallback_acc);
             let prod_dft_ref = poulpy_hal::layouts::vec_znx_dft_backend_ref_from_mut(&prod_dft_backend);
             for col in 0..cols {
@@ -403,14 +421,15 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
     }
 }
 
-/// PROD of giant step `g` summed over `terms`: the first term writes
+/// PROD of giant step `g` summed over the terms `(babies[t], lts[t])`: the first term writes
 /// `prod_dft`, each later one is computed into one scratch bucket, taken only
 /// for a sum, and added in DFT.
 fn sum_giant_prod<BE, M, P>(
     module: &M,
     cnv_offset_hi: usize,
     prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
-    terms: &[(&LinearTransformationBabySteps<BE>, &LinearTransformation<P>)],
+    babies: &[&LinearTransformationBabySteps<BE>],
+    lts: &[&LinearTransformation<P>],
     g: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
@@ -418,16 +437,16 @@ fn sum_giant_prod<BE, M, P>(
     M: CnvPVecBytesOf + Convolution<BE> + ModuleN + VecZnxDftAddAssign<BE>,
     P: DiagonalProd<BE>,
 {
-    let (lhs, rhs) = terms[0];
+    let (lhs, rhs) = (babies[0], lts[0]);
     P::accumulate_giant_prod(module, cnv_offset_hi, prod_dft, lhs, &rhs.giant_steps[g], scratch);
-    if terms.len() == 1 {
+    if babies.len() == 1 {
         return;
     }
     let (mut bucket, mut scratch_bucket) =
         scratch
             .borrow()
             .take_vec_znx_dft_scratch(prod_dft.n(), prod_dft.cols(), prod_dft.size());
-    for &(lhs, rhs) in &terms[1..] {
+    for (&lhs, &rhs) in babies[1..].iter().zip(&lts[1..]) {
         P::accumulate_giant_prod(
             module,
             cnv_offset_hi,

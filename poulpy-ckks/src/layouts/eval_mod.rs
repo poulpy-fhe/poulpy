@@ -248,6 +248,7 @@ impl EvalModPlan {
     }
 
     pub(crate) fn validate(&self) -> Result<()> {
+        self.coeffs_meta.ensure_width("compile_eval_mod")?;
         ensure!(self.f_mod_degree > 0, "f_mod_degree must be > 0");
         ensure!(self.f_mod_interval > 0, "f_mod_interval must be > 0");
         ensure!(self.log_msg_ratio < 64, "log_msg_ratio must be < 64");

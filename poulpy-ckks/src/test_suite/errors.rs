@@ -1,7 +1,7 @@
 use crate::{
     CKKSCompositionError, CKKSInfos, CoeffsMeta, SetCKKSInfos,
     api::{CKKSAddOps, CKKSEncodingOps},
-    layouts::{CKKSModuleAlloc, ComplexDiagonals},
+    layouts::{CKKSModuleAlloc, ComplexDiagonals, EvalModPlan, compile_eval_mod},
     polynomial::{Basis, EncodeBSGS, Polynomial, SplitStrategy},
     reference::ckks_encode_linear_transformation_from_diagonals,
 };
@@ -104,21 +104,21 @@ pub fn test_encode_linear_transformation_zero_k_error<BE, F, E>(
         &err.into(),
         CKKSCompositionError::InvalidOperand {
             op: "ckks_encode_linear_transformation_from_diagonals",
-            reason: "the diagonals' torus width, coeffs_meta.k, is 0".into(),
+            reason: "the operands' torus width, k, is 0".into(),
         },
     );
 }
 
-/// `EncodeBSGS::encode_bsgs_with` and `encode_bsgs_folded_with` reject a zero torus width, `coeff_meta.k = 0`, with
-/// `InvalidOperand` before they allocate anything: here on an odd polynomial both would otherwise encode, panicking on
-/// the first baby step.
+/// `EncodeBSGS::encode_bsgs_with`, `encode_bsgs_folded_with` and `compile_eval_mod` reject a zero torus width,
+/// `coeff_meta.k = 0`, with `InvalidOperand` before they allocate anything: here on an odd polynomial the encoders
+/// would otherwise encode, panicking on the first baby step, and on an empty scratch for `compile_eval_mod`.
 pub fn test_encode_bsgs_zero_k_error<BE, F, E>(
     params: CKKSTestParams,
-    _module: &Module<BE>,
+    module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -129,13 +129,21 @@ pub fn test_encode_bsgs_zero_k_error<BE, F, E>(
     let split = SplitStrategy::MinDepth;
     let with = poly.encode_bsgs_with(host_module, base2k, zero_k, split).map(drop);
     let folded = poly.encode_bsgs_folded_with(host_module, base2k, zero_k, split).map(drop);
-    for (op, res) in [("encode_bsgs_with", with), ("encode_bsgs_folded_with", folded)] {
+    let plan = EvalModPlan::complex_exponential(4, 2, 0, split, zero_k, params.prec().log_delta());
+    let eval_mod = with_scratch::<BE, _>(0, |scratch| {
+        compile_eval_mod::<BE, F>(base2k, plan, module, scratch).map(drop)
+    });
+    for (op, res) in [
+        ("encode_bsgs_with", with),
+        ("encode_bsgs_folded_with", folded),
+        ("compile_eval_mod", eval_mod),
+    ] {
         assert_ckks_error(
             op,
             &res.unwrap_err().into(),
             CKKSCompositionError::InvalidOperand {
                 op,
-                reason: "the baby steps' torus width, coeff_meta.k, is 0".into(),
+                reason: "the operands' torus width, k, is 0".into(),
             },
         );
     }

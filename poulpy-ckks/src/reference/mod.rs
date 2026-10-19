@@ -16,6 +16,7 @@ pub(crate) mod carry_verb;
 pub mod conjugate;
 pub mod copy;
 pub mod dft;
+pub mod dot_product;
 pub mod encoding;
 pub mod encryption;
 pub mod eval_mod;
@@ -37,7 +38,9 @@ pub mod sub;
 
 pub use add::CKKSAddReference;
 pub use dft::gen_dft_matrices;
+pub use dot_product::CKKSDotProductReference;
 pub use eval_mod::CKKSEvalModOpsReference;
+pub use linear_transformation::CKKSLinearTransformationReference;
 pub use linear_transformation_diagonals::ckks_encode_linear_transformation_from_diagonals;
 pub use plaintext::CKKSPlaintextReference;
 pub use polynomial_evaluation::PolynomialEvaluationReference;

@@ -21,6 +21,7 @@ use poulpy_hal::{
 };
 
 use crate::{
+    CKKSCompositionError,
     api::{CKKSLinearTransformationOps, LinearTransformation, LinearTransformationBabySteps, LinearTransformationPrepared},
     layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, ComplexDiagonals},
     test_suite::reference_encoder::ReferenceEncoder,
@@ -298,17 +299,19 @@ pub fn test_linear_transformation_sum<BE, F, E>(
     let single = snapshot::<BE, _>(&single);
     let mut one = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(sum_bytes, |scratch| {
-        module.ckks_eval_linear_transformation_sum_into(&mut one, &[(&cts[0], &babies[0], &prepared[0])], &keys, scratch)
+        module.ckks_eval_linear_transformation_sum_into(&mut one, &[&cts[0]], &[&babies[0]], &[&prepared[0]], &keys, scratch)
     })
     .unwrap();
     assert_eq!(snapshot::<BE, _>(&one), single, "a one-term sum is not the single transform");
 
     // Distinct terms, as (source, matrix): the sum of the single transforms.
     let terms = [(0, 0), (1, 1), (0, 2)];
-    let refs: Vec<_> = terms.iter().map(|&(s, l)| (&cts[s], &babies[s], &prepared[l])).collect();
+    let term_srcs: Vec<_> = terms.iter().map(|&(s, _)| &cts[s]).collect();
+    let term_babies: Vec<_> = terms.iter().map(|&(s, _)| &babies[s]).collect();
+    let term_lts: Vec<_> = terms.iter().map(|&(_, l)| &prepared[l]).collect();
     let mut sum = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(sum_bytes, |scratch| {
-        module.ckks_eval_linear_transformation_sum_into(&mut sum, &refs, &keys, scratch)
+        module.ckks_eval_linear_transformation_sum_into(&mut sum, &term_srcs, &term_babies, &term_lts, &keys, scratch)
     })
     .unwrap();
     let have = snapshot::<BE, _>(&sum);
@@ -334,53 +337,92 @@ pub fn test_linear_transformation_sum<BE, F, E>(
         &mut scratch.borrow(),
     );
 
-    // A mismatched term: rejected for `reason`, with `sum` untouched.
-    let mut reject = |terms: &[(
-        &CKKSCiphertextOwned<BE>,
-        &LinearTransformationBabySteps<BE>,
-        &LinearTransformationPrepared<BE>,
-    )],
-                      reason: &str| {
+    // A mismatched term: rejected for `reason`, with `sum` untouched, as `InvalidOperand` where the sum's own
+    // checks reject it.
+    let mut reject = |srcs: &[&CKKSCiphertextOwned<BE>],
+                      cache: &[&LinearTransformationBabySteps<BE>],
+                      lts: &[&LinearTransformationPrepared<BE>],
+                      reason: &str,
+                      invalid_operand: bool| {
         let before = snapshot::<BE, _>(&sum);
         let err = with_scratch::<BE, _>(sum_bytes, |scratch| {
-            module.ckks_eval_linear_transformation_sum_into(&mut sum, terms, &keys, scratch)
+            module.ckks_eval_linear_transformation_sum_into(&mut sum, srcs, cache, lts, &keys, scratch)
         })
         .unwrap_err();
         assert!(err.to_string().contains(reason), "expected {reason:?}, got: {err}");
+        assert_eq!(
+            matches!(
+                err.composition(),
+                Some(CKKSCompositionError::InvalidOperand {
+                    op: "ckks_eval_linear_transformation_sum_into",
+                    ..
+                })
+            ),
+            invalid_operand,
+            "{reason}: {err:?}"
+        );
         assert_eq!(snapshot::<BE, _>(&sum), before, "a rejected sum wrote dst ({reason})");
     };
-    let first = (&cts[0], &babies[0], &prepared[0]);
-    reject(&[], "has no terms");
+    let two = [&cts[0], &cts[1]];
+    reject(&[], &[], &[], "has no terms", true);
+    reject(&two, &[&babies[0]], &[&prepared[0], &prepared[1]], "differ in length", true);
     let empty: LinearTransformationPrepared<BE> = LinearTransformation {
         baby_steps: vec![0],
         giant_steps: Vec::new(),
     };
-    reject(&[(&cts[0], &babies[0], &empty)], "has no diagonals");
+    reject(&[&cts[0]], &[&babies[0]], &[&empty], "has no diagonals", true);
     let other_schedule = prepare_lt(
         module,
         &encode_lt(module, &params, &bs[1], 2 * n1, false, &mut scratch.borrow()),
         &mut scratch.borrow(),
     );
-    reject(&[first, (&cts[1], &babies[1], &other_schedule)], "giant schedule");
+    reject(
+        &two,
+        &[&babies[0], &babies[1]],
+        &[&prepared[0], &other_schedule],
+        "giant schedule",
+        true,
+    );
     let mut bad = prepare_lt(module, &lts[1], &mut scratch.borrow());
     let scale = bad.first_diagonal_plaintext().unwrap().log_scale();
     bad.set_log_scale(scale + 1);
     reject(
-        &[first, (&cts[1], &babies[1], &bad)],
+        &two,
+        &[&babies[0], &babies[1]],
+        &[&prepared[0], &bad],
         "diagonal layout, width, scale and slot kind",
+        true,
     );
     // Only a later diagonal differs, which core's first-diagonal check misses.
     bad.set_log_scale(scale);
     bad.giant_steps.last_mut().unwrap().diagonals[0]
         .plaintext
         .set_log_scale(scale + 1);
-    reject(&[first, (&cts[1], &babies[1], &bad)], "not uniform");
+    reject(&two, &[&babies[0], &babies[1]], &[&prepared[0], &bad], "not uniform", false);
     let narrow = alloc_ct(&params, module, params.k - params.base2k);
-    reject(&[first, (&narrow, &babies[1], &prepared[1])], "source layout and scale");
+    reject(
+        &[&cts[0], &narrow],
+        &[&babies[0], &babies[1]],
+        &[&prepared[0], &prepared[1]],
+        "source layout and scale",
+        true,
+    );
+    // Core reads the sources through their caches: one built from a narrower source is rejected here, not there.
+    let narrow_babies = LinearTransformationBabySteps::alloc(module, prepared[1].baby_steps(), &narrow);
+    reject(
+        &two,
+        &[&babies[0], &narrow_babies],
+        &[&prepared[0], &prepared[1]],
+        "baby-step cache layout",
+        true,
+    );
     let no_babies = LinearTransformationBabySteps::alloc(module, &[0], &cts[1]);
     reject(
-        &[first, (&cts[1], &no_babies, &prepared[1])],
+        &two,
+        &[&babies[0], &no_babies],
+        &[&prepared[0], &prepared[1]],
         "missing prepared baby-step rotation",
+        false,
     );
 }
 

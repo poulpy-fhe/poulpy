@@ -292,6 +292,18 @@ impl CoeffsMeta {
     pub fn log_budget(&self) -> usize {
         usize::from(self.k).saturating_sub(self.log_delta())
     }
+
+    /// `InvalidOperand` for a zero torus width, which every plan encoder rejects before allocating anything: an
+    /// operand without a limb would panic in the encoder, after its allocation.
+    pub(crate) fn ensure_width(&self, op: &'static str) -> Result<(), CKKSCompositionError> {
+        if self.k.as_usize() == 0 {
+            return Err(CKKSCompositionError::InvalidOperand {
+                op,
+                reason: "the operands' torus width, k, is 0".into(),
+            });
+        }
+        Ok(())
+    }
 }
 
 /// Narrowing conversion: keeps `k` and the [`GLWEPlaintextMeta`], drops the ring/radix

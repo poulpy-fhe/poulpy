@@ -30,6 +30,8 @@ macro_rules! impl_cpu_ckks_defaults {
         ::poulpy_ckks::impl_ckks_copy_reference!($be);
         ::poulpy_ckks::impl_ckks_encryption_reference!($be);
         ::poulpy_ckks::impl_ckks_mul_reference!($be);
+        ::poulpy_ckks::impl_ckks_dot_product_reference!($be);
+        ::poulpy_ckks::impl_ckks_linear_transformation_reference!($be);
         ::poulpy_ckks::impl_ckks_neg_reference!($be);
         ::poulpy_ckks::impl_ckks_pow2_reference!($be);
         ::poulpy_ckks::impl_ckks_rotate_reference!($be);

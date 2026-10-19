@@ -398,7 +398,8 @@ impl_operations_delegate!(
         cnv_offset: usize,
         res: &mut R,
         res_k: crate::layouts::TorusPrecision,
-        pairs: &[(&A, &B)],
+        a: &[&A],
+        b: &[&B],
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -407,7 +408,7 @@ impl_operations_delegate!(
         B: GLWEToBackendRef<BE> + GLWEInfos,
         H: GetTensorKey<BE>,
     {
-        BE::glwe_mul_relinearize_sum(self, cnv_offset, res, res_k, pairs, tsk, scratch)
+        BE::glwe_mul_relinearize_sum(self, cnv_offset, res, res_k, a, b, tsk, scratch)
     }
 );
 
@@ -433,7 +434,8 @@ impl_operations_delegate!(
         cnv_offset: usize,
         res: &mut R,
         res_k: crate::layouts::TorusPrecision,
-        pairs: &[(&AP, &BP)],
+        a: &[&AP],
+        b: &[&BP],
         a_size: usize,
         a_k: crate::layouts::TorusPrecision,
         b_size: usize,
@@ -446,7 +448,7 @@ impl_operations_delegate!(
         BP: CnvPVecRToBackendRef<BE>,
         H: GetTensorKey<BE>,
     {
-        BE::glwe_mul_prepared_relinearize_sum(self, cnv_offset, res, res_k, pairs, a_size, a_k, b_size, b_k, tsk, scratch)
+        BE::glwe_mul_prepared_relinearize_sum(self, cnv_offset, res, res_k, a, b, a_size, a_k, b_size, b_k, tsk, scratch)
     },
     fn glwe_tensor_apply_prepared_tmp_bytes<R>(
         &self,

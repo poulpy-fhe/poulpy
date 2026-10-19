@@ -605,6 +605,8 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
                     }
                     let prep_r = prepared_pairs!(BR, r, [(&x_r, &y_r), (&y_r, &x_r), (&x_r, &x_r)]);
                     let prep_t = prepared_pairs!(BT, t, [(&x_t, &y_t), (&y_twin_t, &x_twin_t), (&x_t, &x_t)]);
+                    let prep_r: (Vec<_>, Vec<_>) = prep_r.iter().map(|(l, r)| (l, r)).unzip();
+                    let prep_t: (Vec<_>, Vec<_>) = prep_t.iter().map(|(l, r)| (l, r)).unzip();
                     for cnv_offset in [b, precision] {
                         let mut outs = std::collections::HashMap::new();
                         for &role in roles {
@@ -641,7 +643,8 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
                                             cnv_offset,
                                             $out,
                                             g.k,
-                                            &[($x, $y), ($y2, $x2), ($x, $x)],
+                                            &[$x, $y2, $x],
+                                            &[$y, $x2, $x],
                                             $key,
                                             &mut scratch.borrow(),
                                         ),
@@ -649,10 +652,8 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
                                             cnv_offset,
                                             $out,
                                             g.k,
-                                            &$prep[..if role == 5 { 1 } else { 3 }]
-                                                .iter()
-                                                .map(|(l, r)| (l, r))
-                                                .collect::<Vec<_>>(),
+                                            &$prep.0[..if role == 5 { 1 } else { 3 }],
+                                            &$prep.1[..if role == 5 { 1 } else { 3 }],
                                             size,
                                             g.k,
                                             size,

@@ -10,8 +10,8 @@
 //!
 //! Simple compositions of CKKS operations are crate-private derived defaults
 //! on these contracts. They call the selected constituent operations, so their
-//! overrides and scratch queries remain effective. Complete bootstrap, affine,
-//! dot-product, and linear-transformation pipelines are API-only compositions.
+//! overrides and scratch queries remain effective. Complete bootstrap and affine
+//! pipelines are API-only compositions.
 //!
 //! Scalar encoding and matrix-generation contracts preserve backend-resident
 //! interfaces. Reference implementations carry their own lower-layer or host
@@ -32,11 +32,13 @@ mod conjugate;
 mod copy;
 pub(crate) mod derived;
 mod dft;
+mod dot_product;
 mod encoding;
 mod encryption;
 mod eval_mod;
 mod fold;
 mod imag;
+mod linear_transformation;
 mod mul;
 mod neg;
 mod paco;
@@ -58,6 +60,7 @@ pub use conjugate::impl_ckks_conjugate_reference;
 pub use copy::CKKSCopyImpl;
 pub use copy::impl_ckks_copy_reference;
 pub use dft::{DFTImpl, DFTMatrixImpl, impl_ckks_dft_reference};
+pub use dot_product::{CKKSDotProductImpl, impl_ckks_dot_product_reference};
 pub use encoding::CKKSEncodingImpl;
 pub use encryption::CKKSEncryptionImpl;
 pub use encryption::impl_ckks_encryption_reference;
@@ -65,6 +68,7 @@ pub use eval_mod::{CKKSEvalModImpl, impl_ckks_eval_mod_reference};
 pub use fold::{CKKSFoldImpl, CKKSFoldLayoutImpl, impl_ckks_fold_reference};
 pub use imag::CKKSImagImpl;
 pub use imag::impl_ckks_imag_reference;
+pub use linear_transformation::{CKKSLinearTransformationImpl, impl_ckks_linear_transformation_reference};
 pub use mul::CKKSMulImpl;
 pub use mul::impl_ckks_mul_reference;
 pub use neg::CKKSNegImpl;

@@ -3,7 +3,7 @@ use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     GLWECopy, GLWEMulConst, GLWEMulPlain, GLWENormalize, GLWETensoring, ScratchArenaTakeCore, glwe_prepare_left,
-    glwe_prepare_right,
+    glwe_prepare_left_tmp_bytes, glwe_prepare_right, glwe_prepare_right_tmp_bytes,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextLayout, GLWETensorViewMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         ModuleCoreAlloc, TorusPrecision,
@@ -150,19 +150,13 @@ pub trait CKKSMulReference<BE: Backend> {
         )
     }
 
-    /// A GLWE shaped like `a`, to normalize it into, and the larger of the normalization's and the transform's
-    /// scratch: what `glwe_prepare_left` and `glwe_prepare_right` take.
+    /// What `glwe_prepare_left` and `glwe_prepare_right` take to prepare `a` on its own limbs.
     fn ckks_prepare_tmp_bytes_reference<A>(&self, a: &A) -> usize
     where
-        Self: GLWEBytesOf<BE> + GLWENormalize<BE> + Convolution<BE>,
+        Self: GLWEBytesOf<BE> + GLWENormalize<BE> + Convolution<BE> + Sized,
         A: GLWEInfos,
     {
-        let size = a.size();
-        BE::scratch_aligned(self.glwe_bytes_of_from_infos(a))
-            + self
-                .glwe_normalize_tmp_bytes()
-                .max(self.cnv_prepare_left_tmp_bytes(size, size))
-                .max(self.cnv_prepare_right_tmp_bytes(size, size))
+        glwe_prepare_left_tmp_bytes(self, a.size(), a).max(glwe_prepare_right_tmp_bytes(self, a.size(), a))
     }
 
     /// The bytes of a left operand of `infos` under `hint`: its convolution operand on `ceil(k / base2k)` limbs and
@@ -562,11 +556,11 @@ pub trait CKKSMulReference<BE: Backend> {
 /// Result metadata stamped on `dst` by [`tensor_mul_core`]: the checked budget
 /// and scale, plus the variant's sparsity rule (`None` leaves `dst`'s sparsity
 /// unchanged — squaring in place, where `min(dst, dst)` is the identity).
-struct MulStamp {
-    log_budget: usize,
-    log_delta: usize,
-    log_sparsity: Option<usize>,
-    slots: Option<SlotsKind>,
+pub(crate) struct MulStamp {
+    pub(crate) log_budget: usize,
+    pub(crate) log_delta: usize,
+    pub(crate) log_sparsity: Option<usize>,
+    pub(crate) slots: Option<SlotsKind>,
 }
 
 /// When [`tensor_mul_core`] stamps the result metadata relative to the
@@ -577,13 +571,14 @@ struct MulStamp {
 /// would leave the relinearized output empty. `_assign` variants stamp
 /// **after**: `dst` is also an operand read by `apply`, so its metadata must
 /// stay untouched until the tensoring has consumed it.
-enum StampOrder {
+pub(crate) enum StampOrder {
     BeforeApply,
     AfterApply,
 }
 
 /// Shared body of the five tensor-multiplication variants (`mul_into`,
-/// `mul_assign`, `mul_prepared_assign`, `square_into`, `square_assign`):
+/// `mul_assign`, `mul_prepared_assign`, `square_into`, `square_assign`) and of
+/// the dot products that relinearize once:
 /// stamp (per `order`), carve the tensor intermediate at `tensor_k`, run the
 /// variant's `apply` into it, stamp (per `order`), then relinearize into `dst`.
 ///
@@ -594,7 +589,7 @@ enum StampOrder {
 /// relinearized product into `dst` at the stamped width, reading `dst` first when
 /// `dst` is an operand, so `dst` is stamped after it whatever `order` says.
 #[allow(clippy::too_many_arguments)]
-fn tensor_mul_core<BE, M, Dst, T>(
+pub(crate) fn tensor_mul_core<BE, M, Dst, T>(
     module: &M,
     dst: &mut Dst,
     tsk: &T,

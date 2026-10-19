@@ -302,12 +302,17 @@ pub unsafe trait GLWETensoringImpl: Backend {
     /// reproduce
     /// [`GLWETensoringReference::glwe_mul_relinearize_sum_reference`](crate::reference::operations::GLWETensoringReference::glwe_mul_relinearize_sum_reference)
     /// bit for bit.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the two operand slices of a sum beside the product's operands"
+    )]
     fn glwe_mul_relinearize_sum<R, A, B, H>(
         module: &Module<Self>,
         cnv_offset: usize,
         res: &mut R,
         res_k: crate::layouts::TorusPrecision,
-        pairs: &[(&A, &B)],
+        a: &[&A],
+        b: &[&B],
         tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
@@ -340,7 +345,8 @@ pub unsafe trait GLWETensoringImpl: Backend {
         cnv_offset: usize,
         res: &mut R,
         res_k: crate::layouts::TorusPrecision,
-        pairs: &[(&AP, &BP)],
+        a: &[&AP],
+        b: &[&BP],
         a_size: usize,
         a_k: crate::layouts::TorusPrecision,
         b_size: usize,
@@ -955,7 +961,8 @@ macro_rules! impl_glwe_tensoring_reference {
                 cnv_offset: usize,
                 res: &mut R,
                 res_k: $crate::layouts::TorusPrecision,
-                pairs: &[(&A, &B)],
+                a: &[&A],
+                b: &[&B],
                 tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
@@ -965,7 +972,7 @@ macro_rules! impl_glwe_tensoring_reference {
                 H: $crate::layouts::GetTensorKey<$be>,
             {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_relinearize_sum_reference(
-                    module, cnv_offset, res, res_k, pairs, tsk, scratch,
+                    module, cnv_offset, res, res_k, a, b, tsk, scratch,
                 )
             }
 
@@ -992,7 +999,8 @@ macro_rules! impl_glwe_tensoring_reference {
                 cnv_offset: usize,
                 res: &mut R,
                 res_k: $crate::layouts::TorusPrecision,
-                pairs: &[(&AP, &BP)],
+                a: &[&AP],
+                b: &[&BP],
                 a_size: usize,
                 a_k: $crate::layouts::TorusPrecision,
                 b_size: usize,
@@ -1006,7 +1014,7 @@ macro_rules! impl_glwe_tensoring_reference {
                 H: $crate::layouts::GetTensorKey<$be>,
             {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_prepared_relinearize_sum_reference(
-                    module, cnv_offset, res, res_k, pairs, a_size, a_k, b_size, b_k, tsk, scratch,
+                    module, cnv_offset, res, res_k, a, b, a_size, a_k, b_size, b_k, tsk, scratch,
                 )
             }
 

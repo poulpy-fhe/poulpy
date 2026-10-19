@@ -484,19 +484,19 @@ where
         module.glwe_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch.borrow());
         lts.push(prepared);
     }
-    let terms: Vec<_> = babies.iter().zip(&lts).collect();
+    let (babies, lts): (Vec<_>, Vec<_>) = (babies.iter().collect(), lts.iter().collect());
 
     let mut single: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
-    module.glwe_eval_linear_transformation_into(base2k, &mut single, terms[0].0, terms[0].1, &keys, &mut scratch.borrow());
+    module.glwe_eval_linear_transformation_into(base2k, &mut single, babies[0], lts[0], &keys, &mut scratch.borrow());
     let mut one: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
-    module.glwe_eval_linear_transformation_sum_into(base2k, &mut one, &terms[..1], &keys, &mut scratch.borrow());
+    module.glwe_eval_linear_transformation_sum_into(base2k, &mut one, &babies[..1], &lts[..1], &keys, &mut scratch.borrow());
     assert_eq!(one, single, "a one-term sum is not the single linear transformation");
     assert!(one.is_canonical());
 
     let mut sum: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
-    module.glwe_eval_linear_transformation_sum_into(base2k, &mut sum, &terms, &keys, &mut scratch.borrow());
+    module.glwe_eval_linear_transformation_sum_into(base2k, &mut sum, &babies, &lts, &keys, &mut scratch.borrow());
     let mut want = single;
-    for &(cache, lt) in &terms[1..] {
+    for (&cache, &lt) in babies[1..].iter().zip(&lts[1..]) {
         let mut term: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
         module.glwe_eval_linear_transformation_into(base2k, &mut term, cache, lt, &keys, &mut scratch.borrow());
         module.glwe_add_assign(&mut want, &term);
@@ -508,7 +508,7 @@ where
     // per giant step for each term and for the sum, each with its rounding.
     let var_key_switch =
         atk_infos.var_noise_keyswitch(&ct_infos, &ct_infos, 0.5, 0.5, 0.0, DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE, 0.0);
-    let noise_max = 0.5 * ((terms.len() + 1) as f64 * plan.giant_steps.len() as f64 * var_key_switch).log2() + 1.0;
+    let noise_max = 0.5 * ((babies.len() + 1) as f64 * plan.giant_steps.len() as f64 * var_key_switch).log2() + 1.0;
     let noise_have = glwe_noise_checked(module, &sum, &pt_want, &sk_prepared, &mut scratch.borrow())
         .std()
         .log2();
@@ -577,7 +577,21 @@ pub fn test_glwe_linear_transformation_sum_rejects_no_terms<BE: crate::test_suit
     Module<BE>: GLWELinearTransformations<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    eval_without_keys(params, module, &[], true);
+    eval_without_keys(params, module, &[], &[], true);
+}
+
+/// A sum takes as many transforms as baby caches.
+pub fn test_glwe_linear_transformation_sum_rejects_unequal_lengths<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: GLWELinearTransformations<BE> + CnvPVecAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let (babies, lt) = direct_term(params, module, vec![0, 1], 1, 0, 1);
+    eval_without_keys(params, module, &[&babies, &babies], &[&lt], true);
 }
 
 /// A sum's first term needs a giant step.
@@ -593,7 +607,7 @@ pub fn test_glwe_linear_transformation_sum_rejects_first_term_without_giant_step
     let (babies_a, mut lt_a) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     let (babies_b, lt_b) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     lt_a.giant_steps.clear();
-    eval_without_keys(params, module, &[(&babies_a, &lt_a), (&babies_b, &lt_b)], true);
+    eval_without_keys(params, module, &[&babies_a, &babies_b], &[&lt_a, &lt_b], true);
 }
 
 /// A transform needs a giant step.
@@ -608,7 +622,7 @@ pub fn test_glwe_linear_transformation_rejects_no_giant_steps<BE: crate::test_su
 {
     let (babies, mut lt) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     lt.giant_steps.clear();
-    eval_without_keys(params, module, &[(&babies, &lt)], false);
+    eval_without_keys(params, module, &[&babies], &[&lt], false);
 }
 
 /// Every giant step of a transform needs a diagonal, checked before the
@@ -624,7 +638,7 @@ pub fn test_glwe_linear_transformation_rejects_empty_giant_step<BE: crate::test_
 {
     let (babies, mut lt) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     lt.giant_steps[1].diagonals.clear();
-    eval_without_keys(params, module, &[(&babies, &lt)], false);
+    eval_without_keys(params, module, &[&babies], &[&lt], false);
 }
 
 /// Every giant step of every summed transform needs a diagonal, checked
@@ -641,7 +655,7 @@ pub fn test_glwe_linear_transformation_sum_rejects_empty_giant_step<BE: crate::t
     let (babies_a, lt_a) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     let (babies_b, mut lt_b) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     lt_b.giant_steps[1].diagonals.clear();
-    eval_without_keys(params, module, &[(&babies_a, &lt_a), (&babies_b, &lt_b)], true);
+    eval_without_keys(params, module, &[&babies_a, &babies_b], &[&lt_a, &lt_b], true);
 }
 
 /// Every baby rotation a summed transform reads must be in its cache, checked
@@ -658,7 +672,7 @@ pub fn test_glwe_linear_transformation_sum_rejects_missing_baby_step<BE: crate::
     let (babies_a, lt_a) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     let (babies_b, mut lt_b) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     lt_b.giant_steps[1].diagonals[0].baby = 1;
-    eval_without_keys(params, module, &[(&babies_a, &lt_a), (&babies_b, &lt_b)], true);
+    eval_without_keys(params, module, &[&babies_a, &babies_b], &[&lt_a, &lt_b], true);
 }
 
 /// A summed transform's cache must hold the rotations it reads, checked before
@@ -675,7 +689,7 @@ pub fn test_glwe_linear_transformation_sum_rejects_empty_cache<BE: crate::test_s
     let (babies_a, lt_a) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     let (_, lt_b) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     let empty = LinearTransformationBabySteps::alloc(module, &[], &limbs_layout(params, module, 1, 1));
-    eval_without_keys(params, module, &[(&babies_a, &lt_a), (&empty, &lt_b)], true);
+    eval_without_keys(params, module, &[&babies_a, &empty], &[&lt_a, &lt_b], true);
 }
 
 /// Every giant step of a transform must start with a diagonal as wide as its
@@ -692,7 +706,7 @@ pub fn test_glwe_linear_transformation_rejects_uneven_giant_step_width<BE: crate
     let (babies, mut lt) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     let (_, mut wide) = direct_term(params, module, vec![0, 1], 2, 0, 1);
     std::mem::swap(&mut lt.giant_steps[1].diagonals, &mut wide.giant_steps[1].diagonals);
-    eval_without_keys(params, module, &[(&babies, &lt)], false);
+    eval_without_keys(params, module, &[&babies], &[&lt], false);
 }
 
 /// Every giant step of every summed transform must start with a diagonal as
@@ -711,7 +725,7 @@ pub fn test_glwe_linear_transformation_sum_rejects_uneven_giant_step_width<BE: c
     let (babies_b, mut lt_b) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     let (_, mut wide) = direct_term(params, module, vec![0, 1], 2, 0, 1);
     std::mem::swap(&mut lt_b.giant_steps[1].diagonals, &mut wide.giant_steps[1].diagonals);
-    eval_without_keys(params, module, &[(&babies_a, &lt_a), (&babies_b, &lt_b)], true);
+    eval_without_keys(params, module, &[&babies_a, &babies_b], &[&lt_a, &lt_b], true);
 }
 
 /// Sums a `Direct` transform over `[0, 1]`, with one-limb diagonals at scale 0
@@ -732,7 +746,7 @@ fn eval_mismatched_sum<BE: crate::test_suite::noise::TestBackend>(
 {
     let (babies_a, lt_a) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     let (babies_b, lt_b) = direct_term(params, module, indexes, pt_limbs, log_scale, ct_limbs);
-    eval_without_keys(params, module, &[(&babies_a, &lt_a), (&babies_b, &lt_b)], true);
+    eval_without_keys(params, module, &[&babies_a, &babies_b], &[&lt_a, &lt_b], true);
 }
 
 /// A `Direct` transform over `indexes` (giant steps at those rotations, each
@@ -763,13 +777,14 @@ where
     (babies, lt)
 }
 
-/// Evaluates the sum of `terms`, or its first term alone if `!sum`, into a
+/// Evaluates the sum of the terms `(babies[t], lts[t])`, or the first alone if `!sum`, into a
 /// one-limb `res`. There are no keys and no scratch, so a rejection must panic
 /// before any key is read or `res` is written.
 fn eval_without_keys<BE: crate::test_suite::noise::TestBackend>(
     params: &TestParams,
     module: &Module<BE>,
-    terms: &[(&LinearTransformationBabySteps<BE>, &LinearTransformationPrepared<BE>)],
+    babies: &[&LinearTransformationBabySteps<BE>],
+    lts: &[&LinearTransformationPrepared<BE>],
     sum: bool,
 ) where
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -783,10 +798,9 @@ fn eval_without_keys<BE: crate::test_suite::noise::TestBackend>(
     // Limb offset 1: a one-limb source by a one- or two-limb diagonal gives one product limb either way.
     let cnv_offset = 2 * params.base2k;
     if sum {
-        module.glwe_eval_linear_transformation_sum_into(cnv_offset, &mut res, terms, &keys, &mut scratch.borrow());
+        module.glwe_eval_linear_transformation_sum_into(cnv_offset, &mut res, babies, lts, &keys, &mut scratch.borrow());
     } else {
-        let (babies, lt) = terms[0];
-        module.glwe_eval_linear_transformation_into(cnv_offset, &mut res, babies, lt, &keys, &mut scratch.borrow());
+        module.glwe_eval_linear_transformation_into(cnv_offset, &mut res, babies[0], lts[0], &keys, &mut scratch.borrow());
     }
 }
 
