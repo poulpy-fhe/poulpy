@@ -97,8 +97,8 @@
 //!   `(-1)^floor(e/n) * X^(e mod n)`, with `0 <= e mod n < n`.
 //! - `tau_p(q)` is substitution `q(X^p)` in `R_n`, for odd `p`.
 //! - `plan.p` is the odd exponent supplied when an automorphism plan was made.
-//! - `rnd(x,k) = floor(x * 2^k + 1/2) / 2^k` rounds coefficient-wise to
-//!   precision `k`, with ties toward positive infinity.
+//! - `rnd(x,k)` rounds coefficient-wise to precision `k`, to the nearest
+//!   multiple of `2^-k`, with ties to the even multiple.
 //! - `canon(v,b,k,L)` is the unique column of `L` limbs canonical at radix
 //!   width `b` and precision `k` whose value is congruent coefficient-wise
 //!   to `rnd(v,k)` modulo 1, for `0 <= k <= L*b`.

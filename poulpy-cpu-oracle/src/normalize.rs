@@ -1,4 +1,4 @@
-use dashu_int::IBig;
+use dashu_int::{IBig, ops::BitTest};
 use poulpy_hal::layouts::{ZnxView, ZnxViewMut};
 
 fn integer(size: usize, base2k: usize, mut source: impl FnMut(usize) -> i128) -> IBig {
@@ -8,6 +8,18 @@ fn integer(size: usize, base2k: usize, mut source: impl FnMut(usize) -> i128) ->
         value = (value << base2k) + IBig::from(source(j));
     }
     value
+}
+
+/// `value / 2^drop` rounded to the nearest integer, ties to the even one.
+fn round_ties_even(value: IBig, drop: usize) -> IBig {
+    let floor = &value >> drop;
+    let rem = value - (&floor << drop);
+    let half = IBig::ONE << (drop - 1);
+    if rem > half || (rem == half && floor.bit(0)) {
+        floor + IBig::ONE
+    } else {
+        floor
+    }
 }
 
 fn digits(
@@ -29,7 +41,7 @@ fn digits(
         value <<= shift as usize;
     } else {
         let drop = (-shift) as usize;
-        value = (value + (IBig::ONE << (drop - 1))) >> drop;
+        value = round_ties_even(value, drop);
     }
     let active = k.div_ceil(base2k);
     let padding = active * base2k - k;
@@ -133,16 +145,21 @@ mod tests {
     }
 
     #[test]
-    fn rounding_ties_go_toward_positive_infinity() {
-        for (input, expected) in [(-3, -1), (-1, 0), (1, 1), (3, 2)] {
-            assert_eq!(normalize_digits(&[input], 5, 4, 4, 0), [expected, 0, 0]);
+    fn rounding_ties_go_to_even() {
+        // One bit dropped: round_even(x / 2).
+        for (input, expected) in [(-3, -2), (-1, 0), (1, 0), (3, 2), (5, 2), (7, 4)] {
+            assert_eq!(normalize_digits(&[input], 5, 4, 4, 0)[0], expected, "input {input}");
+        }
+        // Two bits dropped: round_even(x / 4); only remainder 2 is a tie.
+        for (input, expected) in [(2, 0), (6, 2), (10, 2), (14, 4), (1, 0), (3, 1), (5, 1), (7, 2)] {
+            assert_eq!(normalize_digits(&[input], 6, 4, 4, 0)[0], expected, "input {input}");
         }
     }
 
     #[test]
     fn partial_width_and_centered_carry() {
         assert_eq!(normalize_digits(&[3], 4, 4, 3, 0), [4, 0, 0]);
-        assert_eq!(normalize_digits(&[-3], 4, 4, 3, 0), [-2, 0, 0]);
+        assert_eq!(normalize_digits(&[-3], 4, 4, 3, 0), [-4, 0, 0]);
         assert_eq!(normalize_digits(&[8, 8], 4, 4, 8, 0), [-7, -8, 0]);
         assert_eq!(normalize_digits(&[15, 15], 4, 4, 8, 0), [0, -1, 0]);
         assert_eq!(normalize_digits(&[15, 15], 4, 4, 0, 0), [0, 0, 0]);
