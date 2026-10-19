@@ -1065,47 +1065,25 @@ where
 {
     let (m, n, d, hot) = (res.rows(), res.cols(), 1usize << log_d, PrepareHint::OneShot);
     let (b_first, b_shift) = right_maps(&ctx.maps, b_rep);
-    let a_unit = |blocks: &[SA]| UnitBlocks::alloc(module, layout_of(&blocks[0]), ctx.sigma(), ctx.rotate_cols(1), log_d, inner);
-    let b_unit = |blocks: &[SB]| UnitBlocks::alloc(module, layout_of(&blocks[0]), b_first, b_shift(1), log_d, inner);
-    // The terms of block row `i` of a hot `a`, and of block column `j` of a hot `b`, `l`-major, into `terms`.
-    let a_row = |blocks: &[SA],
-                 i: usize,
-                 unit: &mut UnitBlocks<BE>,
-                 terms: &mut Vec<CKKSPreparedLeft<BE>>,
-                 scratch: &mut ScratchArena<'_, BE>| {
+    // The terms of block row `i` of a hot `a`, and of block column `j` of a hot `b`, `l`-major.
+    let a_row = |blocks: &[SA], i: usize, scratch: &mut ScratchArena<'_, BE>| {
         let sources: Vec<_> = blocks[i * inner..(i + 1) * inner].iter().collect();
-        let (first, shift) = (ctx.sigma(), |k| ctx.rotate_cols(k));
-        fill_unit_terms(
+        let convert = |term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| module.ckks_prepare_left(term, hot, s);
+        new_unit_terms(
             module,
-            unit,
             &sources,
-            first,
-            shift,
+            log_d,
+            ctx.sigma(),
+            |k| ctx.rotate_cols(k),
             atk,
-            terms,
-            |term, s| module.ckks_prepare_left(term, hot, s),
-            |res, term, s| module.ckks_prepare_left_into(res, term, s),
+            convert,
             scratch,
         )
     };
-    let b_col = |blocks: &[SB],
-                 j: usize,
-                 unit: &mut UnitBlocks<BE>,
-                 terms: &mut Vec<CKKSPreparedRight<BE>>,
-                 scratch: &mut ScratchArena<'_, BE>| {
+    let b_col = |blocks: &[SB], j: usize, scratch: &mut ScratchArena<'_, BE>| {
         let sources: Vec<_> = (0..inner).map(|l| &blocks[l * n + j]).collect();
-        fill_unit_terms(
-            module,
-            unit,
-            &sources,
-            b_first,
-            b_shift,
-            atk,
-            terms,
-            |term, s| module.ckks_prepare_right(term, hot, s),
-            |res, term, s| module.ckks_prepare_right_into(res, term, s),
-            scratch,
-        )
+        let convert = |term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| module.ckks_prepare_right(term, hot, s);
+        new_unit_terms(module, &sources, log_d, b_first, b_shift, atk, convert, scratch)
     };
     let mut jkls =
         |i: usize, j: usize, lhs: &[&CKKSPreparedLeft<BE>], rhs: &[&CKKSPreparedRight<BE>], s: &mut ScratchArena<'_, BE>| {
@@ -1121,9 +1099,8 @@ where
             }
         }
         (Side::Hot(ab), Side::Cold(bt)) => {
-            let (mut unit, mut row) = (a_unit(ab), Vec::new());
             for i in 0..m {
-                a_row(ab, i, &mut unit, &mut row, scratch)?;
+                let row = a_row(ab, i, scratch)?;
                 let lhs: Vec<_> = row.iter().collect();
                 for j in 0..n {
                     jkls(i, j, &lhs, &cold_col(bt, j, inner, n, d), scratch)?;
@@ -1131,9 +1108,8 @@ where
             }
         }
         (Side::Cold(at), Side::Hot(bb)) => {
-            let (mut unit, mut col) = (b_unit(bb), Vec::new());
             for j in 0..n {
-                b_col(bb, j, &mut unit, &mut col, scratch)?;
+                let col = b_col(bb, j, scratch)?;
                 let rhs: Vec<_> = col.iter().collect();
                 for i in 0..m {
                     jkls(i, j, &cold_row(at, i, inner, d), &rhs, scratch)?;
@@ -1146,38 +1122,24 @@ where
             let la = limbs(layout_of(&ab[0]), ctx.sigma(), ctx.rotate_cols(1));
             let lb = limbs(layout_of(&bb[0]), b_first, b_shift(1));
             if (m - 1) * la <= (n - 1) * lb {
-                let mut unit = a_unit(ab);
-                let mut held = Vec::with_capacity(m);
-                for i in 0..m {
-                    held.push(Vec::new());
-                    a_row(ab, i, &mut unit, &mut held[i], scratch)?;
-                }
-                drop(unit);
+                let held = (0..m).map(|i| a_row(ab, i, scratch)).collect::<Result<Vec<_>>>()?;
                 let lhs: Vec<Vec<_>> = held.iter().map(|row| row.iter().collect()).collect();
-                let (mut unit, mut col) = (b_unit(bb), Vec::new());
                 for j in 0..n {
-                    b_col(bb, j, &mut unit, &mut col, scratch)?;
+                    let col = b_col(bb, j, scratch)?;
                     let rhs: Vec<_> = col.iter().collect();
                     for (i, lhs) in lhs.iter().enumerate() {
                         jkls(i, j, lhs, &rhs, scratch)?;
                     }
                 }
             } else {
-                let mut row = Vec::new();
-                a_row(ab, 0, &mut a_unit(ab), &mut row, scratch)?;
-                let mut unit = b_unit(bb);
-                let mut held = Vec::with_capacity(n);
-                for j in 0..n {
-                    held.push(Vec::new());
-                    b_col(bb, j, &mut unit, &mut held[j], scratch)?;
-                }
-                drop(unit);
+                let mut first = Some(a_row(ab, 0, scratch)?);
+                let held = (0..n).map(|j| b_col(bb, j, scratch)).collect::<Result<Vec<_>>>()?;
                 let rhs: Vec<Vec<_>> = held.iter().map(|col| col.iter().collect()).collect();
-                let mut unit = None;
                 for i in 0..m {
-                    if i > 0 {
-                        a_row(ab, i, unit.get_or_insert_with(|| a_unit(ab)), &mut row, scratch)?;
-                    }
+                    let row = match first.take() {
+                        Some(row) => row,
+                        None => a_row(ab, i, scratch)?,
+                    };
                     let lhs: Vec<_> = row.iter().collect();
                     for (j, rhs) in rhs.iter().enumerate() {
                         jkls(i, j, &lhs, rhs, scratch)?;
@@ -1335,11 +1297,10 @@ where
             let bytes = used.max_bytes(|key| prepare_tmp_bytes(module, a, first, &shift, key, PrepareHint::Reuse));
             assert_scratch(op, bytes, scratch);
             let row_terms = a.cols() << a.log_d();
-            let mut unit = UnitBlocks::alloc(module, layout_of(&a.blocks()[0]), first, shift(1), a.log_d(), a.cols());
             for (row, out) in a.blocks().chunks(a.cols()).zip(res.terms.chunks_mut(row_terms)) {
                 let sources: Vec<_> = row.iter().collect();
                 let emit = |t: usize, term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| convert(&mut out[t], term, s);
-                unit_terms(module, &mut unit, &sources, first, &shift, atk, emit, scratch)?;
+                unit_terms(module, &sources, a.log_d(), first, &shift, atk, emit, scratch)?;
             }
         }
     }
@@ -1348,51 +1309,20 @@ where
     Ok(())
 }
 
-/// The heap blocks of a unit's terms, allocated once for a side and refilled by every [`unit_terms`] of its units: the
-/// `first` (sigma or tau) results at the width `first` leaves, the `d - 1` shifts of each at the terms' width, and one
-/// block of the terms' layout for each result narrowed to its term `0`.
-struct UnitBlocks<BE: Backend> {
-    d: usize,
-    staged: Vec<CKKSCiphertextOwned<BE>>,
-    shifted: Vec<CKKSCiphertextOwned<BE>>,
-    narrowed: CKKSCiphertextOwned<BE>,
-}
-
-impl<BE: BlasMatIntraImpl> UnitBlocks<BE> {
-    /// The blocks of the terms of `sources` blocks of layout `block` through `first`, then the shift `shift`.
-    fn alloc(
-        module: &Module<BE>,
-        block: CKKSLayout,
-        first: &LinearTransformationPrepared<BE>,
-        shift: &LinearTransformationPrepared<BE>,
-        log_d: usize,
-        sources: usize,
-    ) -> Self {
-        let (staged, d) = (mapped_block(block, first), 1 << log_d);
-        let term = mapped_block(staged, shift);
-        Self {
-            d,
-            staged: alloc_blocks(module, &staged, sources),
-            shifted: alloc_blocks(module, &term, sources * (d - 1)),
-            narrowed: module.ckks_ciphertext_alloc_from_infos(&term),
-        }
-    }
-}
-
 /// `count` ciphertexts of layout `layout`.
 fn alloc_blocks<BE: BlasMatIntraImpl>(module: &Module<BE>, layout: &CKKSLayout, count: usize) -> Vec<CKKSCiphertextOwned<BE>> {
     (0..count).map(|_| module.ckks_ciphertext_alloc_from_infos(layout)).collect()
 }
 
-/// The terms of `sources`, blocks of one layout, through the map hook into `unit`, allocated for them: `S = first(s)`
-/// for every source, then `shift(k)` of every `S` for every `k` in `1..d`, then each `S` narrowed by `ckks_copy` into a
-/// block of the terms' layout, its term `0`. Each term is passed once to `emit` with its index, term `k` of source `t`
-/// at `t * d + k`.
+/// The terms of `sources`, blocks of one layout, through the map hook: `S = first(s)` for every source into a heap block
+/// at the width `first` leaves, then `shift(k)` of every `S` for every `k` in `1..d` into heap blocks of the terms' layout,
+/// then each `S` narrowed by `ckks_copy` into a block of the terms' layout, its term `0`, and dropped. Each term is passed
+/// once to `emit` with its index, term `k` of source `t` at `t * d + k`, then dropped.
 #[allow(clippy::too_many_arguments)]
 fn unit_terms<'c, BE, S, K>(
     module: &Module<BE>,
-    unit: &mut UnitBlocks<BE>,
     sources: &[&S],
+    log_d: usize,
     first: &LinearTransformationPrepared<BE>,
     shift: impl Fn(usize) -> &'c LinearTransformationPrepared<BE>,
     atk: &K,
@@ -1404,48 +1334,51 @@ where
     S: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
     K: GetAutomorphismKey<BE> + Sync,
 {
-    let d = unit.d;
-    BE::blas_map_blocks_impl(module, &mut unit.staged, sources, &[first], atk, scratch)?;
-    let (shifts, results): (Vec<_>, Vec<_>) = ((1..d).map(&shift).collect(), unit.staged.iter().collect());
-    BE::blas_map_blocks_impl(module, &mut unit.shifted, &results, &shifts, atk, scratch)?;
-    for (t, (s, shifted)) in unit.staged.iter().zip(unit.shifted.chunks(d - 1)).enumerate() {
-        module.ckks_copy(&mut unit.narrowed, s, scratch)?;
-        emit(t * d, &unit.narrowed, scratch)?;
-        for (k, shifted) in shifted.iter().enumerate() {
-            emit(t * d + k + 1, shifted, scratch)?;
+    let (block, d) = (layout_of(sources[0]), 1usize << log_d);
+    let staged = mapped_block(block, first);
+    let term = mapped_block(staged, shift(1));
+    let mut sigma = alloc_blocks(module, &staged, sources.len());
+    BE::blas_map_blocks_impl(module, &mut sigma, sources, &[first], atk, scratch)?;
+    let (shifts, results): (Vec<_>, Vec<_>) = ((1..d).map(&shift).collect(), sigma.iter().collect());
+    let mut shifted = alloc_blocks(module, &term, sigma.len() * (d - 1));
+    BE::blas_map_blocks_impl(module, &mut shifted, &results, &shifts, atk, scratch)?;
+    let mut shifted = shifted.into_iter();
+    for (t, s) in sigma.into_iter().enumerate() {
+        let mut narrowed = module.ckks_ciphertext_alloc_from_infos(&term);
+        module.ckks_copy(&mut narrowed, &s, scratch)?;
+        drop(s);
+        emit(t * d, &narrowed, scratch)?;
+        for (k, shifted) in shifted.by_ref().take(d - 1).enumerate() {
+            emit(t * d + k + 1, &shifted, scratch)?;
         }
     }
     Ok(())
 }
 
-/// [`unit_terms`] of `sources` into `terms`, in their order: a term `terms` holds is refilled by `into`, the others
-/// pushed by `new`.
+/// [`unit_terms`] of `sources`, each term converted once by `convert` into a new operand, in their order.
 #[allow(clippy::too_many_arguments)]
-fn fill_unit_terms<'c, BE, S, K, P>(
+fn new_unit_terms<'c, BE, S, K, P>(
     module: &Module<BE>,
-    unit: &mut UnitBlocks<BE>,
     sources: &[&S],
+    log_d: usize,
     first: &LinearTransformationPrepared<BE>,
     shift: impl Fn(usize) -> &'c LinearTransformationPrepared<BE>,
     atk: &K,
-    terms: &mut Vec<P>,
-    new: impl Fn(&CKKSCiphertextOwned<BE>, &mut ScratchArena<'_, BE>) -> Result<P>,
-    into: impl Fn(&mut P, &CKKSCiphertextOwned<BE>, &mut ScratchArena<'_, BE>) -> Result<()>,
+    convert: impl Fn(&CKKSCiphertextOwned<BE>, &mut ScratchArena<'_, BE>) -> Result<P>,
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
+) -> Result<Vec<P>>
 where
     BE: BlasMatIntraImpl + 'c,
     S: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
     K: GetAutomorphismKey<BE> + Sync,
 {
-    let emit = |t: usize, term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| match terms.get_mut(t) {
-        Some(res) => into(res, term, s),
-        None => {
-            terms.push(new(term, s)?);
-            Ok(())
-        }
+    let mut terms = Vec::with_capacity(sources.len() << log_d);
+    let emit = |_: usize, term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| {
+        terms.push(convert(term, s)?);
+        Ok(())
     };
-    unit_terms(module, unit, sources, first, shift, atk, emit, scratch)
+    unit_terms(module, sources, log_d, first, shift, atk, emit, scratch)?;
+    Ok(terms)
 }
 
 /// Scratch of a product by public matrices of blocks of layout `a` into blocks of layout `res`, `sources` blocks of `a`

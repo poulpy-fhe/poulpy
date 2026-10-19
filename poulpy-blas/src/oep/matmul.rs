@@ -45,8 +45,8 @@ use crate::layouts::{
 ///   shift maps the plan records. On the right, tau and psi^k, or, for a replicated `b`
 ///   ([`crate::layouts::replicated`], read from its label), [`BlasContext::tau_rep`] and
 ///   [`BlasContext::rotate_rows_rep`], all at the width `b.k - p`. Each term is converted once, by poulpy-ckks's
-///   `ckks_prepare_left_into` (`ckks_prepare_right_into`) or `ckks_prepare_left` (`ckks_prepare_right`), which give the
-///   same bits, on its `ceil(w / base2k)` limbs;
+///   `ckks_prepare_left_into` (`ckks_prepare_right_into`) in a preparation and `ckks_prepare_left`
+///   (`ckks_prepare_right`) in a product, on its `ceil(w / base2k)` limbs;
 /// - one JKLS kernel per block of `res`, [`crate::oep::BlasJklsImpl::blas_jkls_block_impl`], over its `K d` pairs of
 ///   terms `(a_il[k], b_lj[k])`, `l`-major: ascending `l`, then ascending `k` within each `l`, the order the one-pass
 ///   kernel sums them in, part of the bits on FFT; the kernel's `# Safety` fixes its circuit;
