@@ -13,6 +13,8 @@
 - **Breaking:** `VecZnxIdftApplyTmpA`, `HalVecZnxDftImpl::vec_znx_idft_apply_tmpa` and `test_vec_znx_idft_apply_tmpa` are removed; callers use `vec_znx_idft_apply` with `vec_znx_idft_apply_tmp_bytes` of scratch, which also removes the per-call allocation of the AVX-512 NTT4x30 and IFMA backends ([#339](https://github.com/poulpy-fhe/poulpy/issues/339)), and the default `vec_znx_idft_normalize_consume_tmp_bytes` covers that scratch.
 - The contract key `sparse` is renamed `embed`, the module `test_suite::sparse` becomes `test_suite::embed`, and the tests `test_vec_znx_sparse_add_sub`, `test_vec_znx_big_sparse_add_sub` and `test_convolution_sparse` become `test_vec_znx_embed_add_sub`, `test_vec_znx_big_embed_add_sub` and `test_convolution_embed`.
 - **Breaking:** `VecZnx::encode_vec_i64_strided`, `encode_vec_i128_strided`, `decode_vec_i64_strided` and `decode_vec_i128_strided` are removed; the dense forms take one value per coefficient.
+- **Breaking, behaviour:** normalization rounds ties to even instead of toward positive infinity (`rnd` in the HAL notation).
+  Ties of a few dropped exact bits no longer push every coefficient the same way; outputs change only at exact ties.
 
 ### CPU backends
 
@@ -69,7 +71,6 @@
   Every element goes through the same operations in the same order, so the transforms return the same bytes.
 - `vmp_apply_dft_to_dft_add` of the FFT64 backends, serial and Rayon, accumulates each block as it is computed, where it filled a zeroed scratch vector and added it afterwards.
   Its scratch shrinks to the one of `vmp_apply_dft_to_dft`.
-- **Fix:** `ZnxPortable::znx_normalize_middle_step` ignored its `OVERWRITE` parameter and always overwrote.
 - **Fix:** the encapsulated ModUp of the AVX2 and AVX-512 backends read a sparse-to-dense key view taken with `with_k_digit` above the stored `k_digit` as the stored matrix, and returned another ciphertext than the reference body; such a view now takes the reference body.
 - **Fix:** the NTT convolution apply kernels of the AVX2, AVX-512 and NEON backends checked the size of the result but not its column, and wrote past the buffer for a column past the last one; they now panic.
 - **Fix:** the convolution prepare of the NTT4x30 AVX2, AVX-512 and NEON backends gave each parallel task a mutable view of the whole column while the tasks of the other limbs of that column wrote to it; each task now writes only the rows of its limb.
@@ -86,6 +87,9 @@
   The oracle runs `blas_backend_test_suite!` and parity between its families, every other backend type registers parity against the oracle of its family (`NTT3x42` types against the `NTT4x30` oracles), and every conjugate-invariant type, the oracle's included, runs `blas_conjugate_invariant_test_suite!`.
 - Add the `blas_pipeline` example to `poulpy-cpu-portable` (`--features enable-blas`): it plans its keys from `BlasPlan` and `sum_galois_elements`, runs `blas_matmul`, `blas_transpose`, `blas_matmul_pt_right`, `blas_matmul_pt_left` and `blas_sum` on a batch of encrypted matrices and checks the result in the clear.
   It plans every layout from the output-layout queries and generates each key once, at the widest width it is looked up at.
+- **Breaking:** CPU backends normalize through one blocked kernel, `ZnxNormalize`, and take no normalization scratch: `vec_znx_normalize_tmp_bytes` and `vec_znx_big_normalize_tmp_bytes` return 0.
+  The traits `ZnxNormalize*Step*`, `ZnxNormalizeDigit`, `ZnxExtractDigitAddMul`, `I64NormalizeOps` and `I128NormalizeOps` with their kernel functions, `I128NormalizePlan`, the exported macro `rayon_forward_znx_const!`, `ntt4x30_vec_znx_big_normalize*_portable`, `vec_znx_lsh_assign_carry_bytes_portable` and the `carry` parameter of the public normalize entries are removed.
+  Out-of-tree CPU backends implement `ZnxNormalize`, whose default methods run the portable kernel.
 
 ### `poulpy-core`
 
@@ -188,9 +192,8 @@
   Polynomial evaluation prepares its giant steps under `Reuse`, as before, so its bits are unchanged.
 - `test_suite::parity::helpers`, `test_suite::parity::keys` and `test_suite::parity::layout` are public under `test-utils`, so downstream crates build parity tests from the same fixtures.
 - The scratch of the SHIP masking accumulation and mux-rotate covers `vec_znx_idft_apply_tmp_bytes`.
-- **Breaking:** normalization rounds ties to even instead of toward positive infinity (`rnd` in the HAL notation). Ties of a few dropped exact bits no longer push every coefficient the same way; outputs change only at exact ties.
-- `ckks_ci_trace` halves the trace with a plain normalization again; ties to even remove the first-slot bias it showed.
-- CPU backends normalize through one blocked kernel, `ZnxNormalize`, and take no normalization scratch: `vec_znx_normalize_tmp_bytes` and `vec_znx_big_normalize_tmp_bytes` return 0. The per-limb step kernel traits (`ZnxNormalize*Step*`, `I64NormalizeOps`, `I128NormalizeOps`) are removed.
+- **Fix:** the first-slot bias of `ckks_ci_trace`, and so of `ckks_unfold` of conjugate-invariant inputs, is gone: its halving is a normalization, which rounds ties to even.
+  The halving rounded every tie of both columns up, about `2^-34` at slot 0 for a degree-`2^16` ciphertext at scale `2^54`, against `2^-43` elsewhere.
 - The SHIP mux-rotate takes keys of any digit width: the rank-2 input shared by a group is laid out on the digit grid with `gadget_dft_apply`, and its scratch covers that operand.
   A group whose keys are not all whole-limb must share one digit width and count, and returns an error otherwise.
   The mux key generation takes the digit width in bits, and the mux test also runs widths below a limb, one bit past a limb and one bit short of two, and checks that a mixed group is rejected.
