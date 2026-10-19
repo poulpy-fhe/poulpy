@@ -1,3 +1,4 @@
+#![feature(portable_simd)]
 #![allow(clippy::too_many_arguments)]
 
 //! Portable CPU backend for the Poulpy lattice cryptography library.
@@ -7,7 +8,7 @@
 //! - [`FFT64Portable`]: scalar `f64` FFT arithmetic — see the [`fft64`] module.
 //! - [`NTT4x30Portable`]: scalar Q120 NTT arithmetic (CRT over four ~30-bit primes) — see the [`ntt4x30`] module.
 //!
-//! Both are portable across all CPU architectures, in plain scalar Rust, and
+//! Both are portable across all CPU architectures, in plain Rust (`std::simd` for normalization), and
 //! their scalar kernels, in [`kernels`], back the SIMD backends too.
 //!
 //! Both are generic over the ring, standard by default: [`FFT64CIPortable`] and [`NTT4x30CIPortable`]

@@ -2,7 +2,14 @@
 //! with ties to even. The driver walks blocks of coefficients through every limb with the
 //! carry, sticky and half bits in lanes, so rounding sees the exact dropped part.
 
-use std::marker::PhantomData;
+use std::{
+    marker::PhantomData,
+    simd::{
+        Simd,
+        cmp::SimdPartialEq,
+        num::{SimdInt, SimdUint},
+    },
+};
 
 use crate::layouts::{Backend, VecZnxShape};
 
@@ -54,6 +61,8 @@ impl<T> LimbsMut<T> {
 /// A source or carry word of the normalization kernel.
 pub trait NormalizeWord: Copy + Send + Sync + 'static {
     const ZERO: Self;
+    /// Block lanes of the [`ZnxNormalize`] default bodies.
+    type Lanes: NormalizeLanes<Word = Self>;
     /// Low 64 bits.
     fn low(self) -> i64;
     fn sra(self, k: u32) -> Self;
@@ -65,6 +74,7 @@ pub trait NormalizeWord: Copy + Send + Sync + 'static {
 
 impl NormalizeWord for i64 {
     const ZERO: Self = 0;
+    type Lanes = SimdLanes<8>;
     #[inline(always)]
     fn low(self) -> i64 {
         self
@@ -89,6 +99,7 @@ impl NormalizeWord for i64 {
 
 impl NormalizeWord for i128 {
     const ZERO: Self = 0;
+    type Lanes = PortableLanes<i128, 8>;
     #[inline(always)]
     fn low(self) -> i64 {
         self as i64
@@ -220,6 +231,81 @@ impl<S: NormalizeWord, const W: usize> NormalizeLanes for PortableLanes<S, W> {
     }
 }
 
+/// i64 words in `std::simd` vectors of `W` lanes.
+pub struct SimdLanes<const W: usize>;
+
+impl<const W: usize> NormalizeLanes for SimdLanes<W> {
+    const WIDTH: usize = W;
+    type Word = i64;
+    type N = Simd<i64, W>;
+    type W = Simd<i64, W>;
+
+    #[inline(always)]
+    unsafe fn load(p: *const i64) -> Self::W {
+        Simd::from_array(unsafe { p.cast::<[i64; W]>().read_unaligned() })
+    }
+    #[inline(always)]
+    unsafe fn store(p: *mut i64, x: Self::N) {
+        unsafe { p.cast::<[i64; W]>().write_unaligned(x.to_array()) }
+    }
+    #[inline(always)]
+    fn zero() -> Self::W {
+        Simd::splat(0)
+    }
+    #[inline(always)]
+    fn splat(x: i64) -> Self::N {
+        Simd::splat(x)
+    }
+    #[inline(always)]
+    fn add(x: Self::N, y: Self::N) -> Self::N {
+        x + y
+    }
+    #[inline(always)]
+    fn sub(x: Self::N, y: Self::N) -> Self::N {
+        x - y
+    }
+    #[inline(always)]
+    fn and(x: Self::N, y: Self::N) -> Self::N {
+        x & y
+    }
+    #[inline(always)]
+    fn or(x: Self::N, y: Self::N) -> Self::N {
+        x | y
+    }
+    #[inline(always)]
+    fn shl(x: Self::N, k: u32) -> Self::N {
+        x << k as i64
+    }
+    #[inline(always)]
+    fn srl(x: Self::N, k: u32) -> Self::N {
+        (x.cast::<u64>() >> k as u64).cast::<i64>()
+    }
+    #[inline(always)]
+    fn sra(x: Self::N, k: u32) -> Self::N {
+        x >> k as i64
+    }
+    #[inline(always)]
+    fn ne_zero(x: Self::N) -> Self::N {
+        -x.simd_ne(Simd::splat(0)).to_simd()
+    }
+    #[inline(always)]
+    fn wide_add(x: Self::W, y: Self::W) -> Self::W {
+        x + y
+    }
+    #[inline(always)]
+    fn wide_add_n(x: Self::W, y: Self::N) -> Self::W {
+        x + y
+    }
+    #[inline(always)]
+    fn wide_sra(x: Self::W, k: u32) -> Self::W {
+        x >> k as i64
+    }
+    #[inline(always)]
+    fn wide_low(x: Self::W) -> Self::N {
+        x
+    }
+}
+
 /// The normalization kernel of a backend. Every CPU backend word is `i64`; its big word is
 /// `i64` or `i128`.
 pub trait ZnxNormalize: Backend<ZnxWord = i64, BigWord: NormalizeWord> {
@@ -237,7 +323,7 @@ pub trait ZnxNormalize: Backend<ZnxWord = i64, BigWord: NormalizeWord> {
         len: usize,
     ) {
         unsafe {
-            normalize_blocked_portable::<PortableLanes<i64, 8>, PortableLanes<i64, 1>>(
+            normalize_blocked_portable::<<i64 as NormalizeWord>::Lanes, PortableLanes<i64, 1>>(
                 res, res_base2k, res_k, offset, a, a_base2k, len,
             )
         }
@@ -257,7 +343,7 @@ pub trait ZnxNormalize: Backend<ZnxWord = i64, BigWord: NormalizeWord> {
         len: usize,
     ) {
         unsafe {
-            normalize_blocked_portable::<PortableLanes<Self::BigWord, 8>, PortableLanes<Self::BigWord, 1>>(
+            normalize_blocked_portable::<<Self::BigWord as NormalizeWord>::Lanes, PortableLanes<Self::BigWord, 1>>(
                 res, res_base2k, res_k, offset, a, a_base2k, len,
             )
         }
