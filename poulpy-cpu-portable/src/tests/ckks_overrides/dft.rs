@@ -192,6 +192,9 @@ fn checked_dft_construction_preserves_exact_encoded_width() {
         fn lt_slots(&self) -> poulpy_ckks::SlotsKind {
             poulpy_ckks::SlotsKind::Complex
         }
+        fn lt_log_sparsity(&self, log_n: usize) -> usize {
+            log_n.saturating_sub(self.log_n())
+        }
     }
     let module = Module::<FFT64Portable>::new(64);
     let plan = DFTPlan::new(

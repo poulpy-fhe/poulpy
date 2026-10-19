@@ -416,6 +416,10 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::errors::test_encode_linear_transformation_zero_k_error
             );
             run_test!(
+                encode_linear_transformation_into,
+                $crate::test_suite::errors::test_encode_linear_transformation_into
+            );
+            run_test!(
                 encode_bsgs_zero_k_error,
                 $crate::test_suite::errors::test_encode_bsgs_zero_k_error
             );
