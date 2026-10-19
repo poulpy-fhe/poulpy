@@ -282,9 +282,9 @@ struct SameBase {
 }
 
 impl SameBase {
-    /// `a + carry` fits the word: `b >= 2` keeps `|carry|` below half the domain bound on `|a|`.
+    /// With `|a| <= 2^62`, `a + carry` and `t + 2^(b-1)` fit an i64 when `2 <= b <= 62`: `|carry| < 2^61`, `2^(b-1) <= 2^61`.
     fn whole(&self) -> bool {
-        self.lsh == 0 && self.base >= 2
+        self.lsh == 0 && (2..=62).contains(&self.base)
     }
 }
 
@@ -567,6 +567,7 @@ unsafe fn cross_block<L: NormalizeLanes>(g: &Cross, res: LimbsMut<i64>, a: Limbs
 
 /// Writes `canon(a * 2^offset, res_base2k, res_k, res.size)` over `len` coefficients, ties
 /// to even, with lanes `L` and the last `len % L::WIDTH` coefficients with `T`.
+/// Every source coefficient is bounded by `|a| <= 2^62` on i64 words and `|a| <= 2^126` on i128 words.
 ///
 /// # Safety
 /// Every limb of `res` and `a` is valid for `len` coefficients. `res` overlaps `a` only as the
@@ -1030,7 +1031,7 @@ mod tests {
         let Plan::Same(g) = plan(b, k, offset, a.len(), b) else {
             panic!("b={b} k={k} offset={offset}: not a same-base plan")
         };
-        assert_eq!(g.whole(), b >= 2, "b={b} offset={offset}");
+        assert_eq!(g.whole(), (2..=62).contains(&b), "b={b} offset={offset}");
         let general = layout(a, size, |res, src, n| unsafe {
             same_base::<PortableLanes<S, 8>, PortableLanes<S, 1>, false>(&g, res, src, n)
         });
@@ -1044,7 +1045,7 @@ mod tests {
     #[test]
     fn whole_limb_fast_path_matches_split_path() {
         let mut state = 0x2545_f491_4f6c_dd1du64;
-        for b in [1usize, 2, 62] {
+        for b in [1usize, 2, 62, 63] {
             let limbs: Vec<Vec<i64>> = (0..3)
                 .map(|_| {
                     (0..11)
