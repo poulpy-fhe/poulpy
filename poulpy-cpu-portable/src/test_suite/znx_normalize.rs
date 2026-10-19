@@ -67,11 +67,14 @@ pub fn test_znx_normalize<BE: ZnxNormalize>() {
             let limbs: Vec<Vec<i128>> = (0..a_size)
                 .map(|j| {
                     (0..N)
-                        .map(|i| match i % 5 {
+                        .map(|i| match i % 7 {
                             0 if j + 1 == a_size => 1i64 << (ka - 1),
                             1 if j + 1 == a_size => -(1i64 << (ka - 1)),
                             2 if j + 1 == a_size => (1i64 << (ka - 1)) + 1,
                             3 => (i as i64 - 9) << 58,
+                            // The input bound on every limb: the largest carries the kernel must hold.
+                            4 => 1i64 << 62,
+                            5 => -(1i64 << 62),
                             _ => next() >> 1,
                         } as i128)
                         .collect()
