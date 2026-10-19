@@ -741,7 +741,6 @@ fn normalize_exact<F: FnMut(usize) -> i128, G: FnMut(usize, i64)>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_suite::znx_normalize::oracle;
 
     /// `f(res, a, n)` on `a` laid out limb by limb; returns the `size` output limbs per coefficient.
     fn layout<S: NormalizeWord>(a: &[Vec<S>], size: usize, f: impl FnOnce(LimbsMut<i64>, Limbs<S>, usize)) -> Vec<Vec<i64>> {
@@ -769,123 +768,6 @@ mod tests {
         layout(a, size, |res, src, n| unsafe {
             normalize_blocked_portable::<PortableLanes<S, 8>, PortableLanes<S, 1>>(res, kr, k, offset, src, ka, n)
         })
-    }
-
-    fn check(a: &[Vec<i128>], ka: usize, kr: usize, k: usize, size: usize, offset: i64) {
-        let column = |i: usize| a.iter().map(|limb| limb[i]).collect::<Vec<_>>();
-        let have = run::<i128>(a, ka, kr, k, size, offset);
-        for (i, got) in have.iter().enumerate() {
-            assert_eq!(
-                *got,
-                oracle(&column(i), ka, kr, k, size, offset),
-                "i128 a={:?} ka={ka} kr={kr} k={k} size={size} offset={offset}",
-                column(i)
-            );
-        }
-        if a.iter().flatten().all(|&x| i64::try_from(x).is_ok()) {
-            let a64: Vec<Vec<i64>> = a.iter().map(|l| l.iter().map(|&x| x as i64).collect()).collect();
-            let have = run::<i64>(&a64, ka, kr, k, size, offset);
-            for (i, got) in have.iter().enumerate() {
-                assert_eq!(
-                    *got,
-                    oracle(&column(i), ka, kr, k, size, offset),
-                    "i64 a={:?} ka={ka} kr={kr} k={k} size={size} offset={offset}",
-                    column(i)
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn ties_go_to_even_at_every_dropped_width() {
-        for b in [3usize, 4, 17, 50, 62] {
-            for a_size in 1..=3usize {
-                for drop in 1..(a_size * b).min(b + 4) {
-                    let k = a_size * b - drop;
-                    for q in [-3i128, -2, -1, 0, 1, 2, 3, 6, 7] {
-                        // Below, at and above the tie `q + 1/2` at `drop` dropped bits.
-                        let values: Vec<i128> = (0..11i128).map(|t| (q << drop) + (1i128 << (drop - 1)) + t % 3 - 1).collect();
-                        let limbs: Vec<Vec<i128>> = (0..a_size)
-                            .map(|j| {
-                                let shift = (a_size - 1 - j) * b;
-                                values
-                                    .iter()
-                                    .map(|&v| {
-                                        if j == 0 {
-                                            v >> shift
-                                        } else {
-                                            (v >> shift) & ((1i128 << b) - 1)
-                                        }
-                                    })
-                                    .collect()
-                            })
-                            .collect();
-                        for kr in [b, (b + 2).min(63), b.max(2) - 1] {
-                            for size in [k.div_ceil(kr), k.div_ceil(kr) + 1] {
-                                check(&limbs, b, kr, k, size, 0);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn matches_oracle_on_mixed_inputs() {
-        let mut state = 0x9e37_79b9_7f4a_7c15u64;
-        let mut next = move || {
-            state ^= state << 13;
-            state ^= state >> 7;
-            state ^= state << 17;
-            state
-        };
-        for (ka, kr) in [
-            (17, 17),
-            (50, 50),
-            (62, 62),
-            (1, 1),
-            (17, 19),
-            (51, 50),
-            (62, 1),
-            (1, 62),
-            (19, 17),
-        ] {
-            for a_size in [1usize, 3] {
-                let limbs: Vec<Vec<i128>> = (0..a_size)
-                    .map(|_| {
-                        (0..11)
-                            .map(|t| match t % 4 {
-                                0 => -(1i128 << 62),
-                                1 => 1i128 << 62,
-                                _ => (next() as i64 >> 1) as i128,
-                            })
-                            .collect()
-                    })
-                    .collect();
-                for size in [1usize, 3] {
-                    let mut ks = vec![0, 1, kr - 1, kr, size * kr / 2, size * kr - 1, size * kr];
-                    ks.sort_unstable();
-                    ks.dedup();
-                    for k in ks {
-                        for offset in [
-                            -(ka as i64) - 1,
-                            -(ka as i64),
-                            -1,
-                            0,
-                            1,
-                            ka as i64,
-                            -300,
-                            300,
-                            i64::MIN,
-                            i64::MAX,
-                        ] {
-                            check(&limbs, ka, kr, k, size, offset);
-                        }
-                    }
-                }
-            }
-        }
     }
 
     /// The driver against the forced split path, same base, offset a whole number of limbs.
@@ -934,21 +816,6 @@ mod tests {
                         pin_whole_limbs(&limbs, b, k, size, offset);
                         pin_whole_limbs(&wide, b, k, size, offset);
                     }
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn wide_sources_match_oracle() {
-        for (ka, kr) in [(50, 50), (62, 62), (52, 50)] {
-            let limbs: Vec<Vec<i128>> = vec![
-                (0..11).map(|t| (1i128 << 120) - 7 * t).collect(),
-                (0..11).map(|t| -(1i128 << 100) + t).collect(),
-            ];
-            for k in [1, kr, 2 * kr - 1, 2 * kr] {
-                for offset in [-(ka as i64), 0, 3] {
-                    check(&limbs, ka, kr, k, 2, offset);
                 }
             }
         }
