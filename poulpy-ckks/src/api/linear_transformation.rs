@@ -35,12 +35,12 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos},
+    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, TorusPrecision},
     reference::linear_transformation::DiagonalProd,
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use crate::{CKKSCtBounds, SetCKKSInfos, SlotsKind};
+use crate::{CKKSCtBounds, CKKSLayout, SetCKKSInfos, SlotsKind};
 
 pub use poulpy_core::{
     LinearTransformation, LinearTransformationBabySteps, LinearTransformationDiagonal as Diagonal,
@@ -69,6 +69,37 @@ pub trait LtDiagonalMeta {
 
     /// Slot kind of the diagonal plaintext.
     fn lt_slots(&self) -> SlotsKind;
+
+    /// Sparsity the diagonal plaintext imposes on its product with a ciphertext of degree `2^log_n`: `log2` of the
+    /// ratio of that degree to the one the diagonal is dense at.
+    fn lt_log_sparsity(&self, log_n: usize) -> usize;
+}
+
+/// Torus width of the result of [`CKKSLinearTransformationOps::ckks_eval_linear_transformation_into`] evaluating `lt`
+/// from a ciphertext of width `src_k` into one of width `dst_k`, when it evaluates: the diagonals' scale comes off the
+/// source, capped at the destination. Baby-step keys are looked up at `src_k`, giant-step keys at this width.
+pub fn ckks_linear_transformation_output_k<P: LtDiagonalMeta>(
+    lt: &LinearTransformation<P>,
+    src_k: TorusPrecision,
+    dst_k: TorusPrecision,
+) -> TorusPrecision {
+    let scale = lt.first_diagonal_plaintext().map_or(0, LtDiagonalMeta::lt_log_scale);
+    src_k.as_usize().saturating_sub(scale).min(dst_k.as_usize()).into()
+}
+
+/// Layout of that result from a ciphertext of layout `src`: `src` at [`ckks_linear_transformation_output_k`], its
+/// slots joined with the diagonals', sparse where both are.
+pub fn ckks_linear_transformation_output_layout<P: LtDiagonalMeta>(
+    lt: &LinearTransformation<P>,
+    mut src: CKKSLayout,
+    dst_k: TorusPrecision,
+) -> CKKSLayout {
+    src.glwe_layout.k = ckks_linear_transformation_output_k(lt, src.k(), dst_k);
+    if let Some(diagonal) = lt.first_diagonal_plaintext() {
+        src.meta.slots = src.meta.slots.join(diagonal.lt_slots());
+        src.meta.log_sparsity = src.meta.log_sparsity.min(diagonal.lt_log_sparsity(src.log_n()));
+    }
+    src
 }
 
 /// Homomorphic evaluation of a [`LinearTransformation`] on a CKKS ciphertext.

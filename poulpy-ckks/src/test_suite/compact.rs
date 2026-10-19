@@ -4,17 +4,19 @@
 
 use std::collections::HashMap;
 
-use poulpy_core::layouts::{Diagonals, Evaluate, LWEInfos, LinearTransformationStrategy};
+use poulpy_core::layouts::{
+    Diagonals, Evaluate, GLWEInfos, GLWEPlaintextInfos, LWEInfos, LinearTransformationStrategy, SetGLWEPlaintextInfos,
+};
 use poulpy_hal::{
     api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchAvailable, ScratchOwnedBorrow, VecZnxSwitchRing},
     layouts::{Backend, CyclotomicOrder, HostBytesBackend, Module, ScratchArena, Standard},
 };
 
 use crate::{
-    CKKSInfos, SetCKKSInfos,
+    CKKSInfos, CKKSLayout, SetCKKSInfos,
     api::{
         CKKSAddOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSSubOps,
-        LinearTransformation, LinearTransformationPrepared,
+        LinearTransformation, LinearTransformationPrepared, ckks_linear_transformation_output_layout,
     },
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
     test_suite::{
@@ -387,9 +389,17 @@ pub fn test_compact_linear_transformation<BE, F, E>(
     );
     module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch.borrow());
     let mut ct_out = alloc_ct(&params, module, params.k);
+    // A stale label on `dst` is overwritten: the dense source makes the result dense.
+    ct_out.set_log_sparsity(1);
     module
         .ckks_eval_linear_transformation_self_into(&mut ct_out, &ct, &prepared, &atks, &mut scratch.borrow())
         .unwrap();
+    let src_layout = CKKSLayout {
+        glwe_layout: ct.glwe_layout(),
+        meta: ct.meta(),
+    };
+    let predicted = ckks_linear_transformation_output_layout(&prepared, src_layout, ct_out.k());
+    assert_eq!((ct_out.log_sparsity(), predicted.log_sparsity()), (0, 0), "compact_lt_label");
     assert_decrypt_precision(
         "compact_lt_prepared",
         &params,

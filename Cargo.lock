@@ -581,6 +581,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "poulpy-blas"
+version = "0.9.0"
+dependencies = [
+ "anyhow",
+ "byteorder",
+ "num-traits",
+ "poulpy-ckks",
+ "poulpy-core",
+ "poulpy-hal",
+]
+
+[[package]]
 name = "poulpy-ckks"
 version = "0.9.0"
 dependencies = [

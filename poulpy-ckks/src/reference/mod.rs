@@ -41,7 +41,9 @@ pub use dft::gen_dft_matrices;
 pub use dot_product::CKKSDotProductReference;
 pub use eval_mod::CKKSEvalModOpsReference;
 pub use linear_transformation::CKKSLinearTransformationReference;
-pub use linear_transformation_diagonals::ckks_encode_linear_transformation_from_diagonals;
+pub use linear_transformation_diagonals::{
+    ckks_encode_linear_transformation_from_diagonals, ckks_encode_linear_transformation_into,
+};
 pub use plaintext::CKKSPlaintextReference;
 pub use polynomial_evaluation::PolynomialEvaluationReference;
 pub use sub::CKKSSubReference;

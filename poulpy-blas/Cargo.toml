@@ -1,0 +1,21 @@
+[package]
+name = "poulpy-blas"
+version = "0.9.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Backend-agnostic encrypted matrix arithmetic (JKLS) on poulpy-ckks"
+repository = "https://github.com/poulpy-fhe/poulpy"
+homepage = "https://github.com/poulpy-fhe/poulpy"
+documentation = "https://docs.rs/poulpy-blas"
+
+[features]
+# Compiles the exported test suite for backend crates, which enable it from their dev-dependencies.
+test-utils = ["poulpy-ckks/test-utils"]
+
+[dependencies]
+poulpy-hal = {workspace = true}
+poulpy-core = {workspace = true}
+poulpy-ckks = {workspace = true}
+anyhow = {workspace = true}
+byteorder = {workspace = true}
+num-traits = {workspace = true}
