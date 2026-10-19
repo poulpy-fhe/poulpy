@@ -1,4 +1,4 @@
-use poulpy_ckks::CKKSResult as Result;
+use poulpy_ckks::{CKKSResult as Result, oep::CKKSMulImpl};
 use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey, GetTensorKey};
 use poulpy_hal::layouts::{Backend, Module, PrepareHint, ScratchArena};
 
@@ -8,41 +8,34 @@ use crate::layouts::{
     Left,
 };
 
-/// Extension point of [`crate::api::BlasMatMulOps`]: the prepared operands, the preparations, the prepared product and
-/// the products by public matrices, on the right and on the left, are required, and `blas_matmul` is provided over the
-/// preparations and the prepared product.
+/// Extension point of [`crate::api::BlasMatMulOps`]: the preparations, the prepared product and the products by public
+/// matrices, on the right and on the left, are required, and `blas_matmul` is provided over the preparations and the
+/// prepared product.
 ///
 /// # Safety
 ///
-/// Every required method reproduces its `_reference` counterpart in `reference::BlasMatMulReference` bit for
-/// bit, digits and CKKS metadata, within the scratch the matching `_tmp_bytes_impl` reports; with less, it panics
-/// before any write to `res` when it looks up a key, as the reference does.
+/// Every required method reproduces its `_reference` counterpart in `reference::BlasMatMulReference` bit for bit,
+/// digits and CKKS metadata, within the scratch the matching `_tmp_bytes_impl` reports; with less, it panics before any
+/// write to `res` when it looks up a key, as the reference does. The memory, layout and aliasing rules of
+/// `poulpy-hal/docs/backend_safety_contract.md` apply.
 ///
 /// **Prepared operands.** A backend does not choose their type: [`BlasMatMulLeft`] and [`BlasMatMulRight`] are
-/// [`crate::layouts::BlasMatMulOperand`]s of poulpy-ckks ciphertexts and prepared terms, whose storage is the
-/// backend's. That storage is crate-private, so a backend outside poulpy-blas forwards the allocations, the
-/// preparations and the prepared product to `BlasMatMulReference`. The allocations,
-/// [`Self::blas_matmul_left_alloc_from_infos_impl`] and [`Self::blas_matmul_right_alloc_from_infos_impl`], make one of
-/// [`BlasMatMulOperandInfos`] holding all its storage, which reports those infos and the batch `0`; the
-/// `_bytes_of_from_infos_impl` queries give the bytes it holds; the preparations fill it, with no allocation of its
-/// storage, from a source whose infos have its shape (the validator checks the hint, the dimensions and the GLWE
-/// layouts, not the metadata), under the [`PrepareHint`] it was allocated under: hot, `OneShot`, for one product, or
-/// cold, `Reuse`, for many, and return poulpy-ckks's budget error before any write to it, which a cold preparation
-/// evaluates through heap working blocks. An operand reports the infos of its latest preparation: prepared from `a`, it
-/// reports its hint, `a`'s block layout as its source, `a`'s dimensions, `Some` of `a`'s batch,
-/// [`grid_batch::<Self::Ring>(a)`](crate::layouts::grid_batch), which reads the batch of an input without a record from
-/// its label, and as its block layout `a`'s when hot, the layout `reference::blas_matmul_left_term_layout`
-/// (`reference::blas_matmul_right_term_layout` on the right) gives under the preparation's `ctx` when cold:
-/// `reference::blas_matmul_left_operand_layout` and `reference::blas_matmul_right_operand_layout` give
-/// these infos before preparing. The `_prepared` validator, the batch the prepared product records and the provided
-/// `blas_matmul` query read nothing else. The terms of a cold operand are those of the preparation's `ctx`; those of a
-/// hot operand are those of the `ctx` of the product it enters, whatever the context it was prepared under, at whatever
-/// scale: the product evaluates its maps, which spend their scale from the operand's budget, and stamps by the ct x ct
-/// rule. So a hot operand holds a copy of its source's live limbs. The prepared product of two operands, of any hints,
-/// equals the reference's on the reference's operands of the same sources and hints under the same contexts, and so
-/// `blas_matmul` of the sources when every side is hot or prepared under the product's `ctx`. A cold preparation looks
-/// up the rotation keys of its terms and a hot one none, after its validator checked them under either hint; the
-/// prepared product looks up those of each hot side's terms under its `ctx`, and the tensor key.
+/// [`BlasMatMulOperand`](crate::layouts::BlasMatMulOperand)s of the backend's poulpy-ckks ciphertexts and prepared
+/// terms, which [`BlasMatMulOperandPreparedFactory`](crate::layouts::BlasMatMulOperandPreparedFactory) allocates. A
+/// preparation fills one through its `blocks_mut` or `terms_mut`, with no allocation of its storage, from a source
+/// whose infos have its shape (the validator checks the hint, the dimensions and the GLWE layouts, not the metadata),
+/// under its hint, and returns poulpy-ckks's budget error before any write to it, which a cold preparation evaluates
+/// through heap working blocks. It then records with `set_prepared` the infos
+/// [`blas_matmul_left_operand_layout`](crate::layouts::blas_matmul_left_operand_layout)
+/// ([`blas_matmul_right_operand_layout`](crate::layouts::blas_matmul_right_operand_layout)) gives for its source under
+/// the preparation's `ctx`, and the source's batch, [`grid_batch::<Self::Ring>(a)`](crate::layouts::grid_batch). The
+/// `_prepared` validator, the batch the prepared product records and the provided `blas_matmul` query read nothing
+/// else. The terms of a cold operand are those of the preparation's `ctx`; those of a hot operand are those of the
+/// `ctx` of the product it enters, whatever the context it was prepared under, at whatever scale: the product evaluates
+/// its maps, which spend their scale from the operand's budget, and stamps by the ct x ct rule. So a hot operand holds
+/// a copy of its source's live limbs. A cold preparation looks up the rotation keys of its terms and a hot one none,
+/// after its validator checked them under either hint; the prepared product looks up those of each hot side's terms
+/// under its `ctx`, and the tensor key.
 ///
 /// **Fixed** (anything not listed as free changes bits):
 /// - the `d` terms of a source block `a_il`, all at the width `w = a.k - 2p` for the maps' scale `p`: term `0` is sigma
@@ -58,18 +51,13 @@ use crate::layouts::{
 /// - the bits, whatever the hints: the prepared product equals the reference's on the reference's operands of the same
 ///   sources and hints under the same contexts, so an operand prepared under the product's `ctx` gives the same
 ///   products under either hint;
-/// - the key widths: sigma's (tau's) baby steps at `a.k` and giant steps at `a.k - p`, the shifts' giant steps at their
-///   side's term width, the tensor key at the wider of both sides' term widths; a public operand's maps, for its scale
-///   `p_B`: under `BlasPtAlgorithm::Diagonal` its blocks' baby steps at `a.k` and giant steps at
-///   `min(res.k, a.k - p_B)`; under `Jkls` its first map's ([`crate::layouts::BlasPtOperand::first`]) baby steps at
-///   `a.k` and giant steps at `a.k - p_B`, then its blocks' baby steps at `a.k - p_B` and giant steps at
-///   `min(res.k, a.k - 2 p_B)`;
+/// - the key widths of the Keys table of `poulpy-blas/docs/blas-contracts.md`;
 /// - the maps of a left product by public matrices, read once per call from the input's label: when `a` is replicated
 ///   ([`crate::layouts::replicated`]) and `b` holds them ([`crate::layouts::BlasPtOperand::block_replicated`]), the
 ///   blocks' maps are those, `d` diagonals scheduled at `left_mul`'s giant step; otherwise
 ///   [`crate::layouts::BlasPtOperand::block`]'s, `2d - 1`. The two choices differ in bits. The validator's key checks,
-///   `reference::blas_matmul_pt_left_max_base2k` and the key widths above follow the same choice; the scratch
-///   query does not read the block maps;
+///   `reference::blas_matmul_pt_left_max_base2k` and the key widths follow the same choice; the scratch query does not
+///   read the block maps;
 /// - the errors and their order: the validator's, then poulpy-ckks's budget errors, before any write to `res`: the left
 ///   terms', then the right terms', then the first block's ct x ct rule. A hot side's come from the product, so a hot
 ///   preparation of an input short of its budget returns `Ok`;
@@ -93,9 +81,9 @@ use crate::layouts::{
 /// [`crate::layouts::validate_blas_matmul_pt_left`], before any write, and returns its errors with `res`, its batch
 /// record and the operands untouched. On inputs it accepted, it returns `Ok`, after a product stamps `res` with the
 /// batch the validator returns ([`crate::layouts::BlasGridMut::set_mat_slots`]) and a preparation records its source's
-/// batch on its operand, or poulpy-ckks's budget error before any write to `res`. Any other `Err` is a backend fault
-/// (a validator gap or a device failure), and `res` is then unspecified.
-pub unsafe trait BlasMatMulImpl: Backend {
+/// batch on its operand, or poulpy-ckks's budget error before any write to `res`. Any other `Err` is a backend fault (a
+/// validator gap or a device failure), and `res` is then unspecified.
+pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
     fn blas_matmul_prepare_left_tmp_bytes_impl<A, K>(
         module: &Module<Self>,
         a: &A,
@@ -106,16 +94,6 @@ pub unsafe trait BlasMatMulImpl: Backend {
     where
         A: BlasGridInfos,
         K: GGLWEInfos;
-
-    /// Bytes a left operand of `infos` holds, as [`Self::blas_matmul_left_alloc_from_infos_impl`] allocates it.
-    fn blas_matmul_left_bytes_of_from_infos_impl<A>(module: &Module<Self>, infos: &A) -> usize
-    where
-        A: BlasMatMulOperandInfos;
-
-    /// A left operand of `infos`, which [`Self::blas_matmul_prepare_left_impl`] fills.
-    fn blas_matmul_left_alloc_from_infos_impl<A>(module: &Module<Self>, infos: &A) -> BlasMatMulLeft<Self>
-    where
-        A: BlasMatMulOperandInfos;
 
     /// Fills `res`, allocated from the infos its validator checks, from `a` under `res`'s hint.
     fn blas_matmul_prepare_left_impl<A, K>(
@@ -141,16 +119,6 @@ pub unsafe trait BlasMatMulImpl: Backend {
         B: BlasGridInfos,
         K: GGLWEInfos;
 
-    /// Bytes a right operand of `infos` holds, as [`Self::blas_matmul_right_alloc_from_infos_impl`] allocates it.
-    fn blas_matmul_right_bytes_of_from_infos_impl<A>(module: &Module<Self>, infos: &A) -> usize
-    where
-        A: BlasMatMulOperandInfos;
-
-    /// A right operand of `infos`, which [`Self::blas_matmul_prepare_right_impl`] fills.
-    fn blas_matmul_right_alloc_from_infos_impl<A>(module: &Module<Self>, infos: &A) -> BlasMatMulRight<Self>
-    where
-        A: BlasMatMulOperandInfos;
-
     /// Fills `res`, allocated from the infos its validator checks, from `b` under `res`'s hint.
     fn blas_matmul_prepare_right_impl<B, K>(
         module: &Module<Self>,
@@ -165,8 +133,8 @@ pub unsafe trait BlasMatMulImpl: Backend {
         K: GetAutomorphismKey<Self> + Sync;
 
     /// Scratch of [`Self::blas_matmul_prepared_impl`] under `ctx`; `a` and `b` are the operands or the layouts
-    /// `reference::blas_matmul_left_operand_layout` and `reference::blas_matmul_right_operand_layout`
-    /// give.
+    /// [`blas_matmul_left_operand_layout`](crate::layouts::blas_matmul_left_operand_layout) and
+    /// [`blas_matmul_right_operand_layout`](crate::layouts::blas_matmul_right_operand_layout) give.
     fn blas_matmul_prepared_tmp_bytes_impl<R, A, B, T, K>(
         module: &Module<Self>,
         res: &R,
@@ -267,7 +235,7 @@ pub unsafe trait BlasMatMulImpl: Backend {
         T: GGLWEInfos,
         K: GGLWEInfos,
     {
-        derived::blas_matmul_tmp_bytes(module, res, a, b, ctx, tsk, atk)
+        derived::blas_matmul_tmp_bytes_derived(module, res, a, b, ctx, tsk, atk)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -288,6 +256,6 @@ pub unsafe trait BlasMatMulImpl: Backend {
         T: GetTensorKey<Self> + Sync,
         K: GetAutomorphismKey<Self> + Sync,
     {
-        derived::blas_matmul(module, res, a, b, ctx, tsk, atk, scratch)
+        derived::blas_matmul_derived(module, res, a, b, ctx, tsk, atk, scratch)
     }
 }

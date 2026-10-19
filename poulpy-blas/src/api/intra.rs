@@ -67,8 +67,8 @@ pub trait BlasMatIntraOps<BE: Backend> {
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync;
 
-    /// Scratch bytes [`Self::blas_rotate_rows`] needs into `res` from `a` with the maps of `ctx` and rotation keys of layout
-    /// `atk`.
+    /// Scratch bytes [`Self::blas_rotate_rows`] needs into `res` from `a` with the maps of `ctx` and rotation keys of
+    /// layout `atk`.
     ///
     /// # Panics
     ///
@@ -125,8 +125,8 @@ pub trait BlasMatIntraOps<BE: Backend> {
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync;
 
-    /// Scratch bytes [`Self::blas_rotate_cols`] needs into `res` from `a` with the maps of `ctx` and rotation keys of layout
-    /// `atk`.
+    /// Scratch bytes [`Self::blas_rotate_cols`] needs into `res` from `a` with the maps of `ctx` and rotation keys of
+    /// layout `atk`.
     ///
     /// # Panics
     ///
@@ -145,7 +145,8 @@ pub trait BlasMatIntraOps<BE: Backend> {
     /// As [`Self::blas_rotate_rows`] along the block columns, with phi^k' and its two half maps: with
     /// `k mod (a.cols() d) = q d + k'`, block `(i, j)` of `res` is a copy of block `(i, j + q)` for `k' = 0`, phi^k' of
     /// block `(i, j)` on a grid one block wide, and otherwise the sum of the first half map of block `(i, j + q)` and the
-    /// second of block `(i, j + q + 1)`. Its table holds, a grid one block wide in place of one block high.
+    /// second of block `(i, j + q + 1)`. The table of [`Self::blas_rotate_rows`] holds, with "one block wide" in place of
+    /// "one block high".
     ///
     /// # Errors
     ///

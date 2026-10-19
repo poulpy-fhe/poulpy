@@ -51,20 +51,6 @@ impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
         BE::blas_matmul_prepare_left_tmp_bytes_impl(self, a, ctx, atk, hint)
     }
 
-    fn blas_matmul_left_bytes_of_from_infos<A>(&self, infos: &A) -> usize
-    where
-        A: BlasMatMulOperandInfos,
-    {
-        BE::blas_matmul_left_bytes_of_from_infos_impl(self, infos)
-    }
-
-    fn blas_matmul_left_alloc_from_infos<A>(&self, infos: &A) -> BlasMatMulLeft<BE>
-    where
-        A: BlasMatMulOperandInfos,
-    {
-        BE::blas_matmul_left_alloc_from_infos_impl(self, infos)
-    }
-
     fn blas_matmul_prepare_left<A, K>(
         &self,
         res: &mut BlasMatMulLeft<BE>,
@@ -86,20 +72,6 @@ impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
         K: GGLWEInfos,
     {
         BE::blas_matmul_prepare_right_tmp_bytes_impl(self, b, ctx, atk, hint)
-    }
-
-    fn blas_matmul_right_bytes_of_from_infos<A>(&self, infos: &A) -> usize
-    where
-        A: BlasMatMulOperandInfos,
-    {
-        BE::blas_matmul_right_bytes_of_from_infos_impl(self, infos)
-    }
-
-    fn blas_matmul_right_alloc_from_infos<A>(&self, infos: &A) -> BlasMatMulRight<BE>
-    where
-        A: BlasMatMulOperandInfos,
-    {
-        BE::blas_matmul_right_alloc_from_infos_impl(self, infos)
     }
 
     fn blas_matmul_prepare_right<B, K>(

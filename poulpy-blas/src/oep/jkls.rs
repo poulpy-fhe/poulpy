@@ -7,10 +7,12 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 /// Extension point of the JKLS kernel, one output block of the prepared product: the references
 /// `reference::BlasMatMulReference::blas_matmul_prepared_reference` and
-/// `reference::BlasMatMulReference::blas_matmul_reference` run one [`Self::blas_jkls_block_impl`] per block of
-/// `res`, so both `blas_matmul` and `blas_matmul_prepared` reach it, whatever the hints of the operands.
+/// `reference::BlasMatMulReference::blas_matmul_reference` run one [`Self::blas_jkls_block_impl`] per block of `res`,
+/// so both `blas_matmul` and `blas_matmul_prepared` reach it, whatever the hints of the operands.
 ///
 /// # Safety
+///
+/// The memory, layout and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 ///
 /// [`Self::blas_jkls_block_impl`] reproduces `reference::BlasMatMulReference::blas_jkls_block_reference` bit
 /// for bit, digits and CKKS metadata: `res = sum_t lhs[t] rhs[t]` as poulpy-ckks's `ckks_dot_product_ct` computes it
@@ -30,13 +32,14 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 /// - two-pass: each term is one poulpy-core `glwe_tensor_apply_prepared` of `(lhs[t], rhs[t])` at that offset, rounded
 ///   on its own at the tensor width (summing unrounded products, as `cnv_apply_dft_sum` would, changes bits); the terms
 ///   are summed exactly, the sum normalized at that width before the relinearization reads it, `res` stamped as above,
-///   then relinearized once into `res` with the tensor key at that width;
+///   then relinearized once into `res` with the tensor key at that width; like any lazy addition, the sum must fit a
+///   64-bit digit, which the caller's parameters ensure;
 /// - either way, `res` comes back canonical, without a noise tag.
 ///
-/// **Free (bit-identical):** streaming the pairs; caching other forms of the operands. On the two-pass circuit, also the
-/// order and grouping of the terms, computed in turn or concurrently, and normalizing partial sums or leaving them
-/// unnormalized until the DFT that reads the sum: normalization preserves the value, so its placement never changes
-/// the bits. On the one-pass circuit, the order and grouping of the pairs are free only on an NTT backend, whose
+/// **Free (bit-identical):** streaming the pairs; caching other forms of the operands. On the two-pass circuit, also
+/// the order and grouping of the terms, computed in turn or concurrently, and normalizing partial sums or leaving them
+/// unnormalized until the DFT that reads the sum: normalization preserves the value, so its placement never changes the
+/// bits. On the one-pass circuit, the order and grouping of the pairs are free only on an NTT backend, whose
 /// transform-domain additions are exact. Anything else changes bits.
 ///
 /// It is called with `lhs.len() == rhs.len() >= 1` pairs, every `lhs` prepared from terms of one layout and every `rhs`

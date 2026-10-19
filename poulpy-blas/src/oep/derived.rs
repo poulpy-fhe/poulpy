@@ -1,8 +1,8 @@
 //! The provided methods of [`BlasMatIntraImpl`], the transpose and the row and column shifts, each composed over the
 //! map hook [`BlasMatIntraImpl::blas_map_blocks_impl`] and poulpy-ckks's copy and addition; and of [`BlasMatMulImpl`],
 //! `blas_matmul` over both hot preparations and the prepared product. Each runs its validator before any write and, on
-//! `Ok`, stamps the batch record of `res`, as the references do. Their scratch assertion over the keys a map looks up is
-//! shared with the references.
+//! `Ok`, stamps the batch record of `res`, as the references do. They are public so that an override of a provided
+//! method can fall back to it; their scratch assertion over the keys a map looks up is shared with the references.
 
 use std::cell::RefCell;
 
@@ -19,15 +19,17 @@ use poulpy_hal::layouts::{Backend, Module, PrepareHint, ScratchArena};
 
 use super::{BlasMatIntraImpl, BlasMatMulImpl};
 use crate::layouts::{
-    BlasContext, BlasContextInfos, BlasGrid, BlasGridInfos, BlasGridMut,
+    BlasContext, BlasContextInfos, BlasGrid, BlasGridInfos, BlasGridMut, BlasMatMulOperandPreparedFactory,
     context::shift_maps,
     matmul_operand::{left_operand_layout, right_operand_layout},
     validate::{assert_scratch, ensure_rotation, lt_uses},
     validate_blas_matmul, validate_blas_rotate_cols, validate_blas_rotate_rows, validate_blas_transpose,
 };
 
-/// The hook's scratch for the transpose of every block of `a` into a block of `res`.
-pub(crate) fn blas_transpose_tmp_bytes<BE, R, A, K>(module: &Module<BE>, res: &R, a: &A, ctx: &BlasContext<BE>, atk: &K) -> usize
+/// The provided `blas_transpose_tmp_bytes_impl`: the hook's scratch for the transpose of every block of `a` into a
+/// block of `res`.
+#[doc(hidden)]
+pub fn blas_transpose_tmp_bytes_derived<BE, R, A, K>(module: &Module<BE>, res: &R, a: &A, ctx: &BlasContext<BE>, atk: &K) -> usize
 where
     BE: BlasMatIntraImpl,
     R: BlasGridInfos,
@@ -45,8 +47,10 @@ where
     )
 }
 
-/// `res_ji = transpose(a_ij)`: one hook call, its sources in the order of `res`'s blocks.
-pub(crate) fn blas_transpose<BE, R, A, K>(
+/// The provided `blas_transpose_impl`, `res_ji = transpose(a_ij)`: one hook call, its sources in the order of `res`'s
+/// blocks.
+#[doc(hidden)]
+pub fn blas_transpose_derived<BE, R, A, K>(
     module: &Module<BE>,
     res: &mut R,
     a: &A,
@@ -63,7 +67,7 @@ where
     let batch = validate_blas_transpose(module, &*res, a, ctx, atk)?;
     let lts = [ctx.transpose()];
     let (src_k, dst_k, rank) = (a.block_layout().k(), res.block_layout().k(), a.block_layout().rank());
-    let bytes = |key: &GGLWELayout| blas_transpose_tmp_bytes(module, &*res, a, ctx, key);
+    let bytes = |key: &GGLWELayout| blas_transpose_tmp_bytes_derived(module, &*res, a, ctx, key);
     assert_maps_scratch("blas_transpose", module, &lts, atk, src_k, dst_k, rank, bytes, scratch);
     let (rows, cols, blocks) = (a.rows(), a.cols(), a.blocks());
     let src: Vec<_> = (0..cols)
@@ -74,16 +78,45 @@ where
     Ok(())
 }
 
-/// Scratch of a row (`rows`) or column shift by any `k`: the copy for `k' = 0`, otherwise for every `k'` the hook with
-/// psi^k' (phi^k') along one block, or with both half maps plus the addition along several.
-pub(crate) fn blas_shift_tmp_bytes<BE, R, A, K>(
+/// The provided `blas_rotate_rows_tmp_bytes_impl`: the scratch of a row shift by any `k`, as [`shift_tmp_bytes`].
+#[doc(hidden)]
+pub fn blas_rotate_rows_tmp_bytes_derived<BE, R, A, K>(
     module: &Module<BE>,
     res: &R,
     a: &A,
-    rows: bool,
     ctx: &BlasContext<BE>,
     atk: &K,
 ) -> usize
+where
+    BE: BlasMatIntraImpl,
+    R: BlasGridInfos,
+    A: BlasGridInfos,
+    K: GGLWEInfos,
+{
+    shift_tmp_bytes(module, res, a, true, ctx, atk)
+}
+
+/// The provided `blas_rotate_cols_tmp_bytes_impl`: the scratch of a column shift by any `k`, as [`shift_tmp_bytes`].
+#[doc(hidden)]
+pub fn blas_rotate_cols_tmp_bytes_derived<BE, R, A, K>(
+    module: &Module<BE>,
+    res: &R,
+    a: &A,
+    ctx: &BlasContext<BE>,
+    atk: &K,
+) -> usize
+where
+    BE: BlasMatIntraImpl,
+    R: BlasGridInfos,
+    A: BlasGridInfos,
+    K: GGLWEInfos,
+{
+    shift_tmp_bytes(module, res, a, false, ctx, atk)
+}
+
+/// Scratch of a row (`rows`) or column shift by any `k`: the copy for `k' = 0`, otherwise for every `k'` the hook with
+/// psi^k' (phi^k') along one block, or with both half maps plus the addition along several.
+fn shift_tmp_bytes<BE, R, A, K>(module: &Module<BE>, res: &R, a: &A, rows: bool, ctx: &BlasContext<BE>, atk: &K) -> usize
 where
     BE: BlasMatIntraImpl,
     R: BlasGridInfos,
@@ -105,13 +138,53 @@ where
         .fold(module.ckks_copy_tmp_bytes(&res, &a), usize::max)
 }
 
+/// The provided `blas_rotate_rows_impl`, as [`shift`].
+#[doc(hidden)]
+pub fn blas_rotate_rows_derived<BE, R, A, K>(
+    module: &Module<BE>,
+    res: &mut R,
+    a: &A,
+    k: usize,
+    ctx: &BlasContext<BE>,
+    atk: &K,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: BlasMatIntraImpl,
+    R: BlasGridMut<BE>,
+    A: BlasGrid<BE>,
+    K: GetAutomorphismKey<BE> + Sync,
+{
+    shift(module, "blas_rotate_rows", res, a, k, true, ctx, atk, scratch)
+}
+
+/// The provided `blas_rotate_cols_impl`, as [`shift`].
+#[doc(hidden)]
+pub fn blas_rotate_cols_derived<BE, R, A, K>(
+    module: &Module<BE>,
+    res: &mut R,
+    a: &A,
+    k: usize,
+    ctx: &BlasContext<BE>,
+    atk: &K,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: BlasMatIntraImpl,
+    R: BlasGridMut<BE>,
+    A: BlasGrid<BE>,
+    K: GetAutomorphismKey<BE> + Sync,
+{
+    shift(module, "blas_rotate_cols", res, a, k, false, ctx, atk, scratch)
+}
+
 /// Shifts every matrix by `k mod m d = q d + k'` rows (`rows`) or columns, along the block axis of extent `m`. With
 /// `src(t, o)` the block `o` steps past block `t` along that axis: `k' = 0` copies `src(t, q)` into block `t`, then
-/// clears its noise tag; `m = 1` is one hook call with psi^k' (phi^k'); otherwise one hook call evaluates both half maps
-/// of every block of `a` into a heap grid `h` of `res`'s block layout, and block `t` is
+/// clears its noise tag; `m = 1` is one hook call with psi^k' (phi^k'); otherwise one hook call evaluates both half
+/// maps of every block of `a` into a heap grid `h` of `res`'s block layout, and block `t` is
 /// `h[first, src(t, q)] + h[second, src(t, q + 1)]`.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn blas_shift<BE, R, A, K>(
+fn shift<BE, R, A, K>(
     module: &Module<BE>,
     op: &'static str,
     res: &mut R,
@@ -138,7 +211,7 @@ where
     Ok(())
 }
 
-/// The blocks of [`blas_shift`], on inputs its validator accepted.
+/// The blocks of [`shift`], on inputs its validator accepted.
 #[allow(clippy::too_many_arguments)]
 fn shift_blocks<BE, R, A, K>(
     module: &Module<BE>,
@@ -180,14 +253,14 @@ where
     }
     let lts = shift_maps(&ctx.maps, k1, rows, extent);
     let (src_k, dst_k, rank) = (a.block_layout().k(), res.block_layout().k(), a.block_layout().rank());
-    let bytes = |key: &GGLWELayout| blas_shift_tmp_bytes(module, &*res, a, rows, ctx, key);
+    let bytes = |key: &GGLWELayout| shift_tmp_bytes(module, &*res, a, rows, ctx, key);
     assert_maps_scratch(op, module, &lts, atk, src_k, dst_k, rank, bytes, scratch);
     let sources: Vec<_> = a.blocks().iter().collect();
     if lts.len() == 1 {
         // One block along the axis: `q = 0`, so block `t` maps into block `t`.
         return BE::blas_map_blocks_impl(module, res.blocks_mut(), &sources, &lts, atk, scratch);
     }
-    // ponytail: the whole 2mn-block heap grid in one hook call; an override chunks it to bound memory.
+    // ponytail: one hook call over the whole heap grid, two blocks per block of `a`; an override chunks it.
     let layout = res.block_layout();
     let mut halves: Vec<_> = (0..2 * sources.len())
         .map(|_| module.ckks_ciphertext_alloc_from_infos(&layout))
@@ -199,8 +272,10 @@ where
     Ok(())
 }
 
-/// The larger of both hot preparations' scratch and the prepared product's on the layouts they give.
-pub(crate) fn blas_matmul_tmp_bytes<BE, R, A, B, T, K>(
+/// The provided `blas_matmul_tmp_bytes_impl`: the larger of both hot preparations' scratch and the prepared product's
+/// on the layouts they give.
+#[doc(hidden)]
+pub fn blas_matmul_tmp_bytes_derived<BE, R, A, B, T, K>(
     module: &Module<BE>,
     res: &R,
     a: &A,
@@ -229,9 +304,11 @@ where
         ))
 }
 
-/// `res = a b`: both operands allocated hot and prepared into, then their prepared product under `ctx`.
+/// The provided `blas_matmul_impl`, `res = a b`: both operands allocated hot and prepared into, then their prepared
+/// product under `ctx`.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn blas_matmul<BE, R, A, B, T, K>(
+#[doc(hidden)]
+pub fn blas_matmul_derived<BE, R, A, B, T, K>(
     module: &Module<BE>,
     res: &mut R,
     a: &A,
@@ -251,9 +328,9 @@ where
 {
     let batch = validate_blas_matmul(module, &*res, a, b, ctx, tsk, atk)?;
     let hot = PrepareHint::OneShot;
-    let mut left = BE::blas_matmul_left_alloc_from_infos_impl(module, &left_operand_layout(a, &ctx.maps, hot));
+    let mut left = module.blas_matmul_left_alloc_from_infos(&left_operand_layout(a, &ctx.maps, hot));
     BE::blas_matmul_prepare_left_impl(module, &mut left, a, ctx, atk, scratch)?;
-    let mut right = BE::blas_matmul_right_alloc_from_infos_impl(module, &right_operand_layout(b, &ctx.maps, hot));
+    let mut right = module.blas_matmul_right_alloc_from_infos(&right_operand_layout(b, &ctx.maps, hot));
     BE::blas_matmul_prepare_right_impl(module, &mut right, b, ctx, atk, scratch)?;
     BE::blas_matmul_prepared_impl(module, res, &left, &right, ctx, tsk, atk, scratch)?;
     res.set_mat_slots(batch);
@@ -311,8 +388,8 @@ impl<BE: Backend, K: GetTensorKey<BE>> GetTensorKey<BE> for KeyLayouts<'_, K> {
 }
 
 /// Panics unless `scratch` holds the largest `bytes` over the layouts of the rotation keys that evaluating `lts` from
-/// blocks of rank `rank` and width `src_k` into width `dst_k` looks up in `atk`, as [`assert_scratch`] does; a call that
-/// looks up none asserts nothing. The keys passed `op`'s validator, so the look-ups only record their layouts.
+/// blocks of rank `rank` and width `src_k` into width `dst_k` looks up in `atk`, as [`assert_scratch`] does; a call
+/// that looks up none asserts nothing. The keys passed `op`'s validator, so the look-ups only record their layouts.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn assert_maps_scratch<BE: Backend, M: CKKSModuleInfos + ?Sized>(
     op: &'static str,

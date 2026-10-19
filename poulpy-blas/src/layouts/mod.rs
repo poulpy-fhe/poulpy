@@ -20,7 +20,10 @@ pub use context::{
     BlasPtAlgorithm, sum_galois_elements,
 };
 pub use encoding::BlasEncodingOps;
-pub use matmul_operand::{BlasMatMulLeft, BlasMatMulOperand, BlasMatMulRight};
+pub use matmul_operand::{
+    BlasMatMulLeft, BlasMatMulOperand, BlasMatMulOperandPreparedFactory, BlasMatMulRight, blas_matmul_left_operand_layout,
+    blas_matmul_left_term_layout, blas_matmul_right_operand_layout, blas_matmul_right_term_layout,
+};
 pub use pt_operand::{
     BlasPtOperand, BlasPtOperandInfos, BlasPtOperandLayout, BlasPtOperandPreparedFactory, BlasPtOperandUnprepared, BlasPtSide,
     Left, Right,

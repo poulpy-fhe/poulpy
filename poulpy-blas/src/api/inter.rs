@@ -91,8 +91,8 @@ pub trait BlasMatInterOps<BE: Backend> {
     ///   errors `res`, its batch record and `a` are untouched: `InvalidOperand` for a grid, shape or layout it rejects;
     ///   then, key by key, `MissingAutomorphismKey` for a rotation key `atk` lacks at `min(res.k, a.k)`, or
     ///   `InvalidOperand` for one of another rank than `a`'s blocks.
-    /// - poulpy-ckks's budget error, `InsufficientHomomorphicCapacity` from the copy when `res.k` is below
-    ///   `a.log_delta`, comes from inside the backend before any write, and leaves them untouched too.
+    /// - poulpy-ckks's budget error, `InsufficientHomomorphicCapacity` from the copy when `res.k` is below `a.log_delta`,
+    ///   comes from inside the backend before any write, and leaves them untouched too.
     /// - Any other `Err` is a backend fault (a validator gap or a device failure), and `res` is then unspecified.
     fn blas_sum<R, A, K>(&self, res: &mut R, a: &A, atk: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where

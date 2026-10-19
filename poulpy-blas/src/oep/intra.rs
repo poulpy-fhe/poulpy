@@ -14,6 +14,8 @@ use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut};
 ///
 /// # Safety
 ///
+/// The memory, layout and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
+///
 /// **The hook.** [`Self::blas_map_blocks_impl`] reproduces
 /// `reference::BlasMatIntraReference::blas_map_blocks_reference` bit for bit, digits and CKKS metadata: block
 /// `t * lts.len() + m` of `dst` receives `lts[m]` evaluated from `src[t]` by poulpy-ckks's
@@ -49,7 +51,8 @@ use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut};
 ///
 /// The shift maps are `Direct`, as the plan records. Each method returns `Ok` within the scratch its `_tmp_bytes_impl`
 /// reports, or poulpy-ckks's budget error before any write to `res`, and panics before any write with less scratch when
-/// it looks up a key. The provided shifts hold `2 m n` heap blocks across both half maps; an override may chunk them.
+/// it looks up a key. The provided shifts hold two heap blocks per block of `a`, across both half maps; an override may
+/// chunk them.
 ///
 /// A method first runs [`crate::layouts::validate_blas_transpose`], [`crate::layouts::validate_blas_rotate_rows`] or
 /// [`crate::layouts::validate_blas_rotate_cols`], before any write, returns its errors with `res` and its batch record
@@ -93,7 +96,7 @@ pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        derived::blas_transpose_tmp_bytes(module, res, a, ctx, atk)
+        derived::blas_transpose_tmp_bytes_derived(module, res, a, ctx, atk)
     }
 
     fn blas_transpose_impl<R, A, K>(
@@ -109,7 +112,7 @@ pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
         A: BlasGrid<Self>,
         K: GetAutomorphismKey<Self> + Sync,
     {
-        derived::blas_transpose(module, res, a, ctx, atk, scratch)
+        derived::blas_transpose_derived(module, res, a, ctx, atk, scratch)
     }
 
     fn blas_rotate_rows_tmp_bytes_impl<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, atk: &K) -> usize
@@ -118,7 +121,7 @@ pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        derived::blas_shift_tmp_bytes(module, res, a, true, ctx, atk)
+        derived::blas_rotate_rows_tmp_bytes_derived(module, res, a, ctx, atk)
     }
 
     fn blas_rotate_rows_impl<R, A, K>(
@@ -135,7 +138,7 @@ pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
         A: BlasGrid<Self>,
         K: GetAutomorphismKey<Self> + Sync,
     {
-        derived::blas_shift(module, "blas_rotate_rows", res, a, k, true, ctx, atk, scratch)
+        derived::blas_rotate_rows_derived(module, res, a, k, ctx, atk, scratch)
     }
 
     fn blas_rotate_cols_tmp_bytes_impl<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, atk: &K) -> usize
@@ -144,7 +147,7 @@ pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        derived::blas_shift_tmp_bytes(module, res, a, false, ctx, atk)
+        derived::blas_rotate_cols_tmp_bytes_derived(module, res, a, ctx, atk)
     }
 
     fn blas_rotate_cols_impl<R, A, K>(
@@ -161,6 +164,6 @@ pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
         A: BlasGrid<Self>,
         K: GetAutomorphismKey<Self> + Sync,
     {
-        derived::blas_shift(module, "blas_rotate_cols", res, a, k, false, ctx, atk, scratch)
+        derived::blas_rotate_cols_derived(module, res, a, k, ctx, atk, scratch)
     }
 }

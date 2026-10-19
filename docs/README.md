@@ -21,7 +21,7 @@
 
 ## BLAS
 
-- [Implementing BLAS operations](../poulpy-blas/docs/blas-contracts.md), backend wiring, overrides by family, test registration, and attestation inside and outside the workspace.
+- [Implementing BLAS operations](../poulpy-blas/docs/blas-contracts.md), the rules every BLAS family shares: batches, key sets and widths, validation and error order, scratch and parallelism.
 
 ## Specifications
 
