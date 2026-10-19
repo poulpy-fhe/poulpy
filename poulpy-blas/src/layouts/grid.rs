@@ -4,11 +4,8 @@
 /// `s mod count`, read as `entry(s mod count, row, col)` with `row < rows * d`, `col < cols * d`; `count` divides
 /// `slots / d^2`.
 ///
-/// A grid records the batch its blocks' label proves ([`crate::layouts::BlasCiphertext::from_blocks`]), and encryption
-/// derives the label from the plaintext degree. So for a batch of `count` matrices, pass `slots = count * d^2` and
-/// encrypt each vector from `ckks_pt_vec_alloc_compact(count * d^2)`; vectors of every slot encrypt a dense batch,
-/// whatever `count`. A compact degree below a backend's `MIN_DEGREE` is raised there, recording a larger batch: see
-/// `from_blocks` for the portable sizes.
+/// For a batch of `count` matrices, pass `slots = count * d^2` and encrypt each vector compact, as
+/// [`crate::layouts::BlasCiphertext::from_blocks`] describes; vectors of every slot encrypt a dense batch.
 ///
 /// # Panics
 ///

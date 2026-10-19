@@ -291,10 +291,10 @@ impl<D: Data, W: ZnxWord, R: Ring> BlasCiphertext<D, W, R> {
     /// `ckks_pt_vec_alloc_compact(count * d^2)`; a dense plaintext records the full batch `S / d^2`, its matrices
     /// repeated.
     ///
-    /// Compact degrees are raised to the backend's `MIN_DEGREE` (8 by default, 16 on AVX-512 FFT64), and a raised
-    /// degree proves a larger batch than `count`. So a compact batch records `count` on every backend only when its
-    /// degree, `2 * count * d^2` on the standard ring and `count * d^2` on the conjugate-invariant one, reaches every
-    /// target's `MIN_DEGREE` (16 in this workspace); otherwise encrypt it dense.
+    /// Compact degrees are raised to the backend's `MIN_DEGREE`, and a raised degree proves a larger batch than `count`.
+    /// So a compact batch records `count` only when its degree, `2 * count * d^2` on the standard ring and
+    /// `count * d^2` on the conjugate-invariant one, reaches the `MIN_DEGREE` of every backend it runs on; otherwise
+    /// encrypt it dense.
     ///
     /// Plaintext operations keep the smaller of the ciphertext's label and the plaintext's: adding a dense plaintext
     /// to the blocks of a sparse batch drops their label to 0, so the next operation rejects the grid.
@@ -410,9 +410,17 @@ impl<D: Data, W: ZnxWord, R: Ring> BlasCiphertext<D, W, R> {
 
 impl<D: HostDataRef, W: ZnxWord, R: Ring> WriterTo for BlasCiphertext<D, W, R> {
     /// Serialises the grid in little-endian binary format: its header, then every block, row-major, as a
-    /// [`CKKSCiphertext`]. A flag-clear block fails with [`std::io::ErrorKind::InvalidInput`], writing nothing: normalize
-    /// it first. The batch record is not written: a read records the batch the blocks' label proves.
+    /// [`CKKSCiphertext`]. Blocks that differ in `n`, `base2k`, `k` or rank, which the header cannot describe, and a
+    /// flag-clear block, fail with [`std::io::ErrorKind::InvalidInput`], writing nothing: normalize it first. The batch
+    /// record is not written: a read records the batch the blocks' label proves.
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
+        let first = self.blocks[0].glwe_layout();
+        if self.blocks.iter().any(|block| block.glwe_layout() != first) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "the blocks of the grid do not share one layout",
+            ));
+        }
         if self.blocks.iter().any(|block| !GLWE::is_canonical(block)) {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
@@ -777,6 +785,21 @@ mod tests {
     fn grid_write_rejects_a_flag_clear_block_writing_nothing() {
         let mut grid = module().blas_ciphertext_alloc(2, 1, 2, 19usize.into(), 60usize.into());
         GLWE::set_canonical(grid.block_mut(0, 1), false);
+        let mut bytes = Vec::new();
+        assert_eq!(
+            grid.write_to(&mut bytes).unwrap_err().kind(),
+            std::io::ErrorKind::InvalidInput
+        );
+        assert!(bytes.is_empty());
+    }
+
+    #[test]
+    fn grid_write_rejects_blocks_of_different_layouts_writing_nothing() {
+        let module = module();
+        let blocks = (0..2usize)
+            .map(|t| module.ckks_ciphertext_alloc(19usize.into(), (40 + 19 * t).into()))
+            .collect();
+        let grid = BlasCiphertext::from_blocks(blocks, 2, 1, 2).unwrap();
         let mut bytes = Vec::new();
         assert_eq!(
             grid.write_to(&mut bytes).unwrap_err().kind(),

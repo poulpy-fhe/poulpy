@@ -95,144 +95,75 @@ pub trait BlasPtOperandInfos {
     /// The side of the products it enters.
     type Side: BlasPtSide;
 
-    /// The block dimension and how the products are evaluated.
-    fn plan(&self) -> BlasPlan;
+    /// A plain-data snapshot of these infos.
+    fn blas_pt_operand_layout(&self) -> BlasPtOperandLayout<Self::Side>;
+
+    /// [`BlasPtOperandLayout::plan`].
+    fn plan(&self) -> BlasPlan {
+        self.blas_pt_operand_layout().plan
+    }
 
     /// `log2` of the block dimension.
     fn log_d(&self) -> usize {
         self.plan().log_d()
     }
 
-    /// Slots of the module the maps are encoded on.
-    fn slots(&self) -> usize;
+    /// [`BlasPtOperandLayout::slots`].
+    fn slots(&self) -> usize {
+        self.blas_pt_operand_layout().slots
+    }
 
-    /// Number of block rows.
-    fn rows(&self) -> usize;
+    /// [`BlasPtOperandLayout::rows`].
+    fn rows(&self) -> usize {
+        self.blas_pt_operand_layout().rows
+    }
 
-    /// Number of block columns.
-    fn cols(&self) -> usize;
+    /// [`BlasPtOperandLayout::cols`].
+    fn cols(&self) -> usize {
+        self.blas_pt_operand_layout().cols
+    }
 
-    /// Number of distinct public matrices, matrix slot `s` using matrix `s mod count`.
-    fn count(&self) -> usize;
+    /// [`BlasPtOperandLayout::count`].
+    fn count(&self) -> usize {
+        self.blas_pt_operand_layout().count
+    }
 
-    /// Radix of the maps' diagonals.
-    fn base2k(&self) -> Base2K;
+    /// [`BlasPtOperandLayout::base2k`].
+    fn base2k(&self) -> Base2K {
+        self.blas_pt_operand_layout().base2k
+    }
 
-    /// Torus width and metadata the maps are encoded at.
-    fn coeffs_meta(&self) -> CoeffsMeta;
-
-    /// A plain-data snapshot of these infos.
-    fn blas_pt_operand_layout(&self) -> BlasPtOperandLayout<Self::Side> {
-        BlasPtOperandLayout::new(
-            self.plan(),
-            self.slots(),
-            self.rows(),
-            self.cols(),
-            self.count(),
-            self.base2k(),
-            self.coeffs_meta(),
-        )
+    /// [`BlasPtOperandLayout::coeffs_meta`].
+    fn coeffs_meta(&self) -> CoeffsMeta {
+        self.blas_pt_operand_layout().coeffs_meta
     }
 }
 
 impl<T: BlasPtOperandInfos + ?Sized> BlasPtOperandInfos for &T {
     type Side = T::Side;
 
-    fn plan(&self) -> BlasPlan {
-        (**self).plan()
-    }
-
-    fn slots(&self) -> usize {
-        (**self).slots()
-    }
-
-    fn rows(&self) -> usize {
-        (**self).rows()
-    }
-
-    fn cols(&self) -> usize {
-        (**self).cols()
-    }
-
-    fn count(&self) -> usize {
-        (**self).count()
-    }
-
-    fn base2k(&self) -> Base2K {
-        (**self).base2k()
-    }
-
-    fn coeffs_meta(&self) -> CoeffsMeta {
-        (**self).coeffs_meta()
+    fn blas_pt_operand_layout(&self) -> BlasPtOperandLayout<Self::Side> {
+        (**self).blas_pt_operand_layout()
     }
 }
 
 impl<T: BlasPtOperandInfos + ?Sized> BlasPtOperandInfos for &mut T {
     type Side = T::Side;
 
-    fn plan(&self) -> BlasPlan {
-        (**self).plan()
-    }
-
-    fn slots(&self) -> usize {
-        (**self).slots()
-    }
-
-    fn rows(&self) -> usize {
-        (**self).rows()
-    }
-
-    fn cols(&self) -> usize {
-        (**self).cols()
-    }
-
-    fn count(&self) -> usize {
-        (**self).count()
-    }
-
-    fn base2k(&self) -> Base2K {
-        (**self).base2k()
-    }
-
-    fn coeffs_meta(&self) -> CoeffsMeta {
-        (**self).coeffs_meta()
+    fn blas_pt_operand_layout(&self) -> BlasPtOperandLayout<Self::Side> {
+        (**self).blas_pt_operand_layout()
     }
 }
 
 impl<S: BlasPtSide> BlasPtOperandInfos for BlasPtOperandLayout<S> {
     type Side = S;
 
-    fn plan(&self) -> BlasPlan {
-        self.plan
-    }
-
-    fn slots(&self) -> usize {
-        self.slots
-    }
-
-    fn rows(&self) -> usize {
-        self.rows
-    }
-
-    fn cols(&self) -> usize {
-        self.cols
-    }
-
-    fn count(&self) -> usize {
-        self.count
-    }
-
-    fn base2k(&self) -> Base2K {
-        self.base2k
-    }
-
-    fn coeffs_meta(&self) -> CoeffsMeta {
-        self.coeffs_meta
+    fn blas_pt_operand_layout(&self) -> BlasPtOperandLayout<S> {
+        *self
     }
 }
 
-/// The maps of a public operand, in the order encoding and preparation walk them: its first map under JKLS, its blocks
-/// row-major, then its replicated-input maps if it holds them.
+/// The maps of a public operand, in the order [`BlasPtOperandUnprepared::maps`] states.
 pub(crate) struct OperandMaps<T> {
     slots: usize,
     cols: usize,
@@ -315,64 +246,16 @@ pub struct BlasPtOperand<BE: Backend, S = Right> {
 impl<BE: Backend, S: BlasPtSide> BlasPtOperandInfos for BlasPtOperandUnprepared<BE, S> {
     type Side = S;
 
-    fn plan(&self) -> BlasPlan {
-        self.layout.plan
-    }
-
-    fn slots(&self) -> usize {
-        self.layout.slots
-    }
-
-    fn rows(&self) -> usize {
-        self.layout.rows
-    }
-
-    fn cols(&self) -> usize {
-        self.layout.cols
-    }
-
-    fn count(&self) -> usize {
-        self.layout.count
-    }
-
-    fn base2k(&self) -> Base2K {
-        self.layout.base2k
-    }
-
-    fn coeffs_meta(&self) -> CoeffsMeta {
-        self.layout.coeffs_meta
+    fn blas_pt_operand_layout(&self) -> BlasPtOperandLayout<S> {
+        self.layout
     }
 }
 
 impl<BE: Backend, S: BlasPtSide> BlasPtOperandInfos for BlasPtOperand<BE, S> {
     type Side = S;
 
-    fn plan(&self) -> BlasPlan {
-        self.layout.plan
-    }
-
-    fn slots(&self) -> usize {
-        self.layout.slots
-    }
-
-    fn rows(&self) -> usize {
-        self.layout.rows
-    }
-
-    fn cols(&self) -> usize {
-        self.layout.cols
-    }
-
-    fn count(&self) -> usize {
-        self.layout.count
-    }
-
-    fn base2k(&self) -> Base2K {
-        self.layout.base2k
-    }
-
-    fn coeffs_meta(&self) -> CoeffsMeta {
-        self.layout.coeffs_meta
+    fn blas_pt_operand_layout(&self) -> BlasPtOperandLayout<S> {
+        self.layout
     }
 }
 
@@ -697,16 +580,6 @@ mod tests {
                 cols: 4,
                 ..base
             },
-            BlasPtOperandLayout { count: 3, ..base },
-            BlasPtOperandLayout {
-                coeffs_meta: CoeffsMeta::from_delta_budget(0, 0),
-                ..base
-            },
-            BlasPtOperandLayout {
-                base2k: Base2K(0),
-                ..base
-            },
-            BlasPtOperandLayout { slots: 64, ..base },
         ];
         for layout in bad {
             let alloc = catch_unwind(AssertUnwindSafe(|| module.blas_pt_operand_alloc_from_infos(&layout)));

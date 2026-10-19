@@ -243,6 +243,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
             pt_max_k,
         )?;
         let res_k: TorusPrecision = (res_log_budget + res_log_delta).into();
+        debug_assert_eq!(res_k, crate::api::ckks_linear_transformation_output_k(lt, src.k(), dst.k()));
         check_required_keys(lt, babies, keys, self.cyclotomic_order(), res_k)?;
         // `Σ diag ⊙ rot(src)` has real slots when `src` and the diagonals do.
         let slots = src.slots().join(pt_slots);

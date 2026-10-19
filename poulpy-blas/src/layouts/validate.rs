@@ -1,9 +1,10 @@
 //! The validator of every operation, from metadata alone, which its implementation runs before any write. An override
-//! runs the same validators, as the references do.
+//! runs the same validators, as the references do. They check no budget: poulpy-ckks rejects those inside the
+//! implementation, before any write.
 
 use poulpy_ckks::{
     CKKSCompositionError, CKKSCtBounds, CKKSError, CKKSInfos, CKKSLayout, CKKSResult as Result, GLWEPlaintextInfos,
-    api::{CKKSModuleInfos, LinearTransformation, LtDiagonalMeta},
+    api::{CKKSModuleInfos, LinearTransformation, LtDiagonalMeta, ckks_linear_transformation_output_k},
 };
 use poulpy_core::layouts::{Base2K, GLWEInfos, GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, TorusPrecision};
 use poulpy_hal::layouts::{Backend, Module, PrepareHint, Ring, ScratchArena};
@@ -13,7 +14,6 @@ use super::{
     BlasPtOperand, BlasPtOperandInfos, Left,
     ciphertext::{batch_fits, layout_of, replicated_at},
     context::{ContextMaps, shift_maps, sum_rotations},
-    encoding::lt_output_k,
     grid_batch,
     matmul_operand::{left_operand_layout, left_term_layout, product_terms, right_maps, right_operand_layout, right_term_layout},
     pt_operand::OperandMaps,
@@ -221,7 +221,7 @@ fn ensure_key_rank(op: &'static str, kind: &str, key: Rank, blocks: Rank) -> Res
 }
 
 /// The look-ups of evaluating `lt` from blocks of rank `rank` and width `src_k` into a ciphertext of width `dst_k`: the
-/// baby steps at `src_k`, the non-empty giant steps at [`lt_output_k`].
+/// baby steps at `src_k`, the non-empty giant steps at [`ckks_linear_transformation_output_k`].
 ///
 /// These are poulpy-ckks's widths on inputs it evaluates. On an input it rejects with a budget error, this may name a key
 /// poulpy-ckks never looks up for that input: a store holding exactly the widths in use then fails the validator with
@@ -240,7 +240,7 @@ pub(crate) fn lt_uses<P: LtDiagonalMeta>(
             rank,
         })?;
     }
-    let k = lt_output_k(lt, src_k, dst_k);
+    let k = ckks_linear_transformation_output_k(lt, src_k, dst_k);
     for gs in lt.giant_steps.iter().filter(|gs| !gs.diagonals.is_empty()) {
         f(RotationUse {
             rotation: gs.rot,
@@ -261,16 +261,15 @@ pub(crate) fn assert_scratch<BE: Backend>(op: &str, required: usize, scratch: &S
     );
 }
 
-/// Checks a `api::BlasMatInterOps::blas_rotate` call from metadata alone, which its implementation runs before
-/// any write, and returns the batch `res` records, `a`'s: `a` and `res` are grids at `a`'s `log_d` whose blocks tile
-/// their shape and share one layout whose label allows their batch record ([`BlasGrid::blocks`],
-/// [`BlasGridInfos::mat_slots`]), `res` has `a`'s shape and its blocks `a`'s degree, radix and rank, and `atk` holds
-/// the rotation key at `a`'s width, of `a`'s rank.
+/// Checks a `api::BlasMatInterOps::blas_rotate` call, and returns the batch `res` records, `a`'s: `a` and `res` are
+/// grids at `a`'s `log_d` whose blocks tile their shape and share one layout whose label allows their batch record
+/// ([`BlasGrid::blocks`], [`BlasGridInfos::mat_slots`]), `res` has `a`'s shape and its blocks `a`'s degree, radix and
+/// rank, and `atk` holds the rotation key at `a`'s width, of `a`'s rank.
 ///
 /// # Errors
 ///
-/// `InvalidOperand` for a grid, shape or layout it rejects, then `MissingAutomorphismKey`, or `InvalidOperand` for a key
-/// of another rank. It checks no budget: poulpy-ckks rejects those inside the implementation, before any write.
+/// `InvalidOperand` for a grid, shape or layout it rejects, then `MissingAutomorphismKey`, or `InvalidOperand` for a
+/// key of another rank.
 pub fn validate_blas_rotate<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
@@ -290,8 +289,7 @@ pub fn validate_blas_rotate<BE: Backend>(
 /// # Errors
 ///
 /// `InvalidOperand` for a grid, shape or layout it rejects, then, key by key, `MissingAutomorphismKey`, or
-/// `InvalidOperand` for a key of another rank. It checks no budget: poulpy-ckks rejects those inside the
-/// implementation, before any write.
+/// `InvalidOperand` for a key of another rank.
 pub fn validate_blas_sum<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
@@ -339,18 +337,16 @@ fn sum_key_width(res: &impl BlasGridInfos, a: &impl BlasGridInfos) -> TorusPreci
     a.block_layout().k().min(res.block_layout().k())
 }
 
-/// Checks a `api::BlasMatIntraOps::blas_transpose` call from metadata alone, which its implementation runs
-/// before any write, and returns the batch `res` records, `a`'s: `a` and `res` are grids at the context's `log_d` whose
-/// blocks tile their shape and share one layout whose label allows their batch record ([`BlasGrid::blocks`],
-/// [`crate::layouts::BlasGridInfos::mat_slots`]), `res` has the transposed shape of `a` and its blocks `a`'s degree,
-/// radix and rank, `ctx` was encoded on a module of `module`'s slot count at `a`'s radix, and `atk` holds every key of
-/// the transpose at the width it is looked up at, of `a`'s rank.
+/// Checks a `api::BlasMatIntraOps::blas_transpose` call, and returns the batch `res` records, `a`'s: `a` and `res` are
+/// grids at the context's `log_d` whose blocks tile their shape and share one layout whose label allows their batch
+/// record ([`BlasGrid::blocks`], [`crate::layouts::BlasGridInfos::mat_slots`]), `res` has the transposed shape of `a`
+/// and its blocks `a`'s degree, radix and rank, `ctx` was encoded on a module of `module`'s slot count at `a`'s radix,
+/// and `atk` holds every key of the transpose at the width it is looked up at, of `a`'s rank.
 ///
 /// # Errors
 ///
 /// `InvalidOperand` for a grid, shape, layout or context it rejects, then, key by key, `MissingAutomorphismKey`, or
-/// `InvalidOperand` for a key of another rank. It checks no budget: poulpy-ckks rejects those inside the
-/// implementation, before any write.
+/// `InvalidOperand` for a key of another rank.
 pub fn validate_blas_transpose<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
@@ -465,17 +461,16 @@ pub(crate) fn left_takes_replicated<T>(b: &OperandMaps<T>, a: &impl BlasGridInfo
     b.has_replicated() && replicated_at(b.slots(), a)
 }
 
-/// Checks a `api::BlasMatMulOps::blas_matmul` call from metadata alone, which its implementation runs before
-/// any write, and returns the batch `res` records, the larger of `a`'s and `b`'s: `a` and `b` as their preparations
-/// check them ([`validate_blas_matmul_prepare_left`], [`validate_blas_matmul_prepare_right`]), `res` against them as
-/// [`validate_blas_matmul_prepared`] checks it against their operands, and `tsk` at the wider of their term widths
-/// (`blas_matmul_left_term_layout`, `blas_matmul_right_term_layout`), of their rank.
+/// Checks a `api::BlasMatMulOps::blas_matmul` call, and returns the batch `res` records, the larger of `a`'s and `b`'s:
+/// `a` and `b` as their preparations check them ([`validate_blas_matmul_prepare_left`],
+/// [`validate_blas_matmul_prepare_right`]), `res` against them as [`validate_blas_matmul_prepared`] checks it against
+/// their operands, and `tsk` at the wider of their term widths (`blas_matmul_left_term_layout`,
+/// `blas_matmul_right_term_layout`), of their rank.
 ///
 /// # Errors
 ///
 /// `InvalidOperand` for a grid, shape, layout, radix or context it rejects, then, key by key, `MissingAutomorphismKey`
-/// or `MissingRelinearizationKey`, or `InvalidOperand` for a key of another rank. It checks no budget: poulpy-ckks
-/// rejects those inside the implementation, before any write to `res`.
+/// or `MissingRelinearizationKey`, or `InvalidOperand` for a key of another rank.
 pub fn validate_blas_matmul<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
@@ -495,19 +490,18 @@ pub fn validate_blas_matmul<BE: Backend>(
     Ok(grid_batch::<BE::Ring>(a).max(grid_batch::<BE::Ring>(b)))
 }
 
-/// Checks a `api::BlasMatMulOps::blas_matmul_prepare_left` call from metadata alone, which its implementation
-/// runs before any write: `a` is a grid at the context's `log_d` whose blocks tile its shape and share one layout whose
-/// label allows its batch record, of the module's degree, `ctx` was encoded on a module of `module`'s slot count at
-/// `a`'s radix, `res` has the shape of the infos `blas_matmul_left_operand_layout` gives for `a`, `ctx` and `res`'s
-/// hint (the hint, the dimensions, and the degree, radix, width and rank of the source's and the reported blocks,
-/// whatever their metadata), and `atk` holds every key of sigma from `a`'s width and of each phi^k from sigma's result
-/// into the terms' width, at the width it is looked up at, of `a`'s rank.
+/// Checks a `api::BlasMatMulOps::blas_matmul_prepare_left` call: `a` is a grid at the context's `log_d` whose blocks
+/// tile its shape and share one layout whose label allows its batch record, of the module's degree, `ctx` was encoded
+/// on a module of `module`'s slot count at `a`'s radix, `res` has the shape of the infos
+/// `blas_matmul_left_operand_layout` gives for `a`, `ctx` and `res`'s hint (the hint, the dimensions, and the degree,
+/// radix, width and rank of the source's and the reported blocks, whatever their metadata), and `atk` holds every key
+/// of sigma from `a`'s width and of each phi^k from sigma's result into the terms' width, at the width it is looked up
+/// at, of `a`'s rank.
 ///
 /// # Errors
 ///
 /// `InvalidOperand` for a grid, layout or context it rejects or for `res` of another shape, then, key by key,
-/// `MissingAutomorphismKey`, or `InvalidOperand` for a key of another rank. It checks no budget: poulpy-ckks rejects
-/// those inside the implementation.
+/// `MissingAutomorphismKey`, or `InvalidOperand` for a key of another rank.
 pub fn validate_blas_matmul_prepare_left<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasMatMulOperandInfos,
@@ -564,23 +558,21 @@ fn ensure_allocated(op: &'static str, res: &impl BlasMatMulOperandInfos, want: B
     Ok(())
 }
 
-/// Checks a `api::BlasMatMulOps::blas_matmul_prepared` call from metadata alone, which its implementation runs
-/// before any write, and returns the batch `res` records, the larger of the operands': `a` and `b` are prepared
-/// operands, read through their [`BlasMatMulOperandInfos`], at one `log_d`, with at least one block each and a batch
-/// record their label allows, a hot operand at the `log_d` of `ctx`, which was encoded on a module of `module`'s slot
-/// count at its radix; `res` is a grid at that `log_d` whose blocks tile its shape and share one layout whose label
-/// allows its batch record, of `a`'s rows and `b`'s columns, of the module's degree and the operands' radix and rank,
-/// at a radix of 62 at most; `a`'s columns match `b`'s rows; `atk` holds every key of a hot side's terms under `ctx`,
-/// as the preparation of its source looks them up; and `tsk` holds the tensor key at the wider of the terms' widths, a
-/// cold side's own, a hot side's under `ctx`, the one width the product looks it up at, of their rank. A cold side
-/// reads neither `ctx` nor `atk`, and the check reads no hot side's scale: the product spends that of the maps of
-/// `ctx`.
+/// Checks a `api::BlasMatMulOps::blas_matmul_prepared` call, and returns the batch `res` records, the larger of the
+/// operands': `a` and `b` are prepared operands, read through their [`BlasMatMulOperandInfos`], at one `log_d`, with at
+/// least one block each and a batch record their label allows, a hot operand at the `log_d` of `ctx`, which was encoded
+/// on a module of `module`'s slot count at its radix; `res` is a grid at that `log_d` whose blocks tile its shape and
+/// share one layout whose label allows its batch record, of `a`'s rows and `b`'s columns, of the module's degree and
+/// the operands' radix and rank, at a radix of 62 at most; `a`'s columns match `b`'s rows; `atk` holds every key of a
+/// hot side's terms under `ctx`, as the preparation of its source looks them up; and `tsk` holds the tensor key at the
+/// wider of the terms' widths, a cold side's own, a hot side's under `ctx`, the one width the product looks it up at,
+/// of their rank. A cold side reads neither `ctx` nor `atk`, and the check reads no hot side's scale: the product
+/// spends that of the maps of `ctx`.
 ///
 /// # Errors
 ///
 /// `InvalidOperand` for an operand without a batch record, or a grid, shape, layout, radix or context it rejects, then,
 /// key by key, `MissingAutomorphismKey` or `MissingRelinearizationKey`, or `InvalidOperand` for a key of another rank.
-/// It checks no budget: poulpy-ckks rejects those inside the implementation, before any write to `res`.
 pub fn validate_blas_matmul_prepared<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
@@ -601,19 +593,17 @@ pub fn validate_blas_matmul_prepared<BE: Backend>(
     Ok(batch)
 }
 
-/// Checks a `api::BlasMatMulOps::blas_matmul_pt_right` call from metadata alone, which its implementation runs
-/// before any write, and returns the batch `res` records, `a`'s: `a` and `res` are grids at `b`'s `log_d` whose blocks
-/// tile their shape and share one layout whose label allows their batch record, `a`'s columns match `b`'s rows, `res`
-/// has `a`'s rows and `b`'s columns, its blocks have the module's degree and `a`'s radix and rank, `b` was encoded on a
-/// module of `module`'s slot count at `a`'s radix, `b`'s public matrices divide `a`'s batch, and `atk` holds every key
-/// of `b`'s maps at the width it is looked up at, of `a`'s rank: under `Jkls` the first map's from `a`'s width, then
-/// the blocks' from the width it leaves.
+/// Checks a `api::BlasMatMulOps::blas_matmul_pt_right` call, and returns the batch `res` records, `a`'s: `a` and `res`
+/// are grids at `b`'s `log_d` whose blocks tile their shape and share one layout whose label allows their batch record,
+/// `a`'s columns match `b`'s rows, `res` has `a`'s rows and `b`'s columns, its blocks have the module's degree and
+/// `a`'s radix and rank, `b` was encoded on a module of `module`'s slot count at `a`'s radix, `b`'s public matrices
+/// divide `a`'s batch, and `atk` holds every key of `b`'s maps at the width it is looked up at, of `a`'s rank: under
+/// `Jkls` the first map's from `a`'s width, then the blocks' from the width it leaves.
 ///
 /// # Errors
 ///
 /// `InvalidOperand` for a grid, shape, layout, operand or count it rejects, then, key by key, `MissingAutomorphismKey`,
-/// or `InvalidOperand` for a key of another rank. It checks no budget: poulpy-ckks rejects those inside the
-/// implementation, before any write.
+/// or `InvalidOperand` for a key of another rank.
 pub fn validate_blas_matmul_pt_right<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
@@ -639,13 +629,12 @@ pub fn validate_blas_matmul_pt_right<BE: Backend>(
     Ok(batch)
 }
 
-/// Checks a `api::BlasMatMulOps::blas_matmul_pt_left` call from metadata alone, which its implementation runs
-/// before any write, and returns the batch `res` records, `a`'s: `a` and `res` are grids at `b`'s `log_d` whose blocks
-/// tile their shape and share one layout whose label allows their batch record, `b`'s columns match `a`'s rows, `res`
-/// has `b`'s rows and `a`'s columns, its blocks have the module's degree and `a`'s radix and rank, `b` was encoded on a
-/// module of `module`'s slot count at `a`'s radix, `b`'s public matrices divide `a`'s batch, and `atk` holds every key
-/// of `b`'s maps at the width it is looked up at, of `a`'s rank: under `Jkls` the first map's from `a`'s width, then
-/// the blocks' from the width it leaves.
+/// Checks a `api::BlasMatMulOps::blas_matmul_pt_left` call, and returns the batch `res` records, `a`'s: `a` and `res`
+/// are grids at `b`'s `log_d` whose blocks tile their shape and share one layout whose label allows their batch record,
+/// `b`'s columns match `a`'s rows, `res` has `b`'s rows and `a`'s columns, its blocks have the module's degree and
+/// `a`'s radix and rank, `b` was encoded on a module of `module`'s slot count at `a`'s radix, `b`'s public matrices
+/// divide `a`'s batch, and `atk` holds every key of `b`'s maps at the width it is looked up at, of `a`'s rank: under
+/// `Jkls` the first map's from `a`'s width, then the blocks' from the width it leaves.
 ///
 /// # Errors
 ///
@@ -741,7 +730,7 @@ pub(crate) fn term_uses<'c, P: LtDiagonalMeta + 'c>(
 ) -> Result<()> {
     let (a_k, rank) = (a.block_layout().k(), a.block_layout().rank());
     lt_uses(first, a_k, a_k, rank, &mut *f)?;
-    let s_k = lt_output_k(first, a_k, a_k);
+    let s_k = ckks_linear_transformation_output_k(first, a_k, a_k);
     (1..1usize << a.log_d()).try_for_each(|k| lt_uses(shift(k), s_k, s_k, rank, &mut *f))
 }
 
@@ -829,7 +818,7 @@ fn pt_uses<'m, P: LtDiagonalMeta + 'm>(
         None => a_k,
         Some(first) => {
             lt_uses(first, a_k, a_k, rank, &mut *f)?;
-            lt_output_k(first, a_k, a_k)
+            ckks_linear_transformation_output_k(first, a_k, a_k)
         }
     };
     maps.into_iter().try_for_each(|lt| lt_uses(lt, src_k, res_k, rank, &mut *f))

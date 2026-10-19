@@ -9,15 +9,16 @@
 
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{
-    Base2K, DiagonalArithmetic, GLWEPlaintextInfos, LinearTransformationDiagonal, LinearTransformationGiantStep,
-    LinearTransformationStrategy,
+    Base2K, DiagonalArithmetic, GLWELayout, GLWEPlaintextInfos, GLWEPlaintextMeta, LinearTransformationLayout,
+    LinearTransformationStrategy, Rank,
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::api::CKKSModuleInfos;
 use crate::{
-    CoeffsMeta,
+    CKKSCompositionError, CKKSLayout, CKKSResult, CoeffsMeta,
     api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, LinearTransformation},
+    ckks_ensure,
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
 };
 
@@ -76,7 +77,7 @@ fn validate_compile_inputs<F>(
 /// be represented at the requested scale, the diagonal map or BSGS schedule
 /// is malformed, the backend cannot encode a generated diagonal, or the
 /// caller-provided arena is too small. A zero torus width, `coeffs_meta.k = 0`,
-/// is [`CKKSCompositionError::InvalidOperand`](crate::CKKSCompositionError::InvalidOperand), returned before anything is
+/// is [`CKKSCompositionError::InvalidOperand`], returned before anything is
 /// allocated or written.
 ///
 /// # Migration
@@ -105,28 +106,6 @@ where
     coeffs_meta.ensure_width("ckks_encode_linear_transformation_from_diagonals")?;
     validate_compile_inputs(module.ckks_max_slots(), base2k, diagonals, strategy)?;
 
-    encode_linear_transformation_from_diagonals(module, base2k, coeffs_meta, diagonals, strategy, transpose, scratch)
-}
-
-/// Shared implementation of the public fallible compilation path.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "fallible compilation mirrors the established linear-transformation helper's explicit inputs"
-)]
-fn encode_linear_transformation_from_diagonals<BE, F>(
-    module: &Module<BE>,
-    base2k: Base2K,
-    coeffs_meta: CoeffsMeta,
-    diagonals: &ComplexDiagonals<F>,
-    strategy: LinearTransformationStrategy,
-    transpose: bool,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<LinearTransformation<CKKSPlaintextOwned<BE>>>
-where
-    BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
-    F: DiagonalArithmetic + CKKSEncodingScalar,
-{
     let owned_transposed;
     let cd: &ComplexDiagonals<F> = if transpose {
         let mut t = diagonals.clone();
@@ -136,52 +115,107 @@ where
     } else {
         diagonals
     };
-    let complex = cd.im.indexes().iter().any(|&index| {
-        cd.im
+    let layout = LinearTransformationLayout {
+        indexes: cd.indexes(),
+        slots: cd.slots(),
+        strategy,
+    };
+    let infos = CKKSLayout {
+        glwe_layout: GLWELayout {
+            n: module.ckks_compact_degree(cd.period()),
+            base2k,
+            k: coeffs_meta.k,
+            rank: Rank(0),
+        },
+        meta: coeffs_meta.meta,
+    };
+    let mut lt = module.ckks_linear_transformation_alloc_from_infos(&layout, &infos);
+    ckks_encode_linear_transformation_into(module, &mut lt, coeffs_meta.meta, cd, strategy, scratch)
+        .context("cannot encode a linear-transformation diagonal")?;
+    Ok(lt)
+}
+
+/// Encodes `diagonals` into `res`, allocated by
+/// [`CKKSModuleAlloc::ckks_linear_transformation_alloc_from_infos`] for their layout under `strategy`: every diagonal at
+/// `meta`, in the schedule's order, each plaintext overwritten, so encoding again into the same transform refills it.
+///
+/// # Errors
+///
+/// [`CKKSCompositionError::InvalidOperand`] when the schedule of `res` is not the one `diagonals` and `strategy` give,
+/// before anything is written; then the encoding's errors, after which the content of `res` is unspecified.
+pub fn ckks_encode_linear_transformation_into<BE, M, F>(
+    module: &M,
+    res: &mut LinearTransformation<CKKSPlaintextOwned<BE>>,
+    meta: GLWEPlaintextMeta,
+    diagonals: &ComplexDiagonals<F>,
+    strategy: LinearTransformationStrategy,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> CKKSResult<()>
+where
+    BE: Backend,
+    M: CKKSEncodingOps<BE, F>,
+    F: DiagonalArithmetic + CKKSEncodingScalar,
+{
+    let plan = LinearTransformationLayout {
+        indexes: diagonals.indexes(),
+        slots: diagonals.slots(),
+        strategy,
+    }
+    .index();
+    let same_schedule = res.baby_steps == plan.baby_steps
+        && res.giant_steps.len() == plan.giant_steps.len()
+        && res
+            .giant_steps
+            .iter()
+            .zip(plan.giant_steps.iter().zip(&plan.index))
+            .all(|(gs, (&rot, babies))| gs.rot == rot && gs.diagonals.iter().map(|d| d.baby).eq(babies.iter().copied()));
+    if !same_schedule {
+        return Err(CKKSCompositionError::InvalidOperand {
+            op: "ckks_encode_linear_transformation_into",
+            reason: "the transform's schedule is not the diagonals'".into(),
+        }
+        .into());
+    }
+    let complex = diagonals.im.indexes().iter().any(|&index| {
+        diagonals
+            .im
             .get(index)
             .is_some_and(|values| values.iter().any(|value| !value.is_zero()))
     });
-    let encoded = cd.build_transform(strategy, |pre_re, pre_im| -> Result<_> {
-        // The diagonal carries `pre_re.len()` slots: stored compactly, at the
-        // degree that holds them, and read by every consumer through the ring
-        // embedding.
-        let mut pt = module.ckks_pt_vec_alloc_compact(pre_re.len(), base2k, coeffs_meta.k);
-        pt.set_meta_checked(coeffs_meta.meta)?;
-        module
-            .ckks_encode_reim_into(&mut pt, pre_re, pre_im, scratch)
-            .context("cannot encode a linear-transformation diagonal")?;
-        // Real slots after encoding complex diagonals mean the imaginary parts were dropped.
-        ensure!(
-            !complex || !pt.slots().is_real(),
-            "complex linear-transformation diagonals cannot be encoded into real slots"
-        );
-        Ok(pt)
+    let mut targets = res.giant_steps.iter_mut().flat_map(|gs| &mut gs.diagonals);
+    let mut result = Ok(());
+    // The builder visits the diagonals in the schedule's order, the one checked above.
+    diagonals.build_transform(strategy, |re, im| {
+        if let (Ok(()), Some(dst)) = (&result, targets.next()) {
+            result = encode_diagonal(module, &mut dst.plaintext, meta, complex, re, im, scratch);
+        }
     });
+    result
+}
 
-    let giant_steps = encoded
-        .giant_steps
-        .into_iter()
-        .map(|step| {
-            let diagonals = step
-                .diagonals
-                .into_iter()
-                .map(|diagonal| {
-                    Ok(LinearTransformationDiagonal {
-                        baby: diagonal.baby,
-                        plaintext: diagonal.plaintext?,
-                    })
-                })
-                .collect::<Result<_>>()?;
-            Ok(LinearTransformationGiantStep {
-                rot: step.rot,
-                diagonals,
-            })
-        })
-        .collect::<Result<_>>()?;
-    Ok(LinearTransformation {
-        baby_steps: encoded.baby_steps,
-        giant_steps,
-    })
+/// Encodes `re + i im` into `pt` at `meta`.
+fn encode_diagonal<BE, M, F>(
+    module: &M,
+    pt: &mut CKKSPlaintextOwned<BE>,
+    meta: GLWEPlaintextMeta,
+    complex: bool,
+    re: &[F],
+    im: &[F],
+    scratch: &mut ScratchArena<'_, BE>,
+) -> CKKSResult<()>
+where
+    BE: Backend,
+    M: CKKSEncodingOps<BE, F>,
+    F: CKKSEncodingScalar,
+{
+    pt.set_meta_checked(meta)?;
+    module.ckks_encode_reim_into(pt, re, im, scratch)?;
+    // Real slots after encoding complex diagonals mean the imaginary parts were dropped.
+    ckks_ensure!(
+        !complex || !pt.slots().is_real(),
+        "complex linear-transformation diagonals cannot be encoded into real slots"
+    );
+    Ok(())
 }
 
 #[cfg(test)]

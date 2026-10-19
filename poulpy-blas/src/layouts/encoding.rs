@@ -6,11 +6,13 @@ use poulpy_ckks::{
     api::{
         CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, Diagonal, GiantStep,
         LinearTransformation, LinearTransformationLayout, LinearTransformationPlan, LinearTransformationPrepared, LtDiagonalMeta,
+        ckks_linear_transformation_output_layout,
     },
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
+    reference::ckks_encode_linear_transformation_into,
 };
 use poulpy_core::layouts::{
-    Base2K, DiagonalArithmetic, Diagonals, GLWELayout, GetDegree, LWEInfos, LinearTransformationStrategy, Rank, TorusPrecision,
+    Base2K, DiagonalArithmetic, Diagonals, GLWELayout, GetDegree, LWEInfos, LinearTransformationStrategy, Rank,
 };
 use poulpy_hal::{
     api::CnvPVecAlloc,
@@ -144,12 +146,7 @@ pub(crate) fn skeleton<P: Copy>(plan: &LinearTransformationPlan, diagonal: P) ->
     }
 }
 
-/// Encodes `map` into `lt`, allocated from its layout: every diagonal at the map's metadata, in the schedule's order,
-/// straight from the pre-rotated slots poulpy-ckks's schedule builder hands over, so only the plaintexts are written.
-///
-/// # Panics
-///
-/// Panics if the schedule of `lt` is not the map's.
+/// Encodes `map` into `lt`, allocated from its layout.
 pub(crate) fn encode_map_into<BE, M, F>(
     module: &M,
     lt: &mut Encoded<BE>,
@@ -161,49 +158,7 @@ where
     M: CKKSEncodingOps<BE, F>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
 {
-    let Scheduled { map, strategy, meta } = map;
-    let plan = LinearTransformationLayout {
-        indexes: map.indexes(),
-        slots: map.slots(),
-        strategy,
-    }
-    .index();
-    let same_schedule = lt.baby_steps == plan.baby_steps
-        && lt.giant_steps.len() == plan.giant_steps.len()
-        && lt
-            .giant_steps
-            .iter()
-            .zip(plan.giant_steps.iter().zip(&plan.index))
-            .all(|(gs, (&rot, babies))| gs.rot == rot && gs.diagonals.iter().map(|d| d.baby).eq(babies.iter().copied()));
-    assert!(same_schedule, "the map's schedule is not its allocation's");
-    let mut targets = lt.giant_steps.iter_mut().flat_map(|gs| &mut gs.diagonals);
-    let mut result = Ok(());
-    // The builder visits the diagonals in the schedule's order, the one asserted above.
-    map.build_transform(strategy, |re, im| {
-        if let (Ok(()), Some(dst)) = (&result, targets.next()) {
-            result = encode_diagonal(module, &mut dst.plaintext, meta, re, im, scratch);
-        }
-    });
-    result
-}
-
-/// Encodes `re + i im` into `pt` at `meta`.
-fn encode_diagonal<BE, M, F>(
-    module: &M,
-    pt: &mut CKKSPlaintextOwned<BE>,
-    meta: CoeffsMeta,
-    re: &[F],
-    im: &[F],
-    scratch: &mut ScratchArena<'_, BE>,
-) -> CKKSResult<()>
-where
-    BE: Backend,
-    M: CKKSEncodingOps<BE, F>,
-    F: CKKSEncodingScalar,
-{
-    pt.set_meta_checked(meta.meta)?;
-    module.ckks_encode_reim_into(pt, re, im, scratch)?;
-    Ok(())
+    ckks_encode_linear_transformation_into(module, lt, map.meta.meta, &map.map, map.strategy, scratch)
 }
 
 /// Prepares every map of `maps` into the allocation `res` yields at the same position, once `scratch` holds the largest
@@ -332,34 +287,8 @@ pub trait BlasEncodingOps<BE: Backend>: CKKSModuleAlloc<BE> + GetDegree + Sized 
 
 impl<BE: Backend> BlasEncodingOps<BE> for Module<BE> where Module<BE>: CKKSModuleAlloc<BE> {}
 
-/// Width poulpy-ckks gives `lt` evaluated from a ciphertext of width `src_k` into one of width `dst_k`, on an input it
-/// evaluates: the diagonals' scale comes off the source, capped at the destination.
-pub(crate) fn lt_output_k<P: LtDiagonalMeta>(
-    lt: &LinearTransformation<P>,
-    src_k: TorusPrecision,
-    dst_k: TorusPrecision,
-) -> TorusPrecision {
-    let scale = lt.first_diagonal_plaintext().map_or(0, LtDiagonalMeta::lt_log_scale);
-    src_k.as_usize().saturating_sub(scale).min(dst_k.as_usize()).into()
-}
-
-/// `block` after `lt` evaluated into a ciphertext of width `dst_k`: at the width [`lt_output_k`] gives, its slots joined with
-/// the map's. The preparations, the staged blocks of the products and the output-layout queries all read a map's effect
-/// on a layout here.
-pub(crate) fn mapped_block_into<P: LtDiagonalMeta>(
-    mut block: CKKSLayout,
-    lt: &LinearTransformation<P>,
-    dst_k: TorusPrecision,
-) -> CKKSLayout {
-    block.glwe_layout.k = lt_output_k(lt, block.k(), dst_k);
-    if let Some(diagonal) = lt.first_diagonal_plaintext() {
-        block.meta.slots = block.meta.slots.join(diagonal.lt_slots());
-    }
-    block
-}
-
 /// `block` after `lt`: at the width `lt` leaves of it, its slots joined with the map's.
 pub(crate) fn mapped_block<P: LtDiagonalMeta>(block: CKKSLayout, lt: &LinearTransformation<P>) -> CKKSLayout {
     let k = block.k();
-    mapped_block_into(block, lt, k)
+    ckks_linear_transformation_output_layout(lt, block, k)
 }

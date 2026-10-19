@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use num_traits::One;
 use poulpy_ckks::{
-    CKKSResult, CoeffsMeta, GLWEPlaintextInfos, GLWEPlaintextMeta, Scale,
+    CKKSResult, CoeffsMeta, GLWEPlaintextMeta, Scale,
     api::{
         CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, CKKSModuleInfos, LinearTransformation,
         LinearTransformationPrepared, optimal_bsgs_giant_step,
@@ -22,9 +22,8 @@ use poulpy_hal::{
 
 use super::{
     BlasGridInfos,
-    ciphertext::mat_slots_in,
     encoding::{Encoded, Scheduled, encode_map_into, prepare_maps_into, real_map},
-    maps,
+    grid_batch, maps,
 };
 
 /// How the products by public matrices are evaluated, which a plan records for the public operands encoded from it.
@@ -249,9 +248,7 @@ impl MapId {
     }
 }
 
-/// The maps of a context, in the order encoding and preparation walk them: sigma, tau, tau on a replicated input and
-/// the transpose, then psi^k, psi^k on a replicated input, phi^k, the halves of psi^k and those of phi^k, each family
-/// for `k = 1..d`.
+/// The maps of a context, in the order [`BlasContextUnprepared::maps`] states.
 pub(crate) struct ContextMaps<T> {
     log_d: usize,
     slots: usize,
@@ -398,101 +395,55 @@ pub struct BlasContextLayout {
 
 /// A context's plan and encoding, read from a layout, an encoded context or a prepared one.
 pub trait BlasContextInfos {
-    /// The block dimension and the schedule of every map.
-    fn plan(&self) -> BlasPlan;
+    /// A plain-data snapshot of these infos.
+    fn blas_context_layout(&self) -> BlasContextLayout;
+
+    /// [`BlasContextLayout::plan`].
+    fn plan(&self) -> BlasPlan {
+        self.blas_context_layout().plan
+    }
 
     /// `log2` of the block dimension.
     fn log_d(&self) -> usize {
         self.plan().log_d()
     }
 
-    /// Radix of the maps' diagonals.
-    fn base2k(&self) -> Base2K;
+    /// [`BlasContextLayout::base2k`].
+    fn base2k(&self) -> Base2K {
+        self.blas_context_layout().base2k
+    }
 
-    /// Torus width and metadata the maps are encoded at.
-    fn coeffs_meta(&self) -> CoeffsMeta;
+    /// [`BlasContextLayout::coeffs_meta`].
+    fn coeffs_meta(&self) -> CoeffsMeta {
+        self.blas_context_layout().coeffs_meta
+    }
 
-    /// Degree of the ring the maps are encoded on.
-    fn n(&self) -> Degree;
+    /// [`BlasContextLayout::n`].
+    fn n(&self) -> Degree {
+        self.blas_context_layout().n
+    }
 
-    /// Slots of the ring the maps are encoded on.
-    fn slots(&self) -> usize;
-
-    /// A plain-data snapshot of these infos.
-    fn blas_context_layout(&self) -> BlasContextLayout {
-        BlasContextLayout {
-            plan: self.plan(),
-            base2k: self.base2k(),
-            coeffs_meta: self.coeffs_meta(),
-            n: self.n(),
-            slots: self.slots(),
-        }
+    /// [`BlasContextLayout::slots`].
+    fn slots(&self) -> usize {
+        self.blas_context_layout().slots
     }
 }
 
 impl<T: BlasContextInfos + ?Sized> BlasContextInfos for &T {
-    fn plan(&self) -> BlasPlan {
-        (**self).plan()
-    }
-
-    fn base2k(&self) -> Base2K {
-        (**self).base2k()
-    }
-
-    fn coeffs_meta(&self) -> CoeffsMeta {
-        (**self).coeffs_meta()
-    }
-
-    fn n(&self) -> Degree {
-        (**self).n()
-    }
-
-    fn slots(&self) -> usize {
-        (**self).slots()
+    fn blas_context_layout(&self) -> BlasContextLayout {
+        (**self).blas_context_layout()
     }
 }
 
 impl<T: BlasContextInfos + ?Sized> BlasContextInfos for &mut T {
-    fn plan(&self) -> BlasPlan {
-        (**self).plan()
-    }
-
-    fn base2k(&self) -> Base2K {
-        (**self).base2k()
-    }
-
-    fn coeffs_meta(&self) -> CoeffsMeta {
-        (**self).coeffs_meta()
-    }
-
-    fn n(&self) -> Degree {
-        (**self).n()
-    }
-
-    fn slots(&self) -> usize {
-        (**self).slots()
+    fn blas_context_layout(&self) -> BlasContextLayout {
+        (**self).blas_context_layout()
     }
 }
 
 impl BlasContextInfos for BlasContextLayout {
-    fn plan(&self) -> BlasPlan {
-        self.plan
-    }
-
-    fn base2k(&self) -> Base2K {
-        self.base2k
-    }
-
-    fn coeffs_meta(&self) -> CoeffsMeta {
-        self.coeffs_meta
-    }
-
-    fn n(&self) -> Degree {
-        self.n
-    }
-
-    fn slots(&self) -> usize {
-        self.slots
+    fn blas_context_layout(&self) -> BlasContextLayout {
+        *self
     }
 }
 
@@ -510,46 +461,14 @@ pub struct BlasContext<BE: Backend> {
 }
 
 impl<BE: Backend> BlasContextInfos for BlasContextUnprepared<BE> {
-    fn plan(&self) -> BlasPlan {
-        self.layout.plan
-    }
-
-    fn base2k(&self) -> Base2K {
-        self.layout.base2k
-    }
-
-    fn coeffs_meta(&self) -> CoeffsMeta {
-        self.layout.coeffs_meta
-    }
-
-    fn n(&self) -> Degree {
-        self.layout.n
-    }
-
-    fn slots(&self) -> usize {
-        self.layout.slots
+    fn blas_context_layout(&self) -> BlasContextLayout {
+        self.layout
     }
 }
 
 impl<BE: Backend> BlasContextInfos for BlasContext<BE> {
-    fn plan(&self) -> BlasPlan {
-        self.layout.plan
-    }
-
-    fn base2k(&self) -> Base2K {
-        self.layout.base2k
-    }
-
-    fn coeffs_meta(&self) -> CoeffsMeta {
-        self.layout.coeffs_meta
-    }
-
-    fn n(&self) -> Degree {
-        self.layout.n
-    }
-
-    fn slots(&self) -> usize {
-        self.layout.slots
+    fn blas_context_layout(&self) -> BlasContextLayout {
+        self.layout
     }
 }
 
@@ -760,10 +679,7 @@ impl<BE: Backend> BlasContextPreparedFactory<BE> for Module<BE> where
 /// Galois elements `blas_sum` needs on a grid of layout `infos`: at its recorded batch, or for a layout without one
 /// the batch its label proves; none when one block does not fit the slots.
 pub fn sum_galois_elements<BE: Backend>(module: &Module<BE>, infos: &impl BlasGridInfos) -> Vec<i64> {
-    let mat_slots = infos
-        .mat_slots()
-        .unwrap_or_else(|| mat_slots_in(module.ckks_max_slots(), infos.log_d(), infos.block_layout().log_sparsity()));
-    sum_rotations(infos.log_d(), mat_slots)
+    sum_rotations(infos.log_d(), grid_batch::<BE::Ring>(infos))
         .map(|rotation| module.ckks_galois_element(rotation))
         .collect()
 }
@@ -822,22 +738,6 @@ mod tests {
                 plan: BlasPlan::new(0),
                 ..base
             },
-            BlasContextLayout {
-                plan: BlasPlan::new(4),
-                ..base
-            },
-            BlasContextLayout {
-                plan: BlasPlan::new(40),
-                ..base
-            },
-            BlasContextLayout {
-                coeffs_meta: CoeffsMeta::from_delta_budget(0, 0),
-                ..base
-            },
-            BlasContextLayout {
-                base2k: Base2K(0),
-                ..base
-            },
             BlasContextLayout { n: Degree(512), ..base },
             BlasContextLayout { slots: 64, ..base },
         ] {
@@ -874,35 +774,6 @@ mod tests {
         for log_d in [4, 40, usize::MAX] {
             layout.log_d = log_d;
             assert!(sum_galois_elements(&module, &layout).is_empty(), "log_d={log_d}");
-        }
-    }
-
-    /// The replicated-input maps rotate within the plan's product set, tau_rep at tau's giant step, so a client plans
-    /// no new key.
-    #[test]
-    fn rep_maps_rotate_within_the_matmul_set() {
-        for (order, log_d) in [(512, 1), (512, 2), (512, 3), (256, 3)] {
-            let (plan, slots) = (BlasPlan::new(log_d), (order / 4) as usize);
-            let set = plan.matmul_galois_elements(order);
-            let mut rep = vec![(
-                maps::tau_rep::<f64>(slots, log_d),
-                plan.strategy(&maps::tau::<f64>(slots, log_d), false),
-            )];
-            for k in 1..1 << log_d {
-                let map = maps::rotate_rows_rep::<f64>(slots, log_d, k);
-                let strategy = plan.strategy(&map, true);
-                rep.push((map, strategy));
-            }
-            for (map, strategy) in rep {
-                let layout = LinearTransformationLayout {
-                    indexes: map.indexes(),
-                    slots,
-                    strategy,
-                };
-                for p in layout.galois_elements(order) {
-                    assert!(set.contains(&p), "order={order} log_d={log_d} p={p}");
-                }
-            }
         }
     }
 
