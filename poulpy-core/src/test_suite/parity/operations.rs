@@ -4,15 +4,15 @@
 //! compare.
 
 use poulpy_hal::{
-    api::{CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphism},
     layouts::{HostDataMut, Module, ScratchOwned, ZnxView, ZnxViewMut},
     source::Source,
-    test_suite::TestParams,
+    test_suite::{TestParams, vec_znx_backend_mut, vec_znx_backend_ref},
 };
 
 use crate::{
-    GGSWRotate, GLWEAdd, GLWEBytesOf, GLWECopy, GLWEMaskFill, GLWEMulConst, GLWEMulPlain, GLWEMulXpMinusOne, GLWENegate,
-    GLWENormalize, GLWEPreparedTensoring, GLWERotate, GLWEShift, GLWESub, GLWETensoring, GLWEZero,
+    GGSWRotate, GLWEAdd, GLWEBytesOf, GLWECopy, GLWEMaskFill, GLWEMulConst, GLWEMulPlain, GLWEMulPreparedPlainSum,
+    GLWEMulXpMinusOne, GLWENegate, GLWENormalize, GLWEPreparedTensoring, GLWERotate, GLWEShift, GLWESub, GLWETensoring, GLWEZero,
     api::TransferInto,
     glwe_prepare_left, glwe_prepare_left_tmp_bytes, glwe_prepare_right, glwe_prepare_right_tmp_bytes,
     layouts::{Base2K, Degree, GGSWAtViewMut, GLWELayout, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision},
@@ -932,7 +932,8 @@ pub fn test_glwe_shift_parity<BR, BT>(
     }
 }
 
-/// Plaintext and scalar products compare canonical ciphertexts at conversion boundaries.
+/// Plaintext and scalar products, and the summed product of prepared operands, compare canonical ciphertexts at
+/// conversion boundaries.
 pub fn test_glwe_multiplication_parity<BR, BT>(
     params: &TestParams,
     shapes: &ParityShapes,
@@ -942,8 +943,21 @@ pub fn test_glwe_multiplication_parity<BR, BT>(
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWEMulConst<BR> + GLWEMulPlain<BR>,
-    Module<BT>: GLWEMulConst<BT> + GLWEMulPlain<BT>,
+    Module<BR>: GLWEMulConst<BR>
+        + GLWEMulPlain<BR>
+        + GLWEMulPreparedPlainSum<BR>
+        + CnvPVecAlloc<BR>
+        + Convolution<BR>
+        + GLWENormalize<BR>
+        + GLWEBytesOf<BR>
+        + VecZnxAutomorphism<BR>,
+    Module<BT>: GLWEMulConst<BT>
+        + GLWEMulPlain<BT>
+        + GLWEMulPreparedPlainSum<BT>
+        + CnvPVecAlloc<BT>
+        + Convolution<BT>
+        + GLWENormalize<BT>
+        + GLWEBytesOf<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
@@ -1040,8 +1054,185 @@ pub fn test_glwe_multiplication_parity<BR, BT>(
                     );
                 }
             }
+            test_glwe_mul_prepared_plain_sum_case(params, &infos, module_ref, module_test, &mut source);
         }
     }
+}
+
+/// The summed product of prepared ciphertexts by prepared plaintexts read through Galois elements, each call on exactly
+/// its scratch: one term through `1` is `glwe_mul_plain` of the two sources and one through `5` is `glwe_mul_plain` of
+/// the ciphertext by the plaintext's automorphism, bit for bit; three terms through `1`, `5` and `-1` agree across
+/// backends, the two sides preparing under swapped hints, the test side from unnormalized twins; an even element panics
+/// before `res` changes.
+fn test_glwe_mul_prepared_plain_sum_case<BR, BT>(
+    params: &TestParams,
+    infos: &GLWELayout,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+    source: &mut Source,
+) where
+    BR: ParityBackend,
+    BT: ParityBackend,
+    BR::OwnedBuf: HostDataMut,
+    Module<BR>: GLWEMulPlain<BR>
+        + GLWEMulPreparedPlainSum<BR>
+        + CnvPVecAlloc<BR>
+        + Convolution<BR>
+        + GLWENormalize<BR>
+        + GLWEBytesOf<BR>
+        + VecZnxAutomorphism<BR>,
+    Module<BT>: GLWEMulPreparedPlainSum<BT> + CnvPVecAlloc<BT> + Convolution<BT> + GLWENormalize<BT> + GLWEBytesOf<BT>,
+    ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
+    ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
+{
+    const GALOIS: [i64; 3] = [1, 5, -1];
+    let (n, k, rank, base2k) = (infos.n.as_usize(), infos.k.as_usize(), infos.rank, infos.base2k);
+    let (cols, size) = (rank.as_usize() + 1, k.div_ceil(base2k.as_usize()));
+    let (hint, other) = crate::test_suite::prepare_hints(k);
+    let (mut cts, mut plains) = (Vec::new(), Vec::new());
+    let (mut a_ref, mut a_test, mut b_ref, mut b_test) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    for _ in GALOIS {
+        let ct = ref_glwe(module_ref, infos, source);
+        let mut twin = module_test.glwe_alloc_from_infos(infos);
+        unnormalized_twin::<BR, BT>(&ct, &mut twin);
+        let mut plain = module_ref.glwe_plaintext_alloc_from_infos(infos);
+        module_ref.fill_glwe_from_source(&mut plain, source);
+        let mut plain_test = module_test.glwe_plaintext_alloc_from_infos(infos);
+        plain.transfer_into(&mut plain_test);
+
+        let mut left_ref = module_ref.cnv_pvec_left_alloc(n, cols, size, hint);
+        let mut left_test = module_test.cnv_pvec_left_alloc(n, cols, size, other);
+        let mut right_ref = module_ref.cnv_pvec_right_alloc(n, 1, size, other);
+        let mut right_test = module_test.cnv_pvec_right_alloc(n, 1, size, hint);
+        let bytes = glwe_prepare_left_tmp_bytes(module_ref, size, infos);
+        glwe_prepare_left(module_ref, &mut left_ref, &ct, k, &mut poisoned_scratch::<BR>(bytes).borrow());
+        let bytes = glwe_prepare_left_tmp_bytes(module_test, size, infos);
+        glwe_prepare_left(
+            module_test,
+            &mut left_test,
+            &twin,
+            k,
+            &mut poisoned_scratch::<BT>(bytes).borrow(),
+        );
+        let bytes = glwe_prepare_right_tmp_bytes(module_ref, size, &plain);
+        glwe_prepare_right(
+            module_ref,
+            &mut right_ref,
+            &plain,
+            k,
+            &mut poisoned_scratch::<BR>(bytes).borrow(),
+        );
+        let bytes = glwe_prepare_right_tmp_bytes(module_test, size, &plain_test);
+        glwe_prepare_right(
+            module_test,
+            &mut right_test,
+            &plain_test,
+            k,
+            &mut poisoned_scratch::<BT>(bytes).borrow(),
+        );
+
+        cts.push(ct);
+        plains.push(plain);
+        a_ref.push(left_ref);
+        a_test.push(left_test);
+        b_ref.push(right_ref);
+        b_test.push(right_test);
+    }
+    let mut rotated = module_ref.glwe_plaintext_alloc_from_infos(infos);
+    module_ref.vec_znx_automorphism(
+        5,
+        &mut vec_znx_backend_mut::<BR>(&mut rotated.data),
+        0,
+        &vec_znx_backend_ref::<BR>(&plains[0].data),
+        0,
+    );
+    let (a_refs, b_refs): (Vec<&_>, Vec<&_>) = (a_ref.iter().collect(), b_ref.iter().collect());
+    let (a_tests, b_tests): (Vec<&_>, Vec<&_>) = (a_test.iter().collect(), b_test.iter().collect());
+
+    for offset in [0, params.base2k - 1, params.base2k] {
+        for (g, plain) in [(1, &plains[0]), (5, &rotated)] {
+            let mut want = module_ref.glwe_alloc_from_infos(infos);
+            let mut have = module_ref.glwe_alloc_from_infos(infos);
+            let bytes = module_ref.glwe_mul_plain_tmp_bytes(&want, &cts[0], plain);
+            module_ref.glwe_mul_plain(offset, &mut want, &cts[0], plain, &mut poisoned_scratch::<BR>(bytes).borrow());
+            let bytes = module_ref.glwe_mul_prepared_plain_sum_tmp_bytes(&have, size, size);
+            module_ref.glwe_mul_prepared_plain_sum(
+                offset,
+                &mut have,
+                &a_refs[..1],
+                size,
+                &b_refs[..1],
+                size,
+                &[g],
+                base2k,
+                &mut poisoned_scratch::<BR>(bytes).borrow(),
+            );
+            assert_glwe_eq!(
+                want,
+                have,
+                "glwe_mul_prepared_plain_sum versus glwe_mul_plain: g={g} k={k} rank={rank:?} offset={offset}"
+            );
+        }
+
+        let mut res_ref = ref_glwe(module_ref, infos, source);
+        let mut res_test = module_test.glwe_alloc_from_infos(infos);
+        res_ref.transfer_into(&mut res_test);
+        let bytes = module_ref.glwe_mul_prepared_plain_sum_tmp_bytes(&res_ref, size, size);
+        module_ref.glwe_mul_prepared_plain_sum(
+            offset,
+            &mut res_ref,
+            &a_refs,
+            size,
+            &b_refs,
+            size,
+            &GALOIS,
+            base2k,
+            &mut poisoned_scratch::<BR>(bytes).borrow(),
+        );
+        let bytes = module_test.glwe_mul_prepared_plain_sum_tmp_bytes(&res_test, size, size);
+        module_test.glwe_mul_prepared_plain_sum(
+            offset,
+            &mut res_test,
+            &a_tests,
+            size,
+            &b_tests,
+            size,
+            &GALOIS,
+            base2k,
+            &mut poisoned_scratch::<BT>(bytes).borrow(),
+        );
+        let mut have = module_ref.glwe_alloc_from_infos(infos);
+        res_test.transfer_into(&mut have);
+        assert_glwe_eq!(
+            res_ref,
+            have,
+            "glwe_mul_prepared_plain_sum, three terms: k={k} rank={rank:?} offset={offset}"
+        );
+    }
+
+    let mut res = ref_glwe(module_ref, infos, source);
+    let mut before = module_ref.glwe_alloc_from_infos(infos);
+    res.transfer_into(&mut before);
+    let bytes = module_ref.glwe_mul_prepared_plain_sum_tmp_bytes(&res, size, size);
+    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module_ref.glwe_mul_prepared_plain_sum(
+            0,
+            &mut res,
+            &a_refs,
+            size,
+            &b_refs,
+            size,
+            &[1, 4, 5],
+            base2k,
+            &mut poisoned_scratch::<BR>(bytes).borrow(),
+        )
+    }))
+    .is_err();
+    assert!(panicked, "glwe_mul_prepared_plain_sum accepted an even Galois element");
+    assert_eq!(
+        res, before,
+        "glwe_mul_prepared_plain_sum changed res before rejecting an even Galois element"
+    );
 }
 
 /// GGSW rotation visits every row, including the in-place mutation variant.

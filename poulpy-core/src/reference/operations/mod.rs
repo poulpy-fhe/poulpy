@@ -11,5 +11,7 @@
 //! a scratch buffer.
 
 mod glwe;
+mod glwe_mul_plain_sum;
 
 pub use glwe::*;
+pub use glwe_mul_plain_sum::*;

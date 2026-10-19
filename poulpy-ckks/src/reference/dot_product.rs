@@ -158,7 +158,7 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
 impl<BE: Backend> CKKSDotProductReference<BE> for Module<BE> {}
 
 /// Whether every ciphertext shares the first one's layout and scale, the inputs of the ct × ct rule.
-fn share_layout<C: CKKSCtBounds>(cts: &[&C]) -> bool {
+pub(crate) fn share_layout<C: CKKSCtBounds>(cts: &[&C]) -> bool {
     cts.iter()
         .all(|ct| (ct.glwe_layout(), ct.log_delta()) == (cts[0].glwe_layout(), cts[0].log_delta()))
 }

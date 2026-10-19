@@ -1,4 +1,5 @@
 use crate::CKKSResult as Result;
+use poulpy_core::GLWEMulPreparedPlainSum;
 use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos};
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
@@ -6,8 +7,8 @@ use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     layouts::{CKKSCiphertext, CKKSPreparedLeft, CKKSPreparedRight},
     oep::derived::dot_product::{
-        ckks_dot_product_pt_const, ckks_dot_product_pt_const_tmp_bytes, ckks_dot_product_pt_vec,
-        ckks_dot_product_pt_vec_tmp_bytes,
+        ckks_dot_product_prepared_pt, ckks_dot_product_prepared_pt_tmp_bytes, ckks_dot_product_pt_const,
+        ckks_dot_product_pt_const_tmp_bytes, ckks_dot_product_pt_vec, ckks_dot_product_pt_vec_tmp_bytes,
     },
 };
 
@@ -103,6 +104,35 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         E: GLWEToBackendRef<Self> + CKKSCtBounds + IntPolyInfos,
     {
         ckks_dot_product_pt_const(module, dst, a, b, pt_coeffs, scratch)
+    }
+
+    /// Scratch of [`Self::ckks_dot_product_prepared_pt_impl`]: core's summed product's.
+    fn ckks_dot_product_prepared_pt_tmp_bytes_impl<R: CKKSCtBounds, A: GLWEInfos, P: GLWEInfos>(
+        module: &Module<Self>,
+        res: &R,
+        a: &A,
+        b: &P,
+    ) -> usize
+    where
+        Module<Self>: GLWEMulPreparedPlainSum<Self>,
+    {
+        ckks_dot_product_prepared_pt_tmp_bytes(module, res, a, b)
+    }
+
+    /// Core's `glwe_mul_prepared_plain_sum` at the rule of `ckks_mul_pt_vec_into`, every operand checked first.
+    fn ckks_dot_product_prepared_pt_impl<Dst>(
+        module: &Module<Self>,
+        dst: &mut Dst,
+        a: &[&CKKSPreparedLeft<Self>],
+        b: &[&CKKSPreparedRight<Self>],
+        galois: &[i64],
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        Module<Self>: GLWEMulPreparedPlainSum<Self>,
+        Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
+    {
+        ckks_dot_product_prepared_pt(module, dst, a, b, galois, scratch)
     }
 }
 

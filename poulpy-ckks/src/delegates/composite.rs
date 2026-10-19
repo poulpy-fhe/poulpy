@@ -12,7 +12,7 @@ use crate::{
     layouts::{CKKSCiphertext, CKKSCiphertextViewMut, CKKSPreparedLeft, CKKSPreparedRight, ScratchArenaTakeCKKS},
     oep::CKKSDotProductImpl,
 };
-use poulpy_core::GLWEBytesOf;
+use poulpy_core::{GLWEBytesOf, GLWEMulPreparedPlainSum};
 
 /// Shared body of the fused multiply-then-accumulate composites
 /// (`ckks_mul_{add,sub}_*_into`): carve a `dst`-shaped temporary
@@ -414,6 +414,31 @@ impl<BE: Backend + CKKSDotProductImpl> CKKSDotProductOps<BE> for Module<BE> {
         H: GetTensorKey<BE>,
     {
         BE::ckks_dot_product_prepared_impl(self, dst, a, b, tsk, scratch)
+    }
+
+    fn ckks_dot_product_prepared_pt_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    where
+        Self: GLWEMulPreparedPlainSum<BE>,
+        R: CKKSCtBounds,
+        A: GLWEInfos,
+        P: GLWEInfos,
+    {
+        BE::ckks_dot_product_prepared_pt_tmp_bytes_impl(self, res, a, b)
+    }
+
+    fn ckks_dot_product_prepared_pt<Dst>(
+        &self,
+        dst: &mut Dst,
+        a: &[&CKKSPreparedLeft<BE>],
+        b: &[&CKKSPreparedRight<BE>],
+        galois: &[i64],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Self: GLWEMulPreparedPlainSum<BE>,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    {
+        BE::ckks_dot_product_prepared_pt_impl(self, dst, a, b, galois, scratch)
     }
 
     fn ckks_dot_product_pt_vec<Dst: Data, D: Data, E>(

@@ -1021,6 +1021,10 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::dot_product::test_dot_product_pt_vec_aligned
             );
             run_test!(
+                dot_product_prepared_pt,
+                $crate::test_suite::dot_product::test_dot_product_prepared_pt
+            );
+            run_test!(
                 dot_product_const_aligned,
                 $crate::test_suite::dot_product::test_dot_product_const_aligned
             );

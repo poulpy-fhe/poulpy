@@ -16,10 +16,11 @@
 //! | [`test_dot_product_ct_non_uniform`] | ct · ct, pairs without a shared layout or scale |
 //! | [`test_dot_product_prepared`] | prepared ct · prepared ct: the bits of ct · ct, under every pair of hints; rejections |
 //! | [`test_dot_product_pt_vec_aligned`] | ct · ZNX plaintext |
+//! | [`test_dot_product_prepared_pt`] | prepared ct · prepared ZNX plaintexts through Galois elements: one sum, the bits of ct · pt; rejections |
 //! | [`test_dot_product_const_aligned`] | ct · ZNX constant |
 
 use poulpy_core::{
-    CoreError, GLWESub,
+    CoreError, GLWEMulPreparedPlainSum, GLWESub,
     layouts::{
         GLWEInfos, GLWELayout, GLWEPlaintextInfos, GetTensorKey, LWEInfos, Rank, SetGLWEPlaintextInfos, TorusPrecision,
         prepared::GLWETensorKeyPreparedBackendRef,
@@ -31,7 +32,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCompositionError, CKKSError, CKKSInfos, Scale, SetCKKSInfos, SlotsKind,
+    CKKSCompositionError, CKKSError, CKKSInfos, CKKSModuleInfos, Scale, SetCKKSInfos, SlotsKind,
     api::{CKKSDotProductOps, CKKSMulAddOps, CKKSMulOps},
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPreparedLeft, CKKSPreparedRight, plaintext::CKKSPlaintext},
 };
@@ -40,7 +41,7 @@ use super::helpers::{
     PT_PREC, TestContextBackend, TestContextModule, TestScalar, TestVector, alloc_ct, alloc_scratch, assert_ckks_error,
     assert_decrypt_precision, assert_decrypt_precision_at_log_delta, ckks_encrypt, ckks_encrypt_with_prec, ckks_pt_cst_full,
     encode_and_upload_pt, gen_sk_with_raw, gen_tsk, precision_at, quantize, quantized_const, quantized_vector, test_vector_1,
-    test_vector_2, want_mul,
+    test_vector_2, want_mul, want_rotate,
 };
 use super::parity::helpers::{snapshot, with_scratch};
 
@@ -1240,6 +1241,159 @@ pub fn test_dot_product_pt_vec_aligned<BE, F, E>(
         &want_im,
         &mut scratch.borrow(),
     );
+}
+
+/// `ckks_dot_product_prepared_pt` of three ciphertexts prepared by `ckks_prepare_left` by plaintexts prepared by
+/// `ckks_prepare_right`, read through the Galois elements of the rotations `0`, `1` and `-3`, decrypts to
+/// `Σ a_t ⊙ Rot_{r_t}(b_t)` at the rule of `ckks_mul_pt_vec_into`; one term through `1` is `ckks_mul_pt_vec_into` of its
+/// sources, bit for bit, on exactly its scratch; an even element, slices of two lengths and terms of two scales are
+/// rejected before `dst` changes.
+pub fn test_dot_product_prepared_pt<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + GLWEMulPreparedPlainSum<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    const OP: &str = "ckks_dot_product_prepared_pt";
+    const ROTATIONS: [i64; N] = [0, 1, -3];
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let (re2, im2) = test_vector_2::<F>(m);
+    let sk = super::helpers::gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let log_delta = params.prec().log_delta();
+    let prepare_left = |ct: &CKKSCiphertextOwned<BE>| {
+        with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(ct), |s| {
+            module.ckks_prepare_left(ct, PrepareHint::Reuse, s)
+        })
+        .unwrap()
+    };
+
+    let a_vecs = three_vectors(&re1, &im1, &re2, &im2);
+    let b_vecs = three_vectors(&re2, &im2, &re1, &im1);
+    let mut want_re = vec![F::zero(); m];
+    let mut want_im = vec![F::zero(); m];
+    for ((a, b), r) in a_vecs.iter().zip(&b_vecs).zip(ROTATIONS) {
+        let (b_re, b_im) = want_rotate(&quantize(&b.0, log_delta), &quantize(&b.1, log_delta), r, m);
+        cmul_acc(&mut want_re, &mut want_im, &a.0, &a.1, &b_re, &b_im);
+    }
+    let a_cts: Vec<_> = a_vecs
+        .iter()
+        .map(|(re, im)| {
+            ckks_encrypt(
+                &params,
+                module,
+                host_module,
+                &encoder,
+                &sk,
+                params.k,
+                re,
+                im,
+                &mut scratch.borrow(),
+            )
+        })
+        .collect();
+    let pts: Vec<_> = b_vecs
+        .iter()
+        .map(|(re, im)| encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), params.prec(), re, im))
+        .collect();
+    let lefts: Vec<_> = a_cts.iter().map(prepare_left).collect();
+    let rights: Vec<_> = pts
+        .iter()
+        .map(|pt| {
+            with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(pt), |s| {
+                module.ckks_prepare_right(pt, PrepareHint::Reuse, s)
+            })
+            .unwrap()
+        })
+        .collect();
+    let galois: Vec<i64> = ROTATIONS.iter().map(|&r| module.ckks_galois_element(r)).collect();
+    let (a, b): (Vec<&_>, Vec<&_>) = (lefts.iter().collect(), rights.iter().collect());
+
+    let mut dst = alloc_ct(&params, module, params.k);
+    let bytes = module.ckks_dot_product_prepared_pt_tmp_bytes(&dst, a[0], b[0]);
+    with_scratch::<BE, _>(bytes, |s| module.ckks_dot_product_prepared_pt(&mut dst, &a, &b, &galois, s)).unwrap();
+    assert_eq!(
+        (dst.log_delta(), dst.log_budget()),
+        (a_cts[0].log_delta(), a_cts[0].log_budget() - pts[0].log_delta()),
+        "{OP}: metadata"
+    );
+    assert_decrypt_precision(
+        OP,
+        &params,
+        module,
+        &encoder,
+        &dst,
+        &sk,
+        &want_re,
+        &want_im,
+        &mut scratch.borrow(),
+    );
+
+    let mut want = alloc_ct(&params, module, params.k);
+    module
+        .ckks_mul_pt_vec_into(&mut want, &a_cts[0], &pts[0], &mut scratch.borrow())
+        .unwrap();
+    let mut have = alloc_ct(&params, module, params.k);
+    with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_dot_product_prepared_pt(&mut have, &a[..1], &b[..1], &[1], s)
+    })
+    .unwrap();
+    assert!(
+        snapshot::<BE, _>(&have) == snapshot::<BE, _>(&want),
+        "{OP}: one term through 1 is not ckks_mul_pt_vec_into"
+    );
+
+    let before = snapshot::<BE, _>(&have);
+    let even = [galois[0], 2, galois[2]];
+    let err = module
+        .ckks_dot_product_prepared_pt(&mut have, &a, &b, &even, &mut scratch.borrow())
+        .unwrap_err();
+    assert_ckks_error(
+        "even element",
+        &err,
+        CKKSCompositionError::InvalidOperand {
+            op: OP,
+            reason: "a Galois element is even".into(),
+        },
+    );
+    assert!(
+        module
+            .ckks_dot_product_prepared_pt(&mut have, &a, &b[..2], &galois, &mut scratch.borrow())
+            .is_err(),
+        "{OP}: slices of two lengths"
+    );
+    let err = module
+        .ckks_dot_product_prepared_pt(&mut have, &a, &b, &galois[..2], &mut scratch.borrow())
+        .unwrap_err();
+    assert_ckks_error(
+        "two Galois lengths",
+        &err,
+        CKKSCompositionError::InvalidOperand {
+            op: OP,
+            reason: "one Galois element per term".into(),
+        },
+    );
+    let mut rescaled = a_cts[1].clone();
+    rescaled.set_log_delta(a_cts[1].log_delta() - 1);
+    let rescaled = prepare_left(&rescaled);
+    let mixed = [a[0], &rescaled, a[2]];
+    let err = module
+        .ckks_dot_product_prepared_pt(&mut have, &mixed, &b, &galois, &mut scratch.borrow())
+        .unwrap_err();
+    assert_ckks_error(
+        "two scales",
+        &err,
+        CKKSCompositionError::InvalidOperand {
+            op: OP,
+            reason: "every a[t] must share one layout and scale, and every b[t] one".into(),
+        },
+    );
+    assert!(snapshot::<BE, _>(&have) == before, "{OP}: a rejection changed dst");
 }
 
 pub fn test_dot_product_const_aligned<BE, F, E>(
