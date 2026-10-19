@@ -94,8 +94,9 @@ keep the original sweep sizes and CKKS coverage.
 
 To measure actual AVX-512 emulation on an AVX-512-capable host, add
 `-force_emulate skx -force_emulate icl` to the SDE runner. `-icl` alone may execute
-host-supported instructions natively. Test execution is limited to five minutes;
-cold compilation is timed separately.
+host-supported instructions natively.
+Test execution is limited to twelve minutes under SDE and eight minutes natively.
+Cold compilation is timed separately.
 
 ## Basic Usage
 
