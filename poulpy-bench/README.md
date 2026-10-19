@@ -184,7 +184,9 @@ cargo bench -p poulpy-cpu-portable --bench full --features enable-ckks -- 'NTT4x
 
 `hal::params::default_bench_params_normalize()` covers input and output bases
 `{17, 19, 21, 50, 51}`, offsets `{-a_base2k, 0, 1, a_base2k}`, equal input/output
-sizes `{4, 8, 16}`, and ring degrees `{4096, 65536}`, with one column. The Criterion
+sizes `{4, 8, 16}`, and ring degrees `{4096, 65536}`, with one column, plus the rank-1 key
+switching shape: degree 4096, two columns, base 52, `k = 108`, sources of 3 and 4 limbs
+into 3 (rows ending in `drop=48` and `drop=48/a_size=4`). The Criterion
 runners `runner_vec_znx_normalize_sweep` and
 `runner_vec_znx_big_normalize_sweep` accept these parameters.
 
