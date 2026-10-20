@@ -150,6 +150,7 @@ pub trait NormalizeLanes {
     fn wide_add(x: Self::W, y: Self::W) -> Self::W;
     /// `x + y` with `y` sign-extended.
     fn wide_add_n(x: Self::W, y: Self::N) -> Self::W;
+    /// Arithmetic shift right by `1 <= k <= 63`.
     fn wide_sra(x: Self::W, k: u32) -> Self::W;
     /// Low 64 bits of every lane.
     fn wide_low(x: Self::W) -> Self::N;
@@ -300,7 +301,7 @@ impl<const W: usize> NormalizeLanes for SimdLanes<W> {
 }
 
 /// i128 words as `(lo, hi)` halves in `std::simd` vectors of `W` lanes, each 4-coefficient chunk
-/// in lane order [0, 2, 1, 3], the order an in-lane unpack of 128-bit halves yields.
+/// in lane order [0, 2, 1, 3], the order an in-lane unpack of 128-bit halves yields at `W = 4`.
 pub struct SimdI128Lanes<const W: usize>;
 
 /// The source half holding the low 64 bits of an i128.
@@ -400,7 +401,6 @@ impl<const W: usize> NormalizeLanes for SimdI128Lanes<W> {
     }
     #[inline(always)]
     fn wide_sra(x: Self::W, k: u32) -> Self::W {
-        // The driver never shifts by 0, so `64 - k` stays below 64.
         let k = k as u64;
         ((x.0 >> k) | (x.1.cast::<u64>() << (64 - k)), x.1 >> k as i64)
     }
