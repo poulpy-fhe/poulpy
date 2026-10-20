@@ -166,6 +166,9 @@ pub trait CKKSModuleInfos {
     /// Maximum number of slots: `N` real slots or `N/2` complex slots.
     fn ckks_max_slots(&self) -> usize;
 
+    /// Slots a plaintext of degree `n` holds: `n / 2` complex slots, or `n` real slots on the invariant ring.
+    fn ckks_slots_of_degree(&self, n: usize) -> usize;
+
     /// Automorphism identifier used by CKKS rotations and their evaluation keys.
     /// `rotation` is reduced modulo [`Self::ckks_max_slots`], so a negative shift rotates backwards.
     fn ckks_galois_element(&self, rotation: i64) -> i64;
@@ -174,6 +177,10 @@ pub trait CKKSModuleInfos {
 impl<BE: Backend> CKKSModuleInfos for Module<BE> {
     fn ckks_max_slots(&self) -> usize {
         (self.cyclotomic_order() / 4) as usize
+    }
+
+    fn ckks_slots_of_degree(&self, n: usize) -> usize {
+        n * self.ckks_max_slots() / self.n()
     }
 
     fn ckks_galois_element(&self, rotation: i64) -> i64 {

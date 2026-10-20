@@ -12,6 +12,7 @@
   `HalVecZnxImpl` gains the required methods `vec_znx_gadget_decompose` and `vec_znx_gadget_decompose_tmp_bytes`, and `test_vec_znx_gadget_decompose` checks a backend against a reference and against the contract.
 - **Breaking:** `VecZnxIdftApplyTmpA`, `HalVecZnxDftImpl::vec_znx_idft_apply_tmpa` and `test_vec_znx_idft_apply_tmpa` are removed; callers use `vec_znx_idft_apply` with `vec_znx_idft_apply_tmp_bytes` of scratch, which also removes the per-call allocation of the AVX-512 NTT4x30 and IFMA backends ([#339](https://github.com/poulpy-fhe/poulpy/issues/339)), and the default `vec_znx_idft_normalize_consume_tmp_bytes` covers that scratch.
 - The contract key `sparse` is renamed `embed`, the module `test_suite::sparse` becomes `test_suite::embed`, and the tests `test_vec_znx_sparse_add_sub`, `test_vec_znx_big_sparse_add_sub` and `test_convolution_sparse` become `test_vec_znx_embed_add_sub`, `test_vec_znx_big_embed_add_sub` and `test_convolution_embed`.
+- **Breaking:** `VecZnx::encode_vec_i64_strided`, `encode_vec_i128_strided`, `decode_vec_i64_strided` and `decode_vec_i128_strided` are removed; the dense forms take one value per coefficient.
 
 ### CPU backends
 
@@ -137,6 +138,7 @@
 - **Fix:** `glwe_eval_linear_transformation_into` checks every giant step before writing `res`, as `glwe_eval_linear_transformation_sum_into` does: on the per-giant fallback, a giant step after the first that had no diagonal, started with a diagonal of another width, or read a baby rotation missing from the cache panicked after `res` was written. The other diagonals are not checked: every diagonal of a transform shares one width, scale and degree, as the encoder produces them. Valid calls are unchanged.
 - **Fix:** `glwe_tensor_relinearize_tmp_bytes` counts the operand's second conversion to the tensor key's radix where `glwe_tensor_relinearize` takes it, while the key-switched sum is held. It counted a conversion beside the key product instead, and only for a key of another radix than the output's, so with a key of another `base2k` than the operand's the relinearization could run out of the scratch its query returned and panic, as `ckks_mul_into` did at rank 2 with a key of radix 12 on radix-52 ciphertexts. The query changes only for keys of another radix than the operand's or the output's, and bits are unchanged.
 - The noise test `test_glwe_mul_plain_compact` is renamed `test_glwe_mul_plain_plaintext_degree`.
+- **Breaking:** `GLWEPlaintext::encode_vec_i64_strided`, `encode_vec_i128_strided`, `decode_vec_i64_strided` and `decode_vec_i128_strided` are removed with the gap placement they served; the dense forms take one value per coefficient.
 
 ### `poulpy-ckks`
 
@@ -199,6 +201,13 @@
 - **Breaking:** `CKKSModuleAlloc::ckks_pt_vec_alloc` takes the slot count first and allocates the plaintext at the degree that holds them, `2 * slots` on the standard ring and `slots` on the conjugate-invariant ring; `ckks_max_slots()` gives the ring degree, and a degree below the backend's `MIN_DEGREE` panics.
   `CKKSModuleAlloc::ckks_pt_vec_alloc_compact` is removed, as `ckks_pt_vec_alloc` covers it.
   The test suite's `compact` module is renamed `plaintext_slots`, with `test_plaintext_slots_add_sub_mul`, `test_linear_transformation_diagonal_slots` and `test_diagonal_encoder_slots`; `test_compact_plaintext_embedding` is removed.
+- **Breaking, behaviour:** a plaintext is always dense: the encoders take exactly one value per coefficient of the plaintext, or `CKKSModuleInfos::ckks_slots_of_degree(n)` slots for a plaintext of degree `n`, and return an error for fewer instead of spreading them at a gap.
+  Allocate a message of `m` slots with `ckks_pt_vec_alloc(m, ..)`; below the backend's `MIN_DEGREE`, repeat the slots up to it.
+  Linear-transformation diagonals whose period sits below that floor are repeated over the plaintext's slots, so their encoded values stay the same up to float rounding.
+  `reference::ckks_encode_linear_transformation_tmp_bytes` gives the scratch the linear-transformation encoders need for such a period, and `blas_context_encode_tmp_bytes` and `blas_pt_operand_encode_tmp_bytes` return it.
+- `ckks_decrypt` writes into a plaintext of degree `n` dividing the ciphertext's `N` when `log2(N / n) <= ct.log_sparsity`, every `(N / n)`-th coefficient of the decrypted polynomial, and returns `PlaintextDegreeMismatch` for any other degree before changing it; decoding fewer slots than a plaintext holds goes through it.
+- `CKKSModuleInfos::ckks_slots_of_degree` gives the slots a plaintext of a given degree holds.
+- The CKKS `determinism.txt` plaintext fixtures of the encoding test are recorded at the degree of their slots, and the one- and two-slot ones are gone; their decoded values are unchanged.
 
 ### `poulpy-bin-fhe`
 

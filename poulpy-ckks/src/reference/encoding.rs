@@ -179,28 +179,23 @@ impl CKKSSlotEmbedding for ConjugateInvariant {
     }
 }
 
-fn coefficient_gap<P>(pt: &P, coeff_count: usize) -> Result<usize>
+fn check_coefficient_count<P>(pt: &P, coeff_count: usize) -> Result<()>
 where
     P: GLWEInfos,
 {
-    let n = pt.n().as_usize();
     ensure!(pt.rank().as_usize() == 0, "CKKS plaintext encoding expects rank zero");
-    ensure!(coeff_count > 0, "coefficient count must be non-zero");
     ensure!(
-        coeff_count <= n && n.is_multiple_of(coeff_count),
-        "coefficient count must divide plaintext degree"
+        coeff_count == pt.n().as_usize(),
+        "coefficient count must equal the plaintext degree"
     );
-    let gap = n / coeff_count;
-    ensure!(gap.is_power_of_two(), "coefficient gap must be a power of two");
-    Ok(gap)
+    Ok(())
 }
 
 /// Host reference quantization into canonical integer coefficients at the plaintext scale.
 ///
 /// Coefficients are rounded exactly to the nearest integer, with halfway cases
-/// away from zero ([`ckks_quantize`](crate::numerics::CKKSFloat::ckks_quantize)).
-/// Sparse inputs occupy every `degree / coeff_count`-th coefficient and the
-/// remaining coefficients are zero. Invalid shape or non-representable scalar
+/// away from zero ([`ckks_quantize`](crate::numerics::CKKSFloat::ckks_quantize)),
+/// one per coefficient of the plaintext. Invalid shape or non-representable scalar
 /// inputs are rejected before writing the plaintext. The input and metadata are
 /// preserved, except the slot kind, which is narrowed to the ring's
 /// ([`CKKSSlotEmbedding::SLOTS`]). Host-access bounds are specific to this
@@ -215,7 +210,7 @@ where
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     let coeffs = coeffs.as_slice();
-    let gap = coefficient_gap(pt, coeffs.len())?;
+    check_coefficient_count(pt, coeffs.len())?;
     let log_delta = pt.log_delta();
     let log_budget = pt.log_budget();
     let narrow = log_delta + log_budget <= 63;
@@ -232,7 +227,7 @@ where
                         .context("CKKS coefficient is not representable as an i64 at the plaintext scale")
                 })
                 .collect::<Result<_>>()?;
-            backend.data_mut().encode_vec_i64_strided(base2k, 0, k, gap, &data);
+            backend.data_mut().encode_vec_i64(base2k, 0, k, &data);
         } else {
             let data: Vec<i128> = coeffs
                 .iter()
@@ -241,7 +236,7 @@ where
                         .context("CKKS coefficient is not representable as an i128 at the plaintext scale")
                 })
                 .collect::<Result<_>>()?;
-            backend.data_mut().encode_vec_i128_strided(base2k, 0, k, gap, &data);
+            backend.data_mut().encode_vec_i128(base2k, 0, k, &data);
         }
     }
     pt.set_slots(pt.slots().meet(BE::Ring::SLOTS));
@@ -249,10 +244,8 @@ where
 }
 
 /// Host reference dequantization of canonical integer coefficients, rounded
-/// once ([`ckks_dequantize`](crate::numerics::CKKSFloat::ckks_dequantize)).
-///
-/// The caller selects the coefficient count and therefore the sparse stride.
-/// The plaintext and its metadata are preserved.
+/// once ([`ckks_dequantize`](crate::numerics::CKKSFloat::ckks_dequantize)), one
+/// per coefficient of the plaintext. The plaintext and its metadata are preserved.
 pub fn decode_coeffs_into_host<BE, F, P>(pt: &P, coeffs: &mut CKKSEncodingBufferBackendMut<'_, BE, F>) -> Result<()>
 where
     BE: Backend<ZnxWord = i64>,
@@ -262,7 +255,7 @@ where
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     let coeffs = coeffs.as_mut_slice();
-    let gap = coefficient_gap(pt, coeffs.len())?;
+    check_coefficient_count(pt, coeffs.len())?;
     let log_delta = pt.log_delta();
     let log_budget = pt.log_budget();
     ensure!(
@@ -275,13 +268,13 @@ where
 
     if log_delta + log_budget <= 63 {
         let mut data = vec![0i64; coeffs.len()];
-        backend.data().decode_vec_i64_strided(base2k, 0, k, gap, &mut data);
+        backend.data().decode_vec_i64(base2k, 0, k, &mut data);
         for (coefficient, &value) in coeffs.iter_mut().zip(&data) {
             *coefficient = F::ckks_dequantize(value as i128, log_delta);
         }
     } else {
         let mut data = vec![0i128; coeffs.len()];
-        backend.data().decode_vec_i128_strided(base2k, 0, k, gap, &mut data);
+        backend.data().decode_vec_i128(base2k, 0, k, &mut data);
         for (coefficient, &value) in coeffs.iter_mut().zip(&data) {
             *coefficient = F::ckks_dequantize(value, log_delta);
         }

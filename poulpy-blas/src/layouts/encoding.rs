@@ -4,12 +4,12 @@
 use poulpy_ckks::{
     CKKSLayout, CKKSResult, CoeffsMeta, SlotsKind,
     api::{
-        CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, CKKSModuleInfos, Diagonal,
-        GiantStep, LinearTransformation, LinearTransformationLayout, LinearTransformationPlan, LinearTransformationPrepared,
-        LtDiagonalMeta, ckks_linear_transformation_output_layout,
+        CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, CKKSModuleInfos, Diagonal, GiantStep,
+        LinearTransformation, LinearTransformationLayout, LinearTransformationPlan, LinearTransformationPrepared, LtDiagonalMeta,
+        ckks_linear_transformation_output_layout,
     },
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
-    reference::ckks_encode_linear_transformation_into,
+    reference::{ckks_encode_linear_transformation_into, ckks_encode_linear_transformation_tmp_bytes},
 };
 use poulpy_core::layouts::{
     Base2K, DiagonalArithmetic, Diagonals, GLWELayout, GetDegree, LWEInfos, LinearTransformationStrategy, Rank, TorusPrecision,
@@ -236,7 +236,7 @@ pub(crate) fn prepare_maps_into<'a, BE, M>(
 /// Encoding of public operands, and of contexts, into their allocations.
 pub trait BlasEncodingOps<BE: Backend>: CKKSModuleAlloc<BE> + GetDegree + Sized {
     /// Scratch bytes [`Self::blas_pt_operand_encode_into`] needs for an operand of `infos`: the encoding of one diagonal
-    /// of `count d^2` slots.
+    /// of a map of period `count d^2`.
     fn blas_pt_operand_encode_tmp_bytes<F, A>(&self, infos: &A) -> usize
     where
         Self: CKKSEncodingOps<BE, F>,
@@ -247,7 +247,7 @@ pub trait BlasEncodingOps<BE: Backend>: CKKSModuleAlloc<BE> + GetDegree + Sized 
             .checked_shl(2 * infos.log_d() as u32)
             .and_then(|d2| d2.checked_mul(infos.count()))
             .expect("count d^2 overflows usize");
-        <Self as CKKSEncodingHostOps<BE, F>>::ckks_reim_tmp_bytes(self, slots)
+        ckks_encode_linear_transformation_tmp_bytes::<BE, Self, F>(self, slots)
     }
 
     /// Encodes into `res` the public matrices `entry(m, row, col)`, matrix slot `s` reading matrix `m = s mod count`,
@@ -289,8 +289,8 @@ pub trait BlasEncodingOps<BE: Backend>: CKKSModuleAlloc<BE> + GetDegree + Sized 
     {
         pt_operand::encode_into(self, res, entry, scratch)
     }
-    /// Scratch bytes [`Self::blas_context_encode_into`] needs for a context of `infos`: the encoding of one diagonal of
-    /// `d^2` slots.
+    /// Scratch bytes [`Self::blas_context_encode_into`] needs for a context of `infos`: the encoding of one diagonal of a
+    /// map of period `d^2`.
     fn blas_context_encode_tmp_bytes<F, A>(&self, infos: &A) -> usize
     where
         Self: CKKSEncodingOps<BE, F>,
@@ -298,7 +298,7 @@ pub trait BlasEncodingOps<BE: Backend>: CKKSModuleAlloc<BE> + GetDegree + Sized 
         A: BlasContextInfos,
     {
         let slots = 1usize.checked_shl(2 * infos.log_d() as u32).expect("d^2 overflows usize");
-        <Self as CKKSEncodingHostOps<BE, F>>::ckks_reim_tmp_bytes(self, slots)
+        ckks_encode_linear_transformation_tmp_bytes::<BE, Self, F>(self, slots)
     }
 
     /// Encodes every map of `res`'s plan into it at its `coeffs_meta`, each scheduled as the plan schedules it, but tau on
