@@ -5,7 +5,9 @@ use poulpy_hal::execution::TaskExecutor;
 use poulpy_core::{
     layouts::*,
     reference::{
-        keyswitching::glwe::{GGLWEProductReference, gglwe_product_accumulation_output_size},
+        keyswitching::glwe::{
+            GGLWEProductReference, gadget_dft_apply, gadget_input_size, gglwe_product_accumulation_output_size,
+        },
         linear_transformation::{
             DiagonalProd, assert_linear_transformation_into, assert_linear_transformation_sum,
             glwe_eval_linear_transformation_into_reference, glwe_eval_linear_transformation_sum_into_reference,
@@ -199,7 +201,6 @@ where
         key.base2k().as_usize() != base
             || key.base2k() != res.base2k()
             || key.stride() != 1
-            || !key.digits_aligned()
             || key.dsize().as_usize() < 2
             || key.n().as_usize() != module.n()
             || key.rank_in().as_usize() != 1
@@ -292,14 +293,31 @@ fn finish_giant(
     };
     let output_size = output_size.min(key.size());
     let mask_size = prod.size().min(output_size);
+    // Each normalized mask column is the gadget operand, at most `mask_size`
+    // full limbs: the limbs themselves for whole-limb digits, laid out on the
+    // digit grid otherwise, as the reference lazy giant step does.
+    let (digit_k, dnum) = (key.digit_k(), key.dnum());
+    let mask_k = TorusPrecision((mask_size * base) as u32);
+    let operand_size = gadget_input_size(key.base2k(), digit_k, dnum, mask_k, mask_size);
     let (mut a_dft, mut arena) = scratch
         .borrow()
-        .take_vec_znx_dft_scratch(module.n(), acc.cols() - 1, mask_size);
+        .take_vec_znx_dft_scratch(module.n(), acc.cols() - 1, operand_size);
     {
         let (mut small, mut work) = arena.borrow().take_vec_znx_scratch(module.n(), 1, mask_size);
         for col in 1..acc.cols() {
             module.vec_znx_idft_normalize_consume(&mut small, base, mask_size * base, 0, 0, prod, col, base, None, &mut work);
-            module.vec_znx_dft_apply(1, 0, &mut a_dft, col - 1, &small.to_backend_ref(), 0);
+            gadget_dft_apply(
+                module,
+                &mut a_dft,
+                col - 1,
+                &small.to_backend_ref(),
+                0,
+                key.base2k(),
+                digit_k,
+                dnum,
+                mask_k,
+                &mut work.borrow(),
+            );
         }
     }
 
@@ -332,7 +350,7 @@ fn finish_giant(
         data.size(),
         data.hint(),
     );
-    let bytes = module.gglwe_product_dft_tmp_bytes_reference(output_size, mask_size, &key);
+    let bytes = module.gglwe_product_dft_tmp_bytes_reference(output_size, operand_size, &key);
     let (tmp, _) = crate::hal_impl::take_host_typed::<BE, u64>(arena, bytes / 8);
     super::vmp::vmp_rotate_add::<_, E>(
         &mut acc,
