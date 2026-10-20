@@ -238,6 +238,8 @@
   `reverse` visits the levels from the last down, each by its inverse element, and a nonempty trace leaves its output canonical, summed or normalized.
   The test suite adds `test_glwe_trace_sum` and `test_glwe_trace_parity`, which takes over the trace cases of `test_trace_packing_parity`, runs on both rings and covers summed and reversed windows: register it beside `test_trace_packing_parity`.
 - `docs/layering-contract.md` states the layering rules that `core-contracts.md` restated, and the `# Canonical flag` doc of `GLWE` names the exception of a documented canonical precondition.
+- The hoisted baby steps of a linear transformation lay their input out once per class of keys that read the same operand, whole-limb digits or one digit width over one digit count, where a key set mixing classes was evaluated rotation by rotation, laying the input out and transforming it again for each.
+  Outputs are unchanged; `test_glwe_hoisted_baby_rotations_match_automorphism` also checks key sets off a limb boundary, their coarser views and one mixing three widths.
 
 ### `poulpy-ckks`
 

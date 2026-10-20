@@ -243,20 +243,23 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
             })
         })
         .collect();
-    // The hoisted operand is laid out once for every key: whole-limb digits
-    // read the input limbs whatever their width. Other widths lay out one
-    // digit grid, so the keys must agree on its width and digit count: then
-    // the operand is the one each key's own scratch query sizes, and each key
-    // reads exactly the digits it would decompose alone.
-    let first_digits = key_refs.iter().flatten().next().map(|key| (key.k_digit(), key.dnum()));
-    let aligned = |key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>| digits_aligned(key.base2k(), key.k_digit());
-    let use_hoisted = first_digits.is_some()
-        && key_refs.iter().flatten().all(|key| key.base2k() == a.base2k())
-        && (key_refs.iter().flatten().all(aligned)
-            || key_refs
-                .iter()
-                .flatten()
-                .all(|key| Some((key.k_digit(), key.dnum())) == first_digits));
+    // The hoisted operand is laid out once per class of keys that read the same
+    // one: whole-limb digits read the input limbs whatever their width, and
+    // other widths a digit grid of their width over the digits they reach. In
+    // a class, the operand is the one each key's own scratch query sizes, and
+    // each key reads exactly the digits it would decompose alone.
+    let operand_class = |key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>| -> (u32, usize) {
+        if digits_aligned(key.base2k(), key.k_digit()) {
+            (0, a_size)
+        } else {
+            (
+                key.k_digit().0,
+                gadget_input_size(a.base2k(), key.k_digit(), key.dnum(), a.k(), a_size),
+            )
+        }
+    };
+    let use_hoisted =
+        key_refs.iter().flatten().next().is_some() && key_refs.iter().flatten().all(|key| key.base2k() == a.base2k());
     let key_sizes: Vec<usize> = key_refs
         .iter()
         .map(|key| {
@@ -266,68 +269,96 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
         .collect();
 
     if use_hoisted {
-        let scratch = scratch.borrow();
-        let (k_digit, dnum) = first_digits.unwrap();
-        let operand_size = gadget_input_size(a.base2k(), k_digit, dnum, a.k(), a_size);
-        let (mut a_dft, mut loop_scratch) = scratch.take_vec_znx_dft_scratch(a.n().as_usize(), cols - 1, operand_size);
-        for col_i in 0..cols - 1 {
-            gadget_dft_apply(
-                module,
-                &mut a_dft,
-                col_i,
-                &a_ref.data,
-                col_i + 1,
-                a.base2k(),
-                k_digit,
-                dnum,
-                a.k(),
-                &mut loop_scratch.borrow(),
-            );
-        }
-        let a_dft_ref = a_dft.to_backend_ref();
-        let mut tasks: Vec<_> = cache.values.iter_mut().map(|(&rot, prepared)| (rot, prepared)).collect();
-        let workers = worker_count::<BE::TaskExecutor>(BABY_ROTATION_WORKERS, tasks.len());
-        // Sized exactly as the per-key scratch query sizes one rotation, so the
-        // caller's max over its key layouts covers whatever this loop visits.
-        let rotation_bytes = key_refs
+        // Every class in turn, the unrotated entry with the first one.
+        let classes: Vec<usize> = key_refs
             .iter()
-            .zip(&key_sizes)
-            .filter_map(|(key, &key_size)| key.as_ref().map(|key| (key, key_size)))
-            .map(|(key, key_size)| {
-                module.bytes_of_vec_znx_dft(module.n(), cols, key_size)
-                    + module
-                        .gglwe_product_dft_tmp_bytes_reference(key_size, operand_size, key)
-                        .max(module.vec_znx_idft_normalize_tmp_bytes(a_size, key_size))
+            .map(|key| {
+                key.as_ref().map_or(usize::MAX, |key| {
+                    let class = operand_class(key);
+                    key_refs
+                        .iter()
+                        .position(|other| other.as_ref().is_some_and(|other| operand_class(other) == class))
+                        .unwrap()
+                })
             })
-            .max()
-            .unwrap_or(0);
-        let task_bytes = worker_scratch_bytes::<BE>(
-            module.glwe_bytes_of_from_infos(a) + rotation_bytes.max(module.cnv_prepare_left_tmp_bytes(a_size, a_size)),
-        );
-        let (worker_scratch, _) = loop_scratch.borrow().split(workers, task_bytes);
-        for_each_with_scratch::<BE::TaskExecutor, BE, _, _>(&mut tasks, 0, worker_scratch, &|index, task, task_scratch| {
-            let (rot, prepared) = task;
-            assert_eq!(prepared.cols(), cols, "prepared baby cache has wrong column count");
-            assert_eq!(prepared.size(), a_size, "prepared baby cache has wrong size");
-            if *rot == 0 {
-                module.cnv_prepare_left(&mut prepared.to_backend_mut(), &a_ref.data, task_scratch);
-            } else {
-                let key = key_refs[index].as_ref().unwrap();
-                let (mut baby, mut baby_scratch) = task_scratch.borrow().take_glwe_scratch(&a_ref);
-                glwe_hoisted_baby_rotation(
+            .collect();
+        let mut representatives: Vec<usize> = classes.iter().copied().filter(|&c| c != usize::MAX).collect();
+        representatives.sort_unstable();
+        representatives.dedup();
+        let mut entries: Vec<Option<_>> = cache
+            .values
+            .iter_mut()
+            .map(|(&rot, prepared)| Some((rot, prepared)))
+            .collect();
+        for (pass, &representative) in representatives.iter().enumerate() {
+            let class_key = key_refs[representative].as_ref().unwrap();
+            let (k_digit, dnum) = (class_key.k_digit(), class_key.dnum());
+            let mut tasks: Vec<_> = entries
+                .iter_mut()
+                .enumerate()
+                .filter(|(index, _)| classes[*index] == representative || (pass == 0 && classes[*index] == usize::MAX))
+                .map(|(index, entry)| (index, entry.take().unwrap()))
+                .collect();
+            let scratch = scratch.borrow();
+            let operand_size = gadget_input_size(a.base2k(), k_digit, dnum, a.k(), a_size);
+            let (mut a_dft, mut loop_scratch) = scratch.take_vec_znx_dft_scratch(a.n().as_usize(), cols - 1, operand_size);
+            for col_i in 0..cols - 1 {
+                gadget_dft_apply(
                     module,
-                    &mut baby,
-                    &a_ref,
-                    &a_dft_ref,
-                    key.p,
-                    &key.key,
-                    key_sizes[index],
-                    &mut baby_scratch.borrow(),
+                    &mut a_dft,
+                    col_i,
+                    &a_ref.data,
+                    col_i + 1,
+                    a.base2k(),
+                    k_digit,
+                    dnum,
+                    a.k(),
+                    &mut loop_scratch.borrow(),
                 );
-                let baby_ref = baby.to_backend_ref();
-                module.cnv_prepare_left(&mut prepared.to_backend_mut(), &baby_ref.data, &mut baby_scratch.borrow());
             }
-        });
+            let a_dft_ref = a_dft.to_backend_ref();
+            let workers = worker_count::<BE::TaskExecutor>(BABY_ROTATION_WORKERS, tasks.len());
+            // Sized exactly as the per-key scratch query sizes one rotation, so the
+            // caller's max over its key layouts covers whatever this loop visits.
+            let rotation_bytes = tasks
+                .iter()
+                .filter_map(|(index, _)| key_refs[*index].as_ref().map(|key| (key, key_sizes[*index])))
+                .map(|(key, key_size)| {
+                    module.bytes_of_vec_znx_dft(module.n(), cols, key_size)
+                        + module
+                            .gglwe_product_dft_tmp_bytes_reference(key_size, operand_size, key)
+                            .max(module.vec_znx_idft_normalize_tmp_bytes(a_size, key_size))
+                })
+                .max()
+                .unwrap_or(0);
+            let task_bytes = worker_scratch_bytes::<BE>(
+                module.glwe_bytes_of_from_infos(a) + rotation_bytes.max(module.cnv_prepare_left_tmp_bytes(a_size, a_size)),
+            );
+            let (worker_scratch, _) = loop_scratch.borrow().split(workers, task_bytes);
+            for_each_with_scratch::<BE::TaskExecutor, BE, _, _>(&mut tasks, 0, worker_scratch, &|_, task, task_scratch| {
+                let (index, (rot, prepared)) = task;
+                assert_eq!(prepared.cols(), cols, "prepared baby cache has wrong column count");
+                assert_eq!(prepared.size(), a_size, "prepared baby cache has wrong size");
+                if *rot == 0 {
+                    module.cnv_prepare_left(&mut prepared.to_backend_mut(), &a_ref.data, task_scratch);
+                } else {
+                    let key = key_refs[*index].as_ref().unwrap();
+                    let (mut baby, mut baby_scratch) = task_scratch.borrow().take_glwe_scratch(&a_ref);
+                    glwe_hoisted_baby_rotation(
+                        module,
+                        &mut baby,
+                        &a_ref,
+                        &a_dft_ref,
+                        key.p,
+                        &key.key,
+                        key_sizes[*index],
+                        &mut baby_scratch.borrow(),
+                    );
+                    let baby_ref = baby.to_backend_ref();
+                    module.cnv_prepare_left(&mut prepared.to_backend_mut(), &baby_ref.data, &mut baby_scratch.borrow());
+                }
+            });
+        }
     } else {
         for ((&rot, prepared), key) in cache.values.iter_mut().zip(&key_refs) {
             assert_eq!(prepared.cols(), cols, "prepared baby cache has wrong column count");
