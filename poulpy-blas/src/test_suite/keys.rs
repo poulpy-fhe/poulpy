@@ -4,8 +4,11 @@ use std::collections::{BTreeMap, HashSet};
 
 use poulpy_ckks::{
     CKKSInfos, CKKSResult, CoeffsMeta, SlotsKind,
-    api::{CKKSEncodingOps, CKKSLinearTransformationOps, CKKSModuleInfos, LinearTransformation, LinearTransformationPrepared},
-    layouts::CKKSCiphertext,
+    api::{
+        CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, LinearTransformation,
+        LinearTransformationPrepared,
+    },
+    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
     test_suite::{
         CKKSTestParams,
         helpers::{TestContextBackend, TestContextModule, TestScalar, alloc_scratch, gen_atk, gen_sk_with_raw, gen_tsk},
@@ -25,28 +28,29 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
     layouts::{
         Backend, CyclotomicOrder, Data, HostBytesBackend, HostDataMut, HostDataRef, Module,
         PrepareHint::{OneShot, Reuse},
-        Ring, ScratchArena, ScratchOwned, Standard, ZnxWord,
+        Ring, ScratchArena, Standard, ZnxWord,
     },
     source::Source,
 };
 
 use super::helpers::{
-    Grid, HINTS, MIXES, PT_ALGORITHMS,
+    Grid, HINTS, MASKED_PT_ALGORITHMS, MIXES, PT_ALGORITHMS,
     Rejection::{MissingKey, MissingTensorKey},
     StrictKeys, TestKeys, alloc_grid, assert_grid_decrypt, assert_guard_on, at_scale, blas_context, context_and_keys,
-    encrypt_grid, grid_snapshot, lt_key_uses, mapped_layout, matmul_left_operand, matmul_right_operand, other_scales,
-    product_layout, pt_operand,
+    encoded_context, encrypt_grid, grid_snapshot, lt_key_uses, mapped_layout, matmul_left_operand, matmul_right_operand,
+    other_scales, poisoned_scratch, product_layout, pt_operand,
 };
 use super::matmul::public_entry;
 use crate::{
     api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasGridInfos, BlasMatMulLeft, BlasMatMulRight, BlasPlan,
-        BlasPtAlgorithm, BlasPtOperandInfos, Left, Right, context::context_shapes, replicated, sum_galois_elements,
+        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasEncodingOps, BlasGridInfos, BlasMatMulLeft, BlasMatMulRight,
+        BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos, BlasPtOperandPreparedFactory, BlasPtSide, Left, Right,
+        context::context_shapes, replicated, sum_galois_elements,
     },
     oep::BlasImpl,
     reference::{
@@ -64,7 +68,6 @@ fn width<DG: Data, W: ZnxWord, R: Ring>(g: &BlasCiphertext<DG, W, R>) -> usize {
 /// keys at the widths `tsks`, short of any one of these keys, before the unwritten `res` changes; then runs `call` on
 /// `res` under all of them and asserts it writes `full` bit for bit. The identity takes no key. `query` is the operation's
 /// key-use query, which must list exactly these keys.
-#[allow(clippy::too_many_arguments)]
 fn assert_key_widths<BE, X>(
     label: &str,
     op: &str,
@@ -230,7 +233,7 @@ pub fn test_blas_key_widths<BE, F, E>(
     let uses = |lt: &LinearTransformationPrepared<BE>, src_k, res_k| lt_key_uses(module, lt, src_k, res_k);
     let (tsk_layout, atk_layout) = (params.tsk_layout(), params.atk_layout());
     // Every operation runs on exactly the scratch its own query reports.
-    let own = |bytes: usize| ScratchOwned::<BE>::alloc(bytes);
+    let own = |bytes: usize| poisoned_scratch::<BE>(bytes);
     // Half as wide as the inputs, so that the result's width caps the maps' giant steps, then one limb wider.
     let (narrow, wide) = (a_k / 2, a_k + params.base2k);
 
@@ -723,7 +726,7 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
                 &ctx,
                 &keys,
                 &keys,
-                &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
+                &mut poisoned_scratch::<BE>(bytes).borrow(),
             )
             .unwrap();
         assert_grid_decrypt::<BE, F, E>(
@@ -745,7 +748,7 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
                 &public,
                 &ctx,
                 &keys,
-                &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
+                &mut poisoned_scratch::<BE>(bytes).borrow(),
             )
             .unwrap();
         assert_grid_decrypt::<BE, F, E>(
@@ -764,6 +767,12 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
 
 type Shape = (Vec<i64>, Vec<(i64, Vec<i64>)>, Option<(TorusPrecision, usize, SlotsKind)>);
 
+impl<D: Data, W: ZnxWord, R: Ring> MapDiagonal for CKKSPlaintext<D, W, R> {
+    fn width(&self) -> TorusPrecision {
+        self.k()
+    }
+}
+
 /// A map's schedule and its first diagonal's width, scale and slot kind: what the queries read of it.
 fn shape_of<P: MapDiagonal>(lt: &LinearTransformation<P>) -> Shape {
     (
@@ -777,9 +786,36 @@ fn shape_of<P: MapDiagonal>(lt: &LinearTransformation<P>) -> Shape {
     )
 }
 
-/// The shapes the queries read from a layout are those of the maps encoded and prepared from it, for the context and
-/// for public operands of either side and algorithm: the same schedules, and diagonals of the same width, scale and
-/// slot kind. So every query gives on a layout what it gives on the encoded maps.
+/// The shapes the queries read from the layout of a public operand of `plan` on side `S` are those of its encoded maps,
+/// and their first ones those of its prepared maps: under `JklsStored` and `JklsGalois` the first map alone, its terms
+/// being plaintexts.
+fn assert_operand_shapes<BE, F, S>(
+    module: &Module<BE>,
+    plan: BlasPlan,
+    base2k: Base2K,
+    meta: CoeffsMeta,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CKKSMulOps<BE>,
+    F: DiagonalArithmetic + CKKSEncodingScalar,
+    S: BlasPtSide,
+{
+    let label = format!("left={} {:?} log_d={}", S::LEFT, plan.pt_algorithm(), plan.log_d());
+    let entry = |m: usize, r: usize, c: usize| F::from_f64(((m + r * 3 + c) % 5) as f64 - 2.0).unwrap();
+    let mut op = module.blas_pt_operand_alloc::<S>(plan, 2, 2, 1, base2k, meta);
+    module.blas_pt_operand_encode_into(&mut op, entry, scratch).unwrap();
+    let mut prepared = module.blas_pt_operand_prepared_alloc_from_infos(&op);
+    module.blas_pt_operand_prepare(&mut prepared, &op, scratch);
+    let shapes: Vec<Shape> = operand_shapes(&op.blas_pt_operand_layout()).iter().map(shape_of).collect();
+    assert!(op.maps().map(shape_of).eq(shapes.iter().cloned()), "{label}: encoded");
+    let prepared: Vec<Shape> = prepared.maps().map(shape_of).collect();
+    assert!(shapes.starts_with(&prepared) && !prepared.is_empty(), "{label}: prepared");
+}
+
+/// The shapes the queries read from a layout are those of the maps encoded and prepared from it, for the context of a
+/// plan of each kind and for public operands of either side and algorithm: the same schedules, and diagonals of the same
+/// width, scale and slot kind. So every query gives on a layout what it gives on the encoded maps.
 pub fn test_blas_queries_from_layouts<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -791,31 +827,19 @@ pub fn test_blas_queries_from_layouts<BE, F, E>(
     F: TestScalar + DiagonalArithmetic,
 {
     let mut scratch = alloc_scratch(&params, module);
-    let ctx = blas_context::<BE, F>(&params, module, log_d, &mut scratch.borrow());
-    let shapes = context_shapes(&ctx.blas_context_layout());
-    assert!(
-        shapes.iter().map(shape_of).eq(ctx.maps.iter().map(shape_of)),
-        "context log_d={log_d}"
-    );
     let (base2k, meta): (Base2K, CoeffsMeta) = (params.base2k.into(), params.prec().into());
-    let entry = |m: usize, r: usize, c: usize| F::from_f64(((m + r * 3 + c) % 5) as f64 - 2.0).unwrap();
-    for algorithm in PT_ALGORITHMS {
+    let masked = BlasPlan::new(log_d).with_pt_algorithm(BlasPtAlgorithm::JklsGalois);
+    for plan in [BlasPlan::new(log_d), masked] {
+        let ctx = encoded_context::<BE, F>(module, plan, base2k, meta, &mut scratch.borrow());
+        let shapes = context_shapes(&ctx.blas_context_layout());
+        assert!(
+            shapes.iter().map(shape_of).eq(ctx.maps.iter().map(shape_of)),
+            "context {plan:?}"
+        );
+    }
+    for algorithm in PT_ALGORITHMS.into_iter().chain(MASKED_PT_ALGORITHMS) {
         let plan = BlasPlan::new(log_d).with_pt_algorithm(algorithm);
-        let right = pt_operand::<BE, F, Right>(module, plan, 2, 1, 1, entry, base2k, meta, &mut scratch.borrow());
-        let left = pt_operand::<BE, F, Left>(module, plan, 1, 2, 1, entry, base2k, meta, &mut scratch.borrow());
-        assert!(
-            operand_shapes(&right.blas_pt_operand_layout())
-                .iter()
-                .map(shape_of)
-                .eq(right.maps.iter().map(shape_of)),
-            "right {algorithm:?} log_d={log_d}"
-        );
-        assert!(
-            operand_shapes(&left.blas_pt_operand_layout())
-                .iter()
-                .map(shape_of)
-                .eq(left.maps.iter().map(shape_of)),
-            "left {algorithm:?} log_d={log_d}"
-        );
+        assert_operand_shapes::<BE, F, Right>(module, plan, base2k, meta, &mut scratch.borrow());
+        assert_operand_shapes::<BE, F, Left>(module, plan, base2k, meta, &mut scratch.borrow());
     }
 }

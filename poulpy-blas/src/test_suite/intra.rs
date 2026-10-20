@@ -13,8 +13,8 @@ use poulpy_ckks::{
 };
 use poulpy_core::layouts::{DiagonalArithmetic, LWEInfos};
 use poulpy_hal::{
-    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
+    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    layouts::{CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, Standard},
 };
 
 use super::helpers::{
@@ -22,7 +22,7 @@ use super::helpers::{
     Rejection::{Budget, InvalidOperand, MissingKey},
     TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, assert_guard_on, assert_short_scratch, at_scale, blas_context,
     context_and_keys, copied_layout, corner, encrypt_grid, foreign_contexts, foreign_layouts, mapped_layout, other_scales,
-    rejected_grids, relabel, rotation_keys,
+    poisoned_scratch, rejected_grids, relabel, rotation_keys,
 };
 use crate::{
     api::BlasMatIntraOps,
@@ -77,7 +77,7 @@ pub fn test_blas_transpose<BE, F, E>(
             let mut res = alloc_grid(&params, module, log_d, cols, rows, res_k);
             let bytes = module.blas_transpose_tmp_bytes(&res, &ct, &ctx, &params.atk_layout());
             module
-                .blas_transpose(&mut res, &ct, &ctx, &keys, &mut ScratchOwned::<BE>::alloc(bytes).borrow())
+                .blas_transpose(&mut res, &ct, &ctx, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
                 .unwrap();
             assert_grid_decrypt::<BE, F, E>(
                 &format!("transpose p={p} res_k={res_k}"),
@@ -179,7 +179,7 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
             let bytes = module
                 .blas_rotate_rows_tmp_bytes(&res, &ct, &ctx, &params.atk_layout())
                 .max(module.blas_rotate_cols_tmp_bytes(&res, &ct, &ctx, &params.atk_layout()));
-            let mut op_scratch = ScratchOwned::<BE>::alloc(bytes);
+            let mut op_scratch = poisoned_scratch::<BE>(bytes);
             for &k in row_shifts {
                 let layout = want_layout(k, &res);
                 module
@@ -227,7 +227,7 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
             let bytes = module
                 .blas_rotate_rows_tmp_bytes(&res, &ct, &ctx, &params.atk_layout())
                 .max(module.blas_rotate_cols_tmp_bytes(&res, &ct, &ctx, &params.atk_layout()));
-            let mut op_scratch = ScratchOwned::<BE>::alloc(bytes);
+            let mut op_scratch = poisoned_scratch::<BE>(bytes);
             let layout = mapped_layout(&ct, rows, cols, params.k, p);
             module
                 .blas_rotate_rows(&mut res, &ct, 1, &ctx, &row_keys[1], &mut op_scratch.borrow())
@@ -287,7 +287,14 @@ pub fn test_blas_intra_guards<BE, F, E>(
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
     let (ctx, mut atks) = context_and_keys::<BE, F>(&params, module, log_d, &sk_raw, &mut scratch.borrow());
-    let foreign = foreign_contexts::<BE, F>(&params, module, log_d, &sk_raw, &mut atks, &mut scratch.borrow());
+    let foreign = foreign_contexts::<BE, F>(
+        &params,
+        module,
+        BlasPlan::new(log_d),
+        &sk_raw,
+        &mut atks,
+        &mut scratch.borrow(),
+    );
     let keys = TestKeys::<BE> { atks, tsk: None };
     let (rows, cols) = (2, 3);
     let a = Grid::model(log_d, rows, cols, slots >> (2 * log_d), 6);
@@ -303,7 +310,13 @@ pub fn test_blas_intra_guards<BE, F, E>(
         &mut scratch.borrow(),
     );
     let alloc = |rows: usize, cols: usize| alloc_grid(&params, module, log_d, rows, cols, params.k);
-    let mut op_scratch = ScratchOwned::<BE>::alloc(module.blas_rotate_rows_tmp_bytes(&ct, &ct, &ctx, &params.atk_layout()));
+    let atk = params.atk_layout();
+    let mut op_scratch = poisoned_scratch::<BE>(
+        module
+            .blas_transpose_tmp_bytes(&alloc(cols, rows), &ct, &ctx, &atk)
+            .max(module.blas_rotate_rows_tmp_bytes(&ct, &ct, &ctx, &atk))
+            .max(module.blas_rotate_cols_tmp_bytes(&ct, &ct, &ctx, &atk)),
+    );
 
     // `res` shaped like `a` for the transpose, like its transpose for the rotations.
     let (mut wrong, mut wrong_t) = (alloc(cols, rows), alloc(rows, cols));
@@ -454,7 +467,6 @@ pub fn test_blas_intra_guards<BE, F, E>(
     });
 
     // A shift by 1 takes both half maps along two or three blocks, the whole map along one.
-    let atk = params.atk_layout();
     let (one_row, one_column) = (corner::<BE>(&ct, 1, ct.cols()), corner::<BE>(&ct, ct.rows(), 1));
     for a in [&ct, &one_row, &one_column] {
         let mut res = alloc(a.rows(), a.cols());

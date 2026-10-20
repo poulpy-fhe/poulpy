@@ -13,5 +13,8 @@ pub mod layouts;
 pub mod oep;
 pub mod reference;
 #[cfg(feature = "test-utils")]
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "test fixtures pass their operands, keys and parameters one by one"
+)]
 pub mod test_suite;

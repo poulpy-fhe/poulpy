@@ -27,7 +27,9 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::{
     api::NegacyclicFFT,
-    layouts::{Backend, Data, HostBytesBackend, HostDataMut, HostDataRef, Module, PrepareHint, Ring, ScratchArena, ZnxWord},
+    layouts::{
+        Backend, Data, HostBytesBackend, HostDataMut, HostDataRef, Module, PrepareHint, Ring, ScratchArena, ScratchOwned, ZnxWord,
+    },
 };
 
 use crate::{
@@ -628,10 +630,15 @@ pub fn assert_short_scratch<BE, DG>(
     );
 }
 
-/// Runs `call` with a scratch one byte short of `bytes`, its query, and asserts it panics.
+/// Runs `call` with a scratch one byte short of `bytes`, its query, and asserts it panics on its scratch. A zero-byte
+/// query has no short scratch to test.
 pub fn assert_short_scratch_panics<BE: Backend, T>(op: &str, bytes: usize, call: impl FnOnce(&mut ScratchArena<'_, BE>) -> T) {
-    let run = catch_unwind(AssertUnwindSafe(|| with_scratch::<BE, _>(bytes - 1, call)));
-    assert!(run.is_err(), "{op} ran one byte short of its scratch query");
+    let Some(short) = bytes.checked_sub(1) else {
+        return;
+    };
+    assert_panics(&format!("{op} one byte short of its scratch query"), "scratch", || {
+        with_scratch::<BE, _>(short, call)
+    });
 }
 
 /// The public operand of `plan` on side `S`, `rows x cols` blocks of `count` matrices read through `entry`, at
@@ -660,12 +667,28 @@ where
     prepared
 }
 
-/// Panics unless `call` panics.
-pub fn assert_panics<T>(label: &str, call: impl FnOnce() -> T) {
+/// Panics unless `call` panics with a message that contains `expected`.
+pub fn assert_panics<T>(label: &str, expected: &str, call: impl FnOnce() -> T) {
+    let Err(payload) = catch_unwind(AssertUnwindSafe(call)) else {
+        panic!("{label}: the call did not panic");
+    };
+    let message = payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or_default();
     assert!(
-        catch_unwind(AssertUnwindSafe(call)).is_err(),
-        "{label}: the call did not panic"
+        message.contains(expected),
+        "{label}: panicked with {message:?}, not {expected:?}"
     );
+}
+
+/// An owned scratch of `bytes` poisoned with `0xA5`, so an operation that reads a temporary before writing it fails.
+pub fn poisoned_scratch<BE: Backend>(bytes: usize) -> ScratchOwned<BE> {
+    ScratchOwned {
+        data: BE::from_host_bytes(&vec![0xA5; bytes]),
+        _phantom: std::marker::PhantomData,
+    }
 }
 
 /// What a prepared operand, or any grid, reports through [`BlasGridInfos`]: its layout and its batch record.
@@ -969,23 +992,6 @@ where
     (ctx, atks)
 }
 
-/// Every map of `ctx`.
-pub fn context_maps<BE: Backend>(ctx: &crate::layouts::BlasContext<BE>) -> Vec<&LinearTransformationPrepared<BE>> {
-    let mut maps = vec![ctx.sigma(), ctx.tau(), ctx.transpose(), ctx.tau_rep()];
-    for k in 1..1 << ctx.log_d() {
-        maps.extend([
-            ctx.rotate_rows(k),
-            ctx.rotate_rows_rep(k),
-            ctx.rotate_cols(k),
-            ctx.rows_upper(k),
-            ctx.rows_lower(k),
-            ctx.cols_left(k),
-            ctx.cols_right(k),
-        ]);
-    }
-    maps
-}
-
 /// The Galois elements the encoded `maps` rotate by on a ring of cyclotomic order `order`, sorted and deduplicated.
 pub fn map_galois_elements<'a, BE: Backend + 'a>(
     maps: impl IntoIterator<Item = &'a LinearTransformationPrepared<BE>>,
@@ -997,13 +1003,13 @@ pub fn map_galois_elements<'a, BE: Backend + 'a>(
     elements
 }
 
-/// Contexts of `2^log_d x 2^log_d` blocks an operation on `module` rejects, by label: one encoded on a module of twice
-/// the degree, one at a radix one below `params.base2k`. `atks` gains a key for every rotation they take on `module`, so
-/// no missing key stops an operation from evaluating them.
+/// Contexts of `plan` an operation on `module` rejects, by label: one encoded on a module of twice the degree, one at a
+/// radix one below `params.base2k`. `atks` gains a key for every rotation they take on `module`, so no missing key stops
+/// an operation from evaluating them.
 pub fn foreign_contexts<BE, F>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    log_d: usize,
+    plan: BlasPlan,
     sk_raw: &poulpy_core::layouts::BackendGLWESecret<BE>,
     atks: &mut HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
     scratch: &mut ScratchArena<'_, BE>,
@@ -1018,7 +1024,6 @@ where
 {
     use poulpy_hal::layouts::CyclotomicOrder;
     let double = Module::<BE>::new(2 * params.n as u64);
-    let plan = crate::layouts::BlasPlan::new(log_d);
     let mut encode =
         |module: &Module<BE>, base2k: usize| encoded_context::<BE, F>(module, plan, base2k.into(), params.prec().into(), scratch);
     let contexts = [
@@ -1027,7 +1032,7 @@ where
     ];
     for p in contexts
         .iter()
-        .flat_map(|(_, ctx)| map_galois_elements(context_maps(ctx), module.cyclotomic_order()))
+        .flat_map(|(_, ctx)| map_galois_elements(ctx.maps(), module.cyclotomic_order()))
     {
         atks.entry(p)
             .or_insert_with(|| poulpy_ckks::test_suite::helpers::gen_atk(params, module, p, sk_raw, scratch));

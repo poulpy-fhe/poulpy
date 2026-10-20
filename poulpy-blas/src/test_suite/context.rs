@@ -22,7 +22,8 @@ use poulpy_hal::{
 };
 
 use super::helpers::{
-    assert_panics, assert_short_scratch_panics, context_maps, encoded_context, map_galois_elements, pt_operand,
+    MASKED_PT_ALGORITHMS, PT_ALGORITHMS, assert_panics, assert_short_scratch_panics, encoded_context, map_galois_elements,
+    pt_operand,
 };
 use crate::layouts::{
     BlasContext, BlasContextInfos, BlasContextLayout, BlasContextPreparedFactory, BlasContextUnprepared, BlasEncodingOps,
@@ -30,26 +31,35 @@ use crate::layouts::{
     BlasPtOperandPreparedFactory, BlasPtOperandUnprepared, BlasPtSide, Left, Right,
 };
 
-/// Every block map of `b`.
+/// Every block map of `b`; none under `JklsStored` and `JklsGalois`, whose blocks are plaintexts.
 fn operand_maps<BE: Backend, S: BlasPtSide>(b: &BlasPtOperand<BE, S>) -> Vec<&LinearTransformationPrepared<BE>> {
+    if b.blas_pt_operand_layout().plan.pt_algorithm().masked() {
+        return Vec::new();
+    }
     (0..b.rows())
         .flat_map(|l| (0..b.cols()).map(move |j| b.block(l, j)))
         .collect()
 }
 
-/// At each `log_d` from 1 to 3 whose blocks fit the `S` slots, `d^2 <= S`, each key set of the plan equals the Galois
-/// elements of the maps its operation evaluates, as the context encodes them: the transpose, the row and column shifts
-/// by every `k` below `2 d`, the matrix products, and the products by public operands, on either side, of any values,
-/// grid shape and count, of the counts that divide the matrix slots. Public operands of `Diagonal` and `Jkls`, side and
-/// count store their blocks at one degree, whatever their values, and a JKLS operand's first map and blocks rotate by
-/// its side's set. The union of these sets, and the plan's own, equals the context's. A `log_d` whose blocks do not fit
-/// is skipped with a message. The context panics at its allocation on matrices wider than the slots, a zero torus
-/// width, `coeffs_meta.k = 0`, a radix outside `1..=63` and a prepared allocation or size of the same; a public operand
-/// whose count does not divide the matrix slots, or of a zero torus width, panics at its allocation, prepared or not,
-/// and so does its prepared size. The prepare scratch query panics on a layout of other slots, and a preparation into
-/// an operand of another layout, or one scratch byte short of its query, panics.
-pub fn test_blas_context<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
-where
+/// On blocks of `2^log_d`, each key set of the plan equals the Galois elements of the maps its operation evaluates, as
+/// the context encodes them: the transpose, the row and column shifts by every `k` below `2 d`, the matrix products,
+/// and the products by public operands, on either side, of any values, grid shape and count, of the counts that divide
+/// the matrix slots. Public operands of `Diagonal` and `Jkls`, side and count store their blocks at one degree,
+/// whatever their values, and a JKLS operand's first map and blocks rotate by its side's set; under `JklsStored` and
+/// `JklsGalois`, a context of a masked plan holds the masks, and an operand's first map and the context's masks of its
+/// side, phi^k on the right and the column halves of psi^k on the left, rotate by that side's set. The union of these
+/// sets, and the plan's own, equals the context's, for a plan of each kind. The context panics at its allocation on
+/// matrices wider than the slots, a zero torus width, `coeffs_meta.k = 0`, a radix outside `1..=63` and a prepared
+/// allocation or size of the same; a public operand whose count does not divide the matrix slots, or of a zero torus
+/// width, panics at its allocation, prepared or not, and so does its prepared size. The prepare scratch query panics on
+/// a layout of other slots, and a preparation into an operand of another layout, or one scratch byte short of its
+/// query, panics. Each panic carries its own message.
+pub fn test_blas_context<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    _host_module: &Module<HostBytesBackend>,
+    log_d: usize,
+) where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
@@ -68,26 +78,20 @@ where
         ("equal pair", 1, 1, 2, |_, r, c| ((r * 3 + c) % 5) as f64 - 2.0),
         ("zero pair", 2, 2, 2, |_, _, _| 0.0),
     ];
-    // The largest `log_d` whose blocks fit the slots, `d^2 <= S`; the sweep skips the others with a message.
     let slots = params.n / 2;
-    let fits = slots.ilog2() as usize / 2;
-    let (sweep, skipped): (Vec<usize>, Vec<usize>) = (1..=3).partition(|&log_d| log_d <= fits);
-    if !skipped.is_empty() {
-        eprintln!("test_blas_context skips log_d {skipped:?}: it needs d^2 <= {slots} slots");
-    }
-    for log_d in sweep {
-        let plan = BlasPlan::new(log_d);
+    let d = 1 << log_d;
+    let masked_plan = BlasPlan::new(log_d).with_pt_algorithm(BlasPtAlgorithm::JklsGalois);
+    for (plan, algorithms) in [(BlasPlan::new(log_d), PT_ALGORITHMS), (masked_plan, MASKED_PT_ALGORITHMS)] {
         let ctx = encoded_context::<BE, F>(module, plan, base2k, meta, &mut scratch.borrow());
         assert_eq!((ctx.plan(), ctx.log_d()), (plan, log_d));
-        let d = 1 << log_d;
         let encoded = |maps: Vec<_>| map_galois_elements(maps, order);
         let mut union = plan.transpose_galois_elements(order);
-        assert_eq!(union, encoded(vec![ctx.transpose()]), "transpose log_d={log_d}");
+        assert_eq!(union, encoded(vec![ctx.transpose()]), "transpose {plan:?}");
 
         let matmul = plan.matmul_galois_elements(order);
         let mut maps = vec![ctx.sigma(), ctx.tau(), ctx.tau_rep()];
         (1..d).for_each(|k| maps.extend([ctx.rotate_cols(k), ctx.rotate_rows(k), ctx.rotate_rows_rep(k)]));
-        assert_eq!(matmul, encoded(maps), "matmul log_d={log_d}");
+        assert_eq!(matmul, encoded(maps), "matmul {plan:?}");
         union.extend(matmul);
 
         for k in 0..2 * d {
@@ -104,11 +108,20 @@ where
                 plan.rotate_rows_galois_elements(order, k),
                 plan.rotate_cols_galois_elements(order, k),
             );
-            assert_eq!(plan_rows, encoded(rows), "rotate_rows log_d={log_d} k={k}");
-            assert_eq!(plan_cols, encoded(cols), "rotate_cols log_d={log_d} k={k}");
+            assert_eq!(plan_rows, encoded(rows), "rotate_rows {plan:?} k={k}");
+            assert_eq!(plan_cols, encoded(cols), "rotate_cols {plan:?} k={k}");
             union.extend(plan_rows.into_iter().chain(plan_cols));
         }
 
+        // The context's masks each side's masked products evaluate after the operand's first map.
+        let (right_masks, left_masks): (Vec<_>, Vec<_>) = if plan.pt_algorithm().masked() {
+            (
+                (1..d).map(|k| ctx.rotate_cols(k)).collect(),
+                (1..d).flat_map(|k| [ctx.rows_left(k), ctx.rows_right(k)]).collect(),
+            )
+        } else {
+            (Vec::new(), Vec::new())
+        };
         let (matmul_pt_right, matmul_pt_left) = (
             plan.matmul_pt_right_galois_elements(order),
             plan.matmul_pt_left_galois_elements(order),
@@ -119,26 +132,48 @@ where
             if !(slots >> (2 * log_d)).is_multiple_of(count) {
                 continue;
             }
-            for algorithm in [BlasPtAlgorithm::Diagonal, BlasPtAlgorithm::Jkls] {
-                let (plan, jkls) = (plan.with_pt_algorithm(algorithm), algorithm == BlasPtAlgorithm::Jkls);
+            for algorithm in algorithms {
+                let plan = plan.with_pt_algorithm(algorithm);
                 let f = |m: usize, r: usize, c: usize| F::from_f64(entry(m, r, c)).unwrap();
                 let right = pt_operand::<BE, F, Right>(module, plan, rows, cols, count, f, base2k, meta, &mut scratch.borrow());
                 let left = pt_operand::<BE, F, Left>(module, plan, rows, cols, count, f, base2k, meta, &mut scratch.borrow());
-                for (side, set, first, blocks) in [
-                    ("matmul_pt_right", &matmul_pt_right, right.first(), operand_maps(&right)),
-                    ("matmul_pt_left", &matmul_pt_left, left.first(), operand_maps(&left)),
+                for (side, set, first, blocks, masks) in [
+                    (
+                        "matmul_pt_right",
+                        &matmul_pt_right,
+                        right.first(),
+                        operand_maps(&right),
+                        &right_masks,
+                    ),
+                    (
+                        "matmul_pt_left",
+                        &matmul_pt_left,
+                        left.first(),
+                        operand_maps(&left),
+                        &left_masks,
+                    ),
                 ] {
-                    assert_eq!(first.is_some(), jkls, "{side} {algorithm:?} {label} log_d={log_d}: first map");
+                    assert_eq!(
+                        first.is_some(),
+                        algorithm != BlasPtAlgorithm::Diagonal,
+                        "{side} {algorithm:?} {label} log_d={log_d}: first map"
+                    );
                     assert_eq!(
                         *set,
-                        map_galois_elements(first.into_iter().chain(blocks.iter().copied()), order),
+                        map_galois_elements(
+                            first.into_iter().chain(blocks.iter().copied()).chain(masks.iter().copied()),
+                            order
+                        ),
                         "{side} {algorithm:?} {label} log_d={log_d}"
                     );
+                    if algorithm.masked() {
+                        continue;
+                    }
                     let diagonals = blocks
                         .iter()
                         .flat_map(|lt| lt.giant_steps.iter().flat_map(|gs| &gs.diagonals));
                     degrees
-                        .entry((side, count, jkls))
+                        .entry((side, count, algorithm == BlasPtAlgorithm::Jkls))
                         .or_default()
                         .extend(diagonals.map(|diagonal| diagonal.plaintext.n().as_usize()));
                 }
@@ -154,61 +189,72 @@ where
         union.extend(matmul_pt_right.into_iter().chain(matmul_pt_left));
         union.sort_unstable();
         union.dedup();
-        let every = encoded(context_maps(&ctx));
-        assert_eq!(union, every, "union log_d={log_d}");
-        assert_eq!(plan.galois_elements(order), every, "galois_elements log_d={log_d}");
+        let every = encoded(ctx.maps().collect());
+        assert_eq!(union, every, "union {plan:?}");
+        assert_eq!(plan.galois_elements(order), every, "galois_elements {plan:?}");
     }
 
     // The slots hold no matrix one dimension past the largest that fits; 2^40 x 2^40 has more entries than a usize
     // counts.
-    for log_d in [fits + 1, 40] {
-        assert_panics(&format!("log_d={log_d}"), || {
-            module.blas_context_alloc(BlasPlan::new(log_d), base2k, meta)
+    let fits = slots.ilog2() as usize / 2;
+    for bad in [fits + 1, 40] {
+        assert_panics(&format!("log_d={bad}"), "the context's blocks do not fit its slots", || {
+            module.blas_context_alloc(BlasPlan::new(bad), base2k, meta)
         });
     }
 
     let ctx_base = module
-        .blas_context_alloc(BlasPlan::new(fits.min(2)), base2k, meta)
+        .blas_context_alloc(BlasPlan::new(log_d), base2k, meta)
         .blas_context_layout();
     let ctx_with = |edit: fn(&mut BlasContextLayout)| {
         let mut layout = ctx_base;
         edit(&mut layout);
         layout
     };
-    for bad in [
-        ctx_with(|l| l.coeffs_meta = CoeffsMeta::from_delta_budget(0, 0)),
-        ctx_with(|l| l.base2k = Base2K(0)),
-        ctx_with(|l| l.plan = BlasPlan::new(0)),
+    for (bad, expected) in [
+        (
+            ctx_with(|l| l.coeffs_meta = CoeffsMeta::from_delta_budget(0, 0)),
+            "the context's maps have no torus width",
+        ),
+        (ctx_with(|l| l.base2k = Base2K(0)), "the context's radix is outside 1..=63"),
+        (
+            ctx_with(|l| l.plan = BlasPlan::new(0)),
+            "the context's blocks do not fit its slots",
+        ),
     ] {
-        assert_panics("context prepared alloc", || {
+        assert_panics("context prepared alloc", expected, || {
             module.blas_context_prepared_alloc_from_infos(&bad)
         });
     }
     // Twice the slots fit the blocks, so only the slot check rejects them.
     let ctx_other_slots = ctx_with(|l| l.slots *= 2);
-    assert_panics("context prepare_tmp_bytes slots", || {
-        module.blas_context_prepare_tmp_bytes(&ctx_other_slots)
-    });
+    assert_panics(
+        "context prepare_tmp_bytes slots",
+        "the context's ring is not the module's",
+        || module.blas_context_prepare_tmp_bytes(&ctx_other_slots),
+    );
     let mut ctx = module.blas_context_alloc_from_infos(&ctx_base);
     module.blas_context_encode_into::<F>(&mut ctx, &mut scratch.borrow()).unwrap();
     let mut ctx_other = module.blas_context_prepared_alloc_from_infos(&ctx_with(|l| l.base2k = Base2K(l.base2k.as_u32() + 1)));
-    assert_panics("context prepare into another layout", || {
-        module.blas_context_prepare(&mut ctx_other, &ctx, &mut scratch.borrow())
-    });
+    assert_panics(
+        "context prepare into another layout",
+        "the prepared context was allocated for another layout",
+        || module.blas_context_prepare(&mut ctx_other, &ctx, &mut scratch.borrow()),
+    );
     let mut ctx_prepared = module.blas_context_prepared_alloc_from_infos(&ctx_base);
     let ctx_bytes = module.blas_context_prepare_tmp_bytes(&ctx_base);
-    if ctx_bytes > 0 {
-        assert_short_scratch_panics::<BE, _>("blas_context_prepare", ctx_bytes, |s| {
-            module.blas_context_prepare(&mut ctx_prepared, &ctx, s)
-        });
-    }
+    assert_short_scratch_panics::<BE, _>("blas_context_prepare", ctx_bytes, |s| {
+        module.blas_context_prepare(&mut ctx_prepared, &ctx, s)
+    });
 
-    // Matrix slots of 4 x 4 blocks, or of 2 x 2 where those do not fit, are a power of two: 0 and 3 do not divide them.
-    let (log_d, generic) = (fits.min(2), operands[0].4);
+    // 0 and 3 do not divide the matrix slots, a power of two.
+    let generic = operands[0].4;
     for count in [0, 3] {
-        assert_panics(&format!("count={count}"), || {
-            module.blas_pt_operand_alloc::<Right>(BlasPlan::new(log_d), 3, 2, count, base2k, meta)
-        });
+        assert_panics(
+            &format!("count={count}"),
+            "the operand's count does not divide its matrix slots",
+            || module.blas_pt_operand_alloc::<Right>(BlasPlan::new(log_d), 3, 2, count, base2k, meta),
+        );
     }
     let count = (slots >> (2 * log_d)).min(2);
     let f = |m: usize, r: usize, c: usize| F::from_f64(generic(m, r, c)).unwrap();
@@ -231,38 +277,45 @@ where
         edit(&mut layout);
         layout
     };
-    for bad in [with(|l| l.count = 3), with(|l| l.base2k = Base2K(0))] {
-        assert_panics("prepared alloc", || module.blas_pt_operand_prepared_alloc_from_infos(&bad));
+    for (bad, expected) in [
+        (with(|l| l.count = 3), "the operand's count does not divide its matrix slots"),
+        (with(|l| l.base2k = Base2K(0)), "the operand's radix is outside 1..=63"),
+    ] {
+        assert_panics("prepared alloc", expected, || {
+            module.blas_pt_operand_prepared_alloc_from_infos(&bad)
+        });
     }
     // Twice the slots fit the blocks, so only the slot check rejects them.
     let other_slots = with(|l| l.slots *= 2);
-    assert_panics("prepare_tmp_bytes slots", || {
+    assert_panics("prepare_tmp_bytes slots", "the operand's slots are not the module's", || {
         module.blas_pt_operand_prepare_tmp_bytes(&other_slots)
     });
     let mut op = module.blas_pt_operand_alloc_from_infos(&base);
     module.blas_pt_operand_encode_into(&mut op, f, &mut scratch.borrow()).unwrap();
     let mut other = module.blas_pt_operand_prepared_alloc_from_infos(&with(|l| l.rows = 2));
-    assert_panics("prepare into another layout", || {
-        module.blas_pt_operand_prepare(&mut other, &op, &mut scratch.borrow())
-    });
+    assert_panics(
+        "prepare into another layout",
+        "the prepared operand was allocated for another layout",
+        || module.blas_pt_operand_prepare(&mut other, &op, &mut scratch.borrow()),
+    );
     let mut prepared = module.blas_pt_operand_prepared_alloc_from_infos(&base);
     let bytes = module.blas_pt_operand_prepare_tmp_bytes(&base);
-    // A backend whose preparation needs no scratch has no short scratch to test.
-    if bytes > 0 {
-        assert_short_scratch_panics::<BE, _>("blas_pt_operand_prepare", bytes, |s| {
-            module.blas_pt_operand_prepare(&mut prepared, &op, s)
-        });
-    }
+    assert_short_scratch_panics::<BE, _>("blas_pt_operand_prepare", bytes, |s| {
+        module.blas_pt_operand_prepare(&mut prepared, &op, s)
+    });
 
     // `coeffs_meta.k = 0` is rejected at allocation: the context and every public operand, either side.
     let zero = CoeffsMeta::from_delta_budget(0, 0);
-    assert_panics("context", || module.blas_context_alloc(BlasPlan::new(log_d), base2k, zero));
-    for algorithm in [BlasPtAlgorithm::Diagonal, BlasPtAlgorithm::Jkls] {
+    assert_panics("context", "the context's maps have no torus width", || {
+        module.blas_context_alloc(BlasPlan::new(log_d), base2k, zero)
+    });
+    for algorithm in PT_ALGORITHMS.into_iter().chain(MASKED_PT_ALGORITHMS) {
         let plan = BlasPlan::new(log_d).with_pt_algorithm(algorithm);
-        assert_panics(&format!("right operand {algorithm:?}"), || {
+        let expected = "the operand's maps have no torus width";
+        assert_panics(&format!("right operand {algorithm:?}"), expected, || {
             module.blas_pt_operand_alloc::<Right>(plan, 1, 1, 1, base2k, zero)
         });
-        assert_panics(&format!("left operand {algorithm:?}"), || {
+        assert_panics(&format!("left operand {algorithm:?}"), expected, || {
             module.blas_pt_operand_alloc::<Left>(plan, 1, 1, 1, base2k, zero)
         });
     }

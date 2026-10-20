@@ -199,7 +199,14 @@ fn blas_hooks_run_on_accepted_calls_alone() {
     let (sk_raw, sk) = gen_sk_with_raw(&params, &module, &host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, &module);
     let (ctx, mut atks) = context_and_keys::<OverrideBackend, f64>(&params, &module, log_d, &sk_raw, &mut scratch.borrow());
-    let foreign = foreign_contexts::<OverrideBackend, f64>(&params, &module, log_d, &sk_raw, &mut atks, &mut scratch.borrow());
+    let foreign = foreign_contexts::<OverrideBackend, f64>(
+        &params,
+        &module,
+        BlasPlan::new(log_d),
+        &sk_raw,
+        &mut atks,
+        &mut scratch.borrow(),
+    );
     let keys = TestKeys {
         atks,
         tsk: Some(gen_tsk(&params, &module, &sk_raw, &mut scratch.borrow())),

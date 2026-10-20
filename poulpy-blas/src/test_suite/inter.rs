@@ -11,15 +11,15 @@ use poulpy_ckks::{
     },
 };
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
+    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    layouts::{CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, Standard},
 };
 
 use super::helpers::{
     Grid, Misshapen,
     Rejection::{Budget, InvalidOperand, MissingKey},
     TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, assert_guard_on, assert_short_scratch, copied_layout, corner,
-    encrypt_grid, foreign_layouts, rejected_grids, relabel, rotation_keys,
+    encrypt_grid, foreign_layouts, poisoned_scratch, rejected_grids, relabel, rotation_keys,
 };
 use crate::{
     api::BlasMatInterOps,
@@ -69,7 +69,7 @@ pub fn test_blas_rotate<BE, F, E>(
         // `res` one limb wider than `a` for r = 3.
         let res_k = if r == 3 { params.k + params.base2k } else { params.k };
         let mut res = alloc_grid(&params, module, log_d, 2, 2, res_k);
-        let mut op_scratch = ScratchOwned::<BE>::alloc(module.blas_rotate_tmp_bytes(&res, &ct, &params.atk_layout()));
+        let mut op_scratch = poisoned_scratch::<BE>(module.blas_rotate_tmp_bytes(&res, &ct, &params.atk_layout()));
         module.blas_rotate(&mut res, &ct, r, &keys, &mut op_scratch.borrow()).unwrap();
         assert_grid_decrypt::<BE, F, E>(
             &format!("rotate r={r} res_k={res_k}"),
@@ -119,7 +119,7 @@ where
     // Once with `res` as wide as `a`, once one limb wider.
     for res_k in [params.k, params.k + params.base2k] {
         let mut res = alloc_grid(&params, module, log_d, 2, 2, res_k);
-        let mut op_scratch = ScratchOwned::<BE>::alloc(module.blas_sum_tmp_bytes(&res, &ct, &params.atk_layout()));
+        let mut op_scratch = poisoned_scratch::<BE>(module.blas_sum_tmp_bytes(&res, &ct, &params.atk_layout()));
         module.blas_sum(&mut res, &ct, &keys, &mut op_scratch.borrow()).unwrap();
         assert_grid_decrypt::<BE, F, E>(
             &format!("sum res_k={res_k}"),
@@ -176,7 +176,7 @@ pub fn test_blas_inter_guards<BE, F, E>(
         tsk: None,
     };
     let alloc = |log_d: usize, rows: usize, cols: usize| alloc_grid(&params, module, log_d, rows, cols, params.k);
-    let mut op_scratch = ScratchOwned::<BE>::alloc(module.blas_sum_tmp_bytes(&ct, &ct, &params.atk_layout()));
+    let mut op_scratch = poisoned_scratch::<BE>(module.blas_sum_tmp_bytes(&ct, &ct, &params.atk_layout()));
 
     let sparse_64 = relabel(&ct, |meta| meta.log_sparsity = 64);
     let sparse_65 = relabel(&ct, |meta| meta.log_sparsity = 65);

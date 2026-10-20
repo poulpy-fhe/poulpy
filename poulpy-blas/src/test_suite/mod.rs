@@ -21,10 +21,9 @@ pub mod parity;
 /// Registers the functional tests for one backend, scalar, encoder and parameter set, on blocks of dimension
 /// `2^log_d`: 2 unless the optional `log_d` sets it. The ring degree `N` is free within two bounds: the blocks fit the
 /// `N / 2` slots, `d^2 <= N / 2` (`N >= 32` at the default), and the guards encode on a module of degree `2 N`, which
-/// the backend must support (`N <= 2^16` at most). `test_blas_context` sweeps `log_d` 1 to 3 and skips with a message
-/// those whose blocks do not fit; `test_blas_batch_record`, below four matrix slots, and, in the guards of the products
-/// by public matrices, the operand at another dimension, where only `2 x 2` blocks fit, and the relabelled grid, on one
-/// matrix slot, are skipped with a message too. Maps and public matrices run at the parameter set's scale and a quarter
+/// the backend must support (`N <= 2^16` at most). `test_blas_batch_record`, below four matrix slots, and, in the
+/// guards of the products by public matrices, the operand at another dimension, where only `2 x 2` blocks fit, and the
+/// relabelled grid, on one matrix slot, are skipped with a message. Maps and public matrices run at the parameter set's scale and a quarter
 /// of it below and above ([`other_scales`](crate::test_suite::helpers::other_scales)), so its `k` must hold two maps at
 /// the larger scale and a product; through the latter, the products also multiply factors at two scales, in either
 /// order, one an eighth of the scale lower and either as much narrower, so that their terms keep one budget, or as
@@ -33,7 +32,7 @@ pub mod parity;
 /// the public matrices below that scale, where a key width taken from it in place of theirs, or capped by it, finds no
 /// key.
 /// `test_blas_matmul_long_sums`, a `1 x 8` grid times an `8 x 1` grid of distinct blocks, runs on its own ring,
-/// `N = 32`.
+/// `N = 32`, so a registration that sets `log_d` skips it with a message: its default registration runs it.
 #[macro_export]
 macro_rules! blas_backend_test_suite {
     (mod $modname:ident, backend = $backend:ty, scalar = $scalar:ty, encoder = $encoder:ty, params = $params:expr
@@ -54,14 +53,11 @@ macro_rules! blas_backend_test_suite {
                 log_d
             }
 
-            macro_rules! run_test {
-                ($name:ident, $path:path) => {
-                    #[test]
-                    fn $name() {
-                        use $path as __test_fn;
-                        __test_fn::<$backend, $scalar, $encoder>($params, &*MODULE, &*HOST_MODULE);
-                    }
-                };
+            #[allow(unused_mut)]
+            fn sets_log_d() -> bool {
+                let mut set = false;
+                $(let _ = $log_d; set = true;)?
+                set
             }
 
             macro_rules! run_test_with_arg {
@@ -103,14 +99,25 @@ macro_rules! blas_backend_test_suite {
                 $crate::test_suite::matmul::test_blas_matmul_pt_masked_guards,
                 log_d()
             );
-            run_test!(matmul_long_sums, $crate::test_suite::matmul::test_blas_matmul_long_sums);
+            #[test]
+            fn matmul_long_sums() {
+                if sets_log_d() {
+                    eprintln!("matmul_long_sums skipped: it runs on its own ring, so the default registration runs it");
+                    return;
+                }
+                $crate::test_suite::matmul::test_blas_matmul_long_sums::<$backend, $scalar, $encoder>(
+                    $params,
+                    &*MODULE,
+                    &*HOST_MODULE,
+                );
+            }
             run_test_with_arg!(replicated_shifts, $crate::test_suite::matmul::test_blas_replicated_shifts, log_d());
             run_test_with_arg!(key_widths, $crate::test_suite::keys::test_blas_key_widths, log_d());
             run_test_with_arg!(key_stores, $crate::test_suite::keys::test_blas_key_stores_from_queries, log_d());
             run_test_with_arg!(queries_from_layouts, $crate::test_suite::keys::test_blas_queries_from_layouts, log_d());
             run_test_with_arg!(result_meta, $crate::test_suite::meta::test_blas_result_meta, log_d());
             run_test_with_arg!(batch_record, $crate::test_suite::meta::test_blas_batch_record, log_d());
-            run_test!(context, $crate::test_suite::context::test_blas_context);
+            run_test_with_arg!(context, $crate::test_suite::context::test_blas_context, log_d());
             run_test_with_arg!(refill, $crate::test_suite::context::test_blas_refill, log_d());
         }
     };

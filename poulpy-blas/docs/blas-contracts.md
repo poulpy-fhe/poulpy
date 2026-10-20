@@ -428,10 +428,10 @@ width. The masked products by public matrices, `JklsStored` and `JklsGalois`,
 run under a context holding their masks at the parameter set's scale, three
 scales deep, on the right of one public matrix and on the left of one, two and
 every public matrix per matrix slot, and their guards reject a right operand of
-two public matrices on more than one matrix slot, a right product under a
-context encoded on a module of another degree, at another radix, at another
-dimension or wider than its input, and a left product under a context without
-masks. `test_blas_key_widths` runs with the maps and the public matrices a
+two public matrices on more than one matrix slot, a product on either side
+under a context of masks encoded on a module of another degree, at another
+radix, at another dimension or wider than its input, and a left product under a
+context without masks. `test_blas_key_widths` runs with the maps and the public matrices a
 quarter below that scale, where a key width taken from the inputs' scale in
 place of `p` or `p_B`, or capped by it, finds no key. They read coefficients on
 the host and use the standard ring, so they need a host backend of the standard
@@ -439,13 +439,12 @@ ring. An optional `log_d = …` sets the blocks to `2^log_d x 2^log_d`, 2 by
 default. The ring degree `N` is free within two bounds: the blocks fit the
 `N / 2` slots, `d^2 <= N / 2` (`N >= 32` at the default), and the guards encode
 on a module of degree `2N`, which the backend must support (`N <= 2^16` at
-most). `test_blas_context` sweeps `log_d` 1 to 3 and skips with a message those
-whose blocks do not fit; `test_blas_batch_record`, below four matrix slots,
-and, in the guards of the products by public matrices, the operand at another
-dimension, where only `2 x 2` blocks fit, and the relabelled grid, on one
-matrix slot, are skipped with a message too.
-`test_blas_matmul_long_sums`, a `1 x 8` grid times an `8 x 1` grid of
-distinct blocks, runs on its own ring, `N = 32`.
+most). `test_blas_batch_record`, below four matrix slots, and, in the guards of
+the products by public matrices, the operand at another dimension, where only
+`2 x 2` blocks fit, and the relabelled grid, on one matrix slot, are skipped
+with a message. `test_blas_matmul_long_sums`, a `1 x 8` grid times an `8 x 1`
+grid of distinct blocks, runs on its own ring, `N = 32`, so a registration
+that sets `log_d` skips it with a message: its default registration runs it.
 
 `blas_conjugate_invariant_test_suite!(mod m, backend = …, params = …)`
 registers the test `conjugate_invariant` for a backend of the

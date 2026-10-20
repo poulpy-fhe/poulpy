@@ -15,18 +15,18 @@ use poulpy_ckks::{
 };
 use poulpy_core::layouts::{DiagonalArithmetic, LWEInfos};
 use poulpy_hal::{
-    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
     layouts::{
         CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module,
         PrepareHint::{OneShot, Reuse},
-        ScratchArena, ScratchOwned, Standard,
+        ScratchArena, Standard,
     },
 };
 
 use super::helpers::{
     Grid, HINTS, MIXES, Rejection::InvalidOperand, TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, context_and_keys,
-    copied_layout, encrypt_grid, mapped_layout, matmul_left_operand, matmul_right_operand, operand_infos, product_layout,
-    pt_operand, relabel, to_f, want_operand_infos,
+    copied_layout, encrypt_grid, mapped_layout, matmul_left_operand, matmul_right_operand, operand_infos, poisoned_scratch,
+    product_layout, pt_operand, relabel, to_f, want_operand_infos,
 };
 use crate::{
     api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
@@ -141,7 +141,12 @@ pub fn test_blas_result_meta<BE, F, E>(
     let keys = TestKeys::<BE> { atks, tsk: None };
     let atk = params.atk_layout();
     let bytes = module
-        .blas_rotate_rows_tmp_bytes(&full_row, &full_row, &ctx, &atk)
+        .blas_transpose_tmp_bytes(&full_column, &full_row, &ctx, &atk)
+        .max(module.blas_transpose_tmp_bytes(&full_row, &full_column, &ctx, &atk))
+        .max(module.blas_rotate_rows_tmp_bytes(&full_row, &full_row, &ctx, &atk))
+        .max(module.blas_rotate_cols_tmp_bytes(&full_row, &full_row, &ctx, &atk))
+        .max(module.blas_rotate_rows_tmp_bytes(&full_column, &full_column, &ctx, &atk))
+        .max(module.blas_rotate_cols_tmp_bytes(&full_column, &full_column, &ctx, &atk))
         .max(module.blas_sum_tmp_bytes(&full_row, &full_row, &atk))
         .max(module.blas_rotate_tmp_bytes(&full_row, &full_row, &atk))
         .max(module.blas_matmul_prepare_left_tmp_bytes(&full_row, &ctx, &atk, Reuse))
@@ -150,7 +155,7 @@ pub fn test_blas_result_meta<BE, F, E>(
         .max(module.blas_matmul_prepare_right_tmp_bytes(&full_column, &ctx, &atk, OneShot))
         .max(module.blas_matmul_pt_right_tmp_bytes(&full_row, &full_row, &pt, &ctx, &atk))
         .max(module.blas_matmul_pt_left_tmp_bytes(&full_row, &pt_left, &full_column, &ctx, &atk));
-    let mut op_scratch = ScratchOwned::<BE>::alloc(bytes);
+    let mut op_scratch = poisoned_scratch::<BE>(bytes);
     // A fresh grid labelled `log_sparsity`, recording the batch that label proves.
     let alloc = |rows: usize, cols: usize, log_sparsity: usize| {
         let grid = alloc_grid(&params, module, log_d, rows, cols, params.k);
@@ -416,7 +421,7 @@ pub fn test_blas_batch_record<BE, F, E>(
     };
     let (tsk_layout, atk_layout) = (params.tsk_layout(), params.atk_layout());
     let bytes = module.blas_sum_tmp_bytes(&ct_pair, &ct_pair, &atk_layout);
-    let mut op_scratch = ScratchOwned::<BE>::alloc(bytes);
+    let mut op_scratch = poisoned_scratch::<BE>(bytes);
     let mut res = alloc_grid(&params, module, log_d, 1, 2, params.k);
     module.blas_sum(&mut res, &ct_pair, &keys, &mut op_scratch.borrow()).unwrap();
     assert_eq!(res.mat_slots(), Some(2), "sum of a compact pair: mat_slots");
@@ -482,7 +487,7 @@ pub fn test_blas_batch_record<BE, F, E>(
                 &ctx,
                 &keys,
                 &keys,
-                &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
+                &mut poisoned_scratch::<BE>(bytes).borrow(),
             )
             .unwrap();
         assert_eq!(res.mat_slots(), Some(lanes), "{label}: mat_slots");
@@ -496,7 +501,7 @@ pub fn test_blas_batch_record<BE, F, E>(
             &res,
             &sk,
             &a.matmul(b),
-            &product_layout::<BE::Ring>(ct_a, ct_b, 1, 1, params.k, params.prec().log_delta()),
+            &product,
             &mut scratch.borrow(),
         );
 
@@ -504,7 +509,7 @@ pub fn test_blas_batch_record<BE, F, E>(
             let bytes = module
                 .blas_matmul_prepare_left_tmp_bytes(ct_a, &ctx, &atk_layout, hint)
                 .max(module.blas_matmul_prepare_right_tmp_bytes(ct_b, &ctx, &atk_layout, hint));
-            let mut prepare_scratch = ScratchOwned::<BE>::alloc(bytes);
+            let mut prepare_scratch = poisoned_scratch::<BE>(bytes);
             let left = matmul_left_operand(module, ct_a, &ctx, &keys, hint, &mut prepare_scratch.borrow()).unwrap();
             let right = matmul_right_operand(module, ct_b, &ctx, &keys, hint, &mut prepare_scratch.borrow()).unwrap();
             assert_eq!(
@@ -528,7 +533,7 @@ pub fn test_blas_batch_record<BE, F, E>(
                     &ctx,
                     &keys,
                     &keys,
-                    &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
+                    &mut poisoned_scratch::<BE>(bytes).borrow(),
                 )
                 .unwrap();
             let product = product_layout::<BE::Ring>(ct_a, ct_b, 1, 1, params.k, params.prec().log_delta());

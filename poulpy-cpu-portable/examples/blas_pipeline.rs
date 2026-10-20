@@ -147,7 +147,7 @@ fn report(op: &str, input: &impl BlasGridInfos, res: &impl BlasGridInfos) {
 }
 
 fn main() -> Result<()> {
-    // ── 1. client: secret key and the pipeline's keys ───────────────────────
+    // ── 1. client: secret key ───────────────────────────────────────────────
     let module = Module::<BackendImpl>::new(N as u64);
     let mut source_xs = Source::new([0u8; 32]);
     let mut source_xa = Source::new([1u8; 32]);
@@ -269,6 +269,7 @@ fn main() -> Result<()> {
     let ct_a = encrypt(2, 2, a)?;
     let ct_b = encrypt(2, 2, b)?;
 
+    // ── 4. server: run the pipeline ─────────────────────────────────────────
     // Each result is a fresh grid at K, and each operation's scratch is its query's.
     let alloc = |rows: usize, cols: usize| module.blas_ciphertext_alloc(LOG_D, rows, cols, BASE2K.into(), K.into());
     let (atk, tsk_infos) = (atk_layout(), tsk_layout());
