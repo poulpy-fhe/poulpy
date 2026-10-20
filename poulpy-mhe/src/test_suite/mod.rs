@@ -117,6 +117,11 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
+            fn ggsw_share_digit_widths() {
+                $crate::test_suite::ggsw::test_ggsw_share_digit_widths(&Module::<$backend>::new(256));
+            }
+
+            #[test]
             fn ggsw_share_external_product() {
                 $crate::test_suite::ggsw::test_ggsw_share_external_product(&Module::<$backend>::new(256));
             }

@@ -2,7 +2,7 @@ use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_core::{
     GLWEKeyswitch, GLWEMaskFill,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWELayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, Dnum, GGLWELayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of,
         prepared::GGLWEPreparedFactory,
     },
     test_suite::keys::fill_by_digit,
@@ -53,7 +53,7 @@ where
         rank_in: Rank(cp.rank),
         rank_out: Rank(cp.rank),
         dnum: Dnum(dnum),
-        dsize: Dsize(cp.dsize),
+        k_digit: k_digit_of(cp.base2k, cp.dsize),
         stride: 1,
     };
 

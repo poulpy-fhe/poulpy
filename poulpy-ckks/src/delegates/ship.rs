@@ -30,6 +30,8 @@ where
     F: ShipScalar,
     Module<BE>: CKKSMulOps<BE>
         + GGLWEProductReference<BE>
+        + poulpy_hal::api::VecZnxGadgetDecompose<BE>
+        + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSImagOps<BE>

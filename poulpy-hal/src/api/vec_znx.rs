@@ -65,6 +65,62 @@ pub trait VecZnxNormalize<B: Backend> {
     );
 }
 
+/// Scratch size of the gadget digit layout.
+///
+/// ```text
+/// op         vec_znx_gadget_decompose_tmp_bytes()
+/// class      support
+/// mutation   none
+/// domain     -
+/// ensures    returns the scratch bytes vec_znx_gadget_decompose requires, independently of operand limb counts
+/// test       test_vec_znx_gadget_decompose
+/// ```
+pub trait VecZnxGadgetDecomposeTmpBytes {
+    /// Returns the scratch byte count the gadget digit layout requires.
+    fn vec_znx_gadget_decompose_tmp_bytes(&self) -> usize;
+}
+
+/// Gadget digit layout of a column, for a gadget product with digits of `k_digit` bits.
+///
+/// ```text
+/// op         vec_znx_gadget_decompose(res, res_col, a, a_col, base2k, k_digit, scratch)
+/// class      basis
+/// mutation   out-of-place
+/// definition with R = ceil(k_digit / base2k), w = k_digit - (R - 1) * base2k and dnum = res.size() / R, let
+///            X = 2^(dnum * k_digit) * rnd([[a[a_col]]]_base2k, dnum * k_digit), an integer. For q from dnum - 1
+///            down to 0, d_q = X - 2^k_digit * floor((X + 2^(k_digit - 1)) / 2^k_digit) and X becomes
+///            (X - d_q) / 2^k_digit; the X left after q = 0 is dropped, so d_0 is the most significant digit.
+///            Digit d_q fills limbs q * R .. q * R + R of res[res_col], most significant first: starting from
+///            D = d_q, for t from 0 to R - 2, limb q * R + R - 1 - t is c_t = D - 2^base2k * floor((D + 2^(base2k - 1))
+///            / 2^base2k) and D becomes (D - c_t) / 2^base2k, then limb q * R is the D left. The other columns of
+///            res are untouched
+/// domain     res, a: VecZnx or windows of one, of equal degree, both read at radix base2k in 1..=62; k_digit > 0;
+///            res.size() a nonzero multiple of R; every input digit in [-2^61, 2^61]
+/// requires   scratch >= vec_znx_gadget_decompose_tmp_bytes()
+/// ensures    every d_q is in [-2^(k_digit - 1), 2^(k_digit - 1)), limbs q * R + 1 .. q * R + R are in
+///            [-2^(base2k - 1), 2^(base2k - 1)) and limb q * R is in [-2^(w - 1), 2^(w - 1)];
+///            sum over q < dnum, t < R of res[res_col, q * R + R - 1 - t] * 2^(t * base2k - (q + 1) * k_digit) is
+///            congruent to rnd([[a[a_col]]]_base2k, dnum * k_digit) modulo 1; every limb of the selected column is
+///            written. When base2k divides k_digit, res[res_col] is canon([[a[a_col]]]_base2k, base2k, dnum * k_digit,
+///            res.size()) except at a block whose top limb there is -2^(base2k - 1) over a negative lower part: that
+///            top limb is +2^(base2k - 1) instead and the block above receives one less
+/// test       test_vec_znx_gadget_decompose
+/// ```
+pub trait VecZnxGadgetDecompose<B: Backend> {
+    /// Writes the digits of `a[a_col]` for `k_digit`-bit gadget rows into `res[res_col]`.
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_gadget_decompose(
+        &self,
+        res: &mut VecZnxBackendMut<'_, B>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, B>,
+        a_col: usize,
+        base2k: usize,
+        k_digit: usize,
+        scratch: &mut ScratchArena<'_, B>,
+    );
+}
+
 /// In-place normalization of a column at a radix and precision, with a power-of-two offset.
 ///
 /// ```text

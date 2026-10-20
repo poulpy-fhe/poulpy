@@ -109,6 +109,7 @@ fn external_product_dispatches_dft_with_selected_scratch() {
         &ParityShapes {
             ranks: vec![1, 2],
             dsizes: Some(vec![1, 2, 3]),
+            unaligned_digits: true,
         },
         &Module::<FFT64Portable>::new(64),
         &Module::<DelegatingFFT64Portable>::new(64),

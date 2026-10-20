@@ -1,7 +1,7 @@
 use poulpy_core::{
     GLWEExternalProduct, GLWEMaskFill,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGSW, GGSWAtViewMut, GGSWLayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, Dnum, GGSW, GGSWAtViewMut, GGSWLayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of,
         prepared::{GGSWPrepared, GGSWPreparedFactory},
     },
 };
@@ -31,7 +31,7 @@ fn layouts(cp: &CoreParams) -> (GLWELayout, GGSWLayout) {
         k_aux: TorusPrecision(k_aux),
         rank: Rank(cp.rank),
         dnum: Dnum(dnum),
-        dsize: Dsize(cp.dsize),
+        k_digit: k_digit_of(cp.base2k, cp.dsize),
     };
     (glwe_infos, ggsw_infos)
 }

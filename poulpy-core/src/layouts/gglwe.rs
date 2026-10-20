@@ -24,19 +24,34 @@ where
 {
     /// Auxiliary guard precision (in bits) stored below the gadget region and
     /// used for noise management during key operations. Free value, need not be
-    /// a multiple of `base2k`. In practice `dsize*base2k + logN`.
+    /// a multiple of `base2k`. In practice `k_digit + logN`.
     fn k_aux(&self) -> TorusPrecision;
     /// Number of gadget-decomposition rows.
     fn dnum(&self) -> Dnum;
-    fn dsize(&self) -> Dsize;
+    /// Width in bits of one gadget digit: row `q` carries `2^-((q + 1) * k_digit)`.
+    /// Free value, need not be a multiple of `base2k`.
+    fn k_digit(&self) -> TorusPrecision;
+    /// Limbs one digit spans at the key radix, `ceil(k_digit / base2k)`: the
+    /// sub-limb count the interleaved-digit product runs with.
+    fn dsize(&self) -> Dsize {
+        Dsize(self.k_digit().0.div_ceil(self.base2k().0))
+    }
     fn rank_in(&self) -> Rank;
     fn rank_out(&self) -> Rank;
     /// Row stride into the stored matrix: digit `i` is stored row
     /// `(i + 1) * stride - 1`. A key used as stored has stride 1; a
-    /// [`crate::layouts::GGLWEBackendRef`] coarsening it to `dsize` reports
-    /// `dsize / stored dsize`.
+    /// [`crate::layouts::GGLWEBackendRef`] coarsening it to `k_digit` reports
+    /// `k_digit / stored k_digit`.
     fn stride(&self) -> usize {
         1
+    }
+    /// Whether the digits are whole limbs (see [`crate::layouts::digits_aligned`]).
+    ///
+    /// Decided on the width in use, `k_digit`, which for a view is `stride`
+    /// stored digits read as one: that width sets the operand of a gadget
+    /// product, the input limbs or their layout on the digit grid.
+    fn digits_aligned(&self) -> bool {
+        crate::layouts::digits_aligned(self.base2k(), self.k_digit())
     }
     fn gglwe_layout(&self) -> GGLWELayout {
         let stride = self.stride();
@@ -47,22 +62,22 @@ where
             k_aux: self.k_aux(),
             rank_in: self.rank_in(),
             rank_out: self.rank_out(),
-            dsize: self.dsize(),
+            k_digit: self.k_digit(),
             stride,
         }
     }
 }
 
-/// Every `dsize` this key can be read at, with the digits each reaches.
+/// Every digit width this key can be read at, with the digits each reaches.
 ///
-/// Ascending, always starting with the stored `(dsize(), dnum())`.
-pub(crate) fn valid_dsizes<A: GGLWEInfos + ?Sized>(infos: &A) -> Vec<(Dsize, Dnum)> {
+/// Ascending, always starting with the stored `(k_digit(), dnum())`.
+pub(crate) fn valid_k_digits<A: GGLWEInfos + ?Sized>(infos: &A) -> Vec<(TorusPrecision, Dnum)> {
     let layout = infos.gglwe_layout();
-    let stored: usize = layout.dsize.as_usize();
+    let stored: usize = layout.k_digit.as_usize();
     (1..=infos.dnum().as_usize())
         .filter_map(|stride| {
-            let dsize = Dsize((stride * stored) as u32);
-            layout.at_dsize(dsize).ok().map(|l| (dsize, l.dnum))
+            let k_digit = TorusPrecision((stride * stored) as u32);
+            layout.at_k_digit(k_digit).ok().map(|l| (k_digit, l.dnum))
         })
         .collect()
 }
@@ -76,8 +91,8 @@ impl<T: GGLWEInfos + ?Sized> GGLWEInfos for &T {
         (**self).dnum()
     }
 
-    fn dsize(&self) -> Dsize {
-        (**self).dsize()
+    fn k_digit(&self) -> TorusPrecision {
+        (**self).k_digit()
     }
 
     fn rank_in(&self) -> Rank {
@@ -102,8 +117,8 @@ impl<T: GGLWEInfos + ?Sized> GGLWEInfos for &mut T {
         (**self).dnum()
     }
 
-    fn dsize(&self) -> Dsize {
-        (**self).dsize()
+    fn k_digit(&self) -> TorusPrecision {
+        (**self).k_digit()
     }
 
     fn rank_in(&self) -> Rank {
@@ -120,7 +135,7 @@ impl<T: GGLWEInfos + ?Sized> GGLWEInfos for &mut T {
 }
 
 pub trait SetGGLWEInfos {
-    fn set_dsize(&mut self, dsize: usize);
+    fn set_k_digit(&mut self, k_digit: TorusPrecision);
 }
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
@@ -131,38 +146,40 @@ pub struct GGLWELayout {
     pub k_aux: TorusPrecision,
     pub rank_in: Rank,
     pub rank_out: Rank,
-    pub dsize: Dsize,
+    pub k_digit: TorusPrecision,
     /// Row stride for a coarsened view of a stored key. `1` means the key is
     /// used as stored.
     pub stride: usize,
 }
 
 impl GGLWELayout {
-    /// This layout read at a coarser `dsize`, where digit `i` is stored row
-    /// `(i + 1) * dsize / self.dsize - 1`.
+    /// This layout read at a coarser digit width, where digit `i` is stored row
+    /// `(i + 1) * k_digit / self.k_digit - 1`.
     ///
     /// The last coarse digit still needs a full digit of padding behind it, so
     /// the digits the stride allows are capped by what the precision can guard
     /// and the rest stays as that guard: `k()` and `max_size()` do not move.
     ///
-    /// Fails unless `dsize` is a multiple of the stored one and the key is wide
-    /// enough for a digit of that size plus its guard.
-    pub fn at_dsize(&self, dsize: Dsize) -> Result<Self> {
-        let (stored, base2k) = (self.dsize.as_usize(), self.base2k.as_usize());
+    /// Fails unless `k_digit` is a multiple of the stored one and the key is
+    /// wide enough for a digit of that width plus its guard.
+    pub fn at_k_digit(&self, k_digit: TorusPrecision) -> Result<Self> {
+        let stored: usize = self.k_digit.as_usize();
         let fail = |detail: String| CoreError::GGLWEKeyUse {
-            op: "GGLWELayout::at_dsize",
+            op: "GGLWELayout::at_k_digit",
             detail,
         };
 
-        if stored == 0 || !dsize.as_usize().is_multiple_of(stored) {
-            return Err(fail(format!("dsize={dsize} is not a multiple of the key's dsize={stored}")));
+        if stored == 0 || !k_digit.as_usize().is_multiple_of(stored) {
+            return Err(fail(format!(
+                "k_digit={k_digit} is not a multiple of the key's k_digit={stored}"
+            )));
         }
-        let stride: usize = dsize.as_usize() / stored;
+        let stride: usize = k_digit.as_usize() / stored;
         if stride == 1 {
             return Ok(*self);
         }
 
-        let (total, digit) = (self.k().as_usize(), dsize.as_usize() * base2k);
+        let (total, digit) = (self.k().as_usize(), k_digit.as_usize());
         if total <= digit {
             return Err(fail(format!(
                 "key holds {total} bits, too few for a digit of {digit} plus its guard"
@@ -170,12 +187,12 @@ impl GGLWELayout {
         }
         let dnum: usize = (self.dnum.as_usize() / stride).min(total / digit - 1);
         if dnum == 0 {
-            return Err(fail(format!("key has no digit reachable at dsize={dsize}")));
+            return Err(fail(format!("key has no digit reachable at k_digit={k_digit}")));
         }
 
         Ok(Self {
             dnum: Dnum(dnum as u32),
-            dsize,
+            k_digit,
             k_aux: TorusPrecision((total - dnum * digit) as u32),
             stride: self.stride * stride,
             ..*self
@@ -185,29 +202,24 @@ impl GGLWELayout {
 
 impl GGLWELayout {
     /// Number of gadget digits a key needs to cover an input ciphertext of
-    /// precision `input_k`: `ceil(input_k / (dsize * base2k))`.
+    /// precision `input_k`: `ceil(input_k / k_digit)`.
     ///
     /// This is the inverse of [`Self::gadget_k`] and the rounding rule used by
     /// [`key_work_size`](crate::layouts::key_work_size): the gadget is consumed
     /// in whole digits, so a partial digit counts as a full one. The auxiliary
-    /// guard `k_aux` is chosen by the caller (typically `dsize * base2k + log2(n)`)
+    /// guard `k_aux` is chosen by the caller (typically `k_digit + log2(n)`)
     /// and is not part of this derivation. The digit width must be nonzero.
-    pub fn dnum_for_input(base2k: Base2K, input_k: TorusPrecision, dsize: Dsize) -> Dnum {
-        let digit_bits: u32 = dsize.0 * base2k.0;
-        debug_assert!(
-            digit_bits > 0,
-            "dnum_for_input requires a nonzero gadget digit (dsize * base2k)"
-        );
-        Dnum(input_k.0.div_ceil(digit_bits))
+    pub fn dnum_for_input(input_k: TorusPrecision, k_digit: TorusPrecision) -> Dnum {
+        debug_assert!(k_digit.0 > 0, "dnum_for_input requires a nonzero gadget digit");
+        Dnum(input_k.0.div_ceil(k_digit.0))
     }
 
-    /// Gadget precision of the key: `dnum * dsize * base2k`, i.e. the width
-    /// covered by its `dnum` digits of `dsize` limbs at radix `base2k`, excluding
-    /// the auxiliary guard `k_aux`. An input ciphertext of at most this many bits
-    /// is decomposed entirely by the key. Any [`GGLWEInfos`] reaches it through
-    /// [`GGLWEInfos::gglwe_layout`].
+    /// Gadget precision of the key: `dnum * k_digit`, i.e. the width covered by
+    /// its `dnum` digits, excluding the auxiliary guard `k_aux`. An input
+    /// ciphertext of at most this many bits is decomposed entirely by the key.
+    /// Any [`GGLWEInfos`] reaches it through [`GGLWEInfos::gglwe_layout`].
     pub fn gadget_k(&self) -> TorusPrecision {
-        TorusPrecision(self.dnum.0 * self.dsize.0 * self.base2k.0)
+        TorusPrecision(self.dnum.0 * self.k_digit().0)
     }
 }
 
@@ -221,11 +233,11 @@ impl LWEInfos for GGLWELayout {
     }
 
     fn max_size(&self) -> usize {
-        crate::layouts::key_size(self.base2k, self.dnum, self.dsize, self.k_aux)
+        crate::layouts::key_size(self.base2k, self.dnum, self.k_digit, self.k_aux)
     }
 
     fn k(&self) -> TorusPrecision {
-        crate::layouts::key_k(self.base2k, self.dnum, self.dsize, self.k_aux)
+        crate::layouts::key_k(self.dnum, self.k_digit, self.k_aux)
     }
 }
 
@@ -248,8 +260,8 @@ impl GGLWEInfos for GGLWELayout {
         self.rank_in
     }
 
-    fn dsize(&self) -> Dsize {
-        self.dsize
+    fn k_digit(&self) -> TorusPrecision {
+        self.k_digit
     }
 
     fn rank_out(&self) -> Rank {
@@ -267,7 +279,7 @@ pub struct GGLWE<D: Data, W: ZnxWord> {
     pub(crate) data: MatZnx<D, W>,
     pub(crate) k_aux: TorusPrecision,
     pub(crate) base2k: Base2K,
-    pub(crate) dsize: Dsize,
+    pub(crate) k_digit: TorusPrecision,
 }
 
 pub struct GGLWEBackendRef<'a, BE: Backend + 'a> {
@@ -342,7 +354,7 @@ impl<BE: Backend> GGLWEToBackendRef<BE> for GGLWEBackendRef<'_, BE> {
             noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
-            dsize: self.inner.dsize,
+            k_digit: self.inner.k_digit,
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_ref::<BE>(&self.inner.data),
         })
     }
@@ -360,7 +372,7 @@ impl<BE: Backend> GGLWEToBackendRef<BE> for GGLWEBackendMut<'_, BE> {
             noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
-            dsize: self.inner.dsize,
+            k_digit: self.inner.k_digit,
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_mut::<BE>(&self.inner.data),
         })
     }
@@ -377,7 +389,7 @@ impl<BE: Backend> GGLWEToBackendMut<BE> for GGLWEBackendMut<'_, BE> {
             noise: None,
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
-            dsize: self.inner.dsize,
+            k_digit: self.inner.k_digit,
             data: poulpy_hal::layouts::mat_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
         })
     }
@@ -401,7 +413,7 @@ impl<D: Data, W: ZnxWord> LWEInfos for GGLWE<D, W> {
     }
 
     fn k(&self) -> TorusPrecision {
-        crate::layouts::key_k(self.base2k, self.dnum(), self.dsize, self.k_aux)
+        crate::layouts::key_k(self.dnum(), self.k_digit, self.k_aux)
     }
 }
 
@@ -424,8 +436,8 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GGLWE<D, W> {
         Rank(self.data.cols_out() as u32 - 1)
     }
 
-    fn dsize(&self) -> Dsize {
-        self.dsize
+    fn k_digit(&self) -> TorusPrecision {
+        self.k_digit
     }
 
     fn dnum(&self) -> Dnum {
@@ -582,10 +594,10 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for GGLWE<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "(GGLWE: k={} base2k={} dsize={}) {}",
+            "(GGLWE: k={} base2k={} k_digit={}) {}",
             self.k().0,
             self.base2k().0,
-            self.dsize().0,
+            self.k_digit().0,
             self.data
         )
     }
@@ -639,7 +651,7 @@ impl<D: Data, W: ZnxWord> GGLWE<D, W> {
             noise: crate::layouts::LWEInfos::noise(&self),
             data: MatZnx::from_data(self.data.into_data(), n, rows, cols_in, cols_out, size),
             base2k: self.base2k,
-            dsize: self.dsize,
+            k_digit: self.k_digit,
             k_aux: self.k_aux,
         }
     }
@@ -658,7 +670,7 @@ impl<W: ZnxWord> GGLWE<AlignedBuf, W> {
             infos.n(),
             infos.base2k(),
             infos.dnum(),
-            infos.dsize(),
+            infos.k_digit(),
             infos.k_aux(),
             infos.rank_in(),
             infos.rank_out(),
@@ -669,12 +681,12 @@ impl<W: ZnxWord> GGLWE<AlignedBuf, W> {
         n: Degree,
         base2k: Base2K,
         dnum: Dnum,
-        dsize: Dsize,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank_in: Rank,
         rank_out: Rank,
     ) -> Self {
-        let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
+        let size: usize = crate::layouts::key_size(base2k, dnum, k_digit, k_aux);
 
         GGLWE {
             noise: None,
@@ -693,7 +705,7 @@ impl<W: ZnxWord> GGLWE<AlignedBuf, W> {
                 size,
             ),
             base2k,
-            dsize,
+            k_digit,
             k_aux,
         }
     }
@@ -706,7 +718,7 @@ impl<W: ZnxWord> GGLWE<AlignedBuf, W> {
             infos.n(),
             infos.base2k(),
             infos.dnum(),
-            infos.dsize(),
+            infos.k_digit(),
             infos.k_aux(),
             infos.rank_in(),
             infos.rank_out(),
@@ -717,12 +729,12 @@ impl<W: ZnxWord> GGLWE<AlignedBuf, W> {
         n: Degree,
         base2k: Base2K,
         dnum: Dnum,
-        dsize: Dsize,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank_in: Rank,
         rank_out: Rank,
     ) -> usize {
-        let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
+        let size: usize = crate::layouts::key_size(base2k, dnum, k_digit, k_aux);
 
         MatZnx::<AlignedBuf, W>::bytes_of(n.into(), dnum.into(), rank_in.into(), (rank_out + 1).into(), size)
     }
@@ -749,7 +761,7 @@ where
         GGLWEBackendMut::from_inner(GGLWE {
             noise: None,
             base2k: self.base2k(),
-            dsize: self.dsize(),
+            k_digit: self.k_digit(),
             k_aux: self.k_aux(),
             data: self.data.to_backend_mut(),
         })
@@ -761,7 +773,7 @@ impl<BE: Backend> GGLWEToBackendRef<BE> for &mut GGLWE<BE::BufMut<'_>, BE::ZnxWo
         GGLWEBackendRef::from_inner(GGLWE {
             noise: crate::layouts::LWEInfos::noise(&self),
             base2k: self.base2k(),
-            dsize: self.dsize(),
+            k_digit: self.k_digit(),
             k_aux: self.k_aux(),
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_mut::<BE>(&self.data),
         })
@@ -778,7 +790,7 @@ impl<BE: Backend> GGLWEToBackendMut<BE> for &mut GGLWE<BE::BufMut<'_>, BE::ZnxWo
         GGLWEBackendMut::from_inner(GGLWE {
             noise: None,
             base2k: self.base2k(),
-            dsize: self.dsize(),
+            k_digit: self.k_digit(),
             k_aux: self.k_aux(),
             data: poulpy_hal::layouts::mat_znx_backend_mut_from_mut::<BE>(&mut self.data),
         })
@@ -797,7 +809,7 @@ where
         GGLWEBackendRef::from_inner(GGLWE {
             noise: crate::layouts::LWEInfos::noise(&self),
             base2k: self.base2k(),
-            dsize: self.dsize(),
+            k_digit: self.k_digit(),
             k_aux: self.k_aux(),
             data: self.data.to_backend_ref(),
         })
@@ -810,12 +822,12 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGLWE<D, W> {
         let components = self.data.cols_out();
         let noise = crate::ComponentNoise::read_optional(reader, components)?;
         let base2k = Base2K(reader.read_u32::<LittleEndian>()?);
-        let dsize = Dsize(reader.read_u32::<LittleEndian>()?);
+        let k_digit = TorusPrecision(reader.read_u32::<LittleEndian>()?);
         let k_aux = TorusPrecision(reader.read_u32::<LittleEndian>()?);
         crate::layouts::read_mat_znx_with_shape(&mut self.data, reader, None, None, components)?;
         crate::layouts::validate_noise_components(noise.as_ref(), self.data.cols_out())?;
         self.base2k = base2k;
-        self.dsize = dsize;
+        self.k_digit = k_digit;
         self.k_aux = k_aux;
         self.noise = noise;
         Ok(())
@@ -827,7 +839,7 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GGLWE<D, W> {
         crate::layouts::validate_noise_components(self.noise.as_ref(), self.data.cols_out())?;
         crate::ComponentNoise::write_optional(self.noise.as_ref(), writer)?;
         writer.write_u32::<LittleEndian>(self.base2k.0)?;
-        writer.write_u32::<LittleEndian>(self.dsize.0)?;
+        writer.write_u32::<LittleEndian>(self.k_digit.0)?;
         writer.write_u32::<LittleEndian>(self.k_aux.0)?;
         self.data.write_to(writer)
     }

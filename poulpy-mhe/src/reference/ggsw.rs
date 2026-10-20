@@ -3,7 +3,7 @@ use poulpy_core::{
     GLWENormalize, GetDistribution, ScratchArenaTakeCore,
     layouts::{
         GGLWECompressedSeed, GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef, GGLWEInfos,
-        GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout, LWEInfos, Rank, TorusPrecision,
+        GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout, LWEInfos, Rank, TorusPrecision, digits_aligned,
         prepared::{GGLWEPreparedToBackendRef, GLWESecretPreparedFactory, GLWESecretPreparedToBackendRef},
     },
 };
@@ -139,7 +139,7 @@ where
         let tmp_bytes: usize = self.mhe_ggsw_share_gen_tmp_bytes_reference(&*res);
         {
             let (n, r) = (res.n().as_usize(), rank.as_usize());
-            let (dnum, dsize, base2k) = (res.dnum().as_usize(), res.dsize().as_usize(), res.base2k().as_usize());
+            let (dnum, k_digit, base2k) = (res.dnum().as_usize(), res.k_digit().as_usize(), res.base2k().as_usize());
             let circ = ggsw_share_part_layout(&*res, rank, rank);
             let k = circ.k().as_usize();
             let mut seeds = Source::new(seed);
@@ -171,10 +171,21 @@ where
                         }
                     }
                     for (l, col) in cols.iter_mut().enumerate() {
-                        self.vec_znx_zero(row_pt.data_mut(), 0);
                         if l == j {
-                            self.vec_znx_add_scalar_assign(row_pt.data_mut(), 0, (dsize - 1) + row * dsize, &pt_ref, 0);
-                            self.vec_znx_normalize_assign(base2k, k, 0, row_pt.data_mut(), 0, &mut scratch_2);
+                            poulpy_core::reference::encryption::gadget_row_plaintext(
+                                self,
+                                row_pt.data_mut(),
+                                0,
+                                base2k,
+                                k,
+                                row,
+                                k_digit,
+                                &pt_ref,
+                                0,
+                                &mut scratch_2,
+                            );
+                        } else {
+                            self.vec_znx_zero(row_pt.data_mut(), 0);
                         }
                         self.glwe_encrypt_sk_with_mask(col, &row_pt, u, source_xe, &mut scratch_2);
                         let mut dst = GGLWECompressedToBackendMut::<BE>::to_backend_mut(circ_u);
@@ -241,7 +252,7 @@ where
             "invalid finalization: key output rank differs from the GGSW's"
         );
         assert!(
-            key.dnum().as_usize() * key.dsize().as_usize() * key.base2k().as_usize() >= share.k().as_usize(),
+            key.dnum().as_usize() * key.k_digit().as_usize() >= share.k().as_usize(),
             "invalid finalization: key does not cover the GGSW precision"
         );
         let (dnum, rank) = (share.dnum().as_usize(), share.rank().as_usize());
@@ -326,8 +337,15 @@ fn fresh_ggsw_metadata<BE: Backend, K: GGLWEInfos>(share: &GGSWShareOwned<BE>, k
         return Some(metadata.with_components(components));
     }
     let n = share.n().as_usize();
-    let digit_bits = key.dsize().as_usize() * key.base2k().as_usize();
-    let digit_factor = (1.0 - (-(digit_bits as f64)).exp2()) / (1.0 - (-(key.base2k().as_usize() as f64)).exp2());
+    let digit_bits = key.k_digit().as_usize();
+    // Whole-limb digits are sums of limbs balanced at `base2k`, so they reach
+    // `2^(B-1) * (1 - 2^-B) / (1 - 2^-b)`. Other widths are laid out on the
+    // digit grid, balanced at the digit width itself, so they stay within `2^(B-1)`.
+    let digit_factor = if digits_aligned(key.base2k(), key.k_digit()) {
+        (1.0 - (-(digit_bits as f64)).exp2()) / (1.0 - (-(key.base2k().as_usize() as f64)).exp2())
+    } else {
+        1.0
+    };
     let digits = k.as_usize().div_ceil(digit_bits).min(key.dnum().as_usize());
     // Bounded balanced digits require no uniform-digit assumption. Fold their
     // squared magnitude into the precision rescaling to avoid a vanishing

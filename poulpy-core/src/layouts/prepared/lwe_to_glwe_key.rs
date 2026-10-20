@@ -1,7 +1,7 @@
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendRef, GGLWEPreparedToBackendMut,
+    Base2K, Degree, Dnum, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendRef, GGLWEPreparedToBackendMut,
     GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEInfos, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, LWEInfos, Rank,
     TorusPrecision,
     prepared::{
@@ -47,8 +47,8 @@ impl<D: Data, B: Backend> GGLWEInfos for LWEToGLWEKeyPrepared<D, B> {
         self.0.k_aux()
     }
 
-    fn dsize(&self) -> Dsize {
-        self.0.dsize()
+    fn k_digit(&self) -> TorusPrecision {
+        self.0.k_digit()
     }
 
     fn rank_in(&self) -> Rank {
@@ -79,19 +79,30 @@ where
         k_aux: TorusPrecision,
         rank_out: Rank,
     ) -> LWEToGLWEKeyPrepared<B::OwnedBuf, B> {
-        LWEToGLWEKeyPrepared(self.glwe_switching_key_prepared_alloc(base2k, dnum, Dsize(1), k_aux, Rank(1), rank_out))
+        LWEToGLWEKeyPrepared(self.glwe_switching_key_prepared_alloc(
+            base2k,
+            dnum,
+            TorusPrecision::from(base2k),
+            k_aux,
+            Rank(1),
+            rank_out,
+        ))
     }
     fn lwe_to_glwe_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> LWEToGLWEKeyPrepared<B::OwnedBuf, B>
     where
         A: GGLWEInfos,
     {
         debug_assert_eq!(infos.rank_in().0, 1, "rank_in > 1 is not supported for LWEToGLWEKey");
-        debug_assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for LWEToGLWEKey");
+        debug_assert_eq!(
+            infos.k_digit().0,
+            infos.base2k().0,
+            "LWEToGLWEKey uses one-limb digits: k_digit must equal base2k"
+        );
         LWEToGLWEKeyPrepared(self.glwe_switching_key_prepared_alloc_from_infos(infos))
     }
 
     fn lwe_to_glwe_key_prepared_bytes_of(&self, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision, rank_out: Rank) -> usize {
-        self.bytes_of_glwe_key_prepared(base2k, dnum, Dsize(1), k_aux, Rank(1), rank_out)
+        self.bytes_of_glwe_key_prepared(base2k, dnum, TorusPrecision::from(base2k), k_aux, Rank(1), rank_out)
     }
 
     fn lwe_to_glwe_key_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
@@ -99,7 +110,11 @@ where
         A: GGLWEInfos,
     {
         debug_assert_eq!(infos.rank_in().0, 1, "rank_in > 1 is not supported for LWEToGLWEKey");
-        debug_assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for LWEToGLWEKey");
+        debug_assert_eq!(
+            infos.k_digit().0,
+            infos.base2k().0,
+            "LWEToGLWEKey uses one-limb digits: k_digit must equal base2k"
+        );
         self.glwe_switching_key_prepared_bytes_of_from_infos(infos)
     }
 

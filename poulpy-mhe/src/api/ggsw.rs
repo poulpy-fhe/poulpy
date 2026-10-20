@@ -86,7 +86,7 @@ pub trait GGSWMHEProtocol<BE: Backend> {
     /// columns, plus the message-encryption bodies in the mask columns. Column
     /// 0's masks come from the seeds, so only its bodies are normalized. `key`
     /// is the prepared ephemeral key, from the GGSW's rank to itself; its gadget
-    /// (`dnum * dsize * base2k`) must cover the GGSW precision, and one guard
+    /// (`dnum * k_digit`) must cover the GGSW precision, and one guard
     /// digit (`k_aux >= base2k + log2 n`) keeps its noise far below the
     /// circular term.
     fn mhe_ggsw_share_finalize<R, K>(&self, res: &mut R, share: &GGSWShareOwned<BE>, key: &K, scratch: &mut ScratchArena<'_, BE>)

@@ -15,9 +15,9 @@ use poulpy_core::{
     GGLWEToGGSWKeyEncryptSk, GGSWEncryptSk, GLWEAutomorphismKeyEncryptSk, GLWEExternalProduct, GLWESwitchingKeyEncryptSk,
     GLWEToLWESwitchingKeyEncryptSk, TransferInto,
     layouts::{
-        Dsize, GGLWEToGGSWKeyLayout, GGSWInfos, GGSWLayout, GGSWPreparedFactory, GGSWPreparedToBackendRef,
-        GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyLayout,
-        GLWEToLWEKeyLayout, LWEInfos, LWESecretSampling, ModuleCoreAlloc,
+        GGLWEToGGSWKeyLayout, GGSWInfos, GGSWLayout, GGSWPreparedFactory, GGSWPreparedToBackendRef, GLWEAutomorphismKeyLayout,
+        GLWEInfos, GLWELayout, GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyLayout, GLWEToLWEKeyLayout,
+        LWEInfos, LWESecretSampling, ModuleCoreAlloc,
     },
 };
 use poulpy_hal::{
@@ -66,7 +66,7 @@ fn key_layout(n: usize, bridge: bool) -> BDDKeyLayout {
                 n: n.into(),
                 base2k: 11usize.into(),
                 dnum: 4usize.into(),
-                dsize: Dsize(1),
+                k_digit: 11usize.into(),
                 k_aux: (11 + aux).into(),
                 rank: rank.into(),
             },
@@ -74,7 +74,7 @@ fn key_layout(n: usize, bridge: bool) -> BDDKeyLayout {
                 n: n.into(),
                 base2k: 12usize.into(),
                 dnum: 4usize.into(),
-                dsize: Dsize(1),
+                k_digit: 12usize.into(),
                 k_aux: (12 + aux).into(),
                 rank: rank.into(),
             },
@@ -83,7 +83,7 @@ fn key_layout(n: usize, bridge: bool) -> BDDKeyLayout {
             n: n.into(),
             base2k: 12usize.into(),
             dnum: 4usize.into(),
-            dsize: Dsize(1),
+            k_digit: 12usize.into(),
             k_aux: (12 + aux).into(),
             rank_in: rank.into(),
             rank_out: 1usize.into(),
@@ -167,7 +167,7 @@ where
             n: reference.n().into(),
             base2k: 15usize.into(),
             dnum: 2usize.into(),
-            dsize: Dsize(1),
+            k_digit: 15usize.into(),
             k_aux: (15 + reference.n().ilog2() as usize).into(),
             rank,
         };
@@ -414,7 +414,7 @@ where
             n: module.n().into(),
             base2k: 15usize.into(),
             dnum: 2usize.into(),
-            dsize: Dsize(1),
+            k_digit: 15usize.into(),
             k_aux: (15 + module.n().ilog2() as usize).into(),
             rank: layout.cbt_layout.brk_layout.rank,
         };

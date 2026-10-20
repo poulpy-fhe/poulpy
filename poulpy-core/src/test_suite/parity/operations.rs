@@ -1256,7 +1256,7 @@ pub fn test_ggsw_rotate_parity<BR, BT>(
             n: (params.n as u32).into(),
             base2k: (params.base2k as u32).into(),
             dnum: 3u32.into(),
-            dsize: 2u32.into(),
+            k_digit: crate::layouts::k_digit_of(params.base2k, 2usize),
             k_aux: (2 * params.base2k as u32 + 1).into(),
             rank: (rank as u32).into(),
         };

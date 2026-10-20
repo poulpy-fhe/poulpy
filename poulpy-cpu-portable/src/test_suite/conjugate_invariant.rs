@@ -496,6 +496,7 @@ macro_rules! conjugate_invariant_core_test_suite {
                 let shapes = poulpy_core::test_suite::parity::ParityShapes {
                     ranks: vec![1, 2],
                     dsizes: Some(vec![1, 2]),
+                    unaligned_digits: true,
                 };
                 poulpy_core::test_suite::parity::test_glwe_keyswitch_parity(&params, &shapes, &reference, &module);
                 poulpy_core::test_suite::parity::test_glwe_external_product_parity(&params, &shapes, &reference, &module);
@@ -538,7 +539,7 @@ fn conjugate_invariant_key_composition() {
         base2k: 10u32.into(),
         dnum: 4u32.into(),
         k_aux: 30u32.into(),
-        dsize: 1u32.into(),
+        k_digit: 10u32.into(),
         rank: 1u32.into(),
     };
     let mut source_s = Source::new([0; 32]);

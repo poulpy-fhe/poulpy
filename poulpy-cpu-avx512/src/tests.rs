@@ -134,6 +134,7 @@ poulpy_core::core_parity_test_suite! {
     backend_test = crate::NTT4x30Avx512Rayon,
     // computes at the module degree, no sweep
     params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 52, n: 1<<8 }, 64),
+    shapes = poulpy_core::test_suite::parity::ParityShapes { unaligned_digits: false, ..Default::default() },
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
@@ -174,6 +175,7 @@ poulpy_core::core_parity_test_suite! {
     shapes = poulpy_core::test_suite::parity::ParityShapes {
         ranks: vec![1],
         dsizes: None,
+        unaligned_digits: true,
     },
     tests = {
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
@@ -190,6 +192,7 @@ poulpy_core::core_parity_test_suite! {
     shapes = poulpy_core::test_suite::parity::ParityShapes {
         ranks: vec![1],
         dsizes: None,
+        unaligned_digits: true,
     },
     tests = {
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
@@ -204,6 +207,7 @@ poulpy_core::core_parity_test_suite! {
     shapes = poulpy_core::test_suite::parity::ParityShapes {
         ranks: vec![1],
         dsizes: None,
+        unaligned_digits: true,
     },
     tests = {
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
@@ -219,6 +223,7 @@ poulpy_core::core_parity_test_suite! {
     shapes = poulpy_core::test_suite::parity::ParityShapes {
         ranks: vec![1],
         dsizes: None,
+        unaligned_digits: true,
     },
     tests = {
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
@@ -234,6 +239,7 @@ poulpy_core::core_parity_test_suite! {
     shapes = poulpy_core::test_suite::parity::ParityShapes {
         ranks: vec![1],
         dsizes: None,
+        unaligned_digits: true,
     },
     tests = {
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
@@ -250,6 +256,7 @@ poulpy_core::core_parity_test_suite! {
     shapes = poulpy_core::test_suite::parity::ParityShapes {
         ranks: vec![1],
         dsizes: None,
+        unaligned_digits: true,
     },
     tests = {
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
@@ -300,6 +307,7 @@ poulpy_core::core_parity_test_suite! {
     backend_test = crate::NTT3x42IfmaRayon,
     // computes at the module degree, no sweep
     params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 52, n: 1<<8 }, 64),
+    shapes = poulpy_core::test_suite::parity::ParityShapes { unaligned_digits: false, ..Default::default() },
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
@@ -418,6 +426,7 @@ poulpy_core::core_parity_test_suite! {
     backend_test = crate::FFT64Avx512Rayon,
     // computes at the module degree, no sweep
     params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 17, n: 1<<8 }, 64),
+    shapes = poulpy_core::test_suite::parity::ParityShapes { unaligned_digits: false, ..Default::default() },
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,

@@ -2,26 +2,31 @@ use crate::api::GLWEBytesOf;
 use crate::api::GLWENormalize;
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VmpApplyDftToDft, VmpApplyDftToDftAdd,
-        VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows, VmpPMatBytesOf,
+        ModuleN, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxGadgetDecompose,
+        VecZnxGadgetDecomposeTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes,
+        VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows, VmpPMatBytesOf,
     },
     layouts::{
         Backend, Module, PrepareHint, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
-        VecZnxDftToBackendRef, VmpPMatBackendRef, VmpPMatToBackendRef,
+        VecZnxDftToBackendRef, VmpPMatBackendRef, VmpPMatToBackendRef, vec_znx_backend_ref_from_ref,
     },
 };
 
 use crate::{
     ScratchArenaTakeCore,
     layouts::{
-        GGLWEInfos, GGLWEPreparedBackendRef, GLWEInfos, GLWEToBackendRef, GadgetProductOutputSizeParams, LWEInfos,
-        gadget_product_limbs, gadget_product_output_size,
+        Base2K, Dnum, GGLWEInfos, GGLWEPreparedBackendRef, GLWEInfos, GLWEToBackendRef, GadgetProductOutputSizeParams, LWEInfos,
+        TorusPrecision, digits_aligned, gadget_product_limbs, gadget_product_output_size,
     },
     oep::{GGLWEProductDigitsStridedImpl, gglwe_product_digit_output_size},
 };
 
 impl<BE: Backend> GLWEKeyswitchInternal<BE> for Module<BE> where
-    Self: GGLWEProductReference<BE> + VecZnxDftApply<BE> + GLWENormalize<BE>
+    Self: GGLWEProductReference<BE>
+        + VecZnxDftApply<BE>
+        + GLWENormalize<BE>
+        + VecZnxGadgetDecompose<BE>
+        + VecZnxGadgetDecomposeTmpBytes
 {
 }
 
@@ -34,7 +39,11 @@ impl<BE: Backend> GLWEKeyswitchInternal<BE> for Module<BE> where
 /// the underlying HAL ops, so there is nothing to implement.
 pub trait GLWEKeyswitchInternal<BE: Backend>
 where
-    Self: GGLWEProductReference<BE> + VecZnxDftApply<BE> + GLWENormalize<BE>,
+    Self: GGLWEProductReference<BE>
+        + VecZnxDftApply<BE>
+        + GLWENormalize<BE>
+        + VecZnxGadgetDecompose<BE>
+        + VecZnxGadgetDecomposeTmpBytes,
 {
     fn glwe_keyswitch_internal_tmp_bytes_from_sizes<K>(
         &self,
@@ -89,11 +98,19 @@ fn glwe_keyswitch_dft_fill_tmp_bytes<BE, M, K>(
 ) -> usize
 where
     BE: Backend,
-    M: GGLWEProductReference<BE>,
+    M: GLWEKeyswitchInternal<BE>,
     K: GGLWEInfos,
 {
-    let lvl_0: usize = module.bytes_of_vec_znx_dft(module.n(), mask_cols, a_size);
-    let lvl_1: usize = module.gglwe_product_dft_tmp_bytes_reference(res_size, a_size, key_infos);
+    // Sized for an input of `a_size` full limbs, an upper bound of its precision.
+    let (base2k, k_digit, dnum) = (key_infos.base2k(), key_infos.k_digit(), key_infos.dnum());
+    let a_k = TorusPrecision((a_size * base2k.as_usize()) as u32);
+    let operand_size: usize = gadget_input_size(base2k, k_digit, dnum, a_k, a_size);
+    let lvl_0: usize = module.bytes_of_vec_znx_dft(module.n(), mask_cols, operand_size);
+    let lvl_1: usize = module
+        .gglwe_product_dft_tmp_bytes_reference(res_size, operand_size, key_infos)
+        .max(gadget_dft_apply_tmp_bytes::<BE, _>(
+            module, base2k, k_digit, dnum, a_k, a_size,
+        ));
     lvl_0 + lvl_1
 }
 
@@ -353,7 +370,7 @@ fn glwe_keyswitch_dft_fill<'r, BE, M, A>(
 ) where
     BE: Backend,
     A: GLWEToBackendRef<BE>,
-    M: GLWEKeyswitchInternal<BE> + GGLWEProductReference<BE> + VecZnxDftApply<BE>,
+    M: GLWEKeyswitchInternal<BE>,
 {
     let a = a.to_backend_ref();
     assert_eq!(a.base2k(), key.base2k());
@@ -365,12 +382,24 @@ fn glwe_keyswitch_dft_fill<'r, BE, M, A>(
         tmp_bytes
     );
     let mask_cols = a.rank().as_usize();
-    let a_size: usize = a.size();
+    let (base2k, k_digit, dnum) = (key.base2k(), key.k_digit(), key.dnum());
+    let operand_size: usize = gadget_input_size(base2k, k_digit, dnum, a.k(), a.size());
     scratch.scope(|scratch_phase| {
-        let (mut a_dft, mut scratch_1) = scratch_phase.take_vec_znx_dft_scratch(res.n(), mask_cols, a_size);
+        let (mut a_dft, mut scratch_1) = scratch_phase.take_vec_znx_dft_scratch(res.n(), mask_cols, operand_size);
         for col_i in 0..mask_cols {
             let a_data: &VecZnxBackendRef<'_, BE> = &a.data;
-            module.vec_znx_dft_apply(1, 0, &mut a_dft, col_i, a_data, col_i + 1);
+            gadget_dft_apply(
+                module,
+                &mut a_dft,
+                col_i,
+                a_data,
+                col_i + 1,
+                base2k,
+                k_digit,
+                dnum,
+                a.k(),
+                &mut scratch_1.borrow(),
+            );
         }
         let a_dft_ref = a_dft.to_backend_ref();
         module.gglwe_product_dft_reference(res, &a_dft_ref, key, 1, &mut scratch_1.borrow());
@@ -432,7 +461,7 @@ where
         key_base2k: key_infos.base2k(),
         input_k: a_infos.k(),
         output_k: res_infos.k(),
-        dsize: key_infos.dsize(),
+        k_digit: key_infos.k_digit(),
         k_aux: key_infos.k_aux(),
         product_terms,
         extra_live_limbs,
@@ -607,8 +636,10 @@ pub fn glwe_keyswitch_reference<BE, M, R, A>(
 
         res.set_canonical(true);
         let mut res_ref = res.to_backend_mut();
+        // The body adds back only the limbs the input's precision covers.
+        let a_body = precision_limbs::<BE>(&a.data, a.base2k(), a.k());
         for i in 0..cols {
-            let addend = (i == 0).then_some((&a.data, 0));
+            let addend = a_body.as_ref().filter(|_| i == 0).map(|body| (body, 0));
             module.vec_znx_idft_normalize_consume(
                 &mut res_ref.data,
                 res_base2k,
@@ -744,4 +775,127 @@ pub fn glwe_keyswitch_assign_reference<BE, M, R>(
             &mut scratch.borrow(),
         );
     }
+}
+
+// === Gadget operand: the input limbs, or digits laid out for the interleaved product ===
+
+/// Limbs of the DFT operand a gadget product with digits of `k_digit` bits
+/// reads, for an input of precision `a_k` stored on `a_size` limbs.
+///
+/// Whole-limb digits read the input limbs. Other widths lay the input out as
+/// `ceil(k_digit / base2k)` sub-limbs per digit, for the digits it reaches and
+/// at most `dnum`.
+pub fn gadget_input_size(base2k: Base2K, k_digit: TorusPrecision, dnum: Dnum, a_k: TorusPrecision, a_size: usize) -> usize {
+    if digits_aligned(base2k, k_digit) {
+        a_size
+    } else {
+        let digits: usize = a_k.as_usize().div_ceil(k_digit.as_usize()).min(dnum.as_usize());
+        digits * k_digit.as_usize().div_ceil(base2k.as_usize())
+    }
+}
+
+/// `a` restricted to the limbs that precision `a_k` covers at radix `base2k`,
+/// or `None` when it covers none, as for an input of precision 0.
+///
+/// A buffer may hold more limbs than its precision, and operations sized from
+/// that precision read only these: the digit layout rounds at the gadget
+/// precision, which can reach past `a_k`, and the body of a key switch adds
+/// the input back.
+pub fn precision_limbs<'a, BE: Backend>(
+    a: &'a VecZnxBackendRef<'_, BE>,
+    base2k: Base2K,
+    a_k: TorusPrecision,
+) -> Option<VecZnxBackendRef<'a, BE>> {
+    let live: usize = a_k.as_usize().div_ceil(base2k.as_usize()).min(a.size());
+    (live > 0).then(|| vec_znx_backend_ref_from_ref::<BE>(a).window_limbs(0, 1, live))
+}
+
+/// Leading limbs of the gadget operand that are known to be zero for an input
+/// of magnitude below `2^-(zero_bits + 1)`, so a product may skip them.
+///
+/// Whole-limb digits read the canonical input limbs, the top
+/// `zero_bits / base2k` of which are zero. Other widths read the digits the
+/// input decomposes into. The gadget rounding can carry one unit into the
+/// digit that ends at bit `zero_bits`, so only the top digits ending at least
+/// one bit above it are zero, `(zero_bits - 1) / k_digit` of them, each
+/// spanning `ceil(k_digit / base2k)` limbs.
+pub fn gadget_known_zero_prefix(base2k: Base2K, k_digit: TorusPrecision, dnum: Dnum, zero_bits: usize) -> usize {
+    if digits_aligned(base2k, k_digit) {
+        zero_bits / base2k.as_usize()
+    } else {
+        let digits: usize = (zero_bits.saturating_sub(1) / k_digit.as_usize()).min(dnum.as_usize());
+        digits * k_digit.as_usize().div_ceil(base2k.as_usize())
+    }
+}
+
+/// Scratch of [`gadget_dft_apply`]: none for whole-limb digits.
+pub fn gadget_dft_apply_tmp_bytes<BE, M>(
+    module: &M,
+    base2k: Base2K,
+    k_digit: TorusPrecision,
+    dnum: Dnum,
+    a_k: TorusPrecision,
+    a_size: usize,
+) -> usize
+where
+    BE: Backend,
+    M: ModuleN + VecZnxGadgetDecomposeTmpBytes,
+{
+    if digits_aligned(base2k, k_digit) {
+        0
+    } else {
+        let size: usize = gadget_input_size(base2k, k_digit, dnum, a_k, a_size);
+        BE::scratch_aligned(BE::bytes_of_vec_znx(module.n(), 1, size)) + module.vec_znx_gadget_decompose_tmp_bytes()
+    }
+}
+
+/// DFT of `a[a_col]`, at radix `base2k` and precision `a_k`, into `res[res_col]`
+/// as the operand of a gadget product with digits of `k_digit` bits; `res`
+/// holds at least [`gadget_input_size`] limbs.
+///
+/// Whole-limb digits transform the input as is, exactly as before. Other
+/// widths first lay the limbs `a_k` covers ([`precision_limbs`]) out on
+/// the digit grid with `vec_znx_gadget_decompose`, rounded at the gadget
+/// precision.
+#[allow(clippy::too_many_arguments)]
+pub fn gadget_dft_apply<BE, M>(
+    module: &M,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res_col: usize,
+    a: &VecZnxBackendRef<'_, BE>,
+    a_col: usize,
+    base2k: Base2K,
+    k_digit: TorusPrecision,
+    dnum: Dnum,
+    a_k: TorusPrecision,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: VecZnxDftApply<BE> + VecZnxGadgetDecompose<BE>,
+{
+    if digits_aligned(base2k, k_digit) {
+        module.vec_znx_dft_apply(1, 0, res, res_col, a, a_col);
+        return;
+    }
+    let size: usize = gadget_input_size(base2k, k_digit, dnum, a_k, a.size());
+    assert!(
+        res.size() >= size,
+        "gadget operand needs {size} limbs, res has {}",
+        res.size()
+    );
+    // An input of precision 0 has no digit, and its operand no limb.
+    let Some(a_live) = precision_limbs::<BE>(a, base2k, a_k).filter(|_| size > 0) else {
+        return;
+    };
+    let (mut digits, mut scratch_1) = scratch.borrow().take_vec_znx_scratch(a.n(), 1, size);
+    module.vec_znx_gadget_decompose(
+        &mut digits,
+        0,
+        &a_live,
+        a_col,
+        base2k.as_usize(),
+        k_digit.as_usize(),
+        &mut scratch_1.borrow(),
+    );
+    module.vec_znx_dft_apply(1, 0, res, res_col, &digits.to_backend_ref(), 0);
 }

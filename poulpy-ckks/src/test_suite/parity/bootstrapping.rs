@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use super::{
     helpers::{Snapshot, assert_untagged, fixture_ciphertext, fixture_operand, snapshot, with_scratch},
-    keys::{fixture_gglwe, key_layout, prepared_automorphism_key, prepared_gglwe, prepared_tensor_key},
+    keys::{fixture_gglwe, key_layout, key_layout_bits, prepared_automorphism_key, prepared_gglwe, prepared_tensor_key},
 };
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotsKind,
@@ -22,9 +22,9 @@ use crate::{
 use poulpy_core::{
     GLWEAdd, GLWEMaskFill,
     layouts::{
-        Dsize, GGLWEInfos, GGLWELayout, GGLWEPrepared, GGLWEPreparedFactory, GLWEAutomorphismKeyLayout,
-        GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWESwitchingKeyLayout, GLWETensorKeyLayout,
-        GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, GLWEToBackendRef, LWEInfos,
+        GGLWEInfos, GGLWELayout, GGLWEPrepared, GGLWEPreparedFactory, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared,
+        GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWESwitchingKeyLayout, GLWETensorKeyLayout, GLWETensorKeyPrepared,
+        GLWETensorKeyPreparedFactory, GLWEToBackendRef, LWEInfos, TorusPrecision,
         prepared::{GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
     reference::linear_transformation::DiagonalProd,
@@ -42,15 +42,26 @@ where
     // Matching radix and multi-limb digits permit the optimized path. Other
     // cases require the general composition; widths also cover partial limbs,
     // no zero-prefix limbs, several full zero-prefix limbs, rejected raises,
-    // and a key stored at one dsize read through a view at a multiple of it.
-    for (dsize, view_dsize, key_b, extra, scale) in [
-        (2, 2, b, 4 * b + 3, 0),
-        (2, 2, b, 3 * b + 5, b + 1),
-        (2, 2, b, 5, 4),
-        (1, 1, b, 2 * b + 1, 1),
-        (2, 2, b - 1, 2 * b + 3, 0),
-        (2, 2, b, 0, 1),
-        (1, 2, b, 4 * b + 3, 0),
+    // and a key stored at one width read through a view at a multiple of it.
+    // Digit widths in bits: whole limbs first, then widths off a limb boundary
+    // with no, one and several zero-prefix digits, a shift ending exactly on a
+    // digit boundary (where the gadget rounding may carry into that digit), a
+    // sub-limb width, and a view of an unaligned key.
+    for (k_digit, view_k_digit, key_b, extra, scale) in [
+        (2 * b, 2 * b, b, 4 * b + 3, 0),
+        (2 * b, 2 * b, b, 3 * b + 5, b + 1),
+        (2 * b, 2 * b, b, 5, 4),
+        (b, b, b, 2 * b + 1, 1),
+        (2 * (b - 1), 2 * (b - 1), b - 1, 2 * b + 3, 0),
+        (2 * b, 2 * b, b, 0, 1),
+        (b, 2 * b, b, 4 * b + 3, 0),
+        (2 * b + 3, 2 * b + 3, b, 4 * b + 3, 0),
+        (2 * b - 1, 2 * b - 1, b, 3 * b + 5, b + 1),
+        (b + 1, b + 1, b, 5, 4),
+        (2 * b - 1, 2 * b - 1, b, 6 * b + 1, 0),
+        (2 * b + 3, 2 * b + 3, b, 4 * b + 6, 0),
+        (b / 2 + 1, b / 2 + 1, b, 2 * b + 1, 1),
+        (b + 1, 2 * b + 2, b, 4 * b + 3, 0),
     ] {
         let src_layout = CKKSLayout {
             glwe_layout: GLWELayout {
@@ -73,7 +84,7 @@ where
             ..src_layout
         };
         let d2s_layout = key_layout(module.n(), b, small, 1, params.rank, params.rank);
-        let s2d_layout = key_layout(module.n(), key_b, small + extra, dsize, params.rank, params.rank);
+        let s2d_layout = key_layout_bits(module.n(), key_b, small + extra, k_digit, params.rank, params.rank);
         let mut d2s = module.gglwe_prepared_alloc_from_infos(&d2s_layout);
         let mut s2d = module.gglwe_prepared_alloc_from_infos(&s2d_layout);
         for (prepared, layout, seed) in [(&mut d2s, &d2s_layout, 31), (&mut s2d, &s2d_layout, 37)] {
@@ -82,7 +93,7 @@ where
                 module.gglwe_prepare(prepared, &coefficients, scratch)
             });
         }
-        let s2d = s2d.with_dsize(Dsize(view_dsize)).unwrap();
+        let s2d = s2d.with_k_digit(TorusPrecision(view_k_digit as u32)).unwrap();
         let bytes = B::ckks_encapsulated_mod_up_tmp_bytes(module, &dst_layout, &src_layout, &d2s_layout, &s2d);
         for (seed, lazy) in [(41, false), (43, true)] {
             let mut src = fixture_operand(module, &src_layout, seed, lazy);
@@ -235,7 +246,7 @@ fn keys_layout(atk: &GGLWELayout, d2s: &GGLWELayout, s2d: &GGLWELayout, encapsul
             dnum: atk.dnum,
             k_aux: atk.k_aux,
             rank: atk.rank_out,
-            dsize: atk.dsize,
+            k_digit: atk.k_digit,
         },
         tensor_key: GLWETensorKeyLayout {
             n: atk.n,
@@ -243,7 +254,7 @@ fn keys_layout(atk: &GGLWELayout, d2s: &GGLWELayout, s2d: &GGLWELayout, encapsul
             dnum: atk.dnum,
             k_aux: atk.k_aux,
             rank: atk.rank_out,
-            dsize: atk.dsize,
+            k_digit: atk.k_digit,
         },
         encapsulation: encapsulate.then(|| EncapsulationKeysLayout {
             dense_to_sparse: switching_layout(d2s),
@@ -260,7 +271,7 @@ fn switching_layout(key: &GGLWELayout) -> GLWESwitchingKeyLayout {
         k_aux: key.k_aux,
         rank_in: key.rank_in,
         rank_out: key.rank_out,
-        dsize: key.dsize,
+        k_digit: key.k_digit,
     }
 }
 

@@ -2,7 +2,7 @@ use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Module, ReaderFrom, WriterTo};
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut,
+    Base2K, Degree, Dnum, GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut,
     LWEInfos, Rank, TorusPrecision,
     compressed::{
         GGLWECompressedBackendMut, GGLWECompressedBackendRef, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef,
@@ -60,8 +60,8 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for LWESwitchingKeyCompressed<D, W> {
         self.0.k_aux()
     }
 
-    fn dsize(&self) -> Dsize {
-        self.0.dsize()
+    fn k_digit(&self) -> TorusPrecision {
+        self.0.k_digit()
     }
 
     fn rank_in(&self) -> Rank {
@@ -106,7 +106,11 @@ impl<D: Data, W: ZnxWord> LWESwitchingKeyCompressed<D, W> {
     where
         A: GGLWEInfos,
     {
-        assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for LWESwitchingKeyCompressed");
+        assert_eq!(
+            infos.k_digit().0,
+            infos.base2k().0,
+            "LWESwitchingKeyCompressed uses one-limb digits: k_digit must equal base2k"
+        );
         assert_eq!(
             infos.rank_in().0,
             1,
@@ -130,7 +134,7 @@ impl<D: Data, W: ZnxWord> LWESwitchingKeyCompressed<D, W> {
             n,
             base2k,
             dnum,
-            Dsize(1),
+            TorusPrecision::from(base2k),
             k_aux,
             Rank(1),
             Rank(1),
@@ -141,7 +145,11 @@ impl<D: Data, W: ZnxWord> LWESwitchingKeyCompressed<D, W> {
     where
         A: GGLWEInfos,
     {
-        assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for LWESwitchingKeyCompressed");
+        assert_eq!(
+            infos.k_digit().0,
+            infos.base2k().0,
+            "LWESwitchingKeyCompressed uses one-limb digits: k_digit must equal base2k"
+        );
         assert_eq!(
             infos.rank_in().0,
             1,
@@ -156,7 +164,7 @@ impl<D: Data, W: ZnxWord> LWESwitchingKeyCompressed<D, W> {
     }
 
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision) -> usize {
-        GLWESwitchingKeyCompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, Dsize(1), k_aux, Rank(1))
+        GLWESwitchingKeyCompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, TorusPrecision::from(base2k), k_aux, Rank(1))
     }
 }
 

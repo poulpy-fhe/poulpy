@@ -75,7 +75,7 @@ pub(crate) fn ggsw_blind_rotation_derived<BE, R, A, K>(
     Module<BE>: GLWEBlindRotation<BE>,
 {
     assert!(res.dnum() <= a.dnum());
-    assert_eq!(res.dsize(), a.dsize());
+    assert_eq!(res.k_digit(), a.k_digit());
 
     for col in 0..(res.rank() + 1).into() {
         for row in 0..res.dnum().into() {

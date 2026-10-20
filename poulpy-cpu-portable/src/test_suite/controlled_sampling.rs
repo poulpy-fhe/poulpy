@@ -125,6 +125,7 @@ mod tests {
             let shapes = poulpy_core::test_suite::parity::ParityShapes {
                 ranks: vec![1],
                 dsizes: None,
+                unaligned_digits: true,
             };
             poulpy_core::test_suite::parity::test_glwe_encryption_parity(&params, &shapes, &reference, tested);
             poulpy_core::test_suite::parity::test_lwe_encryption_parity(&params, &shapes, &reference, tested);

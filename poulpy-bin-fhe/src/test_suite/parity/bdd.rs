@@ -42,7 +42,7 @@ fn layouts<B: Backend>(module: &Module<B>) -> (GLWELayout, GGSWLayout) {
             n: (module.n() as u32).into(),
             base2k: 12u32.into(),
             dnum: 3u32.into(),
-            dsize: 1u32.into(),
+            k_digit: 12u32.into(),
             k_aux: 12u32.into(),
             rank: 1u32.into(),
         },

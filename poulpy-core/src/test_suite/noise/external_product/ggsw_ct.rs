@@ -52,7 +52,7 @@ where
                 base2k: in_base2k.into(),
                 dnum: dnum_in.into(),
                 k_aux: (dsize_in * in_base2k + module.log_n()).into(),
-                dsize: dsize_in.into(),
+                k_digit: crate::layouts::k_digit_of(in_base2k, dsize_in),
                 rank: rank.into(),
             };
 
@@ -61,7 +61,7 @@ where
                 base2k: out_base2k.into(),
                 dnum: dnum_in.into(),
                 k_aux: (dsize_in * out_base2k + module.log_n()).into(),
-                dsize: dsize_in.into(),
+                k_digit: crate::layouts::k_digit_of(out_base2k, dsize_in),
                 rank: rank.into(),
             };
 
@@ -70,7 +70,7 @@ where
                 base2k: key_base2k.into(),
                 dnum: dnum.into(),
                 k_aux: (dsize * key_base2k + module.log_n()).into(),
-                dsize: dsize.into(),
+                k_digit: crate::layouts::k_digit_of(key_base2k, dsize),
                 rank: rank.into(),
             };
 
@@ -206,7 +206,7 @@ where
                 base2k: out_base2k.into(),
                 dnum: dnum_in.into(),
                 k_aux: (dsize_in * out_base2k + module.log_n()).into(),
-                dsize: dsize_in.into(),
+                k_digit: crate::layouts::k_digit_of(out_base2k, dsize_in),
                 rank: rank.into(),
             };
 
@@ -215,7 +215,7 @@ where
                 base2k: key_base2k.into(),
                 dnum: dnum.into(),
                 k_aux: (dsize * key_base2k + module.log_n()).into(),
-                dsize: dsize.into(),
+                k_digit: crate::layouts::k_digit_of(key_base2k, dsize),
                 rank: rank.into(),
             };
 

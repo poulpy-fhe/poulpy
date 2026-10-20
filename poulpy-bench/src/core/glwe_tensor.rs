@@ -4,8 +4,8 @@ use criterion::{Bencher, measurement::Measurement};
 use poulpy_core::{
     GLWEMaskFill, GLWETensoring,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GLWELayout, GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory,
-        ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, Dnum, GLWELayout, GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, ModuleCoreAlloc,
+        Rank, TorusPrecision, k_digit_of,
     },
     test_suite::keys::fill_by_digit,
 };
@@ -34,7 +34,7 @@ fn tensor_key_layout(cp: &CoreParams) -> GLWETensorKeyLayout {
         k_aux: TorusPrecision(k_aux),
         rank: Rank(cp.rank),
         dnum: Dnum(dnum),
-        dsize: Dsize(cp.dsize),
+        k_digit: k_digit_of(cp.base2k, cp.dsize),
     }
 }
 

@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 
 use poulpy_core::{
     Distribution,
-    layouts::{Base2K, Degree, Dnum, Dsize, GGSWInfos, GLWEInfos, LWEInfos, Rank, prepared::GGSWPrepared},
+    layouts::{Base2K, Degree, Dnum, GGSWInfos, GLWEInfos, LWEInfos, Rank, prepared::GGSWPrepared},
 };
 
 use crate::blind_rotation::{BlindRotationAlgo, BlindRotationKey, BlindRotationKeyInfos};
@@ -121,8 +121,8 @@ impl<D: Data, BRT: BlindRotationAlgo, B: Backend> GGSWInfos for BlindRotationKey
         self.data[0].k_aux()
     }
 
-    fn dsize(&self) -> poulpy_core::layouts::Dsize {
-        Dsize(1)
+    fn k_digit(&self) -> poulpy_core::layouts::TorusPrecision {
+        self.data[0].k_digit()
     }
 
     fn dnum(&self) -> Dnum {

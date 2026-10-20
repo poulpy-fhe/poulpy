@@ -20,7 +20,7 @@ use crate::{
     oep::EncryptionImpl,
 };
 use poulpy_hal::{
-    api::{VecZnxAddScalarAssign, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxZero},
+    api::{VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes},
     layouts::{Module, ScalarZnxToBackendRef, ScratchArena, ZnxInfos},
     source::Source,
 };
@@ -272,7 +272,7 @@ pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K>(
     R: GGSWToBackendMut<BE> + GGSWInfos + GGSWAtViewMut<BE>,
     P: ScalarZnxToBackendRef<BE> + ZnxInfos,
     K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
-    Module<BE>: VecZnxZero<BE> + VecZnxAddScalarAssign<BE> + VecZnxNormalizeAssign<BE> + VecZnxNormalizeTmpBytes,
+    Module<BE>: VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
 {
     let noise = public_key_encryption_noise::<BE, _, _>(res, pk, PublicKeyBodyNoise::Sampled);
     let k_sample = public_key_sample_precision::<BE, _, _>(res, pk);
@@ -284,20 +284,23 @@ pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K>(
     let tmp_bytes: usize = ggsw_encrypt_pk_tmp_bytes_derived(module, res, pk);
     {
         let (base2k, k): (usize, usize) = (res.base2k().into(), res.k().as_usize());
-        let dsize: usize = res.dsize().into();
+        let k_digit: usize = res.k_digit().as_usize();
         let rank: usize = res.rank().into();
         let (mut tmp_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(res);
         for row in 0..res.dnum().into() {
-            module.vec_znx_zero(&mut tmp_pt.data, 0);
-            module.vec_znx_add_scalar_assign(
-                &mut tmp_pt.to_backend_mut().data,
+            // The encryption adds the plaintext's limbs to its accumulator as they are.
+            crate::reference::encryption::gadget_row_plaintext(
+                module,
+                &mut tmp_pt.data,
                 0,
-                (dsize - 1) + row * dsize,
+                base2k,
+                k,
+                row,
+                k_digit,
                 &pt.to_backend_ref(),
                 0,
+                &mut scratch_1.borrow(),
             );
-            // The encryption adds the plaintext's limbs to its accumulator as they are.
-            module.vec_znx_normalize_assign(base2k, k, 0, &mut tmp_pt.data, 0, &mut scratch_1.borrow());
             for col in 0..rank + 1 {
                 BE::glwe_encrypt_pk_sampled_at(
                     module,

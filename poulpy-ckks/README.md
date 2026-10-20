@@ -207,11 +207,11 @@ degree `N` yields `log_sparsity = log2(N / n)`.
 
 CKKS tensor (relinearization), automorphism, and switching keys use the core
 GGLWE gadget layout. These key layouts no longer take a total `k` field.
-Instead, they expose `dnum`, `dsize`, and the auxiliary guard `k_aux`; their
-total torus precision is derived as
+Instead, they expose `dnum`, the digit width `k_digit` in bits, and the
+auxiliary guard `k_aux`. Their total torus precision is derived as
 
 ```text
-key.k() = dnum * dsize * base2k + k_aux
+key.k() = dnum * k_digit + k_aux
 ```
 
 The first term is the gadget-decomposition region. `k_aux` is the region below
@@ -219,33 +219,38 @@ the gadget digits that absorbs noise and prevents operations from truncating in
 the middle of a digit. It must cover at least one complete digit:
 
 ```text
-k_aux >= dsize * base2k
+k_aux >= k_digit
 ```
+
+The digit width need not be a multiple of `base2k`. A key whose digits are
+whole limbs reads the ciphertext limbs directly, and any other width first lays
+the ciphertext out on its digit grid, `ceil(k_digit / base2k)` limbs per digit.
+This sets the key size independently of the limb radix.
 
 For example, a conservative tensor-key layout can cover the ciphertext width
 with gadget digits and reserve one digit plus the ring-growth allowance as the
 auxiliary guard:
 
 ```rust,ignore
-let digit_bits = DSIZE * BASE2K;
-let dnum = CT_K.div_ceil(digit_bits);
-let k_aux = digit_bits + N.ilog2() as usize;
+let k_digit = DSIZE * BASE2K;
+let dnum = CT_K.div_ceil(k_digit);
+let k_aux = k_digit + N.ilog2() as usize;
 
 let tsk_layout = GLWETensorKeyLayout {
     n: N.into(),
     base2k: BASE2K.into(),
     dnum: dnum.into(),
-    dsize: DSIZE.into(),
+    k_digit: k_digit.into(),
     k_aux: k_aux.into(),
     rank: Rank(1),
 };
 ```
 
 When migrating an old limb-aligned key with `Dnum(d)` and no auxiliary guard,
-use `Dnum(d - 1)` with `k_aux = dsize * base2k`: this preserves the total key
-width while making the formerly implicit final digit an explicit guard. Gadget
-operations now derive their working width from the input ciphertext and the
-key's `(dsize, k_aux)`; they no longer take a caller-supplied output size.
+use `Dnum(d - 1)` with `k_aux = k_digit`. This preserves the total key width
+while making the formerly implicit final digit an explicit guard. Gadget
+operations derive their working width from the input ciphertext and the key's
+`(k_digit, k_aux)`, and no longer take a caller-supplied output size.
 
 ## Encoding
 

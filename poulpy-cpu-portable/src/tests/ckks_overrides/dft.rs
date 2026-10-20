@@ -373,7 +373,7 @@ fn conditional_dft_fallback_reenters_selected_evaluation() {
         k_aux: 16usize.into(),
         rank: 1usize.into(),
         dnum: 4usize.into(),
-        dsize: 1usize.into(),
+        k_digit: 16usize.into(),
     };
     let bytes = module.ckks_dft_tmp_bytes(&dst, &src, &matrix, &key);
     assert!(bytes >= DFT_EXTRA_SCRATCH);
@@ -443,7 +443,7 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
         k_aux: 16usize.into(),
         rank: 1usize.into(),
         dnum: 16usize.into(),
-        dsize: 1usize.into(),
+        k_digit: 16usize.into(),
     };
     let keys = BootstrappingKeysLayout {
         automorphism_key: poulpy_core::layouts::GLWEAutomorphismKeyLayout {
@@ -452,7 +452,7 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
             k_aux: key.k_aux,
             rank: key.rank,
             dnum: key.dnum,
-            dsize: key.dsize,
+            k_digit: key.k_digit,
         },
         tensor_key: key,
         encapsulation: None,
@@ -523,7 +523,7 @@ fn dft_scratch_covers_factor_copy_with_working_buffer() {
         k_aux: 16usize.into(),
         rank: 1usize.into(),
         dnum: 4usize.into(),
-        dsize: 1usize.into(),
+        k_digit: 16usize.into(),
     };
     let bytes = poulpy_ckks::reference::dft::ckks_dft_tmp_bytes(&module, &ct, &ct, &matrix, &key);
     poulpy_ckks::reference::dft::ckks_dft_evaluate_assign(

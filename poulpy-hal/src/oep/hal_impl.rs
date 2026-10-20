@@ -58,6 +58,22 @@ pub unsafe trait HalVecZnxImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     );
 
+    /// See [`crate::api::VecZnxGadgetDecomposeTmpBytes`].
+    fn vec_znx_gadget_decompose_tmp_bytes(module: &Module<Self>) -> usize;
+
+    /// See [`crate::api::VecZnxGadgetDecompose`].
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_gadget_decompose(
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, Self>,
+        a_col: usize,
+        base2k: usize,
+        k_digit: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    );
+
     fn vec_znx_add(
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,

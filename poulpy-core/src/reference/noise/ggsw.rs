@@ -1,12 +1,12 @@
 use poulpy_hal::{
     api::{
-        ScratchArenaTakeBasic, SvpApplyDftToDftAssign, VecZnxAddScalarAssign, VecZnxBigAddAssign, VecZnxBigBytesOf,
-        VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply,
-        VecZnxIdftApplyTmpBytes, VecZnxSubAssign,
+        ScratchArenaTakeBasic, SvpApplyDftToDftAssign, VecZnxBigAddAssign, VecZnxBigBytesOf, VecZnxBigFromSmall,
+        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply,
+        VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes, VecZnxSubAssign,
     },
     layouts::{
         Backend, HostBackend, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendRef, ScratchArena, Stats,
-        VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, ZnxZero,
+        VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
     },
 };
 
@@ -47,7 +47,8 @@ impl<D: HostDataRef> GGSW<D, i64> {
 
 impl<BE: Backend + HostBackend> GGSWNoise<BE> for Module<BE>
 where
-    Module<BE>: VecZnxAddScalarAssign<BE>
+    Module<BE>: VecZnxNormalize<BE>
+        + VecZnxNormalizeTmpBytes
         + VecZnxDftApply<BE>
         + SvpApplyDftToDftAssign<BE>
         + VecZnxIdftApply<BE>
@@ -78,7 +79,7 @@ where
             + self
                 .vec_znx_idft_apply_tmp_bytes()
                 .max(self.vec_znx_big_normalize_tmp_bytes());
-        let lvl_1: usize = lvl_1_glwe_noise.max(lvl_1_mul);
+        let lvl_1: usize = lvl_1_glwe_noise.max(lvl_1_mul).max(self.vec_znx_normalize_tmp_bytes());
 
         lvl_0 + lvl_1
     }
@@ -104,7 +105,7 @@ where
 
         let base2k: usize = res_backend.base2k().into();
         let res_k = res_backend.k().as_usize();
-        let dsize: usize = res_backend.dsize().into();
+        let k_digit: usize = res_backend.k_digit().as_usize();
         assert!(
             scratch.available() >= self.ggsw_noise_tmp_bytes(res),
             "scratch.available(): {} < GGSWNoise::ggsw_noise_tmp_bytes: {}",
@@ -113,17 +114,22 @@ where
         );
 
         let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(&res_backend);
-        pt.data_mut().zero();
+        let pt_k: usize = pt.k().as_usize();
         let pt_want_backend: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> =
             ScalarZnx::from_data(BE::from_host_bytes(pt_want.data), pt_want.n(), pt_want.cols());
         {
             let mut pt_backend = pt.to_backend_mut();
-            self.vec_znx_add_scalar_assign(
+            crate::reference::encryption::gadget_row_plaintext(
+                self,
                 &mut pt_backend.data,
                 0,
-                (dsize - 1) + res_row * dsize,
+                base2k,
+                pt_k,
+                res_row,
+                k_digit,
                 &<ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxToBackendRef<BE>>::to_backend_ref(&pt_want_backend),
                 0,
+                &mut scratch_1.borrow(),
             );
         }
 

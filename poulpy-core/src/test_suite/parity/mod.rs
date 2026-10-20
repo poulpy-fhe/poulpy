@@ -66,7 +66,7 @@ pub use preparation::*;
 pub use structure::*;
 
 use crate::oep::EncryptionImpl;
-use poulpy_hal::layouts::ZnxViewMut;
+use poulpy_hal::layouts::{ZnxView, ZnxViewMut};
 use poulpy_hal::oep::HalVecZnxImpl;
 use poulpy_hal::{
     layouts::{Backend, CopyFromHost, CopyToHost, Module},
@@ -78,7 +78,7 @@ use crate::{
     api::{GLWEMaskFill, TransferInto},
     layouts::{
         BackendGGLWE, BackendGLWE, GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWEToBackendMut, LWEInfos, ModuleCoreAlloc, Rank,
-        TorusPrecision,
+        SetK, TorusPrecision,
     },
     test_suite::keys::fill_by_digit,
 };
@@ -94,6 +94,8 @@ pub struct ParityShapes {
     pub ranks: Vec<usize>,
     /// Gadget digit sizes; `None` sweeps `1..=k.div_ceil(base2k)`.
     pub dsizes: Option<Vec<usize>>,
+    /// Also sweeps digit widths off a limb boundary at rank 1.
+    pub unaligned_digits: bool,
 }
 
 impl Default for ParityShapes {
@@ -101,6 +103,7 @@ impl Default for ParityShapes {
         Self {
             ranks: vec![1, 2],
             dsizes: None,
+            unaligned_digits: true,
         }
     }
 }
@@ -109,6 +112,22 @@ impl ParityShapes {
     /// The `dsize` sweep, resolving `None` against the operand precision.
     pub fn dsizes(&self, k: usize, base2k: usize) -> Vec<usize> {
         self.dsizes.clone().unwrap_or_else(|| (1..=k.div_ceil(base2k)).collect())
+    }
+
+    /// Digit widths in bits: `dsize * base2k` for every swept `dsize`, then,
+    /// for the full sweep at rank 1, widths off a limb boundary (a sub-limb
+    /// width and one bit past and short of a boundary), so the digit layout is
+    /// compared too. `rank` is the largest rank of the case.
+    pub fn k_digits(&self, k: usize, base2k: usize, rank: usize) -> Vec<usize> {
+        let mut widths: Vec<usize> = self.dsizes(k, base2k).into_iter().map(|d| d * base2k).collect();
+        if self.dsizes.is_none() && self.unaligned_digits && rank == 1 {
+            for width in [base2k / 2 + 1, base2k + 1, 2 * base2k - 1] {
+                if (2..=k).contains(&width) && !widths.contains(&width) {
+                    widths.push(width);
+                }
+            }
+        }
+        widths
     }
 }
 
@@ -174,6 +193,26 @@ pub(crate) fn unnormalized_twin<BS: ParityBackend, BD: ParityBackend>(a: &Backen
     }
     twin.set_canonical(false);
     twin.transfer_into(dst);
+}
+
+/// Writes the canonical `a` into `dst`, a buffer of more limbs than `a`'s `k`
+/// covers, at `a`'s precision: the limbs past it keep what `dst` held, so an
+/// operation sized from `k` must read only the limbs `k` covers.
+pub(crate) fn wide_twin<BS: ParityBackend, BD: ParityBackend>(a: &BackendGLWE<BS>, dst: &mut BackendGLWE<BD>) {
+    let narrow = a.to_host_owned::<BS>();
+    let mut wide = dst.to_host_owned::<BD>();
+    assert_eq!(narrow.base2k(), wide.base2k());
+    assert!(wide.data.size() > narrow.size(), "wide twin needs limbs past the precision");
+    for col in 0..narrow.data.cols() {
+        for limb in 0..narrow.size() {
+            wide.data.at_mut(col, limb).copy_from_slice(narrow.data.at(col, limb));
+        }
+    }
+    wide.set_k(narrow.k());
+    wide.set_canonical(true);
+    wide.noise = narrow.noise.clone();
+    dst.set_k(narrow.k());
+    wide.transfer_into(dst);
 }
 
 /// Allocates a GGLWE on the reference module and fills it with uniform noise,
