@@ -85,6 +85,7 @@ fn main() -> Result<()> {
         scale: Scale::Log(LOG_DELTA),
         slots: SlotsKind::Complex,
         log_sparsity: 0,
+        slot_layout: SlotLayout::Full,
     };
     let mut scratch = ScratchOwned::<BackendImpl>::alloc(module.ckks_all_ops_tmp_bytes(&ct_infos, &tsk_layout(), &ct_infos));
 

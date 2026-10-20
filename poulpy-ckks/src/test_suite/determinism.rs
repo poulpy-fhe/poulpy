@@ -26,7 +26,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSModuleInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
+    CKKSModuleInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{CKKSEncodingHostOps, CKKSEncodingOps},
     approximation::{Parity, RemezOptions, minimax, sign_composite_coeffs},
     layouts::{
@@ -179,6 +179,7 @@ where
                 scale: Scale::Log(log_delta),
                 slots: SlotsKind::Complex,
                 log_sparsity: 0,
+                slot_layout: SlotLayout::Full,
             });
             module
                 .ckks_encode_reim_into(&mut pt, &re, &im, &mut scratch.borrow())

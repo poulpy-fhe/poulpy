@@ -8,7 +8,7 @@ use poulpy_ckks::api::{
 };
 use poulpy_ckks::layouts::{CKKSModuleAlloc, CKKSPlaintextOwned};
 use poulpy_ckks::oep::CKKSComplexPolynomialEvaluationImpl;
-use poulpy_ckks::{CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos};
+use poulpy_ckks::{CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout};
 use poulpy_core::layouts::{
     GLWEPlaintextInfos, GetTensorKey, LWEInfos, SetGLWEPlaintextInfos, SetK, TorusPrecision,
     prepared::GLWETensorKeyPreparedBackendRef,
@@ -698,6 +698,7 @@ fn division_by_i_uses_negative_monomials_and_selected_core_workspaces() {
         scale: Scale::Log(16),
         slots: SlotsKind::Real,
         log_sparsity: 1,
+        slot_layout: SlotLayout::Full,
     });
     // Exercise both choices of dominant constituent workspace. The proxy has
     // no CKKS multiplication-by-i or negation contract to compose through.

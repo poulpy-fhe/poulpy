@@ -15,6 +15,8 @@ pub enum CoreError {
     },
     /// A GGLWE key-use policy, resolver, or registry rejected a request.
     GGLWEKeyUse { op: &'static str, detail: String },
+    /// A [`ReplicatedLayout`](crate::layouts::ReplicatedLayout) violates its invariants.
+    InvalidReplicatedLayout { detail: &'static str },
 }
 
 impl fmt::Display for CoreError {
@@ -38,6 +40,7 @@ impl fmt::Display for CoreError {
                 "{op}: ciphertext is not normalized (base2k={base2k}, pending_linear_terms={pending_linear_terms})"
             ),
             CoreError::GGLWEKeyUse { op, detail } => write!(f, "{op}: {detail}"),
+            CoreError::InvalidReplicatedLayout { detail } => write!(f, "invalid replicated layout: {detail}"),
         }
     }
 }

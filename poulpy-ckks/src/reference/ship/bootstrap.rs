@@ -22,7 +22,7 @@ use super::{
     mux::{ship_mux_plans, ship_mux_rotate},
 };
 use crate::{
-    CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SlotsKind,
+    CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SlotLayout, SlotsKind,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSMulOps, CKKSSubOps, ShipScalar},
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, ShipKeysPrepared},
     oep::{CKKSEncodingImpl, CKKSShipCoeffEncodingImpl},
@@ -165,6 +165,7 @@ where
             scale: Scale::Log(ld),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         })?;
         module.ckks_add_pt_vec_assign(&mut leaf0, pt0, scratch)?;
         let mut half_leaves = Vec::with_capacity(plan.sparse_hamming_weight() + 1);

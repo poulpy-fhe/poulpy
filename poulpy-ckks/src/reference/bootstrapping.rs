@@ -868,6 +868,7 @@ where
         scale: Scale::Log(src.log_delta() + scale_up),
         slots: src.slots(),
         log_sparsity: src.log_sparsity(),
+        slot_layout: src.slot_layout(),
     });
     dst.set_k(k_large.into());
 
@@ -924,6 +925,7 @@ where
         scale: Scale::Log(dst.log_delta() + eval_mod.log_msg_ratio),
         slots: src.slots(),
         log_sparsity: src.log_sparsity(),
+        slot_layout: src.slot_layout(),
     });
     Ok(())
 }
@@ -1207,6 +1209,7 @@ where
         scale: Scale::Log(ct_in.log_delta()),
         slots: ct_in.slots(),
         log_sparsity: ct_in.log_sparsity(),
+        slot_layout: ct_in.slot_layout(),
     });
     Ok(())
 }
@@ -1262,6 +1265,7 @@ where
             scale: Scale::Log(log_modulus_in + ctx.c2s_guard_bits()),
             slots: ct_in.slots(),
             log_sparsity: ct_in.log_sparsity(),
+            slot_layout: ct_in.slot_layout(),
         });
         Result::Ok(())
     })
@@ -1311,6 +1315,7 @@ where
             scale: Scale::Log(ct_in.log_delta()),
             slots: ct_in.slots(),
             log_sparsity: ct_in.log_sparsity(),
+            slot_layout: ct_in.slot_layout(),
         });
         Result::Ok(())
     })
@@ -1426,6 +1431,7 @@ where
         scale: Scale::Log(src.log_delta() + scale_up),
         slots: src.slots(),
         log_sparsity: src.log_sparsity(),
+        slot_layout: src.slot_layout(),
     });
     Ok(())
 }
@@ -1536,6 +1542,7 @@ fn functional_output_contract<BE: Backend, F>(
             scale: Scale::Log(log_delta),
             slots: ct_in.slots(),
             log_sparsity: ct_in.log_sparsity(),
+            slot_layout: ct_in.slot_layout(),
         },
         output_k,
     ))

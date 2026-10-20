@@ -8,7 +8,7 @@ use super::{
     keys::{key_layout, prepared_automorphism_key, prepared_gglwe},
 };
 use crate::{
-    CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SlotsKind,
+    CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SlotLayout, SlotsKind,
     layouts::{CKKSCiphertext, CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSModuleAlloc, CKKSRingCiphertext, RingSwitchKeys},
     oep::{CKKSFoldImpl, CKKSFoldLayoutImpl},
     test_suite::CKKSTestParams,
@@ -39,6 +39,7 @@ fn layout(n: usize, base2k: usize, k: usize, log_delta: usize, slots: SlotsKind)
             scale: Scale::Log(log_delta),
             slots,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         },
     }
 }

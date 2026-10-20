@@ -87,6 +87,7 @@ const CT: CKKSLayout = CKKSLayout {
         scale: Scale::Log(LOG_DELTA),
         slots: SlotsKind::Complex,
         log_sparsity: 0,
+        slot_layout: SlotLayout::Full,
     },
 };
 

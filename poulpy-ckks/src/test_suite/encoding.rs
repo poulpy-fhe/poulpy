@@ -10,7 +10,7 @@ use poulpy_hal::{
 
 use crate::SlotsKind;
 use crate::{
-    CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos,
+    CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout,
     layouts::CKKSModuleAlloc,
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
@@ -48,6 +48,7 @@ pub fn test_encode_decode_reim_roundtrip<BE, F, E>(
         scale: Scale::Log(log_delta),
         slots: SlotsKind::Complex,
         log_sparsity: 0,
+        slot_layout: SlotLayout::Full,
     });
     encoder.encode_reim(&mut pt, &re_in, &im_in).unwrap();
 

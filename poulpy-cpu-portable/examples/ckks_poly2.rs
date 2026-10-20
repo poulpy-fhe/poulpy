@@ -23,7 +23,7 @@ use anyhow::Result;
 use poulpy_ckks::CKKSModuleInfos;
 use poulpy_ckks::Scale;
 use poulpy_ckks::{
-    CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
+    CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout, SlotsKind,
     api::CKKSEncodingHostOps,
     api::{CKKSAllOpsTmpBytes, CKKSDecryptOps, CKKSEncryptOps, CKKSPolynomialEvaluationOps},
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
@@ -73,6 +73,7 @@ const PREC_CT: CKKSLayout = CKKSLayout {
         scale: Scale::Log(45),
         slots: SlotsKind::Complex,
         log_sparsity: 0,
+        slot_layout: SlotLayout::Full,
     },
 };
 
@@ -85,6 +86,7 @@ const COEFF_META: CoeffsMeta = CoeffsMeta {
         scale: Scale::Log(45),
         slots: SlotsKind::Complex,
         log_sparsity: 0,
+        slot_layout: SlotLayout::Full,
     },
 };
 const ABS_ERROR_TOLERANCE: f64 = 5e-5;

@@ -88,6 +88,7 @@ where
             scale: Scale::Log(params.plan.f_mod_log_delta),
             slots: SlotsKind::Complex,
             log_sparsity: ct.log_sparsity(),
+            slot_layout: ct.slot_layout(),
         },
     };
 

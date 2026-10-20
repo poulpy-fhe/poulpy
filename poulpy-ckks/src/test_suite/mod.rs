@@ -13,7 +13,7 @@ use poulpy_core::layouts::{
 };
 
 use crate::SlotsKind;
-use crate::{CKKSLayout, GLWEPlaintextMeta};
+use crate::{CKKSLayout, GLWEPlaintextMeta, SlotLayout};
 
 /// Shared CKKS parameter set for test instantiation.
 #[derive(Clone, Copy)]
@@ -160,6 +160,7 @@ pub const BASE52_PARAMS_F64: CKKSTestParams = CKKSTestParams {
         scale: Scale::Log(40),
         slots: SlotsKind::Complex,
         log_sparsity: 0,
+        slot_layout: SlotLayout::Full,
     },
     prec_log_budget: 30,
     hw: 192,
@@ -176,6 +177,7 @@ pub const BASE19_PARAMS_F64: CKKSTestParams = CKKSTestParams {
         scale: Scale::Log(30),
         slots: SlotsKind::Complex,
         log_sparsity: 0,
+        slot_layout: SlotLayout::Full,
     },
     prec_log_budget: 10,
     hw: 192,
@@ -192,6 +194,7 @@ pub const BASE52_PARAMS_QUAD: CKKSTestParams = CKKSTestParams {
         scale: Scale::Log(80),
         slots: SlotsKind::Complex,
         log_sparsity: 0,
+        slot_layout: SlotLayout::Full,
     },
     prec_log_budget: 30,
     hw: 192,

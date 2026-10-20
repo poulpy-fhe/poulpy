@@ -36,7 +36,7 @@ use poulpy_hal::{
 
 use crate::SlotsKind;
 use crate::{
-    CKKSInfos, GLWEPlaintextMeta,
+    CKKSInfos, GLWEPlaintextMeta, SlotLayout,
     api::{CKKSAddOps, CKKSLinearTransformationOps, CKKSMulOps},
     encoding::paco::{coeff_enc::glwe_column_residues, cpx::Cpx},
     layouts::{PaCoPlan, PaCoSecretSpec},
@@ -238,6 +238,7 @@ where
                         scale: Scale::Log(log_delta),
                         slots: SlotsKind::Complex,
                         log_sparsity: 0,
+                        slot_layout: SlotLayout::Full,
                     },
                 },
                 cd,

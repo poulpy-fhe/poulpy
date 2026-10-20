@@ -12,7 +12,7 @@ use poulpy_core::{
     GLWEAutomorphism, GLWEBytesOf, GLWEKeyswitch, GLWELinearTransformations, GLWERotate,
     layouts::{
         Degree, GGLWEPreparedToBackendRef, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEPlaintextMeta, GLWESwitchingKeyDegrees,
-        GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, Scale, TorusPrecision,
+        GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, Scale, SlotLayout, TorusPrecision,
     },
 };
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
@@ -166,6 +166,7 @@ where
             scale: Scale::Log(plan.log_delta_bsk()),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         },
     };
 
@@ -196,6 +197,7 @@ where
             scale: Scale::Log(plan.c2s().log_delta().max(plan.stc().log_delta())),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         },
     };
 

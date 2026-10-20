@@ -19,7 +19,7 @@ use poulpy_hal::layouts::HostStaged;
 use std::{f64::consts::TAU, fmt::Debug};
 
 use crate::{
-    CKKSCompositionError, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos,
+    CKKSCompositionError, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout,
     api::{
         CKKSAddManyOps, CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps, CKKSDotProductOps,
         CKKSEncodingScalar, CKKSEvalModOps, CKKSImagOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSNegOps,
@@ -104,6 +104,7 @@ pub const PT_PREC: CKKSLayout = CKKSLayout {
         scale: Scale::Log(8),
         slots: SlotsKind::Complex,
         log_sparsity: 0,
+        slot_layout: SlotLayout::Full,
     },
 };
 
@@ -139,6 +140,7 @@ pub fn ckks_spec_sparse(n: usize, base2k: usize, log_delta: usize, log_budget: u
             scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,
             log_sparsity,
+            slot_layout: SlotLayout::Full,
         },
     }
 }
@@ -501,6 +503,7 @@ pub fn precision_at(params: &CKKSTestParams, log_delta: usize) -> CKKSLayout {
             scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         },
     }
 }
@@ -1077,6 +1080,7 @@ where
             scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         },
     };
     let pt = ckks_decrypt_with_prec(module, ct, sk, prec, scratch).unwrap();
@@ -1291,6 +1295,7 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
         scale: Scale::Log(ct.log_delta()),
         slots: SlotsKind::Complex,
         log_sparsity: 0,
+        slot_layout: SlotLayout::Full,
     });
     encoder.encode_reim(&mut pt_want, want_re, want_im).unwrap();
 
@@ -1341,6 +1346,7 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
         scale: Scale::Log(ct.log_delta()),
         slots: SlotsKind::Complex,
         log_sparsity: 0,
+        slot_layout: SlotLayout::Full,
     });
     module.ckks_extract_pt(&mut pt_decode, &full_pt, scratch).unwrap();
     let pt_host = download_pt::<BE>(&pt_decode);

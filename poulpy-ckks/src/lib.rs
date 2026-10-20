@@ -72,7 +72,9 @@
 use poulpy_core::layouts::{
     Base2K, Degree, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetK, TorusPrecision,
 };
-pub use poulpy_core::layouts::{GLWEPlaintextInfos, GLWEPlaintextMeta, Scale, SetGLWEPlaintextInfos, SlotsKind};
+pub use poulpy_core::layouts::{
+    GLWEPlaintextInfos, GLWEPlaintextMeta, ReplicatedLayout, Scale, SetGLWEPlaintextInfos, SlotLayout, SlotsKind,
+};
 use poulpy_hal::layouts::Backend;
 use poulpy_hal::layouts::CyclotomicOrder;
 use poulpy_hal::layouts::Module;
@@ -113,7 +115,7 @@ pub mod prelude {
     pub use crate::layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, PolynomialApproximation};
     pub use crate::{
         CKKSCompositionError, CKKSError, CKKSInfos, CKKSLayout, CKKSResult, CoeffsMeta, GLWEPlaintextInfos, GLWEPlaintextMeta,
-        Quad, Scale, SetCKKSInfos, SetGLWEPlaintextInfos, SlotsKind,
+        Quad, ReplicatedLayout, Scale, SetCKKSInfos, SetGLWEPlaintextInfos, SlotLayout, SlotsKind,
     };
     pub use poulpy_core::layouts::SetK;
 }
@@ -286,6 +288,7 @@ impl CoeffsMeta {
                 scale: Scale::Log(log_delta),
                 slots: SlotsKind::Complex,
                 log_sparsity: 0,
+                slot_layout: SlotLayout::Full,
             },
         }
     }
@@ -518,6 +521,7 @@ mod offset_tests {
                 scale: Scale::Log(log_delta),
                 slots: SlotsKind::Complex,
                 log_sparsity: 0,
+                slot_layout: SlotLayout::Full,
             },
         }
     }

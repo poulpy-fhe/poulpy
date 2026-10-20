@@ -28,7 +28,7 @@ use poulpy_blas::{
     reference::{blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k, blas_matmul_pt_right_max_base2k},
 };
 use poulpy_ckks::{
-    CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
+    CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{
         CKKSAllOpsTmpBytes, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSLinearTransformationOps,
         CKKSModuleInfos,
@@ -78,6 +78,7 @@ fn block_layout(bp: &BlasBenchParams) -> CKKSLayout {
             scale: Scale::Log(bp.log_delta),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         },
     }
 }
@@ -373,6 +374,7 @@ where
             scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         });
         self.module
             .ckks_decrypt(&mut pt, block, &self.sk, &mut self.arena.borrow())

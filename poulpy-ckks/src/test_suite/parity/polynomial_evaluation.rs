@@ -5,7 +5,7 @@ use super::{
 };
 use crate::Scale;
 use crate::{
-    CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotsKind,
+    CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotLayout, SlotsKind,
     api::{
         CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSEncodingHostOps, CKKSEncodingScalar, CKKSEvalModOps,
         CKKSPolynomialEvaluationOps,
@@ -64,6 +64,7 @@ where
             scale: Scale::Log(10),
             slots: SlotsKind::Real,
             log_sparsity: 1,
+            slot_layout: SlotLayout::Full,
         },
     };
     let key = key_layout(module.n(), b, layout.k().as_usize(), 1, 1, 1);

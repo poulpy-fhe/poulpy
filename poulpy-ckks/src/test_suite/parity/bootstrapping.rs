@@ -11,7 +11,7 @@ use super::{
     },
 };
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotsKind,
+    CKKSCtBounds, CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotLayout, SlotsKind,
     api::{CKKSAllOpsTmpBytes, CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
     layouts::{
         BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan,
@@ -77,6 +77,7 @@ where
                 scale: Scale::Log(b),
                 slots: SlotsKind::Complex,
                 log_sparsity: 1,
+                slot_layout: SlotLayout::Full,
             },
         };
         let dst_layout = CKKSLayout {
@@ -328,6 +329,7 @@ fn ct_layout(n: usize, base2k: usize, k: usize, log_delta: usize, slots: SlotsKi
             scale: Scale::Log(log_delta),
             slots,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         },
     }
 }

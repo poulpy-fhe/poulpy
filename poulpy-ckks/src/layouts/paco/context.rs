@@ -31,7 +31,7 @@ use super::plan::{PaCoDFTPlan, PaCoPlan};
 use crate::SlotsKind;
 use crate::reference::paco::lt::{PaCoPsiTail, paco_psi_c2s_factors, paco_stc_factors};
 use crate::{
-    GLWEPlaintextMeta, Scale,
+    GLWEPlaintextMeta, Scale, SlotLayout,
     api::{CKKSEncodingHostOps, CKKSEncodingOps, LinearTransformation, PaCoScalar},
     layouts::{CKKSModuleAlloc, CKKSScalar},
 };
@@ -200,6 +200,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
                         scale: Scale::Log(dft.log_delta()),
                         slots: SlotsKind::Complex,
                         log_sparsity: 0,
+                        slot_layout: SlotLayout::Full,
                     },
                 },
                 diagonals,
@@ -278,6 +279,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
                     scale: Scale::Log(dft.log_delta()),
                     slots: SlotsKind::Complex,
                     log_sparsity: 0,
+                    slot_layout: SlotLayout::Full,
                 })?;
                 module
                     .ckks_encode_reim_into(&mut pt, &re, &im, scratch)

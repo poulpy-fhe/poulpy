@@ -59,7 +59,7 @@ use poulpy_core::layouts::{
 
 use crate::numerics::CKKSFloat;
 use crate::{
-    CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, Scale, SlotsKind,
+    CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, Scale, SlotLayout, SlotsKind,
     layouts::{
         BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, DFTOutputFormat, DFTPlan,
         DFTType, EncapsulationKeysLayout, EvalModPlan, EvalModType, SparseSecretEncapsulation,
@@ -347,6 +347,7 @@ impl BootstrappingPreset {
                 scale: Scale::Log(self.spec.log_delta),
                 slots: SlotsKind::Complex,
                 log_sparsity: 0,
+                slot_layout: SlotLayout::Full,
             },
         }
     }

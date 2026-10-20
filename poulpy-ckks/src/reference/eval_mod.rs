@@ -178,6 +178,7 @@ where
         scale: Scale::Log(s_eval),
         slots: ct.slots(),
         log_sparsity: ct.log_sparsity(),
+        slot_layout: ct.slot_layout(),
     };
 
     match &params.f_mod_bsgs {

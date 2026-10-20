@@ -15,7 +15,7 @@ use poulpy_hal::{
 };
 
 use crate::SlotsKind;
-use crate::{GLWEPlaintextMeta, Scale, SetCKKSInfos, ckks_log_delta, layouts::CKKSModuleAlloc};
+use crate::{GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotLayout, ckks_log_delta, layouts::CKKSModuleAlloc};
 
 /// Builds the backend-resident constant-`1.0` plaintext used by the
 /// add-one/sub-one facades.
@@ -31,6 +31,7 @@ where
         scale: Scale::Log(1),
         slots: SlotsKind::Real,
         log_sparsity: 0,
+        slot_layout: SlotLayout::Full,
     };
 
     // Monomial plaintext: total torus width is `log_delta` (budget 0).

@@ -32,7 +32,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSInfos, GLWEPlaintextMeta, Scale,
+    CKKSInfos, GLWEPlaintextMeta, Scale, SlotLayout,
     api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, ShipScalar},
     encoding::ship::masks::ship_mask_slot_vectors,
     layouts::{CKKSCiphertext, CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned},
@@ -479,6 +479,7 @@ impl<D: Data> ShipKeySet<D, i64> {
             scale: Scale::Log(ld),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         };
 
         let mut sk_dense = module.glwe_secret_alloc_from_infos(sk_dense_host);

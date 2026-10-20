@@ -9,7 +9,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos,
+    CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout,
     api::{CKKSComplexPolynomialEvaluationOps, CKKSMulOps, CKKSPolynomialEvaluationOps},
     layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec},
     polynomial::{
@@ -1759,6 +1759,7 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
             scale: Scale::Log(input_log_delta),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         },
         prec_log_budget: k - input_log_delta,
         hw: m,

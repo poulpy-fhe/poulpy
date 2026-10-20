@@ -24,7 +24,7 @@ use std::collections::HashMap;
 
 use crate::SlotsKind;
 use crate::{
-    CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos,
+    CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout,
     api::CKKSConjugateOps,
     encoding::paco::cpx::Cpx,
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
@@ -111,6 +111,7 @@ pub(crate) fn assert_slots<BE, F, E>(
             scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         },
     };
     // Full-precision decrypt on the backend, then download to host bytes.
@@ -124,6 +125,7 @@ pub(crate) fn assert_slots<BE, F, E>(
         scale: Scale::Log(log_delta),
         slots: SlotsKind::Complex,
         log_sparsity: 0,
+        slot_layout: SlotLayout::Full,
     });
     encoder.encode_reim(&mut want_pt, &want_re, &want_im).unwrap();
 

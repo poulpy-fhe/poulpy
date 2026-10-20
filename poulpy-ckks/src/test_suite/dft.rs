@@ -33,7 +33,7 @@ use poulpy_core::{GLWENoise, layouts::LWEInfos};
 
 use crate::SlotsKind;
 use crate::{
-    CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos,
+    CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout,
     api::{CKKSDFTMatrixOps, CKKSDFTOps},
     layouts::{
         CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, DFTMatrix, DFTMatrixPrepared,
@@ -75,6 +75,7 @@ fn dense_params(params: &CKKSTestParams) -> CKKSTestParams {
             scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         },
         prec_log_budget: 10,
         hw: params.hw.min(1 << DENSE_LOG_SLOTS),
@@ -98,6 +99,7 @@ fn sparse_params(params: &CKKSTestParams) -> CKKSTestParams {
             scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         },
         prec_log_budget: 10,
         hw: params.hw.min(32),
@@ -190,6 +192,7 @@ where
         scale: Scale::Log(ct.log_delta()),
         slots: SlotsKind::Complex,
         log_sparsity: 0,
+        slot_layout: SlotLayout::Full,
     });
     pt
 }
@@ -671,6 +674,7 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
         scale: Scale::Log(log_delta),
         slots: SlotsKind::Complex,
         log_sparsity: 0,
+        slot_layout: SlotLayout::Full,
     });
     small.encode_reim(&mut host_pt, &want_re, &want_im).unwrap();
     let mut ct_in = ckks_encrypt_pt(&params, &module, &sk, params.k, &host_pt, &mut scratch.borrow());

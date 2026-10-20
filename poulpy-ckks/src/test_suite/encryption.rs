@@ -9,7 +9,7 @@ use super::parity::helpers::snapshot;
 use crate::CKKSModuleInfos;
 use crate::Scale;
 use crate::{
-    CKKSCompositionError, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos,
+    CKKSCompositionError, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout,
     api::{CKKSDecryptOps, CKKSEncryptOps},
     layouts::CKKSModuleAlloc,
 };
@@ -383,6 +383,7 @@ pub fn test_decrypt_extract_output_hom_rem_too_large<BE, F, E>(
         scale: Scale::Log(src_prec.log_delta()),
         slots: SlotsKind::Complex,
         log_sparsity: 0,
+        slot_layout: SlotLayout::Full,
     });
     let err = module.ckks_decrypt(&mut pt, &ct, &sk, &mut scratch.borrow()).unwrap_err();
     assert_ckks_error(

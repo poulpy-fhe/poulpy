@@ -7,7 +7,7 @@ use poulpy_core::{
     reference::keyswitching::glwe::GGLWEProductReference,
 };
 
-use crate::{CKKSLayout, GLWEPlaintextMeta, Scale};
+use crate::{CKKSLayout, GLWEPlaintextMeta, Scale, SlotLayout};
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
@@ -84,6 +84,7 @@ where
             scale: Scale::Log(plan.log_delta_work()),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         },
     };
 

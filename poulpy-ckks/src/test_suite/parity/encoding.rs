@@ -13,7 +13,7 @@ use poulpy_core::{
 use poulpy_hal::layouts::{Backend, Module, ZnxView};
 
 use crate::{
-    CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotsKind,
+    CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotLayout, SlotsKind,
     api::{CKKSEncodingOps, CKKSEncodingScalar, CKKSModuleInfos, PaCoScalar, ShipScalar},
     layouts::{
         CKKSEncodingBuffer, CKKSEncodingBufferToBackendMut, CKKSPlaintextOwned, ComplexDiagonals, PaCoDFTPlan, PaCoPlan,
@@ -164,6 +164,7 @@ where
                     scale: Scale::Log(log_delta),
                     slots,
                     log_sparsity: 0,
+                    slot_layout: SlotLayout::Full,
                 },
             };
             let count = params.n;
@@ -251,6 +252,7 @@ where
             scale: Scale::Log(40),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         },
     };
     let max_slots = module.ckks_max_slots();
@@ -395,6 +397,7 @@ where
                 scale: Scale::Log(10),
                 slots: SlotsKind::Complex,
                 log_sparsity: 0,
+                slot_layout: SlotLayout::Full,
             },
         };
         let cr = fixture_ciphertext(r, &layout, 72);
@@ -479,6 +482,7 @@ where
             scale: Scale::Log(base2k - 4),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         },
     };
     let cr = fixture_ciphertext(r, &layout, 83);

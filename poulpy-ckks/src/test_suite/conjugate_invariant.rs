@@ -3,7 +3,7 @@ use poulpy_core::layouts::GLWEPlaintextInfos;
 use std::collections::HashMap;
 
 use crate::{
-    CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
+    CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{
         CKKSAddOps, CKKSCIRingMapOps, CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar,
         CKKSFoldLayoutOps, CKKSFoldOps, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, CKKSNegOps,
@@ -357,6 +357,7 @@ where
                 scale: Scale::Log(log_delta),
                 slots: SlotsKind::Complex,
                 log_sparsity: 0,
+                slot_layout: SlotLayout::Full,
             });
             module.ckks_encode_reim_into(&mut pt, &re, &im, &mut scratch.arena()).unwrap();
             assert_eq!(pt.slots(), SlotsKind::Real);

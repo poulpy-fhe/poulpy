@@ -15,7 +15,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
+    CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{CKKSFoldLayoutOps, CKKSFoldOps},
     layouts::{CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSModuleAlloc, CKKSPlaintextVecHostCodec, RingSwitchKeys},
     test_suite::{
@@ -178,7 +178,8 @@ where
                         GLWEPlaintextMeta {
                             scale: Scale::Log(log_delta),
                             slots: SlotsKind::Complex,
-                            log_sparsity: 0
+                            log_sparsity: 0,
+                            slot_layout: SlotLayout::Full,
                         },
                         0
                     ),

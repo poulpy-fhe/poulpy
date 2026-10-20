@@ -16,7 +16,7 @@ use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
 
 use super::ops::PaCoSlotOps;
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale,
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SlotLayout,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSSubOps, PaCoScalar},
     layouts::{
         CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned,
@@ -482,6 +482,7 @@ where
         scale: Scale::Log(output_scale),
         slots: input.slots(),
         log_sparsity: gap.trailing_zeros() as usize,
+        slot_layout: SlotLayout::Full,
     })?;
 
     // Write the result into the caller's destination. The accumulator already carries

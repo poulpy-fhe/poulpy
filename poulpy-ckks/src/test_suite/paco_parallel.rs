@@ -27,7 +27,7 @@ use poulpy_hal::{
 
 use crate::SlotsKind;
 use crate::{
-    CKKSInfos, GLWEPlaintextMeta,
+    CKKSInfos, GLWEPlaintextMeta, SlotLayout,
     api::{CKKSLinearTransformationOps, CKKSPaCoOps, PaCoScalar},
     layouts::{CKKSModuleAlloc, PaCoContext, PaCoDFTPlan, PaCoKeySet, PaCoKeysPrepared, PaCoPlan, PaCoSecretSpec, PaCoWorker},
     reference::paco::ops::PaCoSlotOps,
@@ -95,6 +95,7 @@ where
             scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         },
     };
     let pt = ckks_decrypt_with_prec(module, ct, sk, prec, scratch).unwrap();
