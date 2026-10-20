@@ -85,7 +85,7 @@ pub(crate) fn normalize_assign<R: ZnxViewMut<Scalar = i64>>(res: &mut R, base2k:
 }
 
 /// Gadget digit layout, see `poulpy_hal::api::VecZnxGadgetDecompose`: the
-/// input rounded half up at `dnum * k_digit`, each digit the centered residue
+/// input rounded ties to even at `dnum * k_digit`, each digit the centered residue
 /// modulo `2^k_digit` of what is left, then split into centered limbs from its
 /// bottom up with the top limb taking the rest, on exact integers.
 pub(crate) fn gadget_decompose<R, A>(res: &mut R, col: usize, a: &A, a_col: usize, base2k: usize, k_digit: usize)
@@ -108,8 +108,7 @@ where
     for coeff in 0..res.n() {
         let mut value = integer(a.size(), base2k, |j| a.at(a_col, j)[coeff].into());
         if drop > 0 {
-            let drop = drop as usize;
-            value = (value + (IBig::ONE << (drop - 1))) >> drop;
+            value = round_ties_even(value, drop as usize);
         } else {
             value <<= (-drop) as usize;
         }
