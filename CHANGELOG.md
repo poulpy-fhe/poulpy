@@ -94,6 +94,8 @@
   `poulpy_cpu_rayon::normalize::ntt4x30_vec_znx_big_normalize_par` is renamed `vec_znx_big_normalize_par`, the exported macro `rayon_forward_znx_const!` is removed, and the public normalize entries lose their `carry` parameter.
   The shared suites `test_suite::normalization::test_normalization_kernels` and `test_suite::normalization_i128::test_i128_normalize_fused` are replaced by `test_suite::znx_normalize::test_znx_normalize`.
   Out-of-tree CPU backends implement `ZnxNormalize`, whose default methods run the portable kernel.
+- The normalization kernel runs on `std::simd` lanes on every CPU target, `SimdLanes<8>` for i64 words and `SimdI128Lanes<4>` for i128 words, so no backend carries hand-written normalization lanes.
+  `poulpy-cpu-portable` enables the nightly features `portable_simd` and `hint_prefetch`.
 
 ### `poulpy-core`
 
