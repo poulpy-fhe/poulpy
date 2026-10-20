@@ -27,13 +27,16 @@ env:
     poulpy-core/enable-core
     poulpy-cpu-oracle/enable-ckks
     poulpy-cpu-oracle/enable-bin-fhe
+    poulpy-cpu-oracle/enable-blas
     poulpy-cpu-portable/enable-core
     poulpy-cpu-portable/enable-ckks
     poulpy-cpu-portable/enable-bin-fhe
     poulpy-cpu-portable/enable-mhe
+    poulpy-cpu-portable/enable-blas
     poulpy-cpu-rayon/enable-ckks
     poulpy-cpu-rayon/enable-bin-fhe
     poulpy-cpu-rayon/enable-mhe
+    poulpy-cpu-rayon/enable-blas
     poulpy-bin-fhe/enable-bin-fhe
   AVX_FEATURES: >-
     poulpy-core/enable-core
@@ -45,6 +48,7 @@ env:
     poulpy-cpu-avx/enable-ckks
     poulpy-cpu-avx/enable-bin-fhe
     poulpy-cpu-avx/enable-rayon
+    poulpy-cpu-avx/enable-blas
     poulpy-bin-fhe/enable-bin-fhe
   AVX512_FEATURES: >-
     poulpy-core/enable-core
@@ -60,6 +64,7 @@ env:
     poulpy-cpu-avx512/enable-bin-fhe
     poulpy-cpu-avx512/enable-ifma
     poulpy-cpu-avx512/enable-rayon
+    poulpy-cpu-avx512/enable-blas
     poulpy-bin-fhe/enable-bin-fhe
   NEON_FEATURES: >-
     poulpy-core/enable-core
@@ -71,6 +76,7 @@ env:
     poulpy-cpu-arm/enable-bin-fhe
     poulpy-cpu-arm/enable-neon
     poulpy-cpu-arm/enable-rayon
+    poulpy-cpu-arm/enable-blas
     poulpy-bin-fhe/enable-bin-fhe
 
 jobs:

@@ -13,4 +13,4 @@ It also defines `FFT64PortableRayon` and `NTT4x30PortableRayon`, the Rayon varia
 of the portable backends, with their conjugate-invariant aliases. They live here
 because this crate depends on `poulpy-cpu-portable`. The `enable-core`,
 `enable-ckks`, `enable-bin-fhe` and `enable-mhe` features wire the scheme layers
-into them.
+into them, and `enable-blas`, which implies `enable-ckks`, wires `poulpy-blas`.
