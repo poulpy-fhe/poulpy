@@ -29,7 +29,7 @@ impl<D: HostDataMut> VecZnx<D, i64> {
                 a.size()
             );
             assert!(col < a.cols());
-            assert!(data.len() == a.n(), "data.len()={} must equal N={}", data.len(), a.n());
+            assert!(data.len() == a.n(), "data length must equal the ring degree");
         }
 
         let shape = self.shape();
@@ -76,7 +76,7 @@ impl<D: HostDataMut> VecZnx<D, i64> {
                 a.size()
             );
             assert!(col < a.cols());
-            assert!(data.len() == a.n(), "data.len()={} must equal N={}", data.len(), a.n());
+            assert!(data.len() == a.n(), "data length must equal the ring degree");
         }
 
         let shape = self.shape();
@@ -169,7 +169,7 @@ impl<D: HostDataRef> VecZnx<D, i64> {
         {
             let shape = self.shape();
             let a = VecZnx::<_, i64>::from_shape(self.data().as_ref(), shape);
-            assert!(data.len() == a.n(), "data.len()={} must equal N={}", data.len(), a.n());
+            assert!(data.len() == a.n(), "data length must equal the ring degree");
             assert!(col < a.cols());
         }
 
@@ -206,7 +206,7 @@ impl<D: HostDataRef> VecZnx<D, i64> {
         {
             let shape = self.shape();
             let a = VecZnx::<_, i64>::from_shape(self.data().as_ref(), shape);
-            assert!(data.len() == a.n(), "data.len()={} must equal N={}", data.len(), a.n());
+            assert!(data.len() == a.n(), "data length must equal the ring degree");
             assert!(col < a.cols());
         }
 
