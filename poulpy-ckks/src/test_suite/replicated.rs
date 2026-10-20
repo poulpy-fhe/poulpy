@@ -8,20 +8,25 @@
 //! | [`test_replicated_unit_shaping_encodes_plainly`] | `U = 1` encodes as a full layout holding the scattered batch |
 //! | [`test_replicated_encryption_is_shaped`] | a fresh encryption keeps the data slots far above CKKS at the same scale |
 //! | [`test_replicated_encoding_rejects_batch_size`] | a batch of the wrong size |
+//! | [`test_replicated_products_are_shaped`] | chains of every ct × ct and ct × pt product keep the data slots far above CKKS |
+//! | [`test_replicated_layouts_do_not_mix`] | products and sums of different layouts |
 
 use anyhow::Result;
-use poulpy_core::layouts::{Base2K, GLWEToBackendRef, LWEInfos, TorusPrecision};
+use poulpy_core::layouts::{Base2K, GLWEToBackendRef, LWEInfos, TorusPrecision, prepared::GLWESecretPrepared};
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, HostBytesBackend, Module, ScratchOwned, Standard, ZnxView},
     source::Source,
 };
 
-use super::helpers::{TestContextBackend, TestContextModule, TestScalar, alloc_ct, gen_sk};
+use super::helpers::{
+    PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, ckks_pt_cst_full, gen_sk,
+    gen_sk_with_raw, gen_tsk,
+};
 use crate::{
     CKKSInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, ReplicatedLayout, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
-    api::{CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSModuleInfos},
-    layouts::{CKKSModuleAlloc, CKKSPlaintextOwned},
+    api::{CKKSAddOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSModuleInfos, CKKSMulOps},
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned},
     shaping::ShapingUnit,
     test_suite::CKKSTestParams,
 };
@@ -241,5 +246,244 @@ where
     let (re, im) = batch::<F>(2 << LOG_K);
     let mut pt = plaintext(&params, module, SlotLayout::Replicated(layout()), 1 << LOG_K);
     assert!(encoded(module, &mut pt, &re, &im).is_err());
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Product {
+    Mul,
+    MulAssign,
+    Square,
+    SquareAssign,
+    PtVec,
+    PtVecAssign,
+    PtConst,
+    PtConstAssign,
+}
+
+const STEPS: usize = 3;
+/// Exactly representable at the constant plaintext's 8 bits, so that only the
+/// rescale rounds.
+const CONSTANT: f64 = 0.75;
+
+fn encrypt_batch<BE, F>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
+    slot_layout: SlotLayout,
+    values: (&[F], &[F]),
+    k: usize,
+    seed: u8,
+) -> Result<CKKSCiphertextOwned<BE>>
+where
+    BE: TestContextBackend,
+    F: TestScalar,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+{
+    let mut pt = plaintext(params, module, slot_layout, values.0.len());
+    encoded(module, &mut pt, values.0, values.1)?;
+    let mut ct = alloc_ct(params, module, k);
+    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_encrypt_sk_tmp_bytes(&ct));
+    let (mut xe, mut xa) = (Source::new([seed; 32]), Source::new([seed.wrapping_add(128); 32]));
+    module.ckks_encrypt_sk(&mut ct, &pt, sk, &mut xe, &mut xa, &mut scratch.borrow())?;
+    Ok(ct)
+}
+
+fn decrypt_batch<BE, F>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
+    ct: &CKKSCiphertextOwned<BE>,
+    len: usize,
+) -> (Vec<F>, Vec<F>)
+where
+    BE: TestContextBackend,
+    F: TestScalar,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+{
+    let mut pt = module.ckks_pt_vec_alloc(
+        module.ckks_slots_of_degree(ct.n().as_usize() >> ct.log_sparsity()),
+        Base2K(params.base2k as u32),
+        TorusPrecision((LOG_DELTA + 30) as u32),
+    );
+    pt.set_meta(ct.meta());
+    pt.set_log_budget(ct.log_budget());
+    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_decrypt_tmp_bytes(&pt, ct));
+    module.ckks_decrypt(&mut pt, ct, sk, &mut scratch.borrow()).unwrap();
+    decode::<BE, F>(module, &pt, len)
+}
+
+/// Unit-modulus operands, so that the chained products stay bounded.
+fn unit_batch<F: TestScalar>(len: usize, step: usize) -> (Vec<F>, Vec<F>) {
+    let angle = |i: usize| 0.37 * (i + 1) as f64 + 1.1 * step as f64;
+    let value = |x: f64| F::from_f64(x).unwrap();
+    (
+        (0..len).map(|i| value(angle(i).cos())).collect(),
+        (0..len).map(|i| value(angle(i).sin())).collect(),
+    )
+}
+
+fn complex_mul<F: TestScalar>(a: (&[F], &[F]), b: (&[F], &[F])) -> (Vec<F>, Vec<F>) {
+    (
+        (0..a.0.len()).map(|i| a.0[i] * b.0[i] - a.1[i] * b.1[i]).collect(),
+        (0..a.0.len()).map(|i| a.0[i] * b.1[i] + a.1[i] * b.0[i]).collect(),
+    )
+}
+
+/// Precision of `STEPS` chained products of one kind.
+fn product_chain<BE, F>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+    slot_layout: SlotLayout,
+    product: Product,
+) -> Result<f64>
+where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    F: TestScalar,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+{
+    let len = 1 << LOG_K;
+    let (sk_raw, sk) = gen_sk_with_raw(params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(params, module);
+    let tsk = gen_tsk(params, module, &sk_raw, &mut scratch.borrow());
+    let k = LOG_DELTA * (STEPS + 2);
+
+    let mut want = unit_batch::<F>(len, 0);
+    let mut acc = encrypt_batch(params, module, &sk, slot_layout, (&want.0, &want.1), k, 1)?;
+    let cst = ckks_pt_cst_full::<BE, F>(
+        host_module,
+        module,
+        params.base2k.into(),
+        PT_PREC,
+        params.n / 2,
+        Some(CONSTANT),
+        None,
+    );
+    let zero = F::zero();
+    for step in 1..=STEPS {
+        let operand = unit_batch::<F>(len, step);
+        let fresh = encrypt_batch(params, module, &sk, slot_layout, (&operand.0, &operand.1), k, step as u8 + 1)?;
+        let mut pt = plaintext(params, module, slot_layout, len);
+        encoded(module, &mut pt, &operand.0, &operand.1)?;
+        let mut out = alloc_ct(params, module, k);
+        let s = &mut scratch.borrow();
+        want = match product {
+            Product::Mul => {
+                module.ckks_mul_into(&mut out, &acc, &fresh, &tsk, s)?;
+                acc = out;
+                complex_mul((&want.0, &want.1), (&operand.0, &operand.1))
+            }
+            Product::MulAssign => {
+                module.ckks_mul_assign(&mut acc, &fresh, &tsk, s)?;
+                complex_mul((&want.0, &want.1), (&operand.0, &operand.1))
+            }
+            Product::Square => {
+                module.ckks_square_into(&mut out, &acc, &tsk, s)?;
+                acc = out;
+                complex_mul((&want.0, &want.1), (&want.0, &want.1))
+            }
+            Product::SquareAssign => {
+                module.ckks_square_assign(&mut acc, &tsk, s)?;
+                complex_mul((&want.0, &want.1), (&want.0, &want.1))
+            }
+            Product::PtVec => {
+                module.ckks_mul_pt_vec_into(&mut out, &acc, &pt, s)?;
+                acc = out;
+                complex_mul((&want.0, &want.1), (&operand.0, &operand.1))
+            }
+            Product::PtVecAssign => {
+                module.ckks_mul_pt_vec_assign(&mut acc, &pt, s)?;
+                complex_mul((&want.0, &want.1), (&operand.0, &operand.1))
+            }
+            Product::PtConst | Product::PtConstAssign => {
+                if matches!(product, Product::PtConst) {
+                    module.ckks_mul_pt_const_into(&mut out, &acc, &cst, 0, s)?;
+                    acc = out;
+                } else {
+                    module.ckks_mul_pt_const_assign(&mut acc, &cst, 0, s)?;
+                }
+                let c = F::from_f64(CONSTANT).unwrap();
+                complex_mul((&want.0, &want.1), (&vec![c; len], &vec![zero; len]))
+            }
+        };
+        assert_eq!(acc.slot_layout(), slot_layout, "{product:?}");
+    }
+    let got = decrypt_batch::<BE, F>(params, module, &sk, &acc, len);
+    Ok(precision((&got.0, &got.1), (&want.0, &want.1)))
+}
+
+pub fn test_replicated_products_are_shaped<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) -> Result<()>
+where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    use Product::*;
+    for product in [
+        Mul,
+        MulAssign,
+        Square,
+        SquareAssign,
+        PtVec,
+        PtVecAssign,
+        PtConst,
+        PtConstAssign,
+    ] {
+        let full = product_chain::<BE, F>(&params, module, host_module, SlotLayout::Full, product)?;
+        let shaped = product_chain::<BE, F>(&params, module, host_module, SlotLayout::Replicated(layout()), product)?;
+        assert!(
+            shaped >= full + 15.0,
+            "{product:?} chain at 2^{LOG_DELTA}: {shaped:.2} bits against {full:.2} for a full layout"
+        );
+    }
+    Ok(())
+}
+
+pub fn test_replicated_layouts_do_not_mix<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) -> Result<()>
+where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+    let values = unit_batch::<F>(1 << LOG_K, 0);
+    let k = 3 * LOG_DELTA;
+    let shaped = encrypt_batch(
+        &params,
+        module,
+        &sk,
+        SlotLayout::Replicated(layout()),
+        (&values.0, &values.1),
+        k,
+        1,
+    )?;
+    let full = encrypt_batch(&params, module, &sk, SlotLayout::Full, (&values.0, &values.1), k, 2)?;
+    let mut pt = plaintext(&params, module, SlotLayout::Full, values.0.len());
+    encoded(module, &mut pt, &values.0, &values.1)?;
+    let mut out = alloc_ct(&params, module, k);
+    let s = &mut scratch.borrow();
+    assert!(module.ckks_mul_into(&mut out, &shaped, &full, &tsk, s).is_err());
+    assert!(module.ckks_add_into(&mut out, &shaped, &full, s).is_err());
+    assert!(module.ckks_mul_pt_vec_into(&mut out, &shaped, &pt, s).is_err());
+    assert!(module.ckks_add_pt_vec_into(&mut out, &shaped, &pt, s).is_err());
     Ok(())
 }

@@ -10,13 +10,14 @@ use poulpy_core::{
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSResult as Result, GLWEPlaintextInfos, SetCKKSInfos, SlotsKind,
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSResult as Result, GLWEPlaintextInfos, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{CKKSAddOps, CKKSMulOps},
     ensure_plaintext_degree_embeds,
     layouts::{CKKSPreparedLeft, CKKSPreparedRight},
     oep::derived::dot_product::{accumulate, check_lengths},
     reference::mul::{
-        MulStamp, StampOrder, check_prepared_layout, get_mul_ct_params, mul_one_pass, mul_pt_params_raw, tensor_mul_core,
+        MulStamp, StampOrder, check_prepared_layout, get_mul_ct_params, mul_one_pass, mul_pt_params_raw, product_layout,
+        tensor_mul_core,
     },
 };
 
@@ -90,7 +91,9 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
         let n: usize = a.len();
         // Past base2k 62, two canonical tensor digits can overflow an `i64`, and no backend models a
         // product there (`Module::max_base2k`): such pairs keep the eager path.
-        if n > 1 && dst.base2k().as_usize() <= 62 && share_layout(a) && share_layout(b) {
+        // A replicated layout rounds each product with shaping before the sum.
+        let full = a.iter().all(|ct| ct.slot_layout() == SlotLayout::Full);
+        if full && n > 1 && dst.base2k().as_usize() <= 62 && share_layout(a) && share_layout(b) {
             return dot_product_lazy(
                 self,
                 "ckks_dot_product_ct",
@@ -131,6 +134,9 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
         let invalid = |reason: String| -> Result<()> { Err(CKKSCompositionError::InvalidOperand { op: OP, reason }.into()) };
         if !share_layout(a) || !share_layout(b) {
             return invalid("every a[i] must share one layout and scale, and every b[i] one".into());
+        }
+        if a.iter().any(|ct| ct.slot_layout() != SlotLayout::Full) {
+            return invalid("prepared dot products round plainly, which a replicated slot layout forbids".into());
         }
         // Past base2k 62, where `ckks_dot_product_ct` keeps the eager path, which prepared pairs do not have.
         if dst.base2k().as_usize() > 62 {
@@ -291,11 +297,13 @@ where
     let (log_budget, log_delta, cnv_offset) = get_mul_ct_params(dst, a[0], b[0])?;
     // The eager sum's label and slot kind: the smallest label and the join over every operand.
     let metas = || a.iter().map(|ct| ct.meta()).chain(b.iter().map(|ct| ct.meta()));
+    let slot_layout = product_layout(op, &metas().map(|meta| meta.slot_layout).collect::<Vec<_>>())?;
     let stamp = MulStamp {
         log_budget,
         log_delta,
         log_sparsity: metas().map(|meta| meta.log_sparsity).min(),
         slots: metas().map(|meta| meta.slots).reduce(SlotsKind::join),
+        slot_layout: Some(slot_layout),
     };
     let one_pass = mul_one_pass(dst, &[a[0].base2k(), b[0].base2k()], tensor_layout.k, cnv_offset, tsk)
         .then_some(|dst: &mut Dst, res_k, s: &mut ScratchArena<'_, BE>| one_pass(dst, cnv_offset, res_k, s));

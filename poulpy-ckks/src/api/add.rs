@@ -56,6 +56,11 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// Adds a single quantized constant (one ZNX coefficient of a plaintext) to
 /// one coefficient slot of the ciphertext.  Metadata follows the same rule as
 /// the `pt_vec` variants above.
+///
+/// ## Slot layouts
+///
+/// Ciphertext operands, and a plaintext vector operand, must share one slot
+/// layout, which the sum carries; a constant adds to any layout.
 pub trait CKKSAddOps<BE: Backend> {
     fn ckks_add_tmp_bytes(&self, res_size: usize) -> usize;
 

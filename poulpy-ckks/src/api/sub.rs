@@ -37,6 +37,11 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// ## Ciphertext–plaintext-constant subtraction (`ckks_sub_pt_const_*`)
 ///
 /// Metadata follows the same rule as the `pt_vec` variants above.
+///
+/// ## Slot layouts
+///
+/// Ciphertext operands, and a plaintext vector operand, must share one slot
+/// layout, which the difference carries; a constant subtracts from any layout.
 pub trait CKKSSubOps<BE: Backend> {
     fn ckks_sub_tmp_bytes(&self, res_size: usize) -> usize;
     fn ckks_sub_pt_vec_tmp_bytes(&self, res_size: usize) -> usize;

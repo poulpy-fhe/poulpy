@@ -141,6 +141,10 @@ macro_rules! ckks_carry_verb_reference {
                 {
                     let offset = ckks_offset_binary(dst, a, b);
                     // Validate before mutating: on error `dst` must remain untouched.
+                    let slot_layout = $crate::reference::mul::product_layout(
+                        concat!("ckks_", stringify!($verb)),
+                        &[a.slot_layout(), b.slot_layout()],
+                    )?;
                     let log_budget =
                         checked_log_budget_sub(stringify!($verb), a.log_budget().min(b.log_budget()), offset)?;
 
@@ -163,6 +167,7 @@ macro_rules! ckks_carry_verb_reference {
                     // The sum/product of values sparse at `s` and `t` is sparse at `min(s, t)`.
                     dst.set_log_sparsity(a.log_sparsity().min(b.log_sparsity()));
                     dst.set_slots(a.slots().join(b.slots()));
+                    dst.set_slot_layout(slot_layout);
                     Ok(())
                 }
 
@@ -177,6 +182,10 @@ macro_rules! ckks_carry_verb_reference {
                     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     A: GLWEToBackendRef<BE> + CKKSInfos,
                 {
+                    $crate::reference::mul::product_layout(
+                        concat!("ckks_", stringify!($verb), "_assign"),
+                        &[dst.slot_layout(), a.slot_layout()],
+                    )?;
                     let dst_log_budget = dst.log_budget();
 
                     if dst_log_budget > a.log_budget() {
@@ -211,6 +220,10 @@ macro_rules! ckks_carry_verb_reference {
                     A: GLWEToBackendRef<BE> + CKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
+                    $crate::reference::mul::product_layout(
+                        concat!("ckks_", stringify!($verb), "_pt_vec"),
+                        &[a.slot_layout(), pt.slot_layout()],
+                    )?;
                     $crate::ckks_copy_stamp_unary(self, concat!(stringify!($verb), "_pt_vec"), dst, a, scratch)?;
                     self.[<ckks_ $verb _pt_vec_assign_reference>](dst, pt, scratch)
                 }
@@ -226,6 +239,10 @@ macro_rules! ckks_carry_verb_reference {
                     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
+                    $crate::reference::mul::product_layout(
+                        concat!("ckks_", stringify!($verb), "_pt_vec_assign"),
+                        &[dst.slot_layout(), pt.slot_layout()],
+                    )?;
                     CKKSPlaintextReference::[<ckks_ $verb _pt_vec_into_reference>](self, dst, pt, scratch)?;
                     dst.set_log_sparsity(dst.log_sparsity().min(dst.log_n() - pt.log_n()));
                     dst.set_slots(dst.slots().join(pt.slots()));

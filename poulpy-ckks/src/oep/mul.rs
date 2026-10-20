@@ -16,26 +16,26 @@ use crate::{
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
 pub unsafe trait CKKSMulImpl: Backend {
-    fn ckks_mul_tmp_bytes_impl<R: GLWEInfos, A: GLWEInfos, B: GLWEInfos, T: GGLWEInfos>(
+    fn ckks_mul_tmp_bytes_impl<R: CKKSCtBounds, A: CKKSCtBounds, B: CKKSCtBounds, T: GGLWEInfos>(
         module: &Module<Self>,
         res: &R,
         a: &A,
         b: &B,
         tsk: &T,
     ) -> usize;
-    fn ckks_square_tmp_bytes_impl<R: GLWEInfos, A: GLWEInfos, T: GGLWEInfos>(
+    fn ckks_square_tmp_bytes_impl<R: CKKSCtBounds, A: CKKSCtBounds, T: GGLWEInfos>(
         module: &Module<Self>,
         res: &R,
         a: &A,
         tsk: &T,
     ) -> usize;
-    fn ckks_mul_pt_vec_tmp_bytes_impl<R: GLWEInfos, A: GLWEInfos>(
+    fn ckks_mul_pt_vec_tmp_bytes_impl<R: CKKSCtBounds, A: CKKSCtBounds>(
         module: &Module<Self>,
         res: &R,
         a: &A,
         b_k: TorusPrecision,
     ) -> usize;
-    fn ckks_mul_pt_const_tmp_bytes_impl<R: GLWEInfos, A: GLWEInfos>(
+    fn ckks_mul_pt_const_tmp_bytes_impl<R: CKKSCtBounds, A: CKKSCtBounds>(
         module: &Module<Self>,
         res: &R,
         a: &A,
@@ -212,9 +212,9 @@ macro_rules! impl_ckks_mul_reference {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSMulImpl for $be {
             fn ckks_mul_tmp_bytes_impl<
-                R: ::poulpy_core::layouts::GLWEInfos,
-                A: ::poulpy_core::layouts::GLWEInfos,
-                B: ::poulpy_core::layouts::GLWEInfos,
+                R: $crate::CKKSCtBounds,
+                A: $crate::CKKSCtBounds,
+                B: $crate::CKKSCtBounds,
                 T: ::poulpy_core::layouts::GGLWEInfos,
             >(
                 module: &::poulpy_hal::layouts::Module<Self>,
@@ -227,8 +227,8 @@ macro_rules! impl_ckks_mul_reference {
             }
 
             fn ckks_square_tmp_bytes_impl<
-                R: ::poulpy_core::layouts::GLWEInfos,
-                A: ::poulpy_core::layouts::GLWEInfos,
+                R: $crate::CKKSCtBounds,
+                A: $crate::CKKSCtBounds,
                 T: ::poulpy_core::layouts::GGLWEInfos,
             >(
                 module: &::poulpy_hal::layouts::Module<Self>,
@@ -239,7 +239,7 @@ macro_rules! impl_ckks_mul_reference {
                 $crate::reference::mul::CKKSMulReference::ckks_square_tmp_bytes_reference(module, res, a, tsk)
             }
 
-            fn ckks_mul_pt_vec_tmp_bytes_impl<R: ::poulpy_core::layouts::GLWEInfos, A: ::poulpy_core::layouts::GLWEInfos>(
+            fn ckks_mul_pt_vec_tmp_bytes_impl<R: $crate::CKKSCtBounds, A: $crate::CKKSCtBounds>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &R,
                 a: &A,
@@ -248,7 +248,7 @@ macro_rules! impl_ckks_mul_reference {
                 $crate::reference::mul::CKKSMulReference::ckks_mul_pt_vec_tmp_bytes_reference(module, res, a, b_k)
             }
 
-            fn ckks_mul_pt_const_tmp_bytes_impl<R: ::poulpy_core::layouts::GLWEInfos, A: ::poulpy_core::layouts::GLWEInfos>(
+            fn ckks_mul_pt_const_tmp_bytes_impl<R: $crate::CKKSCtBounds, A: $crate::CKKSCtBounds>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &R,
                 a: &A,
