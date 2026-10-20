@@ -6,9 +6,9 @@ use std::mem::size_of;
 use crate::kernels::vec_znx::{
     vec_znx_add_assign_portable, vec_znx_add_portable, vec_znx_automorphism_assign_portable,
     vec_znx_automorphism_assign_tmp_bytes_portable, vec_znx_automorphism_portable, vec_znx_copy_portable,
-    vec_znx_fill_uniform_portable, vec_znx_gadget_decompose_portable, vec_znx_lsh_assign_portable, vec_znx_mul_xp_minus_one_assign_portable,
-    vec_znx_mul_xp_minus_one_assign_tmp_bytes_portable, vec_znx_negate_assign_portable, vec_znx_negate_portable,
-    vec_znx_normalize_assign_portable, vec_znx_normalize_portable, vec_znx_normalize_tmp_bytes_portable,
+    vec_znx_fill_uniform_portable, vec_znx_gadget_decompose_portable, vec_znx_lsh_assign_portable,
+    vec_znx_mul_xp_minus_one_assign_portable, vec_znx_mul_xp_minus_one_assign_tmp_bytes_portable, vec_znx_negate_assign_portable,
+    vec_znx_negate_portable, vec_znx_normalize_assign_portable, vec_znx_normalize_portable, vec_znx_normalize_tmp_bytes_portable,
     vec_znx_rotate_assign_portable, vec_znx_rotate_assign_tmp_bytes_portable, vec_znx_rotate_portable,
     vec_znx_sub_assign_portable, vec_znx_sub_negate_assign_portable, vec_znx_sub_portable, vec_znx_switch_ring_portable,
     vec_znx_zero_portable,
