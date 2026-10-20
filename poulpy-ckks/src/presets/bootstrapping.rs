@@ -19,15 +19,30 @@
 //! - `circuit`: `c2s` (C2S-first) or `s2c` (S2C-first), extended with a suffix for further techniques.
 //!
 //! `n16_d35_k636_p20_c2s` is thus the C2S-first preset at `N = 2^16` for inputs at
-//! scale `2^35`, producing 600-bit ciphertexts at scale `2^35` with at least 19 bits of precision.
+//! scale `2^35`, producing 636-bit ciphertexts at scale `2^35` with at least 20 bits of precision.
 //!
 //! ## Security
 //!
 //! Each secret of a preset comes with the largest modulus `q = 2^k`, in bits, that
 //! any object under it may use for 128 bits of security: a ternary secret of that
 //! Hamming weight, an error of deviation 3.2, at the preset's ring degree. The
-//! values are those of <https://github.com/jdumezy/sparse-key-estimate>, estimates
-//! against the hybrid attacks on sparse secrets, not proofs.
+//! values are estimates, not proofs, read from the 128-bit table of
+//! [sparse-key-estimate](https://github.com/jdumezy/sparse-key-estimate/blob/aa2c40d4eee4551e6fba06c55d7432f6918e1597/Precomputed-Tables/128bits_security.md):
+//!
+//! | `N` | dense secret, weight 1024 | sparse secret, weight 32 |
+//! | --- | ---: | ---: |
+//! | `2^16` | 1707 | 345 |
+//! | `2^15` | 851 | 162 |
+//!
+//! The tool estimates the primal hybrid attack with a meet-in-the-middle search
+//! over rotations of the secret ([ePrint 2026/279](https://eprint.iacr.org/2026/279)),
+//! and reproduces Table 1 of [ePrint 2022/024](https://eprint.iacr.org/2022/024) at
+//! that paper's sparse-key moduli: 161.8 bits of security at 120 bits for
+//! `N = 2^16` (168.5 in the paper), 140.6 at 111 bits for `N = 2^15` (140.9). The
+//! 121 and 111 bits of 2022/024 are the sizes of its sparse-secret key, not bounds.
+//! At the sparse bounds, the dual and dual-hybrid attacks of the
+//! [lattice estimator](https://github.com/malb/lattice-estimator) cost above
+//! 2^790, so the primal hybrid sets them.
 //!
 //! Every object under a secret counts, the keys included: their modulus is the
 //! widest in a preset, and a key's error sits at its last bit, so the bound
