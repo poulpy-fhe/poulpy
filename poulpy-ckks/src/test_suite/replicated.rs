@@ -13,6 +13,7 @@
 //! | [`test_replicated_automorphisms_are_shaped`] | rotations and conjugation keep the data slots far above CKKS |
 //! | [`test_replicated_rotations_are_admissible`] | rotations by a non-multiple of the period |
 //! | [`test_replicated_masked_constants`] | a masked constant fills the data slots only, and adds to a ciphertext |
+//! | [`test_replicated_conversions_round_trip`] | CKKS to the replicated layout and back keeps the input's precision |
 
 use std::collections::HashMap;
 
@@ -32,9 +33,9 @@ use crate::{
     CKKSInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, ReplicatedLayout, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{
         CKKSAddOps, CKKSConjugateOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSModuleInfos,
-        CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSRotateOps, CKKSSubOps,
+        CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSReplicatedOps, CKKSRotateOps, CKKSSubOps,
     },
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned},
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, ReplicatedConversion},
     polynomial::{Basis, EncodeBSGS, Polynomial},
     shaping::ShapingUnit,
     test_suite::CKKSTestParams,
@@ -310,13 +311,15 @@ where
     F: TestScalar,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
 {
+    // A few bits of budget hold the unit-scale message.
+    let budget = ct.log_budget().min(10);
     let mut pt = module.ckks_pt_vec_alloc(
         module.ckks_slots_of_degree(ct.n().as_usize() >> ct.log_sparsity()),
         Base2K(params.base2k as u32),
-        TorusPrecision((LOG_DELTA + 30) as u32),
+        TorusPrecision((ct.log_delta() + budget) as u32),
     );
     pt.set_meta(ct.meta());
-    pt.set_log_budget(ct.log_budget());
+    pt.set_log_budget(budget);
     let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_decrypt_tmp_bytes(&pt, ct));
     module.ckks_decrypt(&mut pt, ct, sk, &mut scratch.borrow()).unwrap();
     decode::<BE, F>(module, &pt, len)
@@ -674,5 +677,119 @@ where
     let want_im: Vec<F> = values.1.iter().map(|&x| x + c_im).collect();
     let bits = precision((&got.0, &got.1), (&want_re, &want_im));
     assert!(bits >= 40.0, "masked constant sum: {bits:.2} bits");
+    Ok(())
+}
+
+/// Full-layout encryption of `values` with period `values.len()`.
+fn encrypt_full<BE, F>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
+    values: (&[F], &[F]),
+    log_delta: usize,
+    k: usize,
+) -> Result<CKKSCiphertextOwned<BE>>
+where
+    BE: TestContextBackend,
+    F: TestScalar,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+{
+    let mut pt = module.ckks_pt_vec_alloc(
+        slots_of(module, SlotLayout::Full, values.0.len()),
+        Base2K(params.base2k as u32),
+        TorusPrecision((log_delta + 4) as u32),
+    );
+    pt.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(log_delta),
+        slots: SlotsKind::Complex,
+        log_sparsity: 0,
+        slot_layout: SlotLayout::Full,
+    });
+    encoded(module, &mut pt, values.0, values.1)?;
+    let mut ct = alloc_ct(params, module, k);
+    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_encrypt_sk_tmp_bytes(&ct));
+    let (mut xe, mut xa) = (Source::new([9; 32]), Source::new([10; 32]));
+    module.ckks_encrypt_sk(&mut ct, &pt, sk, &mut xe, &mut xa, &mut scratch.borrow())?;
+    Ok(ct)
+}
+
+pub fn test_replicated_conversions_round_trip<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) -> Result<()>
+where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSReplicatedOps<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    // `R = 8` divides `k = 8`; the return lands on `20 + 16 + log2(N/(2k))`.
+    let (log_k, log_delta_ckks, log_delta, log_delta_diag) = (3u8, 40, 20, 30);
+    let extra_bits = log_delta_ckks - log_delta - (params.n / (2 << log_k)).trailing_zeros() as usize;
+    let layout = ShapingUnit::U16_40.layout(log_k, 24)?;
+    let len = 1usize << log_k;
+    let conv = ReplicatedConversion::new::<F>(
+        module,
+        layout,
+        Base2K(params.base2k as u32),
+        log_delta,
+        log_delta_diag,
+        extra_bits,
+    )?;
+
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let mut atks = HashMap::new();
+    for r in conv.rotations() {
+        let gal = module.ckks_galois_element(r);
+        atks.insert(gal, gen_atk(&params, module, gal, &sk_raw, &mut scratch.borrow()));
+    }
+
+    let values = unit_batch::<F>(len, 0);
+    let k = log_delta_ckks + 3 * log_delta_diag;
+    let ckks = encrypt_full(&params, module, &sk, (&values.0, &values.1), log_delta_ckks, k)?;
+    let fresh = decrypt_batch::<BE, F>(&params, module, &sk, &ckks, len);
+    let fresh_bits = precision((&fresh.0, &fresh.1), (&values.0, &values.1));
+
+    let atk_infos = params.atk_layout();
+    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_replicated_conversion_tmp_bytes(&ckks, &atk_infos, &conv));
+    let mut replicated = alloc_ct(&params, module, k);
+    module.ckks_to_replicated_into(&mut replicated, &ckks, &conv, &atks, &mut scratch.borrow())?;
+    assert_eq!(replicated.slot_layout(), SlotLayout::Replicated(layout));
+    assert_eq!(replicated.log_delta(), log_delta);
+    let got = decrypt_batch::<BE, F>(&params, module, &sk, &replicated, len);
+    let to_bits = precision((&got.0, &got.1), (&values.0, &values.1));
+    assert!(
+        to_bits >= fresh_bits - 2.0,
+        "to replicated: {to_bits:.2} bits from {fresh_bits:.2}"
+    );
+
+    let mut back = alloc_ct(&params, module, k);
+    module.ckks_from_replicated_into(&mut back, &replicated, &conv, &atks, &mut scratch.borrow())?;
+    assert_eq!(back.slot_layout(), SlotLayout::Full);
+    assert_eq!(back.log_delta(), log_delta_ckks);
+    let got = decrypt_batch::<BE, F>(&params, module, &sk, &back, len);
+    let from_bits = precision((&got.0, &got.1), (&values.0, &values.1));
+    // The gather's diagonals are quantized plainly, which bounds the return
+    // to about `log_delta_diag` bits.
+    assert!(
+        from_bits >= fresh_bits.min(log_delta_diag as f64) - 3.0,
+        "from replicated: {from_bits:.2} bits from {fresh_bits:.2}"
+    );
+
+    let mut out = alloc_ct(&params, module, k);
+    assert!(
+        module
+            .ckks_to_replicated_into(&mut out, &replicated, &conv, &atks, &mut scratch.borrow())
+            .is_err()
+    );
+    assert!(
+        module
+            .ckks_from_replicated_into(&mut out, &ckks, &conv, &atks, &mut scratch.borrow())
+            .is_err()
+    );
     Ok(())
 }

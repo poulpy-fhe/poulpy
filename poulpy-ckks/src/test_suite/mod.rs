@@ -336,6 +336,10 @@ macro_rules! ckks_backend_rank2_test_suite {
                 replicated_masked_constants,
                 $crate::test_suite::replicated::test_replicated_masked_constants
             );
+            run_test_result!(
+                replicated_conversions_round_trip,
+                $crate::test_suite::replicated::test_replicated_conversions_round_trip
+            );
             run_test!(mul_ct_aligned, $crate::test_suite::mul::test_mul_ct_aligned);
             run_test!(
                 mul_ct_larger_budget_smaller_scale,
@@ -687,6 +691,10 @@ macro_rules! ckks_backend_test_suite {
             run_test_result!(
                 replicated_masked_constants,
                 $crate::test_suite::replicated::test_replicated_masked_constants
+            );
+            run_test_result!(
+                replicated_conversions_round_trip,
+                $crate::test_suite::replicated::test_replicated_conversions_round_trip
             );
             run_test!(conjugate_aligned, $crate::test_suite::conjugate::test_conjugate_aligned);
             run_test!(
