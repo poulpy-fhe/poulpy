@@ -16,10 +16,14 @@ use num_traits::{FromPrimitive, ToPrimitive, Zero};
 
 use crate::{Quad, numerics::CKKSFloat};
 
+/// Largest [`ShapingProfile::max_pass_bits`], reached by `U = ±1`.
+pub const MAX_PASS_BITS: usize = 62;
+
 /// Exact data of a shaping polynomial `U`, and its slot-class profile.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShapingProfile {
     log_r: usize,
+    shaping: Vec<u64>,
     inverse: Vec<u64>,
     log_magnitudes: Vec<f64>,
     l1: u64,
@@ -35,6 +39,7 @@ impl ShapingProfile {
         Self {
             log_r,
             inverse: inverse_mod_2_64(&wide),
+            shaping: wide,
             log_magnitudes: (0..1 << log_r).map(|j| log2_abs_at_class(coeffs, log_r, j)).collect(),
             l1: coeffs.iter().map(|&c| c.unsigned_abs() as u64).sum(),
         }
@@ -79,6 +84,25 @@ impl ShapingProfile {
     /// Shaping depth `min(log_delta + w, max_pass_bits)` of a rescale by `2^log_delta`.
     pub fn shaping_depth(&self, log_delta: usize, w: usize) -> usize {
         (log_delta + w).min(self.max_pass_bits())
+    }
+
+    /// `g·h` for `h = [U^(-1)·c]_(2^λ)`, centered, where `c` is read modulo
+    /// `2^64` and `Y = X^stride`, so that `c − g·h` is divisible by `2^λ`.
+    /// Exact for `λ <= max_pass_bits`.
+    pub(crate) fn shaped_multiple(&self, stride: usize, lambda: usize, c: &[i64]) -> Vec<i64> {
+        let mask = u64::MAX >> (64 - lambda);
+        let h: Vec<i64> = negacyclic_sparse(&self.inverse, stride, c)
+            .into_iter()
+            .map(|x| {
+                let reduced = x as u64 & mask;
+                if reduced > mask >> 1 {
+                    reduced as i64 - (1i64 << lambda)
+                } else {
+                    reduced as i64
+                }
+            })
+            .collect();
+        negacyclic_sparse(&self.shaping, stride, &h)
     }
 }
 
@@ -198,6 +222,24 @@ fn log2_abs_at_class(coeffs: &[i16], log_r: usize, j: usize) -> f64 {
     ((re * re + im * im).ckks_log2() / Quad::from_f64(2.0).unwrap())
         .to_f64()
         .unwrap()
+}
+
+/// `Σ_t coeffs[t] · X^(t·stride) · x` in `(Z/2^64)[X]/(X^N + 1)`.
+fn negacyclic_sparse(coeffs: &[u64], stride: usize, x: &[i64]) -> Vec<i64> {
+    let n = x.len();
+    (0..n)
+        .map(|j| {
+            coeffs.iter().enumerate().fold(0u64, |acc, (t, &coeff)| {
+                let shift = t * stride;
+                let (coeff, x) = if j >= shift {
+                    (coeff, x[j - shift])
+                } else {
+                    (coeff.wrapping_neg(), x[n + j - shift])
+                };
+                acc.wrapping_add(coeff.wrapping_mul(x as u64))
+            }) as i64
+        })
+        .collect()
 }
 
 /// Product in `(Z/2^64)[Y]/(Y^m + 1)`.

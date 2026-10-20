@@ -12,7 +12,7 @@ use poulpy_core::layouts::IntPolyInfos;
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{
-    CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, SetCKKSInfos,
+    CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, GLWEPlaintextInfos, ReplicatedLayout, SetCKKSInfos, SlotLayout,
     layouts::{
         CKKSEncodingBuffer, CKKSEncodingBufferToBackendMut, CKKSEncodingBufferToBackendRef, CKKSScalar, ScratchArenaTakeCKKS,
         copy_encoding_buffer_into_host, copy_encoding_buffer_into_reim_host, copy_host_into_encoding_buffer,
@@ -99,7 +99,30 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
     }
 
     /// Encodes host complex slots through one backend-native arena buffer.
+    ///
+    /// For a [`SlotLayout::Replicated`] plaintext, `re` and `im` hold the batch
+    /// of `2^log_k` values, written to the data slots of `2^log_k · R` slots.
     fn ckks_encode_reim_into<P>(&self, pt: &mut P, re: &[F], im: &[F], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
+    {
+        if let SlotLayout::Replicated(layout) = pt.slot_layout() {
+            ckks_ensure!(
+                re.len() == 1 << layout.log_k() && im.len() == re.len(),
+                "a replicated layout encodes {} values, got {} and {}",
+                1usize << layout.log_k(),
+                re.len(),
+                im.len()
+            );
+            let (re, im) = (scatter_data_slots(&layout, re), scatter_data_slots(&layout, im));
+            return self.ckks_encode_reim_slots_into(pt, &re, &im, scratch);
+        }
+        self.ckks_encode_reim_slots_into(pt, re, im, scratch)
+    }
+
+    /// Encodes host complex slots through one backend-native arena buffer,
+    /// every slot as given whatever the layout.
+    fn ckks_encode_reim_slots_into<P>(&self, pt: &mut P, re: &[F], im: &[F], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
     {
@@ -128,7 +151,36 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
 
     /// Decodes a plaintext to host complex slots through one backend-native
     /// arena buffer.
+    ///
+    /// For a [`SlotLayout::Replicated`] plaintext, `re` and `im` receive the
+    /// batch of `2^log_k` values: reading `2^log_k · R` slots averages the
+    /// replicas, and the data slots are returned.
     fn ckks_decode_reim_into<P>(&self, pt: &P, re: &mut [F], im: &mut [F], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
+    {
+        if let SlotLayout::Replicated(layout) = pt.slot_layout() {
+            ckks_ensure!(
+                re.len() == 1 << layout.log_k() && im.len() == re.len(),
+                "a replicated layout decodes {} values, got {} and {}",
+                1usize << layout.log_k(),
+                re.len(),
+                im.len()
+            );
+            let slots = re.len() << layout.log_r();
+            let (mut re_slots, mut im_slots) = (vec![F::zero(); slots], vec![F::zero(); slots]);
+            self.ckks_decode_reim_slots_into(pt, &mut re_slots, &mut im_slots, scratch)?;
+            for (i, (r, m)) in re.iter_mut().zip(im.iter_mut()).enumerate() {
+                (*r, *m) = (re_slots[i << layout.log_r()], im_slots[i << layout.log_r()]);
+            }
+            return Ok(());
+        }
+        self.ckks_decode_reim_slots_into(pt, re, im, scratch)
+    }
+
+    /// Decodes a plaintext to host complex slots through one backend-native
+    /// arena buffer, every slot whatever the layout.
+    fn ckks_decode_reim_slots_into<P>(&self, pt: &P, re: &mut [F], im: &mut [F], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
     {
@@ -198,4 +250,13 @@ where
     F: CKKSEncodingScalar,
     T: CKKSEncodingOps<BE, F>,
 {
+}
+
+/// `values` on the data slots of a replicated layout, one slot out of `R`.
+fn scatter_data_slots<F: CKKSEncodingScalar>(layout: &ReplicatedLayout, values: &[F]) -> Vec<F> {
+    let mut slots = vec![F::zero(); values.len() << layout.log_r()];
+    for (i, &v) in values.iter().enumerate() {
+        slots[i << layout.log_r()] = v;
+    }
+    slots
 }

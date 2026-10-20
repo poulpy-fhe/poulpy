@@ -106,9 +106,6 @@ fn shaped_round<BE, M, Dst, Src>(
     let (mut carry, scratch) = scratch.take_vec_znx_scratch(n, 1, 2);
     let (mut correction, scratch) = scratch.take_vec_znx_scratch(n, 1, size);
     let (mut sum, mut scratch) = scratch.take_vec_znx_scratch(n, 1, size);
-    let g: Vec<u64> = layout.shaping().iter().map(|&x| x as i64 as u64).collect();
-    let (mut h, mut gh) = (vec![0i64; n], vec![0i64; n]);
-
     for col in 0..src.rank().as_usize() + 1 {
         module.vec_znx_normalize(
             &mut low.to_backend_mut(),
@@ -121,18 +118,8 @@ fn shaped_round<BE, M, Dst, Src>(
             col,
             &mut scratch.borrow(),
         );
-        let c = low.at(0, 0);
-        negacyclic_sparse(&mut h, profile.inverse(), stride, c);
-        for hj in h.iter_mut() {
-            let reduced = *hj as u64 & mask;
-            *hj = if reduced > mask >> 1 {
-                reduced as i64 - (1i64 << lambda)
-            } else {
-                reduced as i64
-            };
-        }
-        negacyclic_sparse(&mut gh, &g, stride, &h);
-        let c = c.to_vec();
+        let c = low.at(0, 0).to_vec();
+        let gh = profile.shaped_multiple(stride, lambda, &c);
         for (j, (&cj, &ghj)) in c.iter().zip(&gh).enumerate() {
             let numerator = cj - ghj;
             debug_assert_eq!(numerator & mask as i64, 0, "shaped numerator must be divisible by 2^λ");
@@ -174,23 +161,5 @@ fn shaped_round<BE, M, Dst, Src>(
             0,
             &mut scratch.borrow(),
         );
-    }
-}
-
-/// `out = Σ_t coeffs[t] · Y^t · x` in `(Z/2^64)[X]/(X^N + 1)`, `Y = X^stride`.
-fn negacyclic_sparse(out: &mut [i64], coeffs: &[u64], stride: usize, x: &[i64]) {
-    let n = x.len();
-    for (j, o) in out.iter_mut().enumerate() {
-        let mut acc = 0u64;
-        for (t, &coeff) in coeffs.iter().enumerate() {
-            let shift = t * stride;
-            let (coeff, x) = if j >= shift {
-                (coeff, x[j - shift])
-            } else {
-                (coeff.wrapping_neg(), x[n + j - shift])
-            };
-            acc = acc.wrapping_add(coeff.wrapping_mul(x as u64));
-        }
-        *o = acc as i64;
     }
 }

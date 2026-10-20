@@ -10,7 +10,14 @@ use poulpy_hal::{
 };
 
 use crate::GLWEToBackendRef;
-use crate::{CKKSCompositionError, CKKSInfos, SetCKKSInfos, checked_log_budget_sub, error::ensure_encryption_degrees};
+use crate::{
+    CKKSCompositionError, CKKSInfos, CKKSLayout, SetCKKSInfos, SlotLayout,
+    api::CKKSRoundOps,
+    checked_log_budget_sub,
+    error::ensure_encryption_degrees,
+    layouts::ScratchArenaTakeCKKS,
+    shaping::{MAX_PASS_BITS, ShapingProfile},
+};
 
 use super::CKKSPlaintextReference;
 use poulpy_core::GLWEBytesOf;
@@ -19,12 +26,31 @@ pub trait CKKSEncryptionReference<BE: Backend> {
     fn ckks_encrypt_sk_tmp_bytes_reference<A>(&self, ct_infos: &A) -> usize
     where
         A: GLWEInfos + CKKSInfos,
-        Self: GLWEEncryptSk<BE> + GLWENormalize<BE> + VecZnxLshTmpBytes + VecZnxRshAdd<BE> + VecZnxRshTmpBytes,
+        Self: GLWEEncryptSk<BE>
+            + GLWENormalize<BE>
+            + GLWEBytesOf<BE>
+            + VecZnxLshTmpBytes
+            + VecZnxRshAdd<BE>
+            + VecZnxRshTmpBytes
+            + CKKSRoundOps<BE>,
     {
-        self.glwe_encrypt_sk_tmp_bytes(ct_infos)
-            .max(self.vec_znx_lsh_tmp_bytes(ct_infos.size()))
-            .max(self.vec_znx_rsh_tmp_bytes(ct_infos.size()))
-            .max(self.glwe_normalize_tmp_bytes())
+        let plain = |infos: &GLWELayout| {
+            self.glwe_encrypt_sk_tmp_bytes(infos)
+                .max(self.vec_znx_lsh_tmp_bytes(infos.size()))
+                .max(self.vec_znx_rsh_tmp_bytes(infos.size()))
+                .max(self.glwe_normalize_tmp_bytes())
+        };
+        let layout = CKKSLayout {
+            glwe_layout: ct_infos.glwe_layout(),
+            meta: ct_infos.meta(),
+        };
+        // A replicated plaintext encrypts at most `MAX_PASS_BITS` wider, then rounds.
+        let mut wide = layout;
+        wide.glwe_layout.k = (ct_infos.k().as_usize() + MAX_PASS_BITS).into();
+        plain(&layout.glwe_layout).max(
+            self.glwe_bytes_of_from_infos(&wide.glwe_layout)
+                + plain(&wide.glwe_layout).max(self.ckks_round_tmp_bytes(&layout, &wide)),
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -39,9 +65,15 @@ pub trait CKKSEncryptionReference<BE: Backend> {
     ) -> Result<()>
     where
         S: GLWESecretPreparedToBackendRef<BE>,
-        Dct: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+        Dct: GLWEToBackendMut<BE> + GLWEInfos + CKKSInfos + SetCKKSInfos,
         Dpt: GLWEToBackendRef<BE> + CKKSInfos + IntPolyInfos,
-        Self: ModuleN + GLWEEncryptSk<BE> + GLWENormalize<BE> + VecZnxLshAdd<BE> + VecZnxRshAdd<BE> + CKKSPlaintextReference<BE>,
+        Self: ModuleN
+            + GLWEEncryptSk<BE>
+            + GLWENormalize<BE>
+            + VecZnxLshAdd<BE>
+            + VecZnxRshAdd<BE>
+            + CKKSPlaintextReference<BE>
+            + CKKSRoundOps<BE>,
     {
         ensure_encryption_degrees(
             "ckks_encrypt_sk",
@@ -50,10 +82,57 @@ pub trait CKKSEncryptionReference<BE: Backend> {
             sk.to_backend_ref().n().as_usize(),
         )?;
         let log_budget = checked_log_budget_sub("ckks_encrypt_sk", ct.k().as_usize(), pt.log_delta())?;
+        let SlotLayout::Replicated(layout) = pt.slot_layout() else {
+            self.ckks_encrypt_aligned(ct, pt, log_budget, pt.log_delta(), sk, source_xe, source_xa, scratch)?;
+            let noise =
+                ComponentNoise::from_secret_at(*sk.to_backend_ref().dist(), ct.k(), ct.to_backend_ref().rank().as_usize());
+            ct.set_noise(Some(noise));
+            return Ok(());
+        };
+        // Encrypting `λ` bits wider puts the fresh error under the bits that
+        // shaped rounding then drops.
+        let lambda = ShapingProfile::new(&layout).max_pass_bits();
+        let mut wide = ct.glwe_layout();
+        wide.k = (wide.k.as_usize() + lambda).into();
+        let (mut tmp, mut scratch_1) = scratch.borrow().take_ckks_ciphertext_scratch(&wide, pt.meta());
+        self.ckks_encrypt_aligned(
+            &mut tmp,
+            pt,
+            log_budget,
+            pt.log_delta() + lambda,
+            sk,
+            source_xe,
+            source_xa,
+            &mut scratch_1,
+        )?;
+        self.ckks_round_into(ct, &tmp, &mut scratch_1)
+    }
+
+    /// Encrypts `pt` into `ct` labelled `(log_budget, log_delta)`, the
+    /// plaintext placed at `2^-log_budget`.
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_encrypt_aligned<Dct, Dpt, S>(
+        &self,
+        ct: &mut Dct,
+        pt: &Dpt,
+        log_budget: usize,
+        log_delta: usize,
+        sk: &S,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        S: GLWESecretPreparedToBackendRef<BE>,
+        Dct: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+        Dpt: GLWEToBackendRef<BE> + CKKSInfos + IntPolyInfos,
+        Self: GLWEEncryptSk<BE> + GLWENormalize<BE> + VecZnxLshAdd<BE> + VecZnxRshAdd<BE> + CKKSPlaintextReference<BE>,
+    {
         self.glwe_encrypt_zero_sk(ct, sk, source_xe, source_xa, scratch);
         ct.set_log_budget(log_budget);
-        ct.set_log_delta(pt.log_delta());
+        ct.set_log_delta(log_delta);
         ct.set_slots(pt.slots());
+        ct.set_slot_layout(pt.slot_layout());
         self.ckks_add_pt_vec_into_reference(ct, pt, scratch)?;
         // A plaintext is dense at its own degree.
         ct.set_log_sparsity(ct.log_n() - pt.log_n());
@@ -62,8 +141,6 @@ pub trait CKKSEncryptionReference<BE: Backend> {
         // propagate the carries before returning (the crate's digit contract
         // for every DFT-domain op).
         self.glwe_normalize_assign(ct, scratch);
-        let noise = ComponentNoise::from_secret_at(*sk.to_backend_ref().dist(), ct.k(), ct.to_backend_ref().rank().as_usize());
-        ct.set_noise(Some(noise));
         Ok(())
     }
 

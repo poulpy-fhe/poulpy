@@ -15,9 +15,11 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, SetCKKSInfos, SlotsKind,
+    CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, GLWEPlaintextInfos, ReplicatedLayout, SetCKKSInfos, SlotLayout,
+    SlotsKind,
     api::CKKSEncodingScalar,
     layouts::{CKKSEncodingBufferBackendMut, CKKSEncodingBufferBackendRef},
+    shaping::ShapingProfile,
 };
 
 pub use crate::encoding::{paco_coeff_encodings_host, ship_coeff_encodings_host};
@@ -216,6 +218,12 @@ where
     let narrow = log_delta + log_budget <= 63;
     let base2k = pt.base2k().as_usize();
     let k = pt.encoded_k().as_usize();
+    if let SlotLayout::Replicated(layout) = pt.slot_layout() {
+        let data = shaped_quantize(coeffs, &layout, log_delta, log_budget, BE::Ring::SLOTS)?;
+        pt.to_backend_mut().data_mut().encode_vec_i128(base2k, 0, k, &data);
+        pt.set_slots(pt.slots().meet(BE::Ring::SLOTS));
+        return Ok(());
+    }
     {
         let mut backend = pt.to_backend_mut();
 
@@ -241,6 +249,47 @@ where
     }
     pt.set_slots(pt.slots().meet(BE::Ring::SLOTS));
     Ok(())
+}
+
+/// Quantizes `coeffs` at `log_delta + λ` bits, then divides by `2^λ` with
+/// shaped rounding, so that the quantization error is a multiple of the
+/// layout's shaping polynomial up to an unshaped `2^-λ` remainder. `λ` is the
+/// largest exact pass that keeps `log_delta + log_budget + λ` within `i128`.
+fn shaped_quantize<F>(
+    coeffs: &[F],
+    layout: &ReplicatedLayout,
+    log_delta: usize,
+    log_budget: usize,
+    ring_slots: SlotsKind,
+) -> Result<Vec<i128>>
+where
+    F: CKKSEncodingScalar,
+{
+    ensure!(
+        ring_slots == SlotsKind::Complex,
+        "the replicated layout requires the standard ring"
+    );
+    let period = 2 << layout.log_r();
+    ensure!(
+        coeffs.len().is_multiple_of(period),
+        "a replicated layout of period {} needs a multiple of {period} coefficients",
+        period / 2
+    );
+    let profile = ShapingProfile::new(layout);
+    let lambda = profile.max_pass_bits().min(126usize.saturating_sub(log_delta + log_budget));
+    let quantized: Vec<i128> = coeffs
+        .iter()
+        .map(|&x| {
+            x.ckks_quantize(log_delta + lambda)
+                .context("CKKS coefficient is not representable as an i128 at the plaintext scale")
+        })
+        .collect::<Result<_>>()?;
+    if lambda == 0 {
+        return Ok(quantized);
+    }
+    let low: Vec<i64> = quantized.iter().map(|&q| q as i64).collect();
+    let gh = profile.shaped_multiple(coeffs.len() / period, lambda, &low);
+    Ok(quantized.iter().zip(&gh).map(|(&q, &m)| (q - m as i128) >> lambda).collect())
 }
 
 /// Host reference dequantization of canonical integer coefficients, rounded

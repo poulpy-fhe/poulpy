@@ -300,6 +300,22 @@ macro_rules! ckks_backend_rank2_test_suite {
                 round_rejects_invalid_widths,
                 $crate::test_suite::round::test_round_rejects_invalid_widths
             );
+            run_test_result!(
+                replicated_encoding_is_shaped,
+                $crate::test_suite::replicated::test_replicated_encoding_is_shaped
+            );
+            run_test_result!(
+                replicated_unit_shaping_encodes_plainly,
+                $crate::test_suite::replicated::test_replicated_unit_shaping_encodes_plainly
+            );
+            run_test_result!(
+                replicated_encryption_is_shaped,
+                $crate::test_suite::replicated::test_replicated_encryption_is_shaped
+            );
+            run_test_result!(
+                replicated_encoding_rejects_batch_size,
+                $crate::test_suite::replicated::test_replicated_encoding_rejects_batch_size
+            );
             run_test!(mul_ct_aligned, $crate::test_suite::mul::test_mul_ct_aligned);
             run_test!(
                 mul_ct_larger_budget_smaller_scale,
@@ -615,6 +631,22 @@ macro_rules! ckks_backend_test_suite {
             run_test_result!(
                 round_rejects_invalid_widths,
                 $crate::test_suite::round::test_round_rejects_invalid_widths
+            );
+            run_test_result!(
+                replicated_encoding_is_shaped,
+                $crate::test_suite::replicated::test_replicated_encoding_is_shaped
+            );
+            run_test_result!(
+                replicated_unit_shaping_encodes_plainly,
+                $crate::test_suite::replicated::test_replicated_unit_shaping_encodes_plainly
+            );
+            run_test_result!(
+                replicated_encryption_is_shaped,
+                $crate::test_suite::replicated::test_replicated_encryption_is_shaped
+            );
+            run_test_result!(
+                replicated_encoding_rejects_batch_size,
+                $crate::test_suite::replicated::test_replicated_encoding_rejects_batch_size
             );
             run_test!(conjugate_aligned, $crate::test_suite::conjugate::test_conjugate_aligned);
             run_test!(
@@ -1149,6 +1181,7 @@ pub mod polynomial_evaluation;
 pub mod presets;
 #[doc(hidden)]
 pub mod reference_encoder;
+pub mod replicated;
 pub mod rotate;
 pub mod round;
 pub mod ship;
