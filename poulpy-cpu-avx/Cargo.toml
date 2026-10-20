@@ -17,9 +17,11 @@ enable-bin-fhe = ["dep:poulpy-bin-fhe", "poulpy-cpu-portable/enable-bin-fhe"]
 enable-avx = []
 enable-rayon = ["enable-avx", "dep:poulpy-cpu-rayon"]
 enable-ckks = ["dep:poulpy-ckks", "poulpy-cpu-portable/enable-ckks"]
+enable-blas = ["dep:poulpy-blas", "enable-ckks"]
 
 [dependencies]
 poulpy-bin-fhe = {workspace = true, optional = true}
+poulpy-blas = {workspace = true, optional = true}
 bytemuck = {workspace = true}
 poulpy-ckks = {workspace = true, optional = true}
 poulpy-core = {workspace = true}

@@ -117,18 +117,18 @@ again, then prepare them.
 poulpy-blas imports no backend. Backend crates select the reference compositions with
 `poulpy_blas::impl_blas_reference_full!(Backend)`. To override a family, a backend wires the other families with
 `impl_blas_inter_reference!`, `impl_blas_intra_reference!`, `impl_blas_matmul_reference!` or `impl_blas_jkls_reference!`
-and implements that family's `oep` trait by hand, forwarding the methods it keeps to `reference`. A backend crate
-outside this workspace does the same for its own types. It takes `poulpy-hal`, `poulpy-core`, `poulpy-ckks` and
-`poulpy-blas` from one poulpy source, as direct dependencies under those names, because the macros expand to
-`::poulpy_hal`, `::poulpy_core` and `::poulpy_ckks`. Like the reference, an implementation runs its operation's
-validator, the public `layouts::validate_*`, before any write and stamps the batch record of `res` after `Ok`: the API
-dispatches without a check. A backend does not choose the type of the prepared operands, `BlasMatMulOperand`: it
-supplies their storage through its `Backend`, as poulpy-hal's prepared layouts do, and holds its terms in its own
-representation through its poulpy-ckks preparations.
+and implements that family's `oep` trait by hand, forwarding the methods it keeps to `reference`. `poulpy-cpu-oracle`
+and the CPU backends do so behind their `enable-blas` feature. A backend crate outside this workspace does the same for
+its own types. It takes `poulpy-hal`, `poulpy-core`, `poulpy-ckks` and `poulpy-blas` from one poulpy source, as direct
+dependencies under those names, because the macros expand to `::poulpy_hal`, `::poulpy_core` and `::poulpy_ckks`. Like
+the reference, an implementation runs its operation's validator, the public `layouts::validate_*`, before any write and
+stamps the batch record of `res` after `Ok`: the API dispatches without a check. A backend does not choose the type of
+the prepared operands, `BlasMatMulOperand`: it supplies their storage through its `Backend`, as poulpy-hal's prepared
+layouts do, and holds its terms in its own representation through its poulpy-ckks preparations.
 
 ```sh
 cargo test -p poulpy-blas
 ```
 
 See the [repository README](../README.md) for commands and CI coverage, and
-[Implementing BLAS operations](docs/blas-contracts.md) for the override contract.
+[Implementing BLAS operations](docs/blas-contracts.md) for wiring and the override contract.

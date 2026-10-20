@@ -72,6 +72,8 @@
 - `NTT3x42IfmaRayon` runs `glwe_eval_linear_transformation_sum_into` on the parallel evaluation of `glwe_eval_linear_transformation_into`.
   Both run the reference checks before resolving a key, and take the reference path for a destination below the module degree.
 - **Breaking:** `SparseWord` becomes `MixedWord`, `sparse_log_gap_portable` becomes `embed_log_gap_portable`, `RightRead::sparse` becomes `RightRead::embedded`, and the conjugate-invariant test `conjugate_invariant_sparse_convolution` becomes `conjugate_invariant_embed_convolution`.
+- Add `enable-blas` to `poulpy-cpu-portable`, `poulpy-cpu-rayon`, `poulpy-cpu-avx`, `poulpy-cpu-avx512`, `poulpy-cpu-arm` and `poulpy-cpu-oracle`: it implies the crate's `enable-ckks` and selects the `poulpy-blas` reference for their standard and conjugate-invariant backends, Rayon and IFMA ones included.
+  The oracle runs `blas_backend_test_suite!` and parity between its families, every other backend type registers parity against the oracle of its family (`NTT3x42` types against the `NTT4x30` oracles), and every conjugate-invariant type, the oracle's included, runs `blas_conjugate_invariant_test_suite!`.
 
 ### `poulpy-core`
 
