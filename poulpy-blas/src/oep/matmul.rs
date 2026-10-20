@@ -63,15 +63,27 @@ use crate::layouts::{
 /// - the errors and their order: the validator's, then poulpy-ckks's budget errors, before any write to `res`: the left
 ///   terms', then the right terms', then the first block's ct x ct rule. A hot side's come from the product, so a hot
 ///   preparation of an input short of its budget returns `Ok`;
-/// - the products by public matrices share their giant steps across the inner index: block `res_ij` is poulpy-ckks's
-///   `ckks_eval_linear_transformation_sum_into` of its `K` terms in ascending `l`, `(s_il, b_lj)` on the right and
-///   `(s_lj, b_il)` on the left, where `s` is `a` under `Diagonal`, and under `Jkls` the blocks of `a` through the
-///   operand's first map, one map-hook call ([`crate::oep::BlasMatIntraImpl::blas_map_blocks_impl`]) per block row of
-///   `a` on the right and per block column on the left, into heap blocks of `a`'s layout at the width that map leaves.
-///   Each giant step sums the products of every term in the transform domain, in that order, before its one rotation;
-///   an FFT backend rounds that sum, so the order is part of the bits. Each block of `res` is then stamped with the
-///   label `min(a.log_sparsity, log2(S / (count d^2)))`, for `S` the slots of a block and `count` the operand's
-///   ([`crate::layouts::BlasPtOperandInfos::count`]).
+/// - the products by public matrices under `Diagonal` and `Jkls` share their giant steps across the inner index: block
+///   `res_ij` is poulpy-ckks's `ckks_eval_linear_transformation_sum_into` of its `K` terms in ascending `l`,
+///   `(s_il, b_lj)` on the right and `(s_lj, b_il)` on the left, where `s` is `a` under `Diagonal`, and under `Jkls`
+///   the blocks of `a` through the operand's first map, one map-hook call
+///   ([`crate::oep::BlasMatIntraImpl::blas_map_blocks_impl`]) per block row of `a` on the right and per block column on
+///   the left, into heap blocks of `a`'s layout at the width that map leaves. Each giant step sums the products of
+///   every term in the transform domain, in that order, before its one rotation; an FFT backend rounds that sum, so the
+///   order is part of the bits. Each block of `res` is then stamped with the label
+///   `min(a.log_sparsity, log2(S / (count d^2)))`, for `S` the slots of a block and `count` the operand's
+///   ([`crate::layouts::BlasPtOperandInfos::count`]);
+/// - the products by public matrices under `JklsStored` and `JklsGalois`, a unit at a time, a block row of `a` on the
+///   right, a block column on the left: one map-hook call evaluates the operand's first map of the unit's `K` blocks
+///   into heap blocks of the layout it leaves; one evaluates the context's masks of those, phi^k for `1 <= k < d` on
+///   the right, `rows_left(k)` then `rows_right(k)` on the left, into heap blocks of the layout the first mask leaves;
+///   `ckks_copy` narrows each first-map result to that layout, term `0`; each term is converted once by
+///   `ckks_prepare_left` under `OneShot`, as a hot side's; then every block of `res` of the unit is poulpy-ckks's
+///   `ckks_dot_product_prepared_pt` of the unit's `K d` (right) or `K (2d - 1)` (left) prepared terms, `l`-major, by
+///   the operand's prepared plaintexts: under `JklsStored` the term's own through `1`, under `JklsGalois` the block's
+///   one through the Galois element of the term's rotation, `k d` on the right, `0` then `k` and `k - d` on the left;
+///   stamped with the label of the other paths. The Scratch section of `poulpy-blas/docs/blas-contracts.md` bounds its
+///   heap. An override reproduces the path its operand was encoded for.
 ///
 /// **Free (bit-identical):** the order of the blocks; which side the product holds and which it streams; materializing
 /// or streaming the terms; caching them or their convolution forms; sharing baby-step caches; batching key switches.
@@ -174,6 +186,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
         res: &R,
         a: &A,
         b: &BlasPtOperand<Self>,
+        ctx: &BlasContext<Self>,
         atk: &K,
     ) -> usize
     where
@@ -186,6 +199,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
         res: &mut R,
         a: &A,
         b: &BlasPtOperand<Self>,
+        ctx: &BlasContext<Self>,
         atk: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
@@ -199,6 +213,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
         res: &R,
         b: &BlasPtOperand<Self, Left>,
         a: &A,
+        ctx: &BlasContext<Self>,
         atk: &K,
     ) -> usize
     where
@@ -212,6 +227,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
         res: &mut R,
         b: &BlasPtOperand<Self, Left>,
         a: &A,
+        ctx: &BlasContext<Self>,
         atk: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
@@ -398,6 +414,7 @@ macro_rules! impl_blas_matmul_reference {
                 res: &R,
                 a: &A,
                 b: &$crate::layouts::BlasPtOperand<Self>,
+                ctx: &$crate::layouts::BlasContext<Self>,
                 atk: &K,
             ) -> usize
             where
@@ -405,7 +422,7 @@ macro_rules! impl_blas_matmul_reference {
                 A: $crate::layouts::BlasGridInfos,
                 K: ::poulpy_core::layouts::GGLWEInfos,
             {
-                $crate::reference::BlasMatMulReference::blas_matmul_pt_right_tmp_bytes_reference(module, res, a, b, atk)
+                $crate::reference::BlasMatMulReference::blas_matmul_pt_right_tmp_bytes_reference(module, res, a, b, ctx, atk)
             }
 
             fn blas_matmul_pt_right_impl<R, A, K>(
@@ -413,6 +430,7 @@ macro_rules! impl_blas_matmul_reference {
                 res: &mut R,
                 a: &A,
                 b: &$crate::layouts::BlasPtOperand<Self>,
+                ctx: &$crate::layouts::BlasContext<Self>,
                 atk: &K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> ::poulpy_ckks::CKKSResult<()>
@@ -421,7 +439,7 @@ macro_rules! impl_blas_matmul_reference {
                 A: $crate::layouts::BlasGrid<Self>,
                 K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
             {
-                $crate::reference::BlasMatMulReference::blas_matmul_pt_right_reference(module, res, a, b, atk, scratch)
+                $crate::reference::BlasMatMulReference::blas_matmul_pt_right_reference(module, res, a, b, ctx, atk, scratch)
             }
 
             fn blas_matmul_pt_left_tmp_bytes_impl<R, A, K>(
@@ -429,6 +447,7 @@ macro_rules! impl_blas_matmul_reference {
                 res: &R,
                 b: &$crate::layouts::BlasPtOperand<Self, $crate::layouts::Left>,
                 a: &A,
+                ctx: &$crate::layouts::BlasContext<Self>,
                 atk: &K,
             ) -> usize
             where
@@ -436,7 +455,7 @@ macro_rules! impl_blas_matmul_reference {
                 A: $crate::layouts::BlasGridInfos,
                 K: ::poulpy_core::layouts::GGLWEInfos,
             {
-                $crate::reference::BlasMatMulReference::blas_matmul_pt_left_tmp_bytes_reference(module, res, b, a, atk)
+                $crate::reference::BlasMatMulReference::blas_matmul_pt_left_tmp_bytes_reference(module, res, b, a, ctx, atk)
             }
 
             fn blas_matmul_pt_left_impl<R, A, K>(
@@ -444,6 +463,7 @@ macro_rules! impl_blas_matmul_reference {
                 res: &mut R,
                 b: &$crate::layouts::BlasPtOperand<Self, $crate::layouts::Left>,
                 a: &A,
+                ctx: &$crate::layouts::BlasContext<Self>,
                 atk: &K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> ::poulpy_ckks::CKKSResult<()>
@@ -452,7 +472,7 @@ macro_rules! impl_blas_matmul_reference {
                 A: $crate::layouts::BlasGrid<Self>,
                 K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
             {
-                $crate::reference::BlasMatMulReference::blas_matmul_pt_left_reference(module, res, b, a, atk, scratch)
+                $crate::reference::BlasMatMulReference::blas_matmul_pt_left_reference(module, res, b, a, ctx, atk, scratch)
             }
         }
     };

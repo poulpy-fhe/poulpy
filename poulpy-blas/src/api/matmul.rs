@@ -332,19 +332,37 @@ pub trait BlasMatMulOps<BE: Backend> {
         K: GetAutomorphismKey<BE> + Sync;
 
     /// Scratch bytes [`Self::blas_matmul_pt_right`] needs into `res` from `a` through `b` with rotation keys of layout
-    /// `atk`.
+    /// `atk`, under `ctx`, read under `JklsStored` and `JklsGalois` alone.
     ///
     /// # Panics
     ///
     /// May panic on layouts [`validate_blas_matmul_pt_right`](crate::layouts::validate_blas_matmul_pt_right) rejects:
-    /// blocks of a degree other than the module's.
-    fn blas_matmul_pt_right_tmp_bytes<R, A, K>(&self, res: &R, a: &A, b: &BlasPtOperand<BE>, atk: &K) -> usize
+    /// blocks of a degree other than the module's, or, under `JklsStored` and `JklsGalois`, a `ctx` at another `log_d`
+    /// than `b`'s.
+    fn blas_matmul_pt_right_tmp_bytes<R, A, K>(
+        &self,
+        res: &R,
+        a: &A,
+        b: &BlasPtOperand<BE>,
+        ctx: &BlasContext<BE>,
+        atk: &K,
+    ) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos;
 
     /// `res` receives the product of every matrix of `a` with the public matrix `b` holds for its matrix slot.
+    ///
+    /// Under `JklsStored` and `JklsGalois`, JKLS's masks go on the ciphertext: every block of `a` goes through
+    /// `b.first()`, sigma, then through `ctx`'s phi^k, `1 <= k < d`, a block row at a time, the row's `K d` terms prepared
+    /// once and shared by its blocks, and block `(i, j)` of `res` is poulpy-ckks's `ckks_dot_product_prepared_pt` of those
+    /// terms by `b`'s prepared plaintexts: `psi^k(tau(B_lj))` stored under `JklsStored`, `tau(B_lj)` read through the
+    /// Galois element of the rotation by `k d` under `JklsGalois`. It spends three scales, `2 p_B + p`, for `p` the
+    /// context's scale. It adds the `K d` products in the transform domain, and each mask adds one diagonal per giant
+    /// step; [`blas_matmul_pt_right_max_base2k`](crate::reference::blas_matmul_pt_right_max_base2k) counts them. On the
+    /// right these two take one public matrix. `ctx` is read under them alone; it holds `d - 1` masks that every
+    /// context holds.
     ///
     /// Under `Jkls` (the operand's plan), every block of `a` first goes through `b.first()`, once, a block row at a time.
     /// Each block of `res` is one linear transformation over its `K = a.cols()` terms, which share their giant steps: a
@@ -364,13 +382,15 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// # Metadata
     ///
     /// Block `(i, j)` of `res` is poulpy-ckks's `ckks_eval_linear_transformation_sum_into` of the `K` terms `(a_il, b_lj)`,
-    /// or under `Jkls` `(s_il, b_lj)` for `s_il` the block `a_il` through `b.first()`, labelled, as by poulpy-ckks's
-    /// plaintext product, with the smaller of `a`'s label and the largest label the `b.count()` distinct matrices allow,
-    /// for `S` the slots of a block:
+    /// or under `Jkls` `(s_il, b_lj)` for `s_il` the block `a_il` through `b.first()`, or under `JklsStored` and
+    /// `JklsGalois` poulpy-ckks's `ckks_dot_product_prepared_pt` of the row's `K d` masked terms by `b`'s plaintexts,
+    /// labelled, as by poulpy-ckks's plaintext product, with the smaller of `a`'s label and the largest label the
+    /// `b.count()` distinct matrices allow, for `S` the slots of a block:
     ///
     /// ```text
-    /// k            = min(res.k, a.k - p_B)       under Diagonal
-    ///                min(res.k, a.k - 2 p_B)     under Jkls
+    /// k            = min(res.k, a.k - p_B)           under Diagonal
+    ///                min(res.k, a.k - 2 p_B)         under Jkls
+    ///                min(res.k, a.k - 2 p_B - p)     under JklsStored and JklsGalois
     /// log_delta    = a.log_delta
     /// log_sparsity = min(a.log_sparsity, log2(S / (b.count() d^2)))
     /// slots        = a.slots.join(Real)
@@ -386,14 +406,17 @@ pub trait BlasMatMulOps<BE: Backend> {
     ///
     /// - The implementation runs [`validate_blas_matmul_pt_right`](crate::layouts::validate_blas_matmul_pt_right)
     ///   before any write, so on its errors `res`, its batch record and `a` are untouched: `InvalidOperand` for a grid,
-    ///   shape, layout, operand or count it rejects, then, key by key, `MissingAutomorphismKey` for a key of `b`'s maps
-    ///   `atk` lacks: under `Diagonal` their baby steps at `a.k` and their giant steps at the result's `k`; under
-    ///   `Jkls` the first map's baby steps at `a.k` and giant steps at `a.k - p_B`, then the blocks' baby steps at
-    ///   `a.k - p_B` and giant steps at the result's `k`; or `InvalidOperand` for a key of another rank than `a`'s
-    ///   blocks.
+    ///   shape, layout, operand or count it rejects, a context it rejects under `JklsStored` and `JklsGalois`, or more
+    ///   than one public matrix there, then, key by key, `MissingAutomorphismKey` for a key `atk` lacks: under
+    ///   `Diagonal` the baby steps of `b`'s maps at `a.k` and their giant steps at the result's `k`; under `Jkls` the
+    ///   first map's baby steps at `a.k` and giant steps at `a.k - p_B`, then the blocks' baby steps at `a.k - p_B` and
+    ///   giant steps at the result's `k`; under `JklsStored` and `JklsGalois` the first map's baby steps at `a.k` and
+    ///   giant steps at `a.k - p_B`, then the masks', `Direct`, at `a.k - p_B - p`; or `InvalidOperand` for a key of
+    ///   another rank than `a`'s blocks.
     /// - poulpy-ckks's budget errors come from inside the backend before any write, and leave them untouched too:
     ///   `MultiplicationPrecisionUnderflow` when `a`'s budget, `a.k - a.log_delta`, is below `p_B` under `Diagonal`;
-    ///   under `Jkls` when it is below `p_B` (the first map), then when it is below `2 p_B` (the blocks' maps); and
+    ///   under `Jkls` when it is below `p_B` (the first map), then when it is below `2 p_B` (the blocks' maps); under
+    ///   `JklsStored` and `JklsGalois` when it is below `p_B`, then `p_B + p`, then `2 p_B + p`; and
     ///   `InsufficientHomomorphicCapacity` when `res.k` is below `a.log_delta`.
     /// - Any other `Err` is a backend fault (a validator gap or a device failure), and `res` is then unspecified.
     fn blas_matmul_pt_right<R, A, K>(
@@ -401,6 +424,7 @@ pub trait BlasMatMulOps<BE: Backend> {
         res: &mut R,
         a: &A,
         b: &BlasPtOperand<BE>,
+        ctx: &BlasContext<BE>,
         atk: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -410,27 +434,41 @@ pub trait BlasMatMulOps<BE: Backend> {
         K: GetAutomorphismKey<BE> + Sync;
 
     /// Scratch bytes [`Self::blas_matmul_pt_left`] needs into `res` through `b` from `a` with rotation keys of layout
-    /// `atk`.
+    /// `atk`, under `ctx`, read under `JklsStored` and `JklsGalois` alone.
     ///
     /// # Panics
     ///
     /// As [`Self::blas_matmul_pt_right_tmp_bytes`], on layouts
-    /// [`validate_blas_matmul_pt_left`](crate::layouts::validate_blas_matmul_pt_left) rejects.
-    fn blas_matmul_pt_left_tmp_bytes<R, A, K>(&self, res: &R, b: &BlasPtOperand<BE, Left>, a: &A, atk: &K) -> usize
+    /// [`validate_blas_matmul_pt_left`](crate::layouts::validate_blas_matmul_pt_left) rejects: under `JklsStored` and
+    /// `JklsGalois`, also a `ctx` without their masks.
+    fn blas_matmul_pt_left_tmp_bytes<R, A, K>(
+        &self,
+        res: &R,
+        b: &BlasPtOperand<BE, Left>,
+        a: &A,
+        ctx: &BlasContext<BE>,
+        atk: &K,
+    ) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos;
 
-    /// `res = B A`: `res` receives the product of the public matrix `b` holds for each matrix slot with the matrix of `a`
-    /// there. Under `Diagonal` it consumes `b`'s scale alone, under `Jkls` twice, where the same product through
-    /// transposes, `transpose(transpose(a) B^T)` by [`Self::blas_matmul_pt_right`], consumes the context's scale twice
-    /// more.
+    /// `res = B A`: `res` receives the product of the public matrix `b` holds for each matrix slot with the matrix of
+    /// `a` there. Under `Diagonal` it consumes `b`'s scale alone, under `Jkls` twice, and under `JklsStored` and
+    /// `JklsGalois` twice and the context's once, `2 p_B + p`, where the same product through transposes,
+    /// `transpose(transpose(a) B^T)` by [`Self::blas_matmul_pt_right`], consumes the context's scale twice more.
     ///
-    /// Each block of `res` is one linear transformation over its `K = a.rows()` terms, which share their giant steps: a
-    /// block costs the giant-step key switches of one of `b`'s maps, whatever `K`. Each giant step adds the products of
-    /// every term with each of its diagonals in the transform domain before its rotation, so choose `base2k` for the count
-    /// [`Self::blas_matmul_pt_right`] documents:
+    /// Under `JklsStored` and `JklsGalois`, every block of `a` goes through `b.first()`, tau, then through `ctx`'s column
+    /// halves of psi^k, `rows_left(k)` and `rows_right(k)`, a block column at a time, the column's `K (2d - 1)` terms
+    /// prepared once and shared by its blocks, and block `(i, j)` of `res` is poulpy-ckks's
+    /// `ckks_dot_product_prepared_pt` of those terms by `b`'s prepared plaintexts `Rot_j(sigma(B_il))`, stored or read
+    /// through Galois elements. `ctx` must hold those masks: its plan selects one of these paths.
+    ///
+    /// Under `Diagonal` and `Jkls`, each block of `res` is one linear transformation over its `K = a.rows()` terms,
+    /// which share their giant steps: a block costs the giant-step key switches of one of `b`'s maps, whatever `K`.
+    /// Each giant step adds the products of every term with each of its diagonals in the transform domain before its
+    /// rotation, so choose `base2k`, under every path, for the count [`Self::blas_matmul_pt_right`] documents:
     /// [`blas_matmul_pt_left_max_base2k`](crate::reference::blas_matmul_pt_left_max_base2k) returns the largest radix
     /// `Module::max_base2k` allows for it.
     ///
@@ -446,17 +484,20 @@ pub trait BlasMatMulOps<BE: Backend> {
     ///
     /// As [`Self::blas_matmul_pt_right`]: block `(i, j)` of `res` is the summed linear transformation of the `K` terms
     /// `(a_lj, b_il)`, or under `Jkls` `(s_lj, b_il)` for `s_lj` the block `a_lj` through `b.first()` (once, a block
-    /// column at a time), labelled as there, and the table there holds.
+    /// column at a time), or under `JklsStored` and `JklsGalois` the summed product of the column's `K (2d - 1)` masked
+    /// terms by `b`'s plaintexts, labelled as there, and the table there holds.
     ///
     /// # Errors
     ///
     /// As [`Self::blas_matmul_pt_right`], from
-    /// [`validate_blas_matmul_pt_left`](crate::layouts::validate_blas_matmul_pt_left).
+    /// [`validate_blas_matmul_pt_left`](crate::layouts::validate_blas_matmul_pt_left), but for the count: on the left,
+    /// `JklsStored` and `JklsGalois` take any number of public matrices, and reject a context without their masks.
     fn blas_matmul_pt_left<R, A, K>(
         &self,
         res: &mut R,
         b: &BlasPtOperand<BE, Left>,
         a: &A,
+        ctx: &BlasContext<BE>,
         atk: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>

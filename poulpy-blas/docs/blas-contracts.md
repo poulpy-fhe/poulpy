@@ -120,14 +120,24 @@ public operand's scale `p_B`:
 | `blas_transpose` | `transpose_galois_elements(order)` | baby steps at `a.k`, giant steps at `min(res.k, a.k - p)` |
 | `blas_rotate_rows`, `blas_rotate_cols` by `k` | `rotate_rows_galois_elements(order, k)`, `rotate_cols_galois_elements(order, k)` | as the transpose; none for a shift by a multiple of `d`, a copy |
 | `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, `blas_matmul`, and `blas_matmul_prepared` of a hot operand | `matmul_galois_elements(order)` | sigma's (tau's) baby steps at `a.k` and giant steps at `a.k - p`; the shifts' giant steps at `a.k - 2p`, those of a replicated right factor `b` at `b.k - p` |
-| `blas_matmul_pt_right`, `blas_matmul_pt_left` | `matmul_pt_right_galois_elements(order)`, `matmul_pt_left_galois_elements(order)` | under `Diagonal`, the blocks' baby steps at `a.k`, giant steps at `min(res.k, a.k - p_B)`; under `Jkls`, the first map's baby steps at `a.k`, giant steps at `a.k - p_B`, then the blocks' baby steps at `a.k - p_B`, giant steps at `min(res.k, a.k - 2 p_B)` |
+| `blas_matmul_pt_right`, `blas_matmul_pt_left` | `matmul_pt_right_galois_elements(order)`, `matmul_pt_left_galois_elements(order)` of the operand's plan | under `Diagonal`, the blocks' baby steps at `a.k`, giant steps at `min(res.k, a.k - p_B)`; under `Jkls`, the first map's baby steps at `a.k`, giant steps at `a.k - p_B`, then the blocks' baby steps at `a.k - p_B`, giant steps at `min(res.k, a.k - 2 p_B)`; under `JklsStored` and `JklsGalois`, the first map's as under `Jkls`, then the context's masks', `Direct`, at `a.k - p_B - p` |
 
-A plan also carries a `BlasPtAlgorithm`, `Diagonal` by default or `Jkls`
-through `BlasPlan::with_pt_algorithm`, which the public operands encoded from
-it follow: one map per block and one scale, or sigma (tau) of every block of
-the encrypted grid, once, and then one map per block, two scales. Both look up
-the same rotation keys, `matmul_pt_right_galois_elements` and
-`matmul_pt_left_galois_elements`, at the widths of the last row.
+A plan also carries a `BlasPtAlgorithm` through `BlasPlan::with_pt_algorithm`,
+which the public operands encoded from it follow. `Diagonal`, the default, maps
+each block once, one scale. `Jkls` maps every block of the encrypted grid by
+sigma (tau) once, then by one map per block, two scales. `JklsStored` and
+`JklsGalois` put JKLS's masks on the ciphertext: that first map, then the
+context's masks of its results, phi^k on the right and the column halves of
+psi^k on the left, then one sum of products by prepared public plaintexts
+(poulpy-ckks's `ckks_dot_product_prepared_pt`), three scales; `JklsStored`
+stores `d` plaintexts per block on the right and `2d - 1` on the left,
+`JklsGalois` one, read through the Galois elements of their rotations. On the
+right these two take one public matrix. Each path is its own circuit. The
+products take the context, which only the last two read; a context encodes the
+column halves of psi^k only when its plan selects one of them, and a left
+product under these paths needs such a context. The first two look up the same
+rotation keys; the last two add their masks', which their plan's sets list, at
+the widths of the last row.
 
 A left product of a replicated input by an operand of one public matrix on more
 than one matrix slot takes the operand's replicated-input block maps
@@ -208,7 +218,10 @@ crate's rules and fail in this order:
    its batch record; a shape or inner dimension that does not match; blocks of
    another degree than the module's, or inputs of another radix or rank than
    `res`; a context or public operand encoded for another slot count or radix;
-   public matrices that do not divide the batch; a prepared operand without a
+   public matrices that do not divide the batch; under `JklsStored` and
+   `JklsGalois`, more than one public matrix on the right, and a context at
+   another `log_d`, encoded for another slot count or radix, wider than the
+   input or, on the left, without their masks; a prepared operand without a
    batch record, or a hot one at another `log_d` than the product's context
    or under a context encoded for another slot count or radix; and a product
    at a radix above 62, whose digits cannot hold two lazy terms of the JKLS
@@ -285,6 +298,16 @@ terms plus one unit, whatever the extent of the streamed side; the held terms
 are in the backend's transform-domain form, one to four times their coefficient
 size depending on its transform. A cold operand holds `d` such terms per block
 of its grid.
+
+Under `JklsStored` and `JklsGalois`, a product by public matrices makes its
+terms as a hot side's: a unit at a time, a block row of `a` on the right and
+a block column on the left, each of its `K d` (left `K (2d - 1)`) terms
+converted once under `OneShot` for every block of `res` the unit writes.
+Each unit is allocated when made, its working blocks dropped as its terms are
+converted, and the unit dropped after its blocks; nothing is reused across
+units. Beside `res` and the operands the heap holds one unit of prepared
+terms, in the backend's transform-domain form, and while the unit is made its
+`K` first-map results and its unconverted terms, whatever the number of units.
 
 ## Parallelism
 

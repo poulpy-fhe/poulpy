@@ -42,6 +42,22 @@ pub enum BlasPtAlgorithm {
     /// adds, and holds that map in the operand; for one public matrix (`count = 1`) its blocks on the right store `d^2`
     /// slots per diagonal where [`maps::right_mul`] stores `d`, up to `d` times the memory.
     Jkls,
+    /// JKLS with its masks on the ciphertext: sigma (tau on the left) of every block of the encrypted grid, once, then
+    /// the context's masks of its results, phi^k on the right and the column halves of psi^k on the left
+    /// ([`maps::rows_left`], [`maps::rows_right`]), then one sum of products by prepared public plaintexts, `d` per
+    /// block on the right, `psi^k(tau(B))`, and `2d - 1` on the left, `Rot_j(sigma(B))` for `-d < j < d`: three scales.
+    /// On the right it takes one public matrix.
+    JklsStored,
+    /// [`Self::JklsStored`] with one public plaintext per block, tau (sigma) of its matrices, read through the Galois
+    /// element of each rotation.
+    JklsGalois,
+}
+
+impl BlasPtAlgorithm {
+    /// Whether the products put JKLS's masks on the ciphertext, reading them from the context.
+    pub(crate) fn masked(self) -> bool {
+        matches!(self, Self::JklsStored | Self::JklsGalois)
+    }
 }
 
 /// The block dimension and the schedule of every map: what a client and a server agree on, and the one source of the
@@ -54,7 +70,8 @@ pub enum BlasPtAlgorithm {
 /// context or public matrix. A pipeline needs the union of its operations' sets, [`sum_galois_elements`] for each grid
 /// it sums, and a tensor key if and only if it calls `blas_matmul` or `blas_matmul_prepared`. Every set is empty when a
 /// block does not fit the slots. The public operands encoded from a plan follow its [`BlasPtAlgorithm`]; their key sets
-/// are the same under both.
+/// are the same under `Diagonal` and `Jkls`, and add the context's masks under `JklsStored` and `JklsGalois`, whose
+/// context then also encodes the column halves of psi^k.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BlasPlan {
     log_d: usize,
@@ -112,6 +129,9 @@ impl BlasPlan {
             for k in 1..1 << self.log_d {
                 list.extend(self.shift_maps(slots, k, true));
                 list.extend(self.shift_maps(slots, k, false));
+                if self.pt.masked() {
+                    list.extend(self.masked_rows(slots, k));
+                }
             }
             list
         })
@@ -147,21 +167,33 @@ impl BlasPlan {
         self.elements(cyclotomic_order, |slots| self.matmul_maps(slots))
     }
 
-    /// Galois elements `blas_matmul_pt_right` looks up, for public matrices of any values, grid shape and count: the right
-    /// product stores a diagonal at every offset `l - c`, whatever the entries, and sigma and the JKLS block maps sit at
-    /// those offsets too, so the set is the same under either [`BlasPtAlgorithm`].
+    /// Galois elements `blas_matmul_pt_right` looks up, for public matrices of any values, grid shape and count: under
+    /// `Diagonal` and `Jkls` those of the right product, which stores a diagonal at every offset `l - c`, where sigma and
+    /// the JKLS block maps sit too; under `JklsStored` and `JklsGalois` sigma's and the context's phi^k, `Direct`.
     pub fn matmul_pt_right_galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
         self.elements(cyclotomic_order, |slots| {
-            vec![(maps::right_mul(slots, self.log_d, 1, |_, _, _| 1.0), false)]
+            let log_d = self.log_d;
+            if !self.pt.masked() {
+                return vec![(maps::right_mul(slots, log_d, 1, |_, _, _| 1.0), false)];
+            }
+            let mut list = vec![(maps::sigma(slots, log_d), false)];
+            list.extend((1..1 << log_d).map(|k| (maps::rotate_cols(slots, log_d, k), true)));
+            list
         })
     }
 
-    /// Galois elements `blas_matmul_pt_left` looks up, for public matrices of any values, grid shape and count: the left
-    /// product stores a diagonal at every offset `(l - r) d`, whatever the entries. These are tau's offsets, scheduled
-    /// alike, and the JKLS block maps sit at them too, so the set is tau's under either [`BlasPtAlgorithm`].
+    /// Galois elements `blas_matmul_pt_left` looks up, for public matrices of any values, grid shape and count: under
+    /// `Diagonal` and `Jkls` those of the left product, which stores a diagonal at every offset `(l - r) d`, tau's
+    /// offsets, scheduled alike, where the JKLS block maps sit too; under `JklsStored` and `JklsGalois` tau's and the
+    /// context's column halves of psi^k, `Direct`.
     pub fn matmul_pt_left_galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
         self.elements(cyclotomic_order, |slots| {
-            vec![(maps::left_mul(slots, self.log_d, 1, |_, _, _| 1.0), false)]
+            if !self.pt.masked() {
+                return vec![(maps::left_mul(slots, self.log_d, 1, |_, _, _| 1.0), false)];
+            }
+            let mut list = vec![(maps::tau(slots, self.log_d), false)];
+            list.extend((1..1 << self.log_d).flat_map(|k| self.masked_rows(slots, k)));
+            list
         })
     }
 
@@ -214,12 +246,21 @@ impl BlasPlan {
         };
         family.into_iter().map(|map| (map(slots, log_d, k), true)).collect()
     }
+
+    /// The column halves of psi^k, `1 <= k < d`.
+    fn masked_rows(&self, slots: usize, k: usize) -> [(Diagonals<f64>, bool); 2] {
+        [
+            (maps::rows_left(slots, self.log_d, k), true),
+            (maps::rows_right(slots, self.log_d, k), true),
+        ]
+    }
 }
 
 /// The host diagonals of a shift map at `k`, on `slots` slots and blocks of `2^log_d`.
 type ShiftMap<F> = fn(usize, usize, usize) -> Diagonals<F>;
 
-/// One map of a context: one of its four single maps, or the map at `k` of one of its seven families of shifts.
+/// One map of a context: one of its four single maps, or the map at `k` of one of its seven families of shifts, nine
+/// under `JklsStored` and `JklsGalois`.
 #[derive(Clone, Copy)]
 pub(crate) enum MapId {
     Single(usize),
@@ -239,14 +280,23 @@ const ROWS_UPPER: usize = 3;
 const ROWS_LOWER: usize = 4;
 const COLS_LEFT: usize = 5;
 const COLS_RIGHT: usize = 6;
-const FAMILIES: usize = 7;
+const ROWS_LEFT: usize = 7;
+const ROWS_RIGHT: usize = 8;
+const FAMILIES: usize = 9;
 
 impl MapId {
-    /// Every map of a context of `2^log_d x 2^log_d` blocks, in the order [`ContextMaps`] holds them.
-    fn all(log_d: usize) -> impl Iterator<Item = Self> {
-        let shifts = (0..FAMILIES).flat_map(move |family| (1..1usize << log_d).map(move |k| Self::Shift(family, k)));
+    /// Every map of a context of `plan`, in the order [`ContextMaps`] holds them.
+    fn all(plan: BlasPlan) -> impl Iterator<Item = Self> {
+        let (log_d, families) = (plan.log_d(), family_count(plan));
+        let shifts = (0..families).flat_map(move |family| (1..1usize << log_d).map(move |k| Self::Shift(family, k)));
         (0..SINGLES).map(Self::Single).chain(shifts)
     }
+}
+
+/// The shift families a context of `plan` holds: the last two, the column halves of psi^k, only when its products by
+/// public matrices read them.
+fn family_count(plan: BlasPlan) -> usize {
+    if plan.pt_algorithm().masked() { FAMILIES } else { ROWS_LEFT }
 }
 
 /// The maps of a context, in the order [`BlasContextUnprepared::maps`] states.
@@ -261,10 +311,17 @@ pub(crate) struct ContextMaps<T> {
 pub(crate) type MapsIter<'a, T> = std::iter::Chain<std::slice::Iter<'a, T>, std::iter::Flatten<std::slice::Iter<'a, Vec<T>>>>;
 
 impl<T> ContextMaps<T> {
-    /// `make(id)` for every map of a context of `2^log_d x 2^log_d` blocks, in walking order.
-    pub(crate) fn build(log_d: usize, slots: usize, mut make: impl FnMut(MapId) -> T) -> Self {
+    /// `make(id)` for every map of a context of `plan`, in walking order.
+    pub(crate) fn build(plan: BlasPlan, slots: usize, mut make: impl FnMut(MapId) -> T) -> Self {
+        let (log_d, families) = (plan.log_d(), family_count(plan));
         let singles = std::array::from_fn(|i| make(MapId::Single(i)));
-        let shifts = std::array::from_fn(|family| (1..1usize << log_d).map(|k| make(MapId::Shift(family, k))).collect());
+        let shifts = std::array::from_fn(|family| {
+            if family < families {
+                (1..1usize << log_d).map(|k| make(MapId::Shift(family, k))).collect()
+            } else {
+                Vec::new()
+            }
+        });
         Self {
             log_d,
             slots,
@@ -332,6 +389,19 @@ impl<T> ContextMaps<T> {
     pub(crate) fn cols_right(&self, k: usize) -> &T {
         &self.shifts[COLS_RIGHT][k - 1]
     }
+
+    pub(crate) fn rows_left(&self, k: usize) -> &T {
+        &self.shifts[ROWS_LEFT][k - 1]
+    }
+
+    pub(crate) fn rows_right(&self, k: usize) -> &T {
+        &self.shifts[ROWS_RIGHT][k - 1]
+    }
+
+    /// Whether it holds the column halves of psi^k: its plan selects `JklsStored` or `JklsGalois`.
+    pub(crate) fn has_masked_rows(&self) -> bool {
+        !self.shifts[ROWS_LEFT].is_empty()
+    }
 }
 
 /// `meta` at no scale, a product by 1.
@@ -371,6 +441,8 @@ pub(crate) fn context_map<F: DiagonalArithmetic + One + PartialEq>(layout: &Blas
                 maps::rows_lower,
                 maps::cols_left,
                 maps::cols_right,
+                maps::rows_left,
+                maps::rows_right,
             ];
             let meta = if family == ROTATE_ROWS_REP { unit(meta) } else { meta };
             scheduled(families[family](slots, log_d, k), true, meta)
@@ -475,8 +547,9 @@ impl<BE: Backend> BlasContextInfos for BlasContext<BE> {
 
 impl<BE: Backend> BlasContextUnprepared<BE> {
     /// Every encoded map, in the order encoding and preparation walk them: sigma, tau, tau on a replicated input and
-    /// the transpose, then psi^k, psi^k on a replicated input, phi^k and the halves of psi^k and of phi^k, each family
-    /// for `k = 1..d`.
+    /// the transpose, then psi^k, psi^k on a replicated input, phi^k and the halves of psi^k and of phi^k, then, under
+    /// `JklsStored` and `JklsGalois`, the column halves of psi^k ([`BlasContext::rows_left`], [`BlasContext::rows_right`]),
+    /// each family for `k = 1..d`.
     pub fn maps(&self) -> impl Iterator<Item = &LinearTransformation<CKKSPlaintextOwned<BE>>> {
         self.maps.iter()
     }
@@ -543,6 +616,17 @@ impl<BE: Backend> BlasContext<BE> {
     pub fn cols_right(&self, k: usize) -> &LinearTransformationPrepared<BE> {
         self.maps.cols_right(k)
     }
+
+    /// The columns of psi^k that phi^k keeps in the block, `c + k < d` ([`maps::rows_left`]). Panics unless
+    /// `1 <= k < d` and the plan selects [`BlasPtAlgorithm::JklsStored`] or [`BlasPtAlgorithm::JklsGalois`].
+    pub fn rows_left(&self, k: usize) -> &LinearTransformationPrepared<BE> {
+        self.maps.rows_left(k)
+    }
+
+    /// The columns of psi^k that phi^k wraps, `c + k >= d` ([`maps::rows_right`]). Panics as [`Self::rows_left`].
+    pub fn rows_right(&self, k: usize) -> &LinearTransformationPrepared<BE> {
+        self.maps.rows_right(k)
+    }
 }
 
 /// Panics unless the blocks of `layout`, at least `2 x 2`, fit its slots, and its maps have a torus width and a radix in
@@ -565,7 +649,7 @@ pub(crate) fn assert_fits(layout: &BlasContextLayout) {
 pub(crate) fn context_shapes(infos: &impl BlasContextInfos) -> ContextMaps<LinearTransformation<DiagonalShape>> {
     let layout = infos.blas_context_layout();
     assert_fits(&layout);
-    ContextMaps::build(layout.plan.log_d(), layout.slots, |id| {
+    ContextMaps::build(layout.plan, layout.slots, |id| {
         shape(&context_map::<f64>(&layout, id).layout())
     })
 }
@@ -613,7 +697,7 @@ where
     M: CKKSModuleAlloc<BE> + GetDegree,
 {
     assert_fits_module(module, layout);
-    let maps = ContextMaps::build(layout.plan.log_d(), layout.slots, |id| {
+    let maps = ContextMaps::build(layout.plan, layout.slots, |id| {
         context_map::<f64>(layout, id).layout().alloc::<BE, M>(module, layout.base2k)
     });
     BlasContextUnprepared { layout: *layout, maps }
@@ -632,7 +716,7 @@ where
 {
     let layout = res.layout;
     assert_fits_module(module, &layout);
-    for (id, lt) in MapId::all(layout.plan.log_d()).zip(res.maps.iter_mut()) {
+    for (id, lt) in MapId::all(layout.plan).zip(res.maps.iter_mut()) {
         encode_map_into(module, lt, context_map::<F>(&layout, id), scratch)?;
     }
     Ok(())
@@ -650,7 +734,7 @@ pub trait BlasContextPreparedFactory<BE: Backend>:
     fn blas_context_prepared_alloc_from_infos<A: BlasContextInfos>(&self, infos: &A) -> BlasContext<BE> {
         let layout = infos.blas_context_layout();
         assert_fits_module(self, &layout);
-        let maps = ContextMaps::build(layout.plan.log_d(), layout.slots, |id| {
+        let maps = ContextMaps::build(layout.plan, layout.slots, |id| {
             context_map::<f64>(&layout, id)
                 .layout()
                 .alloc_prepared::<BE, Self>(self, layout.base2k)
@@ -662,7 +746,7 @@ pub trait BlasContextPreparedFactory<BE: Backend>:
     fn blas_context_prepare_tmp_bytes<A: BlasContextInfos>(&self, infos: &A) -> usize {
         let layout = infos.blas_context_layout();
         assert_fits_module(self, &layout);
-        MapId::all(layout.plan.log_d())
+        MapId::all(layout.plan)
             .map(|id| {
                 context_map::<f64>(&layout, id)
                     .layout()
@@ -748,6 +832,26 @@ mod tests {
             .collect();
         assert_eq!(scales.iter().filter(|&&s| s == 0).count(), 3);
         assert_eq!(scales.iter().filter(|&&s| s == 20).count(), 4 + 6 * 3);
+    }
+
+    /// A context holds the column halves of psi^k, two more families, exactly when its plan's products by public
+    /// matrices read them.
+    #[test]
+    fn masked_plans_encode_the_masked_row_shifts() {
+        let module = Module::<HostBytesBackend>::new(256);
+        let meta = CoeffsMeta::from_delta_budget(20, 19);
+        for algorithm in [
+            BlasPtAlgorithm::Diagonal,
+            BlasPtAlgorithm::Jkls,
+            BlasPtAlgorithm::JklsStored,
+            BlasPtAlgorithm::JklsGalois,
+        ] {
+            let layout = module_layout(&module, BlasPlan::new(2).with_pt_algorithm(algorithm), Base2K(19), meta);
+            let ctx = module.blas_context_alloc_from_infos(&layout);
+            let families = if algorithm.masked() { 9 } else { 7 };
+            assert_eq!(ctx.maps().count(), 4 + families * 3, "{algorithm:?}");
+            assert_eq!(MapId::all(layout.plan).count(), ctx.maps().count(), "{algorithm:?}");
+        }
     }
 
     #[test]
@@ -921,6 +1025,19 @@ mod tests {
             assert_eq!(plan.rotate_galois_elements(ORDER, r), rotations(&[rotation]), "r={r}");
         }
         assert!(plan.rotate_galois_elements(ORDER, 8).is_empty());
+        // Masked: sigma's (tau's) set plus the masks, `Direct`: phi^k by `k`, `k - 4`; psi^k's halves by `4k`, `4k - 16`.
+        for algorithm in [BlasPtAlgorithm::JklsStored, BlasPtAlgorithm::JklsGalois] {
+            let masked = BlasPlan::new(2).with_pt_algorithm(algorithm);
+            assert_eq!(
+                masked.matmul_pt_right_galois_elements(ORDER),
+                rotations(&[1, 2, 3, 125, 126, 127])
+            );
+            assert_eq!(
+                masked.matmul_pt_left_galois_elements(ORDER),
+                rotations(&[4, 8, 12, 116, 120, 124])
+            );
+            assert_eq!(masked.galois_elements(ORDER), plan.galois_elements(ORDER));
+        }
 
         // A block wider than the slots, or a dimension past the word width: no key, no panic.
         for log_d in [4, 40, usize::MAX] {

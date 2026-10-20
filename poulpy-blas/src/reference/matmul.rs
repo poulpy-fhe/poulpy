@@ -8,30 +8,34 @@ use poulpy_ckks::{
     },
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPreparedLeft, CKKSPreparedRight},
 };
-use poulpy_core::layouts::{
-    GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, TorusPrecision,
+use poulpy_core::{
+    GLWEMulPreparedPlainSum,
+    layouts::{
+        GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, TorusPrecision,
+    },
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, ModuleN},
     layouts::{Backend, MaxBase2k, Module, PrepareHint, ScratchArena},
 };
 
-use super::{BlasKeyUses, MapDiagonal, context_shapes, lt_tmp_bytes, operand_shapes, pt_label};
+use super::{BlasKeyUses, MapDiagonal, context_shapes, lt_tmp_bytes, operand_shapes, pt_label, with_mask_shapes};
 use crate::{
     layouts::{
         BlasContext, BlasContextInfos, BlasGrid, BlasGridInfos, BlasGridMut, BlasLayout, BlasMatMulOperand,
-        BlasMatMulOperandInfos, BlasMatMulOperandLayout, BlasPtOperand, BlasPtOperandInfos, BlasPtSide, Left, Right,
+        BlasMatMulOperandInfos, BlasMatMulOperandLayout, BlasPlan, BlasPtAlgorithm, BlasPtOperand, BlasPtOperandInfos,
+        BlasPtSide, Left, Right,
         ciphertext::{layout_of, replicated_at},
         encoding::{mapped_block, mapped_block_into},
         grid_batch,
         matmul_operand::{
             left_operand_layout, left_term_layout, product_terms, right_maps, right_operand_layout, right_term_layout,
         },
-        pt_operand::OperandMaps,
+        pt_operand::{OperandMaps, masked_rotations},
         replicated,
         validate::{
-            MAX_BASE2K, assert_scratch, ensure_rotation, ensure_tensor_key, left_takes_replicated, left_uses, matmul_tensor,
-            matmul_uses, prepared_tensor, prepared_uses, pt_left_uses, pt_right_uses, right_uses, term_uses,
+            MAX_BASE2K, assert_scratch, context_masks, ensure_rotation, ensure_tensor_key, left_takes_replicated, left_uses,
+            matmul_tensor, matmul_uses, prepared_tensor, prepared_uses, pt_left_uses, pt_right_uses, right_uses, term_uses,
             validate_blas_matmul, validate_blas_matmul_prepare_left, validate_blas_matmul_prepare_right,
             validate_blas_matmul_prepared, validate_blas_matmul_pt_left, validate_blas_matmul_pt_right,
         },
@@ -130,10 +134,11 @@ fn giant_products((diagonals, width): (usize, usize), terms: usize, src: usize, 
 }
 
 /// [`blas_matmul_pt_right_max_base2k`] and [`blas_matmul_pt_left_max_base2k`] over `inner` terms, the block maps being
-/// `b`'s replicated-input ones when `rep`.
+/// `b`'s replicated-input ones when `rep`, under the masked paths through the context's `masks`.
 fn pt_max_base2k<BE: MaxBase2k, P: MapDiagonal>(
     a: &impl BlasGridInfos,
     b: &OperandMaps<LinearTransformation<P>>,
+    masks: &[&LinearTransformation<P>],
     inner: usize,
     rep: bool,
     failure_bits: usize,
@@ -147,8 +152,17 @@ fn pt_max_base2k<BE: MaxBase2k, P: MapDiagonal>(
         None => (a_k, None),
         Some(first) => (ckks_linear_transformation_output_k(first, a_k, a_k), Some(map_shape([first]))),
     };
+    let (terms, src_k, masked) = match masks.first() {
+        None => (inner, maps_k, None),
+        Some(&mask) => (
+            inner * (masks.len() + 1),
+            ckks_linear_transformation_output_k(mask, maps_k, maps_k),
+            Some(map_shape(masks.iter().copied())),
+        ),
+    };
     max_radix::<BE>(block.n().as_usize(), failure_bits, |r| {
-        let blocks = giant_products(maps, inner, maps_k.as_usize(), r);
+        let blocks = giant_products(maps, terms, src_k.as_usize(), r);
+        let blocks = masked.map_or(blocks, |shape| blocks.max(giant_products(shape, 1, maps_k.as_usize(), r)));
         first.map_or(blocks, |first| blocks.max(giant_products(first, 1, a_k.as_usize(), r)))
     })
 }
@@ -157,34 +171,47 @@ fn pt_max_base2k<BE: MaxBase2k, P: MapDiagonal>(
 /// [`crate::api::BlasMatMulOps::blas_matmul_pt_right`] of `a` by `b`, `Some(0)` if none does, and `None` for a backend
 /// without a model: the largest radix at which the model holds the count that method documents, with `L` and `P` counted
 /// at each candidate radix, whatever the radix of `a` and `b`. `failure_bits` and the model are those of
-/// [`Module::max_base2k`]. `b` is a public operand or its layout: the query reads the shape of its maps. Name the
-/// backend, as [`blas_matmul_max_base2k`] does.
+/// [`Module::max_base2k`]. `b` is a public operand or its layout: the query reads the shape of its maps. Under
+/// `JklsStored` and `JklsGalois` it also reads the shape of `ctx`'s masks, which add one diagonal per giant step from the
+/// first map's width, and the final step, poulpy-ckks's summed product by prepared plaintexts, adds `K d` products from
+/// the masks' width in the transform domain. `ctx` is a context or its layout, read only then. Name the backend, as
+/// [`blas_matmul_max_base2k`] does.
 ///
 /// # Panics
 ///
-/// As [`blas_matmul_max_base2k`].
+/// As [`blas_matmul_max_base2k`], and under `JklsStored` and `JklsGalois` for a `ctx` that does not fit.
 pub fn blas_matmul_pt_right_max_base2k<BE: MaxBase2k>(
     a: &impl BlasGridInfos,
     b: &impl BlasPtOperandInfos<Side = Right>,
+    ctx: &impl BlasContextInfos,
     failure_bits: usize,
 ) -> Option<usize> {
-    pt_max_base2k::<BE, _>(a, &operand_shapes(b), a.cols(), false, failure_bits)
+    let maps = operand_shapes(b);
+    with_mask_shapes(b.plan(), ctx, false, |masks| {
+        pt_max_base2k::<BE, _>(a, &maps, masks, a.cols(), false, failure_bits)
+    })
 }
 
 /// [`blas_matmul_pt_right_max_base2k`] for [`crate::api::BlasMatMulOps::blas_matmul_pt_left`]: the terms of a block of
 /// `res` number `K = a.rows()`, and the first map under JKLS is tau. The block maps counted are those the product takes
-/// for `a`: [`BlasPtOperand::block_replicated`]'s when `a` is replicated ([`replicated`]) and `b` holds them.
+/// for `a`: [`BlasPtOperand::block_replicated`]'s when `a` is replicated ([`replicated`]) and `b` holds them. Under the
+/// masked paths the final step adds `K (2d - 1)` products.
 ///
 /// # Panics
 ///
-/// As [`blas_matmul_max_base2k`].
+/// As [`blas_matmul_pt_right_max_base2k`], and under `JklsStored` and `JklsGalois` for a `ctx` without the column
+/// halves of psi^k, whose plan selects neither.
 pub fn blas_matmul_pt_left_max_base2k<BE: MaxBase2k>(
     b: &impl BlasPtOperandInfos<Side = Left>,
     a: &impl BlasGridInfos,
+    ctx: &impl BlasContextInfos,
     failure_bits: usize,
 ) -> Option<usize> {
     let maps = operand_shapes(b);
-    pt_max_base2k::<BE, _>(a, &maps, a.rows(), left_takes_replicated(&maps, a), failure_bits)
+    let rep = left_takes_replicated(&maps, a);
+    with_mask_shapes(b.plan(), ctx, true, |masks| {
+        pt_max_base2k::<BE, _>(a, &maps, masks, a.rows(), rep, failure_bits)
+    })
 }
 
 /// Fails as [`ensure_rotation`] unless `atk` holds every key of [`term_uses`].
@@ -261,16 +288,18 @@ pub fn blas_matmul_prepared_output_layout(
 }
 
 /// The block a product of `a` by the public matrices of `b` leaves in blocks of `res`'s width: `first`'s effect, if
-/// any, then that of a block map `map`, at the product's label, [`pt_label`].
+/// any, then that of a context mask `mask`, if any, then that of a block map `map`, at the product's label, [`pt_label`].
 fn pt_block<P: LtDiagonalMeta, S: BlasPtSide>(
     res: &impl BlasGridInfos,
     a: &impl BlasGridInfos,
     b: &impl BlasPtOperandInfos<Side = S>,
     first: Option<&LinearTransformation<P>>,
+    mask: Option<&LinearTransformation<P>>,
     map: &LinearTransformation<P>,
 ) -> CKKSLayout {
     let block = a.block_layout();
     let staged = first.map_or(block, |first| mapped_block_into(block, first, block.k()));
+    let staged = mask.map_or(staged, |mask| mapped_block(staged, mask));
     let mut block = mapped_block_into(staged, map, res.block_layout().k());
     block.meta.log_sparsity = pt_label(b.slots(), a, b.count());
     block
@@ -278,36 +307,45 @@ fn pt_block<P: LtDiagonalMeta, S: BlasPtSide>(
 
 /// The layout [`crate::api::BlasMatMulOps::blas_matmul_pt_right`] stamps on `res` for `a` and `b`: `a`'s block through
 /// `b`'s first map, if any, and a block map, into `res`'s width, at the label that method documents, `a.rows x b.cols`
-/// blocks. The record is `a`'s. `b` is a public operand or its layout: the query reads the shape of its maps.
+/// blocks. The record is `a`'s. `b` is a public operand or its layout: the query reads the shape of its maps. Under
+/// `JklsStored` and `JklsGalois` the block also goes through a mask of `ctx`, at its scale. `ctx` is a context or its
+/// layout, read only then.
+///
+/// # Panics
+///
+/// Under `JklsStored` and `JklsGalois`, for a `ctx` that does not fit.
 pub fn blas_matmul_pt_right_output_layout(
     res: &impl BlasGridInfos,
     a: &impl BlasGridInfos,
     b: &impl BlasPtOperandInfos<Side = Right>,
+    ctx: &impl BlasContextInfos,
 ) -> BlasLayout {
     let maps = operand_shapes(b);
-    BlasLayout::new(
-        pt_block(res, a, b, maps.first(), maps.at(0, 0)),
-        a.log_d(),
-        a.rows(),
-        b.cols(),
-    )
+    let block = with_mask_shapes(b.plan(), ctx, false, |masks| {
+        pt_block(res, a, b, maps.first(), masks.first().copied(), maps.at(0, 0))
+    });
+    BlasLayout::new(block, a.log_d(), a.rows(), b.cols())
 }
 
 /// As [`blas_matmul_pt_right_output_layout`], for [`crate::api::BlasMatMulOps::blas_matmul_pt_left`], `b.rows x a.cols`
 /// blocks, with the block maps of the replicated-input choice.
+///
+/// # Panics
+///
+/// As [`blas_matmul_pt_right_output_layout`], and under `JklsStored` and `JklsGalois` for a `ctx` without the column
+/// halves of psi^k, whose plan selects neither.
 pub fn blas_matmul_pt_left_output_layout(
     res: &impl BlasGridInfos,
     b: &impl BlasPtOperandInfos<Side = Left>,
     a: &impl BlasGridInfos,
+    ctx: &impl BlasContextInfos,
 ) -> BlasLayout {
     let maps = operand_shapes(b);
     let rep = left_takes_replicated(&maps, a);
-    BlasLayout::new(
-        pt_block(res, a, b, maps.first(), maps.at_for(0, 0, rep)),
-        a.log_d(),
-        b.rows(),
-        a.cols(),
-    )
+    let block = with_mask_shapes(b.plan(), ctx, true, |masks| {
+        pt_block(res, a, b, maps.first(), masks.first().copied(), maps.at_for(0, 0, rep))
+    });
+    BlasLayout::new(block, a.log_d(), b.rows(), a.cols())
 }
 
 /// The keys [`crate::api::BlasMatMulOps::blas_matmul`] looks up for factors `a` and `b` under `ctx`: the terms'
@@ -361,28 +399,44 @@ pub fn blas_matmul_prepared_key_uses<BE: Backend>(
 
 /// The keys [`crate::api::BlasMatMulOps::blas_matmul_pt_right`] looks up for `a` into `res`, with the replicated-input
 /// choice of `b`'s maps. See [`BlasKeyUses`]. `b` is a public operand or its layout: the query reads the shape of
-/// its maps.
+/// its maps. Under `JklsStored` and `JklsGalois`, the first map's and `ctx`'s masks', `ctx` a context or its layout,
+/// read only then.
+///
+/// # Panics
+///
+/// As [`blas_matmul_pt_right_output_layout`].
 pub fn blas_matmul_pt_right_key_uses<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGridInfos,
     a: &impl BlasGridInfos,
     b: &impl BlasPtOperandInfos<Side = Right>,
+    ctx: &impl BlasContextInfos,
 ) -> BlasKeyUses {
     let maps = operand_shapes(b);
-    BlasKeyUses::collect(module, None, |f| pt_right_uses(res, a, &maps, f))
+    with_mask_shapes(b.plan(), ctx, false, |masks| {
+        BlasKeyUses::collect(module, None, |f| pt_right_uses(res, a, &maps, masks, f))
+    })
 }
 
 /// The keys [`crate::api::BlasMatMulOps::blas_matmul_pt_left`] looks up for `a` into `res`, with the replicated-input
 /// choice of `pt_left`: `b`'s replicated-input maps when `a` is replicated. See [`BlasKeyUses`]. `b` is a public
-/// operand or its layout: the query reads the shape of its maps.
+/// operand or its layout: the query reads the shape of its maps. Under `JklsStored` and `JklsGalois`, the first map's
+/// and `ctx`'s masks', `ctx` a context or its layout, read only then.
+///
+/// # Panics
+///
+/// As [`blas_matmul_pt_left_output_layout`].
 pub fn blas_matmul_pt_left_key_uses<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGridInfos,
     b: &impl BlasPtOperandInfos<Side = Left>,
     a: &impl BlasGridInfos,
+    ctx: &impl BlasContextInfos,
 ) -> BlasKeyUses {
     let maps = operand_shapes(b);
-    BlasKeyUses::collect(module, None, |f| pt_left_uses(res, &maps, a, f))
+    with_mask_shapes(b.plan(), ctx, true, |masks| {
+        BlasKeyUses::collect(module, None, |f| pt_left_uses(res, &maps, masks, a, f))
+    })
 }
 
 /// Reference compositions of [`crate::api::BlasMatMulOps`] and the JKLS kernel. Each operation runs its validator, the
@@ -396,8 +450,9 @@ pub fn blas_matmul_pt_left_key_uses<BE: Backend>(
 /// a block column of `b` at a time, holding, of two hot sides, the smaller one's terms and streaming the other's, and
 /// read the terms one output block at a time through the JKLS kernel of [`BlasJklsImpl`]. The products by public
 /// matrices evaluate one poulpy-ckks summed linear transformation per output block, under JKLS of the results of the
-/// operand's first map, made through the map hook a block row (column) of `a` at a time. They run block after block on
-/// one scratch, and the first error stops them.
+/// operand's first map, made through the map hook a block row (column) of `a` at a time; under `JklsStored` and
+/// `JklsGalois`, one poulpy-ckks summed product by prepared plaintexts per output block, of terms made as a hot side's.
+/// They run block after block on one scratch, and the first error stops them.
 pub trait BlasMatMulReference<BE: Backend> {
     /// Under `OneShot`, the copy of a block of `a` into a block of its layout. Under `Reuse`, the largest of the map
     /// hook's queries through sigma, from a block row of `a` into blocks of its layout at the width sigma leaves, and
@@ -608,11 +663,22 @@ pub trait BlasMatMulReference<BE: Backend> {
 
     /// The baby steps of one block and one summed linear transformation from blocks of `a`'s layout into a block of
     /// `res`'s; under JKLS, from blocks of the layout `b`'s first map leaves, and the map hook's query of that map from
-    /// a block row of `a` into such blocks.
-    fn blas_matmul_pt_right_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, b: &BlasPtOperand<BE>, atk: &K) -> usize
+    /// a block row of `a` into such blocks. Under `JklsStored` and `JklsGalois`, in place of the baby steps and the
+    /// summed linear transformation, the map hook's query of `ctx`'s masks, phi^k, from those blocks into blocks of the
+    /// terms' layout, the copy of one into a block of the terms' layout, the conversion of a term, and poulpy-ckks's
+    /// `ckks_dot_product_prepared_pt` query of a block of `res` by terms of that layout and `b`'s plaintexts. `ctx` is
+    /// read only then.
+    fn blas_matmul_pt_right_tmp_bytes_reference<R, A, K>(
+        &self,
+        res: &R,
+        a: &A,
+        b: &BlasPtOperand<BE>,
+        ctx: &BlasContext<BE>,
+        atk: &K,
+    ) -> usize
     where
         BE: BlasMatIntraImpl,
-        Self: CKKSLinearTransformationOps<BE>,
+        Self: CKKSLinearTransformationOps<BE> + CKKSMulOps<BE> + CKKSDotProductOps<BE> + GLWEMulPreparedPlainSum<BE>,
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos;
@@ -623,26 +689,53 @@ pub trait BlasMatMulReference<BE: Backend> {
     /// `b`, then every block `res_ij` is poulpy-ckks's summed linear transformation of the `K` terms `(a_il, b_lj)`
     /// (`(s_il, b_lj)`), in ascending `l`, which shares the giant steps across them, stamped with the label
     /// `min(a.log_sparsity, log2(S / (count d^2)))`, for `S` the slots of a block and `count` that of `b`.
+    ///
+    /// Under `JklsStored` and `JklsGalois`, per block row of `a`, a unit: one map-hook call evaluates sigma of the unit's
+    /// blocks, one more `ctx`'s phi^k of those, `1 <= k < d`; term `0` is a sigma result narrowed by `ckks_copy`; each
+    /// term is converted once by `ckks_prepare_left` under `OneShot`, as a hot side's. Then every block `res_ij` is
+    /// poulpy-ckks's `ckks_dot_product_prepared_pt` of the unit's `K d` prepared terms, `l`-major, by `b`'s prepared
+    /// plaintexts of block `(l, j)`: under `JklsStored` term `k`'s own through `1`, under `JklsGalois` the block's one
+    /// through the Galois element of the rotation by `k d`; stamped with the label above. The Scratch section of
+    /// `docs/blas-contracts.md` bounds its heap.
     fn blas_matmul_pt_right_reference<R, A, K>(
         &self,
         res: &mut R,
         a: &A,
         b: &BlasPtOperand<BE>,
+        ctx: &BlasContext<BE>,
         atk: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         BE: BlasMatIntraImpl,
-        Self: CKKSLinearTransformationOps<BE> + ModuleN + CnvPVecAlloc<BE> + Sized,
+        Self: CKKSLinearTransformationOps<BE>
+            + CKKSMulOps<BE>
+            + CKKSDotProductOps<BE>
+            + GLWEMulPreparedPlainSum<BE>
+            + ModuleN
+            + CnvPVecAlloc<BE>
+            + Sized,
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync;
 
-    /// As [`Self::blas_matmul_pt_right_tmp_bytes_reference`], under JKLS from a block column of `a`.
-    fn blas_matmul_pt_left_tmp_bytes_reference<R, A, K>(&self, res: &R, b: &BlasPtOperand<BE, Left>, a: &A, atk: &K) -> usize
+    /// As [`Self::blas_matmul_pt_right_tmp_bytes_reference`], under JKLS from a block column of `a`, and under
+    /// `JklsStored` and `JklsGalois` through `ctx`'s column halves of psi^k, `rows_left(k)` then `rows_right(k)`.
+    ///
+    /// # Panics
+    ///
+    /// Under those paths, for a `ctx` without those masks, whose plan selects neither.
+    fn blas_matmul_pt_left_tmp_bytes_reference<R, A, K>(
+        &self,
+        res: &R,
+        b: &BlasPtOperand<BE, Left>,
+        a: &A,
+        ctx: &BlasContext<BE>,
+        atk: &K,
+    ) -> usize
     where
         BE: BlasMatIntraImpl,
-        Self: CKKSLinearTransformationOps<BE>,
+        Self: CKKSLinearTransformationOps<BE> + CKKSMulOps<BE> + CKKSDotProductOps<BE> + GLWEMulPreparedPlainSum<BE>,
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos;
@@ -653,17 +746,29 @@ pub trait BlasMatMulReference<BE: Backend> {
     /// `b`, then every block `res_ij` is poulpy-ckks's summed linear transformation of the `K` terms `(a_lj, b_il)`
     /// (`(s_lj, b_il)`), in ascending `l`, which shares the giant steps across them, stamped with the label of
     /// [`Self::blas_matmul_pt_right_reference`].
+    ///
+    /// Under `JklsStored` and `JklsGalois`, as there, per block column of `a`, through tau then `ctx`'s `rows_left(k)`
+    /// then `rows_right(k)` for `1 <= k < d`: every block `res_ij` is the summed product of the unit's `K (2d - 1)`
+    /// prepared terms by `b`'s prepared plaintexts of block `(i, l)`, under `JklsGalois` through the Galois elements of
+    /// the rotations by `0`, then `k` and `k - d`.
     fn blas_matmul_pt_left_reference<R, A, K>(
         &self,
         res: &mut R,
         b: &BlasPtOperand<BE, Left>,
         a: &A,
+        ctx: &BlasContext<BE>,
         atk: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         BE: BlasMatIntraImpl,
-        Self: CKKSLinearTransformationOps<BE> + ModuleN + CnvPVecAlloc<BE> + Sized,
+        Self: CKKSLinearTransformationOps<BE>
+            + CKKSMulOps<BE>
+            + CKKSDotProductOps<BE>
+            + GLWEMulPreparedPlainSum<BE>
+            + ModuleN
+            + CnvPVecAlloc<BE>
+            + Sized,
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync;
@@ -867,15 +972,24 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         Ok(())
     }
 
-    fn blas_matmul_pt_right_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, b: &BlasPtOperand<BE>, atk: &K) -> usize
+    fn blas_matmul_pt_right_tmp_bytes_reference<R, A, K>(
+        &self,
+        res: &R,
+        a: &A,
+        b: &BlasPtOperand<BE>,
+        ctx: &BlasContext<BE>,
+        atk: &K,
+    ) -> usize
     where
         BE: BlasMatIntraImpl,
-        Self: CKKSLinearTransformationOps<BE>,
+        Self: CKKSLinearTransformationOps<BE> + CKKSMulOps<BE> + CKKSDotProductOps<BE> + GLWEMulPreparedPlainSum<BE>,
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        pt_tmp_bytes(self, res, a, b.first(), a.cols(), atk)
+        let masks = context_masks(b.plan(), &ctx.maps, false);
+        let masked = b.plan().pt_algorithm().masked().then(|| (masks.as_slice(), &b.plaintexts[0]));
+        pt_tmp_bytes(self, res, a, b.first(), masked, a.cols(), atk)
     }
 
     fn blas_matmul_pt_right_reference<R, A, K>(
@@ -883,36 +997,51 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         res: &mut R,
         a: &A,
         b: &BlasPtOperand<BE>,
+        ctx: &BlasContext<BE>,
         atk: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         BE: BlasMatIntraImpl,
-        Self: CKKSLinearTransformationOps<BE> + ModuleN + CnvPVecAlloc<BE> + Sized,
+        Self: CKKSLinearTransformationOps<BE>
+            + CKKSMulOps<BE>
+            + CKKSDotProductOps<BE>
+            + GLWEMulPreparedPlainSum<BE>
+            + ModuleN
+            + CnvPVecAlloc<BE>
+            + Sized,
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync,
     {
         let op = "blas_matmul_pt_right";
-        let batch = validate_blas_matmul_pt_right(self, &*res, a, b, atk)?;
+        let batch = validate_blas_matmul_pt_right(self, &*res, a, b, ctx, atk)?;
         let (inner, n) = (a.cols(), b.cols());
-        let maps: Vec<_> = (0..inner).flat_map(|l| (0..n).map(move |j| b.maps.at(l, j))).collect();
+        let masks = context_masks(b.plan(), &ctx.maps, false);
         let used = KeyLayouts::new(atk);
-        let _ = pt_right_uses(&*res, a, &b.maps, &mut |u| ensure_rotation(op, self, &used, u));
-        let bytes = used.max_bytes(|key| self.blas_matmul_pt_right_tmp_bytes_reference(&*res, a, b, key));
+        let _ = pt_right_uses(&*res, a, &b.maps, &masks, &mut |u| ensure_rotation(op, self, &used, u));
+        let bytes = used.max_bytes(|key| self.blas_matmul_pt_right_tmp_bytes_reference(&*res, a, b, ctx, key));
         assert_scratch(op, bytes, scratch);
         let (blocks, label) = (a.blocks(), pt_label(b.slots(), a, b.count()));
         let rows: Vec<Vec<_>> = res.blocks_mut().chunks_mut(n).map(|row| row.iter_mut().collect()).collect();
+        let source = |i: usize, l: usize| &blocks[i * inner + l];
         let map = |_: usize, j: usize, l: usize| b.maps.at(l, j);
+        let block_maps = || -> Vec<_> { (0..inner).flat_map(|l| (0..n).map(move |j| b.maps.at(l, j))).collect() };
         match b.first() {
+            Some(first) if b.plan().pt_algorithm().masked() => {
+                let galois = masked_galois(self, b.plan(), false, inner);
+                let plaintexts = |j: usize, l: usize| b.plaintexts_at(l, j);
+                masked_products(
+                    self, rows, source, inner, first, &masks, plaintexts, &galois, label, atk, scratch,
+                )?;
+            }
             None => {
-                let mut caches = baby_caches(self, &maps, &blocks[0], inner);
-                let source = |i: usize, l: usize| &blocks[i * inner + l];
+                let mut caches = baby_caches(self, &block_maps(), &blocks[0], inner);
                 shared_giants(self, &mut caches, rows, source, map, label, atk, scratch)?;
             }
             Some(first) => {
                 let mut staged = alloc_blocks(self, &mapped_block(layout_of(&blocks[0]), first), inner);
-                let mut caches = baby_caches(self, &maps, &staged[0], inner);
+                let mut caches = baby_caches(self, &block_maps(), &staged[0], inner);
                 for (i, row) in rows.into_iter().enumerate() {
                     let unit: Vec<_> = blocks[i * inner..(i + 1) * inner].iter().collect();
                     BE::blas_map_blocks_impl(self, &mut staged, &unit, &[first], atk, scratch)?;
@@ -924,15 +1053,24 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         Ok(())
     }
 
-    fn blas_matmul_pt_left_tmp_bytes_reference<R, A, K>(&self, res: &R, b: &BlasPtOperand<BE, Left>, a: &A, atk: &K) -> usize
+    fn blas_matmul_pt_left_tmp_bytes_reference<R, A, K>(
+        &self,
+        res: &R,
+        b: &BlasPtOperand<BE, Left>,
+        a: &A,
+        ctx: &BlasContext<BE>,
+        atk: &K,
+    ) -> usize
     where
         BE: BlasMatIntraImpl,
-        Self: CKKSLinearTransformationOps<BE>,
+        Self: CKKSLinearTransformationOps<BE> + CKKSMulOps<BE> + CKKSDotProductOps<BE> + GLWEMulPreparedPlainSum<BE>,
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        pt_tmp_bytes(self, res, a, b.first(), a.rows(), atk)
+        let masks = context_masks(b.plan(), &ctx.maps, true);
+        let masked = b.plan().pt_algorithm().masked().then(|| (masks.as_slice(), &b.plaintexts[0]));
+        pt_tmp_bytes(self, res, a, b.first(), masked, a.rows(), atk)
     }
 
     fn blas_matmul_pt_left_reference<R, A, K>(
@@ -940,42 +1078,59 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         res: &mut R,
         b: &BlasPtOperand<BE, Left>,
         a: &A,
+        ctx: &BlasContext<BE>,
         atk: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         BE: BlasMatIntraImpl,
-        Self: CKKSLinearTransformationOps<BE> + ModuleN + CnvPVecAlloc<BE> + Sized,
+        Self: CKKSLinearTransformationOps<BE>
+            + CKKSMulOps<BE>
+            + CKKSDotProductOps<BE>
+            + GLWEMulPreparedPlainSum<BE>
+            + ModuleN
+            + CnvPVecAlloc<BE>
+            + Sized,
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync,
     {
         let op = "blas_matmul_pt_left";
-        let batch = validate_blas_matmul_pt_left(self, &*res, b, a, atk)?;
+        let batch = validate_blas_matmul_pt_left(self, &*res, b, a, ctx, atk)?;
         let (inner, n) = (a.rows(), a.cols());
         let rep = left_takes_replicated(&b.maps, a);
-        let maps: Vec<_> = (0..b.rows())
-            .flat_map(|i| (0..inner).map(move |l| b.maps.at_for(i, l, rep)))
-            .collect();
+        let masks = context_masks(b.plan(), &ctx.maps, true);
         let used = KeyLayouts::new(atk);
-        let _ = pt_left_uses(&*res, &b.maps, a, &mut |u| ensure_rotation(op, self, &used, u));
-        let bytes = used.max_bytes(|key| self.blas_matmul_pt_left_tmp_bytes_reference(&*res, b, a, key));
+        let _ = pt_left_uses(&*res, &b.maps, &masks, a, &mut |u| ensure_rotation(op, self, &used, u));
+        let bytes = used.max_bytes(|key| self.blas_matmul_pt_left_tmp_bytes_reference(&*res, b, a, ctx, key));
         assert_scratch(op, bytes, scratch);
         let mut columns: Vec<Vec<_>> = (0..n).map(|_| Vec::new()).collect();
         for (t, block) in res.blocks_mut().iter_mut().enumerate() {
             columns[t % n].push(block);
         }
         let (blocks, label) = (a.blocks(), pt_label(b.slots(), a, b.count()));
+        let source = |j: usize, l: usize| &blocks[l * n + j];
         let map = |_: usize, i: usize, l: usize| b.maps.at_for(i, l, rep);
+        let block_maps = || -> Vec<_> {
+            (0..b.rows())
+                .flat_map(|i| (0..inner).map(move |l| b.maps.at_for(i, l, rep)))
+                .collect()
+        };
         match b.first() {
+            Some(first) if b.plan().pt_algorithm().masked() => {
+                let galois = masked_galois(self, b.plan(), true, inner);
+                let plaintexts = |i: usize, l: usize| b.plaintexts_at(i, l);
+                masked_products(
+                    self, columns, source, inner, first, &masks, plaintexts, &galois, label, atk, scratch,
+                )?;
+            }
             None => {
-                let mut caches = baby_caches(self, &maps, &blocks[0], inner);
-                let source = |j: usize, l: usize| &blocks[l * n + j];
+                let mut caches = baby_caches(self, &block_maps(), &blocks[0], inner);
                 shared_giants(self, &mut caches, columns, source, map, label, atk, scratch)?;
             }
             Some(first) => {
                 let mut staged = alloc_blocks(self, &mapped_block(layout_of(&blocks[0]), first), inner);
-                let mut caches = baby_caches(self, &maps, &staged[0], inner);
+                let mut caches = baby_caches(self, &block_maps(), &staged[0], inner);
                 for (j, column) in columns.into_iter().enumerate() {
                     let unit: Vec<_> = (0..inner).map(|l| &blocks[l * n + j]).collect();
                     BE::blas_map_blocks_impl(self, &mut staged, &unit, &[first], atk, scratch)?;
@@ -1065,25 +1220,25 @@ where
 {
     let (m, n, d, hot) = (res.rows(), res.cols(), 1usize << log_d, PrepareHint::OneShot);
     let (b_first, b_shift) = right_maps(&ctx.maps, b_rep);
+    // A cold side reads no map of `ctx`, which may then be at another dimension.
+    let a_shifts: Vec<_> = match a {
+        Side::Hot(_) => (1..d).map(|k| ctx.rotate_cols(k)).collect(),
+        Side::Cold(_) => Vec::new(),
+    };
+    let b_shifts: Vec<_> = match b {
+        Side::Hot(_) => (1..d).map(b_shift).collect(),
+        Side::Cold(_) => Vec::new(),
+    };
     // The terms of block row `i` of a hot `a`, and of block column `j` of a hot `b`, `l`-major.
     let a_row = |blocks: &[SA], i: usize, scratch: &mut ScratchArena<'_, BE>| {
         let sources: Vec<_> = blocks[i * inner..(i + 1) * inner].iter().collect();
         let convert = |term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| module.ckks_prepare_left(term, hot, s);
-        new_unit_terms(
-            module,
-            &sources,
-            log_d,
-            ctx.sigma(),
-            |k| ctx.rotate_cols(k),
-            atk,
-            convert,
-            scratch,
-        )
+        new_unit_terms(module, &sources, ctx.sigma(), &a_shifts, atk, convert, scratch)
     };
     let b_col = |blocks: &[SB], j: usize, scratch: &mut ScratchArena<'_, BE>| {
         let sources: Vec<_> = (0..inner).map(|l| &blocks[l * n + j]).collect();
         let convert = |term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| module.ckks_prepare_right(term, hot, s);
-        new_unit_terms(module, &sources, log_d, b_first, b_shift, atk, convert, scratch)
+        new_unit_terms(module, &sources, b_first, &b_shifts, atk, convert, scratch)
     };
     let mut jkls =
         |i: usize, j: usize, lhs: &[&CKKSPreparedLeft<BE>], rhs: &[&CKKSPreparedRight<BE>], s: &mut ScratchArena<'_, BE>| {
@@ -1195,13 +1350,17 @@ where
     Module<BE>: CKKSMulOps<BE>,
 {
     let left = match a.hint() {
-        PrepareHint::OneShot => unit_tmp_bytes(module, a, ctx.sigma(), |k| ctx.rotate_cols(k), atk, a.cols()),
+        PrepareHint::OneShot => {
+            let shifts: Vec<_> = (1..1usize << a.log_d()).map(|k| ctx.rotate_cols(k)).collect();
+            unit_tmp_bytes(module, a, ctx.sigma(), &shifts, atk, a.cols())
+        }
         PrepareHint::Reuse => 0,
     };
     let right = match b.hint() {
         PrepareHint::OneShot => {
             let (first, shift) = right_maps(&ctx.maps, replicated::<BE::Ring>(b));
-            unit_tmp_bytes(module, b, first, shift, atk, b.rows())
+            let shifts: Vec<_> = (1..1usize << b.log_d()).map(shift).collect();
+            unit_tmp_bytes(module, b, first, &shifts, atk, b.rows())
         }
         PrepareHint::Reuse => 0,
     };
@@ -1231,33 +1390,35 @@ where
 {
     match hint {
         PrepareHint::OneShot => copy_tmp_bytes(module, a),
-        PrepareHint::Reuse => unit_tmp_bytes(module, a, first, shift, atk, a.cols()),
+        PrepareHint::Reuse => {
+            let shifts: Vec<_> = (1..1usize << a.log_d()).map(shift).collect();
+            unit_tmp_bytes(module, a, first, &shifts, atk, a.cols())
+        }
     }
 }
 
-/// Scratch of the terms of `sources` blocks of `a`'s layout through `first` and `shift(k)`, each converted once: the
-/// largest of the map hook's queries through `first`, from those blocks into blocks of the layout it leaves, and
-/// through every shift, from those into blocks of the terms' layout, of the copy of one into a block of the terms'
-/// layout, and of the conversion of a term.
-fn unit_tmp_bytes<'c, BE, K>(
+/// Scratch of the terms of `sources` blocks of `a`'s layout through `first` and every map of `shifts` ([`unit_terms`]),
+/// each converted once: the largest of the map hook's queries through `first`, from those blocks into blocks of the
+/// layout it leaves, and through `shifts`, from those into blocks of the terms' layout, of the copy of one into a block
+/// of the terms' layout, and of the conversion of a term.
+fn unit_tmp_bytes<BE, K>(
     module: &Module<BE>,
     a: &impl BlasGridInfos,
     first: &LinearTransformationPrepared<BE>,
-    shift: impl Fn(usize) -> &'c LinearTransformationPrepared<BE>,
+    shifts: &[&LinearTransformationPrepared<BE>],
     atk: &K,
     sources: usize,
 ) -> usize
 where
-    BE: BlasMatIntraImpl + 'c,
+    BE: BlasMatIntraImpl,
     Module<BE>: CKKSMulOps<BE>,
     K: GGLWEInfos,
 {
     let block = a.block_layout();
     let s = mapped_block(block, first);
-    let term = mapped_block(s, shift(1));
-    let shifts: Vec<_> = (1..1usize << a.log_d()).map(shift).collect();
+    let term = mapped_block(s, shifts[0]);
     BE::blas_map_blocks_tmp_bytes_impl(module, &s, &block, sources, &[first], atk)
-        .max(BE::blas_map_blocks_tmp_bytes_impl(module, &term, &s, sources, &shifts, atk))
+        .max(BE::blas_map_blocks_tmp_bytes_impl(module, &term, &s, sources, shifts, atk))
         .max(module.ckks_copy_tmp_bytes(&term, &s))
         .max(module.ckks_prepare_tmp_bytes(&term))
 }
@@ -1296,11 +1457,14 @@ where
             let _ = ensure_term_keys(op, module, a, first, &shift, &used);
             let bytes = used.max_bytes(|key| prepare_tmp_bytes(module, a, first, &shift, key, PrepareHint::Reuse));
             assert_scratch(op, bytes, scratch);
-            let row_terms = a.cols() << a.log_d();
+            let (row_terms, shifts) = (
+                a.cols() << a.log_d(),
+                (1..1usize << a.log_d()).map(&shift).collect::<Vec<_>>(),
+            );
             for (row, out) in a.blocks().chunks(a.cols()).zip(res.terms.chunks_mut(row_terms)) {
                 let sources: Vec<_> = row.iter().collect();
                 let emit = |t: usize, term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| convert(&mut out[t], term, s);
-                unit_terms(module, &sources, a.log_d(), first, &shift, atk, emit, scratch)?;
+                unit_terms(module, &sources, first, &shifts, atk, emit, scratch)?;
             }
         }
     }
@@ -1315,95 +1479,98 @@ fn alloc_blocks<BE: BlasMatIntraImpl>(module: &Module<BE>, layout: &CKKSLayout, 
 }
 
 /// The terms of `sources`, blocks of one layout, through the map hook: `S = first(s)` for every source into a heap block
-/// at the width `first` leaves, then `shift(k)` of every `S` for every `k` in `1..d` into heap blocks of the terms' layout,
-/// then each `S` narrowed by `ckks_copy` into a block of the terms' layout, its term `0`, and dropped. Each term is passed
-/// once to `emit` with its index, term `k` of source `t` at `t * d + k`, then dropped.
-#[allow(clippy::too_many_arguments)]
-fn unit_terms<'c, BE, S, K>(
+/// at the width `first` leaves, then every map of `shifts` of every `S` into heap blocks of the terms' layout, then each
+/// `S` narrowed by `ckks_copy` into a block of the terms' layout, its term `0`, and dropped. Each term is passed once to
+/// `emit` with its index, term `k` of source `t` at `t * (shifts.len() + 1) + k`, then dropped.
+fn unit_terms<BE, S, K>(
     module: &Module<BE>,
     sources: &[&S],
-    log_d: usize,
     first: &LinearTransformationPrepared<BE>,
-    shift: impl Fn(usize) -> &'c LinearTransformationPrepared<BE>,
+    shifts: &[&LinearTransformationPrepared<BE>],
     atk: &K,
     mut emit: impl FnMut(usize, &CKKSCiphertextOwned<BE>, &mut ScratchArena<'_, BE>) -> Result<()>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: BlasMatIntraImpl + 'c,
+    BE: BlasMatIntraImpl,
     S: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
     K: GetAutomorphismKey<BE> + Sync,
 {
-    let (block, d) = (layout_of(sources[0]), 1usize << log_d);
+    let (block, per) = (layout_of(sources[0]), shifts.len() + 1);
     let staged = mapped_block(block, first);
-    let term = mapped_block(staged, shift(1));
+    let term = mapped_block(staged, shifts[0]);
     let mut sigma = alloc_blocks(module, &staged, sources.len());
     BE::blas_map_blocks_impl(module, &mut sigma, sources, &[first], atk, scratch)?;
-    let (shifts, results): (Vec<_>, Vec<_>) = ((1..d).map(&shift).collect(), sigma.iter().collect());
-    let mut shifted = alloc_blocks(module, &term, sigma.len() * (d - 1));
-    BE::blas_map_blocks_impl(module, &mut shifted, &results, &shifts, atk, scratch)?;
+    let results: Vec<_> = sigma.iter().collect();
+    let mut shifted = alloc_blocks(module, &term, sigma.len() * shifts.len());
+    BE::blas_map_blocks_impl(module, &mut shifted, &results, shifts, atk, scratch)?;
     let mut shifted = shifted.into_iter();
     for (t, s) in sigma.into_iter().enumerate() {
         let mut narrowed = module.ckks_ciphertext_alloc_from_infos(&term);
         module.ckks_copy(&mut narrowed, &s, scratch)?;
         drop(s);
-        emit(t * d, &narrowed, scratch)?;
-        for (k, shifted) in shifted.by_ref().take(d - 1).enumerate() {
-            emit(t * d + k + 1, &shifted, scratch)?;
+        emit(t * per, &narrowed, scratch)?;
+        for (k, shifted) in shifted.by_ref().take(shifts.len()).enumerate() {
+            emit(t * per + k + 1, &shifted, scratch)?;
         }
     }
     Ok(())
 }
 
 /// [`unit_terms`] of `sources`, each term converted once by `convert` into a new operand, in their order.
-#[allow(clippy::too_many_arguments)]
-fn new_unit_terms<'c, BE, S, K, P>(
+fn new_unit_terms<BE, S, K, P>(
     module: &Module<BE>,
     sources: &[&S],
-    log_d: usize,
     first: &LinearTransformationPrepared<BE>,
-    shift: impl Fn(usize) -> &'c LinearTransformationPrepared<BE>,
+    shifts: &[&LinearTransformationPrepared<BE>],
     atk: &K,
     convert: impl Fn(&CKKSCiphertextOwned<BE>, &mut ScratchArena<'_, BE>) -> Result<P>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<Vec<P>>
 where
-    BE: BlasMatIntraImpl + 'c,
+    BE: BlasMatIntraImpl,
     S: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
     K: GetAutomorphismKey<BE> + Sync,
 {
-    let mut terms = Vec::with_capacity(sources.len() << log_d);
+    let mut terms = Vec::with_capacity(sources.len() * (shifts.len() + 1));
     let emit = |_: usize, term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| {
         terms.push(convert(term, s)?);
         Ok(())
     };
-    unit_terms(module, sources, log_d, first, shift, atk, emit, scratch)?;
+    unit_terms(module, sources, first, shifts, atk, emit, scratch)?;
     Ok(terms)
 }
 
 /// Scratch of a product by public matrices of blocks of layout `a` into blocks of layout `res`, `sources` blocks of `a`
 /// per unit: the baby steps of one block and one summed linear transformation, from the blocks `first` leaves, and
-/// under JKLS the map hook's query of `first` over a unit.
+/// under JKLS the map hook's query of `first` over a unit; under the masked paths, `masked` holding the context's masks
+/// and one of the operand's prepared plaintexts, the map hook's query of the masks over a unit, from those blocks into
+/// the terms', the narrowing copy into a term, a term's preparation, and poulpy-ckks's summed product of prepared terms,
+/// whose scratch does not grow with their number. The working blocks and the prepared terms live on the heap.
 fn pt_tmp_bytes<BE: BlasMatIntraImpl>(
     module: &Module<BE>,
     res: &impl BlasGridInfos,
     a: &impl BlasGridInfos,
     first: Option<&LinearTransformationPrepared<BE>>,
+    masked: Option<(&[&LinearTransformationPrepared<BE>], &CKKSPreparedRight<BE>)>,
     sources: usize,
     atk: &impl GGLWEInfos,
 ) -> usize
 where
-    Module<BE>: CKKSLinearTransformationOps<BE>,
+    Module<BE>: CKKSLinearTransformationOps<BE> + CKKSMulOps<BE> + CKKSDotProductOps<BE> + GLWEMulPreparedPlainSum<BE>,
 {
     let (res, block) = (res.block_layout(), a.block_layout());
-    match first {
-        None => lt_tmp_bytes(module, &res, &block, atk, true),
-        Some(first) => {
-            let staged = mapped_block(block, first);
-            BE::blas_map_blocks_tmp_bytes_impl(module, &staged, &block, sources, &[first], atk)
-                .max(lt_tmp_bytes(module, &res, &staged, atk, true))
-        }
-    }
+    let Some(first) = first else {
+        return lt_tmp_bytes(module, &res, &block, atk, true);
+    };
+    let staged = mapped_block(block, first);
+    let Some((masks, plaintext)) = masked else {
+        return BE::blas_map_blocks_tmp_bytes_impl(module, &staged, &block, sources, &[first], atk)
+            .max(lt_tmp_bytes(module, &res, &staged, atk, true));
+    };
+    let term = mapped_block(staged, masks[0]);
+    unit_tmp_bytes(module, a, first, masks, atk, sources)
+        .max(module.ckks_dot_product_prepared_pt_tmp_bytes(&res, &term, plaintext))
 }
 
 /// `count` baby-step caches for sources of `src`'s layout, each covering the baby steps of every map of `maps`.
@@ -1466,14 +1633,75 @@ where
     Ok(())
 }
 
+/// The products by public matrices under `JklsStored` and `JklsGalois`, made as a hot side's: group `g` of `groups`
+/// holds the blocks `o` of `res` it writes from its `inner` sources `source(g, l)`, a unit, whose terms
+/// [`new_unit_terms`] makes through `first` then `masks`, each converted once by `ckks_prepare_left` under `OneShot`;
+/// block `o` is poulpy-ckks's summed product of those prepared terms, `l`-major in the operand's term order, by the
+/// prepared plaintexts `plaintexts(o, l)` read through `galois`, then takes `label`. Each unit is dropped after its
+/// blocks.
+#[allow(clippy::too_many_arguments)]
+fn masked_products<'s, 'p, BE, D, S, K>(
+    module: &Module<BE>,
+    groups: Vec<Vec<&mut D>>,
+    source: impl Fn(usize, usize) -> &'s S,
+    inner: usize,
+    first: &LinearTransformationPrepared<BE>,
+    masks: &[&LinearTransformationPrepared<BE>],
+    plaintexts: impl Fn(usize, usize) -> &'p [CKKSPreparedRight<BE>],
+    galois: &[i64],
+    label: usize,
+    atk: &K,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: BlasMatIntraImpl + 's + 'p,
+    Module<BE>: CKKSMulOps<BE> + CKKSDotProductOps<BE> + GLWEMulPreparedPlainSum<BE>,
+    D: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    S: GLWEToBackendRef<BE> + CKKSCtBounds + Sync + 's,
+    K: GetAutomorphismKey<BE> + Sync,
+{
+    let per = masks.len() + 1;
+    let convert =
+        |term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| module.ckks_prepare_left(term, PrepareHint::OneShot, s);
+    let mut pts = Vec::with_capacity(inner * per);
+    for (g, blocks) in groups.into_iter().enumerate() {
+        let sources: Vec<_> = (0..inner).map(|l| source(g, l)).collect();
+        let unit = new_unit_terms(module, &sources, first, masks, atk, convert, scratch)?;
+        let lefts: Vec<_> = unit.iter().collect();
+        for (o, dst) in blocks.into_iter().enumerate() {
+            pts.clear();
+            // `JklsGalois` stores one plaintext per block, which every term of the block reads.
+            pts.extend((0..inner).flat_map(|l| {
+                let block = plaintexts(o, l);
+                (0..per).map(move |t| &block[t % block.len()])
+            }));
+            module.ckks_dot_product_prepared_pt(&mut *dst, &lefts, &pts, galois, scratch)?;
+            dst.set_log_sparsity(label);
+        }
+    }
+    Ok(())
+}
+
+/// The Galois element of every term of a block of `res`, its `inner` source blocks `l`-major, each in the term order of
+/// [`masked_rotations`]: `1` under `JklsStored`, whose plaintexts are stored rotated; under `JklsGalois`, that of the
+/// term's rotation, which reads the block's one plaintext.
+fn masked_galois<BE: Backend>(module: &Module<BE>, plan: BlasPlan, left: bool, inner: usize) -> Vec<i64> {
+    let rotations = masked_rotations(plan.log_d(), left);
+    let per_block: Vec<i64> = match plan.pt_algorithm() {
+        BlasPtAlgorithm::JklsGalois => rotations.iter().map(|&r| module.ckks_galois_element(r)).collect(),
+        _ => vec![1; rotations.len()],
+    };
+    per_block.repeat(inner)
+}
+
 #[cfg(test)]
 mod tests {
     use poulpy_ckks::{CoeffsMeta, layouts::CKKSModuleAlloc};
     use poulpy_core::layouts::Base2K;
-    use poulpy_hal::layouts::HostBytesBackend;
+    use poulpy_hal::layouts::{CyclotomicOrder, HostBytesBackend};
 
     use super::*;
-    use crate::layouts::{BlasPlan, BlasPtOperandLayout};
+    use crate::layouts::{BlasPlan, BlasPtAlgorithm, BlasPtOperandLayout, context::module_layout, validate::MASKLESS};
 
     /// One block of `layout` recording `mat_slots` matrices.
     struct Recorded(BlasLayout, usize);
@@ -1513,21 +1741,114 @@ mod tests {
         let mut block = block(&module, 60, 20);
         block.meta.log_sparsity = 3;
         let a = Recorded(BlasLayout::new(block, 2, 1, 1), 8);
+        let ctx = module_layout(&module, BlasPlan::new(2), Base2K(19), CoeffsMeta::from_delta_budget(20, 19));
         for (count, label) in [(1, 3), (2, 2), (8, 0)] {
             let meta = CoeffsMeta::from_delta_budget(20, 19);
             let right = BlasPtOperandLayout::<Right>::new(BlasPlan::new(2), 128, 1, 1, count, Base2K(19), meta);
             let left = BlasPtOperandLayout::<Left>::new(BlasPlan::new(2), 128, 1, 1, count, Base2K(19), meta);
             assert_eq!(
-                blas_matmul_pt_right_output_layout(&a, &a, &right).block.log_sparsity(),
+                blas_matmul_pt_right_output_layout(&a, &a, &right, &ctx).block.log_sparsity(),
                 label,
                 "count={count}"
             );
             assert_eq!(
-                blas_matmul_pt_left_output_layout(&a, &left, &a).block.log_sparsity(),
+                blas_matmul_pt_left_output_layout(&a, &left, &a, &ctx).block.log_sparsity(),
                 label,
                 "count={count}"
             );
         }
+    }
+
+    /// The masked paths stamp three scales, the operand's twice and the context's masks' once, and look up the keys of
+    /// the first map and the masks alone: those of their plan's sets.
+    #[test]
+    fn masked_pt_queries_read_the_context_masks() {
+        let module = Module::<HostBytesBackend>::new(256);
+        let a = Recorded(BlasLayout::new(block(&module, 90, 20), 2, 1, 1), 8);
+        let meta = CoeffsMeta::from_delta_budget(20, 19);
+        let order = module.cyclotomic_order();
+        for algorithm in [BlasPtAlgorithm::JklsStored, BlasPtAlgorithm::JklsGalois] {
+            let plan = BlasPlan::new(2).with_pt_algorithm(algorithm);
+            let ctx = module_layout(&module, plan, Base2K(19), CoeffsMeta::from_delta_budget(15, 19));
+            let right = BlasPtOperandLayout::<Right>::new(plan, 128, 1, 1, 1, Base2K(19), meta);
+            let left = BlasPtOperandLayout::<Left>::new(plan, 128, 1, 1, 1, Base2K(19), meta);
+            // 90 bits through sigma (tau), the masks and the plaintexts: 90 - 20 - 15 - 20.
+            assert_eq!(
+                blas_matmul_pt_right_output_layout(&a, &a, &right, &ctx).block.k().as_usize(),
+                35
+            );
+            assert_eq!(
+                blas_matmul_pt_left_output_layout(&a, &left, &a, &ctx).block.k().as_usize(),
+                35
+            );
+            let elements = |uses: &BlasKeyUses| {
+                let mut elements: Vec<i64> = uses.rotations.iter().map(|&(p, _)| p).collect();
+                elements.dedup();
+                elements
+            };
+            let right_uses = blas_matmul_pt_right_key_uses(&module, &a, &a, &right, &ctx);
+            let left_uses = blas_matmul_pt_left_key_uses(&module, &a, &left, &a, &ctx);
+            assert_eq!(elements(&right_uses), plan.matmul_pt_right_galois_elements(order));
+            assert_eq!(elements(&left_uses), plan.matmul_pt_left_galois_elements(order));
+            // The first map's baby steps at 90 and giant steps at 70, the masks' at 90 - 20 - 15.
+            for uses in [&right_uses, &left_uses] {
+                let mut widths: Vec<usize> = uses.rotations.iter().map(|&(_, k)| k.as_usize()).collect();
+                widths.sort_unstable();
+                widths.dedup();
+                assert_eq!(widths, [55, 70, 90], "{algorithm:?}");
+            }
+        }
+    }
+
+    /// A left product under the masked paths reads the column halves of psi^k, which a context holds only when its plan
+    /// selects one of those paths: the queries panic on another, with a static message.
+    #[test]
+    fn masked_left_queries_panic_without_the_masks() {
+        let module = Module::<HostBytesBackend>::new(256);
+        let a = Recorded(BlasLayout::new(block(&module, 90, 20), 2, 1, 1), 8);
+        let ctx = module_layout(&module, BlasPlan::new(2), Base2K(19), CoeffsMeta::from_delta_budget(15, 19));
+        let plan = BlasPlan::new(2).with_pt_algorithm(BlasPtAlgorithm::JklsGalois);
+        let meta = CoeffsMeta::from_delta_budget(20, 19);
+        let left = BlasPtOperandLayout::<Left>::new(plan, 128, 1, 1, 1, Base2K(19), meta);
+        let queries: [(&str, &dyn Fn()); 3] = [
+            ("output layout", &|| {
+                blas_matmul_pt_left_output_layout(&a, &left, &a, &ctx);
+            }),
+            ("key uses", &|| {
+                blas_matmul_pt_left_key_uses(&module, &a, &left, &a, &ctx);
+            }),
+            ("max base2k", &|| {
+                blas_matmul_pt_left_max_base2k::<HostBytesBackend>(&left, &a, &ctx, 128);
+            }),
+        ];
+        for (label, query) in queries {
+            let payload = std::panic::catch_unwind(std::panic::AssertUnwindSafe(query)).expect_err(label);
+            assert_eq!(
+                payload.downcast_ref::<String>().map(String::as_str),
+                Some(MASKLESS),
+                "{label}"
+            );
+        }
+    }
+
+    /// The masked paths read the masks of a context at the operand's block dimension: a query panics on another, with a
+    /// static message.
+    #[test]
+    fn masked_queries_panic_at_another_dimension() {
+        let module = Module::<HostBytesBackend>::new(256);
+        let a = Recorded(BlasLayout::new(block(&module, 90, 20), 1, 1, 1), 32);
+        let plan = |log_d| BlasPlan::new(log_d).with_pt_algorithm(BlasPtAlgorithm::JklsGalois);
+        let ctx = module_layout(&module, plan(2), Base2K(19), CoeffsMeta::from_delta_budget(15, 19));
+        let meta = CoeffsMeta::from_delta_budget(20, 19);
+        let right = BlasPtOperandLayout::<Right>::new(plan(1), 128, 1, 1, 1, Base2K(19), meta);
+        let payload = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            blas_matmul_pt_right_output_layout(&a, &a, &right, &ctx);
+        }))
+        .expect_err("the query read a context at another dimension");
+        assert_eq!(
+            payload.downcast_ref::<&str>().copied(),
+            Some("a context at another block dimension than the operand's")
+        );
     }
 
     #[test]
