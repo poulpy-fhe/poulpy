@@ -19,7 +19,8 @@
   `reim4_gather_sparse_block_portable` and `reim4_gather_sparse_block_sum_portable` become `reim4_gather_block_portable` and `reim4_gather_block_sum_portable`, which read through a `RightRead`.
   `convolution_apply_dft_portable`, `ntt4x30_cnv_apply_dft_portable`, their `_add` forms, the packed NTT4x30 drivers and `PackedNtt4x30Base::cnv_apply_dft` and `cnv_apply_dft_add` take `b_galois` after `b_col`.
 - Every CPU backend implements `vec_znx_gadget_decompose` with one portable kernel, a single limb-major pass with exact carries that needs no scratch, and the oracle backend with an independent big-integer implementation.
-- The native CKKS encapsulated modulus raise (portable, AVX2, AVX-512), the IFMA linear transformation and the AVX-512 rank-one relinearization take the reference on keys whose digits are not whole limbs, in their scratch sizing as in their execution.
+- The native CKKS encapsulated modulus raise (portable, AVX2, AVX-512) and the IFMA linear transformation take the reference on keys whose digits are not whole limbs, in their scratch sizing as in their execution.
+- The AVX-512 rank-one relinearization keeps its packed path for tensor keys of any digit width: digits off a limb boundary lay the tensor pairs out on the digit grid with `gadget_dft_apply`, and its scratch covers that operand.
 - Add `FFT64PortableRayon` and `NTT4x30PortableRayon`, the Rayon variants of the portable backends, with their conjugate-invariant aliases `FFT64CIPortableRayon` and `NTT4x30CIPortableRayon`.
   They live in `poulpy-cpu-rayon`, which already depends on `poulpy-cpu-portable`, behind no feature for the HAL and behind `enable-core`, `enable-ckks`, `enable-bin-fhe` and `enable-mhe` for the scheme layers.
   `NTT4x30PortableRayon` runs the fused interleaved-digit product and the encapsulated ModUp of `NTT4x30Portable` on per-worker scratch, and transforms the four planes of a limb as separate tasks from degree `2^13`.
