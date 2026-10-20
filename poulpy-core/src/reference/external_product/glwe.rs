@@ -23,7 +23,7 @@ use crate::{
         gadget_product_limbs,
     },
     oep::{GLWEExternalProductReference, gglwe_product_digit_output_size},
-    reference::keyswitching::glwe::gadget_input_size,
+    reference::keyswitching::glwe::{gadget_input_size, precision_limbs},
 };
 
 /// Limbs of the external-product operand of `a_infos` against `ggsw_infos`,
@@ -51,10 +51,14 @@ where
 /// Compatibility export for the public layout calculation.
 pub use crate::layouts::glwe_external_product_output_size;
 
+/// The digit loop over the first `a_size` limbs of every column of `a`: the
+/// limbs the precision of the operand covers, as the scratch query counts
+/// them, and not the allocated width of its buffer.
 fn glwe_external_product_dft_fill<BE, M>(
     module: &M,
     res_dft: &mut VecZnxDftBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
+    a_size: usize,
     ggsw: &GGSWPreparedBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
@@ -78,7 +82,6 @@ fn glwe_external_product_dft_fill<BE, M>(
     }
     let cols: usize = (ggsw.rank() + 1).into();
     let dsize: usize = ggsw.dsize().into();
-    let a_size: usize = a.size();
     let product_terms = ggsw
         .n()
         .as_usize()
@@ -204,7 +207,7 @@ where
             a_tmp.to_backend_ref()
         };
         if ggsw.digits_aligned() {
-            glwe_external_product_dft_fill(self, res_dft, &a.data, ggsw, &mut scratch);
+            glwe_external_product_dft_fill(self, res_dft, &a.data, a.size(), ggsw, &mut scratch);
             return;
         }
         // Every column of `a` is a gadget operand: lay them all out on the
@@ -213,18 +216,21 @@ where
         let (base2k, digit_k) = (ggsw.base2k(), ggsw.digit_k());
         let size: usize = gadget_input_size(base2k, digit_k, ggsw.dnum(), a.k(), a.size());
         let (mut digits, mut scratch_1) = scratch.borrow().take_vec_znx_scratch(a.n().as_usize(), cols, size);
-        for j in 0..cols {
-            self.vec_znx_gadget_decompose(
-                &mut digits,
-                j,
-                &a.data,
-                j,
-                base2k.as_usize(),
-                digit_k.as_usize(),
-                &mut scratch_1.borrow(),
-            );
+        // An input of precision 0 has no digit: the loop below reads no limb.
+        if let Some(a_live) = precision_limbs::<BE>(&a.data, base2k, a.k()).filter(|_| size > 0) {
+            for j in 0..cols {
+                self.vec_znx_gadget_decompose(
+                    &mut digits,
+                    j,
+                    &a_live,
+                    j,
+                    base2k.as_usize(),
+                    digit_k.as_usize(),
+                    &mut scratch_1.borrow(),
+                );
+            }
         }
-        glwe_external_product_dft_fill(self, res_dft, &digits.to_backend_ref(), ggsw, &mut scratch_1);
+        glwe_external_product_dft_fill(self, res_dft, &digits.to_backend_ref(), size, ggsw, &mut scratch_1);
     }
 }
 

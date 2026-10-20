@@ -8,7 +8,7 @@ use poulpy_hal::{
     },
     layouts::{
         Backend, Module, PrepareHint, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
-        VecZnxDftToBackendRef, VmpPMatBackendRef, VmpPMatToBackendRef,
+        VecZnxDftToBackendRef, VmpPMatBackendRef, VmpPMatToBackendRef, vec_znx_backend_ref_from_ref,
     },
 };
 
@@ -636,8 +636,10 @@ pub fn glwe_keyswitch_reference<BE, M, R, A>(
 
         res.set_canonical(true);
         let mut res_ref = res.to_backend_mut();
+        // The body adds back only the limbs the input's precision covers.
+        let a_body = precision_limbs::<BE>(&a.data, a.base2k(), a.k());
         for i in 0..cols {
-            let addend = (i == 0).then_some((&a.data, 0));
+            let addend = a_body.as_ref().filter(|_| i == 0).map(|body| (body, 0));
             module.vec_znx_idft_normalize_consume(
                 &mut res_ref.data,
                 res_base2k,
@@ -792,6 +794,22 @@ pub fn gadget_input_size(base2k: Base2K, digit_k: TorusPrecision, dnum: Dnum, a_
     }
 }
 
+/// `a` restricted to the limbs that precision `a_k` covers at radix `base2k`,
+/// or `None` when it covers none, as for an input of precision 0.
+///
+/// A buffer may hold more limbs than its precision, and operations sized from
+/// that precision read only these: the digit layout rounds at the gadget
+/// precision, which can reach past `a_k`, and the body of a key switch adds
+/// the input back.
+pub fn precision_limbs<'a, BE: Backend>(
+    a: &'a VecZnxBackendRef<'_, BE>,
+    base2k: Base2K,
+    a_k: TorusPrecision,
+) -> Option<VecZnxBackendRef<'a, BE>> {
+    let live: usize = a_k.as_usize().div_ceil(base2k.as_usize()).min(a.size());
+    (live > 0).then(|| vec_znx_backend_ref_from_ref::<BE>(a).window_limbs(0, 1, live))
+}
+
 /// Leading limbs of the gadget operand that are known to be zero for an input
 /// of magnitude below `2^-(zero_bits + 1)`, so a product may skip them.
 ///
@@ -836,8 +854,9 @@ where
 /// holds at least [`gadget_input_size`] limbs.
 ///
 /// Whole-limb digits transform the input as is, exactly as before. Other
-/// widths first lay the input out on the digit grid with
-/// `vec_znx_gadget_decompose`, rounded at the gadget precision.
+/// widths first lay the limbs `a_k` covers ([`precision_limbs`]) out on
+/// the digit grid with `vec_znx_gadget_decompose`, rounded at the gadget
+/// precision.
 #[allow(clippy::too_many_arguments)]
 pub fn gadget_dft_apply<BE, M>(
     module: &M,
@@ -864,11 +883,15 @@ pub fn gadget_dft_apply<BE, M>(
         "gadget operand needs {size} limbs, res has {}",
         res.size()
     );
+    // An input of precision 0 has no digit, and its operand no limb.
+    let Some(a_live) = precision_limbs::<BE>(a, base2k, a_k).filter(|_| size > 0) else {
+        return;
+    };
     let (mut digits, mut scratch_1) = scratch.borrow().take_vec_znx_scratch(a.n(), 1, size);
     module.vec_znx_gadget_decompose(
         &mut digits,
         0,
-        a,
+        &a_live,
         a_col,
         base2k.as_usize(),
         digit_k.as_usize(),

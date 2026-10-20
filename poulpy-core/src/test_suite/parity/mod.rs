@@ -66,7 +66,7 @@ pub use preparation::*;
 pub use structure::*;
 
 use crate::oep::EncryptionImpl;
-use poulpy_hal::layouts::ZnxViewMut;
+use poulpy_hal::layouts::{ZnxView, ZnxViewMut};
 use poulpy_hal::oep::HalVecZnxImpl;
 use poulpy_hal::{
     layouts::{Backend, CopyFromHost, CopyToHost, Module},
@@ -78,7 +78,7 @@ use crate::{
     api::{GLWEMaskFill, TransferInto},
     layouts::{
         BackendGGLWE, BackendGLWE, GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWEToBackendMut, LWEInfos, ModuleCoreAlloc, Rank,
-        TorusPrecision,
+        SetK, TorusPrecision,
     },
     test_suite::keys::fill_by_digit,
 };
@@ -193,6 +193,26 @@ pub(crate) fn unnormalized_twin<BS: ParityBackend, BD: ParityBackend>(a: &Backen
     }
     twin.set_canonical(false);
     twin.transfer_into(dst);
+}
+
+/// Writes the canonical `a` into `dst`, a buffer of more limbs than `a`'s `k`
+/// covers, at `a`'s precision: the limbs past it keep what `dst` held, so an
+/// operation sized from `k` must read only the limbs `k` covers.
+pub(crate) fn wide_twin<BS: ParityBackend, BD: ParityBackend>(a: &BackendGLWE<BS>, dst: &mut BackendGLWE<BD>) {
+    let narrow = a.to_host_owned::<BS>();
+    let mut wide = dst.to_host_owned::<BD>();
+    assert_eq!(narrow.base2k(), wide.base2k());
+    assert!(wide.data.size() > narrow.size(), "wide twin needs limbs past the precision");
+    for col in 0..narrow.data.cols() {
+        for limb in 0..narrow.size() {
+            wide.data.at_mut(col, limb).copy_from_slice(narrow.data.at(col, limb));
+        }
+    }
+    wide.set_k(narrow.k());
+    wide.set_canonical(true);
+    wide.noise = narrow.noise.clone();
+    dst.set_k(narrow.k());
+    wide.transfer_into(dst);
 }
 
 /// Allocates a GGLWE on the reference module and fills it with uniform noise,

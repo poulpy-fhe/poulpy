@@ -18,6 +18,7 @@ use poulpy_core::{
     },
     reference::keyswitching::glwe::{
         gadget_dft_apply_tmp_bytes, gadget_input_size, gadget_known_zero_prefix, gglwe_product_limbs, gglwe_product_output_size,
+        precision_limbs,
     },
 };
 use poulpy_hal::{
@@ -231,11 +232,13 @@ where
                 }
             } else {
                 let (mut digits, mut layout_scratch) = product_scratch.borrow().take_vec_znx_scratch(module.n(), 1, operand_size);
+                let dst_live =
+                    precision_limbs::<BE>(dst_ref.data(), base2k, dst_ref.k()).expect("the raised ciphertext has a precision");
                 for col in 0..mask_cols {
                     module.vec_znx_gadget_decompose(
                         &mut digits,
                         0,
-                        dst_ref.data(),
+                        &dst_live,
                         col + 1,
                         base2k.as_usize(),
                         digit_k.as_usize(),
