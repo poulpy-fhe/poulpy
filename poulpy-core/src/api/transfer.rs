@@ -143,7 +143,7 @@ where
     fn transfer_into(&self, dst: &mut GGLWE<D2, W>) {
         assert_eq!(self.base2k, dst.base2k, "transfer_into: GGLWE base2k");
         assert_eq!(self.k_aux, dst.k_aux, "transfer_into: GGLWE k_aux");
-        assert_eq!(self.dsize, dst.dsize, "transfer_into: GGLWE dsize");
+        assert_eq!(self.k_digit, dst.k_digit, "transfer_into: GGLWE k_digit");
         move_mat_znx(&self.data, &mut dst.data);
         dst.noise = self.noise.clone();
     }
@@ -158,7 +158,7 @@ where
     fn transfer_into(&self, dst: &mut GGSW<D2, W>) {
         assert_eq!(self.base2k, dst.base2k, "transfer_into: GGSW base2k");
         assert_eq!(self.k_aux, dst.k_aux, "transfer_into: GGSW k_aux");
-        assert_eq!(self.dsize, dst.dsize, "transfer_into: GGSW dsize");
+        assert_eq!(self.k_digit, dst.k_digit, "transfer_into: GGSW k_digit");
         move_mat_znx(&self.data, &mut dst.data);
         dst.noise = self.noise.clone();
     }

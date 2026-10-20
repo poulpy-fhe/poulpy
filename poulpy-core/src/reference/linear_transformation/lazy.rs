@@ -20,8 +20,11 @@ use poulpy_hal::{
 };
 
 use crate::{
-    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, LWEInfos, prepared::GGLWEPreparedBackendRef},
-    reference::keyswitching::{GGLWEProductReference, GLWEKeyswitchInternal},
+    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, LWEInfos, TorusPrecision, prepared::GGLWEPreparedBackendRef},
+    reference::keyswitching::{
+        GGLWEProductReference, GLWEKeyswitchInternal,
+        glwe::{gadget_dft_apply, gadget_dft_apply_tmp_bytes, gadget_input_size},
+    },
 };
 
 pub(super) fn glwe_lazy_giant_automorphism_tmp_bytes<BE, M, R, K>(module: &M, a_infos: &R, key_infos: &K) -> usize
@@ -56,21 +59,27 @@ where
         + VecZnxBigBytesOf
         + VecZnxDftAutomorphismAddWithPlanTmpBytes
         + VecZnxDftBytesOf
-        + VecZnxIdftApplyTmpBytes,
+        + VecZnxIdftApplyTmpBytes
+        + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes,
     K: GGLWEInfos,
 {
     let cols = rank + 1;
     let key_size = key_infos.size();
     let mask_small_size = prod_size.min(key_size);
+    // Each mask column is the gadget operand, at most `mask_small_size` full limbs.
+    let (base2k, k_digit, dnum) = (key_infos.base2k(), key_infos.k_digit(), key_infos.dnum());
+    let mask_k = TorusPrecision((mask_small_size * base2k.as_usize()) as u32);
+    let operand_size = gadget_input_size(base2k, k_digit, dnum, mask_k, mask_small_size);
     let mask_big = module.bytes_of_vec_znx_big(module.n(), 1, prod_size);
-    let mask_dft = module.bytes_of_vec_znx_dft(module.n(), rank, mask_small_size);
+    let mask_dft = module.bytes_of_vec_znx_dft(module.n(), rank, operand_size);
     let mask_small = mask_small_size * core::mem::size_of::<i64>() * module.n();
     let ks_dft = module.bytes_of_vec_znx_dft(module.n(), cols, key_size);
     let inner = module
-        .gglwe_product_dft_tmp_bytes_reference(key_size, mask_small_size, key_infos)
+        .gglwe_product_dft_tmp_bytes_reference(key_size, operand_size, key_infos)
         .max(module.vec_znx_dft_automorphism_add_with_plan_tmp_bytes(key_size, key_size));
+    let digits = gadget_dft_apply_tmp_bytes::<BE, _>(module, base2k, k_digit, dnum, mask_k, mask_small_size);
 
-    mask_dft + mask_big + mask_small + module.vec_znx_idft_apply_tmp_bytes() + ks_dft + inner
+    mask_dft + mask_big + mask_small + module.vec_znx_idft_apply_tmp_bytes().max(digits) + ks_dft + inner
 }
 
 /// ROT for a giant step whose PROD result is still in `VecZnxDft`.
@@ -102,7 +111,8 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M>(
         + VecZnxDftAutomorphism<BE>
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>
-        + VecZnxIdftApply<BE>,
+        + VecZnxIdftApply<BE>
+        + poulpy_hal::api::VecZnxGadgetDecompose<BE>,
 {
     let cols = res_dft.cols();
     let rank = cols - 1;
@@ -114,7 +124,10 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M>(
     let mask_small_size = prod_dft.size().min(output_size);
 
     let scratch = scratch.borrow();
-    let (mut a_dft, mut scratch_1) = scratch.take_vec_znx_dft_scratch(res_dft.n(), rank, mask_small_size);
+    let (k_digit, dnum) = (key.k_digit(), key.dnum());
+    let mask_k = TorusPrecision((mask_small_size * key_base2k) as u32);
+    let operand_size = gadget_input_size(key.base2k(), k_digit, dnum, mask_k, mask_small_size);
+    let (mut a_dft, mut scratch_1) = scratch.take_vec_znx_dft_scratch(res_dft.n(), rank, operand_size);
     {
         let (mut mask_big, scratch_2) = scratch_1.borrow().take_vec_znx_big_scratch(res_dft.n(), 1, prod_dft.size());
         let (mut col_small, mut scratch_3) = scratch_2.take_vec_znx_scratch(res_dft.n(), 1, mask_small_size);
@@ -132,7 +145,18 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M>(
                 0,
                 &mut scratch_3.borrow(),
             );
-            module.vec_znx_dft_apply(1, 0, &mut a_dft, c, &col_small.to_backend_ref(), 0);
+            gadget_dft_apply(
+                module,
+                &mut a_dft,
+                c,
+                &col_small.to_backend_ref(),
+                0,
+                key.base2k(),
+                k_digit,
+                dnum,
+                mask_k,
+                &mut scratch_3.borrow(),
+            );
         }
     }
 

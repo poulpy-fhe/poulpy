@@ -2,8 +2,8 @@ use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo};
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWECompressed, GGLWEDecompress, GGLWEInfos, GGLWEToGGSWKeyToBackendMut, GLWEInfos, LWEInfos,
-    Rank, TorusPrecision,
+    Base2K, Degree, Dnum, GGLWECompressed, GGLWEDecompress, GGLWEInfos, GGLWEToGGSWKeyToBackendMut, GLWEInfos, LWEInfos, Rank,
+    TorusPrecision,
     compressed::{
         GGLWECompressedBackendMut, GGLWECompressedBackendRef, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef,
     },
@@ -46,7 +46,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyCompressedBackendRef<'a, BE> {
             noise: key_i.noise.clone(),
             k_aux: key_i.k_aux,
             base2k: key_i.base2k,
-            dsize: key_i.dsize,
+            k_digit: key_i.k_digit,
             seed: key_i.seed.clone(),
             rank_out: key_i.rank_out,
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_ref::<BE>(&key_i.data),
@@ -82,7 +82,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyCompressedBackendMut<'a, BE> {
             noise: key_i.noise.clone(),
             k_aux: key_i.k_aux,
             base2k: key_i.base2k,
-            dsize: key_i.dsize,
+            k_digit: key_i.k_digit,
             seed: key_i.seed.clone(),
             rank_out: key_i.rank_out,
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_mut::<BE>(&key_i.data),
@@ -97,7 +97,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyCompressedBackendMut<'a, BE> {
             noise: None,
             k_aux: key_i.k_aux,
             base2k: key_i.base2k,
-            dsize: key_i.dsize,
+            k_digit: key_i.k_digit,
             seed: key_i.seed.clone(),
             rank_out: key_i.rank_out,
             data: poulpy_hal::layouts::mat_znx_backend_mut_from_mut::<BE>(&mut key_i.data),
@@ -163,8 +163,8 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GGLWEToGGSWKeyCompressed<D, W> {
         self.keys[0].rank_out()
     }
 
-    fn dsize(&self) -> Dsize {
-        self.keys[0].dsize()
+    fn k_digit(&self) -> TorusPrecision {
+        self.keys[0].k_digit()
     }
 
     fn dnum(&self) -> Dnum {
@@ -203,7 +203,7 @@ impl<D: Data, W: ZnxWord> GGLWEToGGSWKeyCompressed<D, W> {
             infos.n(),
             infos.base2k(),
             infos.dnum(),
-            infos.dsize(),
+            infos.k_digit(),
             infos.k_aux(),
             infos.rank(),
         )
@@ -214,13 +214,13 @@ impl<D: Data, W: ZnxWord> GGLWEToGGSWKeyCompressed<D, W> {
         n: Degree,
         base2k: Base2K,
         dnum: Dnum,
-        dsize: Dsize,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> Self {
         GGLWEToGGSWKeyCompressed {
             keys: (0..rank.as_usize())
-                .map(|_| GGLWECompressed::alloc::<B>(n, base2k, dnum, dsize, k_aux, rank, rank))
+                .map(|_| GGLWECompressed::alloc::<B>(n, base2k, dnum, k_digit, k_aux, rank, rank))
                 .collect(),
         }
     }
@@ -239,15 +239,15 @@ impl<D: Data, W: ZnxWord> GGLWEToGGSWKeyCompressed<D, W> {
             infos.n(),
             infos.base2k(),
             infos.dnum(),
-            infos.dsize(),
+            infos.k_digit(),
             infos.k_aux(),
             infos.rank(),
         )
     }
 
     /// Returns the serialized byte size for a compressed GGLWE-to-GGSW key with the given parameters.
-    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
-        rank.as_usize() * GGLWECompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, dsize, k_aux, rank)
+    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, k_digit: TorusPrecision, k_aux: TorusPrecision, rank: Rank) -> usize {
+        rank.as_usize() * GGLWECompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, k_digit, k_aux, rank)
     }
 }
 
@@ -312,7 +312,7 @@ where
             for i in 0..res.keys.len() {
                 let mut a = res.at_view_mut(i);
                 let b = other.at_view(i);
-                assert_eq!(a.dsize(), b.dsize());
+                assert_eq!(a.k_digit(), b.k_digit());
                 assert!(a.dnum() <= b.dnum());
 
                 let rank_in: usize = a.rank_in().into();

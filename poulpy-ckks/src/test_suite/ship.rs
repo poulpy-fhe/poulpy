@@ -278,7 +278,9 @@ where
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
         + VmpApplyDftToDftTmpBytes
-        + VecZnxBigNormalizeTmpBytes,
+        + VecZnxBigNormalizeTmpBytes
+        + poulpy_hal::api::VecZnxGadgetDecompose<BE>
+        + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -295,9 +297,11 @@ where
     let mut xa = Source::new([22u8; 32]);
     // Exercise the multi-limb gadget path. On exact backends this also covers
     // the shortened accumulator used when several mux products share one
-    // normalization.
-    let mux_dsize = params.dsize.max(4);
-    let mut gen_key = |beta: bool, rot: usize, scratch: &mut ScratchOwned<BE>| {
+    // normalization. Then digit widths off a limb boundary, which lay the
+    // shared input out on the digit grid: below a limb, one bit past a limb
+    // and one bit short of two.
+    let b = params.base2k;
+    let mut gen_key = |k_digit: usize, beta: bool, rot: usize, scratch: &mut ScratchOwned<BE>| {
         let key = hmux_rot_key_encrypt_sk(
             module,
             host_module,
@@ -306,7 +310,7 @@ where
             rot,
             k,
             params.base2k.into(),
-            mux_dsize,
+            k_digit,
             &mut xe,
             &mut xa,
             &mut scratch.borrow(),
@@ -319,90 +323,126 @@ where
             gal_el: key.gal_el(),
         }
     };
-    // Base-3 digit position of weight 5 with digit value 1 selected.
-    let group_rot = vec![
-        gen_key(false, 0, &mut scratch),
-        gen_key(true, 5, &mut scratch),
-        gen_key(false, 10, &mut scratch),
-    ];
-    let group_id = vec![gen_key(true, 0, &mut scratch), gen_key(false, 5, &mut scratch)];
-    let group_zero = vec![gen_key(false, 0, &mut scratch), gen_key(false, 5, &mut scratch)];
+    for mux_k_digit in [params.dsize.max(4) * b, b / 2 + 1, b + 1, 2 * b - 1] {
+        // Base-3 digit position of weight 5 with digit value 1 selected.
+        let group_rot = vec![
+            gen_key(mux_k_digit, false, 0, &mut scratch),
+            gen_key(mux_k_digit, true, 5, &mut scratch),
+            gen_key(mux_k_digit, false, 10, &mut scratch),
+        ];
+        let group_id = vec![
+            gen_key(mux_k_digit, true, 0, &mut scratch),
+            gen_key(mux_k_digit, false, 5, &mut scratch),
+        ];
+        let group_zero = vec![
+            gen_key(mux_k_digit, false, 0, &mut scratch),
+            gen_key(mux_k_digit, false, 5, &mut scratch),
+        ];
 
-    let mux_bytes = crate::reference::ship::mux::ship_mux_rotate_tmp_bytes(
-        module,
-        &alloc_ct(&params, module, k),
-        &group_rot[0].key,
-        group_rot.len(),
-    );
-    let plans = crate::reference::ship::mux::ship_mux_plans(
-        module,
-        [group_rot.as_slice(), group_id.as_slice(), group_zero.as_slice()].into_iter(),
-    );
-    let mut mux_scratch = ScratchOwned::<BE>::alloc(mux_bytes);
+        let mux_bytes = crate::reference::ship::mux::ship_mux_rotate_tmp_bytes(
+            module,
+            &alloc_ct(&params, module, k),
+            &group_rot[0].key,
+            group_rot.len(),
+        );
+        let plans = crate::reference::ship::mux::ship_mux_plans(
+            module,
+            [group_rot.as_slice(), group_id.as_slice(), group_zero.as_slice()].into_iter(),
+        );
+        let mut mux_scratch = ScratchOwned::<BE>::alloc(mux_bytes);
 
-    let ct = ckks_encrypt(
-        &params,
-        module,
-        host_module,
-        &encoder,
-        &sk,
-        k,
-        &re1,
-        &im1,
-        &mut scratch.borrow(),
-    );
+        let ct = ckks_encrypt(
+            &params,
+            module,
+            host_module,
+            &encoder,
+            &sk,
+            k,
+            &re1,
+            &im1,
+            &mut scratch.borrow(),
+        );
 
-    // digit = 1, weight = 5: paper Rot_5 = poulpy rotation by -5.
-    let (want_re, want_im) = want_rotate(&re1, &im1, -5, m);
-    let mut out = alloc_ct(&params, module, k);
-    module.ckks_copy(&mut out, &ct, &mut scratch.borrow()).unwrap();
-    crate::reference::ship::mux::ship_mux_rotate(module, &mut out, &group_rot, &plans, &mut mux_scratch.borrow()).unwrap();
-    assert_eq!(out.log_delta(), ct.log_delta());
-    assert_eq!(out.log_budget(), ct.log_budget());
-    assert_decrypt_precision(
-        "mux_rotate(digit=1,weight=5)",
-        &params,
-        module,
-        &encoder,
-        &out,
-        &sk,
-        &want_re,
-        &want_im,
-        &mut scratch.borrow(),
-    );
+        // digit = 1, weight = 5: paper Rot_5 = poulpy rotation by -5.
+        let (want_re, want_im) = want_rotate(&re1, &im1, -5, m);
+        let mut out = alloc_ct(&params, module, k);
+        module.ckks_copy(&mut out, &ct, &mut scratch.borrow()).unwrap();
+        crate::reference::ship::mux::ship_mux_rotate(module, &mut out, &group_rot, &plans, &mut mux_scratch.borrow()).unwrap();
+        assert_eq!(out.log_delta(), ct.log_delta());
+        assert_eq!(out.log_budget(), ct.log_budget());
+        assert_decrypt_precision(
+            "mux_rotate(digit=1,weight=5)",
+            &params,
+            module,
+            &encoder,
+            &out,
+            &sk,
+            &want_re,
+            &want_im,
+            &mut scratch.borrow(),
+        );
 
-    // digit = 0: identity.
-    let mut out_id = alloc_ct(&params, module, k);
-    module.ckks_copy(&mut out_id, &ct, &mut scratch.borrow()).unwrap();
-    crate::reference::ship::mux::ship_mux_rotate(module, &mut out_id, &group_id, &plans, &mut mux_scratch.borrow()).unwrap();
-    assert_decrypt_precision(
-        "mux_rotate(digit=0)",
-        &params,
-        module,
-        &encoder,
-        &out_id,
-        &sk,
-        &re1,
-        &im1,
-        &mut scratch.borrow(),
-    );
+        // digit = 0: identity.
+        let mut out_id = alloc_ct(&params, module, k);
+        module.ckks_copy(&mut out_id, &ct, &mut scratch.borrow()).unwrap();
+        crate::reference::ship::mux::ship_mux_rotate(module, &mut out_id, &group_id, &plans, &mut mux_scratch.borrow()).unwrap();
+        assert_decrypt_precision(
+            "mux_rotate(digit=0)",
+            &params,
+            module,
+            &encoder,
+            &out_id,
+            &sk,
+            &re1,
+            &im1,
+            &mut scratch.borrow(),
+        );
 
-    // No digit selected: all-zero cleartext.
-    let zeros = vec![F::zero(); m];
-    let mut out_zero = alloc_ct(&params, module, k);
-    module.ckks_copy(&mut out_zero, &ct, &mut scratch.borrow()).unwrap();
-    crate::reference::ship::mux::ship_mux_rotate(module, &mut out_zero, &group_zero, &plans, &mut mux_scratch.borrow()).unwrap();
-    assert_decrypt_precision(
-        "mux_rotate(empty)",
-        &params,
-        module,
-        &encoder,
-        &out_zero,
-        &sk,
-        &zeros,
-        &zeros,
-        &mut scratch.borrow(),
-    );
+        // No digit selected: all-zero cleartext.
+        let zeros = vec![F::zero(); m];
+        let mut out_zero = alloc_ct(&params, module, k);
+        module.ckks_copy(&mut out_zero, &ct, &mut scratch.borrow()).unwrap();
+        crate::reference::ship::mux::ship_mux_rotate(module, &mut out_zero, &group_zero, &plans, &mut mux_scratch.borrow())
+            .unwrap();
+        assert_decrypt_precision(
+            "mux_rotate(empty)",
+            &params,
+            module,
+            &encoder,
+            &out_zero,
+            &sk,
+            &zeros,
+            &zeros,
+            &mut scratch.borrow(),
+        );
+    }
+
+    // One operand serves the whole group: keys off a limb boundary must share
+    // their digit width, and whole-limb keys cannot join them.
+    for (label, k_digits) in [
+        ("off-limb widths", [b / 2 + 1, b + 1]),
+        ("whole-limb and off-limb", [params.dsize.max(4) * b, b + 1]),
+    ] {
+        let group: Vec<_> = k_digits
+            .iter()
+            .zip([0, 5])
+            .map(|(&k_digit, rot)| gen_key(k_digit, false, rot, &mut scratch))
+            .collect();
+        let plans = crate::reference::ship::mux::ship_mux_plans(module, [group.as_slice()].into_iter());
+        let mut mux_scratch = ScratchOwned::<BE>::alloc(crate::reference::ship::mux::ship_mux_rotate_tmp_bytes(
+            module,
+            &alloc_ct(&params, module, k),
+            &group[0].key,
+            group.len(),
+        ));
+        let mut out = alloc_ct(&params, module, k);
+        let err = crate::reference::ship::mux::ship_mux_rotate(module, &mut out, &group, &plans, &mut mux_scratch.borrow())
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("differ in width or count"),
+            "mux_rotate({label}): {err}"
+        );
+    }
 }
 
 /// End-to-end SHIP bootstrap driver: a one-limb bottom ciphertext under the

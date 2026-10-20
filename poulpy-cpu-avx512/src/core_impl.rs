@@ -16,7 +16,9 @@ use poulpy_core::{
     GLWEBytesOf, GLWENormalize, ScratchArenaTakeCore, impl_gglwe_product_digits_strided_reference, impl_glwe_tensoring_reference,
     layouts::{Degree, GGLWEInfos, GGLWEPreparedToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
     oep::GLWETensoringImpl,
-    reference::keyswitching::glwe::{GGLWEProductReference, gglwe_product_output_size},
+    reference::keyswitching::glwe::{
+        GGLWEProductReference, gadget_dft_apply, gadget_dft_apply_tmp_bytes, gadget_input_size, gglwe_product_output_size,
+    },
     reference::operations::{GLWETensoringReference, cnv_offset_to_limb_offset, normalize_input_limb_bound_with_offset},
 };
 use poulpy_cpu_portable::kernels::{
@@ -34,7 +36,7 @@ use poulpy_hal::layouts::{DataViewMut, VecZnxDft};
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
+        VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
         VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
         VecZnxSubAssign,
     },
@@ -920,12 +922,26 @@ macro_rules! impl_rank_one_tensoring {
                 let output_size = gglwe_product_output_size::<$be, _, _, _>(res, a, &key);
                 let res_base2k = res.base2k().as_usize();
                 let res_k = res.k().as_usize();
-                let (mut input, scratch) = scratch.borrow().take_vec_znx_dft_scratch(n, pairs, a_size);
-                let (mut output, mut scratch) = scratch.take_vec_znx_dft_scratch(n, cols, output_size);
+                let (base2k, k_digit, dnum) = (key.base2k(), key.k_digit(), key.dnum());
+                let a_k = a.k();
+                let operand_size = gadget_input_size(base2k, k_digit, dnum, a_k, a_size);
+                let (mut input, mut scratch) = scratch.borrow().take_vec_znx_dft_scratch(n, pairs, operand_size);
                 let a = a.to_backend_ref();
                 for i in 0..pairs {
-                    module.vec_znx_dft_apply(1, 0, &mut input, i, a.data(), cols + i);
+                    gadget_dft_apply(
+                        module,
+                        &mut input,
+                        i,
+                        a.data(),
+                        cols + i,
+                        base2k,
+                        k_digit,
+                        dnum,
+                        a_k,
+                        &mut scratch.borrow(),
+                    );
                 }
+                let (mut output, mut scratch) = scratch.take_vec_znx_dft_scratch(n, cols, output_size);
                 module.gglwe_product_dft_reference(
                     &mut output,
                     &input.to_backend_ref(),
@@ -963,11 +979,16 @@ macro_rules! impl_rank_one_tensoring {
                 let n = assert_degrees(module, [res.n(), a.n(), tsk.n()]);
                 let a_size = a.k().div_ceil(tsk.base2k()) as usize;
                 let output_size = gglwe_product_output_size::<$be, _, _, _>(res, a, tsk);
-                module.bytes_of_vec_znx_dft(n, tsk.rank_in().as_usize(), a_size)
-                    + module.bytes_of_vec_znx_dft(n, tsk.rank_out().as_usize() + 1, output_size)
+                let (base2k, k_digit, dnum) = (tsk.base2k(), tsk.k_digit(), tsk.dnum());
+                let operand_size = gadget_input_size(base2k, k_digit, dnum, a.k(), a_size);
+                // The digit layout runs before the output is taken, the product and
+                // the fused inverse transform after.
+                let layout = gadget_dft_apply_tmp_bytes::<$be, _>(module, base2k, k_digit, dnum, a.k(), a_size);
+                let product = module.bytes_of_vec_znx_dft(n, tsk.rank_out().as_usize() + 1, output_size)
                     + module
-                        .gglwe_product_dft_tmp_bytes_reference(output_size, a_size, tsk)
-                        .max(module.vec_znx_idft_normalize_consume_tmp_bytes(res.size(), output_size))
+                        .gglwe_product_dft_tmp_bytes_reference(output_size, operand_size, tsk)
+                        .max(module.vec_znx_idft_normalize_consume_tmp_bytes(res.size(), output_size));
+                module.bytes_of_vec_znx_dft(n, tsk.rank_in().as_usize(), operand_size) + layout.max(product)
             }
 
             fn glwe_mul_relinearize_tmp_bytes<R, B>(
@@ -1607,7 +1628,15 @@ mod relinearize_tests {
                 for (n, rank) in [(256usize, 1usize), (256, 2), (65536, 1)] {
                     let module = Module::<$be>::new(n as u64);
                     let mut source = Source::new([41; 32]);
-                    for (base2k, key_base2k, dsize) in [(52usize, 52usize, 1usize), (52, 52, 4), (26, 52, 4)] {
+                    // Whole-limb digits, then widths off the limb boundary, one under a limb and two above.
+                    for (base2k, key_base2k, k_digit) in [
+                        (52usize, 52usize, 52usize),
+                        (52, 52, 208),
+                        (26, 52, 208),
+                        (52, 52, 49),
+                        (52, 52, 105),
+                        (26, 52, 159),
+                    ] {
                         let layout = GLWELayout {
                             n: n.into(),
                             base2k: base2k.into(),
@@ -1617,9 +1646,9 @@ mod relinearize_tests {
                         let key_layout = GLWETensorKeyLayout {
                             n: n.into(),
                             base2k: key_base2k.into(),
-                            dsize: dsize.into(),
-                            dnum: 8usize.div_ceil(dsize).into(),
-                            k_aux: (key_base2k * dsize + n.ilog2() as usize).into(),
+                            k_digit: k_digit.into(),
+                            dnum: (8 * key_base2k).div_ceil(k_digit).into(),
+                            k_aux: (k_digit + n.ilog2() as usize).into(),
                             rank: rank.into(),
                         };
                         let mut input = module.glwe_tensor_alloc_from_infos(&layout);
@@ -1660,7 +1689,7 @@ mod relinearize_tests {
                             );
                             assert_eq!(
                                 got, expected,
-                                "n={n}, rank={rank}, base2k={base2k}, dsize={dsize}, res_base2k={res_base2k}"
+                                "n={n}, rank={rank}, base2k={base2k}, k_digit={k_digit}, res_base2k={res_base2k}"
                             );
                         }
                     }

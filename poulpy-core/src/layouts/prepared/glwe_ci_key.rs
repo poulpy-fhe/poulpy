@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::layouts::{
-    Base2K, CIEmbed, CITrace, Degree, Dnum, Dsize, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef,
+    Base2K, CIEmbed, CITrace, Degree, Dnum, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef,
     GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWECIKey, GLWEInfos, GLWESwitchingKey,
     GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, LWEInfos, Rank, TorusPrecision,
     prepared::{GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory},
@@ -56,8 +56,8 @@ impl<D: Data, B: Backend, M> GGLWEInfos for GLWECIKeyPrepared<D, B, M> {
         self.0.rank_in()
     }
 
-    fn dsize(&self) -> Dsize {
-        self.0.dsize()
+    fn k_digit(&self) -> TorusPrecision {
+        self.0.k_digit()
     }
 
     fn rank_out(&self) -> Rank {

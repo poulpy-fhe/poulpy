@@ -1,8 +1,8 @@
 use poulpy_core::{
     GLWEAutomorphism, GLWEMaskFill,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWELayout, GLWEAutomorphismKey, GLWELayout, ModuleCoreAlloc, Rank, SetGaloisElement,
-        TorusPrecision,
+        Base2K, Degree, Dnum, GGLWELayout, GLWEAutomorphismKey, GLWELayout, ModuleCoreAlloc, Rank, SetGaloisElement,
+        TorusPrecision, k_digit_of,
         prepared::{GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory},
     },
     test_suite::keys::fill_by_digit,
@@ -47,7 +47,7 @@ where
         rank_in: Rank(cp.rank),
         rank_out: Rank(cp.rank),
         dnum: Dnum(dnum),
-        dsize: Dsize(cp.dsize),
+        k_digit: k_digit_of(cp.base2k, cp.dsize),
         stride: 1,
     };
 

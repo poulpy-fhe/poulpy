@@ -202,7 +202,7 @@ fn one_shot_polynomials_dispatch_to_independent_prepared_overrides() {
         k_aux: 16usize.into(),
         rank: 1usize.into(),
         dnum: 4usize.into(),
-        dsize: 1usize.into(),
+        k_digit: 16usize.into(),
     };
     let coeff_meta = poulpy_ckks::CKKSLayout {
         glwe_layout: poulpy_core::layouts::GLWELayout {
@@ -280,7 +280,7 @@ fn eval_mod_dispatch_uses_its_independent_scratch_query() {
         k_aux: 16usize.into(),
         rank: 1usize.into(),
         dnum: 4usize.into(),
-        dsize: 1usize.into(),
+        k_digit: 16usize.into(),
     };
     let bytes = module.ckks_eval_mod_tmp_bytes(&dst, &src, &params, &key_infos);
     assert_eq!(bytes, OVERRIDE_SCRATCH);
@@ -319,7 +319,7 @@ fn eval_mod_reference_sizes_the_final_destination_copy() {
         k_aux: 16usize.into(),
         rank: 1usize.into(),
         dnum: 4usize.into(),
-        dsize: 1usize.into(),
+        k_digit: 16usize.into(),
     };
     let mut src = module.ckks_ciphertext_alloc(16usize.into(), 64usize.into());
     src.set_meta(GLWEPlaintextMeta {
@@ -679,7 +679,7 @@ fn reference_queries_follow_independent_core_copy_and_shift_workspaces() {
         k_aux: 16usize.into(),
         rank: 1usize.into(),
         dnum: 4usize.into(),
-        dsize: 1usize.into(),
+        k_digit: 16usize.into(),
     };
     let shift_bytes = query.glwe_shift_tmp_bytes(src.max_size());
     assert!(query.ckks_rotate_tmp_bytes_reference(&src, &key) >= shift_bytes);

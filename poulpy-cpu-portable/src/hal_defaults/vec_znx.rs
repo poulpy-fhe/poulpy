@@ -6,12 +6,12 @@ use std::mem::size_of;
 use crate::kernels::vec_znx::{
     vec_znx_add_assign_portable, vec_znx_add_portable, vec_znx_automorphism_assign_portable,
     vec_znx_automorphism_assign_tmp_bytes_portable, vec_znx_automorphism_portable, vec_znx_copy_portable,
-    vec_znx_fill_uniform_portable, vec_znx_lsh_assign_carry_bytes_portable, vec_znx_lsh_assign_portable,
-    vec_znx_mul_xp_minus_one_assign_portable, vec_znx_mul_xp_minus_one_assign_tmp_bytes_portable, vec_znx_negate_assign_portable,
-    vec_znx_negate_portable, vec_znx_normalize_assign_portable, vec_znx_normalize_portable, vec_znx_normalize_tmp_bytes_portable,
-    vec_znx_rotate_assign_portable, vec_znx_rotate_assign_tmp_bytes_portable, vec_znx_rotate_portable,
-    vec_znx_sub_assign_portable, vec_znx_sub_negate_assign_portable, vec_znx_sub_portable, vec_znx_switch_ring_portable,
-    vec_znx_zero_portable,
+    vec_znx_fill_uniform_portable, vec_znx_gadget_decompose_portable, vec_znx_lsh_assign_carry_bytes_portable,
+    vec_znx_lsh_assign_portable, vec_znx_mul_xp_minus_one_assign_portable, vec_znx_mul_xp_minus_one_assign_tmp_bytes_portable,
+    vec_znx_negate_assign_portable, vec_znx_negate_portable, vec_znx_normalize_assign_portable, vec_znx_normalize_portable,
+    vec_znx_normalize_tmp_bytes_portable, vec_znx_rotate_assign_portable, vec_znx_rotate_assign_tmp_bytes_portable,
+    vec_znx_rotate_portable, vec_znx_sub_assign_portable, vec_znx_sub_negate_assign_portable, vec_znx_sub_portable,
+    vec_znx_switch_ring_portable, vec_znx_zero_portable,
 };
 use crate::kernels::znx::{
     I64NormalizeOps, ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign,
@@ -62,6 +62,28 @@ where
 
     fn vec_znx_normalize_tmp_bytes_default(module: &Module<Self>) -> usize {
         vec_znx_normalize_tmp_bytes_portable(module.n())
+    }
+
+    /// The portable kernel keeps its carries on the stack.
+    fn vec_znx_gadget_decompose_tmp_bytes_default(_module: &Module<Self>) -> usize {
+        0
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_gadget_decompose_default(
+        _module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, Self>,
+        a_col: usize,
+        base2k: usize,
+        k_digit: usize,
+        _scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        for<'x> Self::BufMut<'x>: HostDataMut,
+        for<'x> Self::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
+    {
+        vec_znx_gadget_decompose_portable::<Self>(res, res_col, a, a_col, base2k, k_digit);
     }
 
     #[allow(clippy::too_many_arguments)]

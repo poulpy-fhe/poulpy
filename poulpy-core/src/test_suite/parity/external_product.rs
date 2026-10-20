@@ -15,10 +15,10 @@ use crate::{
     GLWEExternalProduct, GLWEExternalProductInternal, GLWEMaskFill,
     api::TransferInto,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGSWAtViewMut, GGSWLayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, Dnum, GGSWAtViewMut, GGSWLayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::GGSWPreparedFactory,
     },
-    test_suite::parity::{ParityBackend, ParityShapes, ref_glwe, unnormalized_twin},
+    test_suite::parity::{ParityBackend, ParityShapes, ref_glwe, unnormalized_twin, wide_twin},
 };
 
 /// `glwe_external_product` agrees with the selected comparison backend byte-for-byte.
@@ -55,7 +55,7 @@ pub fn test_glwe_external_product_parity<BR, BT>(
 
     for a_base2k in [base2k, base2k - 1] {
         for &rank in &shapes.ranks {
-            for dsize in shapes.dsizes(k, base2k) {
+            for k_digit in shapes.k_digits(k, base2k, rank) {
                 let a_infos = GLWELayout {
                     n: Degree(n),
                     base2k: Base2K(a_base2k as u32),
@@ -65,15 +65,15 @@ pub fn test_glwe_external_product_parity<BR, BT>(
                 let res_infos = GLWELayout {
                     n: Degree(n),
                     base2k: Base2K(base2k as u32),
-                    k: TorusPrecision((k + base2k * dsize) as u32),
+                    k: TorusPrecision((k + k_digit) as u32),
                     rank: Rank(rank as u32),
                 };
                 let ggsw_infos = GGSWLayout {
                     n: Degree(n),
                     base2k: Base2K(base2k as u32),
-                    dnum: Dnum(k.div_ceil(base2k * dsize) as u32),
-                    dsize: Dsize(dsize as u32),
-                    k_aux: TorusPrecision((dsize * base2k) as u32),
+                    dnum: Dnum(k.div_ceil(k_digit) as u32),
+                    k_digit: TorusPrecision(k_digit as u32),
+                    k_aux: TorusPrecision(k_digit as u32),
                     rank: Rank(rank as u32),
                 };
 
@@ -120,7 +120,7 @@ pub fn test_glwe_external_product_parity<BR, BT>(
                 assert_glwe_eq!(
                     res_ref,
                     have,
-                    "glwe_external_product: rank={rank} dsize={dsize} k={k} a_base2k={a_base2k}"
+                    "glwe_external_product: rank={rank} k_digit={k_digit} k={k} a_base2k={a_base2k}"
                 );
 
                 let mut twin_test = module_test.glwe_alloc_from_infos(&a_infos);
@@ -136,7 +136,30 @@ pub fn test_glwe_external_product_parity<BR, BT>(
                 assert_glwe_eq!(
                     res_ref,
                     have,
-                    "glwe_external_product, unnormalized operand: rank={rank} dsize={dsize} k={k} a_base2k={a_base2k}"
+                    "glwe_external_product, unnormalized operand: rank={rank} k_digit={k_digit} k={k} a_base2k={a_base2k}"
+                );
+
+                // A buffer wider than its precision, sized from that precision,
+                // gives the same product: the limbs past `k` are not read.
+                let wide_infos = GLWELayout {
+                    k: TorusPrecision((k + 2 * a_base2k) as u32),
+                    ..a_infos
+                };
+                let mut wide_test = module_test.glwe_alloc_from_infos(&wide_infos);
+                module_test.fill_glwe_from_source(&mut wide_test, &mut source);
+                wide_twin::<BR, BT>(&a_ref, &mut wide_test);
+                module_test.glwe_external_product(
+                    &mut res_test,
+                    &wide_test,
+                    &ggsw_test.to_backend_ref(),
+                    &mut poisoned_scratch::<BT>(module_test.glwe_external_product_tmp_bytes(&res_infos, &a_infos, &ggsw_infos))
+                        .borrow(),
+                );
+                res_test.transfer_into(&mut have);
+                assert_glwe_eq!(
+                    res_ref,
+                    have,
+                    "glwe_external_product, operand wider than its precision: rank={rank} k_digit={k_digit} k={k} a_base2k={a_base2k}"
                 );
 
                 // Observe the internal DFT contract through canonical integer output,
@@ -188,7 +211,7 @@ pub fn test_glwe_external_product_parity<BR, BT>(
                 assert_glwe_eq!(
                     assigned_ref,
                     have,
-                    "glwe_external_product_assign: rank={rank} dsize={dsize} a_base2k={a_base2k}"
+                    "glwe_external_product_assign: rank={rank} k_digit={k_digit} a_base2k={a_base2k}"
                 );
                 module_test.glwe_external_product_assign(
                     &mut twin_test,
@@ -200,9 +223,76 @@ pub fn test_glwe_external_product_parity<BR, BT>(
                 assert_glwe_eq!(
                     assigned_ref,
                     have,
-                    "glwe_external_product_assign, unnormalized operand: rank={rank} dsize={dsize} a_base2k={a_base2k}"
+                    "glwe_external_product_assign, unnormalized operand: rank={rank} k_digit={k_digit} a_base2k={a_base2k}"
                 );
             }
         }
+    }
+    // An input of precision 0 holds no limb: every digit width multiplies it
+    // as the whole-limb path does.
+    for k_digit in shapes.k_digits(k, base2k, 1) {
+        let a_infos = GLWELayout {
+            n: Degree(n),
+            base2k: Base2K(base2k as u32),
+            k: TorusPrecision(0),
+            rank: Rank(1),
+        };
+        let res_infos = GLWELayout {
+            k: TorusPrecision((k + k_digit) as u32),
+            ..a_infos
+        };
+        let ggsw_infos = GGSWLayout {
+            n: Degree(n),
+            base2k: Base2K(base2k as u32),
+            dnum: Dnum(k.div_ceil(k_digit) as u32),
+            k_digit: TorusPrecision(k_digit as u32),
+            k_aux: TorusPrecision(k_digit as u32),
+            rank: Rank(1),
+        };
+        let a_ref = module_ref.glwe_alloc_from_infos(&a_infos);
+        let mut a_test = module_test.glwe_alloc_from_infos(&a_infos);
+        a_ref.transfer_into(&mut a_test);
+        let mut ggsw_ref_coeffs = module_ref.ggsw_alloc_from_infos(&ggsw_infos);
+        for row in 0..ggsw_infos.dnum.as_usize() {
+            for col in 0..2 {
+                module_ref.fill_glwe_from_source(&mut ggsw_ref_coeffs.at_view_mut(row, col), &mut source);
+            }
+        }
+        let mut ggsw_test_coeffs = module_test.ggsw_alloc_from_infos(&ggsw_infos);
+        ggsw_ref_coeffs.transfer_into(&mut ggsw_test_coeffs);
+        let mut ggsw_ref = module_ref.ggsw_prepared_alloc_from_infos(&ggsw_infos);
+        module_ref.ggsw_prepare(
+            &mut ggsw_ref,
+            &ggsw_ref_coeffs,
+            &mut poisoned_scratch::<BR>(module_ref.ggsw_prepare_tmp_bytes(&ggsw_infos)).borrow(),
+        );
+        let mut ggsw_test = module_test.ggsw_prepared_alloc_from_infos(&ggsw_infos);
+        module_test.ggsw_prepare(
+            &mut ggsw_test,
+            &ggsw_test_coeffs,
+            &mut poisoned_scratch::<BT>(module_test.ggsw_prepare_tmp_bytes(&ggsw_infos)).borrow(),
+        );
+        let mut res_ref = ref_glwe(module_ref, &res_infos, &mut source);
+        let mut res_test = module_test.glwe_alloc_from_infos(&res_infos);
+        res_ref.transfer_into(&mut res_test);
+        module_ref.glwe_external_product(
+            &mut res_ref,
+            &a_ref,
+            &ggsw_ref.to_backend_ref(),
+            &mut poisoned_scratch::<BR>(module_ref.glwe_external_product_tmp_bytes(&res_infos, &a_infos, &ggsw_infos)).borrow(),
+        );
+        module_test.glwe_external_product(
+            &mut res_test,
+            &a_test,
+            &ggsw_test.to_backend_ref(),
+            &mut poisoned_scratch::<BT>(module_test.glwe_external_product_tmp_bytes(&res_infos, &a_infos, &ggsw_infos)).borrow(),
+        );
+        let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
+        res_test.transfer_into(&mut have);
+        assert_glwe_eq!(
+            res_ref,
+            have,
+            "glwe_external_product, input of precision 0: k_digit={k_digit}"
+        );
     }
 }

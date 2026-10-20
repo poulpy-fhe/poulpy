@@ -11,8 +11,8 @@ use poulpy_ckks::{
     layouts::{CKKSEncodingBuffer, CKKSModuleAlloc},
 };
 use poulpy_core::layouts::{
-    Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWETensorKeyLayout,
-    GLWETensorKeyPreparedFactory, LWEInfos, Rank, SetGaloisElement, TorusPrecision,
+    Base2K, Degree, Dnum, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWETensorKeyLayout,
+    GLWETensorKeyPreparedFactory, LWEInfos, Rank, SetGaloisElement, TorusPrecision, k_digit_of,
 };
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -47,7 +47,7 @@ fn mul_tsk_layout(p: &CkksBenchParams) -> GLWETensorKeyLayout {
         base2k: Base2K(p.base2k as u32),
         k_aux: TorusPrecision(k_aux),
         rank: Rank(1),
-        dsize: Dsize(p.dsize as u32),
+        k_digit: k_digit_of(p.base2k as u32, p.dsize as u32),
         dnum: Dnum(dnum),
     }
 }
@@ -60,7 +60,7 @@ fn atk_layout(cp: &CkksBenchParams) -> GLWEAutomorphismKeyLayout {
         base2k: Base2K(cp.base2k as u32),
         k_aux: TorusPrecision(k_aux),
         rank: Rank(1),
-        dsize: Dsize(cp.dsize as u32),
+        k_digit: k_digit_of(cp.base2k as u32, cp.dsize as u32),
         dnum: Dnum(dnum),
     }
 }

@@ -33,13 +33,13 @@ use crate::{
             GGLWEPrepared, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef,
             GLWETensorKeyPrepared, GLWETensorKeyPreparedBackendRef,
         },
-        valid_dsizes,
+        valid_k_digits,
     },
     test_suite::keys::fill_by_digit,
 };
 
 /// Answers from `keys`, every key read through `dsize`.
-struct AtDsize<'a, K>(&'a K, Dsize);
+struct AtDsize<'a, K>(&'a K, TorusPrecision);
 
 impl<BE: Backend, D: Data> GetAutomorphismKey<BE> for AtDsize<'_, HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>>
 where
@@ -52,7 +52,7 @@ where
                 op: "get_automorphism_key",
                 detail: format!("no automorphism key for p={p}"),
             })?
-            .with_dsize(self.1)
+            .with_k_digit(self.1)
     }
 }
 
@@ -61,7 +61,7 @@ where
     GGLWEPrepared<D, BE>: GGLWEPreparedToBackendRef<BE>,
 {
     fn lookup_automorphism_key(&self, _p: i64, _k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
-        self.0.with_dsize(self.1)
+        self.0.with_k_digit(self.1)
     }
 }
 
@@ -70,7 +70,7 @@ where
     GGLWEPrepared<D, BE>: GGLWEPreparedToBackendRef<BE>,
 {
     fn get_tensor_key(&self, _k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
-        self.0.with_dsize(self.1)
+        self.0.with_k_digit(self.1)
     }
 }
 
@@ -82,9 +82,9 @@ impl<BE: Backend<ZnxWord = i64, OwnedBuf: HostDataMut>> CoarsenBackend for BE {}
 
 /// The coarsened twin of `parent`, and the stride the parent must be filled at
 /// to match it.
-fn twin_layout(parent: &GGLWELayout, dsize: Dsize) -> (GGLWELayout, usize) {
-    let twin: GGLWELayout = parent.at_dsize(dsize).unwrap();
-    (twin, dsize.as_usize() / parent.dsize().as_usize())
+fn twin_layout(parent: &GGLWELayout, k_digit: TorusPrecision) -> (GGLWELayout, usize) {
+    let twin: GGLWELayout = parent.at_k_digit(k_digit).unwrap();
+    (twin, k_digit.as_usize() / parent.k_digit().as_usize())
 }
 
 /// Byte equality of two GLWE ciphertexts.
@@ -112,15 +112,15 @@ where
             n: Degree(n as u32),
             base2k: Base2K(base2k as u32),
             dnum: Dnum(dnum as u32),
-            dsize: Dsize(dsize as u32),
+            k_digit: crate::layouts::k_digit_of(Base2K(base2k as u32), Dsize(dsize as u32)),
             k_aux: TorusPrecision((dsize * base2k + module.log_n()) as u32),
             rank: Rank(rank as u32),
         };
-        let effective = Dsize((dsize * s) as u32);
+        let effective = TorusPrecision((dsize * s * base2k) as u32);
         let (twin, stride) = twin_layout(&stored.gglwe_layout(), effective);
         let twin = GLWEAutomorphismKeyLayout {
             dnum: twin.dnum,
-            dsize: twin.dsize,
+            k_digit: twin.k_digit,
             k_aux: twin.k_aux,
             ..stored
         };
@@ -151,9 +151,9 @@ where
 
         // `valid_dsizes` is exactly the set `with_dsize` accepts.
         for stride in 1..stored.dnum.as_usize() + 3 {
-            let d = Dsize((stride * dsize) as u32);
-            let listed = valid_dsizes(&stored).into_iter().find(|(x, _)| *x == d);
-            match (listed, key_prep.with_dsize(d)) {
+            let d = TorusPrecision((stride * dsize * base2k) as u32);
+            let listed = valid_k_digits(&stored).into_iter().find(|(x, _)| *x == d);
+            match (listed, key_prep.with_k_digit(d)) {
                 (Some((_, dnum)), Ok(view)) => assert_eq!(view.dnum(), dnum, "dnum disagrees at dsize={d}"),
                 (None, Err(_)) => {}
                 (l, v) => panic!("valid_dsizes says {l:?} at dsize={d}, with_dsize says {}", v.is_ok()),
@@ -161,12 +161,12 @@ where
         }
         if dsize > 1 {
             assert!(
-                key_prep.with_dsize(Dsize(dsize as u32 + 1)).is_err(),
+                key_prep.with_k_digit(TorusPrecision(((dsize + 1) * base2k) as u32)).is_err(),
                 "accepted a non-multiple"
             );
         }
 
-        let view = key_prep.with_dsize(effective).unwrap();
+        let view = key_prep.with_k_digit(effective).unwrap();
         assert_eq!(view.stride(), s);
         // The twin is stored at the coarse dsize (stride 1); the view reads the
         // stored key at stride `s`. Everything else in the layout must agree.
@@ -181,7 +181,7 @@ where
         let ct_infos = GLWELayout {
             n: Degree(n as u32),
             base2k: Base2K(base2k as u32),
-            k: TorusPrecision((twin.dnum.as_usize() * twin.dsize.as_usize() * base2k) as u32),
+            k: TorusPrecision((twin.dnum.as_usize() * twin.k_digit.as_usize()) as u32),
             rank: Rank(rank as u32),
         };
         let mut ct_in = module.glwe_alloc_from_infos(&ct_infos);
@@ -257,7 +257,7 @@ where
     let base2k: usize = params.base2k;
     let n: usize = module.n();
     let rank: usize = 1;
-    let effective = Dsize(2);
+    let effective = TorusPrecision((2 * base2k) as u32);
     let mut source: Source = Source::new([23u8; 32]);
 
     // Deliberately unequal shapes: the set has no common layout.
@@ -273,14 +273,14 @@ where
             n: Degree(n as u32),
             base2k: Base2K(base2k as u32),
             dnum: Dnum(dnum as u32),
-            dsize: Dsize(dsize as u32),
+            k_digit: crate::layouts::k_digit_of(Base2K(base2k as u32), Dsize(dsize as u32)),
             k_aux: TorusPrecision((dsize * base2k + module.log_n()) as u32),
             rank: Rank(rank as u32),
         };
         let (coarse, stride) = twin_layout(&stored.gglwe_layout(), effective);
         let twin = GLWEAutomorphismKeyLayout {
             dnum: coarse.dnum,
-            dsize: coarse.dsize,
+            k_digit: coarse.k_digit,
             k_aux: coarse.k_aux,
             ..stored
         };
@@ -307,7 +307,7 @@ where
             &key_twin,
             &mut poisoned_scratch::<BE>(module.glwe_automorphism_key_prepare_tmp_bytes(&twin)).borrow(),
         );
-        trace_bytes = trace_bytes.max(module.glwe_trace_tmp_bytes(&twin, &twin, &key_prep.with_dsize(effective).unwrap()));
+        trace_bytes = trace_bytes.max(module.glwe_trace_tmp_bytes(&twin, &twin, &key_prep.with_k_digit(effective).unwrap()));
 
         keys.insert(*gal_el, key_prep);
         twins.insert(*gal_el, twin_prep);
@@ -346,15 +346,15 @@ where
             n: Degree(n as u32),
             base2k: Base2K(base2k as u32),
             dnum: Dnum(dnum as u32),
-            dsize: Dsize(dsize as u32),
+            k_digit: crate::layouts::k_digit_of(Base2K(base2k as u32), Dsize(dsize as u32)),
             k_aux: TorusPrecision((dsize * base2k + module.log_n()) as u32),
             rank: Rank(rank as u32),
         };
-        let effective = Dsize((dsize * s) as u32);
+        let effective = TorusPrecision((dsize * s * base2k) as u32);
         let (coarse, stride) = twin_layout(&stored.gglwe_layout(), effective);
         let twin = GLWETensorKeyLayout {
             dnum: coarse.dnum,
-            dsize: coarse.dsize,
+            k_digit: coarse.k_digit,
             k_aux: coarse.k_aux,
             ..stored
         };
@@ -381,7 +381,7 @@ where
         let ct_infos = GLWELayout {
             n: Degree(n as u32),
             base2k: Base2K(base2k as u32),
-            k: TorusPrecision((twin.dnum.as_usize() * twin.dsize.as_usize() * base2k) as u32),
+            k: TorusPrecision((twin.dnum.as_usize() * twin.k_digit.as_usize()) as u32),
             rank: Rank(rank as u32),
         };
         let mut a = module.glwe_tensor_alloc_from_infos(&ct_infos);
@@ -389,7 +389,7 @@ where
 
         let mut have = module.glwe_alloc_from_infos(&ct_infos);
         let mut want = module.glwe_alloc_from_infos(&ct_infos);
-        let view = tsk_prep.with_dsize(effective).unwrap();
+        let view = tsk_prep.with_k_digit(effective).unwrap();
         let mut scratch_have = poisoned_scratch::<BE>(module.glwe_tensor_relinearize_tmp_bytes(&ct_infos, &a, &view));
         let mut scratch_want = poisoned_scratch::<BE>(module.glwe_tensor_relinearize_tmp_bytes(&ct_infos, &a, &twin));
 

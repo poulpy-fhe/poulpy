@@ -10,6 +10,24 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             <Self as HalVecZnxDefault>::vec_znx_normalize_tmp_bytes_default(module)
         }
 
+        fn vec_znx_gadget_decompose_tmp_bytes(module: &Module<Self>) -> usize {
+            <Self as HalVecZnxDefault>::vec_znx_gadget_decompose_tmp_bytes_default(module)
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        fn vec_znx_gadget_decompose(
+            module: &Module<Self>,
+            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
+            res_col: usize,
+            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
+            a_col: usize,
+            base2k: usize,
+            k_digit: usize,
+            scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
+        ) {
+            <Self as HalVecZnxDefault>::vec_znx_gadget_decompose_default(module, res, res_col, a, a_col, base2k, k_digit, scratch)
+        }
+
         fn vec_znx_add(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,

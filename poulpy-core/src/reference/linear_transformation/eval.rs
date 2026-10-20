@@ -66,6 +66,7 @@ where
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
         + VecZnxIdftNormalizeConsumeTmpBytes
+        + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
         + VecZnxNormalizeTmpBytes,
     R: GLWEInfos,
     A: GLWEInfos,
@@ -135,6 +136,7 @@ where
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
         + VecZnxIdftNormalizeConsumeTmpBytes
+        + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
         + crate::api::GLWENormalize<BE>,
     A: GLWEInfos,
     K: GGLWEInfos,
@@ -173,6 +175,8 @@ pub fn glwe_prepare_linear_transformation_baby_steps_reference<BE, M, A, H>(
         + VecZnxIdftApply<BE>
         + VecZnxIdftNormalizeConsume<BE>
         + VecZnxIdftNormalizeConsumeTmpBytes
+        + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
+        + poulpy_hal::api::VecZnxGadgetDecompose<BE>
         + GaloisElement
         + crate::api::GLWENormalize<BE>
         + Sync,
@@ -415,6 +419,7 @@ where
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
         + VecZnxIdftNormalizeConsumeTmpBytes
+        + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
         + VecZnxNormalizeTmpBytes,
     R: GLWEInfos,
     A: GLWEInfos,

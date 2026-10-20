@@ -297,9 +297,8 @@ pub trait GLWEEncryptPkSmudged<BE: Backend> {
 }
 
 /// Public-key GGSW encryption: entry `(row, col)` is
-/// [`GLWEEncryptPk::glwe_encrypt_pk_at_col`] of `pt` at limb
-/// `(dsize - 1) + row * dsize` into column `col`, entries in row then column
-/// order.
+/// [`GLWEEncryptPk::glwe_encrypt_pk_at_col`] of `pt * 2^-((row + 1) * k_digit)`
+/// into column `col`, entries in row then column order.
 /// A public key carrying noise metadata must keep its ephemeral distribution
 /// equal to the metadata provenance base. A mismatch panics before mutation.
 /// Untagged keys skip this provenance check.

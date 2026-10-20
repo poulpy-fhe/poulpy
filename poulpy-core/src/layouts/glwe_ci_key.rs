@@ -3,7 +3,7 @@ use std::{fmt, marker::PhantomData};
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord};
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWEInfos,
+    Base2K, Degree, Dnum, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWEInfos,
     GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, LWEInfos, Rank, TorusPrecision,
 };
 
@@ -63,8 +63,8 @@ impl<D: Data, W: ZnxWord, M> GGLWEInfos for GLWECIKey<D, W, M> {
         self.0.rank_in()
     }
 
-    fn dsize(&self) -> Dsize {
-        self.0.dsize()
+    fn k_digit(&self) -> TorusPrecision {
+        self.0.k_digit()
     }
 
     fn rank_out(&self) -> Rank {

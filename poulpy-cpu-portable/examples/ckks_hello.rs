@@ -61,7 +61,7 @@ fn tsk_layout() -> GLWETensorKeyLayout {
         base2k: BASE2K.into(),
         k_aux: BASE2K.into(),
         rank: Rank(1),
-        dsize: 1usize.into(),
+        k_digit: BASE2K.into(),
         dnum: CT_K.div_ceil(BASE2K).into(),
     }
 }

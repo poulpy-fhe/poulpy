@@ -9,7 +9,7 @@ use crate::{
 };
 use poulpy_core::GGSWNoise;
 
-use poulpy_core::layouts::{Base2K, Dnum, Dsize, ModuleCoreAlloc, Rank, TorusPrecision};
+use poulpy_core::layouts::{Base2K, Dnum, ModuleCoreAlloc, Rank, TorusPrecision};
 use poulpy_core::layouts::{GGSW, GLWESecretPreparedToBackendRef, LWE};
 use poulpy_core::{
     GLWEKeyswitch, LWEFromGLWE,
@@ -49,19 +49,19 @@ impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUintPreparedDebug<D, T, W> {
             module,
             infos.base2k(),
             infos.dnum(),
-            infos.dsize(),
+            infos.k_digit(),
             infos.k_aux(),
             infos.rank(),
         )
     }
 
-    pub fn alloc<M>(module: &M, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> Self
+    pub fn alloc<M>(module: &M, base2k: Base2K, dnum: Dnum, k_digit: TorusPrecision, k_aux: TorusPrecision, rank: Rank) -> Self
     where
         M: ModuleN + ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W>,
     {
         Self {
             bits: (0..T::BITS)
-                .map(|_| module.ggsw_alloc(base2k, dnum, dsize, k_aux, rank))
+                .map(|_| module.ggsw_alloc(base2k, dnum, k_digit, k_aux, rank))
                 .collect(),
             _phantom: PhantomData,
         }
@@ -97,8 +97,8 @@ impl<D: HostDataRef, T: UnsignedInteger, W: ZnxWord> GGSWInfos for FheUintPrepar
         self.bits[0].k_aux()
     }
 
-    fn dsize(&self) -> poulpy_core::layouts::Dsize {
-        self.bits[0].dsize()
+    fn k_digit(&self) -> poulpy_core::layouts::TorusPrecision {
+        self.bits[0].k_digit()
     }
 
     fn dnum(&self) -> poulpy_core::layouts::Dnum {

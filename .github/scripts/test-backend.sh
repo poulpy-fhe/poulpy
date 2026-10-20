@@ -45,8 +45,16 @@ if [[ "$backend" == avx512 || "$mode" == emulated ]]; then
   fi
 fi
 
-echo "Running $backend $mode tests (480-second execution budget; compilation is separate)."
-if timeout --signal=TERM --kill-after=10s 480s "${command[@]}" -- "${filters[@]}" \
+execution_seconds=480
+# AVX-512 SDE also runs arbitrary-bit gadget and summed-product parity sweeps, and
+# the native suite runs the large-ring one-pass and fused parity cases, whose run
+# time varies by about a fifth between runners.
+if [[ "$backend" == avx512 ]]; then
+  execution_seconds=720
+fi
+
+echo "Running $backend $mode tests ($execution_seconds-second execution budget; compilation is separate)."
+if timeout --signal=TERM --kill-after=10s "${execution_seconds}s" "${command[@]}" -- "${filters[@]}" \
   --test-threads=2 -Z unstable-options --report-time; then
   exit 0
 else

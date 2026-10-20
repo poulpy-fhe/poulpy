@@ -5,7 +5,7 @@ use std::fmt;
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Module, ReaderFrom, WriterTo};
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut,
+    Base2K, Degree, Dnum, GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut,
     LWEInfos, Rank, TorusPrecision,
     compressed::{
         GGLWECompressedBackendMut, GGLWECompressedBackendRef, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef,
@@ -66,8 +66,8 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWEToLWESwitchingKeyCompressed<D, W> {
         self.0.rank_in()
     }
 
-    fn dsize(&self) -> Dsize {
-        self.0.dsize()
+    fn k_digit(&self) -> TorusPrecision {
+        self.0.k_digit()
     }
 
     fn rank_out(&self) -> Rank {
@@ -114,9 +114,9 @@ impl<D: Data, W: ZnxWord> GLWEToLWESwitchingKeyCompressed<D, W> {
             "rank_out > 1 is unsupported for GLWEToLWESwitchingKeyCompressed"
         );
         assert_eq!(
-            infos.dsize().0,
-            1,
-            "dsize > 1 is unsupported for GLWEToLWESwitchingKeyCompressed"
+            infos.k_digit().0,
+            infos.base2k().0,
+            "GLWEToLWESwitchingKeyCompressed uses one-limb digits: k_digit must equal base2k"
         );
         Self::alloc::<B>(infos.n(), infos.base2k(), infos.dnum(), infos.k_aux(), infos.rank_in())
     }
@@ -132,7 +132,7 @@ impl<D: Data, W: ZnxWord> GLWEToLWESwitchingKeyCompressed<D, W> {
             n,
             base2k,
             dnum,
-            Dsize(1),
+            TorusPrecision::from(base2k),
             k_aux,
             rank_in,
             Rank(1),
@@ -149,15 +149,15 @@ impl<D: Data, W: ZnxWord> GLWEToLWESwitchingKeyCompressed<D, W> {
             "rank_out > 1 is unsupported for GLWEToLWESwitchingKeyCompressed"
         );
         assert_eq!(
-            infos.dsize().0,
-            1,
-            "dsize > 1 is unsupported for GLWEToLWESwitchingKeyCompressed"
+            infos.k_digit().0,
+            infos.base2k().0,
+            "GLWEToLWESwitchingKeyCompressed uses one-limb digits: k_digit must equal base2k"
         );
         GLWESwitchingKeyCompressed::<AlignedBuf, W>::bytes_of_from_infos(infos)
     }
 
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision, rank_in: Rank) -> usize {
-        GLWESwitchingKeyCompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, Dsize(1), k_aux, rank_in)
+        GLWESwitchingKeyCompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, TorusPrecision::from(base2k), k_aux, rank_in)
     }
 }
 

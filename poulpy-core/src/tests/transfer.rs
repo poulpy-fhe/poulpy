@@ -7,7 +7,7 @@ use poulpy_hal::{
 
 use crate::{
     api::TransferInto,
-    layouts::{Base2K, Dnum, Dsize, GGLWE, GLWE, ModuleCoreAlloc, Rank, TorusPrecision},
+    layouts::{Base2K, Dnum, GGLWE, GLWE, ModuleCoreAlloc, Rank, TorusPrecision},
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -303,8 +303,14 @@ fn module_transfer_glwe_roundtrip() {
 fn module_transfer_gglwe_roundtrip() {
     let src_module: Module<SrcBackend> = Module::new(64);
     let dst_module: Module<DstBackend> = Module::new(64);
-    let mut src: GGLWE<<SrcBackend as Backend>::OwnedBuf, <SrcBackend as Backend>::ZnxWord> =
-        src_module.gglwe_alloc(Base2K(12), Dnum(3), Dsize(1), TorusPrecision(12 + 6), Rank(1), Rank(2));
+    let mut src: GGLWE<<SrcBackend as Backend>::OwnedBuf, <SrcBackend as Backend>::ZnxWord> = src_module.gglwe_alloc(
+        Base2K(12),
+        Dnum(3),
+        TorusPrecision(12),
+        TorusPrecision(12 + 6),
+        Rank(1),
+        Rank(2),
+    );
     fill_bytes(src.data.data_mut());
     src.noise = Some(
         crate::ComponentNoise::from_secret_at(crate::Distribution::BinaryFixed(11), TorusPrecision(54), 2).with_components(

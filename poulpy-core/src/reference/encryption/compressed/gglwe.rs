@@ -1,9 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use poulpy_hal::{
-    api::{
-        ModuleN, VecZnxAddScalarAssign, VecZnxCopy, VecZnxDftBytesOf, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxZero,
-    },
+    api::{ModuleN, VecZnxCopy, VecZnxDftBytesOf, VecZnxNormalize, VecZnxNormalizeTmpBytes},
     layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena},
     source::Source,
 };
@@ -49,10 +47,8 @@ where
         + GLWEMaskFill<BE>
         + VecZnxCopy<BE>
         + VecZnxDftBytesOf
-        + VecZnxNormalizeAssign<BE>
-        + VecZnxAddScalarAssign<BE>
-        + VecZnxNormalizeTmpBytes
-        + VecZnxZero<BE>,
+        + VecZnxNormalize<BE>
+        + VecZnxNormalizeTmpBytes,
 {
     fn gglwe_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -113,17 +109,16 @@ where
                     self.gglwe_compressed_encrypt_sk_tmp_bytes_reference(&res)
                 );
                 assert!(
-                    res.dnum().0 * res.dsize().0 * res.base2k().0 <= res.k().0,
-                    "res.dnum() : {} * res.dsize() : {} * res.base2k() : {} = {} >= res.k() = {}",
+                    res.dnum().0 * res.k_digit().0 <= res.k().0,
+                    "res.dnum() : {} * res.k_digit() : {} = {} > res.k() = {}",
                     res.dnum(),
-                    res.dsize(),
-                    res.base2k(),
-                    res.dnum().0 * res.dsize().0 * res.base2k().0,
+                    res.k_digit(),
+                    res.dnum().0 * res.k_digit().0,
                     res.k()
                 );
 
                 let dnum: usize = res.dnum().into();
-                let dsize: usize = res.dsize().into();
+                let k_digit: usize = res.k_digit().as_usize();
                 let base2k: usize = res.base2k().into();
                 let rank_in: usize = res.rank_in().into();
 
@@ -135,21 +130,20 @@ where
 
                 for col_j in 0..rank_in {
                     for row_i in 0..dnum {
-                        // Adds the scalar_znx_pt to the i-th limb of the vec_znx_pt
-                        self.vec_znx_zero(&mut tmp_pt.data, 0);
-                        {
-                            let mut tmp_pt_backend = tmp_pt.to_backend_mut();
-                            self.vec_znx_add_scalar_assign(
-                                &mut tmp_pt_backend.data,
-                                0,
-                                (dsize - 1) + row_i * dsize,
-                                &pt_backend,
-                                col_j,
-                            );
-                        }
                         scratch_1 = scratch_1.apply_mut(|scratch| {
                             let mut tmp_pt_backend = tmp_pt.to_backend_mut();
-                            self.vec_znx_normalize_assign(base2k, tmp_pt_k, 0, &mut tmp_pt_backend.data, 0, scratch)
+                            crate::reference::encryption::gadget_row_plaintext(
+                                self,
+                                &mut tmp_pt_backend.data,
+                                0,
+                                base2k,
+                                tmp_pt_k,
+                                row_i,
+                                k_digit,
+                                &pt_backend,
+                                col_j,
+                                scratch,
+                            )
                         });
 
                         let (seed, _) = source_xa.branch();

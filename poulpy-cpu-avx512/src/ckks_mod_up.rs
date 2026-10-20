@@ -18,21 +18,23 @@ use poulpy_ckks::{
 use poulpy_core::{
     GLWECopy, GLWEKeyswitch, GLWEShift,
     layouts::{
-        GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, digits_aligned,
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef},
     },
     oep::GGLWEProductDigitsStridedImpl,
-    reference::keyswitching::glwe::{gglwe_product_limbs, gglwe_product_output_size},
+    reference::keyswitching::glwe::{
+        gadget_input_size, gadget_known_zero_prefix, gglwe_product_limbs, gglwe_product_output_size, precision_limbs,
+    },
 };
 use poulpy_hal::{
     api::{
         ScratchArenaTakeBasic, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxDftApply, VecZnxDftBytesOf,
-        VecZnxIdftApply,
+        VecZnxGadgetDecompose, VecZnxIdftApply,
     },
     execution::SerialTaskExecutor,
     layouts::{
         Backend, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendRef,
-        VmpPMatBackendRef,
+        VecZnxToBackendRef, VmpPMatBackendRef,
     },
 };
 
@@ -190,6 +192,7 @@ where
         + VecZnxBigNormalize<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
+        + VecZnxGadgetDecompose<BE>
         + VecZnxIdftApply<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -215,7 +218,6 @@ where
         log_sparsity: src.log_sparsity(),
     });
     dst.set_k(k_large.into());
-    let zero_prefix = shift / dst.base2k().as_usize();
 
     let key = sparse_to_dense.to_backend_ref();
     let output_size = gglwe_product_output_size::<BE, _, _, _>(dst, dst, &key);
@@ -229,11 +231,35 @@ where
 
     {
         let dst_ref = dst.to_backend_ref();
-        let a_size = dst_ref.size();
-        let (mut a_dft, mut product_scratch) = scratch_1.borrow().take_vec_znx_dft_scratch(module.n(), mask_cols, a_size);
-        for col in 0..mask_cols {
-            let mut suffix = a_dft.with_limb_range_mut(zero_prefix, a_size);
-            module.vec_znx_dft_apply(1, zero_prefix, &mut suffix, col, dst_ref.data(), col + 1);
+        // The prefix the raise leaves at zero is not transformed and the product does not read it.
+        let (base2k, k_digit, dnum) = (key.base2k(), key.k_digit(), key.dnum());
+        let operand_size = gadget_input_size(base2k, k_digit, dnum, dst_ref.k(), dst_ref.size());
+        let zero_prefix = gadget_known_zero_prefix(base2k, k_digit, dnum, shift).min(operand_size);
+        let (mut a_dft, mut product_scratch) = scratch_1
+            .borrow()
+            .take_vec_znx_dft_scratch(module.n(), mask_cols, operand_size);
+        if digits_aligned(base2k, k_digit) {
+            for col in 0..mask_cols {
+                let mut suffix = a_dft.with_limb_range_mut(zero_prefix, operand_size);
+                module.vec_znx_dft_apply(1, zero_prefix, &mut suffix, col, dst_ref.data(), col + 1);
+            }
+        } else {
+            let (mut digits, mut layout_scratch) = product_scratch.borrow().take_vec_znx_scratch(module.n(), 1, operand_size);
+            let dst_live =
+                precision_limbs::<BE>(dst_ref.data(), base2k, dst_ref.k()).expect("the raised ciphertext has a precision");
+            for col in 0..mask_cols {
+                module.vec_znx_gadget_decompose(
+                    &mut digits,
+                    0,
+                    &dst_live,
+                    col + 1,
+                    base2k.as_usize(),
+                    k_digit.as_usize(),
+                    &mut layout_scratch.borrow(),
+                );
+                let mut suffix = a_dft.with_limb_range_mut(zero_prefix, operand_size);
+                module.vec_znx_dft_apply(1, zero_prefix, &mut suffix, col, &digits.to_backend_ref(), 0);
+            }
         }
         BE::product_known_zero_prefix(
             module,

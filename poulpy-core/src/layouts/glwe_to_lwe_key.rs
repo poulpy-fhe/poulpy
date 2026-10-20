@@ -2,7 +2,7 @@ use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo};
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos, GGLWEToBackendMut,
+    Base2K, Degree, Dnum, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos, GGLWEToBackendMut,
     GGLWEToBackendRef, GLWEInfos, GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, GLWEViewMut,
     GLWEViewRef, LWEInfos, Rank, TorusPrecision,
 };
@@ -28,11 +28,11 @@ impl LWEInfos for GLWEToLWEKeyLayout {
     }
 
     fn max_size(&self) -> usize {
-        crate::layouts::key_size(self.base2k, self.dnum, Dsize(1), self.k_aux)
+        crate::layouts::key_size(self.base2k, self.dnum, TorusPrecision::from(self.base2k), self.k_aux)
     }
 
     fn k(&self) -> TorusPrecision {
-        crate::layouts::key_k(self.base2k, self.dnum, Dsize(1), self.k_aux)
+        crate::layouts::key_k(self.dnum, TorusPrecision::from(self.base2k), self.k_aux)
     }
 }
 
@@ -55,8 +55,8 @@ impl GGLWEInfos for GLWEToLWEKeyLayout {
         self.rank_in
     }
 
-    fn dsize(&self) -> Dsize {
-        Dsize(1)
+    fn k_digit(&self) -> TorusPrecision {
+        TorusPrecision::from(self.base2k())
     }
 
     fn rank_out(&self) -> Rank {
@@ -104,8 +104,8 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWEToLWEKey<D, W> {
         self.0.rank_in()
     }
 
-    fn dsize(&self) -> Dsize {
-        self.0.dsize()
+    fn k_digit(&self) -> TorusPrecision {
+        self.0.k_digit()
     }
 
     fn rank_out(&self) -> Rank {
@@ -151,12 +151,24 @@ impl<W: ZnxWord> GLWEToLWEKey<AlignedBuf, W> {
         A: GGLWEInfos,
     {
         assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for GLWEToLWEKey");
-        assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for GLWEToLWEKey");
+        assert_eq!(
+            infos.k_digit().0,
+            infos.base2k().0,
+            "GLWEToLWEKey uses one-limb digits: k_digit must equal base2k"
+        );
         Self::alloc(infos.n(), infos.base2k(), infos.dnum(), infos.k_aux(), infos.rank_in())
     }
 
     pub(crate) fn alloc(n: Degree, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision, rank_in: Rank) -> Self {
-        GLWEToLWEKey(GLWESwitchingKey::alloc(n, base2k, dnum, Dsize(1), k_aux, rank_in, Rank(1)))
+        GLWEToLWEKey(GLWESwitchingKey::alloc(
+            n,
+            base2k,
+            dnum,
+            TorusPrecision::from(base2k),
+            k_aux,
+            rank_in,
+            Rank(1),
+        ))
     }
 
     pub fn bytes_of_from_infos<A>(infos: &A) -> usize
@@ -164,12 +176,16 @@ impl<W: ZnxWord> GLWEToLWEKey<AlignedBuf, W> {
         A: GGLWEInfos,
     {
         assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for GLWEToLWEKey");
-        assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for GLWEToLWEKey");
+        assert_eq!(
+            infos.k_digit().0,
+            infos.base2k().0,
+            "GLWEToLWEKey uses one-limb digits: k_digit must equal base2k"
+        );
         Self::bytes_of(infos.n(), infos.base2k(), infos.dnum(), infos.k_aux(), infos.rank_in())
     }
 
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision, rank_in: Rank) -> usize {
-        GLWESwitchingKey::<AlignedBuf, W>::bytes_of(n, base2k, dnum, Dsize(1), k_aux, rank_in, Rank(1))
+        GLWESwitchingKey::<AlignedBuf, W>::bytes_of(n, base2k, dnum, TorusPrecision::from(base2k), k_aux, rank_in, Rank(1))
     }
 }
 

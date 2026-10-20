@@ -2,14 +2,17 @@
 
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::{
-    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GGLWEPreparedToBackendRef},
-    reference::keyswitching::glwe::{GGLWEProductReference, gglwe_product_accumulation_output_size},
+    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, digits_aligned, prepared::GGLWEPreparedToBackendRef},
+    reference::keyswitching::glwe::{
+        GGLWEProductReference, gadget_dft_apply, gadget_dft_apply_tmp_bytes, gadget_input_size,
+        gglwe_product_accumulation_output_size,
+    },
 };
 use poulpy_hal::{
     api::{
         ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
-        VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApply,
-        VecZnxIdftApplyTmpBytes,
+        VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan, VecZnxDftBytesOf, VecZnxDftZero, VecZnxGadgetDecompose,
+        VecZnxGadgetDecomposeTmpBytes, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
     },
     layouts::{
         Backend, Module, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
@@ -52,20 +55,27 @@ where
     BE: Backend,
     C: LWEInfos,
     K: GGLWEInfos,
-    Module<BE>:
-        VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes + VecZnxIdftApplyTmpBytes + GGLWEProductReference<BE>,
+    Module<BE>: VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxGadgetDecomposeTmpBytes
+        + GGLWEProductReference<BE>,
 {
     let a_size = ct.size();
     let output_size = gglwe_product_accumulation_output_size::<BE, _, _, _>(ct, ct, key, term_count);
-    let product = module.gglwe_product_dft_tmp_bytes_reference(output_size, a_size, key);
+    let (base2k, k_digit, dnum) = (key.base2k(), key.k_digit(), key.dnum());
+    let operand_size = gadget_input_size(base2k, k_digit, dnum, ct.k(), a_size);
+    let layout = gadget_dft_apply_tmp_bytes::<BE, _>(module, base2k, k_digit, dnum, ct.k(), a_size);
+    let product = module.gglwe_product_dft_tmp_bytes_reference(output_size, operand_size, key);
     let mux = 2 * module.bytes_of_vec_znx_dft(module.n(), 2, output_size) + product;
     let finalize = module.bytes_of_vec_znx_big(module.n(), 2, output_size)
         + module
             .vec_znx_big_normalize_tmp_bytes()
             .max(module.vec_znx_idft_apply_tmp_bytes());
-    module.bytes_of_vec_znx_dft(module.n(), 2, a_size)
-        + module.bytes_of_vec_znx_dft(module.n(), 2, output_size)
-        + mux.max(finalize)
+    // The operand is laid out before the accumulator is taken.
+    module.bytes_of_vec_znx_dft(module.n(), 2, operand_size)
+        + layout.max(module.bytes_of_vec_znx_dft(module.n(), 2, output_size) + mux.max(finalize))
 }
 
 /// Hoisted B-to-1 mux-rotate: `ct <- sum_d beta_d * Rot_{rot_d}(ct)` over the
@@ -90,6 +100,7 @@ where
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxDftBytesOf
+        + VecZnxGadgetDecompose<BE>
         + GGLWEProductReference<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
 {
@@ -103,14 +114,37 @@ where
         keys[0].key.base2k().as_usize() == base2k,
         "{OP}: ciphertext/key base2k mismatch"
     );
+    // One operand serves every key of the group: whole-limb digits read the
+    // input limbs whatever their width, other widths must share one digit grid.
+    let (k_digit, dnum) = (keys[0].key.k_digit(), keys[0].key.dnum());
+    let key_base2k = keys[0].key.base2k();
+    ckks_ensure!(
+        keys.iter().all(|key| digits_aligned(key.key.base2k(), key.key.k_digit()))
+            || keys.iter().all(|key| (key.key.k_digit(), key.key.dnum()) == (k_digit, dnum)),
+        "{OP}: key digits off a limb boundary differ in width or count within the group"
+    );
+    let operand_size = gadget_input_size(key_base2k, k_digit, dnum, ct.k(), a_size);
 
     let scratch = scratch.borrow();
-    let (mut a_dft, scratch_1) = scratch.take_vec_znx_dft_scratch(module.n(), 2, a_size);
+    let (mut a_dft, mut scratch_1) = scratch.take_vec_znx_dft_scratch(module.n(), 2, operand_size);
     {
         let a_ref = GLWEToBackendRef::<BE>::to_backend_ref(ct);
         let mut a_dft_mut = a_dft.to_backend_mut();
-        module.vec_znx_dft_apply(1, 0, &mut a_dft_mut, 0, a_ref.data(), 1);
-        module.vec_znx_dft_apply(1, 0, &mut a_dft_mut, 1, a_ref.data(), 0);
+        // The rank-2 input is (0, a_mask, a_body): the mask column then the body.
+        for (res_col, a_col) in [(0, 1), (1, 0)] {
+            gadget_dft_apply(
+                module,
+                &mut a_dft_mut,
+                res_col,
+                a_ref.data(),
+                a_col,
+                key_base2k,
+                k_digit,
+                dnum,
+                ct.k(),
+                &mut scratch_1.borrow(),
+            );
+        }
     }
     let a_dft_ref = a_dft.to_backend_ref();
 

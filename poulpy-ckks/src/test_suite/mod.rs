@@ -8,8 +8,8 @@
 
 use crate::{Scale, ckks_log_delta};
 use poulpy_core::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWELayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWESwitchingKeyLayout, GLWETensorKeyLayout,
-    Rank, TorusPrecision,
+    Base2K, Degree, Dnum, GGLWELayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWESwitchingKeyLayout, GLWETensorKeyLayout, Rank,
+    TorusPrecision, k_digit_of,
 };
 
 use crate::SlotsKind;
@@ -66,11 +66,7 @@ impl CKKSTestParams {
     /// Gadget shape of a key covering an input of `k_in` bits: the digit count
     /// from [`GGLWELayout::dnum_for_input`] and the guard `dsize * base2k + log_n`.
     fn key_shape(&self, k_in: usize) -> (Dnum, TorusPrecision) {
-        let dnum = GGLWELayout::dnum_for_input(
-            Base2K(self.base2k as u32),
-            TorusPrecision(k_in as u32),
-            Dsize(self.dsize as u32),
-        );
+        let dnum = GGLWELayout::dnum_for_input(TorusPrecision(k_in as u32), k_digit_of(self.base2k, self.dsize));
         (dnum, TorusPrecision((self.dsize * self.base2k + self.log_n()) as u32))
     }
 
@@ -82,7 +78,7 @@ impl CKKSTestParams {
             dnum,
             k_aux,
             rank: Rank(self.rank as u32),
-            dsize: self.dsize.into(),
+            k_digit: k_digit_of(self.base2k, self.dsize),
         }
     }
 
@@ -94,7 +90,7 @@ impl CKKSTestParams {
             dnum,
             k_aux,
             rank: Rank(self.rank as u32),
-            dsize: self.dsize.into(),
+            k_digit: k_digit_of(self.base2k, self.dsize),
         }
     }
 
@@ -110,7 +106,7 @@ impl CKKSTestParams {
             k_aux,
             rank_in: Rank(self.rank as u32),
             rank_out: Rank(self.rank as u32),
-            dsize: self.dsize.into(),
+            k_digit: k_digit_of(self.base2k, self.dsize),
         }
     }
 }

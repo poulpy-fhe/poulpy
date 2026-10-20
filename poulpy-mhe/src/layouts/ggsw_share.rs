@@ -1,8 +1,6 @@
 use std::fmt;
 
-use poulpy_core::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWELayout, GGSWInfos, GLWEInfos, LWEInfos, Rank, TorusPrecision,
-};
+use poulpy_core::layouts::{Base2K, Degree, Dnum, GGLWEInfos, GGLWELayout, GGSWInfos, GLWEInfos, LWEInfos, Rank, TorusPrecision};
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord};
 
 use crate::layouts::GGLWEPatCompressed;
@@ -17,7 +15,7 @@ pub(crate) fn ggsw_share_part_layout<A: GGSWInfos>(infos: &A, rank_in: Rank, ran
         k_aux: infos.k_aux(),
         rank_in,
         rank_out,
-        dsize: infos.dsize(),
+        k_digit: infos.k_digit(),
         stride: 1,
     }
 }
@@ -105,8 +103,8 @@ impl<D: Data, W: ZnxWord> GGSWInfos for GGSWShare<D, W> {
         self.col0.dnum()
     }
 
-    fn dsize(&self) -> Dsize {
-        self.col0.dsize()
+    fn k_digit(&self) -> TorusPrecision {
+        self.col0.k_digit()
     }
 }
 

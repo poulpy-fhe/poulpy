@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ModuleN, VecZnxAddScalarAssign, VecZnxDftBytesOf, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxZero},
+    api::{ModuleN, VecZnxDftBytesOf, VecZnxNormalize, VecZnxNormalizeTmpBytes},
     layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena},
     source::Source,
 };
@@ -10,9 +10,7 @@ use crate::layouts::operand_degree;
 use crate::{
     GLWEEncryptSk, GLWEEncryptSkInternal, ScratchArenaTakeCore,
     api::GLWEMaskFill,
-    layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWESecretPreparedToBackendRef,
-    },
+    layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWESecretPreparedToBackendRef},
 };
 
 /// Portable implementation using HAL operations.
@@ -45,9 +43,7 @@ where
         + GLWEMaskFill<BE>
         + VecZnxNormalizeTmpBytes
         + VecZnxDftBytesOf
-        + VecZnxAddScalarAssign<BE>
-        + VecZnxNormalizeAssign<BE>
-        + VecZnxZero<BE>,
+        + VecZnxNormalize<BE>,
 {
     fn gglwe_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -104,17 +100,16 @@ where
                 GGLWEEncryptSkReference::gglwe_encrypt_sk_tmp_bytes_reference(self, res)
             );
             assert!(
-                res.dnum().0 * res.dsize().0 * res.base2k().0 <= res.k().0,
-                "res.dnum() : {} * res.dsize() : {} * res.base2k() : {} = {} >= res.k() = {}",
+                res.dnum().0 * res.k_digit().0 <= res.k().0,
+                "res.dnum() : {} * res.k_digit() : {} = {} > res.k() = {}",
                 res.dnum(),
-                res.dsize(),
-                res.base2k(),
-                res.dnum().0 * res.dsize().0 * res.base2k().0,
+                res.k_digit(),
+                res.dnum().0 * res.k_digit().0,
                 res.k()
             );
 
             let dnum: usize = res.dnum().into();
-            let dsize: usize = res.dsize().into();
+            let k_digit: usize = res.k_digit().as_usize();
             let base2k: usize = res.base2k().into();
             let rank_in: usize = res.rank_in().into();
             let (mut tmp_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(res);
@@ -133,16 +128,18 @@ where
             // (-(b*s) + s1, b)
             for col_i in 0..rank_in {
                 for row_i in 0..dnum {
-                    // Adds the scalar_znx_pt to the i-th limb of the vec_znx_pt
-                    self.vec_znx_zero(&mut tmp_pt.data, 0);
-                    self.vec_znx_add_scalar_assign(
-                        &mut tmp_pt.to_backend_mut().data,
+                    super::gadget_row_plaintext(
+                        self,
+                        &mut tmp_pt.data,
                         0,
-                        (dsize - 1) + row_i * dsize,
+                        base2k,
+                        tmp_pt_k,
+                        row_i,
+                        k_digit,
                         &pt_backend,
                         col_i,
+                        &mut scratch_1.borrow(),
                     );
-                    self.vec_znx_normalize_assign(base2k, tmp_pt_k, 0, &mut tmp_pt.data, 0, &mut scratch_1.borrow());
                     let mut res_view = res.at_view_mut(row_i, col_i);
                     self.fill_glwe_mask_from_source(&mut res_view, source_xa);
                     self.glwe_encrypt_sk_internal(

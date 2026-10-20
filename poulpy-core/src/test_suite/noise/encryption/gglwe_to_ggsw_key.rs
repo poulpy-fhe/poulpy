@@ -42,7 +42,7 @@ where
             base2k: base2k.into(),
             dnum: dnum.into(),
             k_aux: (base2k + module.log_n()).into(),
-            dsize: Dsize(1),
+            k_digit: crate::layouts::k_digit_of(base2k, Dsize(1)),
             rank: rank.into(),
         };
 
@@ -142,7 +142,7 @@ pub fn test_gglwe_to_ggsw_compressed_encrypt_sk<BE: crate::test_suite::noise::Te
             base2k: base2k.into(),
             dnum: dnum.into(),
             k_aux: (base2k + module.log_n()).into(),
-            dsize: Dsize(1),
+            k_digit: crate::layouts::k_digit_of(base2k, Dsize(1)),
             rank: rank.into(),
         };
 

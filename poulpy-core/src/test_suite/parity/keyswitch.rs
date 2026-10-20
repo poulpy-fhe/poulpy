@@ -19,7 +19,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GGLWEKeyswitch, GLWEKeyswitch,
+    GGLWEKeyswitch, GLWEKeyswitch, GLWEMaskFill,
     api::TransferInto,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGLWELayout, GGLWEPrepared, GGLWEPreparedBackendRef, GLWELayout, LWEInfos, ModuleCoreAlloc,
@@ -27,7 +27,7 @@ use crate::{
     },
     oep::GGLWEProductDigitsStridedImpl,
     reference::keyswitching::GGLWEProductReference,
-    test_suite::parity::{ParityBackend, ParityShapes, ref_gglwe, ref_glwe, unnormalized_twin},
+    test_suite::parity::{ParityBackend, ParityShapes, ref_gglwe, ref_glwe, unnormalized_twin, wide_twin},
 };
 
 /// Checks a backend's interleaved-digit product against the Core definition.
@@ -154,13 +154,17 @@ where
 
 /// Key layout for a `rank_in -> rank_out` switch covering `k` bits of input.
 fn key_layout(n: u32, base2k: usize, k: usize, dsize: usize, rank_in: usize, rank_out: usize) -> GGLWELayout {
-    let dnum = k.div_ceil(base2k * dsize);
+    key_layout_bits(n, base2k, k, dsize * base2k, rank_in, rank_out)
+}
+
+/// [`key_layout`] with digits of `k_digit` bits, on or off a limb boundary.
+fn key_layout_bits(n: u32, base2k: usize, k: usize, k_digit: usize, rank_in: usize, rank_out: usize) -> GGLWELayout {
     GGLWELayout {
         n: Degree(n),
         base2k: Base2K(base2k as u32),
-        dnum: Dnum(dnum as u32),
-        dsize: Dsize(dsize as u32),
-        k_aux: TorusPrecision((dsize * base2k) as u32),
+        dnum: Dnum(k.div_ceil(k_digit) as u32),
+        k_digit: TorusPrecision(k_digit as u32),
+        k_aux: TorusPrecision(k_digit as u32),
         rank_in: Rank(rank_in as u32),
         rank_out: Rank(rank_out as u32),
         stride: 1,
@@ -196,7 +200,7 @@ pub fn test_glwe_keyswitch_parity<BR, BT>(
     for a_base2k in [base2k, base2k - 1] {
         for &rank_in in &shapes.ranks {
             for &rank_out in &shapes.ranks {
-                for dsize in shapes.dsizes(k_in, base2k) {
+                for k_digit in shapes.k_digits(k_in, base2k, rank_in.max(rank_out)) {
                     let a_infos = GLWELayout {
                         n: Degree(n),
                         base2k: Base2K(a_base2k as u32),
@@ -206,10 +210,10 @@ pub fn test_glwe_keyswitch_parity<BR, BT>(
                     let res_infos = GLWELayout {
                         n: Degree(n),
                         base2k: Base2K(base2k as u32),
-                        k: TorusPrecision((k_in + base2k * dsize) as u32),
+                        k: TorusPrecision((k_in + k_digit) as u32),
                         rank: Rank(rank_out as u32),
                     };
-                    let key_infos = key_layout(n, base2k, k_in, dsize, rank_in, rank_out);
+                    let key_infos = key_layout_bits(n, base2k, k_in, k_digit, rank_in, rank_out);
 
                     let mut a_ref = ref_glwe(module_ref, &a_infos, &mut source);
                     a_ref.noise = Some(crate::ComponentNoise::from_secret(
@@ -255,7 +259,7 @@ pub fn test_glwe_keyswitch_parity<BR, BT>(
                     assert_glwe_eq!(
                         res_ref,
                         have,
-                        "glwe_keyswitch: rank_in={rank_in} rank_out={rank_out} dsize={dsize} k_in={k_in} a_base2k={a_base2k}"
+                        "glwe_keyswitch: rank_in={rank_in} rank_out={rank_out} k_digit={k_digit} k_in={k_in} a_base2k={a_base2k}"
                     );
 
                     unnormalized_twin::<BR, BT>(&a_ref, &mut a_test);
@@ -270,12 +274,87 @@ pub fn test_glwe_keyswitch_parity<BR, BT>(
                     assert_glwe_eq!(
                         res_ref,
                         have,
-                        "glwe_keyswitch, unnormalized operand: rank_in={rank_in} rank_out={rank_out} dsize={dsize} k_in={k_in} \
+                        "glwe_keyswitch, unnormalized operand: rank_in={rank_in} rank_out={rank_out} k_digit={k_digit} k_in={k_in} \
                      a_base2k={a_base2k}"
+                    );
+
+                    // A buffer wider than its precision, sized from that precision,
+                    // gives the same switch: the limbs past `k_in` are not read.
+                    let wide_infos = GLWELayout {
+                        k: TorusPrecision((k_in + 2 * a_base2k) as u32),
+                        ..a_infos
+                    };
+                    let mut wide_test = module_test.glwe_alloc_from_infos(&wide_infos);
+                    module_test.fill_glwe_from_source(&mut wide_test, &mut source);
+                    wide_twin::<BR, BT>(&a_ref, &mut wide_test);
+                    module_test.glwe_keyswitch(
+                        &mut res_test,
+                        &wide_test,
+                        &key_test.to_backend_ref(),
+                        &mut poisoned_scratch::<BT>(module_test.glwe_keyswitch_tmp_bytes(&res_infos, &a_infos, &key_infos))
+                            .borrow(),
+                    );
+                    res_test.transfer_into(&mut have);
+                    assert_glwe_eq!(
+                        res_ref,
+                        have,
+                        "glwe_keyswitch, operand wider than its precision: rank_in={rank_in} rank_out={rank_out} k_digit={k_digit} \
+                     k_in={k_in} a_base2k={a_base2k}"
                     );
                 }
             }
         }
+    }
+    // An input of precision 0 holds no limb: every digit width switches it as
+    // the whole-limb path does, to the key's body alone.
+    for k_digit in shapes.k_digits(k_in, base2k, 1) {
+        let a_infos = GLWELayout {
+            n: Degree(n),
+            base2k: Base2K(base2k as u32),
+            k: TorusPrecision(0),
+            rank: Rank(1),
+        };
+        let res_infos = GLWELayout {
+            k: TorusPrecision((k_in + k_digit) as u32),
+            ..a_infos
+        };
+        let key_infos = key_layout_bits(n, base2k, k_in, k_digit, 1, 1);
+        let a_ref = module_ref.glwe_alloc_from_infos(&a_infos);
+        let mut a_test = module_test.glwe_alloc_from_infos(&a_infos);
+        a_ref.transfer_into(&mut a_test);
+        let key_ref_coeffs = ref_gglwe(module_ref, &key_infos, &mut source);
+        let mut key_test_coeffs = module_test.gglwe_alloc_from_infos(&key_infos);
+        key_ref_coeffs.transfer_into(&mut key_test_coeffs);
+        let mut key_ref = module_ref.gglwe_prepared_alloc_from_infos(&key_infos);
+        module_ref.gglwe_prepare(
+            &mut key_ref,
+            &key_ref_coeffs,
+            &mut poisoned_scratch::<BR>(module_ref.gglwe_prepare_tmp_bytes(&key_infos)).borrow(),
+        );
+        let mut key_test = module_test.gglwe_prepared_alloc_from_infos(&key_infos);
+        module_test.gglwe_prepare(
+            &mut key_test,
+            &key_test_coeffs,
+            &mut poisoned_scratch::<BT>(module_test.gglwe_prepare_tmp_bytes(&key_infos)).borrow(),
+        );
+        let mut res_ref = ref_glwe(module_ref, &res_infos, &mut source);
+        let mut res_test = module_test.glwe_alloc_from_infos(&res_infos);
+        res_ref.transfer_into(&mut res_test);
+        module_ref.glwe_keyswitch(
+            &mut res_ref,
+            &a_ref,
+            &key_ref.to_backend_ref(),
+            &mut poisoned_scratch::<BR>(module_ref.glwe_keyswitch_tmp_bytes(&res_infos, &a_infos, &key_infos)).borrow(),
+        );
+        module_test.glwe_keyswitch(
+            &mut res_test,
+            &a_test,
+            &key_test.to_backend_ref(),
+            &mut poisoned_scratch::<BT>(module_test.glwe_keyswitch_tmp_bytes(&res_infos, &a_infos, &key_infos)).borrow(),
+        );
+        let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
+        res_test.transfer_into(&mut have);
+        assert_glwe_eq!(res_ref, have, "glwe_keyswitch, input of precision 0: k_digit={k_digit}");
     }
 }
 
@@ -303,14 +382,14 @@ pub fn test_glwe_keyswitch_assign_parity<BR, BT>(
 
     for res_base2k in [base2k, base2k - 1] {
         for &rank in &shapes.ranks {
-            for dsize in shapes.dsizes(k, base2k) {
+            for k_digit in shapes.k_digits(k, base2k, rank) {
                 let res_infos = GLWELayout {
                     n: Degree(n),
                     base2k: Base2K(res_base2k as u32),
                     k: TorusPrecision(k as u32),
                     rank: Rank(rank as u32),
                 };
-                let key_infos = key_layout(n, base2k, k, dsize, rank, rank);
+                let key_infos = key_layout_bits(n, base2k, k, k_digit, rank, rank);
 
                 let mut res_ref = ref_glwe(module_ref, &res_infos, &mut source);
                 let key_ref_coeffs = ref_gglwe(module_ref, &key_infos, &mut source);
@@ -344,7 +423,7 @@ pub fn test_glwe_keyswitch_assign_parity<BR, BT>(
                 assert_glwe_eq!(
                     res_ref,
                     have,
-                    "glwe_keyswitch_assign: rank={rank} dsize={dsize} k={k} res_base2k={res_base2k}"
+                    "glwe_keyswitch_assign: rank={rank} k_digit={k_digit} k={k} res_base2k={res_base2k}"
                 );
 
                 module_test.glwe_keyswitch_assign(
@@ -357,7 +436,7 @@ pub fn test_glwe_keyswitch_assign_parity<BR, BT>(
                 assert_glwe_eq!(
                     res_ref,
                     have,
-                    "glwe_keyswitch_assign, unnormalized operand: rank={rank} dsize={dsize} k={k} res_base2k={res_base2k}"
+                    "glwe_keyswitch_assign, unnormalized operand: rank={rank} k_digit={k_digit} k={k} res_base2k={res_base2k}"
                 );
             }
         }
@@ -387,10 +466,10 @@ pub fn test_gglwe_keyswitch_parity<BR, BT>(
     let mut source = Source::new([23u8; 32]);
 
     for &rank in &shapes.ranks {
-        for dsize in shapes.dsizes(k, base2k) {
+        for k_digit in shapes.k_digits(k, base2k, rank) {
             let a_infos = key_layout(n, base2k, k, 1, rank, rank);
             let res_infos = key_layout(n, base2k, k, 1, rank, rank);
-            let key_infos = key_layout(n, base2k, k, dsize, rank, rank);
+            let key_infos = key_layout_bits(n, base2k, k, k_digit, rank, rank);
 
             let a_ref = ref_gglwe(module_ref, &a_infos, &mut source);
             let key_ref_coeffs = ref_gglwe(module_ref, &key_infos, &mut source);
@@ -421,7 +500,7 @@ pub fn test_gglwe_keyswitch_parity<BR, BT>(
 
             let mut have = module_ref.gglwe_alloc_from_infos(&res_infos);
             res_test.transfer_into(&mut have);
-            assert_eval_eq!(res_ref, have, "gglwe_keyswitch: rank={rank} dsize={dsize} k={k}");
+            assert_eval_eq!(res_ref, have, "gglwe_keyswitch: rank={rank} k_digit={k_digit} k={k}");
 
             // The assign query is measured independently at the operand's own width.
             let mut assigned_ref = module_ref.gglwe_alloc_from_infos(&a_infos);
@@ -434,7 +513,7 @@ pub fn test_gglwe_keyswitch_parity<BR, BT>(
             module_test.gglwe_keyswitch_assign(&mut assigned_test, &key_test.to_backend_ref(), &mut scratch_test.borrow());
             let mut have = module_ref.gglwe_alloc_from_infos(&a_infos);
             assigned_test.transfer_into(&mut have);
-            assert_eval_eq!(assigned_ref, have, "gglwe_keyswitch_assign: rank={rank} dsize={dsize}");
+            assert_eval_eq!(assigned_ref, have, "gglwe_keyswitch_assign: rank={rank} k_digit={k_digit}");
         }
     }
 }
@@ -475,14 +554,14 @@ where
             n: Degree(n),
             base2k: Base2K(base2k as u32),
             dnum: Dnum(dnum),
-            dsize: Dsize(dsize),
+            k_digit: crate::layouts::k_digit_of(Base2K(base2k as u32), Dsize(dsize)),
             k_aux: TorusPrecision(dsize * base2k as u32 + n.ilog2()),
             rank_in: Rank(1),
             rank_out: Rank(1),
             stride: 1,
         };
-        let effective = Dsize(dsize * s);
-        let coarse: GGLWELayout = parent.at_dsize(effective).unwrap();
+        let effective = TorusPrecision(dsize * s * base2k as u32);
+        let coarse: GGLWELayout = parent.at_k_digit(effective).unwrap();
         let (stride, sel_dnum, sel_k_aux) = (s as usize, coarse.dnum, coarse.k_aux);
         let (cols_in, cols_out) = (parent.rank_in.as_usize(), (parent.rank_out + 1).as_usize());
         let (rows, size) = (parent.dnum.as_usize(), parent.max_size());
@@ -563,7 +642,7 @@ where
                 noise: None,
                 data: pmat.to_backend_ref(),
                 base2k: layout.base2k,
-                dsize: layout.dsize,
+                k_digit: layout.k_digit,
                 k_aux: layout.k_aux,
                 dnum: layout.dnum,
                 stride,
@@ -571,7 +650,7 @@ where
         }
         let effective_layout = GGLWELayout {
             dnum: sel_dnum,
-            dsize: effective,
+            k_digit: effective,
             k_aux: sel_k_aux,
             stride,
             ..parent
