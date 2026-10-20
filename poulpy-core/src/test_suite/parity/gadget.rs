@@ -205,7 +205,7 @@ where
     let mut source = Source::new([109; 32]);
     let b = params.base2k;
     for &rank in &shapes.ranks {
-        for dsize in shapes.dsizes(2 * b + 1, b) {
+        for digit_k in shapes.digit_ks(2 * b + 1, b, rank) {
             let g = GGSWLayout {
                 n: Degree(params.n as u32),
                 base2k: Base2K(b as u32),
@@ -217,9 +217,9 @@ where
             let k = GGLWELayout {
                 n: g.n,
                 base2k: g.base2k,
-                dnum: Dnum((4 * b + 1).div_ceil(b * dsize) as u32),
-                digit_k: crate::layouts::digit_k_of(g.base2k, Dsize(dsize as u32)),
-                k_aux: TorusPrecision((b * dsize + 1) as u32),
+                dnum: Dnum((4 * b + 1).div_ceil(digit_k) as u32),
+                digit_k: TorusPrecision(digit_k as u32),
+                k_aux: TorusPrecision((digit_k + 1) as u32),
                 rank_in: g.rank,
                 rank_out: g.rank,
                 stride: 1,
@@ -328,7 +328,7 @@ where
                     );
                     let mut have = r.ggsw_alloc_from_infos(&g);
                     out_t.transfer_into(&mut have);
-                    assert_eval_eq!(out_r, have, "{} rank={rank} dsize={dsize}", stringify!($apply));
+                    assert_eval_eq!(out_r, have, "{} rank={rank} digit_k={digit_k}", stringify!($apply));
                     a_r.transfer_into(&mut out_r);
                     a_r.transfer_into(&mut out_t);
                     r.$assign(
@@ -344,7 +344,7 @@ where
                         &mut poisoned_scratch::<BT>(t.$query(&g, &g, &k, &tk)).borrow(),
                     );
                     out_t.transfer_into(&mut have);
-                    assert_eval_eq!(out_r, have, "{} rank={rank} dsize={dsize}", stringify!($assign));
+                    assert_eval_eq!(out_r, have, "{} rank={rank} digit_k={digit_k}", stringify!($assign));
                 }};
             }
             check!(
@@ -389,7 +389,7 @@ where
             short_t.transfer_into(&mut short_have);
             assert_eq!(
                 short_r, short_have,
-                "ggsw keyswitch shorter result: rank={rank} dsize={dsize}"
+                "ggsw keyswitch shorter result: rank={rank} digit_k={digit_k}"
             );
             let mut out_r = r.glwe_automorphism_key_alloc_from_infos(&ak);
             let mut out_t = t.glwe_automorphism_key_alloc_from_infos(&ak);
@@ -409,7 +409,7 @@ where
             );
             let mut have = r.glwe_automorphism_key_alloc_from_infos(&ak);
             out_t.transfer_into(&mut have);
-            assert_eval_eq!(out_r, have, "automorphism key into: rank={rank} dsize={dsize}");
+            assert_eval_eq!(out_r, have, "automorphism key into: rank={rank} digit_k={digit_k}");
             auto_r.transfer_into(&mut out_r);
             auto_r.transfer_into(&mut out_t);
             r.glwe_automorphism_key_automorphism_assign(
@@ -423,7 +423,7 @@ where
                 &mut poisoned_scratch::<BT>(t.glwe_automorphism_key_automorphism_tmp_bytes(&ak, &ak, &ak)).borrow(),
             );
             out_t.transfer_into(&mut have);
-            assert_eval_eq!(out_r, have, "automorphism key assign: rank={rank} dsize={dsize}");
+            assert_eval_eq!(out_r, have, "automorphism key assign: rank={rank} digit_k={digit_k}");
             let h = GGLWELayout {
                 dnum: g.dnum,
                 digit_k: g.digit_k,
@@ -455,7 +455,7 @@ where
             );
             let mut have = r.ggsw_alloc_from_infos(&g);
             out_t.transfer_into(&mut have);
-            assert_eval_eq!(out_r, have, "ggsw_from_gglwe: rank={rank} dsize={dsize}");
+            assert_eval_eq!(out_r, have, "ggsw_from_gglwe: rank={rank} digit_k={digit_k}");
             // Row expansion consumes an existing GGSW body row and replaces mask rows.
             a_r.transfer_into(&mut out_r);
             a_r.transfer_into(&mut out_t);
@@ -470,7 +470,7 @@ where
                 &mut poisoned_scratch::<BT>(t.ggsw_expand_rows_tmp_bytes(&g, &tk)).borrow(),
             );
             out_t.transfer_into(&mut have);
-            assert_eval_eq!(out_r, have, "ggsw_expand_row: rank={rank} dsize={dsize}");
+            assert_eval_eq!(out_r, have, "ggsw_expand_row: rank={rank} digit_k={digit_k}");
         }
     }
 }

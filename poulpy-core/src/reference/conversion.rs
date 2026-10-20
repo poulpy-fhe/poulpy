@@ -6,8 +6,9 @@ use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApply,
-        VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxZero,
+        VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxGadgetDecompose,
+        VecZnxGadgetDecomposeTmpBytes, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes,
+        VecZnxRotate, VecZnxZero,
     },
     layouts::{
         Backend, Module, ScratchArena, VecZnxBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendRef, VecZnxDftToBackendRef,
@@ -24,7 +25,10 @@ use crate::{
         glwe_backend_ref_from_mut,
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedBackendRef},
     },
-    reference::keyswitching::{GGLWEProductReference, gglwe_product_output_size},
+    reference::keyswitching::{
+        GGLWEProductReference, gglwe_product_output_size,
+        glwe::{gadget_dft_apply, gadget_dft_apply_tmp_bytes, gadget_input_size},
+    },
 };
 
 pub fn lwe_sample_extract_reference<BE, M, R, A>(module: &M, res: &mut R, a: &A)
@@ -365,7 +369,8 @@ where
         + VecZnxBigNormalizeTmpBytes
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
-        + VecZnxNormalizeTmpBytes,
+        + VecZnxNormalizeTmpBytes
+        + VecZnxGadgetDecomposeTmpBytes,
     R: GGSWInfos,
     A: GGLWEInfos,
 {
@@ -378,16 +383,20 @@ where
 
     let a_size: usize = res_infos.k().as_usize().div_ceil(tsk_base2k);
     let output_size = gglwe_product_output_size::<BE, _, _, _>(res_infos, res_infos, tsk_infos);
+    let (digit_k, dnum) = (tsk_infos.digit_k(), tsk_infos.dnum());
+    let operand_size: usize = gadget_input_size(tsk_infos.base2k(), digit_k, dnum, res_infos.k(), a_size);
+    let layout: usize = gadget_dft_apply_tmp_bytes::<BE, _>(module, tsk_infos.base2k(), digit_k, dnum, res_infos.k(), a_size);
 
-    let lvl_0: usize = module.bytes_of_vec_znx_dft(n, cols - 1, a_size) + BE::bytes_of_vec_znx(n, 1, a_size);
+    let lvl_0: usize = module.bytes_of_vec_znx_dft(n, cols - 1, operand_size) + BE::bytes_of_vec_znx(n, 1, a_size);
     let lvl_1_res_dft: usize = module.bytes_of_vec_znx_dft(n, cols, output_size);
-    let lvl_1_gglwe_prod: usize = module.gglwe_product_dft_tmp_bytes_reference(output_size, a_size, tsk_infos);
+    let lvl_1_gglwe_prod: usize = module.gglwe_product_dft_tmp_bytes_reference(output_size, operand_size, tsk_infos);
     let lvl_1_big: usize = module.bytes_of_vec_znx_big(n, cols, output_size)
         + module
             .vec_znx_idft_apply_tmp_bytes()
             .max(module.vec_znx_big_normalize_tmp_bytes());
     let lvl_1: usize = lvl_1_res_dft + lvl_1_gglwe_prod.max(lvl_1_big);
-    let lvl_2: usize = module.vec_znx_normalize_tmp_bytes();
+    // Each mask column is normalized at the key radix, then laid out as the gadget operand.
+    let lvl_2: usize = module.vec_znx_normalize_tmp_bytes().max(layout);
 
     lvl_0 + lvl_1.max(lvl_2)
 }
@@ -412,7 +421,9 @@ pub fn ggsw_expand_row_reference<BE, M, R>(
         + VecZnxDftApply<BE>
         + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>
-        + VecZnxNormalize<BE>,
+        + VecZnxNormalize<BE>
+        + VecZnxGadgetDecompose<BE>
+        + VecZnxGadgetDecomposeTmpBytes,
     R: GGSWToBackendMut<BE> + GGSWInfos,
 {
     let mut res_backend = res.to_backend_mut();
@@ -427,23 +438,17 @@ pub fn ggsw_expand_row_reference<BE, M, R>(
         scratch.available(),
         ggsw_expand_rows_tmp_bytes_reference::<BE, _, _, _>(module, &res_backend, tsk)
     );
-    // The rows are products over the DFT of the input limbs, which only whole-limb digits read.
-    assert!(
-        tsk.digits_aligned(),
-        "ggsw_expand_rows: tensor key digits of {} bits are not whole limbs of {} bits",
-        tsk.digit_k(),
-        tsk.base2k()
-    );
-
     let rank: usize = res_backend.rank().into();
     let cols: usize = rank + 1;
 
     let res_conv_size: usize = res_backend.k().as_usize().div_ceil(tsk_base2k);
+    let (digit_k, dnum) = (tsk.digit_k(), tsk.dnum());
+    let operand_size: usize = gadget_input_size(tsk.base2k(), digit_k, dnum, res_backend.k(), res_conv_size);
     {
         let (mut a_dft, scratch_1) =
             scratch
                 .borrow()
-                .take_vec_znx_dft_scratch(res_backend.n().as_usize(), cols - 1, res_conv_size);
+                .take_vec_znx_dft_scratch(res_backend.n().as_usize(), cols - 1, operand_size);
         let (mut a_0, mut scratch_2) = scratch_1.take_vec_znx_scratch(res_backend.n().as_usize(), 1, res_conv_size);
 
         for row in 0..res_backend.dnum().as_usize() {
@@ -463,7 +468,18 @@ pub fn ggsw_expand_row_reference<BE, M, R>(
                         &mut scratch_2.borrow(),
                     );
                     let a_0_ref: VecZnxBackendRef<'_, BE> = a_0.to_backend_ref();
-                    module.vec_znx_dft_apply(1, 0, &mut a_dft, i, &a_0_ref, 0);
+                    gadget_dft_apply(
+                        module,
+                        &mut a_dft,
+                        i,
+                        &a_0_ref,
+                        0,
+                        tsk.base2k(),
+                        digit_k,
+                        dnum,
+                        res_backend.k(),
+                        &mut scratch_2.borrow(),
+                    );
                 }
                 module.vec_znx_normalize(
                     &mut a_0,
@@ -698,6 +714,8 @@ impl<BE: Backend> GGSWConversionReference<BE> for Module<BE>
 where
     Module<BE>: GLWEBytesOf<BE>
         + ModuleN
+        + VecZnxGadgetDecompose<BE>
+        + VecZnxGadgetDecomposeTmpBytes
         + GGLWEProductReference<BE>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxDftBytesOf

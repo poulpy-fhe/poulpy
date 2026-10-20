@@ -43,12 +43,18 @@ where
     let out_base2k: usize = in_base2k; // MUST BE SAME
     let k_in: usize = 4 * in_base2k + 1;
     let max_dsize: usize = k_in.div_ceil(key_base2k);
+    // Whole-limb digits, then widths off a limb boundary, which the switch and
+    // the row expansion lay out on the digit grid.
+    let digit_ks: Vec<usize> = (1..max_dsize + 1)
+        .map(|dsize| dsize * key_base2k)
+        .chain([key_base2k / 2 + 1, key_base2k + 1, 2 * key_base2k - 1])
+        .collect();
 
     for rank in 1_usize..3 {
-        for dsize in 1..max_dsize + 1 {
+        for &digit_k in &digit_ks {
             let n: usize = module.n();
             let dnum_in: usize = k_in / in_base2k;
-            let dnum_ksk: usize = k_in.div_ceil(key_base2k * dsize);
+            let dnum_ksk: usize = k_in.div_ceil(digit_k);
 
             let dsize_in: usize = 1;
 
@@ -74,8 +80,8 @@ where
                 n: n.into(),
                 base2k: key_base2k.into(),
                 dnum: dnum_ksk.into(),
-                k_aux: (dsize * key_base2k + module.log_n()).into(),
-                digit_k: crate::layouts::digit_k_of(key_base2k, dsize),
+                k_aux: (digit_k + module.log_n()).into(),
+                digit_k: digit_k.into(),
                 rank: rank.into(),
             };
 
@@ -83,8 +89,8 @@ where
                 n: n.into(),
                 base2k: key_base2k.into(),
                 dnum: dnum_ksk.into(),
-                k_aux: (dsize * key_base2k + module.log_n()).into(),
-                digit_k: crate::layouts::digit_k_of(key_base2k, dsize),
+                k_aux: (digit_k + module.log_n()).into(),
+                digit_k: digit_k.into(),
                 rank_in: rank.into(),
                 rank_out: rank.into(),
             };
@@ -222,12 +228,18 @@ where
     let key_base2k: usize = base2k;
     let k_out: usize = 4 * out_base2k + 1;
     let max_dsize: usize = k_out.div_ceil(key_base2k);
+    // Whole-limb digits, then widths off a limb boundary, which the switch and
+    // the row expansion lay out on the digit grid.
+    let digit_ks: Vec<usize> = (1..max_dsize + 1)
+        .map(|dsize| dsize * key_base2k)
+        .chain([key_base2k / 2 + 1, key_base2k + 1, 2 * key_base2k - 1])
+        .collect();
 
     for rank in 1_usize..3 {
-        for dsize in 1..max_dsize + 1 {
+        for &digit_k in &digit_ks {
             let n: usize = module.n();
             let dnum_in: usize = k_out / out_base2k;
-            let dnum_ksk: usize = k_out.div_ceil(key_base2k * dsize);
+            let dnum_ksk: usize = k_out.div_ceil(digit_k);
             let dsize_in: usize = 1;
 
             let ggsw_out_infos = GGSWLayout {
@@ -243,8 +255,8 @@ where
                 n: n.into(),
                 base2k: key_base2k.into(),
                 dnum: dnum_ksk.into(),
-                k_aux: (dsize * key_base2k + module.log_n()).into(),
-                digit_k: crate::layouts::digit_k_of(key_base2k, dsize),
+                k_aux: (digit_k + module.log_n()).into(),
+                digit_k: digit_k.into(),
                 rank: rank.into(),
             };
 
@@ -252,8 +264,8 @@ where
                 n: n.into(),
                 base2k: key_base2k.into(),
                 dnum: dnum_ksk.into(),
-                k_aux: (dsize * key_base2k + module.log_n()).into(),
-                digit_k: crate::layouts::digit_k_of(key_base2k, dsize),
+                k_aux: (digit_k + module.log_n()).into(),
+                digit_k: digit_k.into(),
                 rank_in: rank.into(),
                 rank_out: rank.into(),
             };

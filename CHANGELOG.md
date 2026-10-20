@@ -109,7 +109,8 @@
 - `reference::keyswitching::glwe::gadget_known_zero_prefix` gives the leading operand limbs that are zero for an input below `2^-(zero_bits + 1)`: the zero input limbs for whole-limb digits, and otherwise the top digits ending at least one bit above `zero_bits`, since the gadget rounding can carry one unit into the digit that ends at it.
 - `layouts::digits_aligned` and the provided `GGLWEInfos::digits_aligned` and `GGSWInfos::digits_aligned` tell whether the digits are whole limbs, so that a gadget product reads the input limbs as its operand.
   A view decides on its stored digit width, `digit_k / stride`, so a key and its coarser views agree.
-- GGSW row expansion panics on tensor key digits that are not whole limbs.
+- GGSW row expansion, and so GGSW key switching and automorphisms, takes tensor keys of any digit width: each mask column, normalized at the key radix, is laid out on the digit grid with `gadget_dft_apply`, and `ggsw_expand_rows_tmp_bytes` covers that operand.
+  The GGSW key-switch noise tests, in place or not, and the gadget parity suite also run widths off a limb boundary.
 - Key switching, automorphisms, traces and external products run with digits of any width ([#188](https://github.com/poulpy-fhe/poulpy/issues/188)).
   Keys whose digits are whole limbs read the input limbs as before, bit for bit.
   Other keys lay the input out on the digit grid with `vec_znx_gadget_decompose`, `ceil(digit_k / base2k)` sub-limbs per digit, and run the same interleaved product on that operand.
