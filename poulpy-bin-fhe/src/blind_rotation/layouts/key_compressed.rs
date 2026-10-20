@@ -165,7 +165,7 @@ impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> GGSWInfos for BlindRotationKey
     }
 
     fn digit_k(&self) -> poulpy_core::layouts::TorusPrecision {
-        poulpy_core::layouts::TorusPrecision(self.base2k().0)
+        self.keys[0].digit_k()
     }
 }
 

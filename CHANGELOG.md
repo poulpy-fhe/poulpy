@@ -108,7 +108,7 @@
   A digit below a limb also has `dsize() == 1`, so such a layout passed and the host allocators built the key at `digit_k = base2k` while the queries sized the requested width.
 - `reference::keyswitching::glwe::gadget_known_zero_prefix` gives the leading operand limbs that are zero for an input below `2^-(zero_bits + 1)`: the zero input limbs for whole-limb digits, and otherwise the top digits ending at least one bit above `zero_bits`, since the gadget rounding can carry one unit into the digit that ends at it.
 - `layouts::digits_aligned` and the provided `GGLWEInfos::digits_aligned` and `GGSWInfos::digits_aligned` tell whether the digits are whole limbs, so that a gadget product reads the input limbs as its operand.
-  A view decides on its stored digit width, `digit_k / stride`, so a key and its coarser views agree.
+  A view decides on the width it reads, `digit_k`, which sets the operand of its products.
 - GGSW row expansion, and so GGSW key switching and automorphisms, takes tensor keys of any digit width: each mask column, normalized at the key radix, is laid out on the digit grid with `gadget_dft_apply`, and `ggsw_expand_rows_tmp_bytes` covers that operand.
   The GGSW key-switch noise tests, in place or not, and the gadget parity suite also run widths off a limb boundary.
 - Key switching, automorphisms, traces and external products run with digits of any width ([#188](https://github.com/poulpy-fhe/poulpy/issues/188)).
@@ -221,7 +221,7 @@
 
 ### `poulpy-bin-fhe`
 
-- **Breaking:** `FheUintPrepared` and `FheUintPreparedDebug` allocators take `digit_k` in place of `dsize`, and the blind rotation keys report one-limb digits as `digit_k = base2k`.
+- **Breaking:** `FheUintPrepared` and `FheUintPreparedDebug` allocators take `digit_k` in place of `dsize`, and the blind rotation keys report the `digit_k` their GGSWs store, `base2k` as built, as their layout does.
 - The scalar-to-GGSW blind rotation reference places its gadget rows through `gadget_row_plaintext`, requires `VecZnxNormalize` in place of `VecZnxAddScalarAssign` and `VecZnxNormalizeAssign`, and its scratch covers `vec_znx_normalize_tmp_bytes`.
 
 ### `poulpy-mhe`
