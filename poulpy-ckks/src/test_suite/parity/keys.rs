@@ -15,12 +15,17 @@ use poulpy_hal::{
 
 /// Gadget layout of a key covering `k` bits with digit size `dsize`.
 pub fn key_layout(n: usize, base2k: usize, k: usize, dsize: usize, rank_in: usize, rank_out: usize) -> GGLWELayout {
+    key_layout_bits(n, base2k, k, base2k * dsize, rank_in, rank_out)
+}
+
+/// [`key_layout`] with digits of `digit_k` bits, on or off a limb boundary.
+pub fn key_layout_bits(n: usize, base2k: usize, k: usize, digit_k: usize, rank_in: usize, rank_out: usize) -> GGLWELayout {
     GGLWELayout {
         n: n.into(),
         base2k: base2k.into(),
-        dnum: k.div_ceil(base2k * dsize).into(),
-        digit_k: (base2k * dsize).into(),
-        k_aux: (base2k * dsize).into(),
+        dnum: k.div_ceil(digit_k).into(),
+        digit_k: digit_k.into(),
+        k_aux: digit_k.into(),
         rank_in: rank_in.into(),
         rank_out: rank_out.into(),
         stride: 1,

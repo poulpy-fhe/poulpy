@@ -19,7 +19,9 @@
   `reim4_gather_sparse_block_portable` and `reim4_gather_sparse_block_sum_portable` become `reim4_gather_block_portable` and `reim4_gather_block_sum_portable`, which read through a `RightRead`.
   `convolution_apply_dft_portable`, `ntt4x30_cnv_apply_dft_portable`, their `_add` forms, the packed NTT4x30 drivers and `PackedNtt4x30Base::cnv_apply_dft` and `cnv_apply_dft_add` take `b_galois` after `b_col`.
 - Every CPU backend implements `vec_znx_gadget_decompose` with one portable kernel, a single limb-major pass with exact carries that needs no scratch, and the oracle backend with an independent big-integer implementation.
-- The native CKKS encapsulated modulus raise (portable, AVX2, AVX-512) takes the reference on keys whose digits are not whole limbs, in its scratch sizing as in its execution.
+- The native CKKS encapsulated modulus raise (portable, AVX2, AVX-512, and their Rayon variants) keeps its path for sparse-to-dense keys of any digit width.
+  Digits off a limb boundary lay the raised mask out on the digit grid, and the top digits the raise leaves at zero are neither transformed nor read by the product, as whole-limb digits skip their zero limbs.
+  The portable scratch covers the decomposed operand and its digit buffer.
 - The IFMA linear transformation keeps its fused giant-step rotation for automorphism keys of any digit width: each normalized mask column is laid out on the digit grid with `gadget_dft_apply` before the product, as in the reference lazy giant step.
   Keys whose digits fit in one limb still take the reference, as one-limb aligned keys do.
 - The AVX-512 rank-one relinearization keeps its packed path for tensor keys of any digit width: digits off a limb boundary lay the tensor pairs out on the digit grid with `gadget_dft_apply`, and its scratch covers that operand.
@@ -94,6 +96,7 @@
   Secret-key GGLWE and GGSW encryption, compressed or not, public-key GGSW encryption and the GGLWE and GGSW noise references place their rows through it, bit for bit as before when `digit_k = dsize * base2k`.
   The scratch of the GGLWE and GGSW noise references covers `vec_znx_normalize_tmp_bytes`.
 - **Breaking:** `EncryptionImpl::ggsw_encrypt_pk`, the `GGSWEncryptPk` delegate and the reference GGLWE and GGSW encryption traits require `VecZnxNormalize` in place of `VecZnxZero`, `VecZnxAddScalarAssign` and `VecZnxNormalizeAssign`.
+- `reference::keyswitching::glwe::gadget_known_zero_prefix` gives the leading operand limbs that are zero for an input below `2^-(zero_bits + 1)`: the zero input limbs for whole-limb digits, and otherwise the top digits ending at least one bit above `zero_bits`, since the gadget rounding can carry one unit into the digit that ends at it.
 - `layouts::digits_aligned` and the provided `GGLWEInfos::digits_aligned` and `GGSWInfos::digits_aligned` tell whether the digits are whole limbs, so that a gadget product reads the input limbs as its operand.
   A view decides on its stored digit width, `digit_k / stride`, so a key and its coarser views agree.
 - GGSW row expansion panics on tensor key digits that are not whole limbs.
@@ -167,6 +170,7 @@
   It rounded every tie of both columns up, a bias that adds up in the first slots: about `2^-34` at slot 0 for a degree-`2^16` ciphertext at scale `2^54`, against `2^-43` elsewhere.
   The outputs keep the input scale at one bit narrower, as before.
 - The SHIP mux-rotate returns an error on key digits that are not whole limbs.
+- `test_suite::parity::keys::key_layout_bits` builds a key layout of any digit width, and the encapsulated ModUp parity also sweeps widths off a limb boundary, with zero digit prefixes of none, one and several digits and a shift ending on a digit boundary.
 - Add `CKKSLinearTransformationOps::ckks_eval_linear_transformation_sum_into` and its `_tmp_bytes`: `Σ_t M_t · src_t`, over the slices `srcs`, `babies` and `lts` of one length, for resident transforms that share one giant schedule, at the giant key-switch cost of one transform, with the single transform's metadata.
   Slices of different lengths, or a term that does not share the first one's schedule, diagonals, source or baby-cache layout, are `InvalidOperand`, returned before `dst` is written.
 - **Breaking, behaviour:** `ckks_dot_product_ct` relinearizes once for pairs that share layouts, which changes its bits: with two pairs or more, `dst.base2k() <= 62`, one layout and scale for every `a[i]` and one for every `b[i]`, it relinearizes once into a canonical `dst`, with the tensor key at `ckks_mul_into`'s width.
