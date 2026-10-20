@@ -82,7 +82,7 @@ where
         LWEToGLWEKeyPrepared(self.glwe_switching_key_prepared_alloc(
             base2k,
             dnum,
-            TorusPrecision(base2k.0),
+            TorusPrecision::from(base2k),
             k_aux,
             Rank(1),
             rank_out,
@@ -102,7 +102,7 @@ where
     }
 
     fn lwe_to_glwe_key_prepared_bytes_of(&self, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision, rank_out: Rank) -> usize {
-        self.bytes_of_glwe_key_prepared(base2k, dnum, TorusPrecision(base2k.0), k_aux, Rank(1), rank_out)
+        self.bytes_of_glwe_key_prepared(base2k, dnum, TorusPrecision::from(base2k), k_aux, Rank(1), rank_out)
     }
 
     fn lwe_to_glwe_key_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize

@@ -293,9 +293,7 @@ fn finish_giant(
     };
     let output_size = output_size.min(key.size());
     let mask_size = prod.size().min(output_size);
-    // Each normalized mask column is the gadget operand, at most `mask_size`
-    // full limbs: the limbs themselves for whole-limb digits, laid out on the
-    // digit grid otherwise, as the reference lazy giant step does.
+    // Each normalized mask column is the gadget operand, at most `mask_size` full limbs.
     let (digit_k, dnum) = (key.digit_k(), key.dnum());
     let mask_k = TorusPrecision((mask_size * base) as u32);
     let operand_size = gadget_input_size(key.base2k(), digit_k, dnum, mask_k, mask_size);

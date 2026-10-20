@@ -107,9 +107,7 @@ where
     let (mask_cols, output_cols) = (dst.rank().as_usize(), dst.rank().as_usize() + 1);
     let output_size = gglwe_product_output_size::<BE, _, _, _>(dst, dst, sparse_to_dense);
     let res_dft = BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, output_cols, output_size));
-    // The mask columns are the gadget operand, laid out on the digit grid
-    // into a one-column buffer before their transform when the digits are not
-    // whole limbs.
+    // Off-limb digits are laid out in a one-column buffer before their transform.
     let (base2k, digit_k, dnum) = (sparse_to_dense.base2k(), sparse_to_dense.digit_k(), sparse_to_dense.dnum());
     let operand_size = gadget_input_size(base2k, digit_k, dnum, dst.k(), dst.size());
     let layout = gadget_dft_apply_tmp_bytes::<BE, _>(module, base2k, digit_k, dnum, dst.k(), dst.size());

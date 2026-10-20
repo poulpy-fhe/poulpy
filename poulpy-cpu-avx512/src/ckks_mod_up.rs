@@ -231,9 +231,7 @@ where
 
     {
         let dst_ref = dst.to_backend_ref();
-        // The mask columns are the gadget operand: their limbs for whole-limb
-        // digits, their layout on the digit grid otherwise. The prefix the raise
-        // leaves at zero is not transformed and the product does not read it.
+        // The prefix the raise leaves at zero is not transformed and the product does not read it.
         let (base2k, digit_k, dnum) = (key.base2k(), key.digit_k(), key.dnum());
         let operand_size = gadget_input_size(base2k, digit_k, dnum, dst_ref.k(), dst_ref.size());
         let zero_prefix = gadget_known_zero_prefix(base2k, digit_k, dnum, shift).min(operand_size);

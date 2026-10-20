@@ -252,7 +252,7 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for GGLWECompressed<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "(GGLWECompressed: base2k={} k={} dsize={}) {}",
+            "(GGLWECompressed: base2k={} k={} digit_k={}) {}",
             self.base2k.0,
             self.k().0,
             self.digit_k.0,

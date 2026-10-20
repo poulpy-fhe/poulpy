@@ -132,7 +132,7 @@ impl<D: Data, W: ZnxWord> GLWEToLWESwitchingKeyCompressed<D, W> {
             n,
             base2k,
             dnum,
-            TorusPrecision(base2k.0),
+            TorusPrecision::from(base2k),
             k_aux,
             rank_in,
             Rank(1),
@@ -157,7 +157,7 @@ impl<D: Data, W: ZnxWord> GLWEToLWESwitchingKeyCompressed<D, W> {
     }
 
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision, rank_in: Rank) -> usize {
-        GLWESwitchingKeyCompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, TorusPrecision(base2k.0), k_aux, rank_in)
+        GLWESwitchingKeyCompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, TorusPrecision::from(base2k), k_aux, rank_in)
     }
 }
 

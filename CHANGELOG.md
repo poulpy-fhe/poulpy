@@ -107,6 +107,8 @@
 - **Fix:** the LWE switching, GLWE-to-LWE and LWE-to-GLWE key allocators and size queries, host, compressed and prepared, and the reference LWE switching-key encryption check `digit_k == base2k` in place of `dsize() == 1`.
   A digit below a limb also has `dsize() == 1`, so such a layout passed and the host allocators built the key at `digit_k = base2k` while the queries sized the requested width.
 - `reference::keyswitching::glwe::gadget_known_zero_prefix` gives the leading operand limbs that are zero for an input below `2^-(zero_bits + 1)`: the zero input limbs for whole-limb digits, and otherwise the top digits ending at least one bit above `zero_bits`, since the gadget rounding can carry one unit into the digit that ends at it.
+- Add `From<Base2K> for TorusPrecision`, the width of a one-limb digit, and use it where a layout builds `digit_k = base2k`.
+- The `transfer_into` asserts of GGLWE and GGSW, and the `Display` of their compressed forms, name `digit_k` where they compare or print it.
 - `layouts::digits_aligned` and the provided `GGLWEInfos::digits_aligned` and `GGSWInfos::digits_aligned` tell whether the digits are whole limbs, so that a gadget product reads the input limbs as its operand.
   A view decides on the width it reads, `digit_k`, which sets the operand of its products.
 - GGSW row expansion, and so GGSW key switching and automorphisms, takes tensor keys of any digit width: each mask column, normalized at the key radix, is laid out on the digit grid with `gadget_dft_apply`, and `ggsw_expand_rows_tmp_bytes` covers that operand.

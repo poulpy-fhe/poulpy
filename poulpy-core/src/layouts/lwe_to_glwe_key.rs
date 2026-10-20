@@ -29,11 +29,11 @@ impl LWEInfos for LWEToGLWEKeyLayout {
     }
 
     fn max_size(&self) -> usize {
-        crate::layouts::key_size(self.base2k, self.dnum, TorusPrecision(self.base2k.0), self.k_aux)
+        crate::layouts::key_size(self.base2k, self.dnum, TorusPrecision::from(self.base2k), self.k_aux)
     }
 
     fn k(&self) -> TorusPrecision {
-        crate::layouts::key_k(self.dnum, TorusPrecision(self.base2k.0), self.k_aux)
+        crate::layouts::key_k(self.dnum, TorusPrecision::from(self.base2k), self.k_aux)
     }
 }
 
@@ -57,7 +57,7 @@ impl GGLWEInfos for LWEToGLWEKeyLayout {
     }
 
     fn digit_k(&self) -> TorusPrecision {
-        TorusPrecision(self.base2k().0)
+        TorusPrecision::from(self.base2k())
     }
 
     fn rank_out(&self) -> Rank {
@@ -165,7 +165,7 @@ impl<W: ZnxWord> LWEToGLWEKey<AlignedBuf, W> {
             n,
             base2k,
             dnum,
-            TorusPrecision(base2k.0),
+            TorusPrecision::from(base2k),
             k_aux,
             Rank(1),
             rank_out,
@@ -186,7 +186,7 @@ impl<W: ZnxWord> LWEToGLWEKey<AlignedBuf, W> {
     }
 
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision, rank_out: Rank) -> usize {
-        GLWESwitchingKey::<AlignedBuf, W>::bytes_of(n, base2k, dnum, TorusPrecision(base2k.0), k_aux, Rank(1), rank_out)
+        GLWESwitchingKey::<AlignedBuf, W>::bytes_of(n, base2k, dnum, TorusPrecision::from(base2k), k_aux, Rank(1), rank_out)
     }
 }
 

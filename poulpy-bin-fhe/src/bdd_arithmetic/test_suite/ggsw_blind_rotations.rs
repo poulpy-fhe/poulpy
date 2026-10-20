@@ -55,7 +55,7 @@ where
         k_aux: TorusPrecision(k_ggsw_res.0 - 2 * base2k.0),
         rank,
         dnum: Dnum(2),
-        digit_k: TorusPrecision(base2k.0),
+        digit_k: TorusPrecision::from(base2k),
     };
 
     let ggsw_k_infos: GGSWLayout = GGSWLayout {
@@ -64,7 +64,7 @@ where
         k_aux: TorusPrecision(k_ggsw_apply.0 - 3 * base2k.0),
         rank,
         dnum: Dnum(3),
-        digit_k: TorusPrecision(base2k.0),
+        digit_k: TorusPrecision::from(base2k),
     };
 
     let mut source: Source = Source::new([6u8; 32]);

@@ -59,7 +59,7 @@ impl GGSWInfos for BlindRotationKeyLayout {
     }
 
     fn digit_k(&self) -> poulpy_core::layouts::TorusPrecision {
-        poulpy_core::layouts::TorusPrecision(self.base2k().0)
+        poulpy_core::layouts::TorusPrecision::from(self.base2k())
     }
 
     fn dnum(&self) -> Dnum {
@@ -86,13 +86,13 @@ impl LWEInfos for BlindRotationKeyLayout {
         poulpy_core::layouts::key_size(
             self.base2k,
             self.dnum,
-            poulpy_core::layouts::TorusPrecision(self.base2k.0),
+            poulpy_core::layouts::TorusPrecision::from(self.base2k),
             self.k_aux,
         )
     }
 
     fn k(&self) -> TorusPrecision {
-        poulpy_core::layouts::key_k(self.dnum, poulpy_core::layouts::TorusPrecision(self.base2k.0), self.k_aux)
+        poulpy_core::layouts::key_k(self.dnum, poulpy_core::layouts::TorusPrecision::from(self.base2k), self.k_aux)
     }
 }
 

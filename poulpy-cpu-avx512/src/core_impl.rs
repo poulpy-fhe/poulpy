@@ -922,8 +922,6 @@ macro_rules! impl_rank_one_tensoring {
                 let output_size = gglwe_product_output_size::<$be, _, _, _>(res, a, &key);
                 let res_base2k = res.base2k().as_usize();
                 let res_k = res.k().as_usize();
-                // The tensor pairs are the gadget operand: the input limbs for
-                // whole-limb digits, laid out on the digit grid otherwise.
                 let (base2k, digit_k, dnum) = (key.base2k(), key.digit_k(), key.dnum());
                 let a_k = a.k();
                 let operand_size = gadget_input_size(base2k, digit_k, dnum, a_k, a_size);

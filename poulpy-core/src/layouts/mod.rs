@@ -685,7 +685,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             k_aux,
             rank_in,
             rank_out: Rank(1),
-            digit_k: TorusPrecision(base2k.0),
+            digit_k: TorusPrecision::from(base2k),
             stride: 1,
         })
     }
@@ -835,7 +835,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             k_aux,
             rank_in: Rank(1),
             rank_out,
-            digit_k: TorusPrecision(base2k.0),
+            digit_k: TorusPrecision::from(base2k),
             stride: 1,
         })
     }
@@ -1371,6 +1371,14 @@ newtype_u32!(
     /// Wraps a [`u32`] with saturating arithmetic.
     Dsize
 );
+
+/// A limb at radix `base2k` holds `base2k` bits of torus precision: the width
+/// of a one-limb gadget digit.
+impl From<Base2K> for TorusPrecision {
+    fn from(base2k: Base2K) -> Self {
+        TorusPrecision(base2k.0)
+    }
+}
 
 impl Degree {
     /// Returns log2(n). Assumes n is a positive power of two.
