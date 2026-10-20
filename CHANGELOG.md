@@ -182,7 +182,9 @@
 - Fix: the halving of `ckks_ci_trace`, and so of `ckks_unfold` of conjugate-invariant inputs, rounds its ties to even.
   It rounded every tie of both columns up, a bias that adds up in the first slots: about `2^-34` at slot 0 for a degree-`2^16` ciphertext at scale `2^54`, against `2^-43` elsewhere.
   The outputs keep the input scale at one bit narrower, as before.
-- The SHIP mux-rotate returns an error on key digits that are not whole limbs.
+- The SHIP mux-rotate takes keys of any digit width: the rank-2 input shared by a group is laid out on the digit grid with `gadget_dft_apply`, and its scratch covers that operand.
+  A group whose keys are not all whole-limb must share one digit width and count, and returns an error otherwise.
+  The mux key generation takes the digit width in bits, and the mux test also runs widths below a limb, one bit past a limb and one bit short of two, and checks that a mixed group is rejected.
 - `test_suite::parity::keys::key_layout_bits` builds a key layout of any digit width, and the encapsulated ModUp parity also sweeps widths off a limb boundary, with zero digit prefixes of none, one and several digits and a shift ending on a digit boundary.
 - Add `CKKSLinearTransformationOps::ckks_eval_linear_transformation_sum_into` and its `_tmp_bytes`: `Σ_t M_t · src_t`, over the slices `srcs`, `babies` and `lts` of one length, for resident transforms that share one giant schedule, at the giant key-switch cost of one transform, with the single transform's metadata.
   Slices of different lengths, or a term that does not share the first one's schedule, diagonals, source or baby-cache layout, are `InvalidOperand`, returned before `dst` is written.

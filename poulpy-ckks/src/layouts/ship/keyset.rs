@@ -347,7 +347,7 @@ impl<D: Data, BE: Backend> ShipKeysPrepared<D, BE> {
 }
 
 /// Encrypts one [`HMuxRotKey`] for test bit `beta` and rotation amount `rot`
-/// at ciphertext precision `k_ct`.
+/// at ciphertext precision `k_ct`, with gadget digits of `digit_k` bits.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn hmux_rot_key_encrypt_sk<BE>(
     module: &Module<BE>,
@@ -357,7 +357,7 @@ pub(crate) fn hmux_rot_key_encrypt_sk<BE>(
     rot: usize,
     k_ct: usize,
     base2k: Base2K,
-    dsize: usize,
+    digit_k: usize,
     source_xe: &mut Source,
     source_xa: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
@@ -397,15 +397,14 @@ where
     let mut sk_out = module.glwe_secret_alloc_from_infos(&sk_out_host);
     sk_out_host.transfer_into(&mut sk_out);
 
-    let b2k = base2k.as_usize();
     let ksk_infos = GLWESwitchingKeyLayout {
         n,
         base2k,
-        dnum: k_ct.div_ceil(b2k * dsize).into(),
-        k_aux: (b2k * dsize).into(),
+        dnum: k_ct.div_ceil(digit_k).into(),
+        k_aux: digit_k.into(),
         rank_in: Rank(2),
         rank_out: Rank(1),
-        digit_k: (b2k * dsize).into(),
+        digit_k: digit_k.into(),
     };
     let mut key = module.glwe_switching_key_alloc_from_infos(&ksk_infos);
     module.glwe_switching_key_encrypt_sk(&mut key, &sk_in, &sk_out, source_xe, source_xa, scratch);
@@ -521,7 +520,7 @@ impl<D: Data> ShipKeySet<D, i64> {
                         (d * weight) % m,
                         kk,
                         base2k,
-                        layout.mux_dsize,
+                        layout.mux_dsize * base2k.as_usize(),
                         source_xe,
                         source_xa,
                         scratch,
