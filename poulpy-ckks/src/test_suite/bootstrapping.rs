@@ -206,12 +206,10 @@ where
 
     // One scratch for the whole pipeline (plaintext precision sized for the
     // largest plaintext op, EvalMod).
-    // Keys shaped by use, as the presets do: a second tensor key for the lower
-    // half of EvalMod, and rotation keys of the last CoeffsToSlots factor sized
-    // for the width that factor runs at.
+    // Keys shaped by use, as the presets do: rotation keys of the last
+    // CoeffsToSlots factor sized for the width that factor runs at.
     let c2s = plan.coeffs_to_slots();
     let after_c2s = k_boot - c2s.consumed_bits();
-    let after_eval_mod = after_c2s - plan.eval_mod().consumed_bits();
     let narrow = |k: usize| CKKSTestParams { k, ..tp };
     let factors = c2s.galois_elements_per_factor(tp.log_n(), 2 * n as i64);
     let last = factors.len() - 1;
@@ -224,7 +222,6 @@ where
     assert!(!rotation_keys.is_empty());
     let keys_layout = BootstrappingKeysLayout {
         rotation_keys,
-        narrow_tensor_keys: vec![narrow((after_c2s + after_eval_mod) / 2).tsk_layout()],
         automorphism_key: tp.atk_layout(),
         tensor_key: tp.tsk_layout(),
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
@@ -278,22 +275,25 @@ where
         .unwrap()
         .prepare(&module, &mut scratch.borrow());
 
-    // Each relinearization gets the key of fewest rows covering its input,
-    // and no key at all past the widest.
+    // The tensor key covers EvalMod's input, and the bootstrap's key source
+    // refuses a lookup past what a key covers.
     {
-        use crate::layouts::{BootstrappingKeys, TensorKeysByWidth};
-        use poulpy_core::layouts::{GGLWEInfos, GetTensorKey};
-        let tensor_keys = TensorKeysByWidth::new(&bsk);
-        let rows = |k: usize| tensor_keys.get_tensor_key(k.into()).map(|key| key.dnum().as_usize());
-        let (wide, narrow) = (
-            bsk.tensor_key().dnum().as_usize(),
-            bsk.narrow_tensor_keys()[0].dnum().as_usize(),
-        );
-        assert!(narrow < wide);
-        assert_eq!(rows(after_c2s).unwrap(), wide);
-        assert_eq!(rows((after_c2s + after_eval_mod) / 2).unwrap(), narrow);
-        assert_eq!(rows(after_eval_mod).unwrap(), narrow);
-        assert!(rows(bsk.tensor_key().gglwe_layout().max_input_k().as_usize() + 1).is_err());
+        use crate::layouts::{BootstrappingKeys, CoveringKeys};
+        use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey, GetTensorKey};
+        let tensor_key = CoveringKeys(bsk.tensor_key());
+        let max_input_k = bsk.tensor_key().gglwe_layout().max_input_k().as_usize();
+        assert!(after_c2s <= max_input_k);
+        assert!(tensor_key.get_tensor_key(max_input_k.into()).is_ok());
+        assert!(tensor_key.get_tensor_key((max_input_k + 1).into()).is_err());
+        let (&p, narrow) = bsk
+            .rotation_keys
+            .iter()
+            .min_by_key(|(_, key)| key.gglwe_layout().max_input_k())
+            .unwrap();
+        let narrow_k = narrow.gglwe_layout().max_input_k().as_usize();
+        let rotation_keys = CoveringKeys(bsk.rotation_keys());
+        assert!(rotation_keys.get_automorphism_key(p, narrow_k.into()).is_ok());
+        assert!(rotation_keys.get_automorphism_key(p, (narrow_k + 1).into()).is_err());
     }
 
     // Encrypt z at the input ("level 0") modulus.
@@ -420,7 +420,7 @@ where
             &mut res_real,
             &ct_real,
             ctx.eval_mod(),
-            &crate::layouts::TensorKeysByWidth::new(&bsk),
+            &bsk.tensor_key,
             &mut scratch.borrow(),
         )
         .unwrap();
@@ -429,7 +429,7 @@ where
             &mut res_imag,
             &ct_imag,
             ctx.eval_mod(),
-            &crate::layouts::TensorKeysByWidth::new(&bsk),
+            &bsk.tensor_key,
             &mut scratch.borrow(),
         )
         .unwrap();
@@ -547,7 +547,6 @@ where
 
     let keys_layout = BootstrappingKeysLayout {
         rotation_keys: Default::default(),
-        narrow_tensor_keys: Vec::new(),
         automorphism_key: tp.atk_layout(),
         tensor_key: tp.tsk_layout(),
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
@@ -852,7 +851,6 @@ where
 
     let keys_layout = BootstrappingKeysLayout {
         rotation_keys: Default::default(),
-        narrow_tensor_keys: Vec::new(),
         automorphism_key: tp.atk_layout(),
         tensor_key: tp.tsk_layout(),
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {

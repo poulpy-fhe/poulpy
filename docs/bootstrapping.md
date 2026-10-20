@@ -236,9 +236,9 @@ To size the preparation scratch exactly, compile in two stages: `BootstrappingCo
 A preset includes its circuit plan, composable input/output/bootstrap widths, secret weights, ciphertext allocation layouts, and physical evaluation-key layouts:
 
 ```rust
-use poulpy_ckks::presets::bootstrapping::n16_d35_k600_p19_c2s;
+use poulpy_ckks::presets::bootstrapping::n16_d35_k636_p20_c2s;
 
-let preset = n16_d35_k600_p19_c2s()?;
+let preset = n16_d35_k636_p20_c2s()?;
 let plan = preset.plan();
 let keys_layout = preset.keys_layout();
 let input_layout = preset.input_layout();
@@ -253,21 +253,21 @@ The presets take inputs at scale `2^35` and use an optimized Han–Ki EvalMod:
 | Constructor | Pipeline | Input `k` | Output `k` | Minimum precision | Net usable bits (levels) | Bootstrap `k` |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
 | `n15_d35_k180_p18_c2s` | C2S-first | 40 | 180 | 18 bits | 140 (4) | 780 |
-| `n16_d35_k600_p19_c2s` | C2S-first | 40 | 600 | 19 bits | 560 (16) | 1427 |
+| `n16_d35_k636_p20_c2s` | C2S-first | 41 | 636 | 20 bits | 595 (17) | 1381 |
 | `n16_d35_k733_p20_s2c` | S2C-first | 138 | 733 | 20 bits | 595 (17) | 1353 |
 
-The logN15 preset merges each transform into two seven-layer factors: C2S uses `[(7, 2048), (7, 16)]` at matrix scale `2^49`, and S2C uses the reversed schedule at scale `2^30`. EvalMod keeps the degree-30, interval-16 Han–Ki polynomial, three range-reduction steps, and coefficient scale `2^42`, with evaluation scale `2^53`. C2S, EvalMod, and S2C consume 98, 424, and 60 bits; restoring scale `2^35` consumes another 18 bits. Thus `780 - 98 - 424 - 60 - 18 = 180`, leaving four 35-bit levels above the 40-bit input width.
+The logN15 preset merges each transform into two seven-layer factors: C2S uses `[(7, 2048), (7, 16)]` at matrix scale `2^50`, and S2C uses the reversed schedule at scale `2^29`. EvalMod keeps the degree-30, interval-16 Han–Ki polynomial, three range-reduction steps, and coefficient scale `2^42`, with evaluation scale `2^53`. C2S, EvalMod, and S2C consume 100, 424, and 58 bits; restoring scale `2^35` consumes another 18 bits. Thus `780 - 100 - 424 - 58 - 18 = 180`, leaving four 35-bit levels above the 40-bit input width.
 
-The logN16 S2C-first preset uses three factors per transform: C2S `[(5, 4096), (5, 256), (5, 8)]` at matrix scale `2^50` and S2C `[(4, 4), (5, 128), (6, 4096)]` at `2^30`, each with the giant steps that need the fewest key switches. With three factors the precision of CoeffsToSlots depends far more on its scale than with four, hence the two extra bits. It keeps one more usable level than the C2S-first preset for a raised modulus 74 bits narrower.
+Both logN16 presets use three factors per transform, C2S `[(5, 4096), (5, 256), (5, 8)]` and S2C `[(4, 4), (5, 128), (6, 4096)]`, each with the giant steps that need the fewest key switches. With three factors the precision of CoeffsToSlots depends far more on its scale than with four: the S2C-first preset runs it at matrix scale `2^50` and SlotsToCoeffs at `2^30`, the C2S-first preset at `2^51` and `2^35`. Both keep 17 usable levels; the S2C-first preset needs a raised modulus 28 bits narrower.
 
-The logN16 C2S-first preset internally reaches 623 bits at scale `2^58`; `ckks_bootstrap` restores scale `2^35` and returns 600 bits automatically. This leaves exactly `600 - 40 = 560` bits before the next bootstrap. No caller-side scale adjustment is needed.
+The logN16 C2S-first preset takes log message ratio 6, hence its 41-bit input. It internally reaches 659 bits at scale `2^58`; `ckks_bootstrap` restores scale `2^35` and returns 636 bits automatically. This leaves exactly `636 - 41 = 595` bits before the next bootstrap. No caller-side scale adjustment is needed.
 
-The S2C-first preset uses six internal guard bits for CoeffsToSlots, log message ratio 13, and C2S matrix scale 48. The guard bits are removed at the bootstrap output; the application scale remains `2^35`. Custom S2C-first plans can select this lift with `with_c2s_guard_bits`; width accounting includes its cost.
+The S2C-first preset uses six internal guard bits for CoeffsToSlots, log message ratio 13, and C2S matrix scale 50. The guard bits are removed at the bootstrap output; the application scale remains `2^35`. Custom S2C-first plans can select this lift with `with_c2s_guard_bits`; width accounting includes its cost.
 
 All presets use weight 1024 for the dense secret and weight 32 for sparse-secret encapsulation. Each secret carries its modulus bound for 128 bits of security, an estimate from `sparse-key-estimate` that every key must fit: 1707 and 345 bits at logN16, 851 and 162 bits at logN15.
 Preset construction validates the ciphertext, gadget, auxiliary, and total moduli of every key against these bounds.
 A key's digit count comes from `GGLWELayout::dnum_for_input` (`⌈k / k_digit⌉`), the same rounding the key-switch operations apply. Behind its digits a key keeps a guard `k_aux` of one digit plus `log2(N)` bits, or what the bound leaves when that is less: a key switches a `k`-bit input while its own precision exceeds `k + k_digit` by a small margin, so an input that leaves the last digit partly empty lets a wider digit fit under the bound.
-Each high-modulus key takes the widest digit the ciphertexts it switches admit. At the nominal radix of 52 bits, logN16 keys used at the raised width have `dsize = 6` (S2C-first) or `5` (C2S-first); the rotation keys of the later CoeffsToSlots factors and the conjugation key have wider digits and fewer rows, and EvalMod relinearizes with one of three tensor keys of 3, 2 and 1 rows, chosen by the width of its input. LogN15 starts at `dsize = 1`. The dense-to-sparse key keeps `dsize = 1`: 52 gadget bits plus 68 auxiliary bits at logN16.
+Each high-modulus key takes the widest digit the ciphertexts it switches admit. At the nominal radix of 52 bits, logN16 keys used at the raised width have `dsize = 6` (S2C-first) or `5` (C2S-first); the rotation keys of the later CoeffsToSlots factors and the conjugation key have wider digits and fewer rows, and EvalMod relinearizes with a tensor key shaped for its widest product. LogN15 starts at `dsize = 1`. The dense-to-sparse key keeps `dsize = 1`: 52 gadget bits plus 68 auxiliary bits at logN16.
 `with_base2k` re-derives a preset at another limb radix, and `with_dsizes` with one digit size for every high-modulus key, keeping the plan and widths and re-running the same validation. The test and benchmark runner selects the largest uniform high-modulus digit size up to 7 that fits the bounds at a backend radix below the nominal one. FFT64 uses `base2k = 18`, high-modulus `dsize = 3` for logN15 or 7 for logN16, and dense-to-sparse `dsize = 1`.
 The presets keep whole-limb digits, `k_digit = dsize * base2k`, and the `dsize` above is that limb count.
 At logN16 FFT64 needs `base2k <= 18`: the giant steps of CoeffsToSlots and SlotsToCoeffs accumulate their key-switch products in the DFT domain before a single inverse transform, several hundred products, which `f64` no longer represents exactly at `base2k = 19`.

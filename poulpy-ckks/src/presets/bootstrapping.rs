@@ -18,7 +18,7 @@
 //! - `p`: guaranteed output precision in bits (see [`BootstrappingPreset::log2_precision`]);
 //! - `circuit`: `c2s` (C2S-first) or `s2c` (S2C-first), extended with a suffix for further techniques.
 //!
-//! `n16_d35_k600_p19_c2s` is thus the C2S-first preset at `N = 2^16` for inputs at
+//! `n16_d35_k636_p20_c2s` is thus the C2S-first preset at `N = 2^16` for inputs at
 //! scale `2^35`, producing 600-bit ciphertexts at scale `2^35` with at least 19 bits of precision.
 //!
 //! ## Security
@@ -37,10 +37,7 @@
 use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, ensure};
-use poulpy_core::layouts::{
-    Base2K, Degree, GGLWEInfos, GGLWELayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWESwitchingKeyLayout, GLWETensorKeyLayout,
-    LWEInfos, Rank, TorusPrecision, k_digit_of,
-};
+use poulpy_core::layouts::{Base2K, Degree, GGLWEInfos, GGLWELayout, GLWELayout, LWEInfos, Rank, TorusPrecision, k_digit_of};
 
 use crate::numerics::CKKSFloat;
 use crate::{
@@ -52,13 +49,11 @@ use crate::{
     polynomial::SplitStrategy,
 };
 
-const C2S_SCHEDULE: [(usize, usize); 4] = [(4, 8192), (4, 512), (4, 32), (3, 4)];
-/// Three factors of five layers for the S2C-first preset, with the giant steps that
+/// Three factors of five layers for the logN16 presets, with the giant steps that
 /// need the fewest key switches.
-const C2S_SCHEDULE_3: [(usize, usize); 3] = [(5, 4096), (5, 256), (5, 8)];
-const S2C_SCHEDULE: [(usize, usize); 4] = [(3, 4), (4, 32), (4, 512), (4, 8192)];
-/// Three factors of four, five and six layers for the S2C-first preset.
-const S2C_SCHEDULE_3: [(usize, usize); 3] = [(4, 4), (5, 128), (6, 4096)];
+const C2S_SCHEDULE: [(usize, usize); 3] = [(5, 4096), (5, 256), (5, 8)];
+/// Three factors of four, five and six layers for the logN16 presets.
+const S2C_SCHEDULE: [(usize, usize); 3] = [(4, 4), (5, 128), (6, 4096)];
 
 #[derive(Clone, Copy, Debug)]
 struct EvalModSpec {
@@ -148,8 +143,6 @@ pub struct BootstrappingPreset {
     input_k: usize,
     output_k: usize,
     bootstrap_k: usize,
-    max_dense_modulus: usize,
-    max_sparse_modulus: usize,
 }
 
 impl BootstrappingPreset {
@@ -208,12 +201,12 @@ impl BootstrappingPreset {
 
     /// Modulus bound for objects under the dense secret (see [Security](self#security)).
     pub fn max_dense_modulus(&self) -> usize {
-        self.max_dense_modulus
+        self.spec.dense_secret.max_log_modulus
     }
 
     /// Modulus bound for objects under the ephemeral sparse secret (see [Security](self#security)).
     pub fn max_sparse_modulus(&self) -> usize {
-        self.max_sparse_modulus
+        self.spec.sparse_secret.max_log_modulus
     }
 
     /// Gadget digit size (in limbs) of the keys used at the raised width: the
@@ -312,29 +305,30 @@ impl BootstrappingPreset {
 }
 
 /// C2S-first full-slot preset at `N = 2^16` for inputs at scale `2^35`,
-/// producing 600-bit ciphertexts at scale `2^35` with at least 19 bits of precision.
+/// producing 636-bit ciphertexts at scale `2^35` with at least 20 bits of precision.
 ///
-/// Uses an optimized Han–Ki EvalMod. The input and raised widths are 40 and
-/// 1427 bits. The output has 560 usable bits (16 levels) before reaching the
-/// 40-bit input width; the bootstrap restores scale `2^35` automatically.
-pub fn n16_d35_k600_p19_c2s() -> Result<BootstrappingPreset> {
+/// Uses an optimized Han–Ki EvalMod and three factors per transform, as the
+/// S2C-first preset does. The input and raised widths are 41 and 1381 bits. The
+/// output has 595 usable bits (17 levels) before reaching the 41-bit input
+/// width; the bootstrap restores scale `2^35` automatically.
+pub fn n16_d35_k636_p20_c2s() -> Result<BootstrappingPreset> {
     build(PresetSpec {
-        name: "n16_d35_k600_p19_c2s",
+        name: "n16_d35_k636_p20_c2s",
         log_n: 16,
         base2k: 52,
         rank: 1,
         log_delta: 35,
-        output_k: 600,
-        log2_precision: 19,
+        output_k: 636,
+        log2_precision: 20,
         dense_secret: N16_DENSE_SECRET,
         sparse_secret: N16_SPARSE_SECRET,
         key_dsize: None,
         dense_to_sparse_dsize: 1,
         pipeline: BootstrappingPipeline::C2SFirst,
-        log_msg_ratio: 5,
+        log_msg_ratio: 6,
         c2s_schedule: &C2S_SCHEDULE,
         c2s_guard_bits: 0,
-        c2s_log_delta: 50,
+        c2s_log_delta: 51,
         c2s_log_budget: 2,
         s2c_schedule: &S2C_SCHEDULE,
         s2c_log_delta: 35,
@@ -367,11 +361,11 @@ pub fn n16_d35_k733_p20_s2c() -> Result<BootstrappingPreset> {
         dense_to_sparse_dsize: 1,
         pipeline: BootstrappingPipeline::S2CFirst,
         log_msg_ratio: 13,
-        c2s_schedule: &C2S_SCHEDULE_3,
+        c2s_schedule: &C2S_SCHEDULE,
         c2s_guard_bits: 6,
         c2s_log_delta: 50,
         c2s_log_budget: 3,
-        s2c_schedule: &S2C_SCHEDULE_3,
+        s2c_schedule: &S2C_SCHEDULE,
         s2c_log_delta: 30,
         s2c_log_budget: 2,
         eval_mod: optimized_han_ki(),
@@ -401,10 +395,10 @@ pub fn n15_d35_k180_p18_c2s() -> Result<BootstrappingPreset> {
         log_msg_ratio: 5,
         c2s_schedule: &[(7, 2048), (7, 16)],
         c2s_guard_bits: 0,
-        c2s_log_delta: 49,
+        c2s_log_delta: 50,
         c2s_log_budget: 2,
         s2c_schedule: &[(7, 16), (7, 2048)],
-        s2c_log_delta: 30,
+        s2c_log_delta: 29,
         s2c_log_budget: 2,
         eval_mod: EvalModSpec {
             log_delta: 53,
@@ -413,9 +407,48 @@ pub fn n15_d35_k180_p18_c2s() -> Result<BootstrappingPreset> {
     })
 }
 
+/// Insecure S2C-first preset at `N = 2^11` for the test suite: the reference
+/// S2C-first spec on a ring small enough for a non-ignored test, so the key
+/// shapes the presets derive (narrow conjugation and SlotsToCoeffs keys) run
+/// end to end. Its secret bounds are placeholders, not security limits; the
+/// dense one leaves the 800-bit raised width the margin of a few digits.
+#[cfg(feature = "test-utils")]
+pub(crate) fn insecure_n11_d35_k180_p20_s2c() -> Result<BootstrappingPreset> {
+    const TEST_SECRET: SecretBound = SecretBound {
+        hamming_weight: 192,
+        max_log_modulus: 1024,
+    };
+    build(PresetSpec {
+        name: "insecure_n11_d35_k180_p20_s2c",
+        log_n: 11,
+        base2k: 52,
+        rank: 1,
+        log_delta: 35,
+        output_k: 180,
+        log2_precision: 20,
+        dense_secret: TEST_SECRET,
+        sparse_secret: SecretBound {
+            hamming_weight: 32,
+            ..TEST_SECRET
+        },
+        key_dsize: None,
+        dense_to_sparse_dsize: 1,
+        pipeline: BootstrappingPipeline::S2CFirst,
+        log_msg_ratio: 13,
+        c2s_schedule: &[(4, 4), (3, 4), (3, 4)],
+        c2s_guard_bits: 6,
+        c2s_log_delta: 50,
+        c2s_log_budget: 3,
+        s2c_schedule: &[(2, 4), (4, 4), (4, 4)],
+        s2c_log_delta: 30,
+        s2c_log_budget: 2,
+        eval_mod: optimized_han_ki(),
+    })
+}
+
 /// Every preset, in a stable order.
 pub fn all() -> Result<Vec<BootstrappingPreset>> {
-    const PRESETS: &[fn() -> Result<BootstrappingPreset>] = &[n16_d35_k600_p19_c2s, n16_d35_k733_p20_s2c, n15_d35_k180_p18_c2s];
+    const PRESETS: &[fn() -> Result<BootstrappingPreset>] = &[n16_d35_k636_p20_c2s, n16_d35_k733_p20_s2c, n15_d35_k180_p18_c2s];
     PRESETS.iter().map(|build| build()).collect()
 }
 
@@ -511,13 +544,9 @@ fn build(spec: PresetSpec) -> Result<BootstrappingPreset> {
         "bootstrapping preset output width {output_k} is below its input width {input_k}"
     );
     let bootstrap_k = plan.bootstrap_k(output_k, spec.log_delta);
-    let bounds = ModulusBounds {
-        dense: spec.dense_secret.max_log_modulus,
-        sparse: spec.sparse_secret.max_log_modulus,
-    };
-    let keys_layout = keys_layout(&spec, &plan, bootstrap_k, input_k, bounds)?;
+    let keys_layout = keys_layout(&spec, &plan, bootstrap_k, input_k)?;
 
-    validate_modulus_bounds(bounds, bootstrap_k, &keys_layout)?;
+    validate_modulus_bounds(&spec, bootstrap_k, &keys_layout)?;
     Ok(BootstrappingPreset {
         spec,
         n,
@@ -526,16 +555,7 @@ fn build(spec: PresetSpec) -> Result<BootstrappingPreset> {
         input_k,
         output_k,
         bootstrap_k,
-        max_dense_modulus: bounds.dense,
-        max_sparse_modulus: bounds.sparse,
     })
-}
-
-/// Modulus bounds of the two secrets of a preset.
-#[derive(Clone, Copy)]
-struct ModulusBounds {
-    dense: usize,
-    sparse: usize,
 }
 
 fn keys_layout(
@@ -543,89 +563,49 @@ fn keys_layout(
     plan: &BootstrappingPlan,
     bootstrap_k: usize,
     input_k: usize,
-    bounds: ModulusBounds,
 ) -> Result<BootstrappingKeysLayout> {
+    let (dense, sparse) = (spec.dense_secret.max_log_modulus, spec.sparse_secret.max_log_modulus);
     let wide = key_layout(
         spec,
         "high-modulus",
         bootstrap_k,
-        spec.key_dsize.unwrap_or(widest_dsize(spec, bootstrap_k, bounds.dense)),
-        bounds.dense,
+        spec.key_dsize.unwrap_or(widest_dsize(spec, bootstrap_k, dense)),
+        dense,
     )?;
     let dense_to_sparse = key_layout(
         spec,
         "dense-to-sparse",
         spec.log_delta + spec.log_msg_ratio,
         spec.dense_to_sparse_dsize,
-        bounds.sparse,
+        sparse,
     )?;
 
     // With no digit imposed, a key only used on narrower ciphertexts takes the
     // widest digit those admit.
     let mut rotation_keys = BTreeMap::new();
-    let mut tensor_keys = vec![wide];
+    let mut tensor_key = wide;
     // EvalRound+ runs its bypass at widths of its own, which the stage widths
     // below do not model: its keys keep the shape of the raised width.
     if spec.key_dsize.is_none() && plan.coeffs_to_slots_bypass().is_none() {
         for (p, k) in rotation_key_inputs(spec, plan, bootstrap_k, input_k) {
-            let layout = key_layout(spec, "rotation", k, widest_dsize(spec, k, bounds.dense), bounds.dense)?;
+            let layout = key_layout(spec, "rotation", k, widest_dsize(spec, k, dense), dense)?;
             if layout != wide {
-                rotation_keys.insert(p, automorphism_key_layout(&layout));
+                rotation_keys.insert(p, layout.into());
             }
         }
-        tensor_keys.clear();
-        for k in tensor_key_inputs(spec, plan, bootstrap_k, bounds.dense) {
-            tensor_keys.push(key_layout(
-                spec,
-                "tensor",
-                k,
-                widest_dsize(spec, k, bounds.dense),
-                bounds.dense,
-            )?);
-        }
+        let k = eval_mod_relinearization_k(spec, plan, bootstrap_k);
+        tensor_key = key_layout(spec, "tensor", k, widest_dsize(spec, k, dense), dense)?;
     }
-    let tensor_key_layout = |layout: &GGLWELayout| GLWETensorKeyLayout {
-        n: layout.n,
-        base2k: layout.base2k,
-        dnum: layout.dnum,
-        k_aux: layout.k_aux,
-        rank: layout.rank_out,
-        k_digit: layout.k_digit,
-    };
 
     Ok(BootstrappingKeysLayout {
-        automorphism_key: automorphism_key_layout(&wide),
+        automorphism_key: wide.into(),
         rotation_keys,
-        tensor_key: tensor_key_layout(&tensor_keys[0]),
-        narrow_tensor_keys: tensor_keys[1..].iter().map(tensor_key_layout).collect(),
+        tensor_key: tensor_key.into(),
         encapsulation: Some(EncapsulationKeysLayout {
-            dense_to_sparse: switching_key_layout(&dense_to_sparse),
-            sparse_to_dense: switching_key_layout(&wide),
+            dense_to_sparse: dense_to_sparse.into(),
+            sparse_to_dense: wide.into(),
         }),
     })
-}
-
-fn automorphism_key_layout(layout: &GGLWELayout) -> GLWEAutomorphismKeyLayout {
-    GLWEAutomorphismKeyLayout {
-        n: layout.n,
-        base2k: layout.base2k,
-        dnum: layout.dnum,
-        k_aux: layout.k_aux,
-        rank: layout.rank_out,
-        k_digit: layout.k_digit,
-    }
-}
-
-fn switching_key_layout(layout: &GGLWELayout) -> GLWESwitchingKeyLayout {
-    GLWESwitchingKeyLayout {
-        n: layout.n,
-        base2k: layout.base2k,
-        dnum: layout.dnum,
-        k_aux: layout.k_aux,
-        rank_in: layout.rank_in,
-        rank_out: layout.rank_out,
-        k_digit: layout.k_digit,
-    }
 }
 
 /// Widest ciphertext, in bits, each rotation key switches in a bootstrap.
@@ -668,29 +648,20 @@ fn rotation_key_inputs(spec: &PresetSpec, plan: &BootstrappingPlan, bootstrap_k:
     inputs
 }
 
-/// Ciphertext widths, widest first, the tensor keys are laid out for.
+/// Widest ciphertext EvalMod relinearizes, in bits.
 ///
-/// The first is the widest ciphertext EvalMod relinearizes: what CoeffsToSlots
-/// leaves, guard bits included. Each further one is the widest ciphertext a
-/// key of one row fewer covers, down to the last EvalMod level.
-fn tensor_key_inputs(spec: &PresetSpec, plan: &BootstrappingPlan, bootstrap_k: usize, limit: usize) -> Vec<usize> {
-    let rows = |k: usize| k.div_ceil(widest_dsize(spec, k, limit) * spec.base2k);
-    let top = bootstrap_k - plan.coeffs_to_slots().consumed_bits() + plan.c2s_guard_bits();
-    let floor = top.saturating_sub(plan.eval_mod().consumed_bits());
-
-    let mut inputs = vec![top];
-    let mut k = top;
-    while rows(k) > 1 {
-        let fewer = rows(k) - 1;
-        while k > floor && rows(k) > fewer {
-            k -= 1;
-        }
-        if rows(k) > fewer {
-            break;
-        }
-        inputs.push(k);
-    }
-    inputs
+/// EvalMod relabels its input at its own scale and keeps its budget, so its
+/// widest product is at that budget plus `f_mod_log_delta`. The budget is what
+/// CoeffsToSlots leaves of the raised width above the scale the raise labels:
+/// EvalMod's own scale (C2S-first), or the ModUp modulus and the guard bits
+/// (S2C-first).
+fn eval_mod_relinearization_k(spec: &PresetSpec, plan: &BootstrappingPlan, bootstrap_k: usize) -> usize {
+    let f_mod_log_delta = plan.eval_mod().f_mod_log_delta;
+    let raised_log_delta = match plan.pipeline() {
+        BootstrappingPipeline::C2SFirst => f_mod_log_delta,
+        BootstrappingPipeline::S2CFirst => spec.log_delta + spec.log_msg_ratio + plan.c2s_guard_bits(),
+    };
+    bootstrap_k - plan.coeffs_to_slots().consumed_bits() - raised_log_delta + f_mod_log_delta
 }
 
 /// Bits a key keeps between its modulus and the input plus one digit.
@@ -744,24 +715,22 @@ fn gadget_k<K: GGLWEInfos>(key: &K) -> usize {
     key.gglwe_layout().gadget_k().as_usize()
 }
 
-fn validate_modulus_bounds(bounds: ModulusBounds, bootstrap_k: usize, keys: &BootstrappingKeysLayout) -> Result<()> {
+fn validate_modulus_bounds(spec: &PresetSpec, bootstrap_k: usize, keys: &BootstrappingKeysLayout) -> Result<()> {
+    let (dense, sparse) = (spec.dense_secret.max_log_modulus, spec.sparse_secret.max_log_modulus);
     ensure!(
-        bootstrap_k <= bounds.dense,
-        "bootstrap modulus {bootstrap_k} exceeds dense-secret limit {}",
-        bounds.dense
+        bootstrap_k <= dense,
+        "bootstrap modulus {bootstrap_k} exceeds dense-secret limit {dense}"
     );
     for key in keys.rotation_key_layouts() {
-        validate_key("automorphism", &key, bounds.dense)?;
+        validate_key("automorphism", &key, dense)?;
     }
-    for key in keys.tensor_key_layouts() {
-        validate_key("tensor", key, bounds.dense)?;
-    }
+    validate_key("tensor", &keys.tensor_key, dense)?;
     let encapsulation = keys
         .encapsulation
         .as_ref()
         .context("bootstrapping preset is missing encapsulation keys")?;
-    validate_key("dense-to-sparse", &encapsulation.dense_to_sparse, bounds.sparse)?;
-    validate_key("sparse-to-dense", &encapsulation.sparse_to_dense, bounds.dense)
+    validate_key("dense-to-sparse", &encapsulation.dense_to_sparse, sparse)?;
+    validate_key("sparse-to-dense", &encapsulation.sparse_to_dense, dense)
 }
 
 fn validate_key<K: GGLWEInfos + LWEInfos>(name: &str, key: &K, limit: usize) -> Result<()> {
@@ -789,8 +758,8 @@ mod tests {
         assert_eq!(preset.plan().pipeline(), BootstrappingPipeline::C2SFirst);
         assert_eq!(preset.plan().eval_mod().eval_mod_type, EvalModType::CosHKEven);
         assert_eq!(preset.plan().eval_mod().consumed_bits(), 424);
-        assert_eq!(preset.plan().coeffs_to_slots().consumed_bits(), 98);
-        assert_eq!(preset.plan().slots_to_coeffs().consumed_bits(), 60);
+        assert_eq!(preset.plan().coeffs_to_slots().consumed_bits(), 100);
+        assert_eq!(preset.plan().slots_to_coeffs().consumed_bits(), 58);
         assert_eq!((preset.input_k(), preset.output_k(), preset.bootstrap_k()), (40, 180, 780));
         assert_eq!(preset.log2_precision(), 18);
         assert_eq!(preset.output_layout().log_delta(), 35);
@@ -814,11 +783,8 @@ mod tests {
         assert_eq!(gadget_k(&keys.automorphism_key), 780);
         assert_eq!(keys.automorphism_key.k_aux.as_usize(), 67);
         assert_eq!(keys.automorphism_key.k().as_usize(), 847);
-        // EvalMod starts 98 bits below the raised width: room for a 3-limb digit.
-        assert_eq!(
-            key_shapes(keys.tensor_key_layouts()),
-            [(3, 5), (4, 4), (4, 3), (6, 2), (8, 1)]
-        );
+        // EvalMod starts 100 bits below the raised width: room for a 3-limb digit.
+        assert_eq!(key_shapes([&keys.tensor_key]), [(3, 5)]);
         assert_eq!(encapsulation.sparse_to_dense.k().as_usize(), 847);
         assert_eq!(encapsulation.dense_to_sparse.k().as_usize(), 119);
         assert!(preset.with_dsizes(2, 1).is_err());
@@ -829,32 +795,33 @@ mod tests {
     }
 
     #[test]
-    fn n16_d35_k600_p19_c2s_is_composable_and_within_bounds() {
-        let preset = n16_d35_k600_p19_c2s().unwrap();
+    fn n16_d35_k636_p20_c2s_is_composable_and_within_bounds() {
+        let preset = n16_d35_k636_p20_c2s().unwrap();
 
         assert_eq!(preset.plan().pipeline(), BootstrappingPipeline::C2SFirst);
         assert_eq!(preset.plan().eval_mod().eval_mod_type, EvalModType::CosHKEven);
         assert_eq!(preset.plan().eval_mod().consumed_bits(), 464);
-        assert_eq!(preset.plan().coeffs_to_slots().consumed_bits(), 200);
-        assert_eq!(preset.plan().slots_to_coeffs().consumed_bits(), 140);
-        assert_eq!((preset.input_k(), preset.output_k(), preset.bootstrap_k()), (40, 600, 1427));
-        assert_eq!(preset.log2_precision(), 19);
+        assert_eq!(preset.plan().coeffs_to_slots().consumed_bits(), 153);
+        assert_eq!(preset.plan().slots_to_coeffs().consumed_bits(), 105);
+        assert_eq!((preset.input_k(), preset.output_k(), preset.bootstrap_k()), (41, 636, 1381));
+        assert_eq!(preset.log2_precision(), 20);
         assert_eq!(preset.output_layout().log_delta(), 35);
         assert_eq!(preset.input_layout().meta(), preset.output_layout().meta());
-        // 16 rescales at the input scale before the next bootstrap.
+        // 17 rescales at the input scale before the next bootstrap.
         assert_eq!(
             preset.output_layout().log_budget() - preset.input_layout().log_budget(),
-            16 * preset.log_delta()
+            17 * preset.log_delta()
         );
 
-        assert_layouts_within_bounds(&preset, 5);
-        // The four CoeffsToSlots factors run at 1427, 1377, 1327 and 1277 bits.
+        assert_layouts_within_bounds(&preset, 6);
+        // The three CoeffsToSlots factors run at 1381, 1330 and 1279 bits, the
+        // conjugation below them, and SlotsToCoeffs after EvalMod.
         let keys = preset.keys_layout();
         assert_eq!(
             key_shapes(&keys.rotation_key_layouts()),
-            [(5, 6), (6, 5), (7, 4), (8, 4), (9, 3)]
+            [(6, 5), (7, 4), (8, 4), (9, 3), (15, 1), (14, 1)]
         );
-        assert_eq!(key_shapes(keys.tensor_key_layouts()), [(9, 3), (11, 2), (16, 1)]);
+        assert_eq!(key_shapes([&keys.tensor_key]), [(9, 3)]);
     }
 
     #[test]
@@ -883,13 +850,13 @@ mod tests {
             key_shapes(&keys.rotation_key_layouts()),
             [(6, 5), (7, 4), (8, 4), (9, 3), (3, 1), (2, 1)]
         );
-        assert_eq!(key_shapes(keys.tensor_key_layouts()), [(9, 3), (11, 2), (16, 1)]);
+        assert_eq!(key_shapes([&keys.tensor_key]), [(9, 3)]);
         assert_eq!(keys.rotation_key(-1).gglwe_layout().max_input_k().as_usize(), 1239);
-        assert!(keys.tensor_key.gglwe_layout().max_input_k().as_usize() >= 1203);
+        assert!(keys.tensor_key.gglwe_layout().max_input_k().as_usize() >= 1207);
 
         // One digit for every key leaves a single shape.
         let uniform = preset.with_dsizes(6, 1).unwrap();
-        assert!(uniform.keys_layout().rotation_keys.is_empty() && uniform.keys_layout().narrow_tensor_keys.is_empty());
+        assert!(uniform.keys_layout().rotation_keys.is_empty());
         assert_eq!(uniform.keys_layout().tensor_key.dnum.as_usize(), 5);
     }
 
@@ -928,14 +895,14 @@ mod tests {
         let names: Vec<&str> = all().unwrap().iter().map(|p| p.name()).collect();
         assert_eq!(
             names,
-            ["n16_d35_k600_p19_c2s", "n16_d35_k733_p20_s2c", "n15_d35_k180_p18_c2s"]
+            ["n16_d35_k636_p20_c2s", "n16_d35_k733_p20_s2c", "n15_d35_k180_p18_c2s"]
         );
     }
 
     #[test]
     fn rederived_key_shape_keeps_widths_and_revalidates() {
         for (preset, fft_dsize) in [
-            (n16_d35_k600_p19_c2s().unwrap(), 7),
+            (n16_d35_k636_p20_c2s().unwrap(), 7),
             (n16_d35_k733_p20_s2c().unwrap(), 7),
             (n15_d35_k180_p18_c2s().unwrap(), 3),
         ] {

@@ -6,8 +6,7 @@
 //!   of the Galois elements of `CoeffsToSlots` (incl. the optional high-precision
 //!   bypass) and `SlotsToCoeffs`;
 //! - a **conjugation key** (Galois element `−1`) for the split `CoeffsToSlots`;
-//! - a **tensor (relinearization) key** for EvalMod's `ct×ct` squaring, and
-//!   optionally further ones for the narrower ciphertexts of its lower levels;
+//! - a **tensor (relinearization) key** for EvalMod's `ct×ct` squaring;
 //! - optionally, the **sparse-secret encapsulation** key-switching keys
 //!   (`denseToSparse`, `sparseToDense`; <https://eprint.iacr.org/2022/024>),
 //!   whose sparse ephemeral secret is sampled inside
@@ -39,7 +38,10 @@ use poulpy_core::{
         GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared,
         GLWESwitchingKeyPreparedFactory, GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory,
         GetAutomorphismKey, GetGaloisElement, GetTensorKey, LWEInfos, ModuleCoreAlloc, TorusPrecision,
-        prepared::{GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedBackendRef, GLWETensorKeyPreparedToBackendRef},
+        prepared::{
+            GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedBackendRef,
+            GLWETensorKeyPreparedToBackendRef,
+        },
     },
 };
 use poulpy_hal::{
@@ -76,60 +78,47 @@ pub trait BootstrappingKeys<BE: Backend> {
     /// the widest ciphertext EvalMod relinearizes.
     fn tensor_key(&self) -> &Self::TensorKey;
 
-    /// Further tensor keys, each covering narrower ciphertexts with fewer rows
-    /// (see [`TensorKeysByWidth`]). None by default.
-    fn narrow_tensor_keys(&self) -> &[Self::TensorKey] {
-        &[]
-    }
-
     /// Sparse-secret encapsulation keys `(denseToSparse, sparseToDense)`, or
     /// `None` when the trick is disabled.
     fn encapsulation_keys(&self) -> Option<(&Self::SwitchingKey, &Self::SwitchingKey)>;
 }
 
-/// The tensor keys of a [`BootstrappingKeys`] store as one source.
+/// A key source that refuses a key not covering the precision it is asked for.
 ///
-/// A relinearization takes the narrow key with the fewest rows among those
-/// covering its input ([`GGLWELayout::max_input_k`]), else the wide one, and
-/// fails when that one does not cover it either.
-///
-/// The product of a relinearization can hold one limb more than its input.
-/// On a key the input fills, that limb falls past the last row and is dropped:
-/// an error below the key's gadget precision, far under what EvalMod's scale
-/// resolves.
-pub struct TensorKeysByWidth<'a, T> {
-    wide: &'a T,
-    narrow: &'a [T],
+/// Past its [`max_input_k`](poulpy_core::layouts::GGLWELayout::max_input_k), a
+/// key switch drops the input limbs beyond the key's rows. The bootstrap reads
+/// every key through this source, so a key laid out narrower than the width it
+/// is used at fails instead of losing precision.
+pub(crate) struct CoveringKeys<'a, K>(pub(crate) &'a K);
+
+fn check_covers(op: &'static str, layout: GGLWELayout, k: TorusPrecision) -> poulpy_core::Result<()> {
+    let covered = layout.max_input_k();
+    if k > covered {
+        return Err(poulpy_core::CoreError::GGLWEKeyUse {
+            op,
+            detail: format!("the key covers inputs of {covered} bits, asked for {k}"),
+        });
+    }
+    Ok(())
 }
 
-impl<'a, T> TensorKeysByWidth<'a, T> {
-    pub fn new<BE: Backend, K: BootstrappingKeys<BE, TensorKey = T>>(keys: &'a K) -> Self {
-        Self {
-            wide: keys.tensor_key(),
-            narrow: keys.narrow_tensor_keys(),
-        }
-    }
-
-    /// Every key of the source, the wide one first.
-    pub fn iter(&self) -> impl Iterator<Item = &'a T> {
-        core::iter::once(self.wide).chain(self.narrow)
+impl<BE: Backend, K: GetAutomorphismKey<BE>> GetAutomorphismKey<BE> for CoveringKeys<'_, K> {
+    fn lookup_automorphism_key(
+        &self,
+        p: i64,
+        k: TorusPrecision,
+    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        let key = self.0.lookup_automorphism_key(p, k)?;
+        check_covers("get_automorphism_key", key.gglwe_layout(), k)?;
+        Ok(key)
     }
 }
 
-impl<BE: Backend, T: GetTensorKey<BE> + GGLWEInfos> GetTensorKey<BE> for TensorKeysByWidth<'_, T> {
+impl<BE: Backend, K: GetTensorKey<BE>> GetTensorKey<BE> for CoveringKeys<'_, K> {
     fn get_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
-        let covers = |key: &&T| key.gglwe_layout().max_input_k() >= k;
-        match self.narrow.iter().filter(covers).min_by_key(|key| key.dnum().as_usize()) {
-            Some(key) => key.get_tensor_key(k),
-            None if covers(&self.wide) => self.wide.get_tensor_key(k),
-            None => Err(poulpy_core::CoreError::GGLWEKeyUse {
-                op: "get_tensor_key",
-                detail: format!(
-                    "no tensor key covers k={k}: the widest is laid out for k={}",
-                    self.wide.gglwe_layout().max_input_k()
-                ),
-            }),
-        }
+        let key = self.0.get_tensor_key(k)?;
+        check_covers("get_tensor_key", key.gglwe_layout(), k)?;
+        Ok(key)
     }
 }
 
@@ -146,8 +135,6 @@ pub struct BootstrappingKeySet<D: Data, W: ZnxWord> {
     pub rotation_keys: HashMap<i64, GLWEAutomorphismKey<D, W>>,
     /// Relinearization (tensor) key for EvalMod, covering its widest ciphertext.
     pub tensor_key: GLWETensorKey<D, W>,
-    /// Tensor keys for the narrower ciphertexts of EvalMod, possibly none.
-    pub narrow_tensor_keys: Vec<GLWETensorKey<D, W>>,
     /// `(denseToSparse, sparseToDense)` encapsulation keys, or `None`.
     pub encapsulation_keys: Option<(GLWESwitchingKey<D, W>, GLWESwitchingKey<D, W>)>,
 }
@@ -161,8 +148,6 @@ pub struct BootstrappingKeysPrepared<D: Data, BE: Backend> {
     pub rotation_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>,
     /// Prepared relinearization (tensor) key for EvalMod, covering its widest ciphertext.
     pub tensor_key: GLWETensorKeyPrepared<D, BE>,
-    /// Prepared tensor keys for the narrower ciphertexts of EvalMod, possibly none.
-    pub narrow_tensor_keys: Vec<GLWETensorKeyPrepared<D, BE>>,
     /// Prepared `(denseToSparse, sparseToDense)` encapsulation keys, or `None`.
     pub encapsulation_keys: Option<(GLWESwitchingKeyPrepared<D, BE>, GLWESwitchingKeyPrepared<D, BE>)>,
 }
@@ -183,10 +168,6 @@ where
 
     fn tensor_key(&self) -> &Self::TensorKey {
         &self.tensor_key
-    }
-
-    fn narrow_tensor_keys(&self) -> &[Self::TensorKey] {
-        &self.narrow_tensor_keys
     }
 
     fn encapsulation_keys(&self) -> Option<(&Self::SwitchingKey, &Self::SwitchingKey)> {
@@ -222,13 +203,8 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
             rotation_keys.insert(p, prepared);
         }
 
-        let mut prepare_tensor_key = |key: &GLWETensorKey<D, W>| {
-            let mut prepared = module.alloc_tensor_key_prepared_from_infos(key);
-            module.prepare_tensor_key(&mut prepared, key, scratch);
-            prepared
-        };
-        let tensor_key = prepare_tensor_key(&self.tensor_key);
-        let narrow_tensor_keys = self.narrow_tensor_keys.iter().map(&mut prepare_tensor_key).collect();
+        let mut tensor_key = module.alloc_tensor_key_prepared_from_infos(&self.tensor_key);
+        module.prepare_tensor_key(&mut tensor_key, &self.tensor_key, scratch);
 
         let encapsulation_keys = self.encapsulation_keys.as_ref().map(|(d2s, s2d)| {
             let mut d2s_prepared = module.glwe_switching_key_prepared_alloc_from_infos(d2s);
@@ -241,7 +217,6 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
         BootstrappingKeysPrepared {
             rotation_keys,
             tensor_key,
-            narrow_tensor_keys,
             encapsulation_keys,
         }
     }
@@ -254,9 +229,9 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
 /// destination key's precision. The Galois elements of the rotation keys are read from the compiled DFT matrices,
 /// so this layout only gives their shapes.
 ///
-/// A key used on narrow ciphertexts only can take a wider digit under the same
-/// modulus bound, hence fewer rows: `rotation_keys` and `narrow_tensor_keys`
-/// hold such shapes. Left empty, every key has the shape of the widest use.
+/// A rotation key used on narrow ciphertexts only can take a wider digit under
+/// the same modulus bound, hence fewer rows: `rotation_keys` holds such shapes.
+/// Left empty, every rotation key has the shape of the widest use.
 #[derive(Clone, Debug)]
 pub struct BootstrappingKeysLayout {
     /// Layout of the rotation and conjugation keys `rotation_keys` does not
@@ -268,9 +243,6 @@ pub struct BootstrappingKeysLayout {
     /// Layout of the EvalMod relinearization (tensor) key. It must cover the
     /// widest ciphertext EvalMod relinearizes.
     pub tensor_key: GLWETensorKeyLayout,
-    /// Layouts of further tensor keys, for narrower ciphertexts (see the
-    /// [`TensorKeysByWidth`]).
-    pub narrow_tensor_keys: Vec<GLWETensorKeyLayout>,
     /// Physical layouts for the sparse-secret encapsulation keys required by
     /// the recipe, or `None` when the recipe disables the technique.
     pub encapsulation: Option<EncapsulationKeysLayout>,
@@ -291,11 +263,6 @@ impl BootstrappingKeysLayout {
             }
         }
         layouts
-    }
-
-    /// The tensor key layouts, the wide one first.
-    pub fn tensor_key_layouts(&self) -> impl Iterator<Item = &GLWETensorKeyLayout> {
-        core::iter::once(&self.tensor_key).chain(&self.narrow_tensor_keys)
     }
 }
 
@@ -382,15 +349,9 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
             rotation_keys.insert(p, atk);
         }
 
-        // Tensor (relinearization) keys for EvalMod's ct×ct squaring.
-        let mut tensor_keys = Vec::with_capacity(1 + layout.narrow_tensor_keys.len());
-        for tsk_layout in layout.tensor_key_layouts() {
-            let mut tensor_key = module.glwe_tensor_key_alloc_from_infos(tsk_layout);
-            module.glwe_tensor_key_encrypt_sk(&mut tensor_key, sk_dense, source_xe, source_xa, scratch);
-            tensor_keys.push(tensor_key);
-        }
-        let narrow_tensor_keys = tensor_keys.split_off(1);
-        let tensor_key = tensor_keys.pop().expect("the wide tensor key is always generated");
+        // Tensor (relinearization) key for EvalMod's ct×ct squaring.
+        let mut tensor_key = module.glwe_tensor_key_alloc_from_infos(&layout.tensor_key);
+        module.glwe_tensor_key_encrypt_sk(&mut tensor_key, sk_dense, source_xe, source_xa, scratch);
 
         // Sparse-secret encapsulation key-switching keys.
         let encapsulation_keys = match (sparse_secret_hamming_weight, &layout.encapsulation) {
@@ -419,7 +380,6 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
         Ok(BootstrappingKeySet {
             rotation_keys,
             tensor_key,
-            narrow_tensor_keys,
             encapsulation_keys,
         })
     }

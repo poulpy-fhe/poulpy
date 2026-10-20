@@ -1,5 +1,5 @@
 use crate::CKKSResult as Result;
-use poulpy_core::layouts::{GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef};
+use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
@@ -89,7 +89,8 @@ where
     ) -> Result<()>
     where
         F: Sync,
-        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync,
+        K: BootstrappingKeys<BE> + Sync,
+        K::TensorKey: Sync,
     {
         BE::ckks_bootstrap_impl(self, ct_out, ct_in, ctx, keys, scratch)
     }
@@ -104,7 +105,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
+        K: BootstrappingKeys<BE>,
     {
         BE::ckks_functional_bootstrap_impl(self, ct_outs, ct_in, ctx, luts, keys, scratch)
     }

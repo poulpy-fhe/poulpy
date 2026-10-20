@@ -316,7 +316,6 @@ fn run_case<BE, F, E>(
     };
     let keys_layout = BootstrappingKeysLayout {
         rotation_keys: Default::default(),
-        narrow_tensor_keys: Vec::new(),
         automorphism_key: tp.atk_layout(),
         tensor_key: tp.tsk_layout(),
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {

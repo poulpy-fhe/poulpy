@@ -1,5 +1,5 @@
 use crate::CKKSResult as Result;
-use poulpy_core::layouts::{GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef};
+use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{
@@ -147,7 +147,8 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     ) -> Result<()>
     where
         F: Sync,
-        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync;
+        K: BootstrappingKeys<BE> + Sync,
+        K::TensorKey: Sync;
 
     /// Refreshes `ct_in` through an S2C-first context and applies each LUT of
     /// `luts` to it, writing the results into `ct_outs`.
@@ -175,5 +176,5 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>;
+        K: BootstrappingKeys<BE>;
 }
