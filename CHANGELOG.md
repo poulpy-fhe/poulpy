@@ -96,13 +96,14 @@
   Their queries count only what the prepared products use, and one prepared pair needs no more than `glwe_mul_relinearize_tmp_bytes`.
 - **Fix:** `glwe_eval_linear_transformation_into` checks every giant step before writing `res`, as `glwe_eval_linear_transformation_sum_into` does: on the per-giant fallback, a giant step after the first that had no diagonal, started with a diagonal of another width, or read a baby rotation missing from the cache panicked after `res` was written. The other diagonals are not checked: every diagonal of a transform shares one width, scale and degree, as the encoder produces them. Valid calls are unchanged.
 - **Fix:** `glwe_tensor_relinearize_tmp_bytes` counts the operand's second conversion to the tensor key's radix where `glwe_tensor_relinearize` takes it, while the key-switched sum is held. It counted a conversion beside the key product instead, and only for a key of another radix than the output's, so with a key of another `base2k` than the operand's the relinearization could run out of the scratch its query returned and panic, as `ckks_mul_into` did at rank 2 with a key of radix 12 on radix-52 ciphertexts. The query changes only for keys of another radix than the operand's or the output's, and bits are unchanged.
+- The noise test `test_glwe_mul_plain_compact` is renamed `test_glwe_mul_plain_plaintext_degree`.
 
 ### `poulpy-ckks`
 
 - The FFT64 bootstrapping benchmarks (portable, AVX2, AVX-512) and preset precision tests (portable, AVX2, oracle) run the presets at `base2k = 18` instead of 19, and `docs/bootstrapping.md` and `docs/performance.md` follow.
   At logN16 the giant steps of CoeffsToSlots and SlotsToCoeffs accumulate several hundred key-switch products in the DFT domain before one inverse transform, which `f64` no longer represents exactly at `base2k = 19`: the bootstrap returned garbage there, and returns 19.85 bits at 18.
 - `CKKSCiphertext` implements `WriterTo` and `ReaderFrom` in the format of its inner `GLWE`, so a flag-clear ciphertext is rejected with `InvalidInput`; the ring stays a type parameter.
-  `CKKSModuleAlloc::ckks_linear_transformation_alloc_from_infos` allocates a transform of a `LinearTransformationLayout`'s schedule with a zero plaintext of the given infos at every diagonal, the receiver of an encoding, and `ckks_compact_degree` gives the degree `ckks_pt_vec_alloc_compact` allocates at.
+  `CKKSModuleAlloc::ckks_linear_transformation_alloc_from_infos` allocates a transform of a `LinearTransformationLayout`'s schedule with a zero plaintext of the given infos at every diagonal, the receiver of an encoding.
 - `reference::ckks_encode_linear_transformation_into` encodes a diagonal map into a transform `ckks_linear_transformation_alloc_from_infos` allocated, overwriting every plaintext, and returns the errors of `ckks_encode_linear_transformation_from_diagonals` for a malformed map or strategy, and `InvalidOperand` for a transform of another schedule, before any write; `ckks_encode_linear_transformation_from_diagonals` allocates then encodes through it, with unchanged bits.
   `api::ckks_linear_transformation_output_k` and `ckks_linear_transformation_output_layout` give the width and layout of the result of `ckks_eval_linear_transformation_into`.
 - **Breaking:** `LtDiagonalMeta` requires `lt_log_sparsity`, the sparsity a diagonal imposes on its product with a ciphertext of a given degree.
@@ -153,6 +154,9 @@
   The bits change only in that case, where results were wrong.
 - **Fix:** `ckks_encode_linear_transformation_from_diagonals`, `EncodeBSGS::encode_bsgs_with`, `EncodeBSGS::encode_bsgs_folded_with` and `compile_eval_mod` return `CKKSCompositionError::InvalidOperand` for a `CoeffsMeta` with `k = 0`, before allocating anything, and `encode_bsgs`, the `ComplexPolynomial` encoders and the bootstrapping plans return it through them.
   At `log_delta = 0` the linear-transformation encoder panicked while encoding the first diagonal, and at `log_delta > 0` it returned `LimbReallocationShrinksBelowMetadata`; the BSGS and EvalMod encoders panicked while encoding the first baby step.
+- **Breaking:** `CKKSModuleAlloc::ckks_pt_vec_alloc` takes the slot count first and allocates the plaintext at the degree that holds them, `2 * slots` on the standard ring and `slots` on the conjugate-invariant ring; `ckks_max_slots()` gives the ring degree, and a degree below the backend's `MIN_DEGREE` panics.
+  `CKKSModuleAlloc::ckks_pt_vec_alloc_compact` is removed, as `ckks_pt_vec_alloc` covers it.
+  The test suite's `compact` module is renamed `plaintext_slots`, with `test_plaintext_slots_add_sub_mul`, `test_linear_transformation_diagonal_slots` and `test_diagonal_encoder_slots`; `test_compact_plaintext_embedding` is removed.
 
 ### `poulpy-blas`
 

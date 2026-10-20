@@ -98,8 +98,8 @@ That changes the ergonomics in a few important ways:
 - **Easier parameterization:** users specify a modulus budget by size rather than by
   hand-picking an RNS prime chain. In that view, `logQ = 1000` means "about
   1000 bits of total modulus budget," and capacity is then consumed bit by bit.
-- **Compact plaintexts:** plaintexts polynomials do not suffer any expansion unlike
-  the RNS basis. They stay in an optimal compact representation instead of living
+- **No plaintext expansion:** plaintext polynomials do not suffer any expansion,
+  unlike in the RNS basis. They stay at their own width instead of living
   across the full `logQ`.
 - **Circuit-independent evaluation-key parameterization:** because capacity is
   granular at the bit level, evaluation keys are not tied to a specific level
@@ -134,7 +134,7 @@ mixing `Standard` and `ConjugateInvariant` values is a compile error. A standard
 ciphertext with real slots still belongs to the standard ring; CI encoding
 marks its plaintexts real, and arithmetic and linear transformations
 propagate that claim.
-Compact plaintexts must have a degree that embeds in the module; scalar
+Plaintexts must have a degree that embeds in the module; scalar
 coefficient banks need the same ring kind but may have arbitrary lengths.
 
 Secret and evaluation keys use the Core key types and preparation methods.
@@ -269,7 +269,7 @@ let m = 8;  // number of complex slots
 let re = vec![0.0f64; m];
 let im = vec![1.0f64; m];
 
-let mut pt = module.ckks_pt_vec_alloc_compact(m, base2k.into(), 50usize.into());
+let mut pt = module.ckks_pt_vec_alloc(m, base2k.into(), 50usize.into());
 pt.set_meta_checked(GLWEPlaintextMeta {
     scale: Scale::Log(40),
     slots: SlotsKind::Complex,
@@ -431,7 +431,7 @@ rings, shifts wrap modulo the slot count and negative shifts rotate backwards.
 
 The slot encoder accepts planar real/imaginary buffers, discards imaginary
 inputs, decodes with zero imaginary parts, and marks encoded plaintexts real.
-Compact plaintexts use one coefficient per real slot, subject to the backend's
+Plaintexts use one coefficient per real slot, subject to the backend's
 minimum degree. Raw coefficient encoding uses the invariant basis directly.
 
 Leveled arithmetic, real polynomial evaluation, and real linear

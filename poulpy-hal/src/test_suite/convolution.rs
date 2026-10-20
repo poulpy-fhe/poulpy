@@ -1230,7 +1230,7 @@ where
             &vec_znx_backend_ref::<BE>(&b_dense),
             &mut scratch.arena(),
         );
-        // The compact operand at its own degree, prepared under the same module; the
+        // The operand at its own degree, prepared under the same module; the
         // apply below crosses the two degrees.
         let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(b_n, cols, b_size, PrepareHint::Reuse);
         module.cnv_prepare_right(
@@ -1240,7 +1240,7 @@ where
         );
 
         let label = format!("b.n()={b_n}");
-        // Runs `form` on the dense right operand and on the compact one; both must agree after idft + normalize.
+        // Runs `form` on the dense right operand and on the embedded one; both must agree after idft + normalize.
         let mut check = |what: &str, form: &ConvolutionForm<'_, BE>| {
             let mut want_dft: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(params.n, 2, res_size);
             let mut have_dft: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(params.n, 2, res_size);
@@ -1381,7 +1381,7 @@ where
     assert!(panicked, "cnv_prepare_self accepted right.n() != left.n()");
 
     // The left operand of an apply takes the module degree: the entry assert fires
-    // before the kernel reads the zeroed compact operand.
+    // before the kernel reads the zeroed half-degree operand.
     let half_left: CnvPVecLOwned<BE> = CnvPVecL::alloc(n / 2, cols, a_size, PrepareHint::Reuse);
     let mut res_dft: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(params.n, 2, res_size);
     let mut b_full: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(params.n, cols, a_size, PrepareHint::Reuse);
@@ -1410,7 +1410,7 @@ where
 /// Galois reads: the apply of a prepared right operand `b` through `σ_p` equals, bit for bit after `idft` and
 /// normalization, the identity apply of the operand prepared from `σ_p` of the coefficients of `b`, for
 /// `cnv_apply_dft`, `cnv_apply_dft_add` and `cnv_apply_dft_sum` (the sum mixing two Galois elements), on dense and
-/// compact right operands; an even `b_galois` is rejected.
+/// embedded right operands; an even `b_galois` is rejected.
 pub fn test_convolution_galois<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN

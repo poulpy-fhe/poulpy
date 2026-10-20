@@ -1,3 +1,4 @@
+use poulpy_ckks::CKKSModuleInfos;
 use poulpy_ckks::Scale;
 use poulpy_hal::AlignedBuf;
 use std::{collections::HashMap, hint::black_box};
@@ -202,7 +203,7 @@ pub fn runner_ckks_add_pt_vec_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = 
     ct_a.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
 
-    let mut pt = module.ckks_pt_vec_alloc(Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
+    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
     pt.set_meta(meta);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_add_pt_vec_tmp_bytes(ct_layout.size()));
@@ -288,7 +289,7 @@ pub fn runner_ckks_sub_pt_vec_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = 
     ct_a.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
 
-    let mut pt = module.ckks_pt_vec_alloc(Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
+    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
     pt.set_meta(meta);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_sub_pt_vec_tmp_bytes(ct_layout.size()));
@@ -451,7 +452,7 @@ pub fn runner_ckks_mul_pt_vec_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = 
     ct_a.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
 
-    let mut pt = module.ckks_pt_vec_alloc(Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
+    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
     pt.set_meta(meta);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_mul_pt_vec_tmp_bytes(&ct_dst, &ct_a, &pt));
@@ -480,7 +481,7 @@ pub fn runner_ckks_mul_pt_const_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord 
     ct_a.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
 
-    let mut const_full = module.ckks_pt_vec_alloc(Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
+    let mut const_full = module.ckks_pt_vec_alloc(module.ckks_max_slots(), Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
     const_full.set_meta(meta);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_mul_pt_const_tmp_bytes(&ct_dst, &ct_a, &const_full));
@@ -505,7 +506,7 @@ pub fn runner_ckks_encode_slots_assign_into<BE: Backend<OwnedBuf = AlignedBuf, Z
 {
     let module = Module::<BE>::new(cp.n as u64);
 
-    let mut pt = module.ckks_pt_vec_alloc(cp.base2k.into(), cp.k.into());
+    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), cp.base2k.into(), cp.k.into());
     pt.set_meta(ckks_ct_meta(cp));
 
     let values = ckks_encoding_values(cp.n);
@@ -525,7 +526,7 @@ pub fn runner_ckks_decode_slots_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord 
 {
     let module = Module::<BE>::new(cp.n as u64);
 
-    let mut pt = module.ckks_pt_vec_alloc(cp.base2k.into(), 127usize.into()); // TODO: should this be a benchmark parameter?
+    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), cp.base2k.into(), 127usize.into()); // TODO: should this be a benchmark parameter?
     pt.set_meta(ckks_ct_meta(cp));
 
     let values = ckks_encoding_values(cp.n);
@@ -548,7 +549,7 @@ pub fn runner_ckks_encode_coeffs_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord
 {
     let module = Module::<BE>::new(cp.n as u64);
 
-    let mut pt = module.ckks_pt_vec_alloc(cp.base2k.into(), 127usize.into()); // TODO: should this be a benchmark parameter?
+    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), cp.base2k.into(), 127usize.into()); // TODO: should this be a benchmark parameter?
     pt.set_meta(ckks_ct_meta(cp));
 
     let values = ckks_encoding_values(cp.n);
@@ -568,7 +569,7 @@ pub fn runner_ckks_decode_coeffs_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord
 {
     let module = Module::<BE>::new(cp.n as u64);
 
-    let mut pt = module.ckks_pt_vec_alloc(cp.base2k.into(), 127usize.into()); // TODO: should this be a benchmark parameter?
+    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), cp.base2k.into(), 127usize.into()); // TODO: should this be a benchmark parameter?
     pt.set_meta(ckks_ct_meta(cp));
 
     let values = ckks_encoding_values(cp.n);

@@ -302,7 +302,7 @@ where
     for &i in diag_indices {
         let j = i / n1;
         let k = i % n1;
-        let mut plaintext = module.ckks_pt_vec_alloc(Base2K(BASE2K as u32), TorusPrecision(BASE2K as u32));
+        let mut plaintext = module.ckks_pt_vec_alloc(module.ckks_max_slots(), Base2K(BASE2K as u32), TorusPrecision(BASE2K as u32));
         plaintext.set_meta(ckks_pt_meta());
         giant_steps[j].diagonals.push(Diagonal {
             baby: k as i64,
@@ -435,11 +435,11 @@ where
     ct_b.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
 
-    let mut pt = module.ckks_pt_vec_alloc(Base2K(BASE2K as u32), TorusPrecision(K as u32));
+    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), Base2K(BASE2K as u32), TorusPrecision(K as u32));
     pt.set_meta(meta);
     let mut cst = module.ckks_pt_coeffs_alloc(2, Base2K(BASE2K as u32), TorusPrecision(K as u32));
     cst.set_meta(meta);
-    let mut const_full = module.ckks_pt_vec_alloc(Base2K(BASE2K as u32), TorusPrecision(K as u32));
+    let mut const_full = module.ckks_pt_vec_alloc(module.ckks_max_slots(), Base2K(BASE2K as u32), TorusPrecision(K as u32));
     const_full.set_meta(meta);
 
     let tsk = module.alloc_tensor_key_prepared_from_infos(&tsk_layout);
@@ -518,7 +518,7 @@ fn bench_lt_case<BE>(
 
     // Scratch must cover the largest of RHS-prepare, LHS-prepare, and eval.
     let sizing_key = atks.values().next();
-    let mut pt_infos = module.ckks_pt_vec_alloc(Base2K(BASE2K as u32), TorusPrecision(BASE2K as u32));
+    let mut pt_infos = module.ckks_pt_vec_alloc(module.ckks_max_slots(), Base2K(BASE2K as u32), TorusPrecision(BASE2K as u32));
     pt_infos.set_meta(meta_pt);
     let scratch_bytes = module
         .ckks_prepare_linear_transformation_rhs_tmp_bytes(&pt_infos)
@@ -766,11 +766,11 @@ where
     ct_b.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
 
-    let mut pt = module.ckks_pt_vec_alloc(Base2K(p.base2k as u32), TorusPrecision(p.k as u32));
+    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), Base2K(p.base2k as u32), TorusPrecision(p.k as u32));
     pt.set_meta(meta);
     let mut cst = module.ckks_pt_coeffs_alloc(2, Base2K(p.base2k as u32), TorusPrecision(p.k as u32));
     cst.set_meta(meta);
-    let mut const_full = module.ckks_pt_vec_alloc(Base2K(p.base2k as u32), TorusPrecision(p.k as u32));
+    let mut const_full = module.ckks_pt_vec_alloc(module.ckks_max_slots(), Base2K(p.base2k as u32), TorusPrecision(p.k as u32));
     const_full.set_meta(meta);
 
     let tsk = module.alloc_tensor_key_prepared_from_infos(&tsk_layout);

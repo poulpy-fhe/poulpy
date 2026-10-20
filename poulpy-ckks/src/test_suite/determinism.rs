@@ -170,7 +170,7 @@ where
         check_scalars(&format!("{key}-slots"), &values.to_host::<BE>());
 
         for log_delta in [20, 40, 100] {
-            let mut pt = module.ckks_pt_vec_alloc(Base2K(19), TorusPrecision(log_delta as u32 + 20));
+            let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), Base2K(19), TorusPrecision(log_delta as u32 + 20));
             pt.set_meta(GLWEPlaintextMeta {
                 scale: Scale::Log(log_delta),
                 slots: SlotsKind::Complex,

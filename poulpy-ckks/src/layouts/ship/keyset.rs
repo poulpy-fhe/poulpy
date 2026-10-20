@@ -8,6 +8,7 @@
 //! the backend-ready [`ShipKeysPrepared`] with the masks preprocessed as left
 //! convolution operands.
 
+use crate::CKKSModuleInfos;
 use anyhow::{Result, ensure};
 use poulpy_core::{Distribution, GetDistribution, GetDistributionMut};
 use poulpy_core::{
@@ -494,7 +495,7 @@ impl<D: Data> ShipKeySet<D, i64> {
                     .into_iter()
                     .map(|re| {
                         let im = vec![F::zero(); m];
-                        let mut pt = module.ckks_pt_vec_alloc(base2k, kk.into());
+                        let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), base2k, kk.into());
                         pt.set_meta_checked(mask_meta)?;
                         module.ckks_encode_reim_into(&mut pt, &re, &im, scratch)?;
                         let mut ct = module.ckks_ciphertext_alloc(base2k, kk.into());

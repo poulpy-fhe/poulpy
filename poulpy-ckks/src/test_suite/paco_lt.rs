@@ -23,6 +23,7 @@
 //! the SlotToCoeff chain. Grouping radices `g ∈ {1, 2}` cover both the
 //! one-layer-per-factor and merged schedules.
 
+use crate::CKKSModuleInfos;
 use crate::Scale;
 use std::collections::HashMap;
 
@@ -115,7 +116,7 @@ where
     let mut scratch = alloc_scratch(&params, &module);
 
     // Factor plaintext layout: per-factor scale log_delta; sub-`N/2` factors
-    // are stored compactly (tiled slot values). Chains may mix dimensions (the
+    // are stored at their own degree (tiled slot values). Chains may mix dimensions (the
     // fused StC first factor is a 2C tile, the remaining Decode factors C/2),
     // so the layout is built per factor.
     let lts: Vec<_> = factors
@@ -187,7 +188,7 @@ where
     let want_re: Vec<F> = w.iter().map(|x| x.re).collect();
     let want_im: Vec<F> = w.iter().map(|x| x.im).collect();
 
-    let mut pt_want = module.ckks_pt_vec_alloc(ct.base2k(), ct.k());
+    let mut pt_want = module.ckks_pt_vec_alloc(module.ckks_max_slots(), ct.base2k(), ct.k());
     pt_want.set_meta(GLWEPlaintextMeta {
         scale: Scale::Log(ct.log_delta()),
         slots: SlotsKind::Complex,

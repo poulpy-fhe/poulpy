@@ -12,6 +12,7 @@
 //!   signed Galois element `−5^k` applied through the
 //!   plain conjugation op must equal `conj(rotate(·, k))`, in one keyswitch.
 
+use crate::CKKSModuleInfos;
 use crate::Scale;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWELayout, LWEInfos, Rank};
@@ -118,7 +119,7 @@ pub(crate) fn assert_slots<BE, F, E>(
     // Expected plaintext, encoded host-side at the same layout.
     let want_re: Vec<F> = want.iter().map(|x| F::from_f64(x.re).unwrap()).collect();
     let want_im: Vec<F> = want.iter().map(|x| F::from_f64(x.im).unwrap()).collect();
-    let mut want_pt = host_module.ckks_pt_vec_alloc(base2k, ct.k());
+    let mut want_pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), base2k, ct.k());
     want_pt.set_meta(GLWEPlaintextMeta {
         scale: Scale::Log(log_delta),
         slots: SlotsKind::Complex,

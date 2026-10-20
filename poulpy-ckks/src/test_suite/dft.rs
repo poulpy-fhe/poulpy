@@ -17,6 +17,7 @@
 //! `dense_params` (full slot count, `Standard` / `Split` formats) and
 //! `sparse_params` (sub-maximal slots, the `RepackImagAsReal` path).
 
+use crate::CKKSModuleInfos;
 use crate::Scale;
 use crate::api::CKKSEncodingOps;
 use poulpy_core::layouts::{GLWEPlaintextInfos, SetGLWEPlaintextInfos};
@@ -184,7 +185,7 @@ where
     BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: CKKSModuleAlloc<BE>,
 {
-    let mut pt = module.ckks_pt_vec_alloc(ct.base2k(), ct.k());
+    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), ct.base2k(), ct.k());
     pt.set_meta(GLWEPlaintextMeta {
         scale: Scale::Log(ct.log_delta()),
         slots: SlotsKind::Complex,
@@ -661,7 +662,11 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
     want_re[..slots].copy_from_slice(re);
     want_re[slots..].copy_from_slice(im);
     let want_im = vec![F::from_f64(0.0).unwrap(); 2 * slots];
-    let mut host_pt = host_module.ckks_pt_vec_alloc(Base2K(base2k as u32), ((log_delta + 10) as u32).into());
+    let mut host_pt = host_module.ckks_pt_vec_alloc(
+        host_module.ckks_max_slots(),
+        Base2K(base2k as u32),
+        ((log_delta + 10) as u32).into(),
+    );
     host_pt.set_meta(GLWEPlaintextMeta {
         scale: Scale::Log(log_delta),
         slots: SlotsKind::Complex,

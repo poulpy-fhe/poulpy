@@ -1,5 +1,6 @@
 //! SHIP bootstrapping tests (host replica, HMuxRot primitive, end-to-end).
 
+use crate::CKKSModuleInfos;
 use crate::ckks_log_delta;
 use poulpy_core::layouts::GLWEPlaintextInfos;
 use std::f64::consts::TAU;
@@ -486,7 +487,7 @@ fn ship_bootstrap_case<BE, F, E>(
         })
         .collect();
     let bottom_prec = ckks_spec(n, base2k, base2k, 0);
-    let mut host_pt = host_module.ckks_pt_vec_alloc(base2k.into(), bottom_prec.k());
+    let mut host_pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), base2k.into(), bottom_prec.k());
     host_pt.set_meta(bottom_prec.meta());
     host_pt.encode_host_floats(&coeffs).unwrap();
     let mut coeffs_quant = vec![F::zero(); n];
