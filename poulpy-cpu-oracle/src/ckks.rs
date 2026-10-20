@@ -207,6 +207,7 @@ macro_rules! impl_oracle_ckks {
         ::poulpy_ckks::impl_ckks_dot_product_reference!($be);
         ::poulpy_ckks::impl_ckks_linear_transformation_reference!($be);
         ::poulpy_ckks::impl_ckks_neg_reference!($be);
+        ::poulpy_ckks::impl_ckks_round_reference!($be);
         ::poulpy_ckks::impl_ckks_pow2_reference!($be);
         ::poulpy_ckks::impl_ckks_rotate_reference!($be);
         ::poulpy_ckks::impl_ckks_add_reference!($be);

@@ -34,6 +34,7 @@ pub mod polynomial_evaluation;
 pub mod pow2;
 pub(crate) mod ring_map;
 pub mod rotate;
+pub mod round;
 pub mod ship;
 pub mod sub;
 

@@ -46,6 +46,7 @@ mod plaintext;
 mod polynomial_evaluation;
 mod pow2;
 mod rotate;
+mod round;
 mod ship;
 mod sub;
 
@@ -85,6 +86,8 @@ pub use pow2::CKKSPow2Impl;
 pub use pow2::impl_ckks_pow2_reference;
 pub use rotate::CKKSRotateImpl;
 pub use rotate::impl_ckks_rotate_reference;
+pub use round::CKKSRoundImpl;
+pub use round::impl_ckks_round_reference;
 pub use ship::CKKSShipCoeffEncodingImpl;
 pub use sub::CKKSSubImpl;
 pub use sub::impl_ckks_sub_reference;

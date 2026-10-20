@@ -23,7 +23,7 @@ use crate::{
     api::{
         CKKSAddManyOps, CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps, CKKSDotProductOps,
         CKKSEncodingScalar, CKKSEvalModOps, CKKSImagOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSNegOps,
-        CKKSPlaintextVecOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
+        CKKSPlaintextVecOps, CKKSPow2Ops, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
     },
     api::{CKKSDecryptOps, CKKSEncryptOps},
     layouts::{
@@ -184,6 +184,7 @@ pub trait TestContextSharedModule<BE: Backend>:
     + CKKSSubOps<BE>
     + CKKSMulOps<BE>
     + CKKSNegOps<BE>
+    + CKKSRoundOps<BE>
     + CKKSCopyOps<BE>
     + CKKSRotateOps<BE>
     + CKKSPow2Ops<BE>
@@ -222,6 +223,7 @@ impl<BE: Backend, M> TestContextSharedModule<BE> for M where
         + CKKSSubOps<BE>
         + CKKSMulOps<BE>
         + CKKSNegOps<BE>
+        + CKKSRoundOps<BE>
         + CKKSCopyOps<BE>
         + CKKSRotateOps<BE>
         + CKKSPow2Ops<BE>

@@ -284,6 +284,22 @@ macro_rules! ckks_backend_rank2_test_suite {
             run_test_result!(neg, $crate::test_suite::neg::test_neg_aligned);
             run_test_result!(neg_wider_output, $crate::test_suite::neg::test_neg_wider_output);
             run_test_result!(neg_assign, $crate::test_suite::neg::test_neg_assign);
+            run_test_result!(
+                round_unit_shaping_is_plain,
+                $crate::test_suite::round::test_round_unit_shaping_is_plain
+            );
+            run_test_result!(
+                round_error_is_shaped,
+                $crate::test_suite::round::test_round_error_is_shaped
+            );
+            run_test_result!(
+                round_beyond_pass_rounds_plainly_first,
+                $crate::test_suite::round::test_round_beyond_pass_rounds_plainly_first
+            );
+            run_test_result!(
+                round_rejects_invalid_widths,
+                $crate::test_suite::round::test_round_rejects_invalid_widths
+            );
             run_test!(mul_ct_aligned, $crate::test_suite::mul::test_mul_ct_aligned);
             run_test!(
                 mul_ct_larger_budget_smaller_scale,
@@ -584,6 +600,22 @@ macro_rules! ckks_backend_test_suite {
             run_test_result!(neg_smaller_output, $crate::test_suite::neg::test_neg_smaller_output);
             run_test_result!(neg_wider_output, $crate::test_suite::neg::test_neg_wider_output);
             run_test_result!(neg_assign, $crate::test_suite::neg::test_neg_assign);
+            run_test_result!(
+                round_unit_shaping_is_plain,
+                $crate::test_suite::round::test_round_unit_shaping_is_plain
+            );
+            run_test_result!(
+                round_error_is_shaped,
+                $crate::test_suite::round::test_round_error_is_shaped
+            );
+            run_test_result!(
+                round_beyond_pass_rounds_plainly_first,
+                $crate::test_suite::round::test_round_beyond_pass_rounds_plainly_first
+            );
+            run_test_result!(
+                round_rejects_invalid_widths,
+                $crate::test_suite::round::test_round_rejects_invalid_widths
+            );
             run_test!(conjugate_aligned, $crate::test_suite::conjugate::test_conjugate_aligned);
             run_test!(
                 conjugate_smaller_output,
@@ -1118,6 +1150,7 @@ pub mod presets;
 #[doc(hidden)]
 pub mod reference_encoder;
 pub mod rotate;
+pub mod round;
 pub mod ship;
 pub mod slots_kind;
 pub mod sub;
