@@ -6,6 +6,7 @@
 //! native FFT and plaintext codec without a device-to-host round-trip.
 
 use crate::{CKKSResult as Result, ckks_ensure};
+use anyhow::Context;
 use bytemuck::Pod;
 use num_traits::FloatConst;
 use poulpy_core::layouts::IntPolyInfos;
@@ -205,6 +206,38 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
             self.ckks_decode_slots_into(pt, &mut values)?;
             copy_encoding_buffer_into_reim_host::<BE, F, _>(&values, re, im).map_err(Into::into)
         })
+    }
+
+    /// Encodes the masked constant `(re + i·im)·π_S` of a
+    /// [`SlotLayout::Replicated`] plaintext: `re + i·im` on every data slot and
+    /// zero on the guards. `π_S`, one on the data class, lies in `R[Y]`,
+    /// `Y = X^(N/(2R))`, with coefficients `cos(π·j/(2R))/R`, and `i·π_S = Y^R·π_S`,
+    /// so the constant has `2R` coefficients, quantized with shaped rounding.
+    fn ckks_encode_masked_constant_into<P>(&self, pt: &mut P, re: F, im: F, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
+    {
+        let SlotLayout::Replicated(layout) = pt.slot_layout() else {
+            return Err(anyhow::anyhow!("a masked constant needs a replicated slot layout").into());
+        };
+        let r = 1usize << layout.log_r();
+        let order = layout.log_r() as u32 + 2;
+        let r_inv = F::from_usize(r)
+            .context("slot period is not representable by the encoding scalar")?
+            .recip();
+        let pi_s = |j: usize| F::ckks_root_of_unity(j as u64, order).0 * r_inv;
+        let n = pt.n().as_usize();
+        ckks_ensure!(
+            n.is_multiple_of(2 * r),
+            "a masked constant of period {r} needs a degree multiple of {}, got {n}",
+            2 * r
+        );
+        let mut coeffs = vec![F::zero(); n];
+        for j in 0..2 * r {
+            let shifted = if j >= r { pi_s(j - r) } else { -pi_s(j + r) };
+            coeffs[j * (n / (2 * r))] = re * pi_s(j) + im * shifted;
+        }
+        self.ckks_encode_coeffs_host_into(pt, &coeffs, scratch)
     }
 
     /// Quantizes host polynomial coefficients without applying an IFFT.

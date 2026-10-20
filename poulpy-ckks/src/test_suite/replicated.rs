@@ -9,9 +9,10 @@
 //! | [`test_replicated_encryption_is_shaped`] | a fresh encryption keeps the data slots far above CKKS at the same scale |
 //! | [`test_replicated_encoding_rejects_batch_size`] | a batch of the wrong size |
 //! | [`test_replicated_products_are_shaped`] | chains of every ct × ct and ct × pt product keep the data slots far above CKKS |
-//! | [`test_replicated_layouts_do_not_mix`] | products and sums of different layouts, and constant sums |
+//! | [`test_replicated_layouts_do_not_mix`] | products and sums of different layouts, constant sums, and polynomial evaluation |
 //! | [`test_replicated_automorphisms_are_shaped`] | rotations and conjugation keep the data slots far above CKKS |
 //! | [`test_replicated_rotations_are_admissible`] | rotations by a non-multiple of the period |
+//! | [`test_replicated_masked_constants`] | a masked constant fills the data slots only, and adds to a ciphertext |
 
 use std::collections::HashMap;
 
@@ -25,15 +26,16 @@ use poulpy_hal::{
 
 use super::helpers::{
     PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, ckks_pt_cst_full, gen_atk, gen_sk,
-    gen_sk_with_raw, gen_tsk,
+    gen_sk_with_raw, gen_tsk, upload_pt,
 };
 use crate::{
     CKKSInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, ReplicatedLayout, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{
         CKKSAddOps, CKKSConjugateOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSModuleInfos,
-        CKKSMulOps, CKKSRotateOps, CKKSSubOps,
+        CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSRotateOps, CKKSSubOps,
     },
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned},
+    polynomial::{Basis, EncodeBSGS, Polynomial},
     shaping::ShapingUnit,
     test_suite::CKKSTestParams,
 };
@@ -465,7 +467,7 @@ where
     BE: TestContextBackend<Ring = Standard>,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSPolynomialEvaluationOps<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -505,6 +507,16 @@ where
     let mut shifted = shaped.clone();
     assert!(module.ckks_sub_one_assign(&mut shifted, s).is_err());
     module.ckks_mul_pt_const_into(&mut out, &shaped, &cst, 0, s)?;
+
+    // Polynomial evaluation adds scalar constants and fuses plain roundings.
+    let poly = Polynomial::new(Basis::Monomial, vec![0.125f64, -0.25])
+        .encode_bsgs(host_module, params.base2k.into(), PT_PREC.into())?
+        .map_baby_steps_ref(|pt| upload_pt(module, pt));
+    assert!(
+        module
+            .ckks_eval_poly_real_const_coeffs(&mut out, &shaped, &poly, &tsk, s)
+            .is_err()
+    );
     Ok(())
 }
 
@@ -609,5 +621,58 @@ where
     assert!(module.ckks_rotate_into(&mut out, &ct, 1, &atks, s).is_err());
     assert!(module.ckks_rotate_assign(&mut ct, -1, &atks, s).is_err());
     module.ckks_rotate_into(&mut out, &ct, 1 << layout().log_r(), &atks, s)?;
+    Ok(())
+}
+
+pub fn test_replicated_masked_constants<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) -> Result<()>
+where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let len = 1usize << LOG_K;
+    let slots = len << layout().log_r();
+    let (c_re, c_im) = (F::from_f64(0.3).unwrap(), F::from_f64(-0.2).unwrap());
+    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(slots));
+    let mut cst = plaintext(&params, module, SlotLayout::Replicated(layout()), len);
+    module.ckks_encode_masked_constant_into(&mut cst, c_re, c_im, &mut scratch.borrow())?;
+
+    let (mut re, mut im) = (vec![F::zero(); slots], vec![F::zero(); slots]);
+    module.ckks_decode_reim_slots_into(&cst, &mut re, &mut im, &mut scratch.borrow())?;
+    // Data slots hold the constant; guards hold only the shaped quantization
+    // error, amplified by the guard classes of `g`.
+    for t in 0..slots {
+        let data = t % (1 << layout().log_r()) == 0;
+        let want = if data { (c_re, c_im) } else { (F::zero(), F::zero()) };
+        let err = (re[t] - want.0).abs().max((im[t] - want.1).abs()).to_f64().unwrap();
+        let bound = if data { -40 } else { 8 - LOG_DELTA as i32 };
+        assert!(err < 2f64.powi(bound), "slot {t}: error 2^{:.2}", err.log2());
+    }
+
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let values = unit_batch::<F>(len, 0);
+    let mut ct = encrypt_batch(
+        &params,
+        module,
+        &sk,
+        SlotLayout::Replicated(layout()),
+        (&values.0, &values.1),
+        3 * LOG_DELTA,
+        1,
+    )?;
+    let mut add_scratch = alloc_scratch(&params, module);
+    module.ckks_add_pt_vec_assign(&mut ct, &cst, &mut add_scratch.borrow())?;
+    let got = decrypt_batch::<BE, F>(&params, module, &sk, &ct, len);
+    let want_re: Vec<F> = values.0.iter().map(|&x| x + c_re).collect();
+    let want_im: Vec<F> = values.1.iter().map(|&x| x + c_im).collect();
+    let bits = precision((&got.0, &got.1), (&want_re, &want_im));
+    assert!(bits >= 40.0, "masked constant sum: {bits:.2} bits");
     Ok(())
 }

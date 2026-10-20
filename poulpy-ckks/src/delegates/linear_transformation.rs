@@ -92,6 +92,10 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
         H: GetAutomorphismKey<BE>,
     {
+        crate::reference::mul::ensure_full_layout(
+            "ckks_eval_linear_transformation_into",
+            crate::GLWEPlaintextInfos::slot_layout(src),
+        )?;
         BE::ckks_eval_linear_transformation_into_impl(self, dst, src, babies, lt, keys, scratch)
     }
 
@@ -108,6 +112,10 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
         H: GetAutomorphismKey<BE>,
     {
+        crate::reference::mul::ensure_full_layout(
+            "ckks_eval_linear_transformation_assign",
+            crate::GLWEPlaintextInfos::slot_layout(dst),
+        )?;
         BE::ckks_eval_linear_transformation_assign_impl(self, dst, babies, lt, keys, scratch)
     }
 
@@ -125,6 +133,12 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
+        for src in srcs {
+            crate::reference::mul::ensure_full_layout(
+                "ckks_eval_linear_transformation_sum_into",
+                crate::GLWEPlaintextInfos::slot_layout(*src),
+            )?;
+        }
         BE::ckks_eval_linear_transformation_sum_into_impl(self, dst, srcs, babies, lts, keys, scratch)
     }
 
@@ -142,6 +156,10 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
         H: GetAutomorphismKey<BE>,
     {
+        crate::reference::mul::ensure_full_layout(
+            "ckks_eval_linear_transformation_self_into",
+            crate::GLWEPlaintextInfos::slot_layout(src),
+        )?;
         BE::ckks_eval_linear_transformation_self_into_impl(self, dst, src, lt, keys, scratch)
     }
 
@@ -157,6 +175,10 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
         H: GetAutomorphismKey<BE>,
     {
+        crate::reference::mul::ensure_full_layout(
+            "ckks_eval_linear_transformation_self_assign",
+            crate::GLWEPlaintextInfos::slot_layout(dst),
+        )?;
         BE::ckks_eval_linear_transformation_self_assign_impl(self, dst, lt, keys, scratch)
     }
 }

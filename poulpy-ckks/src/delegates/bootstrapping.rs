@@ -60,6 +60,7 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
+        crate::reference::mul::ensure_full_layout("ckks_mod_up_into", crate::GLWEPlaintextInfos::slot_layout(src))?;
         BE::ckks_mod_up_into_impl(self, dst, src, eval_mod, scratch)
     }
 
@@ -76,6 +77,7 @@ where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: BootstrappingKeys<BE>,
     {
+        crate::reference::mul::ensure_full_layout("ckks_bootstrap_mod_up", crate::GLWEPlaintextInfos::slot_layout(src))?;
         BE::ckks_bootstrap_mod_up_impl(self, dst, src, eval_mod, keys, scratch)
     }
 
@@ -92,6 +94,7 @@ where
         K: BootstrappingKeys<BE> + Sync,
         K::TensorKey: Sync,
     {
+        crate::reference::mul::ensure_full_layout("ckks_bootstrap", crate::GLWEPlaintextInfos::slot_layout(ct_in))?;
         BE::ckks_bootstrap_impl(self, ct_out, ct_in, ctx, keys, scratch)
     }
 
@@ -107,6 +110,7 @@ where
     where
         K: BootstrappingKeys<BE>,
     {
+        crate::reference::mul::ensure_full_layout("ckks_functional_bootstrap", crate::GLWEPlaintextInfos::slot_layout(ct_in))?;
         BE::ckks_functional_bootstrap_impl(self, ct_outs, ct_in, ctx, luts, keys, scratch)
     }
 }

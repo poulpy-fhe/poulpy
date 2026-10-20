@@ -66,6 +66,7 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE>,
     {
+        crate::reference::mul::ensure_full_layout("ckks_dft_evaluate_assign", crate::GLWEPlaintextInfos::slot_layout(ct))?;
         BE::ckks_dft_evaluate_assign_impl(self, ct, dft, keys, scratch)
     }
 

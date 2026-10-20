@@ -979,6 +979,19 @@ pub(crate) fn take_wide<'a, BE: Backend + 'a, D: GLWEInfos + CKKSInfos>(
     scratch.borrow().take_ckks_ciphertext_scratch(&layout, dst.meta())
 }
 
+/// Rejects a replicated slot layout in an operation that rounds plainly or
+/// writes the guard slots.
+pub(crate) fn ensure_full_layout(op: &'static str, slot_layout: SlotLayout) -> Result<()> {
+    if let SlotLayout::Replicated(_) = slot_layout {
+        return Err(CKKSCompositionError::InvalidOperand {
+            op,
+            reason: "the operation does not support a replicated slot layout".into(),
+        }
+        .into());
+    }
+    Ok(())
+}
+
 /// Rejects a rotation by `k` slots that moves guard slots onto data slots.
 pub(crate) fn ensure_admissible_rotation(op: &'static str, slot_layout: SlotLayout, k: i64) -> Result<()> {
     if let SlotLayout::Replicated(layout) = slot_layout

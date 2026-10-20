@@ -103,6 +103,7 @@ where
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
+        crate::reference::mul::ensure_full_layout("ckks_ship_bootstrap_into", crate::GLWEPlaintextInfos::slot_layout(input))?;
         ship_bootstrap_into::<BE, F, _>(self, output, input, keys, scratch)
     }
 
@@ -116,6 +117,10 @@ where
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
+        crate::reference::mul::ensure_full_layout(
+            "ckks_ship_bootstrap_complex_into",
+            crate::GLWEPlaintextInfos::slot_layout(input),
+        )?;
         ship_bootstrap_complex_into::<BE, F, _>(self, output, input, keys, scratch)
     }
 }

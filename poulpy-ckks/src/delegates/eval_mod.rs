@@ -31,6 +31,7 @@ impl<BE: Backend + CKKSEvalModImpl> CKKSEvalModOps<BE> for Module<BE> {
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
         H: GetTensorKey<BE>,
     {
+        crate::reference::mul::ensure_full_layout("ckks_eval_mod", crate::GLWEPlaintextInfos::slot_layout(ct))?;
         BE::ckks_eval_mod_impl::<R, C, P, F, H>(self, res, ct, params, tsk, scratch)
     }
 }
