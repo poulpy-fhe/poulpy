@@ -17,7 +17,7 @@ Every ring-dependent operation on the conjugate-invariant ring of degree `n` is 
 Their transforms store the `n` evaluations of the image at one root of each conjugate pair.
 Prepared products use ordinary transform order.
 Normalization reconstructs each coefficient as an arbitrary-precision integer, rounds once, and writes centered radix digits.
-A sparse operand, whose degree divides the call degree, is materialized through its degree embedding before the dense operation runs.
+An embedded operand, whose degree divides the call degree, is materialized through its degree embedding before the dense operation runs.
 Prepared convolution operands are embedded directly in the transform domain by repeating evaluations, without an inverse or larger forward transform.
 
 This crate does not import production CPU kernels or their generated tables.

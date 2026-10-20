@@ -104,7 +104,7 @@ pub trait Reim4Convolution {
     /// `dst_stride` is the distance, in f64, between consecutive limbs of the
     /// destination column: `2m` for a one-column `VecZnxDft`, `2m * cols` for a
     /// column of a multi-column (column-interleaved) one. `b_read` is
-    /// how the right operand is read (sparse degree, Galois element): its block
+    /// how the right operand is read (embedded degree, Galois element): its block
     /// rows are gathered through [`reim4_gather_block_portable`] unless the read is direct. `a` takes the
     /// module degree. `tmp` holds at least `8 * (b_size + min_size)` f64.
     #[allow(clippy::too_many_arguments)]
@@ -265,7 +265,7 @@ pub trait Reim4Convolution {
 
     /// Pairwise column-level convolution `(a0 + a1) ⊛ (b0 + b1)`; `tmp` must
     /// additionally hold `8 * (a_size + b_size)` f64 for the summed rows.
-    /// `b_read` is the sparse degree of the right operand (no Galois element): its block
+    /// `b_read` is the embedded degree of the right operand (no Galois element): its block
     /// rows are summed through [`reim4_gather_block_sum_portable`]. `a0` and `a1` take the module degree.
     #[allow(clippy::too_many_arguments)]
     fn reim4_convolution_pairwise_apply(

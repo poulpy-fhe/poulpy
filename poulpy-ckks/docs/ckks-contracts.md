@@ -101,7 +101,7 @@ and supported parameter ranges. No particular backend is a mandatory oracle.
 The paired helpers upload identical logical fixtures and prepare keys, plans,
 and transformed objects independently. They compare canonical coefficients and
 metadata, using numerical tolerances for encoding/transform rounding where
-appropriate. Compact diagonals are embedded into the common ring for comparison,
+appropriate. Diagonals are embedded into the common ring for comparison,
 so different minimum allocation degrees do not require identical storage. The tested buffers remain opaque; the harness uses explicit
 transfers instead of `HostDataRef`/`HostDataMut` bounds.
 

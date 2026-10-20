@@ -1340,7 +1340,7 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma<R: Ring, E: TaskExecutor>(
     let n = res.n();
     check_degree::<NTT3x42Ifma<R>>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_read = RightRead::sparse(n, b.n());
+    let b_read = RightRead::embedded(n, b.n());
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();

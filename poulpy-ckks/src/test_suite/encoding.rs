@@ -1,5 +1,6 @@
 //! Reim encoder encode/decode round-trip test.
 
+use crate::CKKSModuleInfos;
 use crate::Scale;
 use poulpy_core::layouts::Base2K;
 use poulpy_hal::{
@@ -39,6 +40,7 @@ pub fn test_encode_decode_reim_roundtrip<BE, F, E>(
     let (re_in, im_in) = test_vector_1::<F>(m);
 
     let mut pt = host_module.ckks_pt_vec_alloc(
+        host_module.ckks_max_slots(),
         Base2K(params.base2k as u32),
         poulpy_core::layouts::TorusPrecision((log_delta + 10) as u32),
     );

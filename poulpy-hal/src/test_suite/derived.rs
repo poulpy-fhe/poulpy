@@ -1320,10 +1320,10 @@ where
     // (big operand size, small operand size, res size): res longer than both,
     // small shorter than big, small longer than big, res shorter than both, res
     // past both with one operand ending early.
-    // The small operand is the sparse-capable slot: the last two cases give it
+    // The small operand is the embedding slot: the last two cases give it
     // half the module's degree, the degree the default body has to embed. Under
     // a module too small to halve below the degree floor they stay dense.
-    let sparse_n: usize = if params.n >= 16 { params.n / 2 } else { params.n };
+    let embed_n: usize = if params.n >= 16 { params.n / 2 } else { params.n };
     for (a_size, b_size, res_size, small_n) in [
         (3usize, 3usize, 3usize, params.n),
         (4, 2, 3, params.n),
@@ -1331,8 +1331,8 @@ where
         (3, 3, 5, params.n),
         (4, 4, 2, params.n),
         (4, 2, 5, params.n),
-        (3, 3, 3, sparse_n),
-        (4, 2, 5, sparse_n),
+        (3, 3, 3, embed_n),
+        (4, 2, 5, embed_n),
     ] {
         let mut a_backend = module.vec_znx_alloc(params.n, 1, a_size);
         module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_backend, &mut source);
@@ -1462,10 +1462,10 @@ where
     // (small operand size, big operand size, res size): res longer than both,
     // small shorter than big, small longer than big, res shorter than both, res
     // past both with one operand ending early.
-    // The small operand is the sparse-capable slot: the last two cases give it
+    // The small operand is the embedding slot: the last two cases give it
     // half the module's degree, the degree the default body has to embed. Under
     // a module too small to halve below the degree floor they stay dense.
-    let sparse_n: usize = if params.n >= 16 { params.n / 2 } else { params.n };
+    let embed_n: usize = if params.n >= 16 { params.n / 2 } else { params.n };
     for (a_size, b_size, res_size, small_n) in [
         (3usize, 3usize, 3usize, params.n),
         (2, 4, 3, params.n),
@@ -1473,8 +1473,8 @@ where
         (3, 3, 5, params.n),
         (4, 4, 2, params.n),
         (4, 2, 5, params.n),
-        (3, 3, 3, sparse_n),
-        (4, 2, 5, sparse_n),
+        (3, 3, 3, embed_n),
+        (4, 2, 5, embed_n),
     ] {
         let mut a_backend = module.vec_znx_alloc(small_n, 1, a_size);
         module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_backend, &mut source);
@@ -1604,10 +1604,10 @@ where
     // (big operand size, small operand size, res size): res longer than both,
     // small shorter than big, small longer than big, res shorter than both, res
     // past both with one operand ending early.
-    // The small operand is the sparse-capable slot: the last two cases give it
+    // The small operand is the embedding slot: the last two cases give it
     // half the module's degree, the degree the default body has to embed. Under
     // a module too small to halve below the degree floor they stay dense.
-    let sparse_n: usize = if params.n >= 16 { params.n / 2 } else { params.n };
+    let embed_n: usize = if params.n >= 16 { params.n / 2 } else { params.n };
     for (a_size, b_size, res_size, small_n) in [
         (3usize, 3usize, 3usize, params.n),
         (4, 2, 3, params.n),
@@ -1615,8 +1615,8 @@ where
         (3, 3, 5, params.n),
         (4, 4, 2, params.n),
         (4, 2, 5, params.n),
-        (3, 3, 3, sparse_n),
-        (4, 2, 5, sparse_n),
+        (3, 3, 3, embed_n),
+        (4, 2, 5, embed_n),
     ] {
         let mut a_backend = module.vec_znx_alloc(params.n, 1, a_size);
         module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_backend, &mut source);

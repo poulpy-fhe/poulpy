@@ -393,7 +393,7 @@ pub fn assert_linear_transformation_sum<BE: Backend>(
 /// The streamed inner product additionally holds one resident `CnvPVecR`
 /// diagonal slot and a `cnv_prepare_right` scratch on top of the prepared
 /// evaluation budget, both sized at the module degree, an upper bound for a
-/// compact diagonal.
+/// diagonal of any degree.
 pub fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_reference<BE, M, R, A, B, K>(
     module: &M,
     res: &R,

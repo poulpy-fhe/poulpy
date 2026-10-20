@@ -1149,10 +1149,10 @@ where
     }
 }
 
-/// `glwe_mul_plain` and `glwe_mul_plain_assign` with a compact plaintext (degree
-/// `n/2` and `n/4`, never below the backend floor) are bit-identical to the same
+/// `glwe_mul_plain` and `glwe_mul_plain_assign` with a plaintext of degree
+/// `n/2` and `n/4`, never below the backend floor, are bit-identical to the same
 /// product with the plaintext embedded at the module degree by `switch_ring`.
-pub fn test_glwe_mul_plain_compact<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_mul_plain_plaintext_degree<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -1174,13 +1174,13 @@ where
         let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
         module.fill_glwe_from_source(&mut a, &mut source);
         for b_n in [n / 2, n / 4].into_iter().filter(|&d| d >= BE::MIN_DEGREE) {
-            let mut pt_compact: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> =
+            let mut pt_small: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> =
                 module.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout {
                     n: b_n.into(),
                     base2k: base2k.into(),
                     k: (2 * base2k).into(),
                 });
-            module.fill_glwe_from_source(&mut pt_compact, &mut source);
+            module.fill_glwe_from_source(&mut pt_small, &mut source);
             let mut pt_dense: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> =
                 module.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout {
                     n: n.into(),
@@ -1190,11 +1190,11 @@ where
             module.vec_znx_switch_ring(
                 &mut vec_znx_backend_mut::<BE>(pt_dense.data_mut()),
                 0,
-                &vec_znx_backend_ref::<BE>(pt_compact.data()),
+                &vec_znx_backend_ref::<BE>(pt_small.data()),
                 0,
             );
             for cnv_offset in [0usize, base2k] {
-                let mut res_compact: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
+                let mut res_small: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
                 let mut res_dense: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
                 // The assign form multiplies `res` in place, so its budget is
                 // the product one taken at `res` for both ciphertext operands.
@@ -1203,22 +1203,22 @@ where
                         .glwe_mul_plain_tmp_bytes(&res_dense, &a, &pt_dense)
                         .max(module.glwe_mul_plain_tmp_bytes(&res_dense, &res_dense, &pt_dense)),
                 );
-                module.glwe_mul_plain(cnv_offset, &mut res_compact, &a, &pt_compact, &mut scratch.borrow());
+                module.glwe_mul_plain(cnv_offset, &mut res_small, &a, &pt_small, &mut scratch.borrow());
                 module.glwe_mul_plain(cnv_offset, &mut res_dense, &a, &pt_dense, &mut scratch.borrow());
                 assert_eq!(
-                    res_compact.data().raw(),
+                    res_small.data().raw(),
                     res_dense.data().raw(),
                     "glwe_mul_plain: b.n()={b_n} cnv_offset={cnv_offset} rank={rank}"
                 );
 
-                let mut assign_compact: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
+                let mut assign_small: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
                 let mut assign_dense: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
-                assign_compact.data_mut().raw_mut().copy_from_slice(a.data().raw());
+                assign_small.data_mut().raw_mut().copy_from_slice(a.data().raw());
                 assign_dense.data_mut().raw_mut().copy_from_slice(a.data().raw());
-                module.glwe_mul_plain_assign(cnv_offset, &mut assign_compact, &pt_compact, &mut scratch.borrow());
+                module.glwe_mul_plain_assign(cnv_offset, &mut assign_small, &pt_small, &mut scratch.borrow());
                 module.glwe_mul_plain_assign(cnv_offset, &mut assign_dense, &pt_dense, &mut scratch.borrow());
                 assert_eq!(
-                    assign_compact.data().raw(),
+                    assign_small.data().raw(),
                     assign_dense.data().raw(),
                     "glwe_mul_plain_assign: b.n()={b_n} cnv_offset={cnv_offset} rank={rank}"
                 );

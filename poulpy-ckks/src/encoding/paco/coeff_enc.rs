@@ -15,6 +15,7 @@
 //! polynomials `b̃_v^{(r)}` packed (per chunk `r`, one `2C`-wide block per
 //! `v`) exactly like the σ_t vectors of [`key`](super::key).
 
+use crate::CKKSModuleInfos;
 use crate::layouts::CKKSPlaintextOwned;
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{Base2K, GLWEInfos, LWEInfos};
@@ -256,7 +257,7 @@ where
             *re_slot = value.re;
             *im_slot = value.im;
         }
-        let mut pt = module.ckks_pt_vec_alloc(base2k, k_pt.into());
+        let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), base2k, k_pt.into());
         pt.set_meta_checked(GLWEPlaintextMeta {
             scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,

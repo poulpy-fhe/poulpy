@@ -1539,7 +1539,7 @@ fn ifma_prepared_tensor<R, A, BP>(
     let base = a.base2k().as_usize();
     let a_size = a.k().as_usize().div_ceil(base);
     assert_degrees(module, [res.n(), a.n()]);
-    // The prepared right operand may be sparse: a power of two dividing the ring degree.
+    // The prepared right operand may be embedded: its degree a power of two dividing the ring degree.
     poulpy_hal::layouts::check_degree::<BE>(n, b.to_backend_ref().n());
     assert!(a_size <= a.size(), "effective input exceeds its allocation");
     assert!(scratch.available() >= module.glwe_tensor_apply_prepared_right_tmp_bytes_reference(res, a, a_size, b_size));

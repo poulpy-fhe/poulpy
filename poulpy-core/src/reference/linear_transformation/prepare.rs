@@ -37,8 +37,8 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
 
     /// Pre-allocates a resident transform sized for an explicit BSGS `index`.
     ///
-    /// Each slot takes the plaintext's degree, `base2k` and `k`, so a compact
-    /// (degree-`n`) diagonal gets a degree-`n` slot; the convolution buffers are
+    /// Each slot takes the plaintext's degree, `base2k` and `k`, so a degree-`n`
+    /// diagonal gets a degree-`n` slot; the convolution buffers are
     /// zeroed and populated by `glwe_prepare_linear_transformation_rhs`. The
     /// per-diagonal `log_scale` and real-slot claim are left at `0` and `false`
     /// for the scheme layer to set.
@@ -108,8 +108,8 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
 
 /// Reference impl: scratch bytes for `glwe_prepare_linear_transformation_rhs`.
 ///
-/// Sized at the module degree, an upper bound for a compact diagonal, which is
-/// prepared at its own degree.
+/// Sized at the module degree, an upper bound for a diagonal of any degree, which
+/// is prepared at its own degree.
 pub fn glwe_prepare_linear_transformation_rhs_tmp_bytes_reference<BE, M, P>(module: &M, pt_infos: &P) -> usize
 where
     BE: Backend,

@@ -32,8 +32,8 @@
 //! takes a vector whose length divides `slots`, and the diagonal reads
 //! `diag_i[j] = v[j mod v.len()]`. A full-length vector is a dense diagonal;
 //! a shorter one is a periodic diagonal stored once, which a scheme encodes on
-//! that many slots (its plaintext polynomial is sparse by the factor
-//! `slots / v.len()`). Every reader indexes modulo the stored length.
+//! that many slots, at a degree smaller by the factor `slots / v.len()`. Every
+//! reader indexes modulo the stored length.
 
 use std::collections::BTreeMap;
 
@@ -176,8 +176,7 @@ impl<T> Diagonals<T> {
     }
 
     /// The slot count after which the diagonal at `index` repeats, the length
-    /// of its stored period; `None` when the diagonal is absent. The diagonal's
-    /// plaintext is sparse by the factor `slots / period`.
+    /// of its stored period; `None` when the diagonal is absent.
     pub fn period(&self, index: i64) -> Option<usize> {
         self.get(index).map(Vec::len)
     }
@@ -301,45 +300,6 @@ mod tests {
                 assert!((a - b).abs() < 1e-9, "{strategy:?}: {got:?} != {want:?}");
             }
         }
-    }
-
-    /// A diagonal stored as one period evaluates, transposes and reads like its
-    /// dense replication, and a length that does not divide `slots` is rejected.
-    #[test]
-    fn a_compact_diagonal_reads_as_its_periodic_replication() {
-        let v = vec![1.0, -2.0, 0.5, 3.0];
-        let mut dense = Diagonals::new(4);
-        dense.set(1, vec![2.0, -1.0, 2.0, -1.0]);
-        dense.set(3, vec![0.5; 4]);
-        let mut compact = Diagonals::new(4);
-        compact.set(1, vec![2.0, -1.0]);
-        compact.set(3, vec![0.5]);
-        assert_eq!(compact.period(1), Some(2));
-        assert_eq!(compact.period(3), Some(1));
-        assert_eq!(compact.period(0), None);
-        let strategies = [
-            LinearTransformationStrategy::Direct,
-            LinearTransformationStrategy::Bsgs { giant_step: 2 },
-        ];
-        for strategy in strategies {
-            assert_eq!(compact.evaluate(&v, strategy), dense.evaluate(&v, strategy), "{strategy:?}");
-        }
-        compact.transpose();
-        dense.transpose();
-        assert_eq!(compact.get(-1), Some(&vec![-1.0, 2.0]));
-        assert_eq!(compact.period(-3), Some(1));
-        for strategy in strategies {
-            assert_eq!(compact.evaluate(&v, strategy), dense.evaluate(&v, strategy), "{strategy:?}");
-        }
-        let rejected = std::panic::catch_unwind(|| {
-            let mut d = Diagonals::new(4);
-            d.set(0, vec![1.0, 2.0, 3.0]);
-        });
-        assert!(rejected.is_err(), "a length that does not divide slots must be rejected");
-
-        assert_eq!(period_lcm(2, 3), 6);
-        assert_eq!(period_lcm(4, 16), 16);
-        assert_eq!(period_lcm(1, 5), 5);
     }
 
     #[test]

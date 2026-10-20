@@ -18,7 +18,7 @@ use poulpy_core::{
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module};
 use std::collections::HashMap;
 
-// Compact diagonal storage may stop at a backend-specific minimum degree.
+// A diagonal stored at its period's degree may stop at a backend-specific minimum degree.
 // Compare the public polynomial after the common ring embedding, not its
 // allocation degree or unused coefficient slots.
 fn diagonal_snapshot<B, A>(value: &A, ring_degree: usize) -> Snapshot

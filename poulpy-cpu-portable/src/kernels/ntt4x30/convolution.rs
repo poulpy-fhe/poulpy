@@ -45,7 +45,7 @@ pub(crate) const CNV_ACC_GROUP: usize = 16;
 const PREP_GROUP: usize = 64;
 
 /// Scratch bytes required by [`ntt4x30_cnv_apply_dft_portable`] and its accumulate and
-/// pairwise variants: the padded `a` window, the staged `b` rows (a sparse `b`
+/// pairwise variants: the padded `a` window, the staged `b` rows (an embedded `b`
 /// is gathered, a pairwise `b` is lazily summed) and its `b1` twin, plus the
 /// accumulate staging group.
 pub fn ntt4x30_cnv_apply_dft_tmp_bytes_portable(res_size: usize, a_size: usize, b_size: usize) -> usize {
@@ -85,7 +85,7 @@ fn canonical_sum_row(dst: &mut [u32], a: &[u32], b: &[u32]) {
 /// block, slot `s` of a row at `[8s, 8s + 8)`): degree-`N` slot `i` reads the
 /// degree-`n` slot `read.source(i)`. Row order is preserved, which keeps the reversed limb
 /// order of a `CnvPVecR` column.
-fn gather_sparse_x2_rows(dst: &mut [u32], src: &[u32], size: usize, blk: usize, read: RightRead) {
+fn gather_embedded_x2_rows(dst: &mut [u32], src: &[u32], size: usize, blk: usize, read: RightRead) {
     for lane in 0..2 {
         let slot: usize = read.source(2 * blk + lane);
         let base: usize = (slot >> 1) * size * 16 + 8 * (slot & 1);
@@ -103,7 +103,7 @@ fn gather_sparse_x2_rows(dst: &mut [u32], src: &[u32], size: usize, blk: usize, 
 /// - `PAIRWISE`: operands are `(a0 + a1) mod q` and the lazy sum `b0 + b1`.
 ///
 /// `b_read` maps each slot to the slot of the degree-`n` right operand it reads:
-/// its x2 rows are gathered block by block through [`gather_sparse_x2_rows`].
+/// its x2 rows are gathered block by block through [`gather_embedded_x2_rows`].
 /// `a` takes the module degree.
 #[allow(clippy::too_many_arguments)]
 unsafe fn ntt4x30_conv_block_group<BE, const ACC: bool, const PAIRWISE: bool>(
@@ -152,7 +152,7 @@ unsafe fn ntt4x30_conv_block_group<BE, const ACC: bool, const PAIRWISE: bool>(
         let blk = block_start + local_blk;
         // Stage this block's a rows (or the canonical pairwise sum) into the
         // padded window; b rows are read in place when dense and not pairwise,
-        // otherwise staged (gathered when sparse, lazy-summed when PAIRWISE).
+        // otherwise staged (gathered when embedded, lazy-summed when PAIRWISE).
         let a_blk = &a0_col[blk * 16 * a_size..(blk + 1) * 16 * a_size];
         if PAIRWISE {
             let a1_blk = &a1_col[blk * 16 * a_size..(blk + 1) * 16 * a_size];
@@ -178,9 +178,9 @@ unsafe fn ntt4x30_conv_block_group<BE, const ACC: bool, const PAIRWISE: bool>(
                 b0_blk
             }
         } else {
-            gather_sparse_x2_rows(b_stage, b0_col, b_size, blk, b_read);
+            gather_embedded_x2_rows(b_stage, b0_col, b_size, blk, b_read);
             if PAIRWISE {
-                gather_sparse_x2_rows(b1_stage, b1_col, b_size, blk, b_read);
+                gather_embedded_x2_rows(b1_stage, b1_col, b_size, blk, b_read);
                 for (d, x) in b_stage.iter_mut().zip(b1_stage.iter()) {
                     *d += *x;
                 }
@@ -534,7 +534,7 @@ pub fn ntt4x30_cnv_apply_dft_sum_portable<BE>(
     let stage = &mut tmp_u64[..8 * CNV_ACC_GROUP * res_size];
     let stage4: &mut [[u64; 4]] = cast_slice_mut(stage);
 
-    // Gather buffer of a sparse term's right-operand x2 rows, allocated once (a
+    // Gather buffer of an embedded term's right-operand x2 rows, allocated once (a
     // dense term reads its rows in place and never touches it).
     let mut yb = [[0u32; 8]; 2];
     // Row-0 offsets of the two slots a gathered term reads in the current block.
@@ -622,7 +622,7 @@ pub fn ntt4x30_cnv_pairwise_apply_dft_portable<BE>(
     let n = res.n();
     check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_read = RightRead::sparse(n, b.n());
+    let b_read = RightRead::embedded(n, b.n());
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();

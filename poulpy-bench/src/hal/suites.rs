@@ -528,7 +528,7 @@ where
         },
         BenchOp {
             layer: "hal",
-            name: "cnv_apply_dft_sum_sparse",
+            name: "cnv_apply_dft_sum_embedded",
             runner: convolution::runner_cnv_apply_dft_sum::<B, M, true>,
         },
         BenchOp {

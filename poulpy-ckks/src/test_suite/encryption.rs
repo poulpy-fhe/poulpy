@@ -6,6 +6,7 @@ use super::helpers::{
     gen_sk, quantized_slots, test_vector_1,
 };
 use super::parity::helpers::snapshot;
+use crate::CKKSModuleInfos;
 use crate::Scale;
 use crate::{
     CKKSCompositionError, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos,
@@ -124,7 +125,7 @@ where
         metadata.phase_noise(ct.n().as_usize()).std_dev(),
         poulpy_core::DEFAULT_SIGMA_XE
     );
-    let mut host_pt = host_module.ckks_pt_vec_alloc(params.base2k.into(), params.prec().k());
+    let mut host_pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), params.base2k.into(), params.prec().k());
     host_pt.set_meta(params.prec().meta());
     encoder.encode_reim(&mut host_pt, &re1, &im1).unwrap();
     // CKKS aligns the encoded integer message to the ciphertext's torus grid.
@@ -193,7 +194,7 @@ where
         rank: 1usize.into(),
     };
     let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos(&enc);
-    let mut pt = module.ckks_pt_vec_alloc(8usize.into(), 8usize.into());
+    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), 8usize.into(), 8usize.into());
     let sk = other.glwe_secret_prepared_alloc(1usize.into());
     let mut scratch = ScratchOwned::<BE>::alloc(0);
     let ct_before = snapshot::<BE, _>(&ct);
@@ -374,6 +375,7 @@ pub fn test_decrypt_extract_output_hom_rem_too_large<BE, F, E>(
         &mut scratch.borrow(),
     );
     let mut pt = module.ckks_pt_vec_alloc(
+        module.ckks_max_slots(),
         params.base2k.into(),
         (src_prec.log_delta() + src_prec.log_budget() + 1).into(),
     );
@@ -429,7 +431,7 @@ pub fn test_decrypt_extract_base2k_mismatch_error<BE, F, E>(
         &mut scratch.borrow(),
     );
     let mismatched_base2k = (params.base2k / 2).into();
-    let mut pt = host_module.ckks_pt_vec_alloc(mismatched_base2k, src_prec.k());
+    let mut pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), mismatched_base2k, src_prec.k());
     pt.set_meta(src_prec.meta());
     let err = module.ckks_decrypt(&mut pt, &ct, &sk, &mut scratch.borrow()).unwrap_err();
     assert_ckks_error(
@@ -476,7 +478,7 @@ pub fn test_decrypt_extract_degree_mismatch_error<BE, F, E>(
         &mut scratch.borrow(),
     );
     // A plaintext at half the ciphertext degree: the extraction cannot embed it.
-    let mut pt = host_module.ckks_pt_vec_alloc_compact(m / 2, params.base2k.into(), src_prec.k());
+    let mut pt = host_module.ckks_pt_vec_alloc(m / 2, params.base2k.into(), src_prec.k());
     pt.set_meta(src_prec.meta());
     let err = module.ckks_decrypt(&mut pt, &ct, &sk, &mut scratch.borrow()).unwrap_err();
     assert_ckks_error(

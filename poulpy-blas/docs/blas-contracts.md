@@ -99,12 +99,12 @@ without one the batch its label proves. A preparation records that batch on
 its operand.
 
 Encryption labels a block from its plaintext's degree, so a batch of `count`
-matrices comes from compact plaintexts of `count d^2` slots. Compact degrees
-are raised to the backend's `MIN_DEGREE`, which some backends set above the
-default of 8, and a raised degree records a larger batch. A compact batch
-therefore records `count` on every backend only when its degree,
-`2 count d^2` on the standard ring and `count d^2` on the conjugate-invariant
-one, reaches every target's `MIN_DEGREE`; otherwise encrypt it dense.
+matrices comes from plaintexts of `count d^2` slots, of degree `2 count d^2`
+on the standard ring and `count d^2` on the conjugate-invariant one. A
+plaintext's degree is at least the backend's `MIN_DEGREE`, which some backends
+set above the default of 8, and a degree raised to it records a larger batch.
+Such a batch therefore records `count` on every backend only when its degree
+reaches every target's `MIN_DEGREE`; otherwise encrypt it at the ring degree.
 
 ## Keys
 

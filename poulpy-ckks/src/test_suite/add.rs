@@ -39,6 +39,7 @@
 //! | [`test_add_const_into_smaller_output`] | out-of-place, smaller output with packed-cst precision |
 //! | [`test_add_const_into_real_only`] | out-of-place, real coefficient only |
 //! | [`test_add_const_into_lsh_alignment`] | out-of-place, constant `max_k` above budget → left-shift alignment |
+use crate::CKKSModuleInfos;
 use crate::{CKKSCompositionError, CKKSInfos, SetCKKSInfos, api::CKKSAddOps, layouts::CKKSModuleAlloc};
 use poulpy_core::layouts::IntPolyInfos;
 
@@ -527,7 +528,7 @@ where
     );
 }
 
-// ─── ct + compact ZNX plaintext (GLWE<_, CKKS>::add_pt_vec[_assign]) ────────
+// ─── ct + ZNX plaintext (GLWE<_, CKKS>::add_pt_vec[_assign]) ────────
 
 /// ct + ZNX plaintext, in-place.
 pub fn test_add_pt_vec_assign<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
@@ -1231,7 +1232,7 @@ pub fn test_add_pt_vec_base2k_mismatch_error<BE, F, E>(
         &mut scratch.borrow(),
     );
     let mismatched_base2k = Base2K((params.base2k / 2) as u32);
-    let mut pt = host_module.ckks_pt_vec_alloc(mismatched_base2k, PT_PREC.k());
+    let mut pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), mismatched_base2k, PT_PREC.k());
     pt.set_meta(PT_PREC.meta());
     let err = module
         .ckks_add_pt_vec_assign(&mut ct, &pt, &mut scratch.borrow())

@@ -308,7 +308,7 @@ pub fn convolution_apply_dft_tmp_bytes_portable(res_size: usize, a_size: usize, 
     let min_size: usize = res_size.min(a_size + b_size - 1);
     // Covers the portable per-block staging (a_size + b_size + min_size rows, the `a` rows
     // only for the pairwise sum) and the fused SIMD cores: the padded `a` window, `b` staged
-    // for a sparse or a pairwise `b`, and 16 groups of output rows.
+    // for an embedded or a pairwise `b`, and 16 groups of output rows.
     size_of::<f64>() * 8 * (a_size + 6 + 2 * b_size + 16 * min_size)
 }
 
@@ -448,7 +448,7 @@ pub fn convolution_pairwise_apply_dft_portable<BE>(
     let m: usize = n >> 1;
 
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_read: RightRead = RightRead::sparse(n, b.n());
+    let b_read: RightRead = RightRead::embedded(n, b.n());
 
     let res_size: usize = res.size();
     let a_size: usize = a.size();

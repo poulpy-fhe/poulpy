@@ -99,7 +99,7 @@ fn main() -> Result<()> {
     let zeros = vec![0.0f64; M];
 
     let mut encrypt = |re: &[f64]| -> Result<CKKSCiphertext<AlignedBuf, i64, Standard>> {
-        let mut pt = module.ckks_pt_vec_alloc(BASE2K.into(), CT_K.into());
+        let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), BASE2K.into(), CT_K.into());
         pt.set_meta(meta);
         module.ckks_encode_reim_into(&mut pt, re, &zeros, &mut scratch.borrow())?;
         let mut ct = module.ckks_ciphertext_alloc(BASE2K.into(), CT_K.into());

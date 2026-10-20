@@ -806,7 +806,7 @@ pub unsafe fn reim4_convolution_apply_avx512(
 /// Pairwise variant of [`reim4_convolution_apply_avx512`]: `(a0 + a1) ⊛ (b0 + b1)`.
 ///
 /// `tmp` must hold at least `8 * (a_size + 6 + 2*b_size + 16 * min_size)` f64.
-/// `b_read` is how the right operand is read: sparse degree and Galois element.
+/// `b_read` is how the right operand is read: embedded degree and Galois element.
 ///
 /// # Safety
 /// Caller must ensure the CPU supports AVX-512F (e.g. `is_x86_feature_detected!("avx512f")`).
@@ -1288,7 +1288,7 @@ mod tests {
                                 a_size,
                                 &b,
                                 b_size,
-                                RightRead::sparse(2 * m, 2 * m),
+                                RightRead::embedded(2 * m, 2 * m),
                                 &mut tmp,
                             )
                         };

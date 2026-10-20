@@ -164,7 +164,7 @@ under the same names. The two rings have distinct
 module handles and prepared-data types; layout compatibility only connects
 implementations of the same ring.
 
-Transforms, polynomial products, and automorphisms use this basis. Sparse
+Transforms, polynomial products, and automorphisms use this basis. Lower-degree
 operands embed through `X -> X^(N/n)`. Arbitrary monomial multiplication is
 not closed in this ring, so CI backends do not implement rotation, `X^p - 1`,
 packing, or LWE conversion; the GLWE trace uses standard-ring Galois elements and

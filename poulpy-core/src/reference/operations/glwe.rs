@@ -344,8 +344,8 @@ where
         let cols: usize = res.rank().as_usize() + 1;
 
         let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(res.n().as_usize(), cols, a.size(), PrepareHint::OneShot);
-        // A compact right operand is prepared at its own degree; the apply
-        // reads it through the sparse right slot of the convolution.
+        // The right operand is prepared at its own degree; the apply
+        // reads it through the convolution's embedding slot.
         let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(b.n().as_usize(), 1, b.size(), PrepareHint::OneShot);
 
         let b_backend = b.to_backend_ref();
@@ -421,8 +421,8 @@ where
 
         let (mut res_prep, scratch) =
             scratch.take_cnv_pvec_left_scratch(res.n().as_usize(), cols, res.size(), PrepareHint::OneShot);
-        // A compact right operand is prepared at its own degree; the apply
-        // reads it through the sparse right slot of the convolution.
+        // The right operand is prepared at its own degree; the apply
+        // reads it through the convolution's embedding slot.
         let (mut a_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(a.n().as_usize(), 1, a.size(), PrepareHint::OneShot);
 
         let a_backend = a.to_backend_ref();

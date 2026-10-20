@@ -76,42 +76,30 @@ pub trait CKKSModuleAlloc<BE: Backend>:
         self.ckks_plaintext_alloc(coeff_count.into(), base2k, k)
     }
 
-    /// Full-ring-degree convenience over [`Self::ckks_plaintext_alloc`].
-    fn ckks_pt_vec_alloc(&self, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintextOwned<BE>
+    /// A plaintext of `slots` slots, at the degree that holds them: `2 * slots` on the standard ring, `slots` on the
+    /// invariant ring; [`CKKSModuleInfos::ckks_max_slots`] gives one at the ring degree.
+    ///
+    /// Panics when `slots` is not a power of two, exceeds `ckks_max_slots`, or needs a degree below the backend's
+    /// minimum.
+    fn ckks_pt_vec_alloc(&self, slots: usize, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintextOwned<BE>
     where
         Self: GetDegree,
     {
-        self.ckks_plaintext_alloc(self.ring_degree(), base2k, k)
-    }
-
-    /// Degree of the compact plaintext for `slots` slots: `slots * N / ckks_max_slots` (`2 * slots` on the standard
-    /// ring, `slots` on the invariant ring), raised to the backend's minimum degree and capped at the ring degree.
-    fn ckks_compact_degree(&self, slots: usize) -> Degree
-    where
-        Self: GetDegree,
-    {
-        assert!(slots.is_power_of_two(), "a compact plaintext holds a power-of-two slot count");
-        let ring = self.ring_degree().as_usize();
-        slots
-            .checked_mul(ring / self.ckks_max_slots())
-            .expect("slot count overflow")
-            .max(BE::MIN_DEGREE)
-            .min(ring)
-            .into()
-    }
-
-    /// Allocates the compact plaintext for `slots` slots, at [`Self::ckks_compact_degree`]. Its value under the ring
-    /// embedding is `M(X^(N/n))` for the degree-`n` polynomial `M` it stores; `slots == ckks_max_slots` gives the dense
-    /// plaintext.
-    fn ckks_pt_vec_alloc_compact(&self, slots: usize, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintextOwned<BE>
-    where
-        Self: GetDegree,
-    {
-        self.ckks_plaintext_alloc(self.ckks_compact_degree(slots), base2k, k)
+        let max_slots = self.ckks_max_slots();
+        assert!(
+            slots.is_power_of_two() && slots <= max_slots,
+            "ckks_pt_vec_alloc: the slot count must be a power of two up to the module's slots"
+        );
+        let n = slots * (self.ring_degree().as_usize() / max_slots);
+        assert!(
+            n >= BE::MIN_DEGREE,
+            "ckks_pt_vec_alloc: the slot count needs a degree below the backend's minimum"
+        );
+        self.ckks_plaintext_alloc(n.into(), base2k, k)
     }
 
     /// A transform of `layout`'s schedule, a zero plaintext of `infos` at every diagonal; `infos`' degree must be the
-    /// encoder's, for example `ckks_compact_degree(period)` for compact diagonals. It is the schedule
+    /// encoder's, that of a plaintext of the diagonals' period in slots. It is the schedule
     /// [`ComplexDiagonals::build_transform`](crate::layouts::ComplexDiagonals::build_transform) produces for that
     /// layout, so the receiver of an encoding into a transform.
     fn ckks_linear_transformation_alloc_from_infos<A>(
@@ -160,7 +148,7 @@ mod tests {
     use crate::{CKKSLayout, Scale, SlotsKind, layouts::ComplexDiagonals};
 
     /// A transform allocated from a layout has the schedule `build_transform` encodes into, with a zero plaintext of
-    /// the given infos at every diagonal, at the compact degree `ckks_pt_vec_alloc_compact` allocates at.
+    /// the given infos at every diagonal, at the degree of the diagonals' period.
     #[test]
     fn transform_alloc_is_the_encoding_receiver() {
         let module = Module::<HostBytesBackend>::new(64);
@@ -168,7 +156,7 @@ mod tests {
         cd.re.set(0, vec![1.0, 2.0]);
         cd.im.set(0, vec![0.5]);
         cd.re.set(1, vec![3.0]);
-        cd.re.set(5, vec![-1.0, 4.0]);
+        cd.re.set(5, vec![-1.0, 4.0, 2.0, 0.5]);
         cd.im.set(7, vec![1.0, -2.0]);
         let strategy = LinearTransformationStrategy::Bsgs { giant_step: 4 };
         let layout = LinearTransformationLayout {
@@ -176,13 +164,7 @@ mod tests {
             slots: cd.slots(),
             strategy,
         };
-        let n = module.ckks_compact_degree(cd.period());
-        assert_eq!(
-            n,
-            module
-                .ckks_pt_vec_alloc_compact(cd.period(), Base2K(12), TorusPrecision(24))
-                .n()
-        );
+        let n = module.ckks_pt_vec_alloc(cd.period(), Base2K(12), TorusPrecision(24)).n();
         let infos = CKKSLayout {
             glwe_layout: GLWELayout {
                 n,

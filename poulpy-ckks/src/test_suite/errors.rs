@@ -1,3 +1,4 @@
+use crate::CKKSModuleInfos;
 use crate::{
     CKKSCompositionError, CKKSError, CKKSInfos, CoeffsMeta, SetCKKSInfos,
     api::{CKKSAddOps, CKKSEncodingOps, LinearTransformation},
@@ -51,7 +52,7 @@ pub fn test_add_pt_vec_alignment_error<BE, F, E>(
         &mut scratch.borrow(),
     );
     ct.set_log_budget(0);
-    let mut pt = module.ckks_pt_vec_alloc(params.base2k.into(), params.prec().k());
+    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
     pt.set_meta(params.prec().meta());
     let err = module
         .ckks_add_pt_vec_assign(&mut ct, &pt, &mut scratch.borrow())

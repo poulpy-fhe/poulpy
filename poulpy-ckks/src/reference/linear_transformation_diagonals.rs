@@ -9,7 +9,7 @@
 
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{
-    Base2K, DiagonalArithmetic, GLWELayout, GLWEPlaintextInfos, GLWEPlaintextMeta, LinearTransformationLayout,
+    Base2K, Degree, DiagonalArithmetic, GLWELayout, GLWEPlaintextInfos, GLWEPlaintextMeta, GetDegree, LinearTransformationLayout,
     LinearTransformationStrategy, Rank,
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -121,7 +121,7 @@ where
     };
     let infos = CKKSLayout {
         glwe_layout: GLWELayout {
-            n: module.ckks_compact_degree(cd.period()),
+            n: period_degree::<BE, _>(module, cd.period()),
             base2k,
             k: coeffs_meta.k,
             rank: Rank(0),
@@ -217,6 +217,19 @@ where
         "complex linear-transformation diagonals cannot be encoded into real slots"
     );
     Ok(())
+}
+
+/// The degree of the diagonals of a map of period `period`: `period * N / ckks_max_slots` (`2 * period` on the
+/// standard ring, `period` on the invariant ring), raised to the backend's minimum degree and capped at the ring degree.
+fn period_degree<BE: Backend, M: CKKSModuleInfos + GetDegree>(module: &M, period: usize) -> Degree {
+    assert!(period.is_power_of_two(), "a map's period is a power of two");
+    let ring = module.ring_degree().as_usize();
+    period
+        .checked_mul(ring / module.ckks_max_slots())
+        .expect("slot count overflow")
+        .max(BE::MIN_DEGREE)
+        .min(ring)
+        .into()
 }
 
 #[cfg(test)]

@@ -1,4 +1,5 @@
 use crate::FFT64Portable;
+use poulpy_ckks::CKKSModuleInfos;
 use poulpy_ckks::api::{CKKSDFTMatrixOps, CKKSDFTOps, CKKSLinearTransformationOps};
 use poulpy_ckks::layouts::{DFTMatrix, DFTOutputFormat, DFTPlan, Decode, Encode, Repack, Standard};
 use poulpy_ckks::{CKKSInfos, CoeffsMeta};
@@ -125,7 +126,7 @@ fn checked_dft_construction_rejects_repeated_and_inconsistent_diagonals() {
     let dft_plan = || DFTPlan::new(DFTType::Encode, vec![(1, 1)], DFTOutputFormat::Standard, meta).unwrap();
     // A diagonal of the plan's precision, stored across `storage_k` bits.
     let diagonal = |baby: i64, storage_k: usize, real: bool| {
-        let mut pt = module.ckks_pt_vec_alloc(16usize.into(), storage_k.into());
+        let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), 16usize.into(), storage_k.into());
         pt.set_meta(meta.meta);
         poulpy_core::layouts::SetK::set_k(&mut pt, meta.k);
         if real {
@@ -344,7 +345,7 @@ fn conditional_dft_fallback_reenters_selected_evaluation() {
     use poulpy_core::layouts::{LinearTransformationDiagonal, LinearTransformationGiantStep};
     let module = Module::<OverrideBackend>::new(64);
     let meta = CoeffsMeta::from_delta_budget(12, 2);
-    let mut pt = module.ckks_pt_vec_alloc(16usize.into(), meta.k);
+    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), 16usize.into(), meta.k);
     pt.set_meta(meta.meta);
     let matrix = DFTMatrix::<OverrideBackend, Decode, Repack, _>::try_from_factor_operands(
         &module,
@@ -494,7 +495,7 @@ fn dft_scratch_covers_factor_copy_with_working_buffer() {
     use poulpy_core::layouts::{LinearTransformationDiagonal, LinearTransformationGiantStep};
     let module = Module::<OverrideBackend>::new(64);
     let meta = CoeffsMeta::from_delta_budget(12, 2);
-    let mut pt = module.ckks_pt_vec_alloc(16usize.into(), meta.k);
+    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), 16usize.into(), meta.k);
     pt.set_meta(meta.meta);
     let matrix = DFTMatrix::<OverrideBackend, Encode, Standard, _>::try_from_factor_operands(
         &module,
