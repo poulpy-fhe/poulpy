@@ -44,6 +44,9 @@
   `reim4_gather_sparse_block_portable` and `reim4_gather_sparse_block_sum_portable` become `reim4_gather_block_portable` and `reim4_gather_block_sum_portable`, which read through a `RightRead`.
   `convolution_apply_dft_portable`, `ntt4x30_cnv_apply_dft_portable`, their `_add` forms, the packed NTT4x30 drivers and `PackedNtt4x30Base::cnv_apply_dft` and `cnv_apply_dft_add` take `b_galois` after `b_col`.
 - Every CPU backend implements `vec_znx_gadget_decompose` with one portable kernel, a single limb-major pass with exact carries that needs no scratch, and the oracle backend with an independent big-integer implementation.
+- The Rayon backends, those built with the shared macros and the IFMA one, lay gadget digits out in parallel over coefficient ranges (`poulpy_cpu_rayon::normalize::vec_znx_gadget_decompose_par`, over `vec_znx_gadget_decompose_range_raw_portable`), bit for bit as the serial kernel.
+  On an Apple M5 Pro, `NTT4x30NeonRayon/hal/vec_znx_gadget_decompose/65536x(1x28)/a_size=27/k=53/k_digit=208` takes 0.33 ms where `NTT4x30Neon/hal/vec_znx_gadget_decompose/65536x(1x28)/a_size=27/k=53/k_digit=208` takes 1.49 ms (0.22x), and the split already pays at `8192x(1x28)` (80 µs against 103 µs), so the layout reuses the normalization task floor `NORMALIZE_MIN_TASK`.
+  `hal_impl_vec_znx_without_normalize!` expands to `hal_impl_vec_znx_gadget_decompose!` and `hal_impl_vec_znx_without_normalize_or_decompose!`, the latter for a backend that provides its own layout.
 - **Breaking, behaviour:** the CPU backends no longer override the CKKS encapsulated ModUp: `NTT4x30Avx`, `NTT4x30Avx512`, `NTT3x42Ifma` and their Rayon variants install the reference body (`impl_ckks_encapsulated_mod_up_reference!`), as `NTT4x30Portable` and `NTT4x30PortableRayon` do.
   Their bodies skipped the limbs that the raise leaves at zero. A sparse-to-dense key with a row offset, the bootstrapping presets' key, leaves none: its switch reads the raised ciphertext at its own width, and no preset took them.
 - The IFMA linear transformation keeps its fused giant-step rotation for automorphism keys of any digit width: each normalized mask column is laid out on the digit grid with `gadget_dft_apply` before the product, as in the reference lazy giant step.
@@ -447,6 +450,7 @@
 ### `poulpy-bench`
 
 - **Breaking:** `bench_ckks_bootstrapping` requires `CKKSBootstrappingCIOps`, and runs the presets with EvalMod on the conjugate-invariant ring.
+- **Breaking:** `hal::suites::bench_normalization` requires `VecZnxGadgetDecompose` and `VecZnxGadgetDecomposeTmpBytes`, and also sweeps `vec_znx_gadget_decompose` over the 27-limb key-switch columns of a bootstrap at radix 53 (`GadgetDecomposeSweepParams`, `default_bench_params_gadget_decompose`).
 
 ## [0.9.0] - 2026-10-08
 

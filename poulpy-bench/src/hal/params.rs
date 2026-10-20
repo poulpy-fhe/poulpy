@@ -227,3 +227,39 @@ pub fn default_bench_params_normalize() -> Vec<NormalizeSweepParams> {
     });
     result
 }
+
+/// One gadget digit layout: a source of `a_size` limbs at radix `base2k` laid out
+/// into the digits of `k_digit`-bit gadget rows filling `shape`.
+pub struct GadgetDecomposeSweepParams {
+    pub shape: HalSweepParms,
+    pub a_size: usize,
+    pub base2k: usize,
+    pub k_digit: usize,
+}
+
+impl Display for GadgetDecomposeSweepParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}/a_size={}/k={}/k_digit={}",
+            self.shape, self.a_size, self.base2k, self.k_digit
+        )
+    }
+}
+
+/// The 27-limb columns of a bootstrap key switch at radix 53, whole-limb and off a
+/// limb, across the degrees around the parallel task floor.
+pub fn default_bench_params_gadget_decompose() -> Vec<GadgetDecomposeSweepParams> {
+    let mut result = Vec::new();
+    for n in [1 << 12, 1 << 13, 1 << 14, 1 << 16] {
+        for (k_digit, size) in [(4 * 53, 28), (208, 28)] {
+            result.push(GadgetDecomposeSweepParams {
+                shape: HalSweepParms { n, cols: 1, size },
+                a_size: 27,
+                base2k: 53,
+                k_digit,
+            });
+        }
+    }
+    result
+}
