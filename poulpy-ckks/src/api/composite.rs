@@ -1,4 +1,5 @@
 use crate::CKKSResult as Result;
+use poulpy_core::GLWEMulPreparedPlainSum;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos};
@@ -428,6 +429,58 @@ pub trait CKKSDotProductOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>;
+
+    /// Scratch bytes of [`Self::ckks_dot_product_prepared_pt`] for terms prepared like `a` and plaintexts prepared like
+    /// `b`, whatever their number: pass the prepared operands, whose infos report their sources, or those sources.
+    fn ckks_dot_product_prepared_pt_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    where
+        Self: GLWEMulPreparedPlainSum<BE>,
+        R: CKKSCtBounds,
+        A: GLWEInfos,
+        P: GLWEInfos;
+
+    /// Computes `dst = Σ a[t] · σ_{galois[t]}(b[t])` over ciphertexts prepared by
+    /// [`CKKSMulOps::ckks_prepare_left`](crate::api::CKKSMulOps::ckks_prepare_left) and plaintexts prepared by
+    /// [`CKKSMulOps::ckks_prepare_right`](crate::api::CKKSMulOps::ckks_prepare_right), under either hint, each plaintext
+    /// read through its odd Galois element: `1` for the plaintext itself,
+    /// [`CKKSModuleInfos::ckks_galois_element`](crate::CKKSModuleInfos::ckks_galois_element) of `r` for its slots
+    /// rotated by `r`. It is core's `glwe_mul_prepared_plain_sum`: no operand is transformed in the call, so prepared
+    /// terms serve every sum that shares them, and the products are added in the transform domain in slice order and
+    /// normalized once. One term through `1` is
+    /// [`CKKSMulOps::ckks_mul_pt_vec_into`](crate::api::CKKSMulOps::ckks_mul_pt_vec_into) of the ciphertext and the
+    /// plaintext it was prepared from, bit for bit.
+    ///
+    /// # Metadata
+    ///
+    /// The rule of `ckks_mul_pt_vec_into`, which the terms, sharing one layout and scale, give alike, with the joined
+    /// slot kind and the smallest `log_sparsity` of the pairs:
+    ///
+    /// ```text
+    /// natural_eff_k  = a[t].k() − b[t].log_delta
+    /// offset         = max(0, natural_eff_k − dst.k())
+    ///
+    /// log_delta_out  = a[t].log_delta
+    /// log_budget_out = a[t].log_budget − b[t].log_delta − offset
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Before writing `dst`: an error for `a` and `b` empty or of two lengths; `InvalidOperand` for `galois` of another
+    /// length; as [`Self::ckks_dot_product_prepared`], `PreparedOperandLayoutMismatch` for a term of another degree,
+    /// `base2k` or rank than `dst`; `InvalidOperand` for an even Galois element, a plaintext not of rank 0 at `dst`'s `base2k`, or a side whose operands do not share one
+    /// layout and scale; `PlaintextDegreeMismatch` for a plaintext whose degree does not embed into `dst`'s; and the
+    /// errors of the rule.
+    fn ckks_dot_product_prepared_pt<Dst>(
+        &self,
+        dst: &mut Dst,
+        a: &[&CKKSPreparedLeft<BE>],
+        b: &[&CKKSPreparedRight<BE>],
+        galois: &[i64],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Self: GLWEMulPreparedPlainSum<BE>,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 
     /// Computes `dst = Σ a[i] * b[i]` over ciphertext–plaintext-polynomial pairs.
     ///

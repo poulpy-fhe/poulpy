@@ -10,8 +10,8 @@ use poulpy_core::layouts::{Base2K, GLWEInfos, GetAutomorphismKey, GetTensorKey, 
 use poulpy_hal::layouts::{Backend, Module, PrepareHint, Ring, ScratchArena};
 
 use super::{
-    BlasContext, BlasContextInfos, BlasGrid, BlasGridInfos, BlasMatMulOperandInfos, BlasMatMulOperandLayout, BlasPtOperand,
-    BlasPtOperandInfos, Left,
+    BlasContext, BlasContextInfos, BlasGrid, BlasGridInfos, BlasMatMulOperandInfos, BlasMatMulOperandLayout, BlasPlan,
+    BlasPtOperand, BlasPtOperandInfos, Left,
     ciphertext::{batch_fits, layout_of, replicated_at},
     context::{ContextMaps, shift_maps, sum_rotations},
     grid_batch,
@@ -480,6 +480,53 @@ pub(crate) fn left_takes_replicated<T>(b: &OperandMaps<T>, a: &impl BlasGridInfo
     b.has_replicated() && replicated_at(b.slots(), a)
 }
 
+/// Why a left product under `JklsStored` or `JklsGalois` rejects a context.
+pub(crate) const MASKLESS: &str =
+    "a context without the column halves of psi^k: its plan selects neither JklsStored nor JklsGalois";
+
+/// The context's masks a product by public matrices of an operand of `plan` evaluates, in the operand's term order
+/// after the first: none but under `JklsStored` and `JklsGalois`; on the right phi^k, on the left `rows_left(k)` then
+/// `rows_right(k)`, for `1 <= k < d`.
+///
+/// # Panics
+///
+/// Under those paths, when `maps` is at another block dimension than `plan`, and on the `left` when `maps` lacks the
+/// column halves of psi^k, both of which the validators reject first.
+pub(crate) fn context_masks<T>(plan: BlasPlan, maps: &ContextMaps<T>, left: bool) -> Vec<&T> {
+    if !plan.pt_algorithm().masked() {
+        return Vec::new();
+    }
+    assert!(
+        maps.log_d() == plan.log_d(),
+        "a context at another block dimension than the operand's"
+    );
+    let d = 1usize << plan.log_d();
+    if left {
+        assert!(maps.has_masked_rows(), "{MASKLESS}");
+        (1..d).flat_map(|k| [maps.rows_left(k), maps.rows_right(k)]).collect()
+    } else {
+        (1..d).map(|k| maps.rotate_cols(k)).collect()
+    }
+}
+
+/// Under `JklsStored` and `JklsGalois`, `ctx`'s masks read the results of the operand's first map: `ctx` is at `a`'s
+/// `log_d`, encoded for the module's slot count at `a`'s radix and no wider than `a`, and on the `left` holds the
+/// column halves of psi^k.
+fn ensure_masks<BE: Backend>(
+    op: &'static str,
+    module: &Module<BE>,
+    a: &impl BlasGridInfos,
+    ctx: &BlasContext<BE>,
+    left: bool,
+) -> Result<()> {
+    ensure_dimension(op, ctx.log_d(), a)?;
+    ensure_maps(op, module, ctx.slots(), ctx.base2k(), ctx.coeffs_meta().k, &[a])?;
+    if left && !ctx.maps.has_masked_rows() {
+        return Err(reject(op, MASKLESS.into()));
+    }
+    Ok(())
+}
+
 /// Checks a [`blas_matmul`](crate::api::BlasMatMulOps::blas_matmul) call, and returns the batch `res` records, the
 /// larger of `a`'s and `b`'s: `a` and `b` as their preparations check them ([`validate_blas_matmul_prepare_left`],
 /// [`validate_blas_matmul_prepare_right`]), `res` against them as [`validate_blas_matmul_prepared`] checks it against
@@ -610,16 +657,21 @@ pub fn validate_blas_matmul_prepared<BE: Backend>(
 /// have the module's degree and `a`'s radix and rank, `b` was encoded on a module of `module`'s slot count at `a`'s
 /// radix, `b`'s public matrices divide `a`'s batch, and `atk` holds every key of `b`'s maps at the width it is looked
 /// up at, of `a`'s rank: under `Jkls` the first map's from `a`'s width, then the blocks' from the width it leaves.
+/// Under `JklsStored` and `JklsGalois`, `ctx` is at `a`'s `log_d`, encoded for the module's slot count at `a`'s radix,
+/// no wider than `a`, on the left holding the column halves of psi^k, and on the right `b` holds one public matrix;
+/// `atk` then holds the first map's keys from `a`'s width and the masks' from the width it leaves. Otherwise `ctx` is
+/// not read.
 ///
 /// # Errors
 ///
-/// `InvalidOperand` for a grid, shape, layout, operand or count it rejects, then, key by key, `MissingAutomorphismKey`,
-/// or `InvalidOperand` for a key of another rank.
+/// `InvalidOperand` for a grid, shape, layout, operand, count or context it rejects, then, key by key,
+/// `MissingAutomorphismKey`, or `InvalidOperand` for a key of another rank.
 pub fn validate_blas_matmul_pt_right<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
     b: &BlasPtOperand<BE>,
+    ctx: &BlasContext<BE>,
     atk: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     let op = "blas_matmul_pt_right";
@@ -636,7 +688,21 @@ pub fn validate_blas_matmul_pt_right<BE: Backend>(
             format!("{} public matrices do not divide the {batch} matrix slots", b.count()),
         ));
     }
-    pt_right_uses(res, a, &b.maps, &mut |u| ensure_rotation(op, module, atk, u))?;
+    if b.plan().pt_algorithm().masked() {
+        if b.count() != 1 {
+            return Err(reject(
+                op,
+                format!(
+                    "{} public matrices under {:?}, whose rotations by multiples of d read past a matrix slot",
+                    b.count(),
+                    b.plan().pt_algorithm()
+                ),
+            ));
+        }
+        ensure_masks(op, module, a, ctx, false)?;
+    }
+    let masks = context_masks(b.plan(), &ctx.maps, false);
+    pt_right_uses(res, a, &b.maps, &masks, &mut |u| ensure_rotation(op, module, atk, u))?;
     Ok(batch)
 }
 
@@ -646,6 +712,9 @@ pub fn validate_blas_matmul_pt_right<BE: Backend>(
 /// have the module's degree and `a`'s radix and rank, `b` was encoded on a module of `module`'s slot count at `a`'s
 /// radix, `b`'s public matrices divide `a`'s batch, and `atk` holds every key of `b`'s maps at the width it is looked
 /// up at, of `a`'s rank: under `Jkls` the first map's from `a`'s width, then the blocks' from the width it leaves.
+/// Under `JklsStored` and `JklsGalois`, `ctx` is at `a`'s `log_d`, encoded for the module's slot count at `a`'s radix,
+/// no wider than `a`, and holds the column halves of psi^k; `atk` then holds the first map's keys from `a`'s width and
+/// the masks' from the width it leaves. Otherwise `ctx` is not read.
 ///
 /// # Errors
 ///
@@ -655,6 +724,7 @@ pub fn validate_blas_matmul_pt_left<BE: Backend>(
     res: &impl BlasGrid<BE>,
     b: &BlasPtOperand<BE, Left>,
     a: &impl BlasGrid<BE>,
+    ctx: &BlasContext<BE>,
     atk: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     let op = "blas_matmul_pt_left";
@@ -671,7 +741,11 @@ pub fn validate_blas_matmul_pt_left<BE: Backend>(
             format!("{} public matrices do not divide the {batch} matrix slots", b.count()),
         ));
     }
-    pt_left_uses(res, &b.maps, a, &mut |u| ensure_rotation(op, module, atk, u))?;
+    if b.plan().pt_algorithm().masked() {
+        ensure_masks(op, module, a, ctx, true)?;
+    }
+    let masks = context_masks(b.plan(), &ctx.maps, true);
+    pt_left_uses(res, &b.maps, &masks, a, &mut |u| ensure_rotation(op, module, atk, u))?;
     Ok(batch)
 }
 
@@ -822,11 +896,15 @@ pub(crate) fn prepared_tensor<P: LtDiagonalMeta>(
 }
 
 /// The look-ups of a product by public matrices of `a` into `res`, of `a`'s rank: `first`'s, if any, from `a`'s width into
-/// a block of `a`'s layout at the width it leaves, then the block maps of `maps` from that width into `res`.
+/// a block of `a`'s layout at the width it leaves; then every mask of `masks` from that width into a block at the width
+/// the first mask leaves; then the block maps of `maps` from the width the last stage leaves into `res`. A prepared masked
+/// operand holds no block map, its terms being plaintexts read through no key; the queries read the terms' one-diagonal
+/// shapes, which look up rotation `0` alone.
 fn pt_uses<'m, P: LtDiagonalMeta + 'm>(
     res: &impl BlasGridInfos,
     a: &impl BlasGridInfos,
     first: Option<&LinearTransformation<P>>,
+    masks: &[&LinearTransformation<P>],
     maps: impl IntoIterator<Item = &'m LinearTransformation<P>>,
     f: UseSink<'_>,
 ) -> Result<()> {
@@ -838,31 +916,39 @@ fn pt_uses<'m, P: LtDiagonalMeta + 'm>(
             ckks_linear_transformation_output_k(first, a_k, a_k)
         }
     };
+    for &mask in masks {
+        lt_uses(mask, src_k, src_k, rank, &mut *f)?;
+    }
+    let src_k = masks
+        .first()
+        .map_or(src_k, |&mask| ckks_linear_transformation_output_k(mask, src_k, src_k));
     maps.into_iter().try_for_each(|lt| lt_uses(lt, src_k, res_k, rank, &mut *f))
 }
 
-/// The look-ups of [`validate_blas_matmul_pt_right`]: `b`'s maps, row-major.
+/// The look-ups of [`validate_blas_matmul_pt_right`]: `b`'s first map, the context's `masks`, `b`'s maps, row-major.
 pub(crate) fn pt_right_uses<P: LtDiagonalMeta>(
     res: &impl BlasGridInfos,
     a: &impl BlasGridInfos,
     b: &OperandMaps<LinearTransformation<P>>,
+    masks: &[&LinearTransformation<P>],
     f: UseSink<'_>,
 ) -> Result<()> {
     let maps = (0..b.rows()).flat_map(|l| (0..b.cols()).map(move |j| b.at(l, j)));
-    pt_uses(res, a, b.first(), maps, f)
+    pt_uses(res, a, b.first(), masks, maps, f)
 }
 
-/// The look-ups of [`validate_blas_matmul_pt_left`]: `b`'s maps, row-major, its replicated-input ones when `a` is
+/// The look-ups of [`validate_blas_matmul_pt_left`]: as on the right, `b`'s replicated-input maps when `a` is
 /// replicated ([`left_takes_replicated`]).
 pub(crate) fn pt_left_uses<P: LtDiagonalMeta>(
     res: &impl BlasGridInfos,
     b: &OperandMaps<LinearTransformation<P>>,
+    masks: &[&LinearTransformation<P>],
     a: &impl BlasGridInfos,
     f: UseSink<'_>,
 ) -> Result<()> {
     let rep = left_takes_replicated(b, a);
     let maps = (0..b.rows()).flat_map(|i| (0..b.cols()).map(move |l| b.at_for(i, l, rep)));
-    pt_uses(res, a, b.first(), maps, f)
+    pt_uses(res, a, b.first(), masks, maps, f)
 }
 
 #[cfg(test)]

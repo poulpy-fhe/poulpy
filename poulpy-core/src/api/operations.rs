@@ -149,6 +149,47 @@ pub trait GLWEMulPlain<BE: Backend> {
         A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
 }
 
+/// Sum of products of prepared GLWE ciphertexts by prepared plaintexts, each plaintext read through a Galois element:
+/// `res = Σ_t a[t] ⊛ σ_{galois[t]}(b[t])`.
+///
+/// `a[t]` is a ciphertext prepared as a left operand by [`crate::glwe_prepare_left`]: of the degree of `res`, its
+/// `rank + 1` columns on `a_size` limbs. `b[t]` is a plaintext prepared as a right operand by
+/// [`crate::glwe_prepare_right`]: one column on `b_size` limbs, of the degree of `res` or of a power-of-two divisor of it
+/// not below the backend's minimum degree, which stands for its ring embedding. Both are at radix `base2k`. `b[t]` is
+/// read through `X -> X^{galois[t]}`, `1` reading it as prepared. The call transforms no operand, so one set of prepared
+/// ciphertexts serves every output that shares it. The products are added in the transform domain in slice order, one
+/// convolution sum per column, and normalized once into `res`, canonical at `res.k()`. One term through `1`, prepared
+/// from a ciphertext of width `k` on `ceil(k / base2k)` limbs and from a plaintext on its limbs, is
+/// [`GLWEMulPlain::glwe_mul_plain`] of the two, bit for bit.
+pub trait GLWEMulPreparedPlainSum<BE: Backend> {
+    /// Scratch bytes of [`Self::glwe_mul_prepared_plain_sum`] for operands of `a_size` and `b_size` limbs, whatever the
+    /// number of terms.
+    fn glwe_mul_prepared_plain_sum_tmp_bytes<R>(&self, res: &R, a_size: usize, b_size: usize) -> usize
+    where
+        R: GLWEInfos;
+
+    /// Panics, before writing `res`, if `a` is empty or `b` or `galois` is not as long, if a Galois element is even, if
+    /// a prepared ciphertext is not of the degree of `res` with `rank + 1` columns of `a_size` limbs, if a prepared
+    /// plaintext is not one column of `b_size` limbs of a degree that embeds into that of `res`, or if `scratch` holds
+    /// less than the query.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_prepared_plain_sum<R, AP, BP>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &[&AP],
+        a_size: usize,
+        b: &[&BP],
+        b_size: usize,
+        galois: &[i64],
+        base2k: crate::layouts::Base2K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<BE>,
+        BP: CnvPVecRToBackendRef<BE>;
+}
+
 /// Tensor products of GLWE ciphertexts.
 ///
 /// Both ciphertext operands are read canonical at their `k` (see the

@@ -126,13 +126,20 @@ impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
         BE::blas_matmul_prepared_impl(self, res, a, b, ctx, tsk, atk, scratch)
     }
 
-    fn blas_matmul_pt_right_tmp_bytes<R, A, K>(&self, res: &R, a: &A, b: &BlasPtOperand<BE>, atk: &K) -> usize
+    fn blas_matmul_pt_right_tmp_bytes<R, A, K>(
+        &self,
+        res: &R,
+        a: &A,
+        b: &BlasPtOperand<BE>,
+        ctx: &BlasContext<BE>,
+        atk: &K,
+    ) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        BE::blas_matmul_pt_right_tmp_bytes_impl(self, res, a, b, atk)
+        BE::blas_matmul_pt_right_tmp_bytes_impl(self, res, a, b, ctx, atk)
     }
 
     fn blas_matmul_pt_right<R, A, K>(
@@ -140,6 +147,7 @@ impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
         res: &mut R,
         a: &A,
         b: &BlasPtOperand<BE>,
+        ctx: &BlasContext<BE>,
         atk: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -148,16 +156,23 @@ impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync,
     {
-        BE::blas_matmul_pt_right_impl(self, res, a, b, atk, scratch)
+        BE::blas_matmul_pt_right_impl(self, res, a, b, ctx, atk, scratch)
     }
 
-    fn blas_matmul_pt_left_tmp_bytes<R, A, K>(&self, res: &R, b: &BlasPtOperand<BE, Left>, a: &A, atk: &K) -> usize
+    fn blas_matmul_pt_left_tmp_bytes<R, A, K>(
+        &self,
+        res: &R,
+        b: &BlasPtOperand<BE, Left>,
+        a: &A,
+        ctx: &BlasContext<BE>,
+        atk: &K,
+    ) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        BE::blas_matmul_pt_left_tmp_bytes_impl(self, res, b, a, atk)
+        BE::blas_matmul_pt_left_tmp_bytes_impl(self, res, b, a, ctx, atk)
     }
 
     fn blas_matmul_pt_left<R, A, K>(
@@ -165,6 +180,7 @@ impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
         res: &mut R,
         b: &BlasPtOperand<BE, Left>,
         a: &A,
+        ctx: &BlasContext<BE>,
         atk: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -173,6 +189,6 @@ impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync,
     {
-        BE::blas_matmul_pt_left_impl(self, res, b, a, atk, scratch)
+        BE::blas_matmul_pt_left_impl(self, res, b, a, ctx, atk, scratch)
     }
 }
