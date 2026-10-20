@@ -579,8 +579,9 @@ pub trait GLWETensoringReference<BE: Backend> {
     /// The sum is rounded once where the two-step path rounds twice.
     /// The key-switch runs on `d2` at the alignment of the convolution output, `cnv_offset mod base2k` bits
     /// below the normalized position, so its noise is scaled up by that many bits in the result.
-    /// Where `d2` spans digits past the gadget and that scaled error may reach half a unit of `res_k`, the columns
-    /// are normalized into a tensor and relinearized by [`GLWETensoringImpl::glwe_tensor_relinearize`] instead.
+    /// Where `d2` spans digits past the gadget and the noise model does not keep this path within the two-step
+    /// noise, the columns are normalized into a tensor and relinearized by
+    /// [`GLWETensoringImpl::glwe_tensor_relinearize`] instead.
     ///
     /// Requires rank 1, the `base2k` of `res` for the operands and the tensor key, and `cnv_offset >= base2k`:
     /// below it the final normalization shifts right, which turns the integer parts dropped from `d2` into errors.
@@ -1603,60 +1604,60 @@ where
     }
 }
 
-/// Whether the one-pass relinearization against `tsk` stays within half a unit of `res_k`.
+/// Whether the one-pass relinearization against `tsk` keeps the noise of the two-step path.
 ///
-/// `d2` holds its `dft_size` limbs `lo` bits under the result and the gadget covers `cover_bits = dnum * k_digit`.
-/// Past that width, the lost bits, lifted by `2^lo`, stay below `2^-(cover_bits - lo + 1)`, times `‖s²‖₁ <= ‖s‖₁²`
-/// for the key's secret. The key-switching error, lifted by `2^lo` too, stays below `n * dnum * dsize` products of a
-/// digit under `2^k_digit` by the key error, `Noise::CUTOFF_FACTOR` times its phase deviation. A key without noise
-/// metadata, or with a secret of unknown law, is not within the result.
-fn one_pass_within_result(
+/// Where `lo = cnv_offset mod base2k > 0` and `d2` holds digits past the gadget, the one-pass path is kept only if
+/// its modeled variance stays within [`TENSOR_NOISE_MARGIN`](crate::reference::noise::TENSOR_NOISE_MARGIN) of the
+/// two-step one (see [`var_noise_glwe_mul_relinearize`](crate::reference::noise::var_noise_glwe_mul_relinearize)).
+/// The secret's second moment and the key error are read from the noise metadata of `tsk`: a key without it, or
+/// with a secret of unknown law, takes the two-step path. The operands' errors are floored at their rounding at
+/// their width, which vanishes once the product is lifted past it.
+#[allow(clippy::too_many_arguments)]
+fn one_pass_keeps_two_step_noise(
     tsk: &crate::layouts::GLWETensorKeyPreparedBackendRef<'_, impl Backend>,
     n: usize,
     base2k: usize,
     dft_size: usize,
-    lo: i64,
+    cnv_offset: usize,
+    left_k: TorusPrecision,
+    right_k: TorusPrecision,
+    tensor_k: TorusPrecision,
     res_k: TorusPrecision,
 ) -> bool {
-    let (dnum, k_digit) = (tsk.dnum().as_usize(), tsk.k_digit().as_usize());
-    let cover_bits = dnum * k_digit;
-    let sub_limbs = dnum * tsk.dsize().as_usize();
-    if dft_size * base2k <= cover_bits {
+    let lo = cnv_offset % base2k;
+    if lo == 0 || dft_size * base2k <= tsk.dnum().as_usize() * tsk.k_digit().as_usize() {
         return true;
     }
     let Some(noise) = tsk.noise() else {
         return false;
     };
-    let Some(secret_l1) = secret_l1_bound(noise.secret_distribution(), n) else {
+    let Some(var_xs) = noise.secret_distribution().coefficient_second_moment(n) else {
         return false;
     };
-    let key_error = noise.phase_noise(n).std_dev_at(TorusPrecision(0)) * crate::Noise::CUTOFF_FACTOR as f64;
-    if !key_error.is_finite() {
-        return false;
-    }
-    let bits = |x: u128| (u128::BITS - x.leading_zeros()) as i64;
-    let lo = lo.max(0);
-    let half_ulp = res_k.as_usize() as i64 + 1;
-    let dropped = cover_bits as i64 + 1 - lo - 2 * bits(secret_l1.saturating_sub(1));
-    let key_error = if key_error == 0.0 {
-        i64::MAX
-    } else {
-        (-key_error.log2()).floor() as i64 - lo - k_digit as i64 - bits((n * sub_limbs) as u128)
+    let key_k = tsk.k();
+    let var_key_err_body = noise.body().variance_at(key_k);
+    let var_key_err_mask: f64 = noise.masks().iter().map(|mask| mask.variance_at(key_k)).sum();
+    let var_e = |k: TorusPrecision| {
+        if cnv_offset < k.as_usize() {
+            (-2.0 * k.as_usize() as f64).exp2() / 12.0
+        } else {
+            0.0
+        }
     };
-    (secret_l1 == 0 || dropped >= half_ulp) && key_error >= half_ulp
-}
-
-/// Largest `‖s‖₁` of a secret summed over `secret.parties()` draws of its base law in degree `n`.
-fn secret_l1_bound(secret: crate::SecretDistribution, n: usize) -> Option<u128> {
-    let per_party = match secret.base() {
-        crate::Distribution::TernaryFixed(h) | crate::Distribution::BinaryFixed(h) => h.min(n),
-        crate::Distribution::TernaryProb(p) | crate::Distribution::BinaryProb(p) if p == 0.0 => 0,
-        crate::Distribution::TernaryProb(_) | crate::Distribution::BinaryProb(_) => n,
-        crate::Distribution::BinaryBlock(b) if b > 0 => n / b,
-        crate::Distribution::ZERO => 0,
-        _ => return None,
-    };
-    Some(secret.parties() as u128 * per_party as u128)
+    let var_operands =
+        crate::reference::noise::var_noise_glwe_tensor_operands(n as f64, 1.0, var_xs, var_e(left_k), var_e(right_k), cnv_offset);
+    let (one_pass, two_step) = crate::reference::noise::var_noise_glwe_mul_relinearize(
+        tsk,
+        var_xs,
+        var_key_err_body,
+        var_key_err_mask,
+        var_operands,
+        lo,
+        tensor_k.as_usize(),
+        dft_size * base2k,
+        res_k.as_usize(),
+    );
+    one_pass <= two_step * (2.0 * crate::reference::noise::TENSOR_NOISE_MARGIN).exp2()
 }
 
 /// Scratch of [`glwe_mul_relinearize_one_pass`]: one product of ciphertexts, or a sum of them, or either over
@@ -2038,9 +2039,9 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
         }
     }
 
-    // Unless the one-pass relinearization stays within the result, the columns are aligned to the result first and
+    // Unless the one-pass relinearization keeps the two-step noise, the columns are aligned to the result first and
     // relinearized as a tensor, as in the two-step product.
-    if !one_pass_within_result(tsk, n, base2k, dft_size, cnv_offset_lo, res_k) {
+    if !one_pass_keeps_two_step_noise(tsk, n, base2k, dft_size, cnv_offset, left_k, right_k, tensor_k, res_k) {
         let (mut tensor, mut scratch) = scratch.take_glwe_tensor_scratch(&tensor_infos);
         {
             let mut tensor_backend = tensor.to_backend_mut();
