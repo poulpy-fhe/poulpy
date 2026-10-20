@@ -1529,7 +1529,9 @@ fn tensor_relinearize_into<BE, R, A>(
     let (gadget_base2k, k_digit, dnum) = (tsk.base2k(), tsk.k_digit(), tsk.dnum());
     let gadget_size: usize = gadget_input_size(gadget_base2k, k_digit, dnum, a.k(), a_dft_size);
 
-    let (mut a_dft, mut scratch) = scratch.borrow().take_vec_znx_dft_scratch(res.n().as_usize(), pairs, gadget_size);
+    let (mut a_dft, mut scratch) = scratch
+        .borrow()
+        .take_vec_znx_dft_scratch(res.n().as_usize(), pairs, gadget_size);
 
     if a_base2k == key_base2k {
         for i in 0..pairs {
