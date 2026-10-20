@@ -264,6 +264,10 @@ macro_rules! ckks_carry_verb_reference {
                     A: GLWEToBackendRef<BE> + CKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
+                    $crate::reference::carry_verb::reject_replicated_constant(
+                        concat!("ckks_", stringify!($verb), "_pt_const"),
+                        a.slot_layout(),
+                    )?;
                     $crate::ckks_copy_stamp_unary(self, concat!(stringify!($verb), "_pt_const"), dst, a, scratch)?;
                     self.[<ckks_ $verb _pt_const_assign_reference>](dst, dst_coeff, cst, const_coeff, scratch)
                 }
@@ -281,6 +285,10 @@ macro_rules! ckks_carry_verb_reference {
                     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
+                    $crate::reference::carry_verb::reject_replicated_constant(
+                        concat!("ckks_", stringify!($verb), "_pt_const_assign"),
+                        dst.slot_layout(),
+                    )?;
                     CKKSPlaintextReference::[<ckks_ $verb _pt_const_into_reference>](self, dst, dst_coeff, cst, const_coeff, scratch)?;
                     // cst is always tagged as real, it's where dst_coeff lands
                     // that selects if the added constant is real (X^{0}) or imaginary (X^{N/2}).
@@ -293,3 +301,16 @@ macro_rules! ckks_carry_verb_reference {
     };
 }
 pub(crate) use ckks_carry_verb_reference;
+
+/// A constant lands on every slot, guards included, so a replicated layout
+/// takes constants as replicated plaintexts.
+pub(crate) fn reject_replicated_constant(op: &'static str, slot_layout: crate::SlotLayout) -> Result<()> {
+    if let crate::SlotLayout::Replicated(_) = slot_layout {
+        return Err(crate::CKKSCompositionError::InvalidOperand {
+            op,
+            reason: "a constant would reach the guard slots of a replicated layout".into(),
+        }
+        .into());
+    }
+    Ok(())
+}

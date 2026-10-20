@@ -96,7 +96,7 @@ pub trait CKKSMulReference<BE: Backend> {
         match product_depth(slot_layout, res_log_delta) {
             None => mul_into_at(self, dst, a, b, tsk, cnv_offset, stamp, scratch),
             Some(lambda) => {
-                let (mut wide, mut scratch) = take_wide(scratch, &*dst, lambda);
+                let (mut wide, mut scratch) = take_wide(scratch, &*dst, dst.k().as_usize() + lambda);
                 mul_into_at(self, &mut wide, a, b, tsk, cnv_offset, stamp.widen(lambda), &mut scratch)?;
                 round_into(self, dst, &wide, &stamp, &mut scratch)
             }
@@ -135,7 +135,7 @@ pub trait CKKSMulReference<BE: Backend> {
                 slots: Some(dst.slots().join(a.slots())),
                 slot_layout: Some(slot_layout),
             };
-            let (mut wide, mut scratch) = take_wide(scratch, &*dst, lambda);
+            let (mut wide, mut scratch) = take_wide(scratch, &*dst, dst.k().as_usize() + lambda);
             mul_into_at(self, &mut wide, &*dst, a, tsk, cnv_offset, stamp.widen(lambda), &mut scratch)?;
             return round_into(self, dst, &wide, &stamp, &mut scratch);
         }
@@ -289,7 +289,7 @@ pub trait CKKSMulReference<BE: Backend> {
                 slots: Some(dst.slots().join(prepared.slots())),
                 slot_layout: Some(slot_layout),
             };
-            let (mut wide, mut scratch) = take_wide(scratch, &*dst, lambda);
+            let (mut wide, mut scratch) = take_wide(scratch, &*dst, dst.k().as_usize() + lambda);
             mul_prepared_into_at(
                 self,
                 &mut wide,
@@ -402,7 +402,7 @@ pub trait CKKSMulReference<BE: Backend> {
         match product_depth(a.slot_layout(), res_log_delta) {
             None => square_into_at(self, dst, a, tsk, cnv_offset, stamp, scratch),
             Some(lambda) => {
-                let (mut wide, mut scratch) = take_wide(scratch, &*dst, lambda);
+                let (mut wide, mut scratch) = take_wide(scratch, &*dst, dst.k().as_usize() + lambda);
                 square_into_at(self, &mut wide, a, tsk, cnv_offset, stamp.widen(lambda), &mut scratch)?;
                 round_into(self, dst, &wide, &stamp, &mut scratch)
             }
@@ -433,7 +433,7 @@ pub trait CKKSMulReference<BE: Backend> {
                 slots: Some(dst.slots()),
                 slot_layout: Some(dst.slot_layout()),
             };
-            let (mut wide, mut scratch) = take_wide(scratch, &*dst, lambda);
+            let (mut wide, mut scratch) = take_wide(scratch, &*dst, dst.k().as_usize() + lambda);
             square_into_at(self, &mut wide, &*dst, tsk, cnv_offset, stamp.widen(lambda), &mut scratch)?;
             return round_into(self, dst, &wide, &stamp, &mut scratch);
         }
@@ -534,7 +534,7 @@ pub trait CKKSMulReference<BE: Backend> {
                 Ok(())
             }
             Some(lambda) => {
-                let (mut wide, mut scratch) = take_wide(scratch, &*dst, lambda);
+                let (mut wide, mut scratch) = take_wide(scratch, &*dst, dst.k().as_usize() + lambda);
                 mul_pt_vec_into_at(self, &mut wide, a, pt, cnv_offset, &stamp.widen(lambda), &mut scratch);
                 round_into(self, dst, &wide, &stamp, &mut scratch)
             }
@@ -569,7 +569,7 @@ pub trait CKKSMulReference<BE: Backend> {
                 slots: Some(slots),
                 slot_layout: Some(slot_layout),
             };
-            let (mut wide, mut scratch) = take_wide(scratch, &*dst, lambda);
+            let (mut wide, mut scratch) = take_wide(scratch, &*dst, dst.k().as_usize() + lambda);
             mul_pt_vec_into_at(self, &mut wide, &*dst, pt, cnv_offset, &stamp.widen(lambda), &mut scratch);
             return round_into(self, dst, &wide, &stamp, &mut scratch);
         }
@@ -616,7 +616,7 @@ pub trait CKKSMulReference<BE: Backend> {
                 Ok(())
             }
             Some(lambda) => {
-                let (mut wide, mut scratch) = take_wide(scratch, &*dst, lambda);
+                let (mut wide, mut scratch) = take_wide(scratch, &*dst, dst.k().as_usize() + lambda);
                 mul_pt_const_into_at(
                     self,
                     &mut wide,
@@ -657,7 +657,7 @@ pub trait CKKSMulReference<BE: Backend> {
                 slots: Some(dst.slots()),
                 slot_layout: Some(dst.slot_layout()),
             };
-            let (mut wide, mut scratch) = take_wide(scratch, &*dst, lambda);
+            let (mut wide, mut scratch) = take_wide(scratch, &*dst, dst.k().as_usize() + lambda);
             mul_pt_const_into_at(
                 self,
                 &mut wide,
@@ -966,15 +966,31 @@ pub(crate) fn product_depth(slot_layout: SlotLayout, log_delta: usize) -> Option
     }
 }
 
-/// A ciphertext `lambda` bits wider than `dst`, for a product rounded into `dst`.
+/// A ciphertext shaped as `dst` at width `k`, for a result rounded into `dst`.
 pub(crate) fn take_wide<'a, BE: Backend + 'a, D: GLWEInfos + CKKSInfos>(
     scratch: &'a mut ScratchArena<'_, BE>,
     dst: &D,
-    lambda: usize,
+    k: usize,
 ) -> (CKKSCiphertextViewMut<'a, BE>, ScratchArena<'a, BE>) {
-    let mut layout = dst.glwe_layout();
-    layout.k = (layout.k.as_usize() + lambda).into();
+    let layout = GLWELayout {
+        k: k.into(),
+        ..dst.glwe_layout()
+    };
     scratch.borrow().take_ckks_ciphertext_scratch(&layout, dst.meta())
+}
+
+/// Rejects a rotation by `k` slots that moves guard slots onto data slots.
+pub(crate) fn ensure_admissible_rotation(op: &'static str, slot_layout: SlotLayout, k: i64) -> Result<()> {
+    if let SlotLayout::Replicated(layout) = slot_layout
+        && k.rem_euclid(1 << layout.log_r()) != 0
+    {
+        return Err(CKKSCompositionError::InvalidOperand {
+            op,
+            reason: format!("a rotation by {k} slots is not a multiple of the period 2^{}", layout.log_r()),
+        }
+        .into());
+    }
+    Ok(())
 }
 
 /// Rounds a product computed under the scale into `dst` at the width `stamp` labels.
@@ -1159,7 +1175,7 @@ pub(crate) fn is_replicated(infos: &impl CKKSInfos) -> bool {
 
 /// Scratch of `plain(res, tensor_k)`, and when `shaped`, of the same op computed
 /// `MAX_PASS_BITS` under the scale into a wider ciphertext and rounded into `res`.
-fn with_shaped_bytes<BE, M>(
+pub(crate) fn with_shaped_bytes<BE, M>(
     module: &M,
     res: &impl GLWEInfos,
     tensor_k: TorusPrecision,
@@ -1168,7 +1184,7 @@ fn with_shaped_bytes<BE, M>(
 ) -> usize
 where
     BE: Backend,
-    M: GLWEBytesOf<BE> + CKKSRoundOps<BE> + ?Sized,
+    M: CKKSRoundOps<BE> + ?Sized,
 {
     let layout = res.glwe_layout();
     if !shaped {
@@ -1184,5 +1200,6 @@ where
         meta: Default::default(),
     };
     let round = module.ckks_round_tmp_bytes(&ckks(layout), &ckks(wide));
-    plain(&layout, tensor_k).max(module.glwe_bytes_of_from_infos(&wide) + plain(&wide, widen(tensor_k)).max(round))
+    let wide_bytes = BE::scratch_aligned(BE::bytes_of_vec_znx(wide.n.as_usize(), wide.rank.as_usize() + 1, wide.size()));
+    plain(&layout, tensor_k).max(wide_bytes + plain(&wide, widen(tensor_k)).max(round))
 }

@@ -17,7 +17,7 @@ use crate::{
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
 pub unsafe trait CKKSRotateImpl: Backend + super::CKKSCopyImpl {
-    fn ckks_rotate_tmp_bytes_impl<C: GLWEInfos, K: GGLWEInfos>(module: &Module<Self>, ct_infos: &C, key_infos: &K) -> usize;
+    fn ckks_rotate_tmp_bytes_impl<C: CKKSCtBounds, K: GGLWEInfos>(module: &Module<Self>, ct_infos: &C, key_infos: &K) -> usize;
 
     fn ckks_rotate_into_impl<Dst, Src>(
         module: &Module<Self>,
@@ -87,7 +87,7 @@ pub unsafe trait CKKSRotateImpl: Backend + super::CKKSCopyImpl {
 macro_rules! impl_ckks_rotate_reference {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSRotateImpl for $be {
-            fn ckks_rotate_tmp_bytes_impl<C: ::poulpy_core::layouts::GLWEInfos, K: ::poulpy_core::layouts::GGLWEInfos>(
+            fn ckks_rotate_tmp_bytes_impl<C: $crate::CKKSCtBounds, K: ::poulpy_core::layouts::GGLWEInfos>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 ct_infos: &C,
                 key_infos: &K,

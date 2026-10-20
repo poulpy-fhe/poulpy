@@ -19,6 +19,7 @@ where
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetAutomorphismKey<BE>,
 {
+    crate::reference::mul::ensure_admissible_rotation("conjugate_rotate", crate::GLWEPlaintextInfos::slot_layout(src), k)?;
     let p = conj_rotate_galois_element(k, module.cyclotomic_order());
     // The switch reads `src` at `dst.k()` when `dst` is narrower.
     let switch_k = src.k().min(dst.k());

@@ -43,7 +43,8 @@ pub unsafe trait CKKSConjugateImpl: Backend<Ring = Standard> {
         super::derived::conjugate::conjugate_assign(module, dst, keys, scratch)
     }
 
-    fn ckks_conjugate_tmp_bytes_impl<C: GLWEInfos, K: GGLWEInfos>(module: &Module<Self>, ct_infos: &C, key_infos: &K) -> usize;
+    fn ckks_conjugate_tmp_bytes_impl<C: CKKSCtBounds, K: GGLWEInfos>(module: &Module<Self>, ct_infos: &C, key_infos: &K)
+    -> usize;
 
     fn ckks_conjugate_into_impl<Dst, Src>(
         module: &Module<Self>,
@@ -71,7 +72,7 @@ pub unsafe trait CKKSConjugateImpl: Backend<Ring = Standard> {
 macro_rules! impl_ckks_conjugate_reference {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSConjugateImpl for $be {
-            fn ckks_conjugate_tmp_bytes_impl<C: ::poulpy_core::layouts::GLWEInfos, K: ::poulpy_core::layouts::GGLWEInfos>(
+            fn ckks_conjugate_tmp_bytes_impl<C: $crate::CKKSCtBounds, K: ::poulpy_core::layouts::GGLWEInfos>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 ct_infos: &C,
                 key_infos: &K,

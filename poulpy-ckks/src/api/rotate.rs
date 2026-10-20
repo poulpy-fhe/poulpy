@@ -30,6 +30,12 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 ///
 /// For `_assign` variants `offset = 0` and CKKS layout and scale metadata is unchanged.
 /// Component noise metadata is cleared.
+///
+/// # Slot layouts
+///
+/// A [`SlotLayout::Replicated`](crate::SlotLayout::Replicated) ciphertext
+/// rotates only by multiples of its period `R`, which move the batch by
+/// `k / R` values, and its key switch is rounded with shaping.
 pub trait CKKSRotateOps<BE: Backend> {
     fn ckks_rotate_tmp_bytes<C, K>(&self, ct_infos: &C, key_infos: &K) -> usize
     where

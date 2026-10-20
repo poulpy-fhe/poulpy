@@ -324,6 +324,14 @@ macro_rules! ckks_backend_rank2_test_suite {
                 replicated_layouts_do_not_mix,
                 $crate::test_suite::replicated::test_replicated_layouts_do_not_mix
             );
+            run_test_result!(
+                replicated_automorphisms_are_shaped,
+                $crate::test_suite::replicated::test_replicated_automorphisms_are_shaped
+            );
+            run_test_result!(
+                replicated_rotations_are_admissible,
+                $crate::test_suite::replicated::test_replicated_rotations_are_admissible
+            );
             run_test!(mul_ct_aligned, $crate::test_suite::mul::test_mul_ct_aligned);
             run_test!(
                 mul_ct_larger_budget_smaller_scale,
@@ -663,6 +671,14 @@ macro_rules! ckks_backend_test_suite {
             run_test_result!(
                 replicated_layouts_do_not_mix,
                 $crate::test_suite::replicated::test_replicated_layouts_do_not_mix
+            );
+            run_test_result!(
+                replicated_automorphisms_are_shaped,
+                $crate::test_suite::replicated::test_replicated_automorphisms_are_shaped
+            );
+            run_test_result!(
+                replicated_rotations_are_admissible,
+                $crate::test_suite::replicated::test_replicated_rotations_are_admissible
             );
             run_test!(conjugate_aligned, $crate::test_suite::conjugate::test_conjugate_aligned);
             run_test!(

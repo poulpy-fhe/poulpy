@@ -9,7 +9,11 @@
 //! | [`test_replicated_encryption_is_shaped`] | a fresh encryption keeps the data slots far above CKKS at the same scale |
 //! | [`test_replicated_encoding_rejects_batch_size`] | a batch of the wrong size |
 //! | [`test_replicated_products_are_shaped`] | chains of every ct × ct and ct × pt product keep the data slots far above CKKS |
-//! | [`test_replicated_layouts_do_not_mix`] | products and sums of different layouts |
+//! | [`test_replicated_layouts_do_not_mix`] | products and sums of different layouts, and constant sums |
+//! | [`test_replicated_automorphisms_are_shaped`] | rotations and conjugation keep the data slots far above CKKS |
+//! | [`test_replicated_rotations_are_admissible`] | rotations by a non-multiple of the period |
+
+use std::collections::HashMap;
 
 use anyhow::Result;
 use poulpy_core::layouts::{Base2K, GLWEToBackendRef, LWEInfos, TorusPrecision, prepared::GLWESecretPrepared};
@@ -20,12 +24,15 @@ use poulpy_hal::{
 };
 
 use super::helpers::{
-    PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, ckks_pt_cst_full, gen_sk,
+    PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, ckks_pt_cst_full, gen_atk, gen_sk,
     gen_sk_with_raw, gen_tsk,
 };
 use crate::{
     CKKSInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, ReplicatedLayout, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
-    api::{CKKSAddOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSModuleInfos, CKKSMulOps},
+    api::{
+        CKKSAddOps, CKKSConjugateOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSModuleInfos,
+        CKKSMulOps, CKKSRotateOps, CKKSSubOps,
+    },
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned},
     shaping::ShapingUnit,
     test_suite::CKKSTestParams,
@@ -485,5 +492,122 @@ where
     assert!(module.ckks_add_into(&mut out, &shaped, &full, s).is_err());
     assert!(module.ckks_mul_pt_vec_into(&mut out, &shaped, &pt, s).is_err());
     assert!(module.ckks_add_pt_vec_into(&mut out, &shaped, &pt, s).is_err());
+    let cst = ckks_pt_cst_full::<BE, F>(
+        host_module,
+        module,
+        params.base2k.into(),
+        PT_PREC,
+        params.n / 2,
+        Some(CONSTANT),
+        None,
+    );
+    assert!(module.ckks_add_pt_const_into(&mut out, &shaped, 0, &cst, 0, s).is_err());
+    let mut shifted = shaped.clone();
+    assert!(module.ckks_sub_one_assign(&mut shifted, s).is_err());
+    module.ckks_mul_pt_const_into(&mut out, &shaped, &cst, 0, s)?;
+    Ok(())
+}
+
+/// Precision after a rotation into a new ciphertext, a rotation in place and a
+/// conjugation, against `conj(v[i + 2])`.
+fn automorphism_chain<BE, F>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+    slot_layout: SlotLayout,
+) -> Result<f64>
+where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    F: TestScalar,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+{
+    let len = 1 << LOG_K;
+    let step = match slot_layout {
+        SlotLayout::Replicated(layout) => 1i64 << layout.log_r(),
+        SlotLayout::Full => 1,
+    };
+    let (sk_raw, sk) = gen_sk_with_raw(params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(params, module);
+    let mut atks = HashMap::new();
+    let gal = module.ckks_galois_element(step);
+    atks.insert(gal, gen_atk(params, module, gal, &sk_raw, &mut scratch.borrow()));
+    let conj = gen_atk(params, module, -1, &sk_raw, &mut scratch.borrow());
+
+    let values = unit_batch::<F>(len, 0);
+    let k = 3 * LOG_DELTA;
+    let ct = encrypt_batch(params, module, &sk, slot_layout, (&values.0, &values.1), k, 1)?;
+    let mut rotated = alloc_ct(params, module, k);
+    let s = &mut scratch.borrow();
+    module.ckks_rotate_into(&mut rotated, &ct, step, &atks, s)?;
+    module.ckks_rotate_assign(&mut rotated, step, &atks, s)?;
+    let mut out = alloc_ct(params, module, k);
+    module.ckks_conjugate_into(&mut out, &rotated, &conj, s)?;
+    assert_eq!(out.slot_layout(), slot_layout);
+
+    let want_re: Vec<F> = (0..len).map(|i| values.0[(i + 2) % len]).collect();
+    let want_im: Vec<F> = (0..len).map(|i| -values.1[(i + 2) % len]).collect();
+    let got = decrypt_batch::<BE, F>(params, module, &sk, &out, len);
+    Ok(precision((&got.0, &got.1), (&want_re, &want_im)))
+}
+
+pub fn test_replicated_automorphisms_are_shaped<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) -> Result<()>
+where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let full = automorphism_chain::<BE, F>(&params, module, host_module, SlotLayout::Full)?;
+    let shaped = automorphism_chain::<BE, F>(&params, module, host_module, SlotLayout::Replicated(layout()))?;
+    assert!(
+        shaped >= full + 15.0,
+        "rotations and conjugation at 2^{LOG_DELTA}: {shaped:.2} bits against {full:.2} for a full layout"
+    );
+    Ok(())
+}
+
+pub fn test_replicated_rotations_are_admissible<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) -> Result<()>
+where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let mut atks = HashMap::new();
+    for r in [1, 1i64 << layout().log_r()] {
+        let gal = module.ckks_galois_element(r);
+        atks.insert(gal, gen_atk(&params, module, gal, &sk_raw, &mut scratch.borrow()));
+    }
+    let values = unit_batch::<F>(1 << LOG_K, 0);
+    let mut ct = encrypt_batch(
+        &params,
+        module,
+        &sk,
+        SlotLayout::Replicated(layout()),
+        (&values.0, &values.1),
+        3 * LOG_DELTA,
+        1,
+    )?;
+    let mut out = alloc_ct(&params, module, 3 * LOG_DELTA);
+    let s = &mut scratch.borrow();
+    assert!(module.ckks_rotate_into(&mut out, &ct, 1, &atks, s).is_err());
+    assert!(module.ckks_rotate_assign(&mut ct, -1, &atks, s).is_err());
+    module.ckks_rotate_into(&mut out, &ct, 1 << layout().log_r(), &atks, s)?;
     Ok(())
 }

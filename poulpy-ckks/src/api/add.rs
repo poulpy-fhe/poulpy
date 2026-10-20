@@ -60,7 +60,9 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// ## Slot layouts
 ///
 /// Ciphertext operands, and a plaintext vector operand, must share one slot
-/// layout, which the sum carries; a constant adds to any layout.
+/// layout, which the sum carries. A constant reaches every slot, so it is
+/// rejected on a [`SlotLayout::Replicated`](crate::SlotLayout::Replicated)
+/// layout, whose guards it would shift.
 pub trait CKKSAddOps<BE: Backend> {
     fn ckks_add_tmp_bytes(&self, res_size: usize) -> usize;
 

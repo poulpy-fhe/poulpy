@@ -413,6 +413,29 @@ impl poulpy_ckks::reference::rotate::CKKSRotateReference<OverrideBackend> for Co
 impl poulpy_ckks::reference::conjugate::CKKSConjugateReference<OverrideBackend> for CoreQueryOverrides<'_> {}
 impl poulpy_ckks::reference::imag::CKKSImagReference<OverrideBackend> for CoreQueryOverrides<'_> {}
 
+impl poulpy_ckks::api::CKKSRoundOps<OverrideBackend> for CoreQueryOverrides<'_> {
+    fn ckks_round_tmp_bytes<Dst: poulpy_ckks::CKKSCtBounds, Src: poulpy_ckks::CKKSCtBounds>(
+        &self,
+        dst: &Dst,
+        src: &Src,
+    ) -> usize {
+        self.module.ckks_round_tmp_bytes(dst, src)
+    }
+
+    fn ckks_round_into<Dst, Src>(
+        &self,
+        dst: &mut Dst,
+        src: &Src,
+        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>,
+    ) -> poulpy_ckks::CKKSResult<()>
+    where
+        Dst: poulpy_core::layouts::GLWEToBackendMut<OverrideBackend> + poulpy_ckks::CKKSCtBounds + poulpy_ckks::SetCKKSInfos,
+        Src: poulpy_core::layouts::GLWEToBackendRef<OverrideBackend> + poulpy_ckks::CKKSCtBounds,
+    {
+        self.module.ckks_round_into(dst, src, scratch)
+    }
+}
+
 impl poulpy_core::GLWECopy<OverrideBackend> for CoreQueryOverrides<'_> {
     fn glwe_copy_tmp_bytes<R: poulpy_core::layouts::GLWEInfos, A: poulpy_core::layouts::GLWEInfos>(
         &self,
