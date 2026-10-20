@@ -255,7 +255,7 @@ where
 /// shaped rounding, so that the quantization error is a multiple of the
 /// layout's shaping polynomial up to an unshaped `2^-λ` remainder. `λ` is the
 /// largest exact pass that keeps `log_delta + log_budget + λ` within `i128`.
-fn shaped_quantize<F>(
+pub(crate) fn shaped_quantize<F>(
     coeffs: &[F],
     layout: &ReplicatedLayout,
     log_delta: usize,

@@ -32,12 +32,6 @@ where
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>,
     {
-        if let Ok(x) = power_basis.get(1) {
-            crate::reference::mul::ensure_full_layout(
-                "ckks_eval_poly_real_const_coeffs_from_power_basis",
-                crate::GLWEPlaintextInfos::slot_layout(x),
-            )?;
-        }
         BE::ckks_eval_poly_real_const_coeffs_from_power_basis_impl::<R, B, A, G, H>(self, res, poly, power_basis, tsk, scratch)
     }
 
@@ -57,10 +51,6 @@ where
         H: GetTensorKey<BE>,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        crate::reference::mul::ensure_full_layout(
-            "ckks_eval_poly_real_const_coeffs",
-            crate::GLWEPlaintextInfos::slot_layout(src),
-        )?;
         BE::ckks_eval_poly_real_const_coeffs_impl::<R, S, B, H>(self, dst, src, bsgs, tsk, scratch)
     }
 }
@@ -84,12 +74,6 @@ where
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>,
     {
-        if let Ok(x) = power_basis.get(1) {
-            crate::reference::mul::ensure_full_layout(
-                "ckks_eval_poly_complex_const_coeffs_from_power_basis",
-                crate::GLWEPlaintextInfos::slot_layout(x),
-            )?;
-        }
         BE::ckks_eval_poly_complex_const_coeffs_from_power_basis_impl::<R, C, A, G, H>(self, res, poly, power_basis, tsk, scratch)
     }
 
@@ -108,10 +92,6 @@ where
         H: GetTensorKey<BE>,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        crate::reference::mul::ensure_full_layout(
-            "ckks_eval_poly_complex_const_coeffs",
-            crate::GLWEPlaintextInfos::slot_layout(src),
-        )?;
         BE::ckks_eval_poly_complex_const_coeffs_impl::<R, S, C, H>(self, dst, src, poly, tsk, scratch)
     }
 }

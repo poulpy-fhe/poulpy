@@ -5,15 +5,16 @@ use poulpy_core::layouts::{BSGSMeta, GLWEInfos, GLWEToBackendMut, GLWEToBackendR
 use poulpy_core::{BSGSOps, GLWEPolynomialEvaluation, GLWEZero};
 use poulpy_hal::{
     api::{
-        Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxRsh, VecZnxRshTmpBytes,
+        Convolution, ModuleN, ScratchArenaTakeBasic, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxRsh, VecZnxRshTmpBytes,
     },
     layouts::{
-        Backend, Data, Module, PrepareHint, Ring, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut,
-        VecZnxToBackendRef, ZnxWord, vec_znx_backend_ref_from_ref,
+        Backend, Data, Module, PrepareHint, Ring, ScratchArena, ScratchOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
+        VecZnxToBackendMut, VecZnxToBackendRef, ZnxWord, vec_znx_backend_ref_from_ref,
     },
 };
 
-use crate::CKKSCtBounds;
+use crate::{CKKSCtBounds, GLWEPlaintextMeta, ReplicatedLayout, Scale, SlotLayout, SlotsKind};
 use crate::{
     SetCKKSInfos,
     api::{
@@ -78,6 +79,7 @@ struct CKKSBSGSOps;
 impl<BE: Backend, V, P, A, R> BSGSOps<BE, V, P, A, R> for CKKSBSGSOps
 where
     Module<BE>: CKKSAddOps<BE>
+        + CKKSModuleAlloc<BE>
         + CKKSMulOps<BE>
         + CKKSMulAddOps<BE>
         + CKKSCopyOps<BE>
@@ -120,6 +122,9 @@ where
         let Some(&(seed, _)) = terms.last() else {
             return Ok(false);
         };
+        if let SlotLayout::Replicated(_) = seed.slot_layout() {
+            return Ok(false);
+        }
         let kb: usize = res.base2k().into();
         let delta = seed.log_delta();
         if kb == 0 {
@@ -263,6 +268,9 @@ where
         idx: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> anyhow::Result<()> {
+        if let SlotLayout::Replicated(layout) = res.slot_layout() {
+            return add_masked_const_assign(module, res, layout, coeffs, idx).map_err(::anyhow::Error::from);
+        }
         module
             .ckks_add_pt_const_assign(res, res_coeff, coeffs, idx, scratch)
             .map_err(::anyhow::Error::from)
@@ -327,6 +335,43 @@ where
         module.ckks_copy(res, src, scratch)?;
         Ok(())
     }
+}
+
+/// `res += c·π_S` for the constant `c = coeffs[idx]`: the shaped product of
+/// `c` with a trivial encryption of the masked one, `log_delta(coeffs)` bits
+/// wider than `res`.
+fn add_masked_const_assign<BE, V, P>(
+    module: &Module<BE>,
+    res: &mut V,
+    layout: ReplicatedLayout,
+    coeffs: &P,
+    idx: usize,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: CKKSAddOps<BE> + CKKSMulAddOps<BE> + CKKSModuleAlloc<BE> + GLWEZero<BE>,
+    V: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
+{
+    let log_delta = res.log_delta();
+    let log_budget = res.log_budget() + coeffs.log_delta();
+    let mut one = module.ckks_ciphertext_alloc(res.base2k(), (log_delta + log_budget).into());
+    one.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(log_delta),
+        slots: SlotsKind::Real,
+        log_sparsity: res.log_sparsity(),
+        slot_layout: SlotLayout::Replicated(layout),
+    });
+    one.set_log_budget(log_budget);
+    let mut scratch = ScratchOwned::<BE>::alloc(
+        module
+            .ckks_add_pt_vec_tmp_bytes(one.size())
+            .max(module.ckks_mul_add_pt_const_tmp_bytes(res, &one, coeffs)),
+    );
+    module.glwe_zero(&mut one);
+    let masked_one = crate::reference::carry_verb::ckks_masked_one_pt(module, res.base2k(), layout, log_delta)?;
+    module.ckks_add_pt_vec_assign(&mut one, &masked_one, &mut scratch.borrow())?;
+    module.ckks_mul_add_pt_const_into(res, &one, coeffs, idx, &mut scratch.borrow())
 }
 
 pub trait PolynomialEvaluationReference<BE: Backend> {

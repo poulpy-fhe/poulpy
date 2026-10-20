@@ -90,6 +90,7 @@ pub trait CKKSAddOps<BE: Backend> {
     /// Computes `dst += 1` in-place.
     ///
     /// The exact integer constant is added to coefficient slot `0`.
+    /// On a replicated slot layout, the masked one `π_S` is added instead, so the guard slots stay zero.
     /// CKKS layout and scale metadata is preserved; component noise metadata is cleared.
     /// Size scratch with [`Self::ckks_add_one_tmp_bytes`].
     fn ckks_add_one_assign<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

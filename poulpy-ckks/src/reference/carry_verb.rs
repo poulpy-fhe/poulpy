@@ -8,14 +8,18 @@
 
 use crate::CKKSResult as Result;
 use crate::layouts::CKKSPlaintextOwned;
-use poulpy_core::layouts::Base2K;
+use num_traits::{Float, FromPrimitive};
+use poulpy_core::layouts::{Base2K, IntPolyInfos, LWEInfos};
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
     layouts::{Backend, VecZnx},
 };
 
 use crate::SlotsKind;
-use crate::{GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotLayout, ckks_log_delta, layouts::CKKSModuleAlloc};
+use crate::{
+    GLWEPlaintextMeta, ReplicatedLayout, Scale, SetCKKSInfos, SlotLayout, ckks_log_delta, layouts::CKKSModuleAlloc,
+    numerics::CKKSFloat, scalar::Quad,
+};
 
 /// Builds the backend-resident constant-`1.0` plaintext used by the
 /// add-one/sub-one facades.
@@ -56,6 +60,46 @@ where
 
     let mut pt = module.ckks_pt_coeffs_alloc(1, base2k, k_total.into());
     pt.set_meta(meta);
+    pt.copy_from_host_bytes::<BE>(limbs.data().as_slice());
+    Ok(pt)
+}
+
+/// The masked one `π_S` of a replicated layout at scale `2^log_delta`: one on
+/// the data slots and zero on the guards, a plaintext of degree `2R` in
+/// `Y = X^(N/(2R))` with coefficients `cos(π·j/(2R))/R`, quantized with
+/// shaped rounding.
+pub(crate) fn ckks_masked_one_pt<BE, M>(
+    module: &M,
+    base2k: Base2K,
+    layout: ReplicatedLayout,
+    log_delta: usize,
+) -> Result<CKKSPlaintextOwned<BE>>
+where
+    BE: Backend,
+    M: CKKSModuleAlloc<BE> + ?Sized,
+{
+    let r = 1usize << layout.log_r();
+    let r_inv = Quad::from_usize(r).expect("the period is a small integer").recip();
+    let coeffs: Vec<Quad> = (0..2 * r)
+        .map(|j| Quad::ckks_root_of_unity(j as u64, layout.log_r() as u32 + 2).0 * r_inv)
+        .collect();
+    let data = crate::reference::encoding::shaped_quantize(&coeffs, &layout, log_delta, 1, SlotsKind::Complex)?;
+
+    let mut pt = module.ckks_pt_coeffs_alloc(2 * r, base2k, (log_delta + 1).into());
+    pt.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(log_delta),
+        slots: SlotsKind::Real,
+        log_sparsity: 0,
+        slot_layout: SlotLayout::Replicated(layout),
+    });
+    let size = pt.size();
+    let mut limbs = VecZnx::<AlignedBuf, i64>::from_data(
+        alloc_aligned::<u8>(VecZnx::<AlignedBuf, i64>::bytes_of(2 * r, 1, size)),
+        2 * r,
+        1,
+        size,
+    );
+    limbs.encode_vec_i128(base2k.as_usize(), 0, pt.encoded_k().as_usize(), &data);
     pt.copy_from_host_bytes::<BE>(limbs.data().as_slice());
     Ok(pt)
 }

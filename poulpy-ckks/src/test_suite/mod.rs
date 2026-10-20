@@ -685,6 +685,10 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::replicated::test_replicated_layouts_do_not_mix
             );
             run_test_result!(
+                replicated_polynomials_are_shaped,
+                $crate::test_suite::replicated::test_replicated_polynomials_are_shaped
+            );
+            run_test_result!(
                 replicated_automorphisms_are_shaped,
                 $crate::test_suite::replicated::test_replicated_automorphisms_are_shaped
             );

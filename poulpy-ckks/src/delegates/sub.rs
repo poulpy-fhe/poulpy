@@ -1,6 +1,6 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
+use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, LWEInfos};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::api::CKKSSubOps;
@@ -41,6 +41,10 @@ impl<BE: Backend + CKKSSubImpl> CKKSSubOps<BE> for Module<BE> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
+        if let crate::SlotLayout::Replicated(layout) = crate::GLWEPlaintextInfos::slot_layout(dst) {
+            let one = crate::reference::carry_verb::ckks_masked_one_pt(self, dst.base2k(), layout, dst.log_delta())?;
+            return BE::ckks_sub_pt_vec_assign_impl(self, dst, &one, scratch);
+        }
         BE::ckks_sub_one_assign_impl(self, dst, scratch)
     }
 
