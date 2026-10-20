@@ -153,6 +153,58 @@ pub fn cols_right<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: 
     per_matrix_map(slots, log_d, |r, c| (c + k >= d).then(|| (r, c + k - d, F::one())))
 }
 
+/// The columns of psi^k that phi^k keeps in the block: output `(r, c)` reads `(r + k mod d, c)` when `c + k < d`, else 0.
+pub fn rows_left<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize, k: usize) -> Diagonals<F> {
+    let d = 1usize << log_d;
+    per_matrix_map(slots, log_d, |r, c| (c + k < d).then(|| ((r + k) % d, c, F::one())))
+}
+
+/// The columns of psi^k that phi^k wraps: output `(r, c)` reads `(r + k mod d, c)` when `c + k >= d`, else 0.
+pub fn rows_right<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize, k: usize) -> Diagonals<F> {
+    let d = 1usize << log_d;
+    per_matrix_map(slots, log_d, |r, c| (c + k >= d).then(|| ((r + k) % d, c, F::one())))
+}
+
+fn skewed_values<F>(log_d: usize, count: usize, b: impl Fn(usize, usize, usize) -> F, skew_rows: bool) -> Vec<F> {
+    let d = 1usize << log_d;
+    (0..count * d * d)
+        .map(|t| {
+            let (s, r, c) = (t / (d * d), (t / d) % d, t % d);
+            let skewed = (r + c) % d;
+            if skew_rows { b(s, skewed, c) } else { b(s, r, skewed) }
+        })
+        .collect()
+}
+
+/// Tau of the public matrix `b(s mod count, ., .)` of every matrix slot `s`, `count d^2` values, row-major: entry
+/// `(r, c)` of matrix slot `s` is `b(s, (r + c) mod d, c)`.
+pub fn tau_values<F>(log_d: usize, count: usize, b: impl Fn(usize, usize, usize) -> F) -> Vec<F> {
+    skewed_values(log_d, count, b, true)
+}
+
+/// Sigma of the public matrices, as [`tau_values`]: entry `(r, c)` of matrix slot `s` is `b(s, r, (r + c) mod d)`.
+pub fn sigma_values<F>(log_d: usize, count: usize, b: impl Fn(usize, usize, usize) -> F) -> Vec<F> {
+    skewed_values(log_d, count, b, false)
+}
+
+/// The product by the public slot vector `Rot_rotation(values)`, `values[i + rotation]` over its period: one diagonal
+/// at offset 0, stored at the period of `values`, which divides `slots`.
+///
+/// # Panics
+///
+/// When `values` is empty or its length does not divide `slots`.
+pub fn slot_product<F: DiagonalArithmetic>(slots: usize, values: &[F], rotation: i64) -> Diagonals<F> {
+    assert!(
+        !values.is_empty() && slots.is_multiple_of(values.len()),
+        "slot_product: the values' period must divide the slots"
+    );
+    let mut rotated = values.to_vec();
+    rotated.rotate_left(rotation.rem_euclid(values.len() as i64) as usize);
+    let mut diagonals = Diagonals::new(slots);
+    diagonals.set(0, rotated);
+    diagonals
+}
+
 /// Right product in every matrix slot: output `(r, c)` of matrix slot `s` is `sum_l in(r, l) b(s mod count, l, c)`.
 ///
 /// Its diagonals are stored at a period fixed by the structure, never by `b`'s values: `d` for one public matrix, whose
@@ -561,5 +613,62 @@ mod tests {
         assert_eq!(rep.indexes(), full.indexes());
         let x = &input(19)[..D * D];
         assert_eq!(apply(&rep, x), apply(&full, x));
+    }
+
+    /// The column halves of psi^k: `rows_left(k)` keeps the columns phi^k keeps in the block, `c + k < d`, and
+    /// `rows_right(k)` those it wraps; together they are psi^k.
+    #[test]
+    fn masked_rows_split_psi_by_column() {
+        let x = input(21);
+        let add = |a: Vec<f64>, b: Vec<f64>| -> Vec<f64> { a.iter().zip(&b).map(|(u, v)| u + v).collect() };
+        for k in 1..D {
+            let (left, right) = (
+                apply(&rows_left(SLOTS, LOG_D, k), &x),
+                apply(&rows_right(SLOTS, LOG_D, k), &x),
+            );
+            let pick = |m: &[f64], keep: bool, r: usize, c: usize| if keep { m[((r + k) % D) * D + c] } else { 0.0 };
+            assert_eq!(left, per_matrix(&x, |m, r, c| pick(m, c + k < D, r, c)), "k={k}");
+            assert_eq!(right, per_matrix(&x, |m, r, c| pick(m, c + k >= D, r, c)), "k={k}");
+            assert_eq!(add(left, right), apply(&rotate_rows(SLOTS, LOG_D, k), &x), "k={k}");
+        }
+    }
+
+    /// The masked paths' identities in the clear: on the right, for one public matrix,
+    /// `sum_k phi^k(sigma(A)) ⊙ Rot_{kd}(tau(B))` is `A B`; on the left, for every count,
+    /// `tau(A) ⊙ sigma(B) + sum_{k >= 1} rows_left(k)(tau(A)) ⊙ Rot_k(sigma(B)) + rows_right(k)(tau(A)) ⊙ Rot_{k-d}(sigma(B))`
+    /// is `B A`.
+    #[test]
+    fn masked_identities_hold_in_the_clear() {
+        let a = input(20);
+        let ones = vec![1.0; SLOTS];
+        let product = |x: &[f64], values: &[f64], rotation: i64| -> Vec<f64> {
+            let p = apply(&slot_product(SLOTS, values, rotation), &ones);
+            x.iter().zip(&p).map(|(u, v)| u * v).collect()
+        };
+        let add = |acc: &mut Vec<f64>, x: Vec<f64>| acc.iter_mut().zip(x).for_each(|(o, v)| *o += v);
+
+        let (sa, tb) = (apply(&sigma(SLOTS, LOG_D), &a), tau_values(LOG_D, 1, public));
+        let mut right = product(&sa, &tb, 0);
+        for k in 1..D {
+            add(
+                &mut right,
+                product(&apply(&rotate_cols(SLOTS, LOG_D, k), &sa), &tb, (k * D) as i64),
+            );
+        }
+        assert_eq!(right, apply(&right_mul(SLOTS, LOG_D, 1, public), &a));
+
+        let ta = apply(&tau(SLOTS, LOG_D), &a);
+        for count in [1, 2, MATS] {
+            let sb = sigma_values(LOG_D, count, public);
+            let mut left = product(&ta, &sb, 0);
+            for k in 1..D {
+                add(&mut left, product(&apply(&rows_left(SLOTS, LOG_D, k), &ta), &sb, k as i64));
+                add(
+                    &mut left,
+                    product(&apply(&rows_right(SLOTS, LOG_D, k), &ta), &sb, k as i64 - D as i64),
+                );
+            }
+            assert_eq!(left, apply(&left_mul(SLOTS, LOG_D, count, public), &a), "count={count}");
+        }
     }
 }

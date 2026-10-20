@@ -72,6 +72,13 @@ products of the ciphertexts the operands were prepared from, bit for bit, whatev
 `PrepareHint` each operand was prepared under. One prepared pair runs within
 `glwe_mul_relinearize_tmp_bytes`, as one product does.
 
+`glwe_mul_prepared_plain_sum` (`GLWEMulPreparedPlainSumImpl`) sums products of prepared
+ciphertexts by prepared plaintexts, each plaintext read through an odd Galois element
+(`b_galois` of the convolution sum). It transforms no operand, and one term through
+element `1` must equal `glwe_mul_plain` of the sources, bit for bit, whatever
+`PrepareHint` each operand was prepared under. It checks its operands against `res`
+before writing it.
+
 ## Matching the result
 
 Every OEP override must implement the same circuit as the reference

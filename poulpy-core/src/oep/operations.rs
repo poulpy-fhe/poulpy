@@ -84,6 +84,34 @@ pub unsafe trait GLWEMulPlainImpl: Backend {
         A: GLWEToBackendRef<Self> + IntPolyInfos + GLWEInfos;
 }
 
+/// Backend-provided sums of products of prepared GLWE ciphertexts by prepared plaintexts read through Galois elements.
+///
+/// # Safety
+/// Implementations must interpret the prepared operands consistently with the backend's convolution layout and
+/// preserve all aliasing and buffer-bound invariants.
+pub unsafe trait GLWEMulPreparedPlainSumImpl: Backend {
+    fn glwe_mul_prepared_plain_sum_tmp_bytes<R>(module: &Module<Self>, res: &R, a_size: usize, b_size: usize) -> usize
+    where
+        R: GLWEInfos;
+
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_prepared_plain_sum<R, AP, BP>(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &[&AP],
+        a_size: usize,
+        b: &[&BP],
+        b_size: usize,
+        galois: &[i64],
+        base2k: crate::layouts::Base2K,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<Self>,
+        BP: CnvPVecRToBackendRef<Self>;
+}
+
 /// Backend-provided GLWE tensoring and relinearization operations.
 ///
 /// # Safety
@@ -1089,6 +1117,7 @@ macro_rules! impl_operations_reference_full {
     ($be:ty) => {
         $crate::impl_glwe_mul_const_reference_full!($be);
         $crate::impl_glwe_mul_plain_reference_full!($be);
+        $crate::impl_glwe_mul_prepared_plain_sum_reference_full!($be);
         $crate::impl_glwe_add_reference_full!($be);
         $crate::impl_glwe_sub_reference_full!($be);
         $crate::impl_glwe_negate_reference_full!($be);

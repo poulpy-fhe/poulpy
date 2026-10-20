@@ -28,12 +28,12 @@ use poulpy_core::layouts::{GGLWEInfos, LWEInfos, TorusPrecision};
 use poulpy_hal::layouts::{Backend, Data, Module};
 
 use crate::layouts::{
-    BlasGridInfos, BlasPtOperandInfos, BlasPtSide,
+    BlasContextInfos, BlasGridInfos, BlasPlan, BlasPtOperandInfos, BlasPtSide,
     ciphertext::mat_slots_in,
     context::context_shapes,
     encoding::{DiagonalShape, shape},
     pt_operand::{OperandMaps, layouts_of},
-    validate::UseSink,
+    validate::{UseSink, context_masks},
 };
 
 /// The keys an operation looks up, by the widths it looks them up at: the Galois elements that rotating by each
@@ -94,14 +94,18 @@ where
     M: CKKSLinearTransformationOps<BE> + ?Sized,
     K: GGLWEInfos,
 {
+    // A `res` of no width is never read: its map fails the budget check before any scratch.
+    let live = res.k().as_usize() > 0;
     let eval = if summed {
+        let res_bytes = live.then(|| module.ckks_eval_linear_transformation_sum_tmp_bytes(res, key));
         module
             .ckks_eval_linear_transformation_sum_tmp_bytes(a, key)
-            .max(module.ckks_eval_linear_transformation_sum_tmp_bytes(res, key))
+            .max(res_bytes.unwrap_or(0))
     } else {
+        let res_bytes = live.then(|| module.ckks_eval_linear_transformation_tmp_bytes(res, key));
         module
             .ckks_eval_linear_transformation_tmp_bytes(a, key)
-            .max(module.ckks_eval_linear_transformation_tmp_bytes(res, key))
+            .max(res_bytes.unwrap_or(0))
     };
     module
         .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(a, key)
@@ -134,4 +138,22 @@ pub(crate) fn operand_shapes<S: BlasPtSide>(
     infos: &impl BlasPtOperandInfos<Side = S>,
 ) -> OperandMaps<LinearTransformation<DiagonalShape>> {
     layouts_of(&infos.blas_pt_operand_layout()).map(shape)
+}
+
+/// `f` of the masks of a context of `ctx` that a product by public matrices of an operand of `plan` evaluates, on the
+/// `left` or the right, as the queries read them ([`context_masks`]): none, `ctx` unread, but under `JklsStored` and
+/// `JklsGalois`.
+///
+/// # Panics
+///
+/// Under those paths, as [`crate::layouts::BlasModuleAlloc::blas_context_alloc`] for a layout that does not fit, and on
+/// the `left` for a context whose plan selects neither, which holds no column halves of psi^k.
+pub(crate) fn with_mask_shapes<R>(
+    plan: BlasPlan,
+    ctx: &impl BlasContextInfos,
+    left: bool,
+    f: impl FnOnce(&[&LinearTransformation<DiagonalShape>]) -> R,
+) -> R {
+    let maps = plan.pt_algorithm().masked().then(|| context_shapes(ctx));
+    f(&maps.as_ref().map_or_else(Vec::new, |maps| context_masks(plan, maps, left)))
 }

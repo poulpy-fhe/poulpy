@@ -5,17 +5,18 @@ use poulpy_hal::layouts::{Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, M
 
 use crate::{
     api::{
-        GGSWRotate, GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWEMulRelinearizeSum, GLWEMulXpMinusOne, GLWENegate,
-        GLWENormalize, GLWEPacking, GLWEPreparedTensoring, GLWERotate, GLWEShift, GLWESub, GLWETensoring, GLWETrace, GLWEZero,
+        GGSWRotate, GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWEMulPreparedPlainSum, GLWEMulRelinearizeSum,
+        GLWEMulXpMinusOne, GLWENegate, GLWENormalize, GLWEPacking, GLWEPreparedTensoring, GLWERotate, GLWEShift, GLWESub,
+        GLWETensoring, GLWETrace, GLWEZero,
     },
     layouts::{
         GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
         GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
     },
     oep::{
-        GGSWRotateImpl, GLWEAddImpl, GLWECopyImpl, GLWEMulConstImpl, GLWEMulPlainImpl, GLWEMulXpMinusOneImpl, GLWENegateImpl,
-        GLWENormalizeImpl, GLWEPackImpl, GLWERotateImpl, GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, GLWETraceImpl,
-        GLWEZeroImpl,
+        GGSWRotateImpl, GLWEAddImpl, GLWECopyImpl, GLWEMulConstImpl, GLWEMulPlainImpl, GLWEMulPreparedPlainSumImpl,
+        GLWEMulXpMinusOneImpl, GLWENegateImpl, GLWENormalizeImpl, GLWEPackImpl, GLWERotateImpl, GLWEShiftImpl, GLWESubImpl,
+        GLWETensoringImpl, GLWETraceImpl, GLWEZeroImpl,
     },
 };
 
@@ -187,6 +188,35 @@ impl_operations_delegate!(
         A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
     {
         BE::glwe_mul_plain_assign(self, cnv_offset, res, a, scratch)
+    }
+);
+
+impl_operations_delegate!(
+    GLWEMulPreparedPlainSum<BE>,
+    GLWEMulPreparedPlainSumImpl,
+    fn glwe_mul_prepared_plain_sum_tmp_bytes<R>(&self, res: &R, a_size: usize, b_size: usize) -> usize
+    where
+        R: GLWEInfos,
+    {
+        BE::glwe_mul_prepared_plain_sum_tmp_bytes(self, res, a_size, b_size)
+    },
+    fn glwe_mul_prepared_plain_sum<R, AP, BP>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &[&AP],
+        a_size: usize,
+        b: &[&BP],
+        b_size: usize,
+        galois: &[i64],
+        base2k: crate::layouts::Base2K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<BE>,
+        BP: CnvPVecRToBackendRef<BE>,
+    {
+        BE::glwe_mul_prepared_plain_sum(self, cnv_offset, res, a, a_size, b, b_size, galois, base2k, scratch)
     }
 );
 

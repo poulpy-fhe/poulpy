@@ -1,6 +1,7 @@
 //! Dot products of ciphertexts, or of prepared operands, relinearized once where the pairs share one ct × ct rule.
 use poulpy_core::{
-    GLWEAdd, GLWEBytesOf, GLWEMulRelinearizeSum, GLWENormalize, GLWEPreparedTensoring, GLWETensoring, ScratchArenaTakeCore,
+    GLWEAdd, GLWEBytesOf, GLWEMulPreparedPlainSum, GLWEMulRelinearizeSum, GLWENormalize, GLWEPreparedTensoring, GLWETensoring,
+    ScratchArenaTakeCore,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorViewMut, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, LWEInfos,
         TorusPrecision,
@@ -9,11 +10,14 @@ use poulpy_core::{
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSResult as Result, SetCKKSInfos, SlotsKind,
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSResult as Result, GLWEPlaintextInfos, SetCKKSInfos, SlotsKind,
     api::{CKKSAddOps, CKKSMulOps},
+    ensure_plaintext_degree_embeds,
     layouts::{CKKSPreparedLeft, CKKSPreparedRight},
     oep::derived::dot_product::{accumulate, check_lengths},
-    reference::mul::{MulStamp, StampOrder, check_prepared_layout, get_mul_ct_params, mul_one_pass, tensor_mul_core},
+    reference::mul::{
+        MulStamp, StampOrder, check_prepared_layout, get_mul_ct_params, mul_one_pass, mul_pt_params_raw, tensor_mul_core,
+    },
 };
 
 /// The reference algorithms of [`CKKSDotProductImpl`](crate::oep::CKKSDotProductImpl), which
@@ -152,6 +156,83 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
                 self.glwe_tensor_apply_prepared(cnv_offset, term, a.cnv(), a.size(), b.cnv(), b.size(), a.base2k(), s)
             },
         )
+    }
+
+    /// Core's summed product's scratch, whatever the number of terms.
+    fn ckks_dot_product_prepared_pt_tmp_bytes_reference<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    where
+        Self: GLWEMulPreparedPlainSum<BE>,
+        R: CKKSCtBounds,
+        A: GLWEInfos,
+        P: GLWEInfos,
+    {
+        self.glwe_mul_prepared_plain_sum_tmp_bytes(res, a.size(), b.size())
+    }
+
+    /// Core's `glwe_mul_prepared_plain_sum` at the rule of `ckks_mul_pt_vec_into`, after the checks of
+    /// `ckks_dot_product_prepared` on the terms, the plaintexts' and the Galois elements', before any write.
+    fn ckks_dot_product_prepared_pt_reference<Dst>(
+        &self,
+        dst: &mut Dst,
+        a: &[&CKKSPreparedLeft<BE>],
+        b: &[&CKKSPreparedRight<BE>],
+        galois: &[i64],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Self: GLWEMulPreparedPlainSum<BE>,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    {
+        const OP: &str = "ckks_dot_product_prepared_pt";
+        check_lengths(OP, a.len(), b.len())?;
+        let invalid = |reason: &str| -> Result<()> {
+            Err(CKKSCompositionError::InvalidOperand {
+                op: OP,
+                reason: reason.into(),
+            }
+            .into())
+        };
+        if galois.len() != a.len() {
+            return invalid("one Galois element per term");
+        }
+        for operand in a {
+            check_prepared_layout(OP, &*dst, *operand)?;
+        }
+        if galois.iter().any(|&g| g & 1 == 0) {
+            return invalid("a Galois element is even");
+        }
+        if b.iter().any(|pt| pt.rank().as_usize() != 0 || pt.base2k() != dst.base2k()) {
+            return invalid("every b[t] must be a plaintext at the base2k of dst");
+        }
+        if !share_layout(a) || !share_layout(b) {
+            return invalid("every a[t] must share one layout and scale, and every b[t] one");
+        }
+        let (a0, b0, base2k) = (a[0], b[0], dst.base2k());
+        ensure_plaintext_degree_embeds(OP, dst.n().as_usize(), b0.n().as_usize(), BE::MIN_DEGREE)?;
+        let (log_budget, log_delta, cnv_offset) = mul_pt_params_raw(
+            dst.k().as_usize(),
+            a0.log_delta(),
+            a0.log_budget(),
+            b0.log_delta(),
+            b0.log_budget(),
+            b0.max_k().as_usize(),
+        )?;
+        let log_sparsity = a
+            .iter()
+            .zip(b)
+            .map(|(ct, pt)| ct.log_sparsity().min(ct.log_n() - pt.log_n()))
+            .min()
+            .unwrap_or(0);
+        let slots = a
+            .iter()
+            .zip(b)
+            .fold(a0.slots(), |slots, (ct, pt)| slots.join(ct.slots()).join(pt.slots()));
+        dst.set_log_budget(log_budget);
+        dst.set_log_delta(log_delta);
+        dst.set_log_sparsity(log_sparsity);
+        dst.set_slots(slots);
+        self.glwe_mul_prepared_plain_sum(cnv_offset, dst, a, a0.size(), b, b0.size(), galois, base2k, scratch);
+        Ok(())
     }
 }
 

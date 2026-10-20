@@ -15,11 +15,14 @@ batch: `blas_matmul` (JKLS, ciphertext x ciphertext), `blas_matmul_prepare_left`
 (ciphertext x public matrices, shared or one per matrix slot) and `blas_matmul_pt_left` (public matrices x ciphertext).
 A public operand is encoded from a plan whose `BlasPtAlgorithm` picks the diagonal products (one map per block, one
 scale, the default) or the JKLS ones (sigma or tau of every block of the encrypted grid, once, then one map per block,
-two scales); both look up the same rotation keys. Against the diagonal products, JKLS costs a second scale, one more map
-per block of the encrypted grid and that map's noise, and the operand holds that map; for one public matrix on the
-right, its block maps take up to `d` times the memory. A left operand of one public matrix on more than one matrix
-slot holds a second set of block maps for a replicated input, `(3d - 1) d^2` slot values per block instead of
-`(2d - 1) d^2`, which the product takes when its input's label proves one matrix.
+two scales), or the two that put JKLS's masks on the ciphertext, `JklsStored` and `JklsGalois` (that first map, the
+context's masks, then products by public plaintexts stored per rotation or read through Galois elements, three scales,
+one public matrix on the right); the products take the context, which only these two read. The diagonal and JKLS
+products look up the same rotation keys; the masked ones add their masks'. Against the diagonal products, JKLS costs a
+second scale, one more map per block of the encrypted grid and that map's noise, and the operand holds that map; for one
+public matrix on the right, its block maps take up to `d` times the memory. A left operand of one public matrix on more
+than one matrix slot holds a second set of block maps for a replicated input, `(3d - 1) d^2` slot values per block
+instead of `(2d - 1) d^2`, which the product takes when its input's label proves one matrix.
 A preparation takes a `PrepareHint`: hot, `OneShot`, for one product, a relabel of its input whose terms the product
 evaluates under its own context; cold, `Reuse`, for many, every term under the preparation's context, converted once to
 the transform domain. `blas_matmul` multiplies two hot operands. The reference products make a hot side's terms once, a
