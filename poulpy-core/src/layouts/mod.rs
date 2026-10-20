@@ -1397,24 +1397,14 @@ impl Degree {
 /// `k_aux`. Independent of the key radix.
 /// This is what `LWEInfos::k()` reports for the GGLWE/GGSW key families, so
 /// encryption places the error at the physical bottom limb.
-///
-/// The guard keeps the key noise below what the input can show. Every digit
-/// scales its row's error by `2^k_digit`, a partly filled last digit
-/// included, so switching an input of `input_k` bits adds, in units of
-/// `2^-input_k`, an error of deviation
-///
-/// ```text
-/// 2^(input_k + k_digit - k) * sigma * sqrt(rank_in * n * digits / 12)
-/// ```
-///
-/// with `sigma` the key's error deviation and `digits` the digits the input
-/// uses. What is tolerable depends on the input: its own error sits above
-/// `2^-input_k`, by its scale less its precision for an approximate scheme. A
-/// guard of a full digit plus `log2(n)` bits keeps the key noise below
-/// `2^-input_k` whatever the input; a key whose last digit the input only
-/// partly fills, or whose input carries more error, can do with less, which is
-/// how a wide digit fits under a bound on `k`.
 pub fn key_k(dnum: Dnum, k_digit: TorusPrecision, k_aux: TorusPrecision) -> TorusPrecision {
+    debug_assert!(
+        k_aux.0 >= k_digit.0,
+        "k_aux ({}) must be at least k_digit ({}): the auxiliary guard must cover at least one \
+         full gadget digit, otherwise operations truncate mid-digit",
+        k_aux.0,
+        k_digit.0,
+    );
     TorusPrecision(dnum.0 * k_digit.0 + k_aux.0)
 }
 
@@ -1447,10 +1437,6 @@ pub fn digits_aligned(base2k: Base2K, k_digit: TorusPrecision) -> bool {
 /// digits = ceil(input_k / k_digit)
 /// work   = ceil((digits * k_digit + k_aux) / base2k)
 /// ```
-///
-/// A key with a short `k_aux` holds fewer limbs behind its last digit than a
-/// product needs as guard; an input using fewer digits than the key has then
-/// takes them from the next digit (see `gadget_product_output_size`).
 pub fn key_work_size(base2k: Base2K, input_k: TorusPrecision, k_digit: TorusPrecision, k_aux: TorusPrecision) -> usize {
     let digits: u32 = GGLWELayout::dnum_for_input(input_k, k_digit).0;
     (digits * k_digit.0 + k_aux.0).div_ceil(base2k.0) as usize
@@ -1575,11 +1561,7 @@ pub(crate) fn gadget_product_output_size(params: GadgetProductOutputSizeParams) 
         product_terms,
         extra_live_limbs,
     } = params;
-    // Behind the digits the input uses: the key's auxiliary limbs, or with a
-    // short auxiliary region the guard limbs, taken from the next digit.
-    let guard_limbs = gadget_product_guard_limbs(key_base2k, product_terms);
-    let digit_limbs = (GGLWELayout::dnum_for_input(input_k, k_digit).0 * k_digit.0).div_ceil(key_base2k.0) as usize;
-    let work_size = key_size.min(key_work_size(key_base2k, input_k, k_digit, k_aux).max(digit_limbs.saturating_add(guard_limbs)));
+    let work_size = key_size.min(key_work_size(key_base2k, input_k, k_digit, k_aux));
 
     let base2k = key_base2k.as_usize();
     let live_limbs = input_k
@@ -1587,6 +1569,7 @@ pub(crate) fn gadget_product_output_size(params: GadgetProductOutputSizeParams) 
         .max(output_k.as_usize())
         .div_ceil(base2k)
         .saturating_add(extra_live_limbs);
+    let guard_limbs = gadget_product_guard_limbs(key_base2k, product_terms);
     work_size.min(live_limbs.saturating_add(guard_limbs))
 }
 
@@ -1777,31 +1760,6 @@ mod gadget_sizing_tests {
             }),
             6
         );
-    }
-
-    #[test]
-    fn output_size_takes_its_guard_from_the_next_digit_when_the_aux_region_is_short() {
-        // An input filling two of three 3-limb digits, read to the same width.
-        let size = |k_aux: u32, key_size: usize| {
-            gadget_product_output_size(GadgetProductOutputSizeParams {
-                key_size,
-                key_base2k: Base2K(52),
-                input_k: TorusPrecision(312),
-                output_k: TorusPrecision(312),
-                k_digit: TorusPrecision(3 * 52),
-                k_aux: TorusPrecision(k_aux),
-                product_terms: 1,
-                extra_live_limbs: 0,
-            })
-        };
-        let guard = gadget_product_guard_limbs(Base2K(52), 1);
-        assert_eq!(guard, 2);
-        // A full digit of guard, three bits, or none: six live limbs and the guard.
-        assert_eq!(size(3 * 52 + 8, 13), 6 + guard);
-        assert_eq!(size(3, 10), 6 + guard);
-        assert_eq!(size(0, 9), 6 + guard);
-        // The key holds no limb past the digits the input fills.
-        assert_eq!(size(0, 6), 6);
     }
 
     #[test]

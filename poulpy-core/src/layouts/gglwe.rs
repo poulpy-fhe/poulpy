@@ -156,10 +156,9 @@ impl GGLWELayout {
     /// This layout read at a coarser digit width, where digit `i` is stored row
     /// `(i + 1) * k_digit / self.k_digit - 1`.
     ///
-    /// A coarse view keeps a full digit of padding behind its last digit, the
-    /// guard that suits any input (see [`key_k`](crate::layouts::key_k)): the
-    /// digits the stride allows are capped by what the precision can guard and
-    /// the rest stays as that guard, so `k()` and `max_size()` do not move.
+    /// The last coarse digit still needs a full digit of padding behind it, so
+    /// the digits the stride allows are capped by what the precision can guard
+    /// and the rest stays as that guard: `k()` and `max_size()` do not move.
     ///
     /// Fails unless `k_digit` is a multiple of the stored one and the key is
     /// wide enough for a digit of that width plus its guard.
@@ -208,8 +207,8 @@ impl GGLWELayout {
     /// This is the inverse of [`Self::gadget_k`] and the rounding rule used by
     /// [`key_work_size`](crate::layouts::key_work_size): the gadget is consumed
     /// in whole digits, so a partial digit counts as a full one. The auxiliary
-    /// guard `k_aux` is chosen by the caller (see [`key_k`](crate::layouts::key_k) for what
-    /// it must cover) and is not part of this derivation. The digit width must be nonzero.
+    /// guard `k_aux` is chosen by the caller (typically `k_digit + log2(n)`)
+    /// and is not part of this derivation. The digit width must be nonzero.
     pub fn dnum_for_input(input_k: TorusPrecision, k_digit: TorusPrecision) -> Dnum {
         debug_assert!(k_digit.0 > 0, "dnum_for_input requires a nonzero gadget digit");
         Dnum(input_k.0.div_ceil(k_digit.0))
@@ -223,12 +222,11 @@ impl GGLWELayout {
         TorusPrecision(self.dnum.0 * self.k_digit().0)
     }
 
-    /// Widest input the key is laid out for: what its digits cover, and no
-    /// more than its precision less one digit, the point where the key noise
-    /// reaches `sigma * sqrt(rank_in * n * dnum / 12)` units of the input's
-    /// last bit (see [`key_k`](crate::layouts::key_k)). Whether that is small
-    /// enough is the caller's call; a key with a full digit and `log2(n)` bits
-    /// of guard stays below one unit over all its digits.
+    /// Widest input the key switches whole: what its digits cover, and no more
+    /// than its precision less one digit (see [`key_k`](crate::layouts::key_k)),
+    /// the point where the key noise reaches `sigma * sqrt(rank_in * n * dnum / 12)`
+    /// units of the input's last bit. A guard of a full digit and `log2(n)` bits
+    /// keeps it below one unit over all its digits.
     pub fn max_input_k(&self) -> TorusPrecision {
         TorusPrecision(self.gadget_k().0.min(self.k().0.saturating_sub(self.k_digit().0)))
     }
