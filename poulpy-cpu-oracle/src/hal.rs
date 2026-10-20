@@ -987,7 +987,7 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalConvolutionImpl for Oracle<F, R> {
         }
     }
 
-    // res[j] = sum_{i + l = j + cnv_offset} a[a_col, i] b[b_col, l]. A sparse
+    // res[j] = sum_{i + l = j + cnv_offset} a[a_col, i] b[b_col, l]. An embedded
     // right operand is read through its degree embedding, then the galois element.
     fn cnv_apply_dft(
         _module: &Module<Self>,

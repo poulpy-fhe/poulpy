@@ -43,7 +43,7 @@ unsafe fn reim4_lane_permutations(read: RightRead) -> [__m256i; 4] {
 /// Caller must ensure the CPU supports AVX2.
 #[target_feature(enable = "avx2")]
 #[inline]
-unsafe fn reim4_sparse_permute(v: __m256d, idx: __m256i) -> __m256d {
+unsafe fn reim4_embed_permute(v: __m256d, idx: __m256i) -> __m256d {
     use core::arch::x86_64::{_mm256_castpd_ps, _mm256_castps_pd, _mm256_permutevar8x32_ps};
 
     _mm256_castps_pd(_mm256_permutevar8x32_ps(_mm256_castpd_ps(v), idx))
@@ -891,7 +891,7 @@ pub unsafe fn reim4_convolution_apply_avx(
 /// Pairwise variant of [`reim4_convolution_apply_avx`]: `(a0 + a1) ⊛ (b0 + b1)`.
 ///
 /// `tmp` must hold at least `8 * (a_size + 4 + b_size + 16 * min_size)` f64.
-/// `b_read` is how the right operand is read: sparse degree and Galois element.
+/// `b_read` is how the right operand is read: embedded degree and Galois element.
 ///
 /// # Safety
 /// Caller must ensure the CPU supports AVX2 and FMA (e.g. `is_x86_feature_detected!("avx2")`).
@@ -1034,13 +1034,13 @@ unsafe fn reim4_convolution_apply_core_avx<const PAIRWISE: bool, const ACC: bool
                         let lo: __m256d = _mm256_add_pd(_mm256_loadu_pd(b_blk.add(8 * r)), _mm256_loadu_pd(b1_blk.add(8 * r)));
                         let hi: __m256d =
                             _mm256_add_pd(_mm256_loadu_pd(b_blk.add(8 * r + 4)), _mm256_loadu_pd(b1_blk.add(8 * r + 4)));
-                        _mm256_storeu_pd(b_sum.as_mut_ptr().add(8 * r), reim4_sparse_permute(lo, idx));
-                        _mm256_storeu_pd(b_sum.as_mut_ptr().add(8 * r + 4), reim4_sparse_permute(hi, idx));
+                        _mm256_storeu_pd(b_sum.as_mut_ptr().add(8 * r), reim4_embed_permute(lo, idx));
+                        _mm256_storeu_pd(b_sum.as_mut_ptr().add(8 * r + 4), reim4_embed_permute(hi, idx));
                     }
                 } else {
                     for r in 0..b_size {
-                        let lo: __m256d = reim4_sparse_permute(_mm256_loadu_pd(b_blk.add(8 * r)), idx);
-                        let hi: __m256d = _mm256_xor_pd(reim4_sparse_permute(_mm256_loadu_pd(b_blk.add(8 * r + 4)), idx), conj);
+                        let lo: __m256d = reim4_embed_permute(_mm256_loadu_pd(b_blk.add(8 * r)), idx);
+                        let hi: __m256d = _mm256_xor_pd(reim4_embed_permute(_mm256_loadu_pd(b_blk.add(8 * r + 4)), idx), conj);
                         _mm256_storeu_pd(b_sum.as_mut_ptr().add(8 * r), lo);
                         _mm256_storeu_pd(b_sum.as_mut_ptr().add(8 * r + 4), hi);
                     }
@@ -1323,7 +1323,7 @@ mod tests {
                                 a_size,
                                 &b,
                                 b_size,
-                                RightRead::sparse(2 * m, 2 * m),
+                                RightRead::embedded(2 * m, 2 * m),
                                 &mut tmp,
                             )
                         };

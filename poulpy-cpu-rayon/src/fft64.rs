@@ -415,7 +415,7 @@ fn parallel_reim4_convolution_apply<const PAIRWISE: bool, const ACC: bool, const
     tmp: &mut [f64],
 ) {
     let block_count = m / 4;
-    // An operand is staged per task when it is summed (pairwise) or gathered (a sparse `b`).
+    // An operand is staged per task when it is summed (pairwise) or gathered (an embedded `b`).
     let stage_a = PAIRWISE;
     let stage_b = PAIRWISE || !b_read.is_direct();
     let task_tmp_len = 8 * (min_size + a_size * stage_a as usize + b_size * stage_b as usize);

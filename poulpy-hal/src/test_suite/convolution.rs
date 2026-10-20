@@ -1163,16 +1163,16 @@ where
 /// arena.
 type ConvolutionForm<'a, BE> = dyn Fn(&mut VecZnxDftOwned<BE>, &CnvPVecROwned<BE>, &mut ScratchOwned<BE>) + 'a;
 
-/// Sparse operands: a compact right operand, prepared at its own degree under the
+/// Embedded operands: a lower-degree right operand, prepared at its own degree under the
 /// degree-`n` module, gives the convolution that the dense prepare of
 /// `switch_ring_{b_n->n}` of the same input gives, through `cnv_apply_dft`,
 /// `cnv_apply_dft_add`, `cnv_apply_dft_sum` and `cnv_pairwise_apply_dft`, compared
-/// after `idft` and normalization. The prepares are not sparsity-aware, `res` and `a` share one
+/// after `idft` and normalization. The prepares are not embedding-aware, `res` and `a` share one
 /// degree: `cnv_prepare_left`, `cnv_prepare_right` and `cnv_prepare_self` with a
 /// degree-`n/2` input into a degree-`n` destination panic, `cnv_prepare_self`
 /// rejects a `right` whose degree differs from `left`'s, and `cnv_apply_dft`
 /// rejects a prepared left operand whose degree differs from `res`'s.
-pub fn test_convolution_sparse<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_convolution_embed<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
         + Convolution<BE>
@@ -1216,8 +1216,8 @@ where
         &mut scratch.arena(),
     );
 
-    // At params.n == BE::MIN_DEGREE no sparse degree exists below it, so that leg of the
-    // sweep runs only the rejection block; the compact prepare under the one module is
+    // At params.n == BE::MIN_DEGREE no embedded degree exists below it, so that leg of the
+    // sweep runs only the rejection block; the lower-degree prepare under the one module is
     // checked on the full-degree leg.
     for b_n in (1..=4).map(|g| n >> g).filter(|&d| d >= BE::MIN_DEGREE) {
         let mut b_be = module.vec_znx_alloc(b_n, cols, b_size);
@@ -1266,7 +1266,7 @@ where
                 );
             });
             check(&format!("cnv_apply_dft_add cnv_offset={cnv_offset}"), &|res, b, scratch| {
-                // The seed is the same dense product in both runs; only the added term is sparse.
+                // The seed is the same dense product in both runs; only the added term is embedded.
                 module.cnv_apply_dft(
                     cnv_offset,
                     &mut res.to_backend_mut(),

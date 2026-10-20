@@ -1,4 +1,4 @@
-//! Degree embedding for sparse-capable slots.
+//! Degree embedding of the operands in the embedding slots.
 //!
 //! A degree-`n` operand under a degree-`N` call stands for its image
 //! `p(X^(N/n))`, that is `switch_ring_{n->N}` of itself. The oracle
@@ -32,7 +32,7 @@ fn embed_into<A: ZnxView, R: ZnxViewMut<Scalar = A::Scalar>>(res: &mut R, a: &A)
     }
 }
 
-/// Calls `f` with `a` at degree `n`, embedding it first when it is sparse.
+/// Calls `f` with `a` at degree `n`, embedding it first when its degree is below `n`.
 pub(crate) fn with_vec_znx<BE, T>(a: &VecZnxBackendRef<'_, BE>, n: usize, f: impl FnOnce(&VecZnxBackendRef<'_, BE>) -> T) -> T
 where
     BE: Backend<ZnxWord = i64>,
@@ -42,14 +42,14 @@ where
     if a.n() == n {
         return f(a);
     }
-    assert_dense(a, "sparse operand");
+    assert_dense(a, "embedded operand");
     let bytes = n * a.cols() * a.size() * size_of::<i64>();
     let mut dense = VecZnx::<AlignedBuf, i64>::from_data(alloc_aligned::<u8>(bytes), n, a.cols(), a.size());
     embed_into(&mut dense, a);
     f(&dense.to_backend_ref())
 }
 
-/// Calls `f` with `a` at degree `n`, embedding it first when it is sparse.
+/// Calls `f` with `a` at degree `n`, embedding it first when its degree is below `n`.
 pub(crate) fn with_vec_znx_big<BE, T>(
     a: &VecZnxBigBackendRef<'_, BE>,
     n: usize,
@@ -63,7 +63,7 @@ where
     if a.n() == n {
         return f(a);
     }
-    assert_dense(a, "sparse operand");
+    assert_dense(a, "embedded operand");
     let bytes = n * a.cols() * a.size() * size_of::<BE::BigWord>();
     let mut dense = VecZnxBig::<AlignedBuf, BE::BigWord, BE>::from_data(alloc_aligned::<u8>(bytes), n, a.cols(), a.size());
     embed_into(&mut dense, a);

@@ -1,9 +1,9 @@
-//! The stored slot a convolution reads for each destination slot of its right operand, through a sparse
+//! The stored slot a convolution reads for each destination slot of its right operand, through a degree
 //! embedding and a Galois automorphism, on the bit-reversed transforms of the CPU backends.
 
 use poulpy_hal::layouts::{Ring, check_galois};
 
-use super::sparse_log_gap_portable;
+use super::embed_log_gap_portable;
 
 /// `σ_p` on the first `stored` slots of a bit-reversed spectrum of `full` slots.
 #[derive(Clone, Copy, Debug)]
@@ -50,7 +50,7 @@ impl GaloisSlots {
     }
 }
 
-/// How a degree-`N` convolution reads its right operand: the sparse shift, then the Galois map.
+/// How a degree-`N` convolution reads its right operand: the embedding shift, then the Galois map.
 #[derive(Clone, Copy, Debug)]
 pub struct RightRead {
     log_gap: usize,
@@ -67,15 +67,15 @@ impl RightRead {
     /// `stored` and `full` describe the degree-`b_n` operand's transform.
     pub fn new(module_n: usize, b_n: usize, b_galois: i64, stored: usize, full: usize) -> Self {
         Self {
-            log_gap: sparse_log_gap_portable(module_n, b_n),
+            log_gap: embed_log_gap_portable(module_n, b_n),
             galois: GaloisSlots::new(stored, full, b_galois),
         }
     }
 
-    /// The identity read of a dense or sparse operand.
-    pub fn sparse(module_n: usize, b_n: usize) -> Self {
+    /// The identity read of a dense or embedded operand.
+    pub fn embedded(module_n: usize, b_n: usize) -> Self {
         Self {
-            log_gap: sparse_log_gap_portable(module_n, b_n),
+            log_gap: embed_log_gap_portable(module_n, b_n),
             galois: None,
         }
     }
@@ -119,7 +119,7 @@ impl RightRead {
     /// `(src, key) = self.block::<W>(blk)`.
     pub fn lane_table<const W: usize>(&self) -> [[u8; W]; W] {
         const { assert!(W.is_power_of_two() && W <= 256) };
-        // The lane bits left by the sparse shift, which `σ_p` maps to `key + p x` in bit-reversed order.
+        // The lane bits left by the embedding shift, which `σ_p` maps to `key + p x` in bit-reversed order.
         let bits = W.trailing_zeros().saturating_sub(self.log_gap as u32);
         let mask = (1usize << bits) - 1;
         let p = self.galois.map_or(1, |g| g.p as usize);
@@ -262,7 +262,7 @@ mod tests {
     }
 
     #[test]
-    fn right_read_composes_sparse_then_galois() {
+    fn right_read_composes_embedding_then_galois() {
         let (module_n, b_n, p) = (64usize, 16usize, 5i64);
         let read = RightRead::new(module_n, b_n, p, b_n, b_n);
         let g = GaloisSlots::new(b_n, b_n, p).unwrap();

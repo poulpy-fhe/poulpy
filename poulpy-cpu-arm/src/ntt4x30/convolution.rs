@@ -53,19 +53,19 @@ where
 /// Right operand read as stored.
 const DENSE: u8 = 0;
 /// Right operand slot shared by the four slots of the block: one lane, repeated.
-const SPARSE_ONE: u8 = 1;
+const EMBED_ONE: u8 = 1;
 /// Right operand slots shared by pairs of slots of the block: the two low lanes, each repeated.
-const SPARSE_LOW: u8 = 2;
-/// As [`SPARSE_LOW`], on the two high lanes.
-const SPARSE_HIGH: u8 = 3;
+const EMBED_LOW: u8 = 2;
+/// As [`EMBED_LOW`], on the two high lanes.
+const EMBED_HIGH: u8 = 3;
 
 #[inline(always)]
 unsafe fn load_right<const MODE: u8>(p: *const u32) -> uint32x4_t {
     unsafe {
         match MODE {
             DENSE => vld1q_u32(p),
-            SPARSE_ONE => vld1q_dup_u32(p),
-            SPARSE_LOW => {
+            EMBED_ONE => vld1q_dup_u32(p),
+            EMBED_LOW => {
                 let v = vld1q_u32(p);
                 vzip1q_u32(v, v)
             }
@@ -219,9 +219,9 @@ impl Acc {
         }
     }
 
-    /// Adds `rows` rows of block `blk`, with a possibly sparse right operand.
+    /// Adds `rows` rows of block `blk`, with a possibly embedded right operand.
     ///
-    /// Slot `s` of the dense operand reads slot `s >> log_gap` of the sparse one, then goes through the Galois map,
+    /// Slot `s` of the dense operand reads slot `s >> log_gap` of the embedded one, then goes through the Galois map,
     /// whose block is `galois` ([`galois_block`]).
     /// `b0` and `b1` are right columns offset to their first row, with rows `b_size` limbs apart in their own block order.
     #[allow(clippy::too_many_arguments)]
@@ -252,9 +252,9 @@ impl Acc {
             let (b0, b1) = (b0.add(block), b1.add(block));
             match b_log_gap {
                 0 => self.push_rows::<PAIRWISE, DENSE>(c, a0, a1, b0, b1, rows),
-                1 if slot.is_multiple_of(4) => self.push_rows::<PAIRWISE, SPARSE_LOW>(c, a0, a1, b0, b1, rows),
-                1 => self.push_rows::<PAIRWISE, SPARSE_HIGH>(c, a0, a1, b0, b1, rows),
-                _ => self.push_rows::<PAIRWISE, SPARSE_ONE>(c, a0, a1, b0.add(slot % 4), b1.add(slot % 4), rows),
+                1 if slot.is_multiple_of(4) => self.push_rows::<PAIRWISE, EMBED_LOW>(c, a0, a1, b0, b1, rows),
+                1 => self.push_rows::<PAIRWISE, EMBED_HIGH>(c, a0, a1, b0, b1, rows),
+                _ => self.push_rows::<PAIRWISE, EMBED_ONE>(c, a0, a1, b0.add(slot % 4), b1.add(slot % 4), rows),
             }
         }
     }

@@ -147,7 +147,7 @@ unsafe fn pair_product<const PAIRWISE: bool, const MODE: u8>(
 }
 
 /// With `B_GATHER`, `b` is read through `b_read`, whose [`RightRead::lane_table`] is `b_lanes`; with `DUP` too,
-/// both slots of a pair read one slot (a sparse read), otherwise one stored pair, straight or swapped.
+/// both slots of a pair read one slot (an embedded read), otherwise one stored pair, straight or swapped.
 #[expect(
     clippy::too_many_arguments,
     clippy::needless_range_loop,

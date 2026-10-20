@@ -13,16 +13,16 @@ use crate::layouts::{ZnxView, ZnxViewMut};
 
 /// The word types the strided kernels run on: the coefficient word `i64` and
 /// the NTT big word `i128`.
-pub trait SparseWord: Copy {
+pub trait MixedWord: Copy {
     const ZERO: Self;
     fn wadd(self, other: Self) -> Self;
     fn wsub(self, other: Self) -> Self;
     fn wneg(self) -> Self;
 }
 
-macro_rules! impl_sparse_word {
+macro_rules! impl_mixed_word {
     ($($t:ty),*) => {$(
-        impl SparseWord for $t {
+        impl MixedWord for $t {
             const ZERO: Self = 0;
             #[inline(always)]
             fn wadd(self, other: Self) -> Self {
@@ -39,7 +39,7 @@ macro_rules! impl_sparse_word {
         }
     )*};
 }
-impl_sparse_word!(i64, i128);
+impl_mixed_word!(i64, i128);
 
 /// The embedding gap `res_n / n` of a degree-`n` operand into degree `res_n`.
 ///
@@ -55,7 +55,7 @@ pub fn embedding_gap_portable(res_n: usize, n: usize) -> usize {
 
 /// `res[k * gap] += a[k]` for every coefficient `k` of `a`, `gap = res.len() / a.len()`.
 #[inline(always)]
-pub fn znx_add_strided_portable<T: SparseWord, U: Copy + Into<T>>(res: &mut [T], a: &[U]) {
+pub fn znx_add_strided_portable<T: MixedWord, U: Copy + Into<T>>(res: &mut [T], a: &[U]) {
     debug_assert!(
         res.len().is_multiple_of(a.len()),
         "res.len():{} not a multiple of a.len():{}",
@@ -71,7 +71,7 @@ pub fn znx_add_strided_portable<T: SparseWord, U: Copy + Into<T>>(res: &mut [T],
 
 /// `res[k * gap] -= a[k]` for every coefficient `k` of `a`, `gap = res.len() / a.len()`.
 #[inline(always)]
-pub fn znx_sub_strided_portable<T: SparseWord, U: Copy + Into<T>>(res: &mut [T], a: &[U]) {
+pub fn znx_sub_strided_portable<T: MixedWord, U: Copy + Into<T>>(res: &mut [T], a: &[U]) {
     debug_assert!(
         res.len().is_multiple_of(a.len()),
         "res.len():{} not a multiple of a.len():{}",
@@ -88,7 +88,7 @@ pub fn znx_sub_strided_portable<T: SparseWord, U: Copy + Into<T>>(res: &mut [T],
 /// `res[k * gap] = a[k]` for every coefficient `k` of `a`, `gap = res.len() / a.len()`;
 /// every coefficient of `res` off the stride is zero.
 #[inline(always)]
-pub fn znx_set_strided_portable<T: SparseWord, U: Copy + Into<T>>(res: &mut [T], a: &[U]) {
+pub fn znx_set_strided_portable<T: MixedWord, U: Copy + Into<T>>(res: &mut [T], a: &[U]) {
     debug_assert!(
         res.len().is_multiple_of(a.len()),
         "res.len():{} not a multiple of a.len():{}",
@@ -106,7 +106,7 @@ pub fn vec_znx_from_small_mixed_portable<R, A>(res: &mut R, res_col: usize, a: &
 where
     R: ZnxViewMut,
     A: ZnxView,
-    R::Scalar: SparseWord,
+    R::Scalar: MixedWord,
     A::Scalar: Into<R::Scalar>,
 {
     embedding_gap_portable(res.n(), a.n());
@@ -128,7 +128,7 @@ where
     R: ZnxViewMut,
     A: ZnxView,
     B: ZnxView,
-    R::Scalar: SparseWord,
+    R::Scalar: MixedWord,
     A::Scalar: Into<R::Scalar>,
     B::Scalar: Into<R::Scalar>,
 {
@@ -154,7 +154,7 @@ where
     R: ZnxViewMut,
     A: ZnxView,
     B: ZnxView,
-    R::Scalar: SparseWord,
+    R::Scalar: MixedWord,
     A::Scalar: Into<R::Scalar>,
     B::Scalar: Into<R::Scalar>,
 {
@@ -179,7 +179,7 @@ pub fn vec_znx_add_assign_mixed_portable<R, A>(res: &mut R, res_col: usize, a: &
 where
     R: ZnxViewMut,
     A: ZnxView,
-    R::Scalar: SparseWord,
+    R::Scalar: MixedWord,
     A::Scalar: Into<R::Scalar>,
 {
     embedding_gap_portable(res.n(), a.n());
@@ -193,7 +193,7 @@ pub fn vec_znx_sub_assign_mixed_portable<R, A>(res: &mut R, res_col: usize, a: &
 where
     R: ZnxViewMut,
     A: ZnxView,
-    R::Scalar: SparseWord,
+    R::Scalar: MixedWord,
     A::Scalar: Into<R::Scalar>,
 {
     embedding_gap_portable(res.n(), a.n());
@@ -208,7 +208,7 @@ pub fn vec_znx_sub_negate_assign_mixed_portable<R, A>(res: &mut R, res_col: usiz
 where
     R: ZnxViewMut,
     A: ZnxView,
-    R::Scalar: SparseWord,
+    R::Scalar: MixedWord,
     A::Scalar: Into<R::Scalar>,
 {
     embedding_gap_portable(res.n(), a.n());

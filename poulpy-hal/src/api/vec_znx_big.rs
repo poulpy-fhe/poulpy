@@ -12,8 +12,8 @@ use crate::layouts::{
 /// definition res[res_col,j] = a[a_col,j]; other columns of res are unchanged
 /// domain     res: a VecZnxBig or a window of one; a: a VecZnx or a window of one, of the same degree or of a power-of-two degree dividing it
 /// ensures    the selected column is copied with zero extension or truncation; [[res[res_col]]]_b = [[a[a_col]]]_b for every radix width b when res.size() >= a.size()
-/// sparse     a is the sparse-capable slot, as for vec_znx_big_add
-/// test       test_vec_znx_big_from_small, test_vec_znx_big_window_ops, test_vec_znx_big_sparse_add_sub
+/// embed      a is the embedding slot, as for vec_znx_big_add
+/// test       test_vec_znx_big_from_small, test_vec_znx_big_window_ops, test_vec_znx_big_embed_add_sub
 /// ```
 pub trait VecZnxBigFromSmall<B: Backend> {
     /// Writes column `a_col` of `a` into column `res_col` of `res`.
@@ -65,8 +65,8 @@ pub trait VecZnxBigBytesOf {
 /// definition res[res_col,j] = a[a_col,j] + b[b_col,j]; other columns of res are unchanged
 /// domain     res, a, b: VecZnxBig or windows of one; every sum stays inside the big word
 /// ensures    the selected output column contains the limbwise sum with zero extension or truncation
-/// sparse     a and b are the sparse-capable slots: a dense degree-n operand, n dividing N, stands for switch_ring_{n->N} of itself; a window in these slots has the width of res
-/// test       test_vec_znx_big_add, test_vec_znx_big_sparse_add_sub
+/// embed      a and b are the embedding slots: a dense degree-n operand, n dividing N, stands for switch_ring_{n->N} of itself; a window in these slots has the width of res
+/// test       test_vec_znx_big_add, test_vec_znx_big_embed_add_sub
 /// ```
 pub trait VecZnxBigAdd<B: Backend> {
     /// Writes `a + b` into `res`.
@@ -90,8 +90,8 @@ pub trait VecZnxBigAdd<B: Backend> {
 /// definition res[res_col,j] = old(res)[res_col,j] + a[a_col,j]; limbs a.size() <= j < res.size() and other columns of res are unchanged
 /// domain     res, a: VecZnxBig or windows of one
 /// ensures    res[res_col] += a[a_col] limb by limb; limbs of res past a.size() keep their value
-/// sparse     a is the sparse-capable slot, as for vec_znx_big_add
-/// test       test_vec_znx_big_add_assign, test_vec_znx_big_sparse_add_sub
+/// embed      a is the embedding slot, as for vec_znx_big_add
+/// test       test_vec_znx_big_add_assign, test_vec_znx_big_embed_add_sub
 /// ```
 pub trait VecZnxBigAddAssign<B: Backend> {
     /// Adds `a` into `res`.
@@ -113,10 +113,10 @@ pub trait VecZnxBigAddAssign<B: Backend> {
 /// definition res[res_col,j] = a[a_col,j] + b[b_col,j]; other columns of res are unchanged
 /// domain     res, a: VecZnxBig or windows of one; b: a VecZnx or a window of one
 /// ensures    res[res_col] = a[a_col] + b[b_col]: limbs only b reaches hold b, limbs only a reaches hold a, limbs neither reaches are zero
-/// sparse     b is the sparse-capable slot, as for vec_znx_big_add
+/// embed      b is the embedding slot, as for vec_znx_big_add
 /// fallback   vec_znx_big_from_small(res, res_col, b, b_col); vec_znx_big_add_assign(res, res_col, a, a_col)
 /// override   allowed, scratch-free
-/// test       test_vec_znx_big_add_small, test_vec_znx_big_add_small_derived, test_vec_znx_big_sparse_add_sub
+/// test       test_vec_znx_big_add_small, test_vec_znx_big_add_small_derived, test_vec_znx_big_embed_add_sub
 /// ```
 pub trait VecZnxBigAddSmall<B: Backend> {
     /// Writes the sum of `a` and the coefficient-domain `b` into `res`.
@@ -140,8 +140,8 @@ pub trait VecZnxBigAddSmall<B: Backend> {
 /// definition res[res_col,j] = old(res)[res_col,j] + a[a_col,j]; limbs a.size() <= j < res.size() and other columns of res are unchanged
 /// domain     res: a VecZnxBig or a window of one; a: a VecZnx or a window of one
 /// ensures    res[res_col] += a[a_col] limb by limb; limbs of res past a.size() keep their value
-/// sparse     a is the sparse-capable slot, as for vec_znx_big_add
-/// test       test_vec_znx_big_add_small_assign, test_vec_znx_big_sparse_add_sub
+/// embed      a is the embedding slot, as for vec_znx_big_add
+/// test       test_vec_znx_big_add_small_assign, test_vec_znx_big_embed_add_sub
 /// ```
 pub trait VecZnxBigAddSmallAssign<B: Backend> {
     /// Adds the coefficient-domain `a` into `res`.
@@ -163,8 +163,8 @@ pub trait VecZnxBigAddSmallAssign<B: Backend> {
 /// definition res[res_col,j] = a[a_col,j] - b[b_col,j]; other columns of res are unchanged
 /// domain     res, a, b: VecZnxBig or windows of one; every difference stays inside the big word
 /// ensures    res[res_col] = a[a_col] - b[b_col] limb by limb; operands shorter than res are zero-extended and every limb of res is written
-/// sparse     a and b are the sparse-capable slots, as for vec_znx_big_add
-/// test       test_vec_znx_big_sub, test_vec_znx_big_sparse_add_sub
+/// embed      a and b are the embedding slots, as for vec_znx_big_add
+/// test       test_vec_znx_big_sub, test_vec_znx_big_embed_add_sub
 /// ```
 pub trait VecZnxBigSub<B: Backend> {
     /// Writes `a - b` into `res`.
@@ -188,8 +188,8 @@ pub trait VecZnxBigSub<B: Backend> {
 /// definition res[res_col,j] = old(res)[res_col,j] - a[a_col,j]; limbs a.size() <= j < res.size() and other columns of res are unchanged
 /// domain     res, a: VecZnxBig or windows of one
 /// ensures    res[res_col] -= a[a_col] limb by limb; limbs of res past a.size() keep their value
-/// sparse     a is the sparse-capable slot, as for vec_znx_big_add
-/// test       test_vec_znx_big_sub_assign, test_vec_znx_big_sparse_add_sub
+/// embed      a is the embedding slot, as for vec_znx_big_add
+/// test       test_vec_znx_big_sub_assign, test_vec_znx_big_embed_add_sub
 /// ```
 pub trait VecZnxBigSubAssign<B: Backend> {
     /// Subtracts `a` from `res`.
@@ -211,8 +211,8 @@ pub trait VecZnxBigSubAssign<B: Backend> {
 /// definition res[res_col,j] = a[a_col,j] - old(res)[res_col,j]; other columns of res are unchanged
 /// domain     res, a: VecZnxBig or windows of one
 /// ensures    res[res_col] = a[a_col] - res[res_col] limb by limb; limbs of res past a.size() are negated in place
-/// sparse     a is the sparse-capable slot, as for vec_znx_big_add
-/// test       test_vec_znx_big_sub_negate_assign, test_vec_znx_big_sparse_add_sub
+/// embed      a is the embedding slot, as for vec_znx_big_add
+/// test       test_vec_znx_big_sub_negate_assign, test_vec_znx_big_embed_add_sub
 /// ```
 pub trait VecZnxBigSubNegateAssign<B: Backend> {
     /// Writes `a - res` into `res`.
@@ -234,10 +234,10 @@ pub trait VecZnxBigSubNegateAssign<B: Backend> {
 /// definition res[res_col,j] = a[a_col,j] - b[b_col,j]; other columns of res are unchanged
 /// domain     res, b: VecZnxBig or windows of one; a: a VecZnx or a window of one, the coefficient-domain operand
 /// ensures    res[res_col] = a[a_col] - b[b_col]: limbs only a reaches hold a, limbs only b reaches hold -b, limbs neither reaches are zero
-/// sparse     a is the sparse-capable slot, as for vec_znx_big_add
+/// embed      a is the embedding slot, as for vec_znx_big_add
 /// fallback   vec_znx_big_from_small(res, res_col, a, a_col); vec_znx_big_sub_assign(res, res_col, b, b_col)
 /// override   allowed, scratch-free
-/// test       test_vec_znx_big_sub_small_a, test_vec_znx_big_sub_small_a_derived, test_vec_znx_big_sparse_add_sub
+/// test       test_vec_znx_big_sub_small_a, test_vec_znx_big_sub_small_a_derived, test_vec_znx_big_embed_add_sub
 /// ```
 pub trait VecZnxBigSubSmallA<B: Backend> {
     /// Writes the difference of the coefficient-domain `a` and `b` into `res`.
@@ -261,8 +261,8 @@ pub trait VecZnxBigSubSmallA<B: Backend> {
 /// definition res[res_col,j] = old(res)[res_col,j] - a[a_col,j]; limbs a.size() <= j < res.size() and other columns of res are unchanged
 /// domain     res: a VecZnxBig or a window of one; a: a VecZnx or a window of one
 /// ensures    res[res_col] -= a[a_col] limb by limb; limbs of res past a.size() keep their value
-/// sparse     a is the sparse-capable slot, as for vec_znx_big_add
-/// test       test_vec_znx_big_sub_small_a_assign, test_vec_znx_big_sparse_add_sub
+/// embed      a is the embedding slot, as for vec_znx_big_add
+/// test       test_vec_znx_big_sub_small_a_assign, test_vec_znx_big_embed_add_sub
 /// ```
 pub trait VecZnxBigSubSmallAssign<B: Backend> {
     /// Subtracts the coefficient-domain `a` from `res`.
@@ -284,10 +284,10 @@ pub trait VecZnxBigSubSmallAssign<B: Backend> {
 /// definition res[res_col,j] = a[a_col,j] - b[b_col,j]; other columns of res are unchanged
 /// domain     res, a: VecZnxBig or windows of one; b: a VecZnx or a window of one, the coefficient-domain operand
 /// ensures    res[res_col] = a[a_col] - b[b_col]: limbs only a reaches hold a, limbs only b reaches hold -b, limbs neither reaches are zero
-/// sparse     b is the sparse-capable slot, as for vec_znx_big_add
+/// embed      b is the embedding slot, as for vec_znx_big_add
 /// fallback   vec_znx_big_from_small(res, res_col, b, b_col); vec_znx_big_sub_negate_assign(res, res_col, a, a_col)
 /// override   allowed, scratch-free
-/// test       test_vec_znx_big_sub_small_b, test_vec_znx_big_sub_small_b_derived, test_vec_znx_big_sparse_add_sub
+/// test       test_vec_znx_big_sub_small_b, test_vec_znx_big_sub_small_b_derived, test_vec_znx_big_embed_add_sub
 /// ```
 pub trait VecZnxBigSubSmallB<B: Backend> {
     /// Writes the difference of `a` and the coefficient-domain `b` into `res`.
@@ -311,8 +311,8 @@ pub trait VecZnxBigSubSmallB<B: Backend> {
 /// definition res[res_col,j] = a[a_col,j] - old(res)[res_col,j]; other columns of res are unchanged
 /// domain     res: a VecZnxBig or a window of one; a: a VecZnx or a window of one
 /// ensures    res[res_col] = a[a_col] - res[res_col] limb by limb; limbs of res past a.size() are negated in place
-/// sparse     a is the sparse-capable slot, as for vec_znx_big_add
-/// test       test_vec_znx_big_sub_small_b_assign, test_vec_znx_big_sparse_add_sub
+/// embed      a is the embedding slot, as for vec_znx_big_add
+/// test       test_vec_znx_big_sub_small_b_assign, test_vec_znx_big_embed_add_sub
 /// ```
 pub trait VecZnxBigSubSmallNegateAssign<B: Backend> {
     /// Writes the difference of the coefficient-domain `a` and `res` into `res`.
