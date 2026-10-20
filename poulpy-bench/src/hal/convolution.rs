@@ -191,7 +191,7 @@ const SUM_TERMS: usize = 4;
 
 /// `cnv_apply_dft_sum` over `SUM_TERMS` terms into one output column. With
 /// `EMBEDDED` the right operand is prepared at half the module degree, the
-/// shape a compact plaintext diagonal has; the runner asserts that half
+/// shape a diagonal stored at its period's degree has; the runner asserts that half
 /// still clears the backend floor.
 pub fn runner_cnv_apply_dft_sum<BE, M: Measurement, const EMBEDDED: bool>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where

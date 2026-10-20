@@ -527,7 +527,7 @@ where
     );
 }
 
-// ─── ct + compact ZNX plaintext (GLWE<_, CKKS>::add_pt_vec[_assign]) ────────
+// ─── ct + ZNX plaintext (GLWE<_, CKKS>::add_pt_vec[_assign]) ────────
 
 /// ct + ZNX plaintext, in-place.
 pub fn test_add_pt_vec_assign<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)

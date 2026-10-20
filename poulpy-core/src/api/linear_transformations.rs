@@ -66,7 +66,7 @@ pub trait GLWELinearTransformations<BE: Backend> {
     /// `prepared` must have been sized via
     /// [`LinearTransformation::alloc_prepared`] for the same BSGS schedule as
     /// `lt`. Performs zero `CnvPVecR` allocations. The proxy must also carry the
-    /// diagonals' degree, which a compact diagonal sets below the ring degree;
+    /// diagonals' degree, which may be below the ring degree;
     /// `lt.first_diagonal_plaintext()` is the proxy every caller should pass.
     fn glwe_prepare_linear_transformation_rhs<P>(
         &self,

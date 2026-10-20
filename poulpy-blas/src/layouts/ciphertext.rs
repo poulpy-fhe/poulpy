@@ -290,16 +290,15 @@ impl<D: Data, W: ZnxWord, R: Ring> BlasCiphertext<D, W, R> {
     ///
     /// A label `s` claims the plaintext lies in `Z[X^(2^s)]`, so the slots repeat with period `S >> s`. Encryption
     /// derives it from the plaintext degree: a plaintext of degree `n_pt` labels its ciphertext `log2(N / n_pt)`,
-    /// whatever label the plaintext carries. So encrypt a batch of `count` matrices from a compact plaintext,
-    /// `ckks_pt_vec_alloc_compact(count * d^2)`; a dense plaintext records the full batch `S / d^2`, its matrices
-    /// repeated.
+    /// whatever label the plaintext carries. So encrypt a batch of `count` matrices from a plaintext of `count * d^2`
+    /// slots, of degree `2 * count * d^2` on the standard ring and `count * d^2` on the conjugate-invariant one; a
+    /// plaintext of degree `N` records the full batch `S / d^2`, its matrices repeated.
     ///
-    /// Compact degrees are raised to the backend's `MIN_DEGREE`, and a raised degree proves a larger batch than `count`.
-    /// So a compact batch records `count` only when its degree, `2 * count * d^2` on the standard ring and
-    /// `count * d^2` on the conjugate-invariant one, reaches the `MIN_DEGREE` of every backend it runs on; otherwise
-    /// encrypt it dense.
+    /// A plaintext's degree is at least the backend's `MIN_DEGREE`, and a degree raised to it proves a larger batch
+    /// than `count`. So such a batch records `count` only when its degree reaches the `MIN_DEGREE` of every backend it
+    /// runs on; otherwise encrypt it at degree `N`.
     ///
-    /// Plaintext operations keep the smaller of the ciphertext's label and the plaintext's: adding a dense plaintext
+    /// Plaintext operations keep the smaller of the ciphertext's label and the plaintext's: adding a degree-`N` plaintext
     /// to the blocks of a sparse batch drops their label to 0, so the next operation rejects the grid.
     pub fn from_blocks(blocks: Vec<CKKSCiphertext<D, W, R>>, log_d: usize, rows: usize, cols: usize) -> Result<Self> {
         ensure!(rows > 0 && cols > 0, "a grid has at least one block");

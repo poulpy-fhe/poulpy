@@ -115,7 +115,7 @@ where
     let mut scratch = alloc_scratch(&params, &module);
 
     // Factor plaintext layout: per-factor scale log_delta; sub-`N/2` factors
-    // are stored compactly (tiled slot values). Chains may mix dimensions (the
+    // are stored at their own degree (tiled slot values). Chains may mix dimensions (the
     // fused StC first factor is a 2C tile, the remaining Decode factors C/2),
     // so the layout is built per factor.
     let lts: Vec<_> = factors

@@ -19,7 +19,7 @@ use crate::{
     CKKSCompositionError, CKKSLayout, CKKSResult, CoeffsMeta,
     api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, LinearTransformation},
     ckks_ensure,
-    layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
+    layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals, slots_degree},
 };
 
 fn validate_compile_inputs<F>(
@@ -121,7 +121,7 @@ where
     };
     let infos = CKKSLayout {
         glwe_layout: GLWELayout {
-            n: module.ckks_compact_degree(cd.period()),
+            n: slots_degree::<BE, _>(module, cd.period()),
             base2k,
             k: coeffs_meta.k,
             rank: Rank(0),

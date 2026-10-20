@@ -116,7 +116,7 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
     // width, so its width and size are `max_k`/`max_size`, not the (possibly
     // smaller) effective `k`/`size`.
     let diagonal_size = first.plaintext.max_size();
-    // A compact diagonal is prepared at its own degree; the apply reads it
+    // A diagonal is prepared at its own degree; the apply reads it
     // through the sparse right slot of the convolution.
     let diagonal_n = first.plaintext.n().as_usize();
     let res_dft_size = prod_dft_size(lhs.size(), diagonal_size, cnv_offset_hi);

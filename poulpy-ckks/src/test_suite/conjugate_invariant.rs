@@ -9,7 +9,7 @@ use crate::{
         CKKSFoldLayoutOps, CKKSFoldOps, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, CKKSNegOps,
         CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps, LinearTransformationPrepared,
     },
-    layouts::{CKKSFoldKeysLayout, CKKSModuleAlloc, RingSwitchKeys},
+    layouts::{CKKSFoldKeysLayout, CKKSModuleAlloc, RingSwitchKeys, slots_degree},
 };
 use poulpy_core::{
     GLWECIKeyEncryptSk,
@@ -217,17 +217,26 @@ pub fn test_conjugate_invariant_leveled<BE>(
     assert_eq!(exhausted.data().data().as_ref(), exhausted_before.data().data().as_ref());
 
     let sparse_slots = slots / 4;
-    let mut compact = module.ckks_pt_vec_alloc_compact(sparse_slots, params.base2k.into(), params.prec().k());
-    compact.set_meta(params.prec().meta());
+    let mut sparse_pt = module.ckks_plaintext_alloc(
+        slots_degree::<BE, _>(module, sparse_slots),
+        params.base2k.into(),
+        params.prec().k(),
+    );
+    sparse_pt.set_meta(params.prec().meta());
     module
-        .ckks_encode_reim_into(&mut compact, &re2[..sparse_slots], &im[..sparse_slots], &mut scratch.arena())
+        .ckks_encode_reim_into(
+            &mut sparse_pt,
+            &re2[..sparse_slots],
+            &im[..sparse_slots],
+            &mut scratch.arena(),
+        )
         .unwrap();
     let sparse = ckks_encrypt_pt(
         &params,
         module,
         &sk,
         params.k,
-        &compact.to_host_owned::<BE>(),
+        &sparse_pt.to_host_owned::<BE>(),
         &mut scratch.arena(),
     );
     assert_eq!(sparse.log_sparsity(), 2);
@@ -235,7 +244,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
     assert_output!(&sparse, &sparse_want);
     let mut mixed = alloc_ct(&params, module, params.k);
     module
-        .ckks_mul_pt_vec_into(&mut mixed, &ct1, &compact, &mut scratch.arena())
+        .ckks_mul_pt_vec_into(&mut mixed, &ct1, &sparse_pt, &mut scratch.arena())
         .unwrap();
     let mixed_want = (0..slots).map(|i| re1[i] * sparse_want[i]).collect::<Vec<_>>();
     assert_output!(&mixed, &mixed_want);
@@ -356,13 +365,13 @@ where
             .map(|i| F::from_f64(((17 * i + 3) % 31) as f64 / 37.0).unwrap())
             .collect::<Vec<_>>();
         let im = vec![F::from_f64(0.25).unwrap(); slots];
-        for compact in [false, true] {
-            let mut pt = if compact {
-                module.ckks_pt_vec_alloc_compact(slots, 19usize.into(), (log_delta + 36).into())
+        for below_ring in [false, true] {
+            let mut pt = if below_ring {
+                module.ckks_plaintext_alloc(slots_degree::<BE, _>(module, slots), 19usize.into(), (log_delta + 36).into())
             } else {
                 module.ckks_pt_vec_alloc(19usize.into(), (log_delta + 36).into())
             };
-            if compact {
+            if below_ring {
                 assert_eq!(pt.n().as_usize(), slots.max(BE::MIN_DEGREE).min(module.n()));
             }
             pt.set_meta(GLWEPlaintextMeta {

@@ -496,7 +496,7 @@ impl DFTPlan {
     /// The value `s` paired with a diagonal means that, encoded on a ring of
     /// degree `2^log_n`, the diagonal's plaintext polynomial is `M(X^(2^s))`
     /// (the [`GLWEPlaintextInfos::log_sparsity`](poulpy_core::layouts::GLWEPlaintextInfos::log_sparsity) convention): the diagonal repeats every
-    /// `2^(log_n - 1 - s)` slots and stores compactly at degree `2^(log_n - s)`;
+    /// `2^(log_n - 1 - s)` slots and is stored at degree `2^(log_n - s)`;
     /// `0` is a dense diagonal at full packing.
     ///
     /// Derivation. In the natural slot order a radix-2 layer of butterfly width

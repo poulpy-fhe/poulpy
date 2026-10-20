@@ -115,6 +115,7 @@ pub mod ship;
 pub(crate) mod validation;
 
 pub use alloc::CKKSModuleAlloc;
+pub(crate) use alloc::slots_degree;
 pub use approximation::PolynomialApproximation;
 pub use bootstrapping::{
     BootstrappingContext, BootstrappingContextUnprepared, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,

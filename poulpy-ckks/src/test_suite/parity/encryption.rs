@@ -26,7 +26,7 @@ where
         for sparse in [0, 2] {
             for slots in [SlotsKind::Real, SlotsKind::Complex] {
                 let ct_layout = layout(params, rank, 4 * params.base2k + 3, params.base2k, sparse, slots);
-                // A compact plaintext: encryption reads its sparsity off the degrees.
+                // A plaintext below the ring degree: encryption reads its sparsity off the degrees.
                 let mut pt_layout = layout(params, 0, params.base2k + 3, params.base2k, sparse, slots);
                 pt_layout.glwe_layout.n = (params.n >> sparse).into();
                 let pt = fixture_plaintext(module, &pt_layout, 67);

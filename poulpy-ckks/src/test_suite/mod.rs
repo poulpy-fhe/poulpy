@@ -281,8 +281,8 @@ macro_rules! ckks_backend_rank2_test_suite {
                 $crate::test_suite::mul::test_mul_pt_scale_above_ct
             );
             run_test!(
-                compact_plaintext_add_sub_mul,
-                $crate::test_suite::compact::test_compact_plaintext_add_sub_mul
+                plaintext_degree_add_sub_mul,
+                $crate::test_suite::plaintext_degree::test_plaintext_degree_add_sub_mul
             );
             run_test!(mul_pow2_aligned, $crate::test_suite::mul_pow2::test_mul_pow2_aligned);
             run_test!(div_pow2_aligned, $crate::test_suite::mul_pow2::test_div_pow2_aligned);
@@ -588,20 +588,20 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::linear_transformation::test_linear_transformation_pins_operation_precisions
             );
             run_test!(
-                compact_plaintext_embedding,
-                $crate::test_suite::compact::test_compact_plaintext_embedding
+                plaintext_degree_embedding,
+                $crate::test_suite::plaintext_degree::test_plaintext_degree_embedding
             );
             run_test!(
-                compact_plaintext_add_sub_mul,
-                $crate::test_suite::compact::test_compact_plaintext_add_sub_mul
+                plaintext_degree_add_sub_mul,
+                $crate::test_suite::plaintext_degree::test_plaintext_degree_add_sub_mul
             );
             run_test!(
-                compact_linear_transformation,
-                $crate::test_suite::compact::test_compact_linear_transformation
+                linear_transformation_diagonal_degree,
+                $crate::test_suite::plaintext_degree::test_linear_transformation_diagonal_degree
             );
             run_test!(
-                compact_diagonal_encoder,
-                $crate::test_suite::compact::test_compact_diagonal_encoder
+                diagonal_encoder_degree,
+                $crate::test_suite::plaintext_degree::test_diagonal_encoder_degree
             );
             run_test!(paco_partial_c2s, $crate::test_suite::paco_lt::test_paco_partial_c2s);
             run_test!(paco_packing, $crate::test_suite::paco_lt::test_paco_packing);
@@ -1038,7 +1038,6 @@ pub mod add;
 pub mod add_many;
 pub mod affine;
 pub mod bootstrapping;
-pub mod compact;
 pub mod composition;
 pub mod conjugate;
 pub mod copy;
@@ -1066,6 +1065,7 @@ pub mod paco_ops;
 pub mod paco_parallel;
 pub mod paco_reference;
 pub(crate) mod paco_reference_model;
+pub mod plaintext_degree;
 pub mod polynomial_evaluation;
 pub mod presets;
 #[doc(hidden)]

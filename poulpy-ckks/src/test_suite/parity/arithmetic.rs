@@ -82,10 +82,10 @@ where
                         "double_into k={width} differs from mul_pow2 by one bit"
                     );
                 }
-                for (width, compact) in [(2 * b + 3, false), (4 * b + 1, false), (2 * b + 3, true)] {
+                for (width, below_ring) in [(2 * b + 3, false), (4 * b + 1, false), (2 * b + 3, true)] {
                     let out_layout = layout(params, rank, width, b - 1, 0, SlotsKind::Complex);
                     let mut pt_layout = layout(params, 0, b + 3, b - 1, sparse, slots);
-                    if compact {
+                    if below_ring {
                         pt_layout.glwe_layout.n = (params.n / 4).into();
                     }
                     let pt = fixture_plaintext(module, &pt_layout, 33);
@@ -392,9 +392,9 @@ where
             })
             .unwrap();
             results.push(("square_assign", snapshot::<B, _>(&assigned)));
-            for compact in [false, true] {
+            for below_ring in [false, true] {
                 let mut lp = layout(params, 0, b + 3, b - 1, 2, SlotsKind::Real);
-                if compact {
+                if below_ring {
                     lp.glwe_layout.n = (params.n / 4).into();
                 }
                 let pt = fixture_plaintext(module, &lp, 54);

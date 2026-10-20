@@ -99,8 +99,8 @@ impl RightRead {
     /// The stored slot that destination slot `slot` reads.
     #[inline(always)]
     pub fn source(&self, slot: usize) -> usize {
-        let compact = slot >> self.log_gap;
-        self.galois.map_or(compact, |g| g.source(compact))
+        let stored = slot >> self.log_gap;
+        self.galois.map_or(stored, |g| g.source(stored))
     }
 
     #[inline(always)]

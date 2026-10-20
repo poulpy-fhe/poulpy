@@ -60,7 +60,7 @@ impl<F> Scheduled<F> {
     }
 }
 
-/// One map's shape: its schedule, the slot count its diagonals repeat over, which sets their compact degree, and the
+/// One map's shape: its schedule, the slot count its diagonals repeat over, which sets their degree, and the
 /// metadata they are encoded at.
 #[derive(Clone)]
 pub(crate) struct MapLayout {
@@ -70,7 +70,7 @@ pub(crate) struct MapLayout {
 }
 
 impl MapLayout {
-    /// The layout of every diagonal on `module`: compact at the map's period.
+    /// The layout of every diagonal on `module`: at the degree of the map's period.
     fn plaintext<BE, M>(&self, module: &M, base2k: Base2K) -> CKKSLayout
     where
         BE: Backend,
@@ -78,7 +78,9 @@ impl MapLayout {
     {
         CKKSLayout {
             glwe_layout: GLWELayout {
-                n: module.ckks_compact_degree(self.period),
+                n: (self.period * module.ring_degree().as_usize() / module.ckks_max_slots())
+                    .max(BE::MIN_DEGREE)
+                    .into(),
                 base2k,
                 k: self.meta.k,
                 rank: Rank(0),

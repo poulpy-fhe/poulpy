@@ -292,22 +292,22 @@ mod tests {
     /// transpose and encode like their dense replication; `build_transform`
     /// hands the encoder the map's period.
     #[test]
-    fn compact_diagonals_behave_like_their_replication() {
-        let mut compact = ComplexDiagonals::new(Diagonals::new(4), Diagonals::new(4));
-        compact.re.set(0, vec![1.0, 2.0]);
-        compact.im.set(0, vec![0.5]);
-        compact.re.set(1, vec![3.0]);
-        compact.im.set(3, vec![1.0, 0.0, -1.0, 0.0]);
+    fn periodic_diagonals_behave_like_their_replication() {
+        let mut periodic = ComplexDiagonals::new(Diagonals::new(4), Diagonals::new(4));
+        periodic.re.set(0, vec![1.0, 2.0]);
+        periodic.im.set(0, vec![0.5]);
+        periodic.re.set(1, vec![3.0]);
+        periodic.im.set(3, vec![1.0, 0.0, -1.0, 0.0]);
         let mut dense = ComplexDiagonals::new(Diagonals::new(4), Diagonals::new(4));
         dense.re.set(0, vec![1.0, 2.0, 1.0, 2.0]);
         dense.im.set(0, vec![0.5; 4]);
         dense.re.set(1, vec![3.0; 4]);
         dense.im.set(3, vec![1.0, 0.0, -1.0, 0.0]);
-        assert_eq!(compact.diagonal_period(0), Some(2));
-        assert_eq!(compact.diagonal_period(1), Some(1));
-        assert_eq!(compact.diagonal_period(3), Some(4));
-        assert_eq!(compact.diagonal_period(2), None);
-        assert_eq!(compact.period(), 4);
+        assert_eq!(periodic.diagonal_period(0), Some(2));
+        assert_eq!(periodic.diagonal_period(1), Some(1));
+        assert_eq!(periodic.diagonal_period(3), Some(4));
+        assert_eq!(periodic.diagonal_period(2), None);
+        assert_eq!(periodic.period(), 4);
 
         let (vre, vim) = (vec![1.0, -1.0, 2.0, 0.5], vec![0.5, 2.0, -1.0, 1.0]);
         let strategies = [
@@ -316,12 +316,12 @@ mod tests {
         ];
         for strategy in strategies {
             assert_eq!(
-                compact.evaluate((vre.as_slice(), vim.as_slice()), strategy),
+                periodic.evaluate((vre.as_slice(), vim.as_slice()), strategy),
                 dense.evaluate((vre.as_slice(), vim.as_slice()), strategy),
                 "{strategy:?}"
             );
         }
-        let cc = compact.compose(&compact);
+        let cc = periodic.compose(&periodic);
         let dd = dense.compose(&dense);
         assert_eq!(cc.diagonal_period(1), Some(2), "composed period is the lcm of the terms");
         for strategy in strategies {
@@ -332,18 +332,18 @@ mod tests {
             );
         }
 
-        let mut c2 = compact.clone();
+        let mut c2 = periodic.clone();
         c2.conjugate();
         c2.scale(&2.0);
         assert_eq!(c2.re.get(0), Some(&vec![2.0, 4.0]));
         assert_eq!(c2.im.get(0), Some(&vec![-1.0]));
-        let mut t = compact.clone();
+        let mut t = periodic.clone();
         t.transpose();
         assert_eq!(t.re.get(-1), Some(&vec![3.0]));
         assert_eq!(t.diagonal_period(-3), Some(4));
 
         // A map whose longest period is two is encoded on two slots.
-        let mut small = compact.clone();
+        let mut small = periodic.clone();
         small.im.set(3, vec![1.0, 0.0]);
         assert_eq!(small.period(), 2);
         let lt = small.build_transform(LinearTransformationStrategy::Bsgs { giant_step: 2 }, |re, im| {

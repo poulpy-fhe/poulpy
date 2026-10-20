@@ -1293,7 +1293,7 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
 
     // Decrypt once into the raw full-width plaintext; both checks below extract
     // their own view from it (re-extracting an already-extracted plaintext would
-    // shift the message scale twice). `full_pt` carries `ct_compact`'s metadata so
+    // shift the message scale twice). `full_pt` carries `ct`'s metadata so
     // the extracts re-precision it exactly as `ckks_decrypt` would.
     let mut full_pt = module.glwe_plaintext_alloc_from_infos(ct);
     module.glwe_decrypt(ct, &mut full_pt, sk, scratch);

@@ -10,7 +10,7 @@ use crate::Scale;
 use crate::{
     CKKSCompositionError, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos,
     api::{CKKSDecryptOps, CKKSEncryptOps},
-    layouts::CKKSModuleAlloc,
+    layouts::{CKKSModuleAlloc, slots_degree},
 };
 use poulpy_core::{
     GLWEDecrypt, GLWENoise, GLWENormalize, GLWESub, GetDistribution,
@@ -476,7 +476,11 @@ pub fn test_decrypt_extract_degree_mismatch_error<BE, F, E>(
         &mut scratch.borrow(),
     );
     // A plaintext at half the ciphertext degree: the extraction cannot embed it.
-    let mut pt = host_module.ckks_pt_vec_alloc_compact(m / 2, params.base2k.into(), src_prec.k());
+    let mut pt = host_module.ckks_plaintext_alloc(
+        slots_degree::<HostBytesBackend, _>(host_module, m / 2),
+        params.base2k.into(),
+        src_prec.k(),
+    );
     pt.set_meta(src_prec.meta());
     let err = module.ckks_decrypt(&mut pt, &ct, &sk, &mut scratch.borrow()).unwrap_err();
     assert_ckks_error(

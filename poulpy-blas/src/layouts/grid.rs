@@ -4,8 +4,8 @@
 /// `s mod count`, read as `entry(s mod count, row, col)` with `row < rows * d`, `col < cols * d`; `count` divides
 /// `slots / d^2`.
 ///
-/// For a batch of `count` matrices, pass `slots = count * d^2` and encrypt each vector compact, as
-/// [`crate::layouts::BlasCiphertext::from_blocks`] describes; vectors of every slot encrypt a dense batch.
+/// For a batch of `count` matrices, pass `slots = count * d^2` and encrypt each vector from a plaintext of that many
+/// slots, as [`crate::layouts::BlasCiphertext::from_blocks`] describes; vectors of every slot encrypt the full batch.
 ///
 /// # Panics
 ///

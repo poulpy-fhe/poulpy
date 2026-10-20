@@ -111,7 +111,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         self.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(ct, key)
     }
 
-    /// The ciphertext stands in for the diagonal, so the budget is an upper bound for a compact diagonal.
+    /// The ciphertext stands in for the diagonal, so the budget is an upper bound for a diagonal below the ring degree.
     fn ckks_eval_linear_transformation_tmp_bytes_reference<C, K>(&self, ct: &C, key: &K) -> usize
     where
         Self: GLWELinearTransformations<BE> + GLWEBytesOf<BE>,
@@ -125,7 +125,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         self.glwe_eval_linear_transformation_tmp_bytes(ct, ct, ct, key) + BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
     }
 
-    /// The ciphertext stands in for the diagonal, so the budget is an upper bound for a compact diagonal.
+    /// The ciphertext stands in for the diagonal, so the budget is an upper bound for a diagonal below the ring degree.
     fn ckks_eval_linear_transformation_streamed_tmp_bytes_reference<C, K>(&self, ct: &C, key: &K) -> usize
     where
         Self: GLWELinearTransformations<BE> + GLWEBytesOf<BE>,
@@ -139,7 +139,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
             + BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
     }
 
-    /// The ciphertext stands in for the diagonal, so the budget is an upper bound for a compact diagonal.
+    /// The ciphertext stands in for the diagonal, so the budget is an upper bound for a diagonal below the ring degree.
     fn ckks_eval_linear_transformation_sum_tmp_bytes_reference<C, K>(&self, ct: &C, key: &K) -> usize
     where
         Self: GLWELinearTransformations<BE>,
