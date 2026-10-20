@@ -65,6 +65,7 @@
 //! | [`encoding`] / [`reference::encoding`] | Canonical slot ordering, quantization, and PaCo/SHIP embeddings, with explicit host reference helpers |
 //! | [`layouts`] | CKKS ciphertext/plaintext wrappers and metadata-aware allocation helpers |
 //! | [`presets`] | Ready-to-use parameter sets |
+//! | [`shaping`] | Shaping polynomials of the replicated slot layout: profiles, inverses, and optimal units |
 //! | [`api`] | The public op traits: leveled arithmetic (add, sub, mul, neg, rotate, conjugate), encryption, decryption, rescale, and scratch sizing |
 //! | [`api::CKKSBootstrappingOps`] | API composition of encapsulated ModUp, DFT, and EvalMod; parameterized by [`layouts::BootstrappingPlan`] |
 //! | [`api::CKKSPaCoOps`] | PaCo bootstrapping without ModUp or EvalMod; parameterized by [`layouts::PaCoPlan`] and a compiled [`layouts::PaCoContext`] |
@@ -124,6 +125,7 @@ pub mod polynomial;
 pub mod power_basis;
 pub mod presets;
 pub mod scalar;
+pub mod shaping;
 #[cfg(feature = "test-utils")]
 #[allow(clippy::disallowed_methods)]
 pub mod test_suite;
