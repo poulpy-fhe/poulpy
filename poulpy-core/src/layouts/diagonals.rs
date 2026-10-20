@@ -32,8 +32,8 @@
 //! takes a vector whose length divides `slots`, and the diagonal reads
 //! `diag_i[j] = v[j mod v.len()]`. A full-length vector is a dense diagonal;
 //! a shorter one is a periodic diagonal stored once, which a scheme encodes on
-//! that many slots (its plaintext polynomial is sparse by the factor
-//! `slots / v.len()`). Every reader indexes modulo the stored length.
+//! that many slots, at a degree smaller by the factor `slots / v.len()`. Every
+//! reader indexes modulo the stored length.
 
 use std::collections::BTreeMap;
 
@@ -176,8 +176,7 @@ impl<T> Diagonals<T> {
     }
 
     /// The slot count after which the diagonal at `index` repeats, the length
-    /// of its stored period; `None` when the diagonal is absent. The diagonal's
-    /// plaintext is sparse by the factor `slots / period`.
+    /// of its stored period; `None` when the diagonal is absent.
     pub fn period(&self, index: i64) -> Option<usize> {
         self.get(index).map(Vec::len)
     }

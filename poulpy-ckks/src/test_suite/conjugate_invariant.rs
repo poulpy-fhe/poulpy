@@ -217,15 +217,15 @@ pub fn test_conjugate_invariant_leveled<BE>(
     assert_eq!(exhausted.data().data().as_ref(), exhausted_before.data().data().as_ref());
 
     let sparse_slots = slots / 4;
-    let mut sparse_pt = module.ckks_plaintext_alloc(
+    let mut quarter_pt = module.ckks_plaintext_alloc(
         slots_degree::<BE, _>(module, sparse_slots),
         params.base2k.into(),
         params.prec().k(),
     );
-    sparse_pt.set_meta(params.prec().meta());
+    quarter_pt.set_meta(params.prec().meta());
     module
         .ckks_encode_reim_into(
-            &mut sparse_pt,
+            &mut quarter_pt,
             &re2[..sparse_slots],
             &im[..sparse_slots],
             &mut scratch.arena(),
@@ -236,7 +236,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
         module,
         &sk,
         params.k,
-        &sparse_pt.to_host_owned::<BE>(),
+        &quarter_pt.to_host_owned::<BE>(),
         &mut scratch.arena(),
     );
     assert_eq!(sparse.log_sparsity(), 2);
@@ -244,7 +244,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
     assert_output!(&sparse, &sparse_want);
     let mut mixed = alloc_ct(&params, module, params.k);
     module
-        .ckks_mul_pt_vec_into(&mut mixed, &ct1, &sparse_pt, &mut scratch.arena())
+        .ckks_mul_pt_vec_into(&mut mixed, &ct1, &quarter_pt, &mut scratch.arena())
         .unwrap();
     let mixed_want = (0..slots).map(|i| re1[i] * sparse_want[i]).collect::<Vec<_>>();
     assert_output!(&mixed, &mixed_want);

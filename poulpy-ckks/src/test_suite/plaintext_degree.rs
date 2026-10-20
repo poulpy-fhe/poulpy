@@ -199,7 +199,7 @@ pub fn test_plaintext_degree_add_sub_mul<BE, F, E>(
     assert_eq!(dec_full, dec_small, "sub: plaintext at its degree != degree-N plaintext");
 
     // mul: the plaintext is prepared at its own degree and read through
-    // the sparse right slot of the convolution.
+    // the convolution's embedding slot.
     let (want_re, want_im) = want_mul(&re1, &im1, &q_re2, &q_im2);
     let mut with_full = alloc_ct(&params, module, params.k);
     let mut with_small = alloc_ct(&params, module, params.k);

@@ -502,8 +502,7 @@ impl DFTPlan {
     /// Derivation. In the natural slot order a radix-2 layer of butterfly width
     /// `m` is the block-diagonal replication of one `m × m` butterfly, so each
     /// of its diagonals (`0`, `+m/2` and `-m/2`, the last two coinciding when
-    /// `m` is the slot count) repeats every `m` slots: the layer's diagonals
-    /// are sparse by the factor `slots / m`, and the layers of a transform walk
+    /// `m` is the slot count) repeats every `m` slots, and the layers of a transform walk
     /// `m = 2, 4, .., slots`. Merging a layer into a factor rotates every
     /// accumulated diagonal by `±m/2`, which keeps its period, multiplies it
     /// slot-wise by a layer diagonal, which yields the larger of the two

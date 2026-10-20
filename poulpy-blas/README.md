@@ -26,7 +26,7 @@ the transform domain. `blas_matmul` multiplies two hot operands. The reference p
 block row or column at a time; of two hot sides they hold one side's terms and stream the other's, so the heap of
 `blas_matmul` does not grow with the streamed side. A right factor whose label proves it holds one matrix, repeated over
 the slots, takes its psi^k as rotations at no scale, so it may arrive one map scale narrower than the left factor:
-encrypt it from a compact plaintext of `d^2` slots whose degree reaches the backend's `MIN_DEGREE`, since a dense one at
+encrypt it from a plaintext of `d^2` slots whose degree reaches the backend's `MIN_DEGREE`, since a degree-`N` one at
 label 0 proves one matrix only when one fills the slots.
 
 `reference::{blas_matmul_max_base2k, blas_matmul_pt_right_max_base2k, blas_matmul_pt_left_max_base2k}` return the
