@@ -1,9 +1,9 @@
 //! Encrypt / decrypt round-trip tests.
 
 use super::helpers::{
-    TestContextBackend, TestContextModule, TestScalar, alloc_scratch, assert_ckks_error, assert_ct_meta,
+    TestContextBackend, TestContextModule, TestScalar, alloc_scratch, assert_ckks_error, assert_ct_meta, assert_precision,
     assert_precision_for_log_delta, ckks_decrypt_decode, ckks_decrypt_with_prec, ckks_encrypt, ckks_encrypt_with_prec, ckks_spec,
-    gen_sk, quantized_slots, test_vector_1,
+    download_pt, gen_sk, quantized_slots, test_vector_1,
 };
 use super::parity::helpers::snapshot;
 use crate::CKKSModuleInfos;
@@ -445,7 +445,8 @@ pub fn test_decrypt_extract_base2k_mismatch_error<BE, F, E>(
     );
 }
 
-/// Extracting into a plaintext of another degree is a `PlaintextDegreeMismatch`.
+/// Decrypting a dense ciphertext into a plaintext of half its degree is a `PlaintextDegreeMismatch`; a ciphertext
+/// whose slots repeat every `N / 4` decrypts into it, every second coefficient of its polynomial.
 pub fn test_decrypt_extract_degree_mismatch_error<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -477,7 +478,6 @@ pub fn test_decrypt_extract_degree_mismatch_error<BE, F, E>(
         src_prec,
         &mut scratch.borrow(),
     );
-    // A plaintext at half the ciphertext degree: the extraction cannot embed it.
     let mut pt = host_module.ckks_pt_vec_alloc(m / 2, params.base2k.into(), src_prec.k());
     pt.set_meta(src_prec.meta());
     let err = module.ckks_decrypt(&mut pt, &ct, &sk, &mut scratch.borrow()).unwrap_err();
@@ -485,9 +485,45 @@ pub fn test_decrypt_extract_degree_mismatch_error<BE, F, E>(
         "decrypt_extract_degree_mismatch",
         &err,
         CKKSCompositionError::PlaintextDegreeMismatch {
-            op: "ckks_extract_pt",
+            op: "ckks_decrypt",
             ct_n: params.n,
             pt_n: params.n / 2,
         },
+    );
+
+    let half = ReferenceEncoder::<E>::new(m / 2).unwrap();
+    let (re2, im2) = test_vector_1::<F>(m / 2);
+    let mut sparse_prec = src_prec;
+    sparse_prec.meta.log_sparsity = 1;
+    let ct = ckks_encrypt_with_prec(
+        &params,
+        module,
+        host_module,
+        &half,
+        &sk,
+        src_prec.k().as_usize(),
+        &re2,
+        &im2,
+        sparse_prec,
+        &mut scratch.borrow(),
+    );
+    let mut pt = module.ckks_pt_vec_alloc(m / 2, params.base2k.into(), src_prec.k());
+    pt.set_meta(src_prec.meta());
+    module.ckks_decrypt(&mut pt, &ct, &sk, &mut scratch.borrow()).unwrap();
+    let (mut re_out, mut im_out) = (vec![F::zero(); m / 2], vec![F::zero(); m / 2]);
+    half.decode_reim(&download_pt::<BE>(&pt), &mut re_out, &mut im_out).unwrap();
+    assert_precision(
+        "decrypt into half the degree re",
+        &re_out,
+        &re2,
+        src_prec.log_delta(),
+        params.n,
+    );
+    assert_precision(
+        "decrypt into half the degree im",
+        &im_out,
+        &im2,
+        src_prec.log_delta(),
+        params.n,
     );
 }

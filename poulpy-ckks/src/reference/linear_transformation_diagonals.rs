@@ -9,8 +9,8 @@
 
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{
-    Base2K, Degree, DiagonalArithmetic, GLWELayout, GLWEPlaintextInfos, GLWEPlaintextMeta, GetDegree, LinearTransformationLayout,
-    LinearTransformationStrategy, Rank,
+    Base2K, Degree, DiagonalArithmetic, GLWELayout, GLWEPlaintextInfos, GLWEPlaintextMeta, GetDegree, LWEInfos,
+    LinearTransformationLayout, LinearTransformationStrategy, Rank,
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
@@ -194,7 +194,7 @@ where
     result
 }
 
-/// Encodes `re + i im` into `pt` at `meta`.
+/// Encodes `re + i im`, one period, into `pt` at `meta`, repeated over the slots of `pt`.
 fn encode_diagonal<BE, M, F>(
     module: &M,
     pt: &mut CKKSPlaintextOwned<BE>,
@@ -206,11 +206,17 @@ fn encode_diagonal<BE, M, F>(
 ) -> CKKSResult<()>
 where
     BE: Backend,
-    M: CKKSEncodingOps<BE, F>,
+    M: CKKSModuleInfos + CKKSEncodingOps<BE, F>,
     F: CKKSEncodingScalar,
 {
     pt.set_meta_checked(meta)?;
-    module.ckks_encode_reim_into(pt, re, im, scratch)?;
+    // A period below the backend's minimum degree fills fewer slots than the plaintext holds.
+    let reps = module.ckks_slots_of_degree(pt.n().as_usize()) / re.len();
+    if reps > 1 {
+        module.ckks_encode_reim_into(pt, &re.repeat(reps), &im.repeat(reps), scratch)?;
+    } else {
+        module.ckks_encode_reim_into(pt, re, im, scratch)?;
+    }
     // Real slots after encoding complex diagonals mean the imaginary parts were dropped.
     ckks_ensure!(
         !complex || !pt.slots().is_real(),

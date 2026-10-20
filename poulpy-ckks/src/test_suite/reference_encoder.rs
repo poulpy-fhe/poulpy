@@ -220,28 +220,23 @@ impl<T> ReferenceEncoder<T> {
         self.plan.unpack_reim_coeffs(&self.table, coeffs, re, im)
     }
 
-    /// Encodes complex slot values into a host-backed ZNX plaintext buffer.
+    /// Encodes `m` complex slot values into a host-backed ZNX plaintext of degree `n >= 2m`, repeated over its `n / 2`
+    /// slots: the degree-`2m` encoding under the ring embedding.
     pub fn encode_reim<F, P>(&self, pt: &mut P, re: &[F], im: &[F]) -> Result<()>
     where
         F: CKKSScalar + Float + FloatConst + Debug + NumCast,
         T: NegacyclicFFT<F>,
         P: CKKSPlaintextVecHostCodec<F>,
     {
-        let m = self.table.m();
-        let coeff_count = 2 * m;
-        let n = pt.n().as_usize();
-        anyhow::ensure!(
-            coeff_count <= n && n.is_multiple_of(coeff_count),
-            "encoded coefficient count {coeff_count} must divide plaintext degree {n}"
-        );
-        let gap = n / coeff_count;
-        anyhow::ensure!(gap.is_power_of_two());
-        let mut coeffs = vec![F::zero(); coeff_count];
+        let mut coeffs = vec![F::zero(); 2 * self.table.m()];
+        let gap = embedding_gap(coeffs.len(), pt.n().as_usize())?;
         self.pack_reim_coeffs(&mut coeffs, re, im)?;
-        pt.encode_host_floats(&coeffs)
+        let mut embedded = vec![F::zero(); coeffs.len() * gap];
+        embedded.iter_mut().step_by(gap).zip(&coeffs).for_each(|(e, &c)| *e = c);
+        pt.encode_host_floats(&embedded)
     }
 
-    /// Decodes a host-backed ZNX plaintext buffer into complex slot values.
+    /// Decodes the first `m` slots of a host-backed ZNX plaintext of degree `n >= 2m` whose slots repeat with period `m`.
     pub fn decode_reim<F, P>(&self, pt: &P, re: &mut [F], im: &mut [F]) -> Result<()>
     where
         F: CKKSScalar + Float + FloatConst + Debug,
@@ -249,18 +244,22 @@ impl<T> ReferenceEncoder<T> {
         P: CKKSPlaintextVecHostCodec<F>,
     {
         let m = self.table.m();
-        let coeff_count = 2 * m;
-        let n = pt.n().as_usize();
         anyhow::ensure!(re.len() == m);
         anyhow::ensure!(im.len() == m);
-        anyhow::ensure!(
-            coeff_count <= n && n.is_multiple_of(coeff_count),
-            "decoded coefficient count {coeff_count} must divide plaintext degree {n}"
-        );
-        let gap = n / coeff_count;
-        anyhow::ensure!(gap.is_power_of_two());
-        let mut coeffs = vec![F::zero(); coeff_count];
-        pt.decode_host_floats(&mut coeffs)?;
+        let n = pt.n().as_usize();
+        let gap = embedding_gap(2 * m, n)?;
+        let mut embedded = vec![F::zero(); n];
+        pt.decode_host_floats(&mut embedded)?;
+        let coeffs: Vec<F> = embedded.into_iter().step_by(gap).collect();
         self.unpack_reim_coeffs(&coeffs, re, im)
     }
+}
+
+/// `n / coeff_count`, the ratio of the ring embedding from degree `coeff_count` to `n`.
+fn embedding_gap(coeff_count: usize, n: usize) -> Result<usize> {
+    anyhow::ensure!(
+        coeff_count <= n && n.is_multiple_of(coeff_count),
+        "encoded coefficient count {coeff_count} must divide plaintext degree {n}"
+    );
+    Ok(n / coeff_count)
 }

@@ -1,16 +1,16 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_core::layouts::{GLWEInfos, GLWESecretPreparedToBackendRef, GLWEToBackendMut};
+use poulpy_core::layouts::{GLWEInfos, GLWELayout, GLWESecretPreparedToBackendRef, GLWEToBackendMut, LWEInfos, Rank};
 use poulpy_core::{ComponentNoise, GetDistribution};
 use poulpy_core::{GLWEDecrypt, GLWEEncryptSk, GLWENormalize, ScratchArenaTakeCore};
 use poulpy_hal::{
-    api::{ModuleN, VecZnxLsh, VecZnxLshAdd, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshTmpBytes},
+    api::{ModuleN, VecZnxLsh, VecZnxLshAdd, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshTmpBytes, VecZnxSwitchRing},
     layouts::{Backend, ScratchArena},
     source::Source,
 };
 
 use crate::GLWEToBackendRef;
-use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub, error::ensure_encryption_degrees};
+use crate::{CKKSCompositionError, CKKSInfos, SetCKKSInfos, checked_log_budget_sub, error::ensure_encryption_degrees};
 
 use super::CKKSPlaintextReference;
 use poulpy_core::GLWEBytesOf;
@@ -75,7 +75,13 @@ pub trait CKKSEncryptionReference<BE: Backend> {
         Self:
             GLWEDecrypt<BE> + VecZnxLsh<BE> + VecZnxLshTmpBytes + VecZnxRsh<BE> + VecZnxRshTmpBytes + CKKSPlaintextReference<BE>,
     {
+        let below = if pt_infos.n() < ct_infos.n() {
+            BE::scratch_aligned(self.glwe_plaintext_bytes_of_from_infos(&below_layout(pt_infos, ct_infos)))
+        } else {
+            0
+        };
         self.glwe_plaintext_bytes_of_from_infos(ct_infos)
+            + below
             + self
                 .glwe_decrypt_tmp_bytes(ct_infos)
                 // Extraction uses the destination's physical limb allocation,
@@ -94,15 +100,37 @@ pub trait CKKSEncryptionReference<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         Dpt: GLWEToBackendMut<BE> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
         Dct: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
-        Self: GLWEDecrypt<BE> + CKKSPlaintextReference<BE> + VecZnxLsh<BE> + VecZnxRsh<BE>,
+        Self: GLWEDecrypt<BE> + CKKSPlaintextReference<BE> + VecZnxLsh<BE> + VecZnxRsh<BE> + VecZnxSwitchRing<BE>,
     {
+        let (ct_n, pt_n) = (ct.n().as_usize(), pt.n().as_usize());
+        // Every `ct_n / pt_n`-th coefficient holds the message only when the slots repeat that often.
+        if pt_n != ct_n && !(pt_n < ct_n && ct_n.is_multiple_of(pt_n) && (ct_n / pt_n).ilog2() as usize <= ct.log_sparsity()) {
+            return Err(CKKSCompositionError::PlaintextDegreeMismatch {
+                op: "ckks_decrypt",
+                ct_n,
+                pt_n,
+            }
+            .into());
+        }
         let (mut full_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(ct);
         self.glwe_decrypt(ct, &mut full_pt, sk, &mut scratch_1);
-
-        CKKSPlaintextReference::ckks_extract_pt_with_meta_reference(self, pt, &full_pt, ct.meta(), &mut scratch_1)?;
-
-        Ok(())
+        if pt_n == ct_n {
+            return CKKSPlaintextReference::ckks_extract_pt_with_meta_reference(self, pt, &full_pt, ct.meta(), &mut scratch_1);
+        }
+        let (mut below, mut scratch_2) = scratch_1.take_glwe_plaintext_scratch(&below_layout(pt, ct));
+        self.vec_znx_switch_ring(below.to_backend_mut().data_mut(), 0, full_pt.to_backend_ref().data(), 0);
+        CKKSPlaintextReference::ckks_extract_pt_with_meta_reference(self, pt, &below, ct.meta(), &mut scratch_2)
     }
 }
 
 impl<BE: Backend> CKKSEncryptionReference<BE> for poulpy_hal::layouts::Module<BE> {}
+
+/// The decrypted polynomial at the degree of `pt`.
+fn below_layout<P: LWEInfos, C: LWEInfos>(pt: &P, ct: &C) -> GLWELayout {
+    GLWELayout {
+        n: pt.n(),
+        base2k: ct.base2k(),
+        k: ct.k(),
+        rank: Rank(0),
+    }
+}

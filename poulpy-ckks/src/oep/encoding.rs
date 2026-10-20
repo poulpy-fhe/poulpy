@@ -45,7 +45,7 @@ pub unsafe trait CKKSEncodingImpl<F: CKKSEncodingScalar>: Backend {
     /// Backend-native coefficient → plaintext mapping, without an IFFT.
     ///
     /// Follows [`encode_coeffs_into_host`](crate::reference::encoding::encode_coeffs_into_host),
-    /// including rounding and sparse placement. Rejects non-finite inputs and
+    /// including rounding, one value per coefficient. Rejects non-finite inputs and
     /// rounded values outside the codec's signed integer range before writing
     /// the plaintext. Preserves the input coefficients and plaintext metadata,
     /// except that invariant modules mark the slots [`SlotsKind::Real`](crate::SlotsKind::Real).
