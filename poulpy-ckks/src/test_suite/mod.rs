@@ -272,6 +272,10 @@ macro_rules! ckks_backend_rank2_test_suite {
                 $crate::test_suite::dot_product::test_dot_product_prepared
             );
             run_test!(
+                dot_product_prepared_pt,
+                $crate::test_suite::dot_product::test_dot_product_prepared_pt
+            );
+            run_test!(
                 mul_pt_vec_into_aligned,
                 $crate::test_suite::mul::test_mul_pt_vec_into_aligned
             );

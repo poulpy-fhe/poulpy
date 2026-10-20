@@ -7,8 +7,8 @@ use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     layouts::{CKKSCiphertext, CKKSPreparedLeft, CKKSPreparedRight},
     oep::derived::dot_product::{
-        ckks_dot_product_prepared_pt, ckks_dot_product_prepared_pt_tmp_bytes, ckks_dot_product_pt_const,
-        ckks_dot_product_pt_const_tmp_bytes, ckks_dot_product_pt_vec, ckks_dot_product_pt_vec_tmp_bytes,
+        ckks_dot_product_pt_const, ckks_dot_product_pt_const_tmp_bytes, ckks_dot_product_pt_vec,
+        ckks_dot_product_pt_vec_tmp_bytes,
     },
 };
 
@@ -106,7 +106,6 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         ckks_dot_product_pt_const(module, dst, a, b, pt_coeffs, scratch)
     }
 
-    /// Scratch of [`Self::ckks_dot_product_prepared_pt_impl`]: core's summed product's.
     fn ckks_dot_product_prepared_pt_tmp_bytes_impl<R: CKKSCtBounds, A: GLWEInfos, P: GLWEInfos>(
         module: &Module<Self>,
         res: &R,
@@ -114,12 +113,8 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         b: &P,
     ) -> usize
     where
-        Module<Self>: GLWEMulPreparedPlainSum<Self>,
-    {
-        ckks_dot_product_prepared_pt_tmp_bytes(module, res, a, b)
-    }
+        Module<Self>: GLWEMulPreparedPlainSum<Self>;
 
-    /// Core's `glwe_mul_prepared_plain_sum` at the rule of `ckks_mul_pt_vec_into`, every operand checked first.
     fn ckks_dot_product_prepared_pt_impl<Dst>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -130,10 +125,7 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
     ) -> Result<()>
     where
         Module<Self>: GLWEMulPreparedPlainSum<Self>,
-        Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
-    {
-        ckks_dot_product_prepared_pt(module, dst, a, b, galois, scratch)
-    }
+        Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos;
 }
 
 /// Implements this contract with the callable reference algorithms.
@@ -187,6 +179,39 @@ macro_rules! impl_ckks_dot_product_reference {
                 H: ::poulpy_core::layouts::GetTensorKey<Self>,
             {
                 $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_reference(module, dst, a, b, tsk, scratch)
+            }
+
+            fn ckks_dot_product_prepared_pt_tmp_bytes_impl<
+                R: $crate::CKKSCtBounds,
+                A: ::poulpy_core::layouts::GLWEInfos,
+                P: ::poulpy_core::layouts::GLWEInfos,
+            >(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &R,
+                a: &A,
+                b: &P,
+            ) -> usize
+            where
+                ::poulpy_hal::layouts::Module<Self>: ::poulpy_core::GLWEMulPreparedPlainSum<Self>,
+            {
+                $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_tmp_bytes_reference(module, res, a, b)
+            }
+
+            fn ckks_dot_product_prepared_pt_impl<Dst>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                dst: &mut Dst,
+                a: &[&$crate::layouts::CKKSPreparedLeft<Self>],
+                b: &[&$crate::layouts::CKKSPreparedRight<Self>],
+                galois: &[i64],
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> $crate::CKKSResult<()>
+            where
+                ::poulpy_hal::layouts::Module<Self>: ::poulpy_core::GLWEMulPreparedPlainSum<Self>,
+                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
+            {
+                $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_reference(
+                    module, dst, a, b, galois, scratch,
+                )
             }
         }
     };
