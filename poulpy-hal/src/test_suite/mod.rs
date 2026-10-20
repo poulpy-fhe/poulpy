@@ -15,9 +15,9 @@ use crate::oep::HalVecZnxImpl;
 
 pub mod convolution;
 pub mod derived;
+pub mod embed;
 pub mod reim;
 pub mod serialization;
-pub mod sparse;
 pub mod svp;
 pub mod transfer;
 pub mod vec_znx;

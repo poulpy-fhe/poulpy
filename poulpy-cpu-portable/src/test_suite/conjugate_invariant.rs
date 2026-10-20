@@ -338,7 +338,7 @@ macro_rules! conjugate_invariant_test_suite {
             }
 
             #[test]
-            fn conjugate_invariant_sparse_convolution() {
+            fn conjugate_invariant_embed_convolution() {
                 let module = module(256);
                 for n in [8, 128, 256].into_iter().filter(|&n| n >= BE::MIN_DEGREE) {
                     let params = poulpy_hal::test_suite::TestParams {
@@ -346,10 +346,10 @@ macro_rules! conjugate_invariant_test_suite {
                         n,
                         base2k: 10,
                     };
-                    poulpy_hal::test_suite::convolution::test_convolution_sparse(&params, &module);
+                    poulpy_hal::test_suite::convolution::test_convolution_embed(&params, &module);
                     poulpy_hal::test_suite::convolution::test_convolution_galois(&params, &module);
-                    poulpy_hal::test_suite::sparse::test_vec_znx_sparse_add_sub(&params, &module);
-                    poulpy_hal::test_suite::sparse::test_vec_znx_big_sparse_add_sub(&params, &module);
+                    poulpy_hal::test_suite::embed::test_vec_znx_embed_add_sub(&params, &module);
+                    poulpy_hal::test_suite::embed::test_vec_znx_big_embed_add_sub(&params, &module);
                 }
             }
 

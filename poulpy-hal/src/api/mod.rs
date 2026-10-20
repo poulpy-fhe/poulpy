@@ -19,7 +19,7 @@
 //!
 //! `op`, `class`, `mutation`, `domain`, `ensures` and `test` are always
 //! present, `definition` on every class but `support`; `requires`,
-//! `fallback`, `override` and `sparse` appear where applicable.
+//! `fallback`, `override` and `embed` appear where applicable.
 //!
 //! - `class` is `basis` (an independently defined operation), `variant`
 //!   (an operation with a different storage or mutation contract), `derived`
@@ -187,21 +187,21 @@
 //! # Degree embedding
 //!
 //! Every operation is defined on `R_N`, `N` the degree of the call. A
-//! degree-`n` object in a sparse-capable slot, `n` a power-of-two divisor of
+//! degree-`n` object in an embedding slot, `n` a power-of-two divisor of
 //! `N`, denotes its image `p(X^(N/n))` in `R_N`, and a formula on such an
 //! operand uses that image; the compact storage is a representation choice
-//! the contracts never mention. Only the operand slots a contract's `sparse`
+//! the contracts never mention. Only the operand slots a contract's `embed`
 //! line names accept a degree other than `N`; `res` and every other
-//! operand share `N`. Only a dense operand takes such a degree: a window in a
-//! sparse-capable slot has the width of `res`. The coefficient-domain `add`
+//! operand share `N`. Only a dense operand takes such a degree: a window in an
+//! embedding slot has the width of `res`. The coefficient-domain `add`
 //! and `sub` families and `vec_znx_big_from_small` accept the slot, so the
 //! derived small-operand forms inherit it. The shift-add and shift-sub forms
 //! of `VecZnx` accept it in `a`. In the convolution only the prepared right
-//! operand is sparse-capable, and the prepares are not sparsity-aware: a
+//! operand takes an embedding slot, and the prepares are not embedding-aware: a
 //! degree-`n` right operand is prepared at degree `n`, like any dense
 //! prepare, and the degree-`N` apply forms read it through the backend's slot
 //! correspondence, while the left operand and the result take the degree `N`
-//! of the call. A backend may reject a sparse degree below its transform
+//! of the call. A backend may reject an embedded degree below its transform
 //! block width in the apply; the coefficient-domain add and sub families
 //! accept any power-of-two divisor. `switch_ring` states both directions of
 //! the coefficient map explicitly.

@@ -1,6 +1,6 @@
-//! Sparse operands: a degree-`n` operand, `n` a power-of-two divisor of
+//! Embedded operands: a degree-`n` operand, `n` a power-of-two divisor of
 //! the module degree `N`, stands for its ring embedding `switch_ring_{n->N}`.
-//! Every sparse-capable slot must give the result the embedded dense operand
+//! Every embedding slot must give the result the embedded dense operand
 //! gives, bit for bit in the coefficient domain and after normalization in the
 //! big domain.
 
@@ -21,9 +21,9 @@ use crate::{
     test_suite::{TestBackend, TestParams, download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref},
 };
 
-/// The sparse degrees exercised under a module of degree `n`: `n/2` down to
+/// The embedded degrees exercised under a module of degree `n`: `n/2` down to
 /// `n/16`, never below 8 (the CPU floor).
-fn sparse_degrees(n: usize) -> Vec<usize> {
+fn embedded_degrees(n: usize) -> Vec<usize> {
     (1..=4).map(|g| n >> g).filter(|&d| d >= 8).collect()
 }
 
@@ -138,9 +138,9 @@ fn check_assign<BE: TestBackend>(
 }
 
 /// `vec_znx_add`, `sub`, their in-place forms and the shift-add family with a
-/// degree-`n` operand in each sparse-capable slot equal the same operation on
+/// degree-`n` operand in each embedding slot equal the same operation on
 /// the embedded operand.
-pub fn test_vec_znx_sparse_add_sub<BE: TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_vec_znx_embed_add_sub<BE: TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
         + VecZnxSwitchRing<BE>
@@ -161,9 +161,9 @@ where
     let base2k = params.base2k;
     let cols = 2;
     let mut source = Source::new([7u8; 32]);
-    for sparse_n in sparse_degrees(n) {
+    for embed_n in embedded_degrees(n) {
         for (a_size, b_size, res_size) in SIZES {
-            for (a_n, b_n) in [(sparse_n, n), (n, sparse_n), (sparse_n, sparse_n), (sparse_n, sparse_n / 2)] {
+            for (a_n, b_n) in [(embed_n, n), (n, embed_n), (embed_n, embed_n), (embed_n, embed_n / 2)] {
                 if b_n < 8 {
                     continue;
                 }
@@ -178,7 +178,7 @@ where
                     module.vec_znx_sub(r, rc, x, xc, y, yc)
                 });
             }
-            let mut a = module.vec_znx_alloc(sparse_n, cols, a_size);
+            let mut a = module.vec_znx_alloc(embed_n, cols, a_size);
             module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
             check_assign(
                 module,
@@ -218,7 +218,7 @@ where
                     .max(module.vec_znx_lsh_tmp_bytes(res_size)),
             ));
             for k in [0usize, 3, base2k, base2k + 5] {
-                let mut a = module.vec_znx_alloc(sparse_n, cols, a_size);
+                let mut a = module.vec_znx_alloc(embed_n, cols, a_size);
                 module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
                 check_assign(
                     module,
@@ -339,9 +339,9 @@ type BigAssign<'m, BE> = &'m dyn Fn(&mut VecZnxBigBackendMut<'_, BE>, usize, &Ve
 type SmallAssign<'m, BE> = &'m dyn Fn(&mut VecZnxBigBackendMut<'_, BE>, usize, &VecZnxBackendRef<'_, BE>, usize);
 
 /// The `VecZnxBig` add and sub families with a degree-`n` operand in each
-/// sparse-capable slot, Big or small, equal the same operation on the embedded
+/// embedding slot, Big or small, equal the same operation on the embedded
 /// operand after normalization.
-pub fn test_vec_znx_big_sparse_add_sub<BE: TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_vec_znx_big_embed_add_sub<BE: TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
         + VecZnxSwitchRing<BE>
@@ -399,9 +399,9 @@ where
         }),
     ];
 
-    for sparse_n in sparse_degrees(n) {
+    for embed_n in embedded_degrees(n) {
         for (a_size, b_size, res_size) in SIZES {
-            for (a_n, b_n) in [(sparse_n, n), (n, sparse_n)] {
+            for (a_n, b_n) in [(embed_n, n), (n, embed_n)] {
                 let mut a = module.vec_znx_alloc(a_n, cols, a_size);
                 module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
                 let mut b = module.vec_znx_alloc(b_n, cols, b_size);
@@ -512,8 +512,8 @@ where
                 );
             }
 
-            // In-place forms: the destination is a random degree-N Big, the operand is sparse.
-            let mut a = module.vec_znx_alloc(sparse_n, cols, a_size);
+            // In-place forms: the destination is a random degree-N Big, the operand is embedded.
+            let mut a = module.vec_znx_alloc(embed_n, cols, a_size);
             module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
             let mut seed = module.vec_znx_alloc(n, cols, res_size);
             module.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut seed, &mut source);
@@ -529,12 +529,12 @@ where
                 assert_eq!(
                     normalized(module, base2k, &want, &mut scratch),
                     normalized(module, base2k, &have, &mut scratch),
-                    "{what}: a.n()={sparse_n} sizes=({a_size}, {res_size})"
+                    "{what}: a.n()={embed_n} sizes=({a_size}, {res_size})"
                 );
             }
             let a_small_dense = embed(module, n, &a);
 
-            // The basis promotion is a sparse-capable slot too: the degree-n
+            // The basis promotion is an embedding slot too: the degree-n
             // operand and its embedding promote to the same Big.
             let mut want: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(params.n, cols, res_size);
             let mut have: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(params.n, cols, res_size);
@@ -550,7 +550,7 @@ where
             assert_eq!(
                 normalized(module, base2k, &want, &mut scratch),
                 normalized(module, base2k, &have, &mut scratch),
-                "vec_znx_big_from_small: a.n()={sparse_n} sizes=({a_size}, {res_size})"
+                "vec_znx_big_from_small: a.n()={embed_n} sizes=({a_size}, {res_size})"
             );
             for (what, op) in small_assign.iter() {
                 let mut want = big_embedded(module, n, &seed);
@@ -567,7 +567,7 @@ where
                 assert_eq!(
                     normalized(module, base2k, &want, &mut scratch),
                     normalized(module, base2k, &have, &mut scratch),
-                    "{what}: a.n()={sparse_n} sizes=({a_size}, {res_size})"
+                    "{what}: a.n()={embed_n} sizes=({a_size}, {res_size})"
                 );
             }
         }

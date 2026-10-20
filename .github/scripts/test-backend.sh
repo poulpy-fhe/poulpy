@@ -28,7 +28,7 @@ filters=()
 if [[ "$backend" == avx512 || "$mode" == emulated ]]; then
   filters=(test_vec_znx test_svp test_vmp test_convolution test_cnv test_word_compat
     test_transfer raw_transform_matches_contract core_parity core_encryption glwe_copy
-    conjugate_invariant_sparse_convolution)
+    conjugate_invariant_embed_convolution)
   if [[ "$mode" == native ]]; then
     filters+=(ckks_parity bin_fhe_parity prepared_tensor_tests finish_matches_composition_edges determinism
       consume_parity one_pass_parity relinearize_tests)

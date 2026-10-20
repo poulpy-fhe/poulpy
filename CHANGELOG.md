@@ -8,6 +8,7 @@
   An even `b_galois` panics with "convolution: b_galois must be odd", the message of the new `check_galois`, and a sum checks every term before its first write.
   Out-of-tree backends that override `cnv_apply_dft_sum` must read each term's `b_galois`: an override that ignores it still compiles.
 - **Breaking:** `VecZnxIdftApplyTmpA`, `HalVecZnxDftImpl::vec_znx_idft_apply_tmpa` and `test_vec_znx_idft_apply_tmpa` are removed; callers use `vec_znx_idft_apply` with `vec_znx_idft_apply_tmp_bytes` of scratch, which also removes the per-call allocation of the AVX-512 NTT4x30 and IFMA backends ([#339](https://github.com/poulpy-fhe/poulpy/issues/339)), and the default `vec_znx_idft_normalize_consume_tmp_bytes` covers that scratch.
+- The contract key `sparse` is renamed `embed`, the module `test_suite::sparse` becomes `test_suite::embed`, and the tests `test_vec_znx_sparse_add_sub`, `test_vec_znx_big_sparse_add_sub` and `test_convolution_sparse` become `test_vec_znx_embed_add_sub`, `test_vec_znx_big_embed_add_sub` and `test_convolution_embed`.
 
 ### CPU backends
 
@@ -69,6 +70,7 @@
 - The AVX-512 backends run `glwe_tensor_apply_prepared` at rank 1 on the fused kernel of `glwe_tensor_apply`.
 - `NTT3x42IfmaRayon` runs `glwe_eval_linear_transformation_sum_into` on the parallel evaluation of `glwe_eval_linear_transformation_into`.
   Both run the reference checks before resolving a key, and take the reference path for a destination below the module degree.
+- **Breaking:** `SparseWord` becomes `MixedWord`, `sparse_log_gap_portable` becomes `embed_log_gap_portable`, `RightRead::sparse` becomes `RightRead::embedded`, and the conjugate-invariant test `conjugate_invariant_sparse_convolution` becomes `conjugate_invariant_embed_convolution`.
 
 ### `poulpy-core`
 

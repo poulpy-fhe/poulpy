@@ -27,7 +27,7 @@ use std::path::{Path, PathBuf};
 /// Keys every contract block must carry.
 const REQUIRED: [&str; 6] = ["op", "class", "mutation", "domain", "ensures", "test"];
 /// Keys a block may carry in addition to [`REQUIRED`].
-const OPTIONAL: [&str; 5] = ["definition", "requires", "fallback", "override", "sparse"];
+const OPTIONAL: [&str; 5] = ["definition", "requires", "fallback", "override", "embed"];
 /// Accepted values of the `class` line.
 const CLASSES: [&str; 4] = ["basis", "variant", "derived", "support"];
 /// Accepted values of the `mutation` line.

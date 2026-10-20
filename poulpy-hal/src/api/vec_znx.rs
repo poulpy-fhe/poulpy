@@ -101,8 +101,8 @@ pub trait VecZnxNormalizeAssign<B: Backend> {
 /// definition res[res_col,j] = a[a_col,j] + b[b_col,j]; the other columns of res are untouched
 /// domain     res, a, b: VecZnx or windows of one, read at one shared base2k
 /// ensures    res[res_col] = a[a_col] + b[b_col] limb by limb; operands shorter than res are zero-extended, every limb of res is written, and the digits are not renormalized
-/// sparse     a and b are the sparse-capable slots: a dense degree-n operand, n dividing N, stands for switch_ring_{n->N} of itself; a window in these slots has the width of res
-/// test       test_vec_znx_add_matches_reference, test_vec_znx_window_ops, test_vec_znx_sparse_add_sub
+/// embed      a and b are the embedding slots: a dense degree-n operand, n dividing N, stands for switch_ring_{n->N} of itself; a window in these slots has the width of res
+/// test       test_vec_znx_add_matches_reference, test_vec_znx_window_ops, test_vec_znx_embed_add_sub
 /// ```
 pub trait VecZnxAdd<B: Backend> {
     /// Writes the sum of `a[a_col]` and `b[b_col]` into `res[res_col]`.
@@ -126,8 +126,8 @@ pub trait VecZnxAdd<B: Backend> {
 /// definition res[res_col,j] = old(res)[res_col,j] + a[a_col,j]; limbs from a.size() onward and the other columns of res are untouched
 /// domain     res, a: VecZnx or windows of one, read at one shared base2k
 /// ensures    res[res_col] gains a[a_col] limb by limb; limbs of res past a.size() are untouched; the digits are not renormalized
-/// sparse     a is the sparse-capable slot, as for vec_znx_add
-/// test       test_vec_znx_add_assign, test_vec_znx_add_assign_matches_wrapper, test_vec_znx_sparse_add_sub
+/// embed      a is the embedding slot, as for vec_znx_add
+/// test       test_vec_znx_add_assign, test_vec_znx_add_assign_matches_wrapper, test_vec_znx_embed_add_sub
 /// ```
 pub trait VecZnxAddAssign<B: Backend> {
     /// Adds `a[a_col]` into `res[res_col]`.
@@ -168,8 +168,8 @@ pub trait VecZnxAddScalarAssign<B: Backend> {
 /// definition res[res_col,j] = a[a_col,j] - b[b_col,j]; the other columns of res are untouched
 /// domain     res, a, b: VecZnx or windows of one, read at one shared base2k
 /// ensures    res[res_col] = a[a_col] - b[b_col] limb by limb; operands shorter than res are zero-extended, every limb of res is written, and the digits are not renormalized
-/// sparse     a and b are the sparse-capable slots, as for vec_znx_add
-/// test       test_vec_znx_sub, test_vec_znx_window_ops, test_vec_znx_sparse_add_sub
+/// embed      a and b are the embedding slots, as for vec_znx_add
+/// test       test_vec_znx_sub, test_vec_znx_window_ops, test_vec_znx_embed_add_sub
 /// ```
 pub trait VecZnxSub<B: Backend> {
     /// Writes the difference of `a[a_col]` and `b[b_col]` into `res[res_col]`.
@@ -193,8 +193,8 @@ pub trait VecZnxSub<B: Backend> {
 /// definition res[res_col,j] = old(res)[res_col,j] - a[a_col,j]; limbs from a.size() onward and the other columns of res are untouched
 /// domain     res, a: VecZnx or windows of one, read at one shared base2k
 /// ensures    res[res_col] loses a[a_col] limb by limb; limbs from a.size() onward are untouched; the digits are not renormalized
-/// sparse     a is the sparse-capable slot, as for vec_znx_add
-/// test       test_vec_znx_sub_assign, test_vec_znx_sparse_add_sub
+/// embed      a is the embedding slot, as for vec_znx_add
+/// test       test_vec_znx_sub_assign, test_vec_znx_embed_add_sub
 /// ```
 pub trait VecZnxSubAssign<B: Backend> {
     /// Subtracts `a[a_col]` from `res[res_col]`.
@@ -210,8 +210,8 @@ pub trait VecZnxSubAssign<B: Backend> {
 /// definition res[res_col,j] = a[a_col,j] - old(res)[res_col,j]; the other columns of res are untouched
 /// domain     res, a: VecZnx or windows of one, read at one shared base2k
 /// ensures    res[res_col] holds a[a_col] minus its pre-call value limb by limb; limbs from a.size() onward are negated in place; the digits are not renormalized
-/// sparse     a is the sparse-capable slot, as for vec_znx_add
-/// test       test_vec_znx_sub_negate_assign, test_vec_znx_sparse_add_sub
+/// embed      a is the embedding slot, as for vec_znx_add
+/// test       test_vec_znx_sub_negate_assign, test_vec_znx_embed_add_sub
 /// ```
 pub trait VecZnxSubNegateAssign<B: Backend> {
     /// Replaces `res[res_col]` with `a[a_col]` minus its pre-call value.
@@ -312,8 +312,8 @@ pub trait VecZnxLsh<B: Backend> {
 /// ensures    res[res_col] gains the canonical vec_znx_lsh of a[a_col] on a res.size()-limb destination; the result is not renormalized
 /// fallback   default body: shift into a res.size()-limb temporary of a's degree, then add_assign
 /// override   allowed, with vec_znx_lsh_tmp_bytes
-/// sparse     a is the sparse-capable slot, as for vec_znx_add_assign
-/// test       test_vec_znx_lsh_add_derived, test_vec_znx_sparse_add_sub
+/// embed      a is the embedding slot, as for vec_znx_add_assign
+/// test       test_vec_znx_lsh_add_derived, test_vec_znx_embed_add_sub
 /// ```
 pub trait VecZnxLshAdd<B: Backend> {
     /// Adds `a[a_col]`, shifted up by `k` bits and normalized at `base2k`, into `res[res_col]`.
@@ -386,8 +386,8 @@ pub trait VecZnxRsh<B: Backend> {
 /// ensures    res[res_col] gains the canonical vec_znx_rsh of a[a_col] on a res.size()-limb destination; the result is not renormalized
 /// fallback   default body: shift into a res.size()-limb temporary of a's degree, then add_assign
 /// override   allowed, with vec_znx_rsh_tmp_bytes
-/// sparse     a is the sparse-capable slot, as for vec_znx_add_assign
-/// test       test_vec_znx_rsh_add_derived, test_vec_znx_sparse_add_sub
+/// embed      a is the embedding slot, as for vec_znx_add_assign
+/// test       test_vec_znx_rsh_add_derived, test_vec_znx_embed_add_sub
 /// ```
 pub trait VecZnxRshAdd<B: Backend> {
     /// Adds `a[a_col]`, shifted down by `k` bits and normalized at `base2k`, into `res[res_col]`.
@@ -416,8 +416,8 @@ pub trait VecZnxRshAdd<B: Backend> {
 /// ensures    res[res_col] loses the canonical vec_znx_lsh of a[a_col] on a res.size()-limb destination; the result is not renormalized
 /// fallback   default body: shift into a res.size()-limb temporary of a's degree, then sub_assign
 /// override   allowed, with vec_znx_lsh_tmp_bytes
-/// sparse     a is the sparse-capable slot, as for vec_znx_sub_assign
-/// test       test_vec_znx_lsh_sub_derived, test_vec_znx_sparse_add_sub
+/// embed      a is the embedding slot, as for vec_znx_sub_assign
+/// test       test_vec_znx_lsh_sub_derived, test_vec_znx_embed_add_sub
 /// ```
 pub trait VecZnxLshSub<B: Backend> {
     /// Subtracts `a[a_col]`, shifted up by `k` bits and normalized at `base2k`, from `res[res_col]`.
@@ -446,8 +446,8 @@ pub trait VecZnxLshSub<B: Backend> {
 /// ensures    res[res_col] loses the canonical vec_znx_rsh of a[a_col] on a res.size()-limb destination; the result is not renormalized
 /// fallback   default body: shift into a res.size()-limb temporary of a's degree, then sub_assign
 /// override   allowed, with vec_znx_rsh_tmp_bytes
-/// sparse     a is the sparse-capable slot, as for vec_znx_sub_assign
-/// test       test_vec_znx_rsh_sub_derived, test_vec_znx_sparse_add_sub
+/// embed      a is the embedding slot, as for vec_znx_sub_assign
+/// test       test_vec_znx_rsh_sub_derived, test_vec_znx_embed_add_sub
 /// ```
 pub trait VecZnxRshSub<B: Backend> {
     /// Subtracts `a[a_col]`, shifted down by `k` bits and normalized at `base2k`, from `res[res_col]`.

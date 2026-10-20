@@ -19,10 +19,10 @@ pub mod vmp_select;
 pub use galois::{GaloisSlots, RightRead, right_read_fft64, right_read_ntt};
 
 /// `log2(N / n)` for an operand of degree `n` under a module of degree `N`:
-/// zero for a dense operand. A sparse operand needs a power-of-two degree that
+/// zero for a dense operand. An embedded operand needs a power-of-two degree that
 /// divides `N` and is at least 8, the CPU block floor (spec 4.5, #266). Asserted
 /// once, at kernel entry; the kernels' loops then index on it without checks.
-pub fn sparse_log_gap_portable(module_n: usize, n: usize) -> usize {
+pub fn embed_log_gap_portable(module_n: usize, n: usize) -> usize {
     if n == module_n {
         return 0;
     }

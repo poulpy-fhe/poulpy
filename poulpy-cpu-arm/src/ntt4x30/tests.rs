@@ -174,9 +174,9 @@ backend_test_suite! {
         test_vec_znx_dft_step_zero_rejected => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_step_zero_rejected,
         test_convolution_prepare_shape_rejected => poulpy_hal::test_suite::convolution::test_convolution_prepare_shape_rejected,
         test_vmp_apply_dft_to_dft_shape_rejected => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_shape_rejected,
-        test_vec_znx_sparse_add_sub => poulpy_hal::test_suite::sparse::test_vec_znx_sparse_add_sub,
-        test_vec_znx_big_sparse_add_sub => poulpy_hal::test_suite::sparse::test_vec_znx_big_sparse_add_sub,
-        test_convolution_sparse => poulpy_hal::test_suite::convolution::test_convolution_sparse,
+        test_vec_znx_embed_add_sub => poulpy_hal::test_suite::embed::test_vec_znx_embed_add_sub,
+        test_vec_znx_big_embed_add_sub => poulpy_hal::test_suite::embed::test_vec_znx_big_embed_add_sub,
+        test_convolution_embed => poulpy_hal::test_suite::convolution::test_convolution_embed,
         test_convolution_galois => poulpy_hal::test_suite::convolution::test_convolution_galois,
         test_convolution_by_const_degree_rejected => poulpy_hal::test_suite::convolution::test_convolution_by_const_degree_rejected,
     }
@@ -196,9 +196,9 @@ backend_test_suite! {
         test_vec_znx_dft_step_zero_rejected => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_step_zero_rejected,
         test_convolution_prepare_shape_rejected => poulpy_hal::test_suite::convolution::test_convolution_prepare_shape_rejected,
         test_vmp_apply_dft_to_dft_shape_rejected => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_shape_rejected,
-        test_vec_znx_sparse_add_sub => poulpy_hal::test_suite::sparse::test_vec_znx_sparse_add_sub,
-        test_vec_znx_big_sparse_add_sub => poulpy_hal::test_suite::sparse::test_vec_znx_big_sparse_add_sub,
-        test_convolution_sparse => poulpy_hal::test_suite::convolution::test_convolution_sparse,
+        test_vec_znx_embed_add_sub => poulpy_hal::test_suite::embed::test_vec_znx_embed_add_sub,
+        test_vec_znx_big_embed_add_sub => poulpy_hal::test_suite::embed::test_vec_znx_big_embed_add_sub,
+        test_convolution_embed => poulpy_hal::test_suite::convolution::test_convolution_embed,
         test_convolution_galois => poulpy_hal::test_suite::convolution::test_convolution_galois,
         test_convolution_by_const_degree_rejected => poulpy_hal::test_suite::convolution::test_convolution_by_const_degree_rejected,
     }
@@ -270,7 +270,7 @@ fn test_convolution_direct() {
     test_convolution_by_const_add(&module, module.n(), 50);
     test_convolution_pairwise(&module, FLOOR, 50);
     test_convolution_pairwise(&module, module.n(), 50);
-    // Sparse right operands one and two halvings below the module degree take distinct expansion paths.
+    // Embedded right operands one and two halvings below the module degree take distinct expansion paths.
     for gap in [1, 2] {
         test_convolution(&module, module.n() >> gap, 50);
         test_convolution_pairwise(&module, module.n() >> gap, 50);
