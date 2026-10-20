@@ -14,6 +14,7 @@
 //! | [`test_replicated_rotations_are_admissible`] | rotations by a non-multiple of the period |
 //! | [`test_replicated_masked_constants`] | a masked constant fills the data slots only, and adds to a ciphertext |
 //! | [`test_replicated_conversions_round_trip`] | CKKS to the replicated layout and back keeps the input's precision |
+//! | [`test_replicated_transforms_apply_matrices`] | a complex matrix onto the data slots, and gathered then traced back to period `k` |
 
 use std::collections::HashMap;
 
@@ -35,7 +36,8 @@ use crate::{
         CKKSAddOps, CKKSConjugateOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSModuleInfos,
         CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSReplicatedOps, CKKSRotateOps, CKKSSubOps,
     },
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, ReplicatedConversion},
+    delegates::replicated::{wide_gather_trace, wide_onto_replicated},
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, ReplicatedConversion, ReplicatedTransform},
     polynomial::{Basis, EncodeBSGS, Polynomial},
     shaping::ShapingUnit,
     test_suite::CKKSTestParams,
@@ -791,5 +793,117 @@ where
             .ckks_from_replicated_into(&mut out, &ckks, &conv, &atks, &mut scratch.borrow())
             .is_err()
     );
+    Ok(())
+}
+
+/// `(Mv)` for `M(c, j) = (cos(c·j + 0.1)/2, sin(c + 2j)/3)`.
+fn matrix<F: TestScalar>(c: usize, j: usize) -> (F, F) {
+    let value = |x: f64| F::from_f64(x).unwrap();
+    (
+        value(((c * j) as f64 + 0.1).cos() / 2.0),
+        value(((c + 2 * j) as f64).sin() / 3.0),
+    )
+}
+
+fn apply_matrix<F: TestScalar>(v: (&[F], &[F])) -> (Vec<F>, Vec<F>) {
+    let len = v.0.len();
+    let (mut re, mut im) = (vec![F::zero(); len], vec![F::zero(); len]);
+    for c in 0..len {
+        for j in 0..len {
+            let (a, b) = matrix::<F>(c, j);
+            re[c] = re[c] + a * v.0[j] - b * v.1[j];
+            im[c] = im[c] + a * v.1[j] + b * v.0[j];
+        }
+    }
+    (re, im)
+}
+
+pub fn test_replicated_transforms_apply_matrices<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) -> Result<()>
+where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let log_k = 3u8;
+    let (len, base2k) = (1usize << log_k, Base2K(params.base2k as u32));
+    let layout = ShapingUnit::U16_40.layout(log_k, 24)?;
+    let (log_delta_diag, extra_bits) = (36, 16);
+    let to = ReplicatedTransform::from_period(module, layout, base2k, log_delta_diag, true, |s, j| {
+        if s % (1 << layout.log_r()) == 0 {
+            matrix::<F>((s >> layout.log_r()) % len, j)
+        } else {
+            (F::zero(), F::zero())
+        }
+    })?;
+    let gather = ReplicatedTransform::gather(module, layout, base2k, log_delta_diag, false, matrix::<F>)?;
+    let trace: Vec<i64> = (0..(params.n / (2 * len)).trailing_zeros())
+        .map(|l| (len << l) as i64)
+        .collect();
+
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let mut atks = HashMap::new();
+    for r in to
+        .rotations()
+        .into_iter()
+        .chain(gather.rotations())
+        .chain(trace.iter().copied())
+    {
+        let gal = module.ckks_galois_element(r);
+        atks.insert(gal, gen_atk(&params, module, gal, &sk_raw, &mut scratch.borrow()));
+    }
+    let values = unit_batch::<F>(len, 0);
+    let want = apply_matrix((&values.0, &values.1));
+    let k = 40 + 2 * log_delta_diag;
+    let mut scratch = ScratchOwned::<BE>::alloc(1 << 24);
+
+    let ckks = encrypt_full(&params, module, &sk, (&values.0, &values.1), 40, k)?;
+    let mut onto = alloc_ct(&params, module, k);
+    wide_onto_replicated(
+        module,
+        &mut onto,
+        &ckks,
+        &to.diagonals,
+        layout,
+        LOG_DELTA,
+        extra_bits,
+        &atks,
+        &mut scratch.borrow(),
+    )?;
+    let got = decrypt_batch::<BE, F>(&params, module, &sk, &onto, len);
+    let onto_bits = precision((&got.0, &got.1), (&want.0, &want.1));
+    assert!(onto_bits >= 30.0, "period-k map onto the data slots: {onto_bits:.2} bits");
+
+    let replicated = encrypt_batch(
+        &params,
+        module,
+        &sk,
+        SlotLayout::Replicated(layout),
+        (&values.0, &values.1),
+        k,
+        3,
+    )?;
+    let mut gathered = alloc_ct(&params, module, k);
+    wide_gather_trace(
+        module,
+        &mut gathered,
+        &replicated,
+        &gather.diagonals,
+        &trace,
+        extra_bits,
+        &atks,
+        &mut scratch.borrow(),
+    )?;
+    let got = decrypt_batch::<BE, F>(&params, module, &sk, &gathered, len);
+    let gather_bits = precision((&got.0, &got.1), (&want.0, &want.1));
+    // Plainly quantized diagonals weighted `R·M(c, j)` over `k` terms.
+    assert!(gather_bits >= 26.0, "gather and trace: {gather_bits:.2} bits");
     Ok(())
 }
