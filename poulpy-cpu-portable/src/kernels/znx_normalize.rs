@@ -5,8 +5,8 @@
 use std::{
     marker::PhantomData,
     simd::{
-        Simd,
-        cmp::SimdPartialEq,
+        Simd, Swizzle,
+        cmp::{SimdPartialEq, SimdPartialOrd},
         num::{SimdInt, SimdUint},
     },
 };
@@ -99,7 +99,7 @@ impl NormalizeWord for i64 {
 
 impl NormalizeWord for i128 {
     const ZERO: Self = 0;
-    type Lanes = PortableLanes<i128, 8>;
+    type Lanes = SimdI128Lanes<4>;
     #[inline(always)]
     fn low(self) -> i64 {
         self as i64
@@ -296,6 +296,117 @@ impl<const W: usize> NormalizeLanes for SimdLanes<W> {
     #[inline(always)]
     fn wide_low(x: Self::W) -> Self::N {
         x
+    }
+}
+
+/// i128 words as `(lo, hi)` halves in `std::simd` vectors of `W` lanes, each 4-coefficient chunk
+/// in lane order [0, 2, 1, 3], the order an in-lane unpack of 128-bit halves yields.
+pub struct SimdI128Lanes<const W: usize>;
+
+/// The source half holding the low 64 bits of an i128.
+const LO: usize = cfg!(target_endian = "big") as usize;
+
+/// Lane `j` reads element `scale * c + half`, `c` the coefficient lane `j` holds.
+const fn chunked<const W: usize>(scale: usize, half: usize) -> [usize; W] {
+    let mut idx = [0; W];
+    let mut j = 0;
+    while j < W {
+        idx[j] = scale * (4 * (j / 4) + [0, 2, 1, 3][j % 4]) + half;
+        j += 1;
+    }
+    idx
+}
+
+struct Chunked<const SCALE: usize, const HALF: usize>;
+
+impl<const W: usize, const SCALE: usize, const HALF: usize> Swizzle<W> for Chunked<SCALE, HALF> {
+    const INDEX: [usize; W] = chunked::<W>(SCALE, HALF);
+}
+
+impl<const W: usize> NormalizeLanes for SimdI128Lanes<W> {
+    const WIDTH: usize = W;
+    type Word = i128;
+    type N = Simd<i64, W>;
+    type W = (Simd<u64, W>, Simd<i64, W>);
+
+    #[inline(always)]
+    unsafe fn load(p: *const i128) -> Self::W {
+        let p = p.cast::<[u64; W]>();
+        // SAFETY: the caller guarantees `W` readable i128 at `p`, two `[u64; W]`; the reads are unaligned.
+        let (a, b) = unsafe {
+            (
+                Simd::from_array(p.read_unaligned()),
+                Simd::from_array(p.add(1).read_unaligned()),
+            )
+        };
+        (
+            Chunked::<2, LO>::concat_swizzle(a, b),
+            Chunked::<2, { 1 - LO }>::concat_swizzle(a, b).cast::<i64>(),
+        )
+    }
+    #[inline(always)]
+    unsafe fn store(p: *mut i64, x: Self::N) {
+        // [0, 2, 1, 3] is its own inverse.
+        let x = Chunked::<1, 0>::swizzle(x);
+        // SAFETY: the caller guarantees `W` writable i64 at `p`.
+        unsafe { SimdLanes::<W>::store(p, x) }
+    }
+    #[inline(always)]
+    fn zero() -> Self::W {
+        (Simd::splat(0), Simd::splat(0))
+    }
+    #[inline(always)]
+    fn splat(x: i64) -> Self::N {
+        Simd::splat(x)
+    }
+    #[inline(always)]
+    fn add(x: Self::N, y: Self::N) -> Self::N {
+        SimdLanes::<W>::add(x, y)
+    }
+    #[inline(always)]
+    fn sub(x: Self::N, y: Self::N) -> Self::N {
+        SimdLanes::<W>::sub(x, y)
+    }
+    #[inline(always)]
+    fn and(x: Self::N, y: Self::N) -> Self::N {
+        SimdLanes::<W>::and(x, y)
+    }
+    #[inline(always)]
+    fn or(x: Self::N, y: Self::N) -> Self::N {
+        SimdLanes::<W>::or(x, y)
+    }
+    #[inline(always)]
+    fn shl(x: Self::N, k: u32) -> Self::N {
+        SimdLanes::<W>::shl(x, k)
+    }
+    #[inline(always)]
+    fn srl(x: Self::N, k: u32) -> Self::N {
+        SimdLanes::<W>::srl(x, k)
+    }
+    #[inline(always)]
+    fn ne_zero(x: Self::N) -> Self::N {
+        SimdLanes::<W>::ne_zero(x)
+    }
+    #[inline(always)]
+    fn wide_add(x: Self::W, y: Self::W) -> Self::W {
+        let lo = x.0 + y.0;
+        // The low half wrapped iff it carries; a true mask lane is -1.
+        (lo, x.1 + y.1 - lo.simd_lt(x.0).to_simd())
+    }
+    #[inline(always)]
+    fn wide_add_n(x: Self::W, y: Self::N) -> Self::W {
+        let lo = x.0 + y.cast::<u64>();
+        (lo, x.1 + y.simd_lt(Simd::splat(0)).to_simd() - lo.simd_lt(x.0).to_simd())
+    }
+    #[inline(always)]
+    fn wide_sra(x: Self::W, k: u32) -> Self::W {
+        // The driver never shifts by 0, so `64 - k` stays below 64.
+        let k = k as u64;
+        ((x.0 >> k) | (x.1.cast::<u64>() << (64 - k)), x.1 >> k as i64)
+    }
+    #[inline(always)]
+    fn wide_low(x: Self::W) -> Self::N {
+        x.0.cast::<i64>()
     }
 }
 
@@ -851,7 +962,7 @@ mod tests {
         (0..n).map(|i| (0..size).map(|j| dst[j * n + i]).collect()).collect()
     }
 
-    /// The portable driver over 11 coefficients (a full 8-lane block and a 3-coefficient tail).
+    /// The portable driver over 11 coefficients (full blocks and a 3-coefficient tail).
     fn run<S: NormalizeWord>(a: &[Vec<S>], ka: usize, kr: usize, k: usize, size: usize, offset: i64) -> Vec<Vec<i64>> {
         layout(a, size, |res, src, n| unsafe {
             normalize_blocked_portable::<S::Lanes, PortableLanes<S, 1>>(res, kr, k, offset, src, ka, n)
