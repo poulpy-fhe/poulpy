@@ -6,19 +6,21 @@ use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GetTensorKey};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 /// Extension point of the JKLS kernel, one output block of the prepared product: the references
-/// `reference::BlasMatMulReference::blas_matmul_prepared_reference` and
-/// `reference::BlasMatMulReference::blas_matmul_reference` run one [`Self::blas_jkls_block_impl`] per block of `res`,
-/// so both `blas_matmul` and `blas_matmul_prepared` reach it, whatever the hints of the operands.
+/// [`BlasMatMulReference::blas_matmul_prepared_reference`](crate::reference::BlasMatMulReference::blas_matmul_prepared_reference)
+/// and [`BlasMatMulReference::blas_matmul_reference`](crate::reference::BlasMatMulReference::blas_matmul_reference) run
+/// one [`Self::blas_jkls_block_impl`] per block of `res`, so both `blas_matmul` and `blas_matmul_prepared` reach it,
+/// whatever the hints of the operands.
 ///
 /// # Safety
 ///
 /// The memory, layout and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 ///
-/// [`Self::blas_jkls_block_impl`] reproduces `reference::BlasMatMulReference::blas_jkls_block_reference` bit
-/// for bit, digits and CKKS metadata: `res = sum_t lhs[t] rhs[t]` as poulpy-ckks's `ckks_dot_product_ct` computes it
-/// for the terms the pairs were prepared from, which share one layout per side. The pairs are terms prepared once by
-/// poulpy-ckks's `ckks_prepare_left` and `ckks_prepare_right`, which report the terms they were prepared from and
-/// give their convolution operands through `cnv()`: the kernel transforms no operand.
+/// [`Self::blas_jkls_block_impl`] reproduces
+/// [`BlasMatMulReference::blas_jkls_block_reference`](crate::reference::BlasMatMulReference::blas_jkls_block_reference)
+/// bit for bit, digits and CKKS metadata: `res = sum_t lhs[t] rhs[t]` as poulpy-ckks's `ckks_dot_product_ct` computes
+/// it for the terms the pairs were prepared from, which share one layout per side. The pairs are terms prepared once by
+/// poulpy-ckks's `ckks_prepare_left` and `ckks_prepare_right`, which report the terms they were prepared from and give
+/// their convolution operands through `cnv()`: the kernel transforms no operand.
 ///
 /// **Fixed:**
 /// - the circuit, one-pass where poulpy-ckks's `ckks_mul_into` takes its one-pass product: rank 1, one `base2k` across
@@ -81,4 +83,46 @@ pub unsafe trait BlasJklsImpl: Backend {
     where
         R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         T: GetTensorKey<Self> + Sync;
+}
+
+/// Selects
+/// [`BlasMatMulReference::blas_jkls_block_reference`](crate::reference::BlasMatMulReference::blas_jkls_block_reference)
+/// as the JKLS kernel of `$be`.
+#[macro_export]
+macro_rules! impl_blas_jkls_reference {
+    ($be:ty) => {
+        unsafe impl $crate::oep::BlasJklsImpl for $be {
+            fn blas_jkls_block_tmp_bytes_impl<R, L, Rh, T>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &R,
+                lhs: &L,
+                rhs: &Rh,
+                terms: usize,
+                tsk: &T,
+            ) -> usize
+            where
+                R: ::poulpy_ckks::CKKSCtBounds,
+                L: ::poulpy_ckks::CKKSCtBounds,
+                Rh: ::poulpy_ckks::CKKSCtBounds,
+                T: ::poulpy_core::layouts::GGLWEInfos,
+            {
+                $crate::reference::BlasMatMulReference::blas_jkls_block_tmp_bytes_reference(module, res, lhs, rhs, terms, tsk)
+            }
+
+            fn blas_jkls_block_impl<R, T>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &mut R,
+                lhs: &[&::poulpy_ckks::layouts::CKKSPreparedLeft<Self>],
+                rhs: &[&::poulpy_ckks::layouts::CKKSPreparedRight<Self>],
+                tsk: &T,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> ::poulpy_ckks::CKKSResult<()>
+            where
+                R: ::poulpy_core::layouts::GLWEToBackendMut<Self> + ::poulpy_ckks::CKKSCtBounds + ::poulpy_ckks::SetCKKSInfos,
+                T: ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
+            {
+                $crate::reference::BlasMatMulReference::blas_jkls_block_reference(module, res, lhs, rhs, tsk, scratch)
+            }
+        }
+    };
 }

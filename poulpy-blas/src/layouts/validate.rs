@@ -179,7 +179,7 @@ pub(crate) fn ensure_maps<M: CKKSModuleInfos + ?Sized>(
 
 /// One rotation-key look-up of an operation: the rotation, the width of the input it key-switches, and the rank of the
 /// blocks. The enumerators of an operation's look-ups yield these in the order its validator checks them; a validator
-/// checks each against the store, a `reference::BlasKeyUses` query collects them.
+/// checks each against the store, a [`BlasKeyUses`](crate::reference::BlasKeyUses) query collects them.
 #[derive(Clone, Copy)]
 pub(crate) struct RotationUse {
     pub(crate) rotation: i64,
@@ -297,13 +297,13 @@ pub fn validate_blas_rotate<BE: Backend>(
     Ok(grid_batch::<BE::Ring>(a))
 }
 
-/// Checks a [`blas_sum`](crate::api::BlasMatInterOps::blas_sum) call as [`validate_blas_rotate`] does, with the
-/// rotation keys of the batch at the narrower of `a`'s and `res`'s widths, of `a`'s rank, and returns the batch `res`
-/// records, `a`'s.
+/// Checks a [`blas_sum`](crate::api::BlasMatInterOps::blas_sum) call as [`validate_blas_rotate`] does, with a radix
+/// whose digits hold the `log2(mat_slots) + 1` lazy terms the sum adds, and the rotation keys of the batch at the
+/// narrower of `a`'s and `res`'s widths, of `a`'s rank, and returns the batch `res` records, `a`'s.
 ///
 /// # Errors
 ///
-/// `InvalidOperand` for a grid, shape or layout it rejects, then, key by key, `MissingAutomorphismKey`, or
+/// `InvalidOperand` for a grid, shape, layout or radix it rejects, then, key by key, `MissingAutomorphismKey`, or
 /// `InvalidOperand` for a key of another rank.
 pub fn validate_blas_sum<BE: Backend>(
     module: &Module<BE>,
@@ -313,6 +313,8 @@ pub fn validate_blas_sum<BE: Backend>(
 ) -> Result<usize> {
     let op = "blas_sum";
     ensure_same_grids(op, module, res, a)?;
+    let terms = grid_batch::<BE::Ring>(a).ilog2() as usize + 1;
+    ensure_lazy_terms(op, a.block_layout().base2k().as_usize(), terms)?;
     sum_uses::<BE::Ring>(res, a, &mut |u| ensure_rotation(op, module, atk, u))?;
     Ok(grid_batch::<BE::Ring>(a))
 }
@@ -721,16 +723,22 @@ fn ensure_product<BE: Backend>(
     ensure_grid::<BE::Ring>(op, a.log_d(), res, res.blocks())?;
     ensure_inner(op, a.cols(), b.rows())?;
     ensure_shape(op, res, a.rows(), b.cols())?;
-    let base2k = res.block_layout().base2k().as_usize();
-    if base2k > MAX_BASE2K {
-        return Err(reject(op, format!("2 lazy terms risk i64 overflow at base2k={base2k}")));
-    }
+    ensure_lazy_terms(op, res.block_layout().base2k().as_usize(), 2)?;
     ensure_layouts(op, module.n(), res, &[a, b])
 }
 
-/// The look-ups of preparing `a`, of `a`'s rank: `first` (sigma or tau) from `a`'s width into a block of `a`'s layout, then
-/// `shift(k)` (phi^k or psi^k) of that result for every `k` in `1..d`, each into a block of the terms' width, which caps
-/// nothing, as the reference evaluates them.
+/// Fails unless digits of radix `base2k` hold a sum of `terms` canonical ones, each within `2^(base2k - 1)`, inside
+/// the normalizer's `2^62`.
+fn ensure_lazy_terms(op: &'static str, base2k: usize, terms: usize) -> Result<()> {
+    if terms > 1 << 63usize.saturating_sub(base2k) {
+        return Err(reject(op, format!("{terms} lazy terms risk i64 overflow at base2k={base2k}")));
+    }
+    Ok(())
+}
+
+/// The look-ups of preparing `a`, of `a`'s rank: `first` (sigma or tau) from `a`'s width into a block of `a`'s layout
+/// at the width it leaves, then `shift(k)` (phi^k or psi^k) of that result for every `k` in `1..d`, each into a block
+/// of the terms' width, neither of which caps anything, as the reference evaluates them.
 pub(crate) fn term_uses<'c, P: LtDiagonalMeta + 'c>(
     a: &impl BlasGridInfos,
     first: &LinearTransformation<P>,
@@ -887,5 +895,24 @@ mod tests {
         );
         assert_eq!(check(128, 20, 60), rejected("blocks at base2k=19 read by maps at base2k=20"));
         assert_eq!(check(128, 19, 61), rejected("blocks at k=60 read by maps at k=61"));
+    }
+
+    #[test]
+    fn lazy_terms_fit_the_normalizer_domain() {
+        for (base2k, terms) in [(62, 2), (61, 4), (60, 8), (52, 1 << 11)] {
+            assert!(
+                ensure_lazy_terms("op", base2k, terms).is_ok(),
+                "base2k={base2k} terms={terms}"
+            );
+        }
+        for (base2k, terms) in [(63, 2), (62, 3), (61, 5), (60, 9)] {
+            assert_eq!(
+                ensure_lazy_terms("op", base2k, terms).map_err(|err| err.composition().cloned()),
+                Err(Some(CKKSCompositionError::InvalidOperand {
+                    op: "op",
+                    reason: format!("{terms} lazy terms risk i64 overflow at base2k={base2k}"),
+                }))
+            );
+        }
     }
 }
