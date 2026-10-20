@@ -10,6 +10,7 @@
 //! | [`test_replicated_encoding_rejects_batch_size`] | a batch of the wrong size |
 //! | [`test_replicated_products_are_shaped`] | chains of every ct × ct and ct × pt product keep the data slots far above CKKS |
 //! | [`test_replicated_layouts_do_not_mix`] | products and sums of different layouts, and constant sums |
+//! | [`test_replicated_eval_mod_is_shaped`] | EvalMod with masked constants and a shaped last squaring keeps the message far above CKKS |
 //! | [`test_replicated_polynomials_are_shaped`] | monomial, Chebyshev and complex polynomials keep the data slots far above CKKS |
 //! | [`test_replicated_automorphisms_are_shaped`] | rotations and conjugation keep the data slots far above CKKS |
 //! | [`test_replicated_rotations_are_admissible`] | rotations by a non-multiple of the period |
@@ -32,14 +33,19 @@ use super::helpers::{
     gen_sk_with_raw, gen_tsk, upload_pt,
 };
 use crate::{
-    CKKSInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, ReplicatedLayout, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
+    CKKSInfos, CoeffsMeta, GLWEPlaintextInfos, GLWEPlaintextMeta, ReplicatedLayout, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{
         CKKSAddOps, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps,
-        CKKSEncryptOps, CKKSModuleInfos, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSReplicatedOps, CKKSRotateOps,
+        CKKSEncryptOps, CKKSEvalModOps, CKKSModuleInfos, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSReplicatedOps,
+        CKKSRotateOps,
     },
     delegates::replicated::{wide_gather_trace, wide_onto_replicated},
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, ReplicatedConversion, ReplicatedTransform},
-    polynomial::{Basis, ComplexPolynomial, EncodeBSGS, Polynomial},
+    layouts::{
+        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, EvalModPlan, EvalModPoly, EvalModType, ReplicatedConversion,
+        ReplicatedTransform, compile_eval_mod, compile_eval_mod_replicated, encode_bsgs_replicated,
+        encode_complex_bsgs_replicated,
+    },
+    polynomial::{Basis, ComplexPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
     shaping::ShapingUnit,
     test_suite::CKKSTestParams,
 };
@@ -521,12 +527,15 @@ enum PolynomialCase {
     Complex,
 }
 
-/// Dyadic coefficients, exact at the coefficients' 8 bits.
-fn coefficients(len: usize, shift: usize) -> Vec<f64> {
-    (0..len).map(|i| ((3 * i + shift) % 7) as f64 / 16.0 - 0.1875).collect()
+fn coefficients<F: TestScalar>(len: usize, shift: usize) -> Vec<F> {
+    (0..len)
+        .map(|i| F::from_f64(0.37 * (1.7 * (i + shift) as f64 + 0.2).sin()).unwrap())
+        .collect()
 }
 
-/// Precision of a polynomial evaluated on real inputs in `[-1, 1]`.
+/// Precision of a polynomial evaluated on real inputs in `[-1, 1]`, with
+/// constants at the ciphertext scale: scalar constants on a full layout, and
+/// masked constants on a replicated layout.
 fn polynomial_precision<BE, F>(
     params: &CKKSTestParams,
     module: &Module<BE>,
@@ -547,41 +556,73 @@ where
     let mut scratch = alloc_scratch(params, module);
     let tsk = gen_tsk(params, module, &sk_raw, &mut scratch.borrow());
     let k = 7 * LOG_DELTA;
-    let xs: Vec<f64> = (0..len).map(|i| 0.95 * (1.3 * i as f64 + 0.4).cos()).collect();
-    let re: Vec<F> = xs.iter().map(|&x| F::from_f64(x).unwrap()).collect();
+    let xs: Vec<F> = (0..len)
+        .map(|i| F::from_f64(0.95 * (1.3 * i as f64 + 0.4).cos()).unwrap())
+        .collect();
     let zero = vec![F::zero(); len];
-    let x = encrypt_batch(params, module, &sk, slot_layout, (&re, &zero), k, 1)?;
+    let x = encrypt_batch(params, module, &sk, slot_layout, (&xs, &zero), k, 1)?;
     let mut out = alloc_ct(params, module, k);
     let s = &mut scratch.borrow();
     let base2k = params.base2k.into();
-    let want: Vec<(f64, f64)> = match case {
+    let coeff_meta = CoeffsMeta::from_delta_budget(LOG_DELTA, 10);
+    let mut encoding = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(params.n / 2));
+    let want: Vec<(F, F)> = match case {
         PolynomialCase::Monomial | PolynomialCase::Chebyshev => {
             let (basis, degree) = match case {
                 PolynomialCase::Monomial => (Basis::Monomial, 7),
                 _ => (Basis::Chebyshev, 13),
             };
-            let poly = Polynomial::new(basis, coefficients(degree + 1, 0));
-            let bsgs = poly
-                .encode_bsgs(host_module, base2k, PT_PREC.into())?
-                .map_baby_steps_ref(|pt| upload_pt(module, pt));
-            module.ckks_eval_poly_real_const_coeffs(&mut out, &x, &bsgs, &tsk, s)?;
-            xs.iter().map(|&x| (poly.evaluate(x), 0.0)).collect()
+            let poly = Polynomial::new(basis, coefficients::<F>(degree + 1, 0));
+            match slot_layout {
+                SlotLayout::Replicated(layout) => {
+                    let bsgs = encode_bsgs_replicated(
+                        &poly,
+                        module,
+                        base2k,
+                        coeff_meta,
+                        SplitStrategy::MinDepth,
+                        layout,
+                        &mut encoding.borrow(),
+                    )?;
+                    module.ckks_eval_poly_real_const_coeffs(&mut out, &x, &bsgs, &tsk, s)?;
+                }
+                SlotLayout::Full => {
+                    let bsgs = poly
+                        .encode_bsgs(host_module, base2k, coeff_meta)?
+                        .map_baby_steps_ref(|pt| upload_pt(module, pt));
+                    module.ckks_eval_poly_real_const_coeffs(&mut out, &x, &bsgs, &tsk, s)?;
+                }
+            }
+            xs.iter().map(|&x| (poly.evaluate(x), F::zero())).collect()
         }
         PolynomialCase::Complex => {
-            let poly = ComplexPolynomial::new(Basis::Monomial, coefficients(6, 0), coefficients(6, 2));
-            let bsgs = poly
-                .encode_bsgs(host_module, base2k, PT_PREC.into())?
-                .map_baby_steps_ref(|pt| upload_pt(module, pt));
-            module.ckks_eval_poly_complex_const_coeffs(&mut out, &x, &bsgs, &tsk, s)?;
+            let poly = ComplexPolynomial::new(Basis::Monomial, coefficients::<F>(6, 0), coefficients::<F>(6, 2));
+            match slot_layout {
+                SlotLayout::Replicated(layout) => {
+                    let bsgs = encode_complex_bsgs_replicated(
+                        &poly,
+                        module,
+                        base2k,
+                        coeff_meta,
+                        SplitStrategy::MinDepth,
+                        layout,
+                        &mut encoding.borrow(),
+                    )?;
+                    module.ckks_eval_poly_complex_const_coeffs(&mut out, &x, &bsgs, &tsk, s)?;
+                }
+                SlotLayout::Full => {
+                    let bsgs = poly
+                        .encode_bsgs(host_module, base2k, coeff_meta)?
+                        .map_baby_steps_ref(|pt| upload_pt(module, pt));
+                    module.ckks_eval_poly_complex_const_coeffs(&mut out, &x, &bsgs, &tsk, s)?;
+                }
+            }
             xs.iter().map(|&x| poly.evaluate(x)).collect()
         }
     };
     assert_eq!(out.slot_layout(), slot_layout, "{case:?}");
     let got = decrypt_batch::<BE, F>(params, module, &sk, &out, len);
-    let want: (Vec<F>, Vec<F>) = want
-        .into_iter()
-        .map(|(re, im)| (F::from_f64(re).unwrap(), F::from_f64(im).unwrap()))
-        .unzip();
+    let want: (Vec<F>, Vec<F>) = want.into_iter().unzip();
     Ok(precision((&got.0, &got.1), (&want.0, &want.1)))
 }
 
@@ -990,5 +1031,151 @@ where
     let gather_bits = precision((&got.0, &got.1), (&want.0, &want.1));
     // Plainly quantized diagonals weighted `R·M(c, j)` over `k` terms.
     assert!(gather_bits >= 26.0, "gather and trace: {gather_bits:.2} bits");
+    Ok(())
+}
+
+/// Input scale of the EvalMod test, above its plan scale so that the entry
+/// rounds and the output keeps the message precision under the ratio.
+const EVAL_MOD_LOG_DELTA_IN: usize = 36;
+
+fn eval_mod_plan() -> EvalModPlan {
+    EvalModPlan {
+        eval_mod_type: EvalModType::CosHK,
+        log_msg_ratio: 13,
+        f_mod_degree: 30,
+        f_mod_interval: 16,
+        f_mod_log_interval_reduction: 3,
+        f_mod_inv_degree: None,
+        scaling: None,
+        split_strategy: SplitStrategy::MinDepth,
+        coeffs_meta: CoeffsMeta::from_delta_budget(26, 20),
+        f_mod_log_delta: 28,
+    }
+}
+
+/// EvalMod of `x = I + m/2^13` at `t = x/K`, against the circuit's own
+/// polynomials, in message units.
+fn eval_mod_precision<BE, F>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+    slot_layout: SlotLayout,
+) -> Result<f64>
+where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    F: TestScalar,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE>,
+{
+    let plan = eval_mod_plan();
+    let ratio = (1u64 << plan.log_msg_ratio) as f64;
+    let interval = plan.f_mod_interval as f64;
+    let dsize = 2;
+    // The tensor key's gadget covers the working width at the plan scale.
+    let test_params = CKKSTestParams {
+        k: (plan.consumed_bits() + EVAL_MOD_LOG_DELTA_IN + 2 * params.base2k).next_multiple_of(dsize * params.base2k)
+            + EVAL_MOD_LOG_DELTA_IN
+            - plan.f_mod_log_delta,
+        prec_meta: GLWEPlaintextMeta {
+            scale: Scale::Log(EVAL_MOD_LOG_DELTA_IN),
+            slots: SlotsKind::Complex,
+            log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
+        },
+        prec_log_budget: 10,
+        dsize,
+        ..*params
+    };
+    let k = test_params.k;
+    let len = 1 << LOG_K;
+    let xs: Vec<f64> = [(15.0, 0.9), (-15.0, -0.95), (3.0, 0.3), (-7.0, -0.6)]
+        .into_iter()
+        .map(|(integer, message)| (integer + message / ratio) / interval)
+        .collect();
+    let re: Vec<F> = xs.iter().map(|&x| F::from_f64(x).unwrap()).collect();
+    let zero = vec![F::zero(); len];
+
+    let (sk_raw, sk) = gen_sk_with_raw(&test_params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&test_params, module);
+    let tsk = gen_tsk(&test_params, module, &sk_raw, &mut scratch.borrow());
+    let mut pt = module.ckks_pt_vec_alloc(
+        slots_of(module, slot_layout, len),
+        Base2K(params.base2k as u32),
+        TorusPrecision((EVAL_MOD_LOG_DELTA_IN + 10) as u32),
+    );
+    pt.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(EVAL_MOD_LOG_DELTA_IN),
+        slots: SlotsKind::Complex,
+        log_sparsity: 0,
+        slot_layout,
+    });
+    encoded(module, &mut pt, &re, &zero)?;
+    let mut ct = alloc_ct(&test_params, module, k);
+    let (mut xe, mut xa) = (Source::new([1; 32]), Source::new([2; 32]));
+    module.ckks_encrypt_sk(&mut ct, &pt, &sk, &mut xe, &mut xa, &mut scratch.borrow())?;
+
+    let mut compile = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(params.n / 2));
+    let base2k = Base2K(params.base2k as u32);
+    let mut res = alloc_ct(&test_params, module, k);
+    let tsk_layout = test_params.tsk_layout();
+    let (f_mod_poly, steps, scale) = match slot_layout {
+        SlotLayout::Replicated(layout) => {
+            let eval_mod = compile_eval_mod_replicated::<BE, F>(base2k, plan, layout, module, &mut compile.borrow())?;
+            let mut eval = ScratchOwned::<BE>::alloc(module.ckks_eval_mod_tmp_bytes(&res, &ct, &eval_mod, &tsk_layout));
+            module.ckks_eval_mod(&mut res, &ct, &eval_mod, &tsk, &mut eval.borrow())?;
+            let scale = eval_mod.range_extension_scale();
+            (eval_mod.f_mod_poly, plan.f_mod_log_interval_reduction, scale)
+        }
+        SlotLayout::Full => {
+            let eval_mod = compile_eval_mod::<BE, F>(base2k, plan, module, &mut compile.borrow())?;
+            let mut eval = ScratchOwned::<BE>::alloc(module.ckks_eval_mod_tmp_bytes(&res, &ct, &eval_mod, &tsk_layout));
+            module.ckks_eval_mod(&mut res, &ct, &eval_mod, &tsk, &mut eval.borrow())?;
+            let scale = eval_mod.range_extension_scale();
+            (eval_mod.f_mod_poly, plan.f_mod_log_interval_reduction, scale)
+        }
+    };
+    assert_eq!(res.slot_layout(), slot_layout);
+    assert_eq!(res.log_delta(), EVAL_MOD_LOG_DELTA_IN);
+
+    let EvalModPoly::Real(poly) = f_mod_poly else {
+        unreachable!("CosHK is a real polynomial")
+    };
+    let two = F::one() + F::one();
+    let to_message = F::from_f64(ratio).unwrap();
+    let want: Vec<F> = re
+        .iter()
+        .map(|&t| {
+            let mut p = poly.evaluate(t);
+            for i in 0..steps {
+                p = two * p * p - F::from_f64(scale.powi(1 << (i + 1))).unwrap();
+            }
+            p * to_message
+        })
+        .collect();
+    let got = decrypt_batch::<BE, F>(&test_params, module, &sk, &res, len);
+    let got_re: Vec<F> = got.0.iter().map(|&v| v * to_message).collect();
+    Ok(precision((&got_re, &zero), (&want, &zero)))
+}
+
+pub fn test_replicated_eval_mod_is_shaped<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) -> Result<()>
+where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let full = eval_mod_precision::<BE, F>(&params, module, host_module, SlotLayout::Full)?;
+    let shaped = eval_mod_precision::<BE, F>(&params, module, host_module, SlotLayout::Replicated(layout()))?;
+    assert!(
+        shaped >= 30.0 && shaped >= full + 25.0,
+        "EvalMod at 2^28: {shaped:.2} bits against {full:.2} for a full layout"
+    );
     Ok(())
 }

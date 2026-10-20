@@ -12,7 +12,7 @@ use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    GLWECopy, GLWENormalize,
+    GLWECopy, GLWENormalize, GLWETensoring,
     layouts::{
         BSGSMeta, GGLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, Rank, SetBSGSMeta,
         prepared::GLWETensorKeyPreparedToBackendRef,
@@ -21,16 +21,20 @@ use poulpy_core::{
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    CKKSCtBounds, GLWEPlaintextMeta, Scale, SetCKKSInfos,
+    CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotLayout,
     api::{
         CKKSAddOps, CKKSComplexPolynomialEvaluationOps, CKKSCopyOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops,
-        CKKSSubOps, PolynomialInputTransform,
+        CKKSRoundOps, CKKSSubOps, PolynomialInputTransform,
     },
     layouts::{
-        CKKSCiphertextOwned, CKKSModuleAlloc, ScratchArenaTakeCKKS,
+        CKKSCiphertextOwned, CKKSMaskedConstants, CKKSModuleAlloc, ScratchArenaTakeCKKS,
         eval_mod::{EvalMod, EvalModBsgs},
     },
     power_basis::{PowerBasis, PowerBasisGen},
+    reference::{
+        mul::square_wide_into,
+        polynomial_evaluation::{const_add_assign, const_sub_assign},
+    },
 };
 
 /// Backend-generic reference implementation of [`CKKSEvalModOps`].
@@ -66,7 +70,7 @@ pub trait CKKSEvalModOpsReference<BE: Backend> {
         BE: Backend,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta + CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
 }
@@ -81,6 +85,8 @@ where
         + CKKSCopyOps<BE>
         + CKKSModuleAlloc<BE>
         + CKKSPow2Ops<BE>
+        + CKKSRoundOps<BE>
+        + GLWETensoring<BE>
         + GLWECopy<BE>
         + GLWENormalize<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -97,7 +103,7 @@ where
     where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos + CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>,
     {
         eval_mod(self, res, ct, params, tsk, scratch)
@@ -137,11 +143,13 @@ where
         + CKKSCopyOps<BE>
         + CKKSModuleAlloc<BE>
         + CKKSPow2Ops<BE>
+        + CKKSRoundOps<BE>
+        + GLWETensoring<BE>
         + GLWECopy<BE>
         + GLWENormalize<BE>,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
-    P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
+    P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos + CKKSMaskedConstants<BE>,
     H: GetTensorKey<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
@@ -168,6 +176,12 @@ where
         got = ct.log_budget(),
     );
 
+    let replicated = matches!(ct.slot_layout(), SlotLayout::Replicated(_));
+    // The last squaring of a replicated layout rounds straight to the input
+    // scale when no inverse follows it.
+    let fused = replicated && params.f_mod_inv_bsgs.is_none() && 2 * s_eval >= s_in;
+    let mut returned = false;
+
     let work_layout = GLWELayout {
         n: ct.n(),
         base2k: ct.base2k(),
@@ -186,29 +200,35 @@ where
             if bsgs.input_transform() == PolynomialInputTransform::Identity {
                 // The generic one-shot evaluator would copy this input again
                 // before building its power basis. Hand ownership over directly.
-                let x1 = eval_mod_input(module, ct, &work_layout, work_meta, scratch);
+                let x1 = eval_mod_input(module, ct, &work_layout, work_meta, scratch)?;
                 let mut power_basis = PowerBasis::new(bsgs.basis(), x1);
                 power_basis.populate(bsgs.degree(), bsgs.log_split(), bsgs.parity(), module, tsk, scratch)?;
                 module.ckks_eval_poly_real_const_coeffs_from_power_basis(res, bsgs, &power_basis, tsk, scratch)?;
             } else {
                 scratch.scope(|scratch_local| {
                     let (mut input, mut nested) = scratch_local.take_ckks_ciphertext_scratch(&work_layout, work_meta);
-                    module.glwe_copy(&mut input, ct, &mut nested);
+                    enter_plan_scale(module, &mut input, ct, work_meta, &mut nested)?;
                     if let Some(offset) = params.f_mod_input_offset.as_ref() {
-                        module.ckks_add_pt_const_assign(&mut input, 0, offset, 0, &mut nested)?;
+                        const_add_assign(module, &mut input, offset, 0, &mut nested)?;
                     }
                     module.ckks_eval_poly_real_const_coeffs(res, &input, bsgs, tsk, &mut nested)
                 })?;
             }
 
             if let Some(consts) = params.range_extension_consts.as_ref() {
-                for i in 0..params.plan.f_mod_log_interval_reduction {
+                let steps = params.plan.f_mod_log_interval_reduction;
+                for i in 0..steps {
+                    if fused && i + 1 == steps {
+                        last_square(module, res, s_in, Some((consts, i)), tsk, scratch)?;
+                        returned = true;
+                        continue;
+                    }
                     scratch.scope(|scratch_local| -> Result<()> {
                         let (mut squared, mut nested) = scratch_local.take_ckks_ciphertext_like_scratch(&*res);
                         module.ckks_square_into(&mut squared, &*res, tsk, &mut nested)?;
                         module.ckks_double_into(res, &squared, &mut nested)
                     })?;
-                    module.ckks_sub_pt_const_assign(res, 0, consts, i, scratch)?;
+                    const_sub_assign(module, res, consts, i, scratch)?;
                 }
             }
 
@@ -226,18 +246,24 @@ where
             if bsgs.re.input_transform() == PolynomialInputTransform::Identity
                 && bsgs.im.input_transform() == PolynomialInputTransform::Identity
             {
-                let x1 = eval_mod_input(module, ct, &work_layout, work_meta, scratch);
+                let x1 = eval_mod_input(module, ct, &work_layout, work_meta, scratch)?;
                 let mut power_basis = PowerBasis::new(bsgs.re.basis(), x1);
                 power_basis.populate(bsgs.re.degree(), bsgs.re.log_split(), bsgs.re.parity(), module, tsk, scratch)?;
                 module.ckks_eval_poly_complex_const_coeffs_from_power_basis(res, bsgs, &power_basis, tsk, scratch)?;
             } else {
                 scratch.scope(|scratch_local| {
                     let (mut input, mut nested) = scratch_local.take_ckks_ciphertext_scratch(&work_layout, work_meta);
-                    module.glwe_copy(&mut input, ct, &mut nested);
+                    enter_plan_scale(module, &mut input, ct, work_meta, &mut nested)?;
                     module.ckks_eval_poly_complex_const_coeffs(res, &input, bsgs, tsk, &mut nested)
                 })?;
             }
-            for _ in 0..params.plan.f_mod_log_interval_reduction {
+            let steps = params.plan.f_mod_log_interval_reduction;
+            for i in 0..steps {
+                if fused && i + 1 == steps {
+                    last_square::<_, _, P, _>(module, res, s_in, None, tsk, scratch)?;
+                    returned = true;
+                    continue;
+                }
                 module.ckks_square_assign(res, tsk, scratch)?;
             }
         }
@@ -251,11 +277,59 @@ where
     // and the only consumption is the EvalMod arithmetic, which `consumed_bits()`
     // accounts for in full. When the plan scale is the wider one the relabel
     // lowers `k` by `s_eval - s_in`, which clears the canonical flag.
-    if s_eval != s_in {
+    // A replicated layout returns to the input scale with a shaped rounding.
+    if !returned && s_eval > s_in && replicated {
+        scratch.scope(|scratch_local| -> Result<()> {
+            let (mut wide, mut nested) = scratch_local.take_ckks_ciphertext_like_scratch(&*res);
+            module.ckks_copy(&mut wide, &*res, &mut nested)?;
+            res.set_k((wide.log_budget() + s_in).into());
+            module.ckks_round_into(res, &wide, &mut nested)
+        })?;
+    } else if !returned && s_eval != s_in {
         res.set_log_delta(s_in);
     }
 
     Ok(())
+}
+
+/// The last range-extension step `res ← 2·res² − c·π_S` (`res ← res²` when
+/// `step` is `None`) of a replicated layout, written at scale
+/// `2^log_delta_out`. The square is kept `log_delta` bits under its scale,
+/// where the doubling and the masked constant add exactly, so the division by
+/// the square's scale and the return to `log_delta_out` are one shaped
+/// rounding.
+fn last_square<BE, R, P, H>(
+    module: &Module<BE>,
+    res: &mut R,
+    log_delta_out: usize,
+    step: Option<(&P, usize)>,
+    tsk: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: CKKSSubOps<BE> + CKKSPow2Ops<BE> + CKKSRoundOps<BE> + GLWETensoring<BE>,
+    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + CKKSMaskedConstants<BE>,
+    H: GetTensorKey<BE>,
+{
+    let lambda = res.log_delta();
+    let wide_layout = GLWELayout {
+        n: res.n(),
+        base2k: res.base2k(),
+        k: res.k(),
+        rank: Rank(1),
+    };
+    scratch.scope(|scratch_local| -> Result<()> {
+        let (mut wide, mut nested) = scratch_local.take_ckks_ciphertext_scratch(&wide_layout, res.meta());
+        square_wide_into(module, &mut wide, &*res, tsk, lambda, &mut nested)?;
+        if let Some((consts, i)) = step {
+            module.ckks_mul_pow2_assign(&mut wide, 1, &mut nested)?;
+            const_sub_assign(module, &mut wide, consts, i, &mut nested)?;
+        }
+        res.set_k((wide.log_budget() + log_delta_out).into());
+        module.ckks_round_into(res, &wide, &mut nested)
+    })
 }
 
 /// Allocates the single owned EvalMod input that becomes power-basis element 1.
@@ -267,16 +341,40 @@ fn eval_mod_input<BE, C>(
     layout: &GLWELayout,
     meta: GLWEPlaintextMeta,
     scratch: &mut ScratchArena<'_, BE>,
-) -> CKKSCiphertextOwned<BE>
+) -> Result<CKKSCiphertextOwned<BE>>
 where
     BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE> + GLWECopy<BE>,
+    Module<BE>: CKKSModuleAlloc<BE> + GLWECopy<BE> + CKKSRoundOps<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     let mut input = module.ckks_ciphertext_alloc(layout.base2k, layout.k);
-    module.glwe_copy(&mut input, ct, scratch);
-    input.set_meta(meta);
-    input
+    enter_plan_scale(module, &mut input, ct, meta, scratch)?;
+    Ok(input)
+}
+
+/// Copies `ct` into `dst` at the plan scale of `meta`. A replicated layout
+/// that drops bits to reach it rounds with shaping.
+fn enter_plan_scale<BE, D, C>(
+    module: &Module<BE>,
+    dst: &mut D,
+    ct: &C,
+    meta: GLWEPlaintextMeta,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: GLWECopy<BE> + CKKSRoundOps<BE>,
+    D: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    C: GLWEToBackendRef<BE> + CKKSCtBounds,
+{
+    if matches!(ct.slot_layout(), SlotLayout::Replicated(_)) && ct.k() > dst.k() {
+        module.ckks_round_into(dst, ct, scratch)?;
+    } else {
+        module.glwe_copy(dst, ct, scratch);
+    }
+    dst.set_meta(meta);
+    Ok(())
 }
 
 pub use super::eval_mod_scratch::ckks_eval_mod_tmp_bytes_reference;

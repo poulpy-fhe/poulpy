@@ -79,7 +79,7 @@ unsafe impl poulpy_ckks::oep::CKKSPolynomialEvaluationImpl for OverrideBackend {
             + poulpy_ckks::SetCKKSInfos
             + ::poulpy_core::layouts::SetBSGSMeta,
         B: poulpy_ckks::api::BSGSPolynomialInfos<Self>,
-        B::Coeffs: poulpy_ckks::CKKSCtBounds,
+        B::Coeffs: poulpy_ckks::CKKSCtBounds + poulpy_ckks::layouts::CKKSMaskedConstants<Self>,
         A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + poulpy_ckks::CKKSCtBounds + poulpy_core::layouts::BSGSMeta,
         G: poulpy_ckks::api::PowerBasisHelper<Self, A>,
         H: ::poulpy_core::layouts::GetTensorKey<Self>,
@@ -109,7 +109,8 @@ unsafe impl CKKSComplexPolynomialEvaluationImpl for OverrideBackend {
             + ::poulpy_core::layouts::GLWEInfos
             + poulpy_core::layouts::BSGSMeta
             + poulpy_ckks::CKKSCtBounds
-            + ::poulpy_core::layouts::IntPolyInfos,
+            + ::poulpy_core::layouts::IntPolyInfos
+            + poulpy_ckks::layouts::CKKSMaskedConstants<Self>,
         A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + poulpy_ckks::CKKSCtBounds + poulpy_core::layouts::BSGSMeta,
         G: poulpy_ckks::api::PowerBasisHelper<Self, A>,
         H: ::poulpy_core::layouts::GetTensorKey<Self>,
@@ -156,7 +157,8 @@ unsafe impl poulpy_ckks::oep::CKKSEvalModImpl for OverrideBackend {
         P: ::poulpy_core::layouts::GLWEToBackendRef<Self>
             + ::poulpy_core::layouts::IntPolyInfos
             + poulpy_ckks::CKKSCtBounds
-            + ::poulpy_core::layouts::BSGSMeta,
+            + ::poulpy_core::layouts::BSGSMeta
+            + poulpy_ckks::layouts::CKKSMaskedConstants<Self>,
         H: ::poulpy_core::layouts::GetTensorKey<Self>,
     {
         let _ = (module, res, ct, params, tsk);

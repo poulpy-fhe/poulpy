@@ -108,6 +108,7 @@ pub mod dft;
 mod encoding_buffer;
 pub mod eval_mod;
 pub mod functional_bootstrapping;
+pub mod masked;
 pub mod mul;
 pub mod paco;
 pub mod plaintext;
@@ -139,9 +140,10 @@ pub(crate) use encoding_buffer::{
     copy_encoding_buffer_into_host, copy_encoding_buffer_into_reim_host, copy_host_into_encoding_buffer,
     copy_reim_host_into_encoding_buffer, slot_coeff_count,
 };
-pub use eval_mod::{EvalMod, EvalModBsgs, EvalModPlan, EvalModPoly, EvalModType, compile_eval_mod};
+pub use eval_mod::{EvalMod, EvalModBsgs, EvalModPlan, EvalModPoly, EvalModType, compile_eval_mod, compile_eval_mod_replicated};
 pub use functional_bootstrapping::EncodedLut;
 pub(crate) use functional_bootstrapping::EncodedLutKind;
+pub use masked::{CKKSMaskedConstants, MaskedCoeffs, encode_bsgs_replicated, encode_complex_bsgs_replicated};
 pub use mul::{CKKSPreparedLeft, CKKSPreparedRight};
 pub use paco::{
     PaCoContext, PaCoDFTPlan, PaCoKeyParameters, PaCoKeySet, PaCoKeySetParts, PaCoKeys, PaCoKeysPrepared, PaCoKeysPreparedParts,

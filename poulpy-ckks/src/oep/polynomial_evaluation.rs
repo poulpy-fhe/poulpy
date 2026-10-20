@@ -35,7 +35,7 @@ pub unsafe trait CKKSPolynomialEvaluationImpl:
     where
         R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         B: BSGSPolynomialInfos<Self>,
-        B::Coeffs: CKKSCtBounds,
+        B::Coeffs: CKKSCtBounds + crate::layouts::CKKSMaskedConstants<Self>,
         A: GLWEToBackendRef<Self> + CKKSCtBounds + poulpy_core::layouts::BSGSMeta,
         G: PowerBasisHelper<Self, A>,
         H: GetTensorKey<Self>;
@@ -52,7 +52,7 @@ pub unsafe trait CKKSPolynomialEvaluationImpl:
         R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         S: GLWEToBackendRef<Self> + CKKSCtBounds,
         B: BSGSPolynomialInfos<Self>,
-        B::Coeffs: CKKSCtBounds,
+        B::Coeffs: CKKSCtBounds + crate::layouts::CKKSMaskedConstants<Self>,
         H: GetTensorKey<Self>,
         CKKSCiphertextOwned<Self>: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
     {
@@ -76,7 +76,12 @@ pub unsafe trait CKKSComplexPolynomialEvaluationImpl: CKKSPolynomialEvaluationIm
     ) -> Result<()>
     where
         R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<Self> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos,
+        C: GLWEToBackendRef<Self>
+            + GLWEInfos
+            + BSGSMeta
+            + CKKSCtBounds
+            + IntPolyInfos
+            + crate::layouts::CKKSMaskedConstants<Self>,
         A: GLWEToBackendRef<Self> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<Self, A>,
         H: GetTensorKey<Self>;
@@ -92,7 +97,12 @@ pub unsafe trait CKKSComplexPolynomialEvaluationImpl: CKKSPolynomialEvaluationIm
     where
         R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         S: GLWEToBackendRef<Self> + CKKSCtBounds,
-        C: GLWEToBackendRef<Self> + GLWEInfos + poulpy_core::layouts::BSGSMeta + CKKSCtBounds + IntPolyInfos,
+        C: GLWEToBackendRef<Self>
+            + GLWEInfos
+            + poulpy_core::layouts::BSGSMeta
+            + CKKSCtBounds
+            + IntPolyInfos
+            + crate::layouts::CKKSMaskedConstants<Self>,
         H: GetTensorKey<Self>,
         CKKSCiphertextOwned<Self>: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
     {
@@ -120,7 +130,7 @@ macro_rules! impl_ckks_polynomial_evaluation_reference {
                     + $crate::SetCKKSInfos
                     + ::poulpy_core::layouts::SetBSGSMeta,
                 B: $crate::api::BSGSPolynomialInfos<Self>,
-                B::Coeffs: $crate::CKKSCtBounds,
+                B::Coeffs: $crate::CKKSCtBounds + $crate::layouts::CKKSMaskedConstants<Self>,
                 A: ::poulpy_core::layouts::GLWEToBackendRef<Self>
                     + $crate::CKKSCtBounds
                     + poulpy_core::layouts::BSGSMeta,
@@ -156,7 +166,8 @@ macro_rules! impl_ckks_complex_polynomial_evaluation_reference {
                     + ::poulpy_core::layouts::GLWEInfos
                     + poulpy_core::layouts::BSGSMeta
                     + $crate::CKKSCtBounds
-                    + ::poulpy_core::layouts::IntPolyInfos,
+                    + ::poulpy_core::layouts::IntPolyInfos
+                    + $crate::layouts::CKKSMaskedConstants<Self>,
                 A: ::poulpy_core::layouts::GLWEToBackendRef<Self>
                     + $crate::CKKSCtBounds
                     + poulpy_core::layouts::BSGSMeta,

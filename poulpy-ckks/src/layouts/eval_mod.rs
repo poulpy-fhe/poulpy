@@ -43,17 +43,17 @@
 
 use crate::numerics::CKKSFloat;
 use anyhow::{Result, anyhow, ensure};
-use poulpy_core::layouts::{Base2K, bsgs_consumed_bits, bsgs_eval_depth, bsgs_op_counts};
+use poulpy_core::layouts::{Base2K, GetDegree, bsgs_consumed_bits, bsgs_eval_depth, bsgs_op_counts};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    CoeffsMeta,
+    CKKSModuleInfos, CoeffsMeta, ReplicatedLayout,
     api::{Basis, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, Parity},
     ckks_log_delta, cosine,
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, ComplexPolynomial, Polynomial, SplitStrategy},
 };
 
-use super::{CKKSModuleAlloc, CKKSPlaintextOwned, CKKSScalar};
+use super::{CKKSModuleAlloc, CKKSPlaintextOwned, CKKSScalar, MaskedCoeffs, masked::encode_masked_constants};
 
 // Fallible scalar conversions: building the host-side polynomials goes through
 // the generic float `F`, and a conversion that is not exactly representable in
@@ -452,75 +452,63 @@ pub struct EvalMod<F, P> {
     pub f_mod_inv_poly: Option<Polynomial<F>>,
 }
 
-/// [`encode_bsgs_backend`] through the parity fold (`u = T_2(t)`).
-fn encode_bsgs_folded_backend<BE, F>(
+/// Decomposes `polynomial` for BSGS, through the parity fold when `folded`,
+/// encoding each baby step's coefficients with `encode`.
+pub(crate) fn encode_bsgs_with<F, C>(
     polynomial: &Polynomial<F>,
-    module: &Module<BE>,
-    base2k: Base2K,
-    coeff_meta: CoeffsMeta,
     strategy: SplitStrategy,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<BSGSPolynomial<CKKSPlaintextOwned<BE>>>
+    folded: bool,
+    encode: &mut impl FnMut(&[F]) -> Result<C>,
+) -> Result<BSGSPolynomial<C>>
 where
-    BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     F: CKKSEncodingScalar,
 {
     let mut step_idx = 0usize;
-    polynomial.decompose_bsgs_folded_with(strategy, |baby_coeffs| {
-        let mut pt = module.ckks_pt_coeffs_alloc(baby_coeffs.len(), base2k, coeff_meta.k);
-        pt.set_meta_checked(coeff_meta.meta)?;
-        module
-            .ckks_encode_coeffs_host_into(&mut pt, baby_coeffs, scratch)
-            .map_err(|e| anyhow!("encode_bsgs_folded: step {step_idx}: {e}"))?;
+    let block = |coeffs: &[F]| {
+        let encoded = encode(coeffs).map_err(|e| anyhow!("encode_bsgs: step {step_idx}: {e}"));
         step_idx += 1;
-        Ok(pt)
-    })
+        encoded
+    };
+    if folded {
+        polynomial.decompose_bsgs_folded_with(strategy, block)
+    } else {
+        polynomial.decompose_bsgs_with(strategy, block)
+    }
 }
 
-fn encode_bsgs_backend<BE, F>(
-    polynomial: &Polynomial<F>,
-    module: &Module<BE>,
-    base2k: Base2K,
-    coeff_meta: CoeffsMeta,
-    strategy: SplitStrategy,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<BSGSPolynomial<CKKSPlaintextOwned<BE>>>
-where
-    BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
-    F: CKKSEncodingScalar,
-{
-    let mut step_idx = 0usize;
-    polynomial.decompose_bsgs_with(strategy, |baby_coeffs| {
-        let mut pt = module.ckks_pt_coeffs_alloc(baby_coeffs.len(), base2k, coeff_meta.k);
-        pt.set_meta_checked(coeff_meta.meta)?;
-        module
-            .ckks_encode_coeffs_host_into(&mut pt, baby_coeffs, scratch)
-            .map_err(|error| anyhow!("encode_bsgs: step {step_idx}: {error}"))?;
-        step_idx += 1;
-        Ok(pt)
-    })
-}
-
-fn encode_complex_bsgs_backend<BE, F>(
+/// [`encode_bsgs_with`] for both halves of a complex polynomial.
+pub(crate) fn encode_complex_bsgs_with<F, C>(
     polynomial: &ComplexPolynomial<F>,
-    module: &Module<BE>,
-    base2k: Base2K,
-    coeff_meta: CoeffsMeta,
     strategy: SplitStrategy,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<ComplexBSGSPolynomial<CKKSPlaintextOwned<BE>>>
+    encode: &mut impl FnMut(&[F]) -> Result<C>,
+) -> Result<ComplexBSGSPolynomial<C>>
 where
-    BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     F: CKKSEncodingScalar,
 {
     let (re, im) = polynomial.split_with_shared_parity();
     Ok(ComplexBSGSPolynomial {
-        re: encode_bsgs_backend(&re, module, base2k, coeff_meta, strategy, scratch)?,
-        im: encode_bsgs_backend(&im, module, base2k, coeff_meta, strategy, scratch)?,
+        re: encode_bsgs_with(&re, strategy, false, encode)?,
+        im: encode_bsgs_with(&im, strategy, false, encode)?,
     })
+}
+
+/// Quantizes `values` into a plaintext of `values.len()` scalar coefficients.
+pub(crate) fn encode_scalar_constants<BE, F>(
+    module: &Module<BE>,
+    base2k: Base2K,
+    coeff_meta: CoeffsMeta,
+    values: &[F],
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<CKKSPlaintextOwned<BE>>
+where
+    BE: Backend,
+    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+    F: CKKSEncodingScalar,
+{
+    let mut pt = module.ckks_pt_coeffs_alloc(values.len(), base2k, coeff_meta.k);
+    pt.set_meta_checked(coeff_meta.meta)?;
+    module.ckks_encode_coeffs_host_into(&mut pt, values, scratch)?;
+    Ok(pt)
 }
 
 /// Compiles an [`EvalModPlan`] directly into destination-backend plaintexts.
@@ -545,11 +533,41 @@ where
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     F: CKKSEncodingScalar,
 {
+    let coeff_meta = lit.coeffs_meta;
+    compile_eval_mod_with(lit, &mut |values: &[F]| {
+        encode_scalar_constants(module, base2k, coeff_meta, values, scratch)
+    })
+}
+
+/// [`compile_eval_mod`] for a ciphertext in `layout`: every constant also
+/// carries its masked plaintext `c·π_S`, quantized with shaped rounding at the
+/// coefficient scale (see [`MaskedCoeffs`]).
+pub fn compile_eval_mod_replicated<BE, F>(
+    base2k: Base2K,
+    lit: EvalModPlan,
+    layout: ReplicatedLayout,
+    module: &Module<BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<EvalMod<F, MaskedCoeffs<CKKSPlaintextOwned<BE>>>>
+where
+    BE: Backend,
+    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + GetDegree + CKKSModuleInfos,
+    F: CKKSEncodingScalar,
+{
+    let coeff_meta = lit.coeffs_meta;
+    compile_eval_mod_with(lit, &mut |values: &[F]| {
+        encode_masked_constants(module, base2k, coeff_meta, layout, values, scratch)
+    })
+}
+
+fn compile_eval_mod_with<F, C>(lit: EvalModPlan, encode: &mut impl FnMut(&[F]) -> Result<C>) -> Result<EvalMod<F, C>>
+where
+    F: CKKSEncodingScalar,
+{
     lit.validate()?;
     if lit.eval_mod_type == EvalModType::ExpCmplx {
-        return compile_eval_mod_exp(base2k, lit, module, scratch);
+        return compile_eval_mod_exp(lit, encode);
     }
-    let coeff_meta = lit.coeffs_meta;
 
     let f_mod_log_interval_reduction = match lit.eval_mod_type {
         EvalModType::SinCheby => 0,
@@ -653,25 +671,14 @@ where
         *c = *c * s;
     }
 
-    let f_mod_bsgs = if lit.folds_even_base() {
-        encode_bsgs_folded_backend(&f_mod_poly, module, base2k, coeff_meta, lit.split_strategy, scratch)?
-    } else {
-        encode_bsgs_backend(&f_mod_poly, module, base2k, coeff_meta, lit.split_strategy, scratch)?
-    };
-    let f_mod_input_offset = match lit.input_offset::<F>() {
-        Some(offset) => {
-            let mut pt = module.ckks_pt_coeffs_alloc(1, base2k, coeff_meta.k);
-            pt.set_meta_checked(coeff_meta.meta)?;
-            module
-                .ckks_encode_coeffs_host_into(&mut pt, &[offset], scratch)
-                .map_err(|e| anyhow!("f_mod_input_offset: {e}"))?;
-            Some(pt)
-        }
-        None => None,
-    };
+    let f_mod_bsgs = encode_bsgs_with(&f_mod_poly, lit.split_strategy, lit.folds_even_base(), encode)?;
+    let f_mod_input_offset = lit
+        .input_offset::<F>()
+        .map(|offset| encode(&[offset]).map_err(|e| anyhow!("f_mod_input_offset: {e}")))
+        .transpose()?;
     let f_mod_inv_bsgs = f_mod_inv_poly_opt
         .as_ref()
-        .map(|p| encode_bsgs_backend(p, module, base2k, coeff_meta, lit.split_strategy, scratch))
+        .map(|p| encode_bsgs_with(p, lit.split_strategy, false, encode))
         .transpose()?;
 
     // Pack the per-step constants `s^(2^(i+1))` one per coefficient into a
@@ -681,12 +688,7 @@ where
         let vals: Vec<F> = (0..f_mod_log_interval_reduction)
             .map(|i| s.ckks_powi(1i32 << (i + 1)))
             .collect();
-        let mut pt = module.ckks_pt_coeffs_alloc(f_mod_log_interval_reduction, base2k, coeff_meta.k);
-        pt.set_meta_checked(coeff_meta.meta)?;
-        module
-            .ckks_encode_coeffs_host_into(&mut pt, &vals, scratch)
-            .map_err(|e| anyhow!("range_extension_consts: {e}"))?;
-        Some(pt)
+        Some(encode(&vals).map_err(|e| anyhow!("range_extension_consts: {e}"))?)
     } else {
         None
     };
@@ -707,18 +709,10 @@ where
 /// single [`ComplexPolynomial`] and BSGS-encodes it. The `r` range-extension
 /// steps are plain complex squarings (`exp 2θ = (exp θ)²`), so no offset or
 /// per-step constant is needed.
-fn compile_eval_mod_exp<BE, F>(
-    base2k: Base2K,
-    lit: EvalModPlan,
-    module: &Module<BE>,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<EvalMod<F, CKKSPlaintextOwned<BE>>>
+fn compile_eval_mod_exp<F, C>(lit: EvalModPlan, encode: &mut impl FnMut(&[F]) -> Result<C>) -> Result<EvalMod<F, C>>
 where
-    BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     F: CKKSEncodingScalar,
 {
-    let coeff_meta = lit.coeffs_meta;
     let scaling_f64 = lit.scaling.unwrap_or(1.0);
     let scaling: F = scalar_from_f64("scaling", scaling_f64)?;
     let sc_fac: F = scalar_from_u64("2^f_mod_log_interval_reduction", 1u64 << lit.f_mod_log_interval_reduction)?;
@@ -743,7 +737,7 @@ where
         F::ckks_cos,
     )?;
     let exp_poly = ComplexPolynomial::new(Basis::Chebyshev, re.coeffs, im.coeffs);
-    let exp_bsgs = encode_complex_bsgs_backend(&exp_poly, module, base2k, coeff_meta, lit.split_strategy, scratch)?;
+    let exp_bsgs = encode_complex_bsgs_with(&exp_poly, lit.split_strategy, encode)?;
 
     Ok(EvalMod {
         plan: lit,

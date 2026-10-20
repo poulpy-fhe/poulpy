@@ -1006,6 +1006,43 @@ pub(crate) fn ensure_admissible_rotation(op: &'static str, slot_layout: SlotLayo
     Ok(())
 }
 
+/// `a²` computed `lambda` bits under its scale into `wide`, without rounding:
+/// the square of a destination `lambda` bits narrower than `wide`, labeled
+/// `lambda` bits finer.
+pub(crate) fn square_wide_into<BE, M, Out, A, T>(
+    module: &M,
+    wide: &mut Out,
+    a: &A,
+    tsk: &T,
+    lambda: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    M: GLWETensoring<BE> + ?Sized,
+    Out: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+    A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+    T: GetTensorKey<BE>,
+{
+    let k = a.k();
+    tsk.get_tensor_key(k)
+        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
+            op: "ckks_square_wide",
+            k: k.into(),
+            source,
+        })?;
+    let max_k = wide.k().as_usize().saturating_sub(lambda);
+    let (log_budget, log_delta, cnv_offset) = mul_ct_params_raw(max_k, a.log_delta(), k.into(), a.log_delta(), k.into())?;
+    let stamp = MulStamp {
+        log_budget,
+        log_delta,
+        log_sparsity: Some(a.log_sparsity()),
+        slots: Some(a.slots()),
+        slot_layout: Some(a.slot_layout()),
+    };
+    square_into_at(module, wide, a, tsk, cnv_offset, stamp.widen(lambda), scratch)
+}
+
 /// Rounds a product computed under the scale into `dst` at the width `stamp` labels.
 pub(crate) fn round_into<BE, M, Dst>(
     module: &M,

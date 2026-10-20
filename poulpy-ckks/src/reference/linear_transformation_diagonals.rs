@@ -243,7 +243,7 @@ where
 
 /// The degree of the diagonals of a map of period `period`: `period * N / ckks_max_slots` (`2 * period` on the
 /// standard ring, `period` on the invariant ring), raised to the backend's minimum degree and capped at the ring degree.
-fn period_degree<BE: Backend, M: CKKSModuleInfos + GetDegree>(module: &M, period: usize) -> Degree {
+pub(crate) fn period_degree<BE: Backend, M: CKKSModuleInfos + GetDegree>(module: &M, period: usize) -> Degree {
     assert!(period.is_power_of_two(), "a map's period is a power of two");
     let ring = module.ring_degree().as_usize();
     period

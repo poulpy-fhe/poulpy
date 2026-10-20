@@ -5,12 +5,12 @@ use poulpy_core::layouts::{
 use poulpy_hal::api::{CnvPVecBytesOf, Convolution, VecZnxBigNormalizeTmpBytes, VecZnxRshTmpBytes};
 use poulpy_hal::layouts::{Backend, Module, PrepareHint};
 
-use crate::SlotsKind;
 use crate::{
     CKKSCtBounds, CKKSInfos,
-    api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSSubOps, PolynomialInputTransform},
+    api::{CKKSAddOps, CKKSCopyOps, CKKSMulAddOps, CKKSMulOps, CKKSPow2Ops, CKKSRoundOps, CKKSSubOps, PolynomialInputTransform},
     layouts::eval_mod::{EvalMod, EvalModBsgs},
 };
+use crate::{SlotLayout, SlotsKind};
 
 #[derive(Clone, Copy)]
 struct EvalModWorkCtInfos {
@@ -70,7 +70,10 @@ where
         + CnvPVecBytesOf
         + Convolution<BE>
         + VecZnxRshTmpBytes
-        + VecZnxBigNormalizeTmpBytes,
+        + VecZnxBigNormalizeTmpBytes
+        + CKKSPow2Ops<BE>
+        + CKKSRoundOps<BE>
+        + CKKSMulAddOps<BE>,
     R: CKKSCtBounds,
     C: CKKSCtBounds,
     P: CKKSCtBounds,
@@ -133,7 +136,29 @@ where
     let fused_baby =
         crate::reference::polynomial_evaluation::eval_baby_linear_combination_tmp_bytes(module, work.max_size(), pt_size_max);
 
-    usize::from(needs_work_copy) * compact_work
+    // A replicated layout holds one working-width ciphertext while it takes
+    // masked products, squares its last step or rounds between scales.
+    let replicated = match ct.slot_layout() {
+        SlotLayout::Replicated(_) => {
+            let coeffs = match &params.f_mod_bsgs {
+                EvalModBsgs::Real(poly) => poly.baby_step(0),
+                EvalModBsgs::Complex(poly) => poly.re.baby_step(0),
+            };
+            let masked_products = module
+                .ckks_mul_add_pt_vec_tmp_bytes(&work, &work, coeffs)
+                .max(module.ckks_mul_pt_vec_tmp_bytes(&work, &work, coeffs));
+            compact_work
+                + masked_products
+                    .max(module.ckks_square_tmp_bytes(&work, &work, tsk))
+                    .max(module.ckks_mul_pow2_tmp_bytes(work.max_size()))
+                    .max(module.ckks_copy_tmp_bytes(&work, res))
+                    .max(module.ckks_round_tmp_bytes(res, &work))
+                    .max(module.ckks_round_tmp_bytes(&work, ct))
+        }
+        SlotLayout::Full => 0,
+    };
+
+    let steps = usize::from(needs_work_copy) * compact_work
         + module
             .ckks_copy_tmp_bytes(&work, &work)
             // Polynomial evaluation finishes by copying into the caller's
@@ -147,5 +172,6 @@ where
             .max(module.ckks_sub_one_tmp_bytes(work.max_size()))
             .max(bsgs_giant)
             .max(square_scope)
-            .max(fused_baby)
+            .max(fused_baby);
+    steps.max(replicated)
 }
