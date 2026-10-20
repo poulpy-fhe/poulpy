@@ -212,5 +212,18 @@ pub fn default_bench_params_normalize() -> Vec<NormalizeSweepParams> {
             drop_bits: 48,
         });
     }
+    // 32 limbs at the footprint of the 2^16 x 8 rows.
+    result.push(NormalizeSweepParams {
+        shape: HalSweepParms {
+            n: 1 << 14,
+            cols: 1,
+            size: 32,
+        },
+        a_size: 32,
+        a_base2k: 50,
+        res_base2k: 50,
+        res_offset: 0,
+        drop_bits: 0,
+    });
     result
 }
