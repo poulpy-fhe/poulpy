@@ -46,8 +46,10 @@ if [[ "$backend" == avx512 || "$mode" == emulated ]]; then
 fi
 
 execution_seconds=480
-# AVX-512 SDE also runs arbitrary-bit gadget and summed-product parity sweeps.
-if [[ "$backend" == avx512 && "$mode" == emulated ]]; then
+# AVX-512 SDE also runs arbitrary-bit gadget and summed-product parity sweeps, and
+# the native suite runs the large-ring one-pass and fused parity cases, whose run
+# time varies by about a fifth between runners.
+if [[ "$backend" == avx512 ]]; then
   execution_seconds=720
 fi
 
