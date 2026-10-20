@@ -26,6 +26,7 @@
 //! measures ~28 bits across the suite configurations; the assertions enforce
 //! the `MIN_AVG_LOG2_PREC` regression floor a few bits under that.
 
+use crate::CKKSModuleInfos;
 use crate::Scale;
 use crate::api::CKKSEncodingOps;
 use crate::layouts::CKKSCiphertextOwned;
@@ -963,7 +964,7 @@ where
     // `log_delta + log_budget <= 127` fits the i128 decode codec (the unused
     // high-order budget is dropped losslessly).
     let prec = meta(ct.log_delta(), ct.log_budget().min(127usize.saturating_sub(ct.log_delta())));
-    let mut pt_out = module.ckks_pt_vec_alloc(ct.base2k(), prec.k);
+    let mut pt_out = module.ckks_pt_vec_alloc(module.ckks_max_slots(), ct.base2k(), prec.k);
     pt_out.set_meta(prec.meta);
     module.ckks_decrypt(&mut pt_out, ct, sk, &mut scratch.borrow()).unwrap();
     let m = 1 << (ct.log_n() - ct.log_sparsity() - 1);

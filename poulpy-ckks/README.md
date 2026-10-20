@@ -269,8 +269,7 @@ let m = 8;  // number of complex slots
 let re = vec![0.0f64; m];
 let im = vec![1.0f64; m];
 
-// A plaintext of `m` slots on the standard ring has degree `2 * m`.
-let mut pt = module.ckks_plaintext_alloc((2 * m).into(), base2k.into(), 50usize.into());
+let mut pt = module.ckks_pt_vec_alloc(m, base2k.into(), 50usize.into());
 pt.set_meta_checked(GLWEPlaintextMeta {
     scale: Scale::Log(40),
     slots: SlotsKind::Complex,

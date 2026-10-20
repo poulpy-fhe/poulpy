@@ -281,8 +281,8 @@ macro_rules! ckks_backend_rank2_test_suite {
                 $crate::test_suite::mul::test_mul_pt_scale_above_ct
             );
             run_test!(
-                plaintext_degree_add_sub_mul,
-                $crate::test_suite::plaintext_degree::test_plaintext_degree_add_sub_mul
+                plaintext_slots_add_sub_mul,
+                $crate::test_suite::plaintext_slots::test_plaintext_slots_add_sub_mul
             );
             run_test!(mul_pow2_aligned, $crate::test_suite::mul_pow2::test_mul_pow2_aligned);
             run_test!(div_pow2_aligned, $crate::test_suite::mul_pow2::test_div_pow2_aligned);
@@ -588,20 +588,16 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::linear_transformation::test_linear_transformation_pins_operation_precisions
             );
             run_test!(
-                plaintext_degree_embedding,
-                $crate::test_suite::plaintext_degree::test_plaintext_degree_embedding
+                plaintext_slots_add_sub_mul,
+                $crate::test_suite::plaintext_slots::test_plaintext_slots_add_sub_mul
             );
             run_test!(
-                plaintext_degree_add_sub_mul,
-                $crate::test_suite::plaintext_degree::test_plaintext_degree_add_sub_mul
+                linear_transformation_diagonal_slots,
+                $crate::test_suite::plaintext_slots::test_linear_transformation_diagonal_slots
             );
             run_test!(
-                linear_transformation_diagonal_degree,
-                $crate::test_suite::plaintext_degree::test_linear_transformation_diagonal_degree
-            );
-            run_test!(
-                diagonal_encoder_degree,
-                $crate::test_suite::plaintext_degree::test_diagonal_encoder_degree
+                diagonal_encoder_slots,
+                $crate::test_suite::plaintext_slots::test_diagonal_encoder_slots
             );
             run_test!(paco_partial_c2s, $crate::test_suite::paco_lt::test_paco_partial_c2s);
             run_test!(paco_packing, $crate::test_suite::paco_lt::test_paco_packing);
@@ -1065,7 +1061,7 @@ pub mod paco_ops;
 pub mod paco_parallel;
 pub mod paco_reference;
 pub(crate) mod paco_reference_model;
-pub mod plaintext_degree;
+pub mod plaintext_slots;
 pub mod polynomial_evaluation;
 pub mod presets;
 #[doc(hidden)]

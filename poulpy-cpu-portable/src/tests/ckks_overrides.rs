@@ -1,6 +1,7 @@
 //! Downstream specialization probes: reference families remain available while
 //! polynomial kernels and EvalMod independently select execution and scratch.
 use crate::hal_impl::delegating_backend::DifferentSamplingFFT64Portable as OverrideBackend;
+use poulpy_ckks::CKKSModuleInfos;
 use poulpy_ckks::Scale;
 use poulpy_ckks::api::{
     CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSCopyOps, CKKSEvalModOps, CKKSPolynomialEvaluationOps,
@@ -752,8 +753,8 @@ fn decrypt_query_uses_plaintext_allocation_width() {
 
     let module = Module::<OverrideBackend>::new(64);
     let ct = module.ckks_ciphertext_alloc(16usize.into(), 64usize.into());
-    let narrow = module.ckks_pt_vec_alloc(16usize.into(), 64usize.into());
-    let mut wide = module.ckks_pt_vec_alloc(16usize.into(), 1024usize.into());
+    let narrow = module.ckks_pt_vec_alloc(module.ckks_max_slots(), 16usize.into(), 64usize.into());
+    let mut wide = module.ckks_pt_vec_alloc(module.ckks_max_slots(), 16usize.into(), 1024usize.into());
     SetK::set_k(&mut wide, 32usize.into());
     let expected = module.glwe_plaintext_bytes_of_from_infos(&ct)
         + module

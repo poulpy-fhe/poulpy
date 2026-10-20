@@ -11,6 +11,7 @@
 //! them to the backend, performs the operation, downloads, and asserts
 //! correctness.
 
+use crate::CKKSModuleInfos;
 use crate::Scale;
 use poulpy_core::layouts::SetGLWEPlaintextInfos;
 use poulpy_hal::AlignedBuf;
@@ -440,7 +441,7 @@ pub fn quantized_slots<F: TestScalar, E: NegacyclicFFT<F>>(
     re: &[F],
     im: &[F],
 ) -> (Vec<F>, Vec<F>) {
-    let mut pt = host_module.ckks_pt_vec_alloc(base2k, prec.k());
+    let mut pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), base2k, prec.k());
     pt.set_meta(prec.meta());
     encoder.encode_reim(&mut pt, re, im).unwrap();
     let m = re.len();
@@ -566,7 +567,7 @@ where
     F: TestScalar,
     E: NegacyclicFFT<F>,
 {
-    let mut host_pt = host_module.ckks_pt_vec_alloc(base2k, prec.k());
+    let mut host_pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), base2k, prec.k());
     host_pt.set_meta(prec.meta());
     encoder.encode_reim(&mut host_pt, re, im).unwrap();
     upload_pt(module, &host_pt)
@@ -614,7 +615,7 @@ where
     F: TestScalar,
 {
     let n = m * 2;
-    let mut host_pt = host_module.ckks_pt_vec_alloc(base2k, prec.k());
+    let mut host_pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), base2k, prec.k());
     host_pt.set_meta(prec.meta());
     let mut coeffs: Vec<F> = vec![F::zero(); n];
     if let Some(r) = re {
@@ -920,7 +921,7 @@ where
     F: TestScalar,
     E: NegacyclicFFT<F>,
 {
-    let mut host_pt = host_module.ckks_pt_vec_alloc(params.base2k.into(), prec.k());
+    let mut host_pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), params.base2k.into(), prec.k());
     host_pt.set_meta(prec.meta());
     encoder.encode_reim(&mut host_pt, re, im).unwrap();
     let pt = upload_pt(module, &host_pt);
@@ -1283,7 +1284,7 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
     // Encode the expected message at the ciphertext's full metadata, so the
     // reference spans the same limbs as a full-width decryption (no head-room
     // clipping — any corruption above the head-room shows up as noise).
-    let mut pt_want = module.ckks_pt_vec_alloc(ct.base2k(), ct.k());
+    let mut pt_want = module.ckks_pt_vec_alloc(module.ckks_max_slots(), ct.base2k(), ct.k());
     pt_want.set_meta(GLWEPlaintextMeta {
         scale: Scale::Log(ct.log_delta()),
         slots: SlotsKind::Complex,
@@ -1330,6 +1331,7 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
     // decoding the full storage width would overflow the decoder's
     // `log_delta + log_budget <= 127` limit.
     let mut pt_decode = module.ckks_pt_vec_alloc(
+        module.ckks_max_slots(),
         ct.base2k(),
         (ct.log_delta() + ct.log_budget().min(params.prec().log_budget())).into(),
     );

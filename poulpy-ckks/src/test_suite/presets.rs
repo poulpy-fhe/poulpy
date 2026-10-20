@@ -6,6 +6,7 @@
 //! precision pin test ([`bootstrapping_presets_meet_precision`]) both drive it,
 //! so there is a single description of how a preset is exercised.
 
+use crate::CKKSModuleInfos;
 use crate::Scale;
 use poulpy_core::layouts::{
     GGLWEInfos, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, GLWETensorKeyPrepared, GLWEToBackendMut,
@@ -147,7 +148,7 @@ where
         let keys = keys.prepare(&module, &mut scratch.borrow());
 
         let (want_re, want_im) = test_vector_1::<f64>(n / 2);
-        let mut input_pt = module.ckks_pt_vec_alloc(base2k.into(), input_layout.k());
+        let mut input_pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), base2k.into(), input_layout.k());
         input_pt.set_meta(input_layout.meta());
         module
             .ckks_encode_reim_into(&mut input_pt, &want_re, &want_im, &mut scratch.borrow())
@@ -218,9 +219,11 @@ where
             .log_budget()
             .min(PRECISION_LOG_BUDGET)
             .min(127usize.saturating_sub(output.log_delta()));
-        let mut output_pt = self
-            .module
-            .ckks_pt_vec_alloc(output.base2k(), (output.log_delta() + log_budget).into());
+        let mut output_pt = self.module.ckks_pt_vec_alloc(
+            self.module.ckks_max_slots(),
+            output.base2k(),
+            (output.log_delta() + log_budget).into(),
+        );
         output_pt.set_meta(GLWEPlaintextMeta {
             scale: Scale::Log(output.log_delta()),
             slots: SlotsKind::Complex,

@@ -9,7 +9,7 @@ use crate::{
         CKKSFoldLayoutOps, CKKSFoldOps, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, CKKSNegOps,
         CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps, LinearTransformationPrepared,
     },
-    layouts::{CKKSFoldKeysLayout, CKKSModuleAlloc, RingSwitchKeys, slots_degree},
+    layouts::{CKKSFoldKeysLayout, CKKSModuleAlloc, RingSwitchKeys},
 };
 use poulpy_core::{
     GLWECIKeyEncryptSk,
@@ -58,7 +58,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
     let re2 = (0..slots).map(|i| (slots - i) as f64 / 389.0).collect::<Vec<_>>();
     let im = vec![0.0; slots];
 
-    let mut pt1 = module.ckks_pt_vec_alloc(params.base2k.into(), params.prec().k());
+    let mut pt1 = module.ckks_pt_vec_alloc(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
     pt1.set_meta(params.prec().meta());
     module
         .ckks_encode_reim_into(&mut pt1, &re1, &im, &mut scratch.borrow())
@@ -72,7 +72,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
         &mut scratch.borrow(),
     );
 
-    let mut pt2 = module.ckks_pt_vec_alloc(params.base2k.into(), params.prec().k());
+    let mut pt2 = module.ckks_pt_vec_alloc(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
     pt2.set_meta(params.prec().meta());
     module
         .ckks_encode_reim_into(&mut pt2, &re2, &im, &mut scratch.borrow())
@@ -86,7 +86,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
         &mut scratch.borrow(),
     );
 
-    let mut decrypted = module.ckks_pt_vec_alloc(params.base2k.into(), params.prec().k());
+    let mut decrypted = module.ckks_pt_vec_alloc(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
     let mut got_re = vec![0.0; slots];
     let mut got_im = vec![0.0; slots];
     macro_rules! assert_output {
@@ -216,37 +216,27 @@ pub fn test_conjugate_invariant_leveled<BE>(
     assert_eq!(exhausted.k(), exhausted_before.k());
     assert_eq!(exhausted.data().data().as_ref(), exhausted_before.data().data().as_ref());
 
-    let sparse_slots = slots / 4;
-    let mut quarter_pt = module.ckks_plaintext_alloc(
-        slots_degree::<BE, _>(module, sparse_slots),
-        params.base2k.into(),
-        params.prec().k(),
-    );
-    quarter_pt.set_meta(params.prec().meta());
+    let pt_slots = slots / 4;
+    let mut pt = module.ckks_pt_vec_alloc(pt_slots, params.base2k.into(), params.prec().k());
+    pt.set_meta(params.prec().meta());
     module
-        .ckks_encode_reim_into(
-            &mut quarter_pt,
-            &re2[..sparse_slots],
-            &im[..sparse_slots],
-            &mut scratch.arena(),
-        )
+        .ckks_encode_reim_into(&mut pt, &re2[..pt_slots], &im[..pt_slots], &mut scratch.arena())
         .unwrap();
-    let sparse = ckks_encrypt_pt(
+    let ct2 = ckks_encrypt_pt(
         &params,
         module,
         &sk,
         params.k,
-        &quarter_pt.to_host_owned::<BE>(),
+        &pt.to_host_owned::<BE>(),
         &mut scratch.arena(),
     );
-    assert_eq!(sparse.log_sparsity(), 2);
-    let sparse_want = (0..slots).map(|i| re2[i % sparse_slots]).collect::<Vec<_>>();
-    assert_output!(&sparse, &sparse_want);
+    let want2 = (0..slots).map(|i| re2[i % pt_slots]).collect::<Vec<_>>();
+    assert_output!(&ct2, &want2);
     let mut mixed = alloc_ct(&params, module, params.k);
     module
-        .ckks_mul_pt_vec_into(&mut mixed, &ct1, &quarter_pt, &mut scratch.arena())
+        .ckks_mul_pt_vec_into(&mut mixed, &ct1, &pt, &mut scratch.arena())
         .unwrap();
-    let mixed_want = (0..slots).map(|i| re1[i] * sparse_want[i]).collect::<Vec<_>>();
+    let mixed_want = (0..slots).map(|i| re1[i] * want2[i]).collect::<Vec<_>>();
     assert_output!(&mixed, &mixed_want);
 
     use crate::polynomial::{Basis, EncodeBSGS, Polynomial};
@@ -278,7 +268,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
     };
     let mut lt_scratch =
         ScratchOwned::<BE>::alloc(module.ckks_eval_linear_transformation_streamed_tmp_bytes(&ct1, &params.atk_layout()));
-    for diagonal_slots in [slots, sparse_slots] {
+    for diagonal_slots in [slots, pt_slots] {
         let mut re = Diagonals::new(diagonal_slots);
         for d in [0, 1, 3, 5] {
             re.set(d, (0..diagonal_slots).map(|i| ((i + d as usize) % 7) as f64 / 16.0).collect());
@@ -317,12 +307,8 @@ pub fn test_conjugate_invariant_leveled<BE>(
                 keys.entry(p)
                     .or_insert_with(|| gen_atk(&params, module, p, &sk_raw, &mut scratch.arena()));
             }
-            let input = if diagonal_slots == slots { &ct1 } else { &sparse };
-            let values = if diagonal_slots == slots {
-                &re1[..]
-            } else {
-                &re2[..sparse_slots]
-            };
+            let input = if diagonal_slots == slots { &ct1 } else { &ct2 };
+            let values = if diagonal_slots == slots { &re1[..] } else { &re2[..pt_slots] };
             let (want, _) = diagonals.evaluate((values, &im[..diagonal_slots]), strategy);
             let want = (0..slots).map(|i| want[i % diagonal_slots]).collect::<Vec<_>>();
             let mut result = alloc_ct(&params, module, params.k);
@@ -365,15 +351,8 @@ where
             .map(|i| F::from_f64(((17 * i + 3) % 31) as f64 / 37.0).unwrap())
             .collect::<Vec<_>>();
         let im = vec![F::from_f64(0.25).unwrap(); slots];
-        for below_ring in [false, true] {
-            let mut pt = if below_ring {
-                module.ckks_plaintext_alloc(slots_degree::<BE, _>(module, slots), 19usize.into(), (log_delta + 36).into())
-            } else {
-                module.ckks_pt_vec_alloc(19usize.into(), (log_delta + 36).into())
-            };
-            if below_ring {
-                assert_eq!(pt.n().as_usize(), slots.max(BE::MIN_DEGREE).min(module.n()));
-            }
+        if slots >= BE::MIN_DEGREE {
+            let mut pt = module.ckks_pt_vec_alloc(slots, 19usize.into(), (log_delta + 36).into());
             pt.set_meta(GLWEPlaintextMeta {
                 scale: Scale::Log(log_delta),
                 slots: SlotsKind::Complex,
@@ -433,7 +412,7 @@ where
     }
     let mut oversized = CKKSEncodingBuffer::<AlignedBuf, F>::from_host::<BE>(&vec![F::zero(); 4 * module.n()]);
     assert!(module.ckks_slots_to_coeffs_assign(&mut oversized).is_err());
-    let mut pt = module.ckks_pt_vec_alloc(19usize.into(), (log_delta + 36).into());
+    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), 19usize.into(), (log_delta + 36).into());
     assert!(module.ckks_encode_coeffs_into(&mut pt, &oversized).is_err());
 }
 
@@ -546,7 +525,7 @@ where
     let slots = params.n;
     let want = (0..slots).map(|i| (i as f64 + 1.0) / 521.0).collect::<Vec<_>>();
     let zeros = vec![0.0; slots];
-    let mut pt = ci.ckks_pt_vec_alloc(params.base2k.into(), params.prec().k());
+    let mut pt = ci.ckks_pt_vec_alloc(ci.ckks_max_slots(), params.base2k.into(), params.prec().k());
     pt.set_meta(params.prec().meta());
     ci.ckks_encode_reim_into(&mut pt, &want, &zeros, &mut scratch.borrow())
         .unwrap();

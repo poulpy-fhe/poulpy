@@ -20,6 +20,7 @@
 //! 6. `verification`
 
 use anyhow::Result;
+use poulpy_ckks::CKKSModuleInfos;
 use poulpy_ckks::Scale;
 use poulpy_ckks::{
     CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
@@ -260,7 +261,9 @@ fn encoding(setup: &mut SetupArtifacts) -> Result<EncodingArtifacts> {
     let bsgs = poly.encode_bsgs(&host_module, BASE2K.into(), COEFF_META)?;
     println!("  BSGS baby steps: {}, parity={:?}", bsgs.baby_steps().len(), bsgs.parity());
 
-    let mut pt_znx = setup.module.ckks_pt_vec_alloc(BASE2K.into(), PREC_CT.k());
+    let mut pt_znx = setup
+        .module
+        .ckks_pt_vec_alloc(setup.module.ckks_max_slots(), BASE2K.into(), PREC_CT.k());
     pt_znx.set_meta(PREC_CT.meta());
     setup
         .module

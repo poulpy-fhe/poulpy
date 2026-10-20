@@ -154,8 +154,9 @@
   The bits change only in that case, where results were wrong.
 - **Fix:** `ckks_encode_linear_transformation_from_diagonals`, `EncodeBSGS::encode_bsgs_with`, `EncodeBSGS::encode_bsgs_folded_with` and `compile_eval_mod` return `CKKSCompositionError::InvalidOperand` for a `CoeffsMeta` with `k = 0`, before allocating anything, and `encode_bsgs`, the `ComplexPolynomial` encoders and the bootstrapping plans return it through them.
   At `log_delta = 0` the linear-transformation encoder panicked while encoding the first diagonal, and at `log_delta > 0` it returned `LimbReallocationShrinksBelowMetadata`; the BSGS and EvalMod encoders panicked while encoding the first baby step.
-- **Breaking:** `CKKSModuleAlloc::ckks_pt_vec_alloc_compact` is removed: a plaintext is allocated at its degree with `ckks_plaintext_alloc(n, base2k, k)`, `n = 2 * slots` on the standard ring and `slots` on the conjugate-invariant ring, at least the backend's `MIN_DEGREE`.
-  The test suite's `compact` module is renamed `plaintext_degree`, with `test_plaintext_degree_embedding`, `test_plaintext_degree_add_sub_mul`, `test_linear_transformation_diagonal_degree` and `test_diagonal_encoder_degree`.
+- **Breaking:** `CKKSModuleAlloc::ckks_pt_vec_alloc` takes the slot count first and allocates the plaintext at the degree that holds them, `2 * slots` on the standard ring and `slots` on the conjugate-invariant ring; `ckks_max_slots()` gives the ring degree, and a degree below the backend's `MIN_DEGREE` panics.
+  `CKKSModuleAlloc::ckks_pt_vec_alloc_compact` is removed, as `ckks_pt_vec_alloc` covers it.
+  The test suite's `compact` module is renamed `plaintext_slots`, with `test_plaintext_slots_add_sub_mul`, `test_linear_transformation_diagonal_slots` and `test_diagonal_encoder_slots`; `test_compact_plaintext_embedding` is removed.
 
 ### `poulpy-blas`
 

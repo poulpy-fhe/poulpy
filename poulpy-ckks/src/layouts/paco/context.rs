@@ -19,6 +19,7 @@
 //! scheduled alone it is the unfused fast tail — one fused conj-rotate
 //! keyswitch and one μ-mask multiplication ([`PaCoPsiTailMaterial`]).
 
+use crate::CKKSModuleInfos;
 use crate::layouts::CKKSPlaintext;
 use std::marker::PhantomData;
 
@@ -272,7 +273,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
                     .log_delta()
                     .checked_add(dft.log_budget())
                     .context("PaCo ψ mask torus width overflows usize")?;
-                let mut pt = module.ckks_pt_vec_alloc(base2k, k_pt.into());
+                let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), base2k, k_pt.into());
                 pt.set_meta_checked(GLWEPlaintextMeta {
                     scale: Scale::Log(dft.log_delta()),
                     slots: SlotsKind::Complex,
