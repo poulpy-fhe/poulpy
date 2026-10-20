@@ -336,21 +336,20 @@ mod tests {
             let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(slots));
             let mut scratch = scratch.arena();
 
-            for degree in [2 * slots, module.max_n()] {
-                let mut pt = module.ckks_plaintext_alloc(Degree(degree as u32), Base2K(20), TorusPrecision(80));
-                pt.set_meta(GLWEPlaintextMeta {
-                    scale: Scale::Log(40),
-                    slots: SlotsKind::Complex,
-                    log_sparsity: 0,
-                });
-                module.ckks_encode_reim_into(&mut pt, &re, &im, &mut scratch).unwrap();
-                let mut got_re = vec![F::zero(); slots];
-                let mut got_im = vec![F::zero(); slots];
-                module
-                    .ckks_decode_reim_into(&pt, &mut got_re, &mut got_im, &mut scratch)
-                    .unwrap();
-                assert_close(&got_re, &got_im, &re, &im);
-            }
+            let degree = 2 * slots;
+            let mut pt = module.ckks_plaintext_alloc(Degree(degree as u32), Base2K(20), TorusPrecision(80));
+            pt.set_meta(GLWEPlaintextMeta {
+                scale: Scale::Log(40),
+                slots: SlotsKind::Complex,
+                log_sparsity: 0,
+            });
+            module.ckks_encode_reim_into(&mut pt, &re, &im, &mut scratch).unwrap();
+            let mut got_re = vec![F::zero(); slots];
+            let mut got_im = vec![F::zero(); slots];
+            module
+                .ckks_decode_reim_into(&pt, &mut got_re, &mut got_im, &mut scratch)
+                .unwrap();
+            assert_close(&got_re, &got_im, &re, &im);
         }
     }
 
@@ -371,7 +370,7 @@ mod tests {
     #[test]
     fn coefficient_only_encoding_accepts_scratch_plaintext_views() {
         let module = Module::<FFT64Portable>::new(32);
-        let mut layout = module.ckks_plaintext_alloc(Degree(32), Base2K(20), TorusPrecision(80));
+        let mut layout = module.ckks_plaintext_alloc(Degree(16), Base2K(20), TorusPrecision(80));
         layout.set_meta(GLWEPlaintextMeta {
             scale: Scale::Log(40),
             slots: SlotsKind::Complex,
@@ -424,7 +423,7 @@ mod tests {
     #[test]
     fn encoding_rejects_invalid_slot_shapes() {
         let module = Module::<FFT64Portable>::new(32);
-        let mut pt = module.ckks_plaintext_alloc(Degree(32), Base2K(20), TorusPrecision(80));
+        let mut pt = module.ckks_plaintext_alloc(Degree(16), Base2K(20), TorusPrecision(80));
         pt.set_meta(GLWEPlaintextMeta {
             scale: Scale::Log(40),
             slots: SlotsKind::Complex,
@@ -440,6 +439,9 @@ mod tests {
         let re = [0.0; 8];
         let im = [0.0; 7];
         assert!(module.ckks_encode_reim_into(&mut pt, &re, &im, &mut scratch).is_err());
+
+        let four = [0.0; 4];
+        assert!(module.ckks_encode_reim_into(&mut pt, &four, &four, &mut scratch).is_err());
 
         let im = [0.0; 8];
         assert!(module.ckks_encode_reim_into(&mut pt, &re, &im, &mut scratch).is_ok());

@@ -85,6 +85,11 @@ pub trait CKKSEncryptOps<BE: Backend> {
 /// `PlaintextBase2KMismatch` on differing `base2k`.
 /// Returns `EncryptionDegreeMismatch` if the ciphertext and prepared secret
 /// key degrees differ or exceed the module degree, before changing the plaintext.
+///
+/// `pt` takes the ciphertext's degree `N`, or a power-of-two divisor `n` of it
+/// when `log2(N / n) <= ct.log_sparsity`: the slots repeat every `n / 2`, and
+/// `pt` receives every `(N / n)`-th coefficient of the decrypted polynomial.
+/// Any other degree is a `PlaintextDegreeMismatch`, before changing the plaintext.
 pub trait CKKSDecryptOps<BE: Backend> {
     /// Scratch for the actual destination allocation and input ciphertext.
     /// The destination may retain more allocated limbs than its effective precision.

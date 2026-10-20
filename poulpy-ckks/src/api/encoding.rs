@@ -34,8 +34,9 @@ impl<T> CKKSEncodingScalar for T where T: CKKSScalar + FloatConst + Pod + Send +
 /// A conjugate invariant module packs up to `N` real slots. Encoding discards
 /// imaginary inputs; decoding returns zero imaginary parts. Slot transforms
 /// use `2m` scalars for `m` slots, with the independent invariant coefficients
-/// in the first `m` entries. Coefficient-only operations use the supplied
-/// coefficient count directly.
+/// in the first `m` entries. Every encoding fills its plaintext: `n`
+/// coefficients for a plaintext of degree `n`, or all its
+/// [`ckks_slots_of_degree`](crate::CKKSModuleInfos::ckks_slots_of_degree) slots.
 ///
 /// Every scalar operand is a backend buffer. Host ingress and egress live in
 /// [`CKKSEncodingHostOps`], so device code can use this trait without exposing

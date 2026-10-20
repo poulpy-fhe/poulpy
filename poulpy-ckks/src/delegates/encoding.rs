@@ -16,10 +16,9 @@ fn validate_coefficients<P: GLWEInfos>(max_n: usize, pt: &P, coeff_count: usize)
     let n = pt.n().as_usize();
     ckks_ensure!(pt.rank().as_usize() == 0, "CKKS plaintext encoding expects rank zero");
     ckks_ensure!(n <= max_n, "plaintext degree {n} exceeds module capacity {max_n}");
-    ckks_ensure!(coeff_count > 0, "coefficient count must be non-zero");
     ckks_ensure!(
-        coeff_count <= n && n.is_multiple_of(coeff_count),
-        "coefficient count {coeff_count} must divide plaintext degree {n}"
+        coeff_count == n,
+        "coefficient count {coeff_count} must equal plaintext degree {n}"
     );
     Ok(())
 }

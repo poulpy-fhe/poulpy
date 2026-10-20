@@ -138,7 +138,8 @@ fn precision<F>() -> usize {
 
 /// Encoding fixtures of `module`, keyed by ring and precision only: the slot
 /// transforms, then encoding, decoding and dequantization at three scales,
-/// for dense and sparse slot counts.
+/// for each slot count, on a plaintext at the degree of its slots from the
+/// backend's minimum degree.
 pub fn encoding_fixtures<BE, F>(module: &Module<BE>)
 where
     BE: Backend<ZnxWord = i64>,
@@ -169,8 +170,11 @@ where
         module.ckks_coeffs_to_slots_assign(&mut values).unwrap();
         check_scalars(&format!("{key}-slots"), &values.to_host::<BE>());
 
+        if coeffs < BE::MIN_DEGREE {
+            continue;
+        }
         for log_delta in [20, 40, 100] {
-            let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), Base2K(19), TorusPrecision(log_delta as u32 + 20));
+            let mut pt = module.ckks_pt_vec_alloc(slots, Base2K(19), TorusPrecision(log_delta as u32 + 20));
             pt.set_meta(GLWEPlaintextMeta {
                 scale: Scale::Log(log_delta),
                 slots: SlotsKind::Complex,

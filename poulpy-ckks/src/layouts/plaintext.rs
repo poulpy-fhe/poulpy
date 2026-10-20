@@ -240,31 +240,25 @@ impl<D: Data, W: ZnxWord, R: Ring> BSGSMeta for CKKSPlaintext<D, W, R> {
 }
 
 pub trait CKKSPlaintextVecHostCodec<F: CKKSScalar>: CKKSInfos {
-    /// Quantizes a coefficient vector whose length divides the plaintext
-    /// degree. A full-length vector is dense; a shorter vector is placed with
-    /// the implied coefficient gap.
+    /// Quantizes one value per coefficient of the plaintext.
     fn encode_host_floats(&mut self, coeffs: &[F]) -> Result<()>;
 
-    /// Inverse of [`Self::encode_host_floats`]. The output length selects the
-    /// dense or gap-strided coefficient representation.
+    /// Inverse of [`Self::encode_host_floats`].
     fn decode_host_floats(&self, coeffs: &mut [F]) -> Result<()>;
 }
 
-/// Validates a non-empty coefficient vector of length `L` dividing `n` and
-/// returns the coefficient gap `g = n / L`. With this gap, `coeffs[j]` lands
-/// at polynomial coefficient `j·g`.
-fn coefficient_gap<F>(coeffs: &[F], n: usize) -> Result<usize> {
-    let l = coeffs.len();
-    anyhow::ensure!(l > 0, "coefficient count must be non-zero");
-    anyhow::ensure!(l <= n && n.is_multiple_of(l), "coefficient count {l} must divide n {n}");
-    Ok(n / l)
+/// Validates one coefficient per coefficient of a degree-`n` plaintext.
+fn check_coefficient_count<F>(coeffs: &[F], n: usize) -> Result<()> {
+    anyhow::ensure!(
+        coeffs.len() == n,
+        "coefficient count {} must equal the plaintext degree {n}",
+        coeffs.len()
+    );
+    Ok(())
 }
 
-/// Quantizes `coeffs` (length `N/gap`) and encodes them gap-strided directly into
-/// the plaintext via `encode_vec_i*_strided` — the quantized integer buffer is only
-/// `coeffs.len()` long, so the sparse path never materializes a length-`N` buffer.
-/// `gap == 1` is the dense path (`coeffs.len() == N`).
-fn encode_host_floats_strided<F, D, R: Ring>(pt: &mut CKKSPlaintext<D, i64, R>, coeffs: &[F], gap: usize) -> Result<()>
+/// Quantizes `coeffs`, one per coefficient, into the plaintext.
+fn quantize_into_plaintext<F, D, R: Ring>(pt: &mut CKKSPlaintext<D, i64, R>, coeffs: &[F]) -> Result<()>
 where
     F: CKKSScalar,
     D: HostDataMut + HostDataRef,
@@ -285,7 +279,7 @@ where
                     .with_context(|| format!("CKKS coefficient {index} is not representable as an i64 at scale 2^{log_delta}"))
             })
             .collect::<Result<_>>()?;
-        pt.encode_vec_i64_strided(gap, &data, k);
+        pt.encode_vec_i64(&data, k);
     } else {
         let data: Vec<i128> = coeffs
             .iter()
@@ -295,15 +289,13 @@ where
                     .with_context(|| format!("CKKS coefficient {index} is not representable as an i128 at scale 2^{log_delta}"))
             })
             .collect::<Result<_>>()?;
-        pt.encode_vec_i128_strided(gap, &data, k);
+        pt.encode_vec_i128(&data, k);
     }
     Ok(())
 }
 
-/// Decodes the gap-strided coefficients of `pt` into `coeffs` (length `N/gap`),
-/// inverse of [`encode_host_floats_strided`]. Only `coeffs.len()` coefficients are
-/// reconstructed.
-fn decode_host_floats_strided<F, D, R: Ring>(pt: &CKKSPlaintext<D, i64, R>, coeffs: &mut [F], gap: usize) -> Result<()>
+/// Dequantizes every coefficient of `pt` into `coeffs`, inverse of [`quantize_into_plaintext`].
+fn dequantize_from_plaintext<F, D, R: Ring>(pt: &CKKSPlaintext<D, i64, R>, coeffs: &mut [F]) -> Result<()>
 where
     F: CKKSScalar,
     D: HostDataRef,
@@ -318,13 +310,13 @@ where
     let k = pt.encoded_k();
     if log_delta + log_budget <= 63 {
         let mut data = vec![0i64; coeffs.len()];
-        pt.decode_vec_i64_strided(gap, &mut data, k);
+        pt.decode_vec_i64(&mut data, k);
         for (c, &i) in coeffs.iter_mut().zip(data.iter()) {
             *c = F::ckks_dequantize(i as i128, log_delta);
         }
     } else {
         let mut data = vec![0i128; coeffs.len()];
-        pt.decode_vec_i128_strided(gap, &mut data, k);
+        pt.decode_vec_i128(&mut data, k);
         for (c, &i) in coeffs.iter_mut().zip(data.iter()) {
             *c = F::ckks_dequantize(i, log_delta);
         }
@@ -334,13 +326,13 @@ where
 
 impl<F: CKKSScalar, D: HostDataMut + HostDataRef, R: Ring> CKKSPlaintextVecHostCodec<F> for CKKSPlaintext<D, i64, R> {
     fn encode_host_floats(&mut self, coeffs: &[F]) -> Result<()> {
-        let gap = coefficient_gap(coeffs, self.n().as_usize())?;
-        encode_host_floats_strided(self, coeffs, gap)
+        check_coefficient_count(coeffs, self.n().as_usize())?;
+        quantize_into_plaintext(self, coeffs)
     }
 
     fn decode_host_floats(&self, coeffs: &mut [F]) -> Result<()> {
-        let gap = coefficient_gap(coeffs, self.n().as_usize())?;
-        decode_host_floats_strided(self, coeffs, gap)
+        check_coefficient_count(coeffs, self.n().as_usize())?;
+        dequantize_from_plaintext(self, coeffs)
     }
 }
 
@@ -387,44 +379,5 @@ mod tests {
         assert_eq!(pt.base2k(), base2k);
         assert_eq!(pt.meta(), prec);
         assert!(pt.k() <= pt.max_k());
-    }
-
-    /// Sparse coefficient pack/unpack round-trips, and places values at the
-    /// expected gap-spaced positions of the full coefficient buffer.
-    #[test]
-    fn sparse_coeff_pack_roundtrip_and_layout() {
-        let n = 16usize;
-        let module = Module::<HostBytesBackend>::new(n as u64);
-        let prec = GLWEPlaintextMeta {
-            scale: Scale::Log(40),
-            slots: SlotsKind::Complex,
-            log_sparsity: 0,
-        };
-        let base2k: Base2K = 50usize.into();
-
-        // L = 4 (slots = 2), so gap = n/L = 4.
-        let small = vec![1.0_f64, 2.0, 3.0, 4.0]; // re=[1,2], im=[3,4]
-        let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), base2k, (10usize + 40).into());
-        pt.set_meta(prec);
-        pt.encode_host_floats(&small).unwrap();
-
-        // Full coefficients: re at 0,4; im at n/2=8, 12; rest zero.
-        let mut full = vec![0.0_f64; n];
-        pt.decode_host_floats(&mut full).unwrap();
-        let approx = |a: f64, b: f64| (a - b).abs() < 1e-9;
-        assert!(approx(full[0], 1.0) && approx(full[4], 2.0), "re placement: {full:?}");
-        assert!(approx(full[8], 3.0) && approx(full[12], 4.0), "im placement: {full:?}");
-        for (i, &v) in full.iter().enumerate() {
-            if ![0, 4, 8, 12].contains(&i) {
-                assert!(approx(v, 0.0), "coeff {i} should be zero, got {v}");
-            }
-        }
-
-        // Round-trip back to the small vector.
-        let mut got = vec![0.0_f64; 4];
-        pt.decode_host_floats(&mut got).unwrap();
-        for (a, b) in small.iter().zip(&got) {
-            assert!(approx(*a, *b), "sparse round-trip: {small:?} vs {got:?}");
-        }
     }
 }
