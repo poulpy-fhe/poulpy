@@ -43,6 +43,29 @@ preparations and of the prepared product reads and fills their storage through
 `blocks`, `terms` and their `_mut` forms, and records a preparation with
 `set_prepared`.
 
+## Reference implementations
+
+A **reference** implementation defines a matrix operation by composing CKKS
+and core operations on the module. The reference traits are implemented for
+every `Module<BE>` and are public, so an override can forward to them. They
+call `poulpy-ckks` and `poulpy-core` through their public APIs, so a backend's
+CKKS and core overrides remain effective inside them.
+
+| OEP family | Reference | Macro |
+|---|---|---|
+| `BlasMatInterImpl` | `BlasMatInterReference`, [`reference/inter.rs`](../src/reference/inter.rs) | `impl_blas_inter_reference!` |
+| `BlasMatIntraImpl` | `BlasMatIntraReference` (the hook), [`reference/intra.rs`](../src/reference/intra.rs) | `impl_blas_intra_reference!` |
+| `BlasMatMulImpl` | `BlasMatMulReference`, [`reference/matmul.rs`](../src/reference/matmul.rs) | `impl_blas_matmul_reference!` |
+| `BlasJklsImpl` | `BlasMatMulReference::blas_jkls_block_reference`, [`reference/matmul.rs`](../src/reference/matmul.rs) | `impl_blas_jkls_reference!` |
+
+`impl_blas_reference_full!` expands to the four family macros. The reference's
+cold preparations call the backend's map hook, and the reference prepared
+product, like the reference `blas_matmul`, calls it for the terms of a hot
+operand, then its JKLS kernel. So `impl_blas_matmul_reference!` needs the intra
+and JKLS families. It overrides the provided `blas_matmul` with
+`BlasMatMulReference::blas_matmul_reference`, the same product on the grids
+read in place, without the preparations' copies, under the provided query.
+
 ## Grids and keys
 
 `res` is a `BlasGridMut<BE>` and every ciphertext input a `BlasGrid<BE>`,
@@ -131,6 +154,43 @@ These sets and widths bind implementations: `GetAutomorphismKey` and
 implementation looks up only keys, at widths, that the reference looks up, so
 a store holding its operation's set alone suffices.
 
+### Key-use queries
+
+Each operation has a query in `poulpy_blas::reference` that lists the keys it
+looks up: `blas_matmul_key_uses`, `blas_matmul_prepare_left_key_uses`,
+`blas_matmul_prepare_right_key_uses`, `blas_matmul_prepared_key_uses`,
+`blas_matmul_pt_right_key_uses`, `blas_matmul_pt_left_key_uses`,
+`blas_transpose_key_uses`, `blas_rotate_rows_key_uses`,
+`blas_rotate_cols_key_uses`, `blas_rotate_key_uses` and `blas_sum_key_uses`. A
+query takes the grids, operands and context of the operation's `_tmp_bytes`
+query, without the key layouts. It leaves out what the keys do not depend on:
+the result grid of a product of two encrypted grids, and the `PrepareHint` of a
+preparation, which looks up the same keys under either. A rotation and a shift
+take the amount `r` or `k`, which selects their maps. A query returns a
+`BlasKeyUses`:
+
+- `rotations`, the `(Galois element, width)` pairs the operation looks up,
+  sorted and without repeats, the identity (element 1), which takes no key,
+  left out;
+- `tensor`, the width of the tensor key, `None` where the operation does not
+  relinearize.
+
+The validator of an operation and its query enumerate the lookups with one
+function, so they list the same keys at the same widths; the validator checks
+each against the stores, in the enumeration's order, and the query collects
+them.
+
+The output-layout queries next to them (`blas_matmul_output_layout`,
+`blas_matmul_prepared_output_layout`, `blas_matmul_pt_right_output_layout`,
+`blas_matmul_pt_left_output_layout`, `blas_transpose_output_layout`,
+`blas_rotate_rows_output_layout`, `blas_rotate_cols_output_layout`,
+`blas_rotate_output_layout`, `blas_sum_output_layout`) take the input layouts
+and the allocated `res` and return the `BlasLayout` the call stamps on `res`,
+whose block gives `k`, `log_delta` and label; the record is the validator's.
+They read a map's effect through the same function the preparations and staged
+blocks use, so a client plans every intermediate grid, and with it every key
+width, before it encrypts or runs anything.
+
 ## Validation and errors
 
 Each implementation first runs its validator, the public `validate_<op>` in
@@ -152,8 +212,9 @@ crate's rules and fail in this order:
    batch record, or a hot one at another `log_d` than the product's context
    or under a context encoded for another slot count or radix; and a product
    at a radix above 62, whose digits cannot hold two lazy terms of the JKLS
-   kernel's two-pass circuit. A hot operand's scale is not checked: the
-   product spends that of its context's maps.
+   kernel's two-pass circuit, or a sum at a radix whose digits cannot hold the
+   `log2(mat_slots) + 1` lazy terms it adds. A hot operand's scale is not
+   checked: the product spends that of its context's maps.
 2. Key by key, the rotation keys first, each at the width the operation
    looks it up at ([Keys](#keys)): `MissingAutomorphismKey`, or
    `MissingRelinearizationKey` for the tensor key, when the store lacks it,
@@ -205,6 +266,25 @@ single step. Temporaries that outlive a hook call live on the heap, not in
 scratch: the copies of a hot preparation, the terms a preparation or a product
 makes before converting them, the blocks a JKLS product by public matrices
 stages through its first map, and the heap grid of a shift across blocks.
+
+The reference products make every term once and convert it once, which fixes
+the transform count at its minimum, and keep a term only while it serves. With
+`T = K d` terms in a unit, a block row of `a` or a block column of `b`, of `La`
+and `Lb` limbs, for an `m x K` by `K x n` product:
+
+- two cold operands: no term;
+- one hot side: one unit of its terms at a time, beside its `K` sigma (tau)
+  results while the unit is made;
+- two hot sides, and `blas_matmul`: one side is held, `a` when
+  `(m - 1) La <= (n - 1) Lb`, the fewer limbs for the held terms plus one unit
+  of the other side, and the other streams, a unit at a time; with `b` held,
+  `a`'s first unit is made first, so the left terms' budget errors still lead.
+
+The heap of `blas_matmul` beyond its inputs and `res` is then the held side's
+terms plus one unit, whatever the extent of the streamed side; the held terms
+are in the backend's transform-domain form, one to four times their coefficient
+size depending on its transform. A cold operand holds `d` such terms per block
+of its grid.
 
 ## Parallelism
 
