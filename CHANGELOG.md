@@ -75,6 +75,11 @@
 
 ### `poulpy-core`
 
+- Fix the one-pass products and squares (`glwe_mul_relinearize`, `glwe_square_relinearize`, their assign, prepared and summed forms) against a tensor key whose gadget covers only the operands' limbs.
+  At an offset that is not a whole number of limbs, `d2 = a1·b1` spans one limb more than the operands and is relinearized `cnv_offset mod base2k` bits under the result: the key switch dropped the limb past the gadget, and that error and the key-switching error were both lifted by `2^(cnv_offset mod base2k)`.
+  A product at its operands' width with a large remainder lost up to 17 bits on NTT backends (base2k 52, `N = 2^15`, a result 28 bits narrower).
+  When the bound on both errors (`‖s²‖₁ <= N²` for the secrets core samples, and `DEFAULT_BOUND_XE` for the key error) can reach half a unit of the result, the columns are aligned to the result first and relinearized as a tensor, as in the two-step path; otherwise the one-pass path is unchanged.
+  The scratch of these products covers the tensor path.
 - **Breaking:** `GLWE`, `GLWEPlaintext` and `GLWECompressed` carry an optional, scheme-managed `GLWEPlaintextMeta` (`Scale`, `SlotsKind`, `log_sparsity`) through `GLWEPlaintextInfos` and `SetGLWEPlaintextInfos`, which also read and set each field; `SlotsKind` moves from `poulpy-ckks` and gains `Integer`.
 - **Breaking, format:** serialized `GLWE` and `GLWECompressed` carry their plaintext metadata.
 - `reference::keyswitching::glwe::gglwe_product_limbs` returns the `product_limbs` the reference key switch passes to `GGLWEProductDigitsStridedImpl`, so that backend overrides derive the same.
