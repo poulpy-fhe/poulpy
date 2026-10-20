@@ -114,9 +114,9 @@ impl<D: Data, W: ZnxWord> GLWEToLWESwitchingKeyCompressed<D, W> {
             "rank_out > 1 is unsupported for GLWEToLWESwitchingKeyCompressed"
         );
         assert_eq!(
-            infos.dsize().0,
-            1,
-            "dsize > 1 is unsupported for GLWEToLWESwitchingKeyCompressed"
+            infos.digit_k().0,
+            infos.base2k().0,
+            "GLWEToLWESwitchingKeyCompressed uses one-limb digits: digit_k must equal base2k"
         );
         Self::alloc::<B>(infos.n(), infos.base2k(), infos.dnum(), infos.k_aux(), infos.rank_in())
     }
@@ -149,9 +149,9 @@ impl<D: Data, W: ZnxWord> GLWEToLWESwitchingKeyCompressed<D, W> {
             "rank_out > 1 is unsupported for GLWEToLWESwitchingKeyCompressed"
         );
         assert_eq!(
-            infos.dsize().0,
-            1,
-            "dsize > 1 is unsupported for GLWEToLWESwitchingKeyCompressed"
+            infos.digit_k().0,
+            infos.base2k().0,
+            "GLWEToLWESwitchingKeyCompressed uses one-limb digits: digit_k must equal base2k"
         );
         GLWESwitchingKeyCompressed::<AlignedBuf, W>::bytes_of_from_infos(infos)
     }

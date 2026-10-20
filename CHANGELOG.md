@@ -104,6 +104,8 @@
   The external-product and key-switch parity suites also run such an operand.
 - **Fix:** key switching and external products take an input of precision 0 with keys of any digit width, as with whole-limb digits: the digit layout of an input holding no limb is empty, and `precision_limbs` returns `None` for it.
   The key-switch and external-product parity suites also run such an input at every swept width.
+- **Fix:** the LWE switching, GLWE-to-LWE and LWE-to-GLWE key allocators and size queries, host, compressed and prepared, and the reference LWE switching-key encryption check `digit_k == base2k` in place of `dsize() == 1`.
+  A digit below a limb also has `dsize() == 1`, so such a layout passed and the host allocators built the key at `digit_k = base2k` while the queries sized the requested width.
 - `reference::keyswitching::glwe::gadget_known_zero_prefix` gives the leading operand limbs that are zero for an input below `2^-(zero_bits + 1)`: the zero input limbs for whole-limb digits, and otherwise the top digits ending at least one bit above `zero_bits`, since the gadget rounding can carry one unit into the digit that ends at it.
 - `layouts::digits_aligned` and the provided `GGLWEInfos::digits_aligned` and `GGSWInfos::digits_aligned` tell whether the digits are whole limbs, so that a gadget product reads the input limbs as its operand.
   A view decides on its stored digit width, `digit_k / stride`, so a key and its coarser views agree.

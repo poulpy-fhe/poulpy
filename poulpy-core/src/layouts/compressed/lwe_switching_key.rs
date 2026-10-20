@@ -106,7 +106,11 @@ impl<D: Data, W: ZnxWord> LWESwitchingKeyCompressed<D, W> {
     where
         A: GGLWEInfos,
     {
-        assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for LWESwitchingKeyCompressed");
+        assert_eq!(
+            infos.digit_k().0,
+            infos.base2k().0,
+            "LWESwitchingKeyCompressed uses one-limb digits: digit_k must equal base2k"
+        );
         assert_eq!(
             infos.rank_in().0,
             1,
@@ -141,7 +145,11 @@ impl<D: Data, W: ZnxWord> LWESwitchingKeyCompressed<D, W> {
     where
         A: GGLWEInfos,
     {
-        assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for LWESwitchingKeyCompressed");
+        assert_eq!(
+            infos.digit_k().0,
+            infos.base2k().0,
+            "LWESwitchingKeyCompressed uses one-limb digits: digit_k must equal base2k"
+        );
         assert_eq!(
             infos.rank_in().0,
             1,

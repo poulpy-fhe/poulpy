@@ -151,7 +151,11 @@ impl<W: ZnxWord> GLWEToLWEKey<AlignedBuf, W> {
         A: GGLWEInfos,
     {
         assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for GLWEToLWEKey");
-        assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for GLWEToLWEKey");
+        assert_eq!(
+            infos.digit_k().0,
+            infos.base2k().0,
+            "GLWEToLWEKey uses one-limb digits: digit_k must equal base2k"
+        );
         Self::alloc(infos.n(), infos.base2k(), infos.dnum(), infos.k_aux(), infos.rank_in())
     }
 
@@ -172,7 +176,11 @@ impl<W: ZnxWord> GLWEToLWEKey<AlignedBuf, W> {
         A: GGLWEInfos,
     {
         assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for GLWEToLWEKey");
-        assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for GLWEToLWEKey");
+        assert_eq!(
+            infos.digit_k().0,
+            infos.base2k().0,
+            "GLWEToLWEKey uses one-limb digits: digit_k must equal base2k"
+        );
         Self::bytes_of(infos.n(), infos.base2k(), infos.dnum(), infos.k_aux(), infos.rank_in())
     }
 

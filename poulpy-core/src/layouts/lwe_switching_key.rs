@@ -126,7 +126,11 @@ impl<W: ZnxWord> LWESwitchingKey<AlignedBuf, W> {
     where
         A: GGLWEInfos,
     {
-        assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for LWESwitchingKey");
+        assert_eq!(
+            infos.digit_k().0,
+            infos.base2k().0,
+            "LWESwitchingKey uses one-limb digits: digit_k must equal base2k"
+        );
         assert_eq!(infos.rank_in().0, 1, "rank_in > 1 is not supported for LWESwitchingKey");
         assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for LWESwitchingKey");
         Self::alloc(infos.n(), infos.base2k(), infos.dnum(), infos.k_aux())
@@ -148,7 +152,11 @@ impl<W: ZnxWord> LWESwitchingKey<AlignedBuf, W> {
     where
         A: GGLWEInfos,
     {
-        assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for LWESwitchingKey");
+        assert_eq!(
+            infos.digit_k().0,
+            infos.base2k().0,
+            "LWESwitchingKey uses one-limb digits: digit_k must equal base2k"
+        );
         assert_eq!(infos.rank_in().0, 1, "rank_in > 1 is not supported for LWESwitchingKey");
         assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for LWESwitchingKey");
         Self::bytes_of(infos.n(), infos.base2k(), infos.dnum(), infos.k_aux())

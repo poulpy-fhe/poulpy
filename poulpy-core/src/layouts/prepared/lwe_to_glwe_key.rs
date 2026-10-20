@@ -93,7 +93,11 @@ where
         A: GGLWEInfos,
     {
         debug_assert_eq!(infos.rank_in().0, 1, "rank_in > 1 is not supported for LWEToGLWEKey");
-        debug_assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for LWEToGLWEKey");
+        debug_assert_eq!(
+            infos.digit_k().0,
+            infos.base2k().0,
+            "LWEToGLWEKey uses one-limb digits: digit_k must equal base2k"
+        );
         LWEToGLWEKeyPrepared(self.glwe_switching_key_prepared_alloc_from_infos(infos))
     }
 
@@ -106,7 +110,11 @@ where
         A: GGLWEInfos,
     {
         debug_assert_eq!(infos.rank_in().0, 1, "rank_in > 1 is not supported for LWEToGLWEKey");
-        debug_assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for LWEToGLWEKey");
+        debug_assert_eq!(
+            infos.digit_k().0,
+            infos.base2k().0,
+            "LWEToGLWEKey uses one-limb digits: digit_k must equal base2k"
+        );
         self.glwe_switching_key_prepared_bytes_of_from_infos(infos)
     }
 

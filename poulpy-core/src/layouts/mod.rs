@@ -1778,6 +1778,35 @@ mod gadget_sizing_tests {
     }
 
     #[test]
+    fn lwe_family_keys_take_only_one_limb_digits() {
+        use std::panic::{AssertUnwindSafe, catch_unwind};
+        let layout = |digit_k: u32| GGLWELayout {
+            n: Degree(16),
+            base2k: Base2K(12),
+            dnum: Dnum(3),
+            k_aux: TorusPrecision(16),
+            rank_in: Rank(1),
+            rank_out: Rank(1),
+            digit_k: TorusPrecision(digit_k),
+            stride: 1,
+        };
+        let queries: [fn(&GGLWELayout) -> usize; 3] = [
+            LWESwitchingKey::<poulpy_hal::AlignedBuf, i64>::bytes_of_from_infos,
+            GLWEToLWEKey::<poulpy_hal::AlignedBuf, i64>::bytes_of_from_infos,
+            LWEToGLWEKey::<poulpy_hal::AlignedBuf, i64>::bytes_of_from_infos,
+        ];
+        for query in queries {
+            // One limb per digit is the layout these keys are built at.
+            query(&layout(12));
+            // A digit below a limb also spans one limb, and is refused rather
+            // than built at `base2k`; so is a digit past a limb.
+            for digit_k in [11, 13] {
+                assert!(catch_unwind(AssertUnwindSafe(|| query(&layout(digit_k)))).is_err());
+            }
+        }
+    }
+
+    #[test]
     fn digits_aligned_is_decided_on_the_stored_digit() {
         let key = |digit_k: u32| GGLWELayout {
             n: Degree(16),
