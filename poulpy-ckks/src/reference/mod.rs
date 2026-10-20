@@ -43,6 +43,7 @@ pub use eval_mod::CKKSEvalModOpsReference;
 pub use linear_transformation::CKKSLinearTransformationReference;
 pub use linear_transformation_diagonals::{
     ckks_encode_linear_transformation_from_diagonals, ckks_encode_linear_transformation_into,
+    ckks_encode_linear_transformation_tmp_bytes,
 };
 pub use plaintext::CKKSPlaintextReference;
 pub use polynomial_evaluation::PolynomialEvaluationReference;

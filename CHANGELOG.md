@@ -162,6 +162,7 @@
 - **Breaking, behaviour:** a plaintext is always dense: the encoders take exactly one value per coefficient of the plaintext, or `CKKSModuleInfos::ckks_slots_of_degree(n)` slots for a plaintext of degree `n`, and return an error for fewer instead of spreading them at a gap.
   Allocate a message of `m` slots with `ckks_pt_vec_alloc(m, ..)`; below the backend's `MIN_DEGREE`, repeat the slots up to it.
   Linear-transformation diagonals whose period sits below that floor are repeated over the plaintext's slots, so their encoded values stay the same up to float rounding.
+  `reference::ckks_encode_linear_transformation_tmp_bytes` gives the scratch the linear-transformation encoders need for such a period, and `blas_context_encode_tmp_bytes` and `blas_pt_operand_encode_tmp_bytes` return it.
 - `ckks_decrypt` writes into a plaintext of degree `n` dividing the ciphertext's `N` when `log2(N / n) <= ct.log_sparsity`, every `(N / n)`-th coefficient of the decrypted polynomial, and returns `PlaintextDegreeMismatch` for any other degree before changing it; decoding fewer slots than a plaintext holds goes through it.
 - `CKKSModuleInfos::ckks_slots_of_degree` gives the slots a plaintext of a given degree holds.
 - The CKKS `determinism.txt` plaintext fixtures of the encoding test are recorded at the degree of their slots, and the one- and two-slot ones are gone; their decoded values are unchanged.

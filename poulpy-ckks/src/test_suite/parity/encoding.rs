@@ -8,19 +8,22 @@ use crate::Scale;
 use poulpy_core::layouts::GLWEPlaintextInfos;
 use poulpy_core::{
     GLWEMaskFill,
-    layouts::{GLWELayout, IntPolyInfos, LWEInfos},
+    layouts::{Diagonals, GLWELayout, IntPolyInfos, LWEInfos, LinearTransformationStrategy},
 };
 use poulpy_hal::layouts::{Backend, Module, ZnxView};
 
 use crate::{
-    CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SlotsKind,
+    CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotsKind,
     api::{CKKSEncodingOps, CKKSEncodingScalar, CKKSModuleInfos, PaCoScalar, ShipScalar},
     layouts::{
-        CKKSEncodingBuffer, CKKSEncodingBufferToBackendMut, CKKSPlaintextOwned, PaCoDFTPlan, PaCoPlan, PaCoSlotOrder, ShipPlan,
-        slot_coeff_count,
+        CKKSEncodingBuffer, CKKSEncodingBufferToBackendMut, CKKSPlaintextOwned, ComplexDiagonals, PaCoDFTPlan, PaCoPlan,
+        PaCoSlotOrder, ShipPlan, slot_coeff_count,
     },
     oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl, CKKSShipCoeffEncodingImpl},
-    reference::encoding::CKKSSlotEmbedding,
+    reference::{
+        ckks_encode_linear_transformation_from_diagonals, ckks_encode_linear_transformation_tmp_bytes,
+        encoding::CKKSSlotEmbedding,
+    },
     test_suite::CKKSTestParams,
 };
 
@@ -303,6 +306,35 @@ where
         coefficient_codec::<BR, F>(r, params) == coefficient_codec::<BT, F>(t, params),
         "coefficient codec parity failed"
     );
+    diagonal_within_query::<BR, F>(r, params);
+    diagonal_within_query::<BT, F>(t, params);
+}
+
+/// A map of period 1 encodes within [`ckks_encode_linear_transformation_tmp_bytes`] exactly, on a plaintext at the
+/// backend's minimum degree whose slots repeat the one value.
+fn diagonal_within_query<B, F>(module: &Module<B>, params: CKKSTestParams)
+where
+    B: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
+    F: CKKSEncodingScalar,
+{
+    let slots = module.ckks_max_slots();
+    let mut re = Diagonals::new(slots);
+    re.set(0, vec![F::from_f64(0.5).unwrap()]);
+    let map = ComplexDiagonals::new(re, Diagonals::new(slots));
+    let bytes = ckks_encode_linear_transformation_tmp_bytes::<B, _, F>(module, map.period());
+    let lt = with_scratch::<B, _>(bytes, |scratch| {
+        ckks_encode_linear_transformation_from_diagonals::<B, F>(
+            module,
+            params.base2k.into(),
+            CoeffsMeta::from_delta_budget(8, 12),
+            &map,
+            LinearTransformationStrategy::Direct,
+            false,
+            scratch,
+        )
+    })
+    .unwrap();
+    assert_eq!(lt.first_diagonal_plaintext().unwrap().n().as_usize(), B::MIN_DEGREE);
 }
 
 /// Pairs the two slot-composition OEP methods exactly, for every slot count up

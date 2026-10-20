@@ -66,6 +66,8 @@ fn validate_compile_inputs<F>(
 /// - `true`:  encode `Bᵀ` via [`ComplexDiagonals::transpose`] — engine produces
 ///   `Bᵀ·a = a·B` (matrix on the right of the row vector `a`).
 ///
+/// `scratch` holds [`ckks_encode_linear_transformation_tmp_bytes`] of `diagonals.period()`.
+///
 /// # Errors
 ///
 /// Returns an error when the CKKS layout is inconsistent, a diagonal cannot
@@ -134,9 +136,23 @@ where
     Ok(lt)
 }
 
+/// Scratch bytes [`ckks_encode_linear_transformation_into`] and [`ckks_encode_linear_transformation_from_diagonals`]
+/// need for a map of period at most `period`: the slot encoding of one diagonal, which fills its plaintext, so a period
+/// below the backend's minimum degree counts the slots of that degree.
+pub fn ckks_encode_linear_transformation_tmp_bytes<BE, M, F>(module: &M, period: usize) -> usize
+where
+    BE: Backend,
+    M: CKKSModuleInfos + GetDegree + CKKSEncodingHostOps<BE, F>,
+    F: CKKSEncodingScalar,
+{
+    let slots = module.ckks_slots_of_degree(period_degree::<BE, M>(module, period).as_usize());
+    <M as CKKSEncodingHostOps<BE, F>>::ckks_reim_tmp_bytes(module, slots)
+}
+
 /// Encodes `diagonals` into `res`, allocated by
 /// [`CKKSModuleAlloc::ckks_linear_transformation_alloc_from_infos`] for their layout under `strategy`: every diagonal at
 /// `meta`, in the schedule's order, each plaintext overwritten, so encoding again into the same transform refills it.
+/// `scratch` holds [`ckks_encode_linear_transformation_tmp_bytes`] of the period of `diagonals`.
 ///
 /// # Errors
 ///
