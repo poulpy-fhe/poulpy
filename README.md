@@ -184,8 +184,8 @@ IFMA variants included, is compared against the oracle of its family (`NTT3x42`
 types against the `NTT4x30` oracles) in `f64` and `Quad`. Every
 conjugate-invariant backend type, the oracle's included, also runs
 `blas_conjugate_invariant_test_suite!`. Native CI runs every BLAS test. Under
-Intel SDE, the AVX-512 job runs the `f64` parity of each of its types once, in a
-step with its own execution budget; the emulated AVX job and the optional QEMU
+Intel SDE, the AVX-512 job runs the `f64` parity of each of its serial types
+once, in a step with its own execution budget; the emulated AVX job and the optional QEMU
 run do not run BLAS. See
 [implementing BLAS operations](poulpy-blas/docs/blas-contracts.md).
 

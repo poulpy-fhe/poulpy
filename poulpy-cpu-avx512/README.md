@@ -91,8 +91,8 @@ and core contracts with `POULPY_TEST_EMULATED=1`: ordinary HAL degrees are cappe
 at 256 and core degrees at 64. Explicit large-degree HAL sweeps are excluded in
 that mode; focused tensor cases retain both specialized degrees, 32,768 and
 65,536. Statistical sampling fixtures keep their original sizes. A second step,
-under its own execution budget, runs the BLAS parity of each backend type once, in
-`f64` (`test-backend.sh test avx512 emulated blas`). Native runs keep the original
+under its own execution budget, runs the BLAS parity of each serial backend type
+once, in `f64` (`test-backend.sh test avx512 emulated blas`). Native runs keep the original
 sweep sizes, CKKS coverage and every BLAS test.
 
 To measure actual AVX-512 emulation on an AVX-512-capable host, add
