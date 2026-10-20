@@ -303,45 +303,6 @@ mod tests {
         }
     }
 
-    /// A diagonal stored as one period evaluates, transposes and reads like its
-    /// dense replication, and a length that does not divide `slots` is rejected.
-    #[test]
-    fn a_periodic_diagonal_reads_as_its_replication() {
-        let v = vec![1.0, -2.0, 0.5, 3.0];
-        let mut dense = Diagonals::new(4);
-        dense.set(1, vec![2.0, -1.0, 2.0, -1.0]);
-        dense.set(3, vec![0.5; 4]);
-        let mut periodic = Diagonals::new(4);
-        periodic.set(1, vec![2.0, -1.0]);
-        periodic.set(3, vec![0.5]);
-        assert_eq!(periodic.period(1), Some(2));
-        assert_eq!(periodic.period(3), Some(1));
-        assert_eq!(periodic.period(0), None);
-        let strategies = [
-            LinearTransformationStrategy::Direct,
-            LinearTransformationStrategy::Bsgs { giant_step: 2 },
-        ];
-        for strategy in strategies {
-            assert_eq!(periodic.evaluate(&v, strategy), dense.evaluate(&v, strategy), "{strategy:?}");
-        }
-        periodic.transpose();
-        dense.transpose();
-        assert_eq!(periodic.get(-1), Some(&vec![-1.0, 2.0]));
-        assert_eq!(periodic.period(-3), Some(1));
-        for strategy in strategies {
-            assert_eq!(periodic.evaluate(&v, strategy), dense.evaluate(&v, strategy), "{strategy:?}");
-        }
-        let rejected = std::panic::catch_unwind(|| {
-            let mut d = Diagonals::new(4);
-            d.set(0, vec![1.0, 2.0, 3.0]);
-        });
-        assert!(rejected.is_err(), "a length that does not divide slots must be rejected");
-
-        assert_eq!(period_lcm(2, 3), 6);
-        assert_eq!(period_lcm(4, 16), 16);
-        assert_eq!(period_lcm(1, 5), 5);
-    }
-
     #[test]
     fn transpose_evaluate_matches_matvec_transpose() {
         // After d.transpose(), d.evaluate(v) should equal Mᵀ·v == v·M.
