@@ -130,6 +130,7 @@
 //! - `enable-avx`: exports the AVX2/FMA backends.
 //! - `enable-rayon`: exports `FFT64AvxRayon`, `NTT4x30AvxRayon`, and their crate-owned executor.
 //! - `enable-ckks`: wires the enabled backends into `poulpy-ckks`.
+//! - `enable-blas`: implies `enable-ckks` and wires the enabled backends into `poulpy-blas`.
 //!
 //! # Platform support
 //!
@@ -179,6 +180,8 @@ compile_error!("feature `enable-avx` requires FMA. Build with RUSTFLAGS=\"-C tar
 
 // Keep the crate as a true opt-in backend: without `enable-avx`, none of the
 // AVX modules or their unit tests are compiled.
+#[cfg(all(feature = "enable-avx", feature = "enable-blas"))]
+mod blas_impl;
 #[cfg(all(feature = "enable-avx", feature = "enable-ckks"))]
 mod ckks_impl;
 #[cfg(all(feature = "enable-avx", feature = "enable-ckks"))]

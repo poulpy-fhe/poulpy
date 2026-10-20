@@ -66,6 +66,70 @@ and JKLS families. It overrides the provided `blas_matmul` with
 `BlasMatMulReference::blas_matmul_reference`, the same product on the grids
 read in place, without the preparations' copies, under the provided query.
 
+## Wiring a backend crate
+
+A backend crate of this workspace wires BLAS behind its own `enable-blas`
+feature:
+
+```toml
+[features]
+enable-blas = ["dep:poulpy-blas", "enable-ckks"]
+
+[dependencies]
+poulpy-blas = {workspace = true, optional = true}
+```
+
+`enable-blas` implies the crate's own `enable-ckks`, which wires its CKKS
+families; BLAS needs nothing from another backend crate. A `blas_impl.rs`
+module, declared under `enable-blas`, selects the reference for each type, with
+the same `#[cfg]` gates as `ckks_impl.rs`:
+
+```rust
+::poulpy_blas::impl_blas_reference_full!(crate::MyBackend);
+```
+
+To replace a family, replace the type's `impl_blas_reference_full!` line with
+the macros of the three families it keeps, and write the replaced family's
+`*Impl` implementation directly, forwarding the methods it does not change to
+their reference routines. The expansion of each family macro, in
+[`oep`](../src/oep/), spells out every signature and its forwarding call. A
+family macro and a handwritten implementation of the same trait are mutually
+exclusive. The family traits are `unsafe`: their `# Safety` sections state what
+an implementation must reproduce. Three replacements cover most needs:
+
+- **The map hook**, for a backend that evaluates maps its own way. It covers
+  the transpose, both shifts, the cold preparations and the hot sides of the
+  products, `blas_matmul` included:
+
+  ```rust
+  ::poulpy_blas::impl_blas_inter_reference!(MyBackend);
+  ::poulpy_blas::impl_blas_matmul_reference!(MyBackend);
+  ::poulpy_blas::impl_blas_jkls_reference!(MyBackend);
+  unsafe impl poulpy_blas::oep::BlasMatIntraImpl for MyBackend { /* the hook and its query */ }
+  ```
+
+- **The JKLS kernel**, a fused kernel behind the backend's own `enable-blas`.
+  Both `blas_matmul` and `blas_matmul_prepared` reach it:
+
+  ```rust
+  ::poulpy_blas::impl_blas_inter_reference!(MyBackend);
+  ::poulpy_blas::impl_blas_intra_reference!(MyBackend);
+  ::poulpy_blas::impl_blas_matmul_reference!(MyBackend);
+  unsafe impl poulpy_blas::oep::BlasJklsImpl for MyBackend { /* the kernel and its query */ }
+  ```
+
+- **The products**, in the backend's own evaluation. The inter, intra and JKLS
+  families keep their macros, and `BlasMatMulImpl` is written by hand: it
+  implements the methods it replaces, each running its validator and stamping
+  the batch as the reference does, and forwards the others to
+  `BlasMatMulReference`, `blas_matmul` to `blas_matmul_reference` as the macro
+  does. Preparations and a prepared product read and fill the operands through
+  `BlasMatMulOperand::{blocks, terms}`, their `_mut` forms and `set_prepared`.
+
+A backend may also override a provided method, for example the shifts, to
+chunk their heap grid; it then reproduces the circuit the provided body fixes,
+and may fall back to that body in `oep::derived`.
+
 ## Grids and keys
 
 `res` is a `BlasGridMut<BE>` and every ciphertext input a `BlasGrid<BE>`,
