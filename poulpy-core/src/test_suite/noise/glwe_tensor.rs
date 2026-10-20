@@ -320,7 +320,8 @@ where
 ///
 /// At an offset `k` of remainder `lo`, `d2` spans one limb more than the operands, beyond such a key's gadget. Squares
 /// and products of small messages, at widths of every remainder class tested and against keys of dsize 1 and 2, are
-/// held to the two-step noise, itself held to its bound.
+/// held to the two-step noise, itself held to its bound. Against a key without noise metadata or under a secret
+/// summed over 2^60 parties, such products are the two-step product bit for bit.
 fn one_pass_product_key_coverage<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
@@ -411,6 +412,16 @@ where
         );
         let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
         module.prepare_tensor_key(&mut tsk_prep, &tsk, &mut scratch.borrow());
+        // Keys the one-pass bound rejects: without noise metadata, and under a secret summed over 2^60 parties.
+        let outside: Vec<GLWETensorKeyPrepared<BE::OwnedBuf, BE>> = [None, Some(60)]
+            .into_iter()
+            .map(|log_parties| {
+                let mut key: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
+                module.prepare_tensor_key(&mut key, &tsk, &mut scratch.borrow());
+                key.0.noise = log_parties.map(|log| (0..log).fold(tsk.noise().unwrap(), |noise, _| noise.aggregate(&noise)));
+                key
+            })
+            .collect();
 
         for lo in [0, 1, base2k / 2, base2k - 2, base2k - 1] {
             let k = if lo == 0 { key_k } else { key_k - base2k + lo };
@@ -474,6 +485,38 @@ where
                         one_pass <= 2 * two_step + 2,
                         "one-pass {role}, dsize {dsize}, k {k}, res_k {res_k}: error {one_pass} > two-step {two_step}"
                     );
+                    // Where `d2` spans a limb past the gadget, such keys take the two-step path.
+                    if lo != 0 {
+                        module.glwe_tensor_relinearize(&mut res, &tensor, &tsk_prep, &mut scratch.borrow());
+                        let mut have: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&res_infos);
+                        for key in &outside {
+                            if square {
+                                module.glwe_square_relinearize(
+                                    cnv_offset,
+                                    &mut have,
+                                    res_k.into(),
+                                    &a,
+                                    key,
+                                    &mut scratch.borrow(),
+                                );
+                            } else {
+                                module.glwe_mul_relinearize(
+                                    cnv_offset,
+                                    &mut have,
+                                    res_k.into(),
+                                    &a,
+                                    &b,
+                                    key,
+                                    &mut scratch.borrow(),
+                                );
+                            }
+                            assert_eq!(
+                                have.data().raw(),
+                                res.data().raw(),
+                                "one-pass {role} against a key outside the model, dsize {dsize}, k {k}, res_k {res_k}"
+                            );
+                        }
+                    }
                 }
             }
         }

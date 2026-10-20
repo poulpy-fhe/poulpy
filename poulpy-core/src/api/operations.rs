@@ -278,6 +278,13 @@ pub trait GLWETensoring<BE: Backend> {
     /// single final normalization, where [`Self::glwe_tensor_apply`] followed by
     /// [`Self::glwe_tensor_relinearize`] transforms and normalizes them first.
     /// The two paths agree up to rounding, not bit for bit.
+    ///
+    /// The key switch runs on `d2 = a1 * b1` `cnv_offset mod base2k` bits under the result. When `d2` spans digits
+    /// past the gadget of `tsk` and the error this lifts may reach half a unit of `res_k`, the columns are
+    /// normalized into a tensor and relinearized with [`Self::glwe_tensor_relinearize`]: the result is then that
+    /// of the two-step path, bit for bit. The bound reads the secret distribution, party count and key error from
+    /// the noise metadata of `tsk`; a key without it, or with a secret of unknown law, always takes the tensor path
+    /// there.
     #[allow(clippy::too_many_arguments)]
     fn glwe_mul_relinearize<R, A, B, H>(
         &self,
@@ -397,7 +404,8 @@ pub trait GLWEMulRelinearizeSum<BE: Backend> {
     ///
     /// Each pair's three product columns are added to the first pair's in the transform domain. Only the
     /// key-switched column of the sum is brought back to digits; the other two stay in the transform domain until
-    /// the single final normalization. One pair is [`GLWETensoring::glwe_mul_relinearize`], bit for bit.
+    /// the single final normalization, unless the sum takes the tensor path of [`GLWETensoring::glwe_mul_relinearize`],
+    /// under the same bound. One pair is [`GLWETensoring::glwe_mul_relinearize`], bit for bit.
     /// Relinearizing a sum of [`GLWETensoring::glwe_tensor_apply`] products rounds every term instead: the two agree
     /// up to rounding, not bit for bit.
     ///

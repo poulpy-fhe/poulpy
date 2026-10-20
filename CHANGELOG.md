@@ -90,8 +90,10 @@
 - Fix the one-pass products and squares (`glwe_mul_relinearize`, `glwe_square_relinearize`, their assign, prepared and summed forms) against a tensor key whose gadget covers only the operands' limbs.
   At an offset that is not a whole number of limbs, `d2 = a1·b1` spans one limb more than the operands and is relinearized `cnv_offset mod base2k` bits under the result: the key switch dropped the limb past the gadget, and that error and the key-switching error were both lifted by `2^(cnv_offset mod base2k)`.
   A product at its operands' width with a large remainder lost up to 17 bits on NTT backends (base2k 52, `N = 2^15`, a result 28 bits narrower).
-  When the bound on both errors (`‖s²‖₁ <= N²` for the secrets core samples, and `DEFAULT_BOUND_XE` for the key error) can reach half a unit of the result, the columns are aligned to the result first and relinearized as a tensor, as in the two-step path; otherwise the one-pass path is unchanged.
-  The scratch of these products covers the tensor path.
+  When the bound on both errors can reach half a unit of the result, the columns are aligned to the result first and relinearized as a tensor by the backend's `glwe_tensor_relinearize`, which gives the two-step product bit for bit; otherwise the one-pass path is unchanged.
+  The bound reads the tensor key's noise metadata: `‖s²‖₁ <= ‖s‖₁²` for a secret summed over its parties, from the Hamming weight or the degree of its base law, and `Noise::CUTOFF_FACTOR` times the key's phase deviation for the key error, so multiparty keys are bounded by their own secret and error.
+  A key without noise metadata, or with a secret of unknown law, takes the tensor path wherever `d2` spans digits past the gadget.
+  The scratch of these products covers the backend's tensor path.
 - **Breaking:** the gadget key geometry is computed from a digit width in bits, `k_digit`, instead of a digit size in limbs ([#188](https://github.com/poulpy-fhe/poulpy/issues/188)).
   `key_k` drops its `base2k` argument and returns `dnum * k_digit + k_aux`, and `key_size`, `key_work_size` and `GGLWELayout::dnum_for_input` take `k_digit`, the latter without `base2k`.
   `GGLWEInfos` and `GGSWInfos` gain `k_digit()`, which `k_digit_of` computes from a digit size, and the guard rule becomes `k_aux >= k_digit`.

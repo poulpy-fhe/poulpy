@@ -579,6 +579,8 @@ pub trait GLWETensoringReference<BE: Backend> {
     /// The sum is rounded once where the two-step path rounds twice.
     /// The key-switch runs on `d2` at the alignment of the convolution output, `cnv_offset mod base2k` bits
     /// below the normalized position, so its noise is scaled up by that many bits in the result.
+    /// Where `d2` spans digits past the gadget and that scaled error may reach half a unit of `res_k`, the columns
+    /// are normalized into a tensor and relinearized by [`GLWETensoringImpl::glwe_tensor_relinearize`] instead.
     ///
     /// Requires rank 1, the `base2k` of `res` for the operands and the tensor key, and `cnv_offset >= base2k`:
     /// below it the final normalization shifts right, which turns the integer parts dropped from `d2` into errors.
@@ -953,7 +955,7 @@ where
         H: GetTensorKey<BE>,
     {
         let tsk = &tsk.get_tensor_key(a.k()).unwrap_or_else(|e| panic!("{e}"));
-        let mut scratch = scratch.borrow();
+        let scratch = scratch.borrow();
         assert!(
             scratch.available() >= self.glwe_tensor_relinearize_tmp_bytes_reference(res, a, tsk),
             "scratch.available(): {} < GLWETensoring::glwe_tensor_relinearize_tmp_bytes: {}",
@@ -961,8 +963,124 @@ where
             self.glwe_tensor_relinearize_tmp_bytes_reference(res, a, tsk)
         );
 
-        let res_k = res.k();
-        tensor_relinearize_into(self, res, res_k, a, tsk, &mut scratch);
+        let output_size = gglwe_product_output_size::<BE, _, _, _>(res, a, tsk);
+
+        let a_base2k: usize = a.base2k().into();
+        let key_base2k: usize = tsk.base2k().into();
+        let res_base2k: usize = res.base2k().into();
+        let res_k = res.k().as_usize();
+        let a_backend = a.to_backend_ref();
+
+        assert_eq!(res.rank(), tsk.rank_out());
+        assert_eq!(a.rank(), tsk.rank_out());
+
+        let cols: usize = tsk.rank_out().as_usize() + 1;
+        let pairs: usize = tsk.rank_in().as_usize();
+
+        let a_dft_size: usize = a.k().div_ceil(tsk.base2k()) as usize;
+        let (gadget_base2k, k_digit, dnum) = (tsk.base2k(), tsk.k_digit(), tsk.dnum());
+        let gadget_size: usize = gadget_input_size(gadget_base2k, k_digit, dnum, a.k(), a_dft_size);
+
+        let (mut a_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(res.n().as_usize(), pairs, gadget_size);
+
+        if a_base2k == key_base2k {
+            for i in 0..pairs {
+                gadget_dft_apply(
+                    self,
+                    &mut a_dft,
+                    i,
+                    &a_backend.data,
+                    cols + i,
+                    gadget_base2k,
+                    k_digit,
+                    dnum,
+                    a.k(),
+                    &mut scratch.borrow(),
+                );
+            }
+        } else {
+            let (mut a_conv, mut scratch_norm) = scratch.borrow().take_vec_znx_scratch(res.n().as_usize(), 1, a_dft_size);
+            for i in 0..pairs {
+                let mut scratch_iter = scratch_norm.borrow();
+                self.vec_znx_normalize(
+                    &mut a_conv,
+                    key_base2k,
+                    a_dft_size * key_base2k,
+                    0,
+                    0,
+                    &a_backend.data,
+                    a_base2k,
+                    cols + i,
+                    &mut scratch_iter,
+                );
+                let a_conv_ref = a_conv.to_backend_ref();
+                gadget_dft_apply(
+                    self,
+                    &mut a_dft,
+                    i,
+                    &a_conv_ref,
+                    0,
+                    gadget_base2k,
+                    k_digit,
+                    dnum,
+                    a.k(),
+                    &mut scratch_norm.borrow(),
+                );
+            }
+        }
+
+        let (mut res_dft, mut scratch_2) = scratch
+            .borrow()
+            .take_vec_znx_dft_scratch(res.n().as_usize(), cols, output_size);
+        let a_dft_ref = a_dft.to_backend_ref();
+        self.gglwe_product_dft_reference(&mut res_dft, &a_dft_ref, &tsk.0, 1, &mut scratch_2);
+        let (mut res_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(res.n().as_usize(), cols, output_size);
+        let res_dft_ref = res_dft.to_backend_ref();
+        for i in 0..cols {
+            self.vec_znx_idft_apply(&mut res_big, i, &res_dft_ref, i, &mut scratch_3.borrow());
+        }
+
+        if a_base2k == key_base2k {
+            for i in 0..cols {
+                self.vec_znx_big_add_small_assign(&mut res_big, i, &a_backend.data, i);
+            }
+        } else {
+            let (mut a_conv, mut scratch_norm) = scratch_3.borrow().take_vec_znx_scratch(res.n().as_usize(), 1, a_dft_size);
+            for i in 0..cols {
+                let mut scratch_iter = scratch_norm.borrow();
+                self.vec_znx_normalize(
+                    &mut a_conv,
+                    key_base2k,
+                    a_dft_size * key_base2k,
+                    0,
+                    0,
+                    &a_backend.data,
+                    a_base2k,
+                    i,
+                    &mut scratch_iter,
+                );
+                let a_conv_ref = a_conv.to_backend_ref();
+                self.vec_znx_big_add_small_assign(&mut res_big, i, &a_conv_ref, 0);
+            }
+        }
+
+        res.set_canonical(true);
+        for i in 0..(res.rank() + 1).into() {
+            let res_big_ref = res_big.to_backend_ref();
+            let mut scratch_iter = scratch_3.borrow();
+            let mut res_backend = res.to_backend_mut();
+            self.vec_znx_big_normalize(
+                &mut res_backend.data,
+                res_base2k,
+                res_k,
+                0,
+                i,
+                &res_big_ref,
+                key_base2k,
+                i,
+                &mut scratch_iter,
+            );
+        }
     }
 
     fn glwe_tensor_square_apply_reference<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
@@ -1485,160 +1603,13 @@ where
     }
 }
 
-/// Relinearization of a tensor `a` into `res`, normalized at `res_k`.
-fn tensor_relinearize_into<BE, R, A>(
-    module: &Module<BE>,
-    res: &mut R,
-    res_k: TorusPrecision,
-    a: &A,
-    tsk: &crate::layouts::GLWETensorKeyPreparedBackendRef<'_, BE>,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
-    BE: Backend,
-    Module<BE>: ModuleN
-        + VecZnxDftApply<BE>
-        + VecZnxIdftApply<BE>
-        + VecZnxNormalize<BE>
-        + VecZnxBigNormalize<BE>
-        + VecZnxBigAddSmallAssign<BE>
-        + GGLWEProductReference<BE>
-        + poulpy_hal::api::VecZnxGadgetDecompose<BE>
-        + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
-{
-    let res_infos = GLWELayout {
-        k: res_k,
-        ..res.glwe_layout()
-    };
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(&res_infos, a, tsk);
-
-    let a_base2k: usize = a.base2k().into();
-    let key_base2k: usize = tsk.base2k().into();
-    let res_base2k: usize = res.base2k().into();
-    let res_k = res_k.as_usize();
-    let a_backend = a.to_backend_ref();
-
-    assert_eq!(res.rank(), tsk.rank_out());
-    assert_eq!(a.rank(), tsk.rank_out());
-
-    let cols: usize = tsk.rank_out().as_usize() + 1;
-    let pairs: usize = tsk.rank_in().as_usize();
-
-    let a_dft_size: usize = a.k().div_ceil(tsk.base2k()) as usize;
-    let (gadget_base2k, k_digit, dnum) = (tsk.base2k(), tsk.k_digit(), tsk.dnum());
-    let gadget_size: usize = gadget_input_size(gadget_base2k, k_digit, dnum, a.k(), a_dft_size);
-
-    let (mut a_dft, mut scratch) = scratch
-        .borrow()
-        .take_vec_znx_dft_scratch(res.n().as_usize(), pairs, gadget_size);
-
-    if a_base2k == key_base2k {
-        for i in 0..pairs {
-            gadget_dft_apply(
-                module,
-                &mut a_dft,
-                i,
-                &a_backend.data,
-                cols + i,
-                gadget_base2k,
-                k_digit,
-                dnum,
-                a.k(),
-                &mut scratch.borrow(),
-            );
-        }
-    } else {
-        let (mut a_conv, mut scratch_norm) = scratch.borrow().take_vec_znx_scratch(res.n().as_usize(), 1, a_dft_size);
-        for i in 0..pairs {
-            let mut scratch_iter = scratch_norm.borrow();
-            module.vec_znx_normalize(
-                &mut a_conv,
-                key_base2k,
-                a_dft_size * key_base2k,
-                0,
-                0,
-                &a_backend.data,
-                a_base2k,
-                cols + i,
-                &mut scratch_iter,
-            );
-            let a_conv_ref = a_conv.to_backend_ref();
-            gadget_dft_apply(
-                module,
-                &mut a_dft,
-                i,
-                &a_conv_ref,
-                0,
-                gadget_base2k,
-                k_digit,
-                dnum,
-                a.k(),
-                &mut scratch_norm.borrow(),
-            );
-        }
-    }
-
-    let (mut res_dft, mut scratch_2) = scratch
-        .borrow()
-        .take_vec_znx_dft_scratch(res.n().as_usize(), cols, output_size);
-    let a_dft_ref = a_dft.to_backend_ref();
-    module.gglwe_product_dft_reference(&mut res_dft, &a_dft_ref, &tsk.0, 1, &mut scratch_2);
-    let (mut res_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(res.n().as_usize(), cols, output_size);
-    let res_dft_ref = res_dft.to_backend_ref();
-    for i in 0..cols {
-        module.vec_znx_idft_apply(&mut res_big, i, &res_dft_ref, i, &mut scratch_3.borrow());
-    }
-
-    if a_base2k == key_base2k {
-        for i in 0..cols {
-            module.vec_znx_big_add_small_assign(&mut res_big, i, &a_backend.data, i);
-        }
-    } else {
-        let (mut a_conv, mut scratch_norm) = scratch_3.borrow().take_vec_znx_scratch(res.n().as_usize(), 1, a_dft_size);
-        for i in 0..cols {
-            let mut scratch_iter = scratch_norm.borrow();
-            module.vec_znx_normalize(
-                &mut a_conv,
-                key_base2k,
-                a_dft_size * key_base2k,
-                0,
-                0,
-                &a_backend.data,
-                a_base2k,
-                i,
-                &mut scratch_iter,
-            );
-            let a_conv_ref = a_conv.to_backend_ref();
-            module.vec_znx_big_add_small_assign(&mut res_big, i, &a_conv_ref, 0);
-        }
-    }
-
-    res.set_canonical(true);
-    for i in 0..(res.rank() + 1).into() {
-        let res_big_ref = res_big.to_backend_ref();
-        let mut scratch_iter = scratch_3.borrow();
-        let mut res_backend = res.to_backend_mut();
-        module.vec_znx_big_normalize(
-            &mut res_backend.data,
-            res_base2k,
-            res_k,
-            0,
-            i,
-            &res_big_ref,
-            key_base2k,
-            i,
-            &mut scratch_iter,
-        );
-    }
-}
-
 /// Whether the one-pass relinearization against `tsk` stays within half a unit of `res_k`.
 ///
 /// `d2` holds its `dft_size` limbs `lo` bits under the result and the gadget covers `cover_bits = dnum * k_digit`.
-/// Past that width, the lost bits, lifted by `2^lo`, stay below `2^-(cover_bits - lo + 1)`, times `‖s²‖₁ <= n²` for a
-/// secret in `{-1, 0, 1}`. The key-switching error, lifted by `2^lo` too, stays below `n * dnum * dsize` products of a
-/// digit under `2^k_digit` by a key error under `DEFAULT_BOUND_XE * 2^-(cover_bits + k_aux)`.
+/// Past that width, the lost bits, lifted by `2^lo`, stay below `2^-(cover_bits - lo + 1)`, times `‖s²‖₁ <= ‖s‖₁²`
+/// for the key's secret. The key-switching error, lifted by `2^lo` too, stays below `n * dnum * dsize` products of a
+/// digit under `2^k_digit` by the key error, `Noise::CUTOFF_FACTOR` times its phase deviation. A key without noise
+/// metadata, or with a secret of unknown law, is not within the result.
 fn one_pass_within_result(
     tsk: &crate::layouts::GLWETensorKeyPreparedBackendRef<'_, impl Backend>,
     n: usize,
@@ -1653,13 +1624,39 @@ fn one_pass_within_result(
     if dft_size * base2k <= cover_bits {
         return true;
     }
-    let bits = |x: usize| (usize::BITS - x.leading_zeros()) as usize;
-    let lo = lo.max(0) as usize;
-    let half_ulp = res_k.as_usize() + 1;
-    let dropped = (cover_bits + 1).saturating_sub(lo + 2 * n.ilog2() as usize);
-    let key_error = (cover_bits + tsk.k_aux().as_usize())
-        .saturating_sub(lo + k_digit + bits(n * sub_limbs) + bits(crate::DEFAULT_BOUND_XE as usize));
-    dropped >= half_ulp && key_error >= half_ulp
+    let Some(noise) = tsk.noise() else {
+        return false;
+    };
+    let Some(secret_l1) = secret_l1_bound(noise.secret_distribution(), n) else {
+        return false;
+    };
+    let key_error = noise.phase_noise(n).std_dev_at(TorusPrecision(0)) * crate::Noise::CUTOFF_FACTOR as f64;
+    if !key_error.is_finite() {
+        return false;
+    }
+    let bits = |x: u128| (u128::BITS - x.leading_zeros()) as i64;
+    let lo = lo.max(0);
+    let half_ulp = res_k.as_usize() as i64 + 1;
+    let dropped = cover_bits as i64 + 1 - lo - 2 * bits(secret_l1.saturating_sub(1));
+    let key_error = if key_error == 0.0 {
+        i64::MAX
+    } else {
+        (-key_error.log2()).floor() as i64 - lo - k_digit as i64 - bits((n * sub_limbs) as u128)
+    };
+    (secret_l1 == 0 || dropped >= half_ulp) && key_error >= half_ulp
+}
+
+/// Largest `‖s‖₁` of a secret summed over `secret.parties()` draws of its base law in degree `n`.
+fn secret_l1_bound(secret: crate::SecretDistribution, n: usize) -> Option<u128> {
+    let per_party = match secret.base() {
+        crate::Distribution::TernaryFixed(h) | crate::Distribution::BinaryFixed(h) => h.min(n),
+        crate::Distribution::TernaryProb(p) | crate::Distribution::BinaryProb(p) if p == 0.0 => 0,
+        crate::Distribution::TernaryProb(_) | crate::Distribution::BinaryProb(_) => n,
+        crate::Distribution::BinaryBlock(b) if b > 0 => n / b,
+        crate::Distribution::ZERO => 0,
+        _ => return None,
+    };
+    Some(secret.parties() as u128 * per_party as u128)
 }
 
 /// Scratch of [`glwe_mul_relinearize_one_pass`]: one product of ciphertexts, or a sum of them, or either over
@@ -1733,7 +1730,7 @@ where
         module.glwe_tensor_bytes_of_from_infos(&tensor_infos)
             + module
                 .vec_znx_idft_normalize_consume_tmp_bytes(tensor_size, dft_size)
-                .max(module.glwe_tensor_relinearize_tmp_bytes_reference(res, &tensor_infos, tsk))
+                .max(BE::glwe_tensor_relinearize_tmp_bytes(module, res, &tensor_infos, tsk))
     } else {
         0
     };
@@ -1811,10 +1808,6 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
         + VecZnxIdftNormalizeConsumeTmpBytes
         + VecZnxDftApply<BE>
         + VecZnxDftAddAssign<BE>
-        + VecZnxIdftApply<BE>
-        + VecZnxNormalize<BE>
-        + VecZnxBigNormalize<BE>
-        + VecZnxBigAddSmallAssign<BE>
         + GGLWEProductReference<BE>
         + poulpy_hal::api::VecZnxGadgetDecompose<BE>
         + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes,
@@ -1885,6 +1878,7 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
         ..tensor_infos
     };
 
+    let tsk_source = tsk;
     let tsk = &tsk.get_tensor_key(tensor_k).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(tsk.base2k().as_usize(), base2k, "tsk.base2k() != res.base2k()");
     assert_eq!(tsk.rank_out().as_usize(), 1, "rank 1 only");
@@ -2077,7 +2071,12 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
                 &mut scratch.borrow(),
             );
         }
-        tensor_relinearize_into(module, res, res_k, &tensor, tsk, &mut scratch);
+        {
+            let mut res = res.to_backend_mut();
+            res.k = res_k;
+            BE::glwe_tensor_relinearize(module, &mut &mut res, &tensor, tsk_source, &mut scratch);
+        }
+        res.set_canonical(true);
         return;
     }
 
