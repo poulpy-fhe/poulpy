@@ -1,4 +1,4 @@
-#![feature(portable_simd)]
+#![feature(portable_simd, hint_prefetch)]
 #![allow(clippy::too_many_arguments)]
 
 //! Portable CPU backend for the Poulpy lattice cryptography library.

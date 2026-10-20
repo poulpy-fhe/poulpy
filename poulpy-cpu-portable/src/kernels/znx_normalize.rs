@@ -3,6 +3,7 @@
 //! carry, sticky and half bits in lanes, so rounding sees the exact dropped part.
 
 use std::{
+    hint::Locality,
     marker::PhantomData,
     simd::{
         Simd, Swizzle,
@@ -585,98 +586,136 @@ unsafe fn load_limb<L: NormalizeLanes>(a: Limbs<L::Word>, s: i64, i: usize) -> L
     }
 }
 
+/// Blocks a tile walks limb by limb.
+const TILE: usize = 32;
+
+/// `K` blocks from coefficient `i`, limb by limb; `K > 1` prefetches the limb it reads next.
 #[inline(always)]
-unsafe fn same_base_block<L: NormalizeLanes, const WHOLE: bool>(g: &SameBase, res: LimbsMut<i64>, a: Limbs<L::Word>, i: usize) {
+unsafe fn same_base_tile<L: NormalizeLanes, const WHOLE: bool, const K: usize>(
+    g: &SameBase,
+    res: LimbsMut<i64>,
+    a: Limbs<L::Word>,
+    i: usize,
+) {
     let b = g.base;
-    let mut carry = L::zero();
+    let at = |k: usize| i + k * L::WIDTH;
+    let load = |s: i64, j: usize| {
+        if K > 1 && (1..=a.size as i64).contains(&s) {
+            std::hint::prefetch_read(a.ptr.wrapping_add((s as usize - 1) * a.stride + j), Locality::L1);
+        }
+        unsafe { load_limb::<L>(a, s, j) }
+    };
+    let mut carry = [L::zero(); K];
     // Nothing below the boundary: nothing to round, it is a kept limb.
     let top = if WHOLE && g.padding == 0 && g.low == g.boundary {
         g.active
     } else {
-        let mut sticky = L::splat(0);
-        let mut half = L::splat(0);
+        let mut sticky = [L::splat(0); K];
+        let mut half = [L::splat(0); K];
         let mut s = g.low;
         while s > g.boundary {
-            let (low, high) = split::<L, WHOLE>(unsafe { load_limb::<L>(a, s, i) }, carry, b, g.lsh);
-            carry = high;
-            if g.padding == 0 && s == g.boundary + 1 {
-                if WHOLE {
-                    // The whole dropped limb; rounded at the boundary below.
-                    half = low;
+            for k in 0..K {
+                let (low, high) = split::<L, WHOLE>(load(s, at(k)), carry[k], b, g.lsh);
+                carry[k] = high;
+                if g.padding == 0 && s == g.boundary + 1 {
+                    if WHOLE {
+                        // The whole dropped limb; rounded at the boundary below.
+                        half[k] = low;
+                    } else {
+                        half[k] = L::srl(low, b - 1);
+                        sticky[k] = L::or(sticky[k], L::ne_zero(L::and(low, L::splat(low_mask(b - 1)))));
+                    }
                 } else {
-                    half = L::srl(low, b - 1);
-                    sticky = L::or(sticky, L::ne_zero(L::and(low, L::splat(low_mask(b - 1)))));
+                    sticky[k] = L::or(sticky[k], L::ne_zero(low));
                 }
-            } else {
-                sticky = L::or(sticky, L::ne_zero(low));
             }
             s -= 1;
         }
-        if WHOLE {
-            let p = g.padding;
-            let mut t = L::wide_add(unsafe { load_limb::<L>(a, s, i) }, carry);
-            // The `e` dropped bits (`p`, else `b`) plus `2^(e-1) - 1 + (odd | sticky)` carry out iff ties to even rounds up.
-            if p > 0 {
-                let odd = L::and(L::srl(L::wide_low(t), p), L::splat(1));
-                t = L::wide_add_n(t, L::add(L::or(odd, sticky), L::splat(low_mask(p - 1))));
-            } else {
-                let odd = L::and(L::wide_low(t), L::splat(1));
-                let up = L::srl(L::add(half, L::add(L::or(odd, sticky), L::splat(low_mask(b - 1)))), b);
-                t = L::wide_add_n(t, up);
-            }
-            let u = L::wide_add_n(t, L::splat(1 << (b - 1)));
-            carry = L::wide_sra(u, b);
-            let digit = L::sub(
-                L::and(L::wide_low(u), L::splat(low_mask(b) & !low_mask(p))),
-                L::splat(1 << (b - 1)),
-            );
-            unsafe { L::store(res.ptr.add((g.active - 1) * res.stride + i), digit) };
-        } else {
-            let (low, high) = split::<L, false>(unsafe { load_limb::<L>(a, s, i) }, carry, b, g.lsh);
-            let kept = if g.padding > 0 {
+        for k in 0..K {
+            let (half, sticky) = (half[k], sticky[k]);
+            if WHOLE {
                 let p = g.padding;
-                half = L::and(L::srl(low, p - 1), L::splat(1));
-                sticky = L::or(sticky, L::ne_zero(L::and(low, L::splat(low_mask(p - 1)))));
-                L::srl(low, p)
+                let mut t = L::wide_add(load(s, at(k)), carry[k]);
+                // The `e` dropped bits (`p`, else `b`) plus `2^(e-1) - 1 + (odd | sticky)` carry out iff ties to even rounds up.
+                if p > 0 {
+                    let odd = L::and(L::srl(L::wide_low(t), p), L::splat(1));
+                    t = L::wide_add_n(t, L::add(L::or(odd, sticky), L::splat(low_mask(p - 1))));
+                } else {
+                    let odd = L::and(L::wide_low(t), L::splat(1));
+                    let up = L::srl(L::add(half, L::add(L::or(odd, sticky), L::splat(low_mask(b - 1)))), b);
+                    t = L::wide_add_n(t, up);
+                }
+                let u = L::wide_add_n(t, L::splat(1 << (b - 1)));
+                carry[k] = L::wide_sra(u, b);
+                let digit = L::sub(
+                    L::and(L::wide_low(u), L::splat(low_mask(b) & !low_mask(p))),
+                    L::splat(1 << (b - 1)),
+                );
+                unsafe { L::store(res.ptr.add((g.active - 1) * res.stride + at(k)), digit) };
             } else {
-                low
-            };
-            let (digit, up) = center::<L>(round_even::<L>(kept, half, sticky), b - g.padding);
-            carry = L::wide_add_n(high, up);
-            unsafe { L::store(res.ptr.add((g.active - 1) * res.stride + i), L::shl(digit, g.padding)) };
+                let (low, high) = split::<L, false>(load(s, at(k)), carry[k], b, g.lsh);
+                let (kept, half, sticky) = if g.padding > 0 {
+                    let p = g.padding;
+                    (
+                        L::srl(low, p),
+                        L::and(L::srl(low, p - 1), L::splat(1)),
+                        L::or(sticky, L::ne_zero(L::and(low, L::splat(low_mask(p - 1))))),
+                    )
+                } else {
+                    (low, half, sticky)
+                };
+                let (digit, up) = center::<L>(round_even::<L>(kept, half, sticky), b - g.padding);
+                carry[k] = L::wide_add_n(high, up);
+                unsafe { L::store(res.ptr.add((g.active - 1) * res.stride + at(k)), L::shl(digit, g.padding)) };
+            }
         }
         g.active - 1
     };
     for d in (0..top).rev() {
-        let x = unsafe { load_limb::<L>(a, d as i64 + g.limb_offset, i) };
-        let digit = if WHOLE {
-            let u = L::wide_add_n(L::wide_add(x, carry), L::splat(1 << (b - 1)));
-            carry = L::wide_sra(u, b);
-            L::sub(L::and(L::wide_low(u), L::splat(low_mask(b))), L::splat(1 << (b - 1)))
-        } else {
-            let (low, high) = split::<L, false>(x, carry, b, g.lsh);
-            let (digit, up) = center::<L>(low, b);
-            carry = L::wide_add_n(high, up);
-            digit
-        };
-        unsafe { L::store(res.ptr.add(d * res.stride + i), digit) };
+        for (k, carry) in carry.iter_mut().enumerate() {
+            let x = load(d as i64 + g.limb_offset, at(k));
+            let digit = if WHOLE {
+                let u = L::wide_add_n(L::wide_add(x, *carry), L::splat(1 << (b - 1)));
+                *carry = L::wide_sra(u, b);
+                L::sub(L::and(L::wide_low(u), L::splat(low_mask(b))), L::splat(1 << (b - 1)))
+            } else {
+                let (low, high) = split::<L, false>(x, *carry, b, g.lsh);
+                let (digit, up) = center::<L>(low, b);
+                *carry = L::wide_add_n(high, up);
+                digit
+            };
+            unsafe { L::store(res.ptr.add(d * res.stride + at(k)), digit) };
+        }
     }
     for d in g.active..res.size {
-        unsafe { L::store(res.ptr.add(d * res.stride + i), L::splat(0)) };
+        for k in 0..K {
+            unsafe { L::store(res.ptr.add(d * res.stride + at(k)), L::splat(0)) };
+        }
     }
 }
 
+// Inlined, the tile bodies cost the cross walk beside them 1-3%.
+#[inline(never)]
 unsafe fn same_base<L, T, const WHOLE: bool>(g: &SameBase, res: LimbsMut<i64>, a: Limbs<L::Word>, len: usize)
 where
     L: NormalizeLanes,
     T: NormalizeLanes<Word = L::Word>,
 {
     let full = len - len % L::WIDTH;
-    for i in (0..full).step_by(L::WIDTH) {
-        unsafe { same_base_block::<L, WHOLE>(g, res, a, i) };
+    // A block's limb lines, a power-of-two stride apart, share one L1 set: past its 8 ways, walk tiles.
+    let tiled = if a.size + res.size > 8 {
+        full - full % (TILE * L::WIDTH)
+    } else {
+        0
+    };
+    for i in (0..tiled).step_by(TILE * L::WIDTH) {
+        unsafe { same_base_tile::<L, WHOLE, TILE>(g, res, a, i) };
+    }
+    for i in (tiled..full).step_by(L::WIDTH) {
+        unsafe { same_base_tile::<L, WHOLE, 1>(g, res, a, i) };
     }
     for i in full..len {
-        unsafe { same_base_block::<T, WHOLE>(g, res, a, i) };
+        unsafe { same_base_tile::<T, WHOLE, 1>(g, res, a, i) };
     }
 }
 
@@ -985,36 +1024,103 @@ mod tests {
         );
     }
 
+    /// `size` limbs of `n` coefficients: the `±2^62` input bounds and random words between.
+    fn sample(size: usize, n: usize, state: &mut u64) -> Vec<Vec<i64>> {
+        (0..size)
+            .map(|_| {
+                (0..n)
+                    .map(|t| match t % 4 {
+                        0 => -(1i64 << 62),
+                        1 => 1i64 << 62,
+                        _ => {
+                            *state ^= *state << 13;
+                            *state ^= *state >> 7;
+                            *state ^= *state << 17;
+                            *state as i64 >> 1
+                        }
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    fn widen(limbs: &[Vec<i64>]) -> Vec<Vec<i128>> {
+        limbs
+            .iter()
+            .map(|l| l.iter().map(|&x| ((x as i128) << 63) + x as i128).collect())
+            .collect()
+    }
+
     #[test]
     fn whole_limb_fast_path_matches_split_path() {
         let mut state = 0x2545_f491_4f6c_dd1du64;
         for b in [1usize, 2, 62, 63] {
-            let limbs: Vec<Vec<i64>> = (0..3)
-                .map(|_| {
-                    (0..11)
-                        .map(|t| match t % 4 {
-                            0 => -(1i64 << 62),
-                            1 => 1i64 << 62,
-                            _ => {
-                                state ^= state << 13;
-                                state ^= state >> 7;
-                                state ^= state << 17;
-                                state as i64 >> 1
-                            }
-                        })
-                        .collect()
-                })
-                .collect();
-            let wide: Vec<Vec<i128>> = limbs
-                .iter()
-                .map(|l| l.iter().map(|&x| ((x as i128) << 63) + x as i128).collect())
-                .collect();
+            let limbs = sample(3, 11, &mut state);
+            let wide = widen(&limbs);
             for offset in [0, -(b as i64)] {
                 for k in [3 * b, 3 * b - 1, b + 1] {
                     for size in [3, 4] {
                         pin_whole_limbs(&limbs, b, k, size, offset);
                         pin_whole_limbs(&wide, b, k, size, offset);
                     }
+                }
+            }
+        }
+    }
+
+    /// Tiles, leftover blocks and the tail against the driver one coefficient at a time, and in place.
+    #[test]
+    fn tiled_walk_matches_single_coefficients() {
+        fn single<S: NormalizeWord>(a: &[Vec<S>], b: usize, k: usize, offset: i64) -> Vec<Vec<i64>> {
+            layout(a, a.len(), |res, src, n| {
+                for i in 0..n {
+                    let res = LimbsMut {
+                        ptr: res.ptr.wrapping_add(i),
+                        ..res
+                    };
+                    let src = Limbs {
+                        ptr: src.ptr.wrapping_add(i),
+                        ..src
+                    };
+                    unsafe { normalize_blocked_portable::<S::Lanes, PortableLanes<S, 1>>(res, b, k, offset, src, b, 1) };
+                }
+            })
+        }
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+        // Two tiles, three leftover blocks and a tail at every lane width.
+        let n = 2 * TILE * 8 + 3 * 8 + 5;
+        let size = 6;
+        let limbs = sample(size, n, &mut state);
+        let wide = widen(&limbs);
+        for b in [17usize, 50, 62] {
+            for k in [size * b, size * b - 5, 2 * b + 1] {
+                for offset in [0, 1, -(b as i64), -(b as i64) - 1] {
+                    let want = single(&limbs, b, k, offset);
+                    assert_eq!(run(&limbs, b, b, k, size, offset), want, "b={b} k={k} offset={offset}");
+                    assert_eq!(
+                        run(&wide, b, b, k, size, offset),
+                        single(&wide, b, k, offset),
+                        "wide b={b} k={k} offset={offset}"
+                    );
+                    let mut buf = limbs.concat();
+                    let ptr = buf.as_mut_ptr();
+                    unsafe {
+                        normalize_blocked_portable::<<i64 as NormalizeWord>::Lanes, PortableLanes<i64, 1>>(
+                            LimbsMut { ptr, stride: n, size },
+                            b,
+                            k,
+                            offset,
+                            Limbs {
+                                ptr: ptr.cast_const(),
+                                stride: n,
+                                size,
+                            },
+                            b,
+                            n,
+                        )
+                    };
+                    let in_place: Vec<Vec<i64>> = (0..n).map(|i| (0..size).map(|j| buf[j * n + i]).collect()).collect();
+                    assert_eq!(in_place, want, "in place b={b} k={k} offset={offset}");
                 }
             }
         }
