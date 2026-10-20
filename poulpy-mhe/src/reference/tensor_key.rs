@@ -94,7 +94,7 @@ where
             "invalid share: public key needs a samplable distribution"
         );
         super::assert_public_key_distribution::<BE, _>(pk);
-        let (dnum, digit_k): (usize, usize) = (res.dnum().into(), res.digit_k().as_usize());
+        let (dnum, k_digit): (usize, usize) = (res.dnum().into(), res.k_digit().as_usize());
         let tmp_bytes: usize = self.mhe_glwe_tensor_key_share_gen_tmp_bytes_reference(&*res, pk);
         let mut metadata = None;
         {
@@ -112,7 +112,7 @@ where
                             base2k,
                             k,
                             row,
-                            digit_k,
+                            k_digit,
                             sk.data(),
                             b,
                             &mut scratch_1.borrow(),

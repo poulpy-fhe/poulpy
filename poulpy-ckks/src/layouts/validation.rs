@@ -32,17 +32,17 @@ pub(crate) fn validate_gadget_key<K: GGLWEInfos + ?Sized>(
         key.base2k(),
     );
     ensure!(key.dnum().as_usize() > 0, "{name} must have at least one decomposition digit");
-    ensure!(key.digit_k().as_usize() > 0, "{name} decomposition digits must be non-empty");
+    ensure!(key.k_digit().as_usize() > 0, "{name} decomposition digits must be non-empty");
     ensure!(
-        key.k().as_usize() > key.digit_k().as_usize(),
+        key.k().as_usize() > key.k_digit().as_usize(),
         "{name} decomposition digit of {} bits must be narrower than the {}-bit key",
-        key.digit_k(),
+        key.k_digit(),
         key.k(),
     );
     let gadget_k = key
         .dnum()
         .as_usize()
-        .checked_mul(key.digit_k().as_usize())
+        .checked_mul(key.k_digit().as_usize())
         .with_context(|| format!("{name} decomposition size overflows usize"))?;
     ensure!(
         gadget_k <= key.k().as_usize(),
@@ -92,7 +92,7 @@ where
             && reported.rank_in() == view.rank_in()
             && reported.rank_out() == view.rank_out()
             && reported.dnum() == view.dnum()
-            && reported.digit_k() == view.digit_k(),
+            && reported.k_digit() == view.k_digit(),
         "{name} reported layout does not match its backend-native view",
     );
     Ok(())

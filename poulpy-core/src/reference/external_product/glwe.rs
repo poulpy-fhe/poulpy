@@ -36,9 +36,9 @@ where
     A: GLWEInfos,
     G: GGSWInfos,
 {
-    let (base2k, digit_k, dnum) = (ggsw_infos.base2k(), ggsw_infos.digit_k(), ggsw_infos.dnum());
+    let (base2k, k_digit, dnum) = (ggsw_infos.base2k(), ggsw_infos.k_digit(), ggsw_infos.dnum());
     let a_size: usize = a_infos.k().div_ceil(base2k) as usize;
-    let size: usize = gadget_input_size(base2k, digit_k, dnum, a_infos.k(), a_size);
+    let size: usize = gadget_input_size(base2k, k_digit, dnum, a_infos.k(), a_size);
     let bytes: usize = if ggsw_infos.digits_aligned() {
         0
     } else {
@@ -213,8 +213,8 @@ where
         // Every column of `a` is a gadget operand: lay them all out on the
         // digit grid once, and the interleaved loop reads that layout.
         let cols: usize = (ggsw.rank() + 1).into();
-        let (base2k, digit_k) = (ggsw.base2k(), ggsw.digit_k());
-        let size: usize = gadget_input_size(base2k, digit_k, ggsw.dnum(), a.k(), a.size());
+        let (base2k, k_digit) = (ggsw.base2k(), ggsw.k_digit());
+        let size: usize = gadget_input_size(base2k, k_digit, ggsw.dnum(), a.k(), a.size());
         let (mut digits, mut scratch_1) = scratch.borrow().take_vec_znx_scratch(a.n().as_usize(), cols, size);
         // An input of precision 0 has no digit: the loop below reads no limb.
         if let Some(a_live) = precision_limbs::<BE>(&a.data, base2k, a.k()).filter(|_| size > 0) {
@@ -225,7 +225,7 @@ where
                     &a_live,
                     j,
                     base2k.as_usize(),
-                    digit_k.as_usize(),
+                    k_digit.as_usize(),
                     &mut scratch_1.borrow(),
                 );
             }

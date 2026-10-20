@@ -65,8 +65,8 @@ impl<D: Data, BE: Backend> GGLWEInfos for GGLWEToGGSWKeyPrepared<D, BE> {
         self.keys[0].rank_out()
     }
 
-    fn digit_k(&self) -> TorusPrecision {
-        self.keys[0].digit_k()
+    fn k_digit(&self) -> TorusPrecision {
+        self.keys[0].k_digit()
     }
 
     fn dnum(&self) -> Dnum {
@@ -94,7 +94,7 @@ pub trait GGLWEToGGSWKeyPreparedFactory<BE: Backend> {
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GGLWEToGGSWKeyPrepared<BE::OwnedBuf, BE>;
@@ -109,7 +109,7 @@ pub trait GGLWEToGGSWKeyPreparedFactory<BE: Backend> {
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> usize;
@@ -152,13 +152,13 @@ where
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GGLWEToGGSWKeyPrepared<BE::OwnedBuf, BE> {
         GGLWEToGGSWKeyPrepared {
             keys: (0..rank.as_usize())
-                .map(|_| self.gglwe_prepared_alloc(base2k, dnum, digit_k, k_aux, rank, rank))
+                .map(|_| self.gglwe_prepared_alloc(base2k, dnum, k_digit, k_aux, rank, rank))
                 .collect(),
         }
     }
@@ -179,11 +179,11 @@ where
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> usize {
-        rank.as_usize() * self.gglwe_prepared_bytes_of(base2k, dnum, digit_k, k_aux, rank, rank)
+        rank.as_usize() * self.gglwe_prepared_bytes_of(base2k, dnum, k_digit, k_aux, rank, rank)
     }
 
     fn gglwe_to_ggsw_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize

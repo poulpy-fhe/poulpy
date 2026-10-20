@@ -7,8 +7,8 @@
 - **Breaking:** `cnv_apply_dft` and `cnv_apply_dft_add` take a Galois element `b_galois` after `b_col`, and `CnvDftAccTerm` has a `b_galois` field: the applies read their prepared right operand through `σ_{b_galois}`, so products by the automorphisms of one prepared operand store it once; `1` reads it as before.
   An even `b_galois` panics with "convolution: b_galois must be odd", the message of the new `check_galois`, and a sum checks every term before its first write.
   Out-of-tree backends that override `cnv_apply_dft_sum` must read each term's `b_galois`: an override that ignores it still compiles.
-- **Breaking:** add `VecZnxGadgetDecompose` and `VecZnxGadgetDecomposeTmpBytes`, the gadget digit layout of a column for a gadget product whose digits have any width `digit_k` in bits ([#188](https://github.com/poulpy-fhe/poulpy/issues/188)).
-  Each digit is the centered residue modulo `2^digit_k` of the input rounded at the gadget precision, written as `ceil(digit_k / base2k)` limbs aligned on its own bottom bit, the layout the interleaved-digit product reads.
+- **Breaking:** add `VecZnxGadgetDecompose` and `VecZnxGadgetDecomposeTmpBytes`, the gadget digit layout of a column for a gadget product whose digits have any width `k_digit` in bits ([#188](https://github.com/poulpy-fhe/poulpy/issues/188)).
+  Each digit is the centered residue modulo `2^k_digit` of the input rounded at the gadget precision, written as `ceil(k_digit / base2k)` limbs aligned on its own bottom bit, the layout the interleaved-digit product reads.
   `HalVecZnxImpl` gains the required methods `vec_znx_gadget_decompose` and `vec_znx_gadget_decompose_tmp_bytes`, and `test_vec_znx_gadget_decompose` checks a backend against a reference and against the contract.
 - **Breaking:** `VecZnxIdftApplyTmpA`, `HalVecZnxDftImpl::vec_znx_idft_apply_tmpa` and `test_vec_znx_idft_apply_tmpa` are removed; callers use `vec_znx_idft_apply` with `vec_znx_idft_apply_tmp_bytes` of scratch, which also removes the per-call allocation of the AVX-512 NTT4x30 and IFMA backends ([#339](https://github.com/poulpy-fhe/poulpy/issues/339)), and the default `vec_znx_idft_normalize_consume_tmp_bytes` covers that scratch.
 - The contract key `sparse` is renamed `embed`, the module `test_suite::sparse` becomes `test_suite::embed`, and the tests `test_vec_znx_sparse_add_sub`, `test_vec_znx_big_sparse_add_sub` and `test_convolution_sparse` become `test_vec_znx_embed_add_sub`, `test_vec_znx_big_embed_add_sub` and `test_convolution_embed`.
@@ -70,7 +70,7 @@
 - `vmp_apply_dft_to_dft_add` of the FFT64 backends, serial and Rayon, accumulates each block as it is computed, where it filled a zeroed scratch vector and added it afterwards.
   Its scratch shrinks to the one of `vmp_apply_dft_to_dft`.
 - **Fix:** `ZnxPortable::znx_normalize_middle_step` ignored its `OVERWRITE` parameter and always overwrote.
-- **Fix:** the encapsulated ModUp of the AVX2 and AVX-512 backends read a sparse-to-dense key view taken with `with_digit_k` above the stored `digit_k` as the stored matrix, and returned another ciphertext than the reference body; such a view now takes the reference body.
+- **Fix:** the encapsulated ModUp of the AVX2 and AVX-512 backends read a sparse-to-dense key view taken with `with_k_digit` above the stored `k_digit` as the stored matrix, and returned another ciphertext than the reference body; such a view now takes the reference body.
 - **Fix:** the NTT convolution apply kernels of the AVX2, AVX-512 and NEON backends checked the size of the result but not its column, and wrote past the buffer for a column past the last one; they now panic.
 - **Fix:** the convolution prepare of the NTT4x30 AVX2, AVX-512 and NEON backends gave each parallel task a mutable view of the whole column while the tasks of the other limbs of that column wrote to it; each task now writes only the rows of its limb.
 - **Fix:** the FFT64 DFT kernels of the portable, AVX2, AVX-512 and NEON backends checked operand degrees but not columns.
@@ -85,18 +85,18 @@
 
 ### `poulpy-core`
 
-- **Breaking:** the gadget key geometry is computed from a digit width in bits, `digit_k`, instead of a digit size in limbs ([#188](https://github.com/poulpy-fhe/poulpy/issues/188)).
-  `key_k` drops its `base2k` argument and returns `dnum * digit_k + k_aux`, and `key_size`, `key_work_size` and `GGLWELayout::dnum_for_input` take `digit_k`, the latter without `base2k`.
-  `GGLWEInfos` and `GGSWInfos` gain `digit_k()`, which `digit_k_of` computes from a digit size, and the guard rule becomes `k_aux >= digit_k`.
-  The noise models and the CKKS key validation read `digit_k`, and every value is unchanged for whole-limb digits.
+- **Breaking:** the gadget key geometry is computed from a digit width in bits, `k_digit`, instead of a digit size in limbs ([#188](https://github.com/poulpy-fhe/poulpy/issues/188)).
+  `key_k` drops its `base2k` argument and returns `dnum * k_digit + k_aux`, and `key_size`, `key_work_size` and `GGLWELayout::dnum_for_input` take `k_digit`, the latter without `base2k`.
+  `GGLWEInfos` and `GGSWInfos` gain `k_digit()`, which `k_digit_of` computes from a digit size, and the guard rule becomes `k_aux >= k_digit`.
+  The noise models and the CKKS key validation read `k_digit`, and every value is unchanged for whole-limb digits.
 - **Breaking:** gadget layouts store their digit width in bits ([#188](https://github.com/poulpy-fhe/poulpy/issues/188)).
-  The `dsize` field of every key and GGSW layout, and the `dsize` argument of their allocators and `bytes_of`, become `digit_k: TorusPrecision`.
-  `digit_k()` is the required method of `GGLWEInfos` and `GGSWInfos`, and `dsize()` is derived from it as `ceil(digit_k / base2k)`, the sub-limb count of the interleaved-digit product.
-  Coarser views take a width: `with_dsize` and `at_dsize` become `with_digit_k` and `at_digit_k`, and `SetGGLWEInfos::set_dsize` becomes `set_digit_k`.
-  A layout with `digit_k = dsize * base2k` gives the same keys, products and noise values as before.
-- **Breaking, format:** serialized GGLWE and GGSW keys, compressed or not, store `digit_k` in place of `dsize`, so keys written before cannot be read back.
-- `reference::encryption::gadget_row_plaintext` writes the plaintext of gadget row `row` at bit `(row + 1) * digit_k`, on or off a limb boundary ([#188](https://github.com/poulpy-fhe/poulpy/issues/188)).
-  Secret-key GGLWE and GGSW encryption, compressed or not, public-key GGSW encryption and the GGLWE and GGSW noise references place their rows through it, bit for bit as before when `digit_k = dsize * base2k`.
+  The `dsize` field of every key and GGSW layout, and the `dsize` argument of their allocators and `bytes_of`, become `k_digit: TorusPrecision`.
+  `k_digit()` is the required method of `GGLWEInfos` and `GGSWInfos`, and `dsize()` is derived from it as `ceil(k_digit / base2k)`, the sub-limb count of the interleaved-digit product.
+  Coarser views take a width: `with_dsize` and `at_dsize` become `with_k_digit` and `at_k_digit`, and `SetGGLWEInfos::set_dsize` becomes `set_k_digit`.
+  A layout with `k_digit = dsize * base2k` gives the same keys, products and noise values as before.
+- **Breaking, format:** serialized GGLWE and GGSW keys, compressed or not, store `k_digit` in place of `dsize`, so keys written before cannot be read back.
+- `reference::encryption::gadget_row_plaintext` writes the plaintext of gadget row `row` at bit `(row + 1) * k_digit`, on or off a limb boundary ([#188](https://github.com/poulpy-fhe/poulpy/issues/188)).
+  Secret-key GGLWE and GGSW encryption, compressed or not, public-key GGSW encryption and the GGLWE and GGSW noise references place their rows through it, bit for bit as before when `k_digit = dsize * base2k`.
   The scratch of the GGLWE and GGSW noise references covers `vec_znx_normalize_tmp_bytes`.
 - **Breaking:** `EncryptionImpl::ggsw_encrypt_pk`, the `GGSWEncryptPk` delegate and the reference GGLWE and GGSW encryption traits require `VecZnxNormalize` in place of `VecZnxZero`, `VecZnxAddScalarAssign` and `VecZnxNormalizeAssign`.
 - **Fix:** the external product, the off-limb digit layout and the key-switch body read only the limbs an operand's precision covers, `reference::keyswitching::glwe::precision_limbs`, as their scratch queries count them.
@@ -104,18 +104,18 @@
   The external-product and key-switch parity suites also run such an operand.
 - **Fix:** key switching and external products take an input of precision 0 with keys of any digit width, as with whole-limb digits: the digit layout of an input holding no limb is empty, and `precision_limbs` returns `None` for it.
   The key-switch and external-product parity suites also run such an input at every swept width.
-- **Fix:** the LWE switching, GLWE-to-LWE and LWE-to-GLWE key allocators and size queries, host, compressed and prepared, and the reference LWE switching-key encryption check `digit_k == base2k` in place of `dsize() == 1`.
-  A digit below a limb also has `dsize() == 1`, so such a layout passed and the host allocators built the key at `digit_k = base2k` while the queries sized the requested width.
+- **Fix:** the LWE switching, GLWE-to-LWE and LWE-to-GLWE key allocators and size queries, host, compressed and prepared, and the reference LWE switching-key encryption check `k_digit == base2k` in place of `dsize() == 1`.
+  A digit below a limb also has `dsize() == 1`, so such a layout passed and the host allocators built the key at `k_digit = base2k` while the queries sized the requested width.
 - `reference::keyswitching::glwe::gadget_known_zero_prefix` gives the leading operand limbs that are zero for an input below `2^-(zero_bits + 1)`: the zero input limbs for whole-limb digits, and otherwise the top digits ending at least one bit above `zero_bits`, since the gadget rounding can carry one unit into the digit that ends at it.
-- Add `From<Base2K> for TorusPrecision`, the width of a one-limb digit, and use it where a layout builds `digit_k = base2k`.
-- The `transfer_into` asserts of GGLWE and GGSW, and the `Display` of their compressed forms, name `digit_k` where they compare or print it.
+- Add `From<Base2K> for TorusPrecision`, the width of a one-limb digit, and use it where a layout builds `k_digit = base2k`.
+- The `transfer_into` asserts of GGLWE and GGSW, and the `Display` of their compressed forms, name `k_digit` where they compare or print it.
 - `layouts::digits_aligned` and the provided `GGLWEInfos::digits_aligned` and `GGSWInfos::digits_aligned` tell whether the digits are whole limbs, so that a gadget product reads the input limbs as its operand.
-  A view decides on the width it reads, `digit_k`, which sets the operand of its products.
+  A view decides on the width it reads, `k_digit`, which sets the operand of its products.
 - GGSW row expansion, and so GGSW key switching and automorphisms, takes tensor keys of any digit width: each mask column, normalized at the key radix, is laid out on the digit grid with `gadget_dft_apply`, and `ggsw_expand_rows_tmp_bytes` covers that operand.
   The GGSW key-switch noise tests, in place or not, and the gadget parity suite also run widths off a limb boundary.
 - Key switching, automorphisms, traces and external products run with digits of any width ([#188](https://github.com/poulpy-fhe/poulpy/issues/188)).
   Keys whose digits are whole limbs read the input limbs as before, bit for bit.
-  Other keys lay the input out on the digit grid with `vec_znx_gadget_decompose`, `ceil(digit_k / base2k)` sub-limbs per digit, and run the same interleaved product on that operand.
+  Other keys lay the input out on the digit grid with `vec_znx_gadget_decompose`, `ceil(k_digit / base2k)` sub-limbs per digit, and run the same interleaved product on that operand.
   `reference::keyswitching::glwe::gadget_input_size`, `gadget_dft_apply` and `gadget_dft_apply_tmp_bytes` build that operand, and the key-switch and external-product scratch covers it.
 - **Breaking:** `GLWEKeyswitchInternal` and `GLWEExternalProductDftReference` require `VecZnxGadgetDecompose` and `VecZnxGadgetDecomposeTmpBytes`.
 - The key-switch, automorphism and external-product parity suites also sweep digit widths off a limb boundary.
@@ -123,8 +123,8 @@
   The hoisted baby steps lay the input out once for the whole key set, and so take that route when every key has whole-limb digits or all share one digit width and digit count.
 - The relinearization and linear-transformation parity suites also sweep digit widths off a limb boundary.
 - **Breaking:** `ParityShapes` gains `unaligned_digits`, true in `Default`, which sweeps those widths (a sub-limb width and one bit past and short of a limb boundary) at rank 1 only; the Rayon parity suites of the AVX2, AVX-512 and NEON backends turn it off.
-- `test_suite::noise::test_glwe_keyswitch_digit_k` and `test_glwe_external_product_digit_k`, registered in `core_backend_test_suite!`, run a key switch and an external product at every digit width from 2 bits to three limbs and check the output noise, and the gadget term alone, against the noise model to within one bit.
-- The getting-started guide, the performance guide, the bootstrapping and linear-transformation docs, the CKKS README and the MHE contracts describe gadget digits by their width in bits, `digit_k`.
+- `test_suite::noise::test_glwe_keyswitch_k_digit` and `test_glwe_external_product_k_digit`, registered in `core_backend_test_suite!`, run a key switch and an external product at every digit width from 2 bits to three limbs and check the output noise, and the gadget term alone, against the noise model to within one bit.
+- The getting-started guide, the performance guide, the bootstrapping and linear-transformation docs, the CKKS README and the MHE contracts describe gadget digits by their width in bits, `k_digit`.
 - **Breaking:** `GLWE`, `GLWEPlaintext` and `GLWECompressed` carry an optional, scheme-managed `GLWEPlaintextMeta` (`Scale`, `SlotsKind`, `log_sparsity`) through `GLWEPlaintextInfos` and `SetGLWEPlaintextInfos`, which also read and set each field; `SlotsKind` moves from `poulpy-ckks` and gains `Integer`.
 - **Breaking, format:** serialized `GLWE` and `GLWECompressed` carry their plaintext metadata.
 - `reference::keyswitching::glwe::gglwe_product_limbs` returns the `product_limbs` the reference key switch passes to `GGLWEProductDigitsStridedImpl`, so that backend overrides derive the same.
@@ -223,14 +223,14 @@
 
 ### `poulpy-bin-fhe`
 
-- **Breaking:** `FheUintPrepared` and `FheUintPreparedDebug` allocators take `digit_k` in place of `dsize`, and the blind rotation keys report the `digit_k` their GGSWs store, `base2k` as built, as their layout does.
+- **Breaking:** `FheUintPrepared` and `FheUintPreparedDebug` allocators take `k_digit` in place of `dsize`, and the blind rotation keys report the `k_digit` their GGSWs store, `base2k` as built, as their layout does.
 - The scalar-to-GGSW blind rotation reference places its gadget rows through `gadget_row_plaintext`, requires `VecZnxNormalize` in place of `VecZnxAddScalarAssign` and `VecZnxNormalizeAssign`, and its scratch covers `vec_znx_normalize_tmp_bytes`.
 
 ### `poulpy-mhe`
 
-- **Breaking:** the `MHEModuleAlloc` share allocators take `digit_k` in place of `dsize`.
+- **Breaking:** the `MHEModuleAlloc` share allocators take `k_digit` in place of `dsize`.
 - GGSW and tensor key share generation place their gadget rows through `gadget_row_plaintext`, and the tensor key share scratch covers `vec_znx_normalize_tmp_bytes`.
-- **Fix:** the fresh noise estimate of a collective GGSW bounds a digit by `2^(B-1)` when `digit_k` is not a whole number of limbs, where the digit layout balances digits at their own width, and keeps `2^(B-1) * (1 - 2^-B)/(1 - 2^-b)` for whole-limb digits.
+- **Fix:** the fresh noise estimate of a collective GGSW bounds a digit by `2^(B-1)` when `k_digit` is not a whole number of limbs, where the digit layout balances digits at their own width, and keeps `2^(B-1) * (1 - 2^-B)/(1 - 2^-b)` for whole-limb digits.
   Below a limb the old factor fell under 1 and underestimated the switching noise, and `mhe-contracts.md` gave the same formula.
   `test_ggsw_share_digit_widths` checks the estimate and the measured noise at widths below a limb, one bit past a limb and one bit short of two.
 

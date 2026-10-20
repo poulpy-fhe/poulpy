@@ -68,8 +68,8 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWEAutomorphismKeyCompressed<D, W> {
         self.key.rank_out()
     }
 
-    fn digit_k(&self) -> TorusPrecision {
-        self.key.digit_k()
+    fn k_digit(&self) -> TorusPrecision {
+        self.key.k_digit()
     }
 
     fn dnum(&self) -> Dnum {
@@ -98,7 +98,7 @@ impl<D: Data, W: ZnxWord> GLWEAutomorphismKeyCompressed<D, W> {
             infos.n(),
             infos.base2k(),
             infos.dnum(),
-            infos.digit_k(),
+            infos.k_digit(),
             infos.k_aux(),
             infos.rank(),
         )
@@ -108,12 +108,12 @@ impl<D: Data, W: ZnxWord> GLWEAutomorphismKeyCompressed<D, W> {
         n: Degree,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> Self {
         GLWEAutomorphismKeyCompressed {
-            key: GGLWECompressed::alloc::<B>(n, base2k, dnum, digit_k, k_aux, rank, rank),
+            key: GGLWECompressed::alloc::<B>(n, base2k, dnum, k_digit, k_aux, rank, rank),
             p: 0,
         }
     }
@@ -126,14 +126,14 @@ impl<D: Data, W: ZnxWord> GLWEAutomorphismKeyCompressed<D, W> {
             infos.n(),
             infos.base2k(),
             infos.dnum(),
-            infos.digit_k(),
+            infos.k_digit(),
             infos.k_aux(),
             infos.rank(),
         )
     }
 
-    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, digit_k: TorusPrecision, k_aux: TorusPrecision, rank: Rank) -> usize {
-        GGLWECompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, digit_k, k_aux, rank)
+    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, k_digit: TorusPrecision, k_aux: TorusPrecision, rank: Rank) -> usize {
+        GGLWECompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, k_digit, k_aux, rank)
     }
 }
 

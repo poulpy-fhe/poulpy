@@ -66,8 +66,8 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWEToLWESwitchingKeyCompressed<D, W> {
         self.0.rank_in()
     }
 
-    fn digit_k(&self) -> TorusPrecision {
-        self.0.digit_k()
+    fn k_digit(&self) -> TorusPrecision {
+        self.0.k_digit()
     }
 
     fn rank_out(&self) -> Rank {
@@ -114,9 +114,9 @@ impl<D: Data, W: ZnxWord> GLWEToLWESwitchingKeyCompressed<D, W> {
             "rank_out > 1 is unsupported for GLWEToLWESwitchingKeyCompressed"
         );
         assert_eq!(
-            infos.digit_k().0,
+            infos.k_digit().0,
             infos.base2k().0,
-            "GLWEToLWESwitchingKeyCompressed uses one-limb digits: digit_k must equal base2k"
+            "GLWEToLWESwitchingKeyCompressed uses one-limb digits: k_digit must equal base2k"
         );
         Self::alloc::<B>(infos.n(), infos.base2k(), infos.dnum(), infos.k_aux(), infos.rank_in())
     }
@@ -149,9 +149,9 @@ impl<D: Data, W: ZnxWord> GLWEToLWESwitchingKeyCompressed<D, W> {
             "rank_out > 1 is unsupported for GLWEToLWESwitchingKeyCompressed"
         );
         assert_eq!(
-            infos.digit_k().0,
+            infos.k_digit().0,
             infos.base2k().0,
-            "GLWEToLWESwitchingKeyCompressed uses one-limb digits: digit_k must equal base2k"
+            "GLWEToLWESwitchingKeyCompressed uses one-limb digits: k_digit must equal base2k"
         );
         GLWESwitchingKeyCompressed::<AlignedBuf, W>::bytes_of_from_infos(infos)
     }

@@ -77,13 +77,13 @@ where
         a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
         base2k: usize,
-        digit_k: usize,
+        k_digit: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) where
         for<'x> Self::BufMut<'x>: HostDataMut,
         for<'x> Self::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
     {
-        vec_znx_gadget_decompose_portable::<Self>(res, res_col, a, a_col, base2k, digit_k);
+        vec_znx_gadget_decompose_portable::<Self>(res, res_col, a, a_col, base2k, k_digit);
     }
 
     #[allow(clippy::too_many_arguments)]

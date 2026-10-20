@@ -60,8 +60,8 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for LWESwitchingKeyCompressed<D, W> {
         self.0.k_aux()
     }
 
-    fn digit_k(&self) -> TorusPrecision {
-        self.0.digit_k()
+    fn k_digit(&self) -> TorusPrecision {
+        self.0.k_digit()
     }
 
     fn rank_in(&self) -> Rank {
@@ -107,9 +107,9 @@ impl<D: Data, W: ZnxWord> LWESwitchingKeyCompressed<D, W> {
         A: GGLWEInfos,
     {
         assert_eq!(
-            infos.digit_k().0,
+            infos.k_digit().0,
             infos.base2k().0,
-            "LWESwitchingKeyCompressed uses one-limb digits: digit_k must equal base2k"
+            "LWESwitchingKeyCompressed uses one-limb digits: k_digit must equal base2k"
         );
         assert_eq!(
             infos.rank_in().0,
@@ -146,9 +146,9 @@ impl<D: Data, W: ZnxWord> LWESwitchingKeyCompressed<D, W> {
         A: GGLWEInfos,
     {
         assert_eq!(
-            infos.digit_k().0,
+            infos.k_digit().0,
             infos.base2k().0,
-            "LWESwitchingKeyCompressed uses one-limb digits: digit_k must equal base2k"
+            "LWESwitchingKeyCompressed uses one-limb digits: k_digit must equal base2k"
         );
         assert_eq!(
             infos.rank_in().0,

@@ -922,9 +922,9 @@ macro_rules! impl_rank_one_tensoring {
                 let output_size = gglwe_product_output_size::<$be, _, _, _>(res, a, &key);
                 let res_base2k = res.base2k().as_usize();
                 let res_k = res.k().as_usize();
-                let (base2k, digit_k, dnum) = (key.base2k(), key.digit_k(), key.dnum());
+                let (base2k, k_digit, dnum) = (key.base2k(), key.k_digit(), key.dnum());
                 let a_k = a.k();
-                let operand_size = gadget_input_size(base2k, digit_k, dnum, a_k, a_size);
+                let operand_size = gadget_input_size(base2k, k_digit, dnum, a_k, a_size);
                 let (mut input, mut scratch) = scratch.borrow().take_vec_znx_dft_scratch(n, pairs, operand_size);
                 let a = a.to_backend_ref();
                 for i in 0..pairs {
@@ -935,7 +935,7 @@ macro_rules! impl_rank_one_tensoring {
                         a.data(),
                         cols + i,
                         base2k,
-                        digit_k,
+                        k_digit,
                         dnum,
                         a_k,
                         &mut scratch.borrow(),
@@ -979,11 +979,11 @@ macro_rules! impl_rank_one_tensoring {
                 let n = assert_degrees(module, [res.n(), a.n(), tsk.n()]);
                 let a_size = a.k().div_ceil(tsk.base2k()) as usize;
                 let output_size = gglwe_product_output_size::<$be, _, _, _>(res, a, tsk);
-                let (base2k, digit_k, dnum) = (tsk.base2k(), tsk.digit_k(), tsk.dnum());
-                let operand_size = gadget_input_size(base2k, digit_k, dnum, a.k(), a_size);
+                let (base2k, k_digit, dnum) = (tsk.base2k(), tsk.k_digit(), tsk.dnum());
+                let operand_size = gadget_input_size(base2k, k_digit, dnum, a.k(), a_size);
                 // The digit layout runs before the output is taken, the product and
                 // the fused inverse transform after.
-                let layout = gadget_dft_apply_tmp_bytes::<$be, _>(module, base2k, digit_k, dnum, a.k(), a_size);
+                let layout = gadget_dft_apply_tmp_bytes::<$be, _>(module, base2k, k_digit, dnum, a.k(), a_size);
                 let product = module.bytes_of_vec_znx_dft(n, tsk.rank_out().as_usize() + 1, output_size)
                     + module
                         .gglwe_product_dft_tmp_bytes_reference(output_size, operand_size, tsk)
@@ -1629,7 +1629,7 @@ mod relinearize_tests {
                     let module = Module::<$be>::new(n as u64);
                     let mut source = Source::new([41; 32]);
                     // Whole-limb digits, then widths off the limb boundary, one under a limb and two above.
-                    for (base2k, key_base2k, digit_k) in [
+                    for (base2k, key_base2k, k_digit) in [
                         (52usize, 52usize, 52usize),
                         (52, 52, 208),
                         (26, 52, 208),
@@ -1646,9 +1646,9 @@ mod relinearize_tests {
                         let key_layout = GLWETensorKeyLayout {
                             n: n.into(),
                             base2k: key_base2k.into(),
-                            digit_k: digit_k.into(),
-                            dnum: (8 * key_base2k).div_ceil(digit_k).into(),
-                            k_aux: (digit_k + n.ilog2() as usize).into(),
+                            k_digit: k_digit.into(),
+                            dnum: (8 * key_base2k).div_ceil(k_digit).into(),
+                            k_aux: (k_digit + n.ilog2() as usize).into(),
                             rank: rank.into(),
                         };
                         let mut input = module.glwe_tensor_alloc_from_infos(&layout);
@@ -1689,7 +1689,7 @@ mod relinearize_tests {
                             );
                             assert_eq!(
                                 got, expected,
-                                "n={n}, rank={rank}, base2k={base2k}, digit_k={digit_k}, res_base2k={res_base2k}"
+                                "n={n}, rank={rank}, base2k={base2k}, k_digit={k_digit}, res_base2k={res_base2k}"
                             );
                         }
                     }

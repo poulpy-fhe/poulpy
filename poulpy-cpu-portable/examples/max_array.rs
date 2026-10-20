@@ -77,7 +77,7 @@ where
         k_aux: TorusPrecision(K_AUX),
         rank: Rank(RANK),
         dnum: Dnum(2),
-        digit_k: TorusPrecision(BASE2K),
+        k_digit: TorusPrecision(BASE2K),
     };
 
     // Used to generate BDD Keys, for the arithmetic operations
@@ -96,7 +96,7 @@ where
                 base2k: Base2K(BASE2K),
                 dnum: Dnum(3),
                 k_aux: TorusPrecision(K_AUX),
-                digit_k: TorusPrecision(BASE2K),
+                k_digit: TorusPrecision(BASE2K),
                 rank: Rank(RANK),
             },
             tsk_layout: GGLWEToGGSWKeyLayout {
@@ -104,7 +104,7 @@ where
                 base2k: Base2K(BASE2K),
                 dnum: Dnum(3),
                 k_aux: TorusPrecision(K_AUX),
-                digit_k: TorusPrecision(BASE2K),
+                k_digit: TorusPrecision(BASE2K),
                 rank: Rank(RANK),
             },
         },
@@ -113,7 +113,7 @@ where
             base2k: Base2K(BASE2K),
             dnum: Dnum(3),
             k_aux: TorusPrecision(K_AUX),
-            digit_k: TorusPrecision(BASE2K),
+            k_digit: TorusPrecision(BASE2K),
             rank_in: Rank(RANK),
             rank_out: Rank(1),
         }),

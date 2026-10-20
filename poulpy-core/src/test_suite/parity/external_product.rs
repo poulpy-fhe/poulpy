@@ -55,7 +55,7 @@ pub fn test_glwe_external_product_parity<BR, BT>(
 
     for a_base2k in [base2k, base2k - 1] {
         for &rank in &shapes.ranks {
-            for digit_k in shapes.digit_ks(k, base2k, rank) {
+            for k_digit in shapes.k_digits(k, base2k, rank) {
                 let a_infos = GLWELayout {
                     n: Degree(n),
                     base2k: Base2K(a_base2k as u32),
@@ -65,15 +65,15 @@ pub fn test_glwe_external_product_parity<BR, BT>(
                 let res_infos = GLWELayout {
                     n: Degree(n),
                     base2k: Base2K(base2k as u32),
-                    k: TorusPrecision((k + digit_k) as u32),
+                    k: TorusPrecision((k + k_digit) as u32),
                     rank: Rank(rank as u32),
                 };
                 let ggsw_infos = GGSWLayout {
                     n: Degree(n),
                     base2k: Base2K(base2k as u32),
-                    dnum: Dnum(k.div_ceil(digit_k) as u32),
-                    digit_k: TorusPrecision(digit_k as u32),
-                    k_aux: TorusPrecision(digit_k as u32),
+                    dnum: Dnum(k.div_ceil(k_digit) as u32),
+                    k_digit: TorusPrecision(k_digit as u32),
+                    k_aux: TorusPrecision(k_digit as u32),
                     rank: Rank(rank as u32),
                 };
 
@@ -120,7 +120,7 @@ pub fn test_glwe_external_product_parity<BR, BT>(
                 assert_glwe_eq!(
                     res_ref,
                     have,
-                    "glwe_external_product: rank={rank} digit_k={digit_k} k={k} a_base2k={a_base2k}"
+                    "glwe_external_product: rank={rank} k_digit={k_digit} k={k} a_base2k={a_base2k}"
                 );
 
                 let mut twin_test = module_test.glwe_alloc_from_infos(&a_infos);
@@ -136,7 +136,7 @@ pub fn test_glwe_external_product_parity<BR, BT>(
                 assert_glwe_eq!(
                     res_ref,
                     have,
-                    "glwe_external_product, unnormalized operand: rank={rank} digit_k={digit_k} k={k} a_base2k={a_base2k}"
+                    "glwe_external_product, unnormalized operand: rank={rank} k_digit={k_digit} k={k} a_base2k={a_base2k}"
                 );
 
                 // A buffer wider than its precision, sized from that precision,
@@ -159,7 +159,7 @@ pub fn test_glwe_external_product_parity<BR, BT>(
                 assert_glwe_eq!(
                     res_ref,
                     have,
-                    "glwe_external_product, operand wider than its precision: rank={rank} digit_k={digit_k} k={k} a_base2k={a_base2k}"
+                    "glwe_external_product, operand wider than its precision: rank={rank} k_digit={k_digit} k={k} a_base2k={a_base2k}"
                 );
 
                 // Observe the internal DFT contract through canonical integer output,
@@ -211,7 +211,7 @@ pub fn test_glwe_external_product_parity<BR, BT>(
                 assert_glwe_eq!(
                     assigned_ref,
                     have,
-                    "glwe_external_product_assign: rank={rank} digit_k={digit_k} a_base2k={a_base2k}"
+                    "glwe_external_product_assign: rank={rank} k_digit={k_digit} a_base2k={a_base2k}"
                 );
                 module_test.glwe_external_product_assign(
                     &mut twin_test,
@@ -223,14 +223,14 @@ pub fn test_glwe_external_product_parity<BR, BT>(
                 assert_glwe_eq!(
                     assigned_ref,
                     have,
-                    "glwe_external_product_assign, unnormalized operand: rank={rank} digit_k={digit_k} a_base2k={a_base2k}"
+                    "glwe_external_product_assign, unnormalized operand: rank={rank} k_digit={k_digit} a_base2k={a_base2k}"
                 );
             }
         }
     }
     // An input of precision 0 holds no limb: every digit width multiplies it
     // as the whole-limb path does.
-    for digit_k in shapes.digit_ks(k, base2k, 1) {
+    for k_digit in shapes.k_digits(k, base2k, 1) {
         let a_infos = GLWELayout {
             n: Degree(n),
             base2k: Base2K(base2k as u32),
@@ -238,15 +238,15 @@ pub fn test_glwe_external_product_parity<BR, BT>(
             rank: Rank(1),
         };
         let res_infos = GLWELayout {
-            k: TorusPrecision((k + digit_k) as u32),
+            k: TorusPrecision((k + k_digit) as u32),
             ..a_infos
         };
         let ggsw_infos = GGSWLayout {
             n: Degree(n),
             base2k: Base2K(base2k as u32),
-            dnum: Dnum(k.div_ceil(digit_k) as u32),
-            digit_k: TorusPrecision(digit_k as u32),
-            k_aux: TorusPrecision(digit_k as u32),
+            dnum: Dnum(k.div_ceil(k_digit) as u32),
+            k_digit: TorusPrecision(k_digit as u32),
+            k_aux: TorusPrecision(k_digit as u32),
             rank: Rank(1),
         };
         let a_ref = module_ref.glwe_alloc_from_infos(&a_infos);
@@ -292,7 +292,7 @@ pub fn test_glwe_external_product_parity<BR, BT>(
         assert_glwe_eq!(
             res_ref,
             have,
-            "glwe_external_product, input of precision 0: digit_k={digit_k}"
+            "glwe_external_product, input of precision 0: k_digit={k_digit}"
         );
     }
 }

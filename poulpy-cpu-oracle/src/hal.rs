@@ -86,10 +86,10 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxImpl for Oracle<F, R> {
         a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
         base2k: usize,
-        digit_k: usize,
+        k_digit: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        crate::normalize::gadget_decompose(res, res_col, a, a_col, base2k, digit_k);
+        crate::normalize::gadget_decompose(res, res_col, a, a_col, base2k, k_digit);
     }
 
     fn vec_znx_normalize_assign(

@@ -71,11 +71,11 @@ pub fn glwe_automorphism_key_automorphism_reference<BE, M, R, A>(
     );
 
     assert_eq!(
-        res.digit_k(),
-        a.digit_k(),
-        "res digit_k: {} != a digit_k: {}",
-        res.digit_k(),
-        a.digit_k()
+        res.k_digit(),
+        a.k_digit(),
+        "res k_digit: {} != a k_digit: {}",
+        res.k_digit(),
+        a.k_digit()
     );
     assert_eq!(res.base2k(), a.base2k());
     assert!(

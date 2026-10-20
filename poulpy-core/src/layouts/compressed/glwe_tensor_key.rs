@@ -69,8 +69,8 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWETensorKeyCompressed<D, W> {
         self.0.rank_out()
     }
 
-    fn digit_k(&self) -> TorusPrecision {
-        self.0.digit_k()
+    fn k_digit(&self) -> TorusPrecision {
+        self.0.k_digit()
     }
 
     fn dnum(&self) -> Dnum {
@@ -101,7 +101,7 @@ impl<D: Data, W: ZnxWord> GLWETensorKeyCompressed<D, W> {
             infos.n(),
             infos.base2k(),
             infos.dnum(),
-            infos.digit_k(),
+            infos.k_digit(),
             infos.k_aux(),
             infos.rank(),
         )
@@ -111,7 +111,7 @@ impl<D: Data, W: ZnxWord> GLWETensorKeyCompressed<D, W> {
         n: Degree,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> Self {
@@ -120,7 +120,7 @@ impl<D: Data, W: ZnxWord> GLWETensorKeyCompressed<D, W> {
             n,
             base2k,
             dnum,
-            digit_k,
+            k_digit,
             k_aux,
             Rank(pairs),
             rank,
@@ -135,15 +135,15 @@ impl<D: Data, W: ZnxWord> GLWETensorKeyCompressed<D, W> {
             infos.n(),
             infos.base2k(),
             infos.dnum(),
-            infos.digit_k(),
+            infos.k_digit(),
             infos.k_aux(),
             infos.rank(),
         )
     }
 
-    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, digit_k: TorusPrecision, k_aux: TorusPrecision, rank: Rank) -> usize {
+    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, k_digit: TorusPrecision, k_aux: TorusPrecision, rank: Rank) -> usize {
         let pairs: u32 = (((rank.as_u32() + 1) * rank.as_u32()) >> 1).max(1);
-        GGLWECompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, digit_k, k_aux, Rank(pairs))
+        GGLWECompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, k_digit, k_aux, Rank(pairs))
     }
 }
 

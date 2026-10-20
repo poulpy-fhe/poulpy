@@ -5,7 +5,7 @@ use poulpy_core::{
     GLWEMaskFill, GLWETensoring,
     layouts::{
         Base2K, Degree, Dnum, GLWELayout, GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, ModuleCoreAlloc,
-        Rank, TorusPrecision, digit_k_of,
+        Rank, TorusPrecision, k_digit_of,
     },
     test_suite::keys::fill_by_digit,
 };
@@ -34,7 +34,7 @@ fn tensor_key_layout(cp: &CoreParams) -> GLWETensorKeyLayout {
         k_aux: TorusPrecision(k_aux),
         rank: Rank(cp.rank),
         dnum: Dnum(dnum),
-        digit_k: digit_k_of(cp.base2k, cp.dsize),
+        k_digit: k_digit_of(cp.base2k, cp.dsize),
     }
 }
 

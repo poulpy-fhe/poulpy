@@ -311,7 +311,7 @@ Total key-switches `(n1 − 1) + (n2 − 1)` is minimized at `n1 ≈ n2 ≈ √|
 
 - **`n1`** (baby steps): default `n1 = round(√|I|)`; expose it so callers can align it
   with the diagonal structure of `M`. `n2 = ⌈(max_i + 1)/n1⌉`.
-- **Key sizes / `dnum`, `digit_k`**: the automorphism keys' gadget parameters set the
+- **Key sizes / `dnum`, `k_digit`**: the automorphism keys' gadget parameters set the
   key-switch noise and the `BIG` headroom; reuse the project's existing GGLWE key
   layout conventions.
 - **Diagonal encoding scale `Δ_pt`**: chosen so the post-multiply scale `Δ_ct · Δ_pt`

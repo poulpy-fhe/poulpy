@@ -139,7 +139,7 @@ where
         let tmp_bytes: usize = self.mhe_ggsw_share_gen_tmp_bytes_reference(&*res);
         {
             let (n, r) = (res.n().as_usize(), rank.as_usize());
-            let (dnum, digit_k, base2k) = (res.dnum().as_usize(), res.digit_k().as_usize(), res.base2k().as_usize());
+            let (dnum, k_digit, base2k) = (res.dnum().as_usize(), res.k_digit().as_usize(), res.base2k().as_usize());
             let circ = ggsw_share_part_layout(&*res, rank, rank);
             let k = circ.k().as_usize();
             let mut seeds = Source::new(seed);
@@ -179,7 +179,7 @@ where
                                 base2k,
                                 k,
                                 row,
-                                digit_k,
+                                k_digit,
                                 &pt_ref,
                                 0,
                                 &mut scratch_2,
@@ -252,7 +252,7 @@ where
             "invalid finalization: key output rank differs from the GGSW's"
         );
         assert!(
-            key.dnum().as_usize() * key.digit_k().as_usize() >= share.k().as_usize(),
+            key.dnum().as_usize() * key.k_digit().as_usize() >= share.k().as_usize(),
             "invalid finalization: key does not cover the GGSW precision"
         );
         let (dnum, rank) = (share.dnum().as_usize(), share.rank().as_usize());
@@ -337,11 +337,11 @@ fn fresh_ggsw_metadata<BE: Backend, K: GGLWEInfos>(share: &GGSWShareOwned<BE>, k
         return Some(metadata.with_components(components));
     }
     let n = share.n().as_usize();
-    let digit_bits = key.digit_k().as_usize();
+    let digit_bits = key.k_digit().as_usize();
     // Whole-limb digits are sums of limbs balanced at `base2k`, so they reach
     // `2^(B-1) * (1 - 2^-B) / (1 - 2^-b)`. Other widths are laid out on the
     // digit grid, balanced at the digit width itself, so they stay within `2^(B-1)`.
-    let digit_factor = if digits_aligned(key.base2k(), key.digit_k()) {
+    let digit_factor = if digits_aligned(key.base2k(), key.k_digit()) {
         (1.0 - (-(digit_bits as f64)).exp2()) / (1.0 - (-(key.base2k().as_usize() as f64)).exp2())
     } else {
         1.0

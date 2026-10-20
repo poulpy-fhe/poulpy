@@ -67,16 +67,16 @@ pub const DEFAULT_BOUND_XE: f64 = match crate::Noise::ENCRYPTION {
     crate::Noise::Uniform { .. } => unreachable!(),
 };
 
-/// Writes the plaintext of gadget row `row`, `pt[pt_col] * 2^-((row + 1) * digit_k)`,
+/// Writes the plaintext of gadget row `row`, `pt[pt_col] * 2^-((row + 1) * k_digit)`,
 /// into `res[res_col]`, canonical at radix `base2k` and precision `k`.
 ///
 /// The scalar is read as a one-limb vector at radix 1, worth `pt / 2`, and
-/// scaled by `2^(1 - (row + 1) * digit_k)`, so the row lands on any bit and not
+/// scaled by `2^(1 - (row + 1) * k_digit)`, so the row lands on any bit and not
 /// only on a limb boundary. Every limb of `res[res_col]` is written. For
-/// `digit_k = dsize * base2k` this is the scalar added to limb
+/// `k_digit = dsize * base2k` this is the scalar added to limb
 /// `(dsize - 1) + row * dsize` and normalized, bit for bit.
 ///
-/// Panics unless the row lies within the precision, `(row + 1) * digit_k <= k`.
+/// Panics unless the row lies within the precision, `(row + 1) * k_digit <= k`.
 #[allow(clippy::too_many_arguments)]
 pub fn gadget_row_plaintext<BE, M>(
     module: &M,
@@ -85,7 +85,7 @@ pub fn gadget_row_plaintext<BE, M>(
     base2k: usize,
     k: usize,
     row: usize,
-    digit_k: usize,
+    k_digit: usize,
     pt: &poulpy_hal::layouts::ScalarZnxBackendRef<'_, BE>,
     pt_col: usize,
     scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
@@ -93,7 +93,7 @@ pub fn gadget_row_plaintext<BE, M>(
     BE: poulpy_hal::layouts::Backend,
     M: poulpy_hal::api::VecZnxNormalize<BE>,
 {
-    let position: usize = (row + 1) * digit_k;
+    let position: usize = (row + 1) * k_digit;
     assert!(position <= k, "gadget row {row} at bit {position} is below the precision {k}");
     let src = poulpy_hal::layouts::scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(pt);
     module.vec_znx_normalize(res, base2k, k, 1 - position as i64, res_col, &src, 1, pt_col, scratch);

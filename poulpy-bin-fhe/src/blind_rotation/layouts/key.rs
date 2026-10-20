@@ -29,7 +29,7 @@ use crate::blind_rotation::BlindRotationAlgo;
 ///   ciphertexts stored in the key.
 /// - `base2k`: Decomposition base (bits per limb).
 /// - `dnum`: Number of gadget decomposition digits, each one limb wide
-///   (`digit_k = base2k`). The gadget precision is `dnum * base2k` and the
+///   (`k_digit = base2k`). The gadget precision is `dnum * base2k` and the
 ///   full precision is `key_k(dnum, base2k, k_aux)`.
 /// - `k_aux`: Auxiliary guard precision (torus bits) below the gadget region.
 /// - `rank`: GLWE rank (0 for plain LWE, ≥ 1 for GLWE / Module-LWE).
@@ -58,7 +58,7 @@ impl GGSWInfos for BlindRotationKeyLayout {
         self.k_aux
     }
 
-    fn digit_k(&self) -> poulpy_core::layouts::TorusPrecision {
+    fn k_digit(&self) -> poulpy_core::layouts::TorusPrecision {
         poulpy_core::layouts::TorusPrecision::from(self.base2k())
     }
 
@@ -291,8 +291,8 @@ impl<D: Data, BRT: BlindRotationAlgo, W: ZnxWord> GGSWInfos for BlindRotationKey
         self.keys[0].k_aux()
     }
 
-    fn digit_k(&self) -> poulpy_core::layouts::TorusPrecision {
-        self.keys[0].digit_k()
+    fn k_digit(&self) -> poulpy_core::layouts::TorusPrecision {
+        self.keys[0].k_digit()
     }
 
     fn dnum(&self) -> Dnum {

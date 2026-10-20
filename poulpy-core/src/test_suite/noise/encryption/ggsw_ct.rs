@@ -41,7 +41,7 @@ where
                 base2k: base2k.into(),
                 dnum: dnum.into(),
                 k_aux: (di * base2k + module.log_n()).into(),
-                digit_k: crate::layouts::digit_k_of(base2k, di),
+                k_digit: crate::layouts::k_digit_of(base2k, di),
                 rank: rank.into(),
             };
 
@@ -123,7 +123,7 @@ where
                 base2k: base2k.into(),
                 dnum: dnum.into(),
                 k_aux: (di * base2k + module.log_n()).into(),
-                digit_k: crate::layouts::digit_k_of(base2k, di),
+                k_digit: crate::layouts::k_digit_of(base2k, di),
                 rank: rank.into(),
             };
             let pk_infos = GLWELayout {
@@ -225,7 +225,7 @@ pub fn test_ggsw_encrypt_pk_unnormalized_plaintext<BE: crate::test_suite::noise:
         base2k: base2k.into(),
         dnum: 1_usize.into(),
         k_aux: (base2k + module.log_n()).into(),
-        digit_k: crate::layouts::digit_k_of(base2k, 1_usize),
+        k_digit: crate::layouts::k_digit_of(base2k, 1_usize),
         rank: rank.into(),
     };
     let pk_infos = GLWELayout {
@@ -307,7 +307,7 @@ where
                 base2k: base2k.into(),
                 dnum: dnum.into(),
                 k_aux: (di * base2k + module.log_n()).into(),
-                digit_k: crate::layouts::digit_k_of(base2k, di),
+                k_digit: crate::layouts::k_digit_of(base2k, di),
                 rank: rank.into(),
             };
 

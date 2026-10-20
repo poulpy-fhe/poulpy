@@ -23,7 +23,7 @@
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{
     Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWELayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWESwitchingKeyLayout,
-    GLWETensorKeyLayout, LWEInfos, Rank, TorusPrecision, digit_k_of,
+    GLWETensorKeyLayout, LWEInfos, Rank, TorusPrecision, k_digit_of,
 };
 
 use crate::numerics::CKKSFloat;
@@ -481,8 +481,8 @@ fn keys_layout(spec: &PresetSpec, n: usize, bootstrap_k: usize, log_modulus: usi
     let n = Degree(n as u32);
     let base2k = Base2K(spec.base2k as u32);
     let rank = Rank(spec.rank as u32);
-    let digit_k = digit_k_of(base2k, Dsize(spec.key_dsize as u32));
-    let dense_to_sparse_digit_k = digit_k_of(base2k, Dsize(spec.dense_to_sparse_dsize as u32));
+    let k_digit = k_digit_of(base2k, Dsize(spec.key_dsize as u32));
+    let dense_to_sparse_k_digit = k_digit_of(base2k, Dsize(spec.dense_to_sparse_dsize as u32));
     let high_modulus_switch = GLWESwitchingKeyLayout {
         n,
         base2k,
@@ -490,7 +490,7 @@ fn keys_layout(spec: &PresetSpec, n: usize, bootstrap_k: usize, log_modulus: usi
         k_aux,
         rank_in: rank,
         rank_out: rank,
-        digit_k,
+        k_digit,
     };
 
     BootstrappingKeysLayout {
@@ -500,7 +500,7 @@ fn keys_layout(spec: &PresetSpec, n: usize, bootstrap_k: usize, log_modulus: usi
             dnum,
             k_aux,
             rank,
-            digit_k,
+            k_digit,
         },
         tensor_key: GLWETensorKeyLayout {
             n,
@@ -508,7 +508,7 @@ fn keys_layout(spec: &PresetSpec, n: usize, bootstrap_k: usize, log_modulus: usi
             dnum,
             k_aux,
             rank,
-            digit_k,
+            k_digit,
         },
         encapsulation: Some(EncapsulationKeysLayout {
             dense_to_sparse: GLWESwitchingKeyLayout {
@@ -518,7 +518,7 @@ fn keys_layout(spec: &PresetSpec, n: usize, bootstrap_k: usize, log_modulus: usi
                 k_aux: dense_to_sparse_k_aux,
                 rank_in: rank,
                 rank_out: rank,
-                digit_k: dense_to_sparse_digit_k,
+                k_digit: dense_to_sparse_k_digit,
             },
             sparse_to_dense: high_modulus_switch,
         }),
@@ -529,7 +529,7 @@ fn keys_layout(spec: &PresetSpec, n: usize, bootstrap_k: usize, log_modulus: usi
 /// from [`GGLWELayout::dnum_for_input`] and the preset's guard convention
 /// `dsize * base2k + log_n`.
 fn key_shape(spec: &PresetSpec, input_k: usize, dsize: usize) -> (Dnum, TorusPrecision) {
-    let dnum = GGLWELayout::dnum_for_input(TorusPrecision(input_k as u32), digit_k_of(spec.base2k, dsize));
+    let dnum = GGLWELayout::dnum_for_input(TorusPrecision(input_k as u32), k_digit_of(spec.base2k, dsize));
     (dnum, TorusPrecision((dsize * spec.base2k + spec.log_n) as u32))
 }
 

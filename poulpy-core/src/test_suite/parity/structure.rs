@@ -54,7 +54,7 @@ where
             n: g.n,
             base2k: Base2K((b - 1) as u32),
             dnum: Dnum((2 * b + 1).div_ceil(b - 1) as u32),
-            digit_k: TorusPrecision((b - 1) as u32),
+            k_digit: TorusPrecision((b - 1) as u32),
             k_aux: TorusPrecision(b as u32 + 1),
             rank: g.rank,
         };
@@ -517,13 +517,13 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
                 BR::to_host_bytes(have.data.data()),
                 "tensor decrypt rank={rank} k={precision}"
             );
-            for digit_k in shapes.digit_ks(precision, b, rank) {
+            for k_digit in shapes.k_digits(precision, b, rank) {
                 let key = GLWETensorKeyLayout {
                     n: g.n,
                     base2k: g.base2k,
-                    dnum: Dnum(precision.div_ceil(digit_k) as u32),
-                    digit_k: TorusPrecision(digit_k as u32),
-                    k_aux: TorusPrecision((digit_k + 1) as u32),
+                    dnum: Dnum(precision.div_ceil(k_digit) as u32),
+                    k_digit: TorusPrecision(k_digit as u32),
+                    k_aux: TorusPrecision((k_digit + 1) as u32),
                     rank: g.rank,
                 };
                 let mut key_r = r.glwe_tensor_key_alloc_from_infos(&key);
@@ -559,7 +559,7 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
                 );
                 let mut have = r.glwe_alloc_from_infos(&g);
                 out_t.transfer_into(&mut have);
-                assert_glwe_eq!(out_r, have, "relinearize rank={rank} k={precision} digit_k={digit_k}");
+                assert_glwe_eq!(out_r, have, "relinearize rank={rank} k={precision} k_digit={k_digit}");
 
                 // The one-pass product must agree byte for byte across backends, in each operand role.
                 if rank == 1 {
@@ -672,7 +672,7 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
                             assert_glwe_eq!(
                                 out_r,
                                 have,
-                                "one-pass product role={role} k={precision} digit_k={digit_k} offset={cnv_offset}"
+                                "one-pass product role={role} k={precision} k_digit={k_digit} offset={cnv_offset}"
                             );
                             outs.insert(role, out_r);
                         }
@@ -681,14 +681,14 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
                             assert_glwe_eq!(
                                 *sum,
                                 *prepared,
-                                "one-pass sum versus prepared pairs k={precision} digit_k={digit_k} offset={cnv_offset}"
+                                "one-pass sum versus prepared pairs k={precision} k_digit={k_digit} offset={cnv_offset}"
                             );
                         }
                         if let (Some(product), Some(prepared)) = (outs.get(&0), outs.get(&5)) {
                             assert_glwe_eq!(
                                 *product,
                                 *prepared,
-                                "one-pass product versus one prepared pair k={precision} digit_k={digit_k} offset={cnv_offset}"
+                                "one-pass product versus one prepared pair k={precision} k_digit={k_digit} offset={cnv_offset}"
                             );
                         }
                     }

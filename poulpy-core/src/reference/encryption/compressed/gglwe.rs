@@ -109,16 +109,16 @@ where
                     self.gglwe_compressed_encrypt_sk_tmp_bytes_reference(&res)
                 );
                 assert!(
-                    res.dnum().0 * res.digit_k().0 <= res.k().0,
-                    "res.dnum() : {} * res.digit_k() : {} = {} > res.k() = {}",
+                    res.dnum().0 * res.k_digit().0 <= res.k().0,
+                    "res.dnum() : {} * res.k_digit() : {} = {} > res.k() = {}",
                     res.dnum(),
-                    res.digit_k(),
-                    res.dnum().0 * res.digit_k().0,
+                    res.k_digit(),
+                    res.dnum().0 * res.k_digit().0,
                     res.k()
                 );
 
                 let dnum: usize = res.dnum().into();
-                let digit_k: usize = res.digit_k().as_usize();
+                let k_digit: usize = res.k_digit().as_usize();
                 let base2k: usize = res.base2k().into();
                 let rank_in: usize = res.rank_in().into();
 
@@ -139,7 +139,7 @@ where
                                 base2k,
                                 tmp_pt_k,
                                 row_i,
-                                digit_k,
+                                k_digit,
                                 &pt_backend,
                                 col_j,
                                 scratch,

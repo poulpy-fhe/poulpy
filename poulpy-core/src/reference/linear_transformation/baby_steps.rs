@@ -104,8 +104,8 @@ where
     let baby = module.glwe_bytes_of_from_infos(a_infos);
     let prepare = module.cnv_prepare_left_tmp_bytes(a_infos.size(), a_infos.size());
 
-    let (base2k, digit_k, dnum) = (key_infos.base2k(), key_infos.digit_k(), key_infos.dnum());
-    let operand_size = gadget_input_size(base2k, digit_k, dnum, a_infos.k(), a_size);
+    let (base2k, k_digit, dnum) = (key_infos.base2k(), key_infos.k_digit(), key_infos.dnum());
+    let operand_size = gadget_input_size(base2k, k_digit, dnum, a_infos.k(), a_size);
     let hoisted_a_dft = module.bytes_of_vec_znx_dft(module.n(), cols - 1, operand_size);
     let hoisted_rot = module.bytes_of_vec_znx_dft(module.n(), cols, key_size)
         + module
@@ -116,7 +116,7 @@ where
         + (scratch_workers::<BE::TaskExecutor>(BABY_ROTATION_WORKERS) * hoisted_worker).max(gadget_dft_apply_tmp_bytes::<BE, _>(
             module,
             base2k,
-            digit_k,
+            k_digit,
             dnum,
             a_infos.k(),
             a_size,
@@ -247,15 +247,15 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
     // digit grid, so the keys must agree on its width and digit count: then
     // the operand is the one each key's own scratch query sizes, and each key
     // reads exactly the digits it would decompose alone.
-    let first_digits = key_refs.iter().flatten().next().map(|key| (key.digit_k(), key.dnum()));
-    let aligned = |key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>| digits_aligned(key.base2k(), key.digit_k());
+    let first_digits = key_refs.iter().flatten().next().map(|key| (key.k_digit(), key.dnum()));
+    let aligned = |key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>| digits_aligned(key.base2k(), key.k_digit());
     let use_hoisted = first_digits.is_some()
         && key_refs.iter().flatten().all(|key| key.base2k() == a.base2k())
         && (key_refs.iter().flatten().all(aligned)
             || key_refs
                 .iter()
                 .flatten()
-                .all(|key| Some((key.digit_k(), key.dnum())) == first_digits));
+                .all(|key| Some((key.k_digit(), key.dnum())) == first_digits));
     let key_sizes: Vec<usize> = key_refs
         .iter()
         .map(|key| {
@@ -266,8 +266,8 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
 
     if use_hoisted {
         let scratch = scratch.borrow();
-        let (digit_k, dnum) = first_digits.unwrap();
-        let operand_size = gadget_input_size(a.base2k(), digit_k, dnum, a.k(), a_size);
+        let (k_digit, dnum) = first_digits.unwrap();
+        let operand_size = gadget_input_size(a.base2k(), k_digit, dnum, a.k(), a_size);
         let (mut a_dft, mut loop_scratch) = scratch.take_vec_znx_dft_scratch(a.n().as_usize(), cols - 1, operand_size);
         for col_i in 0..cols - 1 {
             gadget_dft_apply(
@@ -277,7 +277,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
                 &a_ref.data,
                 col_i + 1,
                 a.base2k(),
-                digit_k,
+                k_digit,
                 dnum,
                 a.k(),
                 &mut loop_scratch.borrow(),

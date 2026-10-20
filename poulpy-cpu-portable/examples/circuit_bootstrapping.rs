@@ -89,7 +89,7 @@ fn main() {
             base2k: base2k.into(),
             dnum: rows_trace.into(),
             k_aux: (base2k + n_glwe.ilog2() as usize).into(),
-            digit_k: base2k.into(),
+            k_digit: base2k.into(),
             rank: rank.into(),
         },
         tsk_layout: GGLWEToGGSWKeyLayout {
@@ -97,7 +97,7 @@ fn main() {
             base2k: base2k.into(),
             dnum: rows_tsk.into(),
             k_aux: (base2k + n_glwe.ilog2() as usize).into(),
-            digit_k: base2k.into(),
+            k_digit: base2k.into(),
             rank: rank.into(),
         },
     };
@@ -107,7 +107,7 @@ fn main() {
         base2k: base2k.into(),
         k_aux: (base2k + n_glwe.ilog2() as usize).into(),
         dnum: rows_ggsw_res.into(),
-        digit_k: base2k.into(),
+        k_digit: base2k.into(),
         rank: rank.into(),
     };
 

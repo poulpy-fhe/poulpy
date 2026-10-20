@@ -94,8 +94,8 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWESwitchingKeyCompressed<D, W> {
         self.key.rank_out()
     }
 
-    fn digit_k(&self) -> TorusPrecision {
-        self.key.digit_k()
+    fn k_digit(&self) -> TorusPrecision {
+        self.key.k_digit()
     }
 
     fn dnum(&self) -> Dnum {
@@ -129,7 +129,7 @@ impl<D: Data, W: ZnxWord> GLWESwitchingKeyCompressed<D, W> {
             infos.n(),
             infos.base2k(),
             infos.dnum(),
-            infos.digit_k(),
+            infos.k_digit(),
             infos.k_aux(),
             infos.rank_in(),
             infos.rank_out(),
@@ -141,13 +141,13 @@ impl<D: Data, W: ZnxWord> GLWESwitchingKeyCompressed<D, W> {
         n: Degree,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank_in: Rank,
         rank_out: Rank,
     ) -> Self {
         GLWESwitchingKeyCompressed {
-            key: GGLWECompressed::alloc::<B>(n, base2k, dnum, digit_k, k_aux, rank_in, rank_out),
+            key: GGLWECompressed::alloc::<B>(n, base2k, dnum, k_digit, k_aux, rank_in, rank_out),
             input_degree: Degree(0),
             output_degree: Degree(0),
         }
@@ -166,11 +166,11 @@ impl<D: Data, W: ZnxWord> GLWESwitchingKeyCompressed<D, W> {
         n: Degree,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank_in: Rank,
     ) -> usize {
-        GGLWECompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, digit_k, k_aux, rank_in)
+        GGLWECompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, k_digit, k_aux, rank_in)
     }
 }
 

@@ -170,13 +170,13 @@ where
     {
         let dst_ref = dst.to_backend_ref();
         // The prefix the raise leaves at zero is not transformed and the product does not read it.
-        let (base2k, digit_k, dnum) = (key.base2k(), key.digit_k(), key.dnum());
-        let operand_size = gadget_input_size(base2k, digit_k, dnum, dst_ref.k(), dst_ref.size());
-        let zero_prefix = gadget_known_zero_prefix(base2k, digit_k, dnum, shift).min(operand_size);
+        let (base2k, k_digit, dnum) = (key.base2k(), key.k_digit(), key.dnum());
+        let operand_size = gadget_input_size(base2k, k_digit, dnum, dst_ref.k(), dst_ref.size());
+        let zero_prefix = gadget_known_zero_prefix(base2k, k_digit, dnum, shift).min(operand_size);
         let (mut a_dft, mut product_scratch) = scratch_1
             .borrow()
             .take_vec_znx_dft_scratch(module.n(), mask_cols, operand_size);
-        if digits_aligned(base2k, digit_k) {
+        if digits_aligned(base2k, k_digit) {
             for col in 0..mask_cols {
                 let mut suffix = a_dft.with_limb_range_mut(zero_prefix, operand_size);
                 module.vec_znx_dft_apply(1, zero_prefix, &mut suffix, col, dst_ref.data(), col + 1);
@@ -192,7 +192,7 @@ where
                     &dst_live,
                     col + 1,
                     base2k.as_usize(),
-                    digit_k.as_usize(),
+                    k_digit.as_usize(),
                     &mut layout_scratch.borrow(),
                 );
                 let mut suffix = a_dft.with_limb_range_mut(zero_prefix, operand_size);

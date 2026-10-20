@@ -53,7 +53,7 @@ impl<BE: Backend> GetAutomorphismKey<BE> for MixedDsize<'_, BE> {
             detail: format!("no automorphism key for p={p}"),
         })?;
         if self.coarse_ps.contains(&p) {
-            key.with_digit_k(self.coarse)
+            key.with_k_digit(self.coarse)
         } else {
             Ok(key.to_backend_ref())
         }
@@ -113,7 +113,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         dnum: dnum.into(),
         k_aux: (dsize * key_base2k + module.log_n()).into(),
         rank: rank.into(),
-        digit_k: crate::layouts::digit_k_of(key_base2k, dsize),
+        k_digit: crate::layouts::k_digit_of(key_base2k, dsize),
     };
 
     let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
@@ -126,7 +126,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     let product_size = ct_infos.size() + pt.size();
 
     let coarse_dsize = TorusPrecision((2 * dsize * key_base2k) as u32);
-    let coarse_infos = atk_infos.gglwe_layout().at_digit_k(coarse_dsize).unwrap();
+    let coarse_infos = atk_infos.gglwe_layout().at_k_digit(coarse_dsize).unwrap();
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&atk_infos)
@@ -399,7 +399,7 @@ where
         dnum: k.div_ceil(base2k).into(),
         k_aux: (base2k + module.log_n()).into(),
         rank: 1u32.into(),
-        digit_k: base2k.into(),
+        k_digit: base2k.into(),
     };
     // Babies {0, 1}, giants {0, 4}.
     let schedule = LinearTransformationLayout {

@@ -383,9 +383,9 @@ where
 
     let a_size: usize = res_infos.k().as_usize().div_ceil(tsk_base2k);
     let output_size = gglwe_product_output_size::<BE, _, _, _>(res_infos, res_infos, tsk_infos);
-    let (digit_k, dnum) = (tsk_infos.digit_k(), tsk_infos.dnum());
-    let operand_size: usize = gadget_input_size(tsk_infos.base2k(), digit_k, dnum, res_infos.k(), a_size);
-    let layout: usize = gadget_dft_apply_tmp_bytes::<BE, _>(module, tsk_infos.base2k(), digit_k, dnum, res_infos.k(), a_size);
+    let (k_digit, dnum) = (tsk_infos.k_digit(), tsk_infos.dnum());
+    let operand_size: usize = gadget_input_size(tsk_infos.base2k(), k_digit, dnum, res_infos.k(), a_size);
+    let layout: usize = gadget_dft_apply_tmp_bytes::<BE, _>(module, tsk_infos.base2k(), k_digit, dnum, res_infos.k(), a_size);
 
     let lvl_0: usize = module.bytes_of_vec_znx_dft(n, cols - 1, operand_size) + BE::bytes_of_vec_znx(n, 1, a_size);
     let lvl_1_res_dft: usize = module.bytes_of_vec_znx_dft(n, cols, output_size);
@@ -442,8 +442,8 @@ pub fn ggsw_expand_row_reference<BE, M, R>(
     let cols: usize = rank + 1;
 
     let res_conv_size: usize = res_backend.k().as_usize().div_ceil(tsk_base2k);
-    let (digit_k, dnum) = (tsk.digit_k(), tsk.dnum());
-    let operand_size: usize = gadget_input_size(tsk.base2k(), digit_k, dnum, res_backend.k(), res_conv_size);
+    let (k_digit, dnum) = (tsk.k_digit(), tsk.dnum());
+    let operand_size: usize = gadget_input_size(tsk.base2k(), k_digit, dnum, res_backend.k(), res_conv_size);
     {
         let (mut a_dft, scratch_1) =
             scratch
@@ -475,7 +475,7 @@ pub fn ggsw_expand_row_reference<BE, M, R>(
                         &a_0_ref,
                         0,
                         tsk.base2k(),
-                        digit_k,
+                        k_digit,
                         dnum,
                         res_backend.k(),
                         &mut scratch_2.borrow(),

@@ -921,9 +921,9 @@ where
         // too many.
         let a_dft_size: usize = a.k().div_ceil(tsk.base2k()) as usize;
         let output_size = gglwe_product_output_size::<BE, _, _, _>(res, a, tsk);
-        let (gadget_base2k, digit_k, dnum) = (tsk.base2k(), tsk.digit_k(), tsk.dnum());
-        let gadget_size: usize = gadget_input_size(gadget_base2k, digit_k, dnum, a.k(), a_dft_size);
-        let gadget_bytes: usize = gadget_dft_apply_tmp_bytes::<BE, _>(self, gadget_base2k, digit_k, dnum, a.k(), a_dft_size);
+        let (gadget_base2k, k_digit, dnum) = (tsk.base2k(), tsk.k_digit(), tsk.dnum());
+        let gadget_size: usize = gadget_input_size(gadget_base2k, k_digit, dnum, a.k(), a_dft_size);
+        let gadget_bytes: usize = gadget_dft_apply_tmp_bytes::<BE, _>(self, gadget_base2k, k_digit, dnum, a.k(), a_dft_size);
 
         let lvl_0: usize = self.bytes_of_vec_znx_dft(n, pairs, gadget_size);
 
@@ -976,8 +976,8 @@ where
         let pairs: usize = tsk.rank_in().as_usize();
 
         let a_dft_size: usize = a.k().div_ceil(tsk.base2k()) as usize;
-        let (gadget_base2k, digit_k, dnum) = (tsk.base2k(), tsk.digit_k(), tsk.dnum());
-        let gadget_size: usize = gadget_input_size(gadget_base2k, digit_k, dnum, a.k(), a_dft_size);
+        let (gadget_base2k, k_digit, dnum) = (tsk.base2k(), tsk.k_digit(), tsk.dnum());
+        let gadget_size: usize = gadget_input_size(gadget_base2k, k_digit, dnum, a.k(), a_dft_size);
 
         let (mut a_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(res.n().as_usize(), pairs, gadget_size);
 
@@ -990,7 +990,7 @@ where
                     &a_backend.data,
                     cols + i,
                     gadget_base2k,
-                    digit_k,
+                    k_digit,
                     dnum,
                     a.k(),
                     &mut scratch.borrow(),
@@ -1019,7 +1019,7 @@ where
                     &a_conv_ref,
                     0,
                     gadget_base2k,
-                    digit_k,
+                    k_digit,
                     dnum,
                     a.k(),
                     &mut scratch_norm.borrow(),
@@ -1657,9 +1657,9 @@ where
     let digits = module.vec_znx_idft_normalize_consume_tmp_bytes(dft_size, dft_size);
     // d2 is the gadget operand, at most `dft_size` full limbs.
     let d2_k = TorusPrecision((dft_size * base2k) as u32);
-    let (gadget_base2k, digit_k, dnum) = (tsk.base2k(), tsk.digit_k(), tsk.dnum());
-    let gadget_size: usize = gadget_input_size(gadget_base2k, digit_k, dnum, d2_k, dft_size);
-    let gadget_bytes: usize = gadget_dft_apply_tmp_bytes::<BE, _>(module, gadget_base2k, digit_k, dnum, d2_k, dft_size);
+    let (gadget_base2k, k_digit, dnum) = (tsk.base2k(), tsk.k_digit(), tsk.dnum());
+    let gadget_size: usize = gadget_input_size(gadget_base2k, k_digit, dnum, d2_k, dft_size);
+    let gadget_bytes: usize = gadget_dft_apply_tmp_bytes::<BE, _>(module, gadget_base2k, k_digit, dnum, d2_k, dft_size);
     let product = module.bytes_of_vec_znx_dft(n, 1, gadget_size)
         + gadget_bytes.max(
             module.bytes_of_vec_znx_dft(n, 2, ks_size)
@@ -1985,8 +1985,8 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
     );
 
     let d2_k = TorusPrecision((dft_size * base2k) as u32);
-    let (gadget_base2k, digit_k, dnum) = (tsk.base2k(), tsk.digit_k(), tsk.dnum());
-    let gadget_size: usize = gadget_input_size(gadget_base2k, digit_k, dnum, d2_k, dft_size);
+    let (gadget_base2k, k_digit, dnum) = (tsk.base2k(), tsk.k_digit(), tsk.dnum());
+    let gadget_size: usize = gadget_input_size(gadget_base2k, k_digit, dnum, d2_k, dft_size);
     let (mut d2_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(n, 1, gadget_size);
     gadget_dft_apply(
         module,
@@ -1995,7 +1995,7 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
         &d2_digits.to_backend_ref(),
         0,
         gadget_base2k,
-        digit_k,
+        k_digit,
         dnum,
         d2_k,
         &mut scratch.borrow(),

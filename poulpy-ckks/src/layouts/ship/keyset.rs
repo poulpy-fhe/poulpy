@@ -347,7 +347,7 @@ impl<D: Data, BE: Backend> ShipKeysPrepared<D, BE> {
 }
 
 /// Encrypts one [`HMuxRotKey`] for test bit `beta` and rotation amount `rot`
-/// at ciphertext precision `k_ct`, with gadget digits of `digit_k` bits.
+/// at ciphertext precision `k_ct`, with gadget digits of `k_digit` bits.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn hmux_rot_key_encrypt_sk<BE>(
     module: &Module<BE>,
@@ -357,7 +357,7 @@ pub(crate) fn hmux_rot_key_encrypt_sk<BE>(
     rot: usize,
     k_ct: usize,
     base2k: Base2K,
-    digit_k: usize,
+    k_digit: usize,
     source_xe: &mut Source,
     source_xa: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
@@ -400,11 +400,11 @@ where
     let ksk_infos = GLWESwitchingKeyLayout {
         n,
         base2k,
-        dnum: k_ct.div_ceil(digit_k).into(),
-        k_aux: digit_k.into(),
+        dnum: k_ct.div_ceil(k_digit).into(),
+        k_aux: k_digit.into(),
         rank_in: Rank(2),
         rank_out: Rank(1),
-        digit_k: digit_k.into(),
+        k_digit: k_digit.into(),
     };
     let mut key = module.glwe_switching_key_alloc_from_infos(&ksk_infos);
     module.glwe_switching_key_encrypt_sk(&mut key, &sk_in, &sk_out, source_xe, source_xa, scratch);
@@ -545,7 +545,7 @@ impl<D: Data> ShipKeySet<D, i64> {
             k_aux: b2k.into(),
             rank_in: Rank(1),
             rank_out: Rank(1),
-            digit_k: b2k.into(),
+            k_digit: b2k.into(),
         };
         let mut dense_to_sparse = module.glwe_switching_key_alloc_from_infos(&d2s_infos);
         module.glwe_switching_key_encrypt_sk(&mut dense_to_sparse, &sk_dense, &sk_sparse, source_xe, source_xa, scratch);

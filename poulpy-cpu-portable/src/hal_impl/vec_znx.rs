@@ -22,10 +22,10 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
             a_col: usize,
             base2k: usize,
-            digit_k: usize,
+            k_digit: usize,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
-            <Self as HalVecZnxDefault>::vec_znx_gadget_decompose_default(module, res, res_col, a, a_col, base2k, digit_k, scratch)
+            <Self as HalVecZnxDefault>::vec_znx_gadget_decompose_default(module, res, res_col, a, a_col, base2k, k_digit, scratch)
         }
 
         fn vec_znx_add(

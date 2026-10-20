@@ -11,7 +11,7 @@
 //!
 //! ```text
 //! n      ring degree
-//! B      gadget digit width in bits, digit_k
+//! B      gadget digit width in bits, k_digit
 //! d      digits consumed, min(dnum, ceil(k_in/B))
 //! k      key precision, dnum*B + k_aux
 //! k_in   operand precision
@@ -34,7 +34,7 @@ use crate::layouts::{GGLWEInfos, GGLWELayout, GGSWInfos, GLWEInfos, LWEInfos};
 /// Noise model of a gadget key, blanket-implemented for every [`GGLWEInfos`].
 ///
 /// `k_aux` makes the key's torus precision a property of its layout
-/// (`k() = dnum * digit_k + k_aux`, see [`crate::layouts::key_k`]), so
+/// (`k() = dnum * k_digit + k_aux`, see [`crate::layouts::key_k`]), so
 /// the operations below take only the operands they are applied to and the
 /// error variances, which are no property of a layout; everything else is read
 /// off the key.
@@ -42,9 +42,9 @@ use crate::layouts::{GGLWEInfos, GGLWELayout, GGSWInfos, GLWEInfos, LWEInfos};
 /// `var_xs_in` is the variance of the secret the operand is encrypted under,
 /// `var_xs_out` the one of the secret the key is encrypted under.
 pub(crate) trait GGLWENoiseModel: GGLWEInfos {
-    /// `B = digit_k`.
+    /// `B = k_digit`.
     fn digit_bits(&self) -> usize {
-        self.digit_k().as_usize()
+        self.k_digit().as_usize()
     }
 
     /// `d = min(dnum, ceil(k_in / B))`.
@@ -235,7 +235,7 @@ pub(crate) trait GGSWNoiseModel: GGSWInfos {
             base2k: self.base2k(),
             dnum: self.dnum(),
             k_aux: self.k_aux(),
-            digit_k: self.digit_k(),
+            k_digit: self.k_digit(),
             rank_in: self.rank() + 1,
             rank_out: self.rank(),
             stride: 1,

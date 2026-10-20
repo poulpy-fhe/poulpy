@@ -106,7 +106,7 @@ where
     // The cache may hold rotations unused by this matrix.
     let baby_steps = [0, 1, 3];
     for &rank in &shapes.ranks {
-        for digit_k in shapes.digit_ks(k, base, rank) {
+        for k_digit in shapes.k_digits(k, base, rank) {
             let ct = GLWELayout {
                 n: params.n.into(),
                 base2k: base.into(),
@@ -123,9 +123,9 @@ where
                     n: ct.n,
                     base2k: ct.base2k,
                     rank: ct.rank,
-                    dnum: Dnum(k.div_ceil(digit_k) as u32),
-                    digit_k: TorusPrecision(digit_k as u32),
-                    k_aux: TorusPrecision((digit_k + (params.n.ilog2() as usize)) as u32),
+                    dnum: Dnum(k.div_ceil(k_digit) as u32),
+                    k_digit: TorusPrecision(k_digit as u32),
+                    k_aux: TorusPrecision((k_digit + (params.n.ilog2() as usize)) as u32),
                 };
                 let input_r = ref_glwe(r, &ct, &mut source);
                 let mut input_t = t.glwe_alloc_from_infos(&ct);
@@ -213,7 +213,7 @@ where
                     &mut poisoned_scratch::<BT>(t.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, &key)).borrow(),
                 );
 
-                if digit_k == base && pt_k == base + 1 {
+                if k_digit == base && pt_k == base + 1 {
                     // A single identity diagonal has an exact mathematical
                     // oracle; it must copy every input coefficient and require
                     // no giant rotation or key switching. The one-limb
@@ -438,7 +438,7 @@ where
                         assert_glwe_eq!(
                             out_r,
                             have,
-                            "resident linear transform rank={rank} digit_k={digit_k} offset={offset} out_base={out_base}"
+                            "resident linear transform rank={rank} k_digit={k_digit} offset={offset} out_base={out_base}"
                         );
                         let mut streamed_r = ref_glwe(r, &out, &mut source);
                         let mut streamed_t = t.glwe_alloc_from_infos(&out);
@@ -469,12 +469,12 @@ where
                         assert_glwe_eq!(
                             streamed_r,
                             have,
-                            "streamed linear transform rank={rank} digit_k={digit_k} offset={offset} out_base={out_base}"
+                            "streamed linear transform rank={rank} k_digit={k_digit} offset={offset} out_base={out_base}"
                         );
                         assert_glwe_eq!(
                             out_r,
                             streamed_r,
-                            "resident/streamed linear transform rank={rank} digit_k={digit_k} offset={offset} out_base={out_base}"
+                            "resident/streamed linear transform rank={rank} k_digit={k_digit} offset={offset} out_base={out_base}"
                         );
                         // The second term goes through the sum's scratch bucket.
                         let mut sum_r = ref_glwe(r, &out, &mut source);
@@ -502,7 +502,7 @@ where
                         assert_glwe_eq!(
                             sum_r,
                             have,
-                            "summed linear transform rank={rank} digit_k={digit_k} offset={offset} out_base={out_base}"
+                            "summed linear transform rank={rank} k_digit={k_digit} offset={offset} out_base={out_base}"
                         );
                         // One term is the single transform, bit for bit, on the tested backend too.
                         let mut one_t = t.glwe_alloc_from_infos(&out);
@@ -519,7 +519,7 @@ where
                         assert_glwe_eq!(
                             out_r,
                             have,
-                            "one-term linear transform sum rank={rank} digit_k={digit_k} offset={offset} out_base={out_base}"
+                            "one-term linear transform sum rank={rank} k_digit={k_digit} offset={offset} out_base={out_base}"
                         );
                     }
                 }

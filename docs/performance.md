@@ -1,6 +1,6 @@
 # Getting performance out of Poulpy
 
-Many things affect how fast an application runs; this page covers five that are chosen at build or parameter-selection time and are easy to get wrong: the arithmetic family, the backend, the limb size `base2k`, the gadget digit width `digit_k`, and the number of threads.
+Many things affect how fast an application runs; this page covers five that are chosen at build or parameter-selection time and are easy to get wrong: the arithmetic family, the backend, the limb size `base2k`, the gadget digit width `k_digit`, and the number of threads.
 It describes what each one trades and how to measure the last one on your own machine.
 Use the [diagnostic](#measuring-your-own-thread-count) for numbers from your own hardware.
 
@@ -11,7 +11,7 @@ Use the [diagnostic](#measuring-your-own-thread-count) for numbers from your own
 2. Within a family, take the widest ISA your CPU supports — run the [capability report](#3-compilation-options) to see which ones this machine has.
    In our measurements the ordering between backends did not change with the thread count.
 3. Select `base2k` with `Module::<BE>::max_base2k(n, products, failure_bits, squaring)`, allowing headroom for coefficient-domain additions and the circuit's noise budget.
-4. Tune `digit_k`: it sets key size and the key's auxiliary precision together, and has a smaller, machine-dependent effect on speed. Four limbs, `digit_k = 4 * base2k`, is a reasonable starting point.
+4. Tune `k_digit`: it sets key size and the key's auxiliary precision together, and has a smaller, machine-dependent effect on speed. Four limbs, `k_digit = 4 * base2k`, is a reasonable starting point.
 5. Give the Rayon backends a handful of threads, not all of them, and measure where your own knee is.
 
 ## Key material is usually the bottleneck
@@ -141,21 +141,21 @@ Halving `base2k` therefore roughly doubles the work, and the whole span from a s
 Also reserve coefficient-word headroom for additions and subtractions before normalization; the query only models DFT-domain products.
 The key-size table above uses the benchmark radices, 18 for FFT64 and 52 for NTT; recalculate its bytes-per-bit figures for your chosen radix.
 
-## 5. `digit_k`
+## 5. `k_digit`
 
-`digit_k` is the width in bits of one gadget digit.
-It need not be a multiple of `base2k`, and the limbs a digit spans, `dsize = ceil(digit_k / base2k)`, are derived from it.
+`k_digit` is the width in bits of one gadget digit.
+It need not be a multiple of `base2k`, and the limbs a digit spans, `dsize = ceil(k_digit / base2k)`, are derived from it.
 It moves key size, the key's auxiliary precision, and to a smaller extent evaluation speed.
 
 **Key size.**
-Widening `digit_k` cuts the digit count `dnum` roughly as `1/digit_k` and amortizes the key's fixed precision overhead over a wider digit, so evaluation keys shrink substantially.
+Widening `k_digit` cuts the digit count `dnum` roughly as `1/k_digit` and amortizes the key's fixed precision overhead over a wider digit, so evaluation keys shrink substantially.
 Key generation time follows them down, by a factor of several across the useful range.
 When RAM is the binding constraint, this is the main lever: a bootstrapping key set runs to hundreds of megabytes, and resident keys often decide whether a workload fits at all.
 
 **Auxiliary precision.**
-A wider digit needs a more precise key: `k_aux`, the key's own torus precision, is at least one digit wide and grows with `digit_k`.
+A wider digit needs a more precise key: `k_aux`, the key's own torus precision, is at least one digit wide and grows with `k_digit`.
 That growth enters the key-switching noise, and so the budget the circuit has left to work with.
-This makes `digit_k` a parameter-selection knob rather than a free dial.
+This makes `k_digit` a parameter-selection knob rather than a free dial.
 
 **Off a limb boundary.**
 A key whose digits are whole limbs reads the ciphertext limbs directly.
@@ -165,10 +165,10 @@ In our measurements on a logN16 bootstrap, widths off a limb boundary cost a few
 
 **Speed.**
 The effect on evaluation time is small next to the two above, and it depends on the machine and the circuit.
-Four limbs, `digit_k = 4 * base2k`, is a reasonable starting point.
+Four limbs, `k_digit = 4 * base2k`, is a reasonable starting point.
 Measure if it matters to you.
 
-Pick `digit_k` from the key size and the precision budget your parameters need, and check the evaluation cost of the value you land on.
+Pick `k_digit` from the key size and the precision budget your parameters need, and check the evaluation cost of the value you land on.
 
 ## 6. Threads
 

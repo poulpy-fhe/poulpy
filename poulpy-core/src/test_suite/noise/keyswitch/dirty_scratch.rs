@@ -83,7 +83,7 @@ pub fn test_glwe_keyswitch_ignores_dirty_scratch<BE: crate::test_suite::noise::T
             base2k: key_base2k.into(),
             dnum: dnum.into(),
             k_aux: (dsize * key_base2k + module.log_n()).into(),
-            digit_k: crate::layouts::digit_k_of(key_base2k, dsize),
+            k_digit: crate::layouts::k_digit_of(key_base2k, dsize),
             rank_in: rank.into(),
             rank_out: rank.into(),
         };
@@ -212,7 +212,7 @@ pub fn test_glwe_external_product_ignores_dirty_scratch<BE: crate::test_suite::n
             base2k: key_base2k.into(),
             dnum: dnum.into(),
             k_aux: (dsize * key_base2k + module.log_n()).into(),
-            digit_k: crate::layouts::digit_k_of(key_base2k, dsize),
+            k_digit: crate::layouts::k_digit_of(key_base2k, dsize),
             rank: rank.into(),
         };
 

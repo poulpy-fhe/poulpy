@@ -63,8 +63,8 @@ impl<D: Data, W: ZnxWord, M> GGLWEInfos for GLWECIKey<D, W, M> {
         self.0.rank_in()
     }
 
-    fn digit_k(&self) -> TorusPrecision {
-        self.0.digit_k()
+    fn k_digit(&self) -> TorusPrecision {
+        self.0.k_digit()
     }
 
     fn rank_out(&self) -> Rank {

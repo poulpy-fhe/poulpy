@@ -64,9 +64,9 @@ where
 {
     let a_size = ct.size();
     let output_size = gglwe_product_accumulation_output_size::<BE, _, _, _>(ct, ct, key, term_count);
-    let (base2k, digit_k, dnum) = (key.base2k(), key.digit_k(), key.dnum());
-    let operand_size = gadget_input_size(base2k, digit_k, dnum, ct.k(), a_size);
-    let layout = gadget_dft_apply_tmp_bytes::<BE, _>(module, base2k, digit_k, dnum, ct.k(), a_size);
+    let (base2k, k_digit, dnum) = (key.base2k(), key.k_digit(), key.dnum());
+    let operand_size = gadget_input_size(base2k, k_digit, dnum, ct.k(), a_size);
+    let layout = gadget_dft_apply_tmp_bytes::<BE, _>(module, base2k, k_digit, dnum, ct.k(), a_size);
     let product = module.gglwe_product_dft_tmp_bytes_reference(output_size, operand_size, key);
     let mux = 2 * module.bytes_of_vec_znx_dft(module.n(), 2, output_size) + product;
     let finalize = module.bytes_of_vec_znx_big(module.n(), 2, output_size)
@@ -116,14 +116,14 @@ where
     );
     // One operand serves every key of the group: whole-limb digits read the
     // input limbs whatever their width, other widths must share one digit grid.
-    let (digit_k, dnum) = (keys[0].key.digit_k(), keys[0].key.dnum());
+    let (k_digit, dnum) = (keys[0].key.k_digit(), keys[0].key.dnum());
     let key_base2k = keys[0].key.base2k();
     ckks_ensure!(
-        keys.iter().all(|key| digits_aligned(key.key.base2k(), key.key.digit_k()))
-            || keys.iter().all(|key| (key.key.digit_k(), key.key.dnum()) == (digit_k, dnum)),
+        keys.iter().all(|key| digits_aligned(key.key.base2k(), key.key.k_digit()))
+            || keys.iter().all(|key| (key.key.k_digit(), key.key.dnum()) == (k_digit, dnum)),
         "{OP}: key digits off a limb boundary differ in width or count within the group"
     );
-    let operand_size = gadget_input_size(key_base2k, digit_k, dnum, ct.k(), a_size);
+    let operand_size = gadget_input_size(key_base2k, k_digit, dnum, ct.k(), a_size);
 
     let scratch = scratch.borrow();
     let (mut a_dft, mut scratch_1) = scratch.take_vec_znx_dft_scratch(module.n(), 2, operand_size);
@@ -139,7 +139,7 @@ where
                 a_ref.data(),
                 a_col,
                 key_base2k,
-                digit_k,
+                k_digit,
                 dnum,
                 ct.k(),
                 &mut scratch_1.borrow(),

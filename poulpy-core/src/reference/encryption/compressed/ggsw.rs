@@ -69,7 +69,7 @@ where
             let base2k: usize = res.base2k().into();
             let rank: usize = res.rank().into();
             let cols: usize = rank + 1;
-            let digit_k: usize = res.digit_k().as_usize();
+            let k_digit: usize = res.k_digit().as_usize();
 
             let sk_ref = sk.to_backend_ref();
             let pt_backend = pt.to_backend_ref();
@@ -104,7 +104,7 @@ where
                             base2k,
                             tmp_pt_k,
                             row_i,
-                            digit_k,
+                            k_digit,
                             &pt_backend,
                             0,
                             scratch,

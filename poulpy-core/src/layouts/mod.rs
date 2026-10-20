@@ -25,7 +25,7 @@
 //! | [`TorusPrecision`] | Total number of precision bits over the torus *T = R/Z* |
 //! | [`Rank`] | GLWE rank (number of mask polynomials; 0 for plain LWE) |
 //! | [`Dnum`] | Number of gadget-decomposition digits |
-//! | [`Dsize`] | Limbs one gadget digit spans, `ceil(digit_k / base2k)`, derived from the digit width `digit_k` in bits |
+//! | [`Dsize`] | Limbs one gadget digit spans, `ceil(k_digit / base2k)`, derived from the digit width `k_digit` in bits |
 
 #[macro_use]
 mod macros;
@@ -199,7 +199,7 @@ pub trait ModuleCoreAlloc {
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank_in: Rank,
         rank_out: Rank,
@@ -210,7 +210,7 @@ pub trait ModuleCoreAlloc {
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GGSW<Self::OwnedBuf, Self::ZnxWord>;
@@ -243,7 +243,7 @@ pub trait ModuleCoreAlloc {
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank_in: Rank,
         rank_out: Rank,
@@ -257,7 +257,7 @@ pub trait ModuleCoreAlloc {
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GLWEAutomorphismKey<Self::OwnedBuf, Self::ZnxWord>;
@@ -267,7 +267,7 @@ pub trait ModuleCoreAlloc {
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GLWETensorKey<Self::OwnedBuf, Self::ZnxWord>;
@@ -289,7 +289,7 @@ pub trait ModuleCoreAlloc {
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GGLWEToGGSWKey<Self::OwnedBuf, Self::ZnxWord>;
@@ -389,7 +389,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
 
     fn gglwe_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GGLWE<B::OwnedBuf, B::ZnxWord> {
         let dnum = infos.dnum();
-        let size = crate::layouts::key_size(infos.base2k(), dnum, infos.digit_k(), infos.k_aux());
+        let size = crate::layouts::key_size(infos.base2k(), dnum, infos.k_digit(), infos.k_aux());
 
         GGLWE {
             noise: None,
@@ -409,14 +409,14 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             ),
             k_aux: infos.k_aux(),
             base2k: infos.base2k(),
-            digit_k: infos.digit_k(),
+            k_digit: infos.k_digit(),
         }
     }
     fn gglwe_alloc(
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank_in: Rank,
         rank_out: Rank,
@@ -425,7 +425,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             n: self.ring_degree(),
             base2k,
             dnum,
-            digit_k,
+            k_digit,
             k_aux,
             rank_in,
             rank_out,
@@ -435,7 +435,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
 
     fn ggsw_alloc_from_infos<A: GGSWInfos>(&self, infos: &A) -> GGSW<B::OwnedBuf, B::ZnxWord> {
         let dnum = infos.dnum();
-        let size = crate::layouts::key_size(infos.base2k(), dnum, infos.digit_k(), infos.k_aux());
+        let size = crate::layouts::key_size(infos.base2k(), dnum, infos.k_digit(), infos.k_aux());
 
         GGSW {
             noise: None,
@@ -455,14 +455,14 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             ),
             k_aux: infos.k_aux(),
             base2k: infos.base2k(),
-            digit_k: infos.digit_k(),
+            k_digit: infos.k_digit(),
         }
     }
     fn ggsw_alloc(
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GGSW<B::OwnedBuf, B::ZnxWord> {
@@ -470,7 +470,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             n: self.ring_degree(),
             base2k,
             dnum,
-            digit_k,
+            k_digit,
             k_aux,
             rank,
         })
@@ -587,7 +587,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank_in: Rank,
         rank_out: Rank,
@@ -596,7 +596,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             n: self.ring_degree(),
             base2k,
             dnum,
-            digit_k,
+            k_digit,
             k_aux,
             rank_in,
             rank_out,
@@ -614,7 +614,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GLWEAutomorphismKey<B::OwnedBuf, B::ZnxWord> {
@@ -625,7 +625,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             k_aux,
             rank_in: rank,
             rank_out: rank,
-            digit_k,
+            k_digit,
             stride: 1,
         })
     }
@@ -637,7 +637,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GLWETensorKey<B::OwnedBuf, B::ZnxWord> {
@@ -649,7 +649,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             k_aux,
             rank_in: Rank(pairs),
             rank_out: rank,
-            digit_k,
+            k_digit,
             stride: 1,
         })
     }
@@ -665,9 +665,9 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
     fn glwe_to_lwe_key_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GLWEToLWEKey<B::OwnedBuf, B::ZnxWord> {
         assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for GLWEToLWEKey");
         assert_eq!(
-            infos.digit_k().0,
+            infos.k_digit().0,
             infos.base2k().0,
-            "GLWEToLWEKey needs one-limb digits (digit_k == base2k)"
+            "GLWEToLWEKey needs one-limb digits (k_digit == base2k)"
         );
         GLWEToLWEKey(self.glwe_switching_key_alloc_from_infos(infos))
     }
@@ -685,7 +685,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             k_aux,
             rank_in,
             rank_out: Rank(1),
-            digit_k: TorusPrecision::from(base2k),
+            k_digit: TorusPrecision::from(base2k),
             stride: 1,
         })
     }
@@ -706,7 +706,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GGLWEToGGSWKey<B::OwnedBuf, B::ZnxWord> {
@@ -717,7 +717,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             k_aux,
             rank_in: rank,
             rank_out: rank,
-            digit_k,
+            k_digit,
             stride: 1,
         })
     }
@@ -793,9 +793,9 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
 
     fn lwe_switching_key_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> LWESwitchingKey<B::OwnedBuf, B::ZnxWord> {
         assert_eq!(
-            infos.digit_k().0,
+            infos.k_digit().0,
             infos.base2k().0,
-            "LWESwitchingKey needs one-limb digits (digit_k == base2k)"
+            "LWESwitchingKey needs one-limb digits (k_digit == base2k)"
         );
         assert_eq!(infos.rank_in().0, 1, "rank_in > 1 is not supported for LWESwitchingKey");
         assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for LWESwitchingKey");
@@ -814,9 +814,9 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
     fn lwe_to_glwe_key_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> LWEToGLWEKey<B::OwnedBuf, B::ZnxWord> {
         assert_eq!(infos.rank_in().0, 1, "rank_in > 1 is not supported for LWEToGLWEKey");
         assert_eq!(
-            infos.digit_k().0,
+            infos.k_digit().0,
             infos.base2k().0,
-            "LWEToGLWEKey needs one-limb digits (digit_k == base2k)"
+            "LWEToGLWEKey needs one-limb digits (k_digit == base2k)"
         );
         LWEToGLWEKey(self.glwe_switching_key_alloc_from_infos(infos))
     }
@@ -835,7 +835,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             k_aux,
             rank_in: Rank(1),
             rank_out,
-            digit_k: TorusPrecision::from(base2k),
+            k_digit: TorusPrecision::from(base2k),
             stride: 1,
         })
     }
@@ -865,7 +865,7 @@ pub trait ModuleCoreCompressedAlloc {
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank_in: Rank,
         rank_out: Rank,
@@ -876,7 +876,7 @@ pub trait ModuleCoreCompressedAlloc {
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GGSWCompressed<Self::OwnedBuf, Self::ZnxWord>;
@@ -900,7 +900,7 @@ pub trait ModuleCoreCompressedAlloc {
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank_in: Rank,
         rank_out: Rank,
@@ -914,7 +914,7 @@ pub trait ModuleCoreCompressedAlloc {
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GLWEAutomorphismKeyCompressed<Self::OwnedBuf, Self::ZnxWord>;
@@ -927,7 +927,7 @@ pub trait ModuleCoreCompressedAlloc {
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GLWETensorKeyCompressed<Self::OwnedBuf, Self::ZnxWord>;
@@ -977,7 +977,7 @@ pub trait ModuleCoreCompressedAlloc {
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GGLWEToGGSWKeyCompressed<Self::OwnedBuf, Self::ZnxWord>;
@@ -1007,12 +1007,12 @@ impl<B: Backend> ModuleCoreCompressedAlloc for Module<B> {
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank_in: Rank,
         rank_out: Rank,
     ) -> GGLWECompressed<B::OwnedBuf, B::ZnxWord> {
-        GGLWECompressed::alloc::<B>(self.ring_degree(), base2k, dnum, digit_k, k_aux, rank_in, rank_out)
+        GGLWECompressed::alloc::<B>(self.ring_degree(), base2k, dnum, k_digit, k_aux, rank_in, rank_out)
     }
 
     fn ggsw_compressed_alloc_from_infos<A: GGSWInfos>(&self, infos: &A) -> GGSWCompressed<B::OwnedBuf, B::ZnxWord> {
@@ -1022,11 +1022,11 @@ impl<B: Backend> ModuleCoreCompressedAlloc for Module<B> {
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GGSWCompressed<B::OwnedBuf, B::ZnxWord> {
-        GGSWCompressed::alloc::<B>(self.ring_degree(), base2k, dnum, digit_k, k_aux, rank)
+        GGSWCompressed::alloc::<B>(self.ring_degree(), base2k, dnum, k_digit, k_aux, rank)
     }
 
     fn glwe_public_key_compressed_alloc_from_infos<A: GLWEInfos>(
@@ -1054,12 +1054,12 @@ impl<B: Backend> ModuleCoreCompressedAlloc for Module<B> {
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank_in: Rank,
         rank_out: Rank,
     ) -> GLWESwitchingKeyCompressed<B::OwnedBuf, B::ZnxWord> {
-        GLWESwitchingKeyCompressed::alloc::<B>(self.ring_degree(), base2k, dnum, digit_k, k_aux, rank_in, rank_out)
+        GLWESwitchingKeyCompressed::alloc::<B>(self.ring_degree(), base2k, dnum, k_digit, k_aux, rank_in, rank_out)
     }
 
     fn glwe_automorphism_key_compressed_alloc_from_infos<A: GGLWEInfos>(
@@ -1072,11 +1072,11 @@ impl<B: Backend> ModuleCoreCompressedAlloc for Module<B> {
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GLWEAutomorphismKeyCompressed<B::OwnedBuf, B::ZnxWord> {
-        GLWEAutomorphismKeyCompressed::alloc::<B>(self.ring_degree(), base2k, dnum, digit_k, k_aux, rank)
+        GLWEAutomorphismKeyCompressed::alloc::<B>(self.ring_degree(), base2k, dnum, k_digit, k_aux, rank)
     }
 
     fn glwe_tensor_key_compressed_alloc_from_infos<A: GGLWEInfos>(
@@ -1089,11 +1089,11 @@ impl<B: Backend> ModuleCoreCompressedAlloc for Module<B> {
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GLWETensorKeyCompressed<B::OwnedBuf, B::ZnxWord> {
-        GLWETensorKeyCompressed::alloc::<B>(self.ring_degree(), base2k, dnum, digit_k, k_aux, rank)
+        GLWETensorKeyCompressed::alloc::<B>(self.ring_degree(), base2k, dnum, k_digit, k_aux, rank)
     }
 
     fn glwe_to_lwe_key_compressed_alloc_from_infos<A: GGLWEInfos>(
@@ -1155,11 +1155,11 @@ impl<B: Backend> ModuleCoreCompressedAlloc for Module<B> {
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GGLWEToGGSWKeyCompressed<B::OwnedBuf, B::ZnxWord> {
-        GGLWEToGGSWKeyCompressed::alloc::<B>(self.ring_degree(), base2k, dnum, digit_k, k_aux, rank)
+        GGLWEToGGSWKeyCompressed::alloc::<B>(self.ring_degree(), base2k, dnum, k_digit, k_aux, rank)
     }
 }
 
@@ -1392,54 +1392,54 @@ impl Degree {
     }
 }
 
-/// Total torus precision of a key: `dnum * digit_k + k_aux`, i.e. the gadget
+/// Total torus precision of a key: `dnum * k_digit + k_aux`, i.e. the gadget
 /// precision (see [`GGLWELayout::gadget_k`]) plus the auxiliary guard region
 /// `k_aux`. Independent of the key radix.
 /// This is what `LWEInfos::k()` reports for the GGLWE/GGSW key families, so
 /// encryption places the error at the physical bottom limb.
-pub fn key_k(dnum: Dnum, digit_k: TorusPrecision, k_aux: TorusPrecision) -> TorusPrecision {
+pub fn key_k(dnum: Dnum, k_digit: TorusPrecision, k_aux: TorusPrecision) -> TorusPrecision {
     debug_assert!(
-        k_aux.0 >= digit_k.0,
-        "k_aux ({}) must be at least digit_k ({}): the auxiliary guard must cover at least one \
+        k_aux.0 >= k_digit.0,
+        "k_aux ({}) must be at least k_digit ({}): the auxiliary guard must cover at least one \
          full gadget digit, otherwise operations truncate mid-digit",
         k_aux.0,
-        digit_k.0,
+        k_digit.0,
     );
-    TorusPrecision(dnum.0 * digit_k.0 + k_aux.0)
+    TorusPrecision(dnum.0 * k_digit.0 + k_aux.0)
 }
 
-/// Number of limbs stored per row of a key: `ceil((dnum * digit_k + k_aux) / base2k)`.
-pub fn key_size(base2k: Base2K, dnum: Dnum, digit_k: TorusPrecision, k_aux: TorusPrecision) -> usize {
-    key_k(dnum, digit_k, k_aux).0.div_ceil(base2k.0) as usize
+/// Number of limbs stored per row of a key: `ceil((dnum * k_digit + k_aux) / base2k)`.
+pub fn key_size(base2k: Base2K, dnum: Dnum, k_digit: TorusPrecision, k_aux: TorusPrecision) -> usize {
+    key_k(dnum, k_digit, k_aux).0.div_ceil(base2k.0) as usize
 }
 
 /// Digit width of `dsize` whole limbs at radix `base2k`: `dsize * base2k`.
-pub fn digit_k_of(base2k: impl Into<Base2K>, dsize: impl Into<Dsize>) -> TorusPrecision {
+pub fn k_digit_of(base2k: impl Into<Base2K>, dsize: impl Into<Dsize>) -> TorusPrecision {
     TorusPrecision(base2k.into().0 * dsize.into().0)
 }
 
-/// Whether digits of `digit_k` bits are whole limbs at radix `base2k`, so a
+/// Whether digits of `k_digit` bits are whole limbs at radix `base2k`, so a
 /// gadget product reads the input limbs directly as its operand.
-pub fn digits_aligned(base2k: Base2K, digit_k: TorusPrecision) -> bool {
-    digit_k.0.is_multiple_of(base2k.0)
+pub fn digits_aligned(base2k: Base2K, k_digit: TorusPrecision) -> bool {
+    k_digit.0.is_multiple_of(base2k.0)
 }
 
 /// Number of key limbs an operation should process for an input ciphertext of
 /// precision `input_k` (clamped to the key size by callers). Replaces the old
 /// explicit `key_size`/`tsk_size` argument.
 ///
-/// The gadget is consumed in whole digits of `digit_k` bits each, so the region
+/// The gadget is consumed in whole digits of `k_digit` bits each, so the region
 /// covering `input_k` must be rounded up to a digit boundary: truncating
 /// mid-digit would drop a gadget row entirely and wreck the decomposition.
 /// The auxiliary guard `k_aux` then sits below it:
 ///
 /// ```text
-/// digits = ceil(input_k / digit_k)
-/// work   = ceil((digits * digit_k + k_aux) / base2k)
+/// digits = ceil(input_k / k_digit)
+/// work   = ceil((digits * k_digit + k_aux) / base2k)
 /// ```
-pub fn key_work_size(base2k: Base2K, input_k: TorusPrecision, digit_k: TorusPrecision, k_aux: TorusPrecision) -> usize {
-    let digits: u32 = GGLWELayout::dnum_for_input(input_k, digit_k).0;
-    (digits * digit_k.0 + k_aux.0).div_ceil(base2k.0) as usize
+pub fn key_work_size(base2k: Base2K, input_k: TorusPrecision, k_digit: TorusPrecision, k_aux: TorusPrecision) -> usize {
+    let digits: u32 = GGLWELayout::dnum_for_input(input_k, k_digit).0;
+    (digits * k_digit.0 + k_aux.0).div_ceil(base2k.0) as usize
 }
 
 /// Practical limb window used for an immediately normalized GGSW external
@@ -1469,7 +1469,7 @@ where
         key_base2k: ggsw_infos.base2k(),
         input_k: a_infos.k(),
         output_k: res_infos.k(),
-        digit_k: ggsw_infos.digit_k(),
+        k_digit: ggsw_infos.k_digit(),
         k_aux: ggsw_infos.k_aux(),
         product_terms,
         extra_live_limbs: 0,
@@ -1482,7 +1482,7 @@ pub(crate) struct GadgetProductOutputSizeParams {
     pub(crate) key_base2k: Base2K,
     pub(crate) input_k: TorusPrecision,
     pub(crate) output_k: TorusPrecision,
-    pub(crate) digit_k: TorusPrecision,
+    pub(crate) k_digit: TorusPrecision,
     pub(crate) k_aux: TorusPrecision,
     pub(crate) product_terms: usize,
     pub(crate) extra_live_limbs: usize,
@@ -1556,12 +1556,12 @@ pub(crate) fn gadget_product_output_size(params: GadgetProductOutputSizeParams) 
         key_base2k,
         input_k,
         output_k,
-        digit_k,
+        k_digit,
         k_aux,
         product_terms,
         extra_live_limbs,
     } = params;
-    let work_size = key_size.min(key_work_size(key_base2k, input_k, digit_k, k_aux));
+    let work_size = key_size.min(key_work_size(key_base2k, input_k, k_digit, k_aux));
 
     let base2k = key_base2k.as_usize();
     let live_limbs = input_k
@@ -1700,9 +1700,9 @@ mod gadget_sizing_tests {
     #[test]
     fn dnum_for_input_is_the_inverse_of_gadget_k() {
         let (base2k, dsize) = (Base2K(52), Dsize(4));
-        let digit_k = digit_k_of(base2k, dsize);
-        let digit = digit_k.0;
-        let dnum_for = |input_k: u32| GGLWELayout::dnum_for_input(TorusPrecision(input_k), digit_k);
+        let k_digit = k_digit_of(base2k, dsize);
+        let digit = k_digit.0;
+        let dnum_for = |input_k: u32| GGLWELayout::dnum_for_input(TorusPrecision(input_k), k_digit);
         // A partial digit counts as a full one, an exact multiple does not add one.
         assert_eq!(dnum_for(1404), Dnum(7));
         assert_eq!(dnum_for(7 * digit), Dnum(7));
@@ -1717,15 +1717,15 @@ mod gadget_sizing_tests {
                 k_aux,
                 rank_in: Rank(1),
                 rank_out: Rank(1),
-                digit_k,
+                k_digit,
                 stride: 1,
             };
             let gadget = layout.gadget_k();
             assert_eq!(gadget.0, dnum * digit);
             assert_eq!(dnum_for(gadget.0), Dnum(dnum));
-            assert_eq!(key_k(Dnum(dnum), digit_k, k_aux).0, gadget.0 + k_aux.0);
+            assert_eq!(key_k(Dnum(dnum), k_digit, k_aux).0, gadget.0 + k_aux.0);
             assert_eq!(
-                key_work_size(base2k, gadget, digit_k, k_aux),
+                key_work_size(base2k, gadget, k_digit, k_aux),
                 (dnum * dsize.0 + k_aux.0.div_ceil(base2k.0)) as usize
             );
         }
@@ -1738,7 +1738,7 @@ mod gadget_sizing_tests {
             key_work_size(
                 Base2K(30),
                 TorusPrecision(61),
-                digit_k_of(Base2K(30), Dsize(2)),
+                k_digit_of(Base2K(30), Dsize(2)),
                 TorusPrecision(31)
             ),
             6
@@ -1753,7 +1753,7 @@ mod gadget_sizing_tests {
                 key_base2k: Base2K(30),
                 input_k: TorusPrecision(61),
                 output_k: TorusPrecision(91),
-                digit_k: digit_k_of(Base2K(30), Dsize(2)),
+                k_digit: k_digit_of(Base2K(30), Dsize(2)),
                 k_aux: TorusPrecision(31),
                 product_terms: 1,
                 extra_live_limbs: 0,
@@ -1770,7 +1770,7 @@ mod gadget_sizing_tests {
                 key_base2k: Base2K(base2k),
                 input_k: TorusPrecision(input_k),
                 output_k: TorusPrecision(output_k),
-                digit_k: digit_k_of(Base2K(base2k), Dsize(1)),
+                k_digit: k_digit_of(Base2K(base2k), Dsize(1)),
                 k_aux: TorusPrecision(180),
                 product_terms,
                 extra_live_limbs: 0,
@@ -1788,14 +1788,14 @@ mod gadget_sizing_tests {
     #[test]
     fn lwe_family_keys_take_only_one_limb_digits() {
         use std::panic::{AssertUnwindSafe, catch_unwind};
-        let layout = |digit_k: u32| GGLWELayout {
+        let layout = |k_digit: u32| GGLWELayout {
             n: Degree(16),
             base2k: Base2K(12),
             dnum: Dnum(3),
             k_aux: TorusPrecision(16),
             rank_in: Rank(1),
             rank_out: Rank(1),
-            digit_k: TorusPrecision(digit_k),
+            k_digit: TorusPrecision(k_digit),
             stride: 1,
         };
         let queries: [fn(&GGLWELayout) -> usize; 3] = [
@@ -1808,22 +1808,22 @@ mod gadget_sizing_tests {
             query(&layout(12));
             // A digit below a limb also spans one limb, and is refused rather
             // than built at `base2k`; so is a digit past a limb.
-            for digit_k in [11, 13] {
-                assert!(catch_unwind(AssertUnwindSafe(|| query(&layout(digit_k)))).is_err());
+            for k_digit in [11, 13] {
+                assert!(catch_unwind(AssertUnwindSafe(|| query(&layout(k_digit)))).is_err());
             }
         }
     }
 
     #[test]
     fn digits_aligned_reads_the_width_in_use() {
-        let key = |digit_k: u32| GGLWELayout {
+        let key = |k_digit: u32| GGLWELayout {
             n: Degree(16),
             base2k: Base2K(26),
             dnum: Dnum(4),
             k_aux: TorusPrecision(52),
             rank_in: Rank(1),
             rank_out: Rank(1),
-            digit_k: TorusPrecision(digit_k),
+            k_digit: TorusPrecision(k_digit),
             stride: 1,
         };
         assert!(key(26).digits_aligned());
@@ -1832,11 +1832,11 @@ mod gadget_sizing_tests {
         assert!(!key(27).digits_aligned());
         // Two 13-bit digits read as one 26-bit digit: a whole limb, so the
         // view's operand is the input limbs although the stored digits are not.
-        let view = key(13).at_digit_k(TorusPrecision(26)).unwrap();
-        assert_eq!((view.digit_k, view.stride), (TorusPrecision(26), 2));
+        let view = key(13).at_k_digit(TorusPrecision(26)).unwrap();
+        assert_eq!((view.k_digit, view.stride), (TorusPrecision(26), 2));
         assert!(view.digits_aligned());
-        assert!(!key(13).at_digit_k(TorusPrecision(39)).unwrap().digits_aligned());
-        assert!(key(26).at_digit_k(TorusPrecision(52)).unwrap().digits_aligned());
+        assert!(!key(13).at_k_digit(TorusPrecision(39)).unwrap().digits_aligned());
+        assert!(key(26).at_k_digit(TorusPrecision(52)).unwrap().digits_aligned());
         assert!(!digits_aligned(Base2K(52), TorusPrecision(49)));
         assert!(digits_aligned(Base2K(49), TorusPrecision(98)));
     }

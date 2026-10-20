@@ -57,7 +57,7 @@ where
         k_aux: TorusPrecision(k_ggsw.0 - 2 * base2k.0),
         rank,
         dnum,
-        digit_k: TorusPrecision::from(base2k),
+        k_digit: TorusPrecision::from(base2k),
     };
 
     let mut source: Source = Source::new([6u8; 32]);

@@ -7,7 +7,7 @@ use poulpy_core::{
     layouts::{
         Base2K, Dnum, GGLWEToGGSWKeyLayout, GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWEAutomorphismKeyLayout, GLWELayout,
         GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, LWE, LWEInfos, LWELayout, LWESecret,
-        LWESecretSampling, ModuleCoreAlloc, TorusPrecision, digit_k_of,
+        LWESecretSampling, ModuleCoreAlloc, TorusPrecision, k_digit_of,
     },
 };
 use poulpy_hal::{
@@ -162,7 +162,7 @@ pub fn runner_circuit_bootstrapping<
             base2k: params.bin_fhe_params.base2k.into(),
             k_aux: params.bin_fhe_params.k_aux.into(),
             dnum: Dnum(params.atk_dnum),
-            digit_k: digit_k_of(params.bin_fhe_params.base2k, params.atk_dsize),
+            k_digit: k_digit_of(params.bin_fhe_params.base2k, params.atk_dsize),
             rank: params.bin_fhe_params.rank.into(),
         },
         tsk_layout: GGLWEToGGSWKeyLayout {
@@ -170,7 +170,7 @@ pub fn runner_circuit_bootstrapping<
             base2k: params.bin_fhe_params.base2k.into(),
             k_aux: params.bin_fhe_params.k_aux.into(),
             dnum: Dnum(params.tsk_dnum),
-            digit_k: digit_k_of(params.bin_fhe_params.base2k, params.tsk_dsize),
+            k_digit: k_digit_of(params.bin_fhe_params.base2k, params.tsk_dsize),
             rank: params.bin_fhe_params.rank.into(),
         },
     };
@@ -179,7 +179,7 @@ pub fn runner_circuit_bootstrapping<
         base2k: params.bin_fhe_params.base2k.into(),
         k_aux: params.bin_fhe_params.k_aux.into(),
         dnum: Dnum(params.ggsw_dnum),
-        digit_k: digit_k_of(params.bin_fhe_params.base2k, params.ggsw_dsize),
+        k_digit: k_digit_of(params.bin_fhe_params.base2k, params.ggsw_dsize),
         rank: params.bin_fhe_params.rank.into(),
     };
     let lwe_infos: LWELayout = LWELayout {

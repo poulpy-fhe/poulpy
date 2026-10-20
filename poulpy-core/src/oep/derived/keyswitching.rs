@@ -61,11 +61,11 @@ mod gglwe {
         );
         assert!(res.dnum() <= a.dnum(), "res.dnum()={} > a.dnum()={}", res.dnum(), a.dnum());
         assert_eq!(
-            res.digit_k(),
-            a.digit_k(),
-            "res digit_k: {} != a digit_k: {}",
-            res.digit_k(),
-            a.digit_k()
+            res.k_digit(),
+            a.k_digit(),
+            "res k_digit: {} != a k_digit: {}",
+            res.k_digit(),
+            a.k_digit()
         );
         assert_eq!(res.base2k(), a.base2k());
         assert!(
@@ -183,7 +183,7 @@ mod ggsw {
         let a_backend = a.to_backend_ref();
 
         assert!(res_backend.dnum() <= a_backend.dnum());
-        assert_eq!(res_backend.digit_k(), a_backend.digit_k());
+        assert_eq!(res_backend.k_digit(), a_backend.k_digit());
         assert_eq!(res_backend.base2k(), a_backend.base2k());
         assert!(
             scratch.available()

@@ -55,7 +55,7 @@ impl GGLWEInfos for GLWEToLWEKeyLayout {
         self.rank_in
     }
 
-    fn digit_k(&self) -> TorusPrecision {
+    fn k_digit(&self) -> TorusPrecision {
         TorusPrecision::from(self.base2k())
     }
 
@@ -104,8 +104,8 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWEToLWEKey<D, W> {
         self.0.rank_in()
     }
 
-    fn digit_k(&self) -> TorusPrecision {
-        self.0.digit_k()
+    fn k_digit(&self) -> TorusPrecision {
+        self.0.k_digit()
     }
 
     fn rank_out(&self) -> Rank {
@@ -152,9 +152,9 @@ impl<W: ZnxWord> GLWEToLWEKey<AlignedBuf, W> {
     {
         assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for GLWEToLWEKey");
         assert_eq!(
-            infos.digit_k().0,
+            infos.k_digit().0,
             infos.base2k().0,
-            "GLWEToLWEKey uses one-limb digits: digit_k must equal base2k"
+            "GLWEToLWEKey uses one-limb digits: k_digit must equal base2k"
         );
         Self::alloc(infos.n(), infos.base2k(), infos.dnum(), infos.k_aux(), infos.rank_in())
     }
@@ -177,9 +177,9 @@ impl<W: ZnxWord> GLWEToLWEKey<AlignedBuf, W> {
     {
         assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for GLWEToLWEKey");
         assert_eq!(
-            infos.digit_k().0,
+            infos.k_digit().0,
             infos.base2k().0,
-            "GLWEToLWEKey uses one-limb digits: digit_k must equal base2k"
+            "GLWEToLWEKey uses one-limb digits: k_digit must equal base2k"
         );
         Self::bytes_of(infos.n(), infos.base2k(), infos.dnum(), infos.k_aux(), infos.rank_in())
     }

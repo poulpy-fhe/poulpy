@@ -98,10 +98,10 @@ impl_vec_znx_delegate!(
         a: &VecZnxBackendRef<'_, B>,
         a_col: usize,
         base2k: usize,
-        digit_k: usize,
+        k_digit: usize,
         scratch: &mut ScratchArena<'_, B>,
     ) {
-        B::vec_znx_gadget_decompose(self, res, res_col, a, a_col, base2k, digit_k, scratch);
+        B::vec_znx_gadget_decompose(self, res, res_col, a, a_col, base2k, k_digit, scratch);
     }
 );
 

@@ -294,9 +294,9 @@ fn finish_giant(
     let output_size = output_size.min(key.size());
     let mask_size = prod.size().min(output_size);
     // Each normalized mask column is the gadget operand, at most `mask_size` full limbs.
-    let (digit_k, dnum) = (key.digit_k(), key.dnum());
+    let (k_digit, dnum) = (key.k_digit(), key.dnum());
     let mask_k = TorusPrecision((mask_size * base) as u32);
-    let operand_size = gadget_input_size(key.base2k(), digit_k, dnum, mask_k, mask_size);
+    let operand_size = gadget_input_size(key.base2k(), k_digit, dnum, mask_k, mask_size);
     let (mut a_dft, mut arena) = scratch
         .borrow()
         .take_vec_znx_dft_scratch(module.n(), acc.cols() - 1, operand_size);
@@ -311,7 +311,7 @@ fn finish_giant(
                 &small.to_backend_ref(),
                 0,
                 key.base2k(),
-                digit_k,
+                k_digit,
                 dnum,
                 mask_k,
                 &mut work.borrow(),

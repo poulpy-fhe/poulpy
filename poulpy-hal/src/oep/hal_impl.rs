@@ -70,7 +70,7 @@ pub unsafe trait HalVecZnxImpl: Backend {
         a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
         base2k: usize,
-        digit_k: usize,
+        k_digit: usize,
         scratch: &mut ScratchArena<'_, Self>,
     );
 

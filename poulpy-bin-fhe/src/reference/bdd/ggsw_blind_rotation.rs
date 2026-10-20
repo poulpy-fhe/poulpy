@@ -39,7 +39,7 @@ pub fn scalar_to_ggsw_blind_rotation_reference<T: UnsignedInteger, BE, R, A, K>(
     Module<BE>: GLWEBytesOf<BE> + GLWEBlindRotation<BE> + GLWEZero<BE> + VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
 {
     let base2k: usize = res.base2k().into();
-    let digit_k: usize = res.digit_k().as_usize();
+    let k_digit: usize = res.k_digit().as_usize();
     let (mut tmp_glwe, mut scratch_1) = scratch.borrow().take_glwe_scratch(res);
     let tmp_glwe_k = tmp_glwe.k().as_usize();
     let test_vector = test_vector.to_backend_ref();
@@ -57,7 +57,7 @@ pub fn scalar_to_ggsw_blind_rotation_reference<T: UnsignedInteger, BE, R, A, K>(
                     base2k,
                     tmp_glwe_k,
                     row,
-                    digit_k,
+                    k_digit,
                     &test_vector,
                     0,
                     &mut scratch_1.borrow(),

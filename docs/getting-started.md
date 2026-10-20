@@ -183,14 +183,14 @@ They do not map to a single paper symbol.
   A GLWE ciphertext stores `rank + 1` polynomials, one body and `rank` masks.
   `rank = 1` is standard RLWE.
 - `dnum` (`Dnum`) is the number of digits in the gadget decomposition of a GGLWE or GGSW ciphertext.
-- `digit_k` (`TorusPrecision`) is the width in bits of one gadget digit, and need not be a multiple of `base2k`.
-  Its limb count `dsize = ceil(digit_k / base2k)` is derived, never set by hand.
+- `k_digit` (`TorusPrecision`) is the width in bits of one gadget digit, and need not be a multiple of `base2k`.
+  Its limb count `dsize = ceil(k_digit / base2k)` is derived, never set by hand.
 - `k_aux` (`TorusPrecision`) is the guard below the gadget digits, at least one digit wide.
 
 Setting the ciphertext modulus is simple in practice.
 You pick `base2k` once, then express precision through `k`, which fixes the working modulus at `2^k`.
 The limb count `size` is always derived from `k` and `base2k`, never set by hand.
-For gadget ciphertexts you additionally choose `dnum`, `digit_k` and `k_aux`, and the precision is `k = dnum * digit_k + k_aux`.
+For gadget ciphertexts you additionally choose `dnum`, `k_digit` and `k_aux`, and the precision is `k = dnum * k_digit + k_aux`.
 
 These names appear as fields of the layout structs.
 
@@ -206,7 +206,7 @@ let ggsw_layout = GGSWLayout {
     n: Degree(1024),
     base2k: Base2K(17),
     dnum: Dnum(2),
-    digit_k: TorusPrecision(17),
+    k_digit: TorusPrecision(17),
     k_aux: TorusPrecision(17),
     rank: Rank(1),
 };

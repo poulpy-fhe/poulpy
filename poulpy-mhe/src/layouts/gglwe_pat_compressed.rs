@@ -69,8 +69,8 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GGLWEPatCompressed<D, W> {
         self.inner.dnum()
     }
 
-    fn digit_k(&self) -> TorusPrecision {
-        self.inner.digit_k()
+    fn k_digit(&self) -> TorusPrecision {
+        self.inner.k_digit()
     }
 
     fn rank_in(&self) -> Rank {

@@ -55,8 +55,8 @@ impl<D: Data, B: Backend> GGLWEInfos for GLWETensorKeyPrepared<D, B> {
         self.0.rank_out()
     }
 
-    fn digit_k(&self) -> TorusPrecision {
-        self.0.digit_k()
+    fn k_digit(&self) -> TorusPrecision {
+        self.0.k_digit()
     }
 
     fn dnum(&self) -> Dnum {
@@ -76,12 +76,12 @@ where
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GLWETensorKeyPrepared<B::OwnedBuf, B> {
         let pairs: u32 = (((rank.as_u32() + 1) * rank.as_u32()) >> 1).max(1);
-        GLWETensorKeyPrepared(self.gglwe_prepared_alloc(base2k, dnum, digit_k, k_aux, Rank(pairs), rank))
+        GLWETensorKeyPrepared(self.gglwe_prepared_alloc(base2k, dnum, k_digit, k_aux, Rank(pairs), rank))
     }
 
     fn alloc_tensor_key_prepared_from_infos<A>(&self, infos: &A) -> GLWETensorKeyPrepared<B::OwnedBuf, B>
@@ -95,12 +95,12 @@ where
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> usize {
         let pairs: u32 = (((rank.as_u32() + 1) * rank.as_u32()) >> 1).max(1);
-        self.gglwe_prepared_bytes_of(base2k, dnum, digit_k, k_aux, Rank(pairs), rank)
+        self.gglwe_prepared_bytes_of(base2k, dnum, k_digit, k_aux, Rank(pairs), rank)
     }
 
     fn bytes_of_tensor_key_prepared_from_infos<A>(&self, infos: &A) -> usize
@@ -149,12 +149,12 @@ pub type GLWETensorKeyPreparedBackendRef<'a, B> = GLWETensorKeyPrepared<<B as Ba
 pub type GLWETensorKeyPreparedBackendMut<'a, B> = GLWETensorKeyPrepared<<B as Backend>::BufMut<'a>, B>;
 
 impl<D: Data, B: Backend> GLWETensorKeyPrepared<D, B> {
-    /// This key read through a coarser `digit_k`. See [`GGLWEPrepared::with_digit_k`].
-    pub fn with_digit_k(&self, digit_k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, B>>
+    /// This key read through a coarser `k_digit`. See [`GGLWEPrepared::with_k_digit`].
+    pub fn with_k_digit(&self, k_digit: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, B>>
     where
         GGLWEPrepared<D, B>: GGLWEPreparedToBackendRef<B>,
     {
-        Ok(GLWETensorKeyPrepared(self.0.with_digit_k(digit_k)?))
+        Ok(GLWETensorKeyPrepared(self.0.with_k_digit(k_digit)?))
     }
 }
 
@@ -200,7 +200,7 @@ impl<'a, B: Backend + 'a> GGLWEPreparedToBackendRef<B> for &GLWETensorKeyPrepare
             noise: self.0.noise.clone(),
             base2k: self.0.base2k,
             k_aux: self.0.k_aux,
-            digit_k: self.0.digit_k,
+            k_digit: self.0.k_digit,
             dnum: self.0.dnum,
             stride: self.0.stride,
             data: poulpy_hal::layouts::vmp_pmat_backend_ref_from_ref::<B>(&self.0.data),
@@ -231,7 +231,7 @@ fn tensor_key_layout<A: GGLWEInfos>(infos: &A) -> GGLWELayout {
         k_aux: infos.k_aux(),
         rank_in: Rank((((rank.as_u32() + 1) * rank.as_u32()) >> 1).max(1)),
         rank_out: rank,
-        digit_k: infos.digit_k(),
+        k_digit: infos.k_digit(),
         stride: 1,
     }
 }

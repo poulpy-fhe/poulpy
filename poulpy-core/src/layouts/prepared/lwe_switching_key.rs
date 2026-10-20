@@ -49,8 +49,8 @@ impl<D: Data, B: Backend> GGLWEInfos for LWESwitchingKeyPrepared<D, B> {
         self.0.k_aux()
     }
 
-    fn digit_k(&self) -> TorusPrecision {
-        self.0.digit_k()
+    fn k_digit(&self) -> TorusPrecision {
+        self.0.k_digit()
     }
 
     fn rank_in(&self) -> Rank {
@@ -95,9 +95,9 @@ where
         A: GGLWEInfos,
     {
         debug_assert_eq!(
-            infos.digit_k().0,
+            infos.k_digit().0,
             infos.base2k().0,
-            "LWESwitchingKey uses one-limb digits: digit_k must equal base2k"
+            "LWESwitchingKey uses one-limb digits: k_digit must equal base2k"
         );
         debug_assert_eq!(infos.rank_in().0, 1, "rank_in > 1 is not supported for LWESwitchingKey");
         debug_assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for LWESwitchingKey");
@@ -113,9 +113,9 @@ where
         A: GGLWEInfos,
     {
         debug_assert_eq!(
-            infos.digit_k().0,
+            infos.k_digit().0,
             infos.base2k().0,
-            "LWESwitchingKey uses one-limb digits: digit_k must equal base2k"
+            "LWESwitchingKey uses one-limb digits: k_digit must equal base2k"
         );
         debug_assert_eq!(infos.rank_in().0, 1, "rank_in > 1 is not supported for LWESwitchingKey");
         debug_assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for LWESwitchingKey");

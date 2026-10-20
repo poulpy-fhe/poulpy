@@ -16,15 +16,15 @@ pub mod keyswitch;
 pub mod linear_transformation;
 
 mod conversion;
-mod digit_k;
 mod glwe_packing;
+mod k_digit;
 mod rotate;
 mod shift;
 mod trace;
 
 pub use conversion::*;
-pub use digit_k::*;
 pub use glwe_packing::*;
+pub use k_digit::*;
 pub use rotate::*;
 pub use shift::*;
 pub use trace::*;
@@ -298,7 +298,7 @@ pub fn download_ggsw<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>>(
         ),
         k_aux: src.k_aux,
         base2k: src.base2k,
-        digit_k: src.digit_k,
+        k_digit: src.k_digit,
     }
 }
 

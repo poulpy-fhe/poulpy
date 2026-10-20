@@ -301,7 +301,7 @@ where
     // shared input out on the digit grid: below a limb, one bit past a limb
     // and one bit short of two.
     let b = params.base2k;
-    let mut gen_key = |digit_k: usize, beta: bool, rot: usize, scratch: &mut ScratchOwned<BE>| {
+    let mut gen_key = |k_digit: usize, beta: bool, rot: usize, scratch: &mut ScratchOwned<BE>| {
         let key = hmux_rot_key_encrypt_sk(
             module,
             host_module,
@@ -310,7 +310,7 @@ where
             rot,
             k,
             params.base2k.into(),
-            digit_k,
+            k_digit,
             &mut xe,
             &mut xa,
             &mut scratch.borrow(),
@@ -323,20 +323,20 @@ where
             gal_el: key.gal_el(),
         }
     };
-    for mux_digit_k in [params.dsize.max(4) * b, b / 2 + 1, b + 1, 2 * b - 1] {
+    for mux_k_digit in [params.dsize.max(4) * b, b / 2 + 1, b + 1, 2 * b - 1] {
         // Base-3 digit position of weight 5 with digit value 1 selected.
         let group_rot = vec![
-            gen_key(mux_digit_k, false, 0, &mut scratch),
-            gen_key(mux_digit_k, true, 5, &mut scratch),
-            gen_key(mux_digit_k, false, 10, &mut scratch),
+            gen_key(mux_k_digit, false, 0, &mut scratch),
+            gen_key(mux_k_digit, true, 5, &mut scratch),
+            gen_key(mux_k_digit, false, 10, &mut scratch),
         ];
         let group_id = vec![
-            gen_key(mux_digit_k, true, 0, &mut scratch),
-            gen_key(mux_digit_k, false, 5, &mut scratch),
+            gen_key(mux_k_digit, true, 0, &mut scratch),
+            gen_key(mux_k_digit, false, 5, &mut scratch),
         ];
         let group_zero = vec![
-            gen_key(mux_digit_k, false, 0, &mut scratch),
-            gen_key(mux_digit_k, false, 5, &mut scratch),
+            gen_key(mux_k_digit, false, 0, &mut scratch),
+            gen_key(mux_k_digit, false, 5, &mut scratch),
         ];
 
         let mux_bytes = crate::reference::ship::mux::ship_mux_rotate_tmp_bytes(
@@ -419,14 +419,14 @@ where
 
     // One operand serves the whole group: keys off a limb boundary must share
     // their digit width, and whole-limb keys cannot join them.
-    for (label, digit_ks) in [
+    for (label, k_digits) in [
         ("off-limb widths", [b / 2 + 1, b + 1]),
         ("whole-limb and off-limb", [params.dsize.max(4) * b, b + 1]),
     ] {
-        let group: Vec<_> = digit_ks
+        let group: Vec<_> = k_digits
             .iter()
             .zip([0, 5])
-            .map(|(&digit_k, rot)| gen_key(digit_k, false, rot, &mut scratch))
+            .map(|(&k_digit, rot)| gen_key(k_digit, false, rot, &mut scratch))
             .collect();
         let plans = crate::reference::ship::mux::ship_mux_plans(module, [group.as_slice()].into_iter());
         let mut mux_scratch = ScratchOwned::<BE>::alloc(crate::reference::ship::mux::ship_mux_rotate_tmp_bytes(

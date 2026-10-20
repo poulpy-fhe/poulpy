@@ -42,12 +42,12 @@ where
                 n: Degree(params.n as u32),
                 base2k: Base2K(b as u32),
                 dnum: Dnum(3),
-                digit_k: crate::layouts::digit_k_of(Base2K(b as u32), Dsize(1)),
+                k_digit: crate::layouts::k_digit_of(Base2K(b as u32), Dsize(1)),
                 k_aux: TorusPrecision(b as u32 + 1),
                 rank: Rank(rank as u32),
             };
             let k = GGSWLayout {
-                digit_k: crate::layouts::digit_k_of(Base2K(b as u32), Dsize(dsize as u32)),
+                k_digit: crate::layouts::k_digit_of(Base2K(b as u32), Dsize(dsize as u32)),
                 k_aux: TorusPrecision((b * dsize + 1) as u32),
                 dnum: Dnum((4 * b + 1).div_ceil(b * dsize) as u32),
                 ..g
@@ -56,7 +56,7 @@ where
                 n: g.n,
                 base2k: g.base2k,
                 dnum: g.dnum,
-                digit_k: g.digit_k,
+                k_digit: g.k_digit,
                 k_aux: g.k_aux,
                 rank_in: g.rank,
                 rank_out: g.rank,
@@ -205,21 +205,21 @@ where
     let mut source = Source::new([109; 32]);
     let b = params.base2k;
     for &rank in &shapes.ranks {
-        for digit_k in shapes.digit_ks(2 * b + 1, b, rank) {
+        for k_digit in shapes.k_digits(2 * b + 1, b, rank) {
             let g = GGSWLayout {
                 n: Degree(params.n as u32),
                 base2k: Base2K(b as u32),
                 dnum: Dnum(3),
-                digit_k: crate::layouts::digit_k_of(Base2K(b as u32), Dsize(1)),
+                k_digit: crate::layouts::k_digit_of(Base2K(b as u32), Dsize(1)),
                 k_aux: TorusPrecision(b as u32 + 1),
                 rank: Rank(rank as u32),
             };
             let k = GGLWELayout {
                 n: g.n,
                 base2k: g.base2k,
-                dnum: Dnum((4 * b + 1).div_ceil(digit_k) as u32),
-                digit_k: TorusPrecision(digit_k as u32),
-                k_aux: TorusPrecision((digit_k + 1) as u32),
+                dnum: Dnum((4 * b + 1).div_ceil(k_digit) as u32),
+                k_digit: TorusPrecision(k_digit as u32),
+                k_aux: TorusPrecision((k_digit + 1) as u32),
                 rank_in: g.rank,
                 rank_out: g.rank,
                 stride: 1,
@@ -228,7 +228,7 @@ where
                 n: k.n,
                 base2k: k.base2k,
                 dnum: k.dnum,
-                digit_k: k.digit_k,
+                k_digit: k.k_digit,
                 k_aux: k.k_aux,
                 rank: g.rank,
             };
@@ -236,7 +236,7 @@ where
                 n: k.n,
                 base2k: k.base2k,
                 dnum: k.dnum,
-                digit_k: k.digit_k,
+                k_digit: k.k_digit,
                 k_aux: k.k_aux,
                 rank: g.rank,
             };
@@ -328,7 +328,7 @@ where
                     );
                     let mut have = r.ggsw_alloc_from_infos(&g);
                     out_t.transfer_into(&mut have);
-                    assert_eval_eq!(out_r, have, "{} rank={rank} digit_k={digit_k}", stringify!($apply));
+                    assert_eval_eq!(out_r, have, "{} rank={rank} k_digit={k_digit}", stringify!($apply));
                     a_r.transfer_into(&mut out_r);
                     a_r.transfer_into(&mut out_t);
                     r.$assign(
@@ -344,7 +344,7 @@ where
                         &mut poisoned_scratch::<BT>(t.$query(&g, &g, &k, &tk)).borrow(),
                     );
                     out_t.transfer_into(&mut have);
-                    assert_eval_eq!(out_r, have, "{} rank={rank} digit_k={digit_k}", stringify!($assign));
+                    assert_eval_eq!(out_r, have, "{} rank={rank} k_digit={k_digit}", stringify!($assign));
                 }};
             }
             check!(
@@ -389,7 +389,7 @@ where
             short_t.transfer_into(&mut short_have);
             assert_eq!(
                 short_r, short_have,
-                "ggsw keyswitch shorter result: rank={rank} digit_k={digit_k}"
+                "ggsw keyswitch shorter result: rank={rank} k_digit={k_digit}"
             );
             let mut out_r = r.glwe_automorphism_key_alloc_from_infos(&ak);
             let mut out_t = t.glwe_automorphism_key_alloc_from_infos(&ak);
@@ -409,7 +409,7 @@ where
             );
             let mut have = r.glwe_automorphism_key_alloc_from_infos(&ak);
             out_t.transfer_into(&mut have);
-            assert_eval_eq!(out_r, have, "automorphism key into: rank={rank} digit_k={digit_k}");
+            assert_eval_eq!(out_r, have, "automorphism key into: rank={rank} k_digit={k_digit}");
             auto_r.transfer_into(&mut out_r);
             auto_r.transfer_into(&mut out_t);
             r.glwe_automorphism_key_automorphism_assign(
@@ -423,10 +423,10 @@ where
                 &mut poisoned_scratch::<BT>(t.glwe_automorphism_key_automorphism_tmp_bytes(&ak, &ak, &ak)).borrow(),
             );
             out_t.transfer_into(&mut have);
-            assert_eval_eq!(out_r, have, "automorphism key assign: rank={rank} digit_k={digit_k}");
+            assert_eval_eq!(out_r, have, "automorphism key assign: rank={rank} k_digit={k_digit}");
             let h = GGLWELayout {
                 dnum: g.dnum,
-                digit_k: g.digit_k,
+                k_digit: g.k_digit,
                 k_aux: g.k_aux,
                 ..k
             };
@@ -455,7 +455,7 @@ where
             );
             let mut have = r.ggsw_alloc_from_infos(&g);
             out_t.transfer_into(&mut have);
-            assert_eval_eq!(out_r, have, "ggsw_from_gglwe: rank={rank} digit_k={digit_k}");
+            assert_eval_eq!(out_r, have, "ggsw_from_gglwe: rank={rank} k_digit={k_digit}");
             // Row expansion consumes an existing GGSW body row and replaces mask rows.
             a_r.transfer_into(&mut out_r);
             a_r.transfer_into(&mut out_t);
@@ -470,7 +470,7 @@ where
                 &mut poisoned_scratch::<BT>(t.ggsw_expand_rows_tmp_bytes(&g, &tk)).borrow(),
             );
             out_t.transfer_into(&mut have);
-            assert_eval_eq!(out_r, have, "ggsw_expand_row: rank={rank} digit_k={digit_k}");
+            assert_eval_eq!(out_r, have, "ggsw_expand_row: rank={rank} k_digit={k_digit}");
         }
     }
 }

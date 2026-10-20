@@ -23,7 +23,7 @@ pub struct GLWETensorKeyLayout {
     pub dnum: Dnum,
     pub k_aux: TorusPrecision,
     pub rank: Rank,
-    pub digit_k: TorusPrecision,
+    pub k_digit: TorusPrecision,
 }
 
 /// GLWE tensor key used for relinearisation after a tensor product.
@@ -79,8 +79,8 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWETensorKey<D, W> {
         self.0.rank_out()
     }
 
-    fn digit_k(&self) -> TorusPrecision {
-        self.0.digit_k()
+    fn k_digit(&self) -> TorusPrecision {
+        self.0.k_digit()
     }
 
     fn dnum(&self) -> Dnum {
@@ -98,11 +98,11 @@ impl LWEInfos for GLWETensorKeyLayout {
     }
 
     fn max_size(&self) -> usize {
-        crate::layouts::key_size(self.base2k, self.dnum, self.digit_k, self.k_aux)
+        crate::layouts::key_size(self.base2k, self.dnum, self.k_digit, self.k_aux)
     }
 
     fn k(&self) -> TorusPrecision {
-        crate::layouts::key_k(self.dnum, self.digit_k, self.k_aux)
+        crate::layouts::key_k(self.dnum, self.k_digit, self.k_aux)
     }
 }
 
@@ -127,8 +127,8 @@ impl GGLWEInfos for GLWETensorKeyLayout {
         pairs.into()
     }
 
-    fn digit_k(&self) -> TorusPrecision {
-        self.digit_k
+    fn k_digit(&self) -> TorusPrecision {
+        self.k_digit
     }
 
     fn rank_out(&self) -> Rank {
@@ -176,7 +176,7 @@ impl<W: ZnxWord> GLWETensorKey<AlignedBuf, W> {
             infos.n(),
             infos.base2k(),
             infos.dnum(),
-            infos.digit_k(),
+            infos.k_digit(),
             infos.k_aux(),
             infos.rank(),
         )
@@ -187,12 +187,12 @@ impl<W: ZnxWord> GLWETensorKey<AlignedBuf, W> {
         n: Degree,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> Self {
         let pairs: u32 = (((rank.0 + 1) * rank.0) >> 1).max(1);
-        GLWETensorKey(GGLWE::alloc(n, base2k, dnum, digit_k, k_aux, Rank(pairs), rank))
+        GLWETensorKey(GGLWE::alloc(n, base2k, dnum, k_digit, k_aux, Rank(pairs), rank))
     }
 
     /// Returns the byte count required for a [`GLWETensorKey`] with the given parameters.
@@ -204,16 +204,16 @@ impl<W: ZnxWord> GLWETensorKey<AlignedBuf, W> {
             infos.n(),
             infos.base2k(),
             infos.dnum(),
-            infos.digit_k(),
+            infos.k_digit(),
             infos.k_aux(),
             infos.rank(),
         )
     }
 
     /// Returns the byte count required for a [`GLWETensorKey`] with the given parameters.
-    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, digit_k: TorusPrecision, k_aux: TorusPrecision, rank: Rank) -> usize {
+    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, k_digit: TorusPrecision, k_aux: TorusPrecision, rank: Rank) -> usize {
         let pairs: u32 = (((rank.0 + 1) * rank.0) >> 1).max(1);
-        GGLWE::<AlignedBuf, W>::bytes_of(n, base2k, dnum, digit_k, k_aux, Rank(pairs), rank)
+        GGLWE::<AlignedBuf, W>::bytes_of(n, base2k, dnum, k_digit, k_aux, Rank(pairs), rank)
     }
 }
 

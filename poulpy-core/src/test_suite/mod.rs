@@ -93,8 +93,8 @@ macro_rules! core_backend_test_suite {
                     $crate::test_suite::noise::glwe_tensor::test_glwe_tensor_relinearize_cross_radix,
                 glwe_external_product => $crate::test_suite::noise::external_product::test_glwe_external_product,
                 glwe_external_product_assign => $crate::test_suite::noise::external_product::test_glwe_external_product_assign,
-                glwe_keyswitch_digit_k => $crate::test_suite::noise::test_glwe_keyswitch_digit_k,
-                glwe_external_product_digit_k => $crate::test_suite::noise::test_glwe_external_product_digit_k,
+                glwe_keyswitch_k_digit => $crate::test_suite::noise::test_glwe_keyswitch_k_digit,
+                glwe_external_product_k_digit => $crate::test_suite::noise::test_glwe_external_product_k_digit,
                 glwe_keyswitch_ignores_dirty_scratch =>
                     $crate::test_suite::noise::keyswitch::test_glwe_keyswitch_ignores_dirty_scratch,
                 glwe_external_product_ignores_dirty_scratch =>

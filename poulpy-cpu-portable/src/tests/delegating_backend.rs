@@ -397,7 +397,7 @@ fn derived_ggsw_rotation_uses_selected_glwe_methods_and_scratch() {
         n: Degree(256),
         base2k: Base2K(17),
         dnum: Dnum(2),
-        digit_k: TorusPrecision(17),
+        k_digit: TorusPrecision(17),
         k_aux: TorusPrecision(18),
         rank: Rank(2),
     };
@@ -450,7 +450,7 @@ fn derived_trace_uses_selected_assign_and_its_larger_scratch_query() {
         n: input.n(),
         base2k: input.base2k(),
         dnum: Dnum(3),
-        digit_k: TorusPrecision::from(input.base2k()),
+        k_digit: TorusPrecision::from(input.base2k()),
         k_aux: TorusPrecision(18),
         rank: input.rank(),
     };

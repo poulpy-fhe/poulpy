@@ -831,7 +831,7 @@ fn external_product_dft_query_accepts_opaque_noncontiguous_backend() {
         rank: ct.rank,
         k_aux: TorusPrecision(16),
         dnum: Dnum(2),
-        digit_k: TorusPrecision::from(ct.base2k),
+        k_digit: TorusPrecision::from(ct.base2k),
     };
     assert_eq!(module.glwe_external_product_internal_tmp_bytes(&ct, &ct, &key), 256);
 }

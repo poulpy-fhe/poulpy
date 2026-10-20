@@ -51,7 +51,7 @@ pub fn test_gglwe_automorphism_key_encrypt_sk<BE: crate::test_suite::noise::Test
                 base2k: base2k.into(),
                 dnum: dnum.into(),
                 k_aux: (di * base2k + module.log_n()).into(),
-                digit_k: crate::layouts::digit_k_of(base2k, di),
+                k_digit: crate::layouts::k_digit_of(base2k, di),
                 rank: rank.into(),
             };
 
@@ -158,7 +158,7 @@ pub fn test_gglwe_automorphism_key_compressed_encrypt_sk<BE: crate::test_suite::
                 base2k: base2k.into(),
                 dnum: dnum.into(),
                 k_aux: (dsize * base2k + module.log_n()).into(),
-                digit_k: crate::layouts::digit_k_of(base2k, dsize),
+                k_digit: crate::layouts::k_digit_of(base2k, dsize),
                 rank: rank.into(),
             };
 

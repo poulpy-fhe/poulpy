@@ -15,7 +15,7 @@ pub(crate) fn ggsw_share_part_layout<A: GGSWInfos>(infos: &A, rank_in: Rank, ran
         k_aux: infos.k_aux(),
         rank_in,
         rank_out,
-        digit_k: infos.digit_k(),
+        k_digit: infos.k_digit(),
         stride: 1,
     }
 }
@@ -103,8 +103,8 @@ impl<D: Data, W: ZnxWord> GGSWInfos for GGSWShare<D, W> {
         self.col0.dnum()
     }
 
-    fn digit_k(&self) -> TorusPrecision {
-        self.col0.digit_k()
+    fn k_digit(&self) -> TorusPrecision {
+        self.col0.k_digit()
     }
 }
 

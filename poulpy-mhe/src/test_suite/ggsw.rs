@@ -42,11 +42,11 @@ fn ephemeral_key_layout<BE: Backend>(module: &Module<BE>, layout: &GGSWLayout) -
     GGLWELayout {
         n: layout.n,
         base2k: layout.base2k,
-        dnum: Dnum(layout.k().as_u32().div_ceil(layout.digit_k.as_u32())),
-        k_aux: TorusPrecision(layout.digit_k.as_u32() + module.log_n() as u32),
+        dnum: Dnum(layout.k().as_u32().div_ceil(layout.k_digit.as_u32())),
+        k_aux: TorusPrecision(layout.k_digit.as_u32() + module.log_n() as u32),
         rank_in: layout.rank,
         rank_out: layout.rank,
-        digit_k: layout.digit_k,
+        k_digit: layout.k_digit,
         stride: 1,
     }
 }
@@ -226,7 +226,7 @@ where
     let parties = PARTIES as f64;
     let secret_second = parties * 0.5 + if binary { parties * (parties - 1.0) * 0.25 } else { 0.0 };
     let circular_variance = 2.0 * rank_n * parties * secret_second * sigma2;
-    let digit_bits = key_layout.digit_k.as_usize();
+    let digit_bits = key_layout.k_digit.as_usize();
     let digits = k.div_ceil(digit_bits).min(key_layout.dnum.as_usize());
     // Limb-balanced whole-limb digits exceed `2^(B-1)` by the geometric sum of
     // their limbs, digits laid out on the grid of another width do not.
@@ -319,7 +319,7 @@ where
 {
     let layout = GGSWLayout {
         dnum: Dnum(2),
-        digit_k: TorusPrecision(2 * BASE2K.0),
+        k_digit: TorusPrecision(2 * BASE2K.0),
         k_aux: TorusPrecision(2 * BASE2K.0 + module.log_n() as u32),
         rank: Rank(1),
         ..ggsw_layout(module)
@@ -347,12 +347,12 @@ where
         + ScalarZnxAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    let gadget_k = ggsw_layout(module).dnum.as_u32() * ggsw_layout(module).digit_k.as_u32();
-    for digit_k in [BASE2K.0 - 3, BASE2K.0 + 1, 2 * BASE2K.0 - 1] {
+    let gadget_k = ggsw_layout(module).dnum.as_u32() * ggsw_layout(module).k_digit.as_u32();
+    for k_digit in [BASE2K.0 - 3, BASE2K.0 + 1, 2 * BASE2K.0 - 1] {
         let layout = GGSWLayout {
-            dnum: Dnum(gadget_k.div_ceil(digit_k)),
-            digit_k: TorusPrecision(digit_k),
-            k_aux: TorusPrecision(digit_k + module.log_n() as u32),
+            dnum: Dnum(gadget_k.div_ceil(k_digit)),
+            k_digit: TorusPrecision(k_digit),
+            k_aux: TorusPrecision(k_digit + module.log_n() as u32),
             ..ggsw_layout(module)
         };
         for binary in [false, true] {

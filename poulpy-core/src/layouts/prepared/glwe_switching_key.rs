@@ -79,8 +79,8 @@ impl<D: Data, B: Backend> GGLWEInfos for GLWESwitchingKeyPrepared<D, B> {
         self.key.rank_out()
     }
 
-    fn digit_k(&self) -> TorusPrecision {
-        self.key.digit_k()
+    fn k_digit(&self) -> TorusPrecision {
+        self.key.k_digit()
     }
 
     fn dnum(&self) -> Dnum {
@@ -100,13 +100,13 @@ where
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank_in: Rank,
         rank_out: Rank,
     ) -> GLWESwitchingKeyPrepared<B::OwnedBuf, B> {
         GLWESwitchingKeyPrepared::<B::OwnedBuf, B> {
-            key: self.gglwe_prepared_alloc(base2k, dnum, digit_k, k_aux, rank_in, rank_out),
+            key: self.gglwe_prepared_alloc(base2k, dnum, k_digit, k_aux, rank_in, rank_out),
             input_degree: Degree(0),
             output_degree: Degree(0),
         }
@@ -127,12 +127,12 @@ where
         &self,
         base2k: Base2K,
         dnum: Dnum,
-        digit_k: TorusPrecision,
+        k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank_in: Rank,
         rank_out: Rank,
     ) -> usize {
-        self.gglwe_prepared_bytes_of(base2k, dnum, digit_k, k_aux, rank_in, rank_out)
+        self.gglwe_prepared_bytes_of(base2k, dnum, k_digit, k_aux, rank_in, rank_out)
     }
 
     fn glwe_switching_key_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize

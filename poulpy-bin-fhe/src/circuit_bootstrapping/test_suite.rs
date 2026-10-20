@@ -102,14 +102,14 @@ pub fn test_circuit_bootstrapping_to_exponent<
             dnum: rows_atk.into(),
             k_aux: (a_base2ktk + n_glwe.ilog2() as usize).into(),
             rank: rank.into(),
-            digit_k: a_base2ktk.into(),
+            k_digit: a_base2ktk.into(),
         },
         tsk_layout: GGLWEToGGSWKeyLayout {
             n: n_glwe.into(),
             base2k: tsk_base2k.into(),
             dnum: rows_tsk.into(),
             k_aux: (tsk_base2k + n_glwe.ilog2() as usize).into(),
-            digit_k: tsk_base2k.into(),
+            k_digit: tsk_base2k.into(),
             rank: rank.into(),
         },
     };
@@ -119,7 +119,7 @@ pub fn test_circuit_bootstrapping_to_exponent<
         base2k: res_base2k.into(),
         k_aux: (res_base2k + n_glwe.ilog2() as usize).into(),
         dnum: rows_ggsw_res.into(),
-        digit_k: res_base2k.into(),
+        k_digit: res_base2k.into(),
         rank: rank.into(),
     };
 
@@ -307,14 +307,14 @@ pub fn test_circuit_bootstrapping_to_constant<
             dnum: rows_atk.into(),
             k_aux: (a_base2ktk + n_glwe.ilog2() as usize).into(),
             rank: rank.into(),
-            digit_k: a_base2ktk.into(),
+            k_digit: a_base2ktk.into(),
         },
         tsk_layout: GGLWEToGGSWKeyLayout {
             n: n_glwe.into(),
             base2k: tsk_base2k.into(),
             dnum: rows_tsk.into(),
             k_aux: (tsk_base2k + n_glwe.ilog2() as usize).into(),
-            digit_k: tsk_base2k.into(),
+            k_digit: tsk_base2k.into(),
             rank: rank.into(),
         },
     };
@@ -324,7 +324,7 @@ pub fn test_circuit_bootstrapping_to_constant<
         base2k: res_base2k.into(),
         k_aux: (res_base2k + n_glwe.ilog2() as usize).into(),
         dnum: rows_ggsw_res.into(),
-        digit_k: res_base2k.into(),
+        k_digit: res_base2k.into(),
         rank: rank.into(),
     };
 

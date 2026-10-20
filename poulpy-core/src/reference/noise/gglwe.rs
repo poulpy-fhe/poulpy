@@ -97,7 +97,7 @@ where
         let res_backend = res.to_backend_ref();
         let sk_backend = sk_prepared.to_backend_ref();
         let base2k: usize = res_backend.base2k().into();
-        let digit_k: usize = res_backend.digit_k().as_usize();
+        let k_digit: usize = res_backend.k_digit().as_usize();
         let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(&res_backend);
         let pt_k: usize = pt.k().as_usize();
         let pt_want_backend: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> =
@@ -111,7 +111,7 @@ where
                 base2k,
                 pt_k,
                 res_row,
-                digit_k,
+                k_digit,
                 &<ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxToBackendRef<BE>>::to_backend_ref(&pt_want_backend),
                 res_col,
                 &mut scratch_1.borrow(),

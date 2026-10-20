@@ -84,7 +84,7 @@ where
 
             let base2k: usize = res.base2k().into();
             let rank: usize = res.rank().into();
-            let digit_k: usize = res.digit_k().as_usize();
+            let k_digit: usize = res.k_digit().as_usize();
             let (mut tmp_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(res);
             let tmp_pt_k = tmp_pt.k().as_usize();
 
@@ -96,7 +96,7 @@ where
                     base2k,
                     tmp_pt_k,
                     row_i,
-                    digit_k,
+                    k_digit,
                     &pt.to_backend_ref(),
                     0,
                     &mut scratch_1.borrow(),

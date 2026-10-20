@@ -67,9 +67,9 @@ where
     let key_size = key_infos.size();
     let mask_small_size = prod_size.min(key_size);
     // Each mask column is the gadget operand, at most `mask_small_size` full limbs.
-    let (base2k, digit_k, dnum) = (key_infos.base2k(), key_infos.digit_k(), key_infos.dnum());
+    let (base2k, k_digit, dnum) = (key_infos.base2k(), key_infos.k_digit(), key_infos.dnum());
     let mask_k = TorusPrecision((mask_small_size * base2k.as_usize()) as u32);
-    let operand_size = gadget_input_size(base2k, digit_k, dnum, mask_k, mask_small_size);
+    let operand_size = gadget_input_size(base2k, k_digit, dnum, mask_k, mask_small_size);
     let mask_big = module.bytes_of_vec_znx_big(module.n(), 1, prod_size);
     let mask_dft = module.bytes_of_vec_znx_dft(module.n(), rank, operand_size);
     let mask_small = mask_small_size * core::mem::size_of::<i64>() * module.n();
@@ -77,7 +77,7 @@ where
     let inner = module
         .gglwe_product_dft_tmp_bytes_reference(key_size, operand_size, key_infos)
         .max(module.vec_znx_dft_automorphism_add_with_plan_tmp_bytes(key_size, key_size));
-    let digits = gadget_dft_apply_tmp_bytes::<BE, _>(module, base2k, digit_k, dnum, mask_k, mask_small_size);
+    let digits = gadget_dft_apply_tmp_bytes::<BE, _>(module, base2k, k_digit, dnum, mask_k, mask_small_size);
 
     mask_dft + mask_big + mask_small + module.vec_znx_idft_apply_tmp_bytes().max(digits) + ks_dft + inner
 }
@@ -124,9 +124,9 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M>(
     let mask_small_size = prod_dft.size().min(output_size);
 
     let scratch = scratch.borrow();
-    let (digit_k, dnum) = (key.digit_k(), key.dnum());
+    let (k_digit, dnum) = (key.k_digit(), key.dnum());
     let mask_k = TorusPrecision((mask_small_size * key_base2k) as u32);
-    let operand_size = gadget_input_size(key.base2k(), digit_k, dnum, mask_k, mask_small_size);
+    let operand_size = gadget_input_size(key.base2k(), k_digit, dnum, mask_k, mask_small_size);
     let (mut a_dft, mut scratch_1) = scratch.take_vec_znx_dft_scratch(res_dft.n(), rank, operand_size);
     {
         let (mut mask_big, scratch_2) = scratch_1.borrow().take_vec_znx_big_scratch(res_dft.n(), 1, prod_dft.size());
@@ -152,7 +152,7 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M>(
                 &col_small.to_backend_ref(),
                 0,
                 key.base2k(),
-                digit_k,
+                k_digit,
                 dnum,
                 mask_k,
                 &mut scratch_3.borrow(),

@@ -67,8 +67,8 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWETensorKeyShare<D, W> {
         self.key.dnum()
     }
 
-    fn digit_k(&self) -> TorusPrecision {
-        self.key.digit_k()
+    fn k_digit(&self) -> TorusPrecision {
+        self.key.k_digit()
     }
 
     fn rank_in(&self) -> Rank {

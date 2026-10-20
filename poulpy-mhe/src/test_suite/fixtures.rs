@@ -3,7 +3,7 @@ use poulpy_core::{
     layouts::{
         Base2K, Dnum, Dsize, GGLWELayout, GGSWLayout, GLWE, GLWEInfos, GLWELayout, GLWEPlaintext, GLWEPublicKey,
         GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory, GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory,
-        GLWESecretSampling, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision, digit_k_of,
+        GLWESecretSampling, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of,
     },
 };
 use poulpy_hal::{
@@ -45,7 +45,7 @@ pub(crate) fn gglwe_layout<BE: Backend>(module: &Module<BE>) -> GGLWELayout {
         k_aux: TorusPrecision(DSIZE.0 * BASE2K.0 + module.log_n() as u32),
         rank_in: RANK,
         rank_out: RANK,
-        digit_k: digit_k_of(BASE2K, DSIZE),
+        k_digit: k_digit_of(BASE2K, DSIZE),
         stride: 1,
     }
 }
@@ -59,7 +59,7 @@ pub(crate) fn ggsw_layout<BE: Backend>(module: &Module<BE>) -> GGSWLayout {
         dnum: gglwe.dnum,
         k_aux: gglwe.k_aux,
         rank: RANK,
-        digit_k: gglwe.digit_k,
+        k_digit: gglwe.k_digit,
     }
 }
 

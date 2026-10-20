@@ -27,13 +27,13 @@ use crate::{
 };
 
 /// Digit widths swept: every width from 2 bits to three limbs.
-fn digit_ks(base2k: usize) -> impl Iterator<Item = usize> {
+fn k_digits(base2k: usize) -> impl Iterator<Item = usize> {
     2..=3 * base2k
 }
 
 /// Key switch with digits of every width from 2 bits to three limbs, from radix
 /// `base2k - 1` through a key at `base2k` to radix `base2k - 2`.
-pub fn test_glwe_keyswitch_digit_k<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_keyswitch_k_digit<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -54,10 +54,10 @@ where
     let k_in: usize = 4 * in_base2k + 1;
     let n: usize = module.n();
     let rank: usize = 1;
-    for digit_k in digit_ks(key_base2k) {
-        let dnum: usize = k_in.div_ceil(digit_k);
+    for k_digit in k_digits(key_base2k) {
+        let dnum: usize = k_in.div_ceil(k_digit);
         // Wide enough that the output rounding stays below the gadget noise.
-        let k_out: usize = dnum * digit_k + digit_k + module.log_n() + key_base2k;
+        let k_out: usize = dnum * k_digit + k_digit + module.log_n() + key_base2k;
         let glwe_in_infos = GLWELayout {
             n: n.into(),
             base2k: in_base2k.into(),
@@ -74,8 +74,8 @@ where
             n: n.into(),
             base2k: key_base2k.into(),
             dnum: dnum.into(),
-            k_aux: (digit_k + module.log_n()).into(),
-            digit_k: digit_k.into(),
+            k_aux: (k_digit + module.log_n()).into(),
+            k_digit: k_digit.into(),
             rank_in: rank.into(),
             rank_out: rank.into(),
         };
@@ -148,7 +148,7 @@ where
         let have = glwe_noise_checked(module, &glwe_out, &pt_out, &sk_out_prepared, &mut scratch.borrow())
             .std()
             .log2();
-        assert!(have <= model + 1.0, "digit_k={digit_k}: noise {have} > model {model} + 1");
+        assert!(have <= model + 1.0, "k_digit={k_digit}: noise {have} > model {model} + 1");
 
         // The switch alone, against the input's phase: the input noise cancels
         // and what is left is the gadget term the digit width sets.
@@ -168,13 +168,13 @@ where
         );
         assert!(
             (gadget_have - gadget_model).abs() <= 1.0,
-            "digit_k={digit_k}: gadget noise {gadget_have} vs model {gadget_model}"
+            "k_digit={k_digit}: gadget noise {gadget_have} vs model {gadget_model}"
         );
     }
 }
 
 /// External product with a GGSW of digits of every width from 2 bits to three limbs.
-pub fn test_glwe_external_product_digit_k<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_external_product_k_digit<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -196,9 +196,9 @@ where
     let k_in: usize = 4 * in_base2k + 1;
     let n: usize = module.n();
     for rank in 1_usize..3 {
-        for digit_k in digit_ks(key_base2k) {
-            let dnum: usize = k_in.div_ceil(digit_k);
-            let k_out: usize = dnum * digit_k + digit_k + module.log_n() + key_base2k;
+        for k_digit in k_digits(key_base2k) {
+            let dnum: usize = k_in.div_ceil(k_digit);
+            let k_out: usize = dnum * k_digit + k_digit + module.log_n() + key_base2k;
             let glwe_in_infos = GLWELayout {
                 n: n.into(),
                 base2k: in_base2k.into(),
@@ -215,8 +215,8 @@ where
                 n: n.into(),
                 base2k: key_base2k.into(),
                 dnum: dnum.into(),
-                k_aux: (digit_k + module.log_n()).into(),
-                digit_k: digit_k.into(),
+                k_aux: (k_digit + module.log_n()).into(),
+                k_digit: k_digit.into(),
                 rank: rank.into(),
             };
 
@@ -299,7 +299,7 @@ where
             let have = glwe_noise_checked(module, &glwe_out, &pt_out, &sk_prepared, &mut scratch.borrow())
                 .std()
                 .log2();
-            assert!(have <= model + 1.0, "digit_k={digit_k}: noise {have} > model {model} + 1");
+            assert!(have <= model + 1.0, "k_digit={k_digit}: noise {have} > model {model} + 1");
 
             // The product alone, against X^k times the input's phase.
             let mut phase: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
@@ -325,7 +325,7 @@ where
             );
             assert!(
                 (gadget_have - gadget_model).abs() <= 1.0,
-                "digit_k={digit_k}: gadget noise {gadget_have} vs model {gadget_model}"
+                "k_digit={k_digit}: gadget noise {gadget_have} vs model {gadget_model}"
             );
         }
     }

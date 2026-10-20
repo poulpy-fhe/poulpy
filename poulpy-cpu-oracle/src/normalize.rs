@@ -73,21 +73,21 @@ pub(crate) fn normalize_assign<R: ZnxViewMut<Scalar = i64>>(res: &mut R, base2k:
 }
 
 /// Gadget digit layout, see `poulpy_hal::api::VecZnxGadgetDecompose`: the
-/// input rounded half up at `dnum * digit_k`, each digit the centered residue
-/// modulo `2^digit_k` of what is left, then split into centered limbs from its
+/// input rounded half up at `dnum * k_digit`, each digit the centered residue
+/// modulo `2^k_digit` of what is left, then split into centered limbs from its
 /// bottom up with the top limb taking the rest, on exact integers.
-pub(crate) fn gadget_decompose<R, A>(res: &mut R, col: usize, a: &A, a_col: usize, base2k: usize, digit_k: usize)
+pub(crate) fn gadget_decompose<R, A>(res: &mut R, col: usize, a: &A, a_col: usize, base2k: usize, k_digit: usize)
 where
     R: ZnxViewMut<Scalar = i64>,
     A: ZnxView,
     A::Scalar: Copy + Into<i128>,
 {
     assert_eq!(res.n(), a.n());
-    let r = digit_k.div_ceil(base2k);
+    let r = k_digit.div_ceil(base2k);
     assert!(res.size() > 0 && res.size().is_multiple_of(r));
     let dnum = res.size() / r;
     let source_bits = (a.size() * base2k) as i128;
-    let drop = source_bits - (dnum * digit_k) as i128;
+    let drop = source_bits - (dnum * k_digit) as i128;
     let centered = |value: &IBig, width: usize| -> (IBig, IBig) {
         let carry = (value + (IBig::ONE << (width - 1))) >> width;
         let residue = value - (&carry << width);
@@ -102,7 +102,7 @@ where
             value <<= (-drop) as usize;
         }
         for q in (0..dnum).rev() {
-            let (mut digit, carry) = centered(&value, digit_k);
+            let (mut digit, carry) = centered(&value, k_digit);
             value = carry;
             for t in 0..r - 1 {
                 let (limb, rest) = centered(&digit, base2k);

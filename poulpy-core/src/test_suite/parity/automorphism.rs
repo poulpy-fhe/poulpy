@@ -60,7 +60,7 @@ pub fn test_glwe_automorphism_parity<BR, BT>(
     let mut source = Source::new([31u8; 32]);
 
     for &rank in &shapes.ranks {
-        for digit_k in shapes.digit_ks(k, base2k, rank) {
+        for k_digit in shapes.k_digits(k, base2k, rank) {
             for p in [-1i64, 5] {
                 let a_infos = GLWELayout {
                     n: Degree(n),
@@ -71,15 +71,15 @@ pub fn test_glwe_automorphism_parity<BR, BT>(
                 let res_infos = GLWELayout {
                     n: Degree(n),
                     base2k: Base2K(base2k as u32),
-                    k: TorusPrecision((k + digit_k) as u32),
+                    k: TorusPrecision((k + k_digit) as u32),
                     rank: Rank(rank as u32),
                 };
                 let key_infos = GLWEAutomorphismKeyLayout {
                     n: Degree(n),
                     base2k: Base2K(base2k as u32),
-                    dnum: Dnum(k.div_ceil(digit_k) as u32),
-                    digit_k: TorusPrecision(digit_k as u32),
-                    k_aux: TorusPrecision(digit_k as u32),
+                    dnum: Dnum(k.div_ceil(k_digit) as u32),
+                    k_digit: TorusPrecision(k_digit as u32),
+                    k_aux: TorusPrecision(k_digit as u32),
                     rank: Rank(rank as u32),
                 };
 
@@ -115,7 +115,7 @@ pub fn test_glwe_automorphism_parity<BR, BT>(
                         check!(@call module_test, res_test, a_test, key_test, scratch_test, $method, $assign);
                         let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
                         res_test.transfer_into(&mut have);
-                        assert_glwe_eq!(res_ref, have, "{}: rank={rank} digit_k={digit_k} p={p}", stringify!($method));
+                        assert_glwe_eq!(res_ref, have, "{}: rank={rank} k_digit={k_digit} p={p}", stringify!($method));
 
                         let mut scratch_test = poisoned_scratch::<BT>(module_test.glwe_automorphism_tmp_bytes(&res_infos, input_infos, &key_infos));
                         let mut twin_a = module_test.glwe_alloc_from_infos(&a_infos);
@@ -127,7 +127,7 @@ pub fn test_glwe_automorphism_parity<BR, BT>(
                         }
                         check!(@call module_test, res_test, twin_a, key_test, scratch_test, $method, $assign);
                         res_test.transfer_into(&mut have);
-                        assert_glwe_eq!(res_ref, have, "{}, unnormalized operand: rank={rank} digit_k={digit_k} p={p}", stringify!($method));
+                        assert_glwe_eq!(res_ref, have, "{}, unnormalized operand: rank={rank} k_digit={k_digit} p={p}", stringify!($method));
                     }};
                     (@call $module:ident, $res:ident, $a:ident, $key:ident, $scratch:ident, $method:ident, false) => {
                         $module.$method(&mut $res, &$a, &$key.to_backend_ref(), &mut $scratch.borrow());

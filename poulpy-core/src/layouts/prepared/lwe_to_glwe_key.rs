@@ -47,8 +47,8 @@ impl<D: Data, B: Backend> GGLWEInfos for LWEToGLWEKeyPrepared<D, B> {
         self.0.k_aux()
     }
 
-    fn digit_k(&self) -> TorusPrecision {
-        self.0.digit_k()
+    fn k_digit(&self) -> TorusPrecision {
+        self.0.k_digit()
     }
 
     fn rank_in(&self) -> Rank {
@@ -94,9 +94,9 @@ where
     {
         debug_assert_eq!(infos.rank_in().0, 1, "rank_in > 1 is not supported for LWEToGLWEKey");
         debug_assert_eq!(
-            infos.digit_k().0,
+            infos.k_digit().0,
             infos.base2k().0,
-            "LWEToGLWEKey uses one-limb digits: digit_k must equal base2k"
+            "LWEToGLWEKey uses one-limb digits: k_digit must equal base2k"
         );
         LWEToGLWEKeyPrepared(self.glwe_switching_key_prepared_alloc_from_infos(infos))
     }
@@ -111,9 +111,9 @@ where
     {
         debug_assert_eq!(infos.rank_in().0, 1, "rank_in > 1 is not supported for LWEToGLWEKey");
         debug_assert_eq!(
-            infos.digit_k().0,
+            infos.k_digit().0,
             infos.base2k().0,
-            "LWEToGLWEKey uses one-limb digits: digit_k must equal base2k"
+            "LWEToGLWEKey uses one-limb digits: k_digit must equal base2k"
         );
         self.glwe_switching_key_prepared_bytes_of_from_infos(infos)
     }

@@ -9,7 +9,7 @@
 //! A digit's lower limbs are centered at `base2k` bits. Its top limb is
 //! first centered at its own width `w` and then moved up by `2^w` when it
 //! sits at `-2^(w - 1)` and the lower limbs are negative: that is exactly
-//! when the digit, centered at `digit_k` bits, takes its top value. The sign
+//! when the digit, centered at `k_digit` bits, takes its top value. The sign
 //! of the lower limbs is the sign of the last nonzero one emitted. Every
 //! inner loop is branch free.
 
@@ -24,17 +24,17 @@ pub fn vec_znx_gadget_decompose_portable<'r, 'a, BE>(
     a: &VecZnxBackendRef<'a, BE>,
     a_col: usize,
     base2k: usize,
-    digit_k: usize,
+    k_digit: usize,
 ) where
     BE: Backend<ZnxWord = i64>,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
     assert!((1..=62).contains(&base2k), "base2k={base2k} outside 1..=62");
-    assert!(digit_k > 0, "digit_k must be positive");
+    assert!(k_digit > 0, "k_digit must be positive");
     assert_eq!(res.n(), a.n());
-    let r: usize = digit_k.div_ceil(base2k);
-    let rem: usize = digit_k - (r - 1) * base2k;
+    let r: usize = k_digit.div_ceil(base2k);
+    let rem: usize = k_digit - (r - 1) * base2k;
     assert!(
         res.size() > 0 && res.size().is_multiple_of(r),
         "res.size()={} is not a nonzero multiple of {r} sub-limbs",
@@ -43,7 +43,7 @@ pub fn vec_znx_gadget_decompose_portable<'r, 'a, BE>(
     let dnum: usize = res.size() / r;
     let n: usize = res.n();
     let a_size: usize = a.size();
-    let gadget_k: usize = dnum * digit_k;
+    let gadget_k: usize = dnum * k_digit;
     // Limb holding bit `gadget_k` (bit 1 is the most significant), and its bits below it.
     let j0: usize = gadget_k.div_ceil(base2k) - 1;
     let low: usize = (j0 + 1) * base2k - gadget_k;

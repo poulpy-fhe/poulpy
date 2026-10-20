@@ -45,7 +45,7 @@
 //! saturating arithmetic: [`layouts::Degree`], [`layouts::Base2K`],
 //! [`layouts::TorusPrecision`], [`layouts::Rank`], [`layouts::Dnum`],
 //! [`layouts::Dsize`]. A gadget digit width is a [`layouts::TorusPrecision`]
-//! in bits, `digit_k`, and need not be a multiple of `base2k`.
+//! in bits, `k_digit`, and need not be a multiple of `base2k`.
 //!
 //! # Ciphertext types
 //!

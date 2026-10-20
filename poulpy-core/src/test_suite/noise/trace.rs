@@ -64,7 +64,7 @@ where
             dnum: dnum.into(),
             k_aux: k_aux.into(),
             rank: rank.into(),
-            digit_k: crate::layouts::digit_k_of(key_base2k, dsize),
+            k_digit: crate::layouts::k_digit_of(key_base2k, dsize),
         };
 
         let glwe_out_template: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_out_infos);

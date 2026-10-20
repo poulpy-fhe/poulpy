@@ -118,7 +118,7 @@ impl ParityShapes {
     /// for the full sweep at rank 1, widths off a limb boundary (a sub-limb
     /// width and one bit past and short of a boundary), so the digit layout is
     /// compared too. `rank` is the largest rank of the case.
-    pub fn digit_ks(&self, k: usize, base2k: usize, rank: usize) -> Vec<usize> {
+    pub fn k_digits(&self, k: usize, base2k: usize, rank: usize) -> Vec<usize> {
         let mut widths: Vec<usize> = self.dsizes(k, base2k).into_iter().map(|d| d * base2k).collect();
         if self.dsizes.is_none() && self.unaligned_digits && rank == 1 {
             for width in [base2k / 2 + 1, base2k + 1, 2 * base2k - 1] {

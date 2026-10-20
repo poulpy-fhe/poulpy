@@ -2218,21 +2218,21 @@ pub fn test_vec_znx_gadget_decompose<BR: crate::test_suite::TestBackend, BT: cra
     for (n, reduced) in degrees {
         let radixes: &[usize] = if reduced { &[12, 52] } else { &[1, 5, 12, 17, 30, 52, 62] };
         for &base2k in radixes {
-            let mut digit_ks: Vec<usize> = if reduced {
+            let mut k_digits: Vec<usize> = if reduced {
                 vec![base2k - 1, base2k + 1, 3 * base2k - 1]
             } else {
                 vec![1, base2k, 2 * base2k, base2k + 1, 3 * base2k - 1, 7, 61]
             };
-            digit_ks.dedup();
-            for digit_k in digit_ks {
-                let r = digit_k.div_ceil(base2k);
-                let w = digit_k - (r - 1) * base2k;
+            k_digits.dedup();
+            for k_digit in k_digits {
+                let r = k_digit.div_ceil(base2k);
+                let w = k_digit - (r - 1) * base2k;
                 let a_sizes: &[usize] = if reduced { &[5] } else { &[1, 2, 5] };
                 for &a_size in a_sizes {
                     for dnum in [1usize, 2, 3] {
                         for pattern in 0..5 {
                             let case =
-                                format!("n={n} base2k={base2k} digit_k={digit_k} a_size={a_size} dnum={dnum} pattern={pattern}");
+                                format!("n={n} base2k={base2k} k_digit={k_digit} a_size={a_size} dnum={dnum} pattern={pattern}");
                             let mut a = module_ref.vec_znx_alloc(n, cols, a_size);
                             module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
                             let mut a_host = download_vec_znx::<BR>(&a);
@@ -2255,7 +2255,7 @@ pub fn test_vec_znx_gadget_decompose<BR: crate::test_suite::TestBackend, BT: cra
                             }
                             // A rounding tie off a limb boundary: the bits below the gadget
                             // precision are exactly one half of its last unit.
-                            let gadget_k = dnum * digit_k;
+                            let gadget_k = dnum * k_digit;
                             let (j0, low) = (gadget_k.div_ceil(base2k) - 1, gadget_k.div_ceil(base2k) * base2k - gadget_k);
                             if pattern == 4 && low > 0 && j0 < a_size {
                                 for col in 0..cols {
@@ -2278,7 +2278,7 @@ pub fn test_vec_znx_gadget_decompose<BR: crate::test_suite::TestBackend, BT: cra
                                     &vec_znx_backend_ref::<BR>(&a_ref),
                                     col,
                                     base2k,
-                                    digit_k,
+                                    k_digit,
                                     &mut scratch_ref.arena(),
                                 );
                                 module_test.vec_znx_gadget_decompose(
@@ -2287,7 +2287,7 @@ pub fn test_vec_znx_gadget_decompose<BR: crate::test_suite::TestBackend, BT: cra
                                     &vec_znx_backend_ref::<BT>(&a_test),
                                     col,
                                     base2k,
-                                    digit_k,
+                                    k_digit,
                                     &mut scratch_test.arena(),
                                 );
                             }
@@ -2314,7 +2314,7 @@ pub fn test_vec_znx_gadget_decompose<BR: crate::test_suite::TestBackend, BT: cra
                                                 .map(|t| (res_host.at(col, q * r + r - 1 - t)[i] as i128) << (t * base2k))
                                                 .sum();
                                             assert!(
-                                                (-(1i128 << (digit_k - 1))..(1i128 << (digit_k - 1))).contains(&d),
+                                                (-(1i128 << (k_digit - 1))..(1i128 << (k_digit - 1))).contains(&d),
                                                 "{case}: digit {q} of coefficient {i} is not centered"
                                             );
                                         }
@@ -2345,7 +2345,7 @@ pub fn test_vec_znx_gadget_decompose<BR: crate::test_suite::TestBackend, BT: cra
                                         &mut vec_znx_backend_mut::<BR>(&mut term),
                                         base2k,
                                         gadget_k,
-                                        (r * base2k) as i64 - ((q + 1) * digit_k) as i64,
+                                        (r * base2k) as i64 - ((q + 1) * k_digit) as i64,
                                         0,
                                         &block,
                                         base2k,
@@ -2406,7 +2406,7 @@ pub fn test_vec_znx_gadget_decompose<BR: crate::test_suite::TestBackend, BT: cra
                                             &a_view,
                                             1,
                                             base2k,
-                                            digit_k,
+                                            k_digit,
                                             &mut scratch_test.arena(),
                                         );
                                     }

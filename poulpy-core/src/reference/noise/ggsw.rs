@@ -105,7 +105,7 @@ where
 
         let base2k: usize = res_backend.base2k().into();
         let res_k = res_backend.k().as_usize();
-        let digit_k: usize = res_backend.digit_k().as_usize();
+        let k_digit: usize = res_backend.k_digit().as_usize();
         assert!(
             scratch.available() >= self.ggsw_noise_tmp_bytes(res),
             "scratch.available(): {} < GGSWNoise::ggsw_noise_tmp_bytes: {}",
@@ -126,7 +126,7 @@ where
                 base2k,
                 pt_k,
                 res_row,
-                digit_k,
+                k_digit,
                 &<ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxToBackendRef<BE>>::to_backend_ref(&pt_want_backend),
                 0,
                 &mut scratch_1.borrow(),

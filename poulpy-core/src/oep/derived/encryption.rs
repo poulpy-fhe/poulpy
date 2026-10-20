@@ -284,7 +284,7 @@ pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K>(
     let tmp_bytes: usize = ggsw_encrypt_pk_tmp_bytes_derived(module, res, pk);
     {
         let (base2k, k): (usize, usize) = (res.base2k().into(), res.k().as_usize());
-        let digit_k: usize = res.digit_k().as_usize();
+        let k_digit: usize = res.k_digit().as_usize();
         let rank: usize = res.rank().into();
         let (mut tmp_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(res);
         for row in 0..res.dnum().into() {
@@ -296,7 +296,7 @@ pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K>(
                 base2k,
                 k,
                 row,
-                digit_k,
+                k_digit,
                 &pt.to_backend_ref(),
                 0,
                 &mut scratch_1.borrow(),

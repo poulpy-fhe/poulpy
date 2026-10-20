@@ -47,7 +47,7 @@ where
     // with no, one and several zero-prefix digits, a shift ending exactly on a
     // digit boundary (where the gadget rounding may carry into that digit), a
     // sub-limb width, and a view of an unaligned key.
-    for (digit_k, view_digit_k, key_b, extra, scale) in [
+    for (k_digit, view_k_digit, key_b, extra, scale) in [
         (2 * b, 2 * b, b, 4 * b + 3, 0),
         (2 * b, 2 * b, b, 3 * b + 5, b + 1),
         (2 * b, 2 * b, b, 5, 4),
@@ -84,7 +84,7 @@ where
             ..src_layout
         };
         let d2s_layout = key_layout(module.n(), b, small, 1, params.rank, params.rank);
-        let s2d_layout = key_layout_bits(module.n(), key_b, small + extra, digit_k, params.rank, params.rank);
+        let s2d_layout = key_layout_bits(module.n(), key_b, small + extra, k_digit, params.rank, params.rank);
         let mut d2s = module.gglwe_prepared_alloc_from_infos(&d2s_layout);
         let mut s2d = module.gglwe_prepared_alloc_from_infos(&s2d_layout);
         for (prepared, layout, seed) in [(&mut d2s, &d2s_layout, 31), (&mut s2d, &s2d_layout, 37)] {
@@ -93,7 +93,7 @@ where
                 module.gglwe_prepare(prepared, &coefficients, scratch)
             });
         }
-        let s2d = s2d.with_digit_k(TorusPrecision(view_digit_k as u32)).unwrap();
+        let s2d = s2d.with_k_digit(TorusPrecision(view_k_digit as u32)).unwrap();
         let bytes = B::ckks_encapsulated_mod_up_tmp_bytes(module, &dst_layout, &src_layout, &d2s_layout, &s2d);
         for (seed, lazy) in [(41, false), (43, true)] {
             let mut src = fixture_operand(module, &src_layout, seed, lazy);
@@ -246,7 +246,7 @@ fn keys_layout(atk: &GGLWELayout, d2s: &GGLWELayout, s2d: &GGLWELayout, encapsul
             dnum: atk.dnum,
             k_aux: atk.k_aux,
             rank: atk.rank_out,
-            digit_k: atk.digit_k,
+            k_digit: atk.k_digit,
         },
         tensor_key: GLWETensorKeyLayout {
             n: atk.n,
@@ -254,7 +254,7 @@ fn keys_layout(atk: &GGLWELayout, d2s: &GGLWELayout, s2d: &GGLWELayout, encapsul
             dnum: atk.dnum,
             k_aux: atk.k_aux,
             rank: atk.rank_out,
-            digit_k: atk.digit_k,
+            k_digit: atk.k_digit,
         },
         encapsulation: encapsulate.then(|| EncapsulationKeysLayout {
             dense_to_sparse: switching_layout(d2s),
@@ -271,7 +271,7 @@ fn switching_layout(key: &GGLWELayout) -> GLWESwitchingKeyLayout {
         k_aux: key.k_aux,
         rank_in: key.rank_in,
         rank_out: key.rank_out,
-        digit_k: key.digit_k,
+        k_digit: key.k_digit,
     }
 }
 
