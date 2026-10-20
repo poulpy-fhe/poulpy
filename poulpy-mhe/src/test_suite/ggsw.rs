@@ -228,7 +228,13 @@ where
     let circular_variance = 2.0 * rank_n * parties * secret_second * sigma2;
     let digit_bits = key_layout.digit_k.as_usize();
     let digits = k.div_ceil(digit_bits).min(key_layout.dnum.as_usize());
-    let digit_factor = (1.0 - (-(digit_bits as f64)).exp2()) / (1.0 - (-(key_layout.base2k.as_usize() as f64)).exp2());
+    // Limb-balanced whole-limb digits exceed `2^(B-1)` by the geometric sum of
+    // their limbs, digits laid out on the grid of another width do not.
+    let digit_factor = if digit_bits.is_multiple_of(key_layout.base2k.as_usize()) {
+        (1.0 - (-(digit_bits as f64)).exp2()) / (1.0 - (-(key_layout.base2k.as_usize() as f64)).exp2())
+    } else {
+        1.0
+    };
     let switching_variance = digit_factor.powi(2)
         * rank_n
         * digits as f64
@@ -320,6 +326,38 @@ where
     };
     for binary in [false, true] {
         check_collective_ggsw(module, &layout, binary);
+    }
+}
+
+/// Digit widths off a limb boundary: one below a limb, one bit past a limb,
+/// and one bit short of two, each covering the fixture precision.
+pub fn test_ggsw_share_digit_widths<BE>(module: &Module<BE>)
+where
+    BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: MHEModuleAlloc<BE>
+        + GGSWMHEProtocol<BE>
+        + VecZnxAddScalarAssign<BE>
+        + GLWESwitchingKeyMHEProtocol<BE>
+        + GLWESwitchingKeyPreparedFactory<BE>
+        + GLWESecretSampling<BE>
+        + GLWESecretPreparedFactory<BE>
+        + GGSWNoise<BE>
+        + ScalarZnxAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let gadget_k = ggsw_layout(module).dnum.as_u32() * ggsw_layout(module).digit_k.as_u32();
+    for digit_k in [BASE2K.0 - 3, BASE2K.0 + 1, 2 * BASE2K.0 - 1] {
+        let layout = GGSWLayout {
+            dnum: Dnum(gadget_k.div_ceil(digit_k)),
+            digit_k: TorusPrecision(digit_k),
+            k_aux: TorusPrecision(digit_k + module.log_n() as u32),
+            ..ggsw_layout(module)
+        };
+        for binary in [false, true] {
+            check_collective_ggsw(module, &layout, binary);
+        }
     }
 }
 

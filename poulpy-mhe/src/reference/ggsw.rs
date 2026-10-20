@@ -3,7 +3,7 @@ use poulpy_core::{
     GLWENormalize, GetDistribution, ScratchArenaTakeCore,
     layouts::{
         GGLWECompressedSeed, GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef, GGLWEInfos,
-        GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout, LWEInfos, Rank, TorusPrecision,
+        GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout, LWEInfos, Rank, TorusPrecision, digits_aligned,
         prepared::{GGLWEPreparedToBackendRef, GLWESecretPreparedFactory, GLWESecretPreparedToBackendRef},
     },
 };
@@ -338,7 +338,14 @@ fn fresh_ggsw_metadata<BE: Backend, K: GGLWEInfos>(share: &GGSWShareOwned<BE>, k
     }
     let n = share.n().as_usize();
     let digit_bits = key.digit_k().as_usize();
-    let digit_factor = (1.0 - (-(digit_bits as f64)).exp2()) / (1.0 - (-(key.base2k().as_usize() as f64)).exp2());
+    // Whole-limb digits are sums of limbs balanced at `base2k`, so they reach
+    // `2^(B-1) * (1 - 2^-B) / (1 - 2^-b)`. Other widths are laid out on the
+    // digit grid, balanced at the digit width itself, so they stay within `2^(B-1)`.
+    let digit_factor = if digits_aligned(key.base2k(), key.digit_k()) {
+        (1.0 - (-(digit_bits as f64)).exp2()) / (1.0 - (-(key.base2k().as_usize() as f64)).exp2())
+    } else {
+        1.0
+    };
     let digits = k.as_usize().div_ceil(digit_bits).min(key.dnum().as_usize());
     // Bounded balanced digits require no uniform-digit assumption. Fold their
     // squared magnitude into the precision rescaling to avoid a vanishing

@@ -225,6 +225,9 @@
 
 - **Breaking:** the `MHEModuleAlloc` share allocators take `digit_k` in place of `dsize`.
 - GGSW and tensor key share generation place their gadget rows through `gadget_row_plaintext`, and the tensor key share scratch covers `vec_znx_normalize_tmp_bytes`.
+- **Fix:** the fresh noise estimate of a collective GGSW bounds a digit by `2^(B-1)` when `digit_k` is not a whole number of limbs, where the digit layout balances digits at their own width, and keeps `2^(B-1) * (1 - 2^-B)/(1 - 2^-b)` for whole-limb digits.
+  Below a limb the old factor fell under 1 and underestimated the switching noise, and `mhe-contracts.md` gave the same formula.
+  `test_ggsw_share_digit_widths` checks the estimate and the measured noise at widths below a limb, one bit past a limb and one bit short of two.
 
 ### `poulpy-blas`
 

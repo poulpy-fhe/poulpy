@@ -86,8 +86,10 @@ share generation mutates output or consumes randomness.
 A GGSW's first column carries ordinary aggregated body noise. Other columns
 contain `E_s * U` in the body and `E_u` in each mask, plus each component's
 key-switching and rounding error. Their variance model uses the ephemeral
-second moment, including nonzero means, and bounds each gadget digit by
-`2^(B-1) * (1 - 2^-B)/(1 - 2^-b)` for the digit width `B = digit_k`. The stored estimate takes each component's maximum over all gadget
+second moment, including nonzero means, and bounds each gadget digit of
+width `B = digit_k` by `2^(B-1) * (1 - 2^-B)/(1 - 2^-b)` when `B` is a whole
+number of limbs, whose digits are sums of limbs balanced at `b`, and by
+`2^(B-1)` otherwise, where digits are balanced at `B` itself. The stored estimate takes each component's maximum over all gadget
 columns. The secret's second moment enters when deriving phase noise. Key coverage is checked before this
 construction, so no gadget truncation residue is omitted.
 
