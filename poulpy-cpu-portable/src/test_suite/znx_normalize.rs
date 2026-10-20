@@ -108,6 +108,7 @@ pub fn test_znx_normalize<BE: ZnxNormalize>() {
     check_ties::<BE>();
     check_wide::<BE>();
     check_in_place::<BE>();
+    check_many_limbs::<BE>();
 }
 
 /// Below, at and above the tie `q + 1/2` for every dropped width from one bit to past one limb.
@@ -273,6 +274,75 @@ fn check_in_place<BE: ZnxNormalize>() {
                 have,
                 oracle(&column, b, b, k, size, offset),
                 "in place b={b} k={k} offset={offset} i={i}"
+            );
+        }
+    }
+}
+
+/// Six limbs, so each block spans more than 8 cache lines and the portable driver walks tiles:
+/// two tiles of 32 blocks at lane width 8, leftover blocks and a 3-lane tail, other widths more tiles.
+fn check_many_limbs<BE: ZnxNormalize>() {
+    const N: usize = 2 * 32 * 8 + 3 * 8 + 3;
+    const SIZE: usize = 6;
+    let mut state = 0x9e37_79b9_7f4a_7c15u64;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state as i64
+    };
+    let narrow: Vec<Vec<i128>> = (0..SIZE)
+        .map(|_| {
+            (0..N)
+                .map(|i| match i % 4 {
+                    0 => -(1i128 << 62),
+                    1 => 1 << 62,
+                    _ => (next() >> 1) as i128,
+                })
+                .collect()
+        })
+        .collect();
+    let wide: Vec<Vec<i128>> = narrow.iter().map(|l| l.iter().map(|&x| (x << 63) + x).collect()).collect();
+    for b in [17usize, 50, 62] {
+        for k in [SIZE * b, 2 * b + 1] {
+            for offset in [0, b as i64, -(b as i64), -1] {
+                check::<BE>(&narrow, b, b, k, SIZE, offset);
+                check::<BE>(&wide, b, b, k, SIZE, offset);
+            }
+        }
+        check::<BE>(&narrow, b, b, 4 * b, 4, b as i64);
+        check::<BE>(&narrow, b, b, 7 * b, 7, -(b as i64));
+    }
+    // In place needs `offset < b`.
+    for (b, k, offset) in [(17usize, 6 * 17, 0i64), (50, 6 * 50 - 5, 49), (62, 3 * 62 + 1, -62)] {
+        let mut buf: Vec<i64> = narrow.iter().flatten().map(|&x| x as i64).collect();
+        let ptr = buf.as_mut_ptr();
+        unsafe {
+            BE::znx_normalize(
+                LimbsMut {
+                    ptr,
+                    stride: N,
+                    size: SIZE,
+                },
+                b,
+                k,
+                offset,
+                Limbs {
+                    ptr: ptr.cast_const(),
+                    stride: N,
+                    size: SIZE,
+                },
+                b,
+                N,
+            )
+        };
+        for i in 0..N {
+            let column: Vec<i128> = narrow.iter().map(|l| l[i]).collect();
+            let have: Vec<i64> = (0..SIZE).map(|j| buf[j * N + i]).collect();
+            assert_eq!(
+                have,
+                oracle(&column, b, b, k, SIZE, offset),
+                "many limbs in place b={b} k={k} offset={offset} i={i}"
             );
         }
     }

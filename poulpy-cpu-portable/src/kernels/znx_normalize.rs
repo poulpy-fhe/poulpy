@@ -586,8 +586,11 @@ unsafe fn load_limb<L: NormalizeLanes>(a: Limbs<L::Word>, s: i64, i: usize) -> L
     }
 }
 
-/// Blocks a tile walks limb by limb.
+/// Blocks a tile walks limb by limb: 32 keeps the tile state within about 6 KiB and runs long per limb (Zen 4 bench).
 const TILE: usize = 32;
+
+/// Source plus destination lines per block past which the walk tiles: the 8 ways of an L1 set (crossover between 7 and 16 on Zen 4).
+const TILE_MIN_LINES: usize = 8;
 
 /// `K` blocks from coefficient `i`, limb by limb; `K > 1` prefetches the limb it reads next.
 #[inline(always)]
@@ -703,7 +706,7 @@ where
 {
     let full = len - len % L::WIDTH;
     // A block's limb lines, a power-of-two stride apart, share one L1 set: past its 8 ways, walk tiles.
-    let tiled = if a.size + res.size > 8 {
+    let tiled = if a.size + res.size > TILE_MIN_LINES {
         full - full % (TILE * L::WIDTH)
     } else {
         0
@@ -1001,7 +1004,7 @@ mod tests {
         (0..n).map(|i| (0..size).map(|j| dst[j * n + i]).collect()).collect()
     }
 
-    /// The portable driver over 11 coefficients (full blocks and a 3-coefficient tail).
+    /// The portable driver over the coefficients of the given limbs.
     fn run<S: NormalizeWord>(a: &[Vec<S>], ka: usize, kr: usize, k: usize, size: usize, offset: i64) -> Vec<Vec<i64>> {
         layout(a, size, |res, src, n| unsafe {
             normalize_blocked_portable::<S::Lanes, PortableLanes<S, 1>>(res, kr, k, offset, src, ka, n)
@@ -1071,8 +1074,8 @@ mod tests {
     /// Tiles, leftover blocks and the tail against the driver one coefficient at a time, and in place.
     #[test]
     fn tiled_walk_matches_single_coefficients() {
-        fn single<S: NormalizeWord>(a: &[Vec<S>], b: usize, k: usize, offset: i64) -> Vec<Vec<i64>> {
-            layout(a, a.len(), |res, src, n| {
+        fn single<S: NormalizeWord>(a: &[Vec<S>], size: usize, b: usize, k: usize, offset: i64) -> Vec<Vec<i64>> {
+            layout(a, size, |res, src, n| {
                 for i in 0..n {
                     let res = LimbsMut {
                         ptr: res.ptr.wrapping_add(i),
@@ -1087,21 +1090,25 @@ mod tests {
             })
         }
         let mut state = 0x9e37_79b9_7f4a_7c15u64;
-        // Two tiles, three leftover blocks and a tail at every lane width.
+        // At least two tiles, three leftover blocks and a tail at every lane width.
         let n = 2 * TILE * 8 + 3 * 8 + 5;
         let size = 6;
         let limbs = sample(size, n, &mut state);
         let wide = widen(&limbs);
         for b in [17usize, 50, 62] {
             for k in [size * b, size * b - 5, 2 * b + 1] {
-                for offset in [0, 1, -(b as i64), -(b as i64) - 1] {
-                    let want = single(&limbs, b, k, offset);
+                for offset in [0, 1, b as i64, -(b as i64), -(b as i64) - 1] {
+                    let want = single(&limbs, size, b, k, offset);
                     assert_eq!(run(&limbs, b, b, k, size, offset), want, "b={b} k={k} offset={offset}");
                     assert_eq!(
                         run(&wide, b, b, k, size, offset),
-                        single(&wide, b, k, offset),
+                        single(&wide, size, b, k, offset),
                         "wide b={b} k={k} offset={offset}"
                     );
+                    // In place needs `offset < b`.
+                    if offset >= b as i64 {
+                        continue;
+                    }
                     let mut buf = limbs.concat();
                     let ptr = buf.as_mut_ptr();
                     unsafe {
@@ -1123,6 +1130,13 @@ mod tests {
                     assert_eq!(in_place, want, "in place b={b} k={k} offset={offset}");
                 }
             }
+            // Fewer destination limbs than source limbs, still past the line threshold.
+            let k = 4 * b;
+            assert_eq!(
+                run(&limbs, b, b, k, 4, b as i64),
+                single(&limbs, 4, b, k, b as i64),
+                "size 4 b={b}"
+            );
         }
     }
 }
