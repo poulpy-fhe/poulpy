@@ -267,13 +267,18 @@ where
         gadget_header.extend(K_KEY_AUX.0.to_le_bytes());
         gadget_header.extend(BASE2K.0.to_le_bytes());
         gadget_header.extend(DSIZE.0.to_le_bytes());
+        // A GGLWE stores its row offset after the digit width.
+        let mut gglwe_header = gadget_header.clone();
+        gglwe_header.extend(0u32.to_le_bytes());
         gadget_header.extend(invalid_rank.to_le_bytes());
+        gglwe_header.extend(invalid_rank.to_le_bytes());
         if partial_next_field {
             glwe_header.push(0);
             gadget_header.push(0);
+            gglwe_header.push(0);
         }
         test_reused_reader_shape_bound(glwe_c[1].clone(), &glwe_header);
-        test_reused_reader_shape_bound(gglwe_c[1].clone(), &gadget_header);
+        test_reused_reader_shape_bound(gglwe_c[1].clone(), &gglwe_header);
         test_reused_reader_shape_bound(ggsw_c[1].clone(), &gadget_header);
     }
     // Zero degree makes the advertised byte length zero even with enormous
@@ -286,14 +291,18 @@ where
         glwe_header.extend(value.to_le_bytes());
     }
     test_reused_reader_shape_bound(glwe[1].clone(), &glwe_header);
-    let mut gadget_header = none_prefix;
+    let mut gadget_header = none_prefix.clone();
     gadget_header.extend(BASE2K.0.to_le_bytes());
     gadget_header.extend(DSIZE.0.to_le_bytes());
+    let mut gglwe_header = gadget_header.clone();
+    gglwe_header.extend(0u32.to_le_bytes());
     gadget_header.extend(K_KEY_AUX.0.to_le_bytes());
+    gglwe_header.extend(K_KEY_AUX.0.to_le_bytes());
     for value in [0u64, 1, DNUM.0 as u64, RANK.0 as u64, 1u64 << 32, 0] {
         gadget_header.extend(value.to_le_bytes());
+        gglwe_header.extend(value.to_le_bytes());
     }
-    test_reused_reader_shape_bound(gglwe[1].clone(), &gadget_header);
+    test_reused_reader_shape_bound(gglwe[1].clone(), &gglwe_header);
     test_reused_reader_shape_bound(ggsw[1].clone(), &gadget_header);
 
     test_reader_writer_interface(glwe);

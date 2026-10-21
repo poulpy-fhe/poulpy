@@ -58,6 +58,7 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::noise::Te
                 dnum: dnum_in.into(),
                 k_aux: (dsize_in * in_base2k + module.log_n()).into(),
                 k_digit: crate::layouts::k_digit_of(in_base2k, dsize_in),
+                k_offset: crate::layouts::TorusPrecision(0),
                 rank: rank.into(),
             };
 
@@ -67,6 +68,7 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::noise::Te
                 dnum: dnum_in.into(),
                 k_aux: (dsize_in * out_base2k + module.log_n()).into(),
                 k_digit: crate::layouts::k_digit_of(out_base2k, dsize_in),
+                k_offset: crate::layouts::TorusPrecision(0),
                 rank: rank.into(),
             };
 
@@ -76,6 +78,7 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::noise::Te
                 dnum: dnum_ksk.into(),
                 k_aux: (dsize * key_base2k + module.log_n()).into(),
                 k_digit: crate::layouts::k_digit_of(key_base2k, dsize),
+                k_offset: crate::layouts::TorusPrecision(0),
                 rank: rank.into(),
             };
 
@@ -230,6 +233,7 @@ pub fn test_gglwe_automorphism_key_automorphism_assign<
                 dnum: dnum_in.into(),
                 k_aux: (dsize_in * out_base2k + module.log_n()).into(),
                 k_digit: crate::layouts::k_digit_of(out_base2k, dsize_in),
+                k_offset: crate::layouts::TorusPrecision(0),
                 rank: rank.into(),
             };
 
@@ -239,6 +243,7 @@ pub fn test_gglwe_automorphism_key_automorphism_assign<
                 dnum: dnum_ksk.into(),
                 k_aux: (dsize * key_base2k + module.log_n()).into(),
                 k_digit: crate::layouts::k_digit_of(key_base2k, dsize),
+                k_offset: crate::layouts::TorusPrecision(0),
                 rank: rank.into(),
             };
 

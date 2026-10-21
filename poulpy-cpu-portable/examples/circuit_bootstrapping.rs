@@ -90,6 +90,7 @@ fn main() {
             dnum: rows_trace.into(),
             k_aux: (base2k + n_glwe.ilog2() as usize).into(),
             k_digit: base2k.into(),
+            k_offset: poulpy_core::layouts::TorusPrecision(0),
             rank: rank.into(),
         },
         tsk_layout: GGLWEToGGSWKeyLayout {

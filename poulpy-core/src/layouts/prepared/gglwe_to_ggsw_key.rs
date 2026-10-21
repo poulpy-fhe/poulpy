@@ -69,6 +69,10 @@ impl<D: Data, BE: Backend> GGLWEInfos for GGLWEToGGSWKeyPrepared<D, BE> {
         self.keys[0].k_digit()
     }
 
+    fn k_offset(&self) -> TorusPrecision {
+        self.keys[0].k_offset()
+    }
+
     fn dnum(&self) -> Dnum {
         self.keys[0].dnum()
     }

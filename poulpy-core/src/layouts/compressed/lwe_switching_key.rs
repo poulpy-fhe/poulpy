@@ -64,6 +64,10 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for LWESwitchingKeyCompressed<D, W> {
         self.0.k_digit()
     }
 
+    fn k_offset(&self) -> TorusPrecision {
+        self.0.k_offset()
+    }
+
     fn rank_in(&self) -> Rank {
         self.0.rank_in()
     }

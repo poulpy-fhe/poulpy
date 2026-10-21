@@ -76,6 +76,7 @@ where
             dnum: dnum.into(),
             k_aux: (k_digit + module.log_n()).into(),
             k_digit: k_digit.into(),
+            k_offset: crate::layouts::TorusPrecision(0),
             rank_in: rank.into(),
             rank_out: rank.into(),
         };

@@ -292,6 +292,7 @@ where
         dnum: atk_infos.dnum,
         k_aux: atk_infos.k_aux,
         k_digit: atk_infos.k_digit,
+        k_offset: atk_infos.k_offset,
         rank_in: atk_infos.rank,
         rank_out: atk_infos.rank,
         stride: 1,

@@ -99,6 +99,7 @@ fn atk_at(width: usize) -> GLWEAutomorphismKeyLayout {
         k_aux: (BASE2K + N.ilog2() as usize).into(),
         rank: Rank(1),
         k_digit: BASE2K.into(),
+        k_offset: TorusPrecision(0),
     }
 }
 

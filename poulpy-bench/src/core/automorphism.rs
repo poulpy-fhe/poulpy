@@ -48,6 +48,7 @@ where
         rank_out: Rank(cp.rank),
         dnum: Dnum(dnum),
         k_digit: k_digit_of(cp.base2k, cp.dsize),
+        k_offset: TorusPrecision(0),
         stride: 1,
     };
 

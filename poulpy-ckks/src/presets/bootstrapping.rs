@@ -694,6 +694,7 @@ fn key_layout(spec: &PresetSpec, name: &str, input_k: usize, k_digit: usize, lim
         rank_in: Rank(spec.rank as u32),
         rank_out: Rank(spec.rank as u32),
         k_digit: TorusPrecision(k_digit as u32),
+        k_offset: TorusPrecision(0),
         stride: 1,
     })
 }

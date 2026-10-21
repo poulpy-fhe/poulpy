@@ -71,6 +71,10 @@ impl<D: Data, B: Backend> GGLWEInfos for GLWEAutomorphismKeyPrepared<D, B> {
         self.key.k_digit()
     }
 
+    fn k_offset(&self) -> TorusPrecision {
+        self.key.k_offset()
+    }
+
     fn dnum(&self) -> Dnum {
         self.key.dnum()
     }
@@ -226,6 +230,7 @@ impl<B: Backend> GGLWEPreparedToBackendRef<B> for &GLWEAutomorphismKeyPrepared<B
             base2k: self.key.base2k,
             k_aux: self.key.k_aux,
             k_digit: self.key.k_digit,
+            k_offset: self.key.k_offset,
             dnum: self.key.dnum,
             stride: self.key.stride,
             data: vmp_pmat_backend_ref_from_ref::<B>(&self.key.data),

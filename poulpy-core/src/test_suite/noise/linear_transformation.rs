@@ -114,6 +114,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         k_aux: (dsize * key_base2k + module.log_n()).into(),
         rank: rank.into(),
         k_digit: crate::layouts::k_digit_of(key_base2k, dsize),
+        k_offset: TorusPrecision(0),
     };
 
     let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
@@ -400,6 +401,7 @@ where
         k_aux: (base2k + module.log_n()).into(),
         rank: 1u32.into(),
         k_digit: base2k.into(),
+        k_offset: TorusPrecision(0),
     };
     // Babies {0, 1}, giants {0, 4}.
     let schedule = LinearTransformationLayout {

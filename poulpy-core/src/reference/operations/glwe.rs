@@ -1034,6 +1034,7 @@ where
             .borrow()
             .take_vec_znx_dft_scratch(res.n().as_usize(), cols, output_size);
         let a_dft_ref = a_dft.to_backend_ref();
+        crate::reference::keyswitching::glwe::assert_no_row_offset("glwe_tensor_relinearize", &tsk.0);
         self.gglwe_product_dft_reference(&mut res_dft, &a_dft_ref, &tsk.0, 1, &mut scratch_2);
         let (mut res_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(res.n().as_usize(), cols, output_size);
         let res_dft_ref = res_dft.to_backend_ref();
@@ -2115,6 +2116,7 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
     // One more output limb than the two-step path when the alignment adds a limb to d2.
     let ks_size = (output_size + dft_size.saturating_sub(tensor_size)).min(tsk.size());
     let (mut res_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(n, 2, ks_size);
+    crate::reference::keyswitching::glwe::assert_no_row_offset("glwe_mul_relinearize", &tsk.0);
     module.gglwe_product_dft_reference(&mut res_dft, &d2_dft.to_backend_ref(), &tsk.0, 1, &mut scratch.borrow());
     module.vec_znx_dft_add_assign(&mut res_dft, 0, &diag.to_backend_ref(), 0);
     module.vec_znx_dft_add_assign(&mut res_dft, 1, &cross.to_backend_ref(), 0);

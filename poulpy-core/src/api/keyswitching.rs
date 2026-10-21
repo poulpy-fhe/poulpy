@@ -1,6 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, ScratchArena, VecZnxDftBackendMut};
 
 use crate::layouts::{
     GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
@@ -23,6 +23,37 @@ pub trait GLWEKeyswitch<BE: Backend> {
     fn glwe_keyswitch_assign<R>(&self, res: &mut R, key: &GGLWEPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos;
+
+    /// Scratch of [`Self::glwe_keyswitch_dft`] and [`Self::glwe_keyswitch_dft_add`]
+    /// for an accumulator of `res_size` limbs.
+    fn glwe_keyswitch_dft_tmp_bytes<A, K>(&self, res_size: usize, a_infos: &A, key_infos: &K) -> usize
+    where
+        A: GLWEInfos,
+        K: GGLWEInfos;
+
+    /// `res = mask(a) x key` in the DFT domain, over the limbs of `res`: a key switch
+    /// without its body. Several products summed with [`Self::glwe_keyswitch_dft_add`]
+    /// are finished by one `vec_znx_idft_normalize` per column, the sum of the bodies,
+    /// each lowered by `key.k_offset()`, as the addend of column 0. `a` is at the key
+    /// radix; a key with a row offset takes an input of at most its `max_input_k`.
+    fn glwe_keyswitch_dft<A>(
+        &self,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        a: &A,
+        key: &GGLWEPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        A: GLWEToBackendRef<BE> + GLWEInfos;
+
+    /// `res += mask(a) x key` in the DFT domain (see [`Self::glwe_keyswitch_dft`]).
+    fn glwe_keyswitch_dft_add<A>(
+        &self,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        a: &A,
+        key: &GGLWEPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        A: GLWEToBackendRef<BE> + GLWEInfos;
 }
 
 pub trait GGLWEKeyswitch<BE: Backend> {

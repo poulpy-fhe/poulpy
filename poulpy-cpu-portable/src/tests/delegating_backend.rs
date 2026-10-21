@@ -451,6 +451,7 @@ fn derived_trace_uses_selected_assign_and_its_larger_scratch_query() {
         base2k: input.base2k(),
         dnum: Dnum(3),
         k_digit: TorusPrecision::from(input.base2k()),
+        k_offset: TorusPrecision(0),
         k_aux: TorusPrecision(18),
         rank: input.rank(),
     };

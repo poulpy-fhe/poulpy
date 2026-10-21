@@ -97,6 +97,7 @@ where
                     tmp_pt_k,
                     row_i,
                     k_digit,
+                    0,
                     &pt.to_backend_ref(),
                     0,
                     &mut scratch_1.borrow(),

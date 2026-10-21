@@ -79,6 +79,7 @@ pub fn test_glwe_automorphism_parity<BR, BT>(
                     base2k: Base2K(base2k as u32),
                     dnum: Dnum(k.div_ceil(k_digit) as u32),
                     k_digit: TorusPrecision(k_digit as u32),
+                    k_offset: TorusPrecision(0),
                     k_aux: TorusPrecision(k_digit as u32),
                     rank: Rank(rank as u32),
                 };

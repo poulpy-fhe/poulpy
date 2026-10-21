@@ -297,6 +297,7 @@ pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K>(
                 k,
                 row,
                 k_digit,
+                0,
                 &pt.to_backend_ref(),
                 0,
                 &mut scratch_1.borrow(),

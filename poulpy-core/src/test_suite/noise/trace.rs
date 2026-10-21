@@ -65,6 +65,7 @@ where
             k_aux: k_aux.into(),
             rank: rank.into(),
             k_digit: crate::layouts::k_digit_of(key_base2k, dsize),
+            k_offset: crate::layouts::TorusPrecision(0),
         };
 
         let glwe_out_template: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_out_infos);

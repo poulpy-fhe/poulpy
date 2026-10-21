@@ -356,6 +356,7 @@ pub fn glwe_from_lwe_reference<BE, M, R, A>(
     let glwe_ref = glwe_backend_ref_from_mut::<BE>(&glwe);
     let glwe_view = &glwe_ref;
     let mut res_view = &mut res_backend;
+    crate::reference::keyswitching::glwe::assert_no_row_offset("glwe_from_lwe", &ksk);
     module.glwe_keyswitch(&mut res_view, &glwe_view, &ksk.to_backend_ref(), &mut scratch_1)
 }
 
@@ -541,6 +542,7 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, BE: Backend>(
         let (mut res_dft, mut scratch_1) = scratch_row.take_vec_znx_dft_scratch(res.n().as_usize(), cols, output_size);
         {
             let mut scratch_prod = scratch_1.borrow();
+            crate::reference::keyswitching::glwe::assert_no_row_offset("ggsw_expand_rows", &tsk.at(col - 1));
             module.gglwe_product_dft_reference(&mut res_dft, a_dft, tsk.at(col - 1), 1, &mut scratch_prod);
         }
 

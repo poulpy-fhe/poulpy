@@ -106,6 +106,7 @@ where
                 dnum: Dnum(3),
                 k_aux: TorusPrecision(K_AUX),
                 k_digit: TorusPrecision(BASE2K),
+                k_offset: TorusPrecision(0),
                 rank: Rank(RANK),
             },
             tsk_layout: GGLWEToGGSWKeyLayout {
@@ -123,6 +124,7 @@ where
             dnum: Dnum(3),
             k_aux: TorusPrecision(K_AUX),
             k_digit: TorusPrecision(BASE2K),
+            k_offset: TorusPrecision(0),
             rank_in: Rank(RANK),
             rank_out: Rank(1),
         }),

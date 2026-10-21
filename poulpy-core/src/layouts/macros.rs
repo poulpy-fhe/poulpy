@@ -105,6 +105,10 @@ macro_rules! impl_gglwe_infos_for_inner {
                 self.$($field)+.k_digit()
             }
 
+            fn k_offset(&self) -> TorusPrecision {
+                self.$($field)+.k_offset()
+            }
+
             fn dnum(&self) -> Dnum {
                 self.$($field)+.dnum()
             }

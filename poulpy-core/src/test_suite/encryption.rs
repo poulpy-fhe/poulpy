@@ -115,6 +115,7 @@ pub fn test_gadget_row_plaintext<BE: crate::test_suite::noise::TestBackend>(
                     k,
                     row,
                     k_digit,
+                    0,
                     &scalar_znx_backend_ref::<BE>(&pt),
                     pt_col,
                     &mut scratch.borrow(),

@@ -16,6 +16,7 @@ pub(crate) fn ggsw_share_part_layout<A: GGSWInfos>(infos: &A, rank_in: Rank, ran
         rank_in,
         rank_out,
         k_digit: infos.k_digit(),
+        k_offset: TorusPrecision(0),
         stride: 1,
     }
 }

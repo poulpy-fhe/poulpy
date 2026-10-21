@@ -60,6 +60,10 @@ impl<D: Data, B: Backend, M> GGLWEInfos for GLWECIKeyPrepared<D, B, M> {
         self.0.k_digit()
     }
 
+    fn k_offset(&self) -> TorusPrecision {
+        self.0.k_offset()
+    }
+
     fn rank_out(&self) -> Rank {
         self.0.rank_out()
     }

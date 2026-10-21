@@ -25,6 +25,8 @@ pub struct GGLWEPrepared<D: Data, B: Backend> {
     pub(crate) k_aux: TorusPrecision,
     pub(crate) base2k: Base2K,
     pub(crate) k_digit: TorusPrecision,
+    /// Row offset in bits (see [`GGLWEInfos::k_offset`]).
+    pub(crate) k_offset: TorusPrecision,
     /// Digits reachable at `k_digit`: the stored rows, or fewer for a view.
     pub(crate) dnum: Dnum,
     /// Rows to skip between digits: 1 as stored, `k_digit / stored k_digit` for a view.
@@ -49,11 +51,11 @@ impl<D: Data, B: Backend> LWEInfos for GGLWEPrepared<D, B> {
     }
 
     fn max_size(&self) -> usize {
-        crate::layouts::key_size(self.base2k, self.dnum(), self.k_digit, self.k_aux)
+        crate::layouts::offset_key_size(self.base2k, self.k_offset, self.dnum(), self.k_digit, self.k_aux)
     }
 
     fn k(&self) -> TorusPrecision {
-        crate::layouts::key_k(self.dnum(), self.k_digit, self.k_aux)
+        crate::layouts::offset_key_k(self.k_offset, self.dnum(), self.k_digit, self.k_aux)
     }
 }
 
@@ -80,6 +82,10 @@ impl<D: Data, B: Backend> GGLWEInfos for GGLWEPrepared<D, B> {
 
     fn k_digit(&self) -> TorusPrecision {
         self.k_digit
+    }
+
+    fn k_offset(&self) -> TorusPrecision {
+        self.k_offset
     }
 
     fn dnum(&self) -> Dnum {
@@ -117,6 +123,7 @@ where
             rank_in,
             rank_out,
             k_digit,
+            k_offset: TorusPrecision(0),
             stride: 1,
         })
     }
@@ -127,7 +134,8 @@ where
         A: GGLWEInfos,
     {
         let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
-        let size: usize = crate::layouts::key_size(infos.base2k(), infos.dnum(), infos.k_digit(), infos.k_aux());
+        let size: usize =
+            crate::layouts::offset_key_size(infos.base2k(), infos.k_offset(), infos.dnum(), infos.k_digit(), infos.k_aux());
         GGLWEPrepared {
             noise: None,
             data: self.vmp_pmat_alloc(
@@ -140,6 +148,7 @@ where
             ),
             base2k: infos.base2k(),
             k_digit: infos.k_digit(),
+            k_offset: infos.k_offset(),
             k_aux: infos.k_aux(),
             dnum: infos.dnum(),
             stride: 1,
@@ -164,6 +173,7 @@ where
             rank_in,
             rank_out,
             k_digit,
+            k_offset: TorusPrecision(0),
             stride: 1,
         })
     }
@@ -174,7 +184,8 @@ where
         A: GGLWEInfos,
     {
         let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
-        let size: usize = crate::layouts::key_size(infos.base2k(), infos.dnum(), infos.k_digit(), infos.k_aux());
+        let size: usize =
+            crate::layouts::offset_key_size(infos.base2k(), infos.k_offset(), infos.dnum(), infos.k_digit(), infos.k_aux());
         self.bytes_of_vmp_pmat(
             n,
             infos.dnum().into(),
@@ -216,6 +227,7 @@ where
             assert_eq!(res.base2k, other.base2k);
             assert_eq!(res.size(), other.size());
             assert_eq!(res.k_digit, other.k_digit);
+            assert_eq!(res.k_offset, other.k_offset, "gglwe_prepare: row offsets differ");
             assert!(
                 scratch.available() >= self.gglwe_prepare_tmp_bytes(&res),
                 "scratch.available(): {} < GGLWEPreparedFactory::gglwe_prepare_tmp_bytes: {}",
@@ -272,6 +284,7 @@ impl<B: Backend> GGLWEPreparedToBackendRef<B> for GGLWEPrepared<B::OwnedBuf, B> 
             base2k: self.base2k,
             k_aux: self.k_aux,
             k_digit: self.k_digit,
+            k_offset: self.k_offset,
             dnum: self.dnum,
             stride: self.stride,
             data: self.data.to_backend_ref(),
@@ -286,6 +299,7 @@ impl<B: Backend> GGLWEPreparedToBackendRef<B> for &GGLWEPrepared<B::BufRef<'_>, 
             base2k: self.base2k,
             k_aux: self.k_aux,
             k_digit: self.k_digit,
+            k_offset: self.k_offset,
             dnum: self.dnum,
             stride: self.stride,
             data: vmp_pmat_backend_ref_from_ref::<B>(&self.data),
@@ -313,6 +327,7 @@ impl<B: Backend> GGLWEPreparedToBackendMut<B> for GGLWEPrepared<B::OwnedBuf, B> 
             base2k: self.base2k,
             k_aux: self.k_aux,
             k_digit: self.k_digit,
+            k_offset: self.k_offset,
             dnum: self.dnum,
             stride: self.stride,
             data: self.data.to_backend_mut(),

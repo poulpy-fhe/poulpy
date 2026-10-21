@@ -154,6 +154,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R>(
 
     // `key_size` is this key's own product width; limbs above it stay zeroed.
     let (mut res_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(a.n().as_usize(), cols, key_size);
+    crate::reference::keyswitching::glwe::assert_no_row_offset("glwe_hoisted_baby_rotation", &key_ref);
     module.gglwe_product_dft_reference(&mut res_dft, a_dft_ref, key_ref, 1, &mut scratch_1.borrow());
 
     let baby_base2k = baby.base2k().as_usize();

@@ -103,6 +103,7 @@ pub fn test_circuit_bootstrapping_to_exponent<
             k_aux: (a_base2ktk + n_glwe.ilog2() as usize).into(),
             rank: rank.into(),
             k_digit: a_base2ktk.into(),
+            k_offset: poulpy_core::layouts::TorusPrecision(0),
         },
         tsk_layout: GGLWEToGGSWKeyLayout {
             n: n_glwe.into(),
@@ -308,6 +309,7 @@ pub fn test_circuit_bootstrapping_to_constant<
             k_aux: (a_base2ktk + n_glwe.ilog2() as usize).into(),
             rank: rank.into(),
             k_digit: a_base2ktk.into(),
+            k_offset: poulpy_core::layouts::TorusPrecision(0),
         },
         tsk_layout: GGLWEToGGSWKeyLayout {
             n: n_glwe.into(),

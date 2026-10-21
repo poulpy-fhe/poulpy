@@ -113,6 +113,7 @@ where
                             k,
                             row,
                             k_digit,
+                            0,
                             sk.data(),
                             b,
                             &mut scratch_1.borrow(),

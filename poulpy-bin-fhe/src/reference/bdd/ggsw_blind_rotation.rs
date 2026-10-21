@@ -58,6 +58,7 @@ pub fn scalar_to_ggsw_blind_rotation_reference<T: UnsignedInteger, BE, R, A, K>(
                     tmp_glwe_k,
                     row,
                     k_digit,
+                    0,
                     &test_vector,
                     0,
                     &mut scratch_1.borrow(),

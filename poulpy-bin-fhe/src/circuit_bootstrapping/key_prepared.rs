@@ -91,6 +91,7 @@ impl<D: Data, BRA: BlindRotationAlgo, B: Backend> CircuitBootstrappingKeyInfos f
             dnum: atk.dnum(),
             k_aux: atk.k_aux(),
             k_digit: atk.k_digit(),
+            k_offset: atk.k_offset(),
             rank: atk.rank(),
         }
     }

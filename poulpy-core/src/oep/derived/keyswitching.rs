@@ -82,6 +82,7 @@ mod gglwe {
             for col in 0..res.rank_in().into() {
                 let mut res_at = res.at_view_mut(row, col);
                 let a_at = a.at_view(row, col);
+                crate::reference::keyswitching::glwe::assert_no_row_offset("gglwe_keyswitch", &b);
                 module.glwe_keyswitch(&mut res_at, &a_at, &b.to_backend_ref(), &mut scratch.borrow());
             }
         }
@@ -196,6 +197,7 @@ mod ggsw {
         for row in 0..res_backend.dnum().into() {
             let mut res_at = res_backend.at_view_mut(row, 0);
             let a_at = a_backend.at_view(row, 0);
+            crate::reference::keyswitching::glwe::assert_no_row_offset("gglwe_keyswitch", &key);
             module.glwe_keyswitch(&mut res_at, &a_at, &key.to_backend_ref(), &mut scratch.borrow());
         }
 

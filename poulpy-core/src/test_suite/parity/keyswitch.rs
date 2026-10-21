@@ -159,11 +159,25 @@ fn key_layout(n: u32, base2k: usize, k: usize, dsize: usize, rank_in: usize, ran
 
 /// [`key_layout`] with digits of `k_digit` bits, on or off a limb boundary.
 fn key_layout_bits(n: u32, base2k: usize, k: usize, k_digit: usize, rank_in: usize, rank_out: usize) -> GGLWELayout {
+    key_layout_offset(n, base2k, k, k_digit, 0, rank_in, rank_out)
+}
+
+/// [`key_layout_bits`] with rows `k_offset` bits lower.
+fn key_layout_offset(
+    n: u32,
+    base2k: usize,
+    k: usize,
+    k_digit: usize,
+    k_offset: usize,
+    rank_in: usize,
+    rank_out: usize,
+) -> GGLWELayout {
     GGLWELayout {
         n: Degree(n),
         base2k: Base2K(base2k as u32),
         dnum: Dnum(k.div_ceil(k_digit) as u32),
         k_digit: TorusPrecision(k_digit as u32),
+        k_offset: TorusPrecision(k_offset as u32),
         k_aux: TorusPrecision(k_digit as u32),
         rank_in: Rank(rank_in as u32),
         rank_out: Rank(rank_out as u32),
@@ -197,7 +211,8 @@ pub fn test_glwe_keyswitch_parity<BR, BT>(
     let k_in = 4 * base2k + 1;
     let mut source = Source::new([7u8; 32]);
 
-    for a_base2k in [base2k, base2k - 1] {
+    // Offset-free keys, and keys whose rows sit an unaligned offset lower.
+    for (k_offset, a_base2k) in [(0, base2k), (0, base2k - 1), (base2k + 3, base2k), (base2k + 3, base2k - 1)] {
         for &rank_in in &shapes.ranks {
             for &rank_out in &shapes.ranks {
                 for k_digit in shapes.k_digits(k_in, base2k, rank_in.max(rank_out)) {
@@ -207,13 +222,19 @@ pub fn test_glwe_keyswitch_parity<BR, BT>(
                         k: TorusPrecision(k_in as u32),
                         rank: Rank(rank_in as u32),
                     };
+                    // An offset key's output reaches only as far as its rows.
+                    let res_k = if k_offset == 0 {
+                        k_in + k_digit
+                    } else {
+                        k_offset + k_in.div_ceil(k_digit) * k_digit
+                    };
                     let res_infos = GLWELayout {
                         n: Degree(n),
                         base2k: Base2K(base2k as u32),
-                        k: TorusPrecision((k_in + k_digit) as u32),
+                        k: TorusPrecision(res_k as u32),
                         rank: Rank(rank_out as u32),
                     };
-                    let key_infos = key_layout_bits(n, base2k, k_in, k_digit, rank_in, rank_out);
+                    let key_infos = key_layout_offset(n, base2k, k_in, k_digit, k_offset, rank_in, rank_out);
 
                     let mut a_ref = ref_glwe(module_ref, &a_infos, &mut source);
                     a_ref.noise = Some(crate::ComponentNoise::from_secret(
@@ -259,7 +280,7 @@ pub fn test_glwe_keyswitch_parity<BR, BT>(
                     assert_glwe_eq!(
                         res_ref,
                         have,
-                        "glwe_keyswitch: rank_in={rank_in} rank_out={rank_out} k_digit={k_digit} k_in={k_in} a_base2k={a_base2k}"
+                        "glwe_keyswitch: rank_in={rank_in} rank_out={rank_out} k_digit={k_digit} k_offset={k_offset} k_in={k_in} a_base2k={a_base2k}"
                     );
 
                     unnormalized_twin::<BR, BT>(&a_ref, &mut a_test);
@@ -555,6 +576,7 @@ where
             base2k: Base2K(base2k as u32),
             dnum: Dnum(dnum),
             k_digit: crate::layouts::k_digit_of(Base2K(base2k as u32), Dsize(dsize)),
+            k_offset: TorusPrecision(0),
             k_aux: TorusPrecision(dsize * base2k as u32 + n.ilog2()),
             rank_in: Rank(1),
             rank_out: Rank(1),
@@ -643,6 +665,7 @@ where
                 data: pmat.to_backend_ref(),
                 base2k: layout.base2k,
                 k_digit: layout.k_digit,
+                k_offset: layout.k_offset,
                 k_aux: layout.k_aux,
                 dnum: layout.dnum,
                 stride,
@@ -651,6 +674,7 @@ where
         let effective_layout = GGLWELayout {
             dnum: sel_dnum,
             k_digit: effective,
+            k_offset: TorusPrecision(0),
             k_aux: sel_k_aux,
             stride,
             ..parent

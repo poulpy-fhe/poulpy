@@ -454,6 +454,7 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
             rank: key.rank,
             dnum: key.dnum,
             k_digit: key.k_digit,
+            k_offset: poulpy_core::layouts::TorusPrecision(0),
         },
         tensor_key: key,
         encapsulation: None,

@@ -66,6 +66,7 @@ pub fn test_glwe_packing<BE: crate::test_suite::noise::TestBackend + crate::oep:
         k_aux: (dsize * key_base2k + module.log_n()).into(),
         rank: rank.into(),
         k_digit: crate::layouts::k_digit_of(key_base2k, dsize),
+        k_offset: crate::layouts::TorusPrecision(0),
     };
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(

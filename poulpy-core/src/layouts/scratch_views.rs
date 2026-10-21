@@ -210,6 +210,10 @@ impl<BE: Backend> GGLWEInfos for GGLWEViewMut<'_, BE> {
         self.inner.k_digit()
     }
 
+    fn k_offset(&self) -> crate::layouts::TorusPrecision {
+        self.inner.k_offset()
+    }
+
     fn rank_in(&self) -> Rank {
         self.inner.rank_in()
     }
@@ -230,6 +234,10 @@ impl<BE: Backend> GGLWEInfos for GGLWEPreparedViewMut<'_, BE> {
 
     fn k_digit(&self) -> crate::layouts::TorusPrecision {
         self.inner.k_digit()
+    }
+
+    fn k_offset(&self) -> crate::layouts::TorusPrecision {
+        self.inner.k_offset()
     }
 
     fn rank_in(&self) -> Rank {
@@ -495,6 +503,7 @@ impl<BE: Backend> GGLWEToBackendRef<BE> for GGLWEViewMut<'_, BE> {
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             k_digit: self.inner.k_digit,
+            k_offset: self.inner.k_offset,
             data: mat_znx_backend_ref_from_mut::<BE>(&self.inner.data),
         })
     }
@@ -512,6 +521,7 @@ impl<BE: Backend> GGLWEToBackendMut<BE> for GGLWEViewMut<'_, BE> {
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             k_digit: self.inner.k_digit,
+            k_offset: self.inner.k_offset,
             data: mat_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
         })
     }
@@ -524,6 +534,7 @@ impl<BE: Backend> GGLWEPreparedToBackendRef<BE> for GGLWEPreparedViewMut<'_, BE>
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             k_digit: self.inner.k_digit,
+            k_offset: self.inner.k_offset,
             dnum: self.inner.dnum,
             stride: self.inner.stride,
             data: self.inner.data.reborrow_backend_ref(),
@@ -543,6 +554,7 @@ impl<BE: Backend> GGLWEPreparedToBackendMut<BE> for GGLWEPreparedViewMut<'_, BE>
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             k_digit: self.inner.k_digit,
+            k_offset: self.inner.k_offset,
             dnum: self.inner.dnum,
             stride: self.inner.stride,
             data: self.inner.data.reborrow_backend_mut(),

@@ -161,6 +161,7 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M>(
     }
 
     let (mut ks_dft, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(res_dft.n(), cols, output_size);
+    crate::reference::keyswitching::glwe::assert_no_row_offset("glwe_eval_linear_transformation", &key);
     module.gglwe_product_dft_reference(&mut ks_dft, &a_dft.to_backend_ref(), key, term_count, &mut scratch_2.borrow());
 
     // Carry the body in DFT. `vec_znx_dft_add_assign` truncates to `output_size`,

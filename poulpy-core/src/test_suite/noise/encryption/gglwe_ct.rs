@@ -40,82 +40,86 @@ where
     let base2k: usize = params.base2k;
     let k_ksk: usize = 4 * base2k + 1;
     let dsize: usize = k_ksk / base2k;
-    for rank_in in 1_usize..3 {
-        for rank_out in 1_usize..3 {
-            for di in 1_usize..dsize + 1 {
-                let dnum: usize = (k_ksk - di * base2k) / (di * base2k);
+    // Offset-free keys, and keys whose rows sit an aligned or unaligned offset lower.
+    for k_offset in [0, base2k, base2k + 5] {
+        for rank_in in 1_usize..3 {
+            for rank_out in 1_usize..3 {
+                for di in 1_usize..dsize + 1 {
+                    let dnum: usize = (k_ksk - di * base2k) / (di * base2k);
 
-                let gglwe_infos = GGLWELayout {
-                    n: n.into(),
-                    base2k: base2k.into(),
-                    dnum: dnum.into(),
-                    k_aux: (di * base2k + module.log_n()).into(),
-                    k_digit: crate::layouts::k_digit_of(base2k, di),
-                    rank_in: rank_in.into(),
-                    rank_out: rank_out.into(),
-                    stride: 1,
-                };
+                    let gglwe_infos = GGLWELayout {
+                        n: n.into(),
+                        base2k: base2k.into(),
+                        dnum: dnum.into(),
+                        k_aux: (di * base2k + module.log_n()).into(),
+                        k_digit: crate::layouts::k_digit_of(base2k, di),
+                        k_offset: k_offset.into(),
+                        rank_in: rank_in.into(),
+                        rank_out: rank_out.into(),
+                        stride: 1,
+                    };
 
-                let mut ksk: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> =
-                    module.glwe_switching_key_alloc_from_infos(&gglwe_infos);
+                    let mut ksk: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> =
+                        module.glwe_switching_key_alloc_from_infos(&gglwe_infos);
 
-                let mut source_xs: Source = Source::new([0u8; 32]);
-                let mut source_xe: Source = Source::new([0u8; 32]);
-                let mut source_xa: Source = Source::new([0u8; 32]);
+                    let mut source_xs: Source = Source::new([0u8; 32]);
+                    let mut source_xe: Source = Source::new([0u8; 32]);
+                    let mut source_xa: Source = Source::new([0u8; 32]);
 
-                let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-                    (module)
-                        .glwe_switching_key_encrypt_sk_tmp_bytes(&gglwe_infos)
-                        .max(module.gglwe_noise_tmp_bytes(&gglwe_infos)),
-                );
+                    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+                        (module)
+                            .glwe_switching_key_encrypt_sk_tmp_bytes(&gglwe_infos)
+                            .max(module.gglwe_noise_tmp_bytes(&gglwe_infos)),
+                    );
 
-                let mut sk_in: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank_in.into());
-                module.glwe_secret_fill_ternary_prob(&mut sk_in, 0.5, &mut source_xs);
+                    let mut sk_in: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank_in.into());
+                    module.glwe_secret_fill_ternary_prob(&mut sk_in, 0.5, &mut source_xs);
 
-                let mut sk_out: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank_out.into());
-                module.glwe_secret_fill_ternary_prob(&mut sk_out, 0.5, &mut source_xs);
-                *sk_out.dist_mut() = Distribution::ENCAPSULATED("roundtrip");
-                let mut sk_out_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> =
-                    module.glwe_secret_prepared_alloc(rank_out.into());
-                module.glwe_secret_prepare(&mut sk_out_prepared, &sk_out);
+                    let mut sk_out: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank_out.into());
+                    module.glwe_secret_fill_ternary_prob(&mut sk_out, 0.5, &mut source_xs);
+                    *sk_out.dist_mut() = Distribution::ENCAPSULATED("roundtrip");
+                    let mut sk_out_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> =
+                        module.glwe_secret_prepared_alloc(rank_out.into());
+                    module.glwe_secret_prepare(&mut sk_out_prepared, &sk_out);
 
-                module.glwe_switching_key_encrypt_sk(
-                    &mut ksk,
-                    &sk_in,
-                    &sk_out,
-                    &mut source_xe,
-                    &mut source_xa,
-                    &mut scratch.arena(),
-                );
+                    module.glwe_switching_key_encrypt_sk(
+                        &mut ksk,
+                        &sk_in,
+                        &sk_out,
+                        &mut source_xe,
+                        &mut source_xa,
+                        &mut scratch.arena(),
+                    );
 
-                let mut bytes = Vec::new();
-                ksk.write_to(&mut bytes).unwrap();
-                let mut restored = module.glwe_switching_key_alloc_from_infos(&gglwe_infos);
-                restored.read_from(&mut bytes.as_slice()).unwrap();
-                assert!(restored == ksk);
-                assert_eq!(ksk.noise().unwrap().secret_distribution().base(), Distribution::NONE);
+                    let mut bytes = Vec::new();
+                    ksk.write_to(&mut bytes).unwrap();
+                    let mut restored = module.glwe_switching_key_alloc_from_infos(&gglwe_infos);
+                    restored.read_from(&mut bytes.as_slice()).unwrap();
+                    assert!(restored == ksk);
+                    assert_eq!(ksk.noise().unwrap().secret_distribution().base(), Distribution::NONE);
 
-                let max_noise: f64 = DEFAULT_SIGMA_XE.log2() - (gglwe_infos.k().as_usize() as f64) + 0.5;
+                    let max_noise: f64 = DEFAULT_SIGMA_XE.log2() - (gglwe_infos.k().as_usize() as f64) + 0.5;
 
-                for row in 0..ksk.dnum().as_usize() {
-                    for col in 0..ksk.rank_in().as_usize() {
-                        let noise_have = ksk
-                            .key
-                            .noise_stats(
-                                module,
-                                row,
-                                col,
-                                &sk_in.data.to_ref(),
-                                &sk_out_prepared,
-                                &mut scratch.borrow(),
-                            )
-                            .std()
-                            .log2();
+                    for row in 0..ksk.dnum().as_usize() {
+                        for col in 0..ksk.rank_in().as_usize() {
+                            let noise_have = ksk
+                                .key
+                                .noise_stats(
+                                    module,
+                                    row,
+                                    col,
+                                    &sk_in.data.to_ref(),
+                                    &sk_out_prepared,
+                                    &mut scratch.borrow(),
+                                )
+                                .std()
+                                .log2();
 
-                        assert!(
-                            noise_have <= max_noise,
-                            "row:{row} col:{col} noise_have:{noise_have} > max_noise:{max_noise}",
-                        );
+                            assert!(
+                                noise_have <= max_noise,
+                                "row:{row} col:{col} noise_have:{noise_have} > max_noise:{max_noise}",
+                            );
+                        }
                     }
                 }
             }
@@ -131,6 +135,7 @@ where
             dnum: dnum.into(),
             k_aux: (base2k + module.log_n()).into(),
             k_digit: crate::layouts::k_digit_of(base2k, 1_u32),
+            k_offset: crate::layouts::TorusPrecision(0),
             rank_in: 1_u32.into(),
             rank_out: 1_u32.into(),
             stride: 1,
@@ -187,6 +192,7 @@ pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::noi
                     dnum: dnum.into(),
                     k_aux: (dsize * base2k + module.log_n()).into(),
                     k_digit: crate::layouts::k_digit_of(base2k, dsize),
+                    k_offset: crate::layouts::TorusPrecision(0),
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
                     stride: 1,
@@ -264,6 +270,7 @@ pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::noi
             dnum: dnum.into(),
             k_aux: (base2k + module.log_n()).into(),
             k_digit: crate::layouts::k_digit_of(base2k, 1_u32),
+            k_offset: crate::layouts::TorusPrecision(0),
             rank_in: 1_u32.into(),
             rank_out: 1_u32.into(),
             stride: 1,
@@ -326,6 +333,7 @@ where
                     dnum: dnum.into(),
                     k_aux: (dsize * base2k + module.log_n()).into(),
                     k_digit: crate::layouts::k_digit_of(base2k, dsize),
+                    k_offset: crate::layouts::TorusPrecision(0),
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
                     stride: 1,

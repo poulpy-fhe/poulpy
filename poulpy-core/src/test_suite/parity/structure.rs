@@ -55,6 +55,7 @@ where
             base2k: Base2K((b - 1) as u32),
             dnum: Dnum((2 * b + 1).div_ceil(b - 1) as u32),
             k_digit: TorusPrecision((b - 1) as u32),
+            k_offset: TorusPrecision(0),
             k_aux: TorusPrecision(b as u32 + 1),
             rank: g.rank,
         };
