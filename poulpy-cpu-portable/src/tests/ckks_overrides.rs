@@ -61,6 +61,7 @@ poulpy_ckks::impl_ckks_conjugate_reference!(OverrideBackend);
 poulpy_ckks::impl_ckks_encryption_reference!(OverrideBackend);
 poulpy_ckks::impl_ckks_mul_reference!(OverrideBackend);
 poulpy_ckks::impl_ckks_linear_transformation_reference!(OverrideBackend);
+poulpy_ckks::impl_ckks_dot_product_reference!(OverrideBackend);
 
 unsafe impl poulpy_ckks::oep::CKKSPolynomialEvaluationImpl for OverrideBackend {
     fn ckks_eval_poly_real_const_coeffs_from_power_basis_impl<R, B, A, G, H>(

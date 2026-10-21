@@ -35,9 +35,12 @@ rayon = {workspace = true}
 # Used by the test-suite macros of `poulpy-hal`.
 once_cell = {workspace = true}
 paste = {workspace = true}
+# Independent arithmetic for the blas parity tests.
+poulpy-cpu-oracle = {workspace = true, features = ["enable-blas"]}
 # Shared test helpers and portable comparison backends.
 poulpy-cpu-portable = {workspace = true, features = ["enable-core", "enable-test-suite"]}
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
+poulpy-blas = {workspace = true, features = ["test-utils"]}
 poulpy-bin-fhe = {workspace = true}
 anyhow = {workspace = true}
 poulpy-bench = {workspace = true}
