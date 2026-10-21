@@ -458,9 +458,8 @@ where
                         module.vmp_extract_selected_rows(&mut got.to_backend_mut(), &pmat.to_backend_ref(), first, step);
                         // Compared through the backend's host download rather
                         // than `digest_u64`, which needs host-resident buffers.
-                        assert_eq!(
-                            BE::to_host_bytes(DataView::data(&got)),
-                            BE::to_host_bytes(DataView::data(&expected)),
+                        assert!(
+                            BE::to_host_bytes(DataView::data(&got)) == BE::to_host_bytes(DataView::data(&expected)),
                             "cols_in={cols_in} cols_out={cols_out} step={step} rows={res_rows} size={res_size}"
                         );
                     }

@@ -1418,7 +1418,7 @@ mod tests {
                             Some(prefix),
                             &mut scratch,
                         );
-                        assert_eq!(actual.data, expected.data, "prefix={prefix}, dsize={dsize}, size={size}");
+                        assert!(actual == expected, "prefix={prefix}, dsize={dsize}, size={size}");
                     }
                 }
             }

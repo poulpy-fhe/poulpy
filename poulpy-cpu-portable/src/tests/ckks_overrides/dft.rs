@@ -5,7 +5,7 @@ use poulpy_ckks::layouts::{DFTMatrix, DFTOutputFormat, DFTPlan, Decode, Encode, 
 use poulpy_ckks::{CKKSInfos, CoeffsMeta};
 use poulpy_core::layouts::LinearTransformationPrepared;
 use poulpy_hal::api::{ScratchOwnedAlloc, ScratchOwnedBorrow};
-use poulpy_hal::layouts::{DataView, Module, ScratchOwned};
+use poulpy_hal::layouts::{Module, ScratchOwned};
 
 fn plan(kind: poulpy_ckks::layouts::DFTType, format: DFTOutputFormat) -> DFTPlan {
     DFTPlan::new(kind, vec![(1, 1), (2, 2)], format, CoeffsMeta::from_delta_budget(12, 2)).unwrap()
@@ -43,7 +43,7 @@ fn downstream_dft_preparation_preserves_plan_and_factors() {
         assert_eq!(a.index(), b.index());
         for (a, b) in a.giant_steps.iter().zip(&b.giant_steps) {
             for (a, b) in a.diagonals.iter().zip(&b.diagonals) {
-                assert_eq!(a.plaintext.cnv().data(), b.plaintext.cnv().data());
+                assert!(a.plaintext.cnv() == b.plaintext.cnv(), "prepared diagonals differ");
             }
         }
     }

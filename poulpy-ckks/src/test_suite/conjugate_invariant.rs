@@ -214,7 +214,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
     );
     assert_eq!(exhausted.meta(), exhausted_before.meta());
     assert_eq!(exhausted.k(), exhausted_before.k());
-    assert_eq!(exhausted.data().data().as_ref(), exhausted_before.data().data().as_ref());
+    assert_eq!(exhausted.data(), exhausted_before.data());
 
     let pt_slots = slots / 4;
     let mut pt = module.ckks_pt_vec_alloc(pt_slots, params.base2k.into(), params.prec().k());

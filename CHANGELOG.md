@@ -19,6 +19,8 @@
   Ties of a few dropped exact bits no longer push every coefficient the same way; outputs change only at exact ties.
 - Add `MatZnxAddAssign::mat_znx_add_assign`, the entrywise sum of two `MatZnx` of one shape, limb by limb and not renormalized, in the new `api::mat_znx` family ([#380](https://github.com/poulpy-fhe/poulpy/issues/380)).
   `HalVecZnxImpl` gains `mat_znx_add_assign` with a default body, `oep::mat_znx_add_assign_derived`, one `vec_znx_add_assign` per output column of every entry, so no backend change is required; `test_mat_znx_add_assign` runs in every backend suite.
+- `ScalarZnx` prints its shape and the first 16 coefficients of each column under `Debug`, as `VecZnx` does, where it printed its whole buffer, and `CnvPVecL` and `CnvPVecR` implement `PartialEq` and `Eq` (same shape, same bytes), as `VmpPMat` does ([#450](https://github.com/poulpy-fhe/poulpy/issues/450)).
+  The test suites compare layouts through these impls, or opaque buffers under a static message, so a failing assertion no longer prints whole buffers.
 
 ### CPU backends
 

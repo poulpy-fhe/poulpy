@@ -40,7 +40,7 @@ where
     assert_eq!(receiver.plaintext_meta(), Some(SPARSE_META));
     let mut round_trip = Vec::new();
     receiver.write_to(&mut round_trip).unwrap();
-    assert_eq!(round_trip, bytes);
+    assert!(round_trip == bytes, "a read plaintext serializes as the original");
 }
 
 fn assert_rejects_sparsity_exceeding_serialized_degree<T>(mut source: T, mut receiver: T)

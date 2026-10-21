@@ -1430,8 +1430,8 @@ where
                 module.glwe_mul_plain(cnv_offset, &mut res_small, &a, &pt_small, &mut scratch.borrow());
                 module.glwe_mul_plain(cnv_offset, &mut res_dense, &a, &pt_dense, &mut scratch.borrow());
                 assert_eq!(
-                    res_small.data().raw(),
-                    res_dense.data().raw(),
+                    res_small.data(),
+                    res_dense.data(),
                     "glwe_mul_plain: b.n()={b_n} cnv_offset={cnv_offset} rank={rank}"
                 );
 
@@ -1442,8 +1442,8 @@ where
                 module.glwe_mul_plain_assign(cnv_offset, &mut assign_small, &pt_small, &mut scratch.borrow());
                 module.glwe_mul_plain_assign(cnv_offset, &mut assign_dense, &pt_dense, &mut scratch.borrow());
                 assert_eq!(
-                    assign_small.data().raw(),
-                    assign_dense.data().raw(),
+                    assign_small.data(),
+                    assign_dense.data(),
                     "glwe_mul_plain_assign: b.n()={b_n} cnv_offset={cnv_offset} rank={rank}"
                 );
             }

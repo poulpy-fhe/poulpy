@@ -1,4 +1,5 @@
 use std::{
+    fmt,
     hash::{DefaultHasher, Hasher},
     marker::PhantomData,
 };
@@ -57,11 +58,23 @@ impl<D: Data, W: ZnxWord> ScalarZnx<D, W> {
 }
 
 #[repr(C)]
-#[derive(PartialEq, Eq, Debug, Clone, Hash)]
+#[derive(PartialEq, Eq, Clone, Hash)]
 pub struct ScalarZnx<D: Data, W: ZnxWord> {
     pub data: D,
     shape: ScalarZnxShape,
     pub _phantom: PhantomData<W>,
+}
+
+/// Shape and the first 16 coefficients of each column, as `VecZnx` prints.
+impl<D: HostDataRef, W: ZnxWord> fmt::Debug for ScalarZnx<D, W> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ScalarZnx(n={}, cols={})", self.n(), self.cols())?;
+        for col in 0..self.cols() {
+            let coeffs = self.at(col, 0);
+            write!(f, " column {col}: {:?}", &coeffs[..coeffs.len().min(16)])?;
+        }
+        Ok(())
+    }
 }
 
 impl<D: HostDataRef, W: ZnxWord> DigestU64 for ScalarZnx<D, W> {
