@@ -20,6 +20,7 @@
 
 ### CPU backends
 
+- The native CKKS encapsulated modulus raise (portable, AVX2, AVX-512, and their Rayon variants) and the fused IFMA giant step leave a key with a row offset to the reference, which refuses it, and the AVX-512 rank-one relinearization refuses one, instead of using it as an offset-free key.
 - Every CPU backend reads the right operand of the convolution applies through the Galois element in the pass that reads a sparse operand.
 - **Breaking:** the `Reim4Convolution` and `Fft64RingArith` convolution methods take a `RightRead` in place of `b_log_gap`, built with `right_read_fft64` or `right_read_ntt`.
   `reim4_gather_sparse_block_portable` and `reim4_gather_sparse_block_sum_portable` become `reim4_gather_block_portable` and `reim4_gather_block_sum_portable`, which read through a `RightRead`.
@@ -114,9 +115,10 @@
   The caller finishes each column with `vec_znx_idft_normalize`, the sum of the bodies lowered by the key's offset as the addend of column 0.
   The input is at the key radix, and `impl_glwe_keyswitch_reference_full!` provides the reference.
 - `glwe_keyswitch` takes keys with a row offset, from any input radix, for an output of at most `k_offset + dnum * k_digit` bits.
-  Every other consumer of a GGLWE key panics on one, through the new `reference::keyswitching::glwe::assert_no_row_offset`: the assign and automorphism key switches, the hoisted baby rotation, the lazy giant step, `ggsw_expand_rows`, the LWE conversions and key switch, `gglwe_keyswitch`, the tensor relinearization and `glwe_mul_relinearize`.
-- `core_backend_test_suite!` gains `glwe_keyswitch_row_offset`, which checks an offset switch against the input lowered with `glwe_rsh` and switched by an offset-free key, and `glwe_keyswitch_dft_add`, which checks a DFT sum of switches against the sum of single switches with the advertised scratch.
-  The GGLWE encryption test and the key-switch parity sweep cover keys with an offset.
+  The other consumers of a GGLWE key in `poulpy-core` panic on one, through the new `reference::keyswitching::glwe::assert_no_row_offset`: the assign and automorphism key switches, the hoisted baby rotation, the lazy giant step, `ggsw_expand_rows`, the LWE conversions and key switch, `gglwe_keyswitch`, `ggsw_keyswitch`, the tensor relinearization and `glwe_mul_relinearize`, and the encryption of tensor keys.
+  `gglwe_keyswitch`, `glwe_automorphism_key_automorphism` and `gglwe_external_product` panic when the result's offset differs from the input's.
+- `core_backend_test_suite!` gains `glwe_keyswitch_row_offset`, which checks an offset switch against the input lowered with `glwe_rsh` and switched by an offset-free key, `glwe_keyswitch_dft_add`, which checks a DFT sum of switches against the sum of single switches with the advertised scratch, and `glwe_keyswitch_row_offset_refusals`, which checks the refusals above.
+  The row-placement test, the GGLWE, switching and automorphism key encryption tests, plain and compressed, and the key-switch parity sweep cover keys with an offset.
 - Fix the one-pass products and squares (`glwe_mul_relinearize`, `glwe_square_relinearize`, their assign, prepared and summed forms) against a tensor key whose gadget covers only the operands' limbs.
   At an offset that is not a whole number of limbs, `d2 = a1·b1` spans one limb more than the operands and is relinearized `cnv_offset mod base2k` bits under the result: the key switch dropped the limb past the gadget, and that error and the key-switching error were both lifted by `2^(cnv_offset mod base2k)`.
   A product at its operands' width with a large remainder lost up to 17 bits on NTT backends (base2k 52, `N = 2^15`, a result 28 bits narrower).
@@ -197,6 +199,7 @@
 
 ### `poulpy-ckks`
 
+- The ship mux returns an error on a key with a row offset.
 - **Breaking:** the C2S-first logN16 preset `n16_d35_k600_p19_c2s` is replaced by `n16_d35_k636_p20_c2s`: three factors per transform, as the S2C-first preset (C2S at scale `2^51`, S2C at `2^35`), and log message ratio 6 for at least 20 bits of precision (20.8 measured, 23.0 on average), a 41-bit input, 595 usable bits (17 levels instead of 16) and a raised modulus of 1381 bits instead of 1427.
 - **Breaking:** `n15_d35_k180_p18_c2s` runs CoeffsToSlots at scale `2^50` and SlotsToCoeffs at `2^29` (were `2^49` and `2^30`), at the same widths, and keeps its 18 bits of precision (18.4 measured, 20.3 on average) with a single tensor key.
 - **Breaking:** the S2C-first logN16 preset `n16_d35_k720_p19_s2c` is replaced by `n16_d35_k733_p20_s2c`: three factors per transform (C2S `[(5, 4096), (5, 256), (5, 8)]` at scale `2^50`, S2C `[(4, 4), (5, 128), (6, 4096)]` at `2^30`) for at least 20 bits of precision (20.4 measured, 23.0 on average), a 138-bit input, 595 usable bits (17 levels instead of 16) and a raised modulus of 1353 bits instead of 1382.

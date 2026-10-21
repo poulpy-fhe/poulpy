@@ -92,11 +92,12 @@ pub fn test_gadget_row_plaintext<BE: crate::test_suite::noise::TestBackend>(
     let mut scratch = ScratchOwned::<BE>::alloc(module.vec_znx_normalize_tmp_bytes());
     let dnum: usize = 3;
     for k_digit in [1, b - 1, b, b + 1, 2 * b, 2 * b + 3, 3 * b - 2] {
-        for extra in [0, 1, b / 2 + 1] {
-            let k: usize = dnum * k_digit + extra;
+        // Rows without an offset, and rows an unaligned and a one-limb-plus offset lower.
+        for (extra, k_offset) in [0, 1, b / 2 + 1].into_iter().flat_map(|e| [(e, 0), (e, 3), (e, b + 2)]) {
+            let k: usize = k_offset + dnum * k_digit + extra;
             let size: usize = k.div_ceil(b);
             for (row, pt_col, res_col) in (0..dnum).flat_map(|r| [(r, 0, 0), (r, 1, 1), (r, 0, 1)]) {
-                let position: usize = (row + 1) * k_digit;
+                let position: usize = k_offset + (row + 1) * k_digit;
                 let garbage = |v: &mut poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord>, seed: u8| {
                     let mut s = Source::new([seed; 32]);
                     for col in 0..2 {
@@ -115,7 +116,7 @@ pub fn test_gadget_row_plaintext<BE: crate::test_suite::noise::TestBackend>(
                     k,
                     row,
                     k_digit,
-                    0,
+                    k_offset,
                     &scalar_znx_backend_ref::<BE>(&pt),
                     pt_col,
                     &mut scratch.borrow(),
@@ -145,7 +146,7 @@ pub fn test_gadget_row_plaintext<BE: crate::test_suite::noise::TestBackend>(
                 );
                 assert!(
                     res == want,
-                    "gadget row placement differs: base2k={b} k_digit={k_digit} k={k} row={row} pt_col={pt_col} res_col={res_col}"
+                    "gadget row placement differs: base2k={b} k_digit={k_digit} k_offset={k_offset} k={k} row={row} pt_col={pt_col} res_col={res_col}"
                 );
 
                 if pt_col == 0 && size * b <= 120 {

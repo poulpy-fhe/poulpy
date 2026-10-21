@@ -910,6 +910,7 @@ macro_rules! impl_rank_one_tensoring {
                 if a.base2k() != key.base2k() {
                     return module.glwe_tensor_relinearize_reference(res, a, tsk, scratch);
                 }
+                poulpy_core::reference::keyswitching::glwe::assert_no_row_offset("glwe_tensor_relinearize", &key);
                 let n = assert_degrees(module, [res.n(), a.n(), key.n()]);
                 assert_eq!(res.rank(), key.rank_out());
                 assert_eq!(a.rank(), key.rank_out());

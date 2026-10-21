@@ -67,7 +67,15 @@ mod gglwe {
             res.k_digit(),
             a.k_digit()
         );
+        assert_eq!(
+            res.k_offset(),
+            a.k_offset(),
+            "res k_offset: {} != a k_offset: {}",
+            res.k_offset(),
+            a.k_offset()
+        );
         assert_eq!(res.base2k(), a.base2k());
+        crate::reference::keyswitching::glwe::assert_no_row_offset("gglwe_keyswitch", &b);
         assert!(
             scratch.available() >= gglwe_keyswitch_tmp_bytes_derived::<BE, _, _, _, _>(module, res, a, b),
             "scratch.available(): {} < GGLWEKeyswitch::gglwe_keyswitch_tmp_bytes: {}",
@@ -82,7 +90,6 @@ mod gglwe {
             for col in 0..res.rank_in().into() {
                 let mut res_at = res.at_view_mut(row, col);
                 let a_at = a.at_view(row, col);
-                crate::reference::keyswitching::glwe::assert_no_row_offset("gglwe_keyswitch", &b);
                 module.glwe_keyswitch(&mut res_at, &a_at, &b.to_backend_ref(), &mut scratch.borrow());
             }
         }
@@ -194,10 +201,10 @@ mod ggsw {
             ggsw_keyswitch_tmp_bytes_derived::<BE, _, _, _, _, _>(module, &res_backend, &a_backend, key, tsk)
         );
 
+        crate::reference::keyswitching::glwe::assert_no_row_offset("ggsw_keyswitch", &key);
         for row in 0..res_backend.dnum().into() {
             let mut res_at = res_backend.at_view_mut(row, 0);
             let a_at = a_backend.at_view(row, 0);
-            crate::reference::keyswitching::glwe::assert_no_row_offset("gglwe_keyswitch", &key);
             module.glwe_keyswitch(&mut res_at, &a_at, &key.to_backend_ref(), &mut scratch.borrow());
         }
 

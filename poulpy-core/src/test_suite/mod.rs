@@ -88,6 +88,7 @@ macro_rules! core_backend_test_suite {
                 glwe_keyswitch_assign => $crate::test_suite::noise::keyswitch::test_glwe_keyswitch_assign,
                 glwe_keyswitch_row_offset => $crate::test_suite::noise::keyswitch::test_glwe_keyswitch_row_offset,
                 glwe_keyswitch_dft_add => $crate::test_suite::noise::keyswitch::test_glwe_keyswitch_dft_add,
+                glwe_keyswitch_row_offset_refusals => $crate::test_suite::noise::keyswitch::test_glwe_keyswitch_row_offset_refusals,
                 glwe_automorphism => $crate::test_suite::noise::automorphism::test_glwe_automorphism,
                 glwe_automorphism_assign => $crate::test_suite::noise::automorphism::test_glwe_automorphism_assign,
                 glwe_automorphism_coarsened => $crate::test_suite::parity::test_glwe_automorphism_coarsened,
