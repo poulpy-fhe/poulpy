@@ -1,7 +1,8 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::layouts::{
-    Backend, Module, ScalarZnxBackendRef, ScratchArena, Standard, VecZnxBackendMut, VecZnxBackendRef, VecZnxToBackendMut,
+    Backend, MatZnxBackendMut, MatZnxBackendRef, Module, ScalarZnxBackendRef, ScratchArena, Standard, VecZnxBackendMut,
+    VecZnxBackendRef, VecZnxToBackendMut,
 };
 use crate::source::Source;
 
@@ -104,6 +105,12 @@ pub unsafe trait HalVecZnxImpl: Backend {
         a_col: usize,
     ) {
         crate::oep::vec_znx_add_scalar_assign_derived::<Self>(module, res, res_col, res_limb, a, a_col)
+    }
+
+    /// `res += a` entry by entry. Default body: `mat_znx_add_assign_derived`, a `vec_znx_add_assign` on every
+    /// output column of every entry.
+    fn mat_znx_add_assign(module: &Module<Self>, res: &mut MatZnxBackendMut<'_, Self>, a: &MatZnxBackendRef<'_, Self>) {
+        crate::oep::mat_znx_add_assign_derived::<Self>(module, res, a)
     }
 
     fn vec_znx_sub(
