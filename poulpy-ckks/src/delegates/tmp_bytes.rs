@@ -1,17 +1,20 @@
 use crate::{
-    CKKSCtBounds, CKKSInfos,
+    CKKSCtBounds, CKKSInfos, SlotLayout,
     api::{
         CKKSAddOps, CKKSAllOpsTmpBytes, CKKSCopyOps, CKKSDecryptOps, CKKSEncryptOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps,
-        CKKSNegOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
+        CKKSNegOps, CKKSPow2Ops, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
     },
 };
 use poulpy_core::{
-    GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWELinearTransformations, GLWEMulConst, GLWEMulPlain, GLWEShift,
-    GLWETensorKeyEncryptSk, GLWETensoring,
+    GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWEBytesOf, GLWELinearTransformations, GLWEMulConst, GLWEMulPlain,
+    GLWENormalize, GLWEShift, GLWETensorKeyEncryptSk, GLWETensoring,
     layouts::{GGLWEInfos, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
 };
 use poulpy_hal::{
-    api::{CnvPVecBytesOf, ModuleN, VecZnxLsh, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshSub, VecZnxRshTmpBytes},
+    api::{
+        CnvPVecBytesOf, ModuleN, VecZnxIdftApplyTmpBytes, VecZnxLsh, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshSub,
+        VecZnxRshTmpBytes,
+    },
     layouts::{Backend, Module},
 };
 
@@ -38,6 +41,10 @@ where
         + GLWEMulConst<BE>
         + GLWETensoring<BE>
         + GLWETensorKeyEncryptSk<BE>
+        + GLWENormalize<BE>
+        + GLWEBytesOf<BE>
+        + CKKSRoundOps<BE>
+        + VecZnxIdftApplyTmpBytes
         + GLWETensorKeyPreparedFactory<BE>
         + CnvPVecBytesOf
         + VecZnxLsh<BE>
@@ -88,6 +95,16 @@ where
                     pt_prec.k().as_usize().div_ceil(ct_infos.base2k().as_usize()).max(1),
                 ),
             )
+            .max(match ct_infos.slot_layout() {
+                SlotLayout::Replicated(_) => {
+                    crate::reference::polynomial_evaluation::eval_shaped_baby_linear_combination_tmp_bytes(
+                        self,
+                        ct_infos,
+                        pt_prec.k().as_usize().div_ceil(ct_infos.base2k().as_usize()).max(1),
+                    )
+                }
+                SlotLayout::Full => 0,
+            })
             .max(self.ckks_mul_pt_vec_tmp_bytes(ct_infos, ct_infos, pt_prec))
             .max(self.ckks_mul_pt_const_tmp_bytes(ct_infos, ct_infos, pt_prec))
             .max(self.prepare_tensor_key_tmp_bytes(tsk_infos))

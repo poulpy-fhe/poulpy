@@ -1,8 +1,8 @@
-use poulpy_core::GLWECopy;
 use poulpy_core::layouts::{
     Base2K, Degree, GGLWEInfos, GLWEInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, LWEInfos, Rank, Scale, TorusPrecision,
 };
-use poulpy_hal::api::{CnvPVecBytesOf, Convolution, VecZnxBigNormalizeTmpBytes, VecZnxRshTmpBytes};
+use poulpy_core::{GLWEBytesOf, GLWECopy, GLWENormalize};
+use poulpy_hal::api::{CnvPVecBytesOf, Convolution, VecZnxBigNormalizeTmpBytes, VecZnxIdftApplyTmpBytes, VecZnxRshTmpBytes};
 use poulpy_hal::layouts::{Backend, Module, PrepareHint};
 
 use crate::{
@@ -71,6 +71,9 @@ where
         + Convolution<BE>
         + VecZnxRshTmpBytes
         + VecZnxBigNormalizeTmpBytes
+        + VecZnxIdftApplyTmpBytes
+        + GLWENormalize<BE>
+        + GLWEBytesOf<BE>
         + CKKSPow2Ops<BE>
         + CKKSRoundOps<BE>
         + CKKSMulAddOps<BE>,
@@ -154,6 +157,13 @@ where
                     .max(module.ckks_copy_tmp_bytes(&work, res))
                     .max(module.ckks_round_tmp_bytes(res, &work))
                     .max(module.ckks_round_tmp_bytes(&work, ct))
+                    .max(
+                        crate::reference::polynomial_evaluation::eval_shaped_baby_linear_combination_tmp_bytes(
+                            module,
+                            &work,
+                            pt_size_max,
+                        ),
+                    )
         }
         SlotLayout::Full => 0,
     };
