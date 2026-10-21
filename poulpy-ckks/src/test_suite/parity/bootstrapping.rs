@@ -125,21 +125,23 @@ where
     // Sparse-to-dense keys whose rows sit lower: the raise is their switch. An
     // offset equal to the raise's shift switches `src` as it is, a smaller one
     // first shifts it inside the key's window, a larger one is refused. Digits
-    // on and off a limb boundary, one row or several.
-    for (k_digit, extra, scale, k_offset) in [
-        (2 * b, 4 * b + 3, 0, 4 * b + 3),
-        (b, 3 * b + 5, b + 1, 2 * b + 4),
-        (4 * b, 4 * b + 3, 0, 4 * b + 3),
-        (2 * b, 4 * b + 3, 0, 2 * b),
-        (b + 1, 4 * b + 3, 1, 3 * b),
-        (2 * b - 1, 3 * b + 5, b + 1, b + 3),
-        (2 * b, 2 * b + 1, 0, 2 * b + 2),
+    // on and off a limb boundary, one row or several, and an input at a radix
+    // other than the key's.
+    for (k_digit, extra, scale, k_offset, src_b) in [
+        (2 * b, 4 * b + 3, 0, 4 * b + 3, b),
+        (b, 3 * b + 5, b + 1, 2 * b + 4, b),
+        (4 * b, 4 * b + 3, 0, 4 * b + 3, b),
+        (2 * b, 4 * b + 3, 0, 2 * b, b),
+        (b + 1, 4 * b + 3, 1, 3 * b, b),
+        (2 * b - 1, 3 * b + 5, b + 1, b + 3, b),
+        (2 * b, 2 * b + 1, 0, 2 * b + 2, b),
+        (2 * b, 4 * b + 3, 1, 2 * b, b - 1),
     ] {
         let k_large = small + extra;
         let src_layout = CKKSLayout {
             glwe_layout: GLWELayout {
                 n: module.n().into(),
-                base2k: b.into(),
+                base2k: src_b.into(),
                 k: small.into(),
                 rank: params.rank.into(),
             },
@@ -151,12 +153,13 @@ where
         };
         let dst_layout = CKKSLayout {
             glwe_layout: GLWELayout {
+                base2k: b.into(),
                 k: k_large.into(),
                 ..src_layout.glwe_layout
             },
             ..src_layout
         };
-        let d2s_layout = key_layout(module.n(), b, small, 1, params.rank, params.rank);
+        let d2s_layout = key_layout(module.n(), src_b, small, 1, params.rank, params.rank);
         let s2d_layout = key_layout_offset(module.n(), b, k_large - k_offset, k_digit, k_offset, params.rank, params.rank);
         let mut d2s = module.gglwe_prepared_alloc_from_infos(&d2s_layout);
         let mut s2d = module.gglwe_prepared_alloc_from_infos(&s2d_layout);

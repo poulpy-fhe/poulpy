@@ -469,6 +469,20 @@ impl KeyWidths<'_> {
     /// CoeffsToSlots leaves of the raised width above the scale the raise labels:
     /// EvalMod's own scale (C2S-first), or the input scale, the message ratio and
     /// the guard bits (S2C-first).
+    /// `(k_small, k_small + scale_up)` of the ciphertext ModUp raises for a
+    /// bootstrap input of `input_k` bits: C2S-first lifts it to EvalMod's scale
+    /// at its own width (an input wider than that scale fails at the lift),
+    /// S2C-first raises it once SlotsToCoeffs is done, with the C2S guard bits.
+    pub(crate) fn raise(&self, input_k: usize) -> (usize, usize) {
+        match self.pipeline {
+            BootstrappingPipeline::C2SFirst => (input_k, self.eval_mod.f_mod_log_delta.max(input_k)),
+            BootstrappingPipeline::S2CFirst => {
+                let k_small = input_k.saturating_sub(self.slots_to_coeffs.consumed_bits());
+                (k_small, k_small + self.c2s_guard_bits)
+            }
+        }
+    }
+
     pub(crate) fn eval_mod_relinearization_k(&self, bootstrap_k: usize, input_log_delta: usize) -> usize {
         let f_mod_log_delta = self.eval_mod.f_mod_log_delta;
         let raised_log_delta = match self.pipeline {

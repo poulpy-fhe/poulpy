@@ -177,14 +177,18 @@ where
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    BE: crate::oep::CKKSModUpFirstFactorImpl,
 {
     let n = 1 << (LOG_SLOTS + 1);
     let m = n / 2;
     let base2k = params.base2k;
-    // The scales and message ratios of the ordinary tests of each pipeline.
-    for (pipeline, log_delta, log_msg_ratio, guard_bits) in [
-        (BootstrappingPipeline::C2SFirst, 45, LOG_MSG_RATIO, 0),
-        (BootstrappingPipeline::S2CFirst, 40, 16, 6),
+    // The scales and message ratios of the ordinary tests of each pipeline, at a
+    // raised width on a limb boundary and off one.
+    for (pipeline, log_delta, log_msg_ratio, guard_bits, aligned) in [
+        (BootstrappingPipeline::C2SFirst, 45, LOG_MSG_RATIO, 0, true),
+        (BootstrappingPipeline::S2CFirst, 40, 16, 6, true),
+        (BootstrappingPipeline::C2SFirst, 45, LOG_MSG_RATIO, 0, false),
+        (BootstrappingPipeline::S2CFirst, 40, 16, 6, false),
     ] {
         let s2c_first = pipeline == BootstrappingPipeline::S2CFirst;
         let ordinary = bootstrap_plan(pipeline, false, log_msg_ratio, guard_bits, false);
@@ -199,7 +203,8 @@ where
         } else {
             plan.bootstrap_k(log_modulus_in + 2 * log_delta, log_delta)
         }
-        .next_multiple_of(base2k);
+        .next_multiple_of(base2k)
+            + if aligned { 0 } else { base2k / 2 + 1 };
 
         let module = Module::<BE>::new(n as u64);
         let host_module = Module::<HostBytesBackend>::new(n as u64);
@@ -281,6 +286,47 @@ where
         assert_eq!(key_set.first_factor_keys.len(), first.giant_steps.len());
         let bsk = key_set.prepare(&module, &mut scratch.borrow());
 
+        // The raise alone runs on exactly the scratch it advertises.
+        let (k_small, raised) = if s2c_first {
+            (log_modulus_in, plan.raised_window(log_modulus_in))
+        } else {
+            (k_in, plan.raised_window(log_modulus_in))
+        };
+        let small_spec = ckks_spec(n, base2k, log_delta, k_small - log_delta);
+        let raise_tmp = BE::ckks_mod_up_first_factor_tmp_bytes(
+            &module,
+            &boot_spec,
+            &small_spec,
+            first,
+            keys_layout.encapsulation.as_ref().map(|encaps| &encaps.dense_to_sparse),
+            &first_factor_key,
+        );
+        assert!(raise_tmp > 0);
+        {
+            let mut src = module.ckks_ciphertext_alloc(base2k.into(), k_small.into());
+            src.set_meta(small_spec.meta);
+            let mut dst = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+            let mut exact = ScratchOwned::<BE>::alloc(raise_tmp);
+            BE::ckks_mod_up_first_factor(
+                &module,
+                &mut dst,
+                &mut src,
+                raised - k_small,
+                first,
+                &bsk,
+                &mut exact.borrow(),
+            )
+            .unwrap();
+        }
+
+        // Keys laid out for the raise refuse a narrower bootstrap before any work.
+        let mut narrow = module.ckks_ciphertext_alloc(base2k.into(), (k_boot - base2k).into());
+        let ct_any = module.ckks_ciphertext_alloc(base2k.into(), k_in.into());
+        let err = module
+            .ckks_bootstrap(&mut narrow, &ct_any, &ctx, &bsk, &mut scratch.borrow())
+            .unwrap_err();
+        assert!(err.to_string().contains("first-factor"), "{err}");
+
         let (re, im) = test_vector_1::<F>(m);
         let im_zero = vec![F::zero(); m];
         for (want_im, slots) in [(&im, SlotsKind::Complex), (&im_zero, SlotsKind::Real)] {
@@ -312,7 +358,7 @@ where
             for (got, want, tag) in [(&got_re, &re, "re"), (&got_im, want_im, "im")] {
                 let stats = precision_stats(got, want, log_delta);
                 println!(
-                    "ckks_bootstrap (first factor on raise, {pipeline:?}, {slots:?}) ({tag}) avg={:.2} min={:.2} bits",
+                    "ckks_bootstrap (first factor on raise, {pipeline:?}, {slots:?}, aligned={aligned}) ({tag}) avg={:.2} min={:.2} bits",
                     stats.avg_log2_prec, stats.min_log2_prec
                 );
                 assert!(

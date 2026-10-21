@@ -158,6 +158,8 @@ where
 /// were laid out for. Each stage reads its keys through [`CoveringKeys`] too;
 /// this check only moves the failure ahead of the computation. An EvalRound+
 /// recipe runs its bypass at widths of its own and is left to those checks.
+/// Keys with a row offset (sparse-to-dense, first factor) are laid out for one
+/// raise: they are checked against the raise this bootstrap runs.
 fn check_key_widths<BE, F, K>(
     ct_out: &CKKSCiphertextOwned<BE>,
     ct_in: &CKKSCiphertextOwned<BE>,
@@ -169,29 +171,45 @@ where
     K: BootstrappingKeys<BE>,
     CKKSCiphertextOwned<BE>: CKKSCtBounds,
 {
-    if ctx.coeffs_to_slots_bypass().is_some() {
-        return Ok(());
-    }
-    let op = "ckks_bootstrap";
     let widths = ctx.key_widths();
     let (bootstrap_k, input_k) = (ct_out.k().as_usize(), ct_in.k().as_usize());
-    let log_n = ct_out.n().as_usize().trailing_zeros() as usize;
-    let rotations = CoveringKeys(keys.rotation_keys());
-    for (p, k) in widths.rotation_key_inputs(log_n, bootstrap_k, input_k) {
-        let k = TorusPrecision(k as u32);
-        rotations
-            .get_automorphism_key(p, k)
-            .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-                op,
-                rotation: p,
-                k: k.into(),
-                source,
-            })?;
+    if ctx.coeffs_to_slots_bypass().is_none() {
+        let op = "ckks_bootstrap";
+        let log_n = ct_out.n().as_usize().trailing_zeros() as usize;
+        let rotations = CoveringKeys(keys.rotation_keys());
+        for (p, k) in widths.rotation_key_inputs(log_n, bootstrap_k, input_k) {
+            let k = TorusPrecision(k as u32);
+            rotations
+                .get_automorphism_key(p, k)
+                .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
+                    op,
+                    rotation: p,
+                    k: k.into(),
+                    source,
+                })?;
+        }
+        let k = TorusPrecision(widths.eval_mod_relinearization_k(bootstrap_k, ct_in.log_delta()) as u32);
+        CoveringKeys(keys.tensor_key())
+            .get_tensor_key(k)
+            .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source })?;
     }
-    let k = TorusPrecision(widths.eval_mod_relinearization_k(bootstrap_k, ct_in.log_delta()) as u32);
-    CoveringKeys(keys.tensor_key())
-        .get_tensor_key(k)
-        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source })?;
+    // Keys with a row offset are laid out for the raise: one that does not fit it
+    // fails here too, before SlotsToCoeffs runs.
+    let (k_small, raised) = widths.raise(input_k);
+    if let Some(factor) = ctx.coeffs_to_slots_first_factor() {
+        crate::reference::first_factor::check_first_factor_raise(
+            ct_out.base2k().as_usize(),
+            ct_out.n().as_usize().ilog2() as usize,
+            bootstrap_k,
+            raised,
+            factor,
+            keys,
+        )?;
+    } else if let Some((_, Some(sparse_to_dense))) = keys.encapsulation_keys()
+        && sparse_to_dense.k_offset().as_usize() > 0
+    {
+        check_offset_raise(bootstrap_k, k_small, raised - k_small, sparse_to_dense)?;
+    }
     Ok(())
 }
 
@@ -1349,6 +1367,35 @@ fn offset_key_window<K: GGLWEInfos>(dst_k: usize, key: &K) -> usize {
     dst_k.saturating_sub(key.k_offset().as_usize())
 }
 
+/// Checks that a sparse-to-dense key with a row offset serves the raise of a
+/// `k_small`-bit ciphertext lifted by `scale_up` into `k_large` bits, and
+/// returns the raise's shift and the bits the key's window then holds.
+pub(crate) fn check_offset_raise<K: GGLWEInfos>(
+    k_large: usize,
+    k_small: usize,
+    scale_up: usize,
+    key: &K,
+) -> Result<(usize, usize)> {
+    ckks_ensure!(
+        k_large >= k_small + scale_up,
+        "ckks_mod_up: dst.k ({k_large}) < src.k ({k_small}) + scale_up ({scale_up}); ModUp must widen, not shrink, the modulus"
+    );
+    let shift = k_large - k_small - scale_up;
+    let k_offset = key.k_offset().as_usize();
+    ckks_ensure!(
+        k_offset <= shift,
+        "ckks_mod_up: the sparse-to-dense key lowers its input by {k_offset} bits, more than the raise's {shift}"
+    );
+    let window = offset_key_window(k_large, key) - scale_up;
+    let max_input_k = key.gglwe_layout().max_input_k().as_usize();
+    let reach = k_offset + key.gglwe_layout().gadget_k().as_usize();
+    ckks_ensure!(
+        window <= max_input_k && k_large <= reach,
+        "ckks_mod_up: the sparse-to-dense key takes {max_input_k} bits of input and reaches bit {reach}; the raise needs {window} bits up to bit {k_large}"
+    );
+    Ok((shift, window))
+}
+
 /// ModUp and the sparse-to-dense switch as one key switch, with a key whose
 /// rows sit `k_offset` bits lower: the switch reads the digits of `src` as
 /// balanced integers and lowers them, which is the raise, integer multiple of
@@ -1371,23 +1418,8 @@ where
 {
     let k_large: usize = dst.k().as_usize();
     let k_small: usize = src.k().as_usize();
-    ckks_ensure!(
-        k_large >= k_small + scale_up,
-        "ckks_mod_up: dst.k ({k_large}) < src.k ({k_small}) + scale_up ({scale_up}); ModUp must widen, not shrink, the modulus"
-    );
-    let shift = k_large - k_small - scale_up;
+    let (shift, window) = check_offset_raise(k_large, k_small, scale_up, sparse_to_dense)?;
     let k_offset = sparse_to_dense.k_offset().as_usize();
-    ckks_ensure!(
-        k_offset <= shift,
-        "ckks_mod_up: the sparse-to-dense key lowers its input by {k_offset} bits, more than the raise's {shift}"
-    );
-    let window = offset_key_window(k_large, sparse_to_dense) - scale_up;
-    let max_input_k = sparse_to_dense.gglwe_layout().max_input_k().as_usize();
-    let reach = k_offset + sparse_to_dense.gglwe_layout().gadget_k().as_usize();
-    ckks_ensure!(
-        window <= max_input_k && k_large <= reach,
-        "ckks_mod_up: the sparse-to-dense key takes {max_input_k} bits of input and reaches bit {reach}; the raise needs {window} bits up to bit {k_large}"
-    );
     let key = sparse_to_dense.to_backend_ref();
     if shift == k_offset {
         module.glwe_keyswitch(dst, src, &key, scratch);

@@ -217,6 +217,8 @@
   The sparse-to-dense switch is not used, nor its key generated.
   `BootstrappingPreset::with_first_factor_on_raise` re-derives a preset with it; it is not combined with EvalRound+.
   A key set whose keys do not fit the raise, by radix, offset, input width or reach, is an error, as is a raise of a ciphertext wider than its keys switch.
+  `ckks_bootstrap` checks the first-factor keys, and a sparse-to-dense key with a row offset, against the raise it runs before any work, so a bootstrap at other widths than its keys were laid out for fails at entry.
+  `DFTPlan::with_optimal_bsgs` keeps the one diagonal per giant step of a first factor left to the raise.
 - **Breaking:** the sparse-to-dense key is optional, absent exactly when the first factor is applied on the raise: `EncapsulationKeysLayout::sparse_to_dense` is an `Option`, the second key of `BootstrappingKeySet::encapsulation_keys` and `BootstrappingKeysPrepared::encapsulation_keys` too, and `BootstrappingKeys::encapsulation_keys` returns `Option<(&SwitchingKey, Option<&SwitchingKey>)>`; add the alias `EncapsulationKeys`. Key generation rejects a layout whose sparse-to-dense key disagrees with the recipe.
 - **Breaking:** `CKKSEncapsulatedModUpImpl` requires `CKKSModUpFirstFactorImpl` (`impl_ckks_mod_up_first_factor_reference!`); `BootstrappingKeysLayout`, `BootstrappingKeySet` and `BootstrappingKeysPrepared` gain the first-factor key fields; `BootstrappingContext::generate_keys` requires `VecZnxAutomorphism`.
 - `reference::first_factor` exposes `first_factor_work`, `first_factor_small_bits` and `first_factor_diagonal_growth`, the widths a first-factor key is laid out from.

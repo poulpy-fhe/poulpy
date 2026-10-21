@@ -400,6 +400,10 @@ impl DFTPlan {
         for (step, giant_step) in self.schedule.steps.iter_mut().zip(giant_steps) {
             step.giant_step = giant_step;
         }
+        // A first factor left to the raise keeps one diagonal per giant step.
+        if self.first_factor_on_raise {
+            self.schedule.steps[0].giant_step = 1;
+        }
         self
     }
 
