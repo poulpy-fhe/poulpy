@@ -99,6 +99,7 @@
 - The normalization kernel runs on `std::simd` lanes on every CPU target, so no backend carries hand-written normalization lanes.
   Each backend picks its lane widths through the associated types of `ZnxNormalize`, portable widths by default; the AVX-512 backends fill zmm registers.
   `poulpy-cpu-portable` enables the nightly features `portable_simd`, `hint_prefetch` and `associated_type_defaults`.
+- The portable `vec_znx_gadget_decompose` kernel bounds-checks its columns once and reads its limbs through raw pointers, where it called `at` and `at_mut` per limb and per chunk of coefficients ([#460](https://github.com/poulpy-fhe/poulpy/issues/460)). Results are unchanged.
 
 ### `poulpy-core`
 
@@ -179,6 +180,10 @@
   Backends get it from `impl_operations_reference_full!`, or from `impl_glwe_mul_prepared_plain_sum_reference_full!` with the OEP family `GLWEMulPreparedPlainSumImpl` and its reference `GLWEMulPreparedPlainSumReference`.
 - Add `GGLWELayout::max_input_k`, the widest input a key switches whole: what its digits cover, and no more than its precision less one digit.
 - Add `From<GGLWELayout>` for `GLWEAutomorphismKeyLayout`, `GLWESwitchingKeyLayout` and `GLWETensorKeyLayout`. Each panics on a coarsened view.
+- **Fix:** `glwe_secret_tensor_prepare` takes every temporary from its scratch, where it allocated the transformed secret, the products and their normalization buffer, and wipes that scratch before returning, so no secret-derived buffer is freed unwiped ([#425](https://github.com/poulpy-fhe/poulpy/issues/425)).
+  `glwe_secret_tensor_prepare_tmp_bytes` grows by those buffers.
+- **Fix:** `glwe_eval_linear_transformation_tmp_bytes` counts the scratch of the final iDFT and BIG normalization of the lazy giant-step path, and of the BIG normalization of the per-giant fallback ([#426](https://github.com/poulpy-fhe/poulpy/issues/426)).
+  The lazy path counts its phases as sequential instead of summing them, so the query can shrink; outputs are unchanged.
 
 ### `poulpy-ckks`
 

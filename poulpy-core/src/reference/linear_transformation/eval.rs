@@ -13,7 +13,7 @@ use poulpy_hal::{
     api::{
         CnvPVecAlloc, CnvPVecBytesOf, Convolution, VecZnxAutomorphismAssign, VecZnxBigAddAssign, VecZnxBigAlloc,
         VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromSmall,
-        VecZnxBigNormalize, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism,
+        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism,
         VecZnxDftAutomorphismAddWithPlanTmpBytes, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply,
         VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VecZnxNormalizeAssign,
         VecZnxNormalizeTmpBytes,
@@ -61,6 +61,7 @@ where
         + VecZnxAutomorphismAssign<BE>
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigBytesOf
+        + VecZnxBigNormalizeTmpBytes
         + VecZnxDftApply<BE>
         + VecZnxDftAutomorphismAddWithPlanTmpBytes
         + VecZnxDftBytesOf
@@ -93,7 +94,6 @@ where
     let lazy_size = key.size().max(prod_size);
     let lazy_acc_dft = module.bytes_of_vec_znx_dft(module.n(), cols, lazy_size);
     let lazy_acc_big = module.bytes_of_vec_znx_big(module.n(), cols, lazy_size);
-    let rot_dft = module.bytes_of_vec_znx_dft(module.n(), cols, key.size());
     let prepare_right = module.cnv_prepare_right_tmp_bytes(pt_size, pt_size);
     let lazy_dft = glwe_lazy_giant_automorphism_from_dft_tmp_bytes::<BE, _, _>(module, a.rank().as_usize(), prod_size, key);
     // The fallback first normalizes each product into the destination layout,
@@ -101,10 +101,14 @@ where
     let fallback_work = inner_dft
         .max(module.glwe_automorphism_tmp_bytes(res, res, key))
         .max(module.vec_znx_normalize_tmp_bytes())
+        .max(module.vec_znx_big_normalize_tmp_bytes())
         .max(module.vec_znx_idft_apply_tmp_bytes());
     let fallback_path = prod_dft + prod_col_big + fallback_work;
-    let lazy_dft_rot = rot_dft + lazy_dft;
-    let lazy_dft_path = prod_dft + lazy_acc_dft + inner_dft + lazy_dft_rot + lazy_acc_big;
+    let lazy_final = lazy_acc_big
+        + module
+            .vec_znx_idft_apply_tmp_bytes()
+            .max(module.vec_znx_big_normalize_tmp_bytes());
+    let lazy_dft_path = prod_dft + lazy_acc_dft + inner_dft.max(lazy_dft).max(lazy_final);
 
     module
         .glwe_automorphism_tmp_bytes(res, a, key)
@@ -278,6 +282,7 @@ where
         + VecZnxAutomorphismAssign<BE>
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigBytesOf
+        + VecZnxBigNormalizeTmpBytes
         + VecZnxDftApply<BE>
         + VecZnxDftAutomorphismAddWithPlanTmpBytes
         + VecZnxDftBytesOf
@@ -414,6 +419,7 @@ where
         + VecZnxAutomorphismAssign<BE>
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigBytesOf
+        + VecZnxBigNormalizeTmpBytes
         + VecZnxDftApply<BE>
         + VecZnxDftAutomorphismAddWithPlanTmpBytes
         + VecZnxDftBytesOf
