@@ -292,7 +292,8 @@
 - The aggregations of `GGLWEPatCompressed`, `GGLWEPat` and the public key shares add a share with one `mat_znx_add_assign` over the whole matrix, where they summed one entry at a time ([#380](https://github.com/poulpy-fhe/poulpy/issues/380)).
   The public key share aggregation compares the seed vectors once and no longer calls `glwe_pat_compressed_aggregate_assign` per entry.
   The finalizations of `GGLWEPatCompressed` and `GGLWEPat` normalize the whole matrix with `mat_znx_normalize_assign` (the bodies) and `mat_znx_normalize` (one call per output column), and their scratch queries are `mat_znx_normalize_tmp_bytes`.
-  **Breaking:** `GLWEPublicKeyMHEProtocolImpl` gains the supertrait `HalMatZnxImpl`.
+  The public key share finalization normalizes the bodies with one `mat_znx_normalize` and fills each mask from its seed, where it called `glwe_pat_compressed_finalize` per entry; its scratch query is `mat_znx_normalize_tmp_bytes`.
+  **Breaking:** the supertraits of `GLWEPublicKeyMHEProtocolImpl` are `HalMatZnxImpl` and `poulpy_core::oep::EncryptionImpl`, where it had `GLWEPatCompressedImpl`.
 
 ### `poulpy-blas`
 
