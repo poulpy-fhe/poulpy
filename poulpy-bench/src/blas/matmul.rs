@@ -34,7 +34,7 @@ use poulpy_ckks::{
         CKKSModuleInfos,
     },
     layouts::CKKSModuleAlloc,
-    test_suite::helpers::{TestContextBackend, TestContextSharedModule},
+    test_suite::helpers::TestContextSharedModule,
 };
 use poulpy_core::{
     GLWEAutomorphismKeyEncryptSk, GLWETensorKeyEncryptSk,
@@ -161,7 +161,7 @@ fn verify<BE>(op: &str, bp: &BlasBenchParams, max_err: f64, max_base2k: Option<u
     );
     assert!(
         max_err <= bound,
-        "the first call deviates from the cleartext beyond the error bound"
+        "{op}: the first call deviates from the cleartext beyond the error bound"
     );
 }
 
@@ -221,7 +221,7 @@ struct Client<BE: Backend> {
 
 impl<BE> Client<BE>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: Backend<Ring = Standard> + 'static,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -263,16 +263,6 @@ where
         module.blas_context_encode_into::<f64>(&mut ctx, &mut arena.borrow()).unwrap();
         module.blas_context_prepare(&mut prepared, &ctx, &mut arena.borrow());
         prepared
-    }
-
-    /// The prepared public matrix on the right of the encrypted grid, one matrix shared by every matrix slot.
-    fn public_right(&self, bp: &BlasBenchParams, algorithm: BlasPtAlgorithm) -> BlasPtOperand<BE> {
-        self.public::<Right>(bp, algorithm)
-    }
-
-    /// The prepared public matrix on the left of the encrypted grid, one matrix shared by every matrix slot.
-    fn public_left(&self, bp: &BlasBenchParams, algorithm: BlasPtAlgorithm) -> BlasPtOperand<BE, Left> {
-        self.public::<Left>(bp, algorithm)
     }
 
     /// The prepared public matrix on side `S` of the encrypted grid, one matrix shared by every matrix slot.
@@ -403,7 +393,7 @@ where
 /// `blas_transpose` of a grid of `batch` matrices.
 pub fn runner_blas_transpose<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: TestContextBackend<Ring = Standard> + BlasMatIntraImpl,
+    BE: Backend<Ring = Standard> + 'static + BlasMatIntraImpl,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -435,7 +425,7 @@ where
 /// compact encryption proves it, so that the right factor takes the replicated maps.
 fn matmul<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams, op: &'static str, dense: bool)
 where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + 'static + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -488,7 +478,7 @@ where
 /// `blas_matmul` with a dense right factor, distinct matrices per matrix slot: needs `bp.batch() > 1`.
 pub fn runner_blas_matmul<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + 'static + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -499,7 +489,7 @@ where
 /// `blas_matmul` with a replicated right factor, one matrix in every matrix slot.
 pub fn runner_blas_matmul_replicated<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + 'static + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -510,14 +500,14 @@ where
 /// `blas_matmul_pt_right` by the public matrix under `algorithm`.
 fn pt_right<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams, op: &'static str, algorithm: BlasPtAlgorithm)
 where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + 'static + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
 {
     timed::<BE, M>(bencher, op, bp, || {
         let mut client = Client::<BE>::new(bp);
-        let pt = client.public_right(bp, algorithm);
+        let pt = client.public::<Right>(bp, algorithm);
         let ctx = client.context(bp);
         let ct_a = client.encrypt(bp, bp.batch(), a_entry);
         let max_base2k = blas_matmul_pt_right_max_base2k::<BE>(&ct_a, &pt, &ctx, FAILURE_BITS);
@@ -551,7 +541,7 @@ where
 /// `blas_matmul_pt_right` under `Diagonal`.
 pub fn runner_blas_matmul_pt_right_diagonal<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + 'static + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -562,7 +552,7 @@ where
 /// `blas_matmul_pt_right` under `Jkls`.
 pub fn runner_blas_matmul_pt_right_jkls<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + 'static + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -573,14 +563,14 @@ where
 /// `blas_matmul_pt_left` by the public matrix under `algorithm`.
 fn pt_left<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams, op: &'static str, algorithm: BlasPtAlgorithm)
 where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + 'static + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
 {
     timed::<BE, M>(bencher, op, bp, || {
         let mut client = Client::<BE>::new(bp);
-        let pt = client.public_left(bp, algorithm);
+        let pt = client.public::<Left>(bp, algorithm);
         let ctx = client.context(bp);
         let ct_a = client.encrypt(bp, bp.batch(), a_entry);
         let max_base2k = blas_matmul_pt_left_max_base2k::<BE>(&pt, &ct_a, &ctx, FAILURE_BITS);
@@ -614,7 +604,7 @@ where
 /// `blas_matmul_pt_left` under `Diagonal`.
 pub fn runner_blas_matmul_pt_left_diagonal<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + 'static + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -625,7 +615,7 @@ where
 /// `blas_matmul_pt_left` under `Jkls`.
 pub fn runner_blas_matmul_pt_left_jkls<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + 'static + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,

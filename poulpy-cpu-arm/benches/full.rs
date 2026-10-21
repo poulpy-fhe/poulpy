@@ -6,7 +6,7 @@
 //! With `enable-blas`, a second group runs the BLAS layer on the NTT backend
 //! (`poulpy_bench::blas::suites`) under its own Criterion configuration.
 
-use criterion::criterion_group;
+use criterion::{criterion_group, criterion_main};
 #[cfg(feature = "enable-blas")]
 use poulpy_bench::blas::suites::bench_blas;
 use poulpy_bench::core::suites::{bench_core_binfhe, bench_core_ckks};
@@ -36,11 +36,7 @@ criterion_group! {
     targets = bench_blas::<Ntt>
 }
 
-// What `criterion_main!(benches)` expands to, with the BLAS group between the others and the final summary.
-fn main() {
-    benches();
-    #[cfg(feature = "enable-blas")]
-    blas_benches();
-
-    criterion::Criterion::default().configure_from_args().final_summary();
-}
+#[cfg(not(feature = "enable-blas"))]
+criterion_main!(benches);
+#[cfg(feature = "enable-blas")]
+criterion_main!(benches, blas_benches);

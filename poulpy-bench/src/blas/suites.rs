@@ -5,10 +5,9 @@ use criterion::{
     measurement::{Measurement, WallTime},
 };
 use poulpy_blas::oep::{BlasMatIntraImpl, BlasMatMulImpl};
-use poulpy_ckks::test_suite::helpers::TestContextBackend;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{MaxBase2k, Module, ScratchOwned, Standard},
+    layouts::{Backend, MaxBase2k, Module, ScratchOwned, Standard},
 };
 
 use crate::{
@@ -23,7 +22,7 @@ use crate::{
 /// needs several matrices per ciphertext: at one matrix the right factor is the replicated one.
 pub fn blas_dense_ops<BE, M>() -> [BenchOp<M, BlasBenchParams>; 1]
 where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + 'static + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -39,7 +38,7 @@ where
 /// on either side under `Diagonal` and `Jkls`, and the transpose.
 pub fn blas_ops<BE, M>() -> [BenchOp<M, BlasBenchParams>; 6]
 where
-    BE: TestContextBackend<Ring = Standard> + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + 'static + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -81,7 +80,7 @@ where
 /// Every operation over `points`, the dense product only where a ciphertext holds several matrices.
 fn bench_points<BE>(c: &mut Criterion<WallTime>, points: Vec<BlasBenchParams>)
 where
-    BE: TestContextBackend<Ring = Standard> + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + 'static + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -98,7 +97,7 @@ where
 /// `criterion_group!` registers it once per backend to cover.
 pub fn bench_blas<BE>(c: &mut Criterion<WallTime>)
 where
-    BE: TestContextBackend<Ring = Standard> + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + 'static + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -109,10 +108,9 @@ where
 pub mod standard {
     use criterion::{Criterion, measurement::WallTime};
     use poulpy_blas::oep::{BlasMatIntraImpl, BlasMatMulImpl};
-    use poulpy_ckks::test_suite::helpers::TestContextBackend;
     use poulpy_hal::{
         api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-        layouts::{MaxBase2k, Module, ScratchOwned, Standard},
+        layouts::{Backend, MaxBase2k, Module, ScratchOwned, Standard},
     };
 
     use super::{BlasBenchModule, bench_points};
@@ -121,7 +119,7 @@ pub mod standard {
     /// `where` clause matches [`super::bench_blas`]'s own.
     pub fn bench_blas<BE>(c: &mut Criterion<WallTime>)
     where
-        BE: TestContextBackend<Ring = Standard> + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
+        BE: Backend<Ring = Standard> + 'static + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
         Module<BE>: BlasBenchModule<BE>,
         ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     {
@@ -137,10 +135,9 @@ pub mod standard {
 pub mod light {
     use criterion::{Criterion, measurement::WallTime};
     use poulpy_blas::oep::{BlasMatIntraImpl, BlasMatMulImpl};
-    use poulpy_ckks::test_suite::helpers::TestContextBackend;
     use poulpy_hal::{
         api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-        layouts::{MaxBase2k, Module, ScratchOwned, Standard},
+        layouts::{Backend, MaxBase2k, Module, ScratchOwned, Standard},
     };
 
     use super::{BlasBenchModule, bench_points};
@@ -149,7 +146,7 @@ pub mod light {
     /// `where` clause matches [`super::bench_blas`]'s own.
     pub fn bench_blas<BE>(c: &mut Criterion<WallTime>)
     where
-        BE: TestContextBackend<Ring = Standard> + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
+        BE: Backend<Ring = Standard> + 'static + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
         Module<BE>: BlasBenchModule<BE>,
         ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     {

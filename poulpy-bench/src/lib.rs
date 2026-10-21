@@ -75,8 +75,8 @@
 //! No changes needed here — a backend implementing the full HAL/core/CKKS
 //! surface just plugs its own marker types in via turbofish. A backend that
 //! also wires `poulpy-blas` registers `blas::suites::bench_blas::<Ntt>` in a
-//! second group configured by [`blas_criterion_config`], and runs it from an
-//! explicit `main`, as the `benches/` of the backend crates do.
+//! second group configured by [`blas_criterion_config`], as the `benches/` of
+//! the backend crates do.
 
 pub mod blas;
 pub mod core;

@@ -204,8 +204,7 @@ its `*_tmp_bytes` reports. Before timing, it checks `base2k` against the operati
 runs the call once, decrypts and asserts every entry within `blas::matmul::error_bound` of the cleartext, and prints
 the measured error in a `PRECISION` line. The group runs under `blas_criterion_config()`, ten samples.
 
-A backend binary registers the group next to its main one, behind its `enable-blas` feature, with the `main` that
-`criterion_main!` would expand to:
+A backend binary registers the group next to its main one, behind its `enable-blas` feature:
 
 ```rust
 #[cfg(feature = "enable-blas")]
@@ -215,13 +214,10 @@ criterion_group! {
     targets = bench_blas::<Ntt>
 }
 
-fn main() {
-    benches();
-    #[cfg(feature = "enable-blas")]
-    blas_benches();
-
-    criterion::Criterion::default().configure_from_args().final_summary();
-}
+#[cfg(not(feature = "enable-blas"))]
+criterion_main!(benches);
+#[cfg(feature = "enable-blas")]
+criterion_main!(benches, blas_benches);
 ```
 
 ```sh
