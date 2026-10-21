@@ -20,7 +20,7 @@ use std::collections::BTreeMap;
 use poulpy_hal::{
     api::{
         CnvPVecAlloc, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphismAssign, VecZnxDftApply, VecZnxDftBytesOf,
-        VecZnxDftZero, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
+        VecZnxDftZero, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
     },
     execution::{for_each_with_scratch, scratch_workers, worker_count, worker_scratch_bytes},
     layouts::{Backend, GaloisElement, PrepareHint, ScratchArena, VecZnxDftBackendRef, VecZnxDftToBackendRef},
@@ -92,7 +92,7 @@ where
         + VecZnxAutomorphismAssign<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
-        + VecZnxIdftNormalizeConsumeTmpBytes
+        + VecZnxIdftNormalizeTmpBytes
         + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
         + GLWENormalize<BE>,
     A: GLWEInfos,
@@ -110,7 +110,7 @@ where
     let hoisted_rot = module.bytes_of_vec_znx_dft(module.n(), cols, key_size)
         + module
             .gglwe_product_dft_tmp_bytes_reference(key_size, operand_size, key_infos)
-            .max(module.vec_znx_idft_normalize_consume_tmp_bytes(a_size, key_size));
+            .max(module.vec_znx_idft_normalize_tmp_bytes(a_size, key_size));
     let hoisted_worker = worker_scratch_bytes::<BE>(baby + hoisted_rot.max(prepare));
     let hoisted = hoisted_a_dft
         + (scratch_workers::<BE::TaskExecutor>(BABY_ROTATION_WORKERS) * hoisted_worker).max(gadget_dft_apply_tmp_bytes::<BE, _>(
@@ -146,7 +146,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R>(
         + VecZnxAutomorphismAssign<BE>
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>
-        + VecZnxIdftNormalizeConsume<BE>,
+        + VecZnxIdftNormalize<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
 {
     let cols = a.rank().as_usize() + 1;
@@ -162,7 +162,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R>(
     {
         let mut baby_ref = baby.to_backend_mut();
         for col in 0..cols {
-            module.vec_znx_idft_normalize_consume(
+            module.vec_znx_idft_normalize(
                 &mut baby_ref.data,
                 baby_base2k,
                 baby_k,
@@ -208,8 +208,8 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>
-        + VecZnxIdftNormalizeConsume<BE>
-        + VecZnxIdftNormalizeConsumeTmpBytes
+        + VecZnxIdftNormalize<BE>
+        + VecZnxIdftNormalizeTmpBytes
         + poulpy_hal::api::VecZnxGadgetDecompose<BE>
         + GLWENormalize<BE>
         + Sync,
@@ -296,7 +296,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
                 module.bytes_of_vec_znx_dft(module.n(), cols, key_size)
                     + module
                         .gglwe_product_dft_tmp_bytes_reference(key_size, operand_size, key)
-                        .max(module.vec_znx_idft_normalize_consume_tmp_bytes(a_size, key_size))
+                        .max(module.vec_znx_idft_normalize_tmp_bytes(a_size, key_size))
             })
             .max()
             .unwrap_or(0);

@@ -1158,12 +1158,12 @@ unsafe impl HalSvpImpl for $rayon {
 }
 unsafe impl HalVecZnxDftImpl for $rayon {
 
-    fn vec_znx_idft_normalize_consume_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+    fn vec_znx_idft_normalize_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         0
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_idft_normalize_consume(
+    fn vec_znx_idft_normalize(
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_base2k: usize,

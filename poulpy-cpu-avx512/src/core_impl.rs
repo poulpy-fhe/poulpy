@@ -36,9 +36,8 @@ use poulpy_hal::layouts::{DataViewMut, VecZnxDft};
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
-        VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
-        VecZnxSubAssign,
+        VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize,
+        VecZnxIdftNormalizeTmpBytes, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxSubAssign,
     },
     layouts::{
         Backend, CnvPVecLBackendRef, CnvPVecLToBackendRef, CnvPVecRBackendRef, CnvPVecRToBackendRef, Module, PrepareHint, Ring,
@@ -129,7 +128,7 @@ trait RankOneTensorDft: Backend {
 macro_rules! ifma_tensor_finish {
     ($executor:ty, $cap:expr) => {
         fn tensor_finish_tmp_bytes(module: &Module<Self>, _n: usize, _size: usize) -> usize {
-            module.vec_znx_idft_normalize_consume_tmp_bytes(0, 0)
+            module.vec_znx_idft_normalize_tmp_bytes(0, 0)
         }
 
         fn tensor_finish(
@@ -153,7 +152,7 @@ macro_rules! ifma_tensor_finish {
             let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), workers * 3 * n);
             let shape = a.shape();
             let mut a = VecZnxDft::from_shape(&mut **a.data_mut(), shape);
-            crate::ntt3x42_ifma::vec_znx_dft::idft_normalize_consume_ifma::<R, $executor>(
+            crate::ntt3x42_ifma::vec_znx_dft::idft_normalize_ifma::<R, $executor>(
                 module.reinterpret(),
                 res,
                 res_base2k,
@@ -275,7 +274,7 @@ impl_rank_one_tensor_dft_rayon!(poulpy_hal::layouts::ConjugateInvariant);
 impl<R: Ring> RankOneTensorDft for NTT3x42Ifma<R>
 where
     Self: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
-    Module<Self>: VecZnxIdftNormalizeConsumeTmpBytes,
+    Module<Self>: VecZnxIdftNormalizeTmpBytes,
 {
     ifma_tensor_finish!(poulpy_hal::execution::SerialTaskExecutor, 1);
     fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
@@ -323,7 +322,7 @@ impl<R: Ring> RankOneTensorDft for NTT3x42IfmaRayon<R>
 where
     NTT3x42Ifma<R>:
         Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
-    Module<Self>: VecZnxIdftNormalizeConsumeTmpBytes,
+    Module<Self>: VecZnxIdftNormalizeTmpBytes,
 {
     ifma_tensor_finish!(
         super::ntt3x42_ifma::NTT3x42IfmaRayonExecutor,
@@ -950,7 +949,7 @@ macro_rules! impl_rank_one_tensoring {
                 res.set_canonical(true);
                 let mut res = res.to_backend_mut();
                 for i in 0..cols {
-                    module.vec_znx_idft_normalize_consume(
+                    module.vec_znx_idft_normalize(
                         res.data_mut(),
                         res_base2k,
                         res_k,
@@ -985,7 +984,7 @@ macro_rules! impl_rank_one_tensoring {
                 let product = module.bytes_of_vec_znx_dft(n, tsk.rank_out().as_usize() + 1, output_size)
                     + module
                         .gglwe_product_dft_tmp_bytes_reference(output_size, operand_size, tsk)
-                        .max(module.vec_znx_idft_normalize_consume_tmp_bytes(res.size(), output_size));
+                        .max(module.vec_znx_idft_normalize_tmp_bytes(res.size(), output_size));
                 module.bytes_of_vec_znx_dft(n, tsk.rank_in().as_usize(), operand_size) + layout.max(product)
             }
 

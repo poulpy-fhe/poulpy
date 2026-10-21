@@ -1338,13 +1338,13 @@ unsafe impl HalSvpImpl for $rayon
 }
 unsafe impl HalVecZnxDftImpl for $rayon
 {
-    fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<Self>, _res_size: usize, a_size: usize) -> usize {
+    fn vec_znx_idft_normalize_tmp_bytes(module: &Module<Self>, _res_size: usize, a_size: usize) -> usize {
         let workers = $crate::workers(<Self as $crate::__private::poulpy_hal::execution::ScratchWorkers>::IDFT).min(a_size.max(1));
         workers * <$base as $crate::ntt4x30::PackedNtt4x30Base>::idft_tmp_words(module.n()) * size_of::<u64>()
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_idft_normalize_consume(
+    fn vec_znx_idft_normalize(
         module: &Module<Self>,
         res: &mut $crate::__private::poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
         res_base2k: usize,

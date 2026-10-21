@@ -416,12 +416,12 @@ unsafe impl<R: Ring> HalVecZnxDftImpl for NTT4x30Portable<R>
 where
     Self: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + ZnxAutomorphism,
 {
-    fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+    fn vec_znx_idft_normalize_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         super::vec_znx_dft::idft_tmp_words(module.n()) * size_of::<u64>()
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_idft_normalize_consume(
+    fn vec_znx_idft_normalize(
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
@@ -436,7 +436,7 @@ where
     ) {
         let n = a.n();
         poulpy_hal::layouts::check_degree::<Self>(module.n(), n);
-        assert_eq!(res.n(), n, "vec_znx_idft_normalize_consume: res.n():{} != a.n():{n}", res.n());
+        assert_eq!(res.n(), n, "vec_znx_idft_normalize: res.n():{} != a.n():{n}", res.n());
         let arena = scratch.borrow();
         let (tmp, _) = take_host_typed::<Self, u64>(arena, super::vec_znx_dft::idft_tmp_words(n));
         super::vec_znx_dft::idft_compact_in_place(module, a, a_col, tmp);

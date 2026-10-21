@@ -13,7 +13,7 @@ use poulpy_hal::{
         TestParams,
         convolution::{test_convolution_add, test_convolution_by_const_add},
         derived::{
-            test_cnv_apply_dft_add_derived, test_cnv_by_const_apply_add_derived, test_vec_znx_idft_normalize_consume_derived,
+            test_cnv_apply_dft_add_derived, test_cnv_by_const_apply_add_derived, test_vec_znx_idft_normalize_derived,
             test_vec_znx_lsh_add_derived, test_vec_znx_lsh_sub_derived, test_vec_znx_rsh_add_derived,
             test_vec_znx_rsh_sub_derived, test_vmp_apply_dft_derived, test_vmp_apply_dft_to_dft_add_derived,
         },
@@ -40,7 +40,7 @@ where
     test_vec_znx_lsh_sub_derived(&PARAMS, module);
     test_vec_znx_rsh_add_derived(&PARAMS, module);
     test_vec_znx_rsh_sub_derived(&PARAMS, module);
-    test_vec_znx_idft_normalize_consume_derived(&PARAMS, module);
+    test_vec_znx_idft_normalize_derived(&PARAMS, module);
     test_cnv_apply_dft_add_derived(&PARAMS, module);
     test_cnv_by_const_apply_add_derived(&PARAMS, module);
 }

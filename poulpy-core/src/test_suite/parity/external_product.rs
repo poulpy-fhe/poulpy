@@ -2,9 +2,7 @@
 
 use super::poisoned_scratch;
 use poulpy_hal::{
-    api::{
-        ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxDftAlloc, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
-    },
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxDftAlloc, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes},
     layouts::{HostDataMut, Module, ScratchOwned, VecZnx, VecZnxDftToBackendMut, VecZnxToBackendMut},
     source::Source,
     test_suite::TestParams,
@@ -35,14 +33,14 @@ pub fn test_glwe_external_product_parity<BR, BT>(
         + GGSWPreparedFactory<BR>
         + GLWEExternalProductInternal<BR>
         + VecZnxDftAlloc<BR>
-        + VecZnxIdftNormalizeConsume<BR>
-        + VecZnxIdftNormalizeConsumeTmpBytes,
+        + VecZnxIdftNormalize<BR>
+        + VecZnxIdftNormalizeTmpBytes,
     Module<BT>: GLWEExternalProduct<BT>
         + GGSWPreparedFactory<BT>
         + GLWEExternalProductInternal<BT>
         + VecZnxDftAlloc<BT>
-        + VecZnxIdftNormalizeConsume<BT>
-        + VecZnxIdftNormalizeConsumeTmpBytes,
+        + VecZnxIdftNormalize<BT>
+        + VecZnxIdftNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
@@ -175,8 +173,8 @@ pub fn test_glwe_external_product_parity<BR, BT>(
                     $module.glwe_external_product_dft(&mut dft.to_backend_mut(),&$a,&$key.to_backend_ref(),&mut poisoned_scratch::<$be>($module.glwe_external_product_internal_tmp_bytes(&res_infos,&a_infos,&ggsw_infos)).borrow());
                     let mut normalized=$module.glwe_alloc_from_infos(&res_infos);
                     for col in 0..rank+1 {
-                        let tmp=$module.vec_znx_idft_normalize_consume_tmp_bytes(normalized.data.size(),size);
-                        $module.vec_znx_idft_normalize_consume(&mut <VecZnx<<$be as poulpy_hal::layouts::Backend>::OwnedBuf,i64> as VecZnxToBackendMut<$be>>::to_backend_mut(&mut normalized.data),base2k,res_infos.k.as_usize(),0,col,&mut dft.to_backend_mut(),col,base2k,None,&mut poisoned_scratch::<$be>(tmp).borrow());
+                        let tmp=$module.vec_znx_idft_normalize_tmp_bytes(normalized.data.size(),size);
+                        $module.vec_znx_idft_normalize(&mut <VecZnx<<$be as poulpy_hal::layouts::Backend>::OwnedBuf,i64> as VecZnxToBackendMut<$be>>::to_backend_mut(&mut normalized.data),base2k,res_infos.k.as_usize(),0,col,&mut dft.to_backend_mut(),col,base2k,None,&mut poisoned_scratch::<$be>(tmp).borrow());
                     }
                     normalized
                 }};
