@@ -22,9 +22,9 @@ use crate::{
 use poulpy_core::{
     GLWEAdd, GLWEMaskFill,
     layouts::{
-        GGLWEInfos, GGLWELayout, GGLWEPrepared, GGLWEPreparedFactory, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared,
-        GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWESwitchingKeyLayout, GLWETensorKeyLayout, GLWETensorKeyPrepared,
-        GLWETensorKeyPreparedFactory, GLWEToBackendRef, LWEInfos, TorusPrecision,
+        GGLWEInfos, GGLWELayout, GGLWEPrepared, GGLWEPreparedFactory, GLWEAutomorphismKeyPrepared,
+        GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, GLWEToBackendRef,
+        LWEInfos, TorusPrecision,
         prepared::{GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
     reference::linear_transformation::DiagonalProd,
@@ -240,38 +240,13 @@ fn ct_layout(n: usize, base2k: usize, k: usize, log_delta: usize, slots: SlotsKi
 
 fn keys_layout(atk: &GGLWELayout, d2s: &GGLWELayout, s2d: &GGLWELayout, encapsulate: bool) -> BootstrappingKeysLayout {
     BootstrappingKeysLayout {
-        automorphism_key: GLWEAutomorphismKeyLayout {
-            n: atk.n,
-            base2k: atk.base2k,
-            dnum: atk.dnum,
-            k_aux: atk.k_aux,
-            rank: atk.rank_out,
-            k_digit: atk.k_digit,
-        },
-        tensor_key: GLWETensorKeyLayout {
-            n: atk.n,
-            base2k: atk.base2k,
-            dnum: atk.dnum,
-            k_aux: atk.k_aux,
-            rank: atk.rank_out,
-            k_digit: atk.k_digit,
-        },
+        rotation_keys: Default::default(),
+        automorphism_key: (*atk).into(),
+        tensor_key: (*atk).into(),
         encapsulation: encapsulate.then(|| EncapsulationKeysLayout {
-            dense_to_sparse: switching_layout(d2s),
-            sparse_to_dense: switching_layout(s2d),
+            dense_to_sparse: (*d2s).into(),
+            sparse_to_dense: (*s2d).into(),
         }),
-    }
-}
-
-fn switching_layout(key: &GGLWELayout) -> GLWESwitchingKeyLayout {
-    GLWESwitchingKeyLayout {
-        n: key.n,
-        base2k: key.base2k,
-        dnum: key.dnum,
-        k_aux: key.k_aux,
-        rank_in: key.rank_in,
-        rank_out: key.rank_out,
-        k_digit: key.k_digit,
     }
 }
 
@@ -323,7 +298,8 @@ where
         + GLWEMaskFill<B>
         + CyclotomicOrder,
     CKKSPlaintextOwned<B>: GLWEToBackendRef<B> + CKKSCtBounds + DiagonalProd<B>,
-    FixtureKeys<B>: BootstrappingKeys<B, TensorKey = GLWETensorKeyPrepared<B::OwnedBuf, B>> + Sync,
+    FixtureKeys<B>: BootstrappingKeys<B> + Sync,
+    <FixtureKeys<B> as BootstrappingKeys<B>>::TensorKey: Sync,
 {
     let (n, b) = (module.n(), params.base2k);
     let log_slots = n.ilog2() as usize - 1;
@@ -453,8 +429,10 @@ where
         + CyclotomicOrder,
     CKKSPlaintextOwned<BR>: GLWEToBackendRef<BR> + CKKSCtBounds + DiagonalProd<BR>,
     CKKSPlaintextOwned<BT>: GLWEToBackendRef<BT> + CKKSCtBounds + DiagonalProd<BT>,
-    FixtureKeys<BR>: BootstrappingKeys<BR, TensorKey = GLWETensorKeyPrepared<BR::OwnedBuf, BR>> + Sync,
-    FixtureKeys<BT>: BootstrappingKeys<BT, TensorKey = GLWETensorKeyPrepared<BT::OwnedBuf, BT>> + Sync,
+    FixtureKeys<BR>: BootstrappingKeys<BR> + Sync,
+    <FixtureKeys<BR> as BootstrappingKeys<BR>>::TensorKey: Sync,
+    FixtureKeys<BT>: BootstrappingKeys<BT> + Sync,
+    <FixtureKeys<BT> as BootstrappingKeys<BT>>::TensorKey: Sync,
 {
     assert_eq!(reference.n(), tested.n());
     let want = run_bootstrap::<BR, F>(params, reference);

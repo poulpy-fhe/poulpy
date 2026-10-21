@@ -283,9 +283,10 @@ where
         rank: dst.rank(),
     };
     tsk.get_tensor_key(tensor_layout.k)
-        .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
             op,
             k: tensor_layout.k.into(),
+            source,
         })?;
     let (log_budget, log_delta, cnv_offset) = get_mul_ct_params(dst, a[0], b[0])?;
     // The eager sum's label and slot kind: the smallest label and the join over every operand.

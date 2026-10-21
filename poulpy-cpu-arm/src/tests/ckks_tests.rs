@@ -11,6 +11,23 @@ ckks_backend_test_suite!(
     rotations = super::ATK_ROTATIONS,
 );
 
+#[test]
+fn ntt4x30_neon_small_s2c_preset_meets_precision() {
+    poulpy_ckks::test_suite::presets::small_s2c_preset_meets_precision::<crate::NTT4x30Neon>();
+}
+
+/// Full logN16 bootstraps per preset: slow, so opt in with `--ignored`.
+#[cfg(feature = "enable-rayon")]
+mod bootstrapping_presets {
+    use poulpy_ckks::test_suite::presets::bootstrapping_presets_meet_precision;
+
+    #[test]
+    #[ignore = "full logN16 bootstrapping presets"]
+    fn ntt4x30_neon_rayon() {
+        bootstrapping_presets_meet_precision::<crate::NTT4x30NeonRayon>(52);
+    }
+}
+
 #[cfg(feature = "enable-rayon")]
 ckks_backend_test_suite!(
     mod fft64_rayon_f64,

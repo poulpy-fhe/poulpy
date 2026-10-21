@@ -4,9 +4,7 @@
 //! ModUp's known-zero low limbs are a CKKS pipeline property, not a general
 //! Core key-switch operation.
 
-use poulpy_core::layouts::{
-    GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, prepared::GGLWEPreparedBackendRef,
-};
+use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GGLWEPreparedBackendRef};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
 
 use crate::{
@@ -85,7 +83,8 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
     ) -> CKKSResult<()>
     where
         F: Sync,
-        K: BootstrappingKeys<Self, TensorKey = GLWETensorKeyPrepared<Self::OwnedBuf, Self>> + Sync;
+        K: BootstrappingKeys<Self> + Sync,
+        K::TensorKey: Sync;
 
     fn ckks_functional_bootstrap_impl<F, K>(
         module: &Module<Self>,
@@ -97,7 +96,7 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
     where
-        K: BootstrappingKeys<Self, TensorKey = GLWETensorKeyPrepared<Self::OwnedBuf, Self>>;
+        K: BootstrappingKeys<Self>;
 }
 
 /// Backend implementation of
@@ -238,13 +237,8 @@ macro_rules! impl_ckks_bootstrapping_reference {
             ) -> $crate::CKKSResult<()>
             where
                 F: Sync,
-                K: $crate::layouts::BootstrappingKeys<
-                        $be,
-                        TensorKey = ::poulpy_core::layouts::GLWETensorKeyPrepared<
-                            <$be as ::poulpy_hal::layouts::Backend>::OwnedBuf,
-                            $be,
-                        >,
-                    > + Sync,
+                K: $crate::layouts::BootstrappingKeys<$be> + Sync,
+                K::TensorKey: Sync,
             {
                 $crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_bootstrap_reference(
                     module, ct_out, ct_in, ctx, keys, scratch,
@@ -261,13 +255,7 @@ macro_rules! impl_ckks_bootstrapping_reference {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) -> $crate::CKKSResult<()>
             where
-                K: $crate::layouts::BootstrappingKeys<
-                        $be,
-                        TensorKey = ::poulpy_core::layouts::GLWETensorKeyPrepared<
-                            <$be as ::poulpy_hal::layouts::Backend>::OwnedBuf,
-                            $be,
-                        >,
-                    >,
+                K: $crate::layouts::BootstrappingKeys<$be>,
             {
                 $crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_functional_bootstrap_reference(
                     module, ct_outs, ct_in, ctx, luts, keys, scratch,

@@ -315,6 +315,7 @@ fn run_case<BE, F, E>(
         Some(BootstrappingContext::<BE, F>::compile(module, params.base2k.into(), &plan, &mut scratch.borrow()).unwrap())
     };
     let keys_layout = BootstrappingKeysLayout {
+        rotation_keys: Default::default(),
         automorphism_key: tp.atk_layout(),
         tensor_key: tp.tsk_layout(),
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {

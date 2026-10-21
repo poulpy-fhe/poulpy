@@ -45,7 +45,7 @@ impl fmt::Display for CKKSError {
 impl Error for CKKSError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::Composition(_) => None,
+            Self::Composition(c) => c.source(),
             Self::Internal(e) => Some(e.as_ref()),
         }
     }
@@ -141,10 +141,21 @@ pub enum CKKSCompositionError {
         coeff: usize,
         n: usize,
     },
-    /// A requested rotation/conjugation key is not present in the provided key map.
-    MissingAutomorphismKey { op: &'static str, rotation: i64, k: u32 },
-    /// No relinearization key covers the exact precision the operation works at.
-    MissingRelinearizationKey { op: &'static str, k: u32 },
+    /// No usable rotation/conjugation key: the key source has none, or refused
+    /// the one it holds (for instance one too narrow for `k`), as `source` says.
+    MissingAutomorphismKey {
+        op: &'static str,
+        rotation: i64,
+        k: u32,
+        source: poulpy_core::CoreError,
+    },
+    /// No usable relinearization key at the precision the operation works at:
+    /// the key source has none, or refused the one it holds, as `source` says.
+    MissingRelinearizationKey {
+        op: &'static str,
+        k: u32,
+        source: poulpy_core::CoreError,
+    },
     /// A plaintext cannot be aligned into the requested destination precision.
     PlaintextAlignmentImpossible {
         op: &'static str,
@@ -234,17 +245,14 @@ impl fmt::Display for CKKSCompositionError {
             Self::PlaintextCoefficientOutOfRange { op, role, coeff, n } => {
                 write!(f, "{op} coefficient index {coeff} is out of range for {role} degree {n}")
             }
-            Self::MissingAutomorphismKey { op, rotation, k } => {
+            Self::MissingAutomorphismKey { op, rotation, k, source } => {
                 write!(
                     f,
-                    "{op} requires an automorphism key for rotation {rotation} at precision k={k}, but none was provided"
+                    "{op} requires an automorphism key for rotation {rotation} at precision k={k}: {source}"
                 )
             }
-            Self::MissingRelinearizationKey { op, k } => {
-                write!(
-                    f,
-                    "{op} requires a relinearization key at precision k={k}, but none was provided"
-                )
+            Self::MissingRelinearizationKey { op, k, source } => {
+                write!(f, "{op} requires a relinearization key at precision k={k}: {source}")
             }
             Self::PlaintextAlignmentImpossible {
                 op,
@@ -293,7 +301,14 @@ impl fmt::Display for CKKSCompositionError {
     }
 }
 
-impl Error for CKKSCompositionError {}
+impl Error for CKKSCompositionError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::MissingAutomorphismKey { source, .. } | Self::MissingRelinearizationKey { source, .. } => Some(source),
+            _ => None,
+        }
+    }
+}
 
 pub(crate) fn checked_log_budget_sub(op: &'static str, available_log_budget: usize, required_bits: usize) -> Result<usize> {
     available_log_budget.checked_sub(required_bits).ok_or_else(|| {

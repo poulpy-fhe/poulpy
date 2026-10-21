@@ -40,9 +40,15 @@ ckks_backend_test_suite!(
     rotations = super::ATK_ROTATIONS,
 );
 
-/// Full logN16 bootstraps per preset: slow, so opt in with `--ignored`.
+/// Full logN16 bootstraps per preset: slow, so opt in with `--ignored`. The
+/// small S2C-first preset runs by default.
 mod bootstrapping_presets {
-    use poulpy_ckks::test_suite::presets::bootstrapping_presets_meet_precision;
+    use poulpy_ckks::test_suite::presets::{bootstrapping_presets_meet_precision, small_s2c_preset_meets_precision};
+
+    #[test]
+    fn ntt4x30_small_s2c_preset_meets_precision() {
+        small_s2c_preset_meets_precision::<crate::NTT4x30Avx>();
+    }
 
     #[test]
     #[ignore = "runs a full logN16 bootstrap per preset; opt in with --ignored"]
