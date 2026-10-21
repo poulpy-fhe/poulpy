@@ -7,7 +7,7 @@ use poulpy_core::{
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    CKKSCtBounds, SetCKKSInfos,
+    CKKSCtBounds, SetCKKSInfos, SlotLayout,
     api::{CKKSLinearTransformationOps, LtDiagonalMeta},
     oep::CKKSLinearTransformationImpl,
 };
@@ -96,7 +96,9 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
             "ckks_eval_linear_transformation_into",
             crate::GLWEPlaintextInfos::slot_layout(src),
         )?;
-        BE::ckks_eval_linear_transformation_into_impl(self, dst, src, babies, lt, keys, scratch)
+        BE::ckks_eval_linear_transformation_into_impl(self, dst, src, babies, lt, keys, scratch)?;
+        dst.set_slot_layout(SlotLayout::Full);
+        Ok(())
     }
 
     fn ckks_eval_linear_transformation_assign<Dst, P, H>(
@@ -139,7 +141,9 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
                 crate::GLWEPlaintextInfos::slot_layout(*src),
             )?;
         }
-        BE::ckks_eval_linear_transformation_sum_into_impl(self, dst, srcs, babies, lts, keys, scratch)
+        BE::ckks_eval_linear_transformation_sum_into_impl(self, dst, srcs, babies, lts, keys, scratch)?;
+        dst.set_slot_layout(SlotLayout::Full);
+        Ok(())
     }
 
     fn ckks_eval_linear_transformation_self_into<Dst, Src, P, H>(
@@ -160,7 +164,9 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
             "ckks_eval_linear_transformation_self_into",
             crate::GLWEPlaintextInfos::slot_layout(src),
         )?;
-        BE::ckks_eval_linear_transformation_self_into_impl(self, dst, src, lt, keys, scratch)
+        BE::ckks_eval_linear_transformation_self_into_impl(self, dst, src, lt, keys, scratch)?;
+        dst.set_slot_layout(SlotLayout::Full);
+        Ok(())
     }
 
     fn ckks_eval_linear_transformation_self_assign<Dst, P, H>(

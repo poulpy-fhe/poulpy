@@ -53,7 +53,10 @@ use crate::{
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, ComplexPolynomial, Polynomial, SplitStrategy},
 };
 
-use super::{CKKSModuleAlloc, CKKSPlaintextOwned, CKKSScalar, MaskedCoeffs, masked::encode_masked_constants};
+use super::{
+    CKKSModuleAlloc, CKKSPlaintextOwned, CKKSScalar, MaskedCoeffs,
+    masked::{encode_masked_constants, encode_masked_constants_phased},
+};
 
 // Fallible scalar conversions: building the host-side polynomials goes through
 // the generic float `F`, and a conversion that is not exactly representable in
@@ -534,7 +537,7 @@ where
     F: CKKSEncodingScalar,
 {
     let coeff_meta = lit.coeffs_meta;
-    compile_eval_mod_with(lit, &mut |values: &[F]| {
+    compile_eval_mod_with(lit, &mut |values: &[F], _| {
         encode_scalar_constants(module, base2k, coeff_meta, values, scratch)
     })
 }
@@ -555,18 +558,72 @@ where
     F: CKKSEncodingScalar,
 {
     let coeff_meta = lit.coeffs_meta;
-    compile_eval_mod_with(lit, &mut |values: &[F]| {
+    compile_eval_mod_with(lit, &mut |values: &[F], _| {
         encode_masked_constants(module, base2k, coeff_meta, layout, values, scratch)
     })
 }
 
-fn compile_eval_mod_with<F, C>(lit: EvalModPlan, encode: &mut impl FnMut(&[F]) -> Result<C>) -> Result<EvalMod<F, C>>
+/// [`compile_eval_mod_replicated`] for two batches packed side by side in
+/// `layout`, the second carrying the phase `φ = e^(iπ/2^(r+1))`, `r` the
+/// range-extension steps: the polynomial's constants are multiplied by `φ` on
+/// the second half and the constant of step `i` by `φ^(2^(i+1))`, so that the
+/// second half comes out multiplied by `φ^(2^r) = i`. The input offset carries
+/// no phase.
+pub fn compile_eval_mod_replicated_packed<BE, F>(
+    base2k: Base2K,
+    lit: EvalModPlan,
+    layout: ReplicatedLayout,
+    module: &Module<BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<EvalMod<F, MaskedCoeffs<CKKSPlaintextOwned<BE>>>>
+where
+    BE: Backend,
+    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + GetDegree + CKKSModuleInfos,
+    F: CKKSEncodingScalar,
+{
+    ensure!(layout.log_k() > 0, "a packed EvalMod needs two batches");
+    ensure!(
+        lit.f_mod_inv_degree.is_none() && matches!(lit.eval_mod_type, EvalModType::CosHK | EvalModType::CosHKEven),
+        "a packed EvalMod needs a cosine EvalMod without inverse"
+    );
+    let r = lit.f_mod_log_interval_reduction;
+    let pi = F::PI();
+    let phase = |m: u64| -> Result<(F, F)> {
+        let angle = pi * scalar_from_u64::<F>("phase", m)? / scalar_from_u64::<F>("2^(r+1)", 2u64 << r)?;
+        Ok((angle.ckks_cos(), angle.ckks_sin()))
+    };
+    let coeff_meta = lit.coeffs_meta;
+    compile_eval_mod_with(lit, &mut |values: &[F], role| {
+        let phases = (0..values.len())
+            .map(|i| match role {
+                EvalModConstant::Polynomial => phase(1),
+                EvalModConstant::InputOffset => Ok((F::one(), F::zero())),
+                EvalModConstant::RangeExtension => phase(2 << i),
+            })
+            .collect::<Result<Vec<_>>>()?;
+        encode_masked_constants_phased(module, base2k, coeff_meta, layout, values, &phases, scratch)
+    })
+}
+
+/// The constants [`compile_eval_mod_with`] encodes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EvalModConstant {
+    Polynomial,
+    InputOffset,
+    /// One value per range-extension step.
+    RangeExtension,
+}
+
+fn compile_eval_mod_with<F, C>(
+    lit: EvalModPlan,
+    encode: &mut impl FnMut(&[F], EvalModConstant) -> Result<C>,
+) -> Result<EvalMod<F, C>>
 where
     F: CKKSEncodingScalar,
 {
     lit.validate()?;
     if lit.eval_mod_type == EvalModType::ExpCmplx {
-        return compile_eval_mod_exp(lit, encode);
+        return compile_eval_mod_exp(lit, &mut |values: &[F]| encode(values, EvalModConstant::Polynomial));
     }
 
     let f_mod_log_interval_reduction = match lit.eval_mod_type {
@@ -671,14 +728,15 @@ where
         *c = *c * s;
     }
 
-    let f_mod_bsgs = encode_bsgs_with(&f_mod_poly, lit.split_strategy, lit.folds_even_base(), encode)?;
-    let f_mod_input_offset = lit
-        .input_offset::<F>()
-        .map(|offset| encode(&[offset]).map_err(|e| anyhow!("f_mod_input_offset: {e}")))
-        .transpose()?;
+    let polynomial = &mut |values: &[F]| encode(values, EvalModConstant::Polynomial);
+    let f_mod_bsgs = encode_bsgs_with(&f_mod_poly, lit.split_strategy, lit.folds_even_base(), polynomial)?;
     let f_mod_inv_bsgs = f_mod_inv_poly_opt
         .as_ref()
-        .map(|p| encode_bsgs_with(p, lit.split_strategy, false, encode))
+        .map(|p| encode_bsgs_with(p, lit.split_strategy, false, polynomial))
+        .transpose()?;
+    let f_mod_input_offset = lit
+        .input_offset::<F>()
+        .map(|offset| encode(&[offset], EvalModConstant::InputOffset).map_err(|e| anyhow!("f_mod_input_offset: {e}")))
         .transpose()?;
 
     // Pack the per-step constants `s^(2^(i+1))` one per coefficient into a
@@ -688,7 +746,7 @@ where
         let vals: Vec<F> = (0..f_mod_log_interval_reduction)
             .map(|i| s.ckks_powi(1i32 << (i + 1)))
             .collect();
-        Some(encode(&vals).map_err(|e| anyhow!("range_extension_consts: {e}"))?)
+        Some(encode(&vals, EvalModConstant::RangeExtension).map_err(|e| anyhow!("range_extension_consts: {e}"))?)
     } else {
         None
     };

@@ -712,6 +712,10 @@ macro_rules! ckks_backend_test_suite {
                 replicated_transforms_apply_matrices,
                 $crate::test_suite::replicated::test_replicated_transforms_apply_matrices
             );
+            run_test_result!(
+                replicated_bootstrap,
+                $crate::test_suite::replicated::test_replicated_bootstrap
+            );
             run_test!(conjugate_aligned, $crate::test_suite::conjugate::test_conjugate_aligned);
             run_test!(
                 conjugate_smaller_output,

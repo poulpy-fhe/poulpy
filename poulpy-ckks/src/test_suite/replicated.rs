@@ -21,9 +21,12 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
-use poulpy_core::layouts::{Base2K, GLWEToBackendRef, LWEInfos, TorusPrecision, prepared::GLWESecretPrepared};
+use poulpy_core::{
+    GLWETrace,
+    layouts::{Base2K, GLWEToBackendRef, LWEInfos, TorusPrecision, prepared::GLWESecretPrepared},
+};
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, HostBytesBackend, Module, ScratchOwned, Standard, ZnxView},
     source::Source,
 };
@@ -36,15 +39,16 @@ use crate::{
     CKKSInfos, CoeffsMeta, GLWEPlaintextInfos, GLWEPlaintextMeta, ReplicatedLayout, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{
         CKKSAddOps, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps,
-        CKKSEncryptOps, CKKSEvalModOps, CKKSModuleInfos, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSReplicatedOps,
-        CKKSRotateOps,
+        CKKSEncryptOps, CKKSEvalModOps, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, CKKSPolynomialEvaluationOps,
+        CKKSReplicatedBootstrapOps, CKKSReplicatedOps, CKKSRotateOps,
     },
     delegates::replicated::{wide_gather_trace, wide_onto_replicated},
     layouts::{
-        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, EvalModPlan, EvalModPoly, EvalModType, ReplicatedConversion,
-        ReplicatedTransform, compile_eval_mod, compile_eval_mod_replicated, encode_bsgs_replicated,
-        encode_complex_bsgs_replicated,
+        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, EvalModPlan, EvalModPoly, EvalModType, ReplicatedBootstrapPlan,
+        ReplicatedBootstrapping, ReplicatedConversion, ReplicatedTransform, compile_eval_mod, compile_eval_mod_replicated,
+        compile_eval_mod_replicated_packed, encode_bsgs_replicated, encode_complex_bsgs_replicated,
     },
+    oep::CKKSEncapsulatedModUpImpl,
     polynomial::{Basis, ComplexPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
     shaping::ShapingUnit,
     test_suite::CKKSTestParams,
@@ -850,7 +854,11 @@ where
     BE: TestContextBackend<Ring = Standard>,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSReplicatedOps<BE>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSReplicatedOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -953,7 +961,7 @@ where
     BE: TestContextBackend<Ring = Standard>,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -961,7 +969,9 @@ where
     let (len, base2k) = (1usize << log_k, Base2K(params.base2k as u32));
     let layout = ShapingUnit::U16_40.layout(log_k, 24)?;
     let (log_delta_diag, extra_bits) = (36, 16);
-    let to = ReplicatedTransform::from_period(module, layout, base2k, log_delta_diag, true, |s, j| {
+    // Shaped diagonals far coarser than the result: each BSGS giant step needs
+    // its own rotated shaping polynomial to keep their error off the data slots.
+    let to = ReplicatedTransform::from_period(module, layout, base2k, 14, true, |s, j| {
         if s % (1 << layout.log_r()) == 0 {
             matrix::<F>((s >> layout.log_r()) % len, j)
         } else {
@@ -996,7 +1006,7 @@ where
         module,
         &mut onto,
         &ckks,
-        &to.diagonals,
+        &to,
         layout,
         LOG_DELTA,
         extra_bits,
@@ -1021,7 +1031,7 @@ where
         module,
         &mut gathered,
         &replicated,
-        &gather.diagonals,
+        &gather,
         &trace,
         extra_bits,
         &atks,
@@ -1053,13 +1063,22 @@ fn eval_mod_plan() -> EvalModPlan {
     }
 }
 
+/// The EvalMod of [`eval_mod_precision`].
+#[derive(Clone, Copy)]
+enum EvalModMode {
+    Full,
+    Replicated,
+    /// Two batches side by side, the second returned times `i`.
+    Packed,
+}
+
 /// EvalMod of `x = I + m/2^13` at `t = x/K`, against the circuit's own
 /// polynomials, in message units.
 fn eval_mod_precision<BE, F>(
     params: &CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
-    slot_layout: SlotLayout,
+    mode: EvalModMode,
 ) -> Result<f64>
 where
     BE: TestContextBackend<Ring = Standard>,
@@ -1088,11 +1107,25 @@ where
         ..*params
     };
     let k = test_params.k;
-    let len = 1 << LOG_K;
-    let xs: Vec<f64> = [(15.0, 0.9), (-15.0, -0.95), (3.0, 0.3), (-7.0, -0.6)]
-        .into_iter()
-        .map(|(integer, message)| (integer + message / ratio) / interval)
-        .collect();
+    let (slot_layout, len) = match mode {
+        EvalModMode::Full => (SlotLayout::Full, 1 << LOG_K),
+        EvalModMode::Replicated => (SlotLayout::Replicated(layout()), 1 << LOG_K),
+        EvalModMode::Packed => (SlotLayout::Replicated(ShapingUnit::U32_45.layout(LOG_K + 1, 24)?), 2 << LOG_K),
+    };
+    let xs: Vec<f64> = [
+        (15.0, 0.9),
+        (-15.0, -0.95),
+        (3.0, 0.3),
+        (-7.0, -0.6),
+        (12.0, -0.4),
+        (-1.0, 0.8),
+        (0.0, 0.05),
+        (-11.0, 0.7),
+    ]
+    .into_iter()
+    .take(len)
+    .map(|(integer, message)| (integer + message / ratio) / interval)
+    .collect();
     let re: Vec<F> = xs.iter().map(|&x| F::from_f64(x).unwrap()).collect();
     let zero = vec![F::zero(); len];
 
@@ -1121,7 +1154,11 @@ where
     let tsk_layout = test_params.tsk_layout();
     let (f_mod_poly, steps, scale) = match slot_layout {
         SlotLayout::Replicated(layout) => {
-            let eval_mod = compile_eval_mod_replicated::<BE, F>(base2k, plan, layout, module, &mut compile.borrow())?;
+            let eval_mod = if let EvalModMode::Packed = mode {
+                compile_eval_mod_replicated_packed::<BE, F>(base2k, plan, layout, module, &mut compile.borrow())?
+            } else {
+                compile_eval_mod_replicated::<BE, F>(base2k, plan, layout, module, &mut compile.borrow())?
+            };
             let mut eval = ScratchOwned::<BE>::alloc(module.ckks_eval_mod_tmp_bytes(&res, &ct, &eval_mod, &tsk_layout));
             module.ckks_eval_mod(&mut res, &ct, &eval_mod, &tsk, &mut eval.borrow())?;
             let scale = eval_mod.range_extension_scale();
@@ -1153,9 +1190,14 @@ where
             p * to_message
         })
         .collect();
+    // A packed second half comes out on the imaginary parts.
+    let half = if let EvalModMode::Packed = mode { len / 2 } else { len };
+    let want_re: Vec<F> = (0..len).map(|j| if j < half { want[j] } else { F::zero() }).collect();
+    let want_im: Vec<F> = (0..len).map(|j| if j < half { F::zero() } else { want[j] }).collect();
     let got = decrypt_batch::<BE, F>(&test_params, module, &sk, &res, len);
     let got_re: Vec<F> = got.0.iter().map(|&v| v * to_message).collect();
-    Ok(precision((&got_re, &zero), (&want, &zero)))
+    let got_im: Vec<F> = got.1.iter().map(|&v| v * to_message).collect();
+    Ok(precision((&got_re, &got_im), (&want_re, &want_im)))
 }
 
 pub fn test_replicated_eval_mod_is_shaped<BE, F, E>(
@@ -1171,11 +1213,91 @@ where
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let full = eval_mod_precision::<BE, F>(&params, module, host_module, SlotLayout::Full)?;
-    let shaped = eval_mod_precision::<BE, F>(&params, module, host_module, SlotLayout::Replicated(layout()))?;
+    let full = eval_mod_precision::<BE, F>(&params, module, host_module, EvalModMode::Full)?;
+    let shaped = eval_mod_precision::<BE, F>(&params, module, host_module, EvalModMode::Replicated)?;
+    let packed = eval_mod_precision::<BE, F>(&params, module, host_module, EvalModMode::Packed)?;
     assert!(
         shaped >= 30.0 && shaped >= full + 25.0,
         "EvalMod at 2^28: {shaped:.2} bits against {full:.2} for a full layout"
     );
+    assert!(
+        packed >= 30.0 && packed >= full + 25.0,
+        "packed EvalMod at 2^28: {packed:.2} bits against {full:.2} for a full layout"
+    );
+    Ok(())
+}
+
+/// One bootstrapping of `k = 8` values with the parameters of the paper, from
+/// the leveled scale, against the values.
+pub fn test_replicated_bootstrap<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) -> Result<()>
+where
+    BE: TestContextBackend<Ring = Standard> + CKKSEncapsulatedModUpImpl,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSReplicatedBootstrapOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>
+        + GLWETrace<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let layout = ShapingUnit::U16_40.layout(3, 24)?;
+    let plan = ReplicatedBootstrapPlan::paper(layout);
+    let base2k = Base2K(params.base2k as u32);
+    let mut compile = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(params.n / 2));
+    let ctx = ReplicatedBootstrapping::<BE, F>::new(module, plan, base2k, &mut compile.borrow())?;
+    assert!(ctx.is_packed());
+    let k_out = plan.k_in() + plan.level_log_delta;
+    let key_layouts = ctx.key_layouts(params.n.into(), base2k, k_out, params.base2k, params.base2k + 1, true);
+
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let (mut xs, mut xe, mut xa) = (Source::new([3; 32]), Source::new([4; 32]), Source::new([5; 32]));
+    let mut keygen = ScratchOwned::<BE>::alloc(1 << 26);
+    let keys = ctx
+        .generate_keys(
+            module,
+            &sk_raw,
+            &key_layouts,
+            16,
+            &mut xs,
+            &mut xe,
+            &mut xa,
+            &mut keygen.borrow(),
+        )
+        .prepare(module, &mut keygen.borrow());
+
+    let len = 1 << layout.log_k();
+    let values = unit_batch::<F>(len, 0);
+    let input = encrypt_batch(
+        &params,
+        module,
+        &sk,
+        SlotLayout::Replicated(layout),
+        (&values.0, &values.1),
+        plan.k_in() - (plan.log_delta - plan.level_log_delta),
+        1,
+    )?;
+    let encapsulation = key_layouts.encapsulation.map(|e| (e.dense_to_sparse, e.sparse_to_dense));
+    let mut boot_scratch = ScratchOwned::<BE>::alloc(module.ckks_replicated_bootstrap_tmp_bytes(
+        &alloc_ct(&params, module, k_out),
+        &ctx,
+        &key_layouts.automorphism_key,
+        &key_layouts.tensor_key,
+        encapsulation.as_ref().map(|(d, s)| (d, s)),
+    ));
+    let mut out = alloc_ct(&params, module, k_out);
+    module.ckks_replicated_bootstrap_into(&mut out, &input, &ctx, &keys, &mut boot_scratch.borrow())?;
+    assert_eq!(out.slot_layout(), SlotLayout::Replicated(layout));
+    assert_eq!((out.log_delta(), out.k().as_usize()), (plan.level_log_delta, k_out));
+    let got = decrypt_batch::<BE, F>(&params, module, &sk, &out, len);
+    let bits = precision((&got.0, &got.1), (&values.0, &values.1));
+    eprintln!("BOOT {bits:.2}");
+    assert!(bits >= 19.0, "replicated bootstrapping: {bits:.2} bits");
     Ok(())
 }

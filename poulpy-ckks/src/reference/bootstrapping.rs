@@ -934,7 +934,7 @@ where
     clippy::too_many_arguments,
     reason = "the raise takes its lift, its scale and the first factor as separate operands"
 )]
-fn ckks_bootstrap_mod_up_from_mut<BE, Dst, Src, K>(
+pub(crate) fn ckks_bootstrap_mod_up_from_mut<BE, Dst, Src, K>(
     module: &Module<BE>,
     dst: &mut Dst,
     src: &mut Src,

@@ -5,7 +5,10 @@ use poulpy_core::layouts::{
     BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, GLWEToBackendRef, GetDegree, IntPolyInfos,
     LWEInfos, Rank, TorusPrecision,
 };
-use poulpy_hal::layouts::{Backend, Data, Module, Ring, ScratchArena, ZnxWord};
+use poulpy_hal::{
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
+    layouts::{Backend, Data, Module, Ring, ScratchArena, ScratchOwned, ZnxWord},
+};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSModuleInfos, CoeffsMeta, ReplicatedLayout, SetCKKSInfos, SlotLayout, SlotsKind,
@@ -153,6 +156,46 @@ where
         })
         .collect::<Result<Vec<_>>>()?;
     Ok(MaskedCoeffs { scalars, masked })
+}
+
+/// [`encode_masked_constants`] with the phase `phases[j]` on the second half
+/// of the `2^log_k` values of `layout`: constant `j` is `c_j` on the first
+/// half and `c_j·phases[j]` on the second, a plaintext of `2^log_k·R` slots,
+/// or the compact `c_j·π_S` when its phase is one.
+pub(crate) fn encode_masked_constants_phased<BE, F>(
+    module: &Module<BE>,
+    base2k: Base2K,
+    coeff_meta: CoeffsMeta,
+    layout: ReplicatedLayout,
+    values: &[F],
+    phases: &[(F, F)],
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<MaskedCoeffs<CKKSPlaintextOwned<BE>>>
+where
+    BE: Backend,
+    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + GetDegree + CKKSModuleInfos,
+    F: CKKSEncodingScalar,
+{
+    let mut constants = encode_masked_constants(module, base2k, coeff_meta, layout, values, scratch)?;
+    let half = 1usize << (layout.log_k() - 1);
+    let slots = (2 * half) << layout.log_r();
+    let mut host = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(slots));
+    for ((masked, &value), &(re, im)) in constants.masked.iter_mut().zip(values).zip(phases) {
+        if re == F::one() && im == F::zero() {
+            continue;
+        }
+        let mut pt = module.ckks_pt_vec_alloc(slots, base2k, coeff_meta.k);
+        pt.set_meta(GLWEPlaintextMeta {
+            slots: SlotsKind::Complex,
+            slot_layout: SlotLayout::Replicated(layout),
+            ..coeff_meta.meta
+        });
+        let re: Vec<F> = (0..2 * half).map(|j| if j < half { value } else { value * re }).collect();
+        let im: Vec<F> = (0..2 * half).map(|j| if j < half { F::zero() } else { value * im }).collect();
+        module.ckks_encode_reim_into(&mut pt, &re, &im, &mut host.borrow())?;
+        *masked = pt;
+    }
+    Ok(constants)
 }
 
 /// BSGS-encodes `polynomial` for a ciphertext in `layout`, every constant

@@ -140,7 +140,10 @@ pub(crate) use encoding_buffer::{
     copy_encoding_buffer_into_host, copy_encoding_buffer_into_reim_host, copy_host_into_encoding_buffer,
     copy_reim_host_into_encoding_buffer, slot_coeff_count,
 };
-pub use eval_mod::{EvalMod, EvalModBsgs, EvalModPlan, EvalModPoly, EvalModType, compile_eval_mod, compile_eval_mod_replicated};
+pub use eval_mod::{
+    EvalMod, EvalModBsgs, EvalModPlan, EvalModPoly, EvalModType, compile_eval_mod, compile_eval_mod_replicated,
+    compile_eval_mod_replicated_packed,
+};
 pub use functional_bootstrapping::EncodedLut;
 pub(crate) use functional_bootstrapping::EncodedLutKind;
 pub use masked::{CKKSMaskedConstants, MaskedCoeffs, encode_bsgs_replicated, encode_complex_bsgs_replicated};
@@ -150,7 +153,7 @@ pub use paco::{
     PaCoPlan, PaCoSecretSpec, PaCoSlotOrder, PaCoWorker,
 };
 pub use plaintext::{CKKSPlaintext, CKKSPlaintextOwned, CKKSPlaintextViewMut};
-pub use replicated::{ReplicatedConversion, ReplicatedTransform};
+pub use replicated::{ReplicatedBootstrapPlan, ReplicatedBootstrapping, ReplicatedConversion, ReplicatedTransform};
 pub use ship::{
     HMuxRotKey, HMuxRotKeyPrepared, ShipCoeffEncodings, ShipIndexKeys, ShipIndexKeysPrepared, ShipKeyParameters, ShipKeySet,
     ShipKeysLayout, ShipKeysPrepared, ShipPlan, ShipSecretSpec,

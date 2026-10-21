@@ -11,7 +11,7 @@ use criterion::{criterion_group, criterion_main};
 use poulpy_bench::blas::suites::bench_blas;
 use poulpy_bench::core::suites::{bench_core_binfhe, bench_core_ckks};
 use poulpy_bench::hal::suites::{bench_hal_binfhe, bench_hal_ckks};
-use poulpy_bench::schemes::suites::{bench_binfhe, bench_ckks, bench_ckks_bootstrapping};
+use poulpy_bench::schemes::suites::{bench_binfhe, bench_ckks, bench_ckks_bootstrapping, bench_ckks_replicated_bootstrapping};
 use poulpy_bin_fhe::blind_rotation::CGGI;
 
 use poulpy_cpu_avx::FFT64Avx as Fft;
@@ -28,6 +28,8 @@ criterion_group! {
      bench_ckks::<Ntt>,
      bench_ckks_bootstrapping::<Ntt, 52>,
      bench_ckks_bootstrapping::<Fft, 18>,
+     bench_ckks_replicated_bootstrapping::<Ntt, 52>,
+     bench_ckks_replicated_bootstrapping::<Fft, 18>,
      bench_binfhe::<Fft, CGGI>
 }
 
