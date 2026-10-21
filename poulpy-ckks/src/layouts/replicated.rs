@@ -620,6 +620,38 @@ impl<BE: Backend, F> ReplicatedBootstrapping<BE, F> {
         }
     }
 
+    /// [`Self::key_layouts`] with the fewest gadget digits within the modulus
+    /// bounds: every key under the secret within `max_dense_modulus` bits and
+    /// the key to the ephemeral secret within `max_sparse_modulus`, each with
+    /// an auxiliary modulus of one digit, `log2(QP) = (dnum + 1)·k_digit`.
+    pub fn secure_key_layouts(
+        &self,
+        n: Degree,
+        base2k: Base2K,
+        k_out: usize,
+        max_dense_modulus: usize,
+        max_sparse_modulus: usize,
+    ) -> Result<BootstrappingKeysLayout> {
+        let k_key = self.key_k(k_out);
+        let k_q_b = self.plan.log_delta + self.plan.eval_mod.log_msg_ratio;
+        let digit = |k: usize, max: usize| {
+            (1..=k)
+                .map(|dnum| k.div_ceil(dnum))
+                .find(|&digit| k.div_ceil(digit) * digit + digit <= max)
+                .with_context(|| format!("no gadget covers {k} bits within a modulus of {max} bits"))
+        };
+        let k_digit = digit(k_key, max_dense_modulus)?;
+        let sparse_digit = digit(k_q_b, max_sparse_modulus)?;
+        let mut layouts = self.key_layouts(n, base2k, k_out, k_digit, k_digit, true);
+        if let Some(encapsulation) = layouts.encapsulation.as_mut() {
+            let sparse = TorusPrecision(sparse_digit as u32);
+            encapsulation.dense_to_sparse.k_digit = sparse;
+            encapsulation.dense_to_sparse.k_aux = sparse;
+            encapsulation.dense_to_sparse.dnum = GGLWELayout::dnum_for_input(TorusPrecision(k_q_b as u32), sparse);
+        }
+        Ok(layouts)
+    }
+
     /// Generates the keys of the bootstrapping under `sk`: the automorphism
     /// keys of [`Self::galois_elements`], the tensor key, and with
     /// `layout.encapsulation` the keys to and from an ephemeral secret of

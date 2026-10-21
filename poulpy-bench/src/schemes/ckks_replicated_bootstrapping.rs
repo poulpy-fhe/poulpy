@@ -1,9 +1,11 @@
 //! Bootstrapping of a replicated slot layout, with the parameters of
 //! ePrint 2026/2513 ([`ReplicatedBootstrapPlan::paper`]).
 //!
-//! One benchmark per batch size `k` and output levels `L`, at `N = 2^15`, the
-//! unit `U32_45` and keys of two-limb digits. Criterion's name filter selects a
-//! configuration.
+//! One benchmark per ring degree, batch size `k` and output levels `L`, with
+//! the unit `U32_45` and the keys of
+//! [`ReplicatedBootstrapping::secure_key_layouts`] within the 128-bit modulus
+//! bounds of a dense secret of Hamming weight 1024 and an ephemeral secret of
+//! weight 32. Criterion's name filter selects a configuration.
 
 use crate::backend_name;
 use criterion::{BenchmarkGroup, BenchmarkId, Criterion, measurement::WallTime};
@@ -23,7 +25,9 @@ use poulpy_ckks::{
 use poulpy_core::{
     GLWETrace,
     layouts::prepared::GLWESecretPreparedFactory,
-    layouts::{GLWELayout, GLWESecretSampling, LWEInfos, ModuleCoreAlloc, Rank, prepared::GLWESecretPrepared},
+    layouts::{
+        GGLWEInfos, GGLWELayout, GLWELayout, GLWESecretSampling, LWEInfos, ModuleCoreAlloc, Rank, prepared::GLWESecretPrepared,
+    },
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -31,14 +35,31 @@ use poulpy_hal::{
     source::Source,
 };
 
-const LOG_N: usize = 15;
 const HAMMING_WEIGHT: usize = 1024;
 const EPHEMERAL_HAMMING_WEIGHT: usize = 32;
 /// Data-slot precision every configuration keeps, in bits.
 const MIN_PRECISION: f64 = 19.0;
 
-/// Batch sizes and output levels.
-const CONFIGURATIONS: [(usize, usize); 4] = [(16, 1), (16, 16), (64, 1), (64, 16)];
+/// `(log2 N, k, L)`.
+const CONFIGURATIONS: [(usize, usize, usize); 8] = [
+    (14, 16, 1),
+    (14, 16, 2),
+    (14, 64, 1),
+    (14, 64, 2),
+    (15, 16, 1),
+    (15, 16, 16),
+    (15, 64, 1),
+    (15, 64, 16),
+];
+
+/// 128-bit bounds on `log2(QP)` for secrets of Hamming weight 1024 and 32.
+fn modulus_bounds(log_n: usize) -> (usize, usize) {
+    match log_n {
+        14 => (424, 77),
+        15 => (851, 162),
+        _ => unreachable!("no bound for log2 N = {log_n}"),
+    }
+}
 
 /// What the benchmark asks of a module.
 pub trait ReplicatedBootstrappingModule<BE: Backend>:
@@ -71,6 +92,8 @@ struct Run<BE: Backend> {
     output: CKKSCiphertextOwned<BE>,
     values: (Vec<f64>, Vec<f64>),
     scratch: ScratchOwned<BE>,
+    /// The gadgets of the keys under the secret and of the key to the ephemeral secret.
+    gadgets: String,
 }
 
 impl<BE> Run<BE>
@@ -80,15 +103,18 @@ where
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
 {
-    fn setup(base2k: usize, k: usize, levels: usize) -> Self {
-        let n = 1usize << LOG_N;
+    fn setup(base2k: usize, log_n: usize, k: usize, levels: usize) -> Self {
+        let n = 1usize << log_n;
         let module = Module::<BE>::new(n as u64);
         let layout = ShapingUnit::U32_45.layout(k.trailing_zeros() as u8, 24).unwrap();
         let plan = ReplicatedBootstrapPlan::paper(layout);
         let mut scratch = ScratchOwned::<BE>::alloc(1 << 28);
         let ctx = ReplicatedBootstrapping::<BE, f64>::new(&module, plan, base2k.into(), &mut scratch.borrow()).unwrap();
         let k_out = plan.k_in() + levels * plan.level_log_delta;
-        let keys_layout = ctx.key_layouts(n.into(), base2k.into(), k_out, 2 * base2k, 2 * base2k, true);
+        let (max_dense, max_sparse) = modulus_bounds(log_n);
+        let keys_layout = ctx
+            .secure_key_layouts(n.into(), base2k.into(), k_out, max_dense, max_sparse)
+            .unwrap();
 
         let glwe = GLWELayout {
             n: n.into(),
@@ -130,6 +156,13 @@ where
             .ckks_encrypt_sk(&mut input, &pt, &sk, &mut xe, &mut xa, &mut scratch.borrow())
             .unwrap();
 
+        let gadget = |key: &GGLWELayout| format!("{}x{}+{}", key.dnum.0, key.k_digit.0, key.k_aux.0);
+        let encapsulation = keys_layout.encapsulation.expect("the keys carry encapsulation");
+        let gadgets = format!(
+            "keys={} ephemeral={}",
+            gadget(&keys_layout.automorphism_key.gglwe_layout()),
+            gadget(&encapsulation.dense_to_sparse.gglwe_layout())
+        );
         let output = module.ckks_ciphertext_alloc(base2k.into(), k_out.into());
         let encapsulation = keys_layout.encapsulation.map(|e| (e.dense_to_sparse, e.sparse_to_dense));
         let bytes = module.ckks_replicated_bootstrap_tmp_bytes(
@@ -148,6 +181,7 @@ where
             output,
             values,
             scratch: ScratchOwned::<BE>::alloc(bytes.max(1 << 24)),
+            gadgets,
         }
     }
 
@@ -191,24 +225,24 @@ where
     }
 }
 
-fn runner<BE>(group: &mut BenchmarkGroup<'_, WallTime>, base2k: usize, k: usize, levels: usize)
+fn runner<BE>(group: &mut BenchmarkGroup<'_, WallTime>, base2k: usize, log_n: usize, k: usize, levels: usize)
 where
     BE: TestContextBackend<Ring = Standard> + CKKSEncapsulatedModUpImpl,
     Module<BE>: ReplicatedBootstrappingModule<BE>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
 {
-    let id = format!("logn={LOG_N},k={k},levels={levels},base2k={base2k}");
+    let id = format!("logn={log_n},k={k},levels={levels},base2k={base2k}");
     let mut run = None;
     let mut precision = None;
     group.bench_function(BenchmarkId::from_parameter(&id), |bencher| {
-        let run = run.get_or_insert_with(|| Run::<BE>::setup(base2k, k, levels));
+        let run = run.get_or_insert_with(|| Run::<BE>::setup(base2k, log_n, k, levels));
         bencher.iter(|| run.bootstrap());
-        precision = Some(run.precision());
+        precision = Some((run.precision(), run.gadgets.clone()));
     });
-    if let Some((min, avg)) = precision {
+    if let Some(((min, avg), gadgets)) = precision {
         println!(
-            "PRECISION backend={} replicated {id} min={min:.2}b avg={avg:.2}b",
+            "PRECISION backend={} replicated {id} {gadgets} min={min:.2}b avg={avg:.2}b",
             backend_name::<BE>()
         );
         assert!(min >= MIN_PRECISION, "replicated bootstrapping {id}: {min:.2} bits");
@@ -225,8 +259,8 @@ where
 {
     let mut group = c.benchmark_group(format!("{}/ckks/ckks_replicated_bootstrapping", backend_name::<BE>()));
     group.sample_size(10);
-    for (k, levels) in CONFIGURATIONS {
-        runner::<BE>(&mut group, FIXTURE_BASE2K, k, levels);
+    for (log_n, k, levels) in CONFIGURATIONS {
+        runner::<BE>(&mut group, FIXTURE_BASE2K, log_n, k, levels);
     }
     group.finish();
 }
