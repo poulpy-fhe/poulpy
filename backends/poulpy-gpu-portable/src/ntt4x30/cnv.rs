@@ -502,6 +502,191 @@ fn launch_scale<RT: GpuRuntime>(res: &DftColumn, group: &Group, offset: usize, a
     );
 }
 
+/// Most products [`scale_many`] writes per launch, left operands it reads and terms per product.
+#[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
+pub(crate) const MANY_PRODUCTS: usize = 8;
+#[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
+pub(crate) const MANY_LEFTS: usize = 6;
+#[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
+pub(crate) const MANY_TERMS: usize = 8;
+
+/// Which left operand and which right operand each term of each product of
+/// [`scale_many`] multiplies, fixed at compile time.
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+#[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
+pub(crate) struct Schedule {
+    pub(crate) products: u32,
+    pub(crate) lefts: u32,
+    pub(crate) counts: [u32; MANY_PRODUCTS],
+    pub(crate) left: [[u32; MANY_TERMS]; MANY_PRODUCTS],
+    pub(crate) right: [[u32; MANY_TERMS]; MANY_PRODUCTS],
+}
+
+/// [`convolution_scale_kernel`] for several products that share their left
+/// operands: one thread per result residue reads each left operand once and
+/// writes every product.
+#[cube(launch_unchecked)]
+#[allow(clippy::too_many_arguments, unused_assignments)]
+fn scale_many_kernel(
+    res: &mut [u32],
+    a0: &[u32],
+    a1: &[u32],
+    a2: &[u32],
+    a3: &[u32],
+    a4: &[u32],
+    a5: &[u32],
+    b: &[u32],
+    log_n: u32,
+    limbs: u32,
+    res_base: u32,
+    res_stride: u32,
+    // Words between two products.
+    res_gap: u32,
+    a0_base: u32,
+    a1_base: u32,
+    a2_base: u32,
+    a3_base: u32,
+    a4_base: u32,
+    a5_base: u32,
+    a_stride: u32,
+    a_size: u32,
+    b_base: u32,
+    // Words of one right operand.
+    b_block: u32,
+    b_gap: u32,
+    offset: u32,
+    #[comptime] c: Consts,
+    #[comptime] s: Schedule,
+) {
+    let log_block = log_n + 2u32;
+    let pos = ABSOLUTE_POS as u32;
+    if pos < (limbs << log_block) {
+        let j = pos >> log_block;
+        let word = pos - (j << log_block);
+        let plane = word >> log_n;
+        let slot = word - (plane << log_n);
+        let b_word = (plane << (log_n - b_gap)) + (slot >> b_gap);
+        let q = sel4(plane, c.q);
+        let r = sel4(plane, c.r);
+        let mu = sel4(plane, c.mu60);
+        let u = j + offset;
+        let from = u * a_stride + word;
+
+        let mut xs = Sequence::<u32>::new();
+        #[unroll]
+        for left in 0..s.lefts {
+            let mut x = 0u32;
+            if u < a_size {
+                if comptime!(left == 0) {
+                    x = a0[(a0_base + from) as usize];
+                } else if comptime!(left == 1) {
+                    x = a1[(a1_base + from) as usize];
+                } else if comptime!(left == 2) {
+                    x = a2[(a2_base + from) as usize];
+                } else if comptime!(left == 3) {
+                    x = a3[(a3_base + from) as usize];
+                } else if comptime!(left == 4) {
+                    x = a4[(a4_base + from) as usize];
+                } else {
+                    x = a5[(a5_base + from) as usize];
+                }
+            }
+            xs.push(x);
+        }
+
+        #[unroll]
+        for product in 0..s.products {
+            // At most eight products of canonical residues: below `2^63`.
+            let mut acc = 0u64;
+            #[unroll]
+            for term in 0..comptime!(s.counts[product as usize]) {
+                let x = *xs.index(comptime!(s.left[product as usize][term as usize] as usize));
+                let right = comptime!(s.right[product as usize][term as usize]);
+                acc += u64::cast_from(x) * u64::cast_from(b[(b_base + right * b_block + b_word) as usize]);
+            }
+            res[(res_base + product * res_gap + j * res_stride + word) as usize] = barrett60(fold64(acc, r), q, mu);
+        }
+    }
+}
+
+/// `res_g[j] = sum_t lefts[left(g, t)][j + offset] * rights[right(g, t)][0]` for
+/// every limb of every product `g` of `schedule`: the sums of
+/// [`convolution_sum`] over right operands of one limb, for products that
+/// share their left operands, each of which is read once.
+///
+/// Product `g` is the column at `res.base + g * res_gap`. The left operands
+/// have one size; right operand `d` is the block at `rights.base + d * rights.stride`.
+#[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
+pub(crate) fn scale_many<RT: GpuRuntime>(
+    res: &DftColumn,
+    res_gap: u32,
+    lefts: &[DftColumn],
+    rights: &DftColumn,
+    schedule: Schedule,
+    offset: usize,
+) {
+    let (n, limbs) = (res.n, res.size);
+    let a = &lefts[0];
+    assert_eq!(lefts.len(), schedule.lefts as usize);
+    assert!(
+        (1..=MANY_LEFTS).contains(&lefts.len()) && (1..=MANY_PRODUCTS as u32).contains(&schedule.products),
+        "more operands or products than one launch takes"
+    );
+    assert!(
+        lefts
+            .iter()
+            .all(|left| left.n == n && left.size == a.size && left.stride == a.stride),
+        "the left operands have the shape of the first"
+    );
+    assert!(
+        rights.n.is_power_of_two() && rights.n <= n,
+        "the right operands have degree {} which does not divide {n}",
+        rights.n
+    );
+    if limbs == 0 {
+        return;
+    }
+    // Operands beyond the last repeat it: the kernel does not read them.
+    let left = |index: usize| &lefts[index.min(lefts.len() - 1)];
+    let units = 4 * n * limbs;
+    let read = limbs.min(a.size.saturating_sub(offset));
+    let terms: u32 = schedule.counts.iter().sum();
+    let bytes = 4 * (4 * n * read * lefts.len() + 4 * rights.n * terms as usize + units * schedule.products as usize);
+    launch!(
+        RT, Label::CnvSum, bytes, scale_many_kernel, (units, RT::GROUP, RT::GROUP);
+        [
+            res.binding => u32,
+            left(0).binding => u32,
+            left(1).binding => u32,
+            left(2).binding => u32,
+            left(3).binding => u32,
+            left(4).binding => u32,
+            left(5).binding => u32,
+            rights.binding => u32,
+        ];
+        [
+            n.ilog2(),
+            limbs as u32,
+            res.base,
+            res.stride,
+            res_gap,
+            left(0).base,
+            left(1).base,
+            left(2).base,
+            left(3).base,
+            left(4).base,
+            left(5).base,
+            a.stride,
+            a.size as u32,
+            rights.base,
+            rights.stride,
+            (n / rights.n).ilog2(),
+            offset.min(a.size) as u32,
+        ];
+        [Consts::get(), schedule]
+    );
+}
+
 /// `res[j] = sum_t sum_{u + v = j + offset} a_t[u] * sigma_t(b_t[v])` for
 /// every limb of `res`, over the `(a_t, b_t, sigma_t)` of `terms`, added to
 /// `res` when `accumulate`. Terms of the same shape are summed [`SUM_TERMS`]

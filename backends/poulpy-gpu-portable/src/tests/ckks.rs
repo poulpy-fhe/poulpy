@@ -260,19 +260,28 @@ fn bootstrapping_n16_d35_k733_p20_s2c_precision_and_launches() {
         run.preset().log2_precision(),
     );
     crate::reset_launch_counters();
-    let start = std::time::Instant::now();
     run.bootstrap();
-    let elapsed = start.elapsed();
     let counters = crate::launch_counters();
+    let breakdown = crate::launch_breakdown();
+    // Synchronized bootstraps, timed one by one.
+    let mut millis: Vec<f64> = (0..7)
+        .map(|_| {
+            let start = std::time::Instant::now();
+            run.bootstrap();
+            start.elapsed().as_secs_f64() * 1e3
+        })
+        .collect();
+    millis.sort_by(f64::total_cmp);
     println!(
-        "LAUNCHES preset={} launches={} bytes={} allocations={} elapsed={:.1}ms",
+        "LAUNCHES preset={} launches={} bytes={} allocations={} min={:.1}ms median={:.1}ms",
         run.preset().name(),
         counters.launches,
         counters.bytes,
         counters.allocations,
-        elapsed.as_secs_f64() * 1e3
+        millis[0],
+        millis[millis.len() / 2]
     );
-    for kernel in crate::launch_breakdown() {
+    for kernel in breakdown {
         println!(
             "KERNEL {:<24} launches={:>5} bytes={:>13} share={:>5.1}%",
             kernel.label,

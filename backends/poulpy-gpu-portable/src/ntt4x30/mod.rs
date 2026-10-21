@@ -25,13 +25,15 @@ mod vmp;
 pub use automorphism::AutomorphismPlan;
 pub(crate) use automorphism::automorphism;
 pub(crate) use cnv::{CAPACITY_STEP, convolution, convolution_pairwise, convolution_sum, convolution_tensor};
+#[cfg_attr(not(feature = "enable-core"), allow(unused_imports))]
+pub(crate) use cnv::{MANY_LEFTS, MANY_PRODUCTS, MANY_TERMS, Schedule, scale_many};
 pub(crate) use crt::{crt_at, to_big, to_big_clearing};
 pub(crate) use elementwise::{DftTerm, combine};
 pub(crate) use ntt::{forward, inverse};
 pub(crate) use primes::Consts;
 pub(crate) use svp::scale;
 pub(crate) use tables::Tables;
-pub(crate) use vmp::{Pmat, digit_product, extract_rows};
+pub(crate) use vmp::{Pmat, Tail, digit_product, extract_rows};
 
 use crate::runtime::Binding;
 

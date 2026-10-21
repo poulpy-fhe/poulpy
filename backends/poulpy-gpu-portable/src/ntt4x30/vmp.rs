@@ -27,7 +27,7 @@
 use cubecl::prelude::*;
 
 use super::{
-    DftColumn,
+    AutomorphismPlan, DftColumn,
     primes::{Consts, FOLD_TERMS, barrett60, fold64, sel4},
 };
 use crate::runtime::{Binding, GpuRuntime, Label, launch};
@@ -65,6 +65,20 @@ struct Terms {
     dsize: u32,
     /// Source limbs the product reads: `min(a.size, rows * dsize)`.
     limbs: u32,
+    /// Output columns 0 and 1 that receive an addend, one bit each.
+    addend: u32,
+    /// Whether the result is stored through an automorphism.
+    permute: bool,
+}
+
+/// What a product does with its result besides storing it.
+#[derive(Default)]
+pub(crate) struct Tail<'a> {
+    /// Columns added to output columns 0 and 1 of the product, each over the
+    /// limbs both have.
+    pub(crate) addends: [Option<&'a DftColumn>; 2],
+    /// The result is `sigma(product + addend)`.
+    pub(crate) automorphism: Option<&'a AutomorphismPlan>,
 }
 
 impl Terms {
@@ -107,11 +121,13 @@ impl Terms {
 }
 
 #[cube(launch_unchecked)]
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::collapsible_if)]
 fn product_kernel(
     res: &mut [u32],
     a: &[u32],
     key: &[u32],
+    add0: &[u32],
+    add1: &[u32],
     log_n: u32,
     res_base: u32,
     res_size: u32,
@@ -120,6 +136,14 @@ fn product_kernel(
     key_size: u32,
     limb_offset: u32,
     product_limbs: u32,
+    add0_base: u32,
+    add0_stride: u32,
+    add0_size: u32,
+    add1_base: u32,
+    add1_stride: u32,
+    add1_size: u32,
+    mul: u32,
+    shift: u32,
     #[comptime] c: Consts,
     #[comptime] t: Terms,
     #[comptime] accumulate: bool,
@@ -135,6 +159,17 @@ fn product_kernel(
         let cols_out = t.cols_out;
         let dsize = t.dsize;
         let rows = comptime!(t.rows());
+
+        // Where the thread stores: its own word, or the word whose slot the
+        // automorphism reads this one from.
+        let mut out = word;
+        if comptime!(t.permute) {
+            let slot = word - (plane << log_n);
+            let up = 32u32 - log_n;
+            let point = slot.reverse_bits() >> up;
+            let exponent = (mul * ((point << shift) + 1u32)) & ((1u32 << (log_n + shift)) - 1u32);
+            out = (plane << log_n) + ((exponent >> shift).reverse_bits() >> up);
+        }
 
         // Source limb `l` of input column `col` is register `l * cols_in + col`.
         let mut xs = Sequence::<u32>::new();
@@ -217,8 +252,20 @@ fn product_kernel(
             for d in 0..cols_out {
                 if step >= dsize - 1u32 {
                     let j = step - (dsize - 1u32);
-                    let index = res_base + ((j * cols_out + d) << log_block) + word;
+                    let index = res_base + ((j * cols_out + d) << log_block) + out;
                     let mut value = barrett60(fold64(window.index((d * dsize) as usize).read(), r), q, mu);
+                    if comptime!(t.addend >> d & 1 == 1) {
+                        let mut y = 0u32;
+                        if comptime!(d == 0) {
+                            if j < add0_size {
+                                y = add0[(add0_base + j * add0_stride + word) as usize];
+                            }
+                        } else if j < add1_size {
+                            y = add1[(add1_base + j * add1_stride + word) as usize];
+                        }
+                        let sum = value + y;
+                        value = min(sum, sum - q);
+                    }
                     if accumulate {
                         let sum = value + res[index as usize];
                         value = min(sum, sum - q);
@@ -234,11 +281,28 @@ fn product_kernel(
                 window.index((d * dsize + dsize - 1) as usize).store(0u64);
             }
         }
-        if !accumulate {
-            #[unroll]
-            for d in 0..cols_out {
+        // Past the product: the addend alone, or zero.
+        #[unroll]
+        for d in 0..cols_out {
+            let added = comptime!(t.addend >> d & 1 == 1);
+            if comptime!(added || !accumulate) {
                 for j in first..res_size {
-                    res[(res_base + ((j * cols_out + d) << log_block) + word) as usize] = 0u32;
+                    let index = res_base + ((j * cols_out + d) << log_block) + out;
+                    let mut value = 0u32;
+                    if added {
+                        if comptime!(d == 0) {
+                            if j < add0_size {
+                                value = add0[(add0_base + j * add0_stride + word) as usize];
+                            }
+                        } else if j < add1_size {
+                            value = add1[(add1_base + j * add1_stride + word) as usize];
+                        }
+                    }
+                    if accumulate {
+                        let sum = value + res[index as usize];
+                        value = min(sum, sum - q);
+                    }
+                    res[index as usize] = value;
                 }
             }
         }
@@ -255,6 +319,9 @@ fn product_kernel(
 /// Without `accumulate` every limb of `res` is written, those from `w_0` on
 /// with zero. With `accumulate` the product is added to `res`, whose limbs
 /// from `w_0` on are left untouched.
+///
+/// With a [`Tail`] the value stored or added is `sigma(product + addend)`,
+/// the addend reaching past `w_0` over the limbs it has.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn digit_product<RT: GpuRuntime>(
     res: &DftColumn,
@@ -264,6 +331,7 @@ pub(crate) fn digit_product<RT: GpuRuntime>(
     product_limbs: usize,
     limb_offset: usize,
     accumulate: bool,
+    tail: Tail<'_>,
 ) {
     let n = pmat.n;
     let block = 4 * n;
@@ -275,6 +343,20 @@ pub(crate) fn digit_product<RT: GpuRuntime>(
     if res.size == 0 {
         return;
     }
+    for (col, addend) in tail.addends.iter().enumerate() {
+        if let Some(addend) = addend {
+            assert_eq!(addend.n, n, "vector-matrix product: addend of another degree");
+            assert!(col < pmat.cols_out, "vector-matrix product: addend column out of range");
+        }
+    }
+    if let Some(plan) = tail.automorphism {
+        assert_eq!(plan.n(), n, "vector-matrix product: automorphism plan of another degree");
+    }
+    let plain = tail.addends.iter().all(Option::is_none) && tail.automorphism.is_none();
+    assert!(
+        plain || (limbs != 0 && limb_offset < pmat.size),
+        "vector-matrix product: a tail needs a product"
+    );
     if limbs == 0 || limb_offset >= pmat.size {
         // No term: the product is zero.
         if !accumulate {
@@ -296,17 +378,28 @@ pub(crate) fn digit_product<RT: GpuRuntime>(
         cols_out: narrow(pmat.cols_out),
         dsize: narrow(dsize),
         limbs: narrow(limbs),
+        addend: tail.addends[0].is_some() as u32 | (tail.addends[1].is_some() as u32) << 1,
+        permute: tail.automorphism.is_some(),
     };
+    // An absent addend is bound to a buffer of the launch and never read.
+    let [(add0, add0_size), (add1, add1_size)] = tail
+        .addends
+        .map(|addend| addend.map_or((a, 0), |addend| (addend, addend.size.min(res.size))));
+    let (mul, shift) = tail.automorphism.map_or((1, 1), AutomorphismPlan::scatter);
     let units = block;
     let key_limbs = pmat.size.min(res.size + dsize - 1);
     let words = limbs * pmat.cols_in
-        + pmat.cols_out * (terms.rows() as usize * pmat.cols_in * key_limbs + res.size * (1 + accumulate as usize));
+        + pmat.cols_out * (terms.rows() as usize * pmat.cols_in * key_limbs + res.size * (1 + accumulate as usize))
+        + add0_size
+        + add1_size;
     launch!(
         RT, if accumulate { Label::VmpDigitProductAdd } else { Label::VmpDigitProduct }, units * 4 * words, product_kernel, (units, RT::GROUP, RT::GROUP);
         [
             res.binding => u32,
             a.binding => u32,
             pmat.binding => u32,
+            add0.binding => u32,
+            add1.binding => u32,
         ];
         [
             n.ilog2(),
@@ -317,6 +410,14 @@ pub(crate) fn digit_product<RT: GpuRuntime>(
             narrow(pmat.size),
             narrow(limb_offset),
             narrow(product_limbs.min(dsize)),
+            add0.base,
+            add0.stride,
+            narrow(add0_size),
+            add1.base,
+            add1.stride,
+            narrow(add1_size),
+            mul,
+            shift,
         ];
         [Consts::get(), terms, accumulate]
     );

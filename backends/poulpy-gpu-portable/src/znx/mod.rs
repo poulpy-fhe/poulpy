@@ -15,6 +15,8 @@ pub(crate) use gadget::gadget_decompose;
 pub(crate) use lincomb::{Term, lincomb, lincomb_decimating};
 pub(crate) use normalize::{KERNEL_RADIX, normalize, normalize_residues};
 pub(crate) use permute::{Map, ci_embed, ci_trace, move_from_temp, permute};
+#[cfg_attr(not(feature = "enable-core"), allow(unused_imports))]
+pub(crate) use products::{CONST_TERMS, convolution_by_const_sum};
 pub(crate) use products::{col_weighted_sum, convolution_by_const, inner_sum, scalar_product};
 
 use crate::runtime::Binding;

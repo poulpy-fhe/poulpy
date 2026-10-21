@@ -62,6 +62,37 @@ pub(crate) fn glwe_mul_columns<RT: GpuRuntime, R: Ring>(
     );
 }
 
+/// [`glwe_mul_columns`] of a square: the left prepared form on both sides.
+#[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
+pub(crate) fn glwe_square_columns<RT: GpuRuntime, R: Ring>(
+    module: &Module<NTT4x30Gpu<RT, R>>,
+    cnv_offset: usize,
+    diag: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
+    cross: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
+    a: &CnvPVecLBackendRef<'_, NTT4x30Gpu<RT, R>>,
+) {
+    assert!(
+        diag.cols() >= 2 && a.cols() >= 2,
+        "glwe_square_columns: rank-1 operands have two columns"
+    );
+    assert!(
+        a.n() == diag.n() && cross.n() == diag.n(),
+        "glwe_square_columns: operand degrees differ"
+    );
+    let column = |column: Option<DftColumn>| column.expect("glwe_square_columns: an operand holds no storage");
+    convolution_tensor::<RT>(
+        &column(dft_column_mut(diag, 0)),
+        &column(dft_column_mut(diag, 1)),
+        &column(dft_column_mut(cross, 0)),
+        &column(cnv_left_column(a, 0)),
+        &column(cnv_left_column(a, 1)),
+        &column(cnv_left_column(a, 0)),
+        &column(cnv_left_column(a, 1)),
+        cnv_offset,
+        handle(module).convolution_capacity_step(),
+    );
+}
+
 /// Transforms every column of `a` into the prepared vector whose column 0 is
 /// `res0`, truncating or zero-extending to its limbs.
 fn prepare<RT: GpuRuntime, R: Ring>(

@@ -11,7 +11,7 @@ use super::operand::{all_blocks, all_dft_blocks, column_ref, dft_column_mut, dft
 use crate::{
     NTT4x30Gpu,
     module::handle,
-    ntt4x30::{DftTerm, combine, digit_product, extract_rows, forward},
+    ntt4x30::{AutomorphismPlan, DftTerm, Tail, combine, digit_product, extract_rows, forward},
     runtime::GpuRuntime,
 };
 
@@ -31,6 +31,66 @@ pub(crate) fn gglwe_product_digits_strided<RT: GpuRuntime, R: Ring>(
     pmat: &VmpPMatBackendRef<'_, NTT4x30Gpu<RT, R>>,
 ) {
     product::<RT, R>(res, a, pmat, dsize, product_limbs, 0, false);
+}
+
+/// `res (+)= sigma(a * pmat + addends)` over interleaved digits: the product
+/// of the core hook, with column `c` of `addends[d].0` added to its column
+/// `d` over the limbs both have, stored or accumulated through the
+/// automorphism of `plan` when there is one. Without `accumulate` every limb
+/// of `res` is written.
+#[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+pub(crate) fn gglwe_product_fused<RT: GpuRuntime, R: Ring>(
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
+    product_size: usize,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Gpu<RT, R>>,
+    dsize: usize,
+    product_limbs: usize,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Gpu<RT, R>>,
+    addends: [Option<(&VecZnxDftBackendRef<'_, NTT4x30Gpu<RT, R>>, usize)>; 2],
+    plan: Option<&AutomorphismPlan>,
+    accumulate: bool,
+) {
+    assert!(
+        a.n() == res.n() && pmat.n() == res.n(),
+        "fused product: operand degrees differ"
+    );
+    assert_eq!(a.cols(), pmat.cols_in(), "fused product: a.cols() != pmat.cols_in()");
+    assert_eq!(res.cols(), pmat.cols_out(), "fused product: res.cols() != pmat.cols_out()");
+    assert!(
+        product_size <= res.size(),
+        "fused product: product wider than its destination"
+    );
+    let res = dft_column_mut(res, 0).expect("fused product: res holds no storage");
+    if !accumulate && product_size < res.size {
+        // Stored over `product_size` limbs: the limbs past them are zero.
+        let cols = pmat.cols_out();
+        let all = all_dft_blocks(&res, res.size);
+        let tail = all.limbs(product_size * cols, 1, (res.size - product_size) * cols);
+        combine::<RT>(&tail, tail.size, DftTerm::zero(&tail), DftTerm::zero(&tail));
+    }
+    let res = res.limbs(0, 1, product_size);
+    let a = dft_column_ref(a, 0).expect("fused product: a holds no storage");
+    let pmat = self::pmat(pmat).expect("fused product: pmat holds no storage");
+    let addends = addends.map(|addend| {
+        addend.map(|(addend, col)| {
+            assert_eq!(addend.n(), res.n, "fused product: addend of another degree");
+            dft_column_ref(addend, col).expect("fused product: an addend holds no storage")
+        })
+    });
+    digit_product::<RT>(
+        &res,
+        &a,
+        &pmat,
+        dsize,
+        product_limbs,
+        0,
+        accumulate,
+        Tail {
+            addends: [addends[0].as_ref(), addends[1].as_ref()],
+            automorphism: plan,
+        },
+    );
 }
 
 fn product<RT: GpuRuntime, R: Ring>(
@@ -60,7 +120,7 @@ fn product<RT: GpuRuntime, R: Ring>(
         }
         return;
     };
-    digit_product::<RT>(&res, &a, &b, dsize, product_limbs, limb_offset, accumulate);
+    digit_product::<RT>(&res, &a, &b, dsize, product_limbs, limb_offset, accumulate, Tail::default());
 }
 
 unsafe impl<RT: GpuRuntime, R: Ring> HalVmpImpl for NTT4x30Gpu<RT, R> {

@@ -6,8 +6,9 @@ use poulpy_core::reference::operations::GLWETensoringReference;
 use poulpy_hal::{
     api::{
         CnvPVecAlloc, Convolution, ScratchOwnedAlloc, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
-        VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize,
-        VecZnxIdftNormalizeTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan, VecZnxDftCopy,
+        VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VmpPMatAlloc, VmpPrepare,
+        VmpPrepareTmpBytes,
     },
     layouts::{
         Backend, DataView, MatZnx, Module, PrepareHint, Ring, ScratchOwned, VecZnx, VecZnxBigToBackendMut, VecZnxDftOwned,
@@ -145,6 +146,66 @@ fn digits_case<R: Ring>(
         "digit product differs from its reference: a_size={a_size} dsize={dsize} rows={rows} cols_in={cols_in} \
          cols_out={cols_out} key_size={key_size} res_size={res_size} product_limbs={product_limbs}"
     );
+
+    // The rotated product against its composition: the product above over
+    // `product_size` limbs, the body added to column 0, then the
+    // automorphism, stored or accumulated.
+    let narrow = res_size.saturating_sub(1).max(1);
+    for (accumulate, body_size, product_size) in [
+        (false, res_size, res_size),
+        (true, res_size + 2, res_size),
+        (true, res_size.div_ceil(2), res_size),
+        (false, res_size, narrow),
+        (true, res_size + 2, narrow),
+    ] {
+        let body = transformed(module, n, cols_out, body_size, &mut seed);
+        let plan = module.vec_znx_dft_automorphism_plan(n, 5);
+        let mut accumulator_seed = seed;
+        let mut rotated_want = transformed(module, n, cols_out, res_size, &mut accumulator_seed);
+        let mut rotated_have = transformed(module, n, cols_out, res_size, &mut seed);
+        let mut sum = module.vec_znx_dft_alloc(n, cols_out, product_size);
+        for col in 0..cols_out {
+            module.vec_znx_dft_copy(1, 0, &mut sum.to_backend_mut(), col, &want.to_backend_ref(), col);
+        }
+        module.vec_znx_dft_add_assign(&mut sum.to_backend_mut(), 0, &body.to_backend_ref(), 0);
+        for col in 0..cols_out {
+            if accumulate {
+                module.vec_znx_dft_automorphism_add_with_plan(
+                    &plan,
+                    &mut rotated_want.to_backend_mut(),
+                    col,
+                    &sum.to_backend_ref(),
+                    col,
+                    &mut scratch.arena(),
+                );
+            } else {
+                module.vec_znx_dft_automorphism_with_plan(
+                    &plan,
+                    &mut rotated_want.to_backend_mut(),
+                    col,
+                    &sum.to_backend_ref(),
+                    col,
+                );
+            }
+        }
+        crate::hal_impl::gglwe_product_fused(
+            &mut rotated_have.to_backend_mut(),
+            product_size,
+            &a.to_backend_ref(),
+            dsize,
+            product_limbs,
+            &pmat.to_backend_ref(),
+            [Some((&body.to_backend_ref(), 0)), None],
+            Some(&plan),
+            accumulate,
+        );
+        assert!(
+            rotated_want == rotated_have,
+            "rotated digit product differs from its composition: a_size={a_size} dsize={dsize} rows={rows} \
+             cols_in={cols_in} cols_out={cols_out} key_size={key_size} res_size={res_size} \
+             product_limbs={product_limbs} accumulate={accumulate} body_size={body_size} product_size={product_size}"
+        );
+    }
 }
 
 #[test]

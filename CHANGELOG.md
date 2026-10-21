@@ -831,6 +831,7 @@
   CKKS encoding and decoding, the uniform fill of a coefficient column and the normalizations at radices above 62 bits are staged through the host, and everything else runs on the device, sampling included.
   `Replay` records a repeated sequence of calls and replays it as one graph.
   `handle` reaches a module's `GpuHandle`, which sets the convolution capacity step (`set_convolution_capacity_step`).
+  It implements the step hooks of `poulpy-core` with fused launches.
   See `docs/guides/backends.md`.
 
 ### `poulpy-bench`
