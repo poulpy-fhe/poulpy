@@ -51,6 +51,7 @@ pub fn vec_znx_gadget_decompose_portable<'r, 'a, BE>(
     let low: usize = (j0 + 1) * base2k - gadget_k;
     let nothing_dropped: i64 = (j0 + 1 == a_size && low == 0) as i64;
 
+    assert!(res_col < res.cols() && a_col < a.cols(), "operand column out of range");
     // Bounds-checks the last limb of each column, the farthest one the kernel touches.
     if a_size > 0 {
         let _ = a.at_ptr(a_col, a_size - 1);
