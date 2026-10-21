@@ -361,6 +361,42 @@ pub unsafe trait HalMatZnxImpl: HalVecZnxImpl {
     fn mat_znx_add_assign(module: &Module<Self>, res: &mut MatZnxBackendMut<'_, Self>, a: &MatZnxBackendRef<'_, Self>) {
         crate::oep::mat_znx_add_assign_derived::<Self>(module, res, a)
     }
+
+    /// Default body: `mat_znx_normalize_tmp_bytes_derived`, the scratch of `vec_znx_normalize`.
+    fn mat_znx_normalize_tmp_bytes(module: &Module<Self>) -> usize {
+        crate::oep::mat_znx_normalize_tmp_bytes_derived::<Self>(module)
+    }
+
+    /// Default body: `mat_znx_normalize_derived`, a `vec_znx_normalize` on every entry.
+    fn mat_znx_normalize(
+        module: &Module<Self>,
+        res: &mut MatZnxBackendMut<'_, Self>,
+        res_base2k: usize,
+        res_k: usize,
+        res_offset: i64,
+        res_col: usize,
+        a: &MatZnxBackendRef<'_, Self>,
+        a_base2k: usize,
+        a_col: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        crate::oep::mat_znx_normalize_derived::<Self>(
+            module, res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, scratch,
+        )
+    }
+
+    /// Default body: `mat_znx_normalize_assign_derived`, a `vec_znx_normalize_assign` on every entry.
+    fn mat_znx_normalize_assign(
+        module: &Module<Self>,
+        base2k: usize,
+        k: usize,
+        a_offset: i64,
+        a: &mut MatZnxBackendMut<'_, Self>,
+        a_col: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        crate::oep::mat_znx_normalize_assign_derived::<Self>(module, base2k, k, a_offset, a, a_col, scratch)
+    }
 }
 
 /// Monomial multiplication (`X^k`), not implemented by conjugate-invariant backends.

@@ -19,6 +19,7 @@
   Ties of a few dropped exact bits no longer push every coefficient the same way; outputs change only at exact ties.
 - Add `MatZnxAddAssign::mat_znx_add_assign`, the entrywise sum of two `MatZnx` of one shape, limb by limb and not renormalized, in the new `api::mat_znx` family ([#380](https://github.com/poulpy-fhe/poulpy/issues/380)).
   **Breaking:** its OEP method sits in the new family `HalMatZnxImpl: HalVecZnxImpl`, which every backend implements; the default body, `oep::mat_znx_add_assign_derived`, is one `vec_znx_add_assign` per output column of every entry, so an empty `unsafe impl` suffices. `test_mat_znx_add_assign` runs in every backend suite.
+- Add `MatZnxNormalize::mat_znx_normalize` and `MatZnxNormalizeAssign::mat_znx_normalize_assign`, with `MatZnxNormalizeTmpBytes`, the normalization of one output column of every entry of a `MatZnx`, as `vec_znx_normalize` and `vec_znx_normalize_assign` on each entry, which their `HalMatZnxImpl` default bodies are; `test_mat_znx_normalize` runs in every backend suite.
 - **Breaking:** `ScalarZnx` implements `Debug` on host-readable storage only and prints its shape and the first 16 coefficients of each column, as `VecZnx` and `MatZnx` do, where it derived `Debug` and printed its whole buffer, and `CnvPVecL` and `CnvPVecR` implement `PartialEq` and `Eq` (same shape, same bytes), as `VmpPMat` does ([#450](https://github.com/poulpy-fhe/poulpy/issues/450)).
   `VecZnxDft`, `VecZnxBig`, `SvpPPol`, `VmpPMat`, `CnvPVecL` and `CnvPVecR` implement `Debug`, which prints the shape only.
   The test suites compare layouts with `assert_eq!` through these impls, and raw bytes only under a static message, so a failing assertion no longer prints whole buffers.
@@ -290,6 +291,7 @@
   `test_ggsw_share_digit_widths` checks the estimate and the measured noise at widths below a limb, one bit past a limb and one bit short of two.
 - The aggregations of `GGLWEPatCompressed`, `GGLWEPat` and the public key shares add a share with one `mat_znx_add_assign` over the whole matrix, where they summed one entry at a time ([#380](https://github.com/poulpy-fhe/poulpy/issues/380)).
   The public key share aggregation compares the seed vectors once and no longer calls `glwe_pat_compressed_aggregate_assign` per entry.
+  The finalizations of `GGLWEPatCompressed` and `GGLWEPat` normalize the whole matrix with `mat_znx_normalize_assign` (the bodies) and `mat_znx_normalize` (one call per output column), and their scratch queries are `mat_znx_normalize_tmp_bytes`.
   **Breaking:** `GLWEPublicKeyMHEProtocolImpl` gains the supertrait `HalMatZnxImpl`.
 
 ### `poulpy-blas`
