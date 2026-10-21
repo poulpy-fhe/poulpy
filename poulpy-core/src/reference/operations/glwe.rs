@@ -579,6 +579,9 @@ pub trait GLWETensoringReference<BE: Backend> {
     /// The sum is rounded once where the two-step path rounds twice.
     /// The key-switch runs on `d2` at the alignment of the convolution output, `cnv_offset mod base2k` bits
     /// below the normalized position, so its noise is scaled up by that many bits in the result.
+    /// Where `d2` spans digits past the gadget and the noise model does not keep this path within the two-step
+    /// noise, the columns are normalized into a tensor and relinearized by
+    /// [`GLWETensoringImpl::glwe_tensor_relinearize`] instead.
     ///
     /// Requires rank 1, the `base2k` of `res` for the operands and the tensor key, and `cnv_offset >= base2k`:
     /// below it the final normalization shifts right, which turns the integer parts dropped from `d2` into errors.
@@ -1601,6 +1604,62 @@ where
     }
 }
 
+/// Whether the one-pass relinearization against `tsk` keeps the noise of the two-step path.
+///
+/// Where `lo = cnv_offset mod base2k > 0` and `d2` holds digits past the gadget, the one-pass path is kept only if
+/// its modeled variance stays within [`TENSOR_NOISE_MARGIN`](crate::reference::noise::TENSOR_NOISE_MARGIN) of the
+/// two-step one (see [`var_noise_glwe_mul_relinearize`](crate::reference::noise::var_noise_glwe_mul_relinearize)).
+/// The secret's second moment and the key error are read from the noise metadata of `tsk`: a key without it, or
+/// with a secret of unknown law, takes the two-step path. The operands' errors are floored at their rounding at
+/// their width, which vanishes once the product is lifted past it.
+#[allow(clippy::too_many_arguments)]
+fn one_pass_keeps_two_step_noise(
+    tsk: &crate::layouts::GLWETensorKeyPreparedBackendRef<'_, impl Backend>,
+    n: usize,
+    base2k: usize,
+    dft_size: usize,
+    cnv_offset: usize,
+    left_k: TorusPrecision,
+    right_k: TorusPrecision,
+    tensor_k: TorusPrecision,
+    res_k: TorusPrecision,
+) -> bool {
+    let lo = cnv_offset % base2k;
+    if lo == 0 || dft_size * base2k <= tsk.dnum().as_usize() * tsk.k_digit().as_usize() {
+        return true;
+    }
+    let Some(noise) = tsk.noise() else {
+        return false;
+    };
+    let Some(var_xs) = noise.secret_distribution().coefficient_second_moment(n) else {
+        return false;
+    };
+    let key_k = tsk.k();
+    let var_key_err_body = noise.body().variance_at(key_k);
+    let var_key_err_mask: f64 = noise.masks().iter().map(|mask| mask.variance_at(key_k)).sum();
+    let var_e = |k: TorusPrecision| {
+        if cnv_offset < k.as_usize() {
+            (-2.0 * k.as_usize() as f64).exp2() / 12.0
+        } else {
+            0.0
+        }
+    };
+    let var_operands =
+        crate::reference::noise::var_noise_glwe_tensor_operands(n as f64, 1.0, var_xs, var_e(left_k), var_e(right_k), cnv_offset);
+    let (one_pass, two_step) = crate::reference::noise::var_noise_glwe_mul_relinearize(
+        tsk,
+        var_xs,
+        var_key_err_body,
+        var_key_err_mask,
+        var_operands,
+        lo,
+        tensor_k.as_usize(),
+        dft_size * base2k,
+        res_k.as_usize(),
+    );
+    one_pass <= two_step * (2.0 * crate::reference::noise::TENSOR_NOISE_MARGIN).exp2()
+}
+
 /// Scratch of [`glwe_mul_relinearize_one_pass`]: one product of ciphertexts, or a sum of them, or either over
 /// prepared pairs.
 #[allow(clippy::too_many_arguments)]
@@ -1667,7 +1726,16 @@ where
                     .gglwe_product_dft_tmp_bytes_reference(ks_size, gadget_size, tsk)
                     .max(module.vec_znx_idft_normalize_consume_tmp_bytes(res.size(), ks_size)),
         );
-    let tail = columns + BE::bytes_of_vec_znx(n, 1, dft_size) + convolve.max(digits).max(product);
+    // Relinearized as a tensor when the gadget does not cover the digits of `d2`.
+    let uncovered = if dft_size * base2k > tsk.dnum().as_usize() * tsk.k_digit().as_usize() {
+        module.glwe_tensor_bytes_of_from_infos(&tensor_infos)
+            + module
+                .vec_znx_idft_normalize_consume_tmp_bytes(tensor_size, dft_size)
+                .max(BE::glwe_tensor_relinearize_tmp_bytes(module, res, &tensor_infos, tsk))
+    } else {
+        0
+    };
+    let tail = columns + BE::bytes_of_vec_znx(n, 1, dft_size) + convolve.max(digits).max(product).max(uncovered);
 
     // A sum holds a second set of product columns while each later pair is formed, and the digits of `d2`
     // while a later pair of ciphertexts is prepared. A prepared form reads its operands where they are.
@@ -1811,6 +1879,7 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
         ..tensor_infos
     };
 
+    let tsk_source = tsk;
     let tsk = &tsk.get_tensor_key(tensor_k).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(tsk.base2k().as_usize(), base2k, "tsk.base2k() != res.base2k()");
     assert_eq!(tsk.rank_out().as_usize(), 1, "rank 1 only");
@@ -1968,6 +2037,48 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
                 add_columns!(&a.to_backend_ref(), &b.to_backend_ref());
             }
         }
+    }
+
+    // Unless the one-pass relinearization keeps the two-step noise, the columns are aligned to the result first and
+    // relinearized as a tensor, as in the two-step product.
+    if !one_pass_keeps_two_step_noise(tsk, n, base2k, dft_size, cnv_offset, left_k, right_k, tensor_k, res_k) {
+        let (mut tensor, mut scratch) = scratch.take_glwe_tensor_scratch(&tensor_infos);
+        {
+            let mut tensor_backend = tensor.to_backend_mut();
+            for (col, column) in [(0, 0), (2, 1)] {
+                module.vec_znx_idft_normalize_consume(
+                    &mut tensor_backend.data,
+                    base2k,
+                    tensor_size * base2k,
+                    cnv_offset_lo,
+                    col,
+                    &mut diag,
+                    column,
+                    base2k,
+                    None,
+                    &mut scratch.borrow(),
+                );
+            }
+            module.vec_znx_idft_normalize_consume(
+                &mut tensor_backend.data,
+                base2k,
+                tensor_size * base2k,
+                cnv_offset_lo,
+                1,
+                &mut cross,
+                0,
+                base2k,
+                None,
+                &mut scratch.borrow(),
+            );
+        }
+        {
+            let mut res = res.to_backend_mut();
+            res.k = res_k;
+            BE::glwe_tensor_relinearize(module, &mut &mut res, &tensor, tsk_source, &mut scratch);
+        }
+        res.set_canonical(true);
+        return;
     }
 
     // The inverse consumes column 1 of `diag` and leaves d0 in column 0.
