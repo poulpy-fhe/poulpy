@@ -67,6 +67,14 @@ client plans every intermediate grid, and with it every key, before it encrypts 
 context or a public operand, or their layouts (`BlasContextLayout`, `BlasPtOperandLayout`), and reads only the shape of
 their maps, so the plan needs no map encoded; the radix queries name their backend, `blas_matmul_max_base2k::<BE>`.
 
+The [pipeline example](../poulpy-cpu-portable/examples/blas_pipeline.rs) plans its keys this way, plans every layout from the queries, runs `blas_matmul`,
+`blas_transpose`, `blas_matmul_pt_right`, `blas_matmul_pt_left` and `blas_sum` on a batch of encrypted matrices, prints the
+torus width each one consumes and checks the result in the clear:
+
+```sh
+cargo run -p poulpy-cpu-portable --example blas_pipeline --features enable-blas
+```
+
 ## Lifecycle
 
 poulpy-blas follows poulpy-core's layouts: a standard form, which a client builds and a server stores, and a prepared
@@ -130,5 +138,15 @@ layouts do, and holds its terms in its own representation through its poulpy-ckk
 cargo test -p poulpy-blas
 ```
 
+The `test-utils` feature exposes the functional suite, registered with `blas_backend_test_suite!` and run by
+`poulpy-cpu-oracle`, its conjugate-invariant counterpart, registered with `blas_conjugate_invariant_test_suite!` and run
+by every conjugate-invariant backend type, the parity suite, registered with `blas_parity_test_suite!`, and the radix
+helpers' test, registered with `blas_max_base2k_test_suite!` for a backend that implements `MaxBase2k`. Parity compares
+a tested backend with a reference backend bit for bit, at every block dimension that the optional `shapes` argument
+(`test_suite::parity::BlasParityShapes`, `log_d` 1 and 2 by default) selects, and also runs concurrent calls on the
+tested backend. Every override ships with that parity test passing against an attested backend: the oracle inside this
+workspace; outside it, either the oracle taken from the same git revision as every other poulpy crate, or the published
+`poulpy-cpu-portable` with `enable-blas`.
+
 See the [repository README](../README.md) for commands and CI coverage, and
-[Implementing BLAS operations](docs/blas-contracts.md) for wiring and the override contract.
+[Implementing BLAS operations](docs/blas-contracts.md) for wiring, the override contract, registration and attestation.
