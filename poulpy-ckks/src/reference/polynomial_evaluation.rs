@@ -412,7 +412,7 @@ where
     A: GLWEToBackendRef<BE> + CKKSCtBounds,
     P: CKKSMaskedConstants<BE>,
 {
-    use crate::reference::mul::{mul_pt_params_raw, product_depth};
+    use crate::reference::mul::{mul_pt_params_raw, product_depth, product_layout};
 
     let Some(&(seed, _)) = terms.last() else {
         return Ok(false);
@@ -428,6 +428,10 @@ where
         let Some(pt) = operand(i) else {
             return Ok(false);
         };
+        product_layout(
+            "ckks_eval_baby_linear_combination",
+            &[seed.slot_layout(), t.slot_layout(), pt.slot_layout()],
+        )?;
         if t.base2k().as_usize() != kb || t.log_delta() != delta || pt.base2k().as_usize() != kb || pt.log_delta() != pt_log_delta
         {
             return Ok(false);

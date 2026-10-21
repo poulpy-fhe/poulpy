@@ -776,6 +776,39 @@ where
             "{case:?} polynomial at 2^{LOG_DELTA}: {shaped:.2} bits against {full:.2} for a full layout"
         );
     }
+
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+    let k = 7 * LOG_DELTA;
+    let values = unit_batch::<F>(1 << LOG_K, 0);
+    let x = encrypt_batch(
+        &params,
+        module,
+        &sk,
+        SlotLayout::Replicated(layout()),
+        (&values.0, &values.1),
+        k,
+        1,
+    )?;
+    let narrower = ShapingUnit::U16_20.layout(LOG_K, 24)?;
+    let identity = Polynomial::new(Basis::Monomial, vec![F::zero(), F::one()]);
+    let mut encoding = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(params.n / 2));
+    let bsgs = encode_bsgs_replicated(
+        &identity,
+        module,
+        params.base2k.into(),
+        CoeffsMeta::from_delta_budget(LOG_DELTA, 10),
+        SplitStrategy::MinDepth,
+        narrower,
+        &mut encoding.borrow(),
+    )?;
+    let mut out = alloc_ct(&params, module, k);
+    assert!(
+        module
+            .ckks_eval_poly_real_const_coeffs(&mut out, &x, &bsgs, &tsk, &mut scratch.borrow())
+            .is_err()
+    );
     Ok(())
 }
 
