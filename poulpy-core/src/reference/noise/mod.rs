@@ -29,7 +29,7 @@ pub(crate) mod glwe;
 
 pub use crate::api::GGLWENoise;
 
-use crate::layouts::{GGLWEInfos, GGLWELayout, GGSWInfos, GLWEInfos, LWEInfos};
+use crate::layouts::{GGLWEInfos, GGLWELayout, GGSWInfos, GLWEInfos, GLWELayout, LWEInfos, TorusPrecision};
 
 /// Noise model of a gadget key, blanket-implemented for every [`GGLWEInfos`].
 ///
@@ -308,6 +308,12 @@ fn var_canonicalization_with_fold(k: usize, base2k: usize, fold: f64) -> f64 {
     }
 }
 
+/// Rounding of a value normalized at `k` from a wider one, folded by `fold`: uniform over an ulp at a limb
+/// boundary, and at most the half-ulp canonicalization otherwise.
+fn var_rounding(k: usize, base2k: usize, fold: f64) -> f64 {
+    var_canonicalization_with_fold(k, base2k, fold).max(fold * (-2.0 * k as f64).exp2() / 12.0)
+}
+
 /// `log2 sqrt(Var)`, clamped to the largest representable noise
 /// (`[-2^{-1}, 2^{-1}]`).
 fn log2_std(var: f64) -> f64 {
@@ -351,9 +357,82 @@ pub(crate) fn var_noise_glwe_tensor(
     k_out: usize,
     base2k_out: usize,
 ) -> f64 {
-    let scale: f64 = ((2 * cnv_offset) as f64).exp2();
-    let tensor_fold = var_tensor_key(n, rank, var_xs);
-    (var_e_a + var_e_b) * tensor_fold * scale + var_canonicalization_with_fold(k_out, base2k_out, tensor_fold)
+    var_noise_glwe_tensor_operands(n, rank, var_xs, var_e_a, var_e_b, cnv_offset)
+        + var_canonicalization_with_fold(k_out, base2k_out, var_tensor_key(n, rank, var_xs))
+}
+
+/// `(Var(e_a) + Var(e_b)) * var_tensor_key * 2^{2*cnv_offset}`, the operands' errors in a tensor product at the
+/// output scale, without its rounding.
+pub(crate) fn var_noise_glwe_tensor_operands(
+    n: f64,
+    rank: f64,
+    var_xs: f64,
+    var_e_a: f64,
+    var_e_b: f64,
+    cnv_offset: usize,
+) -> f64 {
+    (var_e_a + var_e_b) * var_tensor_key(n, rank, var_xs) * ((2 * cnv_offset) as f64).exp2()
+}
+
+/// Slack, in bits of standard deviation, between a measured or alternative noise and the model it is held to.
+///
+/// Realised noise varies with the secret draw: a factor of four above the model's standard deviation, two bits on
+/// the log2 scale.
+pub(crate) const TENSOR_NOISE_MARGIN: f64 = 2.0;
+
+/// `Var_key + n * (2 * n * var_xs^2) * Var(r)`, what relinearizing `d2`, the `s^2` column of a rank-1 tensor of
+/// precision `d2_k`, adds: the key error of [`GGLWENoiseModel::var_key_error`], and the residue the gadget drops
+/// below its cover, lost against `s^2`, whose coefficients have variance `2 * n * var_xs^2`.
+pub(crate) fn var_noise_relinearize_d2<K: GGLWEInfos>(
+    tsk: &K,
+    d2_k: usize,
+    var_xs: f64,
+    var_key_err_body: f64,
+    var_key_err_mask: f64,
+) -> f64 {
+    let d2 = GLWELayout {
+        n: tsk.n(),
+        base2k: tsk.base2k(),
+        k: TorusPrecision(d2_k as u32),
+        rank: tsk.rank_out(),
+    };
+    let n: f64 = tsk.n().as_usize() as f64;
+    tsk.var_key_error(&d2, var_xs, var_key_err_body, var_key_err_mask) + n * (2.0 * n * var_xs * var_xs) * tsk.var_residue(&d2)
+}
+
+/// `(one_pass, two_step)` variances of a rank-1 product relinearized against `tsk` at `res_k`:
+///
+/// ```text
+/// shared   = var_operands + (1 + n * var_xs) * Var(round_res)
+/// two_step = shared + var_tensor_key * Var(round_tensor) + Var_relin(tensor_k)
+/// one_pass = shared + 2^{2*lo} * Var_relin(d2_k)
+/// ```
+///
+/// The two-step path normalizes the tensor at `tensor_k` before relinearizing `d2`. The one-pass path relinearizes
+/// `d2` as the convolution leaves it, `d2_k` bits wide and `lo = cnv_offset mod base2k` bits under the result, which
+/// lifts its relinearization by `2^lo`. `var_operands` is the operands' term of
+/// [`var_noise_glwe_tensor_operands`], or what the caller knows of the product's own noise.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn var_noise_glwe_mul_relinearize<K: GGLWEInfos>(
+    tsk: &K,
+    var_xs: f64,
+    var_key_err_body: f64,
+    var_key_err_mask: f64,
+    var_operands: f64,
+    lo: usize,
+    tensor_k: usize,
+    d2_k: usize,
+    res_k: usize,
+) -> (f64, f64) {
+    let n: f64 = tsk.n().as_usize() as f64;
+    let base2k: usize = tsk.base2k().as_usize();
+    let shared: f64 = var_operands + var_rounding(res_k, base2k, 1.0 + n * var_xs);
+    let two_step: f64 = shared
+        + var_rounding(tensor_k, base2k, var_tensor_key(n, 1.0, var_xs))
+        + var_noise_relinearize_d2(tsk, tensor_k, var_xs, var_key_err_body, var_key_err_mask);
+    let one_pass: f64 =
+        shared + ((2 * lo) as f64).exp2() * var_noise_relinearize_d2(tsk, d2_k, var_xs, var_key_err_body, var_key_err_mask);
+    (one_pass, two_step)
 }
 
 /// Tensor-product noise plus the canonical round after relinearization.

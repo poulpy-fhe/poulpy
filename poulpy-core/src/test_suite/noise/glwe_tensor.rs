@@ -26,13 +26,7 @@ use crate::{
     log2_std_noise_glwe_tensor, log2_std_noise_glwe_tensor_relinearized,
 };
 
-/// Slack allowed above [`log2_std_noise_glwe_tensor`] for the measured
-/// tensoring noise, in bits.
-///
-/// Realised noise varies with the secret draw. This test allows a factor of
-/// four above the model's estimated standard deviation (two bits on the log2
-/// scale). The same margin applies to every implementation under test.
-const TENSOR_NOISE_MARGIN: f64 = 2.0;
+use crate::reference::noise::TENSOR_NOISE_MARGIN;
 
 pub(crate) fn assert_canonical(a: &VecZnx<impl HostDataRef, i64>, base2k: usize, k: usize) {
     let active_size = k.div_ceil(base2k);
@@ -313,6 +307,231 @@ where
     }
 
     one_pass_product_noise(params, module);
+    one_pass_product_key_coverage(params, module);
+}
+
+/// The one-pass product against the two-step path when the tensor key covers exactly the operands' limbs.
+///
+/// At an offset `k` of remainder `lo`, `d2` spans one limb more than the operands, beyond such a key's gadget. Squares
+/// and products of small messages, at widths of every remainder class tested and against keys of dsize 1 and 2, are
+/// held to the noise model of each path. Where the model rejects the one-pass path, and against a key without noise
+/// metadata, such products are the two-step product bit for bit.
+fn one_pass_product_key_coverage<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
+where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: GLWETensoring<BE>
+        + GLWEEncryptSk<BE>
+        + GLWEDecrypt<BE>
+        + GLWESecretPreparedFactory<BE>
+        + GLWESub<BE>
+        + VecZnxNormalizeAssign<BE>
+        + GLWETensorKeyEncryptSk<BE>
+        + GLWETensorKeyPreparedFactory<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let key_k: usize = 8 * base2k;
+    let n: usize = module.n();
+
+    let key_infos = GLWELayout {
+        n: n.into(),
+        base2k: base2k.into(),
+        k: key_k.into(),
+        rank: 1u32.into(),
+    };
+    let tsk_infos = |dsize: usize| GLWETensorKeyLayout {
+        n: n.into(),
+        base2k: base2k.into(),
+        dnum: key_k.div_ceil(dsize * base2k).into(),
+        k_aux: (dsize * base2k + module.log_n()).into(),
+        rank: 1u32.into(),
+        k_digit: crate::layouts::k_digit_of(base2k, Dsize(dsize as u32)),
+    };
+    let size = key_k.div_ceil(base2k);
+
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        [1, 2]
+            .iter()
+            .map(|&dsize| {
+                let tsk = tsk_infos(dsize);
+                module
+                    .glwe_tensor_key_encrypt_sk_tmp_bytes(&tsk)
+                    .max(module.prepare_tensor_key_tmp_bytes(&tsk))
+                    .max(module.glwe_mul_relinearize_tmp_bytes(&key_infos, size, size, TorusPrecision(key_k as u32), &tsk))
+                    .max(module.glwe_tensor_relinearize_tmp_bytes(&key_infos, &key_infos, &tsk))
+            })
+            .fold(0, usize::max)
+            .max(module.glwe_encrypt_sk_tmp_bytes(&key_infos))
+            .max(module.glwe_decrypt_tmp_bytes(&key_infos))
+            .max(module.glwe_tensor_apply_tmp_bytes(&key_infos, &key_infos, &key_infos))
+            .max(module.glwe_tensor_square_apply_tmp_bytes(&key_infos, &key_infos)),
+    );
+
+    let mut source_xs: Source = Source::new([6u8; 32]);
+    let mut source_xe: Source = Source::new([7u8; 32]);
+    let mut source_xa: Source = Source::new([8u8; 32]);
+
+    let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(1u32.into());
+    module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
+    let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
+    module.glwe_secret_prepare(&mut sk_dft, &sk);
+
+    let mut data = vec![0i64; n];
+    for i in data.iter_mut() {
+        *i = (source_xa.next_i64() & 7) - 4;
+    }
+    let mean_square = data.iter().map(|x| (x * x) as f64).sum::<f64>() / n as f64;
+    // The negacyclic square of the messages.
+    let mut square = vec![0i64; n];
+    for (i, &x) in data.iter().enumerate() {
+        for (j, &y) in data.iter().enumerate() {
+            if i + j < n {
+                square[i + j] += x * y;
+            } else {
+                square[i + j - n] -= x * y;
+            }
+        }
+    }
+
+    for dsize in [1, 2] {
+        let tsk_infos = tsk_infos(dsize);
+        let mut tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
+        module.glwe_tensor_key_encrypt_sk(
+            &mut tsk,
+            &sk,
+            &mut source_xe,
+            &mut source_xa,
+            &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
+        );
+        let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
+        module.prepare_tensor_key(&mut tsk_prep, &tsk, &mut scratch.borrow());
+        // A key without noise metadata, which the one-pass model rejects.
+        let mut outside: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
+        module.prepare_tensor_key(&mut outside, &tsk, &mut scratch.borrow());
+        outside.0.noise = None;
+
+        let key_noise = tsk_prep.noise().unwrap();
+        let var_xs = key_noise.secret_distribution().coefficient_second_moment(n).unwrap();
+        let var_key_err_body = key_noise.body().variance_at(tsk_prep.k());
+        let var_key_err_mask: f64 = key_noise.masks().iter().map(|mask| mask.variance_at(tsk_prep.k())).sum();
+        let cover = tsk_infos.dnum.as_usize() * tsk_infos.k_digit.as_usize();
+
+        for lo in [0, 1, base2k / 2, base2k - 2, base2k - 1] {
+            let k = if lo == 0 { key_k } else { key_k - base2k + lo };
+            // `d2` as the convolution leaves it: one limb past the tensor at a remainder.
+            let d2_k = (k.div_ceil(base2k) + usize::from(lo != 0)) * base2k;
+            let infos = GLWELayout {
+                k: k.into(),
+                ..key_infos
+            };
+            let mut tensor: GLWETensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_alloc_from_infos(&infos);
+            let mut pt_in: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&infos);
+            let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&infos);
+
+            // A result at the operands' width, and one a limb narrower as a rescaled product is.
+            for res_k in [k, k - base2k] {
+                let res_infos = GLWELayout {
+                    k: res_k.into(),
+                    ..infos
+                };
+                let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&res_infos);
+                let mut pt_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&res_infos);
+                // The messages sit `r` bits above the offset `k`, and their square `r` bits under it, a few bits
+                // above the result's last bit.
+                let r = (k - res_k) / 2 + 4;
+                let cnv_offset = k;
+                pt_in.encode_vec_i64(&data, TorusPrecision((k - r) as u32));
+                pt_want.encode_vec_i64(&square, TorusPrecision((k - 2 * r) as u32));
+                let mut want = vec![0i128; n];
+                pt_want.decode_vec_i128(&mut want, TorusPrecision(res_k as u32));
+                let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
+                let mut b: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
+                for ct in [&mut a, &mut b] {
+                    module.glwe_encrypt_sk(ct, &pt_in, &sk_dft, &mut source_xe, &mut source_xa, &mut scratch.borrow());
+                }
+                // The largest error, in units of the result's last bit, and log2 of its standard deviation.
+                let mut error = |res: &GLWE<BE::OwnedBuf, BE::ZnxWord>, scratch: &mut ScratchOwned<BE>| -> (u128, f64) {
+                    glwe_decrypt_checked(module, res, &mut pt_have, &sk_dft, &mut scratch.borrow());
+                    let mut have = vec![0i128; n];
+                    pt_have.decode_vec_i128(&mut have, TorusPrecision(res_k as u32));
+                    let diff: Vec<i128> = have.iter().zip(&want).map(|(h, w)| h - w).collect();
+                    let var = diff.iter().map(|d| (*d as f64).powi(2)).sum::<f64>() / n as f64;
+                    (
+                        diff.iter().map(|d| d.unsigned_abs()).max().unwrap_or(0),
+                        0.5 * var.log2() - res_k as f64,
+                    )
+                };
+                // The model, with the operands' errors met by the messages, `e_a * m_b + e_b * m_a` lifted by `2^k`,
+                // and with them floored as the product does, at zero once the lift passes the operands' width.
+                let model = |var_operands: f64| {
+                    crate::reference::noise::var_noise_glwe_mul_relinearize(
+                        &tsk_prep,
+                        var_xs,
+                        var_key_err_body,
+                        var_key_err_mask,
+                        var_operands,
+                        lo,
+                        k,
+                        d2_k,
+                        res_k,
+                    )
+                };
+                let var_msg = n as f64 * crate::DEFAULT_SIGMA_XE.powi(2) * mean_square * (-2.0 * (k - r) as f64).exp2();
+                let (floor_one_pass, floor_two_step) = model(0.0);
+                let one_pass_kept =
+                    lo == 0 || d2_k <= cover || floor_one_pass <= floor_two_step * (2.0 * TENSOR_NOISE_MARGIN).exp2();
+                let mut have: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&res_infos);
+                for square in [true, false] {
+                    let role = if square { "square" } else { "product" };
+                    let (var_one_pass, var_two_step) = model(if square { 4.0 } else { 2.0 } * var_msg);
+                    if square {
+                        module.glwe_tensor_square_apply(cnv_offset, &mut tensor, &a, &mut scratch.borrow());
+                    } else {
+                        module.glwe_tensor_apply(cnv_offset, &mut tensor, &a, &b, &mut scratch.borrow());
+                    }
+                    module.glwe_tensor_relinearize(&mut res, &tensor, &tsk_prep, &mut scratch.borrow());
+                    let (two_step_max, two_step) = error(&res, &mut scratch);
+                    assert!(
+                        two_step_max < 1 << 20 && two_step <= 0.5 * var_two_step.log2() + TENSOR_NOISE_MARGIN,
+                        "two-step {role}, dsize {dsize}, k {k}, res_k {res_k}: error {two_step_max}, log2 std {two_step} \
+                         against {}",
+                        0.5 * var_two_step.log2()
+                    );
+                    let mut one_pass_with = |key: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>, have: &mut GLWE<_, _>| {
+                        if square {
+                            module.glwe_square_relinearize(cnv_offset, have, res_k.into(), &a, key, &mut scratch.borrow());
+                        } else {
+                            module.glwe_mul_relinearize(cnv_offset, have, res_k.into(), &a, &b, key, &mut scratch.borrow());
+                        }
+                        assert_canonical(have.data(), base2k, res_k);
+                    };
+                    one_pass_with(&tsk_prep, &mut have);
+                    let same = have.data().raw() == res.data().raw();
+                    one_pass_with(&outside, &mut have);
+                    assert!(
+                        lo == 0 || d2_k <= cover || have.data().raw() == res.data().raw(),
+                        "one-pass {role} against a key without noise metadata, dsize {dsize}, k {k}, res_k {res_k}"
+                    );
+                    one_pass_with(&tsk_prep, &mut have);
+                    if one_pass_kept {
+                        let (_, one_pass) = error(&have, &mut scratch);
+                        assert!(
+                            one_pass <= 0.5 * var_one_pass.log2() + TENSOR_NOISE_MARGIN,
+                            "one-pass {role}, dsize {dsize}, k {k}, res_k {res_k}: log2 std {one_pass} against {}",
+                            0.5 * var_one_pass.log2()
+                        );
+                    } else {
+                        assert!(
+                            same,
+                            "one-pass {role}, dsize {dsize}, k {k}, res_k {res_k}: not the two-step product"
+                        );
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Noise of the one-pass product and relinearization, held to the bound of the two-step path.

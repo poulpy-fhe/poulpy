@@ -99,6 +99,14 @@
 
 ### `poulpy-core`
 
+- Fix the one-pass products and squares (`glwe_mul_relinearize`, `glwe_square_relinearize`, their assign, prepared and summed forms) against a tensor key whose gadget covers only the operands' limbs.
+  At an offset that is not a whole number of limbs, `d2 = a1·b1` spans one limb more than the operands and is relinearized `cnv_offset mod base2k` bits under the result: the key switch dropped the limb past the gadget, and that error and the key-switching error were both lifted by `2^(cnv_offset mod base2k)`.
+  A product at its operands' width with a large remainder lost up to 17 bits on NTT backends (base2k 52, `N = 2^15`, a result 28 bits narrower).
+  When the offset is not a whole number of limbs and `d2` spans digits past the gadget, the one-pass path is kept only if its modeled variance stays within `TENSOR_NOISE_MARGIN` (two bits of standard deviation) of the two-step path's; otherwise the columns are aligned to the result first and relinearized as a tensor by the backend's `glwe_tensor_relinearize`, which gives the two-step product bit for bit.
+  The model, `var_noise_glwe_mul_relinearize` in `reference::noise`, shares the operands' term between the paths and differs in the relinearization: `Var_ks + Var_tail` of `d2` at the tensor width plus the tensor rounding for the two-step path, `2^(2·(cnv_offset mod base2k))` times those of `d2` as the convolution leaves it for the one-pass path, where `Var_tail` is the residue past the gadget against `s²`.
+  The secret's second moment and the key error come from the tensor key's noise metadata, and the operands' errors are floored at their rounding at their width, which vanishes once the product is lifted past it; a key without noise metadata, or with a secret of unknown law, takes the tensor path there.
+  Rounding at a width that is a whole number of limbs counts a uniform ulp in the model, where `var_canonicalization` counts none.
+  The scratch of these products covers the backend's tensor path.
 - **Breaking:** the gadget key geometry is computed from a digit width in bits, `k_digit`, instead of a digit size in limbs ([#188](https://github.com/poulpy-fhe/poulpy/issues/188)).
   `key_k` drops its `base2k` argument and returns `dnum * k_digit + k_aux`, and `key_size`, `key_work_size` and `GGLWELayout::dnum_for_input` take `k_digit`, the latter without `base2k`.
   `GGLWEInfos` and `GGSWInfos` gain `k_digit()`, which `k_digit_of` computes from a digit size, and the guard rule becomes `k_aux >= k_digit`.
