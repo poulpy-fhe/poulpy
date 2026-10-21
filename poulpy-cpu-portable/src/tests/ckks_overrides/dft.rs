@@ -43,7 +43,7 @@ fn downstream_dft_preparation_preserves_plan_and_factors() {
         assert_eq!(a.index(), b.index());
         for (a, b) in a.giant_steps.iter().zip(&b.giant_steps) {
             for (a, b) in a.diagonals.iter().zip(&b.diagonals) {
-                assert!(a.plaintext.cnv() == b.plaintext.cnv(), "prepared diagonals differ");
+                assert_eq!(a.plaintext.cnv(), b.plaintext.cnv());
             }
         }
     }

@@ -69,6 +69,13 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> PartialEq for SvpPPol<D, W, B
 
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> Eq for SvpPPol<D, W, B> {}
 
+/// The shape only: the representation is opaque.
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> std::fmt::Debug for SvpPPol<D, W, B> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SvpPPol").field("shape", &self.shape).finish()
+    }
+}
+
 impl<D: Data + std::hash::Hash, W: DftWord, B: Backend<DftWord = W>> std::hash::Hash for SvpPPol<D, W, B> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.shape.hash(state);

@@ -65,10 +65,7 @@ fn downstream_baby_step_preparation_preserves_cache_shape() {
     }
     assert_eq!(cache.baby_steps().collect::<Vec<_>>(), vec![0, 1]);
     for rot in cache.baby_steps() {
-        assert!(
-            cache.baby_step(rot) == expected.baby_step(0),
-            "baby step {rot} differs from the reference"
-        );
+        assert_eq!(cache.baby_step(rot), expected.baby_step(0), "baby step {rot}");
         assert_eq!(cache.baby_step(rot).cols(), 3);
         assert_eq!(cache.baby_step(rot).size(), normalized.size());
     }
