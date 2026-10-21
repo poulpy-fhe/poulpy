@@ -157,7 +157,7 @@
   It transforms no operand, so prepared ciphertexts serve every output that shares them, and `glwe_mul_prepared_plain_sum_tmp_bytes` does not grow with the number of terms. It checks every operand against the degree and rank of `res`, every element odd, and its scratch, before writing `res`. One term through `1` is `glwe_mul_plain` of the sources bit for bit.
   Backends get it from `impl_operations_reference_full!`, or from `impl_glwe_mul_prepared_plain_sum_reference_full!` with the OEP family `GLWEMulPreparedPlainSumImpl` and its reference `GLWEMulPreparedPlainSumReference`.
 - Add `GGLWELayout::max_input_k`, the widest input a key switches whole: what its digits cover, and no more than its precision less one digit.
-- Add `From<GGLWELayout>` for `GLWEAutomorphismKeyLayout`, `GLWESwitchingKeyLayout` and `GLWETensorKeyLayout`.
+- Add `From<GGLWELayout>` for `GLWEAutomorphismKeyLayout`, `GLWESwitchingKeyLayout` and `GLWETensorKeyLayout`. Each panics on a coarsened view.
 
 ### `poulpy-ckks`
 
@@ -238,6 +238,8 @@
 - **Breaking:** the bootstrapping presets check every key against the modulus bounds of their secrets, 128-bit estimates documented with the presets (1707 and 345 bits at `N = 2^16` for weights 1024 and 32, 851 and 162 at `N = 2^15`), and give each key the whole-limb digit of fewest rows its use admits, guarded by at least one digit: rotation keys by CoeffsToSlots factor, and the tensor key by the widest product EvalMod relinearizes (a plan with the EvalRound+ bypass keeps one shape). Key sets generated for 0.9.0 presets do not match. `BootstrappingPreset::with_dsizes` still gives every high-modulus key one digit of whole limbs; add `BootstrappingPreset::key_k_digit`.
 - **Breaking:** the bootstrap and functional-bootstrap entry points no longer require `BootstrappingKeys::TensorKey` to be `GLWETensorKeyPrepared`; the parallel paths require `TensorKey: Sync`.
 - **Behaviour:** the bootstraps return an error when a rotation or tensor key is used at a precision above its `max_input_k`, where the key switch dropped the input limbs past the key's rows, for any `BootstrappingKeys` store.
+  `ckks_bootstrap` checks every rotation key and the tensor key at the widths the working width `ct_out.k()` sets before any work, except for an EvalRound+ recipe, whose stages check them as they use them.
+- **Breaking:** `CKKSCompositionError::MissingAutomorphismKey` and `MissingRelinearizationKey` carry the key source's error as `source`, which their message includes and `Error::source` returns, so a key too narrow for its use is no longer reported as absent; `CKKSError::source` returns the source of a composition error.
 - Add `DFTPlan::galois_elements_per_factor`.
 - The bootstrap scratch bounds cover every rotation key shape of the layout, taking one maximum per key list.
 - The test suite adds `small_s2c_preset_meets_precision`, an S2C-first bootstrap on an insecure `N = 2^11` preset built by the preset machinery, which backends run by default.

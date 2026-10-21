@@ -718,13 +718,13 @@ where
         if dst_k > a_k.max(b_k) {
             let at_dst = TensorKeyAt(&tsk, TorusPrecision(dst_k as u32));
             let err = assert_rejected(module, &mut lazy, &a_refs, &b_refs, &at_dst, bytes);
-            assert_ckks_error(
-                &label,
-                &err,
-                CKKSCompositionError::MissingRelinearizationKey {
-                    op: "ckks_dot_product_ct",
-                    k: key_k.as_u32(),
-                },
+            assert!(
+                matches!(
+                    err.composition(),
+                    Some(CKKSCompositionError::MissingRelinearizationKey { op: "ckks_dot_product_ct", k, .. })
+                        if *k == key_k.as_u32()
+                ),
+                "{label}: unexpected error: {err}"
             );
         }
 
@@ -1125,10 +1125,12 @@ where
 
     // No tensor key at `max(a.k, b.k)`.
     let err = assert_prepared_rejected(module, &mut dst, &lhs, &rhs, &no_key, bytes);
-    assert_ckks_error(
-        "missing tensor key",
-        &err,
-        CKKSCompositionError::MissingRelinearizationKey { op: OP, k: p.k as u32 },
+    assert!(
+        matches!(
+            err.composition(),
+            Some(CKKSCompositionError::MissingRelinearizationKey { op: OP, k, .. }) if *k == p.k as u32
+        ),
+        "missing tensor key: unexpected error: {err}"
     );
 
     // Inputs whose budget is below their scale, after the tensor key.

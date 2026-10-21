@@ -528,15 +528,21 @@ where
                 .chain(sparse_split_galois_elements(n, log_g).map(|p| (p, src.k() + log_g as u32)));
             let mut keys = Vec::new();
             for (p, k) in required {
-                let missing = || CKKSCompositionError::MissingAutomorphismKey {
+                let missing = |source| CKKSCompositionError::MissingAutomorphismKey {
                     op: "ckks_unfold",
                     rotation: p,
                     k: k.into(),
+                    source,
                 };
                 let key = automorphisms
-                    .ok_or_else(missing)?
+                    .ok_or_else(|| {
+                        missing(poulpy_core::CoreError::GGLWEKeyUse {
+                            op: "ckks_unfold",
+                            detail: "no automorphism keys were given".to_string(),
+                        })
+                    })?
                     .get_automorphism_key(p, k)
-                    .map_err(|_| missing())?;
+                    .map_err(missing)?;
                 validate_ring_switch_key("unfold automorphism key", &&key, n, k.as_usize())?;
                 keys.push(key);
             }
@@ -626,13 +632,15 @@ where
     let mut image = module.ckks_ciphertext_alloc_from_glwe_infos(&wide);
     let mut difference = module.ckks_ciphertext_alloc_from_glwe_infos(&wide);
     for (level, p) in sparse_split_galois_elements(n, log_g).enumerate() {
-        let key = automorphisms
-            .get_automorphism_key(p, wide.k)
-            .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
-                op: "ckks_unfold",
-                rotation: p,
-                k: wide.k.into(),
-            })?;
+        let key =
+            automorphisms
+                .get_automorphism_key(p, wide.k)
+                .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
+                    op: "ckks_unfold",
+                    rotation: p,
+                    k: wide.k.into(),
+                    source,
+                })?;
         let mut odds = Vec::with_capacity(nodes.len());
         for node in &mut nodes {
             module.glwe_automorphism(&mut image, node, &key, scratch);

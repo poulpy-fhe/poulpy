@@ -281,6 +281,8 @@ Three key roles are used:
 | `tensor_key` | Relinearization key for the EvalMod range-extension squarings |
 | `encapsulation_keys` | Optional `denseToSparse` / `sparseToDense` pair for sparse-secret encapsulation |
 
+Keys shaped by use cover the widths of the bootstrap they were laid out for. `ckks_bootstrap` runs at the width of `ct_out` and checks every rotation key and the tensor key at the widths that width sets before it starts, so a wider output fails up front, with the key source's refusal as the error's source.
+
 ## Batches
 
 A batch is refreshed with as few bootstraps as possible by folding it into standard ciphertexts of the bootstrap degree `N` (`CKKSFoldOps::ckks_fold`), bootstrapping each with `ckks_bootstrap`, and unfolding the results (`ckks_unfold`) into outputs labeled like the inputs.

@@ -312,6 +312,31 @@ where
         &mut scratch.borrow(),
     );
 
+    // A working width that takes the last CoeffsToSlots factor past its narrow
+    // keys fails at entry, with the key source's refusal as its source.
+    {
+        use poulpy_core::layouts::GGLWEInfos;
+        let narrow_k = bsk
+            .rotation_keys
+            .values()
+            .map(|key| key.gglwe_layout().max_input_k().as_usize())
+            .min()
+            .unwrap();
+        let wide_k = (narrow_k + last * c2s.coeffs_meta().log_delta() + 1).next_multiple_of(base2k);
+        let mut ct_wide = module.ckks_ciphertext_alloc(base2k.into(), wide_k.into());
+        let err = module
+            .ckks_bootstrap(&mut ct_wide, &ct0, &ctx, &bsk, &mut scratch.borrow())
+            .unwrap_err();
+        match err.composition() {
+            Some(CKKSCompositionError::MissingAutomorphismKey {
+                op: "ckks_bootstrap",
+                source,
+                ..
+            }) => assert!(source.to_string().contains("the key covers inputs of"), "{err}"),
+            _ => panic!("expected a key refused at entry, got: {err}"),
+        }
+    }
+
     // Compare the public orchestrator with the explicit pipeline below.
     let ct_bs = {
         let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());

@@ -137,6 +137,14 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     /// and [`BootstrappingPlan::bootstrap_k`](crate::layouts::BootstrappingPlan::bootstrap_k)
     /// to place the pre- and post-ModUp costs correctly. Pass the input `log_delta`
     /// to `bootstrap_k` so it accounts for C2S-first's output scale restoration.
+    ///
+    /// Before any work, every rotation key and the tensor key must cover the
+    /// widest ciphertext the bootstrap switches with it at this working width:
+    /// otherwise it fails with
+    /// [`MissingAutomorphismKey`](crate::CKKSCompositionError::MissingAutomorphismKey)
+    /// or [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey),
+    /// whose `source` is the key source's refusal. Keys laid out by a preset
+    /// cover its `bootstrap_k`.
     fn ckks_bootstrap<F, K>(
         &self,
         ct_out: &mut CKKSCiphertextOwned<BE>,

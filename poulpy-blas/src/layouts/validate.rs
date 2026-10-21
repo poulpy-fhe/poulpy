@@ -204,10 +204,11 @@ where
     }
     let key = keys
         .get_automorphism_key(p, u.k)
-        .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
+        .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
             op,
             rotation: u.rotation,
             k: u.k.into(),
+            source,
         })?;
     ensure_key_rank(op, "rotation", key.rank(), u.rank)
 }
@@ -222,7 +223,7 @@ pub(crate) fn ensure_tensor_key<BE: Backend, K: GetTensorKey<BE>>(
 ) -> Result<()> {
     let key = keys
         .get_tensor_key(k)
-        .map_err(|_| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into() })?;
+        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source })?;
     ensure_key_rank(op, "tensor", key.rank(), rank)
 }
 

@@ -610,13 +610,14 @@ fn keys_layout(
     // EvalRound+ runs its bypass at widths of its own, which the stage widths
     // below do not model: its keys keep the shape of the raised width.
     if spec.key_dsize.is_none() && plan.coeffs_to_slots_bypass().is_none() {
-        for (p, k) in rotation_key_inputs(spec, plan, bootstrap_k, input_k) {
+        let widths = plan.key_widths();
+        for (p, k) in widths.rotation_key_inputs(spec.log_n, bootstrap_k, input_k) {
             let layout = key_layout(spec, "rotation", k, widest_k_digit(spec, k, dense), dense)?;
             if layout != wide {
                 rotation_keys.insert(p, layout.into());
             }
         }
-        let k = eval_mod_relinearization_k(spec, plan, bootstrap_k);
+        let k = widths.eval_mod_relinearization_k(bootstrap_k, spec.log_delta);
         tensor_key = key_layout(spec, "tensor", k, widest_k_digit(spec, k, dense), dense)?;
     }
 
@@ -629,62 +630,6 @@ fn keys_layout(
             sparse_to_dense: wide.into(),
         }),
     })
-}
-
-/// Widest ciphertext, in bits, each rotation key switches in a bootstrap.
-///
-/// Factor `i` of a transform runs on a ciphertext `i` factor scales below the
-/// width the transform starts at: the raised width for CoeffsToSlots, and for
-/// SlotsToCoeffs the input width (S2C-first) or what EvalMod leaves
-/// (C2S-first). The conjugation follows CoeffsToSlots. Not for a plan with the
-/// EvalRound+ bypass.
-fn rotation_key_inputs(spec: &PresetSpec, plan: &BootstrappingPlan, bootstrap_k: usize, input_k: usize) -> BTreeMap<i64, usize> {
-    let cyclotomic_order = 1i64 << (spec.log_n + 1);
-    let after_c2s = bootstrap_k - plan.coeffs_to_slots().consumed_bits();
-    let s2c_k = match plan.pipeline() {
-        BootstrappingPipeline::S2CFirst => input_k,
-        BootstrappingPipeline::C2SFirst => after_c2s - plan.eval_mod().consumed_bits(),
-    };
-
-    let mut inputs: BTreeMap<i64, usize> = BTreeMap::new();
-    let mut widen = |p: i64, k: usize| {
-        let widest = inputs.entry(p).or_insert(k);
-        *widest = (*widest).max(k);
-    };
-    let transforms = [(plan.coeffs_to_slots(), bootstrap_k), (plan.slots_to_coeffs(), s2c_k)];
-    for (dft, start) in transforms {
-        let log_delta = dft.coeffs_meta().log_delta();
-        let factors = dft.galois_elements_per_factor(spec.log_n, cyclotomic_order);
-        // The repack rotation of the sparse path belongs to no factor.
-        for p in dft.galois_elements(spec.log_n, cyclotomic_order) {
-            if !factors.iter().any(|elements| elements.contains(&p)) {
-                widen(p, start);
-            }
-        }
-        for (factor, elements) in factors.iter().enumerate() {
-            for &p in elements {
-                widen(p, start - factor * log_delta);
-            }
-        }
-    }
-    widen(-1, after_c2s);
-    inputs
-}
-
-/// Widest ciphertext EvalMod relinearizes, in bits.
-///
-/// EvalMod relabels its input at its own scale and keeps its budget, so its
-/// widest product is at that budget plus `f_mod_log_delta`. The budget is what
-/// CoeffsToSlots leaves of the raised width above the scale the raise labels:
-/// EvalMod's own scale (C2S-first), or the ModUp modulus and the guard bits
-/// (S2C-first).
-fn eval_mod_relinearization_k(spec: &PresetSpec, plan: &BootstrappingPlan, bootstrap_k: usize) -> usize {
-    let f_mod_log_delta = plan.eval_mod().f_mod_log_delta;
-    let raised_log_delta = match plan.pipeline() {
-        BootstrappingPipeline::C2SFirst => f_mod_log_delta,
-        BootstrappingPipeline::S2CFirst => spec.log_delta + spec.log_msg_ratio + plan.c2s_guard_bits(),
-    };
-    bootstrap_k - plan.coeffs_to_slots().consumed_bits() - raised_log_delta + f_mod_log_delta
 }
 
 /// Bits a key keeps between its modulus and the input plus one digit.

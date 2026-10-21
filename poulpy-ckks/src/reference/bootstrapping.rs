@@ -1,10 +1,10 @@
-use crate::{CKKSResult as Result, ckks_ensure, ckks_log_delta, layouts::eval_mod::EvalModPlan};
+use crate::{CKKSCompositionError, CKKSResult as Result, ckks_ensure, ckks_log_delta, layouts::eval_mod::EvalModPlan};
 use poulpy_core::layouts::{GLWEPlaintextInfos, SetGLWEPlaintextInfos};
 use poulpy_core::{
     GLWECopy, GLWEKeyswitch, GLWEShift,
     layouts::{
-        BSGSMeta, GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
-        SetBSGSMeta, SetK,
+        BSGSMeta, GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
+        GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, SetBSGSMeta, SetK, TorusPrecision,
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
@@ -132,6 +132,50 @@ where
     }
 
     carved + nested
+}
+
+/// Fails before any work unless every key covers the widest ciphertext the
+/// bootstrap switches with it.
+///
+/// The bootstrap runs at `ct_out.k()`, which need not be the width the keys
+/// were laid out for. Each stage reads its keys through [`CoveringKeys`] too;
+/// this check only moves the failure ahead of the computation. An EvalRound+
+/// recipe runs its bypass at widths of its own and is left to those checks.
+fn check_key_widths<BE, F, K>(
+    ct_out: &CKKSCiphertextOwned<BE>,
+    ct_in: &CKKSCiphertextOwned<BE>,
+    ctx: &BootstrappingContext<BE, F>,
+    keys: &K,
+) -> Result<()>
+where
+    BE: Backend,
+    K: BootstrappingKeys<BE>,
+    CKKSCiphertextOwned<BE>: CKKSCtBounds,
+{
+    if ctx.coeffs_to_slots_bypass().is_some() {
+        return Ok(());
+    }
+    let op = "ckks_bootstrap";
+    let widths = ctx.key_widths();
+    let (bootstrap_k, input_k) = (ct_out.k().as_usize(), ct_in.k().as_usize());
+    let log_n = ct_out.n().as_usize().trailing_zeros() as usize;
+    let rotations = CoveringKeys(keys.rotation_keys());
+    for (p, k) in widths.rotation_key_inputs(log_n, bootstrap_k, input_k) {
+        let k = TorusPrecision(k as u32);
+        rotations
+            .get_automorphism_key(p, k)
+            .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
+                op,
+                rotation: p,
+                k: k.into(),
+                source,
+            })?;
+    }
+    let k = TorusPrecision(widths.eval_mod_relinearization_k(bootstrap_k, ct_in.log_delta()) as u32);
+    CoveringKeys(keys.tensor_key())
+        .get_tensor_key(k)
+        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source })?;
+    Ok(())
 }
 
 fn bootstrap_layouts<C1, C2>(ct_out: &C1, ct_in: &C2) -> (CKKSLayout, CKKSLayout)
@@ -480,6 +524,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
             ctx.sparse_secret_hamming_weight().is_some(),
             encapsulation_keys.is_some()
         );
+        check_key_widths(ct_out, ct_in, ctx, keys)?;
 
         if ctx.pipeline() == BootstrappingPipeline::S2CFirst {
             // Known-real slots skip the imaginary nonlinear branch: one EvalMod

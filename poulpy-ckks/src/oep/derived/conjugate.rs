@@ -22,10 +22,11 @@ where
     let p = conj_rotate_galois_element(k, module.cyclotomic_order());
     let key = keys
         .get_automorphism_key(p, src.k())
-        .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
+        .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
             op: "conjugate",
             rotation: k,
             k: src.k().into(),
+            source,
         })?;
     BE::ckks_conjugate_into_impl(module, dst, src, &key, scratch)
 }
@@ -43,10 +44,11 @@ where
 {
     let key = keys
         .get_automorphism_key(-1, dst.k())
-        .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
+        .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
             op: "conjugate_assign",
             rotation: 0,
             k: dst.k().into(),
+            source,
         })?;
     BE::ckks_conjugate_assign_impl(module, dst, &key, scratch)
 }
