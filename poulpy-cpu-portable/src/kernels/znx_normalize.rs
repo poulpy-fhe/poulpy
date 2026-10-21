@@ -62,9 +62,9 @@ impl<T> LimbsMut<T> {
 /// A source or carry word of the normalization kernel.
 pub trait NormalizeWord: Copy + Send + Sync + 'static {
     const ZERO: Self;
-    /// Block lanes of the tiled walk in [`normalize_portable`].
+    /// Portable lanes of the tiled walk, the [`ZnxNormalize`] default.
     type Lanes: NormalizeLanes<Word = Self>;
-    /// Block lanes of the blocked walk in [`normalize_portable`], which amortize its per-block driver work.
+    /// Portable lanes of the blocked walk, the [`ZnxNormalize`] default.
     type WideLanes: NormalizeLanes<Word = Self>;
     /// Low 64 bits.
     fn low(self) -> i64;
@@ -78,10 +78,7 @@ pub trait NormalizeWord: Copy + Send + Sync + 'static {
 impl NormalizeWord for i64 {
     const ZERO: Self = 0;
     type Lanes = SimdLanes<8>;
-    #[cfg(target_feature = "avx2")]
-    type WideLanes = SimdLanes<16>;
     // Sixteen lanes spill SSE2's sixteen registers: the cross walk loses 6-8% (Zen 4 bench).
-    #[cfg(not(target_feature = "avx2"))]
     type WideLanes = SimdLanes<8>;
     #[inline(always)]
     fn low(self) -> i64 {
@@ -107,14 +104,7 @@ impl NormalizeWord for i64 {
 
 impl NormalizeWord for i128 {
     const ZERO: Self = 0;
-    // AVX-512 lanes fill zmm registers: each half of a word is one zmm at width 8.
-    #[cfg(target_feature = "avx512f")]
-    type Lanes = SimdI128Lanes<8>;
-    #[cfg(not(target_feature = "avx512f"))]
     type Lanes = SimdI128Lanes<4>;
-    #[cfg(target_feature = "avx512f")]
-    type WideLanes = SimdI128Lanes<16>;
-    #[cfg(not(target_feature = "avx512f"))]
     type WideLanes = SimdI128Lanes<8>;
     #[inline(always)]
     fn low(self) -> i64 {
@@ -317,36 +307,34 @@ impl<const W: usize> NormalizeLanes for SimdLanes<W> {
 }
 
 /// i128 words as `(lo, hi)` halves in `std::simd` vectors of `W` lanes, each 4-coefficient chunk
-/// in lane order [0, 2, 1, 3], coefficient order on AVX-512.
-pub struct SimdI128Lanes<const W: usize>;
-
-/// In-lane unpacks yield [0, 2, 1, 3] on 256-bit registers; AVX-512 gathers coefficient order and stores it unpermuted.
-#[cfg(not(target_feature = "avx512f"))]
-const CHUNK: [usize; 4] = [0, 2, 1, 3];
-#[cfg(target_feature = "avx512f")]
-const CHUNK: [usize; 4] = [0, 1, 2, 3];
+/// in lane order [0, 2, 1, 3] if `UNPACK`, else in coefficient order.
+///
+/// In-lane unpacks yield [0, 2, 1, 3] on 256-bit registers; 512-bit registers permute across
+/// lanes and store coefficient order unpermuted.
+pub struct SimdI128Lanes<const W: usize, const UNPACK: bool = true>;
 
 /// The source half holding the low 64 bits of an i128.
 const LO: usize = cfg!(target_endian = "big") as usize;
 
 /// Lane `j` reads element `scale * c + half`, `c` the coefficient lane `j` holds.
-const fn chunked<const W: usize>(scale: usize, half: usize) -> [usize; W] {
+const fn chunked<const W: usize>(scale: usize, half: usize, unpack: bool) -> [usize; W] {
+    let order = if unpack { [0, 2, 1, 3] } else { [0, 1, 2, 3] };
     let mut idx = [0; W];
     let mut j = 0;
     while j < W {
-        idx[j] = scale * (4 * (j / 4) + CHUNK[j % 4]) + half;
+        idx[j] = scale * (4 * (j / 4) + order[j % 4]) + half;
         j += 1;
     }
     idx
 }
 
-struct Chunked<const SCALE: usize, const HALF: usize>;
+struct Chunked<const SCALE: usize, const HALF: usize, const UNPACK: bool>;
 
-impl<const W: usize, const SCALE: usize, const HALF: usize> Swizzle<W> for Chunked<SCALE, HALF> {
-    const INDEX: [usize; W] = chunked::<W>(SCALE, HALF);
+impl<const W: usize, const SCALE: usize, const HALF: usize, const UNPACK: bool> Swizzle<W> for Chunked<SCALE, HALF, UNPACK> {
+    const INDEX: [usize; W] = chunked::<W>(SCALE, HALF, UNPACK);
 }
 
-impl<const W: usize> NormalizeLanes for SimdI128Lanes<W> {
+impl<const W: usize, const UNPACK: bool> NormalizeLanes for SimdI128Lanes<W, UNPACK> {
     const WIDTH: usize = W;
     type Word = i128;
     type N = Simd<i64, W>;
@@ -363,14 +351,14 @@ impl<const W: usize> NormalizeLanes for SimdI128Lanes<W> {
             )
         };
         (
-            Chunked::<2, LO>::concat_swizzle(a, b),
-            Chunked::<2, { 1 - LO }>::concat_swizzle(a, b).cast::<i64>(),
+            Chunked::<2, LO, UNPACK>::concat_swizzle(a, b),
+            Chunked::<2, { 1 - LO }, UNPACK>::concat_swizzle(a, b).cast::<i64>(),
         )
     }
     #[inline(always)]
     unsafe fn store(p: *mut i64, x: Self::N) {
         // Both orders are their own inverse.
-        let x = Chunked::<1, 0>::swizzle(x);
+        let x = Chunked::<1, 0, UNPACK>::swizzle(x);
         // SAFETY: the caller guarantees `W` writable i64 at `p`.
         unsafe { SimdLanes::<W>::store(p, x) }
     }
@@ -435,6 +423,15 @@ impl<const W: usize> NormalizeLanes for SimdI128Lanes<W> {
 /// The normalization kernel of a backend. Every CPU backend word is `i64`; its big word is
 /// `i64` or `i128`.
 pub trait ZnxNormalize: Backend<ZnxWord = i64, BigWord: NormalizeWord> {
+    /// Lanes of [`Self::znx_normalize`] on the tiled walk, past `TILE_MIN_LINES` lines per block.
+    type Lanes: NormalizeLanes<Word = i64> = <i64 as NormalizeWord>::Lanes;
+    /// Lanes of [`Self::znx_normalize`] on the blocked walk, wide to amortize its per-block driver work.
+    type WideLanes: NormalizeLanes<Word = i64> = <i64 as NormalizeWord>::WideLanes;
+    /// [`Self::Lanes`] of [`Self::znx_normalize_big`].
+    type BigLanes: NormalizeLanes<Word = Self::BigWord> = <Self::BigWord as NormalizeWord>::Lanes;
+    /// [`Self::WideLanes`] of [`Self::znx_normalize_big`].
+    type BigWideLanes: NormalizeLanes<Word = Self::BigWord> = <Self::BigWord as NormalizeWord>::WideLanes;
+
     /// `res = canon(a * 2^offset, res_base2k, res_k, res.size)` over `len` coefficients.
     ///
     /// # Safety
@@ -448,7 +445,7 @@ pub trait ZnxNormalize: Backend<ZnxWord = i64, BigWord: NormalizeWord> {
         a_base2k: usize,
         len: usize,
     ) {
-        unsafe { normalize_portable(res, res_base2k, res_k, offset, a, a_base2k, len) }
+        unsafe { normalize_portable::<Self::Lanes, Self::WideLanes>(res, res_base2k, res_k, offset, a, a_base2k, len) }
     }
 
     /// [`Self::znx_normalize`] from big-word limbs.
@@ -464,29 +461,32 @@ pub trait ZnxNormalize: Backend<ZnxWord = i64, BigWord: NormalizeWord> {
         a_base2k: usize,
         len: usize,
     ) {
-        unsafe { normalize_portable(res, res_base2k, res_k, offset, a, a_base2k, len) }
+        unsafe { normalize_portable::<Self::BigLanes, Self::BigWideLanes>(res, res_base2k, res_k, offset, a, a_base2k, len) }
     }
 }
 
-/// [`normalize_blocked_portable`] with [`NormalizeWord::WideLanes`] where the walk is blocked
-/// (cross radix, or at most `TILE_MIN_LINES` lines per block), else with [`NormalizeWord::Lanes`].
+/// [`normalize_blocked_portable`] on `WL` lanes where the walk is blocked (cross radix, or at most
+/// `TILE_MIN_LINES` lines per block), else on `L` lanes.
 ///
 /// # Safety
 /// See [`normalize_blocked_portable`].
-pub unsafe fn normalize_portable<S: NormalizeWord>(
+pub unsafe fn normalize_portable<L, WL>(
     res: LimbsMut<i64>,
     res_base2k: usize,
     res_k: usize,
     offset: i64,
-    a: Limbs<S>,
+    a: Limbs<L::Word>,
     a_base2k: usize,
     len: usize,
-) {
+) where
+    L: NormalizeLanes,
+    WL: NormalizeLanes<Word = L::Word>,
+{
     unsafe {
         if a_base2k != res_base2k || a.size + res.size <= TILE_MIN_LINES {
-            normalize_blocked_portable::<S::WideLanes, PortableLanes<S, 1>>(res, res_base2k, res_k, offset, a, a_base2k, len)
+            normalize_blocked_portable::<WL, PortableLanes<L::Word, 1>>(res, res_base2k, res_k, offset, a, a_base2k, len)
         } else {
-            normalize_blocked_portable::<S::Lanes, PortableLanes<S, 1>>(res, res_base2k, res_k, offset, a, a_base2k, len)
+            normalize_blocked_portable::<L, PortableLanes<L::Word, 1>>(res, res_base2k, res_k, offset, a, a_base2k, len)
         }
     }
 }
@@ -1043,7 +1043,7 @@ mod tests {
     /// The portable driver over the coefficients of the given limbs.
     fn run<S: NormalizeWord>(a: &[Vec<S>], ka: usize, kr: usize, k: usize, size: usize, offset: i64) -> Vec<Vec<i64>> {
         layout(a, size, |res, src, n| unsafe {
-            normalize_portable(res, kr, k, offset, src, ka, n)
+            normalize_portable::<S::Lanes, S::WideLanes>(res, kr, k, offset, src, ka, n)
         })
     }
 

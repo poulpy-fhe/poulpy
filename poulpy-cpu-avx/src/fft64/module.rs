@@ -339,7 +339,10 @@ impl<R: Ring> ZnxSwitchRing for FFT64Avx<R> {
     }
 }
 
-impl<R: Ring> poulpy_cpu_portable::kernels::znx_normalize::ZnxNormalize for FFT64Avx<R> {}
+impl<R: Ring> poulpy_cpu_portable::kernels::znx_normalize::ZnxNormalize for FFT64Avx<R> {
+    type WideLanes = poulpy_cpu_portable::kernels::znx_normalize::SimdLanes<16>;
+    type BigWideLanes = poulpy_cpu_portable::kernels::znx_normalize::SimdLanes<16>;
+}
 
 impl<R: Ring> ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Avx<R> {
     #[inline(always)]

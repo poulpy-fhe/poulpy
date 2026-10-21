@@ -116,4 +116,6 @@ impl<R: Ring> ZnxSwitchRing for NTT4x30Avx<R> {
     }
 }
 
-impl<R: Ring> poulpy_cpu_portable::kernels::znx_normalize::ZnxNormalize for NTT4x30Avx<R> {}
+impl<R: Ring> poulpy_cpu_portable::kernels::znx_normalize::ZnxNormalize for NTT4x30Avx<R> {
+    type WideLanes = poulpy_cpu_portable::kernels::znx_normalize::SimdLanes<16>;
+}
