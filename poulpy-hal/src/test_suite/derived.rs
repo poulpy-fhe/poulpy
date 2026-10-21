@@ -1723,13 +1723,13 @@ where
     }
 }
 
-/// `vec_znx_idft_normalize_consume`: the OEP default body against an
+/// `vec_znx_idft_normalize`: the OEP default body against an
 /// independent oracle, `vec_znx_idft_apply` into a `VecZnxBig`, the optional
 /// `big_add_small_assign`, then `big_normalize`, driven through the public
 /// api traits. The op clobbers its input, so each side transforms its own
 /// copy of the same host operand. Both arenas are sized by their own side's
 /// `_tmp_bytes` alone, so a default that under-reports its scratch panics.
-pub fn test_vec_znx_idft_normalize_consume_derived<BE: TestBackend + HalVecZnxDftImpl>(params: &TestParams, module: &Module<BE>)
+pub fn test_vec_znx_idft_normalize_derived<BE: TestBackend + HalVecZnxDftImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
         + VecZnxAlloc<BE>
@@ -1759,9 +1759,9 @@ where
         module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut addend_backend, &mut source);
         let addend_ref = vec_znx_backend_ref::<BE>(&addend_backend);
 
-        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-            crate::oep::vec_znx_idft_normalize_consume_tmp_bytes_derived::<BE>(module, res_size, a_size),
-        );
+        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(crate::oep::vec_znx_idft_normalize_tmp_bytes_derived::<BE>(
+            module, res_size, a_size,
+        ));
 
         for (with_addend, res_offset) in [(false, 0i64), (true, 0), (false, 7), (true, -5)] {
             let addend_arg = with_addend.then_some((&addend_ref, 0));
@@ -1777,7 +1777,7 @@ where
             let mut have_backend = upload_vec_znx::<BE>(&res_template);
             let mut want_backend = upload_vec_znx::<BE>(&res_template);
 
-            crate::oep::vec_znx_idft_normalize_consume_derived::<BE>(
+            crate::oep::vec_znx_idft_normalize_derived::<BE>(
                 module,
                 &mut vec_znx_backend_mut::<BE>(&mut have_backend),
                 base2k,
@@ -1819,7 +1819,7 @@ where
             assert_eq!(
                 download_vec_znx::<BE>(&want_backend),
                 download_vec_znx::<BE>(&have_backend),
-                "vec_znx_idft_normalize_consume: default body != independent oracle (a_size {a_size} res_size {res_size} \
+                "vec_znx_idft_normalize: default body != independent oracle (a_size {a_size} res_size {res_size} \
                  addend {with_addend} res_offset {res_offset})"
             );
         }

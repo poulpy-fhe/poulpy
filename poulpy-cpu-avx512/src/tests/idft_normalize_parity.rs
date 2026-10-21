@@ -1,10 +1,10 @@
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes},
+    api::{ScratchOwnedAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes},
     layouts::{DataView, HostBytesBackend, Module, ScratchOwned, VecZnxDftToBackendMut, ZnxViewMut},
     test_suite::{download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref},
 };
 
-macro_rules! consume_case {
+macro_rules! idft_normalize_case {
     ($name:ident, $parallel:ty, $serial:ty, $oracle:ty) => {
         #[test]
         fn $name() {
@@ -66,7 +66,7 @@ macro_rules! consume_case {
                                             let mut res = upload_vec_znx::<$be>(&res);
                                             let add_ref = vec_znx_backend_ref::<$be>(&add);
                                             let mut scratch = ScratchOwned::<$be>::alloc($bytes);
-                                            $module.vec_znx_idft_normalize_consume(
+                                            $module.vec_znx_idft_normalize(
                                                 &mut vec_znx_backend_mut::<$be>(&mut res),
                                                 49,
                                                 k,
@@ -88,14 +88,13 @@ macro_rules! consume_case {
                                             download_vec_znx::<$be>(&res)
                                         }};
                                     }
-                                    let expected = run!($oracle, oracle, oracle.vec_znx_idft_normalize_consume_tmp_bytes(6, 5));
-                                    let serial_result =
-                                        run!($serial, serial, serial.vec_znx_idft_normalize_consume_tmp_bytes(6, 5));
+                                    let expected = run!($oracle, oracle, oracle.vec_znx_idft_normalize_tmp_bytes(6, 5));
+                                    let serial_result = run!($serial, serial, serial.vec_znx_idft_normalize_tmp_bytes(6, 5));
                                     assert_eq!(
                                         serial_result, expected,
                                         "serial n={n}, offset={offset}, k={k}, add={with_add}"
                                     );
-                                    let declared = parallel.vec_znx_idft_normalize_consume_tmp_bytes(6, 5);
+                                    let declared = parallel.vec_znx_idft_normalize_tmp_bytes(6, 5);
                                     assert_eq!(declared, 5 * 4 * 8 * parallel.n());
                                     for bytes in [4 * n * 8, 2 * 4 * n * 8, declared] {
                                         let actual = run!($parallel, parallel, bytes);
@@ -119,9 +118,9 @@ macro_rules! consume_case {
                     let host = Module::<HostBytesBackend>::new(256);
                     let res = host.vec_znx_alloc(256, 1, 2);
                     let mut res = upload_vec_znx::<$parallel>(&res);
-                    let mut scratch = ScratchOwned::<$parallel>::alloc(module.vec_znx_idft_normalize_consume_tmp_bytes(2, 2));
+                    let mut scratch = ScratchOwned::<$parallel>::alloc(module.vec_znx_idft_normalize_tmp_bytes(2, 2));
                     let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        module.vec_znx_idft_normalize_consume(
+                        module.vec_znx_idft_normalize(
                             &mut vec_znx_backend_mut::<$parallel>(&mut res), 52, 104, 0, 0,
                             &mut dft.to_backend_mut(), col, 52, None, &mut scratch.arena(),
                         );
@@ -133,25 +132,25 @@ macro_rules! consume_case {
     };
 }
 
-consume_case!(
+idft_normalize_case!(
     avx,
     poulpy_cpu_avx::NTT4x30AvxRayon,
     poulpy_cpu_avx::NTT4x30Avx,
     poulpy_cpu_oracle::NTT4x30Oracle
 );
-consume_case!(
+idft_normalize_case!(
     avx_ci,
     poulpy_cpu_avx::NTT4x30CIAvxRayon,
     poulpy_cpu_avx::NTT4x30CIAvx,
     poulpy_cpu_oracle::NTT4x30CIOracle
 );
-consume_case!(
+idft_normalize_case!(
     avx512,
     crate::NTT4x30Avx512Rayon,
     crate::NTT4x30Avx512,
     poulpy_cpu_oracle::NTT4x30Oracle
 );
-consume_case!(
+idft_normalize_case!(
     avx512_ci,
     crate::NTT4x30CIAvx512Rayon,
     crate::NTT4x30CIAvx512,

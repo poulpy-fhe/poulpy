@@ -7,8 +7,8 @@ use poulpy_hal::{
         VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigNegate, VecZnxBigNegateAssign,
         VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign,
         VecZnxBigSubSmallA, VecZnxBigSubSmallB, VecZnxDftAdd, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftSub,
-        VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume,
-        VecZnxIdftNormalizeConsumeTmpBytes, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes,
+        VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize,
+        VecZnxIdftNormalizeTmpBytes, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes,
         VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNegate, VecZnxNegateAssign,
         VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign,
         VecZnxRotateAssignTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign, VecZnxRshSub, VecZnxRshTmpBytes, VecZnxSub,
@@ -72,8 +72,8 @@ where
 
 pub fn vec_znx_dft_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> [BenchOp<M, HalSweepParms>; 8]
 where
-    Module<B>: VecZnxIdftNormalizeConsume<B>
-        + VecZnxIdftNormalizeConsumeTmpBytes
+    Module<B>: VecZnxIdftNormalize<B>
+        + VecZnxIdftNormalizeTmpBytes
         + ModuleNew<B>
         + VecZnxDftAlloc<B>
         + VecZnxBigAlloc<B>
@@ -82,8 +82,8 @@ where
         + VecZnxDftApply<B>
         + VecZnxIdftApply<B>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxIdftNormalizeConsume<B>
-        + VecZnxIdftNormalizeConsumeTmpBytes
+        + VecZnxIdftNormalize<B>
+        + VecZnxIdftNormalizeTmpBytes
         + VecZnxDftSub<B>
         + VecZnxDftSubAssign<B>
         + VecZnxDftSubNegateAssign<B>,
@@ -112,8 +112,8 @@ where
         },
         BenchOp {
             layer: "hal",
-            name: "vec_znx_idft_normalize_consume",
-            runner: vec_znx_dft::runner_vec_znx_idft_normalize_consume::<B, M>,
+            name: "vec_znx_idft_normalize",
+            runner: vec_znx_dft::runner_vec_znx_idft_normalize::<B, M>,
         },
         BenchOp {
             layer: "hal",
@@ -619,8 +619,8 @@ where
         + VecZnxDftApply<B>
         + VecZnxIdftApply<B>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxIdftNormalizeConsume<B>
-        + VecZnxIdftNormalizeConsumeTmpBytes
+        + VecZnxIdftNormalize<B>
+        + VecZnxIdftNormalizeTmpBytes
         + VecZnxDftSub<B>
         + VecZnxDftSubAssign<B>
         + VecZnxDftSubNegateAssign<B>
@@ -664,8 +664,8 @@ where
         + VecZnxDftAlloc<B>
         + VecZnxIdftApply<B>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxIdftNormalizeConsume<B>
-        + VecZnxIdftNormalizeConsumeTmpBytes
+        + VecZnxIdftNormalize<B>
+        + VecZnxIdftNormalizeTmpBytes
         + VecZnxBigAlloc<B>
         + SvpApplyDftToDft<B>
         + SvpPPolAlloc<B>
@@ -771,8 +771,8 @@ where
         + VecZnxDftApply<B>
         + VecZnxIdftApply<B>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxIdftNormalizeConsume<B>
-        + VecZnxIdftNormalizeConsumeTmpBytes
+        + VecZnxIdftNormalize<B>
+        + VecZnxIdftNormalizeTmpBytes
         + VecZnxDftSub<B>
         + VecZnxDftSubAssign<B>
         + VecZnxDftSubNegateAssign<B>
@@ -877,8 +877,8 @@ where
         + VecZnxDftApply<B>
         + VecZnxIdftApply<B>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxIdftNormalizeConsume<B>
-        + VecZnxIdftNormalizeConsumeTmpBytes
+        + VecZnxIdftNormalize<B>
+        + VecZnxIdftNormalizeTmpBytes
         + VecZnxDftSub<B>
         + VecZnxDftSubAssign<B>
         + VecZnxDftSubNegateAssign<B>
@@ -962,8 +962,8 @@ pub mod standard {
     use super::{
         ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDft, SvpPPolAlloc, VecZnxAdd, VecZnxAlloc, VecZnxBigAdd,
         VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApply,
-        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes, VecZnxNormalize,
-        VecZnxNormalizeTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, standard_ops,
+        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes,
+        VmpApplyDftToDft, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, standard_ops,
     };
     use crate::{
         bench_ops, bin_fhe_n,
@@ -980,8 +980,8 @@ pub mod standard {
             + VecZnxDftAlloc<B>
             + VecZnxIdftApply<B>
             + VecZnxIdftApplyTmpBytes
-            + VecZnxIdftNormalizeConsume<B>
-            + VecZnxIdftNormalizeConsumeTmpBytes
+            + VecZnxIdftNormalize<B>
+            + VecZnxIdftNormalizeTmpBytes
             + VecZnxBigAlloc<B>
             + SvpApplyDftToDft<B>
             + SvpPPolAlloc<B>
@@ -1023,8 +1023,8 @@ pub mod standard {
             + VecZnxDftAlloc<B>
             + VecZnxIdftApply<B>
             + VecZnxIdftApplyTmpBytes
-            + VecZnxIdftNormalizeConsume<B>
-            + VecZnxIdftNormalizeConsumeTmpBytes
+            + VecZnxIdftNormalize<B>
+            + VecZnxIdftNormalizeTmpBytes
             + VecZnxBigAlloc<B>
             + SvpApplyDftToDft<B>
             + SvpPPolAlloc<B>
@@ -1068,8 +1068,8 @@ pub mod light {
     use super::{
         ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDft, SvpPPolAlloc, VecZnxAdd, VecZnxAlloc, VecZnxBigAdd,
         VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApply,
-        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes, VecZnxNormalize,
-        VecZnxNormalizeTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, standard_ops,
+        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes,
+        VmpApplyDftToDft, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, standard_ops,
     };
     use crate::{
         bench_ops, bin_fhe_n,
@@ -1086,8 +1086,8 @@ pub mod light {
             + VecZnxDftAlloc<B>
             + VecZnxIdftApply<B>
             + VecZnxIdftApplyTmpBytes
-            + VecZnxIdftNormalizeConsume<B>
-            + VecZnxIdftNormalizeConsumeTmpBytes
+            + VecZnxIdftNormalize<B>
+            + VecZnxIdftNormalizeTmpBytes
             + VecZnxBigAlloc<B>
             + SvpApplyDftToDft<B>
             + SvpPPolAlloc<B>
@@ -1129,8 +1129,8 @@ pub mod light {
             + VecZnxDftAlloc<B>
             + VecZnxIdftApply<B>
             + VecZnxIdftApplyTmpBytes
-            + VecZnxIdftNormalizeConsume<B>
-            + VecZnxIdftNormalizeConsumeTmpBytes
+            + VecZnxIdftNormalize<B>
+            + VecZnxIdftNormalizeTmpBytes
             + VecZnxBigAlloc<B>
             + SvpApplyDftToDft<B>
             + SvpPPolAlloc<B>

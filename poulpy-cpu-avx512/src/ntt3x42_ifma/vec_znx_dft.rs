@@ -573,7 +573,7 @@ pub(crate) fn idft_compact_in_place_ifma<R: Ring, E: poulpy_hal::execution::Task
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn idft_normalize_consume_ifma<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
+pub(crate) fn idft_normalize_ifma<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
     module: &Module<NTT3x42Ifma<R>>,
     res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, NTT3x42Ifma<R>>,
     res_base2k: usize,
@@ -591,7 +591,7 @@ pub(crate) fn idft_normalize_consume_ifma<R: Ring, E: poulpy_hal::execution::Tas
 {
     #[cfg(feature = "enable-rayon")]
     if E::is_parallel() && poulpy_cpu_rayon::RayonTaskExecutor::should_serialize_inner() {
-        return idft_normalize_consume_ifma::<R, poulpy_hal::execution::SerialTaskExecutor>(
+        return idft_normalize_ifma::<R, poulpy_hal::execution::SerialTaskExecutor>(
             module, res, res_base2k, res_k, res_offset, res_col, a, a_col, a_base2k, addend, tmp,
         );
     }
@@ -1180,12 +1180,11 @@ mod finish_tests {
                         let mut got = host.vec_znx_alloc(n, 2, 6);
                         got.at_mut(0, 0).fill(123);
                         let mut expected = got.clone();
-                        let mut scratch = ScratchOwned::<NTT3x42Ifma>::alloc(
-                            NTT3x42Ifma::vec_znx_idft_normalize_consume_tmp_bytes(&module, 6, 5),
-                        );
+                        let mut scratch =
+                            ScratchOwned::<NTT3x42Ifma>::alloc(NTT3x42Ifma::vec_znx_idft_normalize_tmp_bytes(&module, 6, 5));
                         let mut input = module.vec_znx_dft_alloc(n, 2, 5);
                         input.data_mut().copy_from_slice(source.data());
-                        NTT3x42Ifma::vec_znx_idft_normalize_consume(
+                        NTT3x42Ifma::vec_znx_idft_normalize(
                             &module,
                             &mut VecZnxToBackendMut::<NTT3x42Ifma>::to_backend_mut(&mut got),
                             base2k,
@@ -1315,7 +1314,7 @@ mod finish_tests {
                                     let mut expected = got.clone();
                                     let mut input = module.vec_znx_dft_alloc(n, 2, 5);
                                     input.data_mut().copy_from_slice(source.data());
-                                    idft_normalize_consume_ifma::<_, CheckedExecutor>(
+                                    idft_normalize_ifma::<_, CheckedExecutor>(
                                         &module,
                                         &mut VecZnxToBackendMut::<NTT3x42Ifma>::to_backend_mut(&mut got),
                                         base2k,

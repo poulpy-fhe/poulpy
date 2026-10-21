@@ -3,7 +3,7 @@ use crate::{
         VecZnxDftAdd, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism,
         VecZnxDftAutomorphismAddWithPlanTmpBytes, VecZnxDftAutomorphismPlan, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftSub,
         VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
-        VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
+        VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
     },
     layouts::{
         Backend, Module, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
@@ -57,15 +57,15 @@ impl_vec_znx_dft_delegate!(
 );
 
 impl_vec_znx_dft_delegate!(
-    VecZnxIdftNormalizeConsumeTmpBytes,
-    fn vec_znx_idft_normalize_consume_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize {
-        B::vec_znx_idft_normalize_consume_tmp_bytes(self, res_size, a_size)
+    VecZnxIdftNormalizeTmpBytes,
+    fn vec_znx_idft_normalize_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize {
+        B::vec_znx_idft_normalize_tmp_bytes(self, res_size, a_size)
     }
 );
 
 impl_vec_znx_dft_delegate!(
-    VecZnxIdftNormalizeConsume<B>,
-    fn vec_znx_idft_normalize_consume(
+    VecZnxIdftNormalize<B>,
+    fn vec_znx_idft_normalize(
         &self,
         res: &mut VecZnxBackendMut<'_, B>,
         res_base2k: usize,
@@ -78,7 +78,7 @@ impl_vec_znx_dft_delegate!(
         addend: Option<(&VecZnxBackendRef<'_, B>, usize)>,
         scratch: &mut ScratchArena<'_, B>,
     ) {
-        B::vec_znx_idft_normalize_consume(
+        B::vec_znx_idft_normalize(
             self, res, res_base2k, res_k, res_offset, res_col, a, a_col, a_base2k, addend, scratch,
         );
     }

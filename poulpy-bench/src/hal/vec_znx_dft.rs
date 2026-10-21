@@ -6,7 +6,7 @@ use poulpy_hal::{
     api::{
         ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxBigAlloc, VecZnxDftAdd, VecZnxDftAddAssign,
         VecZnxDftAlloc, VecZnxDftApply, VecZnxDftSub, VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxIdftApply,
-        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
+        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
     },
     layouts::{Backend, Module, ScratchOwned, VecZnxBigOwned, VecZnxDftOwned},
     source::Source,
@@ -179,12 +179,11 @@ pub fn runner_vec_znx_dft_sub_negate_assign<B: Backend<ZnxWord = i64>, M: Measur
     });
 }
 
-pub fn runner_vec_znx_idft_normalize_consume<B: Backend<ZnxWord = i64>, M: Measurement>(
+pub fn runner_vec_znx_idft_normalize<B: Backend<ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     sweep: &HalSweepParms,
 ) where
-    Module<B>:
-        ModuleNew<B> + VecZnxDftAlloc<B> + VecZnxAlloc<B> + VecZnxIdftNormalizeConsume<B> + VecZnxIdftNormalizeConsumeTmpBytes,
+    Module<B>: ModuleNew<B> + VecZnxDftAlloc<B> + VecZnxAlloc<B> + VecZnxIdftNormalize<B> + VecZnxIdftNormalizeTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -193,8 +192,7 @@ pub fn runner_vec_znx_idft_normalize_consume<B: Backend<ZnxWord = i64>, M: Measu
 
     let mut source: Source = Source::new([0u8; 32]);
 
-    let mut scratch: ScratchOwned<B> =
-        ScratchOwned::alloc(module.vec_znx_idft_normalize_consume_tmp_bytes(sweep.size, sweep.size));
+    let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.vec_znx_idft_normalize_tmp_bytes(sweep.size, sweep.size));
 
     let mut a: VecZnxDftOwned<B> = random_backend_vec_znx_dft::<B>(module.n(), sweep.cols, sweep.size, &mut source);
     let mut res = module.vec_znx_alloc(module.n(), sweep.cols, sweep.size);
@@ -203,7 +201,7 @@ pub fn runner_vec_znx_idft_normalize_consume<B: Backend<ZnxWord = i64>, M: Measu
         let mut a = vec_znx_dft_backend_mut::<B>(&mut a);
         let mut res = vec_znx_backend_mut::<B>(&mut res);
         for i in 0..sweep.cols {
-            module.vec_znx_idft_normalize_consume(
+            module.vec_znx_idft_normalize(
                 &mut res,
                 base2k,
                 base2k * sweep.size,

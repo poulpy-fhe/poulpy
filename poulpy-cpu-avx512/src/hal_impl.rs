@@ -541,12 +541,12 @@ unsafe impl<R: Ring> HalVecZnxDftImpl for NTT4x30Avx512<R>
 where
     Self: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + ZnxAutomorphism,
 {
-    fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+    fn vec_znx_idft_normalize_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         4 * module.n() * size_of::<u64>()
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_idft_normalize_consume(
+    fn vec_znx_idft_normalize(
         module: &Module<Self>,
         res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
@@ -561,7 +561,7 @@ where
     ) {
         let n = a.n();
         poulpy_hal::layouts::check_degree::<Self>(module.n(), n);
-        assert_eq!(res.n(), n, "vec_znx_idft_normalize_consume: res.n():{} != a.n():{n}", res.n());
+        assert_eq!(res.n(), n, "vec_znx_idft_normalize: res.n():{} != a.n():{n}", res.n());
         let arena = scratch.borrow();
         let (tmp, _) = take_host_typed::<Self, u64>(arena, 4 * n);
         crate::ntt4x30_avx512::vec_znx_dft::idft_compact_in_place(module, a, a_col, tmp);
@@ -969,12 +969,12 @@ mod ifma_impl {
             + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>
             + ZnxAutomorphism,
     {
-        fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+        fn vec_znx_idft_normalize_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
             3 * module.n() * size_of::<u64>()
         }
 
         #[allow(clippy::too_many_arguments)]
-        fn vec_znx_idft_normalize_consume(
+        fn vec_znx_idft_normalize(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
             res_base2k: usize,
@@ -989,7 +989,7 @@ mod ifma_impl {
         ) {
             let n = a.n();
             let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), 3 * n);
-            crate::ntt3x42_ifma::vec_znx_dft::idft_normalize_consume_ifma::<_, poulpy_hal::execution::SerialTaskExecutor>(
+            crate::ntt3x42_ifma::vec_znx_dft::idft_normalize_ifma::<_, poulpy_hal::execution::SerialTaskExecutor>(
                 module, res, res_base2k, res_k, res_offset, res_col, a, a_col, a_base2k, addend, tmp,
             );
         }

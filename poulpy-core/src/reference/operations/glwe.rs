@@ -2,8 +2,8 @@ use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAdd, VecZnxAddAssign, VecZnxBigAddSmallAssign,
         VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftApply,
-        VecZnxDftBytesOf, VecZnxDftSubAssign, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume,
-        VecZnxIdftNormalizeConsumeTmpBytes, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxMulXpMinusOne,
+        VecZnxDftBytesOf, VecZnxDftSubAssign, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize,
+        VecZnxIdftNormalizeTmpBytes, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxMulXpMinusOne,
         VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize,
         VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign, VecZnxRotateAssignTmpBytes,
         VecZnxRshAssign, VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxZero,
@@ -830,8 +830,8 @@ where
         + VecZnxNormalizeTmpBytes
         + VecZnxDftAddAssign<BE>
         + VecZnxDftSubAssign<BE>
-        + VecZnxIdftNormalizeConsume<BE>
-        + VecZnxIdftNormalizeConsumeTmpBytes
+        + VecZnxIdftNormalize<BE>
+        + VecZnxIdftNormalizeTmpBytes
         + VecZnxBigBytesOf
         + GLWENormalize<BE>,
 {
@@ -1679,7 +1679,7 @@ where
         + CnvPVecBytesOf
         + Convolution<BE>
         + GLWENormalize<BE>
-        + VecZnxIdftNormalizeConsumeTmpBytes
+        + VecZnxIdftNormalizeTmpBytes
         + GGLWEProductReference<BE>
         + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes,
     R: GLWEInfos,
@@ -1713,7 +1713,7 @@ where
     let convolve = module
         .cnv_apply_dft_tmp_bytes(max_size, dft_size, a_size, b_size)
         .max(module.cnv_pairwise_apply_dft_tmp_bytes(max_size, dft_size, a_size, b_size));
-    let digits = module.vec_znx_idft_normalize_consume_tmp_bytes(dft_size, dft_size);
+    let digits = module.vec_znx_idft_normalize_tmp_bytes(dft_size, dft_size);
     // d2 is the gadget operand, at most `dft_size` full limbs.
     let d2_k = TorusPrecision((dft_size * base2k) as u32);
     let (gadget_base2k, k_digit, dnum) = (tsk.base2k(), tsk.k_digit(), tsk.dnum());
@@ -1724,13 +1724,13 @@ where
             module.bytes_of_vec_znx_dft(n, 2, ks_size)
                 + module
                     .gglwe_product_dft_tmp_bytes_reference(ks_size, gadget_size, tsk)
-                    .max(module.vec_znx_idft_normalize_consume_tmp_bytes(res.size(), ks_size)),
+                    .max(module.vec_znx_idft_normalize_tmp_bytes(res.size(), ks_size)),
         );
     // Relinearized as a tensor when the gadget does not cover the digits of `d2`.
     let uncovered = if dft_size * base2k > tsk.dnum().as_usize() * tsk.k_digit().as_usize() {
         module.glwe_tensor_bytes_of_from_infos(&tensor_infos)
             + module
-                .vec_znx_idft_normalize_consume_tmp_bytes(tensor_size, dft_size)
+                .vec_znx_idft_normalize_tmp_bytes(tensor_size, dft_size)
                 .max(BE::glwe_tensor_relinearize_tmp_bytes(module, res, &tensor_infos, tsk))
     } else {
         0
@@ -1805,8 +1805,8 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
         + CnvPVecBytesOf
         + Convolution<BE>
         + GLWENormalize<BE>
-        + VecZnxIdftNormalizeConsume<BE>
-        + VecZnxIdftNormalizeConsumeTmpBytes
+        + VecZnxIdftNormalize<BE>
+        + VecZnxIdftNormalizeTmpBytes
         + VecZnxDftApply<BE>
         + VecZnxDftAddAssign<BE>
         + GGLWEProductReference<BE>
@@ -2046,7 +2046,7 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
         {
             let mut tensor_backend = tensor.to_backend_mut();
             for (col, column) in [(0, 0), (2, 1)] {
-                module.vec_znx_idft_normalize_consume(
+                module.vec_znx_idft_normalize(
                     &mut tensor_backend.data,
                     base2k,
                     tensor_size * base2k,
@@ -2059,7 +2059,7 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
                     &mut scratch.borrow(),
                 );
             }
-            module.vec_znx_idft_normalize_consume(
+            module.vec_znx_idft_normalize(
                 &mut tensor_backend.data,
                 base2k,
                 tensor_size * base2k,
@@ -2081,8 +2081,8 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
         return;
     }
 
-    // The inverse consumes column 1 of `diag` and leaves d0 in column 0.
-    module.vec_znx_idft_normalize_consume(
+    // The inverse clobbers column 1 of `diag` and leaves d0 in column 0.
+    module.vec_znx_idft_normalize(
         &mut d2_digits,
         base2k,
         dft_size * base2k,
@@ -2122,7 +2122,7 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
     res.set_canonical(true);
     let mut res_backend = res.to_backend_mut();
     for i in 0..2 {
-        module.vec_znx_idft_normalize_consume(
+        module.vec_znx_idft_normalize(
             &mut res_backend.data,
             base2k,
             res_k.as_usize(),
