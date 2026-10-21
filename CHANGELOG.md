@@ -17,6 +17,8 @@
 - **Breaking:** `VecZnx::encode_vec_i64_strided`, `encode_vec_i128_strided`, `decode_vec_i64_strided` and `decode_vec_i128_strided` are removed; the dense forms take one value per coefficient.
 - **Breaking, behaviour:** normalization rounds ties to even instead of toward positive infinity (`rnd` in the HAL notation).
   Ties of a few dropped exact bits no longer push every coefficient the same way; outputs change only at exact ties.
+- Add `MatZnxAddAssign::mat_znx_add_assign`, the entrywise sum of two `MatZnx` of one shape, limb by limb and not renormalized, in the new `api::mat_znx` family ([#380](https://github.com/poulpy-fhe/poulpy/issues/380)).
+  `HalVecZnxImpl` gains `mat_znx_add_assign` with a default body, `oep::mat_znx_add_assign_derived`, one `vec_znx_add_assign` per output column of every entry, so no backend change is required; `test_mat_znx_add_assign` runs in every backend suite.
 
 ### CPU backends
 
@@ -181,6 +183,7 @@
   Backends get it from `impl_operations_reference_full!`, or from `impl_glwe_mul_prepared_plain_sum_reference_full!` with the OEP family `GLWEMulPreparedPlainSumImpl` and its reference `GLWEMulPreparedPlainSumReference`.
 - Add `GGLWELayout::max_input_k`, the widest input a key switches whole: what its digits cover, and no more than its precision less one digit.
 - Add `From<GGLWELayout>` for `GLWEAutomorphismKeyLayout`, `GLWESwitchingKeyLayout` and `GLWETensorKeyLayout`. Each panics on a coarsened view.
+- Add `GGLWECompressed::data` and `data_mut`, the stored bodies, as on `GGLWE`.
 - **Fix:** `glwe_secret_tensor_prepare` takes every temporary from its scratch, where it allocated the transformed secret, the products and their normalization buffer, and wipes that scratch before returning, so no secret-derived buffer is freed unwiped ([#425](https://github.com/poulpy-fhe/poulpy/issues/425)).
   `glwe_secret_tensor_prepare_tmp_bytes` grows by those buffers.
 - **Fix:** `glwe_eval_linear_transformation_tmp_bytes` counts the scratch of the final iDFT and BIG normalization of the lazy giant-step path, and of the BIG normalization of the per-giant fallback ([#426](https://github.com/poulpy-fhe/poulpy/issues/426)).
@@ -282,6 +285,9 @@
 - **Fix:** the fresh noise estimate of a collective GGSW bounds a digit by `2^(B-1)` when `k_digit` is not a whole number of limbs, where the digit layout balances digits at their own width, and keeps `2^(B-1) * (1 - 2^-B)/(1 - 2^-b)` for whole-limb digits.
   Below a limb the old factor fell under 1 and underestimated the switching noise, and `mhe-contracts.md` gave the same formula.
   `test_ggsw_share_digit_widths` checks the estimate and the measured noise at widths below a limb, one bit past a limb and one bit short of two.
+- The aggregations of `GGLWEPatCompressed`, `GGLWEPat` and the public key shares add a share with one `mat_znx_add_assign` over the whole matrix, where they summed one entry at a time ([#380](https://github.com/poulpy-fhe/poulpy/issues/380)).
+  The public key share aggregation compares the seed vectors once and no longer calls `glwe_pat_compressed_aggregate_assign` per entry.
+  **Breaking:** `GLWEPublicKeyMHEProtocolImpl` gains the supertrait `HalVecZnxImpl`, which every backend implements.
 
 ### `poulpy-blas`
 

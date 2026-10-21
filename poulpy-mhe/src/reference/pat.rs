@@ -1,5 +1,5 @@
 use poulpy_core::{
-    GLWEAdd, GLWEMaskFill, GLWENormalize,
+    GLWEMaskFill, GLWENormalize,
     layouts::{
         GGLWECompressedSeed, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef, GGLWEDecompress, GGLWEInfos,
         GGLWEToBackendMut, GGLWEToBackendRef, GLWECompressedSeed, GLWECompressedToBackendMut, GLWECompressedToBackendRef,
@@ -7,7 +7,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{VecZnxAddAssign, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes},
+    api::{MatZnxAddAssign, VecZnxAddAssign, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes},
     layouts::{Backend, Module, ScratchArena},
 };
 
@@ -83,7 +83,7 @@ pub trait GGLWEPatCompressedReference<BE: Backend> {
 
 impl<BE: Backend> GGLWEPatCompressedReference<BE> for Module<BE>
 where
-    Self: VecZnxAddAssign<BE>
+    Self: MatZnxAddAssign<BE>
         + VecZnxNormalizeTmpBytes
         + VecZnxNormalizeAssign<BE>
         + GLWEDecompress<Backend = BE>
@@ -97,14 +97,9 @@ where
         assert!(res.gglwe_layout() == a.gglwe_layout(), "invalid aggregation: layouts differ");
         assert!(res.seed() == a.seed(), "invalid aggregation: seeds differ");
         let metadata = super::aggregate_metadata(res.noise(), a.noise());
-        let (dnum, rank_in): (usize, usize) = (res.dnum().into(), res.rank_in().into());
         let mut res_be = res.to_backend_mut();
         let a_be = a.to_backend_ref();
-        for row in 0..dnum {
-            for col in 0..rank_in {
-                self.vec_znx_add_assign(res_be.at_view_mut(row, col).data_mut(), 0, a_be.at_view(row, col).data(), 0);
-            }
-        }
+        self.mat_znx_add_assign(res_be.data_mut(), a_be.data());
         drop(res_be);
         res.set_noise(metadata);
     }
@@ -152,7 +147,7 @@ pub trait GGLWEPatReference<BE: Backend> {
 
 impl<BE: Backend> GGLWEPatReference<BE> for Module<BE>
 where
-    Self: GLWEAdd<BE> + GLWENormalize<BE>,
+    Self: MatZnxAddAssign<BE> + GLWENormalize<BE>,
 {
     fn gglwe_pat_aggregate_assign_reference<R, A>(&self, res: &mut R, a: &A)
     where
@@ -161,14 +156,9 @@ where
     {
         assert!(res.gglwe_layout() == a.gglwe_layout(), "invalid aggregation: layouts differ");
         let metadata = super::aggregate_common_key_metadata(res.noise(), a.noise(), res.n().as_usize());
-        let (dnum, rank_in): (usize, usize) = (res.dnum().into(), res.rank_in().into());
         let mut res_be = res.to_backend_mut();
         let a_be = a.to_backend_ref();
-        for row in 0..dnum {
-            for col in 0..rank_in {
-                self.glwe_add_assign(&mut res_be.at_view_mut(row, col), &a_be.at_view(row, col));
-            }
-        }
+        self.mat_znx_add_assign(res_be.data_mut(), a_be.data());
         drop(res_be);
         res.set_noise(metadata);
     }

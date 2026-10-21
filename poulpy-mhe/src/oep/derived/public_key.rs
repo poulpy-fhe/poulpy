@@ -5,11 +5,14 @@ use poulpy_core::{
         GLWEPublicKeyCompressedToBackendRef, GLWEPublicKeyToBackendMut, LWEInfos,
     },
 };
-use poulpy_hal::layouts::{Module, ScratchArena};
+use poulpy_hal::{
+    layouts::{MatZnxToBackendMut, MatZnxToBackendRef, Module, ScratchArena},
+    oep::HalVecZnxImpl,
+};
 
 use crate::{layouts::GLWEPublicKeyShareOwned, oep::GLWEPatCompressedImpl};
 
-pub(crate) fn mhe_glwe_public_key_share_aggregate_derived<BE: GLWEPatCompressedImpl>(
+pub(crate) fn mhe_glwe_public_key_share_aggregate_derived<BE: HalVecZnxImpl>(
     module: &Module<BE>,
     res: &mut GLWEPublicKeyShareOwned<BE>,
     a: &GLWEPublicKeyShareOwned<BE>,
@@ -18,12 +21,11 @@ pub(crate) fn mhe_glwe_public_key_share_aggregate_derived<BE: GLWEPatCompressedI
     assert!(res.dist() == a.dist(), "invalid aggregation: secret distributions differ");
     assert!(res.seed() == a.seed(), "invalid aggregation: seeds differ");
     let metadata = crate::reference::aggregate_metadata(res.noise(), a.noise());
-    let mut res_be = res.key.to_backend_mut();
-    let a = a.key.to_backend_ref();
-    for l in 0..a.rank().as_usize() {
-        BE::glwe_pat_compressed_aggregate_assign(module, &mut res_be.at_view_mut(l), &a.at_view(l));
-    }
-    drop(res_be);
+    BE::mat_znx_add_assign(
+        module,
+        &mut MatZnxToBackendMut::<BE>::to_backend_mut(res.key.data_mut()),
+        &MatZnxToBackendRef::<BE>::to_backend_ref(a.key.data()),
+    );
     GLWEPublicKeyCompressedToBackendMut::<BE>::set_noise(res, metadata);
 }
 
