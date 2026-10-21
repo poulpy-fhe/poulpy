@@ -11,10 +11,11 @@ use criterion::{criterion_group, criterion_main};
 use poulpy_bench::blas::suites::bench_blas;
 use poulpy_bench::core::suites::{bench_core_binfhe, bench_core_ckks};
 use poulpy_bench::hal::suites::{bench_hal_binfhe, bench_hal_ckks};
-use poulpy_bench::schemes::suites::{bench_binfhe, bench_ckks, bench_ckks_bootstrapping};
+use poulpy_bench::schemes::suites::{bench_binfhe, bench_ckks, bench_ckks_bootstrapping, bench_ckks_bootstrapping_ci};
 use poulpy_bin_fhe::blind_rotation::CGGI;
 
 use poulpy_cpu_portable::FFT64Portable as Fft;
+use poulpy_cpu_portable::NTT4x30CIPortable as NttCi;
 use poulpy_cpu_portable::NTT4x30Portable as Ntt;
 
 criterion_group! {
@@ -27,6 +28,7 @@ criterion_group! {
      bench_core_binfhe::<Fft>,
      bench_ckks::<Ntt>,
      bench_ckks_bootstrapping::<Ntt, 52>,
+     bench_ckks_bootstrapping_ci::<Ntt, NttCi, 52>,
      bench_ckks_bootstrapping::<Fft, 18>,
      bench_binfhe::<Fft, CGGI>
 }

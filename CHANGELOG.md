@@ -224,6 +224,7 @@
 - **Breaking:** the rotation, encapsulation and first-factor queries of `BootstrappingKeys` move to its new supertrait `BootstrappingLinearKeys`, which ModUp and CoeffsToSlots take: a custom key store implements both. Add the keys of these linear stages alone, `BootstrappingLinearKeysLayout` (`BootstrappingKeysLayout::linear`), `BootstrappingLinearKeySet` and `BootstrappingLinearKeysPrepared`, and `BootstrappingContext::generate_linear_keys`, which generates them with or without conjugation.
 - Add the preset `n16_d35_k685_p19_s2c_fast` (`BootstrappingCIPreset`, `all_ci`): S2C-first with the transforms of the former `n16_d35_k720_p19_s2c`, the first factor on the raise and EvalMod on the CI ring, 15 usable levels and a raised width of 1383 bits, which the dense-secret bound leaves for the first-factor keys.
 - Add `test_suite::presets::bootstrapping_ci_presets_meet_precision`.
+- Add `test_suite::presets::BootstrappingCIPresetRun`, the driver of the presets with EvalMod on the conjugate-invariant ring, as `BootstrappingPresetRun` is for the others: `bootstrapping_ci_presets_meet_precision` and the benchmarks run on it.
 - Add the modulus raise that applies the first `CoeffsToSlots` factor on the raised ciphertext while it is small (`DFTPlan::with_first_factor_on_raise`, after ePrint 2025/1403): the factor consumes no modulus, and the raised width drops by one CoeffsToSlots scale.
   Each diagonal's term is rotated with no key and switched to the dense secret by a `GLWESwitchingKey` of its own, from the rotated raise secret, whose rows sit `k_offset` bits under the term's few limbs and end at the raise's working width (`BootstrappingKeysLayout::first_factor_key`, `BootstrappingKeys::first_factor_key`); the switches are summed with `glwe_keyswitch_dft_add` and rounded once.
   The sparse-to-dense switch is not used, nor its key generated.
@@ -389,6 +390,11 @@
   The counts are those `blas_matmul` and `blas_matmul_pt_right` document.
 - `validate_blas_sum` rejects with `InvalidOperand` a `base2k` whose digits cannot hold the `log2(mat_slots) + 1` lazy terms the sum adds within `2^62`, as the products reject one above 62.
 - Calls with distinct `res` and `scratch` may run concurrently over a shared module, context, public operands, prepared operands and key stores, and an override keeps no state across calls.
+
+### `poulpy-bench`
+
+- Add `schemes::suites::bench_ckks_bootstrapping_ci`, which benchmarks the presets with EvalMod on the conjugate-invariant ring (`n16_d35_k685_p19_s2c_fast`) in the group of the other bootstrapping presets, from a standard backend and its conjugate-invariant one.
+  The NEON, portable, AVX and AVX-512 (IFMA included) benchmark binaries run it on their NTT backends; the presets have one radix, so a backend whose fixture radix is below it leaves them out.
 
 ### `poulpy-cpu-arm`
 
