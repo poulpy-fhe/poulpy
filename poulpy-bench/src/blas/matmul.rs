@@ -97,6 +97,7 @@ fn atk_layout(bp: &BlasBenchParams) -> GLWEAutomorphismKeyLayout {
         k_aux,
         rank: Rank(1),
         k_digit,
+        k_offset: TorusPrecision(0),
         dnum,
     }
 }
