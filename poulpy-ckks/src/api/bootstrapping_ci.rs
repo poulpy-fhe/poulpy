@@ -18,6 +18,17 @@ use crate::{
 ///
 /// As [`ckks_bootstrap`](crate::api::CKKSBootstrappingOps::ckks_bootstrap) on the
 /// base plan: the output keeps the input scale, at the preset output width.
+///
+/// # Keys
+///
+/// `ct_out.k()` sets the working width. Before any work, the rotation keys of
+/// the linear stages and the CI tensor key must cover the widest ciphertext the
+/// bootstrap switches with them at that width, or it fails with
+/// [`MissingAutomorphismKey`](crate::CKKSCompositionError::MissingAutomorphismKey)
+/// or [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey),
+/// whose `source` is the refusal; and the trace and embed keys must cover the
+/// conversions, or it fails with
+/// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand).
 pub trait CKKSBootstrappingCIOps<BE: Backend, BCI: Backend> {
     /// Scratch of [`Self::ckks_bootstrap_ci`]: `(scratch, scratch_ci)`.
     fn ckks_bootstrap_ci_tmp_bytes<C1, C2, F>(

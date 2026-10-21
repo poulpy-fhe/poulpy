@@ -209,7 +209,7 @@ pub(crate) fn check_raise_keys<BE, F, K, C1, C2>(
 ) -> Result<()>
 where
     BE: Backend,
-    K: BootstrappingKeys<BE>,
+    K: BootstrappingLinearKeys<BE>,
     C1: CKKSCtBounds,
     C2: CKKSCtBounds,
 {

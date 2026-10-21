@@ -1,12 +1,12 @@
 //! Reference S2C-first bootstrapping with EvalMod on the conjugate-invariant ring
 //! (see [`crate::layouts::bootstrapping_ci`]).
 
-use crate::{CKKSResult as Result, ckks_ensure, reference::first_factor::glwe_automorphism_keyless};
+use crate::{CKKSCompositionError, CKKSResult as Result, ckks_ensure, reference::first_factor::glwe_automorphism_keyless};
 use poulpy_core::{
     GLWEBytesOf, GLWECopy, GLWEKeyswitch, GLWEShift,
     layouts::{
-        BSGSMeta, GLWE, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
-        LWEInfos, Rank, SetBSGSMeta, SetK,
+        BSGSMeta, GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWETensorKeyPrepared, GLWEToBackendMut,
+        GLWEToBackendRef, GetAutomorphismKey, LWEInfos, Rank, SetBSGSMeta, SetK, TorusPrecision,
         prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
@@ -24,6 +24,7 @@ use crate::{
     layouts::{
         BootstrappingCIContext, BootstrappingCIKeysLayout, BootstrappingCIKeysPrepared, BootstrappingLinearKeys,
         BootstrappingLinearKeysPrepared, CKKSCiphertextOwned, CKKSModuleAlloc, CoveringKeys, ScratchArenaTakeCKKS,
+        bootstrapping_keys::check_covers,
     },
     oep::{CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl},
     reference::{
@@ -44,6 +45,63 @@ fn layout_at<C: CKKSCtBounds>(n: usize, ct: &C) -> CKKSLayout {
         },
         meta: GLWEPlaintextMeta::default(),
     }
+}
+
+/// Fails before any work unless every key covers the widest ciphertext the CI
+/// bootstrap switches with it at the working width `ct_out.k()`: the rotation
+/// keys of the linear stages (no conjugation, CoeffsToSlots is not split), the
+/// trace key on the CoeffsToSlots output after the product by `u`, the CI
+/// tensor key in EvalMod, and the embed key on the EvalMod output.
+fn check_ci_key_widths<BE, BCI, F>(
+    ct_out: &CKKSCiphertextOwned<BE>,
+    ct_in: &CKKSCiphertextOwned<BE>,
+    ctx: &BootstrappingCIContext<BE, BCI, F>,
+    keys: &BootstrappingCIKeysPrepared<BE::OwnedBuf, BE, BCI>,
+) -> Result<()>
+where
+    BE: Backend,
+    BCI: Backend,
+    CKKSCiphertextOwned<BE>: CKKSCtBounds,
+{
+    let op = "ckks_bootstrap_ci";
+    let base = ctx.base();
+    let widths = base.key_widths();
+    let (bootstrap_k, input_k) = (ct_out.k().as_usize(), ct_in.k().as_usize());
+    let log_n = ct_out.n().as_usize().trailing_zeros() as usize;
+    let rotations = CoveringKeys(keys.linear.rotation_keys());
+    for (p, k) in widths.rotation_key_inputs(log_n, bootstrap_k, input_k) {
+        if p == -1 {
+            continue;
+        }
+        let k = TorusPrecision(k as u32);
+        rotations
+            .get_automorphism_key(p, k)
+            .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
+                op,
+                rotation: p,
+                k: k.into(),
+                source,
+            })?;
+    }
+    // The widths of the conversions, as the presets lay their keys out.
+    let traced = bootstrap_k - base.coeffs_to_slots().consumed_bits() + base.c2s_guard_bits() - ctx.pre().log_delta();
+    let embedded = traced - base.eval_mod().plan.consumed_bits();
+    let k = TorusPrecision(widths.eval_mod_relinearization_k(traced, ct_in.log_delta()) as u32);
+    check_covers(op, keys.tensor_key.gglwe_layout(), k).map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
+        op,
+        k: k.into(),
+        source,
+    })?;
+    for (name, layout, k) in [
+        ("trace", keys.trace_key.gglwe_layout(), traced),
+        ("embed", keys.embed_key.gglwe_layout(), embedded),
+    ] {
+        check_covers(op, layout, TorusPrecision(k as u32)).map_err(|source| CKKSCompositionError::InvalidOperand {
+            op,
+            reason: format!("the {name} key does not cover its input: {source}"),
+        })?;
+    }
+    crate::reference::bootstrapping::check_raise_keys(ct_out, ct_in, base, &keys.linear)
 }
 
 /// `res` = `a` at the degree of `res`, column by column: `X -> X^(n_res / n_a)` when
@@ -148,6 +206,7 @@ where
             ct_in.rank().as_usize() == 1 && ct_out.rank().as_usize() == 1,
             "ckks_bootstrap_ci supports rank-1 ciphertexts only"
         );
+        check_ci_key_widths(ct_out, ct_in, ctx, keys)?;
         let base = ctx.base();
         let boot_layout = GLWELayout {
             n: ct_out.n(),
@@ -168,7 +227,12 @@ where
             scratch.scope(|scratch| {
                 let (mut z, mut scratch) = scratch.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta());
                 ckks_bootstrap_s2c_mod_up(self, &mut z, ct_in, base, &keys.linear, &mut scratch)?;
-                self.ckks_dft_evaluate_assign(&mut z, base.coeffs_to_slots(), keys.linear.rotation_keys(), &mut scratch)?;
+                self.ckks_dft_evaluate_assign(
+                    &mut z,
+                    base.coeffs_to_slots(),
+                    &CoveringKeys(keys.linear.rotation_keys()),
+                    &mut scratch,
+                )?;
                 embedded.set_k(z.k());
                 switch_degree(wide, &mut embedded, &z);
                 embedded.set_meta(z.meta());

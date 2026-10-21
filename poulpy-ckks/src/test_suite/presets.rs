@@ -6,6 +6,7 @@
 //! precision pin test ([`bootstrapping_presets_meet_precision`]) both drive it,
 //! so there is a single description of how a preset is exercised.
 
+use crate::CKKSCompositionError;
 use crate::CKKSModuleInfos;
 use crate::Scale;
 use poulpy_core::layouts::{
@@ -480,6 +481,33 @@ where
                 &mut scratch.borrow(),
             )
             .unwrap();
+
+        // A working width past what the keys cover fails at entry: 1024 bits is more
+        // than any key keeps beyond the width it was laid out for.
+        let mut too_wide = module.ckks_ciphertext_alloc(base2k.into(), (preset.bootstrap_k() + 1024).into());
+        let err = module
+            .ckks_bootstrap_ci(
+                &wide,
+                &ci,
+                &mut too_wide,
+                &input,
+                &context,
+                &keys,
+                &mut scratch.borrow(),
+                &mut scratch_ci.borrow(),
+            )
+            .unwrap_err();
+        assert!(
+            matches!(
+                err.composition(),
+                Some(CKKSCompositionError::MissingAutomorphismKey {
+                    op: "ckks_bootstrap_ci",
+                    ..
+                })
+            ),
+            "{}: expected a key refused at entry, got: {err}",
+            preset.name()
+        );
 
         let mut output = module.ckks_ciphertext_alloc_from_glwe_infos(&bootstrap_layout);
         output.set_k(preset.bootstrap_k().into());

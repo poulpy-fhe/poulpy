@@ -117,7 +117,8 @@ pub trait BootstrappingKeys<BE: Backend>: BootstrappingLinearKeys<BE> {
 /// is used at fails instead of losing precision.
 pub(crate) struct CoveringKeys<'a, K>(pub(crate) &'a K);
 
-fn check_covers(op: &'static str, layout: GGLWELayout, k: TorusPrecision) -> poulpy_core::Result<()> {
+/// Refuses a key whose layout does not cover inputs of `k` bits.
+pub(crate) fn check_covers(op: &'static str, layout: GGLWELayout, k: TorusPrecision) -> poulpy_core::Result<()> {
     let covered = layout.max_input_k();
     if k > covered {
         return Err(poulpy_core::CoreError::GGLWEKeyUse {
