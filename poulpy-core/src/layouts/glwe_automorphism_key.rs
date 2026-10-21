@@ -3,8 +3,8 @@ use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, W
 
 use crate::layouts::{
     Base2K, Degree, Dnum, GGLWE, GGLWEAtBackendMut, GGLWEAtBackendRef, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut,
-    GGLWEBackendRef, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWE, GLWEInfos, GLWEViewMut, GLWEViewRef, LWEInfos, Rank,
-    TorusPrecision,
+    GGLWEBackendRef, GGLWEInfos, GGLWELayout, GGLWEToBackendMut, GGLWEToBackendRef, GLWE, GLWEInfos, GLWEViewMut, GLWEViewRef,
+    LWEInfos, Rank, TorusPrecision,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use poulpy_hal::layouts::ZnxWord;
@@ -25,6 +25,23 @@ pub struct GLWEAutomorphismKeyLayout {
     pub k_aux: TorusPrecision,
     pub rank: Rank,
     pub k_digit: TorusPrecision,
+}
+
+/// The automorphism key of a stored GGLWE layout (`rank_out` is its rank).
+///
+/// Panics on a coarsened view (`stride != 1`), which no key is stored as.
+impl From<GGLWELayout> for GLWEAutomorphismKeyLayout {
+    fn from(layout: GGLWELayout) -> Self {
+        assert_eq!(layout.stride, 1, "a coarsened view is not a stored layout");
+        Self {
+            n: layout.n,
+            base2k: layout.base2k,
+            dnum: layout.dnum,
+            k_aux: layout.k_aux,
+            rank: layout.rank_out,
+            k_digit: layout.k_digit,
+        }
+    }
 }
 /// GLWE automorphism (Galois) key.
 ///

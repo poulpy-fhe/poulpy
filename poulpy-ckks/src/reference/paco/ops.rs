@@ -137,13 +137,14 @@ where
     {
         let order = self.cyclotomic_order();
         for rot in checked_fold_rotations(self, a, b)? {
-            let key = keys.get_automorphism_key(galois_element(rot, order), ct.k()).map_err(|_| {
-                CKKSCompositionError::MissingAutomorphismKey {
+            let key = keys
+                .get_automorphism_key(galois_element(rot, order), ct.k())
+                .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
                     op: "paco_slot_trace",
                     rotation: rot,
                     k: ct.k().into(),
-                }
-            })?;
+                    source,
+                })?;
             self.glwe_automorphism_add_assign(ct, &key, scratch);
         }
         Ok(())

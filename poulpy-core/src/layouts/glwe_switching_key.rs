@@ -3,8 +3,8 @@ use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, W
 
 use crate::layouts::{
     Base2K, Degree, Dnum, GGLWE, GGLWEAtBackendMut, GGLWEAtBackendRef, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut,
-    GGLWEBackendRef, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWE, GLWEInfos, GLWEViewMut, GLWEViewRef, LWEInfos, Rank,
-    TorusPrecision,
+    GGLWEBackendRef, GGLWEInfos, GGLWELayout, GGLWEToBackendMut, GGLWEToBackendRef, GLWE, GLWEInfos, GLWEViewMut, GLWEViewRef,
+    LWEInfos, Rank, TorusPrecision,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use poulpy_hal::layouts::ZnxWord;
@@ -25,6 +25,24 @@ pub struct GLWESwitchingKeyLayout {
     pub rank_in: Rank,
     pub rank_out: Rank,
     pub k_digit: TorusPrecision,
+}
+
+/// The switching key of a stored GGLWE layout.
+///
+/// Panics on a coarsened view (`stride != 1`), which no key is stored as.
+impl From<GGLWELayout> for GLWESwitchingKeyLayout {
+    fn from(layout: GGLWELayout) -> Self {
+        assert_eq!(layout.stride, 1, "a coarsened view is not a stored layout");
+        Self {
+            n: layout.n,
+            base2k: layout.base2k,
+            dnum: layout.dnum,
+            k_aux: layout.k_aux,
+            rank_in: layout.rank_in,
+            rank_out: layout.rank_out,
+            k_digit: layout.k_digit,
+        }
+    }
 }
 
 impl LWEInfos for GLWESwitchingKeyLayout {

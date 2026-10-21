@@ -27,7 +27,7 @@
 //! (lazy / streaming / on-the-fly-prepared) can implement [`BootstrappingKeys`]
 //! directly instead of materializing the whole bundle.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use anyhow::Result;
 use poulpy_core::{
@@ -37,8 +37,11 @@ use poulpy_core::{
         GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWESecretLayout,
         GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared,
         GLWESwitchingKeyPreparedFactory, GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory,
-        GetAutomorphismKey, GetGaloisElement, GetTensorKey, LWEInfos, ModuleCoreAlloc,
-        prepared::{GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
+        GetAutomorphismKey, GetGaloisElement, GetTensorKey, LWEInfos, ModuleCoreAlloc, TorusPrecision,
+        prepared::{
+            GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedBackendRef,
+            GLWETensorKeyPreparedToBackendRef,
+        },
     },
 };
 use poulpy_hal::{
@@ -71,12 +74,52 @@ pub trait BootstrappingKeys<BE: Backend> {
     /// Rotation (automorphism) keys, Galois element `−1` among them.
     fn rotation_keys(&self) -> &Self::RotationKeys;
 
-    /// Relinearization (tensor) key for EvalMod's `ct×ct` squaring.
+    /// Relinearization (tensor) key for EvalMod's `ct×ct` squaring. It covers
+    /// the widest ciphertext EvalMod relinearizes.
     fn tensor_key(&self) -> &Self::TensorKey;
 
     /// Sparse-secret encapsulation keys `(denseToSparse, sparseToDense)`, or
     /// `None` when the trick is disabled.
     fn encapsulation_keys(&self) -> Option<(&Self::SwitchingKey, &Self::SwitchingKey)>;
+}
+
+/// A key source that refuses a key not covering the precision it is asked for.
+///
+/// Past its [`max_input_k`](poulpy_core::layouts::GGLWELayout::max_input_k), a
+/// key switch drops the input limbs beyond the key's rows. The bootstrap reads
+/// every key through this source, so a key laid out narrower than the width it
+/// is used at fails instead of losing precision.
+pub(crate) struct CoveringKeys<'a, K>(pub(crate) &'a K);
+
+fn check_covers(op: &'static str, layout: GGLWELayout, k: TorusPrecision) -> poulpy_core::Result<()> {
+    let covered = layout.max_input_k();
+    if k > covered {
+        return Err(poulpy_core::CoreError::GGLWEKeyUse {
+            op,
+            detail: format!("the key covers inputs of {covered} bits, asked for {k}"),
+        });
+    }
+    Ok(())
+}
+
+impl<BE: Backend, K: GetAutomorphismKey<BE>> GetAutomorphismKey<BE> for CoveringKeys<'_, K> {
+    fn lookup_automorphism_key(
+        &self,
+        p: i64,
+        k: TorusPrecision,
+    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        let key = self.0.lookup_automorphism_key(p, k)?;
+        check_covers("get_automorphism_key", key.gglwe_layout(), k)?;
+        Ok(key)
+    }
+}
+
+impl<BE: Backend, K: GetTensorKey<BE>> GetTensorKey<BE> for CoveringKeys<'_, K> {
+    fn get_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+        let key = self.0.get_tensor_key(k)?;
+        check_covers("get_tensor_key", key.gglwe_layout(), k)?;
+        Ok(key)
+    }
 }
 
 /// The **unprepared** bootstrapping keys: encrypted but not yet preprocessed.
@@ -90,7 +133,7 @@ pub struct BootstrappingKeySet<D: Data, W: ZnxWord> {
     /// Rotation keys indexed by Galois element (the engine-wide convention),
     /// conjugation (`−1`) among them.
     pub rotation_keys: HashMap<i64, GLWEAutomorphismKey<D, W>>,
-    /// Relinearization (tensor) key for EvalMod.
+    /// Relinearization (tensor) key for EvalMod, covering its widest ciphertext.
     pub tensor_key: GLWETensorKey<D, W>,
     /// `(denseToSparse, sparseToDense)` encapsulation keys, or `None`.
     pub encapsulation_keys: Option<(GLWESwitchingKey<D, W>, GLWESwitchingKey<D, W>)>,
@@ -103,7 +146,7 @@ pub struct BootstrappingKeySet<D: Data, W: ZnxWord> {
 pub struct BootstrappingKeysPrepared<D: Data, BE: Backend> {
     /// Prepared rotation keys indexed by Galois element, conjugation among them.
     pub rotation_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>,
-    /// Prepared relinearization (tensor) key for EvalMod.
+    /// Prepared relinearization (tensor) key for EvalMod, covering its widest ciphertext.
     pub tensor_key: GLWETensorKeyPrepared<D, BE>,
     /// Prepared `(denseToSparse, sparseToDense)` encapsulation keys, or `None`.
     pub encapsulation_keys: Option<(GLWESwitchingKeyPrepared<D, BE>, GLWESwitchingKeyPrepared<D, BE>)>,
@@ -160,11 +203,8 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
             rotation_keys.insert(p, prepared);
         }
 
-        let tensor_key = {
-            let mut prepared = module.alloc_tensor_key_prepared_from_infos(&self.tensor_key);
-            module.prepare_tensor_key(&mut prepared, &self.tensor_key, scratch);
-            prepared
-        };
+        let mut tensor_key = module.alloc_tensor_key_prepared_from_infos(&self.tensor_key);
+        module.prepare_tensor_key(&mut tensor_key, &self.tensor_key, scratch);
 
         let encapsulation_keys = self.encapsulation_keys.as_ref().map(|(d2s, s2d)| {
             let mut d2s_prepared = module.glwe_switching_key_prepared_alloc_from_infos(d2s);
@@ -187,16 +227,43 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
 ///
 /// Key generation uses [`poulpy_core::Noise::ENCRYPTION`] at each
 /// destination key's precision. The Galois elements of the rotation keys are read from the compiled DFT matrices,
-/// so they are not part of this layout — only the shared automorphism-key shape.
-#[derive(Clone, Copy, Debug)]
+/// so this layout only gives their shapes.
+///
+/// A rotation key used on narrow ciphertexts only can take a wider digit under
+/// the same modulus bound, hence fewer rows: `rotation_keys` holds such shapes.
+/// Left empty, every rotation key has the shape of the widest use.
+#[derive(Clone, Debug)]
 pub struct BootstrappingKeysLayout {
-    /// Shared layout of the rotation and conjugation automorphism keys.
+    /// Layout of the rotation and conjugation keys `rotation_keys` does not
+    /// list. It must cover the widest ciphertext of the pipeline.
     pub automorphism_key: GLWEAutomorphismKeyLayout,
-    /// Layout of the EvalMod relinearization (tensor) key.
+    /// Layouts of single rotation keys, by Galois element. Each must cover the
+    /// widest ciphertext its key switches.
+    pub rotation_keys: BTreeMap<i64, GLWEAutomorphismKeyLayout>,
+    /// Layout of the EvalMod relinearization (tensor) key. It must cover the
+    /// widest ciphertext EvalMod relinearizes.
     pub tensor_key: GLWETensorKeyLayout,
     /// Physical layouts for the sparse-secret encapsulation keys required by
     /// the recipe, or `None` when the recipe disables the technique.
     pub encapsulation: Option<EncapsulationKeysLayout>,
+}
+
+impl BootstrappingKeysLayout {
+    /// Layout of the rotation key of Galois element `p`.
+    pub fn rotation_key(&self, p: i64) -> GLWEAutomorphismKeyLayout {
+        self.rotation_keys.get(&p).copied().unwrap_or(self.automorphism_key)
+    }
+
+    /// The distinct rotation key layouts, the shared one first.
+    pub fn rotation_key_layouts(&self) -> Vec<GLWEAutomorphismKeyLayout> {
+        let mut layouts = vec![self.automorphism_key];
+        for layout in self.rotation_keys.values() {
+            if !layouts.contains(layout) {
+                layouts.push(*layout);
+            }
+        }
+        layouts
+    }
 }
 
 /// Layout of the sparse-secret encapsulation key-switching keys
@@ -264,7 +331,6 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
         );
 
         let order = module.cyclotomic_order();
-        let atk_layout = layout.automorphism_key;
 
         // Rotation keys: the union of both DFTs' (and the bypass') Galois elements.
         let mut gal_set: BTreeSet<i64> = BTreeSet::new();
@@ -278,14 +344,13 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
 
         let mut rotation_keys = HashMap::with_capacity(gal_set.len());
         for p in gal_set {
-            let mut atk = module.glwe_automorphism_key_alloc_from_infos(&atk_layout);
+            let mut atk = module.glwe_automorphism_key_alloc_from_infos(&layout.rotation_key(p));
             module.glwe_automorphism_key_encrypt_sk(&mut atk, p, sk_dense, source_xe, source_xa, scratch);
             rotation_keys.insert(p, atk);
         }
 
         // Tensor (relinearization) key for EvalMod's ct×ct squaring.
-        let tsk_layout = layout.tensor_key;
-        let mut tensor_key = module.glwe_tensor_key_alloc_from_infos(&tsk_layout);
+        let mut tensor_key = module.glwe_tensor_key_alloc_from_infos(&layout.tensor_key);
         module.glwe_tensor_key_encrypt_sk(&mut tensor_key, sk_dense, source_xe, source_xa, scratch);
 
         // Sparse-secret encapsulation key-switching keys.

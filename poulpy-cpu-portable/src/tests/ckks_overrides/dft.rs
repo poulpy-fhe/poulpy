@@ -446,6 +446,7 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
         k_digit: 16usize.into(),
     };
     let keys = BootstrappingKeysLayout {
+        rotation_keys: Default::default(),
         automorphism_key: poulpy_core::layouts::GLWEAutomorphismKeyLayout {
             n: key.n,
             base2k: key.base2k,

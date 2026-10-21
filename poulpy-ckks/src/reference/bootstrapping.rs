@@ -1,10 +1,10 @@
-use crate::{CKKSResult as Result, ckks_ensure, ckks_log_delta, layouts::eval_mod::EvalModPlan};
+use crate::{CKKSCompositionError, CKKSResult as Result, ckks_ensure, ckks_log_delta, layouts::eval_mod::EvalModPlan};
 use poulpy_core::layouts::{GLWEPlaintextInfos, SetGLWEPlaintextInfos};
 use poulpy_core::{
     GLWECopy, GLWEKeyswitch, GLWEShift,
     layouts::{
-        BSGSMeta, GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
-        SetBSGSMeta, SetK,
+        BSGSMeta, GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
+        GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, SetBSGSMeta, SetK, TorusPrecision,
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
@@ -22,11 +22,161 @@ use crate::{
     eval_lut::{ckks_eval_lut, ckks_eval_lut_binary, ckks_eval_lut_from_basis, ckks_lut_power_basis},
     layouts::{
         BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, CKKSCiphertextOwned,
-        CKKSModuleAlloc, CKKSPlaintextOwned, EncodedLut, EncodedLutKind, EvalModType, ScratchArenaTakeCKKS,
+        CKKSModuleAlloc, CKKSPlaintextOwned, CoveringKeys, EncodedLut, EncodedLutKind, EvalModType, ScratchArenaTakeCKKS,
     },
     oep::CKKSEncapsulatedModUpImpl,
 };
 use poulpy_core::{GLWEBytesOf, GLWENormalize};
+
+/// [`CKKSBootstrappingReference::ckks_bootstrap_tmp_bytes_reference`]: the terms
+/// of the rotation keys are maximized over their layouts, those of EvalMod come
+/// from the tensor key alone.
+fn bootstrap_tmp_bytes_for<BE, C1, C2, F>(
+    module: &Module<BE>,
+    ct_out: &C1,
+    ct_in: &C2,
+    ctx: &BootstrappingContext<BE, F>,
+    keys_layout: &BootstrappingKeysLayout,
+) -> usize
+where
+    BE: Backend + CKKSEncapsulatedModUpImpl,
+    Module<BE>: GLWEBytesOf<BE>,
+    Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSDFTOps<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
+    C1: CKKSCtBounds,
+    C2: CKKSCtBounds,
+    CKKSCiphertextOwned<BE>: CKKSCtBounds,
+{
+    let (boot_layout, in_layout) = bootstrap_layouts(ct_out, ct_in);
+    let base2k = ct_in.base2k();
+    let boot_ct_bytes = module.glwe_bytes_of_from_infos(&boot_layout);
+    // The coefficient-plaintext proxy for the plaintext ops: EvalMod's
+    // encoded polynomial coefficients, the widest plaintext the pipeline
+    // multiplies by.
+    let coeffs_meta = ctx.eval_mod().plan.coeffs_meta;
+    let coeffs_layout = CKKSLayout {
+        glwe_layout: GLWELayout {
+            n: ct_out.n(),
+            base2k,
+            k: coeffs_meta.k,
+            rank: Rank(1),
+        },
+        meta: coeffs_meta.meta,
+    };
+
+    let in_ct_bytes = module.glwe_bytes_of_from_infos(&in_layout);
+
+    let post_mod_up = if ctx.coeffs_to_slots_bypass().is_some() {
+        5 * boot_ct_bytes
+    } else {
+        3 * boot_ct_bytes
+    };
+    let mut carved = match ctx.pipeline() {
+        BootstrappingPipeline::C2SFirst => post_mod_up,
+        BootstrappingPipeline::S2CFirst => post_mod_up.max(boot_ct_bytes + in_ct_bytes),
+    };
+
+    // EvalMod writes into scratch-carved boot-width ciphertexts and, on the
+    // real-slot path, into `ct_out` itself, which may be allocated wider
+    // than its `k`.
+    let tsk = &keys_layout.tensor_key;
+    let eval_mod_tmp = module
+        .ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod(), tsk)
+        .max(module.ckks_eval_mod_tmp_bytes(ct_out, &boot_layout, ctx.eval_mod(), tsk));
+    let eval_mod_tmp = if <BE::TaskExecutor as TaskExecutor>::IS_PARALLEL {
+        2 * worker_scratch_bytes::<BE>(eval_mod_tmp)
+    } else {
+        eval_mod_tmp
+    };
+    let mut nested = eval_mod_tmp;
+
+    // CoeffsToSlots always reads the raised ciphertext. SlotsToCoeffs runs
+    // in place on the input before ModUp in the S2C-first pipeline.
+    // Otherwise it reads the EvalMod outputs and writes `ct_out`, whose
+    // allocation can be wider than its `k`.
+    let out_layout = CKKSLayout {
+        glwe_layout: GLWELayout {
+            k: ct_out.max_k(),
+            ..boot_layout.glwe_layout
+        },
+        meta: boot_layout.meta,
+    };
+    let (s2c_dst, s2c_src) = match ctx.pipeline() {
+        BootstrappingPipeline::C2SFirst => (&out_layout, &boot_layout),
+        BootstrappingPipeline::S2CFirst => (&in_layout, &in_layout),
+    };
+    // Every rotation key shape against the widest ciphertext: a narrow key has a
+    // wider digit, which can need more scratch than the wide key.
+    for atk in &keys_layout.rotation_key_layouts() {
+        nested = nested
+            .max(module.ckks_all_ops_with_atk_tmp_bytes(&boot_layout, tsk, atk, &coeffs_layout))
+            .max(module.ckks_all_ops_with_atk_tmp_bytes(&in_layout, tsk, atk, &coeffs_layout))
+            .max(module.ckks_dft_tmp_bytes(&boot_layout, &boot_layout, ctx.coeffs_to_slots(), atk))
+            .max(module.ckks_dft_tmp_bytes(s2c_dst, s2c_src, ctx.slots_to_coeffs(), atk));
+        if let Some(bypass) = ctx.coeffs_to_slots_bypass() {
+            nested = nested.max(module.ckks_dft_tmp_bytes(&boot_layout, &boot_layout, bypass, atk));
+        }
+    }
+
+    if ctx.pipeline() == BootstrappingPipeline::C2SFirst {
+        carved += in_ct_bytes;
+    }
+
+    if let Some(encaps) = &keys_layout.encapsulation {
+        nested = nested.max(BE::ckks_encapsulated_mod_up_tmp_bytes(
+            module,
+            &boot_layout,
+            &in_layout,
+            &encaps.dense_to_sparse,
+            &encaps.sparse_to_dense,
+        ));
+    }
+
+    carved + nested
+}
+
+/// Fails before any work unless every key covers the widest ciphertext the
+/// bootstrap switches with it.
+///
+/// The bootstrap runs at `ct_out.k()`, which need not be the width the keys
+/// were laid out for. Each stage reads its keys through [`CoveringKeys`] too;
+/// this check only moves the failure ahead of the computation. An EvalRound+
+/// recipe runs its bypass at widths of its own and is left to those checks.
+fn check_key_widths<BE, F, K>(
+    ct_out: &CKKSCiphertextOwned<BE>,
+    ct_in: &CKKSCiphertextOwned<BE>,
+    ctx: &BootstrappingContext<BE, F>,
+    keys: &K,
+) -> Result<()>
+where
+    BE: Backend,
+    K: BootstrappingKeys<BE>,
+    CKKSCiphertextOwned<BE>: CKKSCtBounds,
+{
+    if ctx.coeffs_to_slots_bypass().is_some() {
+        return Ok(());
+    }
+    let op = "ckks_bootstrap";
+    let widths = ctx.key_widths();
+    let (bootstrap_k, input_k) = (ct_out.k().as_usize(), ct_in.k().as_usize());
+    let log_n = ct_out.n().as_usize().trailing_zeros() as usize;
+    let rotations = CoveringKeys(keys.rotation_keys());
+    for (p, k) in widths.rotation_key_inputs(log_n, bootstrap_k, input_k) {
+        let k = TorusPrecision(k as u32);
+        rotations
+            .get_automorphism_key(p, k)
+            .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
+                op,
+                rotation: p,
+                k: k.into(),
+                source,
+            })?;
+    }
+    let k = TorusPrecision(widths.eval_mod_relinearization_k(bootstrap_k, ct_in.log_delta()) as u32);
+    CoveringKeys(keys.tensor_key())
+        .get_tensor_key(k)
+        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source })?;
+    Ok(())
+}
 
 fn bootstrap_layouts<C1, C2>(ct_out: &C1, ct_in: &C2) -> (CKKSLayout, CKKSLayout)
 where
@@ -153,7 +303,8 @@ pub trait CKKSBootstrappingReference<BE: Backend> {
             + CKKSDFTOps<BE>
             + CKKSEvalModOps<BE>
             + GLWENormalize<BE>,
-        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync,
+        K: BootstrappingKeys<BE> + Sync,
+        K::TensorKey: Sync,
         CKKSCiphertextOwned<BE>:
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
@@ -192,7 +343,7 @@ pub trait CKKSBootstrappingReference<BE: Backend> {
             + CKKSPow2Ops<BE>
             + CKKSAffineOps<BE>
             + GLWENormalize<BE>,
-        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
+        K: BootstrappingKeys<BE>,
         CKKSCiphertextOwned<BE>:
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
@@ -220,103 +371,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
         C2: CKKSCtBounds,
         CKKSCiphertextOwned<BE>: CKKSCtBounds,
     {
-        let (boot_layout, in_layout) = bootstrap_layouts(ct_out, ct_in);
-        let base2k = ct_in.base2k();
-        let boot_ct_bytes = self.glwe_bytes_of_from_infos(&boot_layout);
-        // The coefficient-plaintext proxy for the plaintext ops: EvalMod's
-        // encoded polynomial coefficients, the widest plaintext the pipeline
-        // multiplies by.
-        let coeffs_meta = ctx.eval_mod().plan.coeffs_meta;
-        let coeffs_layout = CKKSLayout {
-            glwe_layout: GLWELayout {
-                n: ct_out.n(),
-                base2k,
-                k: coeffs_meta.k,
-                rank: Rank(1),
-            },
-            meta: coeffs_meta.meta,
-        };
-
-        let in_ct_bytes = self.glwe_bytes_of_from_infos(&in_layout);
-
-        let post_mod_up = if ctx.coeffs_to_slots_bypass().is_some() {
-            5 * boot_ct_bytes
-        } else {
-            3 * boot_ct_bytes
-        };
-        let mut carved = match ctx.pipeline() {
-            BootstrappingPipeline::C2SFirst => post_mod_up,
-            BootstrappingPipeline::S2CFirst => post_mod_up.max(boot_ct_bytes + in_ct_bytes),
-        };
-
-        // EvalMod writes into scratch-carved boot-width ciphertexts and, on the
-        // real-slot path, into `ct_out` itself, which may be allocated wider
-        // than its `k`.
-        let eval_mod_tmp = self
-            .ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key)
-            .max(self.ckks_eval_mod_tmp_bytes(ct_out, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key));
-        let eval_mod_tmp = if <BE::TaskExecutor as TaskExecutor>::IS_PARALLEL {
-            2 * worker_scratch_bytes::<BE>(eval_mod_tmp)
-        } else {
-            eval_mod_tmp
-        };
-        let mut nested = self
-            .ckks_all_ops_with_atk_tmp_bytes(
-                &boot_layout,
-                &keys_layout.tensor_key,
-                &keys_layout.automorphism_key,
-                &coeffs_layout,
-            )
-            .max(self.ckks_all_ops_with_atk_tmp_bytes(
-                &in_layout,
-                &keys_layout.tensor_key,
-                &keys_layout.automorphism_key,
-                &coeffs_layout,
-            ))
-            .max(eval_mod_tmp);
-
-        // CoeffsToSlots always reads the raised ciphertext. SlotsToCoeffs runs
-        // in place on the input before ModUp in the S2C-first pipeline.
-        // Otherwise it reads the EvalMod outputs and writes `ct_out`, whose
-        // allocation can be wider than its `k`.
-        let out_layout = CKKSLayout {
-            glwe_layout: GLWELayout {
-                k: ct_out.max_k(),
-                ..boot_layout.glwe_layout
-            },
-            meta: boot_layout.meta,
-        };
-        let (s2c_dst, s2c_src) = match ctx.pipeline() {
-            BootstrappingPipeline::C2SFirst => (&out_layout, &boot_layout),
-            BootstrappingPipeline::S2CFirst => (&in_layout, &in_layout),
-        };
-        nested = nested
-            .max(self.ckks_dft_tmp_bytes(
-                &boot_layout,
-                &boot_layout,
-                ctx.coeffs_to_slots(),
-                &keys_layout.automorphism_key,
-            ))
-            .max(self.ckks_dft_tmp_bytes(s2c_dst, s2c_src, ctx.slots_to_coeffs(), &keys_layout.automorphism_key));
-        if let Some(bypass) = ctx.coeffs_to_slots_bypass() {
-            nested = nested.max(self.ckks_dft_tmp_bytes(&boot_layout, &boot_layout, bypass, &keys_layout.automorphism_key));
-        }
-
-        if ctx.pipeline() == BootstrappingPipeline::C2SFirst {
-            carved += in_ct_bytes;
-        }
-
-        if let Some(encaps) = &keys_layout.encapsulation {
-            nested = nested.max(BE::ckks_encapsulated_mod_up_tmp_bytes(
-                self,
-                &boot_layout,
-                &in_layout,
-                &encaps.dense_to_sparse,
-                &encaps.sparse_to_dense,
-            ));
-        }
-
-        carved + nested
+        bootstrap_tmp_bytes_for(self, ct_out, ct_in, ctx, keys_layout)
     }
 
     fn ckks_functional_bootstrap_tmp_bytes_reference<C1, C2, F>(
@@ -342,26 +397,19 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
         // LUT-evaluation temporary. Direct S2C instead holds one boot-width
         // ciphertext beside its input-width buffer.
         let carved = (4 * boot_bytes).max(boot_bytes + in_bytes);
+        let tsk = &keys_layout.tensor_key;
         let mut nested = 0usize;
-        for lut in luts {
-            nested = nested
-                .max(self.ckks_all_ops_with_atk_tmp_bytes(
-                    &boot_layout,
-                    &keys_layout.tensor_key,
-                    &keys_layout.automorphism_key,
-                    lut.coeffs(),
-                ))
-                .max(self.ckks_all_ops_with_atk_tmp_bytes(
-                    &in_layout,
-                    &keys_layout.tensor_key,
-                    &keys_layout.automorphism_key,
-                    lut.coeffs(),
-                ));
-        }
         if luts.iter().any(EncodedLut::requires_eval_mod) {
             nested = nested
-                .max(self.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key))
-                .max(self.ckks_eval_mod_tmp_bytes(ct_out, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key));
+                .max(self.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod(), tsk))
+                .max(self.ckks_eval_mod_tmp_bytes(ct_out, &boot_layout, ctx.eval_mod(), tsk));
+        }
+        for atk in &keys_layout.rotation_key_layouts() {
+            for lut in luts {
+                nested = nested
+                    .max(self.ckks_all_ops_with_atk_tmp_bytes(&boot_layout, tsk, atk, lut.coeffs()))
+                    .max(self.ckks_all_ops_with_atk_tmp_bytes(&in_layout, tsk, atk, lut.coeffs()));
+            }
         }
         base.max(carved + nested)
     }
@@ -449,7 +497,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
             + CKKSDFTOps<BE>
             + CKKSEvalModOps<BE>
             + GLWENormalize<BE>,
-        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync,
+        K: BootstrappingKeys<BE> + Sync,
+        K::TensorKey: Sync,
         CKKSCiphertextOwned<BE>:
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -475,6 +524,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
             ctx.sparse_secret_hamming_weight().is_some(),
             encapsulation_keys.is_some()
         );
+        check_key_widths(ct_out, ct_in, ctx, keys)?;
 
         if ctx.pipeline() == BootstrappingPipeline::S2CFirst {
             // Known-real slots skip the imaginary nonlinear branch: one EvalMod
@@ -511,15 +561,27 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
             match ctx.coeffs_to_slots_bypass() {
                 // Standard: EvalMod's clean residue goes straight to SlotsToCoeffs.
                 None => {
-                    self.ckks_eval_mod(&mut ct, &r0, ctx.eval_mod(), keys.tensor_key(), &mut scratch_local)?;
+                    self.ckks_eval_mod(
+                        &mut ct,
+                        &r0,
+                        ctx.eval_mod(),
+                        &CoveringKeys(keys.tensor_key()),
+                        &mut scratch_local,
+                    )?;
                     r0.set_k(k_boot);
-                    self.ckks_eval_mod(&mut r0, &i0, ctx.eval_mod(), keys.tensor_key(), &mut scratch_local)?;
+                    self.ckks_eval_mod(
+                        &mut r0,
+                        &i0,
+                        ctx.eval_mod(),
+                        &CoveringKeys(keys.tensor_key()),
+                        &mut scratch_local,
+                    )?;
                     self.ckks_slots_to_coeffs_split(
                         ct_out,
                         &ct,
                         &r0,
                         ctx.slots_to_coeffs(),
-                        keys.rotation_keys(),
+                        &CoveringKeys(keys.rotation_keys()),
                         &mut scratch_local,
                     )?;
                 }
@@ -534,7 +596,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
                         &mut i0_hp,
                         &ct,
                         bypass,
-                        keys.rotation_keys(),
+                        &CoveringKeys(keys.rotation_keys()),
                         &mut scratch_local,
                     )?;
 
@@ -547,13 +609,25 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
                     );
                     let log2_k = ctx.eval_mod().plan.f_mod_interval.trailing_zeros() as usize;
 
-                    self.ckks_eval_mod(&mut ct, &r0, ctx.eval_mod(), keys.tensor_key(), &mut scratch_local)?;
+                    self.ckks_eval_mod(
+                        &mut ct,
+                        &r0,
+                        ctx.eval_mod(),
+                        &CoveringKeys(keys.tensor_key()),
+                        &mut scratch_local,
+                    )?;
                     self.ckks_mul_pow2_assign(&mut r0, log2_k, &mut scratch_local)?;
                     self.ckks_sub_assign(&mut r0_hp, &r0, &mut scratch_local)?;
                     self.ckks_add_assign(&mut r0_hp, &ct, &mut scratch_local)?;
 
                     r0.set_k(k_boot);
-                    self.ckks_eval_mod(&mut r0, &i0, ctx.eval_mod(), keys.tensor_key(), &mut scratch_local)?;
+                    self.ckks_eval_mod(
+                        &mut r0,
+                        &i0,
+                        ctx.eval_mod(),
+                        &CoveringKeys(keys.tensor_key()),
+                        &mut scratch_local,
+                    )?;
                     self.ckks_mul_pow2_assign(&mut i0, log2_k, &mut scratch_local)?;
                     self.ckks_sub_assign(&mut i0_hp, &i0, &mut scratch_local)?;
                     self.ckks_add_assign(&mut i0_hp, &r0, &mut scratch_local)?;
@@ -563,7 +637,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
                         &r0_hp,
                         &i0_hp,
                         ctx.slots_to_coeffs(),
-                        keys.rotation_keys(),
+                        &CoveringKeys(keys.rotation_keys()),
                         &mut scratch_local,
                     )?;
                 }
@@ -602,7 +676,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
             + CKKSPow2Ops<BE>
             + CKKSAffineOps<BE>
             + GLWENormalize<BE>,
-        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
+        K: BootstrappingKeys<BE>,
         CKKSCiphertextOwned<BE>:
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -692,7 +766,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
                     &boot_layout,
                     ctx.eval_mod(),
                     luts,
-                    keys.tensor_key(),
+                    &CoveringKeys(keys.tensor_key()),
                     &mut scratch_local,
                 )?;
                 for (ct_out, lut) in ct_outs.iter_mut().zip(luts) {
@@ -703,8 +777,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
                         &mut ct_raised,
                         lut,
                         &basis,
-                        keys.rotation_keys(),
-                        keys.tensor_key(),
+                        &CoveringKeys(keys.rotation_keys()),
+                        &CoveringKeys(keys.tensor_key()),
                         &mut scratch_local,
                     )?;
                     recombine_halves(self, ct_out, &mut ct_raised, &mut scratch_local)?;
@@ -868,7 +942,14 @@ where
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
-    module.ckks_coeffs_to_slots_split(r0, i0, ct, ctx.coeffs_to_slots(), keys.rotation_keys(), scratch)
+    module.ckks_coeffs_to_slots_split(
+        r0,
+        i0,
+        ct,
+        ctx.coeffs_to_slots(),
+        &CoveringKeys(keys.rotation_keys()),
+        scratch,
+    )
 }
 
 fn ckks_bootstrap_coeffs_to_slots_real<BE, F, K, R1, R2>(
@@ -886,8 +967,8 @@ where
     R1: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     R2: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
-    module.ckks_dft_evaluate_assign(ct, ctx.coeffs_to_slots(), keys.rotation_keys(), scratch)?;
-    module.ckks_conjugate_into(conjugate, &*ct, keys.rotation_keys(), scratch)?;
+    module.ckks_dft_evaluate_assign(ct, ctx.coeffs_to_slots(), &CoveringKeys(keys.rotation_keys()), scratch)?;
+    module.ckks_conjugate_into(conjugate, &*ct, &CoveringKeys(keys.rotation_keys()), scratch)?;
     module.ckks_add_assign(ct, &*conjugate, scratch)?;
     // `z + conj(z) = 2·Re(z)` holds the input polynomial's coefficients.
     ct.set_slots(SlotsKind::Real);
@@ -909,28 +990,29 @@ where
     BE: Backend + CKKSEncapsulatedModUpImpl,
     Module<BE>: CKKSEvalModOps<BE>,
     F: Sync,
-    K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync,
+    K: BootstrappingKeys<BE> + Sync,
+    K::TensorKey: Sync,
     C: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
     R1: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
     R2: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
 {
+    let tensor_keys = &CoveringKeys(keys.tensor_key());
     if !<BE::TaskExecutor as TaskExecutor>::IS_PARALLEL {
-        module.ckks_eval_mod(res_real, r0, ctx.eval_mod(), keys.tensor_key(), scratch)?;
-        module.ckks_eval_mod(res_imag, i0, ctx.eval_mod(), keys.tensor_key(), scratch)?;
+        module.ckks_eval_mod(res_real, r0, ctx.eval_mod(), tensor_keys, scratch)?;
+        module.ckks_eval_mod(res_imag, i0, ctx.eval_mod(), tensor_keys, scratch)?;
         return Ok(());
     }
 
-    let task_bytes = module
-        .ckks_eval_mod_tmp_bytes(res_real, r0, ctx.eval_mod(), keys.tensor_key())
-        .max(module.ckks_eval_mod_tmp_bytes(res_imag, i0, ctx.eval_mod(), keys.tensor_key()));
-    let task_bytes = worker_scratch_bytes::<BE>(task_bytes);
+    // The two halves share what the layout-sized query reserved for them
+    // (`ckks_bootstrap_tmp_bytes`): two worker arenas of EvalMod's scratch.
+    let task_bytes = scratch.available() / 2 / BE::SCRATCH_ALIGN * BE::SCRATCH_ALIGN;
     let (arenas, _) = scratch.borrow().split(2, task_bytes);
     let mut arenas = arenas.into_iter();
     let mut scratch_real = arenas.next().unwrap();
     let mut scratch_imag = arenas.next().unwrap();
     let (real, imag) = <BE::TaskExecutor as TaskExecutor>::join(
-        || module.ckks_eval_mod(res_real, r0, ctx.eval_mod(), keys.tensor_key(), &mut scratch_real),
-        || module.ckks_eval_mod(res_imag, i0, ctx.eval_mod(), keys.tensor_key(), &mut scratch_imag),
+        || module.ckks_eval_mod(res_real, r0, ctx.eval_mod(), tensor_keys, &mut scratch_real),
+        || module.ckks_eval_mod(res_imag, i0, ctx.eval_mod(), tensor_keys, &mut scratch_imag),
     );
     real?;
     imag?;
@@ -960,7 +1042,8 @@ where
         + CKKSCopyOps<BE>
         + CKKSPow2Ops<BE>
         + GLWENormalize<BE>,
-    K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync,
+    K: BootstrappingKeys<BE> + Sync,
+    K::TensorKey: Sync,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
@@ -1004,7 +1087,7 @@ where
                     &mut i0_hp,
                     &ct_raised,
                     bypass,
-                    keys.rotation_keys(),
+                    &CoveringKeys(keys.rotation_keys()),
                     &mut scratch_local,
                 )?;
                 {
@@ -1082,7 +1165,7 @@ where
         module.ckks_dft_evaluate_assign(
             &mut ct_coeffs,
             ctx.slots_to_coeffs(),
-            keys.rotation_keys(),
+            &CoveringKeys(keys.rotation_keys()),
             &mut scratch_inner,
         )?;
 
@@ -1128,7 +1211,7 @@ where
         + CKKSDFTOps<BE>
         + CKKSEvalModOps<BE>
         + GLWENormalize<BE>,
-    K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
+    K: BootstrappingKeys<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
@@ -1143,7 +1226,13 @@ where
         let (mut r0, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta());
         ckks_bootstrap_s2c_mod_up(module, &mut ct_raised, ct_in, ctx, keys, &mut scratch_local)?;
         ckks_bootstrap_coeffs_to_slots_real(module, &mut ct_raised, &mut r0, ctx, keys, &mut scratch_local)?;
-        module.ckks_eval_mod(ct_out, &ct_raised, ctx.eval_mod(), keys.tensor_key(), &mut scratch_local)?;
+        module.ckks_eval_mod(
+            ct_out,
+            &ct_raised,
+            ctx.eval_mod(),
+            &CoveringKeys(keys.tensor_key()),
+            &mut scratch_local,
+        )?;
         ct_out.set_log_delta(ct_out.log_delta() - ctx.c2s_guard_bits());
         ct_out.set_meta(GLWEPlaintextMeta {
             scale: Scale::Log(ct_in.log_delta()),
@@ -1278,7 +1367,7 @@ where
         + CKKSPow2Ops<BE>
         + CKKSAffineOps<BE>
         + GLWENormalize<BE>,
-    K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
+    K: BootstrappingKeys<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
@@ -1291,8 +1380,8 @@ where
             ct_in,
             ctx.eval_mod(),
             series,
-            keys.rotation_keys(),
-            keys.tensor_key(),
+            &CoveringKeys(keys.rotation_keys()),
+            &CoveringKeys(keys.tensor_key()),
             scratch,
         )?,
         EncodedLutKind::Binary {
@@ -1306,7 +1395,7 @@ where
             cos,
             *log_interval_reduction,
             affine,
-            keys.tensor_key(),
+            &CoveringKeys(keys.tensor_key()),
             scratch,
         )?,
     }
@@ -1341,7 +1430,7 @@ where
         + CKKSPow2Ops<BE>
         + CKKSAffineOps<BE>
         + GLWENormalize<BE>,
-    K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
+    K: BootstrappingKeys<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -1353,9 +1442,25 @@ where
             k: outs[0].k(),
             rank: outs[0].rank(),
         };
-        let basis = ckks_lut_power_basis(module, ct, &layout, ctx.eval_mod(), luts, keys.tensor_key(), scratch)?;
+        let basis = ckks_lut_power_basis(
+            module,
+            ct,
+            &layout,
+            ctx.eval_mod(),
+            luts,
+            &CoveringKeys(keys.tensor_key()),
+            scratch,
+        )?;
         for (out, lut) in outs.iter_mut().zip(luts) {
-            ckks_eval_lut_from_basis(module, out, lut, &basis, keys.rotation_keys(), keys.tensor_key(), scratch)?;
+            ckks_eval_lut_from_basis(
+                module,
+                out,
+                lut,
+                &basis,
+                &CoveringKeys(keys.rotation_keys()),
+                &CoveringKeys(keys.tensor_key()),
+                scratch,
+            )?;
         }
         return Ok(());
     }

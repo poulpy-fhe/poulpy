@@ -566,29 +566,52 @@ impl DFTPlan {
     /// Infallible: every `DFTPlan` is shape-valid by construction
     /// ([`Self::new`]).
     pub fn galois_elements(&self, log_n: usize, cyclotomic_order: i64) -> Vec<i64> {
-        let sparse = self.is_sparse_repack(log_n);
-        let slots = 1i64 << self.log_slots();
-        // The factor diagonals (and thus the BSGS schedule) live in the `2·slots`
-        // working ring on the sparse path, else in `slots`.
-        let slot_count = if sparse { (slots << 1) as usize } else { slots as usize };
-
-        let mut set: BTreeSet<i64> = BTreeSet::new();
-        for (indexes, step) in self.diagonal_indexes(log_n).into_iter().zip(&self.schedule.steps) {
-            let layout = LinearTransformationLayout {
-                indexes,
-                slots: slot_count,
-                strategy: LinearTransformationStrategy::Bsgs {
-                    giant_step: step.giant_step,
-                },
-            };
-            set.extend(layout.galois_elements(cyclotomic_order));
-        }
-        if sparse {
-            set.insert(galois_element(slots, cyclotomic_order));
+        let mut set: BTreeSet<i64> = self
+            .galois_elements_per_factor(log_n, cyclotomic_order)
+            .into_iter()
+            .flatten()
+            .collect();
+        if self.is_sparse_repack(log_n) {
+            set.insert(galois_element(1i64 << self.log_slots(), cyclotomic_order));
         }
         // Defensive: the identity automorphism is never key-switched.
         set.remove(&galois_element(0, cyclotomic_order));
         set.into_iter().collect()
+    }
+
+    /// The Galois elements of each factor, in evaluation order: the keys factor
+    /// `i` switches with, on a ciphertext `i` factors below the input width.
+    ///
+    /// Their union is [`Self::galois_elements`] less the repack rotation of the
+    /// sparse path, which belongs to no factor. An element can serve several
+    /// factors.
+    pub fn galois_elements_per_factor(&self, log_n: usize, cyclotomic_order: i64) -> Vec<Vec<i64>> {
+        let slots = 1i64 << self.log_slots();
+        // The factor diagonals (and thus the BSGS schedule) live in the `2·slots`
+        // working ring on the sparse path, else in `slots`.
+        let slot_count = if self.is_sparse_repack(log_n) {
+            (slots << 1) as usize
+        } else {
+            slots as usize
+        };
+        let identity = galois_element(0, cyclotomic_order);
+
+        self.diagonal_indexes(log_n)
+            .into_iter()
+            .zip(&self.schedule.steps)
+            .map(|(indexes, step)| {
+                let layout = LinearTransformationLayout {
+                    indexes,
+                    slots: slot_count,
+                    strategy: LinearTransformationStrategy::Bsgs {
+                        giant_step: step.giant_step,
+                    },
+                };
+                let mut set: BTreeSet<i64> = layout.galois_elements(cyclotomic_order).into_iter().collect();
+                set.remove(&identity);
+                set.into_iter().collect()
+            })
+            .collect()
     }
 }
 
