@@ -1,3 +1,5 @@
+#[cfg(feature = "enable-blas")]
+mod blas_tests;
 #[cfg(feature = "enable-ckks")]
 mod ckks_tests;
 #[cfg(feature = "enable-rayon")]

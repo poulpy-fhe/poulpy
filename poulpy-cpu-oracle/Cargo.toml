@@ -33,3 +33,4 @@ doctest = false
 [dev-dependencies]
 once_cell = {workspace = true}
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
+poulpy-blas = {workspace = true, features = ["test-utils"]}

@@ -84,6 +84,8 @@
 - **Breaking:** `SparseWord` becomes `MixedWord`, `sparse_log_gap_portable` becomes `embed_log_gap_portable`, `RightRead::sparse` becomes `RightRead::embedded`, and the conjugate-invariant test `conjugate_invariant_sparse_convolution` becomes `conjugate_invariant_embed_convolution`.
 - Add `enable-blas` to `poulpy-cpu-portable`, `poulpy-cpu-rayon`, `poulpy-cpu-avx`, `poulpy-cpu-avx512`, `poulpy-cpu-arm` and `poulpy-cpu-oracle`: it implies the crate's `enable-ckks` and selects the `poulpy-blas` reference for their standard and conjugate-invariant backends, Rayon and IFMA ones included.
   The oracle runs `blas_backend_test_suite!` and parity between its families, every other backend type registers parity against the oracle of its family (`NTT3x42` types against the `NTT4x30` oracles), and every conjugate-invariant type, the oracle's included, runs `blas_conjugate_invariant_test_suite!`.
+- Add the `blas_pipeline` example to `poulpy-cpu-portable` (`--features enable-blas`): it plans its keys from `BlasPlan` and `sum_galois_elements`, runs `blas_matmul`, `blas_transpose`, `blas_matmul_pt_right`, `blas_matmul_pt_left` and `blas_sum` on a batch of encrypted matrices and checks the result in the clear.
+  It plans every layout from the output-layout queries and generates each key once, at the widest width it is looked up at.
 
 ### `poulpy-core`
 
@@ -274,6 +276,8 @@
   Add output-layout queries (`blas_matmul_output_layout`, `blas_matmul_prepared_output_layout`, `blas_matmul_pt_right_output_layout`, `blas_matmul_pt_left_output_layout`, `blas_transpose_output_layout`, `blas_rotate_rows_output_layout`, `blas_rotate_cols_output_layout`, `blas_rotate_output_layout`, `blas_sum_output_layout`) returning the `BlasLayout` an operation stamps on `res`.
 - `blas_matmul_pt_left` on a replicated input by a `Diagonal` operand of one public matrix on more than one matrix slot takes `d`-diagonal block maps (`BlasPtOperand::block_replicated`, `maps::left_mul_rep`, scheduled at `left_mul`'s giant step), 22 key switches per block at `d = 128` against 30 for the `2d - 1` maps of the other inputs, with the same key set.
   Such operands hold `(3d - 1) d^2` slot values per block, against `(2d - 1) d^2`.
+- `blas_backend_test_suite!`, `blas_conjugate_invariant_test_suite!`, `blas_parity_test_suite!` and `blas_max_base2k_test_suite!` register the BLAS test suites for a backend under `test-utils`, the last for a backend that implements `MaxBase2k`.
+  The parity suite also runs a `concurrency` test.
 - A grid records its batch (`BlasGridInfos::mat_slots`), which `BlasCiphertext::from_blocks` reads from its blocks' label, and a product of two batches broadcasts the smaller.
   Each output block of a product of encrypted grids is one JKLS sum relinearized once through `ckks_dot_product_prepared`, over terms converted once to the transform domain (summed in the transform domain where poulpy-ckks takes its one-pass product, on rank 1, under the radix rule `blas_matmul` states).
   The products by public matrices under `Diagonal` and `Jkls` share their giant steps across the inner dimension through `ckks_eval_linear_transformation_sum_into`.
