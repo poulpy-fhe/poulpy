@@ -19,7 +19,7 @@
   Ties of a few dropped exact bits no longer push every coefficient the same way; outputs change only at exact ties.
 - Add `MatZnxAddAssign::mat_znx_add_assign`, the entrywise sum of two `MatZnx` of one shape, limb by limb and not renormalized, in the new `api::mat_znx` family ([#380](https://github.com/poulpy-fhe/poulpy/issues/380)).
   `HalVecZnxImpl` gains `mat_znx_add_assign` with a default body, `oep::mat_znx_add_assign_derived`, one `vec_znx_add_assign` per output column of every entry, so no backend change is required; `test_mat_znx_add_assign` runs in every backend suite.
-- `ScalarZnx` prints its shape and the first 16 coefficients of each column under `Debug`, as `VecZnx` does, where it printed its whole buffer, and `CnvPVecL` and `CnvPVecR` implement `PartialEq` and `Eq` (same shape, same bytes), as `VmpPMat` does ([#450](https://github.com/poulpy-fhe/poulpy/issues/450)).
+- **Breaking:** `ScalarZnx` implements `Debug` on host-readable storage only and prints its shape and the first 16 coefficients of each column, as `VecZnx` and `MatZnx` do, where it derived `Debug` and printed its whole buffer, and `CnvPVecL` and `CnvPVecR` implement `PartialEq` and `Eq` (same shape, same bytes), as `VmpPMat` does ([#450](https://github.com/poulpy-fhe/poulpy/issues/450)).
   `VecZnxDft`, `VecZnxBig`, `SvpPPol`, `VmpPMat`, `CnvPVecL` and `CnvPVecR` implement `Debug`, which prints the shape only.
   The test suites compare layouts with `assert_eq!` through these impls, and raw bytes only under a static message, so a failing assertion no longer prints whole buffers.
 
@@ -188,8 +188,8 @@
 - Add `From<GGLWELayout>` for `GLWEAutomorphismKeyLayout`, `GLWESwitchingKeyLayout` and `GLWETensorKeyLayout`. Each panics on a coarsened view.
 - Add `GGLWECompressed::data` and `data_mut`, the stored bodies, as on `GGLWE`.
 - **Fix:** `glwe_secret_tensor_prepare` takes every temporary from its scratch, where it allocated the transformed secret, the products and their normalization buffer, and wipes that scratch before returning, so no secret-derived buffer is freed unwiped ([#425](https://github.com/poulpy-fhe/poulpy/issues/425)).
-  `glwe_secret_tensor_prepare_tmp_bytes` grows by those buffers.
-- **Fix:** `glwe_eval_linear_transformation_tmp_bytes` counts the scratch of the final iDFT and BIG normalization of the lazy giant-step path, and of the BIG normalization of the per-giant fallback ([#426](https://github.com/poulpy-fhe/poulpy/issues/426)).
+  `glwe_secret_tensor_prepare_tmp_bytes` grows by those buffers, and the tensor key and GGLWE-to-GGSW key encryptions reuse that scratch for the encryption, so their queries count the larger of the two phases instead of their sum.
+- **Fix:** `glwe_eval_linear_transformation_tmp_bytes` counts the scratch of the per-column and final BIG normalizations and of the final iDFT of the lazy giant-step path, and of the BIG normalization of the per-giant fallback ([#426](https://github.com/poulpy-fhe/poulpy/issues/426)).
   The lazy path counts its phases as sequential instead of summing them, so the query can shrink; outputs are unchanged.
 
 ### `poulpy-ckks`

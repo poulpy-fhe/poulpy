@@ -464,11 +464,9 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
             &secret_r,
             &mut poisoned_scratch::<BR>(r.glwe_secret_tensor_prepare_tmp_bytes(Rank(rank as u32))).borrow(),
         );
-        t.glwe_secret_tensor_prepare(
-            &mut tensor_t,
-            &secret_t,
-            &mut poisoned_scratch::<BT>(t.glwe_secret_tensor_prepare_tmp_bytes(Rank(rank as u32))).borrow(),
-        );
+        crate::test_suite::assert_wipes_scratch::<BT>(t.glwe_secret_tensor_prepare_tmp_bytes(Rank(rank as u32)), |scratch| {
+            t.glwe_secret_tensor_prepare(&mut tensor_t, &secret_t, scratch)
+        });
         assert_eq!(
             poulpy_hal::test_suite::download_scalar_znx::<BR>(&tensor_r.data),
             poulpy_hal::test_suite::download_scalar_znx::<BT>(&tensor_t.data),

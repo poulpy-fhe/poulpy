@@ -231,10 +231,10 @@ where
 {
     fn glwe_secret_tensor_prepare_tmp_bytes(&self, rank: Rank) -> usize {
         let n: usize = self.n();
-        self.glwe_secret_prepared_bytes_of(rank)
-            + self.bytes_of_vec_znx_dft(n, rank.into(), 1)
-            + self.bytes_of_vec_znx_dft(n, 1, 1)
-            + self.bytes_of_vec_znx_big(n, 1, 1)
+        BE::scratch_aligned(self.glwe_secret_prepared_bytes_of(rank))
+            + BE::scratch_aligned(self.bytes_of_vec_znx_dft(n, rank.into(), 1))
+            + BE::scratch_aligned(self.bytes_of_vec_znx_dft(n, 1, 1))
+            + BE::scratch_aligned(self.bytes_of_vec_znx_big(n, 1, 1))
             + self
                 .vec_znx_big_normalize_tmp_bytes()
                 .max(self.vec_znx_idft_apply_tmp_bytes())

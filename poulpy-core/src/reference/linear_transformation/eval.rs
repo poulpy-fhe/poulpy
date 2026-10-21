@@ -103,12 +103,13 @@ where
         .max(module.vec_znx_normalize_tmp_bytes())
         .max(module.vec_znx_big_normalize_tmp_bytes())
         .max(module.vec_znx_idft_apply_tmp_bytes());
-    let fallback_path = prod_dft + prod_col_big + fallback_work;
-    let lazy_final = lazy_acc_big
+    let fallback_path = BE::scratch_aligned(prod_dft) + BE::scratch_aligned(prod_col_big) + fallback_work;
+    let lazy_final = BE::scratch_aligned(lazy_acc_big)
         + module
             .vec_znx_idft_apply_tmp_bytes()
             .max(module.vec_znx_big_normalize_tmp_bytes());
-    let lazy_dft_path = prod_dft + lazy_acc_dft + inner_dft.max(lazy_dft).max(lazy_final);
+    let lazy_dft_path =
+        BE::scratch_aligned(prod_dft) + BE::scratch_aligned(lazy_acc_dft) + inner_dft.max(lazy_dft).max(lazy_final);
 
     module
         .glwe_automorphism_tmp_bytes(res, a, key)
