@@ -46,10 +46,10 @@ where
         + poulpy_hal::api::VecZnxDftBytesOf
         + poulpy_hal::api::VecZnxBigBytesOf
         + poulpy_hal::api::VecZnxIdftApplyTmpBytes
-        + poulpy_hal::api::VecZnxIdftNormalizeConsumeTmpBytes
+        + poulpy_hal::api::VecZnxIdftNormalizeTmpBytes
         + poulpy_hal::api::VecZnxBigNormalizeTmpBytes
         + poulpy_hal::api::VecZnxNormalizeTmpBytes
-        + poulpy_hal::api::VecZnxIdftNormalizeConsume<BE>
+        + poulpy_hal::api::VecZnxIdftNormalize<BE>
         + poulpy_hal::api::VecZnxNormalize<BE>
         + poulpy_hal::api::VecZnxBigAddSmallAssign<BE>
         + poulpy_hal::api::VecZnxBigNormalize<BE>

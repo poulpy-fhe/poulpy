@@ -375,12 +375,12 @@ where
         + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>
         + ZnxAutomorphism,
 {
-    fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+    fn vec_znx_idft_normalize_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::IDFT) * 3 * module.n() * size_of::<u64>()
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_idft_normalize_consume(
+    fn vec_znx_idft_normalize(
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
@@ -403,7 +403,7 @@ where
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), workers * 3 * n);
         let mut a_base = base_dft_mut::<R>(a);
         let add_base = addend.map(|(add, col)| (poulpy_hal::layouts::VecZnx::from_shape(&**add.data(), add.shape()), col));
-        super::vec_znx_dft::idft_normalize_consume_ifma::<_, NTT3x42IfmaRayonExecutor>(
+        super::vec_znx_dft::idft_normalize_ifma::<_, NTT3x42IfmaRayonExecutor>(
             base_module(module),
             res,
             res_base2k,

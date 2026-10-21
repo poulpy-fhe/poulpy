@@ -672,17 +672,17 @@ pub unsafe trait HalVecZnxDftImpl: Backend + HalVecZnxBigImpl {
     );
 
     /// Returns scratch bytes required for
-    /// [`Self::vec_znx_idft_normalize_consume`]. Default body:
-    /// `vec_znx_idft_normalize_consume_tmp_bytes_derived`, the `a_size`-limb
+    /// [`Self::vec_znx_idft_normalize`]. Default body:
+    /// `vec_znx_idft_normalize_tmp_bytes_derived`, the `a_size`-limb
     /// `VecZnxBig` the inverse transform lands in plus the big normalization's
     /// own carry.
-    fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
-        crate::oep::vec_znx_idft_normalize_consume_tmp_bytes_derived::<Self>(module, res_size, a_size)
+    fn vec_znx_idft_normalize_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
+        crate::oep::vec_znx_idft_normalize_tmp_bytes_derived::<Self>(module, res_size, a_size)
     }
 
     /// `res[res_col] = normalize(idft(a[a_col]) + addend)`, clobbering `a[a_col]`.
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_idft_normalize_consume(
+    fn vec_znx_idft_normalize(
         module: &Module<Self>,
         res: &mut crate::layouts::VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
@@ -695,7 +695,7 @@ pub unsafe trait HalVecZnxDftImpl: Backend + HalVecZnxBigImpl {
         addend: Option<(&crate::layouts::VecZnxBackendRef<'_, Self>, usize)>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        crate::oep::vec_znx_idft_normalize_consume_derived::<Self>(
+        crate::oep::vec_znx_idft_normalize_derived::<Self>(
             module, res, res_base2k, res_k, res_offset, res_col, a, a_col, a_base2k, addend, scratch,
         )
     }

@@ -349,8 +349,8 @@ pub fn gglwe_product_digits_strided_reference<BE: Backend>(
 use poulpy_hal::{
     api::{
         VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxIdftApply,
-        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes, VecZnxNormalize,
-        VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
+        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VecZnxNormalize, VecZnxNormalizeAssign,
+        VecZnxNormalizeTmpBytes,
     },
     layouts::{VecZnxBigToBackendRef, VecZnxToBackendRef},
 };
@@ -479,7 +479,7 @@ where
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
         + VecZnxIdftApplyTmpBytes
-        + VecZnxIdftNormalizeConsumeTmpBytes
+        + VecZnxIdftNormalizeTmpBytes
         + VecZnxBigNormalizeTmpBytes
         + VecZnxNormalizeTmpBytes,
     R: GLWEInfos,
@@ -494,7 +494,7 @@ where
     let a_dft_size = a_infos.k().div_ceil(key_infos.base2k()) as usize;
     let lvl_0: usize = module.bytes_of_vec_znx_dft(module.n(), output_cols, output_size);
     let lvl_1_big: usize = module.bytes_of_vec_znx_big(module.n(), output_cols, output_size);
-    let consume_tmp: usize = module.vec_znx_idft_normalize_consume_tmp_bytes(output_size, output_size);
+    let consume_tmp: usize = module.vec_znx_idft_normalize_tmp_bytes(output_size, output_size);
     let lvl_1: usize = consume_tmp.max(
         lvl_1_big
             + module
@@ -543,7 +543,7 @@ pub fn glwe_keyswitch_reference<BE, M, R, A>(
         + GLWEKeyswitchInternal<BE>
         + GLWENormalize<BE>
         + VecZnxDftBytesOf
-        + VecZnxIdftNormalizeConsume<BE>
+        + VecZnxIdftNormalize<BE>
         + VecZnxNormalize<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
@@ -611,7 +611,7 @@ pub fn glwe_keyswitch_reference<BE, M, R, A>(
         let res_small_ref = res_small.to_backend_ref();
         for i in 0..cols {
             let addend = (i == 0).then_some((&res_small_ref, 0));
-            module.vec_znx_idft_normalize_consume(
+            module.vec_znx_idft_normalize(
                 &mut res_ref.data,
                 res_base2k,
                 res_k,
@@ -640,7 +640,7 @@ pub fn glwe_keyswitch_reference<BE, M, R, A>(
         let a_body = precision_limbs::<BE>(&a.data, a.base2k(), a.k());
         for i in 0..cols {
             let addend = a_body.as_ref().filter(|_| i == 0).map(|body| (body, 0));
-            module.vec_znx_idft_normalize_consume(
+            module.vec_znx_idft_normalize(
                 &mut res_ref.data,
                 res_base2k,
                 res_k,

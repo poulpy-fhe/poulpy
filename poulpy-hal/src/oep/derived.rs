@@ -546,11 +546,11 @@ pub fn vec_znx_big_sub_small_b_derived<BE>(
     BE::vec_znx_big_sub_negate_assign(module, res, res_col, a, a_col);
 }
 
-/// Scratch for [`vec_znx_idft_normalize_consume_derived`]: the `VecZnxBig` the
+/// Scratch for [`vec_znx_idft_normalize_derived`]: the `VecZnxBig` the
 /// inverse transform lands in, plus the larger of the inverse transform's and
 /// the big normalization's own scratch.
 #[doc(hidden)]
-pub fn vec_znx_idft_normalize_consume_tmp_bytes_derived<BE>(module: &Module<BE>, _res_size: usize, a_size: usize) -> usize
+pub fn vec_znx_idft_normalize_tmp_bytes_derived<BE>(module: &Module<BE>, _res_size: usize, a_size: usize) -> usize
 where
     BE: HalVecZnxDftImpl,
 {
@@ -560,7 +560,7 @@ where
 
 /// `res = normalize(idft(a) + addend)`, clobbering `a`.
 #[doc(hidden)]
-pub fn vec_znx_idft_normalize_consume_derived<BE>(
+pub fn vec_znx_idft_normalize_derived<BE>(
     module: &Module<BE>,
     res: &mut VecZnxBackendMut<'_, BE>,
     res_base2k: usize,

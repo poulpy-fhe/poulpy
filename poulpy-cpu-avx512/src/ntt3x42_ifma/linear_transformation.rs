@@ -303,7 +303,7 @@ fn finish_giant(
     {
         let (mut small, mut work) = arena.borrow().take_vec_znx_scratch(module.n(), 1, mask_size);
         for col in 1..acc.cols() {
-            module.vec_znx_idft_normalize_consume(&mut small, base, mask_size * base, 0, 0, prod, col, base, None, &mut work);
+            module.vec_znx_idft_normalize(&mut small, base, mask_size * base, 0, 0, prod, col, base, None, &mut work);
             gadget_dft_apply(
                 module,
                 &mut a_dft,
@@ -386,7 +386,7 @@ fn consume(
     let mut a = VecZnxDft::<_, _, crate::NTT3x42Ifma>::from_shape(&mut **a.data_mut(), shape);
     let shape = res.shape();
     let mut res = VecZnx::from_shape(&mut **res.data_mut(), shape);
-    super::vec_znx_dft::idft_normalize_consume_ifma::<_, E>(
+    super::vec_znx_dft::idft_normalize_ifma::<_, E>(
         module.reinterpret(),
         &mut res,
         res_base,

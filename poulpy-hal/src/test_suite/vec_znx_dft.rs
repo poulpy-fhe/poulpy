@@ -10,7 +10,7 @@ use crate::{
         VecZnxBigNormalizeTmpBytes, VecZnxDftAdd, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism,
         VecZnxDftAutomorphismAddWithPlanTmpBytes, VecZnxDftAutomorphismPlan, VecZnxDftCopy, VecZnxDftSub, VecZnxDftSubAssign,
         VecZnxDftSubNegateAssign, VecZnxDftZero, VecZnxFillUniformSourceAll, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
-        VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
+        VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
     },
     layouts::{Module, ScratchOwned, VecZnx, VecZnxOwned, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut},
     source::Source,
@@ -1110,18 +1110,18 @@ pub fn test_vec_znx_dft_automorphism_add<BR: crate::test_suite::TestBackend, BT:
     automorphism_add_check_one_backend::<BT>(base2k, params.n, module_test, &mut scratch_test, cols, p_values);
 }
 
-/// Runs the fused check `idft_normalize_consume(res, a, addend) ==
+/// Runs the fused check `idft_normalize(res, a, addend) ==
 /// normalize(idft(a) + addend)` on a single backend, over size and base2k
 /// combinations and both addend arms.
-fn idft_normalize_consume_check_one_backend<BE>(base2k: usize, n: usize, module: &Module<BE>, cols: usize)
+fn idft_normalize_check_one_backend<BE>(base2k: usize, n: usize, module: &Module<BE>, cols: usize)
 where
     BE: crate::test_suite::TestBackend,
     Module<BE>: VecZnxDftAlloc<BE>
         + VecZnxDftApply<BE>
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpBytes
-        + crate::api::VecZnxIdftNormalizeConsume<BE>
-        + crate::api::VecZnxIdftNormalizeConsumeTmpBytes
+        + crate::api::VecZnxIdftNormalize<BE>
+        + crate::api::VecZnxIdftNormalizeTmpBytes
         + crate::api::VecZnxBigAddSmallAssign<BE>
         + VecZnxBigAlloc<BE>
         + VecZnxBigNormalize<BE>
@@ -1141,7 +1141,7 @@ where
 
                 let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
                     module
-                        .vec_znx_idft_normalize_consume_tmp_bytes(res_size, a_size)
+                        .vec_znx_idft_normalize_tmp_bytes(res_size, a_size)
                         .max(module.vec_znx_idft_apply_tmp_bytes())
                         .max(module.vec_znx_big_normalize_tmp_bytes()),
                 );
@@ -1153,7 +1153,7 @@ where
                     let mut a_dft = dft_of_uploaded_vec_znx(module, &a, 1, 0);
                     let res_host_template = VecZnx::alloc(n, 1, res_size);
                     let mut res_have_backend = upload_vec_znx::<BE>(&res_host_template);
-                    module.vec_znx_idft_normalize_consume(
+                    module.vec_znx_idft_normalize(
                         &mut vec_znx_backend_mut::<BE>(&mut res_have_backend),
                         res_base2k,
                         res_size * res_base2k,
@@ -1196,7 +1196,7 @@ where
 
                     assert_eq!(
                         res_want, res_have,
-                        "idft_normalize_consume != idft + add_small + normalize for a_size={a_size}, res_size={res_size}, \
+                        "idft_normalize != idft + add_small + normalize for a_size={a_size}, res_size={res_size}, \
                          res_base2k={res_base2k}, addend={with_addend}, col={col}, res_offset={res_offset}"
                     );
                 }
@@ -1205,10 +1205,10 @@ where
     }
 }
 
-/// Verifies `vec_znx_idft_normalize_consume` against the composition of
+/// Verifies `vec_znx_idft_normalize` against the composition of
 /// `vec_znx_idft_apply`, `vec_znx_big_add_small_assign` and
 /// `vec_znx_big_normalize`, on both `module_ref` and `module_test`.
-pub fn test_vec_znx_idft_normalize_consume<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+pub fn test_vec_znx_idft_normalize<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
@@ -1217,8 +1217,8 @@ pub fn test_vec_znx_idft_normalize_consume<BR: crate::test_suite::TestBackend, B
         + VecZnxDftApply<BR>
         + VecZnxIdftApply<BR>
         + VecZnxIdftApplyTmpBytes
-        + crate::api::VecZnxIdftNormalizeConsume<BR>
-        + crate::api::VecZnxIdftNormalizeConsumeTmpBytes
+        + crate::api::VecZnxIdftNormalize<BR>
+        + crate::api::VecZnxIdftNormalizeTmpBytes
         + crate::api::VecZnxBigAddSmallAssign<BR>
         + VecZnxBigAlloc<BR>
         + VecZnxBigNormalize<BR>
@@ -1227,8 +1227,8 @@ pub fn test_vec_znx_idft_normalize_consume<BR: crate::test_suite::TestBackend, B
         + VecZnxDftApply<BT>
         + VecZnxIdftApply<BT>
         + VecZnxIdftApplyTmpBytes
-        + crate::api::VecZnxIdftNormalizeConsume<BT>
-        + crate::api::VecZnxIdftNormalizeConsumeTmpBytes
+        + crate::api::VecZnxIdftNormalize<BT>
+        + crate::api::VecZnxIdftNormalizeTmpBytes
         + crate::api::VecZnxBigAddSmallAssign<BT>
         + VecZnxBigAlloc<BT>
         + VecZnxBigNormalize<BT>
@@ -1240,8 +1240,8 @@ pub fn test_vec_znx_idft_normalize_consume<BR: crate::test_suite::TestBackend, B
     assert_eq!(module_ref.n(), module_test.n());
     let cols = 2;
 
-    idft_normalize_consume_check_one_backend::<BR>(base2k, params.n, module_ref, cols);
-    idft_normalize_consume_check_one_backend::<BT>(base2k, params.n, module_test, cols);
+    idft_normalize_check_one_backend::<BR>(base2k, params.n, module_ref, cols);
+    idft_normalize_check_one_backend::<BT>(base2k, params.n, module_test, cols);
 }
 
 /// Pins the limb selection of `vec_znx_dft_apply`: limb `j` of the result is

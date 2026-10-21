@@ -2,9 +2,9 @@
 mod blas_tests;
 #[cfg(feature = "enable-ckks")]
 mod ckks_tests;
-#[cfg(feature = "enable-rayon")]
-mod consume_parity;
 mod core_emulated_tensor;
+#[cfg(feature = "enable-rayon")]
+mod idft_normalize_parity;
 #[cfg(feature = "enable-ifma")]
 mod one_pass_parity;
 

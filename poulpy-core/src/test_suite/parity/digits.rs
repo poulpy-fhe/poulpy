@@ -8,8 +8,8 @@ use poulpy_hal::{
     AlignedBuf,
     api::{
         VecZnxAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxFillUniformSource,
-        VecZnxFillUniformSourceAll, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes, VmpApplyDftToDft,
-        VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        VecZnxFillUniformSourceAll, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd,
+        VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
         MatZnx, MatZnxAtBackendMut, MatZnxToBackendRef, Module, PrepareHint, VecZnx, VecZnxDftToBackendMut,
@@ -28,8 +28,8 @@ pub trait DigitParityModule<BE: ParityBackend>:
     + VecZnxDftBytesOf
     + VecZnxDftCopy<BE>
     + VecZnxDftZero<BE>
-    + VecZnxIdftNormalizeConsume<BE>
-    + VecZnxIdftNormalizeConsumeTmpBytes
+    + VecZnxIdftNormalize<BE>
+    + VecZnxIdftNormalizeTmpBytes
     + VmpPMatAlloc<BE>
     + VmpPrepare<BE>
     + VmpPrepareTmpBytes
@@ -46,8 +46,8 @@ impl<BE: ParityBackend, M> DigitParityModule<BE> for M where
         + VecZnxDftBytesOf
         + VecZnxDftCopy<BE>
         + VecZnxDftZero<BE>
-        + VecZnxIdftNormalizeConsume<BE>
-        + VecZnxIdftNormalizeConsumeTmpBytes
+        + VecZnxIdftNormalize<BE>
+        + VecZnxIdftNormalizeTmpBytes
         + VmpPMatAlloc<BE>
         + VmpPrepare<BE>
         + VmpPrepareTmpBytes
@@ -106,7 +106,7 @@ where
     );
     let mut output = module.vec_znx_alloc(a.n(), cols_out, size);
     for col in 0..cols_out {
-        module.vec_znx_idft_normalize_consume(
+        module.vec_znx_idft_normalize(
             &mut <VecZnx<BE::OwnedBuf, i64> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut output),
             base2k,
             size * base2k,
@@ -116,7 +116,7 @@ where
             col,
             base2k,
             None,
-            &mut poisoned_scratch::<BE>(module.vec_znx_idft_normalize_consume_tmp_bytes(size, size)).arena(),
+            &mut poisoned_scratch::<BE>(module.vec_znx_idft_normalize_tmp_bytes(size, size)).arena(),
         );
     }
     download_vec_znx::<BE>(&output)

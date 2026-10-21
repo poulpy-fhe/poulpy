@@ -4,6 +4,8 @@
 
 ### `poulpy-hal`
 
+- **Breaking:** `vec_znx_idft_normalize_consume` and `vec_znx_idft_normalize_consume_tmp_bytes` become `vec_znx_idft_normalize` and `vec_znx_idft_normalize_tmp_bytes`, the traits `VecZnxIdftNormalizeConsume` and `VecZnxIdftNormalizeConsumeTmpBytes` become `VecZnxIdftNormalize` and `VecZnxIdftNormalizeTmpBytes`, and the tests `test_vec_znx_idft_normalize_consume` and `test_vec_znx_idft_normalize_consume_derived` become `test_vec_znx_idft_normalize` and `test_vec_znx_idft_normalize_derived` ([#430](https://github.com/poulpy-fhe/poulpy/issues/430)).
+  The operation still clobbers `a[a_col]`, as its `&mut` source and its contract state.
 - **Breaking:** `cnv_apply_dft` and `cnv_apply_dft_add` take a Galois element `b_galois` after `b_col`, and `CnvDftAccTerm` has a `b_galois` field: the applies read their prepared right operand through `σ_{b_galois}`, so products by the automorphisms of one prepared operand store it once; `1` reads it as before.
   An even `b_galois` panics with "convolution: b_galois must be odd", the message of the new `check_galois`, and a sum checks every term before its first write.
   Out-of-tree backends that override `cnv_apply_dft_sum` must read each term's `b_galois`: an override that ignores it still compiles.

@@ -99,36 +99,36 @@ pub trait VecZnxIdftApply<B: Backend> {
 /// Scratch size of the inverse DFT fused with normalization.
 ///
 /// ```text
-/// op         vec_znx_idft_normalize_consume_tmp_bytes(res_size, a_size)
+/// op         vec_znx_idft_normalize_tmp_bytes(res_size, a_size)
 /// class      support
 /// mutation   none
 /// domain     res_size, a_size: the destination's and the source's limb counts
-/// ensures    returns the scratch bytes required by vec_znx_idft_normalize_consume for these limb counts
-/// test       test_vec_znx_idft_normalize_consume
+/// ensures    returns the scratch bytes required by vec_znx_idft_normalize for these limb counts
+/// test       test_vec_znx_idft_normalize
 /// ```
-pub trait VecZnxIdftNormalizeConsumeTmpBytes {
-    /// Returns the scratch byte size that [`VecZnxIdftNormalizeConsume`] requires for `res_size` and `a_size` limbs.
-    fn vec_znx_idft_normalize_consume_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
+pub trait VecZnxIdftNormalizeTmpBytes {
+    /// Returns the scratch byte size that [`VecZnxIdftNormalize`] requires for `res_size` and `a_size` limbs.
+    fn vec_znx_idft_normalize_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
 }
 
-/// Inverse DFT of a DFT-domain vector fused with normalization into a coefficient-domain vector, consuming the source.
+/// Inverse DFT of a DFT-domain vector fused with normalization into a coefficient-domain vector, clobbering the selected source column.
 ///
 /// ```text
-/// op         vec_znx_idft_normalize_consume(res, res_base2k, res_k, res_offset, res_col, a, a_col, a_base2k, addend, scratch)
+/// op         vec_znx_idft_normalize(res, res_base2k, res_k, res_offset, res_col, a, a_col, a_base2k, addend, scratch)
 /// class      derived
 /// mutation   out-of-place
 /// definition res[res_col] = canon(sum_{0 <= t < a.size()} (idft(old(a))[a_col,t] + addend_limb(addend,t)) * 2^(-a_base2k * (t + 1)) * 2^res_offset, res_base2k, res_k, res.size()); a[a_col] is unspecified afterwards; columns of res other than res_col and columns of a other than a_col are unchanged
 /// domain     res: a VecZnx; a: a VecZnxDft taken mutably; addend: an optional VecZnx column read at a_base2k; all operands have the degree N of the call; res_k <= res.size() * res_base2k; normalization input and radix bounds apply
-/// requires   scratch >= vec_znx_idft_normalize_consume_tmp_bytes(res.size(), a.size())
+/// requires   scratch >= vec_znx_idft_normalize_tmp_bytes(res.size(), a.size())
 /// ensures    the inverse-transformed source and the first a.size() limbs of the optional addend are read at a_base2k, scaled by 2^res_offset, rounded once at precision res_k, and represented canonically at res_base2k modulo 1
 /// fallback   inverse-transform into an a.size()-limb VecZnxBig, add the optional selected column, then normalize with res_offset
-/// override   allowed, with vec_znx_idft_normalize_consume_tmp_bytes
-/// test       test_vec_znx_idft_normalize_consume, test_vec_znx_idft_normalize_consume_derived
+/// override   allowed, with vec_znx_idft_normalize_tmp_bytes
+/// test       test_vec_znx_idft_normalize, test_vec_znx_idft_normalize_derived
 /// ```
-pub trait VecZnxIdftNormalizeConsume<B: Backend> {
+pub trait VecZnxIdftNormalize<B: Backend> {
     /// Writes the inverse DFT of the pre-call `a` plus the optional `addend`, scaled by `2^res_offset` and normalized at `res_base2k` and `res_k`, into `res`.
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_idft_normalize_consume(
+    fn vec_znx_idft_normalize(
         &self,
         res: &mut VecZnxBackendMut<'_, B>,
         res_base2k: usize,

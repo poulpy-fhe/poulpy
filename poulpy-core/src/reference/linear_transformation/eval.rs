@@ -15,7 +15,7 @@ use poulpy_hal::{
         VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromSmall,
         VecZnxBigNormalize, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism,
         VecZnxDftAutomorphismAddWithPlanTmpBytes, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply,
-        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes, VecZnxNormalizeAssign,
+        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VecZnxNormalizeAssign,
         VecZnxNormalizeTmpBytes,
     },
     layouts::{Backend, GaloisElement, PrepareHint, ScratchArena},
@@ -65,7 +65,7 @@ where
         + VecZnxDftAutomorphismAddWithPlanTmpBytes
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
-        + VecZnxIdftNormalizeConsumeTmpBytes
+        + VecZnxIdftNormalizeTmpBytes
         + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
         + VecZnxNormalizeTmpBytes,
     R: GLWEInfos,
@@ -135,7 +135,7 @@ where
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
-        + VecZnxIdftNormalizeConsumeTmpBytes
+        + VecZnxIdftNormalizeTmpBytes
         + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
         + crate::api::GLWENormalize<BE>,
     A: GLWEInfos,
@@ -173,8 +173,8 @@ pub fn glwe_prepare_linear_transformation_baby_steps_reference<BE, M, A, H>(
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>
-        + VecZnxIdftNormalizeConsume<BE>
-        + VecZnxIdftNormalizeConsumeTmpBytes
+        + VecZnxIdftNormalize<BE>
+        + VecZnxIdftNormalizeTmpBytes
         + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
         + poulpy_hal::api::VecZnxGadgetDecompose<BE>
         + GaloisElement
@@ -282,7 +282,7 @@ where
         + VecZnxDftAutomorphismAddWithPlanTmpBytes
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
-        + VecZnxIdftNormalizeConsumeTmpBytes
+        + VecZnxIdftNormalizeTmpBytes
         + VecZnxNormalizeTmpBytes,
     R: GLWEInfos,
     A: GLWEInfos,
@@ -418,7 +418,7 @@ where
         + VecZnxDftAutomorphismAddWithPlanTmpBytes
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
-        + VecZnxIdftNormalizeConsumeTmpBytes
+        + VecZnxIdftNormalizeTmpBytes
         + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
         + VecZnxNormalizeTmpBytes,
     R: GLWEInfos,

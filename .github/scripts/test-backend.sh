@@ -41,7 +41,7 @@ elif [[ "$backend" == avx512 || "$mode" == emulated ]]; then
     conjugate_invariant_embed_convolution test_znx_normalize)
   if [[ "$mode" == native ]]; then
     filters+=(ckks_parity bin_fhe_parity blas_tests prepared_tensor_tests finish_matches_composition_edges determinism
-      consume_parity one_pass_parity relinearize_tests)
+      idft_normalize_parity one_pass_parity relinearize_tests)
   else
     filters+=(--skip ::ntt_n)
     if [[ "$backend" == avx512 ]]; then
