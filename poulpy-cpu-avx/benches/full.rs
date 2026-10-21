@@ -2,8 +2,13 @@
 //! bin-fhe, swept over each layer's full default parameter grid. See
 //! `poulpy_bench::{hal,core,schemes}::suites` for the shared implementation;
 //! this binary just wires it up against `poulpy-cpu-avx`'s backends.
+//!
+//! With `enable-blas`, a second group runs the BLAS layer on the NTT backend
+//! (`poulpy_bench::blas::suites`) under its own Criterion configuration.
 
 use criterion::{criterion_group, criterion_main};
+#[cfg(feature = "enable-blas")]
+use poulpy_bench::blas::suites::bench_blas;
 use poulpy_bench::core::suites::{bench_core_binfhe, bench_core_ckks};
 use poulpy_bench::hal::suites::{bench_hal_binfhe, bench_hal_ckks};
 use poulpy_bench::schemes::suites::{bench_binfhe, bench_ckks, bench_ckks_bootstrapping};
@@ -26,4 +31,14 @@ criterion_group! {
      bench_binfhe::<Fft, CGGI>
 }
 
+#[cfg(feature = "enable-blas")]
+criterion_group! {
+    name = blas_benches;
+    config = poulpy_bench::blas_criterion_config();
+    targets = bench_blas::<Ntt>
+}
+
+#[cfg(not(feature = "enable-blas"))]
 criterion_main!(benches);
+#[cfg(feature = "enable-blas")]
+criterion_main!(benches, blas_benches);

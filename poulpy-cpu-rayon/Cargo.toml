@@ -50,3 +50,8 @@ criterion = {workspace = true}
 name = "bootstrapping"
 harness = false
 required-features = ["enable-ckks"]
+
+[[bench]]
+name = "blas"
+harness = false
+required-features = ["enable-blas"]
