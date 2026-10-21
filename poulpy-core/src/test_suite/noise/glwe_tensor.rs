@@ -26,7 +26,7 @@ use crate::{
     log2_std_noise_glwe_tensor, log2_std_noise_glwe_tensor_relinearized,
 };
 
-use crate::reference::noise::TENSOR_NOISE_MARGIN;
+use crate::reference::{noise::TENSOR_NOISE_MARGIN, operations::ONE_PASS_VARIANCE_SLACK};
 
 pub(crate) fn assert_canonical(a: &VecZnx<impl HostDataRef, i64>, base2k: usize, k: usize) {
     let active_size = k.div_ceil(base2k);
@@ -481,7 +481,7 @@ where
                 let var_msg = n as f64 * crate::DEFAULT_SIGMA_XE.powi(2) * mean_square * (-2.0 * (k - r) as f64).exp2();
                 let (floor_one_pass, floor_two_step) = model(0.0);
                 let one_pass_kept =
-                    lo == 0 || d2_k <= cover || floor_one_pass <= floor_two_step * (2.0 * TENSOR_NOISE_MARGIN).exp2();
+                    lo == 0 || d2_k <= cover || floor_one_pass <= floor_two_step * (1.0 + ONE_PASS_VARIANCE_SLACK);
                 let mut have: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&res_infos);
                 for square in [true, false] {
                     let role = if square { "square" } else { "product" };
@@ -521,6 +521,11 @@ where
                             one_pass <= 0.5 * var_one_pass.log2() + TENSOR_NOISE_MARGIN,
                             "one-pass {role}, dsize {dsize}, k {k}, res_k {res_k}: log2 std {one_pass} against {}",
                             0.5 * var_one_pass.log2()
+                        );
+                        assert!(
+                            one_pass <= two_step + 0.25,
+                            "one-pass {role}, dsize {dsize}, k {k}, res_k {res_k}: log2 std {one_pass} against the \
+                             two-step {two_step}"
                         );
                     } else {
                         assert!(
