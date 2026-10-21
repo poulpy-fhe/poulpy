@@ -5,7 +5,10 @@ use std::collections::HashMap;
 
 use super::{
     helpers::{Snapshot, assert_untagged, fixture_ciphertext, fixture_operand, snapshot, with_scratch},
-    keys::{fixture_gglwe, key_layout, key_layout_bits, prepared_automorphism_key, prepared_gglwe, prepared_tensor_key},
+    keys::{
+        fixture_gglwe, key_layout, key_layout_bits, key_layout_offset, prepared_automorphism_key, prepared_gglwe,
+        prepared_tensor_key,
+    },
 };
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotsKind,
@@ -102,6 +105,87 @@ where
                 B::ckks_encapsulated_mod_up(module, &mut dst, &mut src, scale, &d2s.to_backend_ref(), &s2d, scratch)
             });
             assert_eq!(result.is_ok(), extra >= scale, "modulus raise acceptance changed");
+            if result.is_ok() {
+                assert_eq!(
+                    dst.meta(),
+                    GLWEPlaintextMeta {
+                        scale: Scale::Log(ckks_log_delta(&src_layout.meta) + scale),
+                        ..src_layout.meta
+                    }
+                );
+                assert_eq!(dst.k(), dst_layout.glwe_layout.k);
+            }
+            results.push((
+                result.map_err(|error| error.to_string()),
+                snapshot::<B, _>(&src),
+                snapshot::<B, _>(&dst),
+            ));
+        }
+    }
+    // Sparse-to-dense keys whose rows sit lower: the raise is their switch. An
+    // offset equal to the raise's shift switches `src` as it is, a smaller one
+    // first shifts it inside the key's window, a larger one is refused. Digits
+    // on and off a limb boundary, one row or several.
+    for (k_digit, extra, scale, k_offset) in [
+        (2 * b, 4 * b + 3, 0, 4 * b + 3),
+        (b, 3 * b + 5, b + 1, 2 * b + 4),
+        (4 * b, 4 * b + 3, 0, 4 * b + 3),
+        (2 * b, 4 * b + 3, 0, 2 * b),
+        (b + 1, 4 * b + 3, 1, 3 * b),
+        (2 * b - 1, 3 * b + 5, b + 1, b + 3),
+        (2 * b, 2 * b + 1, 0, 2 * b + 2),
+    ] {
+        let k_large = small + extra;
+        let src_layout = CKKSLayout {
+            glwe_layout: GLWELayout {
+                n: module.n().into(),
+                base2k: b.into(),
+                k: small.into(),
+                rank: params.rank.into(),
+            },
+            meta: GLWEPlaintextMeta {
+                scale: Scale::Log(b),
+                slots: SlotsKind::Complex,
+                log_sparsity: 1,
+            },
+        };
+        let dst_layout = CKKSLayout {
+            glwe_layout: GLWELayout {
+                k: k_large.into(),
+                ..src_layout.glwe_layout
+            },
+            ..src_layout
+        };
+        let d2s_layout = key_layout(module.n(), b, small, 1, params.rank, params.rank);
+        let s2d_layout = key_layout_offset(module.n(), b, k_large - k_offset, k_digit, k_offset, params.rank, params.rank);
+        let mut d2s = module.gglwe_prepared_alloc_from_infos(&d2s_layout);
+        let mut s2d = module.gglwe_prepared_alloc_from_infos(&s2d_layout);
+        for (prepared, layout, seed) in [(&mut d2s, &d2s_layout, 53), (&mut s2d, &s2d_layout, 59)] {
+            let coefficients = fixture_gglwe(module, layout, seed);
+            with_scratch::<B, _>(module.gglwe_prepare_tmp_bytes(layout), |scratch| {
+                module.gglwe_prepare(prepared, &coefficients, scratch)
+            });
+        }
+        let bytes = B::ckks_encapsulated_mod_up_tmp_bytes(module, &dst_layout, &src_layout, &d2s_layout, &s2d_layout);
+        for (seed, lazy) in [(61, false), (67, true)] {
+            let mut src = fixture_operand(module, &src_layout, seed, lazy);
+            let mut dst = fixture_ciphertext(module, &dst_layout, 71);
+            let result = with_scratch::<B, _>(bytes, |scratch| {
+                B::ckks_encapsulated_mod_up(
+                    module,
+                    &mut dst,
+                    &mut src,
+                    scale,
+                    &d2s.to_backend_ref(),
+                    &s2d.to_backend_ref(),
+                    scratch,
+                )
+            });
+            assert_eq!(
+                result.is_ok(),
+                k_offset <= extra - scale,
+                "offset modulus raise acceptance changed: k_digit={k_digit} extra={extra} scale={scale} k_offset={k_offset}"
+            );
             if result.is_ok() {
                 assert_eq!(
                     dst.meta(),

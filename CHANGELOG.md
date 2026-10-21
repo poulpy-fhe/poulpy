@@ -212,6 +212,13 @@
 
 ### `poulpy-ckks`
 
+- The encapsulated ModUp takes a sparse-to-dense key with a row offset (`k_offset` of `poulpy-core`): its switch is the raise, from the raised ciphertext at its own width, integer part included, with no zero-padded copy and no transform of zero limbs.
+  A raise whose shift exceeds the key's offset first shifts its input by the difference inside the key's window; one whose shift is smaller, or that the key's rows do not cover, is an error.
+  Keys without an offset take the path they took before, bit for bit.
+- `BootstrappingPlan::raised_window` gives the bits the raised ciphertext fills at the bottom of the raised width: EvalMod's scale for C2S-first, the ModUp modulus and the C2S guard bits for S2C-first.
+- **Breaking, behaviour:** the bootstrapping presets' sparse-to-dense key has a row offset, its rows under the raised ciphertext and ending at the raised width, and whole-limb digits covering `raised_window`, fewest rows first.
+  At `N = 2^16` it is one row of 104 bits instead of 7 rows of 208 (29 MiB instead of 231 for the key's coefficients), at `N = 2^15` two rows of 52 instead of 15 (17 MiB instead of 127.5), and its modulus is at most that of the key it replaces.
+- `CKKSTestParams::ksk_offset_layout` gives such a key for the test suites; the standard C2S-first and S2C-first bootstrapping tests and the encapsulated ModUp parity test use offset keys.
 - The ship mux returns an error on a key with a row offset.
 - **Breaking:** the C2S-first logN16 preset `n16_d35_k600_p19_c2s` is replaced by `n16_d35_k636_p20_c2s`: three factors per transform, as the S2C-first preset (C2S at scale `2^51`, S2C at `2^35`), and log message ratio 6 for at least 20 bits of precision (20.8 measured, 23.0 on average), a 41-bit input, 595 usable bits (17 levels instead of 16) and a raised modulus of 1381 bits instead of 1427.
 - **Breaking:** `n15_d35_k180_p18_c2s` runs CoeffsToSlots at scale `2^50` and SlotsToCoeffs at `2^29` (were `2^49` and `2^30`), at the same widths, and keeps its 18 bits of precision (18.4 measured, 20.3 on average) with a single tensor key.

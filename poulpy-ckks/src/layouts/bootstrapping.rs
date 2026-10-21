@@ -281,6 +281,20 @@ impl BootstrappingPlan {
         log_modulus + self.pre_mod_up_consumed_bits()
     }
 
+    /// Bits the raised ciphertext fills at the bottom of the raised width, for
+    /// a modulus of `log_modulus` bits at ModUp: what a sparse-to-dense key
+    /// with a row offset of `bootstrap_k - raised_window` switches
+    /// ([`EncapsulationKeysLayout::sparse_to_dense`](crate::layouts::EncapsulationKeysLayout::sparse_to_dense)).
+    /// C2S-first lifts every input to the EvalMod scale, so its window does not
+    /// depend on the input; S2C-first raises its modulus and the C2S guard bits,
+    /// and a narrower input is shifted into the window.
+    pub fn raised_window(&self, log_modulus: usize) -> usize {
+        match self.pipeline {
+            BootstrappingPipeline::C2SFirst => self.eval_mod.f_mod_log_delta,
+            BootstrappingPipeline::S2CFirst => log_modulus + self.c2s_guard_bits,
+        }
+    }
+
     /// Bootstrap width for an output at the input scale `log_delta`.
     /// C2S-first includes the width removed when restoring that scale.
     pub fn bootstrap_k(&self, output_k: usize, log_delta: usize) -> usize {

@@ -602,6 +602,12 @@ fn keys_layout(
         spec.dense_to_sparse_dsize * spec.base2k,
         sparse,
     )?;
+    let sparse_to_dense = sparse_to_dense_layout(
+        spec,
+        plan.raised_window(spec.log_delta + spec.log_msg_ratio),
+        bootstrap_k,
+        dense,
+    )?;
 
     // With no digit imposed, a key only used on narrower ciphertexts takes the
     // widest digit those admit.
@@ -627,8 +633,39 @@ fn keys_layout(
         tensor_key: tensor_key.into(),
         encapsulation: Some(EncapsulationKeysLayout {
             dense_to_sparse: dense_to_sparse.into(),
-            sparse_to_dense: wide.into(),
+            sparse_to_dense: sparse_to_dense.into(),
         }),
+    })
+}
+
+/// Layout of the sparse-to-dense key, whose switch is the raise: its rows sit
+/// under the raised ciphertext, `window` bits at the bottom of the raised
+/// width ([`BootstrappingPlan::raised_window`]), and end exactly at that width,
+/// so the key's modulus is the one a key covering the whole width would have.
+/// The digits are whole limbs, the fewest rows first; the bits their gadget
+/// adds over the window are a shift of the input inside it.
+fn sparse_to_dense_layout(spec: &PresetSpec, window: usize, bootstrap_k: usize, limit: usize) -> Result<GGLWELayout> {
+    let shape = |k_digit: usize| {
+        let gadget = window.div_ceil(k_digit) * k_digit;
+        bootstrap_k.checked_sub(gadget).map(|k_offset| (gadget, k_offset))
+    };
+    let fits = |k_digit: usize| {
+        shape(k_digit).is_some_and(|(gadget, k_offset)| key_fits(spec, gadget, k_digit, limit.saturating_sub(k_offset)))
+    };
+    let k_digit = spec.key_dsize.map_or_else(
+        || {
+            (1..=window.div_ceil(spec.base2k))
+                .map(|limbs| limbs * spec.base2k)
+                .filter(|&k_digit| fits(k_digit))
+                .min_by_key(|&k_digit| (window.div_ceil(k_digit), k_digit))
+                .unwrap_or(spec.base2k)
+        },
+        |dsize| dsize * spec.base2k,
+    );
+    let (gadget, k_offset) = shape(k_digit).context("sparse-to-dense key: its digits overshoot the raised width")?;
+    Ok(GGLWELayout {
+        k_offset: TorusPrecision(k_offset as u32),
+        ..key_layout(spec, "sparse-to-dense", gadget, k_digit, limit.saturating_sub(k_offset))?
     })
 }
 
@@ -774,7 +811,9 @@ mod tests {
         assert_eq!(keys.automorphism_key.k().as_usize(), 847);
         // EvalMod starts 100 bits below the raised width: room for a 2-limb digit.
         assert_eq!(key_shapes([&keys.tensor_key]), [(104, 7)]);
-        assert_eq!(encapsulation.sparse_to_dense.k().as_usize(), 847);
+        // The raise switches to the dense secret: two rows under the raised ciphertext, ending at the
+        // raised width, at the modulus a key covering it would have.
+        assert_eq!(sparse_to_dense_shape(&preset), (52, 2, 676, 847));
         assert_eq!(encapsulation.dense_to_sparse.k().as_usize(), 119);
         // A wider digit leaves less than a digit of guard under either bound.
         assert!(preset.with_dsizes(2, 1).is_err());
@@ -802,6 +841,7 @@ mod tests {
         );
 
         assert_layouts_within_bounds(&preset, (208, 7, 224, 1680));
+        assert_eq!(sparse_to_dense_shape(&preset), (104, 1, 1277, 1501));
         // The three CoeffsToSlots factors run at 1381, 1330 and 1279 bits, the
         // conjugation below them, and SlotsToCoeffs after EvalMod.
         let keys = preset.keys_layout();
@@ -830,6 +870,7 @@ mod tests {
         );
 
         assert_layouts_within_bounds(&preset, (208, 7, 224, 1680));
+        assert_eq!(sparse_to_dense_shape(&preset), (104, 1, 1249, 1473));
         // The three CoeffsToSlots factors run at 1353, 1303 and 1253 bits, the
         // conjugation and the first EvalMod level below them; SlotsToCoeffs runs
         // on the 138-bit input.
@@ -846,6 +887,20 @@ mod tests {
         let uniform = preset.with_dsizes(4, 1).unwrap();
         assert!(uniform.keys_layout().rotation_keys.is_empty());
         assert_eq!(uniform.keys_layout().tensor_key.dnum.as_usize(), 7);
+    }
+
+    /// `(k_digit, dnum, k_offset, k)` of the sparse-to-dense key, whose rows end at the raised width.
+    fn sparse_to_dense_shape(preset: &BootstrappingPreset) -> (usize, usize, usize, usize) {
+        let key = preset.keys_layout().encapsulation.unwrap().sparse_to_dense;
+        let gadget = gadget_k(&key);
+        assert_eq!(key.k_offset.as_usize() + gadget, preset.bootstrap_k());
+        assert!(gadget >= preset.plan().raised_window(preset.spec.log_delta + preset.spec.log_msg_ratio));
+        (
+            key.k_digit.as_usize(),
+            key.dnum.as_usize(),
+            key.k_offset.as_usize(),
+            key.k().as_usize(),
+        )
     }
 
     /// `(k_digit, dnum)` of each key, widest input first.
@@ -876,7 +931,8 @@ mod tests {
             wide
         );
         assert!(key.k_aux >= key.k_digit && key.k().as_usize() <= preset.max_dense_modulus());
-        assert_eq!(encapsulation.sparse_to_dense.k().as_usize(), wide.3);
+        // One row under the raised ciphertext, below the modulus of the keys covering the raised width.
+        assert!(encapsulation.sparse_to_dense.k() <= key.k());
         assert!(preset.with_dsizes(5, 1).is_err());
         assert!(preset.with_dsizes(4, 1).is_ok());
 

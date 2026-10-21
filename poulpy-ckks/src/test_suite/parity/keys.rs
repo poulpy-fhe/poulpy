@@ -20,12 +20,25 @@ pub fn key_layout(n: usize, base2k: usize, k: usize, dsize: usize, rank_in: usiz
 
 /// [`key_layout`] with digits of `k_digit` bits, on or off a limb boundary.
 pub fn key_layout_bits(n: usize, base2k: usize, k: usize, k_digit: usize, rank_in: usize, rank_out: usize) -> GGLWELayout {
+    key_layout_offset(n, base2k, k, k_digit, 0, rank_in, rank_out)
+}
+
+/// [`key_layout_bits`] with its rows `k_offset` bits lower.
+pub fn key_layout_offset(
+    n: usize,
+    base2k: usize,
+    k: usize,
+    k_digit: usize,
+    k_offset: usize,
+    rank_in: usize,
+    rank_out: usize,
+) -> GGLWELayout {
     GGLWELayout {
         n: n.into(),
         base2k: base2k.into(),
         dnum: k.div_ceil(k_digit).into(),
         k_digit: k_digit.into(),
-        k_offset: poulpy_core::layouts::TorusPrecision(0),
+        k_offset: k_offset.into(),
         k_aux: k_digit.into(),
         rank_in: rank_in.into(),
         rank_out: rank_out.into(),

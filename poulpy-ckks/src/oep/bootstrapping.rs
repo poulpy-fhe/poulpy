@@ -101,7 +101,9 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
 
 /// Backend implementation of
 /// `dense-to-sparse key switch -> ModUp -> sparse-to-dense key switch`.
-/// A backend may exploit the known-zero limbs produced by ModUp.
+/// A backend may exploit the known-zero limbs produced by ModUp. A
+/// sparse-to-dense key with a row offset makes ModUp and its switch one key
+/// switch, which reads the raised ciphertext at its own width.
 ///
 /// # Safety
 ///

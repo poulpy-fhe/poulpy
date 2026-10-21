@@ -60,6 +60,9 @@ denseToSparse ─► ModUp ─► sparseToDense
 ```
 
 so `I·q` stays small and EvalMod can use a much smaller interval `K` with negligible failure probability ([eprint 2022/024](https://eprint.iacr.org/2022/024)).
+The raise and the switch back can be one key switch: a `sparseToDense` key whose rows sit `k_offset` bits lower (`GGLWEInfos::k_offset` in `poulpy-core`) lowers its input by that many bits as it switches it, integer part `I` included.
+Its rows then cover only the bits the raised ciphertext fills at the bottom of the raised width (`BootstrappingPlan::raised_window`), not the whole width: at `N = 2^16` the presets' key drops from 7 rows of 208-bit digits (231 MiB) to one row of 104 bits (29 MiB).
+A raise whose shift exceeds the key's offset first shifts its input by the difference, inside the key's window, as S2C-first does for its narrower inputs.
 It is selected by the bootstrapping recipe through `BootstrappingTechniques::sparse_secret_encapsulation`, whose Hamming weight must be chosen together with EvalMod's interval.
 `BootstrappingKeysLayout::encapsulation` contains only the two physical key-switch layouts; key generation rejects its presence or absence when it disagrees with the compiled recipe, and execution likewise rejects a mismatched key set.
 The generated keys remain part of the key bundle, while the public Hamming-weight parameter is retained by the otherwise secret-independent `BootstrappingPlan`/`BootstrappingContext`.

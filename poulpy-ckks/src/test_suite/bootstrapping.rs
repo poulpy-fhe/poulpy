@@ -226,7 +226,8 @@ where
         tensor_key: tp.tsk_layout(),
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
             dense_to_sparse: tp.ksk_layout(log_modulus_in),
-            sparse_to_dense: tp.ksk_layout(k_boot),
+            // The raise is the sparse-to-dense switch, with rows under the raised ciphertext.
+            sparse_to_dense: tp.ksk_offset_layout(k_boot, plan.raised_window(log_modulus_in)),
         }),
     };
     let scratch_size = bootstrap_setup_tmp_bytes(
@@ -880,7 +881,8 @@ where
         tensor_key: tp.tsk_layout(),
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
             dense_to_sparse: tp.ksk_layout(log_modulus_in),
-            sparse_to_dense: tp.ksk_layout(k_boot),
+            // The raise is the sparse-to-dense switch, with rows under the raised ciphertext.
+            sparse_to_dense: tp.ksk_offset_layout(k_boot, plan.raised_window(log_modulus_in)),
         }),
     };
     let scratch_size = bootstrap_setup_tmp_bytes(

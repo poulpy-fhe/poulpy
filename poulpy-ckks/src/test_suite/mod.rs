@@ -110,6 +110,18 @@ impl CKKSTestParams {
             k_offset: TorusPrecision(0),
         }
     }
+
+    /// [`Self::ksk_layout`] for a sparse-to-dense key whose switch is the raise
+    /// into `k_boot` bits: its rows sit under the raised ciphertext of `window`
+    /// bits ([`crate::layouts::BootstrappingPlan::raised_window`]) and end at `k_boot`.
+    pub fn ksk_offset_layout(&self, k_boot: usize, window: usize) -> GLWESwitchingKeyLayout {
+        let k_digit = k_digit_of(self.base2k, self.dsize).as_usize();
+        let gadget = window.div_ceil(k_digit) * k_digit;
+        GLWESwitchingKeyLayout {
+            k_offset: TorusPrecision((k_boot - gadget) as u32),
+            ..self.ksk_layout(gadget)
+        }
+    }
 }
 
 /// Radix-52 parameter set.

@@ -277,7 +277,11 @@ impl BootstrappingKeysLayout {
 pub struct EncapsulationKeysLayout {
     /// `denseToSparse` key layout (sized at the input modulus).
     pub dense_to_sparse: GLWESwitchingKeyLayout,
-    /// `sparseToDense` key layout (sized at the bootstrap modulus).
+    /// `sparseToDense` key layout. With a row offset, its switch is the raise
+    /// itself: its rows sit under the raised ciphertext and end at the bootstrap
+    /// modulus, so it covers only the raised ciphertext's
+    /// [`BootstrappingPlan::raised_window`](crate::layouts::BootstrappingPlan::raised_window)
+    /// bits. Without one, it switches the raised ciphertext at the whole bootstrap modulus.
     pub sparse_to_dense: GLWESwitchingKeyLayout,
 }
 

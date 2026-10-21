@@ -26,7 +26,7 @@ use crate::{
     },
     oep::CKKSEncapsulatedModUpImpl,
 };
-use poulpy_core::{GLWEBytesOf, GLWENormalize};
+use poulpy_core::{GLWEBytesOf, GLWENormalize, ScratchArenaTakeCore};
 
 /// [`CKKSBootstrappingReference::ckks_bootstrap_tmp_bytes_reference`]: the terms
 /// of the rotation keys are maximized over their layouts, those of EvalMod come
@@ -1262,10 +1262,84 @@ where
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     module.glwe_keyswitch_assign(src, &dense_to_sparse.to_backend_ref(), scratch);
+    if sparse_to_dense.k_offset().as_usize() > 0 {
+        return ckks_mod_up_offset_reference(module, dst, src, scale_up, sparse_to_dense, scratch);
+    }
     // The lift is fused into ModUp, so the message is already at its final scale
     // when sparse-to-dense adds its noise.
     ckks_mod_up_scaled_reference(module, dst, src, scale_up, scratch)?;
     module.glwe_keyswitch_assign(dst, &sparse_to_dense.to_backend_ref(), scratch);
+    Ok(())
+}
+
+/// Bits of input a sparse-to-dense key with a row offset takes for a raise
+/// into `dst_k` bits: those below its offset, which its rows must reach.
+fn offset_key_window<K: GGLWEInfos>(dst_k: usize, key: &K) -> usize {
+    dst_k.saturating_sub(key.k_offset().as_usize())
+}
+
+/// ModUp and the sparse-to-dense switch as one key switch, with a key whose
+/// rows sit `k_offset` bits lower: the switch reads the digits of `src` as
+/// balanced integers and lowers them, which is the raise, integer multiple of
+/// the modulus included. The raise lowers `src` by `dst.k - src.k - scale_up`
+/// bits; a key of a smaller offset takes the rest as a shift of `src` inside
+/// its window first, exact since the window holds every bit of it.
+fn ckks_mod_up_offset_reference<BE, Dst, Src>(
+    module: &Module<BE>,
+    dst: &mut Dst,
+    src: &Src,
+    scale_up: usize,
+    sparse_to_dense: &GGLWEPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE>,
+    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+    Src: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+{
+    let k_large: usize = dst.k().as_usize();
+    let k_small: usize = src.k().as_usize();
+    ckks_ensure!(
+        k_large >= k_small + scale_up,
+        "ckks_mod_up: dst.k ({k_large}) < src.k ({k_small}) + scale_up ({scale_up}); ModUp must widen, not shrink, the modulus"
+    );
+    let shift = k_large - k_small - scale_up;
+    let k_offset = sparse_to_dense.k_offset().as_usize();
+    ckks_ensure!(
+        k_offset <= shift,
+        "ckks_mod_up: the sparse-to-dense key lowers its input by {k_offset} bits, more than the raise's {shift}"
+    );
+    let window = offset_key_window(k_large, sparse_to_dense) - scale_up;
+    let max_input_k = sparse_to_dense.gglwe_layout().max_input_k().as_usize();
+    let reach = k_offset + sparse_to_dense.gglwe_layout().gadget_k().as_usize();
+    ckks_ensure!(
+        window <= max_input_k && k_large <= reach,
+        "ckks_mod_up: the sparse-to-dense key takes {max_input_k} bits of input and reaches bit {reach}; the raise needs {window} bits up to bit {k_large}"
+    );
+    let key = sparse_to_dense.to_backend_ref();
+    if shift == k_offset {
+        module.glwe_keyswitch(dst, src, &key, scratch);
+    } else {
+        let layout = GLWELayout {
+            n: src.n(),
+            base2k: src.base2k(),
+            k: window.into(),
+            rank: src.rank(),
+        };
+        scratch.scope(|scratch_inner| {
+            let (mut lowered, mut scratch_inner) = scratch_inner.take_glwe_scratch(&layout);
+            module.glwe_copy(&mut lowered, src, &mut scratch_inner);
+            module.glwe_rsh(shift - k_offset, &mut lowered, &mut scratch_inner);
+            module.glwe_keyswitch(dst, &lowered, &key, &mut scratch_inner);
+        });
+    }
+    dst.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(src.log_delta() + scale_up),
+        slots: src.slots(),
+        log_sparsity: src.log_sparsity(),
+    });
+    dst.set_k(k_large.into());
     Ok(())
 }
 
@@ -1286,9 +1360,22 @@ where
     D2S: GGLWEInfos,
     S2D: GGLWEInfos,
 {
-    module
-        .glwe_keyswitch_tmp_bytes(src_infos, src_infos, dense_to_sparse_infos)
-        .max(module.glwe_shift_tmp_bytes(dst_infos.size().max(src_infos.size())))
+    let d2s = module.glwe_keyswitch_tmp_bytes(src_infos, src_infos, dense_to_sparse_infos);
+    if sparse_to_dense_infos.k_offset().as_usize() > 0 {
+        // The input of the switch, `src` or its shift inside the key's window.
+        let window = GLWELayout {
+            n: src_infos.n(),
+            base2k: src_infos.base2k(),
+            k: offset_key_window(dst_infos.max_k().as_usize(), sparse_to_dense_infos)
+                .max(src_infos.k().as_usize())
+                .into(),
+            rank: src_infos.rank(),
+        };
+        let switch = module.glwe_keyswitch_tmp_bytes(dst_infos, &window, sparse_to_dense_infos);
+        let shifted = module.glwe_bytes_of_from_infos(&window) + module.glwe_shift_tmp_bytes(window.size()).max(switch);
+        return d2s.max(switch).max(shifted);
+    }
+    d2s.max(module.glwe_shift_tmp_bytes(dst_infos.size().max(src_infos.size())))
         .max(module.glwe_keyswitch_tmp_bytes(dst_infos, dst_infos, sparse_to_dense_infos))
 }
 
