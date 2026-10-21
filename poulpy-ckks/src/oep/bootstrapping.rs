@@ -4,7 +4,9 @@
 //! ModUp's known-zero low limbs are a CKKS pipeline property, not a general
 //! Core key-switch operation.
 
-use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GGLWEPreparedBackendRef};
+use poulpy_core::layouts::{
+    GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LinearTransformation, prepared::GGLWEPreparedBackendRef,
+};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
 
 use crate::{
@@ -99,6 +101,48 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
         K: BootstrappingKeys<Self>;
 }
 
+/// Backend implementation of the modulus raise that applies the first
+/// `CoeffsToSlots` factor on the raised ciphertext while it is small
+/// ([`DFTPlan::with_first_factor_on_raise`](crate::layouts::DFTPlan::with_first_factor_on_raise)).
+///
+/// # Safety
+///
+/// Implementations must preserve the exact CKKS metadata and ciphertext
+/// semantics of the reference composition and stay within the supplied
+/// scratch arena.
+pub unsafe trait CKKSModUpFirstFactorImpl: Backend<Ring = Standard> {
+    /// `d2s_infos` is the dense-to-sparse key under encapsulation, `key_infos`
+    /// the layout of the first-factor keys.
+    fn ckks_mod_up_first_factor_tmp_bytes<Dst, Src, D2S, K>(
+        module: &Module<Self>,
+        dst_infos: &Dst,
+        src_infos: &Src,
+        factor: &LinearTransformation<CKKSPlaintextOwned<Self>>,
+        d2s_infos: Option<&D2S>,
+        key_infos: &K,
+    ) -> usize
+    where
+        Dst: CKKSCtBounds,
+        Src: CKKSCtBounds,
+        D2S: GGLWEInfos,
+        K: GGLWEInfos;
+
+    /// See [`ckks_mod_up_first_factor_reference`](crate::reference::first_factor::ckks_mod_up_first_factor_reference).
+    fn ckks_mod_up_first_factor<Dst, Src, K>(
+        module: &Module<Self>,
+        dst: &mut Dst,
+        src: &mut Src,
+        scale_up: usize,
+        factor: &LinearTransformation<CKKSPlaintextOwned<Self>>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> CKKSResult<()>
+    where
+        Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
+        K: BootstrappingKeys<Self>;
+}
+
 /// Backend implementation of
 /// `dense-to-sparse key switch -> ModUp -> sparse-to-dense key switch`.
 /// A backend may exploit the known-zero limbs produced by ModUp. A
@@ -110,7 +154,7 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
 /// Implementations must preserve the exact CKKS metadata and ciphertext
 /// semantics of the reference composition, honor all key layouts, and stay
 /// within the supplied scratch arena.
-pub unsafe trait CKKSEncapsulatedModUpImpl: Backend<Ring = Standard> {
+pub unsafe trait CKKSEncapsulatedModUpImpl: Backend<Ring = Standard> + CKKSModUpFirstFactorImpl {
     fn ckks_encapsulated_mod_up_tmp_bytes<Dst, Src, D2S, S2D>(
         module: &Module<Self>,
         dst_infos: &Dst,
@@ -326,6 +370,60 @@ macro_rules! impl_ckks_encapsulated_mod_up_reference {
         }
     };
 }
+
+/// Opts a standard backend into the reference raise with the first factor.
+#[macro_export]
+macro_rules! impl_ckks_mod_up_first_factor_reference {
+    ($be:ty) => {
+        unsafe impl $crate::oep::CKKSModUpFirstFactorImpl for $be {
+            fn ckks_mod_up_first_factor_tmp_bytes<Dst, Src, D2S, K>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                dst_infos: &Dst,
+                src_infos: &Src,
+                factor: &::poulpy_core::layouts::LinearTransformation<$crate::layouts::CKKSPlaintextOwned<$be>>,
+                d2s_infos: Option<&D2S>,
+                key_infos: &K,
+            ) -> usize
+            where
+                Dst: $crate::CKKSCtBounds,
+                Src: $crate::CKKSCtBounds,
+                D2S: ::poulpy_core::layouts::GGLWEInfos,
+                K: ::poulpy_core::layouts::GGLWEInfos,
+            {
+                $crate::reference::first_factor::ckks_mod_up_first_factor_tmp_bytes_reference(
+                    module, dst_infos, src_infos, factor, d2s_infos, key_infos,
+                )
+            }
+
+            fn ckks_mod_up_first_factor<Dst, Src, K>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                dst: &mut Dst,
+                src: &mut Src,
+                scale_up: usize,
+                factor: &::poulpy_core::layouts::LinearTransformation<$crate::layouts::CKKSPlaintextOwned<$be>>,
+                keys: &K,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) -> $crate::CKKSResult<()>
+            where
+                Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be>
+                    + ::poulpy_core::layouts::GLWEToBackendRef<$be>
+                    + $crate::CKKSCtBounds
+                    + $crate::SetCKKSInfos,
+                Src: ::poulpy_core::layouts::GLWEToBackendMut<$be>
+                    + ::poulpy_core::layouts::GLWEToBackendRef<$be>
+                    + $crate::CKKSCtBounds
+                    + $crate::SetCKKSInfos,
+                K: $crate::layouts::BootstrappingKeys<$be>,
+            {
+                $crate::reference::first_factor::ckks_mod_up_first_factor_reference(
+                    module, dst, src, scale_up, factor, keys, scratch,
+                )
+            }
+        }
+    };
+}
+
+pub use crate::impl_ckks_mod_up_first_factor_reference;
 
 pub use crate::impl_ckks_encapsulated_mod_up_reference;
 

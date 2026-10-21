@@ -222,6 +222,7 @@ macro_rules! impl_oracle_ckks_standard {
         impl_oracle_ckks!($be);
         impl_oracle_ckks_coeff_encodings!($be);
         ::poulpy_ckks::impl_ckks_encapsulated_mod_up_reference!($be);
+        ::poulpy_ckks::impl_ckks_mod_up_first_factor_reference!($be);
         ::poulpy_ckks::impl_ckks_conjugate_reference!($be);
         ::poulpy_ckks::impl_ckks_imag_reference!($be);
         ::poulpy_ckks::impl_ckks_bootstrapping_reference!($be);

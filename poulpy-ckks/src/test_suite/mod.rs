@@ -924,6 +924,10 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::bootstrapping::test_bootstrapping_standard_e2e
             );
             run_params_test!(
+                bootstrapping_first_factor_on_raise,
+                $crate::test_suite::bootstrapping::test_bootstrapping_first_factor_on_raise
+            );
+            run_params_test!(
                 bootstrapping_evalround_e2e,
                 $crate::test_suite::bootstrapping::test_bootstrapping_evalround_e2e
             );

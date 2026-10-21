@@ -316,11 +316,12 @@ fn run_case<BE, F, E>(
     };
     let keys_layout = BootstrappingKeysLayout {
         rotation_keys: Default::default(),
+        first_factor_key: None,
         automorphism_key: tp.atk_layout(),
         tensor_key: tp.tsk_layout(),
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
             dense_to_sparse: tp.ksk_layout(log_modulus_in),
-            sparse_to_dense: tp.ksk_layout(k_boot),
+            sparse_to_dense: Some(tp.ksk_layout(k_boot)),
         }),
     };
     let output_spec = ckks_spec(params.n, params.base2k, INPUT_LOG_DELTA, k_boot - INPUT_LOG_DELTA);

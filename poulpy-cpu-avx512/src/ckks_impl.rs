@@ -6,12 +6,15 @@ use super::{FFT64Avx512, NTT4x30Avx512};
 use poulpy_ckks::{
     impl_ckks_bootstrapping_reference, impl_ckks_complex_polynomial_evaluation_reference, impl_ckks_conjugate_reference,
     impl_ckks_dft_reference, impl_ckks_encapsulated_mod_up_reference, impl_ckks_eval_mod_reference, impl_ckks_fold_reference,
-    impl_ckks_imag_reference,
+    impl_ckks_imag_reference, impl_ckks_mod_up_first_factor_reference,
 };
 
 impl_ckks_encapsulated_mod_up_reference!(FFT64Avx512);
+impl_ckks_mod_up_first_factor_reference!(FFT64Avx512);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_encapsulated_mod_up_reference!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_ckks_mod_up_first_factor_reference!(FFT64Avx512Rayon);
 
 // `f64` encodes through the AVX-512 kernels and `Quad` through the portable
 // kernels, both on the canonical twiddles. Rust has no specialization, so
