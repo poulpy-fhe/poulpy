@@ -754,19 +754,14 @@ fn expected_public_key_components(rank: usize, weight: f64, base2k: usize, k: us
     let at_k = |variance: f64, precision: usize| variance * (-2.0 * (precision - k) as f64).exp2();
     let scale = (-2.0 * (sample_k - k) as f64).exp2();
     // A dropped-limb tail is uniform over one ulp of the sampling grid; the
-    // output rounding drops `sample_k - k` uniform bits, ties rounding up.
+    // output rounding drops `sample_k - k` uniform bits, ties to even.
     let tail = if sample_k < k_pk {
         let mean = -0.5 * (-(base2k as f64)).exp2() / (1.0 - (-(base2k as f64)).exp2()) * scale.sqrt();
         mean * mean + scale / 12.0
     } else {
         0.0
     };
-    let rounding = if sample_k > k {
-        let mean = -0.5 * scale.sqrt();
-        mean * mean + (1.0 - scale) / 12.0
-    } else {
-        0.0
-    };
+    let rounding = if sample_k > k { (1.0 + 2.0 * scale) / 12.0 } else { 0.0 };
     (0..=rank)
         .map(|i| {
             let key = if i == 0 { at_k(sigma2, k_pk) } else { 0.0 };

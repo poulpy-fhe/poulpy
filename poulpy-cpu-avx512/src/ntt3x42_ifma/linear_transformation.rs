@@ -379,13 +379,9 @@ fn consume(
     scratch: &mut ScratchArena<'_, BE>,
 ) {
     let n = a.n();
-    let workers = poulpy_hal::execution::scratch_workers_within::<E>(
-        a.size().min(8),
-        3 * n * size_of::<u64>(),
-        scratch.available().saturating_sub(3 * n * size_of::<i128>()),
-    );
-    let (tmp, arena) = crate::hal_impl::take_host_typed::<BE, u64>(scratch.borrow(), workers * 3 * n);
-    let (carry, _) = crate::hal_impl::take_host_typed::<BE, i128>(arena, 3 * n);
+    let workers =
+        poulpy_hal::execution::scratch_workers_within::<E>(a.size().min(8), 3 * n * size_of::<u64>(), scratch.available());
+    let (tmp, _) = crate::hal_impl::take_host_typed::<BE, u64>(scratch.borrow(), workers * 3 * n);
     let shape = a.shape();
     let mut a = VecZnxDft::<_, _, crate::NTT3x42Ifma>::from_shape(&mut **a.data_mut(), shape);
     let shape = res.shape();
@@ -402,6 +398,5 @@ fn consume(
         base,
         None,
         tmp,
-        carry,
     );
 }

@@ -353,43 +353,47 @@ pub(crate) fn pk_sample(k: usize, k_pk: usize) -> usize {
 }
 
 /// `(mean, variance)` in output units of a dropped-limb tail, uniform over one
-/// ulp of the sampling grid, and the output rounding's mean.
-pub(crate) fn pk_tail_and_rounding(k: usize, k_pk: usize) -> ((f64, f64), f64) {
+/// ulp of the sampling grid.
+pub(crate) fn pk_tail(k: usize, k_pk: usize) -> (f64, f64) {
     let (base2k, sample) = (BASE2K.as_usize() as f64, pk_sample(k, k_pk));
     let ulp = (-((sample - k) as f64)).exp2();
-    let tail = if sample < k_pk {
+    if sample < k_pk {
         (-0.5 * (-base2k).exp2() / (1.0 - (-base2k).exp2()) * ulp, ulp * ulp / 12.0)
     } else {
         (0.0, 0.0)
-    };
-    (tail, if sample > k { -0.5 * ulp } else { 0.0 })
+    }
+}
+
+/// Second moment `(1 + 2*4^-d)/12` of the output rounding of the `d` bits a
+/// public-key encryption at `k` drops; ties go to even, so its mean is 0.
+pub(crate) fn pk_rounding(k: usize, k_pk: usize) -> f64 {
+    let sample = pk_sample(k, k_pk);
+    if sample > k {
+        (1.0 + 2.0 * (-2.0 * (sample - k) as f64).exp2()) / 12.0
+    } else {
+        0.0
+    }
 }
 
 /// Phase variance of a public-key encryption at output precision `k` under a
 /// centered key at `k_pk`: inherited key error, the tail of the key limbs past
 /// the sampling grid (weighted by `tail_fold`), fresh error drawn on that grid,
-/// one limb past `k`, and the rounding of its `d` bits, of second moment
-/// `(1 - 4^-d)/12 + 4^-d/4`.
+/// one limb past `k`, and the rounding of its `d` bits.
 pub(crate) fn expected_pk_variance(inherited: f64, fresh: f64, phase_fold: f64, tail_fold: f64, k: usize, k_pk: usize) -> f64 {
-    let ((tau, v_t), mu_r) = pk_tail_and_rounding(k, k_pk);
+    let (tau, v_t) = pk_tail(k, k_pk);
     let ulp = (-((pk_sample(k, k_pk) - k) as f64)).exp2();
-    let rounding = if mu_r != 0.0 {
-        mu_r * mu_r + (1.0 - ulp * ulp) / 12.0
-    } else {
-        0.0
-    };
-    inherited + tail_fold * (tau * tau + v_t) + fresh * ulp * ulp + phase_fold * rounding
+    inherited + tail_fold * (tau * tau + v_t) + fresh * ulp * ulp + phase_fold * pk_rounding(k, k_pk)
 }
 
 /// The core model's coherent excess on the negacyclic ring of degree `n`: the
-/// means of the ephemeral `u`, the secret `s` (each `(mean, second moment)`),
-/// a dropped-limb tail and the rounding, adding up along ring products.
+/// means of the ephemeral `u`, the secret `s` (each `(mean, second moment)`)
+/// and a dropped-limb tail, adding up along ring products.
 pub(crate) fn pk_coherent_excess(
     n: usize,
     rank: usize,
     (mu_u, q_u): (f64, f64),
     (mu_s, q_s): (f64, f64),
-    ((tau, v_t), mu_r): ((f64, f64), f64),
+    (tau, v_t): (f64, f64),
 ) -> f64 {
     let m = Standard::product_moments(n);
     let (r, w) = (rank as f64, m.weight);
@@ -397,12 +401,9 @@ pub(crate) fn pk_coherent_excess(
     let triple = (m.triple_weight - w * w) * v_u * v_s * q_t + m.triple_weight * v_t * (v_u * mu_s * mu_s + v_s * mu_u * mu_u)
         - w * w * q_t * (v_u * mu_s * mu_s + v_s * mu_u * mu_u + mu_u * mu_u * mu_s * mu_s);
     let single = mu_s * v_u * tau * tau * (2.0 * m.sum_cross_weight + r * mu_s * m.sum_weight)
-        + mu_u * v_s * tau * (r * mu_u * tau * m.sum_weight + 2.0 * mu_r * m.sum_cross_weight)
+        + r * (mu_u * tau).powi(2) * v_s * m.sum_weight
         + v_t * (mu_u * mu_s).powi(2) * m.sum_weight;
-    let (a, b) = (r * (mu_u * tau + mu_r * mu_s), r * r * mu_u * mu_s * tau);
-    let mean = a * a * m.sum_square
-        + 2.0 * a * b * m.sum_triple_sum
-        + b * b * m.triple_sum_square
-        + 2.0 * mu_r * (a * m.sum + b * m.triple_sum);
-    r * r * (triple + single) + mean - r * w * (mu_u * mu_u * tau * tau + mu_s * mu_s * mu_r * mu_r)
+    let (a, b) = (r * mu_u * tau, r * r * mu_u * mu_s * tau);
+    let mean = a * a * m.sum_square + 2.0 * a * b * m.sum_triple_sum + b * b * m.triple_sum_square;
+    r * r * (triple + single) + mean - r * w * mu_u * mu_u * tau * tau
 }

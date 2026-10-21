@@ -253,6 +253,7 @@ fn vmp_apply_dft_to_dft_dispatch<const OVERWRITE: bool, BE, KERNEL, E>(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[inline(always)]
 unsafe fn vmp_apply_dft_to_dft_block<const OVERWRITE: bool, REIM>(
     n: usize,
     m: usize,

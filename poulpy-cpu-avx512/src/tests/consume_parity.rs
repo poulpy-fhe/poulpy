@@ -96,8 +96,8 @@ macro_rules! consume_case {
                                         "serial n={n}, offset={offset}, k={k}, add={with_add}"
                                     );
                                     let declared = parallel.vec_znx_idft_normalize_consume_tmp_bytes(6, 5);
-                                    assert_eq!(declared, (5 * 4 * 8 + 3 * 16) * parallel.n());
-                                    for bytes in [4 * n * 8 + 3 * n * 16, 2 * 4 * n * 8 + 3 * n * 16, declared] {
+                                    assert_eq!(declared, 5 * 4 * 8 * parallel.n());
+                                    for bytes in [4 * n * 8, 2 * 4 * n * 8, declared] {
                                         let actual = run!($parallel, parallel, bytes);
                                         assert_eq!(
                                             actual, expected,

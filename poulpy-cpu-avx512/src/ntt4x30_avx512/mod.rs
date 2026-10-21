@@ -31,7 +31,7 @@
 //! | BBB inner product (`arithmetic_avx512::vec_mat1col_product_bbb`) | AVX-512F, 2-element pair-pack with half-fold |
 //! | BBC mat-vec (`mat_vec_avx512::vec_mat1col_product_bbc`, `_x2_bbc`, `_2cols_x2_bbc`, `_blkpair_bbc_pm`) | AVX-512F, 2-element pair-pack with half-fold |
 //! | Pack helpers (`arithmetic_avx512::pack_*_1blk_x2*`, `pairwise_pack_*_1blk_x2*`) | AVX-512F (pair-pack the two q120b's per row) |
-//! | VecZnxBig i128 ops + normalization (`crate::vec_znx_big_avx512`) | AVX-512F, 4-i128/512-bit (mask-based borrow) |
+//! | VecZnxBig i128 ops (`crate::vec_znx_big_avx512`) | AVX-512F, 4-i128/512-bit (mask-based borrow) |
 //!
 //! Block-order tight inner stages (`nn = 2, 4`) cannot pair-pack along `i` (≤ 1 twiddled
 //! butterfly per block). `nn = 2` uses a cross-block pair-pack kernel; `nn = 4` currently

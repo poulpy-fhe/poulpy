@@ -218,6 +218,18 @@ fn test_convolution_direct() {
     test_convolution_pairwise(&module, module.n(), 12);
 }
 
+#[test]
+fn test_znx_normalize_neon() {
+    use poulpy_cpu_portable::test_suite::znx_normalize::test_znx_normalize;
+    test_znx_normalize::<FFT64Neon>();
+    test_znx_normalize::<crate::NTT4x30Neon>();
+    #[cfg(feature = "enable-rayon")]
+    {
+        test_znx_normalize::<crate::FFT64NeonRayon>();
+        test_znx_normalize::<crate::NTT4x30NeonRayon>();
+    }
+}
+
 cross_backend_test_suite! {
     mod word_compat,
     backend_ref =  poulpy_cpu_portable::FFT64Portable,

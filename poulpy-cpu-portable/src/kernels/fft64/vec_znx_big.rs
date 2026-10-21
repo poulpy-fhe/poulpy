@@ -6,21 +6,15 @@ use crate::{
         noise::add_noise_portable,
         vec_znx::{
             vec_znx_add_assign_portable, vec_znx_add_portable, vec_znx_automorphism_assign_portable,
-            vec_znx_automorphism_portable, vec_znx_negate_assign_portable, vec_znx_negate_portable, vec_znx_normalize_portable,
-            vec_znx_normalize_tmp_bytes_portable, vec_znx_sub_assign_portable, vec_znx_sub_negate_assign_portable,
-            vec_znx_sub_portable,
+            vec_znx_automorphism_portable, vec_znx_negate_assign_portable, vec_znx_negate_portable, vec_znx_sub_assign_portable,
+            vec_znx_sub_negate_assign_portable, vec_znx_sub_portable,
         },
         znx::{
-            I64NormalizeOps, ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign,
-            ZnxNormalizeDigit, ZnxNormalizeFinalStep, ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep,
-            ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign,
-            ZnxNormalizeMiddleStepCarryOnly, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxZero,
+            ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxNegate, ZnxNegateAssign, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign,
+            ZnxZero,
         },
     },
-    layouts::{
-        Backend, HostDataMut, HostDataRef, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut,
-        VecZnxToBackendRef,
-    },
+    layouts::{Backend, HostDataMut, HostDataRef, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendRef},
     source::Source,
 };
 use poulpy_core::Noise;
@@ -145,56 +139,6 @@ where
 {
     let mut res_vznx = big_as_vec_znx_mut::<BE>(res.to_backend_mut());
     vec_znx_negate_assign_portable::<BE>(&mut res_vznx, res_col);
-}
-
-pub fn vec_znx_big_normalize_tmp_bytes_portable(n: usize) -> usize {
-    vec_znx_normalize_tmp_bytes_portable(n)
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn vec_znx_big_normalize_portable<R, A, BE>(
-    res: &mut R,
-    res_base2k: usize,
-    res_k: usize,
-    res_offset: i64,
-    res_col: usize,
-    a: &A,
-    a_base2k: usize,
-    a_col: usize,
-    carry: &mut [i64],
-) where
-    R: VecZnxToBackendMut<BE>,
-    A: VecZnxBigToBackendRef<BE>,
-    BE: Backend<BigWord = i64, ZnxWord = i64>
-        + ZnxZero
-        + ZnxCopy
-        + ZnxAddAssign
-        + ZnxMulPowerOfTwoAssign
-        + ZnxNormalizeFirstStepCarryOnly
-        + ZnxNormalizeMiddleStepCarryOnly
-        + ZnxNormalizeMiddleStep
-        + ZnxNormalizeFinalStep
-        + ZnxNormalizeFirstStep
-        + I64NormalizeOps
-        + ZnxNormalizeDigit
-        + ZnxNormalizeMiddleStepAssign
-        + ZnxNormalizeFinalStepAssign,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> BE::BufRef<'a>: HostDataRef,
-{
-    let a_vznx = big_as_vec_znx_ref::<BE>(a.to_backend_ref());
-    let mut res_ref = res.to_backend_mut();
-    vec_znx_normalize_portable::<BE>(
-        &mut res_ref,
-        res_base2k,
-        res_k,
-        res_offset,
-        res_col,
-        &a_vznx,
-        a_base2k,
-        a_col,
-        carry,
-    );
 }
 
 pub fn vec_znx_big_add_noise_portable<R, BE>(
