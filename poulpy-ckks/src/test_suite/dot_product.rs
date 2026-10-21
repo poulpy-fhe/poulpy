@@ -150,9 +150,11 @@ where
     let b_refs: Vec<&_> = b_cts.iter().collect();
 
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_dot_product_ct(&mut ct_res, &a_refs, &b_refs, &tsk, &mut scratch.borrow())
-        .unwrap();
+    let bytes = module.ckks_dot_product_ct_tmp_bytes(N, &ct_res, a_refs[0], b_refs[0], &tsk);
+    with_scratch::<BE, _>(bytes, |scratch| {
+        module.ckks_dot_product_ct(&mut ct_res, &a_refs, &b_refs, &tsk, scratch)
+    })
+    .unwrap();
     assert_decrypt_precision(
         "dot_product_ct_aligned",
         &params,
@@ -231,9 +233,11 @@ pub fn test_dot_product_ct_unaligned<BE, F, E>(
     let b_refs: Vec<&_> = b_cts.iter().collect();
 
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_dot_product_ct(&mut ct_res, &a_refs, &b_refs, &tsk, &mut scratch.borrow())
-        .unwrap();
+    let bytes = module.ckks_dot_product_ct_tmp_bytes(N, &ct_res, a_refs[0], b_refs[0], &tsk);
+    with_scratch::<BE, _>(bytes, |scratch| {
+        module.ckks_dot_product_ct(&mut ct_res, &a_refs, &b_refs, &tsk, scratch)
+    })
+    .unwrap();
     assert_decrypt_precision(
         "dot_product_ct_unaligned",
         &params,
@@ -312,9 +316,11 @@ pub fn test_dot_product_ct_unaligned_b<BE, F, E>(
     let b_refs: Vec<&_> = b_cts.iter().collect();
 
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_dot_product_ct(&mut ct_res, &a_refs, &b_refs, &tsk, &mut scratch.borrow())
-        .unwrap();
+    let bytes = module.ckks_dot_product_ct_tmp_bytes(N, &ct_res, a_refs[0], b_refs[0], &tsk);
+    with_scratch::<BE, _>(bytes, |scratch| {
+        module.ckks_dot_product_ct(&mut ct_res, &a_refs, &b_refs, &tsk, scratch)
+    })
+    .unwrap();
     assert_decrypt_precision(
         "dot_product_ct_unaligned_b",
         &params,
@@ -422,9 +428,11 @@ pub fn test_dot_product_ct_delta_log_delta<BE, F, E>(
     let b_refs: Vec<&_> = b_cts.iter().collect();
 
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_dot_product_ct(&mut ct_res, &a_refs, &b_refs, &tsk, &mut scratch.borrow())
-        .unwrap();
+    let bytes = module.ckks_dot_product_ct_tmp_bytes(N, &ct_res, a_refs[0], b_refs[0], &tsk);
+    with_scratch::<BE, _>(bytes, |scratch| {
+        module.ckks_dot_product_ct(&mut ct_res, &a_refs, &b_refs, &tsk, scratch)
+    })
+    .unwrap();
     assert_decrypt_precision_at_log_delta(
         "dot_product_ct_delta_log_delta",
         &params,
@@ -511,9 +519,11 @@ pub fn test_dot_product_ct_smaller_output<BE, F, E>(
     let b_refs: Vec<&_> = b_cts.iter().collect();
 
     let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
-    module
-        .ckks_dot_product_ct(&mut ct_res, &a_refs, &b_refs, &tsk, &mut scratch.borrow())
-        .unwrap();
+    let bytes = module.ckks_dot_product_ct_tmp_bytes(N, &ct_res, a_refs[0], b_refs[0], &tsk);
+    with_scratch::<BE, _>(bytes, |scratch| {
+        module.ckks_dot_product_ct(&mut ct_res, &a_refs, &b_refs, &tsk, scratch)
+    })
+    .unwrap();
     assert_decrypt_precision(
         "dot_product_ct smaller_output",
         &params,
