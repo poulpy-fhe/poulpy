@@ -428,7 +428,7 @@ pub fn test_dot_product_ct_delta_log_delta<BE, F, E>(
     let b_refs: Vec<&_> = b_cts.iter().collect();
 
     let mut ct_res = alloc_ct(&params, module, params.k);
-    let bytes = module.ckks_dot_product_ct_tmp_bytes(N, &ct_res, a_refs[0], b_refs[0], &tsk);
+    let bytes = module.ckks_dot_product_ct_tmp_bytes(N, &ct_res, a_refs[0], b_refs[1], &tsk);
     with_scratch::<BE, _>(bytes, |scratch| {
         module.ckks_dot_product_ct(&mut ct_res, &a_refs, &b_refs, &tsk, scratch)
     })
