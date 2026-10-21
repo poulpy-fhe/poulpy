@@ -5,7 +5,6 @@
 //! API layer to the unsafe backend implementations via blanket `impl` blocks.
 
 mod convolution;
-mod mat_znx;
 mod module;
 mod scratch;
 mod svp_ppol;

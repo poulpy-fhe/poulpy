@@ -1,7 +1,7 @@
 use crate::{
     api::{
-        ScalarZnxAutomorphism, ScalarZnxCIEmbed, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign, VecZnxAutomorphism,
-        VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxCIEmbed, VecZnxCITrace, VecZnxCopy,
+        MatZnxAddAssign, ScalarZnxAutomorphism, ScalarZnxCIEmbed, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign,
+        VecZnxAutomorphism, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxCIEmbed, VecZnxCITrace, VecZnxCopy,
         VecZnxFillUniformSource, VecZnxFillUniformSourceAll, VecZnxGadgetDecompose, VecZnxGadgetDecomposeTmpBytes, VecZnxLsh,
         VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign,
         VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize, VecZnxNormalizeAssign,
@@ -10,8 +10,9 @@ use crate::{
         VecZnxZero,
     },
     layouts::{
-        Backend, Module, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
-        VecZnxToBackendMut, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_ref,
+        Backend, MatZnxBackendMut, MatZnxBackendRef, Module, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena,
+        VecZnxBackendMut, VecZnxBackendRef, VecZnxToBackendMut, scalar_znx_as_vec_znx_backend_mut_from_mut,
+        scalar_znx_as_vec_znx_backend_ref_from_ref,
     },
     oep::{HalVecZnxCIImpl, HalVecZnxImpl, HalVecZnxMonomialImpl},
     source::Source,
@@ -153,6 +154,13 @@ impl_vec_znx_delegate!(
         a_col: usize,
     ) {
         B::vec_znx_add_scalar_assign(self, res, res_col, res_limb, a, a_col);
+    }
+);
+
+impl_vec_znx_delegate!(
+    MatZnxAddAssign<B>,
+    fn mat_znx_add_assign(&self, res: &mut MatZnxBackendMut<'_, B>, a: &MatZnxBackendRef<'_, B>) {
+        B::mat_znx_add_assign(self, res, a);
     }
 );
 
