@@ -14,6 +14,8 @@
 //! - [`core`]: `poulpy-core` GLWE/GGSW operations (encryption, decryption,
 //!   keyswitch, automorphism, external product, tensoring).
 //! - [`schemes`]: full scheme-level operations (`ckks`, `bin_fhe`).
+//! - [`blas`]: `poulpy-blas` encrypted matrix operations (`blas_matmul`, `blas_matmul_pt_right`, `blas_matmul_pt_left`,
+//!   `blas_transpose`).
 //!
 //! # The runner / `BenchOp` / suite pattern
 //!
@@ -30,7 +32,7 @@
 //! # Tiers: `bench_*` criterion_group targets
 //!
 //! Each layer's `suites` module (`hal::suites`, `core::suites`,
-//! `schemes::suites`) additionally exposes single-backend-type-parameter
+//! `schemes::suites`, `blas::suites`) additionally exposes single-backend-type-parameter
 //! `bench_*` functions meant to be registered directly as `criterion_group!`
 //! targets.
 //!
@@ -40,12 +42,14 @@
 //!   with the `_ckks` sweep restricted to `log_n` 13/14/15.
 //! - `suites::light::{...}`: same shape as `standard`, but the `_ckks`
 //!   sweep is a single size (`log_n` = 14) instead of {13, 14, 15}.
+//! - `blas::suites::{bench_blas, standard::bench_blas, light::bench_blas}`: the same three tiers for the BLAS layer,
+//!   which targets NTT backends and runs under [`blas_criterion_config`].
 //!
 //! # Params
 //!
 //! Each layer has its own `params` module (`hal::params`, `core::params`,
-//! `schemes::params`) holding the sweep-parameter structs its runners take
-//! (`HalSweepParms`, `CoreParams`, `CkksBenchParams`, ...) plus
+//! `schemes::params`, `blas::params`) holding the sweep-parameter structs its runners take
+//! (`HalSweepParms`, `CoreParams`, `CkksBenchParams`, `BlasBenchParams`, ...) plus
 //! `default_bench_params_*` functions giving every backend the same
 //! reasonable default sweep, so results can be comparable across backends.
 //!
@@ -69,8 +73,12 @@
 //! ```
 //!
 //! No changes needed here — a backend implementing the full HAL/core/CKKS
-//! surface just plugs its own marker types in via turbofish.
+//! surface just plugs its own marker types in via turbofish. A backend that
+//! also wires `poulpy-blas` registers `blas::suites::bench_blas::<Ntt>` in a
+//! second group configured by [`blas_criterion_config`], as the `benches/` of
+//! the backend crates do.
 
+pub mod blas;
 pub mod core;
 pub mod hal;
 pub mod schemes;
@@ -121,6 +129,12 @@ pub fn criterion_config() -> criterion::Criterion {
 
 pub fn ckks_criterion_config() -> criterion::Criterion {
     criterion_config()
+}
+
+/// The configuration of the BLAS group: ten samples, since one ciphertext by ciphertext product at `n = 2^16`,
+/// `d = 128` takes seconds.
+pub fn blas_criterion_config() -> criterion::Criterion {
+    criterion_config().sample_size(10)
 }
 
 /// One named operation in a benchmark suite: a criterion group (`layer`,
