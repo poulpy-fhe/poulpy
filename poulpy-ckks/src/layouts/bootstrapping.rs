@@ -461,14 +461,6 @@ impl KeyWidths<'_> {
         inputs
     }
 
-    /// Widest ciphertext EvalMod relinearizes, in bits, for an input of scale
-    /// `2^input_log_delta`.
-    ///
-    /// EvalMod relabels its input at its own scale and keeps its budget, so its
-    /// widest product is at that budget plus `f_mod_log_delta`. The budget is what
-    /// CoeffsToSlots leaves of the raised width above the scale the raise labels:
-    /// EvalMod's own scale (C2S-first), or the input scale, the message ratio and
-    /// the guard bits (S2C-first).
     /// `(k_small, k_small + scale_up)` of the ciphertext ModUp raises for a
     /// bootstrap input of `input_k` bits: C2S-first lifts it to EvalMod's scale
     /// at its own width (an input wider than that scale fails at the lift),
@@ -483,6 +475,14 @@ impl KeyWidths<'_> {
         }
     }
 
+    /// Widest ciphertext EvalMod relinearizes, in bits, for an input of scale
+    /// `2^input_log_delta`.
+    ///
+    /// EvalMod relabels its input at its own scale and keeps its budget, so its
+    /// widest product is at that budget plus `f_mod_log_delta`. The budget is what
+    /// CoeffsToSlots leaves of the raised width above the scale the raise labels:
+    /// EvalMod's own scale (C2S-first), or the input scale, the message ratio and
+    /// the guard bits (S2C-first).
     pub(crate) fn eval_mod_relinearization_k(&self, bootstrap_k: usize, input_log_delta: usize) -> usize {
         let f_mod_log_delta = self.eval_mod.f_mod_log_delta;
         let raised_log_delta = match self.pipeline {
