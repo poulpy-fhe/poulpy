@@ -83,6 +83,9 @@ impl ReplicatedLayout {
         if log_r == 0 || log_r as usize > Self::MAX_LOG_R {
             return invalid("log_r must lie in 1..=MAX_LOG_R");
         }
+        if log_k as u32 + log_r as u32 >= usize::BITS - 1 {
+            return invalid("2kR must fit in a usize");
+        }
         if shaping.len() != 2 << log_r {
             return invalid("the shaping polynomial must have 2R coefficients");
         }
@@ -343,6 +346,8 @@ mod tests {
         assert!(ReplicatedLayout::new(2, ReplicatedLayout::MAX_LOG_R as u8 + 1, 8, &[1; 128]).is_err());
         assert!(ReplicatedLayout::new(2, 1, 8, &[1, 0, 0]).is_err());
         assert!(ReplicatedLayout::new(2, 1, 8, &[1, 1, 0, 0]).is_err());
+        assert!(ReplicatedLayout::new((usize::BITS - 2) as u8, 1, 8, &[1, -1, 0, 1]).is_err());
+        assert!(ReplicatedLayout::new((usize::BITS - 3) as u8, 1, 8, &[1, -1, 0, 1]).is_ok());
     }
 
     #[test]

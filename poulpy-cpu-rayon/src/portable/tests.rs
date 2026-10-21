@@ -278,6 +278,7 @@ mod ckks {
             dft => poulpy_ckks::test_suite::parity::test_dft_parity,
             real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
             polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
+            replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
             encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
             bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
             fold => poulpy_ckks::test_suite::parity::test_fold_parity,

@@ -88,9 +88,10 @@ pub trait CKKSReplicatedOps<BE: Backend> {
 /// [`ReplicatedBootstrapPlan::k_boot`](crate::layouts::ReplicatedBootstrapPlan::k_boot)
 /// of it. The keys cover [`ReplicatedBootstrapping::galois_elements`].
 pub trait CKKSReplicatedBootstrapOps<BE: Backend> {
-    fn ckks_replicated_bootstrap_tmp_bytes<C, F, A, T, S>(
+    fn ckks_replicated_bootstrap_tmp_bytes<C, I, F, A, T, S>(
         &self,
         ct_out: &C,
+        ct_in: &I,
         ctx: &ReplicatedBootstrapping<BE, F>,
         atk_infos: &A,
         tsk_infos: &T,
@@ -98,6 +99,7 @@ pub trait CKKSReplicatedBootstrapOps<BE: Backend> {
     ) -> usize
     where
         C: CKKSCtBounds,
+        I: CKKSCtBounds,
         A: GGLWEInfos,
         T: GGLWEInfos,
         S: GGLWEInfos;

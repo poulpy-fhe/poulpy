@@ -2,7 +2,8 @@ use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{
-    BSGSMeta, GLWEInfos, GLWELayout, GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Parity, Rank, SetBSGSMeta,
+    BSGSMeta, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Parity,
+    Rank, SetBSGSMeta,
 };
 use poulpy_core::{BSGSOps, GLWENormalize, GLWEPolynomialEvaluation, GLWEZero, glwe_prepare_left, glwe_prepare_left_tmp_bytes};
 use poulpy_hal::{
@@ -11,9 +12,9 @@ use poulpy_hal::{
         VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxRsh, VecZnxRshTmpBytes,
     },
     layouts::{
-        Backend, CnvPVecLOwned, CnvPVecLToBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, Data, Module, PrepareHint,
-        Ring, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
-        VecZnxToBackendMut, VecZnxToBackendRef, ZnxWord, vec_znx_backend_ref_from_ref,
+        Backend, CnvPVecLOwned, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Data, Module, PrepareHint, Ring, ScratchArena,
+        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut,
+        VecZnxToBackendRef, ZnxWord, vec_znx_backend_ref_from_ref,
     },
 };
 
@@ -78,6 +79,7 @@ where
     let g_size = pt_size + 1;
     let acc_size = wide_size + g_size;
     let combination = BE::bytes_of_vec_znx(n, 1, g_size)
+        + BE::bytes_of_cnv_pvec_right(n, 1, g_size, PrepareHint::OneShot)
         + BE::bytes_of_vec_znx_dft(n, 1, acc_size)
         + BE::bytes_of_vec_znx_big(n, 1, acc_size)
         + module
@@ -488,36 +490,22 @@ where
 
     let wide_k = budget + delta + lambda;
     let mut acc_size = wide_k.div_ceil(kb);
-    let mut rights = Vec::with_capacity(operands.len());
-    for ((_, prepared, pt), &(b, off)) in operands.iter().zip(&params) {
+    for ((_, prepared, pt), (b, off)) in operands.iter().zip(params.iter_mut()) {
         // The sub-limb part `r` of the offset shifts the constant, the rest
         // offsets the convolution by `rho` limbs.
-        let off = off + b - budget;
-        let r = (kb - off % kb) % kb;
-        let rho = (off + r) / kb - 1;
-        let pt_bk = pt.to_backend_ref();
-        let (pt_n, pt_size) = (pt_bk.n().as_usize(), pt_bk.data().size());
-        let g_size = pt_size + usize::from(r != 0);
-        let mut right = module.cnv_pvec_right_alloc(pt_n, 1, g_size, PrepareHint::OneShot);
-        let pt_data = vec_znx_backend_ref_from_ref::<BE>(pt_bk.data());
-        if r == 0 {
-            module.cnv_prepare_right(&mut right.to_backend_mut(), &pt_data, &mut scratch.borrow());
-        } else {
-            scratch.scope(|scratch_local| {
-                let (mut g, mut scratch_local) = scratch_local.take_vec_znx_scratch(pt_n, 1, g_size);
-                module.vec_znx_rsh(kb, r, &mut g.to_backend_mut(), 0, &pt_data, 0, &mut scratch_local.borrow());
-                module.cnv_prepare_right(&mut right.to_backend_mut(), &g.to_backend_ref(), &mut scratch_local);
-            });
-        }
+        let total = *off + *b - budget;
+        let r = (kb - total % kb) % kb;
+        let rho = (total + r) / kb - 1;
+        let g_size = pt.to_backend_ref().data().size() + usize::from(r != 0);
         acc_size = acc_size.max((prepared.size() + g_size - 1).saturating_sub(rho));
-        rights.push((right, rho));
+        (*b, *off) = (r, rho);
     }
 
     let mut slots = seed.slots();
     let mut log_sparsity = res.log_sparsity();
-    for (t, _) in terms {
-        log_sparsity = log_sparsity.min(t.log_sparsity());
-        slots = slots.join(t.slots());
+    for (t, _, pt) in &operands {
+        log_sparsity = log_sparsity.min(t.log_sparsity()).min(t.log_n() - pt.log_n());
+        slots = slots.join(t.slots()).join(pt.slots());
     }
     let layout = GLWELayout {
         n: res.n(),
@@ -539,13 +527,28 @@ where
         let (mut acc, scratch_local) = scratch_local.take_vec_znx_dft_scratch(n, 1, acc_size);
         let (mut big, mut scratch_local) = scratch_local.take_vec_znx_big_scratch(n, 1, acc_size);
         for col in 0..res.rank().as_usize() + 1 {
-            for (t_idx, ((_, prepared, _), (right, rho))) in operands.iter().zip(&rights).enumerate() {
+            for (t_idx, ((_, prepared, pt), &(r, rho))) in operands.iter().zip(&params).enumerate() {
+                let pt_bk = pt.to_backend_ref();
+                let (pt_n, pt_size) = (pt_bk.n().as_usize(), pt_bk.data().size());
+                let g_size = pt_size + usize::from(r != 0);
+                let pt_data = vec_znx_backend_ref_from_ref::<BE>(pt_bk.data());
+                let (mut right, mut scratch_term) =
+                    scratch_local
+                        .borrow()
+                        .take_cnv_pvec_right_scratch(pt_n, 1, g_size, PrepareHint::OneShot);
+                if r == 0 {
+                    module.cnv_prepare_right(&mut right, &pt_data, &mut scratch_term);
+                } else {
+                    let (mut g, mut scratch_g) = scratch_term.borrow().take_vec_znx_scratch(pt_n, 1, g_size);
+                    module.vec_znx_rsh(kb, r, &mut g.to_backend_mut(), 0, &pt_data, 0, &mut scratch_g.borrow());
+                    module.cnv_prepare_right(&mut right, &g.to_backend_ref(), &mut scratch_g);
+                }
                 let mut acc_bk = acc.to_backend_mut();
                 let (a, b) = (prepared.to_backend_ref(), right.to_backend_ref());
                 if t_idx == 0 {
-                    module.cnv_apply_dft(*rho, &mut acc_bk, 0, &a, col, &b, 0, 1, &mut scratch_local.borrow());
+                    module.cnv_apply_dft(rho, &mut acc_bk, 0, &a, col, &b, 0, 1, &mut scratch_term);
                 } else {
-                    module.cnv_apply_dft_add(*rho, &mut acc_bk, 0, &a, col, &b, 0, 1, &mut scratch_local.borrow());
+                    module.cnv_apply_dft_add(rho, &mut acc_bk, 0, &a, col, &b, 0, 1, &mut scratch_term);
                 }
             }
             module.vec_znx_idft_apply(

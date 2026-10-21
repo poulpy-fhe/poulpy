@@ -74,6 +74,10 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
+        crate::reference::mul::ensure_full_layout(
+            "ckks_prepare_linear_transformation_baby_steps",
+            crate::GLWEPlaintextInfos::slot_layout(src),
+        )?;
         BE::ckks_prepare_linear_transformation_baby_steps_impl(self, babies, src, keys, scratch)
     }
 

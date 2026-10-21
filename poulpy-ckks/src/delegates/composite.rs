@@ -187,6 +187,7 @@ where
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
+        crate::reference::mul::ensure_full_layout("ckks_affine_pt_const_into", crate::GLWEPlaintextInfos::slot_layout(a))?;
         self.ckks_mul_pt_const_into(dst, a, affine_const, scale_coeff, scratch)?;
         self.ckks_add_pt_const_assign(dst, 0, affine_const, offset_coeff, scratch)
     }
@@ -203,6 +204,7 @@ where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
+        crate::reference::mul::ensure_full_layout("ckks_affine_pt_const_assign", crate::GLWEPlaintextInfos::slot_layout(dst))?;
         self.ckks_mul_pt_const_assign(dst, affine_const, scale_coeff, scratch)?;
         self.ckks_add_pt_const_assign(dst, 0, affine_const, offset_coeff, scratch)
     }
@@ -231,6 +233,10 @@ where
         S: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
+        crate::reference::mul::product_layout(
+            "ckks_affine_pt_vec_into",
+            &[a.slot_layout(), scale.slot_layout(), offset.slot_layout()],
+        )?;
         self.ckks_mul_pt_vec_into(dst, a, scale, scratch)?;
         self.ckks_add_pt_vec_assign(dst, offset, scratch)
     }
@@ -247,6 +253,10 @@ where
         S: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
+        crate::reference::mul::product_layout(
+            "ckks_affine_pt_vec_assign",
+            &[dst.slot_layout(), scale.slot_layout(), offset.slot_layout()],
+        )?;
         self.ckks_mul_pt_vec_assign(dst, scale, scratch)?;
         self.ckks_add_pt_vec_assign(dst, offset, scratch)
     }

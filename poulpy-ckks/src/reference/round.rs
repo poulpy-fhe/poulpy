@@ -18,7 +18,7 @@ pub trait CKKSRoundReference<BE: Backend> {
         Src: GLWEInfos,
     {
         let n = src.n().as_usize();
-        let shaped = BE::scratch_aligned(BE::bytes_of_vec_znx(n, 1, 1))
+        let shaped = 2 * BE::scratch_aligned(BE::bytes_of_vec_znx(n, 1, 1))
             + BE::scratch_aligned(BE::bytes_of_vec_znx(n, 1, 2))
             + 2 * BE::scratch_aligned(BE::bytes_of_vec_znx(n, 1, src.size().max(dst.size())))
             + self.vec_znx_normalize_tmp_bytes();
@@ -103,6 +103,7 @@ fn shaped_round<BE, M, Dst, Src>(
     let size = src.size().max(dst.size());
 
     let (mut low, scratch) = scratch.borrow().take_vec_znx_scratch(n, 1, 1);
+    let (mut h, scratch) = scratch.take_vec_znx_scratch(n, 1, 1);
     let (mut carry, scratch) = scratch.take_vec_znx_scratch(n, 1, 2);
     let (mut correction, scratch) = scratch.take_vec_znx_scratch(n, 1, size);
     let (mut sum, mut scratch) = scratch.take_vec_znx_scratch(n, 1, size);
@@ -118,13 +119,15 @@ fn shaped_round<BE, M, Dst, Src>(
             col,
             &mut scratch.borrow(),
         );
-        let c = low.at(0, 0).to_vec();
-        let gh = profile.shaped_multiple(stride, lambda, &c);
-        for (j, (&cj, &ghj)) in c.iter().zip(&gh).enumerate() {
-            let numerator = cj - ghj;
+        let c = low.at(0, 0);
+        profile.shaped_multiple(stride, lambda, c, h.at_mut(0, 0), carry.at_mut(0, 0));
+        for (kappa, &cj) in carry.at_mut(0, 0).iter_mut().zip(c) {
+            let numerator = cj - *kappa;
             debug_assert_eq!(numerator & mask as i64, 0, "shaped numerator must be divisible by 2^λ");
-            carry.at_mut(0, 0)[j] = numerator >> lambda;
-            carry.at_mut(0, 1)[j] = -cj;
+            *kappa = numerator >> lambda;
+        }
+        for (neg, &cj) in carry.at_mut(0, 1).iter_mut().zip(c) {
+            *neg = -cj;
         }
         // `κ·2^-λ − c·2^-2λ` at radix `λ`, scaled to `κ·2^-k − c·2^-(k+λ)`.
         module.vec_znx_normalize(

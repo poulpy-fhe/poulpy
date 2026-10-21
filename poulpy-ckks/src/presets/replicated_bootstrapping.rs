@@ -8,7 +8,8 @@
 //!
 //! - `n`: ring-degree exponent, which with the secret weights fixes the modulus bounds;
 //! - `d`: leveled scale exponent of the inputs and the outputs;
-//! - `k`: output width in bits. The usable budget is `output_k - input_k`;
+//! - `k`: output width in bits, the levels at `2^d` above the bootstrapping
+//!   input width [`ReplicatedBootstrapPlan::k_in`];
 //! - `p`: guaranteed output precision in bits on the data slots.
 //!
 //! The batch size `k`, a power of two with `R | k`, and the shaping unit are the

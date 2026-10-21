@@ -207,6 +207,9 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
         if galois.iter().any(|&g| g & 1 == 0) {
             return invalid("a Galois element is even");
         }
+        if a.iter().any(|ct| ct.slot_layout() != SlotLayout::Full) || b.iter().any(|pt| pt.slot_layout() != SlotLayout::Full) {
+            return invalid("prepared dot products round plainly, which a replicated slot layout forbids");
+        }
         if b.iter().any(|pt| pt.rank().as_usize() != 0 || pt.base2k() != dst.base2k()) {
             return invalid("every b[t] must be a plaintext at the base2k of dst");
         }
@@ -237,6 +240,7 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
         dst.set_log_delta(log_delta);
         dst.set_log_sparsity(log_sparsity);
         dst.set_slots(slots);
+        dst.set_slot_layout(SlotLayout::Full);
         self.glwe_mul_prepared_plain_sum(cnv_offset, dst, a, a0.size(), b, b0.size(), galois, base2k, scratch);
         Ok(())
     }

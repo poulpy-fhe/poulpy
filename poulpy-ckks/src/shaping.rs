@@ -22,13 +22,16 @@ use crate::{Quad, numerics::CKKSFloat};
 /// Largest [`ShapingProfile::max_pass_bits`], reached by `U = ±1`.
 pub const MAX_PASS_BITS: usize = 62;
 
+/// Largest number of coefficients of a shaping polynomial, `2R`.
+const MAX_COEFFS: usize = 2 << ReplicatedLayout::MAX_LOG_R;
+
 /// Exact data of a shaping polynomial `U`, and its slot-class profile.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShapingProfile {
     log_r: usize,
-    coeffs: Vec<i16>,
-    shaping: Vec<u64>,
-    inverse: Vec<u64>,
+    coeffs: [i16; MAX_COEFFS],
+    shaping: [u64; MAX_COEFFS],
+    inverse: OnceLock<[u64; MAX_COEFFS]>,
     log_magnitudes: OnceLock<Vec<f64>>,
     l1: u64,
 }
@@ -39,15 +42,23 @@ impl ShapingProfile {
     }
 
     fn from_coeffs(log_r: usize, coeffs: &[i16]) -> Self {
-        let wide: Vec<u64> = coeffs.iter().map(|&c| c as i64 as u64).collect();
+        let (mut padded, mut shaping) = ([0; MAX_COEFFS], [0; MAX_COEFFS]);
+        for (i, &c) in coeffs.iter().enumerate() {
+            padded[i] = c;
+            shaping[i] = c as i64 as u64;
+        }
         Self {
             log_r,
-            coeffs: coeffs.to_vec(),
-            inverse: inverse_mod_2_64(&wide),
-            shaping: wide,
+            coeffs: padded,
+            shaping,
+            inverse: OnceLock::new(),
             log_magnitudes: OnceLock::new(),
             l1: coeffs.iter().map(|&c| c.unsigned_abs() as u64).sum(),
         }
+    }
+
+    fn len(&self) -> usize {
+        2 << self.log_r
     }
 
     /// Base-2 logarithm of the slot period `R`.
@@ -57,14 +68,14 @@ impl ShapingProfile {
 
     /// The `2R` coefficients of `U^(-1) mod 2^64`.
     pub fn inverse(&self) -> &[u64] {
-        &self.inverse
+        &self.inverse.get_or_init(|| inverse_mod_2_64(&self.shaping[..self.len()]))[..self.len()]
     }
 
     /// `log2 |U(ω^(5^j))|` for each slot class `j < R`, the data class first.
     pub fn class_log_magnitudes(&self) -> &[f64] {
         self.log_magnitudes.get_or_init(|| {
             (0..1 << self.log_r)
-                .map(|j| log2_abs_at_class(&self.coeffs, self.log_r, j))
+                .map(|j| log2_abs_at_class(&self.coeffs[..self.len()], self.log_r, j))
                 .collect()
         })
     }
@@ -98,23 +109,21 @@ impl ShapingProfile {
         (log_delta + w).min(self.max_pass_bits())
     }
 
-    /// `g·h` for `h = [U^(-1)·c]_(2^λ)`, centered, where `c` is read modulo
-    /// `2^64` and `Y = X^stride`, so that `c − g·h` is divisible by `2^λ`.
-    /// Exact for `λ <= max_pass_bits`.
-    pub(crate) fn shaped_multiple(&self, stride: usize, lambda: usize, c: &[i64]) -> Vec<i64> {
+    /// Writes `g·h` into `gh` for `h = [U^(-1)·c]_(2^λ)`, centered, where `c`
+    /// is read modulo `2^64` and `Y = X^stride`, so that `c − g·h` is divisible
+    /// by `2^λ`; `h` is a buffer as long as `c`. Exact for `λ <= max_pass_bits`.
+    pub(crate) fn shaped_multiple(&self, stride: usize, lambda: usize, c: &[i64], h: &mut [i64], gh: &mut [i64]) {
         let mask = u64::MAX >> (64 - lambda);
-        let h: Vec<i64> = negacyclic_sparse(&self.inverse, stride, c)
-            .into_iter()
-            .map(|x| {
-                let reduced = x as u64 & mask;
-                if reduced > mask >> 1 {
-                    reduced as i64 - (1i64 << lambda)
-                } else {
-                    reduced as i64
-                }
-            })
-            .collect();
-        negacyclic_sparse(&self.shaping, stride, &h)
+        negacyclic_sparse(self.inverse(), stride, c, h);
+        for x in h.iter_mut() {
+            let reduced = *x as u64 & mask;
+            *x = if reduced > mask >> 1 {
+                reduced as i64 - (1i64 << lambda)
+            } else {
+                reduced as i64
+            };
+        }
+        negacyclic_sparse(&self.shaping[..self.len()], stride, h, gh);
     }
 }
 
@@ -236,27 +245,27 @@ fn log2_abs_at_class(coeffs: &[i16], log_r: usize, j: usize) -> f64 {
         .unwrap()
 }
 
-/// `Σ_t coeffs[t] · X^(t·stride) · x` in `(Z/2^64)[X]/(X^N + 1)`.
-fn negacyclic_sparse(coeffs: &[u64], stride: usize, x: &[i64]) -> Vec<i64> {
+/// Writes `Σ_t coeffs[t] · X^(t·stride) · x` in `(Z/2^64)[X]/(X^N + 1)` into `out`.
+fn negacyclic_sparse(coeffs: &[u64], stride: usize, x: &[i64], out: &mut [i64]) {
     let n = x.len();
-    let mut out = vec![0u64; n];
+    out.fill(0);
     for (t, &coeff) in coeffs.iter().enumerate().filter(|&(_, &c)| c != 0) {
+        let coeff = coeff as i64;
         let shift = t * stride;
         let (wrapped, direct) = out.split_at_mut(shift);
         for (o, &x) in direct.iter_mut().zip(&x[..n - shift]) {
-            *o = o.wrapping_add(coeff.wrapping_mul(x as u64));
+            *o = o.wrapping_add(coeff.wrapping_mul(x));
         }
         for (o, &x) in wrapped.iter_mut().zip(&x[n - shift..]) {
-            *o = o.wrapping_sub(coeff.wrapping_mul(x as u64));
+            *o = o.wrapping_sub(coeff.wrapping_mul(x));
         }
     }
-    out.into_iter().map(|x| x as i64).collect()
 }
 
-/// Product in `(Z/2^64)[Y]/(Y^m + 1)`.
-fn negacyclic_mul(a: &[u64], b: &[u64]) -> Vec<u64> {
+/// Product in `(Z/2^64)[Y]/(Y^m + 1)`, for `m <= MAX_COEFFS`.
+fn negacyclic_mul(a: &[u64], b: &[u64]) -> [u64; MAX_COEFFS] {
     let m = a.len();
-    let mut out = vec![0u64; m];
+    let mut out = [0u64; MAX_COEFFS];
     for (i, &x) in a.iter().enumerate() {
         for (j, &y) in b.iter().enumerate() {
             let p = x.wrapping_mul(y);
@@ -274,19 +283,19 @@ fn negacyclic_mul(a: &[u64], b: &[u64]) -> Vec<u64> {
 /// Inverse in `(Z/2^64)[Y]/(Y^m + 1)` of `u` with `u(1)` odd, by Newton's
 /// iteration `v ← v(2 - uv)` from `v = 1`. Since `(Y+1)^m ∈ 2Z[Y]/(Y^m + 1)`,
 /// the error `1 - uv` reaches zero after `log2(64m)` squarings.
-fn inverse_mod_2_64(u: &[u64]) -> Vec<u64> {
+fn inverse_mod_2_64(u: &[u64]) -> [u64; MAX_COEFFS] {
     let m = u.len();
-    let mut one = vec![0u64; m];
+    let mut one = [0u64; MAX_COEFFS];
     one[0] = 1;
-    let mut v = one.clone();
+    let mut v = one;
     loop {
-        let uv = negacyclic_mul(u, &v);
+        let uv = negacyclic_mul(u, &v[..m]);
         if uv == one {
             return v;
         }
-        let mut correction: Vec<u64> = uv.iter().map(|x| x.wrapping_neg()).collect();
+        let mut correction = uv.map(u64::wrapping_neg);
         correction[0] = correction[0].wrapping_add(2);
-        v = negacyclic_mul(&v, &correction);
+        v = negacyclic_mul(&v[..m], &correction[..m]);
     }
 }
 
@@ -328,6 +337,22 @@ mod tests {
         );
     }
 
+    fn negacyclic_mul_dense(a: &[u64], b: &[u64]) -> Vec<u64> {
+        let m = a.len();
+        let mut out = vec![0u64; m];
+        for (i, &x) in a.iter().enumerate() {
+            for (j, &y) in b.iter().enumerate() {
+                let p = x.wrapping_mul(y);
+                if i + j < m {
+                    out[i + j] = out[i + j].wrapping_add(p);
+                } else {
+                    out[i + j - m] = out[i + j - m].wrapping_sub(p);
+                }
+            }
+        }
+        out
+    }
+
     #[test]
     fn sparse_product_matches_dense() {
         let n = 64;
@@ -344,8 +369,10 @@ mod tests {
             for (t, &c) in coeffs.iter().enumerate() {
                 dense[t * stride] = c;
             }
-            let expected: Vec<i64> = negacyclic_mul(&dense, &xu).into_iter().map(|v| v as i64).collect();
-            assert_eq!(negacyclic_sparse(&coeffs, stride, &x), expected);
+            let expected: Vec<i64> = negacyclic_mul_dense(&dense, &xu).into_iter().map(|v| v as i64).collect();
+            let mut got = vec![0; n];
+            negacyclic_sparse(&coeffs, stride, &x, &mut got);
+            assert_eq!(got, expected);
         }
     }
 

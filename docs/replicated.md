@@ -93,5 +93,6 @@ module.ckks_replicated_bootstrap_into(&mut output, &input, &ctx, &keys, &mut scr
 
 ## Validation
 
-The CKKS test suite checks every shaped operation against the full layout on the data slots (`test_replicated_*`), and the bootstrapping on a small ring.
+The CKKS test suite checks every shaped operation against the full layout on the data slots (`test_replicated_*`), that operations which would round plainly reject a replicated input, and the bootstrapping on a small ring.
+`test_replicated_parity` checks that the shaped operations give the same digits on every pair of CPU backends.
 The ignored test `replicated_bootstrapping_presets_meet_precision`, registered on the NTT backends, runs every preset at both batch sizes and asserts the advertised precision; the benchmark `bench_ckks_replicated_bootstrapping` of `poulpy-bench` runs the same configurations.

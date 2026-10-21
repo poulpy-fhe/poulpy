@@ -555,6 +555,7 @@ impl<BE: Backend, F: CKKSEncodingScalar> ReplicatedBootstrapping<BE, F> {
         Module<BE>: ReplicatedTransformModule<BE, F>,
     {
         let layout = plan.layout;
+        check_period(module, &layout)?;
         let (k, r) = (1usize << layout.log_k(), 1usize << layout.log_r());
         ensure!(r <= k, "bootstrapping needs the period {r} to divide the batch size {k}");
         let half = module.ckks_max_slots();

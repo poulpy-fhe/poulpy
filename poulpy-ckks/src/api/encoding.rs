@@ -115,6 +115,13 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
                 re.len(),
                 im.len()
             );
+            ckks_ensure!(
+                (2usize << layout.log_k()) << layout.log_r() <= pt.n().as_usize(),
+                "{} values of period {} need more than the {} slots of the plaintext",
+                1usize << layout.log_k(),
+                1usize << layout.log_r(),
+                pt.n().as_usize() / 2
+            );
             let (re, im) = (scatter_data_slots(&layout, re), scatter_data_slots(&layout, im));
             return self.ckks_encode_reim_slots_into(pt, &re, &im, scratch);
         }
@@ -167,6 +174,13 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
                 1usize << layout.log_k(),
                 re.len(),
                 im.len()
+            );
+            ckks_ensure!(
+                (2usize << layout.log_k()) << layout.log_r() <= pt.n().as_usize(),
+                "{} values of period {} need more than the {} slots of the plaintext",
+                1usize << layout.log_k(),
+                1usize << layout.log_r(),
+                pt.n().as_usize() / 2
             );
             let slots = re.len() << layout.log_r();
             let (mut re_slots, mut im_slots) = (vec![F::zero(); slots], vec![F::zero(); slots]);

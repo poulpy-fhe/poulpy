@@ -375,9 +375,10 @@ where
         + GLWEKeyswitch<BE>
         + GLWETrace<BE>,
 {
-    fn ckks_replicated_bootstrap_tmp_bytes<C, F, A, T, S>(
+    fn ckks_replicated_bootstrap_tmp_bytes<C, I, F, A, T, S>(
         &self,
         ct_out: &C,
+        ct_in: &I,
         ctx: &ReplicatedBootstrapping<BE, F>,
         atk_infos: &A,
         tsk_infos: &T,
@@ -385,6 +386,7 @@ where
     ) -> usize
     where
         C: CKKSCtBounds,
+        I: CKKSCtBounds,
         A: GGLWEInfos,
         T: GGLWEInfos,
         S: GGLWEInfos,
@@ -440,7 +442,9 @@ where
             .max(self.ckks_mul_i_tmp_bytes(raised.size()))
             .max(self.ckks_add_tmp_bytes(raised.size()))
             .max(self.ckks_round_tmp_bytes(&ckks(ct_out.glwe_layout(), replicated), &boot));
-        let front = 2 * ct_bytes::<BE>(&input) + 3 * ct_bytes::<BE>(&low) + wide(low).max(mod_up);
+        let lift = plan.log_delta.saturating_sub(ct_in.log_delta());
+        let narrow = at(ct_in.k().as_usize() + lift);
+        let front = ct_bytes::<BE>(&input) + ct_bytes::<BE>(&narrow) + 3 * ct_bytes::<BE>(&low) + wide(low).max(mod_up);
         let front = front.max(ct_bytes::<BE>(&input) + ct_bytes::<BE>(&low) + wide(low));
         let back = 3 * ct_bytes::<BE>(&raised) + (4 * ct_bytes::<BE>(&high) + wide(high)).max(eval_mod);
         ct_bytes::<BE>(&raised) + front.max(back)
@@ -519,15 +523,8 @@ where
             apply_transform(self, &mut acc, &x, &ctx.s2c, rotation_keys, &mut scratch)?;
             coeffs.set_k((acc.log_budget() + plan.log_delta).into());
             self.ckks_round_into(&mut coeffs, &acc, &mut scratch)?;
-            let ratio = plan.eval_mod.log_msg_ratio;
-            let lift = coeffs
-                .log_budget()
-                .checked_sub(ratio)
-                .ok_or_else(|| invalid(OP, "the coefficient message has less budget than the EvalMod message ratio"))?;
-            if lift > 0 {
-                let log_delta = coeffs.log_delta();
-                self.ckks_mul_pow2_assign(&mut coeffs, lift, &mut scratch)?;
-                coeffs.set_scale(Scale::Log(log_delta + lift));
+            if coeffs.log_budget() != plan.eval_mod.log_msg_ratio {
+                return Err(invalid(OP, "the coefficient message does not have the EvalMod message ratio"));
             }
 
             // 4. ModUp: `I·q_b + Δ_b·m` at the scale `q_b`, lifted.

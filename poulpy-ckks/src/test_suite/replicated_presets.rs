@@ -129,6 +129,7 @@ where
         let encapsulation = keys_layout.encapsulation.map(|e| (e.dense_to_sparse, e.sparse_to_dense));
         let bytes = module.ckks_replicated_bootstrap_tmp_bytes(
             &output,
+            &input,
             &ctx,
             &keys_layout.automorphism_key,
             &keys_layout.tensor_key,

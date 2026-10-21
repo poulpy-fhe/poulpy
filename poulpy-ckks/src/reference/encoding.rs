@@ -254,7 +254,8 @@ where
 /// Quantizes `coeffs` at `log_delta + λ` bits, then divides by `2^λ` with
 /// shaped rounding, so that the quantization error is a multiple of the
 /// layout's shaping polynomial up to an unshaped `2^-λ` remainder. `λ` is the
-/// largest exact pass that keeps `log_delta + log_budget + λ` within `i128`.
+/// largest exact pass that keeps `log_delta + log_budget + λ` within `i128`;
+/// a plaintext that leaves none is rejected.
 pub(crate) fn shaped_quantize<F>(
     coeffs: &[F],
     layout: &ReplicatedLayout,
@@ -277,6 +278,11 @@ where
     );
     let profile = ShapingProfile::new(layout);
     let lambda = profile.max_pass_bits().min(126usize.saturating_sub(log_delta + log_budget));
+    ensure!(
+        lambda > 0,
+        "a replicated plaintext of {} torus bits leaves no shaping pass within i128",
+        log_delta + log_budget
+    );
     let quantized: Vec<i128> = coeffs
         .iter()
         .map(|&x| {
@@ -284,11 +290,9 @@ where
                 .context("CKKS coefficient is not representable as an i128 at the plaintext scale")
         })
         .collect::<Result<_>>()?;
-    if lambda == 0 {
-        return Ok(quantized);
-    }
     let low: Vec<i64> = quantized.iter().map(|&q| q as i64).collect();
-    let gh = profile.shaped_multiple(coeffs.len() / period, lambda, &low);
+    let (mut h, mut gh) = (vec![0i64; low.len()], vec![0i64; low.len()]);
+    profile.shaped_multiple(coeffs.len() / period, lambda, &low, &mut h, &mut gh);
     Ok(quantized.iter().zip(&gh).map(|(&q, &m)| (q - m as i128) >> lambda).collect())
 }
 

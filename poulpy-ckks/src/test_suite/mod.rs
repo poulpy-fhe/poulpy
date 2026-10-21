@@ -325,6 +325,10 @@ macro_rules! ckks_backend_rank2_test_suite {
                 $crate::test_suite::replicated::test_replicated_layouts_do_not_mix
             );
             run_test_result!(
+                replicated_plain_rounding_is_rejected,
+                $crate::test_suite::replicated::test_replicated_plain_rounding_is_rejected
+            );
+            run_test_result!(
                 replicated_automorphisms_are_shaped,
                 $crate::test_suite::replicated::test_replicated_automorphisms_are_shaped
             );
@@ -683,6 +687,10 @@ macro_rules! ckks_backend_test_suite {
             run_test_result!(
                 replicated_layouts_do_not_mix,
                 $crate::test_suite::replicated::test_replicated_layouts_do_not_mix
+            );
+            run_test_result!(
+                replicated_plain_rounding_is_rejected,
+                $crate::test_suite::replicated::test_replicated_plain_rounding_is_rejected
             );
             run_test_result!(
                 replicated_polynomials_are_shaped,

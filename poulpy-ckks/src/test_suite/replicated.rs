@@ -10,6 +10,7 @@
 //! | [`test_replicated_encoding_rejects_batch_size`] | a batch of the wrong size |
 //! | [`test_replicated_products_are_shaped`] | chains of every ct × ct and ct × pt product keep the data slots far above CKKS |
 //! | [`test_replicated_layouts_do_not_mix`] | products and sums of different layouts, and constant sums |
+//! | [`test_replicated_plain_rounding_is_rejected`] | operations that round plainly, and layouts or scales without a shaped encoding |
 //! | [`test_replicated_eval_mod_is_shaped`] | EvalMod with masked constants and a shaped last squaring keeps the message far above CKKS |
 //! | [`test_replicated_polynomials_are_shaped`] | monomial, Chebyshev and complex polynomials keep the data slots far above CKKS |
 //! | [`test_replicated_automorphisms_are_shaped`] | rotations and conjugation keep the data slots far above CKKS |
@@ -22,12 +23,12 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use poulpy_core::{
-    GLWETrace,
-    layouts::{Base2K, GLWEToBackendRef, LWEInfos, TorusPrecision, prepared::GLWESecretPrepared},
+    GLWEMulPreparedPlainSum, GLWETrace,
+    layouts::{Base2K, GLWEToBackendRef, LWEInfos, LinearTransformationBabySteps, TorusPrecision, prepared::GLWESecretPrepared},
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBytesBackend, Module, ScratchOwned, Standard, ZnxView},
+    layouts::{Backend, HostBytesBackend, Module, PrepareHint, ScratchOwned, Standard, ZnxView},
     source::Source,
 };
 
@@ -38,9 +39,9 @@ use super::helpers::{
 use crate::{
     CKKSInfos, CoeffsMeta, GLWEPlaintextInfos, GLWEPlaintextMeta, ReplicatedLayout, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{
-        CKKSAddOps, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps,
-        CKKSEncryptOps, CKKSEvalModOps, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, CKKSPolynomialEvaluationOps,
-        CKKSReplicatedBootstrapOps, CKKSReplicatedOps, CKKSRotateOps,
+        CKKSAddOps, CKKSAffineOps, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSDecryptOps, CKKSDotProductOps,
+        CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSEvalModOps, CKKSLinearTransformationOps, CKKSModuleInfos,
+        CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSReplicatedBootstrapOps, CKKSReplicatedOps, CKKSRotateOps,
     },
     delegates::replicated::{wide_gather_trace, wide_onto_replicated},
     layouts::{
@@ -521,6 +522,99 @@ where
     );
     assert!(module.ckks_add_pt_const_into(&mut out, &shaped, 0, &cst, 0, s).is_err());
     module.ckks_mul_pt_const_into(&mut out, &shaped, &cst, 0, s)?;
+    Ok(())
+}
+
+pub fn test_replicated_plain_rounding_is_rejected<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) -> Result<()>
+where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSAffineOps<BE>
+        + CKKSDotProductOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + GLWEMulPreparedPlainSum<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let values = unit_batch::<F>(1 << LOG_K, 0);
+    let k = 3 * LOG_DELTA;
+    let shaped = encrypt_batch(
+        &params,
+        module,
+        &sk,
+        SlotLayout::Replicated(layout()),
+        (&values.0, &values.1),
+        k,
+        1,
+    )?;
+    let mut out = alloc_ct(&params, module, k);
+    let cst = ckks_pt_cst_full::<BE, F>(
+        host_module,
+        module,
+        params.base2k.into(),
+        PT_PREC,
+        params.n / 2,
+        Some(CONSTANT),
+        None,
+    );
+    assert!(
+        module
+            .ckks_affine_pt_const_into(&mut out, &shaped, &cst, 0, 0, &mut scratch.borrow())
+            .is_err()
+    );
+
+    let mut pt = plaintext(&params, module, SlotLayout::Full, values.0.len());
+    encoded(module, &mut pt, &values.0, &values.1)?;
+    let left = module.ckks_prepare_left(&shaped, PrepareHint::OneShot, &mut scratch.borrow())?;
+    let right = module.ckks_prepare_right(&pt, PrepareHint::OneShot, &mut scratch.borrow())?;
+    assert!(
+        module
+            .ckks_dot_product_prepared_pt(&mut out, &[&left], &[&right], &[1], &mut scratch.borrow())
+            .is_err()
+    );
+
+    let gal = module.ckks_galois_element(1);
+    let atks = HashMap::from([(gal, gen_atk(&params, module, gal, &sk_raw, &mut scratch.borrow()))]);
+    let mut babies = LinearTransformationBabySteps::alloc(module, &[1], &shaped);
+    assert!(
+        module
+            .ckks_prepare_linear_transformation_baby_steps(&mut babies, &shaped, &atks, &mut scratch.borrow())
+            .is_err()
+    );
+
+    // No shaping pass fits `i128` above 126 torus bits.
+    let mut wide = module.ckks_pt_vec_alloc(
+        slots_of(module, SlotLayout::Replicated(layout()), values.0.len()),
+        Base2K(params.base2k as u32),
+        TorusPrecision(130),
+    );
+    wide.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(100),
+        slots: SlotsKind::Complex,
+        log_sparsity: 0,
+        slot_layout: SlotLayout::Replicated(layout()),
+    });
+    assert!(encoded(module, &mut wide, &values.0, &values.1).is_err());
+
+    // `N/2` values of period `R` exceed the slots of the ring.
+    let log_n = params.n.ilog2() as u8;
+    let oversized = ReplicatedLayout::new(log_n - 1, layout().log_r() as u8, layout().w() as u8, layout().shaping())?;
+    let mut big = plaintext(&params, module, SlotLayout::Full, params.n / 2);
+    big.set_meta(GLWEPlaintextMeta {
+        slot_layout: SlotLayout::Replicated(oversized),
+        ..big.meta()
+    });
+    let many = unit_batch::<F>(params.n / 2, 0);
+    assert!(encoded(module, &mut big, &many.0, &many.1).is_err());
     Ok(())
 }
 
@@ -1286,6 +1380,7 @@ where
     let encapsulation = key_layouts.encapsulation.map(|e| (e.dense_to_sparse, e.sparse_to_dense));
     let mut boot_scratch = ScratchOwned::<BE>::alloc(module.ckks_replicated_bootstrap_tmp_bytes(
         &alloc_ct(&params, module, k_out),
+        &input,
         &ctx,
         &key_layouts.automorphism_key,
         &key_layouts.tensor_key,
@@ -1297,7 +1392,6 @@ where
     assert_eq!((out.log_delta(), out.k().as_usize()), (plan.level_log_delta, k_out));
     let got = decrypt_batch::<BE, F>(&params, module, &sk, &out, len);
     let bits = precision((&got.0, &got.1), (&values.0, &values.1));
-    eprintln!("BOOT {bits:.2}");
     assert!(bits >= 19.0, "replicated bootstrapping: {bits:.2} bits");
     Ok(())
 }
