@@ -375,6 +375,9 @@ Leveled operations are invoked through traits implemented on
 | `CKKSBootstrappingOps` | bootstrapping pipeline (mod-raise, homomorphic DFT, `EvalMod`) |
 | `CKKSPaCoOps` | PaCo bootstrapping (see [`docs/paco.md`](../docs/paco.md)) |
 | `CKKSShipOps` | SHIP half bootstrapping (see [`docs/ship.md`](../docs/ship.md)) |
+| `CKKSRoundOps` | rounding to a smaller width, with shaping on a replicated layout |
+| `CKKSReplicatedOps` | conversions between CKKS and a replicated slot layout (see [`docs/replicated.md`](../docs/replicated.md)) |
+| `CKKSReplicatedBootstrapOps` | bootstrapping of a replicated slot layout (see [`docs/replicated.md`](../docs/replicated.md)) |
 | `CKKSAllOpsTmpBytes` | scratch size queries for all operations |
 
 For example, ciphertext addition uses `CKKSAddOps<BE>` and is called through
@@ -419,6 +422,7 @@ The core leveled evaluator building blocks are now implemented:
 - bootstrapping (mod-raise, homomorphic DFT, and `EvalMod`)
 - PaCo bootstrapping (partial CoeffsToSlots, without ModUp or `EvalMod`; see [`docs/paco.md`](../docs/paco.md))
 - SHIP half bootstrapping (mux blind rotations over a sparse secret, without ModUp or `EvalMod`; see [`docs/ship.md`](../docs/ship.md))
+- small batches in a replicated slot layout with shaped rounding, with conversions and bootstrapping ([ePrint 2026/2513](https://eprint.iacr.org/2026/2513); see [`docs/replicated.md`](../docs/replicated.md))
 
 Higher-level functionality on top of that foundation:
 

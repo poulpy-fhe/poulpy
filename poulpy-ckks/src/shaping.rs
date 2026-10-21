@@ -1,4 +1,5 @@
-//! Shaping polynomials of the [`ReplicatedLayout`].
+//! Shaping polynomials of the [`ReplicatedLayout`] of
+//! [ePrint 2026/2513](https://eprint.iacr.org/2026/2513).
 //!
 //! A replicated layout of period `R = 2^log_r` shapes errors by
 //! `g = U(X^(N/(2R)))` with `U ∈ Z[Y]/(Y^(2R)+1)`. Slot `t` sees `g` at

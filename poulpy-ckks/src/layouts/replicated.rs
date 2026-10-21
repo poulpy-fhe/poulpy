@@ -1,4 +1,6 @@
-//! Linear maps, conversions and bootstrapping of a replicated slot layout.
+//! Linear maps, conversions and bootstrapping of a replicated slot layout, the
+//! small-batch scheme of [ePrint 2026/2513](https://eprint.iacr.org/2026/2513)
+//! (see `docs/replicated.md`).
 
 use std::collections::{BTreeMap, HashMap};
 
