@@ -605,6 +605,36 @@ where
     });
     assert!(encoded(module, &mut wide, &values.0, &values.1).is_err());
 
+    // A sum at two scales would drop the finer operand's bits plainly.
+    let mut coarse = encrypt_batch(
+        &params,
+        module,
+        &sk,
+        SlotLayout::Replicated(layout()),
+        (&values.0, &values.1),
+        k,
+        2,
+    )?;
+    coarse.set_log_delta(LOG_DELTA - 4);
+    assert!(
+        module
+            .ckks_add_into(&mut out, &shaped, &coarse, &mut scratch.borrow())
+            .is_err()
+    );
+    let mut fine = plaintext(&params, module, SlotLayout::Replicated(layout()), values.0.len());
+    encoded(module, &mut fine, &values.0, &values.1)?;
+    let mut acc = encrypt_batch(
+        &params,
+        module,
+        &sk,
+        SlotLayout::Replicated(layout()),
+        (&values.0, &values.1),
+        k,
+        3,
+    )?;
+    acc.set_log_delta(LOG_DELTA - 4);
+    assert!(module.ckks_add_pt_vec_assign(&mut acc, &fine, &mut scratch.borrow()).is_err());
+
     // `N/2` values of period `R` exceed the slots of the ring.
     let log_n = params.n.ilog2() as u8;
     let oversized = ReplicatedLayout::new(log_n - 1, layout().log_r() as u8, layout().w() as u8, layout().shaping())?;
@@ -913,6 +943,24 @@ where
     let want_re: Vec<F> = want_re.iter().map(|&x| x + F::one()).collect();
     let bits = precision((&got.0, &got.1), (&want_re, &want_im));
     assert!(bits >= 40.0, "masked one: {bits:.2} bits");
+
+    // The masked one of a period whose `2R` coefficients lie below the
+    // backend's smallest plaintext.
+    let small = ReplicatedLayout::new(LOG_K, 1, 24, &[1, -1, 0, 1])?;
+    let mut ct = encrypt_batch(
+        &params,
+        module,
+        &sk,
+        SlotLayout::Replicated(small),
+        (&values.0, &values.1),
+        3 * LOG_DELTA,
+        5,
+    )?;
+    module.ckks_add_one_assign(&mut ct, &mut add_scratch.borrow())?;
+    let got = decrypt_batch::<BE, F>(&params, module, &sk, &ct, len);
+    let want_re: Vec<F> = values.0.iter().map(|&x| x + F::one()).collect();
+    let bits = precision((&got.0, &got.1), (&want_re, &values.1));
+    assert!(bits >= LOG_DELTA as f64 - 4.0, "masked one of period 2: {bits:.2} bits");
     Ok(())
 }
 

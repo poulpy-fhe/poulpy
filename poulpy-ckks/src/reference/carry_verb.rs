@@ -65,13 +65,29 @@ pub(crate) fn take_one_pt<'a, BE: Backend + 'a>(
                 &mut h[..2 * r],
                 &mut gh[..2 * r],
             )?;
+            // Embedded at the backend's smallest plaintext degree when `2R` is below it.
+            let n = (2 * r).max(BE::MIN_DEGREE);
+            if n > MAX_ONE_COEFFS {
+                return Err(crate::CKKSCompositionError::InvalidOperand {
+                    op: "ckks_one",
+                    reason: format!("the masked one needs a plaintext of degree {n} > {MAX_ONE_COEFFS}"),
+                }
+                .into());
+            }
+            let stride = n / (2 * r);
+            if stride > 1 {
+                for j in (1..2 * r).rev() {
+                    data[j * stride] = data[j];
+                    data[j] = 0;
+                }
+            }
             let meta = GLWEPlaintextMeta {
                 scale: Scale::Log(log_delta),
                 slots: SlotsKind::Real,
                 log_sparsity: 0,
                 slot_layout,
             };
-            (2 * r, log_delta + 1, meta)
+            (n, log_delta + 1, meta)
         }
     };
     let layout = GLWEPlaintextLayout {
@@ -186,6 +202,12 @@ macro_rules! ckks_carry_verb_reference {
                         concat!("ckks_", stringify!($verb)),
                         &[a.slot_layout(), b.slot_layout()],
                     )?;
+                    $crate::reference::carry_verb::reject_replicated_scales(
+                        concat!("ckks_", stringify!($verb)),
+                        slot_layout,
+                        a.log_delta(),
+                        b.log_delta(),
+                    )?;
                     let log_budget =
                         checked_log_budget_sub(stringify!($verb), a.log_budget().min(b.log_budget()), offset)?;
 
@@ -223,9 +245,15 @@ macro_rules! ckks_carry_verb_reference {
                     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     A: GLWEToBackendRef<BE> + CKKSInfos,
                 {
-                    $crate::reference::mul::product_layout(
+                    let slot_layout = $crate::reference::mul::product_layout(
                         concat!("ckks_", stringify!($verb), "_assign"),
                         &[dst.slot_layout(), a.slot_layout()],
+                    )?;
+                    $crate::reference::carry_verb::reject_replicated_scales(
+                        concat!("ckks_", stringify!($verb), "_assign"),
+                        slot_layout,
+                        dst.log_delta(),
+                        a.log_delta(),
                     )?;
                     let dst_log_budget = dst.log_budget();
 
@@ -280,10 +308,18 @@ macro_rules! ckks_carry_verb_reference {
                     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
-                    $crate::reference::mul::product_layout(
+                    let slot_layout = $crate::reference::mul::product_layout(
                         concat!("ckks_", stringify!($verb), "_pt_vec_assign"),
                         &[dst.slot_layout(), pt.slot_layout()],
                     )?;
+                    if pt.log_delta() > dst.log_delta() {
+                        $crate::reference::carry_verb::reject_replicated_scales(
+                            concat!("ckks_", stringify!($verb), "_pt_vec_assign"),
+                            slot_layout,
+                            dst.log_delta(),
+                            pt.log_delta(),
+                        )?;
+                    }
                     CKKSPlaintextReference::[<ckks_ $verb _pt_vec_into_reference>](self, dst, pt, scratch)?;
                     dst.set_log_sparsity(dst.log_sparsity().min(dst.log_n() - pt.log_n()));
                     dst.set_slots(dst.slots().join(pt.slots()));
@@ -345,6 +381,26 @@ pub(crate) use ckks_carry_verb_reference;
 
 /// A constant lands on every slot, guards included, so a replicated layout
 /// takes constants as replicated plaintexts.
+/// Rejects a sum of a replicated layout at two scales, which would drop the
+/// finer operand's extra bits with plain rounding.
+pub(crate) fn reject_replicated_scales(
+    op: &'static str,
+    slot_layout: crate::SlotLayout,
+    log_delta_a: usize,
+    log_delta_b: usize,
+) -> Result<()> {
+    if matches!(slot_layout, crate::SlotLayout::Replicated(_)) && log_delta_a != log_delta_b {
+        return Err(crate::CKKSCompositionError::InvalidOperand {
+            op,
+            reason: format!(
+                "a replicated layout adds at one scale, got 2^{log_delta_a} and 2^{log_delta_b}: round the finer operand with shaping first"
+            ),
+        }
+        .into());
+    }
+    Ok(())
+}
+
 pub(crate) fn reject_replicated_constant(op: &'static str, slot_layout: crate::SlotLayout) -> Result<()> {
     if let crate::SlotLayout::Replicated(_) = slot_layout {
         return Err(crate::CKKSCompositionError::InvalidOperand {

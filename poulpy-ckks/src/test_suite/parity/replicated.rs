@@ -119,7 +119,7 @@ where
         results.push((label, snapshot::<B, _>(&out)));
     }
 
-    let coeff_meta = CoeffsMeta::from_delta_budget(20, 4);
+    let coeff_meta = CoeffsMeta::from_delta_budget(b - 1, 4);
     let polynomial = Polynomial::new(
         Basis::Monomial,
         [0.125, -0.25, 0.0625, 0.125]
