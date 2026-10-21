@@ -4,7 +4,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     layouts::{Module, ScratchArena},
-    oep::HalVecZnxImpl,
+    oep::HalMatZnxImpl,
     source::Source,
 };
 
@@ -14,7 +14,7 @@ use crate::{layouts::GLWEPublicKeyShareOwned, oep::GLWEPatCompressedImpl};
 /// # Safety
 /// Reproduce the reference share, entry seeds included, within the queried
 /// scratch budget.
-pub unsafe trait GLWEPublicKeyMHEProtocolImpl: GLWEPatCompressedImpl + HalVecZnxImpl {
+pub unsafe trait GLWEPublicKeyMHEProtocolImpl: GLWEPatCompressedImpl + HalMatZnxImpl {
     fn mhe_glwe_public_key_share_gen_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GLWEInfos;

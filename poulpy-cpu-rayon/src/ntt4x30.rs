@@ -768,6 +768,8 @@ impl BigWordHadamardProduct for $rayon {
     }
 }
 
+unsafe impl $crate::__private::poulpy_hal::oep::HalMatZnxImpl for $rayon {}
+
 unsafe impl HalVecZnxImpl for $rayon
 {
     $crate::__private::poulpy_cpu_portable::hal_impl_vec_znx_without_normalize!();

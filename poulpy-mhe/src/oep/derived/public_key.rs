@@ -7,12 +7,12 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     layouts::{MatZnxToBackendMut, MatZnxToBackendRef, Module, ScratchArena},
-    oep::HalVecZnxImpl,
+    oep::HalMatZnxImpl,
 };
 
 use crate::{layouts::GLWEPublicKeyShareOwned, oep::GLWEPatCompressedImpl};
 
-pub(crate) fn mhe_glwe_public_key_share_aggregate_derived<BE: HalVecZnxImpl>(
+pub(crate) fn mhe_glwe_public_key_share_aggregate_derived<BE: HalMatZnxImpl>(
     module: &Module<BE>,
     res: &mut GLWEPublicKeyShareOwned<BE>,
     a: &GLWEPublicKeyShareOwned<BE>,
