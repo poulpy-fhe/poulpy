@@ -16,8 +16,7 @@ use crate::{
     layouts::{CKKSPreparedLeft, CKKSPreparedRight},
     oep::derived::dot_product::{accumulate, check_lengths},
     reference::mul::{
-        MulStamp, StampOrder, check_prepared_layout, get_mul_ct_params, mul_one_pass, mul_pt_params_raw, product_layout,
-        tensor_mul_core,
+        MulStamp, StampOrder, check_prepared_layout, get_mul_ct_params, mul_one_pass, mul_pt_params_raw, tensor_mul_core,
     },
 };
 
@@ -301,7 +300,14 @@ where
     let (log_budget, log_delta, cnv_offset) = get_mul_ct_params(dst, a[0], b[0])?;
     // The eager sum's label and slot kind: the smallest label and the join over every operand.
     let metas = || a.iter().map(|ct| ct.meta()).chain(b.iter().map(|ct| ct.meta()));
-    let slot_layout = product_layout(op, &metas().map(|meta| meta.slot_layout).collect::<Vec<_>>())?;
+    let slot_layout = a[0].slot_layout();
+    if metas().any(|meta| meta.slot_layout != slot_layout) {
+        return Err(CKKSCompositionError::InvalidOperand {
+            op,
+            reason: "the operands' slot layouts differ".into(),
+        }
+        .into());
+    }
     let stamp = MulStamp {
         log_budget,
         log_delta,

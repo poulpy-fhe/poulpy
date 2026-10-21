@@ -41,7 +41,7 @@ use crate::{
     api::{
         CKKSAddOps, CKKSAffineOps, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSDecryptOps, CKKSDotProductOps,
         CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSEvalModOps, CKKSLinearTransformationOps, CKKSModuleInfos,
-        CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSReplicatedBootstrapOps, CKKSReplicatedOps, CKKSRotateOps,
+        CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSReplicatedBootstrapOps, CKKSReplicatedOps, CKKSRotateOps, CKKSSubOps,
     },
     delegates::replicated::{wide_gather_trace, wide_onto_replicated},
     layouts::{
@@ -903,6 +903,16 @@ where
     let want_im: Vec<F> = values.1.iter().map(|&x| x + c_im).collect();
     let bits = precision((&got.0, &got.1), (&want_re, &want_im));
     assert!(bits >= 40.0, "masked constant sum: {bits:.2} bits");
+
+    // The masked one, added twice and subtracted once.
+    let s = &mut add_scratch.borrow();
+    module.ckks_add_one_assign(&mut ct, s)?;
+    module.ckks_add_one_assign(&mut ct, s)?;
+    module.ckks_sub_one_assign(&mut ct, s)?;
+    let got = decrypt_batch::<BE, F>(&params, module, &sk, &ct, len);
+    let want_re: Vec<F> = want_re.iter().map(|&x| x + F::one()).collect();
+    let bits = precision((&got.0, &got.1), (&want_re, &want_im));
+    assert!(bits >= 40.0, "masked one: {bits:.2} bits");
     Ok(())
 }
 

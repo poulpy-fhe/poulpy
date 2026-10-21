@@ -60,6 +60,7 @@ mod znx_base;
 pub use base2k::{MaxBase2k, max_base2k_fft64, max_base2k_ntt};
 pub use convolution::*;
 pub use crt::*;
+pub use encoding::encode_i128_by_limb;
 pub use layout_compat::*;
 pub use mat_znx::*;
 pub use module::*;

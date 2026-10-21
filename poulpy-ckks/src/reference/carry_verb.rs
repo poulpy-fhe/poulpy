@@ -7,101 +7,98 @@
 //! The macro is `pub(crate)`: it is an implementation detail of the two verb modules, not a backend-facing extension point.
 
 use crate::CKKSResult as Result;
-use crate::layouts::CKKSPlaintextOwned;
+use crate::layouts::{CKKSPlaintextViewMut, ScratchArenaTakeCKKS};
 use num_traits::{Float, FromPrimitive};
-use poulpy_core::layouts::{Base2K, IntPolyInfos, LWEInfos};
-use poulpy_hal::{
-    AlignedBuf, alloc_aligned,
-    layouts::{Backend, VecZnx},
-};
+use poulpy_core::layouts::{Base2K, GLWEPlaintextLayout, GLWEToBackendMut, IntPolyInfos, TorusPrecision};
+use poulpy_hal::layouts::{Backend, ScratchArena, encode_i128_by_limb};
 
 use crate::SlotsKind;
-use crate::{
-    GLWEPlaintextMeta, ReplicatedLayout, Scale, SetCKKSInfos, SlotLayout, ckks_log_delta, layouts::CKKSModuleAlloc,
-    numerics::CKKSFloat, scalar::Quad,
-};
+use crate::{GLWEPlaintextMeta, ReplicatedLayout, Scale, SlotLayout, numerics::CKKSFloat, scalar::Quad};
 
-/// Builds the backend-resident constant-`1.0` plaintext used by the
-/// add-one/sub-one facades.
-///
-/// This currently allocates and uploads a degree-1, single-limb monomial on
-/// each call. The unit-operation scratch query covers the arithmetic workspace.
-pub(crate) fn ckks_one_pt<BE, M>(module: &M, base2k: Base2K) -> Result<CKKSPlaintextOwned<BE>>
-where
-    BE: Backend,
-    M: CKKSModuleAlloc<BE> + ?Sized,
-{
-    let meta = GLWEPlaintextMeta {
-        scale: Scale::Log(1),
-        slots: SlotsKind::Real,
-        log_sparsity: 0,
-        slot_layout: SlotLayout::Full,
-    };
+/// Largest number of coefficients of the one of a slot layout, `2R`.
+const MAX_ONE_COEFFS: usize = 2 << ReplicatedLayout::MAX_LOG_R;
 
-    // Monomial plaintext: total torus width is `log_delta` (budget 0).
-    let k_total: usize = ckks_log_delta(&meta);
-
-    // The constant is integer-exact: 1.0 at scale `2^log_delta` is the single
-    // coefficient `1 << log_delta`, so its limbs are built on the host with the
-    // integer codec and uploaded as raw bytes (no float codec, no transfer op).
-    let size = k_total.div_ceil(base2k.as_usize());
-    let mut limbs = VecZnx::<AlignedBuf, i64>::from_data(
-        alloc_aligned::<u8>(VecZnx::<AlignedBuf, i64>::bytes_of(1, 1, size)),
-        1,
-        1,
-        size,
-    );
-    limbs.encode_vec_i64(
-        base2k.as_usize(),
-        0,
-        size * base2k.as_usize(),
-        &[1i64 << ckks_log_delta(&meta)],
-    );
-
-    let mut pt = module.ckks_pt_coeffs_alloc(1, base2k, k_total.into());
-    pt.set_meta(meta);
-    pt.copy_from_host_bytes::<BE>(limbs.data().as_slice());
-    Ok(pt)
+/// Scratch bytes of [`take_one_pt`] for a destination of `res_size` limbs.
+pub(crate) fn one_pt_tmp_bytes<BE: Backend>(res_size: usize) -> usize {
+    BE::scratch_aligned(BE::bytes_of_vec_znx(MAX_ONE_COEFFS, 1, res_size + 1))
 }
 
-/// The masked one `π_S` of a replicated layout at scale `2^log_delta`: one on
-/// the data slots and zero on the guards, a plaintext of degree `2R` in
-/// `Y = X^(N/(2R))` with coefficients `cos(π·j/(2R))/R`, quantized with
-/// shaped rounding.
-pub(crate) fn ckks_masked_one_pt<BE, M>(
-    module: &M,
+/// The one of `slot_layout`, carved from `scratch`. On a full layout it is the
+/// monomial `2` at scale `2`, added as a constant. On a replicated layout it is
+/// the masked one `π_S` at scale `2^log_delta`: one on the data slots and zero
+/// on the guards, a plaintext of degree `2R` in `Y = X^(N/(2R))` with
+/// coefficients `cos(π·j/(2R))/R`, quantized with shaped rounding.
+pub(crate) fn take_one_pt<'a, BE: Backend + 'a>(
     base2k: Base2K,
-    layout: ReplicatedLayout,
+    slot_layout: SlotLayout,
     log_delta: usize,
-) -> Result<CKKSPlaintextOwned<BE>>
-where
-    BE: Backend,
-    M: CKKSModuleAlloc<BE> + ?Sized,
-{
-    let r = 1usize << layout.log_r();
-    let r_inv = Quad::from_usize(r).expect("the period is a small integer").recip();
-    let coeffs: Vec<Quad> = (0..2 * r)
-        .map(|j| Quad::ckks_root_of_unity(j as u64, layout.log_r() as u32 + 2).0 * r_inv)
-        .collect();
-    let data = crate::reference::encoding::shaped_quantize(&coeffs, &layout, log_delta, 1, SlotsKind::Complex)?;
-
-    let mut pt = module.ckks_pt_coeffs_alloc(2 * r, base2k, (log_delta + 1).into());
-    pt.set_meta(GLWEPlaintextMeta {
-        scale: Scale::Log(log_delta),
-        slots: SlotsKind::Real,
-        log_sparsity: 0,
-        slot_layout: SlotLayout::Replicated(layout),
-    });
-    let size = pt.size();
-    let mut limbs = VecZnx::<AlignedBuf, i64>::from_data(
-        alloc_aligned::<u8>(VecZnx::<AlignedBuf, i64>::bytes_of(2 * r, 1, size)),
-        2 * r,
-        1,
-        size,
-    );
-    limbs.encode_vec_i128(base2k.as_usize(), 0, pt.encoded_k().as_usize(), &data);
-    pt.copy_from_host_bytes::<BE>(limbs.data().as_slice());
-    Ok(pt)
+    scratch: ScratchArena<'a, BE>,
+) -> Result<(CKKSPlaintextViewMut<'a, BE>, ScratchArena<'a, BE>)> {
+    let mut data = [0i128; MAX_ONE_COEFFS];
+    let (n, k, meta) = match slot_layout {
+        SlotLayout::Full => {
+            data[0] = 2;
+            let meta = GLWEPlaintextMeta {
+                scale: Scale::Log(1),
+                slots: SlotsKind::Real,
+                log_sparsity: 0,
+                slot_layout,
+            };
+            (1, 1, meta)
+        }
+        SlotLayout::Replicated(layout) => {
+            let r = 1usize << layout.log_r();
+            let r_inv = Quad::from_usize(r).expect("the period is a small integer").recip();
+            let mut coeffs = [Quad::from_usize(0).expect("zero"); MAX_ONE_COEFFS];
+            for (j, c) in coeffs[..2 * r].iter_mut().enumerate() {
+                *c = Quad::ckks_root_of_unity(j as u64, layout.log_r() as u32 + 2).0 * r_inv;
+            }
+            let (mut low, mut h, mut gh) = ([0i64; MAX_ONE_COEFFS], [0i64; MAX_ONE_COEFFS], [0i64; MAX_ONE_COEFFS]);
+            crate::reference::encoding::shaped_quantize_into(
+                &coeffs[..2 * r],
+                &layout,
+                log_delta,
+                1,
+                SlotsKind::Complex,
+                &mut data[..2 * r],
+                &mut low[..2 * r],
+                &mut h[..2 * r],
+                &mut gh[..2 * r],
+            )?;
+            let meta = GLWEPlaintextMeta {
+                scale: Scale::Log(log_delta),
+                slots: SlotsKind::Real,
+                log_sparsity: 0,
+                slot_layout,
+            };
+            (2 * r, log_delta + 1, meta)
+        }
+    };
+    let layout = GLWEPlaintextLayout {
+        n: n.into(),
+        base2k,
+        k: TorusPrecision(k as u32),
+    };
+    let (mut pt, scratch) = scratch.take_ckks_plaintext_scratch(&layout, meta);
+    let encoded_k = pt.encoded_k().as_usize();
+    let (mut carry, mut limb) = ([0i64; MAX_ONE_COEFFS], [0i64; MAX_ONE_COEFFS]);
+    {
+        let mut backend = pt.to_backend_mut();
+        let shape = backend.data().shape();
+        encode_i128_by_limb(
+            base2k.as_usize(),
+            encoded_k,
+            &mut data[..n],
+            &mut carry[..n],
+            &mut limb[..n],
+            |j, digits| {
+                let offset = shape.scalar_offset(0, j) * size_of::<i64>();
+                let mut region = BE::region_mut_ref(backend.data_mut().data_mut(), offset, size_of_val(digits));
+                BE::copy_host_to_view(&mut region, bytemuck::cast_slice(digits));
+            },
+        );
+    }
+    Ok((pt, scratch))
 }
 
 /// Generates a `CKKS{Add,Sub}Reference` trait: the full reference-layer carry-verb

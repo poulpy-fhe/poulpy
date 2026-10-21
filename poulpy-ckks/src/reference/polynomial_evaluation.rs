@@ -2,17 +2,17 @@ use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{
-    BSGSMeta, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Parity,
-    Rank, SetBSGSMeta,
+    BSGSMeta, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
+    SetBSGSMeta,
 };
 use poulpy_core::{BSGSOps, GLWENormalize, GLWEPolynomialEvaluation, GLWEZero, glwe_prepare_left, glwe_prepare_left_tmp_bytes};
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
-        VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxRsh, VecZnxRshTmpBytes,
+        Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxIdftApply,
+        VecZnxIdftApplyTmpBytes, VecZnxRsh, VecZnxRshTmpBytes,
     },
     layouts::{
-        Backend, CnvPVecLOwned, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Data, Module, PrepareHint, Ring, ScratchArena,
+        Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Data, Module, PrepareHint, Ring, ScratchArena,
         VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut,
         VecZnxToBackendRef, ZnxWord, vec_znx_backend_ref_from_ref,
     },
@@ -51,8 +51,8 @@ where
 
 /// Scratch upper bound for the shaped baby-step linear combination of a
 /// replicated layout, for terms of the layout of `ct` and masked constants of
-/// `pt_size` limbs: the powers prepared once, then the combination computed
-/// up to `MAX_PASS_BITS` under the scale and rounded with shaping.
+/// `pt_size` limbs: each term prepared in turn and summed in the transform
+/// domain up to `MAX_PASS_BITS` under the scale, then rounded with shaping.
 pub(crate) fn eval_shaped_baby_linear_combination_tmp_bytes<BE, M, C>(module: &M, ct: &C, pt_size: usize) -> usize
 where
     BE: Backend,
@@ -78,19 +78,23 @@ where
     let wide_size = wide.size();
     let g_size = pt_size + 1;
     let acc_size = wide_size + g_size;
-    let combination = BE::bytes_of_vec_znx(n, 1, g_size)
+    let term = BE::bytes_of_cnv_pvec_left(n, cols, ct.size(), PrepareHint::OneShot)
         + BE::bytes_of_cnv_pvec_right(n, 1, g_size, PrepareHint::OneShot)
-        + BE::bytes_of_vec_znx_dft(n, 1, acc_size)
-        + BE::bytes_of_vec_znx_big(n, 1, acc_size)
+        + glwe_prepare_left_tmp_bytes(module, ct.size(), ct)
+            .max(
+                BE::bytes_of_vec_znx(n, 1, g_size)
+                    + module
+                        .vec_znx_rsh_tmp_bytes(g_size)
+                        .max(module.cnv_prepare_right_tmp_bytes(g_size, g_size)),
+            )
+            .max(module.cnv_apply_dft_tmp_bytes(0, acc_size, ct.size(), g_size))
+            .max(module.cnv_apply_dft_add_tmp_bytes(0, acc_size, ct.size(), g_size));
+    let normalize = BE::bytes_of_vec_znx_big(n, 1, acc_size)
         + module
-            .vec_znx_rsh_tmp_bytes(g_size)
-            .max(module.cnv_prepare_right_tmp_bytes(g_size, g_size))
-            .max(module.cnv_apply_dft_tmp_bytes(0, acc_size, wide_size, g_size))
-            .max(module.cnv_apply_dft_add_tmp_bytes(0, acc_size, wide_size, g_size))
-            .max(module.vec_znx_idft_apply_tmp_bytes())
+            .vec_znx_idft_apply_tmp_bytes()
             .max(module.vec_znx_big_normalize_tmp_bytes());
-    let shaped = BE::bytes_of_vec_znx(n, cols, wide_size) + combination.max(module.ckks_round_tmp_bytes(ct, &wide));
-    shaped.max(glwe_prepare_left_tmp_bytes(module, ct.size(), ct))
+    let combination = BE::bytes_of_vec_znx_dft(n, cols, acc_size) + term.max(normalize);
+    BE::bytes_of_vec_znx(n, cols, wide_size) + combination.max(module.ckks_round_tmp_bytes(ct, &wide))
 }
 
 struct EvaluatedBabyStep<D: Data, W: ZnxWord, R: Ring> {
@@ -124,44 +128,10 @@ where
 /// Every method is a thin dispatch to the CKKS API ([`CKKSMulOps`], [`CKKSAddOps`],
 /// [`CKKSCopyOps`]); the non-dispatch bits are the accumulator seed, which
 /// has no single existing API equivalent, and the fused baby-step linear
-/// combinations. `powers` holds, by degree, the power-basis elements prepared
-/// as left operands for the shaped combination of a replicated layout.
-struct CKKSBSGSOps<'a, BE: Backend> {
-    powers: &'a [Option<CnvPVecLOwned<BE>>],
-}
+/// combinations.
+struct CKKSBSGSOps;
 
-/// The baby-step powers of `power_basis` up to `degree` and of `parity`,
-/// prepared as left operands when its elements have a replicated layout.
-fn prepare_baby_powers<BE, A, G>(
-    module: &Module<BE>,
-    power_basis: &G,
-    degree: usize,
-    parity: Parity,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<Vec<Option<CnvPVecLOwned<BE>>>>
-where
-    BE: Backend,
-    Module<BE>: Convolution<BE> + GLWENormalize<BE> + CnvPVecAlloc<BE>,
-    A: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds,
-    G: PowerBasisHelper<BE, A>,
-{
-    if !matches!(power_basis.get(1)?.slot_layout(), SlotLayout::Replicated(_)) {
-        return Ok(Vec::new());
-    }
-    let first = if parity == Parity::Even { 2 } else { 1 };
-    let step = if parity == Parity::Full { 1 } else { 2 };
-    let mut powers: Vec<Option<CnvPVecLOwned<BE>>> = (0..=degree).map(|_| None).collect();
-    for i in (first..=degree).step_by(step) {
-        let a = power_basis.get(i)?;
-        let size = a.k().as_usize().div_ceil(a.base2k().as_usize());
-        let mut prepared = module.cnv_pvec_left_alloc(a.n().as_usize(), a.rank().as_usize() + 1, size, PrepareHint::Reuse);
-        glwe_prepare_left(module, &mut prepared, a, a.k().as_usize(), scratch);
-        powers[i] = Some(prepared);
-    }
-    Ok(powers)
-}
-
-impl<BE: Backend, V, P, A, R> BSGSOps<BE, V, P, A, R> for CKKSBSGSOps<'_, BE>
+impl<BE: Backend, V, P, A, R> BSGSOps<BE, V, P, A, R> for CKKSBSGSOps
 where
     Module<BE>: CKKSAddOps<BE>
         + CKKSModuleAlloc<BE>
@@ -174,7 +144,7 @@ where
         + VecZnxRsh<BE>
         + VecZnxRshTmpBytes
         + VecZnxIdftApply<BE>
-        + CnvPVecAlloc<BE>
+        + GLWENormalize<BE>
         + CKKSRoundOps<BE>,
     V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + CKKSMaskedConstants<BE>,
@@ -211,7 +181,7 @@ where
             return Ok(false);
         };
         if let SlotLayout::Replicated(_) = seed.slot_layout() {
-            return shaped_baby_linear_combination(module, res, terms, coeffs, self.powers, scratch);
+            return shaped_baby_linear_combination(module, res, terms, coeffs, scratch);
         }
         let kb: usize = res.base2k().into();
         let delta = seed.log_delta();
@@ -432,13 +402,12 @@ fn shaped_baby_linear_combination<BE, V, A, P>(
     res: &mut V,
     terms: &[(&A, usize)],
     coeffs: &P,
-    powers: &[Option<CnvPVecLOwned<BE>>],
     scratch: &mut ScratchArena<'_, BE>,
 ) -> anyhow::Result<bool>
 where
     BE: Backend,
     Module<BE>:
-        Convolution<BE> + VecZnxRsh<BE> + VecZnxIdftApply<BE> + VecZnxBigNormalize<BE> + CnvPVecAlloc<BE> + CKKSRoundOps<BE>,
+        Convolution<BE> + GLWENormalize<BE> + VecZnxRsh<BE> + VecZnxIdftApply<BE> + VecZnxBigNormalize<BE> + CKKSRoundOps<BE>,
     V: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     A: GLWEToBackendRef<BE> + CKKSCtBounds,
     P: CKKSMaskedConstants<BE>,
@@ -450,60 +419,70 @@ where
     };
     let kb = res.base2k().as_usize();
     let delta = seed.log_delta();
-    let mut operands = Vec::with_capacity(terms.len());
+    let operand = |i: usize| coeffs.masked_constant(i);
+    let Some(first) = operand(terms[0].1) else {
+        return Ok(false);
+    };
+    let pt_log_delta = first.log_delta();
     for &(t, i) in terms {
-        let (Some(prepared), Some(pt)) = (powers.get(i).and_then(Option::as_ref), coeffs.masked_constant(i)) else {
+        let Some(pt) = operand(i) else {
             return Ok(false);
         };
-        if t.base2k().as_usize() != kb || t.log_delta() != delta || pt.base2k().as_usize() != kb {
+        if t.base2k().as_usize() != kb || t.log_delta() != delta || pt.base2k().as_usize() != kb || pt.log_delta() != pt_log_delta
+        {
             return Ok(false);
         }
-        operands.push((t, prepared, pt));
-    }
-    let pt_log_delta = operands[0].2.log_delta();
-    if operands.iter().any(|(_, _, pt)| pt.log_delta() != pt_log_delta) {
-        return Ok(false);
     }
     let Some(lambda) = product_depth(seed.slot_layout(), pt_log_delta) else {
         return Ok(false);
     };
 
+    // Each term at the rule of the scalar combination: its product's budget
+    // and offset against the running smallest budget.
+    let running = || {
+        terms.iter().scan(seed.log_budget(), move |budget, &(t, i)| {
+            let pt = operand(i)?;
+            let (b, d, off) = mul_pt_params_raw(
+                *budget + delta,
+                t.log_delta(),
+                t.log_budget(),
+                pt.log_delta(),
+                pt.log_budget(),
+                pt.encoded_k().as_usize(),
+            )
+            .ok()?;
+            *budget = (*budget).min(b);
+            Some((t, pt, b, d, off))
+        })
+    };
     let mut budget = seed.log_budget();
-    let mut params = Vec::with_capacity(operands.len());
-    for (t, _, pt) in &operands {
-        let Ok((b, d, off)) = mul_pt_params_raw(
-            budget + delta,
-            t.log_delta(),
-            t.log_budget(),
-            pt.log_delta(),
-            pt.log_budget(),
-            pt.encoded_k().as_usize(),
-        ) else {
-            return Ok(false);
-        };
+    let mut count = 0;
+    for (_, _, b, d, off) in running() {
         if d != delta || off < kb {
             return Ok(false);
         }
         budget = budget.min(b);
-        params.push((b, off));
+        count += 1;
     }
+    if count != terms.len() {
+        return Ok(false);
+    }
+    // The sub-limb part `r` of a term's offset shifts its constant, the rest
+    // offsets its convolution by `rho` limbs.
+    let split = |b: usize, off: usize| {
+        let total = off + b - budget;
+        let r = (kb - total % kb) % kb;
+        (r, (total + r) / kb - 1)
+    };
 
     let wide_k = budget + delta + lambda;
     let mut acc_size = wide_k.div_ceil(kb);
-    for ((_, prepared, pt), (b, off)) in operands.iter().zip(params.iter_mut()) {
-        // The sub-limb part `r` of the offset shifts the constant, the rest
-        // offsets the convolution by `rho` limbs.
-        let total = *off + *b - budget;
-        let r = (kb - total % kb) % kb;
-        let rho = (total + r) / kb - 1;
-        let g_size = pt.to_backend_ref().data().size() + usize::from(r != 0);
-        acc_size = acc_size.max((prepared.size() + g_size - 1).saturating_sub(rho));
-        (*b, *off) = (r, rho);
-    }
-
     let mut slots = seed.slots();
     let mut log_sparsity = res.log_sparsity();
-    for (t, _, pt) in &operands {
+    for (t, pt, b, _, off) in running() {
+        let (r, rho) = split(b, off);
+        let g_size = pt.to_backend_ref().data().size() + usize::from(r != 0);
+        acc_size = acc_size.max((t.k().as_usize().div_ceil(kb) + g_size - 1).saturating_sub(rho));
         log_sparsity = log_sparsity.min(t.log_sparsity()).min(t.log_n() - pt.log_n());
         slots = slots.join(t.slots()).join(pt.slots());
     }
@@ -522,40 +501,46 @@ where
     let (mut wide, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&layout, meta);
     wide.set_log_budget(budget);
     wide.set_canonical(true);
-    let n = res.n().as_usize();
+    let (n, cols) = (res.n().as_usize(), res.rank().as_usize() + 1);
     scratch.scope(|scratch_local| {
-        let (mut acc, scratch_local) = scratch_local.take_vec_znx_dft_scratch(n, 1, acc_size);
-        let (mut big, mut scratch_local) = scratch_local.take_vec_znx_big_scratch(n, 1, acc_size);
-        for col in 0..res.rank().as_usize() + 1 {
-            for (t_idx, ((_, prepared, pt), &(r, rho))) in operands.iter().zip(&params).enumerate() {
-                let pt_bk = pt.to_backend_ref();
-                let (pt_n, pt_size) = (pt_bk.n().as_usize(), pt_bk.data().size());
-                let g_size = pt_size + usize::from(r != 0);
-                let pt_data = vec_znx_backend_ref_from_ref::<BE>(pt_bk.data());
-                let (mut right, mut scratch_term) =
-                    scratch_local
-                        .borrow()
-                        .take_cnv_pvec_right_scratch(pt_n, 1, g_size, PrepareHint::OneShot);
-                if r == 0 {
-                    module.cnv_prepare_right(&mut right, &pt_data, &mut scratch_term);
-                } else {
-                    let (mut g, mut scratch_g) = scratch_term.borrow().take_vec_znx_scratch(pt_n, 1, g_size);
-                    module.vec_znx_rsh(kb, r, &mut g.to_backend_mut(), 0, &pt_data, 0, &mut scratch_g.borrow());
-                    module.cnv_prepare_right(&mut right, &g.to_backend_ref(), &mut scratch_g);
-                }
+        let (mut acc, mut scratch_local) = scratch_local.take_vec_znx_dft_scratch(n, cols, acc_size);
+        for (t_idx, (t, pt, b, _, off)) in running().enumerate() {
+            let (r, rho) = split(b, off);
+            let a_size = t.k().as_usize().div_ceil(kb);
+            let pt_bk = pt.to_backend_ref();
+            let (pt_n, pt_size) = (pt_bk.n().as_usize(), pt_bk.data().size());
+            let g_size = pt_size + usize::from(r != 0);
+            let pt_data = vec_znx_backend_ref_from_ref::<BE>(pt_bk.data());
+            let (mut left, scratch_term) =
+                scratch_local
+                    .borrow()
+                    .take_cnv_pvec_left_scratch(n, cols, a_size, PrepareHint::OneShot);
+            let (mut right, mut scratch_term) = scratch_term.take_cnv_pvec_right_scratch(pt_n, 1, g_size, PrepareHint::OneShot);
+            glwe_prepare_left(module, &mut left, t, t.k().as_usize(), &mut scratch_term);
+            if r == 0 {
+                module.cnv_prepare_right(&mut right, &pt_data, &mut scratch_term);
+            } else {
+                let (mut g, mut scratch_g) = scratch_term.borrow().take_vec_znx_scratch(pt_n, 1, g_size);
+                module.vec_znx_rsh(kb, r, &mut g.to_backend_mut(), 0, &pt_data, 0, &mut scratch_g.borrow());
+                module.cnv_prepare_right(&mut right, &g.to_backend_ref(), &mut scratch_g);
+            }
+            let (a, b) = (left.to_backend_ref(), right.to_backend_ref());
+            for col in 0..cols {
                 let mut acc_bk = acc.to_backend_mut();
-                let (a, b) = (prepared.to_backend_ref(), right.to_backend_ref());
                 if t_idx == 0 {
-                    module.cnv_apply_dft(rho, &mut acc_bk, 0, &a, col, &b, 0, 1, &mut scratch_term);
+                    module.cnv_apply_dft(rho, &mut acc_bk, col, &a, col, &b, 0, 1, &mut scratch_term);
                 } else {
-                    module.cnv_apply_dft_add(rho, &mut acc_bk, 0, &a, col, &b, 0, 1, &mut scratch_term);
+                    module.cnv_apply_dft_add(rho, &mut acc_bk, col, &a, col, &b, 0, 1, &mut scratch_term);
                 }
             }
+        }
+        let (mut big, mut scratch_local) = scratch_local.take_vec_znx_big_scratch(n, 1, acc_size);
+        for col in 0..cols {
             module.vec_znx_idft_apply(
                 &mut big.to_backend_mut(),
                 0,
                 &acc.to_backend_ref(),
-                0,
+                col,
                 &mut scratch_local.borrow(),
             );
             let mut wide_bk = wide.to_backend_mut();
@@ -704,7 +689,6 @@ pub trait PolynomialEvaluationReference<BE: Backend> {
             + VecZnxRsh<BE>
             + VecZnxRshTmpBytes
             + VecZnxIdftApply<BE>
-            + CnvPVecAlloc<BE>
             + GLWENormalize<BE>
             + CKKSRoundOps<BE>
             + Sized,
@@ -736,7 +720,6 @@ pub trait PolynomialEvaluationReference<BE: Backend> {
             + VecZnxRsh<BE>
             + VecZnxRshTmpBytes
             + VecZnxIdftApply<BE>
-            + CnvPVecAlloc<BE>
             + GLWENormalize<BE>
             + CKKSRoundOps<BE>
             + Sized,
@@ -772,7 +755,6 @@ where
             + VecZnxRsh<BE>
             + VecZnxRshTmpBytes
             + VecZnxIdftApply<BE>
-            + CnvPVecAlloc<BE>
             + GLWENormalize<BE>
             + CKKSRoundOps<BE>
             + Sized,
@@ -809,12 +791,7 @@ where
         let mut baby_steps = Vec::with_capacity(n_to_process);
         let parity = poly.parity();
         let x = power_basis.get(1)?;
-        let max_degree = (0..n_to_process)
-            .map(|i| poly.baby_step(i).n().as_usize() - 1)
-            .max()
-            .unwrap_or(0);
-        let powers = prepare_baby_powers(self, power_basis, max_degree, parity, &mut scratch.borrow())?;
-        let precision = CKKSBSGSOps { powers: &powers };
+        let precision = CKKSBSGSOps;
         for i in 0..n_to_process {
             let coeffs = poly.baby_step(i);
             let degree = coeffs.n().as_usize() - 1;
@@ -863,7 +840,6 @@ where
             + VecZnxRsh<BE>
             + VecZnxRshTmpBytes
             + VecZnxIdftApply<BE>
-            + CnvPVecAlloc<BE>
             + GLWENormalize<BE>
             + CKKSRoundOps<BE>
             + Sized,
@@ -914,12 +890,7 @@ where
         // over baby_i runs the relinearizations once.
         let parity = BSGSPolynomialInfos::<BE>::parity(poly_re);
         let x = power_basis.get(1)?;
-        let max_degree = (0..n_to_process)
-            .map(|i| BSGSPolynomialInfos::<BE>::baby_step(poly_re, i).n().as_usize() - 1)
-            .max()
-            .unwrap_or(0);
-        let powers = prepare_baby_powers(self, power_basis, max_degree, parity, &mut scratch.borrow())?;
-        let precision = CKKSBSGSOps { powers: &powers };
+        let precision = CKKSBSGSOps;
         let mut baby_steps = Vec::with_capacity(n_to_process);
         for i in 0..n_to_process {
             let re_coeffs = BSGSPolynomialInfos::<BE>::baby_step(poly_re, i);

@@ -266,6 +266,31 @@ pub(crate) fn shaped_quantize<F>(
 where
     F: CKKSEncodingScalar,
 {
+    let n = coeffs.len();
+    let mut out = vec![0i128; n];
+    let (mut low, mut h, mut gh) = (vec![0i64; n], vec![0i64; n], vec![0i64; n]);
+    shaped_quantize_into(
+        coeffs, layout, log_delta, log_budget, ring_slots, &mut out, &mut low, &mut h, &mut gh,
+    )?;
+    Ok(out)
+}
+
+/// [`shaped_quantize`] into `out`, with buffers `low`, `h` and `gh` as long as `coeffs`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn shaped_quantize_into<F>(
+    coeffs: &[F],
+    layout: &ReplicatedLayout,
+    log_delta: usize,
+    log_budget: usize,
+    ring_slots: SlotsKind,
+    out: &mut [i128],
+    low: &mut [i64],
+    h: &mut [i64],
+    gh: &mut [i64],
+) -> Result<()>
+where
+    F: CKKSEncodingScalar,
+{
     ensure!(
         ring_slots == SlotsKind::Complex,
         "the replicated layout requires the standard ring"
@@ -283,17 +308,17 @@ where
         "a replicated plaintext of {} torus bits leaves no shaping pass within i128",
         log_delta + log_budget
     );
-    let quantized: Vec<i128> = coeffs
-        .iter()
-        .map(|&x| {
-            x.ckks_quantize(log_delta + lambda)
-                .context("CKKS coefficient is not representable as an i128 at the plaintext scale")
-        })
-        .collect::<Result<_>>()?;
-    let low: Vec<i64> = quantized.iter().map(|&q| q as i64).collect();
-    let (mut h, mut gh) = (vec![0i64; low.len()], vec![0i64; low.len()]);
-    profile.shaped_multiple(coeffs.len() / period, lambda, &low, &mut h, &mut gh);
-    Ok(quantized.iter().zip(&gh).map(|(&q, &m)| (q - m as i128) >> lambda).collect())
+    for ((q, l), &x) in out.iter_mut().zip(low.iter_mut()).zip(coeffs) {
+        *q = x
+            .ckks_quantize(log_delta + lambda)
+            .context("CKKS coefficient is not representable as an i128 at the plaintext scale")?;
+        *l = *q as i64;
+    }
+    profile.shaped_multiple(coeffs.len() / period, lambda, low, h, gh);
+    for (q, &m) in out.iter_mut().zip(gh.iter()) {
+        *q = (*q - m as i128) >> lambda;
+    }
+    Ok(())
 }
 
 /// Host reference dequantization of canonical integer coefficients, rounded

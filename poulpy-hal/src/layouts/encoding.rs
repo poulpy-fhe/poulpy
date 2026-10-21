@@ -317,6 +317,40 @@ impl<D: HostDataRef> VecZnx<D, i64> {
 ///
 /// Panics if `b == 0` (integer division by zero).
 #[inline]
+/// [`VecZnx::encode_vec_i128`] of one column without allocation: the digits
+/// of the `size = k.div_ceil(base2k)` limbs are handed to `emit(j, digits)`
+/// from the least significant limb `j = size - 1` to `j = 0`, bit for bit those
+/// `encode_vec_i128` writes. `data` is consumed as the carry; `carry` and `limb`
+/// are buffers as long as `data`.
+pub fn encode_i128_by_limb(
+    base2k: usize,
+    k: usize,
+    data: &mut [i128],
+    carry: &mut [i64],
+    limb: &mut [i64],
+    mut emit: impl FnMut(usize, &[i64]),
+) {
+    assert!(carry.len() == data.len() && limb.len() == data.len());
+    let size: usize = k.div_ceil(base2k);
+    let k_rem: usize = (base2k - (k % base2k)) % base2k;
+    carry.fill(0);
+    for j in (0..size).rev() {
+        for (x, a) in izip!(limb.iter_mut(), data.iter_mut()) {
+            let digit: i128 = get_digit_i128(base2k, *a);
+            *a = get_carry_i128(base2k, *a, digit);
+            *x = digit as i64;
+        }
+        if j == size - 1 {
+            znx_normalize_first_step_assign(base2k, k_rem, limb, carry);
+        } else if j == 0 {
+            znx_normalize_final_step_assign(base2k, k_rem, limb, carry);
+        } else {
+            znx_normalize_middle_step_assign(base2k, k_rem, limb, carry);
+        }
+        emit(j, limb);
+    }
+}
+
 pub fn div_round_i64(a: i64, b: i64) -> i64 {
     let div = a / b;
     let rem = a % b;
@@ -431,5 +465,33 @@ fn znx_normalize_final_step_assign(base2k: usize, lsh: usize, x: &mut [i64], car
         x.iter_mut().zip(carry.iter_mut()).for_each(|(x, c)| {
             *x = get_digit_i64(base2k, (get_digit_i64(base2k_lsh, *x) << lsh) + *c);
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::layouts::VecZnx;
+
+    #[test]
+    fn encode_by_limb_matches_encode_vec_i128() {
+        let n = 8;
+        for (base2k, k) in [(12usize, 50usize), (19, 57), (52, 104), (52, 126), (17, 17), (30, 7)] {
+            let data: Vec<i128> = (0..n as i128)
+                .map(|i| (0x5DEE_CE66_D1CE_4E5B_7A3F_19C2_8B04_u128 as i128).wrapping_mul(i + 1) >> (128 - k.min(126)))
+                .collect();
+            let size = k.div_ceil(base2k);
+            let mut bytes = vec![0u8; VecZnx::<Vec<u8>, i64>::bytes_of(n, 1, size)];
+            let mut expected = VecZnx::<&mut [u8], i64>::from_data(&mut bytes[..], n, 1, size);
+            expected.encode_vec_i128(base2k, 0, k, &data);
+            let mut got = vec![vec![0i64; n]; size];
+            let (mut consumed, mut carry, mut limb) = (data.clone(), vec![0; n], vec![0; n]);
+            encode_i128_by_limb(base2k, k, &mut consumed, &mut carry, &mut limb, |j, digits| {
+                got[j].copy_from_slice(digits)
+            });
+            for (j, limb) in got.iter().enumerate() {
+                assert_eq!(expected.at(0, j), &limb[..], "base2k {base2k}, k {k}, limb {j}");
+            }
+        }
     }
 }

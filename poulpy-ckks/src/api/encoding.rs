@@ -13,11 +13,11 @@ use poulpy_core::layouts::IntPolyInfos;
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{
-    CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, GLWEPlaintextInfos, ReplicatedLayout, SetCKKSInfos, SlotLayout,
+    CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, GLWEPlaintextInfos, SetCKKSInfos, SlotLayout,
     layouts::{
         CKKSEncodingBuffer, CKKSEncodingBufferToBackendMut, CKKSEncodingBufferToBackendRef, CKKSScalar, ScratchArenaTakeCKKS,
         copy_encoding_buffer_into_host, copy_encoding_buffer_into_reim_host, copy_host_into_encoding_buffer,
-        copy_reim_host_into_encoding_buffer,
+        copy_reim_host_into_encoding_buffer, download_from_encoding_buffer, upload_into_encoding_buffer,
     },
 };
 
@@ -122,8 +122,25 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
                 1usize << layout.log_r(),
                 pt.n().as_usize() / 2
             );
-            let (re, im) = (scatter_data_slots(&layout, re), scatter_data_slots(&layout, im));
-            return self.ckks_encode_reim_slots_into(pt, &re, &im, scratch);
+            let (period, slots) = (1usize << layout.log_r(), re.len() << layout.log_r());
+            let required = CKKSEncodingBuffer::<BE::OwnedBuf, F>::bytes_of(2 * slots);
+            ckks_ensure!(
+                scratch.available() >= required,
+                "CKKS encoding needs {required} scratch bytes, but only {} are available",
+                scratch.available()
+            );
+            return scratch.scope(|arena| -> Result<()> {
+                let (mut values, _) = arena.take_ckks_encoding_buffer_scratch::<F>(2 * slots);
+                upload_into_encoding_buffer::<BE, F, _>(&mut values, |t| {
+                    let (part, s) = if t < slots { (re, t) } else { (im, t - slots) };
+                    if s.is_multiple_of(period) {
+                        part[s / period]
+                    } else {
+                        F::zero()
+                    }
+                });
+                self.ckks_encode_slots_assign_into(pt, &mut values)
+            });
         }
         self.ckks_encode_reim_slots_into(pt, re, im, scratch)
     }
@@ -182,13 +199,24 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
                 1usize << layout.log_r(),
                 pt.n().as_usize() / 2
             );
-            let slots = re.len() << layout.log_r();
-            let (mut re_slots, mut im_slots) = (vec![F::zero(); slots], vec![F::zero(); slots]);
-            self.ckks_decode_reim_slots_into(pt, &mut re_slots, &mut im_slots, scratch)?;
-            for (i, (r, m)) in re.iter_mut().zip(im.iter_mut()).enumerate() {
-                (*r, *m) = (re_slots[i << layout.log_r()], im_slots[i << layout.log_r()]);
-            }
-            return Ok(());
+            let (period, slots) = (1usize << layout.log_r(), re.len() << layout.log_r());
+            let required = CKKSEncodingBuffer::<BE::OwnedBuf, F>::bytes_of(2 * slots);
+            ckks_ensure!(
+                scratch.available() >= required,
+                "CKKS decoding needs {required} scratch bytes, but only {} are available",
+                scratch.available()
+            );
+            return scratch.scope(|arena| -> Result<()> {
+                let (mut values, _) = arena.take_ckks_encoding_buffer_scratch::<F>(2 * slots);
+                self.ckks_decode_slots_into(pt, &mut values)?;
+                download_from_encoding_buffer::<BE, F, _>(&values, |t, v| {
+                    let (part, s) = if t < slots { (&mut *re, t) } else { (&mut *im, t - slots) };
+                    if s.is_multiple_of(period) {
+                        part[s / period] = v;
+                    }
+                });
+                Ok(())
+            });
         }
         self.ckks_decode_reim_slots_into(pt, re, im, scratch)
     }
@@ -246,12 +274,25 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
             "a masked constant of period {r} needs a degree multiple of {}, got {n}",
             2 * r
         );
-        let mut coeffs = vec![F::zero(); n];
-        for j in 0..2 * r {
-            let shifted = if j >= r { pi_s(j - r) } else { -pi_s(j + r) };
-            coeffs[j * (n / (2 * r))] = re * pi_s(j) + im * shifted;
-        }
-        self.ckks_encode_coeffs_host_into(pt, &coeffs, scratch)
+        let stride = n / (2 * r);
+        let required = CKKSEncodingBuffer::<BE::OwnedBuf, F>::bytes_of(n);
+        ckks_ensure!(
+            scratch.available() >= required,
+            "CKKS coefficient encoding needs {required} scratch bytes, but only {} are available",
+            scratch.available()
+        );
+        scratch.scope(|arena| -> Result<()> {
+            let (mut values, _) = arena.take_ckks_encoding_buffer_scratch::<F>(n);
+            upload_into_encoding_buffer::<BE, F, _>(&mut values, |t| {
+                if !t.is_multiple_of(stride) {
+                    return F::zero();
+                }
+                let j = t / stride;
+                let shifted = if j >= r { pi_s(j - r) } else { -pi_s(j + r) };
+                re * pi_s(j) + im * shifted
+            });
+            self.ckks_encode_coeffs_into(pt, &values)
+        })
     }
 
     /// Quantizes host polynomial coefficients without applying an IFFT.
@@ -297,13 +338,4 @@ where
     F: CKKSEncodingScalar,
     T: CKKSEncodingOps<BE, F>,
 {
-}
-
-/// `values` on the data slots of a replicated layout, one slot out of `R`.
-fn scatter_data_slots<F: CKKSEncodingScalar>(layout: &ReplicatedLayout, values: &[F]) -> Vec<F> {
-    let mut slots = vec![F::zero(); values.len() << layout.log_r()];
-    for (i, &v) in values.iter().enumerate() {
-        slots[i << layout.log_r()] = v;
-    }
-    slots
 }

@@ -8,8 +8,8 @@ use super::{
 use crate::{
     CKKSLayout, CoeffsMeta, SlotLayout, SlotsKind,
     api::{
-        CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSEncodingHostOps, CKKSEncodingScalar, CKKSModuleInfos, CKKSMulOps,
-        CKKSPolynomialEvaluationOps, CKKSRotateOps, CKKSRoundOps,
+        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSEncodingHostOps, CKKSEncodingScalar, CKKSModuleInfos, CKKSMulOps,
+        CKKSPolynomialEvaluationOps, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
     },
     layouts::encode_bsgs_replicated,
     oep::{CKKSEncodingImpl, CKKSImpl},
@@ -100,6 +100,24 @@ where
     })
     .unwrap();
     results.push(("conjugate_into", snapshot::<B, _>(&out)));
+
+    for (label, add) in [("add_one_assign", true), ("sub_one_assign", false)] {
+        let mut out = fixture_ciphertext(module, &la, 71);
+        let bytes = if add {
+            module.ckks_add_one_tmp_bytes(out.size())
+        } else {
+            module.ckks_sub_one_tmp_bytes(out.size())
+        };
+        with_scratch::<B, _>(bytes, |s| {
+            if add {
+                module.ckks_add_one_assign(&mut out, s)
+            } else {
+                module.ckks_sub_one_assign(&mut out, s)
+            }
+        })
+        .unwrap();
+        results.push((label, snapshot::<B, _>(&out)));
+    }
 
     let coeff_meta = CoeffsMeta::from_delta_budget(20, 4);
     let polynomial = Polynomial::new(

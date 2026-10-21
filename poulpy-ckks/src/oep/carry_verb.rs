@@ -44,7 +44,9 @@ macro_rules! ckks_carry_verb_oep {
                     A: GLWEToBackendRef<Self> + CKKSInfos;
                 /// Scratch bytes for the independently overridable unit shift.
                 fn [<ckks_ $verb _one_tmp_bytes_impl>](module: &Module<Self>, res_size: usize) -> usize {
-                    Self::[<ckks_ $verb _pt_const_tmp_bytes_impl>](module, res_size)
+                    crate::reference::carry_verb::one_pt_tmp_bytes::<Self>(res_size)
+                        + Self::[<ckks_ $verb _pt_const_tmp_bytes_impl>](module, res_size)
+                            .max(Self::[<ckks_ $verb _pt_vec_tmp_bytes_impl>](module, res_size))
                 }
                 fn [<ckks_ $verb _one_assign_impl>]<Dst>(
                     module: &Module<Self>,

@@ -148,8 +148,9 @@ fn unit_shifts_use_selected_plaintext_scratch() {
     for size in [1, 3, 8] {
         assert!(module.ckks_add_one_tmp_bytes(size) > module.ckks_add_tmp_bytes(size));
         assert!(module.ckks_sub_one_tmp_bytes(size) > module.ckks_sub_tmp_bytes(size));
-        assert_eq!(module.ckks_add_one_tmp_bytes(size), module.ckks_add_pt_const_tmp_bytes(size));
-        assert_eq!(module.ckks_sub_one_tmp_bytes(size), module.ckks_sub_pt_const_tmp_bytes(size));
+        // The unit constant is carved from the same arena as the selected plaintext workspace.
+        assert!(module.ckks_add_one_tmp_bytes(size) > module.ckks_add_pt_const_tmp_bytes(size));
+        assert!(module.ckks_sub_one_tmp_bytes(size) > module.ckks_sub_pt_const_tmp_bytes(size));
     }
     let params = CKKSTestParams {
         n: 64,

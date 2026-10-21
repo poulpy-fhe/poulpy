@@ -172,6 +172,55 @@ where
     Ok(())
 }
 
+/// Size of the host chunks staging generated values through an encoding buffer.
+const TRANSFER_CHUNK: usize = 64;
+
+/// Uploads `value(i)` to every index `i` of `dst`, staged through a fixed host
+/// chunk.
+pub(crate) fn upload_into_encoding_buffer<BE, F, C>(dst: &mut C, mut value: impl FnMut(usize) -> F)
+where
+    BE: Backend,
+    F: Pod,
+    C: CKKSEncodingBufferToBackendMut<BE, F>,
+{
+    let len = dst.len();
+    let mut dst = dst.to_backend_mut();
+    let mut chunk = [F::zeroed(); TRANSFER_CHUNK];
+    for start in (0..len).step_by(TRANSFER_CHUNK) {
+        let m = TRANSFER_CHUNK.min(len - start);
+        for (i, c) in chunk[..m].iter_mut().enumerate() {
+            *c = value(start + i);
+        }
+        let bytes = CKKSEncodingBuffer::<BE::BufMut<'_>, F>::bytes_of(m);
+        let offset = CKKSEncodingBuffer::<BE::BufMut<'_>, F>::bytes_of(start);
+        let mut region = BE::region_mut_ref(&mut dst.data, offset, bytes);
+        BE::copy_host_to_view(&mut region, bytemuck::cast_slice(&chunk[..m]));
+    }
+}
+
+/// Downloads every index `i` of `src` to `sink(i, value)`, staged through a
+/// fixed host chunk.
+pub(crate) fn download_from_encoding_buffer<BE, F, C>(src: &C, mut sink: impl FnMut(usize, F))
+where
+    BE: Backend,
+    F: Pod,
+    C: CKKSEncodingBufferToBackendRef<BE, F>,
+{
+    let len = src.len();
+    let src = src.to_backend_ref();
+    let mut chunk = [F::zeroed(); TRANSFER_CHUNK];
+    for start in (0..len).step_by(TRANSFER_CHUNK) {
+        let m = TRANSFER_CHUNK.min(len - start);
+        let bytes = CKKSEncodingBuffer::<BE::BufRef<'_>, F>::bytes_of(m);
+        let offset = CKKSEncodingBuffer::<BE::BufRef<'_>, F>::bytes_of(start);
+        let region = BE::region_ref(&src.data, offset, bytes);
+        BE::copy_view_to_host(&region, bytemuck::cast_slice_mut(&mut chunk[..m]));
+        for (i, &v) in chunk[..m].iter().enumerate() {
+            sink(start + i, v);
+        }
+    }
+}
+
 /// Explicit backend-to-host transfer from an owned or arena-borrowed encoding
 /// buffer.
 pub(crate) fn copy_encoding_buffer_into_host<BE, F, C>(src: &C, values: &mut [F]) -> Result<()>
