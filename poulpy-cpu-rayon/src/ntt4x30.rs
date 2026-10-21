@@ -555,20 +555,16 @@ use $crate::__private::rayon::prelude::*;
 use $crate::__private::poulpy_cpu_portable::{
     hal_defaults::{BigWordHadamardProduct, HalVecZnxDefault, NTT4x30ModuleDefault, NTT4x30VecZnxBigDefault},
     kernels::{
-        normalization::I64NormalizeOps,
         ntt4x30::{
-            I128BigOps, I128NormalizeOps, NttDFTExecute,
+            I128BigOps, NttDFTExecute,
             ntt::{NttTable, NttTableInv},
             primes::Primes30,
-            vec_znx_big::AssignOp,
         },
         znx::{
-            ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
-            ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
-            ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly,
-            ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxRotate, ZnxSub,
-            ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero,
+            ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxMulAddPowerOfTwo, ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign,
+            ZnxNegate, ZnxNegateAssign, ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero,
         },
+        znx_normalize::{Limbs, LimbsMut, ZnxNormalize},
     },
 };
 use $crate::__private::poulpy_hal::{
@@ -707,51 +703,23 @@ $crate::rayon_parallel_unary!($rayon, $base, ZnxNegateAssign, znx_negate_assign)
 $crate::rayon_forward_znx!($rayon, $base, ZnxRotate, znx_rotate(p: i64, res: &mut [i64], src: &[i64]));
 $crate::rayon_parallel_unary!($rayon, $base, ZnxZero, znx_zero);
 $crate::rayon_forward_znx!($rayon, $base, ZnxSwitchRing, znx_switch_ring(res: &mut [i64], a: &[i64]));
-$crate::rayon_forward_znx_const!($rayon, $base, ZnxNormalizeFirstStep, znx_normalize_first_step(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]));
-$crate::rayon_forward_znx_const!($rayon, $base, ZnxNormalizeMiddleStep, znx_normalize_middle_step(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]));
-$crate::rayon_forward_znx_const!($rayon, $base, ZnxNormalizeFinalStep, znx_normalize_final_step(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]));
-$crate::rayon_forward_znx!($rayon, $base, ZnxNormalizeFirstStepCarryOnly, znx_normalize_first_step_carry_only(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]));
-$crate::rayon_forward_znx!($rayon, $base, ZnxNormalizeFirstStepAssign, znx_normalize_first_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]));
-$crate::rayon_forward_znx!($rayon, $base, ZnxNormalizeMiddleStepCarryOnly, znx_normalize_middle_step_carry_only(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]));
-$crate::rayon_forward_znx!($rayon, $base, ZnxNormalizeMiddleStepAssign, znx_normalize_middle_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]));
-$crate::rayon_forward_znx!($rayon, $base, ZnxNormalizeFinalStepAssign, znx_normalize_final_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]));
-impl ZnxExtractDigitAddMul for $rayon {
-    #[inline(always)]
-    fn znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
-        <$base as ZnxExtractDigitAddMul>::znx_extract_digit_addmul(base2k, lsh, res, src);
-    }
-}
 
-impl I64NormalizeOps for $rayon {
-    #[inline(always)]
-    fn znx_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i64], carry: &mut [i64]) {
-        <$base as I64NormalizeOps>::znx_normalize_floor::<CARRY_IN, ROUND>(base2k, lsh, a, carry);
+impl ZnxNormalize for $rayon {
+    unsafe fn znx_normalize(res: LimbsMut<i64>, res_base2k: usize, res_k: usize, offset: i64, a: Limbs<i64>, a_base2k: usize, len: usize) {
+        unsafe { <$base as ZnxNormalize>::znx_normalize(res, res_base2k, res_k, offset, a, a_base2k, len) }
     }
-
-    #[inline(always)]
-    fn znx_normalize_round<const CARRY_IN: bool, const PAD: bool>(base2k: usize, lsh: usize, padding: usize, res: &mut [i64], a: &[i64], carry: &mut [i64]) {
-        <$base as I64NormalizeOps>::znx_normalize_round::<CARRY_IN, PAD>(base2k, lsh, padding, res, a, carry);
-    }
-
-    #[inline(always)]
-    fn znx_normalize_round_assign<const CARRY_IN: bool>(base2k: usize, lsh: usize, padding: usize, res: &mut [i64], carry: &mut [i64]) {
-        <$base as I64NormalizeOps>::znx_normalize_round_assign::<CARRY_IN>(base2k, lsh, padding, res, carry);
-    }
-
-    #[inline(always)]
-    fn znx_extract_digit_mul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
-        <$base as I64NormalizeOps>::znx_extract_digit_mul(base2k, lsh, res, src);
-    }
-
-    #[inline(always)]
-    fn znx_extract_digit_addmul_normalize<const OVERWRITE: bool>(
-        base2k: usize, lsh: usize, res_base2k: usize,
-        res: &mut [i64], src: &mut [i64], carry: &mut [i64],
+    unsafe fn znx_normalize_big(
+        res: LimbsMut<i64>,
+        res_base2k: usize,
+        res_k: usize,
+        offset: i64,
+        a: Limbs<<$base as Backend>::BigWord>,
+        a_base2k: usize,
+        len: usize,
     ) {
-        <$base as I64NormalizeOps>::znx_extract_digit_addmul_normalize::<OVERWRITE>(base2k, lsh, res_base2k, res, src, carry);
+        unsafe { <$base as ZnxNormalize>::znx_normalize_big(res, res_base2k, res_k, offset, a, a_base2k, len) }
     }
 }
-$crate::rayon_forward_znx!($rayon, $base, ZnxNormalizeDigit, znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]));
 
 impl NttDFTExecute<NttTable<Primes30, <$base as Backend>::Ring>> for $rayon
 {
@@ -794,72 +762,6 @@ impl I128BigOps for $rayon {
     $crate::rayon_forward_i128_big!($base, i128_from_small(res: &mut [i128], a: &[i64]));
 }
 
-impl I128NormalizeOps for $rayon {
-    #[inline(always)]
-    fn nfc_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i128], carry: &mut [i128]) {
-        <$base as I128NormalizeOps>::nfc_normalize_floor::<CARRY_IN, ROUND>(base2k, lsh, a, carry);
-    }
-
-    #[inline(always)]
-    fn nfc_normalize_round<const CARRY_IN: bool, const PAD: bool>(
-        base2k: usize,
-        lsh: usize,
-        padding: usize,
-        res: &mut [i64],
-        a: &[i128],
-        carry: &mut [i128],
-    ) {
-        <$base as I128NormalizeOps>::nfc_normalize_round::<CARRY_IN, PAD>(base2k, lsh, padding, res, a, carry);
-    }
-
-    #[inline(always)]
-    fn nfc_add_small_carry(carry: &mut [i128], a: &[i64]) {
-        <$base as I128NormalizeOps>::nfc_add_small_carry(carry, a);
-    }
-
-    #[inline(always)]
-    fn znx_extract_digit_addmul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
-        <$base as I128NormalizeOps>::znx_extract_digit_addmul_i128(base2k, lsh, res, src);
-    }
-
-    const FUSE_NORMALIZE: bool = <$base as $crate::__private::poulpy_cpu_portable::kernels::ntt4x30::I128NormalizeOps>::FUSE_NORMALIZE;
-
-    fn znx_extract_digit_mul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
-        <$base as $crate::__private::poulpy_cpu_portable::kernels::ntt4x30::I128NormalizeOps>::znx_extract_digit_mul_i128(
-            base2k, lsh, res, src,
-        )
-    }
-
-    fn znx_extract_digit_addmul_normalize_i128<const OVERWRITE: bool>(
-        base2k: usize,
-        lsh: usize,
-        res_base2k: usize,
-        res: &mut [i64],
-        src: &mut [i128],
-        carry: &mut [i128],
-    ) {
-        <$base as $crate::__private::poulpy_cpu_portable::kernels::ntt4x30::I128NormalizeOps>::znx_extract_digit_addmul_normalize_i128::<
-            OVERWRITE,
-        >(base2k, lsh, res_base2k, res, src, carry)
-    }
-
-    fn nfc_middle_step(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
-        <$base as I128NormalizeOps>::nfc_middle_step(base2k, lsh, res, a, carry)
-    }
-    fn nfc_middle_step_into<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
-        <$base as I128NormalizeOps>::nfc_middle_step_into::<O>(base2k, lsh, res, a, carry)
-    }
-    fn nfc_middle_step_assign(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
-        <$base as I128NormalizeOps>::nfc_middle_step_assign(base2k, lsh, res, carry)
-    }
-    fn nfc_final_step_assign(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
-        <$base as I128NormalizeOps>::nfc_final_step_assign(base2k, lsh, res, carry)
-    }
-    fn nfc_final_step_into<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
-        <$base as I128NormalizeOps>::nfc_final_step_into::<O>(base2k, lsh, res, carry)
-    }
-}
-
 impl BigWordHadamardProduct for $rayon {
     fn big_word_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
         <Self as I128BigOps>::i128_hadamard_product_i64(res, a, b)
@@ -880,12 +782,9 @@ unsafe impl HalVecZnxImpl for $rayon
         a: &VecZnxBackendRef<'_, Self>,
         a_base2k: usize,
         a_col: usize,
-        scratch: &mut ScratchArena<'_, Self>,
+        _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let (carry, _) = $crate::take_scratch::<Self, i64>(scratch.borrow(), 3 * res.n());
-        $crate::normalize::vec_znx_normalize_par::<$base, Self>(
-            res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, carry,
-        );
+        $crate::normalize::vec_znx_normalize_par::<$base, Self>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col);
     }
 
     fn vec_znx_normalize_assign(
@@ -895,10 +794,9 @@ unsafe impl HalVecZnxImpl for $rayon
         a_offset: i64,
         a: &mut VecZnxBackendMut<'_, Self>,
         a_col: usize,
-        scratch: &mut ScratchArena<'_, Self>,
+        _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let (carry, _) = $crate::take_scratch::<Self, i64>(scratch.borrow(), 3 * a.n());
-        $crate::normalize::vec_znx_normalize_assign_par::<$base, Self>(base2k, k, a_offset, a, a_col, carry);
+        $crate::normalize::vec_znx_normalize_assign_par::<$base, Self>(base2k, k, a_offset, a, a_col);
     }
 }
 unsafe impl HalModuleImpl for $rayon
@@ -1326,10 +1224,9 @@ unsafe impl HalVecZnxBigImpl for $rayon
         a: &$crate::__private::poulpy_hal::layouts::VecZnxBigBackendRef<'_, Self>,
         a_base2k: usize,
         a_col: usize,
-        scratch: &mut ScratchArena<'_, Self>,
+        _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let (carry, _) = $crate::take_scratch::<Self, i128>(scratch.borrow(), 3 * res.n());
-        $crate::normalize::ntt4x30_vec_znx_big_normalize_par::<$base, Self>(
+        $crate::normalize::vec_znx_big_normalize_par::<$base, Self>(
             res,
             res_base2k,
             res_k,
@@ -1338,7 +1235,6 @@ unsafe impl HalVecZnxBigImpl for $rayon
             &base_big_ref(a),
             a_base2k,
             a_col,
-            carry,
         );
     }
 }
@@ -1444,7 +1340,7 @@ unsafe impl HalVecZnxDftImpl for $rayon
 {
     fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<Self>, _res_size: usize, a_size: usize) -> usize {
         let workers = $crate::workers(<Self as $crate::__private::poulpy_hal::execution::ScratchWorkers>::IDFT).min(a_size.max(1));
-        workers * <$base as $crate::ntt4x30::PackedNtt4x30Base>::idft_tmp_words(module.n()) * size_of::<u64>() + 3 * module.n() * size_of::<i128>()
+        workers * <$base as $crate::ntt4x30::PackedNtt4x30Base>::idft_tmp_words(module.n()) * size_of::<u64>()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1468,7 +1364,7 @@ unsafe impl HalVecZnxDftImpl for $rayon
         let cols = a.cols();
         let size = a.size();
         let per_worker = <$base as $crate::ntt4x30::PackedNtt4x30Base>::idft_tmp_words(n);
-        let (carry, arena) = $crate::take_scratch::<Self, i128>(scratch.borrow(), 3 * n);
+        let arena = scratch.borrow();
         let workers = $crate::workers_within(
             size.clamp(1, <Self as $crate::__private::poulpy_hal::execution::ScratchWorkers>::IDFT),
             per_worker * size_of::<u64>(),
@@ -1511,9 +1407,7 @@ unsafe impl HalVecZnxDftImpl for $rayon
         }
         let a_shape = a.shape();
         let big_ref: $crate::__private::poulpy_hal::layouts::VecZnxBigBackendRef<'_, $base> = VecZnxBig::from_shape(&**a.data(), a_shape);
-        $crate::normalize::ntt4x30_vec_znx_big_normalize_par::<$base, Self>(
-            res, res_base2k, res_k, res_offset, res_col, &big_ref, a_base2k, a_col, carry,
-        );
+        $crate::normalize::vec_znx_big_normalize_par::<$base, Self>(res, res_base2k, res_k, res_offset, res_col, &big_ref, a_base2k, a_col);
     }
     fn vec_znx_dft_apply(
         module: &Module<Self>,

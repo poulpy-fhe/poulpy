@@ -19,11 +19,9 @@ use crate::{
             reim4::{Reim4BlkMatVec, Reim4Convolution},
         },
         znx::{
-            ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
-            ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
-            ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly,
-            ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxRotate, ZnxSub,
-            ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero,
+            ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxMulAddPowerOfTwo, ZnxMulPowerOfTwo,
+            ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign,
+            ZnxSwitchRing, ZnxZero,
         },
     },
 };
@@ -141,86 +139,8 @@ macro_rules! impl_fft64_delegating_backend {
                 <$from as ZnxSwitchRing>::znx_switch_ring(res, a)
             }
         }
-        impl ZnxNormalizeFirstStep for $be {
-            #[inline(always)]
-            fn znx_normalize_first_step<const OVERWRITE: bool>(
-                base2k: usize,
-                lsh: usize,
-                x: &mut [i64],
-                a: &[i64],
-                carry: &mut [i64],
-            ) {
-                <$from as ZnxNormalizeFirstStep>::znx_normalize_first_step::<OVERWRITE>(base2k, lsh, x, a, carry)
-            }
-        }
-        impl ZnxNormalizeMiddleStep for $be {
-            #[inline(always)]
-            fn znx_normalize_middle_step<const OVERWRITE: bool>(
-                base2k: usize,
-                lsh: usize,
-                x: &mut [i64],
-                a: &[i64],
-                carry: &mut [i64],
-            ) {
-                <$from as ZnxNormalizeMiddleStep>::znx_normalize_middle_step::<OVERWRITE>(base2k, lsh, x, a, carry)
-            }
-        }
-        impl ZnxNormalizeFinalStep for $be {
-            #[inline(always)]
-            fn znx_normalize_final_step<const OVERWRITE: bool>(
-                base2k: usize,
-                lsh: usize,
-                x: &mut [i64],
-                a: &[i64],
-                carry: &mut [i64],
-            ) {
-                <$from as ZnxNormalizeFinalStep>::znx_normalize_final_step::<OVERWRITE>(base2k, lsh, x, a, carry)
-            }
-        }
-        impl ZnxNormalizeFirstStepCarryOnly for $be {
-            #[inline(always)]
-            fn znx_normalize_first_step_carry_only(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]) {
-                <$from as ZnxNormalizeFirstStepCarryOnly>::znx_normalize_first_step_carry_only(base2k, lsh, x, carry)
-            }
-        }
-        impl ZnxNormalizeFirstStepAssign for $be {
-            #[inline(always)]
-            fn znx_normalize_first_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
-                <$from as ZnxNormalizeFirstStepAssign>::znx_normalize_first_step_assign(base2k, lsh, x, carry)
-            }
-        }
-        impl ZnxNormalizeMiddleStepCarryOnly for $be {
-            #[inline(always)]
-            fn znx_normalize_middle_step_carry_only(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]) {
-                <$from as ZnxNormalizeMiddleStepCarryOnly>::znx_normalize_middle_step_carry_only(base2k, lsh, x, carry)
-            }
-        }
-        impl ZnxNormalizeMiddleStepAssign for $be {
-            #[inline(always)]
-            fn znx_normalize_middle_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
-                <$from as ZnxNormalizeMiddleStepAssign>::znx_normalize_middle_step_assign(base2k, lsh, x, carry)
-            }
-        }
-        impl ZnxNormalizeFinalStepAssign for $be {
-            #[inline(always)]
-            fn znx_normalize_final_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
-                <$from as ZnxNormalizeFinalStepAssign>::znx_normalize_final_step_assign(base2k, lsh, x, carry)
-            }
-        }
-        impl ZnxExtractDigitAddMul for $be {
-            #[inline(always)]
-            fn znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
-                <$from as ZnxExtractDigitAddMul>::znx_extract_digit_addmul(base2k, lsh, res, src);
-            }
-        }
 
-        impl crate::kernels::normalization::I64NormalizeOps for $be {}
-        impl ZnxNormalizeDigit for $be {
-            #[inline(always)]
-            fn znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]) {
-                <$from as ZnxNormalizeDigit>::znx_normalize_digit(base2k, res, src)
-            }
-        }
+        impl crate::kernels::znx_normalize::ZnxNormalize for $be {}
 
         impl ReimFFTExecute<ReimFFTTable<f64>, f64> for $be {
             #[inline(always)]
@@ -317,8 +237,8 @@ impl crate::kernels::fft64::ring_arith::Fft64RingArith for ControlledSamplingFFT
 poulpy_core::impl_core_reference_full!(ControlledSamplingFFT64CIPortable);
 
 #[test]
-fn test_normalization_kernels_delegating_fft64_portable() {
-    crate::test_suite::normalization::test_normalization_kernels::<DelegatingFFT64Portable>();
+fn test_znx_normalize_delegating_fft64_portable() {
+    crate::test_suite::znx_normalize::test_znx_normalize::<DelegatingFFT64Portable>();
 }
 
 poulpy_core::impl_core_reference_full!(ControlledSamplingFFT64Portable);

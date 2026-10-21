@@ -232,6 +232,22 @@ fn test_convolution_direct() {
     test_convolution_add(&module, module.n(), 12);
 }
 
+#[test]
+fn test_znx_normalize_avx512() {
+    use poulpy_cpu_portable::test_suite::znx_normalize::test_znx_normalize;
+    test_znx_normalize::<FFT64Avx512>();
+    test_znx_normalize::<crate::NTT4x30Avx512>();
+    #[cfg(feature = "enable-ifma")]
+    test_znx_normalize::<crate::NTT3x42Ifma>();
+    #[cfg(feature = "enable-rayon")]
+    {
+        test_znx_normalize::<crate::FFT64Avx512Rayon>();
+        test_znx_normalize::<crate::NTT4x30Avx512Rayon>();
+        #[cfg(feature = "enable-ifma")]
+        test_znx_normalize::<crate::NTT3x42IfmaRayon>();
+    }
+}
+
 cross_backend_test_suite! {
     mod word_compat,
     backend_ref =  poulpy_cpu_portable::FFT64Portable,

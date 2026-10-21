@@ -126,13 +126,15 @@ where
     BE: Backend,
     K: PaCoKeys<BE>,
 {
-    let key = keys.rotation_keys().get_automorphism_key(element, input_k).map_err(|_| {
-        CKKSCompositionError::MissingAutomorphismKey {
+    let key = keys
+        .rotation_keys()
+        .get_automorphism_key(element, input_k)
+        .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
             op: "ckks_paco_bootstrap",
             rotation: element,
             k: input_k.into(),
-        }
-    })?;
+            source,
+        })?;
     validate_key_shape(
         &format!("PaCo automorphism key {element} at precision {input_k}"),
         &key,
@@ -154,9 +156,10 @@ where
     let key = keys
         .tensor_key()
         .get_tensor_key(input_k)
-        .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
             op: "ckks_paco_bootstrap",
             k: input_k.into(),
+            source,
         })?;
     validate_key_shape(&format!("PaCo relinearization key at precision {input_k}"), &key, n, base2k)
 }
@@ -401,10 +404,11 @@ where
     let _conjugation_key_for = |k: TorusPrecision| {
         keys.rotation_keys()
             .get_automorphism_key(-1, k)
-            .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
+            .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
                 op: "ckks_paco_bootstrap",
                 rotation: -1,
                 k: k.into(),
+                source,
             })
     };
 

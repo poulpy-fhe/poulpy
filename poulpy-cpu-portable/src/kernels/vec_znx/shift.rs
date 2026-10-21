@@ -1,73 +1,54 @@
 //! CPU override of the `normalize(offset = +k)` default for `vec_znx_lsh_assign`.
 //!
 //! The OEP default shifts into a full-width `VecZnx` temporary and copies back;
-//! the kernel below moves the limbs in place through a single carry buffer, one
-//! memory pass instead of two. It is bit-exact with the default; the parity
-//! test in `poulpy_hal::test_suite::derived` pins that, and the rest of the
-//! shift family (`lsh`, `lsh_add`, `lsh_sub`, `rsh*`) stays on its default.
-
-use std::mem::size_of;
+//! the kernel below moves the limbs within the column, then normalizes them in
+//! place, with no temporary. It is bit-exact with the default; the parity test in
+//! `poulpy_hal::test_suite::derived` pins that, and the rest of the shift family
+//! (`lsh`, `lsh_add`, `lsh_sub`, `rsh*`) stays on its default.
 
 use crate::{
-    kernels::znx::{ZnxCopy, ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStepAssign, ZnxNormalizeMiddleStepAssign, ZnxZero},
-    layouts::{Backend, HostDataMut, VecZnxBackendMut, ZnxView, ZnxViewMut},
+    kernels::znx_normalize::{Limbs, LimbsMut, ZnxNormalize},
+    layouts::{HostDataMut, VecZnxBackendMut, ZnxView, ZnxViewMut},
 };
 
-/// Scratch the [`vec_znx_lsh_assign_portable`] kernel carves: one normalization carry.
-///
-/// The api-level `vec_znx_lsh_tmp_bytes` keeps its OEP default, which also has
-/// to cover the still-derived `lsh_add` / `lsh_sub`; it is strictly larger than
-/// this.
-pub fn vec_znx_lsh_assign_carry_bytes_portable(n: usize) -> usize {
-    n * size_of::<i64>()
-}
-
-pub fn vec_znx_lsh_assign_portable<'r, BE>(
-    base2k: usize,
-    k: usize,
-    res: &mut VecZnxBackendMut<'r, BE>,
-    res_col: usize,
-    carry: &mut [i64],
-) where
-    BE: Backend<ZnxWord = i64>,
+pub fn vec_znx_lsh_assign_portable<'r, BE>(base2k: usize, k: usize, res: &mut VecZnxBackendMut<'r, BE>, res_col: usize)
+where
+    BE: ZnxNormalize,
     BE::BufMut<'r>: HostDataMut,
-    BE: ZnxZero + ZnxCopy + ZnxNormalizeFirstStepAssign + ZnxNormalizeMiddleStepAssign + ZnxNormalizeFinalStepAssign,
 {
-    let n: usize = res.n();
-    let size: usize = res.size();
+    let (n, size, shape) = (res.n(), res.size(), res.shape());
+    assert!(res_col < res.cols(), "operand column out of range");
+    if size > 0 {
+        // Bounds-checks the last limb, the farthest one the kernel writes.
+        let _ = res.at_ptr(res_col, size - 1);
+    }
     let (steps, k_rem) = (k / base2k, k % base2k);
-
-    // Everything is shifted past the top limb: the column is zero, as in the
-    // `normalize(offset = +k)` default.
-    if steps >= size {
-        for j in 0..size {
-            BE::znx_zero(res.at_mut(res_col, j));
+    let base = res.base_mut_ptr();
+    // SAFETY: every limb `j < size` of `res_col` lies in the buffer, bounds-checked above.
+    let limb = |j: usize| unsafe { base.add(shape.scalar_offset(res_col, j)) };
+    let kept = size.saturating_sub(steps);
+    if steps > 0 {
+        for j in 0..kept {
+            // SAFETY: distinct limbs of one column never overlap.
+            unsafe { std::ptr::copy_nonoverlapping(limb(j + steps), limb(j), n) };
         }
+    }
+    for j in kept..size {
+        // SAFETY: a limb holds `n` words.
+        unsafe { std::ptr::write_bytes(limb(j), 0, n) };
+    }
+    if kept == 0 {
         return;
     }
-
-    // Assign shift of limbs by a k/base2k. The limbs are moved one at a time
-    // through `carry`: the normalization below starts with a first step, which
-    // overwrites the carry instead of reading it.
-    if steps > 0 {
-        let bounce = &mut carry[..n];
-        for j in 0..size - steps {
-            BE::znx_copy(bounce, res.at(res_col, j + steps));
-            BE::znx_copy(res.at_mut(res_col, j), bounce);
-        }
-
-        for j in size - steps..size {
-            BE::znx_zero(res.at_mut(res_col, j));
-        }
-    }
-
-    for j in (0..size - steps).rev() {
-        if j == size - steps - 1 {
-            BE::znx_normalize_first_step_assign(base2k, k_rem, res.at_mut(res_col, j), carry);
-        } else if j == 0 {
-            BE::znx_normalize_final_step_assign(base2k, k_rem, res.at_mut(res_col, j), carry);
-        } else {
-            BE::znx_normalize_middle_step_assign(base2k, k_rem, res.at_mut(res_col, j), carry);
-        }
-    }
+    let res = LimbsMut {
+        size: kept,
+        ..LimbsMut::new(base, shape, res_col, 0)
+    };
+    let a = Limbs {
+        ptr: res.ptr.cast_const(),
+        stride: res.stride,
+        size: kept,
+    };
+    // SAFETY: in place on one column at one radix, with offset `k_rem < base2k`.
+    unsafe { BE::znx_normalize(res, base2k, kept * base2k, k_rem as i64, a, base2k, n) }
 }

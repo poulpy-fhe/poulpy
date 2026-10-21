@@ -47,6 +47,7 @@ pub fn vec_znx_gadget_decompose_portable<'r, 'a, BE>(
     // Limb holding bit `gadget_k` (bit 1 is the most significant), and its bits below it.
     let j0: usize = gadget_k.div_ceil(base2k) - 1;
     let low: usize = (j0 + 1) * base2k - gadget_k;
+    let nothing_dropped: i64 = (j0 + 1 == a_size && low == 0) as i64;
 
     let mut acc = [0i64; CHUNK];
     let mut carry = [0i64; CHUNK];
@@ -57,19 +58,25 @@ pub fn vec_znx_gadget_decompose_portable<'r, 'a, BE>(
         let range = start..start + len;
         let (acc, carry, neg) = (&mut acc[..len], &mut carry[..len], &mut neg[..len]);
 
-        // Rounding at `gadget_k`, half up: floor((tail + 2^(drop - 1)) / 2^drop),
-        // carried exactly through the limbs below the straddling one.
+        // Ties to even at `gadget_k`: half up, low bit cleared when `acc`, sticky over the dropped remainders, is zero.
         if j0 < a_size {
             carry.fill(0);
+            acc.fill(nothing_dropped);
+            let limb_mask: i64 = (1i64 << base2k) - 1;
             for j in (j0 + 1..a_size).rev() {
                 let half: i64 = if j == j0 + 1 && low == 0 { 1 << (base2k - 1) } else { 0 };
-                for (c, &v) in carry.iter_mut().zip(&a.at(a_col, j)[range.clone()]) {
-                    *c = (v + *c + half) >> base2k;
+                for ((c, x), &v) in carry.iter_mut().zip(acc.iter_mut()).zip(&a.at(a_col, j)[range.clone()]) {
+                    let s = v + *c + half;
+                    *c = s >> base2k;
+                    *x |= s & limb_mask;
                 }
             }
             let half: i64 = if low > 0 { 1 << (low - 1) } else { 0 };
+            let low_mask: i64 = (1i64 << low) - 1;
             for ((x, &c), &v) in acc.iter_mut().zip(carry.iter()).zip(&a.at(a_col, j0)[range.clone()]) {
-                *x = (v + c + half) >> low;
+                let s = v + c + half;
+                let tie: i64 = ((*x | (s & low_mask)) == 0) as i64;
+                *x = (s >> low) & !tie;
             }
         } else {
             acc.fill(0);

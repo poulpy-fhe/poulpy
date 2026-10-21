@@ -21,8 +21,8 @@ use crate::{
 use std::collections::HashMap;
 
 use super::helpers::{
-    TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ckks_error, assert_ct_meta,
-    assert_decrypt_precision, assert_unary_output_meta, ckks_encrypt, gen_atk, gen_sk_with_raw, test_vector_1, want_rotate,
+    TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ct_meta, assert_decrypt_precision,
+    assert_unary_output_meta, ckks_encrypt, gen_atk, gen_sk_with_raw, test_vector_1, want_rotate,
 };
 use poulpy_core::layouts::GLWEAutomorphismKeyPrepared;
 use poulpy_core::{GLWEAutomorphism, GLWEShift};
@@ -244,13 +244,12 @@ pub fn test_rotate_assign_missing_key_error<BE, F, E>(
     let err = module
         .ckks_rotate_assign(&mut ct, 1, &empty_keys, &mut scratch.borrow())
         .unwrap_err();
-    assert_ckks_error(
-        "rotate_assign missing_key",
-        &err,
-        CKKSCompositionError::MissingAutomorphismKey {
-            op: "rotate_assign",
-            rotation: 1,
-            k: params.k as u32,
-        },
+    assert!(
+        matches!(
+            err.composition(),
+            Some(CKKSCompositionError::MissingAutomorphismKey { op: "rotate_assign", rotation: 1, k, .. })
+                if *k == params.k as u32
+        ),
+        "rotate_assign missing_key: unexpected error: {err}"
     );
 }

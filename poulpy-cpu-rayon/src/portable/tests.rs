@@ -70,6 +70,15 @@ fn test_convolution_fft64() {
     test_convolution_by_const_add(&module, module.n(), 12);
 }
 
+#[test]
+fn test_znx_normalize_portable_rayon() {
+    use poulpy_cpu_portable::test_suite::znx_normalize::test_znx_normalize;
+    test_znx_normalize::<crate::FFT64PortableRayon>();
+    test_znx_normalize::<crate::FFT64CIPortableRayon>();
+    test_znx_normalize::<crate::NTT4x30PortableRayon>();
+    test_znx_normalize::<crate::NTT4x30CIPortableRayon>();
+}
+
 poulpy_cpu_portable::conjugate_invariant_test_suite!(
     ci_fft64,
     crate::FFT64CIPortableRayon,

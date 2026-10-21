@@ -22,6 +22,7 @@ where
         bencher,
         &NormalizeSweepParams {
             shape: sweep.clone(),
+            a_size: sweep.size,
             a_base2k: 50,
             res_base2k: 50,
             res_offset: 0,
@@ -42,7 +43,7 @@ pub fn runner_vec_znx_normalize_sweep<B: Backend<ZnxWord = i64>, M: Measurement>
 
     let mut source: Source = Source::new([0u8; 32]);
 
-    let a = random_normalization_vec_znx(module.n(), sweep.cols, sweep.size, &mut source);
+    let a = random_normalization_vec_znx(module.n(), sweep.cols, params.a_size, &mut source);
     let a = upload_host_vec_znx::<B>(&a);
     let res = random_host_vec_znx(module.n(), sweep.cols, sweep.size, &mut source);
     let mut res = upload_host_vec_znx::<B>(&res);

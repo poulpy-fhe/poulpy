@@ -13,6 +13,8 @@
 - **Breaking:** `VecZnxIdftApplyTmpA`, `HalVecZnxDftImpl::vec_znx_idft_apply_tmpa` and `test_vec_znx_idft_apply_tmpa` are removed; callers use `vec_znx_idft_apply` with `vec_znx_idft_apply_tmp_bytes` of scratch, which also removes the per-call allocation of the AVX-512 NTT4x30 and IFMA backends ([#339](https://github.com/poulpy-fhe/poulpy/issues/339)), and the default `vec_znx_idft_normalize_consume_tmp_bytes` covers that scratch.
 - The contract key `sparse` is renamed `embed`, the module `test_suite::sparse` becomes `test_suite::embed`, and the tests `test_vec_znx_sparse_add_sub`, `test_vec_znx_big_sparse_add_sub` and `test_convolution_sparse` become `test_vec_znx_embed_add_sub`, `test_vec_znx_big_embed_add_sub` and `test_convolution_embed`.
 - **Breaking:** `VecZnx::encode_vec_i64_strided`, `encode_vec_i128_strided`, `decode_vec_i64_strided` and `decode_vec_i128_strided` are removed; the dense forms take one value per coefficient.
+- **Breaking, behaviour:** normalization rounds ties to even instead of toward positive infinity (`rnd` in the HAL notation).
+  Ties of a few dropped exact bits no longer push every coefficient the same way; outputs change only at exact ties.
 
 ### CPU backends
 
@@ -69,7 +71,6 @@
   Every element goes through the same operations in the same order, so the transforms return the same bytes.
 - `vmp_apply_dft_to_dft_add` of the FFT64 backends, serial and Rayon, accumulates each block as it is computed, where it filled a zeroed scratch vector and added it afterwards.
   Its scratch shrinks to the one of `vmp_apply_dft_to_dft`.
-- **Fix:** `ZnxPortable::znx_normalize_middle_step` ignored its `OVERWRITE` parameter and always overwrote.
 - **Fix:** the encapsulated ModUp of the AVX2 and AVX-512 backends read a sparse-to-dense key view taken with `with_k_digit` above the stored `k_digit` as the stored matrix, and returned another ciphertext than the reference body; such a view now takes the reference body.
 - **Fix:** the NTT convolution apply kernels of the AVX2, AVX-512 and NEON backends checked the size of the result but not its column, and wrote past the buffer for a column past the last one; they now panic.
 - **Fix:** the convolution prepare of the NTT4x30 AVX2, AVX-512 and NEON backends gave each parallel task a mutable view of the whole column while the tasks of the other limbs of that column wrote to it; each task now writes only the rows of its limb.
@@ -86,6 +87,16 @@
   The oracle runs `blas_backend_test_suite!` and parity between its families, every other backend type registers parity against the oracle of its family (`NTT3x42` types against the `NTT4x30` oracles), and every conjugate-invariant type, the oracle's included, runs `blas_conjugate_invariant_test_suite!`.
 - Add the `blas_pipeline` example to `poulpy-cpu-portable` (`--features enable-blas`): it plans its keys from `BlasPlan` and `sum_galois_elements`, runs `blas_matmul`, `blas_transpose`, `blas_matmul_pt_right`, `blas_matmul_pt_left` and `blas_sum` on a batch of encrypted matrices and checks the result in the clear.
   It plans every layout from the output-layout queries and generates each key once, at the widest width it is looked up at.
+- **Breaking:** CPU backends normalize through one blocked kernel, `ZnxNormalize`, and take no normalization scratch: `vec_znx_normalize_tmp_bytes` and `vec_znx_big_normalize_tmp_bytes` return 0.
+  The traits `ZnxNormalize*Step*`, `ZnxNormalizeDigit`, `ZnxExtractDigitAddMul`, `I64NormalizeOps` and `I128NormalizeOps` with their kernel functions, and `I128NormalizePlan`, are removed.
+  The `kernels::normalization` module, `AddOp`, `SubOp` and `AssignOp` of `kernels::ntt4x30::vec_znx_big`, `ntt4x30_vec_znx_big_normalize*_portable`, `kernels::fft64::vec_znx_big::vec_znx_big_normalize_tmp_bytes_portable` and `vec_znx_lsh_assign_carry_bytes_portable` are removed.
+  `vec_znx_big_normalize_portable` moves from `kernels::fft64::vec_znx_big` to `kernels::vec_znx_big_normalize` and serves both big words.
+  `poulpy_cpu_rayon::normalize::ntt4x30_vec_znx_big_normalize_par` is renamed `vec_znx_big_normalize_par`, the exported macro `rayon_forward_znx_const!` is removed, and the public normalize entries lose their `carry` parameter.
+  The shared suites `test_suite::normalization::test_normalization_kernels` and `test_suite::normalization_i128::test_i128_normalize_fused` are replaced by `test_suite::znx_normalize::test_znx_normalize`.
+  Out-of-tree CPU backends implement `ZnxNormalize`, whose default methods run the portable kernel.
+- The normalization kernel runs on `std::simd` lanes on every CPU target, so no backend carries hand-written normalization lanes.
+  Each backend picks its lane widths through the associated types of `ZnxNormalize`, portable widths by default; the AVX-512 backends fill zmm registers.
+  `poulpy-cpu-portable` enables the nightly features `portable_simd`, `hint_prefetch` and `associated_type_defaults`.
 
 ### `poulpy-core`
 
@@ -164,9 +175,14 @@
 - `GLWEMulPreparedPlainSum::glwe_mul_prepared_plain_sum` computes `res = Σ_t a[t] ⊛ σ_{galois[t]}(b[t])` over parallel slices of ciphertexts prepared as left operands, plaintexts prepared as right operands and odd Galois elements, at given limb counts and radix: one `cnv_apply_dft_sum` per column in slice order, then one normalization, canonical at `res.k()`.
   It transforms no operand, so prepared ciphertexts serve every output that shares them, and `glwe_mul_prepared_plain_sum_tmp_bytes` does not grow with the number of terms. It checks every operand against the degree and rank of `res`, every element odd, and its scratch, before writing `res`. One term through `1` is `glwe_mul_plain` of the sources bit for bit.
   Backends get it from `impl_operations_reference_full!`, or from `impl_glwe_mul_prepared_plain_sum_reference_full!` with the OEP family `GLWEMulPreparedPlainSumImpl` and its reference `GLWEMulPreparedPlainSumReference`.
+- Add `GGLWELayout::max_input_k`, the widest input a key switches whole: what its digits cover, and no more than its precision less one digit.
+- Add `From<GGLWELayout>` for `GLWEAutomorphismKeyLayout`, `GLWESwitchingKeyLayout` and `GLWETensorKeyLayout`. Each panics on a coarsened view.
 
 ### `poulpy-ckks`
 
+- **Breaking:** the C2S-first logN16 preset `n16_d35_k600_p19_c2s` is replaced by `n16_d35_k636_p20_c2s`: three factors per transform, as the S2C-first preset (C2S at scale `2^51`, S2C at `2^35`), and log message ratio 6 for at least 20 bits of precision (20.8 measured, 23.0 on average), a 41-bit input, 595 usable bits (17 levels instead of 16) and a raised modulus of 1381 bits instead of 1427.
+- **Breaking:** `n15_d35_k180_p18_c2s` runs CoeffsToSlots at scale `2^50` and SlotsToCoeffs at `2^29` (were `2^49` and `2^30`), at the same widths, and keeps its 18 bits of precision (18.4 measured, 20.3 on average) with a single tensor key.
+- **Breaking:** the S2C-first logN16 preset `n16_d35_k720_p19_s2c` is replaced by `n16_d35_k733_p20_s2c`: three factors per transform (C2S `[(5, 4096), (5, 256), (5, 8)]` at scale `2^50`, S2C `[(4, 4), (5, 128), (6, 4096)]` at `2^30`) for at least 20 bits of precision (20.4 measured, 23.0 on average), a 138-bit input, 595 usable bits (17 levels instead of 16) and a raised modulus of 1353 bits instead of 1382.
 - The FFT64 bootstrapping benchmarks (portable, AVX2, AVX-512) and preset precision tests (portable, AVX2, oracle) run the presets at `base2k = 18` instead of 19, and `docs/bootstrapping.md` and `docs/performance.md` follow.
   At logN16 the giant steps of CoeffsToSlots and SlotsToCoeffs accumulate several hundred key-switch products in the DFT domain before one inverse transform, which `f64` no longer represents exactly at `base2k = 19`: the bootstrap returned garbage there, and returns 19.85 bits at 18.
 - `CKKSCiphertext` implements `WriterTo` and `ReaderFrom` in the format of its inner `GLWE`, so a flag-clear ciphertext is rejected with `InvalidInput`; the ring stays a type parameter.
@@ -196,9 +212,8 @@
   Polynomial evaluation prepares its giant steps under `Reuse`, as before, so its bits are unchanged.
 - `test_suite::parity::helpers`, `test_suite::parity::keys` and `test_suite::parity::layout` are public under `test-utils`, so downstream crates build parity tests from the same fixtures.
 - The scratch of the SHIP masking accumulation and mux-rotate covers `vec_znx_idft_apply_tmp_bytes`.
-- Fix: the halving of `ckks_ci_trace`, and so of `ckks_unfold` of conjugate-invariant inputs, rounds its ties to even.
-  It rounded every tie of both columns up, a bias that adds up in the first slots: about `2^-34` at slot 0 for a degree-`2^16` ciphertext at scale `2^54`, against `2^-43` elsewhere.
-  The outputs keep the input scale at one bit narrower, as before.
+- **Fix:** the first-slot bias of `ckks_ci_trace`, and so of `ckks_unfold` of conjugate-invariant inputs, is gone: its halving is a normalization, which rounds ties to even.
+  The halving rounded every tie of both columns up, about `2^-34` at slot 0 for a degree-`2^16` ciphertext at scale `2^54`, against `2^-43` elsewhere.
 - The SHIP mux-rotate takes keys of any digit width: the rank-2 input shared by a group is laid out on the digit grid with `gadget_dft_apply`, and its scratch covers that operand.
   A group whose keys are not all whole-limb must share one digit width and count, and returns an error otherwise.
   The mux key generation takes the digit width in bits, and the mux test also runs widths below a limb, one bit past a limb and one bit short of two, and checks that a mixed group is rejected.
@@ -237,6 +252,15 @@
 - The CKKS `determinism.txt` plaintext fixtures of the encoding test are recorded at the degree of their slots, and the one- and two-slot ones are gone; their decoded values are unchanged.
 - `CKKSDotProductOps::ckks_dot_product_prepared_pt` and its `_tmp_bytes` sum the products of ciphertexts prepared by `ckks_prepare_left` by plaintexts prepared by `ckks_prepare_right`, each plaintext read through an odd Galois element (`ckks_galois_element(r)` for its slots rotated by `r`), through core's `glwe_mul_prepared_plain_sum`, at the metadata rule of `ckks_mul_pt_vec_into`.
   They check their operands as `ckks_dot_product_prepared` does, and return `InvalidOperand` for an even element, before writing `dst`; one term through `1` is `ckks_mul_pt_vec_into` bit for bit. Backends get them from `impl_ckks_dot_product_reference!`, over `CKKSDotProductReference`; they require `Module: GLWEMulPreparedPlainSum`, which every CPU backend implements.
+- **Breaking:** `BootstrappingKeysLayout` gains `rotation_keys` (layouts of single rotation keys, by Galois element) and is no longer `Copy`.
+- **Breaking:** the bootstrapping presets check every key against the modulus bounds of their secrets, 128-bit estimates documented with the presets (1707 and 345 bits at `N = 2^16` for weights 1024 and 32, 851 and 162 at `N = 2^15`), and give each key the whole-limb digit of fewest rows its use admits, guarded by at least one digit: rotation keys by CoeffsToSlots factor, and the tensor key by the widest product EvalMod relinearizes (a plan with the EvalRound+ bypass keeps one shape). Key sets generated for 0.9.0 presets do not match. `BootstrappingPreset::with_dsizes` still gives every high-modulus key one digit of whole limbs; add `BootstrappingPreset::key_k_digit`.
+- **Breaking:** the bootstrap and functional-bootstrap entry points no longer require `BootstrappingKeys::TensorKey` to be `GLWETensorKeyPrepared`; the parallel paths require `TensorKey: Sync`.
+- **Behaviour:** the bootstraps return an error when a rotation or tensor key is used at a precision above its `max_input_k`, where the key switch dropped the input limbs past the key's rows, for any `BootstrappingKeys` store.
+  `ckks_bootstrap` checks every rotation key and the tensor key at the widths the working width `ct_out.k()` sets before any work, except for an EvalRound+ recipe, whose stages check them as they use them.
+- **Breaking:** `CKKSCompositionError::MissingAutomorphismKey` and `MissingRelinearizationKey` carry the key source's error as `source`, which their message includes and `Error::source` returns, so a key too narrow for its use is no longer reported as absent; `CKKSError::source` returns the source of a composition error.
+- Add `DFTPlan::galois_elements_per_factor`.
+- The bootstrap scratch bounds cover every rotation key shape of the layout, taking one maximum per key list.
+- The test suite adds `small_s2c_preset_meets_precision`, an S2C-first bootstrap on an insecure `N = 2^11` preset built by the preset machinery, which backends run by default.
 
 ### `poulpy-bin-fhe`
 
@@ -293,6 +317,10 @@
   The counts are those `blas_matmul` and `blas_matmul_pt_right` document.
 - `validate_blas_sum` rejects with `InvalidOperand` a `base2k` whose digits cannot hold the `log2(mat_slots) + 1` lazy terms the sum adds within `2^62`, as the products reject one above 62.
 - Calls with distinct `res` and `scratch` may run concurrently over a shared module, context, public operands, prepared operands and key stores, and an override keeps no state across calls.
+
+### `poulpy-cpu-arm`
+
+- Add the full-size bootstrapping preset precision test for `NTT4x30NeonRayon`.
 
 ## [0.9.0] - 2026-10-08
 

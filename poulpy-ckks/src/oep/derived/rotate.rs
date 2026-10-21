@@ -38,10 +38,11 @@ where
     }
     let key = keys
         .get_automorphism_key(p, src.k())
-        .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
+        .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
             op: "rotate",
             rotation: k,
             k: src.k().into(),
+            source,
         })?;
     BE::ckks_rotate_into_impl(module, dst, src, &key, scratch)
 }
@@ -65,10 +66,11 @@ where
     }
     let key = keys
         .get_automorphism_key(p, dst.k())
-        .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
+        .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
             op: "rotate_assign",
             rotation: k,
             k: dst.k().into(),
+            source,
         })?;
     BE::ckks_rotate_assign_impl(module, dst, &key, scratch)
 }

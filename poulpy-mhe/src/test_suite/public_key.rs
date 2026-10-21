@@ -255,22 +255,18 @@ where
                 let phase_fold = 1.0 + rank_n * secret_second;
                 let extra_bits = (key_k.0 - k.0) as usize;
                 // Fresh errors are drawn one limb past `k`. Dropped key limbs
-                // leave a tail on every key component; with the output rounding,
-                // noncentered means add up along ring products.
+                // leave a tail on every key component whose noncentered mean
+                // adds up along ring products.
                 let sample = super::fixtures::pk_sample(k.as_usize(), key_k.as_usize());
                 let fresh_scale = (-2.0 * (sample - k.as_usize()) as f64).exp2();
-                let ((tau, v_t), mu_r) = super::fixtures::pk_tail_and_rounding(k.as_usize(), key_k.as_usize());
-                let component_rounding = if mu_r != 0.0 {
-                    mu_r * mu_r + (1.0 - fresh_scale) / 12.0
-                } else {
-                    0.0
-                };
+                let (tau, v_t) = super::fixtures::pk_tail(k.as_usize(), key_k.as_usize());
+                let component_rounding = super::fixtures::pk_rounding(k.as_usize(), key_k.as_usize());
                 let excess = super::fixtures::pk_coherent_excess(
                     module.n(),
                     RANK.as_usize(),
                     (mean, second),
                     (count * mean, secret_second),
-                    ((tau, v_t), mu_r),
+                    (tau, v_t),
                 );
                 let tail_and_rounding =
                     rank_n * second * phase_fold * (tau * tau + v_t) + phase_fold * component_rounding + excess;

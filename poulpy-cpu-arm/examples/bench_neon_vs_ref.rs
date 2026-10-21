@@ -32,8 +32,8 @@ mod neon {
         FFT64Portable, NTT4x30Portable,
         kernels::{
             fft64::reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
-            ntt4x30::{I128BigOps, I128NormalizeOps},
-            znx::{ZnxAdd, ZnxAutomorphism, ZnxNormalizeMiddleStepAssign},
+            ntt4x30::I128BigOps,
+            znx::{ZnxAdd, ZnxAutomorphism},
         },
     };
 
@@ -142,38 +142,6 @@ mod neon {
             black_box(&r);
         });
         row(rep, "znx_add", n, ref_ns, neon_ns, sp);
-    }
-
-    fn bench_znx_normalize(rep: &mut Reporter, n: usize, sp: &mut Vec<f64>) {
-        let base2k = 18usize;
-        let x_init = rand_i64s(n);
-        let c_init = rand_i64s(n);
-
-        let mut x_neon = x_init.clone();
-        let mut c_neon = c_init.clone();
-        let mut x_ref = x_init.clone();
-        let mut c_ref = c_init.clone();
-        <FFT64Neon as ZnxNormalizeMiddleStepAssign>::znx_normalize_middle_step_assign(base2k, 0, &mut x_neon, &mut c_neon);
-        <FFT64Portable as ZnxNormalizeMiddleStepAssign>::znx_normalize_middle_step_assign(base2k, 0, &mut x_ref, &mut c_ref);
-        assert_eq!(x_neon, x_ref, "znx_normalize_middle_step_assign x (n={n})");
-        assert_eq!(c_neon, c_ref, "znx_normalize_middle_step_assign c (n={n})");
-
-        let iters = iters_for(n);
-        let mut x = x_init.clone();
-        let mut c = c_init.clone();
-        let ref_ns = time(iters, || {
-            x.copy_from_slice(&x_init);
-            c.copy_from_slice(&c_init);
-            <FFT64Portable as ZnxNormalizeMiddleStepAssign>::znx_normalize_middle_step_assign(base2k, 0, &mut x, &mut c);
-            black_box((&x, &c));
-        });
-        let neon_ns = time(iters, || {
-            x.copy_from_slice(&x_init);
-            c.copy_from_slice(&c_init);
-            <FFT64Neon as ZnxNormalizeMiddleStepAssign>::znx_normalize_middle_step_assign(base2k, 0, &mut x, &mut c);
-            black_box((&x, &c));
-        });
-        row(rep, "znx_normalize_middle_step_assign", n, ref_ns, neon_ns, sp);
     }
 
     fn bench_znx_automorphism(rep: &mut Reporter, n: usize, sp: &mut Vec<f64>) {
@@ -362,36 +330,6 @@ mod neon {
         row(rep, "i128_add", n, ref_ns, neon_ns, sp);
     }
 
-    fn bench_nfc_middle_step(rep: &mut Reporter, n: usize, sp: &mut Vec<f64>) {
-        let base2k = 32usize;
-        let a = rand_i128s(n);
-        let c_init = rand_i128s(n);
-
-        let mut r_neon = vec![0i64; n];
-        let mut c_neon = c_init.clone();
-        let mut r_ref = vec![0i64; n];
-        let mut c_ref = c_init.clone();
-        <NTT4x30Neon as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r_neon, &a, &mut c_neon);
-        <NTT4x30Portable as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r_ref, &a, &mut c_ref);
-        assert_eq!(r_neon, r_ref, "nfc_middle_step r (n={n})");
-        assert_eq!(c_neon, c_ref, "nfc_middle_step c (n={n})");
-
-        let iters = iters_for(n);
-        let mut r = vec![0i64; n];
-        let mut c = c_init.clone();
-        let ref_ns = time(iters, || {
-            c.copy_from_slice(&c_init);
-            <NTT4x30Portable as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r, &a, &mut c);
-            black_box((&r, &c));
-        });
-        let neon_ns = time(iters, || {
-            c.copy_from_slice(&c_init);
-            <NTT4x30Neon as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r, &a, &mut c);
-            black_box((&r, &c));
-        });
-        row(rep, "nfc_middle_step (i128)", n, ref_ns, neon_ns, sp);
-    }
-
     // ─── driver ────────────────────────────────────────────────────────────
 
     fn section(rep: &mut Reporter, title: &str) {
@@ -441,7 +379,6 @@ mod neon {
         section(&mut rep, "Znx (i64)");
         for &n in SIZES {
             bench_znx_add(&mut rep, n, &mut sp);
-            bench_znx_normalize(&mut rep, n, &mut sp);
             bench_znx_automorphism(&mut rep, n, &mut sp);
         }
 
@@ -461,7 +398,6 @@ mod neon {
         section(&mut rep, "VecZnxBig (i128)");
         for &n in SIZES {
             bench_i128_add(&mut rep, n, &mut sp);
-            bench_nfc_middle_step(&mut rep, n, &mut sp);
         }
 
         section(&mut rep, "Summary");

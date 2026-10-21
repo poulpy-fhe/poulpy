@@ -61,11 +61,11 @@ mod avx {
         kernels::{
             fft64::reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
             ntt4x30::{
-                I128BigOps, I128NormalizeOps, NttDFTExecute, NttFromZnx64,
+                I128BigOps, NttDFTExecute, NttFromZnx64,
                 ntt::{NttTable, NttTableInv},
                 primes::{PrimeSet, Primes30},
             },
-            znx::{ZnxAdd, ZnxAutomorphism, ZnxNormalizeMiddleStepAssign},
+            znx::{ZnxAdd, ZnxAutomorphism},
         },
     };
 
@@ -184,38 +184,6 @@ mod avx {
             black_box(&r);
         });
         row(rep, "znx_add", n, ref_ns, avx_ns, sp);
-    }
-
-    fn bench_znx_normalize(rep: &mut Reporter, n: usize, sp: &mut Vec<f64>) {
-        let base2k = 18usize;
-        let x_init = rand_i64s(n);
-        let c_init = rand_i64s(n);
-
-        let mut x_avx = x_init.clone();
-        let mut c_avx = c_init.clone();
-        let mut x_ref = x_init.clone();
-        let mut c_ref = c_init.clone();
-        <FFT64Avx as ZnxNormalizeMiddleStepAssign>::znx_normalize_middle_step_assign(base2k, 0, &mut x_avx, &mut c_avx);
-        <FFT64Portable as ZnxNormalizeMiddleStepAssign>::znx_normalize_middle_step_assign(base2k, 0, &mut x_ref, &mut c_ref);
-        assert_eq!(x_avx, x_ref, "znx_normalize_middle_step_assign x (n={n})");
-        assert_eq!(c_avx, c_ref, "znx_normalize_middle_step_assign c (n={n})");
-
-        let iters = iters_for(n);
-        let mut x = x_init.clone();
-        let mut c = c_init.clone();
-        let ref_ns = time(iters, || {
-            x.copy_from_slice(&x_init);
-            c.copy_from_slice(&c_init);
-            <FFT64Portable as ZnxNormalizeMiddleStepAssign>::znx_normalize_middle_step_assign(base2k, 0, &mut x, &mut c);
-            black_box((&x, &c));
-        });
-        let avx_ns = time(iters, || {
-            x.copy_from_slice(&x_init);
-            c.copy_from_slice(&c_init);
-            <FFT64Avx as ZnxNormalizeMiddleStepAssign>::znx_normalize_middle_step_assign(base2k, 0, &mut x, &mut c);
-            black_box((&x, &c));
-        });
-        row(rep, "znx_normalize_middle_step_assign", n, ref_ns, avx_ns, sp);
     }
 
     fn bench_znx_automorphism(rep: &mut Reporter, n: usize, sp: &mut Vec<f64>) {
@@ -478,36 +446,6 @@ mod avx {
         row(rep, "i128_add", n, ref_ns, avx_ns, sp);
     }
 
-    fn bench_nfc_middle_step(rep: &mut Reporter, n: usize, sp: &mut Vec<f64>) {
-        let base2k = 32usize;
-        let a = rand_i128s(n);
-        let c_init = rand_i128s(n);
-
-        let mut r_avx = vec![0i64; n];
-        let mut c_avx = c_init.clone();
-        let mut r_ref = vec![0i64; n];
-        let mut c_ref = c_init.clone();
-        <NTT4x30Avx as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r_avx, &a, &mut c_avx);
-        <NTT4x30Portable as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r_ref, &a, &mut c_ref);
-        assert_eq!(r_avx, r_ref, "nfc_middle_step r (n={n})");
-        assert_eq!(c_avx, c_ref, "nfc_middle_step c (n={n})");
-
-        let iters = iters_for(n);
-        let mut r = vec![0i64; n];
-        let mut c = c_init.clone();
-        let ref_ns = time(iters, || {
-            c.copy_from_slice(&c_init);
-            <NTT4x30Portable as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r, &a, &mut c);
-            black_box((&r, &c));
-        });
-        let avx_ns = time(iters, || {
-            c.copy_from_slice(&c_init);
-            <NTT4x30Avx as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r, &a, &mut c);
-            black_box((&r, &c));
-        });
-        row(rep, "nfc_middle_step (i128)", n, ref_ns, avx_ns, sp);
-    }
-
     // ─── driver ────────────────────────────────────────────────────────────
 
     fn section(rep: &mut Reporter, title: &str) {
@@ -557,7 +495,6 @@ mod avx {
         section(&mut rep, "Znx (i64)");
         for &n in SIZES {
             bench_znx_add(&mut rep, n, &mut sp);
-            bench_znx_normalize(&mut rep, n, &mut sp);
             bench_znx_automorphism(&mut rep, n, &mut sp);
         }
 
@@ -584,7 +521,6 @@ mod avx {
         section(&mut rep, "VecZnxBig (i128)");
         for &n in SIZES {
             bench_i128_add(&mut rep, n, &mut sp);
-            bench_nfc_middle_step(&mut rep, n, &mut sp);
         }
 
         section(&mut rep, "Summary");

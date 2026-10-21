@@ -1034,28 +1034,6 @@ pub(crate) unsafe fn intt_avx512<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTabl
     }
 }
 
-/// Transforms one quarter, stopping before the final two inverse stages.
-///
-/// # Safety
-/// `ptr` owns `table.n / 4` coefficients, `table.n >= 64`, `prime < 3`,
-/// and `part < 4`. AVX512-IFMA and AVX512-VL must be available.
-#[target_feature(enable = "avx512ifma,avx512vl")]
-pub(crate) unsafe fn intt_quarter<P: PrimeSetNtt3x42Ifma, R: Ring>(
-    table: &Ntt3x42IfmaTableInv<P, R>,
-    ptr: *mut u64,
-    prime: usize,
-    part: usize,
-) {
-    unsafe {
-        let n = table.n;
-        let ip = &table.inv_quot[prime * n..(prime + 1) * n];
-        let q_v = _mm512_set1_epi64(P::Q[prime] as i64);
-        let q2_v = _mm512_set1_epi64((2 * P::Q[prime]) as i64);
-        inv_plane(ptr, n / 4, 2, part, ip, q_v, q2_v);
-        inv_broadcast_stage(ptr, n / 8, 1, ip, n - 7 + part, q_v, q2_v);
-    }
-}
-
 /// Finishes two inverse stages and scales a coefficient span in all four quarters.
 ///
 /// # Safety

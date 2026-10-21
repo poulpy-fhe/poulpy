@@ -75,9 +75,10 @@ pub trait CKKSMulReference<BE: Backend> {
     {
         let k = a.k().max(b.k());
         tsk.get_tensor_key(k)
-            .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+            .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
                 op: "ckks_mul_into",
                 k: k.into(),
+                source,
             })?;
 
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, a, b)?;
@@ -119,9 +120,10 @@ pub trait CKKSMulReference<BE: Backend> {
     {
         let k = dst.k().max(a.k());
         tsk.get_tensor_key(k)
-            .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+            .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
                 op: "ckks_mul_assign",
                 k: k.into(),
+                source,
             })?;
 
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, dst, a)?;
@@ -258,9 +260,10 @@ pub trait CKKSMulReference<BE: Backend> {
     {
         let k = dst.k().max(prepared.k());
         tsk.get_tensor_key(k)
-            .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+            .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
                 op: "ckks_mul_prepared_assign",
                 k: k.into(),
+                source,
             })?;
 
         let (res_log_budget, res_log_delta, cnv_offset, tensor_k) = get_mul_prepared_params(&*dst, prepared)?;
@@ -348,9 +351,10 @@ pub trait CKKSMulReference<BE: Backend> {
     {
         let k = a.k();
         tsk.get_tensor_key(k)
-            .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+            .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
                 op: "ckks_square_into",
                 k: k.into(),
+                source,
             })?;
 
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, a, a)?;
@@ -384,9 +388,10 @@ pub trait CKKSMulReference<BE: Backend> {
     {
         let k = dst.k();
         tsk.get_tensor_key(k)
-            .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+            .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
                 op: "ckks_square_assign",
                 k: k.into(),
+                source,
             })?;
 
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, dst, dst)?;

@@ -1,16 +1,9 @@
 //! Large-coefficient (i128) ring element vector support for [`NTT4x30Neon`](super::NTT4x30Neon).
 
 use super::NTT4x30Neon;
-#[cfg(target_arch = "aarch64")]
-use poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::AssignOp;
-use poulpy_cpu_portable::kernels::ntt4x30::{I128BigOps, I128NormalizeOps};
+use poulpy_cpu_portable::kernels::ntt4x30::I128BigOps;
 use poulpy_hal::layouts::Ring;
 
-#[cfg(target_arch = "aarch64")]
-use crate::neon::normalize::{
-    nfc_final_step_assign_neon, nfc_final_step_into_neon, nfc_middle_step_assign_neon, nfc_middle_step_into_neon,
-    nfc_middle_step_neon,
-};
 #[cfg(target_arch = "aarch64")]
 use crate::neon::vec_znx_big::{
     vi128_add_assign_neon, vi128_add_neon, vi128_add_small_assign_neon, vi128_add_small_neon, vi128_from_small_neon,
@@ -92,79 +85,3 @@ impl<R: Ring> poulpy_cpu_portable::hal_defaults::BigWordHadamardProduct for NTT4
         <Self as I128BigOps>::i128_hadamard_product_i64(res, a, b)
     }
 }
-
-#[cfg(target_arch = "aarch64")]
-impl<R: Ring> I128NormalizeOps for NTT4x30Neon<R> {
-    #[inline(always)]
-    fn nfc_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i128], carry: &mut [i128]) {
-        crate::neon::normalization_boundary::nfc_normalize_floor_neon::<CARRY_IN, ROUND>(base2k, lsh, a, carry);
-    }
-
-    #[inline(always)]
-    fn nfc_normalize_round<const CARRY_IN: bool, const PAD: bool>(
-        base2k: usize,
-        lsh: usize,
-        padding: usize,
-        res: &mut [i64],
-        a: &[i128],
-        carry: &mut [i128],
-    ) {
-        crate::neon::normalization_boundary::nfc_normalize_round_neon::<CARRY_IN, PAD>(base2k, lsh, padding, res, a, carry);
-    }
-
-    #[inline(always)]
-    fn nfc_add_small_carry(carry: &mut [i128], a: &[i64]) {
-        assert!(a.len() >= carry.len());
-        vi128_add_small_assign_neon(carry.len(), carry, a);
-    }
-
-    #[inline(always)]
-    fn znx_extract_digit_addmul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
-        assert!(src.len() >= res.len());
-        unsafe {
-            crate::neon::normalize::nfc_extract_normalize_neon::<false, false>(base2k, lsh, base2k + lsh, res, src, &mut []);
-        }
-    }
-
-    fn znx_extract_digit_mul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
-        assert!(src.len() >= res.len());
-        unsafe { crate::neon::normalize::nfc_extract_normalize_neon::<true, false>(base2k, lsh, base2k + lsh, res, src, &mut []) }
-    }
-
-    fn znx_extract_digit_addmul_normalize_i128<const OVERWRITE: bool>(
-        base2k: usize,
-        lsh: usize,
-        res_base2k: usize,
-        res: &mut [i64],
-        src: &mut [i128],
-        carry: &mut [i128],
-    ) {
-        assert!(src.len() >= res.len());
-        assert!(carry.len() >= res.len());
-        unsafe { crate::neon::normalize::nfc_extract_normalize_neon::<OVERWRITE, true>(base2k, lsh, res_base2k, res, src, carry) }
-    }
-
-    #[inline(always)]
-    fn nfc_middle_step(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
-        nfc_middle_step_neon(base2k, lsh, res, a, carry);
-    }
-    #[inline(always)]
-    fn nfc_middle_step_into<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
-        nfc_middle_step_into_neon::<O>(base2k, lsh, res, a, carry);
-    }
-    #[inline(always)]
-    fn nfc_middle_step_assign(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
-        nfc_middle_step_assign_neon(base2k, lsh, res, carry);
-    }
-    #[inline(always)]
-    fn nfc_final_step_assign(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
-        nfc_final_step_assign_neon(base2k, lsh, res, carry);
-    }
-    #[inline(always)]
-    fn nfc_final_step_into<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
-        nfc_final_step_into_neon::<O>(base2k, lsh, res, carry);
-    }
-}
-
-#[cfg(not(target_arch = "aarch64"))]
-impl<R: Ring> I128NormalizeOps for NTT4x30Neon<R> {}

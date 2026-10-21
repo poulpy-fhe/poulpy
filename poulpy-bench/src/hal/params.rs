@@ -152,7 +152,9 @@ pub fn default_bench_params_cnv() -> Vec<CnvSweepParms> {
 /// Base conversion and displacement parameters for normalization benchmarks.
 #[derive(Debug, Clone)]
 pub struct NormalizeSweepParams {
+    /// The destination; the source has the same degree and columns.
     pub shape: HalSweepParms,
+    pub a_size: usize,
     pub a_base2k: usize,
     pub res_base2k: usize,
     pub res_offset: i64,
@@ -165,7 +167,11 @@ impl Display for NormalizeSweepParams {
             f,
             "{}/k={}->{}/offset={}/drop={}",
             self.shape, self.a_base2k, self.res_base2k, self.res_offset, self.drop_bits
-        )
+        )?;
+        if self.a_size != self.shape.size {
+            write!(f, "/a_size={}", self.a_size)?;
+        }
+        Ok(())
     }
 }
 
@@ -179,6 +185,7 @@ pub fn default_bench_params_normalize() -> Vec<NormalizeSweepParams> {
                         for drop_bits in [0, res_base2k / 2, 2 * res_base2k + 1] {
                             result.push(NormalizeSweepParams {
                                 shape: HalSweepParms { n, cols: 1, size },
+                                a_size: size,
                                 a_base2k,
                                 res_base2k,
                                 res_offset,
@@ -190,5 +197,33 @@ pub fn default_bench_params_normalize() -> Vec<NormalizeSweepParams> {
             }
         }
     }
+    // Key switching and external product at rank 1: k 108 on base 52, sources of 4 and 3 limbs.
+    for a_size in [3, 4] {
+        result.push(NormalizeSweepParams {
+            shape: HalSweepParms {
+                n: 1 << 12,
+                cols: 2,
+                size: 3,
+            },
+            a_size,
+            a_base2k: 52,
+            res_base2k: 52,
+            res_offset: 0,
+            drop_bits: 48,
+        });
+    }
+    // 32 limbs at the footprint of the 2^16 x 8 rows.
+    result.push(NormalizeSweepParams {
+        shape: HalSweepParms {
+            n: 1 << 14,
+            cols: 1,
+            size: 32,
+        },
+        a_size: 32,
+        a_base2k: 50,
+        res_base2k: 50,
+        res_offset: 0,
+        drop_bits: 0,
+    });
     result
 }

@@ -549,7 +549,7 @@ where
     Self: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + ZnxAutomorphism,
 {
     fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
-        crate::ntt4x30::vec_znx_dft::idft_tmp_words(module.n()) * size_of::<u64>() + 3 * module.n() * size_of::<i128>()
+        crate::ntt4x30::vec_znx_dft::idft_tmp_words(module.n()) * size_of::<u64>()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -570,8 +570,7 @@ where
         poulpy_hal::layouts::check_degree::<Self>(module.n(), n);
         assert_eq!(res.n(), n, "vec_znx_idft_normalize_consume: res.n():{} != a.n():{n}", res.n());
         let arena = scratch.borrow();
-        let (tmp, arena) = take_host_typed::<Self, u64>(arena, crate::ntt4x30::vec_znx_dft::idft_tmp_words(n));
-        let (carry, _) = take_host_typed::<Self, i128>(arena, 3 * n);
+        let (tmp, _) = take_host_typed::<Self, u64>(arena, crate::ntt4x30::vec_znx_dft::idft_tmp_words(n));
         crate::ntt4x30::vec_znx_dft::idft_compact_in_place(module, a, a_col, tmp);
         let a_shape = a.shape();
         if let Some((add, add_col)) = addend {
@@ -587,17 +586,8 @@ where
         }
         let big_ref: poulpy_hal::layouts::VecZnxBigBackendRef<'_, Self> =
             poulpy_hal::layouts::VecZnxBig::from_shape(&**a.data(), a_shape);
-        let mut res_ref = &mut *res;
-        poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_normalize_portable::<_, _, Self>(
-            &mut res_ref,
-            res_base2k,
-            res_k,
-            res_offset,
-            res_col,
-            &&big_ref,
-            a_base2k,
-            a_col,
-            carry,
+        poulpy_cpu_portable::kernels::vec_znx_big_normalize::vec_znx_big_normalize_portable::<Self>(
+            res, res_base2k, res_k, res_offset, res_col, &big_ref, a_base2k, a_col,
         );
     }
 

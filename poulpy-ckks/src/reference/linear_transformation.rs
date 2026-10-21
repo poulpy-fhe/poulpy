@@ -197,14 +197,12 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         let cyclotomic_order = self.cyclotomic_order();
         let src_k = src.k();
         for rotation in babies.baby_steps().filter(|&rotation| rotation != 0) {
-            if keys
-                .get_automorphism_key(galois_element(rotation, cyclotomic_order), src_k)
-                .is_err()
-            {
+            if let Err(source) = keys.get_automorphism_key(galois_element(rotation, cyclotomic_order), src_k) {
                 return Err(CKKSCompositionError::MissingAutomorphismKey {
                     op: "linear_transformation",
                     rotation,
                     k: src_k.into(),
+                    source,
                 }
                 .into());
             }
@@ -401,10 +399,11 @@ where
     {
         let gal_el = galois_element(rotation, cyclotomic_order);
         keys.get_automorphism_key(gal_el, giant_k)
-            .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
+            .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
                 op: "linear_transformation",
                 rotation,
                 k: giant_k.into(),
+                source,
             })?;
     }
     Ok(())

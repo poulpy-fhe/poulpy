@@ -225,6 +225,7 @@ pub fn runner_vec_znx_big_normalize<B: Backend<ZnxWord = i64>, M: Measurement>(
         bencher,
         &NormalizeSweepParams {
             shape: sweep.clone(),
+            a_size: sweep.size,
             a_base2k: 50,
             res_base2k: 50,
             res_offset: 0,
@@ -246,7 +247,7 @@ pub fn runner_vec_znx_big_normalize_sweep<B: Backend<ZnxWord = i64>, M: Measurem
 
     let mut source: Source = Source::new([0u8; 32]);
 
-    let a: VecZnxBigOwned<B> = random_normalization_vec_znx_big::<B>(module.n(), sweep.cols, sweep.size, &mut source);
+    let a: VecZnxBigOwned<B> = random_normalization_vec_znx_big::<B>(module.n(), sweep.cols, params.a_size, &mut source);
     let res = random_host_vec_znx(module.n(), sweep.cols, sweep.size, &mut source);
     let mut res = upload_host_vec_znx::<B>(&res);
 
