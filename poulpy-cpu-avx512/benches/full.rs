@@ -59,7 +59,6 @@ criterion_group! {
      bench_ckks_bootstrapping::<Fft, 18>,
      bench_ckks_replicated_bootstrapping::<Ntt, 52>,
      bench_ckks_replicated_bootstrapping_ifma,
-     bench_ckks_replicated_bootstrapping::<Fft, 18>,
      bench_binfhe::<Fft, CGGI>
 }
 

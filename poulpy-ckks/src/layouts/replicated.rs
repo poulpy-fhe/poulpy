@@ -428,6 +428,97 @@ impl ReplicatedBootstrapPlan {
         k_out + self.c2s_log_delta_diag + self.eval_mod.consumed_bits() + self.log_delta + self.mod_up_extra_bits
             - self.level_log_delta
     }
+
+    /// Width of the widest key switch: the raised modulus and the working bits
+    /// of the top trace and `CoeffsToSlots`.
+    pub fn key_k(&self, k_out: usize) -> usize {
+        self.k_boot(k_out) + self.extra_bits
+    }
+
+    /// Key layouts for outputs of width `k_out`: the automorphism and tensor
+    /// keys cover [`Self::key_k`] in digits of `k_digit` bits, with an
+    /// auxiliary modulus of `k_aux` bits; with `encapsulation`, the key to the
+    /// ephemeral secret covers the ModUp input in one-limb digits and an
+    /// auxiliary modulus of one limb and a bit, and the key back the raised
+    /// modulus.
+    pub fn key_layouts(
+        &self,
+        n: Degree,
+        base2k: Base2K,
+        k_out: usize,
+        k_digit: usize,
+        k_aux: usize,
+        encapsulation: bool,
+    ) -> BootstrappingKeysLayout {
+        let digit = TorusPrecision(k_digit as u32);
+        let dnum = |k: usize, digit: TorusPrecision| GGLWELayout::dnum_for_input(TorusPrecision(k as u32), digit);
+        let switching = |k: usize, digit: TorusPrecision, k_aux: usize| GLWESwitchingKeyLayout {
+            n,
+            base2k,
+            dnum: dnum(k, digit),
+            k_aux: TorusPrecision(k_aux as u32),
+            rank_in: Rank(1),
+            rank_out: Rank(1),
+            k_digit: digit,
+        };
+        let k_key = self.key_k(k_out);
+        let one_limb = TorusPrecision(base2k.as_u32());
+        BootstrappingKeysLayout {
+            rotation_keys: BTreeMap::new(),
+            automorphism_key: GLWEAutomorphismKeyLayout {
+                n,
+                base2k,
+                dnum: dnum(k_key, digit),
+                k_aux: TorusPrecision(k_aux as u32),
+                rank: Rank(1),
+                k_digit: digit,
+            },
+            tensor_key: GLWETensorKeyLayout {
+                n,
+                base2k,
+                dnum: dnum(k_key, digit),
+                k_aux: TorusPrecision(k_aux as u32),
+                rank: Rank(1),
+                k_digit: digit,
+            },
+            encapsulation: encapsulation.then(|| EncapsulationKeysLayout {
+                dense_to_sparse: switching(self.log_delta + self.eval_mod.log_msg_ratio, one_limb, base2k.as_usize() + 1),
+                sparse_to_dense: switching(self.k_boot(k_out), digit, k_aux),
+            }),
+        }
+    }
+
+    /// [`Self::key_layouts`] with the fewest gadget digits within the modulus
+    /// bounds: every key under the secret within `max_dense_modulus` bits and
+    /// the key to the ephemeral secret within `max_sparse_modulus`, each with
+    /// an auxiliary modulus of one digit, `log2(QP) = (dnum + 1)·k_digit`.
+    pub fn secure_key_layouts(
+        &self,
+        n: Degree,
+        base2k: Base2K,
+        k_out: usize,
+        max_dense_modulus: usize,
+        max_sparse_modulus: usize,
+    ) -> Result<BootstrappingKeysLayout> {
+        let k_key = self.key_k(k_out);
+        let k_q_b = self.log_delta + self.eval_mod.log_msg_ratio;
+        let digit = |k: usize, max: usize| {
+            (1..=k)
+                .map(|dnum| k.div_ceil(dnum))
+                .find(|&digit| k.div_ceil(digit) * digit + digit <= max)
+                .with_context(|| format!("no gadget covers {k} bits within a modulus of {max} bits"))
+        };
+        let k_digit = digit(k_key, max_dense_modulus)?;
+        let sparse_digit = digit(k_q_b, max_sparse_modulus)?;
+        let mut layouts = self.key_layouts(n, base2k, k_out, k_digit, k_digit, true);
+        if let Some(encapsulation) = layouts.encapsulation.as_mut() {
+            let sparse = TorusPrecision(sparse_digit as u32);
+            encapsulation.dense_to_sparse.k_digit = sparse;
+            encapsulation.dense_to_sparse.k_aux = sparse;
+            encapsulation.dense_to_sparse.dnum = GGLWELayout::dnum_for_input(TorusPrecision(k_q_b as u32), sparse);
+        }
+        Ok(layouts)
+    }
 }
 
 /// Compiled [`ReplicatedBootstrapPlan`]: the `SlotsToCoeffs` gather onto the
@@ -555,101 +646,6 @@ impl<BE: Backend, F> ReplicatedBootstrapping<BE, F> {
         elements.sort_unstable();
         elements.dedup();
         elements
-    }
-
-    /// Width of the widest key switch: the raised modulus and the working bits
-    /// of the top trace and `CoeffsToSlots`.
-    pub fn key_k(&self, k_out: usize) -> usize {
-        self.plan.k_boot(k_out) + self.plan.extra_bits
-    }
-
-    /// Key layouts for outputs of width `k_out`: the automorphism and tensor
-    /// keys cover [`Self::key_k`] in digits of `k_digit` bits, with an
-    /// auxiliary modulus of `k_aux` bits; with `encapsulation`, the key to the
-    /// ephemeral secret covers the ModUp input in one-limb digits and an
-    /// auxiliary modulus of one limb and a bit, and the key back the raised
-    /// modulus.
-    pub fn key_layouts(
-        &self,
-        n: Degree,
-        base2k: Base2K,
-        k_out: usize,
-        k_digit: usize,
-        k_aux: usize,
-        encapsulation: bool,
-    ) -> BootstrappingKeysLayout {
-        let digit = TorusPrecision(k_digit as u32);
-        let dnum = |k: usize, digit: TorusPrecision| GGLWELayout::dnum_for_input(TorusPrecision(k as u32), digit);
-        let switching = |k: usize, digit: TorusPrecision, k_aux: usize| GLWESwitchingKeyLayout {
-            n,
-            base2k,
-            dnum: dnum(k, digit),
-            k_aux: TorusPrecision(k_aux as u32),
-            rank_in: Rank(1),
-            rank_out: Rank(1),
-            k_digit: digit,
-        };
-        let k_key = self.key_k(k_out);
-        let one_limb = TorusPrecision(base2k.as_u32());
-        BootstrappingKeysLayout {
-            rotation_keys: BTreeMap::new(),
-            automorphism_key: GLWEAutomorphismKeyLayout {
-                n,
-                base2k,
-                dnum: dnum(k_key, digit),
-                k_aux: TorusPrecision(k_aux as u32),
-                rank: Rank(1),
-                k_digit: digit,
-            },
-            tensor_key: GLWETensorKeyLayout {
-                n,
-                base2k,
-                dnum: dnum(k_key, digit),
-                k_aux: TorusPrecision(k_aux as u32),
-                rank: Rank(1),
-                k_digit: digit,
-            },
-            encapsulation: encapsulation.then(|| EncapsulationKeysLayout {
-                dense_to_sparse: switching(
-                    self.plan.log_delta + self.plan.eval_mod.log_msg_ratio,
-                    one_limb,
-                    base2k.as_usize() + 1,
-                ),
-                sparse_to_dense: switching(self.plan.k_boot(k_out), digit, k_aux),
-            }),
-        }
-    }
-
-    /// [`Self::key_layouts`] with the fewest gadget digits within the modulus
-    /// bounds: every key under the secret within `max_dense_modulus` bits and
-    /// the key to the ephemeral secret within `max_sparse_modulus`, each with
-    /// an auxiliary modulus of one digit, `log2(QP) = (dnum + 1)·k_digit`.
-    pub fn secure_key_layouts(
-        &self,
-        n: Degree,
-        base2k: Base2K,
-        k_out: usize,
-        max_dense_modulus: usize,
-        max_sparse_modulus: usize,
-    ) -> Result<BootstrappingKeysLayout> {
-        let k_key = self.key_k(k_out);
-        let k_q_b = self.plan.log_delta + self.plan.eval_mod.log_msg_ratio;
-        let digit = |k: usize, max: usize| {
-            (1..=k)
-                .map(|dnum| k.div_ceil(dnum))
-                .find(|&digit| k.div_ceil(digit) * digit + digit <= max)
-                .with_context(|| format!("no gadget covers {k} bits within a modulus of {max} bits"))
-        };
-        let k_digit = digit(k_key, max_dense_modulus)?;
-        let sparse_digit = digit(k_q_b, max_sparse_modulus)?;
-        let mut layouts = self.key_layouts(n, base2k, k_out, k_digit, k_digit, true);
-        if let Some(encapsulation) = layouts.encapsulation.as_mut() {
-            let sparse = TorusPrecision(sparse_digit as u32);
-            encapsulation.dense_to_sparse.k_digit = sparse;
-            encapsulation.dense_to_sparse.k_aux = sparse;
-            encapsulation.dense_to_sparse.dnum = GGLWELayout::dnum_for_input(TorusPrecision(k_q_b as u32), sparse);
-        }
-        Ok(layouts)
     }
 
     /// Generates the keys of the bootstrapping under `sk`: the automorphism

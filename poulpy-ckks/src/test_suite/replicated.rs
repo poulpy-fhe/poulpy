@@ -1254,7 +1254,7 @@ where
     let ctx = ReplicatedBootstrapping::<BE, F>::new(module, plan, base2k, &mut compile.borrow())?;
     assert!(ctx.is_packed());
     let k_out = plan.k_in() + plan.level_log_delta;
-    let key_layouts = ctx.key_layouts(params.n.into(), base2k, k_out, params.base2k, params.base2k + 1, true);
+    let key_layouts = plan.key_layouts(params.n.into(), base2k, k_out, params.base2k, params.base2k + 1, true);
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let (mut xs, mut xe, mut xa) = (Source::new([3; 32]), Source::new([4; 32]), Source::new([5; 32]));

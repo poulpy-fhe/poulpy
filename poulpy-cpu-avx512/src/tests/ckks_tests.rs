@@ -20,6 +20,17 @@ mod bootstrapping_presets {
     }
 }
 
+#[cfg(feature = "enable-ifma")]
+mod replicated_bootstrapping_presets {
+    use poulpy_ckks::test_suite::replicated_presets::replicated_bootstrapping_presets_meet_precision;
+
+    #[test]
+    #[ignore = "full logN14 and logN15 replicated bootstrapping presets"]
+    fn ifma() {
+        replicated_bootstrapping_presets_meet_precision::<crate::NTT3x42Ifma>(52);
+    }
+}
+
 ckks_backend_test_suite!(
     mod fft64_avx512_f64,
     backend = crate::FFT64Avx512,

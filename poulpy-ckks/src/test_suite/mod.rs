@@ -1250,6 +1250,7 @@ pub mod presets;
 #[doc(hidden)]
 pub mod reference_encoder;
 pub mod replicated;
+pub mod replicated_presets;
 pub mod rotate;
 pub mod round;
 pub mod ship;
