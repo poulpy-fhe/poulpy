@@ -306,14 +306,66 @@ impl GGLWEInfos for GGLWELayout {
     }
 }
 
-#[derive(PartialEq, Eq, Clone)]
+/// A GGLWE key: `dnum` rows of `rank_in` GLWE ciphertexts each, row `q`
+/// carrying `2^-(k_offset + (q + 1) * k_digit)`.
+///
+/// Its rows are canonical at `k()` (see [`GLWE`]) but on a view of its first
+/// digits ([`Self::with_dnum`]), whose rows hold the key's bits below that
+/// precision. Equality ignores the flag.
+#[derive(Clone)]
 pub struct GGLWE<D: Data, W: ZnxWord> {
     pub(crate) noise: Option<crate::ComponentNoise>,
     pub(crate) data: MatZnx<D, W>,
     pub(crate) k_aux: TorusPrecision,
+    pub(crate) canonical: bool,
     pub(crate) base2k: Base2K,
     pub(crate) k_digit: TorusPrecision,
     pub(crate) k_offset: TorusPrecision,
+}
+
+impl<D: Data, W: ZnxWord> PartialEq for GGLWE<D, W>
+where
+    MatZnx<D, W>: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.noise == other.noise
+            && self.data == other.data
+            && self.k_aux == other.k_aux
+            && self.base2k == other.base2k
+            && self.k_digit == other.k_digit
+            && self.k_offset == other.k_offset
+    }
+}
+
+impl<D: Data, W: ZnxWord> Eq for GGLWE<D, W> where MatZnx<D, W>: Eq {}
+
+impl<D: Data, W: ZnxWord> GGLWE<D, W> {
+    /// Its first `dnum` digits, over the same buffer: rows `0..dnum`, at the
+    /// precision `k_offset + dnum * k_digit + k_aux` of a key of `dnum` digits
+    /// and this guard. A narrower view keeps the key's bits below that
+    /// precision, so it reports its rows non-canonical, which a switch
+    /// normalizes before reading them, and drops the noise estimate. No row
+    /// is copied.
+    ///
+    /// Fails unless `1 <= dnum <= self.dnum()`.
+    pub fn with_dnum(self, dnum: Dnum) -> Result<Self> {
+        let stored: Dnum = self.dnum();
+        if dnum.0 == 0 || dnum.0 > stored.0 {
+            return Err(CoreError::GGLWEKeyUse {
+                op: "GGLWE::with_dnum",
+                detail: format!("dnum={} is not in 1..={}", dnum.0, stored.0),
+            });
+        }
+        if dnum == stored {
+            return Ok(self);
+        }
+        Ok(GGLWE {
+            noise: None,
+            data: self.data.with_rows(dnum.as_usize()),
+            canonical: false,
+            ..self
+        })
+    }
 }
 
 pub struct GGLWEBackendRef<'a, BE: Backend + 'a> {
@@ -323,6 +375,11 @@ pub struct GGLWEBackendRef<'a, BE: Backend + 'a> {
 impl<'a, BE: Backend + 'a> GGLWEBackendRef<'a, BE> {
     pub fn from_inner(inner: GGLWE<BE::BufRef<'a>, BE::ZnxWord>) -> Self {
         Self { inner }
+    }
+
+    /// The view of its first `dnum` digits ([`GGLWE::with_dnum`]).
+    pub fn with_dnum(self, dnum: Dnum) -> Result<Self> {
+        Ok(Self::from_inner(self.inner.with_dnum(dnum)?))
     }
 
     pub fn into_inner(self) -> GGLWE<BE::BufRef<'a>, BE::ZnxWord> {
@@ -349,6 +406,11 @@ pub struct GGLWEBackendMut<'a, BE: Backend + 'a> {
 impl<'a, BE: Backend + 'a> GGLWEBackendMut<'a, BE> {
     pub fn from_inner(inner: GGLWE<BE::BufMut<'a>, BE::ZnxWord>) -> Self {
         Self { inner }
+    }
+
+    /// The view of its first `dnum` digits ([`GGLWE::with_dnum`]).
+    pub fn with_dnum(self, dnum: Dnum) -> Result<Self> {
+        Ok(Self::from_inner(self.inner.with_dnum(dnum)?))
     }
 
     pub fn into_inner(self) -> GGLWE<BE::BufMut<'a>, BE::ZnxWord> {
@@ -388,6 +450,7 @@ impl<BE: Backend> GGLWEToBackendRef<BE> for GGLWEBackendRef<'_, BE> {
             noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
+            canonical: self.inner.canonical,
             k_digit: self.inner.k_digit,
             k_offset: self.inner.k_offset,
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_ref::<BE>(&self.inner.data),
@@ -407,6 +470,7 @@ impl<BE: Backend> GGLWEToBackendRef<BE> for GGLWEBackendMut<'_, BE> {
             noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
+            canonical: self.inner.canonical,
             k_digit: self.inner.k_digit,
             k_offset: self.inner.k_offset,
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_mut::<BE>(&self.inner.data),
@@ -425,6 +489,7 @@ impl<BE: Backend> GGLWEToBackendMut<BE> for GGLWEBackendMut<'_, BE> {
             noise: None,
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
+            canonical: self.inner.canonical,
             k_digit: self.inner.k_digit,
             k_offset: self.inner.k_offset,
             data: poulpy_hal::layouts::mat_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
@@ -505,7 +570,7 @@ impl<BE: Backend> GGLWEAtBackendRef<BE> for GGLWE<BE::OwnedBuf, BE::ZnxWord> {
             noise: crate::layouts::LWEInfos::noise(&self),
             base2k: self.base2k,
             k: self.k(),
-            canonical: true,
+            canonical: self.canonical,
             plaintext_meta: None,
             data,
         }
@@ -522,7 +587,7 @@ pub(crate) fn gglwe_at_backend_ref_from_ref<'a, 'b, BE: Backend>(
         noise: crate::layouts::LWEInfos::noise(&gglwe),
         base2k: gglwe.base2k,
         k: gglwe.k(),
-        canonical: true,
+        canonical: gglwe.canonical,
         plaintext_meta: None,
         data,
     }
@@ -550,7 +615,7 @@ pub(crate) fn gglwe_at_backend_ref_from_mut<'a, 'b, BE: Backend>(
         noise: crate::layouts::LWEInfos::noise(&gglwe),
         base2k: gglwe.base2k,
         k: gglwe.k(),
-        canonical: true,
+        canonical: gglwe.canonical,
         plaintext_meta: None,
         data,
     }
@@ -573,15 +638,14 @@ pub trait GGLWEAtBackendMut<BE: Backend> {
 impl<BE: Backend> GGLWEAtBackendMut<BE> for GGLWE<BE::OwnedBuf, BE::ZnxWord> {
     /// Clears the owner's component noise metadata.
     fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
-        let base2k = self.base2k;
-        let k = self.k();
+        let (base2k, k, canonical) = (self.base2k, self.k(), self.canonical);
         let data = <MatZnx<BE::OwnedBuf, BE::ZnxWord> as MatZnxAtBackendMut<BE>>::at_backend_mut(&mut self.data, row, col);
         self.noise = None;
         GLWE {
             noise: None,
             base2k,
             k,
-            canonical: true,
+            canonical,
             plaintext_meta: None,
             data,
         }
@@ -593,15 +657,14 @@ pub(crate) fn gglwe_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
     row: usize,
     col: usize,
 ) -> GLWE<BE::BufMut<'a>, BE::ZnxWord> {
-    let base2k = gglwe.base2k;
-    let k = gglwe.k();
+    let (base2k, k, canonical) = (gglwe.base2k, gglwe.k(), gglwe.canonical);
     let data = poulpy_hal::layouts::mat_znx_at_backend_mut_from_mut::<BE>(&mut gglwe.data, row, col);
     gglwe.noise = None;
     GLWE {
         noise: None,
         base2k,
         k,
-        canonical: true,
+        canonical,
         plaintext_meta: None,
         data,
     }
@@ -652,7 +715,7 @@ impl<D: HostDataRef, W: ZnxWord> GGLWE<D, W> {
             noise: crate::layouts::LWEInfos::noise(&self),
             base2k: self.base2k,
             k: self.k(),
-            canonical: true,
+            canonical: self.canonical,
             plaintext_meta: None,
             data,
         }
@@ -661,15 +724,14 @@ impl<D: HostDataRef, W: ZnxWord> GGLWE<D, W> {
 
 impl<D: HostDataMut, W: ZnxWord> GGLWE<D, W> {
     pub fn at_mut(&mut self, row: usize, col: usize) -> GLWE<&mut [u8], W> {
-        let base2k = self.base2k;
-        let k = self.k();
+        let (base2k, k, canonical) = (self.base2k, self.k(), self.canonical);
         let data = self.data.at_mut(row, col);
         self.noise = None;
         GLWE {
             noise: None,
             base2k,
             k,
-            canonical: true,
+            canonical,
             plaintext_meta: None,
             data,
         }
@@ -696,6 +758,7 @@ impl<D: Data, W: ZnxWord> GGLWE<D, W> {
             k_digit: self.k_digit,
             k_offset: self.k_offset,
             k_aux: self.k_aux,
+            canonical: self.canonical,
         }
     }
 }
@@ -769,6 +832,7 @@ impl<W: ZnxWord> GGLWE<AlignedBuf, W> {
             k_digit,
             k_offset,
             k_aux,
+            canonical: true,
         }
     }
 
@@ -826,6 +890,7 @@ where
             k_digit: self.k_digit(),
             k_offset: self.k_offset(),
             k_aux: self.k_aux(),
+            canonical: self.canonical,
             data: self.data.to_backend_mut(),
         })
     }
@@ -839,6 +904,7 @@ impl<BE: Backend> GGLWEToBackendRef<BE> for &mut GGLWE<BE::BufMut<'_>, BE::ZnxWo
             k_digit: self.k_digit(),
             k_offset: self.k_offset(),
             k_aux: self.k_aux(),
+            canonical: self.canonical,
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_mut::<BE>(&self.data),
         })
     }
@@ -857,6 +923,7 @@ impl<BE: Backend> GGLWEToBackendMut<BE> for &mut GGLWE<BE::BufMut<'_>, BE::ZnxWo
             k_digit: self.k_digit(),
             k_offset: self.k_offset(),
             k_aux: self.k_aux(),
+            canonical: self.canonical,
             data: poulpy_hal::layouts::mat_znx_backend_mut_from_mut::<BE>(&mut self.data),
         })
     }
@@ -877,6 +944,7 @@ where
             k_digit: self.k_digit(),
             k_offset: self.k_offset(),
             k_aux: self.k_aux(),
+            canonical: self.canonical,
             data: self.data.to_backend_ref(),
         })
     }
@@ -897,6 +965,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGLWE<D, W> {
         self.k_digit = k_digit;
         self.k_offset = k_offset;
         self.k_aux = k_aux;
+        self.canonical = true;
         self.noise = noise;
         Ok(())
     }
@@ -904,6 +973,12 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGLWE<D, W> {
 
 impl<D: HostDataRef, W: ZnxWord> WriterTo for GGLWE<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
+        if !self.canonical {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "GGLWE is a view of its first digits: copy it into a key of that layout before serializing",
+            ));
+        }
         crate::layouts::validate_noise_components(self.noise.as_ref(), self.data.cols_out())?;
         crate::ComponentNoise::write_optional(self.noise.as_ref(), writer)?;
         writer.write_u32::<LittleEndian>(self.base2k.0)?;

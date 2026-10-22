@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Module, ScratchOwned},
+    layouts::{Module, ScratchOwned, ZnxView},
     source::Source,
     test_suite::TestParams,
 };
@@ -8,11 +8,11 @@ use poulpy_hal::{
 use crate::layouts::GLWESecretSampling;
 use crate::layouts::prepared::GGLWEPreparedToBackendRef;
 use crate::{
-    GGLWEKeyswitch, GGLWENoise, GLWESwitchingKeyEncryptSk,
+    GGLWEKeyswitch, GGLWENoise, GLWENormalize, GLWESwitchingKeyEncryptSk,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGLWEInfos, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey, GLWESwitchingKeyLayout,
-        GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
+        Dnum, GGLWEDigits, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWESecret, GLWESecretPreparedFactory,
+        GLWESwitchingKey, GLWESwitchingKeyLayout, GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
         prepared::{GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
     noise::GGLWENoiseModel,
@@ -173,6 +173,167 @@ where
                                 .log2();
                             assert!(noise_have <= max_noise, "noise_have: {noise_have} > max_noise: {max_noise}")
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// A switching key switches a key of its own layout through a view of the
+/// latter's first digits, into a view of as many digits of another key of that
+/// layout: the rows decrypt within the noise model of the view's width, and
+/// match bit for bit those of a switch of the narrowed copy the view reads.
+pub fn test_gglwe_switching_key_keyswitch_digits<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: GLWESwitchingKeyEncryptSk<BE>
+        + GGLWEKeyswitch<BE>
+        + GLWESwitchingKeyPreparedFactory<BE>
+        + GLWESecretPreparedFactory<BE>
+        + GLWENormalize<BE>
+        + GGLWENoise<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let n: usize = module.n();
+    let dnum: usize = 4;
+    for rank in 1_usize..3 {
+        let layout = GLWESwitchingKeyLayout {
+            n: n.into(),
+            base2k: base2k.into(),
+            dnum: dnum.into(),
+            k_aux: (base2k + module.log_n()).into(),
+            k_digit: crate::layouts::k_digit_of(base2k, 1_usize),
+            k_offset: crate::layouts::TorusPrecision(0),
+            rank_in: rank.into(),
+            rank_out: rank.into(),
+        };
+        let at = |d: usize| GLWESwitchingKeyLayout {
+            dnum: d.into(),
+            ..layout
+        };
+        let max_input_k = layout.gglwe_layout().max_input_k();
+        let digits: usize = (1..dnum).rev().find(|&d| at(d).k() <= max_input_k).unwrap();
+        let view_layout = at(digits);
+
+        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+            module
+                .glwe_switching_key_encrypt_sk_tmp_bytes(&layout)
+                .max(module.gglwe_keyswitch_tmp_bytes(&view_layout, &view_layout, &layout))
+                .max(module.glwe_normalize_tmp_bytes())
+                .max(module.gglwe_noise_tmp_bytes(&view_layout)),
+        );
+        let mut source_xs: Source = Source::new([1u8; 32]);
+        let mut source_xe: Source = Source::new([2u8; 32]);
+        let mut source_xa: Source = Source::new([3u8; 32]);
+        let mut sks: Vec<GLWESecret<BE::OwnedBuf, BE::ZnxWord>> = (0..3).map(|_| module.glwe_secret_alloc(rank.into())).collect();
+        for sk in sks.iter_mut() {
+            module.glwe_secret_fill_ternary_prob(sk, 0.5, &mut source_xs);
+        }
+        let mut sk2_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
+        module.glwe_secret_prepare(&mut sk2_prepared, &sks[2]);
+
+        let mut s0s1: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&layout);
+        let mut s1s2: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&layout);
+        module.glwe_switching_key_encrypt_sk(
+            &mut s0s1,
+            &sks[0],
+            &sks[1],
+            &mut source_xe,
+            &mut source_xa,
+            &mut scratch.arena(),
+        );
+        module.glwe_switching_key_encrypt_sk(
+            &mut s1s2,
+            &sks[1],
+            &sks[2],
+            &mut source_xe,
+            &mut source_xa,
+            &mut scratch.arena(),
+        );
+        let mut s1s2_prepared: GLWESwitchingKeyPrepared<BE::OwnedBuf, BE> =
+            module.glwe_switching_key_prepared_alloc_from_infos(&s1s2);
+        module.glwe_switching_key_prepare(&mut s1s2_prepared, &s1s2, &mut scratch.borrow());
+
+        let mut s0s2: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&layout);
+        module.gglwe_keyswitch(
+            &mut GGLWEDigits::new(&mut s0s2, Dnum(digits as u32)).unwrap(),
+            &GGLWEDigits::new(&s0s1, Dnum(digits as u32)).unwrap(),
+            &s1s2_prepared.to_backend_ref(),
+            &mut scratch.borrow(),
+        );
+
+        let max_noise: f64 = layout.log2_std_noise_keyswitch(
+            &view_layout,
+            &view_layout,
+            0.5,
+            0.5,
+            DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
+            DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
+            0f64,
+        ) + 0.5;
+        let res_view = GGLWEDigits::new(&s0s2, Dnum(digits as u32)).unwrap();
+        for row in 0..digits {
+            for col in 0..rank {
+                let noise_have: f64 = module
+                    .gglwe_noise(
+                        &res_view,
+                        row,
+                        col,
+                        &sks[0].data.to_ref(),
+                        &sk2_prepared,
+                        &mut scratch.borrow(),
+                    )
+                    .std()
+                    .log2();
+                assert!(
+                    noise_have <= max_noise,
+                    "rank={rank}: noise_have: {noise_have} > max_noise: {max_noise}"
+                );
+            }
+        }
+
+        let mut s0s1_copy: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&view_layout);
+        {
+            let view = GGLWEDigits::new(&s0s1, Dnum(digits as u32)).unwrap();
+            let view = GGLWEToBackendRef::<BE>::to_backend_ref(&view);
+            let mut copy = GGLWEToBackendMut::<BE>::to_backend_mut(&mut s0s1_copy);
+            for row in 0..digits {
+                for col in 0..rank {
+                    module.glwe_normalize(
+                        &mut copy.at_view_mut(row, col),
+                        &view.at_view(row, col),
+                        &mut scratch.borrow(),
+                    );
+                }
+            }
+        }
+        let mut s0s2_copy: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&view_layout);
+        module.gglwe_keyswitch(
+            &mut s0s2_copy,
+            &s0s1_copy,
+            &s1s2_prepared.to_backend_ref(),
+            &mut scratch.borrow(),
+        );
+        for row in 0..digits {
+            for col in 0..rank {
+                let (have, want) = (s0s2.key.at(row, col), s0s2_copy.key.at(row, col));
+                for c in 0..rank + 1 {
+                    for limb in 0..have.data().size() {
+                        let expected: Vec<i64> = if limb < want.data().size() {
+                            want.data().at(c, limb).to_vec()
+                        } else {
+                            vec![0; n]
+                        };
+                        assert!(
+                            have.data().at(c, limb) == expected.as_slice(),
+                            "rank={rank} row={row} col={col}: the view's switch differs from the narrowed copy's at column {c}, limb {limb}"
+                        );
                     }
                 }
             }

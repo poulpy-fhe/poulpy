@@ -111,6 +111,7 @@ pub fn glwe_automorphism_key_automorphism_reference<BE, M, R, A>(
                     for i in 0..cols_out {
                         module.vec_znx_automorphism(p, &mut res_tmp.data, i, &a_ct_backend.data, i);
                     }
+                    res_tmp.set_canonical(a_ct_backend.is_canonical());
 
                     let mut scratch_iter = scratch.borrow();
                     module.glwe_keyswitch_assign(&mut res_tmp, &key.to_backend_ref(), &mut scratch_iter);

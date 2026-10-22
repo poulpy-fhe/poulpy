@@ -128,6 +128,11 @@ input wider than the key's `GGLWELayout::max_input_k`, before any write. A
 caller drops the bits below by narrowing the input first (`SetK::set_k`). A
 key switching the rows of another key covers their width,
 `dnum * k_digit + k_aux`, guard included, so a key never covers its own layout.
+It covers a view of that key's first digits, `GGLWEDigits` (`GGSWDigits` for a
+GGSW): rows `0..dnum'` read at `dnum' * k_digit + k_aux` bits over the same
+buffer, reported non-canonical so that a switch normalizes each row at that
+width before reading it. A destination view of as many digits is written at
+that width, its other rows untouched.
 
 `GetAutomorphismKey::get_automorphism_key` and `GetTensorKey::get_tensor_key`
 return `CoreError::GGLWEKeyUse` for a key that does not cover the width asked

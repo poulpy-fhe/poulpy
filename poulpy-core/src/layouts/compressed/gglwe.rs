@@ -63,6 +63,7 @@ impl<'a, BE: Backend + 'a> GGLWECompressedBackendRef<'a, BE> {
                 .map(|noise| noise.with_components(vec![noise.body()])),
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_ref::<BE>(&self.inner.data),
             k_aux: self.inner.k_aux,
+            canonical: true,
             base2k: self.inner.base2k,
             k_digit: self.inner.k_digit,
             k_offset: self.inner.k_offset,

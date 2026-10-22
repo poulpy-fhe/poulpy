@@ -31,6 +31,7 @@
 mod macros;
 
 mod diagonals;
+mod digits;
 mod gglwe;
 mod gglwe_to_ggsw_key;
 mod ggsw;
@@ -74,6 +75,7 @@ pub use self::compressed::{
     LWESwitchingKeyDecompress, LWEToGLWEKeyCompressed, LWEToGLWEKeyDecompress,
 };
 pub use diagonals::*;
+pub use digits::*;
 pub use gglwe::*;
 pub use gglwe_to_ggsw_key::*;
 pub use ggsw::*;
@@ -408,6 +410,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
                 size,
             ),
             k_aux: infos.k_aux(),
+            canonical: true,
             base2k: infos.base2k(),
             k_digit: infos.k_digit(),
             k_offset: infos.k_offset(),
@@ -456,6 +459,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
                 size,
             ),
             k_aux: infos.k_aux(),
+            canonical: true,
             base2k: infos.base2k(),
             k_digit: infos.k_digit(),
         }

@@ -307,6 +307,7 @@ pub fn download_ggsw<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>>(
             src.data.size(),
         ),
         k_aux: src.k_aux,
+        canonical: src.canonical,
         base2k: src.base2k,
         k_digit: src.k_digit,
     }
