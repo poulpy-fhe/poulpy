@@ -47,10 +47,8 @@ fn layout_at<C: CKKSCtBounds>(n: usize, ct: &C) -> CKKSLayout {
 }
 
 /// Fails before any work unless every key covers the widest ciphertext the CI
-/// bootstrap switches with it at the working width `ct_out.k()`: the rotation
-/// keys of the linear stages (no conjugation, CoeffsToSlots is not split), the
-/// trace key on the CoeffsToSlots output after the product by `u`, the CI
-/// tensor key in EvalMod, and the embed key on the EvalMod output.
+/// bootstrap switches with it at the working width `ct_out.k()`, the CI tensor
+/// key and the trace and embed keys included.
 fn check_ci_key_widths<BE, BCI, F>(
     ct_out: &CKKSCiphertextOwned<BE>,
     ct_in: &CKKSCiphertextOwned<BE>,
@@ -79,9 +77,6 @@ where
                 source,
             })?;
     }
-    // The widths of the conversions, as the presets lay their keys out: what
-    // CoeffsToSlots and the product by `u` leave of the working width, then what
-    // EvalMod leaves of that.
     let EvalModRing::ConjugateInvariant(conversion) = ctx.eval_mod_ring() else {
         crate::ckks_bail!("{op}: the context runs EvalMod on the ring of the bootstrap");
     };
@@ -254,10 +249,9 @@ where
                 Result::Ok(())
             })?;
 
-            // `z(X²)` times `u`, traced onto the CI ring without halving: `2·Re(u·z)` at
-            // the scale of `z`, exact, the split EvalMod input, real and imaginary parts
-            // in two slots each; EvalMod is compiled for that scale. The CI ciphertexts
-            // pass between the modules of two backends, which share owned buffers only.
+            // `z(X²)` times `u`, traced onto the CI ring without halving: `2·Re(u·z)`, the
+            // split EvalMod input. The CI ciphertexts are owned: the two backends share
+            // owned buffers only.
             wide.ckks_mul_pt_vec_assign(&mut embedded, pre, &mut scratch)?;
             let mut traced = ci.ckks_ciphertext_alloc(embedded.base2k(), embedded.k());
             ckks_ci_trace_doubled(wide, &mut traced, &embedded, trace_key, &mut scratch)?;

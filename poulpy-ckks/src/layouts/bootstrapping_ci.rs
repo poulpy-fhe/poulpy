@@ -1,38 +1,15 @@
-//! S2C-first bootstrapping with EvalMod on the conjugate-invariant ring.
+//! S2C-first bootstrapping with EvalMod on the conjugate-invariant (CI) ring.
 //!
-//! On the standard ring of degree `N`, CoeffsToSlots leaves the `N` real
-//! coefficients of the raised input in `N/2` complex slots, `z_j = c_j + i·c_{j+N/2}`,
-//! and the polynomial of EvalMod, which is real, only reduces real inputs: the
-//! standard pipeline splits `z` into its real and imaginary parts and evaluates
-//! EvalMod twice. The conjugate-invariant (CI) ring of degree `N` has `N` real
-//! slots, so a single EvalMod there reduces every coefficient.
+//! CoeffsToSlots leaves the `N` coefficients in `N/2` complex slots, and the real
+//! polynomial of EvalMod runs on each half; the CI ring of degree `N` has `N` real
+//! slots, so one EvalMod there reduces them all. The ciphertext goes there and
+//! back through the standard ring of degree `2N` (embedding as `z(X²)`, products
+//! by `u` and `v`, traces); `docs/bootstrapping.md` details the conversions.
 //!
-//! A plan selects it with [`BootstrappingPlan::with_eval_mod_on_ci_ring`]; the
-//! circuit is that of an S2C-first bootstrap, through
-//! [`CKKSBootstrappingCIOps`](crate::api::CKKSBootstrappingCIOps), which takes the
-//! modules of the two rings. It moves `z` to the CI ring and back through the
-//! standard ring of degree `2N`, which contains both:
-//!
-//! 1. `z(X)` is embedded as `z(X²)`, where each slot of degree `N` holds two slots
-//!    of degree `2N`, `j` and `j + N/2`. Its secret is `s(X²)`.
-//! 2. A product with the plaintext `u` (`1` on the first copy, `−i` on the second)
-//!    spends [`EvalModCIPlan::pre_log_delta`] bits, and the trace onto the CI ring
-//!    ([`ckks_ci_trace`](crate::api::CKKSCIRingMapOps::ckks_ci_trace)) keeps the
-//!    real part of each slot: `c_j` and `c_{j+N/2}`, each in its own slot, twice
-//!    over, which is the input the split EvalMod also takes.
-//! 3. EvalMod runs once on the CI ring.
-//! 4. The embedding back ([`ckks_ci_embed`](crate::api::CKKSCIRingMapOps::ckks_ci_embed)),
-//!    a product with `v` (`1` and `i`) at [`EvalModCIPlan::post_log_delta`] bits
-//!    and the trace `x + x(−X)`, which needs no key since `s(X²)` is invariant
-//!    under `X -> −X`, pair the reduced slots back as `r_j + i·r_{j+N/2}` on the
-//!    even coefficients, the ciphertext of degree `N` under `s`.
-//!
-//! The keys of the conversions are of degree `2N`, from `s(X²)` to the CI secret
-//! and back ([`ConversionKeysLayout`](crate::layouts::ConversionKeysLayout)); EvalMod relinearizes with a CI tensor key
-//! of degree `N`. The context and the prepared keys hold EvalMod's plaintexts and
-//! that key on the CI backend: `BootstrappingContext<BE, F, BCI>` and
-//! `BootstrappingKeysPrepared<_, BE, BCI>`. CoeffsToSlots is not split, so there
-//! is no conjugation key.
+//! A plan selects it with [`BootstrappingPlan::with_eval_mod_on_ci_ring`]. The
+//! context and the prepared keys then hold EvalMod and its tensor key on the CI
+//! backend (`BootstrappingContext<BE, F, BCI>`), beside the conversion
+//! plaintexts and keys of degree `2N`; there is no conjugation key.
 
 use anyhow::{Result, ensure};
 use poulpy_core::{

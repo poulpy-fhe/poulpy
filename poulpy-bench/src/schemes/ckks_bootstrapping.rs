@@ -4,7 +4,7 @@
 //! at an explicitly chosen fixture radix, those with EvalMod on the
 //! conjugate-invariant ring included, in the same group. Criterion's name filter selects a preset by its name. The
 //! setup, bootstrap call, and precision measurement use the shared
-//! [`BootstrappingPresetRun`] and [`BootstrappingCIPresetRun`] drivers, so the
+//! [`BootstrappingPresetRun`] driver, on the stages of each EvalMod ring, so the
 //! benchmark exercises exactly what the precision pin tests check.
 
 use crate::backend_name;
@@ -17,7 +17,7 @@ use poulpy_ckks::{
     presets::bootstrapping::{BootstrappingPreset, all},
     test_suite::{
         helpers::{PrecisionStats, TestContextBackend, TestContextModule, TestContextSharedModule},
-        presets::{BootstrappingCIPresetRun, BootstrappingPresetRun, preset_with_max_base2k},
+        presets::{BootstrappingPresetRun, CIStages, PresetStages, StandardStages, preset_with_max_base2k},
     },
 };
 use poulpy_core::{
@@ -32,22 +32,24 @@ use poulpy_hal::{
     layouts::{Backend, ConjugateInvariant, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
 };
 
-fn runner_ckks_bootstrapping<BE>(group: &mut BenchmarkGroup<'_, WallTime>, preset: BootstrappingPreset)
+/// Benchmarks `preset` on the stages `S` of its EvalMod ring and reports the
+/// precision of its last bootstrap.
+fn runner_ckks_bootstrapping<BE, S>(group: &mut BenchmarkGroup<'_, WallTime>, preset: BootstrappingPreset)
 where
     BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    S: PresetStages<BE>,
 {
     let id = preset_id(&preset);
     let mut run = None;
     let mut precision = None;
     group.bench_function(BenchmarkId::from_parameter(&id), |bencher| {
-        let run = run.get_or_insert_with(|| BootstrappingPresetRun::<BE>::setup(preset.clone()));
+        let run = run.get_or_insert_with(|| BootstrappingPresetRun::<BE, S>::setup(preset.clone()));
         bencher.iter(|| run.bootstrap());
         precision = Some(run.precision());
     });
@@ -116,7 +118,7 @@ where
     let presets = all().unwrap().into_iter();
     for preset in presets.filter(|preset| preset.plan().eval_mod_ring() == EvalModRing::Standard) {
         let preset = preset_with_max_base2k(&preset, FIXTURE_BASE2K).unwrap();
-        runner_ckks_bootstrapping::<BE>(&mut group, preset);
+        runner_ckks_bootstrapping::<BE, StandardStages<BE>>(&mut group, preset);
     }
     group.finish();
 }
@@ -155,15 +157,7 @@ where
         if preset.base2k() > FIXTURE_BASE2K {
             continue;
         }
-        let id = preset_id(&preset);
-        let mut run = None;
-        let mut precision = None;
-        group.bench_function(BenchmarkId::from_parameter(&id), |bencher| {
-            let run = run.get_or_insert_with(|| BootstrappingCIPresetRun::<BE, BCI>::setup(preset.clone()));
-            bencher.iter(|| run.bootstrap());
-            precision = Some(run.precision());
-        });
-        report_precision(backend.clone(), &id, &preset, precision);
+        runner_ckks_bootstrapping::<BE, CIStages<BE, BCI>>(&mut group, preset);
     }
     group.finish();
 }

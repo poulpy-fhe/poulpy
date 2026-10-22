@@ -516,22 +516,14 @@ const C2S_FFR_SCHEDULE: [(usize, usize); 4] = [(3, 1), (4, 1024), (4, 64), (4, 4
 const S2C_FAST_SCHEDULE: [(usize, usize); 4] = [(3, 4), (4, 32), (4, 512), (4, 8192)];
 
 /// S2C-first full-slot preset at `N = 2^16` for inputs at scale `2^35`, tuned for
-/// speed: 685-bit ciphertexts with at least 19 bits of precision.
+/// speed: 685-bit ciphertexts with at least 19 bits of precision, 15 usable levels.
 ///
-/// - The first CoeffsToSlots factor, of three layers, is applied by the modulus
-///   raise ([`BootstrappingPreset::with_first_factor_on_raise`]), with eight small
-///   keys in place of the sparse-to-dense switch; three paid factors of four
-///   layers follow at scale `2^48`.
-/// - EvalMod runs once, on the conjugate-invariant ring
-///   ([`crate::layouts::bootstrapping_ci`]), instead of twice; the conversions
-///   there and back cost 84 bits.
-/// - SlotsToCoeffs has four factors at scale `2^28`, below ModUp: the input width
-///   is 160 bits, and 525 bits (15 rescales) are usable.
-///
-/// The first-factor keys hold the raised width under the dense-secret bound, hence
-/// the narrower precision and budget than [`n16_d35_k733_p20_s2c`]. At 1383 bits,
-/// 35 below a 16-level budget, every key at the widest levels has one row fewer.
-/// It runs through [`CKKSBootstrappingCIOps`](crate::api::CKKSBootstrappingCIOps).
+/// The first CoeffsToSlots factor is applied by the raise, three paid factors of
+/// four layers follow at scale `2^48`, EvalMod runs once on the
+/// conjugate-invariant ring (84 bits of conversions, through
+/// [`CKKSBootstrappingCIOps`](crate::api::CKKSBootstrappingCIOps)), and
+/// SlotsToCoeffs has four factors at scale `2^28`. The first-factor keys keep the
+/// raised width, 1383 bits, under the dense-secret bound.
 pub fn n16_d35_k685_p19_s2c_fast() -> Result<BootstrappingPreset> {
     build(PresetSpec {
         name: "n16_d35_k685_p19_s2c_fast",

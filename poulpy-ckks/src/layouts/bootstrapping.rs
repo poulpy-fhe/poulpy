@@ -277,12 +277,9 @@ impl BootstrappingPlan {
         }
     }
 
-    /// Runs EvalMod once on the conjugate-invariant ring instead of twice on
-    /// the ring of the bootstrap (see [`crate::layouts::bootstrapping_ci`]), at
-    /// the cost of the two conversions of `conversion`.
-    ///
-    /// The plan is S2C-first, without EvalRound+ or functional bootstrapping,
-    /// and its EvalMod is one of the real families.
+    /// Runs EvalMod once on the conjugate-invariant ring, through the conversions
+    /// of `conversion` ([`crate::layouts::bootstrapping_ci`]). The plan is
+    /// S2C-first, with a real EvalMod family and neither EvalRound+ nor a LUT.
     pub fn with_eval_mod_on_ci_ring(mut self, conversion: EvalModCIPlan) -> Result<Self> {
         ensure!(
             self.pipeline == BootstrappingPipeline::S2CFirst,
@@ -318,8 +315,7 @@ impl BootstrappingPlan {
     /// EvalRound+ evaluates its bypass in parallel with the low-precision
     /// CoeffsToSlots + EvalMod branch, so the wider of the two branch costs is
     /// charged before any trailing SlotsToCoeffs.
-    /// S2C-first also charges the CoeffsToSlots guard bits, and the two
-    /// conversions of EvalMod on the conjugate-invariant ring.
+    /// S2C-first also charges the CoeffsToSlots guard bits and any conversions.
     pub fn post_mod_up_consumed_bits(&self) -> usize {
         let c2s_eval_mod = self.coeffs_to_slots.consumed_bits() + self.eval_mod.consumed_bits();
         let eval_round = self
@@ -415,12 +411,10 @@ impl BootstrappingPlan {
 /// The ring EvalMod runs on, after CoeffsToSlots.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EvalModRing {
-    /// The ring of the bootstrap: EvalMod runs on the real and on the imaginary
-    /// part of the slots.
+    /// The ring of the bootstrap, once per half of the slots.
     Standard,
-    /// The conjugate-invariant ring of the same degree, whose real slots hold
-    /// every coefficient: EvalMod runs once, between two conversions (see
-    /// [`crate::layouts::bootstrapping_ci`]).
+    /// The conjugate-invariant ring of the same degree, once, between two
+    /// conversions ([`crate::layouts::bootstrapping_ci`]).
     ConjugateInvariant(EvalModCIPlan),
 }
 
@@ -434,9 +428,8 @@ impl EvalModRing {
     }
 }
 
-/// The two conversions of EvalMod on the conjugate-invariant ring: the scales,
-/// in bits, of the plaintext products before and after it. Each spends its
-/// scale from the budget.
+/// Scales, in bits, of the plaintext products of the conversions before and
+/// after EvalMod on the conjugate-invariant ring, each spent from the budget.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EvalModCIPlan {
     /// Scale of `u`, which pairs each slot of degree `N` into two real CI slots.
@@ -452,10 +445,8 @@ pub struct EvalModCIPlan {
 /// `SplitRealAndImag` format is used for both transforms so the real and
 /// imaginary coefficient halves can be reduced independently by EvalMod.
 ///
-/// `BEM` is the backend EvalMod runs on: `BE` itself, or the backend of the
-/// conjugate-invariant ring when the plan runs EvalMod there
-/// ([`EvalModRing::ConjugateInvariant`], built by
-/// [`Self::compile_ci`](crate::layouts::bootstrapping_ci)).
+/// `BEM` is the backend EvalMod runs on: `BE`, or the CI backend for
+/// [`EvalModRing::ConjugateInvariant`] ([`Self::compile_ci`](crate::layouts::bootstrapping_ci)).
 pub struct BootstrappingContext<BE: Backend, F, BEM: Backend = BE> {
     c2s_guard_bits: usize,
     functional_message_modulus: Option<usize>,
@@ -480,8 +471,7 @@ pub struct BootstrappingContext<BE: Backend, F, BEM: Backend = BE> {
     /// Encoded, backend-resident EvalMod (`x mod 1`), on the backend it runs on.
     eval_mod: EvalMod<F, CKKSPlaintextOwned<BEM>>,
 
-    /// The plaintexts `u` and `v` of degree `2N` of the conversions, when EvalMod
-    /// runs on the conjugate-invariant ring.
+    /// The conversion plaintexts `u` and `v` of degree `2N`, on the CI ring only.
     pub(crate) conversions: Option<(CKKSPlaintextOwned<BE>, CKKSPlaintextOwned<BE>)>,
 
     /// The ring EvalMod runs on.
@@ -555,9 +545,8 @@ impl KeyWidths<'_> {
         inputs
     }
 
-    /// Widths, in bits, of the ciphertext the trace takes to the
-    /// conjugate-invariant ring and of the one the embedding takes back, for a
-    /// bootstrap at `bootstrap_k` bits, when EvalMod runs on that ring.
+    /// Widths of the traced and of the embedded ciphertext of a bootstrap at
+    /// `bootstrap_k` bits, when EvalMod runs on the conjugate-invariant ring.
     pub(crate) fn conversions(&self, bootstrap_k: usize) -> Option<(usize, usize)> {
         let EvalModRing::ConjugateInvariant(conversion) = self.eval_mod_ring else {
             return None;
@@ -659,8 +648,7 @@ impl<BE: Backend, F, BEM: Backend> BootstrappingContext<BE, F, BEM> {
         self.eval_mod_ring
     }
 
-    /// The plaintexts `u` and `v` of degree `2N` before and after EvalMod, when
-    /// it runs on the conjugate-invariant ring.
+    /// The conversion plaintexts `u` and `v` of degree `2N`, on the CI ring only.
     pub fn conversions(&self) -> Option<(&CKKSPlaintextOwned<BE>, &CKKSPlaintextOwned<BE>)> {
         self.conversions.as_ref().map(|(pre, post)| (pre, post))
     }
@@ -783,9 +771,8 @@ where
     }
 
     /// First stage of [`Self::compile`]: generates the DFT matrices and encodes
-    /// EvalMod, without preparing the matrices. A plan that runs EvalMod on the
-    /// conjugate-invariant ring is compiled by
-    /// [`Self::compile_unprepared_ci`](crate::layouts::bootstrapping_ci).
+    /// EvalMod, without preparing the matrices; a plan with EvalMod on the CI ring
+    /// takes [`Self::compile_unprepared_ci`](crate::layouts::bootstrapping_ci).
     pub fn compile_unprepared(
         module: &Module<BE>,
         base2k: Base2K,

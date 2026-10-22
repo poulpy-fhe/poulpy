@@ -174,8 +174,8 @@ pub struct BootstrappingKeySet<D: Data, W: ZnxWord> {
     /// the rotated raise secret (the sparse one under encapsulation) to the
     /// dense one, see [`BootstrappingKeysLayout::first_factor_key`].
     pub first_factor_keys: HashMap<i64, GLWESwitchingKey<D, W>>,
-    /// The trace and embedding keys of degree `2N` when EvalMod runs on the
-    /// conjugate-invariant ring, whose `tensor_key` is then of that ring.
+    /// The trace and embedding keys of degree `2N`, with EvalMod on the
+    /// conjugate-invariant ring only; `tensor_key` is then of that ring.
     pub conversion_keys: Option<(GLWECITraceKey<D, W>, GLWECIEmbedKey<D, W>)>,
 }
 
@@ -194,8 +194,7 @@ pub struct BootstrappingKeysPrepared<D: Data, BE: Backend, BEM: Backend = BE> {
     pub encapsulation_keys: Option<EncapsulationKeys<GLWESwitchingKeyPrepared<D, BE>>>,
     /// Prepared first-factor keys by slot rotation, possibly none.
     pub first_factor_keys: HashMap<i64, GLWESwitchingKeyPrepared<D, BE>>,
-    /// Prepared trace and embedding keys of degree `2N`, when EvalMod runs on the
-    /// conjugate-invariant ring.
+    /// Prepared trace and embedding keys, with EvalMod on the CI ring only.
     pub conversion_keys: Option<(GLWECITraceKeyPrepared<D, BE>, GLWECIEmbedKeyPrepared<D, BE>)>,
 }
 
@@ -292,8 +291,7 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
     /// Convenience for the CPU path that prepares the whole set up front; streaming
     /// callers (e.g. GPU) can instead prepare individual keys on the fly from the
     /// public fields. `scratch` must hold the per-key prepare scratch. A key set
-    /// for EvalMod on the conjugate-invariant ring, whose tensor key is of that
-    /// ring, is prepared by [`Self::prepare_ci`](crate::layouts::bootstrapping_ci).
+    /// for EvalMod on the CI ring takes [`Self::prepare_ci`](crate::layouts::bootstrapping_ci).
     pub fn prepare<BE: Backend>(
         &self,
         module: &Module<BE>,
@@ -361,9 +359,8 @@ pub struct BootstrappingKeysLayout {
     /// rotated raise secret to the dense one: its rows sit under the term, `k_offset`
     /// bits lower, and reach the width the raise sums its terms at.
     pub first_factor_key: Option<GLWESwitchingKeyLayout>,
-    /// Layouts of the conversion keys when the recipe runs EvalMod on the
-    /// conjugate-invariant ring, or `None`. `tensor_key` is then the layout of a
-    /// tensor key of that ring.
+    /// Layouts of the conversion keys, with EvalMod on the conjugate-invariant
+    /// ring only; `tensor_key` is then of that ring.
     pub conversion: Option<ConversionKeysLayout>,
 }
 
