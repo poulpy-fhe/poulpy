@@ -141,7 +141,10 @@ where
 /// [`EvalModType::ExpCmplx`](crate::layouts::eval_mod::EvalModType::ExpCmplx):
 /// available on rings with complex slots, rejected on the others.
 trait ComplexBasePolynomial<BE: Backend> {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the base polynomial takes its working layout and scale beside its operands"
+    )]
     fn eval<R, C, P, H>(
         module: &Module<BE>,
         res: &mut R,

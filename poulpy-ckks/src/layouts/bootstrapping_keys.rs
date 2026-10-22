@@ -569,7 +569,10 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
     /// [`Self::generate_keys`] does but without tensor keys, and with the
     /// conjugation key only when `conjugation` is set: a pipeline that does not
     /// split CoeffsToSlots does not use it.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "key generation takes the secret, the layout, three sources and a scratch arena"
+    )]
     pub fn generate_linear_keys(
         &self,
         module: &Module<BE>,
@@ -604,8 +607,14 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
     /// Checks `layout` against the compiled recipe and generates the rotation keys:
     /// the union of both DFTs' (and the bypass') Galois elements, and conjugation
     /// when `conjugation` is set.
-    #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::type_complexity)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "key generation takes the secret, the layout, two sources and a scratch arena"
+    )]
+    #[expect(
+        clippy::type_complexity,
+        reason = "the rotation keys by Galois element, as the key set holds them"
+    )]
     fn generate_rotation_keys(
         &self,
         module: &Module<BE>,
@@ -673,8 +682,14 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
 
     /// The keys of the raise, on a layout [`Self::generate_rotation_keys`] checked:
     /// the encapsulation keys, under a fresh sparse secret, and the first-factor keys.
-    #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::type_complexity)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "key generation takes the secret, the layout, three sources and a scratch arena"
+    )]
+    #[expect(
+        clippy::type_complexity,
+        reason = "the encapsulation and first-factor keys of the raise, returned together"
+    )]
     fn generate_raise_keys(
         &self,
         module: &Module<BE>,

@@ -48,7 +48,10 @@ pub trait CKKSBootstrappingCIOps<BE: Backend, BCI: Backend> {
         C1: CKKSCtBounds,
         C2: CKKSCtBounds;
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the CI bootstrap takes three modules and a scratch arena per ring"
+    )]
     fn ckks_bootstrap_ci<F>(
         &self,
         wide: &Module<BE>,

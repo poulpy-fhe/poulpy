@@ -282,7 +282,7 @@ where
     }
     // SlotsToCoeffs and the raise work on a copy of the input, CoeffsToSlots on
     // the raised ciphertext.
-    let in_ct_bytes = module.glwe_bytes_of_from_infos(&in_layout);
+    let in_ct_bytes = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&in_layout));
     let mut bytes = 0;
     for atk in &keys_layout.rotation_key_layouts() {
         let s2c_mod_up = module

@@ -35,8 +35,9 @@ use poulpy_core::{
     DiagonalProd, GLWECIKeyEncryptSk, GLWETensorKeyEncryptSk, GetDistribution, GetDistributionMut,
     layouts::{
         BackendGLWESecret, GGLWEInfos, GGLWEToBackendRef, GLWECIEmbedKey, GLWECIEmbedKeyPrepared, GLWECIKeyPreparedFactory,
-        GLWECITraceKey, GLWECITraceKeyPrepared, GLWEInfos, GLWESecretLayout, GLWESecretSampling, GLWESwitchingKeyLayout,
-        GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, ModuleCoreAlloc,
+        GLWECITraceKey, GLWECITraceKeyPrepared, GLWEInfos, GLWESecret, GLWESecretLayout, GLWESecretSampling,
+        GLWESwitchingKeyLayout, GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory,
+        ModuleCoreAlloc,
     },
 };
 use poulpy_hal::{
@@ -283,7 +284,10 @@ where
     /// keys, and the conversion keys of degree `2N` between it and `s(X²)`.
     ///
     /// `scratch` serves the base and conversion keys, `scratch_ci` the CI tensor keys.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "key generation takes three modules, three sources and a scratch arena per ring"
+    )]
     pub fn generate_keys(
         &self,
         module: &Module<BE>,
@@ -327,18 +331,21 @@ where
             scratch,
         )?;
 
+        // The CI secret takes the dense secret's Hamming weight. The secrets derived
+        // here are wiped before returning, so nothing fails between their creation and
+        // their wipe.
+        let hamming_weight = match sk_dense.dist() {
+            poulpy_core::Distribution::TernaryFixed(hw) => *hw,
+            dist => anyhow::bail!("EvalMod on the CI ring takes a fixed-weight ternary dense secret, got {dist:?}"),
+        };
+
         // `s(X²)`, the secret of the embedded ciphertext.
         let mut sk_wide = wide.glwe_secret_alloc_from_infos(&GLWESecretLayout {
             n: wide.n().into(),
             rank: sk_dense.rank(),
         });
-        {
-            let src = sk_dense.data().at(0, 0).to_vec();
-            let dst = sk_wide.data_mut().at_mut(0, 0);
-            dst.iter_mut().for_each(|x| *x = BE::ZnxWord::from_i64(0));
-            for (i, c) in src.into_iter().enumerate() {
-                dst[2 * i] = c;
-            }
+        for (i, &c) in sk_dense.data().at(0, 0).iter().enumerate() {
+            sk_wide.data_mut().at_mut(0, 0)[2 * i] = c;
         }
         *sk_wide.dist_mut() = *sk_dense.dist();
 
@@ -347,10 +354,6 @@ where
             n: ci.n().into(),
             rank: sk_dense.rank(),
         });
-        let hamming_weight = match sk_dense.dist() {
-            poulpy_core::Distribution::TernaryFixed(hw) => *hw,
-            dist => anyhow::bail!("EvalMod on the CI ring takes a fixed-weight ternary dense secret, got {dist:?}"),
-        };
         ci.glwe_secret_fill_ternary_hw(&mut sk_ci, hamming_weight, source_xs);
 
         let mut tensor_key = ci.glwe_tensor_key_alloc_from_infos(&layout.tensor_key);
@@ -360,6 +363,8 @@ where
         wide.glwe_ci_trace_key_encrypt_sk(&mut trace_key, &sk_ci, &sk_wide, source_xe, source_xa, scratch);
         let mut embed_key = wide.glwe_ci_embed_key_alloc_from_infos(&layout.embed_key);
         wide.glwe_ci_embed_key_encrypt_sk(&mut embed_key, &sk_ci, &sk_wide, source_xe, source_xa, scratch);
+        wipe_secret(&mut sk_wide);
+        wipe_secret(&mut sk_ci);
 
         Ok(BootstrappingCIKeySet {
             linear,
@@ -367,6 +372,18 @@ where
             trace_key,
             embed_key,
         })
+    }
+}
+
+/// Zeroes a secret that key generation derived for itself, before it is
+/// dropped: the writes are volatile, so they are kept although the buffer is
+/// freed right after.
+fn wipe_secret<D: HostDataMut, W: ZnxWord>(sk: &mut GLWESecret<D, W>) {
+    for col in 0..sk.rank().as_usize() {
+        for x in sk.data_mut().at_mut(col, 0) {
+            // SAFETY: `x` is a valid, aligned, exclusive reference.
+            unsafe { std::ptr::write_volatile(x, W::from_i64(0)) };
+        }
     }
 }
 

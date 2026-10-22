@@ -98,7 +98,7 @@ where
     A: GLWEInfos,
     K: GGLWEInfos,
 {
-    module.glwe_bytes_of_from_infos(a_infos)
+    BE::scratch_aligned(module.glwe_bytes_of_from_infos(a_infos))
         + module
             .glwe_keyswitch_tmp_bytes(a_infos, a_infos, key_infos)
             .max(module.glwe_ci_trace_tmp_bytes(res_infos, a_infos))

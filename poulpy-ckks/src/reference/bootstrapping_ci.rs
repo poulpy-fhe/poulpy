@@ -178,7 +178,7 @@ where
         let traced = layout_at(ci.n(), ct_out);
         // `embedded` lives through the whole bootstrap; `z` through the linear
         // stages, `negated` through the last sum.
-        let linear = self.glwe_bytes_of_from_infos(&raised)
+        let linear = BE::scratch_aligned(self.glwe_bytes_of_from_infos(&raised))
             + s2c_first_linear_tmp_bytes(self, &raised, ct_in, ctx.base(), &keys_layout.linear);
         let conversions = wide
             .ckks_mul_pt_vec_tmp_bytes(&embedded, &embedded, ctx.pre())
@@ -190,8 +190,10 @@ where
                 &keys_layout.trace_key,
             ))
             .max(wide.ckks_ci_embed_tmp_bytes(&embedded, &keys_layout.embed_key));
-        let sum = wide.glwe_bytes_of_from_infos(&embedded) + wide.ckks_add_tmp_bytes(embedded.size());
-        let wide_bytes = wide.glwe_bytes_of_from_infos(&embedded) + linear.max(conversions).max(sum);
+        // Every temporary is carved at an aligned offset.
+        let embedded_bytes = BE::scratch_aligned(wide.glwe_bytes_of_from_infos(&embedded));
+        let sum = embedded_bytes + wide.ckks_add_tmp_bytes(embedded.size());
+        let wide_bytes = embedded_bytes + linear.max(conversions).max(sum);
         let eval_mod = ci.ckks_eval_mod_tmp_bytes(&traced, &traced, ctx.eval_mod(), &keys_layout.tensor_key);
         (wide_bytes, eval_mod)
     }

@@ -1104,6 +1104,37 @@ mod tests {
     }
 
     #[test]
+    fn n16_d35_k685_p19_s2c_fast_has_a_smaller_key_set() {
+        let mib = |bytes: usize| {
+            assert!(bytes.is_multiple_of(1 << 20));
+            bytes >> 20
+        };
+        // Rotation keys with conjugation, the tensor key and the encapsulation keys: 8022 MiB.
+        assert_eq!(key_set_bytes(&n16_d35_k733_p20_s2c().unwrap()).map(mib), [7891, 99, 32, 0]);
+
+        // 43 rotation keys and no conjugation, the CI tensor key, the dense-to-sparse key,
+        // eight first-factor keys and the trace and embed keys of degree 2N: 6845 MiB.
+        let preset = n16_d35_k685_p19_s2c_fast().unwrap();
+        let (keys, plan, log_n) = (preset.keys_layout(), preset.base().plan(), preset.base().log_n());
+        let order = 2i64 << log_n;
+        let mut elements: BTreeSet<i64> = plan.coeffs_to_slots().galois_elements(log_n, order).into_iter().collect();
+        elements.extend(plan.slots_to_coeffs().galois_elements(log_n, order));
+        assert_eq!(elements.len(), 43);
+        let rotations = elements.iter().map(|&p| key_bytes(&keys.linear.rotation_key(p))).sum();
+        let first_factor =
+            plan.coeffs_to_slots().diagonal_indexes(log_n)[0].len() * key_bytes(keys.linear.first_factor_key.as_ref().unwrap());
+        let parts = [
+            rotations,
+            key_bytes(&keys.tensor_key),
+            key_bytes(&keys.linear.encapsulation.as_ref().unwrap().dense_to_sparse),
+            first_factor,
+            key_bytes(&keys.trace_key),
+            key_bytes(&keys.embed_key),
+        ];
+        assert_eq!(parts.map(mib), [6243, 99, 3, 240, 198, 62]);
+    }
+
+    #[test]
     fn n16_d35_k685_p19_s2c_fast_fits_the_dense_bound() {
         let preset = n16_d35_k685_p19_s2c_fast().unwrap();
         assert_eq!((preset.base().input_k(), preset.base().output_k()), (160, 685));

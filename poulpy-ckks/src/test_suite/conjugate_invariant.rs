@@ -33,7 +33,7 @@ use super::{
     helpers::{
         TestContextBackend, TestContextModule, TestContextSharedModule, alloc_ct, alloc_scratch, assert_precision,
         ckks_decrypt_with_prec, ckks_encrypt_coeffs, ckks_encrypt_pt, gen_atk, gen_ci_keys, gen_sk_with_raw, gen_tsk,
-        precision_at, precision_stats,
+        next_test_seed, precision_at, precision_stats,
     },
 };
 use crate::reference::ckks_encode_linear_transformation_from_diagonals;
@@ -549,7 +549,7 @@ pub fn test_conjugate_invariant_eval_mod<BE>(
     let slots = params.n;
     let ratio = (1u64 << lit.log_msg_ratio) as f64;
     let bound = (lit.input_scaling().unwrap().recip() - ratio.recip()).floor();
-    let mut source = Source::new([5u8; 32]);
+    let mut source = Source::new(next_test_seed(5));
     let x: Vec<f64> = (0..slots)
         .map(|_| {
             (source.next_f64(-bound, bound).round() * ratio + source.next_f64(-1.0, 1.0)) * lit.input_scaling().unwrap() / ratio
