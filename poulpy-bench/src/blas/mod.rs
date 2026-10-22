@@ -1,5 +1,5 @@
-//! Benchmarks of `poulpy-blas`: ciphertext by ciphertext and ciphertext by public matrix products, and the transpose,
-//! on one `d x d` block per operand.
+//! Benchmarks of `poulpy-blas`: ciphertext by ciphertext and ciphertext by public matrix products, the transpose, the
+//! row and column sums and the row rotation of a replicated grid, on one `d x d` block per operand.
 //!
 //! - [`params`]: [`BlasBenchParams`](params::BlasBenchParams) and the default sweep over the ring degree and the block
 //!   dimension.

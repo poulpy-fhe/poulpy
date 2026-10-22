@@ -85,4 +85,54 @@ impl<BE: Backend + BlasMatIntraImpl> BlasMatIntraOps<BE> for Module<BE> {
     {
         BE::blas_rotate_cols_impl(self, res, a, k, ctx, atk, scratch)
     }
+
+    fn blas_sum_rows_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, atk: &K) -> usize
+    where
+        R: BlasGridInfos,
+        A: BlasGridInfos,
+        K: GGLWEInfos,
+    {
+        BE::blas_sum_rows_tmp_bytes_impl(self, res, a, ctx, atk)
+    }
+
+    fn blas_sum_rows<R, A, K>(
+        &self,
+        res: &mut R,
+        a: &A,
+        ctx: &BlasContext<BE>,
+        atk: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        R: BlasGridMut<BE>,
+        A: BlasGrid<BE>,
+        K: GetAutomorphismKey<BE> + Sync,
+    {
+        BE::blas_sum_rows_impl(self, res, a, ctx, atk, scratch)
+    }
+
+    fn blas_sum_cols_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, atk: &K) -> usize
+    where
+        R: BlasGridInfos,
+        A: BlasGridInfos,
+        K: GGLWEInfos,
+    {
+        BE::blas_sum_cols_tmp_bytes_impl(self, res, a, ctx, atk)
+    }
+
+    fn blas_sum_cols<R, A, K>(
+        &self,
+        res: &mut R,
+        a: &A,
+        ctx: &BlasContext<BE>,
+        atk: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        R: BlasGridMut<BE>,
+        A: BlasGrid<BE>,
+        K: GetAutomorphismKey<BE> + Sync,
+    {
+        BE::blas_sum_cols_impl(self, res, a, ctx, atk, scratch)
+    }
 }

@@ -39,15 +39,17 @@ use crate::{
     reference::{
         blas_matmul_output_layout, blas_matmul_prepared_output_layout, blas_matmul_pt_left_output_layout,
         blas_matmul_pt_right_output_layout, blas_rotate_cols_output_layout, blas_rotate_output_layout,
-        blas_rotate_rows_output_layout, blas_sum_output_layout, blas_transpose_output_layout,
+        blas_rotate_rows_output_layout, blas_sum_cols_output_layout, blas_sum_output_layout, blas_sum_rows_output_layout,
+        blas_transpose_output_layout,
     },
 };
 
 /// Every per-matrix map, the matrix-slot rotation and the sum give their result the metadata [`copied_layout`] or
 /// [`mapped_layout`] derives from their input, whatever `res` held, and the values of their cleartext model: transpose,
-/// row and column rotations across blocks, within one block and by whole blocks, the products by public matrices on
-/// either side and the rotation, from a half-full batch into a fresh grid and from a full batch into a grid labelled
-/// and recorded half full. The operand preparations report their hint, their input's dimensions, batch and layout as
+/// row and column rotations across blocks, within one block and by whole blocks, row rotations of a grid one block high
+/// holding one matrix, which copy its layout, row and column sums, the products by public matrices on either side and
+/// the rotation, from a half-full batch into a fresh grid and from a full batch into a grid labelled and recorded half
+/// full. The operand preparations report their hint, their input's dimensions, batch and layout as
 /// their source, and as their layout their input's when hot and that of their terms when cold, sigma (tau) then a
 /// shift of its blocks, at no scale on a right input holding one matrix, which [`blas_matmul_left_term_layout`]
 /// ([`blas_matmul_right_term_layout`]) gives, as [`blas_matmul_left_operand_layout`]
@@ -147,6 +149,10 @@ pub fn test_blas_result_meta<BE, F, E>(
         .max(module.blas_rotate_cols_tmp_bytes(&full_row, &full_row, &ctx, &atk))
         .max(module.blas_rotate_rows_tmp_bytes(&full_column, &full_column, &ctx, &atk))
         .max(module.blas_rotate_cols_tmp_bytes(&full_column, &full_column, &ctx, &atk))
+        .max(module.blas_sum_rows_tmp_bytes(&full_row, &full_row, &ctx, &atk))
+        .max(module.blas_sum_cols_tmp_bytes(&full_row, &full_row, &ctx, &atk))
+        .max(module.blas_sum_rows_tmp_bytes(&full_column, &full_column, &ctx, &atk))
+        .max(module.blas_sum_cols_tmp_bytes(&full_column, &full_column, &ctx, &atk))
         .max(module.blas_sum_tmp_bytes(&full_row, &full_row, &atk))
         .max(module.blas_rotate_tmp_bytes(&full_row, &full_row, &atk))
         .max(module.blas_matmul_prepare_left_tmp_bytes(&full_row, &ctx, &atk, Reuse))
@@ -184,7 +190,7 @@ pub fn test_blas_result_meta<BE, F, E>(
     let mut cases: Vec<_> = half_grids.iter().map(|(row, column)| (row, column, &half, 1, 0)).collect();
     cases.push((&full_row, &full_column, &full, 0, usize::from(lanes > 1)));
     // A shift by 1 crosses blocks along the axis two blocks long and stays in the block along the other; a shift by `d`
-    // copies whole blocks.
+    // copies whole blocks, and a row shift of a grid one block high holding one matrix rotates them.
     for (row, column, (row_model, column_model), want, stale) in cases {
         let label = |op: &str| format!("{op} from log_sparsity {want} into {stale}");
         let mut res = alloc(2, 1, stale);
@@ -214,13 +220,19 @@ pub fn test_blas_result_meta<BE, F, E>(
                 } else {
                     mapped_layout(a, rows, cols, k, p)
                 };
+                let rotates = rows == 1 && replicated::<BE::Ring>(a);
+                let rows_layout = if rotates { copied_layout(a, rows, cols, k) } else { layout };
                 let mut res = alloc(rows, cols, stale);
                 module
                     .blas_rotate_rows(&mut res, a, shift, &ctx, &keys, &mut op_scratch.borrow())
                     .unwrap();
                 let op = label(&format!("rotate_rows {shape}"));
-                assert_eq!(blas_rotate_rows_output_layout(&res, a, shift, &ctx), layout, "{op}: query");
-                check(&op, &res, &model.rotate_rows(shift), &layout, &mut scratch.borrow());
+                assert_eq!(
+                    blas_rotate_rows_output_layout(&res, a, shift, &ctx),
+                    rows_layout,
+                    "{op}: query"
+                );
+                check(&op, &res, &model.rotate_rows(shift), &rows_layout, &mut scratch.borrow());
                 let mut res = alloc(rows, cols, stale);
                 module
                     .blas_rotate_cols(&mut res, a, shift, &ctx, &keys, &mut op_scratch.borrow())
@@ -228,6 +240,32 @@ pub fn test_blas_result_meta<BE, F, E>(
                 let op = label(&format!("rotate_cols {shape}"));
                 assert_eq!(blas_rotate_cols_output_layout(&res, a, shift, &ctx), layout, "{op}: query");
                 check(&op, &res, &model.rotate_cols(shift), &layout, &mut scratch.borrow());
+            }
+        }
+        // A replicated grid sums its rows without the projection.
+        for (a, model) in [(row, row_model), (column, column_model)] {
+            let (rows, cols) = (a.rows(), a.cols());
+            for along_rows in [true, false] {
+                let layout = if along_rows && replicated::<BE::Ring>(a) {
+                    copied_layout(a, rows, cols, k)
+                } else {
+                    mapped_layout(a, rows, cols, k, p)
+                };
+                let mut res = alloc(rows, cols, stale);
+                let (op, query, want) = if along_rows {
+                    module
+                        .blas_sum_rows(&mut res, a, &ctx, &keys, &mut op_scratch.borrow())
+                        .unwrap();
+                    ("sum_rows", blas_sum_rows_output_layout(&res, a, &ctx), model.sum_rows())
+                } else {
+                    module
+                        .blas_sum_cols(&mut res, a, &ctx, &keys, &mut op_scratch.borrow())
+                        .unwrap();
+                    ("sum_cols", blas_sum_cols_output_layout(&res, a, &ctx), model.sum_cols())
+                };
+                let op = label(&format!("{op} {rows}x{cols}"));
+                assert_eq!(query, layout, "{op}: query");
+                check(&op, &res, &want, &layout, &mut scratch.borrow());
             }
         }
         for hint in HINTS {

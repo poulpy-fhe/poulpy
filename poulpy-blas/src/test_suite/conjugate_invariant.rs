@@ -41,7 +41,8 @@ use crate::{
 
 /// Every operation once on the conjugate-invariant ring, on real matrices of `4 x 4` blocks encoded with the module's
 /// own encoder (the standard decoding helper reads complex slots): `blas_rotate`, `blas_sum`, `blas_transpose`,
-/// `blas_rotate_rows` and `blas_rotate_cols` across blocks, both preparations under either hint then
+/// `blas_rotate_rows` and `blas_rotate_cols` across blocks, `blas_sum_rows` and `blas_sum_cols`, of distinct matrices
+/// and of one matrix one block high, which also shifts its rows by rotations, both preparations under either hint then
 /// `blas_matmul_prepared` of every mix and `blas_matmul`, by a right factor of distinct matrices and by one whose
 /// compact encryption proves it holds one matrix, `blas_matmul_pt_right` and `blas_matmul_pt_left` under every
 /// algorithm, the masked ones under the context's masks and on the right of one public matrix, each on exactly the
@@ -148,6 +149,54 @@ pub fn test_blas_conjugate_invariant<BE>(
     })
     .unwrap();
     check("rotate_cols", &res, &a.rotate_cols(1), layout, &mut scratch.borrow());
+
+    // Row and column sums, of `A` and of a grid one block high whose compact encryption proves it holds one matrix:
+    // that grid sums its rows and shifts them by rotations, at no scale.
+    let mut one_row = Grid::model(log_d, 1, 2, 1, 14);
+    one_row.im.fill(0.0);
+    let ct_one_row = encrypt_real(&params, module, &sk, &one_row, &mut scratch.borrow());
+    assert!(replicated::<ConjugateInvariant>(&ct_one_row), "the fixture holds one matrix");
+    let spread_row = Grid::from_fn(log_d, 1, 2, lanes, |_, r, c| one_row.at(0, r, c));
+    for (name, ct_x, x) in [("", &ct_a, &a), (" of one matrix", &ct_one_row, &spread_row)] {
+        let (rows, cols) = (ct_x.rows(), ct_x.cols());
+        let mapped = mapped_layout(ct_x, rows, cols, k, p);
+        let unmapped = if replicated::<ConjugateInvariant>(ct_x) {
+            copied_layout(ct_x, rows, cols, k)
+        } else {
+            mapped
+        };
+        let mut res = alloc(rows, cols);
+        with_scratch::<BE, _>(module.blas_sum_rows_tmp_bytes(&res, ct_x, &ctx, &atk), |s| {
+            module.blas_sum_rows(&mut res, ct_x, &ctx, &keys, s)
+        })
+        .unwrap();
+        check(
+            &format!("sum_rows{name}"),
+            &res,
+            &x.sum_rows(),
+            unmapped,
+            &mut scratch.borrow(),
+        );
+        with_scratch::<BE, _>(module.blas_sum_cols_tmp_bytes(&res, ct_x, &ctx, &atk), |s| {
+            module.blas_sum_cols(&mut res, ct_x, &ctx, &keys, s)
+        })
+        .unwrap();
+        check(&format!("sum_cols{name}"), &res, &x.sum_cols(), mapped, &mut scratch.borrow());
+        if rows == 1 {
+            let mut res = alloc(rows, cols);
+            with_scratch::<BE, _>(module.blas_rotate_rows_tmp_bytes(&res, ct_x, &ctx, &atk), |s| {
+                module.blas_rotate_rows(&mut res, ct_x, 1, &ctx, &keys, s)
+            })
+            .unwrap();
+            check(
+                &format!("rotate_rows{name}"),
+                &res,
+                &x.rotate_rows(1),
+                unmapped,
+                &mut scratch.borrow(),
+            );
+        }
+    }
 
     // Both operands under either hint, hot first, then the prepared product of every mix.
     let lefts = HINTS.map(|hint| {
