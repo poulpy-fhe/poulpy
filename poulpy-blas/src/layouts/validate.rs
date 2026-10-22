@@ -279,7 +279,7 @@ pub(crate) fn assert_scratch<BE: Backend>(op: &str, required: usize, scratch: &S
 /// Checks a [`blas_rotate`](crate::api::BlasMatInterOps::blas_rotate) call, and returns the batch `res` records, `a`'s:
 /// `a` and `res` are grids at `a`'s `log_d` whose blocks tile their shape and share one layout whose label allows their
 /// batch record ([`BlasGrid::blocks`], [`BlasGridInfos::mat_slots`]), `res` has `a`'s shape and its blocks `a`'s
-/// degree, radix and rank, and `atk` holds the rotation key at `a`'s width, of `a`'s rank.
+/// degree, radix and rank, and `atk` holds the rotation key at the narrower of `a`'s and `res`'s widths, of `a`'s rank.
 ///
 /// # Errors
 ///
@@ -294,7 +294,7 @@ pub fn validate_blas_rotate<BE: Backend>(
 ) -> Result<usize> {
     let op = "blas_rotate";
     ensure_same_grids(op, module, res, a)?;
-    rotate_uses(a, r, &mut |u| ensure_rotation(op, module, atk, u))?;
+    rotate_uses(res, a, r, &mut |u| ensure_rotation(op, module, atk, u))?;
     Ok(grid_batch::<BE::Ring>(a))
 }
 
@@ -320,19 +320,18 @@ pub fn validate_blas_sum<BE: Backend>(
     Ok(grid_batch::<BE::Ring>(a))
 }
 
-/// The look-up of [`validate_blas_rotate`]: the rotation by `r d^2` slots, at `a`'s width.
-pub(crate) fn rotate_uses(a: &impl BlasGridInfos, r: i64, f: UseSink<'_>) -> Result<()> {
-    let block = a.block_layout();
+/// The look-up of [`validate_blas_rotate`]: the rotation by `r d^2` slots, at the narrower of `a`'s and `res`'s widths.
+pub(crate) fn rotate_uses(res: &impl BlasGridInfos, a: &impl BlasGridInfos, r: i64, f: UseSink<'_>) -> Result<()> {
     f(RotationUse {
         rotation: r << (2 * a.log_d()),
-        k: block.k(),
-        rank: block.rank(),
+        k: rotation_key_width(res, a),
+        rank: a.block_layout().rank(),
     })
 }
 
 /// The look-ups of [`validate_blas_sum`]: the rotations of the batch, at the narrower of `a`'s and `res`'s widths.
 pub(crate) fn sum_uses<R: Ring>(res: &impl BlasGridInfos, a: &impl BlasGridInfos, f: UseSink<'_>) -> Result<()> {
-    let (k, rank) = (sum_key_width(res, a), a.block_layout().rank());
+    let (k, rank) = (rotation_key_width(res, a), a.block_layout().rank());
     sum_rotations(a.log_d(), grid_batch::<R>(a)).try_for_each(|rotation| f(RotationUse { rotation, k, rank }))
 }
 
@@ -350,8 +349,9 @@ fn ensure_same_grids<BE: Backend>(
     ensure_layouts(op, module.n(), res, &[a])
 }
 
-/// The width `blas_sum` rotates at: `ckks_copy` leaves `res` at the narrower of `a` and `res`.
-fn sum_key_width(res: &impl BlasGridInfos, a: &impl BlasGridInfos) -> TorusPrecision {
+/// The width `blas_rotate` and `blas_sum` rotate at, the narrower of `a`'s and `res`'s: `ckks_rotate_into` reads `a` at
+/// a narrower `res`'s width, and `ckks_copy` leaves `res` at it.
+fn rotation_key_width(res: &impl BlasGridInfos, a: &impl BlasGridInfos) -> TorusPrecision {
     a.block_layout().k().min(res.block_layout().k())
 }
 

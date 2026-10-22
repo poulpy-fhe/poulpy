@@ -128,8 +128,8 @@ fn assert_key_widths<BE, X>(
     );
 }
 
-/// With a key store answering only at the widths poulpy-ckks uses each key at, read off real results (a rotation at its
-/// input's width, a sum's rotations at its result's, baby steps at the source's width, giant steps at the result's, the
+/// With a key store answering only at the widths poulpy-ckks uses each key at, read off real results (a rotation at the
+/// narrower of its input's and its result's widths, a sum's rotations at its result's, baby steps at the source's width, giant steps at the result's, the
 /// tensor key at the wider of the products' term widths), every operation runs and matches its result under the full
 /// store bit for bit, and rejects the store short of any one of these keys before it writes. Rotations, sums,
 /// transposes, row and column shifts and products by public matrices, on either side and under `Diagonal` and `Jkls`,
@@ -243,12 +243,12 @@ pub fn test_blas_key_widths<BE, F, E>(
         module
             .blas_rotate(&mut full, &row, 1, &keys, &mut own(bytes).borrow())
             .unwrap();
-        let rotation = [(module.ckks_galois_element((d * d) as i64), a_k)];
+        let rotation = [(module.ckks_galois_element((d * d) as i64), a_k.min(width(&full)))];
         assert_key_widths(
             &format!("rotate res_k={res_k}"),
             "blas_rotate",
             &keys,
-            blas_rotate_key_uses(module, &row, 1),
+            blas_rotate_key_uses(module, &full, &row, 1),
             rotation,
             [],
             &full,

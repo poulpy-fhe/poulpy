@@ -179,7 +179,7 @@ public operand's scale `p_B`:
 
 | Operation | Rotation keys | Widths |
 |---|---|---|
-| `blas_rotate` by `r` | `rotate_galois_elements(order, r)` | `a.k` |
+| `blas_rotate` by `r` | `rotate_galois_elements(order, r)` | `min(res.k, a.k)` |
 | `blas_sum` | `sum_galois_elements(order, a)` | `min(res.k, a.k)` |
 | `blas_transpose` | `transpose_galois_elements(order)` | baby steps at `a.k`, giant steps at `min(res.k, a.k - p)` |
 | `blas_rotate_rows`, `blas_rotate_cols` by `k` | `rotate_rows_galois_elements(order, k)`, `rotate_cols_galois_elements(order, k)` | as the transpose; none for a shift by a multiple of `d`, a copy |
