@@ -163,7 +163,7 @@ where
                     k: crate::layouts::TorusPrecision(ksk_infos.gglwe_layout().max_input_k().0 + 1),
                     ..glwe_in_infos
                 });
-                assert_refuses_uncovered_input("glwe_keyswitch took an input one digit past its key", || {
+                assert_refuses_uncovered_input("glwe_keyswitch took an input one bit past its key", || {
                     module.glwe_keyswitch(&mut glwe_out, &wide, &ksk_prepared.to_backend_ref(), &mut scratch.borrow())
                 });
             }

@@ -546,7 +546,7 @@ where
                 op: "ckks_bootstrap",
                 source,
                 ..
-            }) => assert!(source.to_string().contains("the key covers inputs of"), "{err}"),
+            }) => assert!(source.to_string().contains("wider than the key's max_input_k"), "{err}"),
             _ => panic!("expected a key refused at entry, got: {err}"),
         }
     }

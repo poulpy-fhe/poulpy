@@ -155,11 +155,11 @@ where
 /// bootstrap switches with it.
 ///
 /// The bootstrap runs at `ct_out.k()`, which need not be the width the keys
-/// were laid out for. The key switches refuse an input wider than their key
-/// too; this check moves the failure ahead of the computation, as an error.
-/// An EvalRound+ recipe runs its bypass at widths of its own and is left to
-/// those checks. Keys with a row offset (sparse-to-dense, first factor) are laid out for one
-/// raise: they are checked against the raise this bootstrap runs.
+/// were laid out for. Each stage's key lookup also refuses a key too narrow for
+/// its width; this check only moves the failure ahead of the computation. An
+/// EvalRound+ recipe runs its bypass at widths of its own and is left to those
+/// checks. Keys with a row offset (sparse-to-dense, first factor) are laid out
+/// for one raise: they are checked against the raise this bootstrap runs.
 fn check_key_widths<BE, F, K>(
     ct_out: &CKKSCiphertextOwned<BE>,
     ct_in: &CKKSCiphertextOwned<BE>,
@@ -180,7 +180,6 @@ where
             let k = TorusPrecision(k as u32);
             keys.rotation_keys()
                 .get_automorphism_key(p, k)
-                .and_then(|key| check_covers("get_automorphism_key", &key, k))
                 .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
                     op,
                     rotation: p,
@@ -191,7 +190,6 @@ where
         let k = TorusPrecision(widths.eval_mod_relinearization_k(bootstrap_k, ct_in.log_delta()) as u32);
         keys.tensor_key()
             .get_tensor_key(k)
-            .and_then(|key| check_covers("get_tensor_key", &key, k))
             .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source })?;
     }
     check_raise_keys(ct_out, ct_in, ctx, keys)
@@ -227,17 +225,6 @@ where
         && sparse_to_dense.k_offset().as_usize() > 0
     {
         check_offset_raise(bootstrap_k, k_small, raised - k_small, sparse_to_dense)?;
-    }
-    Ok(())
-}
-
-fn check_covers<K: GGLWEInfos>(op: &'static str, key: &K, k: TorusPrecision) -> poulpy_core::Result<()> {
-    let covered = key.gglwe_layout().max_input_k();
-    if k > covered {
-        return Err(poulpy_core::CoreError::GGLWEKeyUse {
-            op,
-            detail: format!("the key covers inputs of {covered} bits, asked for {k}"),
-        });
     }
     Ok(())
 }
@@ -1347,6 +1334,7 @@ where
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
+    ensure_encapsulation_covers(dst, src, dense_to_sparse, sparse_to_dense)?;
     module.glwe_keyswitch_assign(src, &dense_to_sparse.to_backend_ref(), scratch);
     if sparse_to_dense.k_offset().as_usize() > 0 {
         return ckks_mod_up_offset_reference(module, dst, src, scale_up, sparse_to_dense, scratch);
@@ -1439,6 +1427,28 @@ where
         slots: src.slots(),
         log_sparsity: src.log_sparsity(),
     });
+    Ok(())
+}
+
+/// Refuses encapsulation keys too narrow for their inputs before any write: `src`
+/// for the dense-to-sparse switch, `dst` for an offset-free sparse-to-dense one. A
+/// sparse-to-dense key with a row offset is checked against its raise, by
+/// [`check_offset_raise`].
+fn ensure_encapsulation_covers<Dst: CKKSCtBounds, Src: CKKSCtBounds, D2S: GGLWEInfos, S2D: GGLWEInfos>(
+    dst: &Dst,
+    src: &Src,
+    dense_to_sparse: &D2S,
+    sparse_to_dense: &S2D,
+) -> Result<()> {
+    let sparse_to_dense_covers =
+        sparse_to_dense.k_offset().as_usize() > 0 || dst.k() <= sparse_to_dense.gglwe_layout().max_input_k();
+    if src.k() > dense_to_sparse.gglwe_layout().max_input_k() || !sparse_to_dense_covers {
+        return Err(CKKSCompositionError::InvalidOperand {
+            op: "ckks_encapsulated_mod_up",
+            reason: "the input is wider than an encapsulation key's max_input_k".into(),
+        }
+        .into());
+    }
     Ok(())
 }
 

@@ -309,7 +309,7 @@ where
             k: TorusPrecision(tsk_infos.gglwe_layout().max_input_k().0 + 1),
             ..glwe_out_infos
         });
-        assert_refuses_uncovered_input("glwe_tensor_relinearize took a tensor one digit past its key", || {
+        assert_refuses_uncovered_input("glwe_tensor_relinearize took a tensor one bit past its key", || {
             module.glwe_tensor_relinearize(&mut res_relin, &wide, &tsk_prep, &mut scratch.borrow())
         });
     }

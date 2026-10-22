@@ -154,7 +154,7 @@ where
                 k: TorusPrecision(autokey_infos.gglwe_layout().max_input_k().0 + 1),
                 ..ct_in_infos
             });
-            assert_refuses_uncovered_input("glwe_automorphism took an input one digit past its key", || {
+            assert_refuses_uncovered_input("glwe_automorphism took an input one bit past its key", || {
                 module.glwe_automorphism(&mut ct_out, &wide, &autokey_prepared.to_backend_ref(), &mut scratch.borrow())
             });
         }

@@ -192,11 +192,8 @@ where
         .iter()
         .map(|gs| {
             (gs.rot != 0).then(|| {
-                let key = keys
-                    .get_automorphism_key(module.galois_element(gs.rot), res.k())
-                    .unwrap_or_else(|e| panic!("giant-step rotation {}: {e}", gs.rot));
-                poulpy_core::reference::keyswitching::glwe::assert_key_covers("glwe_eval_linear_transformation", res.k(), &key);
-                key
+                keys.get_automorphism_key(module.galois_element(gs.rot), res.k())
+                    .unwrap_or_else(|e| panic!("giant-step rotation {}: {e}", gs.rot))
             })
         })
         .collect();

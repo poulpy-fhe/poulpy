@@ -20,12 +20,14 @@ where
     H: GetAutomorphismKey<BE>,
 {
     let p = conj_rotate_galois_element(k, module.cyclotomic_order());
+    // The switch reads `src` at `dst.k()` when `dst` is narrower.
+    let switch_k = src.k().min(dst.k());
     let key = keys
-        .get_automorphism_key(p, src.k())
+        .get_automorphism_key(p, switch_k)
         .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
             op: "conjugate",
             rotation: k,
-            k: src.k().into(),
+            k: switch_k.into(),
             source,
         })?;
     BE::ckks_conjugate_into_impl(module, dst, src, &key, scratch)

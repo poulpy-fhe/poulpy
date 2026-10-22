@@ -956,7 +956,6 @@ where
         H: GetTensorKey<BE>,
     {
         let tsk = &tsk.get_tensor_key(a.k()).unwrap_or_else(|e| panic!("{e}"));
-        crate::reference::keyswitching::glwe::assert_key_covers("glwe_tensor_relinearize", a.k(), &tsk.0);
         let scratch = scratch.borrow();
         assert!(
             scratch.available() >= self.glwe_tensor_relinearize_tmp_bytes_reference(res, a, tsk),

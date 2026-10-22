@@ -6,14 +6,14 @@ use crate::{
     api::TransferInto,
     glwe_prepare_left, glwe_prepare_left_tmp_bytes, glwe_prepare_right, glwe_prepare_right_tmp_bytes,
     layouts::{
-        Base2K, Degree, Dnum, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecretLayout, GLWESecretTensorFactory,
-        GLWETensorKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, Dnum, GGLWEInfos, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecretLayout,
+        GLWESecretTensorFactory, GLWETensorKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::{
             GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretTensorPreparedFactory,
             GLWETensorKeyPreparedFactory,
         },
     },
-    test_suite::keys::fill_by_digit,
+    test_suite::{keys::fill_by_digit, noise::assert_refuses_uncovered_input},
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -559,6 +559,35 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
                 let mut have = r.glwe_alloc_from_infos(&g);
                 out_t.transfer_into(&mut have);
                 assert_glwe_eq!(out_r, have, "relinearize rank={rank} k={precision} k_digit={k_digit}");
+
+                let wide = GLWELayout {
+                    k: TorusPrecision(key.gglwe_layout().max_input_k().0 + 1),
+                    ..g
+                };
+                let wide_tensor = t.glwe_tensor_alloc_from_infos(&wide);
+                assert_refuses_uncovered_input("glwe_tensor_relinearize took a tensor one bit past its key", || {
+                    t.glwe_tensor_relinearize(
+                        &mut out_t,
+                        &wide_tensor,
+                        &kp_t,
+                        &mut poisoned_scratch::<BT>(t.glwe_tensor_relinearize_tmp_bytes(&g, &wide, &key)).borrow(),
+                    )
+                });
+                if rank == 1 {
+                    let wide_glwe = t.glwe_alloc_from_infos(&wide);
+                    let size = wide.k.as_usize().div_ceil(b);
+                    assert_refuses_uncovered_input("glwe_mul_relinearize took operands one bit past its key", || {
+                        t.glwe_mul_relinearize(
+                            b,
+                            &mut out_t,
+                            g.k,
+                            &wide_glwe,
+                            &wide_glwe,
+                            &kp_t,
+                            &mut poisoned_scratch::<BT>(t.glwe_mul_relinearize_tmp_bytes(&g, size, size, wide.k, &key)).borrow(),
+                        )
+                    });
+                }
 
                 // The one-pass product must agree byte for byte across backends, in each operand role.
                 if rank == 1 {

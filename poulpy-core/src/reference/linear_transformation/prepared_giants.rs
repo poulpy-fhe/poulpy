@@ -242,11 +242,8 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
         .iter()
         .map(|gs| {
             (gs.rot != 0).then(|| {
-                let key = keys
-                    .get_automorphism_key(operand_galois_element(module, res.n().as_usize(), gs.rot), res.k())
-                    .unwrap_or_else(|e| panic!("giant-step rotation {}: {e}", gs.rot));
-                crate::reference::keyswitching::glwe::assert_key_covers("glwe_eval_linear_transformation", res.k(), &key);
-                key
+                keys.get_automorphism_key(operand_galois_element(module, res.n().as_usize(), gs.rot), res.k())
+                    .unwrap_or_else(|e| panic!("giant-step rotation {}: {e}", gs.rot))
             })
         })
         .collect();

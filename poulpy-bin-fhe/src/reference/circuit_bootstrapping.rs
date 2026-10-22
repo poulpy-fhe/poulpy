@@ -517,7 +517,7 @@ fn circuit_bootstrap_prepared<R, L, M, BRA, BE>(
     // Every rotation's key shares the layout; read it off the first one.
     let atk_layout = key
         .atk
-        .get_automorphism_key(-1, glwe_brk_layout.k())
+        .lookup_automorphism_key(-1, glwe_brk_layout.k())
         .map(|key| key.gglwe_layout())
         .unwrap_or_else(|e| panic!("{e}"));
     // The traces run at the precision the keys decompose exactly.

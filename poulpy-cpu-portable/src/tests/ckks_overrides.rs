@@ -168,7 +168,7 @@ unsafe impl poulpy_ckks::oep::CKKSEvalModImpl for OverrideBackend {
 
 struct NoTensorKey;
 impl<BE: Backend> GetTensorKey<BE> for NoTensorKey {
-    fn get_tensor_key(&self, _: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+    fn lookup_tensor_key(&self, _: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
         panic!("linear polynomial dispatch must not request a tensor key")
     }
 }

@@ -605,7 +605,7 @@ impl<BE: Backend, A: GLWEAutomorphismKeyPreparedToBackendRef<BE>, T> GetAutomorp
 }
 
 impl<BE: Backend, A, T: GLWETensorKeyPreparedToBackendRef<BE>> GetTensorKey<BE> for WidthKeys<A, T> {
-    fn get_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+    fn lookup_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
         let (_, key) = self
             .tsks
             .range(k.as_u32()..)
