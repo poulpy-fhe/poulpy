@@ -25,8 +25,8 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{
-        ScratchArenaTakeBasic, VecZnxAddAssign, VecZnxAutomorphism, VecZnxCopy, VecZnxDftBytesOf, VecZnxIdftNormalize,
-        VecZnxIdftNormalizeTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes,
+        ScratchArenaTakeBasic, VecZnxAddAssign, VecZnxAutomorphism, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftBytesOf,
+        VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes,
     },
     layouts::{
         Backend, CyclotomicOrder, Module, ScalarZnxAsVecZnxBackendMut, ScalarZnxAsVecZnxBackendRef, ScratchArena,
@@ -220,7 +220,7 @@ where
         + module.bytes_of_vec_znx_dft(n, 2, acc_size);
     let ops = module
         .glwe_mul_plain_tmp_bytes(&small_layout, &small_layout, diagonal)
-        .max(module.glwe_keyswitch_dft_tmp_bytes(acc_size, &small_layout, key_infos))
+        .max(module.glwe_keyswitch_dft_add_tmp_bytes(acc_size, &small_layout, key_infos))
         .max(module.glwe_shift_tmp_bytes(small))
         .max(module.vec_znx_normalize_tmp_bytes())
         .max(module.vec_znx_idft_normalize_tmp_bytes(dst_infos.size(), acc_size));
@@ -252,6 +252,7 @@ where
         + VecZnxAutomorphism<BE>
         + VecZnxCopy<BE>
         + VecZnxAddAssign<BE>
+        + VecZnxDftAddAssign<BE>
         + VecZnxNormalize<BE>
         + VecZnxIdftNormalize<BE>
         + CyclotomicOrder,
