@@ -442,7 +442,7 @@ where
         );
         let max_base2k = blas_matmul_max_base2k::<BE>(&ct_a, &ct_b, &ctx, FAILURE_BITS);
         assert!(
-            max_base2k.is_some_and(|max| max >= bp.base2k),
+            max_base2k >= bp.base2k,
             "blas_matmul: base2k exceeds the radix its lazy sums allow at 128 failure bits"
         );
         let order = client.module.cyclotomic_order();
@@ -465,7 +465,7 @@ where
         let max_err = client.max_error(bp, &res, |s, r, c| {
             (0..bp.d()).map(|l| a_entry(s, r, l) * b(s % right, l, c)).sum()
         });
-        verify::<BE>(op, bp, max_err, max_base2k, atks.len());
+        verify::<BE>(op, bp, max_err, Some(max_base2k), atks.len());
         let module = client.module;
         Box::new(move || {
             module
@@ -512,7 +512,7 @@ where
         let ct_a = client.encrypt(bp, bp.batch(), a_entry);
         let max_base2k = blas_matmul_pt_right_max_base2k::<BE>(&ct_a, &pt, &ctx, FAILURE_BITS);
         assert!(
-            max_base2k.is_some_and(|max| max >= bp.base2k),
+            max_base2k >= bp.base2k,
             "blas_matmul_pt_right: base2k exceeds the radix its lazy sums allow at 128 failure bits"
         );
         let order = client.module.cyclotomic_order();
@@ -528,7 +528,7 @@ where
             .unwrap();
         let p = p_entry(bp.d());
         let max_err = client.max_error(bp, &res, |s, r, c| (0..bp.d()).map(|l| a_entry(s, r, l) * p(0, l, c)).sum());
-        verify::<BE>(op, bp, max_err, max_base2k, atks.len());
+        verify::<BE>(op, bp, max_err, Some(max_base2k), atks.len());
         let module = client.module;
         Box::new(move || {
             module
@@ -575,7 +575,7 @@ where
         let ct_a = client.encrypt(bp, bp.batch(), a_entry);
         let max_base2k = blas_matmul_pt_left_max_base2k::<BE>(&pt, &ct_a, &ctx, FAILURE_BITS);
         assert!(
-            max_base2k.is_some_and(|max| max >= bp.base2k),
+            max_base2k >= bp.base2k,
             "blas_matmul_pt_left: base2k exceeds the radix its lazy sums allow at 128 failure bits"
         );
         let order = client.module.cyclotomic_order();
@@ -591,7 +591,7 @@ where
             .unwrap();
         let p = p_entry(bp.d());
         let max_err = client.max_error(bp, &res, |s, r, c| (0..bp.d()).map(|l| p(0, r, l) * a_entry(s, l, c)).sum());
-        verify::<BE>(op, bp, max_err, max_base2k, atks.len());
+        verify::<BE>(op, bp, max_err, Some(max_base2k), atks.len());
         let module = client.module;
         Box::new(move || {
             module

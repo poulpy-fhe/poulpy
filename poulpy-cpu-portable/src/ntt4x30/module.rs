@@ -55,14 +55,14 @@ impl<R: Ring> NTT4x30PortableHandle<R> {
 impl<R: Ring> poulpy_hal::execution::ScratchWorkers for NTT4x30Portable<R> {}
 
 impl<R: Ring> poulpy_hal::layouts::MaxBase2k for NTT4x30Portable<R> {
-    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize> {
-        Some(poulpy_hal::layouts::max_base2k_ntt::<Self>(
+    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
+        poulpy_hal::layouts::max_base2k_ntt::<Self>(
             <Primes30 as poulpy_hal::layouts::PrimeSet>::LOG_Q_PRODUCT,
             n,
             products,
             failure_bits,
             squaring,
-        ))
+        )
     }
 }
 

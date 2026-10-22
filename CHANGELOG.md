@@ -26,10 +26,11 @@
 - `max_base2k_ntt` and `max_base2k_fft64` model the conjugate-invariant ring, read from the backend's `Ring` ([#435](https://github.com/poulpy-fhe/poulpy/issues/435)).
   The constant coefficient of a product has variance `4n - 3` there, twice the others', and a square's has mean `(2n - 1)` times the input variance, which comes off the NTT threshold `Q/2` and, summed coherently through the inverse DCT, adds `2u^2/3` of its square to the FFT64 error.
   FFT64 budgets each DCT as its cyclic FFT plus three stages. At `n = 2^16` and 128 bits, 32 products select 53 bits on NTT4x30 and 18 on FFT64, one square 52 and 17.
+- **Breaking:** `MaxBase2k::max_base2k` and `Module::max_base2k` return `usize`, where they returned `Option<usize>`: a backend without a model does not implement `MaxBase2k`, and `HostBytesBackend` no longer does.
 
 ### CPU backends
 
-- Every conjugate-invariant backend type returns `Some` from `max_base2k`: each backend implements `MaxBase2k` once for both rings, where the conjugate-invariant types returned `None`.
+- Every conjugate-invariant backend type has a `max_base2k` model: each backend implements `MaxBase2k` once for both rings, where the conjugate-invariant types returned `None`.
 - The native CKKS encapsulated modulus raise (portable, AVX2, AVX-512, and their Rayon variants) and the fused IFMA giant step leave a key with a row offset to the reference, which refuses it, and the AVX-512 rank-one relinearization refuses one, instead of using it as an offset-free key.
 - Every CPU backend reads the right operand of the convolution applies through the Galois element in the pass that reads a sparse operand.
 - **Breaking:** the `Reim4Convolution` and `Fft64RingArith` convolution methods take a `RightRead` in place of `b_log_gap`, built with `right_read_fft64` or `right_read_ntt`.
@@ -355,7 +356,7 @@
   The reference products make every term once and keep it only while it serves: a hot side's terms come a block row of `a` or a block column of `b` at a time, and of two hot sides the one whose terms, with one row or column of the other's, take fewer limbs is held while the other streams, so `blas_matmul`, which reads its grids in place, holds one side's terms and one row or column of the other's, whatever the extent of the streamed side.
   An operand reports its hint and its input's block layout through `BlasMatMulOperandInfos`, and `blas_matmul_left_operand_layout` and `blas_matmul_right_operand_layout` give those infos before preparing, a `BlasMatMulOperandLayout`, for the prepared product's query, which takes the context and both key layouts.
 - On a right factor whose label proves one matrix, the encrypted products (`blas_matmul`, `blas_matmul_prepare_right` and `blas_matmul_prepared`) take tau with `d` diagonals and psi^k as rotations at no scale (`replicated`, `BlasContext::{tau_rep, rotate_rows_rep}`), so its terms are one map scale wider.
-- Add `reference::{blas_matmul_max_base2k, blas_matmul_pt_right_max_base2k, blas_matmul_pt_left_max_base2k}`: the largest `base2k`, at most 62, that `Module::max_base2k` allows for every lazy sum of a product, counted at each radix from the grids' layouts, the context and the public operand, `None` for a backend without a model.
+- Add `reference::{blas_matmul_max_base2k, blas_matmul_pt_right_max_base2k, blas_matmul_pt_left_max_base2k}`: the largest `base2k`, at most 62, that `Module::max_base2k` allows for every lazy sum of a product, counted at each radix from the grids' layouts, the context and the public operand, 0 if none does.
   The counts are those `blas_matmul` and `blas_matmul_pt_right` document.
 - `validate_blas_sum` rejects with `InvalidOperand` a `base2k` whose digits cannot hold the `log2(mat_slots) + 1` lazy terms the sum adds within `2^62`, as the products reject one above 62.
 - Calls with distinct `res` and `scratch` may run concurrently over a shared module, context, public operands, prepared operands and key stores, and an override keeps no state across calls.

@@ -135,7 +135,7 @@ use $crate::{RayonTaskExecutor, SendPtr};
 $crate::__private::poulpy_hal::impl_backend_from!($rayon, $base, $crate::RayonTaskExecutor);
 
 impl $crate::__private::poulpy_hal::layouts::MaxBase2k for $rayon {
-    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize> {
+    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
         <$base as $crate::__private::poulpy_hal::layouts::MaxBase2k>::max_base2k(n, products, failure_bits, squaring)
     }
 }

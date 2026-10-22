@@ -9,7 +9,7 @@ pub trait MaxBase2k: Backend {
     /// Set `squaring` if any term is a square; `products` still counts actual
     /// terms (one for a single square). Otherwise all operands are independent.
     /// Caps the radix at `Self::ZnxWord::BITS - 2` for coefficient headroom.
-    /// Returns `Some(0)` if no positive radix fits, or `None` without a model.
+    /// Returns 0 if no positive radix fits. A backend without a model does not implement this trait.
     /// See [`Module::max_base2k`](super::Module::max_base2k) for input constraints.
     ///
     /// Current NTT and FFT64 models assume independent centered uniform
@@ -17,7 +17,7 @@ pub trait MaxBase2k: Backend {
     /// `squaring` allows equal operands within a term.
     /// Their Gaussian failure estimates are not guarantees; other correlations,
     /// including operand reuse across terms, require a separate model.
-    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize>;
+    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize;
 }
 
 /// NTT radix for independent products or squares of centered uniform inputs.

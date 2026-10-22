@@ -70,14 +70,14 @@ impl<R: Ring> NTT3x42IfmaHandle<R> {
 }
 
 impl<R: Ring> poulpy_hal::layouts::MaxBase2k for NTT3x42Ifma<R> {
-    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize> {
-        Some(poulpy_hal::layouts::max_base2k_ntt::<Self>(
+    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
+        poulpy_hal::layouts::max_base2k_ntt::<Self>(
             <Primes42 as poulpy_hal::layouts::PrimeSet>::LOG_Q_PRODUCT,
             n,
             products,
             failure_bits,
             squaring,
-        ))
+        )
     }
 }
 

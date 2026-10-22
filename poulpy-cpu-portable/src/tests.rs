@@ -28,8 +28,8 @@ fn conjugate_invariant_square_mean_sets_the_ntt_radix() {
 
     type BE = crate::NTT4x30CIPortable;
     let n = 1 << 13;
-    assert_eq!(Module::<NTT4x30Portable>::max_base2k(n, 1, 128, true), Some(55));
-    let k = Module::<BE>::max_base2k(n, 1, 128, true).unwrap();
+    assert_eq!(Module::<NTT4x30Portable>::max_base2k(n, 1, 128, true), 55);
+    let k = Module::<BE>::max_base2k(n, 1, 128, true);
     assert_eq!(k, 54);
     let module = Module::<BE>::new(n as u64);
     let mut scratch = ScratchOwned::<BE>::alloc(module.svp_apply_dft_tmp_bytes(1).max(module.vec_znx_idft_apply_tmp_bytes()));

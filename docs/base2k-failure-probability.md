@@ -77,7 +77,7 @@ $$
 
 With $x=(T-\mu)/(\sqrt2\,\sigma)$, $(T,\sigma)=(Q/2,\sigma_c)$ or $(1/2,\sigma_e)$, and $\mu$ zero except for conjugate-invariant NTT squares, it searches for the largest integer $K$ satisfying $x^2+\operatorname{asinh}(\sqrt\pi\,x/2)\ge(\lambda+\log_2N)\ln2$. This evaluates the logarithm of the bound rather than the tiny probability itself.
 
-The search caps the radix at `BE::ZnxWord::BITS - 2`: **62 for `i64`, 30 for a future `i32` backend**, and slightly reduces $x$ for a numerical margin at the threshold. The runtime query needs no module allocation; it returns `Some(K)`, `Some(0)` if no positive radix fits, or `None` without an applicable model. `N` must be a power of two at least 2 and the backend's minimum degree; `d` and `failure_bits` must be positive. For $m$ output polynomials, add $\lceil\log_2m\rceil$ to `failure_bits` to allocate a total failure budget.
+The search caps the radix at `BE::ZnxWord::BITS - 2`: **62 for `i64`, 30 for a future `i32` backend**, and slightly reduces $x$ for a numerical margin at the threshold. The runtime query needs no module allocation; it returns $K$, or 0 if no positive radix fits; a backend without an applicable model does not implement `MaxBase2k`. `N` must be a power of two at least 2 and the backend's minimum degree; `d` and `failure_bits` must be positive. For $m$ output polynomials, add $\lceil\log_2m\rceil$ to `failure_bits` to allocate a total failure budget.
 
 ## Why a probabilistic bound helps
 

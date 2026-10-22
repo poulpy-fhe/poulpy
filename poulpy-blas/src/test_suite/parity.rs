@@ -48,7 +48,7 @@ use poulpy_hal::{
 };
 
 use super::helpers::{
-    HINTS, MASKED_PT_ALGORITHMS, MIXES, PT_ALGORITHMS, TestKeys, grid_infos, grid_snapshot, matmul_left_operand,
+    HINTS, MASKED_PT_ALGORITHMS, MIXES, PT_ALGORITHMS, TestKeys, assert_panics, grid_infos, grid_snapshot, matmul_left_operand,
     matmul_right_operand,
 };
 use crate::{
@@ -57,7 +57,10 @@ use crate::{
         BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextInfos, BlasContextLayout, BlasContextPreparedFactory,
         BlasEncodingOps, BlasGridInfos, BlasLayout, BlasMatMulOperandInfos, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm,
         BlasPtOperand, BlasPtOperandInfos, BlasPtOperandLayout, BlasPtOperandPreparedFactory, BlasPtSide, Left, Right,
-        blas_matmul_left_term_layout, blas_matmul_right_term_layout, sum_galois_elements, validate::MAX_BASE2K,
+        blas_matmul_left_term_layout, blas_matmul_right_term_layout,
+        context::module_layout,
+        sum_galois_elements,
+        validate::{MASKLESS, MAX_BASE2K},
     },
     oep::BlasImpl,
     reference::{blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k, blas_matmul_pt_right_max_base2k},
@@ -1168,17 +1171,17 @@ where
 
 /// Asserts `got` is the largest radix `hand` allows at every failure target of `targets`, bits per output polynomial: it
 /// satisfies [`Module::max_base2k`] at the products `hand` counts at that radix, and no larger one does, none at all for
-/// `Some(0)`.
+/// 0.
 fn assert_largest_radix<B: Backend + MaxBase2k>(
     label: &str,
     n: usize,
     targets: impl IntoIterator<Item = usize>,
     hand: impl Fn(usize) -> usize,
-    got: impl Fn(usize) -> Option<usize>,
+    got: impl Fn(usize) -> usize,
 ) {
     for failure_bits in targets {
-        let fits = |r: usize| Module::<B>::max_base2k(n, hand(r), failure_bits, false) >= Some(r);
-        let r = got(failure_bits).unwrap_or_else(|| panic!("{label}: no model at {failure_bits} bits"));
+        let fits = |r: usize| Module::<B>::max_base2k(n, hand(r), failure_bits, false) >= r;
+        let r = got(failure_bits);
         assert!(r == 0 || fits(r), "{label}: radix {r} does not fit at {failure_bits} bits");
         assert!(
             (r + 1..=MAX_BASE2K).all(|q| !fits(q)),
@@ -1205,7 +1208,8 @@ fn assert_largest_radix<B: Backend + MaxBase2k>(
 ///   largest giant group equals `left_mul`'s at every shape (the dimensions `d = 2` to `128` at one to eight matrix
 ///   slots were checked), so that case covers the wiring only;
 ///
-/// and, for a sum so long that no FFT64 radix holds it at a failure target of 2^60 bits, `Some(0)`.
+/// and, for a sum so long that no FFT64 radix holds it at a failure target of 2^60 bits, 0. Under the masked paths, a left
+/// product's query panics on a context without the column halves of psi^k, with a static message.
 pub fn test_blas_max_base2k<B, F>(params: CKKSTestParams, module: &Module<B>)
 where
     B: BlasParityBackend + MaxBase2k,
@@ -1313,6 +1317,14 @@ where
                 blas_matmul_pt_left_max_base2k::<B>(&pt, &a_rep, &ctx, bits)
             });
         }
+    }
+
+    let maskless = module_layout(module, BlasPlan::new(log_d), params.base2k.into(), diagonal_meta(params, p));
+    for algorithm in MASKED_PT_ALGORITHMS {
+        let (pt, a) = (left_operand(3, algorithm, p), layout(width(params), 0, 3, 2));
+        assert_panics(&format!("{algorithm:?}: a context without masks"), MASKLESS, || {
+            blas_matmul_pt_left_max_base2k::<B>(&pt, &a, &maskless, 128)
+        });
     }
 }
 
