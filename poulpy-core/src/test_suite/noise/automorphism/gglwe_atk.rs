@@ -10,10 +10,10 @@ use crate::layouts::GLWESecretSampling;
 use crate::layouts::LWEInfos;
 use crate::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef;
 use crate::{
-    DEFAULT_SIGMA_XE, GGLWENoise, GLWEAutomorphismKeyAutomorphism, GLWEAutomorphismKeyEncryptSk,
+    DEFAULT_SIGMA_XE, GGLWENoise, GLWEAutomorphismKeyAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWENormalize,
     layouts::{
         Dnum, GGLWEInfos, GGLWEViewWithDigits, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout,
-        GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
+        GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc, SetGaloisElement,
         prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
     noise::GGLWENoiseModel,
@@ -215,6 +215,7 @@ pub fn test_gglwe_automorphism_key_automorphism_digits<
         + VecZnxAutomorphism<BE>
         + GaloisElement
         + GLWESecretPreparedFactory<BE>
+        + GLWENormalize<BE>
         + GGLWENoise<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -243,6 +244,7 @@ pub fn test_gglwe_automorphism_key_automorphism_digits<
             module
                 .glwe_automorphism_key_encrypt_sk_tmp_bytes(&layout)
                 .max(module.glwe_automorphism_key_automorphism_tmp_bytes(&view_layout, &view_layout, &layout))
+                .max(module.glwe_normalize_tmp_bytes())
                 .max(module.gglwe_noise_tmp_bytes(&view_layout)),
         );
         let mut source_xs: Source = Source::new([4u8; 32]);
@@ -332,6 +334,28 @@ pub fn test_gglwe_automorphism_key_automorphism_digits<
                 );
             }
         }
+
+        let mut key_in_copy: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =
+            module.glwe_automorphism_key_alloc_from_infos(&view_layout);
+        crate::test_suite::noise::gglwe_narrowed_copy(
+            module,
+            &mut key_in_copy,
+            &key_in.view_with_digits(Dnum(digits as u32)).unwrap(),
+            &mut scratch.borrow(),
+        );
+        key_in_copy.set_p(p0);
+        let mut key_out_copy: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =
+            module.glwe_automorphism_key_alloc_from_infos(&view_layout);
+        module.glwe_automorphism_key_automorphism(
+            &mut key_out_copy,
+            &key_in_copy,
+            &key_apply_prepared.to_backend_ref(),
+            &mut scratch.borrow(),
+        );
+        assert!(
+            key_out.key.data() == key_out_copy.key.data(),
+            "rank={rank}: the view's automorphism differs from the narrowed copy's"
+        );
     }
 }
 

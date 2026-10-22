@@ -1,9 +1,4 @@
 //! Read-only views of the first digits of a key or a GGSW.
-//!
-//! A switch decomposes the rows of the key it switches exactly, guard
-//! included, so a key cannot switch a key of its own layout. Read through its
-//! first digits, the switched key has rows of `dnum * k_digit + k_aux` bits,
-//! which a key of more digits covers. The view copies nothing.
 
 use poulpy_hal::layouts::Backend;
 
@@ -15,31 +10,42 @@ use crate::{
     },
 };
 
-fn check_dnum(dnum: Dnum, stored: Dnum) -> Result<()> {
+pub(crate) fn check_dnum(op: &'static str, dnum: Dnum, stored: Dnum) -> Result<()> {
     if dnum.0 == 0 || dnum.0 > stored.0 {
         return Err(CoreError::GGLWEKeyUse {
-            op: "view_with_digits",
+            op,
             detail: format!("dnum={} is not in 1..={}", dnum.0, stored.0),
         });
     }
     Ok(())
 }
 
-/// The first `dnum` digits of a key, from [`GGLWEViewWithDigits`]: its backend
-/// view is [`GGLWEBackendRef::with_dnum`], and its layout that of a key of
-/// `dnum` digits and the same guard. A view of fewer digits than the key has
-/// no noise estimate.
+/// The first `dnum` digits of a key, from [`GGLWEViewWithDigits`]: rows
+/// `0..dnum` over the key's buffer, read at the precision
+/// `k_offset + dnum * k_digit + k_aux` of a key of `dnum` digits and the same
+/// guard. No row is copied, and its backend view is
+/// [`GGLWEBackendRef::with_dnum`].
+///
+/// A switch decomposes the rows of the key it switches exactly, guard
+/// included, so a key never covers a key of its own layout, but covers a view
+/// of fewer digits; the result goes into a key of that many digits.
+///
+/// The rows of a view of fewer digits keep the key's bits below its
+/// precision: it reports them non-canonical, so an operation reading them
+/// normalizes each row at the view's width, and it has no noise estimate.
+/// Preparation panics on such a view and serialization refuses it: normalize
+/// its rows into a key of that layout first.
 pub struct GGLWEDigits<'a, K> {
     key: &'a K,
     dnum: Dnum,
 }
 
 /// `key.view_with_digits(dnum)` reads a key as a key of its first `dnum`
-/// digits, to switch it with a key of its own layout.
+/// digits, see [`GGLWEDigits`].
 pub trait GGLWEViewWithDigits: GGLWEInfos + Sized {
     /// Fails unless `1 <= dnum <= self.dnum()`.
     fn view_with_digits(&self, dnum: Dnum) -> Result<GGLWEDigits<'_, Self>> {
-        check_dnum(dnum, self.dnum())?;
+        check_dnum("view_with_digits", dnum, self.dnum())?;
         Ok(GGLWEDigits { key: self, dnum })
     }
 }
@@ -115,19 +121,20 @@ impl<K: GetGaloisElement> GetGaloisElement for GGLWEDigits<'_, K> {
     }
 }
 
-/// The first `dnum` digits of a GGSW, from [`GGSWViewWithDigits`], as
-/// [`GGLWEDigits`]: rows `0..dnum` at `dnum * k_digit + k_aux` bits.
+/// The first `dnum` digits of a GGSW, from [`GGSWViewWithDigits`]: rows
+/// `0..dnum` read at `dnum * k_digit + k_aux` bits, as [`GGLWEDigits`] reads a
+/// key.
 pub struct GGSWDigits<'a, G> {
     ggsw: &'a G,
     dnum: Dnum,
 }
 
 /// `ggsw.view_with_digits(dnum)` reads a GGSW as a GGSW of its first `dnum`
-/// digits, as [`GGLWEViewWithDigits`].
+/// digits, see [`GGSWDigits`].
 pub trait GGSWViewWithDigits: GGSWInfos + Sized {
     /// Fails unless `1 <= dnum <= self.dnum()`.
     fn view_with_digits(&self, dnum: Dnum) -> Result<GGSWDigits<'_, Self>> {
-        check_dnum(dnum, self.dnum())?;
+        check_dnum("view_with_digits", dnum, self.dnum())?;
         Ok(GGSWDigits { ggsw: self, dnum })
     }
 }

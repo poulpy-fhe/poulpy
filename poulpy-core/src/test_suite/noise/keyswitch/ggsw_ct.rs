@@ -10,12 +10,12 @@ use crate::layouts::LWEInfos;
 use crate::layouts::prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef};
 use crate::{Distribution, ScalarZnxFillDistribution};
 use crate::{
-    GGLWEToGGSWKeyEncryptSk, GGSWEncryptSk, GGSWKeyswitch, GGSWNoise, GLWESwitchingKeyEncryptSk,
+    GGLWEToGGSWKeyEncryptSk, GGSWEncryptSk, GGSWKeyswitch, GGSWNoise, GLWENormalize, GLWESwitchingKeyEncryptSk,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         Dnum, GGLWEInfos, GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPrepared, GGLWEToGGSWKeyPreparedFactory, GGSW,
-        GGSWInfos, GGSWLayout, GGSWViewWithDigits, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey,
-        GLWESwitchingKeyLayout, GLWESwitchingKeyPreparedFactory, ModuleCoreAlloc,
+        GGSWInfos, GGSWLayout, GGSWPreparedFactory, GGSWViewWithDigits, GLWEInfos, GLWESecret, GLWESecretPreparedFactory,
+        GLWESwitchingKey, GLWESwitchingKeyLayout, GLWESwitchingKeyPreparedFactory, ModuleCoreAlloc,
         prepared::{GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
     noise::GGLWENoiseModel,
@@ -226,6 +226,8 @@ where
         + GLWESecretPreparedFactory<BE>
         + GLWESwitchingKeyPreparedFactory<BE>
         + GGLWEToGGSWKeyPreparedFactory<BE>
+        + GGSWPreparedFactory<BE>
+        + GLWENormalize<BE>
         + GGSWNoise<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -275,6 +277,7 @@ where
                 .max(module.glwe_switching_key_encrypt_sk_tmp_bytes(&ksk_layout))
                 .max(module.gglwe_to_ggsw_key_encrypt_sk_tmp_bytes(&tsk_layout))
                 .max(module.ggsw_keyswitch_tmp_bytes(&view_layout, &view_layout, &ksk_layout, &tsk_layout))
+                .max(module.glwe_normalize_tmp_bytes())
                 .max(module.ggsw_noise_tmp_bytes(&view_layout)),
         );
         let mut source_xs: Source = Source::new([7u8; 32]);
@@ -367,6 +370,27 @@ where
                 );
             }
         }
+
+        let mut ggsw_in_copy: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&view_layout);
+        crate::test_suite::noise::ggsw_narrowed_copy(
+            module,
+            &mut ggsw_in_copy,
+            &ggsw_in.view_with_digits(Dnum(digits as u32)).unwrap(),
+            &mut scratch.borrow(),
+        );
+        let mut ggsw_out_copy: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&view_layout);
+        module.ggsw_keyswitch(
+            &mut ggsw_out_copy,
+            &ggsw_in_copy,
+            &ksk_prepared.to_backend_ref(),
+            &tsk_prepared.to_backend_ref(),
+            &mut scratch.borrow(),
+        );
+        assert!(
+            ggsw_out.data == ggsw_out_copy.data,
+            "rank={rank}: the view's switch differs from the narrowed copy's"
+        );
+        crate::test_suite::noise::assert_ggsw_view_refusals(module, &ggsw_in, digits, &mut scratch.borrow());
     }
 }
 

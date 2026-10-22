@@ -10,11 +10,12 @@ use crate::layouts::LWEInfos;
 use crate::layouts::prepared::{GGLWEToGGSWKeyPreparedToBackendRef, GLWEAutomorphismKeyPreparedToBackendRef};
 use crate::{Distribution, ScalarZnxFillDistribution};
 use crate::{
-    GGLWEToGGSWKeyEncryptSk, GGSWAutomorphism, GGSWEncryptSk, GGSWNoise, GLWEAutomorphismKeyEncryptSk,
+    GGLWEToGGSWKeyEncryptSk, GGSWAutomorphism, GGSWEncryptSk, GGSWNoise, GLWEAutomorphismKeyEncryptSk, GLWENormalize,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPreparedFactory, GGSW, GGSWInfos, GGSWLayout, GLWEAutomorphismKey,
-        GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
+        Dnum, GGLWEInfos, GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPreparedFactory, GGSW, GGSWInfos, GGSWLayout,
+        GGSWViewWithDigits, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWEInfos,
+        GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
         prepared::{GGLWEToGGSWKeyPrepared, GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
     noise::GGLWENoiseModel,
@@ -399,5 +400,147 @@ where
                 }
             }
         }
+    }
+}
+
+/// An automorphism key and a tensor key of a GGSW's own gadget apply to a view
+/// of its first digits, into a GGSW of that many digits, bit for bit as they
+/// apply to the narrowed copy the view reads as.
+pub fn test_ggsw_automorphism_digits<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
+where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: GGSWEncryptSk<BE>
+        + GLWEAutomorphismKeyEncryptSk<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + GGSWAutomorphism<BE>
+        + GGLWEToGGSWKeyPreparedFactory<BE>
+        + GGLWEToGGSWKeyEncryptSk<BE>
+        + GLWESecretPreparedFactory<BE>
+        + GLWENormalize<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let n: usize = module.n();
+    let dnum: usize = 4;
+    let k_aux: usize = base2k + module.log_n();
+    for rank in 1_usize..3 {
+        let ggsw_layout = GGSWLayout {
+            n: n.into(),
+            base2k: base2k.into(),
+            dnum: dnum.into(),
+            k_digit: base2k.into(),
+            k_aux: k_aux.into(),
+            rank: rank.into(),
+        };
+        let atk_layout = GLWEAutomorphismKeyLayout {
+            n: n.into(),
+            base2k: base2k.into(),
+            dnum: dnum.into(),
+            k_aux: k_aux.into(),
+            k_digit: base2k.into(),
+            rank: rank.into(),
+        };
+        let tsk_layout = GGLWEToGGSWKeyLayout {
+            n: n.into(),
+            base2k: base2k.into(),
+            dnum: dnum.into(),
+            k_aux: k_aux.into(),
+            k_digit: base2k.into(),
+            rank: rank.into(),
+        };
+        let max_input_k = atk_layout.gglwe_layout().max_input_k();
+        let at = |d: usize| GGSWLayout {
+            dnum: d.into(),
+            ..ggsw_layout
+        };
+        let digits: usize = (1..dnum).rev().find(|&d| at(d).k() <= max_input_k).unwrap();
+        let view_layout = at(digits);
+
+        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+            module
+                .ggsw_encrypt_sk_tmp_bytes(&ggsw_layout)
+                .max(module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&atk_layout))
+                .max(module.gglwe_to_ggsw_key_encrypt_sk_tmp_bytes(&tsk_layout))
+                .max(module.ggsw_automorphism_tmp_bytes(&view_layout, &view_layout, &atk_layout, &tsk_layout))
+                .max(module.glwe_normalize_tmp_bytes()),
+        );
+        let mut source_xs: Source = Source::new([13u8; 32]);
+        let mut source_xe: Source = Source::new([14u8; 32]);
+        let mut source_xa: Source = Source::new([15u8; 32]);
+        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
+        module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
+        let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
+        module.glwe_secret_prepare(&mut sk_prepared, &sk);
+
+        let mut atk: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_automorphism_key_alloc_from_infos(&atk_layout);
+        module.glwe_automorphism_key_encrypt_sk(
+            &mut atk,
+            -5,
+            &sk,
+            &mut source_xe,
+            &mut source_xa,
+            &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
+        );
+        let mut tsk: GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord> = module.gglwe_to_ggsw_key_alloc_from_infos(&tsk_layout);
+        module.gglwe_to_ggsw_key_encrypt_sk(
+            &mut tsk,
+            &sk,
+            &mut source_xe,
+            &mut source_xa,
+            &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
+        );
+        let mut atk_prepared: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE> =
+            module.glwe_automorphism_key_prepared_alloc_from_infos(&atk);
+        module.glwe_automorphism_key_prepare(&mut atk_prepared, &atk, &mut scratch.borrow());
+        let mut tsk_prepared: GGLWEToGGSWKeyPrepared<BE::OwnedBuf, BE> = module.gglwe_to_ggsw_key_prepared_alloc_from_infos(&tsk);
+        module.gglwe_to_ggsw_key_prepare(&mut tsk_prepared, &tsk, &mut scratch.borrow());
+
+        let mut pt_scalar: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(n, 1);
+        module.scalar_znx_fill_distribution(
+            &mut scalar_znx_backend_mut::<BE>(&mut pt_scalar),
+            0,
+            Distribution::TernaryFixed(n),
+            &mut source_xs,
+        );
+        let mut ggsw_in: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_layout);
+        module.ggsw_encrypt_sk(
+            &mut ggsw_in,
+            &pt_scalar,
+            &sk_prepared,
+            &mut source_xe,
+            &mut source_xa,
+            &mut scratch.borrow(),
+        );
+
+        let mut ggsw_out: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&view_layout);
+        module.ggsw_automorphism(
+            &mut ggsw_out,
+            &ggsw_in.view_with_digits(Dnum(digits as u32)).unwrap(),
+            &atk_prepared.to_backend_ref(),
+            &tsk_prepared.to_backend_ref(),
+            &mut scratch.borrow(),
+        );
+
+        let mut ggsw_in_copy: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&view_layout);
+        crate::test_suite::noise::ggsw_narrowed_copy(
+            module,
+            &mut ggsw_in_copy,
+            &ggsw_in.view_with_digits(Dnum(digits as u32)).unwrap(),
+            &mut scratch.borrow(),
+        );
+        let mut ggsw_out_copy: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&view_layout);
+        module.ggsw_automorphism(
+            &mut ggsw_out_copy,
+            &ggsw_in_copy,
+            &atk_prepared.to_backend_ref(),
+            &tsk_prepared.to_backend_ref(),
+            &mut scratch.borrow(),
+        );
+        assert!(
+            ggsw_out.data == ggsw_out_copy.data,
+            "rank={rank}: the view's automorphism differs from the narrowed copy's"
+        );
     }
 }

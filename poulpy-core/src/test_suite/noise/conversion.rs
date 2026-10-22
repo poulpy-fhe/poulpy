@@ -9,15 +9,17 @@ use poulpy_hal::{
 
 use byteorder::{LittleEndian, WriteBytesExt};
 
-use crate::layouts::prepared::GGLWEPreparedToBackendRef;
+use crate::layouts::prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef};
 use crate::layouts::{GLWESecretSampling, LWESecretSampling};
 use crate::test_suite::noise::{glwe_decrypt_checked, glwe_noise_checked};
 use crate::{
-    DEFAULT_SIGMA_XE, GLWEDecrypt, GLWEEncryptSk, GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE, GLWEMaskFill, GLWENoise,
-    GLWENormalize, GLWEToLWESwitchingKeyEncryptSk, LWEDecrypt, LWEEncryptSk, LWEFromGLWE, LWEMatrixDecrypt,
-    LWEToGLWESwitchingKeyEncryptSk,
+    DEFAULT_SIGMA_XE, GGLWEToGGSWKeyEncryptSk, GGSWFromGGLWE, GLWEDecrypt, GLWEEncryptSk, GLWEExpandLWE, GLWEExpandLWEMatrix,
+    GLWEFromLWE, GLWEMaskFill, GLWENoise, GLWENormalize, GLWESwitchingKeyEncryptSk, GLWEToLWESwitchingKeyEncryptSk, LWEDecrypt,
+    LWEEncryptSk, LWEFromGLWE, LWEMatrixDecrypt, LWEToGLWESwitchingKeyEncryptSk,
     layouts::{
-        Base2K, Degree, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWEToLWEKey, GLWEToLWEKeyLayout,
+        Base2K, Degree, Dnum, GGLWEInfos, GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPrepared,
+        GGLWEToGGSWKeyPreparedFactory, GGLWEViewWithDigits, GGSW, GGSWLayout, GLWE, GLWELayout, GLWEPlaintext, GLWESecret,
+        GLWESecretPreparedFactory, GLWESwitchingKey, GLWESwitchingKeyLayout, GLWEToLWEKey, GLWEToLWEKeyLayout,
         GLWEToLWEKeyPrepared, GLWEToLWEKeyPreparedFactory, LWE, LWEInfos, LWELayout, LWEMatrixLayout, LWEPlaintext, LWESecret,
         LWEToGLWEKey, LWEToGLWEKeyLayout, LWEToGLWEKeyPrepared, LWEToGLWEKeyPreparedFactory, ModuleCoreAlloc, Rank,
         SecretConversion, TorusPrecision, prepared::GLWESecretPrepared,
@@ -656,5 +658,122 @@ pub fn test_glwe_expand_lwe_matrix_decrypt<BE: crate::test_suite::noise::TestBac
                 limb
             );
         }
+    }
+}
+
+/// A GGSW built from a view of a key's first digits, of that many digits,
+/// matches bit for bit the GGSW built from the narrowed copy the view reads as.
+pub fn test_ggsw_from_gglwe_digits<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
+where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: GLWESwitchingKeyEncryptSk<BE>
+        + GGLWEToGGSWKeyEncryptSk<BE>
+        + GGLWEToGGSWKeyPreparedFactory<BE>
+        + GGSWFromGGLWE<BE>
+        + GLWENormalize<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let n: usize = module.n();
+    let dnum: usize = 4;
+    let k_aux: usize = base2k + module.log_n();
+    for rank in 1_usize..3 {
+        let layout = GLWESwitchingKeyLayout {
+            n: n.into(),
+            base2k: base2k.into(),
+            dnum: dnum.into(),
+            k_aux: k_aux.into(),
+            k_digit: base2k.into(),
+            k_offset: TorusPrecision(0),
+            rank_in: rank.into(),
+            rank_out: rank.into(),
+        };
+        let tsk_layout = GGLWEToGGSWKeyLayout {
+            n: n.into(),
+            base2k: base2k.into(),
+            dnum: dnum.into(),
+            k_aux: k_aux.into(),
+            k_digit: base2k.into(),
+            rank: rank.into(),
+        };
+        let max_input_k = layout.gglwe_layout().max_input_k();
+        let at = |d: usize| GLWESwitchingKeyLayout {
+            dnum: d.into(),
+            ..layout
+        };
+        let digits: usize = (1..dnum).rev().find(|&d| at(d).k() <= max_input_k).unwrap();
+        let view_layout = at(digits);
+        let ggsw_layout = GGSWLayout {
+            n: n.into(),
+            base2k: base2k.into(),
+            dnum: digits.into(),
+            k_digit: base2k.into(),
+            k_aux: k_aux.into(),
+            rank: rank.into(),
+        };
+
+        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+            module
+                .glwe_switching_key_encrypt_sk_tmp_bytes(&layout)
+                .max(module.gglwe_to_ggsw_key_encrypt_sk_tmp_bytes(&tsk_layout))
+                .max(module.ggsw_from_gglwe_tmp_bytes(&ggsw_layout, &view_layout, &tsk_layout))
+                .max(module.glwe_normalize_tmp_bytes()),
+        );
+        let mut source_xs: Source = Source::new([16u8; 32]);
+        let mut source_xe: Source = Source::new([17u8; 32]);
+        let mut source_xa: Source = Source::new([18u8; 32]);
+        let mut sk_in: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
+        module.glwe_secret_fill_ternary_prob(&mut sk_in, 0.5, &mut source_xs);
+        let mut sk_out: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
+        module.glwe_secret_fill_ternary_prob(&mut sk_out, 0.5, &mut source_xs);
+
+        let mut key: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&layout);
+        module.glwe_switching_key_encrypt_sk(
+            &mut key,
+            &sk_in,
+            &sk_out,
+            &mut source_xe,
+            &mut source_xa,
+            &mut scratch.arena(),
+        );
+        let mut tsk: GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord> = module.gglwe_to_ggsw_key_alloc_from_infos(&tsk_layout);
+        module.gglwe_to_ggsw_key_encrypt_sk(
+            &mut tsk,
+            &sk_out,
+            &mut source_xe,
+            &mut source_xa,
+            &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
+        );
+        let mut tsk_prepared: GGLWEToGGSWKeyPrepared<BE::OwnedBuf, BE> = module.gglwe_to_ggsw_key_prepared_alloc_from_infos(&tsk);
+        module.gglwe_to_ggsw_key_prepare(&mut tsk_prepared, &tsk, &mut scratch.borrow());
+
+        let mut res: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_layout);
+        module.ggsw_from_gglwe(
+            &mut res,
+            &key.view_with_digits(Dnum(digits as u32)).unwrap(),
+            &tsk_prepared.to_backend_ref(),
+            &mut scratch.borrow(),
+        );
+
+        let mut key_copy: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&view_layout);
+        crate::test_suite::noise::gglwe_narrowed_copy(
+            module,
+            &mut key_copy,
+            &key.view_with_digits(Dnum(digits as u32)).unwrap(),
+            &mut scratch.borrow(),
+        );
+        let mut res_copy: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_layout);
+        module.ggsw_from_gglwe(
+            &mut res_copy,
+            &key_copy,
+            &tsk_prepared.to_backend_ref(),
+            &mut scratch.borrow(),
+        );
+        assert!(
+            res.data == res_copy.data,
+            "rank={rank}: the GGSW built from the view differs from the narrowed copy's"
+        );
     }
 }

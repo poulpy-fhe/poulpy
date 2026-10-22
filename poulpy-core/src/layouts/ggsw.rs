@@ -140,9 +140,8 @@ impl GGSWInfos for GGSWLayout {
 ///
 /// `D: Data` is the storage backend (e.g. `AlignedBuf`, `&[u8]`, `&mut [u8]`).
 ///
-/// Its rows are canonical at `k()` (see [`GLWE`]) but on a view of its first
-/// digits ([`GGSWViewWithDigits`](crate::layouts::GGSWViewWithDigits)), whose
-/// rows hold its bits below that precision. Equality ignores the flag.
+/// Its canonical flag (see [`GLWE`]) is clear only on a view of its first
+/// digits ([`GGSWDigits`](crate::layouts::GGSWDigits)); equality ignores it.
 #[derive(Clone)]
 pub struct GGSW<D: Data, W: ZnxWord> {
     pub(crate) noise: Option<crate::ComponentNoise>,
@@ -172,12 +171,7 @@ impl<D: Data, W: ZnxWord> GGSW<D, W> {
     /// See [`GGSWBackendRef::with_dnum`].
     pub(crate) fn with_dnum(self, dnum: Dnum) -> crate::Result<Self> {
         let stored: Dnum = self.dnum();
-        if dnum.0 == 0 || dnum.0 > stored.0 {
-            return Err(crate::CoreError::GGLWEKeyUse {
-                op: "GGSW::with_dnum",
-                detail: format!("dnum={} is not in 1..={}", dnum.0, stored.0),
-            });
-        }
+        super::digits::check_dnum("GGSW::with_dnum", dnum, stored)?;
         if dnum == stored {
             return Ok(self);
         }
@@ -199,9 +193,8 @@ impl<'a, BE: Backend + 'a> GGSWBackendRef<'a, BE> {
         Self { inner }
     }
 
-    /// Its first `dnum` digits, over the same buffer: rows `0..dnum`, at the
-    /// precision `dnum * k_digit + k_aux`, as
-    /// [`GGLWEBackendRef::with_dnum`](crate::layouts::GGLWEBackendRef::with_dnum).
+    /// Its first `dnum` digits over the same buffer, as
+    /// [`GGSWDigits`](crate::layouts::GGSWDigits) reads them.
     ///
     /// Fails unless `1 <= dnum <= self.dnum()`.
     pub fn with_dnum(self, dnum: Dnum) -> crate::Result<Self> {

@@ -309,9 +309,8 @@ impl GGLWEInfos for GGLWELayout {
 /// A GGLWE key: `dnum` rows of `rank_in` GLWE ciphertexts each, row `q`
 /// carrying `2^-(k_offset + (q + 1) * k_digit)`.
 ///
-/// Its rows are canonical at `k()` (see [`GLWE`]) but on a view of its first
-/// digits ([`GGLWEViewWithDigits`](crate::layouts::GGLWEViewWithDigits)), whose
-/// rows hold the key's bits below that precision. Equality ignores the flag.
+/// Its canonical flag (see [`GLWE`]) is clear only on a view of its first
+/// digits ([`GGLWEDigits`](crate::layouts::GGLWEDigits)); equality ignores it.
 #[derive(Clone)]
 pub struct GGLWE<D: Data, W: ZnxWord> {
     pub(crate) noise: Option<crate::ComponentNoise>,
@@ -343,12 +342,7 @@ impl<D: Data, W: ZnxWord> GGLWE<D, W> {
     /// See [`GGLWEBackendRef::with_dnum`].
     pub(crate) fn with_dnum(self, dnum: Dnum) -> Result<Self> {
         let stored: Dnum = self.dnum();
-        if dnum.0 == 0 || dnum.0 > stored.0 {
-            return Err(CoreError::GGLWEKeyUse {
-                op: "GGLWE::with_dnum",
-                detail: format!("dnum={} is not in 1..={}", dnum.0, stored.0),
-            });
-        }
+        super::digits::check_dnum("GGLWE::with_dnum", dnum, stored)?;
         if dnum == stored {
             return Ok(self);
         }
@@ -370,12 +364,8 @@ impl<'a, BE: Backend + 'a> GGLWEBackendRef<'a, BE> {
         Self { inner }
     }
 
-    /// Its first `dnum` digits, over the same buffer: rows `0..dnum`, at the
-    /// precision `k_offset + dnum * k_digit + k_aux` of a key of `dnum` digits
-    /// and this guard. A narrower view keeps the key's bits below that
-    /// precision, so it reports its rows non-canonical, which a switch
-    /// normalizes before reading them, and drops the noise estimate. No row
-    /// is copied.
+    /// Its first `dnum` digits over the same buffer, as
+    /// [`GGLWEDigits`](crate::layouts::GGLWEDigits) reads them.
     ///
     /// Fails unless `1 <= dnum <= self.dnum()`.
     pub fn with_dnum(self, dnum: Dnum) -> Result<Self> {

@@ -11,8 +11,8 @@ use crate::{
     GGLWEKeyswitch, GGLWENoise, GLWENormalize, GLWESwitchingKeyEncryptSk,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        Dnum, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGLWEViewWithDigits, GLWESecret, GLWESecretPreparedFactory,
-        GLWESwitchingKey, GLWESwitchingKeyLayout, GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
+        Dnum, GGLWEInfos, GGLWEPreparedFactory, GGLWEViewWithDigits, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey,
+        GLWESwitchingKeyLayout, GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
         prepared::{GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
     noise::GGLWENoiseModel,
@@ -195,6 +195,7 @@ pub fn test_gglwe_switching_key_keyswitch_digits<BE: crate::test_suite::noise::T
         + GGLWEKeyswitch<BE>
         + GLWESwitchingKeyPreparedFactory<BE>
         + GLWESecretPreparedFactory<BE>
+        + GGLWEPreparedFactory<BE>
         + GLWENormalize<BE>
         + GGLWENoise<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -291,20 +292,12 @@ pub fn test_gglwe_switching_key_keyswitch_digits<BE: crate::test_suite::noise::T
         }
 
         let mut s0s1_copy: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&view_layout);
-        {
-            let view = s0s1.view_with_digits(Dnum(digits as u32)).unwrap();
-            let view = GGLWEToBackendRef::<BE>::to_backend_ref(&view);
-            let mut copy = GGLWEToBackendMut::<BE>::to_backend_mut(&mut s0s1_copy);
-            for row in 0..digits {
-                for col in 0..rank {
-                    module.glwe_normalize(
-                        &mut copy.at_view_mut(row, col),
-                        &view.at_view(row, col),
-                        &mut scratch.borrow(),
-                    );
-                }
-            }
-        }
+        crate::test_suite::noise::gglwe_narrowed_copy(
+            module,
+            &mut s0s1_copy,
+            &s0s1.view_with_digits(Dnum(digits as u32)).unwrap(),
+            &mut scratch.borrow(),
+        );
         let mut s0s2_copy: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&view_layout);
         module.gglwe_keyswitch(
             &mut s0s2_copy,
@@ -316,6 +309,7 @@ pub fn test_gglwe_switching_key_keyswitch_digits<BE: crate::test_suite::noise::T
             s0s2.key.data() == s0s2_copy.key.data(),
             "rank={rank}: the view's switch differs from the narrowed copy's"
         );
+        crate::test_suite::noise::assert_gglwe_view_refusals(module, &s0s1, digits, &mut scratch.borrow());
     }
 }
 

@@ -16,6 +16,7 @@ pub mod keyswitch;
 pub mod linear_transformation;
 
 mod conversion;
+mod digits;
 mod glwe_packing;
 mod k_digit;
 mod rotate;
@@ -23,6 +24,7 @@ mod shift;
 mod trace;
 
 pub use conversion::*;
+pub use digits::*;
 pub use glwe_packing::*;
 pub use k_digit::*;
 pub use rotate::*;
