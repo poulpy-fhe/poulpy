@@ -257,6 +257,7 @@ where
                 dense_to_sparse: tp.ksk_layout(log_modulus_in),
                 sparse_to_dense: None,
             }),
+            conversion: None,
         };
         let boot_spec = ckks_spec(n, base2k, log_delta, k_boot - log_delta);
         let in_spec = ckks_spec(n, base2k, log_delta, k_in - log_delta);
@@ -456,6 +457,7 @@ where
             // The raise is the sparse-to-dense switch, with rows under the raised ciphertext.
             sparse_to_dense: Some(tp.ksk_offset_layout(k_boot, plan.raised_window(log_modulus_in))),
         }),
+        conversion: None,
     };
     let scratch_size = bootstrap_setup_tmp_bytes(
         &module,
@@ -807,6 +809,7 @@ where
             dense_to_sparse: tp.ksk_layout(log_modulus_in),
             sparse_to_dense: Some(tp.ksk_layout(k_boot)),
         }),
+        conversion: None,
     };
     let scratch_size = bootstrap_setup_tmp_bytes(
         &module,
@@ -1119,6 +1122,7 @@ where
             // The raise is the sparse-to-dense switch, with rows under the raised ciphertext.
             sparse_to_dense: Some(tp.ksk_offset_layout(k_boot, plan.raised_window(log_modulus_in))),
         }),
+        conversion: None,
     };
     let scratch_size = bootstrap_setup_tmp_bytes(
         &module,

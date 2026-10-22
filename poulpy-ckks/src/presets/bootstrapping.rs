@@ -63,9 +63,9 @@ use crate::numerics::CKKSFloat;
 use crate::{
     CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, Scale, SlotsKind,
     layouts::{
-        BootstrappingCIKeysLayout, BootstrappingCIPlan, BootstrappingKeysLayout, BootstrappingLinearKeysLayout,
-        BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, DFTOutputFormat, DFTPlan, DFTType,
-        EncapsulationKeysLayout, EvalModCIPlan, EvalModPlan, EvalModType, SparseSecretEncapsulation,
+        BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, ConversionKeysLayout,
+        DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout, EvalModCIPlan, EvalModPlan, EvalModType,
+        SparseSecretEncapsulation,
     },
     polynomial::SplitStrategy,
     reference::first_factor::{first_factor_diagonal_growth, first_factor_small_bits, first_factor_work},
@@ -140,6 +140,8 @@ struct PresetSpec {
     c2s_schedule: &'static [(usize, usize)],
     /// The first CoeffsToSlots factor is applied by the raise, for no modulus.
     c2s_first_factor_on_raise: bool,
+    /// EvalMod runs on the conjugate-invariant ring, through these conversions.
+    eval_mod_ci: Option<EvalModCIPlan>,
     c2s_guard_bits: usize,
     c2s_log_delta: usize,
     c2s_log_budget: usize,
@@ -375,6 +377,7 @@ pub fn n16_d35_k636_p20_c2s() -> Result<BootstrappingPreset> {
         log_msg_ratio: 6,
         c2s_schedule: &C2S_SCHEDULE,
         c2s_first_factor_on_raise: false,
+        eval_mod_ci: None,
         c2s_guard_bits: 0,
         c2s_log_delta: 51,
         c2s_log_budget: 2,
@@ -411,6 +414,7 @@ pub fn n16_d35_k733_p20_s2c() -> Result<BootstrappingPreset> {
         log_msg_ratio: 13,
         c2s_schedule: &C2S_SCHEDULE,
         c2s_first_factor_on_raise: false,
+        eval_mod_ci: None,
         c2s_guard_bits: 6,
         c2s_log_delta: 50,
         c2s_log_budget: 3,
@@ -444,6 +448,7 @@ pub fn n15_d35_k180_p18_c2s() -> Result<BootstrappingPreset> {
         log_msg_ratio: 5,
         c2s_schedule: &[(7, 2048), (7, 16)],
         c2s_first_factor_on_raise: false,
+        eval_mod_ci: None,
         c2s_guard_bits: 0,
         c2s_log_delta: 50,
         c2s_log_budget: 2,
@@ -487,6 +492,7 @@ pub(crate) fn insecure_n11_d35_k180_p20_s2c() -> Result<BootstrappingPreset> {
         log_msg_ratio: 13,
         c2s_schedule: &[(4, 4), (3, 4), (3, 4)],
         c2s_first_factor_on_raise: false,
+        eval_mod_ci: None,
         c2s_guard_bits: 6,
         c2s_log_delta: 50,
         c2s_log_budget: 3,
@@ -526,116 +532,31 @@ const S2C_FAST_SCHEDULE: [(usize, usize); 4] = [(3, 4), (4, 32), (4, 512), (4, 8
 /// the narrower precision and budget than [`n16_d35_k733_p20_s2c`]. At 1383 bits,
 /// 35 below a 16-level budget, every key at the widest levels has one row fewer.
 /// It runs through [`CKKSBootstrappingCIOps`](crate::api::CKKSBootstrappingCIOps).
-pub fn n16_d35_k685_p19_s2c_fast() -> Result<BootstrappingCIPreset> {
-    build_ci(
-        "n16_d35_k685_p19_s2c_fast",
-        PresetSpec {
-            name: "n16_d35_k685_p19_s2c_fast",
-            output_k: 685,
-            log2_precision: 19,
-            c2s_schedule: &C2S_FFR_SCHEDULE,
-            c2s_first_factor_on_raise: true,
-            c2s_log_delta: 48,
-            s2c_schedule: &S2C_FAST_SCHEDULE,
-            s2c_log_delta: 28,
-            ..n16_d35_k733_p20_s2c()?.spec
-        },
-        EVALMOD_CI_CONVERSION,
-    )
-}
-
-/// Every preset with EvalMod on the conjugate-invariant ring, in a stable order.
-pub fn all_ci() -> Result<Vec<BootstrappingCIPreset>> {
-    const PRESETS: &[fn() -> Result<BootstrappingCIPreset>] = &[n16_d35_k685_p19_s2c_fast];
-    PRESETS.iter().map(|build| build()).collect()
-}
-
-/// A [`BootstrappingPreset`] whose EvalMod runs on the conjugate-invariant ring:
-/// the input and output layouts of the preset it extends, a raised width wider
-/// by the two conversions, and the keys of [`BootstrappingCIKeysLayout`].
-///
-/// [`Self::base`] is the extended preset at that width: its bootstrap layout and
-/// key layouts are those of the CI pipeline's standard stages.
-#[derive(Clone, Debug)]
-pub struct BootstrappingCIPreset {
-    name: &'static str,
-    base: BootstrappingPreset,
-    plan: BootstrappingCIPlan,
-    keys_layout: BootstrappingCIKeysLayout,
-}
-
-impl BootstrappingCIPreset {
-    /// Stable descriptive name of the preset.
-    pub fn name(&self) -> &'static str {
-        self.name
-    }
-
-    /// The extended preset, at the raised width of this one.
-    pub fn base(&self) -> &BootstrappingPreset {
-        &self.base
-    }
-
-    pub fn plan(&self) -> &BootstrappingCIPlan {
-        &self.plan
-    }
-
-    pub fn keys_layout(&self) -> &BootstrappingCIKeysLayout {
-        &self.keys_layout
-    }
-
-    /// Raised width, the conversions included.
-    pub fn bootstrap_k(&self) -> usize {
-        self.base.bootstrap_k
-    }
-}
-
-fn build_ci(name: &'static str, spec: PresetSpec, conversion: EvalModCIPlan) -> Result<BootstrappingCIPreset> {
-    let mut base = build(spec)?;
-    let plan = BootstrappingCIPlan::new(base.plan.clone(), conversion)?;
-    let bootstrap_k = plan.bootstrap_k(base.output_k, spec.log_delta);
-    let base_keys = keys_layout(&spec, plan.base(), bootstrap_k, base.input_k)?;
-    // The linear stages, without conjugation: CoeffsToSlots is not split.
-    let mut linear = base_keys.linear();
-    linear.rotation_keys.remove(&-1);
-    validate_linear_bounds(&spec, bootstrap_k, &linear)?;
-    let dense = spec.dense_secret.max_log_modulus;
-
-    // The conversion keys are of degree 2N. Their secrets lie in subrings of rank N
-    // (`s(X²)`, the embedded CI secret): the bounds of degree N apply.
-    let wide = PresetSpec {
-        log_n: spec.log_n + 1,
-        ..spec
-    };
-    // CoeffsToSlots and the product by `u` leave the raised width; the C2S guard
-    // bits are only dropped from the scale at the output.
-    let traced = bootstrap_k - plan.base().coeffs_to_slots().consumed_bits() - conversion.pre_log_delta;
-    let embedded = traced - plan.base().eval_mod().consumed_bits();
-    // EvalMod runs on the traced ciphertext.
-    let k = plan.base().key_widths().eval_mod_relinearization_k(traced, spec.log_delta);
-    let tensor_key = key_layout(&spec, "CI tensor", k, widest_k_digit(&spec, k, dense), dense)?;
-    validate_key("CI tensor", &tensor_key, dense)?;
-    let conversion_key = |name: &str, k: usize| -> Result<GLWESwitchingKeyLayout> {
-        Ok(key_layout(&wide, name, k, widest_k_digit(&wide, k, dense), dense)?.into())
-    };
-    let keys_layout = BootstrappingCIKeysLayout {
-        linear,
-        tensor_key: tensor_key.into(),
-        trace_key: conversion_key("CI trace", traced)?,
-        embed_key: conversion_key("CI embed", embedded)?,
-    };
-    base.bootstrap_k = bootstrap_k;
-    base.keys_layout = base_keys;
-    Ok(BootstrappingCIPreset {
-        name,
-        base,
-        plan,
-        keys_layout,
+pub fn n16_d35_k685_p19_s2c_fast() -> Result<BootstrappingPreset> {
+    build(PresetSpec {
+        name: "n16_d35_k685_p19_s2c_fast",
+        output_k: 685,
+        log2_precision: 19,
+        c2s_schedule: &C2S_FFR_SCHEDULE,
+        c2s_first_factor_on_raise: true,
+        eval_mod_ci: Some(EVALMOD_CI_CONVERSION),
+        c2s_log_delta: 48,
+        s2c_schedule: &S2C_FAST_SCHEDULE,
+        s2c_log_delta: 28,
+        ..n16_d35_k733_p20_s2c()?.spec
     })
 }
 
-/// Every preset, in a stable order.
+/// Every preset, in a stable order. Those with EvalMod on the conjugate-invariant
+/// ring ([`BootstrappingPlan::eval_mod_ring`]) run through
+/// [`CKKSBootstrappingCIOps`](crate::api::CKKSBootstrappingCIOps).
 pub fn all() -> Result<Vec<BootstrappingPreset>> {
-    const PRESETS: &[fn() -> Result<BootstrappingPreset>] = &[n16_d35_k636_p20_c2s, n16_d35_k733_p20_s2c, n15_d35_k180_p18_c2s];
+    const PRESETS: &[fn() -> Result<BootstrappingPreset>] = &[
+        n16_d35_k636_p20_c2s,
+        n16_d35_k733_p20_s2c,
+        n15_d35_k180_p18_c2s,
+        n16_d35_k685_p19_s2c_fast,
+    ];
     PRESETS.iter().map(|build| build()).collect()
 }
 
@@ -715,6 +636,10 @@ fn build(spec: PresetSpec) -> Result<BootstrappingPreset> {
         plan
     } else {
         plan.with_c2s_guard_bits(spec.c2s_guard_bits)?
+    };
+    let plan = match spec.eval_mod_ci {
+        Some(conversion) => plan.with_eval_mod_on_ci_ring(conversion)?,
+        None => plan,
     };
     let log_slots = spec
         .log_n
@@ -797,6 +722,29 @@ fn keys_layout(
         tensor_key = key_layout(spec, "tensor", k, widest_k_digit(spec, k, dense), dense)?;
     }
 
+    // On the conjugate-invariant ring EvalMod runs on the traced ciphertext, with a
+    // tensor key of that ring. The conversion keys are of degree 2N; their secrets
+    // lie in subrings of rank N (`s(X²)`, the embedded CI secret): the bounds of
+    // degree N apply.
+    let conversion = match plan.key_widths().conversions(bootstrap_k) {
+        Some((traced, embedded)) => {
+            let k = plan.key_widths().eval_mod_relinearization_k(traced, spec.log_delta);
+            tensor_key = key_layout(spec, "CI tensor", k, widest_k_digit(spec, k, dense), dense)?;
+            let wide = PresetSpec {
+                log_n: spec.log_n + 1,
+                ..*spec
+            };
+            let conversion_key = |name: &str, k: usize| -> Result<GLWESwitchingKeyLayout> {
+                Ok(key_layout(&wide, name, k, widest_k_digit(&wide, k, dense), dense)?.into())
+            };
+            Some(ConversionKeysLayout {
+                trace_key: conversion_key("CI trace", traced)?,
+                embed_key: conversion_key("CI embed", embedded)?,
+            })
+        }
+        None => None,
+    };
+
     Ok(BootstrappingKeysLayout {
         automorphism_key: wide.into(),
         rotation_keys,
@@ -809,6 +757,7 @@ fn keys_layout(
             .c2s_first_factor_on_raise
             .then(|| first_factor_key_layout(spec, plan, bootstrap_k, dense))
             .transpose()?,
+        conversion,
     })
 }
 
@@ -950,12 +899,12 @@ fn gadget_k<K: GGLWEInfos>(key: &K) -> usize {
 }
 
 fn validate_modulus_bounds(spec: &PresetSpec, bootstrap_k: usize, keys: &BootstrappingKeysLayout) -> Result<()> {
-    validate_key("tensor", &keys.tensor_key, spec.dense_secret.max_log_modulus)?;
-    validate_linear_bounds(spec, bootstrap_k, &keys.linear())
-}
-
-fn validate_linear_bounds(spec: &PresetSpec, bootstrap_k: usize, keys: &BootstrappingLinearKeysLayout) -> Result<()> {
     let (dense, sparse) = (spec.dense_secret.max_log_modulus, spec.sparse_secret.max_log_modulus);
+    validate_key("tensor", &keys.tensor_key, dense)?;
+    if let Some(conversion) = &keys.conversion {
+        validate_key("CI trace", &conversion.trace_key, dense)?;
+        validate_key("CI embed", &conversion.embed_key, dense)?;
+    }
     ensure!(
         bootstrap_k <= dense,
         "bootstrap modulus {bootstrap_k} exceeds dense-secret limit {dense}"
@@ -1076,39 +1025,39 @@ mod tests {
     /// Bytes of the coefficients of the key set of a preset with EvalMod on the CI
     /// ring, by kind: rotation keys, CI tensor key, encapsulation keys, first-factor
     /// keys, trace key and embed key.
-    fn ci_key_set_bytes(preset: &BootstrappingCIPreset) -> [usize; 6] {
-        let (keys, plan, log_n) = (preset.keys_layout(), preset.base().plan(), preset.base().log_n());
+    fn ci_key_set_bytes(preset: &BootstrappingPreset) -> [usize; 6] {
+        let (keys, plan, log_n) = (preset.keys_layout(), preset.plan(), preset.log_n());
         let order = 2i64 << log_n;
         let mut elements: BTreeSet<i64> = plan.coeffs_to_slots().galois_elements(log_n, order).into_iter().collect();
         elements.extend(plan.slots_to_coeffs().galois_elements(log_n, order));
-        let rotations = elements.iter().map(|&p| key_bytes(&keys.linear.rotation_key(p))).sum();
-        let encapsulation = keys.linear.encapsulation.as_ref().map_or(0, |encaps| {
+        let rotations = elements.iter().map(|&p| key_bytes(&keys.rotation_key(p))).sum();
+        let encapsulation = keys.encapsulation.as_ref().map_or(0, |encaps| {
             key_bytes(&encaps.dense_to_sparse) + encaps.sparse_to_dense.as_ref().map_or(0, key_bytes)
         });
-        let first_factor = keys.linear.first_factor_key.as_ref().map_or(0, |key| {
+        let first_factor = keys.first_factor_key.as_ref().map_or(0, |key| {
             plan.coeffs_to_slots().diagonal_indexes(log_n)[0].len() * key_bytes(key)
         });
+        let conversion = keys.conversion.expect("EvalMod on the CI ring");
         [
             rotations,
             key_bytes(&keys.tensor_key),
             encapsulation,
             first_factor,
-            key_bytes(&keys.trace_key),
-            key_bytes(&keys.embed_key),
+            key_bytes(&conversion.trace_key),
+            key_bytes(&conversion.embed_key),
         ]
     }
 
     /// [`n16_d35_k685_p19_s2c_fast`] with its first CoeffsToSlots factor evaluated
     /// by the matrix, at the same output width: the raise then reaches 48 bits more.
-    fn fast_without_first_factor_on_raise() -> BootstrappingCIPreset {
+    fn fast_without_first_factor_on_raise() -> BootstrappingPreset {
         const SCHEDULE: [(usize, usize); 4] = [(3, 8), (4, 1024), (4, 64), (4, 4)];
-        let spec = n16_d35_k685_p19_s2c_fast().unwrap().base().spec;
-        let spec = PresetSpec {
+        build(PresetSpec {
             c2s_schedule: &SCHEDULE,
             c2s_first_factor_on_raise: false,
-            ..spec
-        };
-        build_ci(spec.name, spec, EVALMOD_CI_CONVERSION).unwrap()
+            ..n16_d35_k685_p19_s2c_fast().unwrap().spec
+        })
+        .unwrap()
     }
 
     #[test]
@@ -1136,24 +1085,27 @@ mod tests {
     #[test]
     fn n16_d35_k685_p19_s2c_fast_fits_the_dense_bound() {
         let preset = n16_d35_k685_p19_s2c_fast().unwrap();
-        assert_eq!((preset.base().input_k(), preset.base().output_k()), (160, 685));
-        assert_eq!(preset.base().log2_precision(), 19);
+        assert_eq!((preset.input_k(), preset.output_k()), (160, 685));
+        assert_eq!(preset.log2_precision(), 19);
         // Three paid CoeffsToSlots factors, EvalMod, and the two conversions.
-        assert_eq!(preset.plan().base().coeffs_to_slots().consumed_bits(), 3 * 48);
-        assert_eq!(preset.plan().conversion_consumed_bits(), 84);
+        assert_eq!(preset.plan().coeffs_to_slots().consumed_bits(), 3 * 48);
+        assert_eq!(preset.plan().eval_mod_ring().consumed_bits(), 84);
         assert_eq!(preset.bootstrap_k(), 1383);
-        assert_eq!(preset.base().bootstrap_layout().k().as_usize(), 1383);
-        assert!(preset.plan().base().coeffs_to_slots().first_factor_on_raise());
+        assert_eq!(preset.bootstrap_layout().k().as_usize(), 1383);
+        assert!(preset.plan().coeffs_to_slots().first_factor_on_raise());
         let keys = preset.keys_layout();
-        for key in [&keys.trace_key, &keys.embed_key] {
+        let conversion = keys.conversion.unwrap();
+        for key in [&conversion.trace_key, &conversion.embed_key] {
             assert_eq!(key.n().as_usize(), 1 << 17);
-            assert!(key.k().as_usize() <= preset.base().max_dense_modulus());
+            assert!(key.k().as_usize() <= preset.max_dense_modulus());
         }
         assert_eq!(keys.tensor_key.n().as_usize(), 1 << 16);
-        assert!(keys.tensor_key.k().as_usize() <= preset.base().max_dense_modulus());
-        assert!(keys.linear.automorphism_key.k().as_usize() <= preset.base().max_dense_modulus());
-        let first_factor = keys.linear.first_factor_key.unwrap();
-        assert!(first_factor.k().as_usize() <= preset.base().max_dense_modulus());
+        assert!(keys.tensor_key.k().as_usize() <= preset.max_dense_modulus());
+        assert!(keys.automorphism_key.k().as_usize() <= preset.max_dense_modulus());
+        // CoeffsToSlots is not split: no conjugation key.
+        assert!(keys.rotation_keys.keys().all(|&p| p != -1));
+        let first_factor = keys.first_factor_key.unwrap();
+        assert!(first_factor.k().as_usize() <= preset.max_dense_modulus());
     }
 
     #[test]
@@ -1330,7 +1282,12 @@ mod tests {
         let names: Vec<&str> = all().unwrap().iter().map(|p| p.name()).collect();
         assert_eq!(
             names,
-            ["n16_d35_k636_p20_c2s", "n16_d35_k733_p20_s2c", "n15_d35_k180_p18_c2s"]
+            [
+                "n16_d35_k636_p20_c2s",
+                "n16_d35_k733_p20_s2c",
+                "n15_d35_k180_p18_c2s",
+                "n16_d35_k685_p19_s2c_fast"
+            ]
         );
     }
 

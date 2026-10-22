@@ -459,6 +459,7 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
         },
         tensor_key: key,
         encapsulation: None,
+        conversion: None,
     };
     let src = module.ckks_ciphertext_alloc(16usize.into(), 64usize.into());
     let dst = module.ckks_ciphertext_alloc(16usize.into(), 256usize.into());

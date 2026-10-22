@@ -3,11 +3,12 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds,
-    layouts::{BootstrappingCIContext, BootstrappingCIKeysLayout, BootstrappingCIKeysPrepared, CKKSCiphertextOwned},
+    layouts::{BootstrappingContext, BootstrappingKeysLayout, BootstrappingKeysPrepared, CKKSCiphertextOwned},
 };
 
 /// S2C-first bootstrapping with EvalMod on the conjugate-invariant ring (see
-/// [`crate::layouts::bootstrapping_ci`]), on the standard module of degree `N`.
+/// [`crate::layouts::bootstrapping_ci`]), on the standard module of degree `N`,
+/// for a context compiled by [`BootstrappingContext::compile_ci`].
 ///
 /// `wide` is a standard module of degree `2N`, for the conversions, and `ci` a
 /// module of the CI ring of degree `N`, for EvalMod; the CI backend shares the
@@ -16,8 +17,8 @@ use crate::{
 ///
 /// # Metadata
 ///
-/// As [`ckks_bootstrap`](crate::api::CKKSBootstrappingOps::ckks_bootstrap) on the
-/// base plan: the output keeps the input scale, at the preset output width.
+/// As [`ckks_bootstrap`](crate::api::CKKSBootstrappingOps::ckks_bootstrap): the
+/// output keeps the input scale, at the preset output width.
 ///
 /// # Keys
 ///
@@ -41,8 +42,8 @@ pub trait CKKSBootstrappingCIOps<BE: Backend, BCI: Backend> {
         ci: &Module<BCI>,
         ct_out: &C1,
         ct_in: &C2,
-        ctx: &BootstrappingCIContext<BE, BCI, F>,
-        keys_layout: &BootstrappingCIKeysLayout,
+        ctx: &BootstrappingContext<BE, F, BCI>,
+        keys_layout: &BootstrappingKeysLayout,
     ) -> (usize, usize)
     where
         C1: CKKSCtBounds,
@@ -58,8 +59,8 @@ pub trait CKKSBootstrappingCIOps<BE: Backend, BCI: Backend> {
         ci: &Module<BCI>,
         ct_out: &mut CKKSCiphertextOwned<BE>,
         ct_in: &CKKSCiphertextOwned<BE>,
-        ctx: &BootstrappingCIContext<BE, BCI, F>,
-        keys: &BootstrappingCIKeysPrepared<BE::OwnedBuf, BE, BCI>,
+        ctx: &BootstrappingContext<BE, F, BCI>,
+        keys: &BootstrappingKeysPrepared<BE::OwnedBuf, BE, BCI>,
         scratch: &mut ScratchArena<'_, BE>,
         scratch_ci: &mut ScratchArena<'_, BCI>,
     ) -> Result<()>;

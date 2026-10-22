@@ -21,9 +21,9 @@ use crate::{
     },
     eval_lut::{ckks_eval_lut, ckks_eval_lut_binary, ckks_eval_lut_from_basis, ckks_lut_power_basis},
     layouts::{
-        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingLinearKeysLayout,
-        BootstrappingPipeline, CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, CoveringKeys, EncodedLut,
-        EncodedLutKind, EvalModType, ScratchArenaTakeCKKS,
+        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingPipeline,
+        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, CoveringKeys, EncodedLut, EncodedLutKind, EvalModType,
+        ScratchArenaTakeCKKS,
     },
     oep::{CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl},
 };
@@ -206,14 +206,15 @@ where
 /// Keys with a row offset are laid out for the raise: fails before any work
 /// unless the first-factor keys, or a sparse-to-dense key with an offset, fit
 /// the raise of `ct_in` into `ct_out.k()` bits.
-pub(crate) fn check_raise_keys<BE, F, K, C1, C2>(
+pub(crate) fn check_raise_keys<BE, F, K, C1, C2, BEM>(
     ct_out: &C1,
     ct_in: &C2,
-    ctx: &BootstrappingContext<BE, F>,
+    ctx: &BootstrappingContext<BE, F, BEM>,
     keys: &K,
 ) -> Result<()>
 where
     BE: Backend,
+    BEM: Backend,
     K: BootstrappingLinearKeys<BE>,
     C1: CKKSCtBounds,
     C2: CKKSCtBounds,
@@ -240,15 +241,16 @@ where
 /// Scratch of [`ckks_bootstrap_s2c_mod_up`] into a ciphertext like `ct_raised`
 /// followed by CoeffsToSlots on it, with every rotation key shape against the
 /// widest ciphertext: the linear stages of an S2C-first bootstrap.
-pub(crate) fn s2c_first_linear_tmp_bytes<BE, C1, C2, F>(
+pub(crate) fn s2c_first_linear_tmp_bytes<BE, C1, C2, F, BEM>(
     module: &Module<BE>,
     ct_raised: &C1,
     ct_in: &C2,
-    ctx: &BootstrappingContext<BE, F>,
-    keys_layout: &BootstrappingLinearKeysLayout,
+    ctx: &BootstrappingContext<BE, F, BEM>,
+    keys_layout: &BootstrappingKeysLayout,
 ) -> usize
 where
     BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
+    BEM: Backend,
     Module<BE>: GLWEBytesOf<BE> + CKKSDFTOps<BE> + CKKSPow2Ops<BE> + GLWEShift<BE> + GLWEKeyswitch<BE>,
     C1: CKKSCtBounds,
     C2: CKKSCtBounds,
@@ -1308,16 +1310,17 @@ where
     Ok(())
 }
 
-pub(crate) fn ckks_bootstrap_s2c_mod_up<BE, F, K, R>(
+pub(crate) fn ckks_bootstrap_s2c_mod_up<BE, F, K, R, BEM>(
     module: &Module<BE>,
     ct_raised: &mut R,
     ct_in: &CKKSCiphertextOwned<BE>,
-    ctx: &BootstrappingContext<BE, F>,
+    ctx: &BootstrappingContext<BE, F, BEM>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
+    BEM: Backend,
     Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSCopyOps<BE> + CKKSPow2Ops<BE> + CKKSDFTOps<BE>,
     K: BootstrappingLinearKeys<BE>,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,

@@ -333,6 +333,7 @@ fn run_case<BE, F, E>(
             dense_to_sparse: tp.ksk_layout(log_modulus_in),
             sparse_to_dense: (!first_factor_on_raise).then(|| tp.ksk_layout(k_boot)),
         }),
+        conversion: None,
     };
     let output_spec = ckks_spec(params.n, params.base2k, INPUT_LOG_DELTA, k_boot - INPUT_LOG_DELTA);
     let input_spec = ckks_spec(params.n, params.base2k, INPUT_LOG_DELTA, k_in - INPUT_LOG_DELTA);

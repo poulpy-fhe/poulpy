@@ -7,9 +7,11 @@
 //! EvalMod twice. The conjugate-invariant (CI) ring of degree `N` has `N` real
 //! slots, so a single EvalMod there reduces every coefficient.
 //!
-//! The pipeline ([`CKKSBootstrappingCIOps`](crate::api::CKKSBootstrappingCIOps))
-//! moves `z` there and back through the standard ring of degree `2N`, which
-//! contains both:
+//! A plan selects it with [`BootstrappingPlan::with_eval_mod_on_ci_ring`]; the
+//! circuit is that of an S2C-first bootstrap, through
+//! [`CKKSBootstrappingCIOps`](crate::api::CKKSBootstrappingCIOps), which takes the
+//! modules of the two rings. It moves `z` to the CI ring and back through the
+//! standard ring of degree `2N`, which contains both:
 //!
 //! 1. `z(X)` is embedded as `z(X²)`, where each slot of degree `N` holds two slots
 //!    of degree `2N`, `j` and `j + N/2`. Its secret is `s(X²)`.
@@ -26,18 +28,18 @@
 //!    even coefficients, the ciphertext of degree `N` under `s`.
 //!
 //! The keys of the conversions are of degree `2N`, from `s(X²)` to the CI secret
-//! and back; EvalMod relinearizes with a CI tensor key of degree `N`. The linear
-//! stages take the keys of the base plan less those the pipeline never uses: the
-//! tensor keys of the standard ring and conjugation ([`BootstrappingCIKeysLayout`]).
+//! and back ([`ConversionKeysLayout`](crate::layouts::ConversionKeysLayout)); EvalMod relinearizes with a CI tensor key
+//! of degree `N`. The context and the prepared keys hold EvalMod's plaintexts and
+//! that key on the CI backend: `BootstrappingContext<BE, F, BCI>` and
+//! `BootstrappingKeysPrepared<_, BE, BCI>`. CoeffsToSlots is not split, so there
+//! is no conjugation key.
 
 use anyhow::{Result, ensure};
 use poulpy_core::{
     DiagonalProd, GLWECIKeyEncryptSk, GLWETensorKeyEncryptSk, GetDistribution, GetDistributionMut,
     layouts::{
-        BackendGLWESecret, GGLWEInfos, GGLWEToBackendRef, GLWECIEmbedKey, GLWECIEmbedKeyPrepared, GLWECIKeyPreparedFactory,
-        GLWECITraceKey, GLWECITraceKeyPrepared, GLWEInfos, GLWESecret, GLWESecretLayout, GLWESecretSampling,
-        GLWESwitchingKeyLayout, GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory,
-        ModuleCoreAlloc,
+        BackendGLWESecret, GGLWEInfos, GGLWEToBackendRef, GLWECIEmbedKey, GLWECIKeyPreparedFactory, GLWECITraceKey, GLWEInfos,
+        GLWESecret, GLWESecretLayout, GLWESecretSampling, GLWETensorKey, GLWETensorKeyPreparedFactory, ModuleCoreAlloc,
     },
 };
 use poulpy_hal::{
@@ -49,258 +51,94 @@ use poulpy_hal::{
 
 use crate::{
     Base2K, CKKSCtBounds, CKKSModuleInfos, GLWEPlaintextMeta, Scale, SlotsKind,
-    api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
+    api::{CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
     layouts::{
-        BootstrappingContext, BootstrappingLinearKeySet, BootstrappingLinearKeysLayout, BootstrappingLinearKeysPrepared,
-        BootstrappingPipeline, BootstrappingPlan, CKKSModuleAlloc, CKKSPlaintextOwned,
-        eval_mod::{EvalMod, EvalModType, compile_eval_mod},
+        BootstrappingContext, BootstrappingContextUnprepared, BootstrappingKeySet, BootstrappingKeysLayout,
+        BootstrappingKeysPrepared, BootstrappingPlan, CKKSModuleAlloc, CKKSPlaintextOwned, EvalModCIPlan, EvalModRing,
+        bootstrapping_keys::prepare_linear_keys, eval_mod::compile_eval_mod,
     },
 };
 
-/// The two conversions of a [`BootstrappingCIPlan`]: the scales, in bits, of the
-/// plaintext products before and after EvalMod. Each spends its scale from the
-/// budget: the levels the conversions add to the bootstrap.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct EvalModCIPlan {
-    /// Scale of `u`, which pairs each slot of degree `N` into two real CI slots.
-    pub pre_log_delta: usize,
-    /// Scale of `v`, which pairs the reduced CI slots back.
-    pub post_log_delta: usize,
-}
-
-/// A [`BootstrappingPlan`] whose EvalMod runs on the conjugate-invariant ring.
-///
-/// The base plan is S2C-first, without functional bootstrapping or EvalRound+,
-/// and its EvalMod is one of the real families. Its widths gain the two
-/// conversion levels.
-#[derive(Clone, Debug)]
-pub struct BootstrappingCIPlan {
-    base: BootstrappingPlan,
-    conversion: EvalModCIPlan,
-}
-
-impl BootstrappingCIPlan {
-    pub fn new(base: BootstrappingPlan, conversion: EvalModCIPlan) -> Result<Self> {
-        ensure!(
-            base.pipeline() == BootstrappingPipeline::S2CFirst,
-            "EvalMod on the conjugate-invariant ring requires an S2C-first plan"
-        );
-        ensure!(
-            base.coeffs_to_slots_bypass().is_none(),
-            "EvalMod on the conjugate-invariant ring does not take the EvalRound+ bypass"
-        );
-        ensure!(
-            base.functional_message_modulus.is_none(),
-            "EvalMod on the conjugate-invariant ring does not run functional bootstrapping"
-        );
-        ensure!(
-            base.eval_mod().eval_mod_type != EvalModType::ExpCmplx,
-            "EvalMod on the conjugate-invariant ring needs a real EvalMod family"
-        );
-        ensure!(
-            conversion.pre_log_delta > 0 && conversion.post_log_delta > 0,
-            "the conversion scales must be positive"
-        );
-        Ok(Self { base, conversion })
-    }
-
-    /// The S2C-first plan around EvalMod.
-    pub fn base(&self) -> &BootstrappingPlan {
-        &self.base
-    }
-
-    /// The scales of the conversions.
-    pub fn conversion(&self) -> EvalModCIPlan {
-        self.conversion
-    }
-
-    /// Budget the two conversions consume.
-    pub fn conversion_consumed_bits(&self) -> usize {
-        self.conversion.pre_log_delta + self.conversion.post_log_delta
-    }
-
-    /// Input width for a given modulus at ModUp, as in the base plan.
-    pub fn input_k(&self, log_modulus: usize) -> usize {
-        self.base.input_k(log_modulus)
-    }
-
-    /// Bootstrap width for an output at the input scale `log_delta`: the base
-    /// width and the two conversion levels.
-    pub fn bootstrap_k(&self, output_k: usize, log_delta: usize) -> usize {
-        self.base.bootstrap_k(output_k, log_delta) + self.conversion_consumed_bits()
-    }
-
-    /// Total budget the pipeline consumes.
-    pub fn consumed_bits(&self) -> usize {
-        self.base.consumed_bits() + self.conversion_consumed_bits()
-    }
-}
-
-/// Compiled [`BootstrappingCIPlan`]: the base context, EvalMod encoded on the CI
-/// module, and the conversion plaintexts `u` and `v` at degree `2N`.
-pub struct BootstrappingCIContext<BE: Backend, BCI: Backend, F> {
-    pub(crate) base: BootstrappingContext<BE, F>,
-    pub(crate) eval_mod: EvalMod<F, CKKSPlaintextOwned<BCI>>,
-    pub(crate) pre: CKKSPlaintextOwned<BE>,
-    pub(crate) post: CKKSPlaintextOwned<BE>,
-}
-
-impl<BE: Backend, BCI: Backend, F> BootstrappingCIContext<BE, BCI, F> {
-    /// The context of the standard stages.
-    pub fn base(&self) -> &BootstrappingContext<BE, F> {
-        &self.base
-    }
-
-    /// EvalMod encoded on the CI module.
-    pub fn eval_mod(&self) -> &EvalMod<F, CKKSPlaintextOwned<BCI>> {
-        &self.eval_mod
-    }
-
-    /// The plaintext `u` of degree `2N` before EvalMod.
-    pub fn pre(&self) -> &CKKSPlaintextOwned<BE> {
-        &self.pre
-    }
-
-    /// The plaintext `v` of degree `2N` after EvalMod.
-    pub fn post(&self) -> &CKKSPlaintextOwned<BE> {
-        &self.post
-    }
-}
-
-impl<BE, BCI, F> BootstrappingCIContext<BE, BCI, F>
+impl<BE, F, BCI> BootstrappingContext<BE, F, BCI>
 where
     BE: Backend<Ring = Standard>,
     BCI: Backend<Ring = ConjugateInvariant>,
     F: CKKSEncodingScalar,
 {
-    /// Compiles `plan`: the base context on `module` (degree `N`), EvalMod on `ci`
-    /// (CI, degree `N`) and the conversion plaintexts on `wide` (degree `2N`).
+    /// Compiles a plan that runs EvalMod on the conjugate-invariant ring: the
+    /// transforms on `module` (degree `N`), EvalMod on `ci` (CI, degree `N`) and
+    /// the conversion plaintexts on `wide` (degree `2N`).
     ///
-    /// `scratch` serves the base context and the plaintexts, `scratch_ci` EvalMod.
-    pub fn compile(
+    /// `scratch` serves the transforms and the plaintexts, `scratch_ci` EvalMod;
+    /// as [`Self::compile`], `scratch` also serves the preparation.
+    pub fn compile_ci(
         module: &Module<BE>,
         wide: &Module<BE>,
         ci: &Module<BCI>,
         base2k: Base2K,
-        plan: &BootstrappingCIPlan,
+        plan: &BootstrappingPlan,
         scratch: &mut ScratchArena<'_, BE>,
         scratch_ci: &mut ScratchArena<'_, BCI>,
     ) -> Result<Self>
     where
-        Module<BE>:
-            crate::api::CKKSDFTOps<BE> + crate::api::CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+        Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
         Module<BCI>: CKKSModuleAlloc<BCI> + CKKSEncodingOps<BCI, F>,
         CKKSPlaintextOwned<BE>: poulpy_core::layouts::GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
+    {
+        Ok(Self::compile_unprepared_ci(module, wide, ci, base2k, plan, scratch, scratch_ci)?.prepare(module, scratch))
+    }
+
+    /// First stage of [`Self::compile_ci`], as [`Self::compile_unprepared`] is of
+    /// [`Self::compile`].
+    pub fn compile_unprepared_ci(
+        module: &Module<BE>,
+        wide: &Module<BE>,
+        ci: &Module<BCI>,
+        base2k: Base2K,
+        plan: &BootstrappingPlan,
+        scratch: &mut ScratchArena<'_, BE>,
+        scratch_ci: &mut ScratchArena<'_, BCI>,
+    ) -> Result<BootstrappingContextUnprepared<BE, F, BCI>>
+    where
+        Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+        Module<BCI>: CKKSModuleAlloc<BCI> + CKKSEncodingOps<BCI, F>,
     {
         ensure!(
             wide.n() == 2 * module.n() && ci.n() == module.n(),
             "EvalMod on the CI ring takes a standard module of degree 2N and a CI module of degree N"
         );
-        let base = BootstrappingContext::compile(module, base2k, plan.base(), scratch)?;
-        let eval_mod = compile_eval_mod::<BCI, F>(base2k, plan.base().eval_mod, ci, scratch_ci)?;
-        let conversion = plan.conversion();
-        // Slot `j` of degree `N` is slot `j` and slot `j + N/2` of degree `2N`.
-        let half = module.n() / 2;
-        let pair = |first: (f64, f64), second: (f64, f64), log_delta: usize, scratch: &mut ScratchArena<'_, BE>| {
-            let (mut re, mut im) = (vec![F::zero(); 2 * half], vec![F::zero(); 2 * half]);
-            for j in 0..half {
-                re[j] = F::from_f64(first.0).unwrap();
-                im[j] = F::from_f64(first.1).unwrap();
-                re[j + half] = F::from_f64(second.0).unwrap();
-                im[j + half] = F::from_f64(second.1).unwrap();
-            }
-            // Values of modulus one: two bits above the scale hold them.
-            let mut pt = wide.ckks_pt_vec_alloc(wide.ckks_max_slots(), base2k, (log_delta + 2).into());
-            crate::SetCKKSInfos::set_meta(
-                &mut pt,
-                GLWEPlaintextMeta {
-                    scale: Scale::Log(log_delta),
-                    slots: SlotsKind::Complex,
-                    log_sparsity: 0,
-                },
-            );
-            wide.ckks_encode_reim_into(&mut pt, &re, &im, scratch)?;
-            Result::<CKKSPlaintextOwned<BE>>::Ok(pt)
+        let EvalModRing::ConjugateInvariant(conversion) = plan.eval_mod_ring() else {
+            anyhow::bail!("the plan runs EvalMod on the ring of the bootstrap: compile it with BootstrappingContext::compile");
         };
-        let pre = pair((1.0, 0.0), (0.0, -1.0), conversion.pre_log_delta, scratch)?;
-        let post = pair((1.0, 0.0), (0.0, 1.0), conversion.post_log_delta, scratch)?;
-        Ok(Self {
-            base,
-            eval_mod,
-            pre,
-            post,
-        })
+        let eval_mod = compile_eval_mod::<BCI, F>(base2k, plan.eval_mod, ci, scratch_ci)?;
+        let conversions = conversion_plaintexts::<BE, F>(module, wide, base2k, conversion, scratch)?;
+        BootstrappingContextUnprepared::with_eval_mod(module, base2k, plan, eval_mod, Some(conversions), scratch)
     }
-}
 
-/// Key layouts of a [`BootstrappingCIPlan`].
-#[derive(Clone, Debug)]
-pub struct BootstrappingCIKeysLayout {
-    /// The keys of the linear stages, as for the base plan. CoeffsToSlots is not
-    /// split, so there is no conjugation key.
-    pub linear: BootstrappingLinearKeysLayout,
-    /// CI tensor key for EvalMod, covering its widest product.
-    pub tensor_key: GLWETensorKeyLayout,
-    /// Key of degree `2N` from `s(X²)` to the embedded CI secret, covering the
-    /// CoeffsToSlots output.
-    pub trace_key: GLWESwitchingKeyLayout,
-    /// Key of degree `2N` from the embedded CI secret to `s(X²)`, covering the
-    /// EvalMod output.
-    pub embed_key: GLWESwitchingKeyLayout,
-}
-
-/// The unprepared keys of a [`BootstrappingCIPlan`].
-pub struct BootstrappingCIKeySet<D: Data, W: ZnxWord> {
-    /// The keys of the linear stages.
-    pub linear: BootstrappingLinearKeySet<D, W>,
-    /// CI tensor key for EvalMod.
-    pub tensor_key: GLWETensorKey<D, W>,
-    /// From `s(X²)` to the embedded CI secret.
-    pub trace_key: GLWECITraceKey<D, W>,
-    /// From the embedded CI secret to `s(X²)`.
-    pub embed_key: GLWECIEmbedKey<D, W>,
-}
-
-/// The prepared keys of a [`BootstrappingCIPlan`].
-pub struct BootstrappingCIKeysPrepared<D: Data, BE: Backend, BCI: Backend> {
-    /// The keys of the linear stages.
-    pub linear: BootstrappingLinearKeysPrepared<D, BE>,
-    /// CI tensor key for EvalMod.
-    pub tensor_key: GLWETensorKeyPrepared<D, BCI>,
-    /// From `s(X²)` to the embedded CI secret.
-    pub trace_key: GLWECITraceKeyPrepared<D, BE>,
-    /// From the embedded CI secret to `s(X²)`.
-    pub embed_key: GLWECIEmbedKeyPrepared<D, BE>,
-}
-
-impl<BE, BCI, F> BootstrappingCIContext<BE, BCI, F>
-where
-    BE: Backend<Ring = Standard>,
-    BCI: Backend<Ring = ConjugateInvariant>,
-{
-    /// Generates the unprepared keys for the dense secret `sk_dense` of degree `N`:
-    /// the keys of the linear stages ([`BootstrappingContext::generate_linear_keys`],
-    /// without conjugation), a CI secret of the same Hamming weight, its tensor
-    /// keys, and the conversion keys of degree `2N` between it and `s(X²)`.
+    /// Generates the unprepared keys for the dense secret `sk_dense` of degree
+    /// `N`: those of the linear stages, without conjugation, as
+    /// [`BootstrappingContext::generate_keys`] does; a CI secret of the same
+    /// Hamming weight and its tensor key; and the conversion keys of degree `2N`
+    /// between it and `s(X²)`.
     ///
-    /// `scratch` serves the base and conversion keys, `scratch_ci` the CI tensor keys.
+    /// `scratch` serves the keys of the standard rings, `scratch_ci` the CI tensor key.
     #[expect(
         clippy::too_many_arguments,
         reason = "key generation takes three modules, three sources and a scratch arena per ring"
     )]
-    pub fn generate_keys(
+    pub fn generate_keys_ci(
         &self,
         module: &Module<BE>,
         wide: &Module<BE>,
         ci: &Module<BCI>,
         sk_dense: &BackendGLWESecret<BE>,
-        layout: &BootstrappingCIKeysLayout,
+        layout: &BootstrappingKeysLayout,
         source_xs: &mut Source,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
         scratch_ci: &mut ScratchArena<'_, BCI>,
-    ) -> Result<BootstrappingCIKeySet<BE::OwnedBuf, BE::ZnxWord>>
+    ) -> Result<BootstrappingKeySet<BE::OwnedBuf, BE::ZnxWord>>
     where
         BE::OwnedBuf: HostDataMut,
         BCI: Backend<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
@@ -320,16 +158,12 @@ where
             wide.n() == 2 * module.n() && ci.n() == module.n(),
             "EvalMod on the CI ring takes a standard module of degree 2N and a CI module of degree N"
         );
-        let linear = self.base.generate_linear_keys(
-            module,
-            sk_dense,
-            &layout.linear,
-            false,
-            source_xs,
-            source_xe,
-            source_xa,
-            scratch,
-        )?;
+        let Some(conversion) = &layout.conversion else {
+            anyhow::bail!("bootstrapping key layout has no conversion keys, which EvalMod on the CI ring uses");
+        };
+        let rotation_keys = self.generate_rotation_keys(module, sk_dense, layout, source_xe, source_xa, scratch)?;
+        let (encapsulation_keys, first_factor_keys) =
+            self.generate_raise_keys(module, sk_dense, layout, source_xs, source_xe, source_xa, scratch);
 
         // The CI secret takes the dense secret's Hamming weight. The secrets derived
         // here are wiped before returning, so nothing fails between their creation and
@@ -358,21 +192,62 @@ where
 
         let mut tensor_key = ci.glwe_tensor_key_alloc_from_infos(&layout.tensor_key);
         ci.glwe_tensor_key_encrypt_sk(&mut tensor_key, &sk_ci, source_xe, source_xa, scratch_ci);
-
-        let mut trace_key = wide.glwe_ci_trace_key_alloc_from_infos(&layout.trace_key);
+        let mut trace_key = wide.glwe_ci_trace_key_alloc_from_infos(&conversion.trace_key);
         wide.glwe_ci_trace_key_encrypt_sk(&mut trace_key, &sk_ci, &sk_wide, source_xe, source_xa, scratch);
-        let mut embed_key = wide.glwe_ci_embed_key_alloc_from_infos(&layout.embed_key);
+        let mut embed_key = wide.glwe_ci_embed_key_alloc_from_infos(&conversion.embed_key);
         wide.glwe_ci_embed_key_encrypt_sk(&mut embed_key, &sk_ci, &sk_wide, source_xe, source_xa, scratch);
         wipe_secret(&mut sk_wide);
         wipe_secret(&mut sk_ci);
 
-        Ok(BootstrappingCIKeySet {
-            linear,
+        Ok(BootstrappingKeySet {
+            rotation_keys,
             tensor_key,
-            trace_key,
-            embed_key,
+            encapsulation_keys,
+            first_factor_keys,
+            conversion_keys: Some((trace_key, embed_key)),
         })
     }
+}
+
+/// The plaintexts `u` and `v` of degree `2N` of the conversions, at the scales of
+/// `conversion`: slot `j` of degree `N` is slot `j` and slot `j + N/2` of degree `2N`.
+fn conversion_plaintexts<BE, F>(
+    module: &Module<BE>,
+    wide: &Module<BE>,
+    base2k: Base2K,
+    conversion: EvalModCIPlan,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<(CKKSPlaintextOwned<BE>, CKKSPlaintextOwned<BE>)>
+where
+    BE: Backend<Ring = Standard>,
+    F: CKKSEncodingScalar,
+    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+{
+    let half = module.n() / 2;
+    let pair = |first: (f64, f64), second: (f64, f64), log_delta: usize, scratch: &mut ScratchArena<'_, BE>| {
+        let (mut re, mut im) = (vec![F::zero(); 2 * half], vec![F::zero(); 2 * half]);
+        for j in 0..half {
+            re[j] = F::from_f64(first.0).unwrap();
+            im[j] = F::from_f64(first.1).unwrap();
+            re[j + half] = F::from_f64(second.0).unwrap();
+            im[j + half] = F::from_f64(second.1).unwrap();
+        }
+        // Values of modulus one: two bits above the scale hold them.
+        let mut pt = wide.ckks_pt_vec_alloc(wide.ckks_max_slots(), base2k, (log_delta + 2).into());
+        crate::SetCKKSInfos::set_meta(
+            &mut pt,
+            GLWEPlaintextMeta {
+                scale: Scale::Log(log_delta),
+                slots: SlotsKind::Complex,
+                log_sparsity: 0,
+            },
+        );
+        wide.ckks_encode_reim_into(&mut pt, &re, &im, scratch)?;
+        Result::<CKKSPlaintextOwned<BE>>::Ok(pt)
+    };
+    let pre = pair((1.0, 0.0), (0.0, -1.0), conversion.pre_log_delta, scratch)?;
+    let post = pair((1.0, 0.0), (0.0, 1.0), conversion.post_log_delta, scratch)?;
+    Ok((pre, post))
 }
 
 /// Zeroes a secret that key generation derived for itself, before it is
@@ -387,17 +262,18 @@ fn wipe_secret<D: HostDataMut, W: ZnxWord>(sk: &mut GLWESecret<D, W>) {
     }
 }
 
-impl<D: Data, W: ZnxWord> BootstrappingCIKeySet<D, W> {
-    /// Prepares every key: the keys of the linear stages on `module`, the CI tensor
-    /// keys on `ci`, the conversion keys on `wide`.
-    pub fn prepare<BE, BCI>(
+impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
+    /// Prepares a key set of a plan with EvalMod on the conjugate-invariant ring:
+    /// the keys of the linear stages on `module`, the CI tensor key on `ci`, the
+    /// conversion keys on `wide`.
+    pub fn prepare_ci<BE, BCI>(
         &self,
         module: &Module<BE>,
         wide: &Module<BE>,
         ci: &Module<BCI>,
         scratch: &mut ScratchArena<'_, BE>,
         scratch_ci: &mut ScratchArena<'_, BCI>,
-    ) -> BootstrappingCIKeysPrepared<BE::OwnedBuf, BE, BCI>
+    ) -> Result<BootstrappingKeysPrepared<BE::OwnedBuf, BE, BCI>>
     where
         BE: Backend<Ring = Standard, ZnxWord = W>,
         BCI: Backend<Ring = ConjugateInvariant, OwnedBuf = BE::OwnedBuf, ZnxWord = W>,
@@ -415,18 +291,28 @@ impl<D: Data, W: ZnxWord> BootstrappingCIKeySet<D, W> {
             + GLWECIKeyPreparedFactory<BE>,
         Module<BCI>: GLWETensorKeyPreparedFactory<BCI>,
     {
-        let linear = self.linear.prepare(module, scratch);
+        let Some((trace, embed)) = &self.conversion_keys else {
+            anyhow::bail!("the key set has no conversion keys, which EvalMod on the CI ring uses");
+        };
+        let (rotation_keys, encapsulation_keys, first_factor_keys) = prepare_linear_keys(
+            module,
+            &self.rotation_keys,
+            self.encapsulation_keys.as_ref(),
+            &self.first_factor_keys,
+            scratch,
+        );
         let mut tensor_key = ci.alloc_tensor_key_prepared_from_infos(&self.tensor_key);
         ci.prepare_tensor_key(&mut tensor_key, &self.tensor_key, scratch_ci);
-        let mut trace_key = wide.glwe_ci_trace_key_prepared_alloc_from_infos(&self.trace_key);
-        wide.glwe_ci_key_prepare(&mut trace_key, &self.trace_key, scratch);
-        let mut embed_key = wide.glwe_ci_embed_key_prepared_alloc_from_infos(&self.embed_key);
-        wide.glwe_ci_key_prepare(&mut embed_key, &self.embed_key, scratch);
-        BootstrappingCIKeysPrepared {
-            linear,
+        let mut trace_key = wide.glwe_ci_trace_key_prepared_alloc_from_infos(trace);
+        wide.glwe_ci_key_prepare(&mut trace_key, trace, scratch);
+        let mut embed_key = wide.glwe_ci_embed_key_prepared_alloc_from_infos(embed);
+        wide.glwe_ci_key_prepare(&mut embed_key, embed, scratch);
+        Ok(BootstrappingKeysPrepared {
+            rotation_keys,
             tensor_key,
-            trace_key,
-            embed_key,
-        }
+            encapsulation_keys,
+            first_factor_keys,
+            conversion_keys: Some((trace_key, embed_key)),
+        })
     }
 }

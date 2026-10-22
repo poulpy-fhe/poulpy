@@ -119,17 +119,13 @@ pub use alloc::CKKSModuleAlloc;
 pub use approximation::PolynomialApproximation;
 pub use bootstrapping::{
     BootstrappingContext, BootstrappingContextUnprepared, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
-    EvalRoundPlus, SparseSecretEncapsulation,
-};
-pub use bootstrapping_ci::{
-    BootstrappingCIContext, BootstrappingCIKeySet, BootstrappingCIKeysLayout, BootstrappingCIKeysPrepared, BootstrappingCIPlan,
-    EvalModCIPlan,
+    EvalModCIPlan, EvalModRing, EvalRoundPlus, SparseSecretEncapsulation,
 };
 pub(crate) use bootstrapping_keys::CoveringKeys;
 pub use bootstrapping_keys::{
-    BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, BootstrappingLinearKeySet,
-    BootstrappingLinearKeys, BootstrappingLinearKeysLayout, BootstrappingLinearKeysPrepared, CKKSFoldKeysLayout,
-    EncapsulationKeys, EncapsulationKeysLayout, RingSwitchKeySet, RingSwitchKeys, RingSwitchKeysLayout, RingSwitchKeysPrepared,
+    BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, BootstrappingLinearKeys,
+    CKKSFoldKeysLayout, ConversionKeysLayout, EncapsulationKeys, EncapsulationKeysLayout, RingSwitchKeySet, RingSwitchKeys,
+    RingSwitchKeysLayout, RingSwitchKeysPrepared,
 };
 pub use ciphertext::{CKKSCiphertext, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSRingCiphertext, ScratchArenaTakeCKKS};
 pub use complex_diagonals::ComplexDiagonals;

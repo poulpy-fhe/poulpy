@@ -28,10 +28,10 @@ use crate::{
         CKKSEncodingOps, CKKSEncryptOps,
     },
     layouts::{
-        BootstrappingCIContext, BootstrappingCIKeysPrepared, BootstrappingContext, BootstrappingKeysLayout,
-        BootstrappingKeysPrepared, BootstrappingPlan, CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned,
+        BootstrappingContext, BootstrappingKeysLayout, BootstrappingKeysPrepared, BootstrappingPlan, CKKSCiphertextOwned,
+        CKKSModuleAlloc, CKKSPlaintextOwned, EvalModRing,
     },
-    presets::bootstrapping::{BootstrappingCIPreset, BootstrappingPreset, all, all_ci},
+    presets::bootstrapping::{BootstrappingPreset, all},
     test_suite::helpers::{
         PrecisionStats, TestContextBackend, TestContextModule, assert_canonical_at_k, ckks_spec, precision_stats, test_vector_1,
     },
@@ -59,6 +59,105 @@ pub fn preset_with_max_base2k(preset: &BootstrappingPreset, fixture_base2k: usiz
     }
 }
 
+/// The application secret of `preset` (raw and prepared), and the reference
+/// vector encrypted under it at the preset's input layout.
+struct ReferenceInput<BE: Backend> {
+    sk_raw: poulpy_core::layouts::BackendGLWESecret<BE>,
+    sk: GLWESecretPrepared<BE::OwnedBuf, BE>,
+    input: CKKSCiphertextOwned<BE>,
+    want_re: Vec<f64>,
+    want_im: Vec<f64>,
+}
+
+impl<BE> ReferenceInput<BE>
+where
+    BE: TestContextBackend<Ring = Standard>,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64>,
+    for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+{
+    fn new(module: &Module<BE>, preset: &BootstrappingPreset, scratch: &mut ScratchOwned<BE>) -> Self {
+        let (n, base2k) = (preset.n(), preset.base2k());
+        let input_layout = preset.input_layout();
+        let glwe_layout = preset.bootstrap_layout().glwe_layout;
+
+        // Dense application secret at the preset's Hamming weight.
+        let mut source_sk = Source::new([0; 32]);
+        let mut sk_raw = module.glwe_secret_alloc_from_infos(&glwe_layout);
+        module.glwe_secret_fill_ternary_hw(&mut sk_raw, preset.dense_secret_hamming_weight(), &mut source_sk);
+        let mut sk = module.glwe_secret_prepared_alloc_from_infos(&glwe_layout);
+        module.glwe_secret_prepare(&mut sk, &sk_raw);
+
+        let (want_re, want_im) = test_vector_1::<f64>(n / 2);
+        let mut input_pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), base2k.into(), input_layout.k());
+        input_pt.set_meta(input_layout.meta());
+        module
+            .ckks_encode_reim_into(&mut input_pt, &want_re, &want_im, &mut scratch.borrow())
+            .unwrap();
+        let mut input = module.ckks_ciphertext_alloc_from_glwe_infos(&input_layout);
+        let (mut input_xa, mut input_xe) = (Source::new([3; 32]), Source::new([4; 32]));
+        module
+            .ckks_encrypt_sk(
+                &mut input,
+                &input_pt,
+                &sk,
+                &mut input_xe,
+                &mut input_xa,
+                &mut scratch.borrow(),
+            )
+            .unwrap();
+        Self {
+            sk_raw,
+            sk,
+            input,
+            want_re,
+            want_im,
+        }
+    }
+
+    /// Decrypts `output` and measures its precision against the reference
+    /// vector, as `(real, imaginary)` statistics.
+    fn precision(
+        &self,
+        module: &Module<BE>,
+        preset: &BootstrappingPreset,
+        output: &CKKSCiphertextOwned<BE>,
+        scratch: &mut ScratchOwned<BE>,
+    ) -> (PrecisionStats, PrecisionStats) {
+        assert_canonical_at_k::<BE>("bootstrap preset", output);
+        let log_budget = output
+            .log_budget()
+            .min(PRECISION_LOG_BUDGET)
+            .min(127usize.saturating_sub(output.log_delta()));
+        let mut output_pt = module.ckks_pt_vec_alloc(
+            module.ckks_max_slots(),
+            output.base2k(),
+            (output.log_delta() + log_budget).into(),
+        );
+        output_pt.set_meta(GLWEPlaintextMeta {
+            scale: Scale::Log(output.log_delta()),
+            slots: SlotsKind::Complex,
+            log_sparsity: 0,
+        });
+        module
+            .ckks_decrypt(&mut output_pt, output, &self.sk, &mut scratch.borrow())
+            .unwrap();
+        let n = preset.n();
+        let (mut got_re, mut got_im) = (vec![0.0; n / 2], vec![0.0; n / 2]);
+        module
+            .ckks_decode_reim_into(&output_pt, &mut got_re, &mut got_im, &mut scratch.borrow())
+            .unwrap();
+        let log_delta = preset.log_delta();
+        (
+            precision_stats(&got_re, &self.want_re, log_delta),
+            precision_stats(&got_im, &self.want_im, log_delta),
+        )
+    }
+}
+
 /// A preset set up end to end and ready to bootstrap repeatedly.
 pub struct BootstrappingPresetRun<BE: Backend> {
     preset: BootstrappingPreset,
@@ -66,11 +165,8 @@ pub struct BootstrappingPresetRun<BE: Backend> {
     context: BootstrappingContext<BE, f64>,
     keys: BootstrappingKeysPrepared<BE::OwnedBuf, BE>,
     scratch: ScratchOwned<BE>,
-    input: CKKSCiphertextOwned<BE>,
+    reference: ReferenceInput<BE>,
     output: CKKSCiphertextOwned<BE>,
-    sk: GLWESecretPrepared<BE::OwnedBuf, BE>,
-    want_re: Vec<f64>,
-    want_im: Vec<f64>,
 }
 
 impl<BE> BootstrappingPresetRun<BE>
@@ -114,18 +210,12 @@ where
             scratch = ScratchOwned::<BE>::alloc(boot_scratch);
         }
 
-        // Dense application secret at the preset's Hamming weight.
-        let mut source_sk = Source::new([0; 32]);
-        let mut sk_raw = module.glwe_secret_alloc_from_infos(&bootstrap_layout.glwe_layout);
-        module.glwe_secret_fill_ternary_hw(&mut sk_raw, preset.dense_secret_hamming_weight(), &mut source_sk);
-        let mut sk = module.glwe_secret_prepared_alloc_from_infos(&bootstrap_layout.glwe_layout);
-        module.glwe_secret_prepare(&mut sk, &sk_raw);
-
+        let reference = ReferenceInput::new(&module, &preset, &mut scratch);
         let (mut source_xs, mut source_xa, mut source_xe) = (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
         let keys = context
             .generate_keys(
                 &module,
-                &sk_raw,
+                &reference.sk_raw,
                 &keys_layout,
                 &mut source_xs,
                 &mut source_xe,
@@ -154,26 +244,6 @@ where
             }
         }
         let keys = keys.prepare(&module, &mut scratch.borrow());
-
-        let (want_re, want_im) = test_vector_1::<f64>(n / 2);
-        let mut input_pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), base2k.into(), input_layout.k());
-        input_pt.set_meta(input_layout.meta());
-        module
-            .ckks_encode_reim_into(&mut input_pt, &want_re, &want_im, &mut scratch.borrow())
-            .unwrap();
-
-        let mut input = module.ckks_ciphertext_alloc_from_glwe_infos(&input_layout);
-        let (mut input_xa, mut input_xe) = (Source::new([3; 32]), Source::new([4; 32]));
-        module
-            .ckks_encrypt_sk(
-                &mut input,
-                &input_pt,
-                &sk,
-                &mut input_xe,
-                &mut input_xa,
-                &mut scratch.borrow(),
-            )
-            .unwrap();
         let output = module.ckks_ciphertext_alloc_from_glwe_infos(&bootstrap_layout);
 
         let mut run = Self {
@@ -182,18 +252,15 @@ where
             context,
             keys,
             scratch,
-            input,
+            reference,
             output,
-            sk,
-            want_re,
-            want_im,
         };
         run.bootstrap();
         assert_eq!(run.output.k().as_usize(), run.preset.output_k());
         assert_eq!(run.output.meta(), run.preset.output_layout().meta());
-        assert_eq!(run.output.log_delta(), run.input.log_delta());
+        assert_eq!(run.output.log_delta(), run.reference.input.log_delta());
         assert_eq!(
-            run.output.k().as_usize() - run.input.k().as_usize(),
+            run.output.k().as_usize() - run.reference.input.k().as_usize(),
             run.preset.output_k() - run.preset.input_k()
         );
         run
@@ -210,7 +277,7 @@ where
         self.module
             .ckks_bootstrap(
                 &mut self.output,
-                &self.input,
+                &self.reference.input,
                 &self.context,
                 &self.keys,
                 &mut self.scratch.borrow(),
@@ -221,35 +288,8 @@ where
     /// Decrypts the last bootstrap output and measures its precision against
     /// the reference vector, as `(real, imaginary)` statistics.
     pub fn precision(&mut self) -> (PrecisionStats, PrecisionStats) {
-        let output = &self.output;
-        assert_canonical_at_k::<BE>("bootstrap preset", output);
-        let log_budget = output
-            .log_budget()
-            .min(PRECISION_LOG_BUDGET)
-            .min(127usize.saturating_sub(output.log_delta()));
-        let mut output_pt = self.module.ckks_pt_vec_alloc(
-            self.module.ckks_max_slots(),
-            output.base2k(),
-            (output.log_delta() + log_budget).into(),
-        );
-        output_pt.set_meta(GLWEPlaintextMeta {
-            scale: Scale::Log(output.log_delta()),
-            slots: SlotsKind::Complex,
-            log_sparsity: 0,
-        });
-        self.module
-            .ckks_decrypt(&mut output_pt, output, &self.sk, &mut self.scratch.borrow())
-            .unwrap();
-        let n = self.preset.n();
-        let (mut got_re, mut got_im) = (vec![0.0; n / 2], vec![0.0; n / 2]);
-        self.module
-            .ckks_decode_reim_into(&output_pt, &mut got_re, &mut got_im, &mut self.scratch.borrow())
-            .unwrap();
-        let log_delta = self.preset.log_delta();
-        (
-            precision_stats(&got_re, &self.want_re, log_delta),
-            precision_stats(&got_im, &self.want_im, log_delta),
-        )
+        self.reference
+            .precision(&self.module, &self.preset, &self.output, &mut self.scratch)
     }
 }
 
@@ -273,7 +313,11 @@ where
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
-    for (index, preset) in all().unwrap().into_iter().enumerate() {
+    let presets = all().unwrap().into_iter();
+    for (index, preset) in presets
+        .filter(|preset| preset.plan().eval_mod_ring() == EvalModRing::Standard)
+        .enumerate()
+    {
         let preset = preset_with_max_base2k(&preset, fixture_base2k).unwrap();
         let mut run = BootstrappingPresetRun::<BE>::setup_with_roundtrip(preset, index == 0);
         let (re, im) = run.precision();
@@ -383,19 +427,16 @@ where
 /// ready to bootstrap repeatedly, as [`BootstrappingPresetRun`] does for the
 /// others: `BE` runs the standard stages, `BCI` EvalMod.
 pub struct BootstrappingCIPresetRun<BE: Backend, BCI: Backend> {
-    preset: BootstrappingCIPreset,
+    preset: BootstrappingPreset,
     module: Module<BE>,
     wide: Module<BE>,
     ci: Module<BCI>,
-    context: BootstrappingCIContext<BE, BCI, f64>,
-    keys: BootstrappingCIKeysPrepared<BE::OwnedBuf, BE, BCI>,
+    context: BootstrappingContext<BE, f64, BCI>,
+    keys: BootstrappingKeysPrepared<BE::OwnedBuf, BE, BCI>,
     scratch: ScratchOwned<BE>,
     scratch_ci: ScratchOwned<BCI>,
-    input: CKKSCiphertextOwned<BE>,
+    reference: ReferenceInput<BE>,
     output: CKKSCiphertextOwned<BE>,
-    sk: GLWESecretPrepared<BE::OwnedBuf, BE>,
-    want_re: Vec<f64>,
-    want_im: Vec<f64>,
 }
 
 impl<BE, BCI> BootstrappingCIPresetRun<BE, BCI>
@@ -422,21 +463,20 @@ where
 {
     /// Compiles the context on the standard module of degree `N`, the one of
     /// degree `2N` and the CI one of degree `N`, generates the keys, encrypts the
-    /// reference vector at the input layout of the preset it extends, and runs
-    /// one bootstrap to check the output width and metadata.
-    pub fn setup(preset: BootstrappingCIPreset) -> Self {
-        let base = preset.base();
-        let (n, base2k) = (base.n(), base.base2k());
-        let input_layout = base.input_layout();
-        let bootstrap_layout = base.bootstrap_layout();
+    /// reference vector at the preset's input layout, and runs one bootstrap to
+    /// check the output width and metadata.
+    pub fn setup(preset: BootstrappingPreset) -> Self {
+        let (n, base2k) = (preset.n(), preset.base2k());
+        let input_layout = preset.input_layout();
+        let bootstrap_layout = preset.bootstrap_layout();
         let module = Module::<BE>::new(n as u64);
         let wide = Module::<BE>::new(2 * n as u64);
         let ci = Module::<BCI>::new(n as u64);
 
-        let scratch_size = bootstrap_setup_tmp_bytes(&module, &bootstrap_layout, base.plan(), base.keys_layout());
+        let scratch_size = bootstrap_setup_tmp_bytes(&module, &bootstrap_layout, preset.plan(), preset.keys_layout());
         let mut scratch = ScratchOwned::<BE>::alloc(scratch_size.max(1 << 30));
         let mut scratch_ci = ScratchOwned::<BCI>::alloc(1 << 30);
-        let context = BootstrappingCIContext::<BE, BCI, f64>::compile(
+        let context = BootstrappingContext::<BE, f64, BCI>::compile_ci(
             &module,
             &wide,
             &ci,
@@ -446,18 +486,14 @@ where
             &mut scratch_ci.borrow(),
         )
         .unwrap();
-        let mut source_sk = Source::new([0; 32]);
-        let mut sk_raw = module.glwe_secret_alloc_from_infos(&bootstrap_layout.glwe_layout);
-        module.glwe_secret_fill_ternary_hw(&mut sk_raw, base.dense_secret_hamming_weight(), &mut source_sk);
-        let mut sk = module.glwe_secret_prepared_alloc_from_infos(&bootstrap_layout.glwe_layout);
-        module.glwe_secret_prepare(&mut sk, &sk_raw);
+        let reference = ReferenceInput::new(&module, &preset, &mut scratch);
         let (mut source_xs, mut source_xa, mut source_xe) = (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
         let keys = context
-            .generate_keys(
+            .generate_keys_ci(
                 &module,
                 &wide,
                 &ci,
-                &sk_raw,
+                &reference.sk_raw,
                 preset.keys_layout(),
                 &mut source_xs,
                 &mut source_xe,
@@ -466,25 +502,7 @@ where
                 &mut scratch_ci.borrow(),
             )
             .unwrap()
-            .prepare::<BE, BCI>(&module, &wide, &ci, &mut scratch.borrow(), &mut scratch_ci.borrow());
-
-        let (want_re, want_im) = test_vector_1::<f64>(n / 2);
-        let mut input_pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), base2k.into(), input_layout.k());
-        input_pt.set_meta(input_layout.meta());
-        module
-            .ckks_encode_reim_into(&mut input_pt, &want_re, &want_im, &mut scratch.borrow())
-            .unwrap();
-        let mut input = module.ckks_ciphertext_alloc_from_glwe_infos(&input_layout);
-        let (mut input_xa, mut input_xe) = (Source::new([3; 32]), Source::new([4; 32]));
-        module
-            .ckks_encrypt_sk(
-                &mut input,
-                &input_pt,
-                &sk,
-                &mut input_xe,
-                &mut input_xa,
-                &mut scratch.borrow(),
-            )
+            .prepare_ci::<BE, BCI>(&module, &wide, &ci, &mut scratch.borrow(), &mut scratch_ci.borrow())
             .unwrap();
         let output = module.ckks_ciphertext_alloc_from_glwe_infos(&bootstrap_layout);
 
@@ -505,23 +523,19 @@ where
             keys,
             scratch,
             scratch_ci,
-            input,
+            reference,
             output,
-            sk,
-            want_re,
-            want_im,
         };
         run.bootstrap();
-        let base = run.preset.base();
         assert_eq!(
             run.output.k().as_usize(),
-            base.output_k(),
+            run.preset.output_k(),
             "{}: output width",
             run.preset.name()
         );
         assert_eq!(
             run.output.meta(),
-            base.output_layout().meta(),
+            run.preset.output_layout().meta(),
             "{}: output metadata",
             run.preset.name()
         );
@@ -529,7 +543,7 @@ where
     }
 
     /// The preset being exercised.
-    pub fn preset(&self) -> &BootstrappingCIPreset {
+    pub fn preset(&self) -> &BootstrappingPreset {
         &self.preset
     }
 
@@ -541,7 +555,7 @@ where
                 &self.wide,
                 &self.ci,
                 &mut self.output,
-                &self.input,
+                &self.reference.input,
                 &self.context,
                 &self.keys,
                 &mut self.scratch.borrow(),
@@ -553,15 +567,13 @@ where
     /// Bootstraps the reference input at the working width `k` and returns the
     /// error, for a width the keys do not cover.
     pub fn bootstrap_error_at(&mut self, k: usize) -> crate::CKKSError {
-        let mut output = self
-            .module
-            .ckks_ciphertext_alloc(self.preset.base().base2k().into(), k.into());
+        let mut output = self.module.ckks_ciphertext_alloc(self.preset.base2k().into(), k.into());
         self.module
             .ckks_bootstrap_ci(
                 &self.wide,
                 &self.ci,
                 &mut output,
-                &self.input,
+                &self.reference.input,
                 &self.context,
                 &self.keys,
                 &mut self.scratch.borrow(),
@@ -573,40 +585,13 @@ where
     /// Decrypts the last bootstrap output and measures its precision against
     /// the reference vector, as `(real, imaginary)` statistics.
     pub fn precision(&mut self) -> (PrecisionStats, PrecisionStats) {
-        let output = &self.output;
-        assert_canonical_at_k::<BE>("bootstrap CI preset", output);
-        let log_budget = output
-            .log_budget()
-            .min(PRECISION_LOG_BUDGET)
-            .min(127usize.saturating_sub(output.log_delta()));
-        let mut output_pt = self.module.ckks_pt_vec_alloc(
-            self.module.ckks_max_slots(),
-            output.base2k(),
-            (output.log_delta() + log_budget).into(),
-        );
-        output_pt.set_meta(GLWEPlaintextMeta {
-            scale: Scale::Log(output.log_delta()),
-            slots: SlotsKind::Complex,
-            log_sparsity: 0,
-        });
-        self.module
-            .ckks_decrypt(&mut output_pt, output, &self.sk, &mut self.scratch.borrow())
-            .unwrap();
-        let n = self.preset.base().n();
-        let (mut got_re, mut got_im) = (vec![0.0; n / 2], vec![0.0; n / 2]);
-        self.module
-            .ckks_decode_reim_into(&output_pt, &mut got_re, &mut got_im, &mut self.scratch.borrow())
-            .unwrap();
-        let log_delta = self.preset.base().log_delta();
-        (
-            precision_stats(&got_re, &self.want_re, log_delta),
-            precision_stats(&got_im, &self.want_im, log_delta),
-        )
+        self.reference
+            .precision(&self.module, &self.preset, &self.output, &mut self.scratch)
     }
 }
 
 /// Runs every preset with EvalMod on the conjugate-invariant ring
-/// ([`all_ci`]) once, with `BE` for the standard stages and `BCI` for
+/// ([`all`], [`BootstrappingPlan::eval_mod_ring`]) once, with `BE` for the standard stages and `BCI` for
 /// EvalMod, and checks the measured output precision against the precision the
 /// preset advertises, at the output width and scale of the preset it extends.
 /// Full-size bootstraps are slow, so backends register this as an ignored test.
@@ -633,7 +618,8 @@ where
     poulpy_core::layouts::GLWETensorKey<BE::OwnedBuf, BE::ZnxWord>: poulpy_core::layouts::GGLWEToBackendRef<BCI>,
 {
     let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
-    for preset in all_ci().unwrap() {
+    let presets = all().unwrap().into_iter();
+    for preset in presets.filter(|preset| preset.plan().eval_mod_ring() != EvalModRing::Standard) {
         let mut run = BootstrappingCIPresetRun::<BE, BCI>::setup(preset);
 
         // A working width past what the keys cover fails at entry: 1024 bits is more
@@ -652,7 +638,7 @@ where
         );
 
         let (re, im) = run.precision();
-        let base = run.preset().base();
+        let base = run.preset();
         println!(
             "PRECISION backend={backend} preset={} base2k={} re_min={:.2}b re_avg={:.2}b im_min={:.2}b im_avg={:.2}b (advertised {}b)",
             run.preset().name(),

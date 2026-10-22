@@ -342,6 +342,7 @@ fn keys_layout(atk: &GGLWELayout, d2s: &GGLWELayout, s2d: &GGLWELayout, encapsul
             dense_to_sparse: (*d2s).into(),
             sparse_to_dense: Some((*s2d).into()),
         }),
+        conversion: None,
     }
 }
 
