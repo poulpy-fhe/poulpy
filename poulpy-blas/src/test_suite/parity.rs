@@ -1187,12 +1187,12 @@ fn assert_largest_radix<B: Backend + MaxBase2k>(
     }
 }
 
-/// The radix helpers on `4 x 4` blocks on the 32 slots of `n = 64`, against counts made by hand. A giant step groups at
-/// most 4 diagonals of sigma and of a right product's block maps (offsets `-3..=3`, split at 29: `{0, 1, 2, 3}` and
-/// `{29, 30, 31}`), 3 of tau, `tau_rep` and a left product's block maps (split at 12: `{0, 4, 8}`, `{12, 20}` and
-/// `{24, 28}`), and 1 of a shift; every diagonal is `p + base2k` bits wide. Over every failure target from 1 to 1000
-/// bits, each helper returns the largest radix at which [`Module::max_base2k`] holds the count of its call at that
-/// radix:
+/// The radix helpers on `4 x 4` blocks on 32 slots, `n = 64` or `n = 32` on the conjugate-invariant ring, against
+/// counts made by hand. A giant step groups at most 4 diagonals of sigma and of a right product's block maps (offsets
+/// `-3..=3`, split at 29: `{0, 1, 2, 3}` and `{29, 30, 31}`), 3 of tau, `tau_rep` and a left product's block maps (split
+/// at 12: `{0, 4, 8}`, `{12, 20}` and `{24, 28}`), and 1 of a shift; every diagonal is `p + base2k` bits wide. Over
+/// every failure target from 1 to 1000 bits, each helper returns the largest radix at which [`Module::max_base2k`]
+/// holds the count of its call at that radix:
 /// - `blas_matmul`: the largest of the kernel's `2 L K d`, `L` the limbs of the narrower terms, `a.k - 2p` and
 ///   `b.k - 2p`, or `b.k - p` for a `b` holding one matrix, and, for each map that makes the terms, the count
 ///   `blas_matmul_pt_right` documents for one term, read at `a.k` or `b.k` for sigma and tau and at that less `p` for a
@@ -1205,9 +1205,7 @@ fn assert_largest_radix<B: Backend + MaxBase2k>(
 ///   largest giant group equals `left_mul`'s at every shape (the dimensions `d = 2` to `128` at one to eight matrix
 ///   slots were checked), so that case covers the wiring only;
 ///
-/// and, for a sum so long that no FFT64 radix holds it at a failure target of 2^60 bits, `Some(0)`. A backend without a
-/// model, as the conjugate-invariant ring, gives `None` from all three, the products by public matrices under every
-/// algorithm.
+/// and, for a sum so long that no FFT64 radix holds it at a failure target of 2^60 bits, `Some(0)`.
 pub fn test_blas_max_base2k<B, F>(params: CKKSTestParams, module: &Module<B>)
 where
     B: BlasParityBackend + MaxBase2k,
@@ -1235,21 +1233,6 @@ where
             BlasPtOperandLayout::new(plan, module.ckks_max_slots(), 1, inner, 1, base2k, meta),
         )
     };
-    if Module::<B>::max_base2k(n, 1, 1, false).is_none() {
-        let (a, b) = (layout(width(params), 0, 2, 3), layout(width(params), 0, 3, 2));
-        assert_eq!(blas_matmul_max_base2k::<B>(&a, &b, &ctx, 128), None);
-        for algorithm in PT_ALGORITHMS.into_iter().chain(MASKED_PT_ALGORITHMS) {
-            assert_eq!(
-                blas_matmul_pt_right_max_base2k::<B>(&a, &right_operand(3, algorithm, p), &ctx, 128),
-                None
-            );
-            assert_eq!(
-                blas_matmul_pt_left_max_base2k::<B>(&left_operand(3, algorithm, p), &b, &ctx, 128),
-                None
-            );
-        }
-        return;
-    }
     assert_eq!(module.ckks_max_slots(), 32, "the counts below are those of 32 slots");
 
     // `(g, input width)` of sigma, the left shifts, tau (or `tau_rep`) and the right shifts, beside the kernel's count.

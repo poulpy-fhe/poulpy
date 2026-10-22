@@ -23,9 +23,13 @@
 - **Breaking:** `ScalarZnx` implements `Debug` on host-readable storage only and prints its shape and the first 16 coefficients of each column, as `VecZnx` and `MatZnx` do, where it derived `Debug` and printed its whole buffer, and `CnvPVecL` and `CnvPVecR` implement `PartialEq` and `Eq` (same shape, same bytes), as `VmpPMat` does ([#450](https://github.com/poulpy-fhe/poulpy/issues/450)).
   `VecZnxDft`, `VecZnxBig`, `SvpPPol`, `VmpPMat`, `CnvPVecL` and `CnvPVecR` implement `Debug`, which prints the shape only.
   The test suites compare layouts with `assert_eq!` through these impls, and raw bytes only under a static message, so a failing assertion no longer prints whole buffers.
+- `max_base2k_ntt` and `max_base2k_fft64` model the conjugate-invariant ring, read from the backend's `Ring` ([#435](https://github.com/poulpy-fhe/poulpy/issues/435)).
+  The constant coefficient of a product has variance `4n - 3` there, twice the others', and a square's has mean `(2n - 1)` times the input variance, which comes off the NTT threshold `Q/2` and, summed coherently through the inverse DCT, adds `2u^2/3` of its square to the FFT64 error.
+  FFT64 budgets each DCT as its cyclic FFT plus three stages. At `n = 2^16` and 128 bits, 32 products select 53 bits on NTT4x30 and 18 on FFT64, one square 52 and 17.
 
 ### CPU backends
 
+- Every conjugate-invariant backend type returns `Some` from `max_base2k`: each backend implements `MaxBase2k` once for both rings, where the conjugate-invariant types returned `None`.
 - The native CKKS encapsulated modulus raise (portable, AVX2, AVX-512, and their Rayon variants) and the fused IFMA giant step leave a key with a row offset to the reference, which refuses it, and the AVX-512 rank-one relinearization refuses one, instead of using it as an offset-free key.
 - Every CPU backend reads the right operand of the convolution applies through the Galois element in the pass that reads a sparse operand.
 - **Breaking:** the `Reim4Convolution` and `Fft64RingArith` convolution methods take a `RightRead` in place of `b_log_gap`, built with `right_read_fft64` or `right_read_ntt`.
@@ -338,7 +342,7 @@
   Add output-layout queries (`blas_matmul_output_layout`, `blas_matmul_prepared_output_layout`, `blas_matmul_pt_right_output_layout`, `blas_matmul_pt_left_output_layout`, `blas_transpose_output_layout`, `blas_rotate_rows_output_layout`, `blas_rotate_cols_output_layout`, `blas_rotate_output_layout`, `blas_sum_output_layout`) returning the `BlasLayout` an operation stamps on `res`.
 - `blas_matmul_pt_left` on a replicated input by a `Diagonal` operand of one public matrix on more than one matrix slot takes `d`-diagonal block maps (`BlasPtOperand::block_replicated`, `maps::left_mul_rep`, scheduled at `left_mul`'s giant step), 22 key switches per block at `d = 128` against 30 for the `2d - 1` maps of the other inputs, with the same key set.
   Such operands hold `(3d - 1) d^2` slot values per block, against `(2d - 1) d^2`.
-- `blas_backend_test_suite!`, `blas_conjugate_invariant_test_suite!`, `blas_parity_test_suite!` and `blas_max_base2k_test_suite!` register the BLAS test suites for a backend under `test-utils`, the last for a backend that implements `MaxBase2k`.
+- `blas_backend_test_suite!`, `blas_conjugate_invariant_test_suite!`, `blas_parity_test_suite!` and `blas_max_base2k_test_suite!` register the BLAS test suites for a backend under `test-utils`, the last for a backend that implements `MaxBase2k`, at 32 slots (`n = 32` on the conjugate-invariant ring).
   The parity suite also runs a `concurrency` test.
 - A grid records its batch (`BlasGridInfos::mat_slots`), which `BlasCiphertext::from_blocks` reads from its blocks' label, and a product of two batches broadcasts the smaller.
   Each output block of a product of encrypted grids is one JKLS sum relinearized once through `ckks_dot_product_prepared`, over terms converted once to the transform domain (summed in the transform domain where poulpy-ckks takes its one-pass product, on rank 1, under the radix rule `blas_matmul` states).

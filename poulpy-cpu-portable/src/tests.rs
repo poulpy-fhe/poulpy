@@ -19,11 +19,53 @@ mod ckks_tests;
 mod delegating_backend;
 mod derived_scratch;
 
+/// A square's constant coefficient has mean `(2n - 1) * 2^(2K) / 12` on the conjugate-invariant ring: one radix past
+/// the model's, it exceeds `Q/2` by itself.
 #[test]
-fn conjugate_invariant_max_base2k_has_no_model() {
-    assert_eq!(Module::<crate::FFT64CIPortable>::max_base2k(1 << 13, 1, 128, true), None);
-    assert_eq!(Module::<crate::NTT4x30CIPortable>::max_base2k(1 << 13, 1, 128, true), None);
-    assert_eq!(Module::<NTT4x30Portable>::max_base2k(1 << 13, 1, 128, true), Some(55));
+fn conjugate_invariant_square_mean_sets_the_ntt_radix() {
+    use poulpy_hal::{api::*, layouts::*};
+    use rand::{RngExt, SeedableRng, rngs::StdRng};
+
+    type BE = crate::NTT4x30CIPortable;
+    let n = 1 << 13;
+    assert_eq!(Module::<NTT4x30Portable>::max_base2k(n, 1, 128, true), Some(55));
+    let k = Module::<BE>::max_base2k(n, 1, 128, true).unwrap();
+    assert_eq!(k, 54);
+    let module = Module::<BE>::new(n as u64);
+    let mut scratch = ScratchOwned::<BE>::alloc(module.svp_apply_dft_tmp_bytes(1).max(module.vec_znx_idft_apply_tmp_bytes()));
+    let mut rng = StdRng::seed_from_u64(0);
+    for radix in [k, k + 1] {
+        let half = 1i64 << (radix - 1);
+        let mut a = module.vec_znx_alloc(n, 1, 1);
+        let mut b = module.scalar_znx_alloc(n, 1);
+        for j in 0..n {
+            let x = rng.random_range(-half..half);
+            a.at_mut(0, 0)[j] = x;
+            b.at_mut(0, 0)[j] = x;
+        }
+        let coeffs = a.at(0, 0);
+        let want = (coeffs[0] as i128).pow(2) + coeffs[1..].iter().map(|&x| 2 * (x as i128).pow(2)).sum::<i128>();
+        let mut ppol = module.svp_ppol_alloc(n, 1, PrepareHint::Reuse);
+        let mut dft = module.vec_znx_dft_alloc(n, 1, 1);
+        let mut big = module.vec_znx_big_alloc(n, 1, 1);
+        module.svp_prepare(
+            &mut ppol.to_backend_mut(),
+            0,
+            &poulpy_hal::test_suite::scalar_znx_backend_ref::<BE>(&b),
+            0,
+        );
+        module.svp_apply_dft(
+            &mut dft.to_backend_mut(),
+            0,
+            &ppol.to_backend_ref(),
+            0,
+            &vec_znx_backend_ref::<BE>(&a),
+            0,
+            &mut scratch.arena(),
+        );
+        module.vec_znx_idft_apply(&mut big.to_backend_mut(), 0, &dft.to_backend_ref(), 0, &mut scratch.arena());
+        assert_eq!(big.at(0, 0)[0] == want, radix == k, "radix {radix}");
+    }
 }
 
 #[test]

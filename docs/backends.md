@@ -115,6 +115,7 @@ Select `base2k` with the runtime query `Module::<BE>::max_base2k(n, products, fa
 Set `squaring = false` for independent products and `true` if any term is a square, counting each square once.
 For a sum of 32 products, `Module::<NTT4x30Portable>::max_base2k(1 << 16, 32, 128, false)` returns `Some(54)`; the same query gives `Some(19)` for `FFT64Portable` and `Some(57)` for `NTT3x42Ifma`.
 For a single square, `Module::<NTT4x30Portable>::max_base2k(1 << 16, 1, 128, true)` returns `Some(55)`; the same query gives `Some(19)` for `FFT64Portable` and `Some(58)` for `NTT3x42Ifma`.
+On the conjugate-invariant ring the same two queries give `Some(53)` and `Some(52)` for `NTT4x30CIPortable`, `Some(18)` and `Some(17)` for `FFT64CIPortable`, and `Some(56)` and `Some(55)` for `NTT3x42CIIfma`: its constant coefficient has twice the variance, and a square's has a positive mean.
 The estimates cover independent accumulated products or squares of centered-uniform inputs, with Gaussian tails and a stochastic roundoff model for FFT64. They are not guarantees for arbitrary inputs.
 See [Failure estimates for base-2^K arithmetic](base2k-failure-probability.md) for the models and an example.
 `Some(0)` means no positive radix fits, and `None` means the backend has no applicable model.
