@@ -24,6 +24,7 @@ macro_rules! impl_oracle_core {
         ::poulpy_core::impl_linear_transformation_reference_full!($be);
         ::poulpy_core::impl_operations_reference_full!($be);
         ::poulpy_core::impl_polynomial_evaluation_derived_full!($be);
+        ::poulpy_core::impl_glwe_trace_derived_full!($be);
     };
 }
 
@@ -35,7 +36,6 @@ macro_rules! impl_oracle_core_standard {
         ::poulpy_core::impl_glwe_rotate_reference_full!($be);
         ::poulpy_core::impl_ggsw_rotate_derived_full!($be);
         ::poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!($be);
-        ::poulpy_core::impl_glwe_trace_derived_full!($be);
     };
 }
 

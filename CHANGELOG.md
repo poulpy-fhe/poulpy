@@ -32,6 +32,7 @@
 
 ### CPU backends
 
+- `impl_cpu_core_defaults!` registers the core trace on both rings, where each standard backend registered it apart.
 - Every conjugate-invariant backend type has a `max_base2k` model: each backend implements `MaxBase2k` once for both rings, where the conjugate-invariant types returned `None`.
 - The AVX-512 rank-one relinearization and the fused IFMA giant step refuse a key that does not cover their input, as the reference does.
 - The native CKKS encapsulated modulus raise (portable, AVX2, AVX-512, and their Rayon variants) and the fused IFMA giant step leave a key with a row offset to the reference, which refuses it, and the AVX-512 rank-one relinearization refuses one, instead of using it as an offset-free key.
@@ -220,6 +221,11 @@
   `glwe_secret_tensor_prepare_tmp_bytes` grows by those buffers, and the tensor key and GGLWE-to-GGSW key encryptions reuse that scratch for the encryption, so their queries count the larger of the two phases instead of their sum.
 - **Fix:** `glwe_eval_linear_transformation_tmp_bytes` counts the scratch of the per-column and final BIG normalizations and of the final iDFT of the lazy giant-step path, and of the BIG normalization of the per-giant fallback ([#426](https://github.com/poulpy-fhe/poulpy/issues/426)).
   The lazy path counts its phases as sequential instead of summing them, so the query can shrink; outputs are unchanged.
+- Add `layouts::max_lazy_terms(base2k, coefficients)`, the most canonical digits a lazy sum holds before it must be normalized: the larger of the worst case `2^(63 - base2k)` and the average-case count whose Gaussian sum leaves the normalizer's domain `[-2^62, 2^62]` with probability at most `2^-128` over the coefficients, for independent centered uniform digits (`docs/base2k-failure-probability.md`).
+- **Breaking:** `GLWETrace` traces over a window of levels in either direction, summed or normalized: `glwe_trace` and `glwe_trace_assign` take `levels: Range<usize>`, `reverse` and `normalize` in place of `skip`, which was `skip..log2(n)`, forward and normalized, and `glwe_trace_galois_elements` takes the levels and the direction.
+  Level 0 is the conjugation, on the standard ring only, and level `i` the rotation by `2^(i-1)` slots, so a full trace ends at `log2(n)` on the standard ring and at `log2(n) + 1` on the conjugate-invariant ring, whose backends now implement `GLWETraceImpl`, part of `impl_core_reference_full!`.
+  `reverse` visits the levels from the last down, each by its inverse element; summed, each level normalizes the running sum in place when its canonical flag is clear, and `glwe_trace_assign_tmp_bytes` covers that normalization.
+  The test suite adds `test_glwe_trace_sum`, and the trace parity covers summed and reversed windows.
 
 ### `poulpy-ckks`
 

@@ -39,8 +39,14 @@ where
     let mut source = Source::new([131; 32]);
     // The key lists name the module's Galois elements; keys for operands of a smaller
     // degree are those of a module of that degree.
+    let log_n = params.n.ilog2() as usize;
     if r.n() == t.n() {
-        assert_eq!(r.glwe_trace_galois_elements(), t.glwe_trace_galois_elements());
+        for reverse in [false, true] {
+            assert_eq!(
+                r.glwe_trace_galois_elements(0..log_n, reverse),
+                t.glwe_trace_galois_elements(0..log_n, reverse)
+            );
+        }
         assert_eq!(r.glwe_pack_galois_elements(), t.glwe_pack_galois_elements());
     }
     for &rank in &shapes.ranks {
@@ -61,7 +67,12 @@ where
         };
         let mut keys_r = HashMap::new();
         let mut keys_t = HashMap::new();
-        for p in r.glwe_pack_galois_elements() {
+        // The packing keys, then the inverse rotations the reverse traces add.
+        for p in r
+            .glwe_pack_galois_elements()
+            .into_iter()
+            .chain(r.glwe_trace_galois_elements(1..log_n, true))
+        {
             let mut key_r = r.glwe_automorphism_key_alloc_from_infos(&k);
             fill_by_digit(r, &mut key_r, 1, &mut source);
             key_r.p = p;
@@ -89,52 +100,71 @@ where
         let mut untagged = r.glwe_alloc_from_infos(&g);
         a_r.transfer_into(&mut untagged);
         untagged.noise = None;
-        for skip in [0, 1, (params.n.ilog2() as usize)] {
+        // Normalized forward traces onto every subring kind, then summed windows forward and reversed, and a
+        // normalized reverse trace.
+        let cases = [
+            (0..log_n, false, true),
+            (1..log_n, false, true),
+            (log_n..log_n, false, true),
+            (1..3, false, false),
+            (1..3, true, false),
+            (2..log_n, true, true),
+        ];
+        for (levels, reverse, normalize) in cases {
+            let label = format!("rank={rank} levels={levels:?} reverse={reverse} normalize={normalize}");
             let mut out_r = ref_glwe(r, &g, &mut source);
             let mut out_t = t.glwe_alloc_from_infos(&g);
             out_r.transfer_into(&mut out_t);
             r.glwe_trace(
                 &mut out_r,
-                skip,
+                levels.clone(),
+                reverse,
+                normalize,
                 &a_r,
                 &keys_r,
                 &mut poisoned_scratch::<BR>(r.glwe_trace_tmp_bytes(&g, &g, &k)).borrow(),
             );
             t.glwe_trace(
                 &mut out_t,
-                skip,
+                levels.clone(),
+                reverse,
+                normalize,
                 &a_t,
                 &keys_t,
                 &mut poisoned_scratch::<BT>(t.glwe_trace_tmp_bytes(&g, &g, &k)).borrow(),
             );
             let mut have = r.glwe_alloc_from_infos(&g);
             out_t.transfer_into(&mut have);
-            assert_glwe_eq!(out_r, have, "trace rank={rank} skip={skip}");
-            if skip == (params.n.ilog2() as usize) {
+            assert_glwe_eq!(out_r, have, "trace {label}");
+            if levels.is_empty() {
                 assert_eq!(out_r, untagged, "empty out-of-place trace must copy the input");
             }
             a_r.transfer_into(&mut out_r);
             a_r.transfer_into(&mut out_t);
             r.glwe_trace_assign(
                 &mut out_r,
-                skip,
+                levels.clone(),
+                reverse,
+                normalize,
                 &keys_r,
                 &mut poisoned_scratch::<BR>(r.glwe_trace_assign_tmp_bytes(&g, &k)).borrow(),
             );
             t.glwe_trace_assign(
                 &mut out_t,
-                skip,
+                levels.clone(),
+                reverse,
+                normalize,
                 &keys_t,
                 &mut poisoned_scratch::<BT>(t.glwe_trace_assign_tmp_bytes(&g, &k)).borrow(),
             );
             out_t.transfer_into(&mut have);
-            assert_glwe_eq!(out_r, have, "trace assign rank={rank} skip={skip}");
-            if skip == (params.n.ilog2() as usize) {
+            assert_glwe_eq!(out_r, have, "trace assign {label}");
+            if levels.is_empty() {
                 assert_eq!(out_r, untagged, "empty trace must preserve coefficients and layout");
             }
         }
-        // Empty traces require no key lookup. Invalid skips reject before
-        // changing output, consistently with the assign entry point.
+        // Empty traces require no key lookup. Levels past the ring's trace reject
+        // before changing output, consistently with the assign entry point.
         macro_rules! check_trace_edges {
             ($be:ty, $module:ident, $a:ident) => {{
                 let empty_keys: HashMap<
@@ -147,7 +177,9 @@ where
                 let mut scratch = poisoned_scratch::<$be>($module.glwe_trace_tmp_bytes(&g, &g, &k));
                 $module.glwe_trace(
                     &mut out,
-                    (params.n.ilog2() as usize),
+                    log_n..log_n,
+                    false,
+                    true,
                     &$a,
                     &empty_keys,
                     &mut scratch.borrow(),
@@ -161,23 +193,27 @@ where
                         if assign {
                             $module.glwe_trace_assign(
                                 &mut out,
-                                (params.n.ilog2() as usize) + 1,
+                                log_n..log_n + 1,
+                                false,
+                                true,
                                 &empty_keys,
                                 &mut scratch.borrow(),
                             );
                         } else {
                             $module.glwe_trace(
                                 &mut out,
-                                (params.n.ilog2() as usize) + 1,
+                                log_n..log_n + 1,
+                                false,
+                                true,
                                 &$a,
                                 &empty_keys,
                                 &mut scratch.borrow(),
                             );
                         }
                     }));
-                    assert!(rejected.is_err(), "trace accepted skip greater than log_n");
+                    assert!(rejected.is_err(), "trace accepted levels past log_n");
                     out.transfer_into(&mut have);
-                    assert_eq!(have, initial, "invalid skip changed output");
+                    assert_eq!(have, initial, "invalid levels changed output");
                 }
             }};
         }

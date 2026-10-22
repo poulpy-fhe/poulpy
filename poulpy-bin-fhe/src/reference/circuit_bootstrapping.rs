@@ -557,7 +557,16 @@ fn circuit_bootstrap_prepared<R, L, M, BRA, BE>(
                 ),
                 CircuitBootstrappingOutput::Constant => {
                     let (mut traced, mut op_scratch) = scratch_1.borrow().take_glwe_scratch(glwe_atk_layout);
-                    module.glwe_trace(&mut traced, 0, &res_glwe_atk_layout, &key.atk, &mut op_scratch);
+                    let log_n = traced.log_n();
+                    module.glwe_trace(
+                        &mut traced,
+                        0..log_n,
+                        false,
+                        true,
+                        &res_glwe_atk_layout,
+                        &key.atk,
+                        &mut op_scratch,
+                    );
                     module.glwe_copy(&mut res_row, &traced, &mut op_scratch);
                 }
             }
@@ -597,9 +606,12 @@ fn post_process<R, A, M, H, BE>(
         let (mut packed, scratch_2) = scratch_1.take_glwe_scratch(a);
         let (mut cts_vec, mut op_scratch) = scratch_2.take_glwe_slice_scratch(steps, a);
 
+        let log_n = a_trace.log_n();
         module.glwe_trace(
             &mut a_trace,
-            module.log_n() - log_gap_in + 1,
+            module.log_n() - log_gap_in + 1..log_n,
+            false,
+            true,
             a,
             auto_keys,
             &mut op_scratch.borrow(),
@@ -622,7 +634,16 @@ fn post_process<R, A, M, H, BE>(
         module.glwe_copy(res, &packed, &mut op_scratch);
     } else {
         let (mut traced, mut op_scratch) = scratch.borrow().take_glwe_scratch(a);
-        module.glwe_trace(&mut traced, module.log_n() - log_gap_in + 1, a, auto_keys, &mut op_scratch);
+        let log_n = traced.log_n();
+        module.glwe_trace(
+            &mut traced,
+            module.log_n() - log_gap_in + 1..log_n,
+            false,
+            true,
+            a,
+            auto_keys,
+            &mut op_scratch,
+        );
         module.glwe_copy(res, &traced, &mut op_scratch);
     }
 }

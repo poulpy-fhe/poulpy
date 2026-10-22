@@ -18,7 +18,7 @@ use std::collections::HashMap;
 
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, CyclotomicOrder, Data, HostDataMut, HostDataRef, Module, ScratchOwned, ZnxView, ZnxViewMut},
+    layouts::{Backend, Data, HostDataMut, HostDataRef, Module, ScratchOwned, ZnxView, ZnxViewMut},
     source::Source,
     test_suite::TestParams,
 };
@@ -267,7 +267,7 @@ where
     let mut twins: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = HashMap::new();
     let mut trace_bytes: usize = 0;
 
-    let gal_els: Vec<i64> = crate::oep::derived::structure::trace_galois_elements(module.log_n(), module.cyclotomic_order());
+    let gal_els: Vec<i64> = module.glwe_trace_galois_elements(0..module.log_n(), false);
     for (salt, gal_el) in gal_els.iter().enumerate() {
         let (dsize, dnum) = shapes[salt % shapes.len()];
         let stored = GLWEAutomorphismKeyLayout {
@@ -326,8 +326,15 @@ where
     want.data.raw_mut().copy_from_slice(have.data.raw());
 
     let mut scratch = poisoned_scratch::<BE>(trace_bytes);
-    module.glwe_trace_assign(&mut have, 0, &AtDsize(&keys, effective), &mut scratch.borrow());
-    module.glwe_trace_assign(&mut want, 0, &twins, &mut scratch.borrow());
+    module.glwe_trace_assign(
+        &mut have,
+        0..module.log_n(),
+        false,
+        true,
+        &AtDsize(&keys, effective),
+        &mut scratch.borrow(),
+    );
+    module.glwe_trace_assign(&mut want, 0..module.log_n(), false, true, &twins, &mut scratch.borrow());
     same(&have, &want, "trace");
 }
 
