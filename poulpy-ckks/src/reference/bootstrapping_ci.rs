@@ -83,9 +83,18 @@ where
                 source,
             })?;
     }
-    // The widths of the conversions, as the presets lay their keys out.
-    let traced = bootstrap_k - base.coeffs_to_slots().consumed_bits() + base.c2s_guard_bits() - ctx.pre().log_delta();
-    let embedded = traced - base.eval_mod().plan.consumed_bits();
+    // The widths of the conversions, as the presets lay their keys out: what
+    // CoeffsToSlots and the product by `u` leave of the working width, then what
+    // EvalMod leaves of that.
+    let consumed = base.coeffs_to_slots().consumed_bits() + ctx.pre().log_delta();
+    let eval_mod = base.eval_mod().plan.consumed_bits();
+    ckks_ensure!(
+        bootstrap_k >= consumed + eval_mod,
+        "{op}: a working width of {bootstrap_k} bits is below the {} that CoeffsToSlots, the conversion and EvalMod consume",
+        consumed + eval_mod
+    );
+    let traced = bootstrap_k - consumed;
+    let embedded = traced - eval_mod;
     let k = TorusPrecision(widths.eval_mod_relinearization_k(traced, ct_in.log_delta()) as u32);
     check_covers(op, keys.tensor_key.gglwe_layout(), k).map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
         op,

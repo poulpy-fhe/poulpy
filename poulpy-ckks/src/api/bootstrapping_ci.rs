@@ -28,7 +28,11 @@ use crate::{
 /// or [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey),
 /// whose `source` is the refusal; and the trace and embed keys must cover the
 /// conversions, or it fails with
-/// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand).
+/// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand). The
+/// first-factor keys, or a sparse-to-dense key with a row offset, are laid out
+/// for one raise: one that does not fit the raise this bootstrap runs fails then
+/// too, with an error that says which key and width. So does a working width
+/// below what CoeffsToSlots, the conversion and EvalMod consume.
 pub trait CKKSBootstrappingCIOps<BE: Backend, BCI: Backend> {
     /// Scratch of [`Self::ckks_bootstrap_ci`]: `(scratch, scratch_ci)`.
     fn ckks_bootstrap_ci_tmp_bytes<C1, C2, F>(

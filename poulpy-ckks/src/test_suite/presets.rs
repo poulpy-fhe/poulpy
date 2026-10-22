@@ -451,15 +451,6 @@ where
             &mut scratch_ci.borrow(),
         )
         .unwrap();
-        let (boot_scratch, boot_scratch_ci) =
-            module.ckks_bootstrap_ci_tmp_bytes(&wide, &ci, &bootstrap_layout, &input_layout, &context, preset.keys_layout());
-        if boot_scratch > BE::len_bytes(&scratch.data) {
-            scratch = ScratchOwned::<BE>::alloc(boot_scratch);
-        }
-        if boot_scratch_ci > BCI::len_bytes(&scratch_ci.data) {
-            scratch_ci = ScratchOwned::<BCI>::alloc(boot_scratch_ci);
-        }
-
         let mut source_sk = Source::new([0; 32]);
         let mut sk_raw = module.glwe_secret_alloc_from_infos(&bootstrap_layout.glwe_layout);
         module.glwe_secret_fill_ternary_hw(&mut sk_raw, base.dense_secret_hamming_weight(), &mut source_sk);
@@ -501,6 +492,14 @@ where
             )
             .unwrap();
         let output = module.ckks_ciphertext_alloc_from_glwe_infos(&bootstrap_layout);
+
+        // The setup takes generous arenas, the compilation and key generation of the
+        // CI pipeline having no scratch query; the bootstraps run on exactly the
+        // scratch they advertise.
+        let (boot_scratch, boot_scratch_ci) =
+            module.ckks_bootstrap_ci_tmp_bytes(&wide, &ci, &bootstrap_layout, &input_layout, &context, preset.keys_layout());
+        let scratch = ScratchOwned::<BE>::alloc(boot_scratch);
+        let scratch_ci = ScratchOwned::<BCI>::alloc(boot_scratch_ci);
 
         let mut run = Self {
             preset,

@@ -189,7 +189,12 @@ where
                     source,
                 })?;
         }
-        let eval_mod_k = bootstrap_k - ctx.coeffs_to_slots().consumed_bits();
+        let c2s = ctx.coeffs_to_slots().consumed_bits();
+        ckks_ensure!(
+            bootstrap_k >= c2s,
+            "{op}: a working width of {bootstrap_k} bits is below the {c2s} that CoeffsToSlots consumes"
+        );
+        let eval_mod_k = bootstrap_k - c2s;
         let k = TorusPrecision(widths.eval_mod_relinearization_k(eval_mod_k, ct_in.log_delta()) as u32);
         CoveringKeys(keys.tensor_key())
             .get_tensor_key(k)

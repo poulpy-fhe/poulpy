@@ -631,8 +631,9 @@ fn build_ci(name: &'static str, spec: PresetSpec, conversion: EvalModCIPlan) -> 
         log_n: spec.log_n + 1,
         ..spec
     };
-    let traced =
-        bootstrap_k - plan.base().coeffs_to_slots().consumed_bits() + plan.base().c2s_guard_bits() - conversion.pre_log_delta;
+    // CoeffsToSlots and the product by `u` leave the raised width; the C2S guard
+    // bits are only dropped from the scale at the output.
+    let traced = bootstrap_k - plan.base().coeffs_to_slots().consumed_bits() - conversion.pre_log_delta;
     let embedded = traced - plan.base().eval_mod().consumed_bits();
     // EvalMod runs on the traced ciphertext.
     let k = plan.base().key_widths().eval_mod_relinearization_k(traced, spec.log_delta);
