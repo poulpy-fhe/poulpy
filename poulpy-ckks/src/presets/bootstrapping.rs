@@ -16,8 +16,7 @@
 //!   `output_k - input_k`.
 //!   S2C-first also reserves the pre-ModUp transform consumption in `input_k`;
 //! - `p`: guaranteed output precision in bits (see [`BootstrappingPreset::log2_precision`]);
-//! - `circuit`: `c2s` (C2S-first) or `s2c` (S2C-first), extended with a suffix for further techniques:
-//!   `ffr` for the first CoeffsToSlots factor on the raise.
+//! - `circuit`: `c2s` (C2S-first) or `s2c` (S2C-first), extended with a suffix for further techniques.
 //!
 //! The suffix `fast` marks the preset tuned for speed,
 //! [`n16_d35_k685_p19_s2c_fast`], at the widths its techniques leave room for.
@@ -75,10 +74,6 @@ use crate::{
 /// Three factors of five layers for the logN16 presets, with the giant steps that
 /// need the fewest key switches.
 const C2S_SCHEDULE: [(usize, usize); 3] = [(5, 4096), (5, 256), (5, 8)];
-/// The logN16 CoeffsToSlots schedule with the first factor applied by the
-/// raise: three layers there, eight diagonals and as many keys, and two factors
-/// of six layers.
-const C2S_FIRST_FACTOR_SCHEDULE: [(usize, usize); 3] = [(3, 1), (6, 512), (6, 8)];
 /// Three factors of four, five and six layers for the logN16 presets.
 const S2C_SCHEDULE: [(usize, usize); 3] = [(4, 4), (5, 128), (6, 4096)];
 
@@ -390,26 +385,6 @@ pub fn n16_d35_k636_p20_c2s() -> Result<BootstrappingPreset> {
     })
 }
 
-/// [`n16_d35_k636_p20_c2s`] with the first CoeffsToSlots factor applied by the
-/// modulus raise ([`BootstrappingPreset::with_first_factor_on_raise`]), at the
-/// same input and output widths.
-///
-/// That factor of three layers consumes no modulus, so the raised width drops by
-/// one CoeffsToSlots scale, 51 bits, to 1330, and the two remaining factors
-/// have six layers each. Its eight diagonals each take a switching key from the
-/// rotated sparse secret to the dense one, which replace the sparse-to-dense
-/// key. The key set is larger: eight keys of 30 MiB in place of one of 29, and
-/// 60 rotation keys instead of 51 for the two six-layer factors, 9386 MiB of
-/// coefficients against 8310.
-pub fn n16_d35_k636_p20_c2s_ffr() -> Result<BootstrappingPreset> {
-    build(PresetSpec {
-        name: "n16_d35_k636_p20_c2s_ffr",
-        c2s_schedule: &C2S_FIRST_FACTOR_SCHEDULE,
-        c2s_first_factor_on_raise: true,
-        ..n16_d35_k636_p20_c2s()?.spec
-    })
-}
-
 /// S2C-first full-slot preset at `N = 2^16` for inputs at scale `2^35`,
 /// producing 733-bit ciphertexts with at least 20 bits of precision.
 ///
@@ -660,12 +635,7 @@ fn build_ci(name: &'static str, spec: PresetSpec, conversion: EvalModCIPlan) -> 
 
 /// Every preset, in a stable order.
 pub fn all() -> Result<Vec<BootstrappingPreset>> {
-    const PRESETS: &[fn() -> Result<BootstrappingPreset>] = &[
-        n16_d35_k636_p20_c2s,
-        n16_d35_k636_p20_c2s_ffr,
-        n16_d35_k733_p20_s2c,
-        n15_d35_k180_p18_c2s,
-    ];
+    const PRESETS: &[fn() -> Result<BootstrappingPreset>] = &[n16_d35_k636_p20_c2s, n16_d35_k733_p20_s2c, n15_d35_k180_p18_c2s];
     PRESETS.iter().map(|build| build()).collect()
 }
 
@@ -1103,6 +1073,44 @@ mod tests {
         assert_eq!(key_shapes([&keys.tensor_key]), [(416, 3)]);
     }
 
+    /// Bytes of the coefficients of the key set of a preset with EvalMod on the CI
+    /// ring, by kind: rotation keys, CI tensor key, encapsulation keys, first-factor
+    /// keys, trace key and embed key.
+    fn ci_key_set_bytes(preset: &BootstrappingCIPreset) -> [usize; 6] {
+        let (keys, plan, log_n) = (preset.keys_layout(), preset.base().plan(), preset.base().log_n());
+        let order = 2i64 << log_n;
+        let mut elements: BTreeSet<i64> = plan.coeffs_to_slots().galois_elements(log_n, order).into_iter().collect();
+        elements.extend(plan.slots_to_coeffs().galois_elements(log_n, order));
+        let rotations = elements.iter().map(|&p| key_bytes(&keys.linear.rotation_key(p))).sum();
+        let encapsulation = keys.linear.encapsulation.as_ref().map_or(0, |encaps| {
+            key_bytes(&encaps.dense_to_sparse) + encaps.sparse_to_dense.as_ref().map_or(0, key_bytes)
+        });
+        let first_factor = keys.linear.first_factor_key.as_ref().map_or(0, |key| {
+            plan.coeffs_to_slots().diagonal_indexes(log_n)[0].len() * key_bytes(key)
+        });
+        [
+            rotations,
+            key_bytes(&keys.tensor_key),
+            encapsulation,
+            first_factor,
+            key_bytes(&keys.trace_key),
+            key_bytes(&keys.embed_key),
+        ]
+    }
+
+    /// [`n16_d35_k685_p19_s2c_fast`] with its first CoeffsToSlots factor evaluated
+    /// by the matrix, at the same output width: the raise then reaches 48 bits more.
+    fn fast_without_first_factor_on_raise() -> BootstrappingCIPreset {
+        const SCHEDULE: [(usize, usize); 4] = [(3, 8), (4, 1024), (4, 64), (4, 4)];
+        let spec = n16_d35_k685_p19_s2c_fast().unwrap().base().spec;
+        let spec = PresetSpec {
+            c2s_schedule: &SCHEDULE,
+            c2s_first_factor_on_raise: false,
+            ..spec
+        };
+        build_ci(spec.name, spec, EVALMOD_CI_CONVERSION).unwrap()
+    }
+
     #[test]
     fn n16_d35_k685_p19_s2c_fast_has_a_smaller_key_set() {
         let mib = |bytes: usize| {
@@ -1115,23 +1123,14 @@ mod tests {
         // 43 rotation keys and no conjugation, the CI tensor key, the dense-to-sparse key,
         // eight first-factor keys and the trace and embed keys of degree 2N: 6845 MiB.
         let preset = n16_d35_k685_p19_s2c_fast().unwrap();
-        let (keys, plan, log_n) = (preset.keys_layout(), preset.base().plan(), preset.base().log_n());
-        let order = 2i64 << log_n;
-        let mut elements: BTreeSet<i64> = plan.coeffs_to_slots().galois_elements(log_n, order).into_iter().collect();
-        elements.extend(plan.slots_to_coeffs().galois_elements(log_n, order));
-        assert_eq!(elements.len(), 43);
-        let rotations = elements.iter().map(|&p| key_bytes(&keys.linear.rotation_key(p))).sum();
-        let first_factor =
-            plan.coeffs_to_slots().diagonal_indexes(log_n)[0].len() * key_bytes(keys.linear.first_factor_key.as_ref().unwrap());
-        let parts = [
-            rotations,
-            key_bytes(&keys.tensor_key),
-            key_bytes(&keys.linear.encapsulation.as_ref().unwrap().dense_to_sparse),
-            first_factor,
-            key_bytes(&keys.trace_key),
-            key_bytes(&keys.embed_key),
-        ];
-        assert_eq!(parts.map(mib), [6243, 99, 3, 240, 198, 62]);
+        assert_eq!(preset.bootstrap_k(), 1383);
+        assert_eq!(ci_key_set_bytes(&preset).map(mib), [6243, 99, 3, 240, 198, 62]);
+
+        // With the first factor evaluated by the matrix, every paid factor runs 48 bits
+        // wider and the sparse-to-dense key comes back: 8001 MiB.
+        let without = fast_without_first_factor_on_raise();
+        assert_eq!(without.bootstrap_k(), 1431);
+        assert_eq!(ci_key_set_bytes(&without).map(mib), [7609, 99, 33, 0, 198, 62]);
     }
 
     #[test]
@@ -1248,12 +1247,15 @@ mod tests {
         assert!(encapsulation.dense_to_sparse.k().as_usize() <= preset.max_sparse_modulus());
     }
 
+    /// The logN16 CoeffsToSlots schedule with the first factor applied by the raise:
+    /// three layers there, eight diagonals and as many keys, and two factors of six.
+    const C2S_FIRST_FACTOR_SCHEDULE: [(usize, usize); 3] = [(3, 1), (6, 512), (6, 8)];
+
     #[test]
     fn first_factor_on_raise_saves_one_factor_of_width() {
-        const SCHEDULE: [(usize, usize); 3] = [(3, 1), (6, 512), (6, 8)];
         // Three factors of CoeffsToSlots, of which the raise takes the first.
         let base = n16_d35_k636_p20_c2s().unwrap();
-        let preset = base.with_first_factor_on_raise(&SCHEDULE).unwrap();
+        let preset = base.with_first_factor_on_raise(&C2S_FIRST_FACTOR_SCHEDULE).unwrap();
 
         // The factor costs no modulus; the widths the application sees do not move.
         assert_eq!(preset.bootstrap_k() + 51, base.bootstrap_k());
@@ -1312,7 +1314,7 @@ mod tests {
             bytes >> 20
         };
         let base = n16_d35_k636_p20_c2s().unwrap();
-        let preset = n16_d35_k636_p20_c2s_ffr().unwrap();
+        let preset = base.with_first_factor_on_raise(&C2S_FIRST_FACTOR_SCHEDULE).unwrap();
         assert_eq!(preset.bootstrap_k() + 51, base.bootstrap_k());
         assert_eq!((preset.input_k(), preset.output_k()), (base.input_k(), base.output_k()));
         // 51 rotation keys, the tensor key and the encapsulation keys: 8310 MiB.
@@ -1328,12 +1330,7 @@ mod tests {
         let names: Vec<&str> = all().unwrap().iter().map(|p| p.name()).collect();
         assert_eq!(
             names,
-            [
-                "n16_d35_k636_p20_c2s",
-                "n16_d35_k636_p20_c2s_ffr",
-                "n16_d35_k733_p20_s2c",
-                "n15_d35_k180_p18_c2s"
-            ]
+            ["n16_d35_k636_p20_c2s", "n16_d35_k733_p20_s2c", "n15_d35_k180_p18_c2s"]
         );
     }
 

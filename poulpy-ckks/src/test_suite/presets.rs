@@ -254,10 +254,8 @@ where
 }
 
 /// Runs every preset once on `BE` and checks the measured output precision
-/// against the precision the preset advertises. The first preset, and the
-/// first with the first CoeffsToSlots factor on the raise, also round-trip
-/// every generated key, both encapsulation directions and the first-factor
-/// keys included.
+/// against the precision the preset advertises. The first preset also
+/// round-trips every generated key, both encapsulation directions included.
 ///
 /// The caller supplies the fixture radix limit; this precision check does
 /// not establish a failure-probability bound. Every backend uses `f64` DFT
@@ -275,12 +273,9 @@ where
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
-    let mut first_factor_roundtrip = true;
     for (index, preset) in all().unwrap().into_iter().enumerate() {
         let preset = preset_with_max_base2k(&preset, fixture_base2k).unwrap();
-        let first_factor = preset.plan().coeffs_to_slots().first_factor_on_raise();
-        let roundtrip = index == 0 || (first_factor && std::mem::take(&mut first_factor_roundtrip));
-        let mut run = BootstrappingPresetRun::<BE>::setup_with_roundtrip(preset, roundtrip);
+        let mut run = BootstrappingPresetRun::<BE>::setup_with_roundtrip(preset, index == 0);
         let (re, im) = run.precision();
         let preset = run.preset();
         println!(
