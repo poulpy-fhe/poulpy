@@ -309,10 +309,9 @@ fn var_canonicalization_with_fold(k: usize, base2k: usize, fold: f64) -> f64 {
     }
 }
 
-/// Rounding of a value normalized at `k` from a wider one, folded by `fold`: uniform over an ulp at a limb
-/// boundary, and at most the half-ulp canonicalization otherwise.
-fn var_rounding(k: usize, base2k: usize, fold: f64) -> f64 {
-    var_canonicalization_with_fold(k, base2k, fold).max(fold * (-2.0 * k as f64).exp2() / 12.0)
+/// Rounding of a value normalized at `k` from a wider one, folded by `fold`: uniform over an ulp at every width.
+fn var_rounding(k: usize, fold: f64) -> f64 {
+    fold * (-2.0 * k as f64).exp2() / 12.0
 }
 
 /// `log2 sqrt(Var)`, clamped to the largest representable noise
@@ -426,10 +425,9 @@ pub(crate) fn var_noise_glwe_mul_relinearize<K: GGLWEInfos>(
     res_k: usize,
 ) -> (f64, f64) {
     let n: f64 = tsk.n().as_usize() as f64;
-    let base2k: usize = tsk.base2k().as_usize();
-    let shared: f64 = var_operands + var_rounding(res_k, base2k, 1.0 + n * var_xs);
+    let shared: f64 = var_operands + var_rounding(res_k, 1.0 + n * var_xs);
     let two_step: f64 = shared
-        + var_rounding(tensor_k, base2k, var_tensor_key(n, 1.0, var_xs))
+        + var_rounding(tensor_k, var_tensor_key(n, 1.0, var_xs))
         + var_noise_relinearize_d2(tsk, tensor_k, var_xs, var_key_err_body, var_key_err_mask);
     let one_pass: f64 =
         shared + ((2 * lo) as f64).exp2() * var_noise_relinearize_d2(tsk, d2_k, var_xs, var_key_err_body, var_key_err_mask);

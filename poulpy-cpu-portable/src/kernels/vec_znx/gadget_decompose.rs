@@ -15,6 +15,8 @@
 
 use poulpy_hal::layouts::{Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut};
 
+use crate::kernels::znx_normalize::{Limbs, LimbsMut};
+
 /// Coefficients per pass: three `i64` buffers of this length live on the stack.
 const CHUNK: usize = 512;
 
@@ -49,14 +51,26 @@ pub fn vec_znx_gadget_decompose_portable<'r, 'a, BE>(
     let low: usize = (j0 + 1) * base2k - gadget_k;
     let nothing_dropped: i64 = (j0 + 1 == a_size && low == 0) as i64;
 
+    assert!(res_col < res.cols() && a_col < a.cols(), "operand column out of range");
+    // Bounds-checks the last limb of each column, the farthest one the kernel touches.
+    if a_size > 0 {
+        let _ = a.at_ptr(a_col, a_size - 1);
+    }
+    let _ = res.at_ptr(res_col, res.size() - 1);
+    let a_limbs = Limbs::new(a.base_ptr(), a.shape(), a_col, 0);
+    let res_shape = res.shape();
+    let res_limbs = LimbsMut::new(res.base_mut_ptr(), res_shape, res_col, 0);
+
     let mut acc = [0i64; CHUNK];
     let mut carry = [0i64; CHUNK];
     let mut neg = [0i64; CHUNK];
     let mut start = 0;
     while start < n {
         let len = CHUNK.min(n - start);
-        let range = start..start + len;
         let (acc, carry, neg) = (&mut acc[..len], &mut carry[..len], &mut neg[..len]);
+        // SAFETY: every limb of both columns is bounds-checked above, and `res` is exclusive and distinct from `a`.
+        let a_limb = |j: usize| unsafe { std::slice::from_raw_parts(a_limbs.ptr.add(j * a_limbs.stride + start), len) };
+        let res_limb = |j: usize| unsafe { std::slice::from_raw_parts_mut(res_limbs.ptr.add(j * res_limbs.stride + start), len) };
 
         // Ties to even at `gadget_k`: half up, low bit cleared when `acc`, sticky over the dropped remainders, is zero.
         if j0 < a_size {
@@ -65,7 +79,7 @@ pub fn vec_znx_gadget_decompose_portable<'r, 'a, BE>(
             let limb_mask: i64 = (1i64 << base2k) - 1;
             for j in (j0 + 1..a_size).rev() {
                 let half: i64 = if j == j0 + 1 && low == 0 { 1 << (base2k - 1) } else { 0 };
-                for ((c, x), &v) in carry.iter_mut().zip(acc.iter_mut()).zip(&a.at(a_col, j)[range.clone()]) {
+                for ((c, x), &v) in carry.iter_mut().zip(acc.iter_mut()).zip(a_limb(j)) {
                     let s = v + *c + half;
                     *c = s >> base2k;
                     *x |= s & limb_mask;
@@ -73,7 +87,7 @@ pub fn vec_znx_gadget_decompose_portable<'r, 'a, BE>(
             }
             let half: i64 = if low > 0 { 1 << (low - 1) } else { 0 };
             let low_mask: i64 = (1i64 << low) - 1;
-            for ((x, &c), &v) in acc.iter_mut().zip(carry.iter()).zip(&a.at(a_col, j0)[range.clone()]) {
+            for ((x, &c), &v) in acc.iter_mut().zip(carry.iter()).zip(a_limb(j0)) {
                 let s = v + c + half;
                 let tie: i64 = ((*x | (s & low_mask)) == 0) as i64;
                 *x = (s >> low) & !tie;
@@ -100,11 +114,11 @@ pub fn vec_znx_gadget_decompose_portable<'r, 'a, BE>(
                 let limb = if next > 0 && next * base2k > pos - w {
                     let s: usize = pos - next * base2k;
                     next -= 1;
-                    Some((s as u32, (w - s) as u32, &a.at(a_col, next)[range.clone()]))
+                    Some((s as u32, (w - s) as u32, a_limb(next)))
                 } else {
                     None
                 };
-                let out = &mut res.at_mut(res_col, q * r + r - 1 - t)[range.clone()];
+                let out = res_limb(q * r + r - 1 - t);
                 match (limb, top) {
                     (Some((s, split, v)), false) if r == 1 => {
                         let lo_mask: i64 = (1i64 << split) - 1;

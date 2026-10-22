@@ -35,10 +35,11 @@
 use crate::{
     api::ScratchArenaTakeBasic,
     layouts::{
-        CnvDftAccTerm, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, MatZnxInfos, Module,
-        ScalarZnxBackendRef, ScratchArena, SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
-        VecZnxBigBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
-        VecZnxDftToBackendRef, VecZnxInfos, VecZnxToBackendMut, VecZnxToBackendRef, VmpPMatBackendRef, ZnxInfos, check_galois,
+        CnvDftAccTerm, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, MatZnxBackendMut,
+        MatZnxBackendRef, MatZnxInfos, Module, ScalarZnxBackendRef, ScratchArena, SvpPPolBackendRef, VecZnxBackendMut,
+        VecZnxBackendRef, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendMut,
+        VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VecZnxToBackendMut, VecZnxToBackendRef,
+        VmpPMatBackendRef, ZnxInfos, check_galois, mat_znx_at_backend_mut_from_mut, mat_znx_at_backend_ref_from_ref,
         scalar_znx_as_vec_znx_backend_ref_from_ref, vec_znx_backend_ref_from_mut, vec_znx_dft_backend_ref_from_mut,
         vec_znx_reborrow_backend_mut,
     },
@@ -460,6 +461,96 @@ pub fn vec_znx_add_scalar_assign_derived<BE>(
         &scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(a),
         a_col,
     );
+}
+
+/// `res += a` entry by entry: `vec_znx_add_assign` on every output column of every (row, input column) entry.
+#[doc(hidden)]
+pub fn mat_znx_add_assign_derived<BE>(module: &Module<BE>, res: &mut MatZnxBackendMut<'_, BE>, a: &MatZnxBackendRef<'_, BE>)
+where
+    BE: HalVecZnxImpl,
+{
+    assert!(
+        (res.n(), res.rows(), res.cols_in(), res.cols_out(), res.size())
+            == (a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size()),
+        "mat_znx_add_assign: res and a differ in degree or dimensions"
+    );
+    for row in 0..res.rows() {
+        for col_in in 0..res.cols_in() {
+            let mut res_entry = mat_znx_at_backend_mut_from_mut::<BE>(res, row, col_in);
+            let a_entry = mat_znx_at_backend_ref_from_ref::<BE>(a, row, col_in);
+            for col_out in 0..a_entry.cols() {
+                BE::vec_znx_add_assign(module, &mut res_entry, col_out, &a_entry, col_out);
+            }
+        }
+    }
+}
+
+/// The scratch of `mat_znx_normalize` and `mat_znx_normalize_assign`: one `vec_znx_normalize` at a time.
+#[doc(hidden)]
+pub fn mat_znx_normalize_tmp_bytes_derived<BE: HalVecZnxImpl>(module: &Module<BE>) -> usize {
+    BE::vec_znx_normalize_tmp_bytes(module)
+}
+
+/// `res[i,c][res_col] = normalize(a[i,c][a_col])`: `vec_znx_normalize` on every (row, input column) entry.
+#[allow(clippy::too_many_arguments)]
+#[doc(hidden)]
+pub fn mat_znx_normalize_derived<BE>(
+    module: &Module<BE>,
+    res: &mut MatZnxBackendMut<'_, BE>,
+    res_base2k: usize,
+    res_k: usize,
+    res_offset: i64,
+    res_col: usize,
+    a: &MatZnxBackendRef<'_, BE>,
+    a_base2k: usize,
+    a_col: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: HalVecZnxImpl,
+{
+    assert!(
+        (res.n(), res.rows(), res.cols_in()) == (a.n(), a.rows(), a.cols_in()),
+        "mat_znx_normalize: res and a differ in degree, rows or input columns"
+    );
+    for row in 0..res.rows() {
+        for col_in in 0..res.cols_in() {
+            let mut res_entry = mat_znx_at_backend_mut_from_mut::<BE>(res, row, col_in);
+            let a_entry = mat_znx_at_backend_ref_from_ref::<BE>(a, row, col_in);
+            BE::vec_znx_normalize(
+                module,
+                &mut res_entry,
+                res_base2k,
+                res_k,
+                res_offset,
+                res_col,
+                &a_entry,
+                a_base2k,
+                a_col,
+                scratch,
+            );
+        }
+    }
+}
+
+/// `a[i,c][a_col] = normalize(a[i,c][a_col])`: `vec_znx_normalize_assign` on every (row, input column) entry.
+#[doc(hidden)]
+pub fn mat_znx_normalize_assign_derived<BE>(
+    module: &Module<BE>,
+    base2k: usize,
+    k: usize,
+    a_offset: i64,
+    a: &mut MatZnxBackendMut<'_, BE>,
+    a_col: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: HalVecZnxImpl,
+{
+    for row in 0..a.rows() {
+        for col_in in 0..a.cols_in() {
+            let mut a_entry = mat_znx_at_backend_mut_from_mut::<BE>(a, row, col_in);
+            BE::vec_znx_normalize_assign(module, base2k, k, a_offset, &mut a_entry, a_col, scratch);
+        }
+    }
 }
 
 /// `res = a + b` with `b` a coefficient-domain operand: promote `b` into the

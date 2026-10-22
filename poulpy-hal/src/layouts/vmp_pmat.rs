@@ -97,6 +97,13 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> PartialEq for VmpPMat<D, W, B
 
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> Eq for VmpPMat<D, W, B> {}
 
+/// The shape only: the representation is opaque.
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> std::fmt::Debug for VmpPMat<D, W, B> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VmpPMat").field("shape", &self.shape).finish()
+    }
+}
+
 impl<D: Data + std::hash::Hash, W: DftWord, B: Backend<DftWord = W>> std::hash::Hash for VmpPMat<D, W, B> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.shape.hash(state);

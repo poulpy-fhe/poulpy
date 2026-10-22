@@ -1,19 +1,21 @@
 use poulpy_core::{
     GetDistribution, GetDistributionMut,
     layouts::{GLWEInfos, GLWEPublicKeyAtViewMut, GLWEPublicKeyToBackendMut, GLWESecretPreparedToBackendRef},
+    oep::EncryptionImpl,
 };
 use poulpy_hal::{
     layouts::{Module, ScratchArena},
+    oep::HalMatZnxImpl,
     source::Source,
 };
 
 use super::derived::public_key as derived;
-use crate::{layouts::GLWEPublicKeyShareOwned, oep::GLWEPatCompressedImpl};
+use crate::layouts::GLWEPublicKeyShareOwned;
 
 /// # Safety
 /// Reproduce the reference share, entry seeds included, within the queried
 /// scratch budget.
-pub unsafe trait GLWEPublicKeyMHEProtocolImpl: GLWEPatCompressedImpl {
+pub unsafe trait GLWEPublicKeyMHEProtocolImpl: HalMatZnxImpl + EncryptionImpl {
     fn mhe_glwe_public_key_share_gen_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GLWEInfos;
@@ -38,7 +40,7 @@ pub unsafe trait GLWEPublicKeyMHEProtocolImpl: GLWEPatCompressedImpl {
     }
 
     fn mhe_glwe_public_key_share_finalize_tmp_bytes(module: &Module<Self>) -> usize {
-        Self::glwe_pat_compressed_finalize_tmp_bytes(module)
+        Self::mat_znx_normalize_tmp_bytes(module)
     }
 
     fn mhe_glwe_public_key_share_finalize<R>(

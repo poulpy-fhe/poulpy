@@ -1,7 +1,8 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::layouts::{
-    Backend, Module, ScalarZnxBackendRef, ScratchArena, Standard, VecZnxBackendMut, VecZnxBackendRef, VecZnxToBackendMut,
+    Backend, MatZnxBackendMut, MatZnxBackendRef, Module, ScalarZnxBackendRef, ScratchArena, Standard, VecZnxBackendMut,
+    VecZnxBackendRef, VecZnxToBackendMut,
 };
 use crate::source::Source;
 
@@ -347,6 +348,54 @@ pub unsafe trait HalVecZnxImpl: Backend {
         R: VecZnxToBackendMut<Self>,
     {
         crate::oep::vec_znx_fill_uniform_source_all_derived::<Self, R>(module, base2k, k, res, source)
+    }
+}
+
+/// Coefficient-domain `MatZnx` extension point.
+///
+/// # Safety
+/// Same contract as [`HalVecZnxImpl`].
+pub unsafe trait HalMatZnxImpl: HalVecZnxImpl {
+    /// `res += a` entry by entry. Default body: `mat_znx_add_assign_derived`, a `vec_znx_add_assign` on every
+    /// output column of every entry.
+    fn mat_znx_add_assign(module: &Module<Self>, res: &mut MatZnxBackendMut<'_, Self>, a: &MatZnxBackendRef<'_, Self>) {
+        crate::oep::mat_znx_add_assign_derived::<Self>(module, res, a)
+    }
+
+    /// Default body: `mat_znx_normalize_tmp_bytes_derived`, the scratch of `vec_znx_normalize`.
+    fn mat_znx_normalize_tmp_bytes(module: &Module<Self>) -> usize {
+        crate::oep::mat_znx_normalize_tmp_bytes_derived::<Self>(module)
+    }
+
+    /// Default body: `mat_znx_normalize_derived`, a `vec_znx_normalize` on every entry.
+    fn mat_znx_normalize(
+        module: &Module<Self>,
+        res: &mut MatZnxBackendMut<'_, Self>,
+        res_base2k: usize,
+        res_k: usize,
+        res_offset: i64,
+        res_col: usize,
+        a: &MatZnxBackendRef<'_, Self>,
+        a_base2k: usize,
+        a_col: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        crate::oep::mat_znx_normalize_derived::<Self>(
+            module, res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, scratch,
+        )
+    }
+
+    /// Default body: `mat_znx_normalize_assign_derived`, a `vec_znx_normalize_assign` on every entry.
+    fn mat_znx_normalize_assign(
+        module: &Module<Self>,
+        base2k: usize,
+        k: usize,
+        a_offset: i64,
+        a: &mut MatZnxBackendMut<'_, Self>,
+        a_col: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        crate::oep::mat_znx_normalize_assign_derived::<Self>(module, base2k, k, a_offset, a, a_col, scratch)
     }
 }
 

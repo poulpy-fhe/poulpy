@@ -47,6 +47,13 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> PartialEq for VecZnxBig<D, W,
 
 impl<D: Data, W: BigWord, B: Backend<BigWord = W>> Eq for VecZnxBig<D, W, B> {}
 
+/// The shape only: the representation is opaque.
+impl<D: Data, W: BigWord, B: Backend<BigWord = W>> std::fmt::Debug for VecZnxBig<D, W, B> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VecZnxBig").field("shape", &self.shape).finish()
+    }
+}
+
 impl<D: Data + std::hash::Hash, W: BigWord, B: Backend<BigWord = W>> std::hash::Hash for VecZnxBig<D, W, B> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         crate::layouts::assert_dense(self, "VecZnxBig::hash");

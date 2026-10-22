@@ -60,9 +60,8 @@ where
                 ($op:expr) => {{
                     let before = BE::to_host_bytes(&res.data);
                     let panicked = catch_unwind(AssertUnwindSafe(|| $op)).is_err();
-                    assert_eq!(
-                        before,
-                        BE::to_host_bytes(&res.data),
+                    assert!(
+                        before == BE::to_host_bytes(&res.data),
                         "{} wrote before rejecting its operands",
                         stringify!($op)
                     );
@@ -161,9 +160,8 @@ pub fn test_vec_znx_dft_transforms_reject_invalid_operands<BE: crate::test_suite
                 ($dst:ident, $op:expr) => {{
                     let before = BE::to_host_bytes(&$dst.data);
                     let panicked = catch_unwind(AssertUnwindSafe(|| $op)).is_err();
-                    assert_eq!(
-                        before,
-                        BE::to_host_bytes(&$dst.data),
+                    assert!(
+                        before == BE::to_host_bytes(&$dst.data),
                         "{} wrote before rejecting its operands",
                         stringify!($op)
                     );

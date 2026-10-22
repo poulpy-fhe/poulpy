@@ -53,6 +53,13 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> PartialEq for VecZnxDft<D, W,
 
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> Eq for VecZnxDft<D, W, B> {}
 
+/// The shape only: the representation is opaque.
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> std::fmt::Debug for VecZnxDft<D, W, B> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VecZnxDft").field("shape", &self.shape).finish()
+    }
+}
+
 impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> DigestU64 for VecZnxDft<D, W, B> {
     fn digest_u64(&self) -> u64 {
         crate::layouts::assert_dense(self, "VecZnxDft::digest_u64");

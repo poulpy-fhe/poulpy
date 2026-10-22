@@ -11,7 +11,8 @@ use poulpy_ckks::{
 use poulpy_core::{
     GLWEMulPreparedPlainSum,
     layouts::{
-        GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, TorusPrecision,
+        GGLWEInfos, GGLWELayout, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos,
+        TorusPrecision,
     },
 };
 use poulpy_hal::{
@@ -1333,7 +1334,15 @@ fn kernel_tmp_bytes<BE: BlasJklsImpl>(
         product_terms(a, || left_term_layout(a, &ctx.maps)),
         product_terms(b, || right_term_layout(b, &ctx.maps)),
     );
-    BE::blas_jkls_block_tmp_bytes_impl(module, &res, &lhs, &rhs, a.cols() << a.log_d(), tsk)
+    // A store may answer at the product's width with a narrower key, whose relinearization can take more scratch.
+    let tsk = tsk.gglwe_layout();
+    let at_width = GGLWELayout {
+        dnum: GGLWELayout::dnum_for_input(lhs.k().max(rhs.k()), tsk.k_digit).min(tsk.dnum),
+        ..tsk
+    };
+    let terms = a.cols() << a.log_d();
+    BE::blas_jkls_block_tmp_bytes_impl(module, &res, &lhs, &rhs, terms, &tsk)
+        .max(BE::blas_jkls_block_tmp_bytes_impl(module, &res, &lhs, &rhs, terms, &at_width))
 }
 
 /// The scratch of the terms of the hot sides of `a` and `b` in a product under `ctx`, a unit at a time, `K` blocks each:

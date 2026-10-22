@@ -2434,10 +2434,13 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     for (hl, hr) in MIXES {
         let (l, r) = (&left[side(hl)], &right[side(hr)]);
         let op = &format!("blas_matmul_prepared {hl:?} x {hr:?}");
-        let bytes = module.blas_matmul_prepared_tmp_bytes(&res, l, r, &ctx, &tsk_layout, &atk_layout);
-        with_scratch::<BE, _>(bytes, |s| module.blas_matmul_prepared(&mut res, l, r, &ctx, &keys, &keys, s))
-            .unwrap_or_else(|e| panic!("{op}: {e}"));
-        assert_short_scratch::<BE, _>(op, &mut res, bytes, |res, s| {
+        // A product narrows `res`, and the query reads it: every call starts from a fresh one.
+        let bytes = module.blas_matmul_prepared_tmp_bytes(&alloc(1, 1), l, r, &ctx, &tsk_layout, &atk_layout);
+        with_scratch::<BE, _>(bytes, |s| {
+            module.blas_matmul_prepared(&mut alloc(1, 1), l, r, &ctx, &keys, &keys, s)
+        })
+        .unwrap_or_else(|e| panic!("{op}: {e}"));
+        assert_short_scratch::<BE, _>(op, &mut alloc(1, 1), bytes, |res, s| {
             module.blas_matmul_prepared(res, l, r, &ctx, &keys, &keys, s)
         });
     }

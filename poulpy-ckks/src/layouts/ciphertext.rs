@@ -471,12 +471,12 @@ mod tests {
         ct.write_to(&mut bytes).unwrap();
         let mut inner = Vec::new();
         ct.inner.write_to(&mut inner).unwrap();
-        assert_eq!(bytes, inner);
+        assert!(bytes == inner, "a ciphertext serializes as its GLWE");
         let mut back = module.ckks_ciphertext_alloc(Base2K(12), TorusPrecision(36));
         back.read_from(&mut bytes.as_slice()).unwrap();
         assert_eq!(back.meta(), meta);
         let mut again = Vec::new();
         back.write_to(&mut again).unwrap();
-        assert_eq!(again, bytes);
+        assert!(again == bytes, "a read ciphertext serializes as the original");
     }
 }

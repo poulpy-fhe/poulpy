@@ -271,6 +271,17 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for GGLWECompressed<D, W> {
 }
 
 impl<D: Data, W: ZnxWord> GGLWECompressed<D, W> {
+    /// Returns a shared reference to the stored bodies, one column per entry.
+    pub fn data(&self) -> &MatZnx<D, W> {
+        &self.data
+    }
+
+    /// Returns a mutable reference to the stored bodies, one column per entry.
+    pub fn data_mut(&mut self) -> &mut MatZnx<D, W> {
+        self.noise = None;
+        &mut self.data
+    }
+
     /// Allocates a new compressed GGLWE by copying parameters from an existing info provider.
     pub(crate) fn alloc_from_infos<B: Backend<OwnedBuf = D, ZnxWord = W>, A>(infos: &A) -> Self
     where

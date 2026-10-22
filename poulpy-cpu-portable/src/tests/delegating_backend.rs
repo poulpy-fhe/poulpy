@@ -43,7 +43,6 @@ const DIGIT_PRODUCT_EXTRA_SCRATCH: usize = 256;
 fn downstream_baby_step_preparation_preserves_cache_shape() {
     use poulpy_core::layouts::LinearTransformationBabySteps;
     use poulpy_hal::api::Convolution;
-    use poulpy_hal::layouts::DataView;
     let module = Module::<FFT64Portable>::new(256);
     let input = sample_glwe();
     let mut normalized = module.glwe_alloc_from_infos(&input);
@@ -66,7 +65,7 @@ fn downstream_baby_step_preparation_preserves_cache_shape() {
     }
     assert_eq!(cache.baby_steps().collect::<Vec<_>>(), vec![0, 1]);
     for rot in cache.baby_steps() {
-        assert_eq!(cache.baby_step(rot).data(), expected.baby_step(0).data());
+        assert_eq!(cache.baby_step(rot), expected.baby_step(0), "baby step {rot}");
         assert_eq!(cache.baby_step(rot).cols(), 3);
         assert_eq!(cache.baby_step(rot).size(), normalized.size());
     }

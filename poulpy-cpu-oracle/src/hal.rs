@@ -51,6 +51,8 @@ fn switch_ring(res: &mut [i64], a: &[i64]) {
     }
 }
 
+unsafe impl<F: DFTFamily, R: OracleRing> poulpy_hal::oep::HalMatZnxImpl for Oracle<F, R> {}
+
 unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxImpl for Oracle<F, R> {
     fn vec_znx_zero(_module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, res_col: usize) {
         apply(res, res_col, |_| 0);

@@ -264,6 +264,8 @@ unsafe impl poulpy_hal::oep::HalVecZnxCIImpl for NTT3x42IfmaRayon {
     poulpy_cpu_portable::hal_impl_vec_znx_ci!();
 }
 
+unsafe impl<R: Ring> poulpy_hal::oep::HalMatZnxImpl for NTT3x42IfmaRayon<R> where Self: HalVecZnxImpl {}
+
 unsafe impl<R: Ring> HalVecZnxImpl for NTT3x42IfmaRayon<R>
 where
     NTT3x42Ifma<R>: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>

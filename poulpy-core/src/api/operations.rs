@@ -280,12 +280,13 @@ pub trait GLWETensoring<BE: Backend> {
     /// The two paths agree up to rounding, not bit for bit.
     ///
     /// The key switch runs on `d2 = a1 * b1` `cnv_offset mod base2k` bits under the result. When that offset is
-    /// not zero and `d2` spans digits past the gadget of `tsk`, the one-pass path is kept only if its modeled noise
-    /// stays within two bits of standard deviation of the two-step path's, with the secret's second moment and the
-    /// key error read from the noise metadata of `tsk` and the operands' errors floored at their rounding.
+    /// not zero and `d2` spans digits past the gadget of `tsk`, the one-pass path is kept only if its modeled
+    /// variance exceeds the two-step path's by at most `2^-4` of it, with the secret's second moment and the key
+    /// error read from the noise metadata of `tsk` and the operands' errors floored at their rounding.
     /// Otherwise the columns are normalized into a tensor and relinearized with [`Self::glwe_tensor_relinearize`]:
-    /// the result is then that of the two-step path, bit for bit. A key without noise metadata, or with a secret of
-    /// unknown law, takes the tensor path there.
+    /// the result is then that of the two-step path bit for bit if and only if `cnv_offset >= min(a.k(), b.k())`,
+    /// and agrees with it up to rounding otherwise. A key without noise metadata, or with a secret of unknown law,
+    /// takes the tensor path there.
     #[allow(clippy::too_many_arguments)]
     fn glwe_mul_relinearize<R, A, B, H>(
         &self,

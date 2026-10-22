@@ -50,6 +50,22 @@ pub struct CnvPVecR<D: Data, W: DftWord, B: Backend<DftWord = W>> {
     _phantom: PhantomData<(W, B)>,
 }
 
+// Same shape, same buffer bytes, as for `VmpPMat`.
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> PartialEq for CnvPVecR<D, W, B> {
+    fn eq(&self, other: &Self) -> bool {
+        self.shape == other.shape && self.data == other.data
+    }
+}
+
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> Eq for CnvPVecR<D, W, B> {}
+
+/// The shape only: the representation is opaque.
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> std::fmt::Debug for CnvPVecR<D, W, B> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CnvPVecR").field("shape", &self.shape).finish()
+    }
+}
+
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for CnvPVecR<D, W, B> {
     fn n(&self) -> usize {
         self.shape.n()
@@ -175,6 +191,22 @@ pub struct CnvPVecL<D: Data, W: DftWord, B: Backend<DftWord = W>> {
     data: D,
     shape: CnvPVecShape,
     _phantom: PhantomData<(W, B)>,
+}
+
+// Same shape, same buffer bytes, as for `VmpPMat`.
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> PartialEq for CnvPVecL<D, W, B> {
+    fn eq(&self, other: &Self) -> bool {
+        self.shape == other.shape && self.data == other.data
+    }
+}
+
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> Eq for CnvPVecL<D, W, B> {}
+
+/// The shape only: the representation is opaque.
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> std::fmt::Debug for CnvPVecL<D, W, B> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CnvPVecL").field("shape", &self.shape).finish()
+    }
 }
 
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for CnvPVecL<D, W, B> {

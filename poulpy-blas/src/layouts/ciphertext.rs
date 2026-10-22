@@ -759,7 +759,7 @@ mod tests {
         back.read_from(&mut bytes.as_slice()).unwrap();
         let mut again = Vec::new();
         back.write_to(&mut again).unwrap();
-        assert_eq!(again, bytes);
+        assert!(again == bytes, "a read grid serializes as the original");
         assert_eq!(back.mat_slots(), grid.mat_slots());
 
         // The record travels, though the label proves fewer matrices.
@@ -780,7 +780,7 @@ mod tests {
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
         let mut after = Vec::new();
         other.write_to(&mut after).unwrap();
-        assert_eq!(after, before);
+        assert!(after == before, "a rejected read changed the grid");
 
         // Another radix at the same limb count, and another precision, are rejected the same way.
         for (base2k, k) in [(20usize, 60usize), (19, 57)] {
@@ -792,7 +792,7 @@ mod tests {
             assert_eq!(err.kind(), std::io::ErrorKind::InvalidData, "{base2k} {k}");
             let mut after = Vec::new();
             other.write_to(&mut after).unwrap();
-            assert_eq!(after, before, "{base2k} {k}");
+            assert!(after == before, "a rejected read changed the grid: {base2k} {k}");
         }
     }
 
