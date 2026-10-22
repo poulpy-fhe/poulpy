@@ -195,7 +195,8 @@ pub fn default_bench_params_circuit_bootstrapping() -> Vec<CircuitBootstrappingB
         brk_dnum: 4,
         atk_dnum: 4,
         atk_dsize: 1,
-        tsk_dnum: 4,
+        // Covers the output GGSW, its guard included: 3 * 18 + 90 bits.
+        tsk_dnum: 8,
         tsk_dsize: 1,
         ggsw_dnum: 3,
         ggsw_dsize: 1,

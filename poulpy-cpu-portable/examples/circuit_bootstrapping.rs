@@ -70,8 +70,8 @@ fn main() {
 
     // GGLWE automorphism keys modulus
 
-    // GGLWE tensor key number of dnum
-    let rows_tsk: usize = rows_ggsw_res + 1;
+    // GGLWE tensor key number of dnum: covers the output GGSW, its guard included
+    let rows_tsk: usize = (rows_ggsw_res * base2k + base2k + n_glwe.ilog2() as usize).div_ceil(base2k);
 
     // GGLWE tensor key modulus
 

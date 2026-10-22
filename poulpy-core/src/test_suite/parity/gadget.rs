@@ -1,6 +1,7 @@
 //! Composite gadget operations, with each backend preparing its own keys.
 
 use super::{ParityBackend, ParityShapes, poisoned_scratch, ref_gglwe};
+use crate::layouts::LWEInfos;
 use crate::{
     GGLWEExternalProduct, GGSWAutomorphism, GGSWExpandRows, GGSWExternalProduct, GGSWFromGGLWE, GGSWKeyswitch,
     GLWEAutomorphismKeyAutomorphism, GLWEMaskFill,
@@ -393,6 +394,31 @@ where
                 short_r, short_have,
                 "ggsw keyswitch shorter result: rank={rank} k_digit={k_digit}"
             );
+            // A key switching another decomposes its rows whole, their guard included,
+            // so it cannot be of the same layout.
+            let ak_apply = GLWEAutomorphismKeyLayout {
+                dnum: Dnum(ak.k().as_usize().div_ceil(k_digit) as u32),
+                ..ak
+            };
+            let mut apply_r = r.glwe_automorphism_key_alloc_from_infos(&ak_apply);
+            fill_by_digit(r, &mut apply_r, 1, &mut source);
+            apply_r.p = -5;
+            let mut apply_t = t.glwe_automorphism_key_alloc_from_infos(&ak_apply);
+            apply_r.transfer_into(&mut apply_t);
+            let mut applyp_r = r.glwe_automorphism_key_prepared_alloc_from_infos(&ak_apply);
+            let mut applyp_t = t.glwe_automorphism_key_prepared_alloc_from_infos(&ak_apply);
+            r.glwe_automorphism_key_prepare(
+                &mut applyp_r,
+                &apply_r,
+                &mut poisoned_scratch::<BR>(r.glwe_automorphism_key_prepare_tmp_bytes(&ak_apply)).borrow(),
+            );
+            t.glwe_automorphism_key_prepare(
+                &mut applyp_t,
+                &apply_t,
+                &mut poisoned_scratch::<BT>(t.glwe_automorphism_key_prepare_tmp_bytes(&ak_apply)).borrow(),
+            );
+            let apply_view_r = GLWEAutomorphismKeyPreparedToBackendRef::to_backend_ref(&applyp_r);
+            let apply_view_t = GLWEAutomorphismKeyPreparedToBackendRef::to_backend_ref(&applyp_t);
             let mut out_r = r.glwe_automorphism_key_alloc_from_infos(&ak);
             let mut out_t = t.glwe_automorphism_key_alloc_from_infos(&ak);
             fill_by_digit(r, &mut out_r, 1, &mut source);
@@ -400,14 +426,14 @@ where
             r.glwe_automorphism_key_automorphism(
                 &mut out_r,
                 &auto_r,
-                &auto_view_r,
-                &mut poisoned_scratch::<BR>(r.glwe_automorphism_key_automorphism_tmp_bytes(&ak, &ak, &ak)).borrow(),
+                &apply_view_r,
+                &mut poisoned_scratch::<BR>(r.glwe_automorphism_key_automorphism_tmp_bytes(&ak, &ak, &ak_apply)).borrow(),
             );
             t.glwe_automorphism_key_automorphism(
                 &mut out_t,
                 &auto_t,
-                &auto_view_t,
-                &mut poisoned_scratch::<BT>(t.glwe_automorphism_key_automorphism_tmp_bytes(&ak, &ak, &ak)).borrow(),
+                &apply_view_t,
+                &mut poisoned_scratch::<BT>(t.glwe_automorphism_key_automorphism_tmp_bytes(&ak, &ak, &ak_apply)).borrow(),
             );
             let mut have = r.glwe_automorphism_key_alloc_from_infos(&ak);
             out_t.transfer_into(&mut have);
@@ -416,13 +442,13 @@ where
             auto_r.transfer_into(&mut out_t);
             r.glwe_automorphism_key_automorphism_assign(
                 &mut out_r,
-                &auto_view_r,
-                &mut poisoned_scratch::<BR>(r.glwe_automorphism_key_automorphism_tmp_bytes(&ak, &ak, &ak)).borrow(),
+                &apply_view_r,
+                &mut poisoned_scratch::<BR>(r.glwe_automorphism_key_automorphism_tmp_bytes(&ak, &ak, &ak_apply)).borrow(),
             );
             t.glwe_automorphism_key_automorphism_assign(
                 &mut out_t,
-                &auto_view_t,
-                &mut poisoned_scratch::<BT>(t.glwe_automorphism_key_automorphism_tmp_bytes(&ak, &ak, &ak)).borrow(),
+                &apply_view_t,
+                &mut poisoned_scratch::<BT>(t.glwe_automorphism_key_automorphism_tmp_bytes(&ak, &ak, &ak_apply)).borrow(),
             );
             out_t.transfer_into(&mut have);
             assert_eval_eq!(out_r, have, "automorphism key assign: rank={rank} k_digit={k_digit}");

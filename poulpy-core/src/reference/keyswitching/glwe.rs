@@ -159,15 +159,7 @@ fn check_keyswitch_dft<BE, M, A>(
     );
     assert_eq!(a.base2k(), key.base2k(), "glwe_keyswitch_dft: a is not at the key radix");
     operand_degree(module.n(), &[res.n().into(), a.n(), key.n()]);
-    if key.k_offset().0 > 0 {
-        let max_input_k = key.gglwe_layout().max_input_k();
-        assert!(
-            a.k() <= max_input_k,
-            "glwe_keyswitch_dft: a.k()={} exceeds the offset key's max_input_k={}",
-            a.k(),
-            max_input_k
-        );
-    }
+    assert_key_covers("glwe_keyswitch_dft", a.k(), key);
     let tmp_bytes = glwe_keyswitch_dft_tmp_bytes_reference(module, res.size(), a, key);
     assert!(
         scratch.available() >= tmp_bytes,
@@ -653,6 +645,7 @@ pub fn glwe_keyswitch_reference<BE, M, R, A>(
     );
 
     operand_degree(module.n(), &[res.n(), a.n(), key.n()]);
+    assert_key_covers("glwe_keyswitch", a.k(), key);
 
     assert!(
         scratch.available() >= module.glwe_keyswitch_tmp_bytes_reference(res, a, key),
@@ -662,18 +655,6 @@ pub fn glwe_keyswitch_reference<BE, M, R, A>(
     );
 
     let k_offset: usize = key.k_offset().as_usize();
-    if k_offset > 0 {
-        // A key with a row offset lowers the input: it must decompose it whole.
-        // Past its rows the output holds the product's tail, as past the gadget of
-        // an offset-free key.
-        let max_input_k = key.gglwe_layout().max_input_k();
-        assert!(
-            a.k() <= max_input_k,
-            "glwe_keyswitch: a.k()={} exceeds the offset key's max_input_k={}",
-            a.k(),
-            max_input_k
-        );
-    }
 
     let output_size = gglwe_product_output_size::<BE, _, _, _>(res, a, key);
 
@@ -771,6 +752,16 @@ pub fn assert_no_row_offset<K: GGLWEInfos>(op: &str, key: &K) {
     );
 }
 
+/// Panics unless `key` decomposes an input of precision `k` exactly: `k` is at
+/// most its [`max_input_k`](crate::layouts::GGLWELayout::max_input_k). A wider
+/// input is narrowed by the caller first.
+pub fn assert_key_covers<K: GGLWEInfos>(op: &str, k: TorusPrecision, key: &K) {
+    assert!(
+        k <= key.gglwe_layout().max_input_k(),
+        "{op}: the input is wider than the key's max_input_k"
+    );
+}
+
 pub fn glwe_keyswitch_assign_reference<BE, M, R>(
     module: &M,
     res: &mut R,
@@ -808,6 +799,7 @@ pub fn glwe_keyswitch_assign_reference<BE, M, R>(
     );
 
     operand_degree(module.n(), &[res.n(), key.n()]);
+    assert_key_covers("glwe_keyswitch_assign", res.k(), key);
 
     assert!(
         scratch.available() >= module.glwe_keyswitch_tmp_bytes_reference(res, res, key),

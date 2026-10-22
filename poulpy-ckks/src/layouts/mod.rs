@@ -120,7 +120,6 @@ pub use bootstrapping::{
     BootstrappingContext, BootstrappingContextUnprepared, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
     EvalRoundPlus, SparseSecretEncapsulation,
 };
-pub(crate) use bootstrapping_keys::CoveringKeys;
 pub use bootstrapping_keys::{
     BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, CKKSFoldKeysLayout,
     EncapsulationKeys, EncapsulationKeysLayout, RingSwitchKeySet, RingSwitchKeys, RingSwitchKeysLayout, RingSwitchKeysPrepared,

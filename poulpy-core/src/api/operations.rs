@@ -242,6 +242,8 @@ pub trait GLWETensoring<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos;
 
+    /// Relinearizes the tensor `a` into `res`, exact: `a` is at most the tensor key's
+    /// [`max_input_k`](crate::layouts::GGLWELayout::max_input_k).
     fn glwe_tensor_relinearize<R, A, H>(&self, res: &mut R, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,

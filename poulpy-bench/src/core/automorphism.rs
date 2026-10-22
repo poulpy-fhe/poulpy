@@ -16,7 +16,7 @@ use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
 
-use crate::core::params::{CoreParams, key_dnum_k_aux};
+use crate::core::params::{CoreParams, switching_key_dnum_k_aux};
 use poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef;
 
 /// Times the GLWE automorphism with a fixed Galois element (`X -> X^3`).
@@ -39,7 +39,7 @@ where
         k: TorusPrecision(cp.k),
         rank: Rank(cp.rank),
     };
-    let (dnum, k_aux) = key_dnum_k_aux(cp.k, cp.base2k, cp.dsize);
+    let (dnum, k_aux) = switching_key_dnum_k_aux(cp.k, cp.base2k, cp.dsize);
     let atk_infos = GGLWELayout {
         n: Degree(cp.n),
         base2k: Base2K(cp.base2k),

@@ -70,10 +70,11 @@ fn key_layout(n: usize, bridge: bool) -> BDDKeyLayout {
                 k_aux: (11 + aux).into(),
                 rank: rank.into(),
             },
+            // Covers the output GGSW, which the row expansion switches.
             tsk_layout: GGLWEToGGSWKeyLayout {
                 n: n.into(),
                 base2k: 12usize.into(),
-                dnum: 4usize.into(),
+                dnum: 5usize.into(),
                 k_digit: 12usize.into(),
                 k_aux: (12 + aux).into(),
                 rank: rank.into(),

@@ -51,6 +51,13 @@ pub fn key_dnum_k_aux(k: u32, base2k: u32, dsize: u32) -> (u32, u32) {
     (dnum, k_aux)
 }
 
+/// [`key_dnum_k_aux`] of the narrowest key that decomposes an input of
+/// `input_k` bits exactly, with one gadget digit of guard.
+pub fn switching_key_dnum_k_aux(input_k: u32, base2k: u32, dsize: u32) -> (u32, u32) {
+    let digit: u32 = dsize * base2k;
+    key_dnum_k_aux(input_k.next_multiple_of(digit) + digit, base2k, dsize)
+}
+
 pub fn default_bench_params_core() -> Vec<CoreParams> {
     vec![
         CoreParams {

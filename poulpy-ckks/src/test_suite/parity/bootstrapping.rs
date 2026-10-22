@@ -87,7 +87,14 @@ where
             ..src_layout
         };
         let d2s_layout = key_layout(module.n(), b, small, 1, params.rank, params.rank);
-        let s2d_layout = key_layout_bits(module.n(), key_b, small + extra, k_digit, params.rank, params.rank);
+        // Covers `dst` through the view too: a read at a coarser digit keeps one
+        // such digit as guard.
+        let s2d_k = if view_k_digit == k_digit {
+            small + extra
+        } else {
+            ((small + extra).div_ceil(view_k_digit) + 1) * view_k_digit
+        };
+        let s2d_layout = key_layout_bits(module.n(), key_b, s2d_k, k_digit, params.rank, params.rank);
         let mut d2s = module.gglwe_prepared_alloc_from_infos(&d2s_layout);
         let mut s2d = module.gglwe_prepared_alloc_from_infos(&s2d_layout);
         for (prepared, layout, seed) in [(&mut d2s, &d2s_layout, 31), (&mut s2d, &s2d_layout, 37)] {

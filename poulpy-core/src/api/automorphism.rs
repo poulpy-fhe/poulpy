@@ -8,6 +8,8 @@ use crate::layouts::{
     prepared::{GGLWEToGGSWKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedBackendRef},
 };
 
+/// Automorphisms of GLWE ciphertexts, exact: the input is at most the key's
+/// [`max_input_k`](crate::layouts::GGLWELayout::max_input_k).
 pub trait GLWEAutomorphism<BE: Backend> {
     fn glwe_automorphism_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where

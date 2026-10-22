@@ -7,6 +7,7 @@ use poulpy_hal::{
 };
 
 use crate::layouts::GLWESecretSampling;
+use crate::layouts::LWEInfos;
 use crate::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef;
 use crate::{
     DEFAULT_SIGMA_XE, GGLWENoise, GLWEAutomorphismKeyAutomorphism, GLWEAutomorphismKeyEncryptSk,
@@ -50,7 +51,6 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::noise::Te
             let dsize_in: usize = 1;
 
             let dnum_in: usize = k_in / in_base2k;
-            let dnum_ksk: usize = k_in.div_ceil(key_base2k * dsize);
 
             let auto_key_in_infos = GLWEAutomorphismKeyLayout {
                 n: n.into(),
@@ -69,6 +69,13 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::noise::Te
                 k_digit: crate::layouts::k_digit_of(out_base2k, dsize_in),
                 rank: rank.into(),
             };
+
+            // Decomposes the rows it switches whole, their guard included.
+            let dnum_ksk: usize = auto_key_in_infos
+                .k()
+                .max(auto_key_out_infos.k())
+                .as_usize()
+                .div_ceil(key_base2k * dsize);
 
             let auto_key_apply_infos = GLWEAutomorphismKeyLayout {
                 n: n.into(),
@@ -222,7 +229,6 @@ pub fn test_gglwe_automorphism_key_automorphism_assign<
             let dsize_in: usize = 1;
 
             let dnum_in: usize = k_out / out_base2k;
-            let dnum_ksk: usize = k_out.div_ceil(key_base2k * dsize);
 
             let auto_key_layout = GLWEAutomorphismKeyLayout {
                 n: n.into(),
@@ -232,6 +238,9 @@ pub fn test_gglwe_automorphism_key_automorphism_assign<
                 k_digit: crate::layouts::k_digit_of(out_base2k, dsize_in),
                 rank: rank.into(),
             };
+
+            // Decomposes the rows it switches whole, their guard included.
+            let dnum_ksk: usize = auto_key_layout.k().as_usize().div_ceil(key_base2k * dsize);
 
             let auto_key_apply_layout = GLWEAutomorphismKeyLayout {
                 n: n.into(),

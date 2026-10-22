@@ -31,6 +31,7 @@
 ### CPU backends
 
 - Every conjugate-invariant backend type has a `max_base2k` model: each backend implements `MaxBase2k` once for both rings, where the conjugate-invariant types returned `None`.
+- The AVX-512 rank-one relinearization and the fused IFMA giant step refuse a key that does not cover their input, as the reference does.
 - The native CKKS encapsulated modulus raise (portable, AVX2, AVX-512, and their Rayon variants) and the fused IFMA giant step leave a key with a row offset to the reference, which refuses it, and the AVX-512 rank-one relinearization refuses one, instead of using it as an offset-free key.
 - Every CPU backend reads the right operand of the convolution applies through the Galois element in the pass that reads a sparse operand.
 - **Breaking:** the `Reim4Convolution` and `Fft64RingArith` convolution methods take a `RightRead` in place of `b_log_gap`, built with `right_read_fft64` or `right_read_ntt`.
@@ -112,6 +113,9 @@
 
 ### `poulpy-core`
 
+- **Breaking, behaviour:** every gadget product with a GGLWE key decomposes its input exactly ([#451](https://github.com/poulpy-fhe/poulpy/issues/451)): `glwe_keyswitch`, `glwe_keyswitch_assign`, `glwe_keyswitch_dft`, the `glwe_automorphism` operations, `glwe_tensor_relinearize`, the linear transformations and `ggsw_expand_row` panic on an input wider than the key's `max_input_k`, where the product dropped the input digits past the key's rows.
+  A caller drops those bits by narrowing the input first (`SetK::set_k`). The GGLWE and GGSW key switches and automorphisms switch rows of `dnum * k_digit + k_aux` bits, so their key covers that width, guard included.
+  `reference::keyswitching::glwe::assert_key_covers` is the check, and the keyswitch, automorphism and tensor noise tests check the refusal of an input one digit past the key with `test_suite::noise::assert_refuses_uncovered_input`.
 - **Breaking:** GGLWE keys take a row offset `k_offset` in bits: row `q` carries `2^-(k_offset + (q + 1) * k_digit)`, so a key switch with such a key lowers its input by `k_offset` bits, over the balanced lift of its digits.
   The result is `2^-k_offset (b + Σ aᵢ sᵢ)` with the integer part of that sum kept, as a modulus raise needs it.
   The key's precision is `k_offset + dnum * k_digit + k_aux`, `max_input_k` is `min(dnum * k_digit, k - k_offset - k_digit)`, and an offset of 0 gives every key as before, bit for bit.
@@ -313,7 +317,8 @@
 - **Breaking:** the bootstrapping presets check every key against the modulus bounds of their secrets, 128-bit estimates documented with the presets (1707 and 345 bits at `N = 2^16` for weights 1024 and 32, 851 and 162 at `N = 2^15`), and give each key the whole-limb digit of fewest rows its use admits, guarded by at least one digit: rotation keys by CoeffsToSlots factor, and the tensor key by the widest product EvalMod relinearizes (a plan with the EvalRound+ bypass keeps one shape). Key sets generated for 0.9.0 presets do not match. `BootstrappingPreset::with_dsizes` still gives every high-modulus key one digit of whole limbs; add `BootstrappingPreset::key_k_digit`.
 - **Breaking:** the bootstrap and functional-bootstrap entry points no longer require `BootstrappingKeys::TensorKey` to be `GLWETensorKeyPrepared`; the parallel paths require `TensorKey: Sync`.
 - **Behaviour:** the bootstraps return an error when a rotation or tensor key is used at a precision above its `max_input_k`, where the key switch dropped the input limbs past the key's rows, for any `BootstrappingKeys` store.
-  `ckks_bootstrap` checks every rotation key and the tensor key at the widths the working width `ct_out.k()` sets before any work, except for an EvalRound+ recipe, whose stages check them as they use them.
+  `ckks_bootstrap` checks every rotation key and the tensor key at the widths the working width `ct_out.k()` sets before any work, except for an EvalRound+ recipe, whose key switches refuse a key too narrow for them.
+- The ship mux returns an error on an input wider than a key's `max_input_k`, and the bootstrap panics on an encapsulation key that does not cover its input.
 - **Breaking:** `CKKSCompositionError::MissingAutomorphismKey` and `MissingRelinearizationKey` carry the key source's error as `source`, which their message includes and `Error::source` returns, so a key too narrow for its use is no longer reported as absent; `CKKSError::source` returns the source of a composition error.
 - Add `DFTPlan::galois_elements_per_factor`.
 - The bootstrap scratch bounds cover every rotation key shape of the layout, taking one maximum per key list.
@@ -321,6 +326,7 @@
 
 ### `poulpy-bin-fhe`
 
+- **Behaviour:** `FheUint::get_bit_lwe` narrows its input to the `max_input_k` of each switching key before the switch, and the circuit bootstrapping traces at the precision its automorphism keys cover, at most the blind rotation's; the circuit bootstrapping panics on a tensor key that does not cover the output GGSW.
 - **Breaking:** `FheUintPrepared` and `FheUintPreparedDebug` allocators take `k_digit` in place of `dsize`, and the blind rotation keys report the `k_digit` their GGSWs store, `base2k` as built, as their layout does.
 - The scalar-to-GGSW blind rotation reference places its gadget rows through `gadget_row_plaintext`, requires `VecZnxNormalize` in place of `VecZnxAddScalarAssign` and `VecZnxNormalizeAssign`, and its scratch covers `vec_znx_normalize_tmp_bytes`.
 

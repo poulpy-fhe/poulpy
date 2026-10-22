@@ -98,6 +98,7 @@ pub fn glwe_automorphism_reference<BE, M, R, A>(
 {
     let p = key.p();
     let key = key.to_backend_ref();
+    crate::reference::keyswitching::glwe::assert_key_covers("glwe_automorphism", a.k(), &key);
     assert!(
         scratch.available() >= module.glwe_automorphism_tmp_bytes_reference(res, a, &key),
         "scratch.available(): {} < GLWEAutomorphism::glwe_automorphism_tmp_bytes: {}",
@@ -125,6 +126,7 @@ pub fn glwe_automorphism_assign_reference<BE, M, R>(
 {
     let p = key.p();
     let key = key.to_backend_ref();
+    crate::reference::keyswitching::glwe::assert_key_covers("glwe_automorphism_assign", res.k(), &key);
     assert!(
         scratch.available() >= module.glwe_automorphism_tmp_bytes_reference(res, res, &key),
         "scratch.available(): {} < GLWEAutomorphism::glwe_automorphism_tmp_bytes: {}",
@@ -165,6 +167,7 @@ pub fn glwe_automorphism_add_reference<BE, M, R, A>(
 {
     let p = key.p();
     let key = key.to_backend_ref();
+    crate::reference::keyswitching::glwe::assert_key_covers("glwe_automorphism_add", a.k(), &key);
     assert!(
         scratch.available() >= module.glwe_automorphism_tmp_bytes_reference(res, a, &key),
         "scratch.available(): {} < GLWEAutomorphism::glwe_automorphism_tmp_bytes: {}",
@@ -244,6 +247,7 @@ pub fn glwe_automorphism_add_assign_reference<BE, M, R>(
 {
     let p = key.p();
     let key = key.to_backend_ref();
+    crate::reference::keyswitching::glwe::assert_key_covers("glwe_automorphism_add_assign", res.k(), &key);
     assert!(
         scratch.available() >= module.glwe_automorphism_tmp_bytes_reference(res, res, &key),
         "scratch.available(): {} < GLWEAutomorphism::glwe_automorphism_tmp_bytes: {}",
@@ -324,6 +328,7 @@ pub fn glwe_automorphism_sub_reference<BE, M, R, A>(
 {
     let p = key.p();
     let key = key.to_backend_ref();
+    crate::reference::keyswitching::glwe::assert_key_covers("glwe_automorphism_sub", a.k(), &key);
     assert!(
         scratch.available() >= module.glwe_automorphism_tmp_bytes_reference(res, a, &key),
         "scratch.available(): {} < GLWEAutomorphism::glwe_automorphism_tmp_bytes: {}",
@@ -404,6 +409,7 @@ pub fn glwe_automorphism_sub_negate_reference<BE, M, R, A>(
 {
     let p = key.p();
     let key = key.to_backend_ref();
+    crate::reference::keyswitching::glwe::assert_key_covers("glwe_automorphism_sub_negate", a.k(), &key);
     assert!(
         scratch.available() >= module.glwe_automorphism_tmp_bytes_reference(res, a, &key),
         "scratch.available(): {} < GLWEAutomorphism::glwe_automorphism_tmp_bytes: {}",
@@ -482,6 +488,7 @@ pub fn glwe_automorphism_sub_assign_reference<BE, M, R>(
 {
     let p = key.p();
     let key = key.to_backend_ref();
+    crate::reference::keyswitching::glwe::assert_key_covers("glwe_automorphism_sub_assign", res.k(), &key);
     assert!(
         scratch.available() >= module.glwe_automorphism_tmp_bytes_reference(res, res, &key),
         "scratch.available(): {} < GLWEAutomorphism::glwe_automorphism_tmp_bytes: {}",
@@ -559,6 +566,7 @@ pub fn glwe_automorphism_sub_negate_assign_reference<BE, M, R>(
 {
     let p = key.p();
     let key = key.to_backend_ref();
+    crate::reference::keyswitching::glwe::assert_key_covers("glwe_automorphism_sub_negate_assign", res.k(), &key);
     assert!(
         scratch.available() >= module.glwe_automorphism_tmp_bytes_reference(res, res, &key),
         "scratch.available(): {} < GLWEAutomorphism::glwe_automorphism_tmp_bytes: {}",

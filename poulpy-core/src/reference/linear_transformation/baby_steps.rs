@@ -238,8 +238,11 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
         .keys()
         .map(|&rot| {
             (rot != 0).then(|| {
-                keys.get_automorphism_key(operand_galois_element(module, a.n().as_usize(), rot), a.k())
-                    .unwrap_or_else(|e| panic!("baby-step rotation {rot}: {e}"))
+                let key = keys
+                    .get_automorphism_key(operand_galois_element(module, a.n().as_usize(), rot), a.k())
+                    .unwrap_or_else(|e| panic!("baby-step rotation {rot}: {e}"));
+                crate::reference::keyswitching::glwe::assert_key_covers("glwe_eval_linear_transformation", a.k(), &key);
+                key
             })
         })
         .collect();

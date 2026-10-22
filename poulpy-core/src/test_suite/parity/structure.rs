@@ -50,10 +50,11 @@ where
             k: TorusPrecision((2 * b + 1) as u32),
             rank: Rank(rank as u32),
         };
+        // Covers the widest packing input below, `g_wide`.
         let k = GLWEAutomorphismKeyLayout {
             n: g.n,
             base2k: Base2K((b - 1) as u32),
-            dnum: Dnum((2 * b + 1).div_ceil(b - 1) as u32),
+            dnum: Dnum((5 * b).div_ceil(b - 1) as u32),
             k_digit: TorusPrecision((b - 1) as u32),
             k_aux: TorusPrecision(b as u32 + 1),
             rank: g.rank,

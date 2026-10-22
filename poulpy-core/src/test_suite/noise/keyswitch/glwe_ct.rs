@@ -7,13 +7,13 @@ use poulpy_hal::{
 };
 
 use crate::layouts::GLWESecretSampling;
-use crate::test_suite::noise::glwe_noise_checked;
+use crate::test_suite::noise::{assert_refuses_uncovered_input, glwe_noise_checked};
 use crate::{
     GLWEEncryptSk, GLWEKeyswitch, GLWENoise, GLWENormalize, GLWESwitchingKeyEncryptSk,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey, GLWESwitchingKeyLayout,
-        GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
+        GGLWEInfos, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey,
+        GLWESwitchingKeyLayout, GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
         prepared::{GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
     noise::GGLWENoiseModel,
@@ -158,6 +158,14 @@ where
                     noise_max - noise_have
                 );
                 assert!(noise_have <= noise_max, "noise_have: {noise_have} > noise_max: {noise_max}");
+
+                let wide: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&GLWELayout {
+                    k: crate::layouts::TorusPrecision(ksk_infos.gglwe_layout().max_input_k().0 + 1),
+                    ..glwe_in_infos
+                });
+                assert_refuses_uncovered_input("glwe_keyswitch took an input one digit past its key", || {
+                    module.glwe_keyswitch(&mut glwe_out, &wide, &ksk_prepared.to_backend_ref(), &mut scratch.borrow())
+                });
             }
         }
     }

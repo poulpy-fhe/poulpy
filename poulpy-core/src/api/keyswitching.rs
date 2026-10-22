@@ -11,6 +11,8 @@ use crate::layouts::{
     prepared::{GGLWEPreparedBackendRef, GGLWEToGGSWKeyPreparedBackendRef},
 };
 
+/// Key switching of GLWE ciphertexts, exact: the input is at most the key's
+/// [`max_input_k`](crate::layouts::GGLWELayout::max_input_k).
 pub trait GLWEKeyswitch<BE: Backend> {
     fn glwe_keyswitch_tmp_bytes<R, A, B>(&self, res_infos: &R, a_infos: &A, key_infos: &B) -> usize
     where
@@ -39,8 +41,7 @@ pub trait GLWEKeyswitch<BE: Backend> {
     /// whole switch but for the body `b`. Several products summed with
     /// [`Self::glwe_keyswitch_dft_add`] are finished by one `vec_znx_idft_normalize`
     /// per column, with the sum of their bodies, each lowered by `key.k_offset()`, as
-    /// the addend of column 0. `a` is at the key radix; a key with a row offset takes
-    /// an input of at most its `max_input_k`.
+    /// the addend of column 0. `a` is at the key radix and at most the key's `max_input_k`.
     fn glwe_keyswitch_dft<A>(
         &self,
         res: &mut VecZnxDftBackendMut<'_, BE>,

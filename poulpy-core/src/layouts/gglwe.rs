@@ -242,6 +242,10 @@ impl GGLWELayout {
     /// the point where the key noise reaches `sigma * sqrt(rank_in * n * dnum / 12)`
     /// units of the input's last bit. A guard of a full digit and `log2(n)` bits
     /// keeps it below one unit over all its digits.
+    ///
+    /// Key switches, automorphisms and relinearizations decompose their input
+    /// exactly and refuse one wider than this: a caller drops the bits below by
+    /// narrowing the input first ([`SetK`](crate::layouts::SetK)).
     pub fn max_input_k(&self) -> TorusPrecision {
         let below_offset = self.k().0.saturating_sub(self.k_offset.0);
         TorusPrecision(self.gadget_k().0.min(below_offset.saturating_sub(self.k_digit().0)))

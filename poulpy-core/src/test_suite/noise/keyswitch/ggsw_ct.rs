@@ -6,6 +6,7 @@ use poulpy_hal::{
 };
 
 use crate::layouts::GLWESecretSampling;
+use crate::layouts::LWEInfos;
 use crate::layouts::prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef};
 use crate::{Distribution, ScalarZnxFillDistribution};
 use crate::{
@@ -54,7 +55,6 @@ where
         for &k_digit in &k_digits {
             let n: usize = module.n();
             let dnum_in: usize = k_in / in_base2k;
-            let dnum_ksk: usize = k_in.div_ceil(k_digit);
 
             let dsize_in: usize = 1;
 
@@ -75,6 +75,9 @@ where
                 k_digit: crate::layouts::k_digit_of(out_base2k, dsize_in),
                 rank: rank.into(),
             };
+
+            // Decomposes the rows it switches whole, their guard included.
+            let dnum_ksk: usize = ggsw_in_infos.k().max(ggsw_out_infos.k()).as_usize().div_ceil(k_digit);
 
             let tsk_infos = GGLWEToGGSWKeyLayout {
                 n: n.into(),
@@ -240,7 +243,6 @@ where
         for &k_digit in &k_digits {
             let n: usize = module.n();
             let dnum_in: usize = k_out / out_base2k;
-            let dnum_ksk: usize = k_out.div_ceil(k_digit);
             let dsize_in: usize = 1;
 
             let ggsw_out_infos = GGSWLayout {
@@ -251,6 +253,9 @@ where
                 k_digit: crate::layouts::k_digit_of(out_base2k, dsize_in),
                 rank: rank.into(),
             };
+
+            // Decomposes the rows it switches whole, their guard included.
+            let dnum_ksk: usize = ggsw_out_infos.k().as_usize().div_ceil(k_digit);
 
             let tsk_infos = GGLWEToGGSWKeyLayout {
                 n: n.into(),
