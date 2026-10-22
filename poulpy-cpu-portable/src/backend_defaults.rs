@@ -36,6 +36,7 @@ macro_rules! impl_cpu_ckks_defaults {
         ::poulpy_ckks::impl_ckks_neg_reference!($be);
         ::poulpy_ckks::impl_ckks_pow2_reference!($be);
         ::poulpy_ckks::impl_ckks_rotate_reference!($be);
+        ::poulpy_ckks::impl_ckks_inner_sum_reference!($be);
         ::poulpy_ckks::impl_ckks_add_reference!($be);
         ::poulpy_ckks::impl_ckks_sub_reference!($be);
         ::poulpy_ckks::impl_ckks_plaintext_reference!($be);

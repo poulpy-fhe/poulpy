@@ -34,6 +34,7 @@
 
 - **Breaking:** `impl_cpu_core_defaults!` registers the core trace on both rings, where each standard backend registered it apart: an out-of-tree backend calling it drops its own `impl_glwe_trace_derived_full!`, which now conflicts.
 - `conjugate_invariant_core_test_suite!` also runs `test_glwe_trace_parity`.
+- `impl_cpu_ckks_defaults!` selects poulpy-ckks's provided inner sum and replicate, `impl_ckks_inner_sum_reference!`.
 - Every conjugate-invariant backend type has a `max_base2k` model: each backend implements `MaxBase2k` once for both rings, where the conjugate-invariant types returned `None`.
 - The AVX-512 rank-one relinearization and the fused IFMA giant step refuse a key that does not cover their input, as the reference does.
 - The native CKKS encapsulated modulus raise (portable, AVX2, AVX-512, and their Rayon variants) and the fused IFMA giant step leave a key with a row offset to the reference, which refuses it, and the AVX-512 rank-one relinearization refuses one, instead of using it as an offset-free key.
@@ -299,7 +300,7 @@
   Where `ckks_mul_into` takes its one-pass product (rank 1, one `base2k` across `dst`, the operands and the tensor key, and a convolution offset of at least `base2k`, which operands one limb wide or more meet), the sum is poulpy-core's `glwe_mul_relinearize_sum`: the products of every pair accumulate in the transform domain, in slice order, in floating point on FFT backends, before each column's inverse transform, so pick `base2k` for `a.len()` times the products of one pair (`Module::max_base2k`); it takes three inverse transforms in all, where the two-pass sum takes `3n + 2` for `n` pairs.
   Otherwise, as at rank 2, it sums the tensor products at `max(a.k, b.k)` without normalizing, as other lazy additions, and normalizes the sum once, right before the relinearization reads it through a DFT.
   `ckks_dot_product_ct_tmp_bytes` budgets the path that relinearizes once as the larger of `glwe_mul_relinearize_sum_tmp_bytes` at `max(a.k, b.k)`, whatever the number of pairs, and two tensors at that width plus the largest of the apply, normalize and relinearize scratch; it used `2n` ciphertexts plus one tensor at `max(res.k, a.k, b.k)`.
-- `ckks_add_many`, `ckks_dot_product_pt_vec`, `ckks_dot_product_pt_const` and `ckks_dot_product_ct` on its eager path no longer reject more than `2^(63 - base2k)` terms: they accumulate every term, and normalization is deferred to the next DFT that reads the sum, as for any lazy addition.
+- `ckks_add_many`, `ckks_dot_product_pt_vec`, `ckks_dot_product_pt_const` and `ckks_dot_product_ct` on its eager path no longer reject more than `2^(63 - base2k)` terms: the dot products accumulate every term, and normalization is deferred to the next DFT that reads the sum, as for any lazy addition; `ckks_add_many_into` normalizes as its caller asks.
   Valid calls keep their bits.
 - Add `CKKSCompositionError::InvalidOperand { op, reason }` for operands that do not fit an operation, as opposed to `InvalidPlan`'s plan literals.
 - Add `CKKSPreparedLeft`, the left operand `CKKSMulOps::ckks_prepare_left` prepares as `ckks_prepare_right` prepares a `CKKSPreparedRight`, and `ckks_prepare_tmp_bytes`, the scratch of both, which `ckks_mul_tmp_bytes` covers.
@@ -337,6 +338,12 @@
 - Add `DFTPlan::galois_elements_per_factor`.
 - The bootstrap scratch bounds cover every rotation key shape of the layout, taking one maximum per key list.
 - The test suite adds `small_s2c_preset_meets_precision`, an S2C-first bootstrap on an insecure `N = 2^11` preset built by the preset machinery, which backends run by default.
+- `CKKSCiphertextViewMut::to_backend_view_ref` reborrows a scratch ciphertext as the public `CKKSCiphertextViewRef`, whose shared buffer lets an operation that takes `Sync` sources read it.
+- **Breaking:** `CKKSAddManyOps::ckks_add_many` is `ckks_add_many_into(dst, inputs, normalize_after, scratch)`: it normalizes the lazy sum in place, by poulpy-core's `glwe_normalize_assign`, after every `normalize_after` additions that another follows, `usize::MAX` for never, rejects an empty input or a zero `normalize_after` with `InvalidOperand` before any write, where an empty input was an untyped error, and panics before any write with less scratch than `ckks_add_many_tmp_bytes`, which covers the normalization.
+- Add `CKKSInnerSumOps` and its extension point `CKKSInnerSumImpl`, part of `CKKSImpl`, whose methods are all provided (`impl_ckks_inner_sum_reference!`): `ckks_inner_sum_into` and `ckks_inner_sum_assign` sum the rotations of a ciphertext by `j 2^log_batch` slots for `j < 2^log_count`, every batch of `2^log_batch` slots receiving the sum of the `2^log_count` batches, or with `normalize` set their mean, the sum divided by `2^log_count` through `ckks_div_pow2_assign`.
+  `ckks_replicate_into` and `ckks_replicate_assign` sum the rotations by `-j 2^log_batch` slots, copying a batch into the batches that follow it.
+  Both are poulpy-core's summed trace over the levels `log_batch + 1..log_batch + 1 + log_count`, forward or reversed, on a copy of the input, which leaves them canonical.
+  Every key is checked before any write, at `min(dst.k, src.k)`, a window past the slots is rejected with `InvalidOperand`, and with less scratch than the `_tmp_bytes` query of the call reports for those keys the call panics before any write; the test suite adds `test_inner_sum`, also in the rank-2 suite, and `test_add_many_normalize_after`.
 
 ### `poulpy-bin-fhe`
 

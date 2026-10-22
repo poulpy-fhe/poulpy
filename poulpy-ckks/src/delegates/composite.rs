@@ -1,5 +1,5 @@
 use crate::CKKSResult as Result;
-use crate::reference::composite::ckks_add_many_reference;
+use crate::reference::composite::{ckks_add_many_into_reference, ckks_add_many_tmp_bytes_reference};
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
@@ -12,7 +12,7 @@ use crate::{
     layouts::{CKKSCiphertext, CKKSCiphertextViewMut, CKKSPreparedLeft, CKKSPreparedRight, ScratchArenaTakeCKKS},
     oep::CKKSDotProductImpl,
 };
-use poulpy_core::{GLWEBytesOf, GLWEMulPreparedPlainSum};
+use poulpy_core::{GLWEBytesOf, GLWEMulPreparedPlainSum, GLWENormalize};
 
 /// Shared body of the fused multiply-then-accumulate composites
 /// (`ckks_mul_{add,sub}_*_into`): carve a `dst`-shaped temporary
@@ -41,18 +41,24 @@ where
 
 impl<BE: Backend> CKKSAddManyOps<BE> for Module<BE>
 where
-    Module<BE>: CKKSAddOps<BE> + CKKSCopyOps<BE>,
+    Module<BE>: CKKSAddOps<BE> + CKKSCopyOps<BE> + GLWENormalize<BE>,
 {
     fn ckks_add_many_tmp_bytes(&self, res_size: usize) -> usize {
-        self.ckks_add_tmp_bytes(res_size)
+        ckks_add_many_tmp_bytes_reference(self, res_size)
     }
 
-    fn ckks_add_many<Dst, Src>(&self, dst: &mut Dst, inputs: &[&Src], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_add_many_into<Dst, Src>(
+        &self,
+        dst: &mut Dst,
+        inputs: &[&Src],
+        normalize_after: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        ckks_add_many_reference(self, dst, inputs, scratch)
+        ckks_add_many_into_reference(self, dst, inputs, normalize_after, scratch)
     }
 }
 

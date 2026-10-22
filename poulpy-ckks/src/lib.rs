@@ -47,12 +47,17 @@
 //! DFT (products, rotations, conjugation, keyswitching, decryption) normalizes a
 //! flag-clear operand first. A value several such operations read is best
 //! normalized once with `glwe_normalize_assign`, and serializing requires a
-//! normalized ciphertext. Nothing caps a sum, at any radix: `ckks_add_many`
-//! and the dot products accumulate every term, and the next DFT that reads
-//! the sum normalizes it. Each lazy addition can grow the digits by one bit at
-//! worst, but signed digits grow like an Irwin–Hall sum, and the caller's
-//! parameters keep a sum within an `i64` digit, which a long sum at a
-//! practical radix (54 or less) is far from filling. Where its pairs share
+//! normalized ciphertext. The dot products accumulate every term, and the next
+//! DFT that reads the sum normalizes it; `ckks_add_many_into` normalizes its
+//! sum in place after every `normalize_after` additions the caller asks for,
+//! which poulpy-core's `max_lazy_terms` sizes, and `ckks_inner_sum_into` before
+//! each rotation, whose key switch reads normalized digits anyway. Each lazy
+//! addition can grow the digits by one bit at worst, but independent signed
+//! digits grow like an Irwin–Hall sum, and a sum must stay within the
+//! normalizer's domain `[-2^62, 2^62]`: `max_lazy_terms` counts the canonical
+//! digits that keep it there, 3907 at radix 54 over `2^16 * 2 * 20`
+//! coefficients, and the caller keeps its other sums within it. Where its
+//! pairs share
 //! layouts and `ckks_mul_into` takes its one-pass product, on rank 1,
 //! `ckks_dot_product_ct` and `ckks_dot_product_prepared` add their products in
 //! the transform domain instead, and the radix must hold them, as they state.

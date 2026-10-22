@@ -930,7 +930,7 @@ where
         b.iter(|| {
             reset_dst(&mut s.ct_dst);
             s.module
-                .ckks_add_many(&mut s.ct_dst, black_box(many_a.as_slice()), &mut s.scratch.borrow())
+                .ckks_add_many_into(&mut s.ct_dst, black_box(many_a.as_slice()), usize::MAX, &mut s.scratch.borrow())
                 .unwrap();
         })
     });
