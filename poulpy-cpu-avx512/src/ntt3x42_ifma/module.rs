@@ -79,6 +79,16 @@ impl<R: Ring> poulpy_hal::layouts::MaxBase2k for NTT3x42Ifma<R> {
             squaring,
         )
     }
+
+    fn max_base2k_squares(n: usize, products: usize, squares: usize, failure_bits: usize) -> usize {
+        poulpy_hal::layouts::max_base2k_ntt_squares::<Self>(
+            <Primes42 as poulpy_hal::layouts::PrimeSet>::LOG_Q_PRODUCT,
+            n,
+            products,
+            squares,
+            failure_bits,
+        )
+    }
 }
 
 impl<R: Ring> Backend for NTT3x42Ifma<R> {

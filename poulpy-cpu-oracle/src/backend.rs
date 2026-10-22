@@ -78,6 +78,16 @@ impl poulpy_hal::layouts::MaxBase2k for NTT4x30Oracle {
             squaring,
         )
     }
+
+    fn max_base2k_squares(n: usize, products: usize, squares: usize, failure_bits: usize) -> usize {
+        poulpy_hal::layouts::max_base2k_ntt_squares::<Self>(
+            <crate::Primes30 as poulpy_hal::layouts::PrimeSet>::LOG_Q_PRODUCT,
+            n,
+            products,
+            squares,
+            failure_bits,
+        )
+    }
 }
 
 impl poulpy_hal::layouts::MaxBase2k for FFT64Oracle {
