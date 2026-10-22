@@ -334,10 +334,9 @@ where
     let lvl_0: usize = sk_prepared;
     let lvl_1: usize = sk_tensor;
     let lvl_2_prepare: usize = module.glwe_secret_tensor_prepare_tmp_bytes(infos.rank());
-    let lvl_2: usize = lvl_2_prepare;
-    let lvl_3_encrypt: usize = BE::gglwe_encrypt_sk_tmp_bytes(module, infos);
+    let lvl_2_encrypt: usize = BE::gglwe_encrypt_sk_tmp_bytes(module, infos);
 
-    BE::scratch_aligned(lvl_0) + BE::scratch_aligned(lvl_1) + BE::scratch_aligned(lvl_2) + lvl_3_encrypt
+    BE::scratch_aligned(lvl_0) + BE::scratch_aligned(lvl_1) + lvl_2_prepare.max(lvl_2_encrypt)
 }
 
 pub(crate) fn glwe_tensor_key_encrypt_sk_derived<BE, R, S>(
@@ -363,12 +362,10 @@ pub(crate) fn glwe_tensor_key_encrypt_sk_derived<BE, R, S>(
     {
         let scratch = scratch.borrow();
         let (mut sk_prepared, scratch_1) = scratch.take_glwe_secret_prepared_scratch(res.n(), res.rank());
-        let (mut sk_tensor, scratch_2) = scratch_1.take_glwe_secret_tensor_scratch(res.n().as_usize().into(), res.rank());
-        let (mut tensor_scratch, scratch_3) = scratch_2.split_at(module.glwe_secret_tensor_prepare_tmp_bytes(res.rank()));
+        let (mut sk_tensor, mut scratch_2) = scratch_1.take_glwe_secret_tensor_scratch(res.n().as_usize().into(), res.rank());
         module.glwe_secret_prepare(&mut sk_prepared, sk);
-        module.glwe_secret_tensor_prepare(&mut sk_tensor, sk, &mut tensor_scratch);
+        module.glwe_secret_tensor_prepare(&mut sk_tensor, sk, &mut scratch_2.borrow());
 
-        let (mut enc_scratch, _scratch_4) = scratch_3.split_at(BE::gglwe_encrypt_sk_tmp_bytes(module, res));
         let sk_tensor_data = sk_tensor.data_mut();
         BE::gglwe_encrypt_sk(
             module,
@@ -377,7 +374,7 @@ pub(crate) fn glwe_tensor_key_encrypt_sk_derived<BE, R, S>(
             &sk_prepared,
             source_xe,
             source_xa,
-            &mut enc_scratch,
+            &mut scratch_2,
         );
     }
     scratch.wipe(tmp_bytes);
@@ -397,10 +394,9 @@ where
     let lvl_0: usize = sk_prepared;
     let lvl_1: usize = sk_tensor;
     let lvl_2_prepare: usize = module.glwe_secret_tensor_prepare_tmp_bytes(infos.rank());
-    let lvl_2: usize = lvl_2_prepare;
-    let lvl_3_encrypt: usize = BE::gglwe_compressed_encrypt_sk_tmp_bytes(module, infos);
+    let lvl_2_encrypt: usize = BE::gglwe_compressed_encrypt_sk_tmp_bytes(module, infos);
 
-    BE::scratch_aligned(lvl_0) + BE::scratch_aligned(lvl_1) + BE::scratch_aligned(lvl_2) + lvl_3_encrypt
+    BE::scratch_aligned(lvl_0) + BE::scratch_aligned(lvl_1) + lvl_2_prepare.max(lvl_2_encrypt)
 }
 
 pub(crate) fn glwe_tensor_key_compressed_encrypt_sk_derived<BE, R, S>(
@@ -426,22 +422,12 @@ pub(crate) fn glwe_tensor_key_compressed_encrypt_sk_derived<BE, R, S>(
     {
         let scratch = scratch.borrow();
         let (mut sk_prepared, scratch_1) = scratch.take_glwe_secret_prepared_scratch(res.n(), res.rank());
-        let (mut sk_tensor, scratch_2) = scratch_1.take_glwe_secret_tensor_scratch(res.n().as_usize().into(), res.rank());
-        let (mut tensor_scratch, scratch_3) = scratch_2.split_at(module.glwe_secret_tensor_prepare_tmp_bytes(res.rank()));
+        let (mut sk_tensor, mut scratch_2) = scratch_1.take_glwe_secret_tensor_scratch(res.n().as_usize().into(), res.rank());
         module.glwe_secret_prepare(&mut sk_prepared, sk);
-        module.glwe_secret_tensor_prepare(&mut sk_tensor, sk, &mut tensor_scratch);
+        module.glwe_secret_tensor_prepare(&mut sk_tensor, sk, &mut scratch_2.borrow());
 
-        let (mut enc_scratch, _scratch_4) = scratch_3.split_at(BE::gglwe_compressed_encrypt_sk_tmp_bytes(module, res));
         let sk_tensor_data = sk_tensor.data_mut();
-        BE::gglwe_compressed_encrypt_sk(
-            module,
-            res,
-            &sk_tensor_data,
-            &sk_prepared,
-            seed_xa,
-            source_xe,
-            &mut enc_scratch,
-        );
+        BE::gglwe_compressed_encrypt_sk(module, res, &sk_tensor_data, &sk_prepared, seed_xa, source_xe, &mut scratch_2);
     }
     scratch.wipe(tmp_bytes);
 }

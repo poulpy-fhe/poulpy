@@ -2,14 +2,18 @@ use poulpy_core::{
     Distribution, GetDistribution, GetDistributionMut,
     layouts::{
         GLWEInfos, GLWEPublicKeyAtViewMut, GLWEPublicKeyCompressedSeed, GLWEPublicKeyCompressedToBackendMut,
-        GLWEPublicKeyCompressedToBackendRef, GLWEPublicKeyToBackendMut, LWEInfos,
+        GLWEPublicKeyToBackendMut, LWEInfos,
     },
+    oep::EncryptionImpl,
 };
-use poulpy_hal::layouts::{Module, ScratchArena};
+use poulpy_hal::{
+    layouts::{MatZnxToBackendMut, MatZnxToBackendRef, Module, ScratchArena},
+    oep::HalMatZnxImpl,
+};
 
-use crate::{layouts::GLWEPublicKeyShareOwned, oep::GLWEPatCompressedImpl};
+use crate::layouts::GLWEPublicKeyShareOwned;
 
-pub(crate) fn mhe_glwe_public_key_share_aggregate_derived<BE: GLWEPatCompressedImpl>(
+pub(crate) fn mhe_glwe_public_key_share_aggregate_derived<BE: HalMatZnxImpl>(
     module: &Module<BE>,
     res: &mut GLWEPublicKeyShareOwned<BE>,
     a: &GLWEPublicKeyShareOwned<BE>,
@@ -18,16 +22,15 @@ pub(crate) fn mhe_glwe_public_key_share_aggregate_derived<BE: GLWEPatCompressedI
     assert!(res.dist() == a.dist(), "invalid aggregation: secret distributions differ");
     assert!(res.seed() == a.seed(), "invalid aggregation: seeds differ");
     let metadata = crate::reference::aggregate_metadata(res.noise(), a.noise());
-    let mut res_be = res.key.to_backend_mut();
-    let a = a.key.to_backend_ref();
-    for l in 0..a.rank().as_usize() {
-        BE::glwe_pat_compressed_aggregate_assign(module, &mut res_be.at_view_mut(l), &a.at_view(l));
-    }
-    drop(res_be);
+    BE::mat_znx_add_assign(
+        module,
+        &mut MatZnxToBackendMut::<BE>::to_backend_mut(res.key.data_mut()),
+        &MatZnxToBackendRef::<BE>::to_backend_ref(a.key.data()),
+    );
     GLWEPublicKeyCompressedToBackendMut::<BE>::set_noise(res, metadata);
 }
 
-pub(crate) fn mhe_glwe_public_key_share_finalize_derived<BE: GLWEPatCompressedImpl, R>(
+pub(crate) fn mhe_glwe_public_key_share_finalize_derived<BE: HalMatZnxImpl + EncryptionImpl, R>(
     module: &Module<BE>,
     res: &mut R,
     share: &GLWEPublicKeyShareOwned<BE>,
@@ -48,9 +51,22 @@ pub(crate) fn mhe_glwe_public_key_share_finalize_derived<BE: GLWEPatCompressedIm
         res.glwe_layout() == share.glwe_layout(),
         "invalid finalization: layouts differ"
     );
-    let share = share.key.to_backend_ref();
-    for l in 0..share.rank().as_usize() {
-        BE::glwe_pat_compressed_finalize(module, &mut res.at_view_mut(l), &share.at_view(l), scratch);
+    let (base2k, k): (usize, usize) = (res.base2k().into(), res.k().into());
+    BE::mat_znx_normalize(
+        module,
+        res.to_backend_mut().data_mut(),
+        base2k,
+        k,
+        0,
+        0,
+        &MatZnxToBackendRef::<BE>::to_backend_ref(share.key.data()),
+        base2k,
+        0,
+        scratch,
+    );
+    // Seeded masks are uniform digits, already canonical.
+    for (l, seed) in seeds.iter().enumerate() {
+        BE::fill_glwe_mask_from_seed(module, &mut res.at_view_mut(l), *seed);
     }
     *res.dist_mut() = dist;
     res.set_noise(share.noise());

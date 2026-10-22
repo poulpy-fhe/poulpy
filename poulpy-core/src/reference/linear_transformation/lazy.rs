@@ -10,8 +10,9 @@
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismAddWithPlanTmpBytes, VecZnxDftBytesOf,
-        VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
+        VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism,
+        VecZnxDftAutomorphismAddWithPlanTmpBytes, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply,
+        VecZnxIdftApplyTmpBytes,
     },
     layouts::{
         Backend, ScratchArena, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendMut,
@@ -60,6 +61,7 @@ where
         + VecZnxDftAutomorphismAddWithPlanTmpBytes
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
+        + VecZnxBigNormalizeTmpBytes
         + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes,
     K: GGLWEInfos,
 {
@@ -79,7 +81,16 @@ where
         .max(module.vec_znx_dft_automorphism_add_with_plan_tmp_bytes(key_size, key_size));
     let digits = gadget_dft_apply_tmp_bytes::<BE, _>(module, base2k, k_digit, dnum, mask_k, mask_small_size);
 
-    mask_dft + mask_big + mask_small + module.vec_znx_idft_apply_tmp_bytes().max(digits) + ks_dft + inner
+    let mask_work = module
+        .vec_znx_idft_apply_tmp_bytes()
+        .max(module.vec_znx_big_normalize_tmp_bytes())
+        .max(digits);
+    BE::scratch_aligned(mask_dft)
+        + BE::scratch_aligned(mask_big)
+        + BE::scratch_aligned(mask_small)
+        + mask_work
+        + BE::scratch_aligned(ks_dft)
+        + inner
 }
 
 /// ROT for a giant step whose PROD result is still in `VecZnxDft`.

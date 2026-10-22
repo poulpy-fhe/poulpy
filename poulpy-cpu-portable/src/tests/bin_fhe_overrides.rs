@@ -472,7 +472,7 @@ fn blind_rotation_rejects_invalid_shapes_before_writes() {
     key.set_distribution(poulpy_core::Distribution::ZERO);
     let mut output = module.glwe_alloc_from_infos(&layout);
     output.data_mut().data_mut().fill(0x55);
-    let before = output.data().data().to_vec();
+    let before = output.data().clone();
     let lut_layout = LookUpTableLayout {
         n: 32usize.into(),
         extension_factor: 1,
@@ -502,11 +502,7 @@ fn blind_rotation_rejects_invalid_shapes_before_writes() {
             )))
             .is_err()
         );
-        assert_eq!(
-            output.data().data().as_slice(),
-            before.as_slice(),
-            "invalid shape mutated output"
-        );
+        assert_eq!(output.data(), &before, "invalid shape mutated output");
     }
 }
 

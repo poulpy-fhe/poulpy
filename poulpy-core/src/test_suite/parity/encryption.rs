@@ -51,11 +51,21 @@ impl<B> EncryptionParityBackend for B where
 {
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub(crate) struct Snapshot {
     pub(crate) label: &'static str,
     pub(crate) metadata: Vec<usize>,
     pub(crate) bytes: Vec<u8>,
+}
+
+impl std::fmt::Debug for Snapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Snapshot")
+            .field("label", &self.label)
+            .field("metadata", &self.metadata)
+            .field("bytes", &self.bytes.len())
+            .finish()
+    }
 }
 pub(crate) fn assert_fresh_noise(value: &impl LWEInfos) {
     assert_noise(value, crate::DEFAULT_SIGMA_XE.powi(2));
@@ -224,9 +234,8 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
             &skp,
             &mut poisoned_scratch::<B>(module.glwe_decrypt_tmp_bytes(&infos)).arena(),
         );
-        assert_eq!(
-            snapshot_glwe::<B, _>("decrypt", &have_twin).bytes,
-            results.last().unwrap().bytes,
+        assert!(
+            snapshot_glwe::<B, _>("decrypt", &have_twin).bytes == results.last().unwrap().bytes,
             "glwe_decrypt, unnormalized operand"
         );
         // The mask phase is the decryption without the body: of the ciphertext's
@@ -252,9 +261,8 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         }
         let mut other = module.glwe_plaintext_alloc_from_infos(&infos);
         module.glwe_mask_inner_product(&mut other, &mask, &skp, &mut mask_scratch().arena());
-        assert_eq!(
-            snapshot_glwe::<B, _>("mask_inner_product", &other).bytes,
-            results.last().unwrap().bytes,
+        assert!(
+            snapshot_glwe::<B, _>("mask_inner_product", &other).bytes == results.last().unwrap().bytes,
             "glwe_mask_inner_product, allocated mask"
         );
         let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -271,9 +279,8 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
             &mut phase,
             &mut poisoned_scratch::<B>(module.glwe_normalize_tmp_bytes()).arena(),
         );
-        assert_eq!(
-            snapshot_glwe::<B, _>("decrypt", &phase).bytes,
-            snapshot_glwe::<B, _>("decrypt", &have).bytes,
+        assert!(
+            snapshot_glwe::<B, _>("decrypt", &phase).bytes == snapshot_glwe::<B, _>("decrypt", &have).bytes,
             "glwe_mask_inner_product plus the body"
         );
         poison_glwe::<B, _>(&mut out);
@@ -557,7 +564,7 @@ pub fn test_lwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
         results.push(snapshot_lwe::<B, _>("lwe_decompress", &out));
         let mut after = vec![0; B::len_bytes(compact.data.data())];
         B::copy_to_host(compact.data.data(), &mut after);
-        assert_eq!(after, before);
+        assert!(after == before, "lwe_decompress changed its source");
         assert_eq!(compact.seed, [107; 32]);
         results
     }

@@ -36,7 +36,7 @@ if [[ "$group" == blas ]]; then
   # The Rayon twins run the same kernels, which the contracts step covers, and would exceed the emulated budget.
   filters=(blas_parity --skip ::concurrency --skip rayon --skip _quad --skip _rank2 --skip _base2k54 --skip _n32)
 elif [[ "$backend" == avx512 || "$mode" == emulated ]]; then
-  filters=(test_vec_znx test_svp test_vmp test_convolution test_cnv test_word_compat
+  filters=(test_vec_znx test_mat_znx test_svp test_vmp test_convolution test_cnv test_word_compat
     test_transfer raw_transform_matches_contract core_parity core_encryption glwe_copy
     conjugate_invariant_embed_convolution test_znx_normalize)
   if [[ "$mode" == native ]]; then

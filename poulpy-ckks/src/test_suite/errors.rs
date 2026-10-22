@@ -8,8 +8,9 @@ use crate::{
 };
 use poulpy_core::layouts::{Diagonals, LWEInfos, LinearTransformationStrategy, TorusPrecision};
 use poulpy_hal::{
+    AlignedBuf,
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, ScratchArena, Standard},
+    layouts::{HostBytesBackend, Module, ScratchArena, Standard, VecZnx},
 };
 
 use super::{
@@ -133,11 +134,11 @@ pub fn test_encode_linear_transformation_into<BE, F, E>(
         }
         ComplexDiagonals::new(re, Diagonals::new(slots))
     };
-    let bytes = |lt: &LinearTransformation<CKKSPlaintextOwned<BE>>| -> Vec<Vec<u8>> {
+    let digits = |lt: &LinearTransformation<CKKSPlaintextOwned<BE>>| -> Vec<VecZnx<AlignedBuf, i64>> {
         lt.giant_steps
             .iter()
             .flat_map(|gs| &gs.diagonals)
-            .map(|d| download_pt::<BE>(&d.plaintext).inner.data().data().to_vec())
+            .map(|d| download_pt::<BE>(&d.plaintext).inner.data().clone())
             .collect()
     };
     let coeffs_meta: CoeffsMeta = params.prec().into();
@@ -157,7 +158,7 @@ pub fn test_encode_linear_transformation_into<BE, F, E>(
     };
 
     let mut lt = encode(&ones, coeffs_meta, &mut scratch.borrow()).unwrap();
-    let before = bytes(&lt);
+    let before = digits(&lt);
     let other = map(&[0, 1, 2], 2.0);
     let err = ckks_encode_linear_transformation_into(module, &mut lt, coeffs_meta.meta, &other, strategy, &mut scratch.borrow())
         .unwrap_err();
@@ -179,11 +180,11 @@ pub fn test_encode_linear_transformation_into<BE, F, E>(
         &mut scratch.borrow(),
     );
     assert!(res.is_err(), "a zero giant step was accepted");
-    assert_eq!(bytes(&lt), before, "a rejected encoding wrote the transform");
+    assert_eq!(digits(&lt), before, "a rejected encoding wrote the transform");
 
     ckks_encode_linear_transformation_into(module, &mut lt, coeffs_meta.meta, &twos, strategy, &mut scratch.borrow()).unwrap();
     let want = encode(&twos, coeffs_meta, &mut scratch.borrow()).unwrap();
-    assert_eq!(bytes(&lt), bytes(&want), "encoding again does not refill the transform");
+    assert_eq!(digits(&lt), digits(&want), "encoding again does not refill the transform");
 
     let narrow = CoeffsMeta {
         k: TorusPrecision(1),

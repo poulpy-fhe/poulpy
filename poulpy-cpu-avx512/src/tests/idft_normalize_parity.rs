@@ -80,9 +80,9 @@ macro_rules! idft_normalize_case {
                                             );
                                             for limb in 0..5 {
                                                 let start = limb * 2 * n * 16;
-                                                assert_eq!(
-                                                    &dft.data()[start..start + n * 16],
-                                                    &before[start..start + n * 16]
+                                                assert!(
+                                                    dft.data()[start..start + n * 16] == before[start..start + n * 16],
+                                                    "the source limb {limb} changed"
                                                 );
                                             }
                                             download_vec_znx::<$be>(&res)

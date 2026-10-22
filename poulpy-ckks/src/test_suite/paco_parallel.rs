@@ -64,7 +64,7 @@ fn assert_ciphertext_unchanged<BE>(
         after.max_size(),
         "a rejected call changed the output stored limb width"
     );
-    assert_eq!(before.data().raw(), after.data().raw(), "a rejected call changed output data");
+    assert_eq!(before.data(), after.data(), "a rejected call changed output data");
 }
 
 /// Decrypts on `BE` at full precision, downloads, and reconstructs the raw
@@ -399,11 +399,7 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     assert_eq!(seq.log_budget(), par.log_budget(), "metadata must match");
     assert_eq!(par.log_sparsity(), expected_sparsity, "parallel output sparsity");
     let (seq_host, par_host) = (seq.to_host_owned::<BE>(), par.to_host_owned::<BE>());
-    assert_eq!(
-        seq_host.data().raw(),
-        par_host.data().raw(),
-        "parallel output must be bit-identical"
-    );
+    assert_eq!(seq_host.data(), par_host.data(), "parallel output must be bit-identical");
 
     // Worker modules and arenas remain reusable across calls.
     let mut par_reused = module.ckks_ciphertext_alloc(ctx.base2k(), k_out);
@@ -418,8 +414,8 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
         )
         .unwrap();
     assert_eq!(
-        seq_host.data().raw(),
-        par_reused.to_host_owned::<BE>().data().raw(),
+        seq_host.data(),
+        par_reused.to_host_owned::<BE>().data(),
         "reused PaCo workers must remain deterministic",
     );
 }
@@ -586,8 +582,8 @@ pub fn test_paco_encapsulated_bootstrap<BE, F, E>(
     assert_eq!(par.log_sparsity(), expected_sparsity, "parallel output sparsity");
     let (out_host, par_host) = (out.to_host_owned::<BE>(), par.to_host_owned::<BE>());
     assert_eq!(
-        out_host.data().raw(),
-        par_host.data().raw(),
+        out_host.data(),
+        par_host.data(),
         "default parallel driver must be bit-identical to the default sequential driver"
     );
 

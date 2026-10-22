@@ -13,6 +13,7 @@
 
 use super::poisoned_scratch;
 use crate::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef;
+use poulpy_hal::layouts::ToOwnedDeep;
 use std::collections::HashMap;
 
 use poulpy_hal::{
@@ -90,7 +91,7 @@ fn twin_layout(parent: &GGLWELayout, k_digit: TorusPrecision) -> (GGLWELayout, u
 /// Byte equality of two GLWE ciphertexts.
 fn same<D: HostDataRef, E: HostDataRef>(have: &GLWE<D, i64>, want: &GLWE<E, i64>, what: &str) {
     assert_eq!(have.glwe_layout(), want.glwe_layout(), "{what}: metadata");
-    assert_eq!(have.data.raw(), want.data.raw(), "{what}");
+    assert_eq!(have.data.to_owned_deep(), want.data.to_owned_deep(), "{what}");
     assert_eq!(have.is_canonical(), want.is_canonical(), "{what}: canonical flag");
 }
 

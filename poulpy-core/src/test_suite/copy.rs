@@ -1,5 +1,6 @@
 //! Exact integer checks for value-preserving GLWE copies and rounded narrowing.
 
+use poulpy_hal::layouts::ToOwnedDeep;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostDataMut, HostDataRef, Module, ScratchOwned, VecZnx, ZnxView, ZnxViewMut},
@@ -72,7 +73,7 @@ where
                     }
                 }
             }
-            let original = src.data.raw().to_vec();
+            let original = src.data.to_owned_deep();
             for dst_base in [base - 1, base, base + 1] {
                 for dst_k in [base - 3, src_k - 3, src_k, src_k + 3] {
                     // Dirty spare limbs must be cleared, including when only
@@ -99,7 +100,7 @@ where
                         dst.noise() == expected_noise,
                         "copy noise: rank {src_rank} -> {dst_rank}, tagged={tagged}"
                     );
-                    assert_eq!(src.data.raw(), original, "copy changed the source");
+                    assert_eq!(src.data.to_owned_deep(), original, "copy changed the source");
                     assert_canonical(&dst.data, dst_base, dst_k);
                     for col in 0..=dst_rank {
                         for j in 0..module.n() {
@@ -143,7 +144,7 @@ where
     assert_eq!(module.glwe_copy_tmp_bytes(&dst, &src), 0);
     let mut scratch = ScratchOwned::<BE>::alloc(0);
     module.glwe_copy(&mut dst, &src, &mut scratch.borrow());
-    assert_eq!(dst.data.raw(), src.data.raw());
+    assert_eq!(dst.data, src.data);
 
     // Every evaluation clears freshness, even matching inputs or an identity.
     src.noise = provenance(1);

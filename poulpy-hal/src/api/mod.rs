@@ -223,6 +223,7 @@
 //! its contents are unspecified afterwards.
 
 mod convolution;
+mod mat_znx;
 mod module;
 mod reim;
 mod scratch;
@@ -233,6 +234,7 @@ mod vec_znx_dft;
 mod vmp_pmat;
 
 pub use convolution::*;
+pub use mat_znx::*;
 pub use module::*;
 pub use reim::*;
 pub use scratch::*;

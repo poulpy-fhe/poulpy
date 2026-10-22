@@ -17,6 +17,12 @@
 - **Breaking:** `VecZnx::encode_vec_i64_strided`, `encode_vec_i128_strided`, `decode_vec_i64_strided` and `decode_vec_i128_strided` are removed; the dense forms take one value per coefficient.
 - **Breaking, behaviour:** normalization rounds ties to even instead of toward positive infinity (`rnd` in the HAL notation).
   Ties of a few dropped exact bits no longer push every coefficient the same way; outputs change only at exact ties.
+- Add `MatZnxAddAssign::mat_znx_add_assign`, the entrywise sum of two `MatZnx` of one shape, limb by limb and not renormalized, in the new `api::mat_znx` family ([#380](https://github.com/poulpy-fhe/poulpy/issues/380)).
+  **Breaking:** its OEP method sits in the new family `HalMatZnxImpl: HalVecZnxImpl`, which every backend implements; the default body, `oep::mat_znx_add_assign_derived`, is one `vec_znx_add_assign` per output column of every entry, so an empty `unsafe impl` suffices. `test_mat_znx_add_assign` runs in every backend suite.
+- Add `MatZnxNormalize::mat_znx_normalize` and `MatZnxNormalizeAssign::mat_znx_normalize_assign`, with `MatZnxNormalizeTmpBytes`, the normalization of one output column of every entry of a `MatZnx`, as `vec_znx_normalize` and `vec_znx_normalize_assign` on each entry, which their `HalMatZnxImpl` default bodies are; `test_mat_znx_normalize` runs in every backend suite.
+- **Breaking:** `ScalarZnx` implements `Debug` on host-readable storage only and prints its shape and the first 16 coefficients of each column, as `VecZnx` and `MatZnx` do, where it derived `Debug` and printed its whole buffer, and `CnvPVecL` and `CnvPVecR` implement `PartialEq` and `Eq` (same shape, same bytes), as `VmpPMat` does ([#450](https://github.com/poulpy-fhe/poulpy/issues/450)).
+  `VecZnxDft`, `VecZnxBig`, `SvpPPol`, `VmpPMat`, `CnvPVecL` and `CnvPVecR` implement `Debug`, which prints the shape only.
+  The test suites compare layouts with `assert_eq!` through these impls, and raw bytes only under a static message, so a failing assertion no longer prints whole buffers.
 
 ### CPU backends
 
@@ -99,16 +105,18 @@
 - The normalization kernel runs on `std::simd` lanes on every CPU target, so no backend carries hand-written normalization lanes.
   Each backend picks its lane widths through the associated types of `ZnxNormalize`, portable widths by default; the AVX-512 backends fill zmm registers.
   `poulpy-cpu-portable` enables the nightly features `portable_simd`, `hint_prefetch` and `associated_type_defaults`.
+- The portable `vec_znx_gadget_decompose` kernel bounds-checks its columns once and reads its limbs through raw pointers, where it called `at` and `at_mut` per limb and per chunk of coefficients ([#460](https://github.com/poulpy-fhe/poulpy/issues/460)). Results are unchanged.
 
 ### `poulpy-core`
 
-- Fix the one-pass products and squares (`glwe_mul_relinearize`, `glwe_square_relinearize`, their assign, prepared and summed forms) against a tensor key whose gadget covers only the operands' limbs.
+- **Fix:** the one-pass products and squares (`glwe_mul_relinearize`, `glwe_square_relinearize`, their assign, prepared and summed forms) against a tensor key whose gadget covers only the operands' limbs.
   At an offset that is not a whole number of limbs, `d2 = a1·b1` spans one limb more than the operands and is relinearized `cnv_offset mod base2k` bits under the result: the key switch dropped the limb past the gadget, and that error and the key-switching error were both lifted by `2^(cnv_offset mod base2k)`.
-  A product at its operands' width with a large remainder lost up to 17 bits on NTT backends (base2k 52, `N = 2^15`, a result 28 bits narrower).
-  When the offset is not a whole number of limbs and `d2` spans digits past the gadget, the one-pass path is kept only if its modeled variance stays within `TENSOR_NOISE_MARGIN` (two bits of standard deviation) of the two-step path's; otherwise the columns are aligned to the result first and relinearized as a tensor by the backend's `glwe_tensor_relinearize`, which gives the two-step product bit for bit.
+  A product at its operands' width with a large remainder lost up to 26 bits of RMS precision on NTT backends, 29.5 with a dense secret (base2k 52, `N = 2^15`, a result 28 bits narrower, `cnv_offset mod base2k = 51`).
+  When the offset is not a whole number of limbs and `d2` spans digits past the gadget, the one-pass path is kept only if its modeled variance exceeds the two-step path's by at most `2^-4` of it (`ONE_PASS_VARIANCE_SLACK`, about 0.04 bits of standard deviation); otherwise the columns are aligned to the result first and relinearized as a tensor by the backend's `glwe_tensor_relinearize`, which gives the two-step product bit for bit if and only if `cnv_offset >= min(k_a, k_b)`, as every CKKS product has it, and agrees with it up to rounding otherwise.
+  A gate at two bits of standard deviation kept products that lost about 2 bits of RMS precision against the two-step path ([#461](https://github.com/poulpy-fhe/poulpy/issues/461)); the equal-variance gate loses at most 0.05 bits, and the tensor path costs about 21% for a product and 25% for a square.
   The model, `var_noise_glwe_mul_relinearize` in `reference::noise`, shares the operands' term between the paths and differs in the relinearization: `Var_ks + Var_tail` of `d2` at the tensor width plus the tensor rounding for the two-step path, `2^(2·(cnv_offset mod base2k))` times those of `d2` as the convolution leaves it for the one-pass path, where `Var_tail` is the residue past the gadget against `s²`.
   The secret's second moment and the key error come from the tensor key's noise metadata, and the operands' errors are floored at their rounding at their width, which vanishes once the product is lifted past it; a key without noise metadata, or with a secret of unknown law, takes the tensor path there.
-  Rounding at a width that is a whole number of limbs counts a uniform ulp in the model, where `var_canonicalization` counts none.
+  The model counts the rounding at the result and tensor widths as uniform over an ulp at every width, where `var_canonicalization` counts none at a whole number of limbs and a half ulp otherwise, so the decision does not flip with the alignment of `res_k`.
   The scratch of these products covers the backend's tensor path.
 - **Breaking:** the gadget key geometry is computed from a digit width in bits, `k_digit`, instead of a digit size in limbs ([#188](https://github.com/poulpy-fhe/poulpy/issues/188)).
   `key_k` drops its `base2k` argument and returns `dnum * k_digit + k_aux`, and `key_size`, `key_work_size` and `GGLWELayout::dnum_for_input` take `k_digit`, the latter without `base2k`.
@@ -179,6 +187,11 @@
   Backends get it from `impl_operations_reference_full!`, or from `impl_glwe_mul_prepared_plain_sum_reference_full!` with the OEP family `GLWEMulPreparedPlainSumImpl` and its reference `GLWEMulPreparedPlainSumReference`.
 - Add `GGLWELayout::max_input_k`, the widest input a key switches whole: what its digits cover, and no more than its precision less one digit.
 - Add `From<GGLWELayout>` for `GLWEAutomorphismKeyLayout`, `GLWESwitchingKeyLayout` and `GLWETensorKeyLayout`. Each panics on a coarsened view.
+- Add `GGLWECompressed::data` and `data_mut`, the stored bodies, as on `GGLWE`.
+- **Fix:** `glwe_secret_tensor_prepare` takes every temporary from its scratch, where it allocated the transformed secret, the products and their normalization buffer, and wipes that scratch before returning, so no secret-derived buffer is freed unwiped ([#425](https://github.com/poulpy-fhe/poulpy/issues/425)).
+  `glwe_secret_tensor_prepare_tmp_bytes` grows by those buffers, and the tensor key and GGLWE-to-GGSW key encryptions reuse that scratch for the encryption, so their queries count the larger of the two phases instead of their sum.
+- **Fix:** `glwe_eval_linear_transformation_tmp_bytes` counts the scratch of the per-column and final BIG normalizations and of the final iDFT of the lazy giant-step path, and of the BIG normalization of the per-giant fallback ([#426](https://github.com/poulpy-fhe/poulpy/issues/426)).
+  The lazy path counts its phases as sequential instead of summing them, so the query can shrink; outputs are unchanged.
 
 ### `poulpy-ckks`
 
@@ -276,6 +289,11 @@
 - **Fix:** the fresh noise estimate of a collective GGSW bounds a digit by `2^(B-1)` when `k_digit` is not a whole number of limbs, where the digit layout balances digits at their own width, and keeps `2^(B-1) * (1 - 2^-B)/(1 - 2^-b)` for whole-limb digits.
   Below a limb the old factor fell under 1 and underestimated the switching noise, and `mhe-contracts.md` gave the same formula.
   `test_ggsw_share_digit_widths` checks the estimate and the measured noise at widths below a limb, one bit past a limb and one bit short of two.
+- The aggregations of `GGLWEPatCompressed`, `GGLWEPat` and the public key shares add a share with one `mat_znx_add_assign` over the whole matrix, where they summed one entry at a time ([#380](https://github.com/poulpy-fhe/poulpy/issues/380)).
+  The public key share aggregation compares the seed vectors once and no longer calls `glwe_pat_compressed_aggregate_assign` per entry.
+  The finalizations of `GGLWEPatCompressed` and `GGLWEPat` normalize the whole matrix with `mat_znx_normalize_assign` (the bodies) and `mat_znx_normalize` (one call per output column), and their scratch queries are `mat_znx_normalize_tmp_bytes`.
+  The public key share finalization normalizes the bodies with one `mat_znx_normalize` and fills each mask from its seed, where it called `glwe_pat_compressed_finalize` per entry; its scratch query is `mat_znx_normalize_tmp_bytes`.
+  **Breaking:** the supertraits of `GLWEPublicKeyMHEProtocolImpl` are `HalMatZnxImpl` and `poulpy_core::oep::EncryptionImpl`, where it had `GLWEPatCompressedImpl`.
 
 ### `poulpy-blas`
 

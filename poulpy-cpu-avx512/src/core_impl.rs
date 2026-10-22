@@ -1791,7 +1791,7 @@ mod prepared_tensor_tests {
                     let before_right = right.data().to_vec();
                     module.glwe_tensor_apply_prepared_right(offset, &mut got, &a, &right, b_size, &mut scratch.borrow());
                     assert_eq!(a, before_a);
-                    assert_eq!(&right.data()[..], &before_right);
+                    assert!(right.data()[..] == before_right[..], "the prepared right operand changed");
                     glwe_tensor_apply_prepared_right(&module, offset, &mut expected, &a, &right, b_size, &mut scratch.borrow());
                     assert_eq!(
                         got, expected,

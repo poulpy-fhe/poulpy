@@ -464,14 +464,12 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
             &secret_r,
             &mut poisoned_scratch::<BR>(r.glwe_secret_tensor_prepare_tmp_bytes(Rank(rank as u32))).borrow(),
         );
-        t.glwe_secret_tensor_prepare(
-            &mut tensor_t,
-            &secret_t,
-            &mut poisoned_scratch::<BT>(t.glwe_secret_tensor_prepare_tmp_bytes(Rank(rank as u32))).borrow(),
-        );
+        crate::test_suite::assert_wipes_scratch::<BT>(t.glwe_secret_tensor_prepare_tmp_bytes(Rank(rank as u32)), |scratch| {
+            t.glwe_secret_tensor_prepare(&mut tensor_t, &secret_t, scratch)
+        });
         assert_eq!(
-            BR::to_host_bytes(&tensor_r.data.data),
-            BT::to_host_bytes(&tensor_t.data.data),
+            poulpy_hal::test_suite::download_scalar_znx::<BR>(&tensor_r.data),
+            poulpy_hal::test_suite::download_scalar_znx::<BT>(&tensor_t.data),
             "tensor secret rank={rank}"
         );
         assert_eq!(tensor_r.dist(), tensor_t.dist());
@@ -513,8 +511,8 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
             pt_t.transfer_into(&mut have);
             assert_eq!((pt_r.base2k, pt_r.k), (have.base2k, have.k));
             assert_eq!(
-                BR::to_host_bytes(pt_r.data.data()),
-                BR::to_host_bytes(have.data.data()),
+                poulpy_hal::test_suite::download_vec_znx::<BR>(&pt_r.data),
+                poulpy_hal::test_suite::download_vec_znx::<BR>(&have.data),
                 "tensor decrypt rank={rank} k={precision}"
             );
             for k_digit in shapes.k_digits(precision, b, rank) {

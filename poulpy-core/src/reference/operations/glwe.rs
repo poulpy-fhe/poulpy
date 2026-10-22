@@ -1604,11 +1604,15 @@ where
     }
 }
 
+/// Relative variance the one-pass relinearization may add to the two-step path's: about 0.04 bits of standard
+/// deviation.
+pub(crate) const ONE_PASS_VARIANCE_SLACK: f64 = 1.0 / 16.0;
+
 /// Whether the one-pass relinearization against `tsk` keeps the noise of the two-step path.
 ///
 /// Where `lo = cnv_offset mod base2k > 0` and `d2` holds digits past the gadget, the one-pass path is kept only if
-/// its modeled variance stays within [`TENSOR_NOISE_MARGIN`](crate::reference::noise::TENSOR_NOISE_MARGIN) of the
-/// two-step one (see [`var_noise_glwe_mul_relinearize`](crate::reference::noise::var_noise_glwe_mul_relinearize)).
+/// its modeled variance exceeds the two-step one by at most [`ONE_PASS_VARIANCE_SLACK`] (see
+/// [`var_noise_glwe_mul_relinearize`](crate::reference::noise::var_noise_glwe_mul_relinearize)).
 /// The secret's second moment and the key error are read from the noise metadata of `tsk`: a key without it, or
 /// with a secret of unknown law, takes the two-step path. The operands' errors are floored at their rounding at
 /// their width, which vanishes once the product is lifted past it.
@@ -1657,7 +1661,7 @@ fn one_pass_keeps_two_step_noise(
         dft_size * base2k,
         res_k.as_usize(),
     );
-    one_pass <= two_step * (2.0 * crate::reference::noise::TENSOR_NOISE_MARGIN).exp2()
+    one_pass <= two_step * (1.0 + ONE_PASS_VARIANCE_SLACK)
 }
 
 /// Scratch of [`glwe_mul_relinearize_one_pass`]: one product of ciphertexts, or a sum of them, or either over
