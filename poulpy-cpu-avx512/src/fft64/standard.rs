@@ -8,17 +8,6 @@ use poulpy_cpu_portable::kernels::{
 use super::FFT64Avx512;
 use crate::znx_avx512::{znx_automorphism_avx512, znx_automorphism_rotate_avx512};
 
-impl poulpy_hal::layouts::MaxBase2k for FFT64Avx512 {
-    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize> {
-        Some(poulpy_hal::layouts::max_base2k_fft64::<Self>(
-            n,
-            products,
-            failure_bits,
-            squaring,
-        ))
-    }
-}
-
 impl ZnxAutomorphism for FFT64Avx512 {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {

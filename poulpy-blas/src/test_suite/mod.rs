@@ -193,9 +193,8 @@ macro_rules! blas_parity_test_suite {
 
 /// Registers [`test_blas_max_base2k`](crate::test_suite::parity::test_blas_max_base2k), the radix helpers of the
 /// products against counts made by hand, as the test `max_base2k`, for one backend that implements
-/// `MaxBase2k`, scalar and parameter set; a backend without a model, as the conjugate-invariant ring, must give
-/// `None`. It runs on `4 x 4` blocks and requires `n = 64`. The expansion names `::poulpy_hal`, so the invoking crate
-/// depends on it directly.
+/// `MaxBase2k`, scalar and parameter set. It runs on `4 x 4` blocks and requires 32 slots: `n = 64`, or `n = 32` on the
+/// conjugate-invariant ring. The expansion names `::poulpy_hal`, so the invoking crate depends on it directly.
 #[macro_export]
 macro_rules! blas_max_base2k_test_suite {
     (mod $modname:ident, backend = $backend:ty, scalar = $scalar:ty, params = $params:expr $(,)?) => {

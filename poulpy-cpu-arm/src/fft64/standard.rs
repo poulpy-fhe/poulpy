@@ -13,17 +13,6 @@ use poulpy_cpu_portable::kernels::znx::{
     standard::znx_automorphism_portable as kn_automorphism, znx_automorphism_rotate_portable as kn_automorphism_rotate,
 };
 
-impl poulpy_hal::layouts::MaxBase2k for FFT64Neon {
-    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize> {
-        Some(poulpy_hal::layouts::max_base2k_fft64::<Self>(
-            n,
-            products,
-            failure_bits,
-            squaring,
-        ))
-    }
-}
-
 impl ZnxAutomorphism for FFT64Neon {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {

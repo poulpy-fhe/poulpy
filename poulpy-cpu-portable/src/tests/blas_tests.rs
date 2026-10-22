@@ -132,7 +132,7 @@ blas_conjugate_invariant_test_suite!(
     params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
 );
 
-// The radix helpers on a type with a model of each family, and on the conjugate-invariant ring, which has none.
+// The radix helpers on a type of each family, on both rings; 32 slots take `n = 32` on the conjugate-invariant ring.
 blas_max_base2k_test_suite! {
     mod blas_max_base2k_fft64portable,
     backend = crate::FFT64Portable,
@@ -151,12 +151,12 @@ blas_max_base2k_test_suite! {
     mod blas_max_base2k_ci_fft64portable,
     backend = crate::FFT64CIPortable,
     scalar = f64,
-    params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 32, hw: 24, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
 blas_max_base2k_test_suite! {
     mod blas_max_base2k_ci_ntt4x30portable,
     backend = crate::NTT4x30CIPortable,
     scalar = f64,
-    params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 32, hw: 24, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
 }

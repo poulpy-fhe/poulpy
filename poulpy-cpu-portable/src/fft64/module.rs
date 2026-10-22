@@ -42,21 +42,9 @@ pub struct FFT64PortableHandle<R: Ring = Standard> {
 
 impl<R: Ring> poulpy_hal::execution::ScratchWorkers for FFT64Portable<R> {}
 
-impl poulpy_hal::layouts::MaxBase2k for FFT64Portable {
-    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize> {
-        Some(poulpy_hal::layouts::max_base2k_fft64::<Self>(
-            n,
-            products,
-            failure_bits,
-            squaring,
-        ))
-    }
-}
-
-/// No failure model: a square's constant coefficient has a large positive mean on this ring.
-impl poulpy_hal::layouts::MaxBase2k for FFT64Portable<poulpy_hal::layouts::ConjugateInvariant> {
-    fn max_base2k(_n: usize, _products: usize, _failure_bits: usize, _squaring: bool) -> Option<usize> {
-        None
+impl<R: Ring> poulpy_hal::layouts::MaxBase2k for FFT64Portable<R> {
+    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
+        poulpy_hal::layouts::max_base2k_fft64::<Self>(n, products, failure_bits, squaring)
     }
 }
 

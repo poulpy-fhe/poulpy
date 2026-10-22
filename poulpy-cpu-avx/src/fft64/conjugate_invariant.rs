@@ -8,13 +8,6 @@ use poulpy_hal::layouts::ConjugateInvariant;
 
 use super::FFT64Avx;
 
-/// No failure model: a square's constant coefficient has a large positive mean on this ring.
-impl poulpy_hal::layouts::MaxBase2k for FFT64Avx<ConjugateInvariant> {
-    fn max_base2k(_n: usize, _products: usize, _failure_bits: usize, _squaring: bool) -> Option<usize> {
-        None
-    }
-}
-
 impl ZnxAutomorphism for FFT64Avx<ConjugateInvariant> {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {

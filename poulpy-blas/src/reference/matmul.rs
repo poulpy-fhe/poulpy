@@ -45,23 +45,20 @@ use crate::{
 };
 
 /// The largest radix in `1..=62` at which the model of `BE` holds the `products(r)` limb products that a lazy sum adds
-/// in one output limb of degree-`n` polynomials at radix `r`, `Some(0)` if none does, `None` without a model.
-fn max_radix<BE: MaxBase2k>(n: usize, failure_bits: usize, products: impl Fn(usize) -> usize) -> Option<usize> {
-    for r in (1..=MAX_BASE2K).rev() {
-        // A zero width adds no product, which the model rejects: count one.
-        if Module::<BE>::max_base2k(n, products(r).max(1), failure_bits, false)? >= r {
-            return Some(r);
-        }
-    }
-    Some(0)
+/// in one output limb of degree-`n` polynomials at radix `r`, 0 if none does.
+fn max_radix<BE: MaxBase2k>(n: usize, failure_bits: usize, products: impl Fn(usize) -> usize) -> usize {
+    // A zero width adds no product, which the model rejects: count one.
+    (1..=MAX_BASE2K)
+        .rev()
+        .find(|&r| Module::<BE>::max_base2k(n, products(r).max(1), failure_bits, false) >= r)
+        .unwrap_or(0)
 }
 
 /// The largest `base2k`, at most 62, that [`Module::max_base2k`] allows for every lazy sum of a
-/// [`crate::api::BlasMatMulOps::blas_matmul`] of `a` by `b` under `ctx`, `Some(0)` if none does, and `None` for a
-/// backend without a model. The JKLS kernel adds the products of its `K d` pairs of terms in the transform domain,
-/// `K = a.cols()` and `d` the block dimension: up to `2 L` limb products per pair in an output limb, `L` the limbs of
-/// the narrower terms, `min(w_a, w_b)` over `base2k` rounded up, for the widths of
-/// [`blas_matmul_left_term_layout`](crate::layouts::blas_matmul_left_term_layout) and
+/// [`crate::api::BlasMatMulOps::blas_matmul`] of `a` by `b` under `ctx`, 0 if none does. The JKLS kernel adds the
+/// products of its `K d` pairs of terms in the transform domain, `K = a.cols()` and `d` the block dimension: up to
+/// `2 L` limb products per pair in an output limb, `L` the limbs of the narrower terms, `min(w_a, w_b)` over `base2k`
+/// rounded up, for the widths of [`blas_matmul_left_term_layout`](crate::layouts::blas_matmul_left_term_layout) and
 /// [`blas_matmul_right_term_layout`](crate::layouts::blas_matmul_right_term_layout). It counts the one-pass circuit,
 /// rank 1 with one `base2k` across the blocks and the tensor key; the two-pass circuit adds at most `2 L` limb products
 /// at once in the transform domain. Each map that makes the terms, sigma or tau then the shifts, adds for one term the
@@ -81,7 +78,7 @@ pub fn blas_matmul_max_base2k<BE: MaxBase2k>(
     b: &impl BlasGridInfos,
     ctx: &impl BlasContextInfos,
     failure_bits: usize,
-) -> Option<usize> {
+) -> usize {
     let maps = context_shapes(ctx);
     let (left, right) = (left_term_layout(a, &maps).block, right_term_layout(b, &maps).block);
     let (width, pairs, shifts) = (
@@ -143,7 +140,7 @@ fn pt_max_base2k<BE: MaxBase2k, P: MapDiagonal>(
     inner: usize,
     rep: bool,
     failure_bits: usize,
-) -> Option<usize> {
+) -> usize {
     let (block, maps) = (
         a.block_layout(),
         map_shape((0..b.rows()).flat_map(|l| (0..b.cols()).map(move |j| b.at_for(l, j, rep)))),
@@ -169,14 +166,13 @@ fn pt_max_base2k<BE: MaxBase2k, P: MapDiagonal>(
 }
 
 /// The largest `base2k`, at most 62, that [`Module::max_base2k`] allows for every lazy sum of a
-/// [`crate::api::BlasMatMulOps::blas_matmul_pt_right`] of `a` by `b`, `Some(0)` if none does, and `None` for a backend
-/// without a model: the largest radix at which the model holds the count that method documents, with `L` and `P` counted
-/// at each candidate radix, whatever the radix of `a` and `b`. `failure_bits` and the model are those of
-/// [`Module::max_base2k`]. `b` is a public operand or its layout: the query reads the shape of its maps. Under
-/// `JklsStored` and `JklsGalois` it also reads the shape of `ctx`'s masks, which add one diagonal per giant step from the
-/// first map's width, and the final step, poulpy-ckks's summed product by prepared plaintexts, adds `K d` products from
-/// the masks' width in the transform domain. `ctx` is a context or its layout, read only then. Name the backend, as
-/// [`blas_matmul_max_base2k`] does.
+/// [`crate::api::BlasMatMulOps::blas_matmul_pt_right`] of `a` by `b`, 0 if none does: the largest radix at which the
+/// model holds the count that method documents, with `L` and `P` counted at each candidate radix, whatever the radix of
+/// `a` and `b`. `failure_bits` and the model are those of [`Module::max_base2k`]. `b` is a public operand or its
+/// layout: the query reads the shape of its maps. Under `JklsStored` and `JklsGalois` it also reads the shape of
+/// `ctx`'s masks, which add one diagonal per giant step from the first map's width, and the final step, poulpy-ckks's
+/// summed product by prepared plaintexts, adds `K d` products from the masks' width in the transform domain. `ctx` is a
+/// context or its layout, read only then. Name the backend, as [`blas_matmul_max_base2k`] does.
 ///
 /// # Panics
 ///
@@ -186,7 +182,7 @@ pub fn blas_matmul_pt_right_max_base2k<BE: MaxBase2k>(
     b: &impl BlasPtOperandInfos<Side = Right>,
     ctx: &impl BlasContextInfos,
     failure_bits: usize,
-) -> Option<usize> {
+) -> usize {
     let maps = operand_shapes(b);
     with_mask_shapes(b.plan(), ctx, false, |masks| {
         pt_max_base2k::<BE, _>(a, &maps, masks, a.cols(), false, failure_bits)
@@ -207,7 +203,7 @@ pub fn blas_matmul_pt_left_max_base2k<BE: MaxBase2k>(
     a: &impl BlasGridInfos,
     ctx: &impl BlasContextInfos,
     failure_bits: usize,
-) -> Option<usize> {
+) -> usize {
     let maps = operand_shapes(b);
     let rep = left_takes_replicated(&maps, a);
     with_mask_shapes(b.plan(), ctx, true, |masks| {
@@ -1819,15 +1815,12 @@ mod tests {
         let plan = BlasPlan::new(2).with_pt_algorithm(BlasPtAlgorithm::JklsGalois);
         let meta = CoeffsMeta::from_delta_budget(20, 19);
         let left = BlasPtOperandLayout::<Left>::new(plan, 128, 1, 1, 1, Base2K(19), meta);
-        let queries: [(&str, &dyn Fn()); 3] = [
+        let queries: [(&str, &dyn Fn()); 2] = [
             ("output layout", &|| {
                 blas_matmul_pt_left_output_layout(&a, &left, &a, &ctx);
             }),
             ("key uses", &|| {
                 blas_matmul_pt_left_key_uses(&module, &a, &left, &a, &ctx);
-            }),
-            ("max base2k", &|| {
-                blas_matmul_pt_left_max_base2k::<HostBytesBackend>(&left, &a, &ctx, 128);
             }),
         ];
         for (label, query) in queries {

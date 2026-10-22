@@ -24,6 +24,12 @@ pub struct FFT64NeonHandle<R: Ring = Standard> {
 
 impl<R: Ring> poulpy_hal::execution::ScratchWorkers for FFT64Neon<R> {}
 
+impl<R: Ring> poulpy_hal::layouts::MaxBase2k for FFT64Neon<R> {
+    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
+        poulpy_hal::layouts::max_base2k_fft64::<Self>(n, products, failure_bits, squaring)
+    }
+}
+
 impl<R: Ring> Backend for FFT64Neon<R> {
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 

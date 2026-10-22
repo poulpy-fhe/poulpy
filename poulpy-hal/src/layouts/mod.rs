@@ -313,13 +313,6 @@ impl<R: Ring> Backend for HostBytesBackend<R> {
     impl_host_byte_storage!();
 }
 
-// Storage-only backend: no transform arithmetic to model.
-impl<R: Ring> MaxBase2k for HostBytesBackend<R> {
-    fn max_base2k(_n: usize, _products: usize, _failure_bits: usize, _squaring: bool) -> Option<usize> {
-        None
-    }
-}
-
 unsafe impl<R: Ring> HalModuleImpl for HostBytesBackend<R> {
     fn new(n: u64) -> crate::layouts::Module<Self> {
         assert!(n.is_power_of_two(), "n must be a power of two, got {n}");
