@@ -79,7 +79,8 @@ pub fn test_circuit_bootstrapping_to_exponent<
 
     let rows_atk: usize = 4;
 
-    let rows_tsk: usize = 4;
+    // Covers the output GGSW, which the row expansion switches.
+    let rows_tsk: usize = 6;
 
     let lwe_infos: LWELayout = LWELayout {
         n: n_lwe.into(),
@@ -284,7 +285,8 @@ pub fn test_circuit_bootstrapping_to_constant<
 
     let rows_atk: usize = 4;
 
-    let rows_tsk: usize = 4;
+    // Covers the output GGSW, which the row expansion switches.
+    let rows_tsk: usize = 6;
 
     let lwe_infos: LWELayout = LWELayout {
         n: n_lwe.into(),

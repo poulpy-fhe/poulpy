@@ -4,7 +4,8 @@ use poulpy_core::{
     LWEFromGLWE, ScratchArenaTakeCore, TransferInto,
     layouts::{
         Base2K, GGLWEInfos, GLWE, GLWEInfos, GLWEPlaintext, GLWEPlaintextLayout, GLWESecretPreparedToBackendRef,
-        GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LWEToBackendMut, ModuleCoreAlloc, Rank, TorusPrecision,
+        GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LWEToBackendMut, ModuleCoreAlloc, Rank, SetK,
+        TorusPrecision,
     },
 };
 use poulpy_hal::AlignedBuf;
@@ -447,22 +448,25 @@ impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
             + GLWEKeyswitch<BE>,
     {
         let log_gap: usize = module.log_n() - T::LOG_BITS as usize;
+        // Each switch reads its input at the precision its key decomposes exactly:
+        // the bits below are dropped here, by narrowing, not by the key.
+        let max_input_k = |key: &GGLWEPreparedBackendRef<'_, BE>| key.gglwe_layout().max_input_k();
         let mut a = GLWEToBackendRef::<BE>::to_backend_ref(self);
+        a.set_k(a.k().min(ks_glwe.map_or(max_input_k(ks_lwe), max_input_k)));
         // The keyswitch reads a lazy sum as is, which its margin tolerates.
         a.set_canonical(true);
-        let a = &a;
         if let Some(ks_glwe) = ks_glwe {
             let mut res_tmp: GLWE<BE::OwnedBuf, BE::ZnxWord> =
-                module.glwe_alloc(ks_glwe.base2k(), ks_glwe.k(), ks_glwe.rank_out());
+                module.glwe_alloc(ks_glwe.base2k(), ks_glwe.k().min(max_input_k(ks_lwe)), ks_glwe.rank_out());
             let mut scratch_1 = scratch.borrow();
             {
                 let mut scratch_op = scratch_1.borrow();
-                module.glwe_keyswitch(&mut res_tmp, &a, ks_glwe, &mut scratch_op);
+                module.glwe_keyswitch(&mut res_tmp, &&a, ks_glwe, &mut scratch_op);
             }
             let mut scratch_op = scratch_1.borrow();
             module.lwe_from_glwe(res, &res_tmp, T::bit_index(bit) << log_gap, ks_lwe, &mut scratch_op);
         } else {
-            module.lwe_from_glwe(res, &a, T::bit_index(bit) << log_gap, ks_lwe, scratch);
+            module.lwe_from_glwe(res, &&a, T::bit_index(bit) << log_gap, ks_lwe, scratch);
         }
     }
 

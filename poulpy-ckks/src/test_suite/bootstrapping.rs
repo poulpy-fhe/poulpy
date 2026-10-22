@@ -503,25 +503,11 @@ where
         .unwrap()
         .prepare(&module, &mut scratch.borrow());
 
-    // The tensor key covers EvalMod's input, and the bootstrap's key source
-    // refuses a lookup past what a key covers.
+    // The tensor key covers EvalMod's input.
     {
-        use crate::layouts::{BootstrappingKeys, CoveringKeys};
-        use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey, GetTensorKey};
-        let tensor_key = CoveringKeys(bsk.tensor_key());
-        let max_input_k = bsk.tensor_key().gglwe_layout().max_input_k().as_usize();
-        assert!(after_c2s <= max_input_k);
-        assert!(tensor_key.get_tensor_key(max_input_k.into()).is_ok());
-        assert!(tensor_key.get_tensor_key((max_input_k + 1).into()).is_err());
-        let (&p, narrow) = bsk
-            .rotation_keys
-            .iter()
-            .min_by_key(|(_, key)| key.gglwe_layout().max_input_k())
-            .unwrap();
-        let narrow_k = narrow.gglwe_layout().max_input_k().as_usize();
-        let rotation_keys = CoveringKeys(bsk.rotation_keys());
-        assert!(rotation_keys.get_automorphism_key(p, narrow_k.into()).is_ok());
-        assert!(rotation_keys.get_automorphism_key(p, (narrow_k + 1).into()).is_err());
+        use crate::layouts::BootstrappingKeys;
+        use poulpy_core::layouts::GGLWEInfos;
+        assert!(after_c2s <= bsk.tensor_key().gglwe_layout().max_input_k().as_usize());
     }
 
     // Encrypt z at the input ("level 0") modulus.
@@ -560,7 +546,7 @@ where
                 op: "ckks_bootstrap",
                 source,
                 ..
-            }) => assert!(source.to_string().contains("the key covers inputs of"), "{err}"),
+            }) => assert!(source.to_string().contains("wider than the key's max_input_k"), "{err}"),
             _ => panic!("expected a key refused at entry, got: {err}"),
         }
     }

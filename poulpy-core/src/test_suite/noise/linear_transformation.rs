@@ -95,11 +95,12 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     let _ = params;
     let in_base2k: usize = 12;
     let key_base2k = in_base2k;
-    // Wide enough that the keys still expose a digit when read at twice their
-    // stored `dsize`, which the mixed key set below does.
     let k_in = 4 * in_base2k + 1;
     let dsize = 2;
-    let dnum = k_in.div_ceil(key_base2k * dsize);
+    // Rows enough that the keys still cover the input when read at twice their
+    // stored `dsize`, which the mixed key set below does: that read keeps one
+    // stored digit as guard.
+    let dnum = 2 * k_in.div_ceil(2 * key_base2k * dsize) + 1;
 
     let ct_infos = GLWELayout {
         n: n.into(),

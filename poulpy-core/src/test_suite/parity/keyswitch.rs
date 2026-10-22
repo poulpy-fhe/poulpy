@@ -490,7 +490,8 @@ pub fn test_gglwe_keyswitch_parity<BR, BT>(
         for k_digit in shapes.k_digits(k, base2k, rank) {
             let a_infos = key_layout(n, base2k, k, 1, rank, rank);
             let res_infos = key_layout(n, base2k, k, 1, rank, rank);
-            let key_infos = key_layout_bits(n, base2k, k, k_digit, rank, rank);
+            // Decomposes the rows it switches whole, their guard included.
+            let key_infos = key_layout_bits(n, base2k, a_infos.k().as_usize(), k_digit, rank, rank);
 
             let a_ref = ref_gglwe(module_ref, &a_infos, &mut source);
             let key_ref_coeffs = ref_gglwe(module_ref, &key_infos, &mut source);

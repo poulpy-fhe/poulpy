@@ -593,9 +593,14 @@ pub fn test_linear_transformation_mixed_key_layouts<BE, F, E>(
     let (a_re, a_im) = test_vector_1::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     // Stored at the smallest `dsize` that still leaves a digit when read at
-    // twice that value, so the coarsened twin below is always reachable.
+    // twice that value, so the coarsened twin below is always reachable, with
+    // rows enough that this read still covers the ciphertext: it keeps one
+    // stored digit as guard.
+    let dsize = params.dsize.max(2);
+    let k_digit = dsize * params.base2k;
     let key_params = CKKSTestParams {
-        dsize: params.dsize.max(2),
+        dsize,
+        k: (2 * params.k.div_ceil(2 * k_digit) + 1) * k_digit,
         ..params
     };
     let mut scratch = alloc_scratch(&key_params, module);

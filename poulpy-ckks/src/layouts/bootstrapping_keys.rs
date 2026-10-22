@@ -40,11 +40,8 @@ use poulpy_core::{
         GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWESecretLayout,
         GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared,
         GLWESwitchingKeyPreparedFactory, GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory,
-        GetAutomorphismKey, GetGaloisElement, GetTensorKey, LWEInfos, ModuleCoreAlloc, TorusPrecision,
-        prepared::{
-            GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedBackendRef,
-            GLWETensorKeyPreparedToBackendRef,
-        },
+        GetAutomorphismKey, GetGaloisElement, GetTensorKey, LWEInfos, ModuleCoreAlloc,
+        prepared::{GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
 use poulpy_hal::{
@@ -97,45 +94,6 @@ pub trait BootstrappingKeys<BE: Backend> {
     /// [`BootstrappingKeysLayout::first_factor_key`]). None by default.
     fn first_factor_key(&self, _rotation: i64) -> Option<&Self::SwitchingKey> {
         None
-    }
-}
-
-/// A key source that refuses a key not covering the precision it is asked for.
-///
-/// Past its [`max_input_k`](poulpy_core::layouts::GGLWELayout::max_input_k), a
-/// key switch drops the input limbs beyond the key's rows. The bootstrap reads
-/// every key through this source, so a key laid out narrower than the width it
-/// is used at fails instead of losing precision.
-pub(crate) struct CoveringKeys<'a, K>(pub(crate) &'a K);
-
-fn check_covers(op: &'static str, layout: GGLWELayout, k: TorusPrecision) -> poulpy_core::Result<()> {
-    let covered = layout.max_input_k();
-    if k > covered {
-        return Err(poulpy_core::CoreError::GGLWEKeyUse {
-            op,
-            detail: format!("the key covers inputs of {covered} bits, asked for {k}"),
-        });
-    }
-    Ok(())
-}
-
-impl<BE: Backend, K: GetAutomorphismKey<BE>> GetAutomorphismKey<BE> for CoveringKeys<'_, K> {
-    fn lookup_automorphism_key(
-        &self,
-        p: i64,
-        k: TorusPrecision,
-    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
-        let key = self.0.lookup_automorphism_key(p, k)?;
-        check_covers("get_automorphism_key", key.gglwe_layout(), k)?;
-        Ok(key)
-    }
-}
-
-impl<BE: Backend, K: GetTensorKey<BE>> GetTensorKey<BE> for CoveringKeys<'_, K> {
-    fn get_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
-        let key = self.0.get_tensor_key(k)?;
-        check_covers("get_tensor_key", key.gglwe_layout(), k)?;
-        Ok(key)
     }
 }
 

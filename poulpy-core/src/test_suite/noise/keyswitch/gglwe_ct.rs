@@ -44,7 +44,6 @@ where
                     let n: usize = module.n();
                     let dsize_in: usize = 1;
                     let dnum_in: usize = k_in / in_base2k;
-                    let dnum_ksk: usize = k_in.div_ceil(key_base2k * dsize);
 
                     let gglwe_s0s1_infos = GLWESwitchingKeyLayout {
                         n: n.into(),
@@ -56,6 +55,9 @@ where
                         rank_in: rank_in_s0s1.into(),
                         rank_out: rank_out_s0s1.into(),
                     };
+
+                    // Decomposes the rows it switches whole, their guard included.
+                    let dnum_ksk: usize = gglwe_s0s1_infos.k().as_usize().div_ceil(key_base2k * dsize);
 
                     let gglwe_s1s2_infos = GLWESwitchingKeyLayout {
                         n: n.into(),
@@ -206,7 +208,6 @@ pub fn test_gglwe_switching_key_keyswitch_assign<BE: crate::test_suite::noise::T
                 let dsize_in: usize = 1;
 
                 let dnum_in: usize = k_out / out_base2k;
-                let dnum_ksk: usize = k_out.div_ceil(key_base2k * dsize);
 
                 let gglwe_s0s1_infos = GLWESwitchingKeyLayout {
                     n: n.into(),
@@ -218,6 +219,9 @@ pub fn test_gglwe_switching_key_keyswitch_assign<BE: crate::test_suite::noise::T
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
                 };
+
+                // Decomposes the rows it switches whole, their guard included.
+                let dnum_ksk: usize = gglwe_s0s1_infos.k().as_usize().div_ceil(key_base2k * dsize);
 
                 let gglwe_s1s2_infos = GLWESwitchingKeyLayout {
                     n: n.into(),

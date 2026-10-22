@@ -444,6 +444,7 @@ pub fn ggsw_expand_row_reference<BE, M, R>(
     // Checked once, before any write.
     for col in 0..rank {
         crate::reference::keyswitching::glwe::assert_no_row_offset("ggsw_expand_rows", &tsk.at(col));
+        crate::reference::keyswitching::glwe::assert_key_covers("ggsw_expand_rows", res_backend.k(), &tsk.at(col));
     }
 
     let res_conv_size: usize = res_backend.k().as_usize().div_ceil(tsk_base2k);

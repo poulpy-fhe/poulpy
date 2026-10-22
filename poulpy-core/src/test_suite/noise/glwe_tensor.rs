@@ -12,13 +12,13 @@ use rand::Rng;
 use std::f64::consts::SQRT_2;
 
 use crate::layouts::GLWESecretSampling;
-use crate::test_suite::noise::glwe_decrypt_checked;
+use crate::test_suite::noise::{assert_refuses_uncovered_input, glwe_decrypt_checked};
 use crate::{
     GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEMaskFill, GLWEMulConst, GLWEMulPlain, GLWEMulRelinearizeSum,
     GLWENormalize, GLWEPreparedTensoring, GLWESub, GLWETensorDecrypt, GLWETensorKeyEncryptSk, GLWETensoring, glwe_prepare_left,
     glwe_prepare_left_tmp_bytes, glwe_prepare_right, glwe_prepare_right_tmp_bytes,
     layouts::{
-        Dnum, Dsize, GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWESecret, GLWESecretPreparedFactory,
+        Dnum, Dsize, GGLWEInfos, GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWESecret, GLWESecretPreparedFactory,
         GLWESecretTensor, GLWESecretTensorFactory, GLWESecretTensorPrepared, GLWESecretTensorPreparedFactory, GLWETensor,
         GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
         TorusPrecision, prepared::GLWESecretPrepared,
@@ -304,6 +304,14 @@ where
                 noise_want_relinearized(res_offset)
             );
         }
+
+        let wide: GLWETensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_alloc_from_infos(&GLWELayout {
+            k: TorusPrecision(tsk_infos.gglwe_layout().max_input_k().0 + 1),
+            ..glwe_out_infos
+        });
+        assert_refuses_uncovered_input("glwe_tensor_relinearize took a tensor one bit past its key", || {
+            module.glwe_tensor_relinearize(&mut res_relin, &wide, &tsk_prep, &mut scratch.borrow())
+        });
     }
 
     one_pass_product_noise(params, module);

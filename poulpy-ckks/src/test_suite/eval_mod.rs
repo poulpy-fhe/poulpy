@@ -43,9 +43,10 @@ where
     let mut res = module.ckks_ciphertext_alloc(params.base2k.into(), res_k.into());
     res.set_meta(params.prec().meta);
     let pt_prec = ckks_spec(params.n, params.base2k, 8, 10);
+    let tsk_layout = super::CKKSTestParams { k: res_k, ..*params }.tsk_layout();
     let scratch_size = module
-        .ckks_all_ops_tmp_bytes(&res, &params.tsk_layout(), &pt_prec)
-        .max(module.ckks_eval_mod_tmp_bytes(&res, &ct, eval_mod, &params.tsk_layout()));
+        .ckks_all_ops_tmp_bytes(&res, &tsk_layout, &pt_prec)
+        .max(module.ckks_eval_mod_tmp_bytes(&res, &ct, eval_mod, &tsk_layout));
     ScratchOwned::<BE>::alloc(scratch_size)
 }
 
@@ -199,7 +200,13 @@ fn run_eval_mod_case<BE, F, E>(
     // which is wider than the input scale by `f_mod_log_delta - input_log_delta`.
     let res_k = test_params.k + lit.f_mod_log_delta.saturating_sub(input_log_delta);
     let mut scratch = alloc_scratch_eval_mod(&test_params, module, &params_be, res_k);
-    let tsk = gen_tsk(&test_params, module, &sk_raw, &mut scratch.borrow());
+    // The tensor key covers the width EvalMod multiplies at.
+    let tsk = gen_tsk(
+        &CKKSTestParams { k: res_k, ..test_params },
+        module,
+        &sk_raw,
+        &mut scratch.borrow(),
+    );
 
     let ct_input = ckks_encrypt_with_prec(
         &test_params,

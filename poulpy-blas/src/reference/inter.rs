@@ -36,9 +36,14 @@ pub fn blas_sum_output_layout(res: &impl BlasGridInfos, a: &impl BlasGridInfos) 
     blas_rotate_output_layout(res, a)
 }
 
-/// The keys [`crate::api::BlasMatInterOps::blas_rotate`] by `r` looks up for a grid `a`; see [`BlasKeyUses`].
-pub fn blas_rotate_key_uses<BE: Backend>(module: &Module<BE>, a: &impl BlasGridInfos, r: i64) -> BlasKeyUses {
-    BlasKeyUses::collect(module, None, |f| rotate_uses(a, r, f))
+/// The keys [`crate::api::BlasMatInterOps::blas_rotate`] by `r` looks up for `a` into `res`; see [`BlasKeyUses`].
+pub fn blas_rotate_key_uses<BE: Backend>(
+    module: &Module<BE>,
+    res: &impl BlasGridInfos,
+    a: &impl BlasGridInfos,
+    r: i64,
+) -> BlasKeyUses {
+    BlasKeyUses::collect(module, None, |f| rotate_uses(res, a, r, f))
 }
 
 /// The keys [`crate::api::BlasMatInterOps::blas_sum`] looks up for `a` into `res`; see [`BlasKeyUses`].
@@ -123,7 +128,7 @@ impl<BE: Backend> BlasMatInterReference<BE> for Module<BE> {
         let batch = validate_blas_rotate(self, &*res, a, r, atk)?;
         let rotation = r << (2 * a.log_d());
         let used = KeyLayouts::new(atk);
-        let _ = rotate_uses(a, r, &mut |u| ensure_rotation(op, self, &used, u));
+        let _ = rotate_uses(&*res, a, r, &mut |u| ensure_rotation(op, self, &used, u));
         let bytes = used.max_bytes(|key| self.blas_rotate_tmp_bytes_reference(&*res, a, key));
         assert_scratch(op, bytes, scratch);
         for (dst, src) in res.blocks_mut().iter_mut().zip(a.blocks()) {

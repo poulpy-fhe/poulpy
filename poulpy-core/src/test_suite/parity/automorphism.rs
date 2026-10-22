@@ -74,10 +74,11 @@ pub fn test_glwe_automorphism_parity<BR, BT>(
                     k: TorusPrecision((k + k_digit) as u32),
                     rank: Rank(rank as u32),
                 };
+                // Covers `res`, which the assign variants switch.
                 let key_infos = GLWEAutomorphismKeyLayout {
                     n: Degree(n),
                     base2k: Base2K(base2k as u32),
-                    dnum: Dnum(k.div_ceil(k_digit) as u32),
+                    dnum: Dnum((k + k_digit).div_ceil(k_digit) as u32),
                     k_digit: TorusPrecision(k_digit as u32),
                     k_aux: TorusPrecision(k_digit as u32),
                     rank: Rank(rank as u32),

@@ -54,10 +54,11 @@ where
                 k_digit: 11usize.into(),
                 rank: rank.into(),
             },
+            // Covers the output GGSW, which the row expansion switches.
             tsk_layout: GGLWEToGGSWKeyLayout {
                 n: n.into(),
                 base2k: 12usize.into(),
-                dnum: 4usize.into(),
+                dnum: 5usize.into(),
                 k_aux: (12 + n.ilog2() as usize).into(),
                 k_digit: 12usize.into(),
                 rank: rank.into(),
