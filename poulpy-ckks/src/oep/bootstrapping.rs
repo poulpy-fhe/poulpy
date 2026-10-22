@@ -7,10 +7,11 @@
 use poulpy_core::layouts::{
     GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LinearTransformation, prepared::GGLWEPreparedBackendRef,
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
+use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, ScratchArena, Standard};
 
 use crate::{
     CKKSCtBounds, CKKSResult, SetCKKSInfos,
+    api::CKKSEvalModOps,
     layouts::{
         BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned, CKKSPlaintextOwned, EncodedLut,
         EvalModPlan,
@@ -99,6 +100,54 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
     ) -> CKKSResult<()>
     where
         K: BootstrappingKeys<Self>;
+}
+
+/// Backend override hook for [`CKKSBootstrappingCIOps`](crate::api::CKKSBootstrappingCIOps),
+/// the bootstrap with EvalMod on the conjugate-invariant ring of `BCI`.
+/// [`impl_ckks_bootstrapping_ci_reference`] wires it to the reference pipeline.
+///
+/// # Safety
+///
+/// As [`CKKSBootstrappingImpl`].
+pub unsafe trait CKKSBootstrappingCIImpl: Backend<Ring = Standard> {
+    fn ckks_bootstrap_ci_tmp_bytes_impl<BCI, C1, C2, F>(
+        module: &Module<Self>,
+        wide: &Module<Self>,
+        ci: &Module<BCI>,
+        ct_out: &C1,
+        ct_in: &C2,
+        ctx: &BootstrappingContext<Self, F>,
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> (usize, usize)
+    where
+        BCI: Backend<Ring = ConjugateInvariant, OwnedBuf = Self::OwnedBuf, ZnxWord = Self::ZnxWord>
+            + for<'a> Backend<BufRef<'a> = Self::BufRef<'a>, BufMut<'a> = Self::BufMut<'a>>
+            + 'static,
+        Module<BCI>: CKKSEvalModOps<BCI>,
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds;
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the bootstrap takes a module and a scratch arena per ring"
+    )]
+    fn ckks_bootstrap_ci_impl<BCI, F, K>(
+        module: &Module<Self>,
+        wide: &Module<Self>,
+        ci: &Module<BCI>,
+        ct_out: &mut CKKSCiphertextOwned<Self>,
+        ct_in: &CKKSCiphertextOwned<Self>,
+        ctx: &BootstrappingContext<Self, F>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, Self>,
+        scratch_ci: &mut ScratchArena<'_, BCI>,
+    ) -> CKKSResult<()>
+    where
+        BCI: Backend<Ring = ConjugateInvariant, OwnedBuf = Self::OwnedBuf, ZnxWord = Self::ZnxWord>
+            + for<'a> Backend<BufRef<'a> = Self::BufRef<'a>, BufMut<'a> = Self::BufMut<'a>>
+            + 'static,
+        Module<BCI>: CKKSEvalModOps<BCI>,
+        K: BootstrappingKeys<Self, BCI>;
 }
 
 /// Backend implementation of the modulus raise that applies the first
@@ -313,6 +362,76 @@ macro_rules! impl_ckks_bootstrapping_reference {
     };
 }
 
+/// Opts a backend into the reference bootstrap with EvalMod on the
+/// conjugate-invariant ring ([`CKKSBootstrappingCIImpl`]).
+#[macro_export]
+macro_rules! impl_ckks_bootstrapping_ci_reference {
+    ($be:ty) => {
+        unsafe impl $crate::oep::CKKSBootstrappingCIImpl for $be {
+            fn ckks_bootstrap_ci_tmp_bytes_impl<BCI, C1, C2, F>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                wide: &::poulpy_hal::layouts::Module<$be>,
+                ci: &::poulpy_hal::layouts::Module<BCI>,
+                ct_out: &C1,
+                ct_in: &C2,
+                ctx: &$crate::layouts::BootstrappingContext<$be, F>,
+                keys_layout: &$crate::layouts::BootstrappingKeysLayout,
+            ) -> (usize, usize)
+            where
+                BCI: ::poulpy_hal::layouts::Backend<
+                        Ring = ::poulpy_hal::layouts::ConjugateInvariant,
+                        OwnedBuf = <$be as ::poulpy_hal::layouts::Backend>::OwnedBuf,
+                        ZnxWord = <$be as ::poulpy_hal::layouts::Backend>::ZnxWord,
+                    > + for<'a> ::poulpy_hal::layouts::Backend<
+                        BufRef<'a> = <$be as ::poulpy_hal::layouts::Backend>::BufRef<'a>,
+                        BufMut<'a> = <$be as ::poulpy_hal::layouts::Backend>::BufMut<'a>,
+                    > + 'static,
+                ::poulpy_hal::layouts::Module<BCI>: $crate::api::CKKSEvalModOps<BCI>,
+                C1: $crate::CKKSCtBounds,
+                C2: $crate::CKKSCtBounds,
+            {
+                $crate::reference::bootstrapping::ckks_bootstrap_ci_tmp_bytes_reference::<$be, BCI, C1, C2, F>(
+                    module,
+                    wide,
+                    ci,
+                    ct_out,
+                    ct_in,
+                    ctx,
+                    keys_layout,
+                )
+            }
+
+            fn ckks_bootstrap_ci_impl<BCI, F, K>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                wide: &::poulpy_hal::layouts::Module<$be>,
+                ci: &::poulpy_hal::layouts::Module<BCI>,
+                ct_out: &mut $crate::layouts::CKKSCiphertextOwned<$be>,
+                ct_in: &$crate::layouts::CKKSCiphertextOwned<$be>,
+                ctx: &$crate::layouts::BootstrappingContext<$be, F>,
+                keys: &K,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+                scratch_ci: &mut ::poulpy_hal::layouts::ScratchArena<'_, BCI>,
+            ) -> $crate::CKKSResult<()>
+            where
+                BCI: ::poulpy_hal::layouts::Backend<
+                        Ring = ::poulpy_hal::layouts::ConjugateInvariant,
+                        OwnedBuf = <$be as ::poulpy_hal::layouts::Backend>::OwnedBuf,
+                        ZnxWord = <$be as ::poulpy_hal::layouts::Backend>::ZnxWord,
+                    > + for<'a> ::poulpy_hal::layouts::Backend<
+                        BufRef<'a> = <$be as ::poulpy_hal::layouts::Backend>::BufRef<'a>,
+                        BufMut<'a> = <$be as ::poulpy_hal::layouts::Backend>::BufMut<'a>,
+                    > + 'static,
+                ::poulpy_hal::layouts::Module<BCI>: $crate::api::CKKSEvalModOps<BCI>,
+                K: $crate::layouts::BootstrappingKeys<$be, BCI>,
+            {
+                $crate::reference::bootstrapping::ckks_bootstrap_ci_reference::<$be, BCI, F, K>(
+                    module, wide, ci, ct_out, ct_in, ctx, keys, scratch, scratch_ci,
+                )
+            }
+        }
+    };
+}
+
 /// Opts a backend into the CKKS reference encapsulated-ModUp pipeline.
 #[macro_export]
 macro_rules! impl_ckks_encapsulated_mod_up_reference {
@@ -430,3 +549,5 @@ pub use crate::impl_ckks_mod_up_first_factor_reference;
 pub use crate::impl_ckks_encapsulated_mod_up_reference;
 
 pub use crate::impl_ckks_bootstrapping_reference;
+
+pub use crate::impl_ckks_bootstrapping_ci_reference;

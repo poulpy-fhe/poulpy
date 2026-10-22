@@ -226,6 +226,7 @@ macro_rules! impl_oracle_ckks_standard {
         ::poulpy_ckks::impl_ckks_conjugate_reference!($be);
         ::poulpy_ckks::impl_ckks_imag_reference!($be);
         ::poulpy_ckks::impl_ckks_bootstrapping_reference!($be);
+        ::poulpy_ckks::impl_ckks_bootstrapping_ci_reference!($be);
         ::poulpy_ckks::impl_ckks_fold_reference!($be);
         ::poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference!($be);
         ::poulpy_ckks::impl_ckks_dft_reference!($be);

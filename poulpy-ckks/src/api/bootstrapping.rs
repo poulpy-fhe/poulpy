@@ -7,8 +7,7 @@ use crate::{
     api::{CKKSDFTOps, CKKSEvalModOps},
     layouts::EvalModPlan,
     layouts::{
-        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, CKKSCiphertextOwned,
-        CKKSPlaintextOwned, EncodedLut,
+        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned, CKKSPlaintextOwned, EncodedLut,
     },
 };
 
@@ -209,19 +208,23 @@ pub trait CKKSBootstrappingCIOps<BE: Backend, BCI: Backend> {
         C1: CKKSCtBounds,
         C2: CKKSCtBounds;
 
+    /// Bootstraps `ct_in` into `ct_out`, at the width of `ct_out`, with `scratch`
+    /// and `scratch_ci` of [`Self::ckks_bootstrap_ci_tmp_bytes`].
     #[expect(
         clippy::too_many_arguments,
         reason = "the bootstrap takes a module and a scratch arena per ring"
     )]
-    fn ckks_bootstrap_ci<F>(
+    fn ckks_bootstrap_ci<F, K>(
         &self,
         wide: &Module<BE>,
         ci: &Module<BCI>,
         ct_out: &mut CKKSCiphertextOwned<BE>,
         ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
-        keys: &BootstrappingKeysPrepared<BE::OwnedBuf, BE, BCI>,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
         scratch_ci: &mut ScratchArena<'_, BCI>,
-    ) -> Result<()>;
+    ) -> Result<()>
+    where
+        K: BootstrappingKeys<BE, BCI>;
 }

@@ -582,7 +582,8 @@ impl KeyWidths<'_> {
             BootstrappingPipeline::C2SFirst => f_mod_log_delta,
             BootstrappingPipeline::S2CFirst => input_log_delta + self.eval_mod.log_msg_ratio + self.c2s_guard_bits,
         };
-        self.eval_mod_k(bootstrap_k) - raised_log_delta + f_mod_log_delta
+        // A width too narrow for EvalMod fails at its key lookup or in EvalMod, not here.
+        (self.eval_mod_k(bootstrap_k) + f_mod_log_delta).saturating_sub(raised_log_delta)
     }
 }
 
@@ -796,12 +797,13 @@ where
         let mut context = Self::compile(module, base2k, plan, scratch)?;
         // Slot `j` of degree `N` is slot `j` and slot `j + N/2` of degree `2N`.
         let half = module.n() / 2;
-        let mut pair = |second: f64, log_delta: usize| {
+        let mut pair = |modulus: f64, second: f64, log_delta: usize| {
             let (mut re, mut im) = (vec![F::zero(); 2 * half], vec![F::zero(); 2 * half]);
-            re[..half].fill(F::one());
-            im[half..].fill(F::from_f64(second).unwrap());
-            // Values of modulus one: two bits above the scale hold them.
-            let mut pt = wide.ckks_pt_vec_alloc(wide.ckks_max_slots(), base2k, (log_delta + 2).into());
+            re[..half].fill(F::from_f64(modulus).unwrap());
+            im[half..].fill(F::from_f64(modulus * second).unwrap());
+            // Values of modulus one take two bits above the scale, of modulus two three.
+            let headroom = 2 + usize::from(modulus > 1.0);
+            let mut pt = wide.ckks_pt_vec_alloc(wide.ckks_max_slots(), base2k, (log_delta + headroom).into());
             pt.set_meta(GLWEPlaintextMeta {
                 scale: Scale::Log(log_delta),
                 slots: SlotsKind::Complex,
@@ -809,7 +811,9 @@ where
             });
             wide.ckks_encode_reim_into(&mut pt, &re, &im, scratch).map(|_| pt)
         };
-        let (pre, post) = (pair(-1.0, pre_log_delta)?, pair(1.0, post_log_delta)?);
+        // `v` also carries the factor 2 of the conjugate pair, which the even
+        // coefficients of degree `2N` keep once back at degree `N`.
+        let (pre, post) = (pair(1.0, -1.0, pre_log_delta)?, pair(2.0, 1.0, post_log_delta)?);
         context.eval_mod_ci = Some(EvalModCI {
             eval_mod: compile_eval_mod(base2k, plan.eval_mod, ci, scratch_ci)?,
             pre,

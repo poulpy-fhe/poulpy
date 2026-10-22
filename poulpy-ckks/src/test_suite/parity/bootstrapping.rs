@@ -254,6 +254,8 @@ where
     type RotationKeys = HashMap<i64, GLWEAutomorphismKeyPrepared<B::OwnedBuf, B>>;
     type TensorKey = GLWETensorKeyPrepared<B::OwnedBuf, B>;
     type SwitchingKey = GGLWEPrepared<B::OwnedBuf, B>;
+    type TraceKey = GGLWEPrepared<B::OwnedBuf, B>;
+    type EmbedKey = GGLWEPrepared<B::OwnedBuf, B>;
 
     fn rotation_keys(&self) -> &Self::RotationKeys {
         &self.rotation_keys

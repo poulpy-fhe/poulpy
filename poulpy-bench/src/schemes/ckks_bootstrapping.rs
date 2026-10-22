@@ -82,15 +82,15 @@ fn runner_ckks_bootstrapping<BE>(
 }
 
 /// Exercises every preset at the caller's fixture radix limit, `BCI` running
-/// EvalMod for the presets that put it on the conjugate-invariant ring, which
-/// have no other radix: a fixture radix below theirs leaves them out.
+/// EvalMod for the presets that put it on the conjugate-invariant ring.
 ///
 /// `FIXTURE_BASE2K` selects the benchmark shape; it carries no failure-probability
 /// guarantee. The registered FFT and NTT fixtures use 18 and 52 respectively.
 pub fn bench_ckks_bootstrapping<BE, BCI, const FIXTURE_BASE2K: usize>(c: &mut Criterion<WallTime>)
 where
     BE: TestContextBackend<Ring = Standard>,
-    BCI: TestContextBackend<Ring = ConjugateInvariant>,
+    BCI:
+        TestContextBackend<Ring = ConjugateInvariant> + for<'a> Backend<BufRef<'a> = BE::BufRef<'a>, BufMut<'a> = BE::BufMut<'a>>,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, f64>
         + CKKSBootstrappingOps<BE>
@@ -110,12 +110,10 @@ where
     let mut group = c.benchmark_group(format!("{backend}/ckks/ckks_bootstrapping"));
     group.sample_size(10);
     for preset in all().unwrap() {
-        match preset.plan().eval_mod_ring() {
-            EvalModRing::Standard => {
-                let preset = preset_with_max_base2k(&preset, FIXTURE_BASE2K).unwrap();
-                runner_ckks_bootstrapping(&mut group, preset, BootstrappingPresetRun::<BE>::setup);
-            }
-            _ if preset.base2k() > FIXTURE_BASE2K => {}
+        let ring = preset.plan().eval_mod_ring();
+        let preset = preset_with_max_base2k(&preset, FIXTURE_BASE2K).unwrap();
+        match ring {
+            EvalModRing::Standard => runner_ckks_bootstrapping(&mut group, preset, BootstrappingPresetRun::<BE>::setup),
             _ => runner_ckks_bootstrapping(&mut group, preset, |preset| {
                 BootstrappingPresetRun::<BE>::setup_ci::<BCI>(preset)
             }),

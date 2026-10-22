@@ -16,8 +16,9 @@
 //!   `output_k - input_k`.
 //!   S2C-first also reserves the pre-ModUp transform consumption in `input_k`;
 //! - `p`: guaranteed output precision in bits (see [`BootstrappingPreset::log2_precision`]);
-//! - `circuit`: `c2s` (C2S-first) or `s2c` (S2C-first), extended with a suffix for further techniques:
-//!   `fast` for [`n16_d35_k685_p19_s2c_fast`], tuned for speed.
+//! - `circuit`: `c2s` (C2S-first) or `s2c` (S2C-first), followed by a suffix per further
+//!   technique: `ffr` for the first CoeffsToSlots factor on the raise, `ci` for EvalMod
+//!   on the conjugate-invariant ring, as [`n16_d35_k685_p19_s2c_ffr_ci`] combines them.
 //!
 //! `n16_d35_k636_p20_c2s` is thus the C2S-first preset at `N = 2^16` for inputs at
 //! scale `2^35`, producing 636-bit ciphertexts at scale `2^35` with at least 20 bits of precision.
@@ -513,9 +514,9 @@ pub(crate) fn insecure_n11_d35_k180_p20_s2c() -> Result<BootstrappingPreset> {
 /// applied by the raise, three factors of four layers follow, EvalMod runs once
 /// on the conjugate-invariant ring ([`EvalModRing::ConjugateInvariant`], 84 bits
 /// of conversions), and SlotsToCoeffs has four factors. The raised width is 1383 bits.
-pub fn n16_d35_k685_p19_s2c_fast() -> Result<BootstrappingPreset> {
+pub fn n16_d35_k685_p19_s2c_ffr_ci() -> Result<BootstrappingPreset> {
     build(PresetSpec {
-        name: "n16_d35_k685_p19_s2c_fast",
+        name: "n16_d35_k685_p19_s2c_ffr_ci",
         output_k: 685,
         log2_precision: 19,
         c2s_schedule: &[(3, 1), (4, 1024), (4, 64), (4, 4)],
@@ -538,7 +539,7 @@ pub fn all() -> Result<Vec<BootstrappingPreset>> {
         n16_d35_k636_p20_c2s,
         n16_d35_k733_p20_s2c,
         n15_d35_k180_p18_c2s,
-        n16_d35_k685_p19_s2c_fast,
+        n16_d35_k685_p19_s2c_ffr_ci,
     ];
     PRESETS.iter().map(|build| build()).collect()
 }
@@ -1168,8 +1169,8 @@ mod tests {
     }
 
     #[test]
-    fn n16_d35_k685_p19_s2c_fast_runs_eval_mod_on_the_ci_ring() {
-        let preset = n16_d35_k685_p19_s2c_fast().unwrap();
+    fn n16_d35_k685_p19_s2c_ffr_ci_runs_eval_mod_on_the_ci_ring() {
+        let preset = n16_d35_k685_p19_s2c_ffr_ci().unwrap();
         assert_eq!((preset.input_k(), preset.output_k(), preset.bootstrap_k()), (160, 685, 1383));
         assert_eq!(preset.plan().eval_mod_ring().consumed_bits(), 84);
         // The tensor key is of the CI ring of degree N, the conversion keys of degree 2N.
@@ -1182,7 +1183,7 @@ mod tests {
     }
 
     #[test]
-    fn n16_d35_k685_p19_s2c_fast_has_a_smaller_key_set() {
+    fn n16_d35_k685_p19_s2c_ffr_ci_has_a_smaller_key_set() {
         let mib = |bytes: usize| {
             assert!(bytes.is_multiple_of(1 << 20));
             bytes >> 20
@@ -1191,7 +1192,7 @@ mod tests {
         assert_eq!(key_set_bytes(&n16_d35_k733_p20_s2c().unwrap()).map(mib), [7891, 99, 32, 0, 0]);
         // 43 rotation keys and no conjugation, the CI tensor key, the dense-to-sparse key,
         // eight first-factor keys and the trace and embed keys of degree 2N: 6845 MiB.
-        let preset = n16_d35_k685_p19_s2c_fast().unwrap();
+        let preset = n16_d35_k685_p19_s2c_ffr_ci().unwrap();
         assert_eq!(key_set_bytes(&preset).map(mib), [6243, 99, 3, 240, 260]);
         // With the first factor evaluated by the matrix, every paid factor runs 48 bits
         // wider and the sparse-to-dense key comes back: 8001 MiB.
@@ -1214,7 +1215,7 @@ mod tests {
                 "n16_d35_k636_p20_c2s",
                 "n16_d35_k733_p20_s2c",
                 "n15_d35_k180_p18_c2s",
-                "n16_d35_k685_p19_s2c_fast"
+                "n16_d35_k685_p19_s2c_ffr_ci"
             ]
         );
     }

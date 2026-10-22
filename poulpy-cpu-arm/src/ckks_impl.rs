@@ -1,8 +1,8 @@
 use super::{FFT64Neon, NTT4x30Neon};
 use poulpy_ckks::{
-    impl_ckks_bootstrapping_reference, impl_ckks_complex_polynomial_evaluation_reference, impl_ckks_conjugate_reference,
-    impl_ckks_dft_reference, impl_ckks_encapsulated_mod_up_reference, impl_ckks_fold_reference, impl_ckks_imag_reference,
-    impl_ckks_mod_up_first_factor_reference,
+    impl_ckks_bootstrapping_ci_reference, impl_ckks_bootstrapping_reference, impl_ckks_complex_polynomial_evaluation_reference,
+    impl_ckks_conjugate_reference, impl_ckks_dft_reference, impl_ckks_encapsulated_mod_up_reference, impl_ckks_fold_reference,
+    impl_ckks_imag_reference, impl_ckks_mod_up_first_factor_reference,
 };
 
 impl_ckks_encapsulated_mod_up_reference!(FFT64Neon);
@@ -33,6 +33,7 @@ poulpy_cpu_portable::impl_cpu_ckks_defaults!(super::FFT64Neon);
 impl_ckks_conjugate_reference!(super::FFT64Neon);
 impl_ckks_imag_reference!(super::FFT64Neon);
 impl_ckks_bootstrapping_reference!(super::FFT64Neon);
+impl_ckks_bootstrapping_ci_reference!(super::FFT64Neon);
 impl_ckks_fold_reference!(super::FFT64Neon);
 impl_ckks_complex_polynomial_evaluation_reference!(super::FFT64Neon);
 impl_ckks_dft_reference!(super::FFT64Neon);
@@ -42,6 +43,7 @@ poulpy_cpu_portable::impl_cpu_ckks_defaults!(super::NTT4x30Neon);
 impl_ckks_conjugate_reference!(super::NTT4x30Neon);
 impl_ckks_imag_reference!(super::NTT4x30Neon);
 impl_ckks_bootstrapping_reference!(super::NTT4x30Neon);
+impl_ckks_bootstrapping_ci_reference!(super::NTT4x30Neon);
 impl_ckks_fold_reference!(super::NTT4x30Neon);
 impl_ckks_complex_polynomial_evaluation_reference!(super::NTT4x30Neon);
 impl_ckks_dft_reference!(super::NTT4x30Neon);
@@ -55,6 +57,8 @@ impl_ckks_conjugate_reference!(super::FFT64NeonRayon);
 impl_ckks_imag_reference!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_bootstrapping_reference!(super::FFT64NeonRayon);
+#[cfg(feature = "enable-rayon")]
+impl_ckks_bootstrapping_ci_reference!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_fold_reference!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]
@@ -74,6 +78,8 @@ impl_ckks_conjugate_reference!(super::NTT4x30NeonRayon);
 impl_ckks_imag_reference!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_bootstrapping_reference!(super::NTT4x30NeonRayon);
+#[cfg(feature = "enable-rayon")]
+impl_ckks_bootstrapping_ci_reference!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_fold_reference!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]

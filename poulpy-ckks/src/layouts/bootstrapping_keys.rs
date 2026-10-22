@@ -49,13 +49,13 @@ use poulpy_hal::{
     api::VecZnxAutomorphism,
     layouts::{
         Backend, ConjugateInvariant, CyclotomicOrder, Data, HostDataMut, HostDataRef, Module, ScalarZnxAsVecZnxBackendRef,
-        ScratchArena, Standard, ZnxView, ZnxViewMut, ZnxWord, galois_element, scalar_znx_as_vec_znx_backend_mut_from_mut,
+        ScratchArena, Standard, ZnxWord, galois_element, scalar_znx_as_vec_znx_backend_mut_from_mut,
     },
     source::Source,
 };
 
 use crate::layouts::{BootstrappingContext, EvalModRing};
-use poulpy_core::layouts::GLWESecretSampling;
+use poulpy_core::layouts::{GLWESecretSampling, GLWESecretViewMut};
 use poulpy_core::{Distribution, GetDistribution, GetDistributionMut};
 
 /// Pipeline-facing access to the **prepared** evaluation keys a CKKS bootstrap
@@ -78,6 +78,12 @@ pub trait BootstrappingKeys<BE: Backend, BEM: Backend = BE> {
     /// The prepared key-switching key type for sparse-secret encapsulation.
     type SwitchingKey: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
+    /// The prepared trace key type, from `s(X²)` to the embedded CI secret.
+    type TraceKey: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
+
+    /// The prepared embedding key type, from the embedded CI secret to `s(X²)`.
+    type EmbedKey: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
+
     /// Rotation (automorphism) keys, Galois element `−1` among them.
     fn rotation_keys(&self) -> &Self::RotationKeys;
 
@@ -96,6 +102,12 @@ pub trait BootstrappingKeys<BE: Backend, BEM: Backend = BE> {
     /// row offset from the rotated raise secret to the dense one (see
     /// [`BootstrappingKeysLayout::first_factor_key`]). None by default.
     fn first_factor_key(&self, _rotation: i64) -> Option<&Self::SwitchingKey> {
+        None
+    }
+
+    /// Trace and embedding keys of degree `2N`, with EvalMod on the
+    /// conjugate-invariant ring. None by default.
+    fn conversion_keys(&self) -> Option<(&Self::TraceKey, &Self::EmbedKey)> {
         None
     }
 }
@@ -153,10 +165,14 @@ where
     GLWEAutomorphismKeyPrepared<D, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
     GLWETensorKeyPrepared<D, BEM>: GLWETensorKeyPreparedToBackendRef<BEM>,
     GLWESwitchingKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    GLWECITraceKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    GLWECIEmbedKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
     type RotationKeys = HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>;
     type TensorKey = GLWETensorKeyPrepared<D, BEM>;
     type SwitchingKey = GLWESwitchingKeyPrepared<D, BE>;
+    type TraceKey = GLWECITraceKeyPrepared<D, BE>;
+    type EmbedKey = GLWECIEmbedKeyPrepared<D, BE>;
 
     fn rotation_keys(&self) -> &Self::RotationKeys {
         &self.rotation_keys
@@ -172,6 +188,10 @@ where
 
     fn first_factor_key(&self, rotation: i64) -> Option<&Self::SwitchingKey> {
         self.first_factor_keys.get(&rotation)
+    }
+
+    fn conversion_keys(&self) -> Option<(&Self::TraceKey, &Self::EmbedKey)> {
+        self.conversion_keys.as_ref().map(|(trace, embed)| (trace, embed))
     }
 }
 
@@ -384,7 +404,10 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
 
     /// [`Self::generate_keys`] on either ring: on the conjugate-invariant ring, the
     /// tensor key is left to [`Self::generate_keys_ci`], unencrypted.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "key generation takes the secret, the layout, three sources and a scratch arena"
+    )]
     fn generate_linear_keys(
         &self,
         module: &Module<BE>,
@@ -536,8 +559,9 @@ impl<BE: Backend<Ring = Standard>, F> BootstrappingContext<BE, F> {
     /// [`Self::generate_keys`] with EvalMod on the conjugate-invariant ring: a CI
     /// secret of the dense secret's Hamming weight, sampled after the raise keys,
     /// has the tensor key on `ci`, of degree `N`; the trace and embedding keys
-    /// switch between it and `s(X²)` on `wide`, of degree `2N`. Both secrets are
-    /// wiped before returning. `scratch_ci` serves the tensor key.
+    /// switch between it and the dense secret lifted to `s(X²)` on `wide`, of
+    /// degree `2N`. The CI secret is carved from `scratch_ci`, which also serves
+    /// the tensor key and is wiped before returning.
     #[expect(
         clippy::too_many_arguments,
         reason = "key generation takes a module per ring, three sources and a scratch arena per backend"
@@ -557,7 +581,8 @@ impl<BE: Backend<Ring = Standard>, F> BootstrappingContext<BE, F> {
     ) -> Result<BootstrappingKeySet<BE::OwnedBuf, BE::ZnxWord>>
     where
         BE::OwnedBuf: HostDataMut,
-        BCI: Backend<Ring = ConjugateInvariant, OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
+        BCI: Backend<Ring = ConjugateInvariant, OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+            + for<'a> Backend<BufRef<'a> = BE::BufRef<'a>, BufMut<'a> = BE::BufMut<'a>>,
         Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + GLWEAutomorphismKeyEncryptSk<BE>
             + GLWETensorKeyEncryptSk<BE>
@@ -579,34 +604,23 @@ impl<BE: Backend<Ring = Standard>, F> BootstrappingContext<BE, F> {
             "generate_keys_ci takes a context with EvalMod on the CI ring, a module of degree 2N and a CI module of degree N"
         );
         let mut keys = self.generate_linear_keys(module, sk_dense, layout, source_xs, source_xe, source_xa, scratch)?;
-        let mut sk_wide = wide.glwe_secret_alloc_from_infos(&GLWESecretLayout {
-            n: wide.n().into(),
-            rank: sk_dense.rank(),
-        });
-        for (i, &c) in sk_dense.data().at(0, 0).iter().enumerate() {
-            sk_wide.data_mut().at_mut(0, 0)[2 * i] = c;
-        }
-        *sk_wide.dist_mut() = *sk_dense.dist();
-        let mut sk_ci = ci.glwe_secret_alloc_from_infos(&GLWESecretLayout {
-            n: ci.n().into(),
-            rank: sk_dense.rank(),
-        });
-        ci.glwe_secret_fill_ternary_hw(&mut sk_ci, hamming_weight, source_xs);
-        ci.glwe_tensor_key_encrypt_sk(&mut keys.tensor_key, &sk_ci, source_xe, source_xa, scratch_ci);
-        let mut trace_key = wide.glwe_ci_trace_key_alloc_from_infos(&trace_layout);
-        wide.glwe_ci_trace_key_encrypt_sk(&mut trace_key, &sk_ci, &sk_wide, source_xe, source_xa, scratch);
-        let mut embed_key = wide.glwe_ci_embed_key_alloc_from_infos(&embed_layout);
-        wide.glwe_ci_embed_key_encrypt_sk(&mut embed_key, &sk_ci, &sk_wide, source_xe, source_xa, scratch);
-        for sk in [&mut sk_wide, &mut sk_ci] {
-            // Volatile writes, kept although the buffer is freed right after.
-            for col in 0..sk.rank().as_usize() {
-                for x in sk.data_mut().at_mut(col, 0) {
-                    // SAFETY: `x` is a valid, aligned, exclusive reference.
-                    unsafe { std::ptr::write_volatile(x, BE::ZnxWord::from_i64(0)) };
-                }
-            }
-        }
-        keys.conversion_keys = Some((trace_key, embed_key));
+        let (n, rank) = (ci.n(), sk_dense.rank());
+        let conversion_keys = {
+            let scratch_ci = scratch_ci.borrow();
+            let (mut sk_ci, mut scratch_ci) = scratch_ci.take_glwe_secret_scratch(n.into(), rank);
+            ci.glwe_secret_fill_ternary_hw(&mut sk_ci, hamming_weight, source_xs);
+            ci.glwe_tensor_key_encrypt_sk(&mut keys.tensor_key, &sk_ci, source_xe, source_xa, &mut scratch_ci);
+            // The two backends share their buffers: the CI secret is read on `wide`, whose
+            // switching keys lift the dense secret to `s(X²)` themselves.
+            let sk_ci = GLWESecretViewMut::<BE>::from_inner(sk_ci.into_inner());
+            let mut trace_key = wide.glwe_ci_trace_key_alloc_from_infos(&trace_layout);
+            wide.glwe_ci_trace_key_encrypt_sk(&mut trace_key, &sk_ci, sk_dense, source_xe, source_xa, scratch);
+            let mut embed_key = wide.glwe_ci_embed_key_alloc_from_infos(&embed_layout);
+            wide.glwe_ci_embed_key_encrypt_sk(&mut embed_key, &sk_ci, sk_dense, source_xe, source_xa, scratch);
+            (trace_key, embed_key)
+        };
+        scratch_ci.wipe(BCI::bytes_of_scalar_znx(n, rank.as_usize()));
+        keys.conversion_keys = Some(conversion_keys);
         Ok(keys)
     }
 }

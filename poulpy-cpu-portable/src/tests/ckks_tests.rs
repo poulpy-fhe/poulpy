@@ -50,11 +50,18 @@ ckks_backend_rank2_test_suite!(
 /// Full logN16 bootstraps per preset: slow, so opt in with `--ignored`. The
 /// small S2C-first preset runs by default.
 mod bootstrapping_presets {
-    use poulpy_ckks::test_suite::presets::{bootstrapping_presets_meet_precision, small_s2c_preset_meets_precision};
+    use poulpy_ckks::test_suite::presets::{
+        bootstrapping_presets_meet_precision, ci_bootstrap_refuses_invalid_inputs, small_s2c_preset_meets_precision,
+    };
 
     #[test]
     fn ntt4x30_small_s2c_preset_meets_precision() {
         small_s2c_preset_meets_precision::<crate::NTT4x30Portable, crate::NTT4x30CIPortable>();
+    }
+
+    #[test]
+    fn ntt4x30_ci_bootstrap_refuses_invalid_inputs() {
+        ci_bootstrap_refuses_invalid_inputs::<crate::NTT4x30Portable, crate::NTT4x30CIPortable>();
     }
 
     #[test]

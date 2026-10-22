@@ -171,7 +171,8 @@ where
     /// [`Self::setup`] for a preset with EvalMod on the conjugate-invariant ring, on `BCI`.
     pub fn setup_ci<BCI>(preset: BootstrappingPreset) -> Self
     where
-        BCI: TestContextBackend<Ring = ConjugateInvariant>,
+        BCI: TestContextBackend<Ring = ConjugateInvariant>
+            + for<'a> Backend<BufRef<'a> = BE::BufRef<'a>, BufMut<'a> = BE::BufMut<'a>>,
         Module<BE>: CKKSBootstrappingCIOps<BE, BCI> + GLWECIKeyEncryptSk<BE> + GLWECIKeyPreparedFactory<BE>,
         Module<BCI>: TestContextSharedModule<BCI> + CKKSEncodingOps<BCI, f64>,
     {
@@ -361,9 +362,9 @@ where
 /// Runs every preset once on `BE` and checks the measured output precision
 /// against the precision the preset advertises, and that its keys are refused
 /// at entry past their width. `BCI` runs EvalMod for the presets that put it on
-/// the conjugate-invariant ring, which have no other radix: a fixture radix below
-/// theirs leaves them out. The first preset also round-trips every generated
-/// key, both encapsulation directions included.
+/// the conjugate-invariant ring. Every preset runs at the fixture radix as
+/// [`preset_with_max_base2k`] adapts it. The first preset also round-trips every
+/// generated key, both encapsulation directions included.
 ///
 /// The caller supplies the fixture radix limit; this precision check does
 /// not establish a failure-probability bound. Every backend uses `f64` DFT
@@ -372,7 +373,8 @@ where
 pub fn bootstrapping_presets_meet_precision<BE, BCI>(fixture_base2k: usize)
 where
     BE: TestContextBackend<Ring = Standard>,
-    BCI: TestContextBackend<Ring = ConjugateInvariant>,
+    BCI:
+        TestContextBackend<Ring = ConjugateInvariant> + for<'a> Backend<BufRef<'a> = BE::BufRef<'a>, BufMut<'a> = BE::BufMut<'a>>,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, f64>
         + CKKSBootstrappingOps<BE>
@@ -389,12 +391,10 @@ where
 {
     let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
     for (index, preset) in all().unwrap().into_iter().enumerate() {
-        match preset.plan().eval_mod_ring() {
-            EvalModRing::Standard => {
-                let preset = preset_with_max_base2k(&preset, fixture_base2k).unwrap();
-                BootstrappingPresetRun::<BE>::setup_with_roundtrip(preset, index == 0).check(backend);
-            }
-            _ if preset.base2k() > fixture_base2k => {}
+        let ring = preset.plan().eval_mod_ring();
+        let preset = preset_with_max_base2k(&preset, fixture_base2k).unwrap();
+        match ring {
+            EvalModRing::Standard => BootstrappingPresetRun::<BE>::setup_with_roundtrip(preset, index == 0).check(backend),
             _ => BootstrappingPresetRun::<BE>::setup_ci::<BCI>(preset).check(backend),
         }
     }
@@ -410,7 +410,8 @@ where
 pub fn small_s2c_preset_meets_precision<BE, BCI>()
 where
     BE: TestContextBackend<Ring = Standard>,
-    BCI: TestContextBackend<Ring = ConjugateInvariant>,
+    BCI:
+        TestContextBackend<Ring = ConjugateInvariant> + for<'a> Backend<BufRef<'a> = BE::BufRef<'a>, BufMut<'a> = BE::BufMut<'a>>,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, f64>
         + CKKSBootstrappingOps<BE>
@@ -451,6 +452,115 @@ where
         post_log_delta: 38,
     };
     BootstrappingPresetRun::<BE>::setup_ci::<BCI>(preset.with_eval_mod_ring(ci).unwrap()).check(backend);
+}
+
+/// The bootstrap with EvalMod on the conjugate-invariant ring refuses, before any
+/// work: conversion keys narrower than its widths, a context compiled without
+/// conversions, modules of the wrong degrees, and keys without the
+/// dense-to-sparse key of an encapsulated recipe. On the insecure `N = 2^11`
+/// preset with EvalMod on the CI ring.
+pub fn ci_bootstrap_refuses_invalid_inputs<BE, BCI>()
+where
+    BE: TestContextBackend<Ring = Standard>,
+    BCI:
+        TestContextBackend<Ring = ConjugateInvariant> + for<'a> Backend<BufRef<'a> = BE::BufRef<'a>, BufMut<'a> = BE::BufMut<'a>>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, f64>
+        + CKKSBootstrappingOps<BE>
+        + CKKSDFTMatrixOps<BE, f64>
+        + CKKSBootstrappingCIOps<BE, BCI>
+        + GLWECIKeyEncryptSk<BE>
+        + GLWECIKeyPreparedFactory<BE>,
+    Module<BCI>: TestContextSharedModule<BCI> + CKKSEncodingOps<BCI, f64>,
+    for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    let standard = crate::presets::bootstrapping::insecure_n11_d35_k180_p20_s2c().unwrap();
+    let ring = EvalModRing::ConjugateInvariant {
+        pre_log_delta: 46,
+        post_log_delta: 38,
+    };
+    let preset = standard.with_eval_mod_ring(ring).unwrap();
+    let n = preset.n() as u64;
+    let (module, wide, ci) = (Module::<BE>::new(n), Module::<BE>::new(2 * n), Module::<BCI>::new(n));
+    let sk_layout = preset.bootstrap_layout().glwe_layout;
+    let mut sk_raw = module.glwe_secret_alloc_from_infos(&sk_layout);
+    module.glwe_secret_fill_ternary_hw(&mut sk_raw, preset.dense_secret_hamming_weight(), &mut Source::new([0; 32]));
+    let (mut scratch, mut scratch_ci) = (ScratchOwned::<BE>::alloc(1 << 28), ScratchOwned::<BCI>::alloc(1 << 28));
+    let base2k = preset.base2k().into();
+    let context = BootstrappingContext::<BE, f64>::compile_ci(
+        &module,
+        &wide,
+        &ci,
+        base2k,
+        preset.plan(),
+        &mut scratch.borrow(),
+        &mut scratch_ci.borrow(),
+    )
+    .unwrap();
+    let compiled = BootstrappingContext::<BE, f64>::compile(&module, base2k, standard.plan(), &mut scratch.borrow()).unwrap();
+    let mut keys_for = |layout: &BootstrappingKeysLayout| {
+        let (mut source_xs, mut source_xa, mut source_xe) = (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
+        context
+            .generate_keys_ci(
+                &module,
+                &wide,
+                &ci,
+                &sk_raw,
+                layout,
+                &mut source_xs,
+                &mut source_xe,
+                &mut source_xa,
+                &mut scratch.borrow(),
+                &mut scratch_ci.borrow(),
+            )
+            .unwrap()
+            .prepare_ci(&module, &wide, &ci, &mut scratch.borrow(), &mut scratch_ci.borrow())
+            .unwrap()
+    };
+    let keys = keys_for(preset.keys_layout());
+    let mut narrow = preset.keys_layout().clone();
+    let (trace, _) = narrow.conversion_keys.as_mut().unwrap();
+    trace.dnum = (trace.dnum.as_usize() - 1).into();
+    let narrow_keys = keys_for(&narrow);
+    let mut no_dense_to_sparse = keys_for(preset.keys_layout());
+    no_dense_to_sparse.encapsulation_keys = None;
+
+    let mut input = module.ckks_ciphertext_alloc_from_glwe_infos(&preset.input_layout());
+    input.set_meta(preset.input_layout().meta());
+    let mut output = module.ckks_ciphertext_alloc_from_glwe_infos(&preset.bootstrap_layout());
+    let mut bootstrap = |wide: &Module<BE>,
+                         context: &BootstrappingContext<BE, f64>,
+                         keys: &crate::layouts::BootstrappingKeysPrepared<BE::OwnedBuf, BE, BCI>| {
+        output.set_k(preset.bootstrap_k().into());
+        module.ckks_bootstrap_ci(
+            wide,
+            &ci,
+            &mut output,
+            &input,
+            context,
+            keys,
+            &mut scratch.borrow(),
+            &mut scratch_ci.borrow(),
+        )
+    };
+    bootstrap(&wide, &context, &keys).unwrap();
+    let err = bootstrap(&wide, &context, &narrow_keys).unwrap_err();
+    assert!(
+        matches!(err.composition(), Some(CKKSCompositionError::InvalidOperand { .. })),
+        "narrow conversion keys: {err}"
+    );
+    for (err, cause) in [
+        (bootstrap(&wide, &compiled, &keys), "compile_ci"),
+        (bootstrap(&module, &context, &keys), "degree 2N"),
+        (bootstrap(&wide, &context, &no_dense_to_sparse), "encapsulation"),
+    ] {
+        let err = err.unwrap_err().to_string();
+        assert!(err.contains(cause), "expected a refusal naming {cause}, got: {err}");
+    }
 }
 
 /// Scratch for unprepared context generation and key preparation.
