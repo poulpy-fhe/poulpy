@@ -16,7 +16,7 @@ pub mod keyswitch;
 pub mod linear_transformation;
 
 mod conversion;
-mod digits;
+mod gadget_copy;
 mod glwe_packing;
 mod k_digit;
 mod rotate;
@@ -24,7 +24,7 @@ mod shift;
 mod trace;
 
 pub use conversion::*;
-pub use digits::*;
+pub use gadget_copy::*;
 pub use glwe_packing::*;
 pub use k_digit::*;
 pub use rotate::*;
@@ -32,10 +32,10 @@ pub use shift::*;
 pub use trace::*;
 
 use crate::oep::{
-    AutomorphismImpl, DecryptionImpl, GGLWEExternalProductImpl, GGLWEKeyswitchImpl, GGLWEProductDigitsStridedImpl,
-    GGSWConversionImpl, GGSWExternalProductImpl, GGSWKeyswitchImpl, GLWEAddImpl, GLWECopyImpl, GLWEExternalProductImpl,
-    GLWEKeyswitchImpl, GLWEMulConstImpl, GLWEMulPlainImpl, GLWENegateImpl, GLWENormalizeImpl, GLWEShiftImpl, GLWESubImpl,
-    GLWETensoringImpl, LWEKeyswitchImpl, SamplingImpl,
+    AutomorphismImpl, DecryptionImpl, GGLWECopyImpl, GGLWEExternalProductImpl, GGLWEKeyswitchImpl, GGLWEProductDigitsStridedImpl,
+    GGSWConversionImpl, GGSWCopyImpl, GGSWExternalProductImpl, GGSWKeyswitchImpl, GLWEAddImpl, GLWECopyImpl,
+    GLWEExternalProductImpl, GLWEKeyswitchImpl, GLWEMulConstImpl, GLWEMulPlainImpl, GLWENegateImpl, GLWENormalizeImpl,
+    GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, LWEKeyswitchImpl, SamplingImpl,
 };
 use crate::{
     GLWEDecrypt, GLWENoise,
@@ -67,6 +67,8 @@ pub trait TestBackend:
     + GLWENegateImpl
     + GLWESubImpl
     + GLWECopyImpl
+    + GGLWECopyImpl
+    + GGSWCopyImpl
     + HalVecZnxImpl
     + GLWEExternalProductImpl
     + GGLWEExternalProductImpl
@@ -99,6 +101,8 @@ where
         + GLWENegateImpl
         + GLWESubImpl
         + GLWECopyImpl
+        + GGLWECopyImpl
+        + GGSWCopyImpl
         + HalVecZnxImpl
         + GLWEExternalProductImpl
         + GGLWEExternalProductImpl
@@ -309,7 +313,6 @@ pub fn download_ggsw<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>>(
             src.data.size(),
         ),
         k_aux: src.k_aux,
-        canonical: src.canonical,
         base2k: src.base2k,
         k_digit: src.k_digit,
     }

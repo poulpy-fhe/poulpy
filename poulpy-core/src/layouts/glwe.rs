@@ -104,11 +104,9 @@ impl GLWEInfos for GLWELayout {
 /// the digits through a DFT normalize a flag-clear operand first. Serialization
 /// rejects a flag-clear GLWE, so a loaded GLWE is flagged canonical; equality
 /// ignores the flag.
-/// A `GLWE` stores it, and a GGLWE or a GGSW for all its rows, clear only on a
-/// view of its first digits ([`crate::layouts::GGLWEDigits`]). The GLWE views
-/// of their rows, of tensors and of plaintexts report the owner's flag and drop
-/// a clear, so their data must stay canonical; normalize after writing a
-/// flag-clearing result into one.
+/// Only a `GLWE` stores it: the GLWE views of GGLWE and GGSW rows, tensors and
+/// plaintexts report it set and drop a clear, so their data must stay canonical;
+/// normalize after writing a flag-clearing result into one.
 ///
 /// # Plaintext metadata
 ///

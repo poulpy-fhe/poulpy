@@ -502,7 +502,6 @@ impl<BE: Backend> GGLWEToBackendRef<BE> for GGLWEViewMut<'_, BE> {
             noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
-            canonical: self.inner.canonical,
             k_digit: self.inner.k_digit,
             k_offset: self.inner.k_offset,
             data: mat_znx_backend_ref_from_mut::<BE>(&self.inner.data),
@@ -521,7 +520,6 @@ impl<BE: Backend> GGLWEToBackendMut<BE> for GGLWEViewMut<'_, BE> {
             noise: None,
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
-            canonical: self.inner.canonical,
             k_digit: self.inner.k_digit,
             k_offset: self.inner.k_offset,
             data: mat_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
@@ -570,7 +568,6 @@ impl<BE: Backend> GGSWToBackendRef<BE> for GGSWViewMut<'_, BE> {
             noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
-            canonical: self.inner.canonical,
             k_digit: self.inner.k_digit,
             data: mat_znx_backend_ref_from_mut::<BE>(&self.inner.data),
         })
@@ -588,7 +585,6 @@ impl<BE: Backend> GGSWToBackendMut<BE> for GGSWViewMut<'_, BE> {
             noise: None,
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
-            canonical: self.inner.canonical,
             k_digit: self.inner.k_digit,
             data: mat_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
         })

@@ -201,20 +201,6 @@ impl<D: Data, W: ZnxWord> MatZnx<D, W> {
         self.data
     }
 
-    /// Its first `rows` rows, over the same buffer: entries are stored row
-    /// after row, so every entry the prefix keeps stays where it is.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `rows > self.rows()`.
-    pub fn with_rows(self, rows: usize) -> Self {
-        assert!(rows <= self.rows(), "MatZnx::with_rows: more rows than the matrix has");
-        Self {
-            shape: MatZnxShape::new(self.n(), rows, self.cols_in(), self.cols_out(), self.size()),
-            ..self
-        }
-    }
-
     /// Returns the byte size of one `(row, col)` entry: an inner [`VecZnx`]
     /// with `cols_out` columns and `size` limbs of `W` words.
     fn entry_bytes(&self) -> usize {

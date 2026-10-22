@@ -193,7 +193,6 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
             GGLWEViewMut::from_inner(GGLWE {
                 noise: None,
                 k_aux: infos.k_aux(),
-                canonical: true,
                 base2k: infos.base2k(),
                 k_digit: infos.k_digit(),
                 k_offset: infos.k_offset(),
@@ -251,7 +250,6 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
             GGSWViewMut::from_inner(GGSW {
                 noise: None,
                 k_aux: infos.k_aux(),
-                canonical: true,
                 base2k: infos.base2k(),
                 k_digit: infos.k_digit(),
                 data: data.into_inner(),

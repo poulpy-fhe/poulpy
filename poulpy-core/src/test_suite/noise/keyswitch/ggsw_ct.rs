@@ -10,12 +10,12 @@ use crate::layouts::LWEInfos;
 use crate::layouts::prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef};
 use crate::{Distribution, ScalarZnxFillDistribution};
 use crate::{
-    GGLWEToGGSWKeyEncryptSk, GGSWEncryptSk, GGSWKeyswitch, GGSWNoise, GLWENormalize, GLWESwitchingKeyEncryptSk,
+    GGLWEToGGSWKeyEncryptSk, GGSWCopy, GGSWEncryptSk, GGSWKeyswitch, GGSWNoise, GLWESwitchingKeyEncryptSk,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        Dnum, GGLWEInfos, GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPrepared, GGLWEToGGSWKeyPreparedFactory, GGSW,
-        GGSWInfos, GGSWLayout, GGSWPreparedFactory, GGSWViewWithDigits, GLWEInfos, GLWESecret, GLWESecretPreparedFactory,
-        GLWESwitchingKey, GLWESwitchingKeyLayout, GLWESwitchingKeyPreparedFactory, ModuleCoreAlloc,
+        GGLWEInfos, GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPrepared, GGLWEToGGSWKeyPreparedFactory, GGSW, GGSWInfos,
+        GGSWLayout, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey, GLWESwitchingKeyLayout,
+        GLWESwitchingKeyPreparedFactory, ModuleCoreAlloc,
         prepared::{GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
     noise::GGLWENoiseModel,
@@ -211,189 +211,6 @@ where
     }
 }
 
-/// A switching key and a tensor key of a GGSW's own gadget switch it through a
-/// view of its first digits, into a GGSW of that many digits: the rows decrypt
-/// within the noise model of the view's width.
-pub fn test_ggsw_keyswitch_digits<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
-where
-    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
-    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
-    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GGSWEncryptSk<BE>
-        + GLWESwitchingKeyEncryptSk<BE>
-        + GGLWEToGGSWKeyEncryptSk<BE>
-        + GGSWKeyswitch<BE>
-        + GLWESecretPreparedFactory<BE>
-        + GLWESwitchingKeyPreparedFactory<BE>
-        + GGLWEToGGSWKeyPreparedFactory<BE>
-        + GGSWPreparedFactory<BE>
-        + GLWENormalize<BE>
-        + GGSWNoise<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-{
-    let base2k: usize = params.base2k;
-    let n: usize = module.n();
-    let dnum: usize = 4;
-    let k_aux: usize = base2k + module.log_n();
-    let var_xs: f64 = 0.5;
-    for rank in 1_usize..3 {
-        let ggsw_layout = GGSWLayout {
-            n: n.into(),
-            base2k: base2k.into(),
-            dnum: dnum.into(),
-            k_digit: base2k.into(),
-            k_aux: k_aux.into(),
-            rank: rank.into(),
-        };
-        let ksk_layout = GLWESwitchingKeyLayout {
-            n: n.into(),
-            base2k: base2k.into(),
-            dnum: dnum.into(),
-            k_aux: k_aux.into(),
-            k_digit: base2k.into(),
-            k_offset: crate::layouts::TorusPrecision(0),
-            rank_in: rank.into(),
-            rank_out: rank.into(),
-        };
-        let tsk_layout = GGLWEToGGSWKeyLayout {
-            n: n.into(),
-            base2k: base2k.into(),
-            dnum: dnum.into(),
-            k_aux: k_aux.into(),
-            k_digit: base2k.into(),
-            rank: rank.into(),
-        };
-        let max_input_k = ksk_layout.gglwe_layout().max_input_k();
-        let at = |d: usize| GGSWLayout {
-            dnum: d.into(),
-            ..ggsw_layout
-        };
-        let digits: usize = (1..dnum).rev().find(|&d| at(d).k() <= max_input_k).unwrap();
-        let view_layout = at(digits);
-
-        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-            module
-                .ggsw_encrypt_sk_tmp_bytes(&ggsw_layout)
-                .max(module.glwe_switching_key_encrypt_sk_tmp_bytes(&ksk_layout))
-                .max(module.gglwe_to_ggsw_key_encrypt_sk_tmp_bytes(&tsk_layout))
-                .max(module.ggsw_keyswitch_tmp_bytes(&view_layout, &view_layout, &ksk_layout, &tsk_layout))
-                .max(module.glwe_normalize_tmp_bytes())
-                .max(module.ggsw_noise_tmp_bytes(&view_layout)),
-        );
-        let mut source_xs: Source = Source::new([7u8; 32]);
-        let mut source_xe: Source = Source::new([8u8; 32]);
-        let mut source_xa: Source = Source::new([9u8; 32]);
-        let mut sk_in: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
-        module.glwe_secret_fill_ternary_prob(&mut sk_in, var_xs, &mut source_xs);
-        let mut sk_in_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
-        module.glwe_secret_prepare(&mut sk_in_prepared, &sk_in);
-        let mut sk_out: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
-        module.glwe_secret_fill_ternary_prob(&mut sk_out, var_xs, &mut source_xs);
-        let mut sk_out_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
-        module.glwe_secret_prepare(&mut sk_out_prepared, &sk_out);
-
-        let mut ksk: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&ksk_layout);
-        module.glwe_switching_key_encrypt_sk(
-            &mut ksk,
-            &sk_in,
-            &sk_out,
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch.arena(),
-        );
-        let mut tsk: GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord> = module.gglwe_to_ggsw_key_alloc_from_infos(&tsk_layout);
-        module.gglwe_to_ggsw_key_encrypt_sk(
-            &mut tsk,
-            &sk_out,
-            &mut source_xe,
-            &mut source_xa,
-            &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
-        );
-        let mut pt_scalar: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(n, 1);
-        module.scalar_znx_fill_distribution(
-            &mut scalar_znx_backend_mut::<BE>(&mut pt_scalar),
-            0,
-            Distribution::TernaryFixed(n),
-            &mut source_xs,
-        );
-        let mut ggsw_in: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_layout);
-        module.ggsw_encrypt_sk(
-            &mut ggsw_in,
-            &pt_scalar,
-            &sk_in_prepared,
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch.borrow(),
-        );
-        let mut ksk_prepared: GLWESwitchingKeyPrepared<BE::OwnedBuf, BE> =
-            module.glwe_switching_key_prepared_alloc_from_infos(&ksk);
-        module.glwe_switching_key_prepare(&mut ksk_prepared, &ksk, &mut scratch.borrow());
-        let mut tsk_prepared: GGLWEToGGSWKeyPrepared<BE::OwnedBuf, BE> = module.gglwe_to_ggsw_key_prepared_alloc_from_infos(&tsk);
-        module.gglwe_to_ggsw_key_prepare(&mut tsk_prepared, &tsk, &mut scratch.borrow());
-
-        let mut ggsw_out: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&view_layout);
-        module.ggsw_keyswitch(
-            &mut ggsw_out,
-            &ggsw_in.view_with_digits(Dnum(digits as u32)).unwrap(),
-            &ksk_prepared.to_backend_ref(),
-            &tsk_prepared.to_backend_ref(),
-            &mut scratch.borrow(),
-        );
-
-        for row in 0..digits {
-            for col in 0..rank + 1 {
-                let max_noise: f64 = ksk_layout.log2_std_noise_ggsw_keyswitch(
-                    &tsk_layout,
-                    col,
-                    &view_layout,
-                    &view_layout,
-                    var_xs,
-                    var_xs,
-                    DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
-                    DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
-                    0f64,
-                ) + 0.5;
-                let noise: f64 = module
-                    .ggsw_noise(
-                        &ggsw_out,
-                        row,
-                        col,
-                        &pt_scalar.to_ref(),
-                        &sk_out_prepared,
-                        &mut scratch.borrow(),
-                    )
-                    .std()
-                    .log2();
-                assert!(
-                    noise <= max_noise,
-                    "rank={rank} row={row} col={col}: noise: {noise} > max_noise: {max_noise}"
-                );
-            }
-        }
-
-        let mut ggsw_in_copy: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&view_layout);
-        crate::test_suite::noise::ggsw_narrowed_copy(
-            module,
-            &mut ggsw_in_copy,
-            &ggsw_in.view_with_digits(Dnum(digits as u32)).unwrap(),
-            &mut scratch.borrow(),
-        );
-        let mut ggsw_out_copy: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&view_layout);
-        module.ggsw_keyswitch(
-            &mut ggsw_out_copy,
-            &ggsw_in_copy,
-            &ksk_prepared.to_backend_ref(),
-            &tsk_prepared.to_backend_ref(),
-            &mut scratch.borrow(),
-        );
-        assert!(
-            ggsw_out.data == ggsw_out_copy.data,
-            "rank={rank}: the view's switch differs from the narrowed copy's"
-        );
-        crate::test_suite::noise::assert_ggsw_view_refusals(module, &ggsw_in, digits, &mut scratch.borrow());
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 pub fn test_ggsw_keyswitch_assign<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
@@ -565,6 +382,167 @@ where
                     );
                     assert!(noise <= max_noise, "noise: {noise} > max_noise: {max_noise}")
                 }
+            }
+        }
+    }
+}
+
+/// A switching key and a tensor key of a GGSW's own gadget switch it once
+/// `ggsw_copy` narrows it into a GGSW of fewer digits, which they cover, in
+/// place: the rows decrypt within the noise model of the copy's width.
+pub fn test_ggsw_keyswitch_own_layout<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
+where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: GGSWEncryptSk<BE>
+        + GLWESwitchingKeyEncryptSk<BE>
+        + GGLWEToGGSWKeyEncryptSk<BE>
+        + GGSWKeyswitch<BE>
+        + GLWESecretPreparedFactory<BE>
+        + GLWESwitchingKeyPreparedFactory<BE>
+        + GGLWEToGGSWKeyPreparedFactory<BE>
+        + GGSWCopy<BE>
+        + GGSWNoise<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let n: usize = module.n();
+    let dnum: usize = 4;
+    let k_aux: usize = base2k + module.log_n();
+    let var_xs: f64 = 0.5;
+    for rank in 1_usize..3 {
+        let ggsw_layout = GGSWLayout {
+            n: n.into(),
+            base2k: base2k.into(),
+            dnum: dnum.into(),
+            k_digit: base2k.into(),
+            k_aux: k_aux.into(),
+            rank: rank.into(),
+        };
+        let ksk_layout = GLWESwitchingKeyLayout {
+            n: n.into(),
+            base2k: base2k.into(),
+            dnum: dnum.into(),
+            k_aux: k_aux.into(),
+            k_digit: base2k.into(),
+            k_offset: crate::layouts::TorusPrecision(0),
+            rank_in: rank.into(),
+            rank_out: rank.into(),
+        };
+        let tsk_layout = GGLWEToGGSWKeyLayout {
+            n: n.into(),
+            base2k: base2k.into(),
+            dnum: dnum.into(),
+            k_aux: k_aux.into(),
+            k_digit: base2k.into(),
+            rank: rank.into(),
+        };
+        let max_input_k = ksk_layout.gglwe_layout().max_input_k();
+        let at = |d: usize| GGSWLayout {
+            dnum: d.into(),
+            ..ggsw_layout
+        };
+        let digits: usize = (1..dnum).rev().find(|&d| at(d).k() <= max_input_k).unwrap();
+        let res_layout = at(digits);
+
+        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+            module
+                .ggsw_encrypt_sk_tmp_bytes(&ggsw_layout)
+                .max(module.glwe_switching_key_encrypt_sk_tmp_bytes(&ksk_layout))
+                .max(module.gglwe_to_ggsw_key_encrypt_sk_tmp_bytes(&tsk_layout))
+                .max(module.ggsw_keyswitch_tmp_bytes(&res_layout, &res_layout, &ksk_layout, &tsk_layout))
+                .max(module.ggsw_copy_tmp_bytes(&res_layout, &ggsw_layout))
+                .max(module.ggsw_noise_tmp_bytes(&res_layout)),
+        );
+        let mut source_xs: Source = Source::new([7u8; 32]);
+        let mut source_xe: Source = Source::new([8u8; 32]);
+        let mut source_xa: Source = Source::new([9u8; 32]);
+        let mut sk_in: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
+        module.glwe_secret_fill_ternary_prob(&mut sk_in, var_xs, &mut source_xs);
+        let mut sk_in_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
+        module.glwe_secret_prepare(&mut sk_in_prepared, &sk_in);
+        let mut sk_out: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
+        module.glwe_secret_fill_ternary_prob(&mut sk_out, var_xs, &mut source_xs);
+        let mut sk_out_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
+        module.glwe_secret_prepare(&mut sk_out_prepared, &sk_out);
+
+        let mut ksk: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&ksk_layout);
+        module.glwe_switching_key_encrypt_sk(
+            &mut ksk,
+            &sk_in,
+            &sk_out,
+            &mut source_xe,
+            &mut source_xa,
+            &mut scratch.arena(),
+        );
+        let mut tsk: GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord> = module.gglwe_to_ggsw_key_alloc_from_infos(&tsk_layout);
+        module.gglwe_to_ggsw_key_encrypt_sk(
+            &mut tsk,
+            &sk_out,
+            &mut source_xe,
+            &mut source_xa,
+            &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
+        );
+        let mut pt_scalar: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(n, 1);
+        module.scalar_znx_fill_distribution(
+            &mut scalar_znx_backend_mut::<BE>(&mut pt_scalar),
+            0,
+            Distribution::TernaryFixed(n),
+            &mut source_xs,
+        );
+        let mut ggsw_in: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_layout);
+        module.ggsw_encrypt_sk(
+            &mut ggsw_in,
+            &pt_scalar,
+            &sk_in_prepared,
+            &mut source_xe,
+            &mut source_xa,
+            &mut scratch.borrow(),
+        );
+        let mut ksk_prepared: GLWESwitchingKeyPrepared<BE::OwnedBuf, BE> =
+            module.glwe_switching_key_prepared_alloc_from_infos(&ksk);
+        module.glwe_switching_key_prepare(&mut ksk_prepared, &ksk, &mut scratch.borrow());
+        let mut tsk_prepared: GGLWEToGGSWKeyPrepared<BE::OwnedBuf, BE> = module.gglwe_to_ggsw_key_prepared_alloc_from_infos(&tsk);
+        module.gglwe_to_ggsw_key_prepare(&mut tsk_prepared, &tsk, &mut scratch.borrow());
+
+        let mut ggsw_out: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&res_layout);
+        module.ggsw_copy(&mut ggsw_out, &ggsw_in, &mut scratch.borrow());
+        module.ggsw_keyswitch_assign(
+            &mut ggsw_out,
+            &ksk_prepared.to_backend_ref(),
+            &tsk_prepared.to_backend_ref(),
+            &mut scratch.borrow(),
+        );
+
+        for row in 0..digits {
+            for col in 0..rank + 1 {
+                let max_noise: f64 = ksk_layout.log2_std_noise_ggsw_keyswitch(
+                    &tsk_layout,
+                    col,
+                    &res_layout,
+                    &res_layout,
+                    var_xs,
+                    var_xs,
+                    DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
+                    DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
+                    0f64,
+                ) + 0.5;
+                let noise: f64 = module
+                    .ggsw_noise(
+                        &ggsw_out,
+                        row,
+                        col,
+                        &pt_scalar.to_ref(),
+                        &sk_out_prepared,
+                        &mut scratch.borrow(),
+                    )
+                    .std()
+                    .log2();
+                assert!(
+                    noise <= max_noise,
+                    "rank={rank} row={row} col={col}: noise: {noise} > max_noise: {max_noise}"
+                );
             }
         }
     }

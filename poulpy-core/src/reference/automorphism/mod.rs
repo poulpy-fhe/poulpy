@@ -251,7 +251,6 @@ where
     Module<BE>: crate::api::GLWEBytesOf<BE>
         + poulpy_hal::api::ModuleN
         + crate::api::GLWEKeyswitch<BE>
-        + crate::api::GLWENormalize<BE>
         + poulpy_hal::api::VecZnxAutomorphismAssignTmpBytes
         + poulpy_hal::layouts::GaloisElement
         + poulpy_hal::api::VecZnxAutomorphism<BE>

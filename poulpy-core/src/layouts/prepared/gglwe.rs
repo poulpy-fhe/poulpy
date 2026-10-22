@@ -220,12 +220,8 @@ where
     {
         let noise = other.to_backend_ref().noise();
         {
-            let other = other.to_backend_ref();
-            assert!(
-                other.canonical,
-                "gglwe_prepare: the source is a view of fewer digits, normalize its rows into a key of that layout first"
-            );
             let mut res = res.to_backend_mut();
+            let other = other.to_backend_ref();
 
             operand_degree(self.ring_degree().as_usize(), &[res.n(), other.n()]);
             assert_eq!(res.base2k, other.base2k);

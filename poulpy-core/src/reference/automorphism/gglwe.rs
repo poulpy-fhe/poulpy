@@ -2,7 +2,7 @@
 //! Inter-family core operations dispatch through the selected backend hooks.
 use crate::api::GLWEKeyswitch;
 
-use crate::api::{GLWEBytesOf, GLWENormalize};
+use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{ModuleN, VecZnxAutomorphism, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes},
     layouts::{Backend, CyclotomicOrder, GaloisElement, ScratchArena},
@@ -12,8 +12,8 @@ use crate::layouts::operand_degree;
 use crate::{
     ScratchArenaTakeCore,
     layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GLWEViewRef,
-        GetGaloisElement, SetGaloisElement, glwe_backend_ref_from_mut,
+        GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWEInfos, GLWEViewRef, GetGaloisElement, SetGaloisElement,
+        glwe_backend_ref_from_mut,
         prepared::{GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPreparedBackendRef},
     },
     oep::GGLWEAutomorphismReference,
@@ -27,7 +27,7 @@ pub fn glwe_automorphism_key_automorphism_tmp_bytes_reference<BE, M, R, A, K>(
 ) -> usize
 where
     BE: Backend,
-    M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitch<BE> + GLWENormalize<BE> + VecZnxAutomorphismAssignTmpBytes,
+    M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitch<BE> + VecZnxAutomorphismAssignTmpBytes,
     R: GGLWEInfos,
     A: GGLWEInfos,
     K: GGLWEInfos,
@@ -35,9 +35,7 @@ where
     operand_degree(module.n(), &[res_infos.n(), a_infos.n(), key_infos.n()]);
 
     let lvl_0: usize = module.glwe_keyswitch_tmp_bytes(res_infos, a_infos, key_infos);
-    let lvl_1: usize = module
-        .vec_znx_automorphism_assign_tmp_bytes()
-        .max(module.glwe_normalize_tmp_bytes());
+    let lvl_1: usize = module.vec_znx_automorphism_assign_tmp_bytes();
 
     if res_infos.glwe_layout() == a_infos.glwe_layout() {
         lvl_0.max(lvl_1)
@@ -58,7 +56,6 @@ pub fn glwe_automorphism_key_automorphism_reference<BE, M, R, A>(
         + GGLWEAutomorphismReference<BE>
         + GaloisElement
         + GLWEKeyswitch<BE>
-        + GLWENormalize<BE>
         + VecZnxAutomorphism<BE>
         + VecZnxAutomorphismAssign<BE>
         + VecZnxAutomorphismAssignTmpBytes
@@ -111,7 +108,9 @@ pub fn glwe_automorphism_key_automorphism_reference<BE, M, R, A>(
                 let a_ct_backend: GLWEViewRef<'_, BE> = a_backend.at_view(row, col);
 
                 if same_layout {
-                    glwe_automorphism_row(module, p, &mut res_tmp, &a_ct_backend, scratch);
+                    for i in 0..cols_out {
+                        module.vec_znx_automorphism(p, &mut res_tmp.data, i, &a_ct_backend.data, i);
+                    }
 
                     let mut scratch_iter = scratch.borrow();
                     module.glwe_keyswitch_assign(&mut res_tmp, &key.to_backend_ref(), &mut scratch_iter);
@@ -121,7 +120,11 @@ pub fn glwe_automorphism_key_automorphism_reference<BE, M, R, A>(
                     }
                 } else {
                     let (mut tmp_glwe, mut scratch_iter) = scratch.borrow().take_glwe_scratch(&a_ct_backend);
-                    glwe_automorphism_row(module, p, &mut tmp_glwe, &a_ct_backend, &mut scratch_iter);
+
+                    for i in 0..cols_out {
+                        module.vec_znx_automorphism(p, &mut tmp_glwe.data, i, &a_ct_backend.data, i);
+                    }
+                    tmp_glwe.set_canonical(a_ct_backend.is_canonical());
 
                     let tmp_glwe_ref = glwe_backend_ref_from_mut::<BE>(&tmp_glwe);
                     let tmp_glwe_view = &tmp_glwe_ref;
@@ -136,36 +139,6 @@ pub fn glwe_automorphism_key_automorphism_reference<BE, M, R, A>(
     }
 
     res.set_p((p * key.p()) % module.cyclotomic_order());
-}
-
-/// `res = σ_p(a)` at `res`'s width. A flag-clear row, from a view of fewer
-/// digits, keeps limbs past `res`: it is normalized first, as the narrowed key
-/// the view reads as holds it.
-fn glwe_automorphism_row<BE, M, R, A>(module: &M, p: i64, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
-where
-    BE: Backend,
-    M: GLWENormalize<BE> + VecZnxAutomorphism<BE> + VecZnxAutomorphismAssign<BE>,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    A: GLWEToBackendRef<BE>,
-{
-    let cols: usize = res.rank().as_usize() + 1;
-    if a.is_canonical() {
-        {
-            let a = a.to_backend_ref();
-            let mut res = res.to_backend_mut();
-            for i in 0..cols {
-                module.vec_znx_automorphism(p, &mut res.data, i, &a.data, i);
-            }
-        }
-        // The image of canonical digits.
-        res.set_canonical(true);
-    } else {
-        module.glwe_normalize(res, a, &mut scratch.borrow());
-        let mut res = res.to_backend_mut();
-        for i in 0..cols {
-            module.vec_znx_automorphism_assign(p, &mut res.data, i, &mut scratch.borrow());
-        }
-    }
 }
 
 pub fn glwe_automorphism_key_automorphism_assign_reference<BE, M, R>(

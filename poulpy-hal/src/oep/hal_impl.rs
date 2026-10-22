@@ -362,6 +362,17 @@ pub unsafe trait HalMatZnxImpl: HalVecZnxImpl {
         crate::oep::mat_znx_add_assign_derived::<Self>(module, res, a)
     }
 
+    /// Default body: `mat_znx_copy_derived`, a `vec_znx_copy` on every entry.
+    fn mat_znx_copy(
+        module: &Module<Self>,
+        res: &mut MatZnxBackendMut<'_, Self>,
+        res_col: usize,
+        a: &MatZnxBackendRef<'_, Self>,
+        a_col: usize,
+    ) {
+        crate::oep::mat_znx_copy_derived::<Self>(module, res, res_col, a, a_col)
+    }
+
     /// Default body: `mat_znx_normalize_tmp_bytes_derived`, the scratch of `vec_znx_normalize`.
     fn mat_znx_normalize_tmp_bytes(module: &Module<Self>) -> usize {
         crate::oep::mat_znx_normalize_tmp_bytes_derived::<Self>(module)

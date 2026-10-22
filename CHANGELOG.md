@@ -4,7 +4,8 @@
 
 ### `poulpy-hal`
 
-- Add `MatZnx::with_rows`, the first rows of a matrix over the same buffer.
+- Add `mat_znx_copy` (`MatZnxCopy`, `HalMatZnxImpl::mat_znx_copy`), the copy of one output column of every entry of a matrix, a `vec_znx_copy` on each entry by default.
+  `mat_znx_normalize` takes a destination of any number of rows: its rows past the source's are zero, and the source's rows past it are not read.
 - **Breaking:** `vec_znx_idft_normalize_consume` and `vec_znx_idft_normalize_consume_tmp_bytes` become `vec_znx_idft_normalize` and `vec_znx_idft_normalize_tmp_bytes`, the traits `VecZnxIdftNormalizeConsume` and `VecZnxIdftNormalizeConsumeTmpBytes` become `VecZnxIdftNormalize` and `VecZnxIdftNormalizeTmpBytes`, and the tests `test_vec_znx_idft_normalize_consume` and `test_vec_znx_idft_normalize_consume_derived` become `test_vec_znx_idft_normalize` and `test_vec_znx_idft_normalize_derived` ([#430](https://github.com/poulpy-fhe/poulpy/issues/430)).
   The operation still clobbers `a[a_col]`, as its `&mut` source and its contract state.
 - **Breaking:** `cnv_apply_dft` and `cnv_apply_dft_add` take a Galois element `b_galois` after `b_col`, and `CnvDftAccTerm` has a `b_galois` field: the applies read their prepared right operand through `σ_{b_galois}`, so products by the automorphisms of one prepared operand store it once; `1` reads it as before.
@@ -114,11 +115,8 @@
 
 ### `poulpy-core`
 
-- Add `key.view_with_digits(dnum)` (`GGLWEViewWithDigits`, `GGSWViewWithDigits` for a GGSW), a read-only view `GGLWEDigits` (`GGSWDigits`) of the first `dnum` digits of any key or GGSW, and `GGLWEBackendRef::with_dnum` and `GGSWBackendRef::with_dnum`: rows `0..dnum` at `k_offset + dnum * k_digit + k_aux` bits over the same buffer, without a copy.
-  A key switching a key of its own layout, which never covers its rows, covers a view of fewer digits, into a key of that many digits.
-  `GGLWE` and `GGSW` store the canonical flag of their rows; a view of fewer digits clears it and has no noise estimate, so an operation reading it normalizes each row at the view's width.
-  Equality ignores the flag, serialization refuses such a view, and preparation panics on one.
-  `GGSWInfos` is implemented for `&T` and `&mut T`.
+- Add `gglwe_copy` and `ggsw_copy` (`GGLWECopy`, `GGSWCopy`, `GGLWECopyImpl`, `GGSWCopyImpl`, `impl_gglwe_copy_reference_full!`, `impl_ggsw_copy_reference_full!`), the copy of the first rows of a GGLWE or a GGSW into one of the same gadget and as many or fewer digits, each row as `glwe_copy` copies it.
+  A key never covers its own layout but covers such a copy, which the `_assign` key switches and automorphisms switch in place; an automorphism key's Galois element is not copied.
 - **Breaking, behaviour:** every gadget product with a GGLWE key decomposes its input exactly ([#451](https://github.com/poulpy-fhe/poulpy/issues/451)): `glwe_keyswitch`, `glwe_keyswitch_assign`, `glwe_keyswitch_dft`, the `glwe_automorphism` operations, `glwe_tensor_relinearize`, the one-pass products (`glwe_mul_relinearize`, `glwe_square_relinearize`, their assign, prepared and summed forms), the linear transformations, trace, packing, the LWE conversions and key switch, and `ggsw_expand_row` panic on an input wider than the key's `max_input_k`, where the product dropped the input digits past the key's rows.
   A caller drops those bits by narrowing the input first (`SetK::set_k`). The GGLWE and GGSW key switches and automorphisms switch rows of `dnum * k_digit + k_aux` bits, so their key covers that width, guard included.
   `reference::keyswitching::glwe::assert_key_covers` is the check for a key passed directly, and `test_suite::noise::assert_refuses_uncovered_input` checks the refusal of an input one bit past the key in the keyswitch, automorphism and tensor noise tests and in the relinearization, one-pass product and linear transformation parity tests.
