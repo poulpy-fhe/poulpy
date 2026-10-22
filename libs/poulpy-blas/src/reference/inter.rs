@@ -1,19 +1,15 @@
 use poulpy_ckks::{
     CKKSResult as Result,
-    api::{CKKSAddOps, CKKSCopyOps, CKKSRotateOps},
-    layouts::ScratchArenaTakeCKKS,
+    api::{CKKSInnerSumOps, CKKSRotateOps},
 };
-use poulpy_core::{
-    GLWEBytesOf,
-    layouts::{GGLWEInfos, GLWEToBackendMut, GetAutomorphismKey, LWEInfos},
-};
+use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey, LWEInfos};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use super::{BlasKeyUses, copied_block};
+use super::BlasKeyUses;
 use crate::{
     layouts::{
         BlasGrid, BlasGridInfos, BlasGridMut, BlasLayout,
-        context::sum_rotations,
+        encoding::copied_block,
         grid_batch,
         validate::{assert_scratch, ensure_rotation, rotate_uses, sum_uses, validate_blas_rotate, validate_blas_sum},
     },
@@ -84,26 +80,22 @@ pub trait BlasMatInterReference<BE: Backend> {
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync;
 
-    /// The loop over one block carves, rotates and adds on the layout of a block of `res`.
+    /// The inner sum of one block into a block of `res`.
     fn blas_sum_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, atk: &K) -> usize
     where
-        Self: CKKSRotateOps<BE> + CKKSAddOps<BE> + CKKSCopyOps<BE> + GLWEBytesOf<BE>,
+        Self: CKKSInnerSumOps<BE>,
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        let (res, a) = (res.block_layout(), a.block_layout());
-        BE::scratch_aligned(self.glwe_bytes_of_from_infos(&res))
-            + self
-                .ckks_rotate_tmp_bytes(&res, atk)
-                .max(self.ckks_add_tmp_bytes(res.size()))
-                .max(self.ckks_copy_tmp_bytes(&res, &a))
+        self.ckks_inner_sum_tmp_bytes(&res.block_layout(), &a.block_layout(), atk)
     }
 
-    /// Per block, `res = a`, then `res += rot(res, 2^i d^2)` for every `i < log2(mat_slots)` in order.
+    /// Per block, poulpy-ckks's `ckks_inner_sum` over `mat_slots` batches of `d^2` slots, not normalized:
+    /// `res = a`, then `res += rot(res, 2^i d^2)` for every `i < log2(mat_slots)` in order.
     fn blas_sum_reference<R, A, K>(&self, res: &mut R, a: &A, atk: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Self: CKKSRotateOps<BE> + CKKSAddOps<BE> + CKKSCopyOps<BE> + GLWEBytesOf<BE>,
+        Self: CKKSInnerSumOps<BE>,
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync;
@@ -140,28 +132,20 @@ impl<BE: Backend> BlasMatInterReference<BE> for Module<BE> {
 
     fn blas_sum_reference<R, A, K>(&self, res: &mut R, a: &A, atk: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Self: CKKSRotateOps<BE> + CKKSAddOps<BE> + CKKSCopyOps<BE> + GLWEBytesOf<BE>,
+        Self: CKKSInnerSumOps<BE>,
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync,
     {
         let op = "blas_sum";
         let batch = validate_blas_sum(self, &*res, a, atk)?;
-        let rotations: Vec<i64> = sum_rotations(a.log_d(), grid_batch::<BE::Ring>(a)).collect();
+        let (log_batch, log_count) = (2 * a.log_d(), grid_batch::<BE::Ring>(a).ilog2() as usize);
         let used = KeyLayouts::new(atk);
         let _ = sum_uses::<BE::Ring>(&*res, a, &mut |u| ensure_rotation(op, self, &used, u));
         let bytes = used.max_bytes(|key| self.blas_sum_tmp_bytes_reference(&*res, a, key));
         assert_scratch(op, bytes, scratch);
         for (dst, src) in res.blocks_mut().iter_mut().zip(a.blocks()) {
-            self.ckks_copy(dst, src, scratch)?;
-            dst.set_noise(None);
-            for &rotation in &rotations {
-                scratch.scope(|s| -> Result<()> {
-                    let (mut rotated, mut s) = s.take_ckks_ciphertext_like_scratch(&*dst);
-                    self.ckks_rotate_into(&mut rotated, &*dst, rotation, atk, &mut s)?;
-                    self.ckks_add_assign(dst, &rotated, &mut s)
-                })?;
-            }
+            self.ckks_inner_sum(dst, src, log_batch, log_count, false, atk, scratch)?;
         }
         res.set_mat_slots(batch);
         Ok(())

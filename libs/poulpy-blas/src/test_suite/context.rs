@@ -18,7 +18,10 @@ use poulpy_core::layouts::{Base2K, DiagonalArithmetic, GetDegree, LWEInfos};
 use poulpy_hal::{
     AlignedBuf,
     api::{CnvPVecAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, CyclotomicOrder, DataView, DataViewMut, HostBytesBackend, Module, ScratchArena, Standard},
+    layouts::{
+        Backend, CyclotomicOrder, DataView, DataViewMut, HostBytesBackend, Module, ScratchArena, Standard,
+        galois_elements_from_rotations,
+    },
 };
 
 use super::helpers::{
@@ -48,12 +51,13 @@ fn operand_maps<BE: Backend, S: BlasPtSide>(b: &BlasPtOperand<BE, S>) -> Vec<&Li
 /// whatever their values, and a JKLS operand's first map and blocks rotate by its side's set; under `JklsStored` and
 /// `JklsGalois`, a context of a masked plan holds the masks, and an operand's first map and the context's masks of its
 /// side, phi^k on the right and the column halves of psi^k on the left, rotate by that side's set. The union of these
-/// sets, and the plan's own, equals the context's, for a plan of each kind. The context panics at its allocation on
-/// matrices wider than the slots, a zero torus width, `coeffs_meta.k = 0`, a radix outside `1..=63` and a prepared
-/// allocation or size of the same; a public operand whose count does not divide the matrix slots, or of a zero torus
-/// width, panics at its allocation, prepared or not, and so does its prepared size. The prepare scratch query panics on
-/// a layout of other slots, and a preparation into an operand of another layout, or one scratch byte short of its
-/// query, panics. Each panic carries its own message.
+/// sets, and the plan's own, equals the context's, for a plan of each kind. The row and column sums rotate by `2^i d`
+/// and `2^i` and their opposites, within the context's set, and their projections take no key. The context panics at
+/// its allocation on matrices wider than the slots, a zero torus width, `coeffs_meta.k = 0`, a radix outside `1..=63`
+/// and a prepared allocation or size of the same; a public operand whose count does not divide the matrix slots, or of
+/// a zero torus width, panics at its allocation, prepared or not, and so does its prepared size. The prepare scratch
+/// query panics on a layout of other slots, and a preparation into an operand of another layout, or one scratch byte
+/// short of its query, panics. Each panic carries its own message.
 pub fn test_blas_context<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -192,6 +196,21 @@ pub fn test_blas_context<BE, F, E>(
         let every = encoded(ctx.maps().collect());
         assert_eq!(union, every, "union {plan:?}");
         assert_eq!(plan.galois_elements(order), every, "galois_elements {plan:?}");
+        assert!(
+            encoded(vec![ctx.first_row(), ctx.first_col()]).is_empty(),
+            "projections {plan:?}"
+        );
+        for (label, set, stride) in [
+            ("sum_rows", plan.sum_rows_galois_elements(order), d),
+            ("sum_cols", plan.sum_cols_galois_elements(order), 1),
+        ] {
+            let strides = (0..log_d).flat_map(|i| [(stride << i) as i64, (slots - (stride << i)) as i64]);
+            assert_eq!(set, galois_elements_from_rotations(strides, order), "{label} {plan:?}");
+            assert!(
+                set.iter().all(|p| every.contains(p)),
+                "{label} {plan:?}: outside the context's set"
+            );
+        }
     }
 
     // The slots hold no matrix one dimension past the largest that fits; 2^40 x 2^40 has more entries than a usize

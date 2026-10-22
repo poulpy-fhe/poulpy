@@ -10,7 +10,8 @@ pub use inter::{
 };
 pub use intra::{
     BlasMatIntraReference, blas_rotate_cols_key_uses, blas_rotate_cols_output_layout, blas_rotate_rows_key_uses,
-    blas_rotate_rows_output_layout, blas_transpose_key_uses, blas_transpose_output_layout,
+    blas_rotate_rows_output_layout, blas_sum_cols_key_uses, blas_sum_cols_output_layout, blas_sum_rows_key_uses,
+    blas_sum_rows_output_layout, blas_transpose_key_uses, blas_transpose_output_layout,
 };
 pub use matmul::{
     BlasMatMulReference, blas_matmul_key_uses, blas_matmul_max_base2k, blas_matmul_output_layout,
@@ -21,7 +22,7 @@ pub use matmul::{
 };
 
 use poulpy_ckks::{
-    CKKSCtBounds, CKKSLayout, CKKSResult as Result, GLWEPlaintextInfos,
+    CKKSCtBounds, CKKSResult as Result, GLWEPlaintextInfos,
     api::{CKKSLinearTransformationOps, CKKSModuleInfos, LinearTransformation, LtDiagonalMeta, PreparedDiagonal},
 };
 use poulpy_core::layouts::{GGLWEInfos, LWEInfos, LinearTransformationPlan, TorusPrecision};
@@ -78,12 +79,6 @@ pub(crate) fn pt_label(slots: usize, a: &impl BlasGridInfos, count: usize) -> us
         .checked_div(count)
         .and_then(usize::checked_ilog2)
         .map_or(0, |log| block.log_sparsity().min(log as usize))
-}
-
-/// `block` copied into a ciphertext of width `dst_k`: at the narrower of the two, as `ckks_copy` leaves it.
-pub(crate) fn copied_block(mut block: CKKSLayout, dst_k: TorusPrecision) -> CKKSLayout {
-    block.glwe_layout.k = block.k().min(dst_k);
-    block
 }
 
 /// Scratch of the baby steps of a block of layout `a` and of one linear transformation, summed when `summed`, from

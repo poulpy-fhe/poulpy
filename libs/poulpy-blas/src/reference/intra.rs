@@ -11,13 +11,13 @@ use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena},
 };
 
-use super::{BlasKeyUses, context_shapes, copied_block, lt_tmp_bytes};
+use super::{BlasKeyUses, context_shapes, lt_tmp_bytes};
 use crate::layouts::{
     BlasContextInfos, BlasGridInfos, BlasLayout,
-    ciphertext::layout_of,
-    context::{ContextMaps, shift_maps},
-    encoding::mapped_block_into,
-    validate::{shift_uses, transpose_uses},
+    ciphertext::{layout_of, replicated_at},
+    context::{ContextMaps, reduction_projection, shift_maps, shift_rotates},
+    encoding::{copied_block, mapped_block_into},
+    validate::{reduction_uses, shift_uses, transpose_uses},
 };
 use crate::oep::derived::assert_maps_scratch;
 
@@ -29,8 +29,9 @@ pub fn blas_transpose_output_layout(res: &impl BlasGridInfos, a: &impl BlasGridI
     BlasLayout::new(block, a.log_d(), a.cols(), a.rows())
 }
 
-/// The layout of a row (`rows`) or column shift by `k`: a copy of `a`'s block for a shift by a multiple of `d`, else its
-/// block through the shift's maps ([`shift_maps`], of one scale) into `res`'s width.
+/// The layout of a row (`rows`) or column shift by `k`: a copy of `a`'s block for a shift by a multiple of `d` or one
+/// that rotates ([`shift_rotates`]), else its block through the shift's maps ([`shift_maps`], of one scale) into
+/// `res`'s width.
 fn shift_output<P: LtDiagonalMeta>(
     res: &impl BlasGridInfos,
     a: &impl BlasGridInfos,
@@ -40,9 +41,30 @@ fn shift_output<P: LtDiagonalMeta>(
 ) -> BlasLayout {
     let (block, res_k) = (a.block_layout(), res.block_layout().k());
     let extent = if rows { a.rows() } else { a.cols() };
-    let block = match shift_maps(maps, k % (1 << maps.log_d()), rows, extent).first() {
+    let lts = if shift_rotates(rows, extent, replicated_at(maps.slots(), a)) {
+        Vec::new()
+    } else {
+        shift_maps(maps, k % (1 << maps.log_d()), rows, extent)
+    };
+    let block = match lts.first() {
         None => copied_block(block, res_k),
         Some(lt) => mapped_block_into(block, lt, res_k),
+    };
+    BlasLayout::new(block, a.log_d(), a.rows(), a.cols())
+}
+
+/// The layout of an axis reduction along the rows (`rows`) or the columns: `a`'s block copied into `res`'s width without
+/// a projection ([`reduction_projection`]), else through it into `res`'s width.
+fn reduction_output<P: LtDiagonalMeta>(
+    res: &impl BlasGridInfos,
+    a: &impl BlasGridInfos,
+    rows: bool,
+    maps: &ContextMaps<LinearTransformation<P>>,
+) -> BlasLayout {
+    let (block, res_k) = (a.block_layout(), res.block_layout().k());
+    let block = match reduction_projection(maps, rows, replicated_at(maps.slots(), a)) {
+        None => copied_block(block, res_k),
+        Some(projection) => mapped_block_into(block, projection, res_k),
     };
     BlasLayout::new(block, a.log_d(), a.rows(), a.cols())
 }
@@ -66,6 +88,17 @@ pub fn blas_rotate_cols_output_layout(
     ctx: &impl BlasContextInfos,
 ) -> BlasLayout {
     shift_output(res, a, k, false, &context_shapes(ctx))
+}
+
+/// The layout [`crate::api::BlasMatIntraOps::blas_sum_rows`] stamps on `res` for `a`; see
+/// [`blas_transpose_output_layout`].
+pub fn blas_sum_rows_output_layout(res: &impl BlasGridInfos, a: &impl BlasGridInfos, ctx: &impl BlasContextInfos) -> BlasLayout {
+    reduction_output(res, a, true, &context_shapes(ctx))
+}
+
+/// [`blas_sum_rows_output_layout`] for [`crate::api::BlasMatIntraOps::blas_sum_cols`].
+pub fn blas_sum_cols_output_layout(res: &impl BlasGridInfos, a: &impl BlasGridInfos, ctx: &impl BlasContextInfos) -> BlasLayout {
+    reduction_output(res, a, false, &context_shapes(ctx))
 }
 
 /// The keys [`crate::api::BlasMatIntraOps::blas_transpose`] looks up for `a` into `res`; see [`BlasKeyUses`]. `ctx`
@@ -106,16 +139,40 @@ pub fn blas_rotate_cols_key_uses<BE: Backend>(
     BlasKeyUses::collect(module, None, |f| shift_uses(res, a, k, false, &maps, f))
 }
 
-/// Reference of the map hook of [`crate::oep::BlasMatIntraImpl`], under which the transpose and the shifts are
-/// provided, and through which the reference cold preparations of products run, and the hot sides of the reference
-/// products, and the first map of the reference JKLS products by public matrices. It runs on the inputs of an operation
-/// its validator accepted ([`crate::layouts::validate_blas_transpose`], [`crate::layouts::validate_blas_rotate_rows`],
-/// [`crate::layouts::validate_blas_rotate_cols`], [`crate::layouts::validate_blas_matmul_prepare_left`],
-/// [`crate::layouts::validate_blas_matmul_prepare_right`], [`crate::layouts::validate_blas_matmul_prepared`],
-/// [`crate::layouts::validate_blas_matmul`], [`crate::layouts::validate_blas_matmul_pt_right`],
-/// [`crate::layouts::validate_blas_matmul_pt_left`]): it checks nothing but its scratch, and returns poulpy-ckks's
-/// budget errors before any write. It runs source after source on one scratch and one baby-step cache, and the first
-/// error stops it.
+/// The keys [`crate::api::BlasMatIntraOps::blas_sum_rows`] looks up for `a` into `res`; see [`BlasKeyUses`]. `ctx` is a
+/// context or its layout: the query reads the shape of its maps.
+pub fn blas_sum_rows_key_uses<BE: Backend>(
+    module: &Module<BE>,
+    res: &impl BlasGridInfos,
+    a: &impl BlasGridInfos,
+    ctx: &impl BlasContextInfos,
+) -> BlasKeyUses {
+    let maps = context_shapes(ctx);
+    BlasKeyUses::collect(module, None, |f| reduction_uses(res, a, true, &maps, f))
+}
+
+/// [`blas_sum_rows_key_uses`] for [`crate::api::BlasMatIntraOps::blas_sum_cols`].
+pub fn blas_sum_cols_key_uses<BE: Backend>(
+    module: &Module<BE>,
+    res: &impl BlasGridInfos,
+    a: &impl BlasGridInfos,
+    ctx: &impl BlasContextInfos,
+) -> BlasKeyUses {
+    let maps = context_shapes(ctx);
+    BlasKeyUses::collect(module, None, |f| reduction_uses(res, a, false, &maps, f))
+}
+
+/// Reference of the map hook of [`crate::oep::BlasMatIntraImpl`], under which the transpose, the shifts and the axis
+/// reductions are provided, and through which the reference cold preparations of products run, and the hot sides of the
+/// reference products, and the first map of the reference JKLS products by public matrices. It runs on the inputs of an
+/// operation its validator accepted ([`crate::layouts::validate_blas_transpose`],
+/// [`crate::layouts::validate_blas_rotate_rows`], [`crate::layouts::validate_blas_rotate_cols`],
+/// [`crate::layouts::validate_blas_sum_rows`], [`crate::layouts::validate_blas_sum_cols`],
+/// [`crate::layouts::validate_blas_matmul_prepare_left`], [`crate::layouts::validate_blas_matmul_prepare_right`],
+/// [`crate::layouts::validate_blas_matmul_prepared`], [`crate::layouts::validate_blas_matmul`],
+/// [`crate::layouts::validate_blas_matmul_pt_right`], [`crate::layouts::validate_blas_matmul_pt_left`]): it checks
+/// nothing but its scratch, and returns poulpy-ckks's budget errors before any write. It runs source after source on
+/// one scratch and one baby-step cache, and the first error stops it.
 pub trait BlasMatIntraReference<BE: Backend> {
     /// Filling a baby-step cache from a source of layout `src`, and the evaluation of a map from it into a block of
     /// layout `dst`.

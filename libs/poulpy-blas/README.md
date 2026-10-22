@@ -8,7 +8,12 @@ its batch, up to `S / d^2` matrices repeated over the slots, from its blocks' la
 `layouts::grid::{split_into_blocks, join_blocks}` move matrices, read and written through element accessors, to and
 from the slot vectors of the blocks.
 
-Intra operations apply one map to every matrix of the batch: `blas_transpose`, `blas_rotate_rows`, `blas_rotate_cols`.
+Intra operations apply one map to every matrix of the batch: `blas_transpose`, `blas_rotate_rows`, `blas_rotate_cols`,
+and the axis reductions `blas_sum_rows` and `blas_sum_cols`, which give every entry the sum of its column or of its row.
+A reduction adds rotations of a block, by `2^i d` slots along the rows and `2^i` along the columns, then projects the
+sums on row 0 (column 0) and broadcasts them back, one scale. On a replicated grid, one matrix repeated over the slots,
+a rotation by a multiple of `d` wraps inside a block, so the rows sum with no projection and no scale, and a grid one
+block high shifts its rows by rotations, also at no scale.
 Inter operations move whole matrices across the batch: `blas_rotate`, `blas_sum`. Products multiply every matrix of the
 batch: `blas_matmul` (JKLS, ciphertext x ciphertext), `blas_matmul_prepare_left`, `blas_matmul_prepare_right` and
 `blas_matmul_prepared` (the same product from prepared operands, bit for bit under the same context), `blas_matmul_pt_right`
@@ -52,9 +57,9 @@ applied to each block.
 
 The plan lists the rotation keys each operation looks up, from the ring's cyclotomic order alone:
 `transpose_galois_elements`, `rotate_rows_galois_elements(k)`, `rotate_cols_galois_elements(k)`,
-`rotate_galois_elements(r)`, `matmul_galois_elements` (the products and both preparations) and
-`matmul_pt_right_galois_elements` and `matmul_pt_left_galois_elements` (any public matrices, on the right or on the left);
-`galois_elements` covers every map of a context, and
+`sum_rows_galois_elements`, `sum_cols_galois_elements`, `rotate_galois_elements(r)`, `matmul_galois_elements` (the
+products and both preparations) and `matmul_pt_right_galois_elements` and `matmul_pt_left_galois_elements` (any public
+matrices, on the right or on the left); `galois_elements` covers every map of a context and both sums, and
 `sum_galois_elements` lists `blas_sum`'s for a grid's batch. A client therefore plans its keys with no module, context
 or public matrix: it generates the union of its pipeline's sets, and a tensor key only if it calls `blas_matmul` or
 `blas_matmul_prepared`. The server checks each grid's batch, `mat_slots()`, against the one the summed keys were
