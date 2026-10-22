@@ -485,13 +485,43 @@ where
     }
 }
 
+/// `res[i,c][res_col] = a[i,c][a_col]`: `vec_znx_copy` on every (row, input column) entry the two share, `vec_znx_zero`
+/// on the rows of `res` past `a`'s.
+#[doc(hidden)]
+pub fn mat_znx_copy_derived<BE>(
+    module: &Module<BE>,
+    res: &mut MatZnxBackendMut<'_, BE>,
+    res_col: usize,
+    a: &MatZnxBackendRef<'_, BE>,
+    a_col: usize,
+) where
+    BE: HalVecZnxImpl,
+{
+    assert!(
+        (res.n(), res.cols_in()) == (a.n(), a.cols_in()),
+        "mat_znx_copy: res and a differ in degree or input columns"
+    );
+    for row in 0..res.rows() {
+        for col_in in 0..res.cols_in() {
+            let mut res_entry = mat_znx_at_backend_mut_from_mut::<BE>(res, row, col_in);
+            if row < a.rows() {
+                let a_entry = mat_znx_at_backend_ref_from_ref::<BE>(a, row, col_in);
+                BE::vec_znx_copy(module, &mut res_entry, res_col, &a_entry, a_col);
+            } else {
+                BE::vec_znx_zero(module, &mut res_entry, res_col);
+            }
+        }
+    }
+}
+
 /// The scratch of `mat_znx_normalize` and `mat_znx_normalize_assign`: one `vec_znx_normalize` at a time.
 #[doc(hidden)]
 pub fn mat_znx_normalize_tmp_bytes_derived<BE: HalVecZnxImpl>(module: &Module<BE>) -> usize {
     BE::vec_znx_normalize_tmp_bytes(module)
 }
 
-/// `res[i,c][res_col] = normalize(a[i,c][a_col])`: `vec_znx_normalize` on every (row, input column) entry.
+/// `res[i,c][res_col] = normalize(a[i,c][a_col])`: `vec_znx_normalize` on every (row, input column) entry the two
+/// share, `vec_znx_zero` on the rows of `res` past `a`'s.
 #[allow(clippy::too_many_arguments)]
 #[doc(hidden)]
 pub fn mat_znx_normalize_derived<BE>(
@@ -509,25 +539,29 @@ pub fn mat_znx_normalize_derived<BE>(
     BE: HalVecZnxImpl,
 {
     assert!(
-        (res.n(), res.rows(), res.cols_in()) == (a.n(), a.rows(), a.cols_in()),
-        "mat_znx_normalize: res and a differ in degree, rows or input columns"
+        (res.n(), res.cols_in()) == (a.n(), a.cols_in()),
+        "mat_znx_normalize: res and a differ in degree or input columns"
     );
     for row in 0..res.rows() {
         for col_in in 0..res.cols_in() {
             let mut res_entry = mat_znx_at_backend_mut_from_mut::<BE>(res, row, col_in);
-            let a_entry = mat_znx_at_backend_ref_from_ref::<BE>(a, row, col_in);
-            BE::vec_znx_normalize(
-                module,
-                &mut res_entry,
-                res_base2k,
-                res_k,
-                res_offset,
-                res_col,
-                &a_entry,
-                a_base2k,
-                a_col,
-                scratch,
-            );
+            if row < a.rows() {
+                let a_entry = mat_znx_at_backend_ref_from_ref::<BE>(a, row, col_in);
+                BE::vec_znx_normalize(
+                    module,
+                    &mut res_entry,
+                    res_base2k,
+                    res_k,
+                    res_offset,
+                    res_col,
+                    &a_entry,
+                    a_base2k,
+                    a_col,
+                    scratch,
+                );
+            } else {
+                BE::vec_znx_zero(module, &mut res_entry, res_col);
+            }
         }
     }
 }

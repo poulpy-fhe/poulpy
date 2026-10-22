@@ -169,6 +169,9 @@ macro_rules! core_backend_test_suite {
                 gglwe_to_ggsw_key_encrypt_sk => $crate::test_suite::noise::encryption::test_gglwe_to_ggsw_key_encrypt_sk,
                 gglwe_switching_key_keyswitch => $crate::test_suite::noise::keyswitch::test_gglwe_switching_key_keyswitch,
                 gglwe_switching_key_keyswitch_assign => $crate::test_suite::noise::keyswitch::test_gglwe_switching_key_keyswitch_assign,
+                gglwe_switching_key_keyswitch_own_layout =>
+                    $crate::test_suite::noise::keyswitch::test_gglwe_switching_key_keyswitch_own_layout,
+                gglwe_copy => $crate::test_suite::noise::test_gglwe_copy,
                 gglwe_switching_key_external_product =>
                     $crate::test_suite::noise::external_product::test_gglwe_switching_key_external_product,
                 gglwe_switching_key_external_product_assign =>
@@ -177,6 +180,8 @@ macro_rules! core_backend_test_suite {
                     $crate::test_suite::noise::automorphism::test_gglwe_automorphism_key_automorphism,
                 gglwe_automorphism_key_automorphism_assign =>
                     $crate::test_suite::noise::automorphism::test_gglwe_automorphism_key_automorphism_assign,
+                gglwe_automorphism_key_automorphism_own_layout =>
+                    $crate::test_suite::noise::automorphism::test_gglwe_automorphism_key_automorphism_own_layout,
                 gadget_row_plaintext => $crate::test_suite::encryption::test_gadget_row_plaintext,
                 ggsw_encrypt_sk => $crate::test_suite::noise::encryption::test_ggsw_encrypt_sk,
                 ggsw_encrypt_pk => $crate::test_suite::noise::encryption::test_ggsw_encrypt_pk,
@@ -185,6 +190,8 @@ macro_rules! core_backend_test_suite {
                 ggsw_compressed_encrypt_sk => $crate::test_suite::noise::encryption::test_ggsw_compressed_encrypt_sk,
                 ggsw_keyswitch => $crate::test_suite::noise::keyswitch::test_ggsw_keyswitch,
                 ggsw_keyswitch_assign => $crate::test_suite::noise::keyswitch::test_ggsw_keyswitch_assign,
+                ggsw_keyswitch_own_layout => $crate::test_suite::noise::keyswitch::test_ggsw_keyswitch_own_layout,
+                ggsw_copy => $crate::test_suite::noise::test_ggsw_copy,
                 ggsw_external_product => $crate::test_suite::noise::external_product::test_ggsw_external_product,
                 ggsw_external_product_assign => $crate::test_suite::noise::external_product::test_ggsw_external_product_assign,
                 ggsw_automorphism => $crate::test_suite::noise::automorphism::test_ggsw_automorphism,

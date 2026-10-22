@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use poulpy_hal::layouts::{Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, ScratchArena};
 
 use crate::layouts::{
-    GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
-    GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
+    GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
+    GGSWToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
 };
 
 /// Normalized trace onto the subring selected by `skip`.
@@ -637,6 +637,39 @@ pub trait GLWECopy<BE: Backend> {
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>;
+}
+
+/// Copies the first `res.dnum()` rows of a GGLWE into a GGLWE of the same gadget
+/// and as many or fewer digits.
+///
+/// Every row is copied as [`GLWECopy`] copies a GLWE, at the destination's radix
+/// and precision `k_offset + res.dnum() * k_digit + k_aux`: a destination of
+/// fewer digits rounds its rows there, ties to even, and has no noise estimate.
+/// A key never covers its own layout but covers such a copy, which the `_assign`
+/// key switches and automorphisms switch in place. The metadata of a wrapping
+/// key is the caller's: an automorphism key's Galois element is not copied.
+pub trait GGLWECopy<BE: Backend> {
+    /// Scratch for the given destination and source layouts (zero for the
+    /// equal-radix, non-narrowing path).
+    fn gglwe_copy_tmp_bytes<R: GGLWEInfos, A: GGLWEInfos>(&self, res: &R, a: &A) -> usize;
+
+    fn gglwe_copy<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GGLWEToBackendMut<BE> + GGLWEInfos,
+        A: GGLWEToBackendRef<BE> + GGLWEInfos;
+}
+
+/// Copies the first `res.dnum()` rows of a GGSW into a GGSW of the same gadget
+/// and as many or fewer digits, as [`GGLWECopy`] copies a GGLWE.
+pub trait GGSWCopy<BE: Backend> {
+    /// Scratch for the given destination and source layouts (zero for the
+    /// equal-radix, non-narrowing path).
+    fn ggsw_copy_tmp_bytes<R: GGSWInfos, A: GGSWInfos>(&self, res: &R, a: &A) -> usize;
+
+    fn ggsw_copy<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GGSWToBackendMut<BE> + GGSWInfos,
+        A: GGSWToBackendRef<BE> + GGSWInfos;
 }
 
 pub trait GLWEShift<BE: Backend> {

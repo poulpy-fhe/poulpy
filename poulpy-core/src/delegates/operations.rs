@@ -5,18 +5,18 @@ use poulpy_hal::layouts::{Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, M
 
 use crate::{
     api::{
-        GGSWRotate, GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWEMulPreparedPlainSum, GLWEMulRelinearizeSum,
-        GLWEMulXpMinusOne, GLWENegate, GLWENormalize, GLWEPacking, GLWEPreparedTensoring, GLWERotate, GLWEShift, GLWESub,
-        GLWETensoring, GLWETrace, GLWEZero,
+        GGLWECopy, GGSWCopy, GGSWRotate, GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWEMulPreparedPlainSum,
+        GLWEMulRelinearizeSum, GLWEMulXpMinusOne, GLWENegate, GLWENormalize, GLWEPacking, GLWEPreparedTensoring, GLWERotate,
+        GLWEShift, GLWESub, GLWETensoring, GLWETrace, GLWEZero,
     },
     layouts::{
-        GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
-        GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
+        GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
+        GGSWToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
     },
     oep::{
-        GGSWRotateImpl, GLWEAddImpl, GLWECopyImpl, GLWEMulConstImpl, GLWEMulPlainImpl, GLWEMulPreparedPlainSumImpl,
-        GLWEMulXpMinusOneImpl, GLWENegateImpl, GLWENormalizeImpl, GLWEPackImpl, GLWERotateImpl, GLWEShiftImpl, GLWESubImpl,
-        GLWETensoringImpl, GLWETraceImpl, GLWEZeroImpl,
+        GGLWECopyImpl, GGSWCopyImpl, GGSWRotateImpl, GLWEAddImpl, GLWECopyImpl, GLWEMulConstImpl, GLWEMulPlainImpl,
+        GLWEMulPreparedPlainSumImpl, GLWEMulXpMinusOneImpl, GLWENegateImpl, GLWENormalizeImpl, GLWEPackImpl, GLWERotateImpl,
+        GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, GLWETraceImpl, GLWEZeroImpl,
     },
 };
 
@@ -119,6 +119,36 @@ impl_operations_delegate!(
         A: GLWEToBackendRef<BE>,
     {
         BE::glwe_copy(self, res, a, scratch)
+    }
+);
+
+impl_operations_delegate!(
+    GGLWECopy<BE>,
+    GGLWECopyImpl,
+    fn gglwe_copy_tmp_bytes<R: GGLWEInfos, A: GGLWEInfos>(&self, res: &R, a: &A) -> usize {
+        BE::gglwe_copy_tmp_bytes(self, res, a)
+    },
+    fn gglwe_copy<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GGLWEToBackendMut<BE> + GGLWEInfos,
+        A: GGLWEToBackendRef<BE> + GGLWEInfos,
+    {
+        BE::gglwe_copy(self, res, a, scratch)
+    }
+);
+
+impl_operations_delegate!(
+    GGSWCopy<BE>,
+    GGSWCopyImpl,
+    fn ggsw_copy_tmp_bytes<R: GGSWInfos, A: GGSWInfos>(&self, res: &R, a: &A) -> usize {
+        BE::ggsw_copy_tmp_bytes(self, res, a)
+    },
+    fn ggsw_copy<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GGSWToBackendMut<BE> + GGSWInfos,
+        A: GGSWToBackendRef<BE> + GGSWInfos,
+    {
+        BE::ggsw_copy(self, res, a, scratch)
     }
 );
 

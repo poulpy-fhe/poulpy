@@ -7,8 +7,8 @@ use poulpy_hal::layouts::{
 };
 
 use crate::layouts::{
-    GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
-    GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
+    GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
+    GGSWToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
 };
 
 /// Backend-provided GLWE constant-multiplication operations.
@@ -499,6 +499,34 @@ pub unsafe trait GLWECopyImpl: Backend {
     where
         R: GLWEToBackendMut<Self>,
         A: GLWEToBackendRef<Self>;
+}
+
+/// Backend-provided GGLWE copy operations.
+///
+/// # Safety
+/// Implementations must honor [`crate::GGLWECopy`]'s rounding and layout contract,
+/// stay within the advertised scratch size, and respect all backend buffer bounds.
+pub unsafe trait GGLWECopyImpl: Backend {
+    fn gglwe_copy_tmp_bytes<R: GGLWEInfos, A: GGLWEInfos>(module: &Module<Self>, res: &R, a: &A) -> usize;
+
+    fn gglwe_copy<R, A>(module: &Module<Self>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, Self>)
+    where
+        R: GGLWEToBackendMut<Self> + GGLWEInfos,
+        A: GGLWEToBackendRef<Self> + GGLWEInfos;
+}
+
+/// Backend-provided GGSW copy operations.
+///
+/// # Safety
+/// Implementations must honor [`crate::GGSWCopy`]'s rounding and layout contract,
+/// stay within the advertised scratch size, and respect all backend buffer bounds.
+pub unsafe trait GGSWCopyImpl: Backend {
+    fn ggsw_copy_tmp_bytes<R: GGSWInfos, A: GGSWInfos>(module: &Module<Self>, res: &R, a: &A) -> usize;
+
+    fn ggsw_copy<R, A>(module: &Module<Self>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, Self>)
+    where
+        R: GGSWToBackendMut<Self> + GGSWInfos,
+        A: GGSWToBackendRef<Self> + GGSWInfos;
 }
 
 /// Backend-provided GLWE rotation operations.
@@ -1123,6 +1151,8 @@ macro_rules! impl_operations_reference_full {
         $crate::impl_glwe_negate_reference_full!($be);
         $crate::impl_glwe_zero_reference_full!($be);
         $crate::impl_glwe_copy_reference_full!($be);
+        $crate::impl_gglwe_copy_reference_full!($be);
+        $crate::impl_ggsw_copy_reference_full!($be);
         $crate::impl_glwe_shift_reference_full!($be);
         $crate::impl_glwe_normalize_reference_full!($be);
     };
