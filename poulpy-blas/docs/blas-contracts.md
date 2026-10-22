@@ -529,10 +529,9 @@ macro registers all three families, so none can be dropped silently.
 `blas_max_base2k_test_suite!` registers the test `max_base2k` for one backend,
 scalar and parameter set: `blas_matmul_max_base2k`,
 `blas_matmul_pt_right_max_base2k` and `blas_matmul_pt_left_max_base2k` on
-`4 x 4` blocks and `n = 64`, under every algorithm, against counts made by
-hand, at every failure target from 1 to 1000 bits. It needs a backend that
-implements `MaxBase2k`; a backend without a model, as the conjugate-invariant
-ring, must return `None`.
+`4 x 4` blocks on 32 slots (`n = 64`, or `n = 32` on the conjugate-invariant
+ring), under every algorithm, against counts made by hand, at every failure
+target from 1 to 1000 bits. It needs a backend that implements `MaxBase2k`.
 
 The registrations of this workspace, and the commands and CI coverage, are in
 the [repository README](../../README.md#testing-a-backend).

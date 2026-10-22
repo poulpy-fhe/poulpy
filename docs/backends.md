@@ -113,11 +113,12 @@ let module = Module::<BackendImpl>::new(n as u64);
 Select `base2k` with the runtime query `Module::<BE>::max_base2k(n, products, failure_bits, squaring)`, which delegates to `MaxBase2k` without constructing a module.
 `products` counts the polynomial products accumulated into one output; `failure_bits` requests an estimated whole-polynomial failure probability of at most `2^(-failure_bits)`.
 Set `squaring = false` for independent products and `true` if any term is a square, counting each square once.
-For a sum of 32 products, `Module::<NTT4x30Portable>::max_base2k(1 << 16, 32, 128, false)` returns `Some(54)`; the same query gives `Some(19)` for `FFT64Portable` and `Some(57)` for `NTT3x42Ifma`.
-For a single square, `Module::<NTT4x30Portable>::max_base2k(1 << 16, 1, 128, true)` returns `Some(55)`; the same query gives `Some(19)` for `FFT64Portable` and `Some(58)` for `NTT3x42Ifma`.
+For a sum of 32 products, `Module::<NTT4x30Portable>::max_base2k(1 << 16, 32, 128, false)` returns 54; the same query gives 19 for `FFT64Portable` and 57 for `NTT3x42Ifma`.
+For a single square, `Module::<NTT4x30Portable>::max_base2k(1 << 16, 1, 128, true)` returns 55; the same query gives 19 for `FFT64Portable` and 58 for `NTT3x42Ifma`.
+On the conjugate-invariant ring the same two queries give 53 and 52 for `NTT4x30CIPortable`, 18 and 17 for `FFT64CIPortable`, and 56 and 55 for `NTT3x42CIIfma`: its constant coefficient has twice the variance, and a square's has a positive mean.
 The estimates cover independent accumulated products or squares of centered-uniform inputs, with Gaussian tails and a stochastic roundoff model for FFT64. They are not guarantees for arbitrary inputs.
 See [Failure estimates for base-2^K arithmetic](base2k-failure-probability.md) for the models and an example.
-`Some(0)` means no positive radix fits, and `None` means the backend has no applicable model.
+0 means no positive radix fits; a backend without a model does not implement `MaxBase2k`.
 The radix is capped at the coefficient word width minus two bits: 62 for `i64`, or 30 for a future `i32` backend.
 A larger `base2k` represents the same precision in fewer limbs, but also reserve coefficient-word headroom for additions before normalization and respect the circuit's noise budget.
 

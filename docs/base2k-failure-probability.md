@@ -1,6 +1,6 @@
 # Failure estimates for base-2^K arithmetic
 
-`Module::<BE>::max_base2k(N, d, failure_bits, squaring)` delegates to `MaxBase2k` to select a radix for one output polynomial $C=\sum_{r=1}^{d}A_rB_r$ in $\mathbb Z[X]/(X^N+1)$. Here $d$ counts accumulated polynomial products, and `failure_bits` $=\lambda$ requests an estimated probability at most $2^{-\lambda}$ that any output coefficient fails.
+`Module::<BE>::max_base2k(N, d, failure_bits, squaring)` delegates to `MaxBase2k` to select a radix for one output polynomial $C=\sum_{r=1}^{d}A_rB_r$ in $\mathbb Z[X]/(X^N+1)$, or in the conjugate-invariant ring of degree $N$ ([below](#conjugate-invariant-ring)). Here $d$ counts accumulated polynomial products, and `failure_bits` $=\lambda$ requests an estimated probability at most $2^{-\lambda}$ that any output coefficient fails.
 
 Use `squaring = false` for independent products, and `true` if any term is a square $A_r^2$. Count each square once: a single square uses `d = 1`. The square model conservatively budgets every term as a square. Distinct terms must use independent inputs, with independent centered uniform coefficients of magnitude at most $2^{K-1}$. The models neglect discrete endpoint corrections and approximate output tails as Gaussian. These estimates are not guarantees for arbitrary inputs or other correlations, including operand reuse across terms.
 
@@ -32,6 +32,40 @@ $$
 
 Here $\sigma_e$ measures numerical error, and **$1/2$** is the rounding threshold. The model assumes centered relative roundoff of variance $u^2/3$, independent of inputs and other roundoff, approximately isotropic complex values, and twiddle errors of mean square at most $2u^2$ whose propagated contributions are treated as uncorrelated, including across terms. Squaring shares the forward error: $(X+e)^2-X^2\simeq2Xe$. Relative to the doubled coefficient-variance budget, the forward and inverse contributions are $4(5/3)L$ and $(5/3)L$, giving $25L/3$. Thus doubling $d$ alone does not model FFT squaring. The maximum in $R$ uses the actual accumulation count and covers separate and fused multiply-add accumulation. These assumptions do not certify Gaussian far tails.
 
+## Conjugate-invariant ring
+
+An element is $a_0+\sum_{k=1}^{N-1}a_k(X^k+X^{-k})$ in $\mathbb Z[X]/(X^{2N}+1)$. With $e_k$ the basis elements, output coefficient $c$ of one product has variance $\sigma^4\sum_{k,m}(e_ke_m)_c^2$: **$4N-3$** at $c=0$, where every $a_kb_k$ with $k\ge1$ lands twice, and $2N-2$ elsewhere. A square's coefficient $c$ has mean $\sigma^2\sum_k(e_ke_k)_c$, which is **$2N-1$** at $c=0$ and zero elsewhere. Both models bound every coefficient by the constant one.
+
+**NTT.** The variance budget uses $4N-3$ in place of $N$. A square's mean, budgeted for all $d$ terms, $\mu=d(2N-1)2^{2K}/12$, comes off the threshold:
+
+$$
+\widehat p_{\mathrm{NTT}}=\operatorname{erfc}\!\left(\frac{Q/2-\mu}{\sqrt2\,\sigma_c}\right),\qquad \mu<Q/2.
+$$
+
+The mean grows like $dN$ and $\sigma_c$ like $\sqrt{dN}$, so for squares the mean, not the tail, sets the radix.
+
+**FFT64.** The transforms are a DCT-III and a DCT-II through a cyclic FFT of $N/2$ points. Their pre- and post-processing take two rotations and two additions per value, about $14/3$ in the accounting above, budgeted as three more stages: $\rho=\frac53(L+3)$ per transform. The slots are real, with variance $V=(2N-1)\sigma^2$. Independent slot errors of variance $E$ reach the constant coefficient with variance $E/N$, twice what the other coefficients get, in the proportion of the output's own variances. For products, with real multiplications and sequential accumulation (a fused accumulation rounds less on real slots),
+
+$$
+E=u^2V^2d\left(3\rho+\frac13+\frac{d+1}{6}-\frac1{3d}\right).
+$$
+
+A square's slots $y^2$ have $\mathbb E[y^4]\le3V^2$, the shared forward error contributes $\mathbb E[(2ye)^2]\le4\rho u^2\,\mathbb E[y^4]$ per term, and a partial sum of $i$ squares has second moment $(i^2+2i)V^2$:
+
+$$
+E=u^2V^2\left(\rho\,d(d+14)+d-1+\frac{d(d+1)(2d+7)}{18}\right).
+$$
+
+The squares' slots are nonnegative, so they also sum coherently into the constant coefficient, through additions only. That sum's roundoff stays there instead of spreading over the output: its variance is at most $2u^2/3$ times the squared mean $(dV)^2$. Then
+
+$$
+\sigma_e^2=\frac EN+\frac23u^2d^2V^2\quad\text{(the last term for squares only)},
+$$
+
+with threshold $1/2$ as above.
+
+For $N=2^{16}$, $d=32$ and $\lambda=128$, NTT4x30 selects **53** bits and FFT64 **18**. For a single square, NTT4x30 selects **52**: at $K=53$, $\mu=(2^{17}-1)2^{106}/12$ exceeds $Q/2$ by itself. FFT64 selects **17**.
+
 ## Selecting the radix
 
 For either model, the union bound gives $\widehat P_{\mathrm{any}}\le\min(1,N\widehat p)$. The helper uses the [Mills-ratio upper bound](https://dlmf.nist.gov/7.8.E2), which is tighter than $e^{-x^2}$:
@@ -41,9 +75,9 @@ $$
 =\exp\!\left[-x^2-\operatorname{asinh}(\sqrt\pi\,x/2)\right],\qquad x\ge0.
 $$
 
-With $x=T/(\sqrt2\,\sigma)$ and $(T,\sigma)=(Q/2,\sigma_c)$ or $(1/2,\sigma_e)$, it searches for the largest integer $K$ satisfying $x^2+\operatorname{asinh}(\sqrt\pi\,x/2)\ge(\lambda+\log_2N)\ln2$. This evaluates the logarithm of the bound rather than the tiny probability itself.
+With $x=(T-\mu)/(\sqrt2\,\sigma)$, $(T,\sigma)=(Q/2,\sigma_c)$ or $(1/2,\sigma_e)$, and $\mu$ zero except for conjugate-invariant NTT squares, it searches for the largest integer $K$ satisfying $x^2+\operatorname{asinh}(\sqrt\pi\,x/2)\ge(\lambda+\log_2N)\ln2$. This evaluates the logarithm of the bound rather than the tiny probability itself.
 
-The search caps the radix at `BE::ZnxWord::BITS - 2`: **62 for `i64`, 30 for a future `i32` backend**, and slightly reduces $x$ for a numerical margin at the threshold. The runtime query needs no module allocation; it returns `Some(K)`, `Some(0)` if no positive radix fits, or `None` without an applicable model. `N` must be a power of two at least 2 and the backend's minimum degree; `d` and `failure_bits` must be positive. For $m$ output polynomials, add $\lceil\log_2m\rceil$ to `failure_bits` to allocate a total failure budget.
+The search caps the radix at `BE::ZnxWord::BITS - 2`: **62 for `i64`, 30 for a future `i32` backend**, and slightly reduces $x$ for a numerical margin at the threshold. The runtime query needs no module allocation; it returns $K$, or 0 if no positive radix fits; a backend without an applicable model does not implement `MaxBase2k`. `N` must be a power of two at least 2 and the backend's minimum degree; `d` and `failure_bits` must be positive. For $m$ output polynomials, add $\lceil\log_2m\rceil$ to `failure_bits` to allocate a total failure budget.
 
 ## Why a probabilistic bound helps
 

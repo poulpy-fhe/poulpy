@@ -94,7 +94,7 @@ impl<R: Ring> poulpy_hal::layouts::MaxBase2k for NTT3x42IfmaRayon<R>
 where
     NTT3x42Ifma<R>: poulpy_hal::layouts::MaxBase2k,
 {
-    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> Option<usize> {
+    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
         <NTT3x42Ifma<R> as poulpy_hal::layouts::MaxBase2k>::max_base2k(n, products, failure_bits, squaring)
     }
 }

@@ -15,13 +15,6 @@ use poulpy_hal::layouts::ConjugateInvariant;
 use super::NTT4x30Neon;
 use poulpy_cpu_portable::kernels::ntt4x30::conjugate_invariant::{intt_portable, ntt_portable};
 
-/// No failure model: a square's constant coefficient has a large positive mean on this ring.
-impl poulpy_hal::layouts::MaxBase2k for NTT4x30Neon<ConjugateInvariant> {
-    fn max_base2k(_n: usize, _products: usize, _failure_bits: usize, _squaring: bool) -> Option<usize> {
-        None
-    }
-}
-
 impl ZnxAutomorphism for NTT4x30Neon<ConjugateInvariant> {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
