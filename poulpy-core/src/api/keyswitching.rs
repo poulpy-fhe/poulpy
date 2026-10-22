@@ -39,8 +39,7 @@ pub trait GLWEKeyswitch<BE: Backend> {
     /// whole switch but for the body `b`. Several products summed with
     /// [`Self::glwe_keyswitch_dft_add`] are finished by one `vec_znx_idft_normalize`
     /// per column, with the sum of their bodies, each lowered by `key.k_offset()`, as
-    /// the addend of column 0. `a` is at the key radix; a key with a row offset takes
-    /// an input of at most its `max_input_k`.
+    /// the addend of column 0. `a` is at the key radix.
     fn glwe_keyswitch_dft<A>(
         &self,
         res: &mut VecZnxDftBackendMut<'_, BE>,

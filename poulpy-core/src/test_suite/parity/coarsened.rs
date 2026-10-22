@@ -70,7 +70,7 @@ impl<BE: Backend, D: Data> GetTensorKey<BE> for AtDsize<'_, GLWETensorKeyPrepare
 where
     GGLWEPrepared<D, BE>: GGLWEPreparedToBackendRef<BE>,
 {
-    fn get_tensor_key(&self, _k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+    fn lookup_tensor_key(&self, _k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
         self.0.with_k_digit(self.1)
     }
 }

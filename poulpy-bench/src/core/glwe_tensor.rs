@@ -15,7 +15,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::core::params::{CoreParams, key_dnum_k_aux};
+use crate::core::params::{CoreParams, switching_key_dnum_k_aux};
 
 fn glwe_layout(cp: &CoreParams) -> GLWELayout {
     GLWELayout {
@@ -27,7 +27,7 @@ fn glwe_layout(cp: &CoreParams) -> GLWELayout {
 }
 
 fn tensor_key_layout(cp: &CoreParams) -> GLWETensorKeyLayout {
-    let (dnum, k_aux) = key_dnum_k_aux(cp.k, cp.base2k, cp.dsize);
+    let (dnum, k_aux) = switching_key_dnum_k_aux(cp.k, cp.base2k, cp.dsize);
     GLWETensorKeyLayout {
         n: Degree(cp.n),
         base2k: Base2K(cp.base2k),

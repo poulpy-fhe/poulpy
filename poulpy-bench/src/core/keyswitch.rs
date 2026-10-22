@@ -17,7 +17,7 @@ use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
 
-use crate::core::params::{CoreParams, key_dnum_k_aux};
+use crate::core::params::{CoreParams, switching_key_dnum_k_aux};
 
 /// Times `glwe_keyswitch` alone.
 ///
@@ -45,7 +45,7 @@ where
         k: TorusPrecision(cp.k),
         rank: Rank(cp.rank),
     };
-    let (dnum, k_aux) = key_dnum_k_aux(cp.k + cp.dsize * cp.base2k, cp.base2k, cp.dsize);
+    let (dnum, k_aux) = switching_key_dnum_k_aux(cp.k, cp.base2k, cp.dsize);
     let key_infos = GGLWELayout {
         n: Degree(cp.n),
         base2k: Base2K(cp.base2k),

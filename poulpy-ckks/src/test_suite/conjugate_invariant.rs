@@ -541,9 +541,11 @@ pub fn test_conjugate_invariant_eval_mod<BE>(
     let res_k = params.k + lit.f_mod_log_delta - input_log_delta;
     let mut res = alloc_ct(&params, module, res_k);
     let ct_layout = alloc_ct(&params, module, params.k);
-    let bytes = module.ckks_eval_mod_tmp_bytes(&res, &ct_layout, &eval_mod, &params.tsk_layout());
+    // The tensor key covers the width EvalMod multiplies at.
+    let tsk_params = CKKSTestParams { k: res_k, ..params };
+    let bytes = module.ckks_eval_mod_tmp_bytes(&res, &ct_layout, &eval_mod, &tsk_params.tsk_layout());
     let mut scratch = ScratchOwned::<BE>::alloc(bytes.max(BE::len_bytes(&alloc_scratch(&params, module).data)));
-    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+    let tsk = gen_tsk(&tsk_params, module, &sk_raw, &mut scratch.borrow());
 
     // `I·ratio + m` over the interval, at the input scaling `1/K`.
     let slots = params.n;

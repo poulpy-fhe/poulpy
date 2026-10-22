@@ -545,21 +545,26 @@ fn conjugate_invariant_key_composition() {
     let mut source_s = Source::new([0; 32]);
     let mut source_e = Source::new([1; 32]);
     let mut source_a = Source::new([2; 32]);
+    // The applied key decomposes the rows of the input key whole, their guard included.
+    let applied_infos = GLWEAutomorphismKeyLayout {
+        dnum: 7u32.into(),
+        ..infos
+    };
     let mut sk = module.glwe_secret_alloc_from_infos(&infos);
     module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_s);
     let mut input = module.glwe_automorphism_key_alloc_from_infos(&infos);
-    let mut applied = module.glwe_automorphism_key_alloc_from_infos(&infos);
+    let mut applied = module.glwe_automorphism_key_alloc_from_infos(&applied_infos);
     let mut output = module.glwe_automorphism_key_alloc_from_infos(&infos);
     let mut scratch = ScratchOwned::<BE>::alloc(
         module
-            .glwe_automorphism_key_encrypt_sk_tmp_bytes(&infos)
-            .max(module.glwe_automorphism_key_prepare_tmp_bytes(&infos))
+            .glwe_automorphism_key_encrypt_sk_tmp_bytes(&applied_infos)
+            .max(module.glwe_automorphism_key_prepare_tmp_bytes(&applied_infos))
             .max(module.gglwe_noise_tmp_bytes(&infos))
-            .max(module.glwe_automorphism_key_automorphism_tmp_bytes(&infos, &infos, &infos)),
+            .max(module.glwe_automorphism_key_automorphism_tmp_bytes(&infos, &infos, &applied_infos)),
     );
     module.glwe_automorphism_key_encrypt_sk(&mut input, 25, &sk, &mut source_e, &mut source_a, &mut scratch.arena());
     module.glwe_automorphism_key_encrypt_sk(&mut applied, 25, &sk, &mut source_e, &mut source_a, &mut scratch.arena());
-    let mut prepared = module.glwe_automorphism_key_prepared_alloc_from_infos(&infos);
+    let mut prepared = module.glwe_automorphism_key_prepared_alloc_from_infos(&applied_infos);
     module.glwe_automorphism_key_prepare(&mut prepared, &applied, &mut scratch.arena());
     module.glwe_automorphism_key_automorphism(
         &mut output,

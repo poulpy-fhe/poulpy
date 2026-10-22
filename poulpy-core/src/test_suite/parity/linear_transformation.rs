@@ -13,14 +13,16 @@ use crate::{
     GLWELinearTransformations,
     api::TransferInto,
     layouts::{
-        Base2K, Degree, Dnum, GLWE, GLWEAutomorphismKeyLayout, GLWEBackendRef, GLWEInfos, GLWELayout, GLWEToBackendRef,
-        IntPolyInfos, LWEInfos, LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep,
-        LinearTransformationLayout, LinearTransformationStrategy, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, Dnum, GGLWEInfos, GLWE, GLWEAutomorphismKeyLayout, GLWEBackendRef, GLWEInfos, GLWELayout,
+        GLWEToBackendRef, IntPolyInfos, LWEInfos, LinearTransformation, LinearTransformationDiagonal,
+        LinearTransformationGiantStep, LinearTransformationLayout, LinearTransformationStrategy, ModuleCoreAlloc, Rank,
+        TorusPrecision,
         prepared::{GLWEAutomorphismKeyPreparedFactory, LinearTransformationBabySteps, PreparedDiagonal},
     },
     reference::linear_transformation::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft},
     test_suite::{
         keys::fill_by_digit,
+        noise::assert_refuses_uncovered_input,
         parity::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe, unnormalized_twin},
     },
 };
@@ -523,6 +525,21 @@ where
                         );
                     }
                 }
+                let wide = GLWELayout {
+                    k: TorusPrecision(key.gglwe_layout().max_input_k().0 + 1),
+                    ..ct
+                };
+                let mut wide_t = t.glwe_alloc_from_infos(&wide);
+                assert_refuses_uncovered_input("giant steps took an output one bit past their keys", || {
+                    t.glwe_eval_linear_transformation_into(
+                        0,
+                        &mut wide_t,
+                        &lhs_t,
+                        &resident_t,
+                        &keys_t,
+                        &mut poisoned_scratch::<BT>(t.glwe_eval_linear_transformation_tmp_bytes(&wide, &ct, &pt, &key)).borrow(),
+                    )
+                });
             }
         }
     }

@@ -6,7 +6,7 @@ use poulpy_core::{
     GLWEBytesOf, GLWECopy, GLWEKeyswitch, GLWEShift,
     layouts::{
         BSGSMeta, GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWETensorKeyPrepared, GLWEToBackendMut,
-        GLWEToBackendRef, GetAutomorphismKey, LWEInfos, Rank, SetBSGSMeta, SetK, TorusPrecision,
+        GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, SetBSGSMeta, SetK, TorusPrecision,
         prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
@@ -23,7 +23,7 @@ use crate::{
     },
     layouts::{
         BootstrappingContext, BootstrappingKeysLayout, BootstrappingKeysPrepared, BootstrappingLinearKeys, CKKSCiphertextOwned,
-        CKKSModuleAlloc, ConversionKeysLayout, CoveringKeys, EvalModRing, ScratchArenaTakeCKKS, bootstrapping_keys::check_covers,
+        CKKSModuleAlloc, ConversionKeysLayout, EvalModRing, ScratchArenaTakeCKKS,
     },
     oep::{CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl},
     reference::{
@@ -60,12 +60,13 @@ where
     BCI: Backend,
     CKKSCiphertextOwned<BE>: CKKSCtBounds,
     BootstrappingKeysPrepared<BE::OwnedBuf, BE, BCI>: BootstrappingLinearKeys<BE>,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BCI>: GLWETensorKeyPreparedToBackendRef<BCI>,
 {
     let op = "ckks_bootstrap_ci";
     let widths = ctx.key_widths();
     let (bootstrap_k, input_k) = (ct_out.k().as_usize(), ct_in.k().as_usize());
     let log_n = ct_out.n().as_usize().trailing_zeros() as usize;
-    let rotations = CoveringKeys(keys.rotation_keys());
+    let rotations = keys.rotation_keys();
     for (p, k) in widths.rotation_key_inputs(log_n, bootstrap_k, input_k) {
         let k = TorusPrecision(k as u32);
         rotations
@@ -89,11 +90,9 @@ where
         .conversions(bootstrap_k)
         .expect("EvalMod on the CI ring has conversions");
     let k = TorusPrecision(widths.eval_mod_relinearization_k(traced, ct_in.log_delta()) as u32);
-    check_covers(op, keys.tensor_key.gglwe_layout(), k).map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
-        op,
-        k: k.into(),
-        source,
-    })?;
+    keys.tensor_key
+        .get_tensor_key(k)
+        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source })?;
     let Some((trace_key, embed_key)) = &keys.conversion_keys else {
         crate::ckks_bail!("{op}: the keys have no conversion keys");
     };
@@ -101,10 +100,15 @@ where
         ("trace", trace_key.gglwe_layout(), traced),
         ("embed", embed_key.gglwe_layout(), embedded),
     ] {
-        check_covers(op, layout, TorusPrecision(k as u32)).map_err(|source| CKKSCompositionError::InvalidOperand {
-            op,
-            reason: format!("the {name} key does not cover its input: {source}"),
-        })?;
+        // These keys go through no key source, which would check their coverage.
+        let covered = layout.max_input_k().as_usize();
+        if k > covered {
+            return Err(CKKSCompositionError::InvalidOperand {
+                op,
+                reason: format!("the {name} key covers inputs of {covered} bits, asked for {k}"),
+            }
+            .into());
+        }
     }
     crate::reference::bootstrapping::check_raise_keys(ct_out, ct_in, ctx, keys)
 }
@@ -237,12 +241,7 @@ where
             scratch.scope(|scratch| {
                 let (mut z, mut scratch) = scratch.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta());
                 ckks_bootstrap_s2c_mod_up(self, &mut z, ct_in, ctx, keys, &mut scratch)?;
-                self.ckks_dft_evaluate_assign(
-                    &mut z,
-                    ctx.coeffs_to_slots(),
-                    &CoveringKeys(keys.rotation_keys()),
-                    &mut scratch,
-                )?;
+                self.ckks_dft_evaluate_assign(&mut z, ctx.coeffs_to_slots(), keys.rotation_keys(), &mut scratch)?;
                 embedded.set_k(z.k());
                 switch_degree(wide, &mut embedded, &z);
                 embedded.set_meta(z.meta());
@@ -258,13 +257,7 @@ where
 
             // One EvalMod for all `N` coefficients.
             let mut reduced = ci.ckks_ciphertext_alloc(traced.base2k(), traced.k());
-            ci.ckks_eval_mod(
-                &mut reduced,
-                &traced,
-                ctx.eval_mod(),
-                &CoveringKeys(&keys.tensor_key),
-                scratch_ci,
-            )?;
+            ci.ckks_eval_mod(&mut reduced, &traced, ctx.eval_mod(), &keys.tensor_key, scratch_ci)?;
             drop(traced);
 
             // Back to degree `2N`, times `v`, and `x + x(−X)`: `r_j + i·r_{j+N/2}` on the

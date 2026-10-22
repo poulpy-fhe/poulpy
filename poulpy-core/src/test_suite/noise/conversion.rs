@@ -206,7 +206,7 @@ pub fn test_lwe_to_glwe<BE: crate::test_suite::noise::TestBackend + crate::oep::
     let lwe_to_glwe_infos = LWEToGLWEKeyLayout {
         n: n_glwe,
         base2k: Base2K(base2k as u32),
-        dnum: 2_usize.into(),
+        dnum: k_lwe.div_ceil(base2k).into(),
         k_aux: (base2k + module.log_n()).into(),
         rank_out: rank,
     };
@@ -323,7 +323,7 @@ pub fn test_glwe_to_lwe<BE: crate::test_suite::noise::TestBackend + crate::oep::
     let glwe_to_lwe_infos = GLWEToLWEKeyLayout {
         n: n_glwe,
         base2k: Base2K(base2k as u32),
-        dnum: 2_usize.into(),
+        dnum: k_glwe.div_ceil(base2k).into(),
         k_aux: (base2k + module.log_n()).into(),
         rank_in: rank,
     };

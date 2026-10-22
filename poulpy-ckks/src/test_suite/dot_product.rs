@@ -558,7 +558,7 @@ fn eager<BE: TestContextBackend, H: GetTensorKey<BE>>(
 struct TensorKeyAt<'a, K>(&'a K, TorusPrecision);
 
 impl<BE: Backend, K: GetTensorKey<BE>> GetTensorKey<BE> for TensorKeyAt<'_, K> {
-    fn get_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+    fn lookup_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
         if k != self.1 {
             return Err(CoreError::GGLWEKeyUse {
                 op: "get_tensor_key",

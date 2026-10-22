@@ -114,6 +114,10 @@ where
         keys[0].key.base2k().as_usize() == base2k,
         "{OP}: ciphertext/key base2k mismatch"
     );
+    ckks_ensure!(
+        keys.iter().all(|key| ct.k() <= key.key.gglwe_layout().max_input_k()),
+        "{OP}: the input is wider than a key's max_input_k"
+    );
     // One operand serves every key of the group: whole-limb digits read the
     // input limbs whatever their width, other widths must share one digit grid.
     let (k_digit, dnum) = (keys[0].key.k_digit(), keys[0].key.dnum());

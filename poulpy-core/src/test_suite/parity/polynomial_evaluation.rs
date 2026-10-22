@@ -129,7 +129,7 @@ impl<BE: Backend> BabyStep<BE> for Step<BE> {
 }
 struct NoKey;
 impl<BE: Backend> GetTensorKey<BE> for NoKey {
-    fn get_tensor_key(&self, _: TorusPrecision) -> crate::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+    fn lookup_tensor_key(&self, _: TorusPrecision) -> crate::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
         panic!("exact scalar policy must not request a cryptographic key")
     }
 }

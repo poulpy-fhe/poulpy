@@ -8,13 +8,13 @@ use poulpy_hal::{
 
 use crate::layouts::GLWESecretSampling;
 use crate::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef;
-use crate::test_suite::noise::glwe_noise_checked;
+use crate::test_suite::noise::{assert_refuses_uncovered_input, glwe_noise_checked};
 use crate::{
     GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWENoise, GLWENormalize,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWEPlaintext,
-        GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc,
+        GGLWEInfos, GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWELayout,
+        GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc, TorusPrecision,
         prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
     noise::GGLWENoiseModel,
@@ -148,7 +148,15 @@ where
                     .std()
                     .log2()
                     <= max_noise + 1.0
-            )
+            );
+
+            let wide: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&GLWELayout {
+                k: TorusPrecision(autokey_infos.gglwe_layout().max_input_k().0 + 1),
+                ..ct_in_infos
+            });
+            assert_refuses_uncovered_input("glwe_automorphism took an input one bit past its key", || {
+                module.glwe_automorphism(&mut ct_out, &wide, &autokey_prepared.to_backend_ref(), &mut scratch.borrow())
+            });
         }
     }
 }

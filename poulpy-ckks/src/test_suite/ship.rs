@@ -8,7 +8,7 @@ use std::f64::consts::TAU;
 use poulpy_core::{
     GLWEZero, TransferInto,
     layouts::{
-        BackendGLWESecret, GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
+        BackendGLWESecret, GGLWEInfos, GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
         prepared::GLWESecretPrepared,
     },
     reference::keyswitching::glwe::GGLWEProductReference,
@@ -443,6 +443,23 @@ where
             "mux_rotate({label}): {err}"
         );
     }
+
+    let group: Vec<_> = [0, 5].map(|rot| gen_key(b, false, rot, &mut scratch)).into();
+    let wide_k = group[0].key.gglwe_layout().max_input_k().as_usize() + 1;
+    let plans = crate::reference::ship::mux::ship_mux_plans(module, [group.as_slice()].into_iter());
+    let mut mux_scratch = ScratchOwned::<BE>::alloc(crate::reference::ship::mux::ship_mux_rotate_tmp_bytes(
+        module,
+        &alloc_ct(&params, module, wide_k),
+        &group[0].key,
+        group.len(),
+    ));
+    let mut out = alloc_ct(&params, module, wide_k);
+    let err =
+        crate::reference::ship::mux::ship_mux_rotate(module, &mut out, &group, &plans, &mut mux_scratch.borrow()).unwrap_err();
+    assert!(
+        err.to_string().contains("wider than a key's max_input_k"),
+        "mux_rotate(input one bit past its keys): {err}"
+    );
 }
 
 /// End-to-end SHIP bootstrap driver: a one-limb bottom ciphertext under the

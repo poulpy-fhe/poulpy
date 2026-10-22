@@ -781,7 +781,7 @@ impl<BE: Backend> GetTensorKey<BE> for TestKeys<BE>
 where
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE>,
 {
-    fn get_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+    fn lookup_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
         self.tsk
             .as_ref()
             .ok_or_else(|| poulpy_core::CoreError::GGLWEKeyUse {
@@ -842,7 +842,7 @@ impl<BE: Backend> GetTensorKey<BE> for StrictKeys<'_, BE>
 where
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE>,
 {
-    fn get_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+    fn lookup_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
         if !self.tsks.contains(&k.as_usize()) {
             return Err(not_at_width("get_tensor_key", format!("no tensor key at k={}", k.as_usize())));
         }

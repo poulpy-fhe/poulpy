@@ -185,11 +185,13 @@ pub(crate) static TEST_BDD_KEY_LAYOUT: BDDKeyLayout = BDDKeyLayout {
             k_aux: TorusPrecision(TEST_K_CBT - 3 * TEST_BRK_BASE2K),
             rank: Rank(TEST_RANK),
         },
+        // The circuit bootstrapping traces at the precision these keys cover,
+        // at least the output GGSW's.
         atk_layout: GLWEAutomorphismKeyLayout {
             n: Degree(TEST_N_GLWE),
             base2k: Base2K(TEST_ATK_BASE2K),
             rank: Rank(TEST_RANK),
-            dnum: Dnum(3),
+            dnum: Dnum(4),
             k_aux: TorusPrecision(TEST_K_CBT - 3 * TEST_ATK_BASE2K),
             k_digit: TorusPrecision(TEST_ATK_BASE2K),
         },

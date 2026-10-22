@@ -119,6 +119,22 @@ retained for another DFT layout. `GLWEExternalProductDftReference` exposes the
 contiguous-limb fallback without dispatching back to the override. Incompatible
 reference digit loops are rejected at compile time.
 
+## Gadget products
+
+Every gadget product with a GGLWE key decomposes its input exactly. Key
+switching, automorphisms, relinearizations, linear transformations, trace,
+packing, the LWE conversions and the GGLWE and GGSW key operations refuse an
+input wider than the key's `GGLWELayout::max_input_k`, before any write. A
+caller drops the bits below by narrowing the input first (`SetK::set_k`). A
+key switching the rows of another key covers their width,
+`dnum * k_digit + k_aux`, guard included, so a key never covers its own layout.
+
+`GetAutomorphismKey::get_automorphism_key` and `GetTensorKey::get_tensor_key`
+return `CoreError::GGLWEKeyUse` for a key that does not cover the width asked
+for, so a scheme can report it as an error. An operation given a key directly
+panics through `reference::keyswitching::glwe::assert_key_covers`. An override
+refuses the same inputs.
+
 ## Public keys
 
 `GLWEPublicKey` defines the rank-`r` public key, `GLWEPublicKeyGenerate` its

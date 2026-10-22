@@ -31,6 +31,7 @@
 ### CPU backends
 
 - Every conjugate-invariant backend type has a `max_base2k` model: each backend implements `MaxBase2k` once for both rings, where the conjugate-invariant types returned `None`.
+- The AVX-512 rank-one relinearization and the fused IFMA giant step refuse a key that does not cover their input, as the reference does.
 - The native CKKS encapsulated modulus raise (portable, AVX2, AVX-512, and their Rayon variants) and the fused IFMA giant step leave a key with a row offset to the reference, which refuses it, and the AVX-512 rank-one relinearization refuses one, instead of using it as an offset-free key.
 - Every CPU backend reads the right operand of the convolution applies through the Galois element in the pass that reads a sparse operand.
 - **Breaking:** the `Reim4Convolution` and `Fft64RingArith` convolution methods take a `RightRead` in place of `b_log_gap`, built with `right_read_fft64` or `right_read_ntt`.
@@ -113,6 +114,10 @@
 
 ### `poulpy-core`
 
+- **Breaking, behaviour:** every gadget product with a GGLWE key decomposes its input exactly ([#451](https://github.com/poulpy-fhe/poulpy/issues/451)): `glwe_keyswitch`, `glwe_keyswitch_assign`, `glwe_keyswitch_dft`, the `glwe_automorphism` operations, `glwe_tensor_relinearize`, the one-pass products (`glwe_mul_relinearize`, `glwe_square_relinearize`, their assign, prepared and summed forms), the linear transformations, trace, packing, the LWE conversions and key switch, and `ggsw_expand_row` panic on an input wider than the key's `max_input_k`, where the product dropped the input digits past the key's rows.
+  A caller drops those bits by narrowing the input first (`SetK::set_k`). The GGLWE and GGSW key switches and automorphisms switch rows of `dnum * k_digit + k_aux` bits, so their key covers that width, guard included.
+  `reference::keyswitching::glwe::assert_key_covers` is the check for a key passed directly, and `test_suite::noise::assert_refuses_uncovered_input` checks the refusal of an input one bit past the key in the keyswitch, automorphism and tensor noise tests and in the relinearization, one-pass product and linear transformation parity tests.
+- **Breaking:** `GetAutomorphismKey::get_automorphism_key` and `GetTensorKey::get_tensor_key` return `CoreError::GGLWEKeyUse` for a key that does not cover the width asked for; a `GetTensorKey` implementor provides `lookup_tensor_key`, whose answer `get_tensor_key` checks, as `GetAutomorphismKey` does.
 - **Breaking:** GGLWE keys take a row offset `k_offset` in bits: row `q` carries `2^-(k_offset + (q + 1) * k_digit)`, so a key switch with such a key lowers its input by `k_offset` bits, over the balanced lift of its digits.
   The result is `2^-k_offset (b + Σ aᵢ sᵢ)` with the integer part of that sum kept, as a modulus raise needs it.
   The key's precision is `k_offset + dnum * k_digit + k_aux`, `max_input_k` is `min(dnum * k_digit, k - k_offset - k_digit)`, and an offset of 0 gives every key as before, bit for bit.
@@ -328,6 +333,8 @@
 - **Breaking:** the bootstrap and functional-bootstrap entry points no longer require `BootstrappingKeys::TensorKey` to be `GLWETensorKeyPrepared`; the parallel paths require `TensorKey: Sync`.
 - **Behaviour:** the bootstraps return an error when a rotation or tensor key is used at a precision above its `max_input_k`, where the key switch dropped the input limbs past the key's rows, for any `BootstrappingKeys` store.
   `ckks_bootstrap` checks every rotation key and the tensor key at the widths the working width `ct_out.k()` sets before any work, except for an EvalRound+ recipe, whose stages check them as they use them.
+- **Behaviour:** every operation returns `MissingAutomorphismKey` or `MissingRelinearizationKey` for a key that does not cover its input, through the core key lookups, the ship mux an error on an input wider than a key's `max_input_k`, and the encapsulated modulus raise `InvalidOperand` on an encapsulation key that does not cover its input.
+  `ckks_rotate_into` and `ckks_conjugate_rotate_into` look their key up at the width they switch, `min(src.k(), dst.k())`.
 - **Breaking:** `CKKSCompositionError::MissingAutomorphismKey` and `MissingRelinearizationKey` carry the key source's error as `source`, which their message includes and `Error::source` returns, so a key too narrow for its use is no longer reported as absent; `CKKSError::source` returns the source of a composition error.
 - Add `DFTPlan::galois_elements_per_factor`.
 - The bootstrap scratch bounds cover every rotation key shape of the layout, taking one maximum per key list.
@@ -335,6 +342,7 @@
 
 ### `poulpy-bin-fhe`
 
+- **Behaviour:** `FheUint::get_bit_lwe` narrows its input to the `max_input_k` of each switching key before the switch, and the circuit bootstrapping traces at the precision its automorphism keys cover, at most the blind rotation's; the circuit bootstrapping panics on a tensor key that does not cover the output GGSW.
 - **Breaking:** `FheUintPrepared` and `FheUintPreparedDebug` allocators take `k_digit` in place of `dsize`, and the blind rotation keys report the `k_digit` their GGSWs store, `base2k` as built, as their layout does.
 - The scalar-to-GGSW blind rotation reference places its gadget rows through `gadget_row_plaintext`, requires `VecZnxNormalize` in place of `VecZnxAddScalarAssign` and `VecZnxNormalizeAssign`, and its scratch covers `vec_znx_normalize_tmp_bytes`.
 
@@ -360,6 +368,8 @@
 - `BlasMatMulOperandPreparedFactory` allocates the hot and cold prepared operands `BlasMatMulLeft<BE>` and `BlasMatMulRight<BE>` (`layouts::BlasMatMulOperand`) from the infos `blas_matmul_left_operand_layout` and `blas_matmul_right_operand_layout` give, and `blas_matmul_left_term_layout` and `blas_matmul_right_term_layout` give the layout of a cold operand's terms.
 - A backend implements the `oep` families `BlasMatInterImpl`, `BlasMatIntraImpl` (the map hook `blas_map_blocks_impl`, with the transpose and both shifts provided over it), `BlasMatMulImpl` (with `blas_matmul_impl` provided over two hot preparations and the prepared product) and `BlasJklsImpl` (one JKLS output block, over terms prepared by `ckks_prepare_left` and `ckks_prepare_right`).
 - Every implementation runs its operation's validator, a public `layouts::validate_*`, before any write and stamps the batch record of `res` after `Ok`, and the API dispatches without a check.
+  A validator rejects a rotation or tensor key that does not cover the width it is used at, as a missing key.
+  `blas_rotate` looks its key up at the narrower of `a`'s and `res`'s widths, the width `ckks_rotate_into` switches at, and `blas_rotate_key_uses` takes `res`.
 - An implementation of `BlasMatMulImpl` reads and fills the operands' storage through `BlasMatMulOperand::{blocks, terms}`, their `_mut` forms and `set_prepared`, and an override of a provided method can fall back to its body, public in `oep::derived` as `*_derived`.
 - `poulpy-blas/docs/blas-contracts.md` states the rules every family shares: batches, key sets and widths, validation and error order, scratch and parallelism.
 - `BlasPlan` fixes the block dimension and lists the rotation keys of each operation without a module, context or public matrix (`transpose_galois_elements`, `matmul_galois_elements`, …), and `sum_galois_elements` those of `blas_sum` for a grid's batch from the cyclotomic order alone. A `BlasContext` holds the plan's maps, allocated from a `BlasContextLayout`, encoded once at a caller-chosen precision with `blas_context_encode_into` and prepared with `blas_context_prepare` into a `blas_context_prepared_alloc_from_infos`; a `BlasPtOperand<BE, Right>` (the default side) or `BlasPtOperand<BE, Left>` does the same for public matrices on the right and on the left (`blas_pt_operand_alloc`, `blas_pt_operand_encode_into`, `blas_pt_operand_prepared_alloc_from_infos`, `blas_pt_operand_prepare`), matrix slot `s` reading matrix `s mod count` for a `count` that divides the batch. A `CoeffsMeta` with `k = 0` panics at allocation.

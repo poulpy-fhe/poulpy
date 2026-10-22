@@ -19,7 +19,7 @@ use poulpy_core::{
     Distribution, GGLWEToGGSWKeyEncryptSk, GGSWExpandRows, GLWEAutomorphismKeyEncryptSk, GLWEBytesOf, GLWECopy, GLWEPacking,
     GLWERotate, GLWETrace, GetDistribution, ScratchArenaTakeCore,
     layouts::{
-        GGLWELayout, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPreparedFactory, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos,
+        GGLWEInfos, GGLWELayout, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPreparedFactory, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos,
         GGSWToBackendMut, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWELayout,
         GLWESecretPreparedFactory, GLWESecretToBackendRef, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
         LWESecretToBackendRef, LWEToBackendRef, ModuleCoreAlloc, SetGaloisElement, prepared::GGLWEToGGSWKeyPreparedToBackendRef,
@@ -270,10 +270,21 @@ where
         k: brk_infos.k(),
         rank: brk_infos.rank,
     };
+    let atk_key_infos: GGLWELayout = GGLWELayout {
+        n: atk_infos.n,
+        base2k: atk_infos.base2k,
+        dnum: atk_infos.dnum,
+        k_aux: atk_infos.k_aux,
+        k_digit: atk_infos.k_digit,
+        k_offset: poulpy_core::layouts::TorusPrecision(0),
+        rank_in: atk_infos.rank,
+        rank_out: atk_infos.rank,
+        stride: 1,
+    };
     let glwe_atk_layout = GLWELayout {
         n: glwe_brk_layout.n,
         base2k: atk_infos.base2k,
-        k: glwe_brk_layout.k,
+        k: glwe_brk_layout.k.min(atk_key_infos.max_input_k()),
         rank: glwe_brk_layout.rank,
     };
     let res_glwe_layout = res_infos.glwe_layout();
@@ -286,40 +297,26 @@ where
     let convert = module.glwe_copy_tmp_bytes(&glwe_atk_layout, &glwe_brk_layout);
     let blind_phase = brk_bytes + blind_rotation.max(convert);
 
-    let atk_key_infos: GGLWELayout = GGLWELayout {
-        n: atk_infos.n,
-        base2k: atk_infos.base2k,
-        dnum: atk_infos.dnum,
-        k_aux: atk_infos.k_aux,
-        k_digit: atk_infos.k_digit,
-        k_offset: poulpy_core::layouts::TorusPrecision(0),
-        rank_in: atk_infos.rank,
-        rank_out: atk_infos.rank,
-        stride: 1,
-    };
     let trace_atk = module.glwe_trace_tmp_bytes(&glwe_atk_layout, &glwe_atk_layout, &atk_key_infos);
-    let trace_res = module.glwe_trace_tmp_bytes(&res_glwe_layout, &glwe_atk_layout, &atk_key_infos);
-    let copy_res = module.glwe_copy_tmp_bytes(&res_glwe_layout, &res_glwe_layout);
+    let copy_res = module.glwe_copy_tmp_bytes(&res_glwe_layout, &glwe_atk_layout);
     let copy_atk = module.glwe_copy_tmp_bytes(&glwe_atk_layout, &glwe_atk_layout);
     let rotate = module.glwe_rotate_tmp_bytes();
     let row_phase = match config.output {
         CircuitBootstrappingOutput::Constant => {
-            aligned(module.glwe_bytes_of_from_infos(&res_glwe_layout)) + trace_res.max(copy_res)
+            aligned(module.glwe_bytes_of_from_infos(&glwe_atk_layout)) + trace_atk.max(copy_res)
         }
         CircuitBootstrappingOutput::Exponent { log_gap_out } => {
             if config.log_gap_in.expect("prepared exponent execution requires its input gap") == log_gap_out {
-                aligned(module.glwe_bytes_of_from_infos(&res_glwe_layout)) + trace_res.max(copy_res)
+                aligned(module.glwe_bytes_of_from_infos(&glwe_atk_layout)) + trace_atk.max(copy_res)
             } else {
                 let steps = 1usize
                     .checked_shl(config.log_domain as u32)
                     .expect("circuit-bootstrap domain overflows usize");
-                let owned = aligned(module.glwe_bytes_of_from_infos(&glwe_atk_layout))
-                    + aligned(module.glwe_bytes_of_from_infos(&res_glwe_layout))
-                    + steps * aligned(module.glwe_bytes_of_from_infos(&glwe_atk_layout));
+                let owned = (steps + 2) * aligned(module.glwe_bytes_of_from_infos(&glwe_atk_layout));
                 owned
                     + trace_atk
                         .max(rotate)
-                        .max(module.glwe_pack_tmp_bytes(&res_glwe_layout, &glwe_atk_layout, &atk_key_infos))
+                        .max(module.glwe_pack_tmp_bytes(&glwe_atk_layout, &glwe_atk_layout, &atk_key_infos))
                         .max(copy_atk)
                         .max(copy_res)
             }
@@ -390,6 +387,7 @@ where
     assert_eq!(res_infos.rank(), key.tsk.rank());
     assert_eq!(res_infos.n(), key.atk_infos().n);
     assert_eq!(res_infos.n(), key.tsk.n());
+    poulpy_core::reference::keyswitching::glwe::assert_key_covers("circuit_bootstrapping", res_infos.k(), &key.tsk);
     let res_base2k = res_infos.base2k().as_usize();
     let dnum_res = res_infos.dnum().as_usize();
     assert!(
@@ -516,16 +514,17 @@ fn circuit_bootstrap_prepared<R, L, M, BRA, BE>(
         rank: key.brk.rank(),
     };
 
-    // Every rotation's key shares the radix; read it off the first one.
-    let atk_base2k = key
+    // Every rotation's key shares the layout; read it off the first one.
+    let atk_layout = key
         .atk
-        .get_automorphism_key(-1, glwe_brk_layout.k())
-        .map(|layout| layout.base2k())
+        .lookup_automorphism_key(-1, glwe_brk_layout.k())
+        .map(|key| key.gglwe_layout())
         .unwrap_or_else(|e| panic!("{e}"));
+    // The traces run at the precision the keys decompose exactly.
     let glwe_atk_layout: &GLWELayout = &GLWELayout {
         n: glwe_brk_layout.n(),
-        base2k: atk_base2k,
-        k: glwe_brk_layout.k(),
+        base2k: atk_layout.base2k,
+        k: glwe_brk_layout.k().min(atk_layout.max_input_k()),
         rank: glwe_brk_layout.rank(),
     };
 
@@ -557,9 +556,9 @@ fn circuit_bootstrap_prepared<R, L, M, BRA, BE>(
                     &mut scratch_1.borrow(),
                 ),
                 CircuitBootstrappingOutput::Constant => {
-                    let (mut tmp_row, mut op_scratch) = scratch_1.borrow().take_glwe_scratch(&res_row);
-                    module.glwe_trace(&mut tmp_row, 0, &res_glwe_atk_layout, &key.atk, &mut op_scratch);
-                    module.glwe_copy(&mut res_row, &tmp_row, &mut op_scratch);
+                    let (mut traced, mut op_scratch) = scratch_1.borrow().take_glwe_scratch(glwe_atk_layout);
+                    module.glwe_trace(&mut traced, 0, &res_glwe_atk_layout, &key.atk, &mut op_scratch);
+                    module.glwe_copy(&mut res_row, &traced, &mut op_scratch);
                 }
             }
 
@@ -595,7 +594,7 @@ fn post_process<R, A, M, H, BE>(
             .checked_shl(log_domain as u32)
             .expect("circuit-bootstrap domain overflows usize");
         let (mut a_trace, scratch_1) = scratch.borrow().take_glwe_scratch(a);
-        let (mut packed, scratch_2) = scratch_1.take_glwe_scratch(res);
+        let (mut packed, scratch_2) = scratch_1.take_glwe_scratch(a);
         let (mut cts_vec, mut op_scratch) = scratch_2.take_glwe_slice_scratch(steps, a);
 
         module.glwe_trace(
@@ -622,7 +621,7 @@ fn post_process<R, A, M, H, BE>(
         module.glwe_pack(&mut packed, cts, log_gap_out, auto_keys, &mut op_scratch);
         module.glwe_copy(res, &packed, &mut op_scratch);
     } else {
-        let (mut traced, mut op_scratch) = scratch.borrow().take_glwe_scratch(res);
+        let (mut traced, mut op_scratch) = scratch.borrow().take_glwe_scratch(a);
         module.glwe_trace(&mut traced, module.log_n() - log_gap_in + 1, a, auto_keys, &mut op_scratch);
         module.glwe_copy(res, &traced, &mut op_scratch);
     }

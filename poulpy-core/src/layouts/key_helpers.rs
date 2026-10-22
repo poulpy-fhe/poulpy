@@ -13,7 +13,7 @@ use poulpy_hal::layouts::{Backend, Data};
 use crate::{
     error::{CoreError, Result},
     layouts::{
-        TorusPrecision,
+        GGLWEInfos, TorusPrecision,
         prepared::{
             GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef,
             GLWETensorKeyPrepared, GLWETensorKeyPreparedBackendRef, GLWETensorKeyPreparedToBackendRef,
@@ -29,7 +29,7 @@ pub trait GetAutomorphismKey<BE: Backend> {
     fn lookup_automorphism_key(&self, p: i64, k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>>;
 
     /// The answer to [`Self::lookup_automorphism_key`], checked to be a key for
-    /// the element that was asked for.
+    /// the element that was asked for, covering an input of `k` bits.
     ///
     /// Operations rotate by the `p` they were given and key-switch with what
     /// the source returns, so a mismatch is silent: this is where it stops.
@@ -41,13 +41,36 @@ pub trait GetAutomorphismKey<BE: Backend> {
                 detail: format!("asked for p={p}, source answered with a key for p={}", key.p),
             });
         }
+        check_covers("get_automorphism_key", &key, k)?;
         Ok(key)
     }
 }
 
 /// Tensor (relinearization) key, at the precision `k` it will be used at.
 pub trait GetTensorKey<BE: Backend> {
-    fn get_tensor_key(&self, k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE>>;
+    /// Answers with a tensor key. Which key and which decomposition is the
+    /// implementor's business.
+    fn lookup_tensor_key(&self, k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE>>;
+
+    /// The answer to [`Self::lookup_tensor_key`], checked to cover an input of `k` bits.
+    fn get_tensor_key(&self, k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+        let key = self.lookup_tensor_key(k)?;
+        check_covers("get_tensor_key", &key, k)?;
+        Ok(key)
+    }
+}
+
+/// Refuses a key that does not decompose an input of `k` bits exactly: one past
+/// its [`max_input_k`](crate::layouts::GGLWELayout::max_input_k).
+fn check_covers<K: GGLWEInfos>(op: &'static str, key: &K, k: TorusPrecision) -> Result<()> {
+    let covered = key.gglwe_layout().max_input_k();
+    if k > covered {
+        return Err(CoreError::GGLWEKeyUse {
+            op,
+            detail: format!("the input is wider than the key's max_input_k ({k} > {covered} bits)"),
+        });
+    }
+    Ok(())
 }
 
 /// A map answers with each key as stored.
@@ -77,7 +100,7 @@ impl<D: Data, BE: Backend> GetTensorKey<BE> for GLWETensorKeyPrepared<D, BE>
 where
     Self: GLWETensorKeyPreparedToBackendRef<BE>,
 {
-    fn get_tensor_key(&self, _k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+    fn lookup_tensor_key(&self, _k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
         Ok(self.to_backend_ref())
     }
 }

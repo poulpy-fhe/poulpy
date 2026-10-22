@@ -300,7 +300,7 @@ impl<B: Backend> GetTensorKey<B> for Recorded<B>
 where
     TestKeys<B>: GetTensorKey<B>,
 {
-    fn get_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, B>> {
+    fn lookup_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, B>> {
         self.lookups.lock().unwrap().1.insert(k.as_usize());
         self.keys.get_tensor_key(k)
     }
