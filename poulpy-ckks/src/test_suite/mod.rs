@@ -110,6 +110,45 @@ impl CKKSTestParams {
             k_offset: TorusPrecision(0),
         }
     }
+
+    /// [`Self::ksk_layout`] for a sparse-to-dense key whose switch is the raise
+    /// into `k_boot` bits: its rows sit under the raised ciphertext of `window`
+    /// bits ([`crate::layouts::BootstrappingPlan::raised_window`]) and end at `k_boot`.
+    pub fn ksk_offset_layout(&self, k_boot: usize, window: usize) -> GLWESwitchingKeyLayout {
+        let k_digit = k_digit_of(self.base2k, self.dsize).as_usize();
+        let gadget = window.div_ceil(k_digit) * k_digit;
+        GLWESwitchingKeyLayout {
+            k_offset: TorusPrecision((k_boot - gadget) as u32),
+            ..self.ksk_layout(gadget)
+        }
+    }
+
+    /// [`Self::ksk_layout`] for the keys of a first CoeffsToSlots factor left to
+    /// the raise into `k_boot` bits of an input at a modulus of `log_modulus_in`
+    /// bits: their rows sit under a term of the raised ciphertext, with the guard
+    /// of the working width below it and a product's growth above, and end at
+    /// that width.
+    pub fn first_factor_key_layout(
+        &self,
+        plan: &crate::layouts::BootstrappingPlan,
+        k_boot: usize,
+        log_modulus_in: usize,
+    ) -> GLWESwitchingKeyLayout {
+        use crate::reference::first_factor::{first_factor_diagonal_growth, first_factor_small_bits, first_factor_work};
+        let (work, _) = first_factor_work(self.base2k, k_boot);
+        let term_bits = first_factor_small_bits(
+            self.base2k,
+            self.n.ilog2() as usize,
+            k_boot,
+            plan.raised_window(log_modulus_in),
+            first_factor_diagonal_growth(self.base2k, &plan.coeffs_to_slots().coeffs_meta()),
+        );
+        let small = term_bits.div_ceil(self.base2k);
+        GLWESwitchingKeyLayout {
+            k_offset: TorusPrecision(((work - small) * self.base2k) as u32),
+            ..self.ksk_layout(small * self.base2k)
+        }
+    }
 }
 
 /// Radix-52 parameter set.
@@ -910,6 +949,10 @@ macro_rules! ckks_backend_test_suite {
             run_params_test!(
                 bootstrapping_standard_e2e,
                 $crate::test_suite::bootstrapping::test_bootstrapping_standard_e2e
+            );
+            run_params_test!(
+                bootstrapping_first_factor_on_raise,
+                $crate::test_suite::bootstrapping::test_bootstrapping_first_factor_on_raise
             );
             run_params_test!(
                 bootstrapping_evalround_e2e,

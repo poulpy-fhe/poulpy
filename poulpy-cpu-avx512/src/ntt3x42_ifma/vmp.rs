@@ -920,20 +920,6 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma<R: Ring, E: TaskExecutor>
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma_known_zero_prefix<R: Ring, E: TaskExecutor>(
-    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma<R>>,
-    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma<R>>,
-    dsize: usize,
-    product_limbs: usize,
-    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma<R>>,
-    zero_prefix: usize,
-    tmp: &mut [u64],
-) {
-    assert!(zero_prefix <= a.size());
-    vmp_apply_dft_to_dft_digits_strided_ifma_inner::<_, E>(res, a, dsize, product_limbs, pmat, Some(zero_prefix), tmp)
-}
-
-#[allow(clippy::too_many_arguments)]
 #[inline(never)]
 fn vmp_apply_dft_to_dft_digits_strided_ifma_inner<R: Ring, E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma<R>>,

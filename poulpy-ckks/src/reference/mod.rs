@@ -21,6 +21,7 @@ pub mod encoding;
 pub mod encryption;
 pub mod eval_mod;
 mod eval_mod_scratch;
+pub mod first_factor;
 pub mod fold;
 pub mod imag;
 pub mod linear_transformation;

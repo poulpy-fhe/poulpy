@@ -60,7 +60,7 @@ use crate::{
         CKKSTestParams,
         helpers::{
             TestContextBackend, TestContextModule, TestScalar, assert_canonical_at_k, ckks_encrypt_with_prec, ckks_spec,
-            gen_sk_with_raw, precision_stats, test_vector_1,
+            gen_sk_with_raw, next_test_seed, precision_stats, test_vector_1,
         },
         presets::bootstrap_setup_tmp_bytes,
     },
@@ -95,6 +95,26 @@ fn bootstrap_plan(
     eval_round_plus: bool,
     log_msg_ratio: usize,
     guard_bits: usize,
+    first_factor_on_raise: bool,
+) -> BootstrappingPlan {
+    plan_with_encapsulation(
+        pipeline,
+        eval_round_plus,
+        log_msg_ratio,
+        guard_bits,
+        first_factor_on_raise,
+        true,
+    )
+}
+
+/// [`bootstrap_plan`], with sparse-secret encapsulation or without it.
+fn plan_with_encapsulation(
+    pipeline: BootstrappingPipeline,
+    eval_round_plus: bool,
+    log_msg_ratio: usize,
+    guard_bits: usize,
+    first_factor_on_raise: bool,
+    encapsulated: bool,
 ) -> BootstrappingPlan {
     let s2c_first = pipeline == BootstrappingPipeline::S2CFirst;
     let mut coeffs_to_slots = DFTPlan::new(
@@ -117,10 +137,13 @@ fn bootstrap_plan(
         coeffs_to_slots = coeffs_to_slots.with_optimal_bsgs(LOG_SLOTS + 1);
         slots_to_coeffs = slots_to_coeffs.with_optimal_bsgs(LOG_SLOTS + 1);
     }
+    if first_factor_on_raise {
+        coeffs_to_slots = coeffs_to_slots.with_first_factor_on_raise();
+    }
     let plan = BootstrappingPlan::new(
         pipeline,
         BootstrappingTechniques {
-            sparse_secret_encapsulation: Some(SparseSecretEncapsulation {
+            sparse_secret_encapsulation: encapsulated.then_some(SparseSecretEncapsulation {
                 hamming_weight: EPHEMERAL_SECRET_WEIGHT,
             }),
             eval_round_plus: eval_round_plus.then(|| EvalRoundPlus {
@@ -158,6 +181,209 @@ fn bootstrap_plan(
     }
 }
 
+/// End-to-end bootstrapping with the first CoeffsToSlots factor applied by the
+/// raise, in both pipelines and for complex and real-tagged inputs, under
+/// sparse-secret encapsulation and without it: the factor costs no modulus,
+/// and the precision is that of the ordinary pipeline.
+pub fn test_bootstrapping_first_factor_on_raise<BE, F, E>(params: CKKSTestParams)
+where
+    BE: TestContextBackend<Ring = Standard>,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, F>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    BE: crate::oep::CKKSModUpFirstFactorImpl,
+{
+    let n = 1 << (LOG_SLOTS + 1);
+    let m = n / 2;
+    let base2k = params.base2k;
+    // The scales and message ratios of the ordinary tests of each pipeline, at a
+    // raised width on a limb boundary and off one. Without encapsulation the raise
+    // runs under the dense secret, here of the ephemeral secret's weight.
+    for (pipeline, log_delta, log_msg_ratio, guard_bits, aligned, encapsulated) in [
+        (BootstrappingPipeline::C2SFirst, 45, LOG_MSG_RATIO, 0, true, true),
+        (BootstrappingPipeline::S2CFirst, 40, 16, 6, true, true),
+        (BootstrappingPipeline::C2SFirst, 45, LOG_MSG_RATIO, 0, false, true),
+        (BootstrappingPipeline::S2CFirst, 40, 16, 6, false, true),
+        (BootstrappingPipeline::C2SFirst, 45, LOG_MSG_RATIO, 0, true, false),
+    ] {
+        let s2c_first = pipeline == BootstrappingPipeline::S2CFirst;
+        let ordinary = plan_with_encapsulation(pipeline, false, log_msg_ratio, guard_bits, false, encapsulated);
+        let plan = plan_with_encapsulation(pipeline, false, log_msg_ratio, guard_bits, true, encapsulated);
+        assert_eq!(plan.sparse_secret_hamming_weight().is_some(), encapsulated);
+        let factor_scale = plan.coeffs_to_slots().coeffs_meta().log_delta();
+        assert_eq!(plan.consumed_bits() + factor_scale, ordinary.consumed_bits());
+
+        let log_modulus_in = log_delta + plan.eval_mod().log_msg_ratio;
+        let k_in = plan.input_k(log_modulus_in);
+        let k_boot = if s2c_first {
+            plan.bootstrap_k(3 * log_delta, log_delta)
+        } else {
+            plan.bootstrap_k(log_modulus_in + 2 * log_delta, log_delta)
+        }
+        .next_multiple_of(base2k)
+            + if aligned { 0 } else { base2k / 2 + 1 };
+
+        let module = Module::<BE>::new(n as u64);
+        let host_module = Module::<HostBytesBackend>::new(n as u64);
+        let encoder = ReferenceEncoder::<E>::new::<F>(m).unwrap();
+        let tp = CKKSTestParams {
+            n,
+            base2k,
+            k: k_boot,
+            prec_meta: GLWEPlaintextMeta {
+                scale: Scale::Log(log_delta),
+                slots: SlotsKind::Complex,
+                log_sparsity: 0,
+            },
+            prec_log_budget: 8,
+            hw: if encapsulated { 192 } else { EPHEMERAL_SECRET_WEIGHT },
+            dsize: 7,
+            rank: 1,
+        };
+        let first_factor_key = tp.first_factor_key_layout(&plan, k_boot, log_modulus_in);
+        let keys_layout = BootstrappingKeysLayout {
+            rotation_keys: Default::default(),
+            first_factor_key: Some(first_factor_key),
+            automorphism_key: tp.atk_layout(),
+            tensor_key: tp.tsk_layout(),
+            // The first-factor keys switch back to the dense secret.
+            encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
+                dense_to_sparse: tp.ksk_layout(log_modulus_in),
+                sparse_to_dense: None,
+            }),
+        };
+        let boot_spec = ckks_spec(n, base2k, log_delta, k_boot - log_delta);
+        let in_spec = ckks_spec(n, base2k, log_delta, k_in - log_delta);
+        let mut scratch = ScratchOwned::<BE>::alloc(bootstrap_setup_tmp_bytes(&module, &boot_spec, &plan, &keys_layout));
+        let unprepared =
+            BootstrappingContext::<BE, F>::compile_unprepared(&module, base2k.into(), &plan, &mut scratch.borrow()).unwrap();
+        let prepare_scratch = unprepared.prepare_tmp_bytes(&module);
+        if prepare_scratch > BE::len_bytes(&scratch.data) {
+            scratch = ScratchOwned::<BE>::alloc(prepare_scratch);
+        }
+        let ctx = unprepared.prepare(&module, &mut scratch.borrow());
+        // The matrix holds the paid factors; the first one stands apart, a rotation per diagonal.
+        let first = ctx
+            .coeffs_to_slots_first_factor()
+            .expect("the first factor is left to the raise");
+        assert_eq!(ctx.coeffs_to_slots().num_factors() + 1, plan.coeffs_to_slots().num_factors());
+        assert!(first.giant_steps.iter().all(|giant| giant.diagonals.len() == 1));
+        let boot_tmp = module.ckks_bootstrap_tmp_bytes(&boot_spec, &in_spec, &ctx, &keys_layout);
+        if boot_tmp > BE::len_bytes(&scratch.data) {
+            scratch = ScratchOwned::<BE>::alloc(boot_tmp);
+        }
+
+        let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, next_test_seed(0));
+        let (mut src_xs, mut src_xa, mut src_xe) = (
+            Source::new(next_test_seed(7)),
+            Source::new(next_test_seed(1)),
+            Source::new(next_test_seed(2)),
+        );
+        let key_set = ctx
+            .generate_keys(
+                &module,
+                &sk_raw,
+                &keys_layout,
+                &mut src_xs,
+                &mut src_xe,
+                &mut src_xa,
+                &mut scratch.borrow(),
+            )
+            .unwrap();
+        assert_eq!(key_set.first_factor_keys.len(), first.giant_steps.len());
+        let bsk = key_set.prepare(&module, &mut scratch.borrow());
+
+        // The raise alone runs on exactly the scratch it advertises.
+        let (k_small, raised) = if s2c_first {
+            (log_modulus_in, plan.raised_window(log_modulus_in))
+        } else {
+            (k_in, plan.raised_window(log_modulus_in))
+        };
+        let small_spec = ckks_spec(n, base2k, log_delta, k_small - log_delta);
+        let raise_tmp = BE::ckks_mod_up_first_factor_tmp_bytes(
+            &module,
+            &boot_spec,
+            &small_spec,
+            first,
+            keys_layout.encapsulation.as_ref().map(|encaps| &encaps.dense_to_sparse),
+            &first_factor_key,
+        );
+        assert!(raise_tmp > 0);
+        {
+            let mut src = module.ckks_ciphertext_alloc(base2k.into(), k_small.into());
+            src.set_meta(small_spec.meta);
+            let mut dst = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+            let mut exact = ScratchOwned::<BE>::alloc(raise_tmp);
+            BE::ckks_mod_up_first_factor(
+                &module,
+                &mut dst,
+                &mut src,
+                raised - k_small,
+                first,
+                &bsk,
+                &mut exact.borrow(),
+            )
+            .unwrap();
+        }
+
+        // Keys laid out for the raise refuse a narrower bootstrap before any work.
+        let mut narrow = module.ckks_ciphertext_alloc(base2k.into(), (k_boot - base2k).into());
+        let ct_any = module.ckks_ciphertext_alloc(base2k.into(), k_in.into());
+        let err = module
+            .ckks_bootstrap(&mut narrow, &ct_any, &ctx, &bsk, &mut scratch.borrow())
+            .unwrap_err();
+        assert!(err.to_string().contains("first-factor"), "{err}");
+
+        let (re, im) = test_vector_1::<F>(m);
+        let im_zero = vec![F::zero(); m];
+        for (want_im, slots) in [(&im, SlotsKind::Complex), (&im_zero, SlotsKind::Real)] {
+            let mut ct0 = ckks_encrypt_with_prec(
+                &tp,
+                &module,
+                &host_module,
+                &encoder,
+                &sk,
+                k_in,
+                &re,
+                want_im,
+                in_spec,
+                &mut scratch.borrow(),
+            );
+            ct0.set_slots(slots);
+            let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+            module
+                .ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, &mut scratch.borrow())
+                .unwrap();
+            assert_eq!((ct_bs.log_delta(), ct_bs.slots()), (log_delta, slots));
+            let scale_drop = if s2c_first {
+                0
+            } else {
+                plan.eval_mod().f_mod_log_delta - log_delta
+            };
+            assert_eq!(ct_bs.k().as_usize(), k_boot - plan.post_mod_up_consumed_bits() - scale_drop);
+            let (got_re, got_im) = decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow());
+            for (got, want, tag) in [(&got_re, &re, "re"), (&got_im, want_im, "im")] {
+                let stats = precision_stats(got, want, log_delta);
+                println!(
+                    "ckks_bootstrap (first factor on raise, {pipeline:?}, {slots:?}, aligned={aligned}, encapsulated={encapsulated}) ({tag}) avg={:.2} min={:.2} bits",
+                    stats.avg_log2_prec, stats.min_log2_prec
+                );
+                assert!(
+                    stats.avg_log2_prec >= MIN_AVG_LOG2_PREC,
+                    "first factor on raise ({pipeline:?}, {slots:?}, encapsulated={encapsulated}, {tag}): {:.1} bits < {MIN_AVG_LOG2_PREC}",
+                    stats.avg_log2_prec
+                );
+            }
+        }
+    }
+}
+
 /// End-to-end bootstrapping: encrypt at level 0, refresh, check the slots return.
 pub fn test_bootstrapping_standard_e2e<BE, F, E>(params: CKKSTestParams)
 where
@@ -172,7 +398,7 @@ where
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    let plan = bootstrap_plan(BootstrappingPipeline::C2SFirst, false, LOG_MSG_RATIO, 0);
+    let plan = bootstrap_plan(BootstrappingPipeline::C2SFirst, false, LOG_MSG_RATIO, 0, false);
 
     let n = 1 << (LOG_SLOTS + 1);
     let m = n / 2;
@@ -222,11 +448,13 @@ where
     assert!(!rotation_keys.is_empty());
     let keys_layout = BootstrappingKeysLayout {
         rotation_keys,
+        first_factor_key: None,
         automorphism_key: tp.atk_layout(),
         tensor_key: tp.tsk_layout(),
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
             dense_to_sparse: tp.ksk_layout(log_modulus_in),
-            sparse_to_dense: tp.ksk_layout(k_boot),
+            // The raise is the sparse-to-dense switch, with rows under the raised ciphertext.
+            sparse_to_dense: Some(tp.ksk_offset_layout(k_boot, plan.raised_window(log_modulus_in))),
         }),
     };
     let scratch_size = bootstrap_setup_tmp_bytes(
@@ -539,7 +767,7 @@ where
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    let plan = bootstrap_plan(BootstrappingPipeline::C2SFirst, true, LOG_MSG_RATIO, 0);
+    let plan = bootstrap_plan(BootstrappingPipeline::C2SFirst, true, LOG_MSG_RATIO, 0, false);
 
     let n = 1 << (LOG_SLOTS + 1);
     let m = n / 2;
@@ -572,11 +800,12 @@ where
 
     let keys_layout = BootstrappingKeysLayout {
         rotation_keys: Default::default(),
+        first_factor_key: None,
         automorphism_key: tp.atk_layout(),
         tensor_key: tp.tsk_layout(),
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
             dense_to_sparse: tp.ksk_layout(log_modulus_in),
-            sparse_to_dense: tp.ksk_layout(k_boot),
+            sparse_to_dense: Some(tp.ksk_layout(k_boot)),
         }),
     };
     let scratch_size = bootstrap_setup_tmp_bytes(
@@ -847,7 +1076,13 @@ where
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    let plan = bootstrap_plan(BootstrappingPipeline::S2CFirst, eval_round_plus, log_msg_ratio, guard_bits);
+    let plan = bootstrap_plan(
+        BootstrappingPipeline::S2CFirst,
+        eval_round_plus,
+        log_msg_ratio,
+        guard_bits,
+        false,
+    );
 
     let n = 1 << (LOG_SLOTS + 1);
     let m = n / 2;
@@ -876,11 +1111,13 @@ where
 
     let keys_layout = BootstrappingKeysLayout {
         rotation_keys: Default::default(),
+        first_factor_key: None,
         automorphism_key: tp.atk_layout(),
         tensor_key: tp.tsk_layout(),
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
             dense_to_sparse: tp.ksk_layout(log_modulus_in),
-            sparse_to_dense: tp.ksk_layout(k_boot),
+            // The raise is the sparse-to-dense switch, with rows under the raised ciphertext.
+            sparse_to_dense: Some(tp.ksk_offset_layout(k_boot, plan.raised_window(log_modulus_in))),
         }),
     };
     let scratch_size = bootstrap_setup_tmp_bytes(

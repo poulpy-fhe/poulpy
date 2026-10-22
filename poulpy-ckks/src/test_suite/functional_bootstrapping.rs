@@ -72,8 +72,10 @@ pub fn test_functional_bootstrapping_e2e<BE, F, E>(
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     for guard_bits in [0, 6] {
-        run_case::<BE, F, E>(Case::General, params, module, host_module, guard_bits);
+        run_case::<BE, F, E>(Case::General, params, module, host_module, guard_bits, false);
     }
+    // The first CoeffsToSlots factor applied by the raise, after SlotsToCoeffs.
+    run_case::<BE, F, E>(Case::General, params, module, host_module, 6, true);
 }
 
 pub fn test_functional_bootstrapping_non_power_of_two_e2e<BE, F, E>(
@@ -98,11 +100,11 @@ pub fn test_functional_bootstrapping_non_power_of_two_e2e<BE, F, E>(
 {
     for p in [2, 3, 5, 6, 7, 9, 17] {
         for guard_bits in [0, 6] {
-            run_case::<BE, F, E>(Case::GeneralModulus(p), params, module, host_module, guard_bits);
+            run_case::<BE, F, E>(Case::GeneralModulus(p), params, module, host_module, guard_bits, false);
         }
     }
     for p in [5, 6, 7] {
-        run_case::<BE, F, E>(Case::MultiModulus(p), params, module, host_module, 6);
+        run_case::<BE, F, E>(Case::MultiModulus(p), params, module, host_module, 6, false);
     }
 }
 
@@ -127,7 +129,7 @@ pub fn test_functional_bootstrapping_multi_e2e<BE, F, E>(
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     for guard_bits in [0, 6] {
-        run_case::<BE, F, E>(Case::Multi, params, module, host_module, guard_bits);
+        run_case::<BE, F, E>(Case::Multi, params, module, host_module, guard_bits, false);
     }
 }
 
@@ -152,7 +154,7 @@ pub fn test_functional_bootstrapping_binary_e2e<BE, F, E>(
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     for guard_bits in [0, 6] {
-        run_case::<BE, F, E>(Case::Binary, params, module, host_module, guard_bits);
+        run_case::<BE, F, E>(Case::Binary, params, module, host_module, guard_bits, false);
     }
 }
 
@@ -162,6 +164,7 @@ fn run_case<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
     guard_bits: usize,
+    first_factor_on_raise: bool,
 ) where
     BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf>,
     Module<BE>: TestContextModule<BE>
@@ -202,7 +205,7 @@ fn run_case<BE, F, E>(
         .map(|table| table.iter().map(|&value| F::from_usize(value).unwrap()).collect())
         .collect();
     let p = tables[0].len();
-    let plan = fbt_plan(params.base2k, guard_bits);
+    let plan = fbt_plan(params.base2k, guard_bits, first_factor_on_raise);
     let coeffs_meta = CoeffsMeta::from_delta_budget(LUT_LOG_DELTA, params.base2k);
 
     let host_luts: Vec<EncodedLut<CKKSPlaintextOwned<HostBytesBackend>>> = match case {
@@ -272,8 +275,14 @@ fn run_case<BE, F, E>(
     let k_in = plan.input_k(log_modulus_in);
     let output_k = log_modulus_in + 2 * INPUT_LOG_DELTA;
     let functional_k = plan.functional_bootstrap_k(output_k, INPUT_LOG_DELTA, &host_luts[0]).unwrap();
+    // A first factor applied by the raise consumes no modulus.
+    let free = if first_factor_on_raise {
+        plan.coeffs_to_slots().coeffs_meta().log_delta()
+    } else {
+        0
+    };
     match case {
-        Case::General => assert_eq!(functional_k, 769 + guard_bits),
+        Case::General => assert_eq!(functional_k, 769 + guard_bits - free),
         Case::Multi => assert_eq!(functional_k, 814 + guard_bits),
         Case::Binary => assert_eq!(functional_k, 668 + guard_bits),
         Case::GeneralModulus(_) | Case::MultiModulus(_) => {}
@@ -311,16 +320,18 @@ fn run_case<BE, F, E>(
     let padded_ctx = if padded_luts.is_empty() {
         None
     } else {
-        let plan = fbt_plan(params.base2k, guard_bits);
+        let plan = fbt_plan(params.base2k, guard_bits, first_factor_on_raise);
         Some(BootstrappingContext::<BE, F>::compile(module, params.base2k.into(), &plan, &mut scratch.borrow()).unwrap())
     };
     let keys_layout = BootstrappingKeysLayout {
         rotation_keys: Default::default(),
+        first_factor_key: first_factor_on_raise.then(|| tp.first_factor_key_layout(&plan, k_boot, log_modulus_in)),
         automorphism_key: tp.atk_layout(),
         tensor_key: tp.tsk_layout(),
+        // The first-factor keys switch back to the dense secret.
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
             dense_to_sparse: tp.ksk_layout(log_modulus_in),
-            sparse_to_dense: tp.ksk_layout(k_boot),
+            sparse_to_dense: (!first_factor_on_raise).then(|| tp.ksk_layout(k_boot)),
         }),
     };
     let output_spec = ckks_spec(params.n, params.base2k, INPUT_LOG_DELTA, k_boot - INPUT_LOG_DELTA);
@@ -660,7 +671,7 @@ fn run_case<BE, F, E>(
     }
 }
 
-fn fbt_plan(base2k: usize, guard_bits: usize) -> BootstrappingPlan {
+fn fbt_plan(base2k: usize, guard_bits: usize, first_factor_on_raise: bool) -> BootstrappingPlan {
     let slots_to_coeffs = DFTPlan::new(
         DFTType::Decode,
         vec![(2, 4), (3, 4), (2, 4)],
@@ -677,6 +688,11 @@ fn fbt_plan(base2k: usize, guard_bits: usize) -> BootstrappingPlan {
         CoeffsMeta::from_delta_budget(50, 2),
     )
     .unwrap();
+    let coeffs_to_slots = if first_factor_on_raise {
+        coeffs_to_slots.with_first_factor_on_raise()
+    } else {
+        coeffs_to_slots
+    };
     BootstrappingPlan::new(
         BootstrappingPipeline::S2CFirst,
         BootstrappingTechniques {

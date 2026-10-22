@@ -516,22 +516,6 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx<R: Ring, E: TaskExecutor>(
     vmp_apply_dft_to_dft_digits_strided_avx_inner::<_, E>(module, res, a, dsize, product_limbs, pmat, None, tmp)
 }
 
-#[cfg(feature = "enable-ckks")]
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx_known_zero_prefix<R: Ring, E: TaskExecutor>(
-    module: &Module<NTT4x30Avx512<R>>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512<R>>,
-    dsize: usize,
-    product_limbs: usize,
-    pmat: &VmpPMatBackendRef<'_, NTT4x30Avx512<R>>,
-    zero_prefix: usize,
-    tmp: &mut [u64],
-) {
-    assert!(zero_prefix <= a.size());
-    vmp_apply_dft_to_dft_digits_strided_avx_inner::<_, E>(module, res, a, dsize, product_limbs, pmat, Some(zero_prefix), tmp)
-}
-
 #[allow(clippy::too_many_arguments)]
 fn vmp_apply_dft_to_dft_digits_strided_avx_inner<R: Ring, E: TaskExecutor>(
     module: &Module<NTT4x30Avx512<R>>,

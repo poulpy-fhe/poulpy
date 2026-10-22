@@ -4,7 +4,7 @@ use poulpy_core::{
     GLWECopy, GLWEKeyswitch, GLWEShift,
     layouts::{
         BSGSMeta, GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
-        GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, SetBSGSMeta, SetK, TorusPrecision,
+        GetAutomorphismKey, GetTensorKey, LWEInfos, LinearTransformation, Rank, SetBSGSMeta, SetK, TorusPrecision,
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
@@ -24,9 +24,9 @@ use crate::{
         BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, CKKSCiphertextOwned,
         CKKSModuleAlloc, CKKSPlaintextOwned, CoveringKeys, EncodedLut, EncodedLutKind, EvalModType, ScratchArenaTakeCKKS,
     },
-    oep::CKKSEncapsulatedModUpImpl,
+    oep::{CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl},
 };
-use poulpy_core::{GLWEBytesOf, GLWENormalize};
+use poulpy_core::{GLWEBytesOf, GLWENormalize, ScratchArenaTakeCore};
 
 /// [`CKKSBootstrappingReference::ckks_bootstrap_tmp_bytes_reference`]: the terms
 /// of the rotation keys are maximized over their layouts, those of EvalMod come
@@ -39,7 +39,7 @@ fn bootstrap_tmp_bytes_for<BE, C1, C2, F>(
     keys_layout: &BootstrappingKeysLayout,
 ) -> usize
 where
-    BE: Backend + CKKSEncapsulatedModUpImpl,
+    BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
     Module<BE>: GLWEBytesOf<BE>,
     Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSDFTOps<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
     C1: CKKSCtBounds,
@@ -121,13 +121,30 @@ where
         carved += in_ct_bytes;
     }
 
-    if let Some(encaps) = &keys_layout.encapsulation {
+    if let Some((encaps, sparse_to_dense)) = keys_layout
+        .encapsulation
+        .as_ref()
+        .and_then(|encaps| encaps.sparse_to_dense.as_ref().map(|s2d| (encaps, s2d)))
+    {
         nested = nested.max(BE::ckks_encapsulated_mod_up_tmp_bytes(
             module,
             &boot_layout,
             &in_layout,
             &encaps.dense_to_sparse,
-            &encaps.sparse_to_dense,
+            sparse_to_dense,
+        ));
+    }
+
+    // A raise that applies the first CoeffsToSlots factor works on a few small
+    // ciphertexts, as wide as its keys switch.
+    if let (Some(factor), Some(key)) = (ctx.coeffs_to_slots_first_factor(), &keys_layout.first_factor_key) {
+        nested = nested.max(BE::ckks_mod_up_first_factor_tmp_bytes(
+            module,
+            &boot_layout,
+            &in_layout,
+            factor,
+            keys_layout.encapsulation.as_ref().map(|encaps| &encaps.dense_to_sparse),
+            key,
         ));
     }
 
@@ -141,6 +158,8 @@ where
 /// were laid out for. Each stage reads its keys through [`CoveringKeys`] too;
 /// this check only moves the failure ahead of the computation. An EvalRound+
 /// recipe runs its bypass at widths of its own and is left to those checks.
+/// Keys with a row offset (sparse-to-dense, first factor) are laid out for one
+/// raise: they are checked against the raise this bootstrap runs.
 fn check_key_widths<BE, F, K>(
     ct_out: &CKKSCiphertextOwned<BE>,
     ct_in: &CKKSCiphertextOwned<BE>,
@@ -152,29 +171,62 @@ where
     K: BootstrappingKeys<BE>,
     CKKSCiphertextOwned<BE>: CKKSCtBounds,
 {
-    if ctx.coeffs_to_slots_bypass().is_some() {
-        return Ok(());
-    }
-    let op = "ckks_bootstrap";
     let widths = ctx.key_widths();
     let (bootstrap_k, input_k) = (ct_out.k().as_usize(), ct_in.k().as_usize());
-    let log_n = ct_out.n().as_usize().trailing_zeros() as usize;
-    let rotations = CoveringKeys(keys.rotation_keys());
-    for (p, k) in widths.rotation_key_inputs(log_n, bootstrap_k, input_k) {
-        let k = TorusPrecision(k as u32);
-        rotations
-            .get_automorphism_key(p, k)
-            .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-                op,
-                rotation: p,
-                k: k.into(),
-                source,
-            })?;
+    if ctx.coeffs_to_slots_bypass().is_none() {
+        let op = "ckks_bootstrap";
+        let log_n = ct_out.n().as_usize().trailing_zeros() as usize;
+        let rotations = CoveringKeys(keys.rotation_keys());
+        for (p, k) in widths.rotation_key_inputs(log_n, bootstrap_k, input_k) {
+            let k = TorusPrecision(k as u32);
+            rotations
+                .get_automorphism_key(p, k)
+                .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
+                    op,
+                    rotation: p,
+                    k: k.into(),
+                    source,
+                })?;
+        }
+        let k = TorusPrecision(widths.eval_mod_relinearization_k(bootstrap_k, ct_in.log_delta()) as u32);
+        CoveringKeys(keys.tensor_key())
+            .get_tensor_key(k)
+            .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source })?;
     }
-    let k = TorusPrecision(widths.eval_mod_relinearization_k(bootstrap_k, ct_in.log_delta()) as u32);
-    CoveringKeys(keys.tensor_key())
-        .get_tensor_key(k)
-        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source })?;
+    check_raise_keys(ct_out, ct_in, ctx, keys)
+}
+
+/// Keys with a row offset are laid out for the raise: fails before any work
+/// unless the first-factor keys, or a sparse-to-dense key with an offset, fit
+/// the raise of `ct_in` into `ct_out.k()` bits.
+pub(crate) fn check_raise_keys<BE, F, K, C1, C2>(
+    ct_out: &C1,
+    ct_in: &C2,
+    ctx: &BootstrappingContext<BE, F>,
+    keys: &K,
+) -> Result<()>
+where
+    BE: Backend,
+    K: BootstrappingKeys<BE>,
+    C1: CKKSCtBounds,
+    C2: CKKSCtBounds,
+{
+    let bootstrap_k = ct_out.k().as_usize();
+    let (k_small, raised) = ctx.key_widths().raise(ct_in.k().as_usize());
+    if let Some(factor) = ctx.coeffs_to_slots_first_factor() {
+        crate::reference::first_factor::check_first_factor_raise(
+            ct_out.base2k().as_usize(),
+            ct_out.n().as_usize().ilog2() as usize,
+            bootstrap_k,
+            raised,
+            factor,
+            keys,
+        )?;
+    } else if let Some((_, Some(sparse_to_dense))) = keys.encapsulation_keys()
+        && sparse_to_dense.k_offset().as_usize() > 0
+    {
+        check_offset_raise(bootstrap_k, k_small, raised - k_small, sparse_to_dense)?;
+    }
     Ok(())
 }
 
@@ -349,7 +401,7 @@ pub trait CKKSBootstrappingReference<BE: Backend> {
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
 }
 
-impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for Module<BE> {
+impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBootstrappingReference<BE> for Module<BE> {
     fn ckks_mod_up_tmp_bytes_reference(&self, res_size: usize) -> usize
     where
         Module<BE>: GLWEShift<BE>,
@@ -449,29 +501,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        // The pipeline carves rank-1 intermediates, so reject higher-rank inputs
-        // rather than silently copying into a rank-1 scratch ciphertext.
-        ckks_ensure!(
-            src.rank().as_usize() == 1 && dst.rank().as_usize() == 1,
-            "ckks_bootstrap_mod_up supports rank-1 ciphertexts only, got rank {} -> {}",
-            src.rank().as_usize(),
-            dst.rank().as_usize()
-        );
-
-        // The input-width copy is scoped so its scratch is released right after
-        // ModUp widens it into `dst`.
-        scratch.scope(|scratch_inner| {
-            let (mut ct0, mut scratch_inner) = scratch_inner.take_ckks_ciphertext_scratch(src, src.meta());
-            self.ckks_copy(&mut ct0, src, &mut scratch_inner)?;
-            ckks_bootstrap_mod_up_from_mut(self, dst, &mut ct0, Some(eval_mod), 0, keys, &mut scratch_inner)
-        })?;
-
-        dst.set_meta(GLWEPlaintextMeta {
-            scale: Scale::Log(dst.log_delta() + eval_mod.log_msg_ratio),
-            slots: src.slots(),
-            log_sparsity: src.log_sparsity(),
-        });
-        Ok(())
+        bootstrap_mod_up(self, dst, src, eval_mod, None, keys, scratch)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -550,7 +580,15 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
             // integer wrap-around `I·q` exposed by ModUp is bounded by the *sparse* secret's
             // Hamming weight (https://eprint.iacr.org/2022/024).
             let (mut ct, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta());
-            self.ckks_bootstrap_mod_up_reference(&mut ct, ct_in, &ctx.eval_mod().plan, keys, &mut scratch_local)?;
+            bootstrap_mod_up(
+                self,
+                &mut ct,
+                ct_in,
+                &ctx.eval_mod().plan,
+                ctx.coeffs_to_slots_first_factor(),
+                keys,
+                &mut scratch_local,
+            )?;
 
             // CoeffsToSlots (split): coefficients → (real, imag) slots. In the standard
             // pipeline this feeds EvalMod directly; in EvalRound+ it is the low-precision
@@ -714,6 +752,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
             "bootstrapping key encapsulation does not match the compiled recipe"
         );
         ensure_functional_message_ratio(ct_in, ctx.slots_to_coeffs().consumed_bits(), log_msg_ratio)?;
+        // Keys laid out for the raise fail here rather than after SlotsToCoeffs.
+        check_raise_keys(head, ct_in, ctx, keys)?;
         ckks_ensure!(
             ctx.functional_message_modulus().unwrap_or(1usize << log_msg_ratio) == luts[0].message_modulus(),
             "functional bootstrap context must be configured for message modulus {}",
@@ -859,17 +899,76 @@ where
     Ok(())
 }
 
+/// Whole raise step of the C2S-first pipeline: lift to the plan's message
+/// ratio, (encapsulated) ModUp, and the first CoeffsToSlots factor when the
+/// plan leaves it to the raise.
+fn bootstrap_mod_up<BE, Dst, Src, K>(
+    module: &Module<BE>,
+    dst: &mut Dst,
+    src: &Src,
+    eval_mod: &EvalModPlan,
+    first_factor: Option<&LinearTransformation<CKKSPlaintextOwned<BE>>>,
+    keys: &K,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
+    Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSPow2Ops<BE> + CKKSCopyOps<BE>,
+    K: BootstrappingKeys<BE>,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+{
+    // The pipeline carves rank-1 intermediates, so reject higher-rank inputs
+    // rather than silently copying into a rank-1 scratch ciphertext.
+    ckks_ensure!(
+        src.rank().as_usize() == 1 && dst.rank().as_usize() == 1,
+        "ckks_bootstrap_mod_up supports rank-1 ciphertexts only, got rank {} -> {}",
+        src.rank().as_usize(),
+        dst.rank().as_usize()
+    );
+
+    // The input-width copy is scoped so its scratch is released right after
+    // ModUp widens it into `dst`.
+    scratch.scope(|scratch_inner| {
+        let (mut ct0, mut scratch_inner) = scratch_inner.take_ckks_ciphertext_scratch(src, src.meta());
+        module.ckks_copy(&mut ct0, src, &mut scratch_inner)?;
+        ckks_bootstrap_mod_up_from_mut(
+            module,
+            dst,
+            &mut ct0,
+            Some(eval_mod),
+            0,
+            first_factor,
+            keys,
+            &mut scratch_inner,
+        )
+    })?;
+
+    dst.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(dst.log_delta() + eval_mod.log_msg_ratio),
+        slots: src.slots(),
+        log_sparsity: src.log_sparsity(),
+    });
+    Ok(())
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the raise takes its lift, its scale and the first factor as separate operands"
+)]
 fn ckks_bootstrap_mod_up_from_mut<BE, Dst, Src, K>(
     module: &Module<BE>,
     dst: &mut Dst,
     src: &mut Src,
     lift: Option<&EvalModPlan>,
     mut scale_up: usize,
+    first_factor: Option<&LinearTransformation<CKKSPlaintextOwned<BE>>>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSEncapsulatedModUpImpl,
+    BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
     Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSPow2Ops<BE>,
     K: BootstrappingKeys<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -892,8 +991,19 @@ where
         scale_up = plan.raised_scale_up(src.log_delta())?;
     }
 
+    // A first CoeffsToSlots factor left to the raise is applied here, on the
+    // raised ciphertext while it is small; its switches replace sparse-to-dense.
+    if let Some(factor) = first_factor {
+        return BE::ckks_mod_up_first_factor(module, dst, src, scale_up, factor, keys, scratch);
+    }
+
     match keys.encapsulation_keys() {
         Some((dense_to_sparse, sparse_to_dense)) => {
+            ckks_ensure!(
+                sparse_to_dense.is_some(),
+                "the encapsulated ModUp needs a sparse-to-dense key, which a key set for the first factor on the raise has not"
+            );
+            let sparse_to_dense = sparse_to_dense.unwrap();
             BE::ckks_encapsulated_mod_up(
                 module,
                 dst,
@@ -1028,7 +1138,7 @@ fn ckks_bootstrap_s2c_first<BE, F, K>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSEncapsulatedModUpImpl,
+    BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
     F: Sync,
     Module<BE>: GLWECopy<BE>
         + GLWEShift<BE>
@@ -1142,7 +1252,7 @@ fn ckks_bootstrap_s2c_mod_up<BE, F, K, R>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSEncapsulatedModUpImpl,
+    BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
     Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSCopyOps<BE> + CKKSPow2Ops<BE> + CKKSDFTOps<BE>,
     K: BootstrappingKeys<BE>,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -1176,6 +1286,7 @@ where
             &mut ct_coeffs,
             None,
             ctx.c2s_guard_bits(),
+            ctx.coeffs_to_slots_first_factor(),
             keys,
             &mut scratch_inner,
         )?;
@@ -1200,7 +1311,7 @@ fn bootstrap_real_inner<BE, F, K>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSEncapsulatedModUpImpl,
+    BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
     Module<BE>: GLWECopy<BE>
         + GLWEShift<BE>
         + GLWEKeyswitch<BE>
@@ -1262,10 +1373,97 @@ where
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     module.glwe_keyswitch_assign(src, &dense_to_sparse.to_backend_ref(), scratch);
+    if sparse_to_dense.k_offset().as_usize() > 0 {
+        return ckks_mod_up_offset_reference(module, dst, src, scale_up, sparse_to_dense, scratch);
+    }
     // The lift is fused into ModUp, so the message is already at its final scale
     // when sparse-to-dense adds its noise.
     ckks_mod_up_scaled_reference(module, dst, src, scale_up, scratch)?;
     module.glwe_keyswitch_assign(dst, &sparse_to_dense.to_backend_ref(), scratch);
+    Ok(())
+}
+
+/// Bits of input a sparse-to-dense key with a row offset takes for a raise
+/// into `dst_k` bits: those below its offset, which its rows must reach.
+fn offset_key_window<K: GGLWEInfos>(dst_k: usize, key: &K) -> usize {
+    dst_k.saturating_sub(key.k_offset().as_usize())
+}
+
+/// Checks that a sparse-to-dense key with a row offset serves the raise of a
+/// `k_small`-bit ciphertext lifted by `scale_up` into `k_large` bits, and
+/// returns the raise's shift and the bits the key's window then holds.
+pub(crate) fn check_offset_raise<K: GGLWEInfos>(
+    k_large: usize,
+    k_small: usize,
+    scale_up: usize,
+    key: &K,
+) -> Result<(usize, usize)> {
+    ckks_ensure!(
+        k_large >= k_small + scale_up,
+        "ckks_mod_up: dst.k ({k_large}) < src.k ({k_small}) + scale_up ({scale_up}); ModUp must widen, not shrink, the modulus"
+    );
+    let shift = k_large - k_small - scale_up;
+    let k_offset = key.k_offset().as_usize();
+    ckks_ensure!(
+        k_offset <= shift,
+        "ckks_mod_up: the sparse-to-dense key lowers its input by {k_offset} bits, more than the raise's {shift}"
+    );
+    let window = offset_key_window(k_large, key) - scale_up;
+    let max_input_k = key.gglwe_layout().max_input_k().as_usize();
+    let reach = k_offset + key.gglwe_layout().gadget_k().as_usize();
+    ckks_ensure!(
+        window <= max_input_k && k_large <= reach,
+        "ckks_mod_up: the sparse-to-dense key takes {max_input_k} bits of input and reaches bit {reach}; the raise needs {window} bits up to bit {k_large}"
+    );
+    Ok((shift, window))
+}
+
+/// ModUp and the sparse-to-dense switch as one key switch, with a key whose
+/// rows sit `k_offset` bits lower: the switch reads the digits of `src` as
+/// balanced integers and lowers them, which is the raise, integer multiple of
+/// the modulus included. The raise lowers `src` by `dst.k - src.k - scale_up`
+/// bits; a key of a smaller offset takes the rest as a shift of `src` inside
+/// its window first, exact since the window holds every bit of it.
+fn ckks_mod_up_offset_reference<BE, Dst, Src>(
+    module: &Module<BE>,
+    dst: &mut Dst,
+    src: &Src,
+    scale_up: usize,
+    sparse_to_dense: &GGLWEPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE>,
+    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+    Src: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+{
+    let k_large: usize = dst.k().as_usize();
+    let k_small: usize = src.k().as_usize();
+    let (shift, window) = check_offset_raise(k_large, k_small, scale_up, sparse_to_dense)?;
+    let k_offset = sparse_to_dense.k_offset().as_usize();
+    let key = sparse_to_dense.to_backend_ref();
+    if shift == k_offset {
+        module.glwe_keyswitch(dst, src, &key, scratch);
+    } else {
+        let layout = GLWELayout {
+            n: src.n(),
+            base2k: src.base2k(),
+            k: window.into(),
+            rank: src.rank(),
+        };
+        scratch.scope(|scratch_inner| {
+            let (mut lowered, mut scratch_inner) = scratch_inner.take_glwe_scratch(&layout);
+            module.glwe_copy(&mut lowered, src, &mut scratch_inner);
+            module.glwe_rsh(shift - k_offset, &mut lowered, &mut scratch_inner);
+            module.glwe_keyswitch(dst, &lowered, &key, &mut scratch_inner);
+        });
+    }
+    dst.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(src.log_delta() + scale_up),
+        slots: src.slots(),
+        log_sparsity: src.log_sparsity(),
+    });
     Ok(())
 }
 
@@ -1286,9 +1484,22 @@ where
     D2S: GGLWEInfos,
     S2D: GGLWEInfos,
 {
-    module
-        .glwe_keyswitch_tmp_bytes(src_infos, src_infos, dense_to_sparse_infos)
-        .max(module.glwe_shift_tmp_bytes(dst_infos.size().max(src_infos.size())))
+    let d2s = module.glwe_keyswitch_tmp_bytes(src_infos, src_infos, dense_to_sparse_infos);
+    if sparse_to_dense_infos.k_offset().as_usize() > 0 {
+        // The input of the switch, `src` or its shift inside the key's window.
+        let window = GLWELayout {
+            n: src_infos.n(),
+            base2k: src_infos.base2k(),
+            k: offset_key_window(dst_infos.max_k().as_usize(), sparse_to_dense_infos)
+                .max(src_infos.k().as_usize())
+                .into(),
+            rank: src_infos.rank(),
+        };
+        let switch = module.glwe_keyswitch_tmp_bytes(dst_infos, &window, sparse_to_dense_infos);
+        let shifted = module.glwe_bytes_of_from_infos(&window) + module.glwe_shift_tmp_bytes(window.size()).max(switch);
+        return d2s.max(switch).max(shifted);
+    }
+    d2s.max(module.glwe_shift_tmp_bytes(dst_infos.size().max(src_infos.size())))
         .max(module.glwe_keyswitch_tmp_bytes(dst_infos, dst_infos, sparse_to_dense_infos))
 }
 

@@ -60,6 +60,9 @@ denseToSparse ─► ModUp ─► sparseToDense
 ```
 
 so `I·q` stays small and EvalMod can use a much smaller interval `K` with negligible failure probability ([eprint 2022/024](https://eprint.iacr.org/2022/024)).
+The raise and the switch back can be one key switch: a `sparseToDense` key whose rows sit `k_offset` bits lower (`GGLWEInfos::k_offset` in `poulpy-core`) lowers its input by that many bits as it switches it, integer part `I` included.
+Its rows then cover only the bits the raised ciphertext fills at the bottom of the raised width (`BootstrappingPlan::raised_window`), not the whole width: at `N = 2^16` the presets' key drops from 7 rows of 208-bit digits (231 MiB) to one row of 104 bits (29 MiB).
+A raise whose shift exceeds the key's offset first shifts its input by the difference, inside the key's window, as S2C-first does for its narrower inputs.
 It is selected by the bootstrapping recipe through `BootstrappingTechniques::sparse_secret_encapsulation`, whose Hamming weight must be chosen together with EvalMod's interval.
 `BootstrappingKeysLayout::encapsulation` contains only the two physical key-switch layouts; key generation rejects its presence or absence when it disagrees with the compiled recipe, and execution likewise rejects a mismatched key set.
 The generated keys remain part of the key bundle, while the public Hamming-weight parameter is retained by the otherwise secret-independent `BootstrappingPlan`/`BootstrappingContext`.
@@ -245,7 +248,7 @@ let input_layout = preset.input_layout();
 let bootstrap_layout = preset.bootstrap_layout();
 ```
 
-Presets are named by what they offer, one token per axis: `n{log_n}_d{log_delta}_k{output_k}_p{log2_precision}_{circuit}`, i.e. ring-degree exponent, input scale exponent, output width in bits, guaranteed output precision in bits, and circuit (`c2s` for C2S-first, `s2c` for S2C-first).
+Presets are named by what they offer, one token per axis: `n{log_n}_d{log_delta}_k{output_k}_p{log2_precision}_{circuit}`, i.e. ring-degree exponent, input scale exponent, output width in bits, guaranteed output precision in bits, and circuit (`c2s` for C2S-first, `s2c` for S2C-first), followed by a suffix for a further technique: `ffr` for the first CoeffsToSlots factor on the raise.
 All output layouts use the input scale. The net usable budget is `output_k - input_k`: the application must stop consuming at `input_k`.
 This matters for S2C-first presets: their SlotsToCoeffs runs before ModUp on the application's width, so `input_k` includes that consumption and a larger tail of the output is reserved than for a C2S-first preset; compare presets across circuits by their usable budget, never by `k`.
 The presets take inputs at scale `2^35` and use an optimized Han–Ki EvalMod:
@@ -254,6 +257,7 @@ The presets take inputs at scale `2^35` and use an optimized Han–Ki EvalMod:
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
 | `n15_d35_k180_p18_c2s` | C2S-first | 40 | 180 | 18 bits | 140 (4) | 780 |
 | `n16_d35_k636_p20_c2s` | C2S-first | 41 | 636 | 20 bits | 595 (17) | 1381 |
+| `n16_d35_k636_p20_c2s_ffr` | C2S-first | 41 | 636 | 20 bits | 595 (17) | 1330 |
 | `n16_d35_k733_p20_s2c` | S2C-first | 138 | 733 | 20 bits | 595 (17) | 1353 |
 
 The logN15 preset merges each transform into two seven-layer factors: C2S uses `[(7, 2048), (7, 16)]` at matrix scale `2^50`, and S2C uses the reversed schedule at scale `2^29`. EvalMod keeps the degree-30, interval-16 Han–Ki polynomial, three range-reduction steps, and coefficient scale `2^42`, with evaluation scale `2^53`. C2S, EvalMod, and S2C consume 100, 424, and 58 bits; restoring scale `2^35` consumes another 18 bits. Thus `780 - 100 - 424 - 58 - 18 = 180`, leaving four 35-bit levels above the 40-bit input width.
@@ -270,16 +274,19 @@ A key's digit count comes from `GGLWELayout::dnum_for_input` (`⌈k / k_digit⌉
 Each high-modulus key takes the whole-limb digit of fewest rows its use admits, and at that row count the narrowest. Digits off a limb boundary would cost the key switches the digit layout of their input. At the nominal radix of 52 bits, the logN16 keys used at the raised width have 7 digits of 208 bits; the rotation keys of the later CoeffsToSlots factors and the conjugation key have wider digits and fewer rows, and EvalMod relinearizes with a tensor key shaped for its widest product. LogN15 keeps 15 digits of 52 bits at the raised width. The dense-to-sparse key keeps one 52-bit digit: 52 gadget bits plus 68 auxiliary bits at logN16.
 `with_base2k` re-derives a preset at another limb radix, and `with_dsizes` with one digit of whole limbs for every high-modulus key, keeping the plan and widths and re-running the same validation. The test and benchmark runner selects the largest uniform high-modulus digit size up to 7 limbs that fits the bounds at a backend radix below the nominal one. FFT64 uses `base2k = 18`, high-modulus digits of 2 limbs for logN15 or 7 for logN16, and a dense-to-sparse digit of 1 limb.
 At logN16 FFT64 needs `base2k <= 18`: the giant steps of CoeffsToSlots and SlotsToCoeffs accumulate their key-switch products in the DFT domain before a single inverse transform, several hundred products, which `f64` no longer represents exactly at `base2k = 19`.
+A plan can leave the first CoeffsToSlots factor to the modulus raise (`DFTPlan::with_first_factor_on_raise`, `BootstrappingPreset::with_first_factor_on_raise`). A raised ciphertext is small until its first key switch, so a plaintext product followed by a division keeps it at the same precision: the factor consumes no modulus, and the raised width drops by one CoeffsToSlots scale. Each diagonal's term is rotated with no key and switched to the dense secret by a switching key of its own, from the rotated raise secret, whose rows sit under the term's few limbs and end at the width the raise works at, at least 16 guard bits above the raised width and rounded up to a limb (`k_offset`); the sparse-to-dense switch is not used and its key is not generated (`EncapsulationKeysLayout::sparse_to_dense` is `None`). The switches are summed in the transform domain and rounded once. The technique follows ePrint 2025/1403.
+`n16_d35_k636_p20_c2s_ffr` applies it to `n16_d35_k636_p20_c2s` with the CoeffsToSlots schedule `[(3, 1), (6, 512), (6, 8)]`: the raised width drops by 51 bits, from 1381 to 1330, and the widths the application sees do not move. Its cost is in keys. The eight diagonals of the first factor take a switching key of one 156-bit row each, 30 MiB of coefficients at `N = 2^16`, in place of the 29 MiB sparse-to-dense key, and the two factors of six layers left to the matrix take 60 rotation keys instead of 51: the key set grows from 8310 to 9386 MiB. On the NEON Rayon backend one bootstrap takes about 6% longer than with the base preset (1.20 s against 1.13 s), at the same precision (20.6 bits at least); the `ckks_bootstrapping` benchmark runs both.
 The advertised precision is the minimum slot-wise precision measured on the reference vector at the nominal shape with `f64` DFT matrices; `test_suite::presets::bootstrapping_presets_meet_precision` (registered as an ignored test by the backend crates) and the `ckks_bootstrapping` benchmark assert the measurement against it on exact backends.
 
 The keys are generated by `generate_keys`, which returns the unprepared `BootstrappingKeySet` — the serializable, GPU-resident form — and a `prepare` step preprocesses the whole set for evaluation.
-Three key roles are used:
+Four key roles are used:
 
 | Key | Role |
 | --- | --- |
 | `rotation_keys` | Automorphism keys for the DFT rotations, read off the compiled matrices, and the Galois `−1` automorphism of the split real/imaginary transform |
 | `tensor_key` | Relinearization key for the EvalMod range-extension squarings |
-| `encapsulation_keys` | Optional `denseToSparse` / `sparseToDense` pair for sparse-secret encapsulation |
+| `encapsulation_keys` | Optional `denseToSparse` / `sparseToDense` pair for sparse-secret encapsulation, with no `sparseToDense` key when the first CoeffsToSlots factor is on the raise |
+| `first_factor_keys` | With the first CoeffsToSlots factor on the raise, one switching key per diagonal of that factor, from the rotated raise secret to the dense one |
 
 Keys shaped by use cover the widths of the bootstrap they were laid out for. `ckks_bootstrap` runs at the width of `ct_out` and checks every rotation key and the tensor key at the widths that width sets before it starts, so a wider output fails up front, with the key source's refusal as the error's source.
 

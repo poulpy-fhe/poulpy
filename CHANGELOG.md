@@ -37,15 +37,14 @@
   `reim4_gather_sparse_block_portable` and `reim4_gather_sparse_block_sum_portable` become `reim4_gather_block_portable` and `reim4_gather_block_sum_portable`, which read through a `RightRead`.
   `convolution_apply_dft_portable`, `ntt4x30_cnv_apply_dft_portable`, their `_add` forms, the packed NTT4x30 drivers and `PackedNtt4x30Base::cnv_apply_dft` and `cnv_apply_dft_add` take `b_galois` after `b_col`.
 - Every CPU backend implements `vec_znx_gadget_decompose` with one portable kernel, a single limb-major pass with exact carries that needs no scratch, and the oracle backend with an independent big-integer implementation.
-- The native CKKS encapsulated modulus raise (portable, AVX2, AVX-512, and their Rayon variants) keeps its path for sparse-to-dense keys of any digit width.
-  Digits off a limb boundary lay the raised mask out on the digit grid, and the top digits the raise leaves at zero are neither transformed nor read by the product, as whole-limb digits skip their zero limbs.
-  The portable scratch covers the decomposed operand and its digit buffer.
+- **Breaking, behaviour:** the CPU backends no longer override the CKKS encapsulated ModUp: `NTT4x30Avx`, `NTT4x30Avx512`, `NTT3x42Ifma` and their Rayon variants install the reference body (`impl_ckks_encapsulated_mod_up_reference!`), as `NTT4x30Portable` and `NTT4x30PortableRayon` do.
+  Their bodies skipped the limbs that the raise leaves at zero. A sparse-to-dense key with a row offset, the bootstrapping presets' key, leaves none: its switch reads the raised ciphertext at its own width, and no preset took them.
 - The IFMA linear transformation keeps its fused giant-step rotation for automorphism keys of any digit width: each normalized mask column is laid out on the digit grid with `gadget_dft_apply` before the product, as in the reference lazy giant step.
   Keys whose digits fit in one limb still take the reference, as one-limb aligned keys do.
 - The AVX-512 rank-one relinearization keeps its packed path for tensor keys of any digit width: digits off a limb boundary lay the tensor pairs out on the digit grid with `gadget_dft_apply`, and its scratch covers that operand.
 - Add `FFT64PortableRayon` and `NTT4x30PortableRayon`, the Rayon variants of the portable backends, with their conjugate-invariant aliases `FFT64CIPortableRayon` and `NTT4x30CIPortableRayon`.
   They live in `poulpy-cpu-rayon`, which already depends on `poulpy-cpu-portable`, behind no feature for the HAL and behind `enable-core`, `enable-ckks`, `enable-bin-fhe` and `enable-mhe` for the scheme layers.
-  `NTT4x30PortableRayon` runs the fused interleaved-digit product and the encapsulated ModUp of `NTT4x30Portable` on per-worker scratch, and transforms the four planes of a limb as separate tasks from degree `2^13`.
+  `NTT4x30PortableRayon` runs the fused interleaved-digit product of `NTT4x30Portable` on per-worker scratch, and transforms the four planes of a limb as separate tasks from degree `2^13`.
   A vector of one limb is transformed serially.
 - `poulpy-cpu-rayon` gains `impl_ntt4x30_rayon_backend!` and the trait `PackedNtt4x30Base`: a serial NTT4x30 backend with a packed `u32` transform domain describes its drivers through the trait, and the macro builds its Rayon variant, as `impl_fft64_rayon_backend!` does for FFT64.
 - `NTT4x30NeonRayon` is built with `impl_ntt4x30_rayon_backend!` on the drivers of `NTT4x30Neon`, in place of its hand-written wiring.
@@ -66,7 +65,7 @@
   `vec_znx_dft_apply` and `svp_prepare` of `NTT4x30Avx` and `NTT4x30Avx512`, serial and Rayon, transform through a buffer each thread keeps, where they allocated one per call: the HAL gives these two operations no scratch.
   `poulpy-cpu-avx` no longer depends on `rayon` directly.
   **Breaking, API:** the two Rayon types no longer implement the q120 kernel traits of `poulpy_cpu_portable::kernels::ntt4x30` (`NttFromZnx64`, `NttToZnx128`, `NttAdd`, `NttMulBbc` and the like), which their serial backends keep.
-- `poulpy_cpu_portable::ntt4x30::drivers` and `poulpy_cpu_portable::ckks_mod_up` expose, as hidden items without stability promise, the packed drivers and the ModUp body that the Rayon variant builds on.
+- `poulpy_cpu_portable::ntt4x30::drivers` exposes, as a hidden item without stability promise, the packed drivers that the Rayon variant builds on.
 - **Fix:** the portable `znx_add`, `znx_sub`, `znx_negate` kernels and their in-place forms, the power-of-two multiplications and the rotating automorphism wrap on overflow, as the oracle and the SIMD backends do. They panicked in builds with overflow checks.
 - **Breaking, behaviour:** `NTT4x30Portable` stores the transform domain as four `u32` residues per coefficient (`DftWord = CrtWord<Primes30, u32>`), half the previous size, for `VecZnxDft`, `SvpPPol`, `VmpPMat` and both convolution operands.
   The layouts are those of the NEON backends: a transformed limb is one plane of canonical residues per prime, prepared operands are multiplied by `2^32`, the prepared matrix and the convolution operands hold residues centered around zero in the order their kernels read them.
@@ -78,14 +77,12 @@
 - The vector-matrix product and the convolutions of `NTT4x30Portable` share one inner product on signed accumulators, 24 products per Montgomery step, gather their inputs and stage their outputs in runs of 32 blocks of four coefficients, and take that staging buffer from scratch.
   `vmp_apply_dft_to_dft_add`, `cnv_apply_dft_add`, `cnv_apply_dft_sum` and `cnv_pairwise_apply_dft` accumulate in the same pass, `svp_apply_dft` transforms each limb into its destination, and `vec_znx_idft_normalize_consume` writes the coefficients over the limb it transforms.
 - `NTT4x30Portable` implements `GGLWEProductDigitsStridedImpl` with a fused kernel for up to 16 gadget digits, which returns the residues of the reference body and skips the rows of leading input limbs that are zero in every column.
-- `NTT4x30Portable` implements `CKKSEncapsulatedModUpImpl` natively: the limbs that the raise to the large modulus leaves at zero are neither transformed nor multiplied, and the reference body stays in use where the layouts differ, the key is a strided view or has fewer than two or more than 16 digits.
 - The middle step of the portable `i128` normalization takes the digit and the carry of the sum of the input and the incoming carry in one step.
   It returns the same values as the two-step form.
 - The portable FFT64 passes load, combine and store four elements at a time, and the two merged layers of a pass run in one sweep.
   Every element goes through the same operations in the same order, so the transforms return the same bytes.
 - `vmp_apply_dft_to_dft_add` of the FFT64 backends, serial and Rayon, accumulates each block as it is computed, where it filled a zeroed scratch vector and added it afterwards.
   Its scratch shrinks to the one of `vmp_apply_dft_to_dft`.
-- **Fix:** the encapsulated ModUp of the AVX2 and AVX-512 backends read a sparse-to-dense key view taken with `with_k_digit` above the stored `k_digit` as the stored matrix, and returned another ciphertext than the reference body; such a view now takes the reference body.
 - **Fix:** the NTT convolution apply kernels of the AVX2, AVX-512 and NEON backends checked the size of the result but not its column, and wrote past the buffer for a column past the last one; they now panic.
 - **Fix:** the convolution prepare of the NTT4x30 AVX2, AVX-512 and NEON backends gave each parallel task a mutable view of the whole column while the tasks of the other limbs of that column wrote to it; each task now writes only the rows of its limb.
 - **Fix:** the FFT64 DFT kernels of the portable, AVX2, AVX-512 and NEON backends checked operand degrees but not columns.
@@ -217,6 +214,28 @@
 
 ### `poulpy-ckks`
 
+- Add the modulus raise that applies the first `CoeffsToSlots` factor on the raised ciphertext while it is small (`DFTPlan::with_first_factor_on_raise`, after ePrint 2025/1403): the factor consumes no modulus, and the raised width drops by one CoeffsToSlots scale.
+  Each diagonal's term is rotated with no key and switched to the dense secret by a `GLWESwitchingKey` of its own, from the rotated raise secret, whose rows sit `k_offset` bits under the term's few limbs and end at the raise's working width (`BootstrappingKeysLayout::first_factor_key`, `BootstrappingKeys::first_factor_key`); the switches are summed with `glwe_keyswitch_dft_add` and rounded once.
+  The sparse-to-dense switch is not used, nor its key generated.
+  `BootstrappingPreset::with_first_factor_on_raise` re-derives a preset with it; it is not combined with EvalRound+.
+  A key set whose keys do not fit the raise, by radix, offset, input width or reach, is an error, as is a raise of a ciphertext wider than its keys switch.
+  `ckks_bootstrap` and `ckks_functional_bootstrap` check the first-factor keys, and a sparse-to-dense key with a row offset, against the raise they run before any work, so a bootstrap at other widths than its keys were laid out for fails at entry; the raise itself checks every diagonal and key before its first switch.
+  `generate_keys` carves each rotated raise secret from its scratch, which it wipes before returning.
+  `DFTPlan::with_optimal_bsgs` keeps the one diagonal per giant step of a first factor left to the raise.
+- **Breaking:** the sparse-to-dense key is optional, absent exactly when the first factor is applied on the raise: `EncapsulationKeysLayout::sparse_to_dense` is an `Option`, the second key of `BootstrappingKeySet::encapsulation_keys` and `BootstrappingKeysPrepared::encapsulation_keys` too, and `BootstrappingKeys::encapsulation_keys` returns `Option<(&SwitchingKey, Option<&SwitchingKey>)>`; add the alias `EncapsulationKeys`. Key generation rejects a layout whose sparse-to-dense key disagrees with the recipe.
+- Add the preset `n16_d35_k636_p20_c2s_ffr`, `n16_d35_k636_p20_c2s` with the first factor on the raise, in `presets::bootstrapping::all`, so the precision test and the `ckks_bootstrapping` benchmark run it beside its base.
+  Its raised width is 1330 bits instead of 1381, at the same input and output widths and 20 bits of precision (20.6 measured).
+  The cost is in keys: eight first-factor keys of 30 MiB replace the 29 MiB sparse-to-dense key, and the two six-layer factors left take 60 rotation keys instead of 51, so the key set grows from 8310 to 9386 MiB of coefficients at `N = 2^16`; on the NEON Rayon backend a bootstrap takes about 6% longer (1.20 s against 1.13 s).
+- **Breaking:** `impl_ckks_bootstrapping_reference!` requires `CKKSModUpFirstFactorImpl` (`impl_ckks_mod_up_first_factor_reference!`) beside `CKKSEncapsulatedModUpImpl`; `BootstrappingKeysLayout`, `BootstrappingKeySet` and `BootstrappingKeysPrepared` gain the first-factor key fields; `BootstrappingContext::generate_keys` requires `VecZnxAutomorphism`.
+- `reference::first_factor` exposes `first_factor_work`, `first_factor_small_bits` and `first_factor_diagonal_growth`, the widths a first-factor key is laid out from.
+- The encapsulated ModUp takes a sparse-to-dense key with a row offset (`k_offset` of `poulpy-core`): its switch is the raise, from the raised ciphertext at its own width, integer part included, with no zero-padded copy and no transform of zero limbs.
+  A raise whose shift exceeds the key's offset first shifts its input by the difference inside the key's window; one whose shift is smaller, or that the key's rows do not cover, is an error.
+  Keys without an offset take the path they took before, bit for bit.
+- `BootstrappingPlan::raised_window` gives the bits the raised ciphertext fills at the bottom of the raised width: EvalMod's scale for C2S-first, the ModUp modulus and the C2S guard bits for S2C-first.
+- **Breaking, behaviour:** the bootstrapping presets' sparse-to-dense key has a row offset, its rows under the raised ciphertext and ending at the raised width, and whole-limb digits covering `raised_window`, fewest rows first.
+  At `N = 2^16` it is one row of 104 bits instead of 7 rows of 208 (29 MiB instead of 231 for the key's coefficients), at `N = 2^15` two rows of 52 instead of 15 (17 MiB instead of 127.5), and its modulus is at most that of the key it replaces.
+- `CKKSTestParams::ksk_offset_layout` gives such a key for the test suites, and `CKKSTestParams::first_factor_key_layout` the first-factor keys; the standard C2S-first and S2C-first bootstrapping tests and the encapsulated ModUp parity test use offset keys.
+  The first-factor bootstrapping test also runs without sparse-secret encapsulation, and the functional bootstrapping test with the first factor on the raise.
 - The ship mux returns an error on a key with a row offset.
 - **Breaking:** the C2S-first logN16 preset `n16_d35_k600_p19_c2s` is replaced by `n16_d35_k636_p20_c2s`: three factors per transform, as the S2C-first preset (C2S at scale `2^51`, S2C at `2^35`), and log message ratio 6 for at least 20 bits of precision (20.8 measured, 23.0 on average), a 41-bit input, 595 usable bits (17 levels instead of 16) and a raised modulus of 1381 bits instead of 1427.
 - **Breaking:** `n15_d35_k180_p18_c2s` runs CoeffsToSlots at scale `2^50` and SlotsToCoeffs at `2^29` (were `2^49` and `2^30`), at the same widths, and keeps its 18 bits of precision (18.4 measured, 20.3 on average) with a single tensor key.
