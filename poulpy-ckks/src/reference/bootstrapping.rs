@@ -24,7 +24,7 @@ use crate::{
         BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, CKKSCiphertextOwned,
         CKKSModuleAlloc, CKKSPlaintextOwned, CoveringKeys, EncodedLut, EncodedLutKind, EvalModType, ScratchArenaTakeCKKS,
     },
-    oep::CKKSEncapsulatedModUpImpl,
+    oep::{CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl},
 };
 use poulpy_core::{GLWEBytesOf, GLWENormalize, ScratchArenaTakeCore};
 
@@ -39,7 +39,7 @@ fn bootstrap_tmp_bytes_for<BE, C1, C2, F>(
     keys_layout: &BootstrappingKeysLayout,
 ) -> usize
 where
-    BE: Backend + CKKSEncapsulatedModUpImpl,
+    BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
     Module<BE>: GLWEBytesOf<BE>,
     Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSDFTOps<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
     C1: CKKSCtBounds,
@@ -193,9 +193,26 @@ where
             .get_tensor_key(k)
             .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source })?;
     }
-    // Keys with a row offset are laid out for the raise: one that does not fit it
-    // fails here too, before SlotsToCoeffs runs.
-    let (k_small, raised) = widths.raise(input_k);
+    check_raise_keys(ct_out, ct_in, ctx, keys)
+}
+
+/// Keys with a row offset are laid out for the raise: fails before any work
+/// unless the first-factor keys, or a sparse-to-dense key with an offset, fit
+/// the raise of `ct_in` into `ct_out.k()` bits.
+pub(crate) fn check_raise_keys<BE, F, K, C1, C2>(
+    ct_out: &C1,
+    ct_in: &C2,
+    ctx: &BootstrappingContext<BE, F>,
+    keys: &K,
+) -> Result<()>
+where
+    BE: Backend,
+    K: BootstrappingKeys<BE>,
+    C1: CKKSCtBounds,
+    C2: CKKSCtBounds,
+{
+    let bootstrap_k = ct_out.k().as_usize();
+    let (k_small, raised) = ctx.key_widths().raise(ct_in.k().as_usize());
     if let Some(factor) = ctx.coeffs_to_slots_first_factor() {
         crate::reference::first_factor::check_first_factor_raise(
             ct_out.base2k().as_usize(),
@@ -384,7 +401,7 @@ pub trait CKKSBootstrappingReference<BE: Backend> {
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
 }
 
-impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for Module<BE> {
+impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBootstrappingReference<BE> for Module<BE> {
     fn ckks_mod_up_tmp_bytes_reference(&self, res_size: usize) -> usize
     where
         Module<BE>: GLWEShift<BE>,
@@ -735,6 +752,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSBootstrappingReference<BE> for
             "bootstrapping key encapsulation does not match the compiled recipe"
         );
         ensure_functional_message_ratio(ct_in, ctx.slots_to_coeffs().consumed_bits(), log_msg_ratio)?;
+        // Keys laid out for the raise fail here rather than after SlotsToCoeffs.
+        check_raise_keys(head, ct_in, ctx, keys)?;
         ckks_ensure!(
             ctx.functional_message_modulus().unwrap_or(1usize << log_msg_ratio) == luts[0].message_modulus(),
             "functional bootstrap context must be configured for message modulus {}",
@@ -893,7 +912,7 @@ fn bootstrap_mod_up<BE, Dst, Src, K>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSEncapsulatedModUpImpl,
+    BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
     Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSPow2Ops<BE> + CKKSCopyOps<BE>,
     K: BootstrappingKeys<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -934,7 +953,10 @@ where
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the raise takes its lift, its scale and the first factor as separate operands"
+)]
 fn ckks_bootstrap_mod_up_from_mut<BE, Dst, Src, K>(
     module: &Module<BE>,
     dst: &mut Dst,
@@ -946,7 +968,7 @@ fn ckks_bootstrap_mod_up_from_mut<BE, Dst, Src, K>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSEncapsulatedModUpImpl,
+    BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
     Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSPow2Ops<BE>,
     K: BootstrappingKeys<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -1116,7 +1138,7 @@ fn ckks_bootstrap_s2c_first<BE, F, K>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSEncapsulatedModUpImpl,
+    BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
     F: Sync,
     Module<BE>: GLWECopy<BE>
         + GLWEShift<BE>
@@ -1230,7 +1252,7 @@ fn ckks_bootstrap_s2c_mod_up<BE, F, K, R>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSEncapsulatedModUpImpl,
+    BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
     Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSCopyOps<BE> + CKKSPow2Ops<BE> + CKKSDFTOps<BE>,
     K: BootstrappingKeys<BE>,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -1289,7 +1311,7 @@ fn bootstrap_real_inner<BE, F, K>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSEncapsulatedModUpImpl,
+    BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
     Module<BE>: GLWECopy<BE>
         + GLWEShift<BE>
         + GLWEKeyswitch<BE>
@@ -1442,7 +1464,6 @@ where
         slots: src.slots(),
         log_sparsity: src.log_sparsity(),
     });
-    dst.set_k(k_large.into());
     Ok(())
 }
 

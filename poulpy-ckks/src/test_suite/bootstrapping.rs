@@ -60,7 +60,7 @@ use crate::{
         CKKSTestParams,
         helpers::{
             TestContextBackend, TestContextModule, TestScalar, assert_canonical_at_k, ckks_encrypt_with_prec, ckks_spec,
-            gen_sk_with_raw, precision_stats, test_vector_1,
+            gen_sk_with_raw, next_test_seed, precision_stats, test_vector_1,
         },
         presets::bootstrap_setup_tmp_bytes,
     },
@@ -97,6 +97,25 @@ fn bootstrap_plan(
     guard_bits: usize,
     first_factor_on_raise: bool,
 ) -> BootstrappingPlan {
+    plan_with_encapsulation(
+        pipeline,
+        eval_round_plus,
+        log_msg_ratio,
+        guard_bits,
+        first_factor_on_raise,
+        true,
+    )
+}
+
+/// [`bootstrap_plan`], with sparse-secret encapsulation or without it.
+fn plan_with_encapsulation(
+    pipeline: BootstrappingPipeline,
+    eval_round_plus: bool,
+    log_msg_ratio: usize,
+    guard_bits: usize,
+    first_factor_on_raise: bool,
+    encapsulated: bool,
+) -> BootstrappingPlan {
     let s2c_first = pipeline == BootstrappingPipeline::S2CFirst;
     let mut coeffs_to_slots = DFTPlan::new(
         DFTType::Encode,
@@ -124,7 +143,7 @@ fn bootstrap_plan(
     let plan = BootstrappingPlan::new(
         pipeline,
         BootstrappingTechniques {
-            sparse_secret_encapsulation: Some(SparseSecretEncapsulation {
+            sparse_secret_encapsulation: encapsulated.then_some(SparseSecretEncapsulation {
                 hamming_weight: EPHEMERAL_SECRET_WEIGHT,
             }),
             eval_round_plus: eval_round_plus.then(|| EvalRoundPlus {
@@ -163,8 +182,9 @@ fn bootstrap_plan(
 }
 
 /// End-to-end bootstrapping with the first CoeffsToSlots factor applied by the
-/// raise, in both pipelines and for complex and real-tagged inputs: the factor
-/// costs no modulus, and the precision is that of the ordinary pipeline.
+/// raise, in both pipelines and for complex and real-tagged inputs, under
+/// sparse-secret encapsulation and without it: the factor costs no modulus,
+/// and the precision is that of the ordinary pipeline.
 pub fn test_bootstrapping_first_factor_on_raise<BE, F, E>(params: CKKSTestParams)
 where
     BE: TestContextBackend<Ring = Standard>,
@@ -183,16 +203,19 @@ where
     let m = n / 2;
     let base2k = params.base2k;
     // The scales and message ratios of the ordinary tests of each pipeline, at a
-    // raised width on a limb boundary and off one.
-    for (pipeline, log_delta, log_msg_ratio, guard_bits, aligned) in [
-        (BootstrappingPipeline::C2SFirst, 45, LOG_MSG_RATIO, 0, true),
-        (BootstrappingPipeline::S2CFirst, 40, 16, 6, true),
-        (BootstrappingPipeline::C2SFirst, 45, LOG_MSG_RATIO, 0, false),
-        (BootstrappingPipeline::S2CFirst, 40, 16, 6, false),
+    // raised width on a limb boundary and off one. Without encapsulation the raise
+    // runs under the dense secret, here of the ephemeral secret's weight.
+    for (pipeline, log_delta, log_msg_ratio, guard_bits, aligned, encapsulated) in [
+        (BootstrappingPipeline::C2SFirst, 45, LOG_MSG_RATIO, 0, true, true),
+        (BootstrappingPipeline::S2CFirst, 40, 16, 6, true, true),
+        (BootstrappingPipeline::C2SFirst, 45, LOG_MSG_RATIO, 0, false, true),
+        (BootstrappingPipeline::S2CFirst, 40, 16, 6, false, true),
+        (BootstrappingPipeline::C2SFirst, 45, LOG_MSG_RATIO, 0, true, false),
     ] {
         let s2c_first = pipeline == BootstrappingPipeline::S2CFirst;
-        let ordinary = bootstrap_plan(pipeline, false, log_msg_ratio, guard_bits, false);
-        let plan = bootstrap_plan(pipeline, false, log_msg_ratio, guard_bits, true);
+        let ordinary = plan_with_encapsulation(pipeline, false, log_msg_ratio, guard_bits, false, encapsulated);
+        let plan = plan_with_encapsulation(pipeline, false, log_msg_ratio, guard_bits, true, encapsulated);
+        assert_eq!(plan.sparse_secret_hamming_weight().is_some(), encapsulated);
         let factor_scale = plan.coeffs_to_slots().coeffs_meta().log_delta();
         assert_eq!(plan.consumed_bits() + factor_scale, ordinary.consumed_bits());
 
@@ -219,25 +242,11 @@ where
                 log_sparsity: 0,
             },
             prec_log_budget: 8,
-            hw: 192,
+            hw: if encapsulated { 192 } else { EPHEMERAL_SECRET_WEIGHT },
             dsize: 7,
             rank: 1,
         };
-        // One key per diagonal: its rows under a term of the raised ciphertext with the
-        // working width's guard below it and a product's growth above, ending at that width.
-        let (work, _) = crate::reference::first_factor::first_factor_work(base2k, k_boot);
-        let term_bits = crate::reference::first_factor::first_factor_small_bits(
-            base2k,
-            LOG_SLOTS + 1,
-            k_boot,
-            plan.raised_window(log_modulus_in),
-            crate::reference::first_factor::first_factor_diagonal_growth(base2k, &plan.coeffs_to_slots().coeffs_meta()),
-        );
-        let small = term_bits.div_ceil(base2k);
-        let first_factor_key = poulpy_core::layouts::GLWESwitchingKeyLayout {
-            k_offset: (((work - small) * base2k) as u32).into(),
-            ..tp.ksk_layout(small * base2k)
-        };
+        let first_factor_key = tp.first_factor_key_layout(&plan, k_boot, log_modulus_in);
         let keys_layout = BootstrappingKeysLayout {
             rotation_keys: Default::default(),
             first_factor_key: Some(first_factor_key),
@@ -270,8 +279,12 @@ where
             scratch = ScratchOwned::<BE>::alloc(boot_tmp);
         }
 
-        let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, [0u8; 32]);
-        let (mut src_xs, mut src_xa, mut src_xe) = (Source::new([7u8; 32]), Source::new([1u8; 32]), Source::new([2u8; 32]));
+        let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, next_test_seed(0));
+        let (mut src_xs, mut src_xa, mut src_xe) = (
+            Source::new(next_test_seed(7)),
+            Source::new(next_test_seed(1)),
+            Source::new(next_test_seed(2)),
+        );
         let key_set = ctx
             .generate_keys(
                 &module,
@@ -358,12 +371,12 @@ where
             for (got, want, tag) in [(&got_re, &re, "re"), (&got_im, want_im, "im")] {
                 let stats = precision_stats(got, want, log_delta);
                 println!(
-                    "ckks_bootstrap (first factor on raise, {pipeline:?}, {slots:?}, aligned={aligned}) ({tag}) avg={:.2} min={:.2} bits",
+                    "ckks_bootstrap (first factor on raise, {pipeline:?}, {slots:?}, aligned={aligned}, encapsulated={encapsulated}) ({tag}) avg={:.2} min={:.2} bits",
                     stats.avg_log2_prec, stats.min_log2_prec
                 );
                 assert!(
                     stats.avg_log2_prec >= MIN_AVG_LOG2_PREC,
-                    "first factor on raise ({pipeline:?}, {slots:?}, {tag}): {:.1} bits < {MIN_AVG_LOG2_PREC}",
+                    "first factor on raise ({pipeline:?}, {slots:?}, encapsulated={encapsulated}, {tag}): {:.1} bits < {MIN_AVG_LOG2_PREC}",
                     stats.avg_log2_prec
                 );
             }

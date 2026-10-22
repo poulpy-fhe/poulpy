@@ -146,6 +146,9 @@ where
             if let Some(sparse_to_dense) = sparse_to_dense {
                 roundtrip(sparse_to_dense, module.glwe_switching_key_alloc_from_infos(sparse_to_dense));
             }
+            for key in keys.first_factor_keys.values() {
+                roundtrip(key, module.glwe_switching_key_alloc_from_infos(key));
+            }
         }
         let keys = keys.prepare(&module, &mut scratch.borrow());
 
@@ -248,8 +251,10 @@ where
 }
 
 /// Runs every preset once on `BE` and checks the measured output precision
-/// against the precision the preset advertises. The first preset also
-/// round-trips every generated key, both encapsulation directions included.
+/// against the precision the preset advertises. The first preset, and the
+/// first with the first CoeffsToSlots factor on the raise, also round-trip
+/// every generated key, both encapsulation directions and the first-factor
+/// keys included.
 ///
 /// The caller supplies the fixture radix limit; this precision check does
 /// not establish a failure-probability bound. Every backend uses `f64` DFT
@@ -267,9 +272,12 @@ where
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
+    let mut first_factor_roundtrip = true;
     for (index, preset) in all().unwrap().into_iter().enumerate() {
         let preset = preset_with_max_base2k(&preset, fixture_base2k).unwrap();
-        let mut run = BootstrappingPresetRun::<BE>::setup_with_roundtrip(preset, index == 0);
+        let first_factor = preset.plan().coeffs_to_slots().first_factor_on_raise();
+        let roundtrip = index == 0 || (first_factor && std::mem::take(&mut first_factor_roundtrip));
+        let mut run = BootstrappingPresetRun::<BE>::setup_with_roundtrip(preset, roundtrip);
         let (re, im) = run.precision();
         let preset = run.preset();
         println!(

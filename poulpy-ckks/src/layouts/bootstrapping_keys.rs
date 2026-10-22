@@ -34,7 +34,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use anyhow::Result;
 use poulpy_core::{
-    GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk,
+    GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ScratchArenaTakeCore,
     layouts::{
         BackendGLWESecret, GGLWEInfos, GGLWELayout, GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEAutomorphismKey,
         GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWESecretLayout,
@@ -50,15 +50,15 @@ use poulpy_core::{
 use poulpy_hal::{
     api::VecZnxAutomorphism,
     layouts::{
-        Backend, CyclotomicOrder, Data, HostDataMut, HostDataRef, Module, ScratchArena, Standard, ZnxWord, galois_element,
+        Backend, CyclotomicOrder, Data, HostDataMut, HostDataRef, Module, ScalarZnxAsVecZnxBackendRef, ScratchArena, Standard,
+        ZnxWord, galois_element, scalar_znx_as_vec_znx_backend_mut_from_mut,
     },
     source::Source,
 };
 
 use crate::layouts::BootstrappingContext;
-use crate::reference::first_factor::glwe_secret_automorphism;
 use poulpy_core::layouts::GLWESecretSampling;
-use poulpy_core::{Distribution, GetDistributionMut};
+use poulpy_core::{Distribution, GetDistribution, GetDistributionMut};
 
 /// Pipeline-facing access to the **prepared** evaluation keys a CKKS bootstrap
 /// consumes.
@@ -357,7 +357,9 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
     /// [`Distribution::ENCAPSULATED`], so it can neither back a public key nor
     /// be serialized.
     ///
-    /// `scratch` must be large enough for the key encrypt operations.
+    /// `scratch` must be large enough for the key encrypt operations and, with
+    /// first-factor keys, a secret beside them: each rotated raise secret is
+    /// carved from it, and the region it took is wiped before returning.
     #[allow(clippy::too_many_arguments)]
     pub fn generate_keys(
         &self,
@@ -436,16 +438,27 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
                             scratch: &mut ScratchArena<'_, BE>| {
             let mut keys = HashMap::with_capacity(first_factor_rotations.len());
             if let Some(key_layout) = &layout.first_factor_key {
-                let mut sk_rotated = module.glwe_secret_alloc_from_infos(&GLWESecretLayout {
-                    n: sk_dense.n(),
-                    rank: sk_dense.rank(),
-                });
-                for &rotation in &first_factor_rotations {
-                    glwe_secret_automorphism(module, &mut sk_rotated, galois_element(rotation, order), sk_raise);
-                    let mut key = module.glwe_switching_key_alloc_from_infos(key_layout);
-                    module.glwe_switching_key_encrypt_sk(&mut key, &sk_rotated, sk_dense, source_xe, source_xa, scratch);
-                    keys.insert(rotation, key);
+                let (n, rank) = (sk_raise.n(), sk_raise.rank());
+                {
+                    // The rotated secret is carved from scratch, which is wiped once the keys
+                    // are encrypted.
+                    let scratch = scratch.borrow();
+                    let (mut sk_rotated, mut scratch) = scratch.take_glwe_secret_scratch(n, rank);
+                    *sk_rotated.dist_mut() = *sk_raise.dist();
+                    for &rotation in &first_factor_rotations {
+                        {
+                            let sk = ScalarZnxAsVecZnxBackendRef::<BE>::as_vec_znx_backend(sk_raise.data());
+                            let mut res = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_rotated.data_mut());
+                            for col in 0..rank.as_usize() {
+                                module.vec_znx_automorphism(galois_element(rotation, order), &mut res, col, &sk, col);
+                            }
+                        }
+                        let mut key = module.glwe_switching_key_alloc_from_infos(key_layout);
+                        module.glwe_switching_key_encrypt_sk(&mut key, &sk_rotated, sk_dense, source_xe, source_xa, &mut scratch);
+                        keys.insert(rotation, key);
+                    }
                 }
+                scratch.wipe(BE::bytes_of_scalar_znx(n.as_usize(), rank.as_usize()));
             }
             keys
         };

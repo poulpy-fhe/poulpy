@@ -334,7 +334,7 @@ impl DFTPlan {
     ///
     /// The compiled matrix then holds the remaining factors only:
     /// [`Self::consumed_bits`] and [`Self::galois_elements`] leave the first
-    /// one out, and [`Self::first_factor_rotations`] lists its rotations.
+    /// one out.
     pub fn with_first_factor_on_raise(mut self) -> Self {
         self.first_factor_on_raise = true;
         self.schedule.steps[0].giant_step = 1;
@@ -351,17 +351,6 @@ impl DFTPlan {
     /// first when it is left to the modulus raise.
     pub fn num_evaluated_factors(&self) -> usize {
         self.num_factors() - usize::from(self.first_factor_on_raise)
-    }
-
-    /// Slot rotations of the diagonals of the first factor, in `[0, slots)`:
-    /// one key each when the factor is left to the modulus raise.
-    pub fn first_factor_rotations(&self, log_n: usize) -> Vec<i64> {
-        let slots = 1i64 << (self.log_slots() + usize::from(self.is_sparse_repack(log_n)));
-        let rotations: BTreeSet<i64> = self.diagonal_indexes(log_n)[0]
-            .iter()
-            .map(|index| index.rem_euclid(slots))
-            .collect();
-        rotations.into_iter().collect()
     }
 
     /// Applies the transform bit-reversed (and expects bit-reversed inputs).

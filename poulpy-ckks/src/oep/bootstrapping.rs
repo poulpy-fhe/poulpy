@@ -154,7 +154,7 @@ pub unsafe trait CKKSModUpFirstFactorImpl: Backend<Ring = Standard> {
 /// Implementations must preserve the exact CKKS metadata and ciphertext
 /// semantics of the reference composition, honor all key layouts, and stay
 /// within the supplied scratch arena.
-pub unsafe trait CKKSEncapsulatedModUpImpl: Backend<Ring = Standard> + CKKSModUpFirstFactorImpl {
+pub unsafe trait CKKSEncapsulatedModUpImpl: Backend<Ring = Standard> {
     fn ckks_encapsulated_mod_up_tmp_bytes<Dst, Src, D2S, S2D>(
         module: &Module<Self>,
         dst_infos: &Dst,
@@ -185,7 +185,9 @@ pub unsafe trait CKKSEncapsulatedModUpImpl: Backend<Ring = Standard> + CKKSModUp
         Src: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos;
 }
 
-/// Opts a standard backend into the CKKS reference bootstrapping pipeline.
+/// Opts a standard backend into the CKKS reference bootstrapping pipeline. The
+/// backend also implements [`CKKSEncapsulatedModUpImpl`] and
+/// [`CKKSModUpFirstFactorImpl`], the two raises the pipeline runs.
 #[macro_export]
 macro_rules! impl_ckks_bootstrapping_reference {
     ($be:ty) => {
