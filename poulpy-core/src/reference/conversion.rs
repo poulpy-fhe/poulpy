@@ -441,6 +441,10 @@ pub fn ggsw_expand_row_reference<BE, M, R>(
     );
     let rank: usize = res_backend.rank().into();
     let cols: usize = rank + 1;
+    // Checked once, before any write.
+    for col in 0..rank {
+        crate::reference::keyswitching::glwe::assert_no_row_offset("ggsw_expand_rows", &tsk.at(col));
+    }
 
     let res_conv_size: usize = res_backend.k().as_usize().div_ceil(tsk_base2k);
     let (k_digit, dnum) = (tsk.k_digit(), tsk.dnum());
@@ -542,7 +546,6 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, BE: Backend>(
         let (mut res_dft, mut scratch_1) = scratch_row.take_vec_znx_dft_scratch(res.n().as_usize(), cols, output_size);
         {
             let mut scratch_prod = scratch_1.borrow();
-            crate::reference::keyswitching::glwe::assert_no_row_offset("ggsw_expand_rows", &tsk.at(col - 1));
             module.gglwe_product_dft_reference(&mut res_dft, a_dft, tsk.at(col - 1), 1, &mut scratch_prod);
         }
 

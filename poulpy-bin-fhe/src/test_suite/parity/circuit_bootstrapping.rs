@@ -52,7 +52,6 @@ where
                 dnum: 4usize.into(),
                 k_aux: (11 + n.ilog2() as usize).into(),
                 k_digit: 11usize.into(),
-                k_offset: poulpy_core::layouts::TorusPrecision(0),
                 rank: rank.into(),
             },
             tsk_layout: GGLWEToGGSWKeyLayout {

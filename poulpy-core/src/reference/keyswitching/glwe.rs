@@ -2,8 +2,8 @@ use crate::api::GLWEBytesOf;
 use crate::api::GLWENormalize;
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy,
-        VecZnxGadgetDecompose, VecZnxGadgetDecomposeTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes,
+        ModuleN, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxGadgetDecompose,
+        VecZnxGadgetDecomposeTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes,
         VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows, VmpPMatBytesOf,
     },
     layouts::{
@@ -83,11 +83,11 @@ where
     }
 }
 
-/// The masked part of a key switch, `a`'s mask times `key`, into `res`: the
-/// gadget product of the input once canonical.
-fn glwe_keyswitch_dft_canonical<'r, BE, M, A>(
+/// The gadget product of a key switch, `a`'s mask columns decomposed and
+/// multiplied by `key`, into `res`: the input once canonical.
+fn glwe_keyswitch_dft_canonical<BE, M, A>(
     module: &M,
-    res: &mut VecZnxDftBackendMut<'r, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
     a: &A,
     key: &GGLWEPreparedBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
@@ -106,22 +106,21 @@ fn glwe_keyswitch_dft_canonical<'r, BE, M, A>(
     glwe_keyswitch_dft_fill(module, res, &&a, key, &mut scratch);
 }
 
-/// Scratch of [`glwe_keyswitch_dft_reference`] and [`glwe_keyswitch_dft_add_reference`]
-/// for an accumulator of `res_size` limbs.
+/// Scratch of [`glwe_keyswitch_dft_reference`] for an accumulator of `res_size` limbs.
 pub fn glwe_keyswitch_dft_tmp_bytes_reference<BE, M, A, K>(module: &M, res_size: usize, a_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
-    M: GLWEKeyswitchInternal<BE> + VecZnxDftBytesOf,
+    M: GLWEKeyswitchInternal<BE>,
     A: GLWEInfos,
     K: GGLWEInfos,
 {
     operand_degree(module.n(), &[a_infos.n(), key_infos.n()]);
-    let product: usize = module.bytes_of_vec_znx_dft(module.n(), (key_infos.rank_out() + 1).as_usize(), res_size);
-    product + module.glwe_keyswitch_internal_tmp_bytes_from_sizes(a_infos.rank().as_usize(), res_size, a_infos.size(), key_infos)
+    module.glwe_keyswitch_internal_tmp_bytes_from_sizes(a_infos.rank().as_usize(), res_size, a_infos.size(), key_infos)
 }
 
-/// `res = mask(a) x key` over the `res.size()` limbs of the DFT accumulator `res`:
-/// a key switch without its body.
+/// The gadget product of a key switch of `a = (b, a_1, ..., a_rank)` over the
+/// `res.size()` limbs of the DFT accumulator `res`: `Σ_i decomp(a_i) · key_i`, the
+/// whole switch but for the body `b`.
 ///
 /// The caller finishes the switch with one `vec_znx_idft_normalize` per column,
 /// passing the body of `a`, lowered by `key.k_offset()` bits, as the addend of
@@ -134,35 +133,11 @@ pub fn glwe_keyswitch_dft_reference<BE, M, A>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GLWEKeyswitchInternal<BE> + VecZnxDftBytesOf,
+    M: GLWEKeyswitchInternal<BE>,
     A: GLWEToBackendRef<BE> + GLWEInfos,
 {
     check_keyswitch_dft(module, res, a, key, scratch);
     glwe_keyswitch_dft_canonical(module, res, a, key, scratch);
-}
-
-/// `res += mask(a) x key` over the limbs of `res`: the product of
-/// [`glwe_keyswitch_dft_reference`] added to an accumulator, so that several
-/// switches are summed before one inverse transform.
-pub fn glwe_keyswitch_dft_add_reference<BE, M, A>(
-    module: &M,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
-    a: &A,
-    key: &GGLWEPreparedBackendRef<'_, BE>,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
-    BE: Backend,
-    M: GLWEKeyswitchInternal<BE> + VecZnxDftBytesOf + VecZnxDftAddAssign<BE>,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
-{
-    check_keyswitch_dft(module, res, a, key, scratch);
-    let cols = res.cols();
-    let (mut product, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(res.n(), cols, res.size());
-    glwe_keyswitch_dft_canonical(module, &mut product, a, key, &mut scratch_1);
-    let product = product.to_backend_ref();
-    for col in 0..cols {
-        module.vec_znx_dft_add_assign(res, col, &product, col);
-    }
 }
 
 fn check_keyswitch_dft<BE, M, A>(
@@ -173,7 +148,7 @@ fn check_keyswitch_dft<BE, M, A>(
     scratch: &ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GLWEKeyswitchInternal<BE> + VecZnxDftBytesOf,
+    M: GLWEKeyswitchInternal<BE>,
     A: GLWEInfos,
 {
     assert_eq!(a.rank(), key.rank_in(), "glwe_keyswitch_dft: a.rank() != key.rank_in()");
@@ -688,21 +663,15 @@ pub fn glwe_keyswitch_reference<BE, M, R, A>(
 
     let k_offset: usize = key.k_offset().as_usize();
     if k_offset > 0 {
-        // A key with a row offset lowers the input: it must decompose it whole,
-        // and its rows must reach the output's precision.
+        // A key with a row offset lowers the input: it must decompose it whole.
+        // Past its rows the output holds the product's tail, as past the gadget of
+        // an offset-free key.
         let max_input_k = key.gglwe_layout().max_input_k();
         assert!(
             a.k() <= max_input_k,
             "glwe_keyswitch: a.k()={} exceeds the offset key's max_input_k={}",
             a.k(),
             max_input_k
-        );
-        let covered = key.k().as_usize() - key.k_aux().as_usize();
-        assert!(
-            res.k().as_usize() <= covered,
-            "glwe_keyswitch: res.k()={} exceeds the {} bits the offset key's rows reach",
-            res.k(),
-            covered
         );
     }
 

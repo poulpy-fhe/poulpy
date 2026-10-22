@@ -110,11 +110,7 @@ where
                 );
                 assert!(
                     res.k_offset().0 + res.dnum().0 * res.k_digit().0 <= res.k().0,
-                    "res.k_offset() : {} + res.dnum() : {} * res.k_digit() : {} > res.k() = {}",
-                    res.k_offset(),
-                    res.dnum(),
-                    res.k_digit(),
-                    res.k()
+                    "the gadget rows, with their offset, exceed the key precision"
                 );
 
                 let dnum: usize = res.dnum().into();

@@ -113,7 +113,6 @@ where
             base2k: Base2K(base2k as u32),
             dnum: Dnum(dnum as u32),
             k_digit: crate::layouts::k_digit_of(Base2K(base2k as u32), Dsize(dsize as u32)),
-            k_offset: TorusPrecision(0),
             k_aux: TorusPrecision((dsize * base2k + module.log_n()) as u32),
             rank: Rank(rank as u32),
         };
@@ -122,7 +121,6 @@ where
         let twin = GLWEAutomorphismKeyLayout {
             dnum: twin.dnum,
             k_digit: twin.k_digit,
-            k_offset: twin.k_offset,
             k_aux: twin.k_aux,
             ..stored
         };
@@ -276,7 +274,6 @@ where
             base2k: Base2K(base2k as u32),
             dnum: Dnum(dnum as u32),
             k_digit: crate::layouts::k_digit_of(Base2K(base2k as u32), Dsize(dsize as u32)),
-            k_offset: TorusPrecision(0),
             k_aux: TorusPrecision((dsize * base2k + module.log_n()) as u32),
             rank: Rank(rank as u32),
         };
@@ -284,7 +281,6 @@ where
         let twin = GLWEAutomorphismKeyLayout {
             dnum: coarse.dnum,
             k_digit: coarse.k_digit,
-            k_offset: coarse.k_offset,
             k_aux: coarse.k_aux,
             ..stored
         };

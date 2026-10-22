@@ -304,7 +304,10 @@ impl<D: Data, W: ZnxWord> GGLWECompressed<D, W> {
         Self::alloc_sized::<B>(n, size, base2k, dnum, k_digit, k_aux, rank_in, rank_out)
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the compressed GGLWE shape is its dimensions and the limb count they size"
+    )]
     fn alloc_sized<B: Backend<OwnedBuf = D, ZnxWord = W>>(
         n: Degree,
         size: usize,

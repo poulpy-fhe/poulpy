@@ -192,7 +192,6 @@ pub(crate) static TEST_BDD_KEY_LAYOUT: BDDKeyLayout = BDDKeyLayout {
             dnum: Dnum(3),
             k_aux: TorusPrecision(TEST_K_CBT - 3 * TEST_ATK_BASE2K),
             k_digit: TorusPrecision(TEST_ATK_BASE2K),
-            k_offset: TorusPrecision(0),
         },
         tsk_layout: GGLWEToGGSWKeyLayout {
             n: Degree(TEST_N_GLWE),

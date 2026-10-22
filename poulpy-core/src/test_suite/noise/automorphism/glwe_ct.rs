@@ -72,7 +72,6 @@ where
                 k_aux: (dsize * key_base2k + module.log_n()).into(),
                 rank: rank.into(),
                 k_digit: crate::layouts::k_digit_of(key_base2k, dsize),
-                k_offset: crate::layouts::TorusPrecision(0),
             };
 
             let mut autokey: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =
@@ -197,7 +196,6 @@ where
                 k_aux: (dsize * key_base2k + module.log_n()).into(),
                 rank: rank.into(),
                 k_digit: crate::layouts::k_digit_of(key_base2k, dsize),
-                k_offset: crate::layouts::TorusPrecision(0),
             };
 
             let mut autokey: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =

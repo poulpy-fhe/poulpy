@@ -228,6 +228,7 @@ where
         + GLWENoise<BE>
         + GLWENormalize<BE>
         + VecZnxDftAlloc<BE>
+        + poulpy_hal::api::VecZnxDftAddAssign<BE>
         + VecZnxAddAssign<BE>
         + VecZnxNormalize<BE>
         + VecZnxNormalizeTmpBytes
@@ -320,15 +321,27 @@ where
         }
         module.glwe_normalize_assign(&mut want, &mut setup.borrow());
 
-        // The accumulated products, with exactly the advertised scratch.
+        // The accumulated products, each with exactly the scratch it advertises.
         let mut acc = module.vec_znx_dft_alloc(n, rank_out + 1, acc_size);
-        let mut scratch: ScratchOwned<BE> =
+        let mut scratch_dft: ScratchOwned<BE> =
             ScratchOwned::alloc(module.glwe_keyswitch_dft_tmp_bytes(acc_size, &in_infos, &ksk_infos));
+        let mut scratch_add: ScratchOwned<BE> =
+            ScratchOwned::alloc(module.glwe_keyswitch_dft_add_tmp_bytes(acc_size, &in_infos, &ksk_infos));
         for (t, input) in inputs.iter().enumerate() {
             if t == 0 {
-                module.glwe_keyswitch_dft(&mut acc.to_backend_mut(), input, &ksk.to_backend_ref(), &mut scratch.arena());
+                module.glwe_keyswitch_dft(
+                    &mut acc.to_backend_mut(),
+                    input,
+                    &ksk.to_backend_ref(),
+                    &mut scratch_dft.arena(),
+                );
             } else {
-                module.glwe_keyswitch_dft_add(&mut acc.to_backend_mut(), input, &ksk.to_backend_ref(), &mut scratch.arena());
+                module.glwe_keyswitch_dft_add(
+                    &mut acc.to_backend_mut(),
+                    input,
+                    &ksk.to_backend_ref(),
+                    &mut scratch_add.arena(),
+                );
             }
         }
         // The bodies, summed limb by limb so that their sum keeps its integer part, then lowered.
@@ -399,8 +412,9 @@ where
 }
 
 /// The operations that cannot take a key with a row offset refuse one, and a
-/// switch with one refuses an input it cannot decompose whole. A GGLWE switched
-/// into a result whose rows sit elsewhere is refused too.
+/// switch with one refuses an input it cannot decompose whole, and takes an
+/// output wider than its rows, as an offset-free switch does. A GGLWE switched
+/// into a result whose rows sit elsewhere is refused.
 pub fn test_glwe_keyswitch_row_offset_refusals<BE: crate::test_suite::noise::TestBackend>(
     params: &TestParams,
     module: &Module<BE>,
@@ -444,6 +458,7 @@ pub fn test_glwe_keyswitch_row_offset_refusals<BE: crate::test_suite::noise::Tes
     };
     let (in_infos, out_infos) = (glwe_infos(k_in), glwe_infos(k_offset + dnum * base2k));
     let wide_infos = glwe_infos(k_in + base2k);
+    let past_rows_infos = glwe_infos(k_offset + dnum * base2k + base2k);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
@@ -451,6 +466,7 @@ pub fn test_glwe_keyswitch_row_offset_refusals<BE: crate::test_suite::noise::Tes
             .max(module.glwe_encrypt_sk_tmp_bytes(&wide_infos))
             .max(module.glwe_keyswitch_tmp_bytes(&out_infos, &wide_infos, &offset_infos))
             .max(module.glwe_keyswitch_tmp_bytes(&in_infos, &in_infos, &offset_infos))
+            .max(module.glwe_keyswitch_tmp_bytes(&past_rows_infos, &in_infos, &offset_infos))
             .max(module.gglwe_keyswitch_tmp_bytes(&offset_infos, &offset_infos, &offset_infos))
             .max(module.gglwe_keyswitch_tmp_bytes(&free_infos, &offset_infos, &free_infos)),
     );
@@ -489,6 +505,9 @@ pub fn test_glwe_keyswitch_row_offset_refusals<BE: crate::test_suite::noise::Tes
         &mut scratch.borrow(),
     );
     let mut out: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&out_infos);
+
+    let mut past_rows: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&past_rows_infos);
+    module.glwe_keyswitch(&mut past_rows, &ct, &ksk_offset.to_backend_ref(), &mut scratch.borrow());
 
     let refused = |what: &str, message: &str, op: &mut dyn FnMut()| {
         let err = catch_unwind(AssertUnwindSafe(op)).expect_err(what);

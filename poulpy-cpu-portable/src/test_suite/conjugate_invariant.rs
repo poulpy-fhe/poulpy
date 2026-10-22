@@ -540,7 +540,6 @@ fn conjugate_invariant_key_composition() {
         dnum: 4u32.into(),
         k_aux: 30u32.into(),
         k_digit: 10u32.into(),
-        k_offset: poulpy_core::layouts::TorusPrecision(0),
         rank: 1u32.into(),
     };
     let mut source_s = Source::new([0; 32]);

@@ -241,3 +241,62 @@ mod ggsw {
     }
 }
 pub(crate) use ggsw::*;
+
+mod glwe_dft {
+    use poulpy_hal::{
+        api::{ScratchArenaTakeBasic, VecZnxDftAddAssign, VecZnxDftBytesOf},
+        layouts::{Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftToBackendRef},
+    };
+
+    use crate::{
+        layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendRef, prepared::GGLWEPreparedBackendRef},
+        oep::GLWEKeyswitchImpl,
+    };
+
+    /// Scratch of [`glwe_keyswitch_dft_add_derived`]: the product, carved at an
+    /// aligned offset, then the scratch of the product itself.
+    pub(crate) fn glwe_keyswitch_dft_add_tmp_bytes_derived<BE, A, K>(
+        module: &Module<BE>,
+        res_size: usize,
+        a_infos: &A,
+        key_infos: &K,
+    ) -> usize
+    where
+        BE: GLWEKeyswitchImpl,
+        A: GLWEInfos,
+        K: GGLWEInfos,
+    {
+        let product = module.bytes_of_vec_znx_dft(module.n(), (key_infos.rank_out() + 1).as_usize(), res_size);
+        BE::scratch_aligned(product) + BE::glwe_keyswitch_dft_tmp_bytes(module, res_size, a_infos, key_infos)
+    }
+
+    /// `res += Σ_i decomp(a_i) · key_i`: the product of
+    /// [`GLWEKeyswitchImpl::glwe_keyswitch_dft`] into a temporary, added to `res`.
+    pub(crate) fn glwe_keyswitch_dft_add_derived<BE, A>(
+        module: &Module<BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        a: &A,
+        key: &GGLWEPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: GLWEKeyswitchImpl,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        Module<BE>: VecZnxDftAddAssign<BE>,
+    {
+        let tmp_bytes = glwe_keyswitch_dft_add_tmp_bytes_derived(module, res.size(), a, key);
+        assert!(
+            scratch.available() >= tmp_bytes,
+            "scratch.available(): {} < GLWEKeyswitch::glwe_keyswitch_dft_add_tmp_bytes: {}",
+            scratch.available(),
+            tmp_bytes
+        );
+        let cols = res.cols();
+        let (mut product, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(res.n(), cols, res.size());
+        BE::glwe_keyswitch_dft(module, &mut product, a, key, &mut scratch_1);
+        let product = product.to_backend_ref();
+        for col in 0..cols {
+            module.vec_znx_dft_add_assign(res, col, &product, col);
+        }
+    }
+}
+pub(crate) use glwe_dft::*;

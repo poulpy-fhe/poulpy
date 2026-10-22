@@ -106,15 +106,15 @@
 - **Breaking:** GGLWE keys take a row offset `k_offset` in bits: row `q` carries `2^-(k_offset + (q + 1) * k_digit)`, so a key switch with such a key lowers its input by `k_offset` bits, over the balanced lift of its digits.
   The result is `2^-k_offset (b + Σ aᵢ sᵢ)` with the integer part of that sum kept, as a modulus raise needs it.
   The key's precision is `k_offset + dnum * k_digit + k_aux`, `max_input_k` is `min(dnum * k_digit, k - k_offset - k_digit)`, and an offset of 0 gives every key as before, bit for bit.
-  `GGLWEInfos` gains the required method `k_offset`; `GGLWELayout`, `GLWESwitchingKeyLayout` and `GLWEAutomorphismKeyLayout` gain a `k_offset` field, and `GadgetProductOutputSizeParams` one too.
-  `offset_key_k` and `offset_key_size` give a key's precision and limb count.
+  `GGLWEInfos` gains the required method `k_offset`; `GGLWELayout` and `GLWESwitchingKeyLayout` gain a `k_offset` field, and `GadgetProductOutputSizeParams` one too. `GLWEAutomorphismKeyLayout` has none, no automorphism taking a key with an offset, and its conversion from a `GGLWELayout` panics on one.
 - **Breaking, format:** the serialized `GGLWE` and `GGLWECompressed`, and every key built on them, write `k_offset` as a `u32` after `k_digit`.
   Keys written before this change no longer read back.
 - **Breaking:** `reference::encryption::gadget_row_plaintext` takes `k_offset` after `k_digit`.
-- **Breaking:** `GLWEKeyswitch` and `GLWEKeyswitchImpl` gain `glwe_keyswitch_dft`, `glwe_keyswitch_dft_add` and `glwe_keyswitch_dft_tmp_bytes`: the product of a key switch without its body, left in the DFT domain, so that several switches into one output are summed before a single inverse transform.
+- **Breaking:** `GLWEKeyswitch` and `GLWEKeyswitchImpl` gain `glwe_keyswitch_dft` and `glwe_keyswitch_dft_tmp_bytes`: the gadget product of a key switch, its mask columns decomposed and multiplied by the key, which is the whole switch but for the body, left in the DFT domain.
+  They gain `glwe_keyswitch_dft_add` and `glwe_keyswitch_dft_add_tmp_bytes` too, which add that product to an accumulator, so that several switches into one output are summed before a single inverse transform; `GLWEKeyswitchImpl` derives both from `glwe_keyswitch_dft` and `vec_znx_dft_add_assign`, which the add requires of the module.
   The caller finishes each column with `vec_znx_idft_normalize`, the sum of the bodies lowered by the key's offset as the addend of column 0.
-  The input is at the key radix, and `impl_glwe_keyswitch_reference_full!` provides the reference.
-- `glwe_keyswitch` takes keys with a row offset, from any input radix, for an output of at most `k_offset + dnum * k_digit` bits.
+  The input is at the key radix, and `impl_glwe_keyswitch_reference_full!` provides the reference of the product.
+- `glwe_keyswitch` takes keys with a row offset, from any input radix, for an input of at most the key's `max_input_k` bits, at any output width.
   The other consumers of a GGLWE key in `poulpy-core` panic on one, through the new `reference::keyswitching::glwe::assert_no_row_offset`: the assign and automorphism key switches, the hoisted baby rotation, the lazy giant step, `ggsw_expand_rows`, the LWE conversions and key switch, `gglwe_keyswitch`, `ggsw_keyswitch`, the tensor relinearization and `glwe_mul_relinearize`, and the encryption of tensor keys.
   `gglwe_keyswitch`, `glwe_automorphism_key_automorphism` and `gglwe_external_product` panic when the result's offset differs from the input's.
 - `core_backend_test_suite!` gains `glwe_keyswitch_row_offset`, which checks an offset switch against the input lowered with `glwe_rsh` and switched by an offset-free key, `glwe_keyswitch_dft_add`, which checks a DFT sum of switches against the sum of single switches with the advertised scratch, and `glwe_keyswitch_row_offset_refusals`, which checks the refusals above.

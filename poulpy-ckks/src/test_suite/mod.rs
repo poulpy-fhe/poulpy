@@ -91,7 +91,6 @@ impl CKKSTestParams {
             k_aux,
             rank: Rank(self.rank as u32),
             k_digit: k_digit_of(self.base2k, self.dsize),
-            k_offset: TorusPrecision(0),
         }
     }
 

@@ -231,7 +231,6 @@ where
                 base2k: k.base2k,
                 dnum: k.dnum,
                 k_digit: k.k_digit,
-                k_offset: k.k_offset,
                 k_aux: k.k_aux,
                 rank: g.rank,
             };

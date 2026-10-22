@@ -61,7 +61,6 @@ fn atk_layout(cp: &CkksBenchParams) -> GLWEAutomorphismKeyLayout {
         k_aux: TorusPrecision(k_aux),
         rank: Rank(1),
         k_digit: k_digit_of(cp.base2k as u32, cp.dsize as u32),
-        k_offset: TorusPrecision(0),
         dnum: Dnum(dnum),
     }
 }

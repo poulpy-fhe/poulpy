@@ -729,7 +729,10 @@ impl<W: ZnxWord> GGLWE<AlignedBuf, W> {
         Self::alloc_with_offset(n, base2k, dnum, k_digit, TorusPrecision(0), k_aux, rank_in, rank_out)
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the GGLWE shape is its eight dimensions, as in `alloc`"
+    )]
     pub(crate) fn alloc_with_offset(
         n: Degree,
         base2k: Base2K,

@@ -163,7 +163,6 @@ pub fn runner_circuit_bootstrapping<
             k_aux: params.bin_fhe_params.k_aux.into(),
             dnum: Dnum(params.atk_dnum),
             k_digit: k_digit_of(params.bin_fhe_params.base2k, params.atk_dsize),
-            k_offset: TorusPrecision(0),
             rank: params.bin_fhe_params.rank.into(),
         },
         tsk_layout: GGLWEToGGSWKeyLayout {

@@ -16,7 +16,8 @@ use std::fmt;
 ///
 /// Implements [`LWEInfos`], [`GLWEInfos`] and [`GGLWEInfos`] so it can
 /// be passed to any generic constructor that needs layout information.
-/// For an automorphism key `rank_in == rank_out`.
+/// For an automorphism key `rank_in == rank_out`. It has no row offset (see
+/// [`GGLWEInfos::k_offset`]): no automorphism takes a key with one.
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub struct GLWEAutomorphismKeyLayout {
     pub n: Degree,
@@ -25,16 +26,16 @@ pub struct GLWEAutomorphismKeyLayout {
     pub k_aux: TorusPrecision,
     pub rank: Rank,
     pub k_digit: TorusPrecision,
-    /// Row offset in bits (see [`GGLWEInfos::k_offset`]).
-    pub k_offset: TorusPrecision,
 }
 
 /// The automorphism key of a stored GGLWE layout (`rank_out` is its rank).
 ///
-/// Panics on a coarsened view (`stride != 1`), which no key is stored as.
+/// Panics on a coarsened view (`stride != 1`), which no key is stored as, and on
+/// a row offset, which no automorphism key has.
 impl From<GGLWELayout> for GLWEAutomorphismKeyLayout {
     fn from(layout: GGLWELayout) -> Self {
         assert_eq!(layout.stride, 1, "a coarsened view is not a stored layout");
+        assert_eq!(layout.k_offset.0, 0, "an automorphism key has no row offset");
         Self {
             n: layout.n,
             base2k: layout.base2k,
@@ -42,7 +43,6 @@ impl From<GGLWELayout> for GLWEAutomorphismKeyLayout {
             k_aux: layout.k_aux,
             rank: layout.rank_out,
             k_digit: layout.k_digit,
-            k_offset: layout.k_offset,
         }
     }
 }
@@ -165,11 +165,11 @@ impl LWEInfos for GLWEAutomorphismKeyLayout {
     }
 
     fn max_size(&self) -> usize {
-        crate::layouts::offset_key_size(self.base2k, self.k_offset, self.dnum, self.k_digit, self.k_aux)
+        crate::layouts::key_size(self.base2k, self.dnum, self.k_digit, self.k_aux)
     }
 
     fn k(&self) -> TorusPrecision {
-        crate::layouts::offset_key_k(self.k_offset, self.dnum, self.k_digit, self.k_aux)
+        crate::layouts::key_k(self.dnum, self.k_digit, self.k_aux)
     }
 }
 
@@ -196,7 +196,7 @@ impl GGLWEInfos for GLWEAutomorphismKeyLayout {
         self.k_digit
     }
     fn k_offset(&self) -> TorusPrecision {
-        self.k_offset
+        TorusPrecision(0)
     }
 
     fn rank_out(&self) -> Rank {

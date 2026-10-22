@@ -188,7 +188,6 @@ pub fn runner_glwe_automorphism_key_encrypt_sk<BE: Backend<ZnxWord = i64>, M: Me
         rank: Rank(cp.rank),
         dnum: Dnum(dnum),
         k_digit: k_digit_of(cp.base2k, cp.dsize),
-        k_offset: TorusPrecision(0),
     };
 
     let module: Module<BE> = Module::<BE>::new(cp.n as u64);

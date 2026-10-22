@@ -125,7 +125,6 @@ where
                     rank: ct.rank,
                     dnum: Dnum(k.div_ceil(k_digit) as u32),
                     k_digit: TorusPrecision(k_digit as u32),
-                    k_offset: TorusPrecision(0),
                     k_aux: TorusPrecision((k_digit + (params.n.ilog2() as usize)) as u32),
                 };
                 let input_r = ref_glwe(r, &ct, &mut source);
