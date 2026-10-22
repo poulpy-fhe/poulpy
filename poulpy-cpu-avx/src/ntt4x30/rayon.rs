@@ -327,51 +327,6 @@ macro_rules! impl_digits_strided {
 impl_digits_strided!(Standard);
 impl_digits_strided!(ConjugateInvariant);
 
-#[cfg(feature = "enable-ckks")]
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn vmp_apply_digits_strided_known_zero_prefix(
-    module: &Module<NTT4x30AvxRayon>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30AvxRayon>,
-    a: &VecZnxDftBackendRef<'_, NTT4x30AvxRayon>,
-    dsize: usize,
-    zero_prefix: usize,
-    product_limbs: usize,
-    pmat: &VmpPMatBackendRef<'_, NTT4x30AvxRayon>,
-    scratch: &mut ScratchArena<'_, NTT4x30AvxRayon>,
-) {
-    let bytes = <NTT4x30AvxRayon as poulpy_core::oep::GGLWEProductDigitsStridedImpl>::gglwe_product_digits_strided_tmp_bytes(
-        module,
-        res.size(),
-        a.cols(),
-        a.size(),
-        dsize,
-        pmat.rows(),
-        pmat.cols_in(),
-        pmat.cols_out(),
-        pmat.size(),
-    );
-    let (tmp, _) = crate::hal_impl::take_host_typed::<NTT4x30AvxRayon, u64>(scratch.borrow(), bytes / size_of::<u64>());
-    let res_shape = res.shape();
-    vmp::vmp_apply_dft_to_dft_digits_strided_avx_known_zero_prefix::<Standard, RayonTaskExecutor>(
-        module.reinterpret(),
-        &mut VecZnxDft::from_shape(&mut **res.data_mut(), res_shape),
-        &VecZnxDft::from_shape(&**a.data(), a.shape()),
-        dsize,
-        product_limbs,
-        &VmpPMat::from_data(
-            &**pmat.data(),
-            pmat.n(),
-            pmat.rows(),
-            pmat.cols_in(),
-            pmat.cols_out(),
-            pmat.size(),
-            pmat.hint(),
-        ),
-        zero_prefix,
-        tmp,
-    );
-}
-
 impl<R: Ring> poulpy_hal::execution::ScratchWorkers for NTT4x30AvxRayon<R> {
     const PREPARE: usize = 4;
     const APPLY: usize = 8;

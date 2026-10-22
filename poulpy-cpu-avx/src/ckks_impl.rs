@@ -7,6 +7,12 @@ use poulpy_ckks::{
 
 impl_ckks_encapsulated_mod_up_reference!(FFT64Avx);
 impl_ckks_mod_up_first_factor_reference!(FFT64Avx);
+impl_ckks_encapsulated_mod_up_reference!(NTT4x30Avx);
+impl_ckks_mod_up_first_factor_reference!(NTT4x30Avx);
+#[cfg(feature = "enable-rayon")]
+impl_ckks_encapsulated_mod_up_reference!(super::NTT4x30AvxRayon);
+#[cfg(feature = "enable-rayon")]
+impl_ckks_mod_up_first_factor_reference!(super::NTT4x30AvxRayon);
 // `f64` encodes through the AVX2/FMA kernels and `Quad` through the portable
 // kernels, both on the canonical twiddles. Rust has no specialization, so
 // accelerated backends list their precisions explicitly.

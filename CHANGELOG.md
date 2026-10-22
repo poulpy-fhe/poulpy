@@ -32,15 +32,14 @@
   `reim4_gather_sparse_block_portable` and `reim4_gather_sparse_block_sum_portable` become `reim4_gather_block_portable` and `reim4_gather_block_sum_portable`, which read through a `RightRead`.
   `convolution_apply_dft_portable`, `ntt4x30_cnv_apply_dft_portable`, their `_add` forms, the packed NTT4x30 drivers and `PackedNtt4x30Base::cnv_apply_dft` and `cnv_apply_dft_add` take `b_galois` after `b_col`.
 - Every CPU backend implements `vec_znx_gadget_decompose` with one portable kernel, a single limb-major pass with exact carries that needs no scratch, and the oracle backend with an independent big-integer implementation.
-- The native CKKS encapsulated modulus raise (portable, AVX2, AVX-512, and their Rayon variants) keeps its path for sparse-to-dense keys of any digit width.
-  Digits off a limb boundary lay the raised mask out on the digit grid, and the top digits the raise leaves at zero are neither transformed nor read by the product, as whole-limb digits skip their zero limbs.
-  The portable scratch covers the decomposed operand and its digit buffer.
+- **Breaking, behaviour:** the CPU backends no longer override the CKKS encapsulated ModUp: `NTT4x30Avx`, `NTT4x30Avx512`, `NTT3x42Ifma` and their Rayon variants install the reference body (`impl_ckks_encapsulated_mod_up_reference!`), as `NTT4x30Portable` and `NTT4x30PortableRayon` do.
+  Their bodies skipped the limbs that the raise leaves at zero. A sparse-to-dense key with a row offset, the bootstrapping presets' key, leaves none: its switch reads the raised ciphertext at its own width, and no preset took them.
 - The IFMA linear transformation keeps its fused giant-step rotation for automorphism keys of any digit width: each normalized mask column is laid out on the digit grid with `gadget_dft_apply` before the product, as in the reference lazy giant step.
   Keys whose digits fit in one limb still take the reference, as one-limb aligned keys do.
 - The AVX-512 rank-one relinearization keeps its packed path for tensor keys of any digit width: digits off a limb boundary lay the tensor pairs out on the digit grid with `gadget_dft_apply`, and its scratch covers that operand.
 - Add `FFT64PortableRayon` and `NTT4x30PortableRayon`, the Rayon variants of the portable backends, with their conjugate-invariant aliases `FFT64CIPortableRayon` and `NTT4x30CIPortableRayon`.
   They live in `poulpy-cpu-rayon`, which already depends on `poulpy-cpu-portable`, behind no feature for the HAL and behind `enable-core`, `enable-ckks`, `enable-bin-fhe` and `enable-mhe` for the scheme layers.
-  `NTT4x30PortableRayon` runs the fused interleaved-digit product and the encapsulated ModUp of `NTT4x30Portable` on per-worker scratch, and transforms the four planes of a limb as separate tasks from degree `2^13`.
+  `NTT4x30PortableRayon` runs the fused interleaved-digit product of `NTT4x30Portable` on per-worker scratch, and transforms the four planes of a limb as separate tasks from degree `2^13`.
   A vector of one limb is transformed serially.
 - `poulpy-cpu-rayon` gains `impl_ntt4x30_rayon_backend!` and the trait `PackedNtt4x30Base`: a serial NTT4x30 backend with a packed `u32` transform domain describes its drivers through the trait, and the macro builds its Rayon variant, as `impl_fft64_rayon_backend!` does for FFT64.
 - `NTT4x30NeonRayon` is built with `impl_ntt4x30_rayon_backend!` on the drivers of `NTT4x30Neon`, in place of its hand-written wiring.
@@ -61,7 +60,7 @@
   `vec_znx_dft_apply` and `svp_prepare` of `NTT4x30Avx` and `NTT4x30Avx512`, serial and Rayon, transform through a buffer each thread keeps, where they allocated one per call: the HAL gives these two operations no scratch.
   `poulpy-cpu-avx` no longer depends on `rayon` directly.
   **Breaking, API:** the two Rayon types no longer implement the q120 kernel traits of `poulpy_cpu_portable::kernels::ntt4x30` (`NttFromZnx64`, `NttToZnx128`, `NttAdd`, `NttMulBbc` and the like), which their serial backends keep.
-- `poulpy_cpu_portable::ntt4x30::drivers` and `poulpy_cpu_portable::ckks_mod_up` expose, as hidden items without stability promise, the packed drivers and the ModUp body that the Rayon variant builds on.
+- `poulpy_cpu_portable::ntt4x30::drivers` exposes, as a hidden item without stability promise, the packed drivers that the Rayon variant builds on.
 - **Fix:** the portable `znx_add`, `znx_sub`, `znx_negate` kernels and their in-place forms, the power-of-two multiplications and the rotating automorphism wrap on overflow, as the oracle and the SIMD backends do. They panicked in builds with overflow checks.
 - **Breaking, behaviour:** `NTT4x30Portable` stores the transform domain as four `u32` residues per coefficient (`DftWord = CrtWord<Primes30, u32>`), half the previous size, for `VecZnxDft`, `SvpPPol`, `VmpPMat` and both convolution operands.
   The layouts are those of the NEON backends: a transformed limb is one plane of canonical residues per prime, prepared operands are multiplied by `2^32`, the prepared matrix and the convolution operands hold residues centered around zero in the order their kernels read them.
@@ -73,14 +72,12 @@
 - The vector-matrix product and the convolutions of `NTT4x30Portable` share one inner product on signed accumulators, 24 products per Montgomery step, gather their inputs and stage their outputs in runs of 32 blocks of four coefficients, and take that staging buffer from scratch.
   `vmp_apply_dft_to_dft_add`, `cnv_apply_dft_add`, `cnv_apply_dft_sum` and `cnv_pairwise_apply_dft` accumulate in the same pass, `svp_apply_dft` transforms each limb into its destination, and `vec_znx_idft_normalize_consume` writes the coefficients over the limb it transforms.
 - `NTT4x30Portable` implements `GGLWEProductDigitsStridedImpl` with a fused kernel for up to 16 gadget digits, which returns the residues of the reference body and skips the rows of leading input limbs that are zero in every column.
-- `NTT4x30Portable` implements `CKKSEncapsulatedModUpImpl` natively: the limbs that the raise to the large modulus leaves at zero are neither transformed nor multiplied, and the reference body stays in use where the layouts differ, the key is a strided view or has fewer than two or more than 16 digits.
 - The middle step of the portable `i128` normalization takes the digit and the carry of the sum of the input and the incoming carry in one step.
   It returns the same values as the two-step form.
 - The portable FFT64 passes load, combine and store four elements at a time, and the two merged layers of a pass run in one sweep.
   Every element goes through the same operations in the same order, so the transforms return the same bytes.
 - `vmp_apply_dft_to_dft_add` of the FFT64 backends, serial and Rayon, accumulates each block as it is computed, where it filled a zeroed scratch vector and added it afterwards.
   Its scratch shrinks to the one of `vmp_apply_dft_to_dft`.
-- **Fix:** the encapsulated ModUp of the AVX2 and AVX-512 backends read a sparse-to-dense key view taken with `with_k_digit` above the stored `k_digit` as the stored matrix, and returned another ciphertext than the reference body; such a view now takes the reference body.
 - **Fix:** the NTT convolution apply kernels of the AVX2, AVX-512 and NEON backends checked the size of the result but not its column, and wrote past the buffer for a column past the last one; they now panic.
 - **Fix:** the convolution prepare of the NTT4x30 AVX2, AVX-512 and NEON backends gave each parallel task a mutable view of the whole column while the tasks of the other limbs of that column wrote to it; each task now writes only the rows of its limb.
 - **Fix:** the FFT64 DFT kernels of the portable, AVX2, AVX-512 and NEON backends checked operand degrees but not columns.

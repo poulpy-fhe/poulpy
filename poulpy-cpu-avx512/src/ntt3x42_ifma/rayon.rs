@@ -976,45 +976,6 @@ where
     }
 }
 
-#[cfg(feature = "enable-ckks")]
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn vmp_apply_digits_strided_known_zero_prefix<R: Ring>(
-    module: &Module<NTT3x42IfmaRayon<R>>,
-    res: &mut VecZnxDftBackendMut<'_, NTT3x42IfmaRayon<R>>,
-    a: &VecZnxDftBackendRef<'_, NTT3x42IfmaRayon<R>>,
-    dsize: usize,
-    zero_prefix: usize,
-    product_limbs: usize,
-    pmat: &VmpPMatBackendRef<'_, NTT3x42IfmaRayon<R>>,
-    scratch: &mut ScratchArena<'_, NTT3x42IfmaRayon<R>>,
-) where
-    NTT3x42Ifma<R>: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>
-        + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>
-        + ZnxAutomorphism,
-{
-    let bytes = <NTT3x42IfmaRayon<R> as poulpy_core::oep::GGLWEProductDigitsStridedImpl>::gglwe_product_digits_strided_tmp_bytes(
-        module,
-        res.size(),
-        a.cols(),
-        a.size(),
-        dsize,
-        pmat.rows(),
-        pmat.cols_in(),
-        pmat.cols_out(),
-        pmat.size(),
-    );
-    let (tmp, _) = crate::hal_impl::take_host_typed::<NTT3x42IfmaRayon<R>, u64>(scratch.borrow(), bytes / size_of::<u64>());
-    super::vmp::vmp_apply_dft_to_dft_digits_strided_ifma_known_zero_prefix::<_, NTT3x42IfmaRayonExecutor>(
-        &mut base_dft_mut::<R>(res),
-        &base_dft_ref::<R>(a),
-        dsize,
-        product_limbs,
-        &base_vmp_ref::<R>(pmat),
-        zero_prefix,
-        tmp,
-    );
-}
-
 unsafe impl<R: Ring> HalConvolutionImpl for NTT3x42IfmaRayon<R>
 where
     NTT3x42Ifma<R>: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>
