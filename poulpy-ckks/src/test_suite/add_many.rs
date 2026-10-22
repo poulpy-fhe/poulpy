@@ -1,4 +1,4 @@
-//! Tests for `CKKSAddManyOps::ckks_add_many`.
+//! Tests for `CKKSAddManyOps::ckks_add_many_into`.
 //!
 //! # Test inventory
 //!
@@ -9,14 +9,23 @@
 //! | [`test_add_many_unaligned_log_budget`] | one input rescaled by one limb |
 //! | [`test_add_many_delta_log_delta`] | inputs at different `log_delta` |
 //! | [`test_add_many_smaller_output`] | output narrower than inputs (`offset > 0`) |
+//! | [`test_add_many_normalize_after`] | normalization after every `normalize_after` additions, and the rejections |
 
-use poulpy_core::layouts::LWEInfos;
+use poulpy_core::{GLWENormalize, layouts::LWEInfos};
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, Standard},
 };
 
-use crate::{CKKSInfos, api::CKKSAddManyOps, test_suite::helpers::assert_ct_meta};
+use crate::{
+    CKKSInfos,
+    api::CKKSAddManyOps,
+    layouts::CKKSCiphertextOwned,
+    test_suite::{
+        helpers::assert_ct_meta,
+        parity::helpers::{snapshot, with_scratch},
+    },
+};
 
 use super::helpers::{
     TestContextBackend, TestContextModule, TestScalar, TestVector, alloc_ct, alloc_scratch, assert_decrypt_precision,
@@ -86,7 +95,9 @@ where
         .collect();
     let ct_refs: Vec<&_> = cts.iter().collect();
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module.ckks_add_many(&mut ct_res, &ct_refs, &mut scratch.borrow()).unwrap();
+    module
+        .ckks_add_many_into(&mut ct_res, &ct_refs, usize::MAX, &mut scratch.borrow())
+        .unwrap();
     let expected_log_delta: usize = cts.iter().map(|c| c.log_delta()).max().unwrap();
     let expected_log_budget: usize = cts.iter().map(|c| c.log_budget()).min().unwrap();
     assert_ct_meta("add_many_aligned", &ct_res, expected_log_delta, expected_log_budget);
@@ -135,11 +146,15 @@ pub fn test_add_many_single_smaller_output<BE, F, E>(
     let ct_refs = vec![&ct];
     // At the input's width, one input is a lossless copy, still an evaluation.
     let mut ct_same = alloc_ct(&params, module, params.k);
-    module.ckks_add_many(&mut ct_same, &ct_refs, &mut scratch.borrow()).unwrap();
+    module
+        .ckks_add_many_into(&mut ct_same, &ct_refs, usize::MAX, &mut scratch.borrow())
+        .unwrap();
     assert!(ct.noise().is_some());
     assert!(ct_same.noise().is_none());
     let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
-    module.ckks_add_many(&mut ct_res, &ct_refs, &mut scratch.borrow()).unwrap();
+    module
+        .ckks_add_many_into(&mut ct_res, &ct_refs, usize::MAX, &mut scratch.borrow())
+        .unwrap();
     assert!(ct_res.noise().is_none());
     assert_decrypt_precision(
         "add_many_single_smaller_output",
@@ -185,7 +200,9 @@ pub fn test_add_many_unaligned_log_budget<BE, F, E>(
         .collect();
     let ct_refs: Vec<&_> = cts.iter().collect();
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module.ckks_add_many(&mut ct_res, &ct_refs, &mut scratch.borrow()).unwrap();
+    module
+        .ckks_add_many_into(&mut ct_res, &ct_refs, usize::MAX, &mut scratch.borrow())
+        .unwrap();
     assert_decrypt_precision(
         "add_many unaligned_log_budget",
         &params,
@@ -272,7 +289,9 @@ pub fn test_add_many_delta_log_delta<BE, F, E>(
     }
 
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module.ckks_add_many(&mut ct_res, &ct_refs, &mut scratch.borrow()).unwrap();
+    module
+        .ckks_add_many_into(&mut ct_res, &ct_refs, usize::MAX, &mut scratch.borrow())
+        .unwrap();
     assert_decrypt_precision_at_log_delta(
         "add_many delta_log_delta",
         &params,
@@ -322,7 +341,9 @@ where
         .collect();
     let ct_refs: Vec<&_> = cts.iter().collect();
     let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
-    module.ckks_add_many(&mut ct_res, &ct_refs, &mut scratch.borrow()).unwrap();
+    module
+        .ckks_add_many_into(&mut ct_res, &ct_refs, usize::MAX, &mut scratch.borrow())
+        .unwrap();
     assert_decrypt_precision(
         "add_many smaller_output",
         &params,
@@ -334,4 +355,98 @@ where
         &want_im,
         &mut scratch.borrow(),
     );
+}
+
+/// Eight inputs normalized after every addition, and after every two, hold at most two and three canonical digits per
+/// coefficient, where never normalized they exceed three, and all three normalize to the same digits and decrypt to the
+/// sum, each within exactly the scratch its query reports. An empty input and a zero `normalize_after` are rejected
+/// before `dst` changes.
+pub fn test_add_many_normalize_after<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let (re2, im2) = test_vector_2::<F>(m);
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+
+    let (terms, want_re, want_im) = build_terms(&re1, &im1, &re2, &im2, 8);
+    let cts: Vec<_> = terms
+        .iter()
+        .map(|(re, im)| {
+            ckks_encrypt(
+                &params,
+                module,
+                host_module,
+                &encoder,
+                &sk,
+                params.k,
+                re,
+                im,
+                &mut scratch.borrow(),
+            )
+        })
+        .collect();
+    let ct_refs: Vec<&_> = cts.iter().collect();
+    let mut sum = |normalize_after: usize| {
+        let mut ct_res = alloc_ct(&params, module, params.k);
+        with_scratch::<BE, _>(module.ckks_add_many_tmp_bytes(ct_res.size()), |s| {
+            module.ckks_add_many_into(&mut ct_res, &ct_refs, normalize_after, s)
+        })
+        .unwrap();
+        let lazy = snapshot::<BE, _>(&ct_res).digits;
+        assert_decrypt_precision(
+            &format!("add_many normalize_after={normalize_after}"),
+            &params,
+            module,
+            &encoder,
+            &ct_res,
+            &sk,
+            &want_re,
+            &want_im,
+            &mut scratch.borrow(),
+        );
+        module.glwe_normalize_assign(&mut ct_res, &mut scratch.borrow());
+        (lazy, snapshot::<BE, _>(&ct_res).digits)
+    };
+    let digit = 1i64 << (params.base2k - 1);
+    let (never, never_normalized) = sum(usize::MAX);
+    assert!(
+        never.iter().any(|x| x.abs() > 3 * digit),
+        "the sum never normalized stays within three digits, so the bounds below test nothing"
+    );
+    for (normalize_after, held) in [(1, 2), (2, 3)] {
+        let (lazy, normalized) = sum(normalize_after);
+        assert!(
+            lazy.iter().all(|x| x.abs() <= held * digit),
+            "normalize_after={normalize_after}: a coefficient exceeds {held} digits"
+        );
+        assert!(
+            normalized == never_normalized,
+            "normalize_after={normalize_after}: normalizing changed the sum"
+        );
+    }
+
+    let mut ct_res = alloc_ct(&params, module, params.k);
+    let before = snapshot::<BE, _>(&ct_res);
+    let empty: Vec<&CKKSCiphertextOwned<BE>> = Vec::new();
+    for (label, inputs, normalize_after) in [("empty", &empty, 1), ("zero normalize_after", &ct_refs, 0)] {
+        assert!(
+            module
+                .ckks_add_many_into(&mut ct_res, inputs, normalize_after, &mut scratch.borrow())
+                .is_err(),
+            "{label} accepted"
+        );
+        assert!(snapshot::<BE, _>(&ct_res) == before, "{label} wrote dst");
+    }
 }

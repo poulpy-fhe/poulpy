@@ -12,10 +12,20 @@ use crate::{
 
 /// Sum over a slice of ciphertexts.
 pub trait CKKSAddManyOps<BE: Backend> {
+    /// Scratch of [`Self::ckks_add_many_into`] into a destination of `res_size` limbs: the additions and the
+    /// normalizations.
     fn ckks_add_many_tmp_bytes(&self, res_size: usize) -> usize;
 
     /// Computes `dst = inputs[0] + inputs[1] + … + inputs[n-1]`, adding the
-    /// inputs to `dst` from left to right.
+    /// inputs to `dst` from left to right, and normalizing `dst` in place, by
+    /// poulpy-core's `glwe_normalize_assign`, after every `normalize_after`
+    /// additions that another addition follows.
+    ///
+    /// The sum is lazy, so `dst` leaves unnormalized unless it holds one
+    /// input. `normalize_after` bounds the canonical digits a coefficient of
+    /// `dst` accumulates to `normalize_after + 1` times the most an input
+    /// holds, one for a canonical input, which poulpy-core's `max_lazy_terms`
+    /// sizes for independent inputs; `usize::MAX` never normalizes.
     ///
     /// # Metadata
     ///
@@ -34,8 +44,15 @@ pub trait CKKSAddManyOps<BE: Backend> {
     /// log_budget_out = (min log_budget) − offset
     /// ```
     ///
-    /// Errors if `inputs` is empty.
-    fn ckks_add_many<Dst, Src>(&self, dst: &mut Dst, inputs: &[&Src], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    /// Errors with `InvalidOperand` before any write if `inputs` is empty or `normalize_after` is 0, and panics before
+    /// any write with less scratch than [`Self::ckks_add_many_tmp_bytes`] reports for `dst`'s limbs.
+    fn ckks_add_many_into<Dst, Src>(
+        &self,
+        dst: &mut Dst,
+        inputs: &[&Src],
+        normalize_after: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds;

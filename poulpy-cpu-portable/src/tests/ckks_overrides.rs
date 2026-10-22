@@ -57,6 +57,7 @@ poulpy_ckks::impl_ckks_neg_reference!(OverrideBackend);
 poulpy_ckks::impl_ckks_pow2_reference!(OverrideBackend);
 poulpy_ckks::impl_ckks_imag_reference!(OverrideBackend);
 poulpy_ckks::impl_ckks_rotate_reference!(OverrideBackend);
+poulpy_ckks::impl_ckks_inner_sum_reference!(OverrideBackend);
 poulpy_ckks::impl_ckks_conjugate_reference!(OverrideBackend);
 poulpy_ckks::impl_ckks_encryption_reference!(OverrideBackend);
 poulpy_ckks::impl_ckks_mul_reference!(OverrideBackend);

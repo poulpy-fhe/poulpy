@@ -22,7 +22,7 @@ use crate::{
     CKKSCompositionError, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos,
     api::{
         CKKSAddManyOps, CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps, CKKSDotProductOps,
-        CKKSEncodingScalar, CKKSEvalModOps, CKKSImagOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSNegOps,
+        CKKSEncodingScalar, CKKSEvalModOps, CKKSImagOps, CKKSInnerSumOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSNegOps,
         CKKSPlaintextVecOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
     },
     api::{CKKSDecryptOps, CKKSEncryptOps},
@@ -187,6 +187,7 @@ pub trait TestContextSharedModule<BE: Backend>:
     + CKKSPow2Ops<BE>
     + CKKSPlaintextVecOps<BE>
     + CKKSAddManyOps<BE>
+    + CKKSInnerSumOps<BE>
     + CKKSMulAddOps<BE>
     + CKKSMulSubOps<BE>
     + CKKSAffineOps<BE>
@@ -225,6 +226,7 @@ impl<BE: Backend, M> TestContextSharedModule<BE> for M where
         + CKKSPow2Ops<BE>
         + CKKSPlaintextVecOps<BE>
         + CKKSAddManyOps<BE>
+        + CKKSInnerSumOps<BE>
         + CKKSMulAddOps<BE>
         + CKKSMulSubOps<BE>
         + CKKSAffineOps<BE>
