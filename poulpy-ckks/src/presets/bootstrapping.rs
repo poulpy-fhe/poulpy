@@ -16,10 +16,8 @@
 //!   `output_k - input_k`.
 //!   S2C-first also reserves the pre-ModUp transform consumption in `input_k`;
 //! - `p`: guaranteed output precision in bits (see [`BootstrappingPreset::log2_precision`]);
-//! - `circuit`: `c2s` (C2S-first) or `s2c` (S2C-first), extended with a suffix for further techniques.
-//!
-//! The suffix `fast` marks the preset tuned for speed,
-//! [`n16_d35_k685_p19_s2c_fast`], at the widths its techniques leave room for.
+//! - `circuit`: `c2s` (C2S-first) or `s2c` (S2C-first), extended with a suffix for further techniques:
+//!   `fast` for [`n16_d35_k685_p19_s2c_fast`], tuned for speed.
 //!
 //! `n16_d35_k636_p20_c2s` is thus the C2S-first preset at `N = 2^16` for inputs at
 //! scale `2^35`, producing 636-bit ciphertexts at scale `2^35` with at least 20 bits of precision.
@@ -63,9 +61,8 @@ use crate::numerics::CKKSFloat;
 use crate::{
     CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, Scale, SlotsKind,
     layouts::{
-        BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, ConversionKeysLayout,
-        DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout, EvalModCIPlan, EvalModPlan, EvalModType,
-        SparseSecretEncapsulation,
+        BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, DFTOutputFormat, DFTPlan,
+        DFTType, EncapsulationKeysLayout, EvalModPlan, EvalModRing, EvalModType, SparseSecretEncapsulation,
     },
     polynomial::SplitStrategy,
     reference::first_factor::{first_factor_diagonal_growth, first_factor_small_bits, first_factor_work},
@@ -140,8 +137,7 @@ struct PresetSpec {
     c2s_schedule: &'static [(usize, usize)],
     /// The first CoeffsToSlots factor is applied by the raise, for no modulus.
     c2s_first_factor_on_raise: bool,
-    /// EvalMod runs on the conjugate-invariant ring, through these conversions.
-    eval_mod_ci: Option<EvalModCIPlan>,
+    eval_mod_ring: EvalModRing,
     c2s_guard_bits: usize,
     c2s_log_delta: usize,
     c2s_log_budget: usize,
@@ -279,6 +275,15 @@ impl BootstrappingPreset {
         })
     }
 
+    /// Re-derives the preset with EvalMod on `eval_mod_ring`: the conversions to
+    /// the conjugate-invariant ring widen the raised width by their scales.
+    pub fn with_eval_mod_ring(&self, eval_mod_ring: EvalModRing) -> Result<Self> {
+        build(PresetSpec {
+            eval_mod_ring,
+            ..self.spec
+        })
+    }
+
     /// Re-derives the preset with one gadget digit of `key_dsize` whole limbs for
     /// every high-modulus key, and of `dense_to_sparse_dsize` limbs for the
     /// dense-to-sparse key. Fails for a digit too wide for the modulus bound of
@@ -377,7 +382,7 @@ pub fn n16_d35_k636_p20_c2s() -> Result<BootstrappingPreset> {
         log_msg_ratio: 6,
         c2s_schedule: &C2S_SCHEDULE,
         c2s_first_factor_on_raise: false,
-        eval_mod_ci: None,
+        eval_mod_ring: EvalModRing::Standard,
         c2s_guard_bits: 0,
         c2s_log_delta: 51,
         c2s_log_budget: 2,
@@ -414,7 +419,7 @@ pub fn n16_d35_k733_p20_s2c() -> Result<BootstrappingPreset> {
         log_msg_ratio: 13,
         c2s_schedule: &C2S_SCHEDULE,
         c2s_first_factor_on_raise: false,
-        eval_mod_ci: None,
+        eval_mod_ring: EvalModRing::Standard,
         c2s_guard_bits: 6,
         c2s_log_delta: 50,
         c2s_log_budget: 3,
@@ -448,7 +453,7 @@ pub fn n15_d35_k180_p18_c2s() -> Result<BootstrappingPreset> {
         log_msg_ratio: 5,
         c2s_schedule: &[(7, 2048), (7, 16)],
         c2s_first_factor_on_raise: false,
-        eval_mod_ci: None,
+        eval_mod_ring: EvalModRing::Standard,
         c2s_guard_bits: 0,
         c2s_log_delta: 50,
         c2s_log_budget: 2,
@@ -492,7 +497,7 @@ pub(crate) fn insecure_n11_d35_k180_p20_s2c() -> Result<BootstrappingPreset> {
         log_msg_ratio: 13,
         c2s_schedule: &[(4, 4), (3, 4), (3, 4)],
         c2s_first_factor_on_raise: false,
-        eval_mod_ci: None,
+        eval_mod_ring: EvalModRing::Standard,
         c2s_guard_bits: 6,
         c2s_log_delta: 50,
         c2s_log_budget: 3,
@@ -503,45 +508,31 @@ pub(crate) fn insecure_n11_d35_k180_p20_s2c() -> Result<BootstrappingPreset> {
     })
 }
 
-/// Scales of the conversions to and from the conjugate-invariant ring: `u` before
-/// EvalMod carries the overflow of the raise, `v` after it only the message.
-const EVALMOD_CI_CONVERSION: EvalModCIPlan = EvalModCIPlan {
-    pre_log_delta: 46,
-    post_log_delta: 38,
-};
-
-/// CoeffsToSlots with its first factor, of three layers, applied by the raise.
-const C2S_FFR_SCHEDULE: [(usize, usize); 4] = [(3, 1), (4, 1024), (4, 64), (4, 4)];
-/// Four factors of SlotsToCoeffs for the fast preset.
-const S2C_FAST_SCHEDULE: [(usize, usize); 4] = [(3, 4), (4, 32), (4, 512), (4, 8192)];
-
-/// S2C-first full-slot preset at `N = 2^16` for inputs at scale `2^35`, tuned for
-/// speed: 685-bit ciphertexts with at least 19 bits of precision, 15 usable levels.
-///
-/// The first CoeffsToSlots factor is applied by the raise, three paid factors of
-/// four layers follow at scale `2^48`, EvalMod runs once on the
-/// conjugate-invariant ring (84 bits of conversions, through
-/// [`CKKSBootstrappingCIOps`](crate::api::CKKSBootstrappingCIOps)), and
-/// SlotsToCoeffs has four factors at scale `2^28`. The first-factor keys keep the
-/// raised width, 1383 bits, under the dense-secret bound.
+/// [`n16_d35_k733_p20_s2c`] tuned for speed: 685-bit ciphertexts with at least
+/// 19 bits of precision, 15 usable levels. The first CoeffsToSlots factor is
+/// applied by the raise, three factors of four layers follow, EvalMod runs once
+/// on the conjugate-invariant ring ([`EvalModRing::ConjugateInvariant`], 84 bits
+/// of conversions), and SlotsToCoeffs has four factors. The raised width is 1383 bits.
 pub fn n16_d35_k685_p19_s2c_fast() -> Result<BootstrappingPreset> {
     build(PresetSpec {
         name: "n16_d35_k685_p19_s2c_fast",
         output_k: 685,
         log2_precision: 19,
-        c2s_schedule: &C2S_FFR_SCHEDULE,
+        c2s_schedule: &[(3, 1), (4, 1024), (4, 64), (4, 4)],
         c2s_first_factor_on_raise: true,
-        eval_mod_ci: Some(EVALMOD_CI_CONVERSION),
+        // `u` carries the overflow of the raise, `v` only the message.
+        eval_mod_ring: EvalModRing::ConjugateInvariant {
+            pre_log_delta: 46,
+            post_log_delta: 38,
+        },
         c2s_log_delta: 48,
-        s2c_schedule: &S2C_FAST_SCHEDULE,
+        s2c_schedule: &[(3, 4), (4, 32), (4, 512), (4, 8192)],
         s2c_log_delta: 28,
         ..n16_d35_k733_p20_s2c()?.spec
     })
 }
 
-/// Every preset, in a stable order. Those with EvalMod on the conjugate-invariant
-/// ring ([`BootstrappingPlan::eval_mod_ring`]) run through
-/// [`CKKSBootstrappingCIOps`](crate::api::CKKSBootstrappingCIOps).
+/// Every preset, in a stable order.
 pub fn all() -> Result<Vec<BootstrappingPreset>> {
     const PRESETS: &[fn() -> Result<BootstrappingPreset>] = &[
         n16_d35_k636_p20_c2s,
@@ -629,10 +620,7 @@ fn build(spec: PresetSpec) -> Result<BootstrappingPreset> {
     } else {
         plan.with_c2s_guard_bits(spec.c2s_guard_bits)?
     };
-    let plan = match spec.eval_mod_ci {
-        Some(conversion) => plan.with_eval_mod_on_ci_ring(conversion)?,
-        None => plan,
-    };
+    let plan = plan.with_eval_mod_ring(spec.eval_mod_ring)?;
     let log_slots = spec
         .log_n
         .checked_sub(1)
@@ -710,32 +698,16 @@ fn keys_layout(
                 rotation_keys.insert(p, layout.into());
             }
         }
-        let k = widths.eval_mod_relinearization_k(bootstrap_k - plan.coeffs_to_slots().consumed_bits(), spec.log_delta);
+        let k = widths.eval_mod_relinearization_k(bootstrap_k, spec.log_delta);
         tensor_key = key_layout(spec, "tensor", k, widest_k_digit(spec, k, dense), dense)?;
     }
-
-    // On the conjugate-invariant ring EvalMod runs on the traced ciphertext, with a
-    // tensor key of that ring. The conversion keys are of degree 2N; their secrets
-    // lie in subrings of rank N (`s(X²)`, the embedded CI secret): the bounds of
-    // degree N apply.
-    let conversion = match plan.key_widths().conversions(bootstrap_k) {
-        Some((traced, embedded)) => {
-            let k = plan.key_widths().eval_mod_relinearization_k(traced, spec.log_delta);
-            tensor_key = key_layout(spec, "CI tensor", k, widest_k_digit(spec, k, dense), dense)?;
-            let wide = PresetSpec {
-                log_n: spec.log_n + 1,
-                ..*spec
-            };
-            let conversion_key = |name: &str, k: usize| -> Result<GLWESwitchingKeyLayout> {
-                Ok(key_layout(&wide, name, k, widest_k_digit(&wide, k, dense), dense)?.into())
-            };
-            Some(ConversionKeysLayout {
-                trace_key: conversion_key("CI trace", traced)?,
-                embed_key: conversion_key("CI embed", embedded)?,
-            })
-        }
-        None => None,
+    // The conversion keys are of degree 2N, under secrets of degree-N subrings
+    // (`s(X²)`, the embedded CI secret), so the bounds of degree N apply.
+    let wide_spec = PresetSpec {
+        log_n: spec.log_n + 1,
+        ..*spec
     };
+    let conversion_key = |k| key_layout(&wide_spec, "conversion", k, widest_k_digit(&wide_spec, k, dense), dense);
 
     Ok(BootstrappingKeysLayout {
         automorphism_key: wide.into(),
@@ -749,7 +721,10 @@ fn keys_layout(
             .c2s_first_factor_on_raise
             .then(|| first_factor_key_layout(spec, plan, bootstrap_k, dense))
             .transpose()?,
-        conversion,
+        conversion_keys: match plan.key_widths().conversions(bootstrap_k) {
+            Some((traced, embedded)) => Some((conversion_key(traced)?.into(), conversion_key(embedded)?.into())),
+            None => None,
+        },
     })
 }
 
@@ -892,11 +867,6 @@ fn gadget_k<K: GGLWEInfos>(key: &K) -> usize {
 
 fn validate_modulus_bounds(spec: &PresetSpec, bootstrap_k: usize, keys: &BootstrappingKeysLayout) -> Result<()> {
     let (dense, sparse) = (spec.dense_secret.max_log_modulus, spec.sparse_secret.max_log_modulus);
-    validate_key("tensor", &keys.tensor_key, dense)?;
-    if let Some(conversion) = &keys.conversion {
-        validate_key("CI trace", &conversion.trace_key, dense)?;
-        validate_key("CI embed", &conversion.embed_key, dense)?;
-    }
     ensure!(
         bootstrap_k <= dense,
         "bootstrap modulus {bootstrap_k} exceeds dense-secret limit {dense}"
@@ -904,8 +874,13 @@ fn validate_modulus_bounds(spec: &PresetSpec, bootstrap_k: usize, keys: &Bootstr
     for key in keys.rotation_key_layouts() {
         validate_key("automorphism", &key, dense)?;
     }
+    validate_key("tensor", &keys.tensor_key, dense)?;
     if let Some(key) = &keys.first_factor_key {
         validate_key("first-factor", key, dense)?;
+    }
+    if let Some((trace, embed)) = &keys.conversion_keys {
+        validate_key("trace", trace, dense)?;
+        validate_key("embed", embed, dense)?;
     }
     let encapsulation = keys
         .encapsulation
@@ -1014,92 +989,6 @@ mod tests {
         assert_eq!(key_shapes([&keys.tensor_key]), [(416, 3)]);
     }
 
-    /// Bytes of the coefficients of the key set of a preset with EvalMod on the CI
-    /// ring, by kind: rotation keys, CI tensor key, encapsulation keys, first-factor
-    /// keys, trace key and embed key.
-    fn ci_key_set_bytes(preset: &BootstrappingPreset) -> [usize; 6] {
-        let (keys, plan, log_n) = (preset.keys_layout(), preset.plan(), preset.log_n());
-        let order = 2i64 << log_n;
-        let mut elements: BTreeSet<i64> = plan.coeffs_to_slots().galois_elements(log_n, order).into_iter().collect();
-        elements.extend(plan.slots_to_coeffs().galois_elements(log_n, order));
-        let rotations = elements.iter().map(|&p| key_bytes(&keys.rotation_key(p))).sum();
-        let encapsulation = keys.encapsulation.as_ref().map_or(0, |encaps| {
-            key_bytes(&encaps.dense_to_sparse) + encaps.sparse_to_dense.as_ref().map_or(0, key_bytes)
-        });
-        let first_factor = keys.first_factor_key.as_ref().map_or(0, |key| {
-            plan.coeffs_to_slots().diagonal_indexes(log_n)[0].len() * key_bytes(key)
-        });
-        let conversion = keys.conversion.expect("EvalMod on the CI ring");
-        [
-            rotations,
-            key_bytes(&keys.tensor_key),
-            encapsulation,
-            first_factor,
-            key_bytes(&conversion.trace_key),
-            key_bytes(&conversion.embed_key),
-        ]
-    }
-
-    /// [`n16_d35_k685_p19_s2c_fast`] with its first CoeffsToSlots factor evaluated
-    /// by the matrix, at the same output width: the raise then reaches 48 bits more.
-    fn fast_without_first_factor_on_raise() -> BootstrappingPreset {
-        const SCHEDULE: [(usize, usize); 4] = [(3, 8), (4, 1024), (4, 64), (4, 4)];
-        build(PresetSpec {
-            c2s_schedule: &SCHEDULE,
-            c2s_first_factor_on_raise: false,
-            ..n16_d35_k685_p19_s2c_fast().unwrap().spec
-        })
-        .unwrap()
-    }
-
-    #[test]
-    fn n16_d35_k685_p19_s2c_fast_has_a_smaller_key_set() {
-        let mib = |bytes: usize| {
-            assert!(bytes.is_multiple_of(1 << 20));
-            bytes >> 20
-        };
-        // Rotation keys with conjugation, the tensor key and the encapsulation keys: 8022 MiB.
-        assert_eq!(key_set_bytes(&n16_d35_k733_p20_s2c().unwrap()).map(mib), [7891, 99, 32, 0]);
-
-        // 43 rotation keys and no conjugation, the CI tensor key, the dense-to-sparse key,
-        // eight first-factor keys and the trace and embed keys of degree 2N: 6845 MiB.
-        let preset = n16_d35_k685_p19_s2c_fast().unwrap();
-        assert_eq!(preset.bootstrap_k(), 1383);
-        assert_eq!(ci_key_set_bytes(&preset).map(mib), [6243, 99, 3, 240, 198, 62]);
-
-        // With the first factor evaluated by the matrix, every paid factor runs 48 bits
-        // wider and the sparse-to-dense key comes back: 8001 MiB.
-        let without = fast_without_first_factor_on_raise();
-        assert_eq!(without.bootstrap_k(), 1431);
-        assert_eq!(ci_key_set_bytes(&without).map(mib), [7609, 99, 33, 0, 198, 62]);
-    }
-
-    #[test]
-    fn n16_d35_k685_p19_s2c_fast_fits_the_dense_bound() {
-        let preset = n16_d35_k685_p19_s2c_fast().unwrap();
-        assert_eq!((preset.input_k(), preset.output_k()), (160, 685));
-        assert_eq!(preset.log2_precision(), 19);
-        // Three paid CoeffsToSlots factors, EvalMod, and the two conversions.
-        assert_eq!(preset.plan().coeffs_to_slots().consumed_bits(), 3 * 48);
-        assert_eq!(preset.plan().eval_mod_ring().consumed_bits(), 84);
-        assert_eq!(preset.bootstrap_k(), 1383);
-        assert_eq!(preset.bootstrap_layout().k().as_usize(), 1383);
-        assert!(preset.plan().coeffs_to_slots().first_factor_on_raise());
-        let keys = preset.keys_layout();
-        let conversion = keys.conversion.unwrap();
-        for key in [&conversion.trace_key, &conversion.embed_key] {
-            assert_eq!(key.n().as_usize(), 1 << 17);
-            assert!(key.k().as_usize() <= preset.max_dense_modulus());
-        }
-        assert_eq!(keys.tensor_key.n().as_usize(), 1 << 16);
-        assert!(keys.tensor_key.k().as_usize() <= preset.max_dense_modulus());
-        assert!(keys.automorphism_key.k().as_usize() <= preset.max_dense_modulus());
-        // CoeffsToSlots is not split: no conjugation key.
-        assert!(keys.rotation_keys.keys().all(|&p| p != -1));
-        let first_factor = keys.first_factor_key.unwrap();
-        assert!(first_factor.k().as_usize() <= preset.max_dense_modulus());
-    }
-
     #[test]
     fn n16_d35_k733_p20_s2c_is_composable_and_within_bounds() {
         let preset = n16_d35_k733_p20_s2c().unwrap();
@@ -1191,15 +1080,12 @@ mod tests {
         assert!(encapsulation.dense_to_sparse.k().as_usize() <= preset.max_sparse_modulus());
     }
 
-    /// The logN16 CoeffsToSlots schedule with the first factor applied by the raise:
-    /// three layers there, eight diagonals and as many keys, and two factors of six.
-    const C2S_FIRST_FACTOR_SCHEDULE: [(usize, usize); 3] = [(3, 1), (6, 512), (6, 8)];
-
     #[test]
     fn first_factor_on_raise_saves_one_factor_of_width() {
+        const SCHEDULE: [(usize, usize); 3] = [(3, 1), (6, 512), (6, 8)];
         // Three factors of CoeffsToSlots, of which the raise takes the first.
         let base = n16_d35_k636_p20_c2s().unwrap();
-        let preset = base.with_first_factor_on_raise(&C2S_FIRST_FACTOR_SCHEDULE).unwrap();
+        let preset = base.with_first_factor_on_raise(&SCHEDULE).unwrap();
 
         // The factor costs no modulus; the widths the application sees do not move.
         assert_eq!(preset.bootstrap_k() + 51, base.bootstrap_k());
@@ -1234,13 +1120,16 @@ mod tests {
     }
 
     /// Bytes of the coefficients of the key set a preset generates, by kind:
-    /// rotation keys, tensor key, encapsulation keys, first-factor keys.
-    fn key_set_bytes(preset: &BootstrappingPreset) -> [usize; 4] {
+    /// rotation keys, tensor key, encapsulation keys, first-factor keys and the
+    /// trace and embed keys of EvalMod on the CI ring.
+    fn key_set_bytes(preset: &BootstrappingPreset) -> [usize; 5] {
         let (keys, plan, log_n) = (preset.keys_layout(), preset.plan(), preset.log_n());
         let order = 2i64 << log_n;
         let mut elements: BTreeSet<i64> = plan.coeffs_to_slots().galois_elements(log_n, order).into_iter().collect();
         elements.extend(plan.slots_to_coeffs().galois_elements(log_n, order));
-        elements.insert(-1);
+        if plan.eval_mod_ring() == EvalModRing::Standard {
+            elements.insert(-1);
+        }
         let rotations = elements.iter().map(|&p| key_bytes(&keys.rotation_key(p))).sum();
         let encapsulation = keys.encapsulation.as_ref().map_or(0, |encaps| {
             key_bytes(&encaps.dense_to_sparse) + encaps.sparse_to_dense.as_ref().map_or(0, key_bytes)
@@ -1248,7 +1137,16 @@ mod tests {
         let first_factor = keys.first_factor_key.as_ref().map_or(0, |key| {
             plan.coeffs_to_slots().diagonal_indexes(log_n)[0].len() * key_bytes(key)
         });
-        [rotations, key_bytes(&keys.tensor_key), encapsulation, first_factor]
+        let conversion = keys
+            .conversion_keys
+            .map_or(0, |(trace, embed)| key_bytes(&trace) + key_bytes(&embed));
+        [
+            rotations,
+            key_bytes(&keys.tensor_key),
+            encapsulation,
+            first_factor,
+            conversion,
+        ]
     }
 
     #[test]
@@ -1258,15 +1156,53 @@ mod tests {
             bytes >> 20
         };
         let base = n16_d35_k636_p20_c2s().unwrap();
-        let preset = base.with_first_factor_on_raise(&C2S_FIRST_FACTOR_SCHEDULE).unwrap();
+        let preset = base.with_first_factor_on_raise(&[(3, 1), (6, 512), (6, 8)]).unwrap();
         assert_eq!(preset.bootstrap_k() + 51, base.bootstrap_k());
         assert_eq!((preset.input_k(), preset.output_k()), (base.input_k(), base.output_k()));
         // 51 rotation keys, the tensor key and the encapsulation keys: 8310 MiB.
-        assert_eq!(key_set_bytes(&base).map(mib), [8179, 99, 32, 0]);
+        assert_eq!(key_set_bytes(&base).map(mib), [8179, 99, 32, 0, 0]);
         // The two remaining factors of six layers take 60 rotation keys, and the eight
         // diagonals of the first one a key of 30 MiB each in place of the
         // sparse-to-dense key of 29: 9386 MiB.
-        assert_eq!(key_set_bytes(&preset).map(mib), [9044, 99, 3, 240]);
+        assert_eq!(key_set_bytes(&preset).map(mib), [9044, 99, 3, 240, 0]);
+    }
+
+    #[test]
+    fn n16_d35_k685_p19_s2c_fast_runs_eval_mod_on_the_ci_ring() {
+        let preset = n16_d35_k685_p19_s2c_fast().unwrap();
+        assert_eq!((preset.input_k(), preset.output_k(), preset.bootstrap_k()), (160, 685, 1383));
+        assert_eq!(preset.plan().eval_mod_ring().consumed_bits(), 84);
+        // The tensor key is of the CI ring of degree N, the conversion keys of degree 2N.
+        let keys = preset.keys_layout();
+        let (trace, embed) = keys.conversion_keys.unwrap();
+        assert_eq!(
+            (keys.tensor_key.n.as_usize(), trace.n.as_usize(), embed.n.as_usize()),
+            (1 << 16, 1 << 17, 1 << 17)
+        );
+    }
+
+    #[test]
+    fn n16_d35_k685_p19_s2c_fast_has_a_smaller_key_set() {
+        let mib = |bytes: usize| {
+            assert!(bytes.is_multiple_of(1 << 20));
+            bytes >> 20
+        };
+        // Rotation keys with conjugation, the tensor key and the encapsulation keys: 8022 MiB.
+        assert_eq!(key_set_bytes(&n16_d35_k733_p20_s2c().unwrap()).map(mib), [7891, 99, 32, 0, 0]);
+        // 43 rotation keys and no conjugation, the CI tensor key, the dense-to-sparse key,
+        // eight first-factor keys and the trace and embed keys of degree 2N: 6845 MiB.
+        let preset = n16_d35_k685_p19_s2c_fast().unwrap();
+        assert_eq!(key_set_bytes(&preset).map(mib), [6243, 99, 3, 240, 260]);
+        // With the first factor evaluated by the matrix, every paid factor runs 48 bits
+        // wider and the sparse-to-dense key comes back: 8001 MiB.
+        let without = build(PresetSpec {
+            c2s_schedule: &[(3, 8), (4, 1024), (4, 64), (4, 4)],
+            c2s_first_factor_on_raise: false,
+            ..preset.spec
+        })
+        .unwrap();
+        assert_eq!(without.bootstrap_k(), 1431);
+        assert_eq!(key_set_bytes(&without).map(mib), [7609, 99, 33, 0, 260]);
     }
 
     #[test]

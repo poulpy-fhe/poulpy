@@ -13,7 +13,7 @@ ckks_backend_test_suite!(
 
 #[test]
 fn ntt4x30_neon_small_s2c_preset_meets_precision() {
-    poulpy_ckks::test_suite::presets::small_s2c_preset_meets_precision::<crate::NTT4x30Neon>();
+    poulpy_ckks::test_suite::presets::small_s2c_preset_meets_precision::<crate::NTT4x30Neon, crate::NTT4x30CINeon>();
 }
 
 /// Full logN16 bootstraps per preset: slow, so opt in with `--ignored`.
@@ -24,16 +24,7 @@ mod bootstrapping_presets {
     #[test]
     #[ignore = "full logN16 bootstrapping presets"]
     fn ntt4x30_neon_rayon() {
-        bootstrapping_presets_meet_precision::<crate::NTT4x30NeonRayon>(52);
-    }
-
-    #[test]
-    #[ignore = "full logN16 bootstrapping presets with EvalMod on the conjugate-invariant ring"]
-    fn ntt4x30_neon_rayon_ci() {
-        poulpy_ckks::test_suite::presets::bootstrapping_ci_presets_meet_precision::<
-            crate::NTT4x30NeonRayon,
-            crate::NTT4x30CINeonRayon,
-        >();
+        bootstrapping_presets_meet_precision::<crate::NTT4x30NeonRayon, crate::NTT4x30CINeonRayon>(52);
     }
 }
 

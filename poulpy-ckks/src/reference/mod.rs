@@ -12,7 +12,6 @@
 
 pub mod add;
 pub mod bootstrapping;
-pub mod bootstrapping_ci;
 pub(crate) mod carry_verb;
 pub mod conjugate;
 pub mod copy;

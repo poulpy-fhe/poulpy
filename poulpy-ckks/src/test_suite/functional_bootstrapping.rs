@@ -326,6 +326,7 @@ fn run_case<BE, F, E>(
     let keys_layout = BootstrappingKeysLayout {
         rotation_keys: Default::default(),
         first_factor_key: first_factor_on_raise.then(|| tp.first_factor_key_layout(&plan, k_boot, log_modulus_in)),
+        conversion_keys: None,
         automorphism_key: tp.atk_layout(),
         tensor_key: tp.tsk_layout(),
         // The first-factor keys switch back to the dense secret.
@@ -333,7 +334,6 @@ fn run_case<BE, F, E>(
             dense_to_sparse: tp.ksk_layout(log_modulus_in),
             sparse_to_dense: (!first_factor_on_raise).then(|| tp.ksk_layout(k_boot)),
         }),
-        conversion: None,
     };
     let output_spec = ckks_spec(params.n, params.base2k, INPUT_LOG_DELTA, k_boot - INPUT_LOG_DELTA);
     let input_spec = ckks_spec(params.n, params.base2k, INPUT_LOG_DELTA, k_in - INPUT_LOG_DELTA);

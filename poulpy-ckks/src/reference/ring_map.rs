@@ -5,7 +5,7 @@ use poulpy_core::{
     GLWEBytesOf, GLWECIEmbed, GLWECITrace, GLWEKeyswitch,
     layouts::{
         GGLWEInfos, GGLWEPreparedToBackendRef, GLWE, GLWECIEmbedKeyPrepared, GLWECITraceKeyPrepared, GLWEInfos, GLWEToBackendMut,
-        GLWEToBackendRef, LWEInfos, SetK,
+        GLWEToBackendRef, LWEInfos,
     },
 };
 use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Module, ScratchArena, Standard};
@@ -82,58 +82,6 @@ where
         self.glwe_keyswitch(&mut switched, src, &key.to_backend_ref(), &mut scratch_1);
         ckks_ci_trace_keyless(self, dst, &switched, &mut scratch_1)
     }
-}
-
-/// Scratch of [`ckks_ci_trace_doubled`].
-pub(crate) fn ckks_ci_trace_doubled_tmp_bytes<BE, R, A, K>(
-    module: &Module<BE>,
-    res_infos: &R,
-    a_infos: &A,
-    key_infos: &K,
-) -> usize
-where
-    BE: Backend,
-    Module<BE>: GLWECITrace<BE> + GLWEKeyswitch<BE> + GLWEBytesOf<BE>,
-    R: GLWEInfos,
-    A: GLWEInfos,
-    K: GGLWEInfos,
-{
-    BE::scratch_aligned(module.glwe_bytes_of_from_infos(a_infos))
-        + module
-            .glwe_keyswitch_tmp_bytes(a_infos, a_infos, key_infos)
-            .max(module.glwe_ci_trace_tmp_bytes(res_infos, a_infos))
-}
-
-/// The keyed trace without its halving: `Tr(m) = 2·Re(m)`, exact, at the width and
-/// scale of `src`, for a caller that takes the doubled real part as it is.
-pub(crate) fn ckks_ci_trace_doubled<BE, D, Src, K>(
-    module: &Module<BE>,
-    dst: &mut CKKSCiphertext<D, BE::ZnxWord, ConjugateInvariant>,
-    src: &Src,
-    key: &GLWECITraceKeyPrepared<K, BE>,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
-where
-    BE: Backend,
-    Module<BE>: GLWECITrace<BE> + GLWEKeyswitch<BE>,
-    D: Data,
-    GLWE<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
-    Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-    K: Data,
-    GLWECITraceKeyPrepared<K, BE>: GGLWEPreparedToBackendRef<BE>,
-{
-    validate_ring_map(module, dst, src)?;
-    crate::ckks_ensure!(key.n() == src.n(), "the trace key has the standard degree");
-    ensure_holds(dst, src.k().as_usize())?;
-    dst.inner.set_k(src.k());
-    dst.set_meta(GLWEPlaintextMeta {
-        slots: SlotsKind::Real,
-        ..src.meta()
-    });
-    let (mut switched, mut scratch_1) = scratch.borrow().take_ckks_ciphertext_scratch(src, src.meta());
-    module.glwe_keyswitch(&mut switched, src, &key.to_backend_ref(), &mut scratch_1);
-    module.glwe_ci_trace(&mut dst.inner, &switched, &mut scratch_1);
-    Ok(())
 }
 
 pub(crate) fn ckks_ci_embed_keyless<BE, Dst, D>(

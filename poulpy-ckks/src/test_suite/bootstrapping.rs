@@ -49,9 +49,9 @@ use crate::{
         CKKSAddOps, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTOps, CKKSDecryptOps, CKKSEvalModOps, CKKSPow2Ops, CKKSSubOps,
     },
     layouts::{
-        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingPipeline,
-        BootstrappingPlan, BootstrappingTechniques, CKKSModuleAlloc, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout,
-        EvalRoundPlus, SparseSecretEncapsulation,
+        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan,
+        BootstrappingTechniques, CKKSModuleAlloc, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout, EvalRoundPlus,
+        SparseSecretEncapsulation,
         eval_mod::{EvalModPlan, EvalModType},
     },
     polynomial::SplitStrategy,
@@ -250,6 +250,7 @@ where
         let keys_layout = BootstrappingKeysLayout {
             rotation_keys: Default::default(),
             first_factor_key: Some(first_factor_key),
+            conversion_keys: None,
             automorphism_key: tp.atk_layout(),
             tensor_key: tp.tsk_layout(),
             // The first-factor keys switch back to the dense secret.
@@ -257,7 +258,6 @@ where
                 dense_to_sparse: tp.ksk_layout(log_modulus_in),
                 sparse_to_dense: None,
             }),
-            conversion: None,
         };
         let boot_spec = ckks_spec(n, base2k, log_delta, k_boot - log_delta);
         let in_spec = ckks_spec(n, base2k, log_delta, k_in - log_delta);
@@ -450,6 +450,7 @@ where
     let keys_layout = BootstrappingKeysLayout {
         rotation_keys,
         first_factor_key: None,
+        conversion_keys: None,
         automorphism_key: tp.atk_layout(),
         tensor_key: tp.tsk_layout(),
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
@@ -457,7 +458,6 @@ where
             // The raise is the sparse-to-dense switch, with rows under the raised ciphertext.
             sparse_to_dense: Some(tp.ksk_offset_layout(k_boot, plan.raised_window(log_modulus_in))),
         }),
-        conversion: None,
     };
     let scratch_size = bootstrap_setup_tmp_bytes(
         &module,
@@ -789,13 +789,13 @@ where
     let keys_layout = BootstrappingKeysLayout {
         rotation_keys: Default::default(),
         first_factor_key: None,
+        conversion_keys: None,
         automorphism_key: tp.atk_layout(),
         tensor_key: tp.tsk_layout(),
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
             dense_to_sparse: tp.ksk_layout(log_modulus_in),
             sparse_to_dense: Some(tp.ksk_layout(k_boot)),
         }),
-        conversion: None,
     };
     let scratch_size = bootstrap_setup_tmp_bytes(
         &module,
@@ -1101,6 +1101,7 @@ where
     let keys_layout = BootstrappingKeysLayout {
         rotation_keys: Default::default(),
         first_factor_key: None,
+        conversion_keys: None,
         automorphism_key: tp.atk_layout(),
         tensor_key: tp.tsk_layout(),
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
@@ -1108,7 +1109,6 @@ where
             // The raise is the sparse-to-dense switch, with rows under the raised ciphertext.
             sparse_to_dense: Some(tp.ksk_offset_layout(k_boot, plan.raised_window(log_modulus_in))),
         }),
-        conversion: None,
     };
     let scratch_size = bootstrap_setup_tmp_bytes(
         &module,

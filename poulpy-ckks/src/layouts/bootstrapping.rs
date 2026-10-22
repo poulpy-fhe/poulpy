@@ -25,17 +25,17 @@
 
 use std::collections::BTreeMap;
 
-use crate::layouts::CKKSPlaintextOwned;
+use crate::layouts::{CKKSPlaintext, CKKSPlaintextOwned};
 use anyhow::{Result, ensure};
 use poulpy_core::{
     layouts::{Base2K, GLWEToBackendRef, LWEInfos, LinearTransformation},
     reference::linear_transformation::DiagonalProd,
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, ScratchArena};
 
 use crate::{
-    CKKSCtBounds, CKKSInfos,
-    api::{CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingOps, CKKSEncodingScalar},
+    CKKSCtBounds, CKKSInfos, CKKSModuleInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
+    api::{CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
     layouts::{
         CKKSModuleAlloc, DFTMatrix, DFTMatrixPrepared, DFTPlan, DFTType, Decode, Encode, EncodedLut, EvalMod, EvalModPlan, Split,
         eval_mod::{EvalModType, compile_eval_mod},
@@ -49,6 +49,38 @@ pub enum BootstrappingPipeline {
     C2SFirst,
     /// SlotsToCoeffs below ModUp, then CoeffsToSlots and EvalMod above it.
     S2CFirst,
+}
+
+/// The ring EvalMod runs on, after an S2C-first CoeffsToSlots.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum EvalModRing {
+    /// The ring of the bootstrap, once per half of the slots.
+    #[default]
+    Standard,
+    /// The conjugate-invariant ring of the same degree, once for all `N`
+    /// coefficients, reached through the standard ring of degree `2N`: the
+    /// products by `u` before EvalMod and `v` after it consume these scales, in bits.
+    ConjugateInvariant { pre_log_delta: usize, post_log_delta: usize },
+}
+
+impl EvalModRing {
+    /// Budget the products of the conversions consume.
+    pub fn consumed_bits(&self) -> usize {
+        match *self {
+            Self::Standard => 0,
+            Self::ConjugateInvariant {
+                pre_log_delta,
+                post_log_delta,
+            } => pre_log_delta + post_log_delta,
+        }
+    }
+
+    fn pre_log_delta(&self) -> usize {
+        match *self {
+            Self::Standard => 0,
+            Self::ConjugateInvariant { pre_log_delta, .. } => pre_log_delta,
+        }
+    }
 }
 
 /// Sparse-secret encapsulation parameters for ModUp.
@@ -88,8 +120,7 @@ pub struct BootstrappingTechniques {
 pub struct BootstrappingPlan {
     pipeline: BootstrappingPipeline,
     c2s_guard_bits: usize,
-    pub(crate) functional_message_modulus: Option<usize>,
-    /// The ring EvalMod runs on ([`Self::with_eval_mod_on_ci_ring`]).
+    functional_message_modulus: Option<usize>,
     eval_mod_ring: EvalModRing,
 
     techniques: BootstrappingTechniques,
@@ -201,7 +232,7 @@ impl BootstrappingPlan {
         );
         ensure!(
             self.eval_mod_ring == EvalModRing::Standard,
-            "functional bootstrapping runs EvalMod on the ring of the bootstrap"
+            "functional bootstrapping runs EvalMod on the standard ring"
         );
         let q = (1usize << lut.log_msg_ratio()) as f64;
         self.slots_to_coeffs = self.slots_to_coeffs.with_scaling(q / (2.0 * lut.message_modulus() as f64))?;
@@ -234,6 +265,26 @@ impl BootstrappingPlan {
     /// Extra internal scale bits used between ModUp and CoeffsToSlots.
     pub fn c2s_guard_bits(&self) -> usize {
         self.c2s_guard_bits
+    }
+
+    /// Selects the ring EvalMod runs on. The conjugate-invariant ring takes an
+    /// S2C-first plan with a real EvalMod, without EvalRound+ or a LUT.
+    pub fn with_eval_mod_ring(mut self, ring: EvalModRing) -> Result<Self> {
+        ensure!(
+            ring == EvalModRing::Standard
+                || (self.pipeline == BootstrappingPipeline::S2CFirst
+                    && self.coeffs_to_slots_bypass().is_none()
+                    && self.functional_message_modulus.is_none()
+                    && self.eval_mod.eval_mod_type != EvalModType::ExpCmplx),
+            "EvalMod on the conjugate-invariant ring takes an S2C-first plan with a real EvalMod, without EvalRound+ or a LUT"
+        );
+        self.eval_mod_ring = ring;
+        Ok(self)
+    }
+
+    /// The ring EvalMod runs on.
+    pub fn eval_mod_ring(&self) -> EvalModRing {
+        self.eval_mod_ring
     }
 
     /// Optional techniques applied by the recipe.
@@ -277,45 +328,13 @@ impl BootstrappingPlan {
         }
     }
 
-    /// Runs EvalMod once on the conjugate-invariant ring, through the conversions
-    /// of `conversion` ([`crate::layouts::bootstrapping_ci`]). The plan is
-    /// S2C-first, with a real EvalMod family and neither EvalRound+ nor a LUT.
-    pub fn with_eval_mod_on_ci_ring(mut self, conversion: EvalModCIPlan) -> Result<Self> {
-        ensure!(
-            self.pipeline == BootstrappingPipeline::S2CFirst,
-            "EvalMod on the conjugate-invariant ring requires an S2C-first plan"
-        );
-        ensure!(
-            self.coeffs_to_slots_bypass().is_none(),
-            "EvalMod on the conjugate-invariant ring does not take the EvalRound+ bypass"
-        );
-        ensure!(
-            self.functional_message_modulus.is_none(),
-            "EvalMod on the conjugate-invariant ring does not run functional bootstrapping"
-        );
-        ensure!(
-            self.eval_mod.eval_mod_type != EvalModType::ExpCmplx,
-            "EvalMod on the conjugate-invariant ring needs a real EvalMod family"
-        );
-        ensure!(
-            conversion.pre_log_delta > 0 && conversion.post_log_delta > 0,
-            "the conversion scales must be positive"
-        );
-        self.eval_mod_ring = EvalModRing::ConjugateInvariant(conversion);
-        Ok(self)
-    }
-
-    /// The ring EvalMod runs on.
-    pub fn eval_mod_ring(&self) -> EvalModRing {
-        self.eval_mod_ring
-    }
-
     /// Budget consumed after ModUp.
     ///
     /// EvalRound+ evaluates its bypass in parallel with the low-precision
     /// CoeffsToSlots + EvalMod branch, so the wider of the two branch costs is
     /// charged before any trailing SlotsToCoeffs.
-    /// S2C-first also charges the CoeffsToSlots guard bits and any conversions.
+    /// S2C-first also charges the CoeffsToSlots guard bits and the conversions
+    /// to the ring EvalMod runs on.
     pub fn post_mod_up_consumed_bits(&self) -> usize {
         let c2s_eval_mod = self.coeffs_to_slots.consumed_bits() + self.eval_mod.consumed_bits();
         let eval_round = self
@@ -408,46 +427,13 @@ impl BootstrappingPlan {
     }
 }
 
-/// The ring EvalMod runs on, after CoeffsToSlots.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum EvalModRing {
-    /// The ring of the bootstrap, once per half of the slots.
-    Standard,
-    /// The conjugate-invariant ring of the same degree, once, between two
-    /// conversions ([`crate::layouts::bootstrapping_ci`]).
-    ConjugateInvariant(EvalModCIPlan),
-}
-
-impl EvalModRing {
-    /// Budget the conversions consume.
-    pub fn consumed_bits(&self) -> usize {
-        match self {
-            Self::Standard => 0,
-            Self::ConjugateInvariant(conversion) => conversion.pre_log_delta + conversion.post_log_delta,
-        }
-    }
-}
-
-/// Scales, in bits, of the plaintext products of the conversions before and
-/// after EvalMod on the conjugate-invariant ring, each spent from the budget.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct EvalModCIPlan {
-    /// Scale of `u`, which pairs each slot of degree `N` into two real CI slots.
-    pub pre_log_delta: usize,
-    /// Scale of `v`, which pairs the reduced CI slots back.
-    pub post_log_delta: usize,
-}
-
 /// Compiled [`BootstrappingPlan`]: the resident DFT matrices and encoded EvalMod
 /// the bootstrapping pipeline evaluates.
 ///
 /// Built once by [`Self::compile`] and reused across bootstraps. The
 /// `SplitRealAndImag` format is used for both transforms so the real and
 /// imaginary coefficient halves can be reduced independently by EvalMod.
-///
-/// `BEM` is the backend EvalMod runs on: `BE`, or the CI backend for
-/// [`EvalModRing::ConjugateInvariant`] ([`Self::compile_ci`](crate::layouts::bootstrapping_ci)).
-pub struct BootstrappingContext<BE: Backend, F, BEM: Backend = BE> {
+pub struct BootstrappingContext<BE: Backend, F> {
     c2s_guard_bits: usize,
     functional_message_modulus: Option<usize>,
     /// Prepared CoeffsToSlots matrix (homomorphic encoding).
@@ -468,20 +454,32 @@ pub struct BootstrappingContext<BE: Backend, F, BEM: Backend = BE> {
     /// cancel the initial real/imaginary split and normalize functional messages.
     slots_to_coeffs: DFTMatrixPrepared<BE, Decode, Split>,
 
-    /// Encoded, backend-resident EvalMod (`x mod 1`), on the backend it runs on.
-    eval_mod: EvalMod<F, CKKSPlaintextOwned<BEM>>,
+    /// Encoded, backend-resident EvalMod (`x mod 1`).
+    eval_mod: EvalMod<F, CKKSPlaintextOwned<BE>>,
 
-    /// The conversion plaintexts `u` and `v` of degree `2N`, on the CI ring only.
-    pub(crate) conversions: Option<(CKKSPlaintextOwned<BE>, CKKSPlaintextOwned<BE>)>,
-
-    /// The ring EvalMod runs on.
+    /// The ring EvalMod runs on, and its plaintexts on the conjugate-invariant
+    /// ring ([`Self::compile_ci`]).
     eval_mod_ring: EvalModRing,
+    eval_mod_ci: Option<EvalModCI<BE, F>>,
 
     /// Selected ModUp/EvalMod pipeline.
     pipeline: BootstrappingPipeline,
 
     /// Ephemeral sparse-secret weight required by the recipe, if enabled.
     sparse_secret_hamming_weight: Option<usize>,
+}
+
+/// EvalMod on the conjugate-invariant ring of degree `N` and the plaintexts of
+/// degree `2N` of the conversions there and back
+/// ([`EvalModRing::ConjugateInvariant`]).
+pub struct EvalModCI<BE: Backend, F> {
+    /// EvalMod in plaintexts of the CI ring.
+    pub eval_mod: EvalMod<F, CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, ConjugateInvariant>>,
+    /// `u`, `1` on slot `j` and `−i` on slot `j + N/2`: the trace of `u·z(X²)`
+    /// holds the real parts of `z_j` and `−i·z_j`, `c_j` and `c_{j+N/2}`.
+    pub pre: CKKSPlaintextOwned<BE>,
+    /// `v`, `1` on slot `j` and `i` on slot `j + N/2`, which pairs them back.
+    pub post: CKKSPlaintextOwned<BE>,
 }
 
 /// The widths, in bits, at which a bootstrap uses its keys, given the width it
@@ -507,7 +505,7 @@ impl KeyWidths<'_> {
     /// width the transform starts at: the raised width `bootstrap_k` for
     /// CoeffsToSlots, and for SlotsToCoeffs the input width `input_k`
     /// (S2C-first) or what EvalMod leaves (C2S-first). The conjugation follows
-    /// CoeffsToSlots.
+    /// CoeffsToSlots, which on the conjugate-invariant ring does not split.
     pub(crate) fn rotation_key_inputs(&self, log_n: usize, bootstrap_k: usize, input_k: usize) -> BTreeMap<i64, usize> {
         let cyclotomic_order = 1i64 << (log_n + 1);
         let after_c2s = bootstrap_k - self.coeffs_to_slots.consumed_bits();
@@ -538,23 +536,22 @@ impl KeyWidths<'_> {
                 }
             }
         }
-        // The split CoeffsToSlots conjugates; on the conjugate-invariant ring it is not split.
         if self.eval_mod_ring == EvalModRing::Standard {
             widen(-1, after_c2s);
         }
         inputs
     }
 
-    /// Widths of the traced and of the embedded ciphertext of a bootstrap at
-    /// `bootstrap_k` bits, when EvalMod runs on the conjugate-invariant ring.
+    /// Widths of the ciphertexts the trace and the embedding switch on the way
+    /// to the conjugate-invariant ring and back, if EvalMod runs there.
     pub(crate) fn conversions(&self, bootstrap_k: usize) -> Option<(usize, usize)> {
-        let EvalModRing::ConjugateInvariant(conversion) = self.eval_mod_ring else {
-            return None;
-        };
-        // CoeffsToSlots and the product by `u` leave the traced width; the C2S guard
-        // bits are only dropped from the scale at the output.
-        let traced = bootstrap_k - self.coeffs_to_slots.consumed_bits() - conversion.pre_log_delta;
-        Some((traced, traced - self.eval_mod.consumed_bits()))
+        let traced = self.eval_mod_k(bootstrap_k);
+        (self.eval_mod_ring != EvalModRing::Standard).then(|| (traced, traced.saturating_sub(self.eval_mod.consumed_bits())))
+    }
+
+    /// Width of EvalMod's input: what CoeffsToSlots and the product by `u` leave.
+    fn eval_mod_k(&self, bootstrap_k: usize) -> usize {
+        bootstrap_k.saturating_sub(self.coeffs_to_slots.consumed_bits() + self.eval_mod_ring.pre_log_delta())
     }
 
     /// `(k_small, k_small + scale_up)` of the ciphertext ModUp raises for a
@@ -571,25 +568,25 @@ impl KeyWidths<'_> {
         }
     }
 
-    /// Widest ciphertext EvalMod relinearizes, in bits, for an EvalMod input of
-    /// `eval_mod_k` bits and a bootstrap input of scale `2^input_log_delta`.
+    /// Widest ciphertext EvalMod relinearizes, in bits, for an input of scale
+    /// `2^input_log_delta`.
     ///
     /// EvalMod relabels its input at its own scale and keeps its budget, so its
     /// widest product is at that budget plus `f_mod_log_delta`. The budget is what
-    /// the input holds above the scale the raise labels: EvalMod's own scale
-    /// (C2S-first), or the input scale, the message ratio and the guard bits
-    /// (S2C-first).
-    pub(crate) fn eval_mod_relinearization_k(&self, eval_mod_k: usize, input_log_delta: usize) -> usize {
+    /// CoeffsToSlots and the product by `u` leave of the raised width above the scale the raise labels:
+    /// EvalMod's own scale (C2S-first), or the input scale, the message ratio and
+    /// the guard bits (S2C-first).
+    pub(crate) fn eval_mod_relinearization_k(&self, bootstrap_k: usize, input_log_delta: usize) -> usize {
         let f_mod_log_delta = self.eval_mod.f_mod_log_delta;
         let raised_log_delta = match self.pipeline {
             BootstrappingPipeline::C2SFirst => f_mod_log_delta,
             BootstrappingPipeline::S2CFirst => input_log_delta + self.eval_mod.log_msg_ratio + self.c2s_guard_bits,
         };
-        eval_mod_k - raised_log_delta + f_mod_log_delta
+        self.eval_mod_k(bootstrap_k) - raised_log_delta + f_mod_log_delta
     }
 }
 
-impl<BE: Backend, F, BEM: Backend> BootstrappingContext<BE, F, BEM> {
+impl<BE: Backend, F> BootstrappingContext<BE, F> {
     /// The stages that set the widths at which a bootstrap uses its keys.
     pub(crate) fn key_widths(&self) -> KeyWidths<'_> {
         KeyWidths {
@@ -639,7 +636,7 @@ impl<BE: Backend, F, BEM: Backend> BootstrappingContext<BE, F, BEM> {
     }
 
     /// Encoded, backend-resident EvalMod circuit.
-    pub fn eval_mod(&self) -> &EvalMod<F, CKKSPlaintextOwned<BEM>> {
+    pub fn eval_mod(&self) -> &EvalMod<F, CKKSPlaintextOwned<BE>> {
         &self.eval_mod
     }
 
@@ -648,9 +645,9 @@ impl<BE: Backend, F, BEM: Backend> BootstrappingContext<BE, F, BEM> {
         self.eval_mod_ring
     }
 
-    /// The conversion plaintexts `u` and `v` of degree `2N`, on the CI ring only.
-    pub fn conversions(&self) -> Option<(&CKKSPlaintextOwned<BE>, &CKKSPlaintextOwned<BE>)> {
-        self.conversions.as_ref().map(|(pre, post)| (pre, post))
+    /// EvalMod on the conjugate-invariant ring and its conversions, if compiled by [`Self::compile_ci`].
+    pub fn eval_mod_ci(&self) -> Option<&EvalModCI<BE, F>> {
+        self.eval_mod_ci.as_ref()
     }
 
     /// Ephemeral sparse-secret weight required by the compiled recipe.
@@ -666,21 +663,20 @@ impl<BE: Backend, F, BEM: Backend> BootstrappingContext<BE, F, BEM> {
 /// separate step so that its scratch can be sized with
 /// [`Self::prepare_tmp_bytes`], which follows the backend's selected
 /// preparation budget.
-pub struct BootstrappingContextUnprepared<BE: Backend, F, BEM: Backend = BE> {
+pub struct BootstrappingContextUnprepared<BE: Backend, F> {
     c2s_guard_bits: usize,
     functional_message_modulus: Option<usize>,
     coeffs_to_slots: DFTMatrix<BE, Encode, Split>,
     coeffs_to_slots_first_factor: Option<LinearTransformation<CKKSPlaintextOwned<BE>>>,
     coeffs_to_slots_bypass: Option<DFTMatrix<BE, Encode, Split>>,
     slots_to_coeffs: DFTMatrix<BE, Decode, Split>,
-    pub(crate) eval_mod: EvalMod<F, CKKSPlaintextOwned<BEM>>,
-    pub(crate) conversions: Option<(CKKSPlaintextOwned<BE>, CKKSPlaintextOwned<BE>)>,
+    eval_mod: EvalMod<F, CKKSPlaintextOwned<BE>>,
     eval_mod_ring: EvalModRing,
     pipeline: BootstrappingPipeline,
     sparse_secret_hamming_weight: Option<usize>,
 }
 
-impl<BE: Backend, F, BEM: Backend> BootstrappingContextUnprepared<BE, F, BEM> {
+impl<BE: Backend, F> BootstrappingContextUnprepared<BE, F> {
     /// Scratch required by [`Self::prepare`]: the largest selected preparation
     /// budget among the matrices.
     pub fn prepare_tmp_bytes(&self, module: &Module<BE>) -> usize
@@ -699,7 +695,7 @@ impl<BE: Backend, F, BEM: Backend> BootstrappingContextUnprepared<BE, F, BEM> {
 
     /// Prepares the matrices into the resident form the pipeline evaluates.
     /// Each unprepared matrix is released as soon as it has been prepared.
-    pub fn prepare(self, module: &Module<BE>, scratch: &mut ScratchArena<'_, BE>) -> BootstrappingContext<BE, F, BEM>
+    pub fn prepare(self, module: &Module<BE>, scratch: &mut ScratchArena<'_, BE>) -> BootstrappingContext<BE, F>
     where
         Module<BE>: CKKSDFTOps<BE>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
@@ -712,7 +708,6 @@ impl<BE: Backend, F, BEM: Backend> BootstrappingContextUnprepared<BE, F, BEM> {
             coeffs_to_slots_bypass,
             slots_to_coeffs,
             eval_mod,
-            conversions,
             eval_mod_ring,
             pipeline,
             sparse_secret_hamming_weight,
@@ -735,8 +730,8 @@ impl<BE: Backend, F, BEM: Backend> BootstrappingContextUnprepared<BE, F, BEM> {
             coeffs_to_slots_bypass,
             slots_to_coeffs,
             eval_mod,
-            conversions,
             eval_mod_ring,
+            eval_mod_ci: None,
             pipeline,
             sparse_secret_hamming_weight,
         }
@@ -770,41 +765,67 @@ where
         Ok(Self::compile_unprepared(module, base2k, plan, scratch)?.prepare(module, scratch))
     }
 
+    /// [`Self::compile`] for EvalMod on the conjugate-invariant ring: also encodes
+    /// EvalMod on `ci`, of degree `N`, and `u` and `v` on `wide`, of degree `2N`.
+    pub fn compile_ci<BCI>(
+        module: &Module<BE>,
+        wide: &Module<BE>,
+        ci: &Module<BCI>,
+        base2k: Base2K,
+        plan: &BootstrappingPlan,
+        scratch: &mut ScratchArena<'_, BE>,
+        scratch_ci: &mut ScratchArena<'_, BCI>,
+    ) -> Result<Self>
+    where
+        BCI: Backend<Ring = ConjugateInvariant, OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
+        Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+        Module<BCI>: CKKSModuleAlloc<BCI> + CKKSEncodingOps<BCI, F>,
+        CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
+    {
+        let EvalModRing::ConjugateInvariant {
+            pre_log_delta,
+            post_log_delta,
+        } = plan.eval_mod_ring
+        else {
+            anyhow::bail!("compile_ci takes a plan with EvalMod on the conjugate-invariant ring");
+        };
+        ensure!(
+            wide.n() == 2 * module.n() && ci.n() == module.n(),
+            "compile_ci takes a module of degree 2N and a CI module of degree N"
+        );
+        let mut context = Self::compile(module, base2k, plan, scratch)?;
+        // Slot `j` of degree `N` is slot `j` and slot `j + N/2` of degree `2N`.
+        let half = module.n() / 2;
+        let mut pair = |second: f64, log_delta: usize| {
+            let (mut re, mut im) = (vec![F::zero(); 2 * half], vec![F::zero(); 2 * half]);
+            re[..half].fill(F::one());
+            im[half..].fill(F::from_f64(second).unwrap());
+            // Values of modulus one: two bits above the scale hold them.
+            let mut pt = wide.ckks_pt_vec_alloc(wide.ckks_max_slots(), base2k, (log_delta + 2).into());
+            pt.set_meta(GLWEPlaintextMeta {
+                scale: Scale::Log(log_delta),
+                slots: SlotsKind::Complex,
+                log_sparsity: 0,
+            });
+            wide.ckks_encode_reim_into(&mut pt, &re, &im, scratch).map(|_| pt)
+        };
+        let (pre, post) = (pair(-1.0, pre_log_delta)?, pair(1.0, post_log_delta)?);
+        context.eval_mod_ci = Some(EvalModCI {
+            eval_mod: compile_eval_mod(base2k, plan.eval_mod, ci, scratch_ci)?,
+            pre,
+            post,
+        });
+        Ok(context)
+    }
+
     /// First stage of [`Self::compile`]: generates the DFT matrices and encodes
-    /// EvalMod, without preparing the matrices; a plan with EvalMod on the CI ring
-    /// takes [`Self::compile_unprepared_ci`](crate::layouts::bootstrapping_ci).
+    /// EvalMod, without preparing the matrices.
     pub fn compile_unprepared(
         module: &Module<BE>,
         base2k: Base2K,
         plan: &BootstrappingPlan,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<BootstrappingContextUnprepared<BE, F>>
-    where
-        Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
-    {
-        ensure!(
-            plan.eval_mod_ring == EvalModRing::Standard,
-            "a plan with EvalMod on the conjugate-invariant ring is compiled with its modules"
-        );
-        let eval_mod = compile_eval_mod::<BE, F>(base2k, plan.eval_mod, module, scratch)?;
-        BootstrappingContextUnprepared::with_eval_mod(module, base2k, plan, eval_mod, None, scratch)
-    }
-}
-
-impl<BE: Backend, F, BEM: Backend> BootstrappingContextUnprepared<BE, F, BEM>
-where
-    F: CKKSEncodingScalar,
-{
-    /// The transforms of `plan` around an EvalMod already encoded, and the
-    /// conversion plaintexts when it runs on the conjugate-invariant ring.
-    pub(crate) fn with_eval_mod(
-        module: &Module<BE>,
-        base2k: Base2K,
-        plan: &BootstrappingPlan,
-        eval_mod: EvalMod<F, CKKSPlaintextOwned<BEM>>,
-        conversions: Option<(CKKSPlaintextOwned<BE>, CKKSPlaintextOwned<BE>)>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<Self>
     where
         Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     {
@@ -816,12 +837,13 @@ where
             .first_factor_on_raise()
             .then(|| coeffs_to_slots.inner.factors.remove(0));
         let slots_to_coeffs = module.ckks_new_dft_matrix::<Decode, Split>(base2k, &plan.slots_to_coeffs, scratch)?;
+        let eval_mod = compile_eval_mod::<BE, F>(base2k, plan.eval_mod, module, scratch)?;
         let coeffs_to_slots_bypass = match plan.coeffs_to_slots_bypass() {
             Some(bypass) => Some(module.ckks_new_dft_matrix::<Encode, Split>(base2k, bypass, scratch)?),
             None => None,
         };
 
-        Ok(Self {
+        Ok(BootstrappingContextUnprepared {
             c2s_guard_bits: plan.c2s_guard_bits,
             functional_message_modulus: plan.functional_message_modulus,
             coeffs_to_slots,
@@ -829,7 +851,6 @@ where
             coeffs_to_slots_bypass,
             slots_to_coeffs,
             eval_mod,
-            conversions,
             eval_mod_ring: plan.eval_mod_ring,
             pipeline: plan.pipeline,
             sparse_secret_hamming_weight: plan.sparse_secret_hamming_weight(),

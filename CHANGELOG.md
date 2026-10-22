@@ -110,7 +110,7 @@
   Each backend picks its lane widths through the associated types of `ZnxNormalize`, portable widths by default; the AVX-512 backends fill zmm registers.
   `poulpy-cpu-portable` enables the nightly features `portable_simd`, `hint_prefetch` and `associated_type_defaults`.
 - The portable `vec_znx_gadget_decompose` kernel bounds-checks its columns once and reads its limbs through raw pointers, where it called `at` and `at_mut` per limb and per chunk of coefficients ([#460](https://github.com/poulpy-fhe/poulpy/issues/460)). Results are unchanged.
-- The conjugate-invariant backends (portable, Rayon, NEON, AVX2, AVX-512, IFMA, oracle) implement `CKKSEvalModImpl` with `impl_ckks_eval_mod_real_reference!`.
+- `impl_cpu_ckks_defaults!` registers `impl_ckks_eval_mod_reference!` on both rings, which the standard backends no longer do on their own; the conjugate-invariant oracle backends register it too.
 
 ### `poulpy-core`
 
@@ -220,31 +220,21 @@
 
 ### `poulpy-ckks`
 
-- `CKKSEvalModImpl` no longer requires the standard ring. `impl_ckks_eval_mod_real_reference!` implements it on a ring with real slots only, such as the conjugate-invariant ring, through `reference::eval_mod::ckks_eval_mod_real_reference`: the real families are evaluated as on the standard ring, and `EvalModType::ExpCmplx`, whose polynomial is complex, is rejected.
-- Add S2C-first bootstrapping with EvalMod on the conjugate-invariant ring, the same circuit with one EvalMod instead of two: `BootstrappingPlan::with_eval_mod_on_ci_ring` (`EvalModRing`, `EvalModCIPlan`), `BootstrappingContext::compile_ci`, `BootstrappingContext::generate_keys_ci`, `BootstrappingKeySet::prepare_ci` and `CKKSBootstrappingCIOps::ckks_bootstrap_ci` (`layouts::bootstrapping_ci`).
-  After CoeffsToSlots the ciphertext is embedded in the standard ring of degree `2N` and traced onto the CI ring of degree `N`, whose `N` real slots hold every coefficient: EvalMod runs once instead of twice, and the result comes back the same way. The two conversions cost a level each, and their keys are of degree `2N`; EvalMod relinearizes with a CI tensor key of degree `N`.
-  The entry point takes a standard module of degree `2N` and a CI module of degree `N`, whose backend shares the buffers of the standard one.
-  **Breaking:** `BootstrappingContext`, `BootstrappingContextUnprepared` and `BootstrappingKeysPrepared` take the backend EvalMod runs on as a last type parameter, the bootstrap's own by default; `BootstrappingKeysLayout` gains `conversion` (`ConversionKeysLayout`), and `BootstrappingKeySet` and `BootstrappingKeysPrepared` gain `conversion_keys`, the trace and embedding keys.
-  Its keys are those of the linear stages without conjugation, which the unsplit CoeffsToSlots does not use, the CI tensor key and the two conversion keys: no tensor key of the standard ring. The secrets that key generation derives, `s(X²)` and the CI secret, are wiped before it returns. The temporaries of the standard ring are carved from scratch; those of the CI ring are allocated, since the two backends share owned buffers only.
-  Before any work, `ckks_bootstrap_ci` checks the rotation keys and the CI tensor key, as `ckks_bootstrap` does, the trace and embed keys at the widths `ct_out.k()` sets, and the first-factor or sparse-to-dense keys with a row offset against its raise; its CoeffsToSlots reads the rotation keys through the same covering source as the other stages.
-  Both entry points return an error, not an overflow, for a working width below what the stages before EvalMod consume.
-- **Breaking:** the rotation, encapsulation and first-factor queries of `BootstrappingKeys` move to its new supertrait `BootstrappingLinearKeys`, which ModUp and CoeffsToSlots take: a custom key store implements both.
-- Add the preset `n16_d35_k685_p19_s2c_fast` to `presets::bootstrapping::all`, run through `ckks_bootstrap_ci` (`BootstrappingPlan::eval_mod_ring`): S2C-first with the transforms of the former `n16_d35_k720_p19_s2c`, the first factor on the raise and EvalMod on the CI ring, 15 usable levels and a raised width of 1383 bits, which the dense-secret bound leaves for the first-factor keys.
-  Compared with `n16_d35_k733_p20_s2c`, it gives up one bit of precision and two levels. In exchange, a bootstrap takes about 22% less time on the NEON Rayon backend (0.72 s against 0.92 s), and its key set is 6845 MiB of coefficients at `N = 2^16` against 8022: 43 rotation keys and no conjugation key, eight first-factor keys of 30 MiB, and conversion keys of degree `2N` of 260 MiB.
-  The first factor on the raise accounts for part of it: evaluated by the matrix, at the same output width, it raises to 1431 bits instead of 1383, the key set grows to 8001 MiB.
-- Add `test_suite::presets::bootstrapping_ci_presets_meet_precision`, which runs the presets with EvalMod on the conjugate-invariant ring; `bootstrapping_presets_meet_precision` and `bench_ckks_bootstrapping` run the others.
-- Add `test_suite::presets::BootstrappingCIPresetRun`, the driver of the presets with EvalMod on the conjugate-invariant ring, as `BootstrappingPresetRun` is for the others: `bootstrapping_ci_presets_meet_precision` and the benchmarks run on it.
 - Add the modulus raise that applies the first `CoeffsToSlots` factor on the raised ciphertext while it is small (`DFTPlan::with_first_factor_on_raise`, after ePrint 2025/1403): the factor consumes no modulus, and the raised width drops by one CoeffsToSlots scale.
-  Each diagonal's term is rotated with no key and switched to the dense secret by a `GLWESwitchingKey` of its own, from the rotated raise secret, whose rows sit `k_offset` bits under the term's few limbs and end at the raise's working width (`BootstrappingKeysLayout::first_factor_key`, `BootstrappingLinearKeys::first_factor_key`); the switches are summed with `glwe_keyswitch_dft_add` and rounded once.
+  Each diagonal's term is rotated with no key and switched to the dense secret by a `GLWESwitchingKey` of its own, from the rotated raise secret, whose rows sit `k_offset` bits under the term's few limbs and end at the raise's working width (`BootstrappingKeysLayout::first_factor_key`, `BootstrappingKeys::first_factor_key`); the switches are summed with `glwe_keyswitch_dft_add` and rounded once.
   The sparse-to-dense switch is not used, nor its key generated.
   `BootstrappingPreset::with_first_factor_on_raise` re-derives a preset with it; it is not combined with EvalRound+.
   A key set whose keys do not fit the raise, by radix, offset, input width or reach, is an error, as is a raise of a ciphertext wider than its keys switch.
   `ckks_bootstrap` and `ckks_functional_bootstrap` check the first-factor keys, and a sparse-to-dense key with a row offset, against the raise they run before any work, so a bootstrap at other widths than its keys were laid out for fails at entry; the raise itself checks every diagonal and key before its first switch.
   `generate_keys` carves each rotated raise secret from its scratch, which it wipes before returning.
   `DFTPlan::with_optimal_bsgs` keeps the one diagonal per giant step of a first factor left to the raise.
-- **Breaking:** the sparse-to-dense key is optional, absent exactly when the first factor is applied on the raise: `EncapsulationKeysLayout::sparse_to_dense` is an `Option`, the second key of `BootstrappingKeySet::encapsulation_keys` and `BootstrappingKeysPrepared::encapsulation_keys` too, and `BootstrappingLinearKeys::encapsulation_keys` returns `Option<(&SwitchingKey, Option<&SwitchingKey>)>`; add the alias `EncapsulationKeys`. Key generation rejects a layout whose sparse-to-dense key disagrees with the recipe.
-- Applied to `n16_d35_k636_p20_c2s` with the CoeffsToSlots schedule `[(3, 1), (6, 512), (6, 8)]`, the first factor on the raise lowers the raised width from 1381 to 1330 bits, at the same input and output widths and 20 bits of precision (20.6 measured).
-  The cost is in keys: eight first-factor keys of 30 MiB replace the 29 MiB sparse-to-dense key, and the two six-layer factors left take 60 rotation keys instead of 51, so the key set grows from 8310 to 9386 MiB of coefficients at `N = 2^16`; on the NEON Rayon backend a bootstrap takes about 6% longer (1.20 s against 1.13 s). No C2S-first preset uses it.
+- **Breaking:** the sparse-to-dense key is optional, absent exactly when the first factor is applied on the raise: `EncapsulationKeysLayout::sparse_to_dense` is an `Option`, the second key of `BootstrappingKeySet::encapsulation_keys` and `BootstrappingKeysPrepared::encapsulation_keys` too, and `BootstrappingKeys::encapsulation_keys` returns `Option<(&SwitchingKey, Option<&SwitchingKey>)>`; add the alias `EncapsulationKeys`. Key generation rejects a layout whose sparse-to-dense key disagrees with the recipe.
+- Add S2C-first bootstrapping with EvalMod once on the conjugate-invariant ring instead of twice on the halves of the slots (`EvalModRing`, `BootstrappingPlan::with_eval_mod_ring`, `BootstrappingPreset::with_eval_mod_ring`), run by `CKKSBootstrappingCIOps::ckks_bootstrap_ci` on a context of `BootstrappingContext::compile_ci` (`EvalModCI`) and keys of `BootstrappingContext::generate_keys_ci` and `BootstrappingKeySet::prepare_ci`; `docs/bootstrapping.md` details the conversions.
+  Key generation wipes the secrets it derives, and the bootstrap checks every key, the conversion keys included, at entry.
+- Add the preset `n16_d35_k685_p19_s2c_fast` to `presets::bootstrapping::all`: `n16_d35_k733_p20_s2c` with the first factor on the raise and EvalMod on the CI ring, 19 bits of precision and 15 levels, for about 22% less time per bootstrap on the NEON Rayon backend.
+- **Breaking:** `BootstrappingKeys` and `BootstrappingKeysPrepared` take the backend EvalMod runs on as a last type parameter, the bootstrap's by default, and so does `CKKSModUpFirstFactorImpl::ckks_mod_up_first_factor`; `BootstrappingKeysLayout`, `BootstrappingKeySet` and `BootstrappingKeysPrepared` gain `conversion_keys`.
+  `CKKSEvalModImpl` no longer requires the standard ring; the reference evaluates `ExpCmplx` through `CKKSEvalModComplexOps`, which the conjugate-invariant ring refuses.
+- **Breaking:** `test_suite::presets::bootstrapping_presets_meet_precision` and `small_s2c_preset_meets_precision`, and `bench_ckks_bootstrapping` of `poulpy-bench`, take the conjugate-invariant backend of `BE`.
 - **Breaking:** `impl_ckks_bootstrapping_reference!` requires `CKKSModUpFirstFactorImpl` (`impl_ckks_mod_up_first_factor_reference!`) beside `CKKSEncapsulatedModUpImpl`; `BootstrappingKeysLayout`, `BootstrappingKeySet` and `BootstrappingKeysPrepared` gain the first-factor key fields; `BootstrappingContext::generate_keys` requires `VecZnxAutomorphism`.
 - `reference::first_factor` exposes `first_factor_work`, `first_factor_small_bits` and `first_factor_diagonal_growth`, the widths a first-factor key is laid out from.
 - The encapsulated ModUp takes a sparse-to-dense key with a row offset (`k_offset` of `poulpy-core`): its switch is the raise, from the raised ciphertext at its own width, integer part included, with no zero-padded copy and no transform of zero limbs.
@@ -404,15 +394,9 @@
 - `validate_blas_sum` rejects with `InvalidOperand` a `base2k` whose digits cannot hold the `log2(mat_slots) + 1` lazy terms the sum adds within `2^62`, as the products reject one above 62.
 - Calls with distinct `res` and `scratch` may run concurrently over a shared module, context, public operands, prepared operands and key stores, and an override keeps no state across calls.
 
-### `poulpy-bench`
-
-- Add `schemes::suites::bench_ckks_bootstrapping_ci`, which benchmarks the presets with EvalMod on the conjugate-invariant ring (`n16_d35_k685_p19_s2c_fast`) in the group of the other bootstrapping presets, from a standard backend and its conjugate-invariant one.
-  The NEON, portable, AVX and AVX-512 (IFMA included) benchmark binaries run it on their NTT backends; the presets have one radix, so a backend whose fixture radix is below it leaves them out.
-
 ### `poulpy-cpu-arm`
 
 - Add the full-size bootstrapping preset precision test for `NTT4x30NeonRayon`.
-- Add the full-size precision test of the presets with EvalMod on the CI ring for `NTT4x30NeonRayon` and `NTT4x30CINeonRayon`.
 
 ## [0.9.0] - 2026-10-08
 

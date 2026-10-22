@@ -33,7 +33,7 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSResult as Result, CoeffsMeta, GLWEPlaintextMeta, Scale, SetCKKSInfos, ckks_bail, ckks_ensure,
-    layouts::{BootstrappingLinearKeys, CKKSPlaintextOwned},
+    layouts::{BootstrappingKeys, CKKSPlaintextOwned},
 };
 
 /// Fewest bits the raise keeps below the raised precision while it applies
@@ -118,7 +118,7 @@ where
 }
 
 /// The first-factor key of the rotation `rotation`.
-fn first_factor_key<BE: Backend, K: BootstrappingLinearKeys<BE>>(keys: &K, rotation: i64) -> Result<&K::SwitchingKey> {
+fn first_factor_key<BE: Backend, M: Backend, K: BootstrappingKeys<BE, M>>(keys: &K, rotation: i64) -> Result<&K::SwitchingKey> {
     let Some(key) = keys.first_factor_key(rotation) else {
         ckks_bail!("no first-factor key for the rotation {rotation}");
     };
@@ -141,7 +141,7 @@ pub(crate) struct FirstFactorRaise {
 /// once lifted: one diagonal per giant step and no baby step, all diagonals of
 /// one scale and width, and one key per rotation, all of one layout that fits
 /// the raise.
-pub(crate) fn check_first_factor_raise<BE, K>(
+pub(crate) fn check_first_factor_raise<BE, M: Backend, K>(
     base2k: usize,
     log_n: usize,
     k_large: usize,
@@ -151,7 +151,7 @@ pub(crate) fn check_first_factor_raise<BE, K>(
 ) -> Result<FirstFactorRaise>
 where
     BE: Backend,
-    K: BootstrappingLinearKeys<BE>,
+    K: BootstrappingKeys<BE, M>,
     CKKSPlaintextOwned<BE>: IntPolyInfos + CKKSInfos,
 {
     let Some(diagonal) = factor.first_diagonal_plaintext() else {
@@ -252,7 +252,7 @@ where
 /// `factor` holds one giant step per diagonal, the diagonal rotated back by
 /// its own index and no baby step. `keys` gives the dense-to-sparse key under
 /// encapsulation and one first-factor key per rotation, all of one layout.
-pub fn ckks_mod_up_first_factor_reference<BE, Dst, Src, K>(
+pub fn ckks_mod_up_first_factor_reference<BE, Dst, Src, M: Backend, K>(
     module: &Module<BE>,
     dst: &mut Dst,
     src: &mut Src,
@@ -274,7 +274,7 @@ where
         + VecZnxNormalize<BE>
         + VecZnxIdftNormalize<BE>
         + CyclotomicOrder,
-    K: BootstrappingLinearKeys<BE>,
+    K: BootstrappingKeys<BE, M>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,

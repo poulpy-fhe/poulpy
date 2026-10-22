@@ -449,6 +449,7 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
     let keys = BootstrappingKeysLayout {
         rotation_keys: Default::default(),
         first_factor_key: None,
+        conversion_keys: None,
         automorphism_key: poulpy_core::layouts::GLWEAutomorphismKeyLayout {
             n: key.n,
             base2k: key.base2k,
@@ -459,7 +460,6 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
         },
         tensor_key: key,
         encapsulation: None,
-        conversion: None,
     };
     let src = module.ckks_ciphertext_alloc(16usize.into(), 64usize.into());
     let dst = module.ckks_ciphertext_alloc(16usize.into(), 256usize.into());

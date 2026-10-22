@@ -1,13 +1,13 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSDFTOps, CKKSEvalModOps},
     layouts::EvalModPlan,
     layouts::{
-        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, CKKSCiphertextOwned,
+        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, CKKSCiphertextOwned,
         CKKSPlaintextOwned, EncodedLut,
     },
 };
@@ -32,7 +32,7 @@ use crate::{
 /// EvalRound+ is selected separately by either recipe's optional bypass.
 /// Sparse-secret encapsulation is also selected by the compiled recipe; the
 /// supplied keys must carry the matching
-/// [encapsulation keys](BootstrappingLinearKeys::encapsulation_keys).
+/// [encapsulation keys](BootstrappingKeys::encapsulation_keys).
 pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE> {
     /// Returns scratch bytes required by [`Self::ckks_mod_up_into`].
     fn ckks_mod_up_tmp_bytes(&self, res_size: usize) -> usize;
@@ -113,14 +113,14 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: BootstrappingLinearKeys<BE>;
+        K: BootstrappingKeys<BE>;
 
     /// One-shot CKKS bootstrap, driven by the compiled context.
     ///
     /// `ct_in` is at the input ("level 0") modulus; `ct_out` must be allocated at
     /// the bootstrap modulus (its `k()` sets the working width). When the compiled
     /// recipe enables sparse-secret encapsulation, `keys` must carry the matching
-    /// [encapsulation keys](BootstrappingLinearKeys::encapsulation_keys), which wrap ModUp
+    /// [encapsulation keys](BootstrappingKeys::encapsulation_keys), which wrap ModUp
     /// (`denseToSparse → ModUp → sparseToDense`). [`BootstrappingPlan::new`](crate::layouts::BootstrappingPlan::new)
     /// folds EvalMod's required input scaling into CoeffsToSlots, so no further
     /// scaling is needed at call time.
@@ -186,4 +186,42 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     ) -> Result<()>
     where
         K: BootstrappingKeys<BE>;
+}
+
+/// [`CKKSBootstrappingOps::ckks_bootstrap`] with EvalMod on the
+/// conjugate-invariant ring ([`EvalModRing::ConjugateInvariant`](crate::layouts::EvalModRing::ConjugateInvariant)),
+/// for a context compiled by [`BootstrappingContext::compile_ci`]: `wide` is the
+/// standard module of degree `2N` and `ci` the CI module of degree `N`, whose
+/// backend shares the buffers of this one. The keys, the conversion keys
+/// included, are checked at entry.
+pub trait CKKSBootstrappingCIOps<BE: Backend, BCI: Backend> {
+    /// Scratch of [`Self::ckks_bootstrap_ci`]: `(scratch, scratch_ci)`.
+    fn ckks_bootstrap_ci_tmp_bytes<C1, C2, F>(
+        &self,
+        wide: &Module<BE>,
+        ci: &Module<BCI>,
+        ct_out: &C1,
+        ct_in: &C2,
+        ctx: &BootstrappingContext<BE, F>,
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> (usize, usize)
+    where
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds;
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the bootstrap takes a module and a scratch arena per ring"
+    )]
+    fn ckks_bootstrap_ci<F>(
+        &self,
+        wide: &Module<BE>,
+        ci: &Module<BCI>,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
+        ctx: &BootstrappingContext<BE, F>,
+        keys: &BootstrappingKeysPrepared<BE::OwnedBuf, BE, BCI>,
+        scratch: &mut ScratchArena<'_, BE>,
+        scratch_ci: &mut ScratchArena<'_, BCI>,
+    ) -> Result<()>;
 }

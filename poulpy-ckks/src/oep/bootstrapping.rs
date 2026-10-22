@@ -12,8 +12,8 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
 use crate::{
     CKKSCtBounds, CKKSResult, SetCKKSInfos,
     layouts::{
-        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, CKKSCiphertextOwned,
-        CKKSPlaintextOwned, EncodedLut, EvalModPlan,
+        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned, CKKSPlaintextOwned, EncodedLut,
+        EvalModPlan,
     },
 };
 
@@ -73,7 +73,7 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
     where
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
-        K: BootstrappingLinearKeys<Self>;
+        K: BootstrappingKeys<Self>;
 
     fn ckks_bootstrap_impl<F, K>(
         module: &Module<Self>,
@@ -128,7 +128,7 @@ pub unsafe trait CKKSModUpFirstFactorImpl: Backend<Ring = Standard> {
         K: GGLWEInfos;
 
     /// See [`ckks_mod_up_first_factor_reference`](crate::reference::first_factor::ckks_mod_up_first_factor_reference).
-    fn ckks_mod_up_first_factor<Dst, Src, K>(
+    fn ckks_mod_up_first_factor<Dst, Src, M: Backend, K>(
         module: &Module<Self>,
         dst: &mut Dst,
         src: &mut Src,
@@ -140,7 +140,7 @@ pub unsafe trait CKKSModUpFirstFactorImpl: Backend<Ring = Standard> {
     where
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
-        K: BootstrappingLinearKeys<Self>;
+        K: BootstrappingKeys<Self, M>;
 }
 
 /// Backend implementation of
@@ -268,7 +268,7 @@ macro_rules! impl_ckks_bootstrapping_reference {
                     + $crate::CKKSCtBounds
                     + $crate::SetCKKSInfos,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds,
-                K: $crate::layouts::BootstrappingLinearKeys<$be>,
+                K: $crate::layouts::BootstrappingKeys<$be>,
             {
                 $crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_bootstrap_mod_up_reference(
                     module, dst, src, eval_mod, keys, scratch,
@@ -397,7 +397,7 @@ macro_rules! impl_ckks_mod_up_first_factor_reference {
                 )
             }
 
-            fn ckks_mod_up_first_factor<Dst, Src, K>(
+            fn ckks_mod_up_first_factor<Dst, Src, M: ::poulpy_hal::layouts::Backend, K>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 dst: &mut Dst,
                 src: &mut Src,
@@ -415,7 +415,7 @@ macro_rules! impl_ckks_mod_up_first_factor_reference {
                     + ::poulpy_core::layouts::GLWEToBackendRef<$be>
                     + $crate::CKKSCtBounds
                     + $crate::SetCKKSInfos,
-                K: $crate::layouts::BootstrappingLinearKeys<$be>,
+                K: $crate::layouts::BootstrappingKeys<$be, M>,
             {
                 $crate::reference::first_factor::ckks_mod_up_first_factor_reference(
                     module, dst, src, scale_up, factor, keys, scratch,

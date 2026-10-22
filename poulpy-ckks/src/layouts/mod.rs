@@ -101,7 +101,6 @@ macro_rules! impl_ckks_infos {
 mod alloc;
 mod approximation;
 pub mod bootstrapping;
-pub mod bootstrapping_ci;
 pub mod bootstrapping_keys;
 pub mod ciphertext;
 pub mod complex_diagonals;
@@ -119,12 +118,11 @@ pub use alloc::CKKSModuleAlloc;
 pub use approximation::PolynomialApproximation;
 pub use bootstrapping::{
     BootstrappingContext, BootstrappingContextUnprepared, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
-    EvalModCIPlan, EvalModRing, EvalRoundPlus, SparseSecretEncapsulation,
+    EvalModCI, EvalModRing, EvalRoundPlus, SparseSecretEncapsulation,
 };
 pub use bootstrapping_keys::{
-    BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, BootstrappingLinearKeys,
-    CKKSFoldKeysLayout, ConversionKeysLayout, EncapsulationKeys, EncapsulationKeysLayout, RingSwitchKeySet, RingSwitchKeys,
-    RingSwitchKeysLayout, RingSwitchKeysPrepared,
+    BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, CKKSFoldKeysLayout,
+    EncapsulationKeys, EncapsulationKeysLayout, RingSwitchKeySet, RingSwitchKeys, RingSwitchKeysLayout, RingSwitchKeysPrepared,
 };
 pub use ciphertext::{CKKSCiphertext, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSRingCiphertext, ScratchArenaTakeCKKS};
 pub use complex_diagonals::ComplexDiagonals;

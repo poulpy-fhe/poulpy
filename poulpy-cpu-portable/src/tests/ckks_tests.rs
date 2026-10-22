@@ -54,19 +54,19 @@ mod bootstrapping_presets {
 
     #[test]
     fn ntt4x30_small_s2c_preset_meets_precision() {
-        small_s2c_preset_meets_precision::<crate::NTT4x30Portable>();
+        small_s2c_preset_meets_precision::<crate::NTT4x30Portable, crate::NTT4x30CIPortable>();
     }
 
     #[test]
     #[ignore = "runs a full logN16 bootstrap per preset; opt in with --ignored"]
     fn ntt4x30_presets_meet_precision() {
-        bootstrapping_presets_meet_precision::<crate::NTT4x30Portable>(52);
+        bootstrapping_presets_meet_precision::<crate::NTT4x30Portable, crate::NTT4x30CIPortable>(52);
     }
 
     #[test]
     #[ignore = "runs a full logN16 bootstrap per preset; opt in with --ignored"]
     fn fft64_presets_meet_precision() {
-        bootstrapping_presets_meet_precision::<crate::FFT64Portable>(18);
+        bootstrapping_presets_meet_precision::<crate::FFT64Portable, crate::FFT64CIPortable>(18);
     }
 }
 

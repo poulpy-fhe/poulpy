@@ -39,6 +39,7 @@ macro_rules! impl_cpu_ckks_defaults {
         ::poulpy_ckks::impl_ckks_sub_reference!($be);
         ::poulpy_ckks::impl_ckks_plaintext_reference!($be);
         ::poulpy_ckks::impl_ckks_polynomial_evaluation_reference!($be);
+        ::poulpy_ckks::impl_ckks_eval_mod_reference!($be);
         $crate::impl_ckks_encoding!($be);
     };
 }
