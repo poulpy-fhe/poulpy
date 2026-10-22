@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Module, ScratchOwned, ZnxView},
+    layouts::{Module, ScratchOwned},
     source::Source,
     test_suite::TestParams,
 };
@@ -11,7 +11,7 @@ use crate::{
     GGLWEKeyswitch, GGLWENoise, GLWENormalize, GLWESwitchingKeyEncryptSk,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        Dnum, GGLWEDigits, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWESecret, GLWESecretPreparedFactory,
+        Dnum, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGLWEViewWithDigits, GLWESecret, GLWESecretPreparedFactory,
         GLWESwitchingKey, GLWESwitchingKeyLayout, GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
         prepared::{GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
@@ -181,9 +181,9 @@ where
 }
 
 /// A switching key switches a key of its own layout through a view of the
-/// latter's first digits, into a view of as many digits of another key of that
-/// layout: the rows decrypt within the noise model of the view's width, and
-/// match bit for bit those of a switch of the narrowed copy the view reads.
+/// latter's first digits, into a key of that many digits: the rows decrypt
+/// within the noise model of the view's width, and match bit for bit those of
+/// a switch of the narrowed copy the view reads.
 pub fn test_gglwe_switching_key_keyswitch_digits<BE: crate::test_suite::noise::TestBackend>(
     params: &TestParams,
     module: &Module<BE>,
@@ -260,10 +260,10 @@ pub fn test_gglwe_switching_key_keyswitch_digits<BE: crate::test_suite::noise::T
             module.glwe_switching_key_prepared_alloc_from_infos(&s1s2);
         module.glwe_switching_key_prepare(&mut s1s2_prepared, &s1s2, &mut scratch.borrow());
 
-        let mut s0s2: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&layout);
+        let mut s0s2: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&view_layout);
         module.gglwe_keyswitch(
-            &mut GGLWEDigits::new(&mut s0s2, Dnum(digits as u32)).unwrap(),
-            &GGLWEDigits::new(&s0s1, Dnum(digits as u32)).unwrap(),
+            &mut s0s2,
+            &s0s1.view_with_digits(Dnum(digits as u32)).unwrap(),
             &s1s2_prepared.to_backend_ref(),
             &mut scratch.borrow(),
         );
@@ -277,18 +277,10 @@ pub fn test_gglwe_switching_key_keyswitch_digits<BE: crate::test_suite::noise::T
             DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
             0f64,
         ) + 0.5;
-        let res_view = GGLWEDigits::new(&s0s2, Dnum(digits as u32)).unwrap();
         for row in 0..digits {
             for col in 0..rank {
                 let noise_have: f64 = module
-                    .gglwe_noise(
-                        &res_view,
-                        row,
-                        col,
-                        &sks[0].data.to_ref(),
-                        &sk2_prepared,
-                        &mut scratch.borrow(),
-                    )
+                    .gglwe_noise(&s0s2, row, col, &sks[0].data.to_ref(), &sk2_prepared, &mut scratch.borrow())
                     .std()
                     .log2();
                 assert!(
@@ -300,7 +292,7 @@ pub fn test_gglwe_switching_key_keyswitch_digits<BE: crate::test_suite::noise::T
 
         let mut s0s1_copy: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&view_layout);
         {
-            let view = GGLWEDigits::new(&s0s1, Dnum(digits as u32)).unwrap();
+            let view = s0s1.view_with_digits(Dnum(digits as u32)).unwrap();
             let view = GGLWEToBackendRef::<BE>::to_backend_ref(&view);
             let mut copy = GGLWEToBackendMut::<BE>::to_backend_mut(&mut s0s1_copy);
             for row in 0..digits {
@@ -320,24 +312,10 @@ pub fn test_gglwe_switching_key_keyswitch_digits<BE: crate::test_suite::noise::T
             &s1s2_prepared.to_backend_ref(),
             &mut scratch.borrow(),
         );
-        for row in 0..digits {
-            for col in 0..rank {
-                let (have, want) = (s0s2.key.at(row, col), s0s2_copy.key.at(row, col));
-                for c in 0..rank + 1 {
-                    for limb in 0..have.data().size() {
-                        let expected: Vec<i64> = if limb < want.data().size() {
-                            want.data().at(c, limb).to_vec()
-                        } else {
-                            vec![0; n]
-                        };
-                        assert!(
-                            have.data().at(c, limb) == expected.as_slice(),
-                            "rank={rank} row={row} col={col}: the view's switch differs from the narrowed copy's at column {c}, limb {limb}"
-                        );
-                    }
-                }
-            }
-        }
+        assert!(
+            s0s2.key.data() == s0s2_copy.key.data(),
+            "rank={rank}: the view's switch differs from the narrowed copy's"
+        );
     }
 }
 

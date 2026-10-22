@@ -310,8 +310,8 @@ impl GGLWEInfos for GGLWELayout {
 /// carrying `2^-(k_offset + (q + 1) * k_digit)`.
 ///
 /// Its rows are canonical at `k()` (see [`GLWE`]) but on a view of its first
-/// digits ([`Self::with_dnum`]), whose rows hold the key's bits below that
-/// precision. Equality ignores the flag.
+/// digits ([`GGLWEViewWithDigits`](crate::layouts::GGLWEViewWithDigits)), whose
+/// rows hold the key's bits below that precision. Equality ignores the flag.
 #[derive(Clone)]
 pub struct GGLWE<D: Data, W: ZnxWord> {
     pub(crate) noise: Option<crate::ComponentNoise>,
@@ -340,15 +340,8 @@ where
 impl<D: Data, W: ZnxWord> Eq for GGLWE<D, W> where MatZnx<D, W>: Eq {}
 
 impl<D: Data, W: ZnxWord> GGLWE<D, W> {
-    /// Its first `dnum` digits, over the same buffer: rows `0..dnum`, at the
-    /// precision `k_offset + dnum * k_digit + k_aux` of a key of `dnum` digits
-    /// and this guard. A narrower view keeps the key's bits below that
-    /// precision, so it reports its rows non-canonical, which a switch
-    /// normalizes before reading them, and drops the noise estimate. No row
-    /// is copied.
-    ///
-    /// Fails unless `1 <= dnum <= self.dnum()`.
-    pub fn with_dnum(self, dnum: Dnum) -> Result<Self> {
+    /// See [`GGLWEBackendRef::with_dnum`].
+    pub(crate) fn with_dnum(self, dnum: Dnum) -> Result<Self> {
         let stored: Dnum = self.dnum();
         if dnum.0 == 0 || dnum.0 > stored.0 {
             return Err(CoreError::GGLWEKeyUse {
@@ -377,7 +370,14 @@ impl<'a, BE: Backend + 'a> GGLWEBackendRef<'a, BE> {
         Self { inner }
     }
 
-    /// The view of its first `dnum` digits ([`GGLWE::with_dnum`]).
+    /// Its first `dnum` digits, over the same buffer: rows `0..dnum`, at the
+    /// precision `k_offset + dnum * k_digit + k_aux` of a key of `dnum` digits
+    /// and this guard. A narrower view keeps the key's bits below that
+    /// precision, so it reports its rows non-canonical, which a switch
+    /// normalizes before reading them, and drops the noise estimate. No row
+    /// is copied.
+    ///
+    /// Fails unless `1 <= dnum <= self.dnum()`.
     pub fn with_dnum(self, dnum: Dnum) -> Result<Self> {
         Ok(Self::from_inner(self.inner.with_dnum(dnum)?))
     }
@@ -406,11 +406,6 @@ pub struct GGLWEBackendMut<'a, BE: Backend + 'a> {
 impl<'a, BE: Backend + 'a> GGLWEBackendMut<'a, BE> {
     pub fn from_inner(inner: GGLWE<BE::BufMut<'a>, BE::ZnxWord>) -> Self {
         Self { inner }
-    }
-
-    /// The view of its first `dnum` digits ([`GGLWE::with_dnum`]).
-    pub fn with_dnum(self, dnum: Dnum) -> Result<Self> {
-        Ok(Self::from_inner(self.inner.with_dnum(dnum)?))
     }
 
     pub fn into_inner(self) -> GGLWE<BE::BufMut<'a>, BE::ZnxWord> {

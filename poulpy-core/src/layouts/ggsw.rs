@@ -141,8 +141,8 @@ impl GGSWInfos for GGSWLayout {
 /// `D: Data` is the storage backend (e.g. `AlignedBuf`, `&[u8]`, `&mut [u8]`).
 ///
 /// Its rows are canonical at `k()` (see [`GLWE`]) but on a view of its first
-/// digits ([`Self::with_dnum`]), whose rows hold its bits below that
-/// precision. Equality ignores the flag.
+/// digits ([`GGSWViewWithDigits`](crate::layouts::GGSWViewWithDigits)), whose
+/// rows hold its bits below that precision. Equality ignores the flag.
 #[derive(Clone)]
 pub struct GGSW<D: Data, W: ZnxWord> {
     pub(crate) noise: Option<crate::ComponentNoise>,
@@ -169,12 +169,8 @@ where
 impl<D: Data, W: ZnxWord> Eq for GGSW<D, W> where MatZnx<D, W>: Eq {}
 
 impl<D: Data, W: ZnxWord> GGSW<D, W> {
-    /// Its first `dnum` digits, over the same buffer: rows `0..dnum`, at the
-    /// precision `dnum * k_digit + k_aux`, as
-    /// [`GGLWE::with_dnum`](crate::layouts::GGLWE::with_dnum).
-    ///
-    /// Fails unless `1 <= dnum <= self.dnum()`.
-    pub fn with_dnum(self, dnum: Dnum) -> crate::Result<Self> {
+    /// See [`GGSWBackendRef::with_dnum`].
+    pub(crate) fn with_dnum(self, dnum: Dnum) -> crate::Result<Self> {
         let stored: Dnum = self.dnum();
         if dnum.0 == 0 || dnum.0 > stored.0 {
             return Err(crate::CoreError::GGLWEKeyUse {
@@ -203,7 +199,11 @@ impl<'a, BE: Backend + 'a> GGSWBackendRef<'a, BE> {
         Self { inner }
     }
 
-    /// The view of its first `dnum` digits ([`GGSW::with_dnum`]).
+    /// Its first `dnum` digits, over the same buffer: rows `0..dnum`, at the
+    /// precision `dnum * k_digit + k_aux`, as
+    /// [`GGLWEBackendRef::with_dnum`](crate::layouts::GGLWEBackendRef::with_dnum).
+    ///
+    /// Fails unless `1 <= dnum <= self.dnum()`.
     pub fn with_dnum(self, dnum: Dnum) -> crate::Result<Self> {
         Ok(Self::from_inner(self.inner.with_dnum(dnum)?))
     }
@@ -232,11 +232,6 @@ pub struct GGSWBackendMut<'a, BE: Backend + 'a> {
 impl<'a, BE: Backend + 'a> GGSWBackendMut<'a, BE> {
     pub fn from_inner(inner: GGSW<BE::BufMut<'a>, BE::ZnxWord>) -> Self {
         Self { inner }
-    }
-
-    /// The view of its first `dnum` digits ([`GGSW::with_dnum`]).
-    pub fn with_dnum(self, dnum: Dnum) -> crate::Result<Self> {
-        Ok(Self::from_inner(self.inner.with_dnum(dnum)?))
     }
 
     pub fn into_inner(self) -> GGSW<BE::BufMut<'a>, BE::ZnxWord> {

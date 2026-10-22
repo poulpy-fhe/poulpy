@@ -114,8 +114,8 @@
 
 ### `poulpy-core`
 
-- Add `GGLWEDigits` and `GGSWDigits`, views of the first `dnum` digits of a key or a GGSW through `&K` or `&mut K`, and `GGLWE::with_dnum`, `GGSW::with_dnum` and the `with_dnum` of their backend views: rows `0..dnum` at `k_offset + dnum * k_digit + k_aux` bits over the same buffer, without a copy.
-  A key switching a key of its own layout, which never covers its rows, covers a view of fewer digits; the key operations take the views on either side, and a destination view is written at its width, its other rows untouched.
+- Add `key.view_with_digits(dnum)` (`GGLWEViewWithDigits`, `GGSWViewWithDigits` for a GGSW), a read-only view `GGLWEDigits` (`GGSWDigits`) of the first `dnum` digits of any key or GGSW, and `GGLWEBackendRef::with_dnum` and `GGSWBackendRef::with_dnum`: rows `0..dnum` at `k_offset + dnum * k_digit + k_aux` bits over the same buffer, without a copy.
+  A key switching a key of its own layout, which never covers its rows, covers a view of fewer digits, into a key of that many digits.
   `GGLWE` and `GGSW` store the canonical flag of their rows, which a view of fewer digits clears, and drops the noise estimate, so a switch normalizes each row at the view's width; equality ignores the flag, and serialization refuses such a view. `GGSWInfos` is implemented for `&T` and `&mut T`.
 - **Breaking, behaviour:** every gadget product with a GGLWE key decomposes its input exactly ([#451](https://github.com/poulpy-fhe/poulpy/issues/451)): `glwe_keyswitch`, `glwe_keyswitch_assign`, `glwe_keyswitch_dft`, the `glwe_automorphism` operations, `glwe_tensor_relinearize`, the one-pass products (`glwe_mul_relinearize`, `glwe_square_relinearize`, their assign, prepared and summed forms), the linear transformations, trace, packing, the LWE conversions and key switch, and `ggsw_expand_row` panic on an input wider than the key's `max_input_k`, where the product dropped the input digits past the key's rows.
   A caller drops those bits by narrowing the input first (`SetK::set_k`). The GGLWE and GGSW key switches and automorphisms switch rows of `dnum * k_digit + k_aux` bits, so their key covers that width, guard included.

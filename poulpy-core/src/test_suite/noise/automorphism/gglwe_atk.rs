@@ -12,8 +12,8 @@ use crate::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef;
 use crate::{
     DEFAULT_SIGMA_XE, GGLWENoise, GLWEAutomorphismKeyAutomorphism, GLWEAutomorphismKeyEncryptSk,
     layouts::{
-        Dnum, GGLWEDigits, GGLWEInfos, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory,
-        GLWEInfos, GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
+        Dnum, GGLWEInfos, GGLWEViewWithDigits, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout,
+        GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
     noise::GGLWENoiseModel,
@@ -197,9 +197,9 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::noise::Te
 }
 
 /// An automorphism key applies to a key of its own layout through a view of
-/// the latter's first digits, into a view of as many digits of another key of
-/// that layout, which takes the composed element: the rows decrypt within the
-/// noise model of the view's width.
+/// the latter's first digits, into a key of that many digits, which takes the
+/// composed element: the rows decrypt within the noise model of the view's
+/// width.
 pub fn test_gglwe_automorphism_key_automorphism_digits<
     BE: crate::test_suite::noise::TestBackend + Backend<OwnedBuf = AlignedBuf>,
 >(
@@ -268,10 +268,11 @@ pub fn test_gglwe_automorphism_key_automorphism_digits<
             module.glwe_automorphism_key_prepared_alloc_from_infos(&layout);
         module.glwe_automorphism_key_prepare(&mut key_apply_prepared, &key_apply, &mut scratch.borrow());
 
-        let mut key_out: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_automorphism_key_alloc_from_infos(&layout);
+        let mut key_out: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =
+            module.glwe_automorphism_key_alloc_from_infos(&view_layout);
         module.glwe_automorphism_key_automorphism(
-            &mut GGLWEDigits::new(&mut key_out, Dnum(digits as u32)).unwrap(),
-            &GGLWEDigits::new(&key_in, Dnum(digits as u32)).unwrap(),
+            &mut key_out,
+            &key_in.view_with_digits(Dnum(digits as u32)).unwrap(),
             &key_apply_prepared.to_backend_ref(),
             &mut scratch.borrow(),
         );
@@ -312,12 +313,11 @@ pub fn test_gglwe_automorphism_key_automorphism_digits<
             DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
             0f64,
         ) + 0.5;
-        let res_view = GGLWEDigits::new(&key_out, Dnum(digits as u32)).unwrap();
         for row in 0..digits {
             for col in 0..rank {
                 let noise_have: f64 = module
                     .gglwe_noise(
-                        &res_view,
+                        &key_out,
                         row,
                         col,
                         &sk.data().to_ref(),

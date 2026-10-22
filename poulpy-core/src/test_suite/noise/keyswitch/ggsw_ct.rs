@@ -14,7 +14,7 @@ use crate::{
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         Dnum, GGLWEInfos, GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPrepared, GGLWEToGGSWKeyPreparedFactory, GGSW,
-        GGSWDigits, GGSWInfos, GGSWLayout, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey,
+        GGSWInfos, GGSWLayout, GGSWViewWithDigits, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey,
         GLWESwitchingKeyLayout, GLWESwitchingKeyPreparedFactory, ModuleCoreAlloc,
         prepared::{GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
@@ -212,8 +212,8 @@ where
 }
 
 /// A switching key and a tensor key of a GGSW's own gadget switch it through a
-/// view of its first digits, into a view of as many digits of another GGSW of
-/// that layout: the rows decrypt within the noise model of the view's width.
+/// view of its first digits, into a GGSW of that many digits: the rows decrypt
+/// within the noise model of the view's width.
 pub fn test_ggsw_keyswitch_digits<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
@@ -328,16 +328,15 @@ where
         let mut tsk_prepared: GGLWEToGGSWKeyPrepared<BE::OwnedBuf, BE> = module.gglwe_to_ggsw_key_prepared_alloc_from_infos(&tsk);
         module.gglwe_to_ggsw_key_prepare(&mut tsk_prepared, &tsk, &mut scratch.borrow());
 
-        let mut ggsw_out: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_layout);
+        let mut ggsw_out: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&view_layout);
         module.ggsw_keyswitch(
-            &mut GGSWDigits::new(&mut ggsw_out, Dnum(digits as u32)).unwrap(),
-            &GGSWDigits::new(&ggsw_in, Dnum(digits as u32)).unwrap(),
+            &mut ggsw_out,
+            &ggsw_in.view_with_digits(Dnum(digits as u32)).unwrap(),
             &ksk_prepared.to_backend_ref(),
             &tsk_prepared.to_backend_ref(),
             &mut scratch.borrow(),
         );
 
-        let res_view = GGSWDigits::new(&ggsw_out, Dnum(digits as u32)).unwrap();
         for row in 0..digits {
             for col in 0..rank + 1 {
                 let max_noise: f64 = ksk_layout.log2_std_noise_ggsw_keyswitch(
@@ -353,7 +352,7 @@ where
                 ) + 0.5;
                 let noise: f64 = module
                     .ggsw_noise(
-                        &res_view,
+                        &ggsw_out,
                         row,
                         col,
                         &pt_scalar.to_ref(),
