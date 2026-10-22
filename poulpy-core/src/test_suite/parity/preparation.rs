@@ -84,6 +84,7 @@ where
                 base2k: b,
                 dnum: dn,
                 k_digit: crate::layouts::k_digit_of(b, ds),
+                k_offset: TorusPrecision(0),
                 k_aux: aux,
                 rank_in: rank,
                 rank_out: rank,
@@ -103,6 +104,7 @@ where
             };
             let lwe = GGLWELayout {
                 k_digit: crate::layouts::k_digit_of(b, 1u32),
+                k_offset: TorusPrecision(0),
                 rank_in: Rank(1),
                 rank_out: Rank(1),
                 ..gadget

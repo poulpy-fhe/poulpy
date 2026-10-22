@@ -83,6 +83,10 @@ impl<D: Data, B: Backend> GGLWEInfos for GLWESwitchingKeyPrepared<D, B> {
         self.key.k_digit()
     }
 
+    fn k_offset(&self) -> TorusPrecision {
+        self.key.k_offset()
+    }
+
     fn dnum(&self) -> Dnum {
         self.key.dnum()
     }

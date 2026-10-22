@@ -180,6 +180,7 @@ where
                                 k,
                                 row,
                                 k_digit,
+                                0,
                                 &pt_ref,
                                 0,
                                 &mut scratch_2,

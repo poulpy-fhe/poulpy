@@ -25,6 +25,8 @@ pub struct GLWESwitchingKeyLayout {
     pub rank_in: Rank,
     pub rank_out: Rank,
     pub k_digit: TorusPrecision,
+    /// Row offset in bits (see [`GGLWEInfos::k_offset`]).
+    pub k_offset: TorusPrecision,
 }
 
 /// The switching key of a stored GGLWE layout.
@@ -41,6 +43,7 @@ impl From<GGLWELayout> for GLWESwitchingKeyLayout {
             rank_in: layout.rank_in,
             rank_out: layout.rank_out,
             k_digit: layout.k_digit,
+            k_offset: layout.k_offset,
         }
     }
 }
@@ -55,11 +58,11 @@ impl LWEInfos for GLWESwitchingKeyLayout {
     }
 
     fn max_size(&self) -> usize {
-        crate::layouts::key_size(self.base2k, self.dnum, self.k_digit, self.k_aux)
+        crate::layouts::offset_key_size(self.base2k, self.k_offset, self.dnum, self.k_digit, self.k_aux)
     }
 
     fn k(&self) -> TorusPrecision {
-        crate::layouts::key_k(self.dnum, self.k_digit, self.k_aux)
+        crate::layouts::offset_key_k(self.k_offset, self.dnum, self.k_digit, self.k_aux)
     }
 }
 
@@ -88,6 +91,9 @@ impl GGLWEInfos for GLWESwitchingKeyLayout {
 
     fn k_digit(&self) -> TorusPrecision {
         self.k_digit
+    }
+    fn k_offset(&self) -> TorusPrecision {
+        self.k_offset
     }
 }
 
@@ -186,6 +192,9 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWESwitchingKey<D, W> {
 
     fn k_digit(&self) -> TorusPrecision {
         self.key.k_digit()
+    }
+    fn k_offset(&self) -> TorusPrecision {
+        self.key.k_offset()
     }
 
     fn dnum(&self) -> Dnum {

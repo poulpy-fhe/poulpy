@@ -137,9 +137,11 @@ where
 {
     let k_large = dst.k().as_usize();
     let k_small = src.k().as_usize();
-    // A strided key view is gathered by the reference body only.
+    // A strided key view is gathered by the reference body only, and a key with
+    // a row offset is refused there: the packed body adds `dst` back unlowered.
     if dst.base2k() != sparse_to_dense.base2k()
         || sparse_to_dense.stride() != 1
+        || sparse_to_dense.k_offset().0 != 0
         || sparse_to_dense.dsize().as_usize() < 2
         || k_large < k_small + scale_up
     {

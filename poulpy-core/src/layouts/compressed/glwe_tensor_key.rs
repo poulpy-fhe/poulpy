@@ -73,6 +73,10 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWETensorKeyCompressed<D, W> {
         self.0.k_digit()
     }
 
+    fn k_offset(&self) -> TorusPrecision {
+        self.0.k_offset()
+    }
+
     fn dnum(&self) -> Dnum {
         self.0.dnum()
     }

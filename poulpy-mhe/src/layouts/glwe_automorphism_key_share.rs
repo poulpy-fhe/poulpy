@@ -76,6 +76,10 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWEAutomorphismKeyShare<D, W> {
         self.key.k_digit()
     }
 
+    fn k_offset(&self) -> TorusPrecision {
+        self.key.k_offset()
+    }
+
     fn rank_in(&self) -> Rank {
         self.key.rank_in()
     }

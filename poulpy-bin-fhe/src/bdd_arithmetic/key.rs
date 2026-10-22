@@ -257,6 +257,7 @@ impl<D: Data, BRA: BlindRotationAlgo, BE: Backend> BDDKeyInfos for BDDKeyPrepare
             rank_out: ks_glwe.rank_out(),
             k_aux: ks_glwe.k_aux(),
             k_digit: ks_glwe.k_digit(),
+            k_offset: ks_glwe.k_offset(),
         })
     }
     fn ks_lwe_infos(&self) -> GLWEToLWEKeyLayout {

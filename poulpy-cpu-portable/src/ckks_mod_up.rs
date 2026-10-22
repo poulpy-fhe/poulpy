@@ -84,9 +84,11 @@ where
     S2D: GGLWEInfos,
 {
     let dsize = sparse_to_dense.dsize().as_usize();
-    // A strided key view is gathered by the reference body only.
+    // A strided key view is gathered by the reference body only, and a key with
+    // a row offset is refused there: the packed body adds `dst` back unlowered.
     dst.base2k() == sparse_to_dense.base2k()
         && sparse_to_dense.stride() == 1
+        && sparse_to_dense.k_offset().0 == 0
         && (2..=STRIDED_MAX_DSIZE).contains(&dsize)
         && scale_up.is_none_or(|scale_up| dst.k().as_usize() >= src.k().as_usize() + scale_up)
 }

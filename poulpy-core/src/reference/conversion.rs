@@ -356,6 +356,7 @@ pub fn glwe_from_lwe_reference<BE, M, R, A>(
     let glwe_ref = glwe_backend_ref_from_mut::<BE>(&glwe);
     let glwe_view = &glwe_ref;
     let mut res_view = &mut res_backend;
+    crate::reference::keyswitching::glwe::assert_no_row_offset("glwe_from_lwe", &ksk);
     module.glwe_keyswitch(&mut res_view, &glwe_view, &ksk.to_backend_ref(), &mut scratch_1)
 }
 
@@ -440,6 +441,10 @@ pub fn ggsw_expand_row_reference<BE, M, R>(
     );
     let rank: usize = res_backend.rank().into();
     let cols: usize = rank + 1;
+    // Checked once, before any write.
+    for col in 0..rank {
+        crate::reference::keyswitching::glwe::assert_no_row_offset("ggsw_expand_rows", &tsk.at(col));
+    }
 
     let res_conv_size: usize = res_backend.k().as_usize().div_ceil(tsk_base2k);
     let (k_digit, dnum) = (tsk.k_digit(), tsk.dnum());

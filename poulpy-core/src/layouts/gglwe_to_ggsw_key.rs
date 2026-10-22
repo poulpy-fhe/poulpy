@@ -49,6 +49,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyBackendRef<'a, BE> {
             base2k: key_i.base2k,
             k_aux: key_i.k_aux,
             k_digit: key_i.k_digit,
+            k_offset: key_i.k_offset,
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_ref::<BE>(&key_i.data),
         })
     }
@@ -83,6 +84,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyBackendMut<'a, BE> {
             base2k: key_i.base2k,
             k_aux: key_i.k_aux,
             k_digit: key_i.k_digit,
+            k_offset: key_i.k_offset,
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_mut::<BE>(&key_i.data),
         })
     }
@@ -96,6 +98,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyBackendMut<'a, BE> {
             base2k: key_i.base2k,
             k_aux: key_i.k_aux,
             k_digit: key_i.k_digit,
+            k_offset: key_i.k_offset,
             data: poulpy_hal::layouts::mat_znx_backend_mut_from_mut::<BE>(&mut key_i.data),
         })
     }
@@ -163,6 +166,10 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GGLWEToGGSWKey<D, W> {
         self.keys[0].k_digit()
     }
 
+    fn k_offset(&self) -> TorusPrecision {
+        self.keys[0].k_offset()
+    }
+
     fn dnum(&self) -> Dnum {
         self.keys[0].dnum()
     }
@@ -207,6 +214,10 @@ impl GGLWEInfos for GGLWEToGGSWKeyLayout {
 
     fn k_digit(&self) -> TorusPrecision {
         self.k_digit
+    }
+
+    fn k_offset(&self) -> TorusPrecision {
+        TorusPrecision(0)
     }
 
     fn rank_out(&self) -> Rank {

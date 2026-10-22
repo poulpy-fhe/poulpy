@@ -100,16 +100,13 @@ where
                 GGLWEEncryptSkReference::gglwe_encrypt_sk_tmp_bytes_reference(self, res)
             );
             assert!(
-                res.dnum().0 * res.k_digit().0 <= res.k().0,
-                "res.dnum() : {} * res.k_digit() : {} = {} > res.k() = {}",
-                res.dnum(),
-                res.k_digit(),
-                res.dnum().0 * res.k_digit().0,
-                res.k()
+                res.k_offset().0 + res.dnum().0 * res.k_digit().0 <= res.k().0,
+                "the gadget rows, with their offset, exceed the key precision"
             );
 
             let dnum: usize = res.dnum().into();
             let k_digit: usize = res.k_digit().as_usize();
+            let k_offset: usize = res.k_offset().as_usize();
             let base2k: usize = res.base2k().into();
             let rank_in: usize = res.rank_in().into();
             let (mut tmp_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(res);
@@ -136,6 +133,7 @@ where
                         tmp_pt_k,
                         row_i,
                         k_digit,
+                        k_offset,
                         &pt_backend,
                         col_i,
                         &mut scratch_1.borrow(),

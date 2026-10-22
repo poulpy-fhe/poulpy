@@ -46,6 +46,7 @@ pub(crate) fn gglwe_layout<BE: Backend>(module: &Module<BE>) -> GGLWELayout {
         rank_in: RANK,
         rank_out: RANK,
         k_digit: k_digit_of(BASE2K, DSIZE),
+        k_offset: TorusPrecision(0),
         stride: 1,
     }
 }

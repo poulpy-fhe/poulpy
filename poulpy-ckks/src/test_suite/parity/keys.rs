@@ -25,6 +25,7 @@ pub fn key_layout_bits(n: usize, base2k: usize, k: usize, k_digit: usize, rank_i
         base2k: base2k.into(),
         dnum: k.div_ceil(k_digit).into(),
         k_digit: k_digit.into(),
+        k_offset: poulpy_core::layouts::TorusPrecision(0),
         k_aux: k_digit.into(),
         rank_in: rank_in.into(),
         rank_out: rank_out.into(),

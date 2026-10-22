@@ -70,6 +70,10 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GGLWEPat<D, W> {
         self.inner.k_digit()
     }
 
+    fn k_offset(&self) -> TorusPrecision {
+        self.inner.k_offset()
+    }
+
     fn rank_in(&self) -> Rank {
         self.inner.rank_in()
     }

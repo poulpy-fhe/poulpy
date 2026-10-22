@@ -389,7 +389,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
 
     fn gglwe_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GGLWE<B::OwnedBuf, B::ZnxWord> {
         let dnum = infos.dnum();
-        let size = crate::layouts::key_size(infos.base2k(), dnum, infos.k_digit(), infos.k_aux());
+        let size = crate::layouts::offset_key_size(infos.base2k(), infos.k_offset(), dnum, infos.k_digit(), infos.k_aux());
 
         GGLWE {
             noise: None,
@@ -410,6 +410,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             k_aux: infos.k_aux(),
             base2k: infos.base2k(),
             k_digit: infos.k_digit(),
+            k_offset: infos.k_offset(),
         }
     }
     fn gglwe_alloc(
@@ -429,6 +430,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             k_aux,
             rank_in,
             rank_out,
+            k_offset: TorusPrecision(0),
             stride: 1,
         })
     }
@@ -600,6 +602,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             k_aux,
             rank_in,
             rank_out,
+            k_offset: TorusPrecision(0),
             stride: 1,
         })
     }
@@ -626,6 +629,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             rank_in: rank,
             rank_out: rank,
             k_digit,
+            k_offset: TorusPrecision(0),
             stride: 1,
         })
     }
@@ -650,6 +654,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             rank_in: Rank(pairs),
             rank_out: rank,
             k_digit,
+            k_offset: TorusPrecision(0),
             stride: 1,
         })
     }
@@ -686,6 +691,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             rank_in,
             rank_out: Rank(1),
             k_digit: TorusPrecision::from(base2k),
+            k_offset: TorusPrecision(0),
             stride: 1,
         })
     }
@@ -718,6 +724,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             rank_in: rank,
             rank_out: rank,
             k_digit,
+            k_offset: TorusPrecision(0),
             stride: 1,
         })
     }
@@ -836,6 +843,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             rank_in: Rank(1),
             rank_out,
             k_digit: TorusPrecision::from(base2k),
+            k_offset: TorusPrecision(0),
             stride: 1,
         })
     }
@@ -1408,6 +1416,28 @@ pub fn key_k(dnum: Dnum, k_digit: TorusPrecision, k_aux: TorusPrecision) -> Toru
     TorusPrecision(dnum.0 * k_digit.0 + k_aux.0)
 }
 
+/// [`key_k`] of a key whose rows sit `k_offset` bits lower (see
+/// [`GGLWEInfos::k_offset`]): `k_offset + dnum * k_digit + k_aux`.
+pub(crate) fn offset_key_k(
+    k_offset: TorusPrecision,
+    dnum: Dnum,
+    k_digit: TorusPrecision,
+    k_aux: TorusPrecision,
+) -> TorusPrecision {
+    TorusPrecision(k_offset.0 + key_k(dnum, k_digit, k_aux).0)
+}
+
+/// [`key_size`] of a key whose rows sit `k_offset` bits lower.
+pub(crate) fn offset_key_size(
+    base2k: Base2K,
+    k_offset: TorusPrecision,
+    dnum: Dnum,
+    k_digit: TorusPrecision,
+    k_aux: TorusPrecision,
+) -> usize {
+    offset_key_k(k_offset, dnum, k_digit, k_aux).0.div_ceil(base2k.0) as usize
+}
+
 /// Number of limbs stored per row of a key: `ceil((dnum * k_digit + k_aux) / base2k)`.
 pub fn key_size(base2k: Base2K, dnum: Dnum, k_digit: TorusPrecision, k_aux: TorusPrecision) -> usize {
     key_k(dnum, k_digit, k_aux).0.div_ceil(base2k.0) as usize
@@ -1438,8 +1468,20 @@ pub fn digits_aligned(base2k: Base2K, k_digit: TorusPrecision) -> bool {
 /// work   = ceil((digits * k_digit + k_aux) / base2k)
 /// ```
 pub fn key_work_size(base2k: Base2K, input_k: TorusPrecision, k_digit: TorusPrecision, k_aux: TorusPrecision) -> usize {
+    offset_key_work_size(base2k, TorusPrecision(0), input_k, k_digit, k_aux)
+}
+
+/// [`key_work_size`] of a key whose rows sit `k_offset` bits lower:
+/// `ceil((k_offset + digits * k_digit + k_aux) / base2k)`.
+pub(crate) fn offset_key_work_size(
+    base2k: Base2K,
+    k_offset: TorusPrecision,
+    input_k: TorusPrecision,
+    k_digit: TorusPrecision,
+    k_aux: TorusPrecision,
+) -> usize {
     let digits: u32 = GGLWELayout::dnum_for_input(input_k, k_digit).0;
-    (digits * k_digit.0 + k_aux.0).div_ceil(base2k.0) as usize
+    (k_offset.0 + digits * k_digit.0 + k_aux.0).div_ceil(base2k.0) as usize
 }
 
 /// Practical limb window used for an immediately normalized GGSW external
@@ -1470,6 +1512,7 @@ where
         input_k: a_infos.k(),
         output_k: res_infos.k(),
         k_digit: ggsw_infos.k_digit(),
+        k_offset: TorusPrecision(0),
         k_aux: ggsw_infos.k_aux(),
         product_terms,
         extra_live_limbs: 0,
@@ -1483,6 +1526,8 @@ pub(crate) struct GadgetProductOutputSizeParams {
     pub(crate) input_k: TorusPrecision,
     pub(crate) output_k: TorusPrecision,
     pub(crate) k_digit: TorusPrecision,
+    /// Row offset of the key: its product lands this many bits below the input.
+    pub(crate) k_offset: TorusPrecision,
     pub(crate) k_aux: TorusPrecision,
     pub(crate) product_terms: usize,
     pub(crate) extra_live_limbs: usize,
@@ -1557,15 +1602,15 @@ pub(crate) fn gadget_product_output_size(params: GadgetProductOutputSizeParams) 
         input_k,
         output_k,
         k_digit,
+        k_offset,
         k_aux,
         product_terms,
         extra_live_limbs,
     } = params;
-    let work_size = key_size.min(key_work_size(key_base2k, input_k, k_digit, k_aux));
+    let work_size = key_size.min(offset_key_work_size(key_base2k, k_offset, input_k, k_digit, k_aux));
 
     let base2k = key_base2k.as_usize();
-    let live_limbs = input_k
-        .as_usize()
+    let live_limbs = (input_k.as_usize() + k_offset.as_usize())
         .max(output_k.as_usize())
         .div_ceil(base2k)
         .saturating_add(extra_live_limbs);
@@ -1718,6 +1763,7 @@ mod gadget_sizing_tests {
                 rank_in: Rank(1),
                 rank_out: Rank(1),
                 k_digit,
+                k_offset: TorusPrecision(0),
                 stride: 1,
             };
             let gadget = layout.gadget_k();
@@ -1754,6 +1800,7 @@ mod gadget_sizing_tests {
                 input_k: TorusPrecision(61),
                 output_k: TorusPrecision(91),
                 k_digit: k_digit_of(Base2K(30), Dsize(2)),
+                k_offset: TorusPrecision(0),
                 k_aux: TorusPrecision(31),
                 product_terms: 1,
                 extra_live_limbs: 0,
@@ -1771,6 +1818,7 @@ mod gadget_sizing_tests {
                 input_k: TorusPrecision(input_k),
                 output_k: TorusPrecision(output_k),
                 k_digit: k_digit_of(Base2K(base2k), Dsize(1)),
+                k_offset: TorusPrecision(0),
                 k_aux: TorusPrecision(180),
                 product_terms,
                 extra_live_limbs: 0,
@@ -1796,6 +1844,7 @@ mod gadget_sizing_tests {
             rank_in: Rank(1),
             rank_out: Rank(1),
             k_digit: TorusPrecision(k_digit),
+            k_offset: TorusPrecision(0),
             stride: 1,
         };
         let queries: [fn(&GGLWELayout) -> usize; 3] = [
@@ -1824,6 +1873,7 @@ mod gadget_sizing_tests {
             rank_in: Rank(1),
             rank_out: Rank(1),
             k_digit: TorusPrecision(k_digit),
+            k_offset: TorusPrecision(0),
             stride: 1,
         };
         assert!(key(26).digits_aligned());

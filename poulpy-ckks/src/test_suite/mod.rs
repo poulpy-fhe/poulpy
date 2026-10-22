@@ -107,6 +107,7 @@ impl CKKSTestParams {
             rank_in: Rank(self.rank as u32),
             rank_out: Rank(self.rank as u32),
             k_digit: k_digit_of(self.base2k, self.dsize),
+            k_offset: TorusPrecision(0),
         }
     }
 }

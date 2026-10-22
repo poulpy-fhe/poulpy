@@ -59,6 +59,10 @@ impl<D: Data, B: Backend> GGLWEInfos for GLWETensorKeyPrepared<D, B> {
         self.0.k_digit()
     }
 
+    fn k_offset(&self) -> TorusPrecision {
+        self.0.k_offset()
+    }
+
     fn dnum(&self) -> Dnum {
         self.0.dnum()
     }
@@ -201,6 +205,7 @@ impl<'a, B: Backend + 'a> GGLWEPreparedToBackendRef<B> for &GLWETensorKeyPrepare
             base2k: self.0.base2k,
             k_aux: self.0.k_aux,
             k_digit: self.0.k_digit,
+            k_offset: self.0.k_offset,
             dnum: self.0.dnum,
             stride: self.0.stride,
             data: poulpy_hal::layouts::vmp_pmat_backend_ref_from_ref::<B>(&self.0.data),
@@ -232,6 +237,7 @@ fn tensor_key_layout<A: GGLWEInfos>(infos: &A) -> GGLWELayout {
         rank_in: Rank((((rank.as_u32() + 1) * rank.as_u32()) >> 1).max(1)),
         rank_out: rank,
         k_digit: infos.k_digit(),
+        k_offset: infos.k_offset(),
         stride: 1,
     }
 }

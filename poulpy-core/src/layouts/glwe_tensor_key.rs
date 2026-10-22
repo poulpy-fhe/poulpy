@@ -99,6 +99,9 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWETensorKey<D, W> {
     fn k_digit(&self) -> TorusPrecision {
         self.0.k_digit()
     }
+    fn k_offset(&self) -> TorusPrecision {
+        self.0.k_offset()
+    }
 
     fn dnum(&self) -> Dnum {
         self.0.dnum()
@@ -146,6 +149,10 @@ impl GGLWEInfos for GLWETensorKeyLayout {
 
     fn k_digit(&self) -> TorusPrecision {
         self.k_digit
+    }
+
+    fn k_offset(&self) -> TorusPrecision {
+        TorusPrecision(0)
     }
 
     fn rank_out(&self) -> Rank {

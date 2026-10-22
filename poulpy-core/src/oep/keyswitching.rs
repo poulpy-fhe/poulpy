@@ -2,7 +2,10 @@
 
 pub use crate::reference::keyswitching::{GLWEKeyswitchReference, LWEKeyswitchReference};
 
-use poulpy_hal::layouts::{Backend, Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef};
+use poulpy_hal::{
+    api::VecZnxDftAddAssign,
+    layouts::{Backend, Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef},
+};
 
 use crate::layouts::{
     GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
@@ -172,6 +175,41 @@ pub unsafe trait GLWEKeyswitchImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos;
+
+    fn glwe_keyswitch_dft_tmp_bytes<A, K>(module: &Module<Self>, res_size: usize, a_infos: &A, key_infos: &K) -> usize
+    where
+        A: GLWEInfos,
+        K: GGLWEInfos;
+
+    fn glwe_keyswitch_dft<A>(
+        module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        a: &A,
+        key: &GGLWEPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        A: GLWEToBackendRef<Self> + GLWEInfos;
+
+    fn glwe_keyswitch_dft_add_tmp_bytes<A, K>(module: &Module<Self>, res_size: usize, a_infos: &A, key_infos: &K) -> usize
+    where
+        A: GLWEInfos,
+        K: GGLWEInfos,
+    {
+        crate::oep::derived::keyswitching::glwe_keyswitch_dft_add_tmp_bytes_derived(module, res_size, a_infos, key_infos)
+    }
+
+    fn glwe_keyswitch_dft_add<A>(
+        module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        a: &A,
+        key: &GGLWEPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        A: GLWEToBackendRef<Self> + GLWEInfos,
+        Module<Self>: VecZnxDftAddAssign<Self>,
+    {
+        crate::oep::derived::keyswitching::glwe_keyswitch_dft_add_derived(module, res, a, key, scratch)
+    }
 }
 
 /// Backend-provided GGLWE key-switching operations.
@@ -335,6 +373,33 @@ macro_rules! impl_glwe_keyswitch_reference_full {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
             {
                 $crate::reference::keyswitching::glwe::glwe_keyswitch_assign_reference::<$be, _, _>(module, res, key, scratch)
+            }
+
+            fn glwe_keyswitch_dft_tmp_bytes<A, K>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res_size: usize,
+                a_infos: &A,
+                key_infos: &K,
+            ) -> usize
+            where
+                A: $crate::layouts::GLWEInfos,
+                K: $crate::layouts::GGLWEInfos,
+            {
+                $crate::reference::keyswitching::glwe::glwe_keyswitch_dft_tmp_bytes_reference::<$be, _, _, _>(
+                    module, res_size, a_infos, key_infos,
+                )
+            }
+
+            fn glwe_keyswitch_dft<A>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>,
+                a: &A,
+                key: &$crate::layouts::prepared::GGLWEPreparedBackendRef<'_, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
+            ) where
+                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+            {
+                $crate::reference::keyswitching::glwe::glwe_keyswitch_dft_reference::<$be, _, _>(module, res, a, key, scratch)
             }
         }
     };

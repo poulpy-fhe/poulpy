@@ -58,6 +58,10 @@ impl<D: Data, B: Backend> GGLWEInfos for GLWEToLWEKeyPrepared<D, B> {
         self.0.k_digit()
     }
 
+    fn k_offset(&self) -> TorusPrecision {
+        self.0.k_offset()
+    }
+
     fn rank_out(&self) -> Rank {
         self.0.rank_out()
     }

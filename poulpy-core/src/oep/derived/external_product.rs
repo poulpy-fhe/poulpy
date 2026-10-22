@@ -61,6 +61,13 @@ mod gglwe {
             res.rank_out(),
             b.rank()
         );
+        assert_eq!(
+            res.k_offset(),
+            a.k_offset(),
+            "res k_offset: {} != a k_offset: {}",
+            res.k_offset(),
+            a.k_offset()
+        );
         assert_eq!(res.base2k(), a.base2k());
         assert!(
             scratch.available() >= gglwe_external_product_tmp_bytes_derived::<BE, _, _, _, _>(module, res, a, b),

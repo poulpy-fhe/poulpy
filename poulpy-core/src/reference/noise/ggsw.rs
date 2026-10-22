@@ -127,6 +127,7 @@ where
                 pt_k,
                 res_row,
                 k_digit,
+                0,
                 &<ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxToBackendRef<BE>>::to_backend_ref(&pt_want_backend),
                 0,
                 &mut scratch_1.borrow(),

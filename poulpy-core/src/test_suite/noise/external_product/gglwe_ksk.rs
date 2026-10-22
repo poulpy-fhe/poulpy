@@ -56,6 +56,7 @@ pub fn test_gglwe_switching_key_external_product<BE: crate::test_suite::noise::T
                     dnum: dnum_in.into(),
                     k_aux: (dsize_in * in_base2k + module.log_n()).into(),
                     k_digit: crate::layouts::k_digit_of(in_base2k, dsize_in),
+                    k_offset: crate::layouts::TorusPrecision(0),
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
                 };
@@ -66,6 +67,7 @@ pub fn test_gglwe_switching_key_external_product<BE: crate::test_suite::noise::T
                     dnum: dnum_in.into(),
                     k_aux: (dsize_in * out_base2k + module.log_n()).into(),
                     k_digit: crate::layouts::k_digit_of(out_base2k, dsize_in),
+                    k_offset: crate::layouts::TorusPrecision(0),
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
                 };
@@ -228,6 +230,7 @@ pub fn test_gglwe_switching_key_external_product_assign<BE: crate::test_suite::n
                     dnum: dnum_in.into(),
                     k_aux: (dsize_in * out_base2k + module.log_n()).into(),
                     k_digit: crate::layouts::k_digit_of(out_base2k, dsize_in),
+                    k_offset: crate::layouts::TorusPrecision(0),
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
                 };

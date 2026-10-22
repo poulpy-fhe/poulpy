@@ -105,6 +105,7 @@ where
                             tmp_pt_k,
                             row_i,
                             k_digit,
+                            0,
                             &pt_backend,
                             0,
                             scratch,

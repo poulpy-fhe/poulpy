@@ -158,6 +158,7 @@ where
         let (mut rot_dft, mut scratch_4) = scratch_3.take_vec_znx_dft_scratch(module.n(), 2, output_size);
         for key in keys {
             ckks_ensure!(key.key.size() == key_size, "{OP}: inconsistent key sizes in group");
+            ckks_ensure!(key.key.k_offset().0 == 0, "{OP}: keys with a row offset are not supported");
             {
                 let mut prod_dft_mut = prod_dft.to_backend_mut();
                 module.gglwe_product_dft_reference(

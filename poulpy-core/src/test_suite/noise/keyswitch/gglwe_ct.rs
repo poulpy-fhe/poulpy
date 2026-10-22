@@ -52,6 +52,7 @@ where
                         dnum: dnum_in.into(),
                         k_aux: (dsize_in * in_base2k + module.log_n()).into(),
                         k_digit: crate::layouts::k_digit_of(in_base2k, dsize_in),
+                        k_offset: crate::layouts::TorusPrecision(0),
                         rank_in: rank_in_s0s1.into(),
                         rank_out: rank_out_s0s1.into(),
                     };
@@ -62,6 +63,7 @@ where
                         dnum: dnum_ksk.into(),
                         k_aux: (dsize * key_base2k + module.log_n()).into(),
                         k_digit: crate::layouts::k_digit_of(key_base2k, dsize),
+                        k_offset: crate::layouts::TorusPrecision(0),
                         rank_in: rank_out_s0s1.into(),
                         rank_out: rank_out_s1s2.into(),
                     };
@@ -72,6 +74,7 @@ where
                         dnum: dnum_in.into(),
                         k_aux: (dsize_in * out_base2k + module.log_n()).into(),
                         k_digit: crate::layouts::k_digit_of(out_base2k, dsize_in),
+                        k_offset: crate::layouts::TorusPrecision(0),
                         rank_in: rank_in_s0s1.into(),
                         rank_out: rank_out_s1s2.into(),
                     };
@@ -211,6 +214,7 @@ pub fn test_gglwe_switching_key_keyswitch_assign<BE: crate::test_suite::noise::T
                     dnum: dnum_in.into(),
                     k_aux: (dsize_in * out_base2k + module.log_n()).into(),
                     k_digit: crate::layouts::k_digit_of(out_base2k, dsize_in),
+                    k_offset: crate::layouts::TorusPrecision(0),
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
                 };
@@ -221,6 +225,7 @@ pub fn test_gglwe_switching_key_keyswitch_assign<BE: crate::test_suite::noise::T
                     dnum: dnum_ksk.into(),
                     k_aux: (dsize * key_base2k + module.log_n()).into(),
                     k_digit: crate::layouts::k_digit_of(key_base2k, dsize),
+                    k_offset: crate::layouts::TorusPrecision(0),
                     rank_in: rank_out.into(),
                     rank_out: rank_out.into(),
                 };

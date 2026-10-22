@@ -47,6 +47,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyCompressedBackendRef<'a, BE> {
             k_aux: key_i.k_aux,
             base2k: key_i.base2k,
             k_digit: key_i.k_digit,
+            k_offset: key_i.k_offset,
             seed: key_i.seed.clone(),
             rank_out: key_i.rank_out,
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_ref::<BE>(&key_i.data),
@@ -83,6 +84,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyCompressedBackendMut<'a, BE> {
             k_aux: key_i.k_aux,
             base2k: key_i.base2k,
             k_digit: key_i.k_digit,
+            k_offset: key_i.k_offset,
             seed: key_i.seed.clone(),
             rank_out: key_i.rank_out,
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_mut::<BE>(&key_i.data),
@@ -98,6 +100,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyCompressedBackendMut<'a, BE> {
             k_aux: key_i.k_aux,
             base2k: key_i.base2k,
             k_digit: key_i.k_digit,
+            k_offset: key_i.k_offset,
             seed: key_i.seed.clone(),
             rank_out: key_i.rank_out,
             data: poulpy_hal::layouts::mat_znx_backend_mut_from_mut::<BE>(&mut key_i.data),
@@ -165,6 +168,10 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GGLWEToGGSWKeyCompressed<D, W> {
 
     fn k_digit(&self) -> TorusPrecision {
         self.keys[0].k_digit()
+    }
+
+    fn k_offset(&self) -> TorusPrecision {
+        self.keys[0].k_offset()
     }
 
     fn dnum(&self) -> Dnum {

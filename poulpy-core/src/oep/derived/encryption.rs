@@ -297,6 +297,7 @@ pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K>(
                 k,
                 row,
                 k_digit,
+                0,
                 &pt.to_backend_ref(),
                 0,
                 &mut scratch_1.borrow(),
@@ -354,6 +355,7 @@ pub(crate) fn glwe_tensor_key_encrypt_sk_derived<BE, R, S>(
 {
     assert_eq!(res.rank_out(), sk.rank());
     assert_eq!(res.n(), sk.n());
+    crate::reference::keyswitching::glwe::assert_no_row_offset("glwe_tensor_key_encrypt_sk", &*res);
     assert!(
         scratch.available() >= glwe_tensor_key_encrypt_sk_tmp_bytes_derived(module, res),
         "insufficient scratch for GLWE tensor key encryption"
@@ -414,6 +416,7 @@ pub(crate) fn glwe_tensor_key_compressed_encrypt_sk_derived<BE, R, S>(
 {
     assert_eq!(res.rank_out(), sk.rank());
     assert_eq!(res.n(), sk.n());
+    crate::reference::keyswitching::glwe::assert_no_row_offset("glwe_tensor_key_compressed_encrypt_sk", &*res);
     assert!(
         scratch.available() >= glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_derived(module, res),
         "insufficient scratch for compressed GLWE tensor key encryption"

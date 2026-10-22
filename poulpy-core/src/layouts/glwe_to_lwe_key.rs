@@ -59,6 +59,10 @@ impl GGLWEInfos for GLWEToLWEKeyLayout {
         TorusPrecision::from(self.base2k())
     }
 
+    fn k_offset(&self) -> TorusPrecision {
+        TorusPrecision(0)
+    }
+
     fn rank_out(&self) -> Rank {
         Rank(1)
     }
@@ -106,6 +110,10 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWEToLWEKey<D, W> {
 
     fn k_digit(&self) -> TorusPrecision {
         self.0.k_digit()
+    }
+
+    fn k_offset(&self) -> TorusPrecision {
+        self.0.k_offset()
     }
 
     fn rank_out(&self) -> Rank {

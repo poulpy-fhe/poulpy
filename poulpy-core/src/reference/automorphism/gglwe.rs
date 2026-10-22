@@ -77,6 +77,13 @@ pub fn glwe_automorphism_key_automorphism_reference<BE, M, R, A>(
         res.k_digit(),
         a.k_digit()
     );
+    assert_eq!(
+        res.k_offset(),
+        a.k_offset(),
+        "res k_offset: {} != a k_offset: {}",
+        res.k_offset(),
+        a.k_offset()
+    );
     assert_eq!(res.base2k(), a.base2k());
     assert!(
         scratch.available() >= module.glwe_automorphism_key_automorphism_tmp_bytes_reference(res, a, key),

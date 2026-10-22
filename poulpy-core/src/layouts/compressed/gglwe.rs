@@ -28,6 +28,7 @@ pub struct GGLWECompressed<D: Data, W: ZnxWord> {
     pub(crate) k_aux: TorusPrecision,
     pub(crate) rank_out: Rank,
     pub(crate) k_digit: TorusPrecision,
+    pub(crate) k_offset: TorusPrecision,
     pub(crate) seed: Vec<[u8; 32]>,
 }
 
@@ -64,6 +65,7 @@ impl<'a, BE: Backend + 'a> GGLWECompressedBackendRef<'a, BE> {
             k_aux: self.inner.k_aux,
             base2k: self.inner.base2k,
             k_digit: self.inner.k_digit,
+            k_offset: self.inner.k_offset,
         }
     }
 }
@@ -124,6 +126,7 @@ impl<BE: Backend> GGLWECompressedToBackendRef<BE> for GGLWECompressedBackendRef<
             k_aux: self.inner.k_aux,
             base2k: self.inner.base2k,
             k_digit: self.inner.k_digit,
+            k_offset: self.inner.k_offset,
             seed: self.inner.seed.clone(),
             rank_out: self.inner.rank_out,
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_ref::<BE>(&self.inner.data),
@@ -138,6 +141,7 @@ impl<BE: Backend> GGLWECompressedToBackendRef<BE> for GGLWECompressedBackendMut<
             k_aux: self.inner.k_aux,
             base2k: self.inner.base2k,
             k_digit: self.inner.k_digit,
+            k_offset: self.inner.k_offset,
             seed: self.inner.seed.clone(),
             rank_out: self.inner.rank_out,
             data: mat_znx_backend_ref_from_mut::<BE>(&self.inner.data),
@@ -157,6 +161,7 @@ impl<BE: Backend> GGLWECompressedToBackendMut<BE> for GGLWECompressedBackendMut<
             k_aux: self.inner.k_aux,
             base2k: self.inner.base2k,
             k_digit: self.inner.k_digit,
+            k_offset: self.inner.k_offset,
             seed: self.inner.seed.clone(),
             rank_out: self.inner.rank_out,
             data: mat_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
@@ -207,11 +212,11 @@ impl<D: Data, W: ZnxWord> LWEInfos for GGLWECompressed<D, W> {
     }
 
     fn max_size(&self) -> usize {
-        crate::layouts::key_size(self.base2k, self.dnum(), self.k_digit, self.k_aux)
+        crate::layouts::offset_key_size(self.base2k, self.k_offset, self.dnum(), self.k_digit, self.k_aux)
     }
 
     fn k(&self) -> TorusPrecision {
-        crate::layouts::key_k(self.dnum(), self.k_digit, self.k_aux)
+        crate::layouts::offset_key_k(self.k_offset, self.dnum(), self.k_digit, self.k_aux)
     }
 }
 impl<D: Data, W: ZnxWord> GLWEInfos for GGLWECompressed<D, W> {
@@ -235,6 +240,10 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GGLWECompressed<D, W> {
 
     fn k_digit(&self) -> TorusPrecision {
         self.k_digit
+    }
+
+    fn k_offset(&self) -> TorusPrecision {
+        self.k_offset
     }
 
     fn dnum(&self) -> Dnum {
@@ -278,15 +287,18 @@ impl<D: Data, W: ZnxWord> GGLWECompressed<D, W> {
     where
         A: GGLWEInfos,
     {
-        Self::alloc::<B>(
+        let mut res = Self::alloc_sized::<B>(
             infos.n(),
+            crate::layouts::offset_key_size(infos.base2k(), infos.k_offset(), infos.dnum(), infos.k_digit(), infos.k_aux()),
             infos.base2k(),
             infos.dnum(),
             infos.k_digit(),
             infos.k_aux(),
             infos.rank_in(),
             infos.rank_out(),
-        )
+        );
+        res.k_offset = infos.k_offset();
+        res
     }
 
     /// Allocates a new compressed GGLWE with the given parameters.
@@ -300,7 +312,23 @@ impl<D: Data, W: ZnxWord> GGLWECompressed<D, W> {
         rank_out: Rank,
     ) -> Self {
         let size: usize = crate::layouts::key_size(base2k, dnum, k_digit, k_aux);
+        Self::alloc_sized::<B>(n, size, base2k, dnum, k_digit, k_aux, rank_in, rank_out)
+    }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the compressed GGLWE shape is its dimensions and the limb count they size"
+    )]
+    fn alloc_sized<B: Backend<OwnedBuf = D, ZnxWord = W>>(
+        n: Degree,
+        size: usize,
+        base2k: Base2K,
+        dnum: Dnum,
+        k_digit: TorusPrecision,
+        k_aux: TorusPrecision,
+        rank_in: Rank,
+        rank_out: Rank,
+    ) -> Self {
         GGLWECompressed {
             noise: None,
             data: MatZnx::from_data(
@@ -311,6 +339,7 @@ impl<D: Data, W: ZnxWord> GGLWECompressed<D, W> {
                 1,
                 size,
             ),
+            k_offset: TorusPrecision(0),
             k_aux,
             base2k,
             k_digit,
@@ -324,14 +353,9 @@ impl<D: Data, W: ZnxWord> GGLWECompressed<D, W> {
     where
         A: GGLWEInfos,
     {
-        Self::bytes_of(
-            infos.n(),
-            infos.base2k(),
-            infos.dnum(),
-            infos.k_digit(),
-            infos.k_aux(),
-            infos.rank_in(),
-        )
+        let size: usize =
+            crate::layouts::offset_key_size(infos.base2k(), infos.k_offset(), infos.dnum(), infos.k_digit(), infos.k_aux());
+        MatZnx::<AlignedBuf, W>::bytes_of(infos.n().into(), infos.dnum().into(), infos.rank_in().into(), 1, size)
     }
 
     /// Returns the serialized byte size for a compressed GGLWE with the given parameters.
@@ -356,6 +380,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGLWECompressed<D, W> {
         let k_aux = TorusPrecision(reader.read_u32::<LittleEndian>()?);
         let base2k = Base2K(reader.read_u32::<LittleEndian>()?);
         let k_digit = TorusPrecision(reader.read_u32::<LittleEndian>()?);
+        let k_offset = TorusPrecision(reader.read_u32::<LittleEndian>()?);
         let rank_out = Rank(reader.read_u32::<LittleEndian>()?);
         if rank_out != self.rank_out {
             return Err(crate::layouts::invalid_serialized_shape());
@@ -372,6 +397,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGLWECompressed<D, W> {
         crate::layouts::read_mat_znx_with_shape(&mut self.data, reader, Some(rows), Some(cols_in), 1)?;
         crate::layouts::validate_noise_components(noise.as_ref(), self.rank_out.as_usize() + 1)?;
         self.k_aux = k_aux;
+        self.k_offset = k_offset;
         self.base2k = base2k;
         self.k_digit = k_digit;
         self.seed = seed;
@@ -387,6 +413,7 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GGLWECompressed<D, W> {
         writer.write_u32::<LittleEndian>(self.k_aux.into())?;
         writer.write_u32::<LittleEndian>(self.base2k.into())?;
         writer.write_u32::<LittleEndian>(self.k_digit.into())?;
+        writer.write_u32::<LittleEndian>(self.k_offset.into())?;
         writer.write_u32::<LittleEndian>(self.rank_out.into())?;
         writer.write_u32::<LittleEndian>(self.seed.len() as u32)?;
         for s in &self.seed {
@@ -416,6 +443,7 @@ where
             let other = other.to_backend_ref();
 
             assert_eq!(res.k_digit(), other.k_digit());
+            assert_eq!(res.k_offset(), other.k_offset(), "decompress_gglwe: row offsets differ");
             assert!(res.dnum() <= other.dnum());
 
             let rank_in: usize = res.rank_in().into();
@@ -447,6 +475,7 @@ impl<BE: Backend> GGLWECompressedToBackendRef<BE> for GGLWECompressed<BE::OwnedB
             k_aux: self.k_aux(),
             base2k: self.base2k(),
             k_digit: self.k_digit(),
+            k_offset: self.k_offset(),
             seed: self.seed.clone(),
             rank_out: self.rank_out,
             data: <MatZnx<BE::OwnedBuf, BE::ZnxWord> as MatZnxToBackendRef<BE>>::to_backend_ref(&self.data),
@@ -461,6 +490,7 @@ impl<BE: Backend> GGLWECompressedToBackendRef<BE> for &GGLWECompressed<BE::BufRe
             k_aux: self.k_aux(),
             base2k: self.base2k(),
             k_digit: self.k_digit(),
+            k_offset: self.k_offset(),
             seed: self.seed.clone(),
             rank_out: self.rank_out,
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_ref::<BE>(&self.data),
@@ -475,6 +505,7 @@ impl<BE: Backend> GGLWECompressedToBackendRef<BE> for &mut GGLWECompressed<BE::B
             k_aux: self.k_aux(),
             base2k: self.base2k(),
             k_digit: self.k_digit(),
+            k_offset: self.k_offset(),
             seed: self.seed.clone(),
             rank_out: self.rank_out,
             data: mat_znx_backend_ref_from_mut::<BE>(&self.data),
@@ -502,6 +533,7 @@ impl<BE: Backend> GGLWECompressedToBackendMut<BE> for GGLWECompressed<BE::OwnedB
             k_aux: self.k_aux(),
             base2k: self.base2k(),
             k_digit: self.k_digit(),
+            k_offset: self.k_offset(),
             seed: self.seed.clone(),
             rank_out: self.rank_out,
             data: <MatZnx<BE::OwnedBuf, BE::ZnxWord> as MatZnxToBackendMut<BE>>::to_backend_mut(&mut self.data),
@@ -521,6 +553,7 @@ impl<BE: Backend> GGLWECompressedToBackendMut<BE> for &mut GGLWECompressed<BE::B
             k_aux: self.k_aux(),
             base2k: self.base2k(),
             k_digit: self.k_digit(),
+            k_offset: self.k_offset(),
             seed: self.seed.clone(),
             rank_out: self.rank_out,
             data: mat_znx_backend_mut_from_mut::<BE>(&mut self.data),

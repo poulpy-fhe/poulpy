@@ -405,6 +405,7 @@ where
         rank_in: Rank(2),
         rank_out: Rank(1),
         k_digit: k_digit.into(),
+        k_offset: poulpy_core::layouts::TorusPrecision(0),
     };
     let mut key = module.glwe_switching_key_alloc_from_infos(&ksk_infos);
     module.glwe_switching_key_encrypt_sk(&mut key, &sk_in, &sk_out, source_xe, source_xa, scratch);
@@ -546,6 +547,7 @@ impl<D: Data> ShipKeySet<D, i64> {
             rank_in: Rank(1),
             rank_out: Rank(1),
             k_digit: b2k.into(),
+            k_offset: poulpy_core::layouts::TorusPrecision(0),
         };
         let mut dense_to_sparse = module.glwe_switching_key_alloc_from_infos(&d2s_infos);
         module.glwe_switching_key_encrypt_sk(&mut dense_to_sparse, &sk_dense, &sk_sparse, source_xe, source_xa, scratch);

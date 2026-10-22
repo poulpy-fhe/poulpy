@@ -98,6 +98,10 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWESwitchingKeyCompressed<D, W> {
         self.key.k_digit()
     }
 
+    fn k_offset(&self) -> TorusPrecision {
+        self.key.k_offset()
+    }
+
     fn dnum(&self) -> Dnum {
         self.key.dnum()
     }
@@ -125,15 +129,11 @@ impl<D: Data, W: ZnxWord> GLWESwitchingKeyCompressed<D, W> {
     where
         A: GGLWEInfos,
     {
-        Self::alloc::<B>(
-            infos.n(),
-            infos.base2k(),
-            infos.dnum(),
-            infos.k_digit(),
-            infos.k_aux(),
-            infos.rank_in(),
-            infos.rank_out(),
-        )
+        GLWESwitchingKeyCompressed {
+            key: GGLWECompressed::alloc_from_infos::<B, _>(infos),
+            input_degree: Degree(0),
+            output_degree: Degree(0),
+        }
     }
 
     /// Allocates a new compressed GLWE switching key with the given parameters.

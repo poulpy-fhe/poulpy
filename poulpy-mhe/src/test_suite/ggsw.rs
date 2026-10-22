@@ -47,6 +47,7 @@ fn ephemeral_key_layout<BE: Backend>(module: &Module<BE>, layout: &GGSWLayout) -
         rank_in: layout.rank,
         rank_out: layout.rank,
         k_digit: layout.k_digit,
+        k_offset: TorusPrecision(0),
         stride: 1,
     }
 }

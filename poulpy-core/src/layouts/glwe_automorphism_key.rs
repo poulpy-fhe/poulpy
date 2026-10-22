@@ -16,7 +16,8 @@ use std::fmt;
 ///
 /// Implements [`LWEInfos`], [`GLWEInfos`] and [`GGLWEInfos`] so it can
 /// be passed to any generic constructor that needs layout information.
-/// For an automorphism key `rank_in == rank_out`.
+/// For an automorphism key `rank_in == rank_out`. It has no row offset (see
+/// [`GGLWEInfos::k_offset`]): no automorphism takes a key with one.
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub struct GLWEAutomorphismKeyLayout {
     pub n: Degree,
@@ -29,10 +30,12 @@ pub struct GLWEAutomorphismKeyLayout {
 
 /// The automorphism key of a stored GGLWE layout (`rank_out` is its rank).
 ///
-/// Panics on a coarsened view (`stride != 1`), which no key is stored as.
+/// Panics on a coarsened view (`stride != 1`), which no key is stored as, and on
+/// a row offset, which no automorphism key has.
 impl From<GGLWELayout> for GLWEAutomorphismKeyLayout {
     fn from(layout: GGLWELayout) -> Self {
         assert_eq!(layout.stride, 1, "a coarsened view is not a stored layout");
+        assert_eq!(layout.k_offset.0, 0, "an automorphism key has no row offset");
         Self {
             n: layout.n,
             base2k: layout.base2k,
@@ -143,6 +146,9 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWEAutomorphismKey<D, W> {
     fn k_digit(&self) -> TorusPrecision {
         self.key.k_digit()
     }
+    fn k_offset(&self) -> TorusPrecision {
+        self.key.k_offset()
+    }
 
     fn dnum(&self) -> Dnum {
         self.key.dnum()
@@ -188,6 +194,9 @@ impl GGLWEInfos for GLWEAutomorphismKeyLayout {
 
     fn k_digit(&self) -> TorusPrecision {
         self.k_digit
+    }
+    fn k_offset(&self) -> TorusPrecision {
+        TorusPrecision(0)
     }
 
     fn rank_out(&self) -> Rank {

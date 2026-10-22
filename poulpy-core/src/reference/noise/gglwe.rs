@@ -112,6 +112,7 @@ where
                 pt_k,
                 res_row,
                 k_digit,
+                res_backend.k_offset().as_usize(),
                 &<ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxToBackendRef<BE>>::to_backend_ref(&pt_want_backend),
                 res_col,
                 &mut scratch_1.borrow(),

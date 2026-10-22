@@ -78,15 +78,103 @@ where
     ) where
         A: GLWEToBackendRef<BE>,
     {
-        let (mut a_tmp, mut scratch) = scratch.borrow().take_glwe_scratch(&a.to_backend_ref());
-        let a = if a.is_canonical() {
-            a.to_backend_ref()
-        } else {
-            self.glwe_normalize(&mut a_tmp, a, &mut scratch.borrow());
-            a_tmp.to_backend_ref()
-        };
-        glwe_keyswitch_dft_fill(self, res, &&a, key, &mut scratch);
+        assert_no_row_offset("glwe_keyswitch_internal", key);
+        glwe_keyswitch_dft_canonical(self, res, a, key, scratch);
     }
+}
+
+/// The gadget product of a key switch, `a`'s mask columns decomposed and
+/// multiplied by `key`, into `res`: the input once canonical.
+fn glwe_keyswitch_dft_canonical<BE, M, A>(
+    module: &M,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    a: &A,
+    key: &GGLWEPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: GLWEKeyswitchInternal<BE>,
+    A: GLWEToBackendRef<BE>,
+{
+    let (mut a_tmp, mut scratch) = scratch.borrow().take_glwe_scratch(&a.to_backend_ref());
+    let a = if a.is_canonical() {
+        a.to_backend_ref()
+    } else {
+        module.glwe_normalize(&mut a_tmp, a, &mut scratch.borrow());
+        a_tmp.to_backend_ref()
+    };
+    glwe_keyswitch_dft_fill(module, res, &&a, key, &mut scratch);
+}
+
+/// Scratch of [`glwe_keyswitch_dft_reference`] for an accumulator of `res_size` limbs.
+pub fn glwe_keyswitch_dft_tmp_bytes_reference<BE, M, A, K>(module: &M, res_size: usize, a_infos: &A, key_infos: &K) -> usize
+where
+    BE: Backend,
+    M: GLWEKeyswitchInternal<BE>,
+    A: GLWEInfos,
+    K: GGLWEInfos,
+{
+    operand_degree(module.n(), &[a_infos.n(), key_infos.n()]);
+    module.glwe_keyswitch_internal_tmp_bytes_from_sizes(a_infos.rank().as_usize(), res_size, a_infos.size(), key_infos)
+}
+
+/// The gadget product of a key switch of `a = (b, a_1, ..., a_rank)` over the
+/// `res.size()` limbs of the DFT accumulator `res`: `Σ_i decomp(a_i) · key_i`, the
+/// whole switch but for the body `b`.
+///
+/// The caller finishes the switch with one `vec_znx_idft_normalize` per column,
+/// passing the body of `a`, lowered by `key.k_offset()` bits, as the addend of
+/// column 0 (see [`glwe_keyswitch_reference`]). `a` is at the key radix.
+pub fn glwe_keyswitch_dft_reference<BE, M, A>(
+    module: &M,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    a: &A,
+    key: &GGLWEPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: GLWEKeyswitchInternal<BE>,
+    A: GLWEToBackendRef<BE> + GLWEInfos,
+{
+    check_keyswitch_dft(module, res, a, key, scratch);
+    glwe_keyswitch_dft_canonical(module, res, a, key, scratch);
+}
+
+fn check_keyswitch_dft<BE, M, A>(
+    module: &M,
+    res: &VecZnxDftBackendMut<'_, BE>,
+    a: &A,
+    key: &GGLWEPreparedBackendRef<'_, BE>,
+    scratch: &ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: GLWEKeyswitchInternal<BE>,
+    A: GLWEInfos,
+{
+    assert_eq!(a.rank(), key.rank_in(), "glwe_keyswitch_dft: a.rank() != key.rank_in()");
+    assert_eq!(
+        res.cols(),
+        (key.rank_out() + 1).as_usize(),
+        "glwe_keyswitch_dft: res.cols() != key.rank_out() + 1"
+    );
+    assert_eq!(a.base2k(), key.base2k(), "glwe_keyswitch_dft: a is not at the key radix");
+    operand_degree(module.n(), &[res.n().into(), a.n(), key.n()]);
+    if key.k_offset().0 > 0 {
+        let max_input_k = key.gglwe_layout().max_input_k();
+        assert!(
+            a.k() <= max_input_k,
+            "glwe_keyswitch_dft: a.k()={} exceeds the offset key's max_input_k={}",
+            a.k(),
+            max_input_k
+        );
+    }
+    let tmp_bytes = glwe_keyswitch_dft_tmp_bytes_reference(module, res.size(), a, key);
+    assert!(
+        scratch.available() >= tmp_bytes,
+        "scratch.available(): {} < GLWEKeyswitch::glwe_keyswitch_dft_tmp_bytes: {}",
+        scratch.available(),
+        tmp_bytes
+    );
 }
 
 fn glwe_keyswitch_dft_fill_tmp_bytes<BE, M, K>(
@@ -462,6 +550,7 @@ where
         input_k: a_infos.k(),
         output_k: res_infos.k(),
         k_digit: key_infos.k_digit(),
+        k_offset: key_infos.k_offset(),
         k_aux: key_infos.k_aux(),
         product_terms,
         extra_live_limbs,
@@ -501,7 +590,7 @@ where
                 .vec_znx_idft_apply_tmp_bytes()
                 .max(module.vec_znx_big_normalize_tmp_bytes()),
     );
-    let lvl_2: usize = if a_infos.base2k() != key_infos.base2k() {
+    let lvl_2: usize = if a_infos.base2k() != key_infos.base2k() || key_infos.k_offset().0 > 0 {
         let small_term_tmp: usize = BE::bytes_of_vec_znx(module.n(), 1, output_size);
         let a_conv_infos: GLWELayout = GLWELayout {
             n: a_infos.n(),
@@ -572,6 +661,20 @@ pub fn glwe_keyswitch_reference<BE, M, R, A>(
         module.glwe_keyswitch_tmp_bytes_reference(res, a, key)
     );
 
+    let k_offset: usize = key.k_offset().as_usize();
+    if k_offset > 0 {
+        // A key with a row offset lowers the input: it must decompose it whole.
+        // Past its rows the output holds the product's tail, as past the gadget of
+        // an offset-free key.
+        let max_input_k = key.gglwe_layout().max_input_k();
+        assert!(
+            a.k() <= max_input_k,
+            "glwe_keyswitch: a.k()={} exceeds the offset key's max_input_k={}",
+            a.k(),
+            max_input_k
+        );
+    }
+
     let output_size = gglwe_product_output_size::<BE, _, _, _>(res, a, key);
 
     let a_base2k: usize = a.base2k().into();
@@ -584,7 +687,9 @@ pub fn glwe_keyswitch_reference<BE, M, R, A>(
         .borrow()
         .take_vec_znx_dft_scratch(res.n().as_usize(), cols, output_size);
 
-    if a_base2k != key_base2k {
+    // The body goes back at its own place, `k_offset` bits below the input: it
+    // is rebuilt at the key radix, lowered, when the key has an offset.
+    if a_base2k != key_base2k || k_offset > 0 {
         let (mut a_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&GLWELayout {
             n: a.n(),
             base2k: key.base2k(),
@@ -601,7 +706,7 @@ pub fn glwe_keyswitch_reference<BE, M, R, A>(
             &mut res_small,
             key_base2k,
             output_size * key_base2k,
-            0,
+            -(k_offset as i64),
             0,
             &a_conv.to_backend_ref().data,
             key_base2k,
@@ -654,6 +759,16 @@ pub fn glwe_keyswitch_reference<BE, M, R, A>(
             );
         }
     }
+}
+
+/// Panics on a key with a row offset: `op` adds its input back at the input's
+/// own place, which only an offset-free key's product matches.
+pub fn assert_no_row_offset<K: GGLWEInfos>(op: &str, key: &K) {
+    assert_eq!(
+        key.k_offset().0,
+        0,
+        "{op}: keys with a row offset are only taken by glwe_keyswitch and glwe_keyswitch_dft"
+    );
 }
 
 pub fn glwe_keyswitch_assign_reference<BE, M, R>(

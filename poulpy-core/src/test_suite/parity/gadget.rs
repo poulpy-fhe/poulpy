@@ -57,6 +57,7 @@ where
                 base2k: g.base2k,
                 dnum: g.dnum,
                 k_digit: g.k_digit,
+                k_offset: TorusPrecision(0),
                 k_aux: g.k_aux,
                 rank_in: g.rank,
                 rank_out: g.rank,
@@ -219,6 +220,7 @@ where
                 base2k: g.base2k,
                 dnum: Dnum((4 * b + 1).div_ceil(k_digit) as u32),
                 k_digit: TorusPrecision(k_digit as u32),
+                k_offset: TorusPrecision(0),
                 k_aux: TorusPrecision((k_digit + 1) as u32),
                 rank_in: g.rank,
                 rank_out: g.rank,
@@ -427,6 +429,7 @@ where
             let h = GGLWELayout {
                 dnum: g.dnum,
                 k_digit: g.k_digit,
+                k_offset: TorusPrecision(0),
                 k_aux: g.k_aux,
                 ..k
             };

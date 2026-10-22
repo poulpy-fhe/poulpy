@@ -111,6 +111,7 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             base2k: (b as u32).into(),
             dnum: Dnum(3),
             k_digit: crate::layouts::k_digit_of(b, dsize),
+            k_offset: TorusPrecision(0),
             k_aux: TorusPrecision((dsize * b + (n.ilog2() as usize) + 1) as u32),
             rank_in: Rank(rank as u32),
             rank_out: Rank(rank as u32),

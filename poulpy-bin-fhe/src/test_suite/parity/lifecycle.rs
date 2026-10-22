@@ -84,6 +84,7 @@ fn key_layout(n: usize, bridge: bool) -> BDDKeyLayout {
             base2k: 12usize.into(),
             dnum: 4usize.into(),
             k_digit: 12usize.into(),
+            k_offset: poulpy_core::layouts::TorusPrecision(0),
             k_aux: (12 + aux).into(),
             rank_in: rank.into(),
             rank_out: 1usize.into(),
