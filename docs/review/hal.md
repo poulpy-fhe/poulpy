@@ -70,7 +70,7 @@ Generic rules: `docs/review/workspace.md` sections 2 and 3.
 - **Support blocks.** A new allocation, sizing, carving, plan or module trait's `support` block bounds dimensions and degree in `domain` (`n: a power of two, MIN_DEGREE <= n <= the module's degree` for allocations and sizes, at most the module's degree for carves, a take fed to a kernel obeying that kernel's floor) and leaves contents unspecified in `ensures`.
 - **Scratch lines.** A scratch-taking op `requires` `scratch >= <query>(<arguments>)` with its own query (`vec_znx_lsh_tmp_bytes(res.size())`) and a scratch-free op has neither, a query's `ensures` names the ops and sizes it serves, never a byte formula or the fallback's carve, and a family query lists, and is named by, every op it sizes, a new op extending that list and the default's bound.
 - **Fallback and override lines.** A derived op's `fallback` describes its body exactly, step by step (temporaries' limbs, columns and degree, nested calls in order, checks), updated with every body change, and its `override` reads `allowed, with <its query>`, `allowed, scratch-free` or, for a sampler, `allowed, drawing the same values`.
-- **Notation changes are behaviour changes.** Changing the meaning of a Notation symbol or the canonical form (the `rnd` tie rule) updates `poulpy-hal/src/api/mod.rs`, the oracle and every backend kernel in one PR with a `**Breaking, behaviour:**` entry, never a regenerated fixture.
+- **Notation changes are behaviour changes.** Changing the meaning of a Notation symbol or the canonical form (the `rnd` tie rule) updates `poulpy-hal/src/api/mod.rs`, the oracle and every backend kernel in one PR with a `**Breaking, behaviour:**` entry, never by regenerating fixtures alone.
 
 ## 4. Delegates
 

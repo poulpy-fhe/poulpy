@@ -53,7 +53,7 @@ Generic rules: `docs/review/workspace.md` section 3.
 
 ### 3.3. Normalization
 
-- **Where mhe normalizes.** No mhe trait exposes normalize; finalization yields a canonical result and generation a canonical share, normalizing only after a flag-clearing last step and to round before a flood (section 5).
+- **Where mhe normalizes.** No mhe trait exposes normalize: generation yields a canonical share (normalizing after a flag-clearing last step and to round before a flood, section 5), aggregation an unnormalized sum (section 3.2) and finalization the canonical result of normalizing that sum.
 - **Normalize only non-canonical parts.** A seeded finalization normalizes only aggregated bodies, regenerating masks from seeds (`fill_glwe_mask_from_seed`, `decompress_gglwe`) under a one-line comment that they are canonical by construction; an unseeded sum (`GGLWEPat`, GLWE-backed shares) normalizes every column.
 
 ### 3.4. Metadata
