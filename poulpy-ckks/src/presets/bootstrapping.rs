@@ -646,16 +646,16 @@ pub(crate) fn insecure_n11_d35_k180_p20_s2c() -> Result<BootstrappingPreset> {
 }
 
 /// [`n16_d35_k733_p20_s2c`] tuned for speed: 685-bit ciphertexts with at least
-/// 19 bits of precision (19.4 measured, the minimum over the slots), 15 usable levels. The first CoeffsToSlots factor is
-/// applied by the raise, three factors of four layers follow, EvalMod runs once
+/// 19 bits of precision (19.6 measured, the minimum over the slots), 15 usable levels. The first CoeffsToSlots factor is
+/// applied by the raise, four factors of three layers follow, EvalMod runs once
 /// on the conjugate-invariant ring ([`EvalModRing::ConjugateInvariant`], 84 bits
-/// of conversions), and SlotsToCoeffs has four factors. The raised width is 1383 bits.
+/// of conversions), and SlotsToCoeffs has four factors. The raised width is 1431 bits.
 pub fn n16_d35_k685_p19_s2c_ffr_ci() -> Result<BootstrappingPreset> {
     build(PresetSpec {
         name: "n16_d35_k685_p19_s2c_ffr_ci",
         output_k: 685,
         log2_precision: 19,
-        c2s_schedule: &[(3, 1), (4, 1024), (4, 64), (4, 4)],
+        c2s_schedule: &[(3, 1), (3, 2048), (3, 256), (3, 32), (3, 4)],
         c2s_first_factor_on_raise: true,
         power_of_two_keys: false,
         // `u` carries the overflow of the raise, `v` only the message.
@@ -1186,10 +1186,10 @@ mod tests {
         assert_eq!(preset.plan().eval_mod().eval_mod_type, EvalModType::CosHKEven);
         assert_eq!(preset.plan().eval_mod().consumed_bits(), 464);
         assert_eq!(preset.plan().eval_mod_ring().consumed_bits(), 84);
-        assert_eq!(preset.plan().coeffs_to_slots().consumed_bits(), 144);
+        assert_eq!(preset.plan().coeffs_to_slots().consumed_bits(), 192);
         assert_eq!(preset.plan().c2s_guard_bits(), 6);
         assert_eq!(preset.plan().slots_to_coeffs().consumed_bits(), 112);
-        assert_eq!((preset.input_k(), preset.output_k(), preset.bootstrap_k()), (160, 685, 1383));
+        assert_eq!((preset.input_k(), preset.output_k(), preset.bootstrap_k()), (160, 685, 1431));
         assert_eq!(preset.log2_precision(), 19);
         assert_eq!(
             preset.output_layout().log_budget() - preset.input_layout().log_budget(),
@@ -1220,7 +1220,7 @@ mod tests {
         let first = keys.first_factor_key.unwrap();
         assert_eq!(
             (first.k_digit.as_usize(), first.dnum.as_usize(), first.k_offset.as_usize()),
-            (104, 1, 1300)
+            (104, 1, 1352)
         );
         // The trace key switches the raised CoeffsToSlots output, the embed key the EvalMod output.
         let (trace, embed) = keys.conversion_keys.unwrap();
@@ -1378,7 +1378,7 @@ mod tests {
     #[test]
     fn n16_d35_k685_p19_s2c_ffr_ci_runs_eval_mod_on_the_ci_ring() {
         let preset = n16_d35_k685_p19_s2c_ffr_ci().unwrap();
-        assert_eq!((preset.input_k(), preset.output_k(), preset.bootstrap_k()), (160, 685, 1383));
+        assert_eq!((preset.input_k(), preset.output_k(), preset.bootstrap_k()), (160, 685, 1431));
         assert_eq!(preset.plan().eval_mod_ring().consumed_bits(), 84);
         // The tensor key is of the CI ring of degree N, the conversion keys of degree 2N.
         let keys = preset.keys_layout();
@@ -1399,10 +1399,10 @@ mod tests {
             })
             .unwrap();
         // The product by `u` no longer takes its 46 bits.
-        assert_eq!((folded.input_k(), folded.output_k(), folded.bootstrap_k()), (160, 685, 1337));
+        assert_eq!((folded.input_k(), folded.output_k(), folded.bootstrap_k()), (160, 685, 1385));
         assert_eq!(folded.plan().eval_mod_ring().consumed_bits(), 38);
-        // The rotation keys follow the narrower raised width: 5533 MiB against 6845.
-        assert_eq!(key_set_bytes(&folded).map(|bytes| bytes >> 20), [4923, 99, 3, 248, 260]);
+        // The rotation keys follow the narrower raised width: 4959 MiB against 5759.
+        assert_eq!(key_set_bytes(&folded).map(|bytes| bytes >> 20), [4357, 99, 3, 240, 260]);
     }
 
     #[test]
@@ -1410,11 +1410,11 @@ mod tests {
         let preset = n16_d35_k685_p19_s2c_ffr_ci().unwrap();
         let powers = preset.with_power_of_two_keys().unwrap();
         let count = |p: &BootstrappingPreset| p.plan().galois_elements(p.log_n(), 2 * p.n() as i64).len();
-        // Five keys per paid factor in place of ten: 21 rotation keys against 43, 3121 MiB
-        // against 6243, every width unchanged.
-        assert_eq!((count(&preset), count(&powers)), (43, 21));
-        assert_eq!(key_set_bytes(&powers).map(|bytes| bytes >> 20), [3121, 99, 3, 240, 260]);
-        assert_eq!((powers.input_k(), powers.output_k(), powers.bootstrap_k()), (160, 685, 1383));
+        // Fewer keys per paid factor: 21 rotation keys against 35, 3419 MiB against 5149,
+        // every width unchanged.
+        assert_eq!((count(&preset), count(&powers)), (35, 21));
+        assert_eq!(key_set_bytes(&powers).map(|bytes| bytes >> 20), [3419, 99, 3, 248, 260]);
+        assert_eq!((powers.input_k(), powers.output_k(), powers.bootstrap_k()), (160, 685, 1431));
     }
 
     #[test]
@@ -1425,21 +1425,21 @@ mod tests {
         };
         // Rotation keys with conjugation, the tensor key and the encapsulation keys: 8022 MiB.
         assert_eq!(key_set_bytes(&n16_d35_k733_p20_s2c().unwrap()).map(mib), [7891, 99, 32, 0, 0]);
-        // 43 rotation keys and no conjugation, the CI tensor key, the dense-to-sparse key,
-        // eight first-factor keys and the trace and embed keys of degree 2N: 6845 MiB.
+        // 35 rotation keys and no conjugation, the CI tensor key, the dense-to-sparse key,
+        // eight first-factor keys and the trace and embed keys of degree 2N: 5759 MiB.
         let preset = n16_d35_k685_p19_s2c_ffr_ci().unwrap();
-        assert_eq!(key_set_bytes(&preset).map(mib), [6243, 99, 3, 240, 260]);
+        assert_eq!(key_set_bytes(&preset).map(mib), [5149, 99, 3, 248, 260]);
         // With the first factor evaluated by the matrix, every paid factor runs 48 bits
-        // wider and the sparse-to-dense key comes back: 8001 MiB.
+        // wider and the sparse-to-dense key comes back: 8756 MiB.
         let without = build(PresetSpec {
-            c2s_schedule: &[(3, 8), (4, 1024), (4, 64), (4, 4)],
+            c2s_schedule: &[(3, 8), (3, 2048), (3, 256), (3, 32), (3, 4)],
             c2s_first_factor_on_raise: false,
             power_of_two_keys: false,
             ..preset.spec
         })
         .unwrap();
-        assert_eq!(without.bootstrap_k(), 1431);
-        assert_eq!(key_set_bytes(&without).map(mib), [7609, 99, 33, 0, 260]);
+        assert_eq!(without.bootstrap_k(), 1479);
+        assert_eq!(key_set_bytes(&without).map(mib), [8363, 99, 34, 0, 260]);
     }
 
     #[test]

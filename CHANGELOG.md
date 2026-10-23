@@ -255,7 +255,8 @@
 
 ### `poulpy-ckks`
 
-- Add `DFTPlan::with_power_of_two_keys` and `BootstrappingPreset::with_power_of_two_keys`, the transforms evaluated with the keys of power-of-two rotations only (`BsgsPowersOfTwo`): `n16_d35_k685_p19_s2c_ffr_ci` takes 21 rotation keys instead of 43, 3121 MiB instead of 6243, at the same widths.
+- Add `DFTPlan::with_power_of_two_keys` and `BootstrappingPreset::with_power_of_two_keys`, the transforms evaluated with the keys of power-of-two rotations only (`BsgsPowersOfTwo`): `n16_d35_k685_p19_s2c_ffr_ci` takes 21 rotation keys instead of 35, 3419 MiB instead of 5149, at the same widths.
+  The preset keeps a key per rotation.
   `preset_label` marks it `+pow2`, and `small_s2c_preset_meets_precision` runs it on both rings.
 - Add the modulus raise that applies the first `CoeffsToSlots` factor on the raised ciphertext while it is small (`DFTPlan::with_first_factor_on_raise`, after ePrint 2025/1403): the factor consumes no modulus, and the raised width drops by one CoeffsToSlots scale.
   Each diagonal's term is rotated with no key and switched to the dense secret by a `GLWESwitchingKey` of its own, from the rotated raise secret, whose rows sit `k_offset` bits under the term's few limbs and end at the raise's working width (`BootstrappingKeysLayout::first_factor_key`, `BootstrappingLinearKeys::first_factor_key`); the switches are summed with `glwe_keyswitch_dft_add` and rounded once.
@@ -276,8 +277,8 @@
   Backends override it through `CKKSBootstrappingCIImpl`, whose associated type `CI` names the conjugate-invariant twin, and which `impl_ckks_bootstrapping_ci_reference!($be, $ci)` wires to the reference; `CKKSBootstrappingCIOps::CI` exposes the twin.
   The entry points take one standard module of degree at least `2N`, which serves the conversions and the stages of degree `N`, and the CI module of degree `N`.
 - **Fix:** CKKS linear transformations, the first-factor raise and bootstrapping key generation read Galois elements at their operands' degree, not the module's, so a module of a larger degree serves them.
-- Add the preset `n16_d35_k685_p19_s2c_ffr_ci` to `presets::bootstrapping::all`: `n16_d35_k733_p20_s2c` with the first factor on the raise and EvalMod on the CI ring, 19 bits of precision and 15 levels, for about 22% less time per bootstrap on the NEON Rayon backend.
-  Measured on an Apple M5 Pro: `NTT4x30NeonRayon/ckks/ckks_bootstrapping/n16_d35_k685_p19_s2c_ffr_ci` takes 0.72 s, `NTT4x30NeonRayon/ckks/ckks_bootstrapping/n16_d35_k733_p20_s2c` 0.92 s.
+- Add the preset `n16_d35_k685_p19_s2c_ffr_ci` to `presets::bootstrapping::all`: `n16_d35_k733_p20_s2c` with the first factor on the raise, CoeffsToSlots in four factors of three layers after it and EvalMod on the CI ring, 19 bits of precision and 15 levels, for about 20% less time per bootstrap on the NEON Rayon backend.
+  Measured on an Apple M5 Pro: `NTT4x30NeonRayon/ckks/ckks_bootstrapping/n16_d35_k685_p19_s2c_ffr_ci` takes 0.65 s, `NTT4x30NeonRayon/ckks/ckks_bootstrapping/n16_d35_k733_p20_s2c` 0.81 s (0.80x), at 19.61 bits of minimum precision.
 - **Breaking:** `BootstrappingKeys` is split: `BootstrappingLinearKeys` holds the rotation, encapsulation and first-factor keys, `BootstrappingKeys` adds the tensor key of the standard ring, and `BootstrappingCIKeys<BE, BCI>` the tensor key on the CI ring and the conversion keys (`TraceKey`, `EmbedKey`, `conversion_keys()`), so `ckks_bootstrap_ci_into` takes any key store.
   A key store implements `BootstrappingLinearKeys` beside `BootstrappingKeys`; `CKKSModUpFirstFactorImpl::ckks_mod_up_first_factor` takes `BootstrappingLinearKeys`.
   `BootstrappingKeysPrepared` takes the backend EvalMod runs on as a last type parameter, the bootstrap's by default; it, `BootstrappingKeysLayout` and `BootstrappingKeySet` gain `conversion_keys`.
@@ -293,7 +294,7 @@
 - The raise that applies the first `CoeffsToSlots` factor prepares the raised ciphertext once for all its diagonals instead of once per product, through `glwe_prepare_left`, `glwe_prepare_right` and `glwe_mul_prepared_plain_sum`, with the same outputs.
 - Add the folding of `u` into the last CoeffsToSlots factor (`CIConversion::Folded`): that factor then runs twice from the same baby steps, on the even and the odd part of `u` (`CIPre::folded`), and costs no level.
   `v` does not fold.
-  Folding narrows the raised width of `n16_d35_k685_p19_s2c_ffr_ci` from 1383 to 1337 bits and its key set from 6845 to 5533 MiB, at 19.4 bits of minimum precision.
+  Folding narrows the raised width of `n16_d35_k685_p19_s2c_ffr_ci` from 1431 to 1385 bits and its key set from 5759 to 4959 MiB, at 19.57 bits of minimum precision.
   The preset keeps the product.
   `BootstrappingPreset::max_backend_base2k` counts the second pass of the folded factor.
   `small_s2c_preset_meets_precision` runs it, and `preset_label` marks it `+fold_u`.
