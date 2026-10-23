@@ -39,8 +39,11 @@ operations, so their overrides remain effective.
 | `CKKSPaCoCoeffEncodingImpl`, `CKKSShipCoeffEncodingImpl` | Scheme embeddings exposed by [`reference::encoding`](../src/reference/encoding.rs), with explicitly named host reference helpers. |
 
 `CKKSImpl` aggregates capabilities; it does not choose operation
-implementations. Affine operations and the conjugate-invariant ring maps are API
-compositions with integration tests, not additional OEP families.
+implementations. Affine operations, conjugate-invariant ring maps, and replicated
+conversion and bootstrap pipelines are API compositions with integration tests.
+The replicated pipelines live in crate-private
+[`reference/replicated.rs`](../src/reference/replicated.rs) and call the public
+CKKS and core operations.
 
 ## What an override must preserve
 

@@ -30,7 +30,9 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// ```
 ///
 /// For `_assign` variants `offset = 0` and CKKS layout and scale metadata is unchanged.
-/// Component noise metadata is cleared.
+/// Component noise metadata is cleared. Key coverage follows
+/// [`super::CKKSRotateOps`], including the shaping depth for a narrower
+/// replicated destination.
 pub trait CKKSConjugateOps<BE: Backend> {
     fn ckks_conjugate_tmp_bytes<C, K>(&self, ct_infos: &C, key_infos: &K) -> usize
     where
@@ -38,6 +40,10 @@ pub trait CKKSConjugateOps<BE: Backend> {
         K: GGLWEInfos;
 
     /// Computes `dst = conj(src)`, the automorphism of Galois element `-1`.
+    ///
+    /// # Errors
+    /// Returns [`crate::CKKSCompositionError::MissingAutomorphismKey`] for
+    /// missing keys or insufficient coverage, before changing `dst`.
     fn ckks_conjugate_into<Dst, Src, H>(
         &self,
         dst: &mut Dst,

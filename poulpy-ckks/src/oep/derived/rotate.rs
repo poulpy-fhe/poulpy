@@ -37,8 +37,7 @@ where
         dst.set_noise(None);
         return Ok(());
     }
-    // The switch reads `src` at `dst.k()` when `dst` is narrower.
-    let switch_k = src.k().min(dst.k());
+    let switch_k = crate::reference::rotate::automorphism_input_k(dst, src);
     let key = keys
         .get_automorphism_key(p, switch_k)
         .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {

@@ -1,6 +1,14 @@
 use crate::CKKSResult as Result;
+use crate::{
+    api::{
+        CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSEvalModOps, CKKSImagOps, CKKSLinearTransformationOps, CKKSPow2Ops,
+        CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
+    },
+    oep::{CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl},
+};
 use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_core::{GLWECopy, GLWEKeyswitch, GLWEShift, GLWETrace};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
@@ -43,7 +51,8 @@ pub trait CKKSReplicatedOps<BE: Backend> {
         K: GGLWEInfos;
 
     /// # Errors
-    /// A workspace with incompatible input dimensions or rotations returns
+    /// Incompatible source and destination degrees or ranks, or a workspace
+    /// with incompatible input dimensions or rotations, return
     /// [`crate::CKKSCompositionError::InvalidOperand`] before writing `dst`.
     fn ckks_to_replicated_into<Dst, Src, H>(
         &self,
@@ -60,7 +69,8 @@ pub trait CKKSReplicatedOps<BE: Backend> {
         H: GetAutomorphismKey<BE>;
 
     /// # Errors
-    /// A workspace with incompatible input dimensions or rotations returns
+    /// Incompatible source and destination degrees or ranks, or a workspace
+    /// with incompatible input dimensions or rotations, return
     /// [`crate::CKKSCompositionError::InvalidOperand`] before writing `dst`.
     fn ckks_from_replicated_into<Dst, Src, H>(
         &self,
@@ -119,7 +129,8 @@ pub trait CKKSReplicatedBootstrapOps<BE: Backend> {
         S: GGLWEInfos;
 
     /// # Errors
-    /// A workspace with incompatible input dimensions or rotations returns
+    /// Incompatible source and destination degrees or ranks, or a workspace
+    /// with incompatible input dimensions or rotations, return
     /// [`crate::CKKSCompositionError::InvalidOperand`] before writing `dst`.
     fn ckks_replicated_bootstrap_into<Dst, Src, F, K>(
         &self,
@@ -134,4 +145,118 @@ pub trait CKKSReplicatedBootstrapOps<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: BootstrappingKeys<BE>;
+}
+
+impl<BE: Backend> CKKSReplicatedOps<BE> for Module<BE>
+where
+    Module<BE>: CKKSLinearTransformationOps<BE>
+        + CKKSRotateOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSPow2Ops<BE>
+        + CKKSRoundOps<BE>,
+{
+    fn ckks_replicated_conversion_tmp_bytes<C, K>(&self, ct_infos: &C, key_infos: &K, conv: &ReplicatedConversion<BE>) -> usize
+    where
+        C: CKKSCtBounds,
+        K: GGLWEInfos,
+    {
+        crate::reference::replicated::ckks_replicated_conversion_tmp_bytes(self, ct_infos, key_infos, conv)
+    }
+
+    fn ckks_to_replicated_into<Dst, Src, H>(
+        &self,
+        dst: &mut Dst,
+        src: &Src,
+        conv: &ReplicatedConversion<BE>,
+        workspace: &mut ReplicatedTransformWorkspace<BE>,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        H: GetAutomorphismKey<BE>,
+    {
+        crate::reference::replicated::ckks_to_replicated_into(self, dst, src, conv, workspace, keys, scratch)
+    }
+
+    fn ckks_from_replicated_into<Dst, Src, H>(
+        &self,
+        dst: &mut Dst,
+        src: &Src,
+        conv: &ReplicatedConversion<BE>,
+        workspace: &mut ReplicatedTransformWorkspace<BE>,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        H: GetAutomorphismKey<BE>,
+    {
+        crate::reference::replicated::ckks_from_replicated_into(self, dst, src, conv, workspace, keys, scratch)
+    }
+}
+
+impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSReplicatedBootstrapOps<BE> for Module<BE>
+where
+    Module<BE>: CKKSLinearTransformationOps<BE>
+        + CKKSRotateOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSPow2Ops<BE>
+        + CKKSRoundOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSImagOps<BE>
+        + CKKSEvalModOps<BE>
+        + GLWECopy<BE>
+        + GLWEShift<BE>
+        + GLWEKeyswitch<BE>
+        + GLWETrace<BE>,
+{
+    fn ckks_replicated_bootstrap_tmp_bytes<C, I, F, A, T, S>(
+        &self,
+        ct_out: &C,
+        ct_in: &I,
+        ctx: &ReplicatedBootstrapping<BE, F>,
+        atk_infos: &A,
+        tsk_infos: &T,
+        encapsulation_infos: Option<(&S, &S)>,
+    ) -> usize
+    where
+        C: CKKSCtBounds,
+        I: CKKSCtBounds,
+        A: GGLWEInfos,
+        T: GGLWEInfos,
+        S: GGLWEInfos,
+    {
+        crate::reference::replicated::ckks_replicated_bootstrap_tmp_bytes(
+            self,
+            ct_out,
+            ct_in,
+            ctx,
+            atk_infos,
+            tsk_infos,
+            encapsulation_infos,
+        )
+    }
+
+    fn ckks_replicated_bootstrap_into<Dst, Src, F, K>(
+        &self,
+        dst: &mut Dst,
+        src: &Src,
+        ctx: &ReplicatedBootstrapping<BE, F>,
+        workspace: &mut ReplicatedBootstrapWorkspace<BE>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        K: BootstrappingKeys<BE>,
+    {
+        crate::reference::replicated::ckks_replicated_bootstrap_into(self, dst, src, ctx, workspace, keys, scratch)
+    }
 }

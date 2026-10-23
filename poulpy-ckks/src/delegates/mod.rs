@@ -17,7 +17,6 @@ pub(crate) mod paco;
 pub(crate) mod plaintext;
 pub(crate) mod polynomial_evaluation;
 pub(crate) mod pow2;
-pub(crate) mod replicated;
 pub(crate) mod rotate;
 pub(crate) mod round;
 pub(crate) mod ship;

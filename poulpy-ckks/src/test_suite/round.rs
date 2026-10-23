@@ -340,15 +340,9 @@ where
             83,
         );
         let before = snapshot::<BE, _>(&dst);
-        let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            with_scratch::<BE, _>(0, |scratch| module.ckks_round_into(&mut dst, &src, scratch))
-        }))
-        .unwrap_err();
-        let message = panic
-            .downcast_ref::<&str>()
-            .copied()
-            .or_else(|| panic.downcast_ref::<String>().map(String::as_str));
-        assert_eq!(message, Some("ckks_round: insufficient scratch"));
+        let err = with_scratch::<BE, _>(0, |scratch| module.ckks_round_into(&mut dst, &src, scratch)).unwrap_err();
+        assert!(matches!(&err, crate::CKKSError::Internal(_)));
+        assert_eq!(err.to_string(), "ckks_round: insufficient scratch");
         assert_eq!(snapshot::<BE, _>(&dst), before);
         assert_eq!(snapshot::<BE, _>(&src), src_before);
     }

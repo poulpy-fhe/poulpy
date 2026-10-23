@@ -35,7 +35,10 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 ///
 /// A [`SlotLayout::Replicated`](crate::SlotLayout::Replicated) ciphertext
 /// rotates only by multiples of its period `R`, which move the batch by
-/// `k / R` values, and its key switch is rounded with shaping.
+/// `k / R` values, and its key switch is rounded with shaping. A narrower
+/// destination requires key coverage of `dst.k() + λ`, where `λ` is the
+/// source layout's shaping depth at `src.log_delta()`. Otherwise the key
+/// covers `src.k()`; a full layout requires `min(src.k(), dst.k())`.
 pub trait CKKSRotateOps<BE: Backend> {
     fn ckks_rotate_tmp_bytes<C, K>(&self, ct_infos: &C, key_infos: &K) -> usize
     where
@@ -46,6 +49,10 @@ pub trait CKKSRotateOps<BE: Backend> {
     ///
     /// `k` may be negative (shifts in the opposite direction).  The `keys`
     /// collection must contain the automorphism key for shift amount `k`.
+    ///
+    /// # Errors
+    /// Returns [`crate::CKKSCompositionError::MissingAutomorphismKey`] for
+    /// missing keys or insufficient coverage, before changing `dst`.
     fn ckks_rotate_into<Dst, Src, H>(
         &self,
         dst: &mut Dst,

@@ -104,6 +104,11 @@ pub trait CKKSAddOps<BE: Backend> {
     /// `pt` is added coefficient-wise after being aligned to the ciphertext's
     /// torus level. CKKS layout and scale metadata is inherited from `a` with the
     /// capacity offset applied (see trait-level doc). Component noise metadata is cleared.
+    ///
+    /// # Errors
+    /// Returns [`crate::CKKSCompositionError::InvalidOperand`] before changing
+    /// `dst` when slot layouts differ or a replicated plaintext has a finer
+    /// scale than the ciphertext.
     fn ckks_add_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,

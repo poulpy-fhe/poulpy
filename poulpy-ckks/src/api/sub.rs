@@ -77,6 +77,11 @@ pub trait CKKSSubOps<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 
     /// Computes `dst = a - pt` where `pt` is a full plaintext polynomial.
+    ///
+    /// # Errors
+    /// Returns [`crate::CKKSCompositionError::InvalidOperand`] before changing
+    /// `dst` when slot layouts differ or a replicated plaintext has a finer
+    /// scale than the ciphertext.
     fn ckks_sub_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,

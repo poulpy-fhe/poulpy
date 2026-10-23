@@ -68,6 +68,16 @@ pub trait CKKSRotateReference<BE: Backend> {
 
 impl<BE: Backend> CKKSRotateReference<BE> for poulpy_hal::layouts::Module<BE> {}
 
+/// Input width consumed by the automorphism, including a shifted shaping temporary.
+pub(crate) fn automorphism_input_k<Dst: CKKSInfos, Src: CKKSInfos>(dst: &Dst, src: &Src) -> TorusPrecision {
+    if ckks_offset_unary(dst, src) != 0 {
+        let lambda = product_depth(src.slot_layout(), src.log_delta()).unwrap_or(0);
+        (dst.k().as_usize() + lambda).into()
+    } else {
+        src.k()
+    }
+}
+
 /// Scratch of [`automorphism_into`] and [`automorphism_assign`].
 pub(crate) fn automorphism_tmp_bytes<BE, M, C, K>(module: &M, ct_infos: &C, key_infos: &K) -> usize
 where

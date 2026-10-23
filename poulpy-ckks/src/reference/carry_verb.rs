@@ -289,10 +289,18 @@ macro_rules! ckks_carry_verb_reference {
                     A: GLWEToBackendRef<BE> + CKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
-                    $crate::reference::mul::product_layout(
-                        concat!("ckks_", stringify!($verb), "_pt_vec"),
+                    let slot_layout = $crate::reference::mul::product_layout(
+                        concat!("ckks_", stringify!($verb), "_pt_vec_into"),
                         &[a.slot_layout(), pt.slot_layout()],
                     )?;
+                    if pt.log_delta() > a.log_delta() {
+                        $crate::reference::carry_verb::reject_replicated_scales(
+                            concat!("ckks_", stringify!($verb), "_pt_vec_into"),
+                            slot_layout,
+                            a.log_delta(),
+                            pt.log_delta(),
+                        )?;
+                    }
                     $crate::ckks_copy_stamp_unary(self, concat!(stringify!($verb), "_pt_vec"), dst, a, scratch)?;
                     self.[<ckks_ $verb _pt_vec_assign_reference>](dst, pt, scratch)
                 }

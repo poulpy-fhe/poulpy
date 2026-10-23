@@ -66,7 +66,7 @@ where
         return Err(invalid(format!("period 2^{} exceeds the ring", layout.log_r())).into());
     }
 
-    assert!(
+    crate::ckks_ensure!(
         scratch.available() >= ckks_round_tmp_bytes_reference(module, dst, src),
         "ckks_round: insufficient scratch"
     );

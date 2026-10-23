@@ -47,7 +47,6 @@ use crate::{
         CKKSModuleInfos, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSReplicatedBootstrapOps, CKKSReplicatedOps, CKKSRotateOps,
         CKKSSubOps,
     },
-    delegates::replicated::{wide_gather_trace, wide_onto_replicated},
     layouts::{
         CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, EvalModPlan, EvalModPoly, EvalModType, ReplicatedBootstrapPlan,
         ReplicatedBootstrapping, ReplicatedConversion, ReplicatedTransform, compile_eval_mod, compile_eval_mod_replicated,
@@ -55,6 +54,7 @@ use crate::{
     },
     oep::CKKSEncapsulatedModUpImpl,
     polynomial::{Basis, ComplexPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
+    reference::replicated::{wide_gather_trace, wide_onto_replicated},
     shaping::ShapingUnit,
     test_suite::CKKSTestParams,
 };
@@ -639,6 +639,35 @@ where
     acc.set_log_delta(LOG_DELTA - 4);
     assert!(module.ckks_add_pt_vec_assign(&mut acc, &fine, &mut scratch.borrow()).is_err());
 
+    {
+        use crate::test_suite::parity::helpers::{snapshot, with_scratch};
+        let before = snapshot::<BE, _>(&out);
+        let source_before = snapshot::<BE, _>(&acc);
+        let pt_before = snapshot::<BE, _>(&fine);
+        for add in [true, false] {
+            let bytes = if add {
+                module.ckks_add_pt_vec_tmp_bytes(out.size())
+            } else {
+                module.ckks_sub_pt_vec_tmp_bytes(out.size())
+            };
+            let err = with_scratch::<BE, _>(bytes, |scratch| {
+                if add {
+                    module.ckks_add_pt_vec_into(&mut out, &acc, &fine, scratch)
+                } else {
+                    module.ckks_sub_pt_vec_into(&mut out, &acc, &fine, scratch)
+                }
+            })
+            .unwrap_err();
+            let expected_op = if add { "ckks_add_pt_vec_into" } else { "ckks_sub_pt_vec_into" };
+            assert!(
+                matches!(err.composition(), Some(crate::CKKSCompositionError::InvalidOperand { op, .. }) if *op == expected_op)
+            );
+            assert_eq!(snapshot::<BE, _>(&out), before);
+            assert_eq!(snapshot::<BE, _>(&acc), source_before);
+            assert_eq!(snapshot::<BE, _>(&fine), pt_before);
+        }
+    }
+
     // `N/2` values of period `R` exceed the slots of the ring.
     let log_n = params.n.ilog2() as u8;
     let oversized = ReplicatedLayout::new(log_n - 1, layout().log_r() as u8, layout().w() as u8, layout().shaping())?;
@@ -1121,6 +1150,45 @@ where
         use crate::test_suite::parity::helpers::snapshot;
         let before = snapshot::<BE, _>(&out);
         let input_before = snapshot::<BE, _>(&ckks);
+        let replicated_before = snapshot::<BE, _>(&replicated);
+        for (n, rank, reason) in [
+            (params.n, ckks.rank().as_usize() + 1, "source and destination ranks differ"),
+            (params.n / 2, ckks.rank().as_usize(), "source and destination degrees differ"),
+        ] {
+            let mut bad = module.ckks_ciphertext_alloc_from_glwe_infos(&GLWELayout {
+                n: n.into(),
+                rank: rank.into(),
+                ..ckks.glwe_layout()
+            });
+            bad.set_meta(ckks.meta());
+            let bad_before = snapshot::<BE, _>(&bad);
+            for to in [true, false] {
+                let err = if to {
+                    module.ckks_to_replicated_into(&mut bad, &ckks, &conv, &mut to_workspace, &atks, &mut scratch.borrow())
+                } else {
+                    module.ckks_from_replicated_into(
+                        &mut bad,
+                        &replicated,
+                        &conv,
+                        &mut from_workspace,
+                        &atks,
+                        &mut scratch.borrow(),
+                    )
+                }
+                .unwrap_err();
+                let expected_op = if to {
+                    "ckks_to_replicated_into"
+                } else {
+                    "ckks_from_replicated_into"
+                };
+                assert!(
+                    matches!(err.composition(), Some(crate::CKKSCompositionError::InvalidOperand { op, reason: actual }) if *op == expected_op && actual == reason)
+                );
+                assert_eq!(snapshot::<BE, _>(&bad), bad_before);
+                assert_eq!(snapshot::<BE, _>(&ckks), input_before);
+                assert_eq!(snapshot::<BE, _>(&replicated), replicated_before);
+            }
+        }
         let mut wrong_width = conv.alloc_to_workspace(
             module,
             &GLWELayout {

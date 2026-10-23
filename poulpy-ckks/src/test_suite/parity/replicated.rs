@@ -3,7 +3,7 @@
 use super::{
     arithmetic::layout,
     helpers::{Snapshot, assert_untagged, fixture_ciphertext, fixture_plaintext, snapshot, with_scratch},
-    keys::{key_layout, prepared_automorphism_key, prepared_tensor_key},
+    keys::{key_layout, key_layout_bits, prepared_automorphism_key, prepared_tensor_key},
 };
 use crate::{
     CKKSLayout, CoeffsMeta, SlotLayout, SlotsKind,
@@ -100,6 +100,56 @@ where
     })
     .unwrap();
     results.push(("conjugate_into", snapshot::<B, _>(&out)));
+
+    let mut source_layout = la;
+    source_layout.glwe_layout.k = 130usize.into();
+    source_layout.meta.scale = crate::Scale::Log(40);
+    source_layout.meta.log_sparsity = 0;
+    let shaped_layout = ShapingUnit::U16_40.layout(1, 24).unwrap();
+    for slot_layout in [SlotLayout::Full, SlotLayout::Replicated(shaped_layout)] {
+        source_layout.meta.slot_layout = slot_layout;
+        let source = fixture_ciphertext(module, &source_layout, 91);
+        let source_before = snapshot::<B, _>(&source);
+        let mut destination_layout = source_layout;
+        destination_layout.glwe_layout.k = 110usize.into();
+        for conjugate in [false, true] {
+            let p = if conjugate { -1 } else { module.ckks_galois_element(8) };
+            for key_bits in [110, 180] {
+                let key_infos = key_layout_bits(params.n, b, key_bits, 10, 1, 1);
+                let key = prepared_automorphism_key(module, &key_infos, p, 93);
+                let mut destination = fixture_ciphertext(module, &destination_layout, 95);
+                let before = snapshot::<B, _>(&destination);
+                let bytes = if conjugate {
+                    module.ckks_conjugate_tmp_bytes(&source, &key_infos)
+                } else {
+                    module.ckks_rotate_tmp_bytes(&source, &key_infos)
+                };
+                let result = with_scratch::<B, _>(bytes, |scratch| {
+                    if conjugate {
+                        module.ckks_conjugate_into(&mut destination, &source, &key, scratch)
+                    } else {
+                        module.ckks_rotate_into(&mut destination, &source, 8, &key, scratch)
+                    }
+                });
+                if slot_layout != SlotLayout::Full && key_bits == 110 {
+                    let err = result.unwrap_err();
+                    let required = 110 + crate::shaping::ShapingProfile::new(&shaped_layout).shaping_depth(40, shaped_layout.w());
+                    let expected_op = if conjugate { "conjugate" } else { "rotate" };
+                    assert!(
+                        matches!(err.composition(), Some(crate::CKKSCompositionError::MissingAutomorphismKey { op, k, .. }) if *op == expected_op && *k as usize == required)
+                    );
+                    assert_eq!(snapshot::<B, _>(&destination), before);
+                } else {
+                    result.unwrap();
+                    results.push((
+                        if conjugate { "narrow_conjugate" } else { "narrow_rotate" },
+                        snapshot::<B, _>(&destination),
+                    ));
+                }
+                assert_eq!(snapshot::<B, _>(&source), source_before);
+            }
+        }
+    }
 
     for (label, add) in [("add_one_assign", true), ("sub_one_assign", false)] {
         let mut out = fixture_ciphertext(module, &la, 71);
