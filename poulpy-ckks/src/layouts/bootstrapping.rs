@@ -289,16 +289,15 @@ impl BootstrappingPlan {
     }
 
     /// Selects the ring EvalMod runs on. The conjugate-invariant ring takes an
-    /// S2C-first plan with a real EvalMod, without EvalRound+ or a LUT; `u` folds
+    /// S2C-first plan with a real EvalMod, without a LUT; `u` folds
     /// into a CoeffsToSlots factor the matrix evaluates, `v` does not fold.
     pub fn with_eval_mod_ring(mut self, ring: EvalModRing) -> Result<Self> {
         ensure!(
             ring == EvalModRing::Standard
                 || (self.pipeline == BootstrappingPipeline::S2CFirst
-                    && self.coeffs_to_slots_bypass().is_none()
                     && self.functional_message_modulus.is_none()
                     && self.eval_mod.eval_mod_type != EvalModType::ExpCmplx),
-            "EvalMod on the conjugate-invariant ring takes an S2C-first plan with a real EvalMod, without EvalRound+ or a LUT"
+            "EvalMod on the conjugate-invariant ring takes an S2C-first plan with a real EvalMod, without a LUT"
         );
         if let EvalModRing::ConjugateInvariant { pre, post } = ring {
             ensure!(post != CIConversion::Folded, "the product by v after EvalMod does not fold");
@@ -372,17 +371,18 @@ impl BootstrappingPlan {
     ///
     /// EvalRound+ evaluates its bypass in parallel with the low-precision
     /// CoeffsToSlots + EvalMod branch, so the wider of the two branch costs is
-    /// charged before any trailing SlotsToCoeffs.
-    /// S2C-first also charges the CoeffsToSlots guard bits and the conversions
-    /// to the ring EvalMod runs on.
+    /// charged before any trailing SlotsToCoeffs. The conversions to the ring
+    /// EvalMod runs on belong to that branch.
+    /// S2C-first also charges the CoeffsToSlots guard bits.
     pub fn post_mod_up_consumed_bits(&self) -> usize {
-        let c2s_eval_mod = self.coeffs_to_slots.consumed_bits() + self.eval_mod.consumed_bits();
+        let c2s_eval_mod =
+            self.coeffs_to_slots.consumed_bits() + self.eval_mod.consumed_bits() + self.eval_mod_ring.consumed_bits();
         let eval_round = self
             .coeffs_to_slots_bypass()
             .map_or(c2s_eval_mod, |bypass| c2s_eval_mod.max(bypass.consumed_bits()));
         match self.pipeline {
             BootstrappingPipeline::C2SFirst => eval_round + self.slots_to_coeffs.consumed_bits(),
-            BootstrappingPipeline::S2CFirst => eval_round + self.c2s_guard_bits + self.eval_mod_ring.consumed_bits(),
+            BootstrappingPipeline::S2CFirst => eval_round + self.c2s_guard_bits,
         }
     }
 

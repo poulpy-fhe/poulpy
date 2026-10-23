@@ -282,12 +282,16 @@
   That radix is 53 on NTT4x30 (52 before), 17 on FFT64 (18 before, which the model only admits at `2^-64`), and 56 on NTT3x42 (52 before).
   A preset with EvalMod on the CI ring runs at 52 on NTT4x30, as before, and at 14 on FFT64, whose model of that ring takes less.
 - The raise that applies the first `CoeffsToSlots` factor prepares the raised ciphertext once for all its diagonals instead of once per product, through `glwe_prepare_left`, `glwe_prepare_right` and `glwe_mul_prepared_plain_sum`, with the same outputs.
-- Add the folding of `u` into the last CoeffsToSlots factor (`CIConversion::Folded`): that factor then runs twice from the same baby steps, on the even and the odd part of `u` (`CIPre::Folded`), and costs no level.
+- Add the folding of `u` into the last CoeffsToSlots factor (`CIConversion::Folded`): that factor then runs twice from the same baby steps, on the even and the odd part of `u` (`CIPre::folded`), and costs no level.
   `v` does not fold.
   Folding narrows the raised width of `n16_d35_k685_p19_s2c_ffr_ci` from 1383 to 1337 bits and its key set from 6845 to 5533 MiB, at 19.4 bits of minimum precision.
   The preset keeps the product.
   `BootstrappingPreset::max_backend_base2k` counts the second pass of the folded factor.
   `small_s2c_preset_meets_precision` runs it, and `preset_label` marks it `+fold_u`.
+- EvalRound+ runs with EvalMod on the conjugate-invariant ring, `u` folded or not: the cancellation `EvalMod(x) − K·x` runs on EvalMod's input on that ring and the bypass is added back at degree `N`, so `v`'s scale must also carry the integer part.
+  `BootstrappingPlan::post_mod_up_consumed_bits` counts the conversions in the branch the bypass runs beside.
+  `BootstrappingPreset::max_backend_base2k` counts the cancellation as one more pass.
+- Add `BootstrappingPreset::with_eval_round_plus`, a bypass of the CoeffsToSlots schedule that shares its rotation keys; `small_s2c_preset_meets_precision` runs EvalRound+ on both rings and `preset_label` marks it `+erp`.
 - **Breaking:** `impl_ckks_bootstrapping_reference!` requires `CKKSModUpFirstFactorImpl` (`impl_ckks_mod_up_first_factor_reference!`) beside `CKKSEncapsulatedModUpImpl`; `BootstrappingKeysLayout`, `BootstrappingKeySet` and `BootstrappingKeysPrepared` gain the first-factor key fields; `BootstrappingContext::generate_keys` requires `VecZnxAutomorphism`.
 - `reference::first_factor` exposes `first_factor_work`, `first_factor_small_bits` and `first_factor_diagonal_growth`, the widths a first-factor key is laid out from.
 - The encapsulated ModUp takes a sparse-to-dense key with a row offset (`k_offset` of `poulpy-core`): its switch is the raise, from the raised ciphertext at its own width, integer part included, with no zero-padded copy and no transform of zero limbs.

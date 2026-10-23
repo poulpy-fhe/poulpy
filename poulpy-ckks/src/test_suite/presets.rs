@@ -346,8 +346,16 @@ where
         layout.glwe_layout.k = k.into();
         let mut output = self.module.ckks_ciphertext_alloc_from_glwe_infos(&layout);
         let err = (self.bootstrap)(&self.module, &mut output, &self.input, &mut self.scratch.borrow()).unwrap_err();
+        // EvalRound+ leaves its rotation keys to the stages' lookups: the sparse-to-dense
+        // key of the raise, checked untyped at entry, refuses first.
+        let refused = if self.preset.plan().coeffs_to_slots_bypass().is_some() {
+            matches!(err, crate::CKKSError::Internal(_))
+                && err.to_string().starts_with("ckks_mod_up: the sparse-to-dense key takes")
+        } else {
+            matches!(err.composition(), Some(CKKSCompositionError::MissingAutomorphismKey { .. }))
+        };
         assert!(
-            matches!(err.composition(), Some(CKKSCompositionError::MissingAutomorphismKey { .. })),
+            refused,
             "{}: expected a key refused at entry, got: {err}",
             preset_label(&self.preset)
         );
@@ -414,16 +422,22 @@ where
     }
 }
 
-/// The preset's name, marked when `u` is folded into CoeffsToSlots
-/// ([`CIConversion::Folded`]), which keeps the preset's name.
+/// The preset's name, marked with the variants that keep it: `+erp` with
+/// EvalRound+ ([`BootstrappingPreset::with_eval_round_plus`]), `+fold_u` with
+/// `u` folded into CoeffsToSlots ([`CIConversion::Folded`]).
 pub fn preset_label(preset: &BootstrappingPreset) -> String {
-    match preset.plan().eval_mod_ring() {
-        EvalModRing::ConjugateInvariant {
-            pre: CIConversion::Folded,
-            ..
-        } => format!("{}+fold_u", preset.name()),
-        _ => preset.name().to_string(),
+    let mut label = preset.name().to_string();
+    if preset.plan().coeffs_to_slots_bypass().is_some() {
+        label.push_str("+erp");
     }
+    if let EvalModRing::ConjugateInvariant {
+        pre: CIConversion::Folded,
+        ..
+    } = preset.plan().eval_mod_ring()
+    {
+        label.push_str("+fold_u");
+    }
+    label
 }
 
 /// Runs the insecure `N = 2^11` S2C-first preset on `BE` and checks its key
@@ -472,13 +486,30 @@ where
 
     let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
     BootstrappingPresetRun::<BE>::setup(preset.clone()).check(backend);
-    // Its keys, conversion keys included, go through their serialization.
-    for (pre, roundtrip) in [(CIConversion::Product { log_delta: 46 }, true), (CIConversion::Folded, false)] {
-        let ci = EvalModRing::ConjugateInvariant {
-            pre,
-            post: CIConversion::Product { log_delta: 38 },
-        };
-        BootstrappingPresetRun::<BE>::setup_ci_with_roundtrip(preset.with_eval_mod_ring(ci).unwrap(), roundtrip).check(backend);
+    // EvalMod on the CI ring, with `u` as a product and folded, then all of it with
+    // EvalRound+: CoeffsToSlots at 30 bits feeds EvalMod, the bypass at 50 sets the precision.
+    // The keys of the first run, conversion keys included, go through their serialization.
+    let eval_round_plus = preset.with_eval_round_plus(30, 50).unwrap();
+    BootstrappingPresetRun::<BE>::setup(eval_round_plus.clone()).check(backend);
+    let mut roundtrip = true;
+    for preset in [&preset, &eval_round_plus] {
+        for pre in [CIConversion::Product { log_delta: 46 }, CIConversion::Folded] {
+            // With EvalRound+, `v` rounds `EvalMod(x) − K·x`, which holds the integer part.
+            let post = if preset.plan().coeffs_to_slots_bypass().is_some() {
+                48
+            } else {
+                38
+            };
+            let ci = EvalModRing::ConjugateInvariant {
+                pre,
+                post: CIConversion::Product { log_delta: post },
+            };
+            BootstrappingPresetRun::<BE>::setup_ci_with_roundtrip(
+                preset.with_eval_mod_ring(ci).unwrap(),
+                std::mem::take(&mut roundtrip),
+            )
+            .check(backend);
+        }
     }
 }
 

@@ -65,7 +65,7 @@ use crate::{
     CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, Scale, SlotsKind,
     layouts::{
         BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, CIConversion,
-        DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout, EvalModPlan, EvalModRing, EvalModType,
+        DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout, EvalModPlan, EvalModRing, EvalModType, EvalRoundPlus,
         SparseSecretEncapsulation,
     },
     polynomial::SplitStrategy,
@@ -145,6 +145,9 @@ struct PresetSpec {
     c2s_guard_bits: usize,
     c2s_log_delta: usize,
     c2s_log_budget: usize,
+    /// Scale of the high-precision CoeffsToSlots of EvalRound+, with the schedule
+    /// of `c2s_schedule`, or `None` without EvalRound+.
+    c2s_bypass_log_delta: Option<usize>,
     s2c_schedule: &'static [(usize, usize)],
     s2c_log_delta: usize,
     s2c_log_budget: usize,
@@ -279,6 +282,18 @@ impl BootstrappingPreset {
         })
     }
 
+    /// Re-derives the preset with EvalRound+: CoeffsToSlots at scale
+    /// `2^c2s_log_delta` feeds EvalMod, and a high-precision CoeffsToSlots of the
+    /// same schedule at `2^bypass_log_delta`, which shares its rotation keys,
+    /// gives the output its precision.
+    pub fn with_eval_round_plus(&self, c2s_log_delta: usize, bypass_log_delta: usize) -> Result<Self> {
+        build(PresetSpec {
+            c2s_log_delta,
+            c2s_bypass_log_delta: Some(bypass_log_delta),
+            ..self.spec
+        })
+    }
+
     /// Re-derives the preset with EvalMod on `eval_mod_ring`: the conversions to
     /// the conjugate-invariant ring widen the raised width by their scales.
     pub fn with_eval_mod_ring(&self, eval_mod_ring: EvalModRing) -> Result<Self> {
@@ -312,7 +327,8 @@ impl BootstrappingPreset {
     /// factor with a baby rotation, over the diagonal's limbs, and the key switch
     /// of every giant step, over the operand limbs. A first factor on the raise
     /// sums one key switch per diagonal over fewer limbs, which that count covers,
-    /// and a folded `u` runs the last CoeffsToSlots pass twice.
+    /// a folded `u` runs the last CoeffsToSlots pass twice, and EvalRound+ adds the
+    /// pass of its cancellation.
     /// An output limb of each of EvalMod's ciphertext products, as many as
     /// [`EvalModPlan::max_ciphertext_products`] bounds, sums a product per limb,
     /// one of them a square. On the CI ring EvalMod runs on `BCI`, and the two
@@ -380,6 +396,10 @@ impl BootstrappingPreset {
                 products = products.max(diagonals * diagonal_limbs + giants * operand);
                 passes += 1;
             }
+        }
+        // EvalRound+ subtracts `K·x` from EvalMod's output: one more pass, of two terms.
+        if self.plan.coeffs_to_slots_bypass().is_some() {
+            passes += 1;
         }
         // A folded `u` runs the last CoeffsToSlots factor twice, on the same diagonals.
         if let EvalModRing::ConjugateInvariant {
@@ -482,6 +502,7 @@ pub fn n16_d35_k636_p20_c2s() -> Result<BootstrappingPreset> {
         c2s_guard_bits: 0,
         c2s_log_delta: 51,
         c2s_log_budget: 2,
+        c2s_bypass_log_delta: None,
         s2c_schedule: &S2C_SCHEDULE,
         s2c_log_delta: 35,
         s2c_log_budget: 2,
@@ -519,6 +540,7 @@ pub fn n16_d35_k733_p20_s2c() -> Result<BootstrappingPreset> {
         c2s_guard_bits: 6,
         c2s_log_delta: 50,
         c2s_log_budget: 3,
+        c2s_bypass_log_delta: None,
         s2c_schedule: &S2C_SCHEDULE,
         s2c_log_delta: 30,
         s2c_log_budget: 2,
@@ -553,6 +575,7 @@ pub fn n15_d35_k180_p18_c2s() -> Result<BootstrappingPreset> {
         c2s_guard_bits: 0,
         c2s_log_delta: 50,
         c2s_log_budget: 2,
+        c2s_bypass_log_delta: None,
         s2c_schedule: &[(7, 16), (7, 2048)],
         s2c_log_delta: 29,
         s2c_log_budget: 2,
@@ -597,6 +620,7 @@ pub(crate) fn insecure_n11_d35_k180_p20_s2c() -> Result<BootstrappingPreset> {
         c2s_guard_bits: 6,
         c2s_log_delta: 50,
         c2s_log_budget: 3,
+        c2s_bypass_log_delta: None,
         s2c_schedule: &[(2, 4), (4, 4), (4, 4)],
         s2c_log_delta: 30,
         s2c_log_budget: 2,
@@ -694,7 +718,18 @@ fn build(spec: PresetSpec) -> Result<BootstrappingPreset> {
             sparse_secret_encapsulation: Some(SparseSecretEncapsulation {
                 hamming_weight: spec.sparse_secret.hamming_weight,
             }),
-            eval_round_plus: None,
+            eval_round_plus: match spec.c2s_bypass_log_delta {
+                Some(log_delta) => Some(EvalRoundPlus {
+                    coeffs_to_slots_bypass: DFTPlan::new(
+                        DFTType::Encode,
+                        spec.c2s_schedule.to_vec(),
+                        DFTOutputFormat::SplitRealAndImag,
+                        CoeffsMeta::from_delta_budget(log_delta, spec.c2s_log_budget),
+                    )?
+                    .with_scaling(1.0)?,
+                }),
+                None => None,
+            },
         },
         coeffs_to_slots,
         EvalModPlan {

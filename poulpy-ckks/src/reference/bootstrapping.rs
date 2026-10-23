@@ -1473,10 +1473,21 @@ where
         .max(module.ckks_mul_pt_vec_tmp_bytes(&embedded, &embedded, &eval_mod_ci.post))
         .max(module.glwe_keyswitch_tmp_bytes(&embedded, &embedded, embed_key))
         .max(trace);
-    let linear = s2c_first_linear_tmp_bytes(module, &boot_layout, ct_in, ctx, keys_layout);
+    let mut linear = s2c_first_linear_tmp_bytes(module, &boot_layout, ct_in, ctx, keys_layout);
+    let ct_bytes = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&boot_layout));
+    // EvalRound+ holds the high-precision CoeffsToSlots beside the rest of the bootstrap.
+    let bypass = match ctx.coeffs_to_slots_bypass() {
+        Some(bypass) => {
+            for atk in &keys_layout.rotation_key_layouts() {
+                linear = linear.max(module.ckks_dft_tmp_bytes(&boot_layout, &boot_layout, bypass, atk));
+            }
+            ct_bytes
+        }
+        None => 0,
+    };
     let ci_bytes = BCI::scratch_aligned(ci.glwe_bytes_of_from_infos(&boot_layout));
     (
-        BE::scratch_aligned(module.glwe_bytes_of_from_infos(&boot_layout)) + linear.max(embedded_bytes + conversions),
+        ct_bytes + bypass + linear.max(embedded_bytes + conversions),
         2 * ci_bytes + ci.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, &eval_mod_ci.eval_mod, &keys_layout.tensor_key),
     )
 }
@@ -1545,6 +1556,7 @@ where
         + GLWECITrace<BE>
         + GLWECIEmbed<BE>
         + GLWERotate<BE>
+        + CKKSSubOps<BE>
         + CKKSLinearTransformationOps<BE>
         + CKKSCopyOps<BE>
         + CKKSPow2Ops<BE>
@@ -1627,6 +1639,16 @@ where
     scratch.scope(|scratch| {
         let (mut z, mut scratch) = scratch.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta());
         ckks_bootstrap_s2c_mod_up(module, &mut z, ct_in, ctx, keys, &mut scratch)?;
+        // EvalRound+: the high-precision CoeffsToSlots of the raised ciphertext, without the split.
+        let (mut z_hp, mut scratch) = match ctx.coeffs_to_slots_bypass() {
+            Some(bypass) => {
+                let (mut z_hp, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&boot_layout, z.meta());
+                module.ckks_copy(&mut z_hp, &z, &mut scratch)?;
+                module.ckks_dft_evaluate_assign(&mut z_hp, bypass, keys.rotation_keys(), &mut scratch)?;
+                (Some(z_hp), scratch)
+            }
+            None => (None, scratch.borrow()),
+        };
         // CoeffsToSlots without the split: the complex slots `z_j = c_j + i·c_{j+N/2}`,
         // embedded as `z(X²)`.
         module.ckks_dft_evaluate_assign(&mut z, ctx.coeffs_to_slots(), keys.rotation_keys(), &mut scratch)?;
@@ -1674,10 +1696,25 @@ where
             keys.tensor_key(),
             &mut scratch_ci,
         )?;
+        let mut reduced = reduced.rebind::<BE>();
+        // EvalRound+: `EvalMod(x) − K·x` on the very input `x` of EvalMod, so that the
+        // error of the low-precision CoeffsToSlots cancels; the bypass is added back
+        // at the end. Both are coefficient-wise, the same on either ring.
+        if ctx.coeffs_to_slots_bypass().is_some() {
+            // The plan constructor rejects this, but re-check before the power-of-two shift.
+            ckks_ensure!(
+                ctx.eval_mod_plan().f_mod_interval.is_power_of_two(),
+                "EvalRound+ requires a power-of-two f_mod_interval, got {}",
+                ctx.eval_mod_plan().f_mod_interval
+            );
+            let mut traced = traced.rebind::<BE>();
+            let log2_k = ctx.eval_mod_plan().f_mod_interval.trailing_zeros() as usize;
+            module.ckks_mul_pow2_assign(&mut traced, log2_k, &mut scratch)?;
+            module.ckks_sub_assign(&mut reduced, &traced, &mut scratch)?;
+        }
 
         // Back to degree `2N` and times `v`, which carries the factor 2 of the
         // conjugate pair: `r_j + i·r_{j+N/2}` on the even coefficients, under `s(X²)`.
-        let reduced = reduced.rebind::<BE>();
         embedded.set_meta(GLWEPlaintextMeta {
             slots: SlotsKind::Real,
             ..reduced.meta()
@@ -1689,6 +1726,14 @@ where
         ct_out.set_k(embedded.k());
         module.glwe_switch_degree(ct_out, &embedded);
         ct_out.set_meta(embedded.meta());
+
+        // EvalRound+: `2·z_hp`, the bypass on the packed halves, which the split
+        // CoeffsToSlots of the standard ring doubles as `2·Re` and `2·Im`.
+        if let Some(z_hp) = z_hp.as_mut() {
+            module.ckks_mul_pow2_assign(z_hp, 1, &mut scratch)?;
+            module.ckks_add_assign(z_hp, ct_out, &mut scratch)?;
+            module.ckks_copy(ct_out, z_hp, &mut scratch)?;
+        }
         Result::Ok(())
     })?;
     // Keep the C2S guard bits through EvalMod, then relabel at the output width.
