@@ -1,3 +1,4 @@
+use poulpy_hal::api::ModuleSynchronize;
 use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
@@ -22,7 +23,7 @@ use crate::hal::params::VmpSweepParms;
 
 pub fn runner_vmp_prepare<B, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &VmpSweepParms)
 where
-    Module<B>: ModuleNew<B> + VmpPMatAlloc<B> + VmpPrepare<B> + VmpPrepareTmpBytes,
+    Module<B>: ModuleNew<B> + ModuleSynchronize<B> + VmpPMatAlloc<B> + VmpPrepare<B> + VmpPrepareTmpBytes,
     B: Backend<ZnxWord = i64>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
@@ -48,13 +49,14 @@ where
         let mut pmat_backend = pmat.to_backend_mut();
         let mat_backend = mat_znx_backend_ref::<B>(&mat);
         module.vmp_prepare(&mut pmat_backend, &mat_backend, &mut scratch.borrow());
+        module.synchronize();
         black_box(());
     });
 }
 
 pub fn runner_vmp_apply_dft<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &VmpSweepParms)
 where
-    Module<B>: ModuleNew<B> + VmpApplyDftTmpBytes + VmpApplyDft<B> + VmpPMatAlloc<B> + VecZnxDftAlloc<B>,
+    Module<B>: ModuleNew<B> + ModuleSynchronize<B> + VmpApplyDftTmpBytes + VmpApplyDft<B> + VmpPMatAlloc<B> + VecZnxDftAlloc<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -80,13 +82,19 @@ where
         let pmat = pmat.to_backend_ref();
         let a = vec_znx_backend_ref::<B>(&a);
         module.vmp_apply_dft(&mut res, &a, &pmat, &mut scratch.borrow());
+        module.synchronize();
         black_box(());
     });
 }
 
 pub fn runner_vmp_apply_dft_to_dft<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &VmpSweepParms)
 where
-    Module<B>: ModuleNew<B> + VecZnxDftAlloc<B> + VmpPMatAlloc<B> + VmpApplyDftToDft<B> + VmpApplyDftToDftTmpBytes,
+    Module<B>: ModuleNew<B>
+        + ModuleSynchronize<B>
+        + VecZnxDftAlloc<B>
+        + VmpPMatAlloc<B>
+        + VmpApplyDftToDft<B>
+        + VmpApplyDftToDftTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -111,6 +119,7 @@ where
         let pmat = pmat.to_backend_ref();
         let a = vec_znx_dft_backend_ref::<B>(&a);
         module.vmp_apply_dft_to_dft(&mut res.to_backend_mut(), &a, &pmat, 0, &mut scratch.borrow());
+        module.synchronize();
         black_box(());
     });
 }
@@ -119,7 +128,12 @@ pub fn runner_vmp_apply_dft_to_dft_add<B: Backend<ZnxWord = i64>, M: Measurement
     bencher: &mut Bencher<'_, M>,
     sweep: &VmpSweepParms,
 ) where
-    Module<B>: ModuleNew<B> + VecZnxDftAlloc<B> + VmpPMatAlloc<B> + VmpApplyDftToDftAdd<B> + VmpApplyDftToDftAddTmpBytes,
+    Module<B>: ModuleNew<B>
+        + ModuleSynchronize<B>
+        + VecZnxDftAlloc<B>
+        + VmpPMatAlloc<B>
+        + VmpApplyDftToDftAdd<B>
+        + VmpApplyDftToDftAddTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -144,6 +158,7 @@ pub fn runner_vmp_apply_dft_to_dft_add<B: Backend<ZnxWord = i64>, M: Measurement
         let pmat = pmat.to_backend_ref();
         let a = vec_znx_dft_backend_ref::<B>(&a);
         module.vmp_apply_dft_to_dft_add(&mut res.to_backend_mut(), &a, &pmat, 0, &mut scratch.borrow());
+        module.synchronize();
         black_box(());
     });
 }

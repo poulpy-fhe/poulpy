@@ -5,6 +5,7 @@ use poulpy_core::{
         ModuleCoreAlloc, Rank, TorusPrecision, prepared::GLWESecretPrepared,
     },
 };
+use poulpy_hal::api::ModuleSynchronize;
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, Module, ScratchOwned},
@@ -19,6 +20,7 @@ use crate::core::params::CoreParams;
 pub fn runner_glwe_decrypt<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
 where
     Module<BE>: ModuleNew<BE>
+        + ModuleSynchronize<BE>
         + GLWEDecrypt<BE>
         + GLWEEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
@@ -58,6 +60,7 @@ where
 
     bencher.iter(|| {
         module.glwe_decrypt(&ct, &mut pt, &sk_prepared, &mut scratch.borrow());
+        module.synchronize();
         black_box(());
     });
 }
