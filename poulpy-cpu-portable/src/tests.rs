@@ -71,18 +71,45 @@ fn conjugate_invariant_square_mean_sets_the_ntt_radix() {
 #[test]
 fn bootstrapping_presets_take_the_backend_radix() {
     use poulpy_ckks::{
+        layouts::EvalModRing,
         presets::bootstrapping::all,
         test_suite::presets::{BOOTSTRAP_FAILURE_BITS, preset_for_backend},
     };
     use poulpy_core::layouts::LWEInfos;
 
-    for preset in all().unwrap() {
+    let (standard, ci): (Vec<_>, Vec<_>) = all()
+        .unwrap()
+        .into_iter()
+        .partition(|preset| preset.plan().eval_mod_ring() == EvalModRing::Standard);
+    for preset in ci {
+        // An output limb of EvalMod's squares on the CI ring holds one square: its mean keeps
+        // the radix at the nominal 52 on NTT4x30. FFT64's model of the CI ring takes 14, at
+        // which the preset is re-derived with digits of 7 limbs.
+        assert_eq!(
+            preset.max_backend_base2k::<NTT4x30Portable, crate::NTT4x30CIPortable>(BOOTSTRAP_FAILURE_BITS),
+            52
+        );
+        let adapted = preset_for_backend::<NTT4x30Portable, crate::NTT4x30CIPortable>(&preset).unwrap();
+        assert_eq!((adapted.base2k(), adapted.bootstrap_k()), (52, preset.bootstrap_k()));
+        let fft = preset_for_backend::<FFT64Portable, crate::FFT64CIPortable>(&preset).unwrap();
+        assert_eq!(
+            (fft.base2k(), fft.key_dsize(), fft.bootstrap_k()),
+            (14, 7, preset.bootstrap_k())
+        );
+    }
+    for preset in standard {
         // At `N = 2^16` and `2^15`, the giant-step passes sum a few hundred products:
         // NTT4x30 takes one bit above the nominal radix, FFT64 drops to 17.
-        assert_eq!(preset.max_backend_base2k::<NTT4x30Portable>(BOOTSTRAP_FAILURE_BITS), 53);
-        assert_eq!(preset.max_backend_base2k::<FFT64Portable>(BOOTSTRAP_FAILURE_BITS), 17);
-        let ntt = preset_for_backend::<NTT4x30Portable>(&preset).unwrap();
-        let fft = preset_for_backend::<FFT64Portable>(&preset).unwrap();
+        assert_eq!(
+            preset.max_backend_base2k::<NTT4x30Portable, crate::NTT4x30CIPortable>(BOOTSTRAP_FAILURE_BITS),
+            53
+        );
+        assert_eq!(
+            preset.max_backend_base2k::<FFT64Portable, crate::FFT64CIPortable>(BOOTSTRAP_FAILURE_BITS),
+            17
+        );
+        let ntt = preset_for_backend::<NTT4x30Portable, crate::NTT4x30CIPortable>(&preset).unwrap();
+        let fft = preset_for_backend::<FFT64Portable, crate::FFT64CIPortable>(&preset).unwrap();
         let fft_dsize = if preset.log_n() == 15 { 2 } else { 7 };
         assert_eq!((ntt.base2k(), ntt.dense_to_sparse_dsize()), (53, 1));
         assert_eq!(

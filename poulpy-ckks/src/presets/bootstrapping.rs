@@ -300,28 +300,44 @@ impl BootstrappingPreset {
     }
 
     /// Largest limb radix at which every accumulation of the bootstrap stays
-    /// within the extended precision of backend `BE`, with a failure probability
-    /// of at most `2^-failure_bits` over the whole bootstrap, by the model of
+    /// within the extended precision of backend `BE`, and of `BCI` for EvalMod on
+    /// the conjugate-invariant ring, with a failure probability of at most
+    /// `2^-failure_bits` over the whole bootstrap, by the model of
     /// [`Module::max_base2k`](poulpy_hal::layouts::Module::max_base2k); zero when
     /// no radix fits.
     ///
     /// The widest accumulations are the giant-step passes of the transforms: an
     /// output limb sums, without normalizing, the product of every diagonal of a
     /// factor with a baby rotation, over the diagonal's limbs, and the key switch
-    /// of every giant step, over the operand limbs. EvalMod's squares are checked
-    /// as squares. The failure budget is split over the outputs of every pass,
-    /// and the radix ignores the security bounds, which
-    /// [`Self::with_backend_base2k`] applies.
-    pub fn max_backend_base2k<BE: MaxBase2k>(&self, failure_bits: usize) -> usize {
+    /// of every giant step, over the operand limbs. A first factor on the raise
+    /// sums one key switch per diagonal over fewer limbs, which that count covers.
+    /// An output limb of each of EvalMod's ciphertext products, as many as
+    /// [`EvalModPlan::max_ciphertext_products`] bounds, sums a product per limb,
+    /// one of them a square. On the CI ring EvalMod runs on `BCI`, and the two
+    /// conversions of degree `2N` sum a key-switch product per operand limb on `BE`.
+    /// The failure budget is split over the outputs of every pass, and the radix
+    /// ignores the security bounds, which [`Self::with_backend_base2k`] applies.
+    pub fn max_backend_base2k<BE: MaxBase2k, BCI: MaxBase2k>(&self, failure_bits: usize) -> usize {
         let n = self.n;
+        let ci = self.plan.eval_mod_ring() != EvalModRing::Standard;
         for base2k in (1..=62).rev() {
             let limbs = self.bootstrap_k.div_ceil(base2k);
-            let (products, outputs) = self.transform_accumulations(base2k);
+            let (products, transform_passes) = self.transform_accumulations(base2k);
+            let passes = transform_passes + self.plan.eval_mod().max_ciphertext_products() + if ci { 2 } else { 0 };
             // Each accumulation's output polynomials: two columns, every limb.
-            let failure_bits = failure_bits + (outputs * 2 * limbs).next_power_of_two().ilog2() as usize;
+            let failure_bits = failure_bits + (passes * 2 * limbs).next_power_of_two().ilog2() as usize;
             let transforms = Module::<BE>::max_base2k(n, products, failure_bits, false);
-            let squares = Module::<BE>::max_base2k(n, limbs, failure_bits, true);
-            if transforms.min(squares) >= base2k {
+            let eval_mod = if ci {
+                Module::<BCI>::max_base2k_squares(n, limbs, 1, failure_bits).min(Module::<BE>::max_base2k(
+                    2 * n,
+                    limbs,
+                    failure_bits,
+                    false,
+                ))
+            } else {
+                Module::<BE>::max_base2k_squares(n, limbs, 1, failure_bits)
+            };
+            if transforms.min(eval_mod) >= base2k {
                 return base2k;
             }
         }
@@ -329,10 +345,10 @@ impl BootstrappingPreset {
     }
 
     /// Re-derives the preset at the largest radix [`Self::max_backend_base2k`]
-    /// allows on backend `BE` and the modulus bounds admit (see
+    /// allows on backends `BE` and `BCI` and the modulus bounds admit (see
     /// [`Self::with_base2k`]).
-    pub fn with_backend_base2k<BE: MaxBase2k>(&self, failure_bits: usize) -> Result<Self> {
-        let max = self.max_backend_base2k::<BE>(failure_bits);
+    pub fn with_backend_base2k<BE: MaxBase2k, BCI: MaxBase2k>(&self, failure_bits: usize) -> Result<Self> {
+        let max = self.max_backend_base2k::<BE, BCI>(failure_bits);
         (1..=max)
             .rev()
             .find_map(|base2k| self.with_base2k(base2k).ok())

@@ -45,17 +45,15 @@ pub const PRECISION_LOG_BUDGET: usize = 8;
 /// benchmark radix is selected for (see [`preset_for_backend`]).
 pub const BOOTSTRAP_FAILURE_BITS: usize = 128;
 
-/// The preset at the largest radix backend `BE` takes for a bootstrap failure
-/// probability of `2^-BOOTSTRAP_FAILURE_BITS`
-/// ([`BootstrappingPreset::max_backend_base2k`]): above the nominal radix the
-/// keys are re-derived as the preset derives them, below it as
-/// [`preset_with_max_base2k`] adapts them.
-pub fn preset_for_backend<BE: MaxBase2k>(preset: &BootstrappingPreset) -> anyhow::Result<BootstrappingPreset> {
-    let max = preset.max_backend_base2k::<BE>(BOOTSTRAP_FAILURE_BITS);
-    // The model of `BE` does not cover EvalMod on the CI ring: such a preset stays at
-    // most at its own radix.
-    if max > preset.base2k() && preset.plan().eval_mod_ring() == EvalModRing::Standard {
-        preset.with_backend_base2k::<BE>(BOOTSTRAP_FAILURE_BITS)
+/// The preset at the largest radix backend `BE`, and `BCI` for EvalMod on the
+/// conjugate-invariant ring, take for a bootstrap failure probability of
+/// `2^-BOOTSTRAP_FAILURE_BITS` ([`BootstrappingPreset::max_backend_base2k`]):
+/// above the nominal radix the keys are re-derived as the preset derives them,
+/// below it as [`preset_with_max_base2k`] adapts them.
+pub fn preset_for_backend<BE: MaxBase2k, BCI: MaxBase2k>(preset: &BootstrappingPreset) -> anyhow::Result<BootstrappingPreset> {
+    let max = preset.max_backend_base2k::<BE, BCI>(BOOTSTRAP_FAILURE_BITS);
+    if max > preset.base2k() {
+        preset.with_backend_base2k::<BE, BCI>(BOOTSTRAP_FAILURE_BITS)
     } else {
         preset_with_max_base2k(preset, max)
     }
@@ -379,8 +377,8 @@ where
 /// Runs every preset once on `BE` and checks the measured output precision
 /// against the precision the preset advertises, and that its keys are refused
 /// at entry past their width. The twin [`CIBackend`] runs EvalMod for the presets that put it on
-/// the conjugate-invariant ring, at most at their own radix. The first preset
-/// also round-trips every generated key, both encapsulation directions included.
+/// the conjugate-invariant ring. The first preset also round-trips every
+/// generated key, both encapsulation directions included.
 ///
 /// Each preset runs at the radix [`preset_for_backend`] selects for `BE`. Every
 /// backend uses `f64` DFT matrices and must reach the advertised precision.
@@ -388,7 +386,7 @@ where
 pub fn bootstrapping_presets_meet_precision<BE>()
 where
     BE: TestContextBackend<Ring = Standard> + MaxBase2k,
-    CIBackend<BE>: TestContextBackend,
+    CIBackend<BE>: TestContextBackend + MaxBase2k,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, f64>
         + CKKSBootstrappingOps<BE>
@@ -408,7 +406,7 @@ where
     let mut first_ci = true;
     for (index, preset) in all().unwrap().into_iter().enumerate() {
         let ring = preset.plan().eval_mod_ring();
-        let preset = preset_for_backend::<BE>(&preset).unwrap();
+        let preset = preset_for_backend::<BE, CIBackend<BE>>(&preset).unwrap();
         match ring {
             EvalModRing::Standard => BootstrappingPresetRun::<BE>::setup_with_roundtrip(preset, index == 0).check(backend),
             _ => BootstrappingPresetRun::<BE>::setup_ci_with_roundtrip(preset, std::mem::take(&mut first_ci)).check(backend),

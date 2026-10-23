@@ -15,8 +15,11 @@ mod bootstrapping_presets {
         let presets = poulpy_ckks::presets::bootstrapping::all().unwrap().into_iter();
         for preset in presets.filter(|preset| preset.plan().eval_mod_ring() == EvalModRing::Standard) {
             // The 126-bit prime product leaves three bits more than NTT4x30's.
-            assert_eq!(preset.max_backend_base2k::<crate::NTT3x42Ifma>(BOOTSTRAP_FAILURE_BITS), 56);
-            let adapted = preset_for_backend::<crate::NTT3x42Ifma>(&preset).unwrap();
+            assert_eq!(
+                preset.max_backend_base2k::<crate::NTT3x42Ifma, crate::NTT3x42CIIfma>(BOOTSTRAP_FAILURE_BITS),
+                56
+            );
+            let adapted = preset_for_backend::<crate::NTT3x42Ifma, crate::NTT3x42CIIfma>(&preset).unwrap();
             assert_eq!(adapted.base2k(), 56);
             assert!(adapted.keys_layout().automorphism_key.k().as_usize() <= adapted.max_dense_modulus());
             let small_key = &adapted.keys_layout().encapsulation.as_ref().unwrap().dense_to_sparse;

@@ -68,7 +68,7 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalModuleImpl for Oracle<F, R> {
 
 impl<F: DFTFamily, R: OracleRing> poulpy_hal::execution::ScratchWorkers for Oracle<F, R> {}
 
-impl poulpy_hal::layouts::MaxBase2k for NTT4x30Oracle {
+impl<R: OracleRing> poulpy_hal::layouts::MaxBase2k for NTT4x30Oracle<R> {
     fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
         poulpy_hal::layouts::max_base2k_ntt::<Self>(
             <crate::Primes30 as poulpy_hal::layouts::PrimeSet>::LOG_Q_PRODUCT,
@@ -90,7 +90,7 @@ impl poulpy_hal::layouts::MaxBase2k for NTT4x30Oracle {
     }
 }
 
-impl poulpy_hal::layouts::MaxBase2k for FFT64Oracle {
+impl<R: OracleRing> poulpy_hal::layouts::MaxBase2k for FFT64Oracle<R> {
     fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
         poulpy_hal::layouts::max_base2k_fft64::<Self>(n, products, failure_bits, squaring)
     }

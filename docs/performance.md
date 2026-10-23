@@ -139,7 +139,7 @@ A given torus precision needs `⌈k / base2k⌉` limbs, and cost grows with the 
 Halving `base2k` therefore roughly doubles the work, and the whole span from a small limb to the backend's maximum is worth several times the runtime on every backend we measured.
 
 Also reserve coefficient-word headroom for additions and subtractions before normalization; the query only models DFT-domain products.
-The key-size table above uses the benchmark radices, those `preset_for_backend` selects for a bootstrap failure probability of `2^-128`: 17 for FFT64, 53 for NTT4x30 and 56 for NTT3x42; recalculate its bytes-per-bit figures for your chosen radix.
+The key-size table above uses the benchmark radices, those `preset_for_backend` selects for a bootstrap failure probability of `2^-128`: 17 for FFT64, 53 for NTT4x30 and 56 for NTT3x42, and for a preset with EvalMod on the conjugate-invariant ring 14 for FFT64 and 52 for NTT4x30; recalculate its bytes-per-bit figures for your chosen radix.
 
 ## 5. `k_digit`
 

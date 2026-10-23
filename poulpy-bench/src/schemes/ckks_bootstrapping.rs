@@ -84,11 +84,11 @@ fn runner_ckks_bootstrapping<BE>(
 /// Exercises every preset at the radix
 /// [`preset_for_backend`](poulpy_ckks::test_suite::presets::preset_for_backend)
 /// selects for `BE`, the twin [`CIBackend`] running EvalMod for the presets that
-/// put it on the conjugate-invariant ring, at most at their own radix.
+/// put it on the conjugate-invariant ring.
 pub fn bench_ckks_bootstrapping<BE>(c: &mut Criterion<WallTime>)
 where
     BE: TestContextBackend<Ring = Standard> + poulpy_hal::layouts::MaxBase2k,
-    CIBackend<BE>: TestContextBackend,
+    CIBackend<BE>: TestContextBackend + poulpy_hal::layouts::MaxBase2k,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, f64>
         + CKKSBootstrappingOps<BE>
@@ -109,7 +109,7 @@ where
     group.sample_size(10);
     for preset in all().unwrap() {
         let ring = preset.plan().eval_mod_ring();
-        let preset = preset_for_backend::<BE>(&preset).unwrap();
+        let preset = preset_for_backend::<BE, CIBackend<BE>>(&preset).unwrap();
         match ring {
             EvalModRing::Standard => runner_ckks_bootstrapping(&mut group, preset, BootstrappingPresetRun::<BE>::setup),
             _ => runner_ckks_bootstrapping(&mut group, preset, |preset| BootstrappingPresetRun::<BE>::setup_ci(preset)),
