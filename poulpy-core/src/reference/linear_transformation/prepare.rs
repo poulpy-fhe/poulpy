@@ -73,6 +73,7 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
 
         LinearTransformation {
             baby_steps: index.baby_steps.clone(),
+            rotations: index.rotations,
             giant_steps,
         }
     }

@@ -130,9 +130,16 @@ impl<D: Data, BE: Backend> GLWEInfos for PreparedDiagonal<D, BE> {
 /// cache is sized via [`LinearTransformationBabySteps::alloc`].
 pub struct LinearTransformationBabySteps<BE: Backend> {
     pub(crate) values: BTreeMap<i64, CnvPVecLOwned<BE>>,
+    /// How the preparation reaches the rotations.
+    pub(crate) rotations: crate::layouts::BsgsRotations,
 }
 
 impl<BE: Backend> LinearTransformationBabySteps<BE> {
+    /// How the preparation reaches the rotations.
+    pub fn rotations(&self) -> crate::layouts::BsgsRotations {
+        self.rotations
+    }
+
     pub fn size(&self) -> usize {
         let (_, cnv_pvec) = self.values.first_key_value().unwrap();
         cnv_pvec.size()

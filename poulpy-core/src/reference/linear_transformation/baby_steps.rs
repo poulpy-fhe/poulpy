@@ -23,7 +23,10 @@ use poulpy_hal::{
         VecZnxDftZero, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
     },
     execution::{for_each_with_scratch, scratch_workers, worker_count, worker_scratch_bytes},
-    layouts::{Backend, GaloisElement, PrepareHint, ScratchArena, VecZnxDftBackendRef, VecZnxDftToBackendRef},
+    layouts::{
+        Backend, GaloisElement, PrepareHint, ScratchArena, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
+        VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, vec_znx_dft_backend_ref_from_mut,
+    },
 };
 
 use crate::reference::keyswitching::glwe::{gadget_dft_apply, gadget_dft_apply_tmp_bytes, gadget_input_size};
@@ -37,8 +40,9 @@ use crate::{
     reference::keyswitching::{GGLWEProductReference, gglwe_product_output_size},
 };
 
-use super::{LinearTransformationBabySteps, LinearTransformationLayout};
-use crate::layouts::{digits_aligned, operand_galois_element};
+use super::{BsgsRotations, LinearTransformationBabySteps, LinearTransformationLayout};
+use crate::layouts::{ModuleCoreAlloc, digits_aligned, operand_galois_element};
+use poulpy_hal::layouts::ScratchOwned;
 
 const BABY_ROTATION_WORKERS: usize = 4;
 
@@ -56,15 +60,34 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
         M: ModuleN + CnvPVecAlloc<BE>,
         A: GLWEInfos,
     {
+        Self::alloc_with(module, baby_steps, BsgsRotations::PerRotation, a)
+    }
+
+    /// Pre-allocates a baby-step cache prepared as `rotations` says, holding the rotations
+    /// [`BsgsRotations::baby_closure`] gives for `baby_steps`.
+    pub fn alloc_with<M, A>(module: &M, baby_steps: &[i64], rotations: BsgsRotations, a: &A) -> Self
+    where
+        M: ModuleN + CnvPVecAlloc<BE>,
+        A: GLWEInfos,
+    {
         let cols = a.rank().as_usize() + 1;
         let size = a.size();
         let mut values = BTreeMap::new();
-        for &rot in baby_steps {
+        for rot in rotations.baby_closure(baby_steps.iter().copied()) {
             values
                 .entry(rot)
                 .or_insert_with(|| module.cnv_pvec_left_alloc(a.n().as_usize(), cols, size, PrepareHint::Reuse));
         }
-        Self { values }
+        Self { values, rotations }
+    }
+
+    /// Pre-allocates the baby-step cache the transformation `lt` reads, prepared as it says.
+    pub fn alloc_for<M, A, P>(module: &M, lt: &crate::LinearTransformation<P>, a: &A) -> Self
+    where
+        M: ModuleN + CnvPVecAlloc<BE>,
+        A: GLWEInfos,
+    {
+        Self::alloc_with(module, lt.baby_steps(), lt.rotations, a)
     }
 
     /// Convenience: pre-allocates from a [`LinearTransformationLayout`].
@@ -200,18 +223,21 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
     BE: Backend,
     M: GLWEBytesOf<BE>
         + CnvPVecAlloc<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + Convolution<BE>
         + GaloisElement
         + GLWEAutomorphism<BE>
         + GGLWEProductReference<BE>
         + ModuleN
         + VecZnxAutomorphismAssign<BE>
+        + poulpy_hal::api::VecZnxAutomorphism<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>
         + VecZnxIdftNormalize<BE>
         + VecZnxIdftNormalizeTmpBytes
         + poulpy_hal::api::VecZnxGadgetDecompose<BE>
+        + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
         + GLWENormalize<BE>
         + Sync,
     A: GLWEToBackendRef<BE> + GLWEInfos,
@@ -225,6 +251,9 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
         a_tmp.to_backend_ref()
     };
     let (a, scratch) = (&&a_ref, &mut scratch);
+    if cache.rotations != BsgsRotations::PerRotation {
+        return glwe_prepare_baby_steps_doubling(module, cache, a, keys, scratch);
+    }
     let cols = a.rank().as_usize() + 1;
     let a_size = a.size();
     // Baby rotations rotate the source, so their keys are the ones the source's
@@ -374,4 +403,265 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
             }
         }
     }
+}
+
+/// [`glwe_prepare_linear_transformation_baby_steps`] for [`BsgsRotations::PowersOfTwo`]: the
+/// rotations of a doubling pass rotate earlier ones with the pass's key, each source laid out
+/// and switched on its own, a task each on a parallel executor. The rotations are held as
+/// ciphertexts until the last pass.
+#[allow(clippy::type_complexity)]
+fn glwe_prepare_baby_steps_doubling<BE, M, H>(
+    module: &M,
+    cache: &mut LinearTransformationBabySteps<BE>,
+    a: &GLWEBackendRef<'_, BE>,
+    keys: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: GLWEBytesOf<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + Convolution<BE>
+        + GaloisElement
+        + GLWEAutomorphism<BE>
+        + GGLWEProductReference<BE>
+        + ModuleN
+        + VecZnxAutomorphismAssign<BE>
+        + poulpy_hal::api::VecZnxAutomorphism<BE>
+        + VecZnxDftApply<BE>
+        + VecZnxDftBytesOf
+        + VecZnxDftZero<BE>
+        + VecZnxIdftNormalize<BE>
+        + VecZnxIdftNormalizeTmpBytes
+        + poulpy_hal::api::VecZnxGadgetDecompose<BE>
+        + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
+        + GLWENormalize<BE>
+        + Sync,
+    H: GetAutomorphismKey<BE>,
+{
+    let n = a.n().as_usize();
+    let cols = a.rank().as_usize() + 1;
+    let a_size = a.size();
+    let rotations: Vec<i64> = cache.values.keys().copied().collect();
+    let passes = cache.rotations.baby_passes(rotations.iter().copied());
+    let pass_keys: Vec<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> = passes
+        .iter()
+        .map(|&(key_rot, _)| {
+            keys.get_automorphism_key(operand_galois_element(module, n, key_rot), a.k())
+                .unwrap_or_else(|e| panic!("baby-step doubling {key_rot}: {e}"))
+        })
+        .collect();
+    // A pass switches its sources together when its key has their base2k: the operand, the
+    // product and the normalized rotation of each, side by side.
+    let hoisted = |key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>| key.base2k() == a.base2k();
+    let pass_bytes = |key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>, sources: usize| {
+        let operand_size = gadget_input_size(a.base2k(), key.k_digit(), key.dnum(), a.k(), a_size);
+        let key_size = gglwe_product_output_size::<BE, _, _, _>(a, a, key);
+        sources
+            * (BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols - 1, operand_size))
+                + BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols, key_size))
+                + BE::scratch_aligned(BE::bytes_of_vec_znx(n, cols, a_size)))
+    };
+    // The rotations as ciphertexts and the buffers of the widest pass, carved from the scratch
+    // when it holds them beside the work of a rotation
+    // ([`glwe_prepare_baby_doubling_tmp_bytes`]), else allocated.
+    let need = rotations.len() * BE::scratch_aligned(module.glwe_bytes_of_from_infos(a))
+        + passes
+            .iter()
+            .zip(&pass_keys)
+            .filter(|(_, key)| hoisted(key))
+            .map(|((_, pairs), key)| pass_bytes(key, pairs.len()))
+            .max()
+            .unwrap_or(0);
+    let work = pass_keys
+        .iter()
+        .map(|key| glwe_prepare_linear_transformation_baby_steps_tmp_bytes::<BE, _, _, _>(module, a, key))
+        .max()
+        .unwrap_or(0);
+    let mut owned: Option<ScratchOwned<BE>> = None;
+    let arena = if scratch.available() >= need + work {
+        scratch.borrow()
+    } else {
+        let owned = owned.insert(<ScratchOwned<BE> as poulpy_hal::api::ScratchOwnedAlloc<BE>>::alloc(
+            need + work,
+        ));
+        poulpy_hal::api::ScratchOwnedBorrow::borrow(owned)
+    };
+    let (mut rotated, mut work) = arena.take_glwe_slice_scratch(rotations.len(), a);
+    let index = |rot: i64| rotations.binary_search(&rot).unwrap();
+    for ((_, pairs), key) in passes.iter().zip(&pass_keys) {
+        if !hoisted(key) {
+            for &(source, target) in pairs {
+                let target = index(target);
+                if source == 0 {
+                    module.glwe_automorphism(&mut rotated[target], &a, key, &mut work);
+                } else {
+                    // A source always precedes its target.
+                    let (sources, targets) = rotated.split_at_mut(target);
+                    let source = sources[index(source)].to_backend_ref();
+                    module.glwe_automorphism(&mut targets[0], &&source, key, &mut work);
+                }
+            }
+            continue;
+        }
+        crate::reference::keyswitching::glwe::assert_no_row_offset("glwe_hoisted_baby_rotation", &key.key);
+        let m = pairs.len();
+        let (k_digit, dnum) = (key.k_digit(), key.dnum());
+        let operand_size = gadget_input_size(a.base2k(), k_digit, dnum, a.k(), a_size);
+        let key_size = gglwe_product_output_size::<BE, _, _, _>(a, a, key);
+        let pass = work.borrow();
+        let (mut operands, pass) = pass.take_vec_znx_dft_slice_scratch(n, m, cols - 1, operand_size);
+        let (mut products, pass) = pass.take_vec_znx_dft_slice_scratch(n, m, cols, key_size);
+        let (mut normalized, mut pass) = pass.take_vec_znx_slice_scratch(m, n, cols, a_size);
+        {
+            // Every source reborrowed alike, the input as the rotations.
+            let sources: Vec<GLWEBackendRef<'_, BE>> = pairs
+                .iter()
+                .map(|&(source, _)| {
+                    if source == 0 {
+                        crate::layouts::glwe_backend_ref_from_ref::<BE>(a)
+                    } else {
+                        rotated[index(source)].to_backend_ref()
+                    }
+                })
+                .collect();
+            // The rotation of `source` before its automorphism: its operand laid out, its
+            // product by the key, normalized with its body.
+            let (base2k, k) = (a.base2k().as_usize(), a.k().as_usize());
+            let switch = |operand: &mut VecZnxDftBackendMut<'_, BE>,
+                          product: &mut VecZnxDftBackendMut<'_, BE>,
+                          normalized: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, BE>,
+                          source: &GLWEBackendRef<'_, BE>,
+                          scratch: &mut ScratchArena<'_, BE>| {
+                for col_i in 0..cols - 1 {
+                    gadget_dft_apply(
+                        module,
+                        operand,
+                        col_i,
+                        &source.data,
+                        col_i + 1,
+                        a.base2k(),
+                        k_digit,
+                        dnum,
+                        a.k(),
+                        &mut scratch.borrow(),
+                    );
+                }
+                module.gglwe_product_dft_reference(
+                    product,
+                    &vec_znx_dft_backend_ref_from_mut(operand),
+                    &key.key,
+                    1,
+                    &mut scratch.borrow(),
+                );
+                for col in 0..cols {
+                    module.vec_znx_idft_normalize(
+                        normalized,
+                        base2k,
+                        k,
+                        0,
+                        col,
+                        product,
+                        col,
+                        base2k,
+                        (col == 0).then_some((&source.data, 0)),
+                        &mut scratch.borrow(),
+                    );
+                }
+            };
+            let task_bytes = worker_scratch_bytes::<BE>(
+                gadget_dft_apply_tmp_bytes::<BE, _>(module, a.base2k(), k_digit, dnum, a.k(), a_size)
+                    .max(module.gglwe_product_dft_tmp_bytes_reference(key_size, operand_size, key))
+                    .max(module.vec_znx_idft_normalize_tmp_bytes(a_size, key_size)),
+            );
+            let workers = worker_count::<BE::TaskExecutor>(BABY_ROTATION_WORKERS, m).min(pass.available() / task_bytes.max(1));
+            let mut tasks: Vec<_> = operands
+                .iter_mut()
+                .zip(products.iter_mut())
+                .zip(normalized.iter_mut())
+                .zip(&sources)
+                .collect();
+            if workers > 1 {
+                // On a parallel executor every source is a task of its own.
+                let (worker_scratch, _) = pass.borrow().split(workers, task_bytes);
+                for_each_with_scratch::<BE::TaskExecutor, BE, _, _>(
+                    &mut tasks,
+                    0,
+                    worker_scratch,
+                    &|_, (((operand, product), normalized), source), task_scratch| {
+                        switch(
+                            &mut operand.to_backend_mut(),
+                            &mut product.to_backend_mut(),
+                            &mut normalized.to_backend_mut(),
+                            source,
+                            task_scratch,
+                        );
+                    },
+                );
+            } else {
+                for (((operand, product), normalized), source) in tasks {
+                    switch(
+                        &mut operand.to_backend_mut(),
+                        &mut product.to_backend_mut(),
+                        &mut normalized.to_backend_mut(),
+                        source,
+                        &mut pass,
+                    );
+                }
+            }
+        }
+        // Each rotation stored through the pass's automorphism.
+        for (normalized, &(_, target)) in normalized.iter().zip(pairs) {
+            let normalized = normalized.to_backend_ref();
+            let mut target = rotated[index(target)].to_backend_mut();
+            for col in 0..cols {
+                module.vec_znx_automorphism(key.p, &mut target.data, col, &normalized, col);
+            }
+        }
+    }
+    // The prepared cache, a task per rotation on a parallel executor.
+    let sources: Vec<GLWEBackendRef<'_, BE>> = rotations
+        .iter()
+        .map(|&rot| {
+            if rot == 0 {
+                crate::layouts::glwe_backend_ref_from_ref::<BE>(a)
+            } else {
+                rotated[index(rot)].to_backend_ref()
+            }
+        })
+        .collect();
+    let mut tasks: Vec<_> = cache.values.values_mut().zip(&sources).collect();
+    let task_bytes = worker_scratch_bytes::<BE>(module.cnv_prepare_left_tmp_bytes(a_size, a_size));
+    let workers = worker_count::<BE::TaskExecutor>(BABY_ROTATION_WORKERS, tasks.len())
+        .min(work.available() / task_bytes.max(1))
+        .max(1);
+    let (worker_scratch, _) = work.borrow().split(workers, task_bytes);
+    for_each_with_scratch::<BE::TaskExecutor, BE, _, _>(&mut tasks, 0, worker_scratch, &|_, (prepared, source), task_scratch| {
+        assert_eq!(prepared.cols(), cols, "prepared baby cache has wrong column count");
+        assert_eq!(prepared.size(), a_size, "prepared baby cache has wrong size");
+        module.cnv_prepare_left(&mut prepared.to_backend_mut(), &source.data, task_scratch);
+    });
+}
+
+/// Bytes the doubling of [`BsgsRotations::PowersOfTwo`] takes from the scratch for a cache of
+/// the rotations `baby_steps` of `a` with keys of the layout `key`, on top of the per-rotation
+/// budget, so that it holds the rotations and the buffers of a pass there instead of allocating
+/// them; zero for [`BsgsRotations::PerRotation`].
+pub fn glwe_prepare_baby_doubling_tmp_bytes<BE, A, K>(baby_steps: &[i64], rotations: BsgsRotations, a: &A, key: &K) -> usize
+where
+    BE: Backend,
+    A: GLWEInfos,
+    K: GGLWEInfos,
+{
+    if rotations == BsgsRotations::PerRotation {
+        return 0;
+    }
+    let (n, cols, a_size) = (a.n().as_usize(), a.rank().as_usize() + 1, a.size());
+    let count = rotations.baby_closure(baby_steps.iter().copied()).len();
+    let operand_size = gadget_input_size(a.base2k(), key.k_digit(), key.dnum(), a.k(), a_size);
+    let key_size = gglwe_product_output_size::<BE, _, _, _>(a, a, key);
+    count * BE::scratch_aligned(BE::bytes_of_vec_znx(n, cols, a_size))
+        + count
+            * (BE::scratch_aligned(BE::bytes_of_vec_znx_dft(n, cols - 1, operand_size))
+                + BE::scratch_aligned(BE::bytes_of_vec_znx_dft(n, cols, key_size))
+                + BE::scratch_aligned(BE::bytes_of_vec_znx(n, cols, a_size)))
 }

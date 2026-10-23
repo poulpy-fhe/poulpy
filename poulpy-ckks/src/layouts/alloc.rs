@@ -128,6 +128,7 @@ pub trait CKKSModuleAlloc<BE: Backend>:
                 })
                 .collect(),
             baby_steps: plan.baby_steps,
+            rotations: plan.rotations,
         }
     }
 }

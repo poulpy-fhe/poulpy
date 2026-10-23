@@ -141,6 +141,8 @@ struct PresetSpec {
     c2s_schedule: &'static [(usize, usize)],
     /// The first CoeffsToSlots factor is applied by the raise, for no modulus.
     c2s_first_factor_on_raise: bool,
+    /// The transforms switch with the keys of power-of-two rotations only.
+    power_of_two_keys: bool,
     eval_mod_ring: EvalModRing,
     c2s_guard_bits: usize,
     c2s_log_delta: usize,
@@ -290,6 +292,17 @@ impl BootstrappingPreset {
         build(PresetSpec {
             c2s_log_delta,
             c2s_bypass_log_delta: Some(bypass_log_delta),
+            ..self.spec
+        })
+    }
+
+    /// Re-derives the preset with the transforms evaluated with the keys of
+    /// power-of-two rotations only ([`DFTPlan::with_power_of_two_keys`]): the
+    /// same key switches, half the CoeffsToSlots and SlotsToCoeffs keys, each
+    /// switching several ciphertexts at once, and a product through more switches.
+    pub fn with_power_of_two_keys(&self) -> Result<Self> {
+        build(PresetSpec {
+            power_of_two_keys: true,
             ..self.spec
         })
     }
@@ -498,6 +511,7 @@ pub fn n16_d35_k636_p20_c2s() -> Result<BootstrappingPreset> {
         log_msg_ratio: 6,
         c2s_schedule: &C2S_SCHEDULE,
         c2s_first_factor_on_raise: false,
+        power_of_two_keys: false,
         eval_mod_ring: EvalModRing::Standard,
         c2s_guard_bits: 0,
         c2s_log_delta: 51,
@@ -536,6 +550,7 @@ pub fn n16_d35_k733_p20_s2c() -> Result<BootstrappingPreset> {
         log_msg_ratio: 13,
         c2s_schedule: &C2S_SCHEDULE,
         c2s_first_factor_on_raise: false,
+        power_of_two_keys: false,
         eval_mod_ring: EvalModRing::Standard,
         c2s_guard_bits: 6,
         c2s_log_delta: 50,
@@ -571,6 +586,7 @@ pub fn n15_d35_k180_p18_c2s() -> Result<BootstrappingPreset> {
         log_msg_ratio: 5,
         c2s_schedule: &[(7, 2048), (7, 16)],
         c2s_first_factor_on_raise: false,
+        power_of_two_keys: false,
         eval_mod_ring: EvalModRing::Standard,
         c2s_guard_bits: 0,
         c2s_log_delta: 50,
@@ -616,6 +632,7 @@ pub(crate) fn insecure_n11_d35_k180_p20_s2c() -> Result<BootstrappingPreset> {
         log_msg_ratio: 13,
         c2s_schedule: &[(4, 4), (3, 4), (3, 4)],
         c2s_first_factor_on_raise: false,
+        power_of_two_keys: false,
         eval_mod_ring: EvalModRing::Standard,
         c2s_guard_bits: 6,
         c2s_log_delta: 50,
@@ -640,6 +657,7 @@ pub fn n16_d35_k685_p19_s2c_ffr_ci() -> Result<BootstrappingPreset> {
         log2_precision: 19,
         c2s_schedule: &[(3, 1), (4, 1024), (4, 64), (4, 4)],
         c2s_first_factor_on_raise: true,
+        power_of_two_keys: false,
         // `u` carries the overflow of the raise, `v` only the message.
         eval_mod_ring: EvalModRing::ConjugateInvariant {
             pre: CIConversion::Product { log_delta: 46 },
@@ -700,13 +718,15 @@ fn build(spec: PresetSpec) -> Result<BootstrappingPreset> {
     .with_scaling(match spec.pipeline {
         BootstrappingPipeline::C2SFirst => (spec.log_msg_ratio as f64).ckks_exp2(),
         BootstrappingPipeline::S2CFirst => 0.5,
-    })?;
+    })?
+    .with_power_of_two_keys(spec.power_of_two_keys);
     let coeffs_to_slots = DFTPlan::new(
         DFTType::Encode,
         spec.c2s_schedule.to_vec(),
         DFTOutputFormat::SplitRealAndImag,
         CoeffsMeta::from_delta_budget(spec.c2s_log_delta, spec.c2s_log_budget),
-    )?;
+    )?
+    .with_power_of_two_keys(spec.power_of_two_keys);
     let coeffs_to_slots = if spec.c2s_first_factor_on_raise {
         coeffs_to_slots.with_first_factor_on_raise()
     } else {
@@ -726,7 +746,8 @@ fn build(spec: PresetSpec) -> Result<BootstrappingPreset> {
                         DFTOutputFormat::SplitRealAndImag,
                         CoeffsMeta::from_delta_budget(log_delta, spec.c2s_log_budget),
                     )?
-                    .with_scaling(1.0)?,
+                    .with_scaling(1.0)?
+                    .with_power_of_two_keys(spec.power_of_two_keys),
                 }),
                 None => None,
             },
@@ -1385,6 +1406,18 @@ mod tests {
     }
 
     #[test]
+    fn power_of_two_keys_halve_the_rotation_keys_of_n16_d35_k685_p19_s2c_ffr_ci() {
+        let preset = n16_d35_k685_p19_s2c_ffr_ci().unwrap();
+        let powers = preset.with_power_of_two_keys().unwrap();
+        let count = |p: &BootstrappingPreset| p.plan().galois_elements(p.log_n(), 2 * p.n() as i64).len();
+        // Five keys per paid factor in place of ten: 21 rotation keys against 43, 3121 MiB
+        // against 6243, every width unchanged.
+        assert_eq!((count(&preset), count(&powers)), (43, 21));
+        assert_eq!(key_set_bytes(&powers).map(|bytes| bytes >> 20), [3121, 99, 3, 240, 260]);
+        assert_eq!((powers.input_k(), powers.output_k(), powers.bootstrap_k()), (160, 685, 1383));
+    }
+
+    #[test]
     fn n16_d35_k685_p19_s2c_ffr_ci_has_a_smaller_key_set() {
         let mib = |bytes: usize| {
             assert!(bytes.is_multiple_of(1 << 20));
@@ -1401,6 +1434,7 @@ mod tests {
         let without = build(PresetSpec {
             c2s_schedule: &[(3, 8), (4, 1024), (4, 64), (4, 4)],
             c2s_first_factor_on_raise: false,
+            power_of_two_keys: false,
             ..preset.spec
         })
         .unwrap();

@@ -53,7 +53,7 @@ where
     H: GetAutomorphismKey<BE>,
 {
     // Only the baby cache is allocated: a plaintext `lt` streams its diagonals inside the evaluation.
-    let mut babies = LinearTransformationBabySteps::alloc(module, lt.baby_steps(), src);
+    let mut babies = LinearTransformationBabySteps::alloc_for(module, lt, src);
     BE::ckks_prepare_linear_transformation_baby_steps_impl(module, &mut babies, src, keys, scratch)?;
     BE::ckks_eval_linear_transformation_into_impl(module, dst, src, &babies, lt, keys, scratch)
 }

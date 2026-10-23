@@ -1509,7 +1509,7 @@ where
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE>,
 {
-    let mut babies = LinearTransformationBabySteps::alloc(module, even.baby_steps(), w);
+    let mut babies = LinearTransformationBabySteps::alloc_for(module, even, w);
     module.ckks_prepare_linear_transformation_baby_steps(&mut babies, w, keys, scratch)?;
     let (mut a, scratch_1) = scratch.borrow().take_ckks_ciphertext_scratch(w, w.meta());
     let (mut b, mut scratch_1) = scratch_1.take_ckks_ciphertext_scratch(w, w.meta());

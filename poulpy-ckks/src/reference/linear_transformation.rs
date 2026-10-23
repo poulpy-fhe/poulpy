@@ -12,7 +12,7 @@ use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     GLWELinearTransformations, LinearTransformationBabySteps, LinearTransformationGiantStep, LinearTransformationPrepared,
     layouts::{
-        GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, TorusPrecision,
+        BsgsRotations, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, TorusPrecision,
         prepared::PreparedDiagonal,
     },
     reference::linear_transformation::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft},
@@ -196,7 +196,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
     {
         let cyclotomic_order = operand_cyclotomic_order("linear_transformation", self, src.n().as_usize())?;
         let src_k = src.k();
-        for rotation in babies.baby_steps().filter(|&rotation| rotation != 0) {
+        for rotation in babies.rotations().baby_key_rotations(babies.baby_steps()) {
             if let Err(source) = keys.get_automorphism_key(galois_element(rotation, cyclotomic_order), src_k) {
                 return Err(CKKSCompositionError::MissingAutomorphismKey {
                     op: "linear_transformation",
@@ -392,13 +392,12 @@ where
     H: GetAutomorphismKey<BE>,
 {
     check_babies(lt, babies)?;
-    for rotation in lt
-        .giant_steps
-        .iter()
-        .filter(|gs| !gs.diagonals.is_empty())
-        .map(|gs| gs.rot)
-        .filter(|&r| r != 0)
-    {
+    let giants = lt.giant_steps.iter().filter(|gs| !gs.diagonals.is_empty()).map(|gs| gs.rot);
+    let rotations: Vec<i64> = match lt.rotations {
+        BsgsRotations::PerRotation => giants.filter(|&r| r != 0).collect(),
+        rotations => rotations.giant_key_rotations(giants),
+    };
+    for rotation in rotations {
         let gal_el = galois_element(rotation, cyclotomic_order);
         keys.get_automorphism_key(gal_el, giant_k)
             .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {

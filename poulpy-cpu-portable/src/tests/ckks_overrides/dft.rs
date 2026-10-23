@@ -140,6 +140,7 @@ fn checked_dft_construction_rejects_repeated_and_inconsistent_diagonals() {
             dft_plan(),
             vec![LinearTransformation {
                 baby_steps: vec![0, 1],
+                rotations: Default::default(),
                 giant_steps: vec![LinearTransformationGiantStep { rot: 0, diagonals }],
             }],
         )
@@ -208,6 +209,7 @@ fn checked_dft_construction_preserves_exact_encoded_width() {
     let factors = |width| {
         vec![LinearTransformation {
             baby_steps: vec![0],
+            rotations: Default::default(),
             giant_steps: vec![GiantStep {
                 rot: 0,
                 diagonals: vec![Diagonal {
@@ -358,6 +360,7 @@ fn conditional_dft_fallback_reenters_selected_evaluation() {
         .unwrap(),
         vec![LinearTransformation {
             baby_steps: vec![0],
+            rotations: Default::default(),
             giant_steps: vec![LinearTransformationGiantStep {
                 rot: 0,
                 diagonals: vec![LinearTransformationDiagonal { baby: 0, plaintext: pt }],
@@ -512,6 +515,7 @@ fn dft_scratch_covers_factor_copy_with_working_buffer() {
         .unwrap(),
         vec![LinearTransformation {
             baby_steps: vec![0],
+            rotations: Default::default(),
             giant_steps: vec![LinearTransformationGiantStep {
                 rot: 0,
                 diagonals: vec![LinearTransformationDiagonal { baby: 0, plaintext: pt }],

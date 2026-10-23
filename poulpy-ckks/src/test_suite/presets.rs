@@ -437,6 +437,9 @@ pub fn preset_label(preset: &BootstrappingPreset) -> String {
     {
         label.push_str("+fold_u");
     }
+    if preset.plan().coeffs_to_slots().power_of_two_keys() {
+        label.push_str("+pow2");
+    }
     label
 }
 
@@ -511,6 +514,14 @@ where
             .check(backend);
         }
     }
+    // The transforms with the keys of power-of-two rotations, `u` folded on the CI ring.
+    let powers_of_two = preset.with_power_of_two_keys().unwrap();
+    BootstrappingPresetRun::<BE>::setup(powers_of_two.clone()).check(backend);
+    let ci = EvalModRing::ConjugateInvariant {
+        pre: CIConversion::Folded,
+        post: CIConversion::Product { log_delta: 38 },
+    };
+    BootstrappingPresetRun::<BE>::setup_ci(powers_of_two.with_eval_mod_ring(ci).unwrap()).check(backend);
 }
 
 /// The bootstrap with EvalMod on the conjugate-invariant ring refuses, before any

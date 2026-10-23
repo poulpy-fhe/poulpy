@@ -38,6 +38,7 @@
 - **Breaking:** `impl_cpu_core_defaults!` registers the core trace on both rings, where each standard backend registered it apart: an out-of-tree backend calling it drops its own `impl_glwe_trace_derived_full!`, which now conflicts.
 - `conjugate_invariant_core_test_suite!` also runs `test_glwe_trace_parity`.
 - `impl_cpu_ckks_defaults!` selects poulpy-ckks's provided inner sum and replicate, `impl_ckks_inner_sum_derived_full!`.
+- Every CPU backend registers `test_linear_transformation_powers_of_two_parity`.
 - Every conjugate-invariant backend type has a `max_base2k` model: each backend implements `MaxBase2k` once for both rings, where the conjugate-invariant types returned `None`.
 - The AVX-512 rank-one relinearization and the fused IFMA giant step refuse a key that does not cover their input, as the reference does.
 - The native CKKS encapsulated modulus raise (portable, AVX2, AVX-512, and their Rayon variants) and the fused IFMA giant step leave a key with a row offset to the reference, which refuses it, and the AVX-512 rank-one relinearization refuses one, instead of using it as an offset-free key.
@@ -129,6 +130,12 @@
 
 ### `poulpy-core`
 
+- Add the evaluation of BSGS linear transformations with the keys of power-of-two rotations only (`LinearTransformationStrategy::BsgsPowersOfTwo`, `BsgsRotations::PowersOfTwo`, `GiantTreeLevel`): the baby rotations come from doubling passes, whose sources share the pass's key and are switched a task each on a parallel executor, and the giant steps are summed as a binary tree over the two's-complement digits of their index, each level switching with one key.
+  The key switches are as many as with a key per rotation, the keys about `log2(n1) + log2(n2)` instead of `n1 + n2`, and a product goes through more switches.
+  The doubling and the tree carve their buffers from the scratch when it holds them (`glwe_prepare_baby_doubling_tmp_bytes`, `glwe_eval_giant_tree_tmp_bytes`) and allocate them otherwise.
+  `test_glwe_linear_transformation_powers_of_two` and `test_linear_transformation_powers_of_two_parity` check them.
+- **Breaking:** `LinearTransformationLayout` gains `rotations`; `BsgsRotations::PerRotation` evaluates as before.
+- The lazy giant steps of a linear transformation normalize each mask column from its inverse transform with `vec_znx_idft_normalize`, where they took an inverse transform into a BIG buffer and normalized it, with the same outputs.
 - Add `gglwe_copy` and `ggsw_copy` (`GGLWECopy`, `GGSWCopy`, `GGLWECopyImpl`, `GGSWCopyImpl`, `impl_gglwe_copy_reference_full!`, `impl_ggsw_copy_reference_full!`), the copy of the first rows of a GGLWE or a GGSW into one of the same gadget and as many or fewer digits, each row as `glwe_copy` copies it.
   A key never covers its own layout but covers such a copy, which the `_assign` key switches and automorphisms switch in place; an automorphism key's Galois element is not copied.
 - `GLWESecretViewMut` implements `GetDistributionMut`, as the other secret views do, so a secret carved from scratch can be sampled.
@@ -248,6 +255,8 @@
 
 ### `poulpy-ckks`
 
+- Add `DFTPlan::with_power_of_two_keys` and `BootstrappingPreset::with_power_of_two_keys`, the transforms evaluated with the keys of power-of-two rotations only (`BsgsPowersOfTwo`): `n16_d35_k685_p19_s2c_ffr_ci` takes 21 rotation keys instead of 43, 3121 MiB instead of 6243, at the same widths.
+  `preset_label` marks it `+pow2`, and `small_s2c_preset_meets_precision` runs it on both rings.
 - Add the modulus raise that applies the first `CoeffsToSlots` factor on the raised ciphertext while it is small (`DFTPlan::with_first_factor_on_raise`, after ePrint 2025/1403): the factor consumes no modulus, and the raised width drops by one CoeffsToSlots scale.
   Each diagonal's term is rotated with no key and switched to the dense secret by a `GLWESwitchingKey` of its own, from the rotated raise secret, whose rows sit `k_offset` bits under the term's few limbs and end at the raise's working width (`BootstrappingKeysLayout::first_factor_key`, `BootstrappingLinearKeys::first_factor_key`); the switches are summed with `glwe_keyswitch_dft_add` and rounded once.
   The sparse-to-dense switch is not used, nor its key generated.
