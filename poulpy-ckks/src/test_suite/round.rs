@@ -7,6 +7,7 @@
 //! | [`test_round_unit_shaping_is_plain`] | a replicated layout with `U = 1` rounds as a full layout |
 //! | [`test_round_error_is_shaped`] | the rounding error is `−g·h·2^-(k+λ)` with `\|\|h\|\|_∞ <= 2^(λ−1)` |
 //! | [`test_round_beyond_pass_rounds_plainly_first`] | a drop beyond the pass size rounds plainly to `k + λ`, then shaped |
+//! | [`test_round_rejects_incompatible_layouts`] | mismatched ranks and degrees, and insufficient scratch, leave operands unchanged |
 //! | [`test_round_rejects_invalid_widths`] | a wider destination and a drop beyond `log_delta` |
 
 use anyhow::Result;
@@ -258,5 +259,98 @@ where
     let k = src.k().as_usize();
     assert!(round(module, &src, &params, k + 1).is_err());
     assert!(round(module, &src, &params, k - src.log_delta() - 1).is_err());
+    Ok(())
+}
+
+/// Rank and degree mismatches refuse before changing either operand.
+pub fn test_round_rejects_incompatible_layouts<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    _host_module: &Module<HostBytesBackend>,
+) -> Result<()>
+where
+    BE: TestContextBackend<Ring = Standard>,
+    Module<BE>: TestContextModule<BE> + poulpy_core::GLWEMaskFill<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    use crate::test_suite::parity::helpers::{fixture_ciphertext, snapshot, with_scratch};
+    use crate::{CKKSCompositionError, CKKSLayout, GLWEPlaintextMeta};
+    use poulpy_core::layouts::GLWELayout;
+    for slot_layout in [
+        SlotLayout::Full,
+        SlotLayout::Replicated(ReplicatedLayout::new(0, 1, 8, &[1, 0, 0, 0])?),
+    ] {
+        let src_layout = CKKSLayout {
+            glwe_layout: GLWELayout {
+                n: params.n.into(),
+                base2k: params.base2k.into(),
+                k: 72usize.into(),
+                rank: 1usize.into(),
+            },
+            meta: GLWEPlaintextMeta {
+                scale: Scale::Log(40),
+                slot_layout,
+                ..Default::default()
+            },
+        };
+        let src = fixture_ciphertext(module, &src_layout, 81);
+        let src_before = snapshot::<BE, _>(&src);
+        for (rank, n, reason) in [
+            (0usize, params.n, "source and destination ranks differ"),
+            (2, params.n, "source and destination ranks differ"),
+            (1, params.n / 2, "source and destination degrees differ"),
+        ] {
+            let dst_layout = CKKSLayout {
+                glwe_layout: GLWELayout {
+                    rank: rank.into(),
+                    n: n.into(),
+                    k: 60usize.into(),
+                    ..src_layout.glwe_layout
+                },
+                meta: GLWEPlaintextMeta {
+                    scale: Scale::Log(7),
+                    ..Default::default()
+                },
+            };
+            let mut dst = fixture_ciphertext(module, &dst_layout, 83);
+            let before = snapshot::<BE, _>(&dst);
+            let err = with_scratch::<BE, _>(module.ckks_round_tmp_bytes(&dst, &src), |scratch| {
+                module.ckks_round_into(&mut dst, &src, scratch)
+            })
+            .unwrap_err();
+            assert!(
+                matches!(err.composition(), Some(CKKSCompositionError::InvalidOperand {op: "ckks_round", reason: got}) if got == reason)
+            );
+            assert_eq!(snapshot::<BE, _>(&dst), before);
+            assert_eq!(snapshot::<BE, _>(&src), src_before);
+        }
+        let mut dst = fixture_ciphertext(
+            module,
+            &CKKSLayout {
+                glwe_layout: GLWELayout {
+                    k: 60usize.into(),
+                    ..src_layout.glwe_layout
+                },
+                meta: GLWEPlaintextMeta {
+                    scale: Scale::Log(7),
+                    ..Default::default()
+                },
+            },
+            83,
+        );
+        let before = snapshot::<BE, _>(&dst);
+        let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            with_scratch::<BE, _>(0, |scratch| module.ckks_round_into(&mut dst, &src, scratch))
+        }))
+        .unwrap_err();
+        let message = panic
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| panic.downcast_ref::<String>().map(String::as_str));
+        assert_eq!(message, Some("ckks_round: insufficient scratch"));
+        assert_eq!(snapshot::<BE, _>(&dst), before);
+        assert_eq!(snapshot::<BE, _>(&src), src_before);
+    }
     Ok(())
 }

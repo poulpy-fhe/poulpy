@@ -10,8 +10,8 @@ use poulpy_core::{
     layouts::{
         BackendGLWESecret, Base2K, Degree, Diagonals, GGLWELayout, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout,
         GLWESecretLayout, GLWESecretSampling, GLWESwitchingKeyLayout, GLWETensorKeyLayout, GetDegree, LWEInfos,
-        LinearTransformationLayout, LinearTransformationPrepared, LinearTransformationStrategy, ModuleCoreAlloc, Rank,
-        TorusPrecision,
+        LinearTransformationBabySteps, LinearTransformationLayout, LinearTransformationPrepared, LinearTransformationStrategy,
+        ModuleCoreAlloc, Rank, TorusPrecision,
     },
 };
 use poulpy_hal::{
@@ -105,6 +105,38 @@ impl<BE: Backend> ReplicatedConversion<BE> {
         self.layout
     }
 
+    /// Allocates reusable baby steps for conversion into this layout from `src`.
+    pub fn alloc_to_workspace<C: GLWEInfos>(&self, module: &Module<BE>, src: &C) -> ReplicatedTransformWorkspace<BE>
+    where
+        Module<BE>: CnvPVecAlloc<BE>,
+    {
+        self.to.alloc_workspace(
+            module,
+            &GLWELayout {
+                k: (src.k().as_usize() + self.extra_bits).into(),
+                ..src.glwe_layout()
+            },
+        )
+    }
+
+    /// Allocates reusable baby steps for conversion from this layout.
+    pub fn alloc_from_workspace<C: GLWEInfos>(&self, module: &Module<BE>, src: &C) -> Result<ReplicatedTransformWorkspace<BE>>
+    where
+        Module<BE>: CnvPVecAlloc<BE>,
+    {
+        let from = self
+            .from
+            .as_ref()
+            .context("the gather needs the period to divide the batch size")?;
+        Ok(from.alloc_workspace(
+            module,
+            &GLWELayout {
+                k: (src.k().as_usize() + self.extra_bits).into(),
+                ..src.glwe_layout()
+            },
+        ))
+    }
+
     /// Slot rotations the conversions use, for their automorphism keys.
     pub fn rotations(&self) -> Vec<i64> {
         let mut rotations = self.to.rotations();
@@ -127,7 +159,26 @@ pub struct ReplicatedTransform<BE: Backend> {
     pub(crate) lt: LinearTransformationPrepared<BE>,
 }
 
+/// Caller-owned prepared baby steps for one transform input layout.
+/// Allocate once and reuse across evaluations; concurrent evaluations need
+/// separate workspaces.
+pub struct ReplicatedTransformWorkspace<BE: Backend> {
+    pub(crate) input: GLWELayout,
+    pub(crate) babies: LinearTransformationBabySteps<BE>,
+}
+
 impl<BE: Backend> ReplicatedTransform<BE> {
+    /// Allocates baby steps for inputs with exactly the given working layout.
+    pub fn alloc_workspace<C: GLWEInfos>(&self, module: &Module<BE>, input: &C) -> ReplicatedTransformWorkspace<BE>
+    where
+        Module<BE>: CnvPVecAlloc<BE>,
+    {
+        ReplicatedTransformWorkspace {
+            input: input.glwe_layout(),
+            babies: LinearTransformationBabySteps::alloc(module, self.lt.baby_steps(), input),
+        }
+    }
+
     /// The map `y_s = Σ_(j<k) a(s, j)·x_j` from slots of period `k` to the `n`
     /// slots: `D_o[s] = a(s, (s + o) mod k)` for `0 <= o < k`. `shaped`
     /// quantizes the diagonals with the layout's shaping.
@@ -638,7 +689,31 @@ impl<BE: Backend, F: CKKSEncodingScalar> ReplicatedBootstrapping<BE, F> {
     }
 }
 
+/// Reusable prepared baby steps of a replicated bootstrap, sized for its
+/// output width. Concurrent evaluations use separate workspaces.
+pub struct ReplicatedBootstrapWorkspace<BE: Backend> {
+    pub(crate) s2c: ReplicatedTransformWorkspace<BE>,
+    pub(crate) c2s: ReplicatedTransformWorkspace<BE>,
+}
+
 impl<BE: Backend, F> ReplicatedBootstrapping<BE, F> {
+    /// Allocates reusable transform storage for bootstraps into `dst`.
+    pub fn alloc_workspace<C: GLWEInfos>(&self, module: &Module<BE>, dst: &C) -> ReplicatedBootstrapWorkspace<BE>
+    where
+        Module<BE>: CnvPVecAlloc<BE>,
+    {
+        let at = |k: usize| GLWELayout {
+            k: k.into(),
+            ..dst.glwe_layout()
+        };
+        ReplicatedBootstrapWorkspace {
+            s2c: self.s2c.alloc_workspace(module, &at(self.plan.k_in() + self.plan.extra_bits)),
+            c2s: self
+                .c2s
+                .alloc_workspace(module, &at(self.plan.k_boot(dst.k().as_usize()) + self.plan.extra_bits)),
+        }
+    }
+
     pub fn plan(&self) -> &ReplicatedBootstrapPlan {
         &self.plan
     }

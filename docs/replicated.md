@@ -38,6 +38,8 @@ Operations that would round plainly or write the guard slots return `InvalidOper
 `CKKSReplicatedOps` moves a batch between CKKS and the replicated layout with the same keys.
 `ckks_to_replicated_into` maps `k` values of a full-layout ciphertext with period `k` onto the data slots; `ckks_from_replicated_into` gathers them back, averaging the replicas.
 `ReplicatedConversion` holds the encoded diagonals and lists the rotations its keys cover.
+Allocate a `ReplicatedTransformWorkspace` once with `conv.alloc_to_workspace(&module, &input)` or `conv.alloc_from_workspace(&module, &input)` and pass it after `conv` to each evaluation.
+The workspace owns the prepared baby rotations for that input layout; evaluations refill those buffers without reallocating them.
 
 ## Bootstrapping
 
@@ -87,8 +89,11 @@ let keys = ctx
 
 // `input` holds `2^log_k` values at the leveled scale and width `preset.input_k()`.
 let mut output = module.ckks_ciphertext_alloc_from_infos(&preset.output_layout(layout));
-module.ckks_replicated_bootstrap_into(&mut output, &input, &ctx, &keys, &mut scratch)?;
+let mut workspace = ctx.alloc_workspace(&module, &output);
+module.ckks_replicated_bootstrap_into(&mut output, &input, &ctx, &mut workspace, &keys, &mut scratch)?;
 ```
+
+The bootstrap workspace is reusable for the same output width and plan. Concurrent evaluations use separate workspaces and scratch arenas.
 
 `ReplicatedBootstrappingPresetRun` in `poulpy_ckks::test_suite::replicated_presets` is a complete example, from key generation to the precision measurement.
 

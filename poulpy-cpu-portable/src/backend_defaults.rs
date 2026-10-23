@@ -33,6 +33,7 @@ macro_rules! impl_cpu_ckks_defaults {
         ::poulpy_ckks::impl_ckks_dot_product_reference!($be);
         ::poulpy_ckks::impl_ckks_linear_transformation_reference!($be);
         ::poulpy_ckks::impl_ckks_neg_reference!($be);
+        $crate::impl_cpu_ckks_shaped_rounding!($be);
         ::poulpy_ckks::impl_ckks_round_reference!($be);
         ::poulpy_ckks::impl_ckks_pow2_reference!($be);
         ::poulpy_ckks::impl_ckks_rotate_reference!($be);

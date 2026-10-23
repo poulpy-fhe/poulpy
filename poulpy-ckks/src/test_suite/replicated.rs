@@ -24,7 +24,10 @@ use std::collections::HashMap;
 use anyhow::Result;
 use poulpy_core::{
     GLWEMulPreparedPlainSum, GLWETrace,
-    layouts::{Base2K, GLWEToBackendRef, LWEInfos, LinearTransformationBabySteps, TorusPrecision, prepared::GLWESecretPrepared},
+    layouts::{
+        Base2K, GLWEInfos, GLWELayout, GLWEToBackendRef, LWEInfos, LinearTransformationBabySteps, TorusPrecision,
+        prepared::GLWESecretPrepared,
+    },
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -1081,7 +1084,8 @@ where
     let atk_infos = params.atk_layout();
     let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_replicated_conversion_tmp_bytes(&ckks, &atk_infos, &conv));
     let mut replicated = alloc_ct(&params, module, k);
-    module.ckks_to_replicated_into(&mut replicated, &ckks, &conv, &atks, &mut scratch.borrow())?;
+    let mut to_workspace = conv.alloc_to_workspace(module, &ckks);
+    module.ckks_to_replicated_into(&mut replicated, &ckks, &conv, &mut to_workspace, &atks, &mut scratch.borrow())?;
     assert_eq!(replicated.slot_layout(), SlotLayout::Replicated(layout));
     assert_eq!(replicated.log_delta(), log_delta);
     let got = decrypt_batch::<BE, F>(&params, module, &sk, &replicated, len);
@@ -1092,7 +1096,15 @@ where
     );
 
     let mut back = alloc_ct(&params, module, k);
-    module.ckks_from_replicated_into(&mut back, &replicated, &conv, &atks, &mut scratch.borrow())?;
+    let mut from_workspace = conv.alloc_from_workspace(module, &replicated)?;
+    module.ckks_from_replicated_into(
+        &mut back,
+        &replicated,
+        &conv,
+        &mut from_workspace,
+        &atks,
+        &mut scratch.borrow(),
+    )?;
     assert_eq!(back.slot_layout(), SlotLayout::Full);
     assert_eq!(back.log_delta(), log_delta_ckks);
     let got = decrypt_batch::<BE, F>(&params, module, &sk, &back, len);
@@ -1105,14 +1117,38 @@ where
     );
 
     let mut out = alloc_ct(&params, module, k);
+    {
+        use crate::test_suite::parity::helpers::snapshot;
+        let before = snapshot::<BE, _>(&out);
+        let input_before = snapshot::<BE, _>(&ckks);
+        let mut wrong_width = conv.alloc_to_workspace(
+            module,
+            &GLWELayout {
+                k: (ckks.k().as_usize() - 1).into(),
+                ..ckks.glwe_layout()
+            },
+        );
+        let mut wrong_rotations = conv.alloc_to_workspace(module, &ckks);
+        wrong_rotations.babies = LinearTransformationBabySteps::alloc(module, &[1], &wrong_rotations.input);
+        for workspace in [&mut wrong_width, &mut wrong_rotations] {
+            let err = module
+                .ckks_to_replicated_into(&mut out, &ckks, &conv, workspace, &atks, &mut scratch.borrow())
+                .unwrap_err();
+            assert!(
+                matches!(err.composition(), Some(crate::CKKSCompositionError::InvalidOperand { op: "ckks_to_replicated_into", reason }) if reason == "workspace does not match the transform input layout or rotations")
+            );
+            assert_eq!(snapshot::<BE, _>(&out), before);
+            assert_eq!(snapshot::<BE, _>(&ckks), input_before);
+        }
+    }
     assert!(
         module
-            .ckks_to_replicated_into(&mut out, &replicated, &conv, &atks, &mut scratch.borrow())
+            .ckks_to_replicated_into(&mut out, &replicated, &conv, &mut to_workspace, &atks, &mut scratch.borrow())
             .is_err()
     );
     assert!(
         module
-            .ckks_from_replicated_into(&mut out, &ckks, &conv, &atks, &mut scratch.borrow())
+            .ckks_from_replicated_into(&mut out, &ckks, &conv, &mut from_workspace, &atks, &mut scratch.borrow())
             .is_err()
     );
     Ok(())
@@ -1190,11 +1226,19 @@ where
 
     let ckks = encrypt_full(&params, module, &sk, (&values.0, &values.1), 40, k)?;
     let mut onto = alloc_ct(&params, module, k);
+    let mut to_workspace = to.alloc_workspace(
+        module,
+        &GLWELayout {
+            k: (ckks.k().as_usize() + extra_bits).into(),
+            ..ckks.glwe_layout()
+        },
+    );
     wide_onto_replicated(
         module,
         &mut onto,
         &ckks,
         &to,
+        &mut to_workspace,
         layout,
         LOG_DELTA,
         extra_bits,
@@ -1215,11 +1259,19 @@ where
         3,
     )?;
     let mut gathered = alloc_ct(&params, module, k);
+    let mut gather_workspace = gather.alloc_workspace(
+        module,
+        &GLWELayout {
+            k: (replicated.k().as_usize() + extra_bits).into(),
+            ..replicated.glwe_layout()
+        },
+    );
     wide_gather_trace(
         module,
         &mut gathered,
         &replicated,
         &gather,
+        &mut gather_workspace,
         &trace,
         extra_bits,
         &atks,
@@ -1490,7 +1542,8 @@ where
                 encapsulation.sparse_to_dense.as_ref().unwrap(),
             )),
         ));
-        module.ckks_replicated_bootstrap_into(&mut out, &input, &ctx, &keys, &mut boot_scratch.borrow())?;
+        let mut workspace = ctx.alloc_workspace(module, &out);
+        module.ckks_replicated_bootstrap_into(&mut out, &input, &ctx, &mut workspace, &keys, &mut boot_scratch.borrow())?;
         assert_eq!(out.slot_layout(), SlotLayout::Replicated(layout));
         assert_eq!((out.log_delta(), out.k().as_usize()), (plan.level_log_delta, k_out));
         let got = decrypt_batch::<BE, F>(&params, module, &sk, &out, len);

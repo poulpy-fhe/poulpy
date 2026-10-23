@@ -153,7 +153,10 @@ pub use paco::{
     PaCoPlan, PaCoSecretSpec, PaCoSlotOrder, PaCoWorker,
 };
 pub use plaintext::{CKKSPlaintext, CKKSPlaintextOwned, CKKSPlaintextViewMut};
-pub use replicated::{ReplicatedBootstrapPlan, ReplicatedBootstrapping, ReplicatedConversion, ReplicatedTransform};
+pub use replicated::{
+    ReplicatedBootstrapPlan, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedConversion, ReplicatedTransform,
+    ReplicatedTransformWorkspace,
+};
 pub use ship::{
     HMuxRotKey, HMuxRotKeyPrepared, ShipCoeffEncodings, ShipIndexKeys, ShipIndexKeysPrepared, ShipKeyParameters, ShipKeySet,
     ShipKeysLayout, ShipKeysPrepared, ShipPlan, ShipSecretSpec,

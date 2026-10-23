@@ -6,7 +6,8 @@ mod comparison {
     poulpy_ckks::impl_ckks_add_reference!(ControlledSamplingFFT64Portable);
     poulpy_ckks::impl_ckks_sub_reference!(ControlledSamplingFFT64Portable);
     poulpy_ckks::impl_ckks_neg_reference!(ControlledSamplingFFT64Portable);
-    poulpy_ckks::impl_ckks_round_reference!(ControlledSamplingFFT64Portable);
+    crate::impl_cpu_ckks_shaped_rounding!(ControlledSamplingFFT64Portable);
+    ::poulpy_ckks::impl_ckks_round_reference!(ControlledSamplingFFT64Portable);
     poulpy_ckks::impl_ckks_pow2_reference!(ControlledSamplingFFT64Portable);
     poulpy_ckks::impl_ckks_imag_reference!(ControlledSamplingFFT64Portable);
     poulpy_ckks::impl_ckks_rotate_reference!(ControlledSamplingFFT64Portable);
@@ -25,7 +26,8 @@ mod comparison {
     poulpy_ckks::impl_ckks_add_reference!(ControlledSamplingFFT64CIPortable);
     poulpy_ckks::impl_ckks_sub_reference!(ControlledSamplingFFT64CIPortable);
     poulpy_ckks::impl_ckks_neg_reference!(ControlledSamplingFFT64CIPortable);
-    poulpy_ckks::impl_ckks_round_reference!(ControlledSamplingFFT64CIPortable);
+    crate::impl_cpu_ckks_shaped_rounding!(ControlledSamplingFFT64CIPortable);
+    ::poulpy_ckks::impl_ckks_round_reference!(ControlledSamplingFFT64CIPortable);
     poulpy_ckks::impl_ckks_pow2_reference!(ControlledSamplingFFT64CIPortable);
     poulpy_ckks::impl_ckks_rotate_reference!(ControlledSamplingFFT64CIPortable);
     poulpy_ckks::impl_ckks_encryption_reference!(ControlledSamplingFFT64CIPortable);

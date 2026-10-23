@@ -4,7 +4,10 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
-    layouts::{BootstrappingKeys, ReplicatedBootstrapping, ReplicatedConversion},
+    layouts::{
+        BootstrappingKeys, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedConversion,
+        ReplicatedTransformWorkspace,
+    },
 };
 
 /// Conversions between CKKS and a replicated slot layout, sharing keys.
@@ -30,18 +33,24 @@ use crate::{
 /// ```
 ///
 /// `keys` holds the automorphism keys of
-/// [`ReplicatedConversion::rotations`].
+/// [`ReplicatedConversion::rotations`]. Allocate the reusable workspace with
+/// [`ReplicatedConversion::alloc_to_workspace`] or
+/// [`ReplicatedConversion::alloc_from_workspace`] for the source layout.
 pub trait CKKSReplicatedOps<BE: Backend> {
     fn ckks_replicated_conversion_tmp_bytes<C, K>(&self, ct_infos: &C, key_infos: &K, conv: &ReplicatedConversion<BE>) -> usize
     where
         C: CKKSCtBounds,
         K: GGLWEInfos;
 
+    /// # Errors
+    /// A workspace with incompatible input dimensions or rotations returns
+    /// [`crate::CKKSCompositionError::InvalidOperand`] before writing `dst`.
     fn ckks_to_replicated_into<Dst, Src, H>(
         &self,
         dst: &mut Dst,
         src: &Src,
         conv: &ReplicatedConversion<BE>,
+        workspace: &mut ReplicatedTransformWorkspace<BE>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -50,11 +59,15 @@ pub trait CKKSReplicatedOps<BE: Backend> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>;
 
+    /// # Errors
+    /// A workspace with incompatible input dimensions or rotations returns
+    /// [`crate::CKKSCompositionError::InvalidOperand`] before writing `dst`.
     fn ckks_from_replicated_into<Dst, Src, H>(
         &self,
         dst: &mut Dst,
         src: &Src,
         conv: &ReplicatedConversion<BE>,
+        workspace: &mut ReplicatedTransformWorkspace<BE>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -86,7 +99,8 @@ pub trait CKKSReplicatedOps<BE: Backend> {
 ///
 /// `dst.k()` is the output width; ModUp raises to
 /// [`ReplicatedBootstrapPlan::k_boot`](crate::layouts::ReplicatedBootstrapPlan::k_boot)
-/// of it. The keys cover [`ReplicatedBootstrapping::galois_elements`].
+/// of it. Allocate its reusable workspace with
+/// [`ReplicatedBootstrapping::alloc_workspace`]. The keys cover [`ReplicatedBootstrapping::galois_elements`].
 pub trait CKKSReplicatedBootstrapOps<BE: Backend> {
     fn ckks_replicated_bootstrap_tmp_bytes<C, I, F, A, T, S>(
         &self,
@@ -104,11 +118,15 @@ pub trait CKKSReplicatedBootstrapOps<BE: Backend> {
         T: GGLWEInfos,
         S: GGLWEInfos;
 
+    /// # Errors
+    /// A workspace with incompatible input dimensions or rotations returns
+    /// [`crate::CKKSCompositionError::InvalidOperand`] before writing `dst`.
     fn ckks_replicated_bootstrap_into<Dst, Src, F, K>(
         &self,
         dst: &mut Dst,
         src: &Src,
         ctx: &ReplicatedBootstrapping<BE, F>,
+        workspace: &mut ReplicatedBootstrapWorkspace<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>

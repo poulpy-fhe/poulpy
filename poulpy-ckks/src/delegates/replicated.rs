@@ -3,13 +3,10 @@ use poulpy_core::{
     GLWECopy, GLWEKeyswitch, GLWEShift, GLWETrace,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
-        LinearTransformationBabySteps, Scale, SetK,
+        Scale, SetK,
     },
 };
-use poulpy_hal::{
-    api::CnvPVecAlloc,
-    layouts::{Backend, Module, ScratchArena},
-};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSModuleInfos, GLWEPlaintextInfos, ReplicatedLayout,
@@ -19,8 +16,8 @@ use crate::{
         CKKSReplicatedBootstrapOps, CKKSReplicatedOps, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
     },
     layouts::{
-        BootstrappingKeys, CKKSCiphertextViewMut, ReplicatedBootstrapping, ReplicatedConversion, ReplicatedTransform,
-        ScratchArenaTakeCKKS,
+        BootstrappingKeys, CKKSCiphertextViewMut, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedConversion,
+        ReplicatedTransform, ReplicatedTransformWorkspace, ScratchArenaTakeCKKS,
     },
     oep::{CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl},
     reference::bootstrapping::ckks_bootstrap_mod_up_from_mut,
@@ -51,6 +48,7 @@ pub(crate) fn wide_onto_replicated<BE, Dst, Src, H>(
     dst: &mut Dst,
     src: &Src,
     transform: &ReplicatedTransform<BE>,
+    workspace: &mut ReplicatedTransformWorkspace<BE>,
     layout: ReplicatedLayout,
     log_delta: usize,
     extra_bits: usize,
@@ -59,7 +57,7 @@ pub(crate) fn wide_onto_replicated<BE, Dst, Src, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + CKKSCopyOps<BE> + CKKSRoundOps<BE>,
+    Module<BE>: CKKSLinearTransformationOps<BE> + CKKSCopyOps<BE> + CKKSRoundOps<BE>,
     Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetAutomorphismKey<BE>,
@@ -71,7 +69,7 @@ where
     module.ckks_copy(&mut x, src, &mut scratch)?;
     x.set_log_delta(src.log_delta() + extra_bits);
     x.set_slot_layout(SlotLayout::Full);
-    apply_transform(module, &mut acc, &x, transform, keys, &mut scratch)?;
+    apply_transform(module, &mut acc, &x, transform, workspace, keys, &mut scratch)?;
     acc.set_slot_layout(SlotLayout::Replicated(layout));
     dst.set_k((acc.log_budget() + log_delta).into());
     module.ckks_round_into(dst, &acc, &mut scratch)
@@ -86,6 +84,7 @@ pub(crate) fn wide_gather_trace<BE, Dst, Src, H>(
     dst: &mut Dst,
     src: &Src,
     transform: &ReplicatedTransform<BE>,
+    workspace: &mut ReplicatedTransformWorkspace<BE>,
     trace: &[i64],
     extra_bits: usize,
     keys: &H,
@@ -93,12 +92,7 @@ pub(crate) fn wide_gather_trace<BE, Dst, Src, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: CKKSLinearTransformationOps<BE>
-        + CnvPVecAlloc<BE>
-        + CKKSRotateOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSPow2Ops<BE>,
+    Module<BE>: CKKSLinearTransformationOps<BE> + CKKSRotateOps<BE> + CKKSAddOps<BE> + CKKSCopyOps<BE> + CKKSPow2Ops<BE>,
     Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetAutomorphismKey<BE>,
@@ -111,7 +105,7 @@ where
     module.ckks_copy(&mut x, src, &mut scratch)?;
     x.set_log_delta(src.log_delta() + extra_bits);
     x.set_slot_layout(SlotLayout::Full);
-    apply_transform(module, &mut acc, &x, transform, keys, &mut scratch)?;
+    apply_transform(module, &mut acc, &x, transform, workspace, keys, &mut scratch)?;
     normalized_trace(module, &mut acc, trace, keys, &mut rotated, &mut scratch)?;
     module.ckks_copy(dst, &acc, &mut scratch)
 }
@@ -153,17 +147,33 @@ fn apply_transform<BE, H>(
     acc: &mut CKKSCiphertextViewMut<'_, BE>,
     x: &CKKSCiphertextViewMut<'_, BE>,
     transform: &ReplicatedTransform<BE>,
+    workspace: &mut ReplicatedTransformWorkspace<BE>,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: CKKSLinearTransformationOps<BE>,
     H: GetAutomorphismKey<BE>,
 {
-    let mut babies = LinearTransformationBabySteps::alloc(module, transform.lt.baby_steps(), x);
-    module.ckks_prepare_linear_transformation_baby_steps(&mut babies, x, keys, scratch)?;
-    module.ckks_eval_linear_transformation_into(acc, x, &babies, &transform.lt, keys, scratch)
+    check_workspace("replicated_transform", workspace, &x.glwe_layout(), transform)?;
+    module.ckks_prepare_linear_transformation_baby_steps(&mut workspace.babies, x, keys, scratch)?;
+    module.ckks_eval_linear_transformation_into(acc, x, &workspace.babies, &transform.lt, keys, scratch)
+}
+
+fn check_workspace<BE: Backend>(
+    op: &'static str,
+    workspace: &ReplicatedTransformWorkspace<BE>,
+    input: &GLWELayout,
+    transform: &ReplicatedTransform<BE>,
+) -> Result<()> {
+    if workspace.input != *input || !workspace.babies.baby_steps().eq(transform.lt.baby_steps().iter().copied()) {
+        return Err(invalid(
+            op,
+            "workspace does not match the transform input layout or rotations",
+        ));
+    }
+    Ok(())
 }
 
 /// Scratch of a wide stage of `transform` on `wide`, beside its ciphertexts.
@@ -181,7 +191,6 @@ where
 impl<BE: Backend> CKKSReplicatedOps<BE> for Module<BE>
 where
     Module<BE>: CKKSLinearTransformationOps<BE>
-        + CnvPVecAlloc<BE>
         + CKKSRotateOps<BE>
         + CKKSAddOps<BE>
         + CKKSCopyOps<BE>
@@ -217,6 +226,7 @@ where
         dst: &mut Dst,
         src: &Src,
         conv: &ReplicatedConversion<BE>,
+        workspace: &mut ReplicatedTransformWorkspace<BE>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -232,11 +242,13 @@ where
         if conv.log_delta > src.log_delta() + conv.extra_bits {
             return Err(invalid(OP, "the replicated scale exceeds the source's working scale"));
         }
+        check_workspace(OP, workspace, &working_layout(src, conv.extra_bits, 0), &conv.to)?;
         wide_onto_replicated(
             self,
             dst,
             src,
             &conv.to,
+            workspace,
             conv.layout,
             conv.log_delta,
             conv.extra_bits,
@@ -250,6 +262,7 @@ where
         dst: &mut Dst,
         src: &Src,
         conv: &ReplicatedConversion<BE>,
+        workspace: &mut ReplicatedTransformWorkspace<BE>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -265,7 +278,8 @@ where
         let Some(from) = &conv.from else {
             return Err(invalid(OP, "the gather needs the period to divide the batch size"));
         };
-        wide_gather_trace(self, dst, src, from, &conv.trace, conv.extra_bits, keys, scratch)
+        check_workspace(OP, workspace, &working_layout(src, conv.extra_bits, 0), from)?;
+        wide_gather_trace(self, dst, src, from, workspace, &conv.trace, conv.extra_bits, keys, scratch)
     }
 }
 
@@ -315,6 +329,7 @@ fn coeffs_to_slots<BE, H>(
     im: Option<&mut CKKSCiphertextViewMut<'_, BE>>,
     src: &CKKSCiphertextViewMut<'_, BE>,
     transform: &ReplicatedTransform<BE>,
+    workspace: &mut ReplicatedTransformWorkspace<BE>,
     layout: ReplicatedLayout,
     extra_bits: usize,
     keys: &H,
@@ -323,7 +338,6 @@ fn coeffs_to_slots<BE, H>(
 where
     BE: Backend,
     Module<BE>: CKKSLinearTransformationOps<BE>
-        + CnvPVecAlloc<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSCopyOps<BE>
@@ -340,7 +354,7 @@ where
 
     module.ckks_copy(&mut x, src, &mut scratch)?;
     x.set_log_delta(src.log_delta() + extra_bits);
-    apply_transform(module, &mut w, &x, transform, keys, &mut scratch)?;
+    apply_transform(module, &mut w, &x, transform, workspace, keys, &mut scratch)?;
     w.set_slot_layout(SlotLayout::Replicated(layout));
     module.ckks_conjugate_into(&mut conj, &w, keys, &mut scratch)?;
     module.ckks_add_into(&mut part, &w, &conj, &mut scratch)?;
@@ -360,7 +374,6 @@ where
 impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSReplicatedBootstrapOps<BE> for Module<BE>
 where
     Module<BE>: CKKSLinearTransformationOps<BE>
-        + CnvPVecAlloc<BE>
         + CKKSRotateOps<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
@@ -455,6 +468,7 @@ where
         dst: &mut Dst,
         src: &Src,
         ctx: &ReplicatedBootstrapping<BE, F>,
+        workspace: &mut ReplicatedBootstrapWorkspace<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -486,6 +500,8 @@ where
             ..src.glwe_layout()
         };
         let k_boot = plan.k_boot(dst.k().as_usize());
+        check_workspace(OP, &workspace.s2c, &at(k_in + plan.extra_bits), &ctx.s2c)?;
+        check_workspace(OP, &workspace.c2s, &at(k_boot + plan.extra_bits), &ctx.c2s)?;
         let mut raised_meta = src.meta();
         raised_meta.slot_layout = SlotLayout::Full;
         let (mut raised, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&at(k_boot), raised_meta);
@@ -520,7 +536,7 @@ where
             // 3. SlotsToCoeffs, rounded plainly to the message ratio.
             x.set_log_delta(x.log_delta() + plan.extra_bits);
             x.set_slot_layout(SlotLayout::Full);
-            apply_transform(self, &mut acc, &x, &ctx.s2c, rotation_keys, &mut scratch)?;
+            apply_transform(self, &mut acc, &x, &ctx.s2c, &mut workspace.s2c, rotation_keys, &mut scratch)?;
             coeffs.set_k((acc.log_budget() + plan.log_delta).into());
             self.ckks_round_into(&mut coeffs, &acc, &mut scratch)?;
             if coeffs.log_budget() != plan.eval_mod.log_msg_ratio {
@@ -564,6 +580,7 @@ where
             ctx.packed.is_none().then_some(&mut im),
             &raised,
             &ctx.c2s,
+            &mut workspace.c2s,
             packed,
             plan.extra_bits,
             rotation_keys,

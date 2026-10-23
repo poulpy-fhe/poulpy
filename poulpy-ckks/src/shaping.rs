@@ -66,6 +66,11 @@ impl ShapingProfile {
         self.log_r
     }
 
+    /// The `2R` signed coefficients of `U`.
+    pub fn coefficients(&self) -> &[i16] {
+        &self.coeffs[..self.len()]
+    }
+
     /// The `2R` coefficients of `U^(-1) mod 2^64`.
     pub fn inverse(&self) -> &[u64] {
         &self.inverse.get_or_init(|| inverse_mod_2_64(&self.shaping[..self.len()]))[..self.len()]
@@ -112,7 +117,7 @@ impl ShapingProfile {
     /// Writes `g·h` into `gh` for `h = [U^(-1)·c]_(2^λ)`, centered, where `c`
     /// is read modulo `2^64` and `Y = X^stride`, so that `c − g·h` is divisible
     /// by `2^λ`; `h` is a buffer as long as `c`. Exact for `λ <= max_pass_bits`.
-    pub(crate) fn shaped_multiple(&self, stride: usize, lambda: usize, c: &[i64], h: &mut [i64], gh: &mut [i64]) {
+    pub fn shaped_multiple_host(&self, stride: usize, lambda: usize, c: &[i64], h: &mut [i64], gh: &mut [i64]) {
         let mask = u64::MAX >> (64 - lambda);
         negacyclic_sparse(self.inverse(), stride, c, h);
         for x in h.iter_mut() {

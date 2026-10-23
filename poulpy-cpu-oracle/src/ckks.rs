@@ -207,6 +207,18 @@ macro_rules! impl_oracle_ckks {
         ::poulpy_ckks::impl_ckks_dot_product_reference!($be);
         ::poulpy_ckks::impl_ckks_linear_transformation_reference!($be);
         ::poulpy_ckks::impl_ckks_neg_reference!($be);
+        unsafe impl ::poulpy_ckks::oep::CKKSShapedRoundingImpl for $be {
+            fn ckks_shaped_round_correction_impl(
+                _module: &::poulpy_hal::layouts::Module<Self>,
+                carry: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
+                h: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
+                low: &::poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
+                profile: &::poulpy_ckks::shaping::ShapingProfile,
+                lambda: usize,
+            ) {
+                crate::ckks_round::shaped_round_correction::<Self>(carry, h, low, profile, lambda);
+            }
+        }
         ::poulpy_ckks::impl_ckks_round_reference!($be);
         ::poulpy_ckks::impl_ckks_pow2_reference!($be);
         ::poulpy_ckks::impl_ckks_rotate_reference!($be);

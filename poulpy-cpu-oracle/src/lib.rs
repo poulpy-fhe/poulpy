@@ -20,6 +20,8 @@ mod ckks;
 mod ckks_fft;
 #[cfg(feature = "enable-ckks")]
 mod ckks_roots;
+#[cfg(feature = "enable-ckks")]
+mod ckks_round;
 #[cfg(feature = "enable-core")]
 mod core_impl;
 mod embed;

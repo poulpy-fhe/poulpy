@@ -301,6 +301,10 @@ macro_rules! ckks_backend_rank2_test_suite {
                 $crate::test_suite::round::test_round_rejects_invalid_widths
             );
             run_test_result!(
+                round_rejects_incompatible_layouts,
+                $crate::test_suite::round::test_round_rejects_incompatible_layouts
+            );
+            run_test_result!(
                 replicated_encoding_is_shaped,
                 $crate::test_suite::replicated::test_replicated_encoding_is_shaped
             );
@@ -663,6 +667,10 @@ macro_rules! ckks_backend_test_suite {
             run_test_result!(
                 round_rejects_invalid_widths,
                 $crate::test_suite::round::test_round_rejects_invalid_widths
+            );
+            run_test_result!(
+                round_rejects_incompatible_layouts,
+                $crate::test_suite::round::test_round_rejects_incompatible_layouts
             );
             run_test_result!(
                 replicated_encoding_is_shaped,

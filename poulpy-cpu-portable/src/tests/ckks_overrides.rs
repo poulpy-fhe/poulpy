@@ -20,6 +20,7 @@ thread_local! {
  static REAL_CALLS: Cell<usize> = const { Cell::new(0) };
  static COMPLEX_CALLS: Cell<usize> = const { Cell::new(0) };
  static EVAL_MOD_CALLS: Cell<usize> = const { Cell::new(0) };
+ static SHAPING_CALLS: Cell<usize> = const { Cell::new(0) };
  static MAX_COPY_CAPACITY: Cell<usize> = const { Cell::new(0) };
 }
 const OVERRIDE_SCRATCH: usize = 256;
@@ -54,7 +55,20 @@ unsafe impl poulpy_ckks::oep::CKKSCopyImpl for OverrideBackend {
 mod carry;
 mod dft;
 poulpy_ckks::impl_ckks_neg_reference!(OverrideBackend);
-poulpy_ckks::impl_ckks_round_reference!(OverrideBackend);
+unsafe impl poulpy_ckks::oep::CKKSShapedRoundingImpl for OverrideBackend {
+    fn ckks_shaped_round_correction_impl(
+        _module: &Module<Self>,
+        carry: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
+        h: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
+        low: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
+        profile: &poulpy_ckks::shaping::ShapingProfile,
+        lambda: usize,
+    ) {
+        SHAPING_CALLS.with(|calls| calls.set(calls.get() + 1));
+        crate::ckks_round::shaped_round_correction::<Self>(carry, h, low, profile, lambda);
+    }
+}
+::poulpy_ckks::impl_ckks_round_reference!(OverrideBackend);
 poulpy_ckks::impl_ckks_pow2_reference!(OverrideBackend);
 poulpy_ckks::impl_ckks_imag_reference!(OverrideBackend);
 poulpy_ckks::impl_ckks_rotate_reference!(OverrideBackend);
@@ -790,4 +804,51 @@ fn decrypt_query_uses_plaintext_allocation_width() {
             .max(module.ckks_extract_pt_tmp_bytes_reference(wide.max_size()));
     assert_eq!(module.ckks_decrypt_tmp_bytes(&wide, &ct), expected);
     assert!(expected > module.ckks_decrypt_tmp_bytes(&narrow, &ct));
+}
+
+#[test]
+fn ckks_round_reference_dispatches_shaping_correction() {
+    use poulpy_ckks::test_suite::parity::helpers::{fixture_ciphertext, snapshot, with_scratch};
+    use poulpy_ckks::{CKKSLayout, api::CKKSRoundOps, shaping::ShapingUnit};
+    use poulpy_core::layouts::GLWELayout;
+    let module = Module::<OverrideBackend>::new(64);
+    let reference = Module::<crate::FFT64Portable>::new(64);
+    let layout = CKKSLayout {
+        glwe_layout: GLWELayout {
+            n: 64usize.into(),
+            base2k: 12usize.into(),
+            k: 72usize.into(),
+            rank: 1usize.into(),
+        },
+        meta: GLWEPlaintextMeta {
+            scale: Scale::Log(40),
+            slot_layout: SlotLayout::Replicated(ShapingUnit::U32_45.layout(0, 8).unwrap()),
+            ..Default::default()
+        },
+    };
+    let src = fixture_ciphertext(&module, &layout, 91);
+    let src_ref = fixture_ciphertext(&reference, &layout, 91);
+    let dst_layout = CKKSLayout {
+        glwe_layout: GLWELayout {
+            k: 60usize.into(),
+            ..layout.glwe_layout
+        },
+        ..layout
+    };
+    let mut dst = fixture_ciphertext(&module, &dst_layout, 93);
+    let mut expected = fixture_ciphertext(&reference, &dst_layout, 93);
+    SHAPING_CALLS.with(|calls| calls.set(0));
+    with_scratch::<OverrideBackend, _>(module.ckks_round_tmp_bytes(&dst, &src), |scratch| {
+        module.ckks_round_into(&mut dst, &src, scratch)
+    })
+    .unwrap();
+    assert_eq!(SHAPING_CALLS.with(Cell::get), 2);
+    with_scratch::<crate::FFT64Portable, _>(reference.ckks_round_tmp_bytes(&expected, &src_ref), |scratch| {
+        reference.ckks_round_into(&mut expected, &src_ref, scratch)
+    })
+    .unwrap();
+    assert_eq!(
+        snapshot::<OverrideBackend, _>(&dst),
+        snapshot::<crate::FFT64Portable, _>(&expected)
+    );
 }

@@ -80,6 +80,10 @@ required-features = ["enable-bin-fhe"]
 name = "blas_streaming_memory"
 required-features = ["enable-blas"]
 
+[[test]]
+name = "ckks_replicated_workspace"
+required-features = ["enable-ckks"]
+
 [dev-dependencies]
 poulpy-cpu-oracle = {workspace = true, features = ["enable-ckks", "enable-bin-fhe", "enable-blas"]}
 paste = {workspace = true}

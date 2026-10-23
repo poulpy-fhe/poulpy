@@ -26,7 +26,8 @@ use crate::{
         CKKSModuleInfos, CKKSReplicatedBootstrapOps,
     },
     layouts::{
-        BootstrappingKeysLayout, BootstrappingKeysPrepared, CKKSCiphertextOwned, CKKSModuleAlloc, ReplicatedBootstrapping,
+        BootstrappingKeysLayout, BootstrappingKeysPrepared, CKKSCiphertextOwned, CKKSModuleAlloc, ReplicatedBootstrapWorkspace,
+        ReplicatedBootstrapping,
     },
     oep::CKKSEncapsulatedModUpImpl,
     presets::replicated_bootstrapping::{ReplicatedBootstrappingPreset, all},
@@ -61,6 +62,7 @@ pub struct ReplicatedBootstrappingPresetRun<BE: Backend> {
     preset: ReplicatedBootstrappingPreset,
     module: Module<BE>,
     ctx: ReplicatedBootstrapping<BE, f64>,
+    workspace: ReplicatedBootstrapWorkspace<BE>,
     keys: BootstrappingKeysPrepared<BE::OwnedBuf, BE>,
     sk: GLWESecretPrepared<BE::OwnedBuf, BE>,
     input: CKKSCiphertextOwned<BE>,
@@ -131,6 +133,7 @@ where
             .unwrap();
 
         let output = module.ckks_ciphertext_alloc_from_infos(&preset.output_layout(layout));
+        let workspace = ctx.alloc_workspace(&module, &output);
         let encapsulation = keys_layout.encapsulation.map(|e| (e.dense_to_sparse, e.sparse_to_dense));
         let bytes = module.ckks_replicated_bootstrap_tmp_bytes(
             &output,
@@ -144,6 +147,7 @@ where
             preset,
             module,
             ctx,
+            workspace,
             keys,
             sk,
             input,
@@ -181,6 +185,7 @@ where
                 &mut self.output,
                 &self.input,
                 &self.ctx,
+                &mut self.workspace,
                 &self.keys,
                 &mut self.scratch.borrow(),
             )
