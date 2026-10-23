@@ -147,6 +147,8 @@ labels! {
     NormalizeProducts => "normalize.products",
     VmpDigitProduct => "vmp.digit_product",
     VmpDigitProductAdd => "vmp.digit_product_add",
+    VmpDigitProducts => "vmp.digit_products",
+    VmpDigitProductsAdd => "vmp.digit_products_add",
     VmpDigitProductInverse => "vmp.digit_product_inverse",
     VmpExtractRows => "vmp.extract_rows",
     SvpScale => "svp.scale",

@@ -35,7 +35,7 @@ pub(crate) use ntt::{forward, inverse, inverse_head, inverse_tail};
 pub(crate) use primes::Consts;
 pub(crate) use svp::scale;
 pub(crate) use tables::Tables;
-pub(crate) use vmp::{Pmat, Tail, digit_product, digit_product_inverse, extract_rows};
+pub(crate) use vmp::{MANY_SOURCES, Pmat, Tail, digit_product, digit_product_inverse, digit_products, extract_rows};
 
 use crate::runtime::Binding;
 

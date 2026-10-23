@@ -12,7 +12,8 @@ use crate::{
     NTT4x30Gpu,
     module::handle,
     ntt4x30::{
-        AutomorphismPlan, DftTerm, Tail, combine, digit_product, digit_product_inverse, extract_rows, forward, inverse_head,
+        AutomorphismPlan, DftColumn, DftTerm, Tail, combine, digit_product, digit_product_inverse, digit_products, extract_rows,
+        forward, inverse_head,
     },
     runtime::GpuRuntime,
 };
@@ -93,6 +94,79 @@ pub(crate) fn gglwe_product_fused<RT: GpuRuntime, R: Ring>(
             automorphism: plan,
         },
     );
+}
+
+/// [`gglwe_product_fused`] of the sources `a` against one key, at most
+/// [`MANY_SOURCES`](crate::ntt4x30::MANY_SOURCES), in one launch: source `i` into `res[i]`, with
+/// column 0 of `addends[i]` added to output column 0 when there are addends. Returns `false`,
+/// having done nothing, unless the views of each role share an allocation, a layout and a size.
+#[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gglwe_products_fused<RT: GpuRuntime, R: Ring>(
+    res: &mut [VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>],
+    product_size: usize,
+    a: &[VecZnxDftBackendRef<'_, NTT4x30Gpu<RT, R>>],
+    dsize: usize,
+    product_limbs: usize,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Gpu<RT, R>>,
+    addends: Option<&[&VecZnxDftBackendRef<'_, NTT4x30Gpu<RT, R>>]>,
+    plan: Option<&AutomorphismPlan>,
+    accumulate: bool,
+) -> bool {
+    let columns = |views: &mut dyn Iterator<Item = Option<DftColumn>>| views.collect::<Option<Vec<DftColumn>>>();
+    let (Some(res_columns), Some(a_columns), Some(pmat)) = (
+        columns(&mut res.iter().map(|res| dft_column_mut(res, 0))),
+        columns(&mut a.iter().map(|a| dft_column_ref(a, 0))),
+        self::pmat(pmat),
+    ) else {
+        return false;
+    };
+    let addend_columns = match addends {
+        Some(addends) => match columns(&mut addends.iter().map(|addend| dft_column_ref(addend, 0))) {
+            Some(columns) => Some(columns),
+            None => return false,
+        },
+        None => None,
+    };
+    let alike = |views: &[DftColumn]| {
+        views
+            .iter()
+            .all(|v| v.binding.id == views[0].binding.id && v.stride == views[0].stride && v.size == views[0].size)
+    };
+    if res_columns.len() > crate::ntt4x30::MANY_SOURCES
+        || !alike(&res_columns)
+        || !alike(&a_columns)
+        || addend_columns.as_deref().is_some_and(|columns| !alike(columns))
+        || res_columns[0].n != pmat.n
+        || a_columns[0].n != pmat.n
+        || a[0].cols() != pmat.cols_in
+        || res[0].cols() != pmat.cols_out
+        || product_size > res[0].size()
+        || a[0].size() == 0
+    {
+        return false;
+    }
+    let cols = pmat.cols_out;
+    for res in &res_columns {
+        if !accumulate && product_size < res.size {
+            // Stored over `product_size` limbs: the limbs past them are zero.
+            let all = all_dft_blocks(res, res.size);
+            let tail = all.limbs(product_size * cols, 1, (res.size - product_size) * cols);
+            combine::<RT>(&tail, tail.size, DftTerm::zero(&tail), DftTerm::zero(&tail));
+        }
+    }
+    let res_columns: Vec<DftColumn> = res_columns.iter().map(|res| res.limbs(0, 1, product_size)).collect();
+    digit_products::<RT>(
+        &res_columns,
+        &a_columns,
+        &pmat,
+        dsize,
+        product_limbs,
+        accumulate,
+        addend_columns.as_deref(),
+        plan,
+    );
+    true
 }
 
 /// [`gglwe_product_fused`] without an automorphism into a fresh `res`, with

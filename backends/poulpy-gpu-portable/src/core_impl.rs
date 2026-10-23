@@ -16,7 +16,7 @@ use poulpy_core::{
     reference::keyswitching::glwe::{
         gglwe_operand_from_dft_reference, gglwe_product_fused_reference, gglwe_product_fused_tmp_bytes_reference,
         gglwe_product_idft_normalize_reference, gglwe_product_idft_normalize_tmp_bytes_reference, gglwe_product_limbs,
-        gglwe_products_fused_reference, gglwe_products_idft_normalize_reference,
+        gglwe_products_idft_normalize_reference,
     },
 };
 use poulpy_cpu_portable::kernels::noise::{gaussian_cumulative_table_portable, gaussian_rejection_constants_portable};
@@ -28,8 +28,8 @@ use poulpy_hal::layouts::{
 use crate::{
     NTT4x30Gpu,
     hal_impl::{
-        big_column_mut, column_mut, column_ref, gglwe_product_digits_strided, gglwe_product_fused, glwe_square_columns,
-        scalar_column,
+        big_column_mut, column_mut, column_ref, gglwe_product_digits_strided, gglwe_product_fused, gglwe_products_fused,
+        glwe_square_columns, scalar_column,
     },
     module::handle,
     ntt4x30::AutomorphismPlan,
@@ -116,6 +116,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
         );
     }
 
+    // The sources of one key in launches of up to `MANY_SOURCES`, each reading the key once.
     fn gglwe_products_fused(
         module: &Module<Self>,
         res: &mut [VecZnxDftBackendMut<'_, Self>],
@@ -128,7 +129,65 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
         accumulate: &[bool],
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        gglwe_products_fused_reference(module, res, product_size, a, key, term_count, addends, p, accumulate, scratch)
+        assert!(
+            a.len() == res.len() && addends.len() == res.len() && accumulate.len() == res.len(),
+            "gglwe_products_fused: items of different lengths"
+        );
+        // The kernel takes a dense key, the same accumulation for all, and on output column 0
+        // either an addend for every source, read from its own column 0, or none.
+        let body = |item: &&[Option<(&VecZnxDftBackendRef<'_, Self>, usize)>]| match item {
+            [] | [None] => Some(false),
+            [Some((_, 0))] => Some(true),
+            _ => None,
+        };
+        let bodies: Option<Vec<bool>> = addends.iter().map(body).collect();
+        let shared = bodies
+            .as_ref()
+            .is_some_and(|bodies| bodies.iter().all(|&b| b == bodies[0]) && accumulate.iter().all(|&acc| acc == accumulate[0]));
+        let dsize = key.dsize().as_usize();
+        let product_limbs = if dsize == 1 { 1 } else { gglwe_product_limbs(key, term_count) };
+        // The identity stores without a rotation.
+        let plan = (p != 1).then(|| AutomorphismPlan::new(res[0].n(), p, handle(module).tables().invariant()));
+        let mut start = 0;
+        while start < res.len() {
+            let end = (start + crate::ntt4x30::MANY_SOURCES).min(res.len());
+            let launched = shared && key.stride() == 1 && end - start >= 2 && {
+                let with_bodies = bodies.as_ref().unwrap()[0];
+                let addend_refs: Vec<&VecZnxDftBackendRef<'_, Self>> = if with_bodies {
+                    addends[start..end].iter().map(|item| item[0].unwrap().0).collect()
+                } else {
+                    Vec::new()
+                };
+                gglwe_products_fused(
+                    &mut res[start..end],
+                    product_size,
+                    &a[start..end],
+                    dsize,
+                    product_limbs,
+                    key.data(),
+                    with_bodies.then_some(&addend_refs[..]),
+                    plan.as_ref(),
+                    accumulate[0],
+                )
+            };
+            if !launched {
+                for i in start..end {
+                    Self::gglwe_product_fused(
+                        module,
+                        &mut res[i],
+                        product_size,
+                        &a[i],
+                        key,
+                        term_count,
+                        addends[i],
+                        p,
+                        accumulate[i],
+                        scratch,
+                    );
+                }
+            }
+            start = end;
+        }
     }
 
     fn gglwe_operand_from_dft(
