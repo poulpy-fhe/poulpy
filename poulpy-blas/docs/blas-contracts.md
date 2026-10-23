@@ -1,9 +1,9 @@
 # Implementing BLAS operations
 
-Public matrix calls follow `api → delegates → oep`. `Module<BE>` implements
+Public matrix calls follow the [layering contract](../../docs/layering-contract.md): `Module<BE>` implements
 `BlasMatInterOps`, `BlasMatIntraOps` and `BlasMatMulOps` for every backend that
-implements the matching `*Impl` trait: each call forwards to the backend's
-method without a check, and the method runs its validator first. The BLAS
+implements the matching `*Impl` trait, and each OEP method runs its validator
+first. The BLAS
 crate imports no backend crate: each backend crate wires its own types.
 
 This file holds the rules every family shares. What an implementation of one
@@ -45,11 +45,8 @@ preparations and of the prepared product reads and fills their storage through
 
 ## Reference implementations
 
-A **reference** implementation defines a matrix operation by composing CKKS
-and core operations on the module. The reference traits are implemented for
-every `Module<BE>` and are public, so an override can forward to them. They
-call `poulpy-ckks` and `poulpy-core` through their public APIs, so a backend's
-CKKS and core overrides remain effective inside them.
+The references compose `poulpy-ckks` and `poulpy-core` through their public
+APIs, so a backend's CKKS and core overrides remain effective inside them.
 
 | OEP family | Reference | Macro |
 |---|---|---|
@@ -89,13 +86,10 @@ the same `#[cfg]` gates as `ckks_impl.rs`:
 ```
 
 To replace a family, replace the type's `impl_blas_reference_full!` line with
-the macros of the three families it keeps, and write the replaced family's
-`*Impl` implementation directly, forwarding the methods it does not change to
-their reference routines. The expansion of each family macro, in
-[`oep`](../src/oep/), spells out every signature and its forwarding call. A
-family macro and a handwritten implementation of the same trait are mutually
-exclusive. The family traits are `unsafe`: their `# Safety` sections state what
-an implementation must reproduce. Three replacements cover most needs:
+the macros of the three families it keeps, as the [layering contract](../../docs/layering-contract.md)
+states. The expansion of each family macro, in [`oep`](../src/oep/), spells out
+every signature and its forwarding call, and each family's `# Safety` section
+states what an implementation must reproduce. Three replacements cover most needs:
 
 - **The map hook**, for a backend that evaluates maps its own way. It covers
   the transpose, both shifts, the cold preparations and the hot sides of the

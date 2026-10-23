@@ -1,22 +1,12 @@
 # Implementing CKKS operations
 
-Public evaluator calls follow `api → delegates → oep`. Implement the relevant
-`*Impl` trait on the backend type to select its behavior. The CKKS crate does not
+Public evaluator calls follow the [layering contract](../../docs/layering-contract.md). The CKKS crate does not
 select a concrete backend or require host storage in these dispatch contracts.
 
 ## Reference and derived implementations
 
-A **reference** implementation defines a CKKS operation by composing core or HAL
-operations. These routines are public so an override can reuse them. A
-**derived** implementation is a simple composition of CKKS operations at the
-same layer. Its helper is `pub(crate)` and is reached through the default method
-on an explicit OEP contract.
-
-Use `impl_ckks_*_reference!` to install a reference family. To replace one of its
-methods, write that family's `*Impl` implementation directly and forward the
-unchanged required methods to their public reference routines. The other
-families retain their own wiring. Derived defaults call the selected constituent
-operations, so their overrides remain effective.
+Each family's opt-in macro is `impl_ckks_<family>_reference!`. The table gives
+the reference of each family.
 
 | OEP family | Canonical implementation |
 |---|---|
@@ -43,15 +33,11 @@ compositions with integration tests, not additional OEP families.
 
 ## What an override must preserve
 
-Compute the same circuit as the reference and validate it with paired tests.
-The reference and API contracts define the result, metadata, supported shapes,
-normalization, and failure/mutation behavior; a second algorithm description is
-unnecessary.
-
-In particular, CKKS metadata is observable: `k`, radix, rank, `log_delta`,
+An override reproduces the reference as the [layering contract](../../docs/layering-contract.md) states. CKKS
+metadata is observable: `k`, radix, rank, `log_delta`,
 `log_sparsity`, and `SlotsKind` must agree, and `log_budget` remains derived from
-`k - log_delta`. Preserve the normalized/unnormalized typestate boundary and the
-core canonical-at-`k` representation. Prepared objects and encoding plans belong
+`k - log_delta`. Preserve the core canonical flag and
+canonical-at-`k` representation. Prepared objects and encoding plans belong
 to their backend; compare their operation results rather than opaque storage. A
 preparation's `PrepareHint` may select its representation, never the bits of the
 products that read it.

@@ -253,7 +253,7 @@ where
             "invalid finalization: key output rank differs from the GGSW's"
         );
         assert!(
-            key.dnum().as_usize() * key.k_digit().as_usize() >= share.k().as_usize(),
+            key.gglwe_layout().max_input_k().as_usize() >= share.k().as_usize(),
             "invalid finalization: key does not cover the GGSW precision"
         );
         let (dnum, rank) = (share.dnum().as_usize(), share.rank().as_usize());

@@ -29,6 +29,7 @@
   The constant coefficient of a product has variance `4n - 3` there, twice the others', and a square's has mean `(2n - 1)` times the input variance, which comes off the NTT threshold `Q/2` and, summed coherently through the inverse DCT, adds `2u^2/3` of its square to the FFT64 error.
   FFT64 budgets each DCT as its cyclic FFT plus three stages. At `n = 2^16` and 128 bits, 32 products select 53 bits on NTT4x30 and 18 on FFT64, one square 52 and 17.
 - **Breaking:** `MaxBase2k::max_base2k` and `Module::max_base2k` return `usize`, where they returned `Option<usize>`: a backend without a model does not implement `MaxBase2k`, and `HostBytesBackend` no longer does.
+- The `# Degree` and `# Preconditions` docs of `poulpy_hal::api` state the coefficient-wise reduction exception and the column bound, and `backend_safety_contract.md` requires a release `assert!` to refuse an aliasing a kernel cannot handle.
 
 ### CPU backends
 
@@ -228,6 +229,7 @@
   An out-of-tree backend calling `impl_core_reference_full!` drops its own `impl_glwe_trace_derived_full!`, which now conflicts, and a hand-written `GLWETraceImpl` takes the new parameters.
   `reverse` visits the levels from the last down, each by its inverse element, and a nonempty trace leaves its output canonical, summed or normalized.
   The test suite adds `test_glwe_trace_sum` and `test_glwe_trace_parity`, which takes over the trace cases of `test_trace_packing_parity`, runs on both rings and covers summed and reversed windows: register it beside `test_trace_packing_parity`.
+- `docs/layering-contract.md` states the layering rules that `core-contracts.md` restated, and the `# Canonical flag` doc of `GLWE` names the exception of a documented canonical precondition.
 
 ### `poulpy-ckks`
 
@@ -337,12 +339,14 @@
 - Add `DFTPlan::galois_elements_per_factor`.
 - The bootstrap scratch bounds cover every rotation key shape of the layout, taking one maximum per key list.
 - The test suite adds `small_s2c_preset_meets_precision`, an S2C-first bootstrap on an insecure `N = 2^11` preset built by the preset machinery, which backends run by default.
+- `ckks-contracts.md` links `docs/layering-contract.md` instead of restating it and no longer mentions the removed typestate.
 
 ### `poulpy-bin-fhe`
 
 - **Behaviour:** `FheUint::get_bit_lwe` narrows its input to the `max_input_k` of each switching key before the switch, and the circuit bootstrapping traces at the precision its automorphism keys cover, at most the blind rotation's; the circuit bootstrapping panics on a tensor key that does not cover the output GGSW.
 - **Breaking:** `FheUintPrepared` and `FheUintPreparedDebug` allocators take `k_digit` in place of `dsize`, and the blind rotation keys report the `k_digit` their GGSWs store, `base2k` as built, as their layout does.
 - The scalar-to-GGSW blind rotation reference places its gadget rows through `gadget_row_plaintext`, requires `VecZnxNormalize` in place of `VecZnxAddScalarAssign` and `VecZnxNormalizeAssign`, and its scratch covers `vec_znx_normalize_tmp_bytes`.
+- `bin-fhe-contracts.md` links `docs/layering-contract.md` instead of restating it.
 
 ### `poulpy-mhe`
 
@@ -356,6 +360,8 @@
   The finalizations of `GGLWEPatCompressed` and `GGLWEPat` normalize the whole matrix with `mat_znx_normalize_assign` (the bodies) and `mat_znx_normalize` (one call per output column), and their scratch queries are `mat_znx_normalize_tmp_bytes`.
   The public key share finalization normalizes the bodies with one `mat_znx_normalize` and fills each mask from its seed, where it called `glwe_pat_compressed_finalize` per entry; its scratch query is `mat_znx_normalize_tmp_bytes`.
   **Breaking:** the supertraits of `GLWEPublicKeyMHEProtocolImpl` are `HalMatZnxImpl` and `poulpy_core::oep::EncryptionImpl`, where it had `GLWEPatCompressedImpl`.
+- **Fix:** `mhe_ggsw_share_finalize` checks the key's `max_input_k` against the share's precision before any write, instead of `dnum * k_digit`, which a key with `k_aux < k_digit` exceeds.
+- `mhe-contracts.md` links `docs/layering-contract.md` instead of restating it and states that generation normalizes fresh shares.
 
 ### `poulpy-blas`
 
@@ -401,6 +407,7 @@
   The counts are those `blas_matmul` and `blas_matmul_pt_right` document.
 - `validate_blas_sum` rejects with `InvalidOperand` a `base2k` whose digits cannot hold the `log2(mat_slots) + 1` lazy terms the sum adds within `2^62`, as the products reject one above 62.
 - Calls with distinct `res` and `scratch` may run concurrently over a shared module, context, public operands, prepared operands and key stores, and an override keeps no state across calls.
+- `blas-contracts.md` links `docs/layering-contract.md` instead of restating it.
 
 ### `poulpy-cpu-arm`
 
