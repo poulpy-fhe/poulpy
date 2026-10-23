@@ -44,6 +44,17 @@ cross_backend_test_suite! {
     }
 }
 
+// The gadget layout past the parallel floor; emulated CI bounds the degree.
+cross_backend_test_suite! {
+    mod vec_znx_gadget_rayon,
+    backend_ref =  crate::NTT4x30Avx512,
+    backend_test = crate::NTT4x30Avx512Rayon,
+    params = crate::tests::bounded_emulation_params(TestParams { size: 1<<14, base2k: 50, n: 8 }, 256),
+    tests = {
+        test_vec_znx_gadget_decompose => poulpy_hal::test_suite::vec_znx::test_vec_znx_gadget_decompose,
+    }
+}
+
 cross_backend_test_suite! {
     mod svp,
     backend_ref =  crate::NTT4x30Avx512,
