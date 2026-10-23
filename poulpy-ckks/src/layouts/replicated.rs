@@ -441,8 +441,8 @@ impl ReplicatedBootstrapPlan {
     /// keys cover [`Self::key_k`] in digits of `k_digit` bits, with an
     /// auxiliary modulus of `k_aux` bits; with `encapsulation`, the key to the
     /// ephemeral secret covers the ModUp input in one-limb digits and an
-    /// auxiliary modulus of one limb and a bit, and the key back the raised
-    /// modulus.
+    /// auxiliary modulus of one limb and a bit. The key back covers the lifted
+    /// ModUp input, with its rows offset to end at the raised modulus.
     pub fn key_layouts(
         &self,
         n: Degree,
@@ -485,9 +485,15 @@ impl ReplicatedBootstrapPlan {
                 rank: Rank(1),
                 k_digit: digit,
             },
-            encapsulation: encapsulation.then(|| EncapsulationKeysLayout {
-                dense_to_sparse: switching(self.log_delta + self.eval_mod.log_msg_ratio, one_limb, base2k.as_usize() + 1),
-                sparse_to_dense: Some(switching(self.k_boot(k_out), digit, k_aux)),
+            encapsulation: encapsulation.then(|| {
+                let k_small = self.log_delta + self.eval_mod.log_msg_ratio;
+                let mut sparse_to_dense = switching(k_small + self.mod_up_extra_bits, digit, k_aux);
+                let gadget = sparse_to_dense.dnum.0 as usize * k_digit;
+                sparse_to_dense.k_offset = self.k_boot(k_out).saturating_sub(gadget).into();
+                EncapsulationKeysLayout {
+                    dense_to_sparse: switching(k_small, one_limb, base2k.as_usize() + 1),
+                    sparse_to_dense: Some(sparse_to_dense),
+                }
             }),
         }
     }
@@ -495,7 +501,8 @@ impl ReplicatedBootstrapPlan {
     /// [`Self::key_layouts`] with the fewest gadget digits within the modulus
     /// bounds: every key under the secret within `max_dense_modulus` bits and
     /// the key to the ephemeral secret within `max_sparse_modulus`, each with
-    /// an auxiliary modulus of one digit, `log2(QP) = (dnum + 1)·k_digit`.
+    /// an auxiliary modulus of one digit,
+    /// `log2(QP) = k_offset + (dnum + 1)·k_digit`.
     pub fn secure_key_layouts(
         &self,
         n: Degree,
@@ -514,12 +521,23 @@ impl ReplicatedBootstrapPlan {
         };
         let k_digit = digit(k_key, max_dense_modulus)?;
         let sparse_digit = digit(k_q_b, max_sparse_modulus)?;
+        let raised = self.k_boot(k_out);
+        let window = k_q_b + self.mod_up_extra_bits;
+        let return_digit = (1..=window)
+            .map(|dnum| window.div_ceil(dnum))
+            .find(|&digit| (window.div_ceil(digit) * digit).max(raised) + digit <= max_dense_modulus)
+            .context("no sparse-to-dense gadget fits the raised modulus and its auxiliary digit")?;
         let mut layouts = self.key_layouts(n, base2k, k_out, k_digit, k_digit, true);
         if let Some(encapsulation) = layouts.encapsulation.as_mut() {
             let sparse = TorusPrecision(sparse_digit as u32);
             encapsulation.dense_to_sparse.k_digit = sparse;
             encapsulation.dense_to_sparse.k_aux = sparse;
             encapsulation.dense_to_sparse.dnum = GGLWELayout::dnum_for_input(TorusPrecision(k_q_b as u32), sparse);
+            let sparse_to_dense = encapsulation.sparse_to_dense.as_mut().unwrap();
+            sparse_to_dense.k_digit = return_digit.into();
+            sparse_to_dense.k_aux = return_digit.into();
+            sparse_to_dense.dnum = GGLWELayout::dnum_for_input(window.into(), return_digit.into());
+            sparse_to_dense.k_offset = raised.saturating_sub(sparse_to_dense.dnum.0 as usize * return_digit).into();
         }
         Ok(layouts)
     }

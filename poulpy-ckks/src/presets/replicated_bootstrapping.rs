@@ -133,15 +133,15 @@ impl ReplicatedBootstrappingPreset {
     }
 }
 
-/// `N = 2^14`: 2 levels at `2^20`, outputs of 109 bits, at least 20 bits of
+/// `N = 2^14`: 2 levels at `2^20`, outputs of 109 bits, at least 21 bits of
 /// precision.
-pub fn n14_d20_k109_p20_s2c() -> Result<ReplicatedBootstrappingPreset> {
+pub fn n14_d20_k109_p21_s2c() -> Result<ReplicatedBootstrappingPreset> {
     build(PresetSpec {
-        name: "n14_d20_k109_p20_s2c",
+        name: "n14_d20_k109_p21_s2c",
         log_n: 14,
         base2k: 52,
         levels: 2,
-        log2_precision: 20,
+        log2_precision: 21,
         dense_secret_hamming_weight: 1024,
         sparse_secret_hamming_weight: 32,
         max_dense_modulus: 424,
@@ -167,7 +167,7 @@ pub fn n15_d20_k389_p20_s2c() -> Result<ReplicatedBootstrappingPreset> {
 
 /// Every replicated bootstrapping preset.
 pub fn all() -> Result<Vec<ReplicatedBootstrappingPreset>> {
-    Ok(vec![n14_d20_k109_p20_s2c()?, n15_d20_k389_p20_s2c()?])
+    Ok(vec![n14_d20_k109_p21_s2c()?, n15_d20_k389_p20_s2c()?])
 }
 
 /// The circuit's widths do not depend on the layout.
@@ -194,7 +194,7 @@ fn build(spec: PresetSpec) -> Result<ReplicatedBootstrappingPreset> {
 
 #[cfg(test)]
 mod tests {
-    use poulpy_core::layouts::GGLWEInfos;
+    use poulpy_core::layouts::{GGLWEInfos, LWEInfos};
 
     use super::*;
 
@@ -206,15 +206,60 @@ mod tests {
             let layout = key.gglwe_layout();
             (layout.dnum.0, layout.k_digit.0, layout.k_aux.0)
         };
-        for (preset, keys, ephemeral) in [
-            (n14_d20_k109_p20_s2c().unwrap(), (14, 28, 28), (2, 22, 22)),
-            (n15_d20_k389_p20_s2c().unwrap(), (4, 168, 168), (1, 43, 43)),
+        for (preset, keys, ephemeral, return_key) in [
+            (n14_d20_k109_p21_s2c().unwrap(), (14, 28, 28), (2, 22, 22), (2, 25, 25)),
+            (n15_d20_k389_p20_s2c().unwrap(), (4, 168, 168), (1, 43, 43), (1, 49, 49)),
         ] {
             let layout = preset.keys_layout();
             let encapsulation = layout.encapsulation.unwrap();
             assert_eq!(gadget(&layout.automorphism_key), keys, "{}", preset.name());
             assert_eq!(gadget(&layout.tensor_key), keys, "{}", preset.name());
             assert_eq!(gadget(&encapsulation.dense_to_sparse), ephemeral, "{}", preset.name());
+            assert_eq!(
+                gadget(&encapsulation.sparse_to_dense.unwrap()),
+                return_key,
+                "{}",
+                preset.name()
+            );
+        }
+    }
+
+    #[test]
+    fn offset_keys_cover_the_raise_within_modulus_bounds() {
+        for preset in all().unwrap() {
+            for base2k in [18, 19, 28, 52, 54] {
+                let preset = preset.with_base2k(base2k).unwrap();
+                let plan = reference_plan();
+                let keys = preset.keys_layout();
+                let encapsulation = keys.encapsulation.unwrap();
+                let return_key = encapsulation.sparse_to_dense.unwrap();
+                let raised = plan.k_boot(preset.output_k());
+                assert!(return_key.k_offset.0 > 0);
+                assert_eq!(
+                    return_key.k_offset.as_usize() + return_key.gglwe_layout().gadget_k().as_usize(),
+                    raised
+                );
+                assert!(return_key.k().as_usize() <= preset.spec.max_dense_modulus);
+                assert!(keys.automorphism_key.k().as_usize() <= preset.spec.max_dense_modulus);
+                assert!(keys.tensor_key.k().as_usize() <= preset.spec.max_dense_modulus);
+                assert!(encapsulation.dense_to_sparse.k().as_usize() <= preset.spec.max_sparse_modulus);
+                crate::reference::bootstrapping::check_offset_raise(
+                    raised,
+                    plan.log_delta + plan.eval_mod.log_msg_ratio,
+                    plan.mod_up_extra_bits,
+                    &return_key,
+                )
+                .unwrap();
+                assert!(
+                    crate::reference::bootstrapping::check_offset_raise(
+                        raised + 1,
+                        plan.log_delta + plan.eval_mod.log_msg_ratio,
+                        plan.mod_up_extra_bits,
+                        &return_key,
+                    )
+                    .is_err()
+                );
+            }
         }
     }
 }

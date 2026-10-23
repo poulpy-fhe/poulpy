@@ -22,10 +22,12 @@ use poulpy_hal::{
 use crate::{
     CKKSInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{
-        CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSLinearTransformationOps, CKKSModuleInfos,
-        CKKSReplicatedBootstrapOps,
+        CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSLinearTransformationOps,
+        CKKSModuleInfos, CKKSReplicatedBootstrapOps,
     },
-    layouts::{BootstrappingKeysPrepared, CKKSCiphertextOwned, CKKSModuleAlloc, ReplicatedBootstrapping},
+    layouts::{
+        BootstrappingKeysLayout, BootstrappingKeysPrepared, CKKSCiphertextOwned, CKKSModuleAlloc, ReplicatedBootstrapping,
+    },
     oep::CKKSEncapsulatedModUpImpl,
     presets::replicated_bootstrapping::{ReplicatedBootstrappingPreset, all},
     shaping::ShapingUnit,
@@ -76,6 +78,11 @@ where
 {
     /// `k` values with the unit `U32_45`.
     pub fn setup(preset: ReplicatedBootstrappingPreset, k: usize) -> Self {
+        let keys_layout = preset.keys_layout().clone();
+        Self::setup_with_keys(preset, k, keys_layout)
+    }
+
+    fn setup_with_keys(preset: ReplicatedBootstrappingPreset, k: usize, keys_layout: BootstrappingKeysLayout) -> Self {
         let n = preset.n();
         let base2k = preset.base2k();
         let module = Module::<BE>::new(n as u64);
@@ -83,8 +90,6 @@ where
         let plan = preset.plan(layout);
         let mut scratch = ScratchOwned::<BE>::alloc(1 << 28);
         let ctx = ReplicatedBootstrapping::<BE, f64>::new(&module, plan, base2k.into(), &mut scratch.borrow()).unwrap();
-        let keys_layout = preset.keys_layout().clone();
-
         let glwe = GLWELayout {
             n: n.into(),
             base2k: base2k.into(),
@@ -158,10 +163,15 @@ where
         let gadget = |key: GGLWELayout| format!("{}x{}+{}", key.dnum.0, key.k_digit.0, key.k_aux.0);
         let layout = self.preset.keys_layout();
         let ephemeral = layout.encapsulation.map(|e| gadget(e.dense_to_sparse.gglwe_layout()));
+        let return_key = layout
+            .encapsulation
+            .and_then(|e| e.sparse_to_dense)
+            .map(|key| format!("{}+{}", key.k_offset.0, gadget(key.gglwe_layout())));
         format!(
-            "keys={} ephemeral={}",
+            "keys={} ephemeral={} return={}",
             gadget(layout.automorphism_key.gglwe_layout()),
-            ephemeral.unwrap_or_default()
+            ephemeral.unwrap_or_default(),
+            return_key.unwrap_or_default()
         )
     }
 
@@ -223,21 +233,37 @@ where
     for preset in all().unwrap() {
         let preset = preset.with_base2k(preset.base2k().min(fixture_base2k)).unwrap();
         for k in BATCH_SIZES {
+            let check = |run: &mut ReplicatedBootstrappingPresetRun<BE>, keys: &str| {
+                run.bootstrap();
+                let (min, avg) = run.precision();
+                println!(
+                    "PRECISION backend={backend} preset={} k={k} {keys} min={min:.2}b avg={avg:.2}b (advertised {}b)",
+                    preset.name(),
+                    preset.log2_precision()
+                );
+                assert!(
+                    min >= preset.log2_precision() as f64,
+                    "preset {} with k = {k} and {keys} advertises {} bits but measured {min:.2}",
+                    preset.name(),
+                    preset.log2_precision()
+                );
+            };
             let mut run = ReplicatedBootstrappingPresetRun::<BE>::setup(preset.clone(), k);
-            run.bootstrap();
-            let (min, avg) = run.precision();
-            println!(
-                "PRECISION backend={backend} preset={} k={k} {} min={min:.2}b avg={avg:.2}b (advertised {}b)",
-                preset.name(),
-                run.gadgets(),
-                preset.log2_precision()
-            );
-            assert!(
-                min >= preset.log2_precision() as f64,
-                "preset {} with k = {k} advertises {} bits but measured {min:.2}",
-                preset.name(),
-                preset.log2_precision()
-            );
+            check(&mut run, "offset");
+
+            let mut keys_layout = preset.keys_layout().clone();
+            let wide = keys_layout.automorphism_key;
+            let return_key = keys_layout.encapsulation.as_mut().unwrap().sparse_to_dense.as_mut().unwrap();
+            return_key.k_offset = 0usize.into();
+            return_key.k_digit = wide.k_digit;
+            return_key.k_aux = wide.k_aux;
+            return_key.dnum = GGLWELayout::dnum_for_input(run.ctx.plan().k_boot(preset.output_k()).into(), wide.k_digit);
+            let mut full = ReplicatedBootstrappingPresetRun::<BE>::setup_with_keys(preset.clone(), k, keys_layout);
+            check(&mut full, "full-width");
+            run.module
+                .ckks_copy(&mut run.input, &full.input, &mut run.scratch.borrow())
+                .unwrap();
+            check(&mut run, "offset/shared-input");
         }
     }
 }

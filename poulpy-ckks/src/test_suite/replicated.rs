@@ -1416,7 +1416,7 @@ where
 }
 
 /// One bootstrapping of `k = 8` values with the parameters of the paper, from
-/// the leveled scale, against the values.
+/// the leveled scale, with full-width and row-offset return keys.
 pub fn test_replicated_bootstrap<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -1445,20 +1445,6 @@ where
     let key_layouts = plan.key_layouts(params.n.into(), base2k, k_out, params.base2k, params.base2k + 1, true);
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
-    let (mut xs, mut xe, mut xa) = (Source::new([3; 32]), Source::new([4; 32]), Source::new([5; 32]));
-    let mut keygen = ScratchOwned::<BE>::alloc(1 << 26);
-    let keys = ctx
-        .generate_keys(
-            module,
-            &sk_raw,
-            &key_layouts,
-            16,
-            &mut xs,
-            &mut xe,
-            &mut xa,
-            &mut keygen.borrow(),
-        )
-        .prepare(module, &mut keygen.borrow());
 
     let len = 1 << layout.log_k();
     let values = unit_batch::<F>(len, 0);
@@ -1471,21 +1457,51 @@ where
         plan.k_in() - (plan.log_delta - plan.level_log_delta),
         1,
     )?;
-    let encapsulation = key_layouts.encapsulation.map(|e| (e.dense_to_sparse, e.sparse_to_dense));
-    let mut boot_scratch = ScratchOwned::<BE>::alloc(module.ckks_replicated_bootstrap_tmp_bytes(
-        &alloc_ct(&params, module, k_out),
-        &input,
-        &ctx,
-        &key_layouts.automorphism_key,
-        &key_layouts.tensor_key,
-        encapsulation.as_ref().map(|(d, s)| (d, s.as_ref().unwrap())),
-    ));
-    let mut out = alloc_ct(&params, module, k_out);
-    module.ckks_replicated_bootstrap_into(&mut out, &input, &ctx, &keys, &mut boot_scratch.borrow())?;
-    assert_eq!(out.slot_layout(), SlotLayout::Replicated(layout));
-    assert_eq!((out.log_delta(), out.k().as_usize()), (plan.level_log_delta, k_out));
-    let got = decrypt_batch::<BE, F>(&params, module, &sk, &out, len);
-    let bits = precision((&got.0, &got.1), (&values.0, &values.1));
-    assert!(bits >= 19.0, "replicated bootstrapping: {bits:.2} bits");
+    let mut full_layouts = key_layouts.clone();
+    let full = full_layouts.encapsulation.as_mut().unwrap().sparse_to_dense.as_mut().unwrap();
+    full.k_offset = 0usize.into();
+    full.dnum = poulpy_core::layouts::GGLWELayout::dnum_for_input(plan.k_boot(k_out).into(), full.k_digit);
+    let mut decoded = Vec::new();
+    for key_layouts in [&full_layouts, &key_layouts] {
+        let (mut xs, mut xe, mut xa) = (Source::new([3; 32]), Source::new([4; 32]), Source::new([5; 32]));
+        let mut keygen = ScratchOwned::<BE>::alloc(1 << 26);
+        let keys = ctx
+            .generate_keys(
+                module,
+                &sk_raw,
+                key_layouts,
+                16,
+                &mut xs,
+                &mut xe,
+                &mut xa,
+                &mut keygen.borrow(),
+            )
+            .prepare(module, &mut keygen.borrow());
+        let encapsulation = key_layouts.encapsulation.as_ref().unwrap();
+        let mut out = alloc_ct(&params, module, k_out);
+        let mut boot_scratch = ScratchOwned::<BE>::alloc(module.ckks_replicated_bootstrap_tmp_bytes(
+            &out,
+            &input,
+            &ctx,
+            &key_layouts.automorphism_key,
+            &key_layouts.tensor_key,
+            Some((
+                &encapsulation.dense_to_sparse,
+                encapsulation.sparse_to_dense.as_ref().unwrap(),
+            )),
+        ));
+        module.ckks_replicated_bootstrap_into(&mut out, &input, &ctx, &keys, &mut boot_scratch.borrow())?;
+        assert_eq!(out.slot_layout(), SlotLayout::Replicated(layout));
+        assert_eq!((out.log_delta(), out.k().as_usize()), (plan.level_log_delta, k_out));
+        let got = decrypt_batch::<BE, F>(&params, module, &sk, &out, len);
+        let bits = precision((&got.0, &got.1), (&values.0, &values.1));
+        assert!(bits >= 19.0, "replicated bootstrapping: {bits:.2} bits");
+        decoded.push(got);
+    }
+    let bits = precision((&decoded[0].0, &decoded[0].1), (&decoded[1].0, &decoded[1].1));
+    assert!(
+        bits >= 18.0,
+        "offset and full-width replicated bootstrapping differ by {bits:.2} bits"
+    );
     Ok(())
 }

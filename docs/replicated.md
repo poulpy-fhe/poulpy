@@ -58,13 +58,14 @@ Operations that would round plainly or write the guard slots return `InvalidOper
 
 `poulpy_ckks::presets::replicated_bootstrapping` provides two parameter sets for 128-bit security, with dense secrets of weight 1024 and an ephemeral ModUp secret of weight 32.
 The batch size and the shaping unit are the caller's; the moduli do not depend on them.
+The sparse-to-dense key covers the 49-bit lifted ModUp input, with a row offset ending its gadget at the raised modulus. Its full modulus includes that offset, the gadget and the auxiliary bits.
 
-| preset | ring | levels at `2^20` | keys (digits × width + aux) | ephemeral key | min precision, k = 16 / 64 |
-|---|---|---|---|---|---|
-| `n14_d20_k109_p20_s2c` | `2^14` | 2 | 14 × 28 + 28 | 2 × 22 + 22 | 22.0 / 21.7 bits |
-| `n15_d20_k389_p20_s2c` | `2^15` | 16 | 4 × 168 + 168 | 1 × 43 + 43 | 21.2 / 20.9 bits |
+| preset | ring | levels at `2^20` | keys (digits × width + aux) | ephemeral key | sparse-to-dense key (offset + gadget + aux) | min precision, k = 16 / 64 |
+|---|---|---|---|---|---|---|
+| `n14_d20_k109_p21_s2c` | `2^14` | 2 | 14 × 28 + 28 | 2 × 22 + 22 | 333 + 2 × 25 + 25 | 21.79 / 21.73 bits |
+| `n15_d20_k389_p20_s2c` | `2^15` | 16 | 4 × 168 + 168 | 1 × 43 + 43 | 614 + 1 × 49 + 49 | 21.16 / 20.84 bits |
 
-Each preset advertises 20 bits of precision on the data slots (the `p20` of its name), which the precision test asserts.
+The logN14 preset advertises 21 bits of precision on the data slots and the logN15 preset 20 bits, which the precision test asserts. The test covers offset and full-width return keys on matched ciphertexts.
 
 ## Construction outline
 
