@@ -291,6 +291,7 @@ poulpy_core::core_parity_test_suite! {
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
         gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
+        glwe_trace => poulpy_core::test_suite::parity::test_glwe_trace_parity,
         glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
         glwe_copy_zero => poulpy_core::test_suite::parity::test_glwe_copy_zero_parity,
         glwe_multiplication => poulpy_core::test_suite::parity::test_glwe_multiplication_parity,

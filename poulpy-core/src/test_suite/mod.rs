@@ -106,6 +106,7 @@ macro_rules! core_backend_test_suite {
                 glwe_shift_saturates => $crate::test_suite::noise::test_glwe_shift_saturates,
                 glwe_shift_exact_scratch => $crate::test_suite::noise::test_glwe_shift_exact_scratch,
                 glwe_trace_assign => $crate::test_suite::noise::test_glwe_trace_assign,
+                glwe_trace_sum => $crate::test_suite::noise::test_glwe_trace_sum,
                 glwe_trace_coarsened => $crate::test_suite::parity::test_glwe_trace_coarsened,
                 glwe_hoisted_baby_rotations_match_automorphism =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_hoisted_baby_rotations_match_automorphism,

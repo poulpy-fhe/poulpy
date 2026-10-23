@@ -122,7 +122,7 @@ CPU backends share their common registrations through `impl_cpu_core_defaults!`
 and `impl_cpu_ckks_defaults!`. Tensoring, strided digit products, encoding
 transforms, and encapsulated ModUp remain explicit backend choices, as do the
 standard-only families (`hal_impl_vec_znx_monomial!`, LWE conversion, packing,
-rotate, `mul_xp_minus_one`, GLWE trace) and the standard-only CKKS families
+rotate, `mul_xp_minus_one`) and the standard-only CKKS families
 (conjugation, `i`, complex polynomial evaluation, DFT, EvalMod, PaCo/SHIP
 coefficient encodings), which only standard-ring backends register. Backends that
 override other families can register the individual operation macros.
@@ -168,8 +168,8 @@ implementations of the same ring.
 Transforms, polynomial products, and automorphisms use this basis. Lower-degree
 operands embed through `X -> X^(N/n)`. Arbitrary monomial multiplication is
 not closed in this ring, so CI backends do not implement rotation, `X^p - 1`,
-packing, or LWE conversion; the GLWE trace uses standard-ring Galois elements and
-is not implemented either.
+packing, or LWE conversion. The GLWE trace runs on both rings: the conjugate-invariant
+ring, fixed by the conjugation, starts it at the rotation by one slot.
 Standard modules embed CI operands of degree `n` into the standard ring of degree
 `2n` and map them back by the relative trace (`vec_znx_ci_embed`, `vec_znx_ci_trace`); CKKS combines
 these with key switching.

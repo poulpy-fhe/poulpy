@@ -1,5 +1,5 @@
 use crate::layouts::IntPolyInfos;
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Range};
 
 use poulpy_hal::layouts::{Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, ScratchArena};
 
@@ -8,15 +8,23 @@ use crate::layouts::{
     GGSWToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
 };
 
-/// Normalized trace onto the subring selected by `skip`.
+/// Trace over the levels `levels`, summed or normalized: the sum of the Galois conjugates of the visited levels.
 ///
-/// Each stage divides by two with the shift operation's rounding, then adds
-/// the corresponding Galois conjugate. `skip` must not exceed `log2(N)`.
-/// An empty trace (`skip == log2(N)`) copies the input using [`GLWECopy`]
-/// semantics; its assign form preserves the destination. Neither needs keys.
-/// Invalid skips panic before mutation.
+/// Level `0` is the conjugation, on the standard ring only, and level `i >= 1` the rotation by `2^(i-1)` slots; a
+/// full trace is `0..log2(n)` on the standard ring and `1..log2(n) + 1` on the conjugate-invariant ring, and
+/// `levels.start..` of it the trace onto a subring. Each visited level adds its conjugate, `x <- x + phi(x)`: with
+/// `normalize`, after dividing `x` by two with the shift operation's rounding, so the result is the average of the
+/// conjugates, the normalized trace; without, the result is their sum. `reverse` visits the levels from the last down
+/// to the first, each by its inverse Galois element, which replicates a value the forward sum would gather. The input
+/// is read at any canonical state, and a nonempty trace leaves `res` canonical at `res.k()`. An empty window copies
+/// the input using [`GLWECopy`] semantics; its assign form preserves the destination. Neither needs keys.
+///
+/// Panics, before writing `res`, if `levels` ends past the ring's trace, starts after its end, or holds level 0 on the
+/// conjugate-invariant ring.
 pub trait GLWETrace<BE: Backend> {
-    fn glwe_trace_galois_elements(&self) -> Vec<i64>;
+    /// The Galois elements a trace over `levels` in the direction `reverse` looks up, at the module's degree; panics on
+    /// the levels the trace refuses.
+    fn glwe_trace_galois_elements(&self, levels: Range<usize>, reverse: bool) -> Vec<i64>;
 
     fn glwe_trace_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
@@ -30,14 +38,33 @@ pub trait GLWETrace<BE: Backend> {
         A: GLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_trace<R, A, H>(&self, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'_, BE>)
-    where
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the trace's operands, levels, direction and normalization, keys and scratch"
+    )]
+    fn glwe_trace<R, A, H>(
+        &self,
+        res: &mut R,
+        levels: Range<usize>,
+        reverse: bool,
+        normalize: bool,
+        a: &A,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         H: GetAutomorphismKey<BE>;
 
-    fn glwe_trace_assign<R, H>(&self, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
-    where
+    fn glwe_trace_assign<R, H>(
+        &self,
+        res: &mut R,
+        levels: Range<usize>,
+        reverse: bool,
+        normalize: bool,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         H: GetAutomorphismKey<BE>;
 }

@@ -23,7 +23,7 @@ use poulpy_hal::{
 };
 
 use crate::{FFT64Portable, hal_impl::delegating_backend::DelegatingFFT64Portable};
-use std::{cell::Cell, collections::HashMap};
+use std::{cell::Cell, collections::HashMap, ops::Range};
 
 thread_local! {
     static ROTATE_OVERRIDE_CALLS: Cell<usize> = const { Cell::new(0) };
@@ -228,17 +228,23 @@ unsafe impl GLWETraceImpl for DelegatingFFT64Portable {
         Self::scratch_aligned(bytes) + TRACE_EXTRA_SCRATCH
     }
 
-    fn glwe_trace_assign<R, H>(module: &Module<Self>, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, Self>)
-    where
+    fn glwe_trace_assign<R, H>(
+        module: &Module<Self>,
+        res: &mut R,
+        levels: Range<usize>,
+        reverse: bool,
+        normalize: bool,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
         R: GLWEToBackendMut<Self> + GLWEInfos,
         H: GetAutomorphismKey<Self>,
     {
         TRACE_ASSIGN_CALLS.set(TRACE_ASSIGN_CALLS.get() + 1);
         let (marker, mut remaining) = scratch.borrow().take_region(TRACE_EXTRA_SCRATCH);
         marker.fill(0xB7);
-        let rotations = module.glwe_trace_galois_elements();
-        assert!(skip <= rotations.len());
-        if let Some(&first) = rotations.get(skip) {
+        let rotations = module.glwe_trace_galois_elements(levels, reverse);
+        if let Some(&first) = rotations.first() {
             let key = keys.get_automorphism_key(first, res.k()).unwrap();
             let mut converted = (res.base2k() != key.base2k()).then(|| {
                 module.glwe_alloc_from_infos(&GLWELayout {
@@ -257,8 +263,10 @@ unsafe impl GLWETraceImpl for DelegatingFFT64Portable {
                     None => res.to_backend_mut(),
                 };
                 let mut work = &mut work;
-                for &p in &rotations[skip..] {
-                    module.glwe_rsh(1, &mut work, &mut remaining.borrow());
+                for &p in &rotations {
+                    if normalize {
+                        module.glwe_rsh(1, &mut work, &mut remaining.borrow());
+                    }
                     let key = keys.get_automorphism_key(p, work.k()).unwrap();
                     module.glwe_automorphism_add_assign(&mut work, &key, &mut remaining.borrow());
                 }
@@ -453,9 +461,8 @@ fn derived_trace_uses_selected_assign_and_its_larger_scratch_query() {
         k_aux: TorusPrecision(18),
         rank: input.rank(),
     };
-    let rotations = reference.glwe_trace_galois_elements();
-    let skip = rotations.len() - 1;
-    let p = rotations[skip];
+    let levels = input.log_n() - 1..input.log_n();
+    let p = reference.glwe_trace_galois_elements(levels.clone(), false)[0];
     let mut key = reference.glwe_automorphism_key_alloc_from_infos(&key_layout);
     fill_by_digit(&reference, &mut key, 1, &mut Source::new([89; 32]));
     key.set_p(p);
@@ -486,14 +493,18 @@ fn derived_trace_uses_selected_assign_and_its_larger_scratch_query() {
     let before = TRACE_ASSIGN_CALLS.get();
     module.glwe_trace(
         &mut actual,
-        skip,
+        levels.clone(),
+        false,
+        true,
         &input,
         &keys_actual,
         &mut poisoned_scratch::<DelegatingFFT64Portable>(actual_bytes).borrow(),
     );
     reference.glwe_trace(
         &mut expected,
-        skip,
+        levels,
+        false,
+        true,
         &input,
         &keys_expected,
         &mut poisoned_scratch::<FFT64Portable>(expected_bytes).borrow(),

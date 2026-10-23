@@ -141,20 +141,28 @@ mod ckks_comparison;
 #[cfg_attr(
     feature = "enable-core",
     doc = r"
-The Galois trace is standard-only:
+The Galois trace serves both rings:
 ```
-use poulpy_core::GLWETrace;
-use poulpy_cpu_portable::FFT64Portable;
-use poulpy_hal::layouts::Module;
-fn trace<M: GLWETrace<FFT64Portable>>(_: &M) {}
-fn check(module: &Module<FFT64Portable>) { trace(module); }
-```
-```compile_fail
 use poulpy_core::GLWETrace;
 use poulpy_cpu_portable::FFT64CIPortable;
 use poulpy_hal::layouts::Module;
 fn trace<M: GLWETrace<FFT64CIPortable>>(_: &M) {}
 fn check(module: &Module<FFT64CIPortable>) { trace(module); }
+```
+Monomial rotation is standard-only:
+```
+use poulpy_core::GLWERotate;
+use poulpy_cpu_portable::FFT64Portable;
+use poulpy_hal::layouts::Module;
+fn rotate<M: GLWERotate<FFT64Portable>>(_: &M) {}
+fn check(module: &Module<FFT64Portable>) { rotate(module); }
+```
+```compile_fail
+use poulpy_core::GLWERotate;
+use poulpy_cpu_portable::FFT64CIPortable;
+use poulpy_hal::layouts::Module;
+fn rotate<M: GLWERotate<FFT64CIPortable>>(_: &M) {}
+fn check(module: &Module<FFT64CIPortable>) { rotate(module); }
 ```
 So are the embedding and trace between the two rings:
 ```
