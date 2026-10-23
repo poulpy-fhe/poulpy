@@ -55,8 +55,10 @@ use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{
-    Base2K, Degree, GGLWEInfos, GGLWELayout, GLWELayout, GLWESwitchingKeyLayout, LWEInfos, Rank, TorusPrecision,
+    Base2K, Degree, GGLWEInfos, GGLWELayout, GLWELayout, GLWESwitchingKeyLayout, LWEInfos, LinearTransformationLayout,
+    LinearTransformationStrategy, Rank, TorusPrecision,
 };
+use poulpy_hal::layouts::{MaxBase2k, Module};
 
 use crate::numerics::CKKSFloat;
 use crate::{
@@ -295,6 +297,73 @@ impl BootstrappingPreset {
             dense_to_sparse_dsize,
             ..self.spec
         })
+    }
+
+    /// Largest limb radix at which every accumulation of the bootstrap stays
+    /// within the extended precision of backend `BE`, with a failure probability
+    /// of at most `2^-failure_bits` over the whole bootstrap, by the model of
+    /// [`Module::max_base2k`](poulpy_hal::layouts::Module::max_base2k); zero when
+    /// no radix fits.
+    ///
+    /// The widest accumulations are the giant-step passes of the transforms: an
+    /// output limb sums, without normalizing, the product of every diagonal of a
+    /// factor with a baby rotation, over the diagonal's limbs, and the key switch
+    /// of every giant step, over the operand limbs. EvalMod's squares are checked
+    /// as squares. The failure budget is split over the outputs of every pass,
+    /// and the radix ignores the security bounds, which
+    /// [`Self::with_backend_base2k`] applies.
+    pub fn max_backend_base2k<BE: MaxBase2k>(&self, failure_bits: usize) -> usize {
+        let n = self.n;
+        for base2k in (1..=62).rev() {
+            let limbs = self.bootstrap_k.div_ceil(base2k);
+            let (products, outputs) = self.transform_accumulations(base2k);
+            // Each accumulation's output polynomials: two columns, every limb.
+            let failure_bits = failure_bits + (outputs * 2 * limbs).next_power_of_two().ilog2() as usize;
+            let transforms = Module::<BE>::max_base2k(n, products, failure_bits, false);
+            let squares = Module::<BE>::max_base2k(n, limbs, failure_bits, true);
+            if transforms.min(squares) >= base2k {
+                return base2k;
+            }
+        }
+        0
+    }
+
+    /// Re-derives the preset at the largest radix [`Self::max_backend_base2k`]
+    /// allows on backend `BE` and the modulus bounds admit (see
+    /// [`Self::with_base2k`]).
+    pub fn with_backend_base2k<BE: MaxBase2k>(&self, failure_bits: usize) -> Result<Self> {
+        let max = self.max_backend_base2k::<BE>(failure_bits);
+        (1..=max)
+            .rev()
+            .find_map(|base2k| self.with_base2k(base2k).ok())
+            .with_context(|| format!("no radix up to {max} fits the modulus bounds of {}", self.name()))
+    }
+
+    /// Worst count of degree-`N` products an output limb of a transform pass
+    /// accumulates at radix `base2k`, and the number of such passes.
+    fn transform_accumulations(&self, base2k: usize) -> (usize, usize) {
+        let log_n = self.spec.log_n;
+        let operand = self.bootstrap_k.div_ceil(base2k);
+        let mut transforms = vec![self.plan.coeffs_to_slots(), self.plan.slots_to_coeffs()];
+        transforms.extend(self.plan.coeffs_to_slots_bypass());
+        let (mut products, mut passes) = (1, 0);
+        for dft in transforms {
+            let meta = dft.coeffs_meta();
+            let diagonal_limbs = (meta.log_delta() + meta.log_budget()).div_ceil(base2k);
+            for (indexes, giant_step) in dft.diagonal_indexes(log_n).into_iter().zip(dft.schedule().giant_steps()) {
+                let index = LinearTransformationLayout {
+                    indexes,
+                    slots: 1 << log_n,
+                    strategy: LinearTransformationStrategy::Bsgs { giant_step },
+                }
+                .index();
+                let diagonals: usize = index.index.iter().map(Vec::len).sum();
+                let giants = index.index.iter().filter(|babies| !babies.is_empty()).count();
+                products = products.max(diagonals * diagonal_limbs + giants * operand);
+                passes += 1;
+            }
+        }
+        (products, passes)
     }
 
     /// Width required by an input ciphertext, i.e. the width the application

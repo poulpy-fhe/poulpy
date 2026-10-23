@@ -4,19 +4,37 @@ const ATK_ROTATIONS: &[i64] = &[1, 7];
 
 #[cfg(feature = "enable-ifma")]
 mod bootstrapping_presets {
-    use poulpy_ckks::test_suite::presets::bootstrapping_presets_meet_precision;
+    use poulpy_ckks::{
+        layouts::EvalModRing,
+        test_suite::presets::{BOOTSTRAP_FAILURE_BITS, bootstrapping_presets_meet_precision, preset_for_backend},
+    };
+    use poulpy_core::layouts::LWEInfos;
+
+    #[test]
+    fn ifma_radix() {
+        let presets = poulpy_ckks::presets::bootstrapping::all().unwrap().into_iter();
+        for preset in presets.filter(|preset| preset.plan().eval_mod_ring() == EvalModRing::Standard) {
+            // The 126-bit prime product leaves three bits more than NTT4x30's.
+            assert_eq!(preset.max_backend_base2k::<crate::NTT3x42Ifma>(BOOTSTRAP_FAILURE_BITS), 56);
+            let adapted = preset_for_backend::<crate::NTT3x42Ifma>(&preset).unwrap();
+            assert_eq!(adapted.base2k(), 56);
+            assert!(adapted.keys_layout().automorphism_key.k().as_usize() <= adapted.max_dense_modulus());
+            let small_key = &adapted.keys_layout().encapsulation.as_ref().unwrap().dense_to_sparse;
+            assert!(small_key.k().as_usize() <= adapted.max_sparse_modulus());
+        }
+    }
 
     #[test]
     #[ignore = "full logN16 bootstrapping presets"]
     fn ifma() {
-        bootstrapping_presets_meet_precision::<crate::NTT3x42Ifma>(52);
+        bootstrapping_presets_meet_precision::<crate::NTT3x42Ifma>();
     }
 
     #[cfg(feature = "enable-rayon")]
     #[test]
     #[ignore = "full logN16 bootstrapping presets"]
     fn ifma_rayon() {
-        bootstrapping_presets_meet_precision::<crate::NTT3x42IfmaRayon>(52);
+        bootstrapping_presets_meet_precision::<crate::NTT3x42IfmaRayon>();
     }
 }
 

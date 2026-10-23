@@ -1,7 +1,7 @@
 //! Full-slot CKKS bootstrapping benchmark.
 //!
 //! One benchmark per preset in [`poulpy_ckks::presets::bootstrapping::all`],
-//! at an explicitly chosen fixture radix. Criterion's name filter selects a
+//! at the radix the backend's failure model selects. Criterion's name filter selects a
 //! preset by its name. The setup, bootstrap call, and precision measurement use
 //! the shared
 //! [`BootstrappingPresetRun`] driver, so the benchmark exercises exactly what
@@ -16,7 +16,7 @@ use poulpy_ckks::{
     presets::bootstrapping::{BootstrappingPreset, all},
     test_suite::{
         helpers::{TestContextBackend, TestContextModule, TestContextSharedModule},
-        presets::{BootstrappingPresetRun, CIBackend, preset_with_max_base2k},
+        presets::{BootstrappingPresetRun, CIBackend, preset_for_backend},
     },
 };
 use poulpy_core::{
@@ -81,14 +81,13 @@ fn runner_ckks_bootstrapping<BE>(
     }
 }
 
-/// Exercises every preset at the caller's fixture radix limit, the twin [`CIBackend`] running
-/// EvalMod for the presets that put it on the conjugate-invariant ring.
-///
-/// `FIXTURE_BASE2K` selects the benchmark shape; it carries no failure-probability
-/// guarantee. The registered FFT and NTT fixtures use 18 and 52 respectively.
-pub fn bench_ckks_bootstrapping<BE, const FIXTURE_BASE2K: usize>(c: &mut Criterion<WallTime>)
+/// Exercises every preset at the radix
+/// [`preset_for_backend`](poulpy_ckks::test_suite::presets::preset_for_backend)
+/// selects for `BE`, the twin [`CIBackend`] running EvalMod for the presets that
+/// put it on the conjugate-invariant ring, at most at their own radix.
+pub fn bench_ckks_bootstrapping<BE>(c: &mut Criterion<WallTime>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend<Ring = Standard> + poulpy_hal::layouts::MaxBase2k,
     CIBackend<BE>: TestContextBackend,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, f64>
@@ -110,7 +109,7 @@ where
     group.sample_size(10);
     for preset in all().unwrap() {
         let ring = preset.plan().eval_mod_ring();
-        let preset = preset_with_max_base2k(&preset, FIXTURE_BASE2K).unwrap();
+        let preset = preset_for_backend::<BE>(&preset).unwrap();
         match ring {
             EvalModRing::Standard => runner_ckks_bootstrapping(&mut group, preset, BootstrappingPresetRun::<BE>::setup),
             _ => runner_ckks_bootstrapping(&mut group, preset, |preset| BootstrappingPresetRun::<BE>::setup_ci(preset)),

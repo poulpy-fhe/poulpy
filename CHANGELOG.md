@@ -47,6 +47,8 @@
 - The Rayon backends, those built with the shared macros and the IFMA one, lay gadget digits out in parallel over coefficient ranges (`poulpy_cpu_rayon::normalize::vec_znx_gadget_decompose_par`, over `vec_znx_gadget_decompose_range_raw_portable`), bit for bit as the serial kernel.
   On an Apple M5 Pro, `NTT4x30NeonRayon/hal/vec_znx_gadget_decompose/65536x(1x28)/a_size=27/k=53/k_digit=208` takes 0.33 ms where `NTT4x30Neon/hal/vec_znx_gadget_decompose/65536x(1x28)/a_size=27/k=53/k_digit=208` takes 1.49 ms (0.22x), and the split already pays at `8192x(1x28)` (80 µs against 103 µs), so the layout reuses the normalization task floor `NORMALIZE_MIN_TASK`.
   `hal_impl_vec_znx_without_normalize!` expands to `hal_impl_vec_znx_gadget_decompose!` and `hal_impl_vec_znx_without_normalize_or_decompose!`, the latter for a backend that provides its own layout.
+- `NTT3x42Ifma` checks that the bootstrapping presets take radix 56 within their key bounds (`ifma_radix`).
+- `NTT4x30Oracle` and `FFT64Oracle` implement `MaxBase2k` with the models of the other backends of each transform, so that the bootstrapping preset tests run at the radix the model selects.
 - **Breaking, behaviour:** the CPU backends no longer override the CKKS encapsulated ModUp: `NTT4x30Avx`, `NTT4x30Avx512`, `NTT3x42Ifma` and their Rayon variants install the reference body (`impl_ckks_encapsulated_mod_up_reference!`), as `NTT4x30Portable` and `NTT4x30PortableRayon` do.
   Their bodies skipped the limbs that the raise leaves at zero. A sparse-to-dense key with a row offset, the bootstrapping presets' key, leaves none: its switch reads the raised ciphertext at its own width, and no preset took them.
 - The IFMA linear transformation keeps its fused giant-step rotation for automorphism keys of any digit width: each normalized mask column is laid out on the digit grid with `gadget_dft_apply` before the product, as in the reference lazy giant step.
@@ -270,6 +272,10 @@
 - **Breaking:** `BootstrappingContext::eval_mod` returns an `Option`, `None` for EvalMod on the conjugate-invariant ring, whose context encodes no EvalMod on the standard ring; `BootstrappingContext::eval_mod_plan` gives the plan on either ring.
 - `test_suite::presets::bootstrapping_presets_meet_precision` and `small_s2c_preset_meets_precision` require `CKKSBootstrappingCIOps`, and run the presets with EvalMod on the conjugate-invariant ring, on its twin `test_suite::presets::CIBackend`, at the fixture radix too.
 - Add `test_suite::presets::ci_bootstrap_refuses_invalid_inputs`, and `conjugate_invariant_ckks_test_suite!` runs EvalMod on the conjugate-invariant ring, the refusal of `ExpCmplx` included.
+- Add `BootstrappingPreset::max_backend_base2k` and `with_backend_base2k`: the largest radix at which every accumulation of the bootstrap fits a backend's extended precision with a failure probability of at most `2^-failure_bits` over the bootstrap, by the model of `Module::max_base2k`, counting the products of each transform's giant-step passes and EvalMod's squares, and the preset re-derived at the largest such radix its modulus bounds admit.
+- **Breaking:** `test_suite::presets::bootstrapping_presets_meet_precision` takes no fixture radix: each preset runs at the radix `test_suite::presets::preset_for_backend` selects for a failure probability of `2^-128` per bootstrap (`BOOTSTRAP_FAILURE_BITS`).
+  That radix is 53 on NTT4x30 (52 before), 17 on FFT64 (18 before, which the model only admits at `2^-64`), and 56 on NTT3x42 (52 before).
+  A preset with EvalMod on the CI ring runs at most at its own radix.
 - **Breaking:** `impl_ckks_bootstrapping_reference!` requires `CKKSModUpFirstFactorImpl` (`impl_ckks_mod_up_first_factor_reference!`) beside `CKKSEncapsulatedModUpImpl`; `BootstrappingKeysLayout`, `BootstrappingKeySet` and `BootstrappingKeysPrepared` gain the first-factor key fields; `BootstrappingContext::generate_keys` requires `VecZnxAutomorphism`.
 - `reference::first_factor` exposes `first_factor_work`, `first_factor_small_bits` and `first_factor_diagonal_growth`, the widths a first-factor key is laid out from.
 - The encapsulated ModUp takes a sparse-to-dense key with a row offset (`k_offset` of `poulpy-core`): its switch is the raise, from the raised ciphertext at its own width, integer part included, with no zero-padded copy and no transform of zero limbs.
@@ -452,6 +458,7 @@
 ### `poulpy-bench`
 
 - **Breaking:** `bench_ckks_bootstrapping` requires `CKKSBootstrappingCIOps`, and runs the presets with EvalMod on the conjugate-invariant ring.
+- **Breaking:** `bench_ckks_bootstrapping` takes no `FIXTURE_BASE2K`: it runs each preset at the radix `test_suite::presets::preset_for_backend` selects for the backend, so the ids of its NTT4x30 and FFT64 runs read `base2k=53` and `base2k=17` instead of 52 and 18.
 - **Breaking:** `hal::suites::bench_normalization` requires `VecZnxGadgetDecompose` and `VecZnxGadgetDecomposeTmpBytes`, and also sweeps `vec_znx_gadget_decompose` over the 27-limb key-switch columns of a bootstrap at radix 53 (`GadgetDecomposeSweepParams`, `default_bench_params_gadget_decompose`).
 
 ## [0.9.0] - 2026-10-08

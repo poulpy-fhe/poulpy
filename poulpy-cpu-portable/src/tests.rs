@@ -69,21 +69,25 @@ fn conjugate_invariant_square_mean_sets_the_ntt_radix() {
 }
 
 #[test]
-fn bootstrapping_presets_keep_fixture_radices() {
-    use poulpy_ckks::{presets::bootstrapping::all, test_suite::presets::preset_with_max_base2k};
+fn bootstrapping_presets_take_the_backend_radix() {
+    use poulpy_ckks::{
+        presets::bootstrapping::all,
+        test_suite::presets::{BOOTSTRAP_FAILURE_BITS, preset_for_backend},
+    };
     use poulpy_core::layouts::LWEInfos;
 
     for preset in all().unwrap() {
-        let fft = preset_with_max_base2k(&preset, 19).unwrap();
-        let ntt = preset_with_max_base2k(&preset, 52).unwrap();
+        // At `N = 2^16` and `2^15`, the giant-step passes sum a few hundred products:
+        // NTT4x30 takes one bit above the nominal radix, FFT64 drops to 17.
+        assert_eq!(preset.max_backend_base2k::<NTT4x30Portable>(BOOTSTRAP_FAILURE_BITS), 53);
+        assert_eq!(preset.max_backend_base2k::<FFT64Portable>(BOOTSTRAP_FAILURE_BITS), 17);
+        let ntt = preset_for_backend::<NTT4x30Portable>(&preset).unwrap();
+        let fft = preset_for_backend::<FFT64Portable>(&preset).unwrap();
         let fft_dsize = if preset.log_n() == 15 { 2 } else { 7 };
+        assert_eq!((ntt.base2k(), ntt.dense_to_sparse_dsize()), (53, 1));
         assert_eq!(
             (fft.base2k(), fft.key_dsize(), fft.dense_to_sparse_dsize()),
-            (19, fft_dsize, 1)
-        );
-        assert_eq!(
-            (ntt.base2k(), ntt.key_dsize(), ntt.dense_to_sparse_dsize()),
-            (preset.base2k(), preset.key_dsize(), preset.dense_to_sparse_dsize())
+            (17, fft_dsize, 1)
         );
         for adapted in [fft, ntt] {
             assert_eq!(

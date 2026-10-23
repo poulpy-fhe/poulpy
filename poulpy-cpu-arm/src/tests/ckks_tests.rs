@@ -35,7 +35,7 @@ mod bootstrapping_presets {
     #[test]
     #[ignore = "full logN16 bootstrapping presets"]
     fn ntt4x30_neon_rayon() {
-        bootstrapping_presets_meet_precision::<crate::NTT4x30NeonRayon>(52);
+        bootstrapping_presets_meet_precision::<crate::NTT4x30NeonRayon>();
     }
 }
 

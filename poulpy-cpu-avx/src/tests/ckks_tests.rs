@@ -66,13 +66,13 @@ mod bootstrapping_presets {
     #[test]
     #[ignore = "runs a full logN16 bootstrap per preset; opt in with --ignored"]
     fn ntt4x30_presets_meet_precision() {
-        bootstrapping_presets_meet_precision::<crate::NTT4x30Avx>(52);
+        bootstrapping_presets_meet_precision::<crate::NTT4x30Avx>();
     }
 
     #[test]
     #[ignore = "runs a full logN16 bootstrap per preset; opt in with --ignored"]
     fn fft64_presets_meet_precision() {
-        bootstrapping_presets_meet_precision::<crate::FFT64Avx>(18);
+        bootstrapping_presets_meet_precision::<crate::FFT64Avx>();
     }
 }
 
