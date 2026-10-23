@@ -1,6 +1,5 @@
 //! The provided methods of [`BlasMatIntraImpl`], the transpose and the row and column shifts, each composed over the
-//! map hook [`BlasMatIntraImpl::blas_map_blocks_impl`] and poulpy-ckks's copy and addition; and of [`BlasMatMulImpl`],
-//! `blas_matmul` over both hot preparations and the prepared product. Each runs its validator before any write and, on
+//! map hook [`BlasMatIntraImpl::blas_map_blocks_impl`] and poulpy-ckks's copy and addition. Each runs its validator before any write and, on
 //! `Ok`, stamps the batch record of `res`, as the references do. They are public so that an override of a provided
 //! method can fall back to it; their scratch assertion over the keys a map looks up is shared with the references.
 
