@@ -26,11 +26,12 @@ Entry point for reviewing a poulpy diff: the one file a review needs to be given
 | touches `poulpy-bin-fhe/` | `bin-fhe.md` |
 | touches `poulpy-mhe/` | `mhe.md` |
 | touches `poulpy-blas/` | `blas.md` |
-| touches `poulpy-cpu-*/` (portable, rayon, avx, avx512, arm, oracle) | `backends.md` and `hal.md`, plus the file of every crate whose OEP trait or test suite the change implements, overrides or registers, and of the crate an example under `poulpy-cpu-portable/examples` demonstrates |
+| touches `poulpy-cpu-*/` (portable, rayon, avx, avx512, arm, oracle) | `backends.md` and `hal.md` (also its sections 6, 7, 9 and 11), plus the file of every crate whose OEP trait or test suite the change implements, overrides or registers, and of the crate an example under `poulpy-cpu-portable/examples` demonstrates |
 | adds or changes an OEP trait, OEP method, opt-in or registration macro, or public test suite, in any crate | `backends.md` (the backend side must follow) |
-| touches `poulpy-bench/` or any `benches/` directory, or makes a performance claim (PR description, CHANGELOG, README, gate constant) | `bench.md` |
-| touches `.github/` | `hal.md` section 11, `ckks.md` sections 15.1 and 15.4, `backends.md` sections 11 and 13.7, `bench.md` section 4 |
+| touches `poulpy-bench/` or any `benches/` directory, or makes a performance claim (PR description, CHANGELOG, README, `docs/performance.md`, gate constant) | `bench.md` |
+| touches `.github/` | these sections alone, picking no file: `hal.md` section 11, `ckks.md` sections 15.1 and 15.4, `backends.md` sections 11 and 13.7, `bench.md` section 4 |
 | touches a crate's manifest, README or `docs/` directory | that crate's file |
+| touches `docs/bootstrapping.md` | `ckks.md` |
 
 ## 3. Sections read whenever a file is picked
 
@@ -70,7 +71,7 @@ Each cell lists the sections to read in that file for that kind of change, on to
 | Defect fix | 11 | 13.4 | 15.3 | 11 | 9 | 11 | 13 |
 | CI workflows and scripts | 11 | - | 15.1, 15.4 | - | - | - | 11, 13.7 |
 | Performance: fused paths, gates, algorithm choices, benches | 5 | - | 8 | 5 | - | 6 | 10, 11 |
-| Unsafe code, raw pointers, parallelism | 7, 9 | - | - | 5 | - | 8 | 5.2, 8 |
+| Unsafe code, raw pointers, parallelism | 7, 9, 11 | - | - | 5 | - | 8 | 5.2, 8 |
 
 ## 5. Topics
 

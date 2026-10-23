@@ -108,7 +108,7 @@ Read with `docs/review/REVIEW.md`; this file adds the rules specific to `poulpy-
 
 ## 9. Plaintexts and encoding
 
-- **Plaintexts by slot count.** A message of `m` slots is allocated with `ckks_pt_vec_alloc(m, base2k, k)`, at degree `2m` on the standard ring and `m` on the conjugate-invariant ring, its slots repeated up to `MIN_DEGREE`, and plaintext operands carry the `IntPolyInfos` bound (`docs/review/workspace.md` sections 2 and 12).
+- **Plaintexts by slot count.** A message of `m` slots is allocated with `ckks_pt_vec_alloc(m, base2k, k)`, at degree `2m` on the standard ring and `m` on the conjugate-invariant ring, panicking below `MIN_DEGREE`, and plaintext operands carry the `IntPolyInfos` bound (`docs/review/workspace.md` sections 2 and 12).
 - **Plaintext operand checks.** Before any write, a `_pt_vec` operation runs `ensure_base2k_match`, `ensure_plaintext_degree_embeds(op, ct_n, pt_n, BE::MIN_DEGREE)` and `ensure_plaintext_alignment`, and a `_pt_const` one, with no degree check, runs `ensure_base2k_match`, `ensure_plaintext_coeff_in_range` for each index against its own operand's degree (`"ciphertext"`, `"plaintext"`) and `ensure_plaintext_alignment`.
 - **One value per coefficient.** Encoders and decoders take exactly one value per plaintext coefficient or `ckks_slots_of_degree(n)` planar `[re | im]` slots (`2m` scalars for `m` slots), returning an error for any other count and never spreading values at a gap.
 - **Quantization rejects before writing.** Every encoding path, overrides included, quantizes through `ckks_quantize` or `ckks_quantize_i64`, never an `as` cast, rejecting a non-finite value or one outside the codec range (`i64` while `log_delta + log_budget <= 63`, else `i128`) before any write, and keeps the preset metadata, narrowing only the slot kind with `meet`.
@@ -181,7 +181,7 @@ Read with `docs/review/REVIEW.md`; this file adds the rules specific to `poulpy-
   - the `ckks_parity_ci_*` lists unless a bound, direct or through an OEP supertrait, needs `Ring = Standard`;
   - the standard and invariant rank-2 lists if rank-generic;
   - the `f32` lists, where kept, for encoding or DFT-matrix generation at `F`, never PaCo or SHIP encoding.
-- **CI tokens.** A check meant for the native AVX-512 lane (tokens `ckks_parity`, `determinism`) or the manual NEON step (`ckks_parity`), no emulated run selecting CKKS tests, is a parity helper registered under a `ckks_parity_[ci_]<backend>_<case>` module or a fixture test whose path contains `determinism` (`docs/review/workspace.md` section 16).
+- **CI tokens.** A check meant for the native AVX-512 lane (tokens `ckks_parity`, `determinism`) or the manual NEON step (`ckks_parity`), no SDE run selecting CKKS tests, is a parity helper registered under a `ckks_parity_[ci_]<backend>_<case>` module or a fixture test whose path contains `determinism` (`docs/review/workspace.md` section 16).
 
 ### 15.2. Parity
 
