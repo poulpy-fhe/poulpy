@@ -139,6 +139,48 @@ poulpy_ckks::ckks_encryption_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
+// The families of the conjugate-invariant ring, as `NTT4x30CIPortable` registers them.
+poulpy_ckks::ckks_parity_test_suite! {
+    mod ckks_parity_ci_f64,
+    backend_ref = poulpy_cpu_portable::NTT4x30CIPortable,
+    backend_test = super::GpuCI,
+    scalar = f64,
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
+    tests = {
+        arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
+        multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
+        rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+        plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
+        encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
+        slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+    }
+}
+
+poulpy_ckks::ckks_parity_test_suite! {
+    mod ckks_parity_ci_quad,
+    backend_ref = poulpy_cpu_portable::NTT4x30CIPortable,
+    backend_test = super::GpuCI,
+    scalar = poulpy_ckks::Quad,
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
+    tests = {
+        arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
+        multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
+        rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+        plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
+        encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
+        slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+    }
+}
+
+poulpy_ckks::ckks_encryption_parity_test_suite! {
+    mod ckks_parity_ci_encryption,
+    backend_ref = poulpy_cpu_portable::test_suite::ControlledSamplingFFT64CIPortable,
+    backend_test = super::GpuCI,
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
+}
+
 /// The bootstrapping presets at full size: keys generated and inputs
 /// encrypted by the portable client, context compiled, keys prepared and
 /// bootstrap evaluated on the device.
