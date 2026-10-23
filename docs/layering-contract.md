@@ -83,4 +83,4 @@ macro is named after its OEP family (`GLWEAddImpl`:
 | poulpy-ckks | `<op>_impl` | `CKKS<Family>Reference<BE>` | `pub(crate)`, with public fallbacks in `oep::defaults` | `impl_ckks_<family>_reference!`, no umbrella |
 | poulpy-bin-fhe | the API name | free functions `<op>_reference` | `pub(crate) fn <op>_derived` | `impl_bin_fhe_<op>_reference!`, `impl_bin_fhe_<op>_derived!`, group umbrellas, `impl_bin_fhe_reference_full!` |
 | poulpy-mhe | the API name | `<Thing>MHEProtocolReference<BE>`, `<PatType>Reference<BE>` | `pub(crate) fn <op>_derived` | `impl_mhe_<stem>_reference!`, `impl_mhe_reference_full!` |
-| poulpy-blas | `blas_<op>_impl` | `BlasMat<Family>Reference<BE>` | `#[doc(hidden)] pub fn blas_<op>_derived` | `impl_blas_<family>_reference!`, `impl_blas_reference_full!`; `impl_blas_matmul_reference!` also replaces the provided `blas_matmul` |
+| poulpy-blas | `blas_<op>_impl` | `BlasMat<Family>Reference<BE>` | `#[doc(hidden)] pub fn blas_<op>_derived` | `impl_blas_<family>_reference!`, `impl_blas_reference_full!` |

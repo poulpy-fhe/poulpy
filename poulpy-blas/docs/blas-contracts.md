@@ -19,19 +19,19 @@ changes bits.
 |---|---|---|
 | `BlasMatInterImpl` | `blas_rotate`, `blas_sum` | |
 | `BlasMatIntraImpl` | the map hook `blas_map_blocks_impl` | `blas_transpose`, `blas_rotate_rows`, `blas_rotate_cols`, over the hook |
-| `BlasMatMulImpl` | `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, `blas_matmul_prepared`, `blas_matmul_pt_right`, `blas_matmul_pt_left` | `blas_matmul`, over both hot preparations and the prepared product |
+| `BlasMatMulImpl` | `blas_matmul`, `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, `blas_matmul_prepared`, `blas_matmul_pt_right`, `blas_matmul_pt_left` | |
 | `BlasJklsImpl` | the JKLS kernel `blas_jkls_block_impl`, one output block of the prepared product | |
 
 Each operation's `_tmp_bytes` query belongs to the same family. `BlasImpl`
 aggregates the four families as a test bound; it has a blanket implementation
 and is never implemented directly.
 
-The provided methods call the backend's selected methods: the transpose and
-both shifts call its map hook, and `blas_matmul` its preparations and prepared
-product. So an override of the hook or of the kernel reaches every operation
-built on it. The provided bodies are public in `poulpy_blas::oep::derived`, as
-`blas_transpose_derived`, `blas_rotate_rows_derived`,
-`blas_rotate_cols_derived` and `blas_matmul_derived` with their
+The provided methods, the transpose and both shifts, call the backend's
+selected map hook, and the references of the products call its hook and its
+JKLS kernel. So an override of the hook or of the kernel reaches every
+operation built on it. The provided bodies are public in
+`poulpy_blas::oep::derived`, as `blas_transpose_derived`,
+`blas_rotate_rows_derived` and `blas_rotate_cols_derived` with their
 `_tmp_bytes_derived` queries, so an override of a provided method can fall
 back to the provided body, for both the call and its query.
 
@@ -59,9 +59,9 @@ APIs, so a backend's CKKS and core overrides remain effective inside them.
 cold preparations call the backend's map hook, and the reference prepared
 product, like the reference `blas_matmul`, calls it for the terms of a hot
 operand, then its JKLS kernel. So `impl_blas_matmul_reference!` needs the intra
-and JKLS families. It overrides the provided `blas_matmul` with
-`BlasMatMulReference::blas_matmul_reference`, the same product on the grids
-read in place, without the preparations' copies, under the provided query.
+and JKLS families. The reference `blas_matmul` is the reference prepared
+product of two hot operands, bit for bit, on the grids read in place, without
+the preparations' copies.
 
 ## Wiring a backend crate
 
@@ -321,9 +321,9 @@ layouts and keys it receives, which may differ from the reference's; the
 reference asserts its bound on entry and panics before any write when it falls
 short, for a call that looks up a key. An override that needs other scratch
 reports it in its own query, and every operation over it follows: the provided
-queries call the selected implementations' queries, the provided `blas_matmul`
-the largest of both hot preparations' queries and the prepared product's on
-the layouts they give.
+queries call the selected implementations' queries, and the reference
+`blas_matmul` query is the largest of both reference hot preparations' queries
+and the reference prepared product's on the layouts they give.
 
 The queries read layouts (`BlasGridInfos`, `CKKSCtBounds`, `GGLWEInfos`), never
 ciphertext data: the prepared product's query receives the prepared operands,
