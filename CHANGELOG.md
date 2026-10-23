@@ -260,6 +260,7 @@
 - `docs/layering-contract.md` states the layering rules that `core-contracts.md` restated, and the `# Canonical flag` doc of `GLWE` names the exception of a documented canonical precondition.
 - The hoisted baby steps of a linear transformation lay their input out once per class of keys that read the same operand, whole-limb digits or one digit width over one digit count, where a key set mixing classes was evaluated rotation by rotation, laying the input out and transforming it again for each.
   Outputs are unchanged; `test_glwe_hoisted_baby_rotations_match_automorphism` also checks key sets off a limb boundary, their coarser views and one mixing three widths.
+- Implement `TransferInto` for `GLWECIKey`, the conversion keys of a CI bootstrap.
 
 ### `poulpy-ckks`
 
@@ -416,6 +417,9 @@
   They refuse, in this order and before any write, a window past the slots of `res`'s degree or a mean of `Integer` slots (`InvalidOperand`), a key missing at `min(res.k, a.k)` (`MissingAutomorphismKey`), a copy or division past the budget (`InsufficientHomomorphicCapacity`) and less scratch than their query (`CKKSError::Internal`).
   The test suite adds `test_inner_sum_aligned` and `test_inner_sum_assign`, also in the rank-2 suite, `test_inner_sum_smaller_output`, `test_inner_sum_window_error`, `test_inner_sum_integer_error`, `test_inner_sum_missing_key_error`, `test_inner_sum_budget_error`, `test_inner_sum_scratch_error`, `test_inner_sum_below_module_degree`, `test_add_many_normalize_after`, `test_add_many_error` and, in `conjugate_invariant_ckks_test_suite!`, `ckks_ci_inner_sum`; `TestContextSharedModule` also requires `GLWEMaskFill`.
   **Breaking:** `CKKSImpl` requires `CKKSInnerSumImpl`: a backend registering the CKKS families one by one adds `impl_ckks_inner_sum_derived_full!`.
+- Add `BootstrappingPlan::generate_keys` and `BootstrappingPlan::generate_keys_ci`, which generate the keys the compiled context generates from the plan alone, with `DFTPlan::first_factor_rotations`, and `BootstrappingKeySet::transfer_and_prepare` and `transfer_and_prepare_ci`, which move a key set to the evaluating backends and prepare it there one key at a time. `BootstrappingContext::generate_keys_ci` requires a `'static` CI backend.
+- **Breaking:** `test_suite::presets::BootstrappingPresetRun<BE, BC = BE>` takes a client backend `BC` that samples the secret, generates the keys from the plan, encrypts and decrypts, while `BE` compiles the context, prepares the keys and bootstraps; the CI presets run on the twins of both backends (`CIBackend`), and the evaluating module's bounds are `PresetRunModule`. `bootstrap` synchronizes the evaluating backend; `bootstrap_queued` and `synchronize` split the two steps.
+- Add `test_suite::presets::bootstrapping_presets_meet_precision_with_client`; `bootstrapping_presets_meet_precision` and `small_s2c_preset_meets_precision` require `PresetRunModule`, `HostStaged` and `CKKSDFTOps`.
 
 ### `poulpy-bin-fhe`
 
@@ -488,6 +492,7 @@
 ### `poulpy-cpu-arm`
 
 - Add the full-size bootstrapping preset precision test for `NTT4x30NeonRayon`.
+- Add the full-size bootstrapping preset precision test of `NTT4x30Neon` and `NTT4x30CINeon` with keys and ciphertexts from an `NTT4x30Portable` client.
 
 ### `poulpy-bench`
 
@@ -496,6 +501,7 @@
 - **Breaking:** `hal::suites::bench_normalization` requires `VecZnxGadgetDecompose` and `VecZnxGadgetDecomposeTmpBytes`, and also sweeps `vec_znx_gadget_decompose` over the 27-limb key-switch columns of a bootstrap at radix 53 (`GadgetDecomposeSweepParams`, `default_bench_params_gadget_decompose`).
 - Every timed closure of the HAL, core and scheme runners ends with `Module::synchronize`, so a backend that queues its work is timed to completion.
 - The HAL, core and CKKS runners and suites no longer require host-resident buffers.
+- Add `bench_ckks_bootstrapping_with_client`; `bench_ckks_bootstrapping` requires `PresetRunModule`, `HostStaged` and `CKKSDFTOps`.
 
 ### Dependencies
 

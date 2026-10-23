@@ -383,6 +383,18 @@ impl DFTPlan {
         self.num_factors() - usize::from(self.first_factor_on_raise)
     }
 
+    /// Slot rotations of the first factor's diagonals, in increasing order, on a
+    /// ring of degree `2^log_n`: one giant step each when the factor is left to
+    /// the modulus raise ([`Self::with_first_factor_on_raise`]).
+    pub fn first_factor_rotations(&self, log_n: usize) -> Vec<i64> {
+        let slots = 1i64 << (self.log_slots() + usize::from(self.is_sparse_repack(log_n)));
+        let rotations: BTreeSet<i64> = self.diagonal_indexes(log_n)[0]
+            .iter()
+            .map(|index| index.rem_euclid(slots))
+            .collect();
+        rotations.into_iter().collect()
+    }
+
     /// Applies the transform bit-reversed (and expects bit-reversed inputs).
     /// Default `false`.
     pub fn with_bit_reversed(mut self, bit_reversed: bool) -> Self {
