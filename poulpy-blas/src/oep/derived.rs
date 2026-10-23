@@ -1,6 +1,5 @@
 //! The provided methods of [`BlasMatIntraImpl`], the transpose and the row and column shifts, each composed over the
-//! map hook [`BlasMatIntraImpl::blas_map_blocks_impl`] and poulpy-ckks's copy and addition; and of [`BlasMatMulImpl`],
-//! `blas_matmul` over both hot preparations and the prepared product. Each runs its validator before any write and, on
+//! map hook [`BlasMatIntraImpl::blas_map_blocks_impl`] and poulpy-ckks's copy and addition. Each runs its validator before any write and, on
 //! `Ok`, stamps the batch record of `res`, as the references do. They are public so that an override of a provided
 //! method can fall back to it; their scratch assertion over the keys a map looks up is shared with the references.
 
@@ -15,15 +14,14 @@ use poulpy_core::layouts::{
     GGLWEInfos, GGLWELayout, GLWEInfos, GLWEToBackendMut, GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, TorusPrecision,
     prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWETensorKeyPreparedBackendRef},
 };
-use poulpy_hal::layouts::{Backend, Module, PrepareHint, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use super::{BlasMatIntraImpl, BlasMatMulImpl};
+use super::BlasMatIntraImpl;
 use crate::layouts::{
-    BlasContext, BlasContextInfos, BlasGrid, BlasGridInfos, BlasGridMut, BlasMatMulOperandPreparedFactory,
+    BlasContext, BlasContextInfos, BlasGrid, BlasGridInfos, BlasGridMut,
     context::shift_maps,
-    matmul_operand::{left_operand_layout, right_operand_layout},
     validate::{assert_scratch, ensure_rotation, lt_uses},
-    validate_blas_matmul, validate_blas_rotate_cols, validate_blas_rotate_rows, validate_blas_transpose,
+    validate_blas_rotate_cols, validate_blas_rotate_rows, validate_blas_transpose,
 };
 
 /// The provided `blas_transpose_tmp_bytes_impl`: the hook's scratch for the transpose of every block of `a` into a
@@ -269,71 +267,6 @@ where
     for (t, dst) in res.blocks_mut().iter_mut().enumerate() {
         module.ckks_add_into(dst, &halves[2 * src(t, q)], &halves[2 * src(t, q + 1) + 1], scratch)?;
     }
-    Ok(())
-}
-
-/// The provided `blas_matmul_tmp_bytes_impl`: the larger of both hot preparations' scratch and the prepared product's
-/// on the layouts they give.
-#[doc(hidden)]
-pub fn blas_matmul_tmp_bytes_derived<BE, R, A, B, T, K>(
-    module: &Module<BE>,
-    res: &R,
-    a: &A,
-    b: &B,
-    ctx: &BlasContext<BE>,
-    tsk: &T,
-    atk: &K,
-) -> usize
-where
-    BE: BlasMatMulImpl,
-    R: BlasGridInfos,
-    A: BlasGridInfos,
-    B: BlasGridInfos,
-    T: GGLWEInfos,
-    K: GGLWEInfos,
-{
-    let hot = PrepareHint::OneShot;
-    let (left, right) = (
-        left_operand_layout(a, &ctx.maps, hot),
-        right_operand_layout(b, &ctx.maps, hot),
-    );
-    BE::blas_matmul_prepare_left_tmp_bytes_impl(module, a, ctx, atk, hot)
-        .max(BE::blas_matmul_prepare_right_tmp_bytes_impl(module, b, ctx, atk, hot))
-        .max(BE::blas_matmul_prepared_tmp_bytes_impl(
-            module, res, &left, &right, ctx, tsk, atk,
-        ))
-}
-
-/// The provided `blas_matmul_impl`, `res = a b`: both operands allocated hot and prepared into, then their prepared
-/// product under `ctx`.
-#[allow(clippy::too_many_arguments)]
-#[doc(hidden)]
-pub fn blas_matmul_derived<BE, R, A, B, T, K>(
-    module: &Module<BE>,
-    res: &mut R,
-    a: &A,
-    b: &B,
-    ctx: &BlasContext<BE>,
-    tsk: &T,
-    atk: &K,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
-where
-    BE: BlasMatMulImpl,
-    R: BlasGridMut<BE>,
-    A: BlasGrid<BE>,
-    B: BlasGrid<BE>,
-    T: GetTensorKey<BE> + Sync,
-    K: GetAutomorphismKey<BE> + Sync,
-{
-    let batch = validate_blas_matmul(module, &*res, a, b, ctx, tsk, atk)?;
-    let hot = PrepareHint::OneShot;
-    let mut left = module.blas_matmul_left_alloc_from_infos(&left_operand_layout(a, &ctx.maps, hot));
-    BE::blas_matmul_prepare_left_impl(module, &mut left, a, ctx, atk, scratch)?;
-    let mut right = module.blas_matmul_right_alloc_from_infos(&right_operand_layout(b, &ctx.maps, hot));
-    BE::blas_matmul_prepare_right_impl(module, &mut right, b, ctx, atk, scratch)?;
-    BE::blas_matmul_prepared_impl(module, res, &left, &right, ctx, tsk, atk, scratch)?;
-    res.set_mat_slots(batch);
     Ok(())
 }
 

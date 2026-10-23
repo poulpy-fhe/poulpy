@@ -585,11 +585,29 @@ pub trait BlasMatMulReference<BE: Backend> {
         T: GetTensorKey<BE> + Sync,
         K: GetAutomorphismKey<BE> + Sync;
 
+    /// The larger of both reference hot preparations' queries and the reference prepared product's on the layouts they
+    /// give.
+    fn blas_matmul_tmp_bytes_reference<R, A, B, T, K>(
+        &self,
+        res: &R,
+        a: &A,
+        b: &B,
+        ctx: &BlasContext<BE>,
+        tsk: &T,
+        atk: &K,
+    ) -> usize
+    where
+        BE: BlasJklsImpl + BlasMatIntraImpl,
+        Self: CKKSMulOps<BE>,
+        R: BlasGridInfos,
+        A: BlasGridInfos,
+        B: BlasGridInfos,
+        T: GGLWEInfos,
+        K: GGLWEInfos;
+
     /// `res = a b`: [`Self::blas_matmul_prepared_reference`] of two hot operands of `a` and `b`, bit for bit, reading
-    /// the blocks of `a` and `b` in place, without the copies of the hot preparations. It asserts the reference's
-    /// composition of the `blas_matmul` query, the largest of both reference hot preparations' queries and the
-    /// reference prepared product's on the layouts they give, over the keys it looks up: the provided query under
-    /// [`crate::impl_blas_matmul_reference!`], so that query stays exact.
+    /// the blocks of `a` and `b` in place, without the copies of the hot preparations. It asserts
+    /// [`Self::blas_matmul_tmp_bytes_reference`] over the keys it looks up.
     #[allow(clippy::too_many_arguments)]
     fn blas_matmul_reference<R, A, B, T, K>(
         &self,
@@ -930,6 +948,34 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         )?;
         res.set_mat_slots(batch);
         Ok(())
+    }
+
+    fn blas_matmul_tmp_bytes_reference<R, A, B, T, K>(
+        &self,
+        res: &R,
+        a: &A,
+        b: &B,
+        ctx: &BlasContext<BE>,
+        tsk: &T,
+        atk: &K,
+    ) -> usize
+    where
+        BE: BlasJklsImpl + BlasMatIntraImpl,
+        Self: CKKSMulOps<BE>,
+        R: BlasGridInfos,
+        A: BlasGridInfos,
+        B: BlasGridInfos,
+        T: GGLWEInfos,
+        K: GGLWEInfos,
+    {
+        let hot = PrepareHint::OneShot;
+        let (left, right) = (
+            left_operand_layout(a, &ctx.maps, hot),
+            right_operand_layout(b, &ctx.maps, hot),
+        );
+        self.blas_matmul_prepare_left_tmp_bytes_reference(a, ctx, atk, hot)
+            .max(self.blas_matmul_prepare_right_tmp_bytes_reference(b, ctx, atk, hot))
+            .max(self.blas_matmul_prepared_tmp_bytes_reference(res, &left, &right, ctx, tsk, atk))
     }
 
     fn blas_matmul_reference<R, A, B, T, K>(
