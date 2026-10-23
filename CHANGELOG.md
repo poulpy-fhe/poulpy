@@ -356,6 +356,7 @@
   The finalizations of `GGLWEPatCompressed` and `GGLWEPat` normalize the whole matrix with `mat_znx_normalize_assign` (the bodies) and `mat_znx_normalize` (one call per output column), and their scratch queries are `mat_znx_normalize_tmp_bytes`.
   The public key share finalization normalizes the bodies with one `mat_znx_normalize` and fills each mask from its seed, where it called `glwe_pat_compressed_finalize` per entry; its scratch query is `mat_znx_normalize_tmp_bytes`.
   **Breaking:** the supertraits of `GLWEPublicKeyMHEProtocolImpl` are `HalMatZnxImpl` and `poulpy_core::oep::EncryptionImpl`, where it had `GLWEPatCompressedImpl`.
+- **Fix:** `mhe_ggsw_share_finalize` checks the key's `max_input_k` against the share's precision before any write, instead of `dnum * k_digit`, which a key with `k_aux < k_digit` exceeds.
 
 ### `poulpy-blas`
 

@@ -101,7 +101,8 @@ impl GLWEInfos for GLWELayout {
 /// [`GLWE::is_canonical`] states that the data is in normalized form.
 /// Normalizing operations set it, additions and subtractions clear it, digit
 /// permutations keep the source's, lowering `k` clears it. Operations that read
-/// the digits through a DFT normalize a flag-clear operand first. Serialization
+/// the digits through a DFT normalize a flag-clear operand first, unless their
+/// API asserts a documented canonical precondition. Serialization
 /// rejects a flag-clear GLWE, so a loaded GLWE is flagged canonical; equality
 /// ignores the flag.
 /// Only a `GLWE` stores it: the GLWE views of GGLWE and GGSW rows, tensors and

@@ -50,8 +50,8 @@ unnecessary.
 
 In particular, CKKS metadata is observable: `k`, radix, rank, `log_delta`,
 `log_sparsity`, and `SlotsKind` must agree, and `log_budget` remains derived from
-`k - log_delta`. Preserve the normalized/unnormalized typestate boundary and the
-core canonical-at-`k` representation. Prepared objects and encoding plans belong
+`k - log_delta`. Preserve the core canonical flag and
+canonical-at-`k` representation. Prepared objects and encoding plans belong
 to their backend; compare their operation results rather than opaque storage. A
 preparation's `PrepareHint` may select its representation, never the bits of the
 products that read it.

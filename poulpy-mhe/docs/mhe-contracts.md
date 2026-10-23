@@ -40,8 +40,9 @@ same trait.
 
 ## Normalization
 
-Aggregation adds limbs without normalizing; finalization, the only
-normalization, produces canonical digits. Headroom for chains of additions
+Generation normalizes, so fresh shares are canonical. Aggregation adds limbs
+without normalizing; finalization normalizes the aggregate into canonical
+digits. Headroom for chains of additions
 follows the
 [radix failure estimates](../../docs/base2k-failure-probability.md).
 
