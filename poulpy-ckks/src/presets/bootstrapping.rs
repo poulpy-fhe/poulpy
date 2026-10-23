@@ -64,8 +64,9 @@ use crate::numerics::CKKSFloat;
 use crate::{
     CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, Scale, SlotsKind,
     layouts::{
-        BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, DFTOutputFormat, DFTPlan,
-        DFTType, EncapsulationKeysLayout, EvalModPlan, EvalModRing, EvalModType, SparseSecretEncapsulation,
+        BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, CIConversion,
+        DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout, EvalModPlan, EvalModRing, EvalModType,
+        SparseSecretEncapsulation,
     },
     polynomial::SplitStrategy,
     reference::first_factor::{first_factor_diagonal_growth, first_factor_small_bits, first_factor_work},
@@ -310,7 +311,8 @@ impl BootstrappingPreset {
     /// output limb sums, without normalizing, the product of every diagonal of a
     /// factor with a baby rotation, over the diagonal's limbs, and the key switch
     /// of every giant step, over the operand limbs. A first factor on the raise
-    /// sums one key switch per diagonal over fewer limbs, which that count covers.
+    /// sums one key switch per diagonal over fewer limbs, which that count covers,
+    /// and a folded `u` runs the last CoeffsToSlots pass twice.
     /// An output limb of each of EvalMod's ciphertext products, as many as
     /// [`EvalModPlan::max_ciphertext_products`] bounds, sums a product per limb,
     /// one of them a square. On the CI ring EvalMod runs on `BCI`, and the two
@@ -378,6 +380,14 @@ impl BootstrappingPreset {
                 products = products.max(diagonals * diagonal_limbs + giants * operand);
                 passes += 1;
             }
+        }
+        // A folded `u` runs the last CoeffsToSlots factor twice, on the same diagonals.
+        if let EvalModRing::ConjugateInvariant {
+            pre: CIConversion::Folded,
+            ..
+        } = self.plan.eval_mod_ring()
+        {
+            passes += 1;
         }
         (products, passes)
     }
@@ -608,8 +618,8 @@ pub fn n16_d35_k685_p19_s2c_ffr_ci() -> Result<BootstrappingPreset> {
         c2s_first_factor_on_raise: true,
         // `u` carries the overflow of the raise, `v` only the message.
         eval_mod_ring: EvalModRing::ConjugateInvariant {
-            pre_log_delta: 46,
-            post_log_delta: 38,
+            pre: CIConversion::Product { log_delta: 46 },
+            post: CIConversion::Product { log_delta: 38 },
         },
         c2s_log_delta: 48,
         s2c_schedule: &[(3, 4), (4, 32), (4, 512), (4, 8192)],
@@ -1321,6 +1331,22 @@ mod tests {
             (keys.tensor_key.n.as_usize(), trace.n.as_usize(), embed.n.as_usize()),
             (1 << 16, 1 << 17, 1 << 17)
         );
+    }
+
+    #[test]
+    fn folding_u_narrows_n16_d35_k685_p19_s2c_ffr_ci() {
+        let preset = n16_d35_k685_p19_s2c_ffr_ci().unwrap();
+        let folded = preset
+            .with_eval_mod_ring(EvalModRing::ConjugateInvariant {
+                pre: CIConversion::Folded,
+                post: CIConversion::Product { log_delta: 38 },
+            })
+            .unwrap();
+        // The product by `u` no longer takes its 46 bits.
+        assert_eq!((folded.input_k(), folded.output_k(), folded.bootstrap_k()), (160, 685, 1337));
+        assert_eq!(folded.plan().eval_mod_ring().consumed_bits(), 38);
+        // The rotation keys follow the narrower raised width: 5533 MiB against 6845.
+        assert_eq!(key_set_bytes(&folded).map(|bytes| bytes >> 20), [4923, 99, 3, 248, 260]);
     }
 
     #[test]

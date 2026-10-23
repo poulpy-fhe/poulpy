@@ -1,7 +1,7 @@
 use crate::{CKKSCompositionError, CKKSResult as Result, ckks_ensure, ckks_log_delta, layouts::eval_mod::EvalModPlan};
 use poulpy_core::layouts::{GLWEPlaintextInfos, SetGLWEPlaintextInfos};
 use poulpy_core::{
-    GLWECIEmbed, GLWECITrace, GLWECopy, GLWEKeyswitch, GLWEShift, GLWESwitchDegree,
+    GLWECIEmbed, GLWECITrace, GLWECopy, GLWEKeyswitch, GLWERotate, GLWEShift, GLWESwitchDegree, LinearTransformationPrepared,
     layouts::{
         BSGSMeta, GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
         GetAutomorphismKey, GetTensorKey, LWEInfos, LinearTransformation, Rank, SetBSGSMeta, SetK, TorusPrecision,
@@ -17,13 +17,14 @@ use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSCopyOps,
-        CKKSDFTOps, CKKSEvalModOps, CKKSImagOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
+        CKKSDFTOps, CKKSEvalModOps, CKKSImagOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSPolynomialEvaluationOps,
+        CKKSPow2Ops, CKKSSubOps, LinearTransformationBabySteps,
     },
     eval_lut::{ckks_eval_lut, ckks_eval_lut_binary, ckks_eval_lut_from_basis, ckks_lut_power_basis},
     layouts::{
         BootstrappingCIKeys, BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys,
-        BootstrappingPipeline, CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, EncodedLut, EncodedLutKind, EvalModRing,
-        EvalModType, ScratchArenaTakeCKKS,
+        BootstrappingPipeline, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSModuleAlloc, CKKSPlaintextOwned, EncodedLut,
+        EncodedLutKind, EvalModRing, EvalModType, ScratchArenaTakeCKKS,
     },
     oep::{CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl},
 };
@@ -1422,8 +1423,16 @@ pub fn ckks_bootstrap_ci_tmp_bytes_reference<BE, BCI, C1, C2, F>(
 where
     BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
     BCI: Backend,
-    Module<BE>:
-        GLWEBytesOf<BE> + CKKSDFTOps<BE> + CKKSPow2Ops<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + GLWECITrace<BE> + CKKSMulOps<BE>,
+    Module<BE>: GLWEBytesOf<BE>
+        + CKKSDFTOps<BE>
+        + CKKSPow2Ops<BE>
+        + GLWEShift<BE>
+        + GLWEKeyswitch<BE>
+        + GLWECITrace<BE>
+        + CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + GLWERotate<BE>,
     Module<BCI>: GLWEBytesOf<BCI> + CKKSEvalModOps<BCI>,
     C1: CKKSCtBounds,
     C2: CKKSCtBounds,
@@ -1445,8 +1454,22 @@ where
         + module
             .glwe_keyswitch_tmp_bytes(&embedded, &embedded, trace_key)
             .max(module.glwe_ci_trace_tmp_bytes(&boot_layout, &embedded));
-    let conversions = module
-        .ckks_mul_pt_vec_tmp_bytes(&embedded, &embedded, &eval_mod_ci.pre)
+    let pre = match &eval_mod_ci.pre.0 {
+        crate::layouts::bootstrapping::CIPreForm::Product(u) => module.ckks_mul_pt_vec_tmp_bytes(&embedded, &embedded, u),
+        // The outputs of the two folded factors beside their evaluation, then the odd
+        // one's embedding beside its rotation.
+        crate::layouts::bootstrapping::CIPreForm::Folded { .. } => {
+            let mut factors = 0;
+            for atk in &keys_layout.rotation_key_layouts() {
+                factors = factors
+                    .max(module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&boot_layout, atk))
+                    .max(module.ckks_eval_linear_transformation_tmp_bytes(&boot_layout, atk));
+            }
+            2 * BE::scratch_aligned(module.glwe_bytes_of_from_infos(&boot_layout))
+                + factors.max(embedded_bytes + module.glwe_rotate_tmp_bytes().max(module.ckks_add_tmp_bytes(embedded.size())))
+        }
+    };
+    let conversions = pre
         .max(module.ckks_mul_pt_vec_tmp_bytes(&embedded, &embedded, &eval_mod_ci.post))
         .max(module.glwe_keyswitch_tmp_bytes(&embedded, &embedded, embed_key))
         .max(trace);
@@ -1456,6 +1479,41 @@ where
         BE::scratch_aligned(module.glwe_bytes_of_from_infos(&boot_layout)) + linear.max(embedded_bytes + conversions),
         2 * ci_bytes + ci.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, &eval_mod_ci.eval_mod, &keys_layout.tensor_key),
     )
+}
+
+/// `u·z(X²)` into `embedded`, of degree `2N`, from the input `w` of the last
+/// CoeffsToSlots factor folded with `u` ([`CIPre::Folded`]): `a(X²) + X·b(X²)`,
+/// with `a` and `b` the even and odd factors on `w`, which share its baby steps.
+fn ci_folded_pre<BE, R, H>(
+    module: &Module<BE>,
+    embedded: &mut R,
+    w: &CKKSCiphertextViewMut<'_, BE>,
+    [even, odd]: [&LinearTransformationPrepared<BE>; 2],
+    keys: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: CKKSLinearTransformationOps<BE> + GLWERotate<BE> + CKKSAddOps<BE> + GLWESwitchDegree<BE>,
+    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    H: GetAutomorphismKey<BE>,
+{
+    let mut babies = LinearTransformationBabySteps::alloc(module, even.baby_steps(), w);
+    module.ckks_prepare_linear_transformation_baby_steps(&mut babies, w, keys, scratch)?;
+    let (mut a, scratch_1) = scratch.borrow().take_ckks_ciphertext_scratch(w, w.meta());
+    let (mut b, mut scratch_1) = scratch_1.take_ckks_ciphertext_scratch(w, w.meta());
+    module.ckks_eval_linear_transformation_into(&mut a, w, &babies, even, keys, &mut scratch_1)?;
+    module.ckks_eval_linear_transformation_into(&mut b, w, &babies, odd, keys, &mut scratch_1)?;
+    let (mut odd_wide, mut scratch_2) = scratch_1.take_ckks_ciphertext_scratch(embedded, b.meta());
+    odd_wide.set_k(b.k());
+    module.glwe_switch_degree(&mut odd_wide, &b);
+    // `X·b(X²)` fills the odd coefficients, which `a(X²)` leaves at zero.
+    module.glwe_rotate_assign(1, &mut odd_wide, &mut scratch_2);
+    embedded.set_meta(a.meta());
+    embedded.set_k(a.k());
+    module.glwe_switch_degree(embedded, &a);
+    module.ckks_add_assign(embedded, &odd_wide, &mut scratch_2)?;
+    Ok(())
 }
 
 /// The S2C-first bootstrap with EvalMod once on the conjugate-invariant ring
@@ -1486,9 +1544,12 @@ where
         + GLWEKeyswitch<BE>
         + GLWECITrace<BE>
         + GLWECIEmbed<BE>
+        + GLWERotate<BE>
+        + CKKSLinearTransformationOps<BE>
         + CKKSCopyOps<BE>
         + CKKSPow2Ops<BE>
         + CKKSMulOps<BE>
+        + CKKSAddOps<BE>
         + CKKSDFTOps<BE>
         + GLWESwitchDegree<BE>,
     Module<BCI>: CKKSEvalModOps<BCI>,
@@ -1574,13 +1635,20 @@ where
             ..boot_layout
         };
         let (mut embedded, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&wide_layout, z.meta());
-        embedded.set_k(z.k());
-        module.glwe_switch_degree(&mut embedded, &z);
 
         // `z(X²)` times `u`, traced onto the CI ring without halving: `2·Re(u·z)`, the
         // split EvalMod input. The CI ciphertexts are carved from `scratch_ci`; the
         // two backends share their buffers, so `module` writes and reads them.
-        module.ckks_mul_pt_vec_assign(&mut embedded, &eval_mod_ci.pre, &mut scratch)?;
+        match &eval_mod_ci.pre.0 {
+            crate::layouts::bootstrapping::CIPreForm::Product(u) => {
+                embedded.set_k(z.k());
+                module.glwe_switch_degree(&mut embedded, &z);
+                module.ckks_mul_pt_vec_assign(&mut embedded, u, &mut scratch)?;
+            }
+            crate::layouts::bootstrapping::CIPreForm::Folded { even, odd } => {
+                ci_folded_pre(module, &mut embedded, &z, [even, odd], keys.rotation_keys(), &mut scratch)?
+            }
+        }
         let meta = GLWEPlaintextMeta {
             slots: SlotsKind::Real,
             ..embedded.meta()

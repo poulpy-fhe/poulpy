@@ -28,7 +28,7 @@ use crate::{
         CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps,
     },
     layouts::{
-        BootstrappingContext, BootstrappingKeysLayout, BootstrappingPlan, CKKSCiphertextOwned, CKKSModuleAlloc,
+        BootstrappingContext, BootstrappingKeysLayout, BootstrappingPlan, CIConversion, CKKSCiphertextOwned, CKKSModuleAlloc,
         CKKSPlaintextOwned, EvalModRing,
     },
     presets::bootstrapping::{BootstrappingPreset, all},
@@ -349,13 +349,13 @@ where
         assert!(
             matches!(err.composition(), Some(CKKSCompositionError::MissingAutomorphismKey { .. })),
             "{}: expected a key refused at entry, got: {err}",
-            self.preset.name()
+            preset_label(&self.preset)
         );
         let (re, im) = self.precision();
         let preset = &self.preset;
         println!(
             "PRECISION backend={backend} preset={} base2k={} re_min={:.2}b re_avg={:.2}b im_min={:.2}b im_avg={:.2}b (advertised {}b)",
-            preset.name(),
+            preset_label(preset),
             preset.base2k(),
             re.min_log2_prec,
             re.avg_log2_prec,
@@ -367,7 +367,7 @@ where
         assert!(
             re.min_log2_prec >= advertised && im.min_log2_prec >= advertised,
             "preset {} advertises {advertised} bits but measured re_min={:.2} im_min={:.2}",
-            preset.name(),
+            preset_label(preset),
             re.min_log2_prec,
             im.min_log2_prec
         );
@@ -411,6 +411,18 @@ where
             EvalModRing::Standard => BootstrappingPresetRun::<BE>::setup_with_roundtrip(preset, index == 0).check(backend),
             _ => BootstrappingPresetRun::<BE>::setup_ci_with_roundtrip(preset, std::mem::take(&mut first_ci)).check(backend),
         }
+    }
+}
+
+/// The preset's name, marked when `u` is folded into CoeffsToSlots
+/// ([`CIConversion::Folded`]), which keeps the preset's name.
+pub fn preset_label(preset: &BootstrappingPreset) -> String {
+    match preset.plan().eval_mod_ring() {
+        EvalModRing::ConjugateInvariant {
+            pre: CIConversion::Folded,
+            ..
+        } => format!("{}+fold_u", preset.name()),
+        _ => preset.name().to_string(),
     }
 }
 
@@ -460,12 +472,14 @@ where
 
     let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
     BootstrappingPresetRun::<BE>::setup(preset.clone()).check(backend);
-    let ci = EvalModRing::ConjugateInvariant {
-        pre_log_delta: 46,
-        post_log_delta: 38,
-    };
     // Its keys, conversion keys included, go through their serialization.
-    BootstrappingPresetRun::<BE>::setup_ci_with_roundtrip(preset.with_eval_mod_ring(ci).unwrap(), true).check(backend);
+    for (pre, roundtrip) in [(CIConversion::Product { log_delta: 46 }, true), (CIConversion::Folded, false)] {
+        let ci = EvalModRing::ConjugateInvariant {
+            pre,
+            post: CIConversion::Product { log_delta: 38 },
+        };
+        BootstrappingPresetRun::<BE>::setup_ci_with_roundtrip(preset.with_eval_mod_ring(ci).unwrap(), roundtrip).check(backend);
+    }
 }
 
 /// The bootstrap with EvalMod on the conjugate-invariant ring refuses, before any
@@ -493,8 +507,8 @@ where
 {
     let standard = crate::presets::bootstrapping::insecure_n11_d35_k180_p20_s2c().unwrap();
     let ring = EvalModRing::ConjugateInvariant {
-        pre_log_delta: 46,
-        post_log_delta: 38,
+        pre: CIConversion::Product { log_delta: 46 },
+        post: CIConversion::Product { log_delta: 38 },
     };
     let preset = standard.with_eval_mod_ring(ring).unwrap();
     let n = preset.n() as u64;

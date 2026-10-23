@@ -40,7 +40,8 @@ use crate::{
         LinearTransformationPrepared, LtDiagonalMeta,
     },
     layouts::{
-        CKKSModuleAlloc, CKKSPlaintextOwned, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTPlan, DftDirection, DftFormat,
+        CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTPlan,
+        DftDirection, DftFormat,
     },
     oep::CKKSEncodingImpl,
     reference::dft::matrices::{DftScalar, gen_dft_matrices},
@@ -110,6 +111,53 @@ where
         .map_err(crate::CKKSError::from)?;
 
     Ok((plan, lts))
+}
+
+/// The last factor `M` of the transform `plan` describes at degree `2^log_n`,
+/// left-multiplied by each map of `scales` and encoded as that factor is: the
+/// factors `scale·M`, for a slot-wise product folded into it, in a matrix of
+/// `plan` to prepare as the others. `plan` is a resolved plan, such as the one a
+/// [`DFTMatrix`] stores.
+pub(crate) fn ckks_scaled_last_factors<BE, F>(
+    module: &Module<BE>,
+    base2k: Base2K,
+    plan: &DFTPlan,
+    log_n: usize,
+    scales: &[ComplexDiagonals<F>],
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<DFTMatrix<BE, crate::layouts::Encode, crate::layouts::Split>>
+where
+    BE: Backend,
+    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+    F: DftScalar + CKKSEncodingScalar,
+{
+    let last = gen_dft_matrices::<F>(plan, log_n)
+        .pop()
+        .expect("a DFT plan has at least one factor");
+    let strategy = LinearTransformationStrategy::Bsgs {
+        giant_step: plan
+            .schedule
+            .steps
+            .last()
+            .expect("a DFT plan has at least one factor")
+            .giant_step,
+    };
+    let factors = scales
+        .iter()
+        .map(|scale| {
+            crate::reference::ckks_encode_linear_transformation_from_diagonals::<BE, F>(
+                module,
+                base2k,
+                plan.coeffs_meta,
+                &scale.compose(&last),
+                strategy,
+                false,
+                scratch,
+            )
+        })
+        .collect::<core::result::Result<Vec<_>, ::anyhow::Error>>()
+        .map_err(crate::CKKSError::from)?;
+    Ok(DFTMatrix::from_factors(DFTMatrixFactors::new(plan.clone(), factors)))
 }
 
 /// Prepares an unprepared (host plaintext) [`DFTMatrix`] into its resident
