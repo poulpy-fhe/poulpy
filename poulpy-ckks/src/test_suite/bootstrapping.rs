@@ -240,6 +240,7 @@ where
                 scale: Scale::Log(log_delta),
                 slots: SlotsKind::Complex,
                 log_sparsity: 0,
+                slot_layout: SlotLayout::Full,
             },
             prec_log_budget: 8,
             hw: if encapsulated { 192 } else { EPHEMERAL_SECRET_WEIGHT },

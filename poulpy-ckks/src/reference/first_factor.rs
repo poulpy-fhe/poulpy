@@ -318,6 +318,7 @@ where
         scale: Scale::Log(src.log_delta() + scale_up),
         slots: src.slots(),
         log_sparsity: src.log_sparsity(),
+        slot_layout: src.slot_layout(),
     };
     let acc_size = gglwe_product_accumulation_output_size::<BE, _, _, _>(
         &layout(dst, k_large.div_ceil(base2k)),

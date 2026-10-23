@@ -33,15 +33,16 @@ use poulpy_hal::{
 };
 
 use super::helpers::{
-    PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, ckks_pt_cst_full, gen_atk, gen_sk,
-    gen_sk_with_raw, gen_tsk, upload_pt,
+    PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, ckks_pt_cst_full, ckks_spec, gen_atk,
+    gen_sk, gen_sk_with_raw, gen_tsk, upload_pt,
 };
 use crate::{
     CKKSInfos, CoeffsMeta, GLWEPlaintextInfos, GLWEPlaintextMeta, ReplicatedLayout, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{
-        CKKSAddOps, CKKSAffineOps, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSDecryptOps, CKKSDotProductOps,
-        CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSEvalModOps, CKKSLinearTransformationOps, CKKSModuleInfos,
-        CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSReplicatedBootstrapOps, CKKSReplicatedOps, CKKSRotateOps, CKKSSubOps,
+        CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSDecryptOps,
+        CKKSDotProductOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSEvalModOps, CKKSLinearTransformationOps,
+        CKKSModuleInfos, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSReplicatedBootstrapOps, CKKSReplicatedOps, CKKSRotateOps,
+        CKKSSubOps,
     },
     delegates::replicated::{wide_gather_trace, wide_onto_replicated},
     layouts::{
@@ -690,9 +691,11 @@ where
     let zero = vec![F::zero(); len];
     let x = encrypt_batch(params, module, &sk, slot_layout, (&xs, &zero), k, 1)?;
     let mut out = alloc_ct(params, module, k);
-    let s = &mut scratch.borrow();
     let base2k = params.base2k.into();
-    let coeff_meta = CoeffsMeta::from_delta_budget(LOG_DELTA, 10);
+    let coeff_prec = ckks_spec(params.n, params.base2k, LOG_DELTA, 10);
+    let coeff_meta = CoeffsMeta::from(coeff_prec);
+    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_all_ops_tmp_bytes(&x, &params.tsk_layout(), &coeff_prec));
+    let s = &mut scratch.borrow();
     let mut encoding = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(params.n / 2));
     let want: Vec<(F, F)> = match case {
         PolynomialCase::Monomial | PolynomialCase::Chebyshev => {
@@ -1475,7 +1478,7 @@ where
         &ctx,
         &key_layouts.automorphism_key,
         &key_layouts.tensor_key,
-        encapsulation.as_ref().map(|(d, s)| (d, s)),
+        encapsulation.as_ref().map(|(d, s)| (d, s.as_ref().unwrap())),
     ));
     let mut out = alloc_ct(&params, module, k_out);
     module.ckks_replicated_bootstrap_into(&mut out, &input, &ctx, &keys, &mut boot_scratch.borrow())?;

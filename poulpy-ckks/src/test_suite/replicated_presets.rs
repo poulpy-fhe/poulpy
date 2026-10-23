@@ -133,7 +133,7 @@ where
             &ctx,
             &keys_layout.automorphism_key,
             &keys_layout.tensor_key,
-            encapsulation.as_ref().map(|(d, s)| (d, s)),
+            encapsulation.as_ref().map(|(d, s)| (d, s.as_ref().unwrap())),
         );
         Self {
             preset,

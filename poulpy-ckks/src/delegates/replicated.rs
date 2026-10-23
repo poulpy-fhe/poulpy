@@ -22,7 +22,7 @@ use crate::{
         BootstrappingKeys, CKKSCiphertextViewMut, ReplicatedBootstrapping, ReplicatedConversion, ReplicatedTransform,
         ScratchArenaTakeCKKS,
     },
-    oep::CKKSEncapsulatedModUpImpl,
+    oep::{CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl},
     reference::bootstrapping::ckks_bootstrap_mod_up_from_mut,
 };
 
@@ -357,7 +357,7 @@ where
     Ok(())
 }
 
-impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSReplicatedBootstrapOps<BE> for Module<BE>
+impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSReplicatedBootstrapOps<BE> for Module<BE>
 where
     Module<BE>: CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>
@@ -536,6 +536,7 @@ where
                 &mut coeffs,
                 None,
                 plan.mod_up_extra_bits,
+                None,
                 keys,
                 &mut scratch,
             )?;

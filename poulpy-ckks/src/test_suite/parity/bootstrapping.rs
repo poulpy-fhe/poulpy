@@ -157,6 +157,7 @@ where
                 scale: Scale::Log(b),
                 slots: SlotsKind::Complex,
                 log_sparsity: 1,
+                slot_layout: SlotLayout::Full,
             },
         };
         let dst_layout = CKKSLayout {

@@ -462,11 +462,13 @@ impl ReplicatedBootstrapPlan {
             rank_in: Rank(1),
             rank_out: Rank(1),
             k_digit: digit,
+            k_offset: TorusPrecision(0),
         };
         let k_key = self.key_k(k_out);
         let one_limb = TorusPrecision(base2k.as_u32());
         BootstrappingKeysLayout {
             rotation_keys: BTreeMap::new(),
+            first_factor_key: None,
             automorphism_key: GLWEAutomorphismKeyLayout {
                 n,
                 base2k,
@@ -485,7 +487,7 @@ impl ReplicatedBootstrapPlan {
             },
             encapsulation: encapsulation.then(|| EncapsulationKeysLayout {
                 dense_to_sparse: switching(self.log_delta + self.eval_mod.log_msg_ratio, one_limb, base2k.as_usize() + 1),
-                sparse_to_dense: switching(self.k_boot(k_out), digit, k_aux),
+                sparse_to_dense: Some(switching(self.k_boot(k_out), digit, k_aux)),
             }),
         }
     }
@@ -676,6 +678,14 @@ impl<BE: Backend, F> ReplicatedBootstrapping<BE, F> {
             + GLWESwitchingKeyEncryptSk<BE>
             + GLWESecretSampling<BE>,
     {
+        assert!(
+            layout.first_factor_key.is_none(),
+            "replicated bootstrapping requires a separate first factor"
+        );
+        assert!(
+            layout.encapsulation.is_none_or(|keys| keys.sparse_to_dense.is_some()),
+            "replicated bootstrapping requires a sparse-to-dense key for encapsulation"
+        );
         let mut rotation_keys = HashMap::new();
         for gal in self.galois_elements(module) {
             let mut key = module.glwe_automorphism_key_alloc_from_infos(&layout.rotation_key(gal));
@@ -693,14 +703,15 @@ impl<BE: Backend, F> ReplicatedBootstrapping<BE, F> {
             *sparse.dist_mut() = Distribution::ENCAPSULATED("sparse-encapsulation");
             let mut dense_to_sparse = module.glwe_switching_key_alloc_from_infos(&encapsulation.dense_to_sparse);
             module.glwe_switching_key_encrypt_sk(&mut dense_to_sparse, sk, &sparse, source_xe, source_xa, scratch);
-            let mut sparse_to_dense = module.glwe_switching_key_alloc_from_infos(&encapsulation.sparse_to_dense);
+            let mut sparse_to_dense = module.glwe_switching_key_alloc_from_infos(&encapsulation.sparse_to_dense.unwrap());
             module.glwe_switching_key_encrypt_sk(&mut sparse_to_dense, &sparse, sk, source_xe, source_xa, scratch);
-            (dense_to_sparse, sparse_to_dense)
+            (dense_to_sparse, Some(sparse_to_dense))
         });
         BootstrappingKeySet {
             rotation_keys,
             tensor_key,
             encapsulation_keys,
+            first_factor_keys: HashMap::new(),
         }
     }
 }
