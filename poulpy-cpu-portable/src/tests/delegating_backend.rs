@@ -218,11 +218,13 @@ unsafe impl GLWETraceImpl for DelegatingFFT64Portable {
             k: a_infos.k(),
             rank: a_infos.rank(),
         };
-        // This test override allocates conversion storage on the heap.
-        let bytes = module
+        let mut bytes = module
             .glwe_shift_tmp_bytes(layout.size())
-            .max(module.glwe_normalize_tmp_bytes())
             .max(module.glwe_automorphism_tmp_bytes(&layout, &layout, key_infos));
+        if a_infos.base2k() != key_infos.base2k() {
+            // This test override allocates conversion storage on the heap.
+            bytes = bytes.max(module.glwe_normalize_tmp_bytes());
+        }
         Self::scratch_aligned(bytes) + TRACE_EXTRA_SCRATCH
     }
 
@@ -264,8 +266,6 @@ unsafe impl GLWETraceImpl for DelegatingFFT64Portable {
                 for &p in &rotations {
                     if normalize {
                         module.glwe_rsh(1, &mut work, &mut remaining.borrow());
-                    } else if !GLWE::is_canonical(work) {
-                        module.glwe_normalize_assign(&mut work, &mut remaining.borrow());
                     }
                     let key = keys.get_automorphism_key(p, work.k()).unwrap();
                     module.glwe_automorphism_add_assign(&mut work, &key, &mut remaining.borrow());

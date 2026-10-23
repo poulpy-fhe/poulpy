@@ -32,7 +32,8 @@
 
 ### CPU backends
 
-- `impl_cpu_core_defaults!` registers the core trace on both rings, where each standard backend registered it apart.
+- **Breaking:** `impl_cpu_core_defaults!` registers the core trace on both rings, where each standard backend registered it apart: an out-of-tree backend calling it drops its own `impl_glwe_trace_derived_full!`, which now conflicts.
+- `conjugate_invariant_core_test_suite!` also runs `test_glwe_trace_parity`.
 - Every conjugate-invariant backend type has a `max_base2k` model: each backend implements `MaxBase2k` once for both rings, where the conjugate-invariant types returned `None`.
 - The AVX-512 rank-one relinearization and the fused IFMA giant step refuse a key that does not cover their input, as the reference does.
 - The native CKKS encapsulated modulus raise (portable, AVX2, AVX-512, and their Rayon variants) and the fused IFMA giant step leave a key with a row offset to the reference, which refuses it, and the AVX-512 rank-one relinearization refuses one, instead of using it as an offset-free key.
@@ -224,8 +225,9 @@
 - Add `layouts::max_lazy_terms(base2k, coefficients)`, the most canonical digits a lazy sum holds before it must be normalized: the larger of the worst case `2^(63 - base2k)` and the average-case count whose Gaussian sum leaves the normalizer's domain `[-2^62, 2^62]` with probability at most `2^-128` over the coefficients, for independent centered uniform digits (`docs/base2k-failure-probability.md`).
 - **Breaking:** `GLWETrace` traces over a window of levels in either direction, summed or normalized: `glwe_trace` and `glwe_trace_assign` take `levels: Range<usize>`, `reverse` and `normalize` in place of `skip`, which was `skip..log2(n)`, forward and normalized, and `glwe_trace_galois_elements` takes the levels and the direction.
   Level 0 is the conjugation, on the standard ring only, and level `i` the rotation by `2^(i-1)` slots, so a full trace ends at `log2(n)` on the standard ring and at `log2(n) + 1` on the conjugate-invariant ring, whose backends now implement `GLWETraceImpl`, part of `impl_core_reference_full!`.
-  `reverse` visits the levels from the last down, each by its inverse element; summed, each level normalizes the running sum in place when its canonical flag is clear, and `glwe_trace_assign_tmp_bytes` covers that normalization.
-  The test suite adds `test_glwe_trace_sum`, and the trace parity covers summed and reversed windows.
+  An out-of-tree backend calling `impl_core_reference_full!` drops its own `impl_glwe_trace_derived_full!`, which now conflicts, and a hand-written `GLWETraceImpl` takes the new parameters.
+  `reverse` visits the levels from the last down, each by its inverse element, and a nonempty trace leaves its output canonical, summed or normalized.
+  The test suite adds `test_glwe_trace_sum` and `test_glwe_trace_parity`, which takes over the trace cases of `test_trace_packing_parity`, runs on both rings and covers summed and reversed windows: register it beside `test_trace_packing_parity`.
 
 ### `poulpy-ckks`
 

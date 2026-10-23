@@ -14,13 +14,16 @@ use crate::layouts::{
 /// full trace is `0..log2(n)` on the standard ring and `1..log2(n) + 1` on the conjugate-invariant ring, and
 /// `levels.start..` of it the trace onto a subring. Each visited level adds its conjugate, `x <- x + phi(x)`: with
 /// `normalize`, after dividing `x` by two with the shift operation's rounding, so the result is the average of the
-/// conjugates, the normalized trace; without, after normalizing a flag-clear `x` in place, so the result is their sum.
-/// `reverse` visits the levels from the last down to the first, each by its inverse Galois element, which replicates a
-/// value the forward sum would gather. An empty window copies the input using [`GLWECopy`] semantics; its assign form
-/// preserves the destination. Neither needs keys. Levels outside the ring's trace, or level 0 on the
-/// conjugate-invariant ring, panic before mutation.
+/// conjugates, the normalized trace; without, the result is their sum. `reverse` visits the levels from the last down
+/// to the first, each by its inverse Galois element, which replicates a value the forward sum would gather. The input
+/// is read at any canonical state, and a nonempty trace leaves `res` canonical at `res.k()`. An empty window copies
+/// the input using [`GLWECopy`] semantics; its assign form preserves the destination. Neither needs keys.
+///
+/// Panics, before writing `res`, if `levels` ends past the ring's trace, starts after its end, or holds level 0 on the
+/// conjugate-invariant ring.
 pub trait GLWETrace<BE: Backend> {
-    /// The Galois elements a trace over `levels` in the direction `reverse` looks up, at the module's degree.
+    /// The Galois elements a trace over `levels` in the direction `reverse` looks up, at the module's degree; panics on
+    /// the levels the trace refuses.
     fn glwe_trace_galois_elements(&self, levels: Range<usize>, reverse: bool) -> Vec<i64>;
 
     fn glwe_trace_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize

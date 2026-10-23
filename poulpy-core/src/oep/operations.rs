@@ -648,7 +648,7 @@ pub unsafe trait GLWENormalizeImpl: Backend {
 /// keys correctly, and keep all accesses within the described ciphertext and scratch regions.
 pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + GLWECopyImpl + GLWENormalizeImpl {
     fn glwe_trace_galois_elements(module: &Module<Self>, levels: Range<usize>, reverse: bool) -> Vec<i64> {
-        crate::oep::derived::structure::glwe_trace_galois_elements_derived(module, levels, reverse)
+        crate::oep::derived::structure::glwe_trace_galois_elements_derived::<Self, _>(module, levels, reverse)
     }
 
     fn glwe_trace_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize

@@ -3,7 +3,9 @@ use std::collections::HashMap;
 
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAddAssign, VecZnxAutomorphism, VecZnxNormalizeAssign, VecZnxSubAssign},
-    layouts::{GaloisElement, Module, ScratchOwned, VecZnxToBackendMut, VecZnxToBackendRef, ZnxViewMut},
+    layouts::{
+        CyclotomicOrder, GaloisElement, Module, Ring, ScratchOwned, Standard, VecZnxToBackendMut, VecZnxToBackendRef, ZnxViewMut,
+    },
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut, vec_znx_backend_ref},
 };
@@ -190,8 +192,9 @@ where
 }
 
 /// The summed trace over a window of levels, forward and reversed, decrypts to the same doublings applied to the
-/// plaintext, `x <- x + phi(x)` per visited level, within `2^levels` times the noise of one key switch. The forward
-/// elements are `5^(2^(i-1))` and the reversed ones their inverses, visited from the last level down.
+/// plaintext, `x <- x + phi(x)` per visited level, within `2^levels` times the noise of one key switch, on either ring.
+/// The forward elements are the conjugation on the standard ring, then `5^(2^(i-1))`, and the reversed ones their
+/// inverses, visited from the last level down.
 pub fn test_glwe_trace_sum<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
@@ -214,13 +217,20 @@ where
     let k: usize = 4 * base2k + 1;
     let n: usize = module.n();
     let log_n = module.log_n();
-    let order = 2 * n as i64;
+    let order = module.cyclotomic_order();
+    // The conjugate-invariant ring is fixed by the conjugation: its trace starts at level 1.
+    let first = usize::from(<BE::Ring as Ring>::CYCLOTOMIC_ORDER_FACTOR != Standard::CYCLOTOMIC_ORDER_FACTOR);
+    let end = order.ilog2() as usize - 1;
 
-    let forward = module.glwe_trace_galois_elements(0..log_n, false);
-    let reversed = module.glwe_trace_galois_elements(0..log_n, true);
-    assert_eq!(forward[0], -1, "level 0 is the conjugation");
-    for (i, &element) in forward.iter().enumerate().skip(1) {
-        assert_eq!(element, module.galois_element(1 << (i - 1)), "level {i}");
+    let forward = module.glwe_trace_galois_elements(first..end, false);
+    let reversed = module.glwe_trace_galois_elements(first..end, true);
+    for (level, &element) in (first..end).zip(&forward) {
+        let want = if level == 0 {
+            -1
+        } else {
+            module.galois_element(1 << (level - 1))
+        };
+        assert_eq!(element, want, "level {level}");
     }
     for (f, r) in forward.iter().rev().zip(&reversed) {
         assert_eq!(
@@ -248,12 +258,14 @@ where
     let mut source_xs: Source = Source::new([1u8; 32]);
     let mut source_xe: Source = Source::new([2u8; 32]);
     let mut source_xa: Source = Source::new([3u8; 32]);
+    let mut source_pt: Source = Source::new([4u8; 32]);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-        module.glwe_encrypt_sk_tmp_bytes(&glwe_infos)
-            | module.glwe_decrypt_tmp_bytes(&glwe_infos)
-            | module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&key_infos)
-            | module.glwe_trace_assign_tmp_bytes(&glwe_infos, &key_infos),
+        module
+            .glwe_encrypt_sk_tmp_bytes(&glwe_infos)
+            .max(module.glwe_decrypt_tmp_bytes(&glwe_infos))
+            .max(module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&key_infos)),
     );
+    let trace_bytes = module.glwe_trace_assign_tmp_bytes(&glwe_infos, &key_infos);
 
     let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&glwe_infos);
     module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
@@ -287,9 +299,9 @@ where
     for j in 0..pt.data.size() {
         pt.data.at_mut(0, j).fill(0);
     }
-    pt.data.at_mut(0, 0).iter_mut().for_each(|x| *x = source_xa.next_i64() & 0xF);
+    pt.data.at_mut(0, 0).iter_mut().for_each(|x| *x = source_pt.next_i64() & 0xF);
 
-    for (levels, reverse) in [(1..3, false), (1..3, true), (2..log_n, false), (0..2, true)] {
+    for (levels, reverse) in [(1..3, false), (1..3, true), (2..end, false), (first..end, true)] {
         let label = format!("levels={levels:?} reverse={reverse}");
         let mut want = upload_glwe_plaintext(module, &pt);
         let mut conjugate = upload_glwe_plaintext(module, &pt_template);
@@ -318,7 +330,14 @@ where
             &mut source_xa,
             &mut scratch.borrow(),
         );
-        module.glwe_trace_assign(&mut ct, levels.clone(), reverse, false, &auto_keys, &mut scratch.borrow());
+        module.glwe_trace_assign(
+            &mut ct,
+            levels.clone(),
+            reverse,
+            false,
+            &auto_keys,
+            &mut crate::test_suite::parity::poisoned_scratch::<BE>(trace_bytes).borrow(),
+        );
         let mut have = upload_glwe_plaintext(module, &pt_template);
         glwe_decrypt_checked(module, &ct, &mut have, &sk_dft, &mut scratch.borrow());
 

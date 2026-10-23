@@ -111,7 +111,6 @@ poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64AvxRayon, fft64);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(super::FFT64AvxRayon);
 #[cfg(feature = "enable-rayon")]
-#[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_glwe_ci_conversion_reference_full!(super::FFT64AvxRayon);
 #[cfg(feature = "enable-rayon")]
 poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30AvxRayon, ntt4x30);
@@ -125,7 +124,6 @@ poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30AvxRayon, ntt4x30);
 ::poulpy_core::impl_ggsw_rotate_derived_full!(super::NTT4x30AvxRayon);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(super::NTT4x30AvxRayon);
-#[cfg(feature = "enable-rayon")]
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_glwe_ci_conversion_reference_full!(super::NTT4x30AvxRayon);
 #[cfg(feature = "enable-rayon")]
