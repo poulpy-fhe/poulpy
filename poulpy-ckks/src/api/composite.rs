@@ -12,50 +12,55 @@ use crate::{
 
 /// Sum over a slice of ciphertexts.
 pub trait CKKSAddManyOps<BE: Backend> {
-    /// Scratch of [`Self::ckks_add_many_into`] into a destination of `res_size` limbs: the additions and the
-    /// normalizations.
-    fn ckks_add_many_tmp_bytes(&self, res_size: usize) -> usize;
+    /// Scratch of [`Self::ckks_add_many`] from terms of layout `a` into `res`: the additions, the normalizations and,
+    /// for one term, the copy.
+    fn ckks_add_many_tmp_bytes<R, A>(&self, res: &R, a: &A) -> usize
+    where
+        R: CKKSCtBounds,
+        A: CKKSCtBounds;
 
-    /// Computes `dst = inputs[0] + inputs[1] + … + inputs[n-1]`, adding the
-    /// inputs to `dst` from left to right, and normalizing `dst` in place, by
-    /// poulpy-core's `glwe_normalize_assign`, after every `normalize_after`
-    /// additions that another addition follows.
+    /// Computes `res = a[0] + a[1] + … + a[n-1]`, adding the terms to `res`
+    /// from left to right, and normalizing `res` in place, by poulpy-core's
+    /// `glwe_normalize_assign`, after every `normalize_after` additions that
+    /// another addition follows.
     ///
-    /// The sum is lazy, so `dst` leaves unnormalized unless it holds one
-    /// input. `normalize_after` bounds the canonical digits a coefficient of
-    /// `dst` accumulates to `normalize_after + 1` times the most an input
-    /// holds, one for a canonical input, which poulpy-core's `max_lazy_terms`
-    /// sizes for independent inputs; `usize::MAX` never normalizes.
+    /// The sum is lazy, so `res` leaves unnormalized unless it holds one
+    /// term. `normalize_after` bounds the canonical digits a coefficient of
+    /// `res` accumulates to `normalize_after + 1` times the most a term
+    /// holds, one for a canonical term, which poulpy-core's `max_lazy_terms`
+    /// sizes for independent terms; `usize::MAX` never normalizes.
     ///
     /// # Metadata
     ///
     /// Follows from repeated application of `ckks_add_into`:
     ///
     /// ```text
-    /// log_delta_out  = min over all inputs of log_delta
-    /// log_budget_out = min over all inputs of log_budget
+    /// log_delta_out  = min over all terms of log_delta
+    /// log_budget_out = min over all terms of log_budget
     /// ```
     ///
     /// No capacity is consumed.  The destination-capacity offset from the
     /// final write applies:
     ///
     /// ```text
-    /// offset         = max(0, result_k − dst.k())
+    /// offset         = max(0, result_k − res.k())
     /// log_budget_out = (min log_budget) − offset
     /// ```
     ///
-    /// Errors with `InvalidOperand` before any write if `inputs` is empty or `normalize_after` is 0, and panics before
-    /// any write with less scratch than [`Self::ckks_add_many_tmp_bytes`] reports for `dst`'s limbs.
-    fn ckks_add_many_into<Dst, Src>(
+    /// # Errors
+    ///
+    /// Before any write: `InvalidOperand` if `normalize_after` is 0 or `a` is empty, then `CKKSError::Internal` with
+    /// less scratch than [`Self::ckks_add_many_tmp_bytes`] reports for `res` and `a[0]`.
+    fn ckks_add_many<R, A>(
         &self,
-        dst: &mut Dst,
-        inputs: &[&Src],
+        res: &mut R,
+        a: &[&A],
         normalize_after: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds;
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds;
 }
 
 /// Fused multiply-accumulate: `dst += a * b`.

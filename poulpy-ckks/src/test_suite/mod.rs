@@ -332,7 +332,8 @@ macro_rules! ckks_backend_rank2_test_suite {
                 $crate::test_suite::rotate::test_rotate_aligned,
                 $rotations
             );
-            run_test!(inner_sum, $crate::test_suite::inner_sum::test_inner_sum);
+            run_test!(inner_sum_aligned, $crate::test_suite::inner_sum::test_inner_sum_aligned);
+            run_test!(inner_sum_assign, $crate::test_suite::inner_sum::test_inner_sum_assign);
             run_test!(conjugate_aligned, $crate::test_suite::conjugate::test_conjugate_aligned);
             run_test!(conjugate_assign, $crate::test_suite::conjugate::test_conjugate_assign);
         }
@@ -841,7 +842,33 @@ macro_rules! ckks_backend_test_suite {
                 add_many_normalize_after,
                 $crate::test_suite::add_many::test_add_many_normalize_after
             );
-            run_test!(inner_sum, $crate::test_suite::inner_sum::test_inner_sum);
+            run_test!(add_many_error, $crate::test_suite::add_many::test_add_many_error);
+            run_test!(inner_sum_aligned, $crate::test_suite::inner_sum::test_inner_sum_aligned);
+            run_test!(
+                inner_sum_smaller_output,
+                $crate::test_suite::inner_sum::test_inner_sum_smaller_output
+            );
+            run_test!(inner_sum_assign, $crate::test_suite::inner_sum::test_inner_sum_assign);
+            run_test!(
+                inner_sum_window_error,
+                $crate::test_suite::inner_sum::test_inner_sum_window_error
+            );
+            run_test!(
+                inner_sum_integer_error,
+                $crate::test_suite::inner_sum::test_inner_sum_integer_error
+            );
+            run_test!(
+                inner_sum_missing_key_error,
+                $crate::test_suite::inner_sum::test_inner_sum_missing_key_error
+            );
+            run_test!(
+                inner_sum_budget_error,
+                $crate::test_suite::inner_sum::test_inner_sum_budget_error
+            );
+            run_test!(
+                inner_sum_scratch_error,
+                $crate::test_suite::inner_sum::test_inner_sum_scratch_error
+            );
             run_test!(mul_add_ct_aligned, $crate::test_suite::mul_add::test_mul_add_ct_aligned);
             run_test!(
                 mul_add_ct_unaligned_dst,

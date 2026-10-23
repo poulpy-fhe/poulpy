@@ -16,7 +16,7 @@ use crate::Scale;
 use poulpy_core::layouts::SetGLWEPlaintextInfos;
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::HostStaged;
-use std::{f64::consts::TAU, fmt::Debug};
+use std::{cell::RefCell, collections::HashMap, f64::consts::TAU, fmt::Debug};
 
 use crate::{
     CKKSCompositionError, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos,
@@ -34,13 +34,14 @@ use crate::{
 };
 use num_traits::{Float, FromPrimitive, ToPrimitive};
 use poulpy_core::{
-    GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECIKeyEncryptSk, GLWEDecrypt, GLWEKeyswitch, GLWENormalize, GLWESub,
-    GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ScratchArenaTakeCore, TransferInto,
+    GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECIKeyEncryptSk, GLWEDecrypt, GLWEKeyswitch, GLWEMaskFill, GLWENormalize,
+    GLWESub, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ScratchArenaTakeCore, TransferInto,
     layouts::{
         BackendGLWESecret, Base2K, Degree, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory,
-        GLWECIEmbedKeyPrepared, GLWECIKeyPreparedFactory, GLWECITraceKeyPrepared, GLWELayout, GLWESecretPreparedFactory,
-        GLWESecretToBackendRef, GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory, GLWETensorKeyPrepared,
-        GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision, prepared::GLWESecretPrepared,
+        GLWECIEmbedKeyPrepared, GLWECIKeyPreparedFactory, GLWECITraceKeyPrepared, GLWEInfos, GLWELayout,
+        GLWESecretPreparedFactory, GLWESecretToBackendRef, GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory,
+        GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, GetAutomorphismKey, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWESecretPrepared},
     },
 };
 
@@ -194,6 +195,7 @@ pub trait TestContextSharedModule<BE: Backend>:
     + CKKSDotProductOps<BE>
     + GLWEAutomorphism<BE>
     + GLWEDecrypt<BE>
+    + GLWEMaskFill<BE>
     + GLWENormalize<BE>
     + GLWESub<BE>
     + GLWESecretPreparedFactory<BE>
@@ -233,6 +235,7 @@ impl<BE: Backend, M> TestContextSharedModule<BE> for M where
         + CKKSDotProductOps<BE>
         + GLWEAutomorphism<BE>
         + GLWEDecrypt<BE>
+        + GLWEMaskFill<BE>
         + GLWENormalize<BE>
         + GLWESub<BE>
         + GLWESecretPreparedFactory<BE>
@@ -537,6 +540,32 @@ where
     module.ckks_ciphertext_alloc_from_glwe_infos(&layout)
 }
 
+/// A ciphertext of `k` bits filled with digits other than any result, labelled like `like`, or unlabelled below its
+/// `log_delta`, where no label fits: a destination whose refused or overwritten content a test can tell apart.
+pub(crate) fn dirty_ct<BE: Backend<ZnxWord = i64>>(
+    module: &Module<BE>,
+    like: &CKKSCiphertextOwned<BE>,
+    k: usize,
+) -> CKKSCiphertextOwned<BE>
+where
+    Module<BE>: GLWEMaskFill<BE>,
+{
+    let layout = CKKSLayout {
+        glwe_layout: GLWELayout {
+            n: like.n(),
+            base2k: like.base2k(),
+            k: k.into(),
+            rank: like.rank(),
+        },
+        meta: if k >= like.log_delta() {
+            like.meta()
+        } else {
+            GLWEPlaintextMeta::default()
+        },
+    };
+    super::parity::helpers::fixture_ciphertext(module, &layout, 7)
+}
+
 // ─── plaintext upload / download ─────────────────────────────────────────────
 
 /// Uploads a host-side plaintext to a backend of the same ring.
@@ -747,6 +776,37 @@ where
     let mut atk_prepared = module.glwe_automorphism_key_prepared_alloc_from_infos(&atk_infos);
     module.glwe_automorphism_key_prepare(&mut atk_prepared, &atk, scratch);
     atk_prepared
+}
+
+/// Key set that records the Galois element and precision of each lookup.
+pub(crate) struct QueryLog<K> {
+    keys: HashMap<i64, K>,
+    seen: RefCell<Vec<(i64, TorusPrecision)>>,
+}
+
+impl<K> QueryLog<K> {
+    pub(crate) fn new(keys: HashMap<i64, K>) -> Self {
+        Self {
+            keys,
+            seen: RefCell::new(Vec::new()),
+        }
+    }
+
+    /// The lookups recorded since the last call.
+    pub(crate) fn take(&self) -> Vec<(i64, TorusPrecision)> {
+        self.seen.take()
+    }
+}
+
+impl<BE: Backend, K: GLWEAutomorphismKeyPreparedToBackendRef<BE>> GetAutomorphismKey<BE> for QueryLog<K> {
+    fn lookup_automorphism_key(
+        &self,
+        p: i64,
+        k: TorusPrecision,
+    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        self.seen.borrow_mut().push((p, k));
+        self.keys.get_automorphism_key(p, k)
+    }
 }
 
 /// Generates a prepared rank-1 GLWE key-switching key from `sk_in` to `sk_out`,
