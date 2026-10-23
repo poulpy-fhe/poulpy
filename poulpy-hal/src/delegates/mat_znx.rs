@@ -1,5 +1,5 @@
 use crate::{
-    api::{MatZnxAddAssign, MatZnxNormalize, MatZnxNormalizeAssign, MatZnxNormalizeTmpBytes},
+    api::{MatZnxAddAssign, MatZnxCopy, MatZnxNormalize, MatZnxNormalizeAssign, MatZnxNormalizeTmpBytes},
     layouts::{Backend, MatZnxBackendMut, MatZnxBackendRef, Module, ScratchArena},
     oep::HalMatZnxImpl,
 };
@@ -19,6 +19,13 @@ impl_mat_znx_delegate!(
     MatZnxAddAssign<B>,
     fn mat_znx_add_assign(&self, res: &mut MatZnxBackendMut<'_, B>, a: &MatZnxBackendRef<'_, B>) {
         B::mat_znx_add_assign(self, res, a);
+    }
+);
+
+impl_mat_znx_delegate!(
+    MatZnxCopy<B>,
+    fn mat_znx_copy(&self, res: &mut MatZnxBackendMut<'_, B>, res_col: usize, a: &MatZnxBackendRef<'_, B>, a_col: usize) {
+        B::mat_znx_copy(self, res, res_col, a, a_col);
     }
 );
 

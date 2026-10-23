@@ -127,7 +127,11 @@ packing, the LWE conversions and the GGLWE and GGSW key operations refuse an
 input wider than the key's `GGLWELayout::max_input_k`, before any write. A
 caller drops the bits below by narrowing the input first (`SetK::set_k`). A
 key switching the rows of another key covers their width,
-`dnum * k_digit + k_aux`, guard included, so a key never covers its own layout.
+`k_offset + dnum * k_digit + k_aux`, guard included, so a key never covers its
+own layout. It covers a copy of that key at fewer digits, `gglwe_copy`
+(`ggsw_copy` for a GGSW), whose rows round at
+`k_offset + dnum' * k_digit + k_aux`; the `_assign` operations switch the copy
+in place.
 
 `GetAutomorphismKey::get_automorphism_key` and `GetTensorKey::get_tensor_key`
 return `CoreError::GGLWEKeyUse` for a key that does not cover the width asked

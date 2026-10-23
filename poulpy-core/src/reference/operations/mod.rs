@@ -10,8 +10,10 @@
 //! in-place (`res = op(res, a)`) variants. In-place variants may require
 //! a scratch buffer.
 
+mod gadget;
 mod glwe;
 mod glwe_mul_plain_sum;
 
+pub use gadget::*;
 pub use glwe::*;
 pub use glwe_mul_plain_sum::*;

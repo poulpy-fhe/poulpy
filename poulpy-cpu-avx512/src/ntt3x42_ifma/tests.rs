@@ -28,6 +28,7 @@ mod ntt3x42_ifma_tests {
             test_vec_znx_add_matches_reference => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_matches_reference,
             test_vec_znx_add_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_assign,
             test_mat_znx_add_assign => poulpy_hal::test_suite::mat_znx::test_mat_znx_add_assign,
+            test_mat_znx_copy => poulpy_hal::test_suite::mat_znx::test_mat_znx_copy,
             test_mat_znx_normalize => poulpy_hal::test_suite::mat_znx::test_mat_znx_normalize,
             test_vec_znx_add_scalar_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_scalar_assign,
             test_vec_znx_sub => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub,
