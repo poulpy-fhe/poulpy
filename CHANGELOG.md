@@ -345,6 +345,7 @@
 - **Behaviour:** `glwe_prepare` checks the rank, degree, limbs, precision and radix of its destination and its scratch before carving, where it normalized a flag-clear source into the scratch first, and `gglwe_to_ggsw_key_prepare` checks the key count before its scratch.
 - **Behaviour:** `lwe_encrypt_sk` and `lwe_decrypt` check the ciphertext dimension against the secret's, and `glwe_decrypt` the ciphertext rank against the secret's, in every build, where they did so only with debug assertions.
 - **Behaviour:** the core suites run each call on an arena of exactly its query, where the arena of `test_suite::poisoned_scratch` was padded to the backend's alignment, and `test_suite::assert_wipes_scratch` checks those bytes.
+- Implement `TransferInto` for `GLWECIKey`, the conversion keys of a CI bootstrap.
 
 ### `poulpy-ckks`
 
@@ -508,6 +509,9 @@
   Each double-angle step but the last subtracts a constant from the square instead of doubling it and subtracting one, and the last step adds the square to `f1` or subtracts it from `f1`.
   `EncodedLut::consumed_bits` and `BootstrappingPlan::functional_bootstrap_k` drop by the LUT's coefficient scale, and outputs change in their low bits at the same precision within about 1 bit (FFT64 oracle, input scale 40 bits, degree 31, `log_interval_reduction` 3 to 5).
   **Breaking:** `CKKSBootstrappingReference::ckks_functional_bootstrap_reference` requires `CKKSNegOps` instead of `CKKSAffineOps`, so an out-of-tree backend that registers the CKKS families one by one implements `CKKSNegImpl`.
+- Add `BootstrappingPlan::generate_keys` and `BootstrappingPlan::generate_keys_ci`, which generate the keys the compiled context generates from the plan alone, with `DFTPlan::first_factor_rotations`, and `BootstrappingKeySet::transfer_and_prepare` and `transfer_and_prepare_ci`, which move a key set to the evaluating backends and prepare it there one key at a time. `BootstrappingContext::generate_keys_ci` requires a `'static` CI backend.
+- **Breaking:** `test_suite::presets::BootstrappingPresetRun<BE, BC = BE>` takes a client backend `BC` that samples the secret, generates the keys from the plan, encrypts and decrypts, while `BE` compiles the context, prepares the keys and bootstraps; the CI presets run on the twins of both backends (`CIBackend`), and the evaluating module's bounds are `PresetRunModule`. `bootstrap` synchronizes the evaluating backend; `bootstrap_queued` and `synchronize` split the two steps.
+- Add `test_suite::presets::bootstrapping_presets_meet_precision_with_client`; `bootstrapping_presets_meet_precision` and `small_s2c_preset_meets_precision` require `PresetRunModule`, `HostStaged` and `CKKSDFTOps`.
 
 ### `poulpy-bin-fhe`
 
@@ -612,6 +616,7 @@
 ### `poulpy-cpu-arm`
 
 - Add the full-size bootstrapping preset precision test for `NTT4x30NeonRayon`.
+- Add the full-size bootstrapping preset precision test of `NTT4x30Neon` and `NTT4x30CINeon` with keys and ciphertexts from an `NTT4x30Portable` client.
 
 ### `poulpy-bench`
 
@@ -623,6 +628,7 @@
 - **Breaking:** `hal::suites::bench_normalization` requires `VecZnxGadgetDecompose` and `VecZnxGadgetDecomposeTmpBytes`, and also sweeps `vec_znx_gadget_decompose` over the 27-limb key-switch columns of a bootstrap at radix 53 (`runner_vec_znx_gadget_decompose`, `GadgetDecomposeSweepParams`, `default_bench_params_gadget_decompose`).
 - Every timed closure of the HAL, core and scheme runners ends with `Module::synchronize`, so a backend that queues its work is timed to completion.
 - The HAL, core and CKKS runners and suites no longer require host-resident buffers.
+- Add `bench_ckks_bootstrapping_with_client`; `bench_ckks_bootstrapping` requires `PresetRunModule`, `HostStaged` and `CKKSDFTOps`.
 
 ### Dependencies
 
