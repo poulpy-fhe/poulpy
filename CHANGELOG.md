@@ -280,6 +280,7 @@
 - **Breaking:** `test_suite::presets::bootstrapping_presets_meet_precision` takes no fixture radix: each preset runs at the radix `test_suite::presets::preset_for_backend` selects for a failure probability of `2^-128` per bootstrap (`BOOTSTRAP_FAILURE_BITS`).
   That radix is 53 on NTT4x30 (52 before), 17 on FFT64 (18 before, which the model only admits at `2^-64`), and 56 on NTT3x42 (52 before).
   A preset with EvalMod on the CI ring runs at 52 on NTT4x30, as before, and at 14 on FFT64, whose model of that ring takes less.
+- The raise that applies the first `CoeffsToSlots` factor prepares the raised ciphertext once for all its diagonals instead of once per product, through `glwe_prepare_left`, `glwe_prepare_right` and `glwe_mul_prepared_plain_sum`, with the same outputs.
 - **Breaking:** `impl_ckks_bootstrapping_reference!` requires `CKKSModUpFirstFactorImpl` (`impl_ckks_mod_up_first_factor_reference!`) beside `CKKSEncapsulatedModUpImpl`; `BootstrappingKeysLayout`, `BootstrappingKeySet` and `BootstrappingKeysPrepared` gain the first-factor key fields; `BootstrappingContext::generate_keys` requires `VecZnxAutomorphism`.
 - `reference::first_factor` exposes `first_factor_work`, `first_factor_small_bits` and `first_factor_diagonal_growth`, the widths a first-factor key is laid out from.
 - The encapsulated ModUp takes a sparse-to-dense key with a row offset (`k_offset` of `poulpy-core`): its switch is the raise, from the raised ciphertext at its own width, integer part included, with no zero-padded copy and no transform of zero limbs.
