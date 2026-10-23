@@ -5,27 +5,27 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use crate::{CKKSCtBounds, SetCKKSInfos, api::CKKSInnerSumOps, oep::CKKSInnerSumImpl};
 
 impl<BE: Backend + CKKSInnerSumImpl> CKKSInnerSumOps<BE> for Module<BE> {
-    fn ckks_inner_sum_into_tmp_bytes<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
+    fn ckks_inner_sum_galois_elements(&self, log_batch: usize, log_count: usize) -> Vec<i64> {
+        BE::ckks_inner_sum_galois_elements(self, log_batch, log_count)
+    }
+
+    fn ckks_replicate_galois_elements(&self, log_batch: usize, log_count: usize) -> Vec<i64> {
+        BE::ckks_replicate_galois_elements(self, log_batch, log_count)
+    }
+
+    fn ckks_inner_sum_tmp_bytes<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
         K: GGLWEInfos,
     {
-        BE::ckks_inner_sum_into_tmp_bytes_impl(self, res, a, key)
+        BE::ckks_inner_sum_tmp_bytes(self, res, a, key)
     }
 
-    fn ckks_inner_sum_assign_tmp_bytes<R, K>(&self, res: &R, key: &K) -> usize
-    where
-        R: CKKSCtBounds,
-        K: GGLWEInfos,
-    {
-        BE::ckks_inner_sum_assign_tmp_bytes_impl(self, res, key)
-    }
-
-    fn ckks_inner_sum_into<Dst, Src, H>(
+    fn ckks_inner_sum<R, A, H>(
         &self,
-        dst: &mut Dst,
-        src: &Src,
+        res: &mut R,
+        a: &A,
         log_batch: usize,
         log_count: usize,
         normalize: bool,
@@ -33,16 +33,16 @@ impl<BE: Backend + CKKSInnerSumImpl> CKKSInnerSumOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_inner_sum_into_impl(self, dst, src, log_batch, log_count, normalize, keys, scratch)
+        BE::ckks_inner_sum(self, res, a, log_batch, log_count, normalize, keys, scratch)
     }
 
-    fn ckks_inner_sum_assign<Dst, H>(
+    fn ckks_inner_sum_assign<R, H>(
         &self,
-        dst: &mut Dst,
+        res: &mut R,
         log_batch: usize,
         log_count: usize,
         normalize: bool,
@@ -50,58 +50,41 @@ impl<BE: Backend + CKKSInnerSumImpl> CKKSInnerSumOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_inner_sum_assign_impl(self, dst, log_batch, log_count, normalize, keys, scratch)
+        BE::ckks_inner_sum_assign(self, res, log_batch, log_count, normalize, keys, scratch)
     }
 
-    fn ckks_replicate_into_tmp_bytes<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
-    where
-        R: CKKSCtBounds,
-        A: CKKSCtBounds,
-        K: GGLWEInfos,
-    {
-        BE::ckks_replicate_into_tmp_bytes_impl(self, res, a, key)
-    }
-
-    fn ckks_replicate_assign_tmp_bytes<R, K>(&self, res: &R, key: &K) -> usize
-    where
-        R: CKKSCtBounds,
-        K: GGLWEInfos,
-    {
-        BE::ckks_replicate_assign_tmp_bytes_impl(self, res, key)
-    }
-
-    fn ckks_replicate_into<Dst, Src, H>(
+    fn ckks_replicate<R, A, H>(
         &self,
-        dst: &mut Dst,
-        src: &Src,
+        res: &mut R,
+        a: &A,
         log_batch: usize,
         log_count: usize,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_replicate_into_impl(self, dst, src, log_batch, log_count, keys, scratch)
+        BE::ckks_replicate(self, res, a, log_batch, log_count, keys, scratch)
     }
 
-    fn ckks_replicate_assign<Dst, H>(
+    fn ckks_replicate_assign<R, H>(
         &self,
-        dst: &mut Dst,
+        res: &mut R,
         log_batch: usize,
         log_count: usize,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_replicate_assign_impl(self, dst, log_batch, log_count, keys, scratch)
+        BE::ckks_replicate_assign(self, res, log_batch, log_count, keys, scratch)
     }
 }

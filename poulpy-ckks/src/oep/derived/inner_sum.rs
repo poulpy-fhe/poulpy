@@ -9,24 +9,43 @@ use poulpy_core::{
         prepared::GLWEAutomorphismKeyPreparedBackendRef,
     },
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Module, ScratchArena};
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSResult as Result, SetCKKSInfos, SlotsKind,
     api::{CKKSCopyOps, CKKSModuleInfos, CKKSPow2Ops},
+    ckks_ensure,
     error::checked_log_budget_sub,
     oep::CKKSInnerSumImpl,
 };
 
-pub(crate) fn ckks_inner_sum_assign_tmp_bytes_derived<BE: CKKSInnerSumImpl, R, K>(module: &Module<BE>, res: &R, key: &K) -> usize
-where
-    R: CKKSCtBounds,
-    K: GGLWEInfos,
-{
-    module.glwe_trace_assign_tmp_bytes(res, key)
+pub(crate) fn ckks_inner_sum_galois_elements_derived<BE: CKKSInnerSumImpl>(
+    module: &Module<BE>,
+    log_batch: usize,
+    log_count: usize,
+) -> Vec<i64> {
+    let sum = Sum::inner(log_batch, log_count, false);
+    assert!(
+        sum.fits(module),
+        "ckks_inner_sum_galois_elements: the window exceeds the slot count"
+    );
+    module.glwe_trace_galois_elements(sum.levels(), sum.reverse)
 }
 
-pub(crate) fn ckks_inner_sum_into_tmp_bytes_derived<BE: CKKSInnerSumImpl, R, A, K>(
+pub(crate) fn ckks_replicate_galois_elements_derived<BE: CKKSInnerSumImpl>(
+    module: &Module<BE>,
+    log_batch: usize,
+    log_count: usize,
+) -> Vec<i64> {
+    let sum = Sum::replicate(log_batch, log_count);
+    assert!(
+        sum.fits(module),
+        "ckks_replicate_galois_elements: the window exceeds the slot count"
+    );
+    module.glwe_trace_galois_elements(sum.levels(), sum.reverse)
+}
+
+pub(crate) fn ckks_inner_sum_tmp_bytes_derived<BE: CKKSInnerSumImpl, R, A, K>(
     module: &Module<BE>,
     res: &R,
     a: &A,
@@ -39,17 +58,17 @@ where
 {
     module
         .ckks_copy_tmp_bytes(res, a)
-        .max(ckks_inner_sum_assign_tmp_bytes_derived(module, res, key))
+        .max(module.glwe_trace_assign_tmp_bytes(res, key))
 }
 
 #[expect(
     clippy::too_many_arguments,
     reason = "the sum's operands, batch, count and normalization, keys and scratch"
 )]
-pub(crate) fn ckks_inner_sum_into_derived<BE: CKKSInnerSumImpl, Dst, Src, H>(
+pub(crate) fn ckks_inner_sum_derived<BE: CKKSInnerSumImpl, R, A, H>(
     module: &Module<BE>,
-    dst: &mut Dst,
-    src: &Src,
+    res: &mut R,
+    a: &A,
     log_batch: usize,
     log_count: usize,
     normalize: bool,
@@ -57,17 +76,16 @@ pub(crate) fn ckks_inner_sum_into_derived<BE: CKKSInnerSumImpl, Dst, Src, H>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-    Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+    R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    A: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetAutomorphismKey<BE>,
 {
-    let sum = Sum::inner(log_batch, log_count, normalize);
-    sum_into(module, dst, src, sum, keys, scratch)
+    sum_into(module, res, a, Sum::inner(log_batch, log_count, normalize), keys, scratch)
 }
 
-pub(crate) fn ckks_inner_sum_assign_derived<BE: CKKSInnerSumImpl, Dst, H>(
+pub(crate) fn ckks_inner_sum_assign_derived<BE: CKKSInnerSumImpl, R, H>(
     module: &Module<BE>,
-    dst: &mut Dst,
+    res: &mut R,
     log_batch: usize,
     log_count: usize,
     normalize: bool,
@@ -75,42 +93,42 @@ pub(crate) fn ckks_inner_sum_assign_derived<BE: CKKSInnerSumImpl, Dst, H>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE>,
 {
-    sum_assign(module, dst, Sum::inner(log_batch, log_count, normalize), keys, scratch)
+    sum_assign(module, res, Sum::inner(log_batch, log_count, normalize), keys, scratch)
 }
 
-pub(crate) fn ckks_replicate_into_derived<BE: CKKSInnerSumImpl, Dst, Src, H>(
+pub(crate) fn ckks_replicate_derived<BE: CKKSInnerSumImpl, R, A, H>(
     module: &Module<BE>,
-    dst: &mut Dst,
-    src: &Src,
+    res: &mut R,
+    a: &A,
     log_batch: usize,
     log_count: usize,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-    Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+    R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    A: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetAutomorphismKey<BE>,
 {
-    sum_into(module, dst, src, Sum::replicate(log_batch, log_count), keys, scratch)
+    sum_into(module, res, a, Sum::replicate(log_batch, log_count), keys, scratch)
 }
 
-pub(crate) fn ckks_replicate_assign_derived<BE: CKKSInnerSumImpl, Dst, H>(
+pub(crate) fn ckks_replicate_assign_derived<BE: CKKSInnerSumImpl, R, H>(
     module: &Module<BE>,
-    dst: &mut Dst,
+    res: &mut R,
     log_batch: usize,
     log_count: usize,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE>,
 {
-    sum_assign(module, dst, Sum::replicate(log_batch, log_count), keys, scratch)
+    sum_assign(module, res, Sum::replicate(log_batch, log_count), keys, scratch)
 }
 
 /// An inner sum (`reverse` clear) or a replicate of `2^log_count` batches of `2^log_batch` slots.
@@ -144,57 +162,70 @@ impl Sum {
         }
     }
 
-    /// The trace levels of the sum, once [`Self::validate`] accepted it.
+    /// Whether the `2^log_count` batches of `2^log_batch` slots fit in the slots.
+    fn fits<BE: CKKSInnerSumImpl>(self, module: &Module<BE>) -> bool {
+        self.log_batch
+            .checked_add(self.log_count)
+            .is_some_and(|log| log <= module.ckks_max_slots().ilog2() as usize)
+    }
+
+    /// The trace levels of the sum, once [`Self::fits`] holds.
     fn levels(self) -> Range<usize> {
         self.log_batch + 1..self.log_batch + 1 + self.log_count
     }
 
-    /// The checks before any write: the window within the slots, the division of `slots` at `log_budget`, and the key
-    /// of every rotation at width `k`. Returns the largest scratch `bytes` gives for those keys' layouts, if any.
-    fn validate<BE: Backend, H>(
+    /// The slot rotation of each level, in the order the trace visits them.
+    fn rotations(self) -> impl Iterator<Item = i64> {
+        (0..self.log_count).map(move |t| {
+            if self.reverse {
+                -(1i64 << (self.log_batch + self.log_count - 1 - t))
+            } else {
+                1i64 << (self.log_batch + t)
+            }
+        })
+    }
+
+    /// The checks before any write of a sum of `a` at width `k`, in the documented order: the window, the division of
+    /// `a`'s slots, the key of every rotation, then the budget of the copy from `a.k` to `k` and of the division.
+    /// Returns the largest scratch `bytes` gives for those keys' layouts, if any key is looked up.
+    fn validate<BE: CKKSInnerSumImpl, A, H>(
         self,
         module: &Module<BE>,
-        slots: SlotsKind,
-        log_budget: usize,
+        a: &A,
         k: TorusPrecision,
         keys: &H,
         bytes: impl Fn(&GLWEAutomorphismKeyPreparedBackendRef<'_, BE>) -> usize,
     ) -> Result<Option<usize>>
     where
+        A: CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
         let op = self.op;
-        let max_slots = module.ckks_max_slots();
-        if self
-            .log_batch
-            .checked_add(self.log_count)
-            .is_none_or(|log| log > max_slots.ilog2() as usize)
-        {
+        if !self.fits(module) {
             return Err(CKKSCompositionError::InvalidOperand {
                 op,
                 reason: format!(
-                    "2^{} batches of 2^{} slots exceed the {max_slots} slots",
-                    self.log_count, self.log_batch
+                    "2^{} batches of 2^{} slots exceed the {} slots",
+                    self.log_count,
+                    self.log_batch,
+                    module.ckks_max_slots()
                 ),
             }
             .into());
         }
-        if self.normalize && self.log_count > 0 {
-            if slots == SlotsKind::Integer {
-                return Err(CKKSCompositionError::InvalidOperand {
-                    op,
-                    reason: format!(
-                        "dividing Integer slots by 2^{} need not give integers; relabel them Real first",
-                        self.log_count
-                    ),
-                }
-                .into());
+        let divides = self.normalize && self.log_count > 0;
+        if divides && a.slots() == SlotsKind::Integer {
+            return Err(CKKSCompositionError::InvalidOperand {
+                op,
+                reason: format!(
+                    "dividing Integer slots by 2^{} need not give integers; relabel them Real first",
+                    self.log_count
+                ),
             }
-            checked_log_budget_sub(op, log_budget, self.log_count)?;
+            .into());
         }
         let mut most = None;
-        for i in 0..self.log_count {
-            let rotation = (1i64 << (self.log_batch + i)) * if self.reverse { -1 } else { 1 };
+        for rotation in self.rotations() {
             let key = keys
                 .get_automorphism_key(module.ckks_galois_element(rotation), k)
                 .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
@@ -205,81 +236,83 @@ impl Sum {
                 })?;
             most = most.max(Some(bytes(&key)));
         }
+        let log_budget = checked_log_budget_sub(op, a.log_budget(), a.k().as_usize() - k.as_usize())?;
+        if divides {
+            checked_log_budget_sub(op, log_budget, self.log_count)?;
+        }
         Ok(most)
     }
 }
 
-fn sum_into<BE: CKKSInnerSumImpl, Dst, Src, H>(
+fn sum_into<BE: CKKSInnerSumImpl, R, A, H>(
     module: &Module<BE>,
-    dst: &mut Dst,
-    src: &Src,
+    res: &mut R,
+    a: &A,
     sum: Sum,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-    Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+    R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    A: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetAutomorphismKey<BE>,
 {
-    // The copy narrows the sum to `dst`'s width, at which every rotation then switches.
-    let k = src.k().min(dst.k());
-    let log_budget = checked_log_budget_sub(sum.op, src.log_budget(), src.k().as_usize() - k.as_usize())?;
-    let bytes = sum.validate(module, src.slots(), log_budget, k, keys, |key| {
-        ckks_inner_sum_into_tmp_bytes_derived(module, &*dst, src, key)
+    // The copy narrows the sum to `res`'s width, at which every rotation then switches.
+    let k = a.k().min(res.k());
+    let bytes = sum.validate(module, a, k, keys, |key| {
+        ckks_inner_sum_tmp_bytes_derived(module, &*res, a, key)
     })?;
     // A sum that looks up no key has no key layout to size its query with; its constituents check their own.
     if let Some(bytes) = bytes {
-        assert!(
+        ckks_ensure!(
             scratch.available() >= bytes,
-            "{}: scratch below its _into_tmp_bytes query",
+            "{}: scratch below CKKSInnerSumOps::ckks_inner_sum_tmp_bytes",
             sum.op
         );
     }
-    module.ckks_copy(dst, src, scratch)?;
-    trace(module, dst, sum, keys, scratch)
+    module.ckks_copy(res, a, scratch)?;
+    trace(module, res, sum, keys, scratch)
 }
 
-fn sum_assign<BE: CKKSInnerSumImpl, Dst, H>(
+fn sum_assign<BE: CKKSInnerSumImpl, R, H>(
     module: &Module<BE>,
-    dst: &mut Dst,
+    res: &mut R,
     sum: Sum,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE>,
 {
-    let (slots, log_budget, k) = (dst.slots(), dst.log_budget(), dst.k());
-    let bytes = sum.validate(module, slots, log_budget, k, keys, |key| {
-        ckks_inner_sum_assign_tmp_bytes_derived(module, &*dst, key)
+    let bytes = sum.validate(module, &*res, res.k(), keys, |key| {
+        ckks_inner_sum_tmp_bytes_derived(module, &*res, &*res, key)
     })?;
     if let Some(bytes) = bytes {
-        assert!(
+        ckks_ensure!(
             scratch.available() >= bytes,
-            "{}: scratch below its _assign_tmp_bytes query",
+            "{}: scratch below CKKSInnerSumOps::ckks_inner_sum_tmp_bytes",
             sum.op
         );
     }
-    trace(module, dst, sum, keys, scratch)
+    trace(module, res, sum, keys, scratch)
 }
 
-/// The summed trace of a validated sum on `dst`, then the inner sum's division.
-fn trace<BE: CKKSInnerSumImpl, Dst, H>(
+/// The summed trace of a validated sum on `res`, then the inner sum's division.
+fn trace<BE: CKKSInnerSumImpl, R, H>(
     module: &Module<BE>,
-    dst: &mut Dst,
+    res: &mut R,
     sum: Sum,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE>,
 {
-    module.glwe_trace_assign(dst, sum.levels(), sum.reverse, false, keys, scratch);
+    module.glwe_trace_assign(res, sum.levels(), sum.reverse, false, keys, scratch);
     if sum.normalize {
-        module.ckks_div_pow2_assign(dst, sum.log_count)?;
+        module.ckks_div_pow2_assign(res, sum.log_count)?;
     }
     Ok(())
 }

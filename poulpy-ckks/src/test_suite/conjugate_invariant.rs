@@ -6,8 +6,9 @@ use crate::{
     CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAddOps, CKKSCIRingMapOps, CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar,
-        CKKSEvalModOps, CKKSFoldLayoutOps, CKKSFoldOps, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, CKKSNegOps,
-        CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps, LinearTransformationPrepared,
+        CKKSEvalModOps, CKKSFoldLayoutOps, CKKSFoldOps, CKKSInnerSumOps, CKKSLinearTransformationOps, CKKSModuleInfos,
+        CKKSMulOps, CKKSNegOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
+        LinearTransformationPrepared,
     },
     layouts::{
         CKKSFoldKeysLayout, CKKSModuleAlloc, RingSwitchKeys,
@@ -35,6 +36,7 @@ use super::{
         ckks_decrypt_with_prec, ckks_encrypt_coeffs, ckks_encrypt_pt, gen_atk, gen_ci_keys, gen_sk_with_raw, gen_tsk,
         next_test_seed, precision_at, precision_stats,
     },
+    parity::helpers::{snapshot, with_scratch},
 };
 use crate::reference::ckks_encode_linear_transformation_from_diagonals;
 use poulpy_hal::api::CnvPVecAlloc;
@@ -331,6 +333,102 @@ pub fn test_conjugate_invariant_leveled<BE>(
     }
 }
 
+/// Inner sums, means and replicates of the invariant ring's real slots decode to their cleartext sums, the keys being
+/// those of their Galois queries, and each `_assign` form equals its out-of-place form, each on exactly its query.
+pub fn test_conjugate_invariant_inner_sum<BE>(
+    mut params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
+) where
+    BE: TestContextBackend<Ring = ConjugateInvariant>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingHostOps<BE, f64>,
+{
+    params.prec_meta.slots = SlotsKind::Real;
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let slots = params.n;
+    let re = (0..slots).map(|i| (i as f64 + 1.0) / 521.0).collect::<Vec<_>>();
+    let im = vec![0.0; slots];
+    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
+    pt.set_meta(params.prec().meta());
+    module
+        .ckks_encode_reim_into(&mut pt, &re, &im, &mut scratch.borrow())
+        .unwrap();
+    let ct = ckks_encrypt_pt(
+        &params,
+        module,
+        &sk,
+        params.k,
+        &pt.to_host_owned::<BE>(),
+        &mut scratch.borrow(),
+    );
+
+    let log_count = 2;
+    let windows = [(0, log_count), (slots.ilog2() as usize - log_count, log_count)];
+    let mut keys = HashMap::new();
+    for (log_batch, log_count) in windows {
+        let inner = module.ckks_inner_sum_galois_elements(log_batch, log_count);
+        for p in inner
+            .into_iter()
+            .chain(module.ckks_replicate_galois_elements(log_batch, log_count))
+        {
+            keys.entry(p)
+                .or_insert_with(|| gen_atk(&params, module, p, &sk_raw, &mut scratch.borrow()));
+        }
+    }
+    let atk = params.atk_layout();
+    let mut decrypted = module.ckks_pt_vec_alloc(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
+    let (mut got_re, mut got_im) = (vec![0.0; slots], vec![0.0; slots]);
+    for (log_batch, log_count) in windows {
+        for (replicate, normalize) in [(false, false), (false, true), (true, false)] {
+            let label = format!("log_batch={log_batch} replicate={replicate} normalize={normalize}");
+            let sign = if replicate { -1 } else { 1 };
+            let scale = if normalize { 1.0 / (1 << log_count) as f64 } else { 1.0 };
+            let want = (0..slots as i64)
+                .map(|i| {
+                    let sum: f64 = (0..1i64 << log_count)
+                        .map(|j| re[(i + sign * (j << log_batch)).rem_euclid(slots as i64) as usize])
+                        .sum();
+                    scale * sum
+                })
+                .collect::<Vec<_>>();
+
+            let mut res = alloc_ct(&params, module, params.k);
+            with_scratch::<BE, _>(module.ckks_inner_sum_tmp_bytes(&res, &ct, &atk), |s| {
+                if replicate {
+                    module.ckks_replicate(&mut res, &ct, log_batch, log_count, &keys, s)
+                } else {
+                    module.ckks_inner_sum(&mut res, &ct, log_batch, log_count, normalize, &keys, s)
+                }
+            })
+            .unwrap();
+            decrypted.set_meta(params.prec().meta());
+            module.ckks_decrypt(&mut decrypted, &res, &sk, &mut scratch.borrow()).unwrap();
+            module
+                .ckks_decode_reim_into(&decrypted, &mut got_re, &mut got_im, &mut scratch.borrow())
+                .unwrap();
+            assert_reim_close(&got_re, &got_im, &want);
+            assert_eq!(res.slots(), SlotsKind::Real, "{label}: slot kind");
+
+            let mut assigned = ct.clone();
+            with_scratch::<BE, _>(module.ckks_inner_sum_tmp_bytes(&assigned, &assigned, &atk), |s| {
+                if replicate {
+                    module.ckks_replicate_assign(&mut assigned, log_batch, log_count, &keys, s)
+                } else {
+                    module.ckks_inner_sum_assign(&mut assigned, log_batch, log_count, normalize, &keys, s)
+                }
+            })
+            .unwrap();
+            assert!(
+                snapshot::<BE, _>(&assigned) == snapshot::<BE, _>(&res),
+                "{label}: in place differs from out of place"
+            );
+        }
+    }
+}
+
 fn assert_reim_close(re: &[f64], im: &[f64], want: &[f64]) {
     for (actual, expected) in re.iter().zip(want) {
         assert!((actual - expected).abs() < 1e-5, "actual={actual}, expected={expected}");
@@ -482,6 +580,13 @@ macro_rules! conjugate_invariant_ckks_test_suite {
                 let module = Module::<$backend>::new(params.n as u64);
                 let host = Module::<HostBytesBackend<<$backend as poulpy_hal::layouts::Backend>::Ring>>::new(params.n as u64);
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_eval_mod(params, &module, &host);
+            }
+            #[test]
+            fn ckks_ci_inner_sum() {
+                let params = $params;
+                let module = Module::<$backend>::new(params.n as u64);
+                let host = Module::<HostBytesBackend<<$backend as poulpy_hal::layouts::Backend>::Ring>>::new(params.n as u64);
+                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_inner_sum(params, &module, &host);
             }
             #[test]
             fn ckks_ci_leveled() {
