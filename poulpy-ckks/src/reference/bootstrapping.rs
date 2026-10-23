@@ -1396,7 +1396,6 @@ where
 /// and the conversions; the traced and the reduced ciphertext beside EvalMod.
 pub fn ckks_bootstrap_ci_tmp_bytes_reference<BE, BCI, C1, C2, F>(
     module: &Module<BE>,
-    wide: &Module<BE>,
     ci: &Module<BCI>,
     ct_out: &C1,
     ct_in: &C2,
@@ -1419,20 +1418,20 @@ where
     let (boot_layout, _) = bootstrap_layouts(ct_out, ct_in);
     let embedded = CKKSLayout {
         glwe_layout: GLWELayout {
-            n: wide.n().into(),
+            n: (2 * boot_layout.n().as_usize()).into(),
             ..boot_layout.glwe_layout
         },
         ..boot_layout
     };
-    let embedded_bytes = BE::scratch_aligned(wide.glwe_bytes_of_from_infos(&embedded));
+    let embedded_bytes = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&embedded));
     let trace = embedded_bytes
-        + wide
+        + module
             .glwe_keyswitch_tmp_bytes(&embedded, &embedded, trace_key)
-            .max(wide.glwe_ci_trace_tmp_bytes(&boot_layout, &embedded));
-    let conversions = wide
+            .max(module.glwe_ci_trace_tmp_bytes(&boot_layout, &embedded));
+    let conversions = module
         .ckks_mul_pt_vec_tmp_bytes(&embedded, &embedded, &eval_mod_ci.pre)
-        .max(wide.ckks_mul_pt_vec_tmp_bytes(&embedded, &embedded, &eval_mod_ci.post))
-        .max(wide.glwe_keyswitch_tmp_bytes(&embedded, &embedded, embed_key))
+        .max(module.ckks_mul_pt_vec_tmp_bytes(&embedded, &embedded, &eval_mod_ci.post))
+        .max(module.glwe_keyswitch_tmp_bytes(&embedded, &embedded, embed_key))
         .max(trace);
     let linear = s2c_first_linear_tmp_bytes(module, &boot_layout, ct_in, ctx, keys_layout);
     let ci_bytes = BCI::scratch_aligned(ci.glwe_bytes_of_from_infos(&boot_layout));
@@ -1445,14 +1444,13 @@ where
 /// The S2C-first bootstrap with EvalMod once on the conjugate-invariant ring
 /// ([`CKKSBootstrappingCIOps::ckks_bootstrap_ci`](crate::api::CKKSBootstrappingCIOps::ckks_bootstrap_ci)):
 /// SlotsToCoeffs, the raise and CoeffsToSlots without the split on `module`, of
-/// degree `N`; the conversions on `wide`, of degree `2N`; EvalMod on `ci`.
+/// degree `N`, and the conversions at degree `2N`, on `module`; EvalMod on `ci`.
 #[expect(
     clippy::too_many_arguments,
     reason = "the bootstrap takes a module and a scratch arena per ring"
 )]
 pub fn ckks_bootstrap_ci_reference<BE, BCI, F, K>(
     module: &Module<BE>,
-    wide: &Module<BE>,
     ci: &Module<BCI>,
     ct_out: &mut CKKSCiphertextOwned<BE>,
     ct_in: &CKKSCiphertextOwned<BE>,
@@ -1485,8 +1483,12 @@ where
         crate::ckks_bail!("{op}: takes a context compiled by compile_ci and keys prepared by prepare_ci");
     };
     ckks_ensure!(
-        wide.n() == 2 * module.n() && ci.n() == module.n() && ct_in.rank().as_usize() == 1 && ct_out.rank().as_usize() == 1,
-        "{op}: takes a module of degree 2N, a CI module of degree N and rank-1 ciphertexts"
+        module.n() >= 2 * ct_in.n().as_usize()
+            && ci.n() == ct_in.n().as_usize()
+            && ct_out.n() == ct_in.n()
+            && ct_in.rank().as_usize() == 1
+            && ct_out.rank().as_usize() == 1,
+        "{op}: takes a module of degree at least 2N, a CI module of degree N and rank-1 ciphertexts of degree N"
     );
     ckks_ensure!(
         keys.encapsulation_keys().is_some() == ctx.sparse_secret_hamming_weight().is_some(),
@@ -1518,17 +1520,17 @@ where
         // embedded as `z(X²)`.
         module.ckks_dft_evaluate_assign(&mut z, ctx.coeffs_to_slots(), keys.rotation_keys(), &mut scratch)?;
         let wide_layout = GLWELayout {
-            n: wide.n().into(),
+            n: (2 * boot_layout.n.as_usize()).into(),
             ..boot_layout
         };
         let (mut embedded, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&wide_layout, z.meta());
         embedded.set_k(z.k());
-        switch_degree(wide, &mut embedded, &z);
+        switch_degree(module, &mut embedded, &z);
 
         // `z(X²)` times `u`, traced onto the CI ring without halving: `2·Re(u·z)`, the
         // split EvalMod input. The CI ciphertexts are carved from `scratch_ci`; the
-        // two backends share their buffers, so `wide` writes and reads them.
-        wide.ckks_mul_pt_vec_assign(&mut embedded, &eval_mod_ci.pre, &mut scratch)?;
+        // two backends share their buffers, so `module` writes and reads them.
+        module.ckks_mul_pt_vec_assign(&mut embedded, &eval_mod_ci.pre, &mut scratch)?;
         let meta = GLWEPlaintextMeta {
             slots: SlotsKind::Real,
             ..embedded.meta()
@@ -1540,8 +1542,8 @@ where
         traced.set_k(embedded.k());
         {
             let (mut switched, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&embedded, embedded.meta());
-            wide.glwe_keyswitch(&mut switched, &embedded, &trace_key.to_backend_ref(), &mut scratch);
-            wide.glwe_ci_trace(&mut traced, &switched, &mut scratch);
+            module.glwe_keyswitch(&mut switched, &embedded, &trace_key.to_backend_ref(), &mut scratch);
+            module.glwe_ci_trace(&mut traced, &switched, &mut scratch);
         }
 
         // One EvalMod for all `N` coefficients.
@@ -1563,9 +1565,9 @@ where
             ..reduced.meta()
         });
         embedded.set_k(reduced.k());
-        wide.glwe_ci_embed(&mut embedded, &reduced);
-        wide.glwe_keyswitch_assign(&mut embedded, &embed_key.to_backend_ref(), &mut scratch);
-        wide.ckks_mul_pt_vec_assign(&mut embedded, &eval_mod_ci.post, &mut scratch)?;
+        module.glwe_ci_embed(&mut embedded, &reduced);
+        module.glwe_keyswitch_assign(&mut embedded, &embed_key.to_backend_ref(), &mut scratch);
+        module.ckks_mul_pt_vec_assign(&mut embedded, &eval_mod_ci.post, &mut scratch)?;
         ct_out.set_k(embedded.k());
         switch_degree(module, ct_out, &embedded);
         ct_out.set_meta(embedded.meta());

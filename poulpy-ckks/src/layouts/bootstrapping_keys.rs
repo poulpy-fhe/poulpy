@@ -437,7 +437,8 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
             layout.encapsulation.is_some()
         );
 
-        let order = module.cyclotomic_order();
+        // The cyclotomic order of the secret's degree, which the module may exceed.
+        let order = module.cyclotomic_order() / (module.n() / sk_dense.n().as_usize()) as i64;
         let first_factor_rotations: Vec<i64> = self
             .coeffs_to_slots_first_factor()
             .map(|factor| factor.giant_steps.iter().map(|giant| giant.rot).collect())
@@ -559,8 +560,8 @@ impl<BE: Backend<Ring = Standard>, F> BootstrappingContext<BE, F> {
     /// [`Self::generate_keys`] with EvalMod on the conjugate-invariant ring: a CI
     /// secret of the dense secret's Hamming weight, sampled after the raise keys,
     /// has the tensor key on `ci`, of degree `N`; the trace and embedding keys
-    /// switch between it and the dense secret lifted to `s(X²)` on `wide`, of
-    /// degree `2N`. The CI secret is carved from `scratch_ci`, which also serves
+    /// switch between it and the dense secret lifted to `s(X²)`, of degree `2N`,
+    /// which `module` serves on top of the bootstrap's degree `N`. The CI secret is carved from `scratch_ci`, which also serves
     /// the tensor key and is wiped before returning.
     #[expect(
         clippy::too_many_arguments,
@@ -569,7 +570,6 @@ impl<BE: Backend<Ring = Standard>, F> BootstrappingContext<BE, F> {
     pub fn generate_keys_ci<BCI>(
         &self,
         module: &Module<BE>,
-        wide: &Module<BE>,
         ci: &Module<BCI>,
         sk_dense: &BackendGLWESecret<BE>,
         layout: &BootstrappingKeysLayout,
@@ -600,8 +600,8 @@ impl<BE: Backend<Ring = Standard>, F> BootstrappingContext<BE, F> {
             anyhow::bail!("EvalMod on the CI ring takes conversion key layouts and a fixed-weight ternary dense secret");
         };
         anyhow::ensure!(
-            self.eval_mod_ring() != EvalModRing::Standard && wide.n() == 2 * module.n() && ci.n() == module.n(),
-            "generate_keys_ci takes a context with EvalMod on the CI ring, a module of degree 2N and a CI module of degree N"
+            self.eval_mod_ring() != EvalModRing::Standard && sk_dense.n().as_usize() == ci.n() && module.n() >= 2 * ci.n(),
+            "generate_keys_ci takes a context with EvalMod on the CI ring, a dense secret and a CI module of degree N, and a module of degree at least 2N"
         );
         let mut keys = self.generate_linear_keys(module, sk_dense, layout, source_xs, source_xe, source_xa, scratch)?;
         let (n, rank) = (ci.n(), sk_dense.rank());
@@ -610,13 +610,13 @@ impl<BE: Backend<Ring = Standard>, F> BootstrappingContext<BE, F> {
             let (mut sk_ci, mut scratch_ci) = scratch_ci.take_glwe_secret_scratch(n.into(), rank);
             ci.glwe_secret_fill_ternary_hw(&mut sk_ci, hamming_weight, source_xs);
             ci.glwe_tensor_key_encrypt_sk(&mut keys.tensor_key, &sk_ci, source_xe, source_xa, &mut scratch_ci);
-            // The two backends share their buffers: the CI secret is read on `wide`, whose
+            // The two backends share their buffers: the CI secret is read on `module`, whose
             // switching keys lift the dense secret to `s(X²)` themselves.
             let sk_ci = GLWESecretViewMut::<BE>::from_inner(sk_ci.into_inner());
-            let mut trace_key = wide.glwe_ci_trace_key_alloc_from_infos(&trace_layout);
-            wide.glwe_ci_trace_key_encrypt_sk(&mut trace_key, &sk_ci, sk_dense, source_xe, source_xa, scratch);
-            let mut embed_key = wide.glwe_ci_embed_key_alloc_from_infos(&embed_layout);
-            wide.glwe_ci_embed_key_encrypt_sk(&mut embed_key, &sk_ci, sk_dense, source_xe, source_xa, scratch);
+            let mut trace_key = module.glwe_ci_trace_key_alloc_from_infos(&trace_layout);
+            module.glwe_ci_trace_key_encrypt_sk(&mut trace_key, &sk_ci, sk_dense, source_xe, source_xa, scratch);
+            let mut embed_key = module.glwe_ci_embed_key_alloc_from_infos(&embed_layout);
+            module.glwe_ci_embed_key_encrypt_sk(&mut embed_key, &sk_ci, sk_dense, source_xe, source_xa, scratch);
             (trace_key, embed_key)
         };
         scratch_ci.wipe(BCI::bytes_of_scalar_znx(n, rank.as_usize()));
@@ -627,11 +627,10 @@ impl<BE: Backend<Ring = Standard>, F> BootstrappingContext<BE, F> {
 
 impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
     /// [`Self::prepare`] with EvalMod on the conjugate-invariant ring: the tensor
-    /// key on `ci`, the conversion keys on `wide`.
+    /// key on `ci`, the conversion keys at degree `2N` on `module`.
     pub fn prepare_ci<BE, BCI>(
         &self,
         module: &Module<BE>,
-        wide: &Module<BE>,
         ci: &Module<BCI>,
         scratch: &mut ScratchArena<'_, BE>,
         scratch_ci: &mut ScratchArena<'_, BCI>,
@@ -657,10 +656,10 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
             ci.prepare_tensor_key(&mut prepared, tensor_key, scratch_ci);
             prepared
         });
-        let mut trace_key = wide.glwe_ci_trace_key_prepared_alloc_from_infos(trace);
-        wide.glwe_ci_key_prepare(&mut trace_key, trace, scratch);
-        let mut embed_key = wide.glwe_ci_embed_key_prepared_alloc_from_infos(embed);
-        wide.glwe_ci_key_prepare(&mut embed_key, embed, scratch);
+        let mut trace_key = module.glwe_ci_trace_key_prepared_alloc_from_infos(trace);
+        module.glwe_ci_key_prepare(&mut trace_key, trace, scratch);
+        let mut embed_key = module.glwe_ci_embed_key_prepared_alloc_from_infos(embed);
+        module.glwe_ci_key_prepare(&mut embed_key, embed, scratch);
         keys.conversion_keys = Some((trace_key, embed_key));
         Ok(keys)
     }

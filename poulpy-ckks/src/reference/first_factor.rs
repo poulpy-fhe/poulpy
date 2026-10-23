@@ -313,7 +313,8 @@ where
     let k_offset = key_layout.k_offset.as_usize();
     let (_, guard) = first_factor_work(base2k, k_large);
     let small_layout = layout(dst, small);
-    let order = module.cyclotomic_order();
+    // The cyclotomic order of the bootstrap's degree, which the module may exceed.
+    let order = module.cyclotomic_order() / (module.n() / dst.n().as_usize()) as i64;
     let meta = GLWEPlaintextMeta {
         scale: Scale::Log(src.log_delta() + scale_up),
         slots: src.slots(),

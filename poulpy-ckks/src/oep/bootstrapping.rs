@@ -112,7 +112,6 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
 pub unsafe trait CKKSBootstrappingCIImpl: Backend<Ring = Standard> {
     fn ckks_bootstrap_ci_tmp_bytes_impl<BCI, C1, C2, F>(
         module: &Module<Self>,
-        wide: &Module<Self>,
         ci: &Module<BCI>,
         ct_out: &C1,
         ct_in: &C2,
@@ -133,7 +132,6 @@ pub unsafe trait CKKSBootstrappingCIImpl: Backend<Ring = Standard> {
     )]
     fn ckks_bootstrap_ci_impl<BCI, F, K>(
         module: &Module<Self>,
-        wide: &Module<Self>,
         ci: &Module<BCI>,
         ct_out: &mut CKKSCiphertextOwned<Self>,
         ct_in: &CKKSCiphertextOwned<Self>,
@@ -370,7 +368,6 @@ macro_rules! impl_ckks_bootstrapping_ci_reference {
         unsafe impl $crate::oep::CKKSBootstrappingCIImpl for $be {
             fn ckks_bootstrap_ci_tmp_bytes_impl<BCI, C1, C2, F>(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                wide: &::poulpy_hal::layouts::Module<$be>,
                 ci: &::poulpy_hal::layouts::Module<BCI>,
                 ct_out: &C1,
                 ct_in: &C2,
@@ -392,7 +389,6 @@ macro_rules! impl_ckks_bootstrapping_ci_reference {
             {
                 $crate::reference::bootstrapping::ckks_bootstrap_ci_tmp_bytes_reference::<$be, BCI, C1, C2, F>(
                     module,
-                    wide,
                     ci,
                     ct_out,
                     ct_in,
@@ -403,7 +399,6 @@ macro_rules! impl_ckks_bootstrapping_ci_reference {
 
             fn ckks_bootstrap_ci_impl<BCI, F, K>(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                wide: &::poulpy_hal::layouts::Module<$be>,
                 ci: &::poulpy_hal::layouts::Module<BCI>,
                 ct_out: &mut $crate::layouts::CKKSCiphertextOwned<$be>,
                 ct_in: &$crate::layouts::CKKSCiphertextOwned<$be>,
@@ -425,7 +420,7 @@ macro_rules! impl_ckks_bootstrapping_ci_reference {
                 K: $crate::layouts::BootstrappingKeys<$be, BCI>,
             {
                 $crate::reference::bootstrapping::ckks_bootstrap_ci_reference::<$be, BCI, F, K>(
-                    module, wide, ci, ct_out, ct_in, ctx, keys, scratch, scratch_ci,
+                    module, ci, ct_out, ct_in, ctx, keys, scratch, scratch_ci,
                 )
             }
         }

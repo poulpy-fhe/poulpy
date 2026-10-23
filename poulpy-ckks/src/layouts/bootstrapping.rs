@@ -34,7 +34,7 @@ use poulpy_core::{
 use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, ScratchArena};
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSModuleInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
+    CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
     api::{CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
     layouts::{
         CKKSModuleAlloc, DFTMatrix, DFTMatrixPrepared, DFTPlan, DFTType, Decode, Encode, EncodedLut, EvalMod, EvalModPlan, Split,
@@ -767,10 +767,10 @@ where
     }
 
     /// [`Self::compile`] for EvalMod on the conjugate-invariant ring: also encodes
-    /// EvalMod on `ci`, of degree `N`, and `u` and `v` on `wide`, of degree `2N`.
+    /// EvalMod on `ci`, of degree `N`, and `u` and `v` at degree `2N`, which
+    /// `module` serves on top of the bootstrap's degree `N`.
     pub fn compile_ci<BCI>(
         module: &Module<BE>,
-        wide: &Module<BE>,
         ci: &Module<BCI>,
         base2k: Base2K,
         plan: &BootstrappingPlan,
@@ -791,25 +791,25 @@ where
             anyhow::bail!("compile_ci takes a plan with EvalMod on the conjugate-invariant ring");
         };
         ensure!(
-            wide.n() == 2 * module.n() && ci.n() == module.n(),
-            "compile_ci takes a module of degree 2N and a CI module of degree N"
+            module.n() >= 2 * ci.n(),
+            "compile_ci takes a module of degree at least 2N and a CI module of degree N"
         );
         let mut context = Self::compile(module, base2k, plan, scratch)?;
         // Slot `j` of degree `N` is slot `j` and slot `j + N/2` of degree `2N`.
-        let half = module.n() / 2;
+        let half = ci.n() / 2;
         let mut pair = |modulus: f64, second: f64, log_delta: usize| {
             let (mut re, mut im) = (vec![F::zero(); 2 * half], vec![F::zero(); 2 * half]);
             re[..half].fill(F::from_f64(modulus).unwrap());
             im[half..].fill(F::from_f64(modulus * second).unwrap());
             // Values of modulus one take two bits above the scale, of modulus two three.
             let headroom = 2 + usize::from(modulus > 1.0);
-            let mut pt = wide.ckks_pt_vec_alloc(wide.ckks_max_slots(), base2k, (log_delta + headroom).into());
+            let mut pt = module.ckks_pt_vec_alloc(2 * half, base2k, (log_delta + headroom).into());
             pt.set_meta(GLWEPlaintextMeta {
                 scale: Scale::Log(log_delta),
                 slots: SlotsKind::Complex,
                 log_sparsity: 0,
             });
-            wide.ckks_encode_reim_into(&mut pt, &re, &im, scratch).map(|_| pt)
+            module.ckks_encode_reim_into(&mut pt, &re, &im, scratch).map(|_| pt)
         };
         // `v` also carries the factor 2 of the conjugate pair, which the even
         // coefficients of degree `2N` keep once back at degree `N`.

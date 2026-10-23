@@ -6,7 +6,6 @@
 //! precision pin test ([`bootstrapping_presets_meet_precision`]) both drive it,
 //! so there is a single description of how a preset is exercised.
 
-use crate::CKKSModuleInfos;
 use crate::Scale;
 use poulpy_core::{
     GLWECIKeyEncryptSk,
@@ -176,8 +175,9 @@ where
         Module<BE>: CKKSBootstrappingCIOps<BE, BCI> + GLWECIKeyEncryptSk<BE> + GLWECIKeyPreparedFactory<BE>,
         Module<BCI>: TestContextSharedModule<BCI> + CKKSEncodingOps<BCI, f64>,
     {
+        // One module of degree 2N serves the conversions and the stages of degree N.
         let n = preset.n() as u64;
-        let (module, wide, ci) = (Module::<BE>::new(n), Module::<BE>::new(2 * n), Module::<BCI>::new(n));
+        let (module, ci) = (Module::<BE>::new(2 * n), Module::<BCI>::new(n));
         let sk_layout = preset.bootstrap_layout().glwe_layout;
         let mut sk_raw = module.glwe_secret_alloc_from_infos(&sk_layout);
         module.glwe_secret_fill_ternary_hw(&mut sk_raw, preset.dense_secret_hamming_weight(), &mut Source::new([0; 32]));
@@ -190,7 +190,6 @@ where
         let (base2k, plan) = (preset.base2k().into(), preset.plan());
         let context = BootstrappingContext::<BE, f64>::compile_ci(
             &module,
-            &wide,
             &ci,
             base2k,
             plan,
@@ -202,7 +201,6 @@ where
         let keys = context
             .generate_keys_ci(
                 &module,
-                &wide,
                 &ci,
                 &sk_raw,
                 preset.keys_layout(),
@@ -213,14 +211,13 @@ where
                 &mut scratch_ci.borrow(),
             )
             .unwrap()
-            .prepare_ci(&module, &wide, &ci, &mut scratch.borrow(), &mut scratch_ci.borrow())
+            .prepare_ci(&module, &ci, &mut scratch.borrow(), &mut scratch_ci.borrow())
             .unwrap();
         let (layout, input_layout) = (preset.bootstrap_layout(), preset.input_layout());
-        let (bytes, bytes_ci) =
-            module.ckks_bootstrap_ci_tmp_bytes(&wide, &ci, &layout, &input_layout, &context, preset.keys_layout());
+        let (bytes, bytes_ci) = module.ckks_bootstrap_ci_tmp_bytes(&ci, &layout, &input_layout, &context, preset.keys_layout());
         let mut scratch_ci = ScratchOwned::<BCI>::alloc(bytes_ci);
         let bootstrap: Bootstrap<BE> = Box::new(move |module, output, input, scratch| {
-            module.ckks_bootstrap_ci(&wide, &ci, output, input, &context, &keys, scratch, &mut scratch_ci.borrow())
+            module.ckks_bootstrap_ci(&ci, output, input, &context, &keys, scratch, &mut scratch_ci.borrow())
         });
         Self::with_bootstrap(preset, module, ScratchOwned::alloc(bytes), sk, bootstrap)
     }
@@ -237,7 +234,7 @@ where
         let (n, base2k) = (preset.n(), preset.base2k());
         let (input_layout, bootstrap_layout) = (preset.input_layout(), preset.bootstrap_layout());
         let (want_re, want_im) = test_vector_1::<f64>(n / 2);
-        let mut input_pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), base2k.into(), input_layout.k());
+        let mut input_pt = module.ckks_pt_vec_alloc(n / 2, base2k.into(), input_layout.k());
         input_pt.set_meta(input_layout.meta());
         module
             .ckks_encode_reim_into(&mut input_pt, &want_re, &want_im, &mut scratch.borrow())
@@ -299,11 +296,9 @@ where
             .log_budget()
             .min(PRECISION_LOG_BUDGET)
             .min(127usize.saturating_sub(output.log_delta()));
-        let mut output_pt = self.module.ckks_pt_vec_alloc(
-            self.module.ckks_max_slots(),
-            output.base2k(),
-            (output.log_delta() + log_budget).into(),
-        );
+        let mut output_pt =
+            self.module
+                .ckks_pt_vec_alloc(self.preset.n() / 2, output.base2k(), (output.log_delta() + log_budget).into());
         output_pt.set_meta(GLWEPlaintextMeta {
             scale: Scale::Log(output.log_delta()),
             slots: SlotsKind::Complex,
@@ -329,7 +324,9 @@ where
     fn check(&mut self, backend: &str) {
         // 1024 bits is more than any key keeps beyond the width it was laid out for.
         let k = self.preset.bootstrap_k() + 1024;
-        let mut output = self.module.ckks_ciphertext_alloc(self.preset.base2k().into(), k.into());
+        let mut layout = self.preset.bootstrap_layout();
+        layout.glwe_layout.k = k.into();
+        let mut output = self.module.ckks_ciphertext_alloc_from_glwe_infos(&layout);
         let err = (self.bootstrap)(&self.module, &mut output, &self.input, &mut self.scratch.borrow()).unwrap_err();
         assert!(
             matches!(err.composition(), Some(CKKSCompositionError::MissingAutomorphismKey { .. })),
@@ -485,7 +482,7 @@ where
     };
     let preset = standard.with_eval_mod_ring(ring).unwrap();
     let n = preset.n() as u64;
-    let (module, wide, ci) = (Module::<BE>::new(n), Module::<BE>::new(2 * n), Module::<BCI>::new(n));
+    let (module, ci) = (Module::<BE>::new(2 * n), Module::<BCI>::new(n));
     let sk_layout = preset.bootstrap_layout().glwe_layout;
     let mut sk_raw = module.glwe_secret_alloc_from_infos(&sk_layout);
     module.glwe_secret_fill_ternary_hw(&mut sk_raw, preset.dense_secret_hamming_weight(), &mut Source::new([0; 32]));
@@ -493,7 +490,6 @@ where
     let base2k = preset.base2k().into();
     let context = BootstrappingContext::<BE, f64>::compile_ci(
         &module,
-        &wide,
         &ci,
         base2k,
         preset.plan(),
@@ -507,7 +503,6 @@ where
         context
             .generate_keys_ci(
                 &module,
-                &wide,
                 &ci,
                 &sk_raw,
                 layout,
@@ -518,7 +513,7 @@ where
                 &mut scratch_ci.borrow(),
             )
             .unwrap()
-            .prepare_ci(&module, &wide, &ci, &mut scratch.borrow(), &mut scratch_ci.borrow())
+            .prepare_ci(&module, &ci, &mut scratch.borrow(), &mut scratch_ci.borrow())
             .unwrap()
     };
     let keys = keys_for(preset.keys_layout());
@@ -532,12 +527,11 @@ where
     let mut input = module.ckks_ciphertext_alloc_from_glwe_infos(&preset.input_layout());
     input.set_meta(preset.input_layout().meta());
     let mut output = module.ckks_ciphertext_alloc_from_glwe_infos(&preset.bootstrap_layout());
-    let mut bootstrap = |wide: &Module<BE>,
+    let mut bootstrap = |module: &Module<BE>,
                          context: &BootstrappingContext<BE, f64>,
                          keys: &crate::layouts::BootstrappingKeysPrepared<BE::OwnedBuf, BE, BCI>| {
         output.set_k(preset.bootstrap_k().into());
         module.ckks_bootstrap_ci(
-            wide,
             &ci,
             &mut output,
             &input,
@@ -547,16 +541,16 @@ where
             &mut scratch_ci.borrow(),
         )
     };
-    bootstrap(&wide, &context, &keys).unwrap();
-    let err = bootstrap(&wide, &context, &narrow_keys).unwrap_err();
+    bootstrap(&module, &context, &keys).unwrap();
+    let err = bootstrap(&module, &context, &narrow_keys).unwrap_err();
     assert!(
         matches!(err.composition(), Some(CKKSCompositionError::InvalidOperand { .. })),
         "narrow conversion keys: {err}"
     );
     for (err, cause) in [
-        (bootstrap(&wide, &compiled, &keys), "compile_ci"),
-        (bootstrap(&module, &context, &keys), "degree 2N"),
-        (bootstrap(&wide, &context, &no_dense_to_sparse), "encapsulation"),
+        (bootstrap(&module, &compiled, &keys), "compile_ci"),
+        (bootstrap(&Module::<BE>::new(n), &context, &keys), "degree at least 2N"),
+        (bootstrap(&module, &context, &no_dense_to_sparse), "encapsulation"),
     ] {
         let err = err.unwrap_err().to_string();
         assert!(err.contains(cause), "expected a refusal naming {cause}, got: {err}");

@@ -189,15 +189,14 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
 
 /// [`CKKSBootstrappingOps::ckks_bootstrap`] with EvalMod on the
 /// conjugate-invariant ring ([`EvalModRing::ConjugateInvariant`](crate::layouts::EvalModRing::ConjugateInvariant)),
-/// for a context compiled by [`BootstrappingContext::compile_ci`]: `wide` is the
-/// standard module of degree `2N` and `ci` the CI module of degree `N`, whose
-/// backend shares the buffers of this one. The keys, the conversion keys
-/// included, are checked at entry.
+/// for a context compiled by [`BootstrappingContext::compile_ci`]: this module
+/// serves degree `2N` for the conversions and `N` for the other stages, and `ci`
+/// is the CI module of degree `N`, whose backend shares the buffers of this one.
+/// The keys, the conversion keys included, are checked at entry.
 pub trait CKKSBootstrappingCIOps<BE: Backend, BCI: Backend> {
     /// Scratch of [`Self::ckks_bootstrap_ci`]: `(scratch, scratch_ci)`.
     fn ckks_bootstrap_ci_tmp_bytes<C1, C2, F>(
         &self,
-        wide: &Module<BE>,
         ci: &Module<BCI>,
         ct_out: &C1,
         ct_in: &C2,
@@ -216,7 +215,6 @@ pub trait CKKSBootstrappingCIOps<BE: Backend, BCI: Backend> {
     )]
     fn ckks_bootstrap_ci<F, K>(
         &self,
-        wide: &Module<BE>,
         ci: &Module<BCI>,
         ct_out: &mut CKKSCiphertextOwned<BE>,
         ct_in: &CKKSCiphertextOwned<BE>,

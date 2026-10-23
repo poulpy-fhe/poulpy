@@ -121,7 +121,6 @@ where
 {
     fn ckks_bootstrap_ci_tmp_bytes<C1, C2, F>(
         &self,
-        wide: &Module<BE>,
         ci: &Module<BCI>,
         ct_out: &C1,
         ct_in: &C2,
@@ -132,12 +131,11 @@ where
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
     {
-        BE::ckks_bootstrap_ci_tmp_bytes_impl(self, wide, ci, ct_out, ct_in, ctx, keys_layout)
+        BE::ckks_bootstrap_ci_tmp_bytes_impl(self, ci, ct_out, ct_in, ctx, keys_layout)
     }
 
     fn ckks_bootstrap_ci<F, K>(
         &self,
-        wide: &Module<BE>,
         ci: &Module<BCI>,
         ct_out: &mut CKKSCiphertextOwned<BE>,
         ct_in: &CKKSCiphertextOwned<BE>,
@@ -149,6 +147,6 @@ where
     where
         K: BootstrappingKeys<BE, BCI>,
     {
-        BE::ckks_bootstrap_ci_impl(self, wide, ci, ct_out, ct_in, ctx, keys, scratch, scratch_ci)
+        BE::ckks_bootstrap_ci_impl(self, ci, ct_out, ct_in, ctx, keys, scratch, scratch_ci)
     }
 }
