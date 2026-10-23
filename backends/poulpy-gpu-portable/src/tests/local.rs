@@ -1533,3 +1533,130 @@ fn const_combination_matches_reference() {
         }
     }
 }
+
+/// The products of two and four sources against one key in one launch equal one launch per
+/// source, bit for bit, at the full degree the fused inverse launch needs and at the widest
+/// CoeffsToSlots shape: the product with the first inverse launch of the baby-step doubling,
+/// and the product added, rotated and accumulated of the giant-step tree.
+#[test]
+fn many_source_products_match_one_launch_each_at_full_degree() {
+    use poulpy_hal::api::ScratchArenaTakeBasic;
+    let n = 1 << 16;
+    let module = Module::<Gpu>::new(n as u64);
+    let (a_size, dsize, rows, key_size, res_size, product_limbs) = (27, 4, 7, 33, 29, 3);
+    let mut seed = 0x0dd5_0dd5_u64;
+    let matrix = MatZnx::from_data(
+        Gpu::from_host_bytes(&coefficients(n * rows * 2 * key_size, &mut seed)),
+        n,
+        rows,
+        1,
+        2,
+        key_size,
+    );
+    let mut pmat = module.vmp_pmat_alloc(n, rows, 1, 2, key_size, PrepareHint::Reuse);
+    let mut scratch = ScratchOwned::<Gpu>::alloc(1 << 24);
+    module.vmp_prepare(
+        &mut pmat.to_backend_mut(),
+        &poulpy_hal::layouts::MatZnxToBackendRef::<Gpu>::to_backend_ref(&matrix),
+        &mut scratch.arena(),
+    );
+    // Both sides read through a copy, the scratch views as the owned vectors.
+    let host = |module: &Module<Gpu>, view: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Gpu>, cols: usize| {
+        let mut owned = module.vec_znx_dft_alloc(n, cols, view.size());
+        for col in 0..cols {
+            module.vec_znx_dft_copy(1, 0, &mut owned.to_backend_mut(), col, view, col);
+        }
+        DataView::data(&owned).to_host()
+    };
+    let plan = crate::ntt4x30::AutomorphismPlan::new(n, 5, false);
+    for m in [2usize, 4] {
+        let sources: Vec<_> = (0..m).map(|_| transformed(&module, n, 1, a_size, &mut seed)).collect();
+        let bodies: Vec<_> = (0..m).map(|_| transformed(&module, n, 2, res_size, &mut seed)).collect();
+        let starts: Vec<_> = (0..m).map(|_| transformed(&module, n, 2, res_size, &mut seed)).collect();
+        let mut arena_owned = ScratchOwned::<Gpu>::alloc(m * n * 16 * (a_size + 4 * res_size) + (1 << 20));
+        let arena = arena_owned.arena();
+        let (mut a, arena) = arena.take_vec_znx_dft_slice_scratch(n, m, 1, a_size);
+        let (mut res, arena) = arena.take_vec_znx_dft_slice_scratch(n, m, 2, res_size);
+        let (mut add, _) = arena.take_vec_znx_dft_slice_scratch(n, m, 2, res_size);
+        for i in 0..m {
+            module.vec_znx_dft_copy(1, 0, &mut a[i].to_backend_mut(), 0, &sources[i].to_backend_ref(), 0);
+            for col in 0..2 {
+                module.vec_znx_dft_copy(1, 0, &mut add[i].to_backend_mut(), col, &bodies[i].to_backend_ref(), col);
+            }
+        }
+        let a_refs: Vec<_> = a.iter().map(|a| a.to_backend_ref()).collect();
+
+        // The product with the first inverse launch.
+        {
+            let mut res_mut: Vec<_> = res.iter_mut().map(|res| res.to_backend_mut()).collect();
+            assert!(crate::hal_impl::gglwe_products_digits_strided_inverse(
+                &module,
+                &mut res_mut,
+                &a_refs,
+                dsize,
+                product_limbs,
+                &pmat.to_backend_ref(),
+            ));
+        }
+        for i in 0..m {
+            let mut want = module.vec_znx_dft_alloc(n, 2, res_size);
+            assert!(crate::hal_impl::gglwe_product_digits_strided_inverse(
+                &module,
+                &mut want.to_backend_mut(),
+                &sources[i].to_backend_ref(),
+                dsize,
+                product_limbs,
+                &pmat.to_backend_ref(),
+                [None, None],
+            ));
+            assert!(
+                host(&module, &res[i].to_backend_ref(), 2) == host(&module, &want.to_backend_ref(), 2),
+                "product with the inverse launch, source {i} of {m}"
+            );
+        }
+
+        // The product added, rotated and accumulated.
+        for i in 0..m {
+            for col in 0..2 {
+                module.vec_znx_dft_copy(1, 0, &mut res[i].to_backend_mut(), col, &starts[i].to_backend_ref(), col);
+            }
+        }
+        {
+            let add_refs: Vec<_> = add.iter().map(|add| add.to_backend_ref()).collect();
+            let add_refs: Vec<_> = add_refs.iter().collect();
+            let mut res_mut: Vec<_> = res.iter_mut().map(|res| res.to_backend_mut()).collect();
+            assert!(crate::hal_impl::gglwe_products_fused(
+                &mut res_mut,
+                res_size,
+                &a_refs,
+                dsize,
+                product_limbs,
+                &pmat.to_backend_ref(),
+                Some(&add_refs),
+                Some(&plan),
+                true,
+            ));
+        }
+        for i in 0..m {
+            let mut want = module.vec_znx_dft_alloc(n, 2, res_size);
+            for col in 0..2 {
+                module.vec_znx_dft_copy(1, 0, &mut want.to_backend_mut(), col, &starts[i].to_backend_ref(), col);
+            }
+            crate::hal_impl::gglwe_product_fused(
+                &mut want.to_backend_mut(),
+                res_size,
+                &sources[i].to_backend_ref(),
+                dsize,
+                product_limbs,
+                &pmat.to_backend_ref(),
+                [Some((&bodies[i].to_backend_ref(), 0)), None],
+                Some(&plan),
+                true,
+            );
+            assert!(
+                host(&module, &res[i].to_backend_ref(), 2) == host(&module, &want.to_backend_ref(), 2),
+                "product added, rotated and accumulated, source {i} of {m}"
+            );
+        }
+    }
+}

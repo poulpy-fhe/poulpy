@@ -150,6 +150,7 @@ labels! {
     VmpDigitProducts => "vmp.digit_products",
     VmpDigitProductsAdd => "vmp.digit_products_add",
     VmpDigitProductInverse => "vmp.digit_product_inverse",
+    VmpDigitProductsInverse => "vmp.digit_products_inverse",
     VmpExtractRows => "vmp.extract_rows",
     SvpScale => "svp.scale",
     CnvSingle => "cnv.single",

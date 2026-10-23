@@ -12,8 +12,8 @@ use crate::{
     NTT4x30Gpu,
     module::handle,
     ntt4x30::{
-        AutomorphismPlan, DftColumn, DftTerm, Tail, combine, digit_product, digit_product_inverse, digit_products, extract_rows,
-        forward, inverse_head,
+        AutomorphismPlan, DftColumn, DftTerm, Tail, combine, digit_product, digit_product_inverse, digit_products,
+        digit_products_inverse, extract_rows, forward, inverse_head,
     },
     runtime::GpuRuntime,
 };
@@ -166,6 +166,51 @@ pub(crate) fn gglwe_products_fused<RT: GpuRuntime, R: Ring>(
         addend_columns.as_deref(),
         plan,
     );
+    true
+}
+
+/// [`gglwe_product_digits_strided_inverse`] without addends for the sources `a` against one
+/// key, at most [`MANY_SOURCES`](crate::ntt4x30::MANY_SOURCES), in one launch: source `i` into
+/// `res[i]`. Returns `false`, having done nothing, when the degree has no inverse launch to take
+/// over or the views of each role do not share an allocation, a layout and a size.
+#[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
+pub(crate) fn gglwe_products_digits_strided_inverse<RT: GpuRuntime, R: Ring>(
+    module: &Module<NTT4x30Gpu<RT, R>>,
+    res: &mut [VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>],
+    a: &[VecZnxDftBackendRef<'_, NTT4x30Gpu<RT, R>>],
+    dsize: usize,
+    product_limbs: usize,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Gpu<RT, R>>,
+) -> bool {
+    let Some(mt) = inverse_head::<RT>(res[0].n().ilog2()) else {
+        return false;
+    };
+    let columns = |views: &mut dyn Iterator<Item = Option<DftColumn>>| views.collect::<Option<Vec<DftColumn>>>();
+    let (Some(res_columns), Some(a_columns), Some(pmat)) = (
+        columns(&mut res.iter().map(|res| dft_column_mut(res, 0))),
+        columns(&mut a.iter().map(|a| dft_column_ref(a, 0))),
+        self::pmat(pmat),
+    ) else {
+        return false;
+    };
+    let alike = |views: &[DftColumn]| {
+        views
+            .iter()
+            .all(|v| v.binding.id == views[0].binding.id && v.stride == views[0].stride && v.size == views[0].size)
+    };
+    if res_columns.len() > crate::ntt4x30::MANY_SOURCES
+        || !alike(&res_columns)
+        || !alike(&a_columns)
+        || res_columns[0].n != pmat.n
+        || a_columns[0].n != pmat.n
+        || a[0].cols() != pmat.cols_in
+        || res[0].cols() != pmat.cols_out
+        || a[0].size() == 0
+    {
+        return false;
+    }
+    let table = handle(module).tables().of(res_columns[0].n);
+    digit_products_inverse::<RT>(table, &res_columns, &a_columns, &pmat, dsize, product_limbs, mt);
     true
 }
 

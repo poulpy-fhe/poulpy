@@ -16,7 +16,6 @@ use poulpy_core::{
     reference::keyswitching::glwe::{
         gglwe_operand_from_dft_reference, gglwe_product_fused_reference, gglwe_product_fused_tmp_bytes_reference,
         gglwe_product_idft_normalize_reference, gglwe_product_idft_normalize_tmp_bytes_reference, gglwe_product_limbs,
-        gglwe_products_idft_normalize_reference,
     },
 };
 use poulpy_cpu_portable::kernels::noise::{gaussian_cumulative_table_portable, gaussian_rejection_constants_portable};
@@ -268,6 +267,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
         }
     }
 
+    // The sources of one key in launches of up to `MANY_SOURCES` that read the key once and run
+    // the first inverse launch; each column then takes the remaining launches and the
+    // normalization.
     fn gglwe_products_idft_normalize(
         module: &Module<Self>,
         res: &mut [VecZnxBackendMut<'_, Self>],
@@ -283,9 +285,64 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
         a_base2k: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        gglwe_products_idft_normalize_reference(
-            module, res, res_base2k, res_k, res_offset, res_dft, a, key, term_count, addends, body, a_base2k, scratch,
-        )
+        assert!(
+            res_dft.len() == res.len() && a.len() == res.len() && addends.len() == res.len() && body.len() == res.len(),
+            "gglwe_products_idft_normalize: items of different lengths"
+        );
+        let dsize = key.dsize().as_usize();
+        let product_limbs = if dsize == 1 { 1 } else { gglwe_product_limbs(key, term_count) };
+        let plain = key.stride() == 1 && addends.iter().all(|item| item.iter().all(Option::is_none));
+        let mut start = 0;
+        while start < res.len() {
+            let end = (start + crate::ntt4x30::MANY_SOURCES).min(res.len());
+            let launched = plain
+                && end - start >= 2
+                && crate::hal_impl::gglwe_products_digits_strided_inverse(
+                    module,
+                    &mut res_dft[start..end],
+                    &a[start..end],
+                    dsize,
+                    product_limbs,
+                    key.data(),
+                );
+            if launched {
+                for i in start..end {
+                    for col in 0..res_dft[i].cols() {
+                        crate::hal_impl::idft_tail_normalize(
+                            module,
+                            &mut res[i],
+                            res_base2k,
+                            res_k,
+                            res_offset,
+                            col,
+                            &mut res_dft[i],
+                            col,
+                            a_base2k,
+                            if col == 0 { body[i] } else { None },
+                        );
+                    }
+                }
+            } else {
+                for i in start..end {
+                    Self::gglwe_product_idft_normalize(
+                        module,
+                        &mut res[i],
+                        res_base2k,
+                        res_k,
+                        res_offset,
+                        &mut res_dft[i],
+                        &a[i],
+                        key,
+                        term_count,
+                        addends[i],
+                        body[i],
+                        a_base2k,
+                        scratch,
+                    );
+                }
+            }
+            start = end;
+        }
     }
 }
 

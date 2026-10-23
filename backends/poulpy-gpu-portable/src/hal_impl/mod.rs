@@ -22,7 +22,7 @@ pub(crate) use operand::{
 pub(crate) use vec_znx_dft::idft_tail_normalize;
 #[cfg(any(test, feature = "enable-core"))]
 #[cfg_attr(not(feature = "enable-core"), allow(unused_imports))]
-pub(crate) use vmp::gglwe_product_digits_strided_inverse;
+pub(crate) use vmp::{gglwe_product_digits_strided, gglwe_product_fused, gglwe_products_fused};
 #[cfg(any(test, feature = "enable-core"))]
 #[cfg_attr(not(feature = "enable-core"), allow(unused_imports))]
-pub(crate) use vmp::{gglwe_product_digits_strided, gglwe_product_fused, gglwe_products_fused};
+pub(crate) use vmp::{gglwe_product_digits_strided_inverse, gglwe_products_digits_strided_inverse};

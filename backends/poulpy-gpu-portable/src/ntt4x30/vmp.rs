@@ -1039,6 +1039,296 @@ pub(crate) fn digit_product_inverse<RT: GpuRuntime>(
     );
 }
 
+/// [`product_inverse_kernel`] without addends for `m` sources against one key, at most
+/// [`MANY_SOURCES`]: source `s` reads `a` from word `a_base{s}` and stores from `res_base{s}`,
+/// each with its own block of shared memory, the barriers shared. Each matrix word is loaded
+/// once for all the sources.
+#[cube(launch_unchecked)]
+#[allow(clippy::too_many_arguments, clippy::collapsible_if)]
+fn product_inverse_many_kernel(
+    res: &mut [u32],
+    a: &[u32],
+    key: &[u32],
+    tw: &[u32],
+    log_n: u32,
+    res_size: u32,
+    key_base: u32,
+    key_size: u32,
+    product_limbs: u32,
+    res_base0: u32,
+    res_base1: u32,
+    res_base2: u32,
+    res_base3: u32,
+    a_base0: u32,
+    a_base1: u32,
+    a_base2: u32,
+    a_base3: u32,
+    #[comptime] c: Consts,
+    #[comptime] t: Terms,
+    #[comptime] mt: u32,
+    #[comptime] m: u32,
+) {
+    let log_block = log_n + 2u32;
+    let cols_in = t.cols_in;
+    let cols_out = t.cols_out;
+    let dsize = t.dsize;
+    let rows = comptime!(t.rows());
+    // Block `s * cols_out + d` of `2^mt` lanes holds output column `d` of source `s`.
+    let mut sh = Shared::<[u32]>::new_slice(comptime!(((m * t.cols_out) as usize) << mt));
+    let u = UNIT_POS;
+    let tile = CUBE_POS as u32;
+    let word = (tile << mt) + u;
+    let active = word < (1u32 << log_block);
+    let plane = min(word >> log_n, 3u32);
+    let q = sel4(plane, c.q);
+    let r = sel4(plane, c.r);
+    let mu = sel4(plane, c.mu60);
+    let block = tile - (plane << (log_n - mt));
+    let tile_tb = (1u32 << (log_n - mt)) + block;
+    let toff = (plane << log_n) + (4u32 << log_n);
+
+    let mut xs = Sequence::<u32>::new();
+    #[unroll]
+    for s in 0..m {
+        let a_base = pick4(a_base0, a_base1, a_base2, a_base3, s);
+        #[unroll]
+        for l in 0..t.limbs {
+            #[unroll]
+            for col in 0..cols_in {
+                let mut x = 0u32;
+                if active {
+                    x = a[(a_base + ((l * cols_in + col) << log_block) + word) as usize];
+                }
+                xs.push(x);
+            }
+        }
+    }
+
+    let first = min(res_size, key_size);
+    let mut widths = Sequence::<u32>::new();
+    widths.push(first);
+    #[unroll]
+    for di in 1..dsize {
+        let span = dsize - di;
+        let omitted = span - min(span, product_limbs);
+        let kept = key_size - min(key_size, omitted);
+        widths.push(min(min(res_size, kept), key_size - min(key_size, di)));
+    }
+
+    let mut window = Sequence::<RuntimeCell<u64>>::new();
+    #[unroll]
+    for _ in 0..comptime!(m * t.dsize * t.cols_out) {
+        window.push(RuntimeCell::<u64>::new(0u64));
+    }
+
+    for step in 0..first + dsize - 1u32 {
+        let mut live = Sequence::<bool>::new();
+        let mut any = false;
+        #[unroll]
+        for di in 0..dsize {
+            let reached = step - di < *widths.index(di as usize);
+            live.push(reached);
+            any = any || reached;
+        }
+        if any && active {
+            #[unroll]
+            for d in 0..cols_out {
+                let mut ks = Sequence::<u32>::new();
+                #[unroll]
+                for row in 0..rows {
+                    #[unroll]
+                    for col in 0..cols_in {
+                        let block = ((row * cols_in + col) * key_size + step) * cols_out + d;
+                        ks.push(key[(key_base + (block << log_block) + word) as usize]);
+                    }
+                }
+                #[unroll]
+                for s in 0..m {
+                    #[unroll]
+                    for di in 0..dsize {
+                        if *live.index(di as usize) {
+                            let slot = window.index(((s * cols_out + d) * dsize + dsize - 1 - di) as usize);
+                            let mut acc = slot.read();
+                            #[unroll]
+                            for row in 0..comptime!(t.digit_rows(di)) {
+                                #[unroll]
+                                for col in 0..cols_in {
+                                    if comptime!(t.fold_before(di, row, col)) {
+                                        acc = fold64(acc, r);
+                                    }
+                                    let x = *xs.index(((s * t.limbs + dsize - 1 - di + row * dsize) * cols_in + col) as usize);
+                                    let k = *ks.index((row * cols_in + col) as usize);
+                                    acc += u64::cast_from(x) * u64::cast_from(k);
+                                }
+                            }
+                            slot.store(acc);
+                        }
+                    }
+                }
+            }
+        }
+        if step >= dsize - 1u32 {
+            #[unroll]
+            for s in 0..m {
+                #[unroll]
+                for d in 0..cols_out {
+                    let value = barrett60(fold64(window.index(((s * cols_out + d) * dsize) as usize).read(), r), q, mu);
+                    sh[(((s * cols_out + d) << mt) + u) as usize] = value;
+                }
+            }
+            sync_cube();
+            #[unroll]
+            for e in 0..mt {
+                let half = comptime!(1u32 << e);
+                if comptime!(cols_out == 2) {
+                    if active {
+                        let pair_index = u & comptime!((1u32 << (mt - 1)) - 1);
+                        let low = ((pair_index >> e) << comptime!(e + 1)) | (pair_index & comptime!(half - 1));
+                        let wq = tw[(toff + tile_tb * comptime!(1u32 << (mt - 1 - e)) + (low >> comptime!(e + 1))) as usize];
+                        let w = wq.mul_hi(q) + 1u32;
+                        #[unroll]
+                        for s in 0..m {
+                            let i0 = (((s * 2u32 + (u >> comptime!(mt - 1))) << mt) + low) as usize;
+                            let i1 = i0 + half as usize;
+                            let pair = gs(sh[i0], sh[i1], wq, w, q);
+                            sh[i0] = pair.0;
+                            sh[i1] = pair.1;
+                        }
+                    }
+                } else if (u & half) == 0u32 && active {
+                    let wq = tw[(toff + tile_tb * comptime!(1u32 << (mt - 1 - e)) + (u >> comptime!(e + 1))) as usize];
+                    let w = wq.mul_hi(q) + 1u32;
+                    #[unroll]
+                    for s in 0..m {
+                        #[unroll]
+                        for d in 0..cols_out {
+                            let i0 = (((s * cols_out + d) << mt) + u) as usize;
+                            let i1 = i0 + half as usize;
+                            let pair = gs(sh[i0], sh[i1], wq, w, q);
+                            sh[i0] = pair.0;
+                            sh[i1] = pair.1;
+                        }
+                    }
+                }
+                sync_cube();
+            }
+        }
+        #[unroll]
+        for s in 0..m {
+            let res_base = pick4(res_base0, res_base1, res_base2, res_base3, s);
+            #[unroll]
+            for d in 0..cols_out {
+                let w0 = (s * cols_out + d) * dsize;
+                if step >= dsize - 1u32 && active {
+                    let j = step - (dsize - 1u32);
+                    res[(res_base + ((j * cols_out + d) << log_block) + word) as usize] =
+                        sh[(((s * cols_out + d) << mt) + u) as usize];
+                }
+                #[unroll]
+                for k in 1..dsize {
+                    window
+                        .index((w0 + k - 1) as usize)
+                        .store(window.index((w0 + k) as usize).read());
+                }
+                window.index((w0 + dsize - 1) as usize).store(0u64);
+            }
+        }
+    }
+    // Past the product the result is zero, and so is its transform.
+    if active {
+        #[unroll]
+        for s in 0..m {
+            let res_base = pick4(res_base0, res_base1, res_base2, res_base3, s);
+            #[unroll]
+            for d in 0..cols_out {
+                for j in first..res_size {
+                    res[(res_base + ((j * cols_out + d) << log_block) + word) as usize] = 0u32;
+                }
+            }
+        }
+    }
+}
+
+/// [`digit_product_inverse`] without addends for the sources `a` against one key, at most
+/// [`MANY_SOURCES`], into fresh results `res`: one launch that reads `pmat` once. The views of
+/// each role share an allocation, a layout and a size.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn digit_products_inverse<RT: GpuRuntime>(
+    table: &crate::runtime::GpuBuf<RT>,
+    res: &[DftColumn],
+    a: &[DftColumn],
+    pmat: &Pmat,
+    dsize: usize,
+    product_limbs: usize,
+    mt: u32,
+) {
+    let m = res.len();
+    assert!((1..=MANY_SOURCES).contains(&m), "fused products: {m} sources");
+    assert_eq!(a.len(), m, "fused products: sources and destinations differ in number");
+    let n = pmat.n;
+    let block = 4 * n;
+    assert!(dsize >= 1, "digit size must be positive");
+    let alike = |views: &[DftColumn], what: &str| {
+        let first = &views[0];
+        assert!(
+            views
+                .iter()
+                .all(|v| v.binding.id == first.binding.id && v.stride == first.stride && v.size == first.size && v.n == n),
+            "fused products: {what} of different allocations or layouts"
+        );
+    };
+    alike(res, "destinations");
+    alike(a, "sources");
+    assert_eq!(a[0].stride as usize, pmat.cols_in * block, "a.cols() != pmat.cols_in()");
+    assert_eq!(res[0].stride as usize, pmat.cols_out * block, "res.cols() != pmat.cols_out()");
+    assert!(
+        (1..=10).contains(&mt) && mt < n.ilog2(),
+        "fused products: no such inverse launch"
+    );
+    let limbs = a[0].size.min(pmat.rows * dsize);
+    assert!(limbs != 0 && res[0].size != 0, "fused products: nothing to multiply");
+    let narrow = |value: usize| u32::try_from(value).expect("vector-matrix product beyond the 32-bit range");
+    narrow(pmat.base as usize + pmat.blocks().size * block);
+    let terms = Terms {
+        cols_in: narrow(pmat.cols_in),
+        cols_out: narrow(pmat.cols_out),
+        dsize: narrow(dsize),
+        limbs: narrow(limbs),
+        addend: 0,
+        permute: false,
+    };
+    let base = |views: &[DftColumn], s: usize| views.get(s).map_or(views[0].base, |v| v.base);
+    let table = table.view().binding().expect("transform tables hold storage");
+    let key_limbs = pmat.size.min(res[0].size + dsize - 1);
+    let words = pmat.cols_out * terms.rows() as usize * pmat.cols_in * key_limbs
+        + m * (limbs * pmat.cols_in + pmat.cols_out * res[0].size);
+    launch!(
+        RT, Label::VmpDigitProductsInverse, block * 4 * words, product_inverse_many_kernel, (block, 1 << mt, 1 << mt);
+        [
+            res[0].binding => u32,
+            a[0].binding => u32,
+            pmat.binding => u32,
+            table => u32,
+        ];
+        [
+            n.ilog2(),
+            narrow(res[0].size),
+            pmat.base,
+            narrow(pmat.size),
+            narrow(product_limbs.min(dsize)),
+            base(res, 0),
+            base(res, 1),
+            base(res, 2),
+            base(res, 3),
+            base(a, 0),
+            base(a, 1),
+            base(a, 2),
+            base(a, 3),
+        ];
+        [Consts::get(), terms, mt, narrow(m)]
+    );
+}
+
 #[cube(launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn extract_rows_kernel(
