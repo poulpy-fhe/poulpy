@@ -1,10 +1,7 @@
 # Multiparty operation contracts
 
-Public `api` traits delegate to backend `oep::*Impl` contracts. A backend opts
-into the reference implementation with the `impl_mhe_*_reference!` macros or
-implements a contract itself. The reference composes `poulpy-core` and
-`poulpy-hal` operations; same-layer compositions are crate-private derived
-defaults in `oep::derived`.
+Public `api` traits follow the [layering contract](../../docs/layering-contract.md). The references compose
+`poulpy-core` and `poulpy-hal` operations.
 
 ## Public API organization
 
@@ -195,9 +192,9 @@ certify a security level, and neither can statistical tests.
 
 ## Replacing an operation
 
-An override must compute the same result as the reference, including its
-seed and layout checks, and pass parity against a validated backend; the
-parity suite arrives with the first override.
+An override reproduces the reference, its seed and layout checks included,
+as the [layering contract](../../docs/layering-contract.md) states; the parity suite arrives with the
+first override.
 `impl_mhe_reference_full!` selects every family; select
 `impl_mhe_pat_reference!`, which covers every PAT type,
 `impl_mhe_public_key_reference!`, `impl_mhe_evaluation_key_reference!`,
