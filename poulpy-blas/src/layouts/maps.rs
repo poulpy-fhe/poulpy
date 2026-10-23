@@ -9,7 +9,7 @@ use super::grid::assert_tiles;
 
 /// Diagonals over `slots` slots of the map whose output `(r, c)` in every matrix slot sums `w * in(r2, c2)` over
 /// `terms(r, c)`, every diagonal stored at the smallest power-of-two period that holds them all.
-pub fn per_matrix_map<F, I>(slots: usize, log_d: usize, terms: impl Fn(usize, usize) -> I) -> Diagonals<F>
+pub(crate) fn per_matrix_map<F, I>(slots: usize, log_d: usize, terms: impl Fn(usize, usize) -> I) -> Diagonals<F>
 where
     F: DiagonalArithmetic + PartialEq,
     I: IntoIterator<Item = (usize, usize, F)>,
@@ -68,13 +68,13 @@ fn min_period<F: PartialEq>(v: &[F]) -> usize {
 }
 
 /// JKLS sigma: output `(r, c)` reads `(r, r + c mod d)`.
-pub fn sigma<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize) -> Diagonals<F> {
+pub(crate) fn sigma<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize) -> Diagonals<F> {
     let d = 1usize << log_d;
     per_matrix_map(slots, log_d, |r, c| [(r, (r + c) % d, F::one())])
 }
 
 /// JKLS tau: output `(r, c)` reads `(r + c mod d, c)`.
-pub fn tau<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize) -> Diagonals<F> {
+pub(crate) fn tau<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize) -> Diagonals<F> {
     let d = 1usize << log_d;
     per_matrix_map(slots, log_d, |r, c| [((r + c) % d, c, F::one())])
 }
@@ -82,7 +82,7 @@ pub fn tau<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize) 
 /// JKLS tau on a replicated input, every matrix slot holding the same matrix: output `(r, c)` reads `(r + c mod d, c)`
 /// through the rotation by `c d`, which wraps inside a block because the matrix slots repeat. `d` diagonals at the
 /// offsets `c d`, each the mask of column `c`, where [`tau`] needs `2d - 1` once two matrix slots differ.
-pub fn tau_rep<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize) -> Diagonals<F> {
+pub(crate) fn tau_rep<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize) -> Diagonals<F> {
     let d = 1usize << log_d;
     assert_tiles(slots, d, 1);
     let mut diagonals = Diagonals::new(slots);
@@ -102,19 +102,19 @@ pub fn tau_rep<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usi
 }
 
 /// Transpose: output `(r, c)` reads `(c, r)`.
-pub fn transpose<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize) -> Diagonals<F> {
+pub(crate) fn transpose<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize) -> Diagonals<F> {
     per_matrix_map(slots, log_d, |r, c| [(c, r, F::one())])
 }
 
 /// JKLS psi^k: output `(r, c)` reads `(r + k mod d, c)`.
-pub fn rotate_rows<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize, k: usize) -> Diagonals<F> {
+pub(crate) fn rotate_rows<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize, k: usize) -> Diagonals<F> {
     let d = 1usize << log_d;
     per_matrix_map(slots, log_d, |r, c| [((r + k) % d, c, F::one())])
 }
 
 /// psi^k on a replicated input, for `1 <= k < d`: the rotation by `k d`, one all-ones diagonal, which wraps inside a
 /// block because the matrix slots repeat. Encoded at `log_delta = 0`, a product by 1, it spends no scale.
-pub fn rotate_rows_rep<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize, k: usize) -> Diagonals<F> {
+pub(crate) fn rotate_rows_rep<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize, k: usize) -> Diagonals<F> {
     let d = 1usize << log_d;
     assert_tiles(slots, d, 1);
     assert!(0 < k && k < d, "rotate_rows_rep takes 1 <= k < d");
@@ -124,43 +124,43 @@ pub fn rotate_rows_rep<F: DiagonalArithmetic + One + PartialEq>(slots: usize, lo
 }
 
 /// JKLS phi^k: output `(r, c)` reads `(r, c + k mod d)`.
-pub fn rotate_cols<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize, k: usize) -> Diagonals<F> {
+pub(crate) fn rotate_cols<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize, k: usize) -> Diagonals<F> {
     let d = 1usize << log_d;
     per_matrix_map(slots, log_d, |r, c| [(r, (c + k) % d, F::one())])
 }
 
 /// Upper half of psi^k: output `(r, c)` reads `(r + k, c)` when `r + k < d`, else 0.
-pub fn rows_upper<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize, k: usize) -> Diagonals<F> {
+pub(crate) fn rows_upper<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize, k: usize) -> Diagonals<F> {
     let d = 1usize << log_d;
     per_matrix_map(slots, log_d, |r, c| (r + k < d).then(|| (r + k, c, F::one())))
 }
 
 /// Lower half of psi^k: output `(r, c)` reads `(r + k - d, c)` when `r + k >= d`, else 0.
-pub fn rows_lower<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize, k: usize) -> Diagonals<F> {
+pub(crate) fn rows_lower<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize, k: usize) -> Diagonals<F> {
     let d = 1usize << log_d;
     per_matrix_map(slots, log_d, |r, c| (r + k >= d).then(|| (r + k - d, c, F::one())))
 }
 
 /// Left half of phi^k: output `(r, c)` reads `(r, c + k)` when `c + k < d`, else 0.
-pub fn cols_left<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize, k: usize) -> Diagonals<F> {
+pub(crate) fn cols_left<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize, k: usize) -> Diagonals<F> {
     let d = 1usize << log_d;
     per_matrix_map(slots, log_d, |r, c| (c + k < d).then(|| (r, c + k, F::one())))
 }
 
 /// Right half of phi^k: output `(r, c)` reads `(r, c + k - d)` when `c + k >= d`, else 0.
-pub fn cols_right<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize, k: usize) -> Diagonals<F> {
+pub(crate) fn cols_right<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize, k: usize) -> Diagonals<F> {
     let d = 1usize << log_d;
     per_matrix_map(slots, log_d, |r, c| (c + k >= d).then(|| (r, c + k - d, F::one())))
 }
 
 /// The columns of psi^k that phi^k keeps in the block: output `(r, c)` reads `(r + k mod d, c)` when `c + k < d`, else 0.
-pub fn rows_left<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize, k: usize) -> Diagonals<F> {
+pub(crate) fn rows_left<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize, k: usize) -> Diagonals<F> {
     let d = 1usize << log_d;
     per_matrix_map(slots, log_d, |r, c| (c + k < d).then(|| ((r + k) % d, c, F::one())))
 }
 
 /// The columns of psi^k that phi^k wraps: output `(r, c)` reads `(r + k mod d, c)` when `c + k >= d`, else 0.
-pub fn rows_right<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize, k: usize) -> Diagonals<F> {
+pub(crate) fn rows_right<F: DiagonalArithmetic + One + PartialEq>(slots: usize, log_d: usize, k: usize) -> Diagonals<F> {
     let d = 1usize << log_d;
     per_matrix_map(slots, log_d, |r, c| (c + k >= d).then(|| ((r + k) % d, c, F::one())))
 }
@@ -178,12 +178,12 @@ fn skewed_values<F>(log_d: usize, count: usize, b: impl Fn(usize, usize, usize) 
 
 /// Tau of the public matrix `b(s mod count, ., .)` of every matrix slot `s`, `count d^2` values, row-major: entry
 /// `(r, c)` of matrix slot `s` is `b(s, (r + c) mod d, c)`.
-pub fn tau_values<F>(log_d: usize, count: usize, b: impl Fn(usize, usize, usize) -> F) -> Vec<F> {
+pub(crate) fn tau_values<F>(log_d: usize, count: usize, b: impl Fn(usize, usize, usize) -> F) -> Vec<F> {
     skewed_values(log_d, count, b, true)
 }
 
 /// Sigma of the public matrices, as [`tau_values`]: entry `(r, c)` of matrix slot `s` is `b(s, r, (r + c) mod d)`.
-pub fn sigma_values<F>(log_d: usize, count: usize, b: impl Fn(usize, usize, usize) -> F) -> Vec<F> {
+pub(crate) fn sigma_values<F>(log_d: usize, count: usize, b: impl Fn(usize, usize, usize) -> F) -> Vec<F> {
     skewed_values(log_d, count, b, false)
 }
 
@@ -193,7 +193,7 @@ pub fn sigma_values<F>(log_d: usize, count: usize, b: impl Fn(usize, usize, usiz
 /// # Panics
 ///
 /// When `values` is empty or its length does not divide `slots`.
-pub fn slot_product<F: DiagonalArithmetic>(slots: usize, values: &[F], rotation: i64) -> Diagonals<F> {
+pub(crate) fn slot_product<F: DiagonalArithmetic>(slots: usize, values: &[F], rotation: i64) -> Diagonals<F> {
     assert!(
         !values.is_empty() && slots.is_multiple_of(values.len()),
         "slot_product: the values' period must divide the slots"
@@ -205,11 +205,33 @@ pub fn slot_product<F: DiagonalArithmetic>(slots: usize, values: &[F], rotation:
     diagonals
 }
 
+/// Projection on row 0: output `(r, c)` reads `(r, c)` when `r = 0`, else 0. One diagonal at offset 0, stored at
+/// `d^2` slots.
+pub(crate) fn first_row<F: DiagonalArithmetic + One>(slots: usize, log_d: usize) -> Diagonals<F> {
+    let d = 1usize << log_d;
+    assert_tiles(slots, d, 1);
+    let mask: Vec<F> = (0..d * d).map(|t| projection(t < d)).collect();
+    slot_product(slots, &mask, 0)
+}
+
+/// Projection on column 0: output `(r, c)` reads `(r, c)` when `c = 0`, else 0. One diagonal at offset 0, stored at `d`
+/// slots.
+pub(crate) fn first_col<F: DiagonalArithmetic + One>(slots: usize, log_d: usize) -> Diagonals<F> {
+    let d = 1usize << log_d;
+    assert_tiles(slots, d, 1);
+    let mask: Vec<F> = (0..d).map(|c| projection(c == 0)).collect();
+    slot_product(slots, &mask, 0)
+}
+
+fn projection<F: DiagonalArithmetic + One>(keep: bool) -> F {
+    if keep { F::one() } else { <F as DiagonalArithmetic>::zero() }
+}
+
 /// Right product in every matrix slot: output `(r, c)` of matrix slot `s` is `sum_l in(r, l) b(s mod count, l, c)`.
 ///
 /// Its diagonals are stored at a period fixed by the structure, never by `b`'s values: `d` for one public matrix, whose
 /// diagonals vary with the column alone, `count d^2` otherwise. Every diagonal offset is stored, zero or not.
-pub fn right_mul<F: DiagonalArithmetic + PartialEq>(
+pub(crate) fn right_mul<F: DiagonalArithmetic + PartialEq>(
     slots: usize,
     log_d: usize,
     count: usize,
@@ -225,7 +247,7 @@ pub fn right_mul<F: DiagonalArithmetic + PartialEq>(
 ///
 /// Its diagonals sit at the offsets `(l - r) d`, `2d - 1` of them, `d` when one matrix fills the slots, every one
 /// stored, zero or not, at `count d^2` slots, a period fixed by the structure, never by `b`'s values.
-pub fn left_mul<F: DiagonalArithmetic + PartialEq>(
+pub(crate) fn left_mul<F: DiagonalArithmetic + PartialEq>(
     slots: usize,
     log_d: usize,
     count: usize,
@@ -240,7 +262,7 @@ pub fn left_mul<F: DiagonalArithmetic + PartialEq>(
 /// [`left_mul`] of one public matrix on a replicated input, every matrix slot holding the same matrix: the rotation by
 /// `-j d` equals the one by `(d - j) d` there, so the diagonals `j` and `j - d` merge. `d` diagonals at the offsets
 /// `j d`, `0 <= j < d`, the entry of matrix slot position `(r, c)` being `b(0, r, (r + j) mod d)`, stored at `d^2` slots.
-pub fn left_mul_rep<F: DiagonalArithmetic + PartialEq>(
+pub(crate) fn left_mul_rep<F: DiagonalArithmetic + PartialEq>(
     slots: usize,
     log_d: usize,
     b: impl Fn(usize, usize, usize) -> F,
@@ -261,7 +283,7 @@ pub fn left_mul_rep<F: DiagonalArithmetic + PartialEq>(
 ///
 /// Its `2d - 1` diagonals sit at sigma's offsets, `-(d-1)..=d-1`, every one stored, zero or not, at `count d^2` slots,
 /// a period fixed by the structure, never by `b`'s values.
-pub fn right_jkls<F: DiagonalArithmetic + PartialEq>(
+pub(crate) fn right_jkls<F: DiagonalArithmetic + PartialEq>(
     slots: usize,
     log_d: usize,
     count: usize,
@@ -281,7 +303,7 @@ pub fn right_jkls<F: DiagonalArithmetic + PartialEq>(
 ///
 /// Its diagonals sit at tau's offsets, `j d` for `|j| < d`, `2d - 1` of them, `d` when one matrix fills the slots,
 /// every one stored, zero or not, at `count d^2` slots.
-pub fn left_jkls<F: DiagonalArithmetic + PartialEq>(
+pub(crate) fn left_jkls<F: DiagonalArithmetic + PartialEq>(
     slots: usize,
     log_d: usize,
     count: usize,
@@ -670,5 +692,33 @@ mod tests {
             }
             assert_eq!(left, apply(&left_mul(SLOTS, LOG_D, count, public), &a), "count={count}");
         }
+    }
+
+    /// `x += Rot_{sign 2^i stride}(x)` for every `i < log2(d)`.
+    fn tree(x: &[f64], stride: usize, sign: i64) -> Vec<f64> {
+        (0..LOG_D).fold(x.to_vec(), |x, i| {
+            let shift = (sign * ((stride << i) as i64)).rem_euclid(x.len() as i64) as usize;
+            (0..x.len()).map(|t| x[t] + x[(t + shift) % x.len()]).collect()
+        })
+    }
+
+    /// The axis reductions in the clear. Along the rows, the tree by `2^i d` leaves the column sums in row 0, and in every
+    /// row of a replicated input; projected on row 0 and broadcast by `-2^i d`, in every row. Along the columns, the tree
+    /// by `2^i`, the projection on column 0 and the broadcast by `-2^i` leave each row's sum in every column.
+    #[test]
+    fn reductions_hold_in_the_clear() {
+        let (x, replicated) = (
+            input(22),
+            input(23)[..D * D].iter().copied().cycle().take(SLOTS).collect::<Vec<_>>(),
+        );
+        let column_sums = |x: &[f64]| per_matrix(x, |m, _, c| (0..D).map(|r| m[r * D + c]).sum());
+        let row_sums = per_matrix(&x, |m, r, _| (0..D).map(|c| m[r * D + c]).sum());
+        assert_eq!(tree(&replicated, D, 1), column_sums(&replicated));
+        let rows = apply(&first_row(SLOTS, LOG_D), &tree(&x, D, 1));
+        assert_eq!(tree(&rows, D, -1), column_sums(&x));
+        let cols = apply(&first_col(SLOTS, LOG_D), &tree(&x, 1, 1));
+        assert_eq!(tree(&cols, 1, -1), row_sums);
+        assert_eq!(first_row::<f64>(SLOTS, LOG_D).period(0), Some(D * D));
+        assert_eq!(first_col::<f64>(SLOTS, LOG_D).period(0), Some(D));
     }
 }

@@ -18,7 +18,7 @@ changes bits.
 | OEP family | Required | Provided |
 |---|---|---|
 | `BlasMatInterImpl` | `blas_rotate`, `blas_sum` | |
-| `BlasMatIntraImpl` | the map hook `blas_map_blocks_impl` | `blas_transpose`, `blas_rotate_rows`, `blas_rotate_cols`, over the hook |
+| `BlasMatIntraImpl` | the map hook `blas_map_blocks_impl` | `blas_transpose`, `blas_rotate_rows`, `blas_rotate_cols`, `blas_sum_rows`, `blas_sum_cols`, over the hook |
 | `BlasMatMulImpl` | `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, `blas_matmul_prepared`, `blas_matmul_pt_right`, `blas_matmul_pt_left` | `blas_matmul`, over both hot preparations and the prepared product |
 | `BlasJklsImpl` | the JKLS kernel `blas_jkls_block_impl`, one output block of the prepared product | |
 
@@ -26,13 +26,14 @@ Each operation's `_tmp_bytes` query belongs to the same family. `BlasImpl`
 aggregates the four families as a test bound; it has a blanket implementation
 and is never implemented directly.
 
-The provided methods call the backend's selected methods: the transpose and
-both shifts call its map hook, and `blas_matmul` its preparations and prepared
-product. So an override of the hook or of the kernel reaches every operation
-built on it. The provided bodies are public in `poulpy_blas::oep::derived`, as
-`blas_transpose_derived`, `blas_rotate_rows_derived`,
-`blas_rotate_cols_derived` and `blas_matmul_derived` with their
-`_tmp_bytes_derived` queries, so an override of a provided method can fall
+The provided methods call the backend's selected methods: the transpose, both
+shifts and both reductions call its map hook, and `blas_matmul` its
+preparations and prepared product. So an override of the hook or of the kernel
+reaches every operation built on it. The provided bodies are public in
+`poulpy_blas::oep::derived`, as `blas_transpose_derived`,
+`blas_rotate_rows_derived`, `blas_rotate_cols_derived`,
+`blas_sum_rows_derived`, `blas_sum_cols_derived` and `blas_matmul_derived`
+with their `_tmp_bytes_derived` queries, so an override of a provided method can fall
 back to the provided body, for both the call and its query.
 
 The prepared operands of the products, `BlasMatMulLeft<BE>` and
@@ -182,7 +183,8 @@ public operand's scale `p_B`:
 | `blas_rotate` by `r` | `rotate_galois_elements(order, r)` | `min(res.k, a.k)` |
 | `blas_sum` | `sum_galois_elements(order, a)` | `min(res.k, a.k)` |
 | `blas_transpose` | `transpose_galois_elements(order)` | baby steps at `a.k`, giant steps at `min(res.k, a.k - p)` |
-| `blas_rotate_rows`, `blas_rotate_cols` by `k` | `rotate_rows_galois_elements(order, k)`, `rotate_cols_galois_elements(order, k)` | as the transpose; none for a shift by a multiple of `d`, a copy |
+| `blas_rotate_rows`, `blas_rotate_cols` by `k` | `rotate_rows_galois_elements(order, k)`, `rotate_cols_galois_elements(order, k)` | as the transpose; none for a shift by a multiple of `d`, a copy; a row shift of a replicated grid one block high, a rotation by `k d`, at `min(res.k, a.k)` |
+| `blas_sum_rows`, `blas_sum_cols` | `sum_rows_galois_elements(order)`, `sum_cols_galois_elements(order)` | the tree's rotations at `a.k`, the broadcast's at `min(res.k, a.k - p)`; along the rows of a replicated grid, the tree's at `min(res.k, a.k)` and no broadcast |
 | `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, `blas_matmul`, and `blas_matmul_prepared` of a hot operand | `matmul_galois_elements(order)` | sigma's (tau's) baby steps at `a.k` and giant steps at `a.k - p`; the shifts' giant steps at `a.k - 2p`, those of a replicated right factor `b` at `b.k - p` |
 | `blas_matmul_pt_right`, `blas_matmul_pt_left` | `matmul_pt_right_galois_elements(order)`, `matmul_pt_left_galois_elements(order)` of the operand's plan | under `Diagonal`, the blocks' baby steps at `a.k`, giant steps at `min(res.k, a.k - p_B)`; under `Jkls`, the first map's baby steps at `a.k`, giant steps at `a.k - p_B`, then the blocks' baby steps at `a.k - p_B`, giant steps at `min(res.k, a.k - 2 p_B)`; under `JklsStored` and `JklsGalois`, the first map's as under `Jkls`, then the context's masks', `Direct`, at `a.k - p_B - p` |
 
@@ -214,8 +216,11 @@ The sets list the rotations of the reference's maps as the plan schedules them:
 shift maps `Direct`, the others at the cost-optimal BSGS giant step. The maps
 of a replicated right factor rotate within `matmul_galois_elements`:
 `BlasContext::tau_rep` at tau's giant step, and `BlasContext::rotate_rows_rep(k)`
-by `k d`, `Direct`, one of psi^k's rotations. `galois_elements(order)` covers
-every map of a context, so every operation's set but `blas_rotate`'s and
+by `k d`, `Direct`, one of psi^k's rotations, as is the rotation of a row
+shift of a replicated grid one block high. The reductions rotate by `2^i d`
+(`2^i`) and its opposite, rotations of psi^(2^i) and psi^(d - 2^i) (phi^(2^i)
+and phi^(d - 2^i)), and their projections take no key. `galois_elements(order)`
+covers every map of a context, so every operation's set but `blas_rotate`'s and
 `blas_sum`'s. The preparations check the keys of their terms under either hint,
 and the prepared product those of a hot operand's under its own context. The
 tensor key is needed if and only if a pipeline calls `blas_matmul` or
@@ -235,7 +240,8 @@ looks up: `blas_matmul_key_uses`, `blas_matmul_prepare_left_key_uses`,
 `blas_matmul_prepare_right_key_uses`, `blas_matmul_prepared_key_uses`,
 `blas_matmul_pt_right_key_uses`, `blas_matmul_pt_left_key_uses`,
 `blas_transpose_key_uses`, `blas_rotate_rows_key_uses`,
-`blas_rotate_cols_key_uses`, `blas_rotate_key_uses` and `blas_sum_key_uses`. A
+`blas_rotate_cols_key_uses`, `blas_sum_rows_key_uses`,
+`blas_sum_cols_key_uses`, `blas_rotate_key_uses` and `blas_sum_key_uses`. A
 query takes the grids, operands and context of the operation's `_tmp_bytes`
 query, without the key layouts. It leaves out what the keys do not depend on:
 the result grid of a product of two encrypted grids, and the `PrepareHint` of a
@@ -258,6 +264,7 @@ The output-layout queries next to them (`blas_matmul_output_layout`,
 `blas_matmul_prepared_output_layout`, `blas_matmul_pt_right_output_layout`,
 `blas_matmul_pt_left_output_layout`, `blas_transpose_output_layout`,
 `blas_rotate_rows_output_layout`, `blas_rotate_cols_output_layout`,
+`blas_sum_rows_output_layout`, `blas_sum_cols_output_layout`,
 `blas_rotate_output_layout`, `blas_sum_output_layout`) take the input layouts
 and the allocated `res` and return the `BlasLayout` the call stamps on `res`,
 whose block gives `k`, `log_delta` and label; the record is the validator's.
@@ -281,17 +288,22 @@ crate's rules and fail in this order:
    one layout, whose `log_delta` exceeds its `k`, or whose label does not allow
    its batch record; a shape or inner dimension that does not match; blocks of
    another degree than the module's, or inputs of another radix or rank than
-   `res`; a context or public operand encoded for another slot count or radix;
-   public matrices that do not divide the batch; under `JklsStored` and
-   `JklsGalois`, more than one public matrix on the right, and a context at
+   `res`; a context or public operand encoded for another slot count or radix,
+   or a context wider than the blocks its maps read, which an intra operation
+   checks only on a path that evaluates a map: a shift by a multiple of `d`,
+   the row shift of a replicated grid one block high and the row sum of a
+   replicated grid check the slot count alone; public matrices that do not
+   divide the batch; under `JklsStored` and `JklsGalois`, more than one public
+   matrix on the right, and a context at
    another `log_d`, encoded for another slot count or radix, wider than the
    input or, on the left, without their masks; a prepared operand without a
    batch record, or a hot one at another `log_d` than the product's context
    or under a context encoded for another slot count or radix; and a product
-   at a radix above 62, whose digits cannot hold two lazy terms of the JKLS
-   kernel's two-pass circuit, or a sum at a radix whose digits cannot hold the
-   `log2(mat_slots) + 1` lazy terms it adds. A hot operand's scale is not
-   checked: the product spends that of its context's maps.
+   at a radix above 62, where two canonical tensor digits can overflow an
+   `i64`, as poulpy-ckks's prepared dot product rejects it. A hot operand's
+   scale is not checked: the product spends that of its context's maps. No
+   radix is rejected for the length of a lazy sum, which normalizes instead
+   ([Lazy sums](#lazy-sums)).
 2. Key by key, the rotation keys first, each at the width the operation
    looks it up at ([Keys](#keys)): `MissingAutomorphismKey`, or
    `MissingRelinearizationKey` for the tensor key, when the store lacks it,
@@ -319,6 +331,37 @@ batch record only after `Ok`, with the batch the validator computed. Since keys
 are checked first, an input that poulpy-ckks rejects for its budget may ask for
 a key that poulpy-ckks would not look up for it: a store holding exactly the
 keys in use then reports `MissingAutomorphismKey` instead of the budget error.
+
+## Lazy sums
+
+The reductions sum the blocks of a line with poulpy-ckks's
+`ckks_add_many_into`, which normalizes the sum in place after every
+`t / w - 1` additions, so that it holds `t` canonical digits per coefficient at
+most, for `w` the digits a block holds, 1 on a line of canonical blocks and 2
+otherwise, the most any operation leaves in a flag-clear block, and `t`
+poulpy-core's `max_lazy_terms` over the sum's `n (rank + 1) size` coefficients,
+the larger of two counts:
+
+- the worst case, `2^(63 - base2k)` digits of magnitude at most
+  `2^(base2k - 1)`, whose sum stays in the normalizer's domain
+  `[-2^62, 2^62]`;
+- the average case of `docs/base2k-failure-probability.md`: the most
+  independent centered uniform digits, of deviation `2^base2k / sqrt(12)`,
+  whose sum leaves `[-2^62, 2^62]` with probability at most `2^-128` over
+  those coefficients, by the Mills-ratio bound on `erfc` and a union bound.
+
+The average case binds from 56 bits down: at `n = 2^16`, rank 1 and 20 limbs,
+52 bits hold 62526 terms where the worst case allows 2048, and 62 bits hold 2.
+There two flag-clear blocks already exceed the bound, so such a line is summed
+block by block, each flag-clear block first normalized into a scratch block and
+the sum normalized before each addition. As everywhere in base2k arithmetic,
+the inputs are taken as independent: correlated inputs, such as thousands of
+copies of one block, can overflow, as can a flag-clear block holding more than
+two digits, which no operation leaves; none of this is checked.
+
+The trees of the reductions and `blas_sum` are poulpy-ckks's inner sums, and
+the broadcasts its replicates, none normalized, over poulpy-core's summed
+trace, whose automorphism at each level leaves the sum canonical.
 
 ## Scratch
 

@@ -322,12 +322,12 @@ impl<BE: Backend, S> BlasPtOperand<BE, S> {
 }
 
 impl<BE: Backend> BlasPtOperand<BE, Left> {
-    /// The prepared map of block `(i, l)` for a replicated input, with `d` diagonals at the offsets `j d` for `j < d`
-    /// ([`maps::left_mul_rep`]), scheduled at `left_mul`'s giant step, so it rotates within the left product's key
-    /// set; `None` unless the operand was encoded under [`BlasPtAlgorithm::Diagonal`] with one public matrix on more
-    /// than one matrix slot. A left product takes these maps instead of [`Self::block`]'s exactly when its input is
-    /// replicated ([`crate::layouts::replicated`], read from the input's label) and the operand holds them. Panics if
-    /// `(i, l)` is outside the grid.
+    /// The prepared map of block `(i, l)` for a replicated input, with `d` diagonals at the offsets `j d` for `j < d`,
+    /// scheduled at `left_mul`'s giant step, so it rotates within the left product's key set; `None` unless the operand
+    /// was encoded under [`BlasPtAlgorithm::Diagonal`] with one public matrix on more than one matrix slot. A left
+    /// product takes these maps instead of [`Self::block`]'s exactly when its input is replicated
+    /// ([`crate::layouts::replicated`], read from the input's label) and the operand holds them. Panics if `(i, l)` is
+    /// outside the grid.
     pub fn block_replicated(&self, i: usize, l: usize) -> Option<&LinearTransformationPrepared<BE>> {
         self.assert_block(i, l);
         self.maps.blocks_rep.as_ref().map(|blocks| &blocks[i * self.layout.cols + l])

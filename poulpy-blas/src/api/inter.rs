@@ -46,8 +46,8 @@ pub trait BlasMatInterOps<BE: Backend> {
     ///
     /// - The implementation runs [`validate_blas_rotate`](crate::layouts::validate_blas_rotate) before any write, so on
     ///   its errors `res`, its batch record and `a` are untouched: `InvalidOperand` for a grid, shape or layout it
-    ///   rejects, then `MissingAutomorphismKey` for the rotation key `atk` lacks at `a.k`, or `InvalidOperand` when
-    ///   that key is of another rank than `a`'s blocks.
+    ///   rejects, then `MissingAutomorphismKey` for the rotation key `atk` lacks at `min(res.k, a.k)`, or
+    ///   `InvalidOperand` when that key is of another rank than `a`'s blocks.
     /// - poulpy-ckks's budget error, `InsufficientHomomorphicCapacity` when `res.k` is below `a.log_delta`, comes from
     ///   inside the backend before any write, and leaves them untouched too.
     /// - Any other `Err` is a backend fault (a validator gap or a device failure), and `res` is then unspecified.
@@ -72,8 +72,9 @@ pub trait BlasMatInterOps<BE: Backend> {
     ///
     /// # Metadata
     ///
-    /// Every block of `res` starts as a copy of the matching block of `a`, then adds its own rotation by `2^i d^2` slots
-    /// for each `i < log2(mat_slots)` in turn, by poulpy-ckks's `ckks_rotate_into` and `ckks_add_assign`:
+    /// Every block of `res` is poulpy-ckks's `ckks_inner_sum_into` of the matching block of `a`, `mat_slots` batches of
+    /// `d^2` slots, not normalized: a copy, then its own rotation by `2^i d^2` slots added for each
+    /// `i < log2(mat_slots)` in turn:
     ///
     /// ```text
     /// k            = min(res.k, a.k)
@@ -89,7 +90,6 @@ pub trait BlasMatInterOps<BE: Backend> {
     ///
     /// - The implementation runs [`validate_blas_sum`](crate::layouts::validate_blas_sum) before any write, so on its
     ///   errors `res`, its batch record and `a` are untouched: `InvalidOperand` for a grid, shape or layout it rejects,
-    ///   or for a `base2k` whose digits cannot hold the `log2(mat_slots) + 1` lazy terms the sum adds, within `2^62`;
     ///   then, key by key, `MissingAutomorphismKey` for a rotation key `atk` lacks at `min(res.k, a.k)`, or
     ///   `InvalidOperand` for one of another rank than `a`'s blocks.
     /// - poulpy-ckks's budget error, `InsufficientHomomorphicCapacity` from the copy when `res.k` is below `a.log_delta`,

@@ -197,6 +197,26 @@ impl Grid {
         })
     }
 
+    /// Every entry of every matrix replaced by its column's sum over the matrix rows.
+    pub fn sum_rows(&self) -> Grid {
+        Grid::from_fn(self.log_d, self.rows, self.cols, self.lanes(), |s, _, c| {
+            (0..self.rows * self.d()).fold((0.0, 0.0), |(acc_re, acc_im), r| {
+                let (re, im) = self.at(s, r, c);
+                (acc_re + re, acc_im + im)
+            })
+        })
+    }
+
+    /// Every entry of every matrix replaced by its row's sum over the matrix columns.
+    pub fn sum_cols(&self) -> Grid {
+        Grid::from_fn(self.log_d, self.rows, self.cols, self.lanes(), |s, r, _| {
+            (0..self.cols * self.d()).fold((0.0, 0.0), |(acc_re, acc_im), c| {
+                let (re, im) = self.at(s, r, c);
+                (acc_re + re, acc_im + im)
+            })
+        })
+    }
+
     /// Lane `s` replaced by lane `s + r` modulo the lane count.
     pub fn rotate_lanes(&self, r: i64) -> Grid {
         let lanes = self.lanes() as i64;
