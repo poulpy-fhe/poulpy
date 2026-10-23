@@ -1,34 +1,69 @@
 use crate::{
-    CKKSCtBounds, CKKSResult as Result, SetCKKSInfos,
+    CKKSCompositionError, CKKSCtBounds, CKKSResult as Result, SetCKKSInfos,
     api::{CKKSAddOps, CKKSCopyOps},
-    ckks_bail,
+    ckks_ensure,
 };
-use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
+use poulpy_core::{
+    GLWENormalize,
+    layouts::{GLWEToBackendMut, GLWEToBackendRef},
+};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-pub(crate) fn ckks_add_many_reference<BE: Backend, Dst, Src>(
+/// Scratch of [`ckks_add_many_reference`] from terms of layout `a` into `res`: the additions, the normalizations
+/// and, for one term, the copy.
+pub(crate) fn ckks_add_many_tmp_bytes_reference<BE: Backend, R, A>(module: &Module<BE>, res: &R, a: &A) -> usize
+where
+    Module<BE>: CKKSAddOps<BE> + CKKSCopyOps<BE> + GLWENormalize<BE>,
+    R: CKKSCtBounds,
+    A: CKKSCtBounds,
+{
+    module
+        .ckks_add_tmp_bytes(res.size())
+        .max(module.glwe_normalize_tmp_bytes())
+        .max(module.ckks_copy_tmp_bytes(res, a))
+}
+
+pub(crate) fn ckks_add_many_reference<BE: Backend, R, A>(
     module: &Module<BE>,
-    dst: &mut Dst,
-    inputs: &[&Src],
+    res: &mut R,
+    a: &[&A],
+    normalize_after: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    Module<BE>: CKKSAddOps<BE> + CKKSCopyOps<BE>,
-    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-    Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+    Module<BE>: CKKSAddOps<BE> + CKKSCopyOps<BE> + GLWENormalize<BE>,
+    R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    A: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
-    match inputs.len() {
-        0 => ckks_bail!("ckks_add_many: inputs must contain at least one ciphertext"),
-        1 => {
-            module.ckks_copy(dst, inputs[0], scratch)?;
+    let invalid = |reason: &str| -> Result<()> {
+        Err(CKKSCompositionError::InvalidOperand {
+            op: "add_many",
+            reason: reason.into(),
         }
-        _ => {
-            module.ckks_add_into(dst, inputs[0], inputs[1], scratch)?;
-            for ct in &inputs[2..] {
-                module.ckks_add_assign(dst, *ct, scratch)?;
+        .into())
+    };
+    if normalize_after == 0 {
+        return invalid("normalize_after must be at least 1");
+    }
+    let [first, rest @ ..] = a else {
+        return invalid("a must contain at least one ciphertext");
+    };
+    ckks_ensure!(
+        scratch.available() >= ckks_add_many_tmp_bytes_reference(module, &*res, *first),
+        "add_many: scratch below CKKSAddManyOps::ckks_add_many_tmp_bytes"
+    );
+    match rest {
+        [] => module.ckks_copy(res, *first, scratch)?,
+        [second, rest @ ..] => {
+            module.ckks_add_into(res, *first, *second, scratch)?;
+            for (additions, term) in (1..).zip(rest) {
+                if additions % normalize_after == 0 {
+                    module.glwe_normalize_assign(res, scratch);
+                }
+                module.ckks_add_assign(res, *term, scratch)?;
             }
         }
     }
-    dst.set_noise(None);
+    res.set_noise(None);
     Ok(())
 }

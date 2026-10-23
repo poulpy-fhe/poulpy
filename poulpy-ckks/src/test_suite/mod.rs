@@ -202,7 +202,7 @@ pub const BASE52_PARAMS_QUAD: CKKSTestParams = CKKSTestParams {
 /// Registers the **rank-generic arithmetic subset** of the CKKS suite for a
 /// parameter set with `rank > 1`: encrypt/decrypt, add/sub (ct and pt), mul
 /// (ct, square, prepared, pt), the ct and prepared dot products, neg, copy,
-/// pow2, rotate, and conjugate.
+/// pow2, rotate, inner sum and replicate, and conjugate.
 ///
 /// The full [`ckks_backend_test_suite!`](crate::ckks_backend_test_suite) hardwires rank-1-only pipelines
 /// (bootstrapping, EvalMod, DFT, PaCo — which reject `rank != 1` by
@@ -332,6 +332,8 @@ macro_rules! ckks_backend_rank2_test_suite {
                 $crate::test_suite::rotate::test_rotate_aligned,
                 $rotations
             );
+            run_test!(inner_sum_aligned, $crate::test_suite::inner_sum::test_inner_sum_aligned);
+            run_test!(inner_sum_assign, $crate::test_suite::inner_sum::test_inner_sum_assign);
             run_test!(conjugate_aligned, $crate::test_suite::conjugate::test_conjugate_aligned);
             run_test!(conjugate_assign, $crate::test_suite::conjugate::test_conjugate_assign);
         }
@@ -836,6 +838,37 @@ macro_rules! ckks_backend_test_suite {
                 add_many_smaller_output,
                 $crate::test_suite::add_many::test_add_many_smaller_output
             );
+            run_test!(
+                add_many_normalize_after,
+                $crate::test_suite::add_many::test_add_many_normalize_after
+            );
+            run_test!(add_many_error, $crate::test_suite::add_many::test_add_many_error);
+            run_test!(inner_sum_aligned, $crate::test_suite::inner_sum::test_inner_sum_aligned);
+            run_test!(
+                inner_sum_smaller_output,
+                $crate::test_suite::inner_sum::test_inner_sum_smaller_output
+            );
+            run_test!(inner_sum_assign, $crate::test_suite::inner_sum::test_inner_sum_assign);
+            run_test!(
+                inner_sum_window_error,
+                $crate::test_suite::inner_sum::test_inner_sum_window_error
+            );
+            run_test!(
+                inner_sum_integer_error,
+                $crate::test_suite::inner_sum::test_inner_sum_integer_error
+            );
+            run_test!(
+                inner_sum_missing_key_error,
+                $crate::test_suite::inner_sum::test_inner_sum_missing_key_error
+            );
+            run_test!(
+                inner_sum_budget_error,
+                $crate::test_suite::inner_sum::test_inner_sum_budget_error
+            );
+            run_test!(
+                inner_sum_scratch_error,
+                $crate::test_suite::inner_sum::test_inner_sum_scratch_error
+            );
             run_test!(mul_add_ct_aligned, $crate::test_suite::mul_add::test_mul_add_ct_aligned);
             run_test!(
                 mul_add_ct_unaligned_dst,
@@ -1096,6 +1129,7 @@ pub mod fold;
 pub mod functional_bootstrapping;
 pub mod helpers;
 pub mod imag;
+pub mod inner_sum;
 pub mod linear_transformation;
 pub mod mul;
 pub mod mul_add;
