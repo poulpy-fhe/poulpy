@@ -21,8 +21,9 @@
 //! caller-selected comparison backend. Validation across backends is transitive.
 //!
 //! Conjugation, multiplication by `i`, complex polynomial evaluation, DFT,
-//! EvalMod, encapsulated ModUp and the PaCo/SHIP coefficient encodings exist
-//! only on the standard ring: conjugate-invariant backends do not implement them.
+//! encapsulated ModUp and the PaCo/SHIP coefficient encodings exist only on the
+//! standard ring: conjugate-invariant backends do not implement them. EvalMod
+//! runs on both rings; the conjugate-invariant ring refuses `ExpCmplx`.
 
 mod add;
 mod bootstrapping;

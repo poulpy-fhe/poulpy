@@ -510,7 +510,7 @@ pub(crate) fn insecure_n11_d35_k180_p20_s2c() -> Result<BootstrappingPreset> {
 }
 
 /// [`n16_d35_k733_p20_s2c`] tuned for speed: 685-bit ciphertexts with at least
-/// 19 bits of precision, 15 usable levels. The first CoeffsToSlots factor is
+/// 19 bits of precision (19.4 measured, the minimum over the slots), 15 usable levels. The first CoeffsToSlots factor is
 /// applied by the raise, three factors of four layers follow, EvalMod runs once
 /// on the conjugate-invariant ring ([`EvalModRing::ConjugateInvariant`], 84 bits
 /// of conversions), and SlotsToCoeffs has four factors. The raised width is 1383 bits.
@@ -1025,6 +1025,62 @@ mod tests {
         let uniform = preset.with_dsizes(4, 1).unwrap();
         assert!(uniform.keys_layout().rotation_keys.is_empty());
         assert_eq!(uniform.keys_layout().tensor_key.dnum.as_usize(), 7);
+    }
+
+    #[test]
+    fn n16_d35_k685_p19_s2c_ffr_ci_is_composable_and_within_bounds() {
+        let preset = n16_d35_k685_p19_s2c_ffr_ci().unwrap();
+
+        assert_eq!(preset.plan().pipeline(), BootstrappingPipeline::S2CFirst);
+        assert_eq!(preset.plan().eval_mod().eval_mod_type, EvalModType::CosHKEven);
+        assert_eq!(preset.plan().eval_mod().consumed_bits(), 464);
+        assert_eq!(preset.plan().eval_mod_ring().consumed_bits(), 84);
+        assert_eq!(preset.plan().coeffs_to_slots().consumed_bits(), 144);
+        assert_eq!(preset.plan().c2s_guard_bits(), 6);
+        assert_eq!(preset.plan().slots_to_coeffs().consumed_bits(), 112);
+        assert_eq!((preset.input_k(), preset.output_k(), preset.bootstrap_k()), (160, 685, 1383));
+        assert_eq!(preset.log2_precision(), 19);
+        assert_eq!(
+            preset.output_layout().log_budget() - preset.input_layout().log_budget(),
+            15 * preset.log_delta()
+        );
+
+        // The keys of the raised width, under the dense bound.
+        assert_eq!((preset.max_dense_modulus(), preset.max_sparse_modulus()), (1707, 345));
+        let keys = preset.keys_layout();
+        let wide = &keys.automorphism_key;
+        assert_eq!(
+            (
+                wide.k_digit.as_usize(),
+                wide.dnum.as_usize(),
+                wide.k_aux.as_usize(),
+                wide.k().as_usize()
+            ),
+            (208, 7, 224, 1680)
+        );
+        assert!(wide.k_aux >= wide.k_digit && wide.k().as_usize() <= preset.max_dense_modulus());
+        assert_eq!(
+            key_shapes(&keys.rotation_key_layouts()),
+            [(208, 7), (260, 5), (156, 1), (104, 1)]
+        );
+        assert_eq!(key_shapes([&keys.tensor_key]), [(416, 3)]);
+        assert!(keys.tensor_key.gglwe_layout().max_input_k().as_usize() >= 1248);
+        // The first factor's keys: one row each, below the raised width.
+        let first = keys.first_factor_key.unwrap();
+        assert_eq!(
+            (first.k_digit.as_usize(), first.dnum.as_usize(), first.k_offset.as_usize()),
+            (104, 1, 1300)
+        );
+        // The trace key switches the raised CoeffsToSlots output, the embed key the EvalMod output.
+        let (trace, embed) = keys.conversion_keys.unwrap();
+        assert_eq!((key_shapes([&trace]), key_shapes([&embed])), (vec![(416, 3)], vec![(780, 1)]));
+        assert_eq!(
+            (
+                trace.gglwe_layout().max_input_k().as_usize(),
+                embed.gglwe_layout().max_input_k().as_usize()
+            ),
+            (1248, 780)
+        );
     }
 
     /// `(k_digit, dnum, k_offset, k)` of the sparse-to-dense key, whose rows end at the raised width.

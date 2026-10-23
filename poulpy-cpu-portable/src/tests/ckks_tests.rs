@@ -56,24 +56,24 @@ mod bootstrapping_presets {
 
     #[test]
     fn ntt4x30_small_s2c_preset_meets_precision() {
-        small_s2c_preset_meets_precision::<crate::NTT4x30Portable, crate::NTT4x30CIPortable>();
+        small_s2c_preset_meets_precision::<crate::NTT4x30Portable>();
     }
 
     #[test]
     fn ntt4x30_ci_bootstrap_refuses_invalid_inputs() {
-        ci_bootstrap_refuses_invalid_inputs::<crate::NTT4x30Portable, crate::NTT4x30CIPortable>();
+        ci_bootstrap_refuses_invalid_inputs::<crate::NTT4x30Portable>();
     }
 
     #[test]
     #[ignore = "runs a full logN16 bootstrap per preset; opt in with --ignored"]
     fn ntt4x30_presets_meet_precision() {
-        bootstrapping_presets_meet_precision::<crate::NTT4x30Portable, crate::NTT4x30CIPortable>(52);
+        bootstrapping_presets_meet_precision::<crate::NTT4x30Portable>(52);
     }
 
     #[test]
     #[ignore = "runs a full logN16 bootstrap per preset; opt in with --ignored"]
     fn fft64_presets_meet_precision() {
-        bootstrapping_presets_meet_precision::<crate::FFT64Portable, crate::FFT64CIPortable>(18);
+        bootstrapping_presets_meet_precision::<crate::FFT64Portable>(18);
     }
 }
 

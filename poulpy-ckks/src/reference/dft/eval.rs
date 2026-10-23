@@ -40,8 +40,7 @@ use crate::{
         LinearTransformationPrepared, LtDiagonalMeta,
     },
     layouts::{
-        CKKSModuleAlloc, CKKSPlaintextOwned, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTOutputFormat, DFTPlan,
-        DftDirection, DftFormat,
+        CKKSModuleAlloc, CKKSPlaintextOwned, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTPlan, DftDirection, DftFormat,
     },
     oep::CKKSEncodingImpl,
     reference::dft::matrices::{DftScalar, gen_dft_matrices},
@@ -81,15 +80,10 @@ where
 {
     checked_dft_log_slots(literal, module.log_n())?;
 
-    // Resolve the plan: sparsity is decided against the ring degree, then a dense
-    // `RepackImagAsReal` is canonicalized to `SplitRealAndImag` (the two coincide)
-    // so the stored `format` is canonical and `plan.is_sparse()` is exact. The
-    // per-factor scale is carried by `literal.coeffs_meta`.
-    let sparse = literal.log_slots() < module.log_n().saturating_sub(1) && literal.format == DFTOutputFormat::RepackImagAsReal;
-    let mut plan = literal.clone();
-    if literal.format == DFTOutputFormat::RepackImagAsReal && !sparse {
-        plan.format = DFTOutputFormat::SplitRealAndImag;
-    }
+    // Resolve the plan against the ring degree, so the stored `format` is canonical
+    // and `plan.is_sparse()` is exact. The per-factor scale is carried by
+    // `literal.coeffs_meta`.
+    let plan = literal.resolved_at(module.log_n());
 
     let factors_cd = gen_dft_matrices::<F>(&plan, module.log_n());
 

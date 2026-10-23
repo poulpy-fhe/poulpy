@@ -14,9 +14,9 @@ use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotsKind,
     api::{CKKSAllOpsTmpBytes, CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
     layouts::{
-        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan,
-        BootstrappingTechniques, CKKSModuleAlloc, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout,
-        EncodedLut, EvalModPlan, EvalModType, EvalRoundPlus, SparseSecretEncapsulation,
+        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingPipeline,
+        BootstrappingPlan, BootstrappingTechniques, CKKSModuleAlloc, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType,
+        EncapsulationKeysLayout, EncodedLut, EvalModPlan, EvalModType, EvalRoundPlus, SparseSecretEncapsulation,
     },
     oep::{CKKSBootstrappingImpl, CKKSEncapsulatedModUpImpl},
     polynomial::SplitStrategy,
@@ -245,28 +245,33 @@ pub struct FixtureKeys<B: Backend> {
 
 type FixtureSwitchingKey<B> = GGLWEPrepared<<B as Backend>::OwnedBuf, B>;
 
+impl<B: Backend> BootstrappingLinearKeys<B> for FixtureKeys<B>
+where
+    GLWEAutomorphismKeyPrepared<B::OwnedBuf, B>: GLWEAutomorphismKeyPreparedToBackendRef<B>,
+    GGLWEPrepared<B::OwnedBuf, B>: GGLWEPreparedToBackendRef<B> + GGLWEInfos,
+{
+    type RotationKeys = HashMap<i64, GLWEAutomorphismKeyPrepared<B::OwnedBuf, B>>;
+    type SwitchingKey = GGLWEPrepared<B::OwnedBuf, B>;
+
+    fn rotation_keys(&self) -> &Self::RotationKeys {
+        &self.rotation_keys
+    }
+
+    fn encapsulation_keys(&self) -> Option<(&Self::SwitchingKey, Option<&Self::SwitchingKey>)> {
+        self.encapsulation_keys.as_ref().map(|(d2s, s2d)| (d2s, Some(s2d)))
+    }
+}
+
 impl<B: Backend> BootstrappingKeys<B> for FixtureKeys<B>
 where
     GLWEAutomorphismKeyPrepared<B::OwnedBuf, B>: GLWEAutomorphismKeyPreparedToBackendRef<B>,
     GLWETensorKeyPrepared<B::OwnedBuf, B>: GLWETensorKeyPreparedToBackendRef<B>,
     GGLWEPrepared<B::OwnedBuf, B>: GGLWEPreparedToBackendRef<B> + GGLWEInfos,
 {
-    type RotationKeys = HashMap<i64, GLWEAutomorphismKeyPrepared<B::OwnedBuf, B>>;
     type TensorKey = GLWETensorKeyPrepared<B::OwnedBuf, B>;
-    type SwitchingKey = GGLWEPrepared<B::OwnedBuf, B>;
-    type TraceKey = GGLWEPrepared<B::OwnedBuf, B>;
-    type EmbedKey = GGLWEPrepared<B::OwnedBuf, B>;
-
-    fn rotation_keys(&self) -> &Self::RotationKeys {
-        &self.rotation_keys
-    }
 
     fn tensor_key(&self) -> &Self::TensorKey {
         &self.tensor_key
-    }
-
-    fn encapsulation_keys(&self) -> Option<(&Self::SwitchingKey, Option<&Self::SwitchingKey>)> {
-        self.encapsulation_keys.as_ref().map(|(d2s, s2d)| (d2s, Some(s2d)))
     }
 }
 

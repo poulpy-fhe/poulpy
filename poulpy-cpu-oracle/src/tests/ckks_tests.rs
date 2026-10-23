@@ -49,6 +49,11 @@ ckks_backend_rank2_test_suite!(
     rotations = super::ATK_ROTATIONS,
 );
 
+#[test]
+fn ntt4x30_ci_bootstrap_refuses_invalid_inputs() {
+    poulpy_ckks::test_suite::presets::ci_bootstrap_refuses_invalid_inputs::<crate::NTT4x30Oracle>();
+}
+
 /// Full logN16 bootstraps per preset: slow, so opt in with `--ignored`.
 mod bootstrapping_presets {
     use poulpy_ckks::test_suite::presets::bootstrapping_presets_meet_precision;
@@ -56,13 +61,13 @@ mod bootstrapping_presets {
     #[test]
     #[ignore = "runs a full logN16 bootstrap per preset; opt in with --ignored"]
     fn ntt4x30_presets_meet_precision() {
-        bootstrapping_presets_meet_precision::<crate::NTT4x30Oracle, crate::NTT4x30CIOracle>(52);
+        bootstrapping_presets_meet_precision::<crate::NTT4x30Oracle>(52);
     }
 
     #[test]
     #[ignore = "runs a full logN16 bootstrap per preset; opt in with --ignored"]
     fn fft64_presets_meet_precision() {
-        bootstrapping_presets_meet_precision::<crate::FFT64Oracle, crate::FFT64CIOracle>(18);
+        bootstrapping_presets_meet_precision::<crate::FFT64Oracle>(18);
     }
 }
 

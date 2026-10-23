@@ -49,24 +49,30 @@ mod bootstrapping_presets {
 
     #[test]
     fn ntt4x30_small_s2c_preset_meets_precision() {
-        small_s2c_preset_meets_precision::<crate::NTT4x30Avx, crate::NTT4x30CIAvx>();
+        small_s2c_preset_meets_precision::<crate::NTT4x30Avx>();
     }
 
     #[test]
     fn ntt4x30_ci_bootstrap_refuses_invalid_inputs() {
-        ci_bootstrap_refuses_invalid_inputs::<crate::NTT4x30Avx, crate::NTT4x30CIAvx>();
+        ci_bootstrap_refuses_invalid_inputs::<crate::NTT4x30Avx>();
+    }
+
+    #[cfg(feature = "enable-rayon")]
+    #[test]
+    fn ntt4x30_rayon_ci_bootstrap_refuses_invalid_inputs() {
+        ci_bootstrap_refuses_invalid_inputs::<crate::NTT4x30AvxRayon>();
     }
 
     #[test]
     #[ignore = "runs a full logN16 bootstrap per preset; opt in with --ignored"]
     fn ntt4x30_presets_meet_precision() {
-        bootstrapping_presets_meet_precision::<crate::NTT4x30Avx, crate::NTT4x30CIAvx>(52);
+        bootstrapping_presets_meet_precision::<crate::NTT4x30Avx>(52);
     }
 
     #[test]
     #[ignore = "runs a full logN16 bootstrap per preset; opt in with --ignored"]
     fn fft64_presets_meet_precision() {
-        bootstrapping_presets_meet_precision::<crate::FFT64Avx, crate::FFT64CIAvx>(18);
+        bootstrapping_presets_meet_precision::<crate::FFT64Avx>(18);
     }
 }
 

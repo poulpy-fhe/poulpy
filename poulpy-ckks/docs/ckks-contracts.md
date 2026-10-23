@@ -31,9 +31,10 @@ operations, so their overrides remain effective.
 | `CKKSEncodingImpl<F>` | [`reference/encoding.rs`](../src/reference/encoding.rs): slot ordering, transform normalization, and quantization; backend-owned plans and cache. |
 | `DFTMatrixImpl<F>`, `DFTImpl` | [`reference/dft`](../src/reference/dft/): matrix generation, preparation, and evaluation; the six standard/split/repack direction wrappers are derived defaults. |
 | `CKKSPolynomialEvaluationImpl`, `CKKSComplexPolynomialEvaluationImpl` | [`reference/polynomial_evaluation.rs`](../src/reference/polynomial_evaluation.rs) for evaluation from a power basis; one-shot real/complex evaluation derives from CKKS input mapping and power-basis construction. The complex family is standard-only. |
-| `CKKSEvalModImpl` | [`reference/eval_mod.rs`](../src/reference/eval_mod.rs), including the selected scratch query. |
+| `CKKSEvalModImpl` | [`reference/eval_mod.rs`](../src/reference/eval_mod.rs), including the selected scratch query. Serves both rings; the conjugate-invariant ring refuses `ExpCmplx`. |
 | `CKKSEncapsulatedModUpImpl` | [`reference/bootstrapping.rs`](../src/reference/bootstrapping.rs). |
 | `CKKSBootstrappingImpl` | [`reference/bootstrapping.rs`](../src/reference/bootstrapping.rs): the ModUp stages and the identity and functional pipelines. |
+| `CKKSBootstrappingCIImpl` | [`reference/bootstrapping.rs`](../src/reference/bootstrapping.rs): `ckks_bootstrap_ci_reference`, registered by `impl_ckks_bootstrapping_ci_reference!($be, $ci)`, `$ci` its conjugate-invariant twin. |
 | `CKKSFoldLayoutImpl`, `CKKSFoldImpl<R>` | [`reference/fold.rs`](../src/reference/fold.rs): `CKKSFoldLayoutReference` and `CKKSFoldReference<BE, R>`, a crate-private per-ring step around ring packing; `impl_ckks_fold_reference!` registers every input ring the reference folds. |
 | `CKKSPaCoCoeffEncodingImpl`, `CKKSShipCoeffEncodingImpl` | Scheme embeddings exposed by [`reference::encoding`](../src/reference/encoding.rs), with explicitly named host reference helpers. |
 

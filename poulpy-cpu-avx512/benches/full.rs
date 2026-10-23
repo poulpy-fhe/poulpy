@@ -15,20 +15,18 @@ use poulpy_bench::schemes::suites::{bench_binfhe, bench_ckks, bench_ckks_bootstr
 use poulpy_bin_fhe::blind_rotation::CGGI;
 
 use poulpy_cpu_avx512::FFT64Avx512 as Fft;
-use poulpy_cpu_avx512::FFT64CIAvx512 as FftCi;
 #[cfg(feature = "enable-ifma")]
 use poulpy_cpu_avx512::NTT3x42Ifma as Ifma;
 use poulpy_cpu_avx512::NTT4x30Avx512 as Ntt;
-use poulpy_cpu_avx512::NTT4x30CIAvx512 as NttCi;
 
 fn bench_ckks_bootstrapping_ifma(_c: &mut Criterion) {
     #[cfg(feature = "enable-ifma")]
-    bench_ckks_bootstrapping::<Ifma, poulpy_cpu_avx512::NTT3x42CIIfma, 52>(_c);
+    bench_ckks_bootstrapping::<Ifma, 52>(_c);
 }
 
 fn bench_ckks_bootstrapping_ifma_rayon(_c: &mut Criterion) {
     #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-    bench_ckks_bootstrapping::<poulpy_cpu_avx512::NTT3x42IfmaRayon, poulpy_cpu_avx512::NTT3x42CIIfmaRayon, 52>(_c);
+    bench_ckks_bootstrapping::<poulpy_cpu_avx512::NTT3x42IfmaRayon, 52>(_c);
 }
 
 /// HAL sweep for `NTT3x42Ifma`, the one accelerated backend that had no HAL row.
@@ -49,11 +47,11 @@ criterion_group! {
      bench_core_ckks::<Ntt>,
      bench_core_binfhe::<Fft>,
      bench_ckks::<Ntt>,
-     bench_ckks_bootstrapping::<Ntt, NttCi, 52>,
+     bench_ckks_bootstrapping::<Ntt, 52>,
      bench_hal_ifma,
      bench_ckks_bootstrapping_ifma,
      bench_ckks_bootstrapping_ifma_rayon,
-     bench_ckks_bootstrapping::<Fft, FftCi, 18>,
+     bench_ckks_bootstrapping::<Fft, 18>,
      bench_binfhe::<Fft, CGGI>
 }
 

@@ -344,7 +344,8 @@ fn run_case<BE, F, E>(
             meta: GLWEPlaintextMeta::default(),
         };
         let boot_ct_bytes = module.glwe_bytes_of_from_infos(&boot_layout);
-        let eval_mod_tmp = module.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key);
+        let eval_mod_tmp =
+            module.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod().unwrap(), &keys_layout.tensor_key);
         assert!(boot_tmp >= 4 * boot_ct_bytes + eval_mod_tmp);
     }
     if boot_tmp > initial_tmp {

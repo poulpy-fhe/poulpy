@@ -33,7 +33,7 @@ poulpy_cpu_portable::impl_cpu_ckks_defaults!(super::FFT64Neon);
 impl_ckks_conjugate_reference!(super::FFT64Neon);
 impl_ckks_imag_reference!(super::FFT64Neon);
 impl_ckks_bootstrapping_reference!(super::FFT64Neon);
-impl_ckks_bootstrapping_ci_reference!(super::FFT64Neon);
+impl_ckks_bootstrapping_ci_reference!(super::FFT64Neon, super::FFT64CINeon);
 impl_ckks_fold_reference!(super::FFT64Neon);
 impl_ckks_complex_polynomial_evaluation_reference!(super::FFT64Neon);
 impl_ckks_dft_reference!(super::FFT64Neon);
@@ -43,7 +43,7 @@ poulpy_cpu_portable::impl_cpu_ckks_defaults!(super::NTT4x30Neon);
 impl_ckks_conjugate_reference!(super::NTT4x30Neon);
 impl_ckks_imag_reference!(super::NTT4x30Neon);
 impl_ckks_bootstrapping_reference!(super::NTT4x30Neon);
-impl_ckks_bootstrapping_ci_reference!(super::NTT4x30Neon);
+impl_ckks_bootstrapping_ci_reference!(super::NTT4x30Neon, super::NTT4x30CINeon);
 impl_ckks_fold_reference!(super::NTT4x30Neon);
 impl_ckks_complex_polynomial_evaluation_reference!(super::NTT4x30Neon);
 impl_ckks_dft_reference!(super::NTT4x30Neon);
@@ -58,7 +58,7 @@ impl_ckks_imag_reference!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_bootstrapping_reference!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]
-impl_ckks_bootstrapping_ci_reference!(super::FFT64NeonRayon);
+impl_ckks_bootstrapping_ci_reference!(super::FFT64NeonRayon, super::FFT64CINeonRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_fold_reference!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]
@@ -79,7 +79,7 @@ impl_ckks_imag_reference!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_bootstrapping_reference!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]
-impl_ckks_bootstrapping_ci_reference!(super::NTT4x30NeonRayon);
+impl_ckks_bootstrapping_ci_reference!(super::NTT4x30NeonRayon, super::NTT4x30CINeonRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_fold_reference!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]

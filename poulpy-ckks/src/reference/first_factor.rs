@@ -33,7 +33,7 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSResult as Result, CoeffsMeta, GLWEPlaintextMeta, Scale, SetCKKSInfos, ckks_bail, ckks_ensure,
-    layouts::{BootstrappingKeys, CKKSPlaintextOwned},
+    layouts::{BootstrappingLinearKeys, CKKSPlaintextOwned},
 };
 
 /// Fewest bits the raise keeps below the raised precision while it applies
@@ -102,7 +102,7 @@ fn layout<A: GLWEInfos>(infos: &A, size: usize) -> GLWELayout {
 
 /// `res = phi_p(a)` column by column, with no key: `res` is under `phi_p` of
 /// the secret of `a`.
-pub(crate) fn glwe_automorphism_keyless<BE, R, A>(module: &Module<BE>, res: &mut R, p: i64, a: &A)
+fn glwe_automorphism_keyless<BE, R, A>(module: &Module<BE>, res: &mut R, p: i64, a: &A)
 where
     BE: Backend,
     Module<BE>: VecZnxAutomorphism<BE>,
@@ -118,7 +118,7 @@ where
 }
 
 /// The first-factor key of the rotation `rotation`.
-fn first_factor_key<BE: Backend, M: Backend, K: BootstrappingKeys<BE, M>>(keys: &K, rotation: i64) -> Result<&K::SwitchingKey> {
+fn first_factor_key<BE: Backend, K: BootstrappingLinearKeys<BE>>(keys: &K, rotation: i64) -> Result<&K::SwitchingKey> {
     let Some(key) = keys.first_factor_key(rotation) else {
         ckks_bail!("no first-factor key for the rotation {rotation}");
     };
@@ -141,7 +141,7 @@ pub(crate) struct FirstFactorRaise {
 /// once lifted: one diagonal per giant step and no baby step, all diagonals of
 /// one scale and width, and one key per rotation, all of one layout that fits
 /// the raise.
-pub(crate) fn check_first_factor_raise<BE, M: Backend, K>(
+pub(crate) fn check_first_factor_raise<BE, K>(
     base2k: usize,
     log_n: usize,
     k_large: usize,
@@ -151,7 +151,7 @@ pub(crate) fn check_first_factor_raise<BE, M: Backend, K>(
 ) -> Result<FirstFactorRaise>
 where
     BE: Backend,
-    K: BootstrappingKeys<BE, M>,
+    K: BootstrappingLinearKeys<BE>,
     CKKSPlaintextOwned<BE>: IntPolyInfos + CKKSInfos,
 {
     let Some(diagonal) = factor.first_diagonal_plaintext() else {
@@ -252,7 +252,7 @@ where
 /// `factor` holds one giant step per diagonal, the diagonal rotated back by
 /// its own index and no baby step. `keys` gives the dense-to-sparse key under
 /// encapsulation and one first-factor key per rotation, all of one layout.
-pub fn ckks_mod_up_first_factor_reference<BE, Dst, Src, M: Backend, K>(
+pub fn ckks_mod_up_first_factor_reference<BE, Dst, Src, K>(
     module: &Module<BE>,
     dst: &mut Dst,
     src: &mut Src,
@@ -274,7 +274,7 @@ where
         + VecZnxNormalize<BE>
         + VecZnxIdftNormalize<BE>
         + CyclotomicOrder,
-    K: BootstrappingKeys<BE, M>,
+    K: BootstrappingLinearKeys<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
@@ -314,7 +314,7 @@ where
     let (_, guard) = first_factor_work(base2k, k_large);
     let small_layout = layout(dst, small);
     // The cyclotomic order of the bootstrap's degree, which the module may exceed.
-    let order = module.cyclotomic_order() / (module.n() / dst.n().as_usize()) as i64;
+    let order = crate::operand_cyclotomic_order("ckks_mod_up_first_factor", module, dst.n().as_usize())?;
     let meta = GLWEPlaintextMeta {
         scale: Scale::Log(src.log_delta() + scale_up),
         slots: src.slots(),

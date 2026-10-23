@@ -544,7 +544,8 @@ pub fn test_conjugate_invariant_eval_mod<BE>(
     // The tensor key covers the width EvalMod multiplies at.
     let tsk_params = CKKSTestParams { k: res_k, ..params };
     let bytes = module.ckks_eval_mod_tmp_bytes(&res, &ct_layout, &eval_mod, &tsk_params.tsk_layout());
-    let mut scratch = ScratchOwned::<BE>::alloc(bytes.max(BE::len_bytes(&alloc_scratch(&params, module).data)));
+    // Key generation and encryption on an arena of their own, EvalMod on exactly its query.
+    let mut scratch = alloc_scratch(&params, module);
     let tsk = gen_tsk(&tsk_params, module, &sk_raw, &mut scratch.borrow());
 
     // `I·ratio + m` over the interval, at the input scaling `1/K`.
@@ -571,9 +572,10 @@ pub fn test_conjugate_invariant_eval_mod<BE>(
         &mut scratch.borrow(),
     );
 
-    module
-        .ckks_eval_mod(&mut res, &ct, &eval_mod, &tsk, &mut scratch.borrow())
-        .unwrap();
+    crate::test_suite::parity::helpers::with_scratch::<BE, _>(bytes, |scratch| {
+        module.ckks_eval_mod(&mut res, &ct, &eval_mod, &tsk, scratch)
+    })
+    .unwrap();
     assert_eq!(res.slots(), SlotsKind::Real);
     let mut prec = precision_at(&params, res.log_delta());
     prec.meta = res.meta();
@@ -589,6 +591,7 @@ pub fn test_conjugate_invariant_eval_mod<BE>(
         .collect();
     let got: Vec<f64> = re.iter().map(|v| v * ratio).collect();
     let stats = precision_stats(&got, &want, input_log_delta);
+    // 18.5 bits measured on average on the portable FFT64 and NTT backends: half a bit of margin.
     assert!(
         stats.avg_log2_prec >= 18.0,
         "CI EvalMod: avg precision {:.1} bits",
@@ -601,13 +604,23 @@ pub fn test_conjugate_invariant_eval_mod<BE>(
         f_mod_log_interval_reduction: 2,
         ..lit
     };
-    if let Ok(complex) = compile_eval_mod::<BE, f64>(params.base2k.into(), complex, module, &mut compile_scratch.borrow()) {
-        assert!(
-            module
-                .ckks_eval_mod(&mut res, &ct, &complex, &tsk, &mut scratch.borrow())
-                .is_err()
-        );
-    }
+    let complex = compile_eval_mod::<BE, f64>(params.base2k.into(), complex, module, &mut compile_scratch.borrow()).unwrap();
+    let before = res.to_host_owned::<BE>();
+    let err = module
+        .ckks_eval_mod(&mut res, &ct, &complex, &tsk, &mut scratch.borrow())
+        .unwrap_err();
+    assert!(
+        matches!(
+            err.composition(),
+            Some(crate::CKKSCompositionError::InvalidPlan { plan: "EvalModPlan", .. })
+        ),
+        "ExpCmplx on the CI ring: {err}"
+    );
+    let after = res.to_host_owned::<BE>();
+    assert!(
+        (after.meta(), after.k(), after.data()) == (before.meta(), before.k(), before.data()),
+        "the refusal wrote the output"
+    );
 }
 
 /// Embeds a CI ciphertext into the standard ring of twice its degree, switches

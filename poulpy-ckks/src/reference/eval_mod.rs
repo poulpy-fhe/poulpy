@@ -153,6 +153,9 @@ where
     // scale also drops that extra precision from the externally visible budget.
     // Intermediates are allocated rank-1 (`ckks_ciphertext_alloc`); reject
     // higher-rank inputs instead of silently mis-shaping them.
+    if matches!(params.f_mod_bsgs, EvalModBsgs::Complex(_)) && !module.ckks_eval_mod_complex_supported() {
+        return Err(complex_refused());
+    }
     ckks_ensure!(
         ct.rank().as_usize() == 1,
         "ckks_eval_mod supports rank-1 ciphertexts only, got rank {}",
@@ -246,7 +249,16 @@ where
 /// The complex base polynomial of [`EvalModType::ExpCmplx`](crate::layouts::eval_mod::EvalModType::ExpCmplx)
 /// and its squarings, on a module of ring `R`: refused by default, as on the
 /// conjugate-invariant ring, whose slots are real.
+///
+/// Implemented once per ring for [`Module`], for EvalMod to dispatch on: not meant to be
+/// called directly.
 pub trait CKKSEvalModComplexOps<BE: Backend, R: Ring> {
+    /// Whether the ring evaluates the complex base polynomial; EvalMod refuses `ExpCmplx`
+    /// before any other check otherwise.
+    fn ckks_eval_mod_complex_supported(&self) -> bool {
+        false
+    }
+
     #[expect(
         clippy::too_many_arguments,
         reason = "the base polynomial takes EvalMod's working layout beside its operands"
@@ -268,8 +280,17 @@ pub trait CKKSEvalModComplexOps<BE: Backend, R: Ring> {
         P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
         H: GetTensorKey<BE>,
     {
-        crate::ckks_bail!("ckks_eval_mod: ExpCmplx needs complex slots, which this ring has not")
+        Err(complex_refused())
     }
+}
+
+/// The refusal of `ExpCmplx` on a ring of real slots.
+fn complex_refused() -> crate::CKKSError {
+    crate::CKKSCompositionError::InvalidPlan {
+        plan: "EvalModPlan",
+        reason: "ExpCmplx needs complex slots, which the conjugate-invariant ring has not".into(),
+    }
+    .into()
 }
 
 impl<BE: Backend> CKKSEvalModComplexOps<BE, ConjugateInvariant> for Module<BE> {}
@@ -284,6 +305,10 @@ where
         + GLWECopy<BE>
         + GLWENormalize<BE>,
 {
+    fn ckks_eval_mod_complex_supported(&self) -> bool {
+        true
+    }
+
     fn ckks_eval_mod_complex<Res, C, P, H>(
         &self,
         res: &mut Res,

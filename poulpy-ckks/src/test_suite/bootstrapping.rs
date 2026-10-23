@@ -49,9 +49,9 @@ use crate::{
         CKKSAddOps, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTOps, CKKSDecryptOps, CKKSEvalModOps, CKKSPow2Ops, CKKSSubOps,
     },
     layouts::{
-        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan,
-        BootstrappingTechniques, CKKSModuleAlloc, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout, EvalRoundPlus,
-        SparseSecretEncapsulation,
+        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingPipeline,
+        BootstrappingPlan, BootstrappingTechniques, CKKSModuleAlloc, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout,
+        EvalRoundPlus, SparseSecretEncapsulation,
         eval_mod::{EvalModPlan, EvalModType},
     },
     polynomial::SplitStrategy,
@@ -660,7 +660,7 @@ where
         .ckks_eval_mod(
             &mut res_real,
             &ct_real,
-            ctx.eval_mod(),
+            ctx.eval_mod().unwrap(),
             &bsk.tensor_key,
             &mut scratch.borrow(),
         )
@@ -669,7 +669,7 @@ where
         .ckks_eval_mod(
             &mut res_imag,
             &ct_imag,
-            ctx.eval_mod(),
+            ctx.eval_mod().unwrap(),
             &bsk.tensor_key,
             &mut scratch.borrow(),
         )
@@ -954,10 +954,22 @@ where
     let mut res_real = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let mut res_imag = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     module
-        .ckks_eval_mod(&mut res_real, &r0_lp, ctx.eval_mod(), bsk.tensor_key(), &mut scratch.borrow())
+        .ckks_eval_mod(
+            &mut res_real,
+            &r0_lp,
+            ctx.eval_mod().unwrap(),
+            bsk.tensor_key(),
+            &mut scratch.borrow(),
+        )
         .unwrap();
     module
-        .ckks_eval_mod(&mut res_imag, &i0_lp, ctx.eval_mod(), bsk.tensor_key(), &mut scratch.borrow())
+        .ckks_eval_mod(
+            &mut res_imag,
+            &i0_lp,
+            ctx.eval_mod().unwrap(),
+            bsk.tensor_key(),
+            &mut scratch.borrow(),
+        )
         .unwrap();
 
     // 4) r1 = r0_hp − K·r0_lp + EvalMod(r0_lp) = IDFT(Δ·m).

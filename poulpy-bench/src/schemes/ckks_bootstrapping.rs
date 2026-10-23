@@ -16,7 +16,7 @@ use poulpy_ckks::{
     presets::bootstrapping::{BootstrappingPreset, all},
     test_suite::{
         helpers::{TestContextBackend, TestContextModule, TestContextSharedModule},
-        presets::{BootstrappingPresetRun, preset_with_max_base2k},
+        presets::{BootstrappingPresetRun, CIBackend, preset_with_max_base2k},
     },
 };
 use poulpy_core::{
@@ -28,7 +28,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::ScratchOwnedAlloc,
-    layouts::{Backend, ConjugateInvariant, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
+    layouts::{Backend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
 };
 
 fn runner_ckks_bootstrapping<BE>(
@@ -81,24 +81,23 @@ fn runner_ckks_bootstrapping<BE>(
     }
 }
 
-/// Exercises every preset at the caller's fixture radix limit, `BCI` running
+/// Exercises every preset at the caller's fixture radix limit, the twin [`CIBackend`] running
 /// EvalMod for the presets that put it on the conjugate-invariant ring.
 ///
 /// `FIXTURE_BASE2K` selects the benchmark shape; it carries no failure-probability
 /// guarantee. The registered FFT and NTT fixtures use 18 and 52 respectively.
-pub fn bench_ckks_bootstrapping<BE, BCI, const FIXTURE_BASE2K: usize>(c: &mut Criterion<WallTime>)
+pub fn bench_ckks_bootstrapping<BE, const FIXTURE_BASE2K: usize>(c: &mut Criterion<WallTime>)
 where
     BE: TestContextBackend<Ring = Standard>,
-    BCI:
-        TestContextBackend<Ring = ConjugateInvariant> + for<'a> Backend<BufRef<'a> = BE::BufRef<'a>, BufMut<'a> = BE::BufMut<'a>>,
+    CIBackend<BE>: TestContextBackend,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, f64>
         + CKKSBootstrappingOps<BE>
         + CKKSDFTMatrixOps<BE, f64>
-        + CKKSBootstrappingCIOps<BE, BCI>
+        + CKKSBootstrappingCIOps<BE>
         + GLWECIKeyEncryptSk<BE>
         + GLWECIKeyPreparedFactory<BE>,
-    Module<BCI>: TestContextSharedModule<BCI> + CKKSEncodingOps<BCI, f64>,
+    Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>> + CKKSEncodingOps<CIBackend<BE>, f64>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
@@ -114,9 +113,7 @@ where
         let preset = preset_with_max_base2k(&preset, FIXTURE_BASE2K).unwrap();
         match ring {
             EvalModRing::Standard => runner_ckks_bootstrapping(&mut group, preset, BootstrappingPresetRun::<BE>::setup),
-            _ => runner_ckks_bootstrapping(&mut group, preset, |preset| {
-                BootstrappingPresetRun::<BE>::setup_ci::<BCI>(preset)
-            }),
+            _ => runner_ckks_bootstrapping(&mut group, preset, |preset| BootstrappingPresetRun::<BE>::setup_ci(preset)),
         }
     }
     group.finish();

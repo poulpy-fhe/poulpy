@@ -6,7 +6,7 @@
 //! `docs/linear_transformation.md`.
 
 use crate::SlotsKind;
-use crate::{CKKSError, CKKSResult as Result, ckks_ensure};
+use crate::{CKKSError, CKKSResult as Result, ckks_ensure, operand_cyclotomic_order};
 use poulpy_core::layouts::GLWEPlaintextInfos;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
@@ -194,7 +194,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
-        let cyclotomic_order = operand_cyclotomic_order(self, src.n().as_usize());
+        let cyclotomic_order = operand_cyclotomic_order("linear_transformation", self, src.n().as_usize())?;
         let src_k = src.k();
         for rotation in babies.baby_steps().filter(|&rotation| rotation != 0) {
             if let Err(source) = keys.get_automorphism_key(galois_element(rotation, cyclotomic_order), src_k) {
@@ -250,7 +250,8 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         )?;
         let res_k: TorusPrecision = (res_log_budget + res_log_delta).into();
         debug_assert_eq!(res_k, crate::api::ckks_linear_transformation_output_k(lt, src.k(), dst.k()));
-        check_required_keys(lt, babies, keys, operand_cyclotomic_order(self, src.n().as_usize()), res_k)?;
+        let cyclotomic_order = operand_cyclotomic_order("linear_transformation", self, src.n().as_usize())?;
+        check_required_keys(lt, babies, keys, cyclotomic_order, res_k)?;
         // `Σ diag ⊙ rot(src)` has real slots when `src` and the diagonals do, and is sparse where both are: a diagonal is
         // dense at its own degree.
         let slots = src.slots().join(pt_slots);
@@ -339,14 +340,9 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
             pt_max_k,
         )?;
         let res_k: TorusPrecision = (res_log_budget + res_log_delta).into();
+        let cyclotomic_order = operand_cyclotomic_order("linear_transformation", self, dst.n().as_usize())?;
         for (&babies_t, &lt_t) in babies.iter().zip(lts) {
-            check_required_keys(
-                lt_t,
-                babies_t,
-                keys,
-                operand_cyclotomic_order(self, dst.n().as_usize()),
-                res_k,
-            )?;
+            check_required_keys(lt_t, babies_t, keys, cyclotomic_order, res_k)?;
         }
         // The sum has real slots when every source and the diagonals do, and is sparse where all of them are.
         let slots = srcs.iter().fold(pt_slots, |slots, src_t| slots.join(src_t.slots()));
@@ -385,12 +381,6 @@ fn check_babies<BE: Backend, P>(lt: &LinearTransformation<P>, babies: &LinearTra
 
 /// Verifies that `babies` covers every baby rotation `lt` needs and that all
 /// automorphism keys required by `lt` are present (keyed by Galois element).
-/// The cyclotomic order of operands of degree `n`, which `module` serves at or
-/// below its own degree.
-fn operand_cyclotomic_order<M: CyclotomicOrder + ?Sized>(module: &M, n: usize) -> i64 {
-    module.cyclotomic_order() / (module.n() / n) as i64
-}
-
 fn check_required_keys<BE: Backend, P, H>(
     lt: &LinearTransformation<P>,
     babies: &LinearTransformationBabySteps<BE>,

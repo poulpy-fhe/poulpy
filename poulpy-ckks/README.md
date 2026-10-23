@@ -442,9 +442,9 @@ minimum degree. Raw coefficient encoding uses the invariant basis directly.
 Leveled arithmetic, real polynomial evaluation, and real linear
 transformations use the module's invariant ring. Host-side polynomial coefficients are
 encoded with a `Module<HostBytesBackend<ConjugateInvariant>>`. Conjugation, multiplication by
-`i`, complex polynomial evaluation, DFT, EvalMod, bootstrapping, PaCo and SHIP
+`i`, complex polynomial evaluation, DFT, bootstrapping, PaCo and SHIP
 are standard-only: CI backends do not implement them, so using them is a
-compile error. Real linear transformations reject nonzero imaginary diagonals.
+compile error. EvalMod runs on both rings; the CI ring refuses `ExpCmplx`. Real linear transformations reject nonzero imaginary diagonals.
 Prepared plaintexts, ciphertexts, and evaluation keys must be used with their
 producing ring and backend.
 
