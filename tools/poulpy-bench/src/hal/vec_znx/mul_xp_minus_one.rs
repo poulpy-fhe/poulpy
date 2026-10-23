@@ -1,3 +1,4 @@
+use poulpy_hal::api::ModuleSynchronize;
 use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
@@ -18,7 +19,7 @@ pub fn runner_vec_znx_mul_xp_minus_one<B: Backend<ZnxWord = i64>, M: Measurement
     bencher: &mut Bencher<'_, M>,
     sweep: &HalSweepParms,
 ) where
-    Module<B>: VecZnxMulXpMinusOne<B> + ModuleNew<B> + VecZnxAlloc<B>,
+    Module<B>: VecZnxMulXpMinusOne<B> + ModuleNew<B> + ModuleSynchronize<B> + VecZnxAlloc<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
 
@@ -34,6 +35,7 @@ pub fn runner_vec_znx_mul_xp_minus_one<B: Backend<ZnxWord = i64>, M: Measurement
         for i in 0..sweep.cols {
             module.vec_znx_mul_xp_minus_one(-7, &mut res, i, &a, i);
         }
+        module.synchronize();
         black_box(());
     });
 }
@@ -42,7 +44,8 @@ pub fn runner_vec_znx_mul_xp_minus_one_assign<B: Backend<ZnxWord = i64>, M: Meas
     bencher: &mut Bencher<'_, M>,
     sweep: &HalSweepParms,
 ) where
-    Module<B>: VecZnxMulXpMinusOneAssign<B> + ModuleNew<B> + VecZnxMulXpMinusOneAssignTmpBytes + VecZnxAlloc<B>,
+    Module<B>:
+        VecZnxMulXpMinusOneAssign<B> + ModuleNew<B> + ModuleSynchronize<B> + VecZnxMulXpMinusOneAssignTmpBytes + VecZnxAlloc<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -59,6 +62,7 @@ pub fn runner_vec_znx_mul_xp_minus_one_assign<B: Backend<ZnxWord = i64>, M: Meas
         for i in 0..sweep.cols {
             module.vec_znx_mul_xp_minus_one_assign(-7, &mut res, i, &mut scratch.borrow());
         }
+        module.synchronize();
         black_box(());
     });
 }
