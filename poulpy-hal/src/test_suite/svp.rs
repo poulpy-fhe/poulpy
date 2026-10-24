@@ -8,6 +8,7 @@ use crate::layouts::VecZnxBigToBackendRef;
 use crate::layouts::VecZnxDftToBackendMut;
 use crate::layouts::VecZnxDftToBackendRef;
 
+use crate::test_suite::poisoned_arena;
 use crate::{
     api::{
         ScratchOwnedAlloc, SvpApplyDft, SvpApplyDftTmpBytes, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPPolCopy,
@@ -56,8 +57,8 @@ pub fn test_svp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
 
     let mut source: Source = Source::new([0u8; 32]);
 
-    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref: ScratchOwned<BR> = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     let mut scalar_ref_backend = module_ref.scalar_znx_alloc(params.n, cols);
     for col in 0..cols {
@@ -96,8 +97,8 @@ pub fn test_svp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
         let a = download_vec_znx::<BR>(&a_ref_backend);
         let a_test_backend = upload_vec_znx::<BT>(&a);
 
-        let mut scratch_svp_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.svp_apply_dft_tmp_bytes(a_size));
-        let mut scratch_svp_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.svp_apply_dft_tmp_bytes(a_size));
+        let mut scratch_svp_ref: ScratchOwned<BR> = poisoned_arena(module_ref.svp_apply_dft_tmp_bytes(a_size));
+        let mut scratch_svp_test: ScratchOwned<BT> = poisoned_arena(module_test.svp_apply_dft_tmp_bytes(a_size));
 
         for res_size in [1, 2, 3, 4] {
             let mut res_dft_ref: VecZnxDftOwned<BR> = module_ref.vec_znx_dft_alloc(params.n, cols, res_size);
@@ -200,8 +201,8 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
 
     let mut source: Source = Source::new([0u8; 32]);
 
-    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref: ScratchOwned<BR> = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     let mut scalar_ref_backend = module_ref.scalar_znx_alloc(params.n, cols);
     for col in 0..cols {
@@ -386,8 +387,8 @@ pub fn test_svp_apply_dft_to_dft_assign<BR: crate::test_suite::TestBackend, BT: 
 
     let mut source: Source = Source::new([0u8; 32]);
 
-    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref: ScratchOwned<BR> = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     let mut scalar_ref_backend = module_ref.scalar_znx_alloc(params.n, cols);
     for col in 0..cols {

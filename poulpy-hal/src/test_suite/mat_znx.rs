@@ -1,9 +1,11 @@
 use super::{TestBackend, TestParams, download_mat_znx, upload_mat_znx};
+use crate::test_suite::poisoned_arena;
 use crate::{
     AlignedBuf,
     api::{
         MatZnxAddAssign, MatZnxAlloc, MatZnxCopy, MatZnxNormalize, MatZnxNormalizeAssign, MatZnxNormalizeTmpBytes,
-        ScratchOwnedAlloc, VecZnxCopy, VecZnxFillUniformSource, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxZero,
+        ScratchOwnedAlloc, VecZnxCopy, VecZnxFillUniformSource, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
+        VecZnxZero,
     },
     layouts::{MatZnx, MatZnxAtBackendMut, MatZnxAtBackendRef, MatZnxToBackendMut, MatZnxToBackendRef, Module, ScratchOwned},
     oep::{mat_znx_add_assign_derived, mat_znx_copy_derived, mat_znx_normalize_assign_derived, mat_znx_normalize_derived},
@@ -235,6 +237,7 @@ pub fn test_mat_znx_normalize<BR: TestBackend, BT: TestBackend>(
         + MatZnxNormalizeTmpBytes
         + VecZnxNormalize<BR>
         + VecZnxNormalizeAssign<BR>
+        + VecZnxNormalizeTmpBytes
         + VecZnxZero<BR>
         + MatZnxAlloc<BR>
         + VecZnxFillUniformSource<BR>,
@@ -244,8 +247,15 @@ pub fn test_mat_znx_normalize<BR: TestBackend, BT: TestBackend>(
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([1u8; 32]);
-    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.mat_znx_normalize_tmp_bytes());
-    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.mat_znx_normalize_tmp_bytes());
+    let mut scratch_ref: ScratchOwned<BR> = poisoned_arena(module_ref.mat_znx_normalize_tmp_bytes());
+    let mut scratch_ref_assign: ScratchOwned<BR> = poisoned_arena(module_ref.mat_znx_normalize_tmp_bytes());
+    let mut scratch_ref_oracle: ScratchOwned<BR> = poisoned_arena(module_ref.vec_znx_normalize_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = poisoned_arena(module_test.mat_znx_normalize_tmp_bytes());
+    let mut scratch_test_assign: ScratchOwned<BT> = poisoned_arena(module_test.mat_znx_normalize_tmp_bytes());
+    let mut scratch_test_derived: ScratchOwned<BT> =
+        poisoned_arena(crate::oep::mat_znx_normalize_tmp_bytes_derived::<BT>(module_test));
+    let mut scratch_test_derived_assign: ScratchOwned<BT> =
+        poisoned_arena(crate::oep::mat_znx_normalize_tmp_bytes_derived::<BT>(module_test));
 
     for (res_rows, (rows, cols_in, cols_out, size)) in
         [(1, (1, 1, 1, 1)), (1, (2, 1, 2, 3)), (3, (3, 2, 3, 2)), (4, (3, 2, 3, 2))]
@@ -276,7 +286,7 @@ pub fn test_mat_znx_normalize<BR: TestBackend, BT: TestBackend>(
                             &MatZnxAtBackendRef::<BR>::at_backend(&a_ref, row, col_in),
                             base2k,
                             a_col,
-                            &mut scratch_ref.arena(),
+                            &mut scratch_ref_oracle.arena(),
                         );
                     } else {
                         module_ref.vec_znx_zero(&mut entry, res_col);
@@ -321,7 +331,7 @@ pub fn test_mat_znx_normalize<BR: TestBackend, BT: TestBackend>(
                 &MatZnxToBackendRef::<BT>::to_backend_ref(&a_test),
                 base2k,
                 a_col,
-                &mut scratch_test.arena(),
+                &mut scratch_test_derived.arena(),
             );
             assert!(
                 download_mat_znx::<BR>(&have_ref) == want,
@@ -347,7 +357,7 @@ pub fn test_mat_znx_normalize<BR: TestBackend, BT: TestBackend>(
                         0,
                         &mut MatZnxAtBackendMut::<BR>::at_backend_mut(&mut want, row, col_in),
                         a_col,
-                        &mut scratch_ref.arena(),
+                        &mut scratch_ref_oracle.arena(),
                     );
                 }
             }
@@ -359,7 +369,7 @@ pub fn test_mat_znx_normalize<BR: TestBackend, BT: TestBackend>(
                 0,
                 &mut MatZnxToBackendMut::<BR>::to_backend_mut(&mut have_ref),
                 a_col,
-                &mut scratch_ref.arena(),
+                &mut scratch_ref_assign.arena(),
             );
             let mut have_test = upload_mat_znx::<BT>(&a);
             module_test.mat_znx_normalize_assign(
@@ -368,7 +378,7 @@ pub fn test_mat_znx_normalize<BR: TestBackend, BT: TestBackend>(
                 0,
                 &mut MatZnxToBackendMut::<BT>::to_backend_mut(&mut have_test),
                 a_col,
-                &mut scratch_test.arena(),
+                &mut scratch_test_assign.arena(),
             );
             let mut have_derived = upload_mat_znx::<BT>(&a);
             mat_znx_normalize_assign_derived::<BT>(
@@ -378,7 +388,7 @@ pub fn test_mat_znx_normalize<BR: TestBackend, BT: TestBackend>(
                 0,
                 &mut MatZnxToBackendMut::<BT>::to_backend_mut(&mut have_derived),
                 a_col,
-                &mut scratch_test.arena(),
+                &mut scratch_test_derived_assign.arena(),
             );
             assert!(
                 download_mat_znx::<BR>(&have_ref) == want,
