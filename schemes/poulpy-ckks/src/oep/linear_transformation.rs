@@ -52,8 +52,8 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
         key: &K,
     ) -> usize;
 
-    /// Prepares every diagonal of `lt` into `prepared`; diagonals not sharing one scale, width and slot kind are
-    /// `InvalidOperand`, before any write.
+    /// Prepares every diagonal of `lt` into `prepared`; a `prepared` allocated for another layout than `lt`'s, or
+    /// diagonals not sharing one scale, width and slot kind, are `InvalidOperand`, before any write.
     fn ckks_prepare_linear_transformation_rhs<P>(
         module: &Module<Self>,
         prepared: &mut LinearTransformationPrepared<Self>,

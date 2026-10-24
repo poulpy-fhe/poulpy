@@ -27,7 +27,10 @@ use poulpy_hal::{
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::{CKKSCopyOps, LinearTransformation, LtDiagonalMeta},
-    layouts::{CKKSPlaintext, validation::ensure_uniform_diagonals},
+    layouts::{
+        CKKSPlaintext,
+        validation::{ensure_prepared_transformation_layout, ensure_uniform_diagonals},
+    },
     reference::mul::mul_pt_params_raw,
 };
 use poulpy_core::GLWEBytesOf;
@@ -171,7 +174,8 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         self.glwe_eval_linear_transformation_sum_tmp_bytes(ct, ct, ct, plan, key)
     }
 
-    /// `InvalidOperand` for diagonals of `lt` not sharing one scale, width and slot kind, before any write.
+    /// `InvalidOperand`, before any write, for a `prepared` allocated for another layout than `lt`'s or diagonals of
+    /// `lt` not sharing one scale, width and slot kind.
     fn ckks_prepare_linear_transformation_rhs_reference<P>(
         &self,
         prepared: &mut LinearTransformationPrepared<BE>,
@@ -182,11 +186,11 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         Self: GLWELinearTransformations<BE>,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
     {
+        const OP: &str = "ckks_prepare_linear_transformation_rhs";
+        ensure_prepared_transformation_layout(OP, prepared, lt)?;
         // The first diagonal's scale and real-slot claim are stashed for all, so eval needs no `lt` for its
         // `cnv_offset` and slot kind.
-        ensure_uniform_diagonals("ckks_prepare_linear_transformation_rhs", lt, |pt| {
-            (pt.log_delta(), pt.encoded_k().as_usize(), pt.slots())
-        })?;
+        ensure_uniform_diagonals(OP, lt, |pt| (pt.log_delta(), pt.encoded_k().as_usize(), pt.slots()))?;
         if let Some(first_pt) = lt.first_diagonal_plaintext() {
             prepared.set_log_scale(first_pt.log_delta());
             prepared.set_real_slots(first_pt.slots().is_real());

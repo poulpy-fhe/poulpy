@@ -4,10 +4,53 @@
 //! Pipeline-specific validation (e.g. PaCo's plan-against-material checks) stays with its pipeline; this module is the reusable bottom layer.
 
 use anyhow::{Context, Result, ensure};
-use poulpy_core::layouts::{Base2K, GGLWEInfos, GLWEInfos, GLWEToBackendRef, LWEInfos, LinearTransformation};
+use poulpy_core::{
+    LinearTransformationPrepared,
+    layouts::{Base2K, GGLWEInfos, GLWEInfos, GLWEToBackendRef, LWEInfos, LinearTransformation},
+};
 use poulpy_hal::layouts::Backend;
 
 use crate::{CKKSCompositionError, SlotsKind};
+
+/// `InvalidOperand` for `op` unless `prepared` was allocated for `lt`'s layout: the same schedule, every diagonal of
+/// both at one degree, radix, width and limb count, and `lt`'s baby steps led by the identity rotation.
+pub(crate) fn ensure_prepared_transformation_layout<BE: Backend, P: LWEInfos>(
+    op: &'static str,
+    prepared: &LinearTransformationPrepared<BE>,
+    lt: &LinearTransformation<P>,
+) -> crate::CKKSResult<()> {
+    let invalid = |reason: &str| -> crate::CKKSError {
+        CKKSCompositionError::InvalidOperand {
+            op,
+            reason: reason.into(),
+        }
+        .into()
+    };
+    if prepared.index() != lt.index() {
+        return Err(invalid("the transformation's schedule differs from the prepared one's"));
+    }
+    let Some(first) = prepared.first_diagonal_plaintext() else {
+        return Err(invalid("the prepared transformation has no diagonal"));
+    };
+    let layout = (first.n(), first.base2k(), first.k(), first.max_size());
+    let prepared_layouts = prepared
+        .giant_steps
+        .iter()
+        .flat_map(|gs| &gs.diagonals)
+        .map(|d| (d.plaintext.n(), d.plaintext.base2k(), d.plaintext.k(), d.plaintext.max_size()));
+    let source_layouts = lt
+        .giant_steps
+        .iter()
+        .flat_map(|gs| &gs.diagonals)
+        .map(|d| (d.plaintext.n(), d.plaintext.base2k(), d.plaintext.k(), d.plaintext.max_size()));
+    if prepared_layouts.chain(source_layouts).any(|diagonal| diagonal != layout) {
+        return Err(invalid("a diagonal's layout differs from the prepared transformation's"));
+    }
+    if lt.baby_steps.first().is_some_and(|&baby| baby != 0) {
+        return Err(invalid("the baby steps do not start with the identity rotation"));
+    }
+    Ok(())
+}
 
 /// `InvalidOperand` for `op` unless every diagonal of `lt` shares the first one's scale, storage width and slot kind,
 /// the `(log_scale, max_k, slots)` that `meta` reads.
