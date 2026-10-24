@@ -15,9 +15,9 @@ use poulpy_core::{
         GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, Scale, TorusPrecision,
     },
 };
-use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use super::{bootstrap::validate_runtime, ops::PaCoSlotOps};
+use super::bootstrap::validate_runtime;
 use crate::SlotsKind;
 use crate::layouts::paco::{
     context::PaCoContext,
@@ -25,11 +25,8 @@ use crate::layouts::paco::{
 };
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout,
-    api::{
-        CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSRotateOps, CKKSSubOps, PaCoScalar,
-    },
-    layouts::CKKSModuleAlloc,
-    oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl},
+    api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSMulOps, CKKSRotateOps, CKKSSubOps, PaCoScalar},
+    oep::{CKKSEncodingImpl, CKKSPaCoImpl},
 };
 
 /// Ciphertext layout used to conservatively size every phase of a branch.
@@ -115,22 +112,8 @@ pub(super) fn direct_tmp_bytes_validated<BE, F, K>(
     keys: &K,
 ) -> Result<usize>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: CKKSPaCoImpl + CKKSEncodingImpl<F>,
     F: PaCoScalar,
-    Module<BE>: CKKSMulOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSRotateOps<BE>
-        + PaCoSlotOps<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWERotate<BE>
-        + GLWEAutomorphism<BE>
-        + GLWELinearTransformations<BE>
-        + GLWEKeyswitch<BE>
-        + CyclotomicOrder,
     K: PaCoKeys<BE>,
 {
     let plan = context.plan();
@@ -230,7 +213,7 @@ where
 
 /// Scratch bytes for one public PaCo call. With `encapsulated`, includes the
 /// one-time dense-to-structured key switch in addition to a direct branch.
-pub(crate) fn paco_bootstrap_tmp_bytes<BE, F, K, Src>(
+fn paco_bootstrap_tmp_bytes<BE, F, K, Src>(
     module: &Module<BE>,
     output: &CKKSCiphertextOwned<BE>,
     input: &Src,
@@ -239,22 +222,8 @@ pub(crate) fn paco_bootstrap_tmp_bytes<BE, F, K, Src>(
     encapsulated: bool,
 ) -> Result<usize>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: CKKSPaCoImpl + CKKSEncodingImpl<F>,
     F: PaCoScalar,
-    Module<BE>: CKKSMulOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSRotateOps<BE>
-        + PaCoSlotOps<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWERotate<BE>
-        + GLWEAutomorphism<BE>
-        + GLWELinearTransformations<BE>
-        + GLWEKeyswitch<BE>
-        + CyclotomicOrder,
     K: PaCoKeys<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
@@ -266,6 +235,38 @@ where
     let switching_key = validate_encapsulation_key(input, context, keys)?;
     let structured = encapsulated_input_layout(input, context);
     Ok(direct.max(module.glwe_keyswitch_tmp_bytes(&structured, input, switching_key)))
+}
+
+pub(crate) fn ckks_paco_bootstrap_direct_tmp_bytes_derived<BE, F, K, Src>(
+    module: &Module<BE>,
+    output: &CKKSCiphertextOwned<BE>,
+    input: &Src,
+    context: &PaCoContext<BE, F>,
+    keys: &K,
+) -> Result<usize>
+where
+    BE: CKKSPaCoImpl + CKKSEncodingImpl<F>,
+    F: PaCoScalar,
+    K: PaCoKeys<BE>,
+    Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+{
+    paco_bootstrap_tmp_bytes(module, output, input, context, keys, false)
+}
+
+pub(crate) fn ckks_paco_bootstrap_tmp_bytes_derived<BE, F, K, Src>(
+    module: &Module<BE>,
+    output: &CKKSCiphertextOwned<BE>,
+    input: &Src,
+    context: &PaCoContext<BE, F>,
+    keys: &K,
+) -> Result<usize>
+where
+    BE: CKKSPaCoImpl + CKKSEncodingImpl<F>,
+    F: PaCoScalar,
+    K: PaCoKeys<BE>,
+    Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+{
+    paco_bootstrap_tmp_bytes(module, output, input, context, keys, true)
 }
 
 /// Performs layout validation and rejects undersized scratch before an output
@@ -280,22 +281,8 @@ pub(super) fn preflight<BE, F, K, Src>(
     scratch: &ScratchArena<'_, BE>,
 ) -> Result<((usize, usize), usize)>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: CKKSPaCoImpl + CKKSEncodingImpl<F>,
     F: PaCoScalar,
-    Module<BE>: CKKSMulOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSRotateOps<BE>
-        + PaCoSlotOps<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWERotate<BE>
-        + GLWEAutomorphism<BE>
-        + GLWELinearTransformations<BE>
-        + GLWEKeyswitch<BE>
-        + CyclotomicOrder,
     K: PaCoKeys<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
@@ -327,7 +314,7 @@ where
 /// `kappa = N/(C*2^s)` makes that stride exactly `2^s`: every live
 /// coefficient is refreshed once, and no branch spends work on a coefficient
 /// the sparsity guarantees is zero.
-pub(super) fn branch_schedule<BE: Backend + CKKSPaCoCoeffEncodingImpl, F: PaCoScalar>(
+pub(super) fn branch_schedule<BE: Backend, F: PaCoScalar>(
     context: &PaCoContext<BE, F>,
     log_sparsity: usize,
 ) -> Result<(usize, usize)> {
@@ -368,7 +355,7 @@ pub(super) fn validate_encapsulation_key<'a, BE, F, K, Src>(
     keys: &'a K,
 ) -> Result<&'a K::SwitchingKey>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: Backend,
     F: PaCoScalar,
     K: PaCoKeys<BE>,
     Src: CKKSCtBounds,
@@ -410,7 +397,7 @@ where
 /// Layout produced by dense-to-PaCo encapsulation. The key switch accepts an
 /// input in a different limb radix, but its result must use the context radix
 /// consumed by the compiled plaintexts and bootstrapping keys.
-fn encapsulated_input_layout<BE: Backend + CKKSPaCoCoeffEncodingImpl, F: PaCoScalar, Src: CKKSCtBounds>(
+fn encapsulated_input_layout<BE: Backend, F: PaCoScalar, Src: CKKSCtBounds>(
     input: &Src,
     context: &PaCoContext<BE, F>,
 ) -> CKKSLayout {

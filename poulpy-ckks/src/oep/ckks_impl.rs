@@ -1,9 +1,10 @@
 use poulpy_hal::layouts::Backend;
 
 use super::{
-    CKKSAddImpl, CKKSComplexPolynomialEvaluationImpl, CKKSConjugateImpl, CKKSCopyImpl, CKKSDotProductImpl, CKKSEncryptionImpl,
-    CKKSEvalModImpl, CKKSImagImpl, CKKSLinearTransformationImpl, CKKSMulImpl, CKKSNegImpl, CKKSPlaintextZnxImpl,
-    CKKSPolynomialEvaluationImpl, CKKSPow2Impl, CKKSRotateImpl, CKKSSubImpl, DFTImpl,
+    CKKSAddImpl, CKKSAddManyImpl, CKKSAffineImpl, CKKSApproximationImpl, CKKSComplexPolynomialEvaluationImpl, CKKSConjugateImpl,
+    CKKSCopyImpl, CKKSDotProductImpl, CKKSEncryptionImpl, CKKSEvalModImpl, CKKSImagImpl, CKKSLinearTransformationImpl,
+    CKKSMulAddImpl, CKKSMulImpl, CKKSMulSubImpl, CKKSNegImpl, CKKSPlaintextZnxImpl, CKKSPolynomialEvaluationImpl, CKKSPow2Impl,
+    CKKSRotateImpl, CKKSSubImpl, DFTImpl,
 };
 
 /// Aggregate CKKS dispatch surface.
@@ -44,6 +45,11 @@ pub unsafe trait CKKSImpl:
     + CKKSComplexPolynomialEvaluationImpl
     + DFTImpl
     + CKKSEvalModImpl
+    + CKKSAddManyImpl
+    + CKKSMulAddImpl
+    + CKKSAffineImpl
+    + CKKSMulSubImpl
+    + CKKSApproximationImpl
 {
 }
 
@@ -65,5 +71,10 @@ unsafe impl<BE: Backend> CKKSImpl for BE where
         + CKKSComplexPolynomialEvaluationImpl
         + DFTImpl
         + CKKSEvalModImpl
+        + CKKSAddManyImpl
+        + CKKSMulAddImpl
+        + CKKSAffineImpl
+        + CKKSMulSubImpl
+        + CKKSApproximationImpl
 {
 }

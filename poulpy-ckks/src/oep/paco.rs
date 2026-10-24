@@ -1,9 +1,29 @@
 use crate::CKKSResult as Result;
 use crate::layouts::CKKSPlaintextOwned;
-use poulpy_core::layouts::GLWEToBackendRef;
-use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
+use poulpy_core::{
+    layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey},
+    oep::{AutomorphismImpl, GLWEKeyswitchImpl, GLWERotateImpl, LinearTransformationImpl},
+};
+use poulpy_hal::{
+    api::ScratchOwnedBorrow,
+    layouts::{Backend, Module, ScratchArena, ScratchOwned, Standard},
+};
 
-use crate::{CKKSCtBounds, api::PaCoScalar, layouts::PaCoContext, oep::CKKSEncodingImpl};
+use crate::{
+    CKKSCtBounds, SetCKKSInfos,
+    api::PaCoScalar,
+    layouts::{CKKSCiphertextOwned, PaCoContext, PaCoKeys, PaCoWorker},
+    oep::{
+        CKKSAddImpl, CKKSConjugateImpl, CKKSCopyImpl, CKKSEncodingImpl, CKKSLinearTransformationImpl, CKKSMulImpl,
+        CKKSRotateImpl, CKKSSubImpl,
+        derived::paco::{
+            ckks_paco_bootstrap_direct_into_derived, ckks_paco_bootstrap_direct_tmp_bytes_derived,
+            ckks_paco_bootstrap_into_derived, ckks_paco_bootstrap_parallel_direct_into_derived,
+            ckks_paco_bootstrap_parallel_into_derived, ckks_paco_bootstrap_tmp_bytes_derived, ckks_slot_product_assign_derived,
+            ckks_slot_trace_assign_derived,
+        },
+    },
+};
 
 /// Backend extension point for the PaCo coefficient encoding: the ciphertext
 /// → four-β-plaintexts transformation consumed by PaCo's blind rotation.
@@ -30,6 +50,8 @@ use crate::{CKKSCtBounds, api::PaCoScalar, layouts::PaCoContext, oep::CKKSEncodi
 pub unsafe trait CKKSPaCoCoeffEncodingImpl: Backend<Ring = Standard> {
     /// Backend-native arena bytes required by coefficient embedding and β
     /// packing. This includes any scalar buffers used by native FFT kernels.
+    /// [`Self::ckks_paco_coeff_encodings`] refuses a smaller arena with
+    /// `CKKSError::Internal` before any work.
     fn ckks_paco_coeff_encodings_tmp_bytes<F>(module: &Module<Self>, context: &PaCoContext<Self, F>) -> Result<usize>
     where
         F: PaCoScalar,
@@ -55,3 +77,199 @@ pub unsafe trait CKKSPaCoCoeffEncodingImpl: Backend<Ring = Standard> {
         Self: CKKSEncodingImpl<F>,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds;
 }
+
+/// Backend contract of the PaCo bootstrapping operations
+/// ([`CKKSPaCoOps`](crate::api::CKKSPaCoOps)) beyond the coefficient encoding, on the standard ring.
+///
+/// Every method defaults to the PaCo drivers over the selected CKKS operations, the
+/// core rotation, automorphism, linear-transformation and key-switch families, and
+/// [`CKKSPaCoCoeffEncodingImpl`]; an override reproduces them bit for bit within its
+/// own query. The scalar `F` is a method parameter bounded by `Self: CKKSEncodingImpl<F>`.
+///
+/// # Safety
+///
+/// Implementations uphold `poulpy-hal/docs/backend_safety_contract.md` for every
+/// operand, worker and scratch region they touch.
+pub unsafe trait CKKSPaCoImpl:
+    Backend<Ring = Standard>
+    + CKKSPaCoCoeffEncodingImpl
+    + CKKSMulImpl
+    + CKKSAddImpl
+    + CKKSSubImpl
+    + CKKSConjugateImpl
+    + CKKSCopyImpl
+    + CKKSRotateImpl
+    + CKKSLinearTransformationImpl
+    + GLWERotateImpl
+    + AutomorphismImpl
+    + LinearTransformationImpl
+    + GLWEKeyswitchImpl
+{
+    /// Scratch of the direct drivers after their runtime validation: one branch at its working width,
+    /// the coefficient encoding included.
+    fn ckks_paco_bootstrap_direct_tmp_bytes<F, K, Src>(
+        module: &Module<Self>,
+        output: &CKKSCiphertextOwned<Self>,
+        input: &Src,
+        context: &PaCoContext<Self, F>,
+        keys: &K,
+    ) -> Result<usize>
+    where
+        F: PaCoScalar,
+        Self: CKKSEncodingImpl<F>,
+        K: PaCoKeys<Self>,
+        Src: GLWEToBackendRef<Self> + CKKSCtBounds,
+    {
+        ckks_paco_bootstrap_direct_tmp_bytes_derived(module, output, input, context, keys)
+    }
+
+    /// Scratch of the encapsulated drivers: the direct bound and the dense-to-PaCo key switch.
+    fn ckks_paco_bootstrap_tmp_bytes<F, K, Src>(
+        module: &Module<Self>,
+        output: &CKKSCiphertextOwned<Self>,
+        input: &Src,
+        context: &PaCoContext<Self, F>,
+        keys: &K,
+    ) -> Result<usize>
+    where
+        F: PaCoScalar,
+        Self: CKKSEncodingImpl<F>,
+        K: PaCoKeys<Self>,
+        Src: GLWEToBackendRef<Self> + CKKSCtBounds,
+    {
+        ckks_paco_bootstrap_tmp_bytes_derived(module, output, input, context, keys)
+    }
+
+    /// Validates, then evaluates every branch in increasing order and adds it to `output`.
+    fn ckks_paco_bootstrap_direct_into<F, K, Src>(
+        module: &Module<Self>,
+        output: &mut CKKSCiphertextOwned<Self>,
+        input: &Src,
+        context: &PaCoContext<Self, F>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        F: PaCoScalar,
+        Self: CKKSEncodingImpl<F>,
+        K: PaCoKeys<Self>,
+        Src: GLWEToBackendRef<Self> + CKKSCtBounds,
+    {
+        ckks_paco_bootstrap_direct_into_derived(module, output, input, context, keys, scratch)
+    }
+
+    /// Validates, switches `input` to the PaCo secret once, then runs the direct driver.
+    fn ckks_paco_bootstrap_into<F, K, Src>(
+        module: &Module<Self>,
+        output: &mut CKKSCiphertextOwned<Self>,
+        input: &Src,
+        context: &PaCoContext<Self, F>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        F: PaCoScalar,
+        Self: CKKSEncodingImpl<F>,
+        K: PaCoKeys<Self>,
+        Src: GLWEToBackendRef<Self> + CKKSCtBounds,
+    {
+        ckks_paco_bootstrap_into_derived(module, output, input, context, keys, scratch)
+    }
+
+    /// Validates every worker's degree and scratch, then evaluates branch zero on the caller and the
+    /// others on `workers`, recombined in increasing branch order.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the caller-allocated parallel API explicitly carries output, input, context, keys, workers, and both scratch/schedule controls"
+    )]
+    fn ckks_paco_bootstrap_parallel_direct_into<F, K, Src>(
+        module: &Module<Self>,
+        output: &mut CKKSCiphertextOwned<Self>,
+        input: &Src,
+        context: &PaCoContext<Self, F>,
+        keys: &K,
+        workers: &mut [PaCoWorker<Self>],
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        F: PaCoScalar,
+        Self: CKKSEncodingImpl<F>,
+        K: PaCoKeys<Self> + Sync,
+        ScratchOwned<Self>: ScratchOwnedBorrow<Self>,
+        Src: GLWEToBackendRef<Self> + CKKSCtBounds + Sync,
+    {
+        ckks_paco_bootstrap_parallel_direct_into_derived(module, output, input, context, keys, workers, scratch)
+    }
+
+    /// Validates, switches `input` to the PaCo secret once on the caller, then runs the parallel direct driver.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the caller-allocated parallel API explicitly carries output, input, context, keys, workers, and both scratch/schedule controls"
+    )]
+    fn ckks_paco_bootstrap_parallel_into<F, K, Src>(
+        module: &Module<Self>,
+        output: &mut CKKSCiphertextOwned<Self>,
+        input: &Src,
+        context: &PaCoContext<Self, F>,
+        keys: &K,
+        workers: &mut [PaCoWorker<Self>],
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        F: PaCoScalar,
+        Self: CKKSEncodingImpl<F>,
+        K: PaCoKeys<Self> + Sync,
+        ScratchOwned<Self>: ScratchOwnedBorrow<Self>,
+        Src: GLWEToBackendRef<Self> + CKKSCtBounds + Sync,
+    {
+        ckks_paco_bootstrap_parallel_into_derived(module, output, input, context, keys, workers, scratch)
+    }
+
+    /// Hook without an API twin: `Tr_{a→b}` in place, slot `i` becoming `Σ_j ct[i + j·b]` for
+    /// `j ∈ [0, a/b)`, one `glwe_automorphism_add_assign` per level under the keys of the fold
+    /// rotations; consumes no budget.
+    fn ckks_slot_trace_assign<Dst, H>(
+        module: &Module<Self>,
+        ct: &mut Dst,
+        a: usize,
+        b: usize,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
+        H: GetAutomorphismKey<Self>,
+    {
+        ckks_slot_trace_assign_derived(module, ct, a, b, keys, scratch)
+    }
+
+    /// Hook without an API twin: `Pr_{a→b}` in place, slot `i` becoming `Π_j ct[i + j·b]` for
+    /// `j ∈ [0, a/b)`, one `ckks_rotate_into` and `ckks_mul_assign` per level; consumes
+    /// `log(a/b) · log_delta` budget bits.
+    fn ckks_slot_product_assign<Dst, H, TH>(
+        module: &Module<Self>,
+        ct: &mut Dst,
+        a: usize,
+        b: usize,
+        keys: &H,
+        tsk: &TH,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
+        H: GetAutomorphismKey<Self>,
+        TH: GetTensorKey<Self>,
+    {
+        ckks_slot_product_assign_derived(module, ct, a, b, keys, tsk, scratch)
+    }
+}
+
+/// Selects the derived PaCo drivers of `CKKSPaCoImpl` for the standard backend `$be`.
+#[macro_export]
+macro_rules! impl_ckks_paco_derived_full {
+    ($be:ty) => {
+        unsafe impl $crate::oep::CKKSPaCoImpl for $be {}
+    };
+}
+
+pub use crate::impl_ckks_paco_derived_full;

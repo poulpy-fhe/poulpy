@@ -7,7 +7,7 @@ use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKe
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 /// Homomorphic encoding (CoeffsToSlots), `Standard` format: evaluates the Encode
 /// (IDFT) matrix in place, retaining selected raw DFT dispatch.
-pub fn ckks_coeffs_to_slots_assign<BE, P, Dst, H>(
+pub fn ckks_coeffs_to_slots_assign_derived<BE, P, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
     dft: &DFTMatrix<BE, Encode, Standard, LinearTransformation<P>>,
@@ -26,7 +26,7 @@ where
 
 /// Homomorphic decoding (SlotsToCoeffs), `Standard` format: evaluates the Decode
 /// (DFT) matrix in place, retaining selected raw DFT dispatch.
-pub fn ckks_slots_to_coeffs_assign<BE, P, Dst, H>(
+pub fn ckks_slots_to_coeffs_assign_derived<BE, P, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
     dft: &DFTMatrix<BE, Decode, Standard, LinearTransformation<P>>,
@@ -53,7 +53,7 @@ where
 /// key (Galois element `−1`). On return, `ct_real` holds the real parts and
 /// `ct_imag` the imaginary parts. Consumes `ct_in` by reference (copied).
 #[allow(clippy::too_many_arguments)]
-pub fn ckks_coeffs_to_slots_split<BE, P, Dst, Src, H>(
+pub fn ckks_coeffs_to_slots_split_derived<BE, P, Dst, Src, H>(
     module: &Module<BE>,
     ct_real: &mut Dst,
     ct_imag: &mut Dst,
@@ -99,7 +99,7 @@ where
 ///
 /// Combines `ct_real + i·ct_imag`, then evaluates the Decode matrix. Writes the
 /// result into `op_out`.
-pub fn ckks_slots_to_coeffs_split<BE, P, Dst, Src, H>(
+pub fn ckks_slots_to_coeffs_split_derived<BE, P, Dst, Src, H>(
     module: &Module<BE>,
     op_out: &mut Dst,
     ct_real: &Src,
@@ -130,7 +130,7 @@ where
 /// `Re` in the left `slots` and `Im` in the right `slots` of each `2·slots` period.
 /// The live slot count doubles, so `ct_out.log_sparsity` is decremented by one.
 #[allow(clippy::too_many_arguments)]
-pub fn ckks_coeffs_to_slots_repack<BE, P, Dst, Src, H>(
+pub fn ckks_coeffs_to_slots_repack_derived<BE, P, Dst, Src, H>(
     module: &Module<BE>,
     ct_out: &mut Dst,
     ct_in: &Src,
@@ -180,13 +180,13 @@ where
 }
 
 /// Sparse `SlotsToCoeffs` from a single repacked ciphertext (the inverse of
-/// [`ckks_coeffs_to_slots_repack`]; `DFTOutputFormat::RepackImagAsReal`, sparse).
+/// [`ckks_coeffs_to_slots_repack_derived`]; `DFTOutputFormat::RepackImagAsReal`, sparse).
 ///
 /// The Decode matrices already embed the repack matrix that recombines the
 /// `[Re | Im]` real packing into the complex form, so this is just an in-place
 /// evaluation. The live slot count halves, so `op_out.log_sparsity` is incremented
 /// by one.
-pub fn ckks_slots_to_coeffs_repack<BE, P, Dst, Src, H>(
+pub fn ckks_slots_to_coeffs_repack_derived<BE, P, Dst, Src, H>(
     module: &Module<BE>,
     op_out: &mut Dst,
     ct_in: &Src,

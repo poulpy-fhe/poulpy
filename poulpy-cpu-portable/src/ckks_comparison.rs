@@ -15,6 +15,11 @@ mod comparison {
     poulpy_ckks::impl_ckks_dot_product_reference_full!(ControlledSamplingFFT64Portable);
     poulpy_ckks::impl_ckks_linear_transformation_reference_full!(ControlledSamplingFFT64Portable);
     poulpy_ckks::impl_ckks_polynomial_evaluation_reference_full!(ControlledSamplingFFT64Portable);
+    poulpy_ckks::impl_ckks_add_many_derived_full!(ControlledSamplingFFT64Portable);
+    poulpy_ckks::impl_ckks_mul_add_derived_full!(ControlledSamplingFFT64Portable);
+    poulpy_ckks::impl_ckks_affine_derived_full!(ControlledSamplingFFT64Portable);
+    poulpy_ckks::impl_ckks_mul_sub_derived_full!(ControlledSamplingFFT64Portable);
+    poulpy_ckks::impl_ckks_approximation_derived_full!(ControlledSamplingFFT64Portable);
     poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference_full!(ControlledSamplingFFT64Portable);
     poulpy_ckks::impl_ckks_eval_mod_reference_full!(ControlledSamplingFFT64Portable);
 
@@ -31,4 +36,9 @@ mod comparison {
     poulpy_ckks::impl_ckks_dot_product_reference_full!(ControlledSamplingFFT64CIPortable);
     poulpy_ckks::impl_ckks_linear_transformation_reference_full!(ControlledSamplingFFT64CIPortable);
     poulpy_ckks::impl_ckks_polynomial_evaluation_reference_full!(ControlledSamplingFFT64CIPortable);
+    poulpy_ckks::impl_ckks_add_many_derived_full!(ControlledSamplingFFT64CIPortable);
+    poulpy_ckks::impl_ckks_mul_add_derived_full!(ControlledSamplingFFT64CIPortable);
+    poulpy_ckks::impl_ckks_affine_derived_full!(ControlledSamplingFFT64CIPortable);
+    poulpy_ckks::impl_ckks_mul_sub_derived_full!(ControlledSamplingFFT64CIPortable);
+    poulpy_ckks::impl_ckks_approximation_derived_full!(ControlledSamplingFFT64CIPortable);
 }

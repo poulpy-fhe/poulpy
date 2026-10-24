@@ -325,7 +325,7 @@ unsafe impl poulpy_ckks::oep::DFTImpl for OverrideBackend {
         H: GetAutomorphismKey<Self>,
     {
         REPACK_CALLS.set(REPACK_CALLS.get() + 1);
-        poulpy_ckks::oep::defaults::ckks_slots_to_coeffs_repack(module, op_out, ct_in, dft, keys, scratch)
+        poulpy_ckks::oep::defaults::ckks_slots_to_coeffs_repack_derived(module, op_out, ct_in, dft, keys, scratch)
     }
 }
 

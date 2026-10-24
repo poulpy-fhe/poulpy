@@ -110,7 +110,7 @@ pub unsafe trait CKKSMulImpl: Backend {
     where
         A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos,
     {
-        super::derived::mul::ckks_prepare_left(module, a, hint, scratch)
+        super::derived::mul::ckks_prepare_left_derived(module, a, hint, scratch)
     }
     /// Prepares a right operand: [`Self::ckks_prepare_right_into`] into
     /// [`Self::ckks_prepared_right_alloc_from_infos`] of `a` under `hint`.
@@ -123,7 +123,7 @@ pub unsafe trait CKKSMulImpl: Backend {
     where
         A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos,
     {
-        super::derived::mul::ckks_prepare_right(module, a, hint, scratch)
+        super::derived::mul::ckks_prepare_right_derived(module, a, hint, scratch)
     }
     fn ckks_mul_prepared_assign<Dst, T>(
         module: &Module<Self>,

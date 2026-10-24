@@ -1,9 +1,9 @@
 //! Tests for the PaCo slot-fold composites and conjugate rotation.
 //!
-//! - **`Tr_{a→b}`** (`PaCoSlotOps::ckks_slot_trace_assign`): fold by
+//! - **`Tr_{a→b}`** (`CKKSPaCoImpl::ckks_slot_trace_assign`): fold by
 //!   addition. Checked against the cleartext recurrence (`trace_slots`) for several
 //!   `(a, b)` pairs; consumes **zero** budget.
-//! - **`Pr_{a→b}`** (`PaCoSlotOps::ckks_slot_product_assign`): fold by
+//! - **`Pr_{a→b}`** (`CKKSPaCoImpl::ckks_slot_product_assign`): fold by
 //!   multiplication with tensor-key relinearization — seqPaCo's EvalMod
 //!   replacement. Inputs are unit-circle slot values (as in the real
 //!   pipeline). Checked against `product_slots`; consumes
@@ -28,7 +28,8 @@ use crate::{
     api::CKKSConjugateOps,
     encoding::paco::cpx::Cpx,
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
-    reference::paco::ops::{PaCoSlotOps, fold_rotations},
+    oep::CKKSPaCoImpl,
+    reference::paco::ops::fold_rotations,
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
@@ -154,8 +155,8 @@ pub(crate) fn assert_slots<BE, F, E>(
 /// `Tr_{a→b}` matches the cleartext fold and consumes no budget.
 pub fn test_paco_slot_trace<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + PaCoSlotOps<BE>,
+    BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -185,9 +186,7 @@ where
             &mut scratch.borrow(),
         );
         let budget_before = ct.log_budget();
-        module
-            .ckks_slot_trace_assign(&mut ct, a, b, &atks, &mut scratch.borrow())
-            .unwrap();
+        BE::ckks_slot_trace_assign(module, &mut ct, a, b, &atks, &mut scratch.borrow()).unwrap();
         assert_eq!(ct.log_budget(), budget_before, "trace({a}->{b}) must consume no budget");
         assert_slots::<BE, F, E>(
             &format!("paco_slot_trace({a}->{b})"),
@@ -207,8 +206,8 @@ where
 /// exactly `log(a/b) · log_delta` budget bits.
 pub fn test_paco_slot_product<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + PaCoSlotOps<BE>,
+    BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -250,9 +249,7 @@ where
             &mut scratch.borrow(),
         );
         let budget_before = ct.log_budget();
-        module
-            .ckks_slot_product_assign(&mut ct, a, b, &atks, &tsk, &mut scratch.borrow())
-            .unwrap();
+        BE::ckks_slot_product_assign(&module, &mut ct, a, b, &atks, &tsk, &mut scratch.borrow()).unwrap();
         assert_eq!(
             budget_before - ct.log_budget(),
             levels * log_delta,

@@ -89,7 +89,7 @@ pub unsafe trait DFTImpl:
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<Self>,
     {
-        crate::oep::derived::dft::ckks_coeffs_to_slots_assign(module, ct, dft, keys, scratch)
+        crate::oep::derived::dft::ckks_coeffs_to_slots_assign_derived(module, ct, dft, keys, scratch)
     }
 
     fn ckks_slots_to_coeffs<P, Dst, H>(
@@ -104,7 +104,7 @@ pub unsafe trait DFTImpl:
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<Self>,
     {
-        crate::oep::derived::dft::ckks_slots_to_coeffs_assign(module, ct, dft, keys, scratch)
+        crate::oep::derived::dft::ckks_slots_to_coeffs_assign_derived(module, ct, dft, keys, scratch)
     }
 
     fn ckks_coeffs_to_slots_split<P, Dst, Src, H>(
@@ -122,7 +122,7 @@ pub unsafe trait DFTImpl:
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
         H: GetAutomorphismKey<Self>,
     {
-        crate::oep::derived::dft::ckks_coeffs_to_slots_split(module, ct_real, ct_imag, ct_in, dft, keys, scratch)
+        crate::oep::derived::dft::ckks_coeffs_to_slots_split_derived(module, ct_real, ct_imag, ct_in, dft, keys, scratch)
     }
 
     fn ckks_slots_to_coeffs_split<P, Dst, Src, H>(
@@ -140,7 +140,7 @@ pub unsafe trait DFTImpl:
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
         H: GetAutomorphismKey<Self>,
     {
-        crate::oep::derived::dft::ckks_slots_to_coeffs_split(module, op_out, ct_real, ct_imag, dft, keys, scratch)
+        crate::oep::derived::dft::ckks_slots_to_coeffs_split_derived(module, op_out, ct_real, ct_imag, dft, keys, scratch)
     }
 
     fn ckks_coeffs_to_slots_repack<P, Dst, Src, H>(
@@ -157,7 +157,7 @@ pub unsafe trait DFTImpl:
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
         H: GetAutomorphismKey<Self>,
     {
-        crate::oep::derived::dft::ckks_coeffs_to_slots_repack(module, ct_out, ct_in, dft, keys, scratch)
+        crate::oep::derived::dft::ckks_coeffs_to_slots_repack_derived(module, ct_out, ct_in, dft, keys, scratch)
     }
 
     fn ckks_slots_to_coeffs_repack<P, Dst, Src, H>(
@@ -174,7 +174,7 @@ pub unsafe trait DFTImpl:
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
         H: GetAutomorphismKey<Self>,
     {
-        crate::oep::derived::dft::ckks_slots_to_coeffs_repack(module, op_out, ct_in, dft, keys, scratch)
+        crate::oep::derived::dft::ckks_slots_to_coeffs_repack_derived(module, op_out, ct_in, dft, keys, scratch)
     }
 }
 

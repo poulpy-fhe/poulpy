@@ -108,7 +108,7 @@ where
             let mut cached = CKKSEncodingBuffer::<B::OwnedBuf, F>::from_host::<B>(&input);
             let mut fresh = CKKSEncodingBuffer::<B::OwnedBuf, F>::from_host::<B>(&input);
             module.ckks_slots_to_coeffs_assign(&mut cached).unwrap();
-            B::ckks_slots_to_coeffs_assign(
+            B::ckks_slots_to_coeffs_assign_with_plan(
                 module,
                 &plans,
                 &mut CKKSEncodingBufferToBackendMut::<B, F>::to_backend_mut(&mut fresh),
@@ -118,7 +118,7 @@ where
             scalar_close(&got, &fresh.to_host::<B>(), transform_tolerance::<F>(len));
             observed.push(got);
             module.ckks_coeffs_to_slots_assign(&mut cached).unwrap();
-            B::ckks_coeffs_to_slots_assign(
+            B::ckks_coeffs_to_slots_assign_with_plan(
                 module,
                 &plans,
                 &mut CKKSEncodingBufferToBackendMut::<B, F>::to_backend_mut(&mut fresh),

@@ -108,13 +108,14 @@ macro_rules! impl_ckks_fold_layout_reference_full {
 #[macro_export]
 macro_rules! impl_ckks_fold_reference_full {
     ($be:ty) => {
-        unsafe impl<R: ::poulpy_hal::layouts::Ring> $crate::oep::CKKSFoldImpl<R> for $be
-        where
-            ::poulpy_hal::layouts::Module<$be>: $crate::reference::fold::CKKSFoldReference<$be, R>,
-        {
+        $crate::impl_ckks_fold_reference_full!(@ring $be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_ckks_fold_reference_full!(@ring $be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    (@ring $be:ty, $ring:ty) => {
+        unsafe impl $crate::oep::CKKSFoldImpl<$ring> for $be {
             fn ckks_fold_count(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                ins: &[$crate::layouts::CKKSRingCiphertext<$be, R>],
+                ins: &[$crate::layouts::CKKSRingCiphertext<$be, $ring>],
                 degree: ::poulpy_core::layouts::Degree,
             ) -> usize {
                 $crate::reference::fold::CKKSFoldReference::ckks_fold_count_reference(module, ins, degree)
@@ -124,13 +125,13 @@ macro_rules! impl_ckks_fold_reference_full {
             where
                 C: $crate::CKKSCtBounds,
             {
-                $crate::reference::fold::CKKSFoldReference::<$be, R>::ckks_unfold_galois_elements_reference(module, ct_in)
+                $crate::reference::fold::CKKSFoldReference::<$be, $ring>::ckks_unfold_galois_elements_reference(module, ct_in)
             }
 
             fn ckks_fold<S>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 folded: &mut [$crate::layouts::CKKSCiphertextOwned<$be>],
-                ins: &[$crate::layouts::CKKSRingCiphertext<$be, R>],
+                ins: &[$crate::layouts::CKKSRingCiphertext<$be, $ring>],
                 inbound: Option<&S>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) -> $crate::CKKSResult<()>
@@ -142,7 +143,7 @@ macro_rules! impl_ckks_fold_reference_full {
 
             fn ckks_unfold<S, H>(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                outs: &mut [$crate::layouts::CKKSRingCiphertext<$be, R>],
+                outs: &mut [$crate::layouts::CKKSRingCiphertext<$be, $ring>],
                 folded: &mut [$crate::layouts::CKKSCiphertextOwned<$be>],
                 outbound: Option<&S>,
                 automorphisms: Option<&H>,

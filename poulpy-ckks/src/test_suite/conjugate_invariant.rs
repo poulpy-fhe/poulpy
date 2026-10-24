@@ -740,7 +740,7 @@ where
         let mut exact = alloc_ct(&params, &ci, params.k);
         poulpy_core::GLWECITrace::glwe_ci_trace(&standard, &mut exact.inner, &extended, &mut standard_scratch.borrow());
         let mut halved = alloc_ct(&params, &ci, params.k - 1);
-        crate::reference::ring_map::ckks_ci_trace_keyless(&standard, &mut halved, &extended, &mut standard_scratch.borrow())
+        crate::oep::derived::ring_map::ckks_ci_trace_keyless(&standard, &mut halved, &extended, &mut standard_scratch.borrow())
             .unwrap();
         // The coefficient `i` of column `col` at `k` bits, modulo `2^128`.
         let low_bits =

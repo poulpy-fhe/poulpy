@@ -27,7 +27,7 @@ pub unsafe trait CKKSConjugateImpl: Backend<Ring = Standard> {
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
         H: GetAutomorphismKey<Self>,
     {
-        super::derived::conjugate::conjugate_rotate(module, dst, src, k, keys, scratch)
+        super::derived::conjugate::ckks_conjugate_rotate_into_derived(module, dst, src, k, keys, scratch)
     }
 
     fn ckks_conjugate_assign<Dst, H>(
@@ -40,7 +40,7 @@ pub unsafe trait CKKSConjugateImpl: Backend<Ring = Standard> {
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<Self>,
     {
-        super::derived::conjugate::conjugate_assign(module, dst, keys, scratch)
+        super::derived::conjugate::ckks_conjugate_assign_derived(module, dst, keys, scratch)
     }
 
     fn ckks_conjugate_tmp_bytes<C: GLWEInfos, K: GGLWEInfos>(module: &Module<Self>, ct_infos: &C, key_infos: &K) -> usize;

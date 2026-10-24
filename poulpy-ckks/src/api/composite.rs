@@ -1,5 +1,4 @@
 use crate::CKKSResult as Result;
-use poulpy_core::GLWEMulPreparedPlainSum;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos};
@@ -434,7 +433,6 @@ pub trait CKKSDotProductOps<BE: Backend> {
     /// `b`, whatever their number: pass the prepared operands, whose infos report their sources, or those sources.
     fn ckks_dot_product_prepared_pt_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
-        Self: GLWEMulPreparedPlainSum<BE>,
         R: CKKSCtBounds,
         A: GLWEInfos,
         P: GLWEInfos;
@@ -479,7 +477,6 @@ pub trait CKKSDotProductOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEMulPreparedPlainSum<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 
     /// Computes `dst = Σ a[i] * b[i]` over ciphertext–plaintext-polynomial pairs.

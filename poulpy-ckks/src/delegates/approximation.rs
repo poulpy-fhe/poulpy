@@ -1,34 +1,17 @@
-//! Composite evaluation of prepared polynomial approximations.
-
-use poulpy_core::GLWEBytesOf;
 use poulpy_core::layouts::GetTensorKey;
-use poulpy_core::layouts::{
-    BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, SetBSGSMeta, SetGLWEPlaintextInfos,
-    prepared::{GLWETensorKeyPrepared, GLWETensorKeyPreparedToBackendRef},
-};
+use poulpy_core::layouts::{BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, SetBSGSMeta};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSResult as Result, SetCKKSInfos, SlotsKind,
-    api::{
-        CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSApproximationOps, CKKSCopyOps, CKKSPolynomialEvaluationOps,
-        CKKSPow2Ops,
-    },
-    ckks_ensure,
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, PolynomialApproximation, ScratchArenaTakeCKKS},
+    CKKSCtBounds, CKKSInfos, CKKSResult as Result, SetCKKSInfos,
+    api::{CKKSAllOpsTmpBytes, CKKSApproximationOps},
+    layouts::PolynomialApproximation,
+    oep::CKKSApproximationImpl,
 };
 
-impl<BE: Backend> CKKSApproximationOps<BE> for Module<BE>
+impl<BE: Backend + CKKSApproximationImpl> CKKSApproximationOps<BE> for Module<BE>
 where
-    Module<BE>: CKKSAddOps<BE>
-        + CKKSAffineOps<BE>
-        + CKKSAllOpsTmpBytes<BE>
-        + CKKSCopyOps<BE>
-        + CKKSModuleAlloc<BE>
-        + CKKSPolynomialEvaluationOps<BE>
-        + CKKSPow2Ops<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
+    Module<BE>: CKKSAllOpsTmpBytes<BE>,
 {
     fn ckks_approximation_tmp_bytes<R, I, T, P>(
         &self,
@@ -43,22 +26,7 @@ where
         T: GGLWEInfos,
         P: CKKSInfos + LWEInfos,
     {
-        let coeffs = approximation.poly.baby_step(0);
-        let eval = self
-            .ckks_all_ops_tmp_bytes(res, tsk, coeffs)
-            .max(self.ckks_all_ops_tmp_bytes(input, tsk, coeffs));
-        match &approximation.affine {
-            Some(affine) => {
-                let ct = self.glwe_bytes_of_from_infos(input);
-                let map = if approximation.scale_pow2.is_some() {
-                    eval
-                } else {
-                    eval.max(self.ckks_affine_pt_const_tmp_bytes(input, input, affine))
-                };
-                ct + map
-            }
-            None => eval,
-        }
+        BE::ckks_approximation_tmp_bytes(self, res, input, tsk, approximation)
     }
 
     fn ckks_eval_approximation<R, I, P, H>(
@@ -75,32 +43,6 @@ where
         P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
         H: GetTensorKey<BE>,
     {
-        let required = approximation.consumed_bits(input.log_delta());
-        ckks_ensure!(
-            input.log_budget() >= required,
-            "ckks_eval_approximation: log_budget {} < {required} bits required at log_delta {}",
-            input.log_budget(),
-            input.log_delta()
-        );
-        if let Some(affine) = &approximation.affine {
-            scratch.scope(|scratch_local| {
-                let (mut normalized, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(input);
-                if let Some(exponent) = approximation.scale_pow2 {
-                    if exponent > 0 {
-                        self.ckks_mul_pow2_into(&mut normalized, input, exponent as usize, &mut scratch_local)?;
-                    } else {
-                        self.ckks_copy(&mut normalized, input, &mut scratch_local)?;
-                        normalized.set_slots(input.slots().join(SlotsKind::Real));
-                        self.ckks_div_pow2_assign(&mut normalized, exponent.unsigned_abs() as usize)?;
-                    }
-                    self.ckks_add_pt_const_assign(&mut normalized, 0, affine, 0, &mut scratch_local)?;
-                } else {
-                    self.ckks_affine_pt_const_into(&mut normalized, input, affine, 0, 1, &mut scratch_local)?;
-                }
-                self.ckks_eval_poly_real_const_coeffs(res, &normalized, &approximation.poly, tsk, &mut scratch_local)
-            })
-        } else {
-            self.ckks_eval_poly_real_const_coeffs(res, input, &approximation.poly, tsk, scratch)
-        }
+        BE::ckks_eval_approximation(self, res, input, approximation, tsk, scratch)
     }
 }

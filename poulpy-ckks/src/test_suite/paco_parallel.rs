@@ -31,7 +31,6 @@ use crate::{
     CKKSInfos, GLWEPlaintextMeta,
     api::{CKKSLinearTransformationOps, CKKSPaCoOps, PaCoScalar},
     layouts::{CKKSModuleAlloc, PaCoContext, PaCoDFTPlan, PaCoKeySet, PaCoKeysPrepared, PaCoPlan, PaCoSecretSpec, PaCoWorker},
-    reference::paco::ops::PaCoSlotOps,
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
@@ -124,7 +123,6 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSLinearTransformationOps<BE>
-        + PaCoSlotOps<BE>
         + CKKSPaCoOps<BE, F>
         + CnvPVecAlloc<BE>
         + GLWERotate<BE>
@@ -433,7 +431,6 @@ pub fn test_paco_encapsulated_bootstrap<BE, F, E>(
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSLinearTransformationOps<BE>
-        + PaCoSlotOps<BE>
         + CKKSPaCoOps<BE, F>
         + CnvPVecAlloc<BE>
         + GLWERotate<BE>

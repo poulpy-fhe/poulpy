@@ -72,8 +72,9 @@ impl PaCoScalar for crate::Quad {
 ///
 /// The scalar is a trait parameter so the methods stay free of backend
 /// bounds: the delegating impl on `Module<BE>` requires the
-/// [`CKKSPaCoCoeffEncodingImpl`](crate::oep::CKKSPaCoCoeffEncodingImpl) and
-/// [`CKKSEncodingImpl`](crate::oep::CKKSEncodingImpl) seams at the impl
+/// [`CKKSPaCoImpl`](crate::oep::CKKSPaCoImpl) family, whose coefficient
+/// encoding is [`CKKSPaCoCoeffEncodingImpl`](crate::oep::CKKSPaCoCoeffEncodingImpl),
+/// and the [`CKKSEncodingImpl`](crate::oep::CKKSEncodingImpl) seam at the impl
 /// level, and a backend overrides those seams independently of any bounds
 /// the reference implementation carries.
 pub trait CKKSPaCoOps<BE: Backend, F: PaCoScalar> {

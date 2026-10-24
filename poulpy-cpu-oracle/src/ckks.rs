@@ -50,7 +50,7 @@ macro_rules! impl_oracle_ckks_encoding {
                 EncodingPlans::new(::poulpy_ckks::api::CKKSModuleInfos::ckks_max_slots(module))
             }
 
-            fn ckks_encode_coeffs_into<P>(
+            fn ckks_quantize_coeffs_into<P>(
                 _module: &::poulpy_hal::layouts::Module<$be>,
                 pt: &mut P,
                 coeffs: &::poulpy_ckks::layouts::CKKSEncodingBufferBackendRef<'_, $be, S>,
@@ -63,7 +63,7 @@ macro_rules! impl_oracle_ckks_encoding {
                 Ok(::poulpy_ckks::reference::encoding::encode_coeffs_into_host::<$be, S, P>(pt, coeffs)?)
             }
 
-            fn ckks_decode_coeffs_into<P>(
+            fn ckks_dequantize_coeffs_into<P>(
                 _module: &::poulpy_hal::layouts::Module<$be>,
                 pt: &P,
                 coeffs: &mut ::poulpy_ckks::layouts::CKKSEncodingBufferBackendMut<'_, $be, S>,
@@ -74,7 +74,7 @@ macro_rules! impl_oracle_ckks_encoding {
                 Ok(::poulpy_ckks::reference::encoding::decode_coeffs_into_host::<$be, S, P>(pt, coeffs)?)
             }
 
-            fn ckks_slots_to_coeffs_assign(
+            fn ckks_slots_to_coeffs_assign_with_plan(
                 _module: &::poulpy_hal::layouts::Module<$be>,
                 plans: &Self::Plans,
                 values: &mut ::poulpy_ckks::layouts::CKKSEncodingBufferBackendMut<'_, $be, S>,
@@ -84,7 +84,7 @@ macro_rules! impl_oracle_ckks_encoding {
                 Ok(ring(map, fft, values.as_mut_slice())?)
             }
 
-            fn ckks_coeffs_to_slots_assign(
+            fn ckks_coeffs_to_slots_assign_with_plan(
                 _module: &::poulpy_hal::layouts::Module<$be>,
                 plans: &Self::Plans,
                 values: &mut ::poulpy_ckks::layouts::CKKSEncodingBufferBackendMut<'_, $be, S>,
@@ -222,6 +222,11 @@ macro_rules! impl_oracle_ckks_without_eval_mod {
         ::poulpy_ckks::impl_ckks_sub_reference_full!($be);
         ::poulpy_ckks::impl_ckks_plaintext_znx_reference_full!($be);
         ::poulpy_ckks::impl_ckks_polynomial_evaluation_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_add_many_derived_full!($be);
+        ::poulpy_ckks::impl_ckks_mul_add_derived_full!($be);
+        ::poulpy_ckks::impl_ckks_affine_derived_full!($be);
+        ::poulpy_ckks::impl_ckks_mul_sub_derived_full!($be);
+        ::poulpy_ckks::impl_ckks_approximation_derived_full!($be);
     };
 }
 
@@ -241,6 +246,9 @@ macro_rules! impl_oracle_ckks_standard {
         ::poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference_full!($be);
         ::poulpy_ckks::impl_dft_reference_full!($be);
         ::poulpy_ckks::impl_dft_matrix_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_ring_map_derived_full!($be);
+        ::poulpy_ckks::impl_ckks_paco_derived_full!($be);
+        ::poulpy_ckks::impl_ckks_ship_reference_full!($be);
     };
 }
 
