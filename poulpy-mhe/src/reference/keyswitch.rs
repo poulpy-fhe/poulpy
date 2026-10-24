@@ -89,6 +89,7 @@ where
             mask.n().as_usize() == self.n(),
             "invalid share: mask degree differs from the module's"
         );
+        assert!(mask.to_mask_backend_ref().is_canonical(), "invalid share: mask not canonical");
         assert!(
             res.n() == mask.n() && res.base2k() == mask.base2k(),
             "invalid share: share and mask layouts differ"
@@ -150,7 +151,7 @@ where
         a: &GLWEPrivateKeyswitchShareOwned<BE>,
     ) {
         assert!(res.glwe_layout() == a.glwe_layout(), "invalid aggregation: layouts differ");
-        let metadata = super::aggregate_metadata(res.noise(), a.noise());
+        let metadata = crate::metadata::aggregate_metadata(res.noise(), a.noise());
         self.glwe_add_assign(&mut res.inner, &a.inner);
         GLWEToBackendMut::<BE>::set_noise(res, metadata);
     }
@@ -281,6 +282,7 @@ where
             mask.n().as_usize() == self.n(),
             "invalid share: mask degree differs from the module's"
         );
+        assert!(mask.to_mask_backend_ref().is_canonical(), "invalid share: mask not canonical");
         assert!(
             res.n() == mask.n() && res.base2k() == mask.base2k(),
             "invalid share: share and mask layouts differ"
@@ -323,7 +325,7 @@ where
         a: &GLWEPublicKeyswitchShareOwned<BE>,
     ) {
         assert!(res.glwe_layout() == a.glwe_layout(), "invalid aggregation: layouts differ");
-        let metadata = super::aggregate_common_key_metadata(res.noise(), a.noise(), res.n().as_usize());
+        let metadata = crate::metadata::aggregate_common_key_metadata(res.noise(), a.noise(), res.n().as_usize());
         self.glwe_add_assign(&mut res.inner, &a.inner);
         GLWEToBackendMut::<BE>::set_noise(res, metadata);
     }

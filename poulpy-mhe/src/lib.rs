@@ -12,6 +12,7 @@
 pub mod api;
 mod delegates;
 pub mod layouts;
+mod metadata;
 pub mod oep;
 pub mod reference;
 pub mod test_suite;

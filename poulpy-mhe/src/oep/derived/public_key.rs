@@ -21,7 +21,7 @@ pub(crate) fn mhe_glwe_public_key_share_aggregate_derived<BE: HalMatZnxImpl>(
     assert!(res.glwe_layout() == a.glwe_layout(), "invalid aggregation: layouts differ");
     assert!(res.dist() == a.dist(), "invalid aggregation: secret distributions differ");
     assert!(res.seed() == a.seed(), "invalid aggregation: seeds differ");
-    let metadata = crate::reference::aggregate_metadata(res.noise(), a.noise());
+    let metadata = crate::metadata::aggregate_metadata(res.noise(), a.noise());
     BE::mat_znx_add_assign(
         module,
         &mut MatZnxToBackendMut::<BE>::to_backend_mut(res.key.data_mut()),

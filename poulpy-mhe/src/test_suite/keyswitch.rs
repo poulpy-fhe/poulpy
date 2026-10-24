@@ -666,3 +666,63 @@ where
     }
     mask
 }
+
+/// A private key switching share of a flag-clear mask is rejected before any draw.
+pub fn test_glwe_private_keyswitch_rejects_flag_clear_mask<BE>(module: &Module<BE>)
+where
+    BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    Module<BE>: GLWEPrivateKeyswitchMHEProtocol<BE> + GLWESecretPreparedFactory<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let layout = glwe_layout(module);
+    let mut ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
+    ct.set_canonical(false);
+    let mut res = module.glwe_private_keyswitch_share_alloc_from_infos(&layout);
+    let before = res.clone();
+    let sk: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(RANK);
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_private_keyswitch_share_gen_tmp_bytes(&layout));
+    let mut source_smudge = Source::new([30u8; 32]);
+    assert_panics_with("invalid share: mask not canonical", || {
+        module.mhe_glwe_private_keyswitch_share_gen(&mut res, &ct, &sk, &sk, FLOOD, &mut source_smudge, &mut scratch.borrow());
+    });
+    assert!(res == before);
+    assert_eq!(source_smudge.next_i64(), Source::new([30u8; 32]).next_i64());
+}
+
+/// A public key switching share of a flag-clear mask is rejected before any draw.
+pub fn test_glwe_public_keyswitch_rejects_flag_clear_mask<BE>(module: &Module<BE>)
+where
+    BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    Module<BE>: GLWEPublicKeyswitchMHEProtocol<BE> + GLWESecretPreparedFactory<BE> + GLWEPublicKeyPreparedFactory<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let layout = glwe_layout(module);
+    let mut ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
+    ct.set_canonical(false);
+    let mut res = module.glwe_public_keyswitch_share_alloc_from_infos(&layout);
+    let before = res.clone();
+    let sk: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(RANK);
+    let pk: GLWEPublicKeyPrepared<AlignedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&layout);
+    let mut scratch: ScratchOwned<BE> =
+        ScratchOwned::alloc(module.mhe_glwe_public_keyswitch_share_gen_tmp_bytes(&layout, &layout, &layout));
+    let mut source_xu = Source::new([20u8; 32]);
+    let mut source_xe = Source::new([10u8; 32]);
+    let mut source_smudge = Source::new([30u8; 32]);
+    assert_panics_with("invalid share: mask not canonical", || {
+        module.mhe_glwe_public_keyswitch_share_gen(
+            &mut res,
+            &ct,
+            &sk,
+            &pk,
+            FLOOD,
+            &mut source_xu,
+            &mut source_xe,
+            &mut source_smudge,
+            &mut scratch.borrow(),
+        );
+    });
+    assert!(res == before);
+    assert_eq!(source_xu.next_i64(), Source::new([20u8; 32]).next_i64());
+    assert_eq!(source_xe.next_i64(), Source::new([10u8; 32]).next_i64());
+    assert_eq!(source_smudge.next_i64(), Source::new([30u8; 32]).next_i64());
+}

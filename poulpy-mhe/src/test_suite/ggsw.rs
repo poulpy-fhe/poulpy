@@ -499,8 +499,13 @@ where
     let pat = module.ggsw_share_alloc_from_infos(&layout);
     let key: GLWESwitchingKeyPrepared<AlignedBuf, BE> = module.glwe_switching_key_prepared_alloc_from_infos(&key_layout);
     let mut res: GGSW<AlignedBuf, i64> = module.ggsw_alloc_from_infos(&layout);
+    let before = res.clone();
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_ggsw_share_finalize_tmp_bytes(&layout, &key_layout));
-    module.mhe_ggsw_share_finalize(&mut res, &pat, &key, &mut scratch.borrow());
+    super::fixtures::assert_panics_with(
+        "mhe_ggsw_share_finalize: the input is wider than the key's max_input_k",
+        || module.mhe_ggsw_share_finalize(&mut res, &pat, &key, &mut scratch.borrow()),
+    );
+    assert!(res == before);
 }
 
 /// Shape errors are rejected before encryption or key switching can print operands.

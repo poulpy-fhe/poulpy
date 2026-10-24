@@ -341,6 +341,42 @@ where
     }
 }
 
+/// An encryption-to-shares generation over a flag-clear mask is rejected before any draw.
+pub fn test_glwe_enc_to_share_rejects_flag_clear_mask<BE>(module: &Module<BE>)
+where
+    BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    Module<BE>: GLWEEncToShareMHEProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let layout = glwe_layout_at(module, K);
+    let (_, sk) = secret_from_seed(module, [100u8; 32]);
+    let mut ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
+    ct.set_canonical(false);
+    let mut public = GLWEEncToShareShare {
+        inner: module.glwe_alloc_from_infos(&GLWELayout { rank: Rank(0), ..layout }),
+    };
+    let mut secret: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&layout);
+    let (public_before, secret_before) = (public.clone(), secret.data().clone());
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_enc_to_share_share_gen_tmp_bytes(&layout));
+    let mut source_xm = Source::new([60u8; 32]);
+    let mut source_smudge = Source::new(SEED_XE);
+    super::fixtures::assert_panics_with("invalid share: mask not canonical", || {
+        module.mhe_glwe_enc_to_share_share_gen(
+            &mut public,
+            &mut secret,
+            &ct,
+            &sk,
+            Noise::Gaussian { sigma: 1024.0 },
+            &mut source_xm,
+            &mut source_smudge,
+            &mut scratch.borrow(),
+        );
+    });
+    assert!(public == public_before && *secret.data() == secret_before);
+    assert_eq!(source_xm.next_i64(), Source::new([60u8; 32]).next_i64());
+    assert_eq!(source_smudge.next_i64(), Source::new(SEED_XE).next_i64());
+}
+
 /// `x` reduced modulo `2^k` into `[-2^(k-1), 2^(k-1))`.
 fn wrap(x: i64, k: usize) -> i64 {
     let shift = 64 - k as u32;

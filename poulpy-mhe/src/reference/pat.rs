@@ -39,7 +39,7 @@ where
     {
         assert!(res.glwe_layout() == a.glwe_layout(), "invalid aggregation: layouts differ");
         assert!(res.seed() == a.seed(), "invalid aggregation: seeds differ");
-        let metadata = super::aggregate_metadata(res.noise(), a.noise());
+        let metadata = crate::metadata::aggregate_metadata(res.noise(), a.noise());
         let mut res_be = res.to_backend_mut();
         let a_be = a.to_backend_ref();
         self.vec_znx_add_assign(res_be.data_mut(), 0, a_be.data(), 0);
@@ -95,7 +95,7 @@ where
     {
         assert!(res.gglwe_layout() == a.gglwe_layout(), "invalid aggregation: layouts differ");
         assert!(res.seed() == a.seed(), "invalid aggregation: seeds differ");
-        let metadata = super::aggregate_metadata(res.noise(), a.noise());
+        let metadata = crate::metadata::aggregate_metadata(res.noise(), a.noise());
         let mut res_be = res.to_backend_mut();
         let a_be = a.to_backend_ref();
         self.mat_znx_add_assign(res_be.data_mut(), a_be.data());
@@ -150,7 +150,7 @@ where
         A: GGLWEToBackendRef<BE> + GGLWEInfos,
     {
         assert!(res.gglwe_layout() == a.gglwe_layout(), "invalid aggregation: layouts differ");
-        let metadata = super::aggregate_common_key_metadata(res.noise(), a.noise(), res.n().as_usize());
+        let metadata = crate::metadata::aggregate_common_key_metadata(res.noise(), a.noise(), res.n().as_usize());
         let mut res_be = res.to_backend_mut();
         let a_be = a.to_backend_ref();
         self.mat_znx_add_assign(res_be.data_mut(), a_be.data());
