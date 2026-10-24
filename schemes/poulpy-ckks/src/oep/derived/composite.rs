@@ -41,7 +41,7 @@ where
     A: CKKSCtBounds,
 {
     module
-        .ckks_add_tmp_bytes(res.size())
+        .ckks_add_tmp_bytes(res.max_size())
         .max(module.glwe_normalize_tmp_bytes())
         .max(module.ckks_copy_tmp_bytes(res, a))
 }

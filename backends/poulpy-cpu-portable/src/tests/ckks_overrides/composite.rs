@@ -84,9 +84,9 @@ fn add_many_enters_the_selected_additions() {
         0,
         SlotsKind::Complex,
     );
-    let sum = |module_r: &Module<FFT64Portable>| -> Snapshot {
-        let inputs: Vec<_> = (0..3)
-            .map(|i| fixture_ciphertext(module_r, &source_layout(), 40 + i))
+    let sum = |module_r: &Module<FFT64Portable>, terms: usize| -> Snapshot {
+        let inputs: Vec<_> = (0..terms)
+            .map(|i| fixture_ciphertext(module_r, &source_layout(), 40 + i as u8))
             .collect();
         let mut out = fixture_ciphertext(module_r, &out_layout, 31);
         let bytes = module_r.ckks_add_many_tmp_bytes(&out, &inputs[0]);
@@ -96,29 +96,36 @@ fn add_many_enters_the_selected_additions() {
         .unwrap();
         snapshot::<FFT64Portable, _>(&out)
     };
-    let want = sum(&reference);
 
-    let inputs: Vec<_> = (0..3)
-        .map(|i| fixture_ciphertext(&module, &source_layout(), 40 + i))
-        .collect();
+    // Several inputs enter the selected additions, one input the selected copy, each on
+    // exactly the query, which covers both.
+    for terms in [3usize, 1] {
+        let inputs: Vec<_> = (0..terms)
+            .map(|i| fixture_ciphertext(&module, &source_layout(), 40 + i as u8))
+            .collect();
+        let mut out = fixture_ciphertext(&module, &out_layout, 31);
+        let bytes = module.ckks_add_many_tmp_bytes(&out, &inputs[0]);
+        assert_eq!(
+            bytes,
+            module
+                .ckks_add_tmp_bytes(out.max_size())
+                .max(module.glwe_normalize_tmp_bytes())
+                .max(module.ckks_copy_tmp_bytes(&out, &inputs[0]))
+        );
+        super::MAX_COPY_CAPACITY.set(0);
+        let calls = count(&ADD_ASSIGN_CALLS, || {
+            with_scratch::<OverrideBackend, _>(bytes, |scratch| {
+                module.ckks_add_many(&mut out, &inputs.iter().collect::<Vec<_>>(), usize::MAX, scratch)
+            })
+            .unwrap();
+        });
+        assert_eq!(calls, terms.saturating_sub(2));
+        assert_eq!(super::MAX_COPY_CAPACITY.get(), if terms == 1 { out.max_size() } else { 0 });
+        assert_eq!(snapshot::<OverrideBackend, _>(&out), sum(&reference, terms));
+    }
+
     let mut out = fixture_ciphertext(&module, &out_layout, 31);
-    let bytes = module.ckks_add_many_tmp_bytes(&out, &inputs[0]);
-    assert_eq!(
-        bytes,
-        module
-            .ckks_add_tmp_bytes(out.size())
-            .max(module.glwe_normalize_tmp_bytes())
-            .max(module.ckks_copy_tmp_bytes(&out, &inputs[0]))
-    );
-    let calls = count(&ADD_ASSIGN_CALLS, || {
-        with_scratch::<OverrideBackend, _>(bytes, |scratch| {
-            module.ckks_add_many(&mut out, &inputs.iter().collect::<Vec<_>>(), usize::MAX, scratch)
-        })
-        .unwrap();
-    });
-    assert_eq!(calls, inputs.len() - 2);
-    assert_eq!(snapshot::<OverrideBackend, _>(&out), want);
-
+    let bytes = module.ckks_add_many_tmp_bytes(&out, &out);
     let unchanged = snapshot::<OverrideBackend, _>(&out);
     let calls = count(&ADD_ASSIGN_CALLS, || {
         let empty: &[&poulpy_ckks::layouts::CKKSCiphertextOwned<OverrideBackend>] = &[];

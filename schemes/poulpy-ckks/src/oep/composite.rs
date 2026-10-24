@@ -32,8 +32,8 @@ use crate::{
 /// Implementations uphold `poulpy-hal/docs/backend_safety_contract.md` for every
 /// operand and scratch region they touch.
 pub unsafe trait CKKSAddManyImpl: Backend + CKKSAddImpl + CKKSCopyImpl + GLWENormalizeImpl {
-    /// Scratch of [`Self::ckks_add_many`] from terms of layout `a` into `res`: the selected `ckks_add_tmp_bytes`,
-    /// poulpy-core's `glwe_normalize_tmp_bytes` and the selected `ckks_copy_tmp_bytes`, the copy serving one term.
+    /// Scratch of [`Self::ckks_add_many`]: the largest of the selected `ckks_add_tmp_bytes` at `res`, poulpy-core's
+    /// `glwe_normalize_tmp_bytes` and the selected `ckks_copy_tmp_bytes` from `a` to `res`.
     fn ckks_add_many_tmp_bytes<R, A>(module: &Module<Self>, res: &R, a: &A) -> usize
     where
         R: CKKSCtBounds,

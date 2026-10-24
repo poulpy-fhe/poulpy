@@ -1,7 +1,7 @@
 use crate::CKKSResult as Result;
 use crate::layouts::CKKSPlaintextOwned;
 use poulpy_core::{
-    layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey},
+    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey},
     oep::{AutomorphismImpl, GLWEKeyswitchImpl, GLWERotateImpl, LinearTransformationImpl},
 };
 use poulpy_hal::{
@@ -20,7 +20,7 @@ use crate::{
             ckks_paco_bootstrap_direct_into_derived, ckks_paco_bootstrap_direct_tmp_bytes_derived,
             ckks_paco_bootstrap_into_derived, ckks_paco_bootstrap_parallel_direct_into_derived,
             ckks_paco_bootstrap_parallel_into_derived, ckks_paco_bootstrap_tmp_bytes_derived, ckks_slot_product_assign_derived,
-            ckks_slot_trace_assign_derived,
+            ckks_slot_product_assign_tmp_bytes_derived, ckks_slot_trace_assign_derived, ckks_slot_trace_assign_tmp_bytes_derived,
         },
     },
 };
@@ -225,9 +225,20 @@ pub unsafe trait CKKSPaCoImpl:
         ckks_paco_bootstrap_parallel_into_derived(module, output, input, context, keys, workers, scratch)
     }
 
+    /// Scratch of [`Self::ckks_slot_trace_assign`] on `ct_infos` under keys laid out like
+    /// `key_infos`: the selected `glwe_automorphism_tmp_bytes`.
+    fn ckks_slot_trace_assign_tmp_bytes<C, K>(module: &Module<Self>, ct_infos: &C, key_infos: &K) -> usize
+    where
+        C: CKKSCtBounds,
+        K: GGLWEInfos,
+    {
+        ckks_slot_trace_assign_tmp_bytes_derived(module, ct_infos, key_infos)
+    }
+
     /// Hook without an API twin: `Tr_{a→b}` in place, slot `i` becoming `Σ_j ct[i + j·b]` for
     /// `j ∈ [0, a/b)`, one `glwe_automorphism_add_assign` per level under the keys of the fold
-    /// rotations; consumes no budget.
+    /// rotations; consumes no budget. Its scratch is [`Self::ckks_slot_trace_assign_tmp_bytes`],
+    /// which an override replaces with it.
     fn ckks_slot_trace_assign<Dst, H>(
         module: &Module<Self>,
         ct: &mut Dst,
@@ -243,9 +254,22 @@ pub unsafe trait CKKSPaCoImpl:
         ckks_slot_trace_assign_derived(module, ct, a, b, keys, scratch)
     }
 
+    /// Scratch of [`Self::ckks_slot_product_assign`] on `ct_infos` under rotation keys laid out
+    /// like `key_infos` and the tensor key `tsk_infos`: the larger of the selected
+    /// `ckks_rotate_tmp_bytes` and `ckks_mul_tmp_bytes`.
+    fn ckks_slot_product_assign_tmp_bytes<C, K, T>(module: &Module<Self>, ct_infos: &C, key_infos: &K, tsk_infos: &T) -> usize
+    where
+        C: CKKSCtBounds,
+        K: GGLWEInfos,
+        T: GGLWEInfos,
+    {
+        ckks_slot_product_assign_tmp_bytes_derived(module, ct_infos, key_infos, tsk_infos)
+    }
+
     /// Hook without an API twin: `Pr_{a→b}` in place, slot `i` becoming `Π_j ct[i + j·b]` for
     /// `j ∈ [0, a/b)`, one `ckks_rotate_into` and `ckks_mul_assign` per level; consumes
-    /// `log(a/b) · log_delta` budget bits.
+    /// `log(a/b) · log_delta` budget bits. Its scratch is
+    /// [`Self::ckks_slot_product_assign_tmp_bytes`], which an override replaces with it.
     fn ckks_slot_product_assign<Dst, H, TH>(
         module: &Module<Self>,
         ct: &mut Dst,
