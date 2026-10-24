@@ -1,19 +1,81 @@
 //! Circuit-bootstrap parity over transferred coefficient-domain inputs and keys.
-use super::{ParityBackend, fixture_ggsw, snapshot_ggsw, with_scratch};
+use super::{ParityBackend, assert_panics_with, fixture_ggsw, gglwe_prepared_bytes, snapshot_ggsw, with_scratch};
 use crate::{
-    api::{CircuitBootstrappingExecute, CircuitBootstrappingKeyEncryptSk, CircuitBootstrappingKeyPreparedFactory},
+    api::{
+        BlindRotationKeyPreparedFactory, CircuitBootstrappingExecute, CircuitBootstrappingKeyEncryptSk,
+        CircuitBootstrappingKeyPreparedFactory,
+    },
     blind_rotation::{BlindRotationKeyLayout, CGGI},
-    circuit_bootstrapping::{CircuitBootstrappingKey, CircuitBootstrappingKeyInfos, CircuitBootstrappingKeyLayout},
+    circuit_bootstrapping::{
+        CircuitBootstrappingKey, CircuitBootstrappingKeyInfos, CircuitBootstrappingKeyLayout, CircuitBootstrappingKeyPrepared,
+    },
 };
 use poulpy_core::{
     LWEEncryptSk, TransferInto,
-    api::{GLWESecretSampling, LWESecretSampling},
-    layouts::{GGLWEToGGSWKeyLayout, GGSWLayout, GLWEAutomorphismKeyLayout, LWELayout, ModuleCoreAlloc},
+    api::{
+        GGLWEToGGSWKeyPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretSampling,
+        LWESecretSampling,
+    },
+    layouts::{GGLWEToGGSWKeyLayout, GGSWLayout, GLWEAutomorphismKeyLayout, GLWEInfos, LWELayout, ModuleCoreAlloc},
 };
 use poulpy_hal::{
-    layouts::{HostBytesBackend, Module},
+    layouts::{DataView, HostBytesBackend, Module},
     source::Source,
 };
+
+/// Bytes of the backend buffers of a prepared circuit-bootstrapping key.
+pub(crate) fn prepared_key_bytes<B: ParityBackend>(key: &CircuitBootstrappingKeyPrepared<B::OwnedBuf, CGGI, B>) -> usize {
+    let brk: usize = key.brk.data.iter().map(|ggsw| B::len_bytes(ggsw.data().data())).sum();
+    let tsk: usize = (0..key.tsk.rank().as_usize())
+        .map(|i| B::len_bytes(key.tsk.at(i).data().data()))
+        .sum();
+    let atk: usize = key.atk.values().map(gglwe_prepared_bytes::<B, _>).sum();
+    brk + tsk + atk
+}
+
+/// The byte query counts the allocated components, and both forms refuse an
+/// automorphism or tensor-switching key of another degree than the module's.
+fn check_prepared_allocation<B: ParityBackend>(
+    module: &Module<B>,
+    layout: &CircuitBootstrappingKeyLayout,
+    key: &CircuitBootstrappingKeyPrepared<B::OwnedBuf, CGGI, B>,
+) where
+    Module<B>: CircuitBootstrappingKeyPreparedFactory<CGGI, B>
+        + BlindRotationKeyPreparedFactory<CGGI, B>
+        + GGSWPreparedFactory<B>
+        + GGLWEToGGSWKeyPreparedFactory<B>
+        + GLWEAutomorphismKeyPreparedFactory<B>,
+{
+    assert_eq!(
+        module.circuit_bootstrapping_key_prepared_bytes_of_from_infos(layout),
+        prepared_key_bytes(key)
+    );
+    let half = (module.n() / 2).into();
+    let foreign_atk = CircuitBootstrappingKeyLayout {
+        atk_layout: GLWEAutomorphismKeyLayout {
+            n: half,
+            ..layout.atk_layout
+        },
+        ..*layout
+    };
+    let foreign_tsk = CircuitBootstrappingKeyLayout {
+        tsk_layout: GGLWEToGGSWKeyLayout {
+            n: half,
+            ..layout.tsk_layout
+        },
+        ..*layout
+    };
+    for foreign in [foreign_atk, foreign_tsk] {
+        assert_panics_with(
+            "circuit_bootstrapping_key_prepared_alloc_from_infos: key degree differs from the module degree",
+            || module.circuit_bootstrapping_key_prepared_alloc_from_infos(&foreign),
+        );
+        assert_panics_with(
+            "circuit_bootstrapping_key_prepared_bytes_of_from_infos: key degree differs from the module degree",
+            || module.circuit_bootstrapping_key_prepared_bytes_of_from_infos(&foreign),
+        );
+    }
+}
 
 /// Compares direct and reusable-plan constant/exponent execution, including
 /// equal-gap and repacking paths, different key radices, and extended domains.
@@ -25,10 +87,19 @@ where
     Module<BR>: CircuitBootstrappingExecute<CGGI, BR>
         + CircuitBootstrappingKeyEncryptSk<CGGI, BR>
         + CircuitBootstrappingKeyPreparedFactory<CGGI, BR>
+        + BlindRotationKeyPreparedFactory<CGGI, BR>
+        + GGSWPreparedFactory<BR>
+        + GGLWEToGGSWKeyPreparedFactory<BR>
+        + GLWEAutomorphismKeyPreparedFactory<BR>
         + GLWESecretSampling<BR>
         + LWESecretSampling<BR>
         + LWEEncryptSk<BR>,
-    Module<BT>: CircuitBootstrappingExecute<CGGI, BT> + CircuitBootstrappingKeyPreparedFactory<CGGI, BT>,
+    Module<BT>: CircuitBootstrappingExecute<CGGI, BT>
+        + CircuitBootstrappingKeyPreparedFactory<CGGI, BT>
+        + BlindRotationKeyPreparedFactory<CGGI, BT>
+        + GGSWPreparedFactory<BT>
+        + GGLWEToGGSWKeyPreparedFactory<BT>
+        + GLWEAutomorphismKeyPreparedFactory<BT>,
 {
     assert_eq!(reference.n(), tested.n());
     let n = reference.n();
@@ -95,6 +166,8 @@ where
         assert_eq!(raw_ref.tsk_infos(), raw_test.tsk_infos());
         let mut key_ref = reference.circuit_bootstrapping_key_prepared_alloc_from_infos(&layout);
         let mut key_test = tested.circuit_bootstrapping_key_prepared_alloc_from_infos(&layout);
+        check_prepared_allocation(reference, &layout, &key_ref);
+        check_prepared_allocation(tested, &layout, &key_test);
         with_scratch::<BR, _>(reference.circuit_bootstrapping_key_prepare_tmp_bytes(&layout), |s| {
             reference.circuit_bootstrapping_key_prepare(&mut key_ref, &raw_ref, s)
         });

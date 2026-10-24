@@ -188,12 +188,6 @@ pub unsafe trait CircuitBootstrappingKeyEncryptSkImpl<BRA: BlindRotationAlgo>: B
 /// Preserve the canonical circuit, metadata, and input invariants. Execution must
 /// stay within the selected scratch query; validate overrides with caller-selected parity.
 pub unsafe trait CircuitBootstrappingKeyPreparedImpl<BRA: BlindRotationAlgo>: Backend {
-    fn circuit_bootstrapping_key_prepared_alloc_from_infos<A>(
-        module: &Module<Self>,
-        infos: &A,
-    ) -> CircuitBootstrappingKeyPrepared<Self::OwnedBuf, BRA, Self>
-    where
-        A: CircuitBootstrappingKeyInfos;
     fn circuit_bootstrapping_key_prepare_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: CircuitBootstrappingKeyInfos;
@@ -310,17 +304,6 @@ macro_rules! impl_circuit_bootstrapping_key_encrypt_sk_reference_full {
 macro_rules! impl_circuit_bootstrapping_key_prepared_reference_full {
     ($be:ty, $algo:ty) => {
         unsafe impl $crate::oep::CircuitBootstrappingKeyPreparedImpl<$algo> for $be {
-            fn circuit_bootstrapping_key_prepared_alloc_from_infos<A>(
-                module: &::poulpy_hal::layouts::Module<Self>,
-                infos: &A,
-            ) -> $crate::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, $algo, Self>
-            where
-                A: $crate::circuit_bootstrapping::CircuitBootstrappingKeyInfos,
-            {
-                $crate::reference::circuit_bootstrapping::circuit_bootstrapping_key_prepared_alloc_from_infos_reference::<A, _, $algo, Self>(
-                    module, infos,
-                )
-            }
             fn circuit_bootstrapping_key_prepare_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<Self>, infos: &A) -> usize
             where
                 A: $crate::circuit_bootstrapping::CircuitBootstrappingKeyInfos,

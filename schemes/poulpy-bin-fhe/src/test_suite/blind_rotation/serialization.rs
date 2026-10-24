@@ -9,14 +9,11 @@ use poulpy_hal::{
     test_suite::serialization::test_reader_writer_interface,
 };
 
-use crate::{
-    blind_rotation::{BlindRotationKey, BlindRotationKeyCompressed, BlindRotationKeyLayout, CGGI},
-    oep::BlindRotationKeyCompressedFactoryImpl,
-};
+use crate::blind_rotation::{BlindRotationKey, BlindRotationKeyCompressed, BlindRotationKeyLayout, CGGI};
 
 /// Round-trips a CGGI blind rotation key, standard and compressed, sampled by
 /// `module`, through `WriterTo`/`ReaderFrom`.
-pub fn test_blind_rotation_key_serialization<BE: Backend + BlindRotationKeyCompressedFactoryImpl<CGGI>>(module: &Module<BE>)
+pub fn test_blind_rotation_key_serialization<BE: Backend>(module: &Module<BE>)
 where
     BE::OwnedBuf: HostDataMut,
     Module<BE>: VecZnxFillUniformSource<BE>,

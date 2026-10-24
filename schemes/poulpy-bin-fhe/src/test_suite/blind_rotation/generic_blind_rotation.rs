@@ -14,7 +14,7 @@ use poulpy_core::api::{GLWESecretSampling, LWESecretSampling};
 use poulpy_core::test_suite::noise::glwe_decrypt_checked;
 use poulpy_core::{
     GLWEDecrypt, LWEEncryptSk,
-    api::GLWESecretPreparedFactory,
+    api::{GGSWPreparedFactory, GLWESecretPreparedFactory},
     layouts::{
         GLWE, GLWELayout, GLWEPlaintext, GLWESecret, LWE, LWEInfos, LWELayout, LWEPlaintext, LWESecret, ModuleCoreAlloc,
         prepared::GLWESecretPrepared,
@@ -32,6 +32,7 @@ where
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + BlindRotationKeyEncryptSk<BRA, BE>
         + BlindRotationKeyPreparedFactory<BRA, BE>
+        + GGSWPreparedFactory<BE>
         + BlindRotationExecute<BRA, BE>
         + LookupTableFactory<BE::OwnedBuf, BE::ZnxWord>
         + GLWESecretPreparedFactory<BE>

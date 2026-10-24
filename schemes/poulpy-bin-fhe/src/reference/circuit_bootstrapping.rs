@@ -4,14 +4,12 @@
 use crate::{
     blind_rotation::{
         BlindRotationAlgo, BlindRotationExecute, BlindRotationKeyEncryptSk, BlindRotationKeyInfos, BlindRotationKeyLayout,
-        BlindRotationKeyPrepared, BlindRotationKeyPreparedFactory, LookUpTableLayout, LookUpTableRotationDirection, LookupTable,
-        LookupTableFactory,
+        BlindRotationKeyPreparedFactory, LookUpTableLayout, LookUpTableRotationDirection, LookupTable, LookupTableFactory,
     },
     circuit_bootstrapping::{
         CircuitBootstrappingKey, CircuitBootstrappingKeyInfos, CircuitBootstrappingKeyPrepared, CircuitBootstrappingPlan,
         CircuitBootstrappingPlanLayout,
         circuit::{CircuitBootstrappingExecutionConfig, CircuitBootstrappingOutput},
-        trace_galois_elements,
     },
 };
 use itertools::Itertools;
@@ -22,7 +20,7 @@ use poulpy_core::{
     layouts::{
         GGLWEInfos, GGLWELayout, GGLWEToGGSWKeyLayout, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
         GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecretToBackendRef, GLWEToBackendMut, GLWEToBackendRef,
-        GetAutomorphismKey, LWEInfos, LWESecretToBackendRef, LWEToBackendRef, ModuleCoreAlloc, SetGaloisElement,
+        GetAutomorphismKey, LWEInfos, LWESecretToBackendRef, LWEToBackendRef, ModuleCoreAlloc,
         prepared::GGLWEToGGSWKeyPreparedToBackendRef,
     },
 };
@@ -166,32 +164,6 @@ pub fn circuit_bootstrapping_key_encrypt_sk_reference<S0, S1, M, BRA, BE>(
         module.blind_rotation_key_encrypt_sk(&mut res.brk, &sk_glwe_prepared, sk_lwe, source_xe, source_xa, &mut op_scratch);
     }
     module.gglwe_to_ggsw_key_encrypt_sk(&mut res.tsk, sk_glwe, source_xe, source_xa, scratch);
-}
-pub fn circuit_bootstrapping_key_prepared_alloc_from_infos_reference<A, M, BRA, BE>(
-    module: &M,
-    infos: &A,
-) -> CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>
-where
-    A: CircuitBootstrappingKeyInfos,
-    BRA: BlindRotationAlgo,
-    BE: Backend,
-    M: BlindRotationKeyPreparedFactory<BRA, BE> + GGLWEToGGSWKeyPreparedFactory<BE> + GLWEAutomorphismKeyPreparedFactory<BE>,
-{
-    let atk_infos: &GLWEAutomorphismKeyLayout = &infos.atk_infos();
-    let gal_els: Vec<i64> = trace_galois_elements(atk_infos.log_n(), 2 * atk_infos.n().as_usize() as i64);
-
-    CircuitBootstrappingKeyPrepared {
-        brk: BlindRotationKeyPrepared::alloc(module, &infos.brk_infos()),
-        tsk: module.gglwe_to_ggsw_key_prepared_alloc_from_infos(&infos.tsk_infos()),
-        atk: gal_els
-            .iter()
-            .map(|&gal_el| {
-                let mut key = module.glwe_automorphism_key_prepared_alloc_from_infos(atk_infos);
-                key.set_p(gal_el);
-                (gal_el, key)
-            })
-            .collect(),
-    }
 }
 pub fn circuit_bootstrapping_key_prepare_tmp_bytes_reference<A, M, BRA, BE>(module: &M, infos: &A) -> usize
 where

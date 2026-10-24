@@ -1,12 +1,14 @@
 //! Key lifecycle and packed-to-prepared integer parity.
-use super::{ParityBackend, fixture_glwe, snapshot_glwe, with_scratch};
+use super::{ParityBackend, assert_panics_with, fixture_glwe, gglwe_prepared_bytes, snapshot_glwe, with_scratch};
 use crate::{
     api::{
-        BDDKeyEncryptSk, BDDKeyPreparedFactory, BlindRotationKeyEncryptSk, CircuitBootstrappingKeyEncryptSk,
-        ExecuteBDDCircuit1WTo1W, ExecuteBDDCircuit2WTo1W, FheUintPrepare, FheUintPreparedEncryptSk,
+        BDDKeyEncryptSk, BDDKeyPreparedFactory, BlindRotationKeyEncryptSk, BlindRotationKeyPreparedFactory,
+        CircuitBootstrappingKeyEncryptSk, CircuitBootstrappingKeyPreparedFactory, ExecuteBDDCircuit1WTo1W,
+        ExecuteBDDCircuit2WTo1W, FheUintPrepare, FheUintPreparedEncryptSk,
     },
     bdd_arithmetic::{
-        BDDKey, BDDKeyInfos, BDDKeyLayout, FheUint, FheUintPrepared, FheUintPreparedFactory, GetBitCircuitInfo, Node,
+        BDDKey, BDDKeyInfos, BDDKeyLayout, BDDKeyPrepared, FheUint, FheUintPrepared, FheUintPreparedFactory, GetBitCircuitInfo,
+        Node,
     },
     blind_rotation::{BlindRotationKeyLayout, CGGI},
     circuit_bootstrapping::CircuitBootstrappingKeyLayout,
@@ -14,7 +16,10 @@ use crate::{
 use poulpy_core::{
     GGLWEToGGSWKeyEncryptSk, GGSWEncryptSk, GLWEAutomorphismKeyEncryptSk, GLWEExternalProduct, GLWESwitchingKeyEncryptSk,
     GLWEToLWESwitchingKeyEncryptSk, TransferInto,
-    api::{GGSWPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling, LWESecretSampling},
+    api::{
+        GGLWEToGGSWKeyPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory,
+        GLWESecretSampling, GLWESwitchingKeyPreparedFactory, GLWEToLWEKeyPreparedFactory, LWESecretSampling,
+    },
     layouts::{
         GGLWEToGGSWKeyLayout, GGSWInfos, GGSWLayout, GGSWPreparedToBackendRef, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout,
         GLWESwitchingKeyLayout, GLWEToLWEKeyLayout, LWEInfos, ModuleCoreAlloc,
@@ -100,6 +105,52 @@ fn key_layout(n: usize, bridge: bool) -> BDDKeyLayout {
     }
 }
 
+/// The byte query counts the allocated components, and both forms refuse a
+/// switching key of another degree than the module's.
+fn check_prepared_allocation<B: ParityBackend>(
+    module: &Module<B>,
+    layout: &BDDKeyLayout,
+    key: &BDDKeyPrepared<B::OwnedBuf, CGGI, B>,
+) where
+    Module<B>: BDDKeyPreparedFactory<CGGI, B>
+        + CircuitBootstrappingKeyPreparedFactory<CGGI, B>
+        + BlindRotationKeyPreparedFactory<CGGI, B>
+        + GGSWPreparedFactory<B>
+        + GGLWEToGGSWKeyPreparedFactory<B>
+        + GLWEAutomorphismKeyPreparedFactory<B>
+        + GLWESwitchingKeyPreparedFactory<B>
+        + GLWEToLWEKeyPreparedFactory<B>,
+{
+    let bytes = super::circuit_bootstrapping::prepared_key_bytes(&key.cbt)
+        + gglwe_prepared_bytes::<B, _>(&key.ks_lwe)
+        + key.ks_glwe.as_ref().map_or(0, gglwe_prepared_bytes::<B, _>);
+    assert_eq!(module.bdd_key_prepared_bytes_of_from_infos(layout), bytes);
+    let half = (module.n() / 2).into();
+    let mut foreign = vec![BDDKeyLayout {
+        ks_lwe_layout: GLWEToLWEKeyLayout {
+            n: half,
+            ..layout.ks_lwe_layout
+        },
+        ..*layout
+    }];
+    if let Some(ks_glwe) = layout.ks_glwe_layout {
+        foreign.push(BDDKeyLayout {
+            ks_glwe_layout: Some(GLWESwitchingKeyLayout { n: half, ..ks_glwe }),
+            ..*layout
+        });
+    }
+    for foreign in &foreign {
+        assert_panics_with(
+            "bdd_key_prepared_alloc_from_infos: key degree differs from the module degree",
+            || module.bdd_key_prepared_alloc_from_infos(foreign),
+        );
+        assert_panics_with(
+            "bdd_key_prepared_bytes_of_from_infos: key degree differs from the module degree",
+            || module.bdd_key_prepared_bytes_of_from_infos(foreign),
+        );
+    }
+}
+
 fn raw_key_bytes<B: ParityBackend>(module: &Module<B>, key: &BDDKey<B::OwnedBuf, CGGI, i64>, layout: &BDDKeyLayout) -> Vec<u8> {
     let host = Module::<HostBytesBackend>::new(module.n() as u64);
     let mut copy = BDDKey::alloc_from_infos(&host, layout);
@@ -147,6 +198,12 @@ pub fn test_lifecycle_parity<BR: ParityBackend, BT: ParityBackend>(reference: &M
 where
     Module<BR>: BDDKeyEncryptSk<CGGI, BR>
         + BDDKeyPreparedFactory<CGGI, BR>
+        + CircuitBootstrappingKeyPreparedFactory<CGGI, BR>
+        + BlindRotationKeyPreparedFactory<CGGI, BR>
+        + GGLWEToGGSWKeyPreparedFactory<BR>
+        + GLWEAutomorphismKeyPreparedFactory<BR>
+        + GLWESwitchingKeyPreparedFactory<BR>
+        + GLWEToLWEKeyPreparedFactory<BR>
         + FheUintPrepare<CGGI, BR>
         + GGSWPreparedFactory<BR>
         + GLWEExternalProduct<BR>
@@ -155,6 +212,12 @@ where
         + ExecuteBDDCircuit1WTo1W<BR>
         + ExecuteBDDCircuit2WTo1W<BR>,
     Module<BT>: BDDKeyPreparedFactory<CGGI, BT>
+        + CircuitBootstrappingKeyPreparedFactory<CGGI, BT>
+        + BlindRotationKeyPreparedFactory<CGGI, BT>
+        + GGLWEToGGSWKeyPreparedFactory<BT>
+        + GLWEAutomorphismKeyPreparedFactory<BT>
+        + GLWESwitchingKeyPreparedFactory<BT>
+        + GLWEToLWEKeyPreparedFactory<BT>
         + FheUintPrepare<CGGI, BT>
         + GGSWPreparedFactory<BT>
         + GLWEExternalProduct<BT>
@@ -195,13 +258,15 @@ where
             raw_key_bytes(reference, &raw_ref, &layout) == raw_key_bytes(tested, &raw_test, &layout),
             "raw key transfer mismatch"
         );
-        let mut key_ref = reference.alloc_bdd_key_from_infos(&layout);
-        let mut key_test = tested.alloc_bdd_key_from_infos(&layout);
-        with_scratch::<BR, _>(reference.prepare_bdd_key_tmp_bytes(&layout), |s| {
-            reference.prepare_bdd_key(&mut key_ref, &raw_ref, s)
+        let mut key_ref = reference.bdd_key_prepared_alloc_from_infos(&layout);
+        let mut key_test = tested.bdd_key_prepared_alloc_from_infos(&layout);
+        check_prepared_allocation(reference, &layout, &key_ref);
+        check_prepared_allocation(tested, &layout, &key_test);
+        with_scratch::<BR, _>(reference.bdd_key_prepare_tmp_bytes(&layout), |s| {
+            reference.bdd_key_prepare(&mut key_ref, &raw_ref, s)
         });
-        with_scratch::<BT, _>(tested.prepare_bdd_key_tmp_bytes(&layout), |s| {
-            tested.prepare_bdd_key(&mut key_test, &raw_test, s)
+        with_scratch::<BT, _>(tested.bdd_key_prepare_tmp_bytes(&layout), |s| {
+            tested.bdd_key_prepare(&mut key_test, &raw_test, s)
         });
         assert_eq!(key_ref.cbt_infos().brk_layout, key_test.cbt_infos().brk_layout);
         assert_eq!(key_ref.ks_lwe_infos(), key_test.ks_lwe_infos());

@@ -706,28 +706,19 @@ macro_rules! impl_bdd_key_prepared_factory_reference_full {
                 circuit_bootstrapping::*,
             };
             unsafe impl $crate::oep::BDDKeyPreparedFactoryImpl<$algo> for $be {
-                #[allow(clippy::too_many_arguments)]
-                fn alloc_bdd_key_from_infos<A>(module: &Module<$be>, infos: &A) -> BDDKeyPrepared<Self::OwnedBuf, $algo, $be>
+                fn bdd_key_prepare_tmp_bytes<A>(module: &Module<$be>, infos: &A) -> usize
                 where
                     A: BDDKeyInfos,
                 {
-                    $crate::reference::bdd::alloc_bdd_key_from_infos_reference::<$algo, $be, _>(module, infos)
+                    $crate::reference::bdd::bdd_key_prepare_tmp_bytes_reference::<$algo, $be, _>(module, infos)
                 }
-                #[allow(clippy::too_many_arguments)]
-                fn prepare_bdd_key_tmp_bytes<A>(module: &Module<$be>, infos: &A) -> usize
-                where
-                    A: BDDKeyInfos,
-                {
-                    $crate::reference::bdd::prepare_bdd_key_tmp_bytes_reference::<$algo, $be, _>(module, infos)
-                }
-                #[allow(clippy::too_many_arguments)]
-                fn prepare_bdd_key(
+                fn bdd_key_prepare(
                     module: &Module<$be>,
                     res: &mut BDDKeyPrepared<Self::OwnedBuf, $algo, $be>,
                     other: &BDDKey<Self::OwnedBuf, $algo, Self::ZnxWord>,
                     scratch: &mut ScratchArena<'_, $be>,
                 ) {
-                    $crate::reference::bdd::prepare_bdd_key_reference::<$algo, $be>(module, res, other, scratch)
+                    $crate::reference::bdd::bdd_key_prepare_reference::<$algo, $be>(module, res, other, scratch)
                 }
             }
         };

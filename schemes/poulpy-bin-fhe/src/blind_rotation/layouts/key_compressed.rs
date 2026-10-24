@@ -44,14 +44,15 @@ pub struct BlindRotationKeyCompressed<D: Data, BRT: BlindRotationAlgo, W: ZnxWor
 pub use crate::api::BlindRotationKeyCompressedFactory;
 
 impl<BRA: BlindRotationAlgo> BlindRotationKeyCompressed<AlignedBuf, BRA, i64> {
-    /// Allocates a compressed key through the module's selected factory.
+    /// Allocates a compressed key on the module, as
+    /// [`BlindRotationKeyCompressedFactory::blind_rotation_key_compressed_alloc_from_infos`] does.
     pub fn alloc<M, A, BE>(module: &M, infos: &A) -> BlindRotationKeyCompressed<BE::OwnedBuf, BRA, BE::ZnxWord>
     where
         BE: Backend,
         M: BlindRotationKeyCompressedFactory<BRA, BE>,
         A: BlindRotationKeyInfos,
     {
-        module.blind_rotation_key_compressed_alloc(infos)
+        module.blind_rotation_key_compressed_alloc_from_infos(infos)
     }
 }
 

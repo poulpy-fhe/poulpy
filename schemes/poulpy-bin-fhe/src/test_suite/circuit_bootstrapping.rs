@@ -8,7 +8,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    blind_rotation::{BlindRotationAlgo, BlindRotationKeyLayout},
+    blind_rotation::{BlindRotationAlgo, BlindRotationKeyLayout, BlindRotationKeyPreparedFactory},
     circuit_bootstrapping::{
         CircuitBootstrappingExecute, CircuitBootstrappingKey, CircuitBootstrappingKeyEncryptSk, CircuitBootstrappingKeyLayout,
         CircuitBootstrappingKeyPrepared, CircuitBootstrappingKeyPreparedFactory,
@@ -18,7 +18,7 @@ use crate::{
 use poulpy_core::test_suite::noise::glwe_decrypt_checked;
 use poulpy_core::{
     GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
-    api::{GGSWPreparedFactory, GLWESecretPreparedFactory},
+    api::{GGLWEToGGSWKeyPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory},
     layouts::{GGLWEToGGSWKeyLayout, GGSWInfos, GGSWLayout, GLWEAutomorphismKeyLayout, GLWEInfos, LWELayout, ModuleCoreAlloc},
 };
 
@@ -44,8 +44,11 @@ pub fn test_circuit_bootstrapping_to_exponent<
         + LWEEncryptSk<BE>
         + CircuitBootstrappingKeyEncryptSk<BRA, BE>
         + CircuitBootstrappingKeyPreparedFactory<BRA, BE>
+        + BlindRotationKeyPreparedFactory<BRA, BE>
         + CircuitBootstrappingExecute<BRA, BE>
         + GGSWPreparedFactory<BE>
+        + GGLWEToGGSWKeyPreparedFactory<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
         + GGSWNoise<BE>
         + GLWEEncryptSk<BE>
         + ScalarZnxAlloc<BE>
@@ -250,8 +253,11 @@ pub fn test_circuit_bootstrapping_to_constant<
         + LWEEncryptSk<BE>
         + CircuitBootstrappingKeyEncryptSk<BRA, BE>
         + CircuitBootstrappingKeyPreparedFactory<BRA, BE>
+        + BlindRotationKeyPreparedFactory<BRA, BE>
         + CircuitBootstrappingExecute<BRA, BE>
         + GGSWPreparedFactory<BE>
+        + GGLWEToGGSWKeyPreparedFactory<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
         + GGSWNoise<BE>
         + GLWEEncryptSk<BE>
         + ScalarZnxAlloc<BE>

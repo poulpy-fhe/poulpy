@@ -208,15 +208,6 @@ impl<BRA: BlindRotationAlgo, BE: CircuitBootstrappingKeyEncryptSkImpl<BRA>> Circ
 impl<BRA: BlindRotationAlgo, BE: CircuitBootstrappingKeyPreparedImpl<BRA>> CircuitBootstrappingKeyPreparedFactory<BRA, BE>
     for Module<BE>
 {
-    fn circuit_bootstrapping_key_prepared_alloc_from_infos<A>(
-        &self,
-        infos: &A,
-    ) -> CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>
-    where
-        A: CircuitBootstrappingKeyInfos,
-    {
-        <BE as CircuitBootstrappingKeyPreparedImpl<BRA>>::circuit_bootstrapping_key_prepared_alloc_from_infos(self, infos)
-    }
     fn circuit_bootstrapping_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: CircuitBootstrappingKeyInfos,

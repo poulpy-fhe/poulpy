@@ -14,11 +14,14 @@ use poulpy_core::{
     ComponentNoise, Distribution, TransferInto,
     layouts::{
         GGSW, GGSWInfos, GGSWLayout, GGSWToBackendMut, GGSWToBackendRef, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut,
-        GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
+        GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, prepared::GGLWEPreparedToBackendRef,
     },
 };
 use poulpy_hal::{
-    layouts::{Backend, CopyFromHost, CopyToHost, HostBytesBackend, HostDataMut, Module, ScratchArena, ScratchOwned, ZnxViewMut},
+    layouts::{
+        Backend, CopyFromHost, CopyToHost, DataView, HostBytesBackend, HostDataMut, Module, ScratchArena, ScratchOwned,
+        ZnxViewMut,
+    },
     source::Source,
 };
 
@@ -163,4 +166,23 @@ pub(crate) fn with_scratch<B: Backend, R>(bytes: usize, run: impl FnOnce(&mut Sc
         "scratch suffix overwritten"
     );
     result
+}
+
+/// Runs `call` and asserts that it panics with exactly `message`, formatted or static.
+pub(crate) fn assert_panics_with<R>(message: &str, call: impl FnOnce() -> R) {
+    let payload = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(call)) {
+        Ok(_) => panic!("expected a panic with \"{message}\""),
+        Err(payload) => payload,
+    };
+    let actual = payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or_default();
+    assert_eq!(actual, message);
+}
+
+/// Bytes of the backend buffer behind a prepared GGLWE.
+pub(crate) fn gglwe_prepared_bytes<B: Backend, K: GGLWEPreparedToBackendRef<B>>(key: &K) -> usize {
+    B::len_bytes_ref(key.to_backend_ref().data().data())
 }

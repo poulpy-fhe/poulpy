@@ -5,7 +5,10 @@ use std::hint::black_box;
 use criterion::{Bencher, measurement::Measurement};
 use poulpy_core::{
     GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEMaskFill, LWEEncryptSk, LWEFillMask,
-    api::{GGSWPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling, LWESecretSampling},
+    api::{
+        GGLWEToGGSWKeyPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory,
+        GLWESecretSampling, LWESecretSampling,
+    },
     layouts::{
         Base2K, Dnum, GGLWEToGGSWKeyLayout, GGSW, GGSWLayout, GLWE, GLWEAutomorphismKeyLayout, GLWELayout, GLWESecret,
         GLWESecretPrepared, LWE, LWEInfos, LWELayout, LWESecret, ModuleCoreAlloc, TorusPrecision, k_digit_of,
@@ -40,6 +43,7 @@ pub fn runner_blind_rotate<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, BR
         + ModuleSynchronize<BE>
         + BlindRotationKeyEncryptSk<BRA, BE>
         + BlindRotationKeyPreparedFactory<BRA, BE>
+        + GGSWPreparedFactory<BE>
         + BlindRotationExecute<BRA, BE>
         + LookupTableFactory<BE::OwnedBuf, BE::ZnxWord>
         + GLWESecretPreparedFactory<BE>
@@ -143,8 +147,11 @@ pub fn runner_circuit_bootstrapping<
         + LWEEncryptSk<BE>
         + CircuitBootstrappingKeyEncryptSk<BRA, BE>
         + CircuitBootstrappingKeyPreparedFactory<BRA, BE>
+        + BlindRotationKeyPreparedFactory<BRA, BE>
         + CircuitBootstrappingExecute<BRA, BE>
         + GGSWPreparedFactory<BE>
+        + GGLWEToGGSWKeyPreparedFactory<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
         + GGSWNoise<BE>
         + GLWEEncryptSk<BE>
         + VecZnxRotateAssign<BE>
