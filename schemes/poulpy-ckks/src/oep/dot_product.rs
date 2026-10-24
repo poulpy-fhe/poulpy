@@ -1,14 +1,14 @@
 use crate::CKKSResult as Result;
-use poulpy_core::GLWEMulPreparedPlainSum;
 use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos};
+use poulpy_core::oep::GLWEMulPreparedPlainSumImpl;
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     layouts::{CKKSCiphertext, CKKSPreparedLeft, CKKSPreparedRight},
     oep::derived::dot_product::{
-        ckks_dot_product_pt_const, ckks_dot_product_pt_const_tmp_bytes, ckks_dot_product_pt_vec,
-        ckks_dot_product_pt_vec_tmp_bytes,
+        ckks_dot_product_pt_const_derived, ckks_dot_product_pt_const_tmp_bytes_derived, ckks_dot_product_pt_vec_derived,
+        ckks_dot_product_pt_vec_tmp_bytes_derived,
     },
 };
 
@@ -17,7 +17,9 @@ use crate::{
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures. See `poulpy-hal/docs/backend_safety_contract.md`.
-pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSAddImpl {
+pub unsafe trait CKKSDotProductImpl:
+    Backend + super::CKKSMulImpl + super::CKKSAddImpl + GLWEMulPreparedPlainSumImpl
+{
     fn ckks_dot_product_ct_tmp_bytes<R: CKKSCtBounds, A: CKKSCtBounds, B: CKKSCtBounds, T: GGLWEInfos>(
         module: &Module<Self>,
         n: usize,
@@ -34,7 +36,7 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         a: &A,
         b: &P,
     ) -> usize {
-        ckks_dot_product_pt_vec_tmp_bytes(module, res, a, b)
+        ckks_dot_product_pt_vec_tmp_bytes_derived(module, res, a, b)
     }
 
     /// Scratch of [`Self::ckks_dot_product_pt_const`]: a `res`-shaped term and the product or addition.
@@ -44,7 +46,7 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         a: &A,
         b: &P,
     ) -> usize {
-        ckks_dot_product_pt_const_tmp_bytes(module, res, a, b)
+        ckks_dot_product_pt_const_tmp_bytes_derived(module, res, a, b)
     }
 
     fn ckks_dot_product_ct<Dst, A, B, H>(
@@ -86,7 +88,7 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         CKKSCiphertext<D, Self::ZnxWord, Self::Ring>: GLWEToBackendRef<Self> + GLWEInfos,
         E: GLWEToBackendRef<Self> + CKKSCtBounds + IntPolyInfos,
     {
-        ckks_dot_product_pt_vec(module, dst, a, b, scratch)
+        ckks_dot_product_pt_vec_derived(module, dst, a, b, scratch)
     }
 
     /// `ckks_mul_pt_const_into` of the first pair, then each later pair's product added to it.
@@ -103,7 +105,7 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         CKKSCiphertext<D, Self::ZnxWord, Self::Ring>: GLWEToBackendRef<Self> + GLWEInfos,
         E: GLWEToBackendRef<Self> + CKKSCtBounds + IntPolyInfos,
     {
-        ckks_dot_product_pt_const(module, dst, a, b, pt_coeffs, scratch)
+        ckks_dot_product_pt_const_derived(module, dst, a, b, pt_coeffs, scratch)
     }
 
     fn ckks_dot_product_prepared_pt_tmp_bytes<R: CKKSCtBounds, A: GLWEInfos, P: GLWEInfos>(
@@ -111,9 +113,7 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         res: &R,
         a: &A,
         b: &P,
-    ) -> usize
-    where
-        Module<Self>: GLWEMulPreparedPlainSum<Self>;
+    ) -> usize;
 
     fn ckks_dot_product_prepared_pt<Dst>(
         module: &Module<Self>,
@@ -124,7 +124,6 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Module<Self>: GLWEMulPreparedPlainSum<Self>,
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos;
 }
 
@@ -190,10 +189,7 @@ macro_rules! impl_ckks_dot_product_reference_full {
                 res: &R,
                 a: &A,
                 b: &P,
-            ) -> usize
-            where
-                ::poulpy_hal::layouts::Module<Self>: ::poulpy_core::GLWEMulPreparedPlainSum<Self>,
-            {
+            ) -> usize {
                 $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_tmp_bytes_reference(module, res, a, b)
             }
 
@@ -206,7 +202,6 @@ macro_rules! impl_ckks_dot_product_reference_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
-                ::poulpy_hal::layouts::Module<Self>: ::poulpy_core::GLWEMulPreparedPlainSum<Self>,
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
             {
                 $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_reference(

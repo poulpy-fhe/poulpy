@@ -4,7 +4,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
-    api::{CKKSBootstrappingCIOps, CKKSBootstrappingOps, CKKSDFTOps, CKKSEvalModOps},
+    api::{CKKSBootstrappingCIOps, CKKSBootstrappingOps},
     layouts::{
         BootstrappingCIKeys, BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned,
         CKKSPlaintextOwned, EncodedLut, EvalModPlan,
@@ -12,10 +12,7 @@ use crate::{
     oep::{CKKSBootstrappingCIImpl, CKKSBootstrappingImpl},
 };
 
-impl<BE: Backend + CKKSBootstrappingImpl> CKKSBootstrappingOps<BE> for Module<BE>
-where
-    Module<BE>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>,
-{
+impl<BE: Backend + CKKSBootstrappingImpl> CKKSBootstrappingOps<BE> for Module<BE> {
     fn ckks_mod_up_tmp_bytes(&self, res_size: usize) -> usize {
         BE::ckks_mod_up_tmp_bytes(self, res_size)
     }

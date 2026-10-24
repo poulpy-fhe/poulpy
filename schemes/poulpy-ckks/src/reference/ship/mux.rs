@@ -8,12 +8,12 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{
-        ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
+        ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
         VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan, VecZnxDftBytesOf, VecZnxDftZero, VecZnxGadgetDecompose,
         VecZnxGadgetDecomposeTmpBytes, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
     },
     layouts::{
-        Backend, Module, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
+        Backend, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
     },
 };
 
@@ -21,39 +21,14 @@ use std::collections::HashMap;
 
 use crate::layouts::{CKKSCiphertextOwned, ship::keyset::HMuxRotKeyPrepared};
 
-/// Automorphism plans of the mux output twists, keyed by Galois element.
-pub(crate) type ShipMuxPlans<BE> = HashMap<i64, <Module<BE> as VecZnxDftAutomorphismPlan<BE>>::Plan>;
-
-/// Builds the automorphism plans of every distinct mux Galois element once;
-/// the same rotation amounts recur across all support slots.
-pub(crate) fn ship_mux_plans<'a, BE>(
-    module: &Module<BE>,
-    groups: impl Iterator<Item = &'a [HMuxRotKeyPrepared<BE::OwnedBuf, BE>]>,
-) -> ShipMuxPlans<BE>
-where
-    BE: Backend + 'a,
-    Module<BE>: VecZnxDftAutomorphismPlan<BE>,
-{
-    let mut plans = ShipMuxPlans::<BE>::new();
-    for group in groups {
-        for key in group {
-            if key.gal_el != 1 {
-                plans
-                    .entry(key.gal_el)
-                    .or_insert_with(|| module.vec_znx_dft_automorphism_plan(module.n(), key.gal_el));
-            }
-        }
-    }
-    plans
-}
-
 /// Scratch bytes for [`ship_mux_rotate`].
-pub(crate) fn ship_mux_rotate_tmp_bytes<BE, C, K>(module: &Module<BE>, ct: &C, key: &K, term_count: usize) -> usize
+pub(crate) fn ship_mux_rotate_tmp_bytes<BE, M, C, K>(module: &M, ct: &C, key: &K, term_count: usize) -> usize
 where
     BE: Backend,
     C: LWEInfos,
     K: GGLWEInfos,
-    Module<BE>: VecZnxDftBytesOf
+    M: ModuleN
+        + VecZnxDftBytesOf
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes
         + VecZnxIdftApplyTmpBytes
@@ -81,16 +56,17 @@ where
 /// DFT'd once and shared by every key; each key contributes one VMP followed
 /// by its DFT-domain output automorphism, and a single IDFT + normalize
 /// closes the position.
-pub(crate) fn ship_mux_rotate<BE>(
-    module: &Module<BE>,
+pub(crate) fn ship_mux_rotate<BE, M>(
+    module: &M,
     ct: &mut CKKSCiphertextOwned<BE>,
     keys: &[HMuxRotKeyPrepared<BE::OwnedBuf, BE>],
-    plans: &ShipMuxPlans<BE>,
+    plans: &HashMap<i64, <M as VecZnxDftAutomorphismPlan<BE>>::Plan>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: VecZnxDftApply<BE>
+    M: ModuleN
+        + VecZnxDftApply<BE>
         + VecZnxDftZero<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftAutomorphism<BE>
@@ -100,7 +76,6 @@ where
         + VecZnxDftBytesOf
         + VecZnxGadgetDecompose<BE>
         + GGLWEProductReference<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
 {
     const OP: &str = "ship_mux_rotate";
     ckks_ensure!(!keys.is_empty(), "{OP}: empty key group");
@@ -204,10 +179,10 @@ where
         }
     }
     let k = ct.k().as_usize();
-    ct.set_canonical(true);
+    GLWEToBackendMut::<BE>::set_canonical(ct, true);
     {
         let res_big_ref = res_big.to_backend_ref();
-        let mut ct_mut = ct.to_backend_mut();
+        let mut ct_mut = GLWEToBackendMut::<BE>::to_backend_mut(ct);
         for col in 0..2 {
             module.vec_znx_big_normalize(
                 ct_mut.data_mut(),

@@ -5,11 +5,13 @@ select a concrete backend or require host storage in these dispatch contracts.
 
 ## Reference and derived implementations
 
-Each family's opt-in macro is `impl_<family>_reference_full!`, `<family>` being the
+Each family's opt-in macro is `impl_<family>_reference_full!`, or
+`impl_<family>_derived_full!` when every method is a derived default, `<family>` being the
 OEP trait in snake case without `Impl` (`CKKSAddImpl`: `impl_ckks_add_reference_full!`,
-`DFTImpl`: `impl_dft_reference_full!`). `impl_ckks_reference_full!` selects every
-scalar-independent family that serves both rings, the families `CKKSImpl` bundles
-minus the standard-only ones; a standard backend adds the standard-only opt-ins,
+`DFTImpl`: `impl_dft_reference_full!`, `CKKSAffineImpl`: `impl_ckks_affine_derived_full!`).
+`impl_ckks_reference_full!` selects every scalar-independent family that serves both
+rings, the families `CKKSImpl` bundles minus the standard-only ones; a standard backend
+adds the standard-only opt-ins,
 and every backend implements the scalar-generic seams (`CKKSEncodingImpl<F>`,
 `DFTMatrixImpl<F>`) and the PaCo and SHIP coefficient encodings itself. A backend
 replacing one of the umbrella's families selects the others with their own opt-ins.
@@ -26,7 +28,7 @@ The table gives the reference of each family.
 | `CKKSInnerSumImpl` | Derived defaults only, selected by `impl_ckks_inner_sum_derived_full!`: `ckks_copy`, poulpy-core's summed trace over a window of levels, forward for the inner sum and reversed for the replicate, and, for a mean, `ckks_div_pow2_assign`; the Galois elements are poulpy-core's `glwe_trace_galois_elements` over those levels at the ciphertext's degree. |
 | `CKKSPlaintextZnxImpl` | [`reference/plaintext.rs`](../src/reference/plaintext.rs). |
 | `CKKSEncryptionImpl` | [`reference/encryption.rs`](../src/reference/encryption.rs), for encryption and decryption. |
-| `CKKSEncodingImpl<F>` | [`reference/encoding.rs`](../src/reference/encoding.rs): slot ordering, transform normalization, and quantization; backend-owned plans and cache. |
+| `CKKSEncodingImpl<F>` | [`reference/encoding.rs`](../src/reference/encoding.rs): slot ordering, transform normalization, and quantization behind the four required kernels `ckks_{quantize,dequantize}_coeffs_into` and `ckks_{slots_to_coeffs,coeffs_to_slots}_assign_with_plan`; backend-owned plans and cache. The six API operations are derived defaults that check the buffer and plaintext shapes and read the plans from the cache. |
 | `DFTMatrixImpl<F>`, `DFTImpl` | [`reference/dft`](../src/reference/dft/): matrix generation, preparation, and evaluation; the six standard/split/repack direction wrappers are derived defaults. |
 | `CKKSPolynomialEvaluationImpl`, `CKKSComplexPolynomialEvaluationImpl` | [`reference/polynomial_evaluation.rs`](../src/reference/polynomial_evaluation.rs) for evaluation from a power basis; one-shot real/complex evaluation derives from CKKS input mapping and power-basis construction. The complex family is standard-only. |
 | `CKKSEvalModImpl` | [`reference/eval_mod.rs`](../src/reference/eval_mod.rs), including the selected scratch query. Serves both rings; the conjugate-invariant ring refuses `ExpCmplx`. |
@@ -35,10 +37,15 @@ The table gives the reference of each family.
 | `CKKSBootstrappingCIImpl` | [`reference/bootstrapping.rs`](../src/reference/bootstrapping.rs): `ckks_bootstrap_ci_reference`, registered by `impl_ckks_bootstrapping_ci_reference_full!($be, $ci)`, `$ci` its conjugate-invariant twin. |
 | `CKKSFoldLayoutImpl`, `CKKSFoldImpl<R>` | [`reference/fold.rs`](../src/reference/fold.rs): `CKKSFoldLayoutReference` and `CKKSFoldReference<BE, R>`, a crate-private per-ring step around ring packing; `impl_ckks_fold_layout_reference_full!` selects the layout and scratch query, and `impl_ckks_fold_reference_full!` registers every input ring the reference folds. |
 | `CKKSPaCoCoeffEncodingImpl`, `CKKSShipCoeffEncodingImpl` | Scheme embeddings exposed by [`reference::encoding`](../src/reference/encoding.rs), with explicitly named host reference helpers. |
+| `CKKSAddManyImpl`, `CKKSMulAddImpl`, `CKKSAffineImpl`, `CKKSMulSubImpl` | Derived defaults ([`oep/derived/composite.rs`](../src/oep/derived/composite.rs)): sums, multiply-accumulate and affine forms over the selected products, additions and subtractions. |
+| `CKKSApproximationImpl` | Derived defaults ([`oep/derived/approximation.rs`](../src/oep/derived/approximation.rs)): the interval map through the selected power-of-two, copy, addition or affine operation, then the selected real polynomial evaluation; sized by `ckks_all_ops_tmp_bytes`. |
+| `CKKSRingMapImpl` | Standard-only derived defaults ([`oep/derived/ring_map.rs`](../src/oep/derived/ring_map.rs)): the core conjugate-invariant embedding and trace composed with the selected key switch. |
+| `CKKSPaCoImpl` | Standard-only derived defaults ([`oep/derived/paco`](../src/oep/derived/paco/)): the sequential and parallel PaCo drivers, their scratch queries and the slot folds `ckks_slot_{trace,product}_assign`, over the selected CKKS and core operations and `CKKSPaCoCoeffEncodingImpl`. |
+| `CKKSShipImpl` | Standard-only: the SHIP drivers and their query are derived defaults ([`oep/derived/ship`](../src/oep/derived/ship/)); the masking accumulation and the hoisted mux rotation are required hooks with references in [`reference/ship`](../src/reference/ship/) (`CKKSShipReference`), registered by `impl_ckks_ship_reference_full!`. |
 
 `CKKSImpl` aggregates capabilities; it does not choose operation
-implementations. Affine operations and the conjugate-invariant ring maps are API
-compositions with integration tests, not additional OEP families.
+implementations. Every API method dispatches through a same-named OEP method;
+compositions of selected operations are that method's derived default.
 
 ## What an override must preserve
 
@@ -77,7 +84,8 @@ DFT queries. Their reference budgets include selected Core and CKKS operations.
 Bootstrap compilation is staged for the same reason: the preparation budget depends on the generated matrices, so `BootstrappingContext::compile_unprepared` returns them unprepared, `prepare_tmp_bytes` reports the selected budget, and `prepare` produces the context.
 `compile` runs both stages on one arena, which must then also cover that budget.
 Polynomial evaluation retains the shared `CKKSAllOpsTmpBytes` bounds. PaCo and
-SHIP coefficient-encoding hooks report their own workspace requirements.
+SHIP coefficient-encoding hooks report their own workspace requirements and refuse
+a smaller arena themselves.
 
 The paired harness gives each implementation its own advertised scratch
 capacity, poisons it, and checks surrounding guards through explicit transfers.

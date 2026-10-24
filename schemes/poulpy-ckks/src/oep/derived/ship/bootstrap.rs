@@ -5,27 +5,16 @@ use poulpy_core::layouts::SetGLWEPlaintextInfos;
 use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_core::{
     GLWEKeyswitch, GLWEZero,
-    layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision},
-    reference::keyswitching::glwe::GGLWEProductReference,
+    layouts::{GLWEInfos, GLWEToBackendRef, LWEInfos, TorusPrecision},
 };
-use poulpy_hal::{
-    api::{
-        CnvPVecBytesOf, Convolution, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
-        VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply,
-        VecZnxIdftApplyTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
-    },
-    layouts::{Backend, Module, ScratchArena},
-};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use super::{
-    masking::ship_masking_accumulate,
-    mux::{ship_mux_plans, ship_mux_rotate},
-};
+use super::ship_mux_plans;
 use crate::{
     CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SlotsKind,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSMulOps, CKKSSubOps, ShipScalar},
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, ShipKeysPrepared},
-    oep::{CKKSEncodingImpl, CKKSShipCoeffEncodingImpl},
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, ShipKeysPrepared},
+    oep::{CKKSEncodingImpl, CKKSShipImpl},
 };
 
 /// Validates the runtime ciphertexts against the key bundle's parameters.
@@ -97,36 +86,8 @@ fn ship_bootstrap_roots<BE, F, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<Vec<CKKSCiphertextOwned<BE>>>
 where
-    BE: Backend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: CKKSShipImpl + CKKSEncodingImpl<F>,
     F: ShipScalar,
-    Module<BE>: CKKSMulOps<BE>
-        + GGLWEProductReference<BE>
-        + poulpy_hal::api::VecZnxGadgetDecompose<BE>
-        + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSImagOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWEKeyswitch<BE>
-        + GLWEZero<BE>
-        + Convolution<BE>
-        + CnvPVecBytesOf
-        + VecZnxDftApply<BE>
-        + VecZnxDftZero<BE>
-        + VecZnxDftCopy<BE>
-        + VecZnxDftAddAssign<BE>
-        + VecZnxDftAutomorphism<BE>
-        + VecZnxIdftApply<BE>
-        + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BE>
-        + VmpApplyDftToDft<BE>
-        + VecZnxDftBytesOf
-        + VecZnxBigBytesOf
-        + VmpApplyDftToDftTmpBytes
-        + VecZnxBigNormalizeTmpBytes,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     const OP: &str = "ckks_ship_bootstrap";
@@ -188,9 +149,9 @@ where
         for (half, half_leaves) in leaves.iter_mut().enumerate() {
             let masks = if half == 0 { ik.masks() } else { ik.masks2() };
             let mut acc = module.ckks_ciphertext_alloc(b2k_t, TorusPrecision(kk as u32));
-            ship_masking_accumulate(module, &mut acc, &plan, masks, pi, scratch)?;
+            BE::ckks_ship_masking_accumulate(module, &mut acc, &plan, masks, pi, scratch)?;
             for group in ik.mux_keys() {
-                ship_mux_rotate(module, &mut acc, group, &plans, scratch)?;
+                BE::ckks_ship_mux_rotate(module, &mut acc, group, &plans, scratch)?;
             }
             half_leaves.push(acc);
         }
@@ -225,7 +186,7 @@ where
 }
 
 /// Real-case SHIP bootstrap: `output = root + Conj(root)`.
-pub(crate) fn ship_bootstrap_into<BE, F, Src>(
+pub(crate) fn ckks_ship_bootstrap_into_derived<BE, F, Src>(
     module: &Module<BE>,
     output: &mut CKKSCiphertextOwned<BE>,
     input: &Src,
@@ -233,36 +194,8 @@ pub(crate) fn ship_bootstrap_into<BE, F, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: CKKSShipImpl + CKKSEncodingImpl<F>,
     F: ShipScalar,
-    Module<BE>: CKKSMulOps<BE>
-        + GGLWEProductReference<BE>
-        + poulpy_hal::api::VecZnxGadgetDecompose<BE>
-        + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSImagOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWEKeyswitch<BE>
-        + GLWEZero<BE>
-        + Convolution<BE>
-        + CnvPVecBytesOf
-        + VecZnxDftApply<BE>
-        + VecZnxDftZero<BE>
-        + VecZnxDftCopy<BE>
-        + VecZnxDftAddAssign<BE>
-        + VecZnxDftAutomorphism<BE>
-        + VecZnxIdftApply<BE>
-        + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BE>
-        + VmpApplyDftToDft<BE>
-        + VecZnxDftBytesOf
-        + VecZnxBigBytesOf
-        + VmpApplyDftToDftTmpBytes
-        + VecZnxBigNormalizeTmpBytes,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     validate_runtime(module, output, input, keys, false)?;
@@ -280,7 +213,7 @@ where
 
 /// Complex-case SHIP bootstrap:
 /// `output = (v1 + i*v2) + Conj(v1 - i*v2)` over the two per-half roots.
-pub(crate) fn ship_bootstrap_complex_into<BE, F, Src>(
+pub(crate) fn ckks_ship_bootstrap_complex_into_derived<BE, F, Src>(
     module: &Module<BE>,
     output: &mut CKKSCiphertextOwned<BE>,
     input: &Src,
@@ -288,36 +221,8 @@ pub(crate) fn ship_bootstrap_complex_into<BE, F, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: CKKSShipImpl + CKKSEncodingImpl<F>,
     F: ShipScalar,
-    Module<BE>: CKKSMulOps<BE>
-        + GGLWEProductReference<BE>
-        + poulpy_hal::api::VecZnxGadgetDecompose<BE>
-        + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSImagOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWEKeyswitch<BE>
-        + GLWEZero<BE>
-        + Convolution<BE>
-        + CnvPVecBytesOf
-        + VecZnxDftApply<BE>
-        + VecZnxDftZero<BE>
-        + VecZnxDftCopy<BE>
-        + VecZnxDftAddAssign<BE>
-        + VecZnxDftAutomorphism<BE>
-        + VecZnxIdftApply<BE>
-        + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BE>
-        + VmpApplyDftToDft<BE>
-        + VecZnxDftBytesOf
-        + VecZnxBigBytesOf
-        + VmpApplyDftToDftTmpBytes
-        + VecZnxBigNormalizeTmpBytes,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     validate_runtime(module, output, input, keys, true)?;

@@ -6,9 +6,8 @@
 //! Overrides must reproduce the circuit and pass the reusable parity tests
 //! against a caller-selected comparison backend.
 //!
-//! Simple same-layer compositions are private derived defaults in
-//! [`crate::oep`]. API-only protocol pipelines retain private implementation
-//! helpers alongside their lower-layer building blocks.
+//! Same-layer compositions, the PaCo and SHIP drivers included, are private
+//! derived defaults in [`crate::oep`].
 
 pub mod add;
 pub mod bootstrapping;
@@ -32,7 +31,6 @@ pub mod paco;
 pub mod plaintext;
 pub mod polynomial_evaluation;
 pub mod pow2;
-pub(crate) mod ring_map;
 pub mod rotate;
 pub mod ship;
 pub mod sub;
@@ -49,5 +47,3 @@ pub use linear_transformation_diagonals::{
 pub use plaintext::CKKSPlaintextReference;
 pub use polynomial_evaluation::PolynomialEvaluationReference;
 pub use sub::CKKSSubReference;
-
-pub(crate) mod composite;

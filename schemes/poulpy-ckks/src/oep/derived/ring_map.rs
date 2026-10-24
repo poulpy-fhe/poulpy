@@ -8,82 +8,86 @@ use poulpy_core::{
         GLWEToBackendRef, LWEInfos,
     },
 };
-use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Module, ScratchArena, Standard};
+use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
-    api::CKKSCIRingMapOps,
     error::checked_log_budget_sub,
     layouts::{CKKSCiphertext, ScratchArenaTakeCKKS},
+    oep::CKKSRingMapImpl,
 };
 
-/// Derived: the keyless maps composed with a key switch of the standard module.
-impl<BE: Backend<Ring = Standard>> CKKSCIRingMapOps<BE> for Module<BE>
+pub(crate) fn ckks_ci_embed_tmp_bytes_derived<BE, R, K>(module: &Module<BE>, res_infos: &R, key_infos: &K) -> usize
 where
-    Module<BE>: GLWECIEmbed<BE> + GLWECITrace<BE> + GLWEKeyswitch<BE> + GLWEBytesOf<BE>,
+    BE: CKKSRingMapImpl,
+    R: GLWEInfos,
+    K: GGLWEInfos,
 {
-    fn ckks_ci_embed_tmp_bytes<R, K>(&self, res_infos: &R, key_infos: &K) -> usize
-    where
-        R: GLWEInfos,
-        K: GGLWEInfos,
-    {
-        self.glwe_keyswitch_tmp_bytes(res_infos, res_infos, key_infos)
-    }
-
-    fn ckks_ci_embed<Dst, D, K>(
-        &self,
-        dst: &mut Dst,
-        src: &CKKSCiphertext<D, BE::ZnxWord, ConjugateInvariant>,
-        key: &GLWECIEmbedKeyPrepared<K, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        D: Data,
-        GLWE<D, BE::ZnxWord>: GLWEToBackendRef<BE>,
-        K: Data,
-        GLWECIEmbedKeyPrepared<K, BE>: GGLWEPreparedToBackendRef<BE>,
-    {
-        crate::ckks_ensure!(key.n() == dst.n(), "the embed key has the standard degree");
-        ckks_ci_embed_keyless(self, dst, src)?;
-        self.glwe_keyswitch_assign(dst, &key.to_backend_ref(), scratch);
-        Ok(())
-    }
-
-    fn ckks_ci_trace_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
-    where
-        R: GLWEInfos,
-        A: GLWEInfos,
-        K: GGLWEInfos,
-    {
-        self.glwe_bytes_of_from_infos(a_infos)
-            + self
-                .glwe_keyswitch_tmp_bytes(a_infos, a_infos, key_infos)
-                .max(ckks_ci_trace_keyless_tmp_bytes(self, res_infos, a_infos))
-    }
-
-    fn ckks_ci_trace<D, Src, K>(
-        &self,
-        dst: &mut CKKSCiphertext<D, BE::ZnxWord, ConjugateInvariant>,
-        src: &Src,
-        key: &GLWECITraceKeyPrepared<K, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        D: Data,
-        GLWE<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: Data,
-        GLWECITraceKeyPrepared<K, BE>: GGLWEPreparedToBackendRef<BE>,
-    {
-        validate_ring_map(self, dst, src)?;
-        crate::ckks_ensure!(key.n() == src.n(), "the trace key has the standard degree");
-        let (mut switched, mut scratch_1) = scratch.borrow().take_ckks_ciphertext_scratch(src, src.meta());
-        self.glwe_keyswitch(&mut switched, src, &key.to_backend_ref(), &mut scratch_1);
-        ckks_ci_trace_keyless(self, dst, &switched, &mut scratch_1)
-    }
+    module.glwe_keyswitch_tmp_bytes(res_infos, res_infos, key_infos)
 }
 
+pub(crate) fn ckks_ci_embed_derived<BE, Dst, D, K>(
+    module: &Module<BE>,
+    dst: &mut Dst,
+    src: &CKKSCiphertext<D, BE::ZnxWord, ConjugateInvariant>,
+    key: &GLWECIEmbedKeyPrepared<K, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: CKKSRingMapImpl,
+    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    D: Data,
+    GLWE<D, BE::ZnxWord>: GLWEToBackendRef<BE>,
+    K: Data,
+    GLWECIEmbedKeyPrepared<K, BE>: GGLWEPreparedToBackendRef<BE>,
+{
+    crate::ckks_ensure!(key.n() == dst.n(), "the embed key has the standard degree");
+    ckks_ci_embed_keyless(module, dst, src)?;
+    module.glwe_keyswitch_assign(dst, &key.to_backend_ref(), scratch);
+    Ok(())
+}
+
+pub(crate) fn ckks_ci_trace_tmp_bytes_derived<BE, R, A, K>(
+    module: &Module<BE>,
+    res_infos: &R,
+    a_infos: &A,
+    key_infos: &K,
+) -> usize
+where
+    BE: CKKSRingMapImpl,
+    R: GLWEInfos,
+    A: GLWEInfos,
+    K: GGLWEInfos,
+{
+    module.glwe_bytes_of_from_infos(a_infos)
+        + module
+            .glwe_keyswitch_tmp_bytes(a_infos, a_infos, key_infos)
+            .max(ckks_ci_trace_keyless_tmp_bytes(module, res_infos, a_infos))
+}
+
+pub(crate) fn ckks_ci_trace_derived<BE, D, Src, K>(
+    module: &Module<BE>,
+    dst: &mut CKKSCiphertext<D, BE::ZnxWord, ConjugateInvariant>,
+    src: &Src,
+    key: &GLWECITraceKeyPrepared<K, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: CKKSRingMapImpl,
+    D: Data,
+    GLWE<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
+    Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+    K: Data,
+    GLWECITraceKeyPrepared<K, BE>: GGLWEPreparedToBackendRef<BE>,
+{
+    validate_ring_map(module, dst, src)?;
+    crate::ckks_ensure!(key.n() == src.n(), "the trace key has the standard degree");
+    let (mut switched, mut scratch_1) = scratch.borrow().take_ckks_ciphertext_scratch(src, src.meta());
+    module.glwe_keyswitch(&mut switched, src, &key.to_backend_ref(), &mut scratch_1);
+    ckks_ci_trace_keyless(module, dst, &switched, &mut scratch_1)
+}
+
+// The keyless maps are shared with the fold reference, which bounds the module, not the backend.
 pub(crate) fn ckks_ci_embed_keyless<BE, Dst, D>(
     module: &Module<BE>,
     dst: &mut Dst,

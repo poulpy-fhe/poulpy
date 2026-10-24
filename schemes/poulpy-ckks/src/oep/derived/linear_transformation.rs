@@ -13,7 +13,7 @@ use crate::{
     oep::CKKSLinearTransformationImpl,
 };
 
-pub(crate) fn ckks_eval_linear_transformation_assign<BE, Dst, P, H>(
+pub(crate) fn ckks_eval_linear_transformation_assign_derived<BE, Dst, P, H>(
     module: &Module<BE>,
     dst: &mut Dst,
     babies: &LinearTransformationBabySteps<BE>,
@@ -36,7 +36,7 @@ where
     })
 }
 
-pub(crate) fn ckks_eval_linear_transformation_self_into<BE, Dst, Src, P, H>(
+pub(crate) fn ckks_eval_linear_transformation_self_into_derived<BE, Dst, Src, P, H>(
     module: &Module<BE>,
     dst: &mut Dst,
     src: &Src,
@@ -57,7 +57,7 @@ where
     BE::ckks_eval_linear_transformation_into(module, dst, src, &babies, lt, keys, scratch)
 }
 
-pub(crate) fn ckks_eval_linear_transformation_self_assign<BE, Dst, P, H>(
+pub(crate) fn ckks_eval_linear_transformation_self_assign_derived<BE, Dst, P, H>(
     module: &Module<BE>,
     dst: &mut Dst,
     lt: &LinearTransformation<P>,

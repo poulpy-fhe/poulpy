@@ -50,7 +50,7 @@ where
     })
 }
 
-pub(crate) fn ckks_dot_product_pt_vec_tmp_bytes<BE, R, A, P>(module: &Module<BE>, res: &R, a: &A, b: &P) -> usize
+pub(crate) fn ckks_dot_product_pt_vec_tmp_bytes_derived<BE, R, A, P>(module: &Module<BE>, res: &R, a: &A, b: &P) -> usize
 where
     BE: CKKSDotProductImpl,
     R: CKKSCtBounds,
@@ -63,7 +63,7 @@ where
             .max(module.ckks_add_tmp_bytes(res.size()))
 }
 
-pub(crate) fn ckks_dot_product_pt_const_tmp_bytes<BE, R, A, P>(module: &Module<BE>, res: &R, a: &A, b: &P) -> usize
+pub(crate) fn ckks_dot_product_pt_const_tmp_bytes_derived<BE, R, A, P>(module: &Module<BE>, res: &R, a: &A, b: &P) -> usize
 where
     BE: CKKSDotProductImpl,
     R: CKKSCtBounds,
@@ -76,7 +76,7 @@ where
             .max(module.ckks_add_tmp_bytes(res.size()))
 }
 
-pub(crate) fn ckks_dot_product_pt_vec<BE, Dst: Data, D: Data, E>(
+pub(crate) fn ckks_dot_product_pt_vec_derived<BE, Dst: Data, D: Data, E>(
     module: &Module<BE>,
     dst: &mut CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
     a: &[&CKKSCiphertext<D, BE::ZnxWord, BE::Ring>],
@@ -96,7 +96,7 @@ where
     })
 }
 
-pub(crate) fn ckks_dot_product_pt_const<BE, Dst: Data, D: Data, E>(
+pub(crate) fn ckks_dot_product_pt_const_derived<BE, Dst: Data, D: Data, E>(
     module: &Module<BE>,
     dst: &mut CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
     a: &[&CKKSCiphertext<D, BE::ZnxWord, BE::Ring>],

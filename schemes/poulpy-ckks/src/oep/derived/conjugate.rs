@@ -5,7 +5,7 @@ use crate::{
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
 use poulpy_hal::layouts::{CyclotomicOrder, Module, ScratchArena};
 
-pub(crate) fn conjugate_rotate<BE, Dst, Src, H>(
+pub(crate) fn ckks_conjugate_rotate_into_derived<BE, Dst, Src, H>(
     module: &Module<BE>,
     dst: &mut Dst,
     src: &Src,
@@ -33,7 +33,7 @@ where
     BE::ckks_conjugate_with_key_into(module, dst, src, &key, scratch)
 }
 
-pub(crate) fn conjugate_assign<BE, Dst, H>(
+pub(crate) fn ckks_conjugate_assign_derived<BE, Dst, H>(
     module: &Module<BE>,
     dst: &mut Dst,
     keys: &H,

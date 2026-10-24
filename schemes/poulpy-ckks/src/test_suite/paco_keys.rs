@@ -41,10 +41,8 @@ use crate::{
     api::{CKKSAddOps, CKKSLinearTransformationOps, CKKSMulOps},
     encoding::paco::{coeff_enc::glwe_column_residues, cpx::Cpx},
     layouts::{PaCoPlan, PaCoSecretSpec},
-    reference::paco::{
-        lt::paco_c2s_factors,
-        ops::{PaCoSlotOps, fold_rotations},
-    },
+    oep::CKKSPaCoImpl,
+    reference::paco::{lt::paco_c2s_factors, ops::fold_rotations},
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
@@ -66,9 +64,8 @@ const PACO_C: usize = 8;
 /// against the cleartext model.
 pub fn test_paco_partial_pipeline<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>:
-        TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + PaCoSlotOps<BE> + CnvPVecAlloc<BE>,
+    BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -85,9 +82,8 @@ where
 /// lands on its `P`-relabel (`slot j = z_7[P(j)]`).
 fn test_paco_partial_pipeline_with<BE, F, E>(params: &CKKSTestParams, slot_order: crate::layouts::PaCoSlotOrder)
 where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>:
-        TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + PaCoSlotOps<BE> + CnvPVecAlloc<BE>,
+    BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -272,9 +268,7 @@ where
             .unwrap();
         module.ckks_add_assign(&mut acc, &tmp, &mut scratch.borrow()).unwrap();
     }
-    module
-        .ckks_slot_trace_assign(&mut acc, m_full, n_paco, &atks, &mut scratch.borrow())
-        .unwrap();
+    BE::ckks_slot_trace_assign(&module, &mut acc, m_full, n_paco, &atks, &mut scratch.borrow()).unwrap();
     for lt in &lts {
         module
             .ckks_eval_linear_transformation_self_assign(&mut acc, lt, &atks, &mut scratch.borrow())

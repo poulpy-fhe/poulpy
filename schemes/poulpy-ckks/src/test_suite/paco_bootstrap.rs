@@ -32,7 +32,6 @@ use crate::{
     api::{CKKSLinearTransformationOps, CKKSPaCoOps, PaCoScalar},
     encoding::paco::coeff_enc::glwe_column_residues,
     layouts::{CKKSModuleAlloc, PaCoContext, PaCoDFTPlan, PaCoKeysPrepared, PaCoPlan, PaCoSecretSpec, ScratchArenaTakeCKKS},
-    reference::paco::ops::PaCoSlotOps,
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
@@ -56,7 +55,6 @@ where
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSLinearTransformationOps<BE>
-        + PaCoSlotOps<BE>
         + CKKSPaCoOps<BE, F>
         + CnvPVecAlloc<BE>
         + GLWECopy<BE>,
@@ -85,7 +83,6 @@ where
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSLinearTransformationOps<BE>
-        + PaCoSlotOps<BE>
         + CKKSPaCoOps<BE, F>
         + CnvPVecAlloc<BE>
         + GLWECopy<BE>,
@@ -125,7 +122,6 @@ fn seq_bootstrap_case<BE, F, E>(
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSLinearTransformationOps<BE>
-        + PaCoSlotOps<BE>
         + CKKSPaCoOps<BE, F>
         + CnvPVecAlloc<BE>
         + GLWECopy<BE>,

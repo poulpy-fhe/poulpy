@@ -168,9 +168,9 @@ all parameters.
 | Module | Role |
 |---|---|
 | `api` | Public evaluator traits implemented on `Module<BE>`. |
-| `delegates` | Crate-private dispatch and API compositions such as affine operations. |
+| `delegates` | Crate-private dispatch: each API method calls its same-named OEP method. |
 | `oep` | Explicit backend `*Impl` contracts; no blanket selection of operation implementations. `CKKSImpl` aggregates capabilities. |
-| `oep::derived` | Crate-private same-layer defaults: add/subtract one, one-shot polynomial evaluation, the plaintext dot products, the `_assign` and self-caching linear transformations, and the six DFT format/direction wrappers. |
+| `oep::derived` | Crate-private same-layer defaults: add/subtract one, sums, multiply-accumulate and affine forms, approximations, the conjugate-invariant ring maps, the encoding checks and plan cache, one-shot polynomial evaluation, the plaintext dot products, the `_assign` and self-caching linear transformations, the six DFT format/direction wrappers, and the PaCo and SHIP drivers. |
 | `reference` | Callable lower-layer algorithms and canonical encoding definitions. Their implementation bounds do not constrain an unrelated override. |
 | `layouts` | Ciphertexts, plaintexts, metadata, allocation, prepared plans, and backend-resident encoding buffers. |
 | `encoding` | PaCo and SHIP scheme embeddings and explicitly named host helpers, also exposed through `reference::encoding`. |
@@ -289,8 +289,10 @@ module.ckks_decode_reim_into(&pt, &mut re_out, &mut im_out, &mut scratch)?;
 ```
 
 The backend implements `oep::CKKSEncodingImpl<F>` for each supported scalar
-precision. Its module owns and caches the transform plans; callers pass only
-encoding buffers and plaintexts. The canonical slot ordering, normalization,
+precision: the coefficient codecs `ckks_{quantize,dequantize}_coeffs_into`, the
+slot transforms `ckks_{slots_to_coeffs,coeffs_to_slots}_assign_with_plan` and its
+plan cache. The API operations are derived defaults that check their operands and
+read the cached plans; callers pass only encoding buffers and plaintexts. The canonical slot ordering, normalization,
 and quantization live in [`reference::encoding`](src/reference/encoding.rs).
 Quantization rejects non-finite and out-of-range values before modifying the
 plaintext. Host slices appear in the explicitly named host helpers and

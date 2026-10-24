@@ -15,17 +15,19 @@ use crate::{
         BootstrappingCIKeys, BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys,
         CKKSCiphertextOwned, CKKSPlaintextOwned, EncodedLut, EvalModPlan,
     },
+    oep::{CKKSEvalModImpl, DFTImpl},
 };
 
 /// Backend override hook for [`CKKSBootstrappingOps`](crate::api::CKKSBootstrappingOps).
 /// [`impl_ckks_bootstrapping_reference_full`] wires every method to the reference pipeline.
+/// The DFT and EvalMod families back the stages the API re-exports.
 ///
 /// # Safety
 ///
 /// Implementations must preserve the exact CKKS metadata and ciphertext
 /// semantics of the reference pipeline, honor all key layouts, and stay within
 /// the scratch they report.
-pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
+pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> + DFTImpl + CKKSEvalModImpl {
     fn ckks_mod_up_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
 
     fn ckks_bootstrap_tmp_bytes<C1, C2, F>(

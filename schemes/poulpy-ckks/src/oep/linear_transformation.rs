@@ -11,8 +11,8 @@ use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::LtDiagonalMeta,
     oep::derived::linear_transformation::{
-        ckks_eval_linear_transformation_assign, ckks_eval_linear_transformation_self_assign,
-        ckks_eval_linear_transformation_self_into,
+        ckks_eval_linear_transformation_assign_derived, ckks_eval_linear_transformation_self_assign_derived,
+        ckks_eval_linear_transformation_self_into_derived,
     },
 };
 
@@ -100,7 +100,7 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
         P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
         H: GetAutomorphismKey<Self>,
     {
-        ckks_eval_linear_transformation_assign(module, dst, babies, lt, keys, scratch)
+        ckks_eval_linear_transformation_assign_derived(module, dst, babies, lt, keys, scratch)
     }
 
     fn ckks_eval_linear_transformation_sum_into<Dst, Src, H>(
@@ -132,7 +132,7 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
         P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
         H: GetAutomorphismKey<Self>,
     {
-        ckks_eval_linear_transformation_self_into(module, dst, src, lt, keys, scratch)
+        ckks_eval_linear_transformation_self_into_derived(module, dst, src, lt, keys, scratch)
     }
 
     /// [`Self::ckks_eval_linear_transformation_self_into`] into a working copy carved from scratch, then copied
@@ -149,7 +149,7 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
         P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
         H: GetAutomorphismKey<Self>,
     {
-        ckks_eval_linear_transformation_self_assign(module, dst, lt, keys, scratch)
+        ckks_eval_linear_transformation_self_assign_derived(module, dst, lt, keys, scratch)
     }
 }
 

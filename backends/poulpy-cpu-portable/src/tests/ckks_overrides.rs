@@ -52,7 +52,10 @@ unsafe impl poulpy_ckks::oep::CKKSCopyImpl for OverrideBackend {
     }
 }
 mod carry;
+mod composite;
 mod dft;
+mod paco_ship;
+mod ring_map;
 poulpy_ckks::impl_ckks_neg_reference_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_pow2_reference_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_imag_reference_full!(OverrideBackend);
@@ -63,6 +66,11 @@ poulpy_ckks::impl_ckks_encryption_reference_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_mul_reference_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_linear_transformation_reference_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_dot_product_reference_full!(OverrideBackend);
+poulpy_ckks::impl_ckks_add_many_derived_full!(OverrideBackend);
+poulpy_ckks::impl_ckks_mul_add_derived_full!(OverrideBackend);
+poulpy_ckks::impl_ckks_affine_derived_full!(OverrideBackend);
+poulpy_ckks::impl_ckks_mul_sub_derived_full!(OverrideBackend);
+poulpy_ckks::impl_ckks_approximation_derived_full!(OverrideBackend);
 
 unsafe impl poulpy_ckks::oep::CKKSPolynomialEvaluationImpl for OverrideBackend {
     fn ckks_eval_poly_real_const_coeffs_from_power_basis<R, B, A, G, H>(

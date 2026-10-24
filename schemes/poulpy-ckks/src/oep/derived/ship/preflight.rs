@@ -2,68 +2,34 @@
 
 use crate::CKKSResult as Result;
 use poulpy_core::{
-    GLWEKeyswitch, GLWEZero,
+    GLWEKeyswitch,
     layouts::{GLWELayout, LWEInfos, Rank},
-    reference::keyswitching::glwe::GGLWEProductReference,
 };
 
 use crate::{CKKSLayout, GLWEPlaintextMeta, Scale};
-use poulpy_hal::{
-    api::{
-        CnvPVecBytesOf, Convolution, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
-        VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply,
-        VecZnxIdftApplyTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
-    },
-    layouts::{Backend, Module},
-};
+use poulpy_hal::layouts::Module;
 
-use super::{bootstrap::validate_runtime, masking::ship_masking_tmp_bytes, mux::ship_mux_rotate_tmp_bytes};
+use super::bootstrap::validate_runtime;
 use crate::SlotsKind;
 use crate::{
     CKKSCtBounds,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSMulOps, CKKSSubOps, ShipScalar},
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, ShipKeysPrepared},
-    oep::{CKKSEncodingImpl, CKKSShipCoeffEncodingImpl},
+    layouts::{CKKSCiphertextOwned, ShipKeysPrepared},
+    oep::{CKKSEncodingImpl, CKKSShipImpl},
 };
 
 /// Caller-arena bound of one SHIP bootstrap call; validates the runtime
 /// ciphertext and key layouts along the way. The bound covers the complex
 /// variant whenever the key bundle carries its masks.
-pub(crate) fn ship_bootstrap_tmp_bytes<BE, F, Src>(
+pub(crate) fn ckks_ship_bootstrap_tmp_bytes_derived<BE, F, Src>(
     module: &Module<BE>,
     output: &CKKSCiphertextOwned<BE>,
     input: &Src,
     keys: &ShipKeysPrepared<BE::OwnedBuf, BE>,
 ) -> Result<usize>
 where
-    BE: Backend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: CKKSShipImpl + CKKSEncodingImpl<F>,
     F: ShipScalar,
-    Module<BE>: CKKSMulOps<BE>
-        + GGLWEProductReference<BE>
-        + poulpy_hal::api::VecZnxGadgetDecompose<BE>
-        + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSImagOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWEKeyswitch<BE>
-        + GLWEZero<BE>
-        + Convolution<BE>
-        + CnvPVecBytesOf
-        + VecZnxDftApply<BE>
-        + VecZnxDftZero<BE>
-        + VecZnxDftCopy<BE>
-        + VecZnxDftAddAssign<BE>
-        + VecZnxDftAutomorphism<BE>
-        + VecZnxIdftApply<BE>
-        + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BE>
-        + VmpApplyDftToDft<BE>
-        + VecZnxDftBytesOf
-        + VecZnxBigBytesOf
-        + VmpApplyDftToDftTmpBytes
-        + VecZnxBigNormalizeTmpBytes,
     Src: CKKSCtBounds,
 {
     let params = keys.parameters();
@@ -95,11 +61,11 @@ where
         params.complex(),
     )?);
     bytes = bytes.max(module.ckks_add_pt_vec_tmp_bytes(raised.size()));
-    bytes = bytes.max(ship_masking_tmp_bytes(module, plan, base2k));
+    bytes = bytes.max(BE::ckks_ship_masking_accumulate_tmp_bytes(module, plan, base2k));
     for ik in keys.index_keys() {
         for group in ik.mux_keys() {
             if let Some(mux) = group.first() {
-                bytes = bytes.max(ship_mux_rotate_tmp_bytes(module, &raised, &mux.key, group.len()));
+                bytes = bytes.max(BE::ckks_ship_mux_rotate_tmp_bytes(module, &raised, &mux.key, group.len()));
             }
         }
     }

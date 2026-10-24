@@ -1,4 +1,5 @@
-//! Unit shifts inherit the selected constant-plaintext operation and its budget.
+//! Unit shifts inherit the selected constant-plaintext operation and its budget,
+//! and the ciphertext and plaintext-vector assignments count the compositions entering them.
 use super::OverrideBackend;
 use crate::FFT64Portable;
 use poulpy_ckks::Scale;
@@ -11,18 +12,47 @@ use poulpy_hal::layouts::{Backend, Module};
 use std::cell::Cell;
 
 thread_local! {
-    static ADD_CONST_CALLS: Cell<usize> = const { Cell::new(0) };
+    pub(super) static ADD_CONST_CALLS: Cell<usize> = const { Cell::new(0) };
     static SUB_CONST_CALLS: Cell<usize> = const { Cell::new(0) };
+    pub(super) static ADD_ASSIGN_CALLS: Cell<usize> = const { Cell::new(0) };
+    pub(super) static SUB_ASSIGN_CALLS: Cell<usize> = const { Cell::new(0) };
+    pub(super) static ADD_PT_VEC_CALLS: Cell<usize> = const { Cell::new(0) };
+    pub(super) static SUB_PT_VEC_CALLS: Cell<usize> = const { Cell::new(0) };
+}
+
+/// Takes `EXTRA` bytes first, fills them with a pattern, runs `body` on the rest and
+/// asserts the pattern intact.
+pub(super) fn with_marked_region<const EXTRA: usize, R>(
+    scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>,
+    body: impl FnOnce(&mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>) -> R,
+) -> R {
+    let (mut marker, mut rest) = scratch.borrow().take_region(EXTRA);
+    <OverrideBackend as Backend>::copy_host_to_view(&mut marker, &[0x5A; EXTRA]);
+    let result = body(&mut rest);
+    let mut after = [0u8; EXTRA];
+    <OverrideBackend as Backend>::copy_view_to_host(&<OverrideBackend as Backend>::view_ref_mut(&marker), &mut after);
+    assert_eq!(after, [0x5A; EXTRA], "an override's extra region was overwritten");
+    result
 }
 
 // Forward the unchanged operations explicitly so the defaults compose a backend
 // that gives only constant-plaintext assignment a larger scratch requirement.
 macro_rules! impl_carry_with_plaintext_workspace {
-    ($verb:ident, $Impl:ident, $Reference:ident, $calls:ident, $workspace:expr) => {
+    (
+        $verb:ident,
+        $Impl:ident,
+        $Reference:ident,
+        $calls:ident,
+        $workspace:expr,
+        $assign_calls:ident,
+        $assign_workspace:expr,
+        $pt_vec_calls:ident,
+        $pt_vec_workspace:expr
+    ) => {
         ::paste::paste! {
             unsafe impl ::poulpy_ckks::oep::$Impl for OverrideBackend {
                 fn [<ckks_ $verb _tmp_bytes>](module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
-                    ::poulpy_ckks::reference::$verb::$Reference::[<ckks_ $verb _tmp_bytes_reference>](module, res_size)
+                    $assign_workspace + ::poulpy_ckks::reference::$verb::$Reference::[<ckks_ $verb _tmp_bytes_reference>](module, res_size)
                 }
 
                 fn [<ckks_ $verb _into>]<Dst, A, B>(
@@ -51,13 +81,16 @@ macro_rules! impl_carry_with_plaintext_workspace {
                     Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self> + ::poulpy_ckks::CKKSInfos + ::poulpy_ckks::SetCKKSInfos,
                     A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_ckks::CKKSInfos,
                 {
-                    ::poulpy_ckks::reference::$verb::$Reference::[<ckks_ $verb _assign_reference>](module, dst, a, scratch)
+                    $assign_calls.set($assign_calls.get() + 1);
+                    with_marked_region::<{ $assign_workspace }, _>(scratch, |rest| {
+                        ::poulpy_ckks::reference::$verb::$Reference::[<ckks_ $verb _assign_reference>](module, dst, a, rest)
+                    })
                 }
 
 
 
                 fn [<ckks_ $verb _pt_vec_tmp_bytes>](module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
-                    ::poulpy_ckks::reference::$verb::$Reference::[<ckks_ $verb _pt_vec_tmp_bytes_reference>](module, res_size)
+                    $pt_vec_workspace + ::poulpy_ckks::reference::$verb::$Reference::[<ckks_ $verb _pt_vec_tmp_bytes_reference>](module, res_size)
                 }
 
                 fn [<ckks_ $verb _pt_vec_into>]<Dst, A, P>(
@@ -86,7 +119,10 @@ macro_rules! impl_carry_with_plaintext_workspace {
                     Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self> + ::poulpy_ckks::CKKSCtBounds + ::poulpy_ckks::SetCKKSInfos,
                     P: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_ckks::CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
                 {
-                    ::poulpy_ckks::reference::$verb::$Reference::[<ckks_ $verb _pt_vec_assign_reference>](module, dst, pt, scratch)
+                    $pt_vec_calls.set($pt_vec_calls.get() + 1);
+                    with_marked_region::<{ $pt_vec_workspace }, _>(scratch, |rest| {
+                        ::poulpy_ckks::reference::$verb::$Reference::[<ckks_ $verb _pt_vec_assign_reference>](module, dst, pt, rest)
+                    })
                 }
 
 
@@ -138,8 +174,32 @@ macro_rules! impl_carry_with_plaintext_workspace {
         }
     };
 }
-impl_carry_with_plaintext_workspace!(add, CKKSAddImpl, CKKSAddReference, ADD_CONST_CALLS, 4096);
-impl_carry_with_plaintext_workspace!(sub, CKKSSubImpl, CKKSSubReference, SUB_CONST_CALLS, 8192);
+pub(super) const ADD_ASSIGN_EXTRA: usize = 1024;
+pub(super) const SUB_ASSIGN_EXTRA: usize = 1536;
+pub(super) const ADD_PT_VEC_EXTRA: usize = 2048;
+pub(super) const SUB_PT_VEC_EXTRA: usize = 3072;
+impl_carry_with_plaintext_workspace!(
+    add,
+    CKKSAddImpl,
+    CKKSAddReference,
+    ADD_CONST_CALLS,
+    4096,
+    ADD_ASSIGN_CALLS,
+    ADD_ASSIGN_EXTRA,
+    ADD_PT_VEC_CALLS,
+    ADD_PT_VEC_EXTRA
+);
+impl_carry_with_plaintext_workspace!(
+    sub,
+    CKKSSubImpl,
+    CKKSSubReference,
+    SUB_CONST_CALLS,
+    8192,
+    SUB_ASSIGN_CALLS,
+    SUB_ASSIGN_EXTRA,
+    SUB_PT_VEC_CALLS,
+    SUB_PT_VEC_EXTRA
+);
 
 #[test]
 fn unit_shifts_use_selected_plaintext_scratch() {

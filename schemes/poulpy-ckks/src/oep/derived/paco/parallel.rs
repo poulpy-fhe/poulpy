@@ -13,7 +13,6 @@
 //! each worker's own scratch arena (`PaCoWorker`), sized per worker.
 
 use crate::layouts::CKKSCiphertextOwned;
-use crate::layouts::CKKSPlaintextOwned;
 use crate::{CKKSError, CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::SetGLWEPlaintextInfos;
 use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
@@ -21,27 +20,24 @@ use std::{sync::mpsc::sync_channel, thread};
 
 use anyhow::Context;
 use poulpy_core::{
-    GLWEAutomorphism, GLWEKeyswitch, GLWELinearTransformations, GLWERotate,
-    layouts::{GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision},
+    GLWEKeyswitch, GLWERotate,
+    layouts::{GLWEToBackendRef, LWEInfos, TorusPrecision},
 };
 use poulpy_hal::{
     api::ScratchOwnedBorrow,
-    layouts::{Backend, CyclotomicOrder, Module, ScratchArena, ScratchOwned},
+    layouts::{Backend, Module, ScratchArena, ScratchOwned},
 };
 
 use super::{
     bootstrap::paco_bootstrap_branch_validated_into,
-    ops::PaCoSlotOps,
     preflight::{branch_schedule, checked_branch_shift, direct_tmp_bytes_validated, preflight, validate_encapsulation_key},
 };
 use crate::layouts::paco::{context::PaCoContext, keyset::PaCoKeys};
 use crate::{
     CKKSCtBounds,
-    api::{
-        CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSRotateOps, CKKSSubOps, PaCoScalar,
-    },
+    api::{CKKSAddOps, CKKSCopyOps, PaCoScalar},
     layouts::{CKKSModuleAlloc, PaCoWorker},
-    oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl},
+    oep::{CKKSEncodingImpl, CKKSPaCoImpl},
 };
 
 #[derive(Clone, Copy)]
@@ -69,25 +65,9 @@ fn run_branch_into<BE, F, K, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
-    Module<BE>: CKKSMulOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSRotateOps<BE>
-        + PaCoSlotOps<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWERotate<BE>
-        + GLWEAutomorphism<BE>
-        + GLWELinearTransformations<BE>
-        + GLWEKeyswitch<BE>
-        + CyclotomicOrder,
+    BE: CKKSPaCoImpl + CKKSEncodingImpl<F>,
     K: PaCoKeys<BE>,
     F: PaCoScalar,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     if branch.shift == 0 {
@@ -111,7 +91,7 @@ where
     Ok(())
 }
 
-fn set_recombined_sparsity<BE: Backend + CKKSPaCoCoeffEncodingImpl, F: PaCoScalar>(
+fn set_recombined_sparsity<BE: Backend, F: PaCoScalar>(
     output: &mut CKKSCiphertextOwned<BE>,
     context: &PaCoContext<BE, F>,
     kappa: usize,
@@ -125,8 +105,8 @@ fn set_recombined_sparsity<BE: Backend + CKKSPaCoCoeffEncodingImpl, F: PaCoScala
     Ok(())
 }
 
-/// Sequential direct-mode driver shared by the public operation delegate.
-pub(crate) fn paco_bootstrap_direct_into<BE, F, K, Src>(
+/// Sequential direct-mode driver.
+pub(crate) fn ckks_paco_bootstrap_direct_into_derived<BE, F, K, Src>(
     module: &Module<BE>,
     output: &mut CKKSCiphertextOwned<BE>,
     input: &Src,
@@ -135,25 +115,9 @@ pub(crate) fn paco_bootstrap_direct_into<BE, F, K, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
-    Module<BE>: CKKSMulOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSRotateOps<BE>
-        + PaCoSlotOps<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWERotate<BE>
-        + GLWEAutomorphism<BE>
-        + GLWELinearTransformations<BE>
-        + GLWEKeyswitch<BE>
-        + CyclotomicOrder,
+    BE: CKKSPaCoImpl + CKKSEncodingImpl<F>,
     K: PaCoKeys<BE>,
     F: PaCoScalar,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let (kappa, stride) = branch_schedule(context, input.log_sparsity())?;
@@ -179,25 +143,9 @@ fn paco_bootstrap_direct_validated_into<BE, F, K, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
-    Module<BE>: CKKSMulOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSRotateOps<BE>
-        + PaCoSlotOps<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWERotate<BE>
-        + GLWEAutomorphism<BE>
-        + GLWELinearTransformations<BE>
-        + GLWEKeyswitch<BE>
-        + CyclotomicOrder,
+    BE: CKKSPaCoImpl + CKKSEncodingImpl<F>,
     K: PaCoKeys<BE>,
     F: PaCoScalar,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     ckks_ensure!(
@@ -253,11 +201,9 @@ fn encapsulate_input<BE, F, K, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<CKKSCiphertextOwned<BE>>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: CKKSPaCoImpl + CKKSEncodingImpl<F>,
     F: PaCoScalar,
-    Module<BE>: CKKSModuleAlloc<BE> + GLWEKeyswitch<BE>,
     K: PaCoKeys<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let switching_key = validate_encapsulation_key(input, context, keys)?;
@@ -268,8 +214,8 @@ where
     Ok(structured)
 }
 
-/// Sequential encapsulated driver shared by the public operation delegate.
-pub(crate) fn paco_bootstrap_into<BE, F, K, Src>(
+/// Sequential encapsulated driver.
+pub(crate) fn ckks_paco_bootstrap_into_derived<BE, F, K, Src>(
     module: &Module<BE>,
     output: &mut CKKSCiphertextOwned<BE>,
     input: &Src,
@@ -278,25 +224,9 @@ pub(crate) fn paco_bootstrap_into<BE, F, K, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
-    Module<BE>: CKKSMulOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSRotateOps<BE>
-        + PaCoSlotOps<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWERotate<BE>
-        + GLWEAutomorphism<BE>
-        + GLWELinearTransformations<BE>
-        + GLWEKeyswitch<BE>
-        + CyclotomicOrder,
+    BE: CKKSPaCoImpl + CKKSEncodingImpl<F>,
     K: PaCoKeys<BE>,
     F: PaCoScalar,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let (kappa, stride) = branch_schedule(context, input.log_sparsity())?;
@@ -317,7 +247,7 @@ where
     clippy::too_many_arguments,
     reason = "the internal driver mirrors the explicit caller-allocated public parallel operation"
 )]
-pub(crate) fn paco_bootstrap_parallel_direct_into<BE, F, K, Src>(
+pub(crate) fn ckks_paco_bootstrap_parallel_direct_into_derived<BE, F, K, Src>(
     module: &Module<BE>,
     output: &mut CKKSCiphertextOwned<BE>,
     input: &Src,
@@ -327,27 +257,10 @@ pub(crate) fn paco_bootstrap_parallel_direct_into<BE, F, K, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
-    Module<BE>: CKKSMulOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSRotateOps<BE>
-        + PaCoSlotOps<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWERotate<BE>
-        + GLWEAutomorphism<BE>
-        + GLWELinearTransformations<BE>
-        + GLWEKeyswitch<BE>
-        + CyclotomicOrder,
+    BE: CKKSPaCoImpl + CKKSEncodingImpl<F>,
     K: PaCoKeys<BE> + Sync,
     F: PaCoScalar,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
-    PaCoContext<BE, F>: Sync,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Send + Sync,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
 {
     let (kappa, stride) = branch_schedule(context, input.log_sparsity())?;
@@ -377,27 +290,10 @@ fn paco_bootstrap_parallel_direct_validated_into<BE, F, K, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
-    Module<BE>: CKKSMulOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSRotateOps<BE>
-        + PaCoSlotOps<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWERotate<BE>
-        + GLWEAutomorphism<BE>
-        + GLWELinearTransformations<BE>
-        + GLWEKeyswitch<BE>
-        + CyclotomicOrder,
+    BE: CKKSPaCoImpl + CKKSEncodingImpl<F>,
     K: PaCoKeys<BE> + Sync,
     F: PaCoScalar,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
-    PaCoContext<BE, F>: Sync,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Send + Sync,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
 {
     // The caller thread evaluates branch zero while the remaining execution
@@ -562,7 +458,7 @@ where
     clippy::too_many_arguments,
     reason = "the internal driver mirrors the explicit caller-allocated public parallel operation"
 )]
-pub(crate) fn paco_bootstrap_parallel_into<BE, F, K, Src>(
+pub(crate) fn ckks_paco_bootstrap_parallel_into_derived<BE, F, K, Src>(
     module: &Module<BE>,
     output: &mut CKKSCiphertextOwned<BE>,
     input: &Src,
@@ -572,27 +468,10 @@ pub(crate) fn paco_bootstrap_parallel_into<BE, F, K, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
-    Module<BE>: CKKSMulOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSRotateOps<BE>
-        + PaCoSlotOps<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWERotate<BE>
-        + GLWEAutomorphism<BE>
-        + GLWELinearTransformations<BE>
-        + GLWEKeyswitch<BE>
-        + CyclotomicOrder,
+    BE: CKKSPaCoImpl + CKKSEncodingImpl<F>,
     K: PaCoKeys<BE> + Sync,
     F: PaCoScalar,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
-    PaCoContext<BE, F>: Sync,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Send + Sync,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let (kappa, stride) = branch_schedule(context, input.log_sparsity())?;

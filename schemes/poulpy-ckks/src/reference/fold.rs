@@ -30,7 +30,7 @@ use crate::{
         CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSModuleAlloc, CKKSRingCiphertext,
         validation::{validate_gadget_backend_view, validate_storage_capacity},
     },
-    reference::ring_map::{ckks_ci_embed_keyless, ckks_ci_trace_keyless, ckks_ci_trace_keyless_tmp_bytes},
+    oep::derived::ring_map::{ckks_ci_embed_keyless, ckks_ci_trace_keyless, ckks_ci_trace_keyless_tmp_bytes},
 };
 
 /// Batch positions: an input alone, or a real pair `(re, im)`.

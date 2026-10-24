@@ -9,24 +9,22 @@
 use crate::{CKKSResult as Result, ckks_ensure};
 use anyhow::Context;
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWEInfos, GLWEPlaintextInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos,
-    TorusPrecision,
+    GGLWEInfos, GLWEInfos, GLWEPlaintextInfos, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, TorusPrecision,
 };
-use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use super::ops::PaCoSlotOps;
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSSubOps, PaCoScalar},
     layouts::{
-        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned,
+        CKKSCiphertextOwned, CKKSModuleAlloc,
         paco::{
             context::{PaCoContext, PaCoPsiTailMaterial},
             keyset::{PaCoKeyParameters, PaCoKeys, validate_backend_storage_capacity},
             plan::PaCoPlan,
         },
     },
-    oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl},
+    oep::{CKKSEncodingImpl, CKKSPaCoImpl},
 };
 
 /// Metadata predicted for a direct PaCo branch after the final, budget-neutral
@@ -176,9 +174,8 @@ pub(crate) fn validate_runtime<BE, F, K, Src>(
     keys: &K,
 ) -> Result<(usize, usize)>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl,
+    BE: Backend,
     F: PaCoScalar,
-    Module<BE>: CyclotomicOrder,
     K: PaCoKeys<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
@@ -331,20 +328,9 @@ pub(crate) fn paco_bootstrap_branch_validated_into<BE, F, K, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: CKKSPaCoImpl + CKKSEncodingImpl<F>,
     K: PaCoKeys<BE>,
-    Module<BE>: CKKSMulOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSCopyOps<BE>
-        + PaCoSlotOps<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSModuleAlloc<BE>
-        + CyclotomicOrder,
     F: PaCoScalar,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let (output_scale, expected_final_k) = output_meta;
@@ -388,7 +374,7 @@ where
     // Step 3 — Homomorphic trace `Tr_{N/2 → slots}`. Collapse the redundant
     // coefficient-class copies of the phase into the working slot layout. One
     // fused automorphism-add per level; consumes no budget.
-    module.ckks_slot_trace_assign(output, plan.half_n(), plan.slots(), keys.rotation_keys(), scratch)?;
+    BE::ckks_slot_trace_assign(module, output, plan.half_n(), plan.slots(), keys.rotation_keys(), scratch)?;
 
     // Step 4 — CoeffsToSlots (body). Apply the compiled C2S factor chain (one
     // linear transformation per factor matrix), moving the packed coefficients
@@ -435,7 +421,8 @@ where
     // reduction (`log(slots/2C)` ct×ct products, relinearized via the tensor
     // key) that multiplies the per-class phases together — the core nonlinear
     // stage of the branch. Consumes `log(slots/2C)·log_delta` budget bits.
-    module.ckks_slot_product_assign(
+    BE::ckks_slot_product_assign(
+        module,
         output,
         plan.slots(),
         plan.c().checked_mul(2).context("PaCo product target overflows usize")?,

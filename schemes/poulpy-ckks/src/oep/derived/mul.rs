@@ -7,7 +7,7 @@ use poulpy_core::layouts::{GLWEInfos, GLWEToBackendRef};
 use poulpy_hal::layouts::{Module, PrepareHint, ScratchArena};
 
 /// A left operand of `a`'s layout under `hint`, allocated then prepared into from `a`.
-pub(crate) fn ckks_prepare_left<BE, A>(
+pub(crate) fn ckks_prepare_left_derived<BE, A>(
     module: &Module<BE>,
     a: &A,
     hint: PrepareHint,
@@ -23,7 +23,7 @@ where
 }
 
 /// As [`ckks_prepare_left`], a right operand.
-pub(crate) fn ckks_prepare_right<BE, A>(
+pub(crate) fn ckks_prepare_right_derived<BE, A>(
     module: &Module<BE>,
     a: &A,
     hint: PrepareHint,

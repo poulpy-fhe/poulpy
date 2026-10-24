@@ -479,10 +479,10 @@ where
     };
     let invalid = |reason: &str| {
         let want = CKKSCompositionError::InvalidOperand {
-            op: "add_many",
+            op: "ckks_add_many",
             reason: reason.into(),
         };
-        move |err: &CKKSError| assert_ckks_error("add_many", err, want.clone())
+        move |err: &CKKSError| assert_ckks_error("ckks_add_many", err, want.clone())
     };
     let empty: Vec<&CKKSCiphertextOwned<BE>> = Vec::new();
     let several = [&ct, &ct, &ct];
@@ -502,10 +502,7 @@ where
 
     let internal = |err: &CKKSError| {
         assert!(
-            matches!(err, CKKSError::Internal(_))
-                && err
-                    .to_string()
-                    .contains("add_many: scratch below CKKSAddManyOps::ckks_add_many_tmp_bytes"),
+            matches!(err, CKKSError::Internal(_)) && err.to_string().contains("ckks_add_many: scratch below its query"),
             "unexpected error: {err}"
         )
     };
