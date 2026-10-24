@@ -9,9 +9,10 @@ use poulpy_hal::{
         VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxRotate, VecZnxZero, VmpApplyDftToDft,
         VmpApplyDftToDftTmpBytes,
     },
+    execution::TaskExecutor,
     layouts::{
-        Backend, Module, ScratchArena, SvpPPolOwned, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendRef,
-        vec_znx_backend_ref_from_mut, vec_znx_big_backend_ref_from_mut, vec_znx_dft_backend_ref_from_mut,
+        Backend, Module, ScratchArena, SvpPPolOwned, VecZnxDftToBackendMut, VecZnxToBackendRef, vec_znx_backend_ref_from_mut,
+        vec_znx_big_backend_ref_from_mut, vec_znx_dft_backend_ref_from_mut,
     },
     oep::HalVecZnxImpl,
 };
@@ -27,92 +28,11 @@ use poulpy_core::GLWEBytesOf;
 use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
 
 /// Canonical lower-layer composition for `blind_rotation_execute_tmp_bytes`.
+///
+/// For a block key, it reserves the products of a whole block, each with its own
+/// worker scratch, exactly when `BE::TaskExecutor::IS_PARALLEL`, as
+/// [`blind_rotation_execute_ref`] runs them.
 pub fn blind_rotation_execute_tmp_bytes_ref<BE, G, B>(
-    module: &Module<BE>,
-    block_size: usize,
-    extension_factor: usize,
-    glwe_infos: &G,
-    brk_infos: &B,
-) -> usize
-where
-    G: GLWEInfos,
-    B: BlindRotationKeyInfos,
-    BE: Backend<ZnxWord = i64>,
-    Module<BE>: BlindRotationModSwitch<BE>
-        + VecZnxDftBytesOf
-        + VecZnxBigBytesOf
-        + VmpApplyDftToDftTmpBytes
-        + VecZnxBigNormalizeTmpBytes
-        + VecZnxIdftApplyTmpBytes
-        + GLWEExternalProduct<BE>
-        + ModuleN
-        + VecZnxRotate<BE>
-        + VecZnxDftApply<BE>
-        + VecZnxDftZero<BE>
-        + VmpApplyDftToDft<BE>
-        + SvpApplyDftToDft<BE>
-        + VecZnxDftAddAssign<BE>
-        + VecZnxDftSubAssign<BE>
-        + VecZnxIdftApply<BE>
-        + VecZnxBigAddSmallAssign<BE>
-        + VecZnxBigNormalize<BE>
-        + GLWEMulXpMinusOne<BE>
-        + GLWEAdd<BE>
-        + GLWECopy<BE>
-        + GLWEZero<BE>
-        + GLWENormalize<BE>
-        + VecZnxCopy<BE>
-        + VecZnxZero<BE>
-        + Sync,
-    BE: HalVecZnxImpl,
-{
-    blind_rotation_execute_tmp_bytes_selected::<BE, G, B, false>(module, block_size, extension_factor, glwe_infos, brk_infos)
-}
-
-/// Explicit block scheduling helper; selected by backend wiring, never inferred.
-pub fn blind_rotation_execute_tmp_bytes_parallel<BE, G, B>(
-    module: &Module<BE>,
-    block_size: usize,
-    extension_factor: usize,
-    glwe_infos: &G,
-    brk_infos: &B,
-) -> usize
-where
-    G: GLWEInfos,
-    B: BlindRotationKeyInfos,
-    BE: Backend<ZnxWord = i64>,
-    Module<BE>: BlindRotationModSwitch<BE>
-        + VecZnxDftBytesOf
-        + VecZnxBigBytesOf
-        + VmpApplyDftToDftTmpBytes
-        + VecZnxBigNormalizeTmpBytes
-        + VecZnxIdftApplyTmpBytes
-        + GLWEExternalProduct<BE>
-        + ModuleN
-        + VecZnxRotate<BE>
-        + VecZnxDftApply<BE>
-        + VecZnxDftZero<BE>
-        + VmpApplyDftToDft<BE>
-        + SvpApplyDftToDft<BE>
-        + VecZnxDftAddAssign<BE>
-        + VecZnxDftSubAssign<BE>
-        + VecZnxIdftApply<BE>
-        + VecZnxBigAddSmallAssign<BE>
-        + VecZnxBigNormalize<BE>
-        + GLWEMulXpMinusOne<BE>
-        + GLWEAdd<BE>
-        + GLWECopy<BE>
-        + GLWEZero<BE>
-        + GLWENormalize<BE>
-        + VecZnxCopy<BE>
-        + VecZnxZero<BE>
-        + Sync,
-    BE: HalVecZnxImpl,
-{
-    blind_rotation_execute_tmp_bytes_selected::<BE, G, B, true>(module, block_size, extension_factor, glwe_infos, brk_infos)
-}
-
-fn blind_rotation_execute_tmp_bytes_selected<BE, G, B, const PARALLEL: bool>(
     module: &Module<BE>,
     block_size: usize,
     extension_factor: usize,
@@ -171,18 +91,16 @@ where
             + module
                 .vec_znx_big_normalize_tmp_bytes()
                 .max(module.vec_znx_idft_apply_tmp_bytes());
-        if extension_factor == 1 && PARALLEL {
+        if extension_factor == 1 {
+            let slots = block_slots::<BE>(block_size);
+            let workers = poulpy_hal::execution::scratch_workers::<BE::TaskExecutor>(block_size);
             acc_dft
-                + 2 * block_size * vmp_res
-                + (block_size * poulpy_hal::execution::worker_scratch_bytes::<BE>(vmp))
+                + (2 * slots + 1) * vmp_res
+                + (workers * poulpy_hal::execution::worker_scratch_bytes::<BE>(vmp))
                     .max(normalize)
                     .max(copy_out)
         } else {
-            let acc = if extension_factor > 1 {
-                BE::bytes_of_vec_znx(module.n(), cols, glwe_infos.size()) * extension_factor
-            } else {
-                0
-            };
+            let acc = BE::bytes_of_vec_znx(module.n(), cols, glwe_infos.size()) * extension_factor;
             acc + acc_dft + 2 * vmp_res + module.bytes_of_vec_znx_dft(module.n(), 1, size) + vmp.max(normalize).max(copy_out)
         }
     } else {
@@ -201,92 +119,12 @@ where
 }
 
 /// Canonical lower-layer composition for `blind_rotation_execute`.
+///
+/// A block key runs the products of a block in parallel exactly when
+/// `BE::TaskExecutor::IS_PARALLEL`, one at a time otherwise, and adds their
+/// contributions in index order, so every executor and pool width returns the
+/// same bytes.
 pub fn blind_rotation_execute_ref<BE, R, L>(
-    module: &Module<BE>,
-    res: &mut R,
-    lwe: &L,
-    lut: &LookupTable<BE::OwnedBuf, BE::ZnxWord>,
-    brk: &BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    L: LWEToBackendRef<BE> + LWEInfos,
-    BE: Backend<ZnxWord = i64>,
-    Module<BE>: BlindRotationModSwitch<BE>
-        + VecZnxDftBytesOf
-        + VecZnxBigBytesOf
-        + VmpApplyDftToDftTmpBytes
-        + VecZnxBigNormalizeTmpBytes
-        + VecZnxIdftApplyTmpBytes
-        + GLWEExternalProduct<BE>
-        + ModuleN
-        + VecZnxRotate<BE>
-        + VecZnxDftApply<BE>
-        + VecZnxDftZero<BE>
-        + VmpApplyDftToDft<BE>
-        + SvpApplyDftToDft<BE>
-        + VecZnxDftAddAssign<BE>
-        + VecZnxDftSubAssign<BE>
-        + VecZnxIdftApply<BE>
-        + VecZnxBigAddSmallAssign<BE>
-        + VecZnxBigNormalize<BE>
-        + GLWEMulXpMinusOne<BE>
-        + GLWEAdd<BE>
-        + GLWECopy<BE>
-        + GLWEZero<BE>
-        + GLWENormalize<BE>
-        + VecZnxCopy<BE>
-        + VecZnxZero<BE>
-        + Sync,
-    BE: HalVecZnxImpl,
-{
-    blind_rotation_execute_selected::<BE, R, L, false>(module, res, lwe, lut, brk, scratch)
-}
-
-/// Explicit block scheduling helper; selected by backend wiring, never inferred.
-pub fn blind_rotation_execute_parallel<BE, R, L>(
-    module: &Module<BE>,
-    res: &mut R,
-    lwe: &L,
-    lut: &LookupTable<BE::OwnedBuf, BE::ZnxWord>,
-    brk: &BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    L: LWEToBackendRef<BE> + LWEInfos,
-    BE: Backend<ZnxWord = i64>,
-    Module<BE>: BlindRotationModSwitch<BE>
-        + VecZnxDftBytesOf
-        + VecZnxBigBytesOf
-        + VmpApplyDftToDftTmpBytes
-        + VecZnxBigNormalizeTmpBytes
-        + VecZnxIdftApplyTmpBytes
-        + GLWEExternalProduct<BE>
-        + ModuleN
-        + VecZnxRotate<BE>
-        + VecZnxDftApply<BE>
-        + VecZnxDftZero<BE>
-        + VmpApplyDftToDft<BE>
-        + SvpApplyDftToDft<BE>
-        + VecZnxDftAddAssign<BE>
-        + VecZnxDftSubAssign<BE>
-        + VecZnxIdftApply<BE>
-        + VecZnxBigAddSmallAssign<BE>
-        + VecZnxBigNormalize<BE>
-        + GLWEMulXpMinusOne<BE>
-        + GLWEAdd<BE>
-        + GLWECopy<BE>
-        + GLWEZero<BE>
-        + GLWENormalize<BE>
-        + VecZnxCopy<BE>
-        + VecZnxZero<BE>
-        + Sync,
-    BE: HalVecZnxImpl,
-{
-    blind_rotation_execute_selected::<BE, R, L, true>(module, res, lwe, lut, brk, scratch)
-}
-
-fn blind_rotation_execute_selected<BE, R, L, const PARALLEL: bool>(
     module: &Module<BE>,
     res: &mut R,
     lwe: &L,
@@ -347,7 +185,7 @@ fn blind_rotation_execute_selected<BE, R, L, const PARALLEL: bool>(
                 );
                 execute_block_binary_extended(module, res, lwe, lut, brk, scratch)
             } else if brk.block_size() > 1 {
-                execute_block_binary::<_, _, _, BE, PARALLEL>(module, res, lwe, lut, brk, scratch);
+                execute_block_binary(module, res, lwe, lut, brk, scratch);
             } else {
                 execute_standard(module, res, lwe, lut, brk, scratch);
             }
@@ -573,7 +411,7 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64>>(
     }
 }
 
-fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64>, const PARALLEL: bool>(
+fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64>>(
     module: &M,
     res: &mut R,
     lwe: &L,
@@ -629,41 +467,42 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64>, const PARALLEL: boo
     }
 
     let block_size: usize = brk.block_size();
+    let slots = block_slots::<BE>(block_size);
+    let workers = poulpy_hal::execution::worker_count::<BE::TaskExecutor>(block_size, slots);
+    let worker_scratch_bytes = poulpy_hal::execution::worker_scratch_bytes::<BE>(module.vmp_apply_dft_to_dft_tmp_bytes(
+        brk.size(),
+        dnum,
+        dnum,
+        cols,
+        cols,
+        brk.size(),
+    ));
+    let x_pow_a = brk.x_pow_a.as_ref().expect("invalid key: x_pow_a has not been initialized");
 
     // ACC + [sum DFT(X^ai -1) * (DFT(ACC) x BRKi)]
 
     let scratch = scratch.borrow();
     let (mut acc_dft, scratch_1) = scratch.take_vec_znx_dft_scratch(module.n(), cols, dnum);
+    let (mut acc_add_dft, scratch_2) = scratch_1.take_vec_znx_dft_scratch(module.n(), cols, brk.size());
+    let (vmp_res, scratch_3) = scratch_2.take_vec_znx_dft_slice_scratch(module.n(), slots, cols, brk.size());
+    let (contributions, mut scratch_4) = scratch_3.take_vec_znx_dft_slice_scratch(module.n(), slots, cols, brk.size());
+    let mut tasks: Vec<_> = vmp_res.into_iter().zip(contributions).collect();
 
-    if PARALLEL {
-        let (vmp_res, scratch_2) = scratch_1.take_vec_znx_dft_slice_scratch(module.n(), block_size, cols, brk.size());
-        let (contributions, mut scratch_3) = scratch_2.take_vec_znx_dft_slice_scratch(module.n(), block_size, cols, brk.size());
-        let mut tasks: Vec<_> = vmp_res.into_iter().zip(contributions).collect();
-        let workers = poulpy_hal::execution::worker_count::<BE::TaskExecutor>(block_size, block_size);
-        let worker_scratch_bytes = poulpy_hal::execution::worker_scratch_bytes::<BE>(module.vmp_apply_dft_to_dft_tmp_bytes(
-            brk.size(),
-            dnum,
-            dnum,
-            cols,
-            cols,
-            brk.size(),
-        ));
+    for (ai, ski) in izip!(a.chunks_exact(block_size), brk.data.chunks_exact(block_size)) {
+        for j in 0..cols {
+            let out_ref = <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(
+                out_tmp.data(),
+            );
+            module.vec_znx_dft_apply(1, 0, &mut acc_dft, j, &out_ref, j);
+            module.vec_znx_dft_zero(&mut acc_add_dft, j);
+        }
 
-        let x_pow_a = brk.x_pow_a.as_ref().expect("invalid key: x_pow_a has not been initialized");
-
-        for (ai, ski) in izip!(a.chunks_exact(block_size), brk.data.chunks_exact(block_size)) {
-            for j in 0..cols {
-                let out_ref = <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(
-                    out_tmp.data(),
-                );
-                module.vec_znx_dft_apply(1, 0, &mut acc_dft, j, &out_ref, j);
-            }
-
-            let (worker_scratch, _) = scratch_3.borrow().split(workers, worker_scratch_bytes);
-            let acc_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&acc_dft);
+        let acc_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&acc_dft);
+        for first in (0..block_size).step_by(slots) {
+            let (worker_scratch, _) = scratch_4.borrow().split(workers, worker_scratch_bytes);
             poulpy_hal::execution::for_each_with_scratch::<BE::TaskExecutor, BE, _, _>(
                 &mut tasks,
-                0,
+                first,
                 worker_scratch,
                 &|index, task, scratch| {
                     let (vmp_res, contribution) = task;
@@ -681,119 +520,45 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64>, const PARALLEL: boo
                 },
             );
 
-            let (sum, rest) = tasks.split_first_mut().unwrap();
-            for (_, contribution) in rest {
+            for (_, contribution) in &tasks {
                 for col in 0..cols {
                     let contribution_ref = vec_znx_dft_backend_ref_from_mut::<BE>(contribution);
-                    module.vec_znx_dft_add_assign(&mut sum.1, col, &contribution_ref, col);
+                    module.vec_znx_dft_add_assign(&mut acc_add_dft, col, &contribution_ref, col);
                 }
             }
+        }
 
-            let (mut acc_add_big, mut scratch_4) = scratch_3.borrow().take_vec_znx_big_scratch(module.n(), 1, brk.size());
-            for col in 0..cols {
-                let contribution_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&sum.1);
-                module.vec_znx_idft_apply(&mut acc_add_big, 0, &contribution_ref, col, &mut scratch_4.borrow());
-                {
-                    let out_ref =
-                        <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(
-                            out_tmp.data(),
-                        );
-                    module.vec_znx_big_add_small_assign(&mut acc_add_big, 0, &out_ref, col);
-                }
-                let acc_add_big_ref = vec_znx_big_backend_ref_from_mut::<BE>(&acc_add_big);
-                let mut out_backend = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendMut<BE>>::to_backend_mut(&mut out_tmp);
-                module.vec_znx_big_normalize(
-                    out_backend.data_mut(),
-                    base2k,
-                    res_k,
-                    0,
-                    col,
-                    &acc_add_big_ref,
-                    base2k,
-                    0,
-                    &mut scratch_4.borrow(),
+        let (mut acc_add_big, mut scratch_5) = scratch_4.borrow().take_vec_znx_big_scratch(module.n(), 1, brk.size());
+        for col in 0..cols {
+            let acc_add_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&acc_add_dft);
+            module.vec_znx_idft_apply(&mut acc_add_big, 0, &acc_add_dft_ref, col, &mut scratch_5.borrow());
+            {
+                let out_ref = <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(
+                    out_tmp.data(),
                 );
+                module.vec_znx_big_add_small_assign(&mut acc_add_big, 0, &out_ref, col);
             }
-        }
-
-        module.glwe_copy(res, &out_tmp, &mut scratch_3);
-        return;
-    }
-
-    let (mut vmp_res, scratch_2) = scratch_1.take_vec_znx_dft_scratch(module.n(), cols, brk.size());
-    let (mut acc_add_dft, scratch_3) = scratch_2.take_vec_znx_dft_scratch(module.n(), cols, brk.size());
-    let (mut vmp_xai, mut scratch_4) = scratch_3.take_vec_znx_dft_scratch(module.n(), 1, brk.size());
-
-    let x_pow_a: &Vec<SvpPPolOwned<BE>>;
-    if let Some(b) = &brk.x_pow_a {
-        x_pow_a = b
-    } else {
-        panic!("invalid key: x_pow_a has not been initialized")
-    }
-
-    for (ai, ski) in izip!(a.chunks_exact(block_size), brk.data.chunks_exact(block_size)) {
-        for j in 0..cols {
-            let out_ref = <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(
-                out_tmp.data(),
+            let acc_add_big_ref = vec_znx_big_backend_ref_from_mut::<BE>(&acc_add_big);
+            let mut out_backend = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendMut<BE>>::to_backend_mut(&mut out_tmp);
+            module.vec_znx_big_normalize(
+                out_backend.data_mut(),
+                base2k,
+                res_k,
+                0,
+                col,
+                &acc_add_big_ref,
+                base2k,
+                0,
+                &mut scratch_5.borrow(),
             );
-            module.vec_znx_dft_apply(1, 0, &mut acc_dft, j, &out_ref, j);
-            module.vec_znx_dft_zero(&mut acc_add_dft, j)
-        }
-
-        for (aii, skii) in izip!(ai.iter(), ski.iter()) {
-            let ai_pos: usize = ((aii + two_n as i64) & (two_n - 1) as i64) as usize;
-
-            // vmp_res = DFT(acc) * BRK[i]
-            let skii_ref = skii.data().to_backend_ref();
-            module.vmp_apply_dft_to_dft(&mut vmp_res, &acc_dft.to_backend_ref(), &skii_ref, 0, &mut scratch_4.borrow());
-
-            // DFT(X^ai -1) * (DFT(acc) * BRK[i])
-            for i in 0..cols {
-                let x_pow_a_ref = x_pow_a[ai_pos].to_backend_ref();
-                let vmp_res_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&vmp_res);
-                {
-                    let mut vmp_xai_backend = vmp_xai.to_backend_mut();
-                    module.svp_apply_dft_to_dft(&mut vmp_xai_backend, 0, &x_pow_a_ref, 0, &vmp_res_ref, i);
-                }
-                let vmp_res_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&vmp_res);
-                let vmp_xai_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&vmp_xai);
-                module.vec_znx_dft_add_assign(&mut acc_add_dft, i, &vmp_xai_ref, 0);
-                module.vec_znx_dft_sub_assign(&mut acc_add_dft, i, &vmp_res_ref, i);
-            }
-        }
-
-        {
-            let (mut acc_add_big, mut scratch_5) = scratch_4.borrow().take_vec_znx_big_scratch(module.n(), 1, brk.size());
-
-            for i in 0..cols {
-                let acc_add_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&acc_add_dft);
-                module.vec_znx_idft_apply(&mut acc_add_big, 0, &acc_add_dft_ref, i, &mut scratch_5.borrow());
-                {
-                    let out_ref =
-                        <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(
-                            out_tmp.data(),
-                        );
-                    module.vec_znx_big_add_small_assign(&mut acc_add_big, 0, &out_ref, i);
-                }
-                let acc_add_big_ref = vec_znx_big_backend_ref_from_mut::<BE>(&acc_add_big);
-                {
-                    let mut out_backend = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendMut<BE>>::to_backend_mut(&mut out_tmp);
-                    module.vec_znx_big_normalize(
-                        out_backend.data_mut(),
-                        base2k,
-                        res_k,
-                        0,
-                        i,
-                        &acc_add_big_ref,
-                        base2k,
-                        0,
-                        &mut scratch_5.borrow(),
-                    );
-                }
-            }
         }
     }
     module.glwe_copy(res, &out_tmp, &mut scratch_4);
+}
+
+/// Block products held at once: the whole block when the executor runs them in parallel.
+fn block_slots<BE: Backend>(block_size: usize) -> usize {
+    if BE::TaskExecutor::IS_PARALLEL { block_size } else { 1 }
 }
 
 fn execute_standard<R, L, M, BE: Backend<ZnxWord = i64>>(
