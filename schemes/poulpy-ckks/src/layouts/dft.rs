@@ -5,7 +5,7 @@
 //! module; this file holds the (backend-free) parameter struct, its enums, and
 //! the prepared [`DFTMatrix`] that carries the encoded/prepared factor operands.
 //! The homomorphic DFT is documented as a stage of the bootstrapping pipeline in
-//! [`docs/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/bootstrapping.md).
+//! [`docs/guides/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/guides/bootstrapping.md).
 
 use core::marker::PhantomData;
 use std::collections::{BTreeMap, BTreeSet};
@@ -62,7 +62,7 @@ pub enum DFTOutputFormat {
 /// one layer per matrix, no merging; `vec![(log_slots, g)]` = a single
 /// fully-merged matrix; anything in between). A single uniform per-factor scale
 /// is used (see the homomorphic-DFT scale accounting in
-/// [`docs/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/bootstrapping.md)).
+/// [`docs/guides/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/guides/bootstrapping.md)).
 ///
 /// **Convention: the schedule is in evaluation order** — the factor matrices are
 /// applied to the ciphertext left-to-right, so the first step is the

@@ -373,8 +373,8 @@ Leveled operations are invoked through traits implemented on
 | `CKKSDFTOps` / `CKKSDFTMatrixOps` | homomorphic DFT (`CoeffsToSlots` / `SlotsToCoeffs`) and its compiled plaintext matrices |
 | `CKKSEvalModOps` | homomorphic modular reduction (`EvalMod`) |
 | `CKKSBootstrappingOps` | bootstrapping pipeline (mod-raise, homomorphic DFT, `EvalMod`) |
-| `CKKSPaCoOps` | PaCo bootstrapping (see [`docs/paco.md`](../../docs/paco.md)) |
-| `CKKSShipOps` | SHIP half bootstrapping (see [`docs/ship.md`](../../docs/ship.md)) |
+| `CKKSPaCoOps` | PaCo bootstrapping (see [`docs/guides/paco.md`](../../docs/guides/paco.md)) |
+| `CKKSShipOps` | SHIP half bootstrapping (see [`docs/guides/ship.md`](../../docs/guides/ship.md)) |
 | `CKKSAllOpsTmpBytes` | scratch size queries for all operations |
 
 For example, ciphertext addition uses `CKKSAddOps<BE>` and is called through
@@ -417,8 +417,8 @@ The core leveled evaluator building blocks are now implemented:
 - homomorphic DFT (`CoeffsToSlots` / `SlotsToCoeffs`)
 - homomorphic modular reduction (`EvalMod`)
 - bootstrapping (mod-raise, homomorphic DFT, and `EvalMod`)
-- PaCo bootstrapping (partial CoeffsToSlots, without ModUp or `EvalMod`; see [`docs/paco.md`](../../docs/paco.md))
-- SHIP half bootstrapping (mux blind rotations over a sparse secret, without ModUp or `EvalMod`; see [`docs/ship.md`](../../docs/ship.md))
+- PaCo bootstrapping (partial CoeffsToSlots, without ModUp or `EvalMod`; see [`docs/guides/paco.md`](../../docs/guides/paco.md))
+- SHIP half bootstrapping (mux blind rotations over a sparse secret, without ModUp or `EvalMod`; see [`docs/guides/ship.md`](../../docs/guides/ship.md))
 
 Higher-level functionality on top of that foundation:
 

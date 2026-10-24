@@ -1,6 +1,6 @@
 # Implementing CKKS operations
 
-Public evaluator calls follow the [layering contract](../../../docs/layering-contract.md). The CKKS crate does not
+Public evaluator calls follow the [layering contract](../../../docs/guides/layering-contract.md). The CKKS crate does not
 select a concrete backend or require host storage in these dispatch contracts.
 
 ## Reference and derived implementations
@@ -34,7 +34,7 @@ compositions with integration tests, not additional OEP families.
 
 ## What an override must preserve
 
-An override reproduces the reference as the [layering contract](../../../docs/layering-contract.md) states. CKKS
+An override reproduces the reference as the [layering contract](../../../docs/guides/layering-contract.md) states. CKKS
 metadata is observable: `k`, radix, rank, `log_delta`,
 `log_sparsity`, and `SlotsKind` must agree, and `log_budget` remains derived from
 `k - log_delta`. Preserve the core canonical flag and

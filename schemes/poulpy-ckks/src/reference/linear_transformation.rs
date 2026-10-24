@@ -3,7 +3,7 @@
 //! Computes the plaintext width, convolution offset, and final result metadata,
 //! then delegates the actual evaluation to the scheme-agnostic core engine
 //! [`GLWELinearTransformations`](trait@poulpy_core::GLWELinearTransformations). See
-//! `docs/linear_transformation.md`.
+//! `docs/guides/linear_transformation.md`.
 
 use crate::SlotsKind;
 use crate::{CKKSError, CKKSResult as Result, ckks_ensure, operand_cyclotomic_order};

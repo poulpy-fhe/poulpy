@@ -4,7 +4,7 @@
 //! evaluation layer (encode factors, chain linear transforms + rescale, the
 //! real/imag format wrappers) lands in later increments. The homomorphic DFT is
 //! documented as a stage of the bootstrapping pipeline in
-//! [`docs/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/bootstrapping.md).
+//! [`docs/guides/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/guides/bootstrapping.md).
 
 pub mod eval;
 pub mod matrices;

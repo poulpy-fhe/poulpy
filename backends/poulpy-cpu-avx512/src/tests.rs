@@ -356,7 +356,7 @@ poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_fft64_rayon, backend = c
 #[cfg(feature = "enable-bin-fhe")]
 poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_ntt4x30_rayon, backend = crate::NTT4x30Avx512Rayon);
 
-/// On-demand thread-count diagnostic; see `docs/performance.md`.
+/// On-demand thread-count diagnostic; see `docs/guides/performance.md`.
 #[cfg(feature = "enable-rayon")]
 mod tuning {
     use poulpy_cpu_rayon::tuning::{Mode, ProbeShape, default_thread_sweep, thread_scaling};

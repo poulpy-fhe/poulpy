@@ -1,6 +1,6 @@
 # Binary-FHE operation contracts
 
-Public `api` traits follow the [layering contract](../../../docs/layering-contract.md). The `CGGI` marker
+Public `api` traits follow the [layering contract](../../../docs/guides/layering-contract.md). The `CGGI` marker
 selects the blind-rotation algorithm, independently of storage and scheduling.
 
 ## Public API organization
@@ -53,7 +53,7 @@ have caller-selected parity tests.
 
 ## Replacing an operation
 
-An override reproduces the reference as the [layering contract](../../../docs/layering-contract.md) states. Parity
+An override reproduces the reference as the [layering contract](../../../docs/guides/layering-contract.md) states. Parity
 compares coefficient-domain outputs,
 precision, rank, radix and allocated tails exactly. Prepared representations
 belong to each backend: compare their observable results, not their bytes.

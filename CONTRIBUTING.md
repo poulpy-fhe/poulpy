@@ -59,4 +59,4 @@ If you touch an accelerated backend, run its lane too, with `RUSTFLAGS="-C targe
 
 Every user-visible change gets an entry under `## [Unreleased]` in [CHANGELOG.md](./CHANGELOG.md), in the section of the crate it affects. Prefix an entry that breaks an API with `**Breaking:**`.
 
-The workspace crates share one version, bumped together in a single release commit that also cuts `[Unreleased]` into a dated section. Releases are tagged on `main`.
+The workspace crates share one version, set in `[workspace.package]` and in the internal `[workspace.dependencies]` of the root `Cargo.toml` and bumped together in a single release commit that also cuts `[Unreleased]` into a dated section. Releases are tagged on `main`.

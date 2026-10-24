@@ -1,6 +1,6 @@
 # Implementing BLAS operations
 
-Public matrix calls follow the [layering contract](../../../docs/layering-contract.md): `Module<BE>` implements
+Public matrix calls follow the [layering contract](../../../docs/guides/layering-contract.md): `Module<BE>` implements
 `BlasMatInterOps`, `BlasMatIntraOps` and `BlasMatMulOps` for every backend that
 implements the matching `*Impl` trait, and each OEP method runs its validator
 first. The BLAS
@@ -86,7 +86,7 @@ the same `#[cfg]` gates as `ckks_impl.rs`:
 ```
 
 To replace a family, replace the type's `impl_blas_reference_full!` line with
-the macros of the three families it keeps, as the [layering contract](../../../docs/layering-contract.md)
+the macros of the three families it keeps, as the [layering contract](../../../docs/guides/layering-contract.md)
 states. The expansion of each family macro, in [`oep`](../src/oep/), spells out
 every signature and its forwarding call, and each family's `# Safety` section
 states what an implementation must reproduce. Three replacements cover most needs:

@@ -2,7 +2,7 @@
 # 🐙 Poulpy
 
 <p align="center">
-<img src="poulpy.png" />
+<img src="docs/img/poulpy.png" />
 </p>
 
 [![CI](https://github.com/poulpy-fhe/poulpy/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/poulpy-fhe/poulpy/actions/workflows/ci.yml)
@@ -245,7 +245,7 @@ This provides the following benefits:
 
 - **Deterministic computation:** Although it is defined on the Torus, bivariate arithmetic remains integer polynomial arithmetic, ensuring all computations are deterministic. Outputs are reproducible and identical regardless of the backend or hardware (even when using floating point).
 
-The bivariate representation recovers bit-granular scale and capacity management that RNS-CKKS lacks. A recent RNS-based technique, [Grafting](https://eprint.iacr.org/2024/1014) by Cheon et al., targets the same goal from inside the RNS world by decoupling scale factors from the modulus. For a detailed comparison of the two approaches, see [docs/grafting-vs-bivariate.md](docs/grafting-vs-bivariate.md).
+The bivariate representation recovers bit-granular scale and capacity management that RNS-CKKS lacks. A recent RNS-based technique, [Grafting](https://eprint.iacr.org/2024/1014) by Cheon et al., targets the same goal from inside the RNS world by decoupling scale factors from the modulus. For a detailed comparison of the two approaches, see [docs/guides/grafting-vs-bivariate.md](docs/guides/grafting-vs-bivariate.md).
 
 ## Installation
 

@@ -3,7 +3,7 @@
 //! Calls dispatch through [`crate::oep::DFTImpl`], including the selected
 //! generic DFT operation used by derived format wrappers.
 //! The homomorphic DFT is documented as a stage of the bootstrapping pipeline in
-//! [`docs/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/bootstrapping.md).
+//! [`docs/guides/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/guides/bootstrapping.md).
 
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;

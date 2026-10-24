@@ -13,7 +13,7 @@ default; `PaCoPlan::with_slot_order` selects `BitRevLow`); the choice changes
 the BSGS diagonal offsets and hence the Galois key set, so it must be kept
 stable per persisted key bundle. The exact convention and its relationship to
 the paper's reference code are recorded in
-[the PaCo DFT specification](spec/paco_dft_convention.md).
+[the PaCo DFT specification](../spec/paco_dft_convention.md).
 
 ## Public API
 
@@ -273,6 +273,6 @@ coefficients and exact metadata, uses each implementation's own guarded scratch
 budget, and checks rejected shapes and input preservation. Independent pipeline
 oracles remain part of the conformance suite.
 
-See [Implementing CKKS operations](../schemes/poulpy-ckks/docs/ckks-contracts.md) for the
-replacement contract and the [repository README](../README.md) for concrete
+See [Implementing CKKS operations](../../schemes/poulpy-ckks/docs/ckks-contracts.md) for the
+replacement contract and the [repository README](../../README.md) for concrete
 test commands and execution coverage.

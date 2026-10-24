@@ -7,7 +7,7 @@
 //! re-exports the data type under CKKS names and adds the scale-aware entry point.
 //! All `log_delta` / `log_budget` accounting lives here — the core engine only
 //! receives base2k-level alignment integers. See
-//! [`docs/linear_transformation.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/linear_transformation.md).
+//! [`docs/guides/linear_transformation.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/guides/linear_transformation.md).
 //!
 //! # Prepared vs streamed — one evaluator
 //!

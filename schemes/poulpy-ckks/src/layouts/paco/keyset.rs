@@ -94,7 +94,7 @@ impl PaCoKeyParameters {
 /// that correspondence. The store is also responsible for cryptographic
 /// provenance: all four bootstrapping ciphertexts, rotation keys, tensor key,
 /// and optional switch must have been generated from the mutually compatible
-/// secrets documented in `docs/paco.md`, which structural metadata cannot
+/// secrets documented in `docs/guides/paco.md`, which structural metadata cannot
 /// prove.
 pub trait PaCoKeys<BE: Backend> {
     /// CKKS ciphertext type used for the four encrypted structured-secret

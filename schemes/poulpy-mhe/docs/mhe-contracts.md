@@ -1,6 +1,6 @@
 # Multiparty operation contracts
 
-Public `api` traits follow the [layering contract](../../../docs/layering-contract.md). The references compose
+Public `api` traits follow the [layering contract](../../../docs/guides/layering-contract.md). The references compose
 `poulpy-core` and `poulpy-hal` operations.
 
 ## Public API organization
@@ -41,7 +41,7 @@ Generation normalizes, so fresh shares are canonical. Aggregation adds limbs
 without normalizing; finalization normalizes the aggregate into canonical
 digits. Headroom for chains of additions
 follows the
-[radix failure estimates](../../../docs/base2k-failure-probability.md).
+[radix failure estimates](../../../docs/guides/base2k-failure-probability.md).
 
 ## Share metadata
 
@@ -193,7 +193,7 @@ certify a security level, and neither can statistical tests.
 ## Replacing an operation
 
 An override reproduces the reference, its seed and layout checks included,
-as the [layering contract](../../../docs/layering-contract.md) states; the parity suite arrives with the
+as the [layering contract](../../../docs/guides/layering-contract.md) states; the parity suite arrives with the
 first override.
 `impl_mhe_reference_full!` selects every family; select
 `impl_mhe_pat_reference!`, which covers every PAT type,

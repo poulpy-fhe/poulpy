@@ -1,11 +1,11 @@
 [package]
 name = "poulpy-bench"
-version = "0.9.0"
-edition = "2024"
-license = "Apache-2.0"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 description = "Consolidated benchmark suite for poulpy"
-repository = "https://github.com/poulpy-fhe/poulpy"
-homepage = "https://github.com/poulpy-fhe/poulpy"
+repository.workspace = true
+homepage.workspace = true
 publish = false
 readme = "README.md"
 

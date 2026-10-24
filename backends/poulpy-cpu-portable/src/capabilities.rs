@@ -62,7 +62,7 @@ pub fn report(caps: &[BackendCapability]) -> String {
 
 /// One instruction set, and whether the CPU running this code implements it.
 ///
-/// For the backends each set unlocks, see `docs/performance.md`; for what a
+/// For the backends each set unlocks, see `docs/guides/performance.md`; for what a
 /// given build enabled, see each backend crate's [`BackendCapability`] report.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InstructionSet {
@@ -135,7 +135,7 @@ pub fn report_instruction_sets() -> String {
     }
     out.push_str("\nThe portable backends need none of these and run everywhere.\n");
     out.push_str("`-C target-cpu=native` enables every instruction set this CPU has.\n");
-    out.push_str("For the backends each set unlocks, see docs/performance.md.\n");
+    out.push_str("For the backends each set unlocks, see docs/guides/performance.md.\n");
     out
 }
 

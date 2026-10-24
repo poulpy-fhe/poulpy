@@ -164,7 +164,7 @@ poulpy_core::core_parity_test_suite! {
     }
 }
 
-/// On-demand thread-count diagnostic; see `docs/performance.md`.
+/// On-demand thread-count diagnostic; see `docs/guides/performance.md`.
 #[cfg(feature = "enable-rayon")]
 mod tuning {
     use poulpy_cpu_rayon::tuning::{Mode, ProbeShape, default_thread_sweep, thread_scaling};
