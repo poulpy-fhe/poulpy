@@ -749,4 +749,47 @@ mod host_transfer_tests {
         assert_eq!(&all[..100], &src2[..]);
         assert!(all[100..].iter().all(|&b| b == 0), "tail not zero after copy_host_to_view");
     }
+
+    /// `transfer_buf_into` writes into a destination the caller already owns, so a
+    /// loop can hoist the allocation out.
+    #[test]
+    fn transfer_buf_into_reuses_destination() {
+        let len = 256usize;
+        let mut a = <HostBytesBackend as Backend>::alloc_bytes(len);
+        let mut b = <HostBytesBackend as Backend>::alloc_bytes(len);
+        a.iter_mut()
+            .enumerate()
+            .for_each(|(i, x)| *x = (i as u8).wrapping_mul(17).wrapping_add(3));
+        b.iter_mut().enumerate().for_each(|(i, x)| *x = (i as u8).wrapping_mul(31));
+        let mut dst = <HostBytesBackend as Backend>::alloc_bytes(len);
+
+        transfer_buf_into(&a, &mut dst);
+        assert_eq!(dst, a);
+
+        // Same destination, different source: no bytes of `a` survive.
+        transfer_buf_into(&b, &mut dst);
+        assert_eq!(dst, b);
+        assert_ne!(dst, a);
+    }
+
+    /// The size check lives in the shared move, so no implementor can skip it.
+    #[test]
+    fn transfer_buf_into_rejects_size_mismatch() {
+        let src = <HostBytesBackend as Backend>::alloc_bytes(256);
+        let mut dst = <HostBytesBackend as Backend>::alloc_bytes(128);
+        dst.fill(0x5a);
+        let before = dst.clone();
+        let err = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| transfer_buf_into(&src, &mut dst)))
+            .expect_err("a size mismatch was accepted");
+        let message = err
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| err.downcast_ref::<&str>().copied())
+            .unwrap_or_default();
+        assert_eq!(
+            message,
+            "assertion `left == right` failed: transfer_buf_into: source is 256 bytes, destination is 128\n  left: 256\n right: 128"
+        );
+        assert_eq!(dst, before, "a refused transfer wrote into the destination");
+    }
 }

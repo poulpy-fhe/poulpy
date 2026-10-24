@@ -132,4 +132,4 @@ pub(crate) mod noise {
 pub mod test_suite;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod test_backend;

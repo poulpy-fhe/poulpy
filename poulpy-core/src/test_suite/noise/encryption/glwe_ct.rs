@@ -17,6 +17,7 @@ use poulpy_hal::{
 
 use crate::api::GLWESecretSampling;
 use crate::test_suite::noise::glwe_noise_checked;
+use crate::test_suite::refusal::{assert_refusal, glwe_state};
 use crate::{
     GLWECompressedEncryptSk, GLWEDecompress, GLWEDecrypt, GLWEEncryptPk, GLWEEncryptSk, GLWEMaskFill, GLWENoise, GLWENormalize,
     GLWEPublicKeyCompressedGenerate, GLWEPublicKeyDecompress, GLWEPublicKeyGenerate, GLWESub, GetDistribution,
@@ -688,9 +689,12 @@ where
     }
 }
 
-/// Encrypting under a public key less precise than the output panics.
-pub fn test_glwe_encrypt_pk_imprecise_key<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
-where
+/// Encrypting under a public key that is another radix, unprepared or less precise than the output is refused with the
+/// destination left as it was.
+pub fn test_glwe_encrypt_pk_rejects_imprecise_key<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
@@ -705,16 +709,30 @@ where
         rank: 1_usize.into(),
     };
     let glwe_infos = layout(base2k * 4 + 1);
-    for (label, pk_layout) in [
+    for (label, pk_layout, message) in [
         (
             "radix mismatch",
             GLWELayout {
                 base2k: (base2k - 1).into(),
                 ..glwe_infos
             },
+            format!(
+                "assertion `left == right` failed\n  left: Base2K({})\n right: Base2K({})",
+                base2k,
+                base2k - 1
+            ),
         ),
-        ("unprepared public key", glwe_infos),
-        ("imprecise public key", layout(base2k * 3 + 1)),
+        (
+            "unprepared public key",
+            glwe_infos,
+            "invalid public key: SecretDistribution::NONE, ensure it has been correctly intialized through Self::generate"
+                .to_string(),
+        ),
+        (
+            "imprecise public key",
+            layout(base2k * 3 + 1),
+            "invalid public key: less precise than the output".to_string(),
+        ),
     ] {
         let mut ct = module.glwe_alloc_from_infos(&glwe_infos);
         ct.noise = Some(crate::ComponentNoise::from_secret_at(
@@ -723,26 +741,20 @@ where
             1,
         ));
         ct.canonical = false;
-        let before = ct.to_owned_deep();
         let pt = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
         let pk = module.glwe_public_key_prepared_alloc_from_infos(&pk_layout);
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_encrypt_pk_tmp_bytes(&glwe_infos, &pk_layout));
-        let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        assert_refusal(&message, &mut ct, glwe_state::<BE>, |ct| {
             module.glwe_encrypt_pk(
-                &mut ct,
+                ct,
                 &pt,
                 &pk,
                 &mut Source::new([0u8; 32]),
                 &mut Source::new([0u8; 32]),
                 &mut scratch.borrow(),
             );
-        }));
-        assert!(rejected.is_err(), "{label} must be rejected");
-        assert!(ct == before, "{label} changed the destination");
+        });
         assert!(!ct.is_canonical(), "{label} changed the canonical flag");
-        if label == "imprecise public key" {
-            std::panic::resume_unwind(rejected.unwrap_err());
-        }
     }
 }
 
@@ -1037,8 +1049,10 @@ where
 }
 
 /// A key tagged with a zero-weight distribution would encrypt with `u = 0`.
-pub fn test_glwe_encrypt_pk_zero_ephemeral<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
-where
+pub fn test_glwe_encrypt_zero_pk_rejects_zero_ephemeral<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
@@ -1049,8 +1063,10 @@ where
 }
 
 /// A NaN probability draws only zero ephemerals.
-pub fn test_glwe_encrypt_pk_nan_ephemeral<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
-where
+pub fn test_glwe_encrypt_zero_pk_rejects_nan_ephemeral<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
@@ -1081,18 +1097,27 @@ fn encrypt_zero_pk_with_ephemeral<BE: crate::test_suite::noise::TestBackend>(
     let mut pk: GLWEPublicKeyPrepared<BE::OwnedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&infos);
     *pk.dist_mut() = dist;
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_encrypt_pk_tmp_bytes(&infos, &infos));
-    module.glwe_encrypt_zero_pk(
+    assert_refusal(
+        "invalid public key: zero ephemeral distribution",
         &mut ct,
-        &pk,
-        &mut Source::new([0u8; 32]),
-        &mut Source::new([0u8; 32]),
-        &mut scratch.borrow(),
+        glwe_state::<BE>,
+        |ct| {
+            module.glwe_encrypt_zero_pk(
+                ct,
+                &pk,
+                &mut Source::new([0u8; 32]),
+                &mut Source::new([0u8; 32]),
+                &mut scratch.borrow(),
+            );
+        },
     );
 }
 
 /// A public key has one entry per rank, so rank 0 has none.
-pub fn test_glwe_public_key_rank_zero<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
-where
+pub fn test_glwe_public_key_alloc_rejects_rank_zero<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
