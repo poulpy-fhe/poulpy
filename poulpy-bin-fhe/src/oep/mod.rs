@@ -18,19 +18,13 @@ pub use circuit_bootstrapping::*;
 /// Selects the supplied binary-FHE circuits for an explicitly opted-in backend.
 ///
 /// Family macros can be selected separately when replacing an operation. The
-/// optional parallel schedule is a backend decision; it does not alter the
-/// canonical reference circuit or the CGGI algorithm marker.
+/// backend's executor picks the blind-rotation schedule
+/// (`TaskExecutor::IS_PARALLEL`); it does not alter the canonical reference
+/// circuit or the CGGI algorithm marker.
 #[macro_export]
 macro_rules! impl_bin_fhe_reference_full {
     ($be:ty) => {
         $crate::impl_blind_rotation_reference_full!($be);
-        $crate::impl_bin_fhe_reference_full!(@remaining $be);
-    };
-    ($be:ty, scheduling = parallel) => {
-        $crate::impl_blind_rotation_reference_full!($be, scheduling = parallel);
-        $crate::impl_bin_fhe_reference_full!(@remaining $be);
-    };
-    (@remaining $be:ty) => {
         $crate::impl_circuit_bootstrapping_reference_full!($be, $crate::blind_rotation::CGGI);
         $crate::impl_bdd_reference_full!($be, $crate::blind_rotation::CGGI);
     };

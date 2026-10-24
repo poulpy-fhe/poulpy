@@ -93,10 +93,11 @@ The integer-parameterized opt-ins still implement their contracts for every
 supported `UnsignedInteger` type, and key/preparation opt-ins take the algorithm
 marker explicitly.
 
-The ordinary blind-rotation reference has a fixed schedule. Explicit
-`scheduling = parallel` opt-in selects the reusable parallel implementation;
-the canonical circuit does not inspect an executor flag to choose a different
-implementation.
+The backend's executor picks the blind-rotation schedule. The reference and
+its query run the products of a block in parallel exactly when
+`BE::TaskExecutor::IS_PARALLEL` holds, reserving one worker scratch per product
+of the block, and add their contributions in index order, so every executor and
+pool width returns the same bytes. No opt-in selects a schedule.
 
 ## Workspace
 

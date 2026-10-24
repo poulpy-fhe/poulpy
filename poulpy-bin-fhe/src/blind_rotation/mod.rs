@@ -51,8 +51,9 @@
 //! Backend implementations explicitly select operations through [`crate::oep`].
 //! The callable compositions live in [`crate::reference::blind_rotation`]. CGGI
 //! is an algorithm marker, independent of the backend and execution schedule.
-//! Parallel block scheduling is an explicit backend selection; the canonical
-//! composition always accumulates contributions in coefficient order.
+//! The backend's executor picks the block schedule: the products of a block run
+//! in parallel exactly when `TaskExecutor::IS_PARALLEL` holds, and every schedule
+//! adds their contributions in index order, so outputs do not depend on it.
 mod algorithms;
 mod encryption;
 pub(crate) mod host_znx;
