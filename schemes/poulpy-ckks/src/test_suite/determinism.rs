@@ -22,7 +22,7 @@ use std::{
 use poulpy_core::layouts::{Base2K, LWEInfos, TorusPrecision};
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBytesBackend, Module, Ring, ScratchOwned, Standard, ZnxView},
+    layouts::{Backend, Module, Ring, ScratchOwned, Standard, ZnxView},
 };
 
 use crate::{
@@ -36,7 +36,7 @@ use crate::{
     },
     polynomial::SplitStrategy,
     reference::gen_dft_matrices,
-    test_suite::{CKKSTestParams, helpers::TestContextBackend, helpers::TestScalar},
+    test_suite::helpers::TestScalar,
 };
 
 const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/test_suite/determinism.txt");
@@ -305,14 +305,40 @@ where
 }
 
 /// Suite entry point for standard-ring backends: encoding fixtures at degree
-/// 4096 and setup fixtures.
-pub fn test_encoding_determinism<BE, F, E>(_: CKKSTestParams, _: &Module<BE>, _: &Module<HostBytesBackend>)
+/// 4096 and setup fixtures, registered by
+/// [`ckks_determinism_test_suite!`](crate::ckks_determinism_test_suite).
+pub fn test_encoding_determinism<BE, F>()
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: Backend<ZnxWord = i64, Ring = Standard>,
     F: TestScalar,
     Module<BE>: ModuleNew<BE> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
 {
     let module = Module::<BE>::new(4096);
     encoding_fixtures::<BE, F>(&module);
     setup_fixtures::<BE, F>(&module);
+}
+
+/// Registers the determinism fixtures of one standard-ring backend type, in
+/// `f64` and in [`Quad`](crate::Quad): `encoding_determinism_f64` and
+/// `encoding_determinism_quad` run
+/// [`test_encoding_determinism`](crate::test_suite::determinism::test_encoding_determinism).
+///
+/// Every backend type implementing CKKS on the standard ring registers it; the
+/// conjugate-invariant types run their encoding fixtures in
+/// [`conjugate_invariant_ckks_test_suite!`](crate::conjugate_invariant_ckks_test_suite).
+#[macro_export]
+macro_rules! ckks_determinism_test_suite {
+    (mod $modname:ident, backend = $backend:ty $(,)?) => {
+        mod $modname {
+            #[test]
+            fn encoding_determinism_f64() {
+                $crate::test_suite::determinism::test_encoding_determinism::<$backend, f64>();
+            }
+
+            #[test]
+            fn encoding_determinism_quad() {
+                $crate::test_suite::determinism::test_encoding_determinism::<$backend, $crate::Quad>();
+            }
+        }
+    };
 }

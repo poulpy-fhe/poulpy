@@ -1,15 +1,14 @@
-use poulpy_ckks::ckks_backend_test_suite;
+use poulpy_ckks::ckks_determinism_test_suite;
 
-const ATK_ROTATIONS: &[i64] = &[1, 7];
+ckks_determinism_test_suite!(mod ckks_determinism_fft64neon, backend = crate::FFT64Neon);
 
-ckks_backend_test_suite!(
-    mod fft64_f64,
-    backend = crate::FFT64Neon,
-    scalar = f64,
-    encoder = crate::FFT64NeonEncodingTable,
-    params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
+ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30neon, backend = crate::NTT4x30Neon);
+
+#[cfg(feature = "enable-rayon")]
+ckks_determinism_test_suite!(mod ckks_determinism_fft64neonrayon, backend = crate::FFT64NeonRayon);
+
+#[cfg(feature = "enable-rayon")]
+ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30neonrayon, backend = crate::NTT4x30NeonRayon);
 
 #[test]
 fn ntt4x30_neon_bootstrapping_plan_keys_match_context() {
@@ -61,55 +60,6 @@ mod bootstrapping_presets {
         bootstrapping_presets_meet_precision::<crate::NTT4x30NeonRayon>();
     }
 }
-
-#[cfg(feature = "enable-rayon")]
-ckks_backend_test_suite!(
-    mod fft64_rayon_f64,
-    backend = crate::FFT64NeonRayon,
-    scalar = f64,
-    encoder = crate::FFT64NeonEncodingTable,
-    params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
-
-ckks_backend_test_suite!(
-    mod ntt4x30_f64,
-    backend = crate::NTT4x30Neon,
-    scalar = f64,
-    encoder = crate::FFT64NeonEncodingTable,
-    params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
-
-#[cfg(feature = "enable-rayon")]
-ckks_backend_test_suite!(
-    mod ntt4x30_rayon_f64,
-    backend = crate::NTT4x30NeonRayon,
-    scalar = f64,
-    encoder = crate::FFT64NeonEncodingTable,
-    params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
-
-// binary128 path on aarch64: `Quad` scalar with the reference encoder.
-ckks_backend_test_suite!(
-    mod ntt4x30_f128,
-    backend = crate::NTT4x30Neon,
-    scalar = poulpy_ckks::Quad,
-    encoder = poulpy_cpu_portable::ckks_encoding::EncodingFFTTable<poulpy_ckks::Quad>,
-    params = poulpy_ckks::test_suite::BASE52_PARAMS_QUAD,
-    rotations = super::ATK_ROTATIONS,
-);
-
-#[cfg(feature = "enable-rayon")]
-ckks_backend_test_suite!(
-    mod ntt4x30_rayon_f128,
-    backend = crate::NTT4x30NeonRayon,
-    scalar = poulpy_ckks::Quad,
-    encoder = poulpy_cpu_portable::ckks_encoding::EncodingFFTTable<poulpy_ckks::Quad>,
-    params = poulpy_ckks::test_suite::BASE52_PARAMS_QUAD,
-    rotations = super::ATK_ROTATIONS,
-);
 
 // Paired OEP validation. Serial backends validate against portable implementations;
 // Rayon backends validate against their serial counterparts.

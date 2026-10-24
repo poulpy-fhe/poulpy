@@ -31,8 +31,8 @@ use crate::{
 /// with no other fused or reassociated operation, and the conversions of
 /// [`CKKSFloat::ckks_quantize`](crate::numerics::CKKSFloat::ckks_quantize) and
 /// [`CKKSFloat::ckks_dequantize`](crate::numerics::CKKSFloat::ckks_dequantize).
-/// Layouts and scheduling are free. The `encoding_determinism` fixtures of the
-/// test suite check the result. See the CKKS encoding section of
+/// Layouts and scheduling are free. The fixtures of
+/// `ckks_determinism_test_suite!` check the result. See the CKKS encoding section of
 /// `docs/guides/backends.md`. Plans and staging are backend-owned, and these
 /// signatures require no host access.
 ///

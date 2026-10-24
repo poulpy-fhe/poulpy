@@ -160,8 +160,10 @@ Coverage degrades rather than switching off. A backend with a narrower envelope 
 
 The noise suite runs in `poulpy-cpu-portable` alone: the scheme-level model is backend-independent, and accelerated backends validate their outputs through parity with an already validated backend.
 
-Backend crates register the core and CKKS suites for portable FFT/NTT, AVX,
-AVX-512/IFMA, NEON and supported Rayon variants. Native CI runs the full registered
+Backend crates register the core and CKKS parity suites and
+`ckks_determinism_test_suite!` for portable FFT/NTT, AVX, AVX-512/IFMA, NEON and
+supported Rayon variants; the functional suites of every layer run on the oracle
+and the portable serial types only. Native CI runs the full registered
 sweeps. AVX and AVX-512 jobs fall back to Intel SDE for HAL and core contracts, and
 the AVX-512 job also for BLAS parity (below); CKKS runs natively, with an additional
 optional NEON run under QEMU.
@@ -180,12 +182,17 @@ cargo test -p poulpy-cpu-portable --lib --profile ci --features enable-core -- \
   core_parity core_encryption --test-threads=2
 ```
 
-CKKS keeps its independent mathematical conformance tests and adds caller-selected
-circuit parity through `ckks_parity_test_suite!`. Registrations cover `f64` and
-`Quad` on all 16 CPU backend types, with Rayon variants compared against their
-serial siblings. Portable encoding and DFT matrix/evaluation parity also exercise `f32`. Native CI and optional QEMU
-runs include the `ckks_parity` groups, including controlled-sampling encryption.
-See [implementing a CKKS backend](schemes/poulpy-ckks/docs/ckks-contracts.md).
+CKKS keeps its independent mathematical conformance tests
+(`ckks_backend_test_suite!`, on the oracle and the portable serial types) and
+adds caller-selected circuit parity through `ckks_parity_test_suite!`.
+Registrations cover `f64` and `Quad` on all 16 CPU backend types, with Rayon
+variants compared against their serial siblings. Every standard-ring CKKS type
+also registers `ckks_determinism_test_suite!`, which checks its encodings and
+setup constants in `f64` and `Quad` against frozen fixtures. Portable encoding
+and DFT matrix/evaluation parity also exercise `f32`. Native CI and optional
+QEMU runs include the `ckks_parity` groups, including controlled-sampling
+encryption. See
+[implementing a CKKS backend](schemes/poulpy-ckks/docs/ckks-contracts.md).
 
 Run portable CKKS parity, the full conformance suite, or the
 [polynomial example](backends/poulpy-cpu-portable/examples/ckks_poly2.rs) with:
