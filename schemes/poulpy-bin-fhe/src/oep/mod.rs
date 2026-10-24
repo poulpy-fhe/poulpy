@@ -7,9 +7,9 @@
 //! inherit crate-private same-layer derived defaults. An override must reproduce
 //! the reference circuit and pass parity against a caller-selected validated
 //! backend. Execution and scratch sizing must be selected together.
-pub mod bdd;
-pub mod blind_rotation;
-pub mod circuit_bootstrapping;
+mod bdd;
+mod blind_rotation;
+mod circuit_bootstrapping;
 pub(crate) mod derived;
 pub use bdd::*;
 pub use blind_rotation::*;

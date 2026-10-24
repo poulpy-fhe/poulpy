@@ -1,26 +1,26 @@
 use poulpy_core::{
     GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWENoise,
     api::GLWESecretPreparedFactory,
-    layouts::{GGSWLayout, GLWELayout, prepared::GLWESecretPrepared},
+    layouts::{GGSWLayout, GLWELayout, GLWESecretPrepared},
 };
-use poulpy_hal::layouts::{HostDataMut, HostDataRef};
+use poulpy_hal::layouts::HostDataRef;
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBackend, Module, ScratchOwned},
+    layouts::{Backend, HostBackend, HostDataMut, Module, ScratchOwned},
     source::Source,
 };
 use rand::Rng;
 
+use crate::test_suite::bdd_arithmetic::{TEST_GGSW_INFOS, TEST_GLWE_INFOS, TestContext};
 use crate::{
     bdd_arithmetic::{
-        BDDKeyEncryptSk, BDDKeyPrepared, BDDKeyPreparedFactory, ExecuteBDDCircuit2WTo1W, FheUint, FheUintPrepare,
-        FheUintPrepareDebug, FheUintPrepared, FheUintPreparedEncryptSk, FheUintPreparedFactory, Sll,
-        test_suite::{TEST_GGSW_INFOS, TEST_GLWE_INFOS, TestContext},
+        Add, BDDKeyEncryptSk, BDDKeyPrepared, BDDKeyPreparedFactory, ExecuteBDDCircuit2WTo1W, FheUint, FheUintPrepare,
+        FheUintPrepareDebug, FheUintPrepared, FheUintPreparedEncryptSk, FheUintPreparedFactory,
     },
     blind_rotation::BlindRotationAlgo,
 };
 
-pub fn test_bdd_sll<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend>(
+pub fn test_bdd_add<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend>(
     test_context: &TestContext<BRA, BE>,
 ) where
     Module<BE>: ModuleNew<BE>
@@ -60,14 +60,28 @@ pub fn test_bdd_sll<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + 
         FheUintPrepared::<BE::OwnedBuf, u32, BE>::alloc_from_infos(module, &ggsw_infos);
 
     let a: u32 = source.next_u32();
-    let b: u32 = source.next_u32() & 15;
+    let b: u32 = source.next_u32();
 
     source.fill_bytes(scratch.data.as_mut());
     a_enc_prep.encrypt_sk(module, a, sk_glwe_prep, &mut source_xe, &mut source_xa, &mut scratch.borrow());
     source.fill_bytes(scratch.data.as_mut());
     b_enc_prep.encrypt_sk(module, b, sk_glwe_prep, &mut source_xe, &mut source_xa, &mut scratch.borrow());
 
-    res.sll(module, &a_enc_prep, &b_enc_prep, bdd_key_prepared, &mut scratch.borrow());
+    let add_bytes: usize = res.add_tmp_bytes(module, &glwe_infos, &ggsw_infos, bdd_key_prepared);
+    let mut scratch_add: ScratchOwned<BE> = ScratchOwned::alloc(add_bytes);
+    res.add(module, &a_enc_prep, &b_enc_prep, bdd_key_prepared, &mut scratch_add.borrow());
+    assert_eq!(res.decrypt(module, sk_glwe_prep, &mut scratch.borrow()), a.wrapping_add(b));
 
-    assert_eq!(res.decrypt(module, sk_glwe_prep, &mut scratch.borrow()), a.wrapping_shl(b));
+    let mt_threads: usize = 4;
+    let add_mt_bytes: usize = res.add_multi_thread_tmp_bytes(module, mt_threads, &glwe_infos, &ggsw_infos, bdd_key_prepared);
+    let mut scratch_mt: ScratchOwned<BE> = ScratchOwned::alloc(add_mt_bytes);
+    res.add_multi_thread(
+        mt_threads,
+        module,
+        &a_enc_prep,
+        &b_enc_prep,
+        bdd_key_prepared,
+        &mut scratch_mt.borrow(),
+    );
+    assert_eq!(res.decrypt(module, sk_glwe_prep, &mut scratch.borrow()), a.wrapping_add(b));
 }

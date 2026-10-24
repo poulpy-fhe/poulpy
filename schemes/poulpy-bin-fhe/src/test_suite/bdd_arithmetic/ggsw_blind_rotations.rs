@@ -15,11 +15,9 @@ use poulpy_hal::{
 };
 use rand::Rng;
 
+use crate::test_suite::bdd_arithmetic::{TEST_FHEUINT_BASE2K, TEST_RANK, TestContext};
 use crate::{
-    bdd_arithmetic::{
-        FheUintPrepared, GGSWBlindRotation,
-        test_suite::{TEST_FHEUINT_BASE2K, TEST_RANK, TestContext},
-    },
+    bdd_arithmetic::{FheUintPrepared, GGSWBlindRotation},
     blind_rotation::BlindRotationAlgo,
 };
 

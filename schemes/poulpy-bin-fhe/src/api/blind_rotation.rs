@@ -15,7 +15,7 @@
 //!
 //! ```
 //! use poulpy_bin_fhe::{
-//!     api::blind_rotation::BlindRotationExecute,
+//!     api::BlindRotationExecute,
 //!     blind_rotation::{BlindRotationKeyPrepared, CGGI, LookupTable},
 //! };
 //! use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, LWEInfos, LWEToBackendRef};

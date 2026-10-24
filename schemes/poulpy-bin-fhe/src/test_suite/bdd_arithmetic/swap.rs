@@ -14,11 +14,9 @@ use poulpy_hal::{
 };
 use rand::Rng;
 
+use crate::test_suite::bdd_arithmetic::{TEST_GGSW_INFOS, TEST_GLWE_INFOS, TestContext};
 use crate::{
-    bdd_arithmetic::{
-        Cmux, Cswap, FheUint, FheUintPrepared, GLWEBlindRetrieval, GLWEBlindRetriever,
-        test_suite::{TEST_GGSW_INFOS, TEST_GLWE_INFOS, TestContext},
-    },
+    bdd_arithmetic::{Cmux, Cswap, FheUint, FheUintPrepared, GLWEBlindRetrieval, GLWEBlindRetriever},
     blind_rotation::BlindRotationAlgo,
 };
 use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
