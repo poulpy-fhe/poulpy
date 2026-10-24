@@ -220,15 +220,13 @@ where
     }
 }
 
-/// Bytes of the backend buffers of a compressed key, read through its row views.
-fn compressed_key_bytes<B: ParityBackend>(key: &BlindRotationKeyCompressed<B::OwnedBuf, CGGI, i64>) -> usize {
+/// Bytes of the backend buffer of a compressed GGSW, read through its row views.
+fn compressed_ggsw_bytes<B: ParityBackend>(ggsw: &GGSWCompressed<B::OwnedBuf, i64>) -> usize {
+    let view = poulpy_core::layouts::compressed::GGSWCompressedToBackendRef::<B>::to_backend_ref(ggsw);
     let mut bytes = 0;
-    for ggsw in &key.keys {
-        let view = poulpy_core::layouts::compressed::GGSWCompressedToBackendRef::<B>::to_backend_ref(ggsw);
-        for row in 0..view.dnum().as_usize() {
-            for col in 0..=view.rank().as_usize() {
-                bytes += B::len_bytes_ref(view.at_view(row, col).data().data());
-            }
+    for row in 0..view.dnum().as_usize() {
+        for col in 0..=view.rank().as_usize() {
+            bytes += B::len_bytes_ref(view.at_view(row, col).data().data());
         }
     }
     bytes
@@ -319,9 +317,13 @@ where
         }
         let mut compressed_expected = module.blind_rotation_key_compressed_alloc_from_infos(&layout);
         let mut compressed_actual = BlindRotationKeyCompressed::<poulpy_hal::AlignedBuf, CGGI, i64>::alloc(module, &layout);
+        let ggsw_bytes = module.ggsw_compressed_bytes_of_from_infos(&layout);
+        for ggsw in &compressed_actual.keys {
+            assert_eq!(compressed_ggsw_bytes::<B>(ggsw), ggsw_bytes);
+        }
         assert_eq!(
             module.blind_rotation_key_compressed_bytes_of_from_infos(&layout),
-            compressed_key_bytes::<B>(&compressed_actual)
+            layout.n_lwe.as_usize() * ggsw_bytes
         );
         with_scratch::<B, _>(blind_rotation_key_compressed_encrypt_sk_tmp_bytes_ref(module, &layout), |s| {
             blind_rotation_key_compressed_encrypt_sk_ref(
