@@ -200,8 +200,7 @@ where
         + GGSWEncryptSk<B>
         + GGSWCompressedEncryptSk<B>
         + GLWESecretPreparedFactory<B>
-        + GGSWDecompress
-        + GLWEDecompress<Backend = B>,
+        + GGSWDecompress<B>,
 {
     let host = Module::<HostBytesBackend>::new(module.n() as u64);
     let layout = BlindRotationKeyLayout {

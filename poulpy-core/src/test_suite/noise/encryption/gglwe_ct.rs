@@ -8,14 +8,13 @@ use poulpy_hal::{
 
 use crate::layouts::GLWESecretSampling;
 use crate::{
-    Distribution, GGLWECompressedEncryptSk, GGLWEEncryptSk, GGLWEKeyswitch, GLWESwitchingKeyCompressedEncryptSk,
-    GLWESwitchingKeyEncryptSk, GetDistributionMut,
+    Distribution, GGLWECompressedEncryptSk, GGLWEDecompress, GGLWEEncryptSk, GGLWEKeyswitch, GLWESwitchingKeyCompressedEncryptSk,
+    GLWESwitchingKeyDecompress, GLWESwitchingKeyEncryptSk, GetDistributionMut,
     decryption::GLWEDecrypt,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGLWE, GGLWECompressed, GGLWEDecompress, GGLWEInfos, GGLWELayout, GLWESecret, GLWESecretPreparedFactory,
-        GLWESwitchingKey, GLWESwitchingKeyCompressed, GLWESwitchingKeyDecompress, LWEInfos, ModuleCoreAlloc,
-        ModuleCoreCompressedAlloc,
+        GGLWE, GGLWECompressed, GGLWEInfos, GGLWELayout, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey,
+        GLWESwitchingKeyCompressed, LWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc,
         prepared::{GGLWEPreparedFactory, GLWESecretPrepared},
     },
     noise::GGLWENoise,
@@ -171,8 +170,7 @@ pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::noi
         + GLWESecretPreparedFactory<BE>
         + GLWESwitchingKeyEncryptSk<BE>
         + GLWESwitchingKeyCompressedEncryptSk<BE>
-        + GLWESwitchingKeyDecompress
-        + crate::layouts::compressed::GLWEDecompress<Backend = BE>
+        + GLWESwitchingKeyDecompress<BE>
         + GGLWENoise<BE>
         + VecZnxFillUniformSource<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -322,8 +320,7 @@ where
         + GLWESecretPreparedFactory<BE>
         + GLWESwitchingKeyEncryptSk<BE>
         + GGLWECompressedEncryptSk<BE>
-        + GLWESwitchingKeyDecompress
-        + crate::layouts::compressed::GLWEDecompress<Backend = BE>
+        + GGLWEDecompress<BE>
         + GGLWENoise<BE>
         + VecZnxFillUniformSource<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,

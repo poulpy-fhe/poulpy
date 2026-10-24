@@ -41,9 +41,9 @@
 //! [`GLWEExternalProductImpl`] methods. Other reference algorithms and derived
 //! defaults remain available when their individual requirements are met.
 //!
-//! Prepared factories, decompression, and internal keyswitch helpers reuse core
-//! and HAL operations through their documented bounds. Host-only noise
-//! diagnostics have additional storage-access requirements.
+//! Prepared factories and internal keyswitch helpers reuse core and HAL
+//! operations through their documented bounds. Host-only noise diagnostics have
+//! additional storage-access requirements.
 //!
 //! # Noise metadata
 //!
@@ -75,6 +75,7 @@
 mod automorphism;
 mod ci_conversion;
 mod conversion;
+mod decompression;
 mod decryption;
 pub(crate) mod derived;
 mod encryption;
@@ -88,6 +89,7 @@ mod sampling;
 pub use automorphism::*;
 pub use ci_conversion::*;
 pub use conversion::*;
+pub use decompression::*;
 pub use decryption::*;
 pub use encryption::*;
 pub use external_product::*;
@@ -106,6 +108,7 @@ pub use sampling::*;
 macro_rules! impl_core_reference_full {
     ($be:ty) => {
         $crate::impl_ggsw_conversion_reference_full!($be);
+        $crate::impl_decompression_reference_full!($be);
         $crate::impl_decryption_reference_full!($be);
         $crate::impl_encryption_reference_full!($be);
         $crate::impl_operations_reference_full!($be);
@@ -126,13 +129,14 @@ macro_rules! impl_core_reference_full {
 }
 
 pub use crate::{
-    impl_automorphism_reference_full, impl_conversion_reference_full, impl_core_reference_full, impl_decryption_reference_full,
-    impl_encryption_reference_full, impl_gglwe_copy_reference_full, impl_gglwe_external_product_derived_full,
-    impl_gglwe_keyswitch_derived_full, impl_gglwe_product_digits_strided_reference_full, impl_ggsw_conversion_reference_full,
-    impl_ggsw_copy_reference_full, impl_ggsw_external_product_derived_full, impl_ggsw_keyswitch_derived_full,
-    impl_ggsw_rotate_derived_full, impl_glwe_add_reference_full, impl_glwe_ci_conversion_reference_full,
-    impl_glwe_copy_reference_full, impl_glwe_external_product_reference_full, impl_glwe_keyswitch_reference_full,
-    impl_glwe_mul_const_reference_full, impl_glwe_mul_plain_reference_full, impl_glwe_mul_prepared_plain_sum_reference_full,
+    impl_automorphism_reference_full, impl_conversion_reference_full, impl_core_reference_full,
+    impl_decompression_reference_full, impl_decryption_reference_full, impl_encryption_reference_full,
+    impl_gglwe_copy_reference_full, impl_gglwe_external_product_derived_full, impl_gglwe_keyswitch_derived_full,
+    impl_gglwe_product_digits_strided_reference_full, impl_ggsw_conversion_reference_full, impl_ggsw_copy_reference_full,
+    impl_ggsw_external_product_derived_full, impl_ggsw_keyswitch_derived_full, impl_ggsw_rotate_derived_full,
+    impl_glwe_add_reference_full, impl_glwe_ci_conversion_reference_full, impl_glwe_copy_reference_full,
+    impl_glwe_external_product_reference_full, impl_glwe_keyswitch_reference_full, impl_glwe_mul_const_reference_full,
+    impl_glwe_mul_plain_reference_full, impl_glwe_mul_prepared_plain_sum_reference_full,
     impl_glwe_mul_xp_minus_one_reference_full, impl_glwe_negate_reference_full, impl_glwe_normalize_reference_full,
     impl_glwe_pack_derived_full, impl_glwe_rotate_reference_full, impl_glwe_shift_reference_full, impl_glwe_sub_reference_full,
     impl_glwe_tensoring_reference_full, impl_glwe_trace_derived_full, impl_glwe_zero_reference_full,

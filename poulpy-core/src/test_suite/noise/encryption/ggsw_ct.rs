@@ -8,12 +8,11 @@ use poulpy_hal::{
 use crate::layouts::GLWESecretSampling;
 use crate::{Distribution, ScalarZnxFillDistribution};
 use crate::{
-    GGSWCompressedEncryptSk, GGSWEncryptPk, GGSWEncryptSk, GGSWNoise, GLWEPublicKeyGenerate,
+    GGSWCompressedEncryptSk, GGSWDecompress, GGSWEncryptPk, GGSWEncryptSk, GGSWNoise, GLWEPublicKeyGenerate,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGSW, GGSWDecompress, GGSWInfos, GGSWLayout, GGSWPreparedFactory, GLWEInfos, GLWELayout, GLWEPublicKey,
-        GLWEPublicKeyPreparedFactory, GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc,
-        ModuleCoreCompressedAlloc,
+        GGSW, GGSWInfos, GGSWLayout, GGSWPreparedFactory, GLWEInfos, GLWELayout, GLWEPublicKey, GLWEPublicKeyPreparedFactory,
+        GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc,
         compressed::GGSWCompressed,
         prepared::{GLWEPublicKeyPrepared, GLWESecretPrepared},
     },
@@ -288,11 +287,7 @@ where
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    Module<BE>: GGSWCompressedEncryptSk<BE>
-        + GLWESecretPreparedFactory<BE>
-        + GGSWNoise<BE>
-        + GGSWDecompress
-        + crate::layouts::compressed::GLWEDecompress<Backend = BE>,
+    Module<BE>: GGSWCompressedEncryptSk<BE> + GLWESecretPreparedFactory<BE> + GGSWNoise<BE> + GGSWDecompress<BE>,
 {
     let base2k: usize = params.base2k;
     let k: usize = 4 * base2k + 1;

@@ -1,14 +1,13 @@
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{
-    Backend, Data, HostDataMut, HostDataRef, MatZnx, MatZnxToBackendMut, MatZnxToBackendRef, Module, ReaderFrom, WriterTo,
+    Backend, Data, HostDataMut, HostDataRef, MatZnx, MatZnxToBackendMut, MatZnxToBackendRef, ReaderFrom, WriterTo,
     mat_znx_at_backend_mut_from_mut, mat_znx_at_backend_ref_from_ref, mat_znx_backend_mut_from_mut, mat_znx_backend_ref_from_mut,
 };
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, GGSWInfos, GGSWToBackendMut, GLWEInfos, LWEInfos, Rank, TorusPrecision,
+    Base2K, Degree, Dnum, GGSWInfos, GLWEInfos, LWEInfos, Rank, TorusPrecision,
     compressed::{
         GLWECompressed, GLWECompressedBackendMut, GLWECompressedBackendRef, GLWECompressedViewMut, GLWECompressedViewRef,
-        GLWEDecompress,
     },
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -415,45 +414,6 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GGSWCompressed<D, W> {
         self.data.write_to(writer)
     }
 }
-
-/// Trait for decompressing a [`GGSWCompressed`] into a standard [`GGSW`](crate::layouts::GGSW).
-///
-/// Iterates over every (row, column) entry, decompressing each
-/// compressed GLWE individually via [`GLWEDecompress`].
-pub trait GGSWDecompress
-where
-    Self: GLWEDecompress,
-{
-    /// Decompresses `other` into `res`.
-    fn decompress_ggsw<R, O>(&self, res: &mut R, other: &O)
-    where
-        R: GGSWToBackendMut<Self::Backend> + GGSWInfos,
-        O: GGSWCompressedToBackendRef<Self::Backend> + GGSWInfos,
-    {
-        let noise = other.to_backend_ref().noise();
-        {
-            let mut res = res.to_backend_mut();
-            let other = other.to_backend_ref();
-
-            assert_eq!(res.rank(), other.rank());
-            let dnum: usize = res.dnum().into();
-            let rank: usize = res.rank().into();
-
-            for row_i in 0..dnum {
-                for col_j in 0..rank + 1 {
-                    let mut dst = res.at_view_mut(row_i, col_j);
-                    let src = other.at_view(row_i, col_j);
-                    self.decompress_glwe(&mut dst, &src);
-                }
-            }
-        }
-        res.set_noise(noise);
-    }
-}
-
-impl<B: Backend> GGSWDecompress for Module<B> where Self: GLWEDecompress {}
-
-// module-only API: decompression is provided by `GGSWDecompress` on `Module`.
 
 pub trait GGSWCompressedToBackendRef<BE: Backend> {
     fn to_backend_ref(&self) -> GGSWCompressedBackendRef<'_, BE>;

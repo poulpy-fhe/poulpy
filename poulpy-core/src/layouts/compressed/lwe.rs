@@ -2,18 +2,12 @@ use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::ZnxWord;
 use std::fmt;
 
-use poulpy_hal::{
-    api::VecZnxCopy,
-    layouts::{
-        Backend, Data, HostDataMut, HostDataRef, Module, ReaderFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, WriterTo,
-        vec_znx_alloc_zeroed, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_mut, vec_znx_backend_ref_from_ref,
-    },
+use poulpy_hal::layouts::{
+    Backend, Data, HostDataMut, HostDataRef, ReaderFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, WriterTo,
+    vec_znx_alloc_zeroed, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_mut, vec_znx_backend_ref_from_ref,
 };
 
-use crate::{
-    api::LWEFillMask,
-    layouts::{Base2K, Degree, LWEInfos, LWEToBackendMut, SetBase2k, TorusPrecision},
-};
+use crate::layouts::{Base2K, Degree, LWEInfos, TorusPrecision};
 
 /// Seed-compressed LWE ciphertext layout.
 ///
@@ -133,40 +127,6 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for LWECompressed<D, W> {
         self.data.write_to(writer)
     }
 }
-
-pub trait LWEDecompress
-where
-    Self: LWEFillMask<Self::Backend> + VecZnxCopy<Self::Backend>,
-{
-    type Backend: Backend;
-
-    fn decompress_lwe<R, O>(&self, res: &mut R, other: &O)
-    where
-        R: LWEToBackendMut<Self::Backend> + LWEInfos + SetBase2k,
-        O: LWECompressedToBackendRef<Self::Backend>,
-    {
-        let other = other.to_backend_ref();
-
-        {
-            let mut res = res.to_backend_mut();
-            assert_eq!(res.base2k(), other.base2k(), "decompress_lwe: base2k mismatch");
-            assert_eq!(res.size(), other.size(), "decompress_lwe: limb count mismatch");
-            self.vec_znx_copy(&mut res.body, 0, &other.data, 0);
-        }
-        self.fill_lwe_mask_from_seed(other.base2k().into(), res, other.seed);
-        res.set_base2k(other.base2k());
-        res.set_noise(None);
-    }
-}
-
-impl<B: Backend> LWEDecompress for Module<B>
-where
-    Self: LWEFillMask<B> + VecZnxCopy<B>,
-{
-    type Backend = B;
-}
-
-// module-only API: decompression is provided by `LWEDecompress` on `Module`.
 
 pub trait LWECompressedToBackendRef<BE: Backend> {
     fn to_backend_ref(&self) -> LWECompressedBackendRef<'_, BE>;

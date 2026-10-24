@@ -123,6 +123,7 @@
 - **Breaking:** the CPU backends, the oracle, `impl_cpu_core_defaults!` and `impl_cpu_ckks_defaults!` register through the renamed scheme opt-ins (`impl_<family>_reference_full!`, see the `poulpy-core`, `poulpy-ckks`, `poulpy-bin-fhe`, `poulpy-mhe` and `poulpy-blas` entries), each standard type invoking both halves of the split CKKS fold and DFT opt-ins.
   `impl_ckks_paco_coeff_encoding!`, `impl_ckks_ship_coeff_encoding!` and `impl_ckks_encoding!` implement the renamed OEP methods, and `impl_ckks_paco_coeff_encoding!` the context-taking `ckks_paco_coeff_encodings`; an out-of-tree backend calling them is unchanged, and one invoking a scheme opt-in directly renames the invocation.
 - `impl_cpu_ckks_defaults!` registers the both-ring CKKS families through `impl_ckks_reference_full!`, the same set as before; the oracle's standard and conjugate-invariant types use it too.
+- `impl_cpu_core_defaults!`, the oracle's `impl_oracle_core!` and the hand-listed IFMA Rayon type register `impl_decompression_reference_full!`, so every CPU backend implements `DecompressionImpl` with the reference bodies.
 
 ### `poulpy-core`
 
@@ -249,6 +250,10 @@
   Callers and backends update their imports; outputs are unchanged.
 - **Breaking:** every opt-in macro is named after its OEP trait: `impl_glwe_tensoring_reference!` becomes `impl_glwe_tensoring_reference_full!`, `impl_gglwe_product_digits_strided_reference!` becomes `impl_gglwe_product_digits_strided_reference_full!` and `impl_glwe_packing_derived_full!` becomes `impl_glwe_pack_derived_full!` (`GLWEPackImpl`).
   Backends rename their invocations; `impl_core_reference_full!` invokes the new names.
+- **Breaking:** decompression dispatches through the new OEP family `DecompressionImpl`, whose methods have the API names (`decompress_glwe`, `decompress_gglwe`, `decompress_ggsw`, `decompress_glwe_public_key`, `decompress_lwe`, `decompress_automorphism_key`, `decompress_glwe_switching_key`, `decompress_tensor_key`, `decompress_glwe_to_lwe_key`, `decompress_lwe_switching_key`, `decompress_lwe_to_glwe_key`, `decompress_gglwe_to_ggsw_key`) and whose reference bodies, those the traits provided, are the `_reference` methods of `reference::decompression::DecompressionReference`.
+  `GLWEDecompress`, `GGLWEDecompress`, `GGSWDecompress`, `GLWEPublicKeyDecompress`, `LWEDecompress`, `GLWEAutomorphismKeyDecompress`, `GLWESwitchingKeyDecompress`, `GLWETensorKeyDecompress`, `GLWEToLWESwitchingKeyDecompress`, `LWESwitchingKeyDecompress`, `LWEToGLWEKeyDecompress` and `GGLWEToGGSWKeyDecompress` move from `poulpy_core::layouts` to `poulpy_core::api` (and the crate root) and become API traits generic over the backend, `<BE>` in place of the `Backend` associated type, with no supertraits, implemented on `Module<BE>` for `BE: DecompressionImpl`.
+  Callers bound `Module<BE>: GGSWDecompress<BE>` where they bounded `GGSWDecompress + GLWEDecompress<Backend = BE>`, and so for each trait; the calls and outputs are unchanged.
+  `impl_core_reference_full!` invokes the new `impl_decompression_reference_full!`; out-of-tree backends that list the core families add it, and `EncryptionParityBackend` gains `DecompressionImpl`.
 
 ### `poulpy-ckks`
 
@@ -399,6 +404,7 @@
   `impl_bin_fhe_circuit_bootstrapping_{execute,key_encrypt_sk,key_prepared}_reference!` become `impl_circuit_bootstrapping_{execute,key_encrypt_sk,key_prepared}_reference_full!`.
   `impl_bin_fhe_{execute_bdd_circuit,execute_bdd_circuit_1w_to_1w,execute_bdd_circuit_2w_to_1w,cswap,cmux,ggsw_blind_rotation,glwe_blind_rotation,glwe_blind_selection,fhe_uint_prepared_encrypt_sk,fhe_uint_prepare,bdd_key_encrypt_sk}_reference!` become `impl_{..}_reference_full!` with the same stems, `impl_bin_fhe_bdd_key_prepared_reference!` becomes `impl_bdd_key_prepared_factory_reference_full!` (`BDDKeyPreparedFactoryImpl`) and `impl_bin_fhe_glwe_blind_retrieval_derived!` `impl_glwe_blind_retrieval_derived_full!`.
   The group umbrellas `impl_bin_fhe_blind_rotation_reference!`, `impl_bin_fhe_circuit_bootstrapping_reference!` and `impl_bin_fhe_bdd_reference!` become `impl_blind_rotation_reference_full!`, `impl_circuit_bootstrapping_reference_full!` and `impl_bdd_reference_full!`; `impl_bin_fhe_reference_full!` keeps its name.
+- **Breaking:** `reference::blind_rotation::blind_rotation_key_decompress_ref` and `test_blind_rotation_key_lifecycle` bound `Module<BE>: GGSWDecompress<BE>`, the backend-generic core decompression API, so a backend registering `impl_blind_rotation_key_decompress_reference_full!` implements `poulpy_core::oep::DecompressionImpl`.
 
 ### `poulpy-mhe`
 
@@ -416,6 +422,7 @@
 - `mhe-contracts.md` links `docs/layering-contract.md` instead of restating it and states that generation normalizes fresh shares.
 - **Breaking:** each OEP trait has its own opt-in macro, named after it: `impl_mhe_pat_reference!` splits into `impl_glwe_pat_compressed_reference_full!`, `impl_gglwe_pat_compressed_reference_full!` and `impl_gglwe_pat_reference_full!`, `impl_mhe_evaluation_key_reference!` into `impl_glwe_switching_key_mhe_protocol_reference_full!` and `impl_glwe_automorphism_key_mhe_protocol_reference_full!`, `impl_mhe_keyswitch_reference!` into `impl_glwe_private_keyswitch_mhe_protocol_reference_full!` and `impl_glwe_public_keyswitch_mhe_protocol_reference_full!`, and `impl_mhe_sharing_reference!` into `impl_glwe_enc_to_share_mhe_protocol_reference_full!` and `impl_glwe_share_to_enc_mhe_protocol_reference_full!`.
   `impl_mhe_ggsw_reference!`, `impl_mhe_public_key_reference!` and `impl_mhe_tensor_key_reference!` become `impl_ggsw_mhe_protocol_reference_full!`, `impl_glwe_public_key_mhe_protocol_reference_full!` and `impl_glwe_tensor_key_mhe_protocol_reference_full!`; `impl_mhe_reference_full!` invokes the twelve.
+- **Breaking:** `GGLWEPatCompressedReference` is implemented on `Module<BE>` bounded by `GGLWEDecompress<BE>`, the backend-generic core decompression API, so a backend registering `impl_gglwe_pat_compressed_reference_full!` implements `poulpy_core::oep::DecompressionImpl`.
 
 ### `poulpy-blas`
 

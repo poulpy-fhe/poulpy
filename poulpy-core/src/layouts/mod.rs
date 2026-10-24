@@ -64,15 +64,13 @@ pub mod prepared;
 
 pub use self::compressed::{
     GGLWECompressed, GGLWECompressedSeed, GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef,
-    GGLWEDecompress, GGLWEToGGSWKeyCompressed, GGLWEToGGSWKeyCompressedToBackendMut, GGLWEToGGSWKeyCompressedToBackendRef,
-    GGLWEToGGSWKeyDecompress, GGSWCompressed, GGSWCompressedSeed, GGSWCompressedSeedMut, GGSWCompressedToBackendMut,
-    GGSWCompressedToBackendRef, GGSWDecompress, GLWEAutomorphismKeyCompressed, GLWEAutomorphismKeyDecompress, GLWECompressed,
-    GLWECompressedSeed, GLWECompressedSeedMut, GLWECompressedToBackendMut, GLWECompressedToBackendRef, GLWEDecompress,
-    GLWEPublicKeyCompressed, GLWEPublicKeyCompressedSeed, GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyCompressedToBackendMut,
-    GLWEPublicKeyCompressedToBackendRef, GLWEPublicKeyDecompress, GLWESwitchingKeyCompressed, GLWESwitchingKeyDecompress,
-    GLWETensorKeyCompressed, GLWETensorKeyDecompress, GLWEToLWESwitchingKeyCompressed, GLWEToLWESwitchingKeyDecompress,
-    LWECompressed, LWECompressedToBackendMut, LWECompressedToBackendRef, LWEDecompress, LWESwitchingKeyCompressed,
-    LWESwitchingKeyDecompress, LWEToGLWEKeyCompressed, LWEToGLWEKeyDecompress,
+    GGLWEToGGSWKeyCompressed, GGLWEToGGSWKeyCompressedToBackendMut, GGLWEToGGSWKeyCompressedToBackendRef, GGSWCompressed,
+    GGSWCompressedSeed, GGSWCompressedSeedMut, GGSWCompressedToBackendMut, GGSWCompressedToBackendRef,
+    GLWEAutomorphismKeyCompressed, GLWECompressed, GLWECompressedSeed, GLWECompressedSeedMut, GLWECompressedToBackendMut,
+    GLWECompressedToBackendRef, GLWEPublicKeyCompressed, GLWEPublicKeyCompressedSeed, GLWEPublicKeyCompressedSeedMut,
+    GLWEPublicKeyCompressedToBackendMut, GLWEPublicKeyCompressedToBackendRef, GLWESwitchingKeyCompressed,
+    GLWETensorKeyCompressed, GLWEToLWESwitchingKeyCompressed, LWECompressed, LWECompressedToBackendMut,
+    LWECompressedToBackendRef, LWESwitchingKeyCompressed, LWEToGLWEKeyCompressed,
 };
 pub use diagonals::*;
 pub use gglwe::*;

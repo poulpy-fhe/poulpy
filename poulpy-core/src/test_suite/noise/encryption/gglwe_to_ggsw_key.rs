@@ -7,13 +7,13 @@ use poulpy_hal::{
 
 use crate::layouts::GLWESecretSampling;
 use crate::{
-    GGLWENoise, GGLWEToGGSWKeyCompressedEncryptSk, GGLWEToGGSWKeyEncryptSk,
+    GGLWENoise, GGLWEToGGSWKeyCompressedEncryptSk, GGLWEToGGSWKeyDecompress, GGLWEToGGSWKeyEncryptSk,
     decryption::GLWEDecrypt,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        Dsize, GGLWE, GGLWEDecompress, GGLWEInfos, GGLWEToGGSWKey, GGLWEToGGSWKeyCompressed, GGLWEToGGSWKeyDecompress,
-        GGLWEToGGSWKeyLayout, GLWESecret, GLWESecretPreparedFactory, GLWESecretTensor, GLWESecretTensorFactory, LWEInfos,
-        ModuleCoreAlloc, ModuleCoreCompressedAlloc, prepared::GLWESecretPrepared,
+        Dsize, GGLWE, GGLWEInfos, GGLWEToGGSWKey, GGLWEToGGSWKeyCompressed, GGLWEToGGSWKeyLayout, GLWESecret,
+        GLWESecretPreparedFactory, GLWESecretTensor, GLWESecretTensorFactory, LWEInfos, ModuleCoreAlloc,
+        ModuleCoreCompressedAlloc, prepared::GLWESecretPrepared,
     },
 };
 
@@ -124,9 +124,7 @@ pub fn test_gglwe_to_ggsw_compressed_encrypt_sk<BE: crate::test_suite::noise::Te
         + GLWEDecrypt<BE>
         + GLWESecretTensorFactory<BE>
         + GGLWENoise<BE>
-        + GGLWEDecompress
-        + GGLWEToGGSWKeyDecompress
-        + crate::layouts::compressed::GLWEDecompress<Backend = BE>
+        + GGLWEToGGSWKeyDecompress<BE>
         + VecZnxCopy<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {

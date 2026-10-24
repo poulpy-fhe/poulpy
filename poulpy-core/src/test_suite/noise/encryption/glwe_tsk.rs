@@ -7,13 +7,13 @@ use poulpy_hal::{
 
 use crate::layouts::GLWESecretSampling;
 use crate::{
-    GGLWENoise, GLWETensorKeyCompressedEncryptSk, GLWETensorKeyEncryptSk,
+    GGLWENoise, GLWETensorKeyCompressedEncryptSk, GLWETensorKeyDecompress, GLWETensorKeyEncryptSk,
     decryption::GLWEDecrypt,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        Dsize, GGLWEDecompress, GGLWEInfos, GLWESecret, GLWESecretPreparedFactory, GLWESecretTensor, GLWESecretTensorFactory,
-        GLWETensorKey, GLWETensorKeyCompressed, GLWETensorKeyDecompress, GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc,
-        ModuleCoreCompressedAlloc, prepared::GLWESecretPrepared,
+        Dsize, GGLWEInfos, GLWESecret, GLWESecretPreparedFactory, GLWESecretTensor, GLWESecretTensorFactory, GLWETensorKey,
+        GLWETensorKeyCompressed, GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc,
+        prepared::GLWESecretPrepared,
     },
 };
 
@@ -113,8 +113,7 @@ pub fn test_gglwe_tensor_key_compressed_encrypt_sk<BE: crate::test_suite::noise:
         + GLWEDecrypt<BE>
         + GLWESecretTensorFactory<BE>
         + GGLWENoise<BE>
-        + GGLWEDecompress
-        + crate::layouts::compressed::GLWEDecompress<Backend = BE>,
+        + GLWETensorKeyDecompress<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;

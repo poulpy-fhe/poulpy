@@ -33,8 +33,9 @@ packing, GLWE/GGSW rotate, `mul_xp_minus_one`), which bound `Backend<Ring = Stan
 and register on standard backends only. Use individual family macros when replacing
 a family, so its `*Impl` is defined only once. Sampling is supplied through
 the mandatory `SamplingImpl`, including full-width flooding.
-Preparation and decompression helpers reuse selected operations;
-see the [OEP documentation](../src/oep/mod.rs) for the available hooks and macros.
+Preparation helpers reuse selected operations, and decompression dispatches
+through `DecompressionImpl`; see the [OEP documentation](../src/oep/mod.rs) for
+the available hooks and macros.
 
 Prepared-right tensor multiplication is a `GLWETensoring` operation. Its
 `glwe_tensor_apply_prepared_right_tmp_bytes` query sizes the selected implementation;

@@ -12,6 +12,7 @@
 pub mod automorphism;
 pub mod ci_conversion;
 pub mod conversion;
+pub mod decompression;
 pub mod decryption;
 pub mod encryption;
 pub mod external_product;

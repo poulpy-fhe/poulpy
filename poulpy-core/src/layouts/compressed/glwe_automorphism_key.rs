@@ -1,9 +1,9 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Module, ReaderFrom, WriterTo};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo};
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, GGLWECompressed, GGLWECompressedSeedMut, GGLWEDecompress, GGLWEInfos, GGLWEToBackendMut,
-    GLWEDecompress, GLWEInfos, GetGaloisElement, LWEInfos, Rank, SetGaloisElement, TorusPrecision,
+    Base2K, Degree, Dnum, GGLWECompressed, GGLWECompressedSeedMut, GGLWEInfos, GLWEInfos, GetGaloisElement, LWEInfos, Rank,
+    SetGaloisElement, TorusPrecision,
     compressed::{
         GGLWECompressedBackendMut, GGLWECompressedBackendRef, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef,
     },
@@ -150,24 +150,6 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWEAutomorphismKeyCompressed<D, W
         self.key.write_to(writer)
     }
 }
-
-pub trait GLWEAutomorphismKeyDecompress
-where
-    Self: GGLWEDecompress,
-{
-    fn decompress_automorphism_key<R, O>(&self, res: &mut R, other: &O)
-    where
-        R: GGLWEToBackendMut<Self::Backend> + GGLWEInfos + SetGaloisElement,
-        O: GGLWECompressedToBackendRef<Self::Backend> + GGLWEInfos + GetGaloisElement,
-    {
-        self.decompress_gglwe(res, other);
-        res.set_p(other.p());
-    }
-}
-
-impl<B: Backend> GLWEAutomorphismKeyDecompress for Module<B> where Self: GLWEDecompress {}
-
-// module-only API: decompression is provided by `GLWEAutomorphismKeyDecompress` on `Module`.
 
 impl_gglwe_compressed_to_backend_for_field!(
     GLWEAutomorphismKeyCompressed<BE::OwnedBuf, BE::ZnxWord>,

@@ -1466,6 +1466,7 @@ mod ifma_rayon_defaults {
     use super::super::NTT3x42IfmaRayon;
 
     ::poulpy_core::impl_automorphism_reference_full!(NTT3x42IfmaRayon);
+    ::poulpy_core::impl_decompression_reference_full!(NTT3x42IfmaRayon);
     ::poulpy_core::impl_decryption_reference_full!(NTT3x42IfmaRayon);
     ::poulpy_core::impl_ggsw_conversion_reference_full!(NTT3x42IfmaRayon);
     ::poulpy_core::impl_glwe_keyswitch_reference_full!(NTT3x42IfmaRayon);

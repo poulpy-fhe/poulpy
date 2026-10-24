@@ -18,16 +18,16 @@ use poulpy_hal::{
 use crate::layouts::GLWESecretSampling;
 use crate::test_suite::noise::glwe_noise_checked;
 use crate::{
-    GLWECompressedEncryptSk, GLWEDecrypt, GLWEEncryptPk, GLWEEncryptSk, GLWEMaskFill, GLWENoise, GLWENormalize,
-    GLWEPublicKeyCompressedGenerate, GLWEPublicKeyGenerate, GLWESub, GetDistribution, GetDistributionMut, Noise,
-    ScalarZnxFillDistribution, VecZnxAddNoise, VecZnxBigAddNoise,
+    GLWECompressedEncryptSk, GLWEDecompress, GLWEDecrypt, GLWEEncryptPk, GLWEEncryptSk, GLWEMaskFill, GLWENoise, GLWENormalize,
+    GLWEPublicKeyCompressedGenerate, GLWEPublicKeyDecompress, GLWEPublicKeyGenerate, GLWESub, GetDistribution,
+    GetDistributionMut, Noise, ScalarZnxFillDistribution, VecZnxAddNoise, VecZnxBigAddNoise,
     dist::Distribution,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GLWE, GLWEInfos, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWEPrepared, GLWEPreparedFactory, GLWEPublicKey,
         GLWEPublicKeyPreparedFactory, GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc,
         ModuleCoreCompressedAlloc, Rank,
-        compressed::{GLWECompressed, GLWEDecompress, GLWEPublicKeyDecompress},
+        compressed::GLWECompressed,
         prepared::{GLWEPublicKeyPrepared, GLWESecretPrepared},
     },
 };
@@ -215,7 +215,7 @@ where
         + GLWESecretPreparedFactory<BE>
         + VecZnxFillUniformSource<BE>
         + GLWESub<BE>
-        + GLWEDecompress<Backend = BE>,
+        + GLWEDecompress<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -497,8 +497,7 @@ where
         + GLWEPublicKeyPreparedFactory<BE>
         + GLWEPublicKeyGenerate<BE>
         + GLWEPublicKeyCompressedGenerate<BE>
-        + GLWEPublicKeyDecompress
-        + GLWEDecompress<Backend = BE>
+        + GLWEPublicKeyDecompress<BE>
         + GLWENoise<BE>
         + GLWESecretPreparedFactory<BE>
         + VecZnxFillUniformSource<BE>
