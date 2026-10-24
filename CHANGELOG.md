@@ -491,7 +491,11 @@
   The parity bodies and `test_blind_rotation_key_lifecycle` check each key allocator's byte count against its buffers and its degree refusal.
 - **Breaking:** the backend's executor picks the blind-rotation schedule: `reference::blind_rotation::blind_rotation_execute_ref` and `blind_rotation_execute_tmp_bytes_ref` run the products of a block in parallel, reserving one worker scratch per product, exactly when `BE::TaskExecutor::IS_PARALLEL`, and add their contributions in index order, so every executor and pool width returns the same bytes.
   The `scheduling = parallel` arms of `impl_bin_fhe_reference_full!` and `impl_blind_rotation_reference_full!`, the opt-in `impl_bin_fhe_blind_rotation_execute_parallel!` and the references `blind_rotation_execute_parallel` and `blind_rotation_execute_tmp_bytes_parallel` are removed: a backend drops the `scheduling = parallel` argument, a hand-written impl calls the `_ref` references, and both select the parallel schedule through a parallel executor.
-  The serial schedule holds each product's contribution over every column, where it held one column, and the parallel schedule adds into its own accumulator: both queries grow by up to one transform-domain vector of `rank + 1` columns at the key's size, and the serial one rounds its product's scratch with `worker_scratch_bytes`.
+  Each product becomes its own contribution in place, through a one-column temporary carved from its worker scratch after the product: the serial schedule needs no more than before, the temporary now sharing the product's scratch, and the parallel one holds one product of `rank + 1` columns per block index, a one-column temporary per worker and one accumulator, where it held two products per index.
+  Both references also bound `Module<BE>: VecZnxDftSubNegateAssign<BE>`: generic callers add the bound.
+- **Breaking, behaviour:** the FFT64 serial block blind rotation (block size above one, extension factor one) adds each product `v` as one term, `acc + (X^{a_i}·v - v)`, where it computed `(acc + X^{a_i}·v) - v`, so its transform-domain rounding differs from 0.9.0.
+  Integer outputs change only where that rounding crosses a coefficient's rounding boundary: at the parity test parameters, the 0.9.0 Rayon twins already ran the new order and matched their serial bases bit for bit. No test fixture changes.
+  The NTT backends compute exactly and return the same bytes, and the extended blind rotation (extension factor above one) keeps the old order.
 
 ### `poulpy-mhe`
 
