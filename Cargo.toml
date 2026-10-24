@@ -6,6 +6,7 @@ members = [
     "schemes/poulpy-ckks",
     "schemes/poulpy-bin-fhe",
     "libs/poulpy-blas",
+    "libs/poulpy-libm",
     "backends/poulpy-cpu-portable",
     "backends/poulpy-cpu-avx",
     "backends/poulpy-cpu-avx512",
@@ -21,6 +22,7 @@ default-members = [
     "schemes/poulpy-ckks",
     "schemes/poulpy-bin-fhe",
     "libs/poulpy-blas",
+    "libs/poulpy-libm",
     "backends/poulpy-cpu-portable",
     "backends/poulpy-cpu-avx",
     "backends/poulpy-cpu-arm",
@@ -53,6 +55,7 @@ poulpy-mhe = {path = "poulpy-mhe", version = "0.9.0"}
 poulpy-ckks = {path = "schemes/poulpy-ckks", version = "0.9.0"}
 poulpy-bin-fhe = {path = "schemes/poulpy-bin-fhe", version = "0.9.0"}
 poulpy-blas = {path = "libs/poulpy-blas", version = "0.9.0"}
+poulpy-libm = {path = "libs/poulpy-libm", version = "0.9.0"}
 poulpy-cpu-portable = {path = "backends/poulpy-cpu-portable", version = "0.9.0"}
 poulpy-cpu-avx = {path = "backends/poulpy-cpu-avx", version = "0.9.0"}
 poulpy-cpu-avx512 = {path = "backends/poulpy-cpu-avx512", version = "0.9.0"}

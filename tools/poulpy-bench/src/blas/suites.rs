@@ -93,8 +93,8 @@ where
     bench_ops(PhantomData::<BE>, &blas_ops::<BE, WallTime>(), points, c);
 }
 
-/// Every BLAS operation over the full sweep, the full tier. Takes exactly one backend type parameter; a
-/// `criterion_group!` registers it once per backend to cover.
+/// Every BLAS operation over the full sweep, the full tier. Takes exactly one backend type parameter, and
+/// a `criterion_group!` registers it once per backend to cover.
 pub fn bench_blas<BE>(c: &mut Criterion<WallTime>)
 where
     BE: Backend<Ring = Standard> + 'static + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
