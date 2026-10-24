@@ -15,7 +15,7 @@ use poulpy_hal::{
 /// The destination must have compatible dimensions and sufficient precision for
 /// the message-bit count `k`. Rotation of the encoded samples uses the canonical
 /// LUT rotation composition.
-pub fn lookup_table_set_ref<BE>(module: &Module<BE>, k: usize, res: &mut LookupTable<BE::OwnedBuf, BE::ZnxWord>, f: &[i64])
+pub fn lookup_table_set_reference<BE>(module: &Module<BE>, k: usize, res: &mut LookupTable<BE::OwnedBuf, BE::ZnxWord>, f: &[i64])
 where
     BE: Backend<ZnxWord = i64>,
     Module<BE>: VecZnxNormalizeAssign<BE> + VecZnxNormalizeTmpBytes + VecZnxRotateAssign<BE> + VecZnxRotateAssignTmpBytes,
@@ -118,13 +118,13 @@ where
         module.vec_znx_normalize_assign(res.base2k.into(), res.k.as_usize(), 0, &mut a_data, 0, &mut scratch.borrow());
     }
 
-    lookup_table_rotate_ref(module, -(drift as i64), res);
+    lookup_table_rotate_reference(module, -(drift as i64), res);
 
     res.drift = drift
 }
 
 /// Rotates an encoded LUT using HAL polynomial rotation and its scratch query.
-pub fn lookup_table_rotate_ref<BE>(module: &Module<BE>, k: i64, res: &mut LookupTable<BE::OwnedBuf, BE::ZnxWord>)
+pub fn lookup_table_rotate_reference<BE>(module: &Module<BE>, k: i64, res: &mut LookupTable<BE::OwnedBuf, BE::ZnxWord>)
 where
     BE: Backend<ZnxWord = i64>,
     Module<BE>: VecZnxRotateAssign<BE> + VecZnxRotateAssignTmpBytes,

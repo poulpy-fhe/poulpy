@@ -3,7 +3,7 @@ use poulpy_core::api::GGSWDecompress;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 /// Scratch for coefficient-domain decompression; the core composition needs none.
-pub fn blind_rotation_key_decompress_tmp_bytes_ref<BE: Backend, A: BlindRotationKeyInfos>(
+pub fn blind_rotation_key_decompress_tmp_bytes_reference<BE: Backend, A: BlindRotationKeyInfos>(
     _module: &Module<BE>,
     _infos: &A,
 ) -> usize {
@@ -11,7 +11,7 @@ pub fn blind_rotation_key_decompress_tmp_bytes_ref<BE: Backend, A: BlindRotation
 }
 
 /// Recreates each GGSW mask through the selected core decompression operation.
-pub fn blind_rotation_key_decompress_ref<BE: Backend>(
+pub fn blind_rotation_key_decompress_reference<BE: Backend>(
     module: &Module<BE>,
     res: &mut BlindRotationKey<BE::OwnedBuf, CGGI, BE::ZnxWord>,
     src: &BlindRotationKeyCompressed<BE::OwnedBuf, CGGI, BE::ZnxWord>,

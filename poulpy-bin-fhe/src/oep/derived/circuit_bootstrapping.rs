@@ -106,7 +106,7 @@ where
         &CircuitBootstrappingPlanLayout {
             output_layout: res_infos.ggsw_layout(),
             log_domain: Some(log_domain),
-            log_gap_in: Some(crate::reference::circuit_bootstrapping::circuit_bootstrapping_log_gap_in(
+            log_gap_in: Some(crate::circuit_bootstrapping::circuit_bootstrapping_log_gap_in(
                 res_infos,
                 log_domain,
                 extension_factor,

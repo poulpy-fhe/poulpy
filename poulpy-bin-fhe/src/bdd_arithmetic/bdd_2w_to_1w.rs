@@ -30,8 +30,8 @@ macro_rules! define_bdd_2w_to_1w_trait {
                 /// Multithreaded version – same vis, method_name + "_multi_thread"
                 fn [<$method_name _multi_thread>]<M, H>(
                     &mut self,
-                    threads: usize,
                     module: &M,
+                    threads: usize,
                     a: &FheUintPrepared<BE::OwnedBuf, T, BE>,
                     b: &FheUintPrepared<BE::OwnedBuf, T, BE>,
                     key: &H,
@@ -58,8 +58,8 @@ macro_rules! define_bdd_2w_to_1w_trait {
 
                 fn [<$method_name _multi_thread_tmp_bytes>]<M, R, G, H>(
                     &self,
-                    threads: usize,
                     module: &M,
+                    threads: usize,
                     res_infos: &R,
                     ggsw_infos: &G,
                     key: &H,
@@ -98,8 +98,8 @@ macro_rules! impl_bdd_2w_to_1w_trait {
 
                 fn [<$method_name _multi_thread>]<M, H>(
                     &mut self,
-                    threads: usize,
                     module: &M,
+                    threads: usize,
                     a: &FheUintPrepared<BE::OwnedBuf, $ty, BE>,
                     b: &FheUintPrepared<BE::OwnedBuf, $ty, BE>,
                     key: &H,
@@ -136,8 +136,8 @@ macro_rules! impl_bdd_2w_to_1w_trait {
 
                 fn [<$method_name _multi_thread_tmp_bytes>]<M, R, G, H>(
                     &self,
-                    threads: usize,
                     module: &M,
+                    threads: usize,
                     res_infos: &R,
                     ggsw_infos: &G,
                     key: &H,

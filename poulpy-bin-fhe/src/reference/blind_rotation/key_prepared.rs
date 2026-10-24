@@ -10,7 +10,7 @@ use poulpy_core::{Distribution, api::GGSWPreparedFactory, layouts::LWEInfos};
 use crate::blind_rotation::{BlindRotationKey, BlindRotationKeyInfos, BlindRotationKeyPrepared, CGGI, utils::set_xai_plus_y};
 
 /// Canonical lower-layer composition for `blind_rotation_key_prepare_tmp_bytes`.
-pub fn blind_rotation_key_prepare_tmp_bytes_ref<BE, A>(module: &Module<BE>, infos: &A) -> usize
+pub fn blind_rotation_key_prepare_tmp_bytes_reference<BE, A>(module: &Module<BE>, infos: &A) -> usize
 where
     A: BlindRotationKeyInfos,
     BE: Backend<ZnxWord = i64>,
@@ -20,7 +20,7 @@ where
 }
 
 /// Canonical lower-layer composition for `blind_rotation_key_prepare`.
-pub fn blind_rotation_key_prepare_ref<BE>(
+pub fn blind_rotation_key_prepare_reference<BE>(
     module: &Module<BE>,
     res: &mut BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>,
     other: &BlindRotationKey<BE::OwnedBuf, CGGI, BE::ZnxWord>,
