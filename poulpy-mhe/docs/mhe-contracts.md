@@ -197,10 +197,10 @@ checks a backend bit for bit against a validated one: each protocol's shares,
 aggregates and finalized output and each PAT type's aggregation and
 finalization, with their layouts, noise estimates, flags, seeds and the draws
 left in every private stream. Fixtures are built on `R` and transferred to
-`T`, each call runs on its own query's scratch, and the comparison backend
-copies `T`'s draws when their samplers differ (`ControlledSampling*` oracles).
-Every backend type registering mhe runs it; the oracle and the portable serial
-types also run `mhe_backend_test_suite!`.
+`T`, each call runs on its own query's scratch, and a controlled-sampling
+comparison backend copies `T`'s draws when their samplers differ. Every backend
+type registering mhe runs it; the reference backends also run
+`mhe_backend_test_suite!`.
 `impl_mhe_reference_full!` selects every family. Each OEP trait has its own
 opt-in, `impl_<family>_reference_full!` with `<family>` the trait in snake case
 without `Impl`; a backend replacing one family selects the others alone:

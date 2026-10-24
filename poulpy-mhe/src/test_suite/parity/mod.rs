@@ -33,20 +33,19 @@ pub use sharing::*;
 pub use tensor_key::*;
 
 use poulpy_core::{
-    ComponentNoise, Distribution, GetDistribution, GetDistributionMut, TransferInto,
+    ComponentNoise, Distribution, GetDistribution, TransferInto,
     api::{GLWESecretPreparedFactory, GLWESecretSampling},
     layouts::{
         Degree, GGLWECompressedSeed, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef, GGLWEInfos, GGLWELayout,
         GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWLayout, GGSWToBackendMut, GGSWToBackendRef, GLWECompressedSeed,
         GLWECompressedToBackendMut, GLWECompressedToBackendRef, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEPlaintextMeta,
-        GLWEPublicKey, GLWEPublicKeyCompressedSeed, GLWEPublicKeyCompressedToBackendRef, GLWEPublicKeyToBackendMut,
-        GLWEPublicKeyToBackendRef, GLWESecret, GLWESecretPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
-        Rank,
+        GLWEPublicKeyCompressedSeed, GLWEPublicKeyCompressedToBackendRef, GLWEPublicKeyToBackendMut, GLWEPublicKeyToBackendRef,
+        GLWESecret, GLWESecretPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, Rank,
     },
 };
 use poulpy_hal::{
     AlignedBuf,
-    layouts::{Backend, CopyFromHost, CopyToHost, DataView, DataViewMut, Module, ScratchArena, ScratchOwned, transfer_buf_into},
+    layouts::{Backend, CopyFromHost, CopyToHost, DataView, DataViewMut, Module, ScratchArena, ScratchOwned},
     source::Source,
 };
 
@@ -299,15 +298,6 @@ where
             (sk, copy)
         })
         .unzip()
-}
-
-/// Moves `src`'s coefficients, distribution and noise estimate into `dst`,
-/// which has its layout.
-fn transfer_public_key<BT: ParityBackend>(src: &GLWEPublicKey<AlignedBuf, i64>, dst: &mut GLWEPublicKey<BT::OwnedBuf, i64>) {
-    assert_eq!(src.glwe_layout(), dst.glwe_layout(), "transfer_public_key: layouts differ");
-    transfer_buf_into(src.data().data(), dst.data_mut().data_mut());
-    *dst.dist_mut() = *src.dist();
-    GLWEPublicKeyToBackendMut::<BT>::set_noise(dst, src.noise());
 }
 
 /// The prepared forms of `secrets` on `module`.

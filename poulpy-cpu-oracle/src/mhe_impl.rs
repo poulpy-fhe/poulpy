@@ -1,15 +1,11 @@
 //! Registers the generic multiparty compositions for the standard oracles and
-//! their controlled-sampling forms.
+//! the controlled-sampling FFT64 oracle.
 
-use crate::{
-    FFT64Oracle, NTT4x30Oracle,
-    test_suite::{ControlledSamplingFFT64Oracle, ControlledSamplingNTT4x30Oracle},
-};
+use crate::{FFT64Oracle, NTT4x30Oracle, test_suite::ControlledSamplingFFT64Oracle};
 
 poulpy_mhe::impl_mhe_reference_full!(FFT64Oracle);
 poulpy_mhe::impl_mhe_reference_full!(NTT4x30Oracle);
 poulpy_mhe::impl_mhe_reference_full!(ControlledSamplingFFT64Oracle);
-poulpy_mhe::impl_mhe_reference_full!(ControlledSamplingNTT4x30Oracle);
 
 #[cfg(test)]
 poulpy_mhe::mhe_backend_test_suite!(mod mhe_fft64oracle, backend = crate::FFT64Oracle);
