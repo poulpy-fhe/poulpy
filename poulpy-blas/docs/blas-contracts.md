@@ -1,9 +1,10 @@
 # Implementing BLAS operations
 
 Public matrix calls follow the [layering contract](../../docs/layering-contract.md): `Module<BE>` implements
-`BlasMatInterOps`, `BlasMatIntraOps` and `BlasMatMulOps` for every backend that
-implements the matching `*Impl` trait, and each OEP method runs its validator
-first. The BLAS
+`BlasMatInterOps`, `BlasMatIntraOps` and `BlasMatMulOps`, and `BlasEncodingOps`,
+`BlasPtOperandPreparedFactory` and `BlasContextPreparedFactory`, for every
+backend that implements the matching `*Impl` trait, and each OEP method of an
+operation runs its validator first. The BLAS
 crate imports no backend crate: each backend crate wires its own types.
 
 This file holds the rules every family shares. What an implementation of one
@@ -21,9 +22,13 @@ changes bits.
 | `BlasMatIntraImpl` | the map hook `blas_map_blocks` | `blas_transpose`, `blas_rotate_rows`, `blas_rotate_cols`, over the hook |
 | `BlasMatMulImpl` | `blas_matmul`, `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, `blas_matmul_prepared`, `blas_matmul_pt_right`, `blas_matmul_pt_left` | |
 | `BlasJklsImpl` | the JKLS kernel `blas_jkls_block`, one output block of the prepared product | |
+| `BlasEncodingImpl` | `blas_pt_operand_encode_into`, `blas_context_encode_into`, `blas_pt_operand_prepare`, `blas_context_prepare` | |
 
-Each operation's `_tmp_bytes` query belongs to the same family. `BlasImpl`
-aggregates the four families as a test bound; it has a blanket implementation
+Each operation's `_tmp_bytes` query belongs to the same family. The encodings
+take poulpy-ckks's encoding scalar `F` as a method parameter bounded by
+`Self: CKKSEncodingImpl<F>`, and the allocations of contexts and public
+operands, prepared or not, stay direct on the module. `BlasImpl`
+aggregates the five families as a test bound; it has a blanket implementation
 and is never implemented directly.
 
 The provided methods, the transpose and both shifts, call the backend's
@@ -52,8 +57,9 @@ APIs, so a backend's CKKS and core overrides remain effective inside them.
 | `BlasMatIntraImpl` | `BlasMatIntraReference` (the hook), [`reference/intra.rs`](../src/reference/intra.rs) | `impl_blas_mat_intra_reference_full!` |
 | `BlasMatMulImpl` | `BlasMatMulReference`, [`reference/matmul.rs`](../src/reference/matmul.rs) | `impl_blas_mat_mul_reference_full!` |
 | `BlasJklsImpl` | `BlasJklsReference` (the kernel), [`reference/jkls.rs`](../src/reference/jkls.rs) | `impl_blas_jkls_reference_full!` |
+| `BlasEncodingImpl` | `BlasEncodingReference`, [`reference/encoding.rs`](../src/reference/encoding.rs) | `impl_blas_encoding_reference_full!` |
 
-`impl_blas_reference_full!` expands to the four family macros. The reference's
+`impl_blas_reference_full!` expands to the five family macros. The reference's
 cold preparations call the backend's map hook, and the reference prepared
 product, like the reference `blas_matmul`, calls it for the terms of a hot
 operand, then its JKLS kernel. So `impl_blas_mat_mul_reference_full!` needs the intra
@@ -84,7 +90,7 @@ the same `#[cfg]` gates as `ckks_impl.rs`:
 ```
 
 To replace a family, replace the type's `impl_blas_reference_full!` line with
-the macros of the three families it keeps, as the [layering contract](../../docs/layering-contract.md)
+the macros of the four families it keeps, as the [layering contract](../../docs/layering-contract.md)
 states. The expansion of each family macro, in [`oep`](../src/oep/), spells out
 every signature and its forwarding call, and each family's `# Safety` section
 states what an implementation must reproduce. Three replacements cover most needs:
@@ -97,6 +103,7 @@ states what an implementation must reproduce. Three replacements cover most need
   ::poulpy_blas::impl_blas_mat_inter_reference_full!(MyBackend);
   ::poulpy_blas::impl_blas_mat_mul_reference_full!(MyBackend);
   ::poulpy_blas::impl_blas_jkls_reference_full!(MyBackend);
+  ::poulpy_blas::impl_blas_encoding_reference_full!(MyBackend);
   unsafe impl poulpy_blas::oep::BlasMatIntraImpl for MyBackend { /* the hook and its query */ }
   ```
 
@@ -107,11 +114,12 @@ states what an implementation must reproduce. Three replacements cover most need
   ::poulpy_blas::impl_blas_mat_inter_reference_full!(MyBackend);
   ::poulpy_blas::impl_blas_mat_intra_reference_full!(MyBackend);
   ::poulpy_blas::impl_blas_mat_mul_reference_full!(MyBackend);
+  ::poulpy_blas::impl_blas_encoding_reference_full!(MyBackend);
   unsafe impl poulpy_blas::oep::BlasJklsImpl for MyBackend { /* the kernel and its query */ }
   ```
 
-- **The products**, in the backend's own evaluation. The inter, intra and JKLS
-  families keep their macros, and `BlasMatMulImpl` is written by hand: it
+- **The products**, in the backend's own evaluation. The inter, intra, JKLS
+  and encoding families keep their macros, and `BlasMatMulImpl` is written by hand: it
   implements the methods it replaces, each running its validator and stamping
   the batch as the reference does, and forwards the others to
   `BlasMatMulReference`, `blas_matmul` to `blas_matmul_reference` as the macro

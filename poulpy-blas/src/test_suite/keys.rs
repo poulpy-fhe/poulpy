@@ -46,18 +46,18 @@ use super::helpers::{
 };
 use super::matmul::public_entry;
 use crate::{
-    api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
+    api::{BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps, BlasPtOperandPreparedFactory},
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasEncodingOps, BlasGridInfos, BlasKeyUses, BlasMatMulLeft,
-        BlasMatMulRight, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos, BlasPtOperandPreparedFactory,
-        BlasPtSide, Left, Right, blas_matmul_key_uses, blas_matmul_prepare_left_key_uses, blas_matmul_prepare_right_key_uses,
-        blas_matmul_prepared_key_uses, blas_matmul_pt_left_key_uses, blas_matmul_pt_right_key_uses, blas_rotate_cols_key_uses,
-        blas_rotate_key_uses, blas_rotate_rows_key_uses, blas_sum_key_uses, blas_transpose_key_uses,
+        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasGridInfos, BlasKeyUses, BlasMatMulLeft, BlasMatMulRight,
+        BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos, BlasPtSide, Left, Right, blas_matmul_key_uses,
+        blas_matmul_prepare_left_key_uses, blas_matmul_prepare_right_key_uses, blas_matmul_prepared_key_uses,
+        blas_matmul_pt_left_key_uses, blas_matmul_pt_right_key_uses, blas_rotate_cols_key_uses, blas_rotate_key_uses,
+        blas_rotate_rows_key_uses, blas_sum_key_uses, blas_transpose_key_uses,
         context::context_shapes,
         planning::{MapDiagonal, operand_shapes},
         replicated, sum_galois_elements,
     },
-    oep::BlasImpl,
+    oep::{BlasEncodingImpl, BlasImpl},
 };
 
 fn width<DG: Data, W: ZnxWord, R: Ring>(g: &BlasCiphertext<DG, W, R>) -> usize {
@@ -150,7 +150,11 @@ pub fn test_blas_key_widths<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend<Ring = Standard> + BlasImpl,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -624,7 +628,11 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend<Ring = Standard> + BlasImpl,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -796,8 +804,9 @@ fn assert_operand_shapes<BE, F, S>(
     meta: CoeffsMeta,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CKKSMulOps<BE>,
+    BE: Backend + BlasEncodingImpl,
+    Module<BE>:
+        CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CKKSMulOps<BE>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
     S: BlasPtSide,
 {
@@ -822,8 +831,8 @@ pub fn test_blas_queries_from_layouts<BE, F, E>(
     _host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
+    BE: TestContextBackend + BlasEncodingImpl,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
     F: TestScalar + DiagonalArithmetic,
 {
     let mut scratch = alloc_scratch(&params, module);

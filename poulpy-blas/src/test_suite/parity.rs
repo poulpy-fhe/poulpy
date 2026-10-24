@@ -52,13 +52,15 @@ use super::helpers::{
     matmul_right_operand,
 };
 use crate::{
-    api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
+    api::{
+        BlasContextPreparedFactory, BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps,
+        BlasPtOperandPreparedFactory,
+    },
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextInfos, BlasContextLayout, BlasContextPreparedFactory,
-        BlasEncodingOps, BlasGridInfos, BlasLayout, BlasMatMulOperandInfos, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm,
-        BlasPtOperand, BlasPtOperandInfos, BlasPtOperandLayout, BlasPtOperandPreparedFactory, BlasPtSide, Left, Right,
-        blas_matmul_left_term_layout, blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k, blas_matmul_pt_right_max_base2k,
-        blas_matmul_right_term_layout,
+        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextInfos, BlasContextLayout, BlasGridInfos, BlasLayout,
+        BlasMatMulOperandInfos, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperand, BlasPtOperandInfos,
+        BlasPtOperandLayout, BlasPtSide, Left, Right, blas_matmul_left_term_layout, blas_matmul_max_base2k,
+        blas_matmul_pt_left_max_base2k, blas_matmul_pt_right_max_base2k, blas_matmul_right_term_layout,
         context::module_layout,
         sum_galois_elements,
         validate::{MASKLESS, MAX_BASE2K},
@@ -72,7 +74,7 @@ pub trait BlasParityBackend: Backend<ZnxWord = i64> + BlasImpl {}
 impl<B: Backend<ZnxWord = i64> + BlasImpl> BlasParityBackend for B {}
 
 /// What blas parity needs from a module: fixtures, lazy ones included, prepared keys and maps encoded at scalar `F`.
-pub trait BlasParityModule<B: Backend, F: TestScalar>:
+pub trait BlasParityModule<B: Backend, F: TestScalar + DiagonalArithmetic>:
     CKKSModuleAlloc<B>
     + CKKSModuleInfos
     + CyclotomicOrder
@@ -81,12 +83,13 @@ pub trait BlasParityModule<B: Backend, F: TestScalar>:
     + GLWEAutomorphismKeyPreparedFactory<B>
     + GLWETensorKeyPreparedFactory<B>
     + CKKSEncodingOps<B, F>
+    + BlasEncodingOps<B, F>
     + CKKSLinearTransformationOps<B>
     + CnvPVecAlloc<B>
 {
 }
 
-impl<B: Backend, F: TestScalar, M> BlasParityModule<B, F> for M where
+impl<B: Backend, F: TestScalar + DiagonalArithmetic, M> BlasParityModule<B, F> for M where
     M: CKKSModuleAlloc<B>
         + CKKSModuleInfos
         + CyclotomicOrder
@@ -95,6 +98,7 @@ impl<B: Backend, F: TestScalar, M> BlasParityModule<B, F> for M where
         + GLWEAutomorphismKeyPreparedFactory<B>
         + GLWETensorKeyPreparedFactory<B>
         + CKKSEncodingOps<B, F>
+        + BlasEncodingOps<B, F>
         + CKKSLinearTransformationOps<B>
         + CnvPVecAlloc<B>
 {
@@ -350,10 +354,10 @@ where
     let mut ctx = module.blas_context_alloc_from_infos(&layout);
     let mut prepared = module.blas_context_prepared_alloc_from_infos(&layout);
     let bytes = module
-        .blas_context_encode_tmp_bytes::<F, _>(&layout)
+        .blas_context_encode_tmp_bytes(&layout)
         .max(module.blas_context_prepare_tmp_bytes(&layout));
     with_scratch::<B, _>(bytes, |s| {
-        module.blas_context_encode_into::<F>(&mut ctx, s).unwrap();
+        module.blas_context_encode_into(&mut ctx, s).unwrap();
         module.blas_context_prepare(&mut prepared, &ctx, s);
     });
     prepared
@@ -401,7 +405,7 @@ fn inter<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) -> Vec<
 where
     B: BlasParityBackend,
     Module<B>: BlasParityModule<B, F>,
-    F: TestScalar,
+    F: TestScalar + DiagonalArithmetic,
 {
     let (plan, order, key, w) = (
         BlasPlan::new(log_d),
@@ -466,7 +470,7 @@ fn inter_budget<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) 
 where
     B: BlasParityBackend,
     Module<B>: BlasParityModule<B, F>,
-    F: TestScalar,
+    F: TestScalar + DiagonalArithmetic,
 {
     let a = operand(params, module, log_d, 2, 2, 61);
     let rotation = BlasPlan::new(log_d).rotate_galois_elements(module.cyclotomic_order(), 3);
@@ -624,7 +628,7 @@ where
     let mut op = module.blas_pt_operand_alloc_from_infos(&layout);
     let mut prepared = module.blas_pt_operand_prepared_alloc_from_infos(&layout);
     let bytes = module
-        .blas_pt_operand_encode_tmp_bytes::<F, _>(&layout)
+        .blas_pt_operand_encode_tmp_bytes(&layout)
         .max(module.blas_pt_operand_prepare_tmp_bytes(&layout));
     with_scratch::<B, _>(bytes, |s| {
         module.blas_pt_operand_encode_into(&mut op, public_entry::<F>, s).unwrap();

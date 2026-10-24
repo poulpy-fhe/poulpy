@@ -25,10 +25,13 @@ use super::helpers::{
     MASKED_PT_ALGORITHMS, PT_ALGORITHMS, assert_panics, assert_short_scratch_panics, encoded_context, map_galois_elements,
     pt_operand,
 };
-use crate::layouts::{
-    BlasContext, BlasContextInfos, BlasContextLayout, BlasContextPreparedFactory, BlasContextUnprepared, BlasEncodingOps,
-    BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperand, BlasPtOperandInfos, BlasPtOperandLayout,
-    BlasPtOperandPreparedFactory, BlasPtOperandUnprepared, BlasPtSide, Left, Right,
+use crate::{
+    api::{BlasContextPreparedFactory, BlasEncodingOps, BlasPtOperandPreparedFactory},
+    layouts::{
+        BlasContext, BlasContextInfos, BlasContextLayout, BlasContextUnprepared, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm,
+        BlasPtOperand, BlasPtOperandInfos, BlasPtOperandLayout, BlasPtOperandUnprepared, BlasPtSide, Left, Right,
+    },
+    oep::BlasEncodingImpl,
 };
 
 /// Every block map of `b`; none under `JklsStored` and `JklsGalois`, whose blocks are plaintexts.
@@ -60,8 +63,12 @@ pub fn test_blas_context<BE, F, E>(
     _host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    BE: TestContextBackend<Ring = Standard> + BlasEncodingImpl,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
 {
     let mut scratch = alloc_scratch(&params, module);
@@ -234,7 +241,7 @@ pub fn test_blas_context<BE, F, E>(
         || module.blas_context_prepare_tmp_bytes(&ctx_other_slots),
     );
     let mut ctx = module.blas_context_alloc_from_infos(&ctx_base);
-    module.blas_context_encode_into::<F>(&mut ctx, &mut scratch.borrow()).unwrap();
+    module.blas_context_encode_into(&mut ctx, &mut scratch.borrow()).unwrap();
     let mut ctx_other = module.blas_context_prepared_alloc_from_infos(&ctx_with(|l| l.base2k = Base2K(l.base2k.as_u32() + 1)));
     assert_panics(
         "context prepare into another layout",
@@ -410,8 +417,9 @@ fn refill_operand<BE, F, S>(
     meta: CoeffsMeta,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: TestContextBackend,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CKKSMulOps<BE>,
+    BE: TestContextBackend + BlasEncodingImpl,
+    Module<BE>:
+        CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CKKSMulOps<BE>,
     F: TestScalar + DiagonalArithmetic,
     S: BlasPtSide,
 {
@@ -451,8 +459,8 @@ pub fn test_blas_refill<BE, F, E>(
     _host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
+    BE: TestContextBackend + BlasEncodingImpl,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
     F: TestScalar + DiagonalArithmetic,
 {
     let mut scratch = alloc_scratch(&params, module);
@@ -479,7 +487,7 @@ pub fn test_blas_refill<BE, F, E>(
             poison_prepared::<BE>(p.maps.iter_mut());
         },
         |c, p, _| {
-            module.blas_context_encode_into::<F>(c, &mut scratch.borrow()).unwrap();
+            module.blas_context_encode_into(c, &mut scratch.borrow()).unwrap();
             module.blas_context_prepare(p, c, &mut scratch.borrow());
         },
     );

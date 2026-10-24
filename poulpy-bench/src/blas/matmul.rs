@@ -17,11 +17,11 @@ use std::{
 
 use criterion::{Bencher, measurement::Measurement};
 use poulpy_blas::{
-    api::{BlasMatIntraOps, BlasMatMulOps},
+    api::{BlasContextPreparedFactory, BlasEncodingOps, BlasMatIntraOps, BlasMatMulOps, BlasPtOperandPreparedFactory},
     blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k, blas_matmul_pt_right_max_base2k,
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextPreparedFactory, BlasEncodingOps, BlasModuleAlloc, BlasPlan,
-        BlasPtAlgorithm, BlasPtOperand, BlasPtOperandPreparedFactory, BlasPtSide, Left, Right,
+        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperand, BlasPtSide,
+        Left, Right,
         grid::{join_blocks, split_into_blocks},
         replicated,
     },
@@ -199,12 +199,24 @@ fn timed<BE: 'static, M: Measurement>(
 /// What a runner asks of a module beyond the operation itself: the key generation, encryption and decryption of
 /// poulpy-ckks, the encoding of the maps, and their preparation.
 pub trait BlasBenchModule<BE: Backend>:
-    TestContextSharedModule<BE> + CKKSEncodingOps<BE, f64> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>
+    TestContextSharedModule<BE>
+    + CKKSEncodingOps<BE, f64>
+    + BlasEncodingOps<BE, f64>
+    + BlasContextPreparedFactory<BE>
+    + BlasPtOperandPreparedFactory<BE>
+    + CKKSLinearTransformationOps<BE>
+    + CnvPVecAlloc<BE>
 {
 }
 
 impl<BE: Backend, M> BlasBenchModule<BE> for M where
-    M: TestContextSharedModule<BE> + CKKSEncodingOps<BE, f64> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>
+    M: TestContextSharedModule<BE>
+        + CKKSEncodingOps<BE, f64>
+        + BlasEncodingOps<BE, f64>
+        + BlasContextPreparedFactory<BE>
+        + BlasPtOperandPreparedFactory<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>
 {
 }
 
@@ -257,10 +269,10 @@ where
         let mut prepared = module.blas_context_prepared_alloc_from_infos(&ctx);
         let mut arena = ScratchOwned::<BE>::alloc(
             module
-                .blas_context_encode_tmp_bytes::<f64, _>(&ctx)
+                .blas_context_encode_tmp_bytes(&ctx)
                 .max(module.blas_context_prepare_tmp_bytes(&ctx)),
         );
-        module.blas_context_encode_into::<f64>(&mut ctx, &mut arena.borrow()).unwrap();
+        module.blas_context_encode_into(&mut ctx, &mut arena.borrow()).unwrap();
         module.blas_context_prepare(&mut prepared, &ctx, &mut arena.borrow());
         prepared
     }
@@ -274,7 +286,7 @@ where
         let mut prepared = module.blas_pt_operand_prepared_alloc_from_infos(&op);
         let mut arena = ScratchOwned::<BE>::alloc(
             module
-                .blas_pt_operand_encode_tmp_bytes::<f64, _>(&op)
+                .blas_pt_operand_encode_tmp_bytes(&op)
                 .max(module.blas_pt_operand_prepare_tmp_bytes(&op)),
         );
         module

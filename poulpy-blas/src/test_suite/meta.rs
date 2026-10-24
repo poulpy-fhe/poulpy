@@ -29,7 +29,7 @@ use super::helpers::{
     product_layout, pt_operand, relabel, to_f, want_operand_infos,
 };
 use crate::{
-    api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
+    api::{BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
     layouts::{
         BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasGridInfos, BlasLayout, BlasModuleAlloc, BlasPlan, Left, Right,
         blas_matmul_left_operand_layout, blas_matmul_left_term_layout, blas_matmul_output_layout,
@@ -60,7 +60,11 @@ pub fn test_blas_result_meta<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend<Ring = Standard> + BlasImpl,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -367,7 +371,11 @@ pub fn test_blas_batch_record<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend<Ring = Standard> + BlasImpl,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,

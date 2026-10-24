@@ -88,19 +88,18 @@ form, the backend's representation, which operations read.
 | `BlasContextUnprepared<BE>` | `BlasContext<BE>` | `BlasContextLayout`, `BlasContextInfos` |
 | none | `BlasMatMulLeft<BE>`, `BlasMatMulRight<BE>` | `BlasMatMulOperandLayout`, `BlasMatMulOperandInfos` |
 
-Each is allocated on a module from its layout (`BlasModuleAlloc`, `BlasPtOperandPreparedFactory`,
-`BlasContextPreparedFactory`), sized by the matching `bytes_of` (`BlasBytesOf` and the factories), and filled in place:
-encoded into (`BlasEncodingOps`), then prepared into. A public operand takes its matrices at encoding, and its side is
-its type parameter `S`, `Right` or `Left`. Encoding and preparing again into the same allocations refills them, with no
-reallocation of their storage:
+Each is allocated on a module from its layout (`BlasModuleAlloc`, and the factories `BlasPtOperandPreparedFactory` and
+`BlasContextPreparedFactory` of `poulpy_blas::api`), sized by the matching `bytes_of` (`BlasBytesOf` and the factories),
+and filled in place: encoded into (`BlasEncodingOps`, at poulpy-ckks's encoding scalar `F`, a trait parameter), then
+prepared into. A public operand takes its matrices at encoding, and its side is its type parameter `S`, `Right` or
+`Left`. Encoding and preparing again into the same allocations refills them, with no reallocation of their storage:
 
 ```rust,ignore
 let mut ctx = module.blas_context_alloc(plan, base2k, coeffs_meta);
 let mut prepared = module.blas_context_prepared_alloc_from_infos(&ctx);
-let mut scratch = ScratchOwned::<BE>::alloc(
-    module.blas_context_encode_tmp_bytes::<f64, _>(&ctx).max(module.blas_context_prepare_tmp_bytes(&ctx)),
-);
-module.blas_context_encode_into::<f64>(&mut ctx, &mut scratch.borrow())?;
+let encode_bytes = BlasEncodingOps::<BE, f64>::blas_context_encode_tmp_bytes(&module, &ctx);
+let mut scratch = ScratchOwned::<BE>::alloc(encode_bytes.max(module.blas_context_prepare_tmp_bytes(&ctx)));
+BlasEncodingOps::<BE, f64>::blas_context_encode_into(&module, &mut ctx, &mut scratch.borrow())?;
 module.blas_context_prepare(&mut prepared, &ctx, &mut scratch.borrow());
 
 let mut b = module.blas_pt_operand_alloc::<Right>(plan, rows, cols, count, base2k, coeffs_meta);
@@ -125,15 +124,16 @@ again, then prepare them.
 
 poulpy-blas imports no backend. Backend crates select the reference compositions with
 `poulpy_blas::impl_blas_reference_full!(Backend)`. To override a family, a backend wires the other families with
-`impl_blas_mat_inter_reference_full!`, `impl_blas_mat_intra_reference_full!`, `impl_blas_mat_mul_reference_full!` or `impl_blas_jkls_reference_full!`
-and implements that family's `oep` trait by hand, forwarding the methods it keeps to `reference`. `poulpy-cpu-oracle`
-and the CPU backends do so behind their `enable-blas` feature. A backend crate outside this workspace does the same for
-its own types. It takes `poulpy-hal`, `poulpy-core`, `poulpy-ckks` and `poulpy-blas` from one poulpy source, as direct
-dependencies under those names, because the macros expand to `::poulpy_hal`, `::poulpy_core` and `::poulpy_ckks`. Like
-the reference, an implementation runs its operation's validator, the public `layouts::validate_*`, before any write and
-stamps the batch record of `res` after `Ok`: the API dispatches without a check. A backend does not choose the type of
-the prepared operands, `BlasMatMulOperand`: it supplies their storage through its `Backend`, as poulpy-hal's prepared
-layouts do, and holds its terms in its own representation through its poulpy-ckks preparations.
+`impl_blas_mat_inter_reference_full!`, `impl_blas_mat_intra_reference_full!`, `impl_blas_mat_mul_reference_full!`,
+`impl_blas_jkls_reference_full!` or `impl_blas_encoding_reference_full!` and implements that family's `oep` trait by
+hand, forwarding the methods it keeps to `reference`. `poulpy-cpu-oracle` and the CPU backends do so behind their
+`enable-blas` feature. A backend crate outside this workspace does the same for its own types. It takes `poulpy-hal`,
+`poulpy-core`, `poulpy-ckks` and `poulpy-blas` from one poulpy source, as direct dependencies under those names, because
+the macros expand to `::poulpy_hal`, `::poulpy_core` and `::poulpy_ckks`. Like the reference, an implementation runs its
+operation's validator, the public `layouts::validate_*`, before any write and stamps the batch record of `res` after
+`Ok`: the API dispatches without a check. A backend does not choose the type of the prepared operands,
+`BlasMatMulOperand`: it supplies their storage through its `Backend`, as poulpy-hal's prepared layouts do, and holds its
+terms in its own representation through its poulpy-ckks preparations.
 
 ```sh
 cargo test -p poulpy-blas

@@ -31,7 +31,7 @@ use super::{
     matmul::public_entry,
 };
 use crate::{
-    api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
+    api::{BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
     layouts::{
         BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasGridInfos, BlasLayout, BlasPlan, BlasPtAlgorithm,
         BlasPtOperand, Left, Right, ciphertext::layout_of, replicated, sum_galois_elements,
@@ -54,7 +54,11 @@ pub fn test_blas_conjugate_invariant<BE>(
     host_module: &Module<HostBytesBackend<ConjugateInvariant>>,
 ) where
     BE: TestContextBackend<Ring = ConjugateInvariant> + BlasImpl,
-    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, f64> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextSharedModule<BE>
+        + CKKSEncodingOps<BE, f64>
+        + BlasEncodingOps<BE, f64>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {

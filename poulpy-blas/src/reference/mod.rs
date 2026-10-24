@@ -1,10 +1,12 @@
 //! Reference compositions over poulpy-ckks, the contract every override reproduces.
 
+mod encoding;
 mod inter;
 mod intra;
 mod jkls;
 mod matmul;
 
+pub use encoding::BlasEncodingReference;
 pub use inter::BlasMatInterReference;
 pub use intra::BlasMatIntraReference;
 pub use jkls::BlasJklsReference;

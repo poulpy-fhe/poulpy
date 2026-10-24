@@ -14,11 +14,13 @@
 //! state across calls, so disjoint concurrent calls stay valid.
 
 pub(crate) mod derived;
+mod encoding;
 mod inter;
 mod intra;
 mod jkls;
 mod matmul;
 
+pub use encoding::BlasEncodingImpl;
 pub use inter::BlasMatInterImpl;
 pub use intra::BlasMatIntraImpl;
 pub use jkls::BlasJklsImpl;
@@ -32,6 +34,7 @@ macro_rules! impl_blas_reference_full {
         $crate::impl_blas_mat_intra_reference_full!($be);
         $crate::impl_blas_mat_mul_reference_full!($be);
         $crate::impl_blas_jkls_reference_full!($be);
+        $crate::impl_blas_encoding_reference_full!($be);
     };
 }
 
@@ -40,6 +43,6 @@ macro_rules! impl_blas_reference_full {
 /// # Safety
 ///
 /// Implemented only through the blanket impl.
-pub unsafe trait BlasImpl: BlasMatInterImpl + BlasMatIntraImpl + BlasMatMulImpl + BlasJklsImpl {}
+pub unsafe trait BlasImpl: BlasMatInterImpl + BlasMatIntraImpl + BlasMatMulImpl + BlasJklsImpl + BlasEncodingImpl {}
 
-unsafe impl<BE: BlasMatInterImpl + BlasMatIntraImpl + BlasMatMulImpl + BlasJklsImpl> BlasImpl for BE {}
+unsafe impl<BE: BlasMatInterImpl + BlasMatIntraImpl + BlasMatMulImpl + BlasJklsImpl + BlasEncodingImpl> BlasImpl for BE {}
