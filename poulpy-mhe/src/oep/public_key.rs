@@ -58,7 +58,7 @@ pub unsafe trait GLWEPublicKeyMHEProtocolImpl: HalMatZnxImpl + EncryptionImpl {
 /// Selects the reference share generation; aggregation and finalization keep
 /// their derived defaults.
 #[macro_export]
-macro_rules! impl_mhe_public_key_reference {
+macro_rules! impl_glwe_public_key_mhe_protocol_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::GLWEPublicKeyMHEProtocolImpl for $be {
             fn mhe_glwe_public_key_share_gen_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize

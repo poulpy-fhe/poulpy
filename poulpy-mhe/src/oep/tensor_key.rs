@@ -55,7 +55,7 @@ pub unsafe trait GLWETensorKeyMHEProtocolImpl: GGLWEPatImpl {
 /// Selects the reference share generation; aggregation and finalization keep
 /// their derived defaults.
 #[macro_export]
-macro_rules! impl_mhe_tensor_key_reference {
+macro_rules! impl_glwe_tensor_key_mhe_protocol_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::GLWETensorKeyMHEProtocolImpl for $be {
             fn mhe_glwe_tensor_key_share_gen_tmp_bytes<A, B>(

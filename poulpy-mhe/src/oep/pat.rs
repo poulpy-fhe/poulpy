@@ -57,9 +57,9 @@ pub unsafe trait GGLWEPatImpl: Backend {
         P: GGLWEToBackendRef<Self> + GGLWEInfos;
 }
 
-/// Selects the reference aggregation and finalization of every PAT type.
+/// Selects the reference aggregation and finalization of `GLWEPatCompressed`.
 #[macro_export]
-macro_rules! impl_mhe_pat_reference {
+macro_rules! impl_glwe_pat_compressed_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::GLWEPatCompressedImpl for $be {
             fn glwe_pat_compressed_aggregate_assign<R, A>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R, a: &A)
@@ -92,7 +92,13 @@ macro_rules! impl_mhe_pat_reference {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPatCompressedReference<$be>>::glwe_pat_compressed_finalize_reference(module, res, pat, scratch)
             }
         }
+    };
+}
 
+/// Selects the reference aggregation and finalization of `GGLWEPatCompressed`.
+#[macro_export]
+macro_rules! impl_gglwe_pat_compressed_reference_full {
+    ($be:ty) => {
         unsafe impl $crate::oep::GGLWEPatCompressedImpl for $be {
             fn gglwe_pat_compressed_aggregate_assign<R, A>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R, a: &A)
             where
@@ -122,7 +128,13 @@ macro_rules! impl_mhe_pat_reference {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::GGLWEPatCompressedReference<$be>>::gglwe_pat_compressed_finalize_reference(module, res, pat, scratch)
             }
         }
+    };
+}
 
+/// Selects the reference aggregation and finalization of `GGLWEPat`.
+#[macro_export]
+macro_rules! impl_gglwe_pat_reference_full {
+    ($be:ty) => {
         unsafe impl $crate::oep::GGLWEPatImpl for $be {
             fn gglwe_pat_aggregate_assign<R, A>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R, a: &A)
             where

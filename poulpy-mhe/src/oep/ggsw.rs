@@ -56,7 +56,7 @@ pub unsafe trait GGSWMHEProtocolImpl: GGLWEPatCompressedImpl {
 /// Selects the reference share generation and finalization; aggregation keeps
 /// its derived default.
 #[macro_export]
-macro_rules! impl_mhe_ggsw_reference {
+macro_rules! impl_ggsw_mhe_protocol_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::GGSWMHEProtocolImpl for $be {
             fn mhe_ggsw_share_gen_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize

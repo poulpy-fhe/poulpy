@@ -100,10 +100,10 @@ pub unsafe trait GLWEShareToEncMHEProtocolImpl: GLWEPatCompressedImpl {
     }
 }
 
-/// Selects the reference encryption-to-shares and shares-to-encryption
-/// operations.
+/// Selects the reference encryption-to-shares share generation, aggregation and
+/// finalization.
 #[macro_export]
-macro_rules! impl_mhe_sharing_reference {
+macro_rules! impl_glwe_enc_to_share_mhe_protocol_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::GLWEEncToShareMHEProtocolImpl for $be {
             fn mhe_glwe_enc_to_share_share_gen_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, ct_infos: &A) -> usize
@@ -152,7 +152,14 @@ macro_rules! impl_mhe_sharing_reference {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEEncToShareMHEProtocolReference<$be>>::mhe_glwe_enc_to_share_share_finalize_reference(module, secret, ct, public, scratch)
             }
         }
+    };
+}
 
+/// Selects the reference shares-to-encryption share generation; aggregation and
+/// finalization keep their derived defaults.
+#[macro_export]
+macro_rules! impl_glwe_share_to_enc_mhe_protocol_reference_full {
+    ($be:ty) => {
         unsafe impl $crate::oep::GLWEShareToEncMHEProtocolImpl for $be {
             fn mhe_glwe_share_to_enc_share_gen_tmp_bytes<A, B>(
                 module: &::poulpy_hal::layouts::Module<$be>,

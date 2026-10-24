@@ -195,12 +195,19 @@ certify a security level, and neither can statistical tests.
 An override reproduces the reference, its seed and layout checks included,
 as the [layering contract](../../docs/guides/layering-contract.md) states; the parity suite arrives with the
 first override.
-`impl_mhe_reference_full!` selects every family; select
-`impl_mhe_pat_reference!`, which covers every PAT type,
-`impl_mhe_public_key_reference!`, `impl_mhe_evaluation_key_reference!`,
-`impl_mhe_tensor_key_reference!`, `impl_mhe_ggsw_reference!`, `impl_mhe_keyswitch_reference!` or
-`impl_mhe_sharing_reference!` alone when replacing another one. The
-reference traits stay callable from an override.
+`impl_mhe_reference_full!` selects every family. Each OEP trait has its own
+opt-in, `impl_<family>_reference_full!` with `<family>` the trait in snake case
+without `Impl`; a backend replacing one family selects the others alone:
+`impl_glwe_pat_compressed_reference_full!`, `impl_gglwe_pat_compressed_reference_full!`,
+`impl_gglwe_pat_reference_full!`, `impl_glwe_public_key_mhe_protocol_reference_full!`,
+`impl_glwe_switching_key_mhe_protocol_reference_full!`,
+`impl_glwe_automorphism_key_mhe_protocol_reference_full!`,
+`impl_glwe_tensor_key_mhe_protocol_reference_full!`, `impl_ggsw_mhe_protocol_reference_full!`,
+`impl_glwe_private_keyswitch_mhe_protocol_reference_full!`,
+`impl_glwe_public_keyswitch_mhe_protocol_reference_full!`,
+`impl_glwe_enc_to_share_mhe_protocol_reference_full!` and
+`impl_glwe_share_to_enc_mhe_protocol_reference_full!`. The reference traits
+stay callable from an override.
 
 ## Workspace
 
