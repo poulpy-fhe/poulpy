@@ -95,19 +95,17 @@ where
     let src = src.to_backend_ref();
     {
         let mut res_ref = res.to_backend_mut();
-        assert_eq!(
-            res_ref.n().as_usize(),
-            2 * src.n().as_usize(),
-            "the embedded secret degree must be twice the source degree"
+        assert!(
+            res_ref.n().as_usize() == 2 * src.n().as_usize(),
+            "embedded secret degree is not twice the source degree"
         );
         assert!(
             res_ref.n().as_usize() <= module.n(),
-            "the embedded secret degree exceeds the module degree"
+            "operand degree exceeds the module degree"
         );
-        assert_eq!(
-            res_ref.rank(),
-            src.rank(),
-            "the embedded secret rank must equal the source rank"
+        assert!(
+            res_ref.rank() == src.rank(),
+            "embedded secret rank differs from the source rank"
         );
         for j in 0..src.rank().as_usize() {
             module.scalar_znx_ci_embed(res_ref.data_mut(), j, src.data(), j);
