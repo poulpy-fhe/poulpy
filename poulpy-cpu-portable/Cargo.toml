@@ -81,7 +81,7 @@ name = "blas_streaming_memory"
 required-features = ["enable-blas"]
 
 [dev-dependencies]
-poulpy-cpu-oracle = {workspace = true, features = ["enable-ckks", "enable-bin-fhe", "enable-blas"]}
+poulpy-cpu-oracle = {workspace = true, features = ["enable-ckks", "enable-bin-fhe", "enable-mhe", "enable-blas"]}
 paste = {workspace = true}
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
 poulpy-blas = {workspace = true, features = ["test-utils"]}

@@ -27,6 +27,7 @@ env:
     poulpy-core/enable-core
     poulpy-cpu-oracle/enable-ckks
     poulpy-cpu-oracle/enable-bin-fhe
+    poulpy-cpu-oracle/enable-mhe
     poulpy-cpu-oracle/enable-blas
     poulpy-cpu-portable/enable-core
     poulpy-cpu-portable/enable-ckks

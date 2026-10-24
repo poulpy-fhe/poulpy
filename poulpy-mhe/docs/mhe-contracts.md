@@ -191,8 +191,16 @@ certify a security level, and neither can statistical tests.
 ## Replacing an operation
 
 An override reproduces the reference, its seed and layout checks included,
-as the [layering contract](../../docs/layering-contract.md) states; the parity suite arrives with the
-first override.
+as the [layering contract](../../docs/layering-contract.md) states.
+`mhe_parity_test_suite!(mod <name>, backend_ref = R, backend_test = T)`
+checks a backend bit for bit against a validated one: each protocol's shares,
+aggregates and finalized output and each PAT type's aggregation and
+finalization, with their layouts, noise estimates, flags, seeds and the draws
+left in every private stream. Fixtures are built on `R` and transferred to
+`T`, each call runs on its own query's scratch, and the comparison backend
+copies `T`'s draws when their samplers differ (`ControlledSampling*` oracles).
+Every backend type registering mhe runs it; the oracle and the portable serial
+types also run `mhe_backend_test_suite!`.
 `impl_mhe_reference_full!` selects every family. Each OEP trait has its own
 opt-in, `impl_<family>_reference_full!` with `<family>` the trait in snake case
 without `Impl`; a backend replacing one family selects the others alone:

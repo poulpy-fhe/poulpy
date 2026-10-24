@@ -1,10 +1,12 @@
 //! Backend-generic tests of `poulpy-mhe`, instantiated by backend crates
-//! through [`mhe_backend_test_suite!`](crate::mhe_backend_test_suite).
+//! through [`mhe_backend_test_suite!`](crate::mhe_backend_test_suite) and,
+//! against a comparison backend, [`mhe_parity_test_suite!`](crate::mhe_parity_test_suite).
 
 pub mod evaluation_key;
 pub(crate) mod fixtures;
 pub mod ggsw;
 pub mod keyswitch;
+pub mod parity;
 pub mod pat;
 pub mod public_key;
 pub mod sharing;

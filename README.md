@@ -227,6 +227,17 @@ poulpy-blas = {git = "https://github.com/poulpy-fhe/poulpy", rev = "<rev>", feat
 poulpy-cpu-oracle = {git = "https://github.com/poulpy-fhe/poulpy", rev = "<rev>", features = ["enable-blas"]}
 ```
 
+MHE runs its functional suite (`mhe_backend_test_suite!`) on the oracle and the
+portable serial types, and every type selecting MHE registers bit-exact parity
+through `mhe_parity_test_suite!`: the portable types against the
+controlled-sampling oracle of their family, the portable Rayon types against
+their serial base, and `NTT4x30Oracle` against `FFT64Oracle`. See
+[implementing multiparty operations](poulpy-mhe/docs/mhe-contracts.md).
+
+```sh
+cargo test -p poulpy-cpu-portable --lib --profile ci --features enable-mhe -- mhe_parity
+```
+
 ## Bivariate Polynomial Representation
 
 Existing FHE implementations (such as [Lattigo](https://github.com/tuneinsight/lattigo) or [OpenFHE](https://github.com/openfheorg/openfhe-development)) use the [residue number system](https://en.wikipedia.org/wiki/Residue_number_system) (RNS) to represent large integers. Although the parallelism and carry-less arithmetic offered by the RNS representation provide efficient modular arithmetic over large integers, RNS also has drawbacks in the context of FHE. The main idea behind the bivariate representation is to decouple cyclotomic arithmetic from large-number arithmetic. Instead of using the RNS representation for large integers, integers are decomposed in base $2^{-K}$ over the Torus $\mathbb{T}_{N}[X]$.
