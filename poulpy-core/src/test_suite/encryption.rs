@@ -7,10 +7,7 @@ use poulpy_hal::{
 };
 
 use super::decryption::panic_message;
-use crate::{
-    GLWEEncryptSk,
-    layouts::{GLWESecretPreparedFactory, ModuleCoreAlloc},
-};
+use crate::{GLWEEncryptSk, api::GLWESecretPreparedFactory, layouts::ModuleCoreAlloc};
 
 /// Secret-key encryption rejects mismatched operand degrees and degrees above the module in all builds.
 pub fn test_glwe_encrypt_degree_mismatch<BE: Backend>()

@@ -5,15 +5,15 @@ use poulpy_hal::{
     test_suite::TestParams,
 };
 
-use crate::layouts::GLWESecretSampling;
+use crate::api::GLWESecretSampling;
 use crate::{
     GGLWENoise, GLWETensorKeyCompressedEncryptSk, GLWETensorKeyDecompress, GLWETensorKeyEncryptSk,
+    api::{GLWESecretPreparedFactory, GLWESecretTensorFactory},
     decryption::GLWEDecrypt,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        Dsize, GGLWEInfos, GLWESecret, GLWESecretPreparedFactory, GLWESecretTensor, GLWESecretTensorFactory, GLWETensorKey,
-        GLWETensorKeyCompressed, GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc,
-        prepared::GLWESecretPrepared,
+        Dsize, GGLWEInfos, GLWESecret, GLWESecretTensor, GLWETensorKey, GLWETensorKeyCompressed, GLWETensorKeyLayout, LWEInfos,
+        ModuleCoreAlloc, ModuleCoreCompressedAlloc, prepared::GLWESecretPrepared,
     },
 };
 

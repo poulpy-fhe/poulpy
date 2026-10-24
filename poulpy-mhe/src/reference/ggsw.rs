@@ -1,10 +1,11 @@
 use poulpy_core::{
     ComponentNoise, FreshNoiseEstimate, GGLWECompressedEncryptSk, GLWEBytesOf, GLWEEncryptSk, GLWEKeyswitch, GLWEMaskFill,
     GLWENormalize, GetDistribution, ScratchArenaTakeCore,
+    api::GLWESecretPreparedFactory,
     layouts::{
         GGLWECompressedSeed, GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef, GGLWEInfos,
         GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout, LWEInfos, Rank, TorusPrecision, digits_aligned,
-        prepared::{GGLWEPreparedToBackendRef, GLWESecretPreparedFactory, GLWESecretPreparedToBackendRef},
+        prepared::{GGLWEPreparedToBackendRef, GLWESecretPreparedToBackendRef},
     },
 };
 use poulpy_hal::{

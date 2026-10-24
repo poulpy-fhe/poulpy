@@ -1,11 +1,16 @@
 use poulpy_hal::{
     api::VecZnxSwitchRing,
-    layouts::{Backend, Module, ScratchArena},
+    layouts::{Backend, Data, Module, ScratchArena},
+    source::Source,
 };
 
 use crate::{
-    api::{GLWECIEmbed, GLWECITrace, GLWESwitchDegree},
-    layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef},
+    GetDistribution,
+    api::{GLWECIEmbed, GLWECIKeyEncryptSk, GLWECITrace, GLWESecretCIEmbed, GLWESwitchDegree},
+    layouts::{
+        GGLWEInfos, GGLWEToBackendMut, GLWECIEmbedKey, GLWECITraceKey, GLWEInfos, GLWESecret, GLWESecretToBackendRef,
+        GLWEToBackendMut, GLWEToBackendRef,
+    },
     oep::GLWECIConversionImpl,
 };
 
@@ -47,5 +52,57 @@ where
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
         BE::glwe_switch_degree(self, res, a)
+    }
+}
+
+impl<BE: Backend + GLWECIConversionImpl> GLWESecretCIEmbed<BE> for Module<BE> {
+    fn glwe_secret_ci_embed<S>(&self, src: &S) -> GLWESecret<BE::OwnedBuf, BE::ZnxWord>
+    where
+        S: GLWESecretToBackendRef<BE>,
+    {
+        BE::glwe_secret_ci_embed(self, src)
+    }
+}
+
+impl<BE: Backend + GLWECIConversionImpl> GLWECIKeyEncryptSk<BE> for Module<BE> {
+    fn glwe_ci_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
+    where
+        A: GGLWEInfos,
+    {
+        BE::glwe_ci_key_encrypt_sk_tmp_bytes(self, infos)
+    }
+
+    fn glwe_ci_embed_key_encrypt_sk<D, S1, S2>(
+        &self,
+        res: &mut GLWECIEmbedKey<D, BE::ZnxWord>,
+        sk_ci: &S1,
+        sk: &S2,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        D: Data,
+        GLWECIEmbedKey<D, BE::ZnxWord>: GGLWEToBackendMut<BE>,
+        S1: GLWESecretToBackendRef<BE>,
+        S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
+    {
+        BE::glwe_ci_embed_key_encrypt_sk(self, res, sk_ci, sk, source_xe, source_xa, scratch)
+    }
+
+    fn glwe_ci_trace_key_encrypt_sk<D, S1, S2>(
+        &self,
+        res: &mut GLWECITraceKey<D, BE::ZnxWord>,
+        sk_ci: &S1,
+        sk: &S2,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        D: Data,
+        GLWECITraceKey<D, BE::ZnxWord>: GGLWEToBackendMut<BE>,
+        S1: GLWESecretToBackendRef<BE>,
+        S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
+    {
+        BE::glwe_ci_trace_key_encrypt_sk(self, res, sk_ci, sk, source_xe, source_xa, scratch)
     }
 }

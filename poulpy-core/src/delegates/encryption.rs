@@ -26,15 +26,6 @@ use crate::{
 };
 
 macro_rules! impl_encryption_delegate {
-    (tensor $trait:ty, $($body:item),+ $(,)?) => {
-        impl<BE> $trait for Module<BE>
-        where
-            BE: Backend + EncryptionImpl,
-            Module<BE>: crate::layouts::GLWESecretPreparedFactory<BE> + crate::layouts::GLWESecretTensorFactory<BE>,
-        {
-            $($body)+
-        }
-    };
     (vec_znx $trait:ty, $($body:item),+ $(,)?) => {
         impl<BE> $trait for Module<BE>
         where
@@ -453,7 +444,7 @@ impl_encryption_delegate!(
 );
 
 impl_encryption_delegate!(
-    tensor GLWETensorKeyEncryptSk<BE>,
+    GLWETensorKeyEncryptSk<BE>,
     fn glwe_tensor_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
@@ -735,7 +726,7 @@ impl_encryption_delegate!(
 );
 
 impl_encryption_delegate!(
-    tensor GLWETensorKeyCompressedEncryptSk<BE>,
+    GLWETensorKeyCompressedEncryptSk<BE>,
     fn glwe_tensor_key_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,

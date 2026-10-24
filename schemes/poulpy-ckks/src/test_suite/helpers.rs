@@ -37,13 +37,13 @@ use poulpy_core::{
     GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECIKeyEncryptSk, GLWEDecrypt, GLWEKeyswitch, GLWEMaskFill, GLWENormalize,
     GLWESub, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ScratchArenaTakeCore, TransferInto,
     api::{
-        GLWEAutomorphismKeyPreparedFactory, GLWECIKeyPreparedFactory, GLWESwitchingKeyPreparedFactory,
+        GLWEAutomorphismKeyPreparedFactory, GLWECIKeyPreparedFactory, GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory,
         GLWETensorKeyPreparedFactory,
     },
     layouts::{
         BackendGLWESecret, Base2K, Degree, GLWEAutomorphismKeyPrepared, GLWECIEmbedKeyPrepared, GLWECITraceKeyPrepared,
-        GLWEInfos, GLWELayout, GLWESecretPreparedFactory, GLWESecretToBackendRef, GLWESwitchingKeyPrepared, GLWETensorKeyPrepared,
-        GetAutomorphismKey, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        GLWEInfos, GLWELayout, GLWESecretToBackendRef, GLWESwitchingKeyPrepared, GLWETensorKeyPrepared, GetAutomorphismKey,
+        LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWESecretPrepared},
     },
 };
@@ -59,7 +59,7 @@ use poulpy_hal::{
 
 use super::CKKSTestParams;
 use crate::SlotsKind;
-use poulpy_core::layouts::GLWESecretSampling;
+use poulpy_core::api::GLWESecretSampling;
 use poulpy_core::{Distribution, GetDistributionMut};
 
 // ─── deterministic per-call RNG seeds ────────────────────────────────────────

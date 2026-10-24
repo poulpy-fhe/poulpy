@@ -5,10 +5,7 @@ use poulpy_hal::{
     layouts::{Backend, Module, ScratchOwned},
 };
 
-use crate::{
-    GLWEDecrypt,
-    layouts::{GLWESecretPreparedFactory, ModuleCoreAlloc},
-};
+use crate::{GLWEDecrypt, api::GLWESecretPreparedFactory, layouts::ModuleCoreAlloc};
 
 /// Decryption rejects mismatched operand degrees and degrees above the module in all builds.
 pub fn test_glwe_decrypt_degree_mismatch<BE: Backend>()

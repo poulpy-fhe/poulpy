@@ -1,11 +1,11 @@
-use poulpy_core::layouts::{GLWESecretSampling, LWESecretSampling};
+use poulpy_core::api::{GLWESecretSampling, LWESecretSampling};
 use poulpy_core::{
     GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
-    api::GGSWPreparedFactory,
+    api::{GGSWPreparedFactory, GLWESecretPreparedFactory},
     layouts::{
         GGLWEToGGSWKeyLayout, GGSW, GGSWInfos, GGSWLayout, GLWE, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWEPlaintext,
         GLWESecret, LWE, LWEInfos, LWELayout, LWEPlaintext, LWESecret, ModuleCoreAlloc,
-        prepared::{GGSWPrepared, GLWESecretPrepared, GLWESecretPreparedFactory},
+        prepared::{GGSWPrepared, GLWESecretPrepared},
     },
 };
 use poulpy_hal::AlignedBuf;

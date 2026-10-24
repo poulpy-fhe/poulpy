@@ -18,10 +18,8 @@ use crate::{
 };
 use poulpy_core::{
     GLWECIKeyEncryptSk,
-    api::GLWECIKeyPreparedFactory,
-    layouts::{
-        GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWEInfos, GLWELayout, GLWESecretCIEmbed, GLWESecretPreparedFactory, LWEInfos,
-    },
+    api::{GLWECIKeyPreparedFactory, GLWESecretCIEmbed, GLWESecretPreparedFactory},
+    layouts::{GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWEInfos, GLWELayout, LWEInfos},
 };
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},

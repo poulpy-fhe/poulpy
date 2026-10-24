@@ -18,18 +18,18 @@ use poulpy_hal::{
     test_suite::{TestParams, vec_znx_backend_mut},
 };
 
-use crate::layouts::GLWESecretSampling;
+use crate::api::GLWESecretSampling;
 use crate::{
     GLWEAdd, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWELinearTransformations,
     GLWENoise, LinearTransformationBabySteps, LinearTransformationPrepared,
-    api::GLWEAutomorphismKeyPreparedFactory,
+    api::{GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory},
     encryption::DEFAULT_SIGMA_XE,
     error::{CoreError, Result},
     layouts::{
         GGLWEInfos, GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext, GLWESecret,
-        GLWESecretPreparedFactory, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation,
-        LinearTransformationDiagonal, LinearTransformationGiantStep, LinearTransformationLayout, LinearTransformationPlan,
-        LinearTransformationStrategy, ModuleCoreAlloc, SetK, TorusPrecision,
+        GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation, LinearTransformationDiagonal,
+        LinearTransformationGiantStep, LinearTransformationLayout, LinearTransformationPlan, LinearTransformationStrategy,
+        ModuleCoreAlloc, SetK, TorusPrecision,
         prepared::{
             GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef,
             GLWESecretPrepared, PreparedDiagonal,

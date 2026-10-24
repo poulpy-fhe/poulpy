@@ -58,7 +58,8 @@ use poulpy_hal::{
 };
 
 use crate::layouts::{BootstrappingContext, EvalModRing};
-use poulpy_core::layouts::{GLWESecretSampling, GLWESecretViewMut};
+use poulpy_core::api::GLWESecretSampling;
+use poulpy_core::layouts::GLWESecretViewMut;
 use poulpy_core::{Distribution, GetDistribution, GetDistributionMut};
 
 /// Pipeline-facing access to the **prepared** keys of the linear stages of a CKKS

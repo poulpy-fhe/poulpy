@@ -17,3 +17,4 @@ mod operations;
 mod polynomial_evaluation;
 mod preparation;
 mod sampling;
+mod secret;

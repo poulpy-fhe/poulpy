@@ -3,12 +3,14 @@ use super::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe, unnormalize
 use crate::{
     Distribution, GLWEMaskFill, GLWEMulRelinearizeSum, GLWENormalize, GLWEPacking, GLWEPreparedTensoring, GLWETensorDecrypt,
     GLWETensoring, GLWETrace, GetDistribution,
-    api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory, TransferInto},
+    api::{
+        GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretTensorFactory, GLWESecretTensorPreparedFactory,
+        GLWETensorKeyPreparedFactory, TransferInto,
+    },
     glwe_prepare_left, glwe_prepare_left_tmp_bytes, glwe_prepare_right, glwe_prepare_right_tmp_bytes,
     layouts::{
         Base2K, Degree, Dnum, GGLWEInfos, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecretLayout,
-        GLWESecretTensorFactory, GLWETensorKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
-        prepared::{GLWESecretPreparedFactory, GLWESecretTensorPreparedFactory},
+        GLWETensorKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
     },
     test_suite::{decryption::panic_message, keys::fill_by_digit, noise::assert_refuses_uncovered_input},
 };

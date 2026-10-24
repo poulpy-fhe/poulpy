@@ -26,7 +26,8 @@ use std::collections::HashMap;
 
 use poulpy_core::{
     TransferInto,
-    layouts::{Base2K, GLWESecretPreparedFactory, LinearTransformationStrategy, ModuleCoreAlloc},
+    api::GLWESecretPreparedFactory,
+    layouts::{Base2K, LinearTransformationStrategy, ModuleCoreAlloc},
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},

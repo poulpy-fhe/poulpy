@@ -4,10 +4,9 @@ use std::collections::HashMap;
 use poulpy_core::test_suite::noise::glwe_decrypt_checked;
 use poulpy_core::{
     GGSWEncryptSk, GLWEDecrypt, GLWEEncryptSk,
-    api::GGSWPreparedFactory,
+    api::{GGSWPreparedFactory, GLWESecretPreparedFactory},
     layouts::{
-        Base2K, Dnum, GGSWLayout, GLWE, GLWELayout, GLWEPlaintext, GLWESecretPrepared, GLWESecretPreparedFactory,
-        ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Dnum, GGSWLayout, GLWE, GLWELayout, GLWEPlaintext, GLWESecretPrepared, ModuleCoreAlloc, Rank, TorusPrecision,
     },
 };
 use poulpy_hal::{

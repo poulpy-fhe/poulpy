@@ -8,11 +8,11 @@ use poulpy_hal::{
 use crate::{
     Distribution, GGLWECopy, GGLWENoise, GGSWCopy, GGSWEncryptSk, GGSWNoise, GLWECopy, GLWESwitchingKeyEncryptSk,
     ScalarZnxFillDistribution,
+    api::{GLWESecretPreparedFactory, GLWESecretSampling},
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGLWEToBackendMut, GGLWEToBackendRef, GGSW, GGSWLayout, GGSWToBackendMut, GGSWToBackendRef, GLWESecret,
-        GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKey, GLWESwitchingKeyLayout, LWEInfos, ModuleCoreAlloc,
-        TorusPrecision, prepared::GLWESecretPrepared,
+        GGLWEToBackendMut, GGLWEToBackendRef, GGSW, GGSWLayout, GGSWToBackendMut, GGSWToBackendRef, GLWESecret, GLWESwitchingKey,
+        GLWESwitchingKeyLayout, LWEInfos, ModuleCoreAlloc, TorusPrecision, prepared::GLWESecretPrepared,
     },
 };
 

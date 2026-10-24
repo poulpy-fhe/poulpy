@@ -9,19 +9,18 @@ use poulpy_hal::{
 
 use byteorder::{LittleEndian, WriteBytesExt};
 
+use crate::api::{GLWESecretSampling, LWESecretSampling};
 use crate::layouts::prepared::GGLWEPreparedToBackendRef;
-use crate::layouts::{GLWESecretSampling, LWESecretSampling};
 use crate::test_suite::noise::{glwe_decrypt_checked, glwe_noise_checked};
 use crate::{
     DEFAULT_SIGMA_XE, GLWEDecrypt, GLWEEncryptSk, GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE, GLWEMaskFill, GLWENoise,
     GLWENormalize, GLWEToLWESwitchingKeyEncryptSk, LWEDecrypt, LWEEncryptSk, LWEFromGLWE, LWEMatrixDecrypt,
     LWEToGLWESwitchingKeyEncryptSk,
-    api::{GLWEToLWEKeyPreparedFactory, LWEToGLWEKeyPreparedFactory},
+    api::{GLWESecretPreparedFactory, GLWEToLWEKeyPreparedFactory, LWEToGLWEKeyPreparedFactory, SecretConversion},
     layouts::{
-        Base2K, Degree, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWEToLWEKey, GLWEToLWEKeyLayout,
-        GLWEToLWEKeyPrepared, LWE, LWEInfos, LWELayout, LWEMatrixLayout, LWEPlaintext, LWESecret, LWEToGLWEKey,
-        LWEToGLWEKeyLayout, LWEToGLWEKeyPrepared, ModuleCoreAlloc, Rank, SecretConversion, TorusPrecision,
-        prepared::GLWESecretPrepared,
+        Base2K, Degree, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWEToLWEKey, GLWEToLWEKeyLayout, GLWEToLWEKeyPrepared, LWE,
+        LWEInfos, LWELayout, LWEMatrixLayout, LWEPlaintext, LWESecret, LWEToGLWEKey, LWEToGLWEKeyLayout, LWEToGLWEKeyPrepared,
+        ModuleCoreAlloc, Rank, TorusPrecision, prepared::GLWESecretPrepared,
     },
 };
 

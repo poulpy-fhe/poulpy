@@ -30,13 +30,13 @@ use poulpy_ckks::{
     polynomial::{BSGSPolynomial, Basis, EncodeBSGS, Polynomial},
     power_basis::{PowerBasis, PowerBasisGen},
 };
-use poulpy_core::layouts::GLWESecretSampling;
+use poulpy_core::api::GLWESecretSampling;
 use poulpy_core::{
     GLWETensorKeyEncryptSk,
-    api::GLWETensorKeyPreparedFactory,
+    api::{GLWESecretPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
         Base2K, Degree, GLWELayout, GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
-        prepared::{GLWESecretPrepared, GLWESecretPreparedFactory, GLWETensorKeyPrepared},
+        prepared::{GLWESecretPrepared, GLWETensorKeyPrepared},
     },
 };
 use poulpy_cpu_portable::NTT4x30Portable;

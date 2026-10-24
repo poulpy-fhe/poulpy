@@ -3,9 +3,10 @@
 
 use poulpy_core::{
     GGLWENoise,
+    api::{GLWESecretPreparedFactory, GLWESecretSampling},
     layouts::{
-        Degree, GLWEAutomorphismKey, GLWEInfos, GLWESecret, GLWESecretLayout, GLWESecretPrepared, GLWESecretPreparedFactory,
-        GLWESecretSampling, GLWESwitchingKey, GLWESwitchingKeyDegrees, ModuleCoreAlloc, Rank,
+        Degree, GLWEAutomorphismKey, GLWEInfos, GLWESecret, GLWESecretLayout, GLWESecretPrepared, GLWESwitchingKey,
+        GLWESwitchingKeyDegrees, ModuleCoreAlloc, Rank,
     },
 };
 use poulpy_hal::{

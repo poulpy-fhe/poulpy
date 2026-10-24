@@ -11,10 +11,10 @@ use poulpy_bin_fhe::{
 };
 use poulpy_core::{
     GLWEDecrypt, GLWEEncryptSk,
-    api::GGSWPreparedFactory,
+    api::{GGSWPreparedFactory, GLWESecretPreparedFactory},
     layouts::{
-        Base2K, Degree, Dnum, GGLWEToGGSWKeyLayout, GGSWLayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWESecretPreparedFactory,
-        GLWESwitchingKeyLayout, GLWEToLWEKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, Dnum, GGLWEToGGSWKeyLayout, GGSWLayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWESwitchingKeyLayout,
+        GLWEToLWEKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
     },
 };
 use poulpy_hal::{
@@ -24,7 +24,7 @@ use poulpy_hal::{
 };
 use rand::RngExt;
 
-use poulpy_core::layouts::{GLWESecretSampling, LWESecretSampling};
+use poulpy_core::api::{GLWESecretSampling, LWESecretSampling};
 use poulpy_cpu_portable::FFT64Portable;
 
 // This example demonstrates and end-to-end example usage of the BDD arithmetic API

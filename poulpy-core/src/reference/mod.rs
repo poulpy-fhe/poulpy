@@ -22,3 +22,4 @@ pub mod noise;
 pub mod operations;
 pub mod polynomial_evaluation;
 pub mod preparation;
+pub mod secret;

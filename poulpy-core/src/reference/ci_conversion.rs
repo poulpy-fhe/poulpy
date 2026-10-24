@@ -1,17 +1,17 @@
-//! Maps between conjugate-invariant GLWEs of degree `N` and standard GLWEs of
-//! degree `2N`, expressed with HAL operations of the standard module, and the
-//! derived encryption of the switching keys between their secrets.
+//! Maps between conjugate-invariant GLWEs and secrets of degree `N` and standard
+//! GLWEs and secrets of degree `2N`, expressed with HAL operations of the standard module.
 use poulpy_hal::{
-    api::{ModuleN, ScratchArenaTakeBasic, VecZnxCIEmbed, VecZnxCITrace, VecZnxNormalize, VecZnxNormalizeTmpBytes},
-    layouts::{Backend, Data, Module, ScratchArena, VecZnxToBackendMut, VecZnxToBackendRef},
-    source::Source,
+    api::{
+        ModuleN, ScalarZnxCIEmbed, ScratchArenaTakeBasic, VecZnxCIEmbed, VecZnxCITrace, VecZnxNormalize, VecZnxNormalizeTmpBytes,
+    },
+    layouts::{Backend, Module, ScratchArena, VecZnxToBackendMut, VecZnxToBackendRef},
 };
 
 use crate::{
-    GLWECIKeyEncryptSk, GLWESwitchingKeyEncryptSk, GetDistribution,
+    dist::Distribution,
     layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GLWECIEmbedKey, GLWECITraceKey, GLWEInfos, GLWESecretCIEmbed, GLWESecretToBackendRef,
-        GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        GLWEInfos, GLWESecret, GLWESecretLayout, GLWESecretToBackendMut, GLWESecretToBackendRef, GLWEToBackendMut,
+        GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
     },
 };
 
@@ -85,51 +85,27 @@ where
     }
 }
 
-/// Derived: embeds the conjugate-invariant secret and encrypts a switching key.
-impl<BE: Backend> GLWECIKeyEncryptSk<BE> for Module<BE>
+/// Embeds each column of `src` into a fresh standard secret of twice its degree, tagged
+/// [`Distribution::ENCAPSULATED`].
+pub fn glwe_secret_ci_embed_reference<BE, S>(module: &Module<BE>, src: &S) -> GLWESecret<BE::OwnedBuf, BE::ZnxWord>
 where
-    Module<BE>: GLWESecretCIEmbed<BE> + GLWESwitchingKeyEncryptSk<BE>,
+    BE: Backend,
+    Module<BE>: ScalarZnxCIEmbed<BE>,
+    S: GLWESecretToBackendRef<BE>,
 {
-    fn glwe_ci_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos,
+    let src = src.to_backend_ref();
+    let n = 2 * src.n().as_usize();
+    assert!(n <= module.n(), "the embedded secret degree exceeds the module degree");
+    let mut res = module.glwe_secret_alloc_from_infos(&GLWESecretLayout {
+        n: n.into(),
+        rank: src.rank(),
+    });
+    res.dist = Distribution::ENCAPSULATED("conjugate-invariant");
     {
-        self.glwe_switching_key_encrypt_sk_tmp_bytes(infos)
+        let mut res_ref = GLWESecretToBackendMut::<BE>::to_backend_mut(&mut res);
+        for j in 0..src.rank().as_usize() {
+            module.scalar_znx_ci_embed(res_ref.data_mut(), j, src.data(), j);
+        }
     }
-
-    fn glwe_ci_embed_key_encrypt_sk<D, S1, S2>(
-        &self,
-        res: &mut GLWECIEmbedKey<D, BE::ZnxWord>,
-        sk_ci: &S1,
-        sk: &S2,
-        source_xe: &mut Source,
-        source_xa: &mut Source,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        D: Data,
-        GLWECIEmbedKey<D, BE::ZnxWord>: GGLWEToBackendMut<BE>,
-        S1: GLWESecretToBackendRef<BE>,
-        S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
-    {
-        let sk_embedded = self.glwe_secret_ci_embed(sk_ci);
-        self.glwe_switching_key_encrypt_sk(res, &sk_embedded, sk, source_xe, source_xa, scratch);
-    }
-
-    fn glwe_ci_trace_key_encrypt_sk<D, S1, S2>(
-        &self,
-        res: &mut GLWECITraceKey<D, BE::ZnxWord>,
-        sk_ci: &S1,
-        sk: &S2,
-        source_xe: &mut Source,
-        source_xa: &mut Source,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        D: Data,
-        GLWECITraceKey<D, BE::ZnxWord>: GGLWEToBackendMut<BE>,
-        S1: GLWESecretToBackendRef<BE>,
-        S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
-    {
-        let sk_embedded = self.glwe_secret_ci_embed(sk_ci);
-        self.glwe_switching_key_encrypt_sk(res, sk, &sk_embedded, source_xe, source_xa, scratch);
-    }
+    res
 }

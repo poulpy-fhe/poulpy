@@ -11,18 +11,17 @@ use poulpy_hal::{
 use rand::Rng;
 use std::f64::consts::SQRT_2;
 
-use crate::layouts::GLWESecretSampling;
+use crate::api::GLWESecretSampling;
 use crate::test_suite::noise::{assert_refuses_uncovered_input, glwe_decrypt_checked};
 use crate::{
     GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEMaskFill, GLWEMulConst, GLWEMulPlain, GLWEMulRelinearizeSum,
     GLWENormalize, GLWEPreparedTensoring, GLWESub, GLWETensorDecrypt, GLWETensorKeyEncryptSk, GLWETensoring,
-    api::GLWETensorKeyPreparedFactory,
+    api::{GLWESecretPreparedFactory, GLWESecretTensorFactory, GLWESecretTensorPreparedFactory, GLWETensorKeyPreparedFactory},
     glwe_prepare_left, glwe_prepare_left_tmp_bytes, glwe_prepare_right, glwe_prepare_right_tmp_bytes,
     layouts::{
-        Dnum, Dsize, GGLWEInfos, GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWESecret, GLWESecretPreparedFactory,
-        GLWESecretTensor, GLWESecretTensorFactory, GLWESecretTensorPrepared, GLWESecretTensorPreparedFactory, GLWETensor,
-        GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPrepared, LWEInfos, ModuleCoreAlloc, TorusPrecision,
-        prepared::GLWESecretPrepared,
+        Dnum, Dsize, GGLWEInfos, GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWESecret, GLWESecretTensor,
+        GLWESecretTensorPrepared, GLWETensor, GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPrepared, LWEInfos,
+        ModuleCoreAlloc, TorusPrecision, prepared::GLWESecretPrepared,
     },
     log2_std_noise_glwe_tensor, log2_std_noise_glwe_tensor_relinearized,
 };

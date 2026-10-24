@@ -10,11 +10,9 @@ pub use crate::api::GLWESwitchingKeyEncryptSk;
 use crate::layouts::operand_degree;
 use crate::{
     GetDistribution, ScratchArenaTakeCore,
+    api::GLWESecretPreparedFactory,
     encryption::gglwe::GGLWEEncryptSk,
-    layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, LWEInfos,
-        prepared::GLWESecretPreparedFactory,
-    },
+    layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, LWEInfos},
 };
 
 /// Portable implementation using HAL operations.

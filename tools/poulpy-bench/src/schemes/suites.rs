@@ -11,8 +11,10 @@ use poulpy_ckks::api::{
 };
 use poulpy_core::{
     GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEMaskFill, LWEEncryptSk, LWEFillMask,
-    api::{GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
-    layouts::{GLWESecretPreparedFactory, GLWESecretSampling, LWESecretSampling},
+    api::{
+        GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling,
+        GLWETensorKeyPreparedFactory, LWESecretSampling,
+    },
 };
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::{

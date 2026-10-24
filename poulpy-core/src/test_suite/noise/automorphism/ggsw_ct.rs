@@ -5,17 +5,17 @@ use poulpy_hal::{
     test_suite::TestParams,
 };
 
-use crate::layouts::GLWESecretSampling;
+use crate::api::GLWESecretSampling;
 use crate::layouts::LWEInfos;
 use crate::layouts::prepared::{GGLWEToGGSWKeyPreparedToBackendRef, GLWEAutomorphismKeyPreparedToBackendRef};
 use crate::{Distribution, ScalarZnxFillDistribution};
 use crate::{
     GGLWEToGGSWKeyEncryptSk, GGSWAutomorphism, GGSWEncryptSk, GGSWNoise, GLWEAutomorphismKeyEncryptSk,
-    api::{GGLWEToGGSWKeyPreparedFactory, GLWEAutomorphismKeyPreparedFactory},
+    api::{GGLWEToGGSWKeyPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory},
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGSW, GGSWInfos, GGSWLayout, GLWEAutomorphismKey, GLWEInfos, GLWESecret,
-        GLWESecretPreparedFactory, ModuleCoreAlloc,
+        ModuleCoreAlloc,
         prepared::{GGLWEToGGSWKeyPrepared, GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
     noise::GGLWENoiseModel,

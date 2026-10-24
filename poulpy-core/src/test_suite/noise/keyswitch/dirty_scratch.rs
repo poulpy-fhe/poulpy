@@ -18,14 +18,14 @@ use poulpy_hal::{
     test_suite::{TestParams, vec_znx_backend_mut},
 };
 
-use crate::layouts::GLWESecretSampling;
+use crate::api::GLWESecretSampling;
 use crate::layouts::prepared::GGSWPreparedToBackendRef;
 use crate::{
     GGSWEncryptSk, GLWEEncryptSk, GLWEExternalProduct, GLWEKeyswitch, GLWESwitchingKeyEncryptSk,
-    api::{GGSWPreparedFactory, GLWESwitchingKeyPreparedFactory},
+    api::{GGSWPreparedFactory, GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory},
     layouts::{
-        GGSW, GGSWLayout, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey,
-        GLWESwitchingKeyLayout, LWEInfos, ModuleCoreAlloc,
+        GGSW, GGSWLayout, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESwitchingKey, GLWESwitchingKeyLayout, LWEInfos,
+        ModuleCoreAlloc,
         prepared::{GGSWPrepared, GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
 };

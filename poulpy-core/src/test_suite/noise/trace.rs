@@ -10,15 +10,14 @@ use poulpy_hal::{
     test_suite::{TestParams, vec_znx_backend_mut, vec_znx_backend_ref},
 };
 
-use crate::layouts::GLWESecretSampling;
+use crate::api::GLWESecretSampling;
 use crate::test_suite::noise::glwe_decrypt_checked;
 use crate::{
     GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWETrace,
-    api::GLWEAutomorphismKeyPreparedFactory,
+    api::{GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory},
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory,
-        LWEInfos, ModuleCoreAlloc,
+        GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext, GLWESecret, LWEInfos, ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
     noise::GGLWENoiseModel,
