@@ -26,7 +26,7 @@ Generic rules: `docs/review/workspace.md` section 3.
 
 - **One stem per family.** A family's stem also names `test_suite/<stem>.rs`; a new protocol joins its family (switching and automorphism keys share `evaluation_key`) or adds its stem to every layer, with its PAT and share types in a `layouts/` file named after the type or family.
 - **Lists that enumerate protocols.** A new protocol or PAT type also updates:
-  - under `poulpy-mhe/src/`: `api/mod.rs` (module doc list, `pub mod`, `pub use`), `delegates/mod.rs`, `oep/mod.rs` and `impl_mhe_reference_full!` (scheme families included), `reference/mod.rs`, `layouts/mod.rs` and the `MHEModuleAlloc` pair, `test_suite/mod.rs` and `mhe_backend_test_suite!`;
+  - under `poulpy-mhe/src/`: `api/mod.rs` (module doc list, private `mod`, `pub use`), `delegates/mod.rs`, `oep/mod.rs` and `impl_mhe_reference_full!` (scheme families included), `reference/mod.rs`, `layouts/mod.rs` and the `MHEModuleAlloc` pair, `test_suite/mod.rs` and `mhe_backend_test_suite!`;
   - `poulpy-mhe/docs/mhe-contracts.md`: "Public API organization", the "Operation map" row, the "Replacing an operation" macro list;
   - the lists of `poulpy-mhe/README.md` and the poulpy-mhe line of the root `README.md`.
 - **Module exports.** `api` and `layouts` are glob re-exported at the crate root, `oep` and `reference` namespaced, `delegates` private, in scheme modules too.
