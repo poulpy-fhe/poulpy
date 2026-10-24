@@ -6,8 +6,8 @@ use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDft, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftSubAssign,
-        VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxRotate, VecZnxZero, VmpApplyDftToDft,
-        VmpApplyDftToDftTmpBytes,
+        VecZnxDftSubNegateAssign, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxRotate, VecZnxZero,
+        VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
     },
     execution::TaskExecutor,
     layouts::{
@@ -58,6 +58,7 @@ where
         + SvpApplyDftToDft<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftSubAssign<BE>
+        + VecZnxDftSubNegateAssign<BE>
         + VecZnxIdftApply<BE>
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigNormalize<BE>
@@ -94,9 +95,10 @@ where
         if extension_factor == 1 {
             let slots = block_slots::<BE>(block_size);
             let workers = poulpy_hal::execution::scratch_workers::<BE::TaskExecutor>(block_size);
+            let per_worker = vmp.max(module.bytes_of_vec_znx_dft(module.n(), 1, size));
             acc_dft
-                + (2 * slots + 1) * vmp_res
-                + (workers * poulpy_hal::execution::worker_scratch_bytes::<BE>(vmp))
+                + (slots + 1) * vmp_res
+                + (workers * poulpy_hal::execution::worker_scratch_bytes::<BE>(per_worker))
                     .max(normalize)
                     .max(copy_out)
         } else {
@@ -150,6 +152,7 @@ pub fn blind_rotation_execute_ref<BE, R, L>(
         + SvpApplyDftToDft<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftSubAssign<BE>
+        + VecZnxDftSubNegateAssign<BE>
         + VecZnxIdftApply<BE>
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigNormalize<BE>
@@ -431,7 +434,7 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64>>(
         + VmpApplyDftToDft<BE>
         + SvpApplyDftToDft<BE>
         + VecZnxDftAddAssign<BE>
-        + VecZnxDftSubAssign<BE>
+        + VecZnxDftSubNegateAssign<BE>
         + VecZnxIdftApply<BE>
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigNormalize<BE>
@@ -469,14 +472,11 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64>>(
     let block_size: usize = brk.block_size();
     let slots = block_slots::<BE>(block_size);
     let workers = poulpy_hal::execution::worker_count::<BE::TaskExecutor>(block_size, slots);
-    let worker_scratch_bytes = poulpy_hal::execution::worker_scratch_bytes::<BE>(module.vmp_apply_dft_to_dft_tmp_bytes(
-        brk.size(),
-        dnum,
-        dnum,
-        cols,
-        cols,
-        brk.size(),
-    ));
+    let worker_scratch_bytes = poulpy_hal::execution::worker_scratch_bytes::<BE>(
+        module
+            .vmp_apply_dft_to_dft_tmp_bytes(brk.size(), dnum, dnum, cols, cols, brk.size())
+            .max(module.bytes_of_vec_znx_dft(module.n(), 1, brk.size())),
+    );
     let x_pow_a = brk.x_pow_a.as_ref().expect("invalid key: x_pow_a has not been initialized");
 
     // ACC + [sum DFT(X^ai -1) * (DFT(ACC) x BRKi)]
@@ -484,9 +484,7 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64>>(
     let scratch = scratch.borrow();
     let (mut acc_dft, scratch_1) = scratch.take_vec_znx_dft_scratch(module.n(), cols, dnum);
     let (mut acc_add_dft, scratch_2) = scratch_1.take_vec_znx_dft_scratch(module.n(), cols, brk.size());
-    let (vmp_res, scratch_3) = scratch_2.take_vec_znx_dft_slice_scratch(module.n(), slots, cols, brk.size());
-    let (contributions, mut scratch_4) = scratch_3.take_vec_znx_dft_slice_scratch(module.n(), slots, cols, brk.size());
-    let mut tasks: Vec<_> = vmp_res.into_iter().zip(contributions).collect();
+    let (mut vmp_res, mut scratch_3) = scratch_2.take_vec_znx_dft_slice_scratch(module.n(), slots, cols, brk.size());
 
     for (ai, ski) in izip!(a.chunks_exact(block_size), brk.data.chunks_exact(block_size)) {
         for j in 0..cols {
@@ -499,28 +497,31 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64>>(
 
         let acc_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&acc_dft);
         for first in (0..block_size).step_by(slots) {
-            let (worker_scratch, _) = scratch_4.borrow().split(workers, worker_scratch_bytes);
+            let (worker_scratch, _) = scratch_3.borrow().split(workers, worker_scratch_bytes);
             poulpy_hal::execution::for_each_with_scratch::<BE::TaskExecutor, BE, _, _>(
-                &mut tasks,
+                &mut vmp_res,
                 first,
                 worker_scratch,
-                &|index, task, scratch| {
-                    let (vmp_res, contribution) = task;
+                &|index, vmp_res, scratch| {
                     let skii_ref = ski[index].data().to_backend_ref();
                     module.vmp_apply_dft_to_dft(vmp_res, &acc_dft_ref, &skii_ref, 0, scratch);
 
                     let ai_pos = ((ai[index] + two_n as i64) & (two_n - 1) as i64) as usize;
                     let x_pow_a_ref = x_pow_a[ai_pos].to_backend_ref();
+                    let (mut vmp_xai, _) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), 1, brk.size());
                     for col in 0..cols {
-                        let vmp_res_ref = vec_znx_dft_backend_ref_from_mut::<BE>(vmp_res);
-                        module.svp_apply_dft_to_dft(contribution, col, &x_pow_a_ref, 0, &vmp_res_ref, col);
-                        let vmp_res_ref = vec_znx_dft_backend_ref_from_mut::<BE>(vmp_res);
-                        module.vec_znx_dft_sub_assign(contribution, col, &vmp_res_ref, col);
+                        {
+                            let vmp_res_ref = vec_znx_dft_backend_ref_from_mut::<BE>(vmp_res);
+                            let mut vmp_xai_backend = vmp_xai.to_backend_mut();
+                            module.svp_apply_dft_to_dft(&mut vmp_xai_backend, 0, &x_pow_a_ref, 0, &vmp_res_ref, col);
+                        }
+                        let vmp_xai_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&vmp_xai);
+                        module.vec_znx_dft_sub_negate_assign(vmp_res, col, &vmp_xai_ref, 0);
                     }
                 },
             );
 
-            for (_, contribution) in &tasks {
+            for contribution in &vmp_res {
                 for col in 0..cols {
                     let contribution_ref = vec_znx_dft_backend_ref_from_mut::<BE>(contribution);
                     module.vec_znx_dft_add_assign(&mut acc_add_dft, col, &contribution_ref, col);
@@ -528,10 +529,10 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64>>(
             }
         }
 
-        let (mut acc_add_big, mut scratch_5) = scratch_4.borrow().take_vec_znx_big_scratch(module.n(), 1, brk.size());
+        let (mut acc_add_big, mut scratch_4) = scratch_3.borrow().take_vec_znx_big_scratch(module.n(), 1, brk.size());
         for col in 0..cols {
             let acc_add_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&acc_add_dft);
-            module.vec_znx_idft_apply(&mut acc_add_big, 0, &acc_add_dft_ref, col, &mut scratch_5.borrow());
+            module.vec_znx_idft_apply(&mut acc_add_big, 0, &acc_add_dft_ref, col, &mut scratch_4.borrow());
             {
                 let out_ref = <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(
                     out_tmp.data(),
@@ -549,11 +550,11 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64>>(
                 &acc_add_big_ref,
                 base2k,
                 0,
-                &mut scratch_5.borrow(),
+                &mut scratch_4.borrow(),
             );
         }
     }
-    module.glwe_copy(res, &out_tmp, &mut scratch_4);
+    module.glwe_copy(res, &out_tmp, &mut scratch_3);
 }
 
 /// Block products held at once: the whole block when the executor runs them in parallel.
