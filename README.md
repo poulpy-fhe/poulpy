@@ -245,6 +245,17 @@ poulpy-blas = {git = "https://github.com/poulpy-fhe/poulpy", rev = "<rev>", feat
 poulpy-cpu-oracle = {git = "https://github.com/poulpy-fhe/poulpy", rev = "<rev>", features = ["enable-blas"]}
 ```
 
+MHE runs its functional suite (`mhe_backend_test_suite!`) on the oracle and the
+portable serial types, and every type selecting MHE registers bit-exact parity
+through `mhe_parity_test_suite!`: the portable types against the
+controlled-sampling oracle of their family, the portable Rayon types against
+their serial base, and `NTT4x30Oracle` against `FFT64Oracle`. See
+[implementing multiparty operations](poulpy-mhe/docs/mhe-contracts.md).
+
+```sh
+cargo test -p poulpy-cpu-portable --lib --profile ci --features enable-mhe -- mhe_parity
+```
+
 libm registers its suite through `libm_backend_test_suite!`: precision and exact budget consumption of every function, on the NTT4x30 type of each CPU backend and on `NTT3x42Ifma`, with the backends' `enable-ckks`.
 [`libm_tests.rs`](backends/poulpy-cpu-portable/src/tests/libm_tests.rs) shows the registration.
 CI runs it on the portable, native AVX2 and NEON backends. The emulated AVX job does not build it, and the AVX-512 jobs filter it out, since their results are byte-identical to the other backends'.

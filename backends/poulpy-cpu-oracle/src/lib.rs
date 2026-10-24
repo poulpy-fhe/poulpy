@@ -6,7 +6,8 @@
 //! conjugate-invariant ring, implement the required HAL operations directly,
 //! with plain loops, and inherit every optional one. They own their
 //! transforms and tables and do not depend on any production CPU backend.
-//! `enable-core` registers the generic Core compositions.
+//! `enable-core` registers the generic Core compositions, and `enable-mhe` the
+//! multiparty ones.
 //! `enable-blas` implies `enable-ckks` and wires the oracle backends into `poulpy-blas`.
 
 mod backend;
@@ -27,6 +28,8 @@ mod family;
 mod fft;
 mod hal;
 mod limbs;
+#[cfg(feature = "enable-mhe")]
+mod mhe_impl;
 mod normalize;
 mod ntt;
 mod ring;

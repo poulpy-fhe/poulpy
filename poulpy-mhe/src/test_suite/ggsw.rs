@@ -38,7 +38,7 @@ fn trial_seed(role: u8, trial: u8) -> [u8; 32] {
 
 /// The ephemeral key layout for `layout`: the GGSW rank to itself, covering the
 /// GGSW precision with one guard digit.
-fn ephemeral_key_layout<BE: Backend>(module: &Module<BE>, layout: &GGSWLayout) -> GGLWELayout {
+pub(crate) fn ephemeral_key_layout<BE: Backend>(module: &Module<BE>, layout: &GGSWLayout) -> GGLWELayout {
     GGLWELayout {
         n: layout.n,
         base2k: layout.base2k,

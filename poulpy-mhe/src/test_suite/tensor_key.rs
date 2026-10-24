@@ -187,7 +187,7 @@ where
     );
 }
 
-fn tensor_key_layout<BE: Backend>(module: &Module<BE>, dnum: Dnum, dsize: Dsize) -> GLWETensorKeyLayout {
+pub(crate) fn tensor_key_layout<BE: Backend>(module: &Module<BE>, dnum: Dnum, dsize: Dsize) -> GLWETensorKeyLayout {
     GLWETensorKeyLayout {
         n: module.n().into(),
         base2k: BASE2K,

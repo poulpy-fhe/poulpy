@@ -9,8 +9,8 @@
 //! A backend selects the reference implementation with the
 //! `impl_<family>_reference_full!` opt-ins or implements an `*Impl` contract
 //! itself. An override must compute the same result as the reference and pass
-//! parity against a validated backend; the parity suite arrives with the first
-//! override.
+//! [`mhe_parity_test_suite!`](crate::mhe_parity_test_suite) against a
+//! validated backend.
 pub(crate) mod derived;
 pub mod evaluation_key;
 pub mod ggsw;
