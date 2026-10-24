@@ -162,7 +162,7 @@
 //#![cfg(all(feature = "enable-avx", target_arch = "x86_64", target_feature = "avx2", target_feature = "fma"))]
 
 // If the user enables this backend but targets a non-x86_64 CPU → abort
-#[cfg(all(feature = "enable-avx", not(target_arch = "x86_64")))]
+#[cfg(all(feature = "enable-avx", not(docsrs), not(target_arch = "x86_64")))]
 compile_error!("feature `enable-avx` requires target_arch = \"x86_64\".");
 
 #[cfg(all(feature = "enable-ckks", not(feature = "enable-avx")))]
@@ -171,11 +171,11 @@ compile_error!(
 );
 
 // If the user enables this backend but AVX2 isn't enabled in the target → abort
-#[cfg(all(feature = "enable-avx", target_arch = "x86_64", not(target_feature = "avx2")))]
+#[cfg(all(feature = "enable-avx", not(docsrs), target_arch = "x86_64", not(target_feature = "avx2")))]
 compile_error!("feature `enable-avx` requires AVX2. Build with RUSTFLAGS=\"-C target-feature=+avx2\".");
 
 // If the user enables this backend but FMA isn't enabled in the target → abort
-#[cfg(all(feature = "enable-avx", target_arch = "x86_64", not(target_feature = "fma")))]
+#[cfg(all(feature = "enable-avx", not(docsrs), target_arch = "x86_64", not(target_feature = "fma")))]
 compile_error!("feature `enable-avx` requires FMA. Build with RUSTFLAGS=\"-C target-feature=+fma\".");
 
 // Keep the crate as a true opt-in backend: without `enable-avx`, none of the
