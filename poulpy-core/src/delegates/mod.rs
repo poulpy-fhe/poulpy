@@ -15,4 +15,5 @@ mod keyswitching;
 mod linear_transformation;
 mod operations;
 mod polynomial_evaluation;
+mod preparation;
 mod sampling;

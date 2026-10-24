@@ -1,8 +1,8 @@
 use poulpy_hal::layouts::VmpPMatToBackendMut;
 use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
-    api::{VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes, VmpZero},
-    layouts::{Backend, Data, Module, PrepareHint, ScratchArena, VmpPMat},
+    api::{VmpPMatAlloc, VmpPMatBytesOf},
+    layouts::{Backend, Data, PrepareHint, ScratchArena, VmpPMat},
 };
 
 use crate::layouts::{Base2K, Degree, Dnum, GGSWInfos, GGSWToBackendRef, GLWEInfos, GetDegree, LWEInfos, Rank, TorusPrecision};
@@ -70,7 +70,7 @@ impl<D: Data, B: Backend> GGSWInfos for GGSWPrepared<D, B> {
 /// Trait for allocating and preparing DFT-domain GGSW ciphertexts.
 pub trait GGSWPreparedFactory<B: Backend>
 where
-    Self: GetDegree + VmpPMatAlloc<B> + VmpPMatBytesOf + VmpPrepareTmpBytes + VmpPrepare<B> + VmpZero<B>,
+    Self: GetDegree + VmpPMatAlloc<B> + VmpPMatBytesOf,
 {
     /// Allocates a new prepared GGSW with the given parameters.
     fn ggsw_prepared_alloc(
@@ -149,53 +149,16 @@ where
 
     fn ggsw_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
     where
-        A: GGSWInfos,
-    {
-        operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
-        let lvl_0: usize = self.vmp_prepare_tmp_bytes(
-            infos.dnum().into(),
-            (infos.rank() + 1).into(),
-            (infos.rank() + 1).into(),
-            infos.size(),
-        );
-        lvl_0
-    }
+        A: GGSWInfos;
+
     fn ggsw_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, B>)
     where
         R: GGSWPreparedToBackendMut<B>,
-        O: GGSWToBackendRef<B>,
-    {
-        let noise = other.to_backend_ref().noise();
-        {
-            let mut res = res.to_backend_mut();
-            let other = other.to_backend_ref();
-            operand_degree(self.ring_degree().as_usize(), &[res.n(), other.n()]);
-            assert_eq!(res.base2k, other.base2k);
-            assert_eq!(res.k_digit, other.k_digit);
-            assert!(
-                scratch.available() >= self.ggsw_prepare_tmp_bytes(&res),
-                "scratch.available(): {} < GGSWPreparedFactory::ggsw_prepare_tmp_bytes: {}",
-                scratch.available(),
-                self.ggsw_prepare_tmp_bytes(&res)
-            );
-            self.vmp_prepare(&mut res.data, &other.data, scratch);
-        }
-        res.set_noise(noise);
-    }
+        O: GGSWToBackendRef<B>;
 
     fn ggsw_zero<R>(&self, res: &mut R)
     where
-        R: GGSWPreparedToBackendMut<B>,
-    {
-        res.set_noise(None);
-        let mut res = res.to_backend_mut();
-        self.vmp_zero(&mut res.data);
-    }
-}
-
-impl<B: Backend> GGSWPreparedFactory<B> for Module<B> where
-    Self: GetDegree + VmpPMatAlloc<B> + VmpPMatBytesOf + VmpPrepareTmpBytes + VmpPrepare<B> + VmpZero<B>
-{
+        R: GGSWPreparedToBackendMut<B>;
 }
 
 // module-only API: allocation/size helpers are provided by `GGSWPreparedFactory` on `Module`.

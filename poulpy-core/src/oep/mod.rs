@@ -41,9 +41,9 @@
 //! [`GLWEExternalProductImpl`] methods. Other reference algorithms and derived
 //! defaults remain available when their individual requirements are met.
 //!
-//! Prepared factories and internal keyswitch helpers reuse core and HAL
-//! operations through their documented bounds. Host-only noise diagnostics have
-//! additional storage-access requirements.
+//! Internal keyswitch helpers reuse core and HAL operations through their
+//! documented bounds. Host-only noise diagnostics have additional
+//! storage-access requirements.
 //!
 //! # Noise metadata
 //!
@@ -84,6 +84,7 @@ mod keyswitching;
 mod linear_transformation;
 mod operations;
 mod polynomial_evaluation;
+mod preparation;
 mod sampling;
 
 pub use automorphism::*;
@@ -97,6 +98,7 @@ pub use keyswitching::*;
 pub use linear_transformation::*;
 pub use operations::*;
 pub use polynomial_evaluation::*;
+pub use preparation::*;
 pub use sampling::*;
 
 /// Forwards every core family except sampling and the standard-only families (LWE conversion,
@@ -113,6 +115,7 @@ macro_rules! impl_core_reference_full {
         $crate::impl_encryption_reference_full!($be);
         $crate::impl_operations_reference_full!($be);
         $crate::impl_polynomial_evaluation_derived_full!($be);
+        $crate::impl_preparation_reference_full!($be);
         $crate::impl_gglwe_external_product_derived_full!($be);
         $crate::impl_gglwe_keyswitch_derived_full!($be);
         $crate::impl_ggsw_external_product_derived_full!($be);
@@ -141,5 +144,5 @@ pub use crate::{
     impl_glwe_pack_derived_full, impl_glwe_rotate_reference_full, impl_glwe_shift_reference_full, impl_glwe_sub_reference_full,
     impl_glwe_tensoring_reference_full, impl_glwe_trace_derived_full, impl_glwe_zero_reference_full,
     impl_linear_transformation_reference_full, impl_lwe_keyswitch_reference_full, impl_operations_reference_full,
-    impl_polynomial_evaluation_derived_full,
+    impl_polynomial_evaluation_derived_full, impl_preparation_reference_full,
 };

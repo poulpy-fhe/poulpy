@@ -1,5 +1,5 @@
 use crate::error::Result;
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
 use crate::layouts::prepared::{GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef};
 use crate::layouts::{
@@ -142,33 +142,13 @@ where
 
     fn glwe_automorphism_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
     where
-        A: GGLWEInfos,
-    {
-        let lvl_0: usize = self.gglwe_prepare_tmp_bytes(infos);
-        lvl_0
-    }
+        A: GGLWEInfos;
 
     fn glwe_automorphism_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, B>)
     where
         R: GGLWEPreparedToBackendMut<B> + SetGaloisElement,
-        O: GGLWEToBackendRef<B> + GetGaloisElement,
-    {
-        let tmp_bytes = {
-            let res_infos = res.to_backend_mut();
-            self.glwe_automorphism_key_prepare_tmp_bytes(&res_infos)
-        };
-        assert!(
-            scratch.available() >= tmp_bytes,
-            "scratch.available(): {} < GLWEAutomorphismKeyPreparedFactory::glwe_automorphism_key_prepare_tmp_bytes: {}",
-            scratch.available(),
-            tmp_bytes
-        );
-        self.gglwe_prepare(res, other, scratch);
-        res.set_p(other.p());
-    }
+        O: GGLWEToBackendRef<B> + GetGaloisElement;
 }
-
-impl<B: Backend> GLWEAutomorphismKeyPreparedFactory<B> for Module<B> where Module<B>: GGLWEPreparedFactory<B> {}
 
 // module-only API: allocation, sizing, and preparation are provided by
 // `GLWEAutomorphismKeyPreparedFactory` on `Module`.

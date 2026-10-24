@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
 use crate::layouts::{
     Base2K, CIEmbed, CITrace, Degree, Dnum, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef,
@@ -146,10 +146,7 @@ where
 
     fn glwe_ci_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
     where
-        A: GGLWEInfos,
-    {
-        self.glwe_switching_key_prepare_tmp_bytes(infos)
-    }
+        A: GGLWEInfos;
 
     /// Prepares `other` into `res`; both carry the same direction.
     fn glwe_ci_key_prepare<DR, DO, M>(
@@ -161,10 +158,5 @@ where
         DR: Data,
         DO: Data,
         GLWESwitchingKeyPrepared<DR, B>: GGLWEPreparedToBackendMut<B>,
-        GLWESwitchingKey<DO, B::ZnxWord>: GGLWEToBackendRef<B>,
-    {
-        self.glwe_switching_key_prepare(&mut res.0, &other.0, scratch);
-    }
+        GLWESwitchingKey<DO, B::ZnxWord>: GGLWEToBackendRef<B>;
 }
-
-impl<B: Backend> GLWECIKeyPreparedFactory<B> for Module<B> where Self: GLWESwitchingKeyPreparedFactory<B> {}

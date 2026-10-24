@@ -3,8 +3,8 @@ use poulpy_hal::layouts::VmpPMatToBackendMut;
 use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::layouts::vmp_pmat_backend_ref_from_ref;
 use poulpy_hal::{
-    api::{VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes},
-    layouts::{Backend, Data, Module, PrepareHint, ScratchArena, VmpPMat},
+    api::{VmpPMatAlloc, VmpPMatBytesOf},
+    layouts::{Backend, Data, PrepareHint, ScratchArena, VmpPMat},
 };
 
 use crate::layouts::operand_degree;
@@ -98,12 +98,9 @@ impl<D: Data, B: Backend> GGLWEInfos for GGLWEPrepared<D, B> {
 }
 
 /// Factory trait for allocating and preparing [`GGLWEPrepared`] instances.
-///
-/// Requires the backend module to support VMP prepared-matrix allocation,
-/// byte-size queries, and the prepare transform.
 pub trait GGLWEPreparedFactory<BE: Backend>
 where
-    Self: GetDegree + VmpPMatAlloc<BE> + VmpPMatBytesOf + VmpPrepare<BE> + VmpPrepareTmpBytes,
+    Self: GetDegree + VmpPMatAlloc<BE> + VmpPMatBytesOf,
 {
     /// Allocates a new [`GGLWEPrepared`] with the given parameters.
     fn gglwe_prepared_alloc(
@@ -199,16 +196,7 @@ where
     /// Returns the scratch-space bytes needed by [`gglwe_prepare`](Self::gglwe_prepare).
     fn gglwe_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
     where
-        A: GGLWEInfos,
-    {
-        let lvl_0: usize = self.vmp_prepare_tmp_bytes(
-            infos.dnum().into(),
-            infos.rank_in().into(),
-            (infos.rank() + 1).into(),
-            infos.size(),
-        );
-        lvl_0
-    }
+        A: GGLWEInfos;
 
     /// Transforms a standard [`GGLWE`](crate::layouts::GGLWE) into the DFT domain, writing the result into `res`.
     ///
@@ -216,33 +204,7 @@ where
     fn gglwe_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GGLWEPreparedToBackendMut<BE>,
-        O: GGLWEToBackendRef<BE>,
-    {
-        let noise = other.to_backend_ref().noise();
-        {
-            let mut res = res.to_backend_mut();
-            let other = other.to_backend_ref();
-
-            operand_degree(self.ring_degree().as_usize(), &[res.n(), other.n()]);
-            assert_eq!(res.base2k, other.base2k);
-            assert_eq!(res.size(), other.size());
-            assert_eq!(res.k_digit, other.k_digit);
-            assert_eq!(res.k_offset, other.k_offset, "gglwe_prepare: row offsets differ");
-            assert!(
-                scratch.available() >= self.gglwe_prepare_tmp_bytes(&res),
-                "scratch.available(): {} < GGLWEPreparedFactory::gglwe_prepare_tmp_bytes: {}",
-                scratch.available(),
-                self.gglwe_prepare_tmp_bytes(&res)
-            );
-            self.vmp_prepare(&mut res.data, &other.data, scratch);
-        }
-        res.set_noise(noise);
-    }
-}
-
-impl<BE: Backend> GGLWEPreparedFactory<BE> for Module<BE> where
-    Module<BE>: GetDegree + VmpPMatAlloc<BE> + VmpPMatBytesOf + VmpPrepare<BE> + VmpPrepareTmpBytes
-{
+        O: GGLWEToBackendRef<BE>;
 }
 
 // module-only API: allocation/size helpers are provided by `GGLWEPreparedFactory` on `Module`.

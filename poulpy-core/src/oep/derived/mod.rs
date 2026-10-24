@@ -12,4 +12,5 @@ pub(crate) mod external_product;
 pub(crate) mod keyswitching;
 pub(crate) mod operations;
 pub(crate) mod polynomial_evaluation;
+pub(crate) mod preparation;
 pub(crate) mod structure;

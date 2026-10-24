@@ -168,7 +168,7 @@ where
 pub fn ckks_rotate_ops<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: criterion::measurement::Measurement>()
 -> [BenchOp<M, CkksBenchParams>; 1]
 where
-    Module<BE>: ModuleNew<BE> + CKKSRotateOps<BE> + GLWEAutomorphismKeyPreparedFactory<BE>,
+    Module<BE>: ModuleNew<BE> + CKKSRotateOps<BE> + GLWEAutomorphismKeyPreparedFactory<BE> + GLWETensorKeyPreparedFactory<BE>,
 {
     [BenchOp {
         layer: "ckks",

@@ -128,7 +128,7 @@ pub fn runner_ckks_rotate_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
-    Module<BE>: ModuleNew<BE> + CKKSRotateOps<BE> + GLWEAutomorphismKeyPreparedFactory<BE>,
+    Module<BE>: ModuleNew<BE> + CKKSRotateOps<BE> + GLWEAutomorphismKeyPreparedFactory<BE> + GLWETensorKeyPreparedFactory<BE>,
 {
     let module = Module::<BE>::new(cp.n as u64);
 
