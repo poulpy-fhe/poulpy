@@ -358,7 +358,8 @@ Leveled operations are invoked through traits implemented on
 | `CKKSMulAddOps` | fused `dst += a * b` variants |
 | `CKKSMulSubOps` | fused `dst -= a * b` variants |
 | `CKKSAffineOps` | fused affine: `dst = a * scale_coeff + offset_coeff` |
-| `CKKSAddManyOps` | sum of a slice, added left to right |
+| `CKKSAddManyOps` | sum of a slice, added left to right, normalized at a caller-set cadence |
+| `CKKSInnerSumOps` | inner sums and replications over power-of-two batches of slots |
 | `CKKSDotProductOps` | inner product of ciphertext, prepared-ciphertext or plaintext slices |
 | `CKKSImagOps` | multiplication and division by `i` (imaginary unit rotation) |
 | `CKKSCopyOps` | level-aware ciphertext copy |

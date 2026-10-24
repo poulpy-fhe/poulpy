@@ -243,7 +243,7 @@ unsafe impl GLWETraceImpl for DelegatingFFT64Portable {
         TRACE_ASSIGN_CALLS.set(TRACE_ASSIGN_CALLS.get() + 1);
         let (marker, mut remaining) = scratch.borrow().take_region(TRACE_EXTRA_SCRATCH);
         marker.fill(0xB7);
-        let rotations = module.glwe_trace_galois_elements(levels, reverse);
+        let rotations = module.glwe_trace_galois_elements(res.n(), levels, reverse);
         if let Some(&first) = rotations.first() {
             let key = keys.get_automorphism_key(first, res.k()).unwrap();
             let mut converted = (res.base2k() != key.base2k()).then(|| {
@@ -462,7 +462,7 @@ fn derived_trace_uses_selected_assign_and_its_larger_scratch_query() {
         rank: input.rank(),
     };
     let levels = input.log_n() - 1..input.log_n();
-    let p = reference.glwe_trace_galois_elements(levels.clone(), false)[0];
+    let p = reference.glwe_trace_galois_elements(input.n(), levels.clone(), false)[0];
     let mut key = reference.glwe_automorphism_key_alloc_from_infos(&key_layout);
     fill_by_digit(&reference, &mut key, 1, &mut Source::new([89; 32]));
     key.set_p(p);

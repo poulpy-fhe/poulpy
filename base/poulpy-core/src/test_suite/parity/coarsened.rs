@@ -267,7 +267,7 @@ where
     let mut twins: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = HashMap::new();
     let mut trace_bytes: usize = 0;
 
-    let gal_els: Vec<i64> = module.glwe_trace_galois_elements(0..module.log_n(), false);
+    let gal_els: Vec<i64> = module.glwe_trace_galois_elements(module.n().into(), 0..module.log_n(), false);
     for (salt, gal_el) in gal_els.iter().enumerate() {
         let (dsize, dnum) = shapes[salt % shapes.len()];
         let stored = GLWEAutomorphismKeyLayout {

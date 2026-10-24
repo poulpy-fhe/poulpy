@@ -57,6 +57,7 @@ poulpy_ckks::impl_ckks_neg_reference!(OverrideBackend);
 poulpy_ckks::impl_ckks_pow2_reference!(OverrideBackend);
 poulpy_ckks::impl_ckks_imag_reference!(OverrideBackend);
 poulpy_ckks::impl_ckks_rotate_reference!(OverrideBackend);
+poulpy_ckks::impl_ckks_inner_sum_derived_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_conjugate_reference!(OverrideBackend);
 poulpy_ckks::impl_ckks_encryption_reference!(OverrideBackend);
 poulpy_ckks::impl_ckks_mul_reference!(OverrideBackend);
@@ -388,6 +389,94 @@ fn eval_mod_reference_sizes_the_final_destination_copy() {
             assert_eq!(src.k(), source_before.k());
         }
     }
+}
+
+/// `call` on exactly `bytes` of `0xA5`-poisoned scratch.
+fn on_exact_scratch<R>(bytes: usize, call: impl FnOnce(&mut poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>) -> R) -> R {
+    let mut owned = ScratchOwned::<OverrideBackend> {
+        data: OverrideBackend::from_host_bytes(&vec![0xA5; bytes]),
+        _phantom: std::marker::PhantomData,
+    };
+    let (mut exact, _) = owned.borrow().split_at(bytes);
+    assert_eq!(exact.available(), bytes);
+    call(&mut exact)
+}
+
+#[test]
+fn add_many_and_inner_sum_queries_cover_the_selected_copy() {
+    use poulpy_ckks::CKKSInfos;
+    use poulpy_ckks::api::{CKKSAddManyOps, CKKSInnerSumOps};
+    use poulpy_core::layouts::{GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared};
+    use poulpy_hal::layouts::ZnxViewMut;
+    use std::collections::HashMap;
+    let module = Module::<OverrideBackend>::new(64);
+    let reference = Module::<crate::FFT64Portable>::new(64);
+    let mut a = module.ckks_ciphertext_alloc(16usize.into(), 64usize.into());
+    a.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(16),
+        ..Default::default()
+    });
+    a.data_mut().at_mut(0, 0)[0] = 128;
+    a.data_mut().at_mut(1, 0)[1] = -64;
+    let key = GLWEAutomorphismKeyLayout {
+        n: 64usize.into(),
+        base2k: 16usize.into(),
+        dnum: 4usize.into(),
+        k_aux: 16usize.into(),
+        rank: 1usize.into(),
+        k_digit: 16usize.into(),
+    };
+    let no_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<_, OverrideBackend>> = HashMap::new();
+    let no_reference_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<_, crate::FFT64Portable>> = HashMap::new();
+    let destination = || {
+        let mut res = module.ckks_ciphertext_alloc(16usize.into(), 128usize.into());
+        res.data_mut().raw_mut().fill(0x55);
+        res
+    };
+
+    // One term is a copy, and an empty window copies without a key: both queries cover the overriding copy's.
+    let mut res = destination();
+    let mut expected = destination();
+    let bytes = reference.ckks_add_many_tmp_bytes(&expected, &a);
+    reference
+        .ckks_add_many(&mut expected, &[&a], usize::MAX, &mut ScratchOwned::alloc(bytes).borrow())
+        .unwrap();
+    let bytes = module.ckks_add_many_tmp_bytes(&res, &a);
+    assert!(bytes >= COPY_WORKSPACE * res.max_size());
+    MAX_COPY_CAPACITY.set(0);
+    on_exact_scratch(bytes, |s| module.ckks_add_many(&mut res, &[&a], usize::MAX, s)).unwrap();
+    assert_eq!(MAX_COPY_CAPACITY.get(), res.max_size());
+    assert_eq!(res.data(), expected.data());
+    assert_eq!(res.meta(), expected.meta());
+
+    let mut res = destination();
+    let mut expected = destination();
+    let bytes = reference.ckks_inner_sum_tmp_bytes(&expected, &a, &key);
+    reference
+        .ckks_inner_sum(
+            &mut expected,
+            &a,
+            0,
+            0,
+            false,
+            &no_reference_keys,
+            &mut ScratchOwned::alloc(bytes).borrow(),
+        )
+        .unwrap();
+    let bytes = module.ckks_inner_sum_tmp_bytes(&res, &a, &key);
+    assert!(bytes >= COPY_WORKSPACE * res.max_size());
+    MAX_COPY_CAPACITY.set(0);
+    on_exact_scratch(bytes, |s| module.ckks_inner_sum(&mut res, &a, 0, 0, false, &no_keys, s)).unwrap();
+    assert_eq!(MAX_COPY_CAPACITY.get(), res.max_size());
+    assert_eq!(res.data(), expected.data());
+    assert_eq!(res.meta(), expected.meta());
+
+    // Calls the API refuses never reach the copy.
+    MAX_COPY_CAPACITY.set(0);
+    let mut res = destination();
+    assert!(on_exact_scratch(bytes, |s| module.ckks_add_many(&mut res, &[&a], 0, s)).is_err());
+    assert!(on_exact_scratch(bytes, |s| module.ckks_inner_sum(&mut res, &a, 32, 1, false, &no_keys, s)).is_err());
+    assert_eq!(MAX_COPY_CAPACITY.get(), 0);
 }
 
 // The query proxy keeps actual lower-layer arithmetic while independently
