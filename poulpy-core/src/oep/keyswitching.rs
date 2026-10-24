@@ -37,7 +37,9 @@ pub fn gglwe_product_digit_output_size(res_size: usize, key_size: usize, dsize: 
 ///
 /// # Safety
 /// Implementations must honor the supplied layouts and return a scratch bound
-/// sufficient for [`Self::gglwe_product_digits_strided`].
+/// sufficient for [`Self::gglwe_product_digits_strided`]. An override of a step hook
+/// ([`Self::gglwe_product_fused`], [`Self::gglwe_product_idft_normalize`]) reproduces its
+/// default bit for bit within its query and writes only `res` and the scratch it is given.
 pub unsafe trait GGLWEProductDigitsStridedImpl: Backend {
     #[allow(clippy::too_many_arguments)]
     fn gglwe_product_digits_strided_tmp_bytes(
@@ -113,6 +115,29 @@ pub unsafe trait GGLWEProductDigitsStridedImpl: Backend {
         )
     }
 
+    /// Scratch bytes of [`Self::gglwe_product_idft_normalize`] for a coefficient output of
+    /// `res_size` limbs, a product of `product_size` limbs and an operand of `a_size` limbs,
+    /// `res_dft` aside.
+    fn gglwe_product_idft_normalize_tmp_bytes<K>(
+        module: &Module<Self>,
+        res_size: usize,
+        product_size: usize,
+        a_size: usize,
+        key_infos: &K,
+    ) -> usize
+    where
+        K: GGLWEInfos,
+        Module<Self>: crate::reference::keyswitching::glwe::GGLWEProductFusedReference<Self>,
+    {
+        crate::reference::keyswitching::glwe::gglwe_product_idft_normalize_tmp_bytes_reference(
+            module,
+            res_size,
+            product_size,
+            a_size,
+            key_infos,
+        )
+    }
+
     /// The gadget product of `a` by `key` followed at once by its inverse transform and
     /// normalization:
     ///
@@ -126,8 +151,9 @@ pub unsafe trait GGLWEProductDigitsStridedImpl: Backend {
     ///   `vec_znx_idft_normalize`, the same for every column.
     ///
     /// The default takes the product into `res_dft`, adds the addends there and calls
-    /// `vec_znx_idft_normalize` column by column. Overrides must reproduce it bit for bit.
-    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    /// `vec_znx_idft_normalize` column by column. Overrides must reproduce it bit for bit within
+    /// [`Self::gglwe_product_idft_normalize_tmp_bytes`]; the caller records the metadata of `res`.
+    #[allow(clippy::too_many_arguments)]
     fn gglwe_product_idft_normalize(
         module: &Module<Self>,
         res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,

@@ -358,6 +358,7 @@ pub trait GGLWEProductFusedReference<BE: Backend>:
     + poulpy_hal::api::VecZnxDftAutomorphism<BE>
     + poulpy_hal::api::VecZnxDftAutomorphismAddWithPlanTmpBytes
     + poulpy_hal::api::VecZnxIdftNormalize<BE>
+    + poulpy_hal::api::VecZnxIdftNormalizeTmpBytes
 {
 }
 
@@ -367,6 +368,7 @@ impl<BE: Backend, M> GGLWEProductFusedReference<BE> for M where
         + poulpy_hal::api::VecZnxDftAutomorphism<BE>
         + poulpy_hal::api::VecZnxDftAutomorphismAddWithPlanTmpBytes
         + poulpy_hal::api::VecZnxIdftNormalize<BE>
+        + poulpy_hal::api::VecZnxIdftNormalizeTmpBytes
 {
 }
 
@@ -377,7 +379,7 @@ pub trait GGLWEProductFused<BE: Backend> {
     where
         K: GGLWEInfos;
 
-    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    #[allow(clippy::too_many_arguments)]
     fn gglwe_product_fused(
         &self,
         res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -391,9 +393,19 @@ pub trait GGLWEProductFused<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
+    fn gglwe_product_idft_normalize_tmp_bytes<K>(
+        &self,
+        res_size: usize,
+        product_size: usize,
+        a_size: usize,
+        key_infos: &K,
+    ) -> usize
+    where
+        K: GGLWEInfos;
+
     /// The product followed at once by its inverse transform and normalization, through the
     /// backend's `GGLWEProductDigitsStridedImpl::gglwe_product_idft_normalize`.
-    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    #[allow(clippy::too_many_arguments)]
     fn gglwe_product_idft_normalize(
         &self,
         res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, BE>,
@@ -421,6 +433,19 @@ where
         K: GGLWEInfos,
     {
         BE::gglwe_product_fused_tmp_bytes(self, res_size, a_size, key_infos)
+    }
+
+    fn gglwe_product_idft_normalize_tmp_bytes<K>(
+        &self,
+        res_size: usize,
+        product_size: usize,
+        a_size: usize,
+        key_infos: &K,
+    ) -> usize
+    where
+        K: GGLWEInfos,
+    {
+        BE::gglwe_product_idft_normalize_tmp_bytes(self, res_size, product_size, a_size, key_infos)
     }
 
     fn gglwe_product_fused(
@@ -471,7 +496,7 @@ where
 }
 
 #[doc(hidden)]
-#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+#[allow(clippy::too_many_arguments)]
 pub fn gglwe_product_idft_normalize_reference<BE, M>(
     module: &M,
     res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, BE>,
@@ -514,6 +539,24 @@ pub fn gglwe_product_idft_normalize_reference<BE, M>(
 }
 
 #[doc(hidden)]
+pub fn gglwe_product_idft_normalize_tmp_bytes_reference<BE, M, K>(
+    module: &M,
+    res_size: usize,
+    product_size: usize,
+    a_size: usize,
+    key_infos: &K,
+) -> usize
+where
+    BE: Backend,
+    M: GGLWEProductFusedReference<BE>,
+    K: GGLWEInfos,
+{
+    module
+        .gglwe_product_dft_tmp_bytes_reference(product_size, a_size, key_infos)
+        .max(module.vec_znx_idft_normalize_tmp_bytes(res_size, product_size))
+}
+
+#[doc(hidden)]
 pub fn gglwe_product_fused_tmp_bytes_reference<BE, M, K>(module: &M, res_size: usize, a_size: usize, key_infos: &K) -> usize
 where
     BE: Backend,
@@ -528,7 +571,7 @@ where
 }
 
 #[doc(hidden)]
-#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+#[allow(clippy::too_many_arguments)]
 pub fn gglwe_product_fused_reference<BE, M>(
     module: &M,
     res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -812,19 +855,20 @@ where
         + VecZnxIdftApplyTmpBytes
         + VecZnxIdftNormalizeTmpBytes
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxNormalizeTmpBytes,
+        + VecZnxNormalizeTmpBytes
+        + GGLWEProductFused<BE>,
     R: GLWEInfos,
     A: GLWEInfos,
     K: GGLWEInfos,
 {
-    operand_degree(module.n(), &[res_infos.n(), a_infos.n(), key_infos.n()]);
+    let n = operand_degree(module.n(), &[res_infos.n(), a_infos.n(), key_infos.n()]);
 
     let output_cols = res_infos.rank().as_usize() + 1;
     let mask_cols = a_infos.rank().as_usize();
     let output_size = gglwe_product_output_size::<BE, _, _, _>(res_infos, a_infos, key_infos);
     let a_dft_size = a_infos.k().div_ceil(key_infos.base2k()) as usize;
-    let lvl_0: usize = module.bytes_of_vec_znx_dft(module.n(), output_cols, output_size);
-    let lvl_1_big: usize = module.bytes_of_vec_znx_big(module.n(), output_cols, output_size);
+    let lvl_0: usize = module.bytes_of_vec_znx_dft(n, output_cols, output_size);
+    let lvl_1_big: usize = module.bytes_of_vec_znx_big(n, output_cols, output_size);
     let consume_tmp: usize = module.vec_znx_idft_normalize_tmp_bytes(output_size, output_size);
     let lvl_1: usize = consume_tmp.max(
         lvl_1_big
@@ -833,7 +877,7 @@ where
                 .max(module.vec_znx_big_normalize_tmp_bytes()),
     );
     let lvl_2: usize = if a_infos.base2k() != key_infos.base2k() || key_infos.k_offset().0 > 0 {
-        let small_term_tmp: usize = BE::bytes_of_vec_znx(module.n(), 1, output_size);
+        let small_term_tmp: usize = BE::bytes_of_vec_znx(n, 1, output_size);
         let a_conv_infos: GLWELayout = GLWELayout {
             n: a_infos.n(),
             base2k: key_infos.base2k(),
@@ -864,7 +908,10 @@ where
         );
         lvl_1
             .max(module.glwe_keyswitch_internal_tmp_bytes_from_sizes(mask_cols, output_size, a_dft_size, key_infos))
-            .max(module.bytes_of_vec_znx_dft(module.n(), mask_cols, operand_size) + consume_tmp)
+            .max(
+                BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, mask_cols, operand_size))
+                    + module.gglwe_product_idft_normalize_tmp_bytes(res_infos.size(), output_size, operand_size, key_infos),
+            )
     };
 
     BE::scratch_aligned(module.glwe_bytes_of_from_infos(a_infos)) + (lvl_0 + lvl_2).max(module.glwe_normalize_tmp_bytes())

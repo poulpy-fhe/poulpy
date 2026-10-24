@@ -204,7 +204,9 @@ where
             scratch = ScratchOwned::<BE>::alloc(prepare_scratch);
         }
         let context = unprepared.prepare(&module, &mut scratch.borrow());
-        let boot_scratch = module.ckks_bootstrap_tmp_bytes(&bootstrap_layout, &input_layout, &context, &keys_layout);
+        let boot_scratch = module
+            .ckks_bootstrap_tmp_bytes(&bootstrap_layout, &input_layout, &context, &keys_layout)
+            .max(keys_layout.prepare_tmp_bytes(&module));
         if boot_scratch > BE::len_bytes(&scratch.data) {
             scratch = ScratchOwned::<BE>::alloc(boot_scratch);
         }
@@ -333,7 +335,6 @@ where
     /// Encrypts the reference vector at the preset's input layout on the client,
     /// moves it to the evaluated backend, and runs one bootstrap to check the
     /// output width.
-    #[allow(clippy::too_many_arguments)]
     fn with_bootstrap(
         preset: BootstrappingPreset,
         module: Module<BE>,
@@ -677,6 +678,128 @@ where
         post: CIConversion::Product { log_delta: 38 },
     };
     BootstrappingPresetRun::<BE>::setup_ci(powers_of_two.with_eval_mod_ring(ci).unwrap()).check(backend);
+}
+
+/// Key generation from the plan alone ([`BootstrappingPlan::generate_keys`] and
+/// [`BootstrappingPlan::generate_keys_ci`]) takes the keys of the compiled context, Galois
+/// elements, first-factor rotations, encapsulation and conversion keys alike, on the insecure
+/// `N = 2^11` S2C-first preset, with the keys of power-of-two rotations, and with EvalMod on
+/// the conjugate-invariant ring, `u` folded into CoeffsToSlots.
+pub fn bootstrapping_plan_keys_match_context<BE>()
+where
+    BE: TestContextBackend<Ring = Standard> + HostStaged + MaxBase2k,
+    CIBackend<BE>: TestContextBackend + MaxBase2k,
+    Module<BE>: TestContextModule<BE>
+        + PresetRunModule<BE>
+        + CKKSDFTOps<BE>
+        + CKKSBootstrappingCIOps<BE>
+        + GLWECIKeyEncryptSk<BE>
+        + GLWECIKeyPreparedFactory<BE>,
+    Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>>
+        + CKKSModuleAlloc<CIBackend<BE>>
+        + CKKSEncodingOps<CIBackend<BE>, f64>
+        + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
+    for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    let standard = crate::presets::bootstrapping::insecure_n11_d35_k180_p20_s2c().unwrap();
+    let powers_of_two = standard.with_power_of_two_keys().unwrap();
+    let folded = EvalModRing::ConjugateInvariant {
+        pre: CIConversion::Folded,
+        post: CIConversion::Product { log_delta: 38 },
+    };
+    let sources = || (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
+    for preset in [standard.clone(), powers_of_two.clone()] {
+        let module = Module::<BE>::new(preset.n() as u64);
+        let (sk_raw, _) = dense_secret(&module, &preset);
+        let (plan, layout) = (preset.plan(), preset.keys_layout());
+        let mut scratch = ScratchOwned::<BE>::alloc(bootstrap_setup_tmp_bytes(&module, &preset.bootstrap_layout(), plan, layout));
+        let context =
+            BootstrappingContext::<BE, f64>::compile(&module, preset.base2k().into(), plan, &mut scratch.borrow()).unwrap();
+        let (mut xs, mut xa, mut xe) = sources();
+        let from_context = context
+            .generate_keys(&module, &sk_raw, layout, &mut xs, &mut xe, &mut xa, &mut scratch.borrow())
+            .unwrap();
+        let (mut xs, mut xa, mut xe) = sources();
+        let from_plan = plan
+            .generate_keys(&module, &sk_raw, layout, &mut xs, &mut xe, &mut xa, &mut scratch.borrow())
+            .unwrap();
+        assert_eq!(
+            key_set_shape(&from_plan),
+            key_set_shape(&from_context),
+            "{}",
+            preset_label(&preset)
+        );
+    }
+    for preset in [
+        standard.with_eval_mod_ring(folded).unwrap(),
+        powers_of_two.with_eval_mod_ring(folded).unwrap(),
+    ] {
+        let n = preset.n() as u64;
+        let (module, ci) = (Module::<BE>::new(2 * n), Module::<CIBackend<BE>>::new(n));
+        let (sk_raw, _) = dense_secret(&module, &preset);
+        let (plan, layout) = (preset.plan(), preset.keys_layout());
+        let context = compile_ci(&module, &ci, &preset);
+        let (bytes, bytes_ci) = layout.generate_ci_tmp_bytes(&module, &ci);
+        let (mut scratch, mut scratch_ci) = (
+            ScratchOwned::<BE>::alloc(bytes),
+            ScratchOwned::<CIBackend<BE>>::alloc(bytes_ci),
+        );
+        let (mut xs, mut xa, mut xe) = sources();
+        let from_context = context
+            .generate_keys_ci(
+                &module,
+                &ci,
+                &sk_raw,
+                layout,
+                &mut xs,
+                &mut xe,
+                &mut xa,
+                &mut scratch.borrow(),
+                &mut scratch_ci.borrow(),
+            )
+            .unwrap();
+        let (mut xs, mut xa, mut xe) = sources();
+        let from_plan = plan
+            .generate_keys_ci(
+                &module,
+                &ci,
+                &sk_raw,
+                layout,
+                &mut xs,
+                &mut xe,
+                &mut xa,
+                &mut scratch.borrow(),
+                &mut scratch_ci.borrow(),
+            )
+            .unwrap();
+        assert_eq!(
+            key_set_shape(&from_plan),
+            key_set_shape(&from_context),
+            "{}",
+            preset_label(&preset)
+        );
+    }
+}
+
+/// The Galois elements of the rotation keys, the rotations of the first-factor keys,
+/// and which encapsulation and conversion keys a key set holds.
+fn key_set_shape<D: poulpy_hal::layouts::Data, W: poulpy_hal::layouts::ZnxWord>(
+    keys: &crate::layouts::BootstrappingKeySet<D, W>,
+) -> (Vec<i64>, Vec<i64>, Option<bool>, bool) {
+    let sorted = |mut v: Vec<i64>| {
+        v.sort_unstable();
+        v
+    };
+    (
+        sorted(keys.rotation_keys.keys().copied().collect()),
+        sorted(keys.first_factor_keys.keys().copied().collect()),
+        keys.encapsulation_keys.as_ref().map(|(_, s2d)| s2d.is_some()),
+        keys.conversion_keys.is_some(),
+    )
 }
 
 /// The bootstrap with EvalMod on the conjugate-invariant ring refuses, before any

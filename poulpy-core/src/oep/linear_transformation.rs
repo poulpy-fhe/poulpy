@@ -13,6 +13,8 @@ use crate::layouts::{
 /// # Safety
 /// Implementors must preserve the semantics, scratch requirements, aliasing
 /// guarantees, and backend bit-parity contract expected by end-to-end pipelines.
+/// An override of [`Self::glwe_accumulate_giant_steps`] reproduces its default bit for bit
+/// and writes only `prods` and the scratch it is given.
 pub unsafe trait LinearTransformationImpl: Backend {
     fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K>(module: &Module<Self>, res: &R, a: &A, pt: &B, key: &K) -> usize
     where
@@ -109,6 +111,8 @@ pub unsafe trait LinearTransformationImpl: Backend {
     ///
     /// `prods` and `steps` have the same length, at most [`Self::glwe_giant_step_batch`]. The
     /// default accumulates each step with `cnv_apply_dft_sum`. Overrides must reproduce it bit for bit.
+    /// Scratch is the per-step product scratch of [`Self::glwe_eval_linear_transformation_tmp_bytes`],
+    /// which reserves the `prods` of a full batch; an internal hook, it records no metadata.
     fn glwe_accumulate_giant_steps(
         module: &Module<Self>,
         cnv_offset_hi: usize,

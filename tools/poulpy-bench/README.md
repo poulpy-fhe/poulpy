@@ -172,6 +172,9 @@ cargo bench -p poulpy-cpu-portable --bench standard --features enable-ckks -- --
 `n15_d35_k180_p18_c2s` (four recovered levels, 18-bit minimum precision)
 and the logN16 presets. The reference, AVX and AVX-512 `full` binaries register this runner.
 Each case checks its measured precision against the preset's advertised minimum.
+`schemes::suites::bench_ckks_bootstrapping_with_client::<BE, BC>` runs the same cases on `BE` with the
+secret, keys and ciphertexts of a client backend `BC`, for an evaluating backend that generates no keys;
+it times the bootstrap on `BE` to completion.
 
 ```sh
 # List the logN15 cases without allocating bootstrapping keys

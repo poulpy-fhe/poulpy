@@ -107,7 +107,7 @@ pub fn runner_vec_znx_gadget_decompose_sweep<B: Backend<ZnxWord = i64>, M: Measu
     bencher: &mut Bencher<'_, M>,
     params: &GadgetDecomposeSweepParams,
 ) where
-    Module<B>: VecZnxGadgetDecompose<B> + ModuleNew<B> + VecZnxGadgetDecomposeTmpBytes,
+    Module<B>: VecZnxGadgetDecompose<B> + ModuleNew<B> + ModuleSynchronize<B> + VecZnxGadgetDecomposeTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     let sweep = &params.shape;
@@ -128,6 +128,7 @@ pub fn runner_vec_znx_gadget_decompose_sweep<B: Backend<ZnxWord = i64>, M: Measu
         for i in 0..sweep.cols {
             module.vec_znx_gadget_decompose(&mut res, i, &a, i, params.base2k, params.k_digit, &mut scratch.borrow());
         }
+        module.synchronize();
         black_box(());
     });
 }
