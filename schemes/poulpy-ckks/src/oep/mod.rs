@@ -104,9 +104,6 @@ pub use ship::{CKKSShipCoeffEncodingImpl, CKKSShipImpl, impl_ckks_ship_reference
 pub use sub::CKKSSubImpl;
 pub use sub::impl_ckks_sub_reference_full;
 
-/// Callable same-layer fallbacks that retain selected constituent overrides.
-pub mod defaults;
-
 /// Selects the reference implementation of every scalar-independent CKKS family that serves both rings, the
 /// families [`CKKSImpl`] bundles minus the standard-only ones.
 ///

@@ -4,7 +4,6 @@ use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
-    api::{CKKSDFTOps, CKKSEvalModOps},
     layouts::EvalModPlan,
     layouts::{
         BootstrappingCIKeys, BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned,
@@ -15,15 +14,14 @@ use crate::{
 /// CKKS bootstrapping.
 ///
 /// Only **ModUp** is a bootstrapping-specific primitive. CoeffsToSlots,
-/// EvalMod, and SlotsToCoeffs are reused from their own op traits, which this
-/// trait re-exports as supertraits:
+/// EvalMod, and SlotsToCoeffs are reused from their own op traits:
 ///
 /// - CoeffsToSlots / SlotsToCoeffs via [`CKKSDFTOps`](crate::api::CKKSDFTOps)
-///   ([`ckks_coeffs_to_slots`](CKKSDFTOps::ckks_coeffs_to_slots),
-///   [`ckks_slots_to_coeffs`](CKKSDFTOps::ckks_slots_to_coeffs), and their
+///   ([`ckks_coeffs_to_slots`](crate::api::CKKSDFTOps::ckks_coeffs_to_slots),
+///   [`ckks_slots_to_coeffs`](crate::api::CKKSDFTOps::ckks_slots_to_coeffs), and their
 ///   `_split` / `_repack` variants);
 /// - EvalMod via [`CKKSEvalModOps`](crate::api::CKKSEvalModOps)
-///   ([`ckks_eval_mod`](CKKSEvalModOps::ckks_eval_mod)).
+///   ([`ckks_eval_mod`](crate::api::CKKSEvalModOps::ckks_eval_mod)).
 ///
 /// The composable stages stay public so callers can assemble custom pipelines,
 /// but a ready-made orchestrator is provided: [`ckks_bootstrap`](Self::ckks_bootstrap).
@@ -33,7 +31,7 @@ use crate::{
 /// Sparse-secret encapsulation is also selected by the compiled recipe; the
 /// supplied keys must carry the matching
 /// [encapsulation keys](crate::layouts::BootstrappingLinearKeys::encapsulation_keys).
-pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE> {
+pub trait CKKSBootstrappingOps<BE: Backend> {
     /// Returns scratch bytes required by [`Self::ckks_mod_up_into`].
     fn ckks_mod_up_tmp_bytes(&self, res_size: usize) -> usize;
 

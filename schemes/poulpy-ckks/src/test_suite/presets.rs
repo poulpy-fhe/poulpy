@@ -31,7 +31,7 @@ use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSResult, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAllOpsTmpBytes, CKKSBootstrappingCIOps, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTOps, CKKSDecryptOps,
-        CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps,
+        CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSEvalModOps,
     },
     layouts::{
         BootstrappingContext, BootstrappingKeysLayout, BootstrappingPlan, CIConversion, CKKSCiphertextOwned, CKKSModuleAlloc,
@@ -97,6 +97,8 @@ pub trait PresetRunModule<BE: Backend>:
     + CKKSAllOpsTmpBytes<BE>
     + CKKSEncodingOps<BE, f64>
     + CKKSBootstrappingOps<BE>
+    + CKKSDFTOps<BE>
+    + CKKSEvalModOps<BE>
     + CKKSDFTMatrixOps<BE, f64>
     + GLWEAutomorphismKeyPreparedFactory<BE>
     + GLWETensorKeyPreparedFactory<BE>
@@ -112,6 +114,8 @@ impl<BE: Backend, M> PresetRunModule<BE> for M where
         + CKKSAllOpsTmpBytes<BE>
         + CKKSEncodingOps<BE, f64>
         + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
         + CKKSDFTMatrixOps<BE, f64>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWETensorKeyPreparedFactory<BE>
@@ -899,6 +903,8 @@ where
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, f64>
         + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
         + CKKSDFTMatrixOps<BE, f64>
         + CKKSBootstrappingCIOps<BE>
         + GLWECIKeyEncryptSk<BE>

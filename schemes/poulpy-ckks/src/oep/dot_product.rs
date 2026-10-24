@@ -1,6 +1,5 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos};
-use poulpy_core::oep::GLWEMulPreparedPlainSumImpl;
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::{
@@ -17,9 +16,7 @@ use crate::{
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures. See `poulpy-hal/docs/backend_safety_contract.md`.
-pub unsafe trait CKKSDotProductImpl:
-    Backend + super::CKKSMulImpl + super::CKKSAddImpl + GLWEMulPreparedPlainSumImpl
-{
+pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSAddImpl {
     fn ckks_dot_product_ct_tmp_bytes<R: CKKSCtBounds, A: CKKSCtBounds, B: CKKSCtBounds, T: GGLWEInfos>(
         module: &Module<Self>,
         n: usize,
