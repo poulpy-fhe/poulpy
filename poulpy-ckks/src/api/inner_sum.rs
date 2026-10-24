@@ -1,5 +1,5 @@
 use crate::CKKSResult as Result;
-use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
+use poulpy_core::layouts::{Degree, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
@@ -38,20 +38,20 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// # Errors
 ///
 /// In this order, before any write: `InvalidOperand` when `2^log_count` batches of `2^log_batch` slots exceed the
-/// slot count, or when `normalize` divides `Integer` slots; `MissingAutomorphismKey` for the first key `keys` lacks at
+/// slots of `res`'s degree, or when `normalize` divides `Integer` slots; `MissingAutomorphismKey` for the first key `keys` lacks at
 /// the width the sum switches at, `k_out`; `InsufficientHomomorphicCapacity` when the copy into `res` needs more than
 /// `a.log_budget`, or the division more than the budget the copy leaves; `CKKSError::Internal` with less scratch than
 /// [`Self::ckks_inner_sum_tmp_bytes`] reports for the keys the sum looks up.
 pub trait CKKSInnerSumOps<BE: Backend> {
-    /// Galois elements of the keys [`Self::ckks_inner_sum`] looks up: poulpy-core's `glwe_trace_galois_elements` over
-    /// its levels. Panics with "ckks_inner_sum_galois_elements: the window exceeds the slot count" when `2^log_count`
-    /// batches of `2^log_batch` slots exceed the slot count.
-    fn ckks_inner_sum_galois_elements(&self, log_batch: usize, log_count: usize) -> Vec<i64>;
+    /// Galois elements of the keys [`Self::ckks_inner_sum`] looks up on a degree-`n` ciphertext: poulpy-core's
+    /// `glwe_trace_galois_elements` over its levels. Panics with "ckks_inner_sum_galois_elements: the window exceeds
+    /// the slot count" when `2^log_count` batches of `2^log_batch` slots exceed the slots of degree `n`.
+    fn ckks_inner_sum_galois_elements(&self, n: Degree, log_batch: usize, log_count: usize) -> Vec<i64>;
 
-    /// Galois elements of the keys [`Self::ckks_replicate`] looks up: poulpy-core's `glwe_trace_galois_elements` over
-    /// its levels in reverse. Panics with "ckks_replicate_galois_elements: the window exceeds the slot count" when
-    /// `2^log_count` batches of `2^log_batch` slots exceed the slot count.
-    fn ckks_replicate_galois_elements(&self, log_batch: usize, log_count: usize) -> Vec<i64>;
+    /// Galois elements of the keys [`Self::ckks_replicate`] looks up on a degree-`n` ciphertext: poulpy-core's
+    /// `glwe_trace_galois_elements` over its levels in reverse. Panics with "ckks_replicate_galois_elements: the window
+    /// exceeds the slot count" when `2^log_count` batches of `2^log_batch` slots exceed the slots of degree `n`.
+    fn ckks_replicate_galois_elements(&self, n: Degree, log_batch: usize, log_count: usize) -> Vec<i64>;
 
     /// Scratch of [`Self::ckks_inner_sum`], [`Self::ckks_inner_sum_assign`], [`Self::ckks_replicate`] and
     /// [`Self::ckks_replicate_assign`] from `a` into `res` with rotation keys of layout `key`, the `_assign` forms

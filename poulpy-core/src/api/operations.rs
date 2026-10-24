@@ -4,7 +4,7 @@ use std::{collections::HashMap, ops::Range};
 use poulpy_hal::layouts::{Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, ScratchArena};
 
 use crate::layouts::{
-    GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
+    Degree, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
     GGSWToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
 };
 
@@ -22,9 +22,9 @@ use crate::layouts::{
 /// Panics, before writing `res`, if `levels` ends past the ring's trace, starts after its end, or holds level 0 on the
 /// conjugate-invariant ring.
 pub trait GLWETrace<BE: Backend> {
-    /// The Galois elements a trace over `levels` in the direction `reverse` looks up, at the module's degree; panics on
-    /// the levels the trace refuses.
-    fn glwe_trace_galois_elements(&self, levels: Range<usize>, reverse: bool) -> Vec<i64>;
+    /// The Galois elements a trace of a degree-`n` operand over `levels` in the direction `reverse` looks up; panics on
+    /// the levels the trace refuses and on a degree above the module's.
+    fn glwe_trace_galois_elements(&self, n: Degree, levels: Range<usize>, reverse: bool) -> Vec<i64>;
 
     fn glwe_trace_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where

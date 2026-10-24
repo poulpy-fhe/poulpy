@@ -1,7 +1,7 @@
 use crate::CKKSResult as Result;
 
 use poulpy_core::{
-    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey},
+    layouts::{Degree, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey},
     oep::GLWETraceImpl,
 };
 use poulpy_hal::layouts::{Module, ScratchArena};
@@ -23,7 +23,8 @@ use crate::{
 /// An override reproduces the provided body of the method it replaces bit for bit, digits, metadata, canonical flag,
 /// noise and refusals included, in their order and before any write, choosing only its kernels and its scratch use:
 /// - `ckks_inner_sum_galois_elements` and `ckks_replicate_galois_elements` return poulpy-core's
-///   `glwe_trace_galois_elements` over the levels of the sum, forward and reversed, and panic on the same windows;
+///   `glwe_trace_galois_elements` at their degree over the levels of the sum, forward and reversed, and panic on the
+///   same windows;
 /// - `ckks_inner_sum_tmp_bytes` covers the scratch the four sums take at its arguments, which may be less than the
 ///   provided query, never less than an overriding sum takes;
 /// - `ckks_inner_sum`, `ckks_inner_sum_assign`, `ckks_replicate` and `ckks_replicate_assign` give the result of
@@ -32,12 +33,12 @@ use crate::{
 ///
 /// Memory, layout, synchrony and aliasing follow `poulpy-hal/docs/backend_safety_contract.md`.
 pub unsafe trait CKKSInnerSumImpl: super::CKKSCopyImpl + super::CKKSPow2Impl + GLWETraceImpl {
-    fn ckks_inner_sum_galois_elements(module: &Module<Self>, log_batch: usize, log_count: usize) -> Vec<i64> {
-        ckks_inner_sum_galois_elements_derived(module, log_batch, log_count)
+    fn ckks_inner_sum_galois_elements(module: &Module<Self>, n: Degree, log_batch: usize, log_count: usize) -> Vec<i64> {
+        ckks_inner_sum_galois_elements_derived(module, n, log_batch, log_count)
     }
 
-    fn ckks_replicate_galois_elements(module: &Module<Self>, log_batch: usize, log_count: usize) -> Vec<i64> {
-        ckks_replicate_galois_elements_derived(module, log_batch, log_count)
+    fn ckks_replicate_galois_elements(module: &Module<Self>, n: Degree, log_batch: usize, log_count: usize) -> Vec<i64> {
+        ckks_replicate_galois_elements_derived(module, n, log_batch, log_count)
     }
 
     fn ckks_inner_sum_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, key: &K) -> usize

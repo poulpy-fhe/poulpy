@@ -369,10 +369,10 @@ pub fn test_conjugate_invariant_inner_sum<BE>(
     let windows = [(0, log_count), (slots.ilog2() as usize - log_count, log_count)];
     let mut keys = HashMap::new();
     for (log_batch, log_count) in windows {
-        let inner = module.ckks_inner_sum_galois_elements(log_batch, log_count);
+        let inner = module.ckks_inner_sum_galois_elements(ct.n(), log_batch, log_count);
         for p in inner
             .into_iter()
-            .chain(module.ckks_replicate_galois_elements(log_batch, log_count))
+            .chain(module.ckks_replicate_galois_elements(ct.n(), log_batch, log_count))
         {
             keys.entry(p)
                 .or_insert_with(|| gen_atk(&params, module, p, &sk_raw, &mut scratch.borrow()));

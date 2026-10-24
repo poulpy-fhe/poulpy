@@ -113,7 +113,7 @@ where
         );
 
         let mut auto_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = HashMap::new();
-        let gal_els: Vec<i64> = module.glwe_trace_galois_elements(0..module.log_n(), false);
+        let gal_els: Vec<i64> = module.glwe_trace_galois_elements(module.n().into(), 0..module.log_n(), false);
         let tmp_template: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =
             module.glwe_automorphism_key_alloc_from_infos(&key_infos);
         gal_els.iter().for_each(|gal_el| {
@@ -222,8 +222,8 @@ where
     let first = usize::from(<BE::Ring as Ring>::CYCLOTOMIC_ORDER_FACTOR != Standard::CYCLOTOMIC_ORDER_FACTOR);
     let end = order.ilog2() as usize - 1;
 
-    let forward = module.glwe_trace_galois_elements(first..end, false);
-    let reversed = module.glwe_trace_galois_elements(first..end, true);
+    let forward = module.glwe_trace_galois_elements(n.into(), first..end, false);
+    let reversed = module.glwe_trace_galois_elements(n.into(), first..end, true);
     for (level, &element) in (first..end).zip(&forward) {
         let want = if level == 0 {
             -1
@@ -305,7 +305,7 @@ where
         let label = format!("levels={levels:?} reverse={reverse}");
         let mut want = upload_glwe_plaintext(module, &pt);
         let mut conjugate = upload_glwe_plaintext(module, &pt_template);
-        for gal_el in module.glwe_trace_galois_elements(levels.clone(), reverse) {
+        for gal_el in module.glwe_trace_galois_elements(module.n().into(), levels.clone(), reverse) {
             module.vec_znx_automorphism(
                 gal_el,
                 &mut vec_znx_backend_mut::<BE>(&mut conjugate.data),

@@ -12,6 +12,7 @@
 //! | [`test_inner_sum_missing_key_error`] | an absent key, refused before the budget, and a key one bit narrower than the sum |
 //! | [`test_inner_sum_budget_error`] | the budget of the copy and of the division |
 //! | [`test_inner_sum_scratch_error`] | an arena one byte below the query |
+//! | [`test_inner_sum_below_module_degree`] | every sum on a module of twice the ciphertext's degree, and a window past the ciphertext's slots |
 
 use std::{
     collections::{HashMap, HashSet},
@@ -19,7 +20,7 @@ use std::{
 };
 
 use poulpy_core::layouts::{
-    BackendGLWESecret, GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWEPlaintextInfos, GetAutomorphismKey, LWEInfos,
+    BackendGLWESecret, Degree, GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWEPlaintextInfos, GetAutomorphismKey, LWEInfos,
     SetGLWEPlaintextInfos, prepared::GLWESecretPrepared,
 };
 use poulpy_hal::{
@@ -69,13 +70,13 @@ impl Kind {
         if self == Kind::Mean { log_count } else { 0 }
     }
 
-    fn galois_elements<BE: Backend>(self, module: &Module<BE>, log_batch: usize, log_count: usize) -> Vec<i64>
+    fn galois_elements<BE: Backend>(self, module: &Module<BE>, n: Degree, log_batch: usize, log_count: usize) -> Vec<i64>
     where
         Module<BE>: CKKSInnerSumOps<BE>,
     {
         match self {
-            Kind::Sum | Kind::Mean => module.ckks_inner_sum_galois_elements(log_batch, log_count),
-            Kind::Replicate => module.ckks_replicate_galois_elements(log_batch, log_count),
+            Kind::Sum | Kind::Mean => module.ckks_inner_sum_galois_elements(n, log_batch, log_count),
+            Kind::Replicate => module.ckks_replicate_galois_elements(n, log_batch, log_count),
         }
     }
 
@@ -190,7 +191,7 @@ where
     let mut keys = HashMap::new();
     for &(log_batch, log_count) in windows {
         for kind in KINDS {
-            for p in kind.galois_elements(module, log_batch, log_count) {
+            for p in kind.galois_elements(module, params.n.into(), log_batch, log_count) {
                 keys.entry(p).or_insert_with(|| gen_atk(params, module, p, sk_raw, scratch));
             }
         }
@@ -292,7 +293,10 @@ pub fn test_inner_sum_smaller_output<BE, F, E>(
                 "{label}: a key was looked up at another width than {narrow_k}"
             );
             let looked_up: HashSet<i64> = seen.iter().map(|&(p, _)| p).collect();
-            let listed: HashSet<i64> = kind.galois_elements(module, log_batch, log_count).into_iter().collect();
+            let listed: HashSet<i64> = kind
+                .galois_elements(module, f.ct.n(), log_batch, log_count)
+                .into_iter()
+                .collect();
             assert_eq!(
                 looked_up, listed,
                 "{label}: the keys looked up are not those of the Galois query"
@@ -390,8 +394,10 @@ where
         let result = with_scratch::<BE, _>(0, |s| kind.run_assign(module, &mut res, log_batch, LOG_COUNT, &no_keys, s));
         assert_refused::<BE>(&format!("{label}, in place"), result, &res, &before, invalid);
 
-        let panic = catch_unwind(AssertUnwindSafe(|| kind.galois_elements(module, log_batch, LOG_COUNT)))
-            .expect_err("the Galois query accepted a window past the slots");
+        let panic = catch_unwind(AssertUnwindSafe(|| {
+            kind.galois_elements(module, f.ct.n(), log_batch, LOG_COUNT)
+        }))
+        .expect_err("the Galois query accepted a window past the slots");
         let message = panic
             .downcast_ref::<&str>()
             .copied()
@@ -604,5 +610,60 @@ where
         let bytes = module.ckks_inner_sum_tmp_bytes(&res, &res, &atk);
         let result = with_scratch::<BE, _>(bytes - 1, |s| kind.run_assign(module, &mut res, 0, LOG_COUNT, &keys, s));
         assert_refused::<BE>(&format!("{label}, in place"), result, &res, &before, internal);
+    }
+}
+
+/// On a module of twice the ciphertext's degree, the Galois queries at the ciphertext's degree and every sum equal
+/// those of a module of that degree, and a window past the ciphertext's slots, within the module's, is refused with
+/// `InvalidOperand` before any write.
+pub fn test_inner_sum_below_module_degree<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let mut f = fixture::<BE, F, E>(&params, module, host_module);
+    let windows = windows(params.n / 2);
+    let keys = gen_keys(&params, module, &f.sk_raw, &windows, &mut f.scratch.borrow());
+    let wide = Module::<BE>::new((2 * params.n) as u64);
+    let n = f.ct.n();
+    let atk = params.atk_layout();
+    for kind in KINDS {
+        for &(log_batch, log_count) in &windows {
+            let label = format!("{kind:?} log_batch={log_batch} log_count={log_count} below the module degree");
+            assert_eq!(
+                kind.galois_elements(&wide, n, log_batch, log_count),
+                kind.galois_elements(module, n, log_batch, log_count),
+                "{label}: Galois query"
+            );
+            let mut want = dirty_ct(module, &f.ct, params.k);
+            with_scratch::<BE, _>(module.ckks_inner_sum_tmp_bytes(&want, &f.ct, &atk), |s| {
+                kind.run(module, &mut want, &f.ct, log_batch, log_count, &keys, s)
+            })
+            .unwrap();
+            let mut res = dirty_ct(module, &f.ct, params.k);
+            with_scratch::<BE, _>(wide.ckks_inner_sum_tmp_bytes(&res, &f.ct, &atk), |s| {
+                kind.run(&wide, &mut res, &f.ct, log_batch, log_count, &keys, s)
+            })
+            .unwrap_or_else(|err| panic!("{label}: {err}"));
+            assert!(
+                snapshot::<BE, _>(&res) == snapshot::<BE, _>(&want),
+                "{label}: differs from the sum at the ciphertext's degree"
+            );
+        }
+
+        let label = format!("{kind:?} window past the ciphertext's slots");
+        let log_m = (params.n / 2).ilog2() as usize;
+        let invalid = |err: &CKKSError| matches!(err.composition(), Some(CKKSCompositionError::InvalidOperand { op, .. }) if *op == kind.op());
+        let mut res = dirty_ct(module, &f.ct, params.k);
+        let before = snapshot::<BE, _>(&res);
+        let result = with_scratch::<BE, _>(0, |s| kind.run(&wide, &mut res, &f.ct, log_m, 1, &keys, s));
+        assert_refused::<BE>(&label, result, &res, &before, invalid);
     }
 }

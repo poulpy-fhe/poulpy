@@ -869,6 +869,10 @@ macro_rules! ckks_backend_test_suite {
                 inner_sum_scratch_error,
                 $crate::test_suite::inner_sum::test_inner_sum_scratch_error
             );
+            run_test!(
+                inner_sum_below_module_degree,
+                $crate::test_suite::inner_sum::test_inner_sum_below_module_degree
+            );
             run_test!(mul_add_ct_aligned, $crate::test_suite::mul_add::test_mul_add_ct_aligned);
             run_test!(
                 mul_add_ct_unaligned_dst,

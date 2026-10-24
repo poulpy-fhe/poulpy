@@ -5,7 +5,7 @@ use std::ops::Range;
 use poulpy_core::{
     GLWETrace,
     layouts::{
-        GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, TorusPrecision,
+        Degree, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, TorusPrecision,
         prepared::GLWEAutomorphismKeyPreparedBackendRef,
     },
 };
@@ -21,28 +21,30 @@ use crate::{
 
 pub(crate) fn ckks_inner_sum_galois_elements_derived<BE: CKKSInnerSumImpl>(
     module: &Module<BE>,
+    n: Degree,
     log_batch: usize,
     log_count: usize,
 ) -> Vec<i64> {
     let sum = Sum::inner(log_batch, log_count, false);
     assert!(
-        sum.fits(module),
+        sum.fits(module, n),
         "ckks_inner_sum_galois_elements: the window exceeds the slot count"
     );
-    module.glwe_trace_galois_elements(sum.levels(), sum.reverse)
+    sum.galois_elements(module, n)
 }
 
 pub(crate) fn ckks_replicate_galois_elements_derived<BE: CKKSInnerSumImpl>(
     module: &Module<BE>,
+    n: Degree,
     log_batch: usize,
     log_count: usize,
 ) -> Vec<i64> {
     let sum = Sum::replicate(log_batch, log_count);
     assert!(
-        sum.fits(module),
+        sum.fits(module, n),
         "ckks_replicate_galois_elements: the window exceeds the slot count"
     );
-    module.glwe_trace_galois_elements(sum.levels(), sum.reverse)
+    sum.galois_elements(module, n)
 }
 
 pub(crate) fn ckks_inner_sum_tmp_bytes_derived<BE: CKKSInnerSumImpl, R, A, K>(
@@ -162,11 +164,16 @@ impl Sum {
         }
     }
 
-    /// Whether the `2^log_count` batches of `2^log_batch` slots fit in the slots.
-    fn fits<BE: CKKSInnerSumImpl>(self, module: &Module<BE>) -> bool {
+    /// Whether the `2^log_count` batches of `2^log_batch` slots fit in the slots of a degree-`n` ciphertext.
+    fn fits<BE: CKKSInnerSumImpl>(self, module: &Module<BE>, n: Degree) -> bool {
         self.log_batch
             .checked_add(self.log_count)
-            .is_some_and(|log| log <= module.ckks_max_slots().ilog2() as usize)
+            .is_some_and(|log| log <= module.ckks_slots_of_degree(n.as_usize()).ilog2() as usize)
+    }
+
+    /// The Galois elements of the sum's keys on a degree-`n` ciphertext, in the order the trace looks them up.
+    fn galois_elements<BE: CKKSInnerSumImpl>(self, module: &Module<BE>, n: Degree) -> Vec<i64> {
+        module.glwe_trace_galois_elements(n, self.levels(), self.reverse)
     }
 
     /// The trace levels of the sum, once [`Self::fits`] holds.
@@ -174,7 +181,7 @@ impl Sum {
         self.log_batch + 1..self.log_batch + 1 + self.log_count
     }
 
-    /// The slot rotation of each level, in the order the trace visits them.
+    /// The slot rotation of each level, in the order of [`Self::galois_elements`].
     fn rotations(self) -> impl Iterator<Item = i64> {
         (0..self.log_count).map(move |t| {
             if self.reverse {
@@ -185,13 +192,14 @@ impl Sum {
         })
     }
 
-    /// The checks before any write of a sum of `a` at width `k`, in the documented order: the window, the division of
-    /// `a`'s slots, the key of every rotation, then the budget of the copy from `a.k` to `k` and of the division.
-    /// Returns the largest scratch `bytes` gives for those keys' layouts, if any key is looked up.
+    /// The checks before any write of a sum of `a` on a degree-`n` result at width `k`, in the documented order: the
+    /// window, the division of `a`'s slots, the key of every rotation, then the budget of the copy from `a.k` to `k`
+    /// and of the division. Returns the largest scratch `bytes` gives for those keys' layouts, if any key is looked up.
     fn validate<BE: CKKSInnerSumImpl, A, H>(
         self,
         module: &Module<BE>,
         a: &A,
+        n: Degree,
         k: TorusPrecision,
         keys: &H,
         bytes: impl Fn(&GLWEAutomorphismKeyPreparedBackendRef<'_, BE>) -> usize,
@@ -201,14 +209,14 @@ impl Sum {
         H: GetAutomorphismKey<BE>,
     {
         let op = self.op;
-        if !self.fits(module) {
+        if !self.fits(module, n) {
             return Err(CKKSCompositionError::InvalidOperand {
                 op,
                 reason: format!(
                     "2^{} batches of 2^{} slots exceed the {} slots",
                     self.log_count,
                     self.log_batch,
-                    module.ckks_max_slots()
+                    module.ckks_slots_of_degree(n.as_usize())
                 ),
             }
             .into());
@@ -225,9 +233,9 @@ impl Sum {
             .into());
         }
         let mut most = None;
-        for rotation in self.rotations() {
+        for (rotation, element) in self.rotations().zip(self.galois_elements(module, n)) {
             let key = keys
-                .get_automorphism_key(module.ckks_galois_element(rotation), k)
+                .get_automorphism_key(element, k)
                 .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
                     op,
                     rotation,
@@ -259,7 +267,7 @@ where
 {
     // The copy narrows the sum to `res`'s width, at which every rotation then switches.
     let k = a.k().min(res.k());
-    let bytes = sum.validate(module, a, k, keys, |key| {
+    let bytes = sum.validate(module, a, res.n(), k, keys, |key| {
         ckks_inner_sum_tmp_bytes_derived(module, &*res, a, key)
     })?;
     // A sum that looks up no key has no key layout to size its query with; its constituents check their own.
@@ -285,7 +293,7 @@ where
     R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE>,
 {
-    let bytes = sum.validate(module, &*res, res.k(), keys, |key| {
+    let bytes = sum.validate(module, &*res, res.n(), res.k(), keys, |key| {
         ckks_inner_sum_tmp_bytes_derived(module, &*res, &*res, key)
     })?;
     if let Some(bytes) = bytes {

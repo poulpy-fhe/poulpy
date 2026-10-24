@@ -10,7 +10,7 @@ use crate::{
         GLWEShift, GLWESub, GLWETensoring, GLWETrace, GLWEZero,
     },
     layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
+        Degree, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
         GGSWToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
     },
     oep::{
@@ -669,8 +669,8 @@ impl_operations_delegate!(
 impl_operations_delegate!(
     GLWETrace<BE>,
     GLWETraceImpl,
-    fn glwe_trace_galois_elements(&self, levels: Range<usize>, reverse: bool) -> Vec<i64> {
-        BE::glwe_trace_galois_elements(self, levels, reverse)
+    fn glwe_trace_galois_elements(&self, n: Degree, levels: Range<usize>, reverse: bool) -> Vec<i64> {
+        BE::glwe_trace_galois_elements(self, n, levels, reverse)
     },
     fn glwe_trace_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where

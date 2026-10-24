@@ -41,15 +41,12 @@ where
     // The conjugate-invariant ring is fixed by the conjugation: its trace starts at level 1.
     let first = usize::from(factor != Standard::CYCLOTOMIC_ORDER_FACTOR);
     let end = (factor as usize * params.n).ilog2() as usize - 1;
-    // The key lists name the module's Galois elements; keys for operands of a smaller
-    // degree are those of a module of that degree.
-    if r.n() == t.n() {
-        for reverse in [false, true] {
-            assert_eq!(
-                r.glwe_trace_galois_elements(first..end, reverse),
-                t.glwe_trace_galois_elements(first..end, reverse)
-            );
-        }
+    let n = Degree(params.n as u32);
+    for reverse in [false, true] {
+        assert_eq!(
+            r.glwe_trace_galois_elements(n, first..end, reverse),
+            t.glwe_trace_galois_elements(n, first..end, reverse)
+        );
     }
     let mut refused = vec![
         (end..end + 1, "trace: levels outside the ring's trace"),
@@ -77,9 +74,9 @@ where
         let mut keys_t = HashMap::new();
         // The forward rotations, then the inverses the reverse traces add.
         for p in r
-            .glwe_trace_galois_elements(first..end, false)
+            .glwe_trace_galois_elements(n, first..end, false)
             .into_iter()
-            .chain(r.glwe_trace_galois_elements(first..end, true))
+            .chain(r.glwe_trace_galois_elements(n, first..end, true))
         {
             if keys_r.contains_key(&p) {
                 continue;
@@ -229,15 +226,13 @@ where
                             "refused levels {levels:?} changed the output, assign={assign}"
                         );
                     }
-                    if $module.n() == params.n {
-                        let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            $module.glwe_trace_galois_elements(levels.clone(), false)
-                        }));
-                        let Err(err) = rejected else {
-                            panic!("the trace key query accepted levels {levels:?}");
-                        };
-                        assert!(panic_message(&*err).contains(message), "key query levels {levels:?}");
-                    }
+                    let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        $module.glwe_trace_galois_elements(n, levels.clone(), false)
+                    }));
+                    let Err(err) = rejected else {
+                        panic!("the trace key query accepted levels {levels:?}");
+                    };
+                    assert!(panic_message(&*err).contains(message), "key query levels {levels:?}");
                 }
             }};
         }

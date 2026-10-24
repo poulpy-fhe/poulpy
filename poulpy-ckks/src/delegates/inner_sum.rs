@@ -1,16 +1,16 @@
 use crate::CKKSResult as Result;
-use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
+use poulpy_core::layouts::{Degree, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos, api::CKKSInnerSumOps, oep::CKKSInnerSumImpl};
 
 impl<BE: Backend + CKKSInnerSumImpl> CKKSInnerSumOps<BE> for Module<BE> {
-    fn ckks_inner_sum_galois_elements(&self, log_batch: usize, log_count: usize) -> Vec<i64> {
-        BE::ckks_inner_sum_galois_elements(self, log_batch, log_count)
+    fn ckks_inner_sum_galois_elements(&self, n: Degree, log_batch: usize, log_count: usize) -> Vec<i64> {
+        BE::ckks_inner_sum_galois_elements(self, n, log_batch, log_count)
     }
 
-    fn ckks_replicate_galois_elements(&self, log_batch: usize, log_count: usize) -> Vec<i64> {
-        BE::ckks_replicate_galois_elements(self, log_batch, log_count)
+    fn ckks_replicate_galois_elements(&self, n: Degree, log_batch: usize, log_count: usize) -> Vec<i64> {
+        BE::ckks_replicate_galois_elements(self, n, log_batch, log_count)
     }
 
     fn ckks_inner_sum_tmp_bytes<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
