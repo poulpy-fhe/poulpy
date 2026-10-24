@@ -362,6 +362,7 @@ pub trait GGLWEProductFusedReference<BE: Backend>:
     + poulpy_hal::api::VecZnxIdftNormalizeTmpBytes
     + poulpy_hal::api::VecZnxDftApply<BE>
     + VecZnxGadgetDecompose<BE>
+    + VecZnxGadgetDecomposeTmpBytes
 {
 }
 
@@ -374,6 +375,7 @@ impl<BE: Backend, M> GGLWEProductFusedReference<BE> for M where
         + poulpy_hal::api::VecZnxIdftNormalizeTmpBytes
         + poulpy_hal::api::VecZnxDftApply<BE>
         + VecZnxGadgetDecompose<BE>
+        + VecZnxGadgetDecomposeTmpBytes
 {
 }
 
@@ -1022,9 +1024,9 @@ pub fn gglwe_operand_from_dft_reference<BE, M>(
 {
     let rank = a.cols() - 1;
     let key_base2k = key.base2k().as_usize();
-    assert_eq!(
-        a_base2k, key_base2k,
-        "the operand of a DFT source requires its base2k to be the key's"
+    assert!(
+        a_base2k == key_base2k,
+        "gglwe_operand_from_dft: the source's base2k differs from the key's"
     );
     let mask_small_size = a.size().min(output_size);
     let (k_digit, dnum) = (key.k_digit(), key.dnum());
@@ -1126,4 +1128,29 @@ pub fn gglwe_products_idft_normalize_reference<BE>(
             module, res, res_base2k, res_k, res_offset, res_dft, &a[i], key, term_count, addends[i], body[i], a_base2k, scratch,
         );
     }
+}
+
+/// Scratch of [`gglwe_operand_from_dft_reference`]: one normalized mask column beside its
+/// inverse transform and its gadget layout.
+#[doc(hidden)]
+pub fn gglwe_operand_from_dft_tmp_bytes_reference<BE, M, K>(module: &M, a_size: usize, output_size: usize, key_infos: &K) -> usize
+where
+    BE: Backend,
+    M: GGLWEProductFusedReference<BE>,
+    K: GGLWEInfos,
+{
+    let mask_small_size = a_size.min(output_size);
+    let (base2k, k_digit, dnum) = (key_infos.base2k(), key_infos.k_digit(), key_infos.dnum());
+    let mask_k = TorusPrecision((mask_small_size * base2k.as_usize()) as u32);
+    BE::scratch_aligned(mask_small_size * core::mem::size_of::<i64>() * module.n())
+        + module
+            .vec_znx_idft_normalize_tmp_bytes(mask_small_size, a_size)
+            .max(gadget_dft_apply_tmp_bytes::<BE, _>(
+                module,
+                base2k,
+                k_digit,
+                dnum,
+                mask_k,
+                mask_small_size,
+            ))
 }

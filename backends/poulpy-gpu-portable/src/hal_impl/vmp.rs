@@ -60,10 +60,7 @@ pub(crate) fn gglwe_product_fused<RT: GpuRuntime, R: Ring>(
     );
     assert_eq!(a.cols(), pmat.cols_in(), "fused product: a.cols() != pmat.cols_in()");
     assert_eq!(res.cols(), pmat.cols_out(), "fused product: res.cols() != pmat.cols_out()");
-    assert!(
-        product_size <= res.size(),
-        "fused product: product wider than its destination"
-    );
+    assert!(product_size <= res.size(), "product wider than its destination");
     let res = dft_column_mut(res, 0).expect("fused product: res holds no storage");
     if !accumulate && product_size < res.size {
         // Stored over `product_size` limbs: the limbs past them are zero.

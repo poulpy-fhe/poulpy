@@ -14,8 +14,9 @@ use poulpy_core::{
     layouts::{GGLWEInfos, prepared::GGLWEPreparedBackendRef},
     oep::{ConstTerm, GGLWEProductDigitsStridedImpl, SamplingImpl},
     reference::keyswitching::glwe::{
-        gglwe_operand_from_dft_reference, gglwe_product_fused_reference, gglwe_product_fused_tmp_bytes_reference,
-        gglwe_product_idft_normalize_reference, gglwe_product_idft_normalize_tmp_bytes_reference, gglwe_product_limbs,
+        gglwe_operand_from_dft_reference, gglwe_operand_from_dft_tmp_bytes_reference, gglwe_product_fused_reference,
+        gglwe_product_fused_tmp_bytes_reference, gglwe_product_idft_normalize_reference,
+        gglwe_product_idft_normalize_tmp_bytes_reference, gglwe_product_limbs,
     },
 };
 use poulpy_cpu_portable::kernels::noise::{gaussian_cumulative_table_portable, gaussian_rejection_constants_portable};
@@ -145,6 +146,14 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
             .is_some_and(|bodies| bodies.iter().all(|&b| b == bodies[0]) && accumulate.iter().all(|&acc| acc == accumulate[0]));
         let dsize = key.dsize().as_usize();
         let product_limbs = if dsize == 1 { 1 } else { gglwe_product_limbs(key, term_count) };
+        if res.is_empty() {
+            // The reference's checks, then nothing to do.
+            assert!(
+                a.is_empty() && addends.is_empty() && accumulate.is_empty(),
+                "gglwe_products_fused: items of different lengths"
+            );
+            return;
+        }
         // The identity stores without a rotation.
         let plan = (p != 1).then(|| AutomorphismPlan::new(res[0].n(), p, handle(module).tables().invariant()));
         let mut start = 0;
@@ -187,6 +196,13 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
             }
             start = end;
         }
+    }
+
+    fn gglwe_operand_from_dft_tmp_bytes<K>(module: &Module<Self>, a_size: usize, output_size: usize, key_infos: &K) -> usize
+    where
+        K: GGLWEInfos,
+    {
+        gglwe_operand_from_dft_tmp_bytes_reference(module, a_size, output_size, key_infos)
     }
 
     fn gglwe_operand_from_dft(
@@ -357,10 +373,6 @@ pub(crate) fn square_columns<RT: GpuRuntime, R: Ring>(
     glwe_square_columns(module, cnv_offset, diag, cross, a);
 }
 
-/// `GLWEMulConstImpl::glwe_const_combination` with the terms of a column
-/// summed inside the launch that normalizes them.
-/// Returns `false`, having done nothing, for more terms than one launch takes
-/// or operands without storage.
 /// Scratch of [`shifted_const_combination`]: every constant of a combination shifted at once.
 pub(crate) fn const_combination_shift_tmp_bytes<RT: GpuRuntime, R: Ring>(
     module: &Module<NTT4x30Gpu<RT, R>>,
@@ -439,6 +451,10 @@ pub(crate) fn shifted_const_combination<RT: GpuRuntime, R: Ring>(
     const_combination(module, res, base2k, res_k, acc_size, &terms)
 }
 
+/// `GLWEMulConstImpl::glwe_const_combination` with the terms of a column
+/// summed inside the launch that normalizes them.
+/// Returns `false`, having done nothing, for more terms than one launch takes
+/// or operands without storage.
 pub(crate) fn const_combination<RT: GpuRuntime, R: Ring>(
     module: &Module<NTT4x30Gpu<RT, R>>,
     res: &mut VecZnxBackendMut<'_, NTT4x30Gpu<RT, R>>,
@@ -480,7 +496,9 @@ pub(crate) fn const_combination<RT: GpuRuntime, R: Ring>(
     // The normalization reads the sum as it forms it, unless the radix is one
     // the kernel leaves to the host or the destination is one of the operands.
     let res0 = column_mut(res, 0).expect("checked above");
-    let apart = products(0).iter().all(|(a, _, _, _)| a.binding.id != res0.binding.id);
+    let apart = products(0)
+        .iter()
+        .all(|(a, b, _, _)| a.binding.id != res0.binding.id && b.binding.id != res0.binding.id);
     if base2k <= KERNEL_RADIX && apart {
         for col in 0..res.cols() {
             let res = column_mut(res, col).expect("checked above");

@@ -7,7 +7,6 @@
 //! and cross-giant accumulation remain in DFT. The sub-limb `cnv_offset_lo`
 //! shift is folded into the single final normalize at Phase C.
 
-use poulpy_hal::api::VecZnxIdftNormalizeTmpBytes as _;
 use poulpy_hal::layouts::Module;
 use poulpy_hal::layouts::vec_znx_dft_backend_ref_from_mut;
 use poulpy_hal::{
@@ -23,7 +22,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    gadget::{gadget_dft_apply_tmp_bytes, gadget_input_size},
+    gadget::gadget_input_size,
     layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, LWEInfos, TorusPrecision, prepared::GGLWEPreparedBackendRef},
     reference::keyswitching::GLWEKeyswitchInternal,
 };
@@ -69,16 +68,11 @@ where
     let mask_k = TorusPrecision((mask_small_size * base2k.as_usize()) as u32);
     let operand_size = gadget_input_size(base2k, k_digit, dnum, mask_k, mask_small_size);
     let mask_dft = module.bytes_of_vec_znx_dft(module.n(), rank, operand_size);
-    let mask_small = mask_small_size * core::mem::size_of::<i64>() * module.n();
-    // The product over at most the key's limbs, its body and the automorphism into a node of at
-    // most `prod_size` or the key's limbs.
+    // The operand's own work, then the product over at most the key's limbs, its body and the
+    // automorphism into a node of at most `prod_size` or the key's limbs.
+    let operand = BE::gglwe_operand_from_dft_tmp_bytes(module, prod_size, key_size, key_infos);
     let fused = BE::gglwe_product_fused_tmp_bytes(module, prod_size.max(key_size), key_size, operand_size, key_infos);
-    let digits = gadget_dft_apply_tmp_bytes::<BE, _>(module, base2k, k_digit, dnum, mask_k, mask_small_size);
-
-    let mask_work = module
-        .vec_znx_idft_normalize_tmp_bytes(mask_small_size, prod_size)
-        .max(digits);
-    BE::scratch_aligned(mask_dft) + BE::scratch_aligned(mask_small) + mask_work + fused
+    BE::scratch_aligned(mask_dft) + operand + fused
 }
 
 /// ROT for a giant step whose PROD result is still in `VecZnxDft`.

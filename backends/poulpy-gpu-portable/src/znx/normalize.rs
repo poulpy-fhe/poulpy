@@ -427,7 +427,10 @@ pub(crate) fn normalize_products<RT: GpuRuntime>(
 ) {
     assert!((1..=4).contains(&terms.len()), "one to four products");
     for (a, b, b_coeff, _) in terms {
-        assert!(a.words == 1 && b.words == 1 && a.n == res.n);
+        assert!(
+            a.words == 1 && b.words == 1 && a.n == res.n,
+            "constant products take one-word operands of the destination degree"
+        );
         assert!(*b_coeff < b.n || b.size == 0, "constant coefficient out of range");
     }
     launch::<RT>(res, res_base2k, res_k, 0, Source::Products { terms, size }, a_base2k);

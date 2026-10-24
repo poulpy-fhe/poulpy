@@ -131,6 +131,11 @@ pub unsafe trait GGLWEProductDigitsStridedImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     );
 
+    /// Scratch bytes of [`Self::gglwe_operand_from_dft`] for a source of `a_size` limbs.
+    fn gglwe_operand_from_dft_tmp_bytes<K>(module: &Module<Self>, a_size: usize, output_size: usize, key_infos: &K) -> usize
+    where
+        K: GGLWEInfos;
+
     /// The gadget operand of `key` for the mask columns of the DFT source `a`, into the
     /// `a.cols() - 1` columns of `res`: each mask column normalized from its inverse transform
     /// over `a.size().min(output_size)` limbs at radix `a_base2k`, then laid out in digits.
@@ -138,8 +143,7 @@ pub unsafe trait GGLWEProductDigitsStridedImpl: Backend {
     ///
     /// The reference, [`gglwe_operand_from_dft_reference`](crate::reference::keyswitching::glwe::gglwe_operand_from_dft_reference),
     /// composes `vec_znx_idft_normalize` and the gadget layout. Overrides must reproduce it bit
-    /// for bit within the scratch of the lazy giant rotation, which reserves one normalized
-    /// column and `gadget_dft_apply_tmp_bytes` past `res`.
+    /// for bit within [`Self::gglwe_operand_from_dft_tmp_bytes`].
     fn gglwe_operand_from_dft(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -222,7 +226,7 @@ pub unsafe trait GGLWEProductDigitsStridedImpl: Backend {
 
 /// The step hooks of [`GGLWEProductDigitsStridedImpl`] (`gglwe_product_fused`,
 /// `gglwe_product_idft_normalize`, their queries, their multi-source forms and
-/// `gglwe_operand_from_dft`) forwarding to their reference bodies,
+/// `gglwe_operand_from_dft` with its query) forwarding to their reference bodies,
 /// for an `impl` block that writes the rest of the family by hand.
 #[macro_export]
 macro_rules! impl_gglwe_product_step_hooks_reference {
@@ -334,6 +338,23 @@ macro_rules! impl_gglwe_product_step_hooks_reference {
                 p,
                 accumulate,
                 scratch,
+            )
+        }
+
+        fn gglwe_operand_from_dft_tmp_bytes<K>(
+            module: &::poulpy_hal::layouts::Module<Self>,
+            a_size: usize,
+            output_size: usize,
+            key_infos: &K,
+        ) -> usize
+        where
+            K: $crate::layouts::GGLWEInfos,
+        {
+            $crate::reference::keyswitching::glwe::gglwe_operand_from_dft_tmp_bytes_reference(
+                module,
+                a_size,
+                output_size,
+                key_infos,
             )
         }
 
