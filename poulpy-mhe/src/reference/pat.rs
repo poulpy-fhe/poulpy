@@ -1,9 +1,9 @@
 use poulpy_core::{
-    GLWEMaskFill,
+    GGLWEDecompress, GLWEMaskFill,
     layouts::{
-        GGLWECompressedSeed, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef, GGLWEDecompress, GGLWEInfos,
-        GGLWEToBackendMut, GGLWEToBackendRef, GLWECompressedSeed, GLWECompressedToBackendMut, GLWECompressedToBackendRef,
-        GLWEDecompress, GLWEInfos, GLWEToBackendMut, LWEInfos,
+        GGLWECompressedSeed, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef, GGLWEInfos, GGLWEToBackendMut,
+        GGLWEToBackendRef, GLWECompressedSeed, GLWECompressedToBackendMut, GLWECompressedToBackendRef, GLWEInfos,
+        GLWEToBackendMut, LWEInfos,
     },
 };
 use poulpy_hal::{
@@ -86,11 +86,7 @@ pub trait GGLWEPatCompressedReference<BE: Backend> {
 
 impl<BE: Backend> GGLWEPatCompressedReference<BE> for Module<BE>
 where
-    Self: MatZnxAddAssign<BE>
-        + MatZnxNormalizeTmpBytes
-        + MatZnxNormalizeAssign<BE>
-        + GLWEDecompress<Backend = BE>
-        + GGLWEDecompress,
+    Self: MatZnxAddAssign<BE> + MatZnxNormalizeTmpBytes + MatZnxNormalizeAssign<BE> + GGLWEDecompress<BE>,
 {
     fn gglwe_pat_compressed_aggregate_assign_reference<R, A>(&self, res: &mut R, a: &A)
     where

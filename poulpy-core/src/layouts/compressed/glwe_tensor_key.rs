@@ -1,9 +1,8 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Module, ReaderFrom, WriterTo};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo};
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, GGLWECompressed, GGLWECompressedSeedMut, GGLWEDecompress, GGLWEInfos, GGLWEToBackendMut, GLWEInfos,
-    LWEInfos, Rank, TorusPrecision,
+    Base2K, Degree, Dnum, GGLWECompressed, GGLWECompressedSeedMut, GGLWEInfos, GLWEInfos, LWEInfos, Rank, TorusPrecision,
     compressed::{
         GGLWECompressedBackendMut, GGLWECompressedBackendRef, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef,
     },
@@ -164,22 +163,5 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWETensorKeyCompressed<D, W> {
         Ok(())
     }
 }
-
-pub trait GLWETensorKeyDecompress
-where
-    Self: GGLWEDecompress,
-{
-    fn decompress_tensor_key<R, O>(&self, res: &mut R, other: &O)
-    where
-        R: GGLWEToBackendMut<Self::Backend> + GGLWEInfos,
-        O: GGLWECompressedToBackendRef<Self::Backend> + GGLWEInfos,
-    {
-        self.decompress_gglwe(res, other);
-    }
-}
-
-impl<B: Backend> GLWETensorKeyDecompress for Module<B> where Self: GGLWEDecompress {}
-
-// module-only API: decompression is provided by `GLWETensorKeyDecompress` on `Module`.
 
 impl_gglwe_compressed_to_backend_for_field!(GLWETensorKeyCompressed<BE::OwnedBuf, BE::ZnxWord>, 0, GGLWECompressed<BE::OwnedBuf, BE::ZnxWord>);

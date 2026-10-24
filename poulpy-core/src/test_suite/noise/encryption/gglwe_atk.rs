@@ -8,13 +8,12 @@ use poulpy_hal::{
 
 use crate::layouts::GLWESecretSampling;
 use crate::{
-    GGLWEKeyswitch, GLWEAutomorphismKeyCompressedEncryptSk, GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyCompressedEncryptSk,
-    GLWESwitchingKeyEncryptSk,
+    GGLWEKeyswitch, GLWEAutomorphismKeyCompressedEncryptSk, GLWEAutomorphismKeyDecompress, GLWEAutomorphismKeyEncryptSk,
+    GLWESwitchingKeyCompressedEncryptSk, GLWESwitchingKeyEncryptSk,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGLWEInfos, GLWEAutomorphismKey, GLWEAutomorphismKeyDecompress, GLWEAutomorphismKeyLayout, GLWEInfos, GLWESecret,
-        GLWESecretPreparedFactory, GLWESwitchingKeyDecompress, LWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc,
-        compressed::GLWEAutomorphismKeyCompressed, prepared::GLWESecretPrepared,
+        GGLWEInfos, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, LWEInfos,
+        ModuleCoreAlloc, ModuleCoreCompressedAlloc, compressed::GLWEAutomorphismKeyCompressed, prepared::GLWESecretPrepared,
     },
     noise::GGLWENoise,
 };
@@ -31,8 +30,6 @@ pub fn test_gglwe_automorphism_key_encrypt_sk<BE: crate::test_suite::noise::Test
         + GLWESecretPreparedFactory<BE>
         + GLWESwitchingKeyEncryptSk<BE>
         + GLWESwitchingKeyCompressedEncryptSk<BE>
-        + GLWESwitchingKeyDecompress
-        + crate::layouts::compressed::GLWEDecompress<Backend = BE>
         + GGLWENoise<BE>
         + VecZnxFillUniformSource<BE>
         + VecZnxAutomorphism<BE>,
@@ -138,8 +135,7 @@ pub fn test_gglwe_automorphism_key_compressed_encrypt_sk<BE: crate::test_suite::
         + GLWESecretPreparedFactory<BE>
         + GLWESwitchingKeyEncryptSk<BE>
         + GLWESwitchingKeyCompressedEncryptSk<BE>
-        + GLWEAutomorphismKeyDecompress
-        + crate::layouts::compressed::GLWEDecompress<Backend = BE>
+        + GLWEAutomorphismKeyDecompress<BE>
         + VecZnxAutomorphism<BE>
         + VecZnxFillUniformSource<BE>
         + GGLWENoise<BE>,

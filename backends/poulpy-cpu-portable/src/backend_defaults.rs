@@ -4,6 +4,7 @@
 macro_rules! impl_cpu_core_defaults {
     ($be:ty, $word_family:ident) => {
         ::poulpy_core::impl_automorphism_reference_full!($be);
+        ::poulpy_core::impl_decompression_reference_full!($be);
         ::poulpy_core::impl_decryption_reference_full!($be);
         ::poulpy_core::impl_ggsw_conversion_reference_full!($be);
         ::poulpy_core::impl_glwe_keyswitch_reference_full!($be);

@@ -4,6 +4,7 @@
 //! - `automorphism` -- Galois automorphisms on ciphertexts and automorphism keys.
 //! - `bytes_of` -- backend-routed byte sizes for core layouts.
 //! - `conversion` -- conversions between ciphertext representations.
+//! - `decompression` -- decompression of seed-compressed ciphertexts and keys.
 //! - `decryption` -- secret-key decryption operations.
 //! - `encryption` -- secret/public-key encryption and evaluation-key generation.
 //! - `external_product` -- GLWE/GGLWE/GGSW external products.
@@ -22,6 +23,7 @@ mod automorphism;
 mod bytes_of;
 mod ci_conversion;
 mod conversion;
+mod decompression;
 mod decryption;
 mod encryption;
 mod external_product;
@@ -37,6 +39,7 @@ pub use automorphism::*;
 pub use bytes_of::*;
 pub use ci_conversion::*;
 pub use conversion::*;
+pub use decompression::*;
 pub use decryption::*;
 pub use encryption::*;
 pub use external_product::*;

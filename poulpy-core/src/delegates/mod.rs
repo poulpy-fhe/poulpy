@@ -7,6 +7,7 @@
 mod automorphism;
 mod ci_conversion;
 mod conversion;
+mod decompression;
 mod decryption;
 mod encryption;
 mod external_product;

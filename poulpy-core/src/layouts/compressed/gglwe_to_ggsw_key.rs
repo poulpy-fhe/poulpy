@@ -2,8 +2,7 @@ use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo};
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, GGLWECompressed, GGLWEDecompress, GGLWEInfos, GGLWEToGGSWKeyToBackendMut, GLWEInfos, LWEInfos, Rank,
-    TorusPrecision,
+    Base2K, Degree, Dnum, GGLWECompressed, GGLWEInfos, GLWEInfos, LWEInfos, Rank, TorusPrecision,
     compressed::{
         GGLWECompressedBackendMut, GGLWECompressedBackendRef, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef,
     },
@@ -299,47 +298,6 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GGLWEToGGSWKeyCompressed<D, W> {
         Ok(())
     }
 }
-
-/// Trait for decompressing a [`GGLWEToGGSWKeyCompressed`] into a standard [`GGLWEToGGSWKey`](crate::layouts::GGLWEToGGSWKey).
-pub trait GGLWEToGGSWKeyDecompress
-where
-    Self: GGLWEDecompress,
-{
-    /// Decompresses `other` into `res` by decompressing each GGLWE entry.
-    fn decompress_gglwe_to_ggsw_key<R, O>(&self, res: &mut R, other: &O)
-    where
-        R: GGLWEToGGSWKeyToBackendMut<Self::Backend>,
-        O: GGLWEToGGSWKeyCompressedToBackendRef<Self::Backend>,
-    {
-        let noise = other.to_backend_ref().noise();
-        {
-            let mut res = res.to_backend_mut();
-            let other = other.to_backend_ref();
-            assert_eq!(res.keys.len(), other.keys.len());
-            for i in 0..res.keys.len() {
-                let mut a = res.at_view_mut(i);
-                let b = other.at_view(i);
-                assert_eq!(a.k_digit(), b.k_digit());
-                assert!(a.dnum() <= b.dnum());
-
-                let rank_in: usize = a.rank_in().into();
-                let dnum: usize = a.dnum().into();
-                for col_i in 0..rank_in {
-                    for row_i in 0..dnum {
-                        let mut dst = a.at_view_mut(row_i, col_i);
-                        let src = b.at_view(row_i, col_i);
-                        self.decompress_glwe(&mut dst, &src);
-                    }
-                }
-            }
-        }
-        res.set_noise(noise);
-    }
-}
-
-impl<B: Backend> GGLWEToGGSWKeyDecompress for poulpy_hal::layouts::Module<B> where Self: GGLWEDecompress {}
-
-// module-only API: decompression is provided by `GGLWEToGGSWKeyDecompress` on `Module`.
 
 pub trait GGLWEToGGSWKeyCompressedToBackendRef<BE: Backend> {
     fn to_backend_ref(&self) -> GGLWEToGGSWKeyCompressedBackendRef<'_, BE>;

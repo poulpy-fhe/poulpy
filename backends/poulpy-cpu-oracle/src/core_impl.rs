@@ -11,6 +11,7 @@ macro_rules! impl_oracle_core {
         ::poulpy_core::impl_glwe_tensoring_reference_full!($be);
         ::poulpy_core::impl_gglwe_product_digits_strided_reference_full!($be);
         ::poulpy_core::impl_automorphism_reference_full!($be);
+        ::poulpy_core::impl_decompression_reference_full!($be);
         ::poulpy_core::impl_decryption_reference_full!($be);
         ::poulpy_core::impl_ggsw_conversion_reference_full!($be);
         ::poulpy_core::impl_glwe_keyswitch_reference_full!($be);
