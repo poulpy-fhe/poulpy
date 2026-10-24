@@ -30,8 +30,8 @@ The [`guides/`](guides) folder holds the guides and design notes, [`spec/`](spec
 
 ## libm
 
-- [libm API guide](../poulpy-libm/docs/api.md), the supported functions with their intervals and circuit costs.
-- [Custom approximations](../poulpy-libm/docs/custom-approximation.md), fitting and evaluating a function outside the libm scope with the approximation API of `poulpy-ckks`.
+- [libm API guide](../libs/poulpy-libm/docs/api.md), the supported functions with their intervals and circuit costs.
+- [Custom approximations](../libs/poulpy-libm/docs/custom-approximation.md), fitting and evaluating a function outside the libm scope with the approximation API of `poulpy-ckks`.
 
 ## Specifications
 

@@ -18,6 +18,7 @@ schemes/
   poulpy-bin-fhe           binary and gate-level FHE
 libs/
   poulpy-blas              encrypted matrix arithmetic on CKKS
+  poulpy-libm              libm-style math functions on CKKS
 backends/
   poulpy-cpu-portable      portable scalar backend
   poulpy-cpu-oracle        independent scalar oracle for correctness tests
@@ -126,6 +127,12 @@ The protocols cover the collective public key, the switching, automorphism and t
 Encrypted matrix arithmetic built on CKKS.
 A matrix is a grid of `d x d` blocks with one CKKS ciphertext per block, and the slots of a ciphertext hold a batch of matrices, so every operation acts on the whole batch.
 Intra operations (transpose, row and column rotations) apply one map to every matrix, inter operations (rotation and sum) move whole matrices across the batch, and the products multiply two encrypted matrices with the JKLS algorithm or an encrypted matrix with public ones.
+
+### poulpy-libm
+
+Math functions with `libm` names on CKKS values: exponentials, logarithms, powers and roots, trigonometric, hyperbolic and special functions, comparisons and slot reductions.
+Each function evaluates a plan built on the host for an input interval and a precision, then transferred to the backend, and the plan reports the modulus it consumes.
+libm composes poulpy-ckks operations and has no extension points of its own, so a backend only registers its test suite.
 
 ### poulpy-bench
 
@@ -244,6 +251,6 @@ let ggsw_layout = GGSWLayout {
 - For a GLWE encrypt and decrypt roundtrip, read `backends/poulpy-cpu-portable/examples/core_encryption.rs`.
 - For the gate and encrypted integer API, read `backends/poulpy-cpu-portable/examples/bdd_arithmetic.rs`.
 - For CKKS, read `backends/poulpy-cpu-portable/examples/ckks_poly2.rs`.
-- For math functions on CKKS values, read `backends/poulpy-cpu-portable/examples/libm_exp.rs` and the [libm API guide](../../poulpy-libm/docs/api.md).
+- For math functions on CKKS values, read `backends/poulpy-cpu-portable/examples/libm_exp.rs` and the [libm API guide](../../libs/poulpy-libm/docs/api.md).
 - For CKKS polynomial evaluation and homomorphic linear transformations, read [polynomial_evaluation.md](polynomial_evaluation.md) and [linear_transformation.md](linear_transformation.md).
 - For the choice of arithmetic backend, read [backends.md](backends.md).

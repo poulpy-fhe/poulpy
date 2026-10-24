@@ -4,7 +4,7 @@
 
 ### Workspace
 
-- The basis crates `poulpy-hal`, `poulpy-core` and `poulpy-mhe` stay at the root, and the other crates move into four folders by role: `schemes/` (`poulpy-ckks`, `poulpy-bin-fhe`), `libs/` (`poulpy-blas`), `backends/` (the `poulpy-cpu-*` crates) and `tools/` (`poulpy-bench`).
+- The basis crates `poulpy-hal`, `poulpy-core` and `poulpy-mhe` stay at the root, and the other crates move into four folders by role: `schemes/` (`poulpy-ckks`, `poulpy-bin-fhe`), `libs/` (`poulpy-blas`, `poulpy-libm`), `backends/` (the `poulpy-cpu-*` crates) and `tools/` (`poulpy-bench`).
   Crate names and features are unchanged. A path dependency on a local clone takes the new folder.
 - The crates inherit `version`, `edition`, `license`, `repository` and `homepage` from `[workspace.package]` in the root `Cargo.toml`.
 - The guides move from `docs/` to `docs/guides/` and the logo to `docs/img/`. The unused `cspell.json` is removed.
