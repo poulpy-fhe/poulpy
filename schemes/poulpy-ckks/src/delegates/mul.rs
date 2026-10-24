@@ -40,7 +40,7 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
         A: CKKSCtBounds,
         P: CKKSInfos,
     {
-        BE::ckks_mul_pt_vec_tmp_bytes(self, res, a, b.k())
+        BE::ckks_mul_pt_vec_tmp_bytes(self, res, a, b)
     }
 
     fn ckks_mul_pt_const_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
@@ -49,7 +49,7 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
         A: CKKSCtBounds,
         P: CKKSInfos,
     {
-        BE::ckks_mul_pt_const_tmp_bytes(self, res, a, b.k())
+        BE::ckks_mul_pt_const_tmp_bytes(self, res, a, b)
     }
 
     fn ckks_mul_into<Dst, A, B, H>(&self, dst: &mut Dst, a: &A, b: &B, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

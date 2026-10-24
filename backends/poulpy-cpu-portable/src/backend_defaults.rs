@@ -25,26 +25,13 @@ macro_rules! impl_cpu_core_defaults {
     };
 }
 
-/// Registers the CKKS families shared by both rings, with encoding, for a CPU backend.
+/// Registers the CKKS families shared by both rings (`impl_ckks_reference_full!`), with encoding, for a CPU backend.
 /// The backend selects its encoding transform separately; standard backends also register the standard-only families.
 #[cfg(feature = "enable-ckks")]
 #[macro_export]
 macro_rules! impl_cpu_ckks_defaults {
     ($be:ty) => {
-        ::poulpy_ckks::impl_ckks_copy_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_encryption_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_mul_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_dot_product_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_linear_transformation_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_neg_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_pow2_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_rotate_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_inner_sum_derived_full!($be);
-        ::poulpy_ckks::impl_ckks_add_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_sub_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_plaintext_znx_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_polynomial_evaluation_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_eval_mod_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_reference_full!($be);
         $crate::impl_ckks_encoding!($be);
     };
 }

@@ -86,7 +86,7 @@ macro is named after its OEP family (`GLWEAddImpl`:
 |---|---|---|---|---|
 | poulpy-hal | the API name | none | `#[doc(hidden)] pub fn <op>_derived` in `oep::derived` | `hal_impl_*!` in poulpy-cpu-portable |
 | poulpy-core | the API name | `<Trait>Reference<BE>` | `pub(crate) fn <op>_derived` | `impl_<family>_reference_full!`, `impl_<family>_derived_full!`, `impl_core_reference_full!` |
-| poulpy-ckks | the API name; keyed hooks `ckks_{rotate,conjugate}_with_key_*` | `CKKS<Family>Reference<BE>` | `pub(crate)`, with public fallbacks in `oep::defaults` | `impl_<family>_reference_full!`, no umbrella |
+| poulpy-ckks | the API name; keyed hooks `ckks_{rotate,conjugate}_with_key_*` | `CKKS<Family>Reference<BE>` | `pub(crate)`, with public fallbacks in `oep::defaults` | `impl_<family>_reference_full!`, `impl_ckks_reference_full!` (both-ring families) |
 | poulpy-bin-fhe | the API name | free functions `<op>_reference` | `pub(crate) fn <op>_derived` | `impl_<family>_reference_full!`, `impl_<family>_derived_full!`, group umbrellas `impl_<group>_reference_full!`, `impl_bin_fhe_reference_full!` |
 | poulpy-mhe | the API name | `<Thing>MHEProtocolReference<BE>`, `<PatType>Reference<BE>` | `pub(crate) fn <op>_derived` | `impl_<family>_reference_full!`, `impl_mhe_reference_full!` |
 | poulpy-blas | the API name; hooks `blas_<hook>` | `BlasMat<Family>Reference<BE>` | `#[doc(hidden)] pub fn blas_<op>_derived` | `impl_<family>_reference_full!`, `impl_blas_reference_full!` |
