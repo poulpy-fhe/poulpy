@@ -102,12 +102,15 @@ where
         {
             let mut res = res.to_backend_mut();
             let other = other.to_backend_ref();
-            assert_eq!(
-                res.rank, other.rank,
-                "GLWESecretTensorPrepared rank must equal the source tensor's rank"
+            assert!(
+                res.rank == other.rank,
+                "prepared tensor rank differs from the source tensor rank"
             );
             let cols: usize = other.data.cols();
-            assert_eq!(res.data.cols(), cols);
+            assert!(
+                res.data.cols() == cols,
+                "prepared tensor column count differs from the source tensor"
+            );
             for i in 0..cols {
                 self.svp_prepare(&mut res.data, i, &other.data, i);
             }
@@ -140,7 +143,7 @@ where
 
             // `res.rank()` is the rank of the base secret the tensor is derived
             // from; its column count is `pairs(rank)`.
-            assert_eq!(res.rank(), a.rank());
+            assert!(res.rank() == a.rank(), "tensor rank differs from the secret rank");
             let n: usize = operand_degree(self.n(), &[res.n(), a.n()]);
             assert!(
                 scratch.available() >= tmp_bytes,
@@ -221,7 +224,7 @@ where
         S: LWESecretToBackendRef<BE>,
     {
         let src = src.to_backend_ref();
-        assert_eq!(src.n().as_usize(), self.n(), "LWE secret degree must equal module degree");
+        assert!(src.n().as_usize() == self.n(), "secret degree differs from the module degree");
         let mut res = self.glwe_secret_alloc(Rank(1));
         res.dist = src.dist;
         {
@@ -251,12 +254,10 @@ where
         let n: usize = self.n();
         let rank: usize = src.rank().into();
         let target: usize = lwe_n.as_usize();
-        assert_eq!(src.n().as_usize(), n, "GLWE secret degree must equal module degree");
+        assert!(src.n().as_usize() == n, "secret degree differs from the module degree");
         assert!(
             target <= rank * n,
-            "lwe_secret_from_glwe_secret: requested LWE dim {} > rank * N ({})",
-            target,
-            rank * n
+            "lwe_secret_from_glwe_secret: requested LWE dimension exceeds rank * N"
         );
         let tmp_bytes: usize = self.lwe_secret_from_glwe_secret_tmp_bytes_reference(&src);
         assert!(
