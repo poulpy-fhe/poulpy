@@ -11,7 +11,7 @@ use crate::backend_name;
 use criterion::{BenchmarkGroup, BenchmarkId, Criterion, measurement::WallTime};
 use poulpy_ckks::{
     CKKSCtBounds, SetCKKSInfos,
-    api::{CKKSBootstrappingCIOps, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSEncodingOps},
+    api::{CKKSBootstrappingCIOps, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingOps, CKKSEvalModOps},
     layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, EvalModRing},
     presets::bootstrapping::{BootstrappingPreset, all},
     test_suite::{
@@ -38,7 +38,12 @@ fn runner_ckks_bootstrapping<BE>(
     setup: impl Fn(BootstrappingPreset) -> BootstrappingPresetRun<BE>,
 ) where
     BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, f64>
+        + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
+        + CKKSDFTMatrixOps<BE, f64>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
@@ -94,6 +99,8 @@ where
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, f64>
         + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
         + CKKSDFTMatrixOps<BE, f64>
         + CKKSBootstrappingCIOps<BE>
         + GLWECIKeyEncryptSk<BE>

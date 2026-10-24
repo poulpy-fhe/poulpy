@@ -17,7 +17,8 @@ use poulpy_hal::{
 use crate::{
     CKKSCtBounds, CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::{
-        CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSEncodingOps, CKKSEvalModOps, CKKSPolynomialEvaluationOps,
+        CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingOps, CKKSEvalModOps,
+        CKKSPolynomialEvaluationOps,
     },
     layouts::{
         BootstrappingContext, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
@@ -60,6 +61,8 @@ pub fn test_functional_bootstrapping_e2e<BE, F, E>(
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
         + CKKSDFTMatrixOps<BE, F>
         + CKKSPolynomialEvaluationOps<BE>,
     F: TestScalar,
@@ -87,6 +90,8 @@ pub fn test_functional_bootstrapping_non_power_of_two_e2e<BE, F, E>(
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
         + CKKSDFTMatrixOps<BE, F>
         + CKKSPolynomialEvaluationOps<BE>,
     F: TestScalar,
@@ -117,6 +122,8 @@ pub fn test_functional_bootstrapping_multi_e2e<BE, F, E>(
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
         + CKKSDFTMatrixOps<BE, F>
         + CKKSPolynomialEvaluationOps<BE>,
     F: TestScalar,
@@ -142,6 +149,8 @@ pub fn test_functional_bootstrapping_binary_e2e<BE, F, E>(
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
         + CKKSDFTMatrixOps<BE, F>
         + CKKSPolynomialEvaluationOps<BE>,
     F: TestScalar,
@@ -170,6 +179,8 @@ fn run_case<BE, F, E>(
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
         + CKKSDFTMatrixOps<BE, F>
         + CKKSPolynomialEvaluationOps<BE>,
     F: TestScalar,

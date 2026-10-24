@@ -188,7 +188,12 @@ fn plan_with_encapsulation(
 pub fn test_bootstrapping_first_factor_on_raise<BE, F, E>(params: CKKSTestParams)
 where
     BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, F>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
+        + CKKSDFTMatrixOps<BE, F>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -389,7 +394,12 @@ where
 pub fn test_bootstrapping_standard_e2e<BE, F, E>(params: CKKSTestParams)
 where
     BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, F>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
+        + CKKSDFTMatrixOps<BE, F>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -745,7 +755,12 @@ where
 pub fn test_bootstrapping_evalround_e2e<BE, F, E>(params: CKKSTestParams)
 where
     BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, F>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
+        + CKKSDFTMatrixOps<BE, F>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -1030,7 +1045,12 @@ where
 pub fn test_bootstrapping_s2c_first_e2e<BE, F, E>(params: CKKSTestParams)
 where
     BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, F>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
+        + CKKSDFTMatrixOps<BE, F>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -1067,7 +1087,12 @@ fn run_s2c_first_case<BE, F, E>(
 ) -> (f64, f64)
 where
     BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, F>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
+        + CKKSDFTMatrixOps<BE, F>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,

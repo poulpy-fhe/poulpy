@@ -192,13 +192,15 @@ where
         .max(module.ckks_copy_tmp_bytes(&branch_layout, &branch_layout))
         .max(module.glwe_rotate_tmp_bytes());
 
-    // The assign path evaluates into a branch-shaped scratch copy and stamps
-    // the narrower result metadata afterwards, so the copy is sized here too.
+    // The assign path evaluates into a branch-shaped scratch copy and copies it
+    // back with the selected `ckks_copy`, so both are sized here too.
     let lt_copy = module.glwe_bytes_of_from_infos(&branch_layout);
+    let copy_back = module.ckks_copy_tmp_bytes(&branch_layout, &branch_layout);
     for &element in context.galois_elements() {
         let key = automorphism_layout_for::<BE, _>(keys.rotation_keys(), element, working_precision)?;
         let lt = module
             .glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(&branch_layout, &branch_layout, &factor_layout, &key)
+            .max(copy_back)
             .checked_add(lt_copy)
             .context("PaCo linear-transformation scratch size overflows usize")?;
         required = required

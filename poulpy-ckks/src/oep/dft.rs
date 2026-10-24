@@ -2,7 +2,6 @@
 //!
 //! Primitive preparation/evaluation use callable algorithms in
 //! [`crate::reference::dft`]. Format wrappers re-enter the selected generic DFT and CKKS arithmetic operations.
-//! Conditional overrides can call them through [`crate::oep::defaults`].
 
 #![allow(clippy::too_many_arguments)]
 

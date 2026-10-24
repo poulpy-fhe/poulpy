@@ -25,7 +25,7 @@ use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSResult, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAllOpsTmpBytes, CKKSBootstrappingCIOps, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTOps, CKKSDecryptOps,
-        CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps,
+        CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSEvalModOps,
     },
     layouts::{
         BootstrappingContext, BootstrappingKeysLayout, BootstrappingPlan, CKKSCiphertextOwned, CKKSModuleAlloc,
@@ -85,7 +85,12 @@ pub struct BootstrappingPresetRun<BE: Backend> {
 impl<BE> BootstrappingPresetRun<BE>
 where
     BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, f64>
+        + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
+        + CKKSDFTMatrixOps<BE, f64>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
@@ -374,6 +379,8 @@ where
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, f64>
         + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
         + CKKSDFTMatrixOps<BE, f64>
         + CKKSBootstrappingCIOps<BE>
         + GLWECIKeyEncryptSk<BE>
@@ -412,6 +419,8 @@ where
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, f64>
         + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
         + CKKSDFTMatrixOps<BE, f64>
         + CKKSBootstrappingCIOps<BE>
         + GLWECIKeyEncryptSk<BE>
@@ -464,6 +473,8 @@ where
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, f64>
         + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
         + CKKSDFTMatrixOps<BE, f64>
         + CKKSBootstrappingCIOps<BE>
         + GLWECIKeyEncryptSk<BE>
