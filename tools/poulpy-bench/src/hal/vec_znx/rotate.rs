@@ -1,3 +1,4 @@
+use poulpy_hal::api::ModuleSynchronize;
 use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
@@ -13,7 +14,7 @@ use crate::hal::params::HalSweepParms;
 
 pub fn runner_vec_znx_rotate<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: VecZnxRotate<B> + ModuleNew<B>,
+    Module<B>: VecZnxRotate<B> + ModuleNew<B> + ModuleSynchronize<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
 
@@ -30,6 +31,7 @@ where
         for i in 0..sweep.cols {
             module.vec_znx_rotate(-7, &mut res, i, &a, i);
         }
+        module.synchronize();
         black_box(());
     });
 }
@@ -38,7 +40,7 @@ pub fn runner_vec_znx_rotate_assign<B: Backend<ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     sweep: &HalSweepParms,
 ) where
-    Module<B>: VecZnxRotateAssign<B> + ModuleNew<B> + VecZnxRotateAssignTmpBytes,
+    Module<B>: VecZnxRotateAssign<B> + ModuleNew<B> + ModuleSynchronize<B> + VecZnxRotateAssignTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -55,6 +57,7 @@ pub fn runner_vec_znx_rotate_assign<B: Backend<ZnxWord = i64>, M: Measurement>(
         for i in 0..sweep.cols {
             module.vec_znx_rotate_assign(-7, &mut res, i, &mut scratch.borrow());
         }
+        module.synchronize();
         black_box(());
     });
 }

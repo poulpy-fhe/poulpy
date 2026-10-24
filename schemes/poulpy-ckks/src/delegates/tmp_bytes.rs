@@ -36,6 +36,7 @@ where
         + GLWEShift<BE>
         + GLWEMulPlain<BE>
         + GLWEMulConst<BE>
+        + poulpy_core::reference::operations::GLWEConstCombination<BE>
         + GLWETensoring<BE>
         + GLWETensorKeyEncryptSk<BE>
         + GLWETensorKeyPreparedFactory<BE>

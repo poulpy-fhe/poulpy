@@ -54,7 +54,8 @@ where
         + poulpy_hal::api::VecZnxBigAddSmallAssign<BE>
         + poulpy_hal::api::VecZnxBigNormalize<BE>
         + poulpy_hal::api::VecZnxIdftApply<BE>
-        + poulpy_hal::api::VecZnxNormalizeAssign<BE>,
+        + poulpy_hal::api::VecZnxNormalizeAssign<BE>
+        + crate::reference::keyswitching::glwe::GGLWEProductFused<BE>,
 {
     fn glwe_keyswitch_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where

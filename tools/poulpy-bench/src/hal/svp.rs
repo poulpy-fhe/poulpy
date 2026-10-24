@@ -1,3 +1,4 @@
+use poulpy_hal::api::ModuleSynchronize;
 use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
@@ -22,7 +23,7 @@ use crate::hal::params::HalSweepParms;
 
 pub fn runner_svp_prepare<B, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: SvpPrepare<B> + SvpPPolAlloc<B> + ModuleNew<B>,
+    Module<B>: SvpPrepare<B> + SvpPPolAlloc<B> + ModuleNew<B> + ModuleSynchronize<B>,
     B: Backend<ZnxWord = i64>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -36,13 +37,14 @@ where
     bencher.iter(|| {
         let a_backend = scalar_znx_backend_ref::<B>(&a);
         module.svp_prepare(&mut svp.to_backend_mut(), 0, &a_backend, 0);
+        module.synchronize();
         black_box(());
     });
 }
 
 pub fn runner_svp_apply_dft<B, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: SvpApplyDft<B> + SvpApplyDftTmpBytes + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
+    Module<B>: SvpApplyDft<B> + SvpApplyDftTmpBytes + SvpPPolAlloc<B> + ModuleNew<B> + ModuleSynchronize<B> + VecZnxDftAlloc<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
     B: Backend<ZnxWord = i64>,
 {
@@ -62,13 +64,14 @@ where
         for j in 0..sweep.cols {
             module.svp_apply_dft(&mut res, j, &svp, j, &a, j, &mut scratch.borrow());
         }
+        module.synchronize();
         black_box(());
     });
 }
 
 pub fn runner_svp_apply_dft_to_dft<B, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: SvpApplyDftToDft<B> + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
+    Module<B>: SvpApplyDftToDft<B> + SvpPPolAlloc<B> + ModuleNew<B> + ModuleSynchronize<B> + VecZnxDftAlloc<B>,
     B: Backend<ZnxWord = i64>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -83,13 +86,14 @@ where
         for j in 0..sweep.cols {
             module.svp_apply_dft_to_dft(&mut res.to_backend_mut(), j, &svp, j, &a.to_backend_ref(), j);
         }
+        module.synchronize();
         black_box(());
     });
 }
 
 pub fn runner_svp_apply_dft_to_dft_assign<B, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: SvpApplyDftToDftAssign<B> + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
+    Module<B>: SvpApplyDftToDftAssign<B> + SvpPPolAlloc<B> + ModuleNew<B> + ModuleSynchronize<B> + VecZnxDftAlloc<B>,
     B: Backend<ZnxWord = i64>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -103,6 +107,7 @@ where
         for j in 0..sweep.cols {
             module.svp_apply_dft_to_dft_assign(&mut res.to_backend_mut(), j, &svp, j);
         }
+        module.synchronize();
         black_box(());
     });
 }

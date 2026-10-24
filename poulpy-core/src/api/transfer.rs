@@ -27,7 +27,7 @@ use poulpy_hal::layouts::{
 };
 
 use crate::layouts::{
-    GGLWE, GGLWEToGGSWKey, GGSW, GLWE, GLWEAutomorphismKey, GLWEPlaintext, GLWESecret, GLWESwitchingKey, GLWETensor,
+    GGLWE, GGLWEToGGSWKey, GGSW, GLWE, GLWEAutomorphismKey, GLWECIKey, GLWEPlaintext, GLWESecret, GLWESwitchingKey, GLWETensor,
     GLWETensorKey, GLWEToLWEKey, LWE, LWEPlaintext, LWESecret,
 };
 
@@ -186,6 +186,17 @@ where
     fn transfer_into(&self, dst: &mut GLWEAutomorphismKey<D2, W>) {
         self.key.transfer_into(&mut dst.key);
         dst.p = self.p;
+    }
+}
+
+impl<D1, D2, W, M> TransferInto<GLWECIKey<D2, W, M>> for GLWECIKey<D1, W, M>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut GLWECIKey<D2, W, M>) {
+        self.0.transfer_into(&mut dst.0);
     }
 }
 

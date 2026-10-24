@@ -2,8 +2,8 @@ use crate::layouts::IntPolyInfos;
 use std::{collections::HashMap, ops::Range};
 
 use poulpy_hal::layouts::{
-    Backend, CnvPVecLBackendRef, CnvPVecLToBackendRef, CnvPVecRBackendRef, CnvPVecRToBackendRef, Module, ScratchArena,
-    VecZnxDftBackendMut,
+    Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecLToBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef,
+    CnvPVecRToBackendRef, Module, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut,
 };
 
 use crate::layouts::{
@@ -15,7 +15,8 @@ use crate::layouts::{
 ///
 /// # Safety
 /// Implementations must respect the provided layout metadata, conversion offset, and scratch-space
-/// contracts, and must not read or write outside the specified backend-owned buffers.
+/// contracts, and must not read or write outside the specified backend-owned buffers. An override
+/// of [`Self::glwe_const_combination`] reproduces its default bit for bit within its query.
 pub unsafe trait GLWEMulConstImpl: Backend {
     fn glwe_mul_const_tmp_bytes<R, A, B>(module: &Module<Self>, res: &R, a: &A, b: &B) -> usize
     where
@@ -46,6 +47,56 @@ pub unsafe trait GLWEMulConstImpl: Backend {
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos,
         B: GLWEToBackendRef<Self> + GLWEInfos;
+
+    /// Scratch bytes of [`Self::glwe_const_combination`] for an accumulator of `acc_size` limbs,
+    /// terms of at most `a_size` limbs and constants of at most `b_size` limbs.
+    fn glwe_const_combination_tmp_bytes(module: &Module<Self>, acc_size: usize, a_size: usize, b_size: usize) -> usize
+    where
+        Module<Self>: crate::reference::operations::GLWEConstCombinationReference<Self>,
+    {
+        crate::reference::operations::glwe_const_combination_tmp_bytes_reference(module, acc_size, a_size, b_size)
+    }
+
+    /// A combination of vectors by constants, normalized once:
+    ///
+    /// `res[col] = normalize(sum_t terms[t].a[col] * (terms[t].b[b_col][b_coeff] >> terms[t].shift))`
+    /// for every column of `res`,
+    ///
+    /// each constant with a non-zero `shift < base2k` being shifted right by that many bits over
+    /// one more limb than `b` (`vec_znx_rsh`), each product being `cnv_by_const_apply` at its
+    /// `cnv_offset`, the sum being accumulated over `acc_size` limbs and normalized to `res_k`
+    /// bits in base `2^base2k`, which is also the base of the terms. `terms` is not empty.
+    ///
+    /// An internal hook of the CKKS baby-step combination, which records the metadata of `res`.
+    /// The default, [`glwe_const_combination_reference`](crate::reference::operations::glwe_const_combination_reference),
+    /// shifts each constant, accumulates with `cnv_by_const_apply` and `cnv_by_const_apply_add`,
+    /// then calls `vec_znx_big_normalize`, column by column. Overrides must reproduce it bit for
+    /// bit within [`Self::glwe_const_combination_tmp_bytes`].
+    fn glwe_const_combination(
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
+        base2k: usize,
+        res_k: usize,
+        acc_size: usize,
+        terms: &[ConstTerm<'_, Self>],
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        Module<Self>: crate::reference::operations::GLWEConstCombinationReference<Self>,
+    {
+        crate::reference::operations::glwe_const_combination_reference(module, res, base2k, res_k, acc_size, terms, scratch)
+    }
+}
+
+/// One term of [`GLWEMulConstImpl::glwe_const_combination`]: every column of `a` times
+/// coefficient `b_coeff` of column `b_col` of `b`, shifted right by `shift` bits, at
+/// convolution offset `cnv_offset`.
+pub struct ConstTerm<'a, BE: Backend + 'a> {
+    pub a: VecZnxBackendRef<'a, BE>,
+    pub b: VecZnxBackendRef<'a, BE>,
+    pub b_col: usize,
+    pub b_coeff: usize,
+    pub shift: usize,
+    pub cnv_offset: usize,
 }
 
 /// Backend-provided GLWE-by-plaintext multiplication operations.
@@ -116,7 +167,9 @@ pub unsafe trait GLWEMulPreparedPlainSumImpl: Backend {
 ///
 /// # Safety
 /// Implementations must preserve tensor layout semantics, respect the temporary-size contracts,
-/// and only touch backend-owned storage regions that belong to the supplied operands.
+/// and only touch backend-owned storage regions that belong to the supplied operands. An
+/// override of a square hook ([`Self::glwe_square_prepare`], [`Self::glwe_square_columns`])
+/// reproduces its default bit for bit.
 pub unsafe trait GLWETensoringImpl: Backend {
     /// Scratch required by the prepared-right tensor implementation.
     fn glwe_tensor_apply_prepared_right_tmp_bytes<R, A>(
@@ -417,6 +470,39 @@ pub unsafe trait GLWETensoringImpl: Backend {
         R: GLWEToBackendMut<Self> + GLWEInfos,
         AP: CnvPVecLToBackendRef<Self>,
         BP: CnvPVecRToBackendRef<Self>;
+
+    /// Prepares the operand of a one-pass square for [`Self::glwe_square_columns`].
+    ///
+    /// The default prepares both forms with `cnv_prepare_self`. A backend whose
+    /// [`Self::glwe_square_columns`] reads the left form alone may leave `right` unwritten.
+    /// Scratch is `cnv_prepare_self_tmp_bytes`, which the one-pass relinearization queries reserve.
+    fn glwe_square_prepare(
+        module: &Module<Self>,
+        left: &mut CnvPVecLBackendMut<'_, Self>,
+        right: &mut CnvPVecRBackendMut<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        Module<Self>: poulpy_hal::api::Convolution<Self>,
+    {
+        use poulpy_hal::api::Convolution;
+        module.cnv_prepare_self(left, right, a, scratch)
+    }
+
+    /// [`Self::glwe_mul_columns`] of a square, on the two forms [`Self::glwe_square_prepare`]
+    /// prepared from one operand. The default is [`Self::glwe_mul_columns`].
+    /// Overrides must reproduce it bit for bit within the scratch of [`Self::glwe_mul_columns`].
+    fn glwe_square_columns(
+        module: &Module<Self>,
+        cnv_offset_hi: usize,
+        diag: &mut VecZnxDftBackendMut<'_, Self>,
+        cross: &mut VecZnxDftBackendMut<'_, Self>,
+        left: &CnvPVecLBackendRef<'_, Self>,
+        right: &CnvPVecRBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        Self::glwe_mul_columns(module, cnv_offset_hi, diag, cross, left, right, scratch)
+    }
 }
 
 /// Backend-provided GLWE addition operations.

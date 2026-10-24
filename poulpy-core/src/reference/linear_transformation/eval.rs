@@ -57,6 +57,9 @@ where
         + GLWEMulPlain<BE>
         + Convolution<BE>
         + GGLWEProductReference<BE>
+        + crate::reference::keyswitching::glwe::GGLWEProductFused<BE>
+        + crate::reference::linear_transformation::GiantStepProducts<BE>
+        + poulpy_hal::api::VecZnxAutomorphism<BE>
         + crate::reference::keyswitching::GLWEKeyswitchInternal<BE>
         + VecZnxAutomorphismAssign<BE>
         + VecZnxBigAutomorphismAssignTmpBytes
@@ -108,8 +111,10 @@ where
         + module
             .vec_znx_idft_apply_tmp_bytes()
             .max(module.vec_znx_big_normalize_tmp_bytes());
-    let lazy_dft_path =
-        BE::scratch_aligned(prod_dft) + BE::scratch_aligned(lazy_acc_dft) + inner_dft.max(lazy_dft).max(lazy_final);
+    // The lazy route holds the products of one batch of giant steps.
+    let lazy_dft_path = module.giant_step_batch() * BE::scratch_aligned(prod_dft)
+        + BE::scratch_aligned(lazy_acc_dft)
+        + inner_dft.max(lazy_dft).max(lazy_final);
 
     module
         .glwe_automorphism_tmp_bytes(res, a, key)
@@ -135,6 +140,9 @@ where
         + Convolution<BE>
         + GLWEAutomorphism<BE>
         + GGLWEProductReference<BE>
+        + crate::reference::keyswitching::glwe::GGLWEProductFused<BE>
+        + crate::reference::linear_transformation::GiantStepProducts<BE>
+        + poulpy_hal::api::VecZnxAutomorphism<BE>
         + VecZnxAutomorphismAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxDftApply<BE>
@@ -171,6 +179,9 @@ pub fn glwe_prepare_linear_transformation_baby_steps_reference<BE, M, A, H>(
         + Convolution<BE>
         + GLWEAutomorphism<BE>
         + GGLWEProductReference<BE>
+        + crate::reference::keyswitching::glwe::GGLWEProductFused<BE>
+        + crate::reference::linear_transformation::GiantStepProducts<BE>
+        + poulpy_hal::api::VecZnxAutomorphism<BE>
         + poulpy_hal::api::ModuleN
         + VecZnxAutomorphismAssign<BE>
         + VecZnxBigBytesOf
@@ -226,6 +237,9 @@ pub fn glwe_eval_linear_transformation_into_reference<BE, M, R, P, H>(
         + Convolution<BE>
         + poulpy_hal::api::ModuleN
         + GGLWEProductReference<BE>
+        + crate::reference::keyswitching::glwe::GGLWEProductFused<BE>
+        + crate::reference::linear_transformation::GiantStepProducts<BE>
+        + poulpy_hal::api::VecZnxAutomorphism<BE>
         + GLWEKeyswitchInternal<BE>
         + VecZnxBigAddAssign<BE>
         + VecZnxBigAlloc<BE>
@@ -288,6 +302,9 @@ where
         + GLWEMulPlain<BE>
         + Convolution<BE>
         + GGLWEProductReference<BE>
+        + crate::reference::keyswitching::glwe::GGLWEProductFused<BE>
+        + crate::reference::linear_transformation::GiantStepProducts<BE>
+        + poulpy_hal::api::VecZnxAutomorphism<BE>
         + crate::reference::keyswitching::GLWEKeyswitchInternal<BE>
         + VecZnxAutomorphismAssign<BE>
         + VecZnxBigAutomorphismAssignTmpBytes
@@ -304,9 +321,9 @@ where
     B: GLWEInfos,
     K: GGLWEInfos,
 {
-    // Sized like the single budget's PROD buffer.
-    let bucket =
-        BE::scratch_aligned(module.bytes_of_vec_znx_dft(module.n(), a.rank().as_usize() + 1, a.max_size() + pt.max_size()));
+    // A batch of buckets, each sized like the single budget's PROD buffer.
+    let bucket = module.giant_step_batch()
+        * BE::scratch_aligned(module.bytes_of_vec_znx_dft(module.n(), a.rank().as_usize() + 1, a.max_size() + pt.max_size()));
     glwe_eval_linear_transformation_tmp_bytes_reference::<BE, _, _, _, _, _>(module, res, a, pt, key) + bucket
 }
 
@@ -338,6 +355,9 @@ pub fn glwe_eval_linear_transformation_sum_into_reference<BE, M, R, H>(
         + Convolution<BE>
         + poulpy_hal::api::ModuleN
         + GGLWEProductReference<BE>
+        + crate::reference::keyswitching::glwe::GGLWEProductFused<BE>
+        + crate::reference::linear_transformation::GiantStepProducts<BE>
+        + poulpy_hal::api::VecZnxAutomorphism<BE>
         + GLWEKeyswitchInternal<BE>
         + VecZnxBigAddAssign<BE>
         + VecZnxBigAlloc<BE>
@@ -431,6 +451,9 @@ where
         + CnvPVecBytesOf
         + Convolution<BE>
         + GGLWEProductReference<BE>
+        + crate::reference::keyswitching::glwe::GGLWEProductFused<BE>
+        + crate::reference::linear_transformation::GiantStepProducts<BE>
+        + poulpy_hal::api::VecZnxAutomorphism<BE>
         + crate::reference::keyswitching::GLWEKeyswitchInternal<BE>
         + VecZnxAutomorphismAssign<BE>
         + VecZnxBigAutomorphismAssignTmpBytes

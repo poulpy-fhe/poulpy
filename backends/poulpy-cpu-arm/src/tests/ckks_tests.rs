@@ -12,6 +12,11 @@ ckks_backend_test_suite!(
 );
 
 #[test]
+fn ntt4x30_neon_bootstrapping_plan_keys_match_context() {
+    poulpy_ckks::test_suite::presets::bootstrapping_plan_keys_match_context::<crate::NTT4x30Neon>();
+}
+
+#[test]
 fn ntt4x30_neon_small_s2c_preset_meets_precision() {
     poulpy_ckks::test_suite::presets::small_s2c_preset_meets_precision::<crate::NTT4x30Neon>();
 }
@@ -28,10 +33,19 @@ fn ntt4x30_neon_rayon_ci_bootstrap_refuses_invalid_inputs() {
 }
 
 /// Full logN16 bootstraps per preset: slow, so opt in with `--ignored`.
-#[cfg(feature = "enable-rayon")]
 mod bootstrapping_presets {
+    #[cfg(feature = "enable-rayon")]
     use poulpy_ckks::test_suite::presets::bootstrapping_presets_meet_precision;
+    use poulpy_ckks::test_suite::presets::bootstrapping_presets_meet_precision_with_client;
 
+    /// Keys and ciphertexts come from another backend and reach the evaluated one by transfer.
+    #[test]
+    #[ignore = "full logN16 bootstrapping presets with a portable client"]
+    fn ntt4x30_neon_with_portable_client() {
+        bootstrapping_presets_meet_precision_with_client::<crate::NTT4x30Neon, poulpy_cpu_portable::NTT4x30Portable>();
+    }
+
+    #[cfg(feature = "enable-rayon")]
     #[test]
     #[ignore = "full logN16 bootstrapping presets"]
     fn ntt4x30_neon_rayon() {

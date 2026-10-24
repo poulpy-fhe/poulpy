@@ -9,15 +9,20 @@
 use crate::Scale;
 use poulpy_core::{
     GLWECIKeyEncryptSk,
+    api::TransferInto,
     layouts::{
-        GGLWEInfos, GLWECIKeyPreparedFactory, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling,
-        GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, SetK,
+        BackendGLWESecret, BackendGLWESecretPrepared, GGLWEInfos, GLWEAutomorphismKeyPreparedFactory, GLWECIKeyPreparedFactory,
+        GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyPreparedFactory,
+        GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, SetK,
         prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostDataMut, HostDataRef, MaxBase2k, Module, ReaderFrom, ScratchArena, ScratchOwned, Standard, WriterTo},
+    api::{ModuleNew, ModuleSynchronize, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    layouts::{
+        Backend, HostDataMut, HostDataRef, HostStaged, MaxBase2k, Module, ReaderFrom, ScratchArena, ScratchOwned, Standard,
+        WriterTo,
+    },
     source::Source,
 };
 
@@ -82,38 +87,82 @@ pub fn preset_with_max_base2k(preset: &BootstrappingPreset, fixture_base2k: usiz
 /// [`CKKSBootstrappingCIOps`].
 pub type CIBackend<BE> = <Module<BE> as CKKSBootstrappingCIOps<BE>>::CI;
 
+/// `Module<BE>` capabilities of the backend a [`BootstrappingPresetRun`] evaluates on.
+pub trait PresetRunModule<BE: Backend>:
+    ModuleNew<BE>
+    + ModuleSynchronize<BE>
+    + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+    + CKKSModuleAlloc<BE>
+    + CKKSAllOpsTmpBytes<BE>
+    + CKKSEncodingOps<BE, f64>
+    + CKKSBootstrappingOps<BE>
+    + CKKSDFTMatrixOps<BE, f64>
+    + GLWEAutomorphismKeyPreparedFactory<BE>
+    + GLWETensorKeyPreparedFactory<BE>
+    + GLWESwitchingKeyPreparedFactory<BE>
+{
+}
+
+impl<BE: Backend, M> PresetRunModule<BE> for M where
+    M: ModuleNew<BE>
+        + ModuleSynchronize<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + CKKSModuleAlloc<BE>
+        + CKKSAllOpsTmpBytes<BE>
+        + CKKSEncodingOps<BE, f64>
+        + CKKSBootstrappingOps<BE>
+        + CKKSDFTMatrixOps<BE, f64>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + GLWETensorKeyPreparedFactory<BE>
+        + GLWESwitchingKeyPreparedFactory<BE>
+{
+}
+
 /// The bootstrap of a preset run: its context and keys, and those of the CI ring.
 type Bootstrap<BE> = Box<
     dyn FnMut(&Module<BE>, &mut CKKSCiphertextOwned<BE>, &CKKSCiphertextOwned<BE>, &mut ScratchArena<'_, BE>) -> CKKSResult<()>,
 >;
 
 /// A preset set up end to end and ready to bootstrap repeatedly.
-pub struct BootstrappingPresetRun<BE: Backend> {
+///
+/// `BE` evaluates: it compiles the context, prepares the keys and bootstraps.
+/// `BC` is the client: it samples the secret, generates the keys from the plan,
+/// encrypts the reference vector and decrypts the result. The client needs host
+/// storage; the evaluated backend only exchanges coefficient data with the host.
+/// A host backend plays both roles, which is the default.
+pub struct BootstrappingPresetRun<BE: Backend, BC: Backend = BE> {
     preset: BootstrappingPreset,
     module: Module<BE>,
+    client: Module<BC>,
     bootstrap: Bootstrap<BE>,
     scratch: ScratchOwned<BE>,
+    client_scratch: ScratchOwned<BC>,
     input: CKKSCiphertextOwned<BE>,
     output: CKKSCiphertextOwned<BE>,
-    sk: GLWESecretPrepared<BE::OwnedBuf, BE>,
+    sk: GLWESecretPrepared<BC::OwnedBuf, BC>,
     want_re: Vec<f64>,
     want_im: Vec<f64>,
 }
 
-impl<BE> BootstrappingPresetRun<BE>
+impl<BE, BC> BootstrappingPresetRun<BE, BC>
 where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
-    for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
-    for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
+    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + 'static,
+    BC: TestContextBackend<Ring = Standard>,
+    Module<BE>: PresetRunModule<BE>,
+    Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64>,
+    for<'a> <BC as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    CKKSCiphertextOwned<BC>: GLWEToBackendMut<BC> + GLWEToBackendRef<BC> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BC>: GLWEToBackendRef<BC> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    /// Compiles the context, generates the keys, encrypts the reference vector
-    /// at the preset's input layout, and runs one bootstrap to check the output
-    /// width. Every layout comes from `preset`.
+    /// Compiles the context, generates the keys on the client and moves them to
+    /// the evaluated backend, encrypts the reference vector at the preset's input
+    /// layout, and runs one bootstrap to check the output width. Every layout
+    /// comes from `preset`.
     pub fn setup(preset: BootstrappingPreset) -> Self {
         Self::setup_with_roundtrip(preset, false)
     }
@@ -125,7 +174,26 @@ where
         let input_layout = preset.input_layout();
         let bootstrap_layout = preset.bootstrap_layout();
         let keys_layout = preset.keys_layout().clone();
-        let module = Module::<BE>::new(n as u64);
+        let (module, client) = (Module::<BE>::new(n as u64), Module::<BC>::new(n as u64));
+
+        let mut client_scratch =
+            ScratchOwned::<BC>::alloc(bootstrap_setup_tmp_bytes(&client, &bootstrap_layout, plan, &keys_layout));
+        let (sk_raw, sk) = dense_secret(&client, &preset);
+        let (mut source_xs, mut source_xa, mut source_xe) = (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
+        let keys = plan
+            .generate_keys(
+                &client,
+                &sk_raw,
+                &keys_layout,
+                &mut source_xs,
+                &mut source_xe,
+                &mut source_xa,
+                &mut client_scratch.borrow(),
+            )
+            .unwrap();
+        if roundtrip_keys {
+            Self::roundtrip_keys(&client, &keys);
+        }
 
         let scratch_size = bootstrap_setup_tmp_bytes(&module, &bootstrap_layout, plan, &keys_layout);
         let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
@@ -136,43 +204,22 @@ where
             scratch = ScratchOwned::<BE>::alloc(prepare_scratch);
         }
         let context = unprepared.prepare(&module, &mut scratch.borrow());
-        let boot_scratch = module.ckks_bootstrap_tmp_bytes(&bootstrap_layout, &input_layout, &context, &keys_layout);
+        let boot_scratch = module
+            .ckks_bootstrap_tmp_bytes(&bootstrap_layout, &input_layout, &context, &keys_layout)
+            .max(keys_layout.prepare_tmp_bytes(&module));
         if boot_scratch > BE::len_bytes(&scratch.data) {
             scratch = ScratchOwned::<BE>::alloc(boot_scratch);
         }
-
-        // Dense application secret at the preset's Hamming weight.
-        let mut source_sk = Source::new([0; 32]);
-        let mut sk_raw = module.glwe_secret_alloc_from_infos(&bootstrap_layout.glwe_layout);
-        module.glwe_secret_fill_ternary_hw(&mut sk_raw, preset.dense_secret_hamming_weight(), &mut source_sk);
-        let mut sk = module.glwe_secret_prepared_alloc_from_infos(&bootstrap_layout.glwe_layout);
-        module.glwe_secret_prepare(&mut sk, &sk_raw);
-
-        let (mut source_xs, mut source_xa, mut source_xe) = (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
-        let keys = context
-            .generate_keys(
-                &module,
-                &sk_raw,
-                &keys_layout,
-                &mut source_xs,
-                &mut source_xe,
-                &mut source_xa,
-                &mut scratch.borrow(),
-            )
-            .unwrap();
-        if roundtrip_keys {
-            Self::roundtrip_keys(&module, &keys);
-        }
-        let keys = keys.prepare(&module, &mut scratch.borrow());
+        let keys = keys.transfer_and_prepare(&module, &mut scratch.borrow());
 
         let bootstrap: Bootstrap<BE> =
             Box::new(move |module, output, input, scratch| module.ckks_bootstrap(output, input, &context, &keys, scratch));
-        Self::with_bootstrap(preset, module, scratch, sk, bootstrap)
+        Self::with_bootstrap(preset, module, scratch, client, client_scratch, sk, bootstrap)
     }
 
     /// Writes every key of `keys` and reads it back into a fresh key of its layout, which must
     /// equal it.
-    fn roundtrip_keys(module: &Module<BE>, keys: &crate::layouts::BootstrappingKeySet<BE::OwnedBuf, BE::ZnxWord>) {
+    fn roundtrip_keys(module: &Module<BC>, keys: &crate::layouts::BootstrappingKeySet<BC::OwnedBuf, BC::ZnxWord>) {
         fn roundtrip<T: ReaderFrom + WriterTo + PartialEq>(key: &T, mut restored: T) {
             let mut bytes = Vec::new();
             key.write_to(&mut bytes).unwrap();
@@ -197,12 +244,20 @@ where
         }
     }
 
-    /// [`Self::setup`] for a preset with EvalMod on the conjugate-invariant ring, on the twin [`CIBackend`].
+    /// [`Self::setup`] for a preset with EvalMod on the conjugate-invariant ring, on the twins
+    /// [`CIBackend`] of the evaluated backend and of the client.
     pub fn setup_ci(preset: BootstrappingPreset) -> Self
     where
-        CIBackend<BE>: TestContextBackend,
-        Module<BE>: CKKSBootstrappingCIOps<BE> + GLWECIKeyEncryptSk<BE> + GLWECIKeyPreparedFactory<BE>,
-        Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>> + CKKSEncodingOps<CIBackend<BE>, f64>,
+        Module<BE>: CKKSBootstrappingCIOps<BE> + CKKSDFTOps<BE> + GLWECIKeyPreparedFactory<BE>,
+        Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>
+            + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+            + CKKSModuleAlloc<CIBackend<BE>>
+            + CKKSEncodingOps<CIBackend<BE>, f64>
+            + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
+        ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
+        CIBackend<BC>: TestContextBackend,
+        Module<BC>: CKKSBootstrappingCIOps<BC> + GLWECIKeyEncryptSk<BC>,
+        Module<CIBackend<BC>>: TestContextSharedModule<CIBackend<BC>>,
     {
         Self::setup_ci_with_roundtrip(preset, false)
     }
@@ -211,72 +266,117 @@ where
     /// `roundtrip_keys`.
     fn setup_ci_with_roundtrip(preset: BootstrappingPreset, roundtrip_keys: bool) -> Self
     where
-        CIBackend<BE>: TestContextBackend,
-        Module<BE>: CKKSBootstrappingCIOps<BE> + GLWECIKeyEncryptSk<BE> + GLWECIKeyPreparedFactory<BE>,
-        Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>> + CKKSEncodingOps<CIBackend<BE>, f64>,
+        Module<BE>: CKKSBootstrappingCIOps<BE> + CKKSDFTOps<BE> + GLWECIKeyPreparedFactory<BE>,
+        Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>
+            + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+            + CKKSModuleAlloc<CIBackend<BE>>
+            + CKKSEncodingOps<CIBackend<BE>, f64>
+            + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
+        ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
+        CIBackend<BC>: TestContextBackend,
+        Module<BC>: CKKSBootstrappingCIOps<BC> + GLWECIKeyEncryptSk<BC>,
+        Module<CIBackend<BC>>: TestContextSharedModule<CIBackend<BC>>,
     {
         // One module of degree 2N serves the conversions and the stages of degree N.
         let n = preset.n() as u64;
         let (module, ci) = (Module::<BE>::new(2 * n), Module::<CIBackend<BE>>::new(n));
-        let sk_layout = preset.bootstrap_layout().glwe_layout;
-        let mut sk_raw = module.glwe_secret_alloc_from_infos(&sk_layout);
-        module.glwe_secret_fill_ternary_hw(&mut sk_raw, preset.dense_secret_hamming_weight(), &mut Source::new([0; 32]));
-        let mut sk = module.glwe_secret_prepared_alloc_from_infos(&sk_layout);
-        module.glwe_secret_prepare(&mut sk, &sk_raw);
+        let (client, client_ci) = (Module::<BC>::new(2 * n), Module::<CIBackend<BC>>::new(n));
+        let (sk_raw, sk) = dense_secret(&client, &preset);
 
         // Every step runs on arenas of exactly its own query.
-        let context = compile_ci(&module, &ci, &preset);
-        let keys = generate_keys_ci(&module, &ci, &context, &sk_raw, preset.keys_layout());
+        let keys_layout = preset.keys_layout();
+        let (bytes, bytes_ci) = keys_layout.generate_ci_tmp_bytes(&client, &client_ci);
+        let (mut source_xs, mut source_xa, mut source_xe) = (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
+        let keys = preset
+            .plan()
+            .generate_keys_ci(
+                &client,
+                &client_ci,
+                &sk_raw,
+                keys_layout,
+                &mut source_xs,
+                &mut source_xe,
+                &mut source_xa,
+                &mut ScratchOwned::<BC>::alloc(bytes).borrow(),
+                &mut ScratchOwned::<CIBackend<BC>>::alloc(bytes_ci).borrow(),
+            )
+            .unwrap();
         if roundtrip_keys {
-            Self::roundtrip_keys(&module, &keys);
+            Self::roundtrip_keys(&client, &keys);
         }
-        let keys = prepare_keys_ci(&module, &ci, &keys, preset.keys_layout());
+        let context = compile_ci(&module, &ci, &preset);
+        let (bytes, bytes_ci) = keys_layout.prepare_ci_tmp_bytes(&module, &ci);
+        let keys = keys
+            .transfer_and_prepare_ci(
+                &module,
+                &ci,
+                &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
+                &mut ScratchOwned::<CIBackend<BE>>::alloc(bytes_ci).borrow(),
+            )
+            .unwrap();
         let (layout, input_layout) = (preset.bootstrap_layout(), preset.input_layout());
-        let (bytes, bytes_ci) = module.ckks_bootstrap_ci_tmp_bytes(&ci, &layout, &input_layout, &context, preset.keys_layout());
+        let (bytes, bytes_ci) = module.ckks_bootstrap_ci_tmp_bytes(&ci, &layout, &input_layout, &context, keys_layout);
         let mut scratch_ci = ScratchOwned::<CIBackend<BE>>::alloc(bytes_ci);
         let bootstrap: Bootstrap<BE> = Box::new(move |module, output, input, scratch| {
             module.ckks_bootstrap_ci_into(&ci, output, input, &context, &keys, scratch, &mut scratch_ci.borrow())
         });
-        Self::with_bootstrap(preset, module, ScratchOwned::alloc(bytes), sk, bootstrap)
+        let client_scratch = ScratchOwned::<BC>::alloc(bootstrap_setup_tmp_bytes(&client, &layout, preset.plan(), keys_layout));
+        Self::with_bootstrap(
+            preset,
+            module,
+            ScratchOwned::alloc(bytes),
+            client,
+            client_scratch,
+            sk,
+            bootstrap,
+        )
     }
 
-    /// Encrypts the reference vector at the preset's input layout and runs one
-    /// bootstrap to check the output width.
+    /// Encrypts the reference vector at the preset's input layout on the client,
+    /// moves it to the evaluated backend, and runs one bootstrap to check the
+    /// output width.
     fn with_bootstrap(
         preset: BootstrappingPreset,
         module: Module<BE>,
-        mut scratch: ScratchOwned<BE>,
-        sk: GLWESecretPrepared<BE::OwnedBuf, BE>,
+        scratch: ScratchOwned<BE>,
+        client: Module<BC>,
+        mut client_scratch: ScratchOwned<BC>,
+        sk: GLWESecretPrepared<BC::OwnedBuf, BC>,
         bootstrap: Bootstrap<BE>,
     ) -> Self {
         let (n, base2k) = (preset.n(), preset.base2k());
         let (input_layout, bootstrap_layout) = (preset.input_layout(), preset.bootstrap_layout());
         let (want_re, want_im) = test_vector_1::<f64>(n / 2);
-        let mut input_pt = module.ckks_pt_vec_alloc(n / 2, base2k.into(), input_layout.k());
+        let mut input_pt = client.ckks_pt_vec_alloc(n / 2, base2k.into(), input_layout.k());
         input_pt.set_meta(input_layout.meta());
-        module
-            .ckks_encode_reim_into(&mut input_pt, &want_re, &want_im, &mut scratch.borrow())
+        client
+            .ckks_encode_reim_into(&mut input_pt, &want_re, &want_im, &mut client_scratch.borrow())
             .unwrap();
 
-        let mut input = module.ckks_ciphertext_alloc_from_glwe_infos(&input_layout);
+        let mut client_input = client.ckks_ciphertext_alloc_from_glwe_infos(&input_layout);
         let (mut input_xa, mut input_xe) = (Source::new([3; 32]), Source::new([4; 32]));
-        module
+        client
             .ckks_encrypt_sk(
-                &mut input,
+                &mut client_input,
                 &input_pt,
                 &sk,
                 &mut input_xe,
                 &mut input_xa,
-                &mut scratch.borrow(),
+                &mut client_scratch.borrow(),
             )
             .unwrap();
+        let mut input = module.ckks_ciphertext_alloc_from_glwe_infos(&input_layout);
+        client_input.inner.transfer_into(&mut input.inner);
+        input.set_meta(client_input.meta());
         let output = module.ckks_ciphertext_alloc_from_glwe_infos(&bootstrap_layout);
 
         let mut run = Self {
             preset,
             module,
+            client,
             bootstrap,
             scratch,
+            client_scratch,
             input,
             output,
             sk,
@@ -299,36 +399,57 @@ where
         &self.preset
     }
 
-    /// Bootstraps the reference input into the output ciphertext.
+    /// Bootstraps the reference input into the output ciphertext and returns
+    /// once the evaluated backend has completed it.
     pub fn bootstrap(&mut self) {
+        self.bootstrap_queued();
+        self.synchronize();
+    }
+
+    /// [`Self::bootstrap`] without waiting for the evaluated backend: on a
+    /// backend that queues its work, the bootstrap may still be running when
+    /// this returns. [`Self::synchronize`] waits for it.
+    pub fn bootstrap_queued(&mut self) {
         self.output.set_k(self.preset.bootstrap_k().into());
         (self.bootstrap)(&self.module, &mut self.output, &self.input, &mut self.scratch.borrow()).unwrap();
     }
 
-    /// Decrypts the last bootstrap output and measures its precision against
-    /// the reference vector, as `(real, imaginary)` statistics.
+    /// Returns once the evaluated backend has completed the work queued so far.
+    pub fn synchronize(&self) {
+        self.module.synchronize();
+    }
+
+    /// Moves the last bootstrap output to the client, decrypts it and measures
+    /// its precision against the reference vector, as `(real, imaginary)`
+    /// statistics.
     pub fn precision(&mut self) -> (PrecisionStats, PrecisionStats) {
-        let output = &self.output;
-        assert_canonical_at_k::<BE>("bootstrap preset", output);
+        // The allocation keeps the bootstrap width; the bootstrap narrowed `k`.
+        let mut output = self
+            .client
+            .ckks_ciphertext_alloc_from_glwe_infos(&self.preset.bootstrap_layout());
+        output.set_k(self.output.k());
+        self.output.inner.transfer_into(&mut output.inner);
+        output.set_meta(self.output.meta());
+        assert_canonical_at_k::<BC>("bootstrap preset", &output);
         let log_budget = output
             .log_budget()
             .min(PRECISION_LOG_BUDGET)
             .min(127usize.saturating_sub(output.log_delta()));
         let mut output_pt =
-            self.module
+            self.client
                 .ckks_pt_vec_alloc(self.preset.n() / 2, output.base2k(), (output.log_delta() + log_budget).into());
         output_pt.set_meta(GLWEPlaintextMeta {
             scale: Scale::Log(output.log_delta()),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
         });
-        self.module
-            .ckks_decrypt(&mut output_pt, output, &self.sk, &mut self.scratch.borrow())
+        self.client
+            .ckks_decrypt(&mut output_pt, &output, &self.sk, &mut self.client_scratch.borrow())
             .unwrap();
         let n = self.preset.n();
         let (mut got_re, mut got_im) = (vec![0.0; n / 2], vec![0.0; n / 2]);
-        self.module
-            .ckks_decode_reim_into(&output_pt, &mut got_re, &mut got_im, &mut self.scratch.borrow())
+        self.client
+            .ckks_decode_reim_into(&output_pt, &mut got_re, &mut got_im, &mut self.client_scratch.borrow())
             .unwrap();
         let log_delta = self.preset.log_delta();
         (
@@ -393,20 +514,53 @@ where
 /// Full-size bootstraps are slow, so backends register this as an ignored test.
 pub fn bootstrapping_presets_meet_precision<BE>()
 where
-    BE: TestContextBackend<Ring = Standard> + MaxBase2k,
+    BE: TestContextBackend<Ring = Standard> + HostStaged + MaxBase2k,
     CIBackend<BE>: TestContextBackend + MaxBase2k,
     Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, f64>
-        + CKKSBootstrappingOps<BE>
-        + CKKSDFTMatrixOps<BE, f64>
+        + PresetRunModule<BE>
+        + CKKSDFTOps<BE>
         + CKKSBootstrappingCIOps<BE>
         + GLWECIKeyEncryptSk<BE>
         + GLWECIKeyPreparedFactory<BE>,
-    Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>> + CKKSEncodingOps<CIBackend<BE>, f64>,
+    Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>>
+        + CKKSModuleAlloc<CIBackend<BE>>
+        + CKKSEncodingOps<CIBackend<BE>, f64>
+        + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    bootstrapping_presets_meet_precision_with_client::<BE, BE>()
+}
+
+/// [`bootstrapping_presets_meet_precision`] for an evaluated backend `BE` whose
+/// keys and ciphertexts come from the client backend `BC`, each with its
+/// conjugate-invariant twin [`CIBackend`].
+pub fn bootstrapping_presets_meet_precision_with_client<BE, BC>()
+where
+    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + MaxBase2k + 'static,
+    CIBackend<BE>: MaxBase2k,
+    BC: TestContextBackend<Ring = Standard>,
+    CIBackend<BC>: TestContextBackend,
+    Module<BE>: PresetRunModule<BE> + CKKSDFTOps<BE> + CKKSBootstrappingCIOps<BE> + GLWECIKeyPreparedFactory<BE>,
+    Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + CKKSModuleAlloc<CIBackend<BE>>
+        + CKKSEncodingOps<CIBackend<BE>, f64>
+        + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
+    Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64> + CKKSBootstrappingCIOps<BC> + GLWECIKeyEncryptSk<BC>,
+    Module<CIBackend<BC>>: TestContextSharedModule<CIBackend<BC>>,
+    for<'a> <BC as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+    ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>:
+        GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::reference::linear_transformation::DiagonalProd<BE>,
+    CKKSCiphertextOwned<BC>: GLWEToBackendMut<BC> + GLWEToBackendRef<BC> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BC>: GLWEToBackendRef<BC> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
@@ -416,8 +570,8 @@ where
         let ring = preset.plan().eval_mod_ring();
         let preset = preset_for_backend::<BE, CIBackend<BE>>(&preset).unwrap();
         match ring {
-            EvalModRing::Standard => BootstrappingPresetRun::<BE>::setup_with_roundtrip(preset, index == 0).check(backend),
-            _ => BootstrappingPresetRun::<BE>::setup_ci_with_roundtrip(preset, std::mem::take(&mut first_ci)).check(backend),
+            EvalModRing::Standard => BootstrappingPresetRun::<BE, BC>::setup_with_roundtrip(preset, index == 0).check(backend),
+            _ => BootstrappingPresetRun::<BE, BC>::setup_ci_with_roundtrip(preset, std::mem::take(&mut first_ci)).check(backend),
         }
     }
 }
@@ -452,16 +606,18 @@ pub fn preset_label(preset: &BootstrappingPreset) -> String {
 /// every key one digit, hence one shape.
 pub fn small_s2c_preset_meets_precision<BE>()
 where
-    BE: TestContextBackend<Ring = Standard>,
-    CIBackend<BE>: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard> + HostStaged + MaxBase2k,
+    CIBackend<BE>: TestContextBackend + MaxBase2k,
     Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, f64>
-        + CKKSBootstrappingOps<BE>
-        + CKKSDFTMatrixOps<BE, f64>
+        + PresetRunModule<BE>
+        + CKKSDFTOps<BE>
         + CKKSBootstrappingCIOps<BE>
         + GLWECIKeyEncryptSk<BE>
         + GLWECIKeyPreparedFactory<BE>,
-    Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>> + CKKSEncodingOps<CIBackend<BE>, f64>,
+    Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>>
+        + CKKSModuleAlloc<CIBackend<BE>>
+        + CKKSEncodingOps<CIBackend<BE>, f64>
+        + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -522,6 +678,128 @@ where
         post: CIConversion::Product { log_delta: 38 },
     };
     BootstrappingPresetRun::<BE>::setup_ci(powers_of_two.with_eval_mod_ring(ci).unwrap()).check(backend);
+}
+
+/// Key generation from the plan alone ([`BootstrappingPlan::generate_keys`] and
+/// [`BootstrappingPlan::generate_keys_ci`]) takes the keys of the compiled context, Galois
+/// elements, first-factor rotations, encapsulation and conversion keys alike, on the insecure
+/// `N = 2^11` S2C-first preset, with the keys of power-of-two rotations, and with EvalMod on
+/// the conjugate-invariant ring, `u` folded into CoeffsToSlots.
+pub fn bootstrapping_plan_keys_match_context<BE>()
+where
+    BE: TestContextBackend<Ring = Standard> + HostStaged + MaxBase2k,
+    CIBackend<BE>: TestContextBackend + MaxBase2k,
+    Module<BE>: TestContextModule<BE>
+        + PresetRunModule<BE>
+        + CKKSDFTOps<BE>
+        + CKKSBootstrappingCIOps<BE>
+        + GLWECIKeyEncryptSk<BE>
+        + GLWECIKeyPreparedFactory<BE>,
+    Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>>
+        + CKKSModuleAlloc<CIBackend<BE>>
+        + CKKSEncodingOps<CIBackend<BE>, f64>
+        + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
+    for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    let standard = crate::presets::bootstrapping::insecure_n11_d35_k180_p20_s2c().unwrap();
+    let powers_of_two = standard.with_power_of_two_keys().unwrap();
+    let folded = EvalModRing::ConjugateInvariant {
+        pre: CIConversion::Folded,
+        post: CIConversion::Product { log_delta: 38 },
+    };
+    let sources = || (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
+    for preset in [standard.clone(), powers_of_two.clone()] {
+        let module = Module::<BE>::new(preset.n() as u64);
+        let (sk_raw, _) = dense_secret(&module, &preset);
+        let (plan, layout) = (preset.plan(), preset.keys_layout());
+        let mut scratch = ScratchOwned::<BE>::alloc(bootstrap_setup_tmp_bytes(&module, &preset.bootstrap_layout(), plan, layout));
+        let context =
+            BootstrappingContext::<BE, f64>::compile(&module, preset.base2k().into(), plan, &mut scratch.borrow()).unwrap();
+        let (mut xs, mut xa, mut xe) = sources();
+        let from_context = context
+            .generate_keys(&module, &sk_raw, layout, &mut xs, &mut xe, &mut xa, &mut scratch.borrow())
+            .unwrap();
+        let (mut xs, mut xa, mut xe) = sources();
+        let from_plan = plan
+            .generate_keys(&module, &sk_raw, layout, &mut xs, &mut xe, &mut xa, &mut scratch.borrow())
+            .unwrap();
+        assert_eq!(
+            key_set_shape(&from_plan),
+            key_set_shape(&from_context),
+            "{}",
+            preset_label(&preset)
+        );
+    }
+    for preset in [
+        standard.with_eval_mod_ring(folded).unwrap(),
+        powers_of_two.with_eval_mod_ring(folded).unwrap(),
+    ] {
+        let n = preset.n() as u64;
+        let (module, ci) = (Module::<BE>::new(2 * n), Module::<CIBackend<BE>>::new(n));
+        let (sk_raw, _) = dense_secret(&module, &preset);
+        let (plan, layout) = (preset.plan(), preset.keys_layout());
+        let context = compile_ci(&module, &ci, &preset);
+        let (bytes, bytes_ci) = layout.generate_ci_tmp_bytes(&module, &ci);
+        let (mut scratch, mut scratch_ci) = (
+            ScratchOwned::<BE>::alloc(bytes),
+            ScratchOwned::<CIBackend<BE>>::alloc(bytes_ci),
+        );
+        let (mut xs, mut xa, mut xe) = sources();
+        let from_context = context
+            .generate_keys_ci(
+                &module,
+                &ci,
+                &sk_raw,
+                layout,
+                &mut xs,
+                &mut xe,
+                &mut xa,
+                &mut scratch.borrow(),
+                &mut scratch_ci.borrow(),
+            )
+            .unwrap();
+        let (mut xs, mut xa, mut xe) = sources();
+        let from_plan = plan
+            .generate_keys_ci(
+                &module,
+                &ci,
+                &sk_raw,
+                layout,
+                &mut xs,
+                &mut xe,
+                &mut xa,
+                &mut scratch.borrow(),
+                &mut scratch_ci.borrow(),
+            )
+            .unwrap();
+        assert_eq!(
+            key_set_shape(&from_plan),
+            key_set_shape(&from_context),
+            "{}",
+            preset_label(&preset)
+        );
+    }
+}
+
+/// The Galois elements of the rotation keys, the rotations of the first-factor keys,
+/// and which encapsulation and conversion keys a key set holds.
+fn key_set_shape<D: poulpy_hal::layouts::Data, W: poulpy_hal::layouts::ZnxWord>(
+    keys: &crate::layouts::BootstrappingKeySet<D, W>,
+) -> (Vec<i64>, Vec<i64>, Option<bool>, bool) {
+    let sorted = |mut v: Vec<i64>| {
+        v.sort_unstable();
+        v
+    };
+    (
+        sorted(keys.rotation_keys.keys().copied().collect()),
+        sorted(keys.first_factor_keys.keys().copied().collect()),
+        keys.encapsulation_keys.as_ref().map(|(_, s2d)| s2d.is_some()),
+        keys.conversion_keys.is_some(),
+    )
 }
 
 /// The bootstrap with EvalMod on the conjugate-invariant ring refuses, before any
@@ -686,14 +964,13 @@ where
 /// [`BootstrappingContext::compile_ci`] of `preset`, each stage on arenas of exactly its query.
 fn compile_ci<BE>(module: &Module<BE>, ci: &Module<CIBackend<BE>>, preset: &BootstrappingPreset) -> BootstrappingContext<BE, f64>
 where
-    BE: TestContextBackend<Ring = Standard>,
-    CIBackend<BE>: TestContextBackend,
-    Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, f64>
-        + CKKSDFTMatrixOps<BE, f64>
-        + CKKSBootstrappingCIOps<BE>
-        + CKKSDFTOps<BE>,
-    Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>> + CKKSEncodingOps<CIBackend<BE>, f64>,
+    BE: Backend<Ring = Standard>,
+    Module<BE>:
+        CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, f64> + CKKSDFTMatrixOps<BE, f64> + CKKSBootstrappingCIOps<BE> + CKKSDFTOps<BE>,
+    Module<CIBackend<BE>>: CKKSModuleAlloc<CIBackend<BE>> + CKKSEncodingOps<CIBackend<BE>, f64>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+    ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::reference::linear_transformation::DiagonalProd<BE>,
 {
     let (bytes, bytes_ci) = BootstrappingContext::<BE, f64>::compile_ci_unprepared_tmp_bytes(module, ci);
     let unprepared = BootstrappingContext::<BE, f64>::compile_ci_unprepared(
@@ -762,6 +1039,23 @@ where
         &mut ScratchOwned::<CIBackend<BE>>::alloc(bytes_ci).borrow(),
     )
     .unwrap()
+}
+
+/// The dense application secret at the preset's Hamming weight, raw and prepared.
+fn dense_secret<BC: Backend>(
+    client: &Module<BC>,
+    preset: &BootstrappingPreset,
+) -> (BackendGLWESecret<BC>, BackendGLWESecretPrepared<BC>)
+where
+    Module<BC>:
+        ModuleCoreAlloc<OwnedBuf = BC::OwnedBuf, ZnxWord = BC::ZnxWord> + GLWESecretSampling<BC> + GLWESecretPreparedFactory<BC>,
+{
+    let sk_layout = preset.bootstrap_layout().glwe_layout;
+    let mut sk_raw = client.glwe_secret_alloc_from_infos(&sk_layout);
+    client.glwe_secret_fill_ternary_hw(&mut sk_raw, preset.dense_secret_hamming_weight(), &mut Source::new([0; 32]));
+    let mut sk = client.glwe_secret_prepared_alloc_from_infos(&sk_layout);
+    client.glwe_secret_prepare(&mut sk, &sk_raw);
+    (sk_raw, sk)
 }
 
 /// Scratch for unprepared context generation and key preparation.

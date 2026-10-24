@@ -7,6 +7,7 @@ use poulpy_core::{
         prepared::{GLWEPublicKeyPrepared, GLWESecretPrepared},
     },
 };
+use poulpy_hal::api::ModuleSynchronize;
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, Module, ScratchOwned},
@@ -21,6 +22,7 @@ use crate::core::params::{CoreParams, key_dnum_k_aux};
 pub fn runner_glwe_encrypt_sk<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
 where
     Module<BE>: ModuleNew<BE>
+        + ModuleSynchronize<BE>
         + GLWEEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWESecretSampling<BE>
@@ -51,6 +53,7 @@ where
 
     bencher.iter(|| {
         module.glwe_encrypt_zero_sk(&mut ct, &sk_prepared, &mut source_xe, &mut source_xa, &mut scratch.borrow());
+        module.synchronize();
         black_box(());
     });
 }
@@ -58,6 +61,7 @@ where
 pub fn runner_glwe_encrypt_pk<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
 where
     Module<BE>: ModuleNew<BE>
+        + ModuleSynchronize<BE>
         + GLWEEncryptPk<BE>
         + GLWEPublicKeyGenerate<BE>
         + GLWEPublicKeyPreparedFactory<BE>
@@ -116,6 +120,7 @@ where
             &mut source_xe,
             &mut scratch.borrow(),
         );
+        module.synchronize();
         black_box(());
     });
 }
@@ -123,6 +128,7 @@ where
 pub fn runner_ggsw_encrypt_sk<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
 where
     Module<BE>: ModuleNew<BE>
+        + ModuleSynchronize<BE>
         + GGSWEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWESecretSampling<BE>
@@ -164,6 +170,7 @@ where
             &mut source_xa,
             &mut scratch.borrow(),
         );
+        module.synchronize();
         black_box(());
     });
 }
@@ -173,6 +180,7 @@ pub fn runner_glwe_automorphism_key_encrypt_sk<BE: Backend<ZnxWord = i64>, M: Me
     cp: &CoreParams,
 ) where
     Module<BE>: ModuleNew<BE>
+        + ModuleSynchronize<BE>
         + GLWEAutomorphismKeyEncryptSk<BE>
         + GLWESecretSampling<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
@@ -204,6 +212,7 @@ pub fn runner_glwe_automorphism_key_encrypt_sk<BE: Backend<ZnxWord = i64>, M: Me
 
     bencher.iter(|| {
         module.glwe_automorphism_key_encrypt_sk(&mut atk, P, &sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
+        module.synchronize();
         black_box(());
     });
 }

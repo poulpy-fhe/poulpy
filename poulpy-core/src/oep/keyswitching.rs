@@ -37,7 +37,9 @@ pub fn gglwe_product_digit_output_size(res_size: usize, key_size: usize, dsize: 
 ///
 /// # Safety
 /// Implementations must honor the supplied layouts and return a scratch bound
-/// sufficient for [`Self::gglwe_product_digits_strided`].
+/// sufficient for [`Self::gglwe_product_digits_strided`]. An override of a step hook
+/// ([`Self::gglwe_product_fused`], [`Self::gglwe_product_idft_normalize`]) reproduces its
+/// default bit for bit within its query and writes only `res` and the scratch it is given.
 pub unsafe trait GGLWEProductDigitsStridedImpl: Backend {
     #[allow(clippy::too_many_arguments)]
     fn gglwe_product_digits_strided_tmp_bytes(
@@ -61,6 +63,118 @@ pub unsafe trait GGLWEProductDigitsStridedImpl: Backend {
         pmat: &VmpPMatBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     );
+
+    /// Scratch bytes of [`Self::gglwe_product_fused`].
+    fn gglwe_product_fused_tmp_bytes<K>(module: &Module<Self>, res_size: usize, a_size: usize, key_infos: &K) -> usize
+    where
+        K: GGLWEInfos,
+        Module<Self>: crate::reference::keyswitching::glwe::GGLWEProductFusedReference<Self>,
+    {
+        crate::reference::keyswitching::glwe::gglwe_product_fused_tmp_bytes_reference(module, res_size, a_size, key_infos)
+    }
+
+    /// The gadget product of `a` by `key` with what follows it in a composite operation:
+    ///
+    /// `res = sigma(a x key + addends)`, or `res += ...` with `accumulate`.
+    ///
+    /// - The product is the one of `GGLWEProductReference::gglwe_product_dft_reference` over
+    ///   `product_size` limbs, at most `res.size()`, for `term_count` accumulated products.
+    /// - `addends[d]`, when present, is a column `(vector, column)` added to output column `d` over the
+    ///   limbs both have. At most `res.cols()` entries.
+    /// - `automorphism = Some(p)` stores through `X -> X^p`, as `vec_znx_dft_automorphism` does.
+    /// - The first `product_size` limbs of every column of `res` are written, the others zeroed;
+    ///   with `accumulate`, the first `product_size` limbs are added to and the others unchanged.
+    ///
+    /// The default composes the product, `vec_znx_dft_add_assign` and the automorphism. Overrides
+    /// must reproduce it bit for bit.
+    fn gglwe_product_fused(
+        module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        product_size: usize,
+        a: &VecZnxDftBackendRef<'_, Self>,
+        key: &GGLWEPreparedBackendRef<'_, Self>,
+        term_count: usize,
+        addends: &[Option<(&VecZnxDftBackendRef<'_, Self>, usize)>],
+        automorphism: Option<i64>,
+        accumulate: bool,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        Module<Self>: crate::reference::keyswitching::glwe::GGLWEProductFusedReference<Self>,
+    {
+        crate::reference::keyswitching::glwe::gglwe_product_fused_reference(
+            module,
+            res,
+            product_size,
+            a,
+            key,
+            term_count,
+            addends,
+            automorphism,
+            accumulate,
+            scratch,
+        )
+    }
+
+    /// Scratch bytes of [`Self::gglwe_product_idft_normalize`] for a coefficient output of
+    /// `res_size` limbs, a product of `product_size` limbs and an operand of `a_size` limbs,
+    /// `res_dft` aside.
+    fn gglwe_product_idft_normalize_tmp_bytes<K>(
+        module: &Module<Self>,
+        res_size: usize,
+        product_size: usize,
+        a_size: usize,
+        key_infos: &K,
+    ) -> usize
+    where
+        K: GGLWEInfos,
+        Module<Self>: crate::reference::keyswitching::glwe::GGLWEProductFusedReference<Self>,
+    {
+        crate::reference::keyswitching::glwe::gglwe_product_idft_normalize_tmp_bytes_reference(
+            module,
+            res_size,
+            product_size,
+            a_size,
+            key_infos,
+        )
+    }
+
+    /// The gadget product of `a` by `key` followed at once by its inverse transform and
+    /// normalization:
+    ///
+    /// `res[col] = normalize(idft(a x key + addends)[col] + body)`, `body` on column 0 only.
+    ///
+    /// - `res_dft` is the caller's scratch for the product, of the width the product is taken at;
+    ///   its content is unspecified afterwards.
+    /// - `addends` are those of [`Self::gglwe_product_fused`]; `body` is the coefficient-domain
+    ///   addend of `vec_znx_idft_normalize` on column 0.
+    /// - `res_base2k`, `res_k`, `res_offset` and `a_base2k` are the arguments of
+    ///   `vec_znx_idft_normalize`, the same for every column.
+    ///
+    /// The default takes the product into `res_dft`, adds the addends there and calls
+    /// `vec_znx_idft_normalize` column by column. Overrides must reproduce it bit for bit within
+    /// [`Self::gglwe_product_idft_normalize_tmp_bytes`]; the caller records the metadata of `res`.
+    #[allow(clippy::too_many_arguments)]
+    fn gglwe_product_idft_normalize(
+        module: &Module<Self>,
+        res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
+        res_base2k: usize,
+        res_k: usize,
+        res_offset: i64,
+        res_dft: &mut VecZnxDftBackendMut<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self>,
+        key: &GGLWEPreparedBackendRef<'_, Self>,
+        term_count: usize,
+        addends: &[Option<(&VecZnxDftBackendRef<'_, Self>, usize)>],
+        body: Option<(&poulpy_hal::layouts::VecZnxBackendRef<'_, Self>, usize)>,
+        a_base2k: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        Module<Self>: crate::reference::keyswitching::glwe::GGLWEProductFusedReference<Self>,
+    {
+        crate::reference::keyswitching::glwe::gglwe_product_idft_normalize_reference(
+            module, res, res_base2k, res_k, res_offset, res_dft, a, key, term_count, addends, body, a_base2k, scratch,
+        )
+    }
 }
 
 /// keyswitch can still dispatch through that implementation.
