@@ -6,12 +6,12 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::{
     AlignedBuf,
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{ModuleNew, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
 };
 
 use poulpy_ckks::{
-    CKKSCtBounds, CKKSInfos, SetCKKSInfos,
+    CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
     polynomial::{Polynomial, SplitStrategy},
     test_suite::{
@@ -250,4 +250,33 @@ where
         );
         assert_precision_bits(label, &re_out, &want, target, params.n);
     }
+}
+
+/// [`test_precision_tuning`] at `N = 2^12` on modules of its own.
+pub fn test_precision_tuning_log_n12<BE, F, E>(base: CKKSTestParams)
+where
+    BE: TestContextBackend<Ring = Standard>,
+    Module<BE>: TestContextModule<BE> + CKKSTrigOps<BE> + ModuleNew<BE>,
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
+        GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
+    CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let params = CKKSTestParams {
+        n: 1 << 12,
+        prec_meta: GLWEPlaintextMeta {
+            log_sparsity: 0,
+            // The standard bootstrap recipe raises the output scale from the
+            // 45-bit message scale by its 11-bit message ratio.
+            scale: Scale::Log(56),
+            slots: Default::default(),
+        },
+        ..base
+    };
+    let module = Module::<BE>::new(params.n as u64);
+    let host_module = Module::<HostBytesBackend>::new(params.n as u64);
+    test_precision_tuning::<BE, F, E>(params, &module, &host_module);
 }

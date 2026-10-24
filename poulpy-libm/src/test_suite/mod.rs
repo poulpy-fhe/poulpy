@@ -1,4 +1,5 @@
-//! Backend-generic libm test suites, instantiated per backend in `backend_tests`.
+//! Backend-generic libm test suites, instantiated by the backend crates with
+//! [`ckks_libm_backend_test_suite!`](crate::ckks_libm_backend_test_suite).
 
 pub mod approximation;
 pub mod arithmetic;
@@ -20,6 +21,10 @@ pub mod softmax;
 pub mod special;
 pub mod trig;
 
+/// Registers every libm test for one backend, scalar, encoder and parameter set
+/// of `N = 256`. `precision_tuning_log_n12` runs at `N = 2^12` on modules of its
+/// own. The expansion names `::poulpy_hal`, so the invoking crate depends on it
+/// directly.
 #[macro_export]
 macro_rules! ckks_libm_backend_test_suite {
     (
@@ -32,7 +37,7 @@ macro_rules! ckks_libm_backend_test_suite {
         mod $modname {
             use std::sync::LazyLock;
 
-            use poulpy_hal::layouts::{HostBytesBackend, Module};
+            use ::poulpy_hal::layouts::{HostBytesBackend, Module};
 
             static MODULE: LazyLock<Module<$backend>> = LazyLock::new(|| Module::<$backend>::new($params.n as u64));
             static HOST_MODULE: LazyLock<Module<HostBytesBackend>> =
@@ -59,6 +64,10 @@ macro_rules! ckks_libm_backend_test_suite {
                 precision_tuning,
                 $crate::test_suite::approximation::test_precision_tuning
             );
+            #[test]
+            fn precision_tuning_log_n12() {
+                $crate::test_suite::approximation::test_precision_tuning_log_n12::<$backend, $scalar, $encoder>($params);
+            }
             run_test!(
                 goldschmidt_division,
                 $crate::test_suite::inverse::test_goldschmidt_division

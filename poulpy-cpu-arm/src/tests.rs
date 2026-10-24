@@ -2,6 +2,8 @@
 mod blas_tests;
 #[cfg(feature = "enable-ckks")]
 mod ckks_tests;
+#[cfg(feature = "enable-ckks")]
+mod libm_tests;
 
 poulpy_core::core_parity_test_suite! {
     mod core_parity_fft64,

@@ -85,6 +85,7 @@ poulpy-cpu-oracle = {workspace = true, features = ["enable-ckks", "enable-bin-fh
 paste = {workspace = true}
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
 poulpy-blas = {workspace = true, features = ["test-utils"]}
+poulpy-libm = {workspace = true, features = ["test-utils"]}
 poulpy-bin-fhe = {workspace = true}
 criterion = {workspace = true}
 # TODO: poulpy-bench's lib is currently #![cfg]-gated on its bench features

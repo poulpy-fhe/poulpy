@@ -5,6 +5,8 @@ mod ckks_tests;
 mod core_emulated_tensor;
 #[cfg(feature = "enable-rayon")]
 mod idft_normalize_parity;
+#[cfg(feature = "enable-ckks")]
+mod libm_tests;
 #[cfg(feature = "enable-ifma")]
 mod one_pass_parity;
 

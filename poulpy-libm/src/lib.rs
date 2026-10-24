@@ -24,12 +24,9 @@ pub mod softmax;
 pub mod special;
 #[doc(hidden)]
 #[allow(missing_docs)]
-#[cfg(any(test, feature = "test-utils"))]
+#[cfg(feature = "test-utils")]
 pub mod test_suite;
 pub mod trig;
-
-#[cfg(test)]
-mod backend_tests;
 
 /// Common imports for applications using `poulpy-libm`.
 pub mod prelude {
