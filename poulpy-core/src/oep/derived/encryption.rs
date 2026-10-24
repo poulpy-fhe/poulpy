@@ -20,7 +20,7 @@ use crate::{
     oep::EncryptionImpl,
 };
 use poulpy_hal::{
-    layouts::{Module, ScalarZnxToBackendRef, ScratchArena, ZnxInfos, scalar_znx_as_vec_znx_backend_ref_from_ref},
+    layouts::{Module, ScalarZnxToBackendRef, ScratchArena, ZnxInfos},
     source::Source,
 };
 
@@ -274,21 +274,18 @@ pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K>(
         let k_digit: usize = res.k_digit().as_usize();
         let rank: usize = res.rank().into();
         let (mut tmp_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(res);
-        let pt = pt.to_backend_ref();
-        let pt = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(&pt);
         for row in 0..res.dnum().into() {
-            // `gadget_row_plaintext` over the selected normalization: the encryption adds these limbs as they are.
-            let position: usize = (row + 1) * k_digit;
-            assert!(position <= k, "gadget row {row} at bit {position} is below the precision {k}");
-            BE::vec_znx_normalize(
+            // The encryption adds the plaintext's limbs to its accumulator as they are.
+            crate::gadget::gadget_row_plaintext(
                 module,
                 &mut tmp_pt.data,
+                0,
                 base2k,
                 k,
-                1 - position as i64,
+                row,
+                k_digit,
                 0,
-                &pt,
-                1,
+                &pt.to_backend_ref(),
                 0,
                 &mut scratch_1.borrow(),
             );

@@ -1,8 +1,9 @@
 #![allow(clippy::too_many_arguments)]
 
 use poulpy_hal::{
-    api::{ModuleN, VecZnxCopy, VecZnxDftBytesOf, VecZnxNormalize, VecZnxNormalizeTmpBytes},
+    api::{ModuleN, VecZnxCopy, VecZnxDftBytesOf, VecZnxNormalizeTmpBytes},
     layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena},
+    oep::HalVecZnxImpl,
     source::Source,
 };
 
@@ -39,7 +40,7 @@ pub trait GGLWECompressedEncryptSkReference<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE>;
 }
 
-impl<BE: Backend> GGLWECompressedEncryptSkReference<BE> for Module<BE>
+impl<BE: Backend + HalVecZnxImpl> GGLWECompressedEncryptSkReference<BE> for Module<BE>
 where
     Self: ModuleN
         + GLWEEncryptSkInternal<BE>
@@ -47,7 +48,6 @@ where
         + GLWEMaskFill<BE>
         + VecZnxCopy<BE>
         + VecZnxDftBytesOf
-        + VecZnxNormalize<BE>
         + VecZnxNormalizeTmpBytes,
 {
     fn gglwe_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize

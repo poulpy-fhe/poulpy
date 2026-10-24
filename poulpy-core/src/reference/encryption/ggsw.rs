@@ -1,6 +1,7 @@
 use poulpy_hal::{
-    api::{ModuleN, VecZnxDftBytesOf, VecZnxNormalize, VecZnxNormalizeTmpBytes},
+    api::{ModuleN, VecZnxDftBytesOf, VecZnxNormalizeTmpBytes},
     layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena, ZnxInfos},
+    oep::HalVecZnxImpl,
     source::Source,
 };
 
@@ -37,15 +38,9 @@ pub trait GGSWEncryptSkReference<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE> + LWEInfos + GLWEInfos;
 }
 
-impl<BE: Backend> GGSWEncryptSkReference<BE> for Module<BE>
+impl<BE: Backend + HalVecZnxImpl> GGSWEncryptSkReference<BE> for Module<BE>
 where
-    Self: ModuleN
-        + GLWEEncryptSkInternal<BE>
-        + GLWEEncryptSk<BE>
-        + GLWEMaskFill<BE>
-        + VecZnxDftBytesOf
-        + VecZnxNormalize<BE>
-        + VecZnxNormalizeTmpBytes,
+    Self: ModuleN + GLWEEncryptSkInternal<BE> + GLWEEncryptSk<BE> + GLWEMaskFill<BE> + VecZnxDftBytesOf + VecZnxNormalizeTmpBytes,
 {
     fn ggsw_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where

@@ -1,10 +1,11 @@
 use poulpy_hal::{
     api::{
         ModuleN, SvpApplyDftToDftAssign, VecZnxBigAddAssign, VecZnxBigBytesOf, VecZnxBigFromSmall, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
         VecZnxNormalizeTmpBytes, VecZnxSubAssign,
     },
     layouts::{Backend, HostBackend, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendRef, ScratchArena, Stats},
+    oep::HalVecZnxImpl,
 };
 
 use crate::ScratchArenaTakeCore;
@@ -43,10 +44,9 @@ impl<D: HostDataRef> GGLWE<D, i64> {
     }
 }
 
-impl<BE: Backend + HostBackend> GGLWENoise<BE> for Module<BE>
+impl<BE: Backend + HostBackend + HalVecZnxImpl> GGLWENoise<BE> for Module<BE>
 where
-    Module<BE>:
-        VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes + VecZnxSubAssign<BE> + GLWENoise<BE> + GLWEDecrypt<BE> + GLWENormalize<BE>,
+    Module<BE>: VecZnxNormalizeTmpBytes + VecZnxSubAssign<BE> + GLWENoise<BE> + GLWEDecrypt<BE> + GLWENormalize<BE>,
     Module<BE>: ModuleN
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf

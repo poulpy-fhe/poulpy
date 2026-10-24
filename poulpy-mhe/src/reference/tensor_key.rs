@@ -4,8 +4,9 @@ use poulpy_core::{
     layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWEPublicKeyPreparedToBackendRef, GLWESecretToBackendRef, LWEInfos},
 };
 use poulpy_hal::{
-    api::{VecZnxNormalize, VecZnxNormalizeTmpBytes},
+    api::VecZnxNormalizeTmpBytes,
     layouts::{Backend, Module, ScratchArena},
+    oep::HalVecZnxImpl,
     source::Source,
 };
 
@@ -31,9 +32,9 @@ pub trait GLWETensorKeyMHEProtocolReference<BE: Backend> {
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
 }
 
-impl<BE: Backend> GLWETensorKeyMHEProtocolReference<BE> for Module<BE>
+impl<BE: Backend + HalVecZnxImpl> GLWETensorKeyMHEProtocolReference<BE> for Module<BE>
 where
-    Self: GLWEEncryptPk<BE> + GLWEBytesOf<BE> + VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
+    Self: GLWEEncryptPk<BE> + GLWEBytesOf<BE> + VecZnxNormalizeTmpBytes,
 {
     fn mhe_glwe_tensor_key_share_gen_tmp_bytes_reference<A, B>(&self, res_infos: &A, pk_infos: &B) -> usize
     where

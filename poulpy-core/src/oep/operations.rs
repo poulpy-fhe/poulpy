@@ -714,7 +714,9 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
 /// # Safety
 /// Implementations must maintain ciphertext correctness while combining inputs, and must respect
 /// all backend buffer, aliasing, and scratch-space invariants expected by the higher layers.
-pub unsafe trait GLWEPackImpl: GLWETraceImpl + GLWERotateImpl + GLWESubImpl + GLWEAddImpl {
+pub unsafe trait GLWEPackImpl:
+    GLWETraceImpl + crate::oep::AutomorphismImpl + GLWERotateImpl + GLWESubImpl + GLWEAddImpl + GLWEShiftImpl + GLWENormalizeImpl
+{
     fn glwe_pack_galois_elements(module: &Module<Self>) -> Vec<i64> {
         crate::oep::derived::structure::glwe_pack_galois_elements_derived::<Self, _>(module)
     }
