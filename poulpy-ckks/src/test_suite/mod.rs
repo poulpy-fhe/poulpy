@@ -3,8 +3,9 @@
 //! All test functions are generic over `BE: super::helpers::TestContextBackend` and take
 //! `(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)`.
 //! Downstream backend crates instantiate these independent mathematical tests
-//! through [`ckks_backend_test_suite!`]. The [`parity`] suite compares a
-//! caller-selected pair through production operation dispatch.
+//! through [`ckks_backend_test_suite!`] and the frozen encoding and setup
+//! fixtures through [`ckks_determinism_test_suite!`]. The [`parity`] suite
+//! compares a caller-selected pair through production operation dispatch.
 
 use crate::{Scale, ckks_log_delta};
 use poulpy_core::layouts::{
@@ -413,10 +414,6 @@ macro_rules! ckks_backend_test_suite {
             run_test!(
                 encode_decode_reim_roundtrip,
                 $crate::test_suite::encoding::test_encode_decode_reim_roundtrip
-            );
-            run_test!(
-                encoding_determinism,
-                $crate::test_suite::determinism::test_encoding_determinism
             );
             run_test!(
                 slots_kind_composition,
@@ -1085,7 +1082,7 @@ macro_rules! ckks_backend_test_suite {
     };
 }
 
-pub use crate::ckks_backend_test_suite;
+pub use crate::{ckks_backend_test_suite, ckks_determinism_test_suite};
 
 pub mod add;
 pub mod add_many;

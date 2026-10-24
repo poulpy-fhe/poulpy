@@ -112,6 +112,12 @@ do not guarantee this when samplers differ. Supply matching streams or a
 controlled-sampling comparison adapter; retain the separate sampling contract
 tests and independent mathematical conformance suite.
 
+Register `ckks_determinism_test_suite!(mod <name>, backend = <type>)` for each
+standard-ring type. It checks the encoding and the setup constants, in `f64` and
+`Quad`, against the frozen fixtures of
+[`test_suite/determinism.txt`](../src/test_suite/determinism.txt), which every
+backend reproduces byte for byte.
+
 Register each supported operation/scalar combination in its backend crate.
 Encoding and DFT matrix generation accept any scalar satisfying their generic
 bounds when the backend implements that precision; paired coverage includes

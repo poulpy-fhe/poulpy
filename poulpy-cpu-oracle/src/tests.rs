@@ -657,6 +657,12 @@ poulpy_ckks::conjugate_invariant_ckks_test_suite!(
 );
 
 #[cfg(feature = "enable-bin-fhe")]
+poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_fft64, backend = crate::FFT64Oracle);
+
+#[cfg(feature = "enable-bin-fhe")]
+poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_ntt4x30, backend = crate::NTT4x30Oracle);
+
+#[cfg(feature = "enable-bin-fhe")]
 mod bin_fhe_tests {
     poulpy_bin_fhe::bin_fhe_reference_test_suite!(mod fft64, backend = crate::FFT64Oracle);
     poulpy_bin_fhe::bin_fhe_reference_test_suite!(mod ntt4x30, backend = crate::NTT4x30Oracle);

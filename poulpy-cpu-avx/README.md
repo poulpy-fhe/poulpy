@@ -8,7 +8,7 @@ This backend implements the Poulpy HAL extension traits and can be used by:
 - [`poulpy-core`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-core)
 - [`poulpy-ckks`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-ckks) (backend wiring opt-in via `enable-ckks`)
 - [`poulpy-blas`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-blas) (backend wiring opt-in via `enable-blas`, which implies `enable-ckks`)
-- [`poulpy-bin-fhe`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-bin-fhe) (backend-agnostic; its tests are instantiated here with `bin_fhe_backend_test_suite!`)
+- [`poulpy-bin-fhe`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-bin-fhe) (backend wiring opt-in via `enable-bin-fhe`; its parity and reference suites are instantiated here with `bin_fhe_parity_test_suite!` and `bin_fhe_reference_test_suite!`)
 
 ## 🚩 Safety and Requirements
 

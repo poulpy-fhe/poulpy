@@ -133,6 +133,12 @@
 - The bin-fhe `register_backend!` of `poulpy-cpu-portable`, `poulpy-cpu-avx`, `poulpy-cpu-avx512` and `poulpy-cpu-arm` loses its `scheduling` argument, and `poulpy-cpu-rayon`'s no longer passes one: every type registers the plain `impl_bin_fhe_reference_full!`, and the Rayon types run the parallel blind rotation because their executor is parallel.
 - `poulpy-cpu-oracle` gains `enable-mhe` (`dep:poulpy-mhe`, `enable-core`), which CI's portable lane enables: `impl_mhe_reference_full!` on `FFT64Oracle`, `NTT4x30Oracle` and `ControlledSamplingFFT64Oracle`, `mhe_backend_test_suite!` on the first two and `mhe_parity_test_suite!` of `NTT4x30Oracle` against `FFT64Oracle`.
   `FFT64Portable` and `NTT4x30Portable` run `mhe_parity_test_suite!` against `ControlledSamplingFFT64Oracle`, and `FFT64PortableRayon` and `NTT4x30PortableRayon` against their serial base, in place of `mhe_backend_test_suite!`, which runs on the oracle and the portable serial types only.
+- The functional suites run on the oracle and the serial `poulpy-cpu-portable` types only; the other types run parity:
+  - the AVX2, AVX-512, IFMA and NEON types and their Rayon variants no longer register `ckks_backend_test_suite!`, nor the AVX2, AVX-512 and NEON ones `bin_fhe_backend_test_suite!`;
+  - `bin_fhe_backend_test_suite!` is registered on `NTT4x30Portable` (`tests::bin_fhe_ntt4x30`), `FFT64Oracle` (`tests::bin_fhe_fft64`) and `NTT4x30Oracle` (`tests::bin_fhe_ntt4x30`);
+  - `blas_backend_test_suite!` is registered on `FFT64Portable` in `f64` and `NTT4x30Portable` in `f64` and `Quad` (`tests::blas_tests::blas_backend_<type>_<scalar>`).
+- Every standard-ring CKKS type, portable, Rayon, AVX2, AVX-512, IFMA, NEON and oracle, registers `ckks_determinism_test_suite!` under `ckks_determinism_<type>` (`portable::tests::ckks::determinism_<family>` in `poulpy-cpu-rayon`), which the `determinism` filters of the native AVX-512 and macOS jobs select.
+  The portable Rayon types gain the fixtures, and every type runs them in `f64` and `Quad`, where the FFT64 types, the AVX2 types and `NTT3x42IfmaRayon` ran `f64` only.
 
 ### `poulpy-core`
 
@@ -469,6 +475,9 @@
   Generic parameter lists are unchanged. Callers move their arguments by hand, since swapped `k`, `bits` and `degree` arguments still compile, and a backend overriding these OEP methods reorders its signatures.
 - **Breaking:** the OEP methods name and order their generics as their API twins: `CKKSEncryptionImpl::ckks_encrypt_sk<Dct, S, Pt>` becomes `<Dct, Dpt, S>`, `ckks_decrypt<S, Dct, Pt>` `<Dpt, Dct, S>`, `CKKSPlaintextZnxImpl::ckks_extract_pt<Dst, Src>` `<D, S>`, and the tensor-key generic `T` of `CKKSMulImpl::ckks_mul_into`, `ckks_mul_assign`, `ckks_mul_prepared_assign`, `ckks_square_into` and `ckks_square_assign` becomes `H`.
   A backend implementing `CKKSEncryptionImpl` by hand reorders the generics of `ckks_encrypt_sk` and `ckks_decrypt` with their bounds, and a turbofish call of either reorders its type arguments.
+- **Breaking:** the determinism fixtures leave `ckks_backend_test_suite!`, which loses `encoding_determinism`, for `ckks_determinism_test_suite!(mod <name>, backend = <type>)`, whose `encoding_determinism_f64` and `encoding_determinism_quad` run them in both precisions.
+  `test_suite::determinism::test_encoding_determinism<BE, F, E>(params, module, host_module)` over `TestContextBackend<Ring = Standard>` becomes `test_encoding_determinism::<BE, F>()` over `Backend<ZnxWord = i64, Ring = Standard>`, which builds its own module of degree 4096.
+  An out-of-tree backend registers `ckks_determinism_test_suite!` for each standard-ring type, and a direct caller drops the encoder parameter and the arguments.
 
 ### `poulpy-bin-fhe`
 
