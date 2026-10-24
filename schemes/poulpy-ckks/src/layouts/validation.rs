@@ -1,11 +1,46 @@
-//! Generic key- and operand-layout validation shared by the bootstrapping pipelines.
+//! Generic key- and operand-layout validation shared by the bootstrapping pipelines and the linear transformations.
 //!
-//! These helpers check the structural invariants (degree, rank, radix, decomposition shape, storage capacity, backend-view consistency) that any gadget key or runtime ciphertext operand must satisfy before entering the arithmetic primitives, independent of which pipeline (PaCo or classic bootstrapping) consumes them.
+//! These helpers check the structural invariants (degree, rank, radix, decomposition shape, storage capacity, backend-view consistency) that any gadget key or runtime ciphertext operand must satisfy before entering the arithmetic primitives, independent of which pipeline (PaCo or classic bootstrapping) consumes them, and the uniformity of a linear transformation's diagonals.
 //! Pipeline-specific validation (e.g. PaCo's plan-against-material checks) stays with its pipeline; this module is the reusable bottom layer.
 
 use anyhow::{Context, Result, ensure};
-use poulpy_core::layouts::{Base2K, GGLWEInfos, GLWEInfos, GLWEToBackendRef, LWEInfos};
+use poulpy_core::layouts::{Base2K, GGLWEInfos, GLWEInfos, GLWEToBackendRef, LWEInfos, LinearTransformation};
 use poulpy_hal::layouts::Backend;
+
+use crate::{CKKSCompositionError, SlotsKind};
+
+/// `InvalidOperand` for `op` unless every diagonal of `lt` shares the first one's scale, storage width and slot kind,
+/// the `(log_scale, max_k, slots)` that `meta` reads.
+///
+/// The evaluation derives one `cnv_offset` and the result metadata from the first diagonal alone, and the preparation
+/// stashes the first diagonal's scale and slot kind for all, so a hand-built transform with another scale on a later
+/// diagonal would mis-scale its contribution and one with another slot kind would mislabel the result.
+pub(crate) fn ensure_uniform_diagonals<P>(
+    op: &'static str,
+    lt: &LinearTransformation<P>,
+    meta: impl Fn(&P) -> (usize, usize, SlotsKind),
+) -> crate::CKKSResult<()> {
+    let Some(first) = lt.first_diagonal_plaintext() else {
+        return Ok(());
+    };
+    let (log_scale, max_k, slots) = meta(first);
+    for gs in &lt.giant_steps {
+        for diag in &gs.diagonals {
+            let (diag_log_scale, diag_max_k, diag_slots) = meta(&diag.plaintext);
+            if (diag_log_scale, diag_max_k, diag_slots) != (log_scale, max_k, slots) {
+                return Err(CKKSCompositionError::InvalidOperand {
+                    op,
+                    reason: format!(
+                        "linear transformation diagonals are not uniform: diagonal (giant rot {}, baby {}) has (log_scale {diag_log_scale}, max_k {diag_max_k}, {diag_slots:?}) but the first diagonal has ({log_scale}, {max_k}, {slots:?})",
+                        gs.rot, diag.baby,
+                    ),
+                }
+                .into());
+            }
+        }
+    }
+    Ok(())
+}
 
 /// Checks degree/rank/radix compatibility shared by all rank-1 gadget keys.
 pub(crate) fn validate_gadget_key<K: GGLWEInfos + ?Sized>(

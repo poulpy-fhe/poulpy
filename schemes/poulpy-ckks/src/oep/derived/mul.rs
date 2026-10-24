@@ -1,6 +1,6 @@
 use crate::{
     CKKSInfos, CKKSResult,
-    layouts::{CKKSPreparedLeft, CKKSPreparedRight},
+    layouts::{CKKSModuleAlloc, CKKSPreparedLeft, CKKSPreparedRight},
     oep::CKKSMulImpl,
 };
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendRef};
@@ -17,7 +17,7 @@ where
     BE: CKKSMulImpl,
     A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
 {
-    let mut res = BE::ckks_prepared_left_alloc_from_infos(module, a, hint);
+    let mut res = module.ckks_prepared_left_alloc_from_infos(a, hint);
     BE::ckks_prepare_left_into(module, &mut res, a, scratch)?;
     Ok(res)
 }
@@ -33,7 +33,7 @@ where
     BE: CKKSMulImpl,
     A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
 {
-    let mut res = BE::ckks_prepared_right_alloc_from_infos(module, a, hint);
+    let mut res = module.ckks_prepared_right_alloc_from_infos(a, hint);
     BE::ckks_prepare_right_into(module, &mut res, a, scratch)?;
     Ok(res)
 }

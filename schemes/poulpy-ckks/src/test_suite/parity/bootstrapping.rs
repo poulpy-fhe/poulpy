@@ -459,7 +459,8 @@ where
         .unwrap();
         let ctx = with_scratch::<B, _>(unprepared.prepare_tmp_bytes(module), |scratch| {
             unprepared.prepare(module, scratch)
-        });
+        })
+        .unwrap();
         let keys = fixture_keys(module, &plan, &atk, &d2s, &s2d);
         let ct_in = fixture_ciphertext(module, &in_layout, 89);
         if functional {

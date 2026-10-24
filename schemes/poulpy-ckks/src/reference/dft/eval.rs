@@ -24,7 +24,7 @@ use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     DiagonalProd,
-    layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformation},
+    layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation},
 };
 use poulpy_hal::{
     api::CnvPVecAlloc,
@@ -33,13 +33,10 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, SetCKKSInfos,
-    api::{
-        CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, LinearTransformationBabySteps,
-        LinearTransformationPrepared, LtDiagonalMeta,
-    },
+    api::{CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, LinearTransformationBabySteps, LtDiagonalMeta},
     layouts::{
         CKKSModuleAlloc, CKKSPlaintextOwned, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTPlan, DftDirection, DftFormat,
-        DftScalar, dft_matrices::gen_dft_matrices,
+        DftScalar, dft_matrices::gen_dft_matrices, validation::ensure_uniform_diagonals,
     },
     oep::CKKSEncodingImpl,
 };
@@ -63,7 +60,7 @@ fn checked_dft_log_slots(literal: &DFTPlan, log_n: usize) -> Result<usize> {
 /// Resolves the plan and generates + encodes each factor into an (unprepared)
 /// CKKS linear transformation (the plaintext factors of an unprepared
 /// [`DFTMatrix`]); [`ckks_prepare_dft_matrix`] later prepares each factor into a
-/// `CnvPVec` to produce the resident [`DFTMatrixPrepared`].
+/// `CnvPVec` of the resident [`DFTMatrixPrepared`].
 #[allow(clippy::too_many_arguments)]
 fn dft_factor_lts<BE, F>(
     module: &Module<BE>,
@@ -108,37 +105,60 @@ where
     Ok((plan, lts))
 }
 
-/// Prepares an unprepared (host plaintext) [`DFTMatrix`] into its resident
-/// convolution-domain form [`DFTMatrixPrepared`], preserving the `Dir`/`Fmt`
-/// type-state.
+/// Prepares an unprepared (host plaintext) [`DFTMatrix`] into `res`, its resident
+/// convolution-domain form [`DFTMatrixPrepared`], with no allocation.
 ///
-/// Each factor's plaintext diagonals are prepared into a `CnvPVec` right operand
-/// (resident), so repeated evaluation no longer materializes them per factor. The
-/// resolved plan is preserved; only the factor storage changes. Build the input
-/// via [`ckks_new_dft_matrix`].
+/// Each factor's plaintext diagonals are prepared into the matching `CnvPVec` right
+/// operand of `res`, so repeated evaluation no longer materializes them per factor,
+/// and `res` takes `dft`'s resolved plan. A `res` of another factor count, factor
+/// schedule or diagonal degree, radix or width, or a factor whose diagonals do not
+/// share one scale, width and slot kind, is `InvalidOperand`, before any write.
+/// Build the input via [`ckks_new_dft_matrix`].
 pub fn ckks_prepare_dft_matrix<Dir, Fmt, BE, P>(
     module: &Module<BE>,
+    res: &mut DFTMatrixPrepared<BE, Dir, Fmt>,
     dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
     scratch: &mut ScratchArena<'_, BE>,
-) -> DFTMatrixPrepared<BE, Dir, Fmt>
+) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: CnvPVecAlloc<BE> + CKKSLinearTransformationOps<BE>,
+    Module<BE>: CKKSLinearTransformationOps<BE>,
     P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
 {
-    let inner = dft.inner();
-    let plan = inner.plan.clone();
-
-    let mut factors = Vec::with_capacity(inner.factors.len());
-    for lt in &inner.factors {
-        let first_pt = lt.first_diagonal_plaintext().expect("dft factor has no diagonals");
-        let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &lt.index(), first_pt);
-        module.ckks_prepare_linear_transformation_rhs(&mut prepared, lt, scratch);
-        factors.push(prepared);
+    const OP: &str = "ckks_prepare_dft_matrix";
+    let invalid = |reason: &str| -> crate::CKKSError {
+        CKKSCompositionError::InvalidOperand {
+            op: OP,
+            reason: reason.into(),
+        }
+        .into()
+    };
+    if res.factor_operands().len() != dft.factor_operands().len() {
+        return Err(invalid("the matrix's factor count differs from the prepared matrix's"));
     }
-
-    // Same direction/format as the input; only `R` changes.
-    DFTMatrix::from_factors(DFTMatrixFactors::new(plan, factors))
+    for (prepared, lt) in res.factor_operands().iter().zip(dft.factor_operands()) {
+        if prepared.index() != lt.index() {
+            return Err(invalid("a factor's schedule differs from the prepared matrix's"));
+        }
+        let Some(slot) = prepared.first_diagonal_plaintext() else {
+            return Err(invalid("a factor has no diagonal"));
+        };
+        let layout = (slot.n(), slot.base2k(), slot.k(), slot.max_size());
+        if lt
+            .giant_steps
+            .iter()
+            .flat_map(|gs| &gs.diagonals)
+            .any(|d| (d.plaintext.n(), d.plaintext.base2k(), d.plaintext.k(), d.plaintext.max_size()) != layout)
+        {
+            return Err(invalid("a factor's diagonal layout differs from the prepared matrix's"));
+        }
+        ensure_uniform_diagonals(OP, lt, |pt| (pt.log_delta(), pt.encoded_k().as_usize(), pt.slots()))?;
+    }
+    for (prepared, lt) in res.inner.factors.iter_mut().zip(dft.factor_operands()) {
+        module.ckks_prepare_linear_transformation_rhs(prepared, lt, scratch)?;
+    }
+    res.inner.plan = dft.plan().clone();
+    Ok(())
 }
 
 /// Builds the backend-owned, unprepared homomorphic (I)DFT for direction `Dir` and
@@ -149,7 +169,7 @@ where
 /// are ignored, like `factor_log_delta`). Each factor matrix is encoded into a
 /// CKKS linear transformation whose diagonals are kept as plaintexts (the default
 /// [`DFTMatrix`]); evaluating it materializes each diagonal on the fly per factor.
-/// Promote it to the resident form with [`ckks_prepare_dft_matrix`].
+/// Prepare it into the resident form with [`ckks_prepare_dft_matrix`].
 ///
 /// Returns an error when the plan is invalid, a generated diagonal cannot be
 /// encoded at the requested metadata, or `Fmt = Repack` is requested with

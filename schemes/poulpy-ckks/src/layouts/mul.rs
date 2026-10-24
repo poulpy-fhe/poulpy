@@ -11,7 +11,7 @@ use poulpy_hal::layouts::{
 /// A CKKS ciphertext prepared as the left operand of a `ct×ct` product.
 ///
 /// Allocated by
-/// [`CKKSMulOps::ckks_prepared_left_alloc_from_infos`](crate::api::CKKSMulOps::ckks_prepared_left_alloc_from_infos)
+/// [`CKKSModuleAlloc::ckks_prepared_left_alloc_from_infos`](crate::layouts::CKKSModuleAlloc::ckks_prepared_left_alloc_from_infos)
 /// and filled by
 /// [`CKKSMulOps::ckks_prepare_left_into`](crate::api::CKKSMulOps::ckks_prepare_left_into),
 /// or produced by
@@ -36,7 +36,7 @@ pub struct CKKSPreparedLeft<BE: Backend> {
 /// A CKKS ciphertext prepared as the right operand of a `ct×ct` product.
 ///
 /// Allocated by
-/// [`CKKSMulOps::ckks_prepared_right_alloc_from_infos`](crate::api::CKKSMulOps::ckks_prepared_right_alloc_from_infos)
+/// [`CKKSModuleAlloc::ckks_prepared_right_alloc_from_infos`](crate::layouts::CKKSModuleAlloc::ckks_prepared_right_alloc_from_infos)
 /// and filled by
 /// [`CKKSMulOps::ckks_prepare_right_into`](crate::api::CKKSMulOps::ckks_prepare_right_into),
 /// or produced by

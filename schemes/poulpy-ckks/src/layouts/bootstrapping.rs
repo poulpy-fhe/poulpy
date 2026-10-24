@@ -841,7 +841,11 @@ impl<BE: Backend, F> BootstrappingContextUnprepared<BE, F> {
 
     /// Prepares the matrices into the resident form the pipeline evaluates.
     /// Each unprepared matrix is released as soon as it has been prepared.
-    pub fn prepare(self, module: &Module<BE>, scratch: &mut ScratchArena<'_, BE>) -> BootstrappingContext<BE, F>
+    ///
+    /// # Errors
+    ///
+    /// As [`CKKSDFTOps::ckks_prepare_dft_matrix`].
+    pub fn prepare(self, module: &Module<BE>, scratch: &mut ScratchArena<'_, BE>) -> Result<BootstrappingContext<BE, F>>
     where
         Module<BE>: CKKSDFTOps<BE>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
@@ -863,31 +867,35 @@ impl<BE: Backend, F> BootstrappingContextUnprepared<BE, F> {
         } = self;
         let coeffs_to_slots = {
             let unprepared = coeffs_to_slots;
-            module.ckks_prepare_dft_matrix(&unprepared, scratch)
+            module.ckks_prepare_dft_matrix_alloc(&unprepared, scratch)?
         };
         let slots_to_coeffs = {
             let unprepared = slots_to_coeffs;
-            module.ckks_prepare_dft_matrix(&unprepared, scratch)
+            module.ckks_prepare_dft_matrix_alloc(&unprepared, scratch)?
         };
-        let coeffs_to_slots_bypass =
-            coeffs_to_slots_bypass.map(|unprepared| module.ckks_prepare_dft_matrix(&unprepared, scratch));
-        let eval_mod_ci = eval_mod_ci.map(|ci| EvalModCI {
-            eval_mod: ci.eval_mod,
-            pre: match ci.pre {
-                CIPreUnprepared::Product(pre) => CIPre(CIPreForm::Product(pre)),
-                CIPreUnprepared::Folded(folded) => {
-                    let [even, odd]: [_; 2] = module
-                        .ckks_prepare_dft_matrix(&folded, scratch)
-                        .inner
-                        .factors
-                        .try_into()
-                        .unwrap_or_else(|_| unreachable!("an even and an odd factor"));
-                    CIPre(CIPreForm::Folded { even, odd })
-                }
-            },
-            post: ci.post,
-        });
-        BootstrappingContext {
+        let coeffs_to_slots_bypass = coeffs_to_slots_bypass
+            .map(|unprepared| module.ckks_prepare_dft_matrix_alloc(&unprepared, scratch))
+            .transpose()?;
+        let eval_mod_ci = match eval_mod_ci {
+            Some(ci) => Some(EvalModCI {
+                eval_mod: ci.eval_mod,
+                pre: match ci.pre {
+                    CIPreUnprepared::Product(pre) => CIPre(CIPreForm::Product(pre)),
+                    CIPreUnprepared::Folded(folded) => {
+                        let [even, odd]: [_; 2] = module
+                            .ckks_prepare_dft_matrix_alloc(&folded, scratch)?
+                            .inner
+                            .factors
+                            .try_into()
+                            .unwrap_or_else(|_| unreachable!("an even and an odd factor"));
+                        CIPre(CIPreForm::Folded { even, odd })
+                    }
+                },
+                post: ci.post,
+            }),
+            None => None,
+        };
+        Ok(BootstrappingContext {
             plan,
             c2s_guard_bits,
             functional_message_modulus,
@@ -901,7 +909,7 @@ impl<BE: Backend, F> BootstrappingContextUnprepared<BE, F> {
             eval_mod_ci,
             pipeline,
             sparse_secret_hamming_weight,
-        }
+        })
     }
 }
 
@@ -929,7 +937,7 @@ where
         Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
     {
-        Ok(Self::compile_unprepared(module, base2k, plan, scratch)?.prepare(module, scratch))
+        Self::compile_unprepared(module, base2k, plan, scratch)?.prepare(module, scratch)
     }
 
     /// [`Self::compile`] for EvalMod on the conjugate-invariant ring: also encodes
@@ -956,7 +964,7 @@ where
         Module<BCI>: CKKSModuleAlloc<BCI> + CKKSEncodingOps<BCI, F>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
     {
-        Ok(Self::compile_ci_unprepared(module, ci, base2k, plan, scratch, scratch_ci)?.prepare(module, scratch))
+        Self::compile_ci_unprepared(module, ci, base2k, plan, scratch, scratch_ci)?.prepare(module, scratch)
     }
 
     /// Scratch of [`Self::compile_ci_unprepared`] for a bootstrap of degree `N = ci.n()`:

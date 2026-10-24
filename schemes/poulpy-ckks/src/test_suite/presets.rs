@@ -208,7 +208,7 @@ where
         if prepare_scratch > BE::len_bytes(&scratch.data) {
             scratch = ScratchOwned::<BE>::alloc(prepare_scratch);
         }
-        let context = unprepared.prepare(&module, &mut scratch.borrow());
+        let context = unprepared.prepare(&module, &mut scratch.borrow()).unwrap();
         let boot_scratch = module
             .ckks_bootstrap_tmp_bytes(&bootstrap_layout, &input_layout, &context, &keys_layout)
             .max(keys_layout.prepare_tmp_bytes(&module));
@@ -1074,7 +1074,9 @@ where
     )
     .unwrap();
     let bytes = unprepared.prepare_tmp_bytes(module);
-    unprepared.prepare(module, &mut ScratchOwned::<BE>::alloc(bytes).borrow())
+    unprepared
+        .prepare(module, &mut ScratchOwned::<BE>::alloc(bytes).borrow())
+        .unwrap()
 }
 
 /// [`BootstrappingContext::generate_keys_ci`] of `layout`, on arenas of exactly its query.

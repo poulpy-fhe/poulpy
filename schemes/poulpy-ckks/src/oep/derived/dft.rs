@@ -1,10 +1,27 @@
 //! Format compositions over the selected CKKS DFT and arithmetic contracts.
 use crate::api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSDFTOps, CKKSImagOps, CKKSRotateOps, CKKSSubOps, LtDiagonalMeta};
-use crate::layouts::{CKKSModuleAlloc, DFTMatrix, Decode, Encode, Repack, Split, Standard};
+use crate::layouts::{CKKSModuleAlloc, DFTMatrix, DFTMatrixPrepared, Decode, Encode, Repack, Split, Standard};
+use crate::oep::DFTImpl;
 use crate::{CKKSCtBounds, CKKSResult as Result, SetCKKSInfos, SlotsKind};
 use poulpy_core::DiagonalProd;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos, LinearTransformation};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+
+/// A prepared matrix of `dft`'s layout, allocated then prepared into from `dft`.
+pub(crate) fn ckks_prepare_dft_matrix_alloc_derived<BE, Dir, Fmt, P>(
+    module: &Module<BE>,
+    dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<DFTMatrixPrepared<BE, Dir, Fmt>>
+where
+    BE: DFTImpl,
+    P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
+{
+    let mut res = module.ckks_dft_matrix_prepared_alloc_from_infos(dft);
+    BE::ckks_prepare_dft_matrix(module, &mut res, dft, scratch)?;
+    Ok(res)
+}
+
 /// Homomorphic encoding (CoeffsToSlots), `Standard` format: evaluates the Encode
 /// (IDFT) matrix in place, retaining selected raw DFT dispatch.
 pub(crate) fn ckks_coeffs_to_slots_assign_derived<BE, P, Dst, H>(

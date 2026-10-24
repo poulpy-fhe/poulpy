@@ -52,12 +52,15 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
         key: &K,
     ) -> usize;
 
+    /// Prepares every diagonal of `lt` into `prepared`; diagonals not sharing one scale, width and slot kind are
+    /// `InvalidOperand`, before any write.
     fn ckks_prepare_linear_transformation_rhs<P>(
         module: &Module<Self>,
         prepared: &mut LinearTransformationPrepared<Self>,
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, Self>,
-    ) where
+    ) -> Result<()>
+    where
         P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds + DiagonalProd<Self>;
 
     fn ckks_prepare_linear_transformation_baby_steps<Src, H>(
@@ -225,7 +228,8 @@ macro_rules! impl_ckks_linear_transformation_reference_full {
                 prepared: &mut ::poulpy_core::LinearTransformationPrepared<Self>,
                 lt: &::poulpy_core::LinearTransformation<P>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-            ) where
+            ) -> $crate::CKKSResult<()>
+            where
                 P: ::poulpy_core::layouts::GLWEToBackendRef<Self>
                     + ::poulpy_core::layouts::IntPolyInfos
                     + $crate::CKKSCtBounds

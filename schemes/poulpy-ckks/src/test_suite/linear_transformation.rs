@@ -11,7 +11,8 @@ use crate::api::CKKSEncodingOps;
 use std::collections::{HashMap, HashSet};
 
 use poulpy_core::layouts::{
-    Diagonals, Evaluate, GGLWEInfos, GetAutomorphismKey, LWEInfos, LinearTransformationStrategy, TorusPrecision, k_digit_of,
+    Diagonals, Evaluate, GGLWEInfos, GetAutomorphismKey, LWEInfos, LinearTransformationStrategy, SetGLWEPlaintextInfos,
+    TorusPrecision, k_digit_of,
     prepared::{GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef},
 };
 use poulpy_hal::{
@@ -20,7 +21,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCompositionError,
+    CKKSCompositionError, CKKSInfos, Scale, SetCKKSInfos, SlotsKind,
     api::{CKKSLinearTransformationOps, LinearTransformation, LinearTransformationBabySteps, LinearTransformationPrepared},
     layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, ComplexDiagonals},
     test_suite::reference_encoder::ReferenceEncoder,
@@ -104,7 +105,9 @@ where
 {
     let first = lt.first_diagonal_plaintext().expect("linear transformation has no diagonals");
     let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &lt.index(), first);
-    module.ckks_prepare_linear_transformation_rhs(&mut prepared, lt, scratch);
+    module
+        .ckks_prepare_linear_transformation_rhs(&mut prepared, lt, scratch)
+        .unwrap();
     prepared
 }
 
@@ -398,7 +401,7 @@ pub fn test_linear_transformation_sum<BE, F, E>(
     bad.giant_steps.last_mut().unwrap().diagonals[0]
         .plaintext
         .set_log_scale(scale + 1);
-    reject(&two, &[&babies[0], &babies[1]], &[&prepared[0], &bad], "not uniform", false);
+    reject(&two, &[&babies[0], &babies[1]], &[&prepared[0], &bad], "not uniform", true);
     let narrow = alloc_ct(&params, module, params.k - params.base2k);
     reject(
         &[&cts[0], &narrow],
@@ -433,6 +436,87 @@ pub fn test_linear_transformation_sum<BE, F, E>(
         "missing prepared baby-step rotation",
         false,
     );
+}
+
+/// A transform whose diagonals do not share one scale or slot kind is refused by its preparation as `InvalidOperand`,
+/// with the destination unchanged.
+pub fn test_prepare_linear_transformation_rejects_mixed_diagonals<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    _host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    F: TestScalar,
+{
+    let m = params.n / 2;
+    let mut scratch = alloc_scratch(&params, module);
+    let indices = [0, 1, 2, 3, 4, 5];
+    let lt = encode_lt(
+        module,
+        &params,
+        &complex_diagonals::<F>(&indices, m, 0),
+        2,
+        false,
+        &mut scratch.borrow(),
+    );
+    let want = prepare_lt(module, &lt, &mut scratch.borrow());
+    let mut res = prepare_lt(module, &lt, &mut scratch.borrow());
+    for case in ["scale", "slot kind"] {
+        // Other values on the same schedule, so a write would show in the destination.
+        let mut mixed = encode_lt(
+            module,
+            &params,
+            &complex_diagonals::<F>(&indices, m, 1),
+            2,
+            false,
+            &mut scratch.borrow(),
+        );
+        let last = &mut mixed.giant_steps.last_mut().unwrap().diagonals.last_mut().unwrap().plaintext;
+        if case == "scale" {
+            let mut meta = last.meta();
+            meta.scale = Scale::Log(last.log_delta() + 1);
+            last.set_meta(meta);
+        } else {
+            last.set_slots(SlotsKind::Real);
+        }
+        let err = module
+            .ckks_prepare_linear_transformation_rhs(&mut res, &mixed, &mut scratch.borrow())
+            .unwrap_err();
+        assert!(
+            matches!(
+                err.composition(),
+                Some(CKKSCompositionError::InvalidOperand {
+                    op: "ckks_prepare_linear_transformation_rhs",
+                    ..
+                })
+            ),
+            "{case}: {err:?}"
+        );
+        assert!(err.to_string().contains("not uniform"), "{case}: {err}");
+        let diagonals = |lt: &LinearTransformationPrepared<BE>| {
+            lt.giant_steps
+                .iter()
+                .flat_map(|gs| &gs.diagonals)
+                .map(|d| (d.plaintext.log_scale(), d.plaintext.real_slots()))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            diagonals(&res),
+            diagonals(&want),
+            "{case}: a rejected preparation wrote the destination"
+        );
+        assert!(
+            res.giant_steps
+                .iter()
+                .flat_map(|gs| &gs.diagonals)
+                .zip(want.giant_steps.iter().flat_map(|gs| &gs.diagonals))
+                .all(|(have, want)| have.plaintext.cnv() == want.plaintext.cnv()),
+            "{case}: a rejected preparation wrote the destination"
+        );
+    }
 }
 
 /// The stored keys, with the Galois elements listed in `coarse_ps` answered

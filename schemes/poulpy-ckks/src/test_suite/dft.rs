@@ -133,7 +133,10 @@ where
     if prepare_bytes > BE::len_bytes(&scratch.data) {
         *scratch = ScratchOwned::<BE>::alloc(prepare_bytes);
     }
-    let prepared = module.ckks_prepare_dft_matrix(matrix, &mut scratch.borrow());
+    let mut prepared = module.ckks_dft_matrix_prepared_alloc_from_infos(matrix);
+    module
+        .ckks_prepare_dft_matrix(&mut prepared, matrix, &mut scratch.borrow())
+        .unwrap();
     let layout = ckks_spec(
         params.n,
         params.base2k,

@@ -30,11 +30,13 @@ fn downstream_dft_preparation_preserves_plan_and_factors() {
             &factor.index(),
             factor.first_diagonal_plaintext().unwrap(),
         );
-        module.ckks_prepare_linear_transformation_rhs(&mut prepared, factor, &mut scratch.borrow());
+        module
+            .ckks_prepare_linear_transformation_rhs(&mut prepared, factor, &mut scratch.borrow())
+            .unwrap();
         factors.push(prepared);
     }
     let custom = matrix.try_with_factor_operands(&module, factors).unwrap();
-    let reference = module.ckks_prepare_dft_matrix(&matrix, &mut scratch.borrow());
+    let reference = module.ckks_prepare_dft_matrix_alloc(&matrix, &mut scratch.borrow()).unwrap();
     assert_eq!(custom.plan().schedule(), reference.plan().schedule());
     assert_eq!(custom.plan().kind(), reference.plan().kind());
     assert_eq!(custom.plan().format(), reference.plan().format());
@@ -44,6 +46,67 @@ fn downstream_dft_preparation_preserves_plan_and_factors() {
         for (a, b) in a.giant_steps.iter().zip(&b.giant_steps) {
             for (a, b) in a.diagonals.iter().zip(&b.diagonals) {
                 assert_eq!(a.plaintext.cnv(), b.plaintext.cnv());
+            }
+        }
+    }
+}
+
+#[test]
+fn dft_preparation_rejects_another_layout() {
+    use poulpy_ckks::CKKSCompositionError;
+    use poulpy_ckks::layouts::{CKKSModuleAlloc, DFTType};
+    let module = Module::<FFT64Portable>::new(64);
+    let mut scratch = ScratchOwned::<FFT64Portable>::alloc(1 << 20);
+    let build = |depths: Vec<(usize, usize)>, base2k: usize, scratch: &mut ScratchOwned<FFT64Portable>| {
+        let plan = DFTPlan::new(
+            DFTType::Encode,
+            depths,
+            DFTOutputFormat::Standard,
+            CoeffsMeta::from_delta_budget(12, 2),
+        )
+        .unwrap();
+        <Module<FFT64Portable> as CKKSDFTMatrixOps<FFT64Portable, f64>>::ckks_new_dft_matrix::<Encode, Standard>(
+            &module,
+            base2k.into(),
+            &plan,
+            &mut scratch.borrow(),
+        )
+        .unwrap()
+    };
+    let matrix = build(vec![(1, 1), (2, 2)], 16, &mut scratch);
+    let mut res = module.ckks_dft_matrix_prepared_alloc_from_infos(&matrix);
+    module
+        .ckks_prepare_dft_matrix(&mut res, &matrix, &mut scratch.borrow())
+        .unwrap();
+    let want = module.ckks_prepare_dft_matrix_alloc(&matrix, &mut scratch.borrow()).unwrap();
+    let others = [
+        (build(vec![(3, 1)], 16, &mut scratch), "factor count"),
+        (build(vec![(1, 1), (2, 2)], 12, &mut scratch), "diagonal layout"),
+    ];
+    for (other, reason) in others {
+        let err = module
+            .ckks_prepare_dft_matrix(&mut res, &other, &mut scratch.borrow())
+            .unwrap_err();
+        assert!(
+            matches!(
+                err.composition(),
+                Some(CKKSCompositionError::InvalidOperand {
+                    op: "ckks_prepare_dft_matrix",
+                    ..
+                })
+            ),
+            "{err:?}"
+        );
+        assert!(err.to_string().contains(reason), "expected {reason:?}, got: {err}");
+        for (a, b) in res.factor_operands().iter().zip(want.factor_operands()) {
+            for (a, b) in a.giant_steps.iter().zip(&b.giant_steps) {
+                for (a, b) in a.diagonals.iter().zip(&b.diagonals) {
+                    assert_eq!(
+                        a.plaintext.cnv(),
+                        b.plaintext.cnv(),
+                        "a rejected preparation wrote the destination"
+                    );
+                }
             }
         }
     }
@@ -74,11 +137,13 @@ fn checked_dft_construction_rejects_invalid_markers_and_layouts() {
                     &factor.index(),
                     factor.first_diagonal_plaintext().unwrap(),
                 );
-                module.ckks_prepare_linear_transformation_rhs(
-                    &mut prepared,
-                    factor,
-                    &mut ScratchOwned::<FFT64Portable>::alloc(1 << 20).borrow(),
-                );
+                module
+                    .ckks_prepare_linear_transformation_rhs(
+                        &mut prepared,
+                        factor,
+                        &mut ScratchOwned::<FFT64Portable>::alloc(1 << 20).borrow(),
+                    )
+                    .unwrap();
                 prepared
             })
             .collect::<Vec<_>>()
@@ -279,17 +344,18 @@ unsafe impl poulpy_ckks::oep::DFTImpl for OverrideBackend {
 
     fn ckks_prepare_dft_matrix<Dir, Fmt, P>(
         module: &Module<Self>,
+        res: &mut DFTMatrixPrepared<Self, Dir, Fmt>,
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
         scratch: &mut ScratchArena<'_, Self>,
-    ) -> DFTMatrixPrepared<Self, Dir, Fmt>
+    ) -> Result<()>
     where
         P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds + DiagonalProd<Self>,
     {
         let (marker, mut remaining) = scratch.borrow().take_region(DFT_PREPARE_SCRATCH);
         marker.fill(0xD7);
-        let prepared = poulpy_ckks::reference::dft::ckks_prepare_dft_matrix(module, dft, &mut remaining);
+        poulpy_ckks::reference::dft::ckks_prepare_dft_matrix(module, res, dft, &mut remaining)?;
         assert!(marker.iter().all(|&byte| byte == 0xD7));
-        prepared
+        Ok(())
     }
 
     fn ckks_dft_evaluate_assign<Dir, Fmt, P, Dst, H>(
@@ -419,7 +485,9 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
     .unwrap();
     let prepare_bytes = unprepared.prepare_tmp_bytes(&module);
     assert!(prepare_bytes >= DFT_PREPARE_SCRATCH);
-    let context = unprepared.prepare(&module, &mut ScratchOwned::<OverrideBackend>::alloc(prepare_bytes).borrow());
+    let context = unprepared
+        .prepare(&module, &mut ScratchOwned::<OverrideBackend>::alloc(prepare_bytes).borrow())
+        .unwrap();
     let key = poulpy_core::layouts::GLWETensorKeyLayout {
         n: 64usize.into(),
         base2k: 16usize.into(),
@@ -536,7 +604,9 @@ fn dft_preparation_uses_selected_scratch() {
     )
     .unwrap();
     let bytes = module.ckks_prepare_dft_matrix_tmp_bytes(&matrix);
-    let prepared = module.ckks_prepare_dft_matrix(&matrix, &mut ScratchOwned::<OverrideBackend>::alloc(bytes).borrow());
+    let prepared = module
+        .ckks_prepare_dft_matrix_alloc(&matrix, &mut ScratchOwned::<OverrideBackend>::alloc(bytes).borrow())
+        .unwrap();
     for (factor, prepared) in matrix.factor_operands().iter().zip(prepared.factor_operands()) {
         assert_eq!(factor.index(), prepared.index());
     }
