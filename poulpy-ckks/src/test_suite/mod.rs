@@ -624,6 +624,10 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::linear_transformation::test_prepare_linear_transformation_rejects_mixed_diagonals
             );
             run_test!(
+                prepare_linear_transformation_rejects_foreign_layout,
+                $crate::test_suite::linear_transformation::test_prepare_linear_transformation_rejects_foreign_layout
+            );
+            run_test!(
                 linear_transformation_mixed_key_layouts,
                 $crate::test_suite::linear_transformation::test_linear_transformation_mixed_key_layouts
             );
@@ -708,6 +712,7 @@ macro_rules! ckks_backend_test_suite {
                 dft_plan_helpers_match_compiled,
                 $crate::test_suite::dft::test_dft_plan_helpers_match_compiled
             );
+            run_test!(dft_prepare_into, $crate::test_suite::dft::test_dft_prepare_into);
             run_test!(mul_ct_aligned, $crate::test_suite::mul::test_mul_ct_aligned);
             run_test!(mul_ct_delta_a_gt_b, $crate::test_suite::mul::test_mul_ct_delta_a_gt_b);
             run_test!(mul_ct_delta_a_lt_b, $crate::test_suite::mul::test_mul_ct_delta_a_lt_b);

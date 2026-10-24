@@ -438,8 +438,60 @@ pub fn test_linear_transformation_sum<BE, F, E>(
     );
 }
 
+/// Prepares `lt` into `res` on an empty arena, which must be refused as `InvalidOperand` for `reason` before any write,
+/// `res` staying equal to `want`.
+fn assert_prepare_refused<BE>(
+    module: &Module<BE>,
+    res: &mut LinearTransformationPrepared<BE>,
+    want: &LinearTransformationPrepared<BE>,
+    lt: &LinearTransformation<CKKSPlaintextOwned<BE>>,
+    reason: &str,
+) where
+    BE: TestContextBackend<Ring = Standard>,
+    Module<BE>: CKKSLinearTransformationOps<BE>,
+{
+    let err = with_scratch::<BE, _>(0, |scratch| module.ckks_prepare_linear_transformation_rhs(res, lt, scratch)).unwrap_err();
+    assert!(
+        matches!(
+            err.composition(),
+            Some(CKKSCompositionError::InvalidOperand {
+                op: "ckks_prepare_linear_transformation_rhs",
+                ..
+            })
+        ),
+        "{reason}: {err:?}"
+    );
+    assert!(err.to_string().contains(reason), "expected {reason:?}, got: {err}");
+    let diagonals = |lt: &LinearTransformationPrepared<BE>| {
+        lt.giant_steps
+            .iter()
+            .flat_map(|gs| gs.diagonals.iter().map(move |d| (gs.rot, d.baby)))
+            .collect::<Vec<_>>()
+    };
+    let stashes = |lt: &LinearTransformationPrepared<BE>| {
+        lt.giant_steps
+            .iter()
+            .flat_map(|gs| &gs.diagonals)
+            .map(|d| (d.plaintext.log_scale(), d.plaintext.real_slots()))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        (diagonals(res), stashes(res)),
+        (diagonals(want), stashes(want)),
+        "{reason}: a rejected preparation wrote the destination"
+    );
+    assert!(
+        res.giant_steps
+            .iter()
+            .flat_map(|gs| &gs.diagonals)
+            .zip(want.giant_steps.iter().flat_map(|gs| &gs.diagonals))
+            .all(|(have, want)| have.plaintext.cnv() == want.plaintext.cnv()),
+        "{reason}: a rejected preparation wrote the destination"
+    );
+}
+
 /// A transform whose diagonals do not share one scale or slot kind is refused by its preparation as `InvalidOperand`,
-/// with the destination unchanged.
+/// before any write and any scratch, with the destination unchanged.
 pub fn test_prepare_linear_transformation_rejects_mixed_diagonals<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -482,41 +534,51 @@ pub fn test_prepare_linear_transformation_rejects_mixed_diagonals<BE, F, E>(
         } else {
             last.set_slots(SlotsKind::Real);
         }
-        let err = module
-            .ckks_prepare_linear_transformation_rhs(&mut res, &mixed, &mut scratch.borrow())
-            .unwrap_err();
-        assert!(
-            matches!(
-                err.composition(),
-                Some(CKKSCompositionError::InvalidOperand {
-                    op: "ckks_prepare_linear_transformation_rhs",
-                    ..
-                })
-            ),
-            "{case}: {err:?}"
-        );
-        assert!(err.to_string().contains("not uniform"), "{case}: {err}");
-        let diagonals = |lt: &LinearTransformationPrepared<BE>| {
-            lt.giant_steps
-                .iter()
-                .flat_map(|gs| &gs.diagonals)
-                .map(|d| (d.plaintext.log_scale(), d.plaintext.real_slots()))
-                .collect::<Vec<_>>()
-        };
-        assert_eq!(
-            diagonals(&res),
-            diagonals(&want),
-            "{case}: a rejected preparation wrote the destination"
-        );
-        assert!(
-            res.giant_steps
-                .iter()
-                .flat_map(|gs| &gs.diagonals)
-                .zip(want.giant_steps.iter().flat_map(|gs| &gs.diagonals))
-                .all(|(have, want)| have.plaintext.cnv() == want.plaintext.cnv()),
-            "{case}: a rejected preparation wrote the destination"
-        );
+        assert_prepare_refused(module, &mut res, &want, &mixed, "not uniform");
     }
+}
+
+/// A destination allocated for another schedule or diagonal layout is refused by the preparation as `InvalidOperand`,
+/// before any write and any scratch, with the destination unchanged.
+pub fn test_prepare_linear_transformation_rejects_foreign_layout<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    _host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    F: TestScalar,
+{
+    let m = params.n / 2;
+    let mut scratch = alloc_scratch(&params, module);
+    let indices = [0, 1, 2, 3, 4, 5];
+    let lt = encode_lt(
+        module,
+        &params,
+        &complex_diagonals::<F>(&indices, m, 0),
+        2,
+        false,
+        &mut scratch.borrow(),
+    );
+    let want = prepare_lt(module, &lt, &mut scratch.borrow());
+    let mut res = prepare_lt(module, &lt, &mut scratch.borrow());
+    // Other values, so a write would show in the destination.
+    let other = complex_diagonals::<F>(&indices, m, 1);
+    let other_schedule = encode_lt(module, &params, &other, 4, false, &mut scratch.borrow());
+    assert_prepare_refused(module, &mut res, &want, &other_schedule, "schedule");
+    let other_radix = crate::encoding::ckks_encode_linear_transformation_from_diagonals(
+        module,
+        (params.base2k - 1).into(),
+        params.prec().into(),
+        &other,
+        LinearTransformationStrategy::Bsgs { giant_step: 2 },
+        false,
+        &mut scratch.borrow(),
+    )
+    .unwrap();
+    assert_prepare_refused(module, &mut res, &want, &other_radix, "diagonal's layout");
 }
 
 /// The stored keys, with the Galois elements listed in `coarse_ps` answered

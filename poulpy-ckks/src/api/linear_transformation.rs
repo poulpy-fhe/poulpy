@@ -164,8 +164,9 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     ///
     /// # Errors
     ///
-    /// `InvalidOperand` when the diagonals of `lt` do not share one scale, width and slot kind, before any write to
-    /// `prepared`.
+    /// `InvalidOperand`, before any write to `prepared`, when `prepared` was allocated for another schedule or
+    /// diagonal degree, radix or width than `lt`'s, or when the diagonals of `lt` do not share one scale, width and
+    /// slot kind.
     fn ckks_prepare_linear_transformation_rhs<P>(
         &self,
         prepared: &mut LinearTransformationPrepared<BE>,

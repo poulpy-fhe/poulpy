@@ -25,8 +25,7 @@ use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     DiagonalProd,
     layouts::{
-        Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation,
-        LinearTransformationStrategy,
+        Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformation, LinearTransformationStrategy,
     },
 };
 use poulpy_hal::{
@@ -39,7 +38,9 @@ use crate::{
     api::{CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, LinearTransformationBabySteps, LtDiagonalMeta},
     layouts::{
         CKKSModuleAlloc, CKKSPlaintextOwned, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTPlan, DftDirection, DftFormat,
-        DftScalar, dft_matrices::gen_dft_matrices, validation::ensure_uniform_diagonals,
+        DftScalar,
+        dft_matrices::gen_dft_matrices,
+        validation::{ensure_prepared_transformation_layout, ensure_uniform_diagonals},
     },
     oep::CKKSEncodingImpl,
 };
@@ -131,32 +132,15 @@ where
     P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
 {
     const OP: &str = "ckks_prepare_dft_matrix";
-    let invalid = |reason: &str| -> crate::CKKSError {
-        CKKSCompositionError::InvalidOperand {
-            op: OP,
-            reason: reason.into(),
-        }
-        .into()
-    };
     if res.factor_operands().len() != dft.factor_operands().len() {
-        return Err(invalid("the matrix's factor count differs from the prepared matrix's"));
+        return Err(CKKSCompositionError::InvalidOperand {
+            op: OP,
+            reason: "the matrix's factor count differs from the prepared matrix's".into(),
+        }
+        .into());
     }
     for (prepared, lt) in res.factor_operands().iter().zip(dft.factor_operands()) {
-        if prepared.index() != lt.index() {
-            return Err(invalid("a factor's schedule differs from the prepared matrix's"));
-        }
-        let Some(slot) = prepared.first_diagonal_plaintext() else {
-            return Err(invalid("a factor has no diagonal"));
-        };
-        let layout = (slot.n(), slot.base2k(), slot.k(), slot.max_size());
-        if lt
-            .giant_steps
-            .iter()
-            .flat_map(|gs| &gs.diagonals)
-            .any(|d| (d.plaintext.n(), d.plaintext.base2k(), d.plaintext.k(), d.plaintext.max_size()) != layout)
-        {
-            return Err(invalid("a factor's diagonal layout differs from the prepared matrix's"));
-        }
+        ensure_prepared_transformation_layout(OP, prepared, lt)?;
         ensure_uniform_diagonals(OP, lt, |pt| (pt.log_delta(), pt.encoded_k().as_usize(), pt.slots()))?;
     }
     for (prepared, lt) in res.inner.factors.iter_mut().zip(dft.factor_operands()) {

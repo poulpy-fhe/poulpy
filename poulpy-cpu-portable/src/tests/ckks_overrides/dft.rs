@@ -52,67 +52,6 @@ fn downstream_dft_preparation_preserves_plan_and_factors() {
 }
 
 #[test]
-fn dft_preparation_rejects_another_layout() {
-    use poulpy_ckks::CKKSCompositionError;
-    use poulpy_ckks::layouts::{CKKSModuleAlloc, DFTType};
-    let module = Module::<FFT64Portable>::new(64);
-    let mut scratch = ScratchOwned::<FFT64Portable>::alloc(1 << 20);
-    let build = |depths: Vec<(usize, usize)>, base2k: usize, scratch: &mut ScratchOwned<FFT64Portable>| {
-        let plan = DFTPlan::new(
-            DFTType::Encode,
-            depths,
-            DFTOutputFormat::Standard,
-            CoeffsMeta::from_delta_budget(12, 2),
-        )
-        .unwrap();
-        <Module<FFT64Portable> as CKKSDFTMatrixOps<FFT64Portable, f64>>::ckks_new_dft_matrix::<Encode, Standard>(
-            &module,
-            base2k.into(),
-            &plan,
-            &mut scratch.borrow(),
-        )
-        .unwrap()
-    };
-    let matrix = build(vec![(1, 1), (2, 2)], 16, &mut scratch);
-    let mut res = module.ckks_dft_matrix_prepared_alloc_from_infos(&matrix);
-    module
-        .ckks_prepare_dft_matrix(&mut res, &matrix, &mut scratch.borrow())
-        .unwrap();
-    let want = module.ckks_prepare_dft_matrix_alloc(&matrix, &mut scratch.borrow()).unwrap();
-    let others = [
-        (build(vec![(3, 1)], 16, &mut scratch), "factor count"),
-        (build(vec![(1, 1), (2, 2)], 12, &mut scratch), "diagonal layout"),
-    ];
-    for (other, reason) in others {
-        let err = module
-            .ckks_prepare_dft_matrix(&mut res, &other, &mut scratch.borrow())
-            .unwrap_err();
-        assert!(
-            matches!(
-                err.composition(),
-                Some(CKKSCompositionError::InvalidOperand {
-                    op: "ckks_prepare_dft_matrix",
-                    ..
-                })
-            ),
-            "{err:?}"
-        );
-        assert!(err.to_string().contains(reason), "expected {reason:?}, got: {err}");
-        for (a, b) in res.factor_operands().iter().zip(want.factor_operands()) {
-            for (a, b) in a.giant_steps.iter().zip(&b.giant_steps) {
-                for (a, b) in a.diagonals.iter().zip(&b.diagonals) {
-                    assert_eq!(
-                        a.plaintext.cnv(),
-                        b.plaintext.cnv(),
-                        "a rejected preparation wrote the destination"
-                    );
-                }
-            }
-        }
-    }
-}
-
-#[test]
 fn checked_dft_construction_rejects_invalid_markers_and_layouts() {
     use poulpy_ckks::layouts::DFTType;
     let module = Module::<FFT64Portable>::new(64);

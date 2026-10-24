@@ -26,14 +26,16 @@ use std::collections::HashMap;
 use poulpy_core::layouts::Base2K;
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned},
+    layouts::{
+        Backend, CyclotomicOrder, DataView, DataViewMut, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned,
+    },
 };
 
 use poulpy_core::{GLWENoise, layouts::LWEInfos};
 
 use crate::SlotsKind;
 use crate::{
-    CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos,
+    CKKSCompositionError, CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos,
     api::{CKKSDFTMatrixOps, CKKSDFTOps},
     layouts::{
         CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, DFTMatrix, DFTMatrixPrepared,
@@ -46,6 +48,7 @@ use crate::{
             TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, ckks_encrypt, ckks_encrypt_coeffs,
             ckks_encrypt_pt, ckks_spec, gen_atk, gen_sk_with_raw, test_vector_1,
         },
+        parity::helpers::with_scratch,
     },
 };
 
@@ -724,6 +727,134 @@ fn assert_factor_degrees<BE: Backend, Dir, Fmt: DftFormat>(
     for (i, (lt, s)) in matrix.factor_operands().iter().zip(sparsity).enumerate() {
         let degree = lt.first_diagonal_plaintext().expect("factor has diagonals").n().as_usize();
         assert_eq!(degree, (n >> s).max(BE::MIN_DEGREE), "{what}: factor {i} plaintext degree");
+    }
+}
+
+/// A prepared matrix allocated from an unprepared one: its bytes query is its buffers' length, preparing into it gives
+/// the allocating preparation's bytes, preparing into it again after poisoning it keeps its buffers and gives them
+/// again, and a matrix of another schedule or with non-uniform diagonals is refused as `InvalidOperand` before any write
+/// and any scratch, its bytes and infos unchanged.
+pub fn test_dft_prepare_into<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
+{
+    let params = sparse_params(&params);
+    let module = Module::<BE>::new(params.n as u64);
+    let mut scratch = alloc_scratch(&params, &module);
+    let base2k = Base2K(params.base2k as u32);
+    let log_slots = module.ckks_max_slots().ilog2() as usize;
+    let build = |giant_step: usize, scratch: &mut ScratchOwned<BE>| -> DFTMatrix<BE, Encode, Standard> {
+        let plan = DFTPlan::new(
+            DFTType::Encode,
+            vec![(1usize, giant_step); log_slots],
+            DFTOutputFormat::Standard,
+            factor_meta(params.prec().log_delta()),
+        )
+        .unwrap();
+        module
+            .ckks_new_dft_matrix::<Encode, Standard>(base2k, &plan, &mut scratch.borrow())
+            .unwrap()
+    };
+    let buffers = |m: &DFTMatrixPrepared<BE, Encode, Standard>| -> Vec<Vec<u8>> {
+        m.factor_operands()
+            .iter()
+            .flat_map(|factor| factor.giant_steps.iter().flat_map(|gs| &gs.diagonals))
+            .map(|d| d.plaintext.cnv().data().to_vec())
+            .collect()
+    };
+    let addresses = |m: &DFTMatrixPrepared<BE, Encode, Standard>| -> Vec<*const u8> {
+        m.factor_operands()
+            .iter()
+            .flat_map(|factor| factor.giant_steps.iter().flat_map(|gs| &gs.diagonals))
+            .map(|d| d.plaintext.cnv().data().as_ptr())
+            .collect()
+    };
+    let infos = |m: &DFTMatrixPrepared<BE, Encode, Standard>| -> (String, Vec<(i64, i64, usize, bool)>) {
+        let diagonals = m
+            .factor_operands()
+            .iter()
+            .flat_map(|factor| {
+                factor.giant_steps.iter().flat_map(|gs| {
+                    gs.diagonals
+                        .iter()
+                        .map(move |d| (gs.rot, d.baby, d.plaintext.log_scale(), d.plaintext.real_slots()))
+                })
+            })
+            .collect();
+        (format!("{:?}", m.plan()), diagonals)
+    };
+
+    let dft = build(2, &mut scratch);
+    let prepare_bytes = module.ckks_prepare_dft_matrix_tmp_bytes(&dft);
+    let fresh = with_scratch::<BE, _>(prepare_bytes, |scratch| module.ckks_prepare_dft_matrix_alloc(&dft, scratch)).unwrap();
+    let mut res = module.ckks_dft_matrix_prepared_alloc_from_infos(&dft);
+    assert_eq!(
+        buffers(&res).iter().map(Vec::len).sum::<usize>(),
+        module.ckks_dft_matrix_prepared_bytes_of_from_infos(&dft),
+        "bytes_of"
+    );
+    with_scratch::<BE, _>(prepare_bytes, |scratch| {
+        module.ckks_prepare_dft_matrix(&mut res, &dft, scratch)
+    })
+    .unwrap();
+    assert_eq!(buffers(&res), buffers(&fresh), "prepare-into differs from prepare");
+    assert_eq!(infos(&res), infos(&fresh), "prepare-into infos differ from prepare");
+
+    let before = addresses(&res);
+    for factor in res.inner.factors.iter_mut() {
+        for diagonal in factor.giant_steps.iter_mut().flat_map(|gs| &mut gs.diagonals) {
+            diagonal.plaintext.cnv_mut().data_mut().as_mut().fill(0xA5);
+        }
+    }
+    with_scratch::<BE, _>(prepare_bytes, |scratch| {
+        module.ckks_prepare_dft_matrix(&mut res, &dft, scratch)
+    })
+    .unwrap();
+    assert_eq!(addresses(&res), before, "the refill reallocated");
+    assert_eq!(buffers(&res), buffers(&fresh), "the refill differs from prepare");
+
+    let other_schedule = build(1, &mut scratch);
+    let mut non_uniform = build(2, &mut scratch);
+    let last = &mut non_uniform.inner.factors[0]
+        .giant_steps
+        .last_mut()
+        .unwrap()
+        .diagonals
+        .last_mut()
+        .unwrap()
+        .plaintext;
+    let mut meta = last.meta();
+    meta.scale = Scale::Log(last.log_delta() + 1);
+    last.set_meta(meta);
+    let (want_buffers, want_infos) = (buffers(&res), infos(&res));
+    for (other, reason) in [(&other_schedule, "schedule"), (&non_uniform, "not uniform")] {
+        let err = with_scratch::<BE, _>(0, |scratch| module.ckks_prepare_dft_matrix(&mut res, other, scratch)).unwrap_err();
+        assert!(
+            matches!(
+                err.composition(),
+                Some(CKKSCompositionError::InvalidOperand {
+                    op: "ckks_prepare_dft_matrix",
+                    ..
+                })
+            ),
+            "{reason}: {err:?}"
+        );
+        assert!(err.to_string().contains(reason), "expected {reason:?}, got: {err}");
+        assert_eq!(
+            buffers(&res),
+            want_buffers,
+            "{reason}: a rejected matrix changed the prepared bytes"
+        );
+        assert_eq!(
+            infos(&res),
+            want_infos,
+            "{reason}: a rejected matrix changed the prepared infos"
+        );
     }
 }
 
