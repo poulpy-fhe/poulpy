@@ -18,23 +18,23 @@ use crate::{
 /// metadata contract expected by the scheme-supplied operations.
 pub unsafe trait PolynomialEvaluationImpl: Backend {
     #[allow(clippy::too_many_arguments)]
-    fn glwe_eval_baby_step<Ops, R, P, A, G>(
+    fn glwe_eval_baby_step<Ops, V, P, A, G>(
         module: &Module<Self>,
         ops: &Ops,
-        res: &mut R,
+        res: &mut V,
         parity: Parity,
         coeffs: &P,
         power_basis: &G,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Ops: BSGSOps<Self, R, P, A, R>,
-        R: GLWEToBackendMut<Self> + GLWEToBackendRef<Self>,
+        Ops: BSGSOps<Self, V, P, A, V>,
+        V: GLWEToBackendMut<Self> + GLWEToBackendRef<Self>,
         P: GLWEToBackendRef<Self> + GLWEInfos,
         A: GLWEToBackendRef<Self>,
         G: PowerBasisHelper<Self, A>,
     {
-        crate::oep::derived::polynomial_evaluation::glwe_eval_baby_step_derived::<Self, Ops, R, P, G, A>(
+        crate::oep::derived::polynomial_evaluation::glwe_eval_baby_step_derived::<Self, Ops, V, P, G, A>(
             module,
             ops,
             res,

@@ -1,8 +1,7 @@
 //! Degree switch expressed by composing HAL operations, and the conjugate-invariant key
 //! encryptions composed from the secret embedding and the selected switching-key encryption.
 use poulpy_hal::{
-    api::VecZnxSwitchRing,
-    layouts::{Backend, Data, Module, ScratchArena},
+    layouts::{Data, Module, ScratchArena},
     source::Source,
 };
 
@@ -19,10 +18,9 @@ use crate::{
 /// Writes each column of `a` into `res` at the degree of `res`: `X -> X^(N_res / N_a)`
 /// when it is larger, the coefficients at multiples of the ratio when it is smaller.
 /// `res` keeps the canonical flag of `a`.
-pub(crate) fn glwe_switch_degree_derived<BE, M, R, A>(module: &M, res: &mut R, a: &A)
+pub(crate) fn glwe_switch_degree_derived<BE, R, A>(module: &Module<BE>, res: &mut R, a: &A)
 where
-    BE: Backend,
-    M: VecZnxSwitchRing<BE>,
+    BE: GLWECIConversionImpl,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
 {
@@ -32,7 +30,7 @@ where
     assert_eq!(res.rank(), a.rank());
     assert_eq!(res.base2k(), a.base2k());
     for col in 0..res.rank().as_usize() + 1 {
-        module.vec_znx_switch_ring(&mut res.data, col, &a.data, col);
+        BE::vec_znx_switch_ring(module, &mut res.data, col, &a.data, col);
     }
 }
 

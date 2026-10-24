@@ -1,8 +1,8 @@
 #![allow(clippy::too_many_arguments)]
 
 use poulpy_hal::{
-    api::VecZnxDftAddAssign,
     layouts::{Backend, Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef},
+    oep::HalVecZnxDftImpl,
 };
 
 use crate::layouts::{
@@ -149,12 +149,12 @@ macro_rules! impl_gglwe_product_digits_strided_reference_full {
 ///   fourth limb.
 ///
 /// Validate with parity against a caller-selected comparison backend as well as the noise bound.
-pub unsafe trait GLWEKeyswitchImpl: Backend {
-    fn glwe_keyswitch_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+pub unsafe trait GLWEKeyswitchImpl: Backend + HalVecZnxDftImpl {
+    fn glwe_keyswitch_tmp_bytes<R, A, B>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
-        K: GGLWEInfos;
+        B: GGLWEInfos;
 
     fn glwe_keyswitch<R, A>(
         module: &Module<Self>,
@@ -204,7 +204,6 @@ pub unsafe trait GLWEKeyswitchImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         A: GLWEToBackendRef<Self> + GLWEInfos,
-        Module<Self>: VecZnxDftAddAssign<Self>,
     {
         crate::oep::derived::keyswitching::glwe_keyswitch_dft_add_derived(module, res, a, key, scratch)
     }
@@ -333,16 +332,16 @@ pub unsafe trait LWEKeyswitchImpl: Backend {
 macro_rules! impl_glwe_keyswitch_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::GLWEKeyswitchImpl for $be {
-            fn glwe_keyswitch_tmp_bytes<R, A, K>(
+            fn glwe_keyswitch_tmp_bytes<R, A, B>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res_infos: &R,
                 a_infos: &A,
-                key_infos: &K,
+                key_infos: &B,
             ) -> usize
             where
                 R: $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEInfos,
-                K: $crate::layouts::GGLWEInfos,
+                B: $crate::layouts::GGLWEInfos,
             {
                 $crate::reference::keyswitching::glwe::glwe_keyswitch_tmp_bytes_reference::<$be, _, _, _, _>(
                     module, res_infos, a_infos, key_infos,

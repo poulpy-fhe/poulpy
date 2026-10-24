@@ -1,7 +1,4 @@
-use poulpy_hal::{
-    api::VecZnxDftAddAssign,
-    layouts::{Backend, Module, ScratchArena, VecZnxDftBackendMut},
-};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena, VecZnxDftBackendMut};
 
 use crate::{
     api::{GGLWEKeyswitch, GGSWKeyswitch, GLWEKeyswitch, LWEKeyswitch},
@@ -87,7 +84,6 @@ impl_keyswitching_delegate!(
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        Self: VecZnxDftAddAssign<BE>,
     {
         BE::glwe_keyswitch_dft_add(self, res, a, key, scratch)
     }

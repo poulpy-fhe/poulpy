@@ -1,6 +1,6 @@
 use poulpy_hal::{
-    api::VecZnxSwitchRing,
     layouts::{Backend, Data, Module, ScratchArena, Standard},
+    oep::HalVecZnxImpl,
     source::Source,
 };
 
@@ -19,12 +19,13 @@ use crate::{
 /// an embedded conjugate-invariant one, executed by a standard backend of degree at least `2N`.
 ///
 /// The key encryptions default to [`Self::glwe_secret_ci_embed`] into their scratch followed by the
-/// selected [`EncryptionImpl::glwe_switching_key_encrypt_sk`].
+/// selected [`EncryptionImpl::glwe_switching_key_encrypt_sk`], and the degree switch to the selected
+/// [`HalVecZnxImpl::vec_znx_switch_ring`] on each column.
 ///
 /// # Safety
 /// Implementations must only read and write the regions described by the provided layouts, respect
 /// scratch-space requirements, and produce results equivalent to the reference maps.
-pub unsafe trait GLWECIConversionImpl: Backend<Ring = Standard> + EncryptionImpl {
+pub unsafe trait GLWECIConversionImpl: Backend<Ring = Standard> + HalVecZnxImpl + EncryptionImpl {
     fn glwe_ci_embed<R, A>(module: &Module<Self>, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<Self> + GLWEInfos,
@@ -48,13 +49,13 @@ pub unsafe trait GLWECIConversionImpl: Backend<Ring = Standard> + EncryptionImpl
         R: GLWEToBackendMut<Self> + GLWEInfos,
         A: GLWEToBackendRef<Self> + GLWEInfos;
 
+    /// Default body: `glwe_switch_degree_derived`, [`HalVecZnxImpl::vec_znx_switch_ring`] on each column.
     fn glwe_switch_degree<R, A>(module: &Module<Self>, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<Self> + GLWEInfos,
         A: GLWEToBackendRef<Self> + GLWEInfos,
-        Module<Self>: VecZnxSwitchRing<Self>,
     {
-        crate::oep::derived::ci_conversion::glwe_switch_degree_derived::<Self, _, _, _>(module, res, a)
+        crate::oep::derived::ci_conversion::glwe_switch_degree_derived(module, res, a)
     }
 
     /// Default body: `glwe_ci_key_encrypt_sk_tmp_bytes_derived`, the embedded secret plus

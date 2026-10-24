@@ -144,7 +144,7 @@
   Keys written before this change no longer read back.
 - **Breaking:** `reference::encryption::gadget_row_plaintext` takes `k_offset` after `k_digit`.
 - **Breaking:** `GLWEKeyswitch` and `GLWEKeyswitchImpl` gain `glwe_keyswitch_dft` and `glwe_keyswitch_dft_tmp_bytes`: the gadget product of a key switch, its mask columns decomposed and multiplied by the key, which is the whole switch but for the body, left in the DFT domain.
-  They gain `glwe_keyswitch_dft_add` and `glwe_keyswitch_dft_add_tmp_bytes` too, which add that product to an accumulator, so that several switches into one output are summed before a single inverse transform; `GLWEKeyswitchImpl` derives both from `glwe_keyswitch_dft` and `vec_znx_dft_add_assign`, which the add requires of the module.
+  They gain `glwe_keyswitch_dft_add` and `glwe_keyswitch_dft_add_tmp_bytes` too, which add that product to an accumulator, so that several switches into one output are summed before a single inverse transform; `GLWEKeyswitchImpl` derives both from `glwe_keyswitch_dft` and the selected `vec_znx_dft_add_assign`.
   The caller finishes each column with `vec_znx_idft_normalize`, the sum of the bodies lowered by the key's offset as the addend of column 0.
   The input is at the key radix, and `impl_glwe_keyswitch_reference_full!` provides the reference of the product.
 - `glwe_keyswitch` takes keys with a row offset, from any input radix, for an input of at most the key's `max_input_k` bits, at any output width.
@@ -174,7 +174,7 @@
 - `reference::encryption::gadget_row_plaintext` writes the plaintext of gadget row `row` at bit `(row + 1) * k_digit`, on or off a limb boundary ([#188](https://github.com/poulpy-fhe/poulpy/issues/188)).
   Secret-key GGLWE and GGSW encryption, compressed or not, public-key GGSW encryption and the GGLWE and GGSW noise references place their rows through it, bit for bit as before when `k_digit = dsize * base2k`.
   The scratch of the GGLWE and GGSW noise references covers `vec_znx_normalize_tmp_bytes`.
-- **Breaking:** `EncryptionImpl::ggsw_encrypt_pk`, the `GGSWEncryptPk` delegate and the reference GGLWE and GGSW encryption traits require `VecZnxNormalize` in place of `VecZnxZero`, `VecZnxAddScalarAssign` and `VecZnxNormalizeAssign`.
+- **Breaking:** the reference GGLWE and GGSW encryption traits require `VecZnxNormalize` in place of `VecZnxZero`, `VecZnxAddScalarAssign` and `VecZnxNormalizeAssign`.
 - **Fix:** the external product, the off-limb digit layout and the key-switch body read only the limbs an operand's precision covers, `reference::keyswitching::glwe::precision_limbs`, as their scratch queries count them.
   An operand whose buffer holds more limbs than its `k` made the external product transform them, past the scratch it advertised, and the off-limb layout and the key-switch body took them into the result.
   The external-product and key-switch parity suites also run such an operand.
@@ -274,6 +274,12 @@
 - **Breaking, behaviour:** `glwe_ci_embed_key_encrypt_sk` and `glwe_ci_trace_key_encrypt_sk` carve the embedded conjugate-invariant secret from their scratch in place of the heap and wipe their whole budget before returning; `glwe_ci_key_encrypt_sk_tmp_bytes` grows by that secret, at the key degree and the larger of its input and output ranks. Callers sizing their arena from the query are unchanged; outputs are unchanged.
 - **Breaking:** `EncryptionImpl` gains `SecretImpl` as a supertrait, and `glwe_tensor_key_encrypt_sk`, `glwe_tensor_key_compressed_encrypt_sk`, their queries and the `GLWETensorKeyEncryptSk` and `GLWETensorKeyCompressedEncryptSk` delegates lose their `Module<Self>: GLWESecretPreparedFactory + GLWESecretTensorFactory` bound: their derived bodies prepare and tensor the secret through `SecretImpl`.
   `impl_core_reference_full!` invokes the new `impl_secret_reference_full!`; out-of-tree backends that list the core families add it, and `test_suite::noise::TestBackend` gains `SecretImpl`.
+- **Breaking:** the core OEP families have as supertraits the families their default bodies dispatch through, in place of `Module<Self>` bounds on their methods: `EncryptionImpl` gains `SamplingImpl`, `HalVecZnxImpl` and `GLWENormalizeImpl`, `GLWEKeyswitchImpl` gains `HalVecZnxDftImpl` and `GLWECIConversionImpl` gains `HalVecZnxImpl`.
+  `glwe_encrypt_pk_smudged`, `glwe_public_key_generate`, `ggsw_encrypt_pk` and their queries, `glwe_keyswitch_dft_add` and `glwe_switch_degree` lose their bounds on HAL and core operations, on the OEP method, the delegate and, for `glwe_keyswitch_dft_add`, the `GLWEKeyswitch` method: their default bodies call the selected HAL methods, and outputs are unchanged.
+  The `GGLWEExternalProduct` and `GGSWExternalProduct` delegates drop their bound on `GLWEExternalProduct`, which their OEP families imply.
+  `AutomorphismImpl` no longer has `GLWEKeyswitchImpl` as a supertrait, which only `GLWEAutomorphismReference` composes, bounding the module by `GLWEKeyswitch`.
+  Out-of-tree backends implementing `EncryptionImpl`, `GLWEKeyswitchImpl` or `GLWECIConversionImpl` implement the new supertraits, as every CPU backend does; generic code that bounds `BE: AutomorphismImpl` and also switches keys bounds `BE: GLWEKeyswitchImpl`.
+- OEP methods take their API method's generics and parameter names: `GLWEExternalProductImpl::glwe_external_product_tmp_bytes` takes `<R, A, B>` and `b_infos`, `glwe_external_product` `lhs` and `rhs`, `glwe_external_product_assign` `a`, `GLWEKeyswitchImpl::glwe_keyswitch_tmp_bytes` `<R, A, B>` and `PolynomialEvaluationImpl::glwe_eval_baby_step` `<Ops, V, P, A, G>`, and `GLWEExternalProductInternal::glwe_external_product_dft` spells its output `VecZnxDftBackendMut`; types and order are unchanged, so implementations and callers compile as they are.
 
 ### `poulpy-ckks`
 

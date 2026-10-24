@@ -44,16 +44,16 @@ unsafe impl poulpy_core::oep::GLWEExternalProductImpl for DelegatingFFT64Portabl
         );
         assert!(marker.iter().all(|&byte| byte == 0xA6));
     }
-    fn glwe_external_product_tmp_bytes<R, A, G>(
+    fn glwe_external_product_tmp_bytes<R, A, B>(
         module: &::poulpy_hal::layouts::Module<DelegatingFFT64Portable>,
         res_infos: &R,
         a_infos: &A,
-        ggsw_infos: &G,
+        b_infos: &B,
     ) -> usize
     where
         R: poulpy_core::layouts::GLWEInfos,
         A: poulpy_core::layouts::GLWEInfos,
-        G: poulpy_core::layouts::GGSWInfos,
+        B: poulpy_core::layouts::GGSWInfos,
     {
         poulpy_core::reference::external_product::glwe::glwe_external_product_tmp_bytes_reference::<
             DelegatingFFT64Portable,
@@ -61,14 +61,14 @@ unsafe impl poulpy_core::oep::GLWEExternalProductImpl for DelegatingFFT64Portabl
             _,
             _,
             _,
-        >(module, res_infos, a_infos, ggsw_infos)
+        >(module, res_infos, a_infos, b_infos)
     }
 
     fn glwe_external_product<R, A>(
         module: &::poulpy_hal::layouts::Module<DelegatingFFT64Portable>,
         res: &mut R,
-        a: &A,
-        ggsw: &poulpy_core::layouts::prepared::GGSWPreparedBackendRef<'_, DelegatingFFT64Portable>,
+        lhs: &A,
+        rhs: &poulpy_core::layouts::prepared::GGSWPreparedBackendRef<'_, DelegatingFFT64Portable>,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<DelegatingFFT64Portable>,
     ) where
         R: poulpy_core::layouts::GLWEToBackendMut<DelegatingFFT64Portable> + poulpy_core::layouts::GLWEInfos,
@@ -76,7 +76,7 @@ unsafe impl poulpy_core::oep::GLWEExternalProductImpl for DelegatingFFT64Portabl
     {
         let before = DFT_CALLS.get();
         poulpy_core::reference::external_product::glwe::glwe_external_product_reference::<DelegatingFFT64Portable, _, _, _>(
-            module, res, a, ggsw, scratch,
+            module, res, lhs, rhs, scratch,
         );
         assert_eq!(DFT_CALLS.get(), before + 1);
     }
@@ -84,14 +84,14 @@ unsafe impl poulpy_core::oep::GLWEExternalProductImpl for DelegatingFFT64Portabl
     fn glwe_external_product_assign<R>(
         module: &::poulpy_hal::layouts::Module<DelegatingFFT64Portable>,
         res: &mut R,
-        ggsw: &poulpy_core::layouts::prepared::GGSWPreparedBackendRef<'_, DelegatingFFT64Portable>,
+        a: &poulpy_core::layouts::prepared::GGSWPreparedBackendRef<'_, DelegatingFFT64Portable>,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<DelegatingFFT64Portable>,
     ) where
         R: poulpy_core::layouts::GLWEToBackendMut<DelegatingFFT64Portable> + poulpy_core::layouts::GLWEInfos,
     {
         let before = DFT_CALLS.get();
         poulpy_core::reference::external_product::glwe::glwe_external_product_assign_reference::<DelegatingFFT64Portable, _, _>(
-            module, res, ggsw, scratch,
+            module, res, a, scratch,
         );
         assert_eq!(DFT_CALLS.get(), before + 1);
     }

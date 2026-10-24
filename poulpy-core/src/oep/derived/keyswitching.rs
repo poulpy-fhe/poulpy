@@ -244,7 +244,7 @@ pub(crate) use ggsw::*;
 
 mod glwe_dft {
     use poulpy_hal::{
-        api::{ScratchArenaTakeBasic, VecZnxDftAddAssign, VecZnxDftBytesOf},
+        api::{ScratchArenaTakeBasic, VecZnxDftBytesOf},
         layouts::{Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftToBackendRef},
     };
 
@@ -281,7 +281,6 @@ mod glwe_dft {
     ) where
         BE: GLWEKeyswitchImpl,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        Module<BE>: VecZnxDftAddAssign<BE>,
     {
         let tmp_bytes = glwe_keyswitch_dft_add_tmp_bytes_derived(module, res.size(), a, key);
         assert!(
@@ -295,7 +294,7 @@ mod glwe_dft {
         BE::glwe_keyswitch_dft(module, &mut product, a, key, &mut scratch_1);
         let product = product.to_backend_ref();
         for col in 0..cols {
-            module.vec_znx_dft_add_assign(res, col, &product, col);
+            BE::vec_znx_dft_add_assign(module, res, col, &product, col);
         }
     }
 }

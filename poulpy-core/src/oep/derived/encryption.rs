@@ -20,8 +20,7 @@ use crate::{
     oep::EncryptionImpl,
 };
 use poulpy_hal::{
-    api::{VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes},
-    layouts::{Module, ScalarZnxToBackendRef, ScratchArena, ZnxInfos},
+    layouts::{Module, ScalarZnxToBackendRef, ScratchArena, ZnxInfos, scalar_znx_as_vec_znx_backend_ref_from_ref},
     source::Source,
 };
 
@@ -47,10 +46,7 @@ pub(crate) fn fill_lwe_mask_from_seed_derived<BE: EncryptionImpl, R: LWEToBacken
 pub(crate) fn glwe_public_key_generate_tmp_bytes_derived<BE: EncryptionImpl, A: GLWEInfos>(
     module: &Module<BE>,
     infos: &A,
-) -> usize
-where
-    Module<BE>: GLWENormalize<BE>,
-{
+) -> usize {
     operand_degree(module.n(), &[infos.n()]);
     BE::glwe_encrypt_sk_tmp_bytes(module, infos).max(module.glwe_normalize_tmp_bytes())
 }
@@ -66,7 +62,6 @@ pub(crate) fn glwe_public_key_generate_derived<BE, R, S>(
     BE: EncryptionImpl,
     R: GLWEPublicKeyToBackendMut<BE> + GetDistributionMut + GLWEInfos,
     S: GLWESecretPreparedToBackendRef<BE> + GetDistribution,
-    Module<BE>: GLWENormalize<BE>,
 {
     {
         let sk_ref = sk.to_backend_ref();
@@ -186,11 +181,8 @@ pub(crate) fn glwe_encrypt_pk_smudged_tmp_bytes_derived<BE: EncryptionImpl, R: G
     module: &Module<BE>,
     res_infos: &R,
     pk_infos: &K,
-) -> usize
-where
-    Module<BE>: VecZnxNormalizeTmpBytes,
-{
-    BE::glwe_encrypt_pk_tmp_bytes(module, res_infos, pk_infos).max(module.vec_znx_normalize_tmp_bytes())
+) -> usize {
+    BE::glwe_encrypt_pk_tmp_bytes(module, res_infos, pk_infos).max(BE::vec_znx_normalize_tmp_bytes(module))
 }
 
 /// Public-key encryption without a body error, then the flood on the canonical
@@ -210,7 +202,6 @@ pub(crate) fn glwe_encrypt_pk_smudged_derived<BE, R, P, K>(
     R: GLWEToBackendMut<BE> + GLWEInfos,
     P: GLWEToBackendRef<BE> + GLWEInfos,
     K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
-    Module<BE>: VecZnxAddNoise<BE> + VecZnxNormalizeAssign<BE> + VecZnxNormalizeTmpBytes,
 {
     let (base2k, k): (usize, usize) = (res.base2k().into(), res.k().as_usize());
     flood.assert_valid_for(base2k, k);
@@ -224,7 +215,7 @@ pub(crate) fn glwe_encrypt_pk_smudged_derived<BE, R, P, K>(
     {
         let mut res = res.to_backend_mut();
         module.vec_znx_add_noise(base2k, k, &mut res.data, 0, flood, source_smudge);
-        module.vec_znx_normalize_assign(base2k, k, 0, &mut res.data, 0, scratch);
+        BE::vec_znx_normalize_assign(module, base2k, k, 0, &mut res.data, 0, scratch);
     }
     res.set_noise(noise);
 }
@@ -250,13 +241,10 @@ pub(crate) fn ggsw_encrypt_pk_tmp_bytes_derived<BE: EncryptionImpl, R: GGSWInfos
     module: &Module<BE>,
     res_infos: &R,
     pk_infos: &K,
-) -> usize
-where
-    Module<BE>: VecZnxNormalizeTmpBytes,
-{
+) -> usize {
     operand_degree(module.n(), &[res_infos.n()]);
     BE::scratch_aligned(module.glwe_plaintext_bytes_of_from_infos(res_infos))
-        + BE::glwe_encrypt_pk_tmp_bytes(module, res_infos, pk_infos).max(module.vec_znx_normalize_tmp_bytes())
+        + BE::glwe_encrypt_pk_tmp_bytes(module, res_infos, pk_infos).max(BE::vec_znx_normalize_tmp_bytes(module))
 }
 
 pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K>(
@@ -272,7 +260,6 @@ pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K>(
     R: GGSWToBackendMut<BE> + GGSWInfos + GGSWAtViewMut<BE>,
     P: ScalarZnxToBackendRef<BE> + ZnxInfos,
     K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
-    Module<BE>: VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
 {
     let noise = public_key_encryption_noise::<BE, _, _>(res, pk, PublicKeyBodyNoise::Sampled);
     let k_sample = public_key_sample_precision::<BE, _, _>(res, pk);
@@ -287,18 +274,21 @@ pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K>(
         let k_digit: usize = res.k_digit().as_usize();
         let rank: usize = res.rank().into();
         let (mut tmp_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(res);
+        let pt = pt.to_backend_ref();
+        let pt = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(&pt);
         for row in 0..res.dnum().into() {
-            // The encryption adds the plaintext's limbs to its accumulator as they are.
-            crate::gadget::gadget_row_plaintext(
+            // `gadget_row_plaintext` over the selected normalization: the encryption adds these limbs as they are.
+            let position: usize = (row + 1) * k_digit;
+            assert!(position <= k, "gadget row {row} at bit {position} is below the precision {k}");
+            BE::vec_znx_normalize(
                 module,
                 &mut tmp_pt.data,
-                0,
                 base2k,
                 k,
-                row,
-                k_digit,
+                1 - position as i64,
                 0,
-                &pt.to_backend_ref(),
+                &pt,
+                1,
                 0,
                 &mut scratch_1.borrow(),
             );
