@@ -173,7 +173,10 @@ where
     H: GetAutomorphismKey<BE>,
 {
     let (lhs, rhs) = (babies[0], lts[0]);
-    if !E::is_parallel()
+    // The fused evaluator uses one key per giant step.
+    // Power-of-two schedules require the reference rotation tree.
+    if rhs.rotations != BsgsRotations::PerRotation
+        || !E::is_parallel()
         || res.size() < PARALLEL_EVAL_MIN_SIZE
         || res.rank().as_usize() != 1
         || module.n() < 8

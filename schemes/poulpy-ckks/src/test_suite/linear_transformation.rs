@@ -368,6 +368,7 @@ pub fn test_linear_transformation_sum<BE, F, E>(
     let empty: LinearTransformationPrepared<BE> = LinearTransformation {
         baby_steps: vec![0],
         giant_steps: Vec::new(),
+        rotations: Default::default(),
     };
     reject(&[&cts[0]], &[&babies[0]], &[&empty], "has no diagonals", true);
     let other_schedule = prepare_lt(

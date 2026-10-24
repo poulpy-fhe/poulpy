@@ -167,6 +167,7 @@ pub fn glwe_prepare_linear_transformation_baby_steps_reference<BE, M, A, H>(
     BE: Backend,
     M: GLWEBytesOf<BE>
         + CnvPVecAlloc<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + Convolution<BE>
         + GLWEAutomorphism<BE>
         + GGLWEProductReference<BE>
@@ -182,9 +183,11 @@ pub fn glwe_prepare_linear_transformation_baby_steps_reference<BE, M, A, H>(
         + VecZnxIdftNormalizeTmpBytes
         + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
         + poulpy_hal::api::VecZnxGadgetDecompose<BE>
+        + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
         + GaloisElement
         + crate::api::GLWENormalize<BE>
-        + Sync,
+        + Sync
+        + poulpy_hal::api::VecZnxAutomorphism<BE>,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     H: GetAutomorphismKey<BE>,
 {
@@ -236,14 +239,20 @@ pub fn glwe_eval_linear_transformation_into_reference<BE, M, R, P, H>(
         + VecZnxDftApply<BE>
         + VecZnxDftAutomorphism<BE>
         + VecZnxDftBytesOf
+        + poulpy_hal::api::VecZnxDftAlloc<BE>
+        + VecZnxBigNormalizeTmpBytes
+        + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
         + VecZnxDftCopy<BE>
         + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>
+        + poulpy_hal::api::VecZnxIdftNormalize<BE>
         + VecZnxIdftApplyTmpBytes
         + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes
         + GLWEMulPlain<BE>
-        + GaloisElement,
+        + GaloisElement
+        + poulpy_hal::api::VecZnxIdftNormalizeTmpBytes
+        + poulpy_hal::api::VecZnxDftAutomorphismAddWithPlanTmpBytes,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     P: DiagonalProd<BE>,
     H: GetAutomorphismKey<BE>,
@@ -342,14 +351,20 @@ pub fn glwe_eval_linear_transformation_sum_into_reference<BE, M, R, H>(
         + VecZnxDftApply<BE>
         + VecZnxDftAutomorphism<BE>
         + VecZnxDftBytesOf
+        + poulpy_hal::api::VecZnxDftAlloc<BE>
+        + VecZnxBigNormalizeTmpBytes
+        + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
         + VecZnxDftCopy<BE>
         + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>
+        + poulpy_hal::api::VecZnxIdftNormalize<BE>
         + VecZnxIdftApplyTmpBytes
         + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes
         + GLWEMulPlain<BE>
-        + GaloisElement,
+        + GaloisElement
+        + poulpy_hal::api::VecZnxIdftNormalizeTmpBytes
+        + poulpy_hal::api::VecZnxDftAutomorphismAddWithPlanTmpBytes,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     H: GetAutomorphismKey<BE>,
 {

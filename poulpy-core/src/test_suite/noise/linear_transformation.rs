@@ -60,6 +60,30 @@ impl<BE: Backend> GetAutomorphismKey<BE> for MixedDsize<'_, BE> {
     }
 }
 
+/// The rotation at position `i` of `baby_steps` (the unrotated one aside)
+/// answered by the keys of layout `i - 1`: one key set over several layouts.
+struct MixedLayouts<'a, BE: Backend, G: Fn(i64) -> i64> {
+    maps: &'a [HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>],
+    baby_steps: &'a [i64],
+    galois: G,
+}
+
+impl<BE: Backend, G: Fn(i64) -> i64> GetAutomorphismKey<BE> for MixedLayouts<'_, BE, G> {
+    fn lookup_automorphism_key(&self, p: i64, _k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        let position = self
+            .baby_steps
+            .iter()
+            .filter(|&&rot| rot != 0)
+            .position(|&rot| (self.galois)(rot) == p)
+            .ok_or(CoreError::GGLWEKeyUse {
+                op: "get_automorphism_key",
+                detail: format!("no automorphism key for p={p}"),
+            })?;
+        let map = &self.maps[position % self.maps.len()];
+        Ok(map[&p].to_backend_ref())
+    }
+}
+
 pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite::noise::TestBackend>(
     params: &TestParams,
     module: &Module<BE>,
@@ -97,10 +121,6 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     let key_base2k = in_base2k;
     let k_in = 4 * in_base2k + 1;
     let dsize = 2;
-    // Rows enough that the keys still cover the input when read at twice their
-    // stored `dsize`, which the mixed key set below does: that read keeps one
-    // stored digit as guard.
-    let dnum = 2 * k_in.div_ceil(2 * key_base2k * dsize) + 1;
 
     let ct_infos = GLWELayout {
         n: n.into(),
@@ -108,14 +128,31 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         k: k_in.into(),
         rank: rank.into(),
     };
-    let atk_infos = GLWEAutomorphismKeyLayout {
+    // Keys at whole-limb digits, at digits off a limb boundary, and at a third
+    // width off it, for a key set that mixes all three.
+    let layout_at = |k_digit: usize| GLWEAutomorphismKeyLayout {
         n: n.into(),
         base2k: key_base2k.into(),
-        dnum: dnum.into(),
-        k_aux: (dsize * key_base2k + module.log_n()).into(),
+        // Rows enough that the key still covers the input when read at twice its
+        // digit width, which the mixed key set below does: that read keeps one
+        // stored digit as guard.
+        dnum: (2 * k_in.div_ceil(2 * k_digit) + 1).into(),
+        k_aux: (k_digit + module.log_n()).into(),
         rank: rank.into(),
-        k_digit: crate::layouts::k_digit_of(key_base2k, dsize),
+        k_digit: (k_digit as u32).into(),
     };
+    let widths = [dsize * key_base2k, dsize * key_base2k + 1, 3 * key_base2k + 1];
+    let layouts: Vec<GLWEAutomorphismKeyLayout> = widths.iter().map(|&k_digit| layout_at(k_digit)).collect();
+    // Each stored layout is also read at twice its digit width.
+    let coarse: Vec<crate::layouts::GGLWELayout> = layouts[..2]
+        .iter()
+        .map(|layout| {
+            layout
+                .gglwe_layout()
+                .at_k_digit(TorusPrecision(2 * layout.k_digit.0))
+                .unwrap()
+        })
+        .collect();
 
     let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
     let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&ct_infos);
@@ -126,20 +163,25 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     let baby_steps = vec![0, 1, 3, 5];
     let product_size = ct_infos.size() + pt.size();
 
-    let coarse_dsize = TorusPrecision((2 * dsize * key_base2k) as u32);
-    let coarse_infos = atk_infos.gglwe_layout().at_k_digit(coarse_dsize).unwrap();
-
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-        module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&atk_infos)
-            | module.glwe_automorphism_tmp_bytes(&ct_infos, &ct_infos, &coarse_infos)
-            | module.glwe_automorphism_key_prepare_tmp_bytes(&atk_infos)
-            | module.glwe_encrypt_sk_tmp_bytes(&ct_infos)
-            | module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &atk_infos)
-            | module.cnv_prepare_right_tmp_bytes(pt.size(), pt.size())
-            | module.cnv_apply_dft_tmp_bytes(0, product_size, ct_infos.size(), pt.size())
-            | module.vec_znx_big_normalize_tmp_bytes()
-            | module.vec_znx_idft_apply_tmp_bytes(),
-    );
+    let mut tmp_bytes = module.glwe_encrypt_sk_tmp_bytes(&ct_infos)
+        | module.cnv_prepare_right_tmp_bytes(pt.size(), pt.size())
+        | module.cnv_apply_dft_tmp_bytes(0, product_size, ct_infos.size(), pt.size())
+        | module.vec_znx_big_normalize_tmp_bytes()
+        | module.vec_znx_idft_apply_tmp_bytes();
+    // The public query sizes one layout at a time, so a caller holding several
+    // takes the max over them; every key set below must fit in exactly that.
+    let mut prep_bytes = 0;
+    for layout in &layouts {
+        tmp_bytes |= module.glwe_automorphism_key_encrypt_sk_tmp_bytes(layout)
+            | module.glwe_automorphism_tmp_bytes(&ct_infos, &ct_infos, layout)
+            | module.glwe_automorphism_key_prepare_tmp_bytes(layout);
+        prep_bytes = prep_bytes.max(module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, layout));
+    }
+    for layout in &coarse {
+        tmp_bytes |= module.glwe_automorphism_tmp_bytes(&ct_infos, &ct_infos, layout);
+        prep_bytes = prep_bytes.max(module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, layout));
+    }
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(tmp_bytes);
 
     module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
     let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
@@ -161,157 +203,226 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         &mut scratch.borrow(),
     );
 
-    let mut atks = HashMap::new();
-    for &rot in baby_steps.iter().filter(|&&rot| rot != 0) {
-        let mut atk: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
-        module.glwe_automorphism_key_encrypt_sk(
-            &mut atk,
-            module.galois_element(rot),
-            &sk,
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch.borrow(),
-        );
-        let mut prepared: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE> =
-            module.glwe_automorphism_key_prepared_alloc_from_infos(&atk_infos);
-        module.glwe_automorphism_key_prepare(&mut prepared, &atk, &mut scratch.borrow());
-        // Automorphism keys are indexed by Galois element throughout the engine.
-        atks.insert(module.galois_element(rot), prepared);
+    // Automorphism keys are indexed by Galois element throughout the engine.
+    let mut maps: Vec<HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>> = Vec::new();
+    for layout in &layouts {
+        let mut atks = HashMap::new();
+        for &rot in baby_steps.iter().filter(|&&rot| rot != 0) {
+            let mut atk: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_automorphism_key_alloc_from_infos(layout);
+            module.glwe_automorphism_key_encrypt_sk(
+                &mut atk,
+                module.galois_element(rot),
+                &sk,
+                &mut source_xe,
+                &mut source_xa,
+                &mut scratch.borrow(),
+            );
+            let mut prepared: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE> =
+                module.glwe_automorphism_key_prepared_alloc_from_infos(layout);
+            module.glwe_automorphism_key_prepare(&mut prepared, &atk, &mut scratch.borrow());
+            atks.insert(module.galois_element(rot), prepared);
+        }
+        maps.push(atks);
     }
 
-    // Two key sets over the same stored keys: all rotations at the stored
-    // layout, then half of them read through a coarser `dsize`. The public
-    // query sizes one layout at a time, so a caller holding several takes the
-    // max over them; both sets must fit in exactly that budget.
-    let prep_bytes = module
-        .glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &atk_infos)
-        .max(module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &coarse_infos));
-    let coarse_sets: [Vec<i64>; 2] = [
-        Vec::new(),
-        baby_steps
-            .iter()
-            .filter(|&&rot| rot != 0)
-            .skip(1)
-            .map(|&rot| module.galois_element(rot))
-            .collect(),
-    ];
+    // Over the stored keys of each of the first two layouts: all rotations as
+    // stored, then half of them read through the coarser view.
+    let half_coarse: Vec<i64> = baby_steps
+        .iter()
+        .filter(|&&rot| rot != 0)
+        .skip(1)
+        .map(|&rot| module.galois_element(rot))
+        .collect();
+    for (atks, layout) in maps.iter().zip(&layouts).take(2) {
+        for coarse_ps in [Vec::new(), half_coarse.clone()] {
+            let keys = MixedDsize::<BE> {
+                atks,
+                coarse: TorusPrecision(2 * layout.k_digit.0),
+                coarse_ps: &coarse_ps,
+            };
+            assert_hoisted_babies_match(
+                module,
+                &keys,
+                &ct,
+                &pt,
+                &baby_steps,
+                rank,
+                product_size,
+                prep_bytes,
+                &mut scratch,
+            );
+        }
+    }
 
-    for coarse_ps in coarse_sets {
-        let keys = MixedDsize::<BE> {
-            atks: &atks,
-            coarse: coarse_dsize,
-            coarse_ps: &coarse_ps,
-        };
-        let mut prep_scratch: ScratchOwned<BE> = ScratchOwned::alloc(prep_bytes);
-        let mut prepared_babies = LinearTransformationBabySteps::alloc(module, &baby_steps, &ct);
-        module.glwe_prepare_linear_transformation_baby_steps(&mut prepared_babies, &ct, &keys, &mut prep_scratch.borrow());
-        assert_eq!(prepared_babies.baby_steps().collect::<Vec<_>>(), baby_steps);
+    // One rotation from each layout: whole-limb digits and two widths off a limb
+    // boundary in one key set.
+    let keys = MixedLayouts::<BE, _> {
+        maps: &maps,
+        baby_steps: &baby_steps,
+        galois: |rot| module.galois_element(rot),
+    };
+    assert_hoisted_babies_match(
+        module,
+        &keys,
+        &ct,
+        &pt,
+        &baby_steps,
+        rank,
+        product_size,
+        prep_bytes,
+        &mut scratch,
+    );
+}
 
-        let mut right_prepared = module.cnv_pvec_right_alloc(module.n(), 1, pt.size(), PrepareHint::Reuse);
-        let pt_ref = <GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(&pt);
-        module.cnv_prepare_right(&mut right_prepared.to_backend_mut(), &pt_ref.data, &mut scratch.borrow());
+/// Prepares the baby steps of `ct` through `keys` in `prep_bytes` of scratch and
+/// checks every one against the automorphism of `ct` by its own key.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the comparison takes the modules, the operands, the keys and their layouts"
+)]
+fn assert_hoisted_babies_match<BE: crate::test_suite::noise::TestBackend, K: GetAutomorphismKey<BE>>(
+    module: &Module<BE>,
+    keys: &K,
+    ct: &GLWE<BE::OwnedBuf, BE::ZnxWord>,
+    pt: &GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord>,
+    baby_steps: &[i64],
+    rank: usize,
+    product_size: usize,
+    prep_bytes: usize,
+    scratch: &mut ScratchOwned<BE>,
+) where
+    BE::OwnedBuf: HostDataMut,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: GLWEAutomorphism<BE>
+        + GLWEAutomorphismKeyEncryptSk<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + CnvPVecAlloc<BE>
+        + Convolution<BE>
+        + GLWECopy<BE>
+        + GLWEEncryptSk<BE>
+        + GLWELinearTransformations<BE>
+        + GLWESecretPreparedFactory<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + VecZnxAlloc<BE>
+        + VecZnxBigAlloc<BE>
+        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxDftAlloc<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxFillUniformSource<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let mut prep_scratch: ScratchOwned<BE> = ScratchOwned::alloc(prep_bytes);
+    let mut prepared_babies = LinearTransformationBabySteps::alloc(module, baby_steps, ct);
+    module.glwe_prepare_linear_transformation_baby_steps(&mut prepared_babies, ct, keys, &mut prep_scratch.borrow());
+    assert_eq!(prepared_babies.baby_steps().collect::<Vec<_>>(), baby_steps);
 
-        for &rot in &baby_steps {
-            let mut expected: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct);
-            if rot == 0 {
-                module.glwe_copy(&mut expected, &ct, &mut scratch.borrow());
-            } else {
-                let p = module.galois_element(rot);
-                let key = keys
-                    .get_automorphism_key(p, ct.k())
-                    .unwrap_or_else(|e| panic!("baby-step rotation {rot}: {e}"));
-                module.glwe_automorphism(&mut expected, &ct, &key, &mut scratch.borrow());
-            }
+    let mut right_prepared = module.cnv_pvec_right_alloc(module.n(), 1, pt.size(), PrepareHint::Reuse);
+    let pt_ref = <GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(pt);
+    module.cnv_prepare_right(&mut right_prepared.to_backend_mut(), &pt_ref.data, &mut scratch.borrow());
 
-            let mut expected_prepared = module.cnv_pvec_left_alloc(module.n(), rank + 1, expected.size(), PrepareHint::Reuse);
-            let expected_ref = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(&expected);
-            module.cnv_prepare_left(
-                &mut expected_prepared.to_backend_mut(),
-                &expected_ref.data,
+    for &rot in baby_steps {
+        let mut expected: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(ct);
+        if rot == 0 {
+            module.glwe_copy(&mut expected, ct, &mut scratch.borrow());
+        } else {
+            let p = module.galois_element(rot);
+            let key = keys
+                .get_automorphism_key(p, ct.k())
+                .unwrap_or_else(|e| panic!("baby-step rotation {rot}: {e}"));
+            module.glwe_automorphism(&mut expected, ct, &key, &mut scratch.borrow());
+        }
+
+        let mut expected_prepared = module.cnv_pvec_left_alloc(module.n(), rank + 1, expected.size(), PrepareHint::Reuse);
+        let expected_ref = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(&expected);
+        module.cnv_prepare_left(
+            &mut expected_prepared.to_backend_mut(),
+            &expected_ref.data,
+            &mut scratch.borrow(),
+        );
+
+        let baby = prepared_babies.baby_step(rot);
+        assert_eq!(
+            baby.shape(),
+            expected_prepared.shape(),
+            "prepared baby rotation {rot} has wrong shape"
+        );
+
+        for col in 0..rank + 1 {
+            let mut have: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(module.n(), 1, product_size);
+            let mut want: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(module.n(), 1, product_size);
+            let mut have_dft = module.vec_znx_dft_alloc(module.n(), 1, product_size);
+            let mut want_dft = module.vec_znx_dft_alloc(module.n(), 1, product_size);
+            let mut have_big = module.vec_znx_big_alloc(module.n(), 1, product_size);
+            let mut want_big = module.vec_znx_big_alloc(module.n(), 1, product_size);
+            let right_ref = right_prepared.to_backend_ref();
+
+            module.cnv_apply_dft(
+                0,
+                &mut have_dft.to_backend_mut(),
+                0,
+                &baby.to_backend_ref(),
+                col,
+                &right_ref,
+                0,
+                1,
+                &mut scratch.borrow(),
+            );
+            module.vec_znx_idft_apply(
+                &mut have_big.to_backend_mut(),
+                0,
+                &have_dft.to_backend_ref(),
+                0,
+                &mut scratch.borrow(),
+            );
+            module.vec_znx_big_normalize(
+                &mut vec_znx_backend_mut::<BE>(&mut have),
+                ct.base2k().as_usize(),
+                ct.k().as_usize(),
+                0,
+                0,
+                &have_big.to_backend_ref(),
+                ct.base2k().as_usize(),
+                0,
                 &mut scratch.borrow(),
             );
 
-            let baby = prepared_babies.baby_step(rot);
-            assert_eq!(
-                baby.shape(),
-                expected_prepared.shape(),
-                "prepared baby rotation {rot} has wrong shape"
+            module.cnv_apply_dft(
+                0,
+                &mut want_dft.to_backend_mut(),
+                0,
+                &expected_prepared.to_backend_ref(),
+                col,
+                &right_ref,
+                0,
+                1,
+                &mut scratch.borrow(),
+            );
+            module.vec_znx_idft_apply(
+                &mut want_big.to_backend_mut(),
+                0,
+                &want_dft.to_backend_ref(),
+                0,
+                &mut scratch.borrow(),
+            );
+            module.vec_znx_big_normalize(
+                &mut vec_znx_backend_mut::<BE>(&mut want),
+                ct.base2k().as_usize(),
+                ct.k().as_usize(),
+                0,
+                0,
+                &want_big.to_backend_ref(),
+                ct.base2k().as_usize(),
+                0,
+                &mut scratch.borrow(),
             );
 
-            for col in 0..rank + 1 {
-                let mut have: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(module.n(), 1, product_size);
-                let mut want: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(module.n(), 1, product_size);
-                let mut have_dft = module.vec_znx_dft_alloc(module.n(), 1, product_size);
-                let mut want_dft = module.vec_znx_dft_alloc(module.n(), 1, product_size);
-                let mut have_big = module.vec_znx_big_alloc(module.n(), 1, product_size);
-                let mut want_big = module.vec_znx_big_alloc(module.n(), 1, product_size);
-                let right_ref = right_prepared.to_backend_ref();
-
-                module.cnv_apply_dft(
-                    0,
-                    &mut have_dft.to_backend_mut(),
-                    0,
-                    &baby.to_backend_ref(),
-                    col,
-                    &right_ref,
-                    0,
-                    1,
-                    &mut scratch.borrow(),
-                );
-                module.vec_znx_idft_apply(
-                    &mut have_big.to_backend_mut(),
-                    0,
-                    &have_dft.to_backend_ref(),
-                    0,
-                    &mut scratch.borrow(),
-                );
-                module.vec_znx_big_normalize(
-                    &mut vec_znx_backend_mut::<BE>(&mut have),
-                    ct.base2k().as_usize(),
-                    ct.k().as_usize(),
-                    0,
-                    0,
-                    &have_big.to_backend_ref(),
-                    ct.base2k().as_usize(),
-                    0,
-                    &mut scratch.borrow(),
-                );
-
-                module.cnv_apply_dft(
-                    0,
-                    &mut want_dft.to_backend_mut(),
-                    0,
-                    &expected_prepared.to_backend_ref(),
-                    col,
-                    &right_ref,
-                    0,
-                    1,
-                    &mut scratch.borrow(),
-                );
-                module.vec_znx_idft_apply(
-                    &mut want_big.to_backend_mut(),
-                    0,
-                    &want_dft.to_backend_ref(),
-                    0,
-                    &mut scratch.borrow(),
-                );
-                module.vec_znx_big_normalize(
-                    &mut vec_znx_backend_mut::<BE>(&mut want),
-                    ct.base2k().as_usize(),
-                    ct.k().as_usize(),
-                    0,
-                    0,
-                    &want_big.to_backend_ref(),
-                    ct.base2k().as_usize(),
-                    0,
-                    &mut scratch.borrow(),
-                );
-
-                assert_eq!(
-                    have, want,
-                    "prepared baby rotation {rot} column {col} differs from on-the-fly automorphism"
-                );
-            }
+            assert_eq!(
+                have, want,
+                "prepared baby rotation {rot} column {col} differs from on-the-fly automorphism"
+            );
         }
     }
 }
@@ -347,6 +458,7 @@ pub fn test_glwe_prepare_linear_transformation_rhs_rejects_wide_diagonal<BE: cra
     let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_prepare_linear_transformation_rhs_tmp_bytes(&layout));
     let lt = LinearTransformation {
         baby_steps: vec![0],
+        rotations: Default::default(),
         giant_steps: vec![LinearTransformationGiantStep {
             rot: 0,
             diagonals: vec![LinearTransformationDiagonal {
@@ -461,6 +573,7 @@ where
 
         let mut lt = LinearTransformation {
             baby_steps: plan.baby_steps.clone(),
+            rotations: plan.rotations,
             giant_steps: Vec::new(),
         };
         for (&rot, index) in plan.giant_steps.iter().zip(&plan.index) {
@@ -511,6 +624,170 @@ where
         atk_infos.var_noise_keyswitch(&ct_infos, &ct_infos, 0.5, 0.5, 0.0, DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE, 0.0);
     let noise_max = 0.5 * ((babies.len() + 1) as f64 * plan.giant_steps.len() as f64 * var_key_switch).log2() + 1.0;
     let noise_have = glwe_noise_checked(module, &sum, &pt_want, &sk_prepared, &mut scratch.borrow())
+        .std()
+        .log2();
+    assert!(noise_have <= noise_max, "noise_have: {noise_have} > noise_max: {noise_max}");
+}
+
+/// A transformation evaluated with the keys of the power-of-two rotations decrypts to its
+/// per-rotation evaluation up to the key switches that differ between them.
+pub fn test_glwe_linear_transformation_powers_of_two<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    BE::OwnedBuf: HostDataMut,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: CnvPVecAlloc<BE>
+        + GLWEAutomorphismKeyEncryptSk<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + GLWEDecrypt<BE>
+        + GLWEEncryptSk<BE>
+        + GLWELinearTransformations<BE>
+        + GLWENoise<BE>
+        + GLWESecretPreparedFactory<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + VecZnxFillUniformSource<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let n = module.n();
+    let base2k = params.base2k.min(12);
+    let k = 4 * base2k + 1;
+    let ct_infos = GLWELayout {
+        n: n.into(),
+        base2k: base2k.into(),
+        k: k.into(),
+        rank: 1u32.into(),
+    };
+    let pt_infos = GLWELayout {
+        k: base2k.into(),
+        rank: 0u32.into(),
+        ..ct_infos
+    };
+    let atk_infos = GLWEAutomorphismKeyLayout {
+        n: n.into(),
+        base2k: base2k.into(),
+        dnum: k.div_ceil(base2k).into(),
+        k_aux: (base2k + module.log_n()).into(),
+        rank: 1u32.into(),
+        k_digit: base2k.into(),
+    };
+    // Diagonals -8..8: babies {0, 1, 2, 3} and giants {-8, -4, 0, 4}, a tree of two levels.
+    let layout = |strategy| LinearTransformationLayout {
+        indexes: (-8..8).collect(),
+        slots: n / 2,
+        strategy,
+    };
+    let schedules = [
+        layout(LinearTransformationStrategy::Bsgs { giant_step: 4 }),
+        layout(LinearTransformationStrategy::BsgsPowersOfTwo { giant_step: 4 }),
+    ];
+    let cyclotomic_order = poulpy_hal::layouts::CyclotomicOrder::cyclotomic_order(module);
+    let mut elements: Vec<i64> = schedules
+        .iter()
+        .flat_map(|schedule| schedule.galois_elements(cyclotomic_order))
+        .collect();
+    // Two doublings and two levels against six rotations.
+    assert_eq!(schedules[1].galois_elements(cyclotomic_order).len(), 4);
+    assert_eq!(schedules[0].galois_elements(cyclotomic_order).len(), 6);
+    elements.sort_unstable();
+    elements.dedup();
+
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&atk_infos)
+            | module.glwe_automorphism_key_prepare_tmp_bytes(&atk_infos)
+            | module.glwe_encrypt_sk_tmp_bytes(&ct_infos)
+            | module.glwe_decrypt_tmp_bytes(&ct_infos)
+            | module.glwe_noise_tmp_bytes(&ct_infos)
+            | module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &atk_infos)
+            | module.glwe_prepare_linear_transformation_rhs_tmp_bytes(&pt_infos)
+            | module.glwe_eval_linear_transformation_tmp_bytes(&ct_infos, &ct_infos, &pt_infos, &atk_infos),
+    );
+    let mut source_xs = Source::new([9u8; 32]);
+    let mut source_xe = Source::new([10u8; 32]);
+    let mut source_xa = Source::new([11u8; 32]);
+
+    let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&ct_infos);
+    module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
+    let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
+    module.glwe_secret_prepare(&mut sk_prepared, &sk);
+
+    let mut keys = HashMap::new();
+    for p in elements {
+        let mut atk: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
+        module.glwe_automorphism_key_encrypt_sk(&mut atk, p, &sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
+        let mut prepared: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE> =
+            module.glwe_automorphism_key_prepared_alloc_from_infos(&atk_infos);
+        module.glwe_automorphism_key_prepare(&mut prepared, &atk, &mut scratch.borrow());
+        keys.insert(p, prepared);
+    }
+
+    let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&ct_infos);
+    module.vec_znx_fill_uniform_source(base2k, k, &mut vec_znx_backend_mut::<BE>(&mut pt.data), 0, &mut source_xa);
+    let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
+    module.glwe_encrypt_sk(
+        &mut ct,
+        &pt,
+        &sk_prepared,
+        &mut source_xe,
+        &mut source_xa,
+        &mut scratch.borrow(),
+    );
+
+    // The same diagonals under both schedules.
+    let plan = schedules[0].index();
+    let mut diagonals: HashMap<(i64, i64), GLWE<BE::OwnedBuf, BE::ZnxWord>> = HashMap::new();
+    for (&rot, index) in plan.giant_steps.iter().zip(&plan.index) {
+        for &baby in index {
+            let mut diagonal: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&pt_infos);
+            module.vec_znx_fill_uniform_source(
+                base2k,
+                base2k,
+                &mut vec_znx_backend_mut::<BE>(&mut diagonal.data),
+                0,
+                &mut source_xa,
+            );
+            diagonals.insert((rot, baby), diagonal);
+        }
+    }
+    let mut results = Vec::new();
+    for schedule in &schedules {
+        let plan = schedule.index();
+        let mut lt = LinearTransformation {
+            baby_steps: plan.baby_steps.clone(),
+            rotations: plan.rotations,
+            giant_steps: Vec::new(),
+        };
+        for (&rot, index) in plan.giant_steps.iter().zip(&plan.index) {
+            let diagonals = index
+                .iter()
+                .map(|&baby| LinearTransformationDiagonal {
+                    baby,
+                    plaintext: diagonals[&(rot, baby)].clone(),
+                })
+                .collect();
+            lt.giant_steps.push(LinearTransformationGiantStep { rot, diagonals });
+        }
+        let mut prepared: LinearTransformationPrepared<BE> = LinearTransformation::alloc_prepared(module, schedule, &pt_infos);
+        module.glwe_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch.borrow());
+        let mut cache = LinearTransformationBabySteps::alloc_for(module, &prepared, &ct);
+        module.glwe_prepare_linear_transformation_baby_steps(&mut cache, &ct, &keys, &mut scratch.borrow());
+        let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
+        module.glwe_eval_linear_transformation_into(base2k, &mut res, &cache, &prepared, &keys, &mut scratch.borrow());
+        results.push(res);
+    }
+    assert!(results[1] != results[0], "the two schedules gave the same ciphertext");
+    let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&ct_infos);
+    module.glwe_decrypt(&results[0], &mut pt_want, &sk_prepared, &mut scratch.borrow());
+
+    // Babies 1 and 2 are the same switch of the input on both sides; baby 3 differs by three
+    // switches, each read by four integer diagonals of `n` uniform coefficients of `base2k`
+    // bits. The giant steps differ by the three switches of each side.
+    let var_key_switch =
+        atk_infos.var_noise_keyswitch(&ct_infos, &ct_infos, 0.5, 0.5, 0.0, DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE, 0.0);
+    let var_diagonal = n as f64 * (2.0f64).powi(2 * base2k as i32) / 12.0;
+    let noise_max = 0.5 * ((3.0 * 4.0 * var_diagonal + 6.0) * var_key_switch).log2() + 3.0;
+    let noise_have = glwe_noise_checked(module, &results[1], &pt_want, &sk_prepared, &mut scratch.borrow())
         .std()
         .log2();
     assert!(noise_have <= noise_max, "noise_have: {noise_have} > noise_max: {noise_max}");

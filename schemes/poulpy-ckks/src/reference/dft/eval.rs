@@ -23,9 +23,7 @@
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    layouts::{
-        Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformation, LinearTransformationStrategy,
-    },
+    layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformation},
     reference::linear_transformation::DiagonalProd,
 };
 use poulpy_hal::{
@@ -40,7 +38,8 @@ use crate::{
         LinearTransformationPrepared, LtDiagonalMeta,
     },
     layouts::{
-        CKKSModuleAlloc, CKKSPlaintextOwned, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTPlan, DftDirection, DftFormat,
+        CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTPlan,
+        DftDirection, DftFormat,
     },
     oep::CKKSEncodingImpl,
     reference::dft::matrices::{DftScalar, gen_dft_matrices},
@@ -93,9 +92,7 @@ where
         .iter()
         .zip(&plan.schedule.steps)
         .map(|(cd, step)| {
-            let strategy = LinearTransformationStrategy::Bsgs {
-                giant_step: step.giant_step,
-            };
+            let strategy = plan.factor_strategy(step.giant_step);
             crate::reference::ckks_encode_linear_transformation_from_diagonals::<BE, F>(
                 module,
                 base2k,
@@ -110,6 +107,52 @@ where
         .map_err(crate::CKKSError::from)?;
 
     Ok((plan, lts))
+}
+
+/// The last factor `M` of the transform `plan` describes at degree `2^log_n`,
+/// left-multiplied by each map of `scales` and encoded as that factor is: the
+/// factors `scale·M`, for a slot-wise product folded into it, in a matrix of
+/// `plan` to prepare as the others. `plan` is a resolved plan, such as the one a
+/// [`DFTMatrix`] stores.
+pub(crate) fn ckks_scaled_last_factors<BE, F>(
+    module: &Module<BE>,
+    base2k: Base2K,
+    plan: &DFTPlan,
+    log_n: usize,
+    scales: &[ComplexDiagonals<F>],
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<DFTMatrix<BE, crate::layouts::Encode, crate::layouts::Split>>
+where
+    BE: Backend,
+    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+    F: DftScalar + CKKSEncodingScalar,
+{
+    let last = gen_dft_matrices::<F>(plan, log_n)
+        .pop()
+        .expect("a DFT plan has at least one factor");
+    let strategy = plan.factor_strategy(
+        plan.schedule
+            .steps
+            .last()
+            .expect("a DFT plan has at least one factor")
+            .giant_step,
+    );
+    let factors = scales
+        .iter()
+        .map(|scale| {
+            crate::reference::ckks_encode_linear_transformation_from_diagonals::<BE, F>(
+                module,
+                base2k,
+                plan.coeffs_meta,
+                &scale.compose(&last),
+                strategy,
+                false,
+                scratch,
+            )
+        })
+        .collect::<core::result::Result<Vec<_>, ::anyhow::Error>>()
+        .map_err(crate::CKKSError::from)?;
+    Ok(DFTMatrix::from_factors(DFTMatrixFactors::new(plan.clone(), factors)))
 }
 
 /// Prepares an unprepared (host plaintext) [`DFTMatrix`] into its resident
@@ -277,7 +320,7 @@ where
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE>,
 {
-    let mut babies = LinearTransformationBabySteps::alloc(module, factor.baby_steps(), running);
+    let mut babies = LinearTransformationBabySteps::alloc_for(module, factor, running);
     module.ckks_prepare_linear_transformation_baby_steps(&mut babies, running, keys, scratch)?;
     module.ckks_eval_linear_transformation_assign(running, &babies, factor, keys, scratch)?;
     Ok(())
@@ -329,7 +372,8 @@ where
     use crate::api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSImagOps, CKKSRotateOps, CKKSSubOps};
     use poulpy_core::{
         GLWEBytesOf, GLWELinearTransformations,
-        layouts::{GLWELayout, LWEInfos},
+        layouts::{BsgsRotations, GLWELayout, LWEInfos},
+        reference::linear_transformation::{glwe_eval_giant_tree_tmp_bytes, glwe_prepare_baby_doubling_tmp_bytes},
     };
     let envelope = |ct: &dyn CKKSCtBounds| crate::CKKSLayout {
         glwe_layout: GLWELayout {
@@ -352,20 +396,31 @@ where
             .max(module.ckks_mul_i_tmp_bytes(ct.max_size()))
             .max(module.ckks_div_i_tmp_bytes(ct.max_size()))
             .max(module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(ct, key));
-        for pt in dft
-            .factor_operands()
-            .iter()
-            .flat_map(|factor| &factor.giant_steps)
-            .flat_map(|giant| &giant.diagonals)
-            .map(|diagonal| &diagonal.plaintext)
-        {
-            // Prepared and streamed evaluation are selected independently, so
-            // neither query is assumed to cover the other.
-            let factor_work = module
-                .glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, pt, key)
-                .max(module.glwe_eval_linear_transformation_tmp_bytes(ct, ct, pt, key))
-                .max(module.ckks_copy_tmp_bytes(ct, ct));
-            bytes = bytes.max(BE::scratch_aligned(module.glwe_bytes_of_from_infos(ct)) + factor_work);
+        for factor in dft.factor_operands() {
+            // The doubling and the giant-step tree of power-of-two keys hold their
+            // ciphertexts in the scratch beside the per-rotation work.
+            bytes = bytes.max(
+                module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(ct, key)
+                    + glwe_prepare_baby_doubling_tmp_bytes::<BE, _, _>(factor.baby_steps(), factor.rotations, ct, key),
+            );
+            for pt in factor
+                .giant_steps
+                .iter()
+                .flat_map(|giant| &giant.diagonals)
+                .map(|diagonal| &diagonal.plaintext)
+            {
+                let tree = match factor.rotations {
+                    BsgsRotations::PerRotation => 0,
+                    _ => glwe_eval_giant_tree_tmp_bytes::<BE, _, _, _>(factor.giant_steps.len(), ct, pt, key),
+                };
+                // Prepared and streamed evaluation are selected independently, so
+                // neither query is assumed to cover the other.
+                let factor_work = module
+                    .glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, pt, key)
+                    .max(module.glwe_eval_linear_transformation_tmp_bytes(ct, ct, pt, key))
+                    .max(module.ckks_copy_tmp_bytes(ct, ct));
+                bytes = bytes.max(BE::scratch_aligned(module.glwe_bytes_of_from_infos(ct)) + factor_work + tree);
+            }
         }
     }
     bytes

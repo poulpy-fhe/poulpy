@@ -268,6 +268,7 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
         LinearTransformation {
             baby_steps: index.baby_steps,
             giant_steps,
+            rotations: index.rotations,
         }
     }
 }

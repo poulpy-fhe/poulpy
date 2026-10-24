@@ -118,7 +118,7 @@ pub use alloc::CKKSModuleAlloc;
 pub use approximation::PolynomialApproximation;
 pub use bootstrapping::{
     BootstrappingContext, BootstrappingContextUnprepared, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
-    EvalModCI, EvalModRing, EvalRoundPlus, SparseSecretEncapsulation,
+    CIConversion, CIPre, EvalModCI, EvalModRing, EvalRoundPlus, SparseSecretEncapsulation,
 };
 pub use bootstrapping_keys::{
     BootstrappingCIKeys, BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared,

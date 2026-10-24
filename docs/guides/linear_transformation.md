@@ -95,11 +95,16 @@ The baby-step cache is prepared once either way.
 
 ## Split strategies
 
-The decomposition is controlled by the choice of `n1`, expressed through the `LinearTransformationStrategy` enum, which has two variants.
+The decomposition is controlled by the choice of `n1`, expressed through the `LinearTransformationStrategy` enum, which has three variants.
 
 - `Direct` uses one giant step per diagonal and no baby rotations. It is best for a handful of diagonals.
 
 - `Bsgs { giant_step }` uses a caller-fixed `n1`. This is the knob to align `n1` with the diagonal structure of `M`, for example the stride of an FFT matrix.
+
+- `BsgsPowersOfTwo { giant_step }` is the same schedule evaluated with the keys of the power-of-two multiples of the baby and giant steps only (`BsgsRotations::PowersOfTwo`).
+  The baby rotation `k·b` is the rotation of `(k - 2^i)·b` by `2^i·b`, `2^i` the top bit of `k`, so the rotations of one doubling pass share a key and are switched together.
+  The giant steps are summed as a binary tree over the two's-complement digits of `j`, `T(u; G) = T(u_even; 2G) + rot(G)(T(u_odd; 2G))`, so the switches of one tree level share a key.
+  The number of key switches is the same, the number of distinct keys is about `log2(n1) + log2(n2)` instead of `n1 + n2`, and a product goes through more switches.
 
 For the cost-optimal width, call the `optimal_bsgs_giant_step` helper and feed its result into `Bsgs { giant_step }`. It returns `1`, which degenerates to the `Direct` schedule, for a single diagonal or fewer. Otherwise it only considers giant steps that are multiples of the smallest gap between consecutive diagonals, which is cheap for stride structured matrices, and selects the one that balances the baby and giant counts near the square root of the number of diagonals.
 
@@ -117,7 +122,7 @@ For a transform whose non-zero diagonals factor as `n1` baby steps by `n2` giant
 | Giant-step key-switches | n2 - 1 |
 | Output normalizations | 1 |
 | Rescale levels consumed | 1 |
-| Distinct automorphism keys | (n1 - 1) + (n2 - 1), minus empty steps |
+| Distinct automorphism keys | (n1 - 1) + (n2 - 1), minus empty steps; about log2(n1) + log2(n2) with `BsgsPowersOfTwo` |
 
 The total number of key-switches is `(n1 - 1) + (n2 - 1)`, minimized when `n1` and `n2` are both close to the square root of the number of diagonals.
 

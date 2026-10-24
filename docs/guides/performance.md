@@ -25,9 +25,9 @@ A prepared key holds one DFT-domain word per coefficient per limb, so what matte
 
 | backend / layout | bytes per coefficient | benchmark `base2k` | bytes per torus bit |
 | --- | --- | --- | --- |
-| `NTT3x42` (IFMA) | 16 | 52 | 0.31 |
-| `NTT4x30` (every backend) | 16 | 52 | 0.31 |
-| `FFT64` | 8 | 18 | 0.44 |
+| `NTT3x42` (IFMA) | 16 | 56 | 0.29 |
+| `NTT4x30` (every backend) | 16 | 53 | 0.30 |
+| `FFT64` | 8 | 17 | 0.47 |
 
 A wider limb is only worth what it costs to store.
 The `NTT4x30` backends, the portable one included, store their four residues as `u32`, so each transformed coefficient occupies 16 bytes.
@@ -139,7 +139,7 @@ A given torus precision needs `⌈k / base2k⌉` limbs, and cost grows with the 
 Halving `base2k` therefore roughly doubles the work, and the whole span from a small limb to the backend's maximum is worth several times the runtime on every backend we measured.
 
 Also reserve coefficient-word headroom for additions and subtractions before normalization; the query only models DFT-domain products.
-The key-size table above uses the benchmark radices, 18 for FFT64 and 52 for NTT; recalculate its bytes-per-bit figures for your chosen radix.
+The key-size table above uses the benchmark radices, those `preset_for_backend` selects for a bootstrap failure probability of `2^-128`: 17 for FFT64, 53 for NTT4x30 and 56 for NTT3x42, and for a preset with EvalMod on the conjugate-invariant ring 14 for FFT64 and 52 for NTT4x30; recalculate its bytes-per-bit figures for your chosen radix.
 
 ## 5. `k_digit`
 

@@ -57,7 +57,7 @@ mod vmp_pmat;
 mod word;
 mod znx_base;
 
-pub use base2k::{MaxBase2k, max_base2k_fft64, max_base2k_ntt};
+pub use base2k::{MaxBase2k, max_base2k_fft64, max_base2k_ntt, max_base2k_ntt_squares};
 pub use convolution::*;
 pub use crt::*;
 pub use layout_compat::*;

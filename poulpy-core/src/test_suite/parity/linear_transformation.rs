@@ -236,6 +236,7 @@ where
                     one_r.transfer_into(&mut one_t);
                     let identity_r = LinearTransformation {
                         baby_steps: vec![0],
+                        rotations: Default::default(),
                         giant_steps: vec![LinearTransformationGiantStep {
                             rot: 0,
                             diagonals: vec![LinearTransformationDiagonal {
@@ -246,6 +247,7 @@ where
                     };
                     let identity_t = LinearTransformation {
                         baby_steps: vec![0],
+                        rotations: Default::default(),
                         giant_steps: vec![LinearTransformationGiantStep {
                             rot: 0,
                             diagonals: vec![LinearTransformationDiagonal {
@@ -335,10 +337,12 @@ where
                 let transform = |source: &mut Source| {
                     let mut rhs_r = LinearTransformation {
                         baby_steps: plan.baby_steps.clone(),
+                        rotations: plan.rotations,
                         giant_steps: Vec::new(),
                     };
                     let mut rhs_t = LinearTransformation {
                         baby_steps: plan.baby_steps.clone(),
+                        rotations: plan.rotations,
                         giant_steps: Vec::new(),
                     };
                     for (&rot, babies) in plan.giant_steps.iter().zip(&plan.index) {
@@ -542,5 +546,177 @@ where
                 });
             }
         }
+    }
+}
+
+/// The transformation of diagonals `-16..16` with the keys of the power-of-two rotations, the
+/// baby steps by doubling, whose second pass switches two ciphertexts with one key, and the giant
+/// steps as a tree whose first level switches four: the same bits on both backends, on the lazy route and on the
+/// normalized one of a destination of another radix.
+pub fn test_linear_transformation_powers_of_two_parity<BR, BT>(
+    params: &TestParams,
+    _shapes: &ParityShapes,
+    r: &Module<BR>,
+    t: &Module<BT>,
+) where
+    BR: ParityBackend,
+    BT: ParityBackend,
+    BR::OwnedBuf: HostDataMut,
+    Module<BR>: GLWELinearTransformations<BR> + GLWEAutomorphismKeyPreparedFactory<BR> + CnvPVecAlloc<BR>,
+    Module<BT>: GLWELinearTransformations<BT> + GLWEAutomorphismKeyPreparedFactory<BT> + CnvPVecAlloc<BT>,
+{
+    assert!(params.n <= r.n() && params.n <= t.n());
+    let base = params.base2k.min(12);
+    let k = 2 * base + 1;
+    let mut source = Source::new([188; 32]);
+    let slots = params.n / 2;
+    let schedule = LinearTransformationLayout {
+        indexes: (-16..16).collect(),
+        slots,
+        strategy: LinearTransformationStrategy::BsgsPowersOfTwo { giant_step: 4 },
+    };
+    let plan = schedule.index();
+    let ct = GLWELayout {
+        n: params.n.into(),
+        base2k: base.into(),
+        k: k.into(),
+        rank: Rank(1),
+    };
+    let pt = GLWELayout {
+        rank: Rank(0),
+        k: (base + 1).into(),
+        ..ct
+    };
+    let key = GLWEAutomorphismKeyLayout {
+        n: ct.n,
+        base2k: ct.base2k,
+        rank: ct.rank,
+        dnum: Dnum(k.div_ceil(base) as u32),
+        k_digit: TorusPrecision(base as u32),
+        k_aux: TorusPrecision((base + (params.n.ilog2() as usize)) as u32),
+    };
+    let input_r = ref_glwe(r, &ct, &mut source);
+    let mut input_t = t.glwe_alloc_from_infos(&ct);
+    input_r.transfer_into(&mut input_t);
+    // Babies {0, 1, 2, 3} by two doublings, the second of two sources.
+    let rotations = plan.rotations;
+    let passes = rotations.baby_passes(plan.baby_steps.iter().copied());
+    assert_eq!(passes.iter().map(|(_, pairs)| pairs.len()).collect::<Vec<_>>(), [1, 2]);
+    let mut keyed: Vec<i64> = rotations.baby_key_rotations(plan.baby_steps.iter().copied());
+    keyed.extend(rotations.giant_key_rotations(plan.giant_steps.iter().copied()));
+    let mut keys_r = HashMap::new();
+    let mut keys_t = HashMap::new();
+    for rotation in keyed {
+        let p = r.galois_element(rotation);
+        let mut key_r = r.glwe_automorphism_key_alloc_from_infos(&key);
+        fill_by_digit(r, &mut key_r, 1, &mut source);
+        key_r.p = p;
+        let mut key_t = t.glwe_automorphism_key_alloc_from_infos(&key);
+        key_r.transfer_into(&mut key_t);
+        let mut prepared_r = r.glwe_automorphism_key_prepared_alloc_from_infos(&key);
+        let mut prepared_t = t.glwe_automorphism_key_prepared_alloc_from_infos(&key);
+        r.glwe_automorphism_key_prepare(
+            &mut prepared_r,
+            &key_r,
+            &mut poisoned_scratch::<BR>(r.glwe_automorphism_key_prepare_tmp_bytes(&key)).borrow(),
+        );
+        t.glwe_automorphism_key_prepare(
+            &mut prepared_t,
+            &key_t,
+            &mut poisoned_scratch::<BT>(t.glwe_automorphism_key_prepare_tmp_bytes(&key)).borrow(),
+        );
+        keys_r.insert(p, prepared_r);
+        keys_t.insert(p, prepared_t);
+    }
+    let mut lhs_r = LinearTransformationBabySteps::alloc_with(r, &plan.baby_steps, rotations, &ct);
+    let mut lhs_t = LinearTransformationBabySteps::alloc_with(t, &plan.baby_steps, rotations, &ct);
+    r.glwe_prepare_linear_transformation_baby_steps(
+        &mut lhs_r,
+        &input_r,
+        &keys_r,
+        &mut poisoned_scratch::<BR>(r.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, &key)).borrow(),
+    );
+    t.glwe_prepare_linear_transformation_baby_steps(
+        &mut lhs_t,
+        &input_t,
+        &keys_t,
+        &mut poisoned_scratch::<BT>(t.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, &key)).borrow(),
+    );
+
+    let mut resident_r: LinearTransformation<PreparedDiagonal<BR::OwnedBuf, BR>> =
+        LinearTransformation::alloc_prepared(r, &schedule, &pt);
+    let mut resident_t: LinearTransformation<PreparedDiagonal<BT::OwnedBuf, BT>> =
+        LinearTransformation::alloc_prepared(t, &schedule, &pt);
+    let mut rhs_r = LinearTransformation {
+        baby_steps: plan.baby_steps.clone(),
+        rotations,
+        giant_steps: Vec::new(),
+    };
+    let mut rhs_t = LinearTransformation {
+        baby_steps: plan.baby_steps.clone(),
+        rotations,
+        giant_steps: Vec::new(),
+    };
+    for (&rot, babies) in plan.giant_steps.iter().zip(&plan.index) {
+        let (mut diagonals_r, mut diagonals_t) = (Vec::new(), Vec::new());
+        for &baby in babies {
+            let diagonal_r = ref_glwe(r, &pt, &mut source);
+            let mut diagonal_t = t.glwe_alloc_from_infos(&pt);
+            diagonal_r.transfer_into(&mut diagonal_t);
+            diagonals_r.push(LinearTransformationDiagonal {
+                baby,
+                plaintext: StreamedDiagonal(diagonal_r),
+            });
+            diagonals_t.push(LinearTransformationDiagonal {
+                baby,
+                plaintext: StreamedDiagonal(diagonal_t),
+            });
+        }
+        rhs_r.giant_steps.push(LinearTransformationGiantStep {
+            rot,
+            diagonals: diagonals_r,
+        });
+        rhs_t.giant_steps.push(LinearTransformationGiantStep {
+            rot,
+            diagonals: diagonals_t,
+        });
+    }
+    r.glwe_prepare_linear_transformation_rhs(
+        &mut resident_r,
+        &rhs_r,
+        &mut poisoned_scratch::<BR>(r.glwe_prepare_linear_transformation_rhs_tmp_bytes(&pt)).borrow(),
+    );
+    t.glwe_prepare_linear_transformation_rhs(
+        &mut resident_t,
+        &rhs_t,
+        &mut poisoned_scratch::<BT>(t.glwe_prepare_linear_transformation_rhs_tmp_bytes(&pt)).borrow(),
+    );
+    for out_base in [base, base - 1] {
+        let out = GLWELayout {
+            base2k: out_base.into(),
+            ..ct
+        };
+        let mut out_r = ref_glwe(r, &out, &mut source);
+        let mut out_t = t.glwe_alloc_from_infos(&out);
+        out_r.transfer_into(&mut out_t);
+        r.glwe_eval_linear_transformation_into(
+            base,
+            &mut out_r,
+            &lhs_r,
+            &resident_r,
+            &keys_r,
+            &mut poisoned_scratch::<BR>(r.glwe_eval_linear_transformation_tmp_bytes(&out, &ct, &pt, &key)).borrow(),
+        );
+        t.glwe_eval_linear_transformation_into(
+            base,
+            &mut out_t,
+            &lhs_t,
+            &resident_t,
+            &keys_t,
+            &mut poisoned_scratch::<BT>(t.glwe_eval_linear_transformation_tmp_bytes(&out, &ct, &pt, &key)).borrow(),
+        );
+        let mut have = r.glwe_alloc_from_infos(&out);
+        out_t.transfer_into(&mut have);
+        assert_glwe_eq!(out_r, have, "powers-of-two linear transform out_base={out_base}");
     }
 }

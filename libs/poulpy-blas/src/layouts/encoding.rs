@@ -135,6 +135,7 @@ impl MapLayout {
 pub(crate) fn skeleton<P: Copy>(plan: &LinearTransformationPlan, diagonal: P) -> LinearTransformation<P> {
     LinearTransformation {
         baby_steps: plan.baby_steps.clone(),
+        rotations: plan.rotations,
         giant_steps: plan
             .giant_steps
             .iter()
