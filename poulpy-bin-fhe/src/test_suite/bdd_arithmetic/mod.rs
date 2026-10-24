@@ -40,7 +40,10 @@ pub use sub::*;
 pub use swap::*;
 pub use xor::*;
 
-use poulpy_core::api::{GLWESecretPreparedFactory, GLWESecretSampling, LWESecretSampling};
+use poulpy_core::api::{
+    GGLWEToGGSWKeyPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory,
+    GLWESecretSampling, GLWESwitchingKeyPreparedFactory, GLWEToLWEKeyPreparedFactory, LWESecretSampling,
+};
 use poulpy_core::layouts::{
     Base2K, Degree, Dnum, GGLWEToGGSWKeyLayout, GGSWLayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWESecret,
     GLWESecretPrepared, GLWESwitchingKeyLayout, GLWEToLWEKeyLayout, LWESecret, ModuleCoreAlloc, Rank, TorusPrecision,
@@ -49,7 +52,7 @@ use poulpy_core::layouts::{
 use crate::{
     bdd_arithmetic::{BDDKey, BDDKeyEncryptSk, BDDKeyLayout, BDDKeyPrepared, BDDKeyPreparedFactory},
     blind_rotation::{BlindRotationAlgo, BlindRotationKeyLayout, BlindRotationKeyPreparedFactory},
-    circuit_bootstrapping::CircuitBootstrappingKeyLayout,
+    circuit_bootstrapping::{CircuitBootstrappingKeyLayout, CircuitBootstrappingKeyPreparedFactory},
 };
 
 pub struct TestContext<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend> {
@@ -66,6 +69,12 @@ where
         + GLWESecretPreparedFactory<BE>
         + BlindRotationKeyPreparedFactory<BRA, BE>
         + BDDKeyPreparedFactory<BRA, BE>
+        + CircuitBootstrappingKeyPreparedFactory<BRA, BE>
+        + GGSWPreparedFactory<BE>
+        + GGLWEToGGSWKeyPreparedFactory<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + GLWESwitchingKeyPreparedFactory<BE>
+        + GLWEToLWEKeyPreparedFactory<BE>
         + GLWESecretSampling<BE>
         + LWESecretSampling<BE>,
     BE: HalModuleImpl,
@@ -97,6 +106,12 @@ impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> +
             + BlindRotationKeyPreparedFactory<BRA, BE>
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + BDDKeyPreparedFactory<BRA, BE>
+            + CircuitBootstrappingKeyPreparedFactory<BRA, BE>
+            + GGSWPreparedFactory<BE>
+            + GGLWEToGGSWKeyPreparedFactory<BE>
+            + GLWEAutomorphismKeyPreparedFactory<BE>
+            + GLWESwitchingKeyPreparedFactory<BE>
+            + GLWEToLWEKeyPreparedFactory<BE>
             + GLWESecretSampling<BE>
             + LWESecretSampling<BE>,
         ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,

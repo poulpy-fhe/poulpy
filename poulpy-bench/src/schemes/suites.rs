@@ -12,8 +12,8 @@ use poulpy_ckks::api::{
 use poulpy_core::{
     GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEMaskFill, LWEEncryptSk, LWEFillMask,
     api::{
-        GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling,
-        GLWETensorKeyPreparedFactory, LWESecretSampling,
+        GGLWEToGGSWKeyPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory,
+        GLWESecretSampling, GLWETensorKeyPreparedFactory, LWESecretSampling,
     },
 };
 use poulpy_hal::AlignedBuf;
@@ -266,6 +266,7 @@ where
         + ModuleNew<BE>
         + BlindRotationKeyEncryptSk<BRA, BE>
         + BlindRotationKeyPreparedFactory<BRA, BE>
+        + GGSWPreparedFactory<BE>
         + BlindRotationExecute<BRA, BE>
         + LookupTableFactory<BE::OwnedBuf, BE::ZnxWord>
         + GLWESecretPreparedFactory<BE>
@@ -298,8 +299,11 @@ where
         + LWEEncryptSk<BE>
         + CircuitBootstrappingKeyEncryptSk<BRA, BE>
         + CircuitBootstrappingKeyPreparedFactory<BRA, BE>
+        + BlindRotationKeyPreparedFactory<BRA, BE>
         + CircuitBootstrappingExecute<BRA, BE>
         + GGSWPreparedFactory<BE>
+        + GGLWEToGGSWKeyPreparedFactory<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
         + GGSWNoise<BE>
         + GLWEEncryptSk<BE>
         + VecZnxRotateAssign<BE>
@@ -398,6 +402,8 @@ where
         + CircuitBootstrappingKeyPreparedFactory<BRA, BE>
         + CircuitBootstrappingExecute<BRA, BE>
         + GGSWPreparedFactory<BE>
+        + GGLWEToGGSWKeyPreparedFactory<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
         + GGSWNoise<BE>
         + GLWEEncryptSk<BE>
         + VecZnxRotateAssign<BE>,
@@ -465,6 +471,8 @@ where
         + CircuitBootstrappingKeyPreparedFactory<BRA, BE>
         + CircuitBootstrappingExecute<BRA, BE>
         + GGSWPreparedFactory<BE>
+        + GGLWEToGGSWKeyPreparedFactory<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
         + GGSWNoise<BE>
         + GLWEEncryptSk<BE>
         + VecZnxRotateAssign<BE>,

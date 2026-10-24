@@ -7,8 +7,9 @@ The crate depends on no concrete backend.
 ## User-facing API
 
 Import operations from `poulpy_bin_fhe::api`; they are also re-exported at the crate root.
-Every operation follows `API -> delegate -> OEP`, including LUT construction
-and compressed-key allocation. Backends explicitly select their implementations.
+Every operation follows `API -> delegate -> OEP`, including LUT construction;
+key allocation and sizing are direct on the module. Backends explicitly select
+their implementations.
 
 - [Blind rotation](src/api/blind_rotation.rs) exposes LUT evaluation, standard
   and compressed key encryption, decompression, preparation, and LUT helpers.

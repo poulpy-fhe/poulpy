@@ -6,16 +6,10 @@ use poulpy_hal::layouts::*;
 /// Implementations must preserve the canonical circuit, buffer bounds, metadata,
 /// and the paired scratch query contract.
 pub unsafe trait BDDKeyPreparedFactoryImpl<BRA: BlindRotationAlgo>: Backend {
-    #[allow(clippy::too_many_arguments)]
-    fn alloc_bdd_key_from_infos<A>(module: &Module<Self>, infos: &A) -> BDDKeyPrepared<Self::OwnedBuf, BRA, Self>
+    fn bdd_key_prepare_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: BDDKeyInfos;
-    #[allow(clippy::too_many_arguments)]
-    fn prepare_bdd_key_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
-    where
-        A: BDDKeyInfos;
-    #[allow(clippy::too_many_arguments)]
-    fn prepare_bdd_key(
+    fn bdd_key_prepare(
         module: &Module<Self>,
         res: &mut BDDKeyPrepared<Self::OwnedBuf, BRA, Self>,
         other: &BDDKey<Self::OwnedBuf, BRA, Self::ZnxWord>,

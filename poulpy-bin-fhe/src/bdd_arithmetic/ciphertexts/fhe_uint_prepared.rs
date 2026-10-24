@@ -261,7 +261,7 @@ impl<BRA: BlindRotationAlgo, BE: Backend<ZnxWord = i64>> BDDKeyPrepared<BE::Owne
     where
         M: BDDKeyPreparedFactory<BRA, BE>,
     {
-        module.prepare_bdd_key(self, other, scratch);
+        module.bdd_key_prepare(self, other, scratch);
     }
 }
 

@@ -11,13 +11,16 @@ User-facing contracts have separate operation files under
 [`api/bdd`](../src/api/bdd.rs). Each family re-exports its traits, as do `api`
 and the crate root. Execution and its matching scratch queries share a trait.
 All public operation traits follow `API -> delegate -> OEP`, including
-`LookupTableFactory` and `BlindRotationKeyCompressedFactory`. Their delegates
-require only the corresponding backend hook. LUT algorithms and compressed-key
-allocation live in independently callable reference functions; a backend opts
-in with `impl_lookup_table_factory_reference_full!` and
-`impl_blind_rotation_key_compressed_factory_reference_full!`, or provides its
-own implementation. The full blind-rotation opt-in includes both hooks.
-Existing domain import paths remain compatibility re-exports.
+`LookupTableFactory`, whose delegate requires only its backend hook. LUT
+algorithms live in independently callable reference functions; a backend opts
+in with `impl_lookup_table_factory_reference_full!`, which the full
+blind-rotation opt-in includes, or provides its own implementation. Key
+allocation and sizing (`<object>_alloc_from_infos`,
+`<object>_bytes_of_from_infos`) are direct on the module, with no OEP method:
+`BlindRotationKeyCompressedFactory` is implemented by every module, and the
+prepared-key factories compose the core prepared factories, each allocator
+refusing a component whose degree differs from the module degree. Existing
+domain import paths remain compatibility re-exports.
 
 ## Operation map
 
@@ -29,7 +32,8 @@ Every operation that uses caller workspace has a selected scratch query.
 |---|---|---|
 | `BlindRotationExecute`, `BlindRotationModSwitch` | [`reference/blind_rotation`](../src/reference/blind_rotation/) | Both directions, standard/block/extended domains, distributions and rounding boundaries. |
 | `BlindRotationKeyEncryptSk`, `BlindRotationKeyCompressedEncryptSk`, `BlindRotationKeyDecompress`, `BlindRotationKeyPreparedFactory` | Same directory | Raw/compressed encryption, decompression, independent preparation and reused prepared keys. |
-| `LookupTableFactory`, `BlindRotationKeyCompressedFactory` | [`reference/blind_rotation`](../src/reference/blind_rotation/) | LUT correctness, compressed key lifecycle, and independent opaque-storage dispatch overrides. |
+| `LookupTableFactory` | [`reference/blind_rotation`](../src/reference/blind_rotation/) | LUT correctness and independent opaque-storage dispatch overrides. |
+| `BlindRotationKeyCompressedFactory` | Direct on the module, no OEP family | Compressed key lifecycle, byte counts, degree refusals and allocation on opaque storage. |
 | `CircuitBootstrappingExecute` | [`reference/circuit_bootstrapping.rs`](../src/reference/circuit_bootstrapping.rs); one-shot constant/exponent wrappers are derived | Constant/exponent outputs, prepared plans, repeated execution, differing radices and invalid shapes. |
 | `CircuitBootstrappingKeyEncryptSk`, `CircuitBootstrappingKeyPreparedFactory` | Same reference module | Shared raw key, independently prepared components and exact query-sized workspace. |
 | `Cmux`, `Cswap` | [`reference/bdd`](../src/reference/bdd/) | Assignment variants, differing precisions, output capacity and operand preservation. |
@@ -39,9 +43,10 @@ Every operation that uses caller workspace has a selected scratch query.
 | `FheUintPrepare`, `FheUintPreparedEncryptSk`, `BDDKeyEncryptSk`, `BDDKeyPreparedFactory` | Same directories | Preparation and key lifecycle, including optional switching keys. |
 
 Layout accessors, serialization, plain container constructors, and generated
-BDD descriptions remain data helpers. Prepared and compressed key factories
-and LUT construction dispatch through their OEP contracts. Convenience
-evaluators route through the selected public operation traits.
+BDD descriptions remain data helpers. Key allocation and sizing are direct on
+the module; key preparation and LUT construction dispatch through their OEP
+contracts. Convenience evaluators route through the selected public operation
+traits.
 
 `GLWEBlindRetriever` and `GLWEBlindRetrieval` serve different purposes. The
 retriever accumulates inputs without changing them and returns one selected
@@ -187,9 +192,9 @@ infos required by rotation and selection queries. Backend crates expose scheme o
 `enable-bin-fhe` feature; the scheme crate's historical feature does not select
 a backend.
 
-`BlindRotationKeyCompressedFactory<BRA, BE>` is now a module operation with an
-`&self` receiver. Generic callers use a bound on the module and call
-`module.blind_rotation_key_compressed_alloc(infos)`; the existing
-`BlindRotationKeyCompressed::alloc(module, infos)` convenience call also uses
-that selected factory. Importing the crate alone no longer installs LUT
-construction from a backend's HAL arithmetic capabilities.
+`BlindRotationKeyCompressedFactory<BRA, BE>` is implemented by every module
+for each algorithm with a compressed key. Generic callers bound the module by
+it and call `module.blind_rotation_key_compressed_alloc_from_infos(infos)`, as
+the `BlindRotationKeyCompressed::alloc(module, infos)` convenience call does.
+Importing the crate alone no longer installs LUT construction from a backend's
+HAL arithmetic capabilities.

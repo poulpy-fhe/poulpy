@@ -83,25 +83,19 @@ impl<BRA: BlindRotationAlgo, BE: BlindRotationKeyCompressedEncryptSkImpl<BRA>> B
 }
 
 impl<BRA: BlindRotationAlgo, BE: BlindRotationKeyPreparedImpl<BRA>> BlindRotationKeyPreparedFactory<BRA, BE> for Module<BE> {
-    fn blind_rotation_key_prepared_alloc<A>(&self, infos: &A) -> BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE>
-    where
-        A: BlindRotationKeyInfos,
-    {
-        BE::blind_rotation_key_prepared_alloc(self, infos)
-    }
     fn blind_rotation_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: BlindRotationKeyInfos,
     {
         BE::blind_rotation_key_prepare_tmp_bytes(self, infos)
     }
-    fn prepare_blind_rotation_key(
+    fn blind_rotation_key_prepare(
         &self,
         res: &mut BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE>,
         other: &BlindRotationKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        BE::prepare_blind_rotation_key(self, res, other, scratch)
+        BE::blind_rotation_key_prepare(self, res, other, scratch)
     }
 }
 
@@ -130,5 +124,4 @@ impl<BRA: BlindRotationAlgo, BE: BlindRotationKeyDecompressImpl<BRA>> BlindRotat
     }
 }
 
-mod blind_rotation_key_compressed_factory;
 mod lookup_table_factory;

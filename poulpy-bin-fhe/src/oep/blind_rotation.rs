@@ -1,8 +1,6 @@
 //! Backend hooks for blind rotation and its key lifecycle.
 #![allow(clippy::too_many_arguments)]
-mod blind_rotation_key_compressed_factory;
 mod lookup_table_factory;
-pub use blind_rotation_key_compressed_factory::BlindRotationKeyCompressedFactoryImpl;
 pub use lookup_table_factory::LookupTableFactoryImpl;
 
 use crate::blind_rotation::{
@@ -218,16 +216,10 @@ macro_rules! impl_blind_rotation_key_compressed_encrypt_sk_reference_full {
 /// # Safety
 /// Preserve the reference circuit, metadata, and advertised scratch bounds.
 pub unsafe trait BlindRotationKeyPreparedImpl<BRA: BlindRotationAlgo>: Backend {
-    fn blind_rotation_key_prepared_alloc<A>(
-        module: &Module<Self>,
-        infos: &A,
-    ) -> BlindRotationKeyPrepared<Self::OwnedBuf, BRA, Self>
-    where
-        A: BlindRotationKeyInfos;
     fn blind_rotation_key_prepare_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: BlindRotationKeyInfos;
-    fn prepare_blind_rotation_key(
+    fn blind_rotation_key_prepare(
         module: &Module<Self>,
         res: &mut BlindRotationKeyPrepared<Self::OwnedBuf, BRA, Self>,
         other: &BlindRotationKey<Self::OwnedBuf, BRA, Self::ZnxWord>,
@@ -244,28 +236,19 @@ macro_rules! impl_blind_rotation_key_prepared_reference_full {
             use $crate::blind_rotation::{BlindRotationKey, BlindRotationKeyInfos, BlindRotationKeyPrepared, CGGI};
 
             unsafe impl $crate::oep::BlindRotationKeyPreparedImpl<$crate::blind_rotation::CGGI> for $backend {
-                fn blind_rotation_key_prepared_alloc<A>(
-                    module: &Module<Self>,
-                    infos: &A,
-                ) -> BlindRotationKeyPrepared<Self::OwnedBuf, CGGI, Self>
-                where
-                    A: BlindRotationKeyInfos,
-                {
-                    $crate::reference::blind_rotation::blind_rotation_key_prepared_alloc_ref::<Self, _>(module, infos)
-                }
                 fn blind_rotation_key_prepare_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
                 where
                     A: BlindRotationKeyInfos,
                 {
                     $crate::reference::blind_rotation::blind_rotation_key_prepare_tmp_bytes_ref::<Self, _>(module, infos)
                 }
-                fn prepare_blind_rotation_key(
+                fn blind_rotation_key_prepare(
                     module: &Module<Self>,
                     res: &mut BlindRotationKeyPrepared<Self::OwnedBuf, CGGI, Self>,
                     other: &BlindRotationKey<Self::OwnedBuf, CGGI, Self::ZnxWord>,
                     scratch: &mut ScratchArena<'_, Self>,
                 ) {
-                    $crate::reference::blind_rotation::prepare_blind_rotation_key_ref::<Self>(module, res, other, scratch)
+                    $crate::reference::blind_rotation::blind_rotation_key_prepare_ref::<Self>(module, res, other, scratch)
                 }
             }
         };
@@ -351,7 +334,6 @@ macro_rules! impl_blind_rotation_reference_full {
         $crate::impl_blind_rotation_key_prepared_reference_full!($backend);
         $crate::impl_blind_rotation_mod_switch_reference_full!($backend);
         $crate::impl_blind_rotation_key_decompress_reference_full!($backend);
-        $crate::impl_blind_rotation_key_compressed_factory_reference_full!($backend);
         $crate::impl_lookup_table_factory_reference_full!($backend);
     };
     ($backend:ty, scheduling = parallel) => {
@@ -361,7 +343,6 @@ macro_rules! impl_blind_rotation_reference_full {
         $crate::impl_blind_rotation_key_prepared_reference_full!($backend);
         $crate::impl_blind_rotation_mod_switch_reference_full!($backend);
         $crate::impl_blind_rotation_key_decompress_reference_full!($backend);
-        $crate::impl_blind_rotation_key_compressed_factory_reference_full!($backend);
         $crate::impl_lookup_table_factory_reference_full!($backend);
     };
 }

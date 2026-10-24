@@ -13,7 +13,5 @@ pub use staging::*;
 mod decompress;
 pub use decompress::*;
 
-mod key_compressed_factory;
-pub use key_compressed_factory::*;
 mod lookup_table;
 pub use lookup_table::*;

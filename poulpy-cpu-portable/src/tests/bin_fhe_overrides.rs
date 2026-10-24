@@ -68,7 +68,6 @@ unsafe impl poulpy_core::oep::GLWECopyImpl for OverrideBackend {
 poulpy_bin_fhe::impl_blind_rotation_key_encrypt_sk_reference_full!(OverrideBackend);
 poulpy_bin_fhe::impl_blind_rotation_key_compressed_encrypt_sk_reference_full!(OverrideBackend);
 poulpy_bin_fhe::impl_blind_rotation_key_decompress_reference_full!(OverrideBackend);
-poulpy_bin_fhe::impl_blind_rotation_key_compressed_factory_reference_full!(OverrideBackend);
 poulpy_bin_fhe::impl_lookup_table_factory_reference_full!(OverrideBackend);
 poulpy_bin_fhe::impl_circuit_bootstrapping_key_encrypt_sk_reference_full!(OverrideBackend, CGGI);
 poulpy_bin_fhe::impl_circuit_bootstrapping_key_prepared_reference_full!(OverrideBackend, CGGI);
@@ -471,7 +470,7 @@ fn blind_rotation_rejects_invalid_shapes_before_writes() {
         k_aux: 12usize.into(),
         rank: 1usize.into(),
     };
-    let mut key = module.blind_rotation_key_prepared_alloc(&layout);
+    let mut key = module.blind_rotation_key_prepared_alloc_from_infos(&layout);
     key.set_distribution(poulpy_core::Distribution::ZERO);
     let mut output = module.glwe_alloc_from_infos(&layout);
     output.data_mut().data_mut().fill(0x55);
@@ -596,28 +595,12 @@ fn prepared_circuit_override_propagates_to_direct_scratch_queries() {
 }
 
 thread_local! {
-    static COMPRESSED_FACTORY_CALLS: Cell<usize> = const { Cell::new(0) };
     static LUT_SET_CALLS: Cell<usize> = const { Cell::new(0) };
     static LUT_ROTATE_CALLS: Cell<usize> = const { Cell::new(0) };
 }
 
-// These overrides use only storage allocation and transfers. OpaqueBackend has
-// no polynomial arithmetic implementations or host-accessible buffer views.
-unsafe impl BlindRotationKeyCompressedFactoryImpl<CGGI> for OpaqueBackend<'_> {
-    fn blind_rotation_key_compressed_alloc<A: BlindRotationKeyInfos>(
-        module: &Module<Self>,
-        infos: &A,
-    ) -> BlindRotationKeyCompressed<Self::OwnedBuf, CGGI, Self::ZnxWord> {
-        assert_eq!(module.n(), infos.n_glwe().as_usize());
-        COMPRESSED_FACTORY_CALLS.set(COMPRESSED_FACTORY_CALLS.get() + 1);
-        BlindRotationKeyCompressed::from_parts(
-            (0..infos.n_lwe().as_usize())
-                .map(|_| module.ggsw_compressed_alloc_from_infos(infos))
-                .collect(),
-            poulpy_core::Distribution::NONE,
-        )
-    }
-}
+// The LUT override uses only storage transfers. OpaqueBackend has no
+// polynomial arithmetic implementations or host-accessible buffer views.
 
 fn opaque_lut_coefficients(lut: &LookupTable<OpaqueOwned, i64>) -> Vec<i64> {
     assert_eq!(lut.extension_factor(), 1);
@@ -678,8 +661,7 @@ unsafe impl LookupTableFactoryImpl for OpaqueBackend<'_> {
 }
 
 #[test]
-fn compressed_key_factory_dispatches_with_opaque_storage() {
-    COMPRESSED_FACTORY_CALLS.set(0);
+fn compressed_key_allocation_is_direct_on_opaque_storage() {
     let environment = ();
     let module = OpaqueBackend::module(&environment);
     let layout = BlindRotationKeyLayout {
@@ -690,10 +672,8 @@ fn compressed_key_factory_dispatches_with_opaque_storage() {
         k_aux: 12usize.into(),
         rank: 1usize.into(),
     };
-    let direct = module.blind_rotation_key_compressed_alloc(&layout);
-    assert_eq!(COMPRESSED_FACTORY_CALLS.get(), 1);
+    let direct = module.blind_rotation_key_compressed_alloc_from_infos(&layout);
     let wrapped = BlindRotationKeyCompressed::<poulpy_hal::AlignedBuf, CGGI, i64>::alloc(&module, &layout);
-    assert_eq!(COMPRESSED_FACTORY_CALLS.get(), 2);
     for key in [&direct, &wrapped] {
         assert_eq!(key.keys().len(), layout.n_lwe.as_usize());
         assert_eq!(key.distribution(), poulpy_core::Distribution::NONE);

@@ -2,6 +2,7 @@ pub use crate::api::{BDDKeyEncryptSk, BDDKeyPreparedFactory};
 use crate::bdd_arithmetic::FheUintPreparedDebug;
 use crate::circuit_bootstrapping::CircuitBootstrappingKeyInfos;
 use crate::{
+    api::{BlindRotationKeyPreparedFactory, CircuitBootstrappingKeyPreparedFactory},
     bdd_arithmetic::{FheUint, UnsignedInteger},
     blind_rotation::BlindRotationAlgo,
     circuit_bootstrapping::{CircuitBootstrappingKey, CircuitBootstrappingKeyLayout, CircuitBootstrappingKeyPrepared},
@@ -10,6 +11,10 @@ use poulpy_hal::AlignedBuf;
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use poulpy_core::TransferInto;
+use poulpy_core::api::{
+    GGLWEToGGSWKeyPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESwitchingKeyPreparedFactory,
+    GLWEToLWEKeyPreparedFactory,
+};
 use poulpy_core::layouts::{
     GGLWEInfos, GLWESwitchingKey, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared, GetAutomorphismKey, ModuleCoreAlloc,
 };
@@ -284,10 +289,17 @@ impl<BRA: BlindRotationAlgo, BE: Backend> GetAutomorphismKey<BE> for BDDKeyPrepa
 impl<BRA: BlindRotationAlgo, BE: Backend<ZnxWord = i64>> BDDKeyPrepared<BE::OwnedBuf, BRA, BE> {
     pub fn alloc_from_infos<M, A>(module: &M, infos: &A) -> Self
     where
-        M: BDDKeyPreparedFactory<BRA, BE>,
+        M: BDDKeyPreparedFactory<BRA, BE>
+            + CircuitBootstrappingKeyPreparedFactory<BRA, BE>
+            + BlindRotationKeyPreparedFactory<BRA, BE>
+            + GGSWPreparedFactory<BE>
+            + GGLWEToGGSWKeyPreparedFactory<BE>
+            + GLWEAutomorphismKeyPreparedFactory<BE>
+            + GLWESwitchingKeyPreparedFactory<BE>
+            + GLWEToLWEKeyPreparedFactory<BE>,
         A: BDDKeyInfos,
     {
-        module.alloc_bdd_key_from_infos(infos)
+        module.bdd_key_prepared_alloc_from_infos(infos)
     }
 }
 
