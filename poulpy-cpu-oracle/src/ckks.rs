@@ -149,9 +149,9 @@ macro_rules! impl_oracle_ckks_coeff_encodings {
         unsafe impl ::poulpy_ckks::oep::CKKSShipCoeffEncodingImpl for $be {
             fn ckks_ship_coeff_encodings_tmp_bytes<S>(
                 _module: &::poulpy_hal::layouts::Module<$be>,
-                _plan: &::poulpy_ckks::layouts::ShipPlan,
                 _base2k: ::poulpy_core::layouts::Base2K,
                 _complex: bool,
+                _plan: &::poulpy_ckks::layouts::ShipPlan,
             ) -> CKKSResult<usize>
             where
                 S: ::poulpy_ckks::api::ShipScalar,
@@ -162,10 +162,10 @@ macro_rules! impl_oracle_ckks_coeff_encodings {
 
             fn ckks_ship_coeff_encodings<S, Src>(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                ct: &Src,
-                plan: &::poulpy_ckks::layouts::ShipPlan,
                 base2k: ::poulpy_core::layouts::Base2K,
                 complex: bool,
+                ciphertext: &Src,
+                plan: &::poulpy_ckks::layouts::ShipPlan,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) -> CKKSResult<
                 ::poulpy_ckks::layouts::ShipCoeffEncodings<
@@ -187,9 +187,9 @@ macro_rules! impl_oracle_ckks_coeff_encodings {
                         plan.n()
                     )));
                 }
-                let mut owned = module.ckks_ciphertext_alloc_from_infos(ct);
-                module.glwe_copy(&mut owned, ct, scratch);
-                owned.set_meta_checked(ct.meta())?;
+                let mut owned = module.ckks_ciphertext_alloc_from_infos(ciphertext);
+                module.glwe_copy(&mut owned, ciphertext, scratch);
+                owned.set_meta_checked(ciphertext.meta())?;
                 Ok(::poulpy_ckks::encoding::ship_coeff_encodings_host::<$be, _, S>(
                     module, &owned, plan, base2k, complex,
                 )?)

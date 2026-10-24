@@ -154,7 +154,7 @@ pub fn runner_ckks_rotate_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>
 
     bencher.iter(|| {
         module
-            .ckks_rotate_into(&mut ct_dst, &ct_a, ROTATION, &atks, &mut scratch.borrow())
+            .ckks_rotate_into(ROTATION, &mut ct_dst, &ct_a, &atks, &mut scratch.borrow())
             .unwrap();
         black_box(());
     });
@@ -378,7 +378,7 @@ pub fn runner_ckks_mul_pow2_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i6
 
     bencher.iter(|| {
         module
-            .ckks_mul_pow2_into(&mut ct_dst, &ct_a, POW2_BITS, &mut scratch.borrow())
+            .ckks_mul_pow2_into(POW2_BITS, &mut ct_dst, &ct_a, &mut scratch.borrow())
             .unwrap();
         black_box(());
     });
@@ -404,7 +404,7 @@ pub fn runner_ckks_div_pow2_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i6
 
     bencher.iter(|| {
         module
-            .ckks_div_pow2_into(&mut ct_dst, &ct_a, POW2_BITS, &mut scratch.borrow())
+            .ckks_div_pow2_into(POW2_BITS, &mut ct_dst, &ct_a, &mut scratch.borrow())
             .unwrap();
         black_box(());
     });

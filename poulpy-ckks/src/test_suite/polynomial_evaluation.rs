@@ -464,8 +464,8 @@ pub fn test_eval_poly_const_coeffs_cubic<BE, F, E>(
     module
         .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
             &mut res,
-            &poly,
             &power_basis,
+            &poly,
             &tsk,
             &mut scratch.borrow(),
         )
@@ -532,8 +532,8 @@ pub fn test_eval_poly_rejects_power_basis_mismatch<BE, F, E>(
     let err = module
         .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
             &mut res,
-            &bsgs,
             &power_basis,
+            &bsgs,
             &tsk,
             &mut scratch.borrow(),
         )
@@ -617,8 +617,8 @@ pub fn test_eval_poly_const_coeffs_exp7<BE, F, E>(
     module
         .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
             &mut res,
-            &bsgs,
             &pb,
+            &bsgs,
             &tsk,
             &mut scratch.borrow(),
         )
@@ -713,8 +713,8 @@ pub fn test_eval_poly_const_coeffs_even_monomial<BE, F, E>(
     module
         .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
             &mut res,
-            &bsgs,
             &pb,
+            &bsgs,
             &tsk,
             &mut scratch.borrow(),
         )
@@ -809,8 +809,8 @@ pub fn test_eval_poly_const_coeffs_odd_monomial<BE, F, E>(
     module
         .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
             &mut res,
-            &bsgs,
             &pb,
+            &bsgs,
             &tsk,
             &mut scratch.borrow(),
         )
@@ -894,8 +894,8 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31<BE, F, E>(
     module
         .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
             &mut res,
-            &bsgs,
             &pb,
+            &bsgs,
             &tsk,
             &mut scratch.borrow(),
         )
@@ -979,8 +979,8 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31_min_mult<BE, F, E>(
     module
         .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
             &mut res,
-            &bsgs,
             &pb,
+            &bsgs,
             &tsk,
             &mut scratch.borrow(),
         )
@@ -1221,8 +1221,8 @@ pub fn test_eval_poly_const_coeffs_complex_cubic<BE, F, E>(
     module
         .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
             &mut res,
-            &poly,
             &power_basis,
+            &poly,
             &tsk,
             &mut scratch.borrow(),
         )
@@ -1353,8 +1353,8 @@ pub fn test_eval_poly_const_coeffs_complex_chebyshev<BE, F, E>(
     module
         .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
             &mut res,
-            &poly,
             &pb,
+            &poly,
             &tsk,
             &mut scratch.borrow(),
         )
@@ -1477,8 +1477,8 @@ pub fn test_eval_poly_const_coeffs_complex_even<BE, F, E>(
     module
         .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
             &mut res,
-            &poly,
             &pb,
+            &poly,
             &tsk,
             &mut scratch.borrow(),
         )
@@ -1589,8 +1589,8 @@ pub fn test_eval_poly_const_coeffs_complex_odd<BE, F, E>(
     module
         .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
             &mut res,
-            &poly,
             &pb,
+            &poly,
             &tsk,
             &mut scratch.borrow(),
         )
@@ -1811,8 +1811,8 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
             module
                 .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
                     &mut res,
-                    &bsgs,
                     &pb,
+                    &bsgs,
                     &tsk,
                     &mut scratch.borrow(),
                 )

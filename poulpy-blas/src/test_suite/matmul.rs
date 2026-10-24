@@ -2674,9 +2674,9 @@ pub fn test_blas_replicated_shifts<BE, F, E>(
         let mut via_rotation = alloc_grid(&params, module, log_d, 1, 1, params.k);
         module
             .ckks_rotate_into(
+                (k * d) as i64,
                 via_rotation.block_mut(0, 0),
                 ct.block(0, 0),
-                (k * d) as i64,
                 &keys,
                 &mut scratch.borrow(),
             )

@@ -14,14 +14,14 @@ pub trait CKKSFoldLayoutOps<BE: Backend> {
     /// Allocation layout of the ciphertexts of `degree` that inputs like `ct_in`
     /// fold into with keys like `keys`. The fold sets CKKS metadata from the batch:
     /// merging clears sparsity, and merging or pairing sets complex slots.
-    fn ckks_fold_layout<C>(&self, ct_in: &C, degree: Degree, keys: &CKKSFoldKeysLayout) -> GLWELayout
+    fn ckks_fold_layout<C>(&self, degree: Degree, ct_in: &C, keys: &CKKSFoldKeysLayout) -> GLWELayout
     where
         C: CKKSCtBounds;
 
     /// Scratch bound of [`CKKSFoldOps::ckks_fold`] and [`CKKSFoldOps::ckks_unfold`] for
     /// outputs like `ct_out`, inputs like `ct_in` of any ring folded into `degree`, and
     /// keys like `keys`.
-    fn ckks_fold_tmp_bytes<C1, C2>(&self, ct_out: &C1, ct_in: &C2, degree: Degree, keys: &CKKSFoldKeysLayout) -> usize
+    fn ckks_fold_tmp_bytes<C1, C2>(&self, degree: Degree, ct_out: &C1, ct_in: &C2, keys: &CKKSFoldKeysLayout) -> usize
     where
         C1: CKKSCtBounds,
         C2: CKKSCtBounds;
@@ -44,7 +44,7 @@ pub trait CKKSFoldLayoutOps<BE: Backend> {
 /// layout, scale and sparsity; outputs their layout, and are labeled like the inputs.
 pub trait CKKSFoldOps<BE: Backend, R: Ring> {
     /// Number of ciphertexts of `degree` that `ins` folds into.
-    fn ckks_fold_count(&self, ins: &[CKKSRingCiphertext<BE, R>], degree: Degree) -> usize;
+    fn ckks_fold_count(&self, degree: Degree, ins: &[CKKSRingCiphertext<BE, R>]) -> usize;
 
     /// Galois elements of the input-secret automorphism keys [`Self::ckks_unfold`] may
     /// use on inputs like `ct_in`, from its metadata alone: `−1` splits pairs of real
@@ -93,8 +93,8 @@ pub trait CKKSFoldOps<BE: Backend, R: Ring> {
         &self,
         outs: &mut [CKKSRingCiphertext<BE, R>],
         folded: &mut [CKKSCiphertextOwned<BE>],
-        outbound: Option<&S>,
         automorphisms: Option<&H>,
+        outbound: Option<&S>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where

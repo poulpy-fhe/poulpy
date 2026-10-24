@@ -45,9 +45,9 @@ pub unsafe trait CKKSShipCoeffEncodingImpl: Backend<Ring = Standard> {
     /// `CKKSError::Internal` before any work.
     fn ckks_ship_coeff_encodings_tmp_bytes<F>(
         module: &Module<Self>,
-        plan: &ShipPlan,
         base2k: Base2K,
         complex: bool,
+        plan: &ShipPlan,
     ) -> Result<usize>
     where
         F: ShipScalar,
@@ -59,10 +59,10 @@ pub unsafe trait CKKSShipCoeffEncodingImpl: Backend<Ring = Standard> {
     /// malformed ciphertext layouts before reading their limbs.
     fn ckks_ship_coeff_encodings<F, Src>(
         module: &Module<Self>,
-        ciphertext: &Src,
-        plan: &ShipPlan,
         base2k: Base2K,
         complex: bool,
+        ciphertext: &Src,
+        plan: &ShipPlan,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<ShipCoeffEncodings<Self::OwnedBuf, Self::ZnxWord>>
     where

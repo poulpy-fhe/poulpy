@@ -46,7 +46,7 @@ where
     let (want_re, want_im) = want_mul_pow2(&re1, &im1, SHIFT_BITS);
     let mut ct_res = alloc_ct(&params, module, params.k);
     module
-        .ckks_mul_pow2_into(&mut ct_res, &ct, SHIFT_BITS, &mut scratch.borrow())
+        .ckks_mul_pow2_into(SHIFT_BITS, &mut ct_res, &ct, &mut scratch.borrow())
         .unwrap();
     assert_unary_output_meta("mul_pow2", &ct_res, params.k, &ct);
     assert_decrypt_precision_at_log_delta(
@@ -93,7 +93,7 @@ where
     let dst_k = params.k - params.base2k - 1;
     let mut ct_res = alloc_ct(&params, module, dst_k);
     module
-        .ckks_mul_pow2_into(&mut ct_res, &ct, SHIFT_BITS, &mut scratch.borrow())
+        .ckks_mul_pow2_into(SHIFT_BITS, &mut ct_res, &ct, &mut scratch.borrow())
         .unwrap();
     assert_unary_output_meta("mul_pow2 smaller_output", &ct_res, dst_k, &ct);
     assert_decrypt_precision_at_log_delta(
@@ -140,7 +140,7 @@ where
     let expected_log_delta = ct.log_delta();
     let expected_log_budget = ct.log_budget();
     module
-        .ckks_mul_pow2_assign(&mut ct, SHIFT_BITS, &mut scratch.borrow())
+        .ckks_mul_pow2_assign(SHIFT_BITS, &mut ct, &mut scratch.borrow())
         .unwrap();
     assert_ct_meta("mul_pow2_assign", &ct, expected_log_delta, expected_log_budget);
     assert_decrypt_precision_at_log_delta(
@@ -186,7 +186,7 @@ where
     let (want_re, want_im) = want_div_pow2(&re1, &im1, SHIFT_BITS);
     let mut ct_res = alloc_ct(&params, module, params.k);
     module
-        .ckks_div_pow2_into(&mut ct_res, &ct, SHIFT_BITS, &mut scratch.borrow())
+        .ckks_div_pow2_into(SHIFT_BITS, &mut ct_res, &ct, &mut scratch.borrow())
         .unwrap();
     assert_ct_meta("div_pow2", &ct_res, ct.log_delta() + SHIFT_BITS, ct.log_budget() - SHIFT_BITS);
     assert_decrypt_precision(
@@ -232,7 +232,7 @@ where
     let dst_k = params.k - params.base2k - 1;
     let mut ct_res = alloc_ct(&params, module, dst_k);
     module
-        .ckks_div_pow2_into(&mut ct_res, &ct, SHIFT_BITS, &mut scratch.borrow())
+        .ckks_div_pow2_into(SHIFT_BITS, &mut ct_res, &ct, &mut scratch.borrow())
         .unwrap();
     let offset = ct.k().as_usize().saturating_sub(dst_k);
     assert_ct_meta(
@@ -284,7 +284,7 @@ where
     // Lossless relabel, mirroring `_into`: the charged bits move under `log_delta`.
     let expected_log_delta = ct.log_delta() + SHIFT_BITS;
     let expected_log_budget = ct.log_budget() - SHIFT_BITS;
-    module.ckks_div_pow2_assign(&mut ct, SHIFT_BITS).unwrap();
+    module.ckks_div_pow2_assign(SHIFT_BITS, &mut ct).unwrap();
     assert_ct_meta("div_pow2_assign", &ct, expected_log_delta, expected_log_budget);
     assert_decrypt_precision(
         "div_pow2_assign",
@@ -330,7 +330,7 @@ pub fn test_div_pow2_assign_explicit_error<BE, F, E>(
     );
     let available_log_budget = ct.log_budget();
     let required_bits = available_log_budget + 1;
-    let err = module.ckks_div_pow2_assign(&mut ct, required_bits).unwrap_err();
+    let err = module.ckks_div_pow2_assign(required_bits, &mut ct).unwrap_err();
     assert_ckks_error(
         "div_pow2_assign_explicit_error",
         &err,

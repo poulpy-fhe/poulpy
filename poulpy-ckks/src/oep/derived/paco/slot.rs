@@ -99,7 +99,7 @@ where
     scratch.scope(|scratch_local| {
         let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(ct);
         for k in rotations {
-            module.ckks_rotate_into(&mut tmp, ct, k, keys, &mut scratch_local.borrow())?;
+            module.ckks_rotate_into(k, &mut tmp, ct, keys, &mut scratch_local.borrow())?;
             module.ckks_mul_assign(ct, &tmp, tsk, &mut scratch_local.borrow())?;
         }
         Ok(())

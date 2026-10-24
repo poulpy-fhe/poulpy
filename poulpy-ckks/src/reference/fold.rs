@@ -244,9 +244,9 @@ where
 
 /// Reference planning queries of [`CKKSFoldLayoutOps`](crate::api::CKKSFoldLayoutOps).
 pub trait CKKSFoldLayoutReference<BE: Backend> {
-    fn ckks_fold_layout_reference<C: CKKSCtBounds>(&self, ct_in: &C, degree: Degree, keys: &CKKSFoldKeysLayout) -> GLWELayout;
+    fn ckks_fold_layout_reference<C: CKKSCtBounds>(&self, degree: Degree, ct_in: &C, keys: &CKKSFoldKeysLayout) -> GLWELayout;
 
-    fn ckks_fold_tmp_bytes_reference<C1, C2>(&self, ct_out: &C1, ct_in: &C2, degree: Degree, keys: &CKKSFoldKeysLayout) -> usize
+    fn ckks_fold_tmp_bytes_reference<C1, C2>(&self, degree: Degree, ct_out: &C1, ct_in: &C2, keys: &CKKSFoldKeysLayout) -> usize
     where
         C1: CKKSCtBounds,
         C2: CKKSCtBounds;
@@ -265,18 +265,18 @@ where
         + CKKSImagOps<BE>
         + CKKSConjugateOps<BE>,
 {
-    fn ckks_fold_layout_reference<C: CKKSCtBounds>(&self, ct_in: &C, degree: Degree, keys: &CKKSFoldKeysLayout) -> GLWELayout {
+    fn ckks_fold_layout_reference<C: CKKSCtBounds>(&self, degree: Degree, ct_in: &C, keys: &CKKSFoldKeysLayout) -> GLWELayout {
         let base2k = keys.ring_switch.map_or(ct_in.base2k(), |keys| keys.inbound.base2k());
         layout(degree.as_usize(), base2k, ct_in.k())
     }
 
     /// Covers every input ring: the packed parts are sized at the fold degree.
-    fn ckks_fold_tmp_bytes_reference<C1, C2>(&self, ct_out: &C1, ct_in: &C2, degree: Degree, keys: &CKKSFoldKeysLayout) -> usize
+    fn ckks_fold_tmp_bytes_reference<C1, C2>(&self, degree: Degree, ct_out: &C1, ct_in: &C2, keys: &CKKSFoldKeysLayout) -> usize
     where
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
     {
-        let folded = self.ckks_fold_layout_reference(ct_in, degree, keys);
+        let folded = self.ckks_fold_layout_reference(degree, ct_in, keys);
         let refreshed = GLWELayout { k: ct_out.k(), ..folded };
         let packed = layout(degree.as_usize(), ct_in.base2k(), ct_in.k());
         let size = packed.size().max(folded.size()).max(refreshed.size());
@@ -320,7 +320,7 @@ where
 
 /// Reference fold of inputs of ring `R`, [`CKKSFoldOps`](crate::api::CKKSFoldOps).
 pub trait CKKSFoldReference<BE: Backend, R: Ring> {
-    fn ckks_fold_count_reference(&self, ins: &[CKKSRingCiphertext<BE, R>], degree: Degree) -> usize;
+    fn ckks_fold_count_reference(&self, degree: Degree, ins: &[CKKSRingCiphertext<BE, R>]) -> usize;
 
     fn ckks_unfold_galois_elements_reference<C: CKKSCtBounds>(&self, ct_in: &C) -> Vec<i64>;
 
@@ -341,8 +341,8 @@ pub trait CKKSFoldReference<BE: Backend, R: Ring> {
         &self,
         outs: &mut [CKKSRingCiphertext<BE, R>],
         folded: &mut [CKKSCiphertextOwned<BE>],
-        outbound: Option<&S>,
         automorphisms: Option<&H>,
+        outbound: Option<&S>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -371,7 +371,7 @@ where
     GLWE<BE::OwnedBuf, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
-    fn ckks_fold_count_reference(&self, ins: &[CKKSRingCiphertext<BE, R>], degree: Degree) -> usize {
+    fn ckks_fold_count_reference(&self, degree: Degree, ins: &[CKKSRingCiphertext<BE, R>]) -> usize {
         let Some(input) = ins.first() else {
             return 0;
         };
@@ -471,8 +471,8 @@ where
         &self,
         outs: &mut [CKKSRingCiphertext<BE, R>],
         folded: &mut [CKKSCiphertextOwned<BE>],
-        outbound: Option<&S>,
         automorphisms: Option<&H>,
+        outbound: Option<&S>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where

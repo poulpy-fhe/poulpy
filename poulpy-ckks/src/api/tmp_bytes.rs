@@ -16,7 +16,7 @@ pub trait CKKSAllOpsTmpBytes<BE: Backend> {
     /// ciphertext ops, plaintext ops, encryption/decryption, multiplication,
     /// and tensor-key setup, including one-shot polynomial input copies. The
     /// shift and multiplication terms bound the standard-only multiplication by `i`.
-    fn ckks_all_ops_tmp_bytes<C, T, P>(&self, ct_infos: &C, tsk_infos: &T, pt_prec: &P) -> usize
+    fn ckks_all_ops_tmp_bytes<C, T, P>(&self, ct_infos: &C, pt_prec: &P, tsk_infos: &T) -> usize
     where
         C: CKKSCtBounds,
         T: GGLWEInfos,
@@ -26,7 +26,7 @@ pub trait CKKSAllOpsTmpBytes<BE: Backend> {
     /// plus automorphism-key setup, rotation, and core prepared or streamed linear transformations.
     /// Rotation also bounds the standard-only conjugation.
     /// Query DFT preparation and evaluation separately for the selected backend implementation.
-    fn ckks_all_ops_with_atk_tmp_bytes<C, T, A, P>(&self, ct_infos: &C, tsk_infos: &T, atk_infos: &A, pt_prec: &P) -> usize
+    fn ckks_all_ops_with_atk_tmp_bytes<C, T, A, P>(&self, ct_infos: &C, pt_prec: &P, tsk_infos: &T, atk_infos: &A) -> usize
     where
         C: CKKSCtBounds,
         T: GGLWEInfos,

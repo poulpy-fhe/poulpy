@@ -522,7 +522,7 @@ where
     ct.set_meta(params.prec().meta);
     let tsk_infos = params.tsk_layout();
     let atk_infos = params.atk_layout();
-    let scratch_size = module.ckks_all_ops_with_atk_tmp_bytes(&ct, &tsk_infos, &atk_infos, &PT_PREC);
+    let scratch_size = module.ckks_all_ops_with_atk_tmp_bytes(&ct, &PT_PREC, &tsk_infos, &atk_infos);
     ScratchOwned::<BE>::alloc(scratch_size)
 }
 

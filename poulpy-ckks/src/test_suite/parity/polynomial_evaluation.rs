@@ -78,7 +78,7 @@ where
         },
         meta: coeff_meta.meta,
     };
-    let bytes = module.ckks_all_ops_tmp_bytes(&layout, &key, &pt_layout);
+    let bytes = module.ckks_all_ops_tmp_bytes(&layout, &pt_layout, &key);
     let host = Module::<HostBytesBackend<B::Ring>>::new(module.n() as u64);
     Setup {
         layout,
@@ -147,8 +147,8 @@ where
         with_scratch::<B, _>(bytes, |scratch| {
             module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<B>, _, _>(
                 &mut prepared_out,
-                &encoded,
                 &powers,
+                &encoded,
                 &prepared_key,
                 scratch,
             )
@@ -228,8 +228,8 @@ where
         with_scratch::<B, _>(bytes, |scratch| {
             module.ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<B>, _, _>(
                 &mut prepared_out,
-                &complex,
                 &powers,
+                &complex,
                 &prepared_key,
                 scratch,
             )

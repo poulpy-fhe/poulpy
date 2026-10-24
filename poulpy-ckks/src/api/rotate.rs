@@ -42,9 +42,9 @@ pub trait CKKSRotateOps<BE: Backend> {
     /// collection must contain the automorphism key for shift amount `k`.
     fn ckks_rotate_into<Dst, Src, H>(
         &self,
+        k: i64,
         dst: &mut Dst,
         src: &Src,
-        k: i64,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -55,7 +55,7 @@ pub trait CKKSRotateOps<BE: Backend> {
 
     /// Computes `dst = rotate(dst, k)` in-place, preserving CKKS layout and scale metadata.
     /// Component noise metadata is cleared.
-    fn ckks_rotate_assign<Dst, H>(&self, dst: &mut Dst, k: i64, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_rotate_assign<Dst, H>(&self, k: i64, dst: &mut Dst, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         H: GetAutomorphismKey<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;

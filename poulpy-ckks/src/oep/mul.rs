@@ -34,30 +34,30 @@ pub unsafe trait CKKSMulImpl: Backend {
         R: CKKSCtBounds,
         A: CKKSCtBounds,
         P: CKKSInfos;
-    fn ckks_mul_into<Dst, A, B, T>(
+    fn ckks_mul_into<Dst, A, B, H>(
         module: &Module<Self>,
         dst: &mut Dst,
         a: &A,
         b: &B,
-        tsk: &T,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<Self> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos,
         B: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos,
-        T: GetTensorKey<Self>;
-    fn ckks_mul_assign<Dst, A, T>(
+        H: GetTensorKey<Self>;
+    fn ckks_mul_assign<Dst, A, H>(
         module: &Module<Self>,
         dst: &mut Dst,
         a: &A,
-        tsk: &T,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos,
-        T: GetTensorKey<Self>;
+        H: GetTensorKey<Self>;
     /// Scratch bytes of [`Self::ckks_prepare_left`], [`Self::ckks_prepare_right`] and their `_into`
     /// forms for an operand shaped like `a`, which [`Self::ckks_mul_tmp_bytes`] of a product reading such an
     /// operand covers, as the API promises.
@@ -110,36 +110,36 @@ pub unsafe trait CKKSMulImpl: Backend {
     {
         super::derived::mul::ckks_prepare_right_derived(module, a, hint, scratch)
     }
-    fn ckks_mul_prepared_assign<Dst, T>(
+    fn ckks_mul_prepared_assign<Dst, H>(
         module: &Module<Self>,
         dst: &mut Dst,
         prepared: &CKKSPreparedRight<Self>,
-        tsk: &T,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        T: GetTensorKey<Self>;
-    fn ckks_square_into<Dst, A, T>(
+        H: GetTensorKey<Self>;
+    fn ckks_square_into<Dst, A, H>(
         module: &Module<Self>,
         dst: &mut Dst,
         a: &A,
-        tsk: &T,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<Self> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos,
-        T: GetTensorKey<Self>;
-    fn ckks_square_assign<Dst, T>(
+        H: GetTensorKey<Self>;
+    fn ckks_square_assign<Dst, H>(
         module: &Module<Self>,
         dst: &mut Dst,
-        tsk: &T,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        T: GetTensorKey<Self>;
+        H: GetTensorKey<Self>;
     fn ckks_mul_pt_vec_into<Dst, A, P>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -235,12 +235,12 @@ macro_rules! impl_ckks_mul_reference_full {
                 $crate::reference::mul::CKKSMulReference::ckks_mul_pt_const_tmp_bytes_reference(module, res, a, b)
             }
 
-            fn ckks_mul_into<Dst, A, B, T>(
+            fn ckks_mul_into<Dst, A, B, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 a: &A,
                 b: &B,
-                tsk: &T,
+                tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
@@ -250,16 +250,16 @@ macro_rules! impl_ckks_mul_reference_full {
                     + ::poulpy_core::layouts::GLWEInfos,
                 A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSInfos + ::poulpy_core::layouts::GLWEInfos,
                 B: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSInfos + ::poulpy_core::layouts::GLWEInfos,
-                T: ::poulpy_core::layouts::GetTensorKey<Self>,
+                H: ::poulpy_core::layouts::GetTensorKey<Self>,
             {
                 $crate::reference::mul::CKKSMulReference::ckks_mul_into_reference(module, dst, a, b, tsk, scratch)
             }
 
-            fn ckks_mul_assign<Dst, A, T>(
+            fn ckks_mul_assign<Dst, A, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 a: &A,
-                tsk: &T,
+                tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
@@ -269,7 +269,7 @@ macro_rules! impl_ckks_mul_reference_full {
                     + $crate::SetCKKSInfos
                     + ::poulpy_core::layouts::GLWEInfos,
                 A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSInfos + ::poulpy_core::layouts::GLWEInfos,
-                T: ::poulpy_core::layouts::GetTensorKey<Self>,
+                H: ::poulpy_core::layouts::GetTensorKey<Self>,
             {
                 $crate::reference::mul::CKKSMulReference::ckks_mul_assign_reference(module, dst, a, tsk, scratch)
             }
@@ -305,11 +305,11 @@ macro_rules! impl_ckks_mul_reference_full {
                 $crate::reference::mul::CKKSMulReference::ckks_prepare_right_into_reference(module, res, a, scratch)
             }
 
-            fn ckks_mul_prepared_assign<Dst, T>(
+            fn ckks_mul_prepared_assign<Dst, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 prepared: &$crate::layouts::CKKSPreparedRight<Self>,
-                tsk: &T,
+                tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
@@ -318,16 +318,16 @@ macro_rules! impl_ckks_mul_reference_full {
                     + $crate::CKKSInfos
                     + $crate::SetCKKSInfos
                     + ::poulpy_core::layouts::GLWEInfos,
-                T: ::poulpy_core::layouts::GetTensorKey<Self>,
+                H: ::poulpy_core::layouts::GetTensorKey<Self>,
             {
                 $crate::reference::mul::CKKSMulReference::ckks_mul_prepared_assign_reference(module, dst, prepared, tsk, scratch)
             }
 
-            fn ckks_square_into<Dst, A, T>(
+            fn ckks_square_into<Dst, A, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 a: &A,
-                tsk: &T,
+                tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
@@ -336,15 +336,15 @@ macro_rules! impl_ckks_mul_reference_full {
                     + $crate::SetCKKSInfos
                     + ::poulpy_core::layouts::GLWEInfos,
                 A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSInfos + ::poulpy_core::layouts::GLWEInfos,
-                T: ::poulpy_core::layouts::GetTensorKey<Self>,
+                H: ::poulpy_core::layouts::GetTensorKey<Self>,
             {
                 $crate::reference::mul::CKKSMulReference::ckks_square_into_reference(module, dst, a, tsk, scratch)
             }
 
-            fn ckks_square_assign<Dst, T>(
+            fn ckks_square_assign<Dst, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
-                tsk: &T,
+                tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
@@ -353,7 +353,7 @@ macro_rules! impl_ckks_mul_reference_full {
                     + $crate::CKKSInfos
                     + $crate::SetCKKSInfos
                     + ::poulpy_core::layouts::GLWEInfos,
-                T: ::poulpy_core::layouts::GetTensorKey<Self>,
+                H: ::poulpy_core::layouts::GetTensorKey<Self>,
             {
                 $crate::reference::mul::CKKSMulReference::ckks_square_assign_reference(module, dst, tsk, scratch)
             }

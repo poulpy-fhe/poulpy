@@ -219,7 +219,7 @@ fn setup() -> Result<SetupArtifacts> {
         },
         meta: COEFF_META.meta,
     };
-    let scratch_bytes = module.ckks_all_ops_tmp_bytes(&ct_infos, &tsk_layout(), &coeff_prec);
+    let scratch_bytes = module.ckks_all_ops_tmp_bytes(&ct_infos, &coeff_prec, &tsk_layout());
     let mut scratch = ScratchOwned::<BackendImpl>::alloc(scratch_bytes);
     println!("  allocated scratch");
 
@@ -338,8 +338,8 @@ fn evaluation(
                 .module
                 .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<AlignedBuf, i64, Standard>, _, _>(
                     &mut ct_sin,
-                    &encoding.bsgs,
                     &pb,
+                    &encoding.bsgs,
                     &setup.tsk_prepared,
                     &mut scratch,
                 )?;

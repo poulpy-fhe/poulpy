@@ -471,14 +471,14 @@ where
     let sr = snapshot::<BR, _>(&cr);
     let st = snapshot::<BT, _>(&ct);
     for complex in [false, true] {
-        let bytes_r = BR::ckks_ship_coeff_encodings_tmp_bytes::<F>(r, &plan, base2k.into(), complex).unwrap();
-        let bytes_t = BT::ckks_ship_coeff_encodings_tmp_bytes::<F>(t, &plan, base2k.into(), complex).unwrap();
+        let bytes_r = BR::ckks_ship_coeff_encodings_tmp_bytes::<F>(r, base2k.into(), complex, &plan).unwrap();
+        let bytes_t = BT::ckks_ship_coeff_encodings_tmp_bytes::<F>(t, base2k.into(), complex, &plan).unwrap();
         let pr = with_scratch::<BR, _>(bytes_r, |s| {
-            BR::ckks_ship_coeff_encodings::<F, _>(r, &cr, &plan, base2k.into(), complex, s)
+            BR::ckks_ship_coeff_encodings::<F, _>(r, base2k.into(), complex, &cr, &plan, s)
         })
         .unwrap();
         let pt = with_scratch::<BT, _>(bytes_t, |s| {
-            BT::ckks_ship_coeff_encodings::<F, _>(t, &ct, &plan, base2k.into(), complex, s)
+            BT::ckks_ship_coeff_encodings::<F, _>(t, base2k.into(), complex, &ct, &plan, s)
         })
         .unwrap();
         compare_plaintexts::<BR, BT, F>(&pr.pt0, &pt.pt0);
@@ -512,10 +512,10 @@ where
         assert!(
             with_scratch::<BR, _>(bytes_r, |s| BR::ckks_ship_coeff_encodings::<F, _>(
                 r,
-                &ir,
-                &plan,
                 base2k.into(),
                 complex,
+                &ir,
+                &plan,
                 s
             ))
             .is_err()
@@ -523,10 +523,10 @@ where
         assert!(
             with_scratch::<BT, _>(bytes_t, |s| BT::ckks_ship_coeff_encodings::<F, _>(
                 t,
-                &it,
-                &plan,
                 base2k.into(),
                 complex,
+                &it,
+                &plan,
                 s
             ))
             .is_err()

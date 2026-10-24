@@ -337,7 +337,7 @@ pb.populate(DEGREE, bsgs.log_split(), bsgs.parity(), &module, &tsk_prepared, &mu
 
 let mut ct_sin = module.ckks_ciphertext_alloc(BASE2K.into(), CT_K.into());
 module.ckks_eval_poly_real_const_coeffs_from_power_basis(
-    &mut ct_sin, &bsgs, &pb, &tsk_prepared, &mut scratch,
+    &mut ct_sin, &pb, &bsgs, &tsk_prepared, &mut scratch,
 )?;
 ```
 

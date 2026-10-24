@@ -132,7 +132,7 @@ where
             &mut scratch_local.borrow(),
         );
         a_sparse.set_meta_checked(input.meta())?;
-        BE::ckks_ship_coeff_encodings::<F, _>(module, &a_sparse, &plan, b2k_t, complex, &mut scratch_local)
+        BE::ckks_ship_coeff_encodings::<F, _>(module, b2k_t, complex, &a_sparse, &plan, &mut scratch_local)
     })?;
     ckks_ensure!(
         enc.pi.len() == plan.sparse_hamming_weight() && (!complex || enc.pt0_2.is_some()),

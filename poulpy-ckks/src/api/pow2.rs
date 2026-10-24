@@ -67,9 +67,9 @@ pub trait CKKSPow2Ops<BE: Backend> {
     /// See the trait-level documentation for the metadata rule.
     fn ckks_mul_pow2_into<Dst, Src>(
         &self,
+        bits: usize,
         dst: &mut Dst,
         src: &Src,
-        bits: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -78,7 +78,7 @@ pub trait CKKSPow2Ops<BE: Backend> {
 
     /// Computes `dst *= 2^bits` in-place, preserving CKKS layout and scale metadata.
     /// Component noise metadata is cleared.
-    fn ckks_mul_pow2_assign<Dst>(&self, dst: &mut Dst, bits: usize, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_mul_pow2_assign<Dst>(&self, bits: usize, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 
@@ -101,9 +101,9 @@ pub trait CKKSPow2Ops<BE: Backend> {
     /// See the trait-level documentation for the metadata rule.
     fn ckks_div_pow2_into<Dst, Src>(
         &self,
+        bits: usize,
         dst: &mut Dst,
         src: &Src,
-        bits: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -118,7 +118,7 @@ pub trait CKKSPow2Ops<BE: Backend> {
     /// ```
     ///
     /// Errors with `InsufficientHomomorphicCapacity` if `bits > dst.log_budget`.
-    fn ckks_div_pow2_assign<Dst>(&self, dst: &mut Dst, bits: usize) -> Result<()>
+    fn ckks_div_pow2_assign<Dst>(&self, bits: usize, dst: &mut Dst) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 }

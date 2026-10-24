@@ -50,7 +50,7 @@ pub trait CKKSConjugateOps<BE: Backend> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
-        self.ckks_conjugate_rotate_into(dst, src, 0, keys, scratch)
+        self.ckks_conjugate_rotate_into(0, dst, src, keys, scratch)
     }
 
     /// Computes `dst = conj(dst)` in-place, preserving CKKS layout and scale metadata.
@@ -66,9 +66,9 @@ pub trait CKKSConjugateOps<BE: Backend> {
     /// conjugation, spelled [`Self::ckks_conjugate_into`].
     fn ckks_conjugate_rotate_into<Dst, Src, H>(
         &self,
+        k: i64,
         dst: &mut Dst,
         src: &Src,
-        k: i64,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>

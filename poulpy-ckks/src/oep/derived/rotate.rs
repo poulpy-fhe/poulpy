@@ -18,9 +18,9 @@ pub(crate) fn ckks_rotate_tmp_bytes_derived<BE: CKKSRotateImpl, C: CKKSCtBounds,
 
 pub(crate) fn ckks_rotate_into_derived<BE, Dst, Src, H>(
     module: &Module<BE>,
+    k: i64,
     dst: &mut Dst,
     src: &Src,
-    k: i64,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -51,8 +51,8 @@ where
 
 pub(crate) fn ckks_rotate_assign_derived<BE, Dst, H>(
     module: &Module<BE>,
-    dst: &mut Dst,
     k: i64,
+    dst: &mut Dst,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
