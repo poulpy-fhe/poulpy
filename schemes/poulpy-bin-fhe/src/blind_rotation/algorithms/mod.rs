@@ -71,11 +71,3 @@ impl<BE: Backend, BRA: BlindRotationAlgo> BlindRotationKeyPrepared<BE::OwnedBuf,
         module.blind_rotation_execute_tmp_bytes(block_size, extension_factor, glwe_infos, brk_infos)
     }
 }
-
-/// Compatibility entry point for the callable canonical host-staging composition.
-///
-/// This function bypasses backend selection. Generic blind rotation calls
-/// [`crate::api::BlindRotationModSwitch`] so a backend can replace the staging
-/// boundary. See [`crate::reference::blind_rotation::mod_switch_2n_ref`] for
-/// normalized signed-limb inputs and rounding semantics.
-pub use crate::reference::blind_rotation::mod_switch_2n_ref as mod_switch_2n;

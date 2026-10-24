@@ -8,7 +8,7 @@ use poulpy_hal::layouts::Backend;
 /// The result is rounded to the nearest integer modulo `modulus`, with ties
 /// towards positive infinity. Left rotation negates the complete coefficient
 /// before rounding. Device implementations may replace this staging boundary.
-pub fn mod_switch_2n_ref<BE, A>(modulus: usize, direction: LookUpTableRotationDirection, res: &mut [i64], lwe: &A)
+pub fn mod_switch_2n<BE, A>(modulus: usize, direction: LookUpTableRotationDirection, res: &mut [i64], lwe: &A)
 where
     BE: Backend<ZnxWord = i64>,
     A: LWEToBackendRef<BE> + LWEInfos,

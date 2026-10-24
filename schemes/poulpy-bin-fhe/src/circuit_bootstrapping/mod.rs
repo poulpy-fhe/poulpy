@@ -43,6 +43,7 @@
 pub(crate) mod circuit;
 mod key;
 mod key_prepared;
+mod log_gap;
 
 pub(crate) fn trace_galois_elements(log_n: usize, cyclotomic_order: i64) -> Vec<i64> {
     (0..log_n)
@@ -59,3 +60,4 @@ pub(crate) fn trace_galois_elements(log_n: usize, cyclotomic_order: i64) -> Vec<
 pub use circuit::*;
 pub use key::*;
 pub use key_prepared::*;
+pub(crate) use log_gap::circuit_bootstrapping_log_gap_in;

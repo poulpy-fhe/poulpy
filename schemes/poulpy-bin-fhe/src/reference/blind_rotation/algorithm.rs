@@ -31,8 +31,8 @@ use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
 ///
 /// For a block key, it reserves the products of a whole block, each with its own
 /// worker scratch, exactly when `BE::TaskExecutor::IS_PARALLEL`, as
-/// [`blind_rotation_execute_ref`] runs them.
-pub fn blind_rotation_execute_tmp_bytes_ref<BE, G, B>(
+/// [`blind_rotation_execute_reference`] runs them.
+pub fn blind_rotation_execute_tmp_bytes_reference<BE, G, B>(
     module: &Module<BE>,
     block_size: usize,
     extension_factor: usize,
@@ -126,7 +126,7 @@ where
 /// `BE::TaskExecutor::IS_PARALLEL`, one at a time otherwise, and adds their
 /// contributions in index order, so every executor and pool width returns the
 /// same bytes.
-pub fn blind_rotation_execute_ref<BE, R, L>(
+pub fn blind_rotation_execute_reference<BE, R, L>(
     module: &Module<BE>,
     res: &mut R,
     lwe: &L,

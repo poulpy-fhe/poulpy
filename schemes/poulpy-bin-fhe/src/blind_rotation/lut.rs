@@ -199,7 +199,7 @@ impl<D: Data, W: ZnxWord> LookupTable<D, W> {
     ///
     /// `k` is the number of message bits to encode (e.g., `1` for a binary
     /// outcome, `res.base2k * res.size()` for the full precision).
-    pub fn set<M>(&mut self, module: &M, f: &[i64], k: usize)
+    pub fn set<M>(&mut self, module: &M, k: usize, f: &[i64])
     where
         M: LookupTableFactory<D, W>,
     {

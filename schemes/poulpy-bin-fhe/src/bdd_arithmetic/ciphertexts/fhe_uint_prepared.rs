@@ -309,8 +309,8 @@ impl<T: UnsignedInteger, BE: Backend<ZnxWord = i64>> FheUintPrepared<BE::OwnedBu
     #[allow(clippy::too_many_arguments)]
     pub fn prepare_custom_multi_thread<BRA, M, K>(
         &mut self,
-        threads: usize,
         module: &M,
+        threads: usize,
         other: &FheUint<BE::OwnedBuf, T, BE::ZnxWord>,
         bit_start: usize,
         bit_end: usize,

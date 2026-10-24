@@ -24,27 +24,27 @@ use poulpy_hal::{
 };
 
 /// Bytes of the backend buffers of a prepared circuit-bootstrapping key.
-pub(crate) fn prepared_key_bytes<B: ParityBackend>(key: &CircuitBootstrappingKeyPrepared<B::OwnedBuf, CGGI, B>) -> usize {
-    let brk: usize = key.brk.data.iter().map(|ggsw| B::len_bytes(ggsw.data().data())).sum();
+pub(crate) fn prepared_key_bytes<BE: ParityBackend>(key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, CGGI, BE>) -> usize {
+    let brk: usize = key.brk.data.iter().map(|ggsw| BE::len_bytes(ggsw.data().data())).sum();
     let tsk: usize = (0..key.tsk.rank().as_usize())
-        .map(|i| B::len_bytes(key.tsk.at(i).data().data()))
+        .map(|i| BE::len_bytes(key.tsk.at(i).data().data()))
         .sum();
-    let atk: usize = key.atk.values().map(gglwe_prepared_bytes::<B, _>).sum();
+    let atk: usize = key.atk.values().map(gglwe_prepared_bytes::<BE, _>).sum();
     brk + tsk + atk
 }
 
 /// The byte query counts the allocated components, and both forms refuse an
 /// automorphism or tensor-switching key of another degree than the module's.
-fn check_prepared_allocation<B: ParityBackend>(
-    module: &Module<B>,
+fn check_prepared_allocation<BE: ParityBackend>(
+    module: &Module<BE>,
     layout: &CircuitBootstrappingKeyLayout,
-    key: &CircuitBootstrappingKeyPrepared<B::OwnedBuf, CGGI, B>,
+    key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, CGGI, BE>,
 ) where
-    Module<B>: CircuitBootstrappingKeyPreparedFactory<CGGI, B>
-        + BlindRotationKeyPreparedFactory<CGGI, B>
-        + GGSWPreparedFactory<B>
-        + GGLWEToGGSWKeyPreparedFactory<B>
-        + GLWEAutomorphismKeyPreparedFactory<B>,
+    Module<BE>: CircuitBootstrappingKeyPreparedFactory<CGGI, BE>
+        + BlindRotationKeyPreparedFactory<CGGI, BE>
+        + GGSWPreparedFactory<BE>
+        + GGLWEToGGSWKeyPreparedFactory<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>,
 {
     assert_eq!(
         module.circuit_bootstrapping_key_prepared_bytes_of_from_infos(layout),
@@ -82,7 +82,7 @@ fn check_prepared_allocation<B: ParityBackend>(
 /// Both backends prepare the same transferred raw key independently. Each call
 /// receives exactly its own advertised scratch budget, poisoned and guarded.
 /// No host-readable view is required from either backend.
-pub fn test_circuit_bootstrapping_parity<BR: ParityBackend, BT: ParityBackend>(reference: &Module<BR>, tested: &Module<BT>)
+pub fn test_circuit_bootstrapping_parity<BR: ParityBackend, BT: ParityBackend>(module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     Module<BR>: CircuitBootstrappingExecute<CGGI, BR>
         + CircuitBootstrappingKeyEncryptSk<CGGI, BR>
@@ -101,8 +101,8 @@ where
         + GGLWEToGGSWKeyPreparedFactory<BT>
         + GLWEAutomorphismKeyPreparedFactory<BT>,
 {
-    assert_eq!(reference.n(), tested.n());
-    let n = reference.n();
+    assert_eq!(module_ref.n(), module_test.n());
+    let n = module_ref.n();
     assert!(n >= 32);
     let host = Module::<HostBytesBackend>::new(n as u64);
     for (rank, block_size) in [(1usize, 1usize), (2, 3)] {
@@ -142,37 +142,40 @@ where
             rank: rank.into(),
         };
         let mut source = Source::new([11; 32]);
-        let mut sk_glwe = reference.glwe_secret_alloc(rank.into());
-        reference.glwe_secret_fill_ternary_prob(&mut sk_glwe, 0.5, &mut source);
-        let mut sk_lwe = reference.lwe_secret_alloc(6usize.into());
-        reference.lwe_secret_fill_binary_block(&mut sk_lwe, block_size, &mut source);
-        let mut raw_ref = CircuitBootstrappingKey::alloc_from_infos(reference, &layout);
+        let mut sk_glwe = module_ref.glwe_secret_alloc(rank.into());
+        module_ref.glwe_secret_fill_ternary_prob(&mut sk_glwe, 0.5, &mut source);
+        let mut sk_lwe = module_ref.lwe_secret_alloc(6usize.into());
+        module_ref.lwe_secret_fill_binary_block(&mut sk_lwe, block_size, &mut source);
+        let mut raw_ref = CircuitBootstrappingKey::alloc_from_infos(module_ref, &layout);
 
-        with_scratch::<BR, _>(reference.circuit_bootstrapping_key_encrypt_sk_tmp_bytes(&layout), |scratch| {
-            reference.circuit_bootstrapping_key_encrypt_sk(
-                &mut raw_ref,
-                &sk_lwe,
-                &sk_glwe,
-                &mut Source::new([19; 32]),
-                &mut Source::new([23; 32]),
-                scratch,
-            );
-        });
-        let mut raw_test = CircuitBootstrappingKey::alloc_from_infos(tested, &layout);
+        with_scratch::<BR, _>(
+            module_ref.circuit_bootstrapping_key_encrypt_sk_tmp_bytes(&layout),
+            |scratch| {
+                module_ref.circuit_bootstrapping_key_encrypt_sk(
+                    &mut raw_ref,
+                    &sk_lwe,
+                    &sk_glwe,
+                    &mut Source::new([19; 32]),
+                    &mut Source::new([23; 32]),
+                    scratch,
+                );
+            },
+        );
+        let mut raw_test = CircuitBootstrappingKey::alloc_from_infos(module_test, &layout);
         raw_ref.transfer_into(&mut raw_test);
         assert_eq!(raw_ref.block_size(), raw_test.block_size());
         assert_eq!(raw_ref.brk_infos(), raw_test.brk_infos());
         assert_eq!(raw_ref.atk_infos(), raw_test.atk_infos());
         assert_eq!(raw_ref.tsk_infos(), raw_test.tsk_infos());
-        let mut key_ref = reference.circuit_bootstrapping_key_prepared_alloc_from_infos(&layout);
-        let mut key_test = tested.circuit_bootstrapping_key_prepared_alloc_from_infos(&layout);
-        check_prepared_allocation(reference, &layout, &key_ref);
-        check_prepared_allocation(tested, &layout, &key_test);
-        with_scratch::<BR, _>(reference.circuit_bootstrapping_key_prepare_tmp_bytes(&layout), |s| {
-            reference.circuit_bootstrapping_key_prepare(&mut key_ref, &raw_ref, s)
+        let mut key_ref = module_ref.circuit_bootstrapping_key_prepared_alloc_from_infos(&layout);
+        let mut key_test = module_test.circuit_bootstrapping_key_prepared_alloc_from_infos(&layout);
+        check_prepared_allocation(module_ref, &layout, &key_ref);
+        check_prepared_allocation(module_test, &layout, &key_test);
+        with_scratch::<BR, _>(module_ref.circuit_bootstrapping_key_prepare_tmp_bytes(&layout), |s| {
+            module_ref.circuit_bootstrapping_key_prepare(&mut key_ref, &raw_ref, s)
         });
-        with_scratch::<BT, _>(tested.circuit_bootstrapping_key_prepare_tmp_bytes(&layout), |s| {
-            tested.circuit_bootstrapping_key_prepare(&mut key_test, &raw_test, s)
+        with_scratch::<BT, _>(module_test.circuit_bootstrapping_key_prepare_tmp_bytes(&layout), |s| {
+            module_test.circuit_bootstrapping_key_prepare(&mut key_test, &raw_test, s)
         });
         assert_eq!(key_ref.block_size(), block_size);
         assert_eq!(key_ref.block_size(), key_test.block_size());
@@ -186,11 +189,11 @@ where
         };
         let mut plain_host = host.lwe_plaintext_alloc(14usize.into(), 3usize.into());
         plain_host.encode_i64(1, 2usize.into());
-        let mut plain = reference.lwe_plaintext_alloc(14usize.into(), 3usize.into());
+        let mut plain = module_ref.lwe_plaintext_alloc(14usize.into(), 3usize.into());
         plain_host.transfer_into(&mut plain);
-        let mut input_ref = reference.lwe_alloc_from_infos(&lwe_infos);
-        with_scratch::<BR, _>(reference.lwe_encrypt_sk_tmp_bytes(&lwe_infos), |s| {
-            reference.lwe_encrypt_sk(
+        let mut input_ref = module_ref.lwe_alloc_from_infos(&lwe_infos);
+        with_scratch::<BR, _>(module_ref.lwe_encrypt_sk_tmp_bytes(&lwe_infos), |s| {
+            module_ref.lwe_encrypt_sk(
                 &mut input_ref,
                 &plain,
                 &sk_lwe,
@@ -199,52 +202,52 @@ where
                 s,
             )
         });
-        let mut input_test = tested.lwe_alloc_from_infos(&lwe_infos);
+        let mut input_test = module_test.lwe_alloc_from_infos(&lwe_infos);
         input_ref.transfer_into(&mut input_test);
         for extension in [0, 3] {
             let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                key_test.prepare_to_constant(tested, 1, extension, &output)
+                key_test.prepare_to_constant(module_test, 1, extension, &output)
             }));
             assert!(rejected.is_err(), "plan accepted a non-power-of-two extension");
         }
         for extension in [1, 2] {
             for gap in [None, Some(n.ilog2() as usize - 1), Some(1)] {
                 let plan_ref = match gap {
-                    None => key_ref.prepare_to_constant(reference, 1, extension, &output),
-                    Some(gap) => key_ref.prepare_to_exponent(reference, gap, 1, extension, &output),
+                    None => key_ref.prepare_to_constant(module_ref, 1, extension, &output),
+                    Some(gap) => key_ref.prepare_to_exponent(module_ref, gap, 1, extension, &output),
                 };
                 let plan_test = match gap {
-                    None => key_test.prepare_to_constant(tested, 1, extension, &output),
-                    Some(gap) => key_test.prepare_to_exponent(tested, gap, 1, extension, &output),
+                    None => key_test.prepare_to_constant(module_test, 1, extension, &output),
+                    Some(gap) => key_test.prepare_to_exponent(module_test, gap, 1, extension, &output),
                 };
                 assert_eq!(plan_ref.output_layout(), output);
                 assert_eq!(plan_ref.output_layout(), plan_test.output_layout());
                 let mut invalid_layout = output;
                 invalid_layout.dnum = 1usize.into();
-                let mut invalid = fixture_ggsw(tested, &invalid_layout, 47);
+                let mut invalid = fixture_ggsw(module_test, &invalid_layout, 47);
                 let before = snapshot_ggsw::<BT, _>(&invalid);
                 let failure = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    with_scratch::<BT, _>(plan_test.execute_tmp_bytes(tested, &key_test), |s| {
-                        plan_test.execute(tested, &mut invalid, &input_test, &key_test, s)
+                    with_scratch::<BT, _>(plan_test.execute_tmp_bytes(module_test, &key_test), |s| {
+                        plan_test.execute(module_test, &mut invalid, &input_test, &key_test, s)
                     });
                 }));
                 assert!(failure.is_err(), "prepared plan accepted incompatible output layout");
                 assert_eq!(snapshot_ggsw::<BT, _>(&invalid), before, "invalid output was modified");
-                let mut expected = fixture_ggsw(reference, &output, 37);
-                let mut actual = fixture_ggsw(tested, &output, 37);
-                with_scratch::<BR, _>(plan_ref.execute_tmp_bytes(reference, &key_ref), |s| {
-                    plan_ref.execute(reference, &mut expected, &input_ref, &key_ref, s)
+                let mut expected = fixture_ggsw(module_ref, &output, 37);
+                let mut actual = fixture_ggsw(module_test, &output, 37);
+                with_scratch::<BR, _>(plan_ref.execute_tmp_bytes(module_ref, &key_ref), |s| {
+                    plan_ref.execute(module_ref, &mut expected, &input_ref, &key_ref, s)
                 });
-                with_scratch::<BT, _>(plan_test.execute_tmp_bytes(tested, &key_test), |s| {
-                    plan_test.execute(tested, &mut actual, &input_test, &key_test, s)
+                with_scratch::<BT, _>(plan_test.execute_tmp_bytes(module_test, &key_test), |s| {
+                    plan_test.execute(module_test, &mut actual, &input_test, &key_test, s)
                 });
                 let want = snapshot_ggsw::<BR, _>(&expected);
                 super::assert_untagged("circuit bootstrapping", &want.rows);
                 assert_eq!(want, snapshot_ggsw::<BT, _>(&actual));
                 // Reuse the same prepared plan after replacing every output coefficient.
-                actual = fixture_ggsw(tested, &output, 41);
-                with_scratch::<BT, _>(plan_test.execute_tmp_bytes(tested, &key_test), |s| {
-                    plan_test.execute(tested, &mut actual, &input_test, &key_test, s)
+                actual = fixture_ggsw(module_test, &output, 41);
+                with_scratch::<BT, _>(plan_test.execute_tmp_bytes(module_test, &key_test), |s| {
+                    plan_test.execute(module_test, &mut actual, &input_test, &key_test, s)
                 });
                 let want = snapshot_ggsw::<BR, _>(&expected);
                 super::assert_untagged("circuit bootstrapping", &want.rows);
@@ -252,19 +255,18 @@ where
                 for legacy in [false, true] {
                     let bytes = match gap {
                         None if legacy => {
-                            tested.circuit_bootstrapping_execute_tmp_bytes(block_size, extension, &output, &key_test)
+                            module_test.circuit_bootstrapping_execute_tmp_bytes(block_size, extension, &output, &key_test)
                         }
-                        None => {
-                            tested.circuit_bootstrapping_execute_to_constant_tmp_bytes(block_size, extension, &output, &key_test)
-                        }
-                        Some(gap) => tested.circuit_bootstrapping_execute_to_exponent_tmp_bytes(
+                        None => module_test
+                            .circuit_bootstrapping_execute_to_constant_tmp_bytes(block_size, extension, &output, &key_test),
+                        Some(gap) => module_test.circuit_bootstrapping_execute_to_exponent_tmp_bytes(
                             gap, 1, block_size, extension, &output, &key_test,
                         ),
                     };
-                    actual = fixture_ggsw(tested, &output, 43);
+                    actual = fixture_ggsw(module_test, &output, 43);
                     with_scratch::<BT, _>(bytes, |s| match gap {
-                        None => key_test.execute_to_constant(tested, 1, extension, &mut actual, &input_test, s),
-                        Some(gap) => key_test.execute_to_exponent(tested, gap, 1, extension, &mut actual, &input_test, s),
+                        None => key_test.execute_to_constant(module_test, 1, extension, &mut actual, &input_test, s),
+                        Some(gap) => key_test.execute_to_exponent(module_test, gap, 1, extension, &mut actual, &input_test, s),
                     });
                     let want = snapshot_ggsw::<BR, _>(&expected);
                     super::assert_untagged("circuit bootstrapping", &want.rows);

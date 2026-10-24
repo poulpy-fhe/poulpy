@@ -146,7 +146,7 @@ unsafe impl BlindRotationExecuteImpl<CGGI> for OverrideBackend {
     ) -> usize {
         QUERY_CALLS.set(QUERY_CALLS.get() + 1);
         EXTRA
-            + poulpy_bin_fhe::reference::blind_rotation::blind_rotation_execute_tmp_bytes_ref(
+            + poulpy_bin_fhe::reference::blind_rotation::blind_rotation_execute_tmp_bytes_reference(
                 module, block_size, extension, output, key,
             )
     }
@@ -161,7 +161,7 @@ unsafe impl BlindRotationExecuteImpl<CGGI> for OverrideBackend {
         EXECUTION_CALLS.set(EXECUTION_CALLS.get() + 1);
         let (mut marker, mut rest) = scratch.borrow().take_region(EXTRA);
         Self::copy_host_to_view(&mut marker, &[0x5A; EXTRA]);
-        poulpy_bin_fhe::reference::blind_rotation::blind_rotation_execute_ref(module, res, lwe, lut, key, &mut rest);
+        poulpy_bin_fhe::reference::blind_rotation::blind_rotation_execute_reference(module, res, lwe, lut, key, &mut rest);
         let mut marker_after = [0u8; EXTRA];
         Self::copy_view_to_host(&Self::view_ref_mut(&marker), &mut marker_after);
         assert_eq!(marker_after, [0x5A; EXTRA]);
@@ -187,7 +187,8 @@ fn independent_blind_rotation_override_and_query_preserve_parity() {
         rank: 1usize.into(),
     };
     let before = QUERY_CALLS.get();
-    let plain = poulpy_bin_fhe::reference::blind_rotation::blind_rotation_execute_tmp_bytes_ref(&tested, 1, 1, &layout, &layout);
+    let plain =
+        poulpy_bin_fhe::reference::blind_rotation::blind_rotation_execute_tmp_bytes_reference(&tested, 1, 1, &layout, &layout);
     assert_eq!(QUERY_CALLS.get(), before);
     assert_eq!(tested.blind_rotation_execute_tmp_bytes(1, 1, &layout, &layout), plain + EXTRA);
 }
@@ -341,7 +342,7 @@ unsafe impl BlindRotationModSwitchImpl for OpaqueBackend<'_> {
         lwe: &L,
     ) {
         STAGING_CALLS.set(STAGING_CALLS.get() + 1);
-        poulpy_bin_fhe::reference::blind_rotation::mod_switch_2n_ref::<Self, _>(modulus, direction, res, lwe);
+        poulpy_bin_fhe::blind_rotation::mod_switch_2n::<Self, _>(modulus, direction, res, lwe);
     }
 }
 
@@ -434,7 +435,7 @@ fn modulus_switch_accepts_opaque_storage_and_dispatches_override() {
     for direction in [LookUpTableRotationDirection::Left, LookUpTableRotationDirection::Right] {
         let mut expected = [0i64; 5];
         let mut actual = [0i64; 5];
-        poulpy_bin_fhe::reference::blind_rotation::mod_switch_2n_ref::<OpaqueBackend, _>(64, direction, &mut expected, &lwe);
+        poulpy_bin_fhe::blind_rotation::mod_switch_2n::<OpaqueBackend, _>(64, direction, &mut expected, &lwe);
         module.blind_rotation_mod_switch(64, direction, &mut actual, &lwe);
         assert_eq!(actual, expected);
     }
@@ -704,7 +705,7 @@ fn lookup_table_api_dispatches_without_reference_arithmetic_bounds() {
     wrapped.set_rotation_direction(LookUpTableRotationDirection::Right);
     module.lookup_table_set(4, &mut direct, &[1, -1, 2, -2]);
     assert_eq!(LUT_SET_CALLS.get(), 1);
-    wrapped.set(&module, &[1, -1, 2, -2], 4);
+    wrapped.set(&module, 4, &[1, -1, 2, -2]);
     assert_eq!(LUT_SET_CALLS.get(), 2);
     let expected = [vec![256; 4], vec![-256; 8], vec![512; 8], vec![-512; 8], vec![-256; 4]].concat();
     for lut in [&direct, &wrapped] {

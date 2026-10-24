@@ -5,11 +5,11 @@ use poulpy_core::{api::GGSWPreparedFactory, layouts::*, *};
 use poulpy_hal::{layouts::*, source::Source};
 use std::marker::PhantomData;
 
-fn key<B: ParityBackend>(
-    module: &Module<B>,
+fn key<BE: ParityBackend>(
+    module: &Module<BE>,
     layout: &BlindRotationKeyLayout,
     distribution: Distribution,
-) -> BlindRotationKey<B::OwnedBuf, CGGI, i64> {
+) -> BlindRotationKey<BE::OwnedBuf, CGGI, i64> {
     BlindRotationKey {
         keys: (0..layout.n_lwe.as_usize())
             .map(|i| fixture_ggsw(module, layout, 20 + i as u8))
@@ -18,12 +18,12 @@ fn key<B: ParityBackend>(
         _phantom: PhantomData,
     }
 }
-fn lut<B: ParityBackend>(
-    module: &Module<B>,
+fn lut<BE: ParityBackend>(
+    module: &Module<BE>,
     layout: &GLWELayout,
     extension: usize,
     direction: LookUpTableRotationDirection,
-) -> LookupTable<B::OwnedBuf, i64> {
+) -> LookupTable<BE::OwnedBuf, i64> {
     let layout = GLWELayout {
         rank: 0usize.into(),
         ..*layout
@@ -37,24 +37,24 @@ fn lut<B: ParityBackend>(
     }
 }
 
-fn reject_mismatched_preparation<B: ParityBackend>(
-    module: &Module<B>,
-    prepared: &mut BlindRotationKeyPrepared<B::OwnedBuf, CGGI, B>,
+fn reject_mismatched_preparation<BE: ParityBackend>(
+    module: &Module<BE>,
+    prepared: &mut BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>,
     layout: &BlindRotationKeyLayout,
 ) where
-    Module<B>: BlindRotationKeyPreparedFactory<CGGI, B>,
+    Module<BE>: BlindRotationKeyPreparedFactory<CGGI, BE>,
 {
-    let snapshot = |key: &BlindRotationKeyPrepared<B::OwnedBuf, CGGI, B>| {
+    let snapshot = |key: &BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>| {
         (
             key.dist,
             key.data
                 .iter()
-                .map(|element| (element.ggsw_layout(), B::to_host_bytes(element.data().data())))
+                .map(|element| (element.ggsw_layout(), BE::to_host_bytes(element.data().data())))
                 .collect::<Vec<_>>(),
             key.x_pow_a.as_ref().map(|table| {
                 table
                     .iter()
-                    .map(|element| B::to_host_bytes(element.data()))
+                    .map(|element| BE::to_host_bytes(element.data()))
                     .collect::<Vec<_>>()
             }),
         )
@@ -66,7 +66,7 @@ fn reject_mismatched_preparation<B: ParityBackend>(
     };
     let invalid_key = key(module, &invalid_layout, Distribution::BinaryBlock(1));
     let failure = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        with_scratch::<B, _>(module.blind_rotation_key_prepare_tmp_bytes(layout), |scratch| {
+        with_scratch::<BE, _>(module.blind_rotation_key_prepare_tmp_bytes(layout), |scratch| {
             module.blind_rotation_key_prepare(prepared, &invalid_key, scratch)
         });
     }));
@@ -76,14 +76,14 @@ fn reject_mismatched_preparation<B: ParityBackend>(
 
 /// The byte query counts the allocated GGSWs, and both forms refuse a key of
 /// another degree than the module's.
-fn check_prepared_allocation<B: ParityBackend>(
-    module: &Module<B>,
+fn check_prepared_allocation<BE: ParityBackend>(
+    module: &Module<BE>,
     layout: &BlindRotationKeyLayout,
-    key: &BlindRotationKeyPrepared<B::OwnedBuf, CGGI, B>,
+    key: &BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>,
 ) where
-    Module<B>: BlindRotationKeyPreparedFactory<CGGI, B> + GGSWPreparedFactory<B>,
+    Module<BE>: BlindRotationKeyPreparedFactory<CGGI, BE> + GGSWPreparedFactory<BE>,
 {
-    let bytes: usize = key.data.iter().map(|ggsw| B::len_bytes(ggsw.data().data())).sum();
+    let bytes: usize = key.data.iter().map(|ggsw| BE::len_bytes(ggsw.data().data())).sum();
     assert_eq!(module.blind_rotation_key_prepared_bytes_of_from_infos(layout), bytes);
     let foreign = BlindRotationKeyLayout {
         n_glwe: (module.n() / 2).into(),
@@ -99,14 +99,14 @@ fn check_prepared_allocation<B: ParityBackend>(
     );
 }
 
-fn output_fixture<B: ParityBackend>(
-    module: &Module<B>,
+fn output_fixture<BE: ParityBackend>(
+    module: &Module<BE>,
     allocation: &GLWELayout,
     precision: TorusPrecision,
-) -> GLWE<B::OwnedBuf, i64> {
+) -> GLWE<BE::OwnedBuf, i64> {
     let mut output = fixture_glwe(module, allocation, 88);
     output.set_k(precision);
-    let mut host = output.to_host_owned::<B>();
+    let mut host = output.to_host_owned::<BE>();
     super::canonicalize(&mut host);
     host.transfer_into(&mut output);
     output
@@ -115,7 +115,7 @@ fn output_fixture<B: ParityBackend>(
 /// Exact coefficient, metadata, and scratch parity for standard, block, and
 /// extended CGGI, including both rotation directions, spare output capacity,
 /// and key preparation reuse.
-pub fn test_blind_rotation_parity<BR, BT>(reference: &Module<BR>, tested: &Module<BT>)
+pub fn test_blind_rotation_parity<BR, BT>(module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: ParityBackend,
     BT: ParityBackend,
@@ -128,17 +128,17 @@ where
         + GGSWPreparedFactory<BR>
         + BlindRotationModSwitch<BR>,
 {
-    assert_eq!(reference.n(), tested.n());
-    let host = Module::<HostBytesBackend>::new(reference.n() as u64);
+    assert_eq!(module_ref.n(), module_test.n());
+    let host = Module::<HostBytesBackend>::new(module_ref.n() as u64);
     for rank in [1usize, 2] {
         let output_layout = GLWELayout {
-            n: reference.n().into(),
+            n: module_ref.n().into(),
             base2k: 12usize.into(),
             k: 24usize.into(),
             rank: rank.into(),
         };
         let key_layout = BlindRotationKeyLayout {
-            n_glwe: reference.n().into(),
+            n_glwe: module_ref.n().into(),
             n_lwe: 4usize.into(),
             base2k: 12usize.into(),
             dnum: 2usize.into(),
@@ -152,14 +152,14 @@ where
         };
         let mut lwe_host = host.lwe_alloc_from_infos(&lwe_layout);
         super::fill_digits(lwe_host.mask_mut().raw_mut(), 4, &mut Source::new([77; 32]));
-        let mut lwe_r = reference.lwe_alloc_from_infos(&lwe_layout);
+        let mut lwe_r = module_ref.lwe_alloc_from_infos(&lwe_layout);
         lwe_host.transfer_into(&mut lwe_r);
-        let mut lwe_t = tested.lwe_alloc_from_infos(&lwe_layout);
+        let mut lwe_t = module_test.lwe_alloc_from_infos(&lwe_layout);
         lwe_host.transfer_into(&mut lwe_t);
-        let mut prepared_r = reference.blind_rotation_key_prepared_alloc_from_infos(&key_layout);
-        let mut prepared_t = tested.blind_rotation_key_prepared_alloc_from_infos(&key_layout);
-        check_prepared_allocation(reference, &key_layout, &prepared_r);
-        check_prepared_allocation(tested, &key_layout, &prepared_t);
+        let mut prepared_r = module_ref.blind_rotation_key_prepared_alloc_from_infos(&key_layout);
+        let mut prepared_t = module_test.blind_rotation_key_prepared_alloc_from_infos(&key_layout);
+        check_prepared_allocation(module_ref, &key_layout, &prepared_r);
+        check_prepared_allocation(module_test, &key_layout, &prepared_t);
         // Block first, then standard exercises clearing stale monomial tables.
         for (distribution, extension) in [
             (Distribution::BinaryBlock(2), 1usize),
@@ -170,13 +170,13 @@ where
             (Distribution::BinaryProb(0.5), 1),
             (Distribution::ZERO, 1),
         ] {
-            let key_r = key(reference, &key_layout, distribution);
-            let key_t = key(tested, &key_layout, distribution);
-            with_scratch::<BR, _>(reference.blind_rotation_key_prepare_tmp_bytes(&key_layout), |s| {
-                reference.blind_rotation_key_prepare(&mut prepared_r, &key_r, s)
+            let key_r = key(module_ref, &key_layout, distribution);
+            let key_t = key(module_test, &key_layout, distribution);
+            with_scratch::<BR, _>(module_ref.blind_rotation_key_prepare_tmp_bytes(&key_layout), |s| {
+                module_ref.blind_rotation_key_prepare(&mut prepared_r, &key_r, s)
             });
-            with_scratch::<BT, _>(tested.blind_rotation_key_prepare_tmp_bytes(&key_layout), |s| {
-                tested.blind_rotation_key_prepare(&mut prepared_t, &key_t, s)
+            with_scratch::<BT, _>(module_test.blind_rotation_key_prepare_tmp_bytes(&key_layout), |s| {
+                module_test.blind_rotation_key_prepare(&mut prepared_t, &key_t, s)
             });
             assert_eq!(prepared_r.dist, prepared_t.dist);
             assert_eq!(prepared_r.x_pow_a.is_some(), prepared_t.x_pow_a.is_some());
@@ -192,22 +192,22 @@ where
                         k: capacity.into(),
                         ..logical_layout
                     };
-                    let lut_r = lut(reference, &logical_layout, extension, direction);
-                    let lut_t = lut(tested, &logical_layout, extension, direction);
+                    let lut_r = lut(module_ref, &logical_layout, extension, direction);
+                    let lut_t = lut(module_test, &logical_layout, extension, direction);
                     let mut switched_r = vec![0; 5];
                     let mut switched_t = vec![0; 5];
-                    reference.blind_rotation_mod_switch(2 * reference.n() * extension, direction, &mut switched_r, &lwe_r);
-                    tested.blind_rotation_mod_switch(2 * tested.n() * extension, direction, &mut switched_t, &lwe_t);
+                    module_ref.blind_rotation_mod_switch(2 * module_ref.n() * extension, direction, &mut switched_r, &lwe_r);
+                    module_test.blind_rotation_mod_switch(2 * module_test.n() * extension, direction, &mut switched_t, &lwe_t);
                     assert_eq!(switched_r, switched_t, "modulus-switch parity");
-                    let mut output_r = output_fixture(reference, &allocation, logical_layout.k);
-                    let mut output_t = output_fixture(tested, &allocation, logical_layout.k);
+                    let mut output_r = output_fixture(module_ref, &allocation, logical_layout.k);
+                    let mut output_t = output_fixture(module_test, &allocation, logical_layout.k);
                     with_scratch::<BR, _>(
-                        reference.blind_rotation_execute_tmp_bytes(key_r.block_size(), extension, &output_r, &key_layout),
-                        |s| reference.blind_rotation_execute(&mut output_r, &lwe_r, &lut_r, &prepared_r, s),
+                        module_ref.blind_rotation_execute_tmp_bytes(key_r.block_size(), extension, &output_r, &key_layout),
+                        |s| module_ref.blind_rotation_execute(&mut output_r, &lwe_r, &lut_r, &prepared_r, s),
                     );
                     with_scratch::<BT, _>(
-                        tested.blind_rotation_execute_tmp_bytes(key_t.block_size(), extension, &output_t, &key_layout),
-                        |s| tested.blind_rotation_execute(&mut output_t, &lwe_t, &lut_t, &prepared_t, s),
+                        module_test.blind_rotation_execute_tmp_bytes(key_t.block_size(), extension, &output_t, &key_layout),
+                        |s| module_test.blind_rotation_execute(&mut output_t, &lwe_t, &lut_t, &prepared_t, s),
                     );
                     let want = snapshot_glwe::<BR, _>(&output_r);
                     super::assert_untagged("blind rotation", [&want]);
@@ -215,18 +215,18 @@ where
                 }
             }
         }
-        reject_mismatched_preparation(reference, &mut prepared_r, &key_layout);
-        reject_mismatched_preparation(tested, &mut prepared_t, &key_layout);
+        reject_mismatched_preparation(module_ref, &mut prepared_r, &key_layout);
+        reject_mismatched_preparation(module_test, &mut prepared_t, &key_layout);
     }
 }
 
 /// Bytes of the backend buffer of a compressed GGSW, read through its row views.
-fn compressed_ggsw_bytes<B: ParityBackend>(ggsw: &GGSWCompressed<B::OwnedBuf, i64>) -> usize {
-    let view = poulpy_core::layouts::compressed::GGSWCompressedToBackendRef::<B>::to_backend_ref(ggsw);
+fn compressed_ggsw_bytes<BE: ParityBackend>(ggsw: &GGSWCompressed<BE::OwnedBuf, i64>) -> usize {
+    let view = poulpy_core::layouts::compressed::GGSWCompressedToBackendRef::<BE>::to_backend_ref(ggsw);
     let mut bytes = 0;
     for row in 0..view.dnum().as_usize() {
         for col in 0..=view.rank().as_usize() {
-            bytes += B::len_bytes_ref(view.at_view(row, col).data().data());
+            bytes += BE::len_bytes_ref(view.at_view(row, col).data().data());
         }
     }
     bytes
@@ -235,17 +235,17 @@ fn compressed_ggsw_bytes<B: ParityBackend>(ggsw: &GGSWCompressed<B::OwnedBuf, i6
 /// Checks key encryption and decompression against their independently callable
 /// compositions on the same backend, so both sides consume identical sampler
 /// outputs without requiring a seed-to-stream convention across backends.
-pub fn test_blind_rotation_key_lifecycle<B>(module: &Module<B>)
+pub fn test_blind_rotation_key_lifecycle<BE>(module: &Module<BE>)
 where
-    B: ParityBackend,
-    Module<B>: BlindRotationKeyEncryptSk<CGGI, B>
-        + BlindRotationKeyCompressedEncryptSk<CGGI, B>
-        + BlindRotationKeyCompressedFactory<CGGI, B>
-        + BlindRotationKeyDecompress<CGGI, B>
-        + GGSWEncryptSk<B>
-        + GGSWCompressedEncryptSk<B>
-        + GLWESecretPreparedFactory<B>
-        + GGSWDecompress<B>,
+    BE: ParityBackend,
+    Module<BE>: BlindRotationKeyEncryptSk<CGGI, BE>
+        + BlindRotationKeyCompressedEncryptSk<CGGI, BE>
+        + BlindRotationKeyCompressedFactory<CGGI, BE>
+        + BlindRotationKeyDecompress<CGGI, BE>
+        + GGSWEncryptSk<BE>
+        + GGSWCompressedEncryptSk<BE>
+        + GLWESecretPreparedFactory<BE>
+        + GGSWDecompress<BE>,
 {
     let host = Module::<HostBytesBackend>::new(module.n() as u64);
     let layout = BlindRotationKeyLayout {
@@ -284,10 +284,10 @@ where
         *lwe_secret_host.dist_mut() = distribution;
         let mut lwe_secret = module.lwe_secret_alloc(4usize.into());
         lwe_secret_host.transfer_into(&mut lwe_secret);
-        let mut expected = BlindRotationKey::<B::OwnedBuf, CGGI, i64>::alloc(module, &layout);
-        let mut actual = BlindRotationKey::<B::OwnedBuf, CGGI, i64>::alloc(module, &layout);
-        with_scratch::<B, _>(blind_rotation_key_encrypt_sk_tmp_bytes_ref(module, &layout), |s| {
-            blind_rotation_key_encrypt_sk_ref(
+        let mut expected = BlindRotationKey::<BE::OwnedBuf, CGGI, i64>::alloc(module, &layout);
+        let mut actual = BlindRotationKey::<BE::OwnedBuf, CGGI, i64>::alloc(module, &layout);
+        with_scratch::<BE, _>(blind_rotation_key_encrypt_sk_tmp_bytes_reference(module, &layout), |s| {
+            blind_rotation_key_encrypt_sk_reference(
                 module,
                 &mut expected,
                 &lwe_secret,
@@ -297,7 +297,7 @@ where
                 s,
             );
         });
-        with_scratch::<B, _>(module.blind_rotation_key_encrypt_sk_tmp_bytes(&layout), |s| {
+        with_scratch::<BE, _>(module.blind_rotation_key_encrypt_sk_tmp_bytes(&layout), |s| {
             module.blind_rotation_key_encrypt_sk(
                 &mut actual,
                 &lwe_secret,
@@ -310,8 +310,8 @@ where
         assert_eq!(actual.dist, expected.dist);
         for (a, b) in actual.keys.iter().zip(&expected.keys) {
             assert_eq!(
-                super::snapshot_ggsw::<B, _>(a),
-                super::snapshot_ggsw::<B, _>(b),
+                super::snapshot_ggsw::<BE, _>(a),
+                super::snapshot_ggsw::<BE, _>(b),
                 "key encryption parity"
             );
         }
@@ -319,24 +319,27 @@ where
         let mut compressed_actual = BlindRotationKeyCompressed::<poulpy_hal::AlignedBuf, CGGI, i64>::alloc(module, &layout);
         let ggsw_bytes = module.ggsw_compressed_bytes_of_from_infos(&layout);
         for ggsw in &compressed_actual.keys {
-            assert_eq!(compressed_ggsw_bytes::<B>(ggsw), ggsw_bytes);
+            assert_eq!(compressed_ggsw_bytes::<BE>(ggsw), ggsw_bytes);
         }
         assert_eq!(
             module.blind_rotation_key_compressed_bytes_of_from_infos(&layout),
             layout.n_lwe.as_usize() * ggsw_bytes
         );
-        with_scratch::<B, _>(blind_rotation_key_compressed_encrypt_sk_tmp_bytes_ref(module, &layout), |s| {
-            blind_rotation_key_compressed_encrypt_sk_ref(
-                module,
-                &mut compressed_expected,
-                &lwe_secret,
-                &secret_prepared,
-                [33; 32],
-                &mut Source::new([34; 32]),
-                s,
-            );
-        });
-        with_scratch::<B, _>(module.blind_rotation_key_compressed_encrypt_sk_tmp_bytes(&layout), |s| {
+        with_scratch::<BE, _>(
+            blind_rotation_key_compressed_encrypt_sk_tmp_bytes_reference(module, &layout),
+            |s| {
+                blind_rotation_key_compressed_encrypt_sk_reference(
+                    module,
+                    &mut compressed_expected,
+                    &lwe_secret,
+                    &secret_prepared,
+                    [33; 32],
+                    &mut Source::new([34; 32]),
+                    s,
+                );
+            },
+        );
+        with_scratch::<BE, _>(module.blind_rotation_key_compressed_encrypt_sk_tmp_bytes(&layout), |s| {
             module.blind_rotation_key_compressed_encrypt_sk(
                 &mut compressed_actual,
                 &lwe_secret,
@@ -349,17 +352,17 @@ where
         assert_eq!(compressed_actual.dist, compressed_expected.dist);
         // Decompression checks every body limb and recreated mask rather than
         // requiring the prepared representation to be shared across backends.
-        with_scratch::<B, _>(blind_rotation_key_decompress_tmp_bytes_ref(module, &layout), |s| {
-            blind_rotation_key_decompress_ref(module, &mut expected, &compressed_expected, s)
+        with_scratch::<BE, _>(blind_rotation_key_decompress_tmp_bytes_reference(module, &layout), |s| {
+            blind_rotation_key_decompress_reference(module, &mut expected, &compressed_expected, s)
         });
-        with_scratch::<B, _>(module.blind_rotation_key_decompress_tmp_bytes(&layout), |s| {
+        with_scratch::<BE, _>(module.blind_rotation_key_decompress_tmp_bytes(&layout), |s| {
             module.blind_rotation_key_decompress(&mut actual, &compressed_actual, s)
         });
         assert_eq!(actual.dist, expected.dist);
         for (a, b) in actual.keys.iter().zip(&expected.keys) {
             assert_eq!(
-                super::snapshot_ggsw::<B, _>(a),
-                super::snapshot_ggsw::<B, _>(b),
+                super::snapshot_ggsw::<BE, _>(a),
+                super::snapshot_ggsw::<BE, _>(b),
                 "compressed key/decompression parity"
             );
         }

@@ -12,7 +12,7 @@ use poulpy_hal::{
 use crate::blind_rotation::{BlindRotationKeyCompressed, CGGI};
 
 /// Canonical lower-layer composition for `blind_rotation_key_compressed_encrypt_sk_tmp_bytes`.
-pub fn blind_rotation_key_compressed_encrypt_sk_tmp_bytes_ref<BE, A>(module: &Module<BE>, infos: &A) -> usize
+pub fn blind_rotation_key_compressed_encrypt_sk_tmp_bytes_reference<BE, A>(module: &Module<BE>, infos: &A) -> usize
 where
     A: GGSWInfos,
     BE: Backend<ZnxWord = i64>,
@@ -22,7 +22,7 @@ where
 }
 
 /// Canonical lower-layer composition for `blind_rotation_key_compressed_encrypt_sk`.
-pub fn blind_rotation_key_compressed_encrypt_sk_ref<BE, S0, S1>(
+pub fn blind_rotation_key_compressed_encrypt_sk_reference<BE, S0, S1>(
     module: &Module<BE>,
     res: &mut BlindRotationKeyCompressed<BE::OwnedBuf, CGGI, BE::ZnxWord>,
     sk_lwe: &S0,

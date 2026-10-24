@@ -144,7 +144,7 @@ where
     };
 
     let mut lut: LookupTable<BE::OwnedBuf, BE::ZnxWord> = LookupTable::alloc(module, &lut_infos);
-    lut.set(module, &f_vec, log_message_modulus + 1);
+    lut.set(module, log_message_modulus + 1, &f_vec);
 
     let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&glwe_infos);
 
