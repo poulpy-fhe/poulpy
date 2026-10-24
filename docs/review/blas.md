@@ -13,7 +13,7 @@ Read with `docs/review/REVIEW.md`; this file adds the rules specific to `poulpy-
 
 Generic rules: `docs/review/workspace.md` sections 1 and 3.
 
-- **Families and their files.** An operation lives in its family's file (`inter`: whole matrices across matrix slots, `intra`: one map on every matrix, `matmul`: products) under `api/`, `delegates/`, `oep/`, `oep/derived/` and `reference/` (`docs/review/workspace.md` section 3; JKLS kernel: `oep/jkls.rs`, `reference/jkls.rs`), with:
+- **Families and their files.** An operation lives in its family's file (`inter`: whole matrices across matrix slots, `intra`: one map on every matrix, `matmul`: products, `encoding`: context and public-operand encodings and preparations) under `api/`, `delegates/`, `oep/`, `oep/derived/` and `reference/` (`docs/review/workspace.md` section 3; JKLS kernel: `oep/jkls.rs`, `reference/jkls.rs`), with:
   - its validator and key-use enumerator in `layouts/validate.rs`;
   - its key-use, output-layout and radix queries in `layouts/planning.rs`, re-exported from `layouts`, and the layout queries a validator or `oep::derived` needs (operand, term) in `layouts`;
   - its provided body in `oep/derived/<family>.rs`, its tests in `test_suite/<family>.rs` and the cross-cutting suites (`context.rs`, `keys.rs`, `meta.rs`, `parity.rs`, `conjugate_invariant.rs`).
@@ -32,7 +32,7 @@ Generic rules: `docs/review/workspace.md` sections 1 and 3.
 
 Generic rules: `docs/review/workspace.md` section 12 (blas layer names: table 12.1).
 
-- **Layer names.** Beyond `docs/review/workspace.md` table 12.1, hooks are `blas_<hook>` with `blas_<hook>_tmp_bytes`, and the JKLS kernel, the one family outside `BlasMat<Family>`, is `BlasJklsImpl` with `impl_blas_jkls_reference_full!` and `BlasJklsReference::blas_jkls_block_reference`.
+- **Layer names.** Beyond `docs/review/workspace.md` table 12.1, hooks are `blas_<hook>` with `blas_<hook>_tmp_bytes`, and the two families outside `BlasMat<Family>` are the JKLS kernel, `BlasJklsImpl` with `impl_blas_jkls_reference_full!` and `BlasJklsReference::blas_jkls_block_reference`, and the encodings and factory preparations, `BlasEncodingImpl` with `impl_blas_encoding_reference_full!` and `BlasEncodingReference`.
 - **Argument order.** Operations take `([r | k], res, inputs in product order, [ctx], [tsk], keys, scratch)` (`docs/review/workspace.md` section 12; inter operations, `blas_rotate` and `blas_sum`, without `ctx`), queries the same with key layouts and without amount and scratch, a preparation's query `(source, ctx, keys, hint)`; validators and key-use queries take `module` first, output-layout and radix queries none.
 - **Sides in the type.** Sides are types (`BlasPtOperand<BE, S: BlasPtSide>` with `Right` or `Left`, `BlasMatMulLeft<BE>`, `BlasMatMulRight<BE>`), and arguments follow the product in every layer, validator and query: `blas_matmul_pt_right(res, a, b, ..)` computes `A B`, `blas_matmul_pt_left(res, b, a, ..)` computes `B A`.
 - **Generic grids, thread bounds.** Methods and hooks take `R: BlasGridMut<BE>` for `res`, `A: BlasGrid<BE>` for ciphertext inputs (never `BlasCiphertext`), `K: GetAutomorphismKey<BE> + Sync`, `T: GetTensorKey<BE> + Sync`, `Sync` hook sources, kernel pairs and keys, `Send` hook destinations and `Send + Sync` prepared operands.
