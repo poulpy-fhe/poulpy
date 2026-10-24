@@ -786,7 +786,7 @@ pub fn gen_ci_keys<BE, S>(
 )
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextSharedModule<BE> + GLWECIKeyEncryptSk<BE>,
+    Module<BE>: TestContextSharedModule<BE> + GLWECIKeyEncryptSk<BE> + GLWECIKeyPreparedFactory<BE>,
     S: GLWESecretToBackendRef<BE>,
 {
     let infos = params.ksk_layout(k_in);

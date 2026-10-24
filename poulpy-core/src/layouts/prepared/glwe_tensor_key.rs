@@ -1,5 +1,5 @@
 use crate::error::Result;
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
 use crate::layouts::prepared::{GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef};
 use crate::layouts::{
@@ -116,32 +116,13 @@ where
 
     fn prepare_tensor_key_tmp_bytes<A>(&self, infos: &A) -> usize
     where
-        A: GGLWEInfos,
-    {
-        let lvl_0: usize = self.gglwe_prepare_tmp_bytes(infos);
-        lvl_0
-    }
+        A: GGLWEInfos;
 
     fn prepare_tensor_key<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, B>)
     where
         R: GGLWEPreparedToBackendMut<B>,
-        O: GGLWEToBackendRef<B>,
-    {
-        let tmp_bytes = {
-            let res_infos = res.to_backend_mut();
-            self.prepare_tensor_key_tmp_bytes(&res_infos)
-        };
-        assert!(
-            scratch.available() >= tmp_bytes,
-            "scratch.available(): {} < GLWETensorKeyPreparedFactory::prepare_tensor_key_tmp_bytes: {}",
-            scratch.available(),
-            tmp_bytes
-        );
-        self.gglwe_prepare(res, other, scratch);
-    }
+        O: GGLWEToBackendRef<B>;
 }
-
-impl<B: Backend> GLWETensorKeyPreparedFactory<B> for Module<B> where Module<B>: GGLWEPreparedFactory<B> {}
 
 // module-only API: allocation/size helpers are provided by `GLWETensorKeyPreparedFactory` on `Module`.
 

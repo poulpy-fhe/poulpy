@@ -7,7 +7,7 @@ use crate::{
     ComponentNoise, Distribution, GetDistribution, GetDistributionMut,
     api::*,
     layouts::*,
-    oep::{DecompressionImpl, DecryptionImpl, EncryptionImpl, GLWENormalizeImpl, SamplingImpl},
+    oep::{DecompressionImpl, DecryptionImpl, EncryptionImpl, GLWENormalizeImpl, PreparationImpl, SamplingImpl},
 };
 use poulpy_hal::{
     api::{VecZnxAddAssign, VecZnxCopy, VecZnxFillUniformSource},
@@ -24,6 +24,7 @@ pub trait EncryptionParityBackend:
     + DecompressionImpl
     + DecryptionImpl
     + GLWENormalizeImpl
+    + PreparationImpl
     + SamplingImpl
     + HalModuleImpl
     + HalVecZnxImpl
@@ -40,6 +41,7 @@ impl<B> EncryptionParityBackend for B where
         + DecompressionImpl
         + DecryptionImpl
         + GLWENormalizeImpl
+        + PreparationImpl
         + SamplingImpl
         + HalModuleImpl
         + HalVecZnxImpl

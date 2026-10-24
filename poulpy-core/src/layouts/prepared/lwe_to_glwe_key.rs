@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
 use crate::layouts::{
     Base2K, Degree, Dnum, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendRef, GGLWEPreparedToBackendMut,
@@ -124,32 +124,13 @@ where
 
     fn lwe_to_glwe_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
     where
-        A: GGLWEInfos,
-    {
-        let lvl_0: usize = self.glwe_switching_key_prepare_tmp_bytes(infos);
-        lvl_0
-    }
+        A: GGLWEInfos;
 
     fn lwe_to_glwe_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, B>)
     where
         R: GGLWEPreparedToBackendMut<B> + GLWESwitchingKeyDegreesMut,
-        O: GGLWEToBackendRef<B> + GLWESwitchingKeyDegrees,
-    {
-        let tmp_bytes = {
-            let res_infos = res.to_backend_mut();
-            self.lwe_to_glwe_key_prepare_tmp_bytes(&res_infos)
-        };
-        assert!(
-            scratch.available() >= tmp_bytes,
-            "scratch.available(): {} < LWEToGLWEKeyPreparedFactory::lwe_to_glwe_key_prepare_tmp_bytes: {}",
-            scratch.available(),
-            tmp_bytes
-        );
-        self.glwe_switching_key_prepare(res, other, scratch);
-    }
+        O: GGLWEToBackendRef<B> + GLWESwitchingKeyDegrees;
 }
-
-impl<B: Backend> LWEToGLWEKeyPreparedFactory<B> for Module<B> where Self: GLWESwitchingKeyPreparedFactory<B> {}
 
 // module-only API: allocation, sizing, and preparation are provided by
 // `LWEToGLWEKeyPreparedFactory` on `Module`.

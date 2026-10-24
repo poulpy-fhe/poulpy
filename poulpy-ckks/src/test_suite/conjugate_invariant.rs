@@ -18,7 +18,8 @@ use crate::{
 use poulpy_core::{
     GLWECIKeyEncryptSk,
     layouts::{
-        GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWEInfos, GLWELayout, GLWESecretCIEmbed, GLWESecretPreparedFactory, LWEInfos,
+        GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWECIKeyPreparedFactory, GLWEInfos, GLWELayout, GLWESecretCIEmbed,
+        GLWESecretPreparedFactory, LWEInfos,
     },
 };
 use poulpy_hal::{
@@ -634,6 +635,7 @@ where
         + CKKSEncodingOps<STD, f64>
         + CKKSCIRingMapOps<STD>
         + GLWECIKeyEncryptSk<STD>
+        + GLWECIKeyPreparedFactory<STD>
         + poulpy_core::GLWECITrace<STD>,
 {
     params.prec_meta.slots = SlotsKind::Real;

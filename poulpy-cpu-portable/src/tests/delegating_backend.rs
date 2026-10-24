@@ -129,6 +129,7 @@ poulpy_core::impl_glwe_shift_reference_full!(DelegatingFFT64Portable);
 poulpy_core::impl_glwe_keyswitch_reference_full!(DelegatingFFT64Portable);
 poulpy_core::impl_encryption_reference_full!(DelegatingFFT64Portable);
 poulpy_core::impl_decryption_reference_full!(DelegatingFFT64Portable);
+poulpy_core::impl_preparation_reference_full!(DelegatingFFT64Portable);
 crate::impl_sampling_host!(DelegatingFFT64Portable, fft64);
 // The pairwise suite must use a selected comparison backend's implementation
 // and its own scratch query, even when that backend delegates its arithmetic.

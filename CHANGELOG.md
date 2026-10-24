@@ -124,6 +124,7 @@
   `impl_ckks_paco_coeff_encoding!`, `impl_ckks_ship_coeff_encoding!` and `impl_ckks_encoding!` implement the renamed OEP methods, and `impl_ckks_paco_coeff_encoding!` the context-taking `ckks_paco_coeff_encodings`; an out-of-tree backend calling them is unchanged, and one invoking a scheme opt-in directly renames the invocation.
 - `impl_cpu_ckks_defaults!` registers the both-ring CKKS families through `impl_ckks_reference_full!`, the same set as before; the oracle's standard and conjugate-invariant types use it too.
 - `impl_cpu_core_defaults!`, the oracle's `impl_oracle_core!` and the hand-listed IFMA Rayon type register `impl_decompression_reference_full!`, so every CPU backend implements `DecompressionImpl` with the reference and derived bodies.
+- `impl_cpu_core_defaults!`, the oracle's `impl_oracle_core!` and the hand-listed IFMA Rayon type register `impl_preparation_reference_full!`, so every CPU backend implements `PreparationImpl` with the reference and derived bodies.
 
 ### `poulpy-core`
 
@@ -255,6 +256,11 @@
   `GLWEDecompress`, `GGLWEDecompress`, `GGSWDecompress`, `GLWEPublicKeyDecompress`, `LWEDecompress`, `GLWEAutomorphismKeyDecompress`, `GLWESwitchingKeyDecompress`, `GLWETensorKeyDecompress`, `GLWEToLWESwitchingKeyDecompress`, `LWESwitchingKeyDecompress`, `LWEToGLWEKeyDecompress` and `GGLWEToGGSWKeyDecompress` move from `poulpy_core::layouts` to `poulpy_core::api` (and the crate root) and become API traits generic over the backend, `<BE>` in place of the `Backend` associated type, with no supertraits, implemented on `Module<BE>` for `BE: DecompressionImpl`.
   Callers bound `Module<BE>: GGSWDecompress<BE>` where they bounded `GGSWDecompress + GLWEDecompress<Backend = BE>`, and so for each trait; the calls and outputs are unchanged.
   `impl_core_reference_full!` invokes the new `impl_decompression_reference_full!`; out-of-tree backends that list the core families add it, and `EncryptionParityBackend` gains `DecompressionImpl`.
+- **Breaking:** the preparations of the stored layouts dispatch through the new OEP family `PreparationImpl`, whose methods have the API names: `glwe_prepare`, `gglwe_prepare`, `ggsw_prepare`, `ggsw_zero`, `glwe_public_key_prepare`, `glwe_automorphism_key_prepare`, `glwe_switching_key_prepare`, `prepare_tensor_key`, `glwe_to_lwe_key_prepare`, `lwe_switching_key_prepare`, `lwe_to_glwe_key_prepare`, `gglwe_to_ggsw_key_prepare` and `glwe_ci_key_prepare`, and their `_tmp_bytes` queries (`ggsw_zero` takes none).
+  The GLWE, GGLWE, GGSW, public-key and GGLWE-to-GGSW-key preparations, their queries and `ggsw_zero` are required, with reference bodies in `reference::preparation::PreparationReference`, and `impl_preparation_reference_full!` selects them; the automorphism, switching, tensor, GLWE-to-LWE, LWE switching, LWE-to-GLWE and CI key preparations and their queries are derived defaults over `gglwe_prepare` and `glwe_switching_key_prepare`, so an override of `gglwe_prepare` reaches every key preparation. The bodies are those the factories provided, and outputs are unchanged.
+  `GLWEPreparedFactory`, `GGLWEPreparedFactory`, `GGSWPreparedFactory`, `GLWEPublicKeyPreparedFactory`, `GLWEAutomorphismKeyPreparedFactory`, `GLWESwitchingKeyPreparedFactory`, `GLWETensorKeyPreparedFactory`, `GLWEToLWEKeyPreparedFactory`, `LWESwitchingKeyPreparedFactory`, `LWEToGLWEKeyPreparedFactory`, `GGLWEToGGSWKeyPreparedFactory` and `GLWECIKeyPreparedFactory` keep their names, paths and allocation and byte-count methods, provided by the traits, and are implemented on `Module<BE>` for `BE: PreparationImpl`; they no longer have HAL operation supertraits (`VmpPrepare`, `VmpPrepareTmpBytes`, `VmpZero`, `VecZnxDftApply`, `GLWENormalize`, `GLWEBytesOf`), and `GGLWEToGGSWKeyPreparedFactory` gains `GGLWEPreparedFactory` as its supertrait.
+  Callers that used a factory through the blanket implementation of another one bound that factory itself (`GLWECIKeyPreparedFactory` beside `GLWESwitchingKeyPreparedFactory`), and callers relying on a removed supertrait bound the HAL trait; the calls and outputs are unchanged.
+  `impl_core_reference_full!` invokes the new `impl_preparation_reference_full!`; out-of-tree backends that list the core families add it, and `EncryptionParityBackend` gains `PreparationImpl`.
 
 ### `poulpy-ckks`
 
@@ -393,6 +399,7 @@
   The standard-only families, the scalar-generic seams and the PaCo and SHIP coefficient encodings keep their own registration.
 - **Breaking:** `CKKSMulImpl::ckks_mul_pt_vec_tmp_bytes` and `ckks_mul_pt_const_tmp_bytes` take the API's parameters `(res, a, b)`, `b: &P` with `P: CKKSInfos` and `res`, `a` bounded by `CKKSCtBounds`, in place of `(res, a, b_k: TorusPrecision)`, and so do `CKKSMulReference::ckks_mul_pt_vec_tmp_bytes_reference` and `ckks_mul_pt_const_tmp_bytes_reference`, which read `b.k()`.
   A backend overriding them takes the plaintext and reads its precision; callers pass the plaintext instead of `pt.k()`.
+- **Breaking:** `test_suite::helpers::gen_ci_keys` and `test_suite::conjugate_invariant::test_conjugate_invariant_ring_map` bound the standard module by `GLWECIKeyPreparedFactory`, which needs `poulpy_core::oep::PreparationImpl` on the backend.
 
 ### `poulpy-bin-fhe`
 
@@ -479,6 +486,7 @@
 ### `poulpy-bench`
 
 - **Breaking:** `bench_ckks_bootstrapping` requires `CKKSBootstrappingCIOps`, and runs the presets with EvalMod on the conjugate-invariant ring.
+- **Breaking:** `ckks_rotate_ops` and `runner_ckks_rotate_into` bound the module by `GLWETensorKeyPreparedFactory`, the factory of the key they allocate.
 
 ## [0.9.0] - 2026-10-08
 

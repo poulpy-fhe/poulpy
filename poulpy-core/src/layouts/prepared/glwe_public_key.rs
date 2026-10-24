@@ -1,6 +1,6 @@
 use poulpy_hal::{
-    api::{VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes},
-    layouts::{Backend, Data, Module, PrepareHint, ScratchArena, VmpPMat, VmpPMatToBackendMut, VmpPMatToBackendRef},
+    api::{VmpPMatAlloc, VmpPMatBytesOf},
+    layouts::{Backend, Data, PrepareHint, ScratchArena, VmpPMat, VmpPMatToBackendMut, VmpPMatToBackendRef},
 };
 
 use crate::layouts::{GLWELayout, operand_degree};
@@ -78,7 +78,7 @@ impl<D: Data, B: Backend> GLWEInfos for GLWEPublicKeyPrepared<D, B> {
 
 pub trait GLWEPublicKeyPreparedFactory<B: Backend>
 where
-    Self: GetDegree + VmpPMatAlloc<B> + VmpPMatBytesOf + VmpPrepare<B> + VmpPrepareTmpBytes,
+    Self: GetDegree + VmpPMatAlloc<B> + VmpPMatBytesOf,
 {
     fn glwe_public_key_prepared_alloc(
         &self,
@@ -130,39 +130,12 @@ where
 
     fn glwe_public_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
     where
-        A: GLWEInfos,
-    {
-        let rank: usize = infos.rank().into();
-        self.vmp_prepare_tmp_bytes(1, rank, rank + 1, infos.size())
-    }
+        A: GLWEInfos;
 
     fn glwe_public_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, B>)
     where
         R: GLWEPublicKeyPreparedToBackendMut<B> + GetDistributionMut,
-        O: GLWEPublicKeyToBackendRef<B> + GetDistribution,
-    {
-        {
-            let mut res = res.to_backend_mut();
-            let other = other.to_backend_ref();
-            assert!(
-                res.data.cols_in() == other.data.cols_in(),
-                "public key and prepared public key have different entry counts"
-            );
-            operand_degree(self.ring_degree().as_usize(), &[res.n(), other.n()]);
-            assert_eq!(res.base2k(), other.base2k());
-            assert_eq!(res.k(), other.k());
-            assert_eq!(res.size(), other.size());
-
-            self.vmp_prepare(&mut res.data, &other.data, scratch);
-        }
-        res.set_noise(other.to_backend_ref().noise());
-        *res.dist_mut() = *other.dist();
-    }
-}
-
-impl<B: Backend> GLWEPublicKeyPreparedFactory<B> for Module<B> where
-    Self: GetDegree + VmpPMatAlloc<B> + VmpPMatBytesOf + VmpPrepare<B> + VmpPrepareTmpBytes
-{
+        O: GLWEPublicKeyToBackendRef<B> + GetDistribution;
 }
 
 // module-only API: allocation, sizing, and preparation are provided by
