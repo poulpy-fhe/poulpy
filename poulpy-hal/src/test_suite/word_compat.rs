@@ -28,9 +28,9 @@ use crate::layouts::VmpPMatToBackendMut;
 use crate::test_suite::poisoned_arena;
 use crate::{
     api::{
-        ScratchOwnedAlloc, SvpPPolAlloc, SvpPrepare, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
-        VecZnxDftAlloc, VecZnxDftApply, VecZnxFillUniformSource, VecZnxFillUniformSourceAll, VecZnxIdftApply,
-        VecZnxIdftApplyTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        SvpPPolAlloc, SvpPrepare, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxDftApply,
+        VecZnxFillUniformSource, VecZnxFillUniformSourceAll, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VmpPMatAlloc, VmpPrepare,
+        VmpPrepareTmpBytes,
     },
     layouts::{
         Backend, DataView, MatZnx, MatZnxAtBackendMut, MatZnxToBackendRef, Module, PrepareHint, ScalarZnxAsVecZnxBackendMut,
@@ -120,8 +120,6 @@ where
     BB: crate::test_suite::TestBackend,
     Module<BA>: VmpPMatAlloc<BA> + VmpPrepare<BA> + VmpPrepareTmpBytes,
     Module<BB>: VmpPMatAlloc<BB> + VmpPrepare<BB> + VmpPrepareTmpBytes,
-    ScratchOwned<BA>: ScratchOwnedAlloc<BA>,
-    ScratchOwned<BB>: ScratchOwnedAlloc<BB>,
 {
     let base2k = params.base2k;
     assert_eq!(module_a.n(), module_b.n());
@@ -189,8 +187,6 @@ where
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BB>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BA>: ScratchOwnedAlloc<BA>,
-    ScratchOwned<BB>: ScratchOwnedAlloc<BB>,
 {
     let base2k = params.base2k;
     assert_eq!(module_a.n(), module_b.n());

@@ -8,8 +8,8 @@ use rand_core::Rng;
 use crate::test_suite::poisoned_arena;
 use crate::{
     api::{
-        ScalarZnxAutomorphism, ScalarZnxCIEmbed, ScratchOwnedAlloc, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign,
-        VecZnxAutomorphism, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxCIEmbed, VecZnxCITrace, VecZnxCopy,
+        ScalarZnxAutomorphism, ScalarZnxCIEmbed, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign, VecZnxAutomorphism,
+        VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxCIEmbed, VecZnxCITrace, VecZnxCopy,
         VecZnxFillUniformSource, VecZnxFillUniformSourceAll, VecZnxGadgetDecompose, VecZnxGadgetDecomposeTmpBytes, VecZnxLsh,
         VecZnxLshAssign, VecZnxLshTmpBytes, VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes,
         VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate,
@@ -438,9 +438,7 @@ pub fn test_vec_znx_automorphism_assign<BR: crate::test_suite::TestBackend, BT: 
     module_test: &Module<BT>,
 ) where
     Module<BR>: VecZnxAutomorphismAssign<BR> + VecZnxAutomorphismAssignTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
     Module<BT>: VecZnxAutomorphismAssign<BT> + VecZnxAutomorphismAssignTmpBytes,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -770,9 +768,7 @@ pub fn test_vec_znx_mul_xp_minus_one_assign<BR: crate::test_suite::TestBackend, 
     module_test: &Module<BT>,
 ) where
     Module<BR>: VecZnxMulXpMinusOneAssign<BR> + VecZnxMulXpMinusOneAssignTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
     Module<BT>: VecZnxMulXpMinusOneAssign<BT> + VecZnxMulXpMinusOneAssignTmpBytes,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -1011,9 +1007,7 @@ pub fn test_vec_znx_normalize<BR: crate::test_suite::TestBackend, BT: crate::tes
     module_test: &Module<BT>,
 ) where
     Module<BR>: VecZnxNormalize<BR> + VecZnxNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
     Module<BT>: VecZnxNormalize<BT> + VecZnxNormalizeTmpBytes,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -1121,9 +1115,7 @@ pub fn test_vec_znx_normalize_assign<BR: crate::test_suite::TestBackend, BT: cra
     module_test: &Module<BT>,
 ) where
     Module<BR>: VecZnxNormalizeAssign<BR> + VecZnxNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
     Module<BT>: VecZnxNormalizeAssign<BT> + VecZnxNormalizeTmpBytes,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -1259,9 +1251,7 @@ pub fn test_vec_znx_rotate_assign<BR: crate::test_suite::TestBackend, BT: crate:
     module_test: &Module<BT>,
 ) where
     Module<BR>: VecZnxRotateAssign<BR> + VecZnxRotateAssignTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
     Module<BT>: VecZnxRotateAssign<BT> + VecZnxRotateAssignTmpBytes,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -1433,9 +1423,7 @@ pub fn test_vec_znx_lsh<BR: crate::test_suite::TestBackend, BT: crate::test_suit
     module_test: &Module<BT>,
 ) where
     Module<BR>: VecZnxLsh<BR> + VecZnxLshTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
     Module<BT>: VecZnxLsh<BT> + VecZnxLshTmpBytes,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -1513,9 +1501,7 @@ pub fn test_vec_znx_lsh_assign<BR: crate::test_suite::TestBackend, BT: crate::te
     module_test: &Module<BT>,
 ) where
     Module<BR>: VecZnxLshAssign<BR> + VecZnxLshTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
     Module<BT>: VecZnxLshAssign<BT> + VecZnxLshTmpBytes,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -1572,9 +1558,7 @@ pub fn test_vec_znx_rsh<BR: crate::test_suite::TestBackend, BT: crate::test_suit
     module_test: &Module<BT>,
 ) where
     Module<BR>: VecZnxRsh<BR> + VecZnxRshTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
     Module<BT>: VecZnxRsh<BT> + VecZnxRshTmpBytes,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -1646,9 +1630,7 @@ pub fn test_vec_znx_rsh_assign<BR: crate::test_suite::TestBackend, BT: crate::te
     module_test: &Module<BT>,
 ) where
     Module<BR>: VecZnxRshAssign<BR> + VecZnxRshTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
     Module<BT>: VecZnxRshAssign<BT> + VecZnxRshTmpBytes,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -2194,8 +2176,6 @@ pub fn test_vec_znx_gadget_decompose<BR: crate::test_suite::TestBackend, BT: cra
         + VecZnxNormalizeTmpBytes
         + VecZnxAddAssign<BR>,
     Module<BT>: VecZnxGadgetDecompose<BT> + VecZnxGadgetDecomposeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     assert_eq!(module_ref.n(), module_test.n());
     let mut source: Source = Source::new([7u8; 32]);

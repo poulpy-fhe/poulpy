@@ -13,10 +13,9 @@ use rand::Rng;
 use crate::test_suite::poisoned_arena;
 use crate::{
     api::{
-        CnvPVecAlloc, Convolution, ModuleN, ScratchOwnedAlloc, VecZnxAdd, VecZnxAlloc, VecZnxAutomorphism, VecZnxBigAlloc,
-        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply,
-        VecZnxFillUniformSourceAll, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
-        VecZnxSwitchRing,
+        CnvPVecAlloc, Convolution, ModuleN, VecZnxAdd, VecZnxAlloc, VecZnxAutomorphism, VecZnxBigAlloc, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxFillUniformSourceAll,
+        VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxSwitchRing,
     },
     layouts::{
         CnvDftAccTerm, CnvPVecL, CnvPVecR, DataView, Module, PrepareHint, ScratchArena, ScratchOwned, VecZnx, VecZnxOwned,
@@ -39,7 +38,6 @@ where
         + VecZnxBigAlloc<BE>
         + VecZnxAlloc<BE>
         + VecZnxFillUniformSourceAll<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let mut source: Source = Source::new([0u8; 32]);
 
@@ -130,7 +128,6 @@ where
         + VecZnxBigAlloc<BE>
         + VecZnxAlloc<BE>
         + VecZnxFillUniformSourceAll<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let mut source: Source = Source::new([0u8; 32]);
 
@@ -245,7 +242,6 @@ where
         + VecZnxBigAlloc<BE>
         + VecZnxAlloc<BE>
         + VecZnxFillUniformSourceAll<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let mut source: Source = Source::new([0u8; 32]);
 
@@ -368,7 +364,6 @@ where
         + VecZnxDftAddAssign<BE>
         + VecZnxAlloc<BE>
         + VecZnxFillUniformSourceAll<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let mut source: Source = Source::new([0u8; 32]);
 
@@ -497,7 +492,6 @@ where
         + VecZnxBigAlloc<BE>
         + VecZnxAlloc<BE>
         + VecZnxFillUniformSourceAll<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     use crate::layouts::CnvDftAccTerm;
 
@@ -669,7 +663,6 @@ where
         + VecZnxCopy<BE>
         + VecZnxAlloc<BE>
         + VecZnxFillUniformSourceAll<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let mut source: Source = Source::new([0u8; 32]);
 
@@ -831,7 +824,6 @@ pub fn bivariate_convolution_naive<M, BE: crate::test_suite::TestBackend>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     M: VecZnxNormalizeAssign<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     for j in 0..res.size() {
         res.zero_at(res_col, j);
@@ -975,7 +967,6 @@ pub fn test_cnv_prepare_rejects_mismatched_shape<BE: crate::test_suite::TestBack
     module: &crate::layouts::Module<BE>,
 ) where
     crate::layouts::Module<BE>: CnvPVecAlloc<BE> + Convolution<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let (cols, size) = (2usize, 2usize);
     let mut source = Source::new([5u8; 32]);
@@ -1087,7 +1078,6 @@ pub fn test_cnv_by_const_rejects_degree_mismatch<BE: crate::test_suite::TestBack
     module: &crate::layouts::Module<BE>,
 ) where
     crate::layouts::Module<BE>: Convolution<BE> + VecZnxBigAlloc<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let size = 2usize;
     let mut source = Source::new([6u8; 32]);
@@ -1228,7 +1218,6 @@ where
         + VecZnxBigNormalizeTmpBytes
         + VecZnxSwitchRing<BE>
         + VecZnxFillUniformSourceAll<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let n = params.n;
     let base2k = params.base2k;
@@ -1465,7 +1454,6 @@ where
         + VecZnxBigNormalizeTmpBytes
         + VecZnxAutomorphism<BE>
         + VecZnxFillUniformSourceAll<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let n = params.n;
     let base2k = params.base2k;
