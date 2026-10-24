@@ -24,16 +24,16 @@
 use crate::test_suite::poisoned_arena;
 use crate::{
     api::{
-        CnvPVecAlloc, Convolution, MatZnxAlloc, ModuleN, ScalarZnxAutomorphism, ScalarZnxCIEmbed, ScratchOwnedAlloc,
-        ScratchOwnedBorrow, SvpApplyDftToDft, SvpPPolAlloc, SvpPrepare, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign,
-        VecZnxAlloc, VecZnxAutomorphism, VecZnxBigAddAssign, VecZnxBigAddSmall, VecZnxBigAddSmallAssign, VecZnxBigAlloc,
-        VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSubAssign, VecZnxBigSubNegateAssign,
-        VecZnxBigSubSmallA, VecZnxBigSubSmallB, VecZnxCIEmbed, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply,
-        VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan, VecZnxDftZero, VecZnxFillUniformSource, VecZnxFillUniformSourceAll,
-        VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes,
-        VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNormalize,
-        VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign, VecZnxRshSub,
-        VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd,
+        CnvPVecAlloc, Convolution, MatZnxAlloc, ModuleN, ScalarZnxAutomorphism, ScalarZnxCIEmbed, ScratchOwnedBorrow,
+        SvpApplyDftToDft, SvpPPolAlloc, SvpPrepare, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign, VecZnxAlloc,
+        VecZnxAutomorphism, VecZnxBigAddAssign, VecZnxBigAddSmall, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigFromSmall,
+        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxBigSubSmallA,
+        VecZnxBigSubSmallB, VecZnxCIEmbed, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism,
+        VecZnxDftAutomorphismPlan, VecZnxDftZero, VecZnxFillUniformSource, VecZnxFillUniformSourceAll, VecZnxIdftApply,
+        VecZnxIdftApplyTmpBytes, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxMulXpMinusOne,
+        VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNormalize, VecZnxNormalizeAssign,
+        VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign, VecZnxRshSub, VecZnxRshTmpBytes,
+        VecZnxSub, VecZnxSubAssign, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd,
         VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
@@ -79,7 +79,7 @@ where
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let (rows, cols_in, cols_out, size) = (4usize, 2usize, 2usize, 4usize);
@@ -236,7 +236,7 @@ where
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     // `cols_out >= 2`, `cols_in != cols_out` on the second shape, and, for two
@@ -438,7 +438,7 @@ where
 pub fn test_vec_znx_lsh_derived<BE: TestBackend + HalVecZnxImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: VecZnxLsh<BE> + VecZnxLshTmpBytes + VecZnxNormalize<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
@@ -498,7 +498,7 @@ where
 pub fn test_vec_znx_rsh_derived<BE: TestBackend + HalVecZnxImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: VecZnxRsh<BE> + VecZnxRshTmpBytes + VecZnxNormalize<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
@@ -591,7 +591,7 @@ where
         + VecZnxLshTmpBytes
         + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
@@ -679,7 +679,7 @@ where
         + VecZnxLshTmpBytes
         + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
@@ -767,7 +767,7 @@ where
         + VecZnxRshTmpBytes
         + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
@@ -855,7 +855,7 @@ where
         + VecZnxRshTmpBytes
         + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
@@ -946,7 +946,7 @@ where
         + VecZnxLshTmpBytes
         + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
@@ -1042,7 +1042,7 @@ where
         + VecZnxRshTmpBytes
         + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
@@ -1194,7 +1194,7 @@ pub fn test_vec_znx_mul_xp_minus_one_assign_derived<BE: TestBackend + HalVecZnxM
     module: &Module<BE>,
 ) where
     Module<BE>: VecZnxMulXpMinusOne<BE> + VecZnxMulXpMinusOneAssign<BE> + VecZnxMulXpMinusOneAssignTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
@@ -1492,7 +1492,7 @@ where
         + VecZnxBigAddSmall<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
@@ -1634,7 +1634,7 @@ where
         + VecZnxBigSubSmallA<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
@@ -1776,7 +1776,7 @@ where
         + VecZnxBigSubSmallB<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
@@ -1922,7 +1922,7 @@ where
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
@@ -2028,7 +2028,7 @@ pub fn test_vec_znx_dft_automorphism_add_with_plan_derived<BE: TestBackend + Hal
         + VecZnxBigAlloc<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([1u8; 32]);
@@ -2157,7 +2157,7 @@ where
         + VecZnxBigAlloc<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([1u8; 32]);
@@ -2267,7 +2267,7 @@ where
         + SvpPPolAlloc<BE>
         + SvpPrepare<BE>
         + SvpApplyDftToDft<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([2u8; 32]);
@@ -2415,7 +2415,7 @@ where
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let cols: usize = 2;
@@ -2532,7 +2532,7 @@ where
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let cols: usize = 2;
@@ -2653,7 +2653,7 @@ where
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let cols: usize = 2;
@@ -2760,7 +2760,7 @@ where
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let cols: usize = 2;
@@ -2860,7 +2860,7 @@ where
         + VecZnxBigAddAssign<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let a_cols: usize = 2;
@@ -2990,7 +2990,7 @@ fn prepare_convolution_operands<BE: TestBackend + HalConvolutionImpl>(
 ) -> (CnvPVecLOwned<BE>, CnvPVecROwned<BE>, ScratchOwned<BE>)
 where
     Module<BE>: ModuleN + Convolution<BE> + CnvPVecAlloc<BE> + VecZnxAlloc<BE> + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let res_size: usize = a_size + b_size;
     let mut source: Source = Source::new([0u8; 32]);

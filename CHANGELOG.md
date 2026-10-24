@@ -36,6 +36,7 @@
 - **Breaking:** the rejection suite functions are renamed to `test_<op>_rejects_<case>`: `test_vec_znx_dft_step_zero_rejected` becomes `test_vec_znx_dft_rejects_zero_step`, `test_convolution_prepare_shape_rejected` becomes `test_cnv_prepare_rejects_mismatched_shape`, `test_convolution_by_const_degree_rejected` becomes `test_cnv_by_const_rejects_degree_mismatch` and `test_vmp_apply_dft_to_dft_shape_rejected` becomes `test_vmp_apply_dft_to_dft_rejects_column_mismatch`.
   A backend test list that names them registers the new names, and each now checks that a rejected call leaves its destination unchanged.
   Every suite scratch arena is `0xA5`-poisoned and sized by the tested operation's own `_tmp_bytes` alone, so an operation that reads scratch it did not write or exceeds its query fails; `test_convolution_by_const`, `test_convolution`, `test_convolution_pairwise`, `test_vmp_apply_dft`, `test_vmp_zero` and `test_mat_znx_normalize` require the `_tmp_bytes` traits of the setup calls they now size separately, and `test_vec_znx_big_normalize` no longer requires `VecZnxBigAutomorphismAssignTmpBytes`.
+  No suite function requires `ScratchOwned<_>: ScratchOwnedAlloc<_>` any more.
 
 ### CPU backends
 

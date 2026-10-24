@@ -8,12 +8,12 @@ use crate::layouts::VecZnxBigToBackendRef;
 use crate::test_suite::poisoned_arena;
 use crate::{
     api::{
-        ScratchOwnedAlloc, VecZnxAddAssign, VecZnxBigAdd, VecZnxBigAddAssign, VecZnxBigAddSmall, VecZnxBigAddSmallAssign,
-        VecZnxBigAlloc, VecZnxBigAutomorphism, VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes,
-        VecZnxBigColWeightedSum, VecZnxBigFromSmall, VecZnxBigInnerSum, VecZnxBigNegate, VecZnxBigNegateAssign,
-        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign,
-        VecZnxBigSubSmallA, VecZnxBigSubSmallAssign, VecZnxBigSubSmallB, VecZnxBigSubSmallNegateAssign,
-        VecZnxFillUniformSourceAll, VecZnxScalarProduct, VecZnxSubNegateAssign,
+        VecZnxAddAssign, VecZnxBigAdd, VecZnxBigAddAssign, VecZnxBigAddSmall, VecZnxBigAddSmallAssign, VecZnxBigAlloc,
+        VecZnxBigAutomorphism, VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigColWeightedSum,
+        VecZnxBigFromSmall, VecZnxBigInnerSum, VecZnxBigNegate, VecZnxBigNegateAssign, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxBigSubSmallA,
+        VecZnxBigSubSmallAssign, VecZnxBigSubSmallB, VecZnxBigSubSmallNegateAssign, VecZnxFillUniformSourceAll,
+        VecZnxScalarProduct, VecZnxSubNegateAssign,
     },
     layouts::{
         DigestU64, HostDataRef, Module, ScalarZnx, ScalarZnxOwned, ScratchOwned, VecZnx, VecZnxOwned, VecZnxToBackendMut,
@@ -150,8 +150,6 @@ pub fn test_vec_znx_big_add<BR: crate::test_suite::TestBackend, BT: crate::test_
         VecZnxBigAdd<BR> + VecZnxBigAlloc<BR> + VecZnxBigFromSmall<BR> + VecZnxBigNormalize<BR> + VecZnxBigNormalizeTmpBytes,
     Module<BT>:
         VecZnxBigAdd<BT> + VecZnxBigAlloc<BT> + VecZnxBigFromSmall<BT> + VecZnxBigNormalize<BT> + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -234,8 +232,6 @@ pub fn test_vec_znx_big_add_assign<BR: crate::test_suite::TestBackend, BT: crate
         + VecZnxBigFromSmall<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -282,8 +278,6 @@ pub fn test_vec_znx_big_add_small<BR: crate::test_suite::TestBackend, BT: crate:
         VecZnxBigAddSmall<BR> + VecZnxBigAlloc<BR> + VecZnxBigFromSmall<BR> + VecZnxBigNormalize<BR> + VecZnxBigNormalizeTmpBytes,
     Module<BT>:
         VecZnxBigAddSmall<BT> + VecZnxBigAlloc<BT> + VecZnxBigFromSmall<BT> + VecZnxBigNormalize<BT> + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -357,8 +351,6 @@ pub fn test_vec_znx_big_add_small_assign<BR: crate::test_suite::TestBackend, BT:
         + VecZnxBigFromSmall<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -424,8 +416,6 @@ pub fn test_vec_znx_big_automorphism<BR: crate::test_suite::TestBackend, BT: cra
         + VecZnxBigFromSmall<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -480,8 +470,6 @@ pub fn test_vec_znx_big_automorphism_assign<BR: crate::test_suite::TestBackend, 
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -533,8 +521,6 @@ pub fn test_vec_znx_big_negate<BR: crate::test_suite::TestBackend, BT: crate::te
         VecZnxBigNegate<BR> + VecZnxBigAlloc<BR> + VecZnxBigFromSmall<BR> + VecZnxBigNormalize<BR> + VecZnxBigNormalizeTmpBytes,
     Module<BT>:
         VecZnxBigNegate<BT> + VecZnxBigAlloc<BT> + VecZnxBigFromSmall<BT> + VecZnxBigNormalize<BT> + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -587,8 +573,6 @@ pub fn test_vec_znx_big_negate_assign<BR: crate::test_suite::TestBackend, BT: cr
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -630,8 +614,6 @@ pub fn test_vec_znx_big_normalize<BR: crate::test_suite::TestBackend, BT: crate:
         + VecZnxAddAssign<BR>
         + VecZnxSubNegateAssign<BR>,
     Module<BT>: VecZnxBigAlloc<BT> + VecZnxBigFromSmall<BT> + VecZnxBigNormalize<BT> + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -735,8 +717,6 @@ pub fn test_vec_znx_big_sub<BR: crate::test_suite::TestBackend, BT: crate::test_
         VecZnxBigSub<BR> + VecZnxBigAlloc<BR> + VecZnxBigFromSmall<BR> + VecZnxBigNormalize<BR> + VecZnxBigNormalizeTmpBytes,
     Module<BT>:
         VecZnxBigSub<BT> + VecZnxBigAlloc<BT> + VecZnxBigFromSmall<BT> + VecZnxBigNormalize<BT> + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -809,8 +789,6 @@ pub fn test_vec_znx_big_sub_assign<BR: crate::test_suite::TestBackend, BT: crate
         + VecZnxBigFromSmall<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -863,8 +841,6 @@ pub fn test_vec_znx_big_sub_negate_assign<BR: crate::test_suite::TestBackend, BT
         + VecZnxBigFromSmall<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -917,8 +893,6 @@ pub fn test_vec_znx_big_sub_small_a<BR: crate::test_suite::TestBackend, BT: crat
         + VecZnxBigFromSmall<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -990,8 +964,6 @@ pub fn test_vec_znx_big_sub_small_b<BR: crate::test_suite::TestBackend, BT: crat
         + VecZnxBigFromSmall<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -1063,8 +1035,6 @@ pub fn test_vec_znx_big_sub_small_a_assign<BR: crate::test_suite::TestBackend, B
         + VecZnxBigFromSmall<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -1130,8 +1100,6 @@ pub fn test_vec_znx_big_sub_small_b_assign<BR: crate::test_suite::TestBackend, B
         + VecZnxBigFromSmall<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -1201,8 +1169,6 @@ pub fn test_vec_znx_big_from_small<BR: crate::test_suite::TestBackend, BT: crate
 ) where
     Module<BR>: VecZnxBigAlloc<BR> + VecZnxBigFromSmall<BR> + VecZnxBigNormalize<BR> + VecZnxBigNormalizeTmpBytes,
     Module<BT>: VecZnxBigAlloc<BT> + VecZnxBigFromSmall<BT> + VecZnxBigNormalize<BT> + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k: usize = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -1271,8 +1237,6 @@ pub fn test_vec_znx_big_inner_sum<BR: crate::test_suite::TestBackend, BT: crate:
         VecZnxBigAlloc<BR> + VecZnxBigFromSmall<BR> + VecZnxBigInnerSum<BR> + VecZnxBigNormalize<BR> + VecZnxBigNormalizeTmpBytes,
     Module<BT>:
         VecZnxBigAlloc<BT> + VecZnxBigFromSmall<BT> + VecZnxBigInnerSum<BT> + VecZnxBigNormalize<BT> + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k: usize = params.base2k;
     let n: usize = params.n;
@@ -1342,8 +1306,6 @@ pub fn test_vec_znx_big_col_weighted_sum<BR: crate::test_suite::TestBackend, BT:
         + VecZnxBigColWeightedSum<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k: usize = params.base2k;
     let n: usize = params.n;
@@ -1436,8 +1398,6 @@ pub fn test_vec_znx_scalar_product<BR: crate::test_suite::TestBackend, BT: crate
         + VecZnxScalarProduct<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k: usize = params.base2k;
     let n: usize = params.n;

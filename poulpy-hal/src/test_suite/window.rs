@@ -6,11 +6,11 @@ use crate::test_suite::poisoned_arena;
 use crate::{
     AlignedBuf,
     api::{
-        CnvPVecAlloc, Convolution, ScratchOwnedAlloc, VecZnxAdd, VecZnxAutomorphism, VecZnxBigAdd, VecZnxBigFromSmall,
-        VecZnxBigNegate, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxCopy, VecZnxDftAlloc,
-        VecZnxDftApply, VecZnxFillUniformSourceAll, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes,
-        VecZnxNegate, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRsh, VecZnxRshAdd,
-        VecZnxRshAssign, VecZnxRshSub, VecZnxRshTmpBytes, VecZnxSub, VecZnxZero,
+        CnvPVecAlloc, Convolution, VecZnxAdd, VecZnxAutomorphism, VecZnxBigAdd, VecZnxBigFromSmall, VecZnxBigNegate,
+        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxCopy, VecZnxDftAlloc, VecZnxDftApply,
+        VecZnxFillUniformSourceAll, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxNegate,
+        VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign,
+        VecZnxRshSub, VecZnxRshTmpBytes, VecZnxSub, VecZnxZero,
     },
     layouts::{
         Backend, CnvPVecLToBackendMut, DataView, HostDataRef, Module, PrepareHint, ScratchOwned, VecZnx, VecZnxBig,
@@ -443,7 +443,6 @@ where
         + VecZnxRshAssign<BE>
         + VecZnxLshTmpBytes
         + VecZnxRshTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let n = params.size;
     let base2k = params.base2k;
@@ -554,7 +553,6 @@ where
 pub fn test_vec_znx_big_window_normalize<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: VecZnxBigFromSmall<BE> + VecZnxBigNormalize<BE> + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let n = params.size;
     let base2k = params.base2k;

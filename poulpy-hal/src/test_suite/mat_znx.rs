@@ -3,9 +3,8 @@ use crate::test_suite::poisoned_arena;
 use crate::{
     AlignedBuf,
     api::{
-        MatZnxAddAssign, MatZnxAlloc, MatZnxCopy, MatZnxNormalize, MatZnxNormalizeAssign, MatZnxNormalizeTmpBytes,
-        ScratchOwnedAlloc, VecZnxCopy, VecZnxFillUniformSource, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
-        VecZnxZero,
+        MatZnxAddAssign, MatZnxAlloc, MatZnxCopy, MatZnxNormalize, MatZnxNormalizeAssign, MatZnxNormalizeTmpBytes, VecZnxCopy,
+        VecZnxFillUniformSource, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxZero,
     },
     layouts::{MatZnx, MatZnxAtBackendMut, MatZnxAtBackendRef, MatZnxToBackendMut, MatZnxToBackendRef, Module, ScratchOwned},
     oep::{mat_znx_add_assign_derived, mat_znx_copy_derived, mat_znx_normalize_assign_derived, mat_znx_normalize_derived},
@@ -242,8 +241,6 @@ pub fn test_mat_znx_normalize<BR: TestBackend, BT: TestBackend>(
         + MatZnxAlloc<BR>
         + VecZnxFillUniformSource<BR>,
     Module<BT>: MatZnxNormalize<BT> + MatZnxNormalizeAssign<BT> + MatZnxNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([1u8; 32]);

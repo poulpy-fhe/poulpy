@@ -7,7 +7,7 @@ use crate::layouts::VecZnxDftToBackendRef;
 use crate::test_suite::poisoned_arena;
 use crate::{
     api::{
-        ScratchOwnedAlloc, VecZnxAutomorphism, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize,
+        VecZnxAutomorphism, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxDftAdd, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism,
         VecZnxDftAutomorphismAddWithPlanTmpBytes, VecZnxDftAutomorphismPlan, VecZnxDftCopy, VecZnxDftSub, VecZnxDftSubAssign,
         VecZnxDftSubNegateAssign, VecZnxDftZero, VecZnxFillUniformSourceAll, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
@@ -36,7 +36,6 @@ where
         + VecZnxDftZero<BE>
         + VecZnxDftAutomorphism<BE>
         + VecZnxDftAutomorphismAddWithPlanTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     use crate::layouts::VecZnxShape;
     use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -140,7 +139,6 @@ pub fn test_vec_znx_dft_transforms_reject_invalid_operands<BE: crate::test_suite
     module: &Module<BE>,
 ) where
     Module<BE>: VecZnxDftApply<BE> + VecZnxIdftApply<BE> + VecZnxIdftApplyTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     use crate::layouts::VecZnxShape;
     use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -218,7 +216,6 @@ pub(crate) fn idft_into_alloc<BE>(module: &Module<BE>, a: &VecZnxDftOwned<BE>) -
 where
     BE: crate::test_suite::TestBackend,
     Module<BE>: VecZnxBigAlloc<BE> + VecZnxIdftApply<BE> + VecZnxIdftApplyTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let mut res = module.vec_znx_big_alloc(a.n(), a.cols(), a.size());
     let mut scratch = poisoned_arena(module.vec_znx_idft_apply_tmp_bytes());
@@ -261,7 +258,6 @@ fn normalize_big_to_host<BE>(
 where
     BE: crate::test_suite::TestBackend,
     Module<BE>: VecZnxBigNormalize<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let mut backend = module.vec_znx_alloc(big.n(), big.cols(), big.size());
     for j in 0..big.cols() {
@@ -289,7 +285,6 @@ fn idft_to_host<BE>(
 where
     BE: crate::test_suite::TestBackend,
     Module<BE>: VecZnxBigAlloc<BE> + VecZnxIdftApply<BE> + VecZnxIdftApplyTmpBytes + VecZnxBigNormalize<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let big = idft_into_alloc(module, dft);
     normalize_big_to_host(module, base2k, &big, scratch)
@@ -305,7 +300,6 @@ pub(crate) fn idft_apply_to_host<BE>(
 where
     BE: crate::test_suite::TestBackend,
     Module<BE>: VecZnxBigAlloc<BE> + VecZnxIdftApply<BE> + VecZnxIdftApplyTmpBytes + VecZnxBigNormalize<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let mut big = module.vec_znx_big_alloc(dft.n(), dft.cols(), res_size);
     let mut scratch_idft = poisoned_arena(module.vec_znx_idft_apply_tmp_bytes());
@@ -342,8 +336,6 @@ pub fn test_vec_znx_dft_add<BR: crate::test_suite::TestBackend, BT: crate::test_
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -418,8 +410,6 @@ pub fn test_vec_znx_dft_add_assign<BR: crate::test_suite::TestBackend, BT: crate
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -517,8 +507,6 @@ pub fn test_vec_znx_dft_copy<BR: crate::test_suite::TestBackend, BT: crate::test
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -664,8 +652,6 @@ pub fn test_vec_znx_idft_apply<BR: crate::test_suite::TestBackend, BT: crate::te
         + VecZnxBigNormalizeTmpBytes
         + VecZnxIdftApply<BT>
         + VecZnxIdftApplyTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     assert_eq!(module_ref.n(), module_test.n());
     let cols = 2;
@@ -735,8 +721,6 @@ pub fn test_vec_znx_dft_sub<BR: crate::test_suite::TestBackend, BT: crate::test_
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -811,8 +795,6 @@ pub fn test_vec_znx_dft_sub_assign<BR: crate::test_suite::TestBackend, BT: crate
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -868,8 +850,6 @@ pub fn test_vec_znx_dft_sub_negate_assign<BR: crate::test_suite::TestBackend, BT
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -925,7 +905,6 @@ fn contract_check_one_backend<BE>(
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxAutomorphism<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let mut source = Source::new([0u8; 32]);
 
@@ -993,8 +972,6 @@ pub fn test_vec_znx_dft_automorphism<BR: crate::test_suite::TestBackend, BT: cra
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxAutomorphism<BT>,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -1032,7 +1009,6 @@ fn automorphism_add_check_one_backend<BE>(
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let mut source = Source::new([1u8; 32]);
 
@@ -1110,8 +1086,6 @@ pub fn test_vec_znx_dft_automorphism_add<BR: crate::test_suite::TestBackend, BT:
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -1141,7 +1115,6 @@ where
         + VecZnxBigAlloc<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let mut source = Source::new([2u8; 32]);
 
@@ -1246,8 +1219,6 @@ pub fn test_vec_znx_idft_normalize<BR: crate::test_suite::TestBackend, BT: crate
         + VecZnxBigAlloc<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -1279,8 +1250,6 @@ pub fn test_vec_znx_dft_apply<BR: crate::test_suite::TestBackend, BT: crate::tes
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k: usize = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -1357,8 +1326,6 @@ pub fn test_vec_znx_dft_zero<BR: crate::test_suite::TestBackend, BT: crate::test
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k: usize = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
