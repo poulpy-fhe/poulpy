@@ -13,11 +13,6 @@ pub unsafe trait GLWEBlindRotationImpl: Backend<Ring = Standard> {
         R: GLWEInfos,
         A: GLWEInfos,
         K: GGSWInfos;
-    /// Scratch required for the in-place rotation.
-    fn glwe_blind_rotation_assign_tmp_bytes<R, K>(module: &Module<Self>, res_infos: &R, k_infos: &K) -> usize
-    where
-        R: GLWEInfos,
-        K: GGSWInfos;
     #[allow(clippy::too_many_arguments)]
     fn glwe_blind_rotation_assign<R, K>(
         module: &Module<Self>,

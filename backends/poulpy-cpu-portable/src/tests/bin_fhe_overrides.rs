@@ -389,11 +389,9 @@ const _: () = {
         cmux_assign_neg_reference(module, res, input, &selector, scratch);
 
         module.glwe_blind_rotation_tmp_bytes(res, input, &selector);
-        module.glwe_blind_rotation_assign_tmp_bytes(res, &selector);
         module.glwe_blind_rotation(res, input, value, true, 0, 1, 0, scratch);
         module.glwe_blind_rotation_assign(res, value, true, 0, 1, 0, scratch);
         glwe_blind_rotation_tmp_bytes_reference(module, res, input, &selector);
-        glwe_blind_rotation_assign_tmp_bytes_reference(module, res, &selector);
         glwe_blind_rotation_reference(module, res, input, value, true, 0, 1, 0, scratch);
         glwe_blind_rotation_assign_reference(module, res, value, true, 0, 1, 0, scratch);
 

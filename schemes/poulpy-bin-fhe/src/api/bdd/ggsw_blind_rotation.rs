@@ -20,11 +20,6 @@ pub trait GGSWBlindRotation<T: UnsignedInteger, BE: Backend> {
         R: GLWEInfos,
         A: GLWEInfos,
         K: GGSWInfos;
-    /// Scratch required for rotating each GGSW row in place.
-    fn ggsw_blind_rotation_assign_tmp_bytes<R, K>(&self, res_infos: &R, k_infos: &K) -> usize
-    where
-        R: GLWEInfos,
-        K: GGSWInfos;
     #[allow(clippy::too_many_arguments)]
     /// res <- res * X^{((k>>bit_rsh) % 2^bit_mask) << bit_lsh}.
     /// res <- a * X^{((k>>bit_rsh) % 2^bit_mask) << bit_lsh}.
