@@ -3,7 +3,7 @@
 //! Run the example with the following command.
 //!
 //! ```text
-//! cargo run --release --features ref --example exp_walkthrough
+//! cargo run --release --features portable --example exp_walkthrough
 //! ```
 
 mod common;
@@ -51,13 +51,9 @@ fn run() -> Result<()> {
     // 4. Evaluate exp without decrypting the input.
     // The result is written to a separate ciphertext.
     let mut output = context.output();
-    context.module.ckks_exp(
-        &mut output,
-        &encrypted,
-        &plan,
-        &context.tsk,
-        &mut context.scratch.borrow(),
-    )?;
+    context
+        .module
+        .ckks_exp(&mut output, &encrypted, &plan, &context.tsk, &mut context.scratch.borrow())?;
     assert_eq!(input_budget - output.log_budget(), consumed);
 
     // 5. Decrypt the result after the encrypted computation is complete.

@@ -5,21 +5,22 @@ use poulpy_core::layouts::{
     prepared::{GLWESecretPrepared, GLWETensorKeyPreparedToBackendRef},
 };
 use poulpy_hal::{
+    AlignedBuf,
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, ScratchOwned},
+    layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
     source::Source,
 };
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
-    test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, ckks_decrypt_decode,
-            ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, gen_tsk, upload_pt,
+            TestContextBackend, TestContextModule, TestScalar, ckks_decrypt_decode, ckks_encrypt_with_prec, ckks_spec,
+            gen_sk_with_raw, gen_tsk, upload_pt,
         },
+        reference_encoder::ReferenceEncoder,
     },
 };
 
@@ -27,35 +28,24 @@ use crate::trig::{CKKSTrigOps, CosPlan, SinPlan, TanPlan, TrigOptions};
 
 use super::helpers::{assert_error, assert_error_starts_with, assert_precision_bits, params_for};
 
-pub fn test_trig_family<BE, F, E>(
-    base: CKKSTestParams,
-    module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-) where
-    BE: TestContextBackend,
+pub fn test_trig_family<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSTrigOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord>:
-        GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
-    CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
+    CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let log_delta = base.prec_meta.log_delta;
+    let log_delta = base.prec().log_delta();
     let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);
     let options = TrigOptions::default();
     let pi = F::PI();
     assert_error(
-        SinPlan::from_precision(
-            F::one(),
-            -F::one(),
-            base.base2k.into(),
-            coeff_meta,
-            options,
-            host_module,
-        ),
+        SinPlan::from_precision(F::one(), -F::one(), base.base2k.into(), coeff_meta, options, host_module),
         "sin: empty interval [a, b]",
     );
     assert_error_starts_with(
@@ -73,34 +63,13 @@ pub fn test_trig_family<BE, F, E>(
         ),
         "sin: degree_for_precision: 80.0 bits not reached by degree 1",
     );
-    let host_sin = SinPlan::from_precision(
-        -pi,
-        pi,
-        base.base2k.into(),
-        coeff_meta,
-        options,
-        host_module,
-    )
-    .expect("SinPlan::from_precision");
-    let host_cos = CosPlan::from_precision(
-        -pi,
-        pi,
-        base.base2k.into(),
-        coeff_meta,
-        options,
-        host_module,
-    )
-    .expect("CosPlan::from_precision");
+    let host_sin =
+        SinPlan::from_precision(-pi, pi, base.base2k.into(), coeff_meta, options, host_module).expect("SinPlan::from_precision");
+    let host_cos =
+        CosPlan::from_precision(-pi, pi, base.base2k.into(), coeff_meta, options, host_module).expect("CosPlan::from_precision");
     let tan_bound = F::from_f64(0.75).unwrap();
-    let host_tan = TanPlan::from_precision(
-        -tan_bound,
-        tan_bound,
-        base.base2k.into(),
-        coeff_meta,
-        options,
-        host_module,
-    )
-    .expect("TanPlan::from_precision");
+    let host_tan = TanPlan::from_precision(-tan_bound, tan_bound, base.base2k.into(), coeff_meta, options, host_module)
+        .expect("TanPlan::from_precision");
     let max_consumed = host_sin
         .consumed_bits(log_delta)
         .max(host_cos.consumed_bits(log_delta))
@@ -145,15 +114,7 @@ pub fn test_trig_family<BE, F, E>(
     let mut sin_res = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     let mut cos_res = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     module
-        .ckks_sincos(
-            &mut sin_res,
-            &mut cos_res,
-            &input,
-            &sin,
-            &cos,
-            &tsk,
-            &mut scratch.borrow(),
-        )
+        .ckks_sincos(&mut sin_res, &mut cos_res, &input, &sin, &cos, &tsk, &mut scratch.borrow())
         .expect("ckks_sincos");
     check(
         "sin",
@@ -257,21 +218,20 @@ fn check<BE, F, E>(
     params: &CKKSTestParams,
     module: &Module<BE>,
     encoder: &ReferenceEncoder<E>,
-    res: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+    res: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
     sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     want: &[F],
     want_budget: usize,
     target_bits: f64,
     scratch: &mut ScratchOwned<BE>,
 ) where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>: GLWEToBackendRef<BE> + CKKSCtBounds,
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + CKKSCtBounds,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     assert_eq!(res.log_budget(), want_budget);
-    let (re_out, _) =
-        ckks_decrypt_decode::<BE, F, E>(params, module, encoder, res, sk, &mut scratch.borrow());
+    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(params, module, encoder, res, sk, &mut scratch.borrow());
     assert_precision_bits(label, &re_out, want, target_bits, params.n);
 }

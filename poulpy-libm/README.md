@@ -37,10 +37,10 @@ The runnable walkthroughs explain plan creation, encryption, evaluation, decrypt
 The inference and signal examples show how several operations compose into application-level circuits.
 
 ```sh
-cargo run --release --features ref --example exp_walkthrough
-cargo run --release --features ref --example trig_walkthrough
-cargo run --release --features ref --example inference_walkthrough
-cargo run --release --features ref --example signal_walkthrough
+cargo run --release --features portable --example exp_walkthrough
+cargo run --release --features portable --example trig_walkthrough
+cargo run --release --features portable --example inference_walkthrough
+cargo run --release --features portable --example signal_walkthrough
 ```
 
 ## Test
@@ -57,7 +57,7 @@ The same `exp`, `log`, and `pow` workloads are available for every backend.
 Run the target matching the benchmark host.
 
 ```sh
-RUSTFLAGS='-C target-cpu=native' cargo bench --features ref --bench functions_ref
+RUSTFLAGS='-C target-cpu=native' cargo bench --features portable --bench functions_ref
 RUSTFLAGS='-C target-cpu=native' cargo bench --features avx --bench functions_avx
 RUSTFLAGS='-C target-cpu=native' cargo bench --features avx512 --bench functions_avx512
 RUSTFLAGS='-C target-cpu=native' cargo bench --features ifma --bench functions_ifma

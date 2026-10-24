@@ -1,17 +1,19 @@
 [package]
 name = "poulpy-libm"
-version = "0.1.0"
+version = "0.9.0"
 edition = "2024"
 license = "Apache-2.0"
-description = "Poulpy libm: CKKS math functions built on Poulpy"
-repository = "https://github.com/poulpy-fhe/poulpy-libm"
 readme = "README.md"
+description = "CKKS math functions (libm-style) built on poulpy-ckks"
+repository = "https://github.com/poulpy-fhe/poulpy"
+homepage = "https://github.com/poulpy-fhe/poulpy"
+documentation = "https://docs.rs/poulpy-libm"
 autobenches = false
 
 [features]
 default = []
 test-utils = ["poulpy-ckks/test-utils"]
-ref = ["dep:poulpy-cpu-ref", "poulpy-cpu-ref/enable-ckks"]
+portable = ["dep:poulpy-cpu-portable", "poulpy-cpu-portable/enable-ckks"]
 avx = [
     "dep:poulpy-cpu-avx",
     "poulpy-cpu-avx/enable-avx",
@@ -26,27 +28,27 @@ ifma = [
     "avx512",
     "poulpy-cpu-avx512/enable-ifma",
 ]
-all-backends = ["ref", "avx", "avx512", "ifma"]
+all-backends = ["portable", "avx", "avx512", "ifma"]
 
 [dependencies]
-anyhow = "1"
-libm = "0.2"
-num-traits = "0.2"
-poulpy-ckks = "=0.8.0"
-poulpy-core = "=0.8.0"
-poulpy-hal = "=0.8.0"
-poulpy-cpu-ref = { version = "=0.8.0", optional = true }
-poulpy-cpu-avx = { version = "=0.8.0", optional = true }
-poulpy-cpu-avx512 = { version = "=0.8.0", optional = true }
+poulpy-hal = {workspace = true}
+poulpy-core = {workspace = true}
+poulpy-ckks = {workspace = true}
+anyhow = {workspace = true}
+libm = {workspace = true}
+num-traits = {workspace = true}
+poulpy-cpu-portable = {workspace = true, optional = true}
+poulpy-cpu-avx = {workspace = true, optional = true}
+poulpy-cpu-avx512 = {workspace = true, optional = true}
 
 [dev-dependencies]
-criterion = "0.8"
-poulpy-ckks = { version = "=0.8.0", features = ["test-utils"] }
+criterion = {workspace = true}
+poulpy-ckks = {workspace = true, features = ["test-utils"]}
 
 [[bench]]
 name = "functions_ref"
 harness = false
-required-features = ["ref"]
+required-features = ["portable"]
 
 [[bench]]
 name = "functions_avx"
@@ -65,19 +67,19 @@ required-features = ["ifma"]
 
 [[example]]
 name = "exp_walkthrough"
-required-features = ["ref"]
+required-features = ["portable"]
 
 [[example]]
 name = "trig_walkthrough"
-required-features = ["ref"]
+required-features = ["portable"]
 
 [[example]]
 name = "inference_walkthrough"
-required-features = ["ref"]
+required-features = ["portable"]
 
 [[example]]
 name = "signal_walkthrough"
-required-features = ["ref"]
+required-features = ["portable"]
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

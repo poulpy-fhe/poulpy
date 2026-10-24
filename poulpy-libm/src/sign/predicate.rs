@@ -5,17 +5,18 @@
 
 use anyhow::Result;
 use poulpy_core::layouts::{
-    BSGSMeta, GGLWEInfos, GGLWEPreparedToBackendRef, GLWE, GLWETensorKeyPrepared, GLWEToBackendMut,
-    GLWEToBackendRef, GetGaloisElement, LWEInfos, SetBSGSMeta,
-    prepared::{GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
+    BSGSMeta, GGLWEInfos, GLWE, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
+    SetBSGSMeta, prepared::GLWETensorKeyPreparedToBackendRef,
 };
-use poulpy_hal::layouts::{Backend, HostStaged, Module, ScratchArena};
+use poulpy_hal::{
+    AlignedBuf,
+    layouts::{Backend, HostStaged, Module, ScratchArena},
+};
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::{
-        CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSMulOps, CKKSNegOps,
-        CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
+        CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSMulOps, CKKSNegOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
     },
     layouts::{CKKSCiphertext, CKKSModuleAlloc, ScratchArenaTakeCKKS},
 };
@@ -25,13 +26,7 @@ use super::{CKKSSignOps, SignComposite, ckks_sign_into, ckks_step_into};
 /// Sign-based predicates and select.
 pub trait CKKSPredicateOps<BE: Backend> {
     /// Scratch bytes for the sign-based predicates.
-    fn ckks_predicate_tmp_bytes<R, T, A, P>(
-        &self,
-        res: &R,
-        tsk: &T,
-        conj_key: &A,
-        coeff_prec: &P,
-    ) -> usize
+    fn ckks_predicate_tmp_bytes<R, T, A, P>(&self, res: &R, tsk: &T, conj_key: &A, coeff_prec: &P) -> usize
     where
         R: CKKSCtBounds,
         T: GGLWEInfos,
@@ -41,8 +36,8 @@ pub trait CKKSPredicateOps<BE: Backend> {
     /// `res ← |x|` via `x·sign(x)`.
     fn ckks_fabs<F, P, K>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        x: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        x: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         composite: &SignComposite<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         conj_key: &K,
@@ -50,18 +45,15 @@ pub trait CKKSPredicateOps<BE: Backend> {
     ) -> Result<()>
     where
         P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-            + GGLWEPreparedToBackendRef<BE>
-            + GetGaloisElement
-            + GGLWEInfos;
+        K: GetAutomorphismKey<BE>;
 
     /// `res ← sign(a − b)` (`+1`/`−1`/`0` for `a >`/`<`/`= b`).
     #[allow(clippy::too_many_arguments)]
     fn ckks_cmp<F, P, K>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         composite: &SignComposite<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         conj_key: &K,
@@ -70,18 +62,15 @@ pub trait CKKSPredicateOps<BE: Backend> {
     where
         BE: HostStaged,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-            + GGLWEPreparedToBackendRef<BE>
-            + GetGaloisElement
-            + GGLWEInfos;
+        K: GetAutomorphismKey<BE>;
 
     /// `res ← [a > b]` (`= step(a − b)`, `1`/`0`/`½`). `ge` is identical.
     #[allow(clippy::too_many_arguments)]
     fn ckks_gt<F, P, K>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         composite: &SignComposite<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         conj_key: &K,
@@ -90,18 +79,15 @@ pub trait CKKSPredicateOps<BE: Backend> {
     where
         BE: HostStaged,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-            + GGLWEPreparedToBackendRef<BE>
-            + GetGaloisElement
-            + GGLWEInfos;
+        K: GetAutomorphismKey<BE>;
 
     /// Alias of [`Self::ckks_gt`].
     #[allow(clippy::too_many_arguments)]
     fn ckks_ge<F, P, K>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         composite: &SignComposite<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         conj_key: &K,
@@ -110,18 +96,15 @@ pub trait CKKSPredicateOps<BE: Backend> {
     where
         BE: HostStaged,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-            + GGLWEPreparedToBackendRef<BE>
-            + GetGaloisElement
-            + GGLWEInfos;
+        K: GetAutomorphismKey<BE>;
 
     /// `res ← [a < b]` (`= step(b − a)`). `le` is identical.
     #[allow(clippy::too_many_arguments)]
     fn ckks_lt<F, P, K>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         composite: &SignComposite<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         conj_key: &K,
@@ -130,18 +113,15 @@ pub trait CKKSPredicateOps<BE: Backend> {
     where
         BE: HostStaged,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-            + GGLWEPreparedToBackendRef<BE>
-            + GetGaloisElement
-            + GGLWEInfos;
+        K: GetAutomorphismKey<BE>;
 
     /// Alias of [`Self::ckks_lt`].
     #[allow(clippy::too_many_arguments)]
     fn ckks_le<F, P, K>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         composite: &SignComposite<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         conj_key: &K,
@@ -150,17 +130,14 @@ pub trait CKKSPredicateOps<BE: Backend> {
     where
         BE: HostStaged,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-            + GGLWEPreparedToBackendRef<BE>
-            + GetGaloisElement
-            + GGLWEInfos;
+        K: GetAutomorphismKey<BE>;
 
     /// Smooth membership in `[bounds[lo_coeff], bounds[hi_coeff]]`.
     #[allow(clippy::too_many_arguments)]
     fn ckks_indicator<F, P, B, K>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        x: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        x: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         bounds: &B,
         lo_coeff: usize,
         hi_coeff: usize,
@@ -173,18 +150,15 @@ pub trait CKKSPredicateOps<BE: Backend> {
         BE: HostStaged,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
         B: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-            + GGLWEPreparedToBackendRef<BE>
-            + GetGaloisElement
-            + GGLWEInfos;
+        K: GetAutomorphismKey<BE>;
 
     /// Smooth equality mask for `|a - b| <= epsilon[epsilon_coeff]`.
     #[allow(clippy::too_many_arguments)]
     fn ckks_eq<F, P, E, K>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         epsilon: &E,
         epsilon_coeff: usize,
         composite: &SignComposite<F, P>,
@@ -196,18 +170,15 @@ pub trait CKKSPredicateOps<BE: Backend> {
         BE: HostStaged,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
         E: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-            + GGLWEPreparedToBackendRef<BE>
-            + GetGaloisElement
-            + GGLWEInfos;
+        K: GetAutomorphismKey<BE>;
 
     /// `res ← max(a - b, 0)`; `a - b` must satisfy the sign plan's domain.
     #[allow(clippy::too_many_arguments)]
     fn ckks_fdim<F, P, K>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         composite: &SignComposite<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         conj_key: &K,
@@ -216,18 +187,15 @@ pub trait CKKSPredicateOps<BE: Backend> {
     where
         BE: HostStaged,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-            + GGLWEPreparedToBackendRef<BE>
-            + GetGaloisElement
-            + GGLWEInfos;
+        K: GetAutomorphismKey<BE>;
 
     /// `res ← |x| * sign(y)`; `x` and `y` must satisfy the sign plan's domain.
     #[allow(clippy::too_many_arguments)]
     fn ckks_copysign<F, P, K>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        x: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        y: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        x: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        y: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         composite: &SignComposite<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         conj_key: &K,
@@ -235,18 +203,15 @@ pub trait CKKSPredicateOps<BE: Backend> {
     ) -> Result<()>
     where
         P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-            + GGLWEPreparedToBackendRef<BE>
-            + GetGaloisElement
-            + GGLWEInfos;
+        K: GetAutomorphismKey<BE>;
 
     /// `res ← mask·a + (1 − mask)·b` for a smooth binary mask.
     fn ckks_select(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        mask: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        mask: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>;
@@ -264,31 +229,25 @@ where
         + CKKSPow2Ops<BE>
         + CKKSModuleAlloc<BE>
         + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
 {
-    fn ckks_predicate_tmp_bytes<R, T, A, P>(
-        &self,
-        res: &R,
-        tsk: &T,
-        conj_key: &A,
-        coeff_prec: &P,
-    ) -> usize
+    fn ckks_predicate_tmp_bytes<R, T, A, P>(&self, res: &R, tsk: &T, conj_key: &A, coeff_prec: &P) -> usize
     where
         R: CKKSCtBounds,
         T: GGLWEInfos,
         A: GGLWEInfos,
         P: CKKSInfos + LWEInfos,
     {
-        let ct_bytes = GLWE::<Vec<u8>, BE::ZnxWord>::bytes_of_from_infos(res);
+        let ct_bytes = GLWE::<AlignedBuf, BE::ZnxWord>::bytes_of_from_infos(res);
         2 * ct_bytes + self.ckks_sign_tmp_bytes(res, tsk, conj_key, coeff_prec)
     }
 
     fn ckks_fabs<F, P, K>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        x: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        x: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         composite: &SignComposite<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         conj_key: &K,
@@ -296,22 +255,11 @@ where
     ) -> Result<()>
     where
         P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-            + GGLWEPreparedToBackendRef<BE>
-            + GetGaloisElement
-            + GGLWEInfos,
+        K: GetAutomorphismKey<BE>,
     {
         scratch.scope(|scratch_local| {
             let (mut sgn, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(x);
-            ckks_sign_into(
-                self,
-                &mut sgn,
-                x,
-                composite,
-                tsk,
-                conj_key,
-                &mut scratch_local,
-            )?;
+            ckks_sign_into(self, &mut sgn, x, composite, tsk, conj_key, &mut scratch_local)?;
             self.ckks_mul_into(res, x, &sgn, tsk, &mut scratch_local)
         })?;
         Ok(())
@@ -319,9 +267,9 @@ where
 
     fn ckks_cmp<F, P, K>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         composite: &SignComposite<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         conj_key: &K,
@@ -330,31 +278,20 @@ where
     where
         BE: HostStaged,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-            + GGLWEPreparedToBackendRef<BE>
-            + GetGaloisElement
-            + GGLWEInfos,
+        K: GetAutomorphismKey<BE>,
     {
         scratch.scope(|scratch_local| {
             let (mut diff, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(a);
             self.ckks_sub_into(&mut diff, a, b, &mut scratch_local)?;
-            ckks_sign_into(
-                self,
-                res,
-                &diff,
-                composite,
-                tsk,
-                conj_key,
-                &mut scratch_local,
-            )
+            ckks_sign_into(self, res, &diff, composite, tsk, conj_key, &mut scratch_local)
         })
     }
 
     fn ckks_gt<F, P, K>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         composite: &SignComposite<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         conj_key: &K,
@@ -363,19 +300,16 @@ where
     where
         BE: HostStaged,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-            + GGLWEPreparedToBackendRef<BE>
-            + GetGaloisElement
-            + GGLWEInfos,
+        K: GetAutomorphismKey<BE>,
     {
         step_of_diff(self, res, a, b, composite, tsk, conj_key, scratch)
     }
 
     fn ckks_ge<F, P, K>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         composite: &SignComposite<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         conj_key: &K,
@@ -384,19 +318,16 @@ where
     where
         BE: HostStaged,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-            + GGLWEPreparedToBackendRef<BE>
-            + GetGaloisElement
-            + GGLWEInfos,
+        K: GetAutomorphismKey<BE>,
     {
         self.ckks_gt(res, a, b, composite, tsk, conj_key, scratch)
     }
 
     fn ckks_lt<F, P, K>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         composite: &SignComposite<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         conj_key: &K,
@@ -405,10 +336,7 @@ where
     where
         BE: HostStaged,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-            + GGLWEPreparedToBackendRef<BE>
-            + GetGaloisElement
-            + GGLWEInfos,
+        K: GetAutomorphismKey<BE>,
     {
         // a < b  ⇔  b > a.
         step_of_diff(self, res, b, a, composite, tsk, conj_key, scratch)
@@ -416,9 +344,9 @@ where
 
     fn ckks_le<F, P, K>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         composite: &SignComposite<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         conj_key: &K,
@@ -427,18 +355,15 @@ where
     where
         BE: HostStaged,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-            + GGLWEPreparedToBackendRef<BE>
-            + GetGaloisElement
-            + GGLWEInfos,
+        K: GetAutomorphismKey<BE>,
     {
         self.ckks_lt(res, a, b, composite, tsk, conj_key, scratch)
     }
 
     fn ckks_indicator<F, P, B, K>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        x: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        x: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         bounds: &B,
         lo_coeff: usize,
         hi_coeff: usize,
@@ -451,23 +376,12 @@ where
         BE: HostStaged,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
         B: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-            + GGLWEPreparedToBackendRef<BE>
-            + GetGaloisElement
-            + GGLWEInfos,
+        K: GetAutomorphismKey<BE>,
     {
         scratch.scope(|scratch_local| {
             let (mut diff, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(x);
             self.ckks_sub_pt_const_into(&mut diff, x, 0, bounds, lo_coeff, &mut scratch_local)?;
-            ckks_step_into(
-                self,
-                res,
-                &diff,
-                composite,
-                tsk,
-                conj_key,
-                &mut scratch_local,
-            )
+            ckks_step_into(self, res, &diff, composite, tsk, conj_key, &mut scratch_local)
         })?;
 
         scratch.scope(|scratch_local| {
@@ -475,15 +389,7 @@ where
             let (mut gate, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(x);
             self.ckks_sub_pt_const_into(&mut diff, x, 0, bounds, hi_coeff, &mut scratch_local)?;
             self.ckks_neg_assign(&mut diff)?;
-            ckks_step_into(
-                self,
-                &mut gate,
-                &diff,
-                composite,
-                tsk,
-                conj_key,
-                &mut scratch_local,
-            )?;
+            ckks_step_into(self, &mut gate, &diff, composite, tsk, conj_key, &mut scratch_local)?;
             self.ckks_mul_assign(res, &gate, tsk, &mut scratch_local)
         })?;
         Ok(())
@@ -491,9 +397,9 @@ where
 
     fn ckks_eq<F, P, E, K>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         epsilon: &E,
         epsilon_coeff: usize,
         composite: &SignComposite<F, P>,
@@ -505,52 +411,21 @@ where
         BE: HostStaged,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
         E: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-            + GGLWEPreparedToBackendRef<BE>
-            + GetGaloisElement
-            + GGLWEInfos,
+        K: GetAutomorphismKey<BE>,
     {
         scratch.scope(|scratch_local| {
             let (mut diff, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(a);
             self.ckks_sub_into(&mut diff, a, b, &mut scratch_local)?;
-            self.ckks_add_pt_const_assign(
-                &mut diff,
-                0,
-                epsilon,
-                epsilon_coeff,
-                &mut scratch_local,
-            )?;
-            ckks_step_into(
-                self,
-                res,
-                &diff,
-                composite,
-                tsk,
-                conj_key,
-                &mut scratch_local,
-            )
+            self.ckks_add_pt_const_assign(&mut diff, 0, epsilon, epsilon_coeff, &mut scratch_local)?;
+            ckks_step_into(self, res, &diff, composite, tsk, conj_key, &mut scratch_local)
         })?;
 
         scratch.scope(|scratch_local| {
             let (mut diff, scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(a);
             let (mut gate, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(a);
             self.ckks_sub_into(&mut diff, b, a, &mut scratch_local)?;
-            self.ckks_add_pt_const_assign(
-                &mut diff,
-                0,
-                epsilon,
-                epsilon_coeff,
-                &mut scratch_local,
-            )?;
-            ckks_step_into(
-                self,
-                &mut gate,
-                &diff,
-                composite,
-                tsk,
-                conj_key,
-                &mut scratch_local,
-            )?;
+            self.ckks_add_pt_const_assign(&mut diff, 0, epsilon, epsilon_coeff, &mut scratch_local)?;
+            ckks_step_into(self, &mut gate, &diff, composite, tsk, conj_key, &mut scratch_local)?;
             self.ckks_mul_assign(res, &gate, tsk, &mut scratch_local)
         })?;
         Ok(())
@@ -558,9 +433,9 @@ where
 
     fn ckks_fdim<F, P, K>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         composite: &SignComposite<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         conj_key: &K,
@@ -569,24 +444,13 @@ where
     where
         BE: HostStaged,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-            + GGLWEPreparedToBackendRef<BE>
-            + GetGaloisElement
-            + GGLWEInfos,
+        K: GetAutomorphismKey<BE>,
     {
         scratch.scope(|scratch_local| {
             let (mut diff, scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(a);
             let (mut sign, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(a);
             self.ckks_sub_into(&mut diff, a, b, &mut scratch_local)?;
-            ckks_sign_into(
-                self,
-                &mut sign,
-                &diff,
-                composite,
-                tsk,
-                conj_key,
-                &mut scratch_local,
-            )?;
+            ckks_sign_into(self, &mut sign, &diff, composite, tsk, conj_key, &mut scratch_local)?;
             self.ckks_mul_into(res, &diff, &sign, tsk, &mut scratch_local)?;
             self.ckks_add_assign(res, &diff, &mut scratch_local)?;
             self.ckks_div_pow2_assign(res, 1)
@@ -596,9 +460,9 @@ where
 
     fn ckks_copysign<F, P, K>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        x: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        y: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        x: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        y: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         composite: &SignComposite<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         conj_key: &K,
@@ -606,35 +470,16 @@ where
     ) -> Result<()>
     where
         P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-            + GGLWEPreparedToBackendRef<BE>
-            + GetGaloisElement
-            + GGLWEInfos,
+        K: GetAutomorphismKey<BE>,
     {
         scratch.scope(|scratch_local| {
             let (mut sign, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(x);
-            ckks_sign_into(
-                self,
-                &mut sign,
-                x,
-                composite,
-                tsk,
-                conj_key,
-                &mut scratch_local,
-            )?;
+            ckks_sign_into(self, &mut sign, x, composite, tsk, conj_key, &mut scratch_local)?;
             self.ckks_mul_into(res, x, &sign, tsk, &mut scratch_local)
         })?;
         scratch.scope(|scratch_local| {
             let (mut sign, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(y);
-            ckks_sign_into(
-                self,
-                &mut sign,
-                y,
-                composite,
-                tsk,
-                conj_key,
-                &mut scratch_local,
-            )?;
+            ckks_sign_into(self, &mut sign, y, composite, tsk, conj_key, &mut scratch_local)?;
             self.ckks_mul_assign(res, &sign, tsk, &mut scratch_local)
         })?;
         Ok(())
@@ -642,10 +487,10 @@ where
 
     fn ckks_select(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        mask: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        mask: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()> {
@@ -663,9 +508,9 @@ where
 #[allow(clippy::too_many_arguments)]
 fn step_of_diff<BE, F, P, K>(
     module: &Module<BE>,
-    res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-    a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-    b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+    res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+    a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+    b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
     composite: &SignComposite<F, P>,
     tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
     conj_key: &K,
@@ -680,26 +525,15 @@ where
         + CKKSConjugateOps<BE>
         + CKKSPow2Ops<BE>
         + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
-    K: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-        + GGLWEPreparedToBackendRef<BE>
-        + GetGaloisElement
-        + GGLWEInfos,
+    K: GetAutomorphismKey<BE>,
 {
     scratch.scope(|scratch_local| {
         let (mut diff, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(a);
         module.ckks_sub_into(&mut diff, a, b, &mut scratch_local)?;
-        ckks_step_into(
-            module,
-            res,
-            &diff,
-            composite,
-            tsk,
-            conj_key,
-            &mut scratch_local,
-        )
+        ckks_step_into(module, res, &diff, composite, tsk, conj_key, &mut scratch_local)
     })
 }

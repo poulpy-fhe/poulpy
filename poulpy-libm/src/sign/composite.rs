@@ -7,8 +7,12 @@
 
 use anyhow::{Result, anyhow, ensure};
 use num_traits::{Float, FloatConst, FromPrimitive};
+use poulpy_ckks::CKKSInfos;
 use poulpy_core::layouts::Base2K;
-use poulpy_hal::layouts::{HostBytesBackend, Module};
+use poulpy_hal::{
+    AlignedBuf,
+    layouts::{HostBytesBackend, Module, Standard},
+};
 
 use poulpy_ckks::{
     CKKSLayout,
@@ -37,16 +41,7 @@ pub const DEFAULT_SIGN_COMPOSITE_CHEBYSHEV: &[&[f64]] = &[
 pub const COEFFS_SIGN_X2_CHEBYSHEV: &[f64] = &[0.0, 1.125, 0.0, -0.125];
 
 /// Degree-seven Chebyshev sign refinement.
-pub const COEFFS_SIGN_X4_CHEBYSHEV: &[f64] = &[
-    0.0,
-    1.1962890625,
-    0.0,
-    -0.2392578125,
-    0.0,
-    0.0478515625,
-    0.0,
-    -0.0048828125,
-];
+pub const COEFFS_SIGN_X4_CHEBYSHEV: &[f64] = &[0.0, 1.1962890625, 0.0, -0.2392578125, 0.0, 0.0478515625, 0.0, -0.0048828125];
 
 /// Prepared composite sign polynomial.
 pub struct SignComposite<F, P> {
@@ -58,10 +53,10 @@ pub struct SignComposite<F, P> {
     pub coeff_log_delta: usize,
 }
 
-impl<F> SignComposite<F, CKKSPlaintext<Vec<u8>, i64>>
+impl<F> SignComposite<F, CKKSPlaintext<AlignedBuf, i64, Standard>>
 where
     F: CKKSScalar + Float + FloatConst + FromPrimitive + std::fmt::Debug,
-    CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+    CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
 {
     /// Prepares odd Chebyshev factors on `[−1, 1]`.
     pub fn from_coeffs(
@@ -71,15 +66,9 @@ where
         strategy: SplitStrategy,
         module: &Module<HostBytesBackend>,
     ) -> Result<Self> {
-        ensure!(
-            !rows.is_empty(),
-            "sign composite: coefficient rows must be non-empty"
-        );
+        ensure!(!rows.is_empty(), "sign composite: coefficient rows must be non-empty");
         for (i, row) in rows.iter().enumerate() {
-            ensure!(
-                !row.is_empty(),
-                "sign composite: coefficient row {i} is empty"
-            );
+            ensure!(!row.is_empty(), "sign composite: coefficient row {i} is empty");
             ensure!(
                 (row.len() - 1) % 2 == 1,
                 "sign composite: coefficient row {i} must have odd degree"
@@ -90,11 +79,7 @@ where
             .enumerate()
             .map(|(i, row)| {
                 row.iter()
-                    .map(|&c| {
-                        F::from_f64(c).ok_or_else(|| {
-                            anyhow!("sign composite: coefficient row {i}: {c} not representable")
-                        })
-                    })
+                    .map(|&c| F::from_f64(c).ok_or_else(|| anyhow!("sign composite: coefficient row {i}: {c} not representable")))
                     .collect::<Result<_>>()
             })
             .collect::<Result<_>>()?;
@@ -114,13 +99,7 @@ where
         strategy: SplitStrategy,
         module: &Module<HostBytesBackend>,
     ) -> Result<Self> {
-        let rows = sign_composite_coeffs::<F>(
-            tau,
-            target_bits,
-            degrees,
-            max_factors,
-            RemezOptions::default(),
-        )?;
+        let rows = sign_composite_coeffs::<F>(tau, target_bits, degrees, max_factors, RemezOptions::default())?;
         Self::from_rows(rows, base2k, coeff_meta, strategy, module)
     }
 
@@ -131,13 +110,7 @@ where
         strategy: SplitStrategy,
         module: &Module<HostBytesBackend>,
     ) -> Result<Self> {
-        Self::from_coeffs(
-            base2k,
-            DEFAULT_SIGN_COMPOSITE_CHEBYSHEV,
-            coeff_meta,
-            strategy,
-            module,
-        )
+        Self::from_coeffs(base2k, DEFAULT_SIGN_COMPOSITE_CHEBYSHEV, coeff_meta, strategy, module)
     }
 
     /// Encodes Chebyshev rows as half-scale BSGS factors.
@@ -148,8 +121,7 @@ where
         strategy: SplitStrategy,
         module: &Module<HostBytesBackend>,
     ) -> Result<Self> {
-        let half =
-            F::from_f64(0.5).ok_or_else(|| anyhow!("sign composite: 0.5 not representable"))?;
+        let half = F::from_f64(0.5).ok_or_else(|| anyhow!("sign composite: 0.5 not representable"))?;
         let mut polys_bsgs = Vec::with_capacity(rows.len());
         let mut polys_host = Vec::with_capacity(rows.len());
         for (i, coeffs) in rows.into_iter().enumerate() {
@@ -167,7 +139,7 @@ where
         Ok(Self {
             polys_bsgs,
             polys_host,
-            coeff_log_delta: coeff_meta.meta.log_delta,
+            coeff_log_delta: coeff_meta.log_delta(),
         })
     }
 }
@@ -199,11 +171,7 @@ impl<F, P> SignComposite<F, P> {
     /// Maps prepared plaintexts.
     pub fn map_plaintexts<Q>(self, mut f: impl FnMut(&P) -> Q) -> SignComposite<F, Q> {
         SignComposite {
-            polys_bsgs: self
-                .polys_bsgs
-                .iter()
-                .map(|p| p.map_baby_steps_ref(&mut f))
-                .collect(),
+            polys_bsgs: self.polys_bsgs.iter().map(|p| p.map_baby_steps_ref(&mut f)).collect(),
             polys_host: self.polys_host,
             coeff_log_delta: self.coeff_log_delta,
         }

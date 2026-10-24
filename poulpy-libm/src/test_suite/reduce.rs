@@ -1,12 +1,15 @@
 //! Tests for slot reductions.
 
+use poulpy_hal::{AlignedBuf, layouts::Standard};
 use std::collections::HashMap;
 
-use poulpy_core::layouts::{
-    GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-    prepared::GLWETensorKeyPreparedToBackendRef,
+use poulpy_core::{
+    GLWEAutomorphism, GLWEShift,
+    layouts::{
+        GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        prepared::GLWETensorKeyPreparedToBackendRef,
+    },
 };
-use poulpy_core::{GLWEAutomorphism, GLWEShift};
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{GaloisElement, HostBytesBackend, Module, ScratchOwned},
@@ -16,13 +19,13 @@ use poulpy_hal::{
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
-    test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, ckks_decrypt_decode,
-            ckks_encrypt_with_prec, ckks_spec, gen_atk, gen_sk_with_raw, gen_tsk,
+            TestContextBackend, TestContextModule, TestScalar, ckks_decrypt_decode, ckks_encrypt_with_prec, ckks_spec, gen_atk,
+            gen_sk_with_raw, gen_tsk,
         },
+        reference_encoder::ReferenceEncoder,
     },
 };
 
@@ -30,14 +33,11 @@ use crate::reduce::CKKSReductionOps;
 
 use super::helpers::{assert_precision_bits, gen_composite, params_for};
 
-pub fn test_sum_slots<BE, F, E>(
-    base: CKKSTestParams,
-    module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-) where
-    BE: TestContextBackend,
+pub fn test_sum_slots<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSReductionOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -78,40 +78,23 @@ pub fn test_sum_slots<BE, F, E>(
     assert_eq!(res.meta(), input.meta());
     assert_eq!(res.log_budget(), input.log_budget());
 
-    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(
-        &params,
-        module,
-        &encoder,
-        &res,
-        &sk,
-        &mut scratch.borrow(),
-    );
-    assert_precision_bits(
-        "sum_slots",
-        &re_out,
-        &want,
-        params.prec_meta.log_delta as f64 - 15.0,
-        params.n,
-    );
+    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
+    assert_precision_bits("sum_slots", &re_out, &want, params.prec().log_delta() as f64 - 15.0, params.n);
 }
 
-pub fn test_extrema_slots<BE, F, E>(
-    base: CKKSTestParams,
-    module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-) where
-    BE: TestContextBackend,
+pub fn test_extrema_slots<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSReductionOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord>:
-        GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
-    CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
+    CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let log_delta = base.prec_meta.log_delta;
+    let log_delta = base.prec().log_delta();
     let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);
     let (composite, _, sign_consumed) = gen_composite::<F, BE>(&base, module, host_module);
     let stages = (base.n / 2).ilog2() as usize;
@@ -129,12 +112,7 @@ pub fn test_extrema_slots<BE, F, E>(
 
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
-    let size = module.ckks_fmax_slots_tmp_bytes(
-        &sizing,
-        &params.tsk_layout(),
-        &params.atk_layout(),
-        &coeff_meta,
-    );
+    let size = module.ckks_fmax_slots_tmp_bytes(&sizing, &params.tsk_layout(), &params.atk_layout(), &coeff_meta);
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let conj_key = gen_atk(&params, module, -1, &sk_raw, &mut scratch.borrow());
@@ -187,14 +165,7 @@ pub fn test_extrema_slots<BE, F, E>(
         );
 
         let want = vec![value; slots];
-        let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(
-            &params,
-            module,
-            &encoder,
-            &res,
-            &sk,
-            &mut scratch.borrow(),
-        );
+        let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
         assert_precision_bits(label, &re_out, &want, 8.0, params.n);
     }
 }
@@ -206,7 +177,7 @@ pub(super) fn rotation_keys<BE>(
     scratch: &mut ScratchOwned<BE>,
 ) -> HashMap<i64, poulpy_core::layouts::GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE>,
 {
     (0..(params.n / 2).ilog2())

@@ -1,5 +1,6 @@
 //! Polynomial fitting and prepared evaluation.
 
+use poulpy_hal::{AlignedBuf, layouts::Standard};
 use std::fmt::Debug;
 
 use anyhow::{Result, anyhow, ensure};
@@ -13,8 +14,8 @@ use poulpy_core::layouts::Base2K;
 use poulpy_hal::layouts::{HostBytesBackend, Module};
 
 pub use poulpy_ckks::approximation::{
-    CKKSApproximationOps, DegreeChoice, Minimax, Parity, PolynomialApproximation, RemezOptions,
-    degree_for_precision, error_bits, minimax, minimax_with, precision_at_depth,
+    CKKSApproximationOps, DegreeChoice, Minimax, Parity, PolynomialApproximation, RemezOptions, degree_for_precision, error_bits,
+    minimax, minimax_with, precision_at_depth,
 };
 
 /// Common options for fixed-domain function plans.
@@ -49,43 +50,24 @@ pub(crate) fn prepare_function<F, Fun>(
     coeff_meta: CKKSLayout,
     options: ApproximationOptions,
     module: &Module<HostBytesBackend>,
-) -> Result<(PolynomialApproximation<CKKSPlaintext<Vec<u8>, i64>>, f64)>
+) -> Result<(PolynomialApproximation<CKKSPlaintext<AlignedBuf, i64, Standard>>, f64)>
 where
     F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
     Fun: Fn(F) -> F + Copy,
-    CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+    CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
 {
-    ensure!(
-        a.is_finite() && b.is_finite(),
-        "{name}: interval endpoints must be finite"
-    );
+    ensure!(a.is_finite() && b.is_finite(), "{name}: interval endpoints must be finite");
     ensure!(b > a, "{name}: empty interval [a, b]");
     ensure!(
         options.target_bits.is_finite() && options.target_bits > 0.0,
         "{name}: target_bits must be positive and finite"
     );
-    ensure!(
-        options.max_degree >= 1,
-        "{name}: max_degree must be positive"
-    );
-    let choice = degree_for_precision(
-        fun,
-        a,
-        b,
-        parity,
-        options.target_bits,
-        options.max_degree,
-        options.strategy,
-    )
-    .map_err(|e| anyhow!("{name}: {e}"))?;
-    let approximation = PolynomialApproximation::from_polynomial(
-        &choice.minimax.poly,
-        base2k,
-        coeff_meta,
-        options.strategy,
-        module,
-    )
-    .map_err(|e| anyhow!("{name}: {e}"))?;
+    ensure!(options.max_degree >= 1, "{name}: max_degree must be positive");
+    let choice = degree_for_precision(fun, a, b, parity, options.target_bits, options.max_degree, options.strategy)
+        .map_err(|e| anyhow!("{name}: {e}"))?;
+    let approximation =
+        PolynomialApproximation::from_polynomial(&choice.minimax.poly, base2k, coeff_meta, options.strategy, module)
+            .map_err(|e| anyhow!("{name}: {e}"))?;
     Ok((approximation, error_bits(choice.minimax.error)))
 }
 

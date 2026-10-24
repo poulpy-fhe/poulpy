@@ -1,25 +1,25 @@
 //! Tests for logarithmic functions.
 
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-    prepared::GLWETensorKeyPreparedToBackendRef,
+    GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
+    AlignedBuf,
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, ScratchOwned},
+    layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
     source::Source,
 };
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
-    test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, ckks_decrypt_decode,
-            ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, gen_tsk, upload_pt,
+            TestContextBackend, TestContextModule, TestScalar, ckks_decrypt_decode, ckks_encrypt_with_prec, ckks_spec,
+            gen_sk_with_raw, gen_tsk, upload_pt,
         },
+        reference_encoder::ReferenceEncoder,
     },
 };
 
@@ -27,63 +27,31 @@ use crate::log::{CKKSLogOps, Log1pPlan, Log2Plan, Log10Plan, LogOptions, LogPlan
 
 use super::helpers::{assert_precision_bits, params_for};
 
-pub fn test_log_family<BE, F, E>(
-    base: CKKSTestParams,
-    module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-) where
-    BE: TestContextBackend,
+pub fn test_log_family<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSLogOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord>:
-        GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
-    CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
+    CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let log_delta = base.prec_meta.log_delta;
+    let log_delta = base.prec().log_delta();
     let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);
     let options = LogOptions::default();
     let half = F::from_f64(0.5).unwrap();
     let one = F::one();
-    let host_log = LogPlan::from_precision(
-        half,
-        one,
-        base.base2k.into(),
-        coeff_meta,
-        options,
-        host_module,
-    )
-    .expect("LogPlan::from_precision");
-    let host_log2 = Log2Plan::from_precision(
-        half,
-        one,
-        base.base2k.into(),
-        coeff_meta,
-        options,
-        host_module,
-    )
-    .expect("Log2Plan::from_precision");
-    let host_log10 = Log10Plan::from_precision(
-        half,
-        one,
-        base.base2k.into(),
-        coeff_meta,
-        options,
-        host_module,
-    )
-    .expect("Log10Plan::from_precision");
-    let host_log1p = Log1pPlan::from_precision(
-        -half,
-        half,
-        base.base2k.into(),
-        coeff_meta,
-        options,
-        host_module,
-    )
-    .expect("Log1pPlan::from_precision");
+    let host_log = LogPlan::from_precision(half, one, base.base2k.into(), coeff_meta, options, host_module)
+        .expect("LogPlan::from_precision");
+    let host_log2 = Log2Plan::from_precision(half, one, base.base2k.into(), coeff_meta, options, host_module)
+        .expect("Log2Plan::from_precision");
+    let host_log10 = Log10Plan::from_precision(half, one, base.base2k.into(), coeff_meta, options, host_module)
+        .expect("Log10Plan::from_precision");
+    let host_log1p = Log1pPlan::from_precision(-half, half, base.base2k.into(), coeff_meta, options, host_module)
+        .expect("Log1pPlan::from_precision");
     let max_consumed = host_log
         .consumed_bits(log_delta)
         .max(host_log2.consumed_bits(log_delta))
@@ -112,13 +80,9 @@ pub fn test_log_family<BE, F, E>(
     for (op, label) in [(0, "log"), (1, "log2"), (2, "log10"), (3, "log1p")] {
         let mut source = Source::new([0xb1u8 + op as u8; 32]);
         let mut x: Vec<F> = if op < 3 {
-            (0..slots)
-                .map(|_| F::from_f64(source.next_f64(0.5, 1.0)).unwrap())
-                .collect()
+            (0..slots).map(|_| F::from_f64(source.next_f64(0.5, 1.0)).unwrap()).collect()
         } else {
-            (0..slots)
-                .map(|_| F::from_f64(source.next_f64(-0.5, 0.5)).unwrap())
-                .collect()
+            (0..slots).map(|_| F::from_f64(source.next_f64(-0.5, 0.5)).unwrap()).collect()
         };
         x[0] = if op < 3 { half } else { -half };
         x[1] = if op < 3 { one } else { half };
@@ -173,14 +137,7 @@ pub fn test_log_family<BE, F, E>(
         };
         assert_eq!(input.log_budget() - res.log_budget(), consumed);
 
-        let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(
-            &params,
-            module,
-            &encoder,
-            &res,
-            &sk,
-            &mut scratch.borrow(),
-        );
+        let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
         assert_precision_bits(label, &re_out, &want, options.target_bits, params.n);
     }
 }

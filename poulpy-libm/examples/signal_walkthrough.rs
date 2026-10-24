@@ -3,7 +3,7 @@
 //! Run the example with the following command.
 //!
 //! ```text
-//! cargo run --release --features ref --example signal_walkthrough
+//! cargo run --release --features portable --example signal_walkthrough
 //! ```
 
 mod common;
@@ -64,7 +64,7 @@ fn run() -> Result<()> {
         module
             .ckks_hypot_tmp_bytes(sizing, &params.tsk_layout(), &hypot)
             .max(module.ckks_log_tmp_bytes(sizing, &params.tsk_layout(), &log))
-            .max(module.ckks_scalbn_tmp_bytes())
+            .max(module.ckks_scalbn_tmp_bytes(sizing))
     });
 
     // The two vectors are encrypted separately because they are independent input channels.
@@ -100,27 +100,17 @@ fn run() -> Result<()> {
 
     // Multiplication by two is exact power-of-two scaling and does not consume more modulus.
     let mut log_power = context.output();
-    context.module.ckks_scalbn(
-        &mut log_power,
-        &log_magnitude,
-        1,
-        &mut context.scratch.borrow(),
-    )?;
+    context
+        .module
+        .ckks_scalbn(&mut log_power, &log_magnitude, 1, &mut context.scratch.borrow())?;
     assert_eq!(log_magnitude.log_budget(), log_power.log_budget());
 
     // Verify the complete pipeline against ln(I^2 + Q^2), not its intermediate stages.
     let output_log_delta = log_power.log_delta();
     let got = context.decrypt(&log_power);
-    let want: Vec<f64> = i_samples
-        .iter()
-        .zip(&q_samples)
-        .map(|(i, q)| (i * i + q * q).ln())
-        .collect();
+    let want: Vec<f64> = i_samples.iter().zip(&q_samples).map(|(i, q)| (i * i + q * q).ln()).collect();
     verify("signal/log_power", &got, &want, output_log_delta);
-    println!(
-        "I={:.3}, Q={:.3}, log power={:.6}",
-        i_samples[0], q_samples[0], got[0]
-    );
+    println!("I={:.3}, Q={:.3}, log power={:.6}", i_samples[0], q_samples[0], got[0]);
 
     Ok(())
 }

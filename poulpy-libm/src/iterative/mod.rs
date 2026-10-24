@@ -2,29 +2,28 @@
 
 use anyhow::{Result, ensure};
 use poulpy_core::layouts::{
-    BSGSMeta, GGLWEInfos, GGLWEPreparedToBackendRef, GLWE, GLWETensorKeyPrepared, GLWEToBackendMut,
-    GLWEToBackendRef, GetGaloisElement, LWEInfos, SetBSGSMeta,
-    prepared::{GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
+    BSGSMeta, GGLWEInfos, GLWE, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
+    SetBSGSMeta, prepared::GLWETensorKeyPreparedToBackendRef,
 };
-use poulpy_hal::layouts::{Backend, HostStaged, Module, ScratchArena};
+use poulpy_hal::{
+    AlignedBuf,
+    layouts::{Backend, HostStaged, Module, ScratchArena},
+};
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::{
-        CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSMulOps, CKKSNegOps,
-        CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
+        CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSMulOps, CKKSNegOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
     },
     layouts::{CKKSCiphertext, CKKSModuleAlloc, ScratchArenaTakeCKKS},
 };
 
-use crate::range::IntervalNorm;
-use crate::sign::{CKKSSignOps, SignComposite, ckks_sign_into};
+use crate::{
+    range::IntervalNorm,
+    sign::{CKKSSignOps, SignComposite, ckks_sign_into},
+};
 
-fn ensure_goldschmidt_capacity<C: CKKSCtBounds>(
-    op: &'static str,
-    ct: &C,
-    iters: usize,
-) -> Result<()> {
+fn ensure_goldschmidt_capacity<C: CKKSCtBounds>(op: &'static str, ct: &C, iters: usize) -> Result<()> {
     ensure!(iters > 0, "{op}: iters must be > 0");
 
     let log_delta = ct.log_delta();
@@ -72,8 +71,8 @@ pub trait CKKSInverseOps<BE: Backend> {
     /// Computes `1/sqrt(x)` with `r` Newton steps. Consumes `2r·log_delta` bits.
     fn ckks_rsqrt(
         &self,
-        y: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        in_half: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        y: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        in_half: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         r: usize,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
@@ -83,13 +82,7 @@ pub trait CKKSInverseOps<BE: Backend> {
 /// Reciprocal over signed intervals.
 pub trait CKKSInverseDomainOps<BE: Backend> {
     /// Scratch bytes for inverse-domain operations.
-    fn ckks_inverse_domain_tmp_bytes<R, T, A, P>(
-        &self,
-        res: &R,
-        tsk: &T,
-        conj_key: &A,
-        coeff_prec: &P,
-    ) -> usize
+    fn ckks_inverse_domain_tmp_bytes<R, T, A, P>(&self, res: &R, tsk: &T, conj_key: &A, coeff_prec: &P) -> usize
     where
         R: CKKSCtBounds,
         T: GGLWEInfos,
@@ -99,8 +92,8 @@ pub trait CKKSInverseDomainOps<BE: Backend> {
     /// Compresses `ct` to `[−1, 1]` and writes its factor to `norm`.
     fn ckks_interval_normalization<P>(
         &self,
-        norm: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        ct: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        norm: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        ct: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         params: &IntervalNorm<P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
@@ -111,7 +104,7 @@ pub trait CKKSInverseDomainOps<BE: Backend> {
     /// `ct ← 1/ct` for `ct ∈ [Min, 2−Min]`. Alias for Goldschmidt division.
     fn ckks_inverse_positive_domain(
         &self,
-        ct: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        ct: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         iters: usize,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
@@ -120,7 +113,7 @@ pub trait CKKSInverseDomainOps<BE: Backend> {
     /// `ct ← 1/ct` on `[−(2−Min), −Min]`.
     fn ckks_inverse_negative_domain(
         &self,
-        ct: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        ct: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         iters: usize,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
@@ -130,7 +123,7 @@ pub trait CKKSInverseDomainOps<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn ckks_inverse_full_domain<F, P, K>(
         &self,
-        ct: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        ct: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         iters: usize,
         composite: &SignComposite<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
@@ -139,21 +132,13 @@ pub trait CKKSInverseDomainOps<BE: Backend> {
     ) -> Result<()>
     where
         P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-            + GGLWEPreparedToBackendRef<BE>
-            + GetGaloisElement
-            + GGLWEInfos;
+        K: GetAutomorphismKey<BE>;
 }
 
 impl<BE: Backend + HostStaged> CKKSInverseOps<BE> for Module<BE>
 where
-    Module<BE>: CKKSMulOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSNegOps<BE>
-        + CKKSPow2Ops<BE>
-        + CKKSCopyOps<BE>
-        + CKKSModuleAlloc<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>:
+    Module<BE>: CKKSMulOps<BE> + CKKSAddOps<BE> + CKKSNegOps<BE> + CKKSPow2Ops<BE> + CKKSCopyOps<BE> + CKKSModuleAlloc<BE>,
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
 {
@@ -162,16 +147,16 @@ where
         R: CKKSCtBounds,
         T: GGLWEInfos,
     {
-        let ct_bytes = GLWE::<Vec<u8>, BE::ZnxWord>::bytes_of_from_infos(res);
+        let ct_bytes = GLWE::<AlignedBuf, BE::ZnxWord>::bytes_of_from_infos(res);
         4 * ct_bytes
             + self
                 .ckks_mul_tmp_bytes(res, res, res, tsk)
                 .max(self.ckks_square_tmp_bytes(res, res, tsk))
-                .max(self.ckks_add_tmp_bytes())
-                .max(self.ckks_add_pt_const_tmp_bytes())
-                .max(self.ckks_neg_tmp_bytes())
-                .max(self.ckks_copy_tmp_bytes())
-                .max(self.ckks_div_pow2_tmp_bytes())
+                .max(self.ckks_add_tmp_bytes(res.size()))
+                .max(self.ckks_add_pt_const_tmp_bytes(res.size()))
+                .max(self.ckks_neg_tmp_bytes(res.size()))
+                .max(self.ckks_copy_tmp_bytes(res, res))
+                .max(self.ckks_div_pow2_tmp_bytes(res.size()))
     }
 
     fn ckks_goldschmidt_division<C>(
@@ -189,8 +174,7 @@ where
         // a := 2 − m (in `ct`), b := 1 − m; a·b converges to 1/m.
         scratch.scope(|scratch_local| {
             let (mut b, scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*ct);
-            let (mut tmp, mut scratch_local) =
-                scratch_local.take_ckks_ciphertext_like_scratch(&*ct);
+            let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*ct);
             self.ckks_neg_assign(ct)?;
             self.ckks_copy(&mut b, &*ct, &mut scratch_local)?;
             self.ckks_add_one_assign(&mut b, &mut scratch_local)?;
@@ -209,8 +193,8 @@ where
 
     fn ckks_rsqrt(
         &self,
-        y: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        in_half: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        y: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        in_half: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         r: usize,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
@@ -222,8 +206,7 @@ where
             let (mut ysqr, scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*y);
             let (mut xy, scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*y);
             let (mut t, scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*y);
-            let (mut half_y, mut scratch_local) =
-                scratch_local.take_ckks_ciphertext_like_scratch(&*y);
+            let (mut half_y, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*y);
 
             for _ in 0..r {
                 self.ckks_square_into(&mut ysqr, &*y, tsk, &mut scratch_local)?;
@@ -253,33 +236,27 @@ where
         + CKKSConjugateOps<BE>
         + CKKSPolynomialEvaluationOps<BE>
         + CKKSModuleAlloc<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
 {
-    fn ckks_inverse_domain_tmp_bytes<R, T, A, P>(
-        &self,
-        res: &R,
-        tsk: &T,
-        conj_key: &A,
-        coeff_prec: &P,
-    ) -> usize
+    fn ckks_inverse_domain_tmp_bytes<R, T, A, P>(&self, res: &R, tsk: &T, conj_key: &A, coeff_prec: &P) -> usize
     where
         R: CKKSCtBounds,
         T: GGLWEInfos,
         A: GGLWEInfos,
         P: CKKSInfos + LWEInfos,
     {
-        let ct_bytes = GLWE::<Vec<u8>, BE::ZnxWord>::bytes_of_from_infos(res);
+        let ct_bytes = GLWE::<AlignedBuf, BE::ZnxWord>::bytes_of_from_infos(res);
         let interval = 5 * ct_bytes
             + self
                 .ckks_mul_tmp_bytes(res, res, res, tsk)
                 .max(self.ckks_square_tmp_bytes(res, res, tsk))
                 .max(self.ckks_mul_pt_const_tmp_bytes(res, res, coeff_prec))
-                .max(self.ckks_copy_tmp_bytes())
-                .max(self.ckks_neg_tmp_bytes())
-                .max(self.ckks_add_tmp_bytes())
-                .max(self.ckks_sub_tmp_bytes());
+                .max(self.ckks_copy_tmp_bytes(res, res))
+                .max(self.ckks_neg_tmp_bytes(res.size()))
+                .max(self.ckks_add_tmp_bytes(res.size()))
+                .max(self.ckks_sub_tmp_bytes(res.size()));
         self.ckks_inverse_tmp_bytes(res, tsk)
             .max(ct_bytes + self.ckks_sign_tmp_bytes(res, tsk, conj_key, coeff_prec))
             .max(ct_bytes + self.ckks_inverse_tmp_bytes(res, tsk))
@@ -288,8 +265,8 @@ where
 
     fn ckks_interval_normalization<P>(
         &self,
-        norm: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        ct: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        norm: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        ct: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         params: &IntervalNorm<P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
@@ -310,8 +287,7 @@ where
             let (mut z1, scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*ct);
             let (mut z2, scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*ct);
             let (mut z0z1, scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*ct);
-            let (mut z0z2, mut scratch_local) =
-                scratch_local.take_ckks_ciphertext_like_scratch(&*ct);
+            let (mut z0z2, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*ct);
 
             for i in 0..params.n {
                 self.ckks_mul_pt_const_into(&mut z0, &*ct, &params.consts, i, &mut scratch_local)?;
@@ -336,7 +312,7 @@ where
 
     fn ckks_inverse_positive_domain(
         &self,
-        ct: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        ct: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         iters: usize,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
@@ -346,7 +322,7 @@ where
 
     fn ckks_inverse_negative_domain(
         &self,
-        ct: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        ct: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         iters: usize,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
@@ -360,7 +336,7 @@ where
 
     fn ckks_inverse_full_domain<F, P, K>(
         &self,
-        ct: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        ct: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         iters: usize,
         composite: &SignComposite<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
@@ -369,10 +345,7 @@ where
     ) -> Result<()>
     where
         P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-            + GGLWEPreparedToBackendRef<BE>
-            + GetGaloisElement
-            + GGLWEInfos,
+        K: GetAutomorphismKey<BE>,
     {
         let log_delta = ct.log_delta();
         let consumed = composite.consumed_bits(log_delta) + (iters + 3) * log_delta;
@@ -385,17 +358,8 @@ where
 
         // Invert the magnitude, then restore the sign.
         scratch.scope(|scratch_local| {
-            let (mut sign, mut scratch_local) =
-                scratch_local.take_ckks_ciphertext_like_scratch(&*ct);
-            ckks_sign_into(
-                self,
-                &mut sign,
-                &*ct,
-                composite,
-                tsk,
-                conj_key,
-                &mut scratch_local,
-            )?;
+            let (mut sign, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*ct);
+            ckks_sign_into(self, &mut sign, &*ct, composite, tsk, conj_key, &mut scratch_local)?;
             self.ckks_mul_assign(ct, &sign, tsk, &mut scratch_local)?;
             self.ckks_goldschmidt_division(ct, iters, tsk, &mut scratch_local)?;
             self.ckks_mul_assign(ct, &sign, tsk, &mut scratch_local)
@@ -415,9 +379,9 @@ pub trait CKKSDivSqrtOps<BE: Backend> {
     /// `res ← a / b` for `b ∈ [Min, 2−Min]`.
     fn ckks_div(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         iters: usize,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
@@ -426,9 +390,9 @@ pub trait CKKSDivSqrtOps<BE: Backend> {
     /// `res ← sqrt(x)` near `1`; `in_half` is `x/2` at the same scale.
     fn ckks_sqrt(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        x: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        in_half: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        x: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        in_half: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         r: usize,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
@@ -438,7 +402,7 @@ pub trait CKKSDivSqrtOps<BE: Backend> {
 impl<BE: Backend + HostStaged> CKKSDivSqrtOps<BE> for Module<BE>
 where
     Module<BE>: CKKSInverseOps<BE> + CKKSMulOps<BE> + CKKSCopyOps<BE> + CKKSModuleAlloc<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
 {
@@ -449,14 +413,14 @@ where
     {
         self.ckks_inverse_tmp_bytes(res, tsk)
             .max(self.ckks_mul_tmp_bytes(res, res, res, tsk))
-            .max(self.ckks_copy_tmp_bytes())
+            .max(self.ckks_copy_tmp_bytes(res, res))
     }
 
     fn ckks_div(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         iters: usize,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
@@ -469,9 +433,9 @@ where
 
     fn ckks_sqrt(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        x: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        in_half: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        x: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        in_half: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         r: usize,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,

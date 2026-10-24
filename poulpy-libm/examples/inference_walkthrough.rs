@@ -3,15 +3,13 @@
 //! Run the example with the following command.
 //!
 //! ```text
-//! cargo run --release --features ref --example inference_walkthrough
+//! cargo run --release --features portable --example inference_walkthrough
 //! ```
 
 mod common;
 
 use anyhow::Result;
-use poulpy_ckks::{
-    CKKSInfos, api::CKKSAddOps, polynomial::SplitStrategy, test_suite::helpers::upload_pt,
-};
+use poulpy_ckks::{CKKSInfos, api::CKKSAddOps, polynomial::SplitStrategy, test_suite::helpers::upload_pt};
 use poulpy_hal::api::ScratchOwnedBorrow;
 use poulpy_libm::{
     arithmetic::CKKSArithmeticOps,
@@ -46,7 +44,7 @@ fn run() -> Result<()> {
     let mut context = setup.prepare(circuit_consumed, |module, sizing, params| {
         module
             .ckks_tanh_tmp_bytes(sizing, &params.tsk_layout(), &tanh)
-            .max(module.ckks_scalbn_tmp_bytes())
+            .max(module.ckks_scalbn_tmp_bytes(sizing))
     });
 
     // One ciphertext carries an entire batch of independent model scores.
@@ -58,12 +56,9 @@ fn run() -> Result<()> {
     // First compute x / 2 without decrypting.
     // Poulpy records the division by moving one bit from the budget to log_delta, so the tanh cost must use the adjusted scale.
     let mut half_scores = context.output();
-    context.module.ckks_scalbn(
-        &mut half_scores,
-        &encrypted_scores,
-        -1,
-        &mut context.scratch.borrow(),
-    )?;
+    context
+        .module
+        .ckks_scalbn(&mut half_scores, &encrypted_scores, -1, &mut context.scratch.borrow())?;
     assert_eq!(input_budget - half_scores.log_budget(), 1);
 
     // Evaluate tanh on every packed score with the same prepared plan.
@@ -75,10 +70,7 @@ fn run() -> Result<()> {
         &context.tsk,
         &mut context.scratch.borrow(),
     )?;
-    assert_eq!(
-        half_scores.log_budget() - probabilities.log_budget(),
-        tanh_consumed
-    );
+    assert_eq!(half_scores.log_budget() - probabilities.log_budget(), tanh_consumed);
 
     // Finish the identity with Poulpy's exact add-one path and libm-style power-of-two scaling.
     let tanh_budget = probabilities.log_budget();
@@ -87,12 +79,9 @@ fn run() -> Result<()> {
         .ckks_add_one_assign(&mut probabilities, &mut context.scratch.borrow())?;
     assert_eq!(tanh_budget, probabilities.log_budget());
     let mut output = context.output();
-    context.module.ckks_scalbn(
-        &mut output,
-        &probabilities,
-        -1,
-        &mut context.scratch.borrow(),
-    )?;
+    context
+        .module
+        .ckks_scalbn(&mut output, &probabilities, -1, &mut context.scratch.borrow())?;
     assert_eq!(probabilities.log_budget() - output.log_budget(), 1);
     assert_eq!(input_budget - output.log_budget(), circuit_consumed);
 
@@ -100,10 +89,7 @@ fn run() -> Result<()> {
     // Poulpy's precision helper checks every packed result against ordinary sigmoid.
     let output_log_delta = output.log_delta();
     let got = context.decrypt(&output);
-    let want: Vec<f64> = scores
-        .iter()
-        .map(|score| 1.0 / (1.0 + (-score).exp()))
-        .collect();
+    let want: Vec<f64> = scores.iter().map(|score| 1.0 / (1.0 + (-score).exp())).collect();
     verify("inference/sigmoid", &got, &want, output_log_delta);
     for index in [0, SLOTS / 2, SLOTS - 1] {
         println!("score={:.3}, probability={:.6}", scores[index], got[index]);

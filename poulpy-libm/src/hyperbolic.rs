@@ -1,5 +1,6 @@
 //! Hyperbolic functions.
 
+use poulpy_hal::{AlignedBuf, layouts::Standard};
 use std::fmt::Debug;
 
 use anyhow::{Result, ensure};
@@ -11,10 +12,10 @@ use poulpy_ckks::{
     layouts::{CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar},
 };
 
-use crate::approximation::{
-    ApproximationOptions, CKKSApproximationOps, Parity, parity_for_interval, prepare_function,
+use crate::{
+    approximation::{ApproximationOptions, CKKSApproximationOps, Parity, parity_for_interval, prepare_function},
+    plan::{declare_unary_op, define_unary_plan, impl_unary_op},
 };
-use crate::plan::{declare_unary_op, define_unary_plan, impl_unary_op};
 
 /// Hyperbolic plan construction options.
 pub type HyperbolicOptions = ApproximationOptions;
@@ -28,7 +29,7 @@ define_unary_plan!(AtanhPlan, "atanh");
 
 macro_rules! impl_host_plan {
     ($plan:ident, $name:literal, $fun:ident, $parity:expr) => {
-        impl $plan<CKKSPlaintext<Vec<u8>, i64>> {
+        impl $plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
             #[doc = concat!("Fits and prepares `", $name, "` on `[a, b]`.")]
             pub fn from_precision<F>(
                 a: F,
@@ -40,7 +41,7 @@ macro_rules! impl_host_plan {
             ) -> Result<Self>
             where
                 F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-                CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+                CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
             {
                 let parity = parity_for_interval(a, b, $parity);
                 let (approximation, approximation_bits) = prepare_function(
@@ -68,7 +69,7 @@ impl_host_plan!(CoshPlan, "cosh", cosh, Parity::Even);
 impl_host_plan!(TanhPlan, "tanh", tanh, Parity::Odd);
 impl_host_plan!(AsinhPlan, "asinh", asinh, Parity::Odd);
 
-impl AcoshPlan<CKKSPlaintext<Vec<u8>, i64>> {
+impl AcoshPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     /// Fits and prepares `acosh` on `[a, b]`, with `a >= 1`.
     pub fn from_precision<F>(
         a: F,
@@ -80,7 +81,7 @@ impl AcoshPlan<CKKSPlaintext<Vec<u8>, i64>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     {
         ensure!(a >= F::one(), "acosh: interval must start at or above 1");
         let (approximation, approximation_bits) = prepare_function(
@@ -101,7 +102,7 @@ impl AcoshPlan<CKKSPlaintext<Vec<u8>, i64>> {
     }
 }
 
-impl AtanhPlan<CKKSPlaintext<Vec<u8>, i64>> {
+impl AtanhPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     /// Fits and prepares `atanh` on `[a, b]`, strictly inside `(-1, 1)`.
     pub fn from_precision<F>(
         a: F,
@@ -113,24 +114,15 @@ impl AtanhPlan<CKKSPlaintext<Vec<u8>, i64>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     {
         ensure!(
             a > -F::one() && b < F::one(),
             "atanh: interval must lie strictly inside (-1, 1)"
         );
         let parity = parity_for_interval(a, b, Parity::Odd);
-        let (approximation, approximation_bits) = prepare_function(
-            "atanh",
-            |x: F| x.atanh(),
-            a,
-            b,
-            parity,
-            base2k,
-            coeff_meta,
-            options,
-            module,
-        )?;
+        let (approximation, approximation_bits) =
+            prepare_function("atanh", |x: F| x.atanh(), a, b, parity, base2k, coeff_meta, options, module)?;
         Ok(Self {
             approximation,
             approximation_bits,

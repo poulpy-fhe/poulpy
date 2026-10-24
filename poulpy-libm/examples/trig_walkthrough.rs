@@ -3,7 +3,7 @@
 //! Run the example with the following command.
 //!
 //! ```text
-//! cargo run --release --features ref --example trig_walkthrough
+//! cargo run --release --features portable --example trig_walkthrough
 //! ```
 
 mod common;
@@ -24,22 +24,8 @@ fn run() -> Result<()> {
         max_degree: 15,
         strategy: SplitStrategy::MinDepth,
     };
-    let host_sin = SinPlan::from_precision(
-        -1.0,
-        1.0,
-        BASE2K.into(),
-        coeff_layout(),
-        options,
-        &setup.host_module,
-    )?;
-    let host_cos = CosPlan::from_precision(
-        -1.0,
-        1.0,
-        BASE2K.into(),
-        coeff_layout(),
-        options,
-        &setup.host_module,
-    )?;
+    let host_sin = SinPlan::from_precision(-1.0, 1.0, BASE2K.into(), coeff_layout(), options, &setup.host_module)?;
+    let host_cos = CosPlan::from_precision(-1.0, 1.0, BASE2K.into(), coeff_layout(), options, &setup.host_module)?;
     let sin_consumed = host_sin.consumed_bits(LOG_DELTA);
     let cos_consumed = host_cos.consumed_bits(LOG_DELTA);
 
@@ -85,10 +71,7 @@ fn run() -> Result<()> {
     let want_cos: Vec<f64> = input.iter().map(|x| x.cos()).collect();
     verify("sin", &got_sin, &want_sin, sin_log_delta);
     verify("cos", &got_cos, &want_cos, cos_log_delta);
-    println!(
-        "x={:.3}, sin(x)={:.6}, cos(x)={:.6}",
-        input[0], got_sin[0], got_cos[0],
-    );
+    println!("x={:.3}, sin(x)={:.6}, cos(x)={:.6}", input[0], got_sin[0], got_cos[0],);
 
     Ok(())
 }

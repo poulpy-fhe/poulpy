@@ -5,51 +5,45 @@ use poulpy_core::layouts::{
     prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
+    AlignedBuf,
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, ScratchOwned},
+    layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
 };
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
     polynomial::{Polynomial, SplitStrategy},
-    test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, ckks_decrypt_decode,
-            ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, gen_tsk, upload_pt,
+            TestContextBackend, TestContextModule, TestScalar, ckks_decrypt_decode, ckks_encrypt_with_prec, ckks_spec,
+            gen_sk_with_raw, gen_tsk, upload_pt,
         },
+        reference_encoder::ReferenceEncoder,
     },
 };
 
 use crate::{
-    approximation::{
-        CKKSApproximationOps, Parity, PolynomialApproximation, RemezOptions, degree_for_precision,
-        minimax_with,
-    },
+    approximation::{CKKSApproximationOps, Parity, PolynomialApproximation, RemezOptions, degree_for_precision, minimax_with},
     trig::{CKKSTrigOps, SinPlan, TrigOptions},
 };
 
 use super::helpers::{assert_error, assert_precision_bits, params_for, sample_interval};
 
-pub fn test_approximation<BE, F, E>(
-    base: CKKSTestParams,
-    module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-) where
-    BE: TestContextBackend,
+pub fn test_approximation<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSApproximationOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord>:
-        GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
-    CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
+    CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let input_log_delta = base.prec_meta.log_delta;
+    let input_log_delta = base.prec().log_delta();
     let coeff_log_delta = 20;
     let coeff_meta = ckks_spec(base.n, base.base2k, coeff_log_delta, base.base2k);
     let lo = F::from_f64(0.5).unwrap();
@@ -69,26 +63,13 @@ pub fn test_approximation<BE, F, E>(
         "minimax: max_iters must be positive",
     );
     assert_error(
-        degree_for_precision(
-            |x: F| x * x,
-            lo,
-            hi,
-            Parity::Full,
-            0.0,
-            15,
-            SplitStrategy::MinDepth,
-        ),
+        degree_for_precision(|x: F| x * x, lo, hi, Parity::Full, 0.0, 15, SplitStrategy::MinDepth),
         "degree_for_precision: target_bits must be positive and finite",
     );
     let poly = Polynomial::chebyshev_interpolate(2, lo, hi, |x| x * x).unwrap();
-    let host_plan = PolynomialApproximation::from_polynomial(
-        &poly,
-        base.base2k.into(),
-        coeff_meta,
-        SplitStrategy::MinDepth,
-        host_module,
-    )
-    .expect("PolynomialApproximation::from_polynomial");
+    let host_plan =
+        PolynomialApproximation::from_polynomial(&poly, base.base2k.into(), coeff_meta, SplitStrategy::MinDepth, host_module)
+            .expect("PolynomialApproximation::from_polynomial");
     assert_eq!(host_plan.interval(), (0.5, 1.5));
     assert_eq!(host_plan.degree(), 2);
     assert!(host_plan.depth() > 0);
@@ -125,35 +106,24 @@ pub fn test_approximation<BE, F, E>(
         .expect("ckks_eval_approximation");
     assert_eq!(input.log_budget() - res.log_budget(), consumed);
 
-    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(
-        &params,
-        module,
-        &encoder,
-        &res,
-        &sk,
-        &mut scratch.borrow(),
-    );
+    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
     let want: Vec<F> = x.iter().map(|&v| v * v).collect();
     assert_precision_bits("approximation", &re_out, &want, 16.0, params.n);
 }
 
-pub fn test_precision_tuning<BE, F, E>(
-    base: CKKSTestParams,
-    module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-) where
-    BE: TestContextBackend,
+pub fn test_precision_tuning<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSTrigOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord>:
-        GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
-    CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
+    CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let input_log_delta = base.prec_meta.log_delta;
+    let input_log_delta = base.prec().log_delta();
     let low_target = 12.0;
     let high_target = 28.0;
     let low_meta = ckks_spec(base.n, base.base2k, 20, base.base2k);
@@ -201,7 +171,7 @@ pub fn test_precision_tuning<BE, F, E>(
     let scaled_consumed = scaled_host.consumed_bits(input_log_delta);
     let high_consumed = high_host.consumed_bits(input_log_delta);
     assert_eq!(low_host.degree(), scaled_host.degree());
-    if input_log_delta < high_meta.meta.log_delta {
+    if input_log_delta < high_meta.log_delta() {
         assert!(
             low_consumed < scaled_consumed,
             "low/scaled costs={low_consumed}/{scaled_consumed}"
@@ -272,16 +242,8 @@ pub fn test_precision_tuning<BE, F, E>(
             .ckks_sin(&mut res, &input, plan, &tsk, &mut scratch.borrow())
             .unwrap_or_else(|e| panic!("{label}: {e}"));
         assert_eq!(input.log_budget() - res.log_budget(), consumed);
-        let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(
-            &params,
-            module,
-            &encoder,
-            &res,
-            &sk,
-            &mut scratch.borrow(),
-        );
-        let stats =
-            poulpy_ckks::test_suite::helpers::precision_stats(&re_out, &want, res.log_delta());
+        let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
+        let stats = poulpy_ckks::test_suite::helpers::precision_stats(&re_out, &want, res.log_delta());
         println!(
             "{label}: avg={:.2}, min={:.2} precision bits",
             stats.avg_log2_prec, stats.min_log2_prec

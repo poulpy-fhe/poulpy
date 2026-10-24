@@ -2,8 +2,7 @@
 
 use anyhow::Result;
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
-    prepared::GLWETensorKeyPreparedToBackendRef,
+    GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
@@ -24,22 +23,24 @@ pub trait CKKSArithmeticOps<BE: Backend> {
     /// Computes `a * b + c` through Poulpy's multiply-add path.
     fn ckks_fma(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        c: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        c: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>;
 
     /// Scratch bytes for [`Self::ckks_scalbn`] and [`Self::ckks_ldexp`].
-    fn ckks_scalbn_tmp_bytes(&self) -> usize;
+    fn ckks_scalbn_tmp_bytes<R>(&self, res: &R) -> usize
+    where
+        R: CKKSCtBounds;
 
     /// Computes `input * 2^exponent` for a public integer exponent.
     fn ckks_scalbn(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        input: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        input: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         exponent: i32,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>;
@@ -47,8 +48,8 @@ pub trait CKKSArithmeticOps<BE: Backend> {
     /// Alias of [`Self::ckks_scalbn`].
     fn ckks_ldexp(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        input: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        input: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         exponent: i32,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>;
@@ -57,7 +58,7 @@ pub trait CKKSArithmeticOps<BE: Backend> {
 impl<BE: Backend> CKKSArithmeticOps<BE> for Module<BE>
 where
     Module<BE>: CKKSCopyOps<BE> + CKKSMulAddOps<BE> + CKKSPow2Ops<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
 {
@@ -66,16 +67,16 @@ where
         R: CKKSCtBounds,
         T: GGLWEInfos,
     {
-        self.ckks_copy_tmp_bytes()
+        self.ckks_copy_tmp_bytes(res, res)
             .max(self.ckks_mul_add_ct_tmp_bytes(res, res, res, tsk))
     }
 
     fn ckks_fma(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        c: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        a: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        b: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        c: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()> {
@@ -84,15 +85,18 @@ where
         Ok(())
     }
 
-    fn ckks_scalbn_tmp_bytes(&self) -> usize {
-        self.ckks_mul_pow2_tmp_bytes()
-            .max(self.ckks_div_pow2_tmp_bytes())
+    fn ckks_scalbn_tmp_bytes<R>(&self, res: &R) -> usize
+    where
+        R: CKKSCtBounds,
+    {
+        self.ckks_mul_pow2_tmp_bytes(res.size())
+            .max(self.ckks_div_pow2_tmp_bytes(res.size()))
     }
 
     fn ckks_scalbn(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        input: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        input: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         exponent: i32,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()> {
@@ -107,8 +111,8 @@ where
 
     fn ckks_ldexp(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        input: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        input: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         exponent: i32,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()> {

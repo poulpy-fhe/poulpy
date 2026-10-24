@@ -34,8 +34,7 @@ macro_rules! ckks_libm_backend_test_suite {
 
             use poulpy_hal::layouts::{HostBytesBackend, Module};
 
-            static MODULE: LazyLock<Module<$backend>> =
-                LazyLock::new(|| Module::<$backend>::new($params.n as u64));
+            static MODULE: LazyLock<Module<$backend>> = LazyLock::new(|| Module::<$backend>::new($params.n as u64));
             static HOST_MODULE: LazyLock<Module<HostBytesBackend>> =
                 LazyLock::new(|| Module::<HostBytesBackend>::new($params.n as u64));
 
@@ -50,21 +49,12 @@ macro_rules! ckks_libm_backend_test_suite {
                 };
             }
 
-            run_test!(
-                sign_composite,
-                $crate::test_suite::sign::test_sign_composite
-            );
-            run_test!(
-                step_composite,
-                $crate::test_suite::sign::test_step_composite
-            );
+            run_test!(sign_composite, $crate::test_suite::sign::test_sign_composite);
+            run_test!(step_composite, $crate::test_suite::sign::test_step_composite);
             run_test!(sign_minimax, $crate::test_suite::sign::test_sign_minimax);
             run_test!(max_min, $crate::test_suite::compare::test_max_min);
             run_test!(arithmetic, $crate::test_suite::arithmetic::test_arithmetic);
-            run_test!(
-                approximation,
-                $crate::test_suite::approximation::test_approximation
-            );
+            run_test!(approximation, $crate::test_suite::approximation::test_approximation);
             run_test!(
                 precision_tuning,
                 $crate::test_suite::approximation::test_precision_tuning
@@ -87,15 +77,9 @@ macro_rules! ckks_libm_backend_test_suite {
                 $crate::test_suite::inverse::test_interval_normalization
             );
             run_test!(fabs, $crate::test_suite::predicate::test_fabs);
-            run_test!(
-                fdim_copysign,
-                $crate::test_suite::predicate::test_fdim_copysign
-            );
+            run_test!(fdim_copysign, $crate::test_suite::predicate::test_fdim_copysign);
             run_test!(compare, $crate::test_suite::predicate::test_compare);
-            run_test!(
-                indicator_eq,
-                $crate::test_suite::predicate::test_indicator_eq
-            );
+            run_test!(indicator_eq, $crate::test_suite::predicate::test_indicator_eq);
             run_test!(select, $crate::test_suite::predicate::test_select);
             run_test!(div, $crate::test_suite::divsqrt::test_div);
             run_test!(sqrt, $crate::test_suite::divsqrt::test_sqrt);
@@ -108,15 +92,9 @@ macro_rules! ckks_libm_backend_test_suite {
             run_test!(powi, $crate::test_suite::pow::test_powi);
             run_test!(root_family, $crate::test_suite::roots::test_root_family);
             run_test!(sum_slots, $crate::test_suite::reduce::test_sum_slots);
-            run_test!(
-                extrema_slots,
-                $crate::test_suite::reduce::test_extrema_slots
-            );
+            run_test!(extrema_slots, $crate::test_suite::reduce::test_extrema_slots);
             run_test!(softmax, $crate::test_suite::softmax::test_softmax);
-            run_test!(
-                special_functions,
-                $crate::test_suite::special::test_special_functions
-            );
+            run_test!(special_functions, $crate::test_suite::special::test_special_functions);
             run_test!(trig_family, $crate::test_suite::trig::test_trig_family);
             run_test!(
                 inverse_trig_family,

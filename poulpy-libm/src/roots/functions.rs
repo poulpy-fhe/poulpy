@@ -1,29 +1,28 @@
 //! Root functions.
 
+use poulpy_hal::{AlignedBuf, layouts::Standard};
 use std::fmt::Debug;
 
 use anyhow::{Result, ensure};
 use num_traits::{Float, FloatConst, FromPrimitive, ToPrimitive};
 use poulpy_core::layouts::{
-    BSGSMeta, GGLWEInfos, GLWE, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
-    LWEInfos, SetBSGSMeta, prepared::GLWETensorKeyPreparedToBackendRef,
+    BSGSMeta, GGLWEInfos, GLWE, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta,
+    prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena};
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, SetCKKSInfos,
     api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps},
-    layouts::{
-        CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar,
-        ScratchArenaTakeCKKS,
-    },
+    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKS},
 };
 
-use crate::approximation::{
-    ApproximationOptions, CKKSApproximationOps, Parity, PolynomialApproximation,
-    parity_for_interval, prepare_function,
+use crate::{
+    approximation::{
+        ApproximationOptions, CKKSApproximationOps, Parity, PolynomialApproximation, parity_for_interval, prepare_function,
+    },
+    plan::{declare_unary_op, define_unary_plan, impl_unary_op},
 };
-use crate::plan::{declare_unary_op, define_unary_plan, impl_unary_op};
 
 /// Root-function plan construction options.
 pub type RootOptions = ApproximationOptions;
@@ -42,7 +41,7 @@ pub struct HypotPlan<P> {
     pub y_interval: (f64, f64),
 }
 
-impl CbrtPlan<CKKSPlaintext<Vec<u8>, i64>> {
+impl CbrtPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     /// Fits and prepares `cbrt` on `[a, b]`.
     pub fn from_precision<F>(
         a: F,
@@ -54,20 +53,11 @@ impl CbrtPlan<CKKSPlaintext<Vec<u8>, i64>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     {
         let parity = parity_for_interval(a, b, Parity::Odd);
-        let (approximation, approximation_bits) = prepare_function(
-            "cbrt",
-            |x: F| x.cbrt(),
-            a,
-            b,
-            parity,
-            base2k,
-            coeff_meta,
-            options,
-            module,
-        )?;
+        let (approximation, approximation_bits) =
+            prepare_function("cbrt", |x: F| x.cbrt(), a, b, parity, base2k, coeff_meta, options, module)?;
         Ok(Self {
             approximation,
             approximation_bits,
@@ -86,7 +76,7 @@ fn square_range<F: Float>(a: F, b: F) -> (F, F) {
     (lo, aa.max(bb))
 }
 
-impl HypotPlan<CKKSPlaintext<Vec<u8>, i64>> {
+impl HypotPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     /// Prepares `sqrt(x^2 + y^2)` on the declared intervals.
     #[allow(clippy::too_many_arguments)]
     pub fn from_precision<F>(
@@ -101,7 +91,7 @@ impl HypotPlan<CKKSPlaintext<Vec<u8>, i64>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     {
         ensure!(
             x_a.is_finite() && x_b.is_finite(),
@@ -129,14 +119,8 @@ impl HypotPlan<CKKSPlaintext<Vec<u8>, i64>> {
         Ok(Self {
             sqrt,
             approximation_bits,
-            x_interval: (
-                x_a.to_f64().unwrap_or(f64::NAN),
-                x_b.to_f64().unwrap_or(f64::NAN),
-            ),
-            y_interval: (
-                y_a.to_f64().unwrap_or(f64::NAN),
-                y_b.to_f64().unwrap_or(f64::NAN),
-            ),
+            x_interval: (x_a.to_f64().unwrap_or(f64::NAN), x_b.to_f64().unwrap_or(f64::NAN)),
+            y_interval: (y_a.to_f64().unwrap_or(f64::NAN), y_b.to_f64().unwrap_or(f64::NAN)),
         })
     }
 }
@@ -182,9 +166,9 @@ pub trait CKKSRootOps<BE: Backend> {
     /// Evaluates `hypot(x, y)`.
     fn ckks_hypot<P>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        x: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        y: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        x: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        y: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         plan: &HypotPlan<P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
@@ -195,12 +179,8 @@ pub trait CKKSRootOps<BE: Backend> {
 
 impl<BE: Backend> CKKSRootOps<BE> for Module<BE>
 where
-    Module<BE>: CKKSAddOps<BE>
-        + CKKSApproximationOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSMulOps<BE>
-        + CKKSModuleAlloc<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>:
+    Module<BE>: CKKSAddOps<BE> + CKKSApproximationOps<BE> + CKKSCopyOps<BE> + CKKSMulOps<BE> + CKKSModuleAlloc<BE>,
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
 {
@@ -212,20 +192,20 @@ where
         T: GGLWEInfos,
         P: CKKSInfos + LWEInfos,
     {
-        let ct = GLWE::<Vec<u8>, BE::ZnxWord>::bytes_of_from_infos(res);
+        let ct = GLWE::<AlignedBuf, BE::ZnxWord>::bytes_of_from_infos(res);
         let square = self.ckks_square_tmp_bytes(res, res, tsk);
-        square.max(ct + square.max(self.ckks_add_tmp_bytes())).max(
+        square.max(ct + square.max(self.ckks_add_tmp_bytes(res.size()))).max(
             ct + self
-                .ckks_copy_tmp_bytes()
+                .ckks_copy_tmp_bytes(res, res)
                 .max(self.ckks_approximation_tmp_bytes(res, res, tsk, &plan.sqrt)),
         )
     }
 
     fn ckks_hypot<P>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        x: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        y: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        x: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        y: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         plan: &HypotPlan<P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
@@ -240,8 +220,7 @@ where
             self.ckks_add_assign(res, &y2, &mut scratch_local)
         })?;
         scratch.scope(|scratch_local| {
-            let (mut sum, mut scratch_local) =
-                scratch_local.take_ckks_ciphertext_like_scratch(&*res);
+            let (mut sum, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*res);
             self.ckks_copy(&mut sum, &*res, &mut scratch_local)?;
             self.ckks_eval_approximation(res, &sum, &plan.sqrt, tsk, &mut scratch_local)
         })?;

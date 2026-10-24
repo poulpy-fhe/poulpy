@@ -1,5 +1,6 @@
 //! Logarithmic functions.
 
+use poulpy_hal::{AlignedBuf, layouts::Standard};
 use std::fmt::Debug;
 
 use anyhow::{Result, ensure};
@@ -11,8 +12,10 @@ use poulpy_ckks::{
     layouts::{CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar},
 };
 
-use crate::approximation::{ApproximationOptions, CKKSApproximationOps, Parity, prepare_function};
-use crate::plan::{declare_unary_op, define_unary_plan, impl_unary_op};
+use crate::{
+    approximation::{ApproximationOptions, CKKSApproximationOps, Parity, prepare_function},
+    plan::{declare_unary_op, define_unary_plan, impl_unary_op},
+};
 
 /// Logarithm plan construction options.
 pub type LogOptions = ApproximationOptions;
@@ -22,7 +25,7 @@ define_unary_plan!(Log2Plan, "log2");
 define_unary_plan!(Log10Plan, "log10");
 define_unary_plan!(Log1pPlan, "log1p");
 
-impl LogPlan<CKKSPlaintext<Vec<u8>, i64>> {
+impl LogPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     /// Fits and prepares `log` on the positive interval `[a, b]`.
     pub fn from_precision<F>(
         a: F,
@@ -34,20 +37,11 @@ impl LogPlan<CKKSPlaintext<Vec<u8>, i64>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     {
         ensure!(a > F::zero(), "log: interval must be positive");
-        let (approximation, approximation_bits) = prepare_function(
-            "log",
-            |x: F| x.ln(),
-            a,
-            b,
-            Parity::Full,
-            base2k,
-            coeff_meta,
-            options,
-            module,
-        )?;
+        let (approximation, approximation_bits) =
+            prepare_function("log", |x: F| x.ln(), a, b, Parity::Full, base2k, coeff_meta, options, module)?;
         Ok(Self {
             approximation,
             approximation_bits,
@@ -55,7 +49,7 @@ impl LogPlan<CKKSPlaintext<Vec<u8>, i64>> {
     }
 }
 
-impl Log2Plan<CKKSPlaintext<Vec<u8>, i64>> {
+impl Log2Plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     /// Fits and prepares `log2` on the positive interval `[a, b]`.
     pub fn from_precision<F>(
         a: F,
@@ -67,7 +61,7 @@ impl Log2Plan<CKKSPlaintext<Vec<u8>, i64>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     {
         ensure!(a > F::zero(), "log2: interval must be positive");
         let (approximation, approximation_bits) = prepare_function(
@@ -88,7 +82,7 @@ impl Log2Plan<CKKSPlaintext<Vec<u8>, i64>> {
     }
 }
 
-impl Log10Plan<CKKSPlaintext<Vec<u8>, i64>> {
+impl Log10Plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     /// Fits and prepares `log10` on the positive interval `[a, b]`.
     pub fn from_precision<F>(
         a: F,
@@ -100,7 +94,7 @@ impl Log10Plan<CKKSPlaintext<Vec<u8>, i64>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     {
         ensure!(a > F::zero(), "log10: interval must be positive");
         let (approximation, approximation_bits) = prepare_function(
@@ -121,7 +115,7 @@ impl Log10Plan<CKKSPlaintext<Vec<u8>, i64>> {
     }
 }
 
-impl Log1pPlan<CKKSPlaintext<Vec<u8>, i64>> {
+impl Log1pPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     /// Fits and prepares `log1p` on `[a, b]`, with `a > -1`.
     pub fn from_precision<F>(
         a: F,
@@ -133,7 +127,7 @@ impl Log1pPlan<CKKSPlaintext<Vec<u8>, i64>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     {
         ensure!(a > -F::one(), "log1p: interval must be greater than -1");
         let (approximation, approximation_bits) = prepare_function(

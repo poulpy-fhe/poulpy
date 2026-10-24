@@ -1,25 +1,25 @@
 //! Tests for root functions.
 
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-    prepared::GLWETensorKeyPreparedToBackendRef,
+    GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
+    AlignedBuf,
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, ScratchOwned},
+    layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
     source::Source,
 };
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
-    test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, ckks_decrypt_decode,
-            ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, gen_tsk, upload_pt,
+            TestContextBackend, TestContextModule, TestScalar, ckks_decrypt_decode, ckks_encrypt_with_prec, ckks_spec,
+            gen_sk_with_raw, gen_tsk, upload_pt,
         },
+        reference_encoder::ReferenceEncoder,
     },
 };
 
@@ -27,23 +27,19 @@ use crate::roots::{CKKSRootOps, CbrtPlan, HypotPlan, RootOptions};
 
 use super::helpers::{assert_precision_bits, params_for};
 
-pub fn test_root_family<BE, F, E>(
-    base: CKKSTestParams,
-    module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-) where
-    BE: TestContextBackend,
+pub fn test_root_family<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSRootOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord>:
-        GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
-    CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
+    CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let log_delta = base.prec_meta.log_delta;
+    let log_delta = base.prec().log_delta();
     let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);
     let options = RootOptions::default();
     let host_cbrt = CbrtPlan::from_precision(
@@ -66,9 +62,7 @@ pub fn test_root_family<BE, F, E>(
         host_module,
     )
     .expect("HypotPlan::from_precision");
-    let max_consumed = host_cbrt
-        .consumed_bits(log_delta)
-        .max(host_hypot.consumed_bits(log_delta));
+    let max_consumed = host_cbrt.consumed_bits(log_delta).max(host_hypot.consumed_bits(log_delta));
     let cbrt = host_cbrt.map_plaintexts(|pt| upload_pt(module, pt));
     let hypot = host_hypot.map_plaintexts(|pt| upload_pt(module, pt));
     let params = params_for(&base, max_consumed);
@@ -78,12 +72,8 @@ pub fn test_root_family<BE, F, E>(
     let x: Vec<F> = (0..slots)
         .map(|_| F::from_f64(source.next_f64(-1.5, -0.5)).unwrap())
         .collect();
-    let hx: Vec<F> = (0..slots)
-        .map(|_| F::from_f64(source.next_f64(0.5, 1.0)).unwrap())
-        .collect();
-    let hy: Vec<F> = (0..slots)
-        .map(|_| F::from_f64(source.next_f64(0.5, 1.0)).unwrap())
-        .collect();
+    let hx: Vec<F> = (0..slots).map(|_| F::from_f64(source.next_f64(0.5, 1.0)).unwrap()).collect();
+    let hy: Vec<F> = (0..slots).map(|_| F::from_f64(source.next_f64(0.5, 1.0)).unwrap()).collect();
     let im = vec![F::zero(); slots];
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0xc6u8; 32]);
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
@@ -134,18 +124,8 @@ pub fn test_root_family<BE, F, E>(
     module
         .ckks_cbrt(&mut res, &cx, &cbrt, &tsk, &mut scratch.borrow())
         .expect("ckks_cbrt");
-    assert_eq!(
-        cx.log_budget() - res.log_budget(),
-        cbrt.consumed_bits(log_delta)
-    );
-    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(
-        &params,
-        module,
-        &encoder,
-        &res,
-        &sk,
-        &mut scratch.borrow(),
-    );
+    assert_eq!(cx.log_budget() - res.log_budget(), cbrt.consumed_bits(log_delta));
+    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
     let want: Vec<F> = x.iter().map(|&v| v.cbrt()).collect();
     assert_precision_bits("cbrt", &re_out, &want, options.target_bits, params.n);
 
@@ -153,22 +133,8 @@ pub fn test_root_family<BE, F, E>(
     module
         .ckks_hypot(&mut res, &chx, &chy, &hypot, &tsk, &mut scratch.borrow())
         .expect("ckks_hypot");
-    assert_eq!(
-        chx.log_budget() - res.log_budget(),
-        hypot.consumed_bits(log_delta)
-    );
-    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(
-        &params,
-        module,
-        &encoder,
-        &res,
-        &sk,
-        &mut scratch.borrow(),
-    );
-    let want: Vec<F> = hx
-        .iter()
-        .zip(&hy)
-        .map(|(&x, &y)| (x * x + y * y).sqrt())
-        .collect();
+    assert_eq!(chx.log_budget() - res.log_budget(), hypot.consumed_bits(log_delta));
+    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
+    let want: Vec<F> = hx.iter().zip(&hy).map(|(&x, &y)| (x * x + y * y).sqrt()).collect();
     assert_precision_bits("hypot", &re_out, &want, options.target_bits, params.n);
 }

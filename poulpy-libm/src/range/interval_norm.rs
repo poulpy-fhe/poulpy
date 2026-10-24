@@ -3,7 +3,10 @@
 use anyhow::{Result, anyhow, ensure};
 use num_traits::{Float, FloatConst, FromPrimitive};
 use poulpy_core::layouts::{Base2K, LWEInfos};
-use poulpy_hal::layouts::{HostBytesBackend, Module};
+use poulpy_hal::{
+    AlignedBuf,
+    layouts::{HostBytesBackend, Module, Standard},
+};
 
 use poulpy_ckks::{
     CKKSInfos, CKKSLayout, SetCKKSInfos,
@@ -23,39 +26,28 @@ pub struct IntervalNorm<P> {
     pub coeff_log_delta: usize,
 }
 
-impl IntervalNorm<CKKSPlaintext<Vec<u8>, i64>> {
+impl IntervalNorm<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     /// Builds the constants for compressing `[−max, max]`.
-    pub fn from_max<F>(
-        max: f64,
-        base2k: Base2K,
-        coeff_meta: CKKSLayout,
-        module: &Module<HostBytesBackend>,
-    ) -> Result<Self>
+    pub fn from_max<F>(max: f64, base2k: Base2K, coeff_meta: CKKSLayout, module: &Module<HostBytesBackend>) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive,
-        CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     {
-        ensure!(
-            max.is_finite() && max > 0.0,
-            "interval_norm: max must be positive and finite"
-        );
+        ensure!(max.is_finite() && max > 0.0, "interval_norm: max must be positive and finite");
         let n = (max.log2() / COMPRESSION_L.log2()).ceil().max(1.0) as usize;
         let c: Vec<F> = (0..n)
             .map(|i| {
                 let den = 27.0 * COMPRESSION_L.powi(2 * (n - 1 - i) as i32);
-                F::from_f64(4.0 / den)
-                    .ok_or_else(|| anyhow!("interval_norm: c_{i} not representable"))
+                F::from_f64(4.0 / den).ok_or_else(|| anyhow!("interval_norm: c_{i} not representable"))
             })
             .collect::<Result<_>>()?;
         let mut consts = module.ckks_pt_coeffs_alloc(n, base2k, coeff_meta.k());
         consts.set_meta(coeff_meta.meta());
-        consts
-            .encode_host_floats(&c)
-            .map_err(|e| anyhow!("interval_norm: {e}"))?;
+        consts.encode_host_floats(&c).map_err(|e| anyhow!("interval_norm: {e}"))?;
         Ok(Self {
             consts,
             n,
-            coeff_log_delta: coeff_meta.meta.log_delta,
+            coeff_log_delta: coeff_meta.log_delta(),
         })
     }
 }

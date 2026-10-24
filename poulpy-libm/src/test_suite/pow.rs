@@ -1,25 +1,25 @@
 //! Tests for power functions.
 
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-    prepared::GLWETensorKeyPreparedToBackendRef,
+    GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
+    AlignedBuf,
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, ScratchOwned},
+    layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
     source::Source,
 };
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
-    test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, ckks_decrypt_decode,
-            ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, gen_tsk, upload_pt,
+            TestContextBackend, TestContextModule, TestScalar, ckks_decrypt_decode, ckks_encrypt_with_prec, ckks_spec,
+            gen_sk_with_raw, gen_tsk, upload_pt,
         },
+        reference_encoder::ReferenceEncoder,
     },
 };
 
@@ -27,27 +27,22 @@ use crate::pow::{CKKSPowOps, PowOptions, PowPlan};
 
 use super::helpers::{assert_precision_bits, params_for};
 
-pub fn test_powi<BE, F, E>(
-    base: CKKSTestParams,
-    module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-) where
-    BE: TestContextBackend,
+pub fn test_powi<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSPowOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let log_delta = base.prec_meta.log_delta;
+    let log_delta = base.prec().log_delta();
     let params = params_for(&base, 6 * log_delta);
     let slots = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new::<F>(slots).unwrap();
     let mut source = Source::new([0xc1u8; 32]);
-    let mut x: Vec<F> = (0..slots)
-        .map(|_| F::from_f64(source.next_f64(-0.8, 0.8)).unwrap())
-        .collect();
+    let mut x: Vec<F> = (0..slots).map(|_| F::from_f64(source.next_f64(-0.8, 0.8)).unwrap()).collect();
     x[0] = F::from_f64(-0.8).unwrap();
     x[1] = F::from_f64(0.8).unwrap();
     x[2] = F::zero();
@@ -83,46 +78,26 @@ pub fn test_powi<BE, F, E>(
         } else {
             (31 - exponent.leading_zeros()) as usize + exponent.count_ones() as usize - 1
         };
-        assert_eq!(
-            input.log_budget() - res.log_budget(),
-            multiplications * log_delta
-        );
+        assert_eq!(input.log_budget() - res.log_budget(), multiplications * log_delta);
 
-        let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(
-            &params,
-            module,
-            &encoder,
-            &res,
-            &sk,
-            &mut scratch.borrow(),
-        );
-        assert_precision_bits(
-            &format!("powi/{exponent}"),
-            &re_out,
-            &want,
-            log_delta as f64 - 14.0,
-            params.n,
-        );
+        let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
+        assert_precision_bits(&format!("powi/{exponent}"), &re_out, &want, log_delta as f64 - 14.0, params.n);
     }
 }
 
-pub fn test_pow<BE, F, E>(
-    base: CKKSTestParams,
-    module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-) where
-    BE: TestContextBackend,
+pub fn test_pow<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSPowOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord>:
-        GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
-    CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
+    CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let log_delta = base.prec_meta.log_delta;
+    let log_delta = base.prec().log_delta();
     let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);
     let options = PowOptions::default();
     let base_a = F::from_f64(0.5).unwrap();
@@ -146,12 +121,8 @@ pub fn test_pow<BE, F, E>(
     let slots = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new::<F>(slots).unwrap();
     let mut source = Source::new([0xc3u8; 32]);
-    let mut x: Vec<F> = (0..slots)
-        .map(|_| F::from_f64(source.next_f64(0.5, 1.5)).unwrap())
-        .collect();
-    let mut y: Vec<F> = (0..slots)
-        .map(|_| F::from_f64(source.next_f64(-2.0, 2.0)).unwrap())
-        .collect();
+    let mut x: Vec<F> = (0..slots).map(|_| F::from_f64(source.next_f64(0.5, 1.5)).unwrap()).collect();
+    let mut y: Vec<F> = (0..slots).map(|_| F::from_f64(source.next_f64(-2.0, 2.0)).unwrap()).collect();
     x[0] = base_a;
     x[1] = base_b;
     y[0] = exponent_a;
@@ -190,24 +161,10 @@ pub fn test_pow<BE, F, E>(
     );
     let mut res = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     module
-        .ckks_pow(
-            &mut res,
-            &base_ct,
-            &exponent_ct,
-            &plan,
-            &tsk,
-            &mut scratch.borrow(),
-        )
+        .ckks_pow(&mut res, &base_ct, &exponent_ct, &plan, &tsk, &mut scratch.borrow())
         .expect("ckks_pow");
     assert_eq!(base_ct.log_budget() - res.log_budget(), consumed);
 
-    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(
-        &params,
-        module,
-        &encoder,
-        &res,
-        &sk,
-        &mut scratch.borrow(),
-    );
+    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
     assert_precision_bits("pow", &re_out, &want, options.target_bits, params.n);
 }

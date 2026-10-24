@@ -1,5 +1,6 @@
 //! Gamma functions.
 
+use poulpy_hal::{AlignedBuf, layouts::Standard};
 use std::fmt::Debug;
 
 use anyhow::{Result, ensure};
@@ -22,7 +23,7 @@ define_unary_plan!(LgammaPlan, "lgamma");
 
 macro_rules! impl_host_plan {
     ($plan:ident, $name:literal, $fun:path) => {
-        impl $plan<CKKSPlaintext<Vec<u8>, i64>> {
+        impl $plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
             #[doc = concat!("Fits and prepares `", $name, "` on positive `[a, b]`.")]
             pub fn from_precision<F>(
                 a: F,
@@ -34,7 +35,7 @@ macro_rules! impl_host_plan {
             ) -> Result<Self>
             where
                 F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-                CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+                CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
             {
                 ensure!(a > F::zero(), concat!($name, ": interval must be positive"));
                 let (approximation, approximation_bits) = prepare_function(

@@ -1,82 +1,54 @@
 //! Tests for hyperbolic functions.
 
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-    prepared::GLWETensorKeyPreparedToBackendRef,
+    GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
+    AlignedBuf,
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, ScratchOwned},
+    layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
     source::Source,
 };
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
-    test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, ckks_decrypt_decode,
-            ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, gen_tsk, upload_pt,
+            TestContextBackend, TestContextModule, TestScalar, ckks_decrypt_decode, ckks_encrypt_with_prec, ckks_spec,
+            gen_sk_with_raw, gen_tsk, upload_pt,
         },
+        reference_encoder::ReferenceEncoder,
     },
 };
 
-use crate::hyperbolic::{
-    AcoshPlan, AsinhPlan, AtanhPlan, CKKSHyperbolicOps, CoshPlan, HyperbolicOptions, SinhPlan,
-    TanhPlan,
-};
+use crate::hyperbolic::{AcoshPlan, AsinhPlan, AtanhPlan, CKKSHyperbolicOps, CoshPlan, HyperbolicOptions, SinhPlan, TanhPlan};
 
 use super::helpers::{assert_error, assert_precision_bits, params_for};
 
-pub fn test_hyperbolic_family<BE, F, E>(
-    base: CKKSTestParams,
-    module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-) where
-    BE: TestContextBackend,
+pub fn test_hyperbolic_family<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSHyperbolicOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord>:
-        GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
-    CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
+    CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let log_delta = base.prec_meta.log_delta;
+    let log_delta = base.prec().log_delta();
     let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);
     let options = HyperbolicOptions::default();
     let bound = F::from_f64(2.0).unwrap();
-    let host_sinh = SinhPlan::from_precision(
-        -bound,
-        bound,
-        base.base2k.into(),
-        coeff_meta,
-        options,
-        host_module,
-    )
-    .expect("SinhPlan::from_precision");
-    let host_cosh = CoshPlan::from_precision(
-        -bound,
-        bound,
-        base.base2k.into(),
-        coeff_meta,
-        options,
-        host_module,
-    )
-    .expect("CoshPlan::from_precision");
-    let host_tanh = TanhPlan::from_precision(
-        -bound,
-        bound,
-        base.base2k.into(),
-        coeff_meta,
-        options,
-        host_module,
-    )
-    .expect("TanhPlan::from_precision");
+    let host_sinh = SinhPlan::from_precision(-bound, bound, base.base2k.into(), coeff_meta, options, host_module)
+        .expect("SinhPlan::from_precision");
+    let host_cosh = CoshPlan::from_precision(-bound, bound, base.base2k.into(), coeff_meta, options, host_module)
+        .expect("CoshPlan::from_precision");
+    let host_tanh = TanhPlan::from_precision(-bound, bound, base.base2k.into(), coeff_meta, options, host_module)
+        .expect("TanhPlan::from_precision");
     let max_consumed = host_sinh
         .consumed_bits(log_delta)
         .max(host_cosh.consumed_bits(log_delta))
@@ -100,9 +72,7 @@ pub fn test_hyperbolic_family<BE, F, E>(
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
 
     let mut source = Source::new([0xd2u8; 32]);
-    let mut x: Vec<F> = (0..slots)
-        .map(|_| F::from_f64(source.next_f64(-2.0, 2.0)).unwrap())
-        .collect();
+    let mut x: Vec<F> = (0..slots).map(|_| F::from_f64(source.next_f64(-2.0, 2.0)).unwrap()).collect();
     x[0] = -bound;
     x[1] = F::zero();
     x[2] = bound;
@@ -121,18 +91,9 @@ pub fn test_hyperbolic_family<BE, F, E>(
 
     for (op, label) in [(0, "sinh"), (1, "cosh"), (2, "tanh")] {
         let (consumed, want): (usize, Vec<F>) = match op {
-            0 => (
-                sinh.consumed_bits(log_delta),
-                x.iter().map(|&v| v.sinh()).collect(),
-            ),
-            1 => (
-                cosh.consumed_bits(log_delta),
-                x.iter().map(|&v| v.cosh()).collect(),
-            ),
-            _ => (
-                tanh.consumed_bits(log_delta),
-                x.iter().map(|&v| v.tanh()).collect(),
-            ),
+            0 => (sinh.consumed_bits(log_delta), x.iter().map(|&v| v.sinh()).collect()),
+            1 => (cosh.consumed_bits(log_delta), x.iter().map(|&v| v.cosh()).collect()),
+            _ => (tanh.consumed_bits(log_delta), x.iter().map(|&v| v.tanh()).collect()),
         };
         let mut res = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
         match op {
@@ -143,35 +104,24 @@ pub fn test_hyperbolic_family<BE, F, E>(
         .unwrap_or_else(|e| panic!("ckks_{label}: {e}"));
         assert_eq!(input.log_budget() - res.log_budget(), consumed, "{label}");
 
-        let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(
-            &params,
-            module,
-            &encoder,
-            &res,
-            &sk,
-            &mut scratch.borrow(),
-        );
+        let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
         assert_precision_bits(label, &re_out, &want, options.target_bits, params.n);
     }
 }
 
-pub fn test_inverse_hyperbolic<BE, F, E>(
-    base: CKKSTestParams,
-    module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-) where
-    BE: TestContextBackend,
+pub fn test_inverse_hyperbolic<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSHyperbolicOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord>:
-        GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
-    CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
+    CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let log_delta = base.prec_meta.log_delta;
+    let log_delta = base.prec().log_delta();
     let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);
     let options = HyperbolicOptions::default();
     let host_asinh = AsinhPlan::from_precision(
@@ -245,14 +195,8 @@ pub fn test_inverse_hyperbolic<BE, F, E>(
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let mut source = Source::new([0xd4u8; 32]);
 
-    for (op, label, lo, hi) in [
-        (0, "asinh", -2.0, 2.0),
-        (1, "acosh", 1.25, 3.0),
-        (2, "atanh", -0.75, 0.75),
-    ] {
-        let mut x: Vec<F> = (0..slots)
-            .map(|_| F::from_f64(source.next_f64(lo, hi)).unwrap())
-            .collect();
+    for (op, label, lo, hi) in [(0, "asinh", -2.0, 2.0), (1, "acosh", 1.25, 3.0), (2, "atanh", -0.75, 0.75)] {
+        let mut x: Vec<F> = (0..slots).map(|_| F::from_f64(source.next_f64(lo, hi)).unwrap()).collect();
         x[0] = F::from_f64(lo).unwrap();
         x[1] = F::from_f64(hi).unwrap();
         let want: Vec<F> = match op {
@@ -288,19 +232,8 @@ pub fn test_inverse_hyperbolic<BE, F, E>(
             ),
         };
         result.unwrap_or_else(|e| panic!("ckks_{label}: {e}"));
-        assert_eq!(
-            input.log_budget() - result_ct.log_budget(),
-            consumed,
-            "{label}"
-        );
-        let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(
-            &params,
-            module,
-            &encoder,
-            &result_ct,
-            &sk,
-            &mut scratch.borrow(),
-        );
+        assert_eq!(input.log_budget() - result_ct.log_budget(), consumed, "{label}");
+        let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &result_ct, &sk, &mut scratch.borrow());
         assert_precision_bits(label, &re_out, &want, options.target_bits, params.n);
     }
 }

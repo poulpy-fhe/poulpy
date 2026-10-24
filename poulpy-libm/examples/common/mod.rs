@@ -5,23 +5,23 @@
 
 use anyhow::Result;
 use poulpy_ckks::{
-    CKKSLayout, CKKSMeta, SetCKKSInfos,
+    CKKSLayout, GLWEPlaintextMeta, Scale, SetCKKSInfos,
     api::CKKSAllOpsTmpBytes,
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
     test_suite::{
         CKKSTestParams,
         helpers::{
-            assert_precision_for_log_delta, ckks_decrypt_decode, ckks_encrypt_with_prec, ckks_spec,
-            gen_sk_with_raw, gen_tsk,
+            assert_precision_for_log_delta, ckks_decrypt_decode, ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, gen_tsk,
         },
         reference_encoder::ReferenceEncoder,
     },
 };
 use poulpy_core::layouts::{GLWESecretPrepared, GLWETensorKeyPrepared};
-use poulpy_cpu_ref::{FFT64ReimTable, NTT4x30Ref};
+use poulpy_cpu_portable::{NTT4x30Portable, ckks_encoding::EncodingFFTTable};
 use poulpy_hal::{
+    AlignedBuf,
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, ScratchOwned},
+    layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
 };
 
 pub const N: usize = 4096;
@@ -29,16 +29,16 @@ pub const SLOTS: usize = N / 2;
 pub const BASE2K: usize = 52;
 pub const LOG_DELTA: usize = 32;
 
-pub type Backend = NTT4x30Ref;
-pub type Ciphertext = CKKSCiphertext<Vec<u8>, i64>;
-pub type SecretKey = GLWESecretPrepared<Vec<u8>, Backend>;
-pub type TensorKey = GLWETensorKeyPrepared<Vec<u8>, Backend>;
+pub type Backend = NTT4x30Portable;
+pub type Ciphertext = CKKSCiphertext<AlignedBuf, i64, Standard>;
+pub type SecretKey = GLWESecretPrepared<AlignedBuf, Backend>;
+pub type TensorKey = GLWETensorKeyPrepared<AlignedBuf, Backend>;
 
 /// Modules and encoder that do not depend on the circuit depth.
 pub struct Setup {
     pub module: Module<Backend>,
     pub host_module: Module<HostBytesBackend>,
-    pub encoder: ReferenceEncoder<FFT64ReimTable<f64>>,
+    pub encoder: ReferenceEncoder<EncodingFFTTable<f64>>,
 }
 
 /// Keys and scratch storage sized for one walkthrough circuit.
@@ -46,7 +46,7 @@ pub struct Context {
     pub params: CKKSTestParams,
     pub module: Module<Backend>,
     pub host_module: Module<HostBytesBackend>,
-    pub encoder: ReferenceEncoder<FFT64ReimTable<f64>>,
+    pub encoder: ReferenceEncoder<EncodingFFTTable<f64>>,
     pub sk: SecretKey,
     pub tsk: TensorKey,
     pub scratch: ScratchOwned<Backend>,
@@ -57,7 +57,7 @@ impl Setup {
         Ok(Self {
             module: Module::<Backend>::new(N as u64),
             host_module: Module::<HostBytesBackend>::new(N as u64),
-            encoder: ReferenceEncoder::<FFT64ReimTable<f64>>::new::<f64>(SLOTS)?,
+            encoder: ReferenceEncoder::<EncodingFFTTable<f64>>::new::<f64>(SLOTS)?,
         })
     }
 
@@ -68,16 +68,15 @@ impl Setup {
         operation_tmp_bytes: impl FnOnce(&Module<Backend>, &Ciphertext, &CKKSTestParams) -> usize,
     ) -> Context {
         let params = params_for(consumed_bits);
-        let mut sizing = self
-            .module
-            .ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
+        let mut sizing = self.module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
         sizing.set_meta(params.prec().meta);
 
         // Key preparation and function evaluation share this temporary memory.
-        let scratch_bytes = operation_tmp_bytes(&self.module, &sizing, &params).max(
-            self.module
-                .ckks_all_ops_tmp_bytes(&sizing, &params.tsk_layout(), &coeff_layout()),
-        );
+        let scratch_bytes = operation_tmp_bytes(&self.module, &sizing, &params).max(self.module.ckks_all_ops_tmp_bytes(
+            &sizing,
+            &params.tsk_layout(),
+            &coeff_layout(),
+        ));
         let mut scratch = ScratchOwned::<Backend>::alloc(scratch_bytes);
         let (sk_raw, sk) = gen_sk_with_raw(&params, &self.module, &self.host_module, [0x11; 32]);
         let tsk = gen_tsk(&params, &self.module, &sk_raw, &mut scratch.borrow());
@@ -121,7 +120,7 @@ impl Context {
 
     /// Decrypts and returns the real slots.
     pub fn decrypt(&mut self, ciphertext: &Ciphertext) -> Vec<f64> {
-        ckks_decrypt_decode::<Backend, f64, FFT64ReimTable<f64>>(
+        ckks_decrypt_decode::<Backend, f64, EncodingFFTTable<f64>>(
             &self.params,
             &self.module,
             &self.encoder,
@@ -138,9 +137,7 @@ pub fn coeff_layout() -> CKKSLayout {
 }
 
 pub fn dense_interval(a: f64, b: f64) -> Vec<f64> {
-    (0..SLOTS)
-        .map(|i| a + (b - a) * i as f64 / (SLOTS - 1) as f64)
-        .collect()
+    (0..SLOTS).map(|i| a + (b - a) * i as f64 / (SLOTS - 1) as f64).collect()
 }
 
 pub fn verify(label: &str, got: &[f64], want: &[f64], log_delta: usize) {
@@ -156,9 +153,9 @@ fn params_for(consumed_bits: usize) -> CKKSTestParams {
         n: N,
         base2k: BASE2K,
         k,
-        prec_meta: CKKSMeta {
+        prec_meta: GLWEPlaintextMeta {
             log_sparsity: 0,
-            log_delta: LOG_DELTA,
+            scale: Scale::Log(LOG_DELTA),
             slots: Default::default(),
         },
         prec_log_budget: k - LOG_DELTA,

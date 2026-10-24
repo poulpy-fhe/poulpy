@@ -1,24 +1,23 @@
 //! Tests for [`CKKSDivSqrtOps`]: `div`, `sqrt`.
 
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
-    prepared::GLWETensorKeyPreparedToBackendRef,
+    GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, ScratchOwned},
+    layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
 };
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
-    test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, ckks_decrypt_decode,
-            ckks_encrypt_with_prec, gen_sk_with_raw, gen_tsk,
+            TestContextBackend, TestContextModule, TestScalar, ckks_decrypt_decode, ckks_encrypt_with_prec, gen_sk_with_raw,
+            gen_tsk,
         },
+        reference_encoder::ReferenceEncoder,
     },
 };
 
@@ -26,20 +25,17 @@ use crate::iterative::CKKSDivSqrtOps;
 
 use super::helpers::{assert_precision_bits, params_for_with_headroom, sample_uniform};
 
-pub fn test_div<BE, F, E>(
-    base: CKKSTestParams,
-    module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-) where
-    BE: TestContextBackend,
+pub fn test_div<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSDivSqrtOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let log_delta = base.prec_meta.log_delta;
+    let log_delta = base.prec().log_delta();
     let iters = 6usize;
     let params = params_for_with_headroom(&base, (iters + 2) * log_delta, log_delta);
     let slots = params.n / 2;
@@ -90,31 +86,21 @@ pub fn test_div<BE, F, E>(
     assert_eq!(res.log_delta(), log_delta, "div: log_delta preserved");
     assert_eq!(input_budget - res.log_budget(), (iters + 2) * log_delta);
 
-    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(
-        &params,
-        module,
-        &encoder,
-        &res,
-        &sk,
-        &mut scratch.borrow(),
-    );
+    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
     assert_precision_bits("div", &re_out, &want, log_delta as f64 - 12.0, params.n);
 }
 
-pub fn test_sqrt<BE, F, E>(
-    base: CKKSTestParams,
-    module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-) where
-    BE: TestContextBackend,
+pub fn test_sqrt<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSDivSqrtOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let log_delta = base.prec_meta.log_delta;
+    let log_delta = base.prec().log_delta();
     let r = 5usize;
     let params = params_for_with_headroom(&base, (2 * r + 1) * log_delta, log_delta);
     let slots = params.n / 2;
@@ -165,13 +151,6 @@ pub fn test_sqrt<BE, F, E>(
     assert_eq!(res.log_delta(), log_delta, "sqrt: log_delta preserved");
     assert_eq!(input_budget - res.log_budget(), (2 * r + 1) * log_delta);
 
-    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(
-        &params,
-        module,
-        &encoder,
-        &res,
-        &sk,
-        &mut scratch.borrow(),
-    );
+    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
     assert_precision_bits("sqrt", &re_out, &want, log_delta as f64 - 15.0, params.n);
 }

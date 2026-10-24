@@ -1,52 +1,47 @@
 //! Tests for smooth special functions.
 
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-    prepared::GLWETensorKeyPreparedToBackendRef,
+    GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
+    AlignedBuf,
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, ScratchOwned},
+    layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
     source::Source,
 };
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
-    test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, ckks_decrypt_decode,
-            ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, gen_tsk, upload_pt,
+            TestContextBackend, TestContextModule, TestScalar, ckks_decrypt_decode, ckks_encrypt_with_prec, ckks_spec,
+            gen_sk_with_raw, gen_tsk, upload_pt,
         },
+        reference_encoder::ReferenceEncoder,
     },
 };
 
 use crate::special::{
-    CKKSBesselOps, CKKSGammaOps, J0Plan, J1Plan, JnPlan, LgammaPlan, SpecialOptions, TgammaPlan,
-    Y0Plan, Y1Plan, YnPlan,
+    CKKSBesselOps, CKKSGammaOps, J0Plan, J1Plan, JnPlan, LgammaPlan, SpecialOptions, TgammaPlan, Y0Plan, Y1Plan, YnPlan,
 };
 
 use super::helpers::{assert_error, assert_precision_bits, params_for};
 
-pub fn test_special_functions<BE, F, E>(
-    base: CKKSTestParams,
-    module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-) where
-    BE: TestContextBackend,
+pub fn test_special_functions<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSBesselOps<BE> + CKKSGammaOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord>:
-        GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
-    CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
+    CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let log_delta = base.prec_meta.log_delta;
+    let log_delta = base.prec().log_delta();
     let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);
     let options = SpecialOptions::default();
     let g0 = F::one();
@@ -55,64 +50,28 @@ pub fn test_special_functions<BE, F, E>(
     let j1 = F::from_f64(4.0).unwrap();
     let y0 = F::one();
     let y1 = F::from_f64(4.0).unwrap();
-    let host_tgamma =
-        TgammaPlan::from_precision(g0, g1, base.base2k.into(), coeff_meta, options, host_module)
-            .expect("TgammaPlan::from_precision");
-    let host_lgamma =
-        LgammaPlan::from_precision(g0, g1, base.base2k.into(), coeff_meta, options, host_module)
-            .expect("LgammaPlan::from_precision");
+    let host_tgamma = TgammaPlan::from_precision(g0, g1, base.base2k.into(), coeff_meta, options, host_module)
+        .expect("TgammaPlan::from_precision");
+    let host_lgamma = LgammaPlan::from_precision(g0, g1, base.base2k.into(), coeff_meta, options, host_module)
+        .expect("LgammaPlan::from_precision");
     let host_j0 =
-        J0Plan::from_precision(j0, j1, base.base2k.into(), coeff_meta, options, host_module)
-            .expect("J0Plan::from_precision");
+        J0Plan::from_precision(j0, j1, base.base2k.into(), coeff_meta, options, host_module).expect("J0Plan::from_precision");
     let host_j1 =
-        J1Plan::from_precision(j0, j1, base.base2k.into(), coeff_meta, options, host_module)
-            .expect("J1Plan::from_precision");
-    let host_jn = JnPlan::from_precision(
-        3,
-        j0,
-        j1,
-        base.base2k.into(),
-        coeff_meta,
-        options,
-        host_module,
-    )
-    .expect("JnPlan::from_precision");
+        J1Plan::from_precision(j0, j1, base.base2k.into(), coeff_meta, options, host_module).expect("J1Plan::from_precision");
+    let host_jn =
+        JnPlan::from_precision(3, j0, j1, base.base2k.into(), coeff_meta, options, host_module).expect("JnPlan::from_precision");
     let host_y0 =
-        Y0Plan::from_precision(y0, y1, base.base2k.into(), coeff_meta, options, host_module)
-            .expect("Y0Plan::from_precision");
+        Y0Plan::from_precision(y0, y1, base.base2k.into(), coeff_meta, options, host_module).expect("Y0Plan::from_precision");
     let host_y1 =
-        Y1Plan::from_precision(y0, y1, base.base2k.into(), coeff_meta, options, host_module)
-            .expect("Y1Plan::from_precision");
-    let host_yn = YnPlan::from_precision(
-        2,
-        y0,
-        y1,
-        base.base2k.into(),
-        coeff_meta,
-        options,
-        host_module,
-    )
-    .expect("YnPlan::from_precision");
+        Y1Plan::from_precision(y0, y1, base.base2k.into(), coeff_meta, options, host_module).expect("Y1Plan::from_precision");
+    let host_yn =
+        YnPlan::from_precision(2, y0, y1, base.base2k.into(), coeff_meta, options, host_module).expect("YnPlan::from_precision");
     assert_error(
-        TgammaPlan::from_precision(
-            F::zero(),
-            g1,
-            base.base2k.into(),
-            coeff_meta,
-            options,
-            host_module,
-        ),
+        TgammaPlan::from_precision(F::zero(), g1, base.base2k.into(), coeff_meta, options, host_module),
         "tgamma: interval must be positive",
     );
     assert_error(
-        Y0Plan::from_precision(
-            F::zero(),
-            y1,
-            base.base2k.into(),
-            coeff_meta,
-            options,
-            host_module,
-        ),
+        Y0Plan::from_precision(F::zero(), y1, base.base2k.into(), coeff_meta, options, host_module),
         "y0: interval must be positive",
     );
 
@@ -139,15 +98,9 @@ pub fn test_special_functions<BE, F, E>(
     let slots = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new::<F>(slots).unwrap();
     let mut source = Source::new([0xe1u8; 32]);
-    let gx: Vec<F> = (0..slots)
-        .map(|_| F::from_f64(source.next_f64(1.0, 3.0)).unwrap())
-        .collect();
-    let jx: Vec<F> = (0..slots)
-        .map(|_| F::from_f64(source.next_f64(-4.0, 4.0)).unwrap())
-        .collect();
-    let yx: Vec<F> = (0..slots)
-        .map(|_| F::from_f64(source.next_f64(1.0, 4.0)).unwrap())
-        .collect();
+    let gx: Vec<F> = (0..slots).map(|_| F::from_f64(source.next_f64(1.0, 3.0)).unwrap()).collect();
+    let jx: Vec<F> = (0..slots).map(|_| F::from_f64(source.next_f64(-4.0, 4.0)).unwrap()).collect();
+    let yx: Vec<F> = (0..slots).map(|_| F::from_f64(source.next_f64(1.0, 4.0)).unwrap()).collect();
     let im = vec![F::zero(); slots];
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0xe2u8; 32]);
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
@@ -202,12 +155,7 @@ pub fn test_special_functions<BE, F, E>(
 
     for (op, &expected_consumed) in consumed.iter().enumerate() {
         #[allow(clippy::type_complexity)]
-        let (label, input, x, want): (
-            &str,
-            &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-            &[F],
-            Vec<F>,
-        ) = match op {
+        let (label, input, x, want): (&str, &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>, &[F], Vec<F>) = match op {
             0 => (
                 "tgamma",
                 &cg,
@@ -285,19 +233,8 @@ pub fn test_special_functions<BE, F, E>(
             _ => module.ckks_yn(&mut sizing, input, &ypn, &tsk, &mut scratch.borrow()),
         };
         result.unwrap_or_else(|e| panic!("ckks_{label}: {e}"));
-        assert_eq!(
-            input.log_budget() - sizing.log_budget(),
-            expected_consumed,
-            "{label}"
-        );
-        let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(
-            &params,
-            module,
-            &encoder,
-            &sizing,
-            &sk,
-            &mut scratch.borrow(),
-        );
+        assert_eq!(input.log_budget() - sizing.log_budget(), expected_consumed, "{label}");
+        let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &sizing, &sk, &mut scratch.borrow());
         assert_precision_bits(label, &re_out, &want, options.target_bits, params.n);
     }
 }

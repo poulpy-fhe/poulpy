@@ -1,33 +1,25 @@
 //! Inverse trigonometric functions.
 
+use poulpy_hal::{AlignedBuf, layouts::Standard};
 use std::fmt::Debug;
 
 use anyhow::{Result, anyhow, ensure};
 use num_traits::{Float, FloatConst, FromPrimitive, ToPrimitive};
 use poulpy_core::layouts::{
-    BSGSMeta, GGLWEInfos, GGLWEPreparedToBackendRef, GLWE, GLWETensorKeyPrepared, GLWEToBackendMut,
-    GLWEToBackendRef, GetGaloisElement, LWEInfos, SetBSGSMeta,
-    prepared::{GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
+    BSGSMeta, GGLWEInfos, GLWE, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
+    SetBSGSMeta, prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena};
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, SetCKKSInfos,
-    api::{
-        CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSMulOps, CKKSNegOps,
-        CKKSPolynomialEvaluationOps,
-    },
-    layouts::{
-        CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar,
-        ScratchArenaTakeCKKS,
-    },
+    api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSMulOps, CKKSNegOps, CKKSPolynomialEvaluationOps},
+    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKS},
     polynomial::SplitStrategy,
 };
 
 use crate::{
-    approximation::{
-        ApproximationOptions, CKKSApproximationOps, Parity, parity_for_interval, prepare_function,
-    },
+    approximation::{ApproximationOptions, CKKSApproximationOps, Parity, parity_for_interval, prepare_function},
     plan::{declare_unary_op, define_unary_plan, impl_unary_op},
     roots::CKKSInverseOps,
     sign::{CKKSSignOps, SignComposite, ckks_sign_into},
@@ -98,7 +90,7 @@ pub struct Atan2Plan<F, P> {
     pub coeff_log_delta: usize,
 }
 
-impl AtanPlan<CKKSPlaintext<Vec<u8>, i64>> {
+impl AtanPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     /// Fits and prepares `atan` on `[a, b]`.
     pub fn from_precision<F>(
         a: F,
@@ -110,7 +102,7 @@ impl AtanPlan<CKKSPlaintext<Vec<u8>, i64>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     {
         let (approximation, approximation_bits) = prepare_function(
             "atan",
@@ -130,7 +122,7 @@ impl AtanPlan<CKKSPlaintext<Vec<u8>, i64>> {
     }
 }
 
-impl AsinPlan<CKKSPlaintext<Vec<u8>, i64>> {
+impl AsinPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     /// Fits and prepares `asin` on `[a, b] ⊆ [-1, 1]`.
     pub fn from_precision<F>(
         a: F,
@@ -142,12 +134,9 @@ impl AsinPlan<CKKSPlaintext<Vec<u8>, i64>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     {
-        ensure!(
-            a >= -F::one() && b <= F::one(),
-            "asin: interval must lie in [-1, 1]"
-        );
+        ensure!(a >= -F::one() && b <= F::one(), "asin: interval must lie in [-1, 1]");
         let (approximation, approximation_bits) = prepare_function(
             "asin",
             |x: F| x.asin(),
@@ -166,7 +155,7 @@ impl AsinPlan<CKKSPlaintext<Vec<u8>, i64>> {
     }
 }
 
-impl AcosPlan<CKKSPlaintext<Vec<u8>, i64>> {
+impl AcosPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     /// Fits and prepares `acos` on `[a, b] ⊆ [-1, 1]`.
     pub fn from_precision<F>(
         a: F,
@@ -178,12 +167,9 @@ impl AcosPlan<CKKSPlaintext<Vec<u8>, i64>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     {
-        ensure!(
-            a >= -F::one() && b <= F::one(),
-            "acos: interval must lie in [-1, 1]"
-        );
+        ensure!(a >= -F::one() && b <= F::one(), "acos: interval must lie in [-1, 1]");
         let (approximation, approximation_bits) = prepare_function(
             "acos",
             |x: F| x.acos(),
@@ -202,10 +188,10 @@ impl AcosPlan<CKKSPlaintext<Vec<u8>, i64>> {
     }
 }
 
-impl<F> Atan2Plan<F, CKKSPlaintext<Vec<u8>, i64>>
+impl<F> Atan2Plan<F, CKKSPlaintext<AlignedBuf, i64, Standard>>
 where
     F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-    CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+    CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
 {
     /// Prepares `atan(y/x)` and quadrant selection.
     pub fn from_precision(
@@ -224,22 +210,13 @@ where
             "atan2: target_bits must be positive and finite"
         );
         ensure!(options.max_degree > 0, "atan2: max_degree must be positive");
-        ensure!(
-            options.reciprocal_iters > 0,
-            "atan2: reciprocal_iters must be positive"
-        );
+        ensure!(options.reciprocal_iters > 0, "atan2: reciprocal_iters must be positive");
         ensure!(
             options.sign_tau.is_finite() && options.sign_tau > 0.0 && options.sign_tau < 1.0,
             "atan2: sign_tau must lie in (0, 1)"
         );
-        ensure!(
-            options.sign_degree > 0,
-            "atan2: sign_degree must be positive"
-        );
-        ensure!(
-            options.max_sign_factors > 0,
-            "atan2: max_sign_factors must be positive"
-        );
+        ensure!(options.sign_degree > 0, "atan2: sign_degree must be positive");
+        ensure!(options.max_sign_factors > 0, "atan2: max_sign_factors must be positive");
         ensure!(
             options.input_bound.is_finite() && options.input_bound > 0.0,
             "atan2: input_bound must be positive and finite"
@@ -311,11 +288,7 @@ impl<F, P> Atan2Plan<F, P> {
 
     /// Multiplicative depth.
     pub fn depth(&self) -> usize {
-        usize::from(self.normalization_steps > 0)
-            + self.sign.depth()
-            + self.reciprocal_iters
-            + 4
-            + self.atan.depth()
+        usize::from(self.normalization_steps > 0) + self.sign.depth() + self.reciprocal_iters + 4 + self.atan.depth()
     }
 
     /// Maps prepared plaintexts to another backend.
@@ -353,13 +326,7 @@ where
 /// Homomorphic full-quadrant `atan2` away from both axes.
 pub trait CKKSAtan2Ops<BE: Backend> {
     /// Scratch bytes for [`Self::ckks_atan2`].
-    fn ckks_atan2_tmp_bytes<R, T, A, F, P>(
-        &self,
-        res: &R,
-        tsk: &T,
-        conj_key: &A,
-        plan: &Atan2Plan<F, P>,
-    ) -> usize
+    fn ckks_atan2_tmp_bytes<R, T, A, F, P>(&self, res: &R, tsk: &T, conj_key: &A, plan: &Atan2Plan<F, P>) -> usize
     where
         R: CKKSCtBounds,
         T: GGLWEInfos,
@@ -371,9 +338,9 @@ pub trait CKKSAtan2Ops<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn ckks_atan2<F, P, K>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        y: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        x: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        y: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        x: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         plan: &Atan2Plan<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         conj_key: &K,
@@ -381,10 +348,7 @@ pub trait CKKSAtan2Ops<BE: Backend> {
     ) -> Result<()>
     where
         P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-            + GGLWEPreparedToBackendRef<BE>
-            + GetGaloisElement
-            + GGLWEInfos;
+        K: GetAutomorphismKey<BE>;
 }
 
 impl<BE: Backend> CKKSAtan2Ops<BE> for Module<BE>
@@ -400,24 +364,18 @@ where
         + CKKSSignOps<BE>
         + CKKSModuleAlloc<BE>
         + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
 {
-    fn ckks_atan2_tmp_bytes<R, T, A, F, P>(
-        &self,
-        res: &R,
-        tsk: &T,
-        conj_key: &A,
-        plan: &Atan2Plan<F, P>,
-    ) -> usize
+    fn ckks_atan2_tmp_bytes<R, T, A, F, P>(&self, res: &R, tsk: &T, conj_key: &A, plan: &Atan2Plan<F, P>) -> usize
     where
         R: CKKSCtBounds,
         T: GGLWEInfos,
         A: GGLWEInfos,
         P: CKKSInfos + LWEInfos,
     {
-        let ct = GLWE::<Vec<u8>, BE::ZnxWord>::bytes_of_from_infos(res);
+        let ct = GLWE::<AlignedBuf, BE::ZnxWord>::bytes_of_from_infos(res);
         4 * ct
             + self
                 .ckks_sign_tmp_bytes(res, tsk, conj_key, &plan.constants)
@@ -425,17 +383,17 @@ where
                 .max(self.ckks_atan_tmp_bytes(res, tsk, &plan.atan))
                 .max(self.ckks_mul_tmp_bytes(res, res, res, tsk))
                 .max(self.ckks_mul_pt_const_tmp_bytes(res, res, &plan.constants))
-                .max(self.ckks_add_tmp_bytes())
-                .max(self.ckks_copy_tmp_bytes())
-                .max(self.ckks_neg_tmp_bytes())
+                .max(self.ckks_add_tmp_bytes(res.size()))
+                .max(self.ckks_copy_tmp_bytes(res, res))
+                .max(self.ckks_neg_tmp_bytes(res.size()))
     }
 
     #[allow(clippy::too_many_arguments)]
     fn ckks_atan2<F, P, K>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        y: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        x: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        y: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        x: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         plan: &Atan2Plan<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         conj_key: &K,
@@ -443,62 +401,26 @@ where
     ) -> Result<()>
     where
         P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-            + GGLWEPreparedToBackendRef<BE>
-            + GetGaloisElement
-            + GGLWEInfos,
+        K: GetAutomorphismKey<BE>,
     {
         scratch.scope(|scratch_local| {
             let (mut sign_x, scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(x);
             let (mut sign_y, scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(y);
             let (mut ratio, scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(x);
-            let (mut correction, mut scratch_local) =
-                scratch_local.take_ckks_ciphertext_like_scratch(x);
+            let (mut correction, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(x);
             self.ckks_copy(&mut ratio, x, &mut scratch_local)?;
             self.ckks_copy(&mut correction, y, &mut scratch_local)?;
             if plan.normalization_steps > 0 {
                 self.ckks_mul_pt_const_assign(&mut ratio, &plan.constants, 1, &mut scratch_local)?;
-                self.ckks_mul_pt_const_assign(
-                    &mut correction,
-                    &plan.constants,
-                    1,
-                    &mut scratch_local,
-                )?;
+                self.ckks_mul_pt_const_assign(&mut correction, &plan.constants, 1, &mut scratch_local)?;
             }
-            ckks_sign_into(
-                self,
-                &mut sign_x,
-                &ratio,
-                &plan.sign,
-                tsk,
-                conj_key,
-                &mut scratch_local,
-            )?;
-            ckks_sign_into(
-                self,
-                &mut sign_y,
-                &correction,
-                &plan.sign,
-                tsk,
-                conj_key,
-                &mut scratch_local,
-            )?;
+            ckks_sign_into(self, &mut sign_x, &ratio, &plan.sign, tsk, conj_key, &mut scratch_local)?;
+            ckks_sign_into(self, &mut sign_y, &correction, &plan.sign, tsk, conj_key, &mut scratch_local)?;
             self.ckks_mul_assign(&mut ratio, &sign_x, tsk, &mut scratch_local)?;
-            self.ckks_goldschmidt_division(
-                &mut ratio,
-                plan.reciprocal_iters,
-                tsk,
-                &mut scratch_local,
-            )?;
+            self.ckks_goldschmidt_division(&mut ratio, plan.reciprocal_iters, tsk, &mut scratch_local)?;
             self.ckks_mul_assign(&mut ratio, &sign_x, tsk, &mut scratch_local)?;
             self.ckks_mul_assign(&mut ratio, &correction, tsk, &mut scratch_local)?;
-            self.ckks_eval_approximation(
-                res,
-                &ratio,
-                &plan.atan.approximation,
-                tsk,
-                &mut scratch_local,
-            )?;
+            self.ckks_eval_approximation(res, &ratio, &plan.atan.approximation, tsk, &mut scratch_local)?;
 
             // pi/2 * sign(y) * (1 - sign(x)).
             self.ckks_mul_into(&mut correction, &sign_y, &sign_x, tsk, &mut scratch_local)?;

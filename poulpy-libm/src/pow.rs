@@ -1,21 +1,20 @@
 //! Power functions.
 
+use poulpy_hal::{AlignedBuf, layouts::Standard};
 use std::fmt::Debug;
 
 use anyhow::{Result, anyhow, ensure};
 use num_traits::{Float, FloatConst, FromPrimitive, ToPrimitive};
 use poulpy_core::layouts::{
-    BSGSMeta, GGLWEInfos, GLWE, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
-    LWEInfos, SetBSGSMeta, prepared::GLWETensorKeyPreparedToBackendRef,
+    BSGSMeta, GGLWEInfos, GLWE, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta,
+    prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::layouts::{Backend, HostBytesBackend, HostStaged, Module, ScratchArena};
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, SetCKKSInfos,
     api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSSubOps},
-    layouts::{
-        CKKSCiphertext, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKS,
-    },
+    layouts::{CKKSCiphertext, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKS},
     polynomial::SplitStrategy,
 };
 
@@ -60,7 +59,7 @@ pub struct PowPlan<P> {
     pub exponent_interval: (f64, f64),
 }
 
-impl PowPlan<CKKSPlaintext<Vec<u8>, i64>> {
+impl PowPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     /// Prepares `x^y = exp(y log(x))` for positive `x`.
     #[allow(clippy::too_many_arguments)]
     pub fn from_precision<F>(
@@ -75,13 +74,10 @@ impl PowPlan<CKKSPlaintext<Vec<u8>, i64>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     {
         ensure!(
-            base_a.is_finite()
-                && base_b.is_finite()
-                && exponent_a.is_finite()
-                && exponent_b.is_finite(),
+            base_a.is_finite() && base_b.is_finite() && exponent_a.is_finite() && exponent_b.is_finite(),
             "pow: interval endpoints must be finite"
         );
         ensure!(base_a > F::zero(), "pow: base interval must be positive");
@@ -107,12 +103,7 @@ impl PowPlan<CKKSPlaintext<Vec<u8>, i64>> {
         .map_err(|e| anyhow!("pow: {e}"))?;
         let log_a = base_a.ln();
         let log_b = base_b.ln();
-        let products = [
-            exponent_a * log_a,
-            exponent_a * log_b,
-            exponent_b * log_a,
-            exponent_b * log_b,
-        ];
+        let products = [exponent_a * log_a, exponent_a * log_b, exponent_b * log_a, exponent_b * log_b];
         let mut product_a = products[0];
         let mut product_b = products[0];
         for value in products.into_iter().skip(1) {
@@ -140,10 +131,7 @@ impl PowPlan<CKKSPlaintext<Vec<u8>, i64>> {
         Ok(Self {
             log,
             exp,
-            base_interval: (
-                base_a.to_f64().unwrap_or(f64::NAN),
-                base_b.to_f64().unwrap_or(f64::NAN),
-            ),
+            base_interval: (base_a.to_f64().unwrap_or(f64::NAN), base_b.to_f64().unwrap_or(f64::NAN)),
             exponent_interval: (
                 exponent_a.to_f64().unwrap_or(f64::NAN),
                 exponent_b.to_f64().unwrap_or(f64::NAN),
@@ -188,8 +176,8 @@ pub trait CKKSPowOps<BE: Backend> {
     /// Evaluates `input^exponent` for a public non-negative integer exponent.
     fn ckks_powi(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        input: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        input: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         exponent: u32,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
@@ -205,9 +193,9 @@ pub trait CKKSPowOps<BE: Backend> {
     /// Evaluates `base^exponent`; `base` must lie in the plan's positive domain.
     fn ckks_pow<P>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        base: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        exponent: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        base: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        exponent: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         plan: &PowPlan<P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
@@ -218,13 +206,8 @@ pub trait CKKSPowOps<BE: Backend> {
 
 impl<BE: Backend + HostStaged> CKKSPowOps<BE> for Module<BE>
 where
-    Module<BE>: CKKSAddOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSExpOps<BE>
-        + CKKSLogOps<BE>
-        + CKKSMulOps<BE>
-        + CKKSSubOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>:
+    Module<BE>: CKKSAddOps<BE> + CKKSCopyOps<BE> + CKKSExpOps<BE> + CKKSLogOps<BE> + CKKSMulOps<BE> + CKKSSubOps<BE>,
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
 {
@@ -235,15 +218,15 @@ where
     {
         self.ckks_mul_tmp_bytes(res, res, res, tsk)
             .max(self.ckks_square_tmp_bytes(res, res, tsk))
-            .max(self.ckks_copy_tmp_bytes())
-            .max(self.ckks_sub_tmp_bytes())
-            .max(self.ckks_add_pt_const_tmp_bytes())
+            .max(self.ckks_copy_tmp_bytes(res, res))
+            .max(self.ckks_sub_tmp_bytes(res.size()))
+            .max(self.ckks_add_pt_const_tmp_bytes(res.size()))
     }
 
     fn ckks_powi(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        input: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        input: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         exponent: u32,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
@@ -279,7 +262,7 @@ where
         T: GGLWEInfos,
         P: CKKSInfos + LWEInfos,
     {
-        let ct = GLWE::<Vec<u8>, BE::ZnxWord>::bytes_of_from_infos(res);
+        let ct = GLWE::<AlignedBuf, BE::ZnxWord>::bytes_of_from_infos(res);
         self.ckks_log_tmp_bytes(res, tsk, &plan.log).max(
             ct + self
                 .ckks_mul_tmp_bytes(res, res, res, tsk)
@@ -289,9 +272,9 @@ where
 
     fn ckks_pow<P>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        base: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-        exponent: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        base: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        exponent: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
         plan: &PowPlan<P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
@@ -301,8 +284,7 @@ where
     {
         self.ckks_log(res, base, &plan.log, tsk, scratch)?;
         scratch.scope(|scratch_local| {
-            let (mut product, mut scratch_local) =
-                scratch_local.take_ckks_ciphertext_like_scratch(&*res);
+            let (mut product, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*res);
             self.ckks_mul_into(&mut product, &*res, exponent, tsk, &mut scratch_local)?;
             self.ckks_exp(res, &product, &plan.exp, tsk, &mut scratch_local)
         })

@@ -1,5 +1,6 @@
 //! Bessel functions.
 
+use poulpy_hal::{AlignedBuf, layouts::Standard};
 use std::fmt::Debug;
 
 use anyhow::{Result, ensure};
@@ -12,10 +13,7 @@ use poulpy_ckks::{
 };
 
 use crate::{
-    approximation::{
-        CKKSApproximationOps, Parity, PolynomialApproximation, parity_for_interval,
-        prepare_function,
-    },
+    approximation::{CKKSApproximationOps, Parity, PolynomialApproximation, parity_for_interval, prepare_function},
     plan::{declare_unary_op, define_unary_plan, impl_unary_op},
     special::SpecialOptions,
 };
@@ -27,7 +25,7 @@ define_unary_plan!(Y1Plan, "y1");
 
 macro_rules! impl_host_plan {
     ($plan:ident, $name:literal, $fun:path, $parity:expr, $positive:expr) => {
-        impl $plan<CKKSPlaintext<Vec<u8>, i64>> {
+        impl $plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
             #[doc = concat!("Fits and prepares `", $name, "` on `[a, b]`.")]
             pub fn from_precision<F>(
                 a: F,
@@ -39,7 +37,7 @@ macro_rules! impl_host_plan {
             ) -> Result<Self>
             where
                 F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-                CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+                CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
             {
                 if $positive {
                     ensure!(a > F::zero(), concat!($name, ": interval must be positive"));
@@ -90,7 +88,7 @@ pub struct YnPlan<P> {
     pub order: i32,
 }
 
-impl JnPlan<CKKSPlaintext<Vec<u8>, i64>> {
+impl JnPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     /// Fits and prepares `jn(order, x)` on `[a, b]`.
     #[allow(clippy::too_many_arguments)]
     pub fn from_precision<F>(
@@ -104,7 +102,7 @@ impl JnPlan<CKKSPlaintext<Vec<u8>, i64>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     {
         let target_parity = if order.unsigned_abs().is_multiple_of(2) {
             Parity::Even
@@ -131,7 +129,7 @@ impl JnPlan<CKKSPlaintext<Vec<u8>, i64>> {
     }
 }
 
-impl YnPlan<CKKSPlaintext<Vec<u8>, i64>> {
+impl YnPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     /// Fits and prepares `yn(order, x)` on positive `[a, b]`.
     #[allow(clippy::too_many_arguments)]
     pub fn from_precision<F>(
@@ -145,7 +143,7 @@ impl YnPlan<CKKSPlaintext<Vec<u8>, i64>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     {
         ensure!(a > F::zero(), "yn: interval must be positive");
         let (approximation, approximation_bits) = prepare_function(

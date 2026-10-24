@@ -54,8 +54,8 @@ macro_rules! declare_unary_op {
         #[doc = concat!("Evaluates `", $name, "(input)`.")]
         fn $eval<P>(
             &self,
-            res: &mut poulpy_ckks::layouts::CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-            input: &poulpy_ckks::layouts::CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+            res: &mut poulpy_ckks::layouts::CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+            input: &poulpy_ckks::layouts::CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
             plan: &$plan<P>,
             tsk: &poulpy_core::layouts::GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
@@ -81,8 +81,8 @@ macro_rules! impl_unary_op {
 
         fn $eval<P>(
             &self,
-            res: &mut poulpy_ckks::layouts::CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
-            input: &poulpy_ckks::layouts::CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord>,
+            res: &mut poulpy_ckks::layouts::CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+            input: &poulpy_ckks::layouts::CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
             plan: &$plan<P>,
             tsk: &poulpy_core::layouts::GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,

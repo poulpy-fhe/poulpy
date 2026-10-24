@@ -1,5 +1,6 @@
 //! Error functions.
 
+use poulpy_hal::{AlignedBuf, layouts::Standard};
 use std::fmt::Debug;
 
 use anyhow::Result;
@@ -11,10 +12,10 @@ use poulpy_ckks::{
     layouts::{CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar},
 };
 
-use crate::approximation::{
-    ApproximationOptions, CKKSApproximationOps, Parity, parity_for_interval, prepare_function,
+use crate::{
+    approximation::{ApproximationOptions, CKKSApproximationOps, Parity, parity_for_interval, prepare_function},
+    plan::{declare_unary_op, define_unary_plan, impl_unary_op},
 };
-use crate::plan::{declare_unary_op, define_unary_plan, impl_unary_op};
 
 /// Error-function plan construction options.
 pub type ErfOptions = ApproximationOptions;
@@ -22,7 +23,7 @@ pub type ErfOptions = ApproximationOptions;
 define_unary_plan!(ErfPlan, "erf");
 define_unary_plan!(ErfcPlan, "erfc");
 
-impl ErfPlan<CKKSPlaintext<Vec<u8>, i64>> {
+impl ErfPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     /// Fits and prepares `erf` on `[a, b]`.
     pub fn from_precision<F>(
         a: F,
@@ -34,7 +35,7 @@ impl ErfPlan<CKKSPlaintext<Vec<u8>, i64>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     {
         let (approximation, approximation_bits) = prepare_function(
             "erf",
@@ -54,7 +55,7 @@ impl ErfPlan<CKKSPlaintext<Vec<u8>, i64>> {
     }
 }
 
-impl ErfcPlan<CKKSPlaintext<Vec<u8>, i64>> {
+impl ErfcPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     /// Fits and prepares `erfc` on `[a, b]`.
     pub fn from_precision<F>(
         a: F,
@@ -66,7 +67,7 @@ impl ErfcPlan<CKKSPlaintext<Vec<u8>, i64>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<Vec<u8>, i64>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     {
         let (approximation, approximation_bits) = prepare_function(
             "erfc",
