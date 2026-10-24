@@ -25,7 +25,7 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, SetCKKSInfos,
-    api::{LinearTransformation, LtDiagonalMeta},
+    api::{CKKSCopyOps, LinearTransformation, LtDiagonalMeta},
     layouts::{CKKSPlaintext, validation::ensure_uniform_diagonals},
     reference::mul::mul_pt_params_raw,
 };
@@ -115,28 +115,32 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
     /// The ciphertext stands in for the diagonal, so the budget is an upper bound for a diagonal below the ring degree.
     fn ckks_eval_linear_transformation_tmp_bytes_reference<C, K>(&self, ct: &C, key: &K) -> usize
     where
-        Self: GLWELinearTransformations<BE> + GLWEBytesOf<BE>,
+        Self: GLWELinearTransformations<BE> + GLWEBytesOf<BE> + CKKSCopyOps<BE>,
         C: CKKSCtBounds,
         K: GGLWEInfos,
     {
         // `ct` doubles as the plaintext-operand proxy: it bounds the convolution
         // sizes from above, so the result is a safe upper bound. The extra
         // ct-sized buffer is the dst-shaped working copy the `_assign` wrappers
-        // carve from scratch (an upper bound for the `_into` paths, which skip it).
-        self.glwe_eval_linear_transformation_tmp_bytes(ct, ct, ct, key) + BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
+        // carve from scratch and copy back with the selected `ckks_copy` (an upper
+        // bound for the `_into` paths, which skip both).
+        self.glwe_eval_linear_transformation_tmp_bytes(ct, ct, ct, key)
+            .max(self.ckks_copy_tmp_bytes(ct, ct))
+            + BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
     }
 
     /// The ciphertext stands in for the diagonal, so the budget is an upper bound for a diagonal below the ring degree.
     fn ckks_eval_linear_transformation_streamed_tmp_bytes_reference<C, K>(&self, ct: &C, key: &K) -> usize
     where
-        Self: GLWELinearTransformations<BE> + GLWEBytesOf<BE>,
+        Self: GLWELinearTransformations<BE> + GLWEBytesOf<BE> + CKKSCopyOps<BE>,
         C: CKKSCtBounds,
         K: GGLWEInfos,
     {
         // `ct` doubles as the plaintext-operand proxy (upper bound on diagonal
-        // shape). The extra ct-sized buffer covers the `_assign` wrappers'
-        // scratch-carved working copy, as above.
+        // shape). The extra ct-sized buffer and the copy cover the `_assign`
+        // wrappers' scratch-carved working copy, as above.
         self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, ct, key)
+            .max(self.ckks_copy_tmp_bytes(ct, ct))
             + BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
     }
 

@@ -105,7 +105,8 @@ pub unsafe trait CKKSPaCoImpl:
     + LinearTransformationImpl
     + GLWEKeyswitchImpl
 {
-    /// Scratch of the direct drivers after their runtime validation: one branch at its working width,
+    /// Scratch of the direct drivers after their runtime validation: the branch output the sequential driver
+    /// carves, then one branch at its working width with the shifted input, accumulator and temporary it carves,
     /// the coefficient encoding included.
     fn ckks_paco_bootstrap_direct_tmp_bytes<F, K, Src>(
         module: &Module<Self>,
@@ -123,7 +124,8 @@ pub unsafe trait CKKSPaCoImpl:
         ckks_paco_bootstrap_direct_tmp_bytes_derived(module, output, input, context, keys)
     }
 
-    /// Scratch of the encapsulated drivers: the direct bound and the dense-to-PaCo key switch.
+    /// Scratch of the encapsulated drivers: the switched input they carve, then the larger of the direct bound and
+    /// the dense-to-PaCo key switch.
     fn ckks_paco_bootstrap_tmp_bytes<F, K, Src>(
         module: &Module<Self>,
         output: &CKKSCiphertextOwned<Self>,
@@ -255,8 +257,9 @@ pub unsafe trait CKKSPaCoImpl:
     }
 
     /// Scratch of [`Self::ckks_slot_product_assign`] on `ct_infos` under rotation keys laid out
-    /// like `key_infos` and the tensor key `tsk_infos`: the larger of the selected
-    /// `ckks_rotate_tmp_bytes` and `ckks_mul_tmp_bytes`.
+    /// like `key_infos` and the tensor key `tsk_infos`: the rotated ciphertext it carves, shaped
+    /// like `ct_infos`, plus the larger of the selected `ckks_rotate_tmp_bytes` and
+    /// `ckks_mul_tmp_bytes`.
     fn ckks_slot_product_assign_tmp_bytes<C, K, T>(module: &Module<Self>, ct_infos: &C, key_infos: &K, tsk_infos: &T) -> usize
     where
         C: CKKSCtBounds,

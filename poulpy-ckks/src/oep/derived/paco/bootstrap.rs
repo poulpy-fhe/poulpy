@@ -9,15 +9,16 @@
 use crate::{CKKSResult as Result, ckks_ensure};
 use anyhow::Context;
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWEInfos, GLWEPlaintextInfos, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, TorusPrecision,
+    Base2K, Degree, GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEToBackendMut, GLWEToBackendRef,
+    GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, TorusPrecision,
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale,
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSSubOps, PaCoScalar},
     layouts::{
-        CKKSCiphertextOwned, CKKSModuleAlloc,
+        CKKSCiphertextOwned, ScratchArenaTakeCKKS,
         paco::{
             context::{PaCoContext, PaCoPsiTailMaterial},
             keyset::{PaCoKeyParameters, PaCoKeys, validate_backend_storage_capacity},
@@ -312,15 +313,26 @@ where
     Ok(output_meta)
 }
 
+/// The layout of the accumulator and the temporary a branch evaluates in, at the branch's working width.
+pub(crate) fn branch_work_layout<BE: Backend>(module: &Module<BE>, base2k: Base2K, working_k: usize) -> Result<GLWELayout> {
+    Ok(GLWELayout {
+        n: Degree(u32::try_from(module.n()).context("PaCo degree does not fit u32")?),
+        base2k,
+        k: TorusPrecision(u32::try_from(working_k).context("PaCo branch working width does not fit u32")?),
+        rank: Rank(1),
+    })
+}
+
 /// Evaluates one direct PaCo branch into caller-provided `output`.
 ///
 /// The input is already encrypted under the structured PaCo secret. The four
 /// bootstrapping ciphertexts homomorphically decrypt it into the application
 /// key, so `output` is under the key that encrypts those ciphertexts. Runtime
-/// validation is completed before the output is mutated.
-pub(crate) fn paco_bootstrap_branch_validated_into<BE, F, K, Src>(
+/// validation is completed before the output is mutated. The accumulator and the
+/// temporary of the branch are carved from `scratch`.
+pub(crate) fn paco_bootstrap_branch_validated_into<BE, F, K, Dst, Src>(
     module: &Module<BE>,
-    output: &mut CKKSCiphertextOwned<BE>,
+    output: &mut Dst,
     input: &Src,
     context: &PaCoContext<BE, F>,
     keys: &K,
@@ -331,6 +343,7 @@ where
     BE: CKKSPaCoImpl + CKKSEncodingImpl<F>,
     K: PaCoKeys<BE>,
     F: PaCoScalar,
+    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let (output_scale, expected_final_k) = output_meta;
@@ -344,7 +357,12 @@ where
     // result is copied into `output` at the end. `output` is shadowed below so the
     // circuit body operates on the working accumulator unchanged.
     let working_k = branch_working_k(plan, expected_final_k)?;
-    let mut work = module.ckks_ciphertext_alloc(context.base2k(), TorusPrecision(working_k as u32));
+    let work_layout = branch_work_layout(module, context.base2k(), working_k)?;
+    let (mut work, scratch_rest) = scratch
+        .borrow()
+        .take_ckks_ciphertext_scratch(&work_layout, GLWEPlaintextMeta::default());
+    let (mut temporary, mut scratch_rest) = scratch_rest.take_ckks_ciphertext_scratch(&work_layout, GLWEPlaintextMeta::default());
+    let scratch = &mut scratch_rest;
     let destination = output;
     let output = &mut work;
 
@@ -362,7 +380,6 @@ where
     // product `Σ_t Enc(σ_t)·β_t` over the four structured-secret ciphertexts:
     // `bsk[0]·β[0]` seeds `output`, and each remaining `bsk[t]·β[t]`
     // accumulates through `temporary`.
-    let mut temporary = module.ckks_ciphertext_alloc(context.base2k(), TorusPrecision(working_k as u32));
     module.ckks_mul_pt_vec_into(output, &bsk[0], &beta[0], scratch)?;
     for index in 1..4 {
         module.ckks_mul_pt_vec_into(&mut temporary, &bsk[index], &beta[index], scratch)?;

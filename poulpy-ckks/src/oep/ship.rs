@@ -96,8 +96,8 @@ pub unsafe trait CKKSShipImpl:
     + GLWEZeroImpl
     + HalVecZnxDftImpl
 {
-    /// Scratch of both bootstraps after their runtime validation: the largest stage, the complex
-    /// variant included when the keys carry its masks.
+    /// Scratch of both bootstraps after their runtime validation: the largest stage with the ciphertexts it
+    /// carves, the complex variant included when the keys carry its masks.
     fn ckks_ship_bootstrap_tmp_bytes<F, Src>(
         module: &Module<Self>,
         output: &CKKSCiphertextOwned<Self>,

@@ -453,6 +453,9 @@
 - **Breaking:** `ckks_prepare_linear_transformation_rhs` on `CKKSLinearTransformationOps`, `CKKSLinearTransformationImpl` and `CKKSLinearTransformationReference` returns `CKKSResult<()>` and refuses in every build, before any write, a transformation whose diagonals do not share one scale, width and slot kind, with `InvalidOperand`, where it asserted it in debug builds only; `ckks_eval_linear_transformation_into` and `ckks_eval_linear_transformation_sum_into` refuse such diagonals with `InvalidOperand` in place of `CKKSError::Internal`.
   Callers handle the result, and an override returns it.
   `test_prepare_linear_transformation_rejects_mixed_diagonals` pins the refusal with the destination unchanged, and `test_linear_transformation_sum` expects `InvalidOperand` for a non-uniform term.
+- **Fix:** `ckks_eval_linear_transformation_tmp_bytes` and `ckks_eval_linear_transformation_streamed_tmp_bytes` count the selected `ckks_copy` that copies the `_assign` and `_self_assign` results back from their working copy, and the PaCo scratch queries take the selected streamed linear-transformation query, at the wider of the branch and its factors, in place of their own sizing.
+- **Fix:** `ckks_slot_product_assign`, the PaCo drivers and the SHIP drivers carve their call-local ciphertexts from scratch, which their queries count: the slot product's rotation; a PaCo branch's accumulator, temporary and shifted input, the sequential driver's branch output and the encapsulated input; SHIP's bottom ciphertext and the temporaries combining the product-tree roots.
+  The parallel PaCo driver's branch outputs, which cross threads, and SHIP's leaves and product tree, whose count the plan sets, stay on the heap.
 
 ### `poulpy-bin-fhe`
 
