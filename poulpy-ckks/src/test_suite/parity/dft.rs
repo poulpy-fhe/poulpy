@@ -11,10 +11,7 @@ use crate::{
     oep::{CKKSEncodingImpl, DFTImpl, DFTMatrixImpl},
     test_suite::CKKSTestParams,
 };
-use poulpy_core::{
-    GLWEMaskFill,
-    layouts::{GLWEAutomorphismKeyPreparedFactory, GLWELayout},
-};
+use poulpy_core::{GLWEMaskFill, api::GLWEAutomorphismKeyPreparedFactory, layouts::GLWELayout};
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module};
 use std::collections::HashMap;
 

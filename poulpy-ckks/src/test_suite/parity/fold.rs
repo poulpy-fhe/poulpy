@@ -15,10 +15,10 @@ use crate::{
 };
 use poulpy_core::{
     GLWEMaskFill,
+    api::{GGLWEPreparedFactory, GLWEAutomorphismKeyPreparedFactory},
     layouts::{
-        GGLWEInfos, GGLWEPrepared, GGLWEPreparedFactory, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory,
-        GLWEInfos, GLWELayout, GetAutomorphismKey, LWEInfos, SetK, TorusPrecision,
-        prepared::GLWEAutomorphismKeyPreparedBackendRef,
+        GGLWEInfos, GGLWEPrepared, GLWEAutomorphismKeyPrepared, GLWEInfos, GLWELayout, GetAutomorphismKey, LWEInfos, SetK,
+        TorusPrecision, prepared::GLWEAutomorphismKeyPreparedBackendRef,
     },
 };
 use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Module, Ring, Standard, ZnxWord};

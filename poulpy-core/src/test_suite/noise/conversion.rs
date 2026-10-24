@@ -16,11 +16,12 @@ use crate::{
     DEFAULT_SIGMA_XE, GLWEDecrypt, GLWEEncryptSk, GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE, GLWEMaskFill, GLWENoise,
     GLWENormalize, GLWEToLWESwitchingKeyEncryptSk, LWEDecrypt, LWEEncryptSk, LWEFromGLWE, LWEMatrixDecrypt,
     LWEToGLWESwitchingKeyEncryptSk,
+    api::{GLWEToLWEKeyPreparedFactory, LWEToGLWEKeyPreparedFactory},
     layouts::{
         Base2K, Degree, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWEToLWEKey, GLWEToLWEKeyLayout,
-        GLWEToLWEKeyPrepared, GLWEToLWEKeyPreparedFactory, LWE, LWEInfos, LWELayout, LWEMatrixLayout, LWEPlaintext, LWESecret,
-        LWEToGLWEKey, LWEToGLWEKeyLayout, LWEToGLWEKeyPrepared, LWEToGLWEKeyPreparedFactory, ModuleCoreAlloc, Rank,
-        SecretConversion, TorusPrecision, prepared::GLWESecretPrepared,
+        GLWEToLWEKeyPrepared, LWE, LWEInfos, LWELayout, LWEMatrixLayout, LWEPlaintext, LWESecret, LWEToGLWEKey,
+        LWEToGLWEKeyLayout, LWEToGLWEKeyPrepared, ModuleCoreAlloc, Rank, SecretConversion, TorusPrecision,
+        prepared::GLWESecretPrepared,
     },
 };
 

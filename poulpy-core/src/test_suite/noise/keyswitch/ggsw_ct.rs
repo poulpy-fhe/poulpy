@@ -11,11 +11,11 @@ use crate::layouts::prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPrepared
 use crate::{Distribution, ScalarZnxFillDistribution};
 use crate::{
     GGLWEToGGSWKeyEncryptSk, GGSWCopy, GGSWEncryptSk, GGSWKeyswitch, GGSWNoise, GLWESwitchingKeyEncryptSk,
+    api::{GGLWEToGGSWKeyPreparedFactory, GLWESwitchingKeyPreparedFactory},
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGLWEInfos, GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPrepared, GGLWEToGGSWKeyPreparedFactory, GGSW, GGSWInfos,
-        GGSWLayout, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey, GLWESwitchingKeyLayout,
-        GLWESwitchingKeyPreparedFactory, ModuleCoreAlloc,
+        GGLWEInfos, GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPrepared, GGSW, GGSWInfos, GGSWLayout, GLWEInfos,
+        GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey, GLWESwitchingKeyLayout, ModuleCoreAlloc,
         prepared::{GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
     noise::GGLWENoiseModel,

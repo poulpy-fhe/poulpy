@@ -21,9 +21,8 @@ use poulpy_ckks::prelude::*;
 use poulpy_core::layouts::GLWESecretSampling;
 use poulpy_core::{
     GLWETensorKeyEncryptSk,
-    layouts::{
-        GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, ModuleCoreAlloc, Rank, prepared::GLWESecretPreparedFactory,
-    },
+    api::GLWETensorKeyPreparedFactory,
+    layouts::{GLWELayout, GLWETensorKeyLayout, ModuleCoreAlloc, Rank, prepared::GLWESecretPreparedFactory},
 };
 use poulpy_cpu_portable::NTT4x30Portable;
 use poulpy_hal::AlignedBuf;

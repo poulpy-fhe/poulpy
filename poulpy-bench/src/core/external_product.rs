@@ -1,8 +1,9 @@
 use poulpy_core::{
     GLWEExternalProduct, GLWEMaskFill,
+    api::GGSWPreparedFactory,
     layouts::{
         Base2K, Degree, Dnum, GGSW, GGSWAtViewMut, GGSWLayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of,
-        prepared::{GGSWPrepared, GGSWPreparedFactory},
+        prepared::GGSWPrepared,
     },
 };
 use poulpy_hal::{

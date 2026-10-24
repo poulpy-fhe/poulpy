@@ -17,10 +17,10 @@ use poulpy_ckks::{
 };
 use poulpy_core::{
     GLWEAutomorphismKeyEncryptSk, GLWETensorKeyEncryptSk,
+    api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
-        Base2K, DiagonalArithmetic, GGLWELayout, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory,
-        GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos,
-        ModuleCoreAlloc, TorusPrecision,
+        Base2K, DiagonalArithmetic, GGLWELayout, GLWEAutomorphismKeyLayout, GLWETensorKeyLayout, GLWEToBackendRef,
+        GetAutomorphismKey, GetTensorKey, LWEInfos, ModuleCoreAlloc, TorusPrecision,
         prepared::{
             GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedBackendRef,
             GLWETensorKeyPreparedToBackendRef,

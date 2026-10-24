@@ -25,11 +25,11 @@ use poulpy_hal::{
 
 use crate::{
     GLWEAutomorphism, GLWEMaskFill, GLWETensoring, GLWETrace,
+    api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     error::{CoreError, Result},
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWELayout, GLWE, GLWEAutomorphismKeyLayout,
-        GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory,
-        GetAutomorphismKey, GetTensorKey, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWELayout, GLWE, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout,
+        GLWETensorKeyLayout, GetAutomorphismKey, GetTensorKey, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::{
             GGLWEPrepared, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef,
             GLWETensorKeyPrepared, GLWETensorKeyPreparedBackendRef,

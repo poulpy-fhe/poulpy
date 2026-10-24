@@ -7,9 +7,9 @@ use std::f64::consts::TAU;
 
 use poulpy_core::{
     GLWEZero, TransferInto,
+    api::GLWESwitchingKeyPreparedFactory,
     layouts::{
-        BackendGLWESecret, GGLWEInfos, GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
-        prepared::GLWESecretPrepared,
+        BackendGLWESecret, GGLWEInfos, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc, prepared::GLWESecretPrepared,
     },
     reference::keyswitching::glwe::GGLWEProductReference,
 };

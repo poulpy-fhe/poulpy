@@ -18,9 +18,10 @@ use crate::{
 use poulpy_core::test_suite::noise::glwe_decrypt_checked;
 use poulpy_core::{
     GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
+    api::GGSWPreparedFactory,
     layouts::{
-        GGLWEToGGSWKeyLayout, GGSWInfos, GGSWLayout, GGSWPreparedFactory, GLWEAutomorphismKeyLayout, GLWEInfos,
-        GLWESecretPreparedFactory, LWELayout, ModuleCoreAlloc,
+        GGLWEToGGSWKeyLayout, GGSWInfos, GGSWLayout, GLWEAutomorphismKeyLayout, GLWEInfos, GLWESecretPreparedFactory, LWELayout,
+        ModuleCoreAlloc,
     },
 };
 

@@ -21,8 +21,9 @@ use poulpy_ckks::{
 };
 use poulpy_core::{
     GLWECIKeyEncryptSk,
+    api::GLWECIKeyPreparedFactory,
     layouts::{
-        GGLWEInfos, GLWECIKeyPreparedFactory, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };

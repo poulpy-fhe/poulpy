@@ -1,13 +1,9 @@
-use poulpy_hal::layouts::{Backend, Data, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data};
 
 use crate::layouts::{
     Base2K, Degree, Dnum, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendRef, GGLWEPreparedToBackendMut,
-    GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEInfos, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, LWEInfos, Rank,
-    TorusPrecision,
-    prepared::{
-        GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory, GLWESwitchingKeyPreparedToBackendMut,
-        GLWESwitchingKeyPreparedToBackendRef,
-    },
+    GGLWEPreparedToBackendRef, GLWEInfos, GLWESwitchingKeyDegreesMut, LWEInfos, Rank, TorusPrecision,
+    prepared::{GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedToBackendMut, GLWESwitchingKeyPreparedToBackendRef},
 };
 
 /// DFT-domain (prepared) variant of an LWE switching key.
@@ -73,71 +69,6 @@ impl<D: Data, B: Backend> GGLWEInfos for LWESwitchingKeyPrepared<D, B> {
         self.0.stride()
     }
 }
-
-pub trait LWESwitchingKeyPreparedFactory<B: Backend>
-where
-    Self: GLWESwitchingKeyPreparedFactory<B>,
-{
-    fn lwe_switching_key_prepared_alloc(
-        &self,
-        base2k: Base2K,
-        dnum: Dnum,
-        k_aux: TorusPrecision,
-    ) -> LWESwitchingKeyPrepared<B::OwnedBuf, B> {
-        LWESwitchingKeyPrepared(self.glwe_switching_key_prepared_alloc(
-            base2k,
-            dnum,
-            TorusPrecision::from(base2k),
-            k_aux,
-            Rank(1),
-            Rank(1),
-        ))
-    }
-
-    fn lwe_switching_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> LWESwitchingKeyPrepared<B::OwnedBuf, B>
-    where
-        A: GGLWEInfos,
-    {
-        debug_assert_eq!(
-            infos.k_digit().0,
-            infos.base2k().0,
-            "LWESwitchingKey uses one-limb digits: k_digit must equal base2k"
-        );
-        debug_assert_eq!(infos.rank_in().0, 1, "rank_in > 1 is not supported for LWESwitchingKey");
-        debug_assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for LWESwitchingKey");
-        LWESwitchingKeyPrepared(self.glwe_switching_key_prepared_alloc_from_infos(infos))
-    }
-
-    fn lwe_switching_key_prepared_bytes_of(&self, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision) -> usize {
-        self.bytes_of_glwe_key_prepared(base2k, dnum, TorusPrecision::from(base2k), k_aux, Rank(1), Rank(1))
-    }
-
-    fn lwe_switching_key_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos,
-    {
-        debug_assert_eq!(
-            infos.k_digit().0,
-            infos.base2k().0,
-            "LWESwitchingKey uses one-limb digits: k_digit must equal base2k"
-        );
-        debug_assert_eq!(infos.rank_in().0, 1, "rank_in > 1 is not supported for LWESwitchingKey");
-        debug_assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for LWESwitchingKey");
-        self.glwe_switching_key_prepared_bytes_of_from_infos(infos)
-    }
-
-    fn lwe_switching_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos;
-
-    fn lwe_switching_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, B>)
-    where
-        R: GGLWEPreparedToBackendMut<B> + GLWESwitchingKeyDegreesMut,
-        O: GGLWEToBackendRef<B> + GLWESwitchingKeyDegrees;
-}
-
-// module-only API: allocation, sizing, and preparation are provided by
-// `LWESwitchingKeyPreparedFactory` on `Module`.
 
 impl<D: Data, B: Backend> GGLWEPreparedToBackendMut<B> for LWESwitchingKeyPrepared<D, B>
 where

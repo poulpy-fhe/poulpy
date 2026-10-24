@@ -1,10 +1,10 @@
 use crate::error::Result;
-use poulpy_hal::layouts::{Backend, Data, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data};
 
 use crate::layouts::prepared::{GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef};
 use crate::layouts::{
-    Base2K, Degree, Dnum, GGLWEInfos, GGLWELayout, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef,
-    GGLWEPreparedFactory, GGLWEToBackendRef, GLWEInfos, LWEInfos, Rank, TorusPrecision,
+    Base2K, Degree, Dnum, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef, GLWEInfos, LWEInfos, Rank,
+    TorusPrecision,
 };
 
 /// DFT-domain (prepared) variant of a GLWE tensor key.
@@ -71,64 +71,6 @@ impl<D: Data, B: Backend> GGLWEInfos for GLWETensorKeyPrepared<D, B> {
         self.0.stride()
     }
 }
-
-pub trait GLWETensorKeyPreparedFactory<B: Backend>
-where
-    Self: GGLWEPreparedFactory<B>,
-{
-    fn alloc_tensor_key_prepared(
-        &self,
-        base2k: Base2K,
-        dnum: Dnum,
-        k_digit: TorusPrecision,
-        k_aux: TorusPrecision,
-        rank: Rank,
-    ) -> GLWETensorKeyPrepared<B::OwnedBuf, B> {
-        let pairs: u32 = (((rank.as_u32() + 1) * rank.as_u32()) >> 1).max(1);
-        GLWETensorKeyPrepared(self.gglwe_prepared_alloc(base2k, dnum, k_digit, k_aux, Rank(pairs), rank))
-    }
-
-    fn alloc_tensor_key_prepared_from_infos<A>(&self, infos: &A) -> GLWETensorKeyPrepared<B::OwnedBuf, B>
-    where
-        A: GGLWEInfos,
-    {
-        GLWETensorKeyPrepared(self.gglwe_prepared_alloc_from_infos(&tensor_key_layout(infos)))
-    }
-
-    fn bytes_of_tensor_key_prepared(
-        &self,
-        base2k: Base2K,
-        dnum: Dnum,
-        k_digit: TorusPrecision,
-        k_aux: TorusPrecision,
-        rank: Rank,
-    ) -> usize {
-        let pairs: u32 = (((rank.as_u32() + 1) * rank.as_u32()) >> 1).max(1);
-        self.gglwe_prepared_bytes_of(base2k, dnum, k_digit, k_aux, Rank(pairs), rank)
-    }
-
-    fn bytes_of_tensor_key_prepared_from_infos<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos,
-    {
-        self.gglwe_prepared_bytes_of_from_infos(&tensor_key_layout(infos))
-    }
-
-    fn prepare_tensor_key_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos;
-
-    fn prepare_tensor_key<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, B>)
-    where
-        R: GGLWEPreparedToBackendMut<B>,
-        O: GGLWEToBackendRef<B>;
-}
-
-// module-only API: allocation/size helpers are provided by `GLWETensorKeyPreparedFactory` on `Module`.
-
-// module-only API: preparation sizing is provided by `GLWETensorKeyPreparedFactory` on `Module`.
-
-// module-only API: preparation is provided by `GLWETensorKeyPreparedFactory` on `Module`.
 
 pub type GLWETensorKeyPreparedBackendRef<'a, B> = GLWETensorKeyPrepared<<B as Backend>::BufRef<'a>, B>;
 pub type GLWETensorKeyPreparedBackendMut<'a, B> = GLWETensorKeyPrepared<<B as Backend>::BufMut<'a>, B>;
@@ -204,21 +146,5 @@ where
 
     fn to_backend_mut(&mut self) -> GGLWEPreparedBackendMut<'_, B> {
         self.0.to_backend_mut()
-    }
-}
-
-/// The GGLWE layout of a tensor key like `infos`: one row per pair of secret columns.
-fn tensor_key_layout<A: GGLWEInfos>(infos: &A) -> GGLWELayout {
-    let rank = infos.rank_out();
-    GGLWELayout {
-        n: infos.n(),
-        base2k: infos.base2k(),
-        dnum: infos.dnum(),
-        k_aux: infos.k_aux(),
-        rank_in: Rank((((rank.as_u32() + 1) * rank.as_u32()) >> 1).max(1)),
-        rank_out: rank,
-        k_digit: infos.k_digit(),
-        k_offset: infos.k_offset(),
-        stride: 1,
     }
 }

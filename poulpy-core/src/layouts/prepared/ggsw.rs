@@ -1,12 +1,8 @@
 use poulpy_hal::layouts::VmpPMatToBackendMut;
 use poulpy_hal::layouts::VmpPMatToBackendRef;
-use poulpy_hal::{
-    api::{VmpPMatAlloc, VmpPMatBytesOf},
-    layouts::{Backend, Data, PrepareHint, ScratchArena, VmpPMat},
-};
+use poulpy_hal::layouts::{Backend, Data, VmpPMat};
 
-use crate::layouts::{Base2K, Degree, Dnum, GGSWInfos, GGSWToBackendRef, GLWEInfos, GetDegree, LWEInfos, Rank, TorusPrecision};
-use crate::layouts::{GGSWLayout, operand_degree};
+use crate::layouts::{Base2K, Degree, Dnum, GGSWInfos, GLWEInfos, LWEInfos, Rank, TorusPrecision};
 
 /// DFT-domain (prepared) variant of [`GGSW`](crate::layouts::GGSW).
 ///
@@ -67,111 +63,11 @@ impl<D: Data, B: Backend> GGSWInfos for GGSWPrepared<D, B> {
     }
 }
 
-/// Trait for allocating and preparing DFT-domain GGSW ciphertexts.
-pub trait GGSWPreparedFactory<B: Backend>
-where
-    Self: GetDegree + VmpPMatAlloc<B> + VmpPMatBytesOf,
-{
-    /// Allocates a new prepared GGSW with the given parameters.
-    fn ggsw_prepared_alloc(
-        &self,
-        base2k: Base2K,
-        dnum: Dnum,
-        k_digit: TorusPrecision,
-        k_aux: TorusPrecision,
-        rank: Rank,
-    ) -> GGSWPrepared<B::OwnedBuf, B> {
-        self.ggsw_prepared_alloc_from_infos(&GGSWLayout {
-            n: self.ring_degree(),
-            base2k,
-            dnum,
-            k_aux,
-            rank,
-            k_digit,
-        })
-    }
-
-    fn ggsw_prepared_alloc_from_infos<A>(&self, infos: &A) -> GGSWPrepared<B::OwnedBuf, B>
-    where
-        A: GGSWInfos,
-    {
-        let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
-        let size: usize = crate::layouts::key_size(infos.base2k(), infos.dnum(), infos.k_digit(), infos.k_aux());
-        GGSWPrepared {
-            noise: None,
-            data: self.vmp_pmat_alloc(
-                n,
-                infos.dnum().into(),
-                (infos.rank() + 1).into(),
-                (infos.rank() + 1).into(),
-                size,
-                PrepareHint::Reuse,
-            ),
-            base2k: infos.base2k(),
-            k_digit: infos.k_digit(),
-            k_aux: infos.k_aux(),
-        }
-    }
-
-    fn ggsw_prepared_bytes_of(
-        &self,
-        base2k: Base2K,
-        dnum: Dnum,
-        k_digit: TorusPrecision,
-        k_aux: TorusPrecision,
-        rank: Rank,
-    ) -> usize {
-        self.ggsw_prepared_bytes_of_from_infos(&GGSWLayout {
-            n: self.ring_degree(),
-            base2k,
-            dnum,
-            k_aux,
-            rank,
-            k_digit,
-        })
-    }
-
-    fn ggsw_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
-    where
-        A: GGSWInfos,
-    {
-        let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
-        let size: usize = crate::layouts::key_size(infos.base2k(), infos.dnum(), infos.k_digit(), infos.k_aux());
-        self.bytes_of_vmp_pmat(
-            n,
-            infos.dnum().into(),
-            (infos.rank() + 1).into(),
-            (infos.rank() + 1).into(),
-            size,
-            PrepareHint::Reuse,
-        )
-    }
-
-    fn ggsw_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: GGSWInfos;
-
-    fn ggsw_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, B>)
-    where
-        R: GGSWPreparedToBackendMut<B>,
-        O: GGSWToBackendRef<B>;
-
-    fn ggsw_zero<R>(&self, res: &mut R)
-    where
-        R: GGSWPreparedToBackendMut<B>;
-}
-
-// module-only API: allocation/size helpers are provided by `GGSWPreparedFactory` on `Module`.
-
 impl<D: Data, B: Backend> GGSWPrepared<D, B> {
     pub fn data(&self) -> &VmpPMat<D, B::DftWord, B> {
         &self.data
     }
 }
-
-// module-only API: preparation sizing is provided by `GGSWPreparedFactory` on `Module`.
-
-// module-only API: preparation and zeroing are provided by `GGSWPreparedFactory` on `Module`.
 
 pub trait GGSWPreparedToBackendRef<B: Backend> {
     fn to_backend_ref(&self) -> GGSWPreparedBackendRef<'_, B>;

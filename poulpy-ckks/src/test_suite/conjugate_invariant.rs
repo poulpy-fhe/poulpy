@@ -17,9 +17,9 @@ use crate::{
 };
 use poulpy_core::{
     GLWECIKeyEncryptSk,
+    api::GLWECIKeyPreparedFactory,
     layouts::{
-        GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWECIKeyPreparedFactory, GLWEInfos, GLWELayout, GLWESecretCIEmbed,
-        GLWESecretPreparedFactory, LWEInfos,
+        GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWEInfos, GLWELayout, GLWESecretCIEmbed, GLWESecretPreparedFactory, LWEInfos,
     },
 };
 use poulpy_hal::{

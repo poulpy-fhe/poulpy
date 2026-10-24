@@ -11,6 +11,7 @@
 //! - `keyswitching` -- LWE/GLWE/GGLWE/GGSW key-switching.
 //! - `noise` -- runtime noise measurement helpers for ciphertexts.
 //! - `operations` -- arithmetic helpers, packing, trace, and tensoring.
+//! - `preparation` -- allocation and preparation of prepared ciphertexts and keys.
 //! - `sampling` -- in-place sampling of secret distributions into a `ScalarZnx`
 //!   column and of `Noise` samples over `ceil(k / base2k)` limbs of a
 //!   `VecZnx` / `VecZnxBig` column.
@@ -32,6 +33,7 @@ mod linear_transformations;
 mod noise;
 mod operations;
 mod polynomial_evaluation;
+mod preparation;
 mod sampling;
 mod transfer;
 
@@ -48,5 +50,6 @@ pub use linear_transformations::*;
 pub use noise::*;
 pub use operations::*;
 pub use polynomial_evaluation::*;
+pub use preparation::*;
 pub use sampling::*;
 pub use transfer::*;

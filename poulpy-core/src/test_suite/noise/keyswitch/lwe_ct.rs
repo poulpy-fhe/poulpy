@@ -9,9 +9,10 @@ use crate::layouts::LWESecretSampling;
 use crate::layouts::prepared::GGLWEPreparedToBackendRef;
 use crate::{
     LWEDecrypt, LWEEncryptSk, LWEKeyswitch, LWESwitchingKeyEncrypt,
+    api::LWESwitchingKeyPreparedFactory,
     layouts::{
-        LWE, LWELayout, LWEPlaintext, LWESecret, LWESwitchingKey, LWESwitchingKeyLayout, LWESwitchingKeyPreparedFactory,
-        ModuleCoreAlloc, prepared::LWESwitchingKeyPrepared,
+        LWE, LWELayout, LWEPlaintext, LWESecret, LWESwitchingKey, LWESwitchingKeyLayout, ModuleCoreAlloc,
+        prepared::LWESwitchingKeyPrepared,
     },
 };
 

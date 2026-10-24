@@ -2,7 +2,8 @@ use itertools::Itertools;
 use poulpy_core::test_suite::noise::glwe_decrypt_checked;
 use poulpy_core::{
     GGSWEncryptSk, GLWEDecrypt, GLWEEncryptSk,
-    layouts::{GGSW, GGSWPrepared, GGSWPreparedFactory, GLWELayout, GLWEPlaintext, GLWESecretPrepared, ModuleCoreAlloc},
+    api::GGSWPreparedFactory,
+    layouts::{GGSW, GGSWPrepared, GLWELayout, GLWEPlaintext, GLWESecretPrepared, ModuleCoreAlloc},
 };
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{HostDataMut, HostDataRef};

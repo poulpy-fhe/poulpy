@@ -10,10 +10,10 @@ use poulpy_hal::{
 use crate::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef;
 use crate::{
     GLWEAutomorphism,
-    api::TransferInto,
+    api::{GLWEAutomorphismKeyPreparedFactory, TransferInto},
     layouts::{
         BackendGLWEAutomorphismKey, Base2K, Degree, Dnum, GLWEAutomorphismKeyLayout, GLWELayout, ModuleCoreAlloc, Rank,
-        TorusPrecision, prepared::GLWEAutomorphismKeyPreparedFactory,
+        TorusPrecision,
     },
     test_suite::{
         keys::fill_by_digit,

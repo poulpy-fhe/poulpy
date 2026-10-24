@@ -13,7 +13,8 @@ use poulpy_core::layouts::{Base2K, Dnum, ModuleCoreAlloc, Rank, TorusPrecision};
 use poulpy_core::layouts::{GGSW, GLWESecretPreparedToBackendRef, LWE};
 use poulpy_core::{
     GLWEKeyswitch, LWEFromGLWE,
-    layouts::{GGSWInfos, GGSWPreparedFactory, GLWEInfos, LWEInfos},
+    api::GGSWPreparedFactory,
+    layouts::{GGSWInfos, GLWEInfos, LWEInfos},
 };
 
 use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;

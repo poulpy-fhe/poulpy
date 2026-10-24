@@ -1,13 +1,9 @@
-use poulpy_hal::{
-    api::{VmpPMatAlloc, VmpPMatBytesOf},
-    layouts::{Backend, Data, PrepareHint, ScratchArena, VmpPMat, VmpPMatToBackendMut, VmpPMatToBackendRef},
-};
+use poulpy_hal::layouts::{Backend, Data, VmpPMat, VmpPMatToBackendMut, VmpPMatToBackendRef};
 
-use crate::layouts::{GLWELayout, operand_degree};
 use crate::{
     GetDistribution, GetDistributionMut,
     dist::Distribution,
-    layouts::{Base2K, Degree, GLWEInfos, GLWEPublicKeyToBackendRef, GetDegree, LWEInfos, Rank, TorusPrecision},
+    layouts::{Base2K, Degree, GLWEInfos, LWEInfos, Rank, TorusPrecision},
 };
 
 /// DFT-domain (prepared) variant of a [`GLWEPublicKey`](crate::layouts::GLWEPublicKey):
@@ -75,71 +71,6 @@ impl<D: Data, B: Backend> GLWEInfos for GLWEPublicKeyPrepared<D, B> {
         Rank(self.data.cols_in() as u32)
     }
 }
-
-pub trait GLWEPublicKeyPreparedFactory<B: Backend>
-where
-    Self: GetDegree + VmpPMatAlloc<B> + VmpPMatBytesOf,
-{
-    fn glwe_public_key_prepared_alloc(
-        &self,
-        base2k: Base2K,
-        k: TorusPrecision,
-        rank: Rank,
-    ) -> GLWEPublicKeyPrepared<B::OwnedBuf, B> {
-        self.glwe_public_key_prepared_alloc_from_infos(&GLWELayout {
-            n: self.ring_degree(),
-            base2k,
-            k,
-            rank,
-        })
-    }
-
-    fn glwe_public_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWEPublicKeyPrepared<B::OwnedBuf, B>
-    where
-        A: GLWEInfos,
-    {
-        let rank: Rank = infos.rank();
-        assert!(rank.as_usize() >= 1, "invalid public key: rank must be at least 1");
-        let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
-        GLWEPublicKeyPrepared {
-            noise: None,
-            data: self.vmp_pmat_alloc(n, 1, rank.into(), (rank + 1).into(), infos.size(), PrepareHint::Reuse),
-            base2k: infos.base2k(),
-            k: infos.k(),
-            dist: Distribution::NONE,
-        }
-    }
-
-    fn glwe_public_key_prepared_bytes_of(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> usize {
-        self.glwe_public_key_prepared_bytes_of_from_infos(&GLWELayout {
-            n: self.ring_degree(),
-            base2k,
-            k,
-            rank,
-        })
-    }
-
-    fn glwe_public_key_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
-    where
-        A: GLWEInfos,
-    {
-        let rank: usize = infos.rank().into();
-        let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
-        self.bytes_of_vmp_pmat(n, 1, rank, rank + 1, infos.size(), PrepareHint::Reuse)
-    }
-
-    fn glwe_public_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: GLWEInfos;
-
-    fn glwe_public_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, B>)
-    where
-        R: GLWEPublicKeyPreparedToBackendMut<B> + GetDistributionMut,
-        O: GLWEPublicKeyToBackendRef<B> + GetDistribution;
-}
-
-// module-only API: allocation, sizing, and preparation are provided by
-// `GLWEPublicKeyPreparedFactory` on `Module`.
 
 pub type GLWEPublicKeyPreparedBackendRef<'a, B> = GLWEPublicKeyPrepared<<B as Backend>::BufRef<'a>, B>;
 pub type GLWEPublicKeyPreparedBackendMut<'a, B> = GLWEPublicKeyPrepared<<B as Backend>::BufMut<'a>, B>;

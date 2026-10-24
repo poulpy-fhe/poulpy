@@ -10,9 +10,12 @@ use poulpy_ckks::{
     api::{CKKSAddOps, CKKSConjugateOps, CKKSEncodingOps, CKKSMulOps, CKKSNegOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps},
     layouts::{CKKSEncodingBuffer, CKKSModuleAlloc},
 };
-use poulpy_core::layouts::{
-    Base2K, Degree, Dnum, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWETensorKeyLayout,
-    GLWETensorKeyPreparedFactory, LWEInfos, Rank, SetGaloisElement, TorusPrecision, k_digit_of,
+use poulpy_core::{
+    api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
+    layouts::{
+        Base2K, Degree, Dnum, GLWEAutomorphismKeyLayout, GLWELayout, GLWETensorKeyLayout, LWEInfos, Rank, SetGaloisElement,
+        TorusPrecision, k_digit_of,
+    },
 };
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
