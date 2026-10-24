@@ -13,6 +13,7 @@ use std::f64::consts::SQRT_2;
 
 use crate::api::GLWESecretSampling;
 use crate::test_suite::noise::{assert_refuses_uncovered_input, glwe_decrypt_checked};
+use crate::test_suite::refusal::{assert_refusal, cnv_pvec_left_state, glwe_state, glwe_tensor_state};
 use crate::{
     GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEMaskFill, GLWEMulConst, GLWEMulPlain, GLWEMulRelinearizeSum,
     GLWENormalize, GLWEPreparedTensoring, GLWESub, GLWETensorDecrypt, GLWETensorKeyEncryptSk, GLWETensoring,
@@ -894,7 +895,7 @@ where
     Module<BE>: GLWEMulRelinearizeSum<BE> + GLWETensorKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    rejected_sum(params, module, SumCase::NoPairs);
+    rejected_sum(params, module, SumCase::NoPairs, "one-pass product sum has no pairs");
 }
 
 /// Every pair of a sum shares the first one's layouts, checked before `res` is written.
@@ -903,7 +904,12 @@ where
     Module<BE>: GLWEMulRelinearizeSum<BE> + GLWETensorKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    rejected_sum(params, module, SumCase::NarrowPair);
+    rejected_sum(
+        params,
+        module,
+        SumCase::NarrowPair,
+        "summed product 1 does not share the first pair's layouts",
+    );
 }
 
 /// A sum takes as many right operands as left ones, checked before `res` is written.
@@ -912,7 +918,12 @@ where
     Module<BE>: GLWEMulRelinearizeSum<BE> + GLWETensorKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    rejected_sum(params, module, SumCase::UnequalLengths);
+    rejected_sum(
+        params,
+        module,
+        SumCase::UnequalLengths,
+        "assertion `left == right` failed: one-pass product sum: a and b differ in length\n  left: 2\n right: 1",
+    );
 }
 
 enum SumCase {
@@ -924,7 +935,7 @@ enum SumCase {
 }
 
 /// Runs a sum without scratch and with an unfilled key.
-fn rejected_sum<BE: Backend>(params: &TestParams, module: &Module<BE>, case: SumCase)
+fn rejected_sum<BE: Backend>(params: &TestParams, module: &Module<BE>, case: SumCase, message: &str)
 where
     Module<BE>: GLWEMulRelinearizeSum<BE> + GLWETensorKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -955,15 +966,17 @@ where
         SumCase::NarrowPair => (vec![&a, &narrow], vec![&a, &a]),
         SumCase::UnequalLengths => (vec![&a, &a], vec![&a]),
     };
-    module.glwe_mul_relinearize_sum(
-        base2k,
-        &mut res,
-        infos.k,
-        &left,
-        &right,
-        &tsk,
-        &mut ScratchOwned::alloc(0).borrow(),
-    );
+    assert_refusal(message, &mut res, glwe_state::<BE>, |res| {
+        module.glwe_mul_relinearize_sum(
+            base2k,
+            res,
+            infos.k,
+            &left,
+            &right,
+            &tsk,
+            &mut ScratchOwned::alloc(0).borrow(),
+        );
+    });
 }
 
 /// A sum of prepared pairs needs a pair.
@@ -972,7 +985,7 @@ where
     Module<BE>: GLWEPreparedTensoring<BE> + GLWETensorKeyPreparedFactory<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    rejected_prepared_sum(params, module, PreparedSumCase::NoPairs);
+    rejected_prepared_sum(params, module, PreparedSumCase::NoPairs, "one-pass product sum has no pairs");
 }
 
 /// Every prepared pair of a sum is of the degree of `res`, of rank 1 and of the given sizes, checked before anything
@@ -982,7 +995,12 @@ where
     Module<BE>: GLWEPreparedTensoring<BE> + GLWETensorKeyPreparedFactory<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    rejected_prepared_sum(params, module, PreparedSumCase::NarrowPair);
+    rejected_prepared_sum(
+        params,
+        module,
+        PreparedSumCase::NarrowPair,
+        "prepared pair 1 does not match res's degree, rank 1 and the given sizes",
+    );
 }
 
 /// The given sizes of a prepared sum are the limb counts of the given widths, checked before anything else.
@@ -991,7 +1009,12 @@ where
     Module<BE>: GLWEPreparedTensoring<BE> + GLWETensorKeyPreparedFactory<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    rejected_prepared_sum(params, module, PreparedSumCase::WiderLeftWidth);
+    rejected_prepared_sum(
+        params,
+        module,
+        PreparedSumCase::WiderLeftWidth,
+        "prepared sizes are not ceil(a_k / base2k) and ceil(b_k / base2k)",
+    );
 }
 
 /// A prepared sum takes as many right operands as left ones, checked before anything else.
@@ -1000,7 +1023,12 @@ where
     Module<BE>: GLWEPreparedTensoring<BE> + GLWETensorKeyPreparedFactory<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    rejected_prepared_sum(params, module, PreparedSumCase::UnequalLengths);
+    rejected_prepared_sum(
+        params,
+        module,
+        PreparedSumCase::UnequalLengths,
+        "assertion `left == right` failed: one-pass product sum: a and b differ in length\n  left: 2\n right: 1",
+    );
 }
 
 enum PreparedSumCase {
@@ -1014,7 +1042,7 @@ enum PreparedSumCase {
 }
 
 /// Runs a sum of prepared pairs without scratch and with an unfilled key.
-fn rejected_prepared_sum<BE: Backend>(params: &TestParams, module: &Module<BE>, case: PreparedSumCase)
+fn rejected_prepared_sum<BE: Backend>(params: &TestParams, module: &Module<BE>, case: PreparedSumCase, message: &str)
 where
     Module<BE>: GLWEPreparedTensoring<BE> + GLWETensorKeyPreparedFactory<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -1045,19 +1073,21 @@ where
         PreparedSumCase::WiderLeftWidth => (vec![&a], vec![&b], (3 * base2k).into()),
         PreparedSumCase::UnequalLengths => (vec![&a, &a], vec![&b], infos.k),
     };
-    module.glwe_mul_prepared_relinearize_sum(
-        base2k,
-        &mut res,
-        infos.k,
-        &left,
-        &right,
-        2,
-        a_k,
-        2,
-        infos.k,
-        &tsk,
-        &mut ScratchOwned::alloc(0).borrow(),
-    );
+    assert_refusal(message, &mut res, glwe_state::<BE>, |res| {
+        module.glwe_mul_prepared_relinearize_sum(
+            base2k,
+            res,
+            infos.k,
+            &left,
+            &right,
+            2,
+            a_k,
+            2,
+            infos.k,
+            &tsk,
+            &mut ScratchOwned::alloc(0).borrow(),
+        );
+    });
 }
 
 /// The prepared operands of a tensor product are of the degree and rank of `res` and of the given sizes, checked
@@ -1078,15 +1108,22 @@ where
     let a = module.cnv_pvec_left_alloc(n, 2, 2, PrepareHint::Reuse);
     let narrow = module.cnv_pvec_right_alloc(n, 2, 1, PrepareHint::Reuse);
     let mut res: GLWETensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_alloc_from_infos(&infos);
-    module.glwe_tensor_apply_prepared(
-        base2k,
+    assert_refusal(
+        "prepared operands do not match res's degree and rank and the given sizes",
         &mut res,
-        &a,
-        2,
-        &narrow,
-        2,
-        infos.base2k,
-        &mut ScratchOwned::alloc(0).borrow(),
+        glwe_tensor_state::<BE>,
+        |res| {
+            module.glwe_tensor_apply_prepared(
+                base2k,
+                res,
+                &a,
+                2,
+                &narrow,
+                2,
+                infos.base2k,
+                &mut ScratchOwned::alloc(0).borrow(),
+            );
+        },
     );
 }
 
@@ -1107,12 +1144,13 @@ where
     };
     let a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
     let mut a_prep = module.cnv_pvec_left_alloc(n, 2, 3, PrepareHint::Reuse);
-    glwe_prepare_left(
-        module,
+    assert_refusal(
+        "assertion `left == right` failed: prepared operand size != ceil(a_k / base2k)\n  left: 3\n right: 2",
         &mut a_prep,
-        &a,
-        infos.k.as_usize(),
-        &mut ScratchOwned::alloc(0).borrow(),
+        cnv_pvec_left_state::<BE>,
+        |a_prep| {
+            glwe_prepare_left(module, a_prep, &a, infos.k.as_usize(), &mut ScratchOwned::alloc(0).borrow());
+        },
     );
 }
 

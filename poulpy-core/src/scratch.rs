@@ -288,3 +288,59 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
 }
 
 impl<'a, B: Backend> ScratchArenaTakeCore<'a, B> for ScratchArena<'a, B> {}
+
+#[cfg(test)]
+mod tests {
+    use std::marker::PhantomData;
+
+    use poulpy_hal::layouts::{Backend, DataViewMut, Module, ScratchOwned};
+
+    use super::*;
+    use crate::{
+        layouts::{Base2K, Degree, Dnum, Dsize, GGSWLayout, GLWELayout, Rank, TorusPrecision},
+        test_backend::HostVecBackend,
+    };
+
+    type TestBackend = HostVecBackend<0>;
+
+    #[test]
+    fn scratch_arena_take_core_returns_disjoint_backend_regions() {
+        let module: Module<TestBackend> = Module::new(64);
+        let glwe_infos = GLWELayout {
+            n: Degree(64),
+            base2k: Base2K(8),
+            k: TorusPrecision(24),
+            rank: Rank(2),
+        };
+        let ggsw_infos = GGSWLayout {
+            n: Degree(64),
+            base2k: Base2K(8),
+            dnum: Dnum(2),
+            k_aux: TorusPrecision(24 - 2 * 8),
+            rank: Rank(1),
+            k_digit: crate::layouts::k_digit_of(Base2K(8), Dsize(1)),
+        };
+
+        let mut scratch: ScratchOwned<TestBackend> = ScratchOwned {
+            data: TestBackend::alloc_bytes(1 << 15),
+            _phantom: PhantomData,
+        };
+        let arena = scratch.arena();
+        let available_before = arena.available();
+
+        let (mut glwe, arena) = arena.take_glwe_scratch(&glwe_infos);
+        let glwe_bytes = glwe.data_mut().data_mut();
+        glwe_bytes[0] = 0x5a;
+        let glwe_ptr = glwe_bytes.as_mut_ptr() as usize;
+        let glwe_len = glwe_bytes.len();
+
+        let (mut prepared, arena) = arena.take_ggsw_prepared_scratch(&module, &ggsw_infos);
+        let prepared_bytes = prepared.data.data_mut();
+        prepared_bytes[0] = 0xa5;
+        let prepared_ptr = prepared_bytes.as_mut_ptr() as usize;
+        let prepared_len = prepared_bytes.len();
+
+        assert!(arena.available() < available_before);
+        assert!(glwe_ptr + glwe_len <= prepared_ptr || prepared_ptr + prepared_len <= glwe_ptr);
+    }
+}

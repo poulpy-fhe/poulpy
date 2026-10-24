@@ -423,3 +423,30 @@ impl<BE: Backend> GLWECompressedToBackendMut<BE> for GLWECompressedViewMut<'_, B
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use poulpy_hal::layouts::{HostBytesBackend, Module};
+
+    use crate::layouts::{
+        ModuleCoreCompressedAlloc, TorusPrecision,
+        glwe::tests::{assert_accepts_larger_serialized_degree, assert_rejects_sparsity_exceeding_serialized_degree, layout},
+    };
+
+    #[test]
+    fn compressed_glwe_reader_accepts_sparsity_for_larger_serialized_degree() {
+        let module = Module::<HostBytesBackend>::new(128);
+        let source = module.glwe_compressed_alloc_from_infos(&layout(128, 16));
+        let mut receiver = module.glwe_compressed_alloc_from_infos(&layout(64, 32));
+        receiver.k = TorusPrecision(16);
+        assert_accepts_larger_serialized_degree(source, receiver);
+    }
+
+    #[test]
+    fn compressed_glwe_reader_rejects_sparsity_exceeding_smaller_serialized_degree() {
+        let module = Module::<HostBytesBackend>::new(128);
+        let source = module.glwe_compressed_alloc_from_infos(&layout(64, 16));
+        let receiver = module.glwe_compressed_alloc_from_infos(&layout(128, 16));
+        assert_rejects_sparsity_exceeding_serialized_degree(source, receiver);
+    }
+}

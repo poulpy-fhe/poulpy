@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::CnvPVecLToBackendMut;
+use crate::test_suite::refusal::{assert_refusal, glwe_state};
 use poulpy_hal::layouts::CnvPVecLToBackendRef;
 use poulpy_hal::layouts::CnvPVecRToBackendMut;
 use poulpy_hal::layouts::CnvPVecRToBackendRef;
@@ -6,6 +6,7 @@ use poulpy_hal::layouts::VecZnxBigToBackendMut;
 use poulpy_hal::layouts::VecZnxBigToBackendRef;
 use poulpy_hal::layouts::VecZnxDftToBackendMut;
 use poulpy_hal::layouts::VecZnxDftToBackendRef;
+use poulpy_hal::layouts::{CnvPVecLToBackendMut, DataView};
 use std::collections::HashMap;
 
 use poulpy_hal::{
@@ -472,7 +473,31 @@ pub fn test_glwe_prepare_linear_transformation_rhs_rejects_wide_diagonal<BE: cra
             }],
         }],
     };
-    module.glwe_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch.borrow());
+    assert_refusal(
+        "assertion `left == right` failed: linear transformation plaintext size does not match its effective precision\n  left: 1\n right: 3",
+        &mut prepared,
+        prepared_state::<BE>,
+        |prepared| module.glwe_prepare_linear_transformation_rhs(prepared, &lt, &mut scratch.borrow()),
+    );
+}
+
+/// Every prepared diagonal's bytes, shape and metadata.
+fn prepared_state<BE: Backend>(lt: &LinearTransformationPrepared<BE>) -> Vec<(i64, i64, Vec<u8>, usize, usize, usize)> {
+    lt.giant_steps
+        .iter()
+        .flat_map(|step| {
+            step.diagonals.iter().map(move |d| {
+                (
+                    step.rot,
+                    d.baby,
+                    BE::to_host_bytes(d.plaintext.cnv.data()),
+                    d.plaintext.cnv.size(),
+                    d.plaintext.k.as_usize(),
+                    d.plaintext.log_scale,
+                )
+            })
+        })
+        .collect()
 }
 
 /// Resident transforms summed on one giant schedule: one term is the single
@@ -814,7 +839,15 @@ pub fn test_glwe_linear_transformation_sum_rejects_mismatched_schedule<BE: crate
     Module<BE>: GLWELinearTransformations<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    eval_mismatched_sum(params, module, vec![0, 2], 1, 0, 1);
+    eval_mismatched_sum(
+        params,
+        module,
+        vec![0, 2],
+        1,
+        0,
+        1,
+        "summed linear transformation 1 does not share the first one's giant schedule",
+    );
 }
 
 /// Summed transforms must share one diagonal layout and width.
@@ -827,7 +860,15 @@ pub fn test_glwe_linear_transformation_sum_rejects_mismatched_diagonal_width<BE:
     Module<BE>: GLWELinearTransformations<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    eval_mismatched_sum(params, module, vec![0, 1], 2, 0, 1);
+    eval_mismatched_sum(
+        params,
+        module,
+        vec![0, 1],
+        2,
+        0,
+        1,
+        "summed linear transformation 1 does not share the first one's diagonal layout, width and scale",
+    );
 }
 
 /// Summed transforms must share one diagonal scale.
@@ -840,7 +881,15 @@ pub fn test_glwe_linear_transformation_sum_rejects_mismatched_diagonal_scale<BE:
     Module<BE>: GLWELinearTransformations<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    eval_mismatched_sum(params, module, vec![0, 1], 1, 19, 1);
+    eval_mismatched_sum(
+        params,
+        module,
+        vec![0, 1],
+        1,
+        19,
+        1,
+        "summed linear transformation 1 does not share the first one's diagonal layout, width and scale",
+    );
 }
 
 /// Summed transforms must share one source layout.
@@ -853,7 +902,15 @@ pub fn test_glwe_linear_transformation_sum_rejects_mismatched_source<BE: crate::
     Module<BE>: GLWELinearTransformations<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    eval_mismatched_sum(params, module, vec![0, 1], 1, 0, 2);
+    eval_mismatched_sum(
+        params,
+        module,
+        vec![0, 1],
+        1,
+        0,
+        2,
+        "summed linear transformation 1 does not share the first one's source layout",
+    );
 }
 
 /// A sum needs a term.
@@ -866,7 +923,7 @@ pub fn test_glwe_linear_transformation_sum_rejects_no_terms<BE: crate::test_suit
     Module<BE>: GLWELinearTransformations<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    eval_without_keys(params, module, &[], &[], true);
+    eval_without_keys(params, module, &[], &[], true, "linear transformation sum has no terms");
 }
 
 /// A sum takes as many transforms as baby caches.
@@ -880,7 +937,14 @@ pub fn test_glwe_linear_transformation_sum_rejects_unequal_lengths<BE: crate::te
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let (babies, lt) = direct_term(params, module, vec![0, 1], 1, 0, 1);
-    eval_without_keys(params, module, &[&babies, &babies], &[&lt], true);
+    eval_without_keys(
+        params,
+        module,
+        &[&babies, &babies],
+        &[&lt],
+        true,
+        "assertion `left == right` failed: linear transformation sum: babies and lts differ in length\n  left: 2\n right: 1",
+    );
 }
 
 /// A sum's first term needs a giant step.
@@ -896,7 +960,14 @@ pub fn test_glwe_linear_transformation_sum_rejects_first_term_without_giant_step
     let (babies_a, mut lt_a) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     let (babies_b, lt_b) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     lt_a.giant_steps.clear();
-    eval_without_keys(params, module, &[&babies_a, &babies_b], &[&lt_a, &lt_b], true);
+    eval_without_keys(
+        params,
+        module,
+        &[&babies_a, &babies_b],
+        &[&lt_a, &lt_b],
+        true,
+        "linear transformation has no non-empty giant steps",
+    );
 }
 
 /// A transform needs a giant step.
@@ -911,7 +982,14 @@ pub fn test_glwe_linear_transformation_rejects_no_giant_steps<BE: crate::test_su
 {
     let (babies, mut lt) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     lt.giant_steps.clear();
-    eval_without_keys(params, module, &[&babies], &[&lt], false);
+    eval_without_keys(
+        params,
+        module,
+        &[&babies],
+        &[&lt],
+        false,
+        "linear transformation has no non-empty giant steps",
+    );
 }
 
 /// Every giant step of a transform needs a diagonal, checked before the
@@ -927,7 +1005,14 @@ pub fn test_glwe_linear_transformation_rejects_empty_giant_step<BE: crate::test_
 {
     let (babies, mut lt) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     lt.giant_steps[1].diagonals.clear();
-    eval_without_keys(params, module, &[&babies], &[&lt], false);
+    eval_without_keys(
+        params,
+        module,
+        &[&babies],
+        &[&lt],
+        false,
+        "giant step 1 of linear transformation 0 has no diagonals",
+    );
 }
 
 /// Every giant step of every summed transform needs a diagonal, checked
@@ -944,7 +1029,14 @@ pub fn test_glwe_linear_transformation_sum_rejects_empty_giant_step<BE: crate::t
     let (babies_a, lt_a) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     let (babies_b, mut lt_b) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     lt_b.giant_steps[1].diagonals.clear();
-    eval_without_keys(params, module, &[&babies_a, &babies_b], &[&lt_a, &lt_b], true);
+    eval_without_keys(
+        params,
+        module,
+        &[&babies_a, &babies_b],
+        &[&lt_a, &lt_b],
+        true,
+        "giant step 1 of linear transformation 1 has no diagonals",
+    );
 }
 
 /// Every baby rotation a summed transform reads must be in its cache, checked
@@ -961,7 +1053,14 @@ pub fn test_glwe_linear_transformation_sum_rejects_missing_baby_step<BE: crate::
     let (babies_a, lt_a) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     let (babies_b, mut lt_b) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     lt_b.giant_steps[1].diagonals[0].baby = 1;
-    eval_without_keys(params, module, &[&babies_a, &babies_b], &[&lt_a, &lt_b], true);
+    eval_without_keys(
+        params,
+        module,
+        &[&babies_a, &babies_b],
+        &[&lt_a, &lt_b],
+        true,
+        "missing prepared baby-step rotation 1 of linear transformation 1",
+    );
 }
 
 /// A summed transform's cache must hold the rotations it reads, checked before
@@ -978,7 +1077,14 @@ pub fn test_glwe_linear_transformation_sum_rejects_empty_cache<BE: crate::test_s
     let (babies_a, lt_a) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     let (_, lt_b) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     let empty = LinearTransformationBabySteps::alloc(module, &[], &limbs_layout(params, module, 1, 1));
-    eval_without_keys(params, module, &[&babies_a, &empty], &[&lt_a, &lt_b], true);
+    eval_without_keys(
+        params,
+        module,
+        &[&babies_a, &empty],
+        &[&lt_a, &lt_b],
+        true,
+        "missing prepared baby-step rotation 0 of linear transformation 1",
+    );
 }
 
 /// Every giant step of a transform must start with a diagonal as wide as its
@@ -995,7 +1101,14 @@ pub fn test_glwe_linear_transformation_rejects_uneven_giant_step_width<BE: crate
     let (babies, mut lt) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     let (_, mut wide) = direct_term(params, module, vec![0, 1], 2, 0, 1);
     std::mem::swap(&mut lt.giant_steps[1].diagonals, &mut wide.giant_steps[1].diagonals);
-    eval_without_keys(params, module, &[&babies], &[&lt], false);
+    eval_without_keys(
+        params,
+        module,
+        &[&babies],
+        &[&lt],
+        false,
+        "giant step 1 of linear transformation 0 is not as wide as the first diagonal",
+    );
 }
 
 /// Every giant step of every summed transform must start with a diagonal as
@@ -1014,7 +1127,14 @@ pub fn test_glwe_linear_transformation_sum_rejects_uneven_giant_step_width<BE: c
     let (babies_b, mut lt_b) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     let (_, mut wide) = direct_term(params, module, vec![0, 1], 2, 0, 1);
     std::mem::swap(&mut lt_b.giant_steps[1].diagonals, &mut wide.giant_steps[1].diagonals);
-    eval_without_keys(params, module, &[&babies_a, &babies_b], &[&lt_a, &lt_b], true);
+    eval_without_keys(
+        params,
+        module,
+        &[&babies_a, &babies_b],
+        &[&lt_a, &lt_b],
+        true,
+        "giant step 1 of linear transformation 1 is not as wide as the first diagonal",
+    );
 }
 
 /// Sums a `Direct` transform over `[0, 1]`, with one-limb diagonals at scale 0
@@ -1027,6 +1147,7 @@ fn eval_mismatched_sum<BE: crate::test_suite::noise::TestBackend>(
     pt_limbs: usize,
     log_scale: usize,
     ct_limbs: usize,
+    message: &str,
 ) where
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -1035,7 +1156,7 @@ fn eval_mismatched_sum<BE: crate::test_suite::noise::TestBackend>(
 {
     let (babies_a, lt_a) = direct_term(params, module, vec![0, 1], 1, 0, 1);
     let (babies_b, lt_b) = direct_term(params, module, indexes, pt_limbs, log_scale, ct_limbs);
-    eval_without_keys(params, module, &[&babies_a, &babies_b], &[&lt_a, &lt_b], true);
+    eval_without_keys(params, module, &[&babies_a, &babies_b], &[&lt_a, &lt_b], true, message);
 }
 
 /// A `Direct` transform over `indexes` (giant steps at those rotations, each
@@ -1075,6 +1196,7 @@ fn eval_without_keys<BE: crate::test_suite::noise::TestBackend>(
     babies: &[&LinearTransformationBabySteps<BE>],
     lts: &[&LinearTransformationPrepared<BE>],
     sum: bool,
+    message: &str,
 ) where
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -1086,11 +1208,13 @@ fn eval_without_keys<BE: crate::test_suite::noise::TestBackend>(
     let mut scratch = ScratchOwned::<BE>::alloc(0);
     // Limb offset 1: a one-limb source by a one- or two-limb diagonal gives one product limb either way.
     let cnv_offset = 2 * params.base2k;
-    if sum {
-        module.glwe_eval_linear_transformation_sum_into(cnv_offset, &mut res, babies, lts, &keys, &mut scratch.borrow());
-    } else {
-        module.glwe_eval_linear_transformation_into(cnv_offset, &mut res, babies[0], lts[0], &keys, &mut scratch.borrow());
-    }
+    assert_refusal(message, &mut res, glwe_state::<BE>, |res| {
+        if sum {
+            module.glwe_eval_linear_transformation_sum_into(cnv_offset, res, babies, lts, &keys, &mut scratch.borrow());
+        } else {
+            module.glwe_eval_linear_transformation_into(cnv_offset, res, babies[0], lts[0], &keys, &mut scratch.borrow());
+        }
+    });
 }
 
 /// A `limbs`-limb GLWE layout of rank `rank` at the test's `base2k`.

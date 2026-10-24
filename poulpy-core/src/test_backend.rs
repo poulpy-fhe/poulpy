@@ -1,20 +1,19 @@
-use std::{marker::PhantomData, ptr::NonNull};
+//! Host-resident backends over plain `Vec<u8>`, distinct types per `ID`, for tests that need two backends.
+
+use std::ptr::NonNull;
 
 use poulpy_hal::{
-    api::ScratchArenaTakeBasic,
-    layouts::{Backend, DataViewMut, Host, Module, ScratchOwned},
+    layouts::{Backend, Host, Module},
     oep::HalModuleImpl,
 };
 
-use crate::{
-    layouts::{Base2K, Degree, Dnum, Dsize, GGSWLayout, GLWELayout, Rank, TorusPrecision},
-    scratch::ScratchArenaTakeCore,
-};
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-struct TestBackend;
+pub(crate) struct HostVecBackend<const ID: u8>;
 
-impl Backend for TestBackend {
+pub(crate) type SrcBackend = HostVecBackend<0>;
+pub(crate) type DstBackend = HostVecBackend<1>;
+
+impl<const ID: u8> Backend for HostVecBackend<ID> {
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type Ring = poulpy_hal::layouts::Standard;
     type ZnxWord = i64;
@@ -49,19 +48,16 @@ impl Backend for TestBackend {
         buf[..src_len].copy_from_slice(src);
         buf[src_len..].fill(0);
     }
-
     fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
         assert!(buf.len() >= dst.len(), "test backend view shorter than destination");
         dst.copy_from_slice(&buf[..dst.len()]);
     }
-
     fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
         assert!(buf.len() >= src.len(), "test backend view shorter than source");
         let src_len = src.len();
         buf[..src_len].copy_from_slice(src);
         buf[src_len..].fill(0);
     }
-
     fn len_bytes(buf: &Self::OwnedBuf) -> usize {
         buf.len()
     }
@@ -135,83 +131,9 @@ impl Backend for TestBackend {
     unsafe fn destroy(_: NonNull<Self::Handle>) {}
 }
 
-unsafe impl HalModuleImpl for TestBackend {
-    fn new(n: u64) -> Module<TestBackend> {
+unsafe impl<const ID: u8> HalModuleImpl for HostVecBackend<ID> {
+    fn new(n: u64) -> Module<HostVecBackend<ID>> {
         assert!(n.is_power_of_two(), "n must be a power of two, got {n}");
         unsafe { Module::from_nonnull(NonNull::dangling(), n) }
     }
-}
-
-#[test]
-fn scratch_arena_take_core_returns_disjoint_backend_regions() {
-    let module: Module<TestBackend> = Module::new(64);
-    let glwe_infos = GLWELayout {
-        n: Degree(64),
-        base2k: Base2K(8),
-        k: TorusPrecision(24),
-        rank: Rank(2),
-    };
-    let ggsw_infos = GGSWLayout {
-        n: Degree(64),
-        base2k: Base2K(8),
-        dnum: Dnum(2),
-        k_aux: TorusPrecision(24 - 2 * 8),
-        rank: Rank(1),
-        k_digit: crate::layouts::k_digit_of(Base2K(8), Dsize(1)),
-    };
-
-    let mut scratch: ScratchOwned<TestBackend> = ScratchOwned {
-        data: TestBackend::alloc_bytes(1 << 15),
-        _phantom: PhantomData,
-    };
-    let arena = scratch.arena();
-    let available_before = arena.available();
-
-    let (mut glwe, arena) = arena.take_glwe_scratch(&glwe_infos);
-    let glwe_bytes = glwe.data_mut().data_mut();
-    glwe_bytes[0] = 0x5a;
-    let glwe_ptr = glwe_bytes.as_mut_ptr() as usize;
-    let glwe_len = glwe_bytes.len();
-
-    let (mut prepared, arena) = arena.take_ggsw_prepared_scratch(&module, &ggsw_infos);
-    let prepared_bytes = prepared.data.data_mut();
-    prepared_bytes[0] = 0xa5;
-    let prepared_ptr = prepared_bytes.as_mut_ptr() as usize;
-    let prepared_len = prepared_bytes.len();
-
-    assert!(arena.available() < available_before);
-    assert!(glwe_ptr + glwe_len <= prepared_ptr || prepared_ptr + prepared_len <= glwe_ptr);
-}
-
-#[test]
-fn scratch_arena_split_yields_independent_chunks() {
-    let mut scratch: ScratchOwned<TestBackend> = ScratchOwned {
-        data: TestBackend::alloc_bytes(1 << 12),
-        _phantom: PhantomData,
-    };
-    let arena = scratch.arena();
-    // Must come from the same source as `take_vec_znx_scratch`, which carves
-    // with `B::bytes_of_vec_znx`; sizing via the host layout instead would
-    // desynchronise the moment a backend overrides its sizing.
-    let chunk_len = TestBackend::bytes_of_vec_znx(64, 2, 2);
-    let (chunks, rem) = arena.split(2, chunk_len);
-
-    assert!(rem.available() < (1 << 12));
-    assert_eq!(chunks.len(), 2);
-
-    let mut it = chunks.into_iter();
-    let (mut lhs, _) = it.next().expect("missing first scratch chunk").take_vec_znx_scratch(64, 2, 2);
-    let (mut rhs, _) = it
-        .next()
-        .expect("missing second scratch chunk")
-        .take_vec_znx_scratch(64, 2, 2);
-
-    let lhs_bytes = lhs.data_mut();
-    let rhs_bytes = rhs.data_mut();
-    lhs_bytes[0] = 1;
-    rhs_bytes[0] = 2;
-
-    let lhs_ptr = lhs_bytes.as_mut_ptr() as usize;
-    let rhs_ptr = rhs_bytes.as_mut_ptr() as usize;
-    assert!(lhs_ptr + lhs_bytes.len() <= rhs_ptr || rhs_ptr + rhs_bytes.len() <= lhs_ptr);
 }
