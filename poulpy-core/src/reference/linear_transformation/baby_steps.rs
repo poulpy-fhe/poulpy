@@ -112,6 +112,7 @@ where
         + Convolution<BE>
         + GLWEAutomorphism<BE>
         + GGLWEProductReference<BE>
+        + GGLWEProductFused<BE>
         + VecZnxAutomorphismAssign<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
@@ -133,9 +134,7 @@ where
     // The product, the normalized copy the automorphism reads, and their scratch.
     let hoisted_rot = module.bytes_of_vec_znx_dft(module.n(), cols, key_size)
         + baby
-        + module
-            .gglwe_product_dft_tmp_bytes_reference(key_size, operand_size, key_infos)
-            .max(module.vec_znx_idft_normalize_tmp_bytes(a_size, key_size));
+        + module.gglwe_product_idft_normalize_tmp_bytes(a_size, key_size, operand_size, key_infos);
     let hoisted_worker = worker_scratch_bytes::<BE>(baby + hoisted_rot.max(prepare));
     let hoisted = hoisted_a_dft
         + (scratch_workers::<BE::TaskExecutor>(BABY_ROTATION_WORKERS) * hoisted_worker).max(gadget_dft_apply_tmp_bytes::<BE, _>(
@@ -362,9 +361,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
                 .map(|(key, key_size)| {
                     module.bytes_of_vec_znx_dft(module.n(), cols, key_size)
                         + module.glwe_bytes_of_from_infos(a)
-                        + module
-                            .gglwe_product_dft_tmp_bytes_reference(key_size, operand_size, key)
-                            .max(module.vec_znx_idft_normalize_tmp_bytes(a_size, key_size))
+                        + module.gglwe_product_idft_normalize_tmp_bytes(a_size, key_size, operand_size, key)
                 })
                 .max()
                 .unwrap_or(0);
@@ -558,8 +555,7 @@ fn glwe_prepare_baby_steps_doubling<BE, M, H>(
             };
             let task_bytes = worker_scratch_bytes::<BE>(
                 gadget_dft_apply_tmp_bytes::<BE, _>(module, a.base2k(), k_digit, dnum, a.k(), a_size)
-                    .max(module.gglwe_product_dft_tmp_bytes_reference(key_size, operand_size, key))
-                    .max(module.vec_znx_idft_normalize_tmp_bytes(a_size, key_size)),
+                    .max(module.gglwe_product_idft_normalize_tmp_bytes(a_size, key_size, operand_size, key)),
             );
             let workers = worker_count::<BE::TaskExecutor>(BABY_ROTATION_WORKERS, m).min(pass.available() / task_bytes.max(1));
             let mut tasks: Vec<_> = operands

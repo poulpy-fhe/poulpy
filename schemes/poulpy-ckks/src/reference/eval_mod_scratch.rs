@@ -62,7 +62,8 @@ pub fn ckks_eval_mod_tmp_bytes_reference<BE: Backend, R, C, P, F, T>(
     tsk: &T,
 ) -> usize
 where
-    Module<BE>: CKKSAddOps<BE>
+    Module<BE>: poulpy_core::reference::operations::GLWEConstCombination<BE>
+        + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSMulOps<BE>
         + CKKSCopyOps<BE>

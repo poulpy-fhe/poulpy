@@ -267,7 +267,7 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
     ///
     /// Convenience for the CPU path that prepares the whole set up front; streaming
     /// callers (e.g. GPU) can instead prepare individual keys on the fly from the
-    /// public fields. `scratch` must hold the per-key prepare scratch.
+    /// public fields. `scratch` holds [`BootstrappingKeysLayout::prepare_tmp_bytes`].
     pub fn prepare<BE: Backend>(
         &self,
         module: &Module<BE>,
@@ -437,7 +437,25 @@ impl BootstrappingKeysLayout {
         (bytes, secret_ci + ci.glwe_tensor_key_encrypt_sk_tmp_bytes(&self.tensor_key))
     }
 
-    /// Scratch of [`BootstrappingKeySet::prepare_ci`] for these layouts:
+    /// Scratch of [`BootstrappingKeySet::prepare`] and [`BootstrappingKeySet::transfer_and_prepare`]
+    /// for these layouts: the preparation of each key on `module`.
+    pub fn prepare_tmp_bytes<BE>(&self, module: &Module<BE>) -> usize
+    where
+        BE: Backend,
+        Module<BE>:
+            GLWEAutomorphismKeyPreparedFactory<BE> + GLWESwitchingKeyPreparedFactory<BE> + GLWETensorKeyPreparedFactory<BE>,
+    {
+        let mut bytes = module.glwe_tensor_key_prepare_tmp_bytes(&self.tensor_key);
+        for layout in self.rotation_key_layouts() {
+            bytes = bytes.max(module.glwe_automorphism_key_prepare_tmp_bytes(&layout));
+        }
+        for layout in self.raise_key_layouts() {
+            bytes = bytes.max(module.glwe_switching_key_prepare_tmp_bytes(&layout));
+        }
+        bytes
+    }
+
+    /// Scratch of [`BootstrappingKeySet::prepare_ci`] and [`BootstrappingKeySet::transfer_and_prepare_ci`] for these layouts:
     /// `(scratch, scratch_ci)`, the preparation of each key on `module` and of the
     /// tensor key on `ci`. Zero without conversion key layouts.
     pub fn prepare_ci_tmp_bytes<BE, BCI>(&self, module: &Module<BE>, ci: &Module<BCI>) -> (usize, usize)
@@ -633,7 +651,7 @@ impl BootstrappingPlan {
             + VecZnxAutomorphism<BE>,
     {
         let order = crate::operand_cyclotomic_order("generate_keys", module, sk_dense.n().as_usize())?;
-        self.key_recipe(sk_dense.n().as_usize().ilog2() as usize, order)
+        self.key_recipe(sk_dense.n().as_usize(), order)?
             .generate_keys(module, sk_dense, layout, source_xs, source_xe, source_xa, scratch)
     }
 
@@ -674,26 +692,34 @@ impl BootstrappingPlan {
             + GLWESecretSampling<BCI>,
     {
         let order = crate::operand_cyclotomic_order("generate_keys_ci", module, sk_dense.n().as_usize())?;
-        self.key_recipe(sk_dense.n().as_usize().ilog2() as usize, order)
-            .generate_keys_ci(
-                module, ci, sk_dense, layout, source_xs, source_xe, source_xa, scratch, scratch_ci,
-            )
+        self.key_recipe(sk_dense.n().as_usize(), order)?.generate_keys_ci(
+            module, ci, sk_dense, layout, source_xs, source_xe, source_xa, scratch, scratch_ci,
+        )
     }
 
-    /// The keys' recipe, on a ring of degree `2^log_n`.
-    fn key_recipe(&self, log_n: usize, cyclotomic_order: i64) -> KeyRecipe {
+    /// The keys' recipe, on a ring of degree `n`, whose slots must hold both transforms, as
+    /// compiling the context checks.
+    fn key_recipe(&self, n: usize, cyclotomic_order: i64) -> Result<KeyRecipe> {
+        let log_n = n.ilog2() as usize;
+        for dft in [self.coeffs_to_slots(), self.slots_to_coeffs()] {
+            anyhow::ensure!(dft.log_slots() < log_n, "DFT exceeds module slot capacity");
+            anyhow::ensure!(
+                dft.format() != crate::layouts::DFTOutputFormat::RepackImagAsReal || dft.log_slots() + 1 < log_n,
+                "dense DFT requires Split instead of Repack"
+            );
+        }
         let first_factor_rotations = if self.coeffs_to_slots().first_factor_on_raise() {
             self.coeffs_to_slots().first_factor_rotations(log_n)
         } else {
             Vec::new()
         };
-        KeyRecipe::new(
+        Ok(KeyRecipe::new(
             self.galois_elements(log_n, cyclotomic_order).into_iter().collect(),
             first_factor_rotations,
             self.sparse_secret_hamming_weight(),
             self.eval_mod_ring(),
             cyclotomic_order,
-        )
+        ))
     }
 }
 
@@ -1005,6 +1031,7 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
     /// [`Self::prepare`] for keys held by another backend: each key is moved
     /// into `module`'s storage, prepared there, and its moved copy dropped
     /// before the next one, so that one unprepared key at most is resident.
+    /// `scratch` holds [`BootstrappingKeysLayout::prepare_tmp_bytes`].
     pub fn transfer_and_prepare<BE>(
         &self,
         module: &Module<BE>,
@@ -1031,6 +1058,7 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
 
     /// [`Self::prepare_ci`] for keys held by another backend, as
     /// [`Self::transfer_and_prepare`]: the conversion keys at degree `2N` on `module`.
+    /// `scratch` and `scratch_ci` hold [`BootstrappingKeysLayout::prepare_ci_tmp_bytes`].
     pub fn transfer_and_prepare_ci<BE, BCI>(
         &self,
         module: &Module<BE>,

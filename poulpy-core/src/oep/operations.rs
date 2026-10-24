@@ -56,29 +56,30 @@ pub unsafe trait GLWEMulConstImpl: Backend {
         R: GLWEToBackendMut<Self> + GLWEInfos,
         B: GLWEToBackendRef<Self> + GLWEInfos;
 
-    /// Scratch bytes of [`Self::glwe_const_combination`] for an accumulator of `acc_size` limbs.
+    /// Scratch bytes of [`Self::glwe_const_combination`] for an accumulator of `acc_size` limbs,
+    /// terms of at most `a_size` limbs and constants of at most `b_size` limbs.
     fn glwe_const_combination_tmp_bytes(module: &Module<Self>, acc_size: usize, a_size: usize, b_size: usize) -> usize
     where
-        Module<Self>: poulpy_hal::api::Convolution<Self> + poulpy_hal::api::VecZnxBigNormalizeTmpBytes,
+        Module<Self>: crate::reference::operations::GLWEConstCombinationReference<Self>,
     {
-        use poulpy_hal::api::{Convolution, VecZnxBigNormalizeTmpBytes};
-        Self::bytes_of_vec_znx_big(module.n(), 1, acc_size)
-            + module
-                .cnv_by_const_apply_tmp_bytes(0, acc_size, a_size, b_size)
-                .max(module.cnv_by_const_apply_add_tmp_bytes(0, acc_size, a_size, b_size))
-                .max(module.vec_znx_big_normalize_tmp_bytes())
+        crate::reference::operations::glwe_const_combination_tmp_bytes_reference(module, acc_size, a_size, b_size)
     }
 
     /// A combination of vectors by constants, normalized once:
     ///
-    /// `res[col] = normalize(sum_t terms[t].a[col] * terms[t].b[b_col][b_coeff])` for every column of `res`,
+    /// `res[col] = normalize(sum_t terms[t].a[col] * (terms[t].b[b_col][b_coeff] >> terms[t].shift))`
+    /// for every column of `res`,
     ///
-    /// each product being `cnv_by_const_apply` at its `cnv_offset`, the sum being accumulated over
-    /// `acc_size` limbs and normalized to `res_k` bits in base `2^base2k`, which is also the base of
-    /// the terms. `terms` is not empty.
+    /// each constant with a non-zero `shift < base2k` being shifted right by that many bits over
+    /// one more limb than `b` (`vec_znx_rsh`), each product being `cnv_by_const_apply` at its
+    /// `cnv_offset`, the sum being accumulated over `acc_size` limbs and normalized to `res_k`
+    /// bits in base `2^base2k`, which is also the base of the terms. `terms` is not empty.
     ///
-    /// The default accumulates with `cnv_by_const_apply` and `cnv_by_const_apply_add`, then calls
-    /// `vec_znx_big_normalize`. Overrides must reproduce it bit for bit.
+    /// An internal hook of the CKKS baby-step combination, which records the metadata of `res`.
+    /// The default, [`glwe_const_combination_reference`](crate::reference::operations::glwe_const_combination_reference),
+    /// shifts each constant, accumulates with `cnv_by_const_apply` and `cnv_by_const_apply_add`,
+    /// then calls `vec_znx_big_normalize`, column by column. Overrides must reproduce it bit for
+    /// bit within [`Self::glwe_const_combination_tmp_bytes`].
     fn glwe_const_combination(
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,
@@ -88,21 +89,21 @@ pub unsafe trait GLWEMulConstImpl: Backend {
         terms: &[ConstTerm<'_, Self>],
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Module<Self>: poulpy_hal::api::Convolution<Self> + poulpy_hal::api::VecZnxBigNormalize<Self>,
+        Module<Self>: crate::reference::operations::GLWEConstCombinationReference<Self>,
     {
-        crate::reference::operations::glwe_const_combination_reference::<Self>(
-            module, res, base2k, res_k, acc_size, terms, scratch,
-        )
+        crate::reference::operations::glwe_const_combination_reference(module, res, base2k, res_k, acc_size, terms, scratch)
     }
 }
 
 /// One term of [`GLWEMulConstImpl::glwe_const_combination`]: every column of `a` times
-/// coefficient `b_coeff` of column `b_col` of `b`, at convolution offset `cnv_offset`.
+/// coefficient `b_coeff` of column `b_col` of `b`, shifted right by `shift` bits, at
+/// convolution offset `cnv_offset`.
 pub struct ConstTerm<'a, BE: Backend + 'a> {
     pub a: VecZnxBackendRef<'a, BE>,
     pub b: VecZnxBackendRef<'a, BE>,
     pub b_col: usize,
     pub b_coeff: usize,
+    pub shift: usize,
     pub cnv_offset: usize,
 }
 
@@ -540,6 +541,7 @@ pub unsafe trait GLWETensoringImpl: Backend {
     ///
     /// The default prepares both forms with `cnv_prepare_self`. A backend whose
     /// [`Self::glwe_square_columns`] reads the left form alone may leave `right` unwritten.
+    /// Scratch is `cnv_prepare_self_tmp_bytes`, which the one-pass relinearization queries reserve.
     fn glwe_square_prepare(
         module: &Module<Self>,
         left: &mut CnvPVecLBackendMut<'_, Self>,
@@ -555,7 +557,7 @@ pub unsafe trait GLWETensoringImpl: Backend {
 
     /// [`Self::glwe_mul_columns`] of a square, on the two forms [`Self::glwe_square_prepare`]
     /// prepared from one operand. The default is [`Self::glwe_mul_columns`].
-    /// Overrides must reproduce it bit for bit.
+    /// Overrides must reproduce it bit for bit within the scratch of [`Self::glwe_mul_columns`].
     fn glwe_square_columns(
         module: &Module<Self>,
         cnv_offset_hi: usize,

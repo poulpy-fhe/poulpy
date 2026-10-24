@@ -5,14 +5,15 @@ use poulpy_hal::{
         VecZnxDftBytesOf, VecZnxDftSubAssign, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize,
         VecZnxIdftNormalizeTmpBytes, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxMulXpMinusOne,
         VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize,
-        VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign, VecZnxRotateAssignTmpBytes,
+        VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign, VecZnxRotateAssignTmpBytes, VecZnxRsh,
         VecZnxRshAssign, VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxZero,
     },
     layouts::{
         Backend, CnvPVecLBackendRef, CnvPVecLOwned, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecRBackendRef,
-        CnvPVecROwned, CnvPVecRToBackendMut, CnvPVecRToBackendRef, Module, PrepareHint, ScratchArena, VecZnxBackendRef,
-        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
-        VecZnxToBackendMut, VecZnxToBackendRef, vec_znx_backend_ref_from_mut,
+        CnvPVecROwned, CnvPVecRToBackendMut, CnvPVecRToBackendRef, Module, PrepareHint, ScratchArena, VecZnxBackendMut,
+        VecZnxBackendRef, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftToBackendMut,
+        VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, vec_znx_backend_ref_from_mut,
+        vec_znx_backend_ref_from_ref,
     },
 };
 
@@ -1733,9 +1734,7 @@ where
     let product = module.bytes_of_vec_znx_dft(n, 1, gadget_size)
         + gadget_bytes.max(
             module.bytes_of_vec_znx_dft(n, 2, ks_size)
-                + module
-                    .gglwe_product_dft_tmp_bytes_reference(ks_size, gadget_size, tsk)
-                    .max(module.vec_znx_idft_normalize_tmp_bytes(res.size(), ks_size)),
+                + module.gglwe_product_idft_normalize_tmp_bytes(res.size(), ks_size, gadget_size, tsk),
         );
     // Relinearized as a tensor when the gadget does not cover the digits of `d2`.
     let uncovered = if dft_size * base2k > tsk.dnum().as_usize() * tsk.k_digit().as_usize() {
@@ -3782,51 +3781,131 @@ macro_rules! impl_glwe_normalize_reference_full {
     };
 }
 
-/// Default of `GLWEMulConstImpl::glwe_const_combination`: the terms accumulated one by one, then one normalization.
-pub fn glwe_const_combination_reference<BE>(
-    module: &poulpy_hal::layouts::Module<BE>,
-    res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, BE>,
+/// The HAL operations [`glwe_const_combination_reference`] composes.
+pub trait GLWEConstCombinationReference<BE: Backend>:
+    ModuleN + Convolution<BE> + VecZnxBigNormalize<BE> + VecZnxBigNormalizeTmpBytes + VecZnxRsh<BE> + VecZnxRshTmpBytes
+{
+}
+
+impl<BE: Backend, M> GLWEConstCombinationReference<BE> for M where
+    M: ModuleN + Convolution<BE> + VecZnxBigNormalize<BE> + VecZnxBigNormalizeTmpBytes + VecZnxRsh<BE> + VecZnxRshTmpBytes
+{
+}
+
+/// A constant combination of the CKKS baby step, through the backend's
+/// `GLWEMulConstImpl::glwe_const_combination`.
+pub trait GLWEConstCombination<BE: Backend> {
+    /// Scratch of [`Self::glwe_const_combination`].
+    fn glwe_const_combination_tmp_bytes(&self, acc_size: usize, a_size: usize, b_size: usize) -> usize;
+
+    /// See `GLWEMulConstImpl::glwe_const_combination`.
+    fn glwe_const_combination(
+        &self,
+        res: &mut VecZnxBackendMut<'_, BE>,
+        base2k: usize,
+        res_k: usize,
+        acc_size: usize,
+        terms: &[crate::oep::ConstTerm<'_, BE>],
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+}
+
+impl<BE> GLWEConstCombination<BE> for Module<BE>
+where
+    BE: Backend + crate::oep::GLWEMulConstImpl,
+    Module<BE>: GLWEConstCombinationReference<BE>,
+{
+    fn glwe_const_combination_tmp_bytes(&self, acc_size: usize, a_size: usize, b_size: usize) -> usize {
+        BE::glwe_const_combination_tmp_bytes(self, acc_size, a_size, b_size)
+    }
+
+    fn glwe_const_combination(
+        &self,
+        res: &mut VecZnxBackendMut<'_, BE>,
+        base2k: usize,
+        res_k: usize,
+        acc_size: usize,
+        terms: &[crate::oep::ConstTerm<'_, BE>],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) {
+        BE::glwe_const_combination(self, res, base2k, res_k, acc_size, terms, scratch)
+    }
+}
+
+/// Scratch of [`glwe_const_combination_reference`]: the accumulator and one shifted constant
+/// beside the products, shift and normalization.
+pub fn glwe_const_combination_tmp_bytes_reference<BE, M>(module: &M, acc_size: usize, a_size: usize, b_size: usize) -> usize
+where
+    BE: Backend,
+    M: GLWEConstCombinationReference<BE>,
+{
+    let shifted_size = b_size + 1;
+    BE::scratch_aligned(BE::bytes_of_vec_znx_big(module.n(), 1, acc_size))
+        + BE::scratch_aligned(BE::bytes_of_vec_znx(1, 1, shifted_size))
+        + module
+            .cnv_by_const_apply_tmp_bytes(0, acc_size, a_size, shifted_size)
+            .max(module.cnv_by_const_apply_add_tmp_bytes(0, acc_size, a_size, shifted_size))
+            .max(module.vec_znx_rsh_tmp_bytes(shifted_size))
+            .max(module.vec_znx_big_normalize_tmp_bytes())
+}
+
+/// Default of `GLWEMulConstImpl::glwe_const_combination`: per column, the terms shifted and
+/// accumulated one by one, then one normalization.
+pub fn glwe_const_combination_reference<BE, M>(
+    module: &M,
+    res: &mut VecZnxBackendMut<'_, BE>,
     base2k: usize,
     res_k: usize,
     acc_size: usize,
     terms: &[crate::oep::ConstTerm<'_, BE>],
-    scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: poulpy_hal::layouts::Backend,
-    Module<BE>: poulpy_hal::api::Convolution<BE> + poulpy_hal::api::VecZnxBigNormalize<BE>,
+    BE: Backend,
+    M: GLWEConstCombinationReference<BE>,
 {
-    use poulpy_hal::{
-        api::{Convolution, ScratchArenaTakeBasic, VecZnxBigNormalize},
-        layouts::{VecZnxBigToBackendMut, VecZnxBigToBackendRef},
-    };
-    assert!(!terms.is_empty(), "a constant combination has at least one term");
-    let (mut acc, mut scratch) = scratch.borrow().take_vec_znx_big_scratch(res.n(), 1, acc_size);
+    assert!(!terms.is_empty(), "glwe_const_combination: no term");
+    assert!(
+        terms.iter().all(|term| term.shift < base2k),
+        "glwe_const_combination: a shift is not below base2k"
+    );
+    let shifted_size = terms.iter().map(|term| term.b.size()).max().unwrap_or(0) + 1;
+    let (mut acc, scratch) = scratch.borrow().take_vec_znx_big_scratch(res.n(), 1, acc_size);
+    let (mut shifted, mut scratch) = scratch.take_vec_znx_scratch(1, 1, shifted_size);
     for col in 0..res.cols() {
         for (index, term) in terms.iter().enumerate() {
             let mut acc = acc.to_backend_mut();
-            if index == 0 {
-                module.cnv_by_const_apply(
-                    term.cnv_offset,
+            if term.shift == 0 {
+                const_combination_accumulate(
+                    module,
+                    index == 0,
                     &mut acc,
-                    0,
-                    &term.a,
                     col,
+                    term,
                     &term.b,
                     term.b_col,
                     term.b_coeff,
-                    &mut scratch.borrow(),
+                    &mut scratch,
                 );
             } else {
-                module.cnv_by_const_apply_add(
-                    term.cnv_offset,
-                    &mut acc,
+                module.vec_znx_rsh(
+                    base2k,
+                    term.shift,
+                    &mut shifted.to_backend_mut(),
                     0,
-                    &term.a,
-                    col,
-                    &term.b,
+                    &vec_znx_backend_ref_from_ref::<BE>(&term.b).window_coeffs(term.b_coeff, 1),
                     term.b_col,
-                    term.b_coeff,
                     &mut scratch.borrow(),
+                );
+                const_combination_accumulate(
+                    module,
+                    index == 0,
+                    &mut acc,
+                    col,
+                    term,
+                    &shifted.to_backend_ref(),
+                    0,
+                    0,
+                    &mut scratch,
                 );
             }
         }
@@ -3839,6 +3918,49 @@ pub fn glwe_const_combination_reference<BE>(
             &acc.to_backend_ref(),
             base2k,
             0,
+            &mut scratch.borrow(),
+        );
+    }
+}
+
+/// Adds, or with `first` writes, the product of `term.a[col]` by `b[b_col][b_coeff]` into `acc`.
+#[allow(clippy::too_many_arguments)]
+fn const_combination_accumulate<BE, M>(
+    module: &M,
+    first: bool,
+    acc: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, BE>,
+    col: usize,
+    term: &crate::oep::ConstTerm<'_, BE>,
+    b: &VecZnxBackendRef<'_, BE>,
+    b_col: usize,
+    b_coeff: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: GLWEConstCombinationReference<BE>,
+{
+    if first {
+        module.cnv_by_const_apply(
+            term.cnv_offset,
+            acc,
+            0,
+            &term.a,
+            col,
+            b,
+            b_col,
+            b_coeff,
+            &mut scratch.borrow(),
+        );
+    } else {
+        module.cnv_by_const_apply_add(
+            term.cnv_offset,
+            acc,
+            0,
+            &term.a,
+            col,
+            b,
+            b_col,
+            b_coeff,
             &mut scratch.borrow(),
         );
     }

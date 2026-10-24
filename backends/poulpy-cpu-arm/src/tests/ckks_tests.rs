@@ -12,6 +12,11 @@ ckks_backend_test_suite!(
 );
 
 #[test]
+fn ntt4x30_neon_bootstrapping_plan_keys_match_context() {
+    poulpy_ckks::test_suite::presets::bootstrapping_plan_keys_match_context::<crate::NTT4x30Neon>();
+}
+
+#[test]
 fn ntt4x30_neon_small_s2c_preset_meets_precision() {
     poulpy_ckks::test_suite::presets::small_s2c_preset_meets_precision::<crate::NTT4x30Neon>();
 }
