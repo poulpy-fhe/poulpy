@@ -1,19 +1,18 @@
 //! Composite-minimax sign and smooth predicates.
 
 use anyhow::{Result, ensure};
-use poulpy_core::layouts::{
-    BSGSMeta, GGLWEInfos, GLWE, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
-    SetBSGSMeta, prepared::GLWETensorKeyPreparedToBackendRef,
+use poulpy_core::{
+    GLWEBytesOf,
+    layouts::{
+        BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos, LWEInfos,
+    },
 };
-use poulpy_hal::{
-    AlignedBuf,
-    layouts::{Backend, HostStaged, Module, ScratchArena},
-};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::{CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops},
-    layouts::{CKKSCiphertext, ScratchArenaTakeCKKS},
+    layouts::ScratchArenaTakeCKKS,
 };
 
 mod compare;
@@ -24,34 +23,36 @@ pub use compare::CKKSComparisonOps;
 pub use composite::{COEFFS_SIGN_X2_CHEBYSHEV, COEFFS_SIGN_X4_CHEBYSHEV, DEFAULT_SIGN_COMPOSITE_CHEBYSHEV, SignComposite};
 pub use predicate::CKKSPredicateOps;
 
-/// Evaluates and real-cleans a sign composite.
-pub(crate) fn ckks_sign_into<BE, R, I, F, P, K>(
+/// Evaluates and real-cleans a sign composite on scratch copies of `input`, then `(s + 1) / 2` when `step` is set, and
+/// copies the result to `res` with its last write.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn ckks_sign_into<BE, R, I, F, P, H, K>(
     module: &Module<BE>,
     res: &mut R,
     input: &I,
     composite: &SignComposite<F, P>,
-    tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+    tsk: &H,
     conj_key: &K,
+    step: bool,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend,
-    Module<BE>: CKKSPolynomialEvaluationOps<BE> + CKKSCopyOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
-    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+    BE: Backend<Ring = Standard>,
+    Module<BE>: CKKSPolynomialEvaluationOps<BE> + CKKSCopyOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE> + CKKSPow2Ops<BE>,
+    R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     I: GLWEToBackendRef<BE> + CKKSCtBounds,
-    P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
+    P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+    H: GetTensorKey<BE>,
     K: GetAutomorphismKey<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
-        GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
 {
-    ensure!(!composite.is_empty(), "ckks_sign: composite polynomial is empty");
+    let op = if step { "ckks_step" } else { "ckks_sign" };
 
     let log_delta = input.log_delta();
-    let required = composite.consumed_bits(log_delta);
+    // The step halves the sign, which costs one more bit.
+    let required = composite.consumed_bits(log_delta) + usize::from(step);
     ensure!(
         input.log_budget() > required,
-        "ckks_sign: log_budget {} <= {required} bits required at log_delta {log_delta}",
+        "{op}: log_budget {} <= {required} bits required at log_delta {log_delta}",
         input.log_budget(),
     );
 
@@ -61,10 +62,18 @@ where
         let (mut conj, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(input);
         module.ckks_copy(&mut cur, input, &mut scratch_local)?;
 
+        // Each factor evaluates at half scale: `nxt += conj(nxt)` cleans the imaginary part and restores full scale,
+        // keeping `log_delta` constant.
         for poly in &composite.polys_bsgs {
             module.ckks_eval_poly_real_const_coeffs(&mut nxt, &cur, poly, tsk, &mut scratch_local)?;
             module.ckks_conjugate_into(&mut conj, &nxt, conj_key, &mut scratch_local)?;
             module.ckks_add_assign(&mut nxt, &conj, &mut scratch_local)?;
+            std::mem::swap(&mut cur, &mut nxt);
+        }
+
+        if step {
+            module.ckks_add_one_assign(&mut cur, &mut scratch_local)?;
+            module.ckks_div_pow2_into(&mut nxt, &cur, 1, &mut scratch_local)?;
             std::mem::swap(&mut cur, &mut nxt);
         }
 
@@ -73,131 +82,152 @@ where
     Ok(())
 }
 
-pub(crate) fn ckks_step_into<BE, R, I, F, P, K>(
+/// Query of [`ckks_sign_into`]: three temporaries with the layout of `input`.
+pub(crate) fn ckks_sign_tmp_bytes<BE, R, I, T, A, P>(
     module: &Module<BE>,
-    res: &mut R,
+    res: &R,
     input: &I,
-    composite: &SignComposite<F, P>,
-    tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
-    conj_key: &K,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
+    tsk: &T,
+    conj_key: &A,
+    coeff_prec: &P,
+) -> usize
 where
-    BE: Backend + HostStaged,
-    Module<BE>: CKKSPolynomialEvaluationOps<BE> + CKKSCopyOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE> + CKKSPow2Ops<BE>,
-    R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-    I: GLWEToBackendRef<BE> + CKKSCtBounds,
-    P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
-    K: GetAutomorphismKey<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
-        GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
+    BE: Backend,
+    Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSCopyOps<BE> + GLWEBytesOf<BE>,
+    R: CKKSCtBounds,
+    I: CKKSCtBounds,
+    T: GGLWEInfos,
+    A: GGLWEInfos,
+    P: CKKSInfos + LWEInfos,
 {
-    ckks_sign_into(module, res, input, composite, tsk, conj_key, scratch)?;
-    module.ckks_add_one_assign(res, scratch)?;
-    scratch.scope(|scratch_local| {
-        let (mut half, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*res);
-        module.ckks_div_pow2_into(&mut half, &*res, 1, &mut scratch_local)?;
-        module.ckks_copy(res, &half, &mut scratch_local)
-    })?;
-    Ok(())
+    3 * BE::scratch_aligned(module.glwe_bytes_of_from_infos(input))
+        + module
+            .ckks_all_ops_with_atk_tmp_bytes(input, tsk, conj_key, coeff_prec)
+            .max(module.ckks_copy_tmp_bytes(res, input))
 }
 
 /// Homomorphic `sign` and `step`.
 pub trait CKKSSignOps<BE: Backend> {
-    /// Scratch bytes for [`Self::ckks_sign`] / [`Self::ckks_step`].
-    fn ckks_sign_tmp_bytes<R, T, A, P>(&self, res: &R, tsk: &T, conj_key: &A, coeff_prec: &P) -> usize
+    /// Scratch bytes for [`Self::ckks_sign`] and [`Self::ckks_step`].
+    fn ckks_sign_tmp_bytes<R, I, T, A, P>(&self, res: &R, input: &I, tsk: &T, conj_key: &A, coeff_prec: &P) -> usize
     where
         R: CKKSCtBounds,
+        I: CKKSCtBounds,
         T: GGLWEInfos,
         A: GGLWEInfos,
         P: CKKSInfos + LWEInfos;
 
-    /// Evaluates `sign(input)` on `[−1, 1]` outside the composite gap.
-    fn ckks_sign<F, P, K>(
+    /// Evaluates `sign(input)` on `[-1, 1]` outside the composite gap.
+    ///
+    /// `conj_key` answers the conjugation, Galois element `-1`.
+    ///
+    /// # Metadata
+    ///
+    /// The factors run at the layout of `input`, each keeping `log_delta` and consuming its share of
+    /// `composite.consumed_bits(input.log_delta())`, then `ckks_copy` writes the result to `res`.
+    ///
+    /// # Errors
+    ///
+    /// An error when `input` holds no more budget than the composite consumes, and the errors of the factors and of the
+    /// final `ckks_copy`. The factors run in scratch, so `res` is untouched on `Err`.
+    fn ckks_sign<R, I, F, P, H, K>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
-        input: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        res: &mut R,
+        input: &I,
         composite: &SignComposite<F, P>,
-        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+        tsk: &H,
         conj_key: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        I: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        H: GetTensorKey<BE>,
         K: GetAutomorphismKey<BE>;
 
     /// Evaluates `(sign(input) + 1) / 2`.
-    fn ckks_step<F, P, K>(
+    ///
+    /// # Metadata
+    ///
+    /// As [`Self::ckks_sign`], then the halving adds one bit to `log_delta` at the same width.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::ckks_sign`], the halving requiring one more bit of budget. `res` is untouched on `Err`.
+    fn ckks_step<R, I, F, P, H, K>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
-        input: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        res: &mut R,
+        input: &I,
         composite: &SignComposite<F, P>,
-        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+        tsk: &H,
         conj_key: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        BE: HostStaged,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        I: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        H: GetTensorKey<BE>,
         K: GetAutomorphismKey<BE>;
 }
 
-impl<BE: Backend> CKKSSignOps<BE> for Module<BE>
+impl<BE: Backend<Ring = Standard>> CKKSSignOps<BE> for Module<BE>
 where
     Module<BE>: CKKSPolynomialEvaluationOps<BE>
         + CKKSCopyOps<BE>
         + CKKSConjugateOps<BE>
         + CKKSAddOps<BE>
         + CKKSPow2Ops<BE>
-        + CKKSAllOpsTmpBytes<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
-        GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
+        + CKKSAllOpsTmpBytes<BE>
+        + GLWEBytesOf<BE>,
 {
-    fn ckks_sign_tmp_bytes<R, T, A, P>(&self, res: &R, tsk: &T, conj_key: &A, coeff_prec: &P) -> usize
+    fn ckks_sign_tmp_bytes<R, I, T, A, P>(&self, res: &R, input: &I, tsk: &T, conj_key: &A, coeff_prec: &P) -> usize
     where
         R: CKKSCtBounds,
+        I: CKKSCtBounds,
         T: GGLWEInfos,
         A: GGLWEInfos,
         P: CKKSInfos + LWEInfos,
     {
-        let ct_bytes = GLWE::<AlignedBuf, BE::ZnxWord>::bytes_of_from_infos(res);
-        3 * ct_bytes + self.ckks_all_ops_with_atk_tmp_bytes(res, tsk, conj_key, coeff_prec)
+        ckks_sign_tmp_bytes(self, res, input, tsk, conj_key, coeff_prec)
     }
 
-    fn ckks_sign<F, P, K>(
+    fn ckks_sign<R, I, F, P, H, K>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
-        input: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        res: &mut R,
+        input: &I,
         composite: &SignComposite<F, P>,
-        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+        tsk: &H,
         conj_key: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        I: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        H: GetTensorKey<BE>,
         K: GetAutomorphismKey<BE>,
     {
-        // Each factor evaluates at half scale; `nxt += conj(nxt)` cleans the
-        // imaginary part and restores full scale, keeping `log_delta` constant.
-        ckks_sign_into(self, res, input, composite, tsk, conj_key, scratch)
+        ckks_sign_into(self, res, input, composite, tsk, conj_key, false, scratch)
     }
 
-    fn ckks_step<F, P, K>(
+    fn ckks_step<R, I, F, P, H, K>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
-        input: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        res: &mut R,
+        input: &I,
         composite: &SignComposite<F, P>,
-        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+        tsk: &H,
         conj_key: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        BE: HostStaged,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        I: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        H: GetTensorKey<BE>,
         K: GetAutomorphismKey<BE>,
     {
-        ckks_step_into(self, res, input, composite, tsk, conj_key, scratch)
+        ckks_sign_into(self, res, input, composite, tsk, conj_key, true, scratch)
     }
 }

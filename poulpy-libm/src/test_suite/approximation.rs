@@ -213,9 +213,9 @@ where
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
     let size = module
-        .ckks_sin_tmp_bytes(&sizing, &params.tsk_layout(), &low)
-        .max(module.ckks_sin_tmp_bytes(&sizing, &params.tsk_layout(), &scaled))
-        .max(module.ckks_sin_tmp_bytes(&sizing, &params.tsk_layout(), &high));
+        .ckks_sin_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &low)
+        .max(module.ckks_sin_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &scaled))
+        .max(module.ckks_sin_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &high));
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let input = ckks_encrypt_with_prec(

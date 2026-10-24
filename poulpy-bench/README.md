@@ -49,8 +49,9 @@ the same underlying `*_ops` tables.
 | [`core`](src/core) | `poulpy-core` GLWE/GGSW operations: encryption, decryption, keyswitch, automorphism, external product, tensoring |
 | [`schemes`](src/schemes) | `poulpy-ckks` (CKKS) and `poulpy-bin-fhe` (blind rotation, circuit bootstrapping) |
 | [`blas`](src/blas) | `poulpy-blas` encrypted matrix operations on one `d x d` block: `blas_matmul` by a dense and by a replicated right factor, `blas_matmul_pt_right` and `blas_matmul_pt_left` under `Diagonal` and `Jkls`, `blas_transpose` |
+| [`libm`](src/libm) | `poulpy-libm` function plans on one ciphertext: `ckks_exp`, `ckks_log`, `ckks_pow` |
 
-Each of `hal`, `core`, `schemes` and `blas` has its own `params` submodule (e.g.
+Each of `hal`, `core`, `schemes`, `blas` and `libm` has its own `params` submodule (e.g.
 [`hal::params`](src/hal/params.rs)) holding that layer's sweep-parameter
 structs and `default_bench_params_*` builders, so every backend sweeps the
 same reasonable defaults.
@@ -60,7 +61,7 @@ same reasonable defaults.
 For a backend implementing the full HAL/core/CKKS/bin-fhe surface, add
 `poulpy-bench` as a dev-dependency and register the ready-made `bench_*`
 functions directly in `criterion_group!` — each layer's `suites` module
-(`hal::suites`, `core::suites`, `schemes::suites`, and `blas::suites` for the
+(`hal::suites`, `core::suites`, `schemes::suites`, `libm::suites`, and `blas::suites` for the
 BLAS layer, see [below](#blas-benchmarks)) exposes them for all three tiers:
 
 - `bench_hal_ckks`/`bench_hal_binfhe`, `bench_core_ckks`/`bench_core_binfhe`,
@@ -179,6 +180,20 @@ cargo bench -p poulpy-cpu-portable --bench full --features enable-ckks -- n15_d3
 
 # Run the logN15 preset on the portable NTT backend
 cargo bench -p poulpy-cpu-portable --bench full --features enable-ckks -- 'NTT4x30Portable/ckks/ckks_bootstrapping/n15_d35_k180_p18_c2s'
+```
+
+### libm benchmarks
+
+`libm::suites` benchmarks `poulpy-libm` on NTT backends, on one ciphertext at radix `base2k` 52 and scale `log_delta = 40`: `ckks_exp` and `ckks_log` of plans on `[0.5, 1.5]`, and `ckks_pow` of a plan for bases in `[0.5, 1.5]` and exponents in `[-1, 1]`, all at default options.
+The sweep is over the ring degree: light `2^14`, standard `2^13`, `2^14` and `2^15`, full adds `2^16`.
+
+A runner builds its point once: the plan on a host module, transferred to the backend, the tensor key, an input and a destination filled on the backend at the width the plan needs, and the scratch its `*_tmp_bytes` reports.
+The timed circuit does not depend on the slot values, so the inputs are uniform fills and no precision is checked.
+The tier binaries register `bench_libm::<Ntt>` in their main group.
+
+```sh
+# The light tier of the libm layer only
+cargo bench -p poulpy-cpu-portable --bench light --features enable-ckks,enable-bin-fhe -- libm
 ```
 
 ### BLAS benchmarks

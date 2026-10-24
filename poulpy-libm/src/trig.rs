@@ -9,12 +9,16 @@ use std::fmt::Debug;
 
 use anyhow::{Result, ensure};
 use num_traits::{Float, FloatConst, FromPrimitive, ToPrimitive};
-use poulpy_core::layouts::{BSGSMeta, GLWETensorKeyPrepared, GLWEToBackendRef};
+use poulpy_core::{
+    GLWEBytesOf,
+    layouts::{BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos, LWEInfos, SetBSGSMeta},
+};
 use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena};
 
 use poulpy_ckks::{
-    CKKSCtBounds, CKKSLayout,
-    layouts::{CKKSCiphertext, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar},
+    CKKSCtBounds, CKKSInfos, CKKSLayout, SetCKKSInfos,
+    api::CKKSCopyOps,
+    layouts::{CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKS},
 };
 
 use crate::{
@@ -108,48 +112,113 @@ pub trait CKKSTrigOps<BE: Backend> {
     declare_unary_op!(ckks_sin_tmp_bytes, ckks_sin, SinPlan, "sin");
     declare_unary_op!(ckks_cos_tmp_bytes, ckks_cos, CosPlan, "cos");
 
-    /// Evaluates `sin(input)` and `cos(input)`.
-    #[allow(clippy::too_many_arguments)]
-    fn ckks_sincos<P, Q>(
+    /// Scratch bytes for [`Self::ckks_sincos`].
+    fn ckks_sincos_tmp_bytes<S, C, I, T, P, Q>(
         &self,
-        sin: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
-        cos: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
-        input: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        sin: &S,
+        cos: &C,
+        input: &I,
+        tsk: &T,
         sin_plan: &SinPlan<P>,
         cos_plan: &CosPlan<Q>,
-        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+    ) -> usize
+    where
+        S: CKKSCtBounds,
+        C: CKKSCtBounds,
+        I: CKKSCtBounds,
+        T: GGLWEInfos,
+        P: CKKSInfos + LWEInfos,
+        Q: CKKSInfos + LWEInfos;
+
+    /// Evaluates `sin(input)` and `cos(input)`.
+    ///
+    /// # Metadata
+    ///
+    /// As [`Self::ckks_sin`] and [`Self::ckks_cos`]. The sine is computed at the layout of `input`, then copied to `sin`.
+    ///
+    /// # Errors
+    ///
+    /// The errors of the two evaluations and of the final `ckks_copy`. The sine runs in scratch, so a failure of either
+    /// evaluation leaves `sin` untouched, and `cos` keeps the guarantee of [`Self::ckks_cos`].
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_sincos<S, C, I, P, Q, H>(
+        &self,
+        sin: &mut S,
+        cos: &mut C,
+        input: &I,
+        sin_plan: &SinPlan<P>,
+        cos_plan: &CosPlan<Q>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
-        Q: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta;
+        S: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        C: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        I: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        Q: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        H: GetTensorKey<BE>;
 
     declare_unary_op!(ckks_tan_tmp_bytes, ckks_tan, TanPlan, "tan");
 }
 
 impl<BE: Backend> CKKSTrigOps<BE> for Module<BE>
 where
-    Module<BE>: CKKSApproximationOps<BE>,
+    Module<BE>: CKKSApproximationOps<BE> + CKKSCopyOps<BE> + GLWEBytesOf<BE>,
 {
     impl_unary_op!(ckks_sin_tmp_bytes, ckks_sin, SinPlan);
     impl_unary_op!(ckks_cos_tmp_bytes, ckks_cos, CosPlan);
 
-    fn ckks_sincos<P, Q>(
+    fn ckks_sincos_tmp_bytes<S, C, I, T, P, Q>(
         &self,
-        sin: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
-        cos: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
-        input: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        sin: &S,
+        cos: &C,
+        input: &I,
+        tsk: &T,
         sin_plan: &SinPlan<P>,
         cos_plan: &CosPlan<Q>,
-        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+    ) -> usize
+    where
+        S: CKKSCtBounds,
+        C: CKKSCtBounds,
+        I: CKKSCtBounds,
+        T: GGLWEInfos,
+        P: CKKSInfos + LWEInfos,
+        Q: CKKSInfos + LWEInfos,
+    {
+        // The sine has the layout of `input`.
+        BE::scratch_aligned(self.glwe_bytes_of_from_infos(input))
+            + self
+                .ckks_sin_tmp_bytes(input, input, tsk, sin_plan)
+                .max(self.ckks_cos_tmp_bytes(cos, input, tsk, cos_plan))
+                .max(self.ckks_copy_tmp_bytes(sin, input))
+    }
+
+    fn ckks_sincos<S, C, I, P, Q, H>(
+        &self,
+        sin: &mut S,
+        cos: &mut C,
+        input: &I,
+        sin_plan: &SinPlan<P>,
+        cos_plan: &CosPlan<Q>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
-        Q: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
+        S: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        C: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        I: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        Q: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        H: GetTensorKey<BE>,
     {
-        self.ckks_sin(sin, input, sin_plan, tsk, scratch)?;
-        self.ckks_cos(cos, input, cos_plan, tsk, scratch)
+        scratch.scope(|scratch_local| {
+            let (mut sine, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(input);
+            self.ckks_sin(&mut sine, input, sin_plan, tsk, &mut scratch_local)?;
+            self.ckks_cos(cos, input, cos_plan, tsk, &mut scratch_local)?;
+            self.ckks_copy(sin, &sine, &mut scratch_local)?;
+            Ok(())
+        })
     }
 
     impl_unary_op!(ckks_tan_tmp_bytes, ckks_tan, TanPlan);

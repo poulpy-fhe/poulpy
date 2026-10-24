@@ -13,11 +13,15 @@ Let:
 Consumed modulus is the expected `log_budget` drop.
 Depth is the longest multiplicative chain.
 A plan's methods are authoritative when its degree, interval, or reduction schedule changes.
-The input budget must be strictly larger than the stated consumption.
+The input budget must cover the stated consumption plus the headroom of the result.
+An evaluation leaves `b = log_budget - P(D)` bits of budget, which are guaranteed to hold a result slot `v` with `|v| < 2^(b - 1)`.
+With `M` the largest result magnitude on the plan's domain, an input with `log_budget >= P(D) + max(1, floor(log2(M)) + 2)` therefore evaluates without wrapping.
+A smaller budget can wrap the result without an error: `exp` on `[0, 3]`, where `M = exp(3)` is about `20.1`, is guaranteed from `P(D) + 6` bits.
 
 Direct unary plans expose `interval()`, `degree()`, `consumed_bits(D)`, `depth()`, and `map_plaintexts(...)`.
-Composed plans expose their declared domains as fields and provide the same cost and mapping methods.
-The `approximation_bits` field is fitted host-polynomial accuracy, not a guarantee on the final ciphertext.
+Composed plans expose their declared domains through accessors and provide the same cost and mapping methods.
+Plan fields are private: a plan is validated once, by its constructor.
+`approximation_bits()` is the fitted host-polynomial accuracy, not a guarantee on the final ciphertext.
 
 Build plans on the host with `from_precision`, transfer their plaintexts with `map_plaintexts`, size scratch with the matching `ckks_*_tmp_bytes` method, and then evaluate.
 No operation bootstraps.
@@ -47,11 +51,11 @@ next libm operation from the refreshed ciphertext's actual metadata:
 
 ```text
 D_out    = refreshed.log_delta()
-required = libm_plan.consumed_bits(D_out)
-refreshed.log_budget() > required
+required = libm_plan.consumed_bits(D_out) + headroom
+refreshed.log_budget() >= required
 ```
 
-The strict inequality is the same precondition used by approximation evaluation.
+`headroom` is the result headroom of the conventions above, `max(1, floor(log2(M)) + 2)` bits for a largest result magnitude `M`.
 Allocate the libm destination at the full circuit/bootstrap modulus; reusing a
 destination whose previous result narrowed its precision metadata can add a
 destination-capacity alignment cost.
@@ -66,7 +70,7 @@ k_boot > log_modulus_in
        + libm_plan.consumed_bits(D_out)
 ```
 
-Add any desired post-libm headroom before rounding up. `D_out` is recipe-dependent;
+Add the result headroom, and any post-libm budget the circuit needs, before rounding up. `D_out` is recipe-dependent;
 use the bootstrap output metadata rather than the pre-bootstrap ciphertext scale.
 The plan's fitted `target_bits` is independent of bootstrapping, while its
 coefficient scale and polynomial depth determine how much of the refreshed budget
@@ -138,9 +142,9 @@ There is no runtime guard on this bound.
 `sin` and `cos` do not perform periodic reduction.
 `tan` covers one continuous branch.
 
-For `atan2`, the plan requires `plan.sign_gap() <= |x|, |y| <= plan.input_bound` and `|y / x| <= plan.ratio_bound`.
+For `atan2`, the plan requires `plan.sign_gap() <= |x|, |y| <= plan.input_bound()` and `|y / x| <= plan.ratio_bound()`.
 With reciprocal iterations `r`, atan cost `A(D)`, sign cost `S(D)`, and optional normalization cost `N`, the total is `N + S(D) + (r + 4)D + A(D)`.
-The normalization cost is `plan.coeff_log_delta` when enabled and zero otherwise.
+The normalization cost is `plan.coeff_log_delta()` when enabled and zero otherwise.
 
 ## Hyperbolic and error functions
 
@@ -229,10 +233,14 @@ For `L = log2(slots)` on dense packing:
 |---|---|---:|---:|
 | `ckks_sum_slots` | Dense slots | `0` | `0` |
 | `ckks_fmax_slots`, `ckks_fmin_slots` | Pairwise differences in the sign domain | `L(S(D) + D + 1)` | `L(s + 1)` |
-| `ckks_softmax` | Dense slots in `plan.input_interval` | `plan.consumed_bits(D)` | `plan.depth()` |
+| `ckks_softmax` | Dense slots in `plan.input_interval()` | `plan.consumed_bits(D)` | `plan.depth()` |
 
 `SoftmaxPlan` includes the exponential approximation, slot count, and fixed Goldschmidt schedule.
-Its cost is `exp.consumed_bits(D) + (reciprocal_iters + 4)D`.
+Its cost is `exp().consumed_bits(D) + (reciprocal_iters() + 4)D`.
+
+The three packed operations rotate by `1, 2, 4, ...` slots.
+`ckks_sum_slots_galois_elements` lists the Galois elements of the rotation keys they look up, which the caller's key source must answer.
+`ckks_fmax_slots` and `ckks_fmin_slots` also look up the conjugation key, Galois element `-1`.
 
 ## Approximation API
 

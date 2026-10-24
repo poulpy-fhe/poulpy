@@ -63,18 +63,26 @@ required-features = ["enable-blas"]
 [[example]]
 name = "libm_exp"
 required-features = ["enable-ckks"]
+# Runs the walkthrough under `cargo test`.
+test = true
 
 [[example]]
 name = "libm_trig"
 required-features = ["enable-ckks"]
+# Runs the walkthrough under `cargo test`.
+test = true
 
 [[example]]
 name = "libm_inference"
 required-features = ["enable-ckks"]
+# Runs the walkthrough under `cargo test`.
+test = true
 
 [[example]]
 name = "libm_signal"
 required-features = ["enable-ckks"]
+# Runs the walkthrough under `cargo test`.
+test = true
 
 [[example]]
 name = "core_encryption"
@@ -135,8 +143,3 @@ required-features = ["enable-core"]
 name = "noise"
 harness = false
 required-features = ["enable-core"]
-
-[[bench]]
-name = "libm"
-harness = false
-required-features = ["enable-ckks"]

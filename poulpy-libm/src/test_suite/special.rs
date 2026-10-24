@@ -106,14 +106,14 @@ where
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
     let size = module
-        .ckks_tgamma_tmp_bytes(&sizing, &params.tsk_layout(), &tgamma)
-        .max(module.ckks_lgamma_tmp_bytes(&sizing, &params.tsk_layout(), &lgamma))
-        .max(module.ckks_j0_tmp_bytes(&sizing, &params.tsk_layout(), &jp0))
-        .max(module.ckks_j1_tmp_bytes(&sizing, &params.tsk_layout(), &jp1))
-        .max(module.ckks_jn_tmp_bytes(&sizing, &params.tsk_layout(), &jpn))
-        .max(module.ckks_y0_tmp_bytes(&sizing, &params.tsk_layout(), &yp0))
-        .max(module.ckks_y1_tmp_bytes(&sizing, &params.tsk_layout(), &yp1))
-        .max(module.ckks_yn_tmp_bytes(&sizing, &params.tsk_layout(), &ypn));
+        .ckks_tgamma_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &tgamma)
+        .max(module.ckks_lgamma_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &lgamma))
+        .max(module.ckks_j0_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &jp0))
+        .max(module.ckks_j1_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &jp1))
+        .max(module.ckks_jn_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &jpn))
+        .max(module.ckks_y0_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &yp0))
+        .max(module.ckks_y1_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &yp1))
+        .max(module.ckks_yn_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &ypn));
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let cg = ckks_encrypt_with_prec(

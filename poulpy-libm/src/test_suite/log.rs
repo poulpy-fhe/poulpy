@@ -70,10 +70,10 @@ where
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
     let size = module
-        .ckks_log_tmp_bytes(&sizing, &params.tsk_layout(), &log)
-        .max(module.ckks_log2_tmp_bytes(&sizing, &params.tsk_layout(), &log2))
-        .max(module.ckks_log10_tmp_bytes(&sizing, &params.tsk_layout(), &log10))
-        .max(module.ckks_log1p_tmp_bytes(&sizing, &params.tsk_layout(), &log1p));
+        .ckks_log_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &log)
+        .max(module.ckks_log2_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &log2))
+        .max(module.ckks_log10_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &log10))
+        .max(module.ckks_log1p_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &log1p));
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
 

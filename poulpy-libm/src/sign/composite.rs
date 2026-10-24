@@ -5,7 +5,7 @@
 
 #![allow(clippy::excessive_precision)]
 
-use anyhow::{Result, anyhow, ensure};
+use anyhow::{Context, Result, anyhow, ensure};
 use num_traits::{Float, FloatConst, FromPrimitive};
 use poulpy_ckks::CKKSInfos;
 use poulpy_core::layouts::Base2K;
@@ -45,12 +45,9 @@ pub const COEFFS_SIGN_X4_CHEBYSHEV: &[f64] = &[0.0, 1.1962890625, 0.0, -0.239257
 
 /// Prepared composite sign polynomial.
 pub struct SignComposite<F, P> {
-    /// BSGS factors in evaluation order.
-    pub polys_bsgs: Vec<BSGSPolynomial<P>>,
-    /// Host factors for reference evaluation.
-    pub polys_host: Vec<Polynomial<F>>,
-    /// Coefficient scale.
-    pub coeff_log_delta: usize,
+    pub(crate) polys_bsgs: Vec<BSGSPolynomial<P>>,
+    pub(crate) polys_host: Vec<Polynomial<F>>,
+    pub(crate) coeff_log_delta: usize,
 }
 
 impl<F> SignComposite<F, CKKSPlaintext<AlignedBuf, i64, Standard>>
@@ -66,7 +63,6 @@ where
         strategy: SplitStrategy,
         module: &Module<HostBytesBackend>,
     ) -> Result<Self> {
-        ensure!(!rows.is_empty(), "sign composite: coefficient rows must be non-empty");
         for (i, row) in rows.iter().enumerate() {
             ensure!(!row.is_empty(), "sign composite: coefficient row {i} is empty");
             ensure!(
@@ -121,6 +117,8 @@ where
         strategy: SplitStrategy,
         module: &Module<HostBytesBackend>,
     ) -> Result<Self> {
+        // Every constructor lands here, so a composite always has a factor.
+        ensure!(!rows.is_empty(), "sign composite: coefficient rows must be non-empty");
         let half = F::from_f64(0.5).ok_or_else(|| anyhow!("sign composite: 0.5 not representable"))?;
         let mut polys_bsgs = Vec::with_capacity(rows.len());
         let mut polys_host = Vec::with_capacity(rows.len());
@@ -132,7 +130,7 @@ where
             polys_bsgs.push(
                 poly_half
                     .encode_bsgs_with(module, base2k, coeff_meta.into(), strategy)
-                    .map_err(|e| anyhow!("sign composite: coefficient row {i}: {e}"))?,
+                    .with_context(|| format!("sign composite: coefficient row {i}"))?,
             );
             polys_host.push(poly);
         }
@@ -145,6 +143,21 @@ where
 }
 
 impl<F, P> SignComposite<F, P> {
+    /// BSGS factors in evaluation order.
+    pub fn polys_bsgs(&self) -> &[BSGSPolynomial<P>] {
+        &self.polys_bsgs
+    }
+
+    /// Host factors for reference evaluation.
+    pub fn polys_host(&self) -> &[Polynomial<F>] {
+        &self.polys_host
+    }
+
+    /// Coefficient scale.
+    pub fn coeff_log_delta(&self) -> usize {
+        self.coeff_log_delta
+    }
+
     /// Number of factors composed.
     pub fn len(&self) -> usize {
         self.polys_bsgs.len()

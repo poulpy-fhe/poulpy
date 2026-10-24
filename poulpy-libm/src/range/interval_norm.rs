@@ -1,6 +1,6 @@
 //! Large-interval normalization from Cheon et al., ePrint 2022/280.
 
-use anyhow::{Result, anyhow, ensure};
+use anyhow::{Context, Result, anyhow, ensure};
 use num_traits::{Float, FloatConst, FromPrimitive};
 use poulpy_core::layouts::{Base2K, LWEInfos};
 use poulpy_hal::{
@@ -18,12 +18,9 @@ pub const COMPRESSION_L: f64 = 2.45;
 
 /// Prepared interval-normalization constants.
 pub struct IntervalNorm<P> {
-    /// Per-step constants.
-    pub consts: P,
-    /// Number of compression steps `⌈log_L(Max)⌉`.
-    pub n: usize,
-    /// Scale the constants were encoded at.
-    pub coeff_log_delta: usize,
+    pub(crate) consts: P,
+    pub(crate) n: usize,
+    pub(crate) coeff_log_delta: usize,
 }
 
 impl IntervalNorm<CKKSPlaintext<AlignedBuf, i64, Standard>> {
@@ -43,7 +40,7 @@ impl IntervalNorm<CKKSPlaintext<AlignedBuf, i64, Standard>> {
             .collect::<Result<_>>()?;
         let mut consts = module.ckks_pt_coeffs_alloc(n, base2k, coeff_meta.k());
         consts.set_meta(coeff_meta.meta());
-        consts.encode_host_floats(&c).map_err(|e| anyhow!("interval_norm: {e}"))?;
+        consts.encode_host_floats(&c).context("interval_norm")?;
         Ok(Self {
             consts,
             n,
@@ -53,6 +50,21 @@ impl IntervalNorm<CKKSPlaintext<AlignedBuf, i64, Standard>> {
 }
 
 impl<P> IntervalNorm<P> {
+    /// Per-step constants.
+    pub fn consts(&self) -> &P {
+        &self.consts
+    }
+
+    /// Number of compression steps `ceil(log_L(max))`.
+    pub fn steps(&self) -> usize {
+        self.n
+    }
+
+    /// Scale the constants were encoded at.
+    pub fn coeff_log_delta(&self) -> usize {
+        self.coeff_log_delta
+    }
+
     /// Consumed modulus bits.
     pub fn consumed_bits(&self, log_delta: usize) -> usize {
         2 * self.n * log_delta

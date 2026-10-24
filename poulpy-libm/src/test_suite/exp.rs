@@ -80,7 +80,7 @@ where
     sizing.set_meta(params.prec().meta);
     let size = plans
         .iter()
-        .map(|(_, _, plan)| module.ckks_exp_tmp_bytes(&sizing, &params.tsk_layout(), plan))
+        .map(|(_, _, plan)| module.ckks_exp_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), plan))
         .max()
         .unwrap();
     let mut scratch = ScratchOwned::<BE>::alloc(size);
@@ -116,6 +116,73 @@ where
         let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
         assert_precision_bits(&format!("exp/{label}"), &re_out, &want, options.target_bits, params.n);
     }
+}
+
+/// `ckks_exp` on `[0, 3]` at exactly the documented input budget, `consumed_bits` plus the result headroom
+/// `max(1, floor(log2(M)) + 2)` for the largest result `M = exp(3)`: the result must not wrap.
+pub fn test_exp_headroom<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend<Ring = Standard>,
+    Module<BE>: TestContextModule<BE> + CKKSExpOps<BE>,
+    CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let log_delta = base.prec().log_delta();
+    let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);
+    let options = ExpOptions::default();
+    let hi = 3.0;
+    let host_plan = ExpPlan::from_precision::<F>(
+        F::zero(),
+        F::from_f64(hi).unwrap(),
+        base.base2k.into(),
+        coeff_meta,
+        options,
+        host_module,
+    )
+    .expect("ExpPlan::from_precision");
+    let consumed = host_plan.consumed_bits(log_delta);
+    let headroom = 1usize.max(f64::exp(hi).log2().floor() as usize + 2);
+    assert_eq!(headroom, 6);
+    let plan = host_plan.map_plaintexts(|pt| upload_pt(module, pt));
+    let params = params_for(&base, consumed);
+    let k_in = log_delta + consumed + headroom;
+    assert!(k_in <= params.k);
+
+    let slots = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new::<F>(slots).unwrap();
+    let im = vec![F::zero(); slots];
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), k_in.into());
+    sizing.set_meta(params.prec().meta);
+    let size = module.ckks_exp_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &plan);
+    let mut scratch = ScratchOwned::<BE>::alloc(size);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+
+    let mut source = Source::new([0x9Au8; 32]);
+    let mut x: Vec<F> = (0..slots).map(|_| F::from_f64(source.next_f64(0.0, hi)).unwrap()).collect();
+    x[0] = F::from_f64(hi).unwrap();
+    let want: Vec<F> = x.iter().map(|&v| v.exp()).collect();
+    let input = ckks_encrypt_with_prec(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        k_in,
+        &x,
+        &im,
+        ckks_spec(params.n, params.base2k, log_delta, consumed + headroom),
+        &mut scratch.borrow(),
+    );
+    assert_eq!(input.log_budget(), consumed + headroom);
+    let mut res = module.ckks_ciphertext_alloc(params.base2k.into(), k_in.into());
+    module
+        .ckks_exp(&mut res, &input, &plan, &tsk, &mut scratch.borrow())
+        .expect("ckks_exp");
+    assert_eq!(res.log_budget(), headroom);
+    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
+    assert_precision_bits("exp/headroom", &re_out, &want, options.target_bits, params.n);
 }
 
 pub fn test_exp2_expm1<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
@@ -161,8 +228,8 @@ where
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
     let size = module
-        .ckks_exp2_tmp_bytes(&sizing, &params.tsk_layout(), &exp2)
-        .max(module.ckks_expm1_tmp_bytes(&sizing, &params.tsk_layout(), &expm1));
+        .ckks_exp2_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &exp2)
+        .max(module.ckks_expm1_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &expm1));
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let input = ckks_encrypt_with_prec(
@@ -236,7 +303,7 @@ where
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0xa6u8; 32]);
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
-    let size = module.ckks_exp10_tmp_bytes(&sizing, &params.tsk_layout(), &plan);
+    let size = module.ckks_exp10_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &plan);
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let input = ckks_encrypt_with_prec(

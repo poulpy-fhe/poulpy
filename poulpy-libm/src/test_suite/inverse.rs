@@ -42,7 +42,8 @@ where
     ct.set_meta(params.prec().meta);
     let size = module
         .ckks_all_ops_tmp_bytes(&ct, &params.tsk_layout(), &PT_PREC)
-        .max(module.ckks_inverse_tmp_bytes(&ct, &params.tsk_layout()));
+        .max(module.ckks_goldschmidt_division_tmp_bytes(&ct, &params.tsk_layout()))
+        .max(module.ckks_rsqrt_tmp_bytes(&ct, &ct, &params.tsk_layout()));
     ScratchOwned::<BE>::alloc(size)
 }
 
@@ -329,7 +330,9 @@ where
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
-    let scratch_size = module.ckks_inverse_domain_tmp_bytes(&sizing, &params.tsk_layout(), &params.atk_layout(), &coeff_meta);
+    let scratch_size = module
+        .ckks_inverse_domain_tmp_bytes(&sizing, &params.tsk_layout(), &params.atk_layout(), &coeff_meta)
+        .max(module.ckks_interval_normalization_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &norm_params));
     let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
 

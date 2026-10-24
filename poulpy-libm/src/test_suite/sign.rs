@@ -147,7 +147,7 @@ where
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
-    let scratch_size = module.ckks_sign_tmp_bytes(&sizing, &params.tsk_layout(), &params.atk_layout(), &coeff_meta);
+    let scratch_size = module.ckks_sign_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &params.atk_layout(), &coeff_meta);
     let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let conj_key = gen_atk(&params, module, -1, &sk_raw, &mut scratch.borrow());
@@ -235,7 +235,7 @@ where
 
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
-    let scratch_size = module.ckks_sign_tmp_bytes(&sizing, &params.tsk_layout(), &params.atk_layout(), &coeff_meta);
+    let scratch_size = module.ckks_sign_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &params.atk_layout(), &coeff_meta);
     let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let conj_key = gen_atk(&params, module, -1, &sk_raw, &mut scratch.borrow());
@@ -278,6 +278,11 @@ where
     // to the noise it adds instead: replayed through the same API as a one-row
     // composite, its output is compared with its polynomial applied in the clear
     // to the decrypted input of that factor.
+    //
+    // Floor: over 16 secret-key and input seeds on NTT4x30Portable at
+    // log_delta = 40, the worst factor kept 29.3 bits on average and 25.0 on its
+    // worst slot, against `log_delta - 15` = 25 and the helper's worst-slot floor
+    // of 17: at least 4.3 and 8 bits of margin.
     let required = log_delta as f64 - 15.0;
     let half = F::from_f64(0.5).unwrap();
     let rows = DEFAULT_SIGN_COMPOSITE_CHEBYSHEV;

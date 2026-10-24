@@ -82,7 +82,14 @@ where
 
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
-    let scratch_size = module.ckks_comparison_tmp_bytes(&sizing, &params.tsk_layout(), &params.atk_layout(), &coeff_meta);
+    let scratch_size = module.ckks_comparison_tmp_bytes(
+        &sizing,
+        &sizing,
+        &sizing,
+        &params.tsk_layout(),
+        &params.atk_layout(),
+        &coeff_meta,
+    );
     let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let conj_key = gen_atk(&params, module, -1, &sk_raw, &mut scratch.borrow());

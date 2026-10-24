@@ -12,7 +12,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{GaloisElement, HostBytesBackend, Module, ScratchOwned},
+    layouts::{HostBytesBackend, Module, ScratchOwned},
     source::Source,
 };
 
@@ -56,7 +56,7 @@ where
 
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
-    let size = module.ckks_sum_slots_tmp_bytes(&sizing, &params.atk_layout());
+    let size = module.ckks_sum_slots_tmp_bytes(&sizing, &sizing, &params.atk_layout());
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let rotation_keys = rotation_keys(&params, module, &sk_raw, &mut scratch);
     let input = ckks_encrypt_with_prec(
@@ -112,7 +112,14 @@ where
 
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
-    let size = module.ckks_fmax_slots_tmp_bytes(&sizing, &params.tsk_layout(), &params.atk_layout(), &coeff_meta);
+    let size = module.ckks_fmax_slots_tmp_bytes(
+        &sizing,
+        &sizing,
+        &params.tsk_layout(),
+        &params.atk_layout(),
+        &params.atk_layout(),
+        &coeff_meta,
+    );
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let conj_key = gen_atk(&params, module, -1, &sk_raw, &mut scratch.borrow());
@@ -178,14 +185,11 @@ pub(super) fn rotation_keys<BE>(
 ) -> HashMap<i64, poulpy_core::layouts::GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>
 where
     BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSReductionOps<BE>,
 {
-    (0..(params.n / 2).ilog2())
-        .map(|i| {
-            let shift = 1i64 << i;
-            let gal = module.galois_element(shift);
-            let key = gen_atk(params, module, gal, sk_raw, &mut scratch.borrow());
-            (gal, key)
-        })
+    module
+        .ckks_sum_slots_galois_elements(&params.prec())
+        .into_iter()
+        .map(|gal| (gal, gen_atk(params, module, gal, sk_raw, &mut scratch.borrow())))
         .collect()
 }

@@ -37,7 +37,8 @@ use super::{
 pub fn test_softmax<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSSoftmaxOps<BE>,
+    Module<BE>:
+        TestContextModule<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSSoftmaxOps<BE> + crate::reduce::CKKSReductionOps<BE>,
     CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
@@ -69,7 +70,7 @@ where
 
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
-    let size = module.ckks_softmax_tmp_bytes(&sizing, &params.tsk_layout(), &params.atk_layout(), &plan);
+    let size = module.ckks_softmax_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &params.atk_layout(), &plan);
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let rotation_keys = rotation_keys(&params, module, &sk_raw, &mut scratch);

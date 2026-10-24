@@ -45,6 +45,8 @@
 //!   sweep is a single size (`log_n` = 14) instead of {13, 14, 15}.
 //! - `blas::suites::{bench_blas, standard::bench_blas, light::bench_blas}`: the same three tiers for the BLAS layer,
 //!   which targets NTT backends and runs under [`blas_criterion_config`].
+//! - `libm::suites::{bench_libm, standard::bench_libm, light::bench_libm}`: the same three tiers for the libm layer,
+//!   which targets NTT backends.
 //!
 //! # Params
 //!
@@ -115,6 +117,37 @@ pub(crate) fn bin_fhe_n() -> u64 {
 
 // #[cfg(any(feature = "core-bench", feature = "bin-fhe-bench", feature = "ckks-bench"))]
 // type BenchHostBackend = poulpy_cpu_portable::FFT64Portable;
+
+/// One call of a built point's operation.
+pub(crate) type Call = Box<dyn FnMut()>;
+
+thread_local! {
+    static POINT: std::cell::RefCell<Option<(String, Call)>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Criterion calls a runner once per warm-up round and once per sample, and building a point (maps, keys, encryptions)
+/// costs far more than one call of its operation: the first call of a point builds it, `build` returning one call of the
+/// operation, and the later calls reuse it. Only one point is kept, so the keys of the previous one are freed before the
+/// next are made.
+pub(crate) fn timed<BE: 'static, M: Measurement, P: Display>(
+    bencher: &mut Bencher<'_, M>,
+    op: &str,
+    params: &P,
+    build: impl FnOnce() -> Call,
+) {
+    let id = format!("{}/{op}/{params}", backend_name::<BE>());
+    POINT.with_borrow_mut(|point| {
+        if point.as_ref().is_none_or(|(have, _)| *have != id) {
+            *point = None;
+            *point = Some((id, build()));
+        }
+        let (_, call) = point.as_mut().expect("the point was just built");
+        bencher.iter(|| {
+            call();
+            std::hint::black_box(())
+        });
+    });
+}
 
 /// Return the shared Criterion configuration used by all bench binaries.
 ///

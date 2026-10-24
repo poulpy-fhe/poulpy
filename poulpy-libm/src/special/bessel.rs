@@ -70,27 +70,20 @@ impl_host_plan!(Y1Plan, "y1", libm::y1, Parity::Full, true);
 
 /// Prepared `jn` approximation for a public integer order.
 pub struct JnPlan<P> {
-    /// Prepared polynomial.
-    pub approximation: PolynomialApproximation<P>,
-    /// Fitted absolute-error bits.
-    pub approximation_bits: f64,
-    /// Public Bessel order.
-    pub order: i32,
+    pub(crate) approximation: PolynomialApproximation<P>,
+    pub(crate) approximation_bits: f64,
+    pub(crate) order: i32,
 }
 
 /// Prepared `yn` approximation for a public integer order.
 pub struct YnPlan<P> {
-    /// Prepared polynomial.
-    pub approximation: PolynomialApproximation<P>,
-    /// Fitted absolute-error bits.
-    pub approximation_bits: f64,
-    /// Public Bessel order.
-    pub order: i32,
+    pub(crate) approximation: PolynomialApproximation<P>,
+    pub(crate) approximation_bits: f64,
+    pub(crate) order: i32,
 }
 
 impl JnPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     /// Fits and prepares `jn(order, x)` on `[a, b]`.
-    #[allow(clippy::too_many_arguments)]
     pub fn from_precision<F>(
         order: i32,
         a: F,
@@ -131,7 +124,6 @@ impl JnPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
 
 impl YnPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     /// Fits and prepares `yn(order, x)` on positive `[a, b]`.
-    #[allow(clippy::too_many_arguments)]
     pub fn from_precision<F>(
         order: i32,
         a: F,
@@ -168,6 +160,21 @@ impl YnPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
 macro_rules! impl_ordered_plan {
     ($plan:ident) => {
         impl<P> $plan<P> {
+            /// Prepared polynomial.
+            pub fn approximation(&self) -> &PolynomialApproximation<P> {
+                &self.approximation
+            }
+
+            /// Fitted absolute-error bits.
+            pub fn approximation_bits(&self) -> f64 {
+                self.approximation_bits
+            }
+
+            /// Public Bessel order.
+            pub fn order(&self) -> i32 {
+                self.order
+            }
+
             /// Consumed modulus bits.
             pub fn consumed_bits(&self, input_log_delta: usize) -> usize {
                 self.approximation.consumed_bits(input_log_delta)

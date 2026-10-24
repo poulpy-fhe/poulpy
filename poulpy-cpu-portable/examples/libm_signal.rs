@@ -62,8 +62,8 @@ fn run() -> Result<()> {
     let log = host_log.map_plaintexts(|pt| upload_pt(&setup.module, pt));
     let mut context = setup.prepare(circuit_consumed, |module, sizing, params| {
         module
-            .ckks_hypot_tmp_bytes(sizing, &params.tsk_layout(), &hypot)
-            .max(module.ckks_log_tmp_bytes(sizing, &params.tsk_layout(), &log))
+            .ckks_hypot_tmp_bytes(sizing, sizing, sizing, &params.tsk_layout(), &hypot)
+            .max(module.ckks_log_tmp_bytes(sizing, sizing, &params.tsk_layout(), &log))
             .max(module.ckks_scalbn_tmp_bytes(sizing))
     });
 

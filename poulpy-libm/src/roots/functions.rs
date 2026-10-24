@@ -5,16 +5,16 @@ use std::fmt::Debug;
 
 use anyhow::{Result, ensure};
 use num_traits::{Float, FloatConst, FromPrimitive, ToPrimitive};
-use poulpy_core::layouts::{
-    BSGSMeta, GGLWEInfos, GLWE, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta,
-    prepared::GLWETensorKeyPreparedToBackendRef,
+use poulpy_core::{
+    GLWEBytesOf,
+    layouts::{BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos, LWEInfos, SetBSGSMeta},
 };
 use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena};
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, SetCKKSInfos,
-    api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps},
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKS},
+    api::{CKKSAddOps, CKKSMulOps},
+    layouts::{CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKS},
 };
 
 use crate::{
@@ -31,14 +31,10 @@ define_unary_plan!(CbrtPlan, "cbrt");
 
 /// Prepared `hypot` approximation.
 pub struct HypotPlan<P> {
-    /// Prepared square-root polynomial.
-    pub sqrt: PolynomialApproximation<P>,
-    /// Fitted absolute-error bits.
-    pub approximation_bits: f64,
-    /// Supported `x` interval.
-    pub x_interval: (f64, f64),
-    /// Supported `y` interval.
-    pub y_interval: (f64, f64),
+    pub(crate) sqrt: PolynomialApproximation<P>,
+    pub(crate) approximation_bits: f64,
+    pub(crate) x_interval: (f64, f64),
+    pub(crate) y_interval: (f64, f64),
 }
 
 impl CbrtPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
@@ -126,6 +122,26 @@ impl HypotPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
 }
 
 impl<P> HypotPlan<P> {
+    /// Prepared square-root polynomial.
+    pub fn sqrt(&self) -> &PolynomialApproximation<P> {
+        &self.sqrt
+    }
+
+    /// Fitted absolute-error bits.
+    pub fn approximation_bits(&self) -> f64 {
+        self.approximation_bits
+    }
+
+    /// Supported `x` interval.
+    pub fn x_interval(&self) -> (f64, f64) {
+        self.x_interval
+    }
+
+    /// Supported `y` interval.
+    pub fn y_interval(&self) -> (f64, f64) {
+        self.y_interval
+    }
+
     /// Consumed modulus bits.
     pub fn consumed_bits(&self, input_log_delta: usize) -> usize {
         input_log_delta + self.sqrt.consumed_bits(input_log_delta)
@@ -157,73 +173,89 @@ pub trait CKKSRootOps<BE: Backend> {
     declare_unary_op!(ckks_cbrt_tmp_bytes, ckks_cbrt, CbrtPlan, "cbrt");
 
     /// Scratch bytes for [`Self::ckks_hypot`].
-    fn ckks_hypot_tmp_bytes<R, T, P>(&self, res: &R, tsk: &T, plan: &HypotPlan<P>) -> usize
+    fn ckks_hypot_tmp_bytes<R, X, Y, T, P>(&self, res: &R, x: &X, y: &Y, tsk: &T, plan: &HypotPlan<P>) -> usize
     where
         R: CKKSCtBounds,
+        X: CKKSCtBounds,
+        Y: CKKSCtBounds,
         T: GGLWEInfos,
         P: CKKSInfos + LWEInfos;
 
-    /// Evaluates `hypot(x, y)`.
-    fn ckks_hypot<P>(
+    /// Evaluates `hypot(x, y) = sqrt(x^2 + y^2)` for `x` and `y` in the plan's intervals.
+    ///
+    /// # Metadata
+    ///
+    /// As `ckks_eval_approximation` of the square-root polynomial on `x^2 + y^2`, computed at the layout of `x`.
+    ///
+    /// # Errors
+    ///
+    /// The errors of the squares, the sum and `ckks_eval_approximation`, the last call and the only write of `res`.
+    fn ckks_hypot<R, X, Y, P, H>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
-        x: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
-        y: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        res: &mut R,
+        x: &X,
+        y: &Y,
         plan: &HypotPlan<P>,
-        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta;
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        X: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Y: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        H: GetTensorKey<BE>;
 }
 
 impl<BE: Backend> CKKSRootOps<BE> for Module<BE>
 where
-    Module<BE>: CKKSAddOps<BE> + CKKSApproximationOps<BE> + CKKSCopyOps<BE> + CKKSMulOps<BE> + CKKSModuleAlloc<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
-        GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
+    Module<BE>: CKKSAddOps<BE> + CKKSApproximationOps<BE> + CKKSMulOps<BE> + GLWEBytesOf<BE>,
 {
     impl_unary_op!(ckks_cbrt_tmp_bytes, ckks_cbrt, CbrtPlan);
 
-    fn ckks_hypot_tmp_bytes<R, T, P>(&self, res: &R, tsk: &T, plan: &HypotPlan<P>) -> usize
+    fn ckks_hypot_tmp_bytes<R, X, Y, T, P>(&self, res: &R, x: &X, y: &Y, tsk: &T, plan: &HypotPlan<P>) -> usize
     where
         R: CKKSCtBounds,
+        X: CKKSCtBounds,
+        Y: CKKSCtBounds,
         T: GGLWEInfos,
         P: CKKSInfos + LWEInfos,
     {
-        let ct = GLWE::<AlignedBuf, BE::ZnxWord>::bytes_of_from_infos(res);
-        let square = self.ckks_square_tmp_bytes(res, res, tsk);
-        square.max(ct + square.max(self.ckks_add_tmp_bytes(res.size()))).max(
-            ct + self
-                .ckks_copy_tmp_bytes(res, res)
-                .max(self.ckks_approximation_tmp_bytes(res, res, tsk, &plan.sqrt)),
-        )
+        // The sum has the layout of `x`, and `y^2` that of `y`.
+        let sum = BE::scratch_aligned(self.glwe_bytes_of_from_infos(x));
+        let y2 = BE::scratch_aligned(self.glwe_bytes_of_from_infos(y));
+        sum + self
+            .ckks_square_tmp_bytes(x, x, tsk)
+            .max(y2 + self.ckks_square_tmp_bytes(y, y, tsk).max(self.ckks_add_tmp_bytes(x.size())))
+            .max(self.ckks_approximation_tmp_bytes(res, x, tsk, &plan.sqrt))
     }
 
-    fn ckks_hypot<P>(
+    fn ckks_hypot<R, X, Y, P, H>(
         &self,
-        res: &mut CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
-        x: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
-        y: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+        res: &mut R,
+        x: &X,
+        y: &Y,
         plan: &HypotPlan<P>,
-        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        X: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Y: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        H: GetTensorKey<BE>,
     {
-        self.ckks_square_into(res, x, tsk, scratch)?;
         scratch.scope(|scratch_local| {
-            let (mut y2, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(y);
-            self.ckks_square_into(&mut y2, y, tsk, &mut scratch_local)?;
-            self.ckks_add_assign(res, &y2, &mut scratch_local)
-        })?;
-        scratch.scope(|scratch_local| {
-            let (mut sum, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*res);
-            self.ckks_copy(&mut sum, &*res, &mut scratch_local)?;
-            self.ckks_eval_approximation(res, &sum, &plan.sqrt, tsk, &mut scratch_local)
-        })?;
-        Ok(())
+            let (mut sum, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(x);
+            self.ckks_square_into(&mut sum, x, tsk, &mut scratch_local)?;
+            scratch_local.scope(|stage| {
+                let (mut y2, mut stage) = stage.take_ckks_ciphertext_like_scratch(y);
+                self.ckks_square_into(&mut y2, y, tsk, &mut stage)?;
+                self.ckks_add_assign(&mut sum, &y2, &mut stage)
+            })?;
+            self.ckks_eval_approximation(res, &sum, &plan.sqrt, tsk, &mut scratch_local)?;
+            Ok(())
+        })
     }
 }

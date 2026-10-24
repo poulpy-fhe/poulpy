@@ -36,8 +36,8 @@ fn run() -> Result<()> {
     let max_consumed = sin_consumed.max(cos_consumed);
     let mut context = setup.prepare(max_consumed, |module, sizing, params| {
         module
-            .ckks_sin_tmp_bytes(sizing, &params.tsk_layout(), &sin_plan)
-            .max(module.ckks_cos_tmp_bytes(sizing, &params.tsk_layout(), &cos_plan))
+            .ckks_sin_tmp_bytes(sizing, sizing, &params.tsk_layout(), &sin_plan)
+            .max(module.ckks_cos_tmp_bytes(sizing, sizing, &params.tsk_layout(), &cos_plan))
     });
 
     // 3. Pack and encrypt the input once because both functions use the same values.

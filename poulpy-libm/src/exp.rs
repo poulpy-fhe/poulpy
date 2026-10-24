@@ -3,18 +3,18 @@
 use poulpy_hal::{AlignedBuf, layouts::Standard};
 use std::fmt::Debug;
 
-use anyhow::{Result, anyhow, ensure};
+use anyhow::{Context, Result, ensure};
 use num_traits::{Float, FloatConst, FromPrimitive, ToPrimitive};
-use poulpy_core::layouts::{
-    BSGSMeta, GGLWEInfos, GLWE, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta,
-    prepared::GLWETensorKeyPreparedToBackendRef,
+use poulpy_core::{
+    GLWEBytesOf,
+    layouts::{BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos, LWEInfos},
 };
 use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena};
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, SetCKKSInfos,
-    api::{CKKSAddOps, CKKSAllOpsTmpBytes, CKKSCopyOps, CKKSMulOps},
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKS},
+    api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps},
+    layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKS},
     polynomial::SplitStrategy,
 };
 
@@ -46,49 +46,35 @@ impl Default for ExpOptions {
 
 /// Prepared `exp` approximation.
 pub struct ExpPlan<P> {
-    /// Reduced exponential polynomial.
-    pub approximation: PolynomialApproximation<P>,
-    /// Number of post-evaluation squarings.
-    pub reduction_steps: usize,
-    /// Absolute-error bits of the reduced polynomial.
-    pub approximation_bits: f64,
+    pub(crate) approximation: PolynomialApproximation<P>,
+    pub(crate) reduction_steps: usize,
+    pub(crate) approximation_bits: f64,
 }
 
 /// Prepared `exp2` approximation.
 pub struct Exp2Plan<P> {
-    /// Reduced exponential polynomial.
-    pub approximation: PolynomialApproximation<P>,
-    /// Number of post-evaluation squarings.
-    pub reduction_steps: usize,
-    /// Absolute-error bits of the reduced polynomial.
-    pub approximation_bits: f64,
+    pub(crate) approximation: PolynomialApproximation<P>,
+    pub(crate) reduction_steps: usize,
+    pub(crate) approximation_bits: f64,
 }
 
 /// Prepared `exp10` approximation.
 pub struct Exp10Plan<P> {
-    /// Reduced exponential polynomial.
-    pub approximation: PolynomialApproximation<P>,
-    /// Number of post-evaluation squarings.
-    pub reduction_steps: usize,
-    /// Absolute-error bits of the reduced polynomial.
-    pub approximation_bits: f64,
+    pub(crate) approximation: PolynomialApproximation<P>,
+    pub(crate) reduction_steps: usize,
+    pub(crate) approximation_bits: f64,
 }
 
 /// Prepared `expm1` approximation.
 pub struct Expm1Plan<P> {
-    /// Reduced `expm1` polynomial.
-    pub approximation: PolynomialApproximation<P>,
-    /// Packed constant `2` for the doubling recurrence.
-    pub two: P,
-    /// Number of doubling steps.
-    pub reduction_steps: usize,
-    /// Absolute-error bits of the reduced polynomial.
-    pub approximation_bits: f64,
+    pub(crate) approximation: PolynomialApproximation<P>,
+    pub(crate) two: P,
+    pub(crate) reduction_steps: usize,
+    pub(crate) approximation_bits: f64,
 }
 
 impl ExpPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     /// Fits and prepares `exp` on `[a, b]`.
-    #[allow(clippy::too_many_arguments)]
     pub fn from_precision<F>(
         a: F,
         b: F,
@@ -125,10 +111,10 @@ impl ExpPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
             options.max_degree,
             options.strategy,
         )
-        .map_err(|e| anyhow!("exp: {e}"))?;
+        .context("exp")?;
         let approximation =
             PolynomialApproximation::from_polynomial(&choice.minimax.poly, base2k, coeff_meta, options.strategy, module)
-                .map_err(|e| anyhow!("exp: {e}"))?;
+                .context("exp")?;
         Ok(Self {
             approximation,
             reduction_steps,
@@ -162,10 +148,10 @@ impl Exp2Plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
             options.max_degree,
             options.strategy,
         )
-        .map_err(|e| anyhow!("exp2: {e}"))?;
+        .context("exp2")?;
         let approximation =
             PolynomialApproximation::from_polynomial(&choice.minimax.poly, base2k, coeff_meta, options.strategy, module)
-                .map_err(|e| anyhow!("exp2: {e}"))?;
+                .context("exp2")?;
         Ok(Self {
             approximation,
             reduction_steps,
@@ -200,10 +186,10 @@ impl Exp10Plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
             options.max_degree,
             options.strategy,
         )
-        .map_err(|e| anyhow!("exp10: {e}"))?;
+        .context("exp10")?;
         let approximation =
             PolynomialApproximation::from_polynomial(&choice.minimax.poly, base2k, coeff_meta, options.strategy, module)
-                .map_err(|e| anyhow!("exp10: {e}"))?;
+                .context("exp10")?;
         Ok(Self {
             approximation,
             reduction_steps,
@@ -237,14 +223,14 @@ impl Expm1Plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
             options.max_degree,
             options.strategy,
         )
-        .map_err(|e| anyhow!("expm1: {e}"))?;
+        .context("expm1")?;
         let approximation =
             PolynomialApproximation::from_polynomial(&choice.minimax.poly, base2k, coeff_meta, options.strategy, module)
-                .map_err(|e| anyhow!("expm1: {e}"))?;
+                .context("expm1")?;
         let mut two = module.ckks_pt_coeffs_alloc(1, base2k, coeff_meta.k());
         two.set_meta(coeff_meta.meta());
         two.encode_host_floats(&[F::from_f64(2.0).unwrap()])
-            .map_err(|e| anyhow!("expm1: constant encoding failed: {e}"))?;
+            .context("expm1: constant encoding failed")?;
         Ok(Self {
             approximation,
             two,
@@ -278,6 +264,21 @@ where
 macro_rules! impl_reduced_plan {
     ($plan:ident) => {
         impl<P> $plan<P> {
+            /// Reduced polynomial.
+            pub fn approximation(&self) -> &PolynomialApproximation<P> {
+                &self.approximation
+            }
+
+            /// Number of post-evaluation squarings.
+            pub fn reduction_steps(&self) -> usize {
+                self.reduction_steps
+            }
+
+            /// Absolute-error bits of the reduced polynomial.
+            pub fn approximation_bits(&self) -> f64 {
+                self.approximation_bits
+            }
+
             /// Consumed modulus bits.
             pub fn consumed_bits(&self, input_log_delta: usize) -> usize {
                 self.approximation.consumed_bits(input_log_delta)
@@ -316,6 +317,26 @@ impl_reduced_plan!(Exp2Plan);
 impl_reduced_plan!(Exp10Plan);
 
 impl<P> Expm1Plan<P> {
+    /// Reduced polynomial.
+    pub fn approximation(&self) -> &PolynomialApproximation<P> {
+        &self.approximation
+    }
+
+    /// Number of doubling steps.
+    pub fn reduction_steps(&self) -> usize {
+        self.reduction_steps
+    }
+
+    /// Absolute-error bits of the reduced polynomial.
+    pub fn approximation_bits(&self) -> f64 {
+        self.approximation_bits
+    }
+
+    /// Packed constant `2` of the doubling recurrence.
+    pub fn two(&self) -> &P {
+        &self.two
+    }
+
     /// Consumed modulus bits.
     pub fn consumed_bits(&self, input_log_delta: usize) -> usize {
         self.approximation.consumed_bits(input_log_delta)
@@ -352,217 +373,386 @@ impl<P> Expm1Plan<P> {
 /// Homomorphic exponential.
 pub trait CKKSExpOps<BE: Backend> {
     /// Scratch bytes for [`Self::ckks_exp`].
-    fn ckks_exp_tmp_bytes<R, T, P>(&self, res: &R, tsk: &T, plan: &ExpPlan<P>) -> usize
+    fn ckks_exp_tmp_bytes<R, I, T, P>(&self, res: &R, input: &I, tsk: &T, plan: &ExpPlan<P>) -> usize
     where
         R: CKKSCtBounds,
+        I: CKKSCtBounds,
         T: GGLWEInfos,
-        P: poulpy_ckks::CKKSInfos + poulpy_core::layouts::LWEInfos;
+        P: CKKSInfos + LWEInfos;
 
-    /// Evaluates `exp(input)`; slots must lie in `plan.interval()`.
-    fn ckks_exp<R, I, P>(
+    /// Evaluates `exp(input)`.
+    ///
+    /// The slots must lie in `plan.interval()`. `input` needs `plan.consumed_bits(input.log_delta())` bits of budget,
+    /// plus the headroom of the result: the remaining budget `b` is guaranteed to hold a slot value `v` with
+    /// `|v| < 2^(b - 1)`, and a larger value can wrap without error.
+    ///
+    /// # Metadata
+    ///
+    /// The reduced polynomial and its squarings run at the layout of `input`, whose scale and remaining budget the
+    /// result keeps, then `ckks_copy` writes it to `res`.
+    ///
+    /// # Errors
+    ///
+    /// An error when `input` holds fewer than `plan.consumed_bits(input.log_delta())` bits of budget, and the errors of
+    /// the stages and of the final `ckks_copy`. The stages run in scratch, so `res` is untouched on `Err`.
+    fn ckks_exp<R, I, P, H>(
         &self,
         res: &mut R,
         input: &I,
         plan: &ExpPlan<P>,
-        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta;
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        H: GetTensorKey<BE>;
 
     /// Scratch bytes for [`Self::ckks_exp2`].
-    fn ckks_exp2_tmp_bytes<R, T, P>(&self, res: &R, tsk: &T, plan: &Exp2Plan<P>) -> usize
+    fn ckks_exp2_tmp_bytes<R, I, T, P>(&self, res: &R, input: &I, tsk: &T, plan: &Exp2Plan<P>) -> usize
     where
         R: CKKSCtBounds,
+        I: CKKSCtBounds,
         T: GGLWEInfos,
-        P: CKKSInfos + poulpy_core::layouts::LWEInfos;
+        P: CKKSInfos + LWEInfos;
 
-    /// Evaluates `exp2(input)`; slots must lie in `plan.interval()`.
-    fn ckks_exp2<R, I, P>(
+    /// Evaluates `exp2(input)`.
+    ///
+    /// The slots must lie in `plan.interval()`. `input` needs `plan.consumed_bits(input.log_delta())` bits of budget,
+    /// plus the headroom of the result: the remaining budget `b` is guaranteed to hold a slot value `v` with
+    /// `|v| < 2^(b - 1)`, and a larger value can wrap without error.
+    ///
+    /// # Metadata
+    ///
+    /// The reduced polynomial and its squarings run at the layout of `input`, whose scale and remaining budget the
+    /// result keeps, then `ckks_copy` writes it to `res`.
+    ///
+    /// # Errors
+    ///
+    /// An error when `input` holds fewer than `plan.consumed_bits(input.log_delta())` bits of budget, and the errors of
+    /// the stages and of the final `ckks_copy`. The stages run in scratch, so `res` is untouched on `Err`.
+    fn ckks_exp2<R, I, P, H>(
         &self,
         res: &mut R,
         input: &I,
         plan: &Exp2Plan<P>,
-        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta;
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        H: GetTensorKey<BE>;
 
     /// Scratch bytes for [`Self::ckks_exp10`].
-    fn ckks_exp10_tmp_bytes<R, T, P>(&self, res: &R, tsk: &T, plan: &Exp10Plan<P>) -> usize
+    fn ckks_exp10_tmp_bytes<R, I, T, P>(&self, res: &R, input: &I, tsk: &T, plan: &Exp10Plan<P>) -> usize
     where
         R: CKKSCtBounds,
+        I: CKKSCtBounds,
         T: GGLWEInfos,
-        P: CKKSInfos + poulpy_core::layouts::LWEInfos;
+        P: CKKSInfos + LWEInfos;
 
-    /// Evaluates `exp10(input)`; slots must lie in `plan.interval()`.
-    fn ckks_exp10<R, I, P>(
+    /// Evaluates `exp10(input)`.
+    ///
+    /// The slots must lie in `plan.interval()`. `input` needs `plan.consumed_bits(input.log_delta())` bits of budget,
+    /// plus the headroom of the result: the remaining budget `b` is guaranteed to hold a slot value `v` with
+    /// `|v| < 2^(b - 1)`, and a larger value can wrap without error.
+    ///
+    /// # Metadata
+    ///
+    /// The reduced polynomial and its squarings run at the layout of `input`, whose scale and remaining budget the
+    /// result keeps, then `ckks_copy` writes it to `res`.
+    ///
+    /// # Errors
+    ///
+    /// An error when `input` holds fewer than `plan.consumed_bits(input.log_delta())` bits of budget, and the errors of
+    /// the stages and of the final `ckks_copy`. The stages run in scratch, so `res` is untouched on `Err`.
+    fn ckks_exp10<R, I, P, H>(
         &self,
         res: &mut R,
         input: &I,
         plan: &Exp10Plan<P>,
-        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta;
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        H: GetTensorKey<BE>;
 
     /// Scratch bytes for [`Self::ckks_expm1`].
-    fn ckks_expm1_tmp_bytes<R, T, P>(&self, res: &R, tsk: &T, plan: &Expm1Plan<P>) -> usize
+    fn ckks_expm1_tmp_bytes<R, I, T, P>(&self, res: &R, input: &I, tsk: &T, plan: &Expm1Plan<P>) -> usize
     where
         R: CKKSCtBounds,
+        I: CKKSCtBounds,
         T: GGLWEInfos,
-        P: CKKSInfos + poulpy_core::layouts::LWEInfos;
+        P: CKKSInfos + LWEInfos;
 
-    /// Evaluates `expm1(input)`; slots must lie in `plan.interval()`.
-    fn ckks_expm1<R, I, P>(
+    /// Evaluates `expm1(input)`.
+    ///
+    /// The slots must lie in `plan.interval()`. `input` needs `plan.consumed_bits(input.log_delta())` bits of budget,
+    /// plus the headroom of the result: the remaining budget `b` is guaranteed to hold a slot value `v` with
+    /// `|v| < 2^(b - 1)`, and a larger value can wrap without error.
+    ///
+    /// # Metadata
+    ///
+    /// The reduced polynomial and its doublings run at the layout of `input`, whose scale and remaining budget the
+    /// result keeps, then `ckks_copy` writes it to `res`.
+    ///
+    /// # Errors
+    ///
+    /// An error when `input` holds fewer than `plan.consumed_bits(input.log_delta())` bits of budget, and the errors of
+    /// the stages and of the final `ckks_copy`. The stages run in scratch, so `res` is untouched on `Err`.
+    fn ckks_expm1<R, I, P, H>(
         &self,
         res: &mut R,
         input: &I,
         plan: &Expm1Plan<P>,
-        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta;
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        H: GetTensorKey<BE>;
 }
 
 impl<BE: Backend> CKKSExpOps<BE> for Module<BE>
 where
-    Module<BE>: CKKSAddOps<BE> + CKKSAllOpsTmpBytes<BE> + CKKSApproximationOps<BE> + CKKSCopyOps<BE> + CKKSMulOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
-        GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
+    Module<BE>: CKKSAddOps<BE> + CKKSApproximationOps<BE> + CKKSCopyOps<BE> + CKKSMulOps<BE> + GLWEBytesOf<BE>,
 {
-    fn ckks_exp_tmp_bytes<R, T, P>(&self, res: &R, tsk: &T, plan: &ExpPlan<P>) -> usize
+    fn ckks_exp_tmp_bytes<R, I, T, P>(&self, res: &R, input: &I, tsk: &T, plan: &ExpPlan<P>) -> usize
     where
         R: CKKSCtBounds,
+        I: CKKSCtBounds,
         T: GGLWEInfos,
-        P: poulpy_ckks::CKKSInfos + poulpy_core::layouts::LWEInfos,
+        P: CKKSInfos + LWEInfos,
     {
-        self.ckks_approximation_tmp_bytes(res, res, tsk, &plan.approximation)
+        reduced_tmp_bytes(self, res, input, tsk, &plan.approximation, false)
     }
 
-    fn ckks_exp<R, I, P>(
+    fn ckks_exp<R, I, P, H>(
         &self,
         res: &mut R,
         input: &I,
         plan: &ExpPlan<P>,
-        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        H: GetTensorKey<BE>,
     {
-        self.ckks_eval_approximation(res, input, &plan.approximation, tsk, scratch)?;
-        for _ in 0..plan.reduction_steps {
-            self.ckks_square_assign(res, tsk, scratch)?;
-        }
-        Ok(())
+        eval_reduced(
+            self,
+            "ckks_exp",
+            res,
+            input,
+            &plan.approximation,
+            plan.reduction_steps,
+            None,
+            tsk,
+            scratch,
+        )
     }
 
-    fn ckks_exp2_tmp_bytes<R, T, P>(&self, res: &R, tsk: &T, plan: &Exp2Plan<P>) -> usize
+    fn ckks_exp2_tmp_bytes<R, I, T, P>(&self, res: &R, input: &I, tsk: &T, plan: &Exp2Plan<P>) -> usize
     where
         R: CKKSCtBounds,
+        I: CKKSCtBounds,
         T: GGLWEInfos,
-        P: CKKSInfos + poulpy_core::layouts::LWEInfos,
+        P: CKKSInfos + LWEInfos,
     {
-        self.ckks_approximation_tmp_bytes(res, res, tsk, &plan.approximation)
+        reduced_tmp_bytes(self, res, input, tsk, &plan.approximation, false)
     }
 
-    fn ckks_exp2<R, I, P>(
+    fn ckks_exp2<R, I, P, H>(
         &self,
         res: &mut R,
         input: &I,
         plan: &Exp2Plan<P>,
-        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        H: GetTensorKey<BE>,
     {
-        self.ckks_eval_approximation(res, input, &plan.approximation, tsk, scratch)?;
-        for _ in 0..plan.reduction_steps {
-            self.ckks_square_assign(res, tsk, scratch)?;
-        }
-        Ok(())
+        eval_reduced(
+            self,
+            "ckks_exp2",
+            res,
+            input,
+            &plan.approximation,
+            plan.reduction_steps,
+            None,
+            tsk,
+            scratch,
+        )
     }
 
-    fn ckks_exp10_tmp_bytes<R, T, P>(&self, res: &R, tsk: &T, plan: &Exp10Plan<P>) -> usize
+    fn ckks_exp10_tmp_bytes<R, I, T, P>(&self, res: &R, input: &I, tsk: &T, plan: &Exp10Plan<P>) -> usize
     where
         R: CKKSCtBounds,
+        I: CKKSCtBounds,
         T: GGLWEInfos,
-        P: CKKSInfos + poulpy_core::layouts::LWEInfos,
+        P: CKKSInfos + LWEInfos,
     {
-        self.ckks_approximation_tmp_bytes(res, res, tsk, &plan.approximation)
+        reduced_tmp_bytes(self, res, input, tsk, &plan.approximation, false)
     }
 
-    fn ckks_exp10<R, I, P>(
+    fn ckks_exp10<R, I, P, H>(
         &self,
         res: &mut R,
         input: &I,
         plan: &Exp10Plan<P>,
-        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        H: GetTensorKey<BE>,
     {
-        self.ckks_eval_approximation(res, input, &plan.approximation, tsk, scratch)?;
-        for _ in 0..plan.reduction_steps {
-            self.ckks_square_assign(res, tsk, scratch)?;
-        }
-        Ok(())
+        eval_reduced(
+            self,
+            "ckks_exp10",
+            res,
+            input,
+            &plan.approximation,
+            plan.reduction_steps,
+            None,
+            tsk,
+            scratch,
+        )
     }
 
-    fn ckks_expm1_tmp_bytes<R, T, P>(&self, res: &R, tsk: &T, plan: &Expm1Plan<P>) -> usize
+    fn ckks_expm1_tmp_bytes<R, I, T, P>(&self, res: &R, input: &I, tsk: &T, plan: &Expm1Plan<P>) -> usize
     where
         R: CKKSCtBounds,
+        I: CKKSCtBounds,
         T: GGLWEInfos,
-        P: CKKSInfos + poulpy_core::layouts::LWEInfos,
+        P: CKKSInfos + LWEInfos,
     {
-        let ct = GLWE::<AlignedBuf, BE::ZnxWord>::bytes_of_from_infos(res);
-        self.ckks_approximation_tmp_bytes(res, res, tsk, &plan.approximation)
-            .max(ct + self.ckks_all_ops_tmp_bytes(res, tsk, &plan.two))
+        reduced_tmp_bytes(self, res, input, tsk, &plan.approximation, true)
     }
 
-    fn ckks_expm1<R, I, P>(
+    fn ckks_expm1<R, I, P, H>(
         &self,
         res: &mut R,
         input: &I,
         plan: &Expm1Plan<P>,
-        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::IntPolyInfos + BSGSMeta,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        H: GetTensorKey<BE>,
     {
-        self.ckks_eval_approximation(res, input, &plan.approximation, tsk, scratch)?;
-        for _ in 0..plan.reduction_steps {
-            scratch.scope(|scratch_local| {
-                let (mut plus_two, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*res);
-                self.ckks_copy(&mut plus_two, &*res, &mut scratch_local)?;
-                self.ckks_add_pt_const_assign(&mut plus_two, 0, &plan.two, 0, &mut scratch_local)?;
-                self.ckks_mul_assign(res, &plus_two, tsk, &mut scratch_local)
-            })?;
-        }
-        Ok(())
+        eval_reduced(
+            self,
+            "ckks_expm1",
+            res,
+            input,
+            &plan.approximation,
+            plan.reduction_steps,
+            Some(&plan.two),
+            tsk,
+            scratch,
+        )
     }
+}
+
+/// Query of [`eval_reduced`]: the stages run on an accumulator with the layout of `input`.
+fn reduced_tmp_bytes<BE, R, I, T, P>(
+    module: &Module<BE>,
+    res: &R,
+    input: &I,
+    tsk: &T,
+    approximation: &PolynomialApproximation<P>,
+    doubling: bool,
+) -> usize
+where
+    BE: Backend,
+    Module<BE>: CKKSAddOps<BE> + CKKSApproximationOps<BE> + CKKSCopyOps<BE> + CKKSMulOps<BE> + GLWEBytesOf<BE>,
+    R: CKKSCtBounds,
+    I: CKKSCtBounds,
+    T: GGLWEInfos,
+    P: CKKSInfos + LWEInfos,
+{
+    let ct = BE::scratch_aligned(module.glwe_bytes_of_from_infos(input));
+    let step = if doubling {
+        ct + module
+            .ckks_copy_tmp_bytes(input, input)
+            .max(module.ckks_add_pt_const_tmp_bytes(input.size()))
+            .max(module.ckks_mul_tmp_bytes(input, input, input, tsk))
+    } else {
+        module.ckks_square_tmp_bytes(input, input, tsk)
+    };
+    ct + module
+        .ckks_approximation_tmp_bytes(input, input, tsk, approximation)
+        .max(step)
+        .max(module.ckks_copy_tmp_bytes(res, input))
+}
+
+/// Evaluates `approximation` on `input`, then `reduction_steps` squarings, or `x * (x + 2)` doublings with `two`, on an
+/// accumulator carved like `input`, and copies the result to `res`.
+#[allow(clippy::too_many_arguments)]
+fn eval_reduced<BE, R, I, P, H>(
+    module: &Module<BE>,
+    op: &'static str,
+    res: &mut R,
+    input: &I,
+    approximation: &PolynomialApproximation<P>,
+    reduction_steps: usize,
+    two: Option<&P>,
+    tsk: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: CKKSAddOps<BE> + CKKSApproximationOps<BE> + CKKSCopyOps<BE> + CKKSMulOps<BE>,
+    R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    I: GLWEToBackendRef<BE> + CKKSCtBounds,
+    P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+    H: GetTensorKey<BE>,
+{
+    let log_delta = input.log_delta();
+    let required = approximation.consumed_bits(log_delta) + reduction_steps * approximation.output_log_delta(log_delta);
+    ensure!(
+        input.log_budget() >= required,
+        "{op}: log_budget {} < {required} bits required at log_delta {log_delta}",
+        input.log_budget()
+    );
+    scratch.scope(|scratch_local| {
+        let (mut acc, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(input);
+        module
+            .ckks_eval_approximation(&mut acc, input, approximation, tsk, &mut scratch_local)
+            .context(op)?;
+        for _ in 0..reduction_steps {
+            match two {
+                None => module.ckks_square_assign(&mut acc, tsk, &mut scratch_local).context(op)?,
+                Some(two) => scratch_local
+                    .scope(|step_scratch| {
+                        let (mut plus_two, mut step_scratch) = step_scratch.take_ckks_ciphertext_like_scratch(&acc);
+                        module.ckks_copy(&mut plus_two, &acc, &mut step_scratch)?;
+                        module.ckks_add_pt_const_assign(&mut plus_two, 0, two, 0, &mut step_scratch)?;
+                        module.ckks_mul_assign(&mut acc, &plus_two, tsk, &mut step_scratch)
+                    })
+                    .context(op)?,
+            }
+        }
+        module.ckks_copy(res, &acc, &mut scratch_local).context(op)
+    })
 }

@@ -229,8 +229,9 @@ poulpy-blas = {git = "https://github.com/poulpy-fhe/poulpy", rev = "<rev>", feat
 poulpy-cpu-oracle = {git = "https://github.com/poulpy-fhe/poulpy", rev = "<rev>", features = ["enable-blas"]}
 ```
 
-libm registers its suite through `ckks_libm_backend_test_suite!`: precision and exact budget consumption of every function, on the NTT4x30 type of each CPU backend and on `NTT3x42Ifma`, with the backends' `enable-ckks`.
+libm registers its suite through `libm_backend_test_suite!`: precision and exact budget consumption of every function, on the NTT4x30 type of each CPU backend and on `NTT3x42Ifma`, with the backends' `enable-ckks`.
 [`libm_tests.rs`](poulpy-cpu-portable/src/tests/libm_tests.rs) shows the registration.
+CI runs it on the portable, native AVX2 and NEON backends. The emulated AVX job does not build it, and the AVX-512 jobs filter it out, since their results are byte-identical to the other backends'.
 Run it on the portable backend with:
 
 ```sh
@@ -297,10 +298,6 @@ poulpy-cpu-portable = "0.9.0"
 ## Built with Poulpy
 
 Projects building on Poulpy. Open a pull request to add yours.
-
-**Function evaluation**
-
-- [`poulpy-libm`](https://github.com/poulpy-fhe/poulpy-libm): homomorphic evaluation of libm-style mathematical functions on CKKS ciphertexts, built on `poulpy-ckks`'s Remez approximation planning.
 
 **Private information retrieval**
 

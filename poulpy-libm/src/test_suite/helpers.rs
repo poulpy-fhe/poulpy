@@ -24,13 +24,14 @@ pub(super) fn assert_error<T>(result: anyhow::Result<T>, expected: &str) {
         Ok(_) => panic!("expected error: {expected}"),
         Err(error) => error,
     };
-    assert_eq!(error.to_string(), expected);
+    // `{:#}` prints the context chain, outermost first.
+    assert_eq!(format!("{error:#}"), expected);
 }
 
 pub(super) fn assert_error_starts_with<T>(result: anyhow::Result<T>, expected: &str) {
     let error = match result {
         Ok(_) => panic!("expected error starting with: {expected}"),
-        Err(error) => error.to_string(),
+        Err(error) => format!("{error:#}"),
     };
     assert!(
         error.starts_with(expected),

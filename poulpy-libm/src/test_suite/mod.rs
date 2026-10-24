@@ -1,8 +1,9 @@
 //! Backend-generic libm test suites, instantiated by the backend crates with
-//! [`ckks_libm_backend_test_suite!`](crate::ckks_libm_backend_test_suite).
+//! [`libm_backend_test_suite!`](crate::libm_backend_test_suite).
 
 pub mod approximation;
 pub mod arithmetic;
+pub mod budgets;
 pub mod compare;
 pub mod divsqrt;
 pub mod erf;
@@ -15,6 +16,7 @@ pub mod log;
 pub mod pow;
 pub mod predicate;
 pub mod reduce;
+pub mod rejections;
 pub mod roots;
 pub mod sign;
 pub mod softmax;
@@ -26,7 +28,7 @@ pub mod trig;
 /// own. The expansion names `::poulpy_hal`, so the invoking crate depends on it
 /// directly.
 #[macro_export]
-macro_rules! ckks_libm_backend_test_suite {
+macro_rules! libm_backend_test_suite {
     (
         mod $modname:ident,
         backend = $backend:ty,
@@ -59,6 +61,16 @@ macro_rules! ckks_libm_backend_test_suite {
             run_test!(sign_minimax, $crate::test_suite::sign::test_sign_minimax);
             run_test!(max_min, $crate::test_suite::compare::test_max_min);
             run_test!(arithmetic, $crate::test_suite::arithmetic::test_arithmetic);
+            run_test!(
+                exact_scratch_plans,
+                $crate::test_suite::budgets::test_exact_scratch_plans
+            );
+            run_test!(exact_scratch_sign, $crate::test_suite::budgets::test_exact_scratch_sign);
+            run_test!(
+                exact_scratch_iterative,
+                $crate::test_suite::budgets::test_exact_scratch_iterative
+            );
+            run_test!(rejections, $crate::test_suite::rejections::test_rejections);
             run_test!(approximation, $crate::test_suite::approximation::test_approximation);
             run_test!(
                 precision_tuning,
@@ -93,6 +105,7 @@ macro_rules! ckks_libm_backend_test_suite {
             run_test!(div, $crate::test_suite::divsqrt::test_div);
             run_test!(sqrt, $crate::test_suite::divsqrt::test_sqrt);
             run_test!(exp, $crate::test_suite::exp::test_exp);
+            run_test!(exp_headroom, $crate::test_suite::exp::test_exp_headroom);
             run_test!(exp2_expm1, $crate::test_suite::exp::test_exp2_expm1);
             run_test!(exp10, $crate::test_suite::exp::test_exp10);
             run_test!(erf_family, $crate::test_suite::erf::test_erf_family);

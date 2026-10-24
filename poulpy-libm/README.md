@@ -47,7 +47,8 @@ cargo run --release -p poulpy-cpu-portable --features enable-ckks --example libm
 ## Test
 
 The backend-generic suite in `test_suite`, compiled with `test-utils`, checks numerical precision and exact budget consumption.
-Backend crates register it with `ckks_libm_backend_test_suite!`, as the portable, AVX2, AVX-512, IFMA and NEON backends of the workspace do with `enable-ckks`.
+Backend crates register it with `libm_backend_test_suite!`, as the portable, AVX2, AVX-512, IFMA and NEON backends of the workspace do with `enable-ckks`.
+CI runs it on the portable, native AVX2 and NEON backends. The AVX-512 jobs filter it out, since their results are byte-identical to the other backends'.
 
 ```sh
 cargo test -p poulpy-cpu-portable --lib --profile ci --features enable-ckks -- libm_tests
@@ -55,12 +56,11 @@ cargo test -p poulpy-cpu-portable --lib --profile ci --features enable-ckks -- l
 
 ## Benchmark
 
-The `exp`, `log`, and `pow` workloads live in `poulpy-bench` (`poulpy_bench::libm::suites::bench_libm`), registered as the `libm` bench of each backend crate.
-Run the target matching the benchmark host.
+The `exp`, `log`, and `pow` workloads live in `poulpy-bench` (`poulpy_bench::libm::suites`), whose full, standard and light tiers the tier binaries of each backend crate register on its NTT backend.
 
 ```sh
-cargo bench -p poulpy-cpu-portable --features enable-ckks --bench libm
-RUSTFLAGS='-C target-cpu=native' cargo bench -p poulpy-cpu-avx --features enable-avx,enable-ckks --bench libm
-RUSTFLAGS='-C target-cpu=native' cargo bench -p poulpy-cpu-avx512 --features enable-avx512f,enable-ckks,enable-ifma --bench libm
-cargo bench -p poulpy-cpu-arm --features enable-neon,enable-ckks --bench libm
+cargo bench -p poulpy-cpu-portable --bench light --features enable-ckks,enable-bin-fhe -- libm
+RUSTFLAGS='-C target-cpu=native' cargo bench -p poulpy-cpu-avx --bench light --features enable-avx,enable-ckks,enable-bin-fhe -- libm
+RUSTFLAGS='-C target-cpu=native' cargo bench -p poulpy-cpu-avx512 --bench light --features enable-avx512f,enable-ckks,enable-bin-fhe -- libm
+cargo bench -p poulpy-cpu-arm --bench light --features enable-neon,enable-ckks,enable-bin-fhe -- libm
 ```

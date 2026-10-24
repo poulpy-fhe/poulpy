@@ -3,7 +3,7 @@
 use poulpy_hal::{AlignedBuf, layouts::Standard};
 use std::fmt::Debug;
 
-use anyhow::{Result, anyhow, ensure};
+use anyhow::{Context, Result, ensure};
 use num_traits::{Float, FloatConst, FromPrimitive, ToPrimitive};
 use poulpy_ckks::{
     CKKSLayout,
@@ -63,11 +63,11 @@ where
         "{name}: target_bits must be positive and finite"
     );
     ensure!(options.max_degree >= 1, "{name}: max_degree must be positive");
-    let choice = degree_for_precision(fun, a, b, parity, options.target_bits, options.max_degree, options.strategy)
-        .map_err(|e| anyhow!("{name}: {e}"))?;
+    let choice =
+        degree_for_precision(fun, a, b, parity, options.target_bits, options.max_degree, options.strategy).context(name)?;
     let approximation =
         PolynomialApproximation::from_polynomial(&choice.minimax.poly, base2k, coeff_meta, options.strategy, module)
-            .map_err(|e| anyhow!("{name}: {e}"))?;
+            .context(name)?;
     Ok((approximation, error_bits(choice.minimax.error)))
 }
 
