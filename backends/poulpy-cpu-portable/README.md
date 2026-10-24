@@ -116,7 +116,7 @@ To implement your own backend (SIMD or accelerator):
    (`fft64_ring_arith_standard!` or `fft64_ring_arith_ci!`); NTT4x30 backends
    implement `NttDFTExecute` for their ring's tables.
 3. Implement the core `*Impl` traits, or use family macros to select reference algorithms and derived defaults.
-4. Optionally, do the same for `poulpy-ckks` behind a backend-owned `enable-ckks` feature using the `impl_ckks_*_reference!` macros or direct OEP trait implementations.
+4. Optionally, do the same for `poulpy-ckks` behind a backend-owned `enable-ckks` feature using its opt-in macros (`impl_<family>_reference_full!`) or direct OEP trait implementations.
 
 CPU backends share their common registrations through `impl_cpu_core_defaults!`
 and `impl_cpu_ckks_defaults!`. Tensoring, strided digit products, encoding

@@ -61,7 +61,7 @@ where
 macro_rules! impl_ckks_ship_coeff_encoding {
     ($be:ty) => {
         unsafe impl ::poulpy_ckks::oep::CKKSShipCoeffEncodingImpl for $be {
-            fn ckks_ship_coeff_encodings_tmp_bytes_impl<F>(
+            fn ckks_ship_coeff_encodings_tmp_bytes<F>(
                 _module: &::poulpy_hal::layouts::Module<$be>,
                 _plan: &::poulpy_ckks::layouts::ShipPlan,
                 _base2k: ::poulpy_core::layouts::Base2K,
@@ -76,7 +76,7 @@ macro_rules! impl_ckks_ship_coeff_encoding {
                 Ok(0)
             }
 
-            fn ckks_ship_coeff_encodings_impl<F, Src>(
+            fn ckks_ship_coeff_encodings<F, Src>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 ct: &Src,
                 plan: &::poulpy_ckks::layouts::ShipPlan,

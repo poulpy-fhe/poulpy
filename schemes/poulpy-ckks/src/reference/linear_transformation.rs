@@ -94,7 +94,7 @@ impl<D: Data, BE: Backend> LtDiagonalMeta for PreparedDiagonal<D, BE> {
 }
 
 /// The reference algorithms of [`CKKSLinearTransformationImpl`](crate::oep::CKKSLinearTransformationImpl), which
-/// `impl_ckks_linear_transformation_reference!` forwards to and an override can call for the methods it keeps.
+/// `impl_ckks_linear_transformation_reference_full!` forwards to and an override can call for the methods it keeps.
 pub trait CKKSLinearTransformationReference<BE: Backend> {
     fn ckks_prepare_linear_transformation_rhs_tmp_bytes_reference<P>(&self, pt_infos: &P) -> usize
     where

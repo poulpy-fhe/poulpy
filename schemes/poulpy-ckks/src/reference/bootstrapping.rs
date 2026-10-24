@@ -283,7 +283,7 @@ where
 }
 
 /// Backend-generic reference of the CKKS bootstrapping pipeline, selected by
-/// [`impl_ckks_bootstrapping_reference`](crate::oep::impl_ckks_bootstrapping_reference).
+/// [`impl_ckks_bootstrapping_reference_full`](crate::oep::impl_ckks_bootstrapping_reference_full).
 pub trait CKKSBootstrappingReference<BE: Backend> {
     fn ckks_mod_up_tmp_bytes_reference(&self, res_size: usize) -> usize
     where

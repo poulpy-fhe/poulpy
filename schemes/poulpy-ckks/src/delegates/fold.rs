@@ -14,7 +14,7 @@ impl<BE: Backend + CKKSFoldLayoutImpl> CKKSFoldLayoutOps<BE> for Module<BE> {
     where
         C: CKKSCtBounds,
     {
-        BE::ckks_fold_layout_impl(self, ct_in, degree, keys)
+        BE::ckks_fold_layout(self, ct_in, degree, keys)
     }
 
     fn ckks_fold_tmp_bytes<C1, C2>(&self, ct_out: &C1, ct_in: &C2, degree: Degree, keys: &CKKSFoldKeysLayout) -> usize
@@ -22,20 +22,20 @@ impl<BE: Backend + CKKSFoldLayoutImpl> CKKSFoldLayoutOps<BE> for Module<BE> {
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
     {
-        BE::ckks_fold_tmp_bytes_impl(self, ct_out, ct_in, degree, keys)
+        BE::ckks_fold_tmp_bytes(self, ct_out, ct_in, degree, keys)
     }
 }
 
 impl<BE: Backend + CKKSFoldImpl<R>, R: Ring> CKKSFoldOps<BE, R> for Module<BE> {
     fn ckks_fold_count(&self, ins: &[CKKSRingCiphertext<BE, R>], degree: Degree) -> usize {
-        BE::ckks_fold_count_impl(self, ins, degree)
+        BE::ckks_fold_count(self, ins, degree)
     }
 
     fn ckks_unfold_galois_elements<C>(&self, ct_in: &C) -> Vec<i64>
     where
         C: CKKSCtBounds,
     {
-        BE::ckks_unfold_galois_elements_impl(self, ct_in)
+        BE::ckks_unfold_galois_elements(self, ct_in)
     }
 
     fn ckks_fold<S>(
@@ -48,7 +48,7 @@ impl<BE: Backend + CKKSFoldImpl<R>, R: Ring> CKKSFoldOps<BE, R> for Module<BE> {
     where
         S: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
-        BE::ckks_fold_impl(self, folded, ins, inbound, scratch)
+        BE::ckks_fold(self, folded, ins, inbound, scratch)
     }
 
     fn ckks_unfold<S, H>(
@@ -63,6 +63,6 @@ impl<BE: Backend + CKKSFoldImpl<R>, R: Ring> CKKSFoldOps<BE, R> for Module<BE> {
         S: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_unfold_impl(self, outs, folded, outbound, automorphisms, scratch)
+        BE::ckks_unfold(self, outs, folded, outbound, automorphisms, scratch)
     }
 }

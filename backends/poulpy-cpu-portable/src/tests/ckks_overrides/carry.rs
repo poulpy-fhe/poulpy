@@ -21,11 +21,11 @@ macro_rules! impl_carry_with_plaintext_workspace {
     ($verb:ident, $Impl:ident, $Reference:ident, $calls:ident, $workspace:expr) => {
         ::paste::paste! {
             unsafe impl ::poulpy_ckks::oep::$Impl for OverrideBackend {
-                fn [<ckks_ $verb _tmp_bytes_impl>](module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
+                fn [<ckks_ $verb _tmp_bytes>](module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
                     ::poulpy_ckks::reference::$verb::$Reference::[<ckks_ $verb _tmp_bytes_reference>](module, res_size)
                 }
 
-                fn [<ckks_ $verb _into_impl>]<Dst, A, B>(
+                fn [<ckks_ $verb _into>]<Dst, A, B>(
                     module: &::poulpy_hal::layouts::Module<Self>,
                     dst: &mut Dst,
                     a: &A,
@@ -41,7 +41,7 @@ macro_rules! impl_carry_with_plaintext_workspace {
                 }
 
 
-                fn [<ckks_ $verb _assign_impl>]<Dst, A>(
+                fn [<ckks_ $verb _assign>]<Dst, A>(
                     module: &::poulpy_hal::layouts::Module<Self>,
                     dst: &mut Dst,
                     a: &A,
@@ -56,11 +56,11 @@ macro_rules! impl_carry_with_plaintext_workspace {
 
 
 
-                fn [<ckks_ $verb _pt_vec_tmp_bytes_impl>](module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
+                fn [<ckks_ $verb _pt_vec_tmp_bytes>](module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
                     ::poulpy_ckks::reference::$verb::$Reference::[<ckks_ $verb _pt_vec_tmp_bytes_reference>](module, res_size)
                 }
 
-                fn [<ckks_ $verb _pt_vec_into_impl>]<Dst, A, P>(
+                fn [<ckks_ $verb _pt_vec_into>]<Dst, A, P>(
                     module: &::poulpy_hal::layouts::Module<Self>,
                     dst: &mut Dst,
                     a: &A,
@@ -76,7 +76,7 @@ macro_rules! impl_carry_with_plaintext_workspace {
                 }
 
 
-                fn [<ckks_ $verb _pt_vec_assign_impl>]<Dst, P>(
+                fn [<ckks_ $verb _pt_vec_assign>]<Dst, P>(
                     module: &::poulpy_hal::layouts::Module<Self>,
                     dst: &mut Dst,
                     pt: &P,
@@ -90,11 +90,11 @@ macro_rules! impl_carry_with_plaintext_workspace {
                 }
 
 
-                fn [<ckks_ $verb _pt_const_tmp_bytes_impl>](module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
+                fn [<ckks_ $verb _pt_const_tmp_bytes>](module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
                     $workspace + ::poulpy_ckks::reference::$verb::$Reference::[<ckks_ $verb _pt_const_tmp_bytes_reference>](module, res_size)
                 }
 
-                fn [<ckks_ $verb _pt_const_into_impl>]<Dst, A, P>(
+                fn [<ckks_ $verb _pt_const_into>]<Dst, A, P>(
                     module: &::poulpy_hal::layouts::Module<Self>,
                     dst: &mut Dst,
                     a: &A,
@@ -114,7 +114,7 @@ macro_rules! impl_carry_with_plaintext_workspace {
                 }
 
 
-                fn [<ckks_ $verb _pt_const_assign_impl>]<Dst, P>(
+                fn [<ckks_ $verb _pt_const_assign>]<Dst, P>(
                     module: &::poulpy_hal::layouts::Module<Self>,
                     dst: &mut Dst,
                     dst_coeff: usize,

@@ -1,9 +1,9 @@
 use crate::CKKSResult as Result;
 use crate::layouts::CKKSPlaintextOwned;
-use poulpy_core::layouts::{Base2K, GLWEToBackendRef};
+use poulpy_core::layouts::GLWEToBackendRef;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
 
-use crate::{CKKSCtBounds, api::PaCoScalar, layouts::PaCoPlan, oep::CKKSEncodingImpl};
+use crate::{CKKSCtBounds, api::PaCoScalar, layouts::PaCoContext, oep::CKKSEncodingImpl};
 
 /// Backend extension point for the PaCo coefficient encoding: the ciphertext
 /// → four-β-plaintexts transformation consumed by PaCo's blind rotation.
@@ -12,10 +12,10 @@ use crate::{CKKSCtBounds, api::PaCoScalar, layouts::PaCoPlan, oep::CKKSEncodingI
 /// bootstrapping operations
 /// ([`CKKSPaCoOps`](crate::api::CKKSPaCoOps)): a backend without a ready
 /// coefficient-encoding implementation cannot bootstrap. The trait imposes no
-/// FFT engine, encoder, host codec, or transfer capability — the encoding
-/// method sees only the ciphertext, the validated plan, the radix, and the
-/// backend's own precomputed material, so a backend may implement the whole
-/// step as one fused native kernel. This crate carries no implementation; the
+/// FFT engine, encoder, host codec, or transfer capability: the encoding
+/// method sees only the ciphertext, the compiled context (its validated plan
+/// and radix), and the backend's own precomputed material, so a backend may
+/// implement the whole step as one fused native kernel. This crate carries no implementation; the
 /// reference implementation is [`crate::reference::encoding::paco_coeff_encodings_host`], and the complete
 /// scheme definition of the step (host ciphertext → four host plaintexts) is
 /// exposed as
@@ -30,7 +30,7 @@ use crate::{CKKSCtBounds, api::PaCoScalar, layouts::PaCoPlan, oep::CKKSEncodingI
 pub unsafe trait CKKSPaCoCoeffEncodingImpl: Backend<Ring = Standard> {
     /// Backend-native arena bytes required by coefficient embedding and β
     /// packing. This includes any scalar buffers used by native FFT kernels.
-    fn ckks_paco_coeff_encodings_tmp_bytes_impl<F>(module: &Module<Self>, plan: &PaCoPlan) -> Result<usize>
+    fn ckks_paco_coeff_encodings_tmp_bytes<F>(module: &Module<Self>, context: &PaCoContext<Self, F>) -> Result<usize>
     where
         F: PaCoScalar,
         Self: CKKSEncodingImpl<F>;
@@ -44,11 +44,10 @@ pub unsafe trait CKKSPaCoCoeffEncodingImpl: Backend<Ring = Standard> {
     /// must agree numerically (within CKKS precision) with the `2C`-block
     /// coefficient→evaluation packing used by the σ vectors of
     /// [`PaCoSecretSpec`](crate::layouts::PaCoSecretSpec) at key generation.
-    fn ckks_paco_coeff_encodings_impl<F, Src>(
+    fn ckks_paco_coeff_encodings<F, Src>(
         module: &Module<Self>,
-        ct: &Src,
-        plan: &PaCoPlan,
-        base2k: Base2K,
+        ciphertext: &Src,
+        context: &PaCoContext<Self, F>,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<[CKKSPlaintextOwned<Self>; 4]>
     where

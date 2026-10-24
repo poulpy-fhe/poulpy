@@ -369,7 +369,7 @@ where
     // before the circuit proper.
     let beta = scratch.scope(|arena| {
         let mut arena = arena;
-        BE::ckks_paco_coeff_encodings_impl::<F, _>(module, input, context.plan(), context.base2k(), &mut arena)
+        BE::ckks_paco_coeff_encodings::<F, _>(module, input, context, &mut arena)
     })?;
 
     // Step 2 — Blind rotation. Assemble the encrypted phase as the inner

@@ -19,8 +19,8 @@ where
                 for budget in [0, b + 1] {
                     let output = layout(params, 0, delta + budget, delta, sparse, slots);
                     let mut out = fixture_plaintext(module, &output, 99);
-                    with_scratch::<B, _>(B::ckks_extract_pt_tmp_bytes_impl(module, out.max_size()), |scratch| {
-                        B::ckks_extract_pt_impl(module, &mut out, &a, scratch)
+                    with_scratch::<B, _>(B::ckks_extract_pt_tmp_bytes(module, out.max_size()), |scratch| {
+                        B::ckks_extract_pt(module, &mut out, &a, scratch)
                     })
                     .unwrap();
                     assert_eq!(out.meta(), output.meta);
@@ -33,8 +33,8 @@ where
             let mut out = fixture_plaintext(module, &invalid, 99);
             let before_out = snapshot::<B, _>(&out);
             assert!(
-                with_scratch::<B, _>(B::ckks_extract_pt_tmp_bytes_impl(module, out.max_size()), |scratch| {
-                    B::ckks_extract_pt_impl(module, &mut out, &a, scratch)
+                with_scratch::<B, _>(B::ckks_extract_pt_tmp_bytes(module, out.max_size()), |scratch| {
+                    B::ckks_extract_pt(module, &mut out, &a, scratch)
                 })
                 .is_err()
             );

@@ -70,7 +70,7 @@ where
     }
 
     fn ckks_ship_coeff_encodings_tmp_bytes(&self, plan: &ShipPlan, base2k: Base2K, complex: bool) -> Result<usize> {
-        BE::ckks_ship_coeff_encodings_tmp_bytes_impl::<F>(self, plan, base2k, complex)
+        BE::ckks_ship_coeff_encodings_tmp_bytes::<F>(self, plan, base2k, complex)
     }
 
     fn ckks_ship_coeff_encodings<Src>(
@@ -84,13 +84,13 @@ where
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        let required = BE::ckks_ship_coeff_encodings_tmp_bytes_impl::<F>(self, plan, base2k, complex)?;
+        let required = BE::ckks_ship_coeff_encodings_tmp_bytes::<F>(self, plan, base2k, complex)?;
         ckks_ensure!(
             scratch.available() >= required,
             "SHIP coefficient encoding needs {required} scratch bytes, but only {} are available",
             scratch.available()
         );
-        BE::ckks_ship_coeff_encodings_impl::<F, Src>(self, ciphertext, plan, base2k, complex, scratch)
+        BE::ckks_ship_coeff_encodings::<F, Src>(self, ciphertext, plan, base2k, complex, scratch)
     }
 
     fn ckks_ship_bootstrap_into<Src>(

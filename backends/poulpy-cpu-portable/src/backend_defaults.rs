@@ -31,20 +31,20 @@ macro_rules! impl_cpu_core_defaults {
 #[macro_export]
 macro_rules! impl_cpu_ckks_defaults {
     ($be:ty) => {
-        ::poulpy_ckks::impl_ckks_copy_reference!($be);
-        ::poulpy_ckks::impl_ckks_encryption_reference!($be);
-        ::poulpy_ckks::impl_ckks_mul_reference!($be);
-        ::poulpy_ckks::impl_ckks_dot_product_reference!($be);
-        ::poulpy_ckks::impl_ckks_linear_transformation_reference!($be);
-        ::poulpy_ckks::impl_ckks_neg_reference!($be);
-        ::poulpy_ckks::impl_ckks_pow2_reference!($be);
-        ::poulpy_ckks::impl_ckks_rotate_reference!($be);
+        ::poulpy_ckks::impl_ckks_copy_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_encryption_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_mul_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_dot_product_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_linear_transformation_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_neg_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_pow2_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_rotate_reference_full!($be);
         ::poulpy_ckks::impl_ckks_inner_sum_derived_full!($be);
-        ::poulpy_ckks::impl_ckks_add_reference!($be);
-        ::poulpy_ckks::impl_ckks_sub_reference!($be);
-        ::poulpy_ckks::impl_ckks_plaintext_reference!($be);
-        ::poulpy_ckks::impl_ckks_polynomial_evaluation_reference!($be);
-        ::poulpy_ckks::impl_ckks_eval_mod_reference!($be);
+        ::poulpy_ckks::impl_ckks_add_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_sub_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_plaintext_znx_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_polynomial_evaluation_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_eval_mod_reference_full!($be);
         $crate::impl_ckks_encoding!($be);
     };
 }

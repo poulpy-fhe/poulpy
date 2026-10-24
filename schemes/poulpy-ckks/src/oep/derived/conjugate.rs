@@ -30,7 +30,7 @@ where
             k: switch_k.into(),
             source,
         })?;
-    BE::ckks_conjugate_into_impl(module, dst, src, &key, scratch)
+    BE::ckks_conjugate_with_key_into(module, dst, src, &key, scratch)
 }
 
 pub(crate) fn conjugate_assign<BE, Dst, H>(
@@ -52,5 +52,5 @@ where
             k: dst.k().into(),
             source,
         })?;
-    BE::ckks_conjugate_assign_impl(module, dst, &key, scratch)
+    BE::ckks_conjugate_with_key_assign(module, dst, &key, scratch)
 }

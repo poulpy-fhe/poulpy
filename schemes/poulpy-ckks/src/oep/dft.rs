@@ -36,7 +36,7 @@ pub unsafe trait DFTImpl:
     + super::CKKSRotateImpl
 {
     /// Workspace for the selected matrix preparation implementation.
-    fn ckks_prepare_dft_matrix_tmp_bytes_impl<Dir, Fmt, P>(
+    fn ckks_prepare_dft_matrix_tmp_bytes<Dir, Fmt, P>(
         module: &Module<Self>,
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
     ) -> usize
@@ -44,7 +44,7 @@ pub unsafe trait DFTImpl:
         P: poulpy_core::layouts::LWEInfos;
 
     /// Workspace shared by the selected raw evaluation and format wrappers.
-    fn ckks_dft_tmp_bytes_impl<Dir, Fmt, P, Dst, Src, K>(
+    fn ckks_dft_tmp_bytes<Dir, Fmt, P, Dst, Src, K>(
         module: &Module<Self>,
         dst: &Dst,
         src: &Src,
@@ -57,7 +57,7 @@ pub unsafe trait DFTImpl:
         Src: CKKSCtBounds,
         K: poulpy_core::layouts::GGLWEInfos;
 
-    fn ckks_prepare_dft_matrix_impl<Dir, Fmt, P>(
+    fn ckks_prepare_dft_matrix<Dir, Fmt, P>(
         module: &Module<Self>,
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
         scratch: &mut ScratchArena<'_, Self>,
@@ -65,7 +65,7 @@ pub unsafe trait DFTImpl:
     where
         P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds + DiagonalProd<Self>;
 
-    fn ckks_dft_evaluate_assign_impl<Dir, Fmt, P, Dst, H>(
+    fn ckks_dft_evaluate_assign<Dir, Fmt, P, Dst, H>(
         module: &Module<Self>,
         ct: &mut Dst,
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
@@ -77,7 +77,7 @@ pub unsafe trait DFTImpl:
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<Self>;
 
-    fn ckks_coeffs_to_slots_impl<P, Dst, H>(
+    fn ckks_coeffs_to_slots<P, Dst, H>(
         module: &Module<Self>,
         ct: &mut Dst,
         dft: &DFTMatrix<Self, Encode, Standard, LinearTransformation<P>>,
@@ -92,7 +92,7 @@ pub unsafe trait DFTImpl:
         crate::oep::derived::dft::ckks_coeffs_to_slots_assign(module, ct, dft, keys, scratch)
     }
 
-    fn ckks_slots_to_coeffs_impl<P, Dst, H>(
+    fn ckks_slots_to_coeffs<P, Dst, H>(
         module: &Module<Self>,
         ct: &mut Dst,
         dft: &DFTMatrix<Self, Decode, Standard, LinearTransformation<P>>,
@@ -107,7 +107,7 @@ pub unsafe trait DFTImpl:
         crate::oep::derived::dft::ckks_slots_to_coeffs_assign(module, ct, dft, keys, scratch)
     }
 
-    fn ckks_coeffs_to_slots_split_impl<P, Dst, Src, H>(
+    fn ckks_coeffs_to_slots_split<P, Dst, Src, H>(
         module: &Module<Self>,
         ct_real: &mut Dst,
         ct_imag: &mut Dst,
@@ -125,7 +125,7 @@ pub unsafe trait DFTImpl:
         crate::oep::derived::dft::ckks_coeffs_to_slots_split(module, ct_real, ct_imag, ct_in, dft, keys, scratch)
     }
 
-    fn ckks_slots_to_coeffs_split_impl<P, Dst, Src, H>(
+    fn ckks_slots_to_coeffs_split<P, Dst, Src, H>(
         module: &Module<Self>,
         op_out: &mut Dst,
         ct_real: &Src,
@@ -143,7 +143,7 @@ pub unsafe trait DFTImpl:
         crate::oep::derived::dft::ckks_slots_to_coeffs_split(module, op_out, ct_real, ct_imag, dft, keys, scratch)
     }
 
-    fn ckks_coeffs_to_slots_repack_impl<P, Dst, Src, H>(
+    fn ckks_coeffs_to_slots_repack<P, Dst, Src, H>(
         module: &Module<Self>,
         ct_out: &mut Dst,
         ct_in: &Src,
@@ -160,7 +160,7 @@ pub unsafe trait DFTImpl:
         crate::oep::derived::dft::ckks_coeffs_to_slots_repack(module, ct_out, ct_in, dft, keys, scratch)
     }
 
-    fn ckks_slots_to_coeffs_repack_impl<P, Dst, Src, H>(
+    fn ckks_slots_to_coeffs_repack<P, Dst, Src, H>(
         module: &Module<Self>,
         op_out: &mut Dst,
         ct_in: &Src,
@@ -188,7 +188,7 @@ pub unsafe trait DFTImpl:
 /// Implementors must preserve the semantics, scratch requirements, aliasing
 /// guarantees, and backend bit-parity contract expected by end-to-end pipelines.
 pub unsafe trait DFTMatrixImpl<F: CKKSEncodingScalar>: Backend<Ring = poulpy_hal::layouts::Standard> {
-    fn ckks_new_dft_matrix_impl<Dir, Fmt>(
+    fn ckks_new_dft_matrix<Dir, Fmt>(
         module: &Module<Self>,
         base2k: Base2K,
         literal: &DFTPlan,
@@ -199,12 +199,12 @@ pub unsafe trait DFTMatrixImpl<F: CKKSEncodingScalar>: Backend<Ring = poulpy_hal
         Fmt: DftFormat;
 }
 
-/// Wires matrix generation and primitive DFT evaluation to their reference algorithms.
+/// Selects the reference DFT-matrix preparation and evaluation.
 #[macro_export]
-macro_rules! impl_ckks_dft_reference {
+macro_rules! impl_dft_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::DFTImpl for $be {
-            fn ckks_prepare_dft_matrix_tmp_bytes_impl<Dir, Fmt, P>(
+            fn ckks_prepare_dft_matrix_tmp_bytes<Dir, Fmt, P>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dft: &$crate::layouts::DFTMatrix<Self, Dir, Fmt, ::poulpy_core::layouts::LinearTransformation<P>>,
             ) -> usize
@@ -214,7 +214,7 @@ macro_rules! impl_ckks_dft_reference {
                 $crate::reference::dft::ckks_prepare_dft_matrix_tmp_bytes(module, dft)
             }
 
-            fn ckks_dft_tmp_bytes_impl<Dir, Fmt, P, Dst, Src, K>(
+            fn ckks_dft_tmp_bytes<Dir, Fmt, P, Dst, Src, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &Dst,
                 src: &Src,
@@ -229,7 +229,7 @@ macro_rules! impl_ckks_dft_reference {
             {
                 $crate::reference::dft::ckks_dft_tmp_bytes(module, dst, src, dft, key)
             }
-            fn ckks_prepare_dft_matrix_impl<Dir, Fmt, P>(
+            fn ckks_prepare_dft_matrix<Dir, Fmt, P>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dft: &$crate::layouts::DFTMatrix<Self, Dir, Fmt, ::poulpy_core::layouts::LinearTransformation<P>>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
@@ -242,7 +242,7 @@ macro_rules! impl_ckks_dft_reference {
             {
                 $crate::reference::dft::ckks_prepare_dft_matrix::<Dir, Fmt, Self, P>(module, dft, scratch)
             }
-            fn ckks_dft_evaluate_assign_impl<Dir, Fmt, P, Dst, H>(
+            fn ckks_dft_evaluate_assign<Dir, Fmt, P, Dst, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 ct: &mut Dst,
                 dft: &$crate::layouts::DFTMatrix<Self, Dir, Fmt, ::poulpy_core::layouts::LinearTransformation<P>>,
@@ -260,11 +260,18 @@ macro_rules! impl_ckks_dft_reference {
                 $crate::reference::dft::ckks_dft_evaluate_assign(module, ct, dft, keys, scratch)
             }
         }
+    };
+}
+
+/// Selects the reference DFT-matrix generation for every encoding scalar of the backend.
+#[macro_export]
+macro_rules! impl_dft_matrix_reference_full {
+    ($be:ty) => {
         unsafe impl<F: $crate::api::CKKSEncodingScalar + $crate::reference::dft::DftScalar> $crate::oep::DFTMatrixImpl<F> for $be
         where
             $be: $crate::oep::CKKSEncodingImpl<F>,
         {
-            fn ckks_new_dft_matrix_impl<Dir, Fmt>(
+            fn ckks_new_dft_matrix<Dir, Fmt>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 base2k: ::poulpy_core::layouts::Base2K,
                 literal: &$crate::layouts::DFTPlan,
@@ -279,4 +286,5 @@ macro_rules! impl_ckks_dft_reference {
         }
     };
 }
-pub use crate::impl_ckks_dft_reference;
+pub use crate::impl_dft_matrix_reference_full;
+pub use crate::impl_dft_reference_full;

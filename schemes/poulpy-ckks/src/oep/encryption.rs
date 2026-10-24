@@ -17,11 +17,11 @@ use crate::{CKKSCtBounds, CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKS
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
 pub unsafe trait CKKSEncryptionImpl: Backend {
-    fn ckks_encrypt_sk_tmp_bytes_impl<A>(module: &Module<Self>, ct_infos: &A) -> usize
+    fn ckks_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, ct_infos: &A) -> usize
     where
         A: CKKSCtBounds;
 
-    fn ckks_encrypt_sk_impl<Dct, S, Pt>(
+    fn ckks_encrypt_sk<Dct, S, Pt>(
         module: &Module<Self>,
         ct: &mut Dct,
         pt: &Pt,
@@ -35,12 +35,12 @@ pub unsafe trait CKKSEncryptionImpl: Backend {
         Dct: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         S: GLWESecretPreparedToBackendRef<Self>;
 
-    fn ckks_decrypt_tmp_bytes_impl<Pt, Ct>(module: &Module<Self>, pt_infos: &Pt, ct_infos: &Ct) -> usize
+    fn ckks_decrypt_tmp_bytes<Pt, Ct>(module: &Module<Self>, pt_infos: &Pt, ct_infos: &Ct) -> usize
     where
         Pt: CKKSInfos,
         Ct: CKKSCtBounds;
 
-    fn ckks_decrypt_impl<S, Dct, Pt>(
+    fn ckks_decrypt<S, Dct, Pt>(
         module: &Module<Self>,
         pt: &mut Pt,
         ct: &Dct,
@@ -53,19 +53,19 @@ pub unsafe trait CKKSEncryptionImpl: Backend {
         S: GLWESecretPreparedToBackendRef<Self> + GLWEInfos;
 }
 
-/// Implements this contract with the callable reference algorithms.
+/// Selects the reference implementation of `CKKSEncryptionImpl` for `$be`.
 #[macro_export]
-macro_rules! impl_ckks_encryption_reference {
+macro_rules! impl_ckks_encryption_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSEncryptionImpl for $be {
-            fn ckks_encrypt_sk_tmp_bytes_impl<A>(module: &::poulpy_hal::layouts::Module<Self>, ct_infos: &A) -> usize
+            fn ckks_encrypt_sk_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<Self>, ct_infos: &A) -> usize
             where
                 A: $crate::CKKSCtBounds,
             {
                 $crate::reference::encryption::CKKSEncryptionReference::ckks_encrypt_sk_tmp_bytes_reference(module, ct_infos)
             }
 
-            fn ckks_encrypt_sk_impl<Dct, S, Pt>(
+            fn ckks_encrypt_sk<Dct, S, Pt>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 ct: &mut Dct,
                 pt: &Pt,
@@ -84,11 +84,7 @@ macro_rules! impl_ckks_encryption_reference {
                 )
             }
 
-            fn ckks_decrypt_tmp_bytes_impl<Pt, Ct>(
-                module: &::poulpy_hal::layouts::Module<Self>,
-                pt_infos: &Pt,
-                ct_infos: &Ct,
-            ) -> usize
+            fn ckks_decrypt_tmp_bytes<Pt, Ct>(module: &::poulpy_hal::layouts::Module<Self>, pt_infos: &Pt, ct_infos: &Ct) -> usize
             where
                 Pt: $crate::CKKSInfos,
                 Ct: $crate::CKKSCtBounds,
@@ -98,7 +94,7 @@ macro_rules! impl_ckks_encryption_reference {
                 )
             }
 
-            fn ckks_decrypt_impl<S, Dct, Pt>(
+            fn ckks_decrypt<S, Dct, Pt>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 pt: &mut Pt,
                 ct: &Dct,
@@ -118,4 +114,4 @@ macro_rules! impl_ckks_encryption_reference {
         }
     };
 }
-pub use crate::impl_ckks_encryption_reference;
+pub use crate::impl_ckks_encryption_reference_full;

@@ -16,8 +16,8 @@ use crate::{
     CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotsKind,
     api::{CKKSEncodingOps, CKKSEncodingScalar, CKKSModuleInfos, PaCoScalar, ShipScalar},
     layouts::{
-        CKKSEncodingBuffer, CKKSEncodingBufferToBackendMut, CKKSPlaintextOwned, ComplexDiagonals, PaCoDFTPlan, PaCoPlan,
-        PaCoSlotOrder, ShipPlan, slot_coeff_count,
+        CKKSEncodingBuffer, CKKSEncodingBufferToBackendMut, CKKSPlaintextOwned, ComplexDiagonals, PaCoContext, PaCoDFTPlan,
+        PaCoPlan, PaCoSlotOrder, ShipPlan, slot_coeff_count,
     },
     oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl, CKKSShipCoeffEncodingImpl},
     reference::{
@@ -88,7 +88,7 @@ where
     B: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
 {
-    let plans = B::ckks_encoding_plans_create_impl(module).unwrap();
+    let plans = B::ckks_encoding_plans_create(module).unwrap();
     // Repeat the geometric family in reverse order to reuse the same cached
     // plans after their first production-dispatch construction.
     let cap = 2 * module.ckks_max_slots();
@@ -108,7 +108,7 @@ where
             let mut cached = CKKSEncodingBuffer::<B::OwnedBuf, F>::from_host::<B>(&input);
             let mut fresh = CKKSEncodingBuffer::<B::OwnedBuf, F>::from_host::<B>(&input);
             module.ckks_slots_to_coeffs_assign(&mut cached).unwrap();
-            B::ckks_slots_to_coeffs_assign_impl(
+            B::ckks_slots_to_coeffs_assign(
                 module,
                 &plans,
                 &mut CKKSEncodingBufferToBackendMut::<B, F>::to_backend_mut(&mut fresh),
@@ -118,7 +118,7 @@ where
             scalar_close(&got, &fresh.to_host::<B>(), transform_tolerance::<F>(len));
             observed.push(got);
             module.ckks_coeffs_to_slots_assign(&mut cached).unwrap();
-            B::ckks_coeffs_to_slots_assign_impl(
+            B::ckks_coeffs_to_slots_assign(
                 module,
                 &plans,
                 &mut CKKSEncodingBufferToBackendMut::<B, F>::to_backend_mut(&mut fresh),
@@ -270,10 +270,10 @@ where
                 .collect();
             let mut slots = CKKSEncodingBuffer::<B::OwnedBuf, F>::from_host::<B>(&input);
             let mut pt = fixture_plaintext(module, &layout, 53);
-            B::ckks_encode_slots_assign_into_impl(module, &mut pt, &mut slots).unwrap();
+            B::ckks_encode_slots_assign_into(module, &mut pt, &mut slots).unwrap();
             let mut decoded = CKKSEncodingBuffer::<B::OwnedBuf, F>::from_host::<B>(&vec![F::nan(); len]);
             let before = snapshot::<B, _>(&pt);
-            B::ckks_decode_slots_into_impl(module, &pt, &mut decoded).unwrap();
+            B::ckks_decode_slots_into(module, &pt, &mut decoded).unwrap();
             assert!(snapshot::<B, _>(&pt) == before, "slot decoding changed plaintext");
             (pt, decoded.to_host::<B>())
         })
@@ -362,6 +362,15 @@ where
     }
 }
 
+fn paco_context<B, F>(module: &Module<B>, params: CKKSTestParams, plan: &PaCoPlan) -> PaCoContext<B, F>
+where
+    B: Backend<ZnxWord = i64> + CKKSEncodingImpl<F> + CKKSPaCoCoeffEncodingImpl,
+    F: PaCoScalar,
+{
+    let bytes = ckks_encode_linear_transformation_tmp_bytes::<B, _, F>(module, module.ckks_max_slots());
+    with_scratch::<B, _>(bytes, |s| PaCoContext::compile(module, params.base2k.into(), plan.clone(), s)).unwrap()
+}
+
 /// Pairs PaCo coefficient embedding for both slot-order conventions. Each
 /// backend receives equivalent exhausted ciphertexts and its own scratch bound;
 /// prepared plaintexts are compared by decoded canonical coefficients.
@@ -379,8 +388,8 @@ where
             .with_evaluation(
                 40,
                 5,
-                PaCoDFTPlan::uniform(3, 1, 1, 0, 0).unwrap(),
-                PaCoDFTPlan::uniform(1, 1, 1, 0, 0).unwrap(),
+                PaCoDFTPlan::uniform(3, 1, 1, 30, 8).unwrap(),
+                PaCoDFTPlan::uniform(1, 1, 1, 30, 8).unwrap(),
             )
             .unwrap()
             .with_slot_order(order);
@@ -401,16 +410,12 @@ where
         let ct = fixture_ciphertext(t, &layout, 72);
         let sr = snapshot::<BR, _>(&cr);
         let st = snapshot::<BT, _>(&ct);
-        let bytes_r = BR::ckks_paco_coeff_encodings_tmp_bytes_impl::<F>(r, &plan).unwrap();
-        let bytes_t = BT::ckks_paco_coeff_encodings_tmp_bytes_impl::<F>(t, &plan).unwrap();
-        let pr = with_scratch::<BR, _>(bytes_r, |s| {
-            BR::ckks_paco_coeff_encodings_impl::<F, _>(r, &cr, &plan, params.base2k.into(), s)
-        })
-        .unwrap();
-        let pt = with_scratch::<BT, _>(bytes_t, |s| {
-            BT::ckks_paco_coeff_encodings_impl::<F, _>(t, &ct, &plan, params.base2k.into(), s)
-        })
-        .unwrap();
+        let ctx_r = paco_context::<BR, F>(r, params, &plan);
+        let ctx_t = paco_context::<BT, F>(t, params, &plan);
+        let bytes_r = BR::ckks_paco_coeff_encodings_tmp_bytes::<F>(r, &ctx_r).unwrap();
+        let bytes_t = BT::ckks_paco_coeff_encodings_tmp_bytes::<F>(t, &ctx_t).unwrap();
+        let pr = with_scratch::<BR, _>(bytes_r, |s| BR::ckks_paco_coeff_encodings::<F, _>(r, &cr, &ctx_r, s)).unwrap();
+        let pt = with_scratch::<BT, _>(bytes_t, |s| BT::ckks_paco_coeff_encodings::<F, _>(t, &ct, &ctx_t, s)).unwrap();
         for (a, b) in pr.iter().zip(&pt) {
             compare_plaintexts::<BR, BT, F>(a, b);
             assert!(a.n().as_usize() == plan.n(), "PaCo degree differs");
@@ -428,26 +433,8 @@ where
         let it = fixture_ciphertext(t, &invalid, 73);
         let before_r = snapshot::<BR, _>(&ir);
         let before_t = snapshot::<BT, _>(&it);
-        assert!(
-            with_scratch::<BR, _>(bytes_r, |s| BR::ckks_paco_coeff_encodings_impl::<F, _>(
-                r,
-                &ir,
-                &plan,
-                params.base2k.into(),
-                s
-            ))
-            .is_err()
-        );
-        assert!(
-            with_scratch::<BT, _>(bytes_t, |s| BT::ckks_paco_coeff_encodings_impl::<F, _>(
-                t,
-                &it,
-                &plan,
-                params.base2k.into(),
-                s
-            ))
-            .is_err()
-        );
+        assert!(with_scratch::<BR, _>(bytes_r, |s| BR::ckks_paco_coeff_encodings::<F, _>(r, &ir, &ctx_r, s)).is_err());
+        assert!(with_scratch::<BT, _>(bytes_t, |s| BT::ckks_paco_coeff_encodings::<F, _>(t, &it, &ctx_t, s)).is_err());
         assert!(
             snapshot::<BR, _>(&ir) == before_r && snapshot::<BT, _>(&it) == before_t,
             "failed PaCo encoding changed its input"
@@ -486,14 +473,14 @@ where
     let sr = snapshot::<BR, _>(&cr);
     let st = snapshot::<BT, _>(&ct);
     for complex in [false, true] {
-        let bytes_r = BR::ckks_ship_coeff_encodings_tmp_bytes_impl::<F>(r, &plan, base2k.into(), complex).unwrap();
-        let bytes_t = BT::ckks_ship_coeff_encodings_tmp_bytes_impl::<F>(t, &plan, base2k.into(), complex).unwrap();
+        let bytes_r = BR::ckks_ship_coeff_encodings_tmp_bytes::<F>(r, &plan, base2k.into(), complex).unwrap();
+        let bytes_t = BT::ckks_ship_coeff_encodings_tmp_bytes::<F>(t, &plan, base2k.into(), complex).unwrap();
         let pr = with_scratch::<BR, _>(bytes_r, |s| {
-            BR::ckks_ship_coeff_encodings_impl::<F, _>(r, &cr, &plan, base2k.into(), complex, s)
+            BR::ckks_ship_coeff_encodings::<F, _>(r, &cr, &plan, base2k.into(), complex, s)
         })
         .unwrap();
         let pt = with_scratch::<BT, _>(bytes_t, |s| {
-            BT::ckks_ship_coeff_encodings_impl::<F, _>(t, &ct, &plan, base2k.into(), complex, s)
+            BT::ckks_ship_coeff_encodings::<F, _>(t, &ct, &plan, base2k.into(), complex, s)
         })
         .unwrap();
         compare_plaintexts::<BR, BT, F>(&pr.pt0, &pt.pt0);
@@ -525,7 +512,7 @@ where
         let before_r = snapshot::<BR, _>(&ir);
         let before_t = snapshot::<BT, _>(&it);
         assert!(
-            with_scratch::<BR, _>(bytes_r, |s| BR::ckks_ship_coeff_encodings_impl::<F, _>(
+            with_scratch::<BR, _>(bytes_r, |s| BR::ckks_ship_coeff_encodings::<F, _>(
                 r,
                 &ir,
                 &plan,
@@ -536,7 +523,7 @@ where
             .is_err()
         );
         assert!(
-            with_scratch::<BT, _>(bytes_t, |s| BT::ckks_ship_coeff_encodings_impl::<F, _>(
+            with_scratch::<BT, _>(bytes_t, |s| BT::ckks_ship_coeff_encodings::<F, _>(
                 t,
                 &it,
                 &plan,

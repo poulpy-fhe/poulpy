@@ -22,37 +22,37 @@ use crate::{
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures. See `poulpy-hal/docs/backend_safety_contract.md`.
 pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
-    fn ckks_prepare_linear_transformation_rhs_tmp_bytes_impl<P: LWEInfos>(module: &Module<Self>, pt_infos: &P) -> usize;
+    fn ckks_prepare_linear_transformation_rhs_tmp_bytes<P: LWEInfos>(module: &Module<Self>, pt_infos: &P) -> usize;
 
-    fn ckks_prepare_linear_transformation_baby_steps_tmp_bytes_impl<C: CKKSCtBounds, K: GGLWEInfos>(
+    fn ckks_prepare_linear_transformation_baby_steps_tmp_bytes<C: CKKSCtBounds, K: GGLWEInfos>(
         module: &Module<Self>,
         ct: &C,
         plan: &LinearTransformationPlan,
         key: &K,
     ) -> usize;
 
-    fn ckks_eval_linear_transformation_tmp_bytes_impl<C: CKKSCtBounds, K: GGLWEInfos>(
+    fn ckks_eval_linear_transformation_tmp_bytes<C: CKKSCtBounds, K: GGLWEInfos>(
         module: &Module<Self>,
         ct: &C,
         plan: &LinearTransformationPlan,
         key: &K,
     ) -> usize;
 
-    fn ckks_eval_linear_transformation_streamed_tmp_bytes_impl<C: CKKSCtBounds, K: GGLWEInfos>(
+    fn ckks_eval_linear_transformation_streamed_tmp_bytes<C: CKKSCtBounds, K: GGLWEInfos>(
         module: &Module<Self>,
         ct: &C,
         plan: &LinearTransformationPlan,
         key: &K,
     ) -> usize;
 
-    fn ckks_eval_linear_transformation_sum_tmp_bytes_impl<C: CKKSCtBounds, K: GGLWEInfos>(
+    fn ckks_eval_linear_transformation_sum_tmp_bytes<C: CKKSCtBounds, K: GGLWEInfos>(
         module: &Module<Self>,
         ct: &C,
         plan: &LinearTransformationPlan,
         key: &K,
     ) -> usize;
 
-    fn ckks_prepare_linear_transformation_rhs_impl<P>(
+    fn ckks_prepare_linear_transformation_rhs<P>(
         module: &Module<Self>,
         prepared: &mut LinearTransformationPrepared<Self>,
         lt: &LinearTransformation<P>,
@@ -60,7 +60,7 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
     ) where
         P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds + DiagonalProd<Self>;
 
-    fn ckks_prepare_linear_transformation_baby_steps_impl<Src, H>(
+    fn ckks_prepare_linear_transformation_baby_steps<Src, H>(
         module: &Module<Self>,
         babies: &mut LinearTransformationBabySteps<Self>,
         src: &Src,
@@ -71,7 +71,7 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
         H: GetAutomorphismKey<Self>;
 
-    fn ckks_eval_linear_transformation_into_impl<Dst, Src, P, H>(
+    fn ckks_eval_linear_transformation_into<Dst, Src, P, H>(
         module: &Module<Self>,
         dst: &mut Dst,
         src: &Src,
@@ -86,8 +86,8 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
         P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
         H: GetAutomorphismKey<Self>;
 
-    /// [`Self::ckks_eval_linear_transformation_into_impl`] into a working copy carved from scratch, then copied back.
-    fn ckks_eval_linear_transformation_assign_impl<Dst, P, H>(
+    /// [`Self::ckks_eval_linear_transformation_into`] into a working copy carved from scratch, then copied back.
+    fn ckks_eval_linear_transformation_assign<Dst, P, H>(
         module: &Module<Self>,
         dst: &mut Dst,
         babies: &LinearTransformationBabySteps<Self>,
@@ -103,7 +103,7 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
         ckks_eval_linear_transformation_assign(module, dst, babies, lt, keys, scratch)
     }
 
-    fn ckks_eval_linear_transformation_sum_into_impl<Dst, Src, H>(
+    fn ckks_eval_linear_transformation_sum_into<Dst, Src, H>(
         module: &Module<Self>,
         dst: &mut Dst,
         srcs: &[&Src],
@@ -117,8 +117,8 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
         H: GetAutomorphismKey<Self>;
 
-    /// [`Self::ckks_eval_linear_transformation_into_impl`] over a baby cache allocated and prepared from `src`.
-    fn ckks_eval_linear_transformation_self_into_impl<Dst, Src, P, H>(
+    /// [`Self::ckks_eval_linear_transformation_into`] over a baby cache allocated and prepared from `src`.
+    fn ckks_eval_linear_transformation_self_into<Dst, Src, P, H>(
         module: &Module<Self>,
         dst: &mut Dst,
         src: &Src,
@@ -135,9 +135,9 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
         ckks_eval_linear_transformation_self_into(module, dst, src, lt, keys, scratch)
     }
 
-    /// [`Self::ckks_eval_linear_transformation_self_into_impl`] into a working copy carved from scratch, then copied
+    /// [`Self::ckks_eval_linear_transformation_self_into`] into a working copy carved from scratch, then copied
     /// back.
-    fn ckks_eval_linear_transformation_self_assign_impl<Dst, P, H>(
+    fn ckks_eval_linear_transformation_self_assign<Dst, P, H>(
         module: &Module<Self>,
         dst: &mut Dst,
         lt: &LinearTransformation<P>,
@@ -153,12 +153,12 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
     }
 }
 
-/// Implements this contract with the callable reference algorithms.
+/// Selects the reference implementation of `CKKSLinearTransformationImpl` for `$be`.
 #[macro_export]
-macro_rules! impl_ckks_linear_transformation_reference {
+macro_rules! impl_ckks_linear_transformation_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSLinearTransformationImpl for $be {
-            fn ckks_prepare_linear_transformation_rhs_tmp_bytes_impl<P: ::poulpy_core::layouts::LWEInfos>(
+            fn ckks_prepare_linear_transformation_rhs_tmp_bytes<P: ::poulpy_core::layouts::LWEInfos>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 pt_infos: &P,
             ) -> usize {
@@ -167,7 +167,7 @@ macro_rules! impl_ckks_linear_transformation_reference {
                 )
             }
 
-            fn ckks_prepare_linear_transformation_baby_steps_tmp_bytes_impl<
+            fn ckks_prepare_linear_transformation_baby_steps_tmp_bytes<
                 C: $crate::CKKSCtBounds,
                 K: ::poulpy_core::layouts::GGLWEInfos,
             >(
@@ -181,7 +181,7 @@ macro_rules! impl_ckks_linear_transformation_reference {
                 )
             }
 
-            fn ckks_eval_linear_transformation_tmp_bytes_impl<C: $crate::CKKSCtBounds, K: ::poulpy_core::layouts::GGLWEInfos>(
+            fn ckks_eval_linear_transformation_tmp_bytes<C: $crate::CKKSCtBounds, K: ::poulpy_core::layouts::GGLWEInfos>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 ct: &C,
                 plan: &::poulpy_core::layouts::LinearTransformationPlan,
@@ -192,7 +192,7 @@ macro_rules! impl_ckks_linear_transformation_reference {
                 )
             }
 
-            fn ckks_eval_linear_transformation_streamed_tmp_bytes_impl<
+            fn ckks_eval_linear_transformation_streamed_tmp_bytes<
                 C: $crate::CKKSCtBounds,
                 K: ::poulpy_core::layouts::GGLWEInfos,
             >(
@@ -206,7 +206,7 @@ macro_rules! impl_ckks_linear_transformation_reference {
                 )
             }
 
-            fn ckks_eval_linear_transformation_sum_tmp_bytes_impl<
+            fn ckks_eval_linear_transformation_sum_tmp_bytes<
                 C: $crate::CKKSCtBounds,
                 K: ::poulpy_core::layouts::GGLWEInfos,
             >(
@@ -220,7 +220,7 @@ macro_rules! impl_ckks_linear_transformation_reference {
                 )
             }
 
-            fn ckks_prepare_linear_transformation_rhs_impl<P>(
+            fn ckks_prepare_linear_transformation_rhs<P>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 prepared: &mut ::poulpy_core::LinearTransformationPrepared<Self>,
                 lt: &::poulpy_core::LinearTransformation<P>,
@@ -236,7 +236,7 @@ macro_rules! impl_ckks_linear_transformation_reference {
                 )
             }
 
-            fn ckks_prepare_linear_transformation_baby_steps_impl<Src, H>(
+            fn ckks_prepare_linear_transformation_baby_steps<Src, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 babies: &mut ::poulpy_core::LinearTransformationBabySteps<Self>,
                 src: &Src,
@@ -252,7 +252,7 @@ macro_rules! impl_ckks_linear_transformation_reference {
                 )
             }
 
-            fn ckks_eval_linear_transformation_into_impl<Dst, Src, P, H>(
+            fn ckks_eval_linear_transformation_into<Dst, Src, P, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 src: &Src,
@@ -274,7 +274,7 @@ macro_rules! impl_ckks_linear_transformation_reference {
                 )
             }
 
-            fn ckks_eval_linear_transformation_sum_into_impl<Dst, Src, H>(
+            fn ckks_eval_linear_transformation_sum_into<Dst, Src, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 srcs: &[&Src],
@@ -295,4 +295,4 @@ macro_rules! impl_ckks_linear_transformation_reference {
         }
     };
 }
-pub use crate::impl_ckks_linear_transformation_reference;
+pub use crate::impl_ckks_linear_transformation_reference_full;

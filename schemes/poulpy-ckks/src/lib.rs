@@ -89,7 +89,7 @@ pub(crate) mod delegates;
 pub mod reference;
 
 /// Re-exports for use inside this crate's exported macros (e.g.
-/// [`impl_ckks_dft_reference`]), so an invoking backend crate does not need
+/// [`impl_dft_matrix_reference_full`]), so an invoking backend crate does not need
 /// `anyhow` as a direct dependency. Not part of the public API.
 #[doc(hidden)]
 pub mod __macro_reexports {

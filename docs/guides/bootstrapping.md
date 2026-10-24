@@ -24,7 +24,7 @@ CoeffsToSlots and SlotsToCoeffs are the homomorphic DFT (`CKKSDFTOps`), a chain 
 
 The engine follows the usual `api` / `oep` / `reference` / `delegates` split.
 A ready-made orchestrator, `ckks_bootstrap`, runs the whole refresh from a compiled `BootstrappingContext` and a prepared `BootstrappingKeys`; [a fold](#batches) packs batches for it.
-Backends select the pipeline through `CKKSBootstrappingImpl` (`impl_ckks_bootstrapping_reference!`), which also covers ModUp and functional bootstrapping, and `test_bootstrapping_parity` compares an override against a reference backend.
+Backends select the pipeline through `CKKSBootstrappingImpl` (`impl_ckks_bootstrapping_reference_full!`), which also covers ModUp and functional bootstrapping, and `test_bootstrapping_parity` compares an override against a reference backend.
 The individual stages stay public, so a caller can assemble a custom pipeline instead.
 The end-to-end tests drive the orchestrator through every pipeline.
 

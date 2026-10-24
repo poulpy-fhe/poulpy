@@ -23,10 +23,10 @@ thread_local! {
  static MAX_COPY_CAPACITY: Cell<usize> = const { Cell::new(0) };
 }
 const OVERRIDE_SCRATCH: usize = 256;
-poulpy_ckks::impl_ckks_plaintext_reference!(OverrideBackend);
+poulpy_ckks::impl_ckks_plaintext_znx_reference_full!(OverrideBackend);
 const COPY_WORKSPACE: usize = 1 << 20;
 unsafe impl poulpy_ckks::oep::CKKSCopyImpl for OverrideBackend {
-    fn ckks_copy_tmp_bytes_impl<Dst: poulpy_ckks::CKKSCtBounds, Src: poulpy_ckks::CKKSCtBounds>(
+    fn ckks_copy_tmp_bytes<Dst: poulpy_ckks::CKKSCtBounds, Src: poulpy_ckks::CKKSCtBounds>(
         module: &Module<Self>,
         dst: &Dst,
         src: &Src,
@@ -34,7 +34,7 @@ unsafe impl poulpy_ckks::oep::CKKSCopyImpl for OverrideBackend {
         COPY_WORKSPACE * dst.max_size()
             + poulpy_ckks::reference::copy::CKKSCopyReference::ckks_copy_tmp_bytes_reference(module, dst, src)
     }
-    fn ckks_copy_impl<Dst, Src>(
+    fn ckks_copy<Dst, Src>(
         module: &Module<Self>,
         dst: &mut Dst,
         src: &Src,
@@ -53,19 +53,19 @@ unsafe impl poulpy_ckks::oep::CKKSCopyImpl for OverrideBackend {
 }
 mod carry;
 mod dft;
-poulpy_ckks::impl_ckks_neg_reference!(OverrideBackend);
-poulpy_ckks::impl_ckks_pow2_reference!(OverrideBackend);
-poulpy_ckks::impl_ckks_imag_reference!(OverrideBackend);
-poulpy_ckks::impl_ckks_rotate_reference!(OverrideBackend);
+poulpy_ckks::impl_ckks_neg_reference_full!(OverrideBackend);
+poulpy_ckks::impl_ckks_pow2_reference_full!(OverrideBackend);
+poulpy_ckks::impl_ckks_imag_reference_full!(OverrideBackend);
+poulpy_ckks::impl_ckks_rotate_reference_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_inner_sum_derived_full!(OverrideBackend);
-poulpy_ckks::impl_ckks_conjugate_reference!(OverrideBackend);
-poulpy_ckks::impl_ckks_encryption_reference!(OverrideBackend);
-poulpy_ckks::impl_ckks_mul_reference!(OverrideBackend);
-poulpy_ckks::impl_ckks_linear_transformation_reference!(OverrideBackend);
-poulpy_ckks::impl_ckks_dot_product_reference!(OverrideBackend);
+poulpy_ckks::impl_ckks_conjugate_reference_full!(OverrideBackend);
+poulpy_ckks::impl_ckks_encryption_reference_full!(OverrideBackend);
+poulpy_ckks::impl_ckks_mul_reference_full!(OverrideBackend);
+poulpy_ckks::impl_ckks_linear_transformation_reference_full!(OverrideBackend);
+poulpy_ckks::impl_ckks_dot_product_reference_full!(OverrideBackend);
 
 unsafe impl poulpy_ckks::oep::CKKSPolynomialEvaluationImpl for OverrideBackend {
-    fn ckks_eval_poly_real_const_coeffs_from_power_basis_impl<R, B, A, G, H>(
+    fn ckks_eval_poly_real_const_coeffs_from_power_basis<R, B, A, G, H>(
         module: &::poulpy_hal::layouts::Module<Self>,
         res: &mut R,
         poly: &B,
@@ -92,7 +92,7 @@ unsafe impl poulpy_ckks::oep::CKKSPolynomialEvaluationImpl for OverrideBackend {
 }
 
 unsafe impl CKKSComplexPolynomialEvaluationImpl for OverrideBackend {
-    fn ckks_eval_poly_complex_const_coeffs_from_power_basis_impl<R, C, A, G, H>(
+    fn ckks_eval_poly_complex_const_coeffs_from_power_basis<R, C, A, G, H>(
         module: &::poulpy_hal::layouts::Module<Self>,
         res: &mut R,
         poly: &poulpy_ckks::polynomial::ComplexBSGSPolynomial<C>,
@@ -122,7 +122,7 @@ unsafe impl CKKSComplexPolynomialEvaluationImpl for OverrideBackend {
 }
 
 unsafe impl poulpy_ckks::oep::CKKSEvalModImpl for OverrideBackend {
-    fn ckks_eval_mod_tmp_bytes_impl<R, C, P, F, T>(
+    fn ckks_eval_mod_tmp_bytes<R, C, P, F, T>(
         module: &::poulpy_hal::layouts::Module<Self>,
         res: &R,
         ct: &C,
@@ -138,7 +138,7 @@ unsafe impl poulpy_ckks::oep::CKKSEvalModImpl for OverrideBackend {
         let _ = (module, res, ct, params, tsk);
         OVERRIDE_SCRATCH
     }
-    fn ckks_eval_mod_impl<R, C, P, F, H>(
+    fn ckks_eval_mod<R, C, P, F, H>(
         module: &::poulpy_hal::layouts::Module<Self>,
         res: &mut R,
         ct: &C,
@@ -772,7 +772,7 @@ fn reference_queries_follow_independent_core_copy_and_shift_workspaces() {
         k_digit: 16usize.into(),
     };
     let shift_bytes = query.glwe_shift_tmp_bytes(src.max_size());
-    assert!(query.ckks_rotate_tmp_bytes_reference(&src, &key) >= shift_bytes);
+    assert!(query.ckks_rotate_with_key_tmp_bytes_reference(&src, &key) >= shift_bytes);
     assert!(query.ckks_conjugate_tmp_bytes_reference(&src, &key) >= shift_bytes);
 }
 

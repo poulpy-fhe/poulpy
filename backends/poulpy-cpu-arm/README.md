@@ -100,7 +100,7 @@ To implement your own Poulpy backend (SIMD or accelerator):
 1. Define a backend struct and implement the `Backend` trait from `poulpy-hal`.
 2. Implement each required HAL OEP method and inherit or override its derived defaults.
 3. Implement the core `*Impl` traits, or use family macros to select reference algorithms and derived defaults.
-4. Optionally, do the same for `poulpy-ckks` behind a backend-owned `enable-ckks` feature using the `impl_ckks_*_reference!` macros or direct OEP trait implementations.
+4. Optionally, do the same for `poulpy-ckks` behind a backend-owned `enable-ckks` feature using its opt-in macros (`impl_<family>_reference_full!`) or direct OEP trait implementations.
 
 Use either a family macro or a handwritten implementation of the same core
 `*Impl` trait. Reference helpers remain callable for methods you forward, while

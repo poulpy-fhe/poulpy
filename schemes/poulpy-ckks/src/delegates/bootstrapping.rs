@@ -17,7 +17,7 @@ where
     Module<BE>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>,
 {
     fn ckks_mod_up_tmp_bytes(&self, res_size: usize) -> usize {
-        BE::ckks_mod_up_tmp_bytes_impl(self, res_size)
+        BE::ckks_mod_up_tmp_bytes(self, res_size)
     }
 
     fn ckks_bootstrap_tmp_bytes<C1, C2, F>(
@@ -31,7 +31,7 @@ where
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
     {
-        BE::ckks_bootstrap_tmp_bytes_impl(self, ct_out, ct_in, ctx, keys_layout)
+        BE::ckks_bootstrap_tmp_bytes(self, ct_out, ct_in, ctx, keys_layout)
     }
 
     fn ckks_functional_bootstrap_tmp_bytes<C1, C2, F>(
@@ -46,7 +46,7 @@ where
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
     {
-        BE::ckks_functional_bootstrap_tmp_bytes_impl(self, ct_out, ct_in, ctx, luts, keys_layout)
+        BE::ckks_functional_bootstrap_tmp_bytes(self, ct_out, ct_in, ctx, luts, keys_layout)
     }
 
     fn ckks_mod_up_into<Dst, Src>(
@@ -60,7 +60,7 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BE::ckks_mod_up_into_impl(self, dst, src, eval_mod, scratch)
+        BE::ckks_mod_up_into(self, dst, src, eval_mod, scratch)
     }
 
     fn ckks_bootstrap_mod_up<Dst, Src, K>(
@@ -76,7 +76,7 @@ where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: BootstrappingKeys<BE>,
     {
-        BE::ckks_bootstrap_mod_up_impl(self, dst, src, eval_mod, keys, scratch)
+        BE::ckks_bootstrap_mod_up(self, dst, src, eval_mod, keys, scratch)
     }
 
     fn ckks_bootstrap<F, K>(
@@ -92,7 +92,7 @@ where
         K: BootstrappingKeys<BE> + Sync,
         K::TensorKey: Sync,
     {
-        BE::ckks_bootstrap_impl(self, ct_out, ct_in, ctx, keys, scratch)
+        BE::ckks_bootstrap(self, ct_out, ct_in, ctx, keys, scratch)
     }
 
     fn ckks_functional_bootstrap<F, K>(
@@ -107,7 +107,7 @@ where
     where
         K: BootstrappingKeys<BE>,
     {
-        BE::ckks_functional_bootstrap_impl(self, ct_outs, ct_in, ctx, luts, keys, scratch)
+        BE::ckks_functional_bootstrap(self, ct_outs, ct_in, ctx, luts, keys, scratch)
     }
 }
 
@@ -129,7 +129,7 @@ where
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
     {
-        BE::ckks_bootstrap_ci_tmp_bytes_impl(self, ci, ct_out, ct_in, ctx, keys_layout)
+        BE::ckks_bootstrap_ci_tmp_bytes(self, ci, ct_out, ct_in, ctx, keys_layout)
     }
 
     fn ckks_bootstrap_ci_into<Dst, Src, F, K>(
@@ -147,6 +147,6 @@ where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: BootstrappingCIKeys<BE, BE::CI>,
     {
-        BE::ckks_bootstrap_ci_into_impl(self, ci, dst, src, ctx, keys, scratch, scratch_ci)
+        BE::ckks_bootstrap_ci_into(self, ci, dst, src, ctx, keys, scratch, scratch_ci)
     }
 }

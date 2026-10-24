@@ -145,7 +145,7 @@ where
     module.glwe_keyswitch(&mut a_sparse, input, &keys.dense_to_sparse().to_backend_ref(), scratch);
     a_sparse.set_meta_checked(input.meta())?;
 
-    let enc = BE::ckks_ship_coeff_encodings_impl::<F, _>(module, &a_sparse, &plan, b2k_t, complex, scratch)?;
+    let enc = BE::ckks_ship_coeff_encodings::<F, _>(module, &a_sparse, &plan, b2k_t, complex, scratch)?;
     ckks_ensure!(
         enc.pi.len() == plan.sparse_hamming_weight() && (!complex || enc.pt0_2.is_some()),
         "{OP}: malformed coefficient encodings"

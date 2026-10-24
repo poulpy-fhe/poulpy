@@ -35,8 +35,8 @@ where
                 let mut ct = fixture_ciphertext(module, &ct_layout, 99);
                 let mut e = Source::new([71; 32]);
                 let mut a = Source::new([72; 32]);
-                with_scratch::<B, _>(B::ckks_encrypt_sk_tmp_bytes_impl(module, &ct), |scratch| {
-                    B::ckks_encrypt_sk_impl(module, &mut ct, &pt, &prepared, &mut e, &mut a, scratch)
+                with_scratch::<B, _>(B::ckks_encrypt_sk_tmp_bytes(module, &ct), |scratch| {
+                    B::ckks_encrypt_sk(module, &mut ct, &pt, &prepared, &mut e, &mut a, scratch)
                 })
                 .unwrap();
                 assert_eq!(before, snapshot::<B, _>(&pt), "encryption changed plaintext");
@@ -46,8 +46,8 @@ where
                 for delta in [params.base2k - 2, params.base2k, params.base2k + 2] {
                     let out_layout = layout(params, 0, delta + 1, delta, sparse, slots);
                     let mut out = fixture_plaintext(module, &out_layout, 98);
-                    with_scratch::<B, _>(B::ckks_decrypt_tmp_bytes_impl(module, &out, &ct), |scratch| {
-                        B::ckks_decrypt_impl(module, &mut out, &ct, &prepared, scratch)
+                    with_scratch::<B, _>(B::ckks_decrypt_tmp_bytes(module, &out, &ct), |scratch| {
+                        B::ckks_decrypt(module, &mut out, &ct, &prepared, scratch)
                     })
                     .unwrap();
                     assert_eq!(out.meta(), out_layout.meta);
@@ -61,8 +61,8 @@ where
                 SetK::set_k(&mut out, (2 * params.base2k).into());
                 assert!(out.max_size() > ct.max_size());
                 let before_meta = out.meta();
-                with_scratch::<B, _>(B::ckks_decrypt_tmp_bytes_impl(module, &out, &ct), |scratch| {
-                    B::ckks_decrypt_impl(module, &mut out, &ct, &prepared, scratch)
+                with_scratch::<B, _>(B::ckks_decrypt_tmp_bytes(module, &out, &ct), |scratch| {
+                    B::ckks_decrypt(module, &mut out, &ct, &prepared, scratch)
                 })
                 .unwrap();
                 assert_eq!(out.meta(), before_meta);
@@ -73,8 +73,8 @@ where
                 let mut out = fixture_plaintext(module, &bad_layout, 98);
                 let unchanged = snapshot::<B, _>(&out);
                 assert!(
-                    with_scratch::<B, _>(B::ckks_decrypt_tmp_bytes_impl(module, &out, &ct), |scratch| {
-                        B::ckks_decrypt_impl(module, &mut out, &ct, &prepared, scratch)
+                    with_scratch::<B, _>(B::ckks_decrypt_tmp_bytes(module, &out, &ct), |scratch| {
+                        B::ckks_decrypt(module, &mut out, &ct, &prepared, scratch)
                     })
                     .is_err()
                 );

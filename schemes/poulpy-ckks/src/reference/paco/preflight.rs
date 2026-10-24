@@ -232,7 +232,7 @@ where
             .max(module.ckks_conjugate_tmp_bytes(&branch_layout, &key))
             .max(lt);
     }
-    required = required.max(BE::ckks_paco_coeff_encodings_tmp_bytes_impl::<F>(module, plan)?);
+    required = required.max(BE::ckks_paco_coeff_encodings_tmp_bytes::<F>(module, context)?);
     Ok(required)
 }
 

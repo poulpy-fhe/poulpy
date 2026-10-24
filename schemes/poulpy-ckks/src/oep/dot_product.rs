@@ -18,7 +18,7 @@ use crate::{
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures. See `poulpy-hal/docs/backend_safety_contract.md`.
 pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSAddImpl {
-    fn ckks_dot_product_ct_tmp_bytes_impl<R: CKKSCtBounds, A: CKKSCtBounds, B: CKKSCtBounds, T: GGLWEInfos>(
+    fn ckks_dot_product_ct_tmp_bytes<R: CKKSCtBounds, A: CKKSCtBounds, B: CKKSCtBounds, T: GGLWEInfos>(
         module: &Module<Self>,
         n: usize,
         res: &R,
@@ -27,8 +27,8 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         tsk: &T,
     ) -> usize;
 
-    /// Scratch of [`Self::ckks_dot_product_pt_vec_impl`]: a `res`-shaped term and the product or addition.
-    fn ckks_dot_product_pt_vec_tmp_bytes_impl<R: CKKSCtBounds, A: CKKSCtBounds, P: CKKSInfos>(
+    /// Scratch of [`Self::ckks_dot_product_pt_vec`]: a `res`-shaped term and the product or addition.
+    fn ckks_dot_product_pt_vec_tmp_bytes<R: CKKSCtBounds, A: CKKSCtBounds, P: CKKSInfos>(
         module: &Module<Self>,
         res: &R,
         a: &A,
@@ -37,8 +37,8 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         ckks_dot_product_pt_vec_tmp_bytes(module, res, a, b)
     }
 
-    /// Scratch of [`Self::ckks_dot_product_pt_const_impl`]: a `res`-shaped term and the product or addition.
-    fn ckks_dot_product_pt_const_tmp_bytes_impl<R: CKKSCtBounds, A: CKKSCtBounds, P: CKKSInfos>(
+    /// Scratch of [`Self::ckks_dot_product_pt_const`]: a `res`-shaped term and the product or addition.
+    fn ckks_dot_product_pt_const_tmp_bytes<R: CKKSCtBounds, A: CKKSCtBounds, P: CKKSInfos>(
         module: &Module<Self>,
         res: &R,
         a: &A,
@@ -47,7 +47,7 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         ckks_dot_product_pt_const_tmp_bytes(module, res, a, b)
     }
 
-    fn ckks_dot_product_ct_impl<Dst, A, B, H>(
+    fn ckks_dot_product_ct<Dst, A, B, H>(
         module: &Module<Self>,
         dst: &mut Dst,
         a: &[&A],
@@ -61,7 +61,7 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         B: GLWEToBackendRef<Self> + CKKSCtBounds,
         H: GetTensorKey<Self>;
 
-    fn ckks_dot_product_prepared_impl<Dst, H>(
+    fn ckks_dot_product_prepared<Dst, H>(
         module: &Module<Self>,
         dst: &mut Dst,
         a: &[&CKKSPreparedLeft<Self>],
@@ -74,7 +74,7 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         H: GetTensorKey<Self>;
 
     /// `ckks_mul_pt_vec_into` of the first pair, then each later pair's product added to it.
-    fn ckks_dot_product_pt_vec_impl<Dst: Data, D: Data, E>(
+    fn ckks_dot_product_pt_vec<Dst: Data, D: Data, E>(
         module: &Module<Self>,
         dst: &mut CKKSCiphertext<Dst, Self::ZnxWord, Self::Ring>,
         a: &[&CKKSCiphertext<D, Self::ZnxWord, Self::Ring>],
@@ -90,7 +90,7 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
     }
 
     /// `ckks_mul_pt_const_into` of the first pair, then each later pair's product added to it.
-    fn ckks_dot_product_pt_const_impl<Dst: Data, D: Data, E>(
+    fn ckks_dot_product_pt_const<Dst: Data, D: Data, E>(
         module: &Module<Self>,
         dst: &mut CKKSCiphertext<Dst, Self::ZnxWord, Self::Ring>,
         a: &[&CKKSCiphertext<D, Self::ZnxWord, Self::Ring>],
@@ -106,7 +106,7 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         ckks_dot_product_pt_const(module, dst, a, b, pt_coeffs, scratch)
     }
 
-    fn ckks_dot_product_prepared_pt_tmp_bytes_impl<R: CKKSCtBounds, A: GLWEInfos, P: GLWEInfos>(
+    fn ckks_dot_product_prepared_pt_tmp_bytes<R: CKKSCtBounds, A: GLWEInfos, P: GLWEInfos>(
         module: &Module<Self>,
         res: &R,
         a: &A,
@@ -115,7 +115,7 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
     where
         Module<Self>: GLWEMulPreparedPlainSum<Self>;
 
-    fn ckks_dot_product_prepared_pt_impl<Dst>(
+    fn ckks_dot_product_prepared_pt<Dst>(
         module: &Module<Self>,
         dst: &mut Dst,
         a: &[&CKKSPreparedLeft<Self>],
@@ -128,12 +128,12 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos;
 }
 
-/// Implements this contract with the callable reference algorithms.
+/// Selects the reference implementation of `CKKSDotProductImpl` for `$be`.
 #[macro_export]
-macro_rules! impl_ckks_dot_product_reference {
+macro_rules! impl_ckks_dot_product_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSDotProductImpl for $be {
-            fn ckks_dot_product_ct_tmp_bytes_impl<
+            fn ckks_dot_product_ct_tmp_bytes<
                 R: $crate::CKKSCtBounds,
                 A: $crate::CKKSCtBounds,
                 B: $crate::CKKSCtBounds,
@@ -149,7 +149,7 @@ macro_rules! impl_ckks_dot_product_reference {
                 $crate::reference::CKKSDotProductReference::ckks_dot_product_ct_tmp_bytes_reference(module, n, res, a, b, tsk)
             }
 
-            fn ckks_dot_product_ct_impl<Dst, A, B, H>(
+            fn ckks_dot_product_ct<Dst, A, B, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 a: &[&A],
@@ -166,7 +166,7 @@ macro_rules! impl_ckks_dot_product_reference {
                 $crate::reference::CKKSDotProductReference::ckks_dot_product_ct_reference(module, dst, a, b, tsk, scratch)
             }
 
-            fn ckks_dot_product_prepared_impl<Dst, H>(
+            fn ckks_dot_product_prepared<Dst, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 a: &[&$crate::layouts::CKKSPreparedLeft<Self>],
@@ -181,7 +181,7 @@ macro_rules! impl_ckks_dot_product_reference {
                 $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_reference(module, dst, a, b, tsk, scratch)
             }
 
-            fn ckks_dot_product_prepared_pt_tmp_bytes_impl<
+            fn ckks_dot_product_prepared_pt_tmp_bytes<
                 R: $crate::CKKSCtBounds,
                 A: ::poulpy_core::layouts::GLWEInfos,
                 P: ::poulpy_core::layouts::GLWEInfos,
@@ -197,7 +197,7 @@ macro_rules! impl_ckks_dot_product_reference {
                 $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_tmp_bytes_reference(module, res, a, b)
             }
 
-            fn ckks_dot_product_prepared_pt_impl<Dst>(
+            fn ckks_dot_product_prepared_pt<Dst>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 a: &[&$crate::layouts::CKKSPreparedLeft<Self>],
@@ -216,4 +216,4 @@ macro_rules! impl_ckks_dot_product_reference {
         }
     };
 }
-pub use crate::impl_ckks_dot_product_reference;
+pub use crate::impl_ckks_dot_product_reference_full;

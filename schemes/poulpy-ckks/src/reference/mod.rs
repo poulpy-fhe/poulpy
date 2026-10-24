@@ -2,7 +2,7 @@
 //!
 //! These bodies define the circuit for each reference operation. They are
 //! available independently of backend wiring: a backend opts into the matching
-//! `impl_ckks_*_reference!` macro or calls a reference body from a custom `*Impl`.
+//! `impl_<family>_reference_full!` macro or calls a reference body from a custom `*Impl`.
 //! Overrides must reproduce the circuit and pass the reusable parity tests
 //! against a caller-selected comparison backend.
 //!

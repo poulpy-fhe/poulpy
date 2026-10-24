@@ -21,8 +21,8 @@ macro_rules! ckks_carry_verb_oep {
             /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
             /// associated method signatures.
             pub unsafe trait $Impl: Backend {
-                fn [<ckks_ $verb _tmp_bytes_impl>](module: &Module<Self>, res_size: usize) -> usize;
-                fn [<ckks_ $verb _into_impl>]<Dst, A, B>(
+                fn [<ckks_ $verb _tmp_bytes>](module: &Module<Self>, res_size: usize) -> usize;
+                fn [<ckks_ $verb _into>]<Dst, A, B>(
                     module: &Module<Self>,
                     dst: &mut Dst,
                     a: &A,
@@ -33,7 +33,7 @@ macro_rules! ckks_carry_verb_oep {
                     Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
                     A: GLWEToBackendRef<Self> + CKKSCtBounds,
                     B: GLWEToBackendRef<Self> + CKKSCtBounds;
-                fn [<ckks_ $verb _assign_impl>]<Dst, A>(
+                fn [<ckks_ $verb _assign>]<Dst, A>(
                     module: &Module<Self>,
                     dst: &mut Dst,
                     a: &A,
@@ -43,10 +43,10 @@ macro_rules! ckks_carry_verb_oep {
                     Dst: GLWEToBackendMut<Self> + CKKSInfos + SetCKKSInfos,
                     A: GLWEToBackendRef<Self> + CKKSInfos;
                 /// Scratch bytes for the independently overridable unit shift.
-                fn [<ckks_ $verb _one_tmp_bytes_impl>](module: &Module<Self>, res_size: usize) -> usize {
-                    Self::[<ckks_ $verb _pt_const_tmp_bytes_impl>](module, res_size)
+                fn [<ckks_ $verb _one_tmp_bytes>](module: &Module<Self>, res_size: usize) -> usize {
+                    Self::[<ckks_ $verb _pt_const_tmp_bytes>](module, res_size)
                 }
-                fn [<ckks_ $verb _one_assign_impl>]<Dst>(
+                fn [<ckks_ $verb _one_assign>]<Dst>(
                     module: &Module<Self>,
                     dst: &mut Dst,
                     scratch: &mut ScratchArena<'_, Self>,
@@ -55,8 +55,8 @@ macro_rules! ckks_carry_verb_oep {
                     Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos {
                     crate::oep::derived::carry_verb::[<ckks_ $verb _one_assign_derived>](module, dst, scratch)
                 }
-                fn [<ckks_ $verb _pt_vec_tmp_bytes_impl>](module: &Module<Self>, res_size: usize) -> usize;
-                fn [<ckks_ $verb _pt_vec_into_impl>]<Dst, A, P>(
+                fn [<ckks_ $verb _pt_vec_tmp_bytes>](module: &Module<Self>, res_size: usize) -> usize;
+                fn [<ckks_ $verb _pt_vec_into>]<Dst, A, P>(
                     module: &Module<Self>,
                     dst: &mut Dst,
                     a: &A,
@@ -67,7 +67,7 @@ macro_rules! ckks_carry_verb_oep {
                     Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
                     A: GLWEToBackendRef<Self> + CKKSCtBounds,
                     P: GLWEToBackendRef<Self> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
-                fn [<ckks_ $verb _pt_vec_assign_impl>]<Dst, P>(
+                fn [<ckks_ $verb _pt_vec_assign>]<Dst, P>(
                     module: &Module<Self>,
                     dst: &mut Dst,
                     pt: &P,
@@ -76,8 +76,8 @@ macro_rules! ckks_carry_verb_oep {
                 where
                     Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
                     P: GLWEToBackendRef<Self> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
-                fn [<ckks_ $verb _pt_const_tmp_bytes_impl>](module: &Module<Self>, res_size: usize) -> usize;
-                fn [<ckks_ $verb _pt_const_into_impl>]<Dst, A, P>(
+                fn [<ckks_ $verb _pt_const_tmp_bytes>](module: &Module<Self>, res_size: usize) -> usize;
+                fn [<ckks_ $verb _pt_const_into>]<Dst, A, P>(
                     module: &Module<Self>,
                     dst: &mut Dst,
                     a: &A,
@@ -90,7 +90,7 @@ macro_rules! ckks_carry_verb_oep {
                     Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
                     A: GLWEToBackendRef<Self> + CKKSCtBounds,
                     P: GLWEToBackendRef<Self> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
-                fn [<ckks_ $verb _pt_const_assign_impl>]<Dst, P>(
+                fn [<ckks_ $verb _pt_const_assign>]<Dst, P>(
                     module: &Module<Self>,
                     dst: &mut Dst,
                     dst_coeff: usize,
@@ -103,16 +103,16 @@ macro_rules! ckks_carry_verb_oep {
                     P: GLWEToBackendRef<Self> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
             }
 
-            #[doc = concat!("Implements the CKKS ", $doc_verb, " contract with callable reference algorithms.")]
+            #[doc = concat!("Selects the reference implementation of the CKKS ", $doc_verb, " contract for `$be`.")]
             #[macro_export]
-            macro_rules! [<impl_ckks_ $verb _reference>] {
+            macro_rules! [<impl_ckks_ $verb _reference_full>] {
                 ($d be:ty) => {
                     unsafe impl $crate::oep::$Impl for $d be {
-                        fn [<ckks_ $verb _tmp_bytes_impl>](module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
+                        fn [<ckks_ $verb _tmp_bytes>](module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
                             $crate::reference::$verb::$Reference::[<ckks_ $verb _tmp_bytes_reference>](module, res_size)
                         }
 
-                        fn [<ckks_ $verb _into_impl>]<Dst, A, B>(
+                        fn [<ckks_ $verb _into>]<Dst, A, B>(
                             module: &::poulpy_hal::layouts::Module<Self>,
                             dst: &mut Dst,
                             a: &A,
@@ -128,7 +128,7 @@ macro_rules! ckks_carry_verb_oep {
                         }
 
 
-                        fn [<ckks_ $verb _assign_impl>]<Dst, A>(
+                        fn [<ckks_ $verb _assign>]<Dst, A>(
                             module: &::poulpy_hal::layouts::Module<Self>,
                             dst: &mut Dst,
                             a: &A,
@@ -143,11 +143,11 @@ macro_rules! ckks_carry_verb_oep {
 
 
 
-                        fn [<ckks_ $verb _pt_vec_tmp_bytes_impl>](module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
+                        fn [<ckks_ $verb _pt_vec_tmp_bytes>](module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
                             $crate::reference::$verb::$Reference::[<ckks_ $verb _pt_vec_tmp_bytes_reference>](module, res_size)
                         }
 
-                        fn [<ckks_ $verb _pt_vec_into_impl>]<Dst, A, P>(
+                        fn [<ckks_ $verb _pt_vec_into>]<Dst, A, P>(
                             module: &::poulpy_hal::layouts::Module<Self>,
                             dst: &mut Dst,
                             a: &A,
@@ -163,7 +163,7 @@ macro_rules! ckks_carry_verb_oep {
                         }
 
 
-                        fn [<ckks_ $verb _pt_vec_assign_impl>]<Dst, P>(
+                        fn [<ckks_ $verb _pt_vec_assign>]<Dst, P>(
                             module: &::poulpy_hal::layouts::Module<Self>,
                             dst: &mut Dst,
                             pt: &P,
@@ -177,11 +177,11 @@ macro_rules! ckks_carry_verb_oep {
                         }
 
 
-                        fn [<ckks_ $verb _pt_const_tmp_bytes_impl>](module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
+                        fn [<ckks_ $verb _pt_const_tmp_bytes>](module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
                             $crate::reference::$verb::$Reference::[<ckks_ $verb _pt_const_tmp_bytes_reference>](module, res_size)
                         }
 
-                        fn [<ckks_ $verb _pt_const_into_impl>]<Dst, A, P>(
+                        fn [<ckks_ $verb _pt_const_into>]<Dst, A, P>(
                             module: &::poulpy_hal::layouts::Module<Self>,
                             dst: &mut Dst,
                             a: &A,
@@ -201,7 +201,7 @@ macro_rules! ckks_carry_verb_oep {
                         }
 
 
-                        fn [<ckks_ $verb _pt_const_assign_impl>]<Dst, P>(
+                        fn [<ckks_ $verb _pt_const_assign>]<Dst, P>(
                             module: &::poulpy_hal::layouts::Module<Self>,
                             dst: &mut Dst,
                             dst_coeff: usize,
