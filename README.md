@@ -19,18 +19,34 @@
 
 ## Library Crates
 
+The crates are grouped by role into five folders. A crate depends only on crates of its own folder or of the folders listed before it, except that the backends benchmark through `poulpy-bench`.
+
+### [`base/`](base): the layers every scheme is built on
+
 - **`poulpy-hal`**: a crate providing layouts and a trait-based hardware acceleration layer with open extension points, matching the API and types of spqlios-arithmetic. This crate does not provide concrete implementations other than the layouts (e.g. `VecZnx`, `VmpPmat`).
 - **`poulpy-core`**: a backend-agnostic crate implementing scheme-agnostic Module-LWE arithmetic for LWE, GLWE, GGLWE, and GGSW ciphertexts using **`poulpy-hal`**. It can be instantiated with any backend crate (e.g. `poulpy-cpu-portable`, `poulpy-cpu-avx`).
+
+### [`schemes/`](schemes): FHE schemes on top of core
+
 - **`poulpy-ckks`**: a backend-agnostic leveled CKKS implementation built on **`poulpy-core`** and **`poulpy-hal`**, including polynomial evaluation and bootstrappings.
 - **`poulpy-bin-fhe`**: the binary/gate-level FHE crate built on **`poulpy-core`** and **`poulpy-hal`**. It replaces the former `poulpy-schemes` crate and exposes backend-owned APIs with explicit operation overrides and reusable reference circuits.
 - **`poulpy-mhe`**: a backend-agnostic multiparty homomorphic encryption crate built on **`poulpy-core`** and **`poulpy-hal`**: collective public, switching, automorphism, tensor and GGSW keys, collective key switching, and conversions between encryptions and additive shares.
+
+### [`libs/`](libs): libraries built on a scheme
+
 - **`poulpy-blas`**: backend-agnostic encrypted matrix arithmetic built on **`poulpy-ckks`**: grids of CKKS block ciphertexts, and the encoded maps and public matrices its operations read.
+
+### [`backends/`](backends): concrete implementations of the layers
+
 - **`poulpy-cpu-portable`**: the portable CPU implementation of **`poulpy-hal`** in plain scalar Rust, which runs on any target and whose scalar kernels back the SIMD backends.
 - **`poulpy-cpu-oracle`**: an unpublished, independent scalar backend that the other backends are compared against in the cross-backend and parity suites.
 - **`poulpy-cpu-rayon`**: the shared Rayon task executor and parallel kernels used by the optional multithreaded CPU backend variants.
 - **`poulpy-cpu-avx`**: an AVX2/FMA accelerated CPU implementation of **`poulpy-hal`**, exposing `FFT64Avx`, `NTT4x30Avx`, and their optional Rayon-scheduled variants (`enable-rayon`).
 - **`poulpy-cpu-avx512`**: an AVX-512 accelerated CPU implementation of **`poulpy-hal`**, exposing `FFT64Avx512`, `NTT4x30Avx512`, and `NTT3x42Ifma` (`enable-ifma`), plus `FFT64Avx512Rayon` and `NTT4x30Avx512Rayon` (`enable-rayon`) and `NTT3x42IfmaRayon` (`enable-rayon` with `enable-ifma`).
 - **`poulpy-cpu-arm`**: a NEON/ASIMD accelerated CPU implementation of **`poulpy-hal`** for AArch64, exposing `FFT64Neon`, `NTT4x30Neon`, and their optional Rayon-scheduled variants (`enable-rayon`).
+
+### [`tools/`](tools): workspace tooling
+
 - **`poulpy-bench`**: the consolidated Criterion benchmark suite for the workspace. It is an internal workspace crate and is not published to crates.io.
 
 ## Architecture

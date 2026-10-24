@@ -6,17 +6,27 @@ It describes what each crate contains and where to look, how the layers are orga
 ## Library organization
 
 Poulpy is a stack of crates with a strict dependency direction.
+The repository groups them by role into five folders, and a crate depends only on crates of its own folder or of the folders listed before it, except that the backends benchmark through `poulpy-bench`.
 
 ```
-poulpy-hal                 hardware abstraction: layouts and operation traits
-└── poulpy-core            scheme-agnostic (Module-)LWE arithmetic (LWE, GLWE, GGSW)
-    ├── poulpy-ckks        leveled CKKS evaluator
-    └── poulpy-bin-fhe     binary and gate-level FHE
-
-poulpy-cpu-portable        portable scalar backend
-poulpy-cpu-oracle          independent scalar oracle for correctness tests
-poulpy-cpu-avx             AVX2 / FMA backend
-poulpy-cpu-avx512          AVX-512 / IFMA backend
+base/
+  poulpy-hal               hardware abstraction: layouts and operation traits
+  poulpy-core              scheme-agnostic (Module-)LWE arithmetic (LWE, GLWE, GGSW)
+schemes/
+  poulpy-ckks              leveled CKKS evaluator
+  poulpy-bin-fhe           binary and gate-level FHE
+  poulpy-mhe               multiparty homomorphic encryption
+libs/
+  poulpy-blas              encrypted matrix arithmetic on CKKS
+backends/
+  poulpy-cpu-portable      portable scalar backend
+  poulpy-cpu-oracle        independent scalar oracle for correctness tests
+  poulpy-cpu-rayon         shared Rayon executor and parallel CPU kernels
+  poulpy-cpu-avx           AVX2 / FMA backend
+  poulpy-cpu-avx512        AVX-512 / IFMA backend
+  poulpy-cpu-arm           NEON / ASIMD backend (AArch64)
+tools/
+  poulpy-bench             Criterion benchmark suite
 ```
 
 ### poulpy-hal
