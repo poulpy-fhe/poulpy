@@ -230,8 +230,8 @@ pub fn normalize_input_limb_bound_with_offset(
 ///
 /// Panics unless the row lies within the precision, `k_offset + (row + 1) * k_digit <= k`.
 #[allow(clippy::too_many_arguments)]
-pub fn gadget_row_plaintext<BE, M>(
-    module: &M,
+pub fn gadget_row_plaintext<BE>(
+    module: &poulpy_hal::layouts::Module<BE>,
     res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, BE>,
     res_col: usize,
     base2k: usize,
@@ -243,11 +243,10 @@ pub fn gadget_row_plaintext<BE, M>(
     pt_col: usize,
     scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
 ) where
-    BE: poulpy_hal::layouts::Backend,
-    M: poulpy_hal::api::VecZnxNormalize<BE>,
+    BE: poulpy_hal::oep::HalVecZnxImpl,
 {
     let position: usize = k_offset + (row + 1) * k_digit;
     assert!(position <= k, "gadget row {row} at bit {position} is below the precision {k}");
     let src = poulpy_hal::layouts::scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(pt);
-    module.vec_znx_normalize(res, base2k, k, 1 - position as i64, res_col, &src, 1, pt_col, scratch);
+    BE::vec_znx_normalize(module, res, base2k, k, 1 - position as i64, res_col, &src, 1, pt_col, scratch);
 }

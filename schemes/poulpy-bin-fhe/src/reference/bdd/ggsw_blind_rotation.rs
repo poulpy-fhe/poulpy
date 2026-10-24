@@ -35,8 +35,8 @@ pub fn scalar_to_ggsw_blind_rotation_reference<T: UnsignedInteger, BE, R, A, K>(
     R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
     A: ScalarZnxToBackendRef<BE>,
     K: GetGGSWBit<BE>,
-    BE: Backend<ZnxWord = i64>,
-    Module<BE>: GLWEBytesOf<BE> + GLWEBlindRotation<BE> + GLWEZero<BE> + VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
+    BE: Backend<ZnxWord = i64> + poulpy_hal::oep::HalVecZnxImpl,
+    Module<BE>: GLWEBytesOf<BE> + GLWEBlindRotation<BE> + GLWEZero<BE> + VecZnxNormalizeTmpBytes,
 {
     let base2k: usize = res.base2k().into();
     let k_digit: usize = res.k_digit().as_usize();

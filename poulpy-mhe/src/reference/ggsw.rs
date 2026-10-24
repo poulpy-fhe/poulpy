@@ -17,6 +17,7 @@ use poulpy_hal::{
         Backend, Module, ScalarZnxToBackendRef, ScratchArena, scalar_znx_as_vec_znx_backend_mut_from_mut,
         vec_znx_backend_ref_from_mut,
     },
+    oep::HalVecZnxImpl,
     source::Source,
 };
 
@@ -58,7 +59,7 @@ pub trait GGSWMHEProtocolReference<BE: Backend> {
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 }
 
-impl<BE: Backend> GGSWMHEProtocolReference<BE> for Module<BE>
+impl<BE: Backend + HalVecZnxImpl> GGSWMHEProtocolReference<BE> for Module<BE>
 where
     Self: GLWESecretPreparedFactory<BE>
         + GLWEEncryptSk<BE>

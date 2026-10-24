@@ -2,12 +2,13 @@ use poulpy_hal::{
     api::{
         ScratchArenaTakeBasic, SvpApplyDftToDftAssign, VecZnxBigAddAssign, VecZnxBigBytesOf, VecZnxBigFromSmall,
         VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply,
-        VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes, VecZnxSubAssign,
+        VecZnxIdftApplyTmpBytes, VecZnxNormalizeTmpBytes, VecZnxSubAssign,
     },
     layouts::{
         Backend, HostBackend, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendRef, ScratchArena, Stats,
         VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
     },
+    oep::HalVecZnxImpl,
 };
 
 use crate::ScratchArenaTakeCore;
@@ -45,10 +46,9 @@ impl<D: HostDataRef> GGSW<D, i64> {
     }
 }
 
-impl<BE: Backend + HostBackend> GGSWNoise<BE> for Module<BE>
+impl<BE: Backend + HostBackend + HalVecZnxImpl> GGSWNoise<BE> for Module<BE>
 where
-    Module<BE>: VecZnxNormalize<BE>
-        + VecZnxNormalizeTmpBytes
+    Module<BE>: VecZnxNormalizeTmpBytes
         + VecZnxDftApply<BE>
         + SvpApplyDftToDftAssign<BE>
         + VecZnxIdftApply<BE>

@@ -351,7 +351,7 @@ mod packing {
     };
 
     use crate::{
-        GLWEAdd, GLWEAutomorphism, GLWECopy, GLWENormalize, GLWERotate, GLWEShift, GLWESub, GLWETrace, ScratchArenaTakeCore,
+        GLWEAdd, GLWEAutomorphism, GLWENormalize, GLWERotate, GLWEShift, GLWESub, GLWETrace, ScratchArenaTakeCore,
         layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GetAutomorphismKey, LWEInfos},
     };
 
@@ -474,7 +474,6 @@ mod packing {
             + GLWEShift<BE>
             + GLWEAdd<BE>
             + GLWENormalize<BE>
-            + GLWECopy<BE>
             + GLWETrace<BE>,
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendMut<BE> + GLWEInfos,
