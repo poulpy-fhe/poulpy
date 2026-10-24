@@ -1,7 +1,7 @@
 use crate::bdd_arithmetic::*;
 use poulpy_core::{layouts::*, *};
 use poulpy_hal::layouts::*;
-/// Workspace for copying the actual source and then invoking the selected in-place rotation.
+/// Workspace for the out-of-place rotation and, with the destination as the source, the in-place one.
 pub fn glwe_blind_rotation_tmp_bytes_reference<BE: Backend, R, A, K>(
     module: &Module<BE>,
     res_infos: &R,
@@ -12,15 +12,15 @@ where
     R: GLWEInfos,
     A: GLWEInfos,
     K: GGSWInfos,
-    Module<BE>: GLWECopy<BE> + GLWEBlindRotation<BE>,
+    Module<BE>: GLWEBytesOf<BE> + GLWECopy<BE> + Cmux<BE>,
 {
     module
         .glwe_copy_tmp_bytes(res_infos, a_infos)
-        .max(module.glwe_blind_rotation_assign_tmp_bytes(res_infos, k_infos))
+        .max(glwe_blind_rotation_assign_scratch(module, res_infos, k_infos))
 }
 
 /// Workspace for the canonical in-place rotation, including the final copy.
-pub fn glwe_blind_rotation_assign_tmp_bytes_reference<BE: Backend, R, K>(module: &Module<BE>, res_infos: &R, k_infos: &K) -> usize
+fn glwe_blind_rotation_assign_scratch<BE: Backend, R, K>(module: &Module<BE>, res_infos: &R, k_infos: &K) -> usize
 where
     R: GLWEInfos,
     K: GGSWInfos,

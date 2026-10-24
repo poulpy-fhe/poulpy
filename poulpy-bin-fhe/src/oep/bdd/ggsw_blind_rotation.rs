@@ -18,13 +18,6 @@ pub unsafe trait GGSWBlindRotationImpl<T: UnsignedInteger>: Backend + crate::oep
             module, res_infos, a_infos, k_infos,
         )
     }
-    fn ggsw_blind_rotation_assign_tmp_bytes<R, K>(module: &Module<Self>, res_infos: &R, k_infos: &K) -> usize
-    where
-        R: GLWEInfos,
-        K: GGSWInfos,
-    {
-        crate::oep::derived::bdd::ggsw_blind_rotation_assign_tmp_bytes_derived::<Self, _, _>(module, res_infos, k_infos)
-    }
     #[allow(clippy::too_many_arguments)]
     fn ggsw_blind_rotation_assign<R, K>(
         module: &Module<Self>,

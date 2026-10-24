@@ -290,15 +290,6 @@ macro_rules! impl_glwe_blind_rotation_reference_full {
                         module, res_infos, a_infos, k_infos,
                     )
                 }
-                fn glwe_blind_rotation_assign_tmp_bytes<R, K>(module: &Module<$be>, res_infos: &R, k_infos: &K) -> usize
-                where
-                    R: GLWEInfos,
-                    K: GGSWInfos,
-                {
-                    $crate::reference::bdd::glwe_blind_rotation_assign_tmp_bytes_reference::<$be, _, _>(
-                        module, res_infos, k_infos,
-                    )
-                }
                 #[allow(clippy::too_many_arguments)]
                 fn glwe_blind_rotation_assign<R, K>(
                     module: &Module<$be>,

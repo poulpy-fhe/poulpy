@@ -290,6 +290,7 @@
 - **Breaking:** `gadget::gadget_row_plaintext` takes `module: &Module<BE>` with `BE: HalVecZnxImpl` and runs the selected `vec_znx_normalize`, in place of any `module: &M` with `M: VecZnxNormalize<BE>`, so the derived public-key GGSW encryption writes its rows through it on a backend of any coefficient word.
   The reference GGLWE and GGSW encryptions, plain and compressed, and the `GGLWENoise` and `GGSWNoise` implementations bound `BE: HalVecZnxImpl` in place of `Module<BE>: VecZnxNormalize<BE>`; callers pass a `Module<BE>` and bound the backend instead of the module.
 - OEP methods take their API method's generics and parameter names: `GLWEExternalProductImpl::glwe_external_product_tmp_bytes` takes `<R, A, B>` and `b_infos`, `glwe_external_product` `lhs` and `rhs`, `glwe_external_product_assign` `a`, `GLWEKeyswitchImpl::glwe_keyswitch_tmp_bytes` `<R, A, B>` and `PolynomialEvaluationImpl::glwe_eval_baby_step` `<Ops, V, P, A, G>`, and `GLWEExternalProductInternal::glwe_external_product_dft` spells its output `VecZnxDftBackendMut`; types and order are unchanged, so implementations and callers compile as they are.
+- **Breaking:** `glwe_trace_assign_tmp_bytes` (`GLWETrace`, `GLWETraceImpl`) is removed; size `glwe_trace_assign` with `glwe_trace_tmp_bytes(res, res, key)`, which covers both forms. Backends drop their override of the removed method and fold its requirement into `glwe_trace_tmp_bytes`.
 
 ### `poulpy-ckks`
 
@@ -496,6 +497,7 @@
 - **Breaking, behaviour:** the FFT64 serial block blind rotation (block size above one, extension factor one) adds each product `v` as one term, `acc + (X^{a_i}·v - v)`, where it computed `(acc + X^{a_i}·v) - v`, so its transform-domain rounding differs from 0.9.0.
   Integer outputs change only where that rounding crosses a coefficient's rounding boundary: at the parity test parameters, the 0.9.0 Rayon twins already ran the new order and matched their serial bases bit for bit. No test fixture changes.
   The NTT backends compute exactly and return the same bytes, and the extended blind rotation (extension factor above one) keeps the old order.
+- **Breaking:** `glwe_blind_rotation_assign_tmp_bytes` and `ggsw_blind_rotation_assign_tmp_bytes` (`GLWEBlindRotation`, `GGSWBlindRotation`, their OEP methods and the reference `glwe_blind_rotation_assign_tmp_bytes_reference`) are removed; size the in-place forms with `glwe_blind_rotation_tmp_bytes(res, res, k)` and `ggsw_to_ggsw_blind_rotation_tmp_bytes(res, res, k)`, which cover both forms. Backends drop their override of the removed methods.
 
 ### `poulpy-mhe`
 

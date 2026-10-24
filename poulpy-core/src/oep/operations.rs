@@ -660,14 +660,6 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
         crate::oep::derived::structure::glwe_trace_tmp_bytes_derived::<Self, _, _, _, _>(module, res_infos, a_infos, key_infos)
     }
 
-    fn glwe_trace_assign_tmp_bytes<A, K>(module: &Module<Self>, a_infos: &A, key_infos: &K) -> usize
-    where
-        A: GLWEInfos,
-        K: GGLWEInfos,
-    {
-        crate::oep::derived::structure::glwe_trace_assign_tmp_bytes_derived::<Self, _, _, _>(module, a_infos, key_infos)
-    }
-
     #[expect(
         clippy::too_many_arguments,
         reason = "the trace's operands, levels, direction and normalization, keys and scratch"

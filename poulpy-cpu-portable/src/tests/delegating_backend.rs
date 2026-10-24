@@ -209,28 +209,17 @@ unsafe impl GGSWRotateImpl for DelegatingFFT64Portable {
     }
 }
 
-// The out-of-place trace inherits its derived body and scratch query. Its
-// selected assign operation deliberately needs more workspace than FFT64Portable.
+// The scratch query is the derived one plus a marker region that the overridden
+// assign operation consumes.
 unsafe impl GLWETraceImpl for DelegatingFFT64Portable {
-    fn glwe_trace_assign_tmp_bytes<A, K>(module: &Module<Self>, a_infos: &A, key_infos: &K) -> usize
+    fn glwe_trace_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
+        R: GLWEInfos,
         A: GLWEInfos,
         K: GGLWEInfos,
     {
-        let layout = GLWELayout {
-            n: a_infos.n(),
-            base2k: key_infos.base2k(),
-            k: a_infos.k(),
-            rank: a_infos.rank(),
-        };
-        let mut bytes = module
-            .glwe_shift_tmp_bytes(layout.size())
-            .max(module.glwe_automorphism_tmp_bytes(&layout, &layout, key_infos));
-        if a_infos.base2k() != key_infos.base2k() {
-            // This test override allocates conversion storage on the heap.
-            bytes = bytes.max(module.glwe_normalize_tmp_bytes());
-        }
-        Self::scratch_aligned(bytes) + TRACE_EXTRA_SCRATCH
+        let reference = Module::<FFT64Portable>::new(module.n() as u64);
+        reference.glwe_trace_tmp_bytes(res_infos, a_infos, key_infos) + TRACE_EXTRA_SCRATCH
     }
 
     fn glwe_trace_assign<R, H>(
@@ -490,10 +479,6 @@ fn derived_trace_uses_selected_assign_and_its_larger_scratch_query() {
     let mut expected = reference.glwe_alloc_from_infos(&input);
     let actual_bytes = module.glwe_trace_tmp_bytes(&actual, &input, &key);
     let expected_bytes = reference.glwe_trace_tmp_bytes(&expected, &input, &key);
-    assert_eq!(
-        module.glwe_trace_assign_tmp_bytes(&input, &key),
-        reference.glwe_trace_assign_tmp_bytes(&input, &key) + TRACE_EXTRA_SCRATCH,
-    );
     assert_eq!(actual_bytes, expected_bytes + TRACE_EXTRA_SCRATCH);
     let before = TRACE_ASSIGN_CALLS.get();
     module.glwe_trace(

@@ -16,16 +16,6 @@ where
 {
     module.glwe_blind_rotation_tmp_bytes(res_infos, a_infos, k_infos)
 }
-pub(crate) fn ggsw_blind_rotation_assign_tmp_bytes_derived<BE: Backend, R: GLWEInfos, K: GGSWInfos>(
-    module: &Module<BE>,
-    res_infos: &R,
-    k_infos: &K,
-) -> usize
-where
-    Module<BE>: GLWEBlindRotation<BE>,
-{
-    module.glwe_blind_rotation_assign_tmp_bytes(res_infos, k_infos)
-}
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn ggsw_blind_rotation_assign_derived<BE, R, K>(
     module: &Module<BE>,

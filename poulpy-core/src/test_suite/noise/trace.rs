@@ -265,7 +265,7 @@ where
             .max(module.glwe_decrypt_tmp_bytes(&glwe_infos))
             .max(module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&key_infos)),
     );
-    let trace_bytes = module.glwe_trace_assign_tmp_bytes(&glwe_infos, &key_infos);
+    let trace_bytes = module.glwe_trace_tmp_bytes(&glwe_infos, &glwe_infos, &key_infos);
 
     let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&glwe_infos);
     module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);

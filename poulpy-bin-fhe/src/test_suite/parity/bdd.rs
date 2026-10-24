@@ -156,7 +156,7 @@ where
     for sign in [false, true] {
         for mask in [0, 1, 3] {
             let mut out = fixture_glwe(module, &layout, 7);
-            with_scratch::<B, _>(module.glwe_blind_rotation_assign_tmp_bytes(&out, &key), |s| {
+            with_scratch::<B, _>(module.glwe_blind_rotation_tmp_bytes(&out, &out, &key), |s| {
                 module.glwe_blind_rotation_assign(&mut out, &selectors, sign, 1, mask, 1, s)
             });
             outputs.push(snapshot_glwe::<B, _>(&out));
@@ -196,7 +196,7 @@ where
         module.glwe_blind_rotation(&mut out, &input, &selectors, false, 1, 3, 1, s)
     });
     outputs.push(snapshot_glwe::<B, _>(&out));
-    let bytes = module.glwe_blind_rotation_assign_tmp_bytes(&out, &key);
+    let bytes = module.glwe_blind_rotation_tmp_bytes(&out, &out, &key);
     with_scratch::<B, _>(bytes, |s| {
         module.glwe_blind_rotation_assign(&mut out, &selectors, true, 1, 3, 1, s)
     });
@@ -501,7 +501,7 @@ where
         let bytes = if variant == 2 {
             module.scalar_to_ggsw_blind_rotation_tmp_bytes(&key, &key)
         } else if variant == 1 {
-            module.ggsw_blind_rotation_assign_tmp_bytes(&out, &key)
+            module.ggsw_to_ggsw_blind_rotation_tmp_bytes(&out, &out, &key)
         } else {
             module.ggsw_to_ggsw_blind_rotation_tmp_bytes(&out, &input, &key)
         };
