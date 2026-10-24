@@ -18,9 +18,9 @@ impl<BE: Backend + CKKSConjugateImpl> CKKSConjugateOps<BE> for Module<BE> {
 
     fn ckks_conjugate_rotate_into<Dst, Src, H>(
         &self,
+        k: i64,
         dst: &mut Dst,
         src: &Src,
-        k: i64,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -29,7 +29,7 @@ impl<BE: Backend + CKKSConjugateImpl> CKKSConjugateOps<BE> for Module<BE> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_conjugate_rotate_into(self, dst, src, k, keys, scratch)
+        BE::ckks_conjugate_rotate_into(self, k, dst, src, keys, scratch)
     }
 
     fn ckks_conjugate_assign<Dst, H>(&self, dst: &mut Dst, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

@@ -16,9 +16,9 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 pub unsafe trait CKKSConjugateImpl: Backend<Ring = Standard> {
     fn ckks_conjugate_rotate_into<Dst, Src, H>(
         module: &Module<Self>,
+        k: i64,
         dst: &mut Dst,
         src: &Src,
-        k: i64,
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
@@ -27,7 +27,7 @@ pub unsafe trait CKKSConjugateImpl: Backend<Ring = Standard> {
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
         H: GetAutomorphismKey<Self>,
     {
-        super::derived::conjugate::ckks_conjugate_rotate_into_derived(module, dst, src, k, keys, scratch)
+        super::derived::conjugate::ckks_conjugate_rotate_into_derived(module, k, dst, src, keys, scratch)
     }
 
     fn ckks_conjugate_assign<Dst, H>(

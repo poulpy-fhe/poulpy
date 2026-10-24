@@ -112,8 +112,8 @@ where
     // wider digit, which can need more scratch than the wide key.
     for atk in &keys_layout.rotation_key_layouts() {
         nested = nested
-            .max(module.ckks_all_ops_with_atk_tmp_bytes(&boot_layout, tsk, atk, &coeffs_layout))
-            .max(module.ckks_all_ops_with_atk_tmp_bytes(&in_layout, tsk, atk, &coeffs_layout))
+            .max(module.ckks_all_ops_with_atk_tmp_bytes(&boot_layout, &coeffs_layout, tsk, atk))
+            .max(module.ckks_all_ops_with_atk_tmp_bytes(&in_layout, &coeffs_layout, tsk, atk))
             .max(module.ckks_dft_tmp_bytes(&boot_layout, &boot_layout, ctx.coeffs_to_slots(), atk))
             .max(module.ckks_dft_tmp_bytes(s2c_dst, s2c_src, ctx.slots_to_coeffs(), atk));
         if let Some(bypass) = ctx.coeffs_to_slots_bypass() {
@@ -482,8 +482,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
         for atk in &keys_layout.rotation_key_layouts() {
             for lut in luts {
                 nested = nested
-                    .max(self.ckks_all_ops_with_atk_tmp_bytes(&boot_layout, tsk, atk, lut.coeffs()))
-                    .max(self.ckks_all_ops_with_atk_tmp_bytes(&in_layout, tsk, atk, lut.coeffs()));
+                    .max(self.ckks_all_ops_with_atk_tmp_bytes(&boot_layout, lut.coeffs(), tsk, atk))
+                    .max(self.ckks_all_ops_with_atk_tmp_bytes(&in_layout, lut.coeffs(), tsk, atk));
             }
         }
         base.max(carved + nested)
@@ -677,7 +677,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
                         keys.tensor_key(),
                         &mut scratch_local,
                     )?;
-                    self.ckks_mul_pow2_assign(&mut r0, log2_k, &mut scratch_local)?;
+                    self.ckks_mul_pow2_assign(log2_k, &mut r0, &mut scratch_local)?;
                     self.ckks_sub_assign(&mut r0_hp, &r0, &mut scratch_local)?;
                     self.ckks_add_assign(&mut r0_hp, &ct, &mut scratch_local)?;
 
@@ -689,7 +689,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
                         keys.tensor_key(),
                         &mut scratch_local,
                     )?;
-                    self.ckks_mul_pow2_assign(&mut i0, log2_k, &mut scratch_local)?;
+                    self.ckks_mul_pow2_assign(log2_k, &mut i0, &mut scratch_local)?;
                     self.ckks_sub_assign(&mut i0_hp, &i0, &mut scratch_local)?;
                     self.ckks_add_assign(&mut i0_hp, &r0, &mut scratch_local)?;
 
@@ -1004,7 +1004,7 @@ where
         let log_delta: usize = src.log_delta();
         let scale_up_in = plan.input_scale_up(k, log_delta)?;
         if scale_up_in != 0 {
-            module.ckks_mul_pow2_assign(src, scale_up_in, scratch)?;
+            module.ckks_mul_pow2_assign(scale_up_in, src, scratch)?;
             // Not `set_log_delta`: it preserves `log_budget` and grows `k`, which
             // cancels the shift. The lift spends budget at a fixed modulus.
             let mut meta = src.meta();
@@ -1238,8 +1238,8 @@ where
                     ctx.eval_mod_plan().f_mod_interval
                 );
                 let log2_k = ctx.eval_mod_plan().f_mod_interval.trailing_zeros() as usize;
-                module.ckks_mul_pow2_assign(&mut r0, log2_k, &mut scratch_local)?;
-                module.ckks_mul_pow2_assign(&mut i0, log2_k, &mut scratch_local)?;
+                module.ckks_mul_pow2_assign(log2_k, &mut r0, &mut scratch_local)?;
+                module.ckks_mul_pow2_assign(log2_k, &mut i0, &mut scratch_local)?;
                 module.ckks_sub_assign(&mut r0_hp, &r0, &mut scratch_local)?;
                 module.ckks_sub_assign(&mut i0_hp, &i0, &mut scratch_local)?;
                 module.ckks_add_assign(&mut r0_hp, ct_out, &mut scratch_local)?;
@@ -1713,7 +1713,7 @@ where
             );
             let mut traced = traced.rebind::<BE>();
             let log2_k = ctx.eval_mod_plan().f_mod_interval.trailing_zeros() as usize;
-            module.ckks_mul_pow2_assign(&mut traced, log2_k, &mut scratch)?;
+            module.ckks_mul_pow2_assign(log2_k, &mut traced, &mut scratch)?;
             module.ckks_sub_assign(&mut reduced, &traced, &mut scratch)?;
         }
 
@@ -1734,7 +1734,7 @@ where
         // EvalRound+: `2·z_hp`, the bypass on the packed halves, which the split
         // CoeffsToSlots of the standard ring doubles as `2·Re` and `2·Im`.
         if let Some(z_hp) = z_hp.as_mut() {
-            module.ckks_mul_pow2_assign(z_hp, 1, &mut scratch)?;
+            module.ckks_mul_pow2_assign(1, z_hp, &mut scratch)?;
             module.ckks_add_assign(z_hp, ct_out, &mut scratch)?;
             module.ckks_copy(ct_out, z_hp, &mut scratch)?;
         }

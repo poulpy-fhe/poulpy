@@ -45,7 +45,7 @@ where
     let pt_prec = ckks_spec(params.n, params.base2k, 8, 10);
     let tsk_layout = super::CKKSTestParams { k: res_k, ..*params }.tsk_layout();
     let scratch_size = module
-        .ckks_all_ops_tmp_bytes(&res, &tsk_layout, &pt_prec)
+        .ckks_all_ops_tmp_bytes(&res, &pt_prec, &tsk_layout)
         .max(module.ckks_eval_mod_tmp_bytes(&res, &ct, eval_mod, &tsk_layout));
     ScratchOwned::<BE>::alloc(scratch_size)
 }

@@ -51,9 +51,9 @@ pub unsafe trait CKKSRotateImpl: Backend + super::CKKSCopyImpl {
     /// shift by a multiple of the slot count is a copy and needs no key.
     fn ckks_rotate_into<Dst, Src, H>(
         module: &Module<Self>,
+        k: i64,
         dst: &mut Dst,
         src: &Src,
-        k: i64,
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
@@ -62,14 +62,14 @@ pub unsafe trait CKKSRotateImpl: Backend + super::CKKSCopyImpl {
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
     {
-        ckks_rotate_into_derived(module, dst, src, k, keys, scratch)
+        ckks_rotate_into_derived(module, k, dst, src, keys, scratch)
     }
 
     /// In-place [`Self::ckks_rotate_into`]; the identity leaves `dst` unchanged.
     fn ckks_rotate_assign<Dst, H>(
         module: &Module<Self>,
-        dst: &mut Dst,
         k: i64,
+        dst: &mut Dst,
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
@@ -77,7 +77,7 @@ pub unsafe trait CKKSRotateImpl: Backend + super::CKKSCopyImpl {
         H: GetAutomorphismKey<Self>,
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
     {
-        ckks_rotate_assign_derived(module, dst, k, keys, scratch)
+        ckks_rotate_assign_derived(module, k, dst, keys, scratch)
     }
 }
 

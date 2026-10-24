@@ -35,8 +35,8 @@ pub unsafe trait CKKSApproximationImpl:
         module: &Module<Self>,
         res: &R,
         input: &I,
-        tsk: &T,
         approximation: &PolynomialApproximation<P>,
+        tsk: &T,
     ) -> usize
     where
         Module<Self>: CKKSAllOpsTmpBytes<Self>,
@@ -45,7 +45,7 @@ pub unsafe trait CKKSApproximationImpl:
         T: GGLWEInfos,
         P: CKKSInfos + LWEInfos,
     {
-        ckks_approximation_tmp_bytes_derived(module, res, input, tsk, approximation)
+        ckks_approximation_tmp_bytes_derived(module, res, input, approximation, tsk)
     }
 
     /// Checks the budget, maps `input` into a scratch temporary (`ckks_mul_pow2_into`

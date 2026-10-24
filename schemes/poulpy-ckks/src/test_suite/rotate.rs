@@ -75,7 +75,7 @@ pub fn test_rotate_aligned<BE, F, E>(
         let (want_re, want_im) = want_rotate(&re1, &im1, r, m);
         let mut ct_res = alloc_ct(&params, module, params.k);
         module
-            .ckks_rotate_into(&mut ct_res, &ct, r, &atks, &mut scratch.borrow())
+            .ckks_rotate_into(r, &mut ct_res, &ct, &atks, &mut scratch.borrow())
             .unwrap();
         assert_unary_output_meta(&format!("rotate({r})"), &ct_res, params.k, &ct);
         assert_decrypt_precision(
@@ -135,7 +135,7 @@ pub fn test_rotate_smaller_output<BE, F, E>(
         let dst_k = params.k - params.base2k - 1;
         let mut ct_res = alloc_ct(&params, module, dst_k);
         module
-            .ckks_rotate_into(&mut ct_res, &ct, r, &atks, &mut scratch.borrow())
+            .ckks_rotate_into(r, &mut ct_res, &ct, &atks, &mut scratch.borrow())
             .unwrap();
         assert_unary_output_meta(&format!("rotate smaller_output({r})"), &ct_res, dst_k, &ct);
         assert_decrypt_precision(
@@ -194,7 +194,7 @@ pub fn test_rotate_assign<BE, F, E>(
         );
         let expected_log_delta = ct.log_delta();
         let expected_log_budget = ct.log_budget();
-        module.ckks_rotate_assign(&mut ct, r, &atks, &mut scratch.borrow()).unwrap();
+        module.ckks_rotate_assign(r, &mut ct, &atks, &mut scratch.borrow()).unwrap();
         assert_ct_meta(&format!("rotate_assign({r})"), &ct, expected_log_delta, expected_log_budget);
         assert_decrypt_precision(
             &format!("rotate_assign({r})"),
@@ -242,7 +242,7 @@ pub fn test_rotate_assign_missing_key_error<BE, F, E>(
     );
     let empty_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = HashMap::new();
     let err = module
-        .ckks_rotate_assign(&mut ct, 1, &empty_keys, &mut scratch.borrow())
+        .ckks_rotate_assign(1, &mut ct, &empty_keys, &mut scratch.borrow())
         .unwrap_err();
     assert!(
         matches!(

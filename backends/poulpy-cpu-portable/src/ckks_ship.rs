@@ -63,9 +63,9 @@ macro_rules! impl_ckks_ship_coeff_encoding {
         unsafe impl ::poulpy_ckks::oep::CKKSShipCoeffEncodingImpl for $be {
             fn ckks_ship_coeff_encodings_tmp_bytes<F>(
                 _module: &::poulpy_hal::layouts::Module<$be>,
-                _plan: &::poulpy_ckks::layouts::ShipPlan,
                 _base2k: ::poulpy_core::layouts::Base2K,
                 _complex: bool,
+                _plan: &::poulpy_ckks::layouts::ShipPlan,
             ) -> ::poulpy_ckks::CKKSResult<usize>
             where
                 F: ::poulpy_ckks::api::ShipScalar,
@@ -78,10 +78,10 @@ macro_rules! impl_ckks_ship_coeff_encoding {
 
             fn ckks_ship_coeff_encodings<F, Src>(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                ct: &Src,
-                plan: &::poulpy_ckks::layouts::ShipPlan,
                 base2k: ::poulpy_core::layouts::Base2K,
                 complex: bool,
+                ciphertext: &Src,
+                plan: &::poulpy_ckks::layouts::ShipPlan,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) -> ::poulpy_ckks::CKKSResult<
                 ::poulpy_ckks::layouts::ShipCoeffEncodings<
@@ -94,7 +94,7 @@ macro_rules! impl_ckks_ship_coeff_encoding {
                 $be: ::poulpy_ckks::oep::CKKSEncodingImpl<F>,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_ckks::CKKSCtBounds,
             {
-                $crate::ckks_ship::ship_coeff_encodings_staged::<$be, F, Src>(module, ct, plan, base2k, complex, scratch)
+                $crate::ckks_ship::ship_coeff_encodings_staged::<$be, F, Src>(module, ciphertext, plan, base2k, complex, scratch)
                     .map_err(::poulpy_ckks::CKKSError::from)
             }
         }

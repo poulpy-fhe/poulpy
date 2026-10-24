@@ -450,7 +450,7 @@ where
         let layout = keys_layout(&atk, &d2s, &s2d, encapsulate);
         let pt = ct_layout(n, b, 16 + 2 * b, 16, SlotsKind::Complex);
         let compile = module
-            .ckks_all_ops_with_atk_tmp_bytes(&out_layout, &atk, &atk, &pt)
+            .ckks_all_ops_with_atk_tmp_bytes(&out_layout, &pt, &atk, &atk)
             .max(<Module<B> as CKKSEncodingHostOps<B, F>>::ckks_reim_tmp_bytes(module, n / 2));
         // Staged compilation: preparation runs with exactly its advertised scratch.
         let unprepared = with_scratch::<B, _>(compile, |scratch| {

@@ -133,7 +133,7 @@ where
         let g = n / n_in;
         let span = g << log_sparsity;
         let degree = n.into();
-        let count = module.ckks_fold_count(&ins, degree);
+        let count = module.ckks_fold_count(degree, &ins);
         assert_eq!(count, units.len().div_ceil(span), "folded count, {label}");
         let keys_layout = CKKSFoldKeysLayout {
             ring_switch: ring_switch.map(RingSwitchKeys::gglwe_layout),
@@ -148,8 +148,8 @@ where
             },
             meta: ins[0].meta(),
         };
-        let folded_layout = module.ckks_fold_layout(&ins[0], degree, &keys_layout);
-        let mut fold_scratch = ScratchOwned::<BE>::alloc(module.ckks_fold_tmp_bytes(&output, &ins[0], degree, &keys_layout));
+        let folded_layout = module.ckks_fold_layout(degree, &ins[0], &keys_layout);
+        let mut fold_scratch = ScratchOwned::<BE>::alloc(module.ckks_fold_tmp_bytes(degree, &output, &ins[0], &keys_layout));
         let mut folded: Vec<_> = (0..count)
             .map(|_| module.ckks_ciphertext_alloc_from_glwe_infos(&folded_layout))
             .collect();
@@ -221,8 +221,8 @@ where
             .ckks_unfold(
                 &mut outs,
                 &mut refreshed,
-                ring_switch.map(|keys| &keys.outbound),
                 automorphisms,
+                ring_switch.map(|keys| &keys.outbound),
                 &mut fold_scratch.borrow(),
             )
             .unwrap();

@@ -92,7 +92,7 @@ where
     let x1 = polynomial_input(module, src, transform, tsk, scratch)?;
     let mut power_basis = PowerBasis::new(bsgs.basis(), x1);
     power_basis.populate(bsgs.degree(), bsgs.log_split(), bsgs.parity(), module, tsk, scratch)?;
-    module.ckks_eval_poly_real_const_coeffs_from_power_basis(dst, bsgs, &power_basis, tsk, scratch)?;
+    module.ckks_eval_poly_real_const_coeffs_from_power_basis(dst, &power_basis, bsgs, tsk, scratch)?;
     if matches!(
         transform,
         PolynomialInputTransform::SquareTimesInput | PolynomialInputTransform::ChebyshevT2TimesInput
@@ -132,7 +132,7 @@ where
     let x1 = polynomial_input(module, src, transform, tsk, scratch)?;
     let mut power_basis = PowerBasis::new(poly.re.basis(), x1);
     power_basis.populate(poly.re.degree(), poly.re.log_split(), poly.re.parity(), module, tsk, scratch)?;
-    module.ckks_eval_poly_complex_const_coeffs_from_power_basis(dst, poly, &power_basis, tsk, scratch)?;
+    module.ckks_eval_poly_complex_const_coeffs_from_power_basis(dst, &power_basis, poly, tsk, scratch)?;
     if matches!(
         transform,
         PolynomialInputTransform::SquareTimesInput | PolynomialInputTransform::ChebyshevT2TimesInput

@@ -428,7 +428,7 @@ where
             module.ckks_add_assign(output, &temporary, scratch)?;
         }
         PaCoPsiTailMaterial::Mask { mu, rotation } => {
-            module.ckks_conjugate_rotate_into(&mut temporary, output, *rotation, keys.rotation_keys(), scratch)?;
+            module.ckks_conjugate_rotate_into(*rotation, &mut temporary, output, keys.rotation_keys(), scratch)?;
             module.ckks_add_assign(output, &temporary, scratch)?;
             module.ckks_mul_pt_vec_assign(output, mu, scratch)?;
         }

@@ -7,9 +7,9 @@ use poulpy_hal::layouts::{CyclotomicOrder, Module, ScratchArena};
 
 pub(crate) fn ckks_conjugate_rotate_into_derived<BE, Dst, Src, H>(
     module: &Module<BE>,
+    k: i64,
     dst: &mut Dst,
     src: &Src,
-    k: i64,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> CKKSResult<()>

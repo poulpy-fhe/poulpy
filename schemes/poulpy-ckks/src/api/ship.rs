@@ -66,7 +66,7 @@ pub trait CKKSShipOps<BE: Backend, F: ShipScalar> {
 
     /// Standard-arena bytes required to build the input-dependent SHIP
     /// plaintext material, including backend-native scalar/FFT workspace.
-    fn ckks_ship_coeff_encodings_tmp_bytes(&self, plan: &ShipPlan, base2k: Base2K, complex: bool) -> Result<usize>;
+    fn ckks_ship_coeff_encodings_tmp_bytes(&self, base2k: Base2K, complex: bool, plan: &ShipPlan) -> Result<usize>;
 
     /// Builds the input-dependent SHIP plaintext material from the bottom
     /// ciphertext's public coefficients. This is the only SHIP primitive
@@ -74,10 +74,10 @@ pub trait CKKSShipOps<BE: Backend, F: ShipScalar> {
     /// composes existing CKKS/core operations.
     fn ckks_ship_coeff_encodings<Src>(
         &self,
-        ciphertext: &Src,
-        plan: &ShipPlan,
         base2k: Base2K,
         complex: bool,
+        ciphertext: &Src,
+        plan: &ShipPlan,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<ShipCoeffEncodings<BE::OwnedBuf, BE::ZnxWord>>
     where

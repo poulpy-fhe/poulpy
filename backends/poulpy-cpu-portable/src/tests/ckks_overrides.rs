@@ -76,8 +76,8 @@ unsafe impl poulpy_ckks::oep::CKKSPolynomialEvaluationImpl for OverrideBackend {
     fn ckks_eval_poly_real_const_coeffs_from_power_basis<R, B, A, G, H>(
         module: &::poulpy_hal::layouts::Module<Self>,
         res: &mut R,
-        poly: &B,
         power_basis: &G,
+        poly: &B,
         tsk: &H,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
     ) -> poulpy_ckks::CKKSResult<()>
@@ -94,7 +94,7 @@ unsafe impl poulpy_ckks::oep::CKKSPolynomialEvaluationImpl for OverrideBackend {
     {
         REAL_CALLS.with(|calls| calls.set(calls.get() + 1));
         poulpy_ckks::reference::polynomial_evaluation::PolynomialEvaluationReference::ckks_eval_poly_real_const_coeffs_from_power_basis_reference::<R, B, A, G, H>(
-            module, res, poly, power_basis, tsk, scratch,
+            module, res, power_basis, poly, tsk, scratch,
         )
     }
 }
@@ -103,8 +103,8 @@ unsafe impl CKKSComplexPolynomialEvaluationImpl for OverrideBackend {
     fn ckks_eval_poly_complex_const_coeffs_from_power_basis<R, C, A, G, H>(
         module: &::poulpy_hal::layouts::Module<Self>,
         res: &mut R,
-        poly: &poulpy_ckks::polynomial::ComplexBSGSPolynomial<C>,
         power_basis: &G,
+        poly: &poulpy_ckks::polynomial::ComplexBSGSPolynomial<C>,
         tsk: &H,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
     ) -> poulpy_ckks::CKKSResult<()>
@@ -124,7 +124,7 @@ unsafe impl CKKSComplexPolynomialEvaluationImpl for OverrideBackend {
     {
         COMPLEX_CALLS.with(|calls| calls.set(calls.get() + 1));
         poulpy_ckks::reference::polynomial_evaluation::PolynomialEvaluationReference::ckks_eval_poly_complex_const_coeffs_from_power_basis_reference::<R, C, A, G, H>(
-            module, res, poly, power_basis, tsk, scratch,
+            module, res, power_basis, poly, tsk, scratch,
         )
     }
 }
@@ -227,7 +227,7 @@ fn one_shot_polynomials_dispatch_to_independent_prepared_overrides() {
             ..Default::default()
         },
     };
-    let bytes = module.ckks_all_ops_tmp_bytes(&src, &key_infos, &coeff_meta);
+    let bytes = module.ckks_all_ops_tmp_bytes(&src, &coeff_meta, &key_infos);
     // The shared query must include this independently selected copy budget;
     // the ordinary reference families use less than COPY_WORKSPACE here.
     assert_eq!(bytes, module.ckks_copy_tmp_bytes(&src, &src));

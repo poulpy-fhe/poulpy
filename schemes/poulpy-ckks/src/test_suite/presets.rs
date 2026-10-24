@@ -1171,7 +1171,7 @@ where
     );
     let mut bytes = 0;
     for atk in &keys.rotation_key_layouts() {
-        bytes = bytes.max(module.ckks_all_ops_with_atk_tmp_bytes(layout, &keys.tensor_key, atk, &coeffs));
+        bytes = bytes.max(module.ckks_all_ops_with_atk_tmp_bytes(layout, &coeffs, &keys.tensor_key, atk));
     }
     bytes
 }

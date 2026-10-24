@@ -20,8 +20,8 @@ pub(crate) fn ckks_approximation_tmp_bytes_derived<BE, R, I, T, P>(
     module: &Module<BE>,
     res: &R,
     input: &I,
-    tsk: &T,
     approximation: &PolynomialApproximation<P>,
+    tsk: &T,
 ) -> usize
 where
     BE: CKKSApproximationImpl,
@@ -33,8 +33,8 @@ where
 {
     let coeffs = approximation.poly.baby_step(0);
     let eval = module
-        .ckks_all_ops_tmp_bytes(res, tsk, coeffs)
-        .max(module.ckks_all_ops_tmp_bytes(input, tsk, coeffs));
+        .ckks_all_ops_tmp_bytes(res, coeffs, tsk)
+        .max(module.ckks_all_ops_tmp_bytes(input, coeffs, tsk));
     match &approximation.affine {
         Some(affine) => {
             let ct = module.glwe_bytes_of_from_infos(input);
@@ -76,11 +76,11 @@ where
             let (mut normalized, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(input);
             if let Some(exponent) = approximation.scale_pow2 {
                 if exponent > 0 {
-                    module.ckks_mul_pow2_into(&mut normalized, input, exponent as usize, &mut scratch_local)?;
+                    module.ckks_mul_pow2_into(exponent as usize, &mut normalized, input, &mut scratch_local)?;
                 } else {
                     module.ckks_copy(&mut normalized, input, &mut scratch_local)?;
                     normalized.set_slots(input.slots().join(SlotsKind::Real));
-                    module.ckks_div_pow2_assign(&mut normalized, exponent.unsigned_abs() as usize)?;
+                    module.ckks_div_pow2_assign(exponent.unsigned_abs() as usize, &mut normalized)?;
                 }
                 module.ckks_add_pt_const_assign(&mut normalized, 0, affine, 0, &mut scratch_local)?;
             } else {

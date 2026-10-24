@@ -124,7 +124,7 @@ impl<BE: Backend> BlasMatInterReference<BE> for Module<BE> {
         let bytes = used.max_bytes(|key| self.blas_rotate_tmp_bytes_reference(&*res, a, key));
         assert_scratch(op, bytes, scratch);
         for (dst, src) in res.blocks_mut().iter_mut().zip(a.blocks()) {
-            self.ckks_rotate_into(dst, src, rotation, atk, scratch)?;
+            self.ckks_rotate_into(rotation, dst, src, atk, scratch)?;
         }
         res.set_mat_slots(batch);
         Ok(())

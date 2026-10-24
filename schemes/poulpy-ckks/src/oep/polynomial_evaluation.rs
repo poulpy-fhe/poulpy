@@ -27,8 +27,8 @@ pub unsafe trait CKKSPolynomialEvaluationImpl:
     fn ckks_eval_poly_real_const_coeffs_from_power_basis<R, B, A, G, H>(
         module: &Module<Self>,
         res: &mut R,
-        poly: &B,
         power_basis: &G,
+        poly: &B,
         tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
@@ -69,8 +69,8 @@ pub unsafe trait CKKSComplexPolynomialEvaluationImpl: CKKSPolynomialEvaluationIm
     fn ckks_eval_poly_complex_const_coeffs_from_power_basis<R, C, A, G, H>(
         module: &Module<Self>,
         res: &mut R,
-        poly: &ComplexBSGSPolynomial<C>,
         power_basis: &G,
+        poly: &ComplexBSGSPolynomial<C>,
         tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
@@ -110,8 +110,8 @@ macro_rules! impl_ckks_polynomial_evaluation_reference_full {
             fn ckks_eval_poly_real_const_coeffs_from_power_basis<R, B, A, G, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut R,
-                poly: &B,
                 power_basis: &G,
+                poly: &B,
                 tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
@@ -129,7 +129,7 @@ macro_rules! impl_ckks_polynomial_evaluation_reference_full {
                 H: ::poulpy_core::layouts::GetTensorKey<Self>,
             {
                 $crate::reference::polynomial_evaluation::PolynomialEvaluationReference::ckks_eval_poly_real_const_coeffs_from_power_basis_reference::<R, B, A, G, H>(
-                    module, res, poly, power_basis, tsk, scratch,
+                    module, res, power_basis, poly, tsk, scratch,
                 )
             }
         }
@@ -144,8 +144,8 @@ macro_rules! impl_ckks_complex_polynomial_evaluation_reference_full {
             fn ckks_eval_poly_complex_const_coeffs_from_power_basis<R, C, A, G, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut R,
-                poly: &$crate::polynomial::ComplexBSGSPolynomial<C>,
                 power_basis: &G,
+                poly: &$crate::polynomial::ComplexBSGSPolynomial<C>,
                 tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
@@ -166,7 +166,7 @@ macro_rules! impl_ckks_complex_polynomial_evaluation_reference_full {
                 H: ::poulpy_core::layouts::GetTensorKey<Self>,
             {
                 $crate::reference::polynomial_evaluation::PolynomialEvaluationReference::ckks_eval_poly_complex_const_coeffs_from_power_basis_reference::<R, C, A, G, H>(
-                    module, res, poly, power_basis, tsk, scratch,
+                    module, res, power_basis, poly, tsk, scratch,
                 )
             }
         }

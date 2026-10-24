@@ -77,7 +77,7 @@ where
                         assert_eq!(raw.canonical, !lazy, "double_into k={width}");
                         results.push(("ckks_double_into", raw));
                         B::glwe_normalize_assign(module, &mut doubled, scratch);
-                        B::ckks_mul_pow2_into(module, &mut shifted, &a, 1, scratch)
+                        B::ckks_mul_pow2_into(module, 1, &mut shifted, &a, scratch)
                     })
                     .unwrap();
                     assert_eq!(
@@ -95,10 +95,13 @@ where
                     let pt = fixture_plaintext(module, &pt_layout, 33);
                     let before_pt = snapshot::<B, _>(&pt);
                     macro_rules! run {
-                ($method:ident, $query:ident, $initial:expr, [$($arg:expr),*]) => {{
+                ($method:ident, $query:ident, $initial:expr, [$($arg:expr),*]) => {
+                    run!($method, $query, $initial, []; [$($arg),*])
+                };
+                ($method:ident, $query:ident, $initial:expr, [$($lead:expr),*]; [$($arg:expr),*]) => {{
                     let mut out = fixture_ciphertext(module, &$initial, 31);
                     let bytes = B::$query(module, out.max_size());
-                    with_scratch::<B,_>(bytes, |scratch| B::$method(module, &mut out, $($arg,)* scratch)).unwrap();
+                    with_scratch::<B,_>(bytes, |scratch| B::$method(module, $($lead,)* &mut out, $($arg,)* scratch)).unwrap();
                     results.push((stringify!($method), snapshot::<B,_>(&out)));
                 }};
             }
@@ -138,11 +141,11 @@ where
                     B::ckks_neg_assign(module, &mut neg).unwrap();
                     results.push(("neg_assign", snapshot::<B, _>(&neg)));
                     for bits in [0, 1, b + 1] {
-                        run!(ckks_mul_pow2_into, ckks_mul_pow2_tmp_bytes, out_layout, [&a, bits]);
-                        run!(ckks_mul_pow2_assign, ckks_mul_pow2_tmp_bytes, la, [bits]);
-                        run!(ckks_div_pow2_into, ckks_div_pow2_tmp_bytes, out_layout, [&a, bits]);
+                        run!(ckks_mul_pow2_into, ckks_mul_pow2_tmp_bytes, out_layout, [bits]; [&a]);
+                        run!(ckks_mul_pow2_assign, ckks_mul_pow2_tmp_bytes, la, [bits]; []);
+                        run!(ckks_div_pow2_into, ckks_div_pow2_tmp_bytes, out_layout, [bits]; [&a]);
                         let mut div = fixture_ciphertext(module, &la, 31);
-                        B::ckks_div_pow2_assign(module, &mut div, bits).unwrap();
+                        B::ckks_div_pow2_assign(module, bits, &mut div).unwrap();
                         results.push(("div_pow2_assign", snapshot::<B, _>(&div)));
                     }
                     assert_eq!(before_a, snapshot::<B, _>(&a), "arithmetic changed source a");
@@ -153,7 +156,7 @@ where
                 let mut out = fixture_ciphertext(module, &la, 31);
                 let before = snapshot::<B, _>(&out);
                 let bits = out.log_budget() + 1;
-                assert!(B::ckks_div_pow2_assign(module, &mut out, bits).is_err());
+                assert!(B::ckks_div_pow2_assign(module, bits, &mut out).is_err());
                 assert_eq!(before, snapshot::<B, _>(&out));
             }
         }
@@ -164,11 +167,14 @@ where
     let source = fixture_ciphertext(module, &source_layout, 71);
     let narrow = layout(params, 1, 1, 0, 0, SlotsKind::Real);
     macro_rules! rejects {
-        ($method:ident, $query:ident, [$($arg:expr),*]) => {{
+        ($method:ident, $query:ident, [$($arg:expr),*]) => {
+            rejects!($method, $query, []; [$($arg),*])
+        };
+        ($method:ident, $query:ident, [$($lead:expr),*]; [$($arg:expr),*]) => {{
             let mut out = fixture_ciphertext(module, &narrow, 72);
             let unchanged = snapshot::<B,_>(&out);
             let bytes = B::$query(module,out.max_size());
-            assert!(with_scratch::<B,_>(bytes,|scratch|B::$method(module,&mut out,$($arg,)*scratch)).is_err(), stringify!($method));
+            assert!(with_scratch::<B,_>(bytes,|scratch|B::$method(module,$($lead,)*&mut out,$($arg,)*scratch)).is_err(), stringify!($method));
             assert_eq!(unchanged,snapshot::<B,_>(&out), "failed {} mutated its destination", stringify!($method));
         }};
     }
@@ -182,8 +188,8 @@ where
         assert_eq!(unchanged, snapshot::<B, _>(&out), "failed copy mutated its destination");
     }
     rejects!(ckks_neg_into, ckks_neg_tmp_bytes, [&source]);
-    rejects!(ckks_mul_pow2_into, ckks_mul_pow2_tmp_bytes, [&source, 0]);
-    rejects!(ckks_div_pow2_into, ckks_div_pow2_tmp_bytes, [&source, 0]);
+    rejects!(ckks_mul_pow2_into, ckks_mul_pow2_tmp_bytes, [0]; [&source]);
+    rejects!(ckks_div_pow2_into, ckks_div_pow2_tmp_bytes, [0]; [&source]);
     results
 }
 
@@ -531,7 +537,7 @@ where
                 let mut out = fixture_ciphertext(module, &lr, 99);
                 let bytes = B::ckks_rotate_tmp_bytes(module, &input, &key);
                 with_scratch::<B, _>(bytes, |scratch| {
-                    B::ckks_rotate_into(module, &mut out, &input, k, &key, scratch)
+                    B::ckks_rotate_into(module, k, &mut out, &input, &key, scratch)
                 })
                 .unwrap();
                 results.push(("rotate_into", snapshot::<B, _>(&out)));
@@ -552,7 +558,7 @@ where
         for k in shifts {
             let mut out = fixture_operand(module, &la, 61, lazy);
             let bytes = B::ckks_rotate_tmp_bytes(module, &out, &key);
-            with_scratch::<B, _>(bytes, |scratch| B::ckks_rotate_assign(module, &mut out, k, &key, scratch)).unwrap();
+            with_scratch::<B, _>(bytes, |scratch| B::ckks_rotate_assign(module, k, &mut out, &key, scratch)).unwrap();
             results.push(("rotate_assign", snapshot::<B, _>(&out)));
         }
         assert_eq!(before, snapshot::<B, _>(&input));

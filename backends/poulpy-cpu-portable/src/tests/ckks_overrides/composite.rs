@@ -365,7 +365,7 @@ fn approximations_enter_the_selected_map_and_polynomial_evaluation() {
             ..Default::default()
         });
         let mut res = r.ckks_ciphertext_alloc_from_infos(&src);
-        let bytes = r.ckks_approximation_tmp_bytes(&res, &src, &tsk, &approx);
+        let bytes = r.ckks_approximation_tmp_bytes(&res, &src, &approx, &tsk);
         with_scratch::<FFT64Portable, _>(bytes, |s| {
             r.ckks_eval_approximation(&mut res, &src, &approx, &super::NoTensorKey, s)
         })
@@ -383,9 +383,9 @@ fn approximations_enter_the_selected_map_and_polynomial_evaluation() {
     let affine = approx.affine.as_ref().unwrap();
     let coeffs = approx.poly.baby_step(0);
     let eval = module
-        .ckks_all_ops_tmp_bytes(&res, &tsk, coeffs)
-        .max(module.ckks_all_ops_tmp_bytes(&src, &tsk, coeffs));
-    let bytes = module.ckks_approximation_tmp_bytes(&res, &src, &tsk, &approx);
+        .ckks_all_ops_tmp_bytes(&res, coeffs, &tsk)
+        .max(module.ckks_all_ops_tmp_bytes(&src, coeffs, &tsk));
+    let bytes = module.ckks_approximation_tmp_bytes(&res, &src, &approx, &tsk);
     assert_eq!(
         bytes,
         module.glwe_bytes_of_from_infos(&src) + eval.max(module.ckks_affine_pt_const_tmp_bytes(&src, &src, affine))

@@ -71,12 +71,12 @@ where
             .and_then(|keys| keys.values().next())
             .map(|key| key.gglwe_layout()),
     };
-    let bytes = B::ckks_fold_tmp_bytes(module, out, &ins[0], degree.into(), &keys_layout);
+    let bytes = B::ckks_fold_tmp_bytes(module, degree.into(), out, &ins[0], &keys_layout);
     let folded_layout = CKKSLayout {
-        glwe_layout: B::ckks_fold_layout(module, &ins[0], degree.into(), &keys_layout),
+        glwe_layout: B::ckks_fold_layout(module, degree.into(), &ins[0], &keys_layout),
         meta: ins[0].meta(),
     };
-    let mut folded: Vec<_> = (0..B::ckks_fold_count(module, ins, degree.into()))
+    let mut folded: Vec<_> = (0..B::ckks_fold_count(module, degree.into(), ins))
         .map(|i| fixture_ciphertext(module, &folded_layout, 150 + i as u8))
         .collect();
     with_scratch::<B, _>(bytes, |scratch| {
@@ -114,8 +114,8 @@ where
             module,
             &mut outs,
             &mut refreshed,
-            ring_switch.map(|keys| &keys.outbound),
             automorphisms,
+            ring_switch.map(|keys| &keys.outbound),
             scratch,
         )
     })
@@ -236,7 +236,7 @@ where
             relabel(fixture_ciphertext(module, &ci, 227 + i))
         })
         .collect();
-    assert_eq!(B::ckks_fold_count(module, &sparse_ci, n.into()), 1);
+    assert_eq!(B::ckks_fold_count(module, n.into(), &sparse_ci), 1);
     let ci_automorphisms: HashMap<i64, _> =
         <B as CKKSFoldImpl<ConjugateInvariant>>::ckks_unfold_galois_elements(module, &sparse_ci[0])
             .into_iter()
@@ -336,11 +336,11 @@ where
             .iter()
             .map(|ct| fixture_ciphertext(module, &layout(degree, 19, 80, 12, ct.slots()), 207))
             .collect();
-        let folded_layout: GLWELayout = B::ckks_fold_layout(module, &ins[0], n.into(), &keys_layout);
-        let mut folded: Vec<_> = (0..B::ckks_fold_count(module, &ins, n.into()))
+        let folded_layout: GLWELayout = B::ckks_fold_layout(module, n.into(), &ins[0], &keys_layout);
+        let mut folded: Vec<_> = (0..B::ckks_fold_count(module, n.into(), &ins))
             .map(|_| module.ckks_ciphertext_alloc_from_glwe_infos(&folded_layout))
             .collect();
-        let bytes = B::ckks_fold_tmp_bytes(module, &outs[0], &ins[0], n.into(), &keys_layout);
+        let bytes = B::ckks_fold_tmp_bytes(module, n.into(), &outs[0], &ins[0], &keys_layout);
         let once = Once(&automorphisms, Cell::new(false));
         with_scratch::<B, _>(bytes, |scratch| {
             B::ckks_fold(module, &mut folded, &ins, Some(&ring_switch.inbound), scratch).unwrap();
@@ -348,8 +348,8 @@ where
                 module,
                 &mut outs,
                 &mut folded,
-                Some(&ring_switch.outbound),
                 Some(&once),
+                Some(&ring_switch.outbound),
                 scratch,
             )
             .unwrap();
@@ -414,7 +414,7 @@ where
                 ct
             })
             .collect();
-        let mut folded: Vec<_> = (0..B::ckks_fold_count(module, &outs, n.into()))
+        let mut folded: Vec<_> = (0..B::ckks_fold_count(module, n.into(), &outs))
             .map(|_| fixture_ciphertext(module, &layout(n, 15, 60, 12, SlotsKind::Complex), 219))
             .collect();
         let before_out: Vec<_> = outs.iter().map(snapshot::<B, _>).collect();
@@ -426,9 +426,9 @@ where
             }),
             automorphism: keys.and_then(|keys| keys.values().next()).map(GGLWEInfos::gglwe_layout),
         };
-        let bytes = B::ckks_fold_tmp_bytes(module, &outs[0], &folded[0], n.into(), &keys_layout);
+        let bytes = B::ckks_fold_tmp_bytes(module, n.into(), &outs[0], &folded[0], &keys_layout);
         let result = with_scratch::<B, _>(bytes, |scratch| {
-            B::ckks_unfold(module, &mut outs, &mut folded, Some(&outbound), keys, scratch)
+            B::ckks_unfold(module, &mut outs, &mut folded, keys, Some(&outbound), scratch)
         });
         assert!(result.is_err(), "{name}: invalid unfold should fail");
         assert_eq!(
@@ -499,11 +499,11 @@ where
         ring_switch: None,
         automorphism: None,
     };
-    let folded_layout = B::ckks_fold_layout(module, &ins[0], n.into(), &keys);
-    let mut folded: Vec<_> = (0..B::ckks_fold_count(module, ins, n.into()))
+    let folded_layout = B::ckks_fold_layout(module, n.into(), &ins[0], &keys);
+    let mut folded: Vec<_> = (0..B::ckks_fold_count(module, n.into(), ins))
         .map(|_| module.ckks_ciphertext_alloc_from_glwe_infos(&folded_layout))
         .collect();
-    let bytes = B::ckks_fold_tmp_bytes(module, &ins[0], &ins[0], n.into(), &keys);
+    let bytes = B::ckks_fold_tmp_bytes(module, n.into(), &ins[0], &ins[0], &keys);
     with_scratch::<B, _>(bytes, |scratch| {
         B::ckks_fold(module, &mut folded, ins, None::<&GGLWEPrepared<B::OwnedBuf, B>>, scratch)
     })
@@ -527,14 +527,14 @@ where
         ring_switch: None,
         automorphism: None,
     };
-    let bytes = B::ckks_fold_tmp_bytes(module, &outs[0], &outs[0], n.into(), &keys);
+    let bytes = B::ckks_fold_tmp_bytes(module, n.into(), &outs[0], &outs[0], &keys);
     with_scratch::<B, _>(bytes, |scratch| {
         B::ckks_unfold(
             module,
             &mut outs,
             &mut refreshed,
-            None::<&GGLWEPrepared<B::OwnedBuf, B>>,
             None::<&AutomorphismKeys<B>>,
+            None::<&GGLWEPrepared<B::OwnedBuf, B>>,
             scratch,
         )
     })

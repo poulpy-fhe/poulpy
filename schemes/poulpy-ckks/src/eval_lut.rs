@@ -198,8 +198,8 @@ where
         .ok_or_else(|| anyhow!("ckks_eval_lut_from_basis: shared evaluation supports general LUTs only"))?;
     module.ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
         res,
-        series,
         power_basis,
+        series,
         tsk,
         scratch,
     )?;

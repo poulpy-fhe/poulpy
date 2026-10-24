@@ -185,7 +185,7 @@ where
     module.ckks_add_assign(ct_out, &conj, scratch)?;
 
     // Repack: rotate Im by `slots` and add into Re → [Re | Im] per 2·slots period.
-    module.ckks_rotate_assign(&mut imag, slots, keys, scratch)?;
+    module.ckks_rotate_assign(slots, &mut imag, keys, scratch)?;
     module.ckks_add_assign(ct_out, &imag, scratch)?;
 
     // The repack doubles the live slot count.

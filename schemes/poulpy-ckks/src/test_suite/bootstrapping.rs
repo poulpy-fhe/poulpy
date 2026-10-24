@@ -994,10 +994,10 @@ where
     //    both cancel, leaving the message at the HP CoeffsToSlots' precision.
     let log2_k = FMOD_INTERVAL.trailing_zeros() as usize;
     module
-        .ckks_mul_pow2_assign(&mut r0_lp, log2_k, &mut scratch.borrow())
+        .ckks_mul_pow2_assign(log2_k, &mut r0_lp, &mut scratch.borrow())
         .unwrap();
     module
-        .ckks_mul_pow2_assign(&mut i0_lp, log2_k, &mut scratch.borrow())
+        .ckks_mul_pow2_assign(log2_k, &mut i0_lp, &mut scratch.borrow())
         .unwrap();
     module.ckks_sub_assign(&mut r0_hp, &r0_lp, &mut scratch.borrow()).unwrap();
     module.ckks_sub_assign(&mut i0_hp, &i0_lp, &mut scratch.borrow()).unwrap();

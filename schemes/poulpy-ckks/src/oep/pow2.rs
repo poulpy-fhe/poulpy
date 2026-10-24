@@ -14,9 +14,9 @@ pub unsafe trait CKKSPow2Impl: Backend {
     fn ckks_mul_pow2_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
     fn ckks_mul_pow2_into<Dst, Src>(
         module: &Module<Self>,
+        bits: usize,
         dst: &mut Dst,
         src: &Src,
-        bits: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -24,8 +24,8 @@ pub unsafe trait CKKSPow2Impl: Backend {
         Src: GLWEToBackendRef<Self> + GLWEInfos + CKKSCtBounds;
     fn ckks_mul_pow2_assign<Dst>(
         module: &Module<Self>,
-        dst: &mut Dst,
         bits: usize,
+        dst: &mut Dst,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -42,15 +42,15 @@ pub unsafe trait CKKSPow2Impl: Backend {
     fn ckks_div_pow2_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
     fn ckks_div_pow2_into<Dst, Src>(
         module: &Module<Self>,
+        bits: usize,
         dst: &mut Dst,
         src: &Src,
-        bits: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + GLWEInfos + CKKSCtBounds;
-    fn ckks_div_pow2_assign<Dst>(module: &Module<Self>, dst: &mut Dst, bits: usize) -> Result<()>
+    fn ckks_div_pow2_assign<Dst>(module: &Module<Self>, bits: usize, dst: &mut Dst) -> Result<()>
     where
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos;
 }
@@ -66,28 +66,28 @@ macro_rules! impl_ckks_pow2_reference_full {
 
             fn ckks_mul_pow2_into<Dst, Src>(
                 module: &::poulpy_hal::layouts::Module<Self>,
+                bits: usize,
                 dst: &mut Dst,
                 src: &Src,
-                bits: usize,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_core::layouts::GLWEInfos + $crate::CKKSCtBounds,
             {
-                $crate::reference::pow2::CKKSPow2Reference::ckks_mul_pow2_into_reference(module, dst, src, bits, scratch)
+                $crate::reference::pow2::CKKSPow2Reference::ckks_mul_pow2_into_reference(module, bits, dst, src, scratch)
             }
 
             fn ckks_mul_pow2_assign<Dst>(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                dst: &mut Dst,
                 bits: usize,
+                dst: &mut Dst,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
             {
-                $crate::reference::pow2::CKKSPow2Reference::ckks_mul_pow2_assign_reference(module, dst, bits, scratch)
+                $crate::reference::pow2::CKKSPow2Reference::ckks_mul_pow2_assign_reference(module, bits, dst, scratch)
             }
 
             fn ckks_double_into<Dst, Src>(
@@ -109,27 +109,27 @@ macro_rules! impl_ckks_pow2_reference_full {
 
             fn ckks_div_pow2_into<Dst, Src>(
                 module: &::poulpy_hal::layouts::Module<Self>,
+                bits: usize,
                 dst: &mut Dst,
                 src: &Src,
-                bits: usize,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_core::layouts::GLWEInfos + $crate::CKKSCtBounds,
             {
-                $crate::reference::pow2::CKKSPow2Reference::ckks_div_pow2_into_reference(module, dst, src, bits, scratch)
+                $crate::reference::pow2::CKKSPow2Reference::ckks_div_pow2_into_reference(module, bits, dst, src, scratch)
             }
 
             fn ckks_div_pow2_assign<Dst>(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                dst: &mut Dst,
                 bits: usize,
+                dst: &mut Dst,
             ) -> $crate::CKKSResult<()>
             where
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
             {
-                $crate::reference::pow2::CKKSPow2Reference::ckks_div_pow2_assign_reference(module, dst, bits)
+                $crate::reference::pow2::CKKSPow2Reference::ckks_div_pow2_assign_reference(module, bits, dst)
             }
         }
     };

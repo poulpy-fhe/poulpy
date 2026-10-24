@@ -325,9 +325,9 @@ fn run_case<BE, F, E>(
         ct.set_meta(tp.prec().meta);
         initial_tmp = module.ckks_all_ops_with_atk_tmp_bytes(
             &ct,
+            &ckks_spec(params.n, params.base2k, EVAL_LOG_DELTA, params.base2k),
             &tp.tsk_layout(),
             &tp.atk_layout(),
-            &ckks_spec(params.n, params.base2k, EVAL_LOG_DELTA, params.base2k),
         );
         ScratchOwned::<BE>::alloc(initial_tmp)
     };

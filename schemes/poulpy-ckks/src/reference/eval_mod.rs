@@ -192,7 +192,7 @@ where
                 let x1 = eval_mod_input(module, ct, &work_layout, work_meta, scratch);
                 let mut power_basis = PowerBasis::new(bsgs.basis(), x1);
                 power_basis.populate(bsgs.degree(), bsgs.log_split(), bsgs.parity(), module, tsk, scratch)?;
-                module.ckks_eval_poly_real_const_coeffs_from_power_basis(res, bsgs, &power_basis, tsk, scratch)?;
+                module.ckks_eval_poly_real_const_coeffs_from_power_basis(res, &power_basis, bsgs, tsk, scratch)?;
             } else {
                 scratch.scope(|scratch_local| {
                     let (mut input, mut nested) = scratch_local.take_ckks_ciphertext_scratch(&work_layout, work_meta);
@@ -332,7 +332,7 @@ where
             let x1 = eval_mod_input(self, ct, work_layout, work_meta, scratch);
             let mut power_basis = PowerBasis::new(bsgs.re.basis(), x1);
             power_basis.populate(bsgs.re.degree(), bsgs.re.log_split(), bsgs.re.parity(), self, tsk, scratch)?;
-            self.ckks_eval_poly_complex_const_coeffs_from_power_basis(res, bsgs, &power_basis, tsk, scratch)?;
+            self.ckks_eval_poly_complex_const_coeffs_from_power_basis(res, &power_basis, bsgs, tsk, scratch)?;
         } else {
             scratch.scope(|scratch_local| {
                 let (mut input, mut nested) = scratch_local.take_ckks_ciphertext_scratch(work_layout, work_meta);

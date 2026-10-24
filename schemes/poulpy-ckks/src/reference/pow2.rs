@@ -24,9 +24,9 @@ pub trait CKKSPow2Reference<BE: Backend> {
 
     fn ckks_mul_pow2_into_reference<Dst, Src>(
         &self,
+        bits: usize,
         dst: &mut Dst,
         src: &Src,
-        bits: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -38,7 +38,7 @@ pub trait CKKSPow2Reference<BE: Backend> {
         Ok(())
     }
 
-    fn ckks_mul_pow2_assign_reference<Dst>(&self, dst: &mut Dst, bits: usize, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_mul_pow2_assign_reference<Dst>(&self, bits: usize, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: GLWEShift<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
@@ -54,7 +54,7 @@ pub trait CKKSPow2Reference<BE: Backend> {
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
         if !ckks_unary_exact(dst, src) {
-            return self.ckks_mul_pow2_into_reference(dst, src, 1, scratch);
+            return self.ckks_mul_pow2_into_reference(1, dst, src, scratch);
         }
         self.glwe_add_into(dst, src, src);
         dst.set_meta(src.meta());
@@ -64,9 +64,9 @@ pub trait CKKSPow2Reference<BE: Backend> {
 
     fn ckks_div_pow2_into_reference<Dst, Src>(
         &self,
+        bits: usize,
         dst: &mut Dst,
         src: &Src,
-        bits: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -81,7 +81,7 @@ pub trait CKKSPow2Reference<BE: Backend> {
         Ok(())
     }
 
-    fn ckks_div_pow2_assign_reference<Dst>(&self, dst: &mut Dst, bits: usize) -> Result<()>
+    fn ckks_div_pow2_assign_reference<Dst>(&self, bits: usize, dst: &mut Dst) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
     {

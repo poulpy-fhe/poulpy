@@ -156,7 +156,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
 
     let mut scaled = alloc_ct(&params, module, params.k);
     module
-        .ckks_mul_pow2_into(&mut scaled, &ct1, 2, &mut scratch.borrow())
+        .ckks_mul_pow2_into(2, &mut scaled, &ct1, &mut scratch.borrow())
         .unwrap();
     let want_scaled = re1.iter().map(|value| 4.0 * value).collect::<Vec<_>>();
     assert_output!(&scaled, &want_scaled);
@@ -178,7 +178,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
     for rotation in rotations {
         let mut rotated = alloc_ct(&params, module, params.k);
         module
-            .ckks_rotate_into(&mut rotated, &ct1, rotation, &keys, &mut scratch.borrow())
+            .ckks_rotate_into(rotation, &mut rotated, &ct1, &keys, &mut scratch.borrow())
             .unwrap();
         let want = (0..slots)
             .map(|i| re1[(i + rotation.rem_euclid(slots as i64) as usize) % slots])
@@ -186,7 +186,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
         assert_output!(&rotated, &want);
         let mut assigned = ct1.clone();
         module
-            .ckks_rotate_assign(&mut assigned, rotation, &keys, &mut scratch.borrow())
+            .ckks_rotate_assign(rotation, &mut assigned, &keys, &mut scratch.borrow())
             .unwrap();
         assert_output!(&assigned, &want);
     }
@@ -195,17 +195,17 @@ pub fn test_conjugate_invariant_leveled<BE>(
     for rotation in [0, slots as i64, -(slots as i64), i64::MIN] {
         let mut rotated = ct1.clone();
         module
-            .ckks_rotate_into(&mut rotated, &ct1, rotation, &empty, &mut scratch.arena())
+            .ckks_rotate_into(rotation, &mut rotated, &ct1, &empty, &mut scratch.arena())
             .unwrap();
         module
-            .ckks_rotate_assign(&mut rotated, rotation, &empty, &mut scratch.arena())
+            .ckks_rotate_assign(rotation, &mut rotated, &empty, &mut scratch.arena())
             .unwrap();
         assert_output!(&rotated, &re1);
     }
     let mut rotation_scratch = ScratchOwned::<BE>::alloc(module.ckks_rotate_tmp_bytes(&ct1, &params.atk_layout()));
     let mut narrowed = alloc_ct(&params, module, params.k - params.base2k);
     module
-        .ckks_rotate_into(&mut narrowed, &ct1, slots as i64, &empty, &mut rotation_scratch.arena())
+        .ckks_rotate_into(slots as i64, &mut narrowed, &ct1, &empty, &mut rotation_scratch.arena())
         .unwrap();
     assert_eq!(narrowed.log_budget(), ct1.log_budget() - params.base2k);
     assert_eq!(narrowed.meta(), ct1.meta());
@@ -214,7 +214,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
     let exhausted_before = exhausted.clone();
     assert!(
         module
-            .ckks_rotate_into(&mut exhausted, &ct1, 0, &empty, &mut rotation_scratch.arena())
+            .ckks_rotate_into(0, &mut exhausted, &ct1, &empty, &mut rotation_scratch.arena())
             .is_err()
     );
     assert_eq!(exhausted.meta(), exhausted_before.meta());
@@ -978,7 +978,7 @@ where
         let g = fold_params.n / (2 * n);
         let span = g << log_sparsity;
         let degree = fold_params.n.into();
-        let count = standard.ckks_fold_count(&ins, degree);
+        let count = standard.ckks_fold_count(degree, &ins);
         assert_eq!(count, units.len().div_ceil(span), "folded count, {label}");
         let keys_layout = CKKSFoldKeysLayout {
             ring_switch: ring_switch.map(RingSwitchKeys::gglwe_layout),
@@ -993,8 +993,8 @@ where
             },
             meta: ins[0].meta(),
         };
-        let folded_layout = standard.ckks_fold_layout(&ins[0], degree, &keys_layout);
-        let mut fold_scratch = ScratchOwned::<STD>::alloc(standard.ckks_fold_tmp_bytes(&output, &ins[0], degree, &keys_layout));
+        let folded_layout = standard.ckks_fold_layout(degree, &ins[0], &keys_layout);
+        let mut fold_scratch = ScratchOwned::<STD>::alloc(standard.ckks_fold_tmp_bytes(degree, &output, &ins[0], &keys_layout));
         let mut folded: Vec<_> = (0..count)
             .map(|_| standard.ckks_ciphertext_alloc_from_glwe_infos(&folded_layout))
             .collect();
@@ -1053,8 +1053,8 @@ where
             .ckks_unfold(
                 &mut outs,
                 &mut refreshed,
-                ring_switch.map(|keys| &keys.outbound),
                 automorphisms,
+                ring_switch.map(|keys| &keys.outbound),
                 &mut fold_scratch.borrow(),
             )
             .unwrap();

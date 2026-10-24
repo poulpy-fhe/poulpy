@@ -17,8 +17,8 @@ where
         &self,
         res: &R,
         input: &I,
-        tsk: &T,
         approximation: &PolynomialApproximation<P>,
+        tsk: &T,
     ) -> usize
     where
         R: CKKSCtBounds,
@@ -26,7 +26,7 @@ where
         T: GGLWEInfos,
         P: CKKSInfos + LWEInfos,
     {
-        BE::ckks_approximation_tmp_bytes(self, res, input, tsk, approximation)
+        BE::ckks_approximation_tmp_bytes(self, res, input, approximation, tsk)
     }
 
     fn ckks_eval_approximation<R, I, P, H>(

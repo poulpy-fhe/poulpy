@@ -14,15 +14,10 @@ use crate::{CKKSInfos, SetCKKSInfos};
 pub unsafe trait CKKSPlaintextZnxImpl: Backend {
     fn ckks_extract_pt_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
 
-    fn ckks_extract_pt<Dst, Src>(
-        module: &Module<Self>,
-        dst: &mut Dst,
-        src: &Src,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) -> Result<()>
+    fn ckks_extract_pt<D, S>(module: &Module<Self>, dst: &mut D, src: &S, scratch: &mut ScratchArena<'_, Self>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<Self> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<Self> + GLWEInfos + CKKSInfos;
+        D: GLWEToBackendMut<Self> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
+        S: GLWEToBackendRef<Self> + GLWEInfos + CKKSInfos;
 }
 
 /// Selects the reference implementation of `CKKSPlaintextZnxImpl` for `$be`.
@@ -34,18 +29,18 @@ macro_rules! impl_ckks_plaintext_znx_reference_full {
                 $crate::reference::plaintext::CKKSPlaintextReference::ckks_extract_pt_tmp_bytes_reference(module, res_size)
             }
 
-            fn ckks_extract_pt<Dst, Src>(
+            fn ckks_extract_pt<D, S>(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                dst: &mut Dst,
-                src: &Src,
+                dst: &mut D,
+                src: &S,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
-                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self>
+                D: ::poulpy_core::layouts::GLWEToBackendMut<Self>
                     + $crate::CKKSInfos
                     + ::poulpy_core::layouts::IntPolyInfos
                     + $crate::SetCKKSInfos,
-                Src: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_core::layouts::GLWEInfos + $crate::CKKSInfos,
+                S: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_core::layouts::GLWEInfos + $crate::CKKSInfos,
             {
                 $crate::reference::plaintext::CKKSPlaintextReference::ckks_extract_pt_reference(module, dst, src, scratch)
             }

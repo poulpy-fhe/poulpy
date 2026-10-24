@@ -21,17 +21,17 @@ pub unsafe trait CKKSEncryptionImpl: Backend {
     where
         A: CKKSCtBounds;
 
-    fn ckks_encrypt_sk<Dct, S, Pt>(
+    fn ckks_encrypt_sk<Dct, Dpt, S>(
         module: &Module<Self>,
         ct: &mut Dct,
-        pt: &Pt,
+        pt: &Dpt,
         sk: &S,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Pt: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds,
+        Dpt: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds,
         Dct: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         S: GLWESecretPreparedToBackendRef<Self>;
 
@@ -40,15 +40,15 @@ pub unsafe trait CKKSEncryptionImpl: Backend {
         Pt: CKKSInfos,
         Ct: CKKSCtBounds;
 
-    fn ckks_decrypt<S, Dct, Pt>(
+    fn ckks_decrypt<Dpt, Dct, S>(
         module: &Module<Self>,
-        pt: &mut Pt,
+        pt: &mut Dpt,
         ct: &Dct,
         sk: &S,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Pt: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos + IntPolyInfos,
+        Dpt: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos + IntPolyInfos,
         Dct: GLWEToBackendRef<Self> + GLWEInfos + CKKSCtBounds,
         S: GLWESecretPreparedToBackendRef<Self> + GLWEInfos;
 }
@@ -65,17 +65,17 @@ macro_rules! impl_ckks_encryption_reference_full {
                 $crate::reference::encryption::CKKSEncryptionReference::ckks_encrypt_sk_tmp_bytes_reference(module, ct_infos)
             }
 
-            fn ckks_encrypt_sk<Dct, S, Pt>(
+            fn ckks_encrypt_sk<Dct, Dpt, S>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 ct: &mut Dct,
-                pt: &Pt,
+                pt: &Dpt,
                 sk: &S,
                 source_xe: &mut ::poulpy_hal::source::Source,
                 source_xa: &mut ::poulpy_hal::source::Source,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
-                Pt: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
+                Dpt: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
                 Dct: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
                 S: ::poulpy_core::layouts::GLWESecretPreparedToBackendRef<Self>,
             {
@@ -94,15 +94,15 @@ macro_rules! impl_ckks_encryption_reference_full {
                 )
             }
 
-            fn ckks_decrypt<S, Dct, Pt>(
+            fn ckks_decrypt<Dpt, Dct, S>(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                pt: &mut Pt,
+                pt: &mut Dpt,
                 ct: &Dct,
                 sk: &S,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
-                Pt: ::poulpy_core::layouts::GLWEToBackendMut<Self>
+                Dpt: ::poulpy_core::layouts::GLWEToBackendMut<Self>
                     + $crate::CKKSCtBounds
                     + $crate::SetCKKSInfos
                     + ::poulpy_core::layouts::IntPolyInfos,

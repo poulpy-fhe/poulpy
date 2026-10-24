@@ -145,10 +145,10 @@ where
     // Halving an integer need not give an integer, so division refuses
     // `Integer` slots rather than carry a false claim.
     a.set_slots(SlotsKind::Integer);
-    assert!(module.ckks_div_pow2_into(&mut res, &a, 1, &mut scratch.borrow()).is_err());
+    assert!(module.ckks_div_pow2_into(1, &mut res, &a, &mut scratch.borrow()).is_err());
     let mut acc = a.clone();
-    assert!(module.ckks_div_pow2_assign(&mut acc, 1).is_err());
+    assert!(module.ckks_div_pow2_assign(1, &mut acc).is_err());
     assert_eq!(acc.slots(), SlotsKind::Integer, "a refused division is a no-op");
-    module.ckks_div_pow2_assign(&mut acc, 0).unwrap();
+    module.ckks_div_pow2_assign(0, &mut acc).unwrap();
     assert_eq!(acc.slots(), SlotsKind::Integer, "dividing by one keeps integers");
 }

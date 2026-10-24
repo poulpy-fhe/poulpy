@@ -55,9 +55,9 @@ where
         .glwe_keyswitch_tmp_bytes(&bottom, input, keys.dense_to_sparse())
         .max(BE::ckks_ship_coeff_encodings_tmp_bytes::<F>(
             module,
-            plan,
             base2k.into(),
             params.complex(),
+            plan,
         )?)
         .checked_add(BE::scratch_aligned(module.glwe_bytes_of_from_infos(&bottom)))
         .context("SHIP encapsulation scratch size overflows usize")?;

@@ -51,7 +51,7 @@ where
         + poulpy_hal::api::Convolution<BE>
         + poulpy_hal::api::VecZnxBigNormalizeTmpBytes,
 {
-    fn ckks_all_ops_tmp_bytes<C, T, P>(&self, ct_infos: &C, tsk_infos: &T, pt_prec: &P) -> usize
+    fn ckks_all_ops_tmp_bytes<C, T, P>(&self, ct_infos: &C, pt_prec: &P, tsk_infos: &T) -> usize
     where
         C: CKKSCtBounds,
         T: GGLWEInfos,
@@ -96,7 +96,7 @@ where
             .max(self.glwe_tensor_key_encrypt_sk_tmp_bytes(tsk_infos))
     }
 
-    fn ckks_all_ops_with_atk_tmp_bytes<C, T, A, P>(&self, ct_infos: &C, tsk_infos: &T, atk_infos: &A, pt_prec: &P) -> usize
+    fn ckks_all_ops_with_atk_tmp_bytes<C, T, A, P>(&self, ct_infos: &C, pt_prec: &P, tsk_infos: &T, atk_infos: &A) -> usize
     where
         C: CKKSCtBounds,
         T: GGLWEInfos,
@@ -105,7 +105,7 @@ where
     {
         // The core linear transformations with a key per rotation, which every plan of that kind sizes alike.
         let plan = LinearTransformationPlan::default();
-        self.ckks_all_ops_tmp_bytes(ct_infos, tsk_infos, pt_prec)
+        self.ckks_all_ops_tmp_bytes(ct_infos, pt_prec, tsk_infos)
             .max(self.ckks_rotate_tmp_bytes(ct_infos, atk_infos))
             .max(self.glwe_eval_linear_transformation_tmp_bytes(ct_infos, ct_infos, ct_infos, &plan, atk_infos))
             .max(self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct_infos, ct_infos, ct_infos, &plan, atk_infos))

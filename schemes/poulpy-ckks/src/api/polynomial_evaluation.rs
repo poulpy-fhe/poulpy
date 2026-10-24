@@ -13,8 +13,8 @@ pub trait CKKSPolynomialEvaluationOps<BE: Backend> {
     fn ckks_eval_poly_real_const_coeffs_from_power_basis<R, B, A, G, H>(
         &self,
         res: &mut R,
-        poly: &B,
         power_basis: &G,
+        poly: &B,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -53,8 +53,8 @@ pub trait CKKSComplexPolynomialEvaluationOps<BE: Backend> {
     fn ckks_eval_poly_complex_const_coeffs_from_power_basis<R, C, A, G, H>(
         &self,
         res: &mut R,
-        poly: &ComplexBSGSPolynomial<C>,
         power_basis: &G,
+        poly: &ComplexBSGSPolynomial<C>,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>

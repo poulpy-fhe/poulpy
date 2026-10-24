@@ -59,11 +59,11 @@ where
         &mut scratch.borrow(),
     );
     // The shared scratch budget also covers the standard-only unary operations.
-    let budget = module.ckks_all_ops_with_atk_tmp_bytes(&ct1, &params.tsk_layout(), &params.atk_layout(), &PT_PREC);
+    let budget = module.ckks_all_ops_with_atk_tmp_bytes(&ct1, &PT_PREC, &params.tsk_layout(), &params.atk_layout());
     assert!(module.ckks_conjugate_tmp_bytes(&ct1, &params.atk_layout()) <= budget);
     assert!(module.ckks_mul_i_tmp_bytes(ct1.max_size()) <= budget);
     assert!(module.ckks_div_i_tmp_bytes(ct1.max_size()) <= budget);
-    let budget = module.ckks_all_ops_tmp_bytes(&ct1, &params.tsk_layout(), &PT_PREC);
+    let budget = module.ckks_all_ops_tmp_bytes(&ct1, &PT_PREC, &params.tsk_layout());
     assert!(module.ckks_mul_i_tmp_bytes(ct1.max_size()) <= budget);
     assert!(module.ckks_div_i_tmp_bytes(ct1.max_size()) <= budget);
     let (want_re, want_im) = want_conjugate(&re1, &im1);

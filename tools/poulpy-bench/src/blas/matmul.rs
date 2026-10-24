@@ -199,7 +199,7 @@ where
         let mut sk = module.glwe_secret_prepared_alloc_from_infos(&layout);
         module.glwe_secret_prepare(&mut sk, &sk_raw);
         let bytes = module
-            .ckks_all_ops_with_atk_tmp_bytes(&layout, &tsk_layout(bp), &atk_layout(bp), &layout)
+            .ckks_all_ops_with_atk_tmp_bytes(&layout, &layout, &tsk_layout(bp), &atk_layout(bp))
             .max(<Module<BE> as CKKSEncodingHostOps<BE, f64>>::ckks_reim_tmp_bytes(
                 &module,
                 bp.slots(),
