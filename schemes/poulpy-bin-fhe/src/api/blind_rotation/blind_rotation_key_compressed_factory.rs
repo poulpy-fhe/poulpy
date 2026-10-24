@@ -1,8 +1,5 @@
 use crate::blind_rotation::{BlindRotationAlgo, BlindRotationKeyCompressed, BlindRotationKeyInfos, CGGI};
-use poulpy_core::{
-    Distribution,
-    layouts::{ModuleCoreCompressedAlloc, key_size},
-};
+use poulpy_core::{Distribution, layouts::ModuleCoreCompressedAlloc};
 use poulpy_hal::{
     api::ModuleN,
     layouts::{Backend, Module},
@@ -56,16 +53,9 @@ pub trait BlindRotationKeyCompressedFactory<BRA: BlindRotationAlgo, BE: Backend>
             infos.n().as_usize() == self.n(),
             "blind_rotation_key_compressed_bytes_of_from_infos: key degree differs from the module degree"
         );
-        let size: usize = key_size(infos.base2k(), infos.dnum(), infos.k_digit(), infos.k_aux());
-        BE::bytes_of_mat_znx(
-            infos.n().as_usize(),
-            infos.dnum().as_usize(),
-            infos.rank().as_usize() + 1,
-            1,
-            size,
-        )
-        .checked_mul(infos.n_lwe().as_usize())
-        .expect("blind_rotation_key_compressed_bytes_of_from_infos: the byte count overflows usize")
+        self.ggsw_compressed_bytes_of_from_infos(infos)
+            .checked_mul(infos.n_lwe().as_usize())
+            .expect("blind_rotation_key_compressed_bytes_of_from_infos: the byte count overflows usize")
     }
 }
 
