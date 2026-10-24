@@ -273,7 +273,7 @@ where
         if prepare_scratch > BE::len_bytes(&scratch.data) {
             scratch = ScratchOwned::<BE>::alloc(prepare_scratch);
         }
-        let ctx = unprepared.prepare(&module, &mut scratch.borrow());
+        let ctx = unprepared.prepare(&module, &mut scratch.borrow()).unwrap();
         // The matrix holds the paid factors; the first one stands apart, a rotation per diagonal.
         let first = ctx
             .coeffs_to_slots_first_factor()
@@ -483,7 +483,7 @@ where
     if prepare_scratch > BE::len_bytes(&scratch.data) {
         scratch = ScratchOwned::<BE>::alloc(prepare_scratch);
     }
-    let ctx = unprepared.prepare(&module, &mut scratch.borrow());
+    let ctx = unprepared.prepare(&module, &mut scratch.borrow()).unwrap();
 
     let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, [0u8; 32]);
 
@@ -826,7 +826,7 @@ where
     if prepare_scratch > BE::len_bytes(&scratch.data) {
         scratch = ScratchOwned::<BE>::alloc(prepare_scratch);
     }
-    let ctx = unprepared.prepare(&module, &mut scratch.borrow());
+    let ctx = unprepared.prepare(&module, &mut scratch.borrow()).unwrap();
 
     let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, [0u8; 32]);
 
@@ -1161,7 +1161,7 @@ where
     if prepare_scratch > BE::len_bytes(&scratch.data) {
         scratch = ScratchOwned::<BE>::alloc(prepare_scratch);
     }
-    let ctx = unprepared.prepare(&module, &mut scratch.borrow());
+    let ctx = unprepared.prepare(&module, &mut scratch.borrow()).unwrap();
 
     let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, [0u8; 32]);
 

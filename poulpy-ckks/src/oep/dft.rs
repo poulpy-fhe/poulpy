@@ -56,13 +56,30 @@ pub unsafe trait DFTImpl:
         Src: CKKSCtBounds,
         K: poulpy_core::layouts::GGLWEInfos;
 
+    /// Prepares every factor of `dft` into `res`, with no allocation. A `res` allocated for another matrix layout, or a
+    /// factor whose diagonals do not share one scale, width and slot kind, is `InvalidOperand`, before any write.
     fn ckks_prepare_dft_matrix<Dir, Fmt, P>(
+        module: &Module<Self>,
+        res: &mut DFTMatrixPrepared<Self, Dir, Fmt>,
+        dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds + DiagonalProd<Self>;
+
+    /// [`Self::ckks_prepare_dft_matrix`] into
+    /// [`CKKSModuleAlloc::ckks_dft_matrix_prepared_alloc_from_infos`](crate::layouts::CKKSModuleAlloc::ckks_dft_matrix_prepared_alloc_from_infos)
+    /// of `dft`.
+    fn ckks_prepare_dft_matrix_alloc<Dir, Fmt, P>(
         module: &Module<Self>,
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
         scratch: &mut ScratchArena<'_, Self>,
-    ) -> DFTMatrixPrepared<Self, Dir, Fmt>
+    ) -> Result<DFTMatrixPrepared<Self, Dir, Fmt>>
     where
-        P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds + DiagonalProd<Self>;
+        P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds + DiagonalProd<Self>,
+    {
+        crate::oep::derived::dft::ckks_prepare_dft_matrix_alloc_derived(module, dft, scratch)
+    }
 
     fn ckks_dft_evaluate_assign<Dir, Fmt, P, Dst, H>(
         module: &Module<Self>,
@@ -230,16 +247,17 @@ macro_rules! impl_dft_reference_full {
             }
             fn ckks_prepare_dft_matrix<Dir, Fmt, P>(
                 module: &::poulpy_hal::layouts::Module<Self>,
+                res: &mut $crate::layouts::DFTMatrixPrepared<Self, Dir, Fmt>,
                 dft: &$crate::layouts::DFTMatrix<Self, Dir, Fmt, ::poulpy_core::layouts::LinearTransformation<P>>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-            ) -> $crate::layouts::DFTMatrixPrepared<Self, Dir, Fmt>
+            ) -> $crate::CKKSResult<()>
             where
                 P: ::poulpy_core::layouts::GLWEToBackendRef<Self>
                     + ::poulpy_core::layouts::IntPolyInfos
                     + $crate::CKKSCtBounds
                     + ::poulpy_core::DiagonalProd<Self>,
             {
-                $crate::reference::dft::ckks_prepare_dft_matrix::<Dir, Fmt, Self, P>(module, dft, scratch)
+                $crate::reference::dft::ckks_prepare_dft_matrix::<Dir, Fmt, Self, P>(module, res, dft, scratch)
             }
             fn ckks_dft_evaluate_assign<Dir, Fmt, P, Dst, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,

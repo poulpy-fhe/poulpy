@@ -62,23 +62,6 @@ pub unsafe trait CKKSMulImpl: Backend {
     /// forms for an operand shaped like `a`, which [`Self::ckks_mul_tmp_bytes`] of a product reading such an
     /// operand covers, as the API promises.
     fn ckks_prepare_tmp_bytes<A: GLWEInfos>(module: &Module<Self>, a: &A) -> usize;
-    /// The bytes [`Self::ckks_prepared_left_alloc_from_infos`] allocates for `infos` under `hint`.
-    fn ckks_prepared_left_bytes_of_from_infos<A: GLWEInfos>(module: &Module<Self>, infos: &A, hint: PrepareHint) -> usize;
-    /// The bytes [`Self::ckks_prepared_right_alloc_from_infos`] allocates for `infos` under `hint`.
-    fn ckks_prepared_right_bytes_of_from_infos<A: GLWEInfos>(module: &Module<Self>, infos: &A, hint: PrepareHint) -> usize;
-    /// A left operand of a ciphertext of `infos`, in the representation `hint` selects, which
-    /// [`Self::ckks_prepare_left_into`] fills; its infos report `infos` and no metadata until then.
-    fn ckks_prepared_left_alloc_from_infos<A: GLWEInfos>(
-        module: &Module<Self>,
-        infos: &A,
-        hint: PrepareHint,
-    ) -> CKKSPreparedLeft<Self>;
-    /// As [`Self::ckks_prepared_left_alloc_from_infos`], for a right operand.
-    fn ckks_prepared_right_alloc_from_infos<A: GLWEInfos>(
-        module: &Module<Self>,
-        infos: &A,
-        hint: PrepareHint,
-    ) -> CKKSPreparedRight<Self>;
     /// Prepares `a` into `res`, with no allocation: `res` then reports `a`'s layout and metadata, and the products
     /// that read it give the reference's bits. An `a` of another layout than `res` was allocated for is
     /// `InvalidOperand`, before any write to `res`.
@@ -100,7 +83,8 @@ pub unsafe trait CKKSMulImpl: Backend {
     where
         A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos;
     /// Prepares a left operand: [`Self::ckks_prepare_left_into`] into
-    /// [`Self::ckks_prepared_left_alloc_from_infos`] of `a` under `hint`.
+    /// [`CKKSModuleAlloc::ckks_prepared_left_alloc_from_infos`](crate::layouts::CKKSModuleAlloc::ckks_prepared_left_alloc_from_infos)
+    /// of `a` under `hint`.
     fn ckks_prepare_left<A>(
         module: &Module<Self>,
         a: &A,
@@ -113,7 +97,8 @@ pub unsafe trait CKKSMulImpl: Backend {
         super::derived::mul::ckks_prepare_left_derived(module, a, hint, scratch)
     }
     /// Prepares a right operand: [`Self::ckks_prepare_right_into`] into
-    /// [`Self::ckks_prepared_right_alloc_from_infos`] of `a` under `hint`.
+    /// [`CKKSModuleAlloc::ckks_prepared_right_alloc_from_infos`](crate::layouts::CKKSModuleAlloc::ckks_prepared_right_alloc_from_infos)
+    /// of `a` under `hint`.
     fn ckks_prepare_right<A>(
         module: &Module<Self>,
         a: &A,
@@ -294,38 +279,6 @@ macro_rules! impl_ckks_mul_reference_full {
                 a: &A,
             ) -> usize {
                 $crate::reference::mul::CKKSMulReference::ckks_prepare_tmp_bytes_reference(module, a)
-            }
-
-            fn ckks_prepared_left_bytes_of_from_infos<A: ::poulpy_core::layouts::GLWEInfos>(
-                module: &::poulpy_hal::layouts::Module<Self>,
-                infos: &A,
-                hint: ::poulpy_hal::layouts::PrepareHint,
-            ) -> usize {
-                $crate::reference::mul::CKKSMulReference::ckks_prepared_left_bytes_of_from_infos_reference(module, infos, hint)
-            }
-
-            fn ckks_prepared_right_bytes_of_from_infos<A: ::poulpy_core::layouts::GLWEInfos>(
-                module: &::poulpy_hal::layouts::Module<Self>,
-                infos: &A,
-                hint: ::poulpy_hal::layouts::PrepareHint,
-            ) -> usize {
-                $crate::reference::mul::CKKSMulReference::ckks_prepared_right_bytes_of_from_infos_reference(module, infos, hint)
-            }
-
-            fn ckks_prepared_left_alloc_from_infos<A: ::poulpy_core::layouts::GLWEInfos>(
-                module: &::poulpy_hal::layouts::Module<Self>,
-                infos: &A,
-                hint: ::poulpy_hal::layouts::PrepareHint,
-            ) -> $crate::layouts::CKKSPreparedLeft<Self> {
-                $crate::reference::mul::CKKSMulReference::ckks_prepared_left_alloc_from_infos_reference(module, infos, hint)
-            }
-
-            fn ckks_prepared_right_alloc_from_infos<A: ::poulpy_core::layouts::GLWEInfos>(
-                module: &::poulpy_hal::layouts::Module<Self>,
-                infos: &A,
-                hint: ::poulpy_hal::layouts::PrepareHint,
-            ) -> $crate::layouts::CKKSPreparedRight<Self> {
-                $crate::reference::mul::CKKSMulReference::ckks_prepared_right_alloc_from_infos_reference(module, infos, hint)
             }
 
             fn ckks_prepare_left_into<A>(

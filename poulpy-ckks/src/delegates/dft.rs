@@ -45,13 +45,25 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
 
     fn ckks_prepare_dft_matrix<Dir, Fmt, P>(
         &self,
+        res: &mut DFTMatrixPrepared<BE, Dir, Fmt>,
         dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> DFTMatrixPrepared<BE, Dir, Fmt>
+    ) -> Result<()>
     where
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
     {
-        BE::ckks_prepare_dft_matrix::<Dir, Fmt, P>(self, dft, scratch)
+        BE::ckks_prepare_dft_matrix::<Dir, Fmt, P>(self, res, dft, scratch)
+    }
+
+    fn ckks_prepare_dft_matrix_alloc<Dir, Fmt, P>(
+        &self,
+        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<DFTMatrixPrepared<BE, Dir, Fmt>>
+    where
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
+    {
+        BE::ckks_prepare_dft_matrix_alloc::<Dir, Fmt, P>(self, dft, scratch)
     }
 
     fn ckks_dft_evaluate_assign<Dir, Fmt, P, Dst, H>(

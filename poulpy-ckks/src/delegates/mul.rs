@@ -1,6 +1,6 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey};
+use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey};
 use poulpy_hal::layouts::{Backend, Module, PrepareHint, ScratchArena};
 
 use crate::api::CKKSMulOps;
@@ -76,34 +76,6 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
         A: CKKSCtBounds,
     {
         BE::ckks_prepare_tmp_bytes(self, a)
-    }
-
-    fn ckks_prepared_left_bytes_of_from_infos<A>(&self, infos: &A, hint: PrepareHint) -> usize
-    where
-        A: GLWEInfos,
-    {
-        BE::ckks_prepared_left_bytes_of_from_infos(self, infos, hint)
-    }
-
-    fn ckks_prepared_right_bytes_of_from_infos<A>(&self, infos: &A, hint: PrepareHint) -> usize
-    where
-        A: GLWEInfos,
-    {
-        BE::ckks_prepared_right_bytes_of_from_infos(self, infos, hint)
-    }
-
-    fn ckks_prepared_left_alloc_from_infos<A>(&self, infos: &A, hint: PrepareHint) -> CKKSPreparedLeft<BE>
-    where
-        A: GLWEInfos,
-    {
-        BE::ckks_prepared_left_alloc_from_infos(self, infos, hint)
-    }
-
-    fn ckks_prepared_right_alloc_from_infos<A>(&self, infos: &A, hint: PrepareHint) -> CKKSPreparedRight<BE>
-    where
-        A: GLWEInfos,
-    {
-        BE::ckks_prepared_right_alloc_from_infos(self, infos, hint)
     }
 
     fn ckks_prepare_left_into<A>(&self, res: &mut CKKSPreparedLeft<BE>, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

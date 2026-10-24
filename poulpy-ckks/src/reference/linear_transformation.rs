@@ -26,7 +26,7 @@ use poulpy_hal::{
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::{LinearTransformation, LtDiagonalMeta},
-    layouts::CKKSPlaintext,
+    layouts::{CKKSPlaintext, validation::ensure_uniform_diagonals},
     reference::mul::mul_pt_params_raw,
 };
 use poulpy_core::GLWEBytesOf;
@@ -151,36 +151,28 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         self.glwe_eval_linear_transformation_sum_tmp_bytes(ct, ct, ct, key)
     }
 
+    /// `InvalidOperand` for diagonals of `lt` not sharing one scale, width and slot kind, before any write.
     fn ckks_prepare_linear_transformation_rhs_reference<P>(
         &self,
         prepared: &mut LinearTransformationPrepared<BE>,
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    ) -> Result<()>
+    where
         Self: GLWELinearTransformations<BE>,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
     {
-        // Stash the plaintext scale exponent and real-slot claim while filling the
-        // diagonals so eval no longer needs `lt` for `cnv_offset` math and the
-        // result's slot kind. Contract: the diagonals must share one scale, width
-        // and slot kind (the crate's compilers always produce uniform diagonals;
-        // the unprepared eval path rejects heterogeneous hand-built inputs via
-        // `ensure_uniform_diagonals`, so this infallible prepare stashes the first
-        // diagonal's for all; debug builds assert the contract).
+        // The first diagonal's scale and real-slot claim are stashed for all, so eval needs no `lt` for its
+        // `cnv_offset` and slot kind.
+        ensure_uniform_diagonals("ckks_prepare_linear_transformation_rhs", lt, |pt| {
+            (pt.log_delta(), pt.encoded_k().as_usize(), pt.slots())
+        })?;
         if let Some(first_pt) = lt.first_diagonal_plaintext() {
-            debug_assert!(
-                lt.giant_steps.iter().flat_map(|gs| &gs.diagonals).all(|diag| {
-                    let pt = &diag.plaintext;
-                    pt.log_delta() == first_pt.log_delta()
-                        && pt.encoded_k() == first_pt.encoded_k()
-                        && pt.slots() == first_pt.slots()
-                }),
-                "linear transformation diagonals must share one scale, width and slot kind"
-            );
             prepared.set_log_scale(first_pt.log_delta());
             prepared.set_real_slots(first_pt.slots().is_real());
         }
         self.glwe_prepare_linear_transformation_rhs(prepared, lt, scratch);
+        Ok(())
     }
 
     fn ckks_prepare_linear_transformation_baby_steps_reference<Src, H>(
@@ -236,7 +228,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         // match the width the diagonal data was positioned at in `cnv_prepare_right`
         // (its effective `k`), which can be below the rounded physical `max_k`.
         let (pt_log_scale, pt_max_k, pt_slots) = (first.lt_log_scale(), first.encoded_k().as_usize(), first.lt_slots());
-        ensure_uniform_diagonals(lt, pt_log_scale, pt_max_k, pt_slots)?;
+        ensure_uniform_diagonals("ckks_eval_linear_transformation_into", lt, lt_diagonal_meta)?;
         // ct × (plaintext diagonal): the ct × pt convolution rule, with the diagonal
         // described by just its scale (`pt_log_scale` → rhs `log_delta`) and storage
         // width (`pt_max_k` → rhs `max_k`). Its `log_budget` is dead in this math
@@ -328,7 +320,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
             }
         }
         for &lt_t in lts {
-            ensure_uniform_diagonals(lt_t, pt_log_scale, pt_max_k, pt_slots)?;
+            ensure_uniform_diagonals("ckks_eval_linear_transformation_sum_into", lt_t, lt_diagonal_meta)?;
         }
         // The terms share the source and diagonal metadata, so the first term's
         // ct × pt rule holds for all of them (see `ckks_eval_linear_transformation_into`).
@@ -360,6 +352,11 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
 }
 
 impl<BE: Backend> CKKSLinearTransformationReference<BE> for Module<BE> {}
+
+/// The scale, storage width and slot kind a diagonal's evaluation reads.
+fn lt_diagonal_meta<P: LtDiagonalMeta + IntPolyInfos>(pt: &P) -> (usize, usize, SlotsKind) {
+    (pt.lt_log_scale(), pt.encoded_k().as_usize(), pt.lt_slots())
+}
 
 fn invalid_sum(reason: String) -> CKKSError {
     CKKSCompositionError::InvalidOperand {
@@ -408,36 +405,6 @@ where
                 k: giant_k.into(),
                 source,
             })?;
-    }
-    Ok(())
-}
-
-/// Verifies every diagonal shares the first diagonal's scale, storage width and slot kind.
-///
-/// The evaluation derives one `cnv_offset` (and the result metadata) from the
-/// first diagonal alone; a hand-built transform with heterogeneous diagonal
-/// scales would silently mis-scale every other diagonal's contribution, and
-/// heterogeneous slot kinds would mislabel the result. The crate's own compilers
-/// (`ckks_encode_linear_transformation_from_diagonals`, the DFT/PaCo factor
-/// encoders) always produce uniform diagonals, so this only rejects malformed
-/// hand-assembled inputs.
-fn ensure_uniform_diagonals<P>(lt: &LinearTransformation<P>, log_scale: usize, max_k: usize, slots: SlotsKind) -> Result<()>
-where
-    P: LtDiagonalMeta + IntPolyInfos + LWEInfos,
-{
-    for gs in &lt.giant_steps {
-        for diag in &gs.diagonals {
-            let pt = &diag.plaintext;
-            ckks_ensure!(
-                pt.lt_log_scale() == log_scale && pt.encoded_k().as_usize() == max_k && pt.lt_slots() == slots,
-                "linear transformation diagonals are not uniform: diagonal (giant rot {}, baby {}) has (log_scale {}, max_k {}, {:?}) but the first diagonal, which cnv_offset and the result metadata are derived from, has ({log_scale}, {max_k}, {slots:?})",
-                gs.rot,
-                diag.baby,
-                pt.lt_log_scale(),
-                pt.encoded_k().as_usize(),
-                pt.lt_slots(),
-            );
-        }
     }
     Ok(())
 }

@@ -620,6 +620,10 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::linear_transformation::test_linear_transformation_sum
             );
             run_test!(
+                prepare_linear_transformation_rejects_mixed_diagonals,
+                $crate::test_suite::linear_transformation::test_prepare_linear_transformation_rejects_mixed_diagonals
+            );
+            run_test!(
                 linear_transformation_mixed_key_layouts,
                 $crate::test_suite::linear_transformation::test_linear_transformation_mixed_key_layouts
             );

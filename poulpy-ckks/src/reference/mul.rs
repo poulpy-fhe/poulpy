@@ -10,8 +10,8 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution, VecZnxCopy},
-    layouts::{Backend, PrepareHint, ScratchArena},
+    api::{Convolution, VecZnxCopy},
+    layouts::{Backend, ScratchArena},
 };
 
 use crate::{CKKSCompositionError, SlotsKind};
@@ -159,55 +159,6 @@ pub trait CKKSMulReference<BE: Backend> {
         A: GLWEInfos,
     {
         glwe_prepare_left_tmp_bytes(self, a.size(), a).max(glwe_prepare_right_tmp_bytes(self, a.size(), a))
-    }
-
-    /// The bytes of a left operand of `infos` under `hint`: its convolution operand on `ceil(k / base2k)` limbs and
-    /// `rank + 1` columns.
-    fn ckks_prepared_left_bytes_of_from_infos_reference<A>(&self, infos: &A, hint: PrepareHint) -> usize
-    where
-        Self: CnvPVecBytesOf,
-        A: GLWEInfos,
-    {
-        self.bytes_of_cnv_pvec_left(infos.n().as_usize(), infos.rank().as_usize() + 1, infos.size(), hint)
-    }
-
-    /// As [`Self::ckks_prepared_left_bytes_of_from_infos_reference`], for a right operand.
-    fn ckks_prepared_right_bytes_of_from_infos_reference<A>(&self, infos: &A, hint: PrepareHint) -> usize
-    where
-        Self: CnvPVecBytesOf,
-        A: GLWEInfos,
-    {
-        self.bytes_of_cnv_pvec_right(infos.n().as_usize(), infos.rank().as_usize() + 1, infos.size(), hint)
-    }
-
-    /// A left operand of `infos` under `hint`, of unspecified contents, reporting `infos` and no metadata.
-    fn ckks_prepared_left_alloc_from_infos_reference<A>(&self, infos: &A, hint: PrepareHint) -> CKKSPreparedLeft<BE>
-    where
-        Self: CnvPVecAlloc<BE>,
-        A: GLWEInfos,
-    {
-        let size = infos.size();
-        CKKSPreparedLeft {
-            prep: self.cnv_pvec_left_alloc(infos.n().as_usize(), infos.rank().as_usize() + 1, size, hint),
-            size,
-            layout: infos.glwe_layout(),
-            meta: None,
-        }
-    }
-
-    /// As [`Self::ckks_prepared_left_alloc_from_infos_reference`], for a right operand.
-    fn ckks_prepared_right_alloc_from_infos_reference<A>(&self, infos: &A, hint: PrepareHint) -> CKKSPreparedRight<BE>
-    where
-        Self: CnvPVecAlloc<BE>,
-        A: GLWEInfos,
-    {
-        let size = infos.size();
-        CKKSPreparedRight {
-            prep: self.cnv_pvec_right_alloc(infos.n().as_usize(), infos.rank().as_usize() + 1, size, hint),
-            size,
-            layout: infos.glwe_layout(),
-            meta: None,
-        }
     }
 
     /// `glwe_prepare_left` of `a`, normalized first if its canonical flag is clear, on its `ceil(k / base2k)` limbs,

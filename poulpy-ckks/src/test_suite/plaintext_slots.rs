@@ -225,7 +225,9 @@ pub fn test_linear_transformation_diagonal_slots<BE, F, E>(
         2 * m,
         "prepared slot is not at the diagonals' degree"
     );
-    module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch.borrow());
+    module
+        .ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch.borrow())
+        .unwrap();
     let mut ct_out = alloc_ct(&params, module, params.k);
     module
         .ckks_eval_linear_transformation_self_into(&mut ct_out, &ct, &prepared, &atks, &mut scratch.borrow())

@@ -321,7 +321,9 @@ pub fn test_conjugate_invariant_leveled<BE>(
             assert_output!(&result, &want);
             let first = lt.first_diagonal_plaintext().unwrap();
             let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &lt.index(), first);
-            module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut lt_scratch.arena());
+            module
+                .ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut lt_scratch.arena())
+                .unwrap();
             module
                 .ckks_eval_linear_transformation_self_into(&mut result, input, &prepared, &keys, &mut lt_scratch.arena())
                 .unwrap();

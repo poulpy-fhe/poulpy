@@ -761,8 +761,9 @@ pub trait BlasContextPreparedFactory<BE: Backend>:
     ///
     /// # Panics
     ///
-    /// Panics if `res` and `other` were allocated from different layouts, or if `scratch` holds less than
-    /// [`Self::blas_context_prepare_tmp_bytes`].
+    /// Panics if `res` and `other` were allocated from different layouts, if `scratch` holds less than
+    /// [`Self::blas_context_prepare_tmp_bytes`], or if a map of `other` has diagonals of more than one scale, width or
+    /// slot kind.
     fn blas_context_prepare(
         &self,
         res: &mut BlasContext<BE>,

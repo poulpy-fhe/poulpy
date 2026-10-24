@@ -23,7 +23,7 @@ use crate::{
 ///
 /// Setup ([`CKKSDFTMatrixOps::ckks_new_dft_matrix`]) builds the factor operands
 /// once (as an unprepared [`DFTMatrix`]); [`Self::ckks_prepare_dft_matrix`] optionally
-/// promotes that to the resident [`DFTMatrixPrepared`] for faster repeated
+/// prepares that into the resident [`DFTMatrixPrepared`] for faster repeated
 /// evaluation. The evaluation methods apply either form. The `*_assign` methods
 /// are the `Standard` format; `*_split` returns the real/imaginary parts in two
 /// ciphertexts (`SplitRealAndImag`); `*_repack` is the sparse `RepackImagAsReal`
@@ -53,17 +53,39 @@ pub trait CKKSDFTOps<BE: Backend> {
         Src: CKKSCtBounds,
         K: poulpy_core::layouts::GGLWEInfos;
 
-    /// Prepares an unprepared [`DFTMatrix`] into its resident
-    /// convolution-domain form [`DFTMatrixPrepared`] (see
-    /// [`crate::reference::dft::ckks_prepare_dft_matrix`]): each factor's plaintext
-    /// diagonals are prepared into a `CnvPVec` right operand, trading resident
-    /// memory for faster repeated evaluation. The plan and output-format variant
-    /// are preserved.
+    /// Prepares an unprepared [`DFTMatrix`] into `res`, its resident
+    /// convolution-domain form [`DFTMatrixPrepared`] allocated by
+    /// [`CKKSModuleAlloc::ckks_dft_matrix_prepared_alloc_from_infos`](crate::layouts::CKKSModuleAlloc::ckks_dft_matrix_prepared_alloc_from_infos),
+    /// with no allocation: each factor's plaintext diagonals are prepared into a `CnvPVec` right operand, trading
+    /// resident memory for faster repeated evaluation. `res` then carries `dft`'s plan; preparing again into it refills
+    /// it. Takes [`Self::ckks_prepare_dft_matrix_tmp_bytes`] of scratch.
+    ///
+    /// # Errors
+    ///
+    /// `InvalidOperand`, before any write to `res`, when `res` was allocated for another factor count, factor schedule
+    /// or diagonal degree, radix or width than `dft`'s, or when the diagonals of a factor do not share one scale, width
+    /// and slot kind.
     fn ckks_prepare_dft_matrix<Dir, Fmt, P>(
+        &self,
+        res: &mut DFTMatrixPrepared<BE, Dir, Fmt>,
+        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>;
+
+    /// [`Self::ckks_prepare_dft_matrix`] of `dft` into
+    /// [`CKKSModuleAlloc::ckks_dft_matrix_prepared_alloc_from_infos`](crate::layouts::CKKSModuleAlloc::ckks_dft_matrix_prepared_alloc_from_infos)
+    /// of `dft`. The plan and output-format variant are preserved.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::ckks_prepare_dft_matrix`].
+    fn ckks_prepare_dft_matrix_alloc<Dir, Fmt, P>(
         &self,
         dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> DFTMatrixPrepared<BE, Dir, Fmt>
+    ) -> Result<DFTMatrixPrepared<BE, Dir, Fmt>>
     where
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>;
 
@@ -183,7 +205,7 @@ pub trait CKKSDFTMatrixOps<BE: Backend, F: CKKSEncodingScalar> {
     /// scalar precision `F` (the reference chain is
     /// [`crate::reference::dft::ckks_new_dft_matrix`]): each factor matrix is
     /// encoded into a CKKS linear transformation with plaintext diagonals,
-    /// materialized per factor at eval time. Promote it to the resident form
+    /// materialized per factor at eval time. Prepare it into the resident form
     /// with [`CKKSDFTOps::ckks_prepare_dft_matrix`]. Each factor's BSGS
     /// giant-step width is taken verbatim from the plan's schedule (`1` is the
     /// direct schedule); no implicit optimum is applied.

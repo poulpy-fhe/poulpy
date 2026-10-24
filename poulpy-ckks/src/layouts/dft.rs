@@ -774,12 +774,12 @@ impl DftFormat for Repack {
 /// default keeps unprepared plaintext diagonals ([`LinearTransformation`]) and
 /// materializes them per factor at eval time (minimal resident memory); the
 /// prepared alias [`DFTMatrixPrepared`] keeps the convolution-domain diagonals
-/// resident. Build via [`ckks_new_dft_matrix`], then optionally
-/// [`ckks_prepare_dft_matrix`]. The required Galois keys are reported by
+/// resident. Build via [`ckks_new_dft_matrix`], then optionally prepare into a
+/// [`DFTMatrixPrepared`] with [`ckks_prepare_dft_matrix`]. The required Galois keys are reported by
 /// `galois_elements`.
 ///
 /// [`ckks_new_dft_matrix`]: crate::reference::dft::ckks_new_dft_matrix
-/// [`ckks_prepare_dft_matrix`]: crate::reference::dft::ckks_prepare_dft_matrix
+/// [`ckks_prepare_dft_matrix`]: crate::api::CKKSDFTOps::ckks_prepare_dft_matrix
 /// [`ckks_coeffs_to_slots_repack`]: crate::api::CKKSDFTOps::ckks_coeffs_to_slots_repack
 pub struct DFTMatrix<BE: Backend, Dir, Fmt, R = LinearTransformation<CKKSPlaintextOwned<BE>>> {
     pub(crate) inner: DFTMatrixFactors<BE, R>,
@@ -789,9 +789,10 @@ pub struct DFTMatrix<BE: Backend, Dir, Fmt, R = LinearTransformation<CKKSPlainte
 /// Prepared (resident-RHS) [`DFTMatrix`]: each factor's diagonals are kept in the
 /// convolution domain ([`LinearTransformationPrepared`]) rather than materialized
 /// per factor, trading resident memory for faster repeated evaluation. Preserves
-/// the `Dir`/`Fmt` type-state of the matrix it was prepared from. Obtained by
-/// preparing a [`DFTMatrix`] via
-/// [`ckks_prepare_dft_matrix`](crate::reference::dft::ckks_prepare_dft_matrix).
+/// the `Dir`/`Fmt` type-state of the matrix it was prepared from. Allocated by
+/// [`CKKSModuleAlloc::ckks_dft_matrix_prepared_alloc_from_infos`](crate::layouts::CKKSModuleAlloc::ckks_dft_matrix_prepared_alloc_from_infos)
+/// and filled from a [`DFTMatrix`] by
+/// [`CKKSDFTOps::ckks_prepare_dft_matrix`](crate::api::CKKSDFTOps::ckks_prepare_dft_matrix).
 pub type DFTMatrixPrepared<BE, Dir, Fmt> = DFTMatrix<BE, Dir, Fmt, LinearTransformationPrepared<BE>>;
 
 impl<BE: Backend, Dir, Fmt, R> DFTMatrix<BE, Dir, Fmt, R> {
@@ -803,11 +804,6 @@ impl<BE: Backend, Dir, Fmt, R> DFTMatrix<BE, Dir, Fmt, R> {
             inner,
             _marker: PhantomData,
         }
-    }
-
-    /// The factor operands.
-    pub(crate) fn inner(&self) -> &DFTMatrixFactors<BE, R> {
-        &self.inner
     }
 
     /// The resolved plan (canonical `format`, populated `factor_log_delta`).

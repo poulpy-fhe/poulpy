@@ -24,7 +24,7 @@
 //! ```ignore
 //! // setup, once per transform / per input shape
 //! let mut prepared = LinearTransformation::alloc_prepared(module, &layout, lt.first_diagonal_plaintext().unwrap());
-//! module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch);
+//! module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch)?;
 //! let mut babies = LinearTransformationBabySteps::alloc(module, prepared.baby_steps(), &ct);
 //!
 //! // per evaluation
@@ -161,12 +161,18 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// `lt`. Performs zero `CnvPVecR` allocations. The proxy must also carry the
     /// diagonals' degree, which may be below the ring degree;
     /// `lt.first_diagonal_plaintext()` is the proxy every caller should pass.
+    ///
+    /// # Errors
+    ///
+    /// `InvalidOperand` when the diagonals of `lt` do not share one scale, width and slot kind, before any write to
+    /// `prepared`.
     fn ckks_prepare_linear_transformation_rhs<P>(
         &self,
         prepared: &mut LinearTransformationPrepared<BE>,
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    ) -> Result<()>
+    where
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>;
 
     /// Fills `babies` with the prepared baby-step rotations of `src`.

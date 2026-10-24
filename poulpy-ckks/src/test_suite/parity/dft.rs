@@ -7,7 +7,7 @@ use crate::Scale;
 use crate::{
     CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotsKind,
     api::{CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingScalar},
-    layouts::{DFTOutputFormat, DFTPlan, DFTType, Decode, Encode, Repack, Split, Standard},
+    layouts::{CKKSModuleAlloc, DFTOutputFormat, DFTPlan, DFTType, Decode, Encode, Repack, Split, Standard},
     oep::{CKKSEncodingImpl, DFTImpl, DFTMatrixImpl},
     test_suite::CKKSTestParams,
 };
@@ -95,9 +95,11 @@ where
                         prepared_automorphism_key(module, &key, p, (p as u8).wrapping_add(53)),
                     );
                 }
-                let prepared = with_scratch::<B, _>(module.ckks_prepare_dft_matrix_tmp_bytes(&dft), |scratch| {
-                    module.ckks_prepare_dft_matrix(&dft, scratch)
-                });
+                let mut prepared = module.ckks_dft_matrix_prepared_alloc_from_infos(&dft);
+                with_scratch::<B, _>(module.ckks_prepare_dft_matrix_tmp_bytes(&dft), |scratch| {
+                    module.ckks_prepare_dft_matrix(&mut prepared, &dft, scratch)
+                })
+                .unwrap();
                 let mut raw = fixture_ciphertext(module, &layout, 61);
                 with_scratch::<B, _>(module.ckks_dft_tmp_bytes(&layout, &layout, &dft, &key), |scratch| {
                     module.ckks_dft_evaluate_assign(&mut raw, &dft, &keys, scratch)
