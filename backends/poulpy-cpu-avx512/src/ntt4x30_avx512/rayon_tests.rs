@@ -177,14 +177,14 @@ backend_test_suite! {
         test_vec_znx_window_normalize_ops => poulpy_hal::test_suite::window::test_vec_znx_window_normalize_ops,
         test_vec_znx_big_window_normalize => poulpy_hal::test_suite::window::test_vec_znx_big_window_normalize,
         test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
-        test_vec_znx_dft_step_zero_rejected => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_step_zero_rejected,
-        test_convolution_prepare_shape_rejected => poulpy_hal::test_suite::convolution::test_convolution_prepare_shape_rejected,
-        test_vmp_apply_dft_to_dft_shape_rejected => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_shape_rejected,
+        test_vec_znx_dft_rejects_zero_step => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_rejects_zero_step,
+        test_cnv_prepare_rejects_mismatched_shape => poulpy_hal::test_suite::convolution::test_cnv_prepare_rejects_mismatched_shape,
+        test_vmp_apply_dft_to_dft_rejects_column_mismatch => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_rejects_column_mismatch,
         test_vec_znx_embed_add_sub => poulpy_hal::test_suite::embed::test_vec_znx_embed_add_sub,
         test_vec_znx_big_embed_add_sub => poulpy_hal::test_suite::embed::test_vec_znx_big_embed_add_sub,
         test_convolution_embed => poulpy_hal::test_suite::convolution::test_convolution_embed,
         test_convolution_galois => poulpy_hal::test_suite::convolution::test_convolution_galois,
-        test_convolution_by_const_degree_rejected => poulpy_hal::test_suite::convolution::test_convolution_by_const_degree_rejected,
+        test_cnv_by_const_rejects_degree_mismatch => poulpy_hal::test_suite::convolution::test_cnv_by_const_rejects_degree_mismatch,
     }
 }
 

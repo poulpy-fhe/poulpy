@@ -2,6 +2,7 @@
 //! equals the same operation applied to a dense copy of the window, and
 //! leaves everything outside the window untouched.
 
+use crate::test_suite::poisoned_arena;
 use crate::{
     AlignedBuf,
     api::{
@@ -266,7 +267,7 @@ where
     );
 
     let mut prep = module.cnv_pvec_left_alloc(params.n, cols, size, PrepareHint::Reuse);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.cnv_prepare_left_tmp_bytes(size, size));
+    let mut scratch: ScratchOwned<BE> = poisoned_arena(module.cnv_prepare_left_tmp_bytes(size, size));
     let cnv_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         module.cnv_prepare_left(
             &mut prep.to_backend_mut(),
@@ -449,15 +450,13 @@ where
     let (cols, size) = (2usize, 4usize);
     let mut source = Source::new([11u8; 32]);
     let base = VecZnxShape::new(n, cols, size);
-    let tmp_bytes = module
-        .vec_znx_normalize_tmp_bytes()
-        .max(module.vec_znx_lsh_tmp_bytes(size))
-        .max(module.vec_znx_rsh_tmp_bytes(size));
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(tmp_bytes);
 
     for w in windows(n, size) {
         let shape = shape_of(base, w);
         let wsize = shape.size();
+        let normalize_arena = || poisoned_arena::<BE>(module.vec_znx_normalize_tmp_bytes());
+        let lsh_arena = || poisoned_arena::<BE>(module.vec_znx_lsh_tmp_bytes(wsize));
+        let rsh_arena = || poisoned_arena::<BE>(module.vec_znx_rsh_tmp_bytes(wsize));
         for op in 0..11 {
             for k in [0usize, 3, base2k, base2k + 2] {
                 let mut a_be = module.vec_znx_alloc(n, cols, size);
@@ -505,7 +504,7 @@ where
                             &a,
                             base2k,
                             col,
-                            &mut scratch.arena()
+                            &mut normalize_arena().arena()
                         )),
                         1 => both!(|r, a| module.vec_znx_normalize(
                             &mut r,
@@ -516,7 +515,7 @@ where
                             &a,
                             base2k,
                             col,
-                            &mut scratch.arena()
+                            &mut normalize_arena().arena()
                         )),
                         2 => {
                             both!(|r, _a| module.vec_znx_normalize_assign(
@@ -525,17 +524,17 @@ where
                                 0,
                                 &mut r,
                                 col,
-                                &mut scratch.arena()
+                                &mut normalize_arena().arena()
                             ))
                         }
-                        3 => both!(|r, a| module.vec_znx_lsh(base2k, k, &mut r, col, &a, col, &mut scratch.arena())),
-                        4 => both!(|r, a| module.vec_znx_rsh(base2k, k, &mut r, col, &a, col, &mut scratch.arena())),
-                        5 => both!(|r, a| module.vec_znx_lsh_add(base2k, k, &mut r, col, &a, col, &mut scratch.arena())),
-                        6 => both!(|r, a| module.vec_znx_rsh_add(base2k, k, &mut r, col, &a, col, &mut scratch.arena())),
-                        7 => both!(|r, a| module.vec_znx_lsh_sub(base2k, k, &mut r, col, &a, col, &mut scratch.arena())),
-                        8 => both!(|r, a| module.vec_znx_rsh_sub(base2k, k, &mut r, col, &a, col, &mut scratch.arena())),
-                        9 => both!(|r, _a| module.vec_znx_lsh_assign(base2k, k, &mut r, col, &mut scratch.arena())),
-                        _ => both!(|r, _a| module.vec_znx_rsh_assign(base2k, k, &mut r, col, &mut scratch.arena())),
+                        3 => both!(|r, a| module.vec_znx_lsh(base2k, k, &mut r, col, &a, col, &mut lsh_arena().arena())),
+                        4 => both!(|r, a| module.vec_znx_rsh(base2k, k, &mut r, col, &a, col, &mut rsh_arena().arena())),
+                        5 => both!(|r, a| module.vec_znx_lsh_add(base2k, k, &mut r, col, &a, col, &mut lsh_arena().arena())),
+                        6 => both!(|r, a| module.vec_znx_rsh_add(base2k, k, &mut r, col, &a, col, &mut rsh_arena().arena())),
+                        7 => both!(|r, a| module.vec_znx_lsh_sub(base2k, k, &mut r, col, &a, col, &mut lsh_arena().arena())),
+                        8 => both!(|r, a| module.vec_znx_rsh_sub(base2k, k, &mut r, col, &a, col, &mut rsh_arena().arena())),
+                        9 => both!(|r, _a| module.vec_znx_lsh_assign(base2k, k, &mut r, col, &mut lsh_arena().arena())),
+                        _ => both!(|r, _a| module.vec_znx_rsh_assign(base2k, k, &mut r, col, &mut rsh_arena().arena())),
                     }
                 }
 
@@ -562,7 +561,7 @@ where
     let (cols, size) = (2usize, 4usize);
     let mut source = Source::new([17u8; 32]);
     let base = VecZnxShape::new(n, cols, size);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch: ScratchOwned<BE> = poisoned_arena(module.vec_znx_big_normalize_tmp_bytes());
 
     for w in windows(n, size) {
         let shape = shape_of(base, w);

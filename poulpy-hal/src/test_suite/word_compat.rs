@@ -25,6 +25,7 @@ use super::{
 use crate::layouts::SvpPPolToBackendMut;
 use crate::layouts::VmpPMatToBackendMut;
 
+use crate::test_suite::poisoned_arena;
 use crate::{
     api::{
         ScratchOwnedAlloc, SvpPPolAlloc, SvpPrepare, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
@@ -127,8 +128,8 @@ where
     let (rows, cols_in, cols_out, size) = (2, 2, 2, 3);
     let mut source = Source::new([0u8; 32]);
 
-    let mut scratch_a: ScratchOwned<BA> = ScratchOwned::alloc(module_a.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size));
-    let mut scratch_b: ScratchOwned<BB> = ScratchOwned::alloc(module_b.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size));
+    let mut scratch_a: ScratchOwned<BA> = poisoned_arena(module_a.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size));
+    let mut scratch_b: ScratchOwned<BB> = poisoned_arena(module_b.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size));
 
     let mut mat_a = module_a.mat_znx_alloc(params.n, rows, cols_in, cols_out, size);
     for row in 0..rows {
@@ -195,16 +196,8 @@ where
     assert_eq!(module_a.n(), module_b.n());
     let cols = 2;
     let mut source = Source::new([0u8; 32]);
-    let mut scratch_a: ScratchOwned<BA> = ScratchOwned::alloc(
-        module_a
-            .vec_znx_idft_apply_tmp_bytes()
-            .max(module_a.vec_znx_big_normalize_tmp_bytes()),
-    );
-    let mut scratch_b: ScratchOwned<BB> = ScratchOwned::alloc(
-        module_b
-            .vec_znx_idft_apply_tmp_bytes()
-            .max(module_b.vec_znx_big_normalize_tmp_bytes()),
-    );
+    let mut scratch_a: ScratchOwned<BA> = poisoned_arena(module_a.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_b: ScratchOwned<BB> = poisoned_arena(module_b.vec_znx_big_normalize_tmp_bytes());
 
     for size in [1, 2, 3, 4] {
         let mut a = module_a.vec_znx_alloc(params.n, cols, size);

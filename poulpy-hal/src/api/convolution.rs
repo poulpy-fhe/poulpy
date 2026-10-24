@@ -60,7 +60,7 @@ pub trait Convolution<BE: Backend> {
     /// domain     res: a CnvPVecL of degree N with res.cols() == a.cols(); a: a dense VecZnx of degree N, canonical at the precision the caller means to convolve at
     /// requires   scratch >= cnv_prepare_left_tmp_bytes(res.size(), a.size())
     /// ensures    each prepared column reads the source column truncated or zero-extended to res.size() limbs
-    /// test       test_convolution, test_convolution_prepare_shape_rejected, test_convolution_embed
+    /// test       test_convolution, test_cnv_prepare_rejects_mismatched_shape, test_convolution_embed
     /// ```
     fn cnv_prepare_left(
         &self,
@@ -90,7 +90,7 @@ pub trait Convolution<BE: Backend> {
     /// domain     res: a CnvPVecR of degree N with res.cols() == a.cols(); a: a dense VecZnx of degree N, canonical at the precision the caller means to convolve at
     /// requires   scratch >= cnv_prepare_right_tmp_bytes(res.size(), a.size())
     /// ensures    each prepared column reads the source column truncated or zero-extended to res.size() limbs
-    /// test       test_convolution, test_convolution_prepare_shape_rejected, test_convolution_embed
+    /// test       test_convolution, test_cnv_prepare_rejects_mismatched_shape, test_convolution_embed
     /// ```
     fn cnv_prepare_right(
         &self,
@@ -133,7 +133,7 @@ pub trait Convolution<BE: Backend> {
     /// domain     res: a VecZnxBig of degree N; a: a dense VecZnx of degree N; b: a dense VecZnx of any degree, b_coeff < b.n(); res.size(), a.size() and b.size() >= 1
     /// requires   scratch >= cnv_by_const_apply_tmp_bytes(cnv_offset, res.size(), a.size(), b.size()); every coefficient of each partial sum and result is representable in BigWord
     /// ensures    the selected column holds the limb window of the constant convolution, scaled by 2^((cnv_offset + 1) * w) at any radix width w; the remaining limbs are zero-filled
-    /// test       test_convolution_by_const, test_convolution_by_const_degree_rejected
+    /// test       test_convolution_by_const, test_cnv_by_const_rejects_degree_mismatch
     /// ```
     #[allow(clippy::too_many_arguments)]
     fn cnv_by_const_apply(
@@ -173,7 +173,7 @@ pub trait Convolution<BE: Backend> {
     /// ensures    the selected column gains the constant convolution; limbs outside its support retain their old value
     /// fallback   the product into a one-column res.size()-limb VecZnxBig, then vec_znx_big_add_assign
     /// override   allowed, with cnv_by_const_apply_add_tmp_bytes
-    /// test       test_convolution_by_const_add, test_cnv_by_const_apply_add_derived, test_convolution_by_const_degree_rejected
+    /// test       test_convolution_by_const_add, test_cnv_by_const_apply_add_derived, test_cnv_by_const_rejects_degree_mismatch
     /// ```
     #[allow(clippy::too_many_arguments)]
     fn cnv_by_const_apply_add(
@@ -357,7 +357,7 @@ pub trait Convolution<BE: Backend> {
     /// ensures    both prepared operands read the source truncated or zero-extended to their limb count
     /// fallback   OEP default body: the shape check, then the two prepares in sequence
     /// override   allowed, with cnv_prepare_self_tmp_bytes
-    /// test       test_cnv_prepare_self_derived, test_convolution_prepare_shape_rejected, test_convolution_embed
+    /// test       test_cnv_prepare_self_derived, test_cnv_prepare_rejects_mismatched_shape, test_convolution_embed
     /// ```
     fn cnv_prepare_self(
         &self,

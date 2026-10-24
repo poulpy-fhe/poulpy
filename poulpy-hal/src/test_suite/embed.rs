@@ -4,6 +4,7 @@
 //! gives, bit for bit in the coefficient domain and after normalization in the
 //! big domain.
 
+use crate::test_suite::poisoned_arena;
 use crate::{
     api::{
         ModuleN, ScratchOwnedAlloc, VecZnxAdd, VecZnxAddAssign, VecZnxBigAdd, VecZnxBigAddAssign, VecZnxBigAddSmall,
@@ -366,7 +367,7 @@ where
     let base2k = params.base2k;
     let cols = 2;
     let mut source = Source::new([9u8; 32]);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch: ScratchOwned<BE> = poisoned_arena(module.vec_znx_big_normalize_tmp_bytes());
 
     let big_bin: [(&str, BigBin<'_, BE>); 2] = [
         ("vec_znx_big_add", &|r, rc, x, xc, y, yc| {

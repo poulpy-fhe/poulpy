@@ -5,6 +5,7 @@ use super::{
 use crate::layouts::VecZnxBigToBackendMut;
 use crate::layouts::VecZnxBigToBackendRef;
 
+use crate::test_suite::poisoned_arena;
 use crate::{
     api::{
         ScratchOwnedAlloc, VecZnxAddAssign, VecZnxBigAdd, VecZnxBigAddAssign, VecZnxBigAddSmall, VecZnxBigAddSmallAssign,
@@ -158,8 +159,8 @@ pub fn test_vec_znx_big_add<BR: crate::test_suite::TestBackend, BT: crate::test_
     let mut source: Source = Source::new([0u8; 32]);
     let cols: usize = 2;
 
-    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref: ScratchOwned<BR> = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
         let mut a = module_ref.vec_znx_alloc(params.n, cols, a_size);
@@ -242,8 +243,8 @@ pub fn test_vec_znx_big_add_assign<BR: crate::test_suite::TestBackend, BT: crate
     let mut source: Source = Source::new([0u8; 32]);
     let cols: usize = 2;
 
-    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref: ScratchOwned<BR> = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
         let mut a = module_ref.vec_znx_alloc(params.n, cols, a_size);
@@ -290,8 +291,8 @@ pub fn test_vec_znx_big_add_small<BR: crate::test_suite::TestBackend, BT: crate:
     let mut source: Source = Source::new([0u8; 32]);
     let cols: usize = 2;
 
-    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref: ScratchOwned<BR> = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
         let mut a = module_ref.vec_znx_alloc(params.n, cols, a_size);
@@ -365,8 +366,8 @@ pub fn test_vec_znx_big_add_small_assign<BR: crate::test_suite::TestBackend, BT:
     let mut source: Source = Source::new([0u8; 32]);
     let cols: usize = 2;
 
-    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref: ScratchOwned<BR> = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
         let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
@@ -432,8 +433,8 @@ pub fn test_vec_znx_big_automorphism<BR: crate::test_suite::TestBackend, BT: cra
     let mut source: Source = Source::new([0u8; 32]);
     let cols: usize = 2;
 
-    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref: ScratchOwned<BR> = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
         let mut a = module_ref.vec_znx_alloc(params.n, cols, a_size);
@@ -488,12 +489,10 @@ pub fn test_vec_znx_big_automorphism_assign<BR: crate::test_suite::TestBackend, 
     let mut source: Source = Source::new([0u8; 32]);
     let cols: usize = 2;
 
-    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(
-        module_ref.vec_znx_big_automorphism_assign_tmp_bytes() | module_ref.vec_znx_big_normalize_tmp_bytes(),
-    );
-    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(
-        module_test.vec_znx_big_automorphism_assign_tmp_bytes() | module_test.vec_znx_big_normalize_tmp_bytes(),
-    );
+    let mut scratch_ref_automorphism: ScratchOwned<BR> = poisoned_arena(module_ref.vec_znx_big_automorphism_assign_tmp_bytes());
+    let mut scratch_test_automorphism: ScratchOwned<BT> = poisoned_arena(module_test.vec_znx_big_automorphism_assign_tmp_bytes());
+    let mut scratch_ref: ScratchOwned<BR> = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for res_size in [1, 2, 3, 4] {
         let mut res = module_ref.vec_znx_alloc(params.n, cols, res_size);
@@ -503,8 +502,18 @@ pub fn test_vec_znx_big_automorphism_assign<BR: crate::test_suite::TestBackend, 
             let mut res_big_test = big_from_small(module_test, &upload_vec_znx::<BT>(&download_vec_znx::<BR>(&res)));
 
             for i in 0..cols {
-                module_ref.vec_znx_big_automorphism_assign(p, &mut res_big_ref.to_backend_mut(), i, &mut scratch_ref.arena());
-                module_test.vec_znx_big_automorphism_assign(p, &mut res_big_test.to_backend_mut(), i, &mut scratch_test.arena());
+                module_ref.vec_znx_big_automorphism_assign(
+                    p,
+                    &mut res_big_ref.to_backend_mut(),
+                    i,
+                    &mut scratch_ref_automorphism.arena(),
+                );
+                module_test.vec_znx_big_automorphism_assign(
+                    p,
+                    &mut res_big_test.to_backend_mut(),
+                    i,
+                    &mut scratch_test_automorphism.arena(),
+                );
             }
 
             let res_small_ref = normalize_big_to_host(module_ref, base2k, &res_big_ref, &mut scratch_ref);
@@ -533,8 +542,8 @@ pub fn test_vec_znx_big_negate<BR: crate::test_suite::TestBackend, BT: crate::te
     let mut source: Source = Source::new([0u8; 32]);
     let cols: usize = 2;
 
-    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref: ScratchOwned<BR> = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
         let mut a = module_ref.vec_znx_alloc(params.n, cols, a_size);
@@ -587,8 +596,8 @@ pub fn test_vec_znx_big_negate_assign<BR: crate::test_suite::TestBackend, BT: cr
     let mut source: Source = Source::new([0u8; 32]);
     let cols: usize = 2;
 
-    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref: ScratchOwned<BR> = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for res_size in [1, 2, 3, 4] {
         let mut res = module_ref.vec_znx_alloc(params.n, cols, res_size);
@@ -616,16 +625,11 @@ pub fn test_vec_znx_big_normalize<BR: crate::test_suite::TestBackend, BT: crate:
 ) where
     Module<BR>: VecZnxBigAlloc<BR>
         + VecZnxBigFromSmall<BR>
-        + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigNormalize<BR>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxAddAssign<BR>
         + VecZnxSubNegateAssign<BR>,
-    Module<BT>: VecZnxBigAlloc<BT>
-        + VecZnxBigFromSmall<BT>
-        + VecZnxBigAutomorphismAssignTmpBytes
-        + VecZnxBigNormalize<BT>
-        + VecZnxBigNormalizeTmpBytes,
+    Module<BT>: VecZnxBigAlloc<BT> + VecZnxBigFromSmall<BT> + VecZnxBigNormalize<BT> + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
@@ -635,12 +639,8 @@ pub fn test_vec_znx_big_normalize<BR: crate::test_suite::TestBackend, BT: crate:
     let mut source: Source = Source::new([0u8; 32]);
     let cols: usize = 2;
 
-    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(
-        module_ref.vec_znx_big_automorphism_assign_tmp_bytes() | module_ref.vec_znx_big_normalize_tmp_bytes(),
-    );
-    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(
-        module_test.vec_znx_big_automorphism_assign_tmp_bytes() | module_test.vec_znx_big_normalize_tmp_bytes(),
-    );
+    let mut scratch_ref: ScratchOwned<BR> = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
         // 2x - y (x at radix 62, y at radix 1) is uniform on [-2^62, 2^62), the radix-63 digits the fill cannot draw.
@@ -744,8 +744,8 @@ pub fn test_vec_znx_big_sub<BR: crate::test_suite::TestBackend, BT: crate::test_
     let mut source: Source = Source::new([0u8; 32]);
     let cols: usize = 2;
 
-    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref: ScratchOwned<BR> = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
         let mut a = module_ref.vec_znx_alloc(params.n, cols, a_size);
@@ -818,8 +818,8 @@ pub fn test_vec_znx_big_sub_assign<BR: crate::test_suite::TestBackend, BT: crate
     let mut source: Source = Source::new([0u8; 32]);
     let cols: usize = 2;
 
-    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref: ScratchOwned<BR> = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
         let mut a = module_ref.vec_znx_alloc(params.n, cols, a_size);
@@ -872,8 +872,8 @@ pub fn test_vec_znx_big_sub_negate_assign<BR: crate::test_suite::TestBackend, BT
     let mut source: Source = Source::new([0u8; 32]);
     let cols: usize = 2;
 
-    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref: ScratchOwned<BR> = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
         let mut a = module_ref.vec_znx_alloc(params.n, cols, a_size);
@@ -926,8 +926,8 @@ pub fn test_vec_znx_big_sub_small_a<BR: crate::test_suite::TestBackend, BT: crat
     let mut source: Source = Source::new([0u8; 32]);
     let cols: usize = 2;
 
-    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref: ScratchOwned<BR> = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
         let mut a = module_ref.vec_znx_alloc(params.n, cols, a_size);
@@ -999,8 +999,8 @@ pub fn test_vec_znx_big_sub_small_b<BR: crate::test_suite::TestBackend, BT: crat
     let mut source: Source = Source::new([0u8; 32]);
     let cols: usize = 2;
 
-    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref: ScratchOwned<BR> = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
         let mut a = module_ref.vec_znx_alloc(params.n, cols, a_size);
@@ -1072,8 +1072,8 @@ pub fn test_vec_znx_big_sub_small_a_assign<BR: crate::test_suite::TestBackend, B
     let mut source: Source = Source::new([0u8; 32]);
     let cols: usize = 2;
 
-    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref: ScratchOwned<BR> = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
         let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
@@ -1139,8 +1139,8 @@ pub fn test_vec_znx_big_sub_small_b_assign<BR: crate::test_suite::TestBackend, B
     let mut source: Source = Source::new([0u8; 32]);
     let cols: usize = 2;
 
-    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref: ScratchOwned<BR> = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
         let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
@@ -1209,8 +1209,8 @@ pub fn test_vec_znx_big_from_small<BR: crate::test_suite::TestBackend, BT: crate
 
     let cols: usize = 2;
     let mut source: Source = Source::new([0u8; 32]);
-    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref: ScratchOwned<BR> = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
         let mut a_ref_backend = module_ref.vec_znx_alloc(params.n, cols, a_size);
@@ -1280,8 +1280,8 @@ pub fn test_vec_znx_big_inner_sum<BR: crate::test_suite::TestBackend, BT: crate:
 
     let cols: usize = 2;
     let mut source: Source = Source::new([0u8; 32]);
-    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref: ScratchOwned<BR> = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 4] {
         let mut a = module_ref.vec_znx_alloc(params.n, cols, a_size);
@@ -1351,8 +1351,8 @@ pub fn test_vec_znx_big_col_weighted_sum<BR: crate::test_suite::TestBackend, BT:
 
     let cols: usize = 3;
     let mut source: Source = Source::new([0u8; 32]);
-    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref: ScratchOwned<BR> = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     let mut weights = ScalarZnxOwned::<i64>::alloc(params.n, 2);
     fill_ternary(&mut weights, &mut source);
@@ -1445,8 +1445,8 @@ pub fn test_vec_znx_scalar_product<BR: crate::test_suite::TestBackend, BT: crate
 
     let cols: usize = 2;
     let mut source: Source = Source::new([0u8; 32]);
-    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref: ScratchOwned<BR> = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     let mut b = ScalarZnxOwned::<i64>::alloc(params.n, cols);
     fill_ternary(&mut b, &mut source);
