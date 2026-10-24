@@ -5,8 +5,8 @@ use poulpy_hal::layouts::*;
 pub(crate) fn execute_bdd_circuit_tmp_bytes_for_derived<BE: Backend, R, G, C>(
     module: &Module<BE>,
     res_infos: &R,
-    circuit: &C,
     ggsw_infos: &G,
+    circuit: &C,
 ) -> usize
 where
     R: GLWEInfos,
@@ -14,7 +14,7 @@ where
     C: GetBitCircuitInfo,
     Module<BE>: ExecuteBDDCircuit<BE>,
 {
-    module.execute_bdd_circuit_tmp_bytes(res_infos, circuit.max_state_size(), ggsw_infos)
+    module.execute_bdd_circuit_tmp_bytes(circuit.max_state_size(), res_infos, ggsw_infos)
 }
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn execute_bdd_circuit_derived<BE: Backend, C, G, O>(

@@ -17,11 +17,11 @@ pub unsafe trait GLWEBlindSelectionImpl<T: UnsignedInteger>: Backend {
     #[allow(clippy::too_many_arguments)]
     fn glwe_blind_selection<R, A, K>(
         module: &Module<Self>,
+        bit_rsh: usize,
+        bit_mask: usize,
         res: &mut R,
         a: HashMap<usize, &mut A>,
         fhe_uint: &K,
-        bit_rsh: usize,
-        bit_mask: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos,

@@ -15,7 +15,7 @@ use poulpy_hal::{
 /// The destination must have compatible dimensions and sufficient precision for
 /// the message-bit count `k`. Rotation of the encoded samples uses the canonical
 /// LUT rotation composition.
-pub fn lookup_table_set_ref<BE>(module: &Module<BE>, res: &mut LookupTable<BE::OwnedBuf, BE::ZnxWord>, f: &[i64], k: usize)
+pub fn lookup_table_set_ref<BE>(module: &Module<BE>, k: usize, res: &mut LookupTable<BE::OwnedBuf, BE::ZnxWord>, f: &[i64])
 where
     BE: Backend<ZnxWord = i64>,
     Module<BE>: VecZnxNormalizeAssign<BE> + VecZnxNormalizeTmpBytes + VecZnxRotateAssign<BE> + VecZnxRotateAssignTmpBytes,

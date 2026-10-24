@@ -336,12 +336,12 @@ unsafe impl BlindRotationModSwitchImpl for OpaqueBackend<'_> {
     fn blind_rotation_mod_switch<L: LWEToBackendRef<Self> + LWEInfos>(
         _module: &Module<Self>,
         modulus: usize,
+        direction: LookUpTableRotationDirection,
         res: &mut [i64],
         lwe: &L,
-        direction: LookUpTableRotationDirection,
     ) {
         STAGING_CALLS.set(STAGING_CALLS.get() + 1);
-        poulpy_bin_fhe::reference::blind_rotation::mod_switch_2n_ref::<Self, _>(modulus, res, lwe, direction);
+        poulpy_bin_fhe::reference::blind_rotation::mod_switch_2n_ref::<Self, _>(modulus, direction, res, lwe);
     }
 }
 
@@ -389,25 +389,25 @@ const _: () = {
         cmux_assign_neg_reference(module, res, input, &selector, scratch);
 
         module.glwe_blind_rotation_tmp_bytes(res, input, &selector);
-        module.glwe_blind_rotation(res, input, value, true, 0, 1, 0, scratch);
-        module.glwe_blind_rotation_assign(res, value, true, 0, 1, 0, scratch);
+        module.glwe_blind_rotation(true, 0, 1, 0, res, input, value, scratch);
+        module.glwe_blind_rotation_assign(true, 0, 1, 0, res, value, scratch);
         glwe_blind_rotation_tmp_bytes_reference(module, res, input, &selector);
-        glwe_blind_rotation_reference(module, res, input, value, true, 0, 1, 0, scratch);
-        glwe_blind_rotation_assign_reference(module, res, value, true, 0, 1, 0, scratch);
+        glwe_blind_rotation_reference(module, true, 0, 1, 0, res, input, value, scratch);
+        glwe_blind_rotation_assign_reference(module, true, 0, 1, 0, res, value, scratch);
 
         let input_infos = [input.glwe_layout()];
         GLWEBlindSelection::<u8, _>::glwe_blind_selection_tmp_bytes(module, res, &input_infos, &selector);
         GLWEBlindSelection::<u8, _>::glwe_blind_selection::<_, GLWE<OpaqueOwned, i64>, _>(
             module,
+            0,
+            1,
             res,
             HashMap::new(),
             value,
-            0,
-            1,
             scratch,
         );
         glwe_blind_selection_tmp_bytes_reference::<u8, _, _, _, _>(module, res, &input_infos, &selector);
-        glwe_blind_selection_reference::<u8, _, _, GLWE<OpaqueOwned, i64>, _>(module, res, HashMap::new(), value, 0, 1, scratch);
+        glwe_blind_selection_reference::<u8, _, _, GLWE<OpaqueOwned, i64>, _>(module, 0, 1, res, HashMap::new(), value, scratch);
     }
 };
 
@@ -434,8 +434,8 @@ fn modulus_switch_accepts_opaque_storage_and_dispatches_override() {
     for direction in [LookUpTableRotationDirection::Left, LookUpTableRotationDirection::Right] {
         let mut expected = [0i64; 5];
         let mut actual = [0i64; 5];
-        poulpy_bin_fhe::reference::blind_rotation::mod_switch_2n_ref::<OpaqueBackend, _>(64, &mut expected, &lwe, direction);
-        module.blind_rotation_mod_switch(64, &mut actual, &lwe, direction);
+        poulpy_bin_fhe::reference::blind_rotation::mod_switch_2n_ref::<OpaqueBackend, _>(64, direction, &mut expected, &lwe);
+        module.blind_rotation_mod_switch(64, direction, &mut actual, &lwe);
         assert_eq!(actual, expected);
     }
     assert_eq!(STAGING_CALLS.get(), 2);
@@ -511,34 +511,34 @@ thread_local! { static PREPARED_CIRCUIT_CALLS: Cell<usize> = const { Cell::new(0
 unsafe impl CircuitBootstrappingExecuteImpl<CGGI> for OverrideBackend {
     fn circuit_bootstrapping_prepare_to_constant<R: GGSWInfos>(
         module: &Module<Self>,
-        res_infos: &R,
-        key: &poulpy_bin_fhe::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, CGGI, Self>,
         log_domain: usize,
         extension_factor: usize,
+        res_infos: &R,
+        key: &poulpy_bin_fhe::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, CGGI, Self>,
     ) -> poulpy_bin_fhe::circuit_bootstrapping::CircuitBootstrappingPlan<Self::OwnedBuf> {
         poulpy_bin_fhe::reference::circuit_bootstrapping::circuit_bootstrapping_prepare_to_constant_reference(
             module,
-            res_infos,
-            key,
             log_domain,
             extension_factor,
+            res_infos,
+            key,
         )
     }
     fn circuit_bootstrapping_prepare_to_exponent<R: GGSWInfos>(
         module: &Module<Self>,
         log_gap_out: usize,
-        res_infos: &R,
-        key: &poulpy_bin_fhe::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, CGGI, Self>,
         log_domain: usize,
         extension_factor: usize,
+        res_infos: &R,
+        key: &poulpy_bin_fhe::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, CGGI, Self>,
     ) -> poulpy_bin_fhe::circuit_bootstrapping::CircuitBootstrappingPlan<Self::OwnedBuf> {
         poulpy_bin_fhe::reference::circuit_bootstrapping::circuit_bootstrapping_prepare_to_exponent_reference(
             module,
             log_gap_out,
-            res_infos,
-            key,
             log_domain,
             extension_factor,
+            res_infos,
+            key,
         )
     }
     fn circuit_bootstrapping_execute_prepared_tmp_bytes<
@@ -560,8 +560,8 @@ unsafe impl CircuitBootstrappingExecuteImpl<CGGI> for OverrideBackend {
         module: &Module<Self>,
         res: &mut R,
         lwe: &L,
-        key: &poulpy_bin_fhe::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, CGGI, Self>,
         plan: &poulpy_bin_fhe::circuit_bootstrapping::CircuitBootstrappingPlan<Self::OwnedBuf>,
+        key: &poulpy_bin_fhe::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, CGGI, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GGSWToBackendMut<Self> + GGSWAtViewRef<Self> + GGSWAtViewMut<Self> + GGSWInfos,
@@ -574,8 +574,8 @@ unsafe impl CircuitBootstrappingExecuteImpl<CGGI> for OverrideBackend {
             module,
             res,
             lwe,
-            key,
             plan,
+            key,
             &mut remaining,
         );
         assert!(marker.iter().all(|&byte| byte == 0x63));
@@ -626,7 +626,7 @@ fn rotate_opaque_lut(lut: &mut LookupTable<OpaqueOwned, i64>, k: i64) {
 }
 
 unsafe impl LookupTableFactoryImpl for OpaqueBackend<'_> {
-    fn lookup_table_set(module: &Module<Self>, res: &mut LookupTable<Self::OwnedBuf, i64>, f: &[i64], k: usize) {
+    fn lookup_table_set(module: &Module<Self>, k: usize, res: &mut LookupTable<Self::OwnedBuf, i64>, f: &[i64]) {
         // This independent test implementation supports one normalized limb.
         assert_eq!(res.extension_factor(), 1);
         assert_eq!(res.size(), 1);
@@ -702,7 +702,7 @@ fn lookup_table_api_dispatches_without_reference_arithmetic_bounds() {
     let mut wrapped = LookupTable::alloc(&module, &layout);
     direct.set_rotation_direction(LookUpTableRotationDirection::Right);
     wrapped.set_rotation_direction(LookUpTableRotationDirection::Right);
-    module.lookup_table_set(&mut direct, &[1, -1, 2, -2], 4);
+    module.lookup_table_set(4, &mut direct, &[1, -1, 2, -2]);
     assert_eq!(LUT_SET_CALLS.get(), 1);
     wrapped.set(&module, &[1, -1, 2, -2], 4);
     assert_eq!(LUT_SET_CALLS.get(), 2);

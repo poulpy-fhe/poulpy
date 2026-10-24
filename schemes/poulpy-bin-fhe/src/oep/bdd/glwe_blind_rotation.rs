@@ -16,12 +16,12 @@ pub unsafe trait GLWEBlindRotationImpl: Backend<Ring = Standard> {
     #[allow(clippy::too_many_arguments)]
     fn glwe_blind_rotation_assign<R, K>(
         module: &Module<Self>,
-        res: &mut R,
-        value: &K,
         sign: bool,
         bit_rsh: usize,
         bit_mask: usize,
         bit_lsh: usize,
+        res: &mut R,
+        value: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos,
@@ -30,13 +30,13 @@ pub unsafe trait GLWEBlindRotationImpl: Backend<Ring = Standard> {
     #[allow(clippy::too_many_arguments)]
     fn glwe_blind_rotation<R, A, K>(
         module: &Module<Self>,
-        res: &mut R,
-        a: &A,
-        fhe_uint: &K,
         sign: bool,
         bit_rsh: usize,
         bit_mask: usize,
         bit_lsh: usize,
+        res: &mut R,
+        a: &A,
+        fhe_uint: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos,

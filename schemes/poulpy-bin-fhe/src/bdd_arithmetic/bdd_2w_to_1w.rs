@@ -58,8 +58,8 @@ macro_rules! define_bdd_2w_to_1w_trait {
 
                 fn [<$method_name _multi_thread_tmp_bytes>]<M, R, G, H>(
                     &self,
-                    module: &M,
                     threads: usize,
+                    module: &M,
                     res_infos: &R,
                     ggsw_infos: &G,
                     key: &H,
@@ -93,7 +93,7 @@ macro_rules! impl_bdd_2w_to_1w_trait {
                     H: GetAutomorphismKey<BE>,
                     BE: Backend<ZnxWord = i64>,
                 {
-                    module.execute_bdd_circuit_2w_to_1w(self, &$output_circuits, a, b, key, scratch)
+                    module.execute_bdd_circuit_2w_to_1w(self, a, b, &$output_circuits, key, scratch)
                 }
 
                 fn [<$method_name _multi_thread>]<M, H>(
@@ -109,7 +109,7 @@ macro_rules! impl_bdd_2w_to_1w_trait {
                     H: GetAutomorphismKey<BE>,
                     BE: Backend<ZnxWord = i64>,
                 {
-                    module.execute_bdd_circuit_2w_to_1w_multi_thread(threads, self, &$output_circuits, a, b, key, scratch)
+                    module.execute_bdd_circuit_2w_to_1w_multi_thread(threads, self, a, b, &$output_circuits, key, scratch)
                 }
 
                 fn [<$method_name _tmp_bytes>]<M, R, G, H>(
@@ -127,17 +127,17 @@ macro_rules! impl_bdd_2w_to_1w_trait {
                     BE: Backend<ZnxWord = i64>,
                 {
                     module.execute_bdd_circuit_2w_to_1w_tmp_bytes::<_, $ty, _, _, _>(
-                        &$output_circuits,
                         res_infos,
                         ggsw_infos,
+                        &$output_circuits,
                         key,
                     )
                 }
 
                 fn [<$method_name _multi_thread_tmp_bytes>]<M, R, G, H>(
                     &self,
-                    module: &M,
                     threads: usize,
+                    module: &M,
                     res_infos: &R,
                     ggsw_infos: &G,
                     key: &H,
@@ -151,9 +151,9 @@ macro_rules! impl_bdd_2w_to_1w_trait {
                 {
                     module.execute_bdd_circuit_2w_to_1w_multi_thread_tmp_bytes::<_, $ty, _, _, _>(
                         threads,
-                        &$output_circuits,
                         res_infos,
                         ggsw_infos,
+                        &$output_circuits,
                         key,
                     )
                 }

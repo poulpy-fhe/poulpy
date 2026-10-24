@@ -24,11 +24,11 @@ where
 }
 pub(crate) fn circuit_bootstrapping_execute_to_constant_derived<R, L, M, BRA, BE>(
     module: &M,
+    log_domain: usize,
+    extension_factor: usize,
     res: &mut R,
     lwe: &L,
     key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
-    log_domain: usize,
-    extension_factor: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWAtViewMut<BE> + GGSWInfos,
@@ -37,17 +37,17 @@ pub(crate) fn circuit_bootstrapping_execute_to_constant_derived<R, L, M, BRA, BE
     BE: Backend<ZnxWord = i64>,
     M: CircuitBootstrappingExecute<BRA, BE>,
 {
-    let plan = key.prepare_to_constant(module, res, log_domain, extension_factor);
+    let plan = key.prepare_to_constant(module, log_domain, extension_factor, res);
     plan.execute(module, res, lwe, key, scratch);
 }
 pub(crate) fn circuit_bootstrapping_execute_to_exponent_derived<R, L, M, BRA, BE>(
     module: &M,
     log_gap_out: usize,
+    log_domain: usize,
+    extension_factor: usize,
     res: &mut R,
     lwe: &L,
     key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
-    log_domain: usize,
-    extension_factor: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWAtViewMut<BE> + GGSWInfos,
@@ -56,7 +56,7 @@ pub(crate) fn circuit_bootstrapping_execute_to_exponent_derived<R, L, M, BRA, BE
     BE: Backend<ZnxWord = i64>,
     M: CircuitBootstrappingExecute<BRA, BE>,
 {
-    let plan = key.prepare_to_exponent(module, log_gap_out, res, log_domain, extension_factor);
+    let plan = key.prepare_to_exponent(module, log_gap_out, log_domain, extension_factor, res);
     plan.execute(module, res, lwe, key, scratch);
 }
 

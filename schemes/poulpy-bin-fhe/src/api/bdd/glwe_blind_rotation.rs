@@ -26,12 +26,12 @@ pub trait GLWEBlindRotation<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn glwe_blind_rotation_assign<R, K>(
         &self,
-        res: &mut R,
-        value: &K,
         sign: bool,
         bit_rsh: usize,
         bit_mask: usize,
         bit_lsh: usize,
+        res: &mut R,
+        value: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -40,13 +40,13 @@ pub trait GLWEBlindRotation<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn glwe_blind_rotation<R, A, K>(
         &self,
-        res: &mut R,
-        a: &A,
-        fhe_uint: &K,
         sign: bool,
         bit_rsh: usize,
         bit_mask: usize,
         bit_lsh: usize,
+        res: &mut R,
+        a: &A,
+        fhe_uint: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,

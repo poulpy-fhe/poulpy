@@ -110,7 +110,7 @@ pub fn fhe_uint_prepare_custom_multi_thread_reference<BRA: BlindRotationAlgo, BE
                 &GGLWEPreparedToBackendRef::to_backend_ref(ks_lwe),
                 &mut scratch_bit,
             );
-            cbt.execute_to_constant(module, &mut tmp_ggsw.to_backend_mut(), &tmp_lwe, 1, 1, &mut scratch_bit);
+            cbt.execute_to_constant(module, 1, 1, &mut tmp_ggsw.to_backend_mut(), &tmp_lwe, &mut scratch_bit);
             module.ggsw_prepare(res_bit, &tmp_ggsw, &mut scratch_bit);
         },
     );

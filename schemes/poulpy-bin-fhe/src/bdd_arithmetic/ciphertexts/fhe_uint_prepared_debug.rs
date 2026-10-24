@@ -170,7 +170,7 @@ where
                 &key.ks_lwe.to_backend_ref(),
                 &mut scratch_bit,
             );
-            key.cbt.execute_to_constant(self, dst, &tmp_lwe, 1, 1, &mut scratch_bit);
+            key.cbt.execute_to_constant(self, 1, 1, dst, &tmp_lwe, &mut scratch_bit);
         }
     }
 }

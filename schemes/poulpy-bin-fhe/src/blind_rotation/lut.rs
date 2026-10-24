@@ -203,7 +203,7 @@ impl<D: Data, W: ZnxWord> LookupTable<D, W> {
     where
         M: LookupTableFactory<D, W>,
     {
-        module.lookup_table_set(self, f, k);
+        module.lookup_table_set(k, self, f);
     }
 
     pub(crate) fn rotate<M>(&mut self, module: &M, k: i64)

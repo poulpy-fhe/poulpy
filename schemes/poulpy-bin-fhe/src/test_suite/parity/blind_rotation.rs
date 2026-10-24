@@ -196,8 +196,8 @@ where
                     let lut_t = lut(tested, &logical_layout, extension, direction);
                     let mut switched_r = vec![0; 5];
                     let mut switched_t = vec![0; 5];
-                    reference.blind_rotation_mod_switch(2 * reference.n() * extension, &mut switched_r, &lwe_r, direction);
-                    tested.blind_rotation_mod_switch(2 * tested.n() * extension, &mut switched_t, &lwe_t, direction);
+                    reference.blind_rotation_mod_switch(2 * reference.n() * extension, direction, &mut switched_r, &lwe_r);
+                    tested.blind_rotation_mod_switch(2 * tested.n() * extension, direction, &mut switched_t, &lwe_t);
                     assert_eq!(switched_r, switched_t, "modulus-switch parity");
                     let mut output_r = output_fixture(reference, &allocation, logical_layout.k);
                     let mut output_t = output_fixture(tested, &allocation, logical_layout.k);
@@ -239,7 +239,7 @@ pub fn test_blind_rotation_key_lifecycle<B>(module: &Module<B>)
 where
     B: ParityBackend,
     Module<B>: BlindRotationKeyEncryptSk<CGGI, B>
-        + BlindRotationKeyCompressedEncryptSk<B, CGGI>
+        + BlindRotationKeyCompressedEncryptSk<CGGI, B>
         + BlindRotationKeyCompressedFactory<CGGI, B>
         + BlindRotationKeyDecompress<CGGI, B>
         + GGSWEncryptSk<B>
@@ -290,8 +290,8 @@ where
             blind_rotation_key_encrypt_sk_ref(
                 module,
                 &mut expected,
-                &secret_prepared,
                 &lwe_secret,
+                &secret_prepared,
                 &mut Source::new([21; 32]),
                 &mut Source::new([22; 32]),
                 s,
@@ -300,8 +300,8 @@ where
         with_scratch::<B, _>(module.blind_rotation_key_encrypt_sk_tmp_bytes(&layout), |s| {
             module.blind_rotation_key_encrypt_sk(
                 &mut actual,
-                &secret_prepared,
                 &lwe_secret,
+                &secret_prepared,
                 &mut Source::new([21; 32]),
                 &mut Source::new([22; 32]),
                 s,
@@ -329,8 +329,8 @@ where
             blind_rotation_key_compressed_encrypt_sk_ref(
                 module,
                 &mut compressed_expected,
-                &secret_prepared,
                 &lwe_secret,
+                &secret_prepared,
                 [33; 32],
                 &mut Source::new([34; 32]),
                 s,
@@ -339,8 +339,8 @@ where
         with_scratch::<B, _>(module.blind_rotation_key_compressed_encrypt_sk_tmp_bytes(&layout), |s| {
             module.blind_rotation_key_compressed_encrypt_sk(
                 &mut compressed_actual,
-                &secret_prepared,
                 &lwe_secret,
+                &secret_prepared,
                 [33; 32],
                 &mut Source::new([34; 32]),
                 s,

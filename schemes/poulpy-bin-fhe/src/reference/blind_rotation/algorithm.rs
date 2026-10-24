@@ -259,7 +259,7 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64>>(
     let two_n: usize = 2 * n_glwe;
     let two_n_ext: usize = 2 * lut.domain_size();
 
-    module.blind_rotation_mod_switch(two_n_ext, &mut lwe_2n, lwe, lut.rotation_direction());
+    module.blind_rotation_mod_switch(two_n_ext, lut.rotation_direction(), &mut lwe_2n, lwe);
 
     let a: &[i64] = &lwe_2n[1..];
     let b_pos: usize = ((lwe_2n[0] + two_n_ext as i64) & (two_n_ext - 1) as i64) as usize;
@@ -454,7 +454,7 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64>>(
 
     let cols: usize = (out_tmp.rank() + 1).into();
 
-    module.blind_rotation_mod_switch(2 * lut.domain_size(), &mut lwe_2n, lwe, lut.rotation_direction());
+    module.blind_rotation_mod_switch(2 * lut.domain_size(), lut.rotation_direction(), &mut lwe_2n, lwe);
 
     let a: &[i64] = &lwe_2n[1..];
     let b: i64 = lwe_2n[0];
@@ -612,7 +612,7 @@ fn execute_standard<R, L, M, BE: Backend<ZnxWord = i64>>(
     let mut out_tmp: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(res);
     module.glwe_copy(&mut out_tmp, res, scratch);
 
-    module.blind_rotation_mod_switch(2 * lut.domain_size(), &mut lwe_2n, lwe, lut.rotation_direction());
+    module.blind_rotation_mod_switch(2 * lut.domain_size(), lut.rotation_direction(), &mut lwe_2n, lwe);
 
     let a: &[i64] = &lwe_2n[1..];
     let b: i64 = lwe_2n[0];

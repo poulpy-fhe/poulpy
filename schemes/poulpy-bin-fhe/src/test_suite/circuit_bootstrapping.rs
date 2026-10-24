@@ -185,10 +185,10 @@ pub fn test_circuit_bootstrapping_to_exponent<
     cbt_prepared.execute_to_exponent(
         module,
         log_gap_out,
-        &mut res,
-        &ct_lwe,
         k_lwe_pt,
         extension_factor,
+        &mut res,
+        &ct_lwe,
         &mut scratch.borrow(),
     );
     println!("CBT: {} ms", now.elapsed().as_millis());
@@ -389,7 +389,7 @@ pub fn test_circuit_bootstrapping_to_constant<
     cbt_prepared.prepare(module, &cbt_key, &mut scratch.borrow());
 
     let now: Instant = Instant::now();
-    cbt_prepared.execute_to_constant(module, &mut res, &ct_lwe, k_lwe_pt, extension_factor, &mut scratch.borrow());
+    cbt_prepared.execute_to_constant(module, k_lwe_pt, extension_factor, &mut res, &ct_lwe, &mut scratch.borrow());
     println!("CBT: {} ms", now.elapsed().as_millis());
 
     // X^{data * 2^log_gap_out}

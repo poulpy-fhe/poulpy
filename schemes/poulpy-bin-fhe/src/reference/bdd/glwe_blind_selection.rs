@@ -56,11 +56,11 @@ where
 /// Independently callable canonical implementation of [`GLWEBlindSelection::glwe_blind_selection`].
 pub fn glwe_blind_selection_reference<T: UnsignedInteger, BE: Backend<ZnxWord = i64>, R, A, K>(
     module: &Module<BE>,
+    bit_rsh: usize,
+    bit_mask: usize,
     res: &mut R,
     mut a: HashMap<usize, &mut A>,
     fhe_uint: &K,
-    bit_rsh: usize,
-    bit_mask: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     R: GLWEToBackendMut<BE> + GLWEInfos,

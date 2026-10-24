@@ -97,13 +97,13 @@ where
             let bit_size: usize = (32 - bit_start).min(digit);
 
             module.glwe_blind_rotation(
-                &mut res,
-                &test_glwe,
-                &k_enc_prep,
                 false,
                 bit_start,
                 bit_size,
                 bit_step,
+                &mut res,
+                &test_glwe,
+                &k_enc_prep,
                 &mut scratch.borrow(),
             );
 

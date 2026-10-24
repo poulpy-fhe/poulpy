@@ -96,8 +96,8 @@ pub fn runner_blind_rotate<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, BR
         BlindRotationKey::<BE::OwnedBuf, BRA, BE::ZnxWord>::alloc(&module, &brk_infos);
     module.blind_rotation_key_encrypt_sk(
         &mut brk,
-        &sk_glwe_dft,
         &sk_lwe,
+        &sk_glwe_dft,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),
@@ -238,10 +238,10 @@ pub fn runner_circuit_bootstrapping<
     bencher.iter(|| {
         cbt_prepared.execute_to_constant(
             &module,
-            &mut res,
-            &ct_lwe,
             params.log_domain,
             params.extension_factor,
+            &mut res,
+            &ct_lwe,
             &mut scratch.borrow(),
         );
         module.synchronize();

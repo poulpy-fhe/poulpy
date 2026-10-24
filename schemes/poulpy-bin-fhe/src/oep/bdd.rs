@@ -47,8 +47,8 @@ macro_rules! impl_execute_bdd_circuit_reference_full {
                 #[allow(clippy::too_many_arguments)]
                 fn execute_bdd_circuit_tmp_bytes<R, G>(
                     module: &Module<$be>,
-                    res_infos: &R,
                     state_size: usize,
+                    res_infos: &R,
                     ggsw_infos: &G,
                 ) -> usize
                 where
@@ -56,7 +56,7 @@ macro_rules! impl_execute_bdd_circuit_reference_full {
                     G: GGSWInfos,
                 {
                     $crate::reference::bdd::execute_bdd_circuit_tmp_bytes_reference::<$be, _, _>(
-                        module, res_infos, state_size, ggsw_infos,
+                        module, state_size, res_infos, ggsw_infos,
                     )
                 }
                 #[allow(clippy::too_many_arguments)]
@@ -230,13 +230,13 @@ macro_rules! impl_ggsw_blind_rotation_reference_full {
                 #[allow(clippy::too_many_arguments)]
                 fn scalar_to_ggsw_blind_rotation<R, A, K>(
                     module: &Module<$be>,
-                    res: &mut R,
-                    test_vector: &A,
-                    fhe_uint: &K,
                     sign: bool,
                     bit_rsh: usize,
                     bit_mask: usize,
                     bit_lsh: usize,
+                    res: &mut R,
+                    test_vector: &A,
+                    fhe_uint: &K,
                     scratch: &mut ScratchArena<'_, $be>,
                 ) where
                     R: GGSWToBackendMut<$be> + GGSWAtViewMut<$be> + GGSWInfos,
@@ -246,13 +246,13 @@ macro_rules! impl_ggsw_blind_rotation_reference_full {
                 {
                     $crate::reference::bdd::scalar_to_ggsw_blind_rotation_reference::<T, $be, _, _, _>(
                         module,
-                        res,
-                        test_vector,
-                        fhe_uint,
                         sign,
                         bit_rsh,
                         bit_mask,
                         bit_lsh,
+                        res,
+                        test_vector,
+                        fhe_uint,
                         scratch,
                     )
                 }
@@ -293,12 +293,12 @@ macro_rules! impl_glwe_blind_rotation_reference_full {
                 #[allow(clippy::too_many_arguments)]
                 fn glwe_blind_rotation_assign<R, K>(
                     module: &Module<$be>,
-                    res: &mut R,
-                    value: &K,
                     sign: bool,
                     bit_rsh: usize,
                     bit_mask: usize,
                     bit_lsh: usize,
+                    res: &mut R,
+                    value: &K,
                     scratch: &mut ScratchArena<'_, $be>,
                 ) where
                     R: GLWEToBackendMut<$be> + GLWEInfos,
@@ -306,19 +306,19 @@ macro_rules! impl_glwe_blind_rotation_reference_full {
                     $be: Backend<ZnxWord = i64>,
                 {
                     $crate::reference::bdd::glwe_blind_rotation_assign_reference::<$be, _, _>(
-                        module, res, value, sign, bit_rsh, bit_mask, bit_lsh, scratch,
+                        module, sign, bit_rsh, bit_mask, bit_lsh, res, value, scratch,
                     )
                 }
                 #[allow(clippy::too_many_arguments)]
                 fn glwe_blind_rotation<R, A, K>(
                     module: &Module<$be>,
-                    res: &mut R,
-                    a: &A,
-                    fhe_uint: &K,
                     sign: bool,
                     bit_rsh: usize,
                     bit_mask: usize,
                     bit_lsh: usize,
+                    res: &mut R,
+                    a: &A,
+                    fhe_uint: &K,
                     scratch: &mut ScratchArena<'_, $be>,
                 ) where
                     R: GLWEToBackendMut<$be> + GLWEInfos,
@@ -327,7 +327,7 @@ macro_rules! impl_glwe_blind_rotation_reference_full {
                     $be: Backend<ZnxWord = i64>,
                 {
                     $crate::reference::bdd::glwe_blind_rotation_reference::<$be, _, _, _>(
-                        module, res, a, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch,
+                        module, sign, bit_rsh, bit_mask, bit_lsh, res, a, fhe_uint, scratch,
                     )
                 }
             }
@@ -375,11 +375,11 @@ macro_rules! impl_glwe_blind_selection_reference_full {
                 #[allow(clippy::too_many_arguments)]
                 fn glwe_blind_selection<R, A, K>(
                     module: &Module<$be>,
+                    bit_rsh: usize,
+                    bit_mask: usize,
                     res: &mut R,
                     a: HashMap<usize, &mut A>,
                     fhe_uint: &K,
-                    bit_rsh: usize,
-                    bit_mask: usize,
                     scratch: &mut ScratchArena<'_, $be>,
                 ) where
                     R: GLWEToBackendMut<$be> + GLWEInfos,
@@ -387,7 +387,7 @@ macro_rules! impl_glwe_blind_selection_reference_full {
                     K: GetGGSWBit<$be>,
                 {
                     $crate::reference::bdd::glwe_blind_selection_reference::<T, $be, _, _, _>(
-                        module, res, a, fhe_uint, bit_rsh, bit_mask, scratch,
+                        module, bit_rsh, bit_mask, res, a, fhe_uint, scratch,
                     )
                 }
             }
@@ -424,9 +424,9 @@ macro_rules! impl_execute_bdd_circuit_1w_to_1w_reference_full {
                 fn execute_bdd_circuit_1w_to_1w_multi_thread_tmp_bytes<C, T, R, G, H>(
                     module: &Module<$be>,
                     threads: usize,
-                    circuit: &C,
                     res_infos: &R,
                     ggsw_infos: &G,
+                    circuit: &C,
                     key: &H,
                 ) -> usize
                 where
@@ -437,7 +437,7 @@ macro_rules! impl_execute_bdd_circuit_1w_to_1w_reference_full {
                     H: GetAutomorphismKey<$be>,
                 {
                     $crate::reference::bdd::execute_bdd_circuit_1w_to_1w_multi_thread_tmp_bytes_reference::<$be, C, T, R, G, H>(
-                        module, threads, circuit, res_infos, ggsw_infos, key,
+                        module, threads, res_infos, ggsw_infos, circuit, key,
                     )
                 }
                 #[allow(clippy::too_many_arguments)]
@@ -445,8 +445,8 @@ macro_rules! impl_execute_bdd_circuit_1w_to_1w_reference_full {
                     module: &Module<$be>,
                     threads: usize,
                     out: &mut FheUint<Self::OwnedBuf, T, Self::ZnxWord>,
-                    circuit: &C,
                     a: &FheUintPrepared<Self::OwnedBuf, T, $be>,
+                    circuit: &C,
                     key: &H,
                     scratch: &mut ScratchArena<'_, $be>,
                 ) where
@@ -456,7 +456,7 @@ macro_rules! impl_execute_bdd_circuit_1w_to_1w_reference_full {
                     $be: Backend<ZnxWord = i64>,
                 {
                     $crate::reference::bdd::execute_bdd_circuit_1w_to_1w_multi_thread_reference::<$be, _, _, T>(
-                        module, threads, out, circuit, a, key, scratch,
+                        module, threads, out, a, circuit, key, scratch,
                     )
                 }
             }
@@ -486,9 +486,9 @@ macro_rules! impl_execute_bdd_circuit_2w_to_1w_reference_full {
                 fn execute_bdd_circuit_2w_to_1w_multi_thread_tmp_bytes<C, T, R, G, H>(
                     module: &Module<$be>,
                     threads: usize,
-                    circuit: &C,
                     res_infos: &R,
                     ggsw_infos: &G,
+                    circuit: &C,
                     key: &H,
                 ) -> usize
                 where
@@ -499,7 +499,7 @@ macro_rules! impl_execute_bdd_circuit_2w_to_1w_reference_full {
                     H: GetAutomorphismKey<$be>,
                 {
                     $crate::reference::bdd::execute_bdd_circuit_2w_to_1w_multi_thread_tmp_bytes_reference::<$be, _, T, _, _, _>(
-                        module, threads, circuit, res_infos, ggsw_infos, key,
+                        module, threads, res_infos, ggsw_infos, circuit, key,
                     )
                 }
                 #[allow(clippy::too_many_arguments)]
@@ -507,9 +507,9 @@ macro_rules! impl_execute_bdd_circuit_2w_to_1w_reference_full {
                     module: &Module<$be>,
                     threads: usize,
                     out: &mut FheUint<Self::OwnedBuf, T, Self::ZnxWord>,
-                    circuit: &C,
                     a: &FheUintPrepared<Self::OwnedBuf, T, $be>,
                     b: &FheUintPrepared<Self::OwnedBuf, T, $be>,
+                    circuit: &C,
                     key: &H,
                     scratch: &mut ScratchArena<'_, $be>,
                 ) where
@@ -519,7 +519,7 @@ macro_rules! impl_execute_bdd_circuit_2w_to_1w_reference_full {
                     $be: Backend<ZnxWord = i64>,
                 {
                     $crate::reference::bdd::execute_bdd_circuit_2w_to_1w_multi_thread_reference::<$be, _, _, T>(
-                        module, threads, out, circuit, a, b, key, scratch,
+                        module, threads, out, a, b, circuit, key, scratch,
                     )
                 }
             }

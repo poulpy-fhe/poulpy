@@ -111,13 +111,13 @@ where
             let bit_size: usize = (32 - bit_start).min(digit);
 
             module.scalar_to_ggsw_blind_rotation(
-                &mut res,
-                &scalar,
-                &k_enc_prep,
                 false,
                 bit_start,
                 bit_size,
                 bit_step,
+                &mut res,
+                &scalar,
+                &k_enc_prep,
                 &mut scratch.borrow(),
             );
 

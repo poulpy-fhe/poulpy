@@ -324,27 +324,27 @@ where
             let mut expected = FheUint::<_, u8, i64>::alloc_from_infos(reference, &bits_layout);
             let mut actual = FheUint::<_, u8, i64>::alloc_from_infos(tested, &bits_layout);
             let rb = if two_words {
-                reference.execute_bdd_circuit_2w_to_1w_tmp_bytes::<_, u8, _, _, _>(&circuit, &bits_layout, &output, &key_ref)
+                reference.execute_bdd_circuit_2w_to_1w_tmp_bytes::<_, u8, _, _, _>(&bits_layout, &output, &circuit, &key_ref)
             } else {
-                reference.execute_bdd_circuit_1w_to_1w_tmp_bytes::<_, u8, _, _, _>(&circuit, &bits_layout, &output, &key_ref)
+                reference.execute_bdd_circuit_1w_to_1w_tmp_bytes::<_, u8, _, _, _>(&bits_layout, &output, &circuit, &key_ref)
             };
             let tb = if two_words {
-                tested.execute_bdd_circuit_2w_to_1w_tmp_bytes::<_, u8, _, _, _>(&circuit, &bits_layout, &output, &key_test)
+                tested.execute_bdd_circuit_2w_to_1w_tmp_bytes::<_, u8, _, _, _>(&bits_layout, &output, &circuit, &key_test)
             } else {
-                tested.execute_bdd_circuit_1w_to_1w_tmp_bytes::<_, u8, _, _, _>(&circuit, &bits_layout, &output, &key_test)
+                tested.execute_bdd_circuit_1w_to_1w_tmp_bytes::<_, u8, _, _, _>(&bits_layout, &output, &circuit, &key_test)
             };
             with_scratch::<BR, _>(rb, |s| {
                 if two_words {
-                    reference.execute_bdd_circuit_2w_to_1w(&mut expected, &circuit, &res_ref, &right_ref, &key_ref, s)
+                    reference.execute_bdd_circuit_2w_to_1w(&mut expected, &res_ref, &right_ref, &circuit, &key_ref, s)
                 } else {
-                    reference.execute_bdd_circuit_1w_to_1w(&mut expected, &circuit, &res_ref, &key_ref, s)
+                    reference.execute_bdd_circuit_1w_to_1w(&mut expected, &res_ref, &circuit, &key_ref, s)
                 }
             });
             with_scratch::<BT, _>(tb, |s| {
                 if two_words {
-                    tested.execute_bdd_circuit_2w_to_1w(&mut actual, &circuit, &res_test, &right_test, &key_test, s)
+                    tested.execute_bdd_circuit_2w_to_1w(&mut actual, &res_test, &right_test, &circuit, &key_test, s)
                 } else {
-                    tested.execute_bdd_circuit_1w_to_1w(&mut actual, &circuit, &res_test, &key_test, s)
+                    tested.execute_bdd_circuit_1w_to_1w(&mut actual, &res_test, &circuit, &key_test, s)
                 }
             });
             assert_eq!(snapshot_glwe::<BR, _>(&expected), snapshot_glwe::<BT, _>(&actual));
@@ -352,17 +352,17 @@ where
                 let bytes = if two_words {
                     tested.execute_bdd_circuit_2w_to_1w_multi_thread_tmp_bytes::<_, u8, _, _, _>(
                         threads,
-                        &circuit,
                         &bits_layout,
                         &output,
+                        &circuit,
                         &key_test,
                     )
                 } else {
                     tested.execute_bdd_circuit_1w_to_1w_multi_thread_tmp_bytes::<_, u8, _, _, _>(
                         threads,
-                        &circuit,
                         &bits_layout,
                         &output,
+                        &circuit,
                         &key_test,
                     )
                 };
@@ -371,14 +371,14 @@ where
                         tested.execute_bdd_circuit_2w_to_1w_multi_thread(
                             threads,
                             &mut actual,
-                            &circuit,
                             &res_test,
                             &right_test,
+                            &circuit,
                             &key_test,
                             s,
                         )
                     } else {
-                        tested.execute_bdd_circuit_1w_to_1w_multi_thread(threads, &mut actual, &circuit, &res_test, &key_test, s)
+                        tested.execute_bdd_circuit_1w_to_1w_multi_thread(threads, &mut actual, &res_test, &circuit, &key_test, s)
                     }
                 });
                 assert_eq!(snapshot_glwe::<BR, _>(&expected), snapshot_glwe::<BT, _>(&actual));
