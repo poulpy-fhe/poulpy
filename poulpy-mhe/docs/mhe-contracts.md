@@ -5,16 +5,14 @@ Public `api` traits follow the [layering contract](../../docs/guides/layering-co
 
 ## Public API organization
 
-`api::pat` holds one trait per PAT type with its operations, `api::public_key`
-the collective public key protocol, `api::evaluation_key` the collective
-switching and automorphism key protocols, `api::keyswitch` the collective key
-switching protocols, `api::tensor_key` the collective tensor key protocol,
-`api::ggsw` the collective GGSW protocol and `api::sharing` the
-encryption-to-shares and shares-to-encryption protocols. A protocol
+The `api` traits cover the PAT types and their operations, the collective
+public key, switching and automorphism key, key switching, tensor key and GGSW
+protocols, and the encryption-to-shares and shares-to-encryption protocols, all
+at the single path `poulpy_mhe::api` (also re-exported at the crate root). A protocol
 trait, named
 `*MHEProtocol`, holds `mhe_*_share_gen`, `mhe_*_share_aggregate` and
 `mhe_*_share_finalize` on the protocol's share type; the prefix keeps them apart
-from core's operations. All are re-exported by `api` and the crate root. Every
+from core's operations. Every
 operation that takes caller scratch has a matching `_tmp_bytes` query in the
 same trait.
 
