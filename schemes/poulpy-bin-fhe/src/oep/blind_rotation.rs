@@ -12,11 +12,11 @@ use crate::blind_rotation::{
 use poulpy_core::{GetDistribution, layouts::*};
 use poulpy_hal::{layouts::*, source::Source};
 
-/// Backend implementation of the blind-rotation operation family.
+/// Backend implementation of the blind-rotation operation family, on the standard ring only.
 ///
 /// # Safety
 /// Preserve the reference circuit, metadata, and advertised scratch bounds.
-pub unsafe trait BlindRotationExecuteImpl<BRA: BlindRotationAlgo>: Backend {
+pub unsafe trait BlindRotationExecuteImpl<BRA: BlindRotationAlgo>: Backend<Ring = Standard> {
     fn blind_rotation_execute_tmp_bytes<G, B>(
         module: &Module<Self>,
         block_size: usize,

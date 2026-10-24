@@ -7,7 +7,7 @@ use crate::{
     ComponentNoise, Distribution, GetDistribution, GetDistributionMut,
     api::*,
     layouts::*,
-    oep::{ConversionImpl, DecryptionImpl, EncryptionImpl, GLWENormalizeImpl, SamplingImpl},
+    oep::{DecryptionImpl, EncryptionImpl, GLWENormalizeImpl, SamplingImpl},
 };
 use poulpy_hal::{
     api::{VecZnxAddAssign, VecZnxCopy, VecZnxFillUniformSource},
@@ -24,7 +24,6 @@ pub trait EncryptionParityBackend:
     + DecryptionImpl
     + GLWENormalizeImpl
     + SamplingImpl
-    + ConversionImpl
     + HalModuleImpl
     + HalVecZnxImpl
     + HalVecZnxBigImpl
@@ -40,7 +39,6 @@ impl<B> EncryptionParityBackend for B where
         + DecryptionImpl
         + GLWENormalizeImpl
         + SamplingImpl
-        + ConversionImpl
         + HalModuleImpl
         + HalVecZnxImpl
         + HalVecZnxBigImpl
@@ -156,14 +154,8 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
     shapes: &ParityShapes,
     reference: &Module<BR>,
     tested: &Module<BT>,
-) where
-    Module<BR>: GLWEExpandLWEMatrix<BR>,
-    Module<BT>: GLWEExpandLWEMatrix<BT>,
-{
-    fn run<B: EncryptionParityBackend>(module: &Module<B>, n: usize, base2k: usize, rank: usize, k: usize) -> Vec<Snapshot>
-    where
-        Module<B>: GLWEExpandLWEMatrix<B>,
-    {
+) {
+    fn run<B: EncryptionParityBackend>(module: &Module<B>, n: usize, base2k: usize, rank: usize, k: usize) -> Vec<Snapshot> {
         let infos = GLWELayout {
             n: (n as u32).into(),
             base2k: (base2k as u32).into(),
@@ -417,6 +409,76 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         assert!(out.noise().is_none());
         results.push(snapshot_glwe::<B, _>("mask_source", &out));
         results.push(source_snapshot("mask_sources", &mut e, &mut a));
+        results
+    }
+    let base2k = params.base2k.min(12);
+    for &rank in &shapes.ranks {
+        for k in [3 * base2k, 4 * base2k - 1, 4 * base2k + 1] {
+            assert_eq!(
+                run(reference, params.n, base2k, rank, k),
+                run(tested, params.n, base2k, rank, k),
+                "GLWE encryption rank={rank} k={k}"
+            );
+        }
+    }
+}
+
+/// A fresh secret-key GLWE encryption and the `lwe_matrix_decrypt` of its
+/// `glwe_expand_lwe_matrix` expansion, equal on both backends; standard ring
+/// only, as the LWE conversions are.
+pub fn test_lwe_matrix_decrypt_parity<BR, BT>(
+    params: &TestParams,
+    shapes: &ParityShapes,
+    reference: &Module<BR>,
+    tested: &Module<BT>,
+) where
+    BR: EncryptionParityBackend + Backend<Ring = Standard>,
+    BT: EncryptionParityBackend + Backend<Ring = Standard>,
+    Module<BR>: GLWEExpandLWEMatrix<BR>,
+    Module<BT>: GLWEExpandLWEMatrix<BT>,
+{
+    fn run<B>(module: &Module<B>, n: usize, base2k: usize, rank: usize, k: usize) -> Vec<Snapshot>
+    where
+        B: EncryptionParityBackend + Backend<Ring = Standard>,
+        Module<B>: GLWEExpandLWEMatrix<B>,
+    {
+        let infos = GLWELayout {
+            n: (n as u32).into(),
+            base2k: (base2k as u32).into(),
+            k: (k as u32).into(),
+            rank: (rank as u32).into(),
+        };
+        let sk = secret(module, n, rank);
+        let mut skp = module.glwe_secret_prepared_alloc_from_infos(&sk);
+        module.glwe_secret_prepare(&mut skp, &sk);
+        let mut pt = module.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout {
+            n: infos.n,
+            base2k: infos.base2k,
+            k: (k as u32 - 1).into(),
+        });
+        module.vec_znx_fill_uniform_source(
+            base2k,
+            pt.k().as_usize(),
+            &mut poulpy_hal::test_suite::vec_znx_backend_mut::<B>(&mut pt.data),
+            0,
+            &mut Source::new([67; 32]),
+        );
+        let mut out = module.glwe_alloc_from_infos(&infos);
+        let mut e = Source::new([71; 32]);
+        let mut a = Source::new([73; 32]);
+        poison_glwe::<B, _>(&mut out);
+        module.glwe_encrypt_sk(
+            &mut out,
+            &pt,
+            &skp,
+            &mut e,
+            &mut a,
+            &mut poisoned_scratch::<B>(module.glwe_encrypt_sk_tmp_bytes(&infos)).arena(),
+        );
+        let mut results = vec![
+            snapshot_glwe::<B, _>("encrypt_sk", &out),
+            source_snapshot("encrypt_sk_sources", &mut e, &mut a),
+        ];
         let mut lsk = module.lwe_secret_alloc((n * rank).into());
         let data: Vec<i64> = (0..n * rank).map(|i| (i % 3) as i64 - 1).collect();
         {
@@ -455,7 +517,7 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
             assert_eq!(
                 run(reference, params.n, base2k, rank, k),
                 run(tested, params.n, base2k, rank, k),
-                "GLWE encryption rank={rank} k={k}"
+                "LWE matrix decryption rank={rank} k={k}"
             );
         }
     }

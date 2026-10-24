@@ -2,7 +2,7 @@ use crate::layouts::IntPolyInfos;
 use std::{collections::HashMap, ops::Range};
 
 use poulpy_hal::layouts::{
-    Backend, CnvPVecLBackendRef, CnvPVecLToBackendRef, CnvPVecRBackendRef, CnvPVecRToBackendRef, Module, ScratchArena,
+    Backend, CnvPVecLBackendRef, CnvPVecLToBackendRef, CnvPVecRBackendRef, CnvPVecRToBackendRef, Module, ScratchArena, Standard,
     VecZnxDftBackendMut,
 };
 
@@ -529,12 +529,12 @@ pub unsafe trait GGSWCopyImpl: Backend {
         A: GGSWToBackendRef<Self> + GGSWInfos;
 }
 
-/// Backend-provided GLWE rotation operations.
+/// Backend-provided GLWE rotation operations, on the standard ring only.
 ///
 /// # Safety
 /// Implementations must perform rotations according to the polynomial layout without violating
 /// scratch-space, aliasing, or buffer-bound guarantees.
-pub unsafe trait GLWERotateImpl: Backend {
+pub unsafe trait GLWERotateImpl: Backend<Ring = Standard> {
     fn glwe_rotate_tmp_bytes(module: &Module<Self>) -> usize;
 
     fn glwe_rotate<R, A>(module: &Module<Self>, k: i64, res: &mut R, a: &A)
@@ -547,7 +547,7 @@ pub unsafe trait GLWERotateImpl: Backend {
         R: GLWEToBackendMut<Self>;
 }
 
-/// Backend-provided GGSW rotation operations.
+/// Backend-provided GGSW rotation operations, on the standard ring only.
 ///
 /// # Safety
 /// Implementations must preserve the GGSW structure for the backend and may only use scratch space
@@ -573,12 +573,12 @@ pub unsafe trait GGSWRotateImpl: GLWERotateImpl {
     }
 }
 
-/// Backend-provided multiplication by `X^p - 1` operations.
+/// Backend-provided multiplication by `X^p - 1` operations, on the standard ring only.
 ///
 /// # Safety
 /// Implementations must apply the requested ring operation without violating the layout or memory
 /// invariants of the supplied ciphertext buffers.
-pub unsafe trait GLWEMulXpMinusOneImpl: Backend {
+pub unsafe trait GLWEMulXpMinusOneImpl: Backend<Ring = Standard> {
     fn glwe_mul_xp_minus_one_assign_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
 
     fn glwe_mul_xp_minus_one<R, A>(module: &Module<Self>, k: i64, res: &mut R, a: &A)
@@ -709,7 +709,7 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
     }
 }
 
-/// Backend-provided GLWE packing operations.
+/// Backend-provided GLWE packing operations, on the standard ring only.
 ///
 /// # Safety
 /// Implementations must maintain ciphertext correctness while combining inputs, and must respect

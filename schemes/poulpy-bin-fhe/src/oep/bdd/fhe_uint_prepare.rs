@@ -1,12 +1,12 @@
 use crate::{bdd_arithmetic::*, blind_rotation::BlindRotationAlgo};
 use poulpy_core::layouts::*;
 use poulpy_hal::layouts::*;
-/// Backend implementation contract for [`FheUintPrepare`].
+/// Backend implementation contract for [`FheUintPrepare`], on the standard ring only.
 ///
 /// # Safety
 /// Implementations must preserve the canonical circuit, buffer bounds, metadata,
 /// and the paired scratch query contract.
-pub unsafe trait FheUintPrepareImpl<BRA: BlindRotationAlgo>: Backend {
+pub unsafe trait FheUintPrepareImpl<BRA: BlindRotationAlgo>: Backend<Ring = Standard> {
     #[allow(clippy::too_many_arguments)]
     fn fhe_uint_prepare_tmp_bytes<R, A, B>(
         module: &Module<Self>,
