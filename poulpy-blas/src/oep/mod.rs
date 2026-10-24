@@ -13,8 +13,7 @@
 //! concurrently over a shared module, context, public operands, prepared operands and key stores. An override keeps no
 //! state across calls, so disjoint concurrent calls stay valid.
 
-#[doc(hidden)]
-pub mod derived;
+pub(crate) mod derived;
 mod inter;
 mod intra;
 mod jkls;

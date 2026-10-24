@@ -9,47 +9,12 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use super::{BlasKeyUses, copied_block};
-use crate::{
-    layouts::{
-        BlasGrid, BlasGridInfos, BlasGridMut, BlasLayout,
-        context::sum_rotations,
-        grid_batch,
-        validate::{assert_scratch, ensure_rotation, rotate_uses, sum_uses, validate_blas_rotate, validate_blas_sum},
-    },
-    oep::derived::KeyLayouts,
+use crate::layouts::{
+    BlasGrid, BlasGridInfos, BlasGridMut,
+    context::sum_rotations,
+    grid_batch,
+    validate::{KeyLayouts, assert_scratch, ensure_rotation, rotate_uses, sum_uses, validate_blas_rotate, validate_blas_sum},
 };
-
-/// The layout [`crate::api::BlasMatInterOps::blas_rotate`] and [`crate::api::BlasMatInterOps::blas_sum`] stamp on `res`
-/// for `a`: `a`'s block copied into `res`'s width, `a`'s dimensions and record.
-pub fn blas_rotate_output_layout(res: &impl BlasGridInfos, a: &impl BlasGridInfos) -> BlasLayout {
-    BlasLayout::new(
-        copied_block(a.block_layout(), res.block_layout().k()),
-        a.log_d(),
-        a.rows(),
-        a.cols(),
-    )
-}
-
-/// [`blas_rotate_output_layout`], named for [`crate::api::BlasMatInterOps::blas_sum`].
-pub fn blas_sum_output_layout(res: &impl BlasGridInfos, a: &impl BlasGridInfos) -> BlasLayout {
-    blas_rotate_output_layout(res, a)
-}
-
-/// The keys [`crate::api::BlasMatInterOps::blas_rotate`] by `r` looks up for `a` into `res`; see [`BlasKeyUses`].
-pub fn blas_rotate_key_uses<BE: Backend>(
-    module: &Module<BE>,
-    res: &impl BlasGridInfos,
-    a: &impl BlasGridInfos,
-    r: i64,
-) -> BlasKeyUses {
-    BlasKeyUses::collect(module, None, |f| rotate_uses(res, a, r, f))
-}
-
-/// The keys [`crate::api::BlasMatInterOps::blas_sum`] looks up for `a` into `res`; see [`BlasKeyUses`].
-pub fn blas_sum_key_uses<BE: Backend>(module: &Module<BE>, res: &impl BlasGridInfos, a: &impl BlasGridInfos) -> BlasKeyUses {
-    BlasKeyUses::collect(module, None, |f| sum_uses::<BE::Ring>(res, a, f))
-}
 
 /// Reference compositions of [`crate::api::BlasMatInterOps`]. Each runs its validator,
 /// [`crate::layouts::validate_blas_rotate`] or [`crate::layouts::validate_blas_sum`], before any write, so its errors

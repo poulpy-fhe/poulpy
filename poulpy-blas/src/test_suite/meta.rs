@@ -32,15 +32,13 @@ use crate::{
     api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
     layouts::{
         BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasGridInfos, BlasLayout, BlasModuleAlloc, BlasPlan, Left, Right,
-        blas_matmul_left_operand_layout, blas_matmul_left_term_layout, blas_matmul_right_operand_layout,
-        blas_matmul_right_term_layout, replicated, sum_galois_elements,
+        blas_matmul_left_operand_layout, blas_matmul_left_term_layout, blas_matmul_output_layout,
+        blas_matmul_prepared_output_layout, blas_matmul_pt_left_output_layout, blas_matmul_pt_right_output_layout,
+        blas_matmul_right_operand_layout, blas_matmul_right_term_layout, blas_rotate_cols_output_layout,
+        blas_rotate_output_layout, blas_rotate_rows_output_layout, blas_sum_output_layout, blas_transpose_output_layout,
+        replicated, sum_galois_elements,
     },
     oep::BlasImpl,
-    reference::{
-        blas_matmul_output_layout, blas_matmul_prepared_output_layout, blas_matmul_pt_left_output_layout,
-        blas_matmul_pt_right_output_layout, blas_rotate_cols_output_layout, blas_rotate_output_layout,
-        blas_rotate_rows_output_layout, blas_sum_output_layout, blas_transpose_output_layout,
-    },
 };
 
 /// Every per-matrix map, the matrix-slot rotation and the sum give their result the metadata [`copied_layout`] or

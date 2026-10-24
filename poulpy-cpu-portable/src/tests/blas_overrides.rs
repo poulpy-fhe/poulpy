@@ -6,7 +6,7 @@ use poulpy_blas::{
     api::{BlasMatIntraOps, BlasMatMulOps},
     layouts::{BlasPlan, BlasPtAlgorithm, Left, Right},
     oep::{BlasJklsImpl, BlasMatIntraImpl},
-    reference::{BlasMatIntraReference, BlasMatMulReference},
+    reference::{BlasJklsReference, BlasMatIntraReference},
     test_suite::{
         helpers::{
             Grid, HINTS, MIXES, PT_ALGORITHMS, TestKeys, alloc_grid, context_and_keys, encrypt_grid, foreign_contexts,

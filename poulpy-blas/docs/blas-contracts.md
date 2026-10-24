@@ -29,11 +29,9 @@ and is never implemented directly.
 The provided methods, the transpose and both shifts, call the backend's
 selected map hook, and the references of the products call its hook and its
 JKLS kernel. So an override of the hook or of the kernel reaches every
-operation built on it. The provided bodies are public in
-`poulpy_blas::oep::derived`, as `blas_transpose_derived`,
-`blas_rotate_rows_derived` and `blas_rotate_cols_derived` with their
-`_tmp_bytes_derived` queries, so an override of a provided method can fall
-back to the provided body, for both the call and its query.
+operation built on it. The provided bodies are crate-private, one
+`blas_<op>_derived` per method and one `blas_<op>_tmp_bytes_derived` per query,
+in the family's file under `oep::derived`.
 
 The prepared operands of the products, `BlasMatMulLeft<BE>` and
 `BlasMatMulRight<BE>`, are `poulpy_blas::layouts::BlasMatMulOperand`s of the
@@ -53,7 +51,7 @@ APIs, so a backend's CKKS and core overrides remain effective inside them.
 | `BlasMatInterImpl` | `BlasMatInterReference`, [`reference/inter.rs`](../src/reference/inter.rs) | `impl_blas_mat_inter_reference_full!` |
 | `BlasMatIntraImpl` | `BlasMatIntraReference` (the hook), [`reference/intra.rs`](../src/reference/intra.rs) | `impl_blas_mat_intra_reference_full!` |
 | `BlasMatMulImpl` | `BlasMatMulReference`, [`reference/matmul.rs`](../src/reference/matmul.rs) | `impl_blas_mat_mul_reference_full!` |
-| `BlasJklsImpl` | `BlasMatMulReference::blas_jkls_block_reference`, [`reference/matmul.rs`](../src/reference/matmul.rs) | `impl_blas_jkls_reference_full!` |
+| `BlasJklsImpl` | `BlasJklsReference` (the kernel), [`reference/jkls.rs`](../src/reference/jkls.rs) | `impl_blas_jkls_reference_full!` |
 
 `impl_blas_reference_full!` expands to the four family macros. The reference's
 cold preparations call the backend's map hook, and the reference prepared
@@ -121,8 +119,7 @@ states what an implementation must reproduce. Three replacements cover most need
   `BlasMatMulOperand::{blocks, terms}`, their `_mut` forms and `set_prepared`.
 
 A backend may also override a provided method, for example the shifts, to
-chunk their heap grid; it then reproduces the circuit the provided body fixes,
-and may fall back to that body in `oep::derived`.
+chunk their heap grid; it then reproduces the circuit the provided body fixes.
 
 ## Grids and keys
 
@@ -224,12 +221,13 @@ a store holding its operation's set alone suffices.
 
 ### Key-use queries
 
-Each operation has a query in `poulpy_blas::reference` that lists the keys it
-looks up: `blas_matmul_key_uses`, `blas_matmul_prepare_left_key_uses`,
-`blas_matmul_prepare_right_key_uses`, `blas_matmul_prepared_key_uses`,
-`blas_matmul_pt_right_key_uses`, `blas_matmul_pt_left_key_uses`,
-`blas_transpose_key_uses`, `blas_rotate_rows_key_uses`,
-`blas_rotate_cols_key_uses`, `blas_rotate_key_uses` and `blas_sum_key_uses`. A
+Each operation has a query in `poulpy_blas::layouts`, re-exported at the crate
+root, that lists the keys it looks up: `blas_matmul_key_uses`,
+`blas_matmul_prepare_left_key_uses`, `blas_matmul_prepare_right_key_uses`,
+`blas_matmul_prepared_key_uses`, `blas_matmul_pt_right_key_uses`,
+`blas_matmul_pt_left_key_uses`, `blas_transpose_key_uses`,
+`blas_rotate_rows_key_uses`, `blas_rotate_cols_key_uses`,
+`blas_rotate_key_uses` and `blas_sum_key_uses`. A
 query takes the grids, operands and context of the operation's `_tmp_bytes`
 query, without the key layouts. It leaves out what the keys do not depend on:
 the result grid of a product of two encrypted grids, and the `PrepareHint` of a

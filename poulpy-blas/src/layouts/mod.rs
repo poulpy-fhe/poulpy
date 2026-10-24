@@ -1,5 +1,6 @@
 //! Grids of block ciphertexts, the encoded per-block maps and their host diagonals, the prepared operands of products,
-//! and the checks every operation runs first.
+//! the checks every operation runs first, and the planning queries: the keys an operation looks up, the layout it
+//! stamps on `res`, and the largest radix of a product.
 
 pub mod grid;
 pub mod maps;
@@ -8,6 +9,7 @@ pub(crate) mod ciphertext;
 pub(crate) mod context;
 pub(crate) mod encoding;
 pub(crate) mod matmul_operand;
+pub(crate) mod planning;
 pub(crate) mod pt_operand;
 pub(crate) mod validate;
 
@@ -23,6 +25,15 @@ pub use encoding::BlasEncodingOps;
 pub use matmul_operand::{
     BlasMatMulLeft, BlasMatMulOperand, BlasMatMulOperandPreparedFactory, BlasMatMulRight, blas_matmul_left_operand_layout,
     blas_matmul_left_term_layout, blas_matmul_right_operand_layout, blas_matmul_right_term_layout,
+};
+pub use planning::{
+    BlasKeyUses, blas_matmul_key_uses, blas_matmul_max_base2k, blas_matmul_output_layout, blas_matmul_prepare_left_key_uses,
+    blas_matmul_prepare_right_key_uses, blas_matmul_prepared_key_uses, blas_matmul_prepared_output_layout,
+    blas_matmul_pt_left_key_uses, blas_matmul_pt_left_max_base2k, blas_matmul_pt_left_output_layout,
+    blas_matmul_pt_right_key_uses, blas_matmul_pt_right_max_base2k, blas_matmul_pt_right_output_layout,
+    blas_rotate_cols_key_uses, blas_rotate_cols_output_layout, blas_rotate_key_uses, blas_rotate_output_layout,
+    blas_rotate_rows_key_uses, blas_rotate_rows_output_layout, blas_sum_key_uses, blas_sum_output_layout,
+    blas_transpose_key_uses, blas_transpose_output_layout,
 };
 pub use pt_operand::{
     BlasPtOperand, BlasPtOperandInfos, BlasPtOperandLayout, BlasPtOperandPreparedFactory, BlasPtOperandUnprepared, BlasPtSide,

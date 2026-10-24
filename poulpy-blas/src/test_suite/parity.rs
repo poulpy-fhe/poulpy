@@ -57,13 +57,13 @@ use crate::{
         BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextInfos, BlasContextLayout, BlasContextPreparedFactory,
         BlasEncodingOps, BlasGridInfos, BlasLayout, BlasMatMulOperandInfos, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm,
         BlasPtOperand, BlasPtOperandInfos, BlasPtOperandLayout, BlasPtOperandPreparedFactory, BlasPtSide, Left, Right,
-        blas_matmul_left_term_layout, blas_matmul_right_term_layout,
+        blas_matmul_left_term_layout, blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k, blas_matmul_pt_right_max_base2k,
+        blas_matmul_right_term_layout,
         context::module_layout,
         sum_galois_elements,
         validate::{MASKLESS, MAX_BASE2K},
     },
     oep::BlasImpl,
-    reference::{blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k, blas_matmul_pt_right_max_base2k},
 };
 
 /// Bounds of a backend taking part in blas parity: any storage, any ring.

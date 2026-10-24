@@ -52,16 +52,15 @@ use super::helpers::{
 use crate::{
     api::{BlasMatIntraOps, BlasMatMulOps},
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextInfos, BlasGridInfos, BlasLayout, BlasMatMulLeft,
-        BlasMatMulOperand, BlasMatMulOperandLayout, BlasMatMulOperandPreparedFactory, BlasMatMulRight, BlasModuleAlloc, BlasPlan,
-        BlasPtAlgorithm, BlasPtOperand, BlasPtOperandInfos, Left, Right, blas_matmul_left_operand_layout,
-        blas_matmul_right_operand_layout, ciphertext::layout_of, replicated, validate::MASKLESS, validate_blas_matmul_prepared,
+        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextInfos, BlasGridInfos, BlasKeyUses, BlasLayout,
+        BlasMatMulLeft, BlasMatMulOperand, BlasMatMulOperandLayout, BlasMatMulOperandPreparedFactory, BlasMatMulRight,
+        BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperand, BlasPtOperandInfos, Left, Right,
+        blas_matmul_left_operand_layout, blas_matmul_pt_left_key_uses, blas_matmul_pt_left_output_layout,
+        blas_matmul_pt_right_key_uses, blas_matmul_pt_right_output_layout, blas_matmul_right_operand_layout,
+        ciphertext::layout_of, planning::pt_label, replicated, validate::MASKLESS, validate_blas_matmul_prepared,
     },
     oep::{BlasImpl, BlasMatMulImpl},
-    reference::{
-        BlasKeyUses, BlasMatMulReference, blas_matmul_pt_left_key_uses, blas_matmul_pt_left_output_layout,
-        blas_matmul_pt_right_key_uses, blas_matmul_pt_right_output_layout, pt_label,
-    },
+    reference::BlasMatMulReference,
 };
 
 /// `dec(matmul(enc(A), enc(B)))` is `A B` for every matrix of the batch, for a `2 x 3` grid times a `3 x 2` grid, with

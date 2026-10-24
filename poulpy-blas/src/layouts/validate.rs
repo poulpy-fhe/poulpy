@@ -2,11 +2,18 @@
 //! runs the same validators, as the references do. They check no budget: poulpy-ckks rejects those inside the
 //! implementation, before any write.
 
+use std::cell::RefCell;
+
 use poulpy_ckks::{
     CKKSCompositionError, CKKSCtBounds, CKKSError, CKKSInfos, CKKSResult as Result, GLWEPlaintextInfos,
-    api::{CKKSModuleInfos, LinearTransformation, LtDiagonalMeta, ckks_linear_transformation_output_k},
+    api::{
+        CKKSModuleInfos, LinearTransformation, LinearTransformationPrepared, LtDiagonalMeta, ckks_linear_transformation_output_k,
+    },
 };
-use poulpy_core::layouts::{Base2K, GLWEInfos, GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, TorusPrecision};
+use poulpy_core::layouts::{
+    Base2K, GGLWEInfos, GGLWELayout, GLWEInfos, GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, TorusPrecision,
+    prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWETensorKeyPreparedBackendRef},
+};
 use poulpy_hal::layouts::{Backend, Module, PrepareHint, Ring, ScratchArena};
 
 use super::{
@@ -179,7 +186,7 @@ pub(crate) fn ensure_maps<M: CKKSModuleInfos + ?Sized>(
 
 /// One rotation-key look-up of an operation: the rotation, the width of the input it key-switches, and the rank of the
 /// blocks. The enumerators of an operation's look-ups yield these in the order its validator checks them; a validator
-/// checks each against the store, a [`BlasKeyUses`](crate::reference::BlasKeyUses) query collects them.
+/// checks each against the store, a [`BlasKeyUses`](super::BlasKeyUses) query collects them.
 #[derive(Clone, Copy)]
 pub(crate) struct RotationUse {
     pub(crate) rotation: i64,
@@ -274,6 +281,97 @@ pub(crate) fn assert_scratch<BE: Backend>(op: &str, required: usize, scratch: &S
         "{op} needs {required} scratch bytes, but only {} are available",
         scratch.available()
     );
+}
+
+/// `keys`, recording the layout of every key looked up through it: an operation sizes its scratch query on the keys its
+/// checks look up, so a call that looks up no key does not assert its scratch. An implementation runs on keys its
+/// validator accepted, so it repeats the validator's look-ups through it only to record their layouts.
+pub(crate) struct KeyLayouts<'a, K> {
+    keys: &'a K,
+    layouts: RefCell<Vec<GGLWELayout>>,
+}
+
+impl<'a, K> KeyLayouts<'a, K> {
+    pub(crate) fn new(keys: &'a K) -> Self {
+        Self {
+            keys,
+            layouts: RefCell::default(),
+        }
+    }
+
+    /// The largest `bytes` over the keys looked up, `0` without any.
+    pub(crate) fn max_bytes(&self, bytes: impl Fn(&GGLWELayout) -> usize) -> usize {
+        self.layouts.borrow().iter().map(bytes).max().unwrap_or(0)
+    }
+
+    fn record<G: GGLWEInfos>(&self, key: &G) {
+        let layout = key.gglwe_layout();
+        let mut layouts = self.layouts.borrow_mut();
+        if !layouts.contains(&layout) {
+            layouts.push(layout);
+        }
+    }
+}
+
+impl<BE: Backend, K: GetAutomorphismKey<BE>> GetAutomorphismKey<BE> for KeyLayouts<'_, K> {
+    fn lookup_automorphism_key(
+        &self,
+        p: i64,
+        k: TorusPrecision,
+    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        let key = self.keys.get_automorphism_key(p, k)?;
+        self.record(&key);
+        Ok(key)
+    }
+}
+
+impl<BE: Backend, K: GetTensorKey<BE>> GetTensorKey<BE> for KeyLayouts<'_, K> {
+    fn lookup_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+        let key = self.keys.get_tensor_key(k)?;
+        self.record(&key);
+        Ok(key)
+    }
+}
+
+/// Panics unless `scratch` holds the largest `bytes` over the layouts of the rotation keys that evaluating `lts` from
+/// blocks of rank `rank` and width `src_k` into width `dst_k` looks up in `atk`, as [`assert_scratch`] does; a call
+/// that looks up none asserts nothing. The keys passed `op`'s validator, so the look-ups only record their layouts.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn assert_maps_scratch<BE: Backend, M: CKKSModuleInfos + ?Sized>(
+    op: &'static str,
+    module: &M,
+    lts: &[&LinearTransformationPrepared<BE>],
+    atk: &impl GetAutomorphismKey<BE>,
+    src_k: TorusPrecision,
+    dst_k: TorusPrecision,
+    rank: Rank,
+    bytes: impl Fn(&GGLWELayout) -> usize,
+    scratch: &ScratchArena<'_, BE>,
+) {
+    let used = KeyLayouts::new(atk);
+    for lt in lts {
+        let _ = ensure_lt_keys(op, module, lt, &used, src_k, dst_k, rank);
+    }
+    assert_scratch(op, used.max_bytes(bytes), scratch);
+}
+
+/// Fails as [`ensure_rotation`] unless `keys` holds every key of [`lt_uses`], of that rank.
+fn ensure_lt_keys<BE, M, P, K>(
+    op: &'static str,
+    module: &M,
+    lt: &LinearTransformation<P>,
+    keys: &K,
+    src_k: TorusPrecision,
+    dst_k: TorusPrecision,
+    rank: Rank,
+) -> Result<()>
+where
+    BE: Backend,
+    M: CKKSModuleInfos + ?Sized,
+    P: LtDiagonalMeta,
+    K: GetAutomorphismKey<BE>,
+{
+    lt_uses(lt, src_k, dst_k, rank, &mut |u| ensure_rotation(op, module, keys, u))
 }
 
 /// Checks a [`blas_rotate`](crate::api::BlasMatInterOps::blas_rotate) call, and returns the batch `res` records, `a`'s:

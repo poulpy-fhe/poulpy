@@ -65,7 +65,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// before one inverse transform, so choose `base2k` for the `2 L K d` limb products it adds in an output limb, up to
     /// `2 L` per pair, `L` the limbs of the narrower terms, `min(w_a, w_b)` over `base2k` rounded up, as for poulpy-core's
     /// `glwe_mul_relinearize_sum`, and for the maps that make the terms, each the count [`Self::blas_matmul_pt_right`]
-    /// documents for one term: [`blas_matmul_max_base2k`](crate::reference::blas_matmul_max_base2k) returns the largest
+    /// documents for one term: [`blas_matmul_max_base2k`](crate::layouts::blas_matmul_max_base2k) returns the largest
     /// radix `Module::max_base2k` allows for every one of them, counting limbs at each radix. An FFT backend adds the
     /// kernel's products in floating point, in the order of the pairs `(a_il[k], b_lj[k])`, `l`-major: ascending `l`, then
     /// ascending `k` within each `l`. That order is then part of the bits.
@@ -278,7 +278,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// `max(w_a, w_b) >= base2k` guarantees, choose `base2k` as [`Self::blas_matmul`] states, `L` the limbs of the narrower
     /// of the terms' widths `w_a` and `w_b`: the kernel adds the products of every pair in the transform domain before one
     /// inverse transform, in the order [`Self::blas_matmul`] states.
-    /// [`blas_matmul_max_base2k`](crate::reference::blas_matmul_max_base2k) takes the source grids of the operands, not a
+    /// [`blas_matmul_max_base2k`](crate::layouts::blas_matmul_max_base2k) takes the source grids of the operands, not a
     /// cold operand's term layout. The reference makes a hot side's terms a block row of `a` or a block column of `b` at a
     /// time, each once, and keeps a row (column) only while it serves: beside a cold side, one at a time; of two hot sides,
     /// it holds one side's, as [`Self::blas_matmul`] does. Of two cold operands it makes no term.
@@ -360,7 +360,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// terms by `b`'s prepared plaintexts: `psi^k(tau(B_lj))` stored under `JklsStored`, `tau(B_lj)` read through the
     /// Galois element of the rotation by `k d` under `JklsGalois`. It spends three scales, `2 p_B + p`, for `p` the
     /// context's scale. It adds the `K d` products in the transform domain, and each mask adds one diagonal per giant
-    /// step; [`blas_matmul_pt_right_max_base2k`](crate::reference::blas_matmul_pt_right_max_base2k) counts them. On the
+    /// step; [`blas_matmul_pt_right_max_base2k`](crate::layouts::blas_matmul_pt_right_max_base2k) counts them. On the
     /// right these two take one public matrix. `ctx` is read under them alone; it holds `d - 1` masks that every
     /// context holds.
     ///
@@ -372,7 +372,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// groups, `L` the limbs of their input, `a.k` over `base2k` rounded up (`a.k - p_B` under `Jkls`), and `P` those of a
     /// diagonal, the width `b` was encoded at over `base2k` rounded up. Under `Jkls` the first map adds its own
     /// `g min(L, P)`, with its own `g` and `P`, for one term and `L` the limbs of `a.k`.
-    /// [`blas_matmul_pt_right_max_base2k`](crate::reference::blas_matmul_pt_right_max_base2k) returns the largest radix
+    /// [`blas_matmul_pt_right_max_base2k`](crate::layouts::blas_matmul_pt_right_max_base2k) returns the largest radix
     /// `Module::max_base2k` allows for the larger count, counting `L` and `P` at each radix, as for poulpy-core's own
     /// summed linear transformation.
     ///
@@ -469,7 +469,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// which share their giant steps: a block costs the giant-step key switches of one of `b`'s maps, whatever `K`.
     /// Each giant step adds the products of every term with each of its diagonals in the transform domain before its
     /// rotation, so choose `base2k`, under every path, for the count [`Self::blas_matmul_pt_right`] documents:
-    /// [`blas_matmul_pt_left_max_base2k`](crate::reference::blas_matmul_pt_left_max_base2k) returns the largest radix
+    /// [`blas_matmul_pt_left_max_base2k`](crate::layouts::blas_matmul_pt_left_max_base2k) returns the largest radix
     /// `Module::max_base2k` allows for it.
     ///
     /// **Replicated input.** When `a` is replicated ([`crate::layouts::replicated`], read from its label) and `b` holds
@@ -477,7 +477,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// maps are those `d`-diagonal maps, scheduled at `left_mul`'s giant step so they rotate within the same key set, in
     /// place of the `2d - 1` of [`BlasPtOperand::block`]: about 22 key switches per block instead of 30 at `d = 128`. The
     /// choice is made once per call from `a`'s label, by the validator, the call and
-    /// [`blas_matmul_pt_left_max_base2k`](crate::reference::blas_matmul_pt_left_max_base2k) alike, and changes the bits
+    /// [`blas_matmul_pt_left_max_base2k`](crate::layouts::blas_matmul_pt_left_max_base2k) alike, and changes the bits
     /// against the `2d - 1` maps. Metadata and keys are unchanged, and the scratch query does not read the maps.
     ///
     /// # Metadata

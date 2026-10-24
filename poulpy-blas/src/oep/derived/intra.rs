@@ -1,33 +1,32 @@
 //! The provided methods of [`BlasMatIntraImpl`], the transpose and the row and column shifts, each composed over the
-//! map hook [`BlasMatIntraImpl::blas_map_blocks`] and poulpy-ckks's copy and addition. Each runs its validator before any write and, on
-//! `Ok`, stamps the batch record of `res`, as the references do. They are public so that an override of a provided
-//! method can fall back to it; their scratch assertion over the keys a map looks up is shared with the references.
-
-use std::cell::RefCell;
+//! map hook [`BlasMatIntraImpl::blas_map_blocks`] and poulpy-ckks's copy and addition. Each runs its validator before
+//! any write and, on `Ok`, stamps the batch record of `res`, as the references do.
 
 use poulpy_ckks::{
     CKKSResult as Result,
-    api::{CKKSAddOps, CKKSCopyOps, CKKSModuleInfos, LinearTransformation, LinearTransformationPrepared, LtDiagonalMeta},
+    api::{CKKSAddOps, CKKSCopyOps},
     layouts::CKKSModuleAlloc,
 };
-use poulpy_core::layouts::{
-    GGLWEInfos, GGLWELayout, GLWEInfos, GLWEToBackendMut, GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, TorusPrecision,
-    prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWETensorKeyPreparedBackendRef},
-};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_core::layouts::{GGLWEInfos, GGLWELayout, GLWEInfos, GLWEToBackendMut, GetAutomorphismKey, LWEInfos};
+use poulpy_hal::layouts::{Module, ScratchArena};
 
-use super::BlasMatIntraImpl;
-use crate::layouts::{
-    BlasContext, BlasContextInfos, BlasGrid, BlasGridInfos, BlasGridMut,
-    context::shift_maps,
-    validate::{assert_scratch, ensure_rotation, lt_uses},
-    validate_blas_rotate_cols, validate_blas_rotate_rows, validate_blas_transpose,
+use crate::{
+    layouts::{
+        BlasContext, BlasContextInfos, BlasGrid, BlasGridInfos, BlasGridMut, context::shift_maps, validate::assert_maps_scratch,
+        validate_blas_rotate_cols, validate_blas_rotate_rows, validate_blas_transpose,
+    },
+    oep::BlasMatIntraImpl,
 };
 
 /// The provided `blas_transpose_tmp_bytes`: the hook's scratch for the transpose of every block of `a` into a
 /// block of `res`.
-#[doc(hidden)]
-pub fn blas_transpose_tmp_bytes_derived<BE, R, A, K>(module: &Module<BE>, res: &R, a: &A, ctx: &BlasContext<BE>, atk: &K) -> usize
+pub(crate) fn blas_transpose_tmp_bytes_derived<BE, R, A, K>(
+    module: &Module<BE>,
+    res: &R,
+    a: &A,
+    ctx: &BlasContext<BE>,
+    atk: &K,
+) -> usize
 where
     BE: BlasMatIntraImpl,
     R: BlasGridInfos,
@@ -47,8 +46,7 @@ where
 
 /// The provided `blas_transpose`, `res_ji = transpose(a_ij)`: one hook call, its sources in the order of `res`'s
 /// blocks.
-#[doc(hidden)]
-pub fn blas_transpose_derived<BE, R, A, K>(
+pub(crate) fn blas_transpose_derived<BE, R, A, K>(
     module: &Module<BE>,
     res: &mut R,
     a: &A,
@@ -77,8 +75,7 @@ where
 }
 
 /// The provided `blas_rotate_rows_tmp_bytes`: the scratch of a row shift by any `k`, as [`shift_tmp_bytes`].
-#[doc(hidden)]
-pub fn blas_rotate_rows_tmp_bytes_derived<BE, R, A, K>(
+pub(crate) fn blas_rotate_rows_tmp_bytes_derived<BE, R, A, K>(
     module: &Module<BE>,
     res: &R,
     a: &A,
@@ -95,8 +92,7 @@ where
 }
 
 /// The provided `blas_rotate_cols_tmp_bytes`: the scratch of a column shift by any `k`, as [`shift_tmp_bytes`].
-#[doc(hidden)]
-pub fn blas_rotate_cols_tmp_bytes_derived<BE, R, A, K>(
+pub(crate) fn blas_rotate_cols_tmp_bytes_derived<BE, R, A, K>(
     module: &Module<BE>,
     res: &R,
     a: &A,
@@ -137,8 +133,7 @@ where
 }
 
 /// The provided `blas_rotate_rows`, as [`shift`].
-#[doc(hidden)]
-pub fn blas_rotate_rows_derived<BE, R, A, K>(
+pub(crate) fn blas_rotate_rows_derived<BE, R, A, K>(
     module: &Module<BE>,
     res: &mut R,
     a: &A,
@@ -157,8 +152,7 @@ where
 }
 
 /// The provided `blas_rotate_cols`, as [`shift`].
-#[doc(hidden)]
-pub fn blas_rotate_cols_derived<BE, R, A, K>(
+pub(crate) fn blas_rotate_cols_derived<BE, R, A, K>(
     module: &Module<BE>,
     res: &mut R,
     a: &A,
@@ -268,95 +262,4 @@ where
         module.ckks_add_into(dst, &halves[2 * src(t, q)], &halves[2 * src(t, q + 1) + 1], scratch)?;
     }
     Ok(())
-}
-
-/// `keys`, recording the layout of every key looked up through it: an operation sizes its scratch query on the keys its
-/// checks look up, so a call that looks up no key does not assert its scratch. An implementation runs on keys its
-/// validator accepted, so it repeats the validator's look-ups through it only to record their layouts.
-pub(crate) struct KeyLayouts<'a, K> {
-    keys: &'a K,
-    layouts: RefCell<Vec<GGLWELayout>>,
-}
-
-impl<'a, K> KeyLayouts<'a, K> {
-    pub(crate) fn new(keys: &'a K) -> Self {
-        Self {
-            keys,
-            layouts: RefCell::default(),
-        }
-    }
-
-    /// The largest `bytes` over the keys looked up, `0` without any.
-    pub(crate) fn max_bytes(&self, bytes: impl Fn(&GGLWELayout) -> usize) -> usize {
-        self.layouts.borrow().iter().map(bytes).max().unwrap_or(0)
-    }
-
-    fn record<G: GGLWEInfos>(&self, key: &G) {
-        let layout = key.gglwe_layout();
-        let mut layouts = self.layouts.borrow_mut();
-        if !layouts.contains(&layout) {
-            layouts.push(layout);
-        }
-    }
-}
-
-impl<BE: Backend, K: GetAutomorphismKey<BE>> GetAutomorphismKey<BE> for KeyLayouts<'_, K> {
-    fn lookup_automorphism_key(
-        &self,
-        p: i64,
-        k: TorusPrecision,
-    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
-        let key = self.keys.get_automorphism_key(p, k)?;
-        self.record(&key);
-        Ok(key)
-    }
-}
-
-impl<BE: Backend, K: GetTensorKey<BE>> GetTensorKey<BE> for KeyLayouts<'_, K> {
-    fn lookup_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
-        let key = self.keys.get_tensor_key(k)?;
-        self.record(&key);
-        Ok(key)
-    }
-}
-
-/// Panics unless `scratch` holds the largest `bytes` over the layouts of the rotation keys that evaluating `lts` from
-/// blocks of rank `rank` and width `src_k` into width `dst_k` looks up in `atk`, as [`assert_scratch`] does; a call
-/// that looks up none asserts nothing. The keys passed `op`'s validator, so the look-ups only record their layouts.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn assert_maps_scratch<BE: Backend, M: CKKSModuleInfos + ?Sized>(
-    op: &'static str,
-    module: &M,
-    lts: &[&LinearTransformationPrepared<BE>],
-    atk: &impl GetAutomorphismKey<BE>,
-    src_k: TorusPrecision,
-    dst_k: TorusPrecision,
-    rank: Rank,
-    bytes: impl Fn(&GGLWELayout) -> usize,
-    scratch: &ScratchArena<'_, BE>,
-) {
-    let used = KeyLayouts::new(atk);
-    for lt in lts {
-        let _ = ensure_lt_keys(op, module, lt, &used, src_k, dst_k, rank);
-    }
-    assert_scratch(op, used.max_bytes(bytes), scratch);
-}
-
-/// Fails as [`ensure_rotation`] unless `keys` holds every key of [`lt_uses`], of that rank.
-fn ensure_lt_keys<BE, M, P, K>(
-    op: &'static str,
-    module: &M,
-    lt: &LinearTransformation<P>,
-    keys: &K,
-    src_k: TorusPrecision,
-    dst_k: TorusPrecision,
-    rank: Rank,
-) -> Result<()>
-where
-    BE: Backend,
-    M: CKKSModuleInfos + ?Sized,
-    P: LtDiagonalMeta,
-    K: GetAutomorphismKey<BE>,
-{
-    lt_uses(lt, src_k, dst_k, rank, &mut |u| ensure_rotation(op, module, keys, u))
 }

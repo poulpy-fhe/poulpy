@@ -55,7 +55,7 @@ use crate::layouts::{
 ///   ([`crate::layouts::replicated`]) and `b` holds them ([`crate::layouts::BlasPtOperand::block_replicated`]), the
 ///   blocks' maps are those, `d` diagonals scheduled at `left_mul`'s giant step; otherwise
 ///   [`crate::layouts::BlasPtOperand::block`]'s, `2d - 1`. The two choices differ in bits. The validator's key checks,
-///   [`blas_matmul_pt_left_max_base2k`](crate::reference::blas_matmul_pt_left_max_base2k) and the key widths follow the
+///   [`blas_matmul_pt_left_max_base2k`](crate::layouts::blas_matmul_pt_left_max_base2k) and the key widths follow the
 ///   same choice; the scratch query does not read the block maps;
 /// - the errors and their order: the validator's, then poulpy-ckks's budget errors, before any write to `res`: the left
 ///   terms', then the right terms', then the first block's ct x ct rule. A hot side's come from the product, so a hot

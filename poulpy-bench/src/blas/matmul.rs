@@ -18,6 +18,7 @@ use std::{
 use criterion::{Bencher, measurement::Measurement};
 use poulpy_blas::{
     api::{BlasMatIntraOps, BlasMatMulOps},
+    blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k, blas_matmul_pt_right_max_base2k,
     layouts::{
         BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextPreparedFactory, BlasEncodingOps, BlasModuleAlloc, BlasPlan,
         BlasPtAlgorithm, BlasPtOperand, BlasPtOperandPreparedFactory, BlasPtSide, Left, Right,
@@ -25,7 +26,6 @@ use poulpy_blas::{
         replicated,
     },
     oep::{BlasMatIntraImpl, BlasMatMulImpl},
-    reference::{blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k, blas_matmul_pt_right_max_base2k},
 };
 use poulpy_ckks::{
     CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,

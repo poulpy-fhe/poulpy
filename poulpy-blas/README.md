@@ -32,9 +32,9 @@ the slots, takes its psi^k as rotations at no scale, so it may arrive one map sc
 encrypt it from a plaintext of `d^2` slots whose degree reaches the backend's `MIN_DEGREE`, since a degree-`N` one at
 label 0 proves one matrix only when one fills the slots.
 
-`reference::{blas_matmul_max_base2k, blas_matmul_pt_right_max_base2k, blas_matmul_pt_left_max_base2k}` return the
-largest `base2k` that `Module::max_base2k` allows for every lazy sum of a product, from the grids' layouts, the context
-and the public operand alone.
+`blas_matmul_max_base2k`, `blas_matmul_pt_right_max_base2k` and `blas_matmul_pt_left_max_base2k` return the largest
+`base2k` that `Module::max_base2k` allows for every lazy sum of a product, from the grids' layouts, the context and the
+public operand alone.
 
 Calls with distinct `res` and `scratch` may run concurrently over a shared module, context, public operands, prepared
 operands and key stores: BLAS spawns no thread and holds no shared mutable state, its types are `Send` and `Sync`, and an
@@ -60,12 +60,13 @@ or public matrix: it generates the union of its pipeline's sets, and a tensor ke
 `blas_matmul_prepared`. The server checks each grid's batch, `mat_slots()`, against the one the summed keys were
 planned for.
 
-Each operation also has a key-use query in `poulpy_blas::reference` (`blas_matmul_key_uses`, ...) that lists each key
-it looks up and the width it looks it up at: `(Galois element, width)` pairs and the tensor key's width. The output-layout
-queries (`blas_matmul_output_layout`, ...) give the layout each operation stamps on `res` from its inputs' layouts, so a
-client plans every intermediate grid, and with it every key, before it encrypts or runs anything. Every query takes a
-context or a public operand, or their layouts (`BlasContextLayout`, `BlasPtOperandLayout`), and reads only the shape of
-their maps, so the plan needs no map encoded; the radix queries name their backend, `blas_matmul_max_base2k::<BE>`.
+Each operation also has a key-use query in `poulpy_blas::layouts`, re-exported at the crate root
+(`blas_matmul_key_uses`, ...), that lists each key it looks up and the width it looks it up at: `(Galois element,
+width)` pairs and the tensor key's width. The output-layout queries (`blas_matmul_output_layout`, ...) give the layout
+each operation stamps on `res` from its inputs' layouts, so a client plans every intermediate grid, and with it every
+key, before it encrypts or runs anything. Every query takes a context or a public operand, or their layouts
+(`BlasContextLayout`, `BlasPtOperandLayout`), and reads only the shape of their maps, so the plan needs no map encoded;
+the radix queries name their backend, `blas_matmul_max_base2k::<BE>`.
 
 The [pipeline example](../poulpy-cpu-portable/examples/blas_pipeline.rs) plans its keys this way, plans every layout from the queries, runs `blas_matmul`,
 `blas_transpose`, `blas_matmul_pt_right`, `blas_matmul_pt_left` and `blas_sum` on a batch of encrypted matrices, prints the

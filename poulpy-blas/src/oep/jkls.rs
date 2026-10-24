@@ -16,7 +16,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 /// The memory, layout and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 ///
 /// [`Self::blas_jkls_block`] reproduces
-/// [`BlasMatMulReference::blas_jkls_block_reference`](crate::reference::BlasMatMulReference::blas_jkls_block_reference)
+/// [`BlasJklsReference::blas_jkls_block_reference`](crate::reference::BlasJklsReference::blas_jkls_block_reference)
 /// bit for bit, digits and CKKS metadata: `res = sum_t lhs[t] rhs[t]` as poulpy-ckks's `ckks_dot_product_ct` computes
 /// it for the terms the pairs were prepared from, which share one layout per side. The pairs are terms prepared once by
 /// poulpy-ckks's `ckks_prepare_left` and `ckks_prepare_right`, which report the terms they were prepared from and give
@@ -79,7 +79,7 @@ pub unsafe trait BlasJklsImpl: Backend {
 }
 
 /// Selects
-/// [`BlasMatMulReference::blas_jkls_block_reference`](crate::reference::BlasMatMulReference::blas_jkls_block_reference)
+/// [`BlasJklsReference::blas_jkls_block_reference`](crate::reference::BlasJklsReference::blas_jkls_block_reference)
 /// as the JKLS kernel of `$be`.
 #[macro_export]
 macro_rules! impl_blas_jkls_reference_full {
@@ -99,7 +99,7 @@ macro_rules! impl_blas_jkls_reference_full {
                 Rh: ::poulpy_ckks::CKKSCtBounds,
                 T: ::poulpy_core::layouts::GGLWEInfos,
             {
-                $crate::reference::BlasMatMulReference::blas_jkls_block_tmp_bytes_reference(module, res, lhs, rhs, terms, tsk)
+                $crate::reference::BlasJklsReference::blas_jkls_block_tmp_bytes_reference(module, res, lhs, rhs, terms, tsk)
             }
 
             fn blas_jkls_block<R, T>(
@@ -114,7 +114,7 @@ macro_rules! impl_blas_jkls_reference_full {
                 R: ::poulpy_core::layouts::GLWEToBackendMut<Self> + ::poulpy_ckks::CKKSCtBounds + ::poulpy_ckks::SetCKKSInfos,
                 T: ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
             {
-                $crate::reference::BlasMatMulReference::blas_jkls_block_reference(module, res, lhs, rhs, tsk, scratch)
+                $crate::reference::BlasJklsReference::blas_jkls_block_reference(module, res, lhs, rhs, tsk, scratch)
             }
         }
     };
