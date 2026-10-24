@@ -2,7 +2,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 
-use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, LWEInfos, TorusPrecision};
+use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, LWEInfos};
 use poulpy_hal::layouts::{Backend, Module, PrepareHint, ScratchArena};
 
 use crate::{
@@ -24,14 +24,16 @@ pub unsafe trait CKKSMulImpl: Backend {
         tsk: &T,
     ) -> usize;
     fn ckks_square_tmp_bytes<R: GLWEInfos, A: GLWEInfos, T: GGLWEInfos>(module: &Module<Self>, res: &R, a: &A, tsk: &T) -> usize;
-    fn ckks_mul_pt_vec_tmp_bytes<R: GLWEInfos, A: GLWEInfos>(module: &Module<Self>, res: &R, a: &A, b_k: TorusPrecision)
-    -> usize;
-    fn ckks_mul_pt_const_tmp_bytes<R: GLWEInfos, A: GLWEInfos>(
-        module: &Module<Self>,
-        res: &R,
-        a: &A,
-        b_k: TorusPrecision,
-    ) -> usize;
+    fn ckks_mul_pt_vec_tmp_bytes<R, A, P>(module: &Module<Self>, res: &R, a: &A, b: &P) -> usize
+    where
+        R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        P: CKKSInfos;
+    fn ckks_mul_pt_const_tmp_bytes<R, A, P>(module: &Module<Self>, res: &R, a: &A, b: &P) -> usize
+    where
+        R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        P: CKKSInfos;
     fn ckks_mul_into<Dst, A, B, T>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -230,22 +232,22 @@ macro_rules! impl_ckks_mul_reference_full {
                 $crate::reference::mul::CKKSMulReference::ckks_square_tmp_bytes_reference(module, res, a, tsk)
             }
 
-            fn ckks_mul_pt_vec_tmp_bytes<R: ::poulpy_core::layouts::GLWEInfos, A: ::poulpy_core::layouts::GLWEInfos>(
-                module: &::poulpy_hal::layouts::Module<Self>,
-                res: &R,
-                a: &A,
-                b_k: ::poulpy_core::layouts::TorusPrecision,
-            ) -> usize {
-                $crate::reference::mul::CKKSMulReference::ckks_mul_pt_vec_tmp_bytes_reference(module, res, a, b_k)
+            fn ckks_mul_pt_vec_tmp_bytes<R, A, P>(module: &::poulpy_hal::layouts::Module<Self>, res: &R, a: &A, b: &P) -> usize
+            where
+                R: $crate::CKKSCtBounds,
+                A: $crate::CKKSCtBounds,
+                P: $crate::CKKSInfos,
+            {
+                $crate::reference::mul::CKKSMulReference::ckks_mul_pt_vec_tmp_bytes_reference(module, res, a, b)
             }
 
-            fn ckks_mul_pt_const_tmp_bytes<R: ::poulpy_core::layouts::GLWEInfos, A: ::poulpy_core::layouts::GLWEInfos>(
-                module: &::poulpy_hal::layouts::Module<Self>,
-                res: &R,
-                a: &A,
-                b_k: ::poulpy_core::layouts::TorusPrecision,
-            ) -> usize {
-                $crate::reference::mul::CKKSMulReference::ckks_mul_pt_const_tmp_bytes_reference(module, res, a, b_k)
+            fn ckks_mul_pt_const_tmp_bytes<R, A, P>(module: &::poulpy_hal::layouts::Module<Self>, res: &R, a: &A, b: &P) -> usize
+            where
+                R: $crate::CKKSCtBounds,
+                A: $crate::CKKSCtBounds,
+                P: $crate::CKKSInfos,
+            {
+                $crate::reference::mul::CKKSMulReference::ckks_mul_pt_const_tmp_bytes_reference(module, res, a, b)
             }
 
             fn ckks_mul_into<Dst, A, B, T>(

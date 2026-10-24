@@ -374,23 +374,23 @@ where
                 let before_pt = snapshot::<B, _>(&pt);
                 let lr = layout(params, rank, 2 * b + 3, b - 1, 0, SlotsKind::Complex);
                 let mut out = fixture_ciphertext(module, &lr, 99);
-                let bytes = B::ckks_mul_pt_vec_tmp_bytes(module, &out, &a, pt.k());
+                let bytes = B::ckks_mul_pt_vec_tmp_bytes(module, &out, &a, &pt);
                 with_scratch::<B, _>(bytes, |scratch| B::ckks_mul_pt_vec_into(module, &mut out, &a, &pt, scratch)).unwrap();
                 results.push(("mul_pt_vec_into", snapshot::<B, _>(&out)));
                 let mut out = fixture_operand(module, &la, 51, lazy);
-                let bytes = B::ckks_mul_pt_vec_tmp_bytes(module, &out, &out, pt.k());
+                let bytes = B::ckks_mul_pt_vec_tmp_bytes(module, &out, &out, &pt);
                 with_scratch::<B, _>(bytes, |scratch| B::ckks_mul_pt_vec_assign(module, &mut out, &pt, scratch)).unwrap();
                 results.push(("mul_pt_vec_assign", snapshot::<B, _>(&out)));
                 for coeff in [0, 3] {
                     let mut out = fixture_ciphertext(module, &lr, 99);
-                    let bytes = B::ckks_mul_pt_const_tmp_bytes(module, &out, &a, pt.k());
+                    let bytes = B::ckks_mul_pt_const_tmp_bytes(module, &out, &a, &pt);
                     with_scratch::<B, _>(bytes, |scratch| {
                         B::ckks_mul_pt_const_into(module, &mut out, &a, &pt, coeff, scratch)
                     })
                     .unwrap();
                     results.push(("mul_pt_const_into", snapshot::<B, _>(&out)));
                     let mut out = fixture_operand(module, &la, 51, lazy);
-                    let bytes = B::ckks_mul_pt_const_tmp_bytes(module, &out, &out, pt.k());
+                    let bytes = B::ckks_mul_pt_const_tmp_bytes(module, &out, &out, &pt);
                     with_scratch::<B, _>(bytes, |scratch| {
                         B::ckks_mul_pt_const_assign(module, &mut out, &pt, coeff, scratch)
                     })

@@ -122,6 +122,7 @@
   An out-of-tree backend that registers both removes its own `impl_ckks_eval_mod_reference!` next to `impl_cpu_ckks_defaults!`.
 - **Breaking:** the CPU backends, the oracle, `impl_cpu_core_defaults!` and `impl_cpu_ckks_defaults!` register through the renamed scheme opt-ins (`impl_<family>_reference_full!`, see the `poulpy-core`, `poulpy-ckks`, `poulpy-bin-fhe`, `poulpy-mhe` and `poulpy-blas` entries), each standard type invoking both halves of the split CKKS fold and DFT opt-ins.
   `impl_ckks_paco_coeff_encoding!`, `impl_ckks_ship_coeff_encoding!` and `impl_ckks_encoding!` implement the renamed OEP methods, and `impl_ckks_paco_coeff_encoding!` the context-taking `ckks_paco_coeff_encodings`; an out-of-tree backend calling them is unchanged, and one invoking a scheme opt-in directly renames the invocation.
+- `impl_cpu_ckks_defaults!` registers the both-ring CKKS families through `impl_ckks_reference_full!`, the same set as before; the oracle's standard and conjugate-invariant types use it too.
 
 ### `poulpy-core`
 
@@ -382,6 +383,10 @@
 - **Breaking:** each opt-in macro covers one OEP trait and is named after it, `impl_<family>_reference_full!` with `<family>` the trait in snake case without `Impl`.
   `impl_ckks_<family>_reference!` becomes `impl_ckks_<family>_reference_full!` for add, sub, copy, neg, pow2, imag, conjugate, rotate, mul, dot_product, linear_transformation, encryption, polynomial_evaluation, complex_polynomial_evaluation, eval_mod, bootstrapping, bootstrapping_ci, encapsulated_mod_up and mod_up_first_factor, and `impl_ckks_plaintext_reference!` becomes `impl_ckks_plaintext_znx_reference_full!` (`CKKSPlaintextZnxImpl`).
   `impl_ckks_fold_reference!` splits into `impl_ckks_fold_layout_reference_full!` (`CKKSFoldLayoutImpl`) and `impl_ckks_fold_reference_full!` (`CKKSFoldImpl<R>`), and `impl_ckks_dft_reference!` into `impl_dft_reference_full!` (`DFTImpl`) and `impl_dft_matrix_reference_full!` (`DFTMatrixImpl<F>`); a backend invokes both halves.
+- Add the umbrella `impl_ckks_reference_full!`, the opt-ins of every scalar-independent family that serves both rings (plaintext, copy, add, sub, encryption, neg, pow2, rotate, mul, dot product, linear transformation, polynomial evaluation, EvalMod).
+  The standard-only families, the scalar-generic seams and the PaCo and SHIP coefficient encodings keep their own registration.
+- **Breaking:** `CKKSMulImpl::ckks_mul_pt_vec_tmp_bytes` and `ckks_mul_pt_const_tmp_bytes` take the API's parameters `(res, a, b)`, `b: &P` with `P: CKKSInfos` and `res`, `a` bounded by `CKKSCtBounds`, in place of `(res, a, b_k: TorusPrecision)`, and so do `CKKSMulReference::ckks_mul_pt_vec_tmp_bytes_reference` and `ckks_mul_pt_const_tmp_bytes_reference`, which read `b.k()`.
+  A backend overriding them takes the plaintext and reads its precision; callers pass the plaintext instead of `pt.k()`.
 
 ### `poulpy-bin-fhe`
 

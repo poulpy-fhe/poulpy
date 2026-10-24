@@ -119,7 +119,8 @@ To implement your own backend (SIMD or accelerator):
 4. Optionally, do the same for `poulpy-ckks` behind a backend-owned `enable-ckks` feature using its opt-in macros (`impl_<family>_reference_full!`) or direct OEP trait implementations.
 
 CPU backends share their common registrations through `impl_cpu_core_defaults!`
-and `impl_cpu_ckks_defaults!`. Tensoring, strided digit products, encoding
+and `impl_cpu_ckks_defaults!` (`impl_ckks_reference_full!` and the encoding).
+Tensoring, strided digit products, encoding
 transforms, and encapsulated ModUp remain explicit backend choices, as do the
 standard-only families (`hal_impl_vec_znx_monomial!`, LWE conversion, packing,
 rotate, `mul_xp_minus_one`) and the standard-only CKKS families

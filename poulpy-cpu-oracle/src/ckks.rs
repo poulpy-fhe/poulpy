@@ -198,8 +198,16 @@ macro_rules! impl_oracle_ckks_coeff_encodings {
     };
 }
 
-/// The CKKS compositions shared by both rings.
+/// The CKKS compositions shared by both rings, EvalMod included.
 macro_rules! impl_oracle_ckks {
+    ($be:ty) => {
+        impl_oracle_ckks_encoding!($be);
+        ::poulpy_ckks::impl_ckks_reference_full!($be);
+    };
+}
+
+/// [`impl_oracle_ckks`] without EvalMod, whose standard-ring reference needs a complex polynomial evaluation.
+macro_rules! impl_oracle_ckks_without_eval_mod {
     ($be:ty) => {
         impl_oracle_ckks_encoding!($be);
         ::poulpy_ckks::impl_ckks_copy_reference_full!($be);
@@ -217,18 +225,10 @@ macro_rules! impl_oracle_ckks {
     };
 }
 
-/// [`impl_oracle_ckks`] with EvalMod, which serves both rings.
-macro_rules! impl_oracle_ckks_eval_mod {
-    ($be:ty) => {
-        impl_oracle_ckks!($be);
-        ::poulpy_ckks::impl_ckks_eval_mod_reference_full!($be);
-    };
-}
-
 /// The CKKS compositions of the standard ring, with bootstrapping.
 macro_rules! impl_oracle_ckks_standard {
     ($be:ty, $ci:ty) => {
-        impl_oracle_ckks_eval_mod!($be);
+        impl_oracle_ckks!($be);
         impl_oracle_ckks_coeff_encodings!($be);
         ::poulpy_ckks::impl_ckks_encapsulated_mod_up_reference_full!($be);
         ::poulpy_ckks::impl_ckks_mod_up_first_factor_reference_full!($be);
@@ -246,7 +246,7 @@ macro_rules! impl_oracle_ckks_standard {
 
 impl_oracle_ckks_standard!(FFT64Oracle, FFT64CIOracle);
 impl_oracle_ckks_standard!(NTT4x30Oracle, NTT4x30CIOracle);
-impl_oracle_ckks_eval_mod!(FFT64CIOracle);
-impl_oracle_ckks_eval_mod!(NTT4x30CIOracle);
-impl_oracle_ckks!(crate::test_suite::ControlledSamplingFFT64Oracle);
-impl_oracle_ckks!(crate::test_suite::ControlledSamplingFFT64CIOracle);
+impl_oracle_ckks!(FFT64CIOracle);
+impl_oracle_ckks!(NTT4x30CIOracle);
+impl_oracle_ckks_without_eval_mod!(crate::test_suite::ControlledSamplingFFT64Oracle);
+impl_oracle_ckks_without_eval_mod!(crate::test_suite::ControlledSamplingFFT64CIOracle);

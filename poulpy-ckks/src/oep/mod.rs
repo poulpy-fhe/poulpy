@@ -93,3 +93,31 @@ pub use sub::impl_ckks_sub_reference_full;
 
 /// Callable same-layer fallbacks that retain selected constituent overrides.
 pub mod defaults;
+
+/// Selects the reference implementation of every scalar-independent CKKS family that serves both rings, the
+/// families [`CKKSImpl`] bundles minus the standard-only ones.
+///
+/// Left out, each with its own opt-in: the standard-only families (`CKKSImagImpl`, `CKKSConjugateImpl`,
+/// `CKKSComplexPolynomialEvaluationImpl`, `DFTImpl`, `CKKSFoldLayoutImpl`, `CKKSFoldImpl<R>`, `CKKSBootstrappingImpl`,
+/// `CKKSBootstrappingCIImpl`, `CKKSEncapsulatedModUpImpl`, `CKKSModUpFirstFactorImpl`), the scalar-generic seams
+/// (`CKKSEncodingImpl<F>`, `DFTMatrixImpl<F>`) and the PaCo and SHIP coefficient encodings, which have no reference
+/// opt-in.
+#[macro_export]
+macro_rules! impl_ckks_reference_full {
+    ($be:ty) => {
+        $crate::impl_ckks_plaintext_znx_reference_full!($be);
+        $crate::impl_ckks_copy_reference_full!($be);
+        $crate::impl_ckks_add_reference_full!($be);
+        $crate::impl_ckks_sub_reference_full!($be);
+        $crate::impl_ckks_encryption_reference_full!($be);
+        $crate::impl_ckks_neg_reference_full!($be);
+        $crate::impl_ckks_pow2_reference_full!($be);
+        $crate::impl_ckks_rotate_reference_full!($be);
+        $crate::impl_ckks_mul_reference_full!($be);
+        $crate::impl_ckks_dot_product_reference_full!($be);
+        $crate::impl_ckks_linear_transformation_reference_full!($be);
+        $crate::impl_ckks_polynomial_evaluation_reference_full!($be);
+        $crate::impl_ckks_eval_mod_reference_full!($be);
+    };
+}
+pub use crate::impl_ckks_reference_full;

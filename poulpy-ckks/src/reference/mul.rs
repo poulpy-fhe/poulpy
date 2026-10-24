@@ -420,32 +420,34 @@ pub trait CKKSMulReference<BE: Backend> {
         )
     }
 
-    fn ckks_mul_pt_vec_tmp_bytes_reference<R, A>(&self, res: &R, a: &A, b_k: TorusPrecision) -> usize
+    fn ckks_mul_pt_vec_tmp_bytes_reference<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         Self: GLWEBytesOf<BE>,
         R: GLWEInfos,
         A: GLWEInfos,
+        P: CKKSInfos,
         Self: GLWEMulPlain<BE>,
     {
         let b_infos = GLWEPlaintextLayout {
             n: res.n(),
             base2k: res.base2k(),
-            k: b_k,
+            k: b.k(),
         };
         self.glwe_bytes_of_from_infos(a) + self.glwe_mul_plain_tmp_bytes(res, a, &b_infos)
     }
 
-    fn ckks_mul_pt_const_tmp_bytes_reference<R, A>(&self, res: &R, a: &A, b_k: TorusPrecision) -> usize
+    fn ckks_mul_pt_const_tmp_bytes_reference<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         Self: GLWEBytesOf<BE>,
         R: GLWEInfos,
         A: GLWEInfos,
+        P: CKKSInfos,
         Self: GLWEMulConst<BE>,
     {
         let b_infos = GLWEPlaintextLayout {
             n: res.n(),
             base2k: res.base2k(),
-            k: b_k,
+            k: b.k(),
         };
         self.glwe_bytes_of_from_infos(res) + self.glwe_mul_const_tmp_bytes(res, a, &b_infos)
     }

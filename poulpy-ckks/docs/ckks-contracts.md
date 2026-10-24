@@ -7,8 +7,13 @@ select a concrete backend or require host storage in these dispatch contracts.
 
 Each family's opt-in macro is `impl_<family>_reference_full!`, `<family>` being the
 OEP trait in snake case without `Impl` (`CKKSAddImpl`: `impl_ckks_add_reference_full!`,
-`DFTImpl`: `impl_dft_reference_full!`). The table gives
-the reference of each family.
+`DFTImpl`: `impl_dft_reference_full!`). `impl_ckks_reference_full!` selects every
+scalar-independent family that serves both rings, the families `CKKSImpl` bundles
+minus the standard-only ones; a standard backend adds the standard-only opt-ins,
+and every backend implements the scalar-generic seams (`CKKSEncodingImpl<F>`,
+`DFTMatrixImpl<F>`) and the PaCo and SHIP coefficient encodings itself. A backend
+replacing one of the umbrella's families selects the others with their own opt-ins.
+The table gives the reference of each family.
 
 | OEP family | Canonical implementation |
 |---|---|
