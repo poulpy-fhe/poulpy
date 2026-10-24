@@ -39,6 +39,7 @@
 - `conjugate_invariant_core_test_suite!` also runs `test_glwe_trace_parity`.
 - `impl_cpu_ckks_defaults!` selects poulpy-ckks's provided inner sum and replicate, `impl_ckks_inner_sum_derived_full!`.
 - Every CPU backend registers `test_linear_transformation_powers_of_two_parity`.
+- The fused IFMA giant step leaves power-of-two rotation schedules to the reference rotation tree, avoiding requests for direct rotation keys absent from those schedules.
 - Every conjugate-invariant backend type has a `max_base2k` model: each backend implements `MaxBase2k` once for both rings, where the conjugate-invariant types returned `None`.
 - The AVX-512 rank-one relinearization and the fused IFMA giant step refuse a key that does not cover their input, as the reference does.
 - The native CKKS encapsulated modulus raise (portable, AVX2, AVX-512, and their Rayon variants) and the fused IFMA giant step leave a key with a row offset to the reference, which refuses it, and the AVX-512 rank-one relinearization refuses one, instead of using it as an offset-free key.
